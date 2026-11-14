@@ -1,7 +1,7 @@
 "use client";
 
 import { useSearchParams } from "next/navigation";
-import { useEffect, useState } from "react";
+import { Suspense, useEffect, useState } from "react";
 
 import { MfaChallengeStep } from "@/components/auth/MfaChallengeStep";
 import { MfaEnrollStep } from "@/components/auth/MfaEnrollStep";
@@ -54,7 +54,19 @@ async function fetchExternalProviders(signal: AbortSignal): Promise<ExternalProv
     : [{ displayName: configuration.displayName?.trim() ?? "", loginUrl: ORIGINAL_LOGIN }];
 }
 
+/**
+ * The query (where to return, what the identity provider reported) is read in
+ * the browser; the boundary is where a static render stops before it.
+ */
 export default function LoginPage() {
+  return (
+    <Suspense>
+      <SignIn />
+    </Suspense>
+  );
+}
+
+function SignIn() {
   const { phase, loginPending, loginError } = useSession();
   const { t } = useLanguage();
   const params = useSearchParams();
