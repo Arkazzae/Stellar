@@ -1,52 +1,28 @@
 "use client";
 
 import { translateForDocument } from "@/i18n/defaultLocale";
-import {
-  useMemo,
-  useRef,
-  type ComponentPropsWithRef,
-  type ReactNode,
-} from "react";
-import { Virtuoso, type VirtuosoHandle } from "react-virtuoso";
+import { useMemo, type ReactNode } from "react";
 
 import { Icon } from "@stellarr/ui/icons";
 import type { OpenProfile } from "@/components/view-models";
 import type { CustomEmoji } from "@/ports";
 
-import { useHistoryWindow } from "./historyWindow";
 import { MessageGroup } from "./MessageGroup";
 import type { MessageAction } from "./MessageToolbar";
 import type { MessageTranslationOptions } from "./attachments/TranslatedTextAttachment";
 import type { AttachmentCallbacks } from "./parts";
-import { messageTail, toRows, type TranscriptSectionVM } from "./transcriptRows";
+import {
+  messageTail,
+  oldestGroupId,
+  toRows,
+  type TranscriptSectionVM,
+} from "./transcriptRows";
 import { useArrivals } from "./useArrivals";
 import { useJumpTo } from "./useJumpTo";
+import { useOlderHistory } from "./useOlderHistory";
 import { useTranscriptScroll } from "./useTranscriptScroll";
 
 export type { TranscriptSectionVM } from "./transcriptRows";
-
-/**
- * How close to the end still counts as "reading the latest". Generous enough
- * to survive a rounding-off scrollTop on fractional device pixels, small
- * enough that someone who scrolled up a screen is left alone.
- */
-const AT_BOTTOM_PX = 48;
-
-/**
- * Rendered beyond the viewport in both directions. Sized to cover a fast flick
- * between two frames rather than to be frugal: a row that is not mounted when
- * it scrolls into view is a blank patch, which costs a reader far more than a
- * few hundred pixels of DOM.
- */
-const OVERSCAN_PX = 900;
-
-/**
- * The opening location has to align the end of the final row, not merely
- * select it. A message group can be taller than the viewport, so the default
- * `start` alignment would open at the top of the group with its newest
- * messages below the fold.
- */
-const OPEN_AT_END = { index: "LAST", align: "end" } as const;
 
 export interface TranscriptProps {
   sections: TranscriptSectionVM[];
@@ -89,9 +65,9 @@ export interface TranscriptProps {
    * Rendered above the first day separator, inside the scroller.
    *
    * A conversation begins somewhere and says so; a channel that has been going
-   * for a year does not. Passing it as a row rather than as a sibling is what
-   * makes it scroll away with the history instead of sitting on top of it like
-   * a banner.
+   * for a year does not. Rendering it inside the scroller rather than as a
+   * sibling is what makes it scroll away with the history instead of sitting
+   * on top of it like a banner.
    */
   intro?: ReactNode;
   /**
@@ -107,11 +83,11 @@ export interface TranscriptProps {
   /**
    * Takes the transcript's "go to this message" for whoever is outside it.
    *
-   * The scroll is an index into a windowed list, so only this component can
-   * perform it — but the channel panel's pinned list needs it. It is the same
+   * Only this component knows where its rows are, so only it can perform the
+   * scroll — but the channel panel's pinned list needs it. It is the same
    * function the reply line uses, so both doors behave identically: a message
-   * outside the loaded window is not scrolled to, because there is nothing to
-   * scroll to yet.
+   * older than the loaded history is not scrolled to, because there is nothing
+   * to scroll to yet.
    */
   onJumpReady?(jumpTo: (messageId: string) => void): void;
 }
@@ -119,20 +95,17 @@ export interface TranscriptProps {
 /**
  * The message list.
  *
- * Windowed by `react-virtuoso`, which does the genuinely hard parts: it
- * measures every row as it renders and holds the scroll position steady when a
- * row above the viewport turns out taller than it looked. A transcript full of
- * images that decode at their own pace would jump under the reader otherwise.
- *
- * The one rule the CSS has to respect: rows are spaced with padding, never
- * margins. A margin escapes the box the virtualiser measures, and every row
- * would be reported a few pixels short — see `transcript.css`.
+ * Every loaded row is rendered into one plain scroller; nothing is windowed.
+ * The scroll behaviour a reader relies on is explicit instead:
+ * `useTranscriptScroll` opens at the end, follows the end, and keeps the row
+ * being read in place when anything above it changes height, and
+ * `useOlderHistory` asks for the page before the oldest one as the reader
+ * nears the top.
  */
 export function Transcript({ loading = false, ...props }: TranscriptProps) {
-  // `initialTopMostItemIndex` is consumed when Virtuoso mounts. Mounting it
-  // against an empty array and filling the array afterwards makes the opening
-  // position racy. The empty log keeps the pane's geometry while the first page
-  // is in flight; the real list then mounts once, already pointed at its end.
+  // The opening position is taken once, when the list mounts with its first
+  // page. Until that page is here, the empty log keeps the pane's geometry and
+  // tells assistive tech it is still busy.
   if (loading) {
     return (
       <div
@@ -177,24 +150,20 @@ function ReadyTranscript({
   );
   const tail = useMemo(() => messageTail(rows), [rows]);
 
-  const virtuoso = useRef<VirtuosoHandle>(null);
-  const scroll = useTranscriptScroll({ virtuoso, tail, followOwnSend });
-  const history = useHistoryWindow(rows);
-  const { flashId, jumpTo } = useJumpTo(rows, virtuoso, onJumpReady);
-  const { freshId, missed, dismissMissed } = useArrivals(
-    rows.at(-1)?.id,
-    scroll.atBottom,
-  );
-
-  // A new `components` object remounts the scroller and loses its place, so it
-  // is rebuilt only when the intro itself changes.
-  const components = useMemo(
-    () => ({
-      List: TranscriptList,
-      ...(intro === undefined ? {} : { Header: () => <>{intro}</> }),
-    }),
-    [intro],
-  );
+  const { scrollerRef, contentRef, atBottom, toEnd, reveal } = useTranscriptScroll({
+    rows,
+    tail,
+    followOwnSend,
+  });
+  useOlderHistory({
+    scroller: scrollerRef,
+    oldestId: oldestGroupId(rows),
+    hasOlder,
+    loadingOlder,
+    onLoadOlder,
+  });
+  const { flashId, jumpTo } = useJumpTo(rows, reveal, onJumpReady);
+  const { freshId, missed, dismissMissed } = useArrivals(rows.at(-1)?.id, atBottom);
 
   /*
    * The way back down belongs to being scrolled up, not to having missed
@@ -206,84 +175,64 @@ function ReadyTranscript({
    */
   const catchUp = () => {
     dismissMissed();
-    virtuoso.current?.scrollToIndex({
-      index: rows.length - 1,
-      align: "end",
-      behavior: "smooth",
-    });
+    toEnd();
   };
-
-  const loadOlder =
-    hasOlder && !loadingOlder && onLoadOlder !== undefined
-      ? () => {
-          history.anchorHere();
-          onLoadOlder();
-        }
-      : undefined;
 
   return (
     // The scroller keeps its own class and its own box; this only gives the
     // catch-up button something to be positioned against.
     <div className="transcript-area">
-      <Virtuoso
-        ref={virtuoso}
-        scrollerRef={scroll.setScroller}
-        className={scroll.ready ? "transcript" : "transcript opening"}
+      <div
+        ref={scrollerRef}
+        className="transcript"
         role="log"
-        aria-busy={!scroll.ready}
+        // Scrollable by keyboard once focused, as a log a reader moves through.
+        tabIndex={0}
+        aria-busy={false}
         aria-live="polite"
         aria-relevant="additions"
         aria-label={label}
-        data={rows}
-        firstItemIndex={history.firstItemIndex}
-        computeItemKey={(_, row) => row.id}
-        // A transcript too short to scroll sits at the bottom of the pane.
-        alignToBottom
-        initialTopMostItemIndex={OPEN_AT_END}
-        // Groups grow in place, so the scroller is moved before paint by
-        // `useTranscriptScroll`; the built-in mode would only snap after the
-        // row had been seen to resize.
-        followOutput={false}
-        totalListHeightChanged={scroll.onTotalListHeightChanged}
-        startReached={loadOlder}
-        rangeChanged={({ startIndex }) => history.noteVisibleStart(startIndex)}
-        atBottomStateChange={scroll.onAtBottomStateChange}
-        atBottomThreshold={AT_BOTTOM_PX}
-        increaseViewportBy={OVERSCAN_PX}
-        components={components}
-        itemContent={(_, row) => {
-          if (row.kind === "day") return <div className="day-sep">{row.day}</div>;
-          if (row.kind === "unread") {
-            return <div className="unread-sep">{t("message.unread")}</div>;
-          }
-          const { group } = row;
-          return (
-            <MessageGroup
-              {...group}
-              replyTo={hideReplyReferences ? undefined : group.replyTo}
-              fresh={row.id === freshId}
-              highlight={row.id === flashId}
-              onOpenReply={hideReplyReferences ? undefined : jumpTo}
-              translation={translation}
-              attachments={attachments}
-              customEmoji={customEmoji}
-              canModerate={canModerate}
-              developerMode={developerMode}
-              editing={editing}
-              onEditSave={onEditSave}
-              onEditCancel={onEditCancel}
-              onReact={onReact}
-              onAction={onAction}
-              onOpenAuthor={
-                onOpenAuthor
-                  ? (anchor) => onOpenAuthor(group.authorId, anchor)
-                  : undefined
-              }
-            />
-          );
-        }}
-      />
-      {scroll.atBottom ? null : (
+      >
+        {/* One box at the top of the column, whatever the intro is made of. */}
+        {intro === undefined ? null : <div>{intro}</div>}
+        <div ref={contentRef} className="transcript-inner">
+          {rows.map((row) => (
+            // One element per row, in the same order as the rows: the scroll
+            // keeper finds a row's box by its position among these.
+            <div key={row.id} data-row-id={row.id}>
+              {row.kind === "day" ? (
+                <div className="day-sep">{row.day}</div>
+              ) : row.kind === "unread" ? (
+                <div className="unread-sep">{t("message.unread")}</div>
+              ) : (
+                <MessageGroup
+                  {...row.group}
+                  replyTo={hideReplyReferences ? undefined : row.group.replyTo}
+                  fresh={row.id === freshId}
+                  highlight={row.id === flashId}
+                  onOpenReply={hideReplyReferences ? undefined : jumpTo}
+                  translation={translation}
+                  attachments={attachments}
+                  customEmoji={customEmoji}
+                  canModerate={canModerate}
+                  developerMode={developerMode}
+                  editing={editing}
+                  onEditSave={onEditSave}
+                  onEditCancel={onEditCancel}
+                  onReact={onReact}
+                  onAction={onAction}
+                  onOpenAuthor={
+                    onOpenAuthor
+                      ? (anchor) => onOpenAuthor(row.group.authorId, anchor)
+                      : undefined
+                  }
+                />
+              )}
+            </div>
+          ))}
+        </div>
+      </div>
+      {atBottom ? null : (
         <button
           type="button"
           className={missed ? "tr-jump" : "tr-jump bare"}
@@ -295,22 +244,6 @@ function ReadyTranscript({
           <Icon name="caret" size={missed ? 13 : 15} />
         </button>
       )}
-    </div>
-  );
-}
-
-/**
- * The element the rows live in.
- *
- * Named so the `.transcript-inner` rules apply. The virtualiser owns its inline
- * styles (the padding that stands in for unrendered rows) and puts more on this
- * element than the style attribute, so everything it passes is forwarded and
- * this sets no layout of its own.
- */
-function TranscriptList({ children, ...rest }: ComponentPropsWithRef<"div">) {
-  return (
-    <div {...rest} className="transcript-inner">
-      {children}
     </div>
   );
 }

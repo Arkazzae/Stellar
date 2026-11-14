@@ -1,175 +1,332 @@
+import { useCallback, useLayoutEffect, useRef, useState } from "react";
+
 import {
-  useCallback,
-  useEffect,
-  useLayoutEffect,
-  useRef,
-  useState,
-  type RefObject,
-} from "react";
-import type { VirtuosoHandle } from "react-virtuoso";
-
-import type { MessageTail } from "./transcriptRows";
+  anchoredScrollTop,
+  centredScrollTop,
+  distanceFromEnd,
+  endScrollTop,
+  isAtEnd,
+  readingMarks,
+  type ReadingMark,
+} from "./scrollAnchor";
+import { arrivedAtEnd, sharesAMessage, type MessageTail, type Row } from "./transcriptRows";
 
 /**
- * Virtuoso confirms an imperative scroll after 150 ms without another size
- * change. Revealing the opening position slightly later keeps its own
- * four-frame initial scroll and our final one-pixel correction from racing.
+ * How close to the end still counts as "reading the latest". Generous enough
+ * to survive a rounding-off scrollTop on fractional device pixels, small
+ * enough that someone who scrolled up a screen is left alone.
  */
-const QUIET_MS = 180;
-/** How long Virtuoso gets to report the bottom before it is asked again. */
-const FALLBACK_MS = 200;
+const AT_BOTTOM_PX = 48;
 
 /**
- * Where the opening scroll stands.
+ * The longest a smooth scroll is trusted to still be travelling. Browsers that
+ * do not report the end of a scroll would otherwise leave it in charge of the
+ * scroller for good.
+ */
+const GLIDE_MS = 1500;
+
+/** What the reader does to take the scroller back from a smooth scroll. */
+const READER_INPUT = ["wheel", "touchstart", "pointerdown", "keydown"] as const;
+
+/** A smooth scroll on its way to a place that may move while it travels. */
+interface Glide {
+  /** Where it is headed, measured afresh each time. */
+  target(): number;
+  /** The offset last handed to the browser. */
+  aimed: number;
+  until: number;
+}
+
+/** What the scroller knows between commits. */
+interface Keeper {
+  /** The rows of the last commit; null until the transcript has opened. */
+  rows: readonly Row[] | null;
+  /** Row id to its position among the rows, which is its position in the DOM. */
+  index: Map<string, number>;
+  tail: MessageTail | null;
+  ownSend: number | undefined;
+  /**
+   * The reader is exactly at the end, so the end is followed as it grows.
+   *
+   * Set by opening, by following a message and by the reader scrolling to the
+   * end; cleared only by the reader moving away. A followed row that grows
+   * (media, embeds) therefore never reads as the reader having left, which
+   * would flash the catch-up button for a frame.
+   */
+  pinned: boolean;
+  /** The last "near the end" that was published, thresholded. */
+  atBottom: boolean;
+  /** Where the reader is, as rows; see `readingMarks`. */
+  marks: ReadingMark[];
+  /** The content height the marks were taken against. */
+  scrollHeight: number;
+  /** The offset last seen or written. */
+  lastTop: number;
+  glide: Glide | null;
+}
+
+/**
+ * Behind a call the channel's transcript stays mounted with no box. Everything
+ * measures zero then, and taking those numbers as the reader's place would
+ * lose the place it has to come back to.
+ */
+function shown(scroller: HTMLElement): boolean {
+  return scroller.clientHeight > 0;
+}
+
+function rowElement(keeper: Keeper, content: HTMLElement, id: string): Element | null {
+  const index = keeper.index.get(id);
+  return index === undefined ? null : content.children.item(index);
+}
+
+/** Takes down where the reader is now, for the next change to restore. */
+function remember(keeper: Keeper, scroller: HTMLElement, content: HTMLElement): void {
+  if (!shown(scroller)) return;
+  keeper.lastTop = scroller.scrollTop;
+  keeper.scrollHeight = scroller.scrollHeight;
+  const rows = keeper.rows ?? [];
+  const elements = content.children;
+  const viewportTop = scroller.getBoundingClientRect().top;
+  keeper.marks = readingMarks(
+    Math.min(rows.length, elements.length),
+    (index) => {
+      const row = rows[index];
+      const rect = elements.item(index)?.getBoundingClientRect();
+      return {
+        id: row?.id ?? "",
+        anchor: row?.kind === "group",
+        top: (rect?.top ?? 0) - viewportTop,
+        bottom: (rect?.bottom ?? 0) - viewportTop,
+      };
+    },
+    scroller.clientHeight,
+  );
+}
+
+function goToEnd(keeper: Keeper, scroller: HTMLElement, content: HTMLElement): void {
+  keeper.pinned = true;
+  keeper.glide = null;
+  if (shown(scroller)) {
+    scroller.scrollTop = endScrollTop(scroller.scrollHeight, scroller.clientHeight);
+  }
+  remember(keeper, scroller, content);
+}
+
+/** Re-aims a smooth scroll whose destination moved under it. */
+function aim(glide: Glide, scroller: HTMLElement): void {
+  const top = glide.target();
+  if (Math.abs(top - glide.aimed) < 1) return;
+  glide.aimed = top;
+  glide.until = performance.now() + GLIDE_MS;
+  scroller.scrollTo({ top, behavior: "smooth" });
+}
+
+function glideTo(keeper: Keeper, scroller: HTMLElement, target: () => number): void {
+  keeper.glide = null;
+  if (!shown(scroller)) return;
+  const top = target();
+  if (Math.abs(top - scroller.scrollTop) <= 1) return;
+  keeper.glide = { target, aimed: top, until: performance.now() + GLIDE_MS };
+  scroller.scrollTo({ top, behavior: "smooth" });
+}
+
+/**
+ * Keeps the reader where they were after something changed size or the rows
+ * changed: at the end if they were pinned there, otherwise with the row they
+ * were reading at the same height on screen.
  *
- * `travelling`: Virtuoso is still on its way to the last row and owns the
- * scroller; writing `scrollTop` now races its delayed alignment, which is what
- * used to land a refresh at seemingly random places.
- * `pinning`: it arrived. Every measurement re-pins the exact bottom and
- * restarts the quiet window, and only when that stays quiet is the list shown.
- * `open`: settled; from here on the reader is in charge.
+ * This is the only thing that compensates for content changing above the
+ * viewport, so the scroller opts out of the browser's own scroll anchoring;
+ * the two would otherwise correct the same change twice.
  */
-type Phase = "travelling" | "pinning" | "open";
+function hold(keeper: Keeper, scroller: HTMLElement, content: HTMLElement): void {
+  if (!shown(scroller)) return;
+  if (keeper.glide !== null) {
+    // Writing the offset would cancel the smooth scroll halfway, so the
+    // scroll is pointed at where its destination is now instead.
+    if (performance.now() < keeper.glide.until) {
+      aim(keeper.glide, scroller);
+      return;
+    }
+    keeper.glide = null;
+  }
+  if (keeper.pinned) {
+    goToEnd(keeper, scroller, content);
+    return;
+  }
+  const viewportTop = scroller.getBoundingClientRect().top;
+  const anchored = anchoredScrollTop(scroller.scrollTop, keeper.marks, (id) => {
+    const element = rowElement(keeper, content, id);
+    return element === null ? undefined : element.getBoundingClientRect().top - viewportTop;
+  });
+  // Messages carried over but none of the rows near the reader did, as when
+  // one long block absorbs a whole page. What changed is taken to have changed
+  // above them, which keeps their distance from the end.
+  const top = anchored ?? scroller.scrollTop + scroller.scrollHeight - keeper.scrollHeight;
+  // Every write cancels a smooth or momentum scroll in flight, so nothing is
+  // written when nothing moved.
+  if (Math.abs(top - scroller.scrollTop) >= 0.5) scroller.scrollTop = top;
+  remember(keeper, scroller, content);
+}
 
 interface Options {
-  virtuoso: RefObject<VirtuosoHandle | null>;
+  rows: readonly Row[];
   tail: MessageTail;
   /** Changes when the reader sends something of their own. */
   followOwnSend: number | undefined;
 }
 
 /**
- * Keeps the real scroller where the reader expects it: at the end when the
+ * Keeps the scroller where the reader expects it: at the end when the
  * transcript opens, at the end for messages that arrive while they are at the
- * end, and at the end for anything they send themselves.
+ * end, at the end for anything they send themselves, and on the row they are
+ * reading when anything above it changes.
  */
-export function useTranscriptScroll({ virtuoso, tail, followOwnSend }: Options) {
-  const scroller = useRef<HTMLElement | null>(null);
-  const lastScrollHeight = useRef<number | null>(null);
-  const phase = useRef<Phase>("travelling");
-  const quietTimer = useRef<number | null>(null);
-  /** Virtuoso's own idea of "at the end", before the arrival-following veto. */
-  const atBottomRef = useRef(true);
-  /** A message was followed and its row may still grow (media, embeds). */
-  const following = useRef(false);
-  const previousTail = useRef(tail);
-  const lastOwnSend = useRef(followOwnSend);
-
-  const [ready, setReady] = useState(false);
+export function useTranscriptScroll({ rows, tail, followOwnSend }: Options) {
+  const scrollerRef = useRef<HTMLDivElement>(null);
+  const contentRef = useRef<HTMLDivElement>(null);
+  const keeper = useRef<Keeper>({
+    rows: null,
+    index: new Map(),
+    tail: null,
+    ownSend: undefined,
+    pinned: true,
+    atBottom: true,
+    marks: [],
+    scrollHeight: 0,
+    lastTop: 0,
+    glide: null,
+  });
   const [atBottom, setAtBottom] = useState(true);
 
-  const toBottom = useCallback(() => {
-    const element = scroller.current;
-    if (element === null) return;
-    element.scrollTop = Math.max(0, element.scrollHeight - element.clientHeight);
-    lastScrollHeight.current = element.scrollHeight;
+  /** Says whether the end is in reach, for the catch-up button and for following arrivals. */
+  const publish = useCallback(() => {
+    const scroller = scrollerRef.current;
+    if (scroller === null || !shown(scroller)) return;
+    const state = keeper.current;
+    const bottom =
+      state.pinned ||
+      distanceFromEnd(scroller.scrollTop, scroller.scrollHeight, scroller.clientHeight) <=
+        AT_BOTTOM_PX;
+    state.atBottom = bottom;
+    setAtBottom(bottom);
   }, []);
 
-  // Close the pixel gap, then wait for measurements to stop before revealing.
-  const pin = useCallback(() => {
-    toBottom();
-    if (quietTimer.current !== null) window.clearTimeout(quietTimer.current);
-    quietTimer.current = window.setTimeout(() => {
-      quietTimer.current = null;
-      toBottom();
-      phase.current = "open";
-      setReady(true);
-    }, QUIET_MS);
-  }, [toBottom]);
-
-  const reachBottom = useCallback(() => {
-    if (phase.current === "open") return;
-    phase.current = "pinning";
-    pin();
-  }, [pin]);
-
-  const setScroller = useCallback((element: HTMLElement | Window | null) => {
-    scroller.current = element instanceof HTMLElement ? element : null;
-    lastScrollHeight.current = scroller.current?.scrollHeight ?? null;
-  }, []);
-
-  const onTotalListHeightChanged = useCallback(() => {
-    const element = scroller.current;
-    if (element === null) return;
-
-    const bottomFor = (height: number) =>
-      Math.max(0, height - element.clientHeight);
-    const wasAtBottom =
-      lastScrollHeight.current !== null &&
-      Math.abs(element.scrollTop - bottomFor(lastScrollHeight.current)) <= 1;
-    const nowAtBottom =
-      Math.abs(element.scrollTop - bottomFor(element.scrollHeight)) <= 1;
-    lastScrollHeight.current = element.scrollHeight;
-
-    if (phase.current === "travelling") return;
-    if (phase.current === "pinning") {
-      pin();
-      return;
-    }
-    // Exact rather than thresholded: a reader 20 px above the end is left
-    // alone, while media that finishes loading under someone at the end is
-    // followed.
-    if (wasAtBottom && !nowAtBottom) toBottom();
-  }, [pin, toBottom]);
-
-  const onAtBottomStateChange = useCallback(
-    (bottom: boolean) => {
-      if (bottom) reachBottom();
-      atBottomRef.current = bottom;
-      // The row is growing under a followed message, which briefly reads as
-      // "away" until the scroller catches up. The reader did not leave.
-      if (!bottom && following.current) return;
-      setAtBottom(bottom);
-      if (bottom) following.current = false;
-    },
-    [reachBottom],
-  );
-
-  /*
-   * A second message from the same author grows the existing row instead of
-   * adding one, which Virtuoso's follow mode would only chase after the fact.
-   * Moving the real scroller here happens before the taller row paints.
-   * Swapping an optimistic id for the server's keeps the count, so it cannot
-   * count as a second arrival.
-   */
   useLayoutEffect(() => {
-    const previous = previousTail.current;
-    previousTail.current = tail;
-    const arrived =
-      tail.count > previous.count &&
-      tail.lastMessageId !== previous.lastMessageId;
-    if (!arrived || !(atBottomRef.current || following.current)) return;
-    following.current = true;
-    toBottom();
-  }, [tail, toBottom]);
+    const scroller = scrollerRef.current;
+    const content = contentRef.current;
+    if (scroller === null || content === null) return;
+    const state = keeper.current;
 
-  /*
-   * Sending commands the view even from further up, where an arrival would
-   * not. Mounting is not a send, and the opening position belongs to Virtuoso.
-   */
-  useLayoutEffect(() => {
-    if (followOwnSend === lastOwnSend.current) return;
-    lastOwnSend.current = followOwnSend;
-    if (phase.current !== "open") return;
-    following.current = true;
-    toBottom();
-  }, [followOwnSend, toBottom]);
-
-  // If Virtuoso never reports the bottom, ask it again, then take it as given.
-  useEffect(() => {
-    let timer = window.setTimeout(() => {
-      if (phase.current !== "travelling") return;
-      virtuoso.current?.scrollToIndex({ index: "LAST", align: "end" });
-      timer = window.setTimeout(() => {
-        if (phase.current === "travelling") reachBottom();
-      }, FALLBACK_MS);
-    }, FALLBACK_MS);
-
-    return () => {
-      window.clearTimeout(timer);
-      if (quietTimer.current !== null) window.clearTimeout(quietTimer.current);
+    const onScroll = () => {
+      if (!shown(scroller)) return;
+      const top = scroller.scrollTop;
+      // Every offset this hook writes raises a scroll event a frame later. It
+      // says nothing about the reader, and by then the content may have grown
+      // under them, which would read as having left the end.
+      if (Math.abs(top - state.lastTop) < 0.5) return;
+      state.pinned = isAtEnd(top, scroller.scrollHeight, scroller.clientHeight);
+      remember(state, scroller, content);
+      if (state.glide !== null && Math.abs(top - state.glide.target()) <= 1) {
+        state.glide = null;
+      }
+      publish();
     };
-  }, [virtuoso, reachBottom]);
 
-  return { ready, atBottom, setScroller, onTotalListHeightChanged, onAtBottomStateChange };
+    const endGlide = () => {
+      state.glide = null;
+    };
+
+    // One observer for both boxes: the rows growing (media, embeds, edits,
+    // reactions) and the viewport shrinking (a taller composer, a keyboard).
+    const observer =
+      typeof ResizeObserver === "undefined"
+        ? null
+        : new ResizeObserver(() => {
+            hold(state, scroller, content);
+            publish();
+          });
+    observer?.observe(content);
+    observer?.observe(scroller);
+    scroller.addEventListener("scroll", onScroll, { passive: true });
+    scroller.addEventListener("scrollend", endGlide);
+    for (const type of READER_INPUT) {
+      scroller.addEventListener(type, endGlide, { passive: true });
+    }
+    return () => {
+      observer?.disconnect();
+      scroller.removeEventListener("scroll", onScroll);
+      scroller.removeEventListener("scrollend", endGlide);
+      for (const type of READER_INPUT) scroller.removeEventListener(type, endGlide);
+    };
+  }, [publish]);
+
+  /*
+   * Runs after every commit that changed the rows, before it is painted, so a
+   * prepended page or a followed message never shows in the wrong place for a
+   * frame. Deciding between following the end and holding the reader's row in
+   * one place is what keeps one from undoing the other.
+   */
+  useLayoutEffect(() => {
+    const scroller = scrollerRef.current;
+    const content = contentRef.current;
+    if (scroller === null || content === null) return;
+    const state = keeper.current;
+    const previousRows = state.rows;
+    const previousTail = state.tail;
+    const previousSend = state.ownSend;
+    state.rows = rows;
+    state.index = new Map(rows.map((row, index) => [row.id, index]));
+    state.tail = tail;
+    state.ownSend = followOwnSend;
+
+    const follow =
+      // Opening: the end, before the first paint. A transcript too short to
+      // scroll is already there, and CSS sits it at the bottom of the pane.
+      previousRows === null ||
+      previousTail === null ||
+      // Following an arrival is conditional on already being at the end, which
+      // is the right restraint for someone else's message: being yanked
+      // mid-read is worse than missing a line. Your own message is not that.
+      followOwnSend !== previousSend ||
+      (arrivedAtEnd(previousTail, tail) && (state.atBottom || state.pinned)) ||
+      // Another conversation under the same transcript, or a first page.
+      !sharesAMessage(previousRows, rows);
+    if (follow) goToEnd(state, scroller, content);
+    else hold(state, scroller, content);
+    // In the same commit, so a button that no longer applies is never painted.
+    publish();
+  }, [rows, tail, followOwnSend, publish]);
+
+  /** Smoothly to the newest message, for the catch-up button. */
+  const toEnd = useCallback(() => {
+    const scroller = scrollerRef.current;
+    if (scroller === null) return;
+    glideTo(keeper.current, scroller, () =>
+      endScrollTop(scroller.scrollHeight, scroller.clientHeight),
+    );
+  }, []);
+
+  /** Smoothly to the row with this id, centred. A row that is not rendered is not scrolled to. */
+  const reveal = useCallback((rowId: string) => {
+    const scroller = scrollerRef.current;
+    const content = contentRef.current;
+    const state = keeper.current;
+    if (scroller === null || content === null) return;
+    if (rowElement(state, content, rowId) === null) return;
+    glideTo(state, scroller, () => {
+      const element = rowElement(state, content, rowId);
+      if (element === null) return scroller.scrollTop;
+      const rect = element.getBoundingClientRect();
+      return centredScrollTop(
+        scroller.scrollTop,
+        rect.top - scroller.getBoundingClientRect().top,
+        rect.height,
+        scroller.clientHeight,
+        scroller.scrollHeight,
+      );
+    });
+  }, []);
+
+  return { scrollerRef, contentRef, atBottom, toEnd, reveal };
 }
