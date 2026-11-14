@@ -34,7 +34,7 @@ export interface MessageBodyVM {
 
 /** What one author block on screen is. */
 export interface MessageGroupVM {
-  /** Stable virtual-list identity for the block; the head message's id. */
+  /** Stable identity for the block's row; the head message's id. */
   id: string;
   authorId: string;
   authorName: string;

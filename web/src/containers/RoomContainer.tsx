@@ -57,9 +57,9 @@ export function RoomContainer() {
 
   /*
    * The transcript's "go to this message", lent to the channel panel. Only the
-   * transcript can perform the scroll, since it is an index into a windowed
-   * list, so it hands the function up. A ref, because taking it must not
-   * re-render the room; a message older than the loaded window scrolls nowhere.
+   * transcript can perform the scroll, since only it knows where its rows are,
+   * so it hands the function up. A ref, because taking it must not re-render
+   * the room; a message older than the loaded history scrolls nowhere.
    */
   const jump = useRef<((messageId: string) => void) | null>(null);
   const takeJump = useCallback((jumpTo: (messageId: string) => void) => {

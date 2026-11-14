@@ -1,46 +1,28 @@
-import { act, render, screen } from "@testing-library/react";
-import type { ComponentType, ReactElement } from "react";
+import { act, fireEvent, render, screen } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
+import { createElement, type ReactElement } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
+import { ConfirmProvider } from "@/components/primitives/ConfirmDialog";
+import { fakeTranscriptLayout } from "@/test/transcriptLayout";
+
+import type * as MessageGroupModule from "./MessageGroup";
 import type { MessageGroupProps, MessageGroupVM } from "./MessageGroup";
 import { Transcript, type TranscriptSectionVM } from "./Transcript";
 
-interface CapturedVirtuosoProps {
-  className?: string;
-  data: Array<{ id: string }>;
-  startReached?: (index: number) => void;
-  atBottomStateChange?: (atBottom: boolean) => void;
-  scrollerRef?: (element: HTMLElement | Window | null) => void;
-  components?: { Header?: ComponentType };
-  // Separator rows are not message groups; the tests that look at those only
-  // render the element and never read its props.
-  itemContent: (index: number, row: unknown) => ReactElement<MessageGroupProps>;
-}
+/** The props each block was last rendered with, by block id. */
+const rendered = vi.hoisted(() => new Map<string, MessageGroupProps>());
 
-const captured = vi.hoisted(() => ({
-  props: null as CapturedVirtuosoProps | null,
-  scrollToIndex: null as ReturnType<typeof vi.fn> | null,
-}));
-
-function virtuosoProps(): CapturedVirtuosoProps {
-  if (captured.props === null) throw new Error("Virtuoso has not rendered yet");
-  return captured.props;
-}
-
-vi.mock("react-virtuoso", async () => {
-  const React = await import("react");
-  const { vi: vitest } = await import("vitest");
+// The real block renders; this only notes what the transcript handed it, for
+// the props that have no visible effect on an empty message.
+vi.mock("./MessageGroup", async (importOriginal) => {
+  const actual = await importOriginal<typeof MessageGroupModule>();
   return {
-    Virtuoso: React.forwardRef<unknown, CapturedVirtuosoProps>(
-      function VirtuosoMock(props, ref) {
-        captured.props = props;
-        captured.scrollToIndex ??= vitest.fn();
-        React.useImperativeHandle(ref, () => ({
-          scrollToIndex: captured.scrollToIndex,
-        }));
-        return React.createElement("div", { "data-testid": "virtuoso" });
-      },
-    ),
+    ...actual,
+    MessageGroup: (props: MessageGroupProps) => {
+      rendered.set(props.id, props);
+      return createElement(actual.MessageGroup, props);
+    },
   };
 });
 
@@ -61,23 +43,32 @@ function section(...groups: MessageGroupVM[]): TranscriptSectionVM[] {
   return [{ day: "Dzisiaj", groups }];
 }
 
-/** What the list would render for the row with this id. */
-function renderedRow(id: string): ReactElement<MessageGroupProps> {
-  const row = virtuosoProps().data.find((candidate) => candidate.id === id);
-  if (row === undefined) throw new Error(`no row ${id}`);
-  return virtuosoProps().itemContent(0, row);
+/** `m1` … `mN` as blocks: with the day separator, N + 1 rows of 100 px. */
+function blocks(count: number): MessageGroupVM[] {
+  return Array.from({ length: count }, (_, index) => group(`m${index + 1}`));
 }
 
-beforeEach(() => {
-  captured.props = null;
-  captured.scrollToIndex?.mockClear();
-});
+/** Message blocks ask before deleting, so they render under the app's confirm dialog. */
+const show = (ui: ReactElement) => render(ui, { wrapper: ConfirmProvider });
+
+const rowIds = () =>
+  [...screen.getByRole("log").querySelectorAll<HTMLElement>("[data-row-id]")].map(
+    (row) => row.dataset.rowId,
+  );
+
+function propsOf(id: string): MessageGroupProps {
+  const props = rendered.get(id);
+  if (props === undefined) throw new Error(`no block ${id}`);
+  return props;
+}
+
+beforeEach(() => rendered.clear());
 
 afterEach(() => vi.useRealTimers());
 
 describe("Transcript rows", () => {
   it("draws the unread line above the first unread block only", () => {
-    render(
+    show(
       <Transcript
         sections={section(group("a"), group("b"), group("c"))}
         label="Wiadomości"
@@ -85,26 +76,18 @@ describe("Transcript rows", () => {
       />,
     );
 
-    expect(virtuosoProps().data.map((row) => row.id)).toEqual([
-      "day-Dzisiaj",
-      "a",
-      "unread-b",
-      "b",
-      "c",
-    ]);
-    render(renderedRow("unread-b"));
+    expect(rowIds()).toEqual(["day-Dzisiaj", "a", "unread-b", "b", "c"]);
     expect(screen.getByText("Nowe wiadomości")).toBeInTheDocument();
   });
 
   it("writes the day heading as its own row", () => {
-    render(<Transcript sections={section(group("a"))} label="Wiadomości" />);
+    show(<Transcript sections={section(group("a"))} label="Wiadomości" />);
 
-    render(renderedRow("day-Dzisiaj"));
-    expect(screen.getByText("Dzisiaj")).toBeInTheDocument();
+    expect(screen.getByText("Dzisiaj")).toHaveClass("day-sep");
   });
 
   it("renders the intro inside the list, above the first day", () => {
-    render(
+    show(
       <Transcript
         sections={section(group("a"))}
         label="Wiadomości"
@@ -112,88 +95,159 @@ describe("Transcript rows", () => {
       />,
     );
 
-    const Header = virtuosoProps().components?.Header;
-    if (Header === undefined) throw new Error("no header");
-    render(<Header />);
-    expect(screen.getByText("To początek kanału.")).toBeInTheDocument();
+    const log = screen.getByRole("log");
+    const intro = screen.getByText("To początek kanału.");
+    expect(log).toContainElement(intro);
+    expect(
+      intro.compareDocumentPosition(screen.getByText("Dzisiaj")) & Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy();
   });
 
-  it("has no header when there is no intro", () => {
-    render(<Transcript sections={section(group("a"))} label="Wiadomości" />);
+  it("has nothing above the rows when there is no intro", () => {
+    show(<Transcript sections={section(group("a"))} label="Wiadomości" />);
 
-    expect(virtuosoProps().components?.Header).toBeUndefined();
+    expect(screen.getByRole("log").firstElementChild).toHaveClass("transcript-inner");
   });
 
-  it("raises the profile of the author of the block it was clicked on", () => {
+  it("raises the profile of the author of the block it was clicked on", async () => {
+    const user = userEvent.setup();
     const onOpenAuthor = vi.fn();
-    render(
-      <Transcript
-        sections={section(group("a"))}
-        label="Wiadomości"
-        onOpenAuthor={onOpenAuthor}
-      />,
+    show(
+      <Transcript sections={section(group("a"))} label="Wiadomości" onOpenAuthor={onOpenAuthor} />,
     );
-    const anchor = document.createElement("button");
 
-    renderedRow("a").props.onOpenAuthor?.(anchor);
+    await user.click(screen.getByRole("button", { name: "Profil: Maja" }));
 
-    expect(onOpenAuthor).toHaveBeenCalledWith("user-1", anchor);
+    expect(onOpenAuthor).toHaveBeenCalledWith("user-1", expect.any(HTMLElement));
   });
 
   it("leaves authors inert when nothing can open a profile", () => {
-    render(<Transcript sections={section(group("a"))} label="Wiadomości" />);
+    show(<Transcript sections={section(group("a"))} label="Wiadomości" />);
 
-    expect(renderedRow("a").props.onOpenAuthor).toBeUndefined();
+    expect(screen.queryByRole("button", { name: "Profil: Maja" })).toBeNull();
+  });
+
+  it("is a labelled log that announces what is added", () => {
+    show(<Transcript sections={section(group("a"))} label="Wiadomości w #ogólny" />);
+
+    const log = screen.getByRole("log", { name: "Wiadomości w #ogólny" });
+    expect(log).toHaveAttribute("aria-live", "polite");
+    expect(log).toHaveAttribute("aria-relevant", "additions");
+    expect(log).toHaveAttribute("aria-busy", "false");
   });
 });
 
 describe("Transcript older history", () => {
-  function startReachedFor(props: {
-    hasOlder?: boolean;
-    loadingOlder?: boolean;
-    onLoadOlder?: () => void;
-  }) {
-    render(
-      <Transcript
-        sections={section(group("a"))}
-        label="Wiadomości"
-        {...props}
-      />,
-    );
-    return virtuosoProps().startReached;
+  function reader(props: { hasOlder?: boolean; loadingOlder?: boolean; onLoadOlder?: () => void }) {
+    const layout = fakeTranscriptLayout();
+    const view = show(<Transcript sections={section(...blocks(20))} label="Wiadomości" {...props} />);
+    return { layout, ...view };
   }
 
-  it("asks for the next page when the oldest row is reached", () => {
+  it("asks for the next page as the reader nears the top", () => {
     const onLoadOlder = vi.fn();
-    const startReached = startReachedFor({ hasOlder: true, onLoadOlder });
+    const { layout } = reader({ hasOlder: true, onLoadOlder });
+    // Opened at the end, 1 500 px down: nowhere near the top yet.
+    expect(onLoadOlder).not.toHaveBeenCalled();
 
-    act(() => startReached?.(1_000_000));
+    layout.scrollTo(1_000);
+    expect(onLoadOlder).not.toHaveBeenCalled();
+    layout.scrollTo(800);
+    expect(onLoadOlder).toHaveBeenCalledOnce();
 
+    // Still near the top, with the same page outstanding.
+    layout.scrollTo(400);
     expect(onLoadOlder).toHaveBeenCalledOnce();
   });
 
   it("does not ask when there is nothing older", () => {
-    expect(startReachedFor({ onLoadOlder: vi.fn() })).toBeUndefined();
+    const onLoadOlder = vi.fn();
+    const { layout } = reader({ onLoadOlder });
+
+    layout.scrollTo(0);
+
+    expect(onLoadOlder).not.toHaveBeenCalled();
   });
 
   it("does not ask again while a page is already loading", () => {
-    expect(
-      startReachedFor({ hasOlder: true, loadingOlder: true, onLoadOlder: vi.fn() }),
-    ).toBeUndefined();
+    const onLoadOlder = vi.fn();
+    const { layout } = reader({ hasOlder: true, loadingOlder: true, onLoadOlder });
+
+    layout.scrollTo(0);
+
+    expect(onLoadOlder).not.toHaveBeenCalled();
   });
 
   it("does not ask when nobody listens", () => {
-    expect(startReachedFor({ hasOlder: true })).toBeUndefined();
+    const { layout } = reader({ hasOlder: true });
+
+    expect(() => layout.scrollTo(0)).not.toThrow();
+  });
+
+  it("asks straight away when the first page does not fill the pane", () => {
+    fakeTranscriptLayout();
+    const onLoadOlder = vi.fn();
+
+    show(
+      <Transcript sections={section(...blocks(3))} label="Wiadomości" hasOlder onLoadOlder={onLoadOlder} />,
+    );
+
+    expect(onLoadOlder).toHaveBeenCalledOnce();
+  });
+
+  it("asks again when a page lands and the top is still in reach", () => {
+    fakeTranscriptLayout();
+    const onLoadOlder = vi.fn();
+    const props = { label: "Wiadomości", hasOlder: true, onLoadOlder };
+    const { rerender } = show(<Transcript sections={section(...blocks(3))} {...props} />);
+    rerender(<Transcript sections={section(...blocks(3))} {...props} loadingOlder />);
+
+    // A short page: two older blocks, and the pane is still not full.
+    rerender(<Transcript sections={section(group("o1"), group("o2"), ...blocks(3))} {...props} />);
+
+    expect(onLoadOlder).toHaveBeenCalledTimes(2);
+  });
+
+  it("does not retry a page that failed until the reader comes back to the top", () => {
+    const layout = fakeTranscriptLayout();
+    const onLoadOlder = vi.fn();
+    const props = { sections: section(...blocks(20)), label: "Wiadomości", hasOlder: true, onLoadOlder };
+    const { rerender } = show(<Transcript {...props} />);
+    layout.scrollTo(300);
+    expect(onLoadOlder).toHaveBeenCalledOnce();
+
+    // The request failed: loading ends and the rows are the same.
+    rerender(<Transcript {...props} loadingOlder />);
+    rerender(<Transcript {...props} />);
+    layout.scrollTo(200);
+    expect(onLoadOlder).toHaveBeenCalledOnce();
+
+    // Another trip to the top tries again.
+    layout.scrollTo(1_200);
+    layout.scrollTo(500);
+    expect(onLoadOlder).toHaveBeenCalledTimes(2);
+  });
+
+  it("does not ask from a transcript that is hidden", () => {
+    const layout = fakeTranscriptLayout({ viewport: 0 });
+    const onLoadOlder = vi.fn();
+
+    show(
+      <Transcript sections={section(...blocks(3))} label="Wiadomości" hasOlder onLoadOlder={onLoadOlder} />,
+    );
+    layout.scrollTo(0);
+
+    expect(onLoadOlder).not.toHaveBeenCalled();
   });
 });
 
 describe("Transcript jumping to a message", () => {
   function mount() {
-    vi.useFakeTimers();
+    const layout = fakeTranscriptLayout();
     let jumpTo: ((messageId: string) => void) | undefined;
-    render(
+    show(
       <Transcript
-        sections={section(group("a"), group("b", "b1", "b2"))}
+        sections={section(...blocks(20), group("b", "b1", "b2"))}
         label="Wiadomości"
         onJumpReady={(jump) => {
           jumpTo = jump;
@@ -201,194 +255,162 @@ describe("Transcript jumping to a message", () => {
       />,
     );
     if (jumpTo === undefined) throw new Error("the jump was not handed out");
-    return jumpTo;
+    const scrollTo = vi.spyOn(layout.scroller(), "scrollTo");
+    return { layout, jumpTo, scrollTo };
   }
 
-  it("scrolls to the block that holds the message and flashes it", () => {
-    const jumpTo = mount();
+  it("scrolls smoothly to the block that holds the message, centred, and flashes it", () => {
+    vi.useFakeTimers();
+    const { jumpTo, scrollTo } = mount();
+
+    act(() => jumpTo("m5"));
+
+    // m5 is the sixth row, 500..600 down the content; centred in a 600 px
+    // pane, its top sits 250 px below the viewport's.
+    expect(scrollTo).toHaveBeenCalledWith({ top: 250, behavior: "smooth" });
+    expect(propsOf("m5").highlight).toBe(true);
+    expect(propsOf("m4").highlight).toBe(false);
+
+    act(() => vi.advanceTimersByTime(1_200));
+    expect(propsOf("m5").highlight).toBe(false);
+  });
+
+  it("finds a later message of a run by the block that holds it", () => {
+    const { layout, jumpTo, scrollTo } = mount();
+    layout.scrollTo(0);
 
     act(() => jumpTo("b2"));
 
-    expect(captured.scrollToIndex).toHaveBeenCalledWith({
-      index: 2,
-      align: "center",
-      behavior: "smooth",
-    });
-    expect(renderedRow("b").props.highlight).toBe(true);
-    expect(renderedRow("a").props.highlight).toBe(false);
-
-    act(() => vi.advanceTimersByTime(1_200));
-    expect(renderedRow("b").props.highlight).toBe(false);
+    expect(scrollTo).toHaveBeenCalledWith({ top: layout.end(), behavior: "smooth" });
+    expect(propsOf("b").highlight).toBe(true);
   });
 
   it("does nothing for a message that has not been loaded", () => {
-    const jumpTo = mount();
+    const { jumpTo, scrollTo } = mount();
 
     act(() => jumpTo("older"));
 
-    expect(captured.scrollToIndex).not.toHaveBeenCalled();
-    expect(renderedRow("a").props.highlight).toBe(false);
+    expect(scrollTo).not.toHaveBeenCalled();
+    expect(propsOf("m1").highlight).toBe(false);
   });
 
-  it("is the same function the reply line uses, and is handed out once", () => {
+  it("keeps aiming at the block when a row above it changes height on the way", () => {
+    const { layout, jumpTo, scrollTo } = mount();
+
+    act(() => jumpTo("m5"));
+    // A picture above m5 finished loading while the scroll was travelling,
+    // and m5 is now 200 px further down.
+    layout.set({ heights: { m2: 300 } });
+    layout.resized();
+
+    expect(scrollTo).toHaveBeenLastCalledWith({ top: 450, behavior: "smooth" });
+  });
+
+  it("lets the reader take the scroller back from a jump still on its way", () => {
+    const { layout, jumpTo, scrollTo } = mount();
+    act(() => jumpTo("m5"));
+    // Partway there, the reader turns the wheel.
+    layout.scrollTo(900);
+    act(() => fireEvent.wheel(layout.scroller()));
+    const reading = layout.topOf("m9");
+
+    layout.set({ heights: { m2: 300 } });
+    layout.resized();
+
+    // Not pulled on towards m5: the row being read simply stays put.
+    expect(scrollTo).toHaveBeenCalledTimes(1);
+    expect(layout.topOf("m9")).toBe(reading);
+  });
+
+  it("is the same function the reply line uses, and is handed out once", async () => {
+    const user = userEvent.setup();
+    const layout = fakeTranscriptLayout();
     const onJumpReady = vi.fn();
     const answer = group("answer");
-    answer.replyTo = { id: "a", authorId: "u2", authorName: "Nils", preview: "Cześć" };
-    const { rerender } = render(
-      <Transcript
-        sections={section(group("a"), answer)}
-        label="Wiadomości"
-        onJumpReady={onJumpReady}
-      />,
+    answer.replyTo = { id: "m1", authorId: "u2", authorName: "Nils", preview: "Cześć" };
+    const { rerender } = show(
+      <Transcript sections={section(...blocks(20), answer)} label="Wiadomości" onJumpReady={onJumpReady} />,
     );
+    const scrollTo = vi.spyOn(layout.scroller(), "scrollTo");
 
-    act(() => renderedRow("answer").props.onOpenReply?.("a"));
-    expect(captured.scrollToIndex).toHaveBeenCalledWith(
-      expect.objectContaining({ index: 1, align: "center" }),
-    );
+    await user.click(screen.getByRole("button", { name: /Cześć/ }));
+    expect(scrollTo).toHaveBeenLastCalledWith({ top: 0, behavior: "smooth" });
 
     rerender(
       <Transcript
-        sections={section(group("a"), answer, group("later"))}
+        sections={section(...blocks(20), answer, group("later"))}
         label="Wiadomości"
         onJumpReady={onJumpReady}
       />,
     );
     expect(onJumpReady).toHaveBeenCalledTimes(1);
-    expect(onJumpReady.mock.calls[0]?.[0]).toBe(renderedRow("answer").props.onOpenReply);
+    expect(onJumpReady.mock.calls[0]?.[0]).toBe(propsOf("answer").onOpenReply);
   });
 
   it("finds a message that arrived after the jump was handed out", () => {
+    const layout = fakeTranscriptLayout();
     let jumpTo: ((messageId: string) => void) | undefined;
     const onJumpReady = (jump: (messageId: string) => void) => {
       jumpTo = jump;
     };
-    const { rerender } = render(
-      <Transcript sections={section(group("a"))} label="Wiadomości" onJumpReady={onJumpReady} />,
+    const { rerender } = show(
+      <Transcript sections={section(...blocks(20))} label="Wiadomości" onJumpReady={onJumpReady} />,
     );
     rerender(
-      <Transcript
-        sections={section(group("a"), group("b"))}
-        label="Wiadomości"
-        onJumpReady={onJumpReady}
-      />,
+      <Transcript sections={section(...blocks(20), group("b"))} label="Wiadomości" onJumpReady={onJumpReady} />,
     );
+    layout.scrollTo(0);
+    const scrollTo = vi.spyOn(layout.scroller(), "scrollTo");
 
     act(() => jumpTo?.("b"));
 
-    expect(captured.scrollToIndex).toHaveBeenCalledWith(
-      expect.objectContaining({ index: 2 }),
-    );
+    expect(scrollTo).toHaveBeenCalledWith({ top: layout.end(), behavior: "smooth" });
   });
 
-  it("leaves reply lines inert inside a thread", () => {
+  it("leaves reply lines out inside a thread", () => {
     const answer = group("answer");
     answer.replyTo = { id: "root", authorId: "u2", authorName: "Nils", preview: "Cześć" };
-    render(
-      <Transcript sections={section(answer)} label="Wątek" hideReplyReferences />,
-    );
+    show(<Transcript sections={section(answer)} label="Wątek" hideReplyReferences />);
 
-    expect(renderedRow("answer").props.onOpenReply).toBeUndefined();
+    expect(screen.queryByRole("button", { name: /Cześć/ })).toBeNull();
+    expect(propsOf("answer").onOpenReply).toBeUndefined();
   });
 });
 
 describe("Transcript arrivals", () => {
   it("marks a block fresh only while it is new, and never on the first render", () => {
     vi.useFakeTimers();
-    const { rerender } = render(
-      <Transcript sections={section(group("a"))} label="Wiadomości" />,
-    );
-    expect(renderedRow("a").props.fresh).toBe(false);
+    const { rerender } = show(<Transcript sections={section(group("a"))} label="Wiadomości" />);
+    expect(propsOf("a").fresh).toBe(false);
 
-    rerender(
-      <Transcript sections={section(group("a"), group("b"))} label="Wiadomości" />,
-    );
-    expect(renderedRow("b").props.fresh).toBe(true);
-    expect(renderedRow("a").props.fresh).toBe(false);
+    rerender(<Transcript sections={section(group("a"), group("b"))} label="Wiadomości" />);
+    expect(propsOf("b").fresh).toBe(true);
+    expect(propsOf("a").fresh).toBe(false);
 
     act(() => vi.advanceTimersByTime(400));
-    expect(renderedRow("b").props.fresh).toBe(false);
+    expect(propsOf("b").fresh).toBe(false);
   });
 
   it("does not treat the first page of an empty transcript as something missed", () => {
-    const { rerender } = render(<Transcript sections={[]} label="Wiadomości" />);
-    act(() => virtuosoProps().atBottomStateChange?.(false));
+    fakeTranscriptLayout();
+    const { rerender } = show(<Transcript sections={[]} label="Wiadomości" />);
 
-    rerender(<Transcript sections={section(group("a"))} label="Wiadomości" />);
+    rerender(<Transcript sections={section(...blocks(20))} label="Wiadomości" />);
 
-    expect(screen.getByRole("button")).toHaveAttribute(
-      "aria-label",
-      "Przejdź do najnowszych wiadomości",
-    );
+    expect(screen.queryByRole("button", { name: /Nowe wiadomości/ })).toBeNull();
   });
 
-  it("goes back to the end and drops the pill's name when it is pressed", () => {
-    const { rerender } = render(
-      <Transcript sections={section(group("a"))} label="Wiadomości" />,
-    );
-    act(() => virtuosoProps().atBottomStateChange?.(false));
-    rerender(
-      <Transcript sections={section(group("a"), group("b"))} label="Wiadomości" />,
-    );
+  it("goes back to the end and drops the pill's name when it is pressed", async () => {
+    const user = userEvent.setup();
+    const layout = fakeTranscriptLayout();
+    const { rerender } = show(<Transcript sections={section(...blocks(20))} label="Wiadomości" />);
+    layout.scrollTo(200);
+    rerender(<Transcript sections={section(...blocks(21))} label="Wiadomości" />);
+    const scrollTo = vi.spyOn(layout.scroller(), "scrollTo");
 
-    act(() => screen.getByRole("button", { name: /Nowe wiadomości/ }).click());
+    await user.click(screen.getByRole("button", { name: /Nowe wiadomości/ }));
 
-    expect(captured.scrollToIndex).toHaveBeenCalledWith(
-      expect.objectContaining({ index: 2, align: "end", behavior: "smooth" }),
-    );
-    expect(screen.getByRole("button")).toHaveAttribute(
-      "aria-label",
-      "Przejdź do najnowszych wiadomości",
-    );
-  });
-});
-
-describe("Transcript opening", () => {
-  function scrollerOf(height: number) {
-    const element = document.createElement("div");
-    Object.defineProperties(element, {
-      clientHeight: { configurable: true, value: 600 },
-      scrollHeight: { configurable: true, value: height },
-      scrollTop: { configurable: true, value: 0, writable: true },
-    });
-    return element;
-  }
-
-  it("asks the list for the end again when it never reports reaching it", () => {
-    vi.useFakeTimers();
-    render(<Transcript sections={section(group("a"))} label="Wiadomości" />);
-    const scroller = scrollerOf(900);
-    act(() => virtuosoProps().scrollerRef?.(scroller));
-
-    act(() => vi.advanceTimersByTime(199));
-    expect(captured.scrollToIndex).not.toHaveBeenCalled();
-    act(() => vi.advanceTimersByTime(1));
-    expect(captured.scrollToIndex).toHaveBeenCalledWith({ index: "LAST", align: "end" });
-    expect(virtuosoProps().className).toBe("transcript opening");
-  });
-
-  it("takes the end as reached when the second request goes unanswered too", () => {
-    vi.useFakeTimers();
-    render(<Transcript sections={section(group("a"))} label="Wiadomości" />);
-    const scroller = scrollerOf(900);
-    act(() => virtuosoProps().scrollerRef?.(scroller));
-
-    act(() => vi.advanceTimersByTime(400));
-    expect(scroller.scrollTop).toBe(300);
-    expect(virtuosoProps().className).toBe("transcript opening");
-
-    act(() => vi.advanceTimersByTime(180));
-    expect(virtuosoProps().className).toBe("transcript");
-  });
-
-  it("does not interfere once the list reported the bottom by itself", () => {
-    vi.useFakeTimers();
-    render(<Transcript sections={section(group("a"))} label="Wiadomości" />);
-    act(() => virtuosoProps().atBottomStateChange?.(true));
-    act(() => vi.advanceTimersByTime(180));
-
-    act(() => vi.advanceTimersByTime(1_000));
-
-    expect(captured.scrollToIndex).not.toHaveBeenCalled();
+    expect(scrollTo).toHaveBeenCalledWith({ top: 1_600, behavior: "smooth" });
+    expect(screen.getByRole("button", { name: "Przejdź do najnowszych wiadomości" })).toBeVisible();
   });
 });

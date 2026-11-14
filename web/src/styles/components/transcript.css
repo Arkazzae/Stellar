@@ -1,11 +1,6 @@
 @layer components {
   /* ---------- TRANSCRIPT ---------- */
   /*
-   * The scroller. `react-virtuoso` supplies the overflow and the height, so
-   * this only contributes the padding the mockup asks for; a `display:flex`
-   * here would fight the inline layout the virtualiser writes.
-   */
-  /*
    * The scroller's frame. Takes the height the scroller used to take straight
    * from `.view`, and exists so the catch-up button has something to be
    * positioned against — the scroller itself cannot hold it, because anything
@@ -15,12 +10,24 @@
     flex:1;min-height:0;min-width:0;position:relative;
     display:flex;flex-direction:column;
   }
+  /*
+   * The scroller. A column, so that a transcript too short to scroll can sit
+   * its rows at the bottom of the pane while the intro stays at the top.
+   *
+   * `overflow-anchor:none` because the transcript keeps the reader's row in
+   * place itself (`useTranscriptScroll`), in every browser and at every
+   * offset; the browser's own anchoring would correct the same change twice.
+   *
+   * Focusable so the keyboard can scroll it, but without a ring: a click on
+   * any message focuses the pane, and the arrow key that follows would
+   * otherwise draw one round the whole transcript.
+   */
   .transcript{
-    flex:1;min-height:0;padding:24px 0 8px;overflow-x:hidden;
+    flex:1;min-height:0;padding:24px 0 8px;
+    display:flex;flex-direction:column;
+    overflow-x:hidden;overflow-y:auto;overflow-anchor:none;
+    outline:none;
   }
-  /* Never expose Virtuoso's provisional opening range. There is deliberately
-     no fade: the first visible frame is already the final, stable position. */
-  .transcript.opening{visibility:hidden}
   /*
    * The way back to the newest message, while you are reading further up.
    *
@@ -55,19 +62,12 @@
     to{opacity:1;transform:translate(-50%, 0)}
   }
   /*
-   * The row container. Also the virtualiser's, which writes the padding that
-   * stands in for every row it has not rendered — so no layout of our own.
+   * The rows. The auto margin takes up whatever the pane has left over, which
+   * puts a short transcript at the bottom; once the rows overflow it is zero
+   * and the scroller reaches every row. `justify-content:flex-end` on the
+   * scroller would do the first and break the second.
    */
-  .transcript-inner{width:100%}
-  /*
-   * Vertical space between rows is padding, never margin.
-   *
-   * The virtualiser measures each row's box to work out where the rest of the
-   * list sits. A margin is outside that box — it also collapses through the
-   * wrapper the library puts around every item — so spacing expressed as
-   * margins reports every row a few pixels short, and the error compounds down
-   * a long transcript into a scrollbar that lies.
-   */
+  .transcript-inner{width:100%;flex:none;margin-top:auto}
   .day-sep{
     display:flex;align-items:center;gap:12px;color:var(--text-faint);font-size:var(--text-12);
     margin-inline:20px;padding:18px 0 12px;
@@ -628,8 +628,8 @@
   .tb-sep{width:1px;height:16px;background:var(--line);margin:0 3px}
   .msg-mobile-more{display:none}
 
-  /* The phone action sheet is portalled to the document so a transformed
-     virtual row cannot clip it. Its scrim is deliberately quiet: this is a
+  /* The phone action sheet is portalled to the document so the transcript's
+     scroller cannot clip it. Its scrim is deliberately quiet: this is a
      short choice, not a new place in the app. */
   .msg-action-layer{
     position:fixed;inset:0;z-index:92;

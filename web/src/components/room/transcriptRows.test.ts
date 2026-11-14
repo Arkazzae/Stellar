@@ -2,8 +2,11 @@ import { describe, expect, it } from "vitest";
 
 import type { MessageGroupVM } from "./MessageGroup";
 import {
+  arrivedAtEnd,
   indexOfMessage,
   messageTail,
+  oldestGroupId,
+  sharesAMessage,
   toRows,
   type TranscriptSectionVM,
 } from "./transcriptRows";
@@ -86,7 +89,63 @@ describe("indexOfMessage", () => {
     expect(indexOfMessage(rows, "unread-b")).toBe(-1);
   });
 
-  it("answers -1 for a message outside the loaded window", () => {
+  it("answers -1 for a message older than the loaded history", () => {
     expect(indexOfMessage(rows, "older")).toBe(-1);
+  });
+});
+
+describe("arrivedAtEnd", () => {
+  it("is a message more and a different newest one", () => {
+    expect(arrivedAtEnd({ count: 2, lastMessageId: "b" }, { count: 3, lastMessageId: "c" })).toBe(
+      true,
+    );
+  });
+
+  it("is not the server's id replacing the optimistic one", () => {
+    expect(
+      arrivedAtEnd(
+        { count: 3, lastMessageId: "local-3" },
+        { count: 3, lastMessageId: "server-3" },
+      ),
+    ).toBe(false);
+  });
+
+  it("is not an older page, which leaves the newest message where it was", () => {
+    expect(arrivedAtEnd({ count: 3, lastMessageId: "c" }, { count: 53, lastMessageId: "c" })).toBe(
+      false,
+    );
+  });
+});
+
+describe("sharesAMessage", () => {
+  const before = toRows([{ day: "Dzisiaj", groups: [group("b", "b1", "b2"), group("c")] }], null);
+
+  it("holds when an older page merged the oldest block into a new one", () => {
+    const after = toRows(
+      [{ day: "Dzisiaj", groups: [group("a", "a1", "b1", "b2"), group("c")] }],
+      null,
+    );
+
+    expect(sharesAMessage(before, after)).toBe(true);
+  });
+
+  it("does not hold for another conversation", () => {
+    const after = toRows([{ day: "Dzisiaj", groups: [group("x"), group("y")] }], null);
+
+    expect(sharesAMessage(before, after)).toBe(false);
+  });
+
+  it("does not hold when the first page lands in an empty transcript", () => {
+    expect(sharesAMessage([], before)).toBe(false);
+  });
+});
+
+describe("oldestGroupId", () => {
+  it("is the first block, past any separator", () => {
+    expect(oldestGroupId(toRows(sections, "a"))).toBe("a");
+  });
+
+  it("is nothing in an empty transcript", () => {
+    expect(oldestGroupId([])).toBeNull();
   });
 });

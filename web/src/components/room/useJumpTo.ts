@@ -1,11 +1,4 @@
-import {
-  useCallback,
-  useEffect,
-  useRef,
-  useState,
-  type RefObject,
-} from "react";
-import type { VirtuosoHandle } from "react-virtuoso";
+import { useCallback, useEffect, useRef, useState } from "react";
 
 import { indexOfMessage, type Row } from "./transcriptRows";
 
@@ -15,18 +8,17 @@ const FLASH_MS = 1200;
  * "Go to this message", for the reply line and for whoever is outside the
  * transcript.
  *
- * The list is windowed, so the scroll is an index rather than an element, and
- * the block is flashed on arrival because a silent jump leaves the reader
- * looking for what moved. A message older than the loaded window has no index
+ * The block is flashed on arrival because a silent jump leaves the reader
+ * looking for what moved. A message older than the loaded history has no row
  * yet; nothing happens, which is better than something wrong.
  *
  * The function handed out is one function for the life of the component, so
  * it reads the rows through a ref instead of closing over the render it was
- * created in.
+ * created in. `reveal` has to be just as stable.
  */
 export function useJumpTo(
   rows: readonly Row[],
-  virtuoso: RefObject<VirtuosoHandle | null>,
+  reveal: (rowId: string) => void,
   onJumpReady: ((jumpTo: (messageId: string) => void) => void) | undefined,
 ) {
   const [flashId, setFlashId] = useState<string | null>(null);
@@ -40,17 +32,12 @@ export function useJumpTo(
 
   const jumpTo = useCallback(
     (messageId: string) => {
-      const index = indexOfMessage(currentRows.current, messageId);
-      const row = currentRows.current[index];
+      const row = currentRows.current[indexOfMessage(currentRows.current, messageId)];
       if (row?.kind !== "group") return;
-      virtuoso.current?.scrollToIndex({
-        index,
-        align: "center",
-        behavior: "smooth",
-      });
+      reveal(row.id);
       setFlashId(row.id);
     },
-    [virtuoso],
+    [reveal],
   );
 
   useEffect(() => {
