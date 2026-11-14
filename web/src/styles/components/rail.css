@@ -227,8 +227,25 @@
   }
   .channel-thread:hover .channel-thread-meta,
   .channel-thread[aria-current="page"] .channel-thread-meta{color:var(--text-muted)}
-  /* Kanał w trakcie przenoszenia — reszta listy rozsuwa się sama (dnd-kit). */
+  /* The channel being carried, lifted off the list. */
   .drag-chosen{background:var(--surface-overlay);box-shadow:0 4px 14px oklch(0 0 0 / 0.45);cursor:grabbing}
+  /*
+   * Sorting text channels. What moves is the row together with its open
+   * threads, by transform only, so nothing reflows under the pointer. The
+   * others slide out of its way; the one under the pointer follows it with no
+   * delay, and once dropped it eases from where it was let go into its slot.
+   *
+   * No `touch-action` here on purpose: a finger swiping along the rail has to
+   * scroll it, as it always has. The browser takes that gesture and the drag it
+   * may have started is cancelled.
+   */
+  .text-channel-node.is-sorting,
+  .text-channel-node[data-settling]{transition:transform var(--dur-base) var(--ease-standard)}
+  .text-channel-node.is-dragging{
+    position:relative;z-index:1;
+    /* Threads carried under the row stay readable over the rows they cross. */
+    background:var(--surface-sidebar);border-radius:var(--radius-sm);
+  }
   /* The collapse caret owns the trailing edge. The separate create button is
      overlaid just before it, keeping two valid sibling buttons without making
      the caret look stranded between the caption and the "+". */
@@ -326,6 +343,8 @@
   /* Fixed height and an avatar that cannot be squeezed: the chip follows the
      pointer over boxes of every width, and a face that reflows into an ellipse
      under it is the drag telling you it has gone wrong. */
+  /* Drawn over the page while a person is carried, above the rail drawer. */
+  .voice-occupant-carry{position:fixed;z-index:60}
   .voice-occupant-overlay{
     width:190px;height:34px;padding:0 8px;border-radius:var(--radius-sm);
     display:flex;align-items:center;gap:8px;
@@ -367,6 +386,7 @@
   }
   @media (prefers-reduced-motion: reduce){
     .ch-threads-toggle,.channel-threads,.channel-thread{transition:none}
+    .text-channel-node.is-sorting,.text-channel-node[data-settling]{transition:none}
   }
   /* ---------- „coś trwa na kanale" ---------- */
   .dock-item{
