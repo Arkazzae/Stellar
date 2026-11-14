@@ -11,7 +11,7 @@
     min-width:0;
     min-height:0;
     /* A width transition rewraps every visible message on each animation
-       frame. That continuously changes virtual-row heights and makes a thread
+       frame. That continuously changes the rows' heights and makes a thread
        visibly jump while it is being pinned to the bottom. Switch desktop
        tracks atomically; narrow layouts still use the transform drawer below,
        which does not reflow the transcript. */

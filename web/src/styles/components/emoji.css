@@ -287,9 +287,8 @@
     bottom: calc(100% + 6px);
   }
 
-  /* Message rows live in a transformed virtual list. Once portalled to body,
-     fixed coordinates keep the picker attached to the viewport instead of a
-     row that may be recycled while the transcript moves. */
+  /* Portalled to body so the transcript's scroller cannot clip it; fixed
+     coordinates then place the picker against the viewport. */
   .emo-pop-react.portaled {
     position: fixed;
   }
