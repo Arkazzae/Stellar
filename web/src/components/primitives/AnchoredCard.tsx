@@ -104,7 +104,7 @@ function cssPixels(style: CSSStyleDeclaration, property: string): number {
  *
  * Unlike `Popover`, which CSS positions inside the region it belongs to, this
  * one portals to `<body>` so it escapes the roster's `overflow: hidden` and the
- * transcript's virtualiser, then measures itself and places itself against the
+ * transcript's scroller, then measures itself and places itself against the
  * anchor's rectangle.
  *
  * It is a dialog for assistive tech: focus moves in, Escape and a click
