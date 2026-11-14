@@ -1,58 +1,13 @@
-import { act, render, screen } from "@testing-library/react";
+import { act, fireEvent, render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import type { ReactElement } from "react";
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { StrictMode, type ReactElement } from "react";
+import { describe, expect, it, vi } from "vitest";
+
+import { ConfirmProvider } from "@/components/primitives/ConfirmDialog";
+import { fakeTranscriptLayout } from "@/test/transcriptLayout";
 
 import type { MessageGroupVM } from "./MessageGroup";
 import { Transcript, type TranscriptSectionVM } from "./Transcript";
-
-interface CapturedVirtuosoProps {
-  "aria-busy"?: boolean;
-  className?: string;
-  data: Array<{ id: string }>;
-  firstItemIndex: number;
-  followOutput?: false | "auto" | "smooth";
-  initialTopMostItemIndex:
-    | number
-    | { index: number | "LAST"; align?: "start" | "center" | "end" };
-  rangeChanged?: (range: { startIndex: number; endIndex: number }) => void;
-  startReached?: (index: number) => void;
-  atBottomStateChange?: (atBottom: boolean) => void;
-  totalListHeightChanged?: (height: number) => void;
-  scrollerRef?: (element: HTMLElement | Window | null) => void;
-  itemContent?: (index: number, row: unknown) => ReactElement;
-}
-
-const captured = vi.hoisted(() => ({
-  props: null as CapturedVirtuosoProps | null,
-  // The handle the transcript scrolls through; the mock is the only thing that
-  // can stand in for a scroller with no layout behind it.
-  scrollToIndex: null as ReturnType<typeof vi.fn> | null,
-}));
-
-function virtuosoProps(): CapturedVirtuosoProps {
-  if (captured.props === null) {
-    throw new Error("Virtuoso has not rendered yet");
-  }
-  return captured.props;
-}
-
-vi.mock("react-virtuoso", async () => {
-  const React = await import("react");
-  const { vi: vitest } = await import("vitest");
-  return {
-    Virtuoso: React.forwardRef<unknown, CapturedVirtuosoProps>(
-      function VirtuosoMock(props, ref) {
-        captured.props = props;
-        captured.scrollToIndex ??= vitest.fn();
-        React.useImperativeHandle(ref, () => ({
-          scrollToIndex: captured.scrollToIndex,
-        }));
-        return React.createElement("div", { "data-testid": "virtuoso" });
-      },
-    ),
-  };
-});
 
 function group(id: string, ...bodyIds: string[]): MessageGroupVM {
   return {
@@ -60,7 +15,7 @@ function group(id: string, ...bodyIds: string[]): MessageGroupVM {
     authorId: "user-1",
     authorName: "Maja",
     timestamp: "2026-08-14T10:00:00Z",
-    bodies: bodyIds.map((bodyId) => ({ id: bodyId, parts: [] })),
+    bodies: (bodyIds.length > 0 ? bodyIds : [id]).map((bodyId) => ({ id: bodyId, parts: [] })),
   };
 }
 
@@ -68,330 +23,393 @@ function section(...ids: string[]): TranscriptSectionVM[] {
   return [{ day: "Dzisiaj", groups: ids.map((id) => group(id)) }];
 }
 
-describe("Transcript history window", () => {
-  afterEach(() => vi.useRealTimers());
+/** `m1` … `mN`: with the day separator, N + 1 rows of 100 px. */
+function messages(count: number, prefix = "m"): string[] {
+  return Array.from({ length: count }, (_, index) => `${prefix}${index + 1}`);
+}
 
-  it("mounts the virtual list only after the first page is ready, at its bottom", () => {
-    captured.props = null;
-    const { rerender } = render(
-      <Transcript
-        loading
-        sections={section("message-1", "message-2")}
-        label="Wiadomości"
-      />,
+/** Message blocks ask before deleting, so they render under the app's confirm dialog. */
+const show = (ui: ReactElement) => render(ui, { wrapper: ConfirmProvider });
+
+/** The way back down, in either of its two shapes. */
+const catchUpButton = () =>
+  screen.queryByRole("button", { name: /^(Przejdź do najnowszych wiadomości|Nowe wiadomości)$/ });
+
+describe("Transcript opening", () => {
+  it("keeps an empty busy log while the first page loads, then opens at its end before painting", () => {
+    const layout = fakeTranscriptLayout();
+    const { rerender } = show(<Transcript loading sections={section(...messages(10))} label="Wiadomości" />,
     );
 
     expect(screen.getByRole("log")).toHaveAttribute("aria-busy", "true");
-    expect(captured.props).toBeNull();
+    expect(screen.queryByText("Dzisiaj")).toBeNull();
 
-    rerender(
-      <Transcript
-        loading={false}
-        sections={section("message-1", "message-2")}
-        label="Wiadomości"
-      />,
+    rerender(<Transcript sections={section(...messages(10))} label="Wiadomości" />);
+
+    // 11 rows of 100 px in a 600 px pane, and nothing waited for.
+    expect(layout.scroller().scrollTop).toBe(500);
+    expect(screen.getByRole("log")).toHaveAttribute("aria-busy", "false");
+    expect(catchUpButton()).toBeNull();
+  });
+
+  it("is already at its end when it is too short to scroll", () => {
+    const layout = fakeTranscriptLayout();
+    show(<Transcript sections={section("m1", "m2")} label="Wiadomości" />);
+
+    expect(layout.scroller().scrollTop).toBe(0);
+    // The rows sit at the bottom of the pane, under the free space.
+    expect(layout.topOf("m2")).toBe(500);
+    expect(catchUpButton()).toBeNull();
+  });
+
+  it("opens at its end under Strict Mode, which runs every effect twice", () => {
+    const layout = fakeTranscriptLayout();
+    show(
+      <StrictMode>
+        <Transcript sections={section(...messages(10))} label="Wiadomości" />
+      </StrictMode>,
     );
 
-    expect(screen.getByTestId("virtuoso")).toBeInTheDocument();
-    expect(virtuosoProps().initialTopMostItemIndex).toEqual({
-      index: "LAST",
-      align: "end",
-    });
+    expect(layout.scroller().scrollTop).toBe(500);
+    expect(catchUpButton()).toBeNull();
+  });
+
+  it("asks for one older page, not two, when a short first page opens under Strict Mode", () => {
+    fakeTranscriptLayout();
+    const onLoadOlder = vi.fn();
+    show(
+      <StrictMode>
+        <Transcript sections={section("m1", "m2")} label="Wiadomości" hasOlder onLoadOlder={onLoadOlder} />
+      </StrictMode>,
+    );
+
+    expect(onLoadOlder).toHaveBeenCalledOnce();
   });
 
   it("hides repeated reply references inside a thread without changing its data", () => {
-    const answer = group("answer-1", "answer-1");
+    fakeTranscriptLayout();
+    const answer = group("answer-1");
     answer.replyTo = {
       id: "root-1",
       authorId: "user-2",
       authorName: "Nils",
       preview: "Wiadomość rozpoczynająca wątek",
     };
-    render(
-      <Transcript
-        sections={[{ day: "Dzisiaj", groups: [answer] }]}
-        label="Wątek"
-        hideReplyReferences
-      />,
+    show(<Transcript sections={[{ day: "Dzisiaj", groups: [answer] }]} label="Wątek" hideReplyReferences />,
     );
 
-    const answerRow = virtuosoProps().data.find((row) => row.id === "answer-1");
-    const rendered = virtuosoProps().itemContent?.(0, answerRow);
-
-    expect(rendered?.props).toMatchObject({ replyTo: undefined });
+    expect(screen.queryByText("Wiadomość rozpoczynająca wątek")).toBeNull();
     expect(answer.replyTo?.id).toBe("root-1");
   });
+});
 
-  it("keeps the visible message anchored when history and a live tail arrive together", () => {
-    const onLoadOlder = vi.fn();
-    const { rerender } = render(
-      <Transcript
-        sections={section("message-b", "message-c")}
-        label="Wiadomości"
-        hasOlder
-        onLoadOlder={onLoadOlder}
-      />,
-    );
+describe("Transcript keeps the reader's place", () => {
+  it("holds the row being read when history and a live message arrive together", () => {
+    const layout = fakeTranscriptLayout();
+    const ids = messages(10);
+    const { rerender } = show(<Transcript sections={section(...ids)} label="Wiadomości" />);
+    // m1 straddles the top edge, m2 starts 50 px into the pane.
+    layout.scrollTo(150);
+    expect(layout.topOf("m2")).toBe(50);
 
-    // The day separator has absolute index 1_000_000; message B is the first
-    // readable row and is where the user stopped before requesting history.
-    act(() => {
-      virtuosoProps().rangeChanged?.({
-        startIndex: 1_000_001,
-        endIndex: 1_000_002,
-      });
-      virtuosoProps().startReached?.(1_000_000);
-    });
-    expect(onLoadOlder).toHaveBeenCalledOnce();
-
-    // A was prepended while D arrived over realtime. Looking only at the last
-    // row would miss the prepend because the tail changed identity.
+    // Three older messages landed above while m11 arrived below. Counting only
+    // the rows that were prepended would be thrown off by the second change.
     rerender(
-      <Transcript
-        sections={section(
-          "message-a",
-          "message-b",
-          "message-c",
-          "message-d",
-        )}
-        label="Wiadomości"
-        hasOlder
-        loadingOlder
-        onLoadOlder={onLoadOlder}
-      />,
+      <Transcript sections={section("a1", "a2", "a3", ...ids, "m11")} label="Wiadomości" />,
     );
 
-    expect(virtuosoProps().firstItemIndex).toBe(999_999);
+    expect(layout.topOf("m1")).toBe(-50);
+    expect(layout.topOf("m2")).toBe(50);
+    expect(layout.scroller().scrollTop).toBe(450);
   });
 
-  it("keeps the opening at the bottom until measurements settle", () => {
-    vi.useFakeTimers();
-    captured.scrollToIndex?.mockClear();
-    render(<Transcript sections={section("message-1")} label="Wiadomości" />);
+  it("holds the next row when the page merged the reader's block into an older one", () => {
+    const layout = fakeTranscriptLayout();
+    const ids = messages(10);
+    const { rerender } = show(<Transcript sections={section(...ids)} label="Wiadomości" />);
+    layout.scrollTo(150);
 
-    const scroller = document.createElement("div");
-    let scrollHeight = 723;
-    Object.defineProperties(scroller, {
-      clientHeight: { configurable: true, value: 600 },
-      scrollHeight: { configurable: true, get: () => scrollHeight },
-      scrollTop: { configurable: true, value: 100, writable: true },
-    });
+    // m1's message now belongs to a block that starts with an older one, under
+    // that one's id; m1's own row is gone.
+    layout.set({ heights: { a1: 200 } });
+    rerender(
+      <Transcript
+        sections={[{ day: "Dzisiaj", groups: [group("a0"), group("a1", "a1", "m1"), ...ids.slice(1).map((id) => group(id))] }]}
+        label="Wiadomości"
+      />,
+    );
 
-    act(() => virtuosoProps().scrollerRef?.(scroller));
-    // Our code must not compete with Virtuoso before its delayed initial scroll.
-    expect(scroller.scrollTop).toBe(100);
-    expect(virtuosoProps().className).toBe("transcript opening");
-    expect(virtuosoProps()["aria-busy"]).toBe(true);
-
-    act(() => virtuosoProps().atBottomStateChange?.(true));
-    expect(scroller.scrollTop).toBe(123);
-
-    // The first size was provisional. A later measurement closes the new gap
-    // and restarts the quiet window before the transcript becomes visible.
-    scrollHeight = 740;
-    act(() => {
-      virtuosoProps().totalListHeightChanged?.(740);
-    });
-    expect(scroller.scrollTop).toBe(140);
-    act(() => {
-      vi.advanceTimersByTime(179);
-    });
-    expect(virtuosoProps().className).toBe("transcript opening");
-    act(() => vi.advanceTimersByTime(1));
-    expect(virtuosoProps().className).toBe("transcript");
-    expect(virtuosoProps()["aria-busy"]).toBe(false);
-
-    // Late content follows an exact bottom, but a reader who has moved even
-    // within Virtuoso's broad threshold is not pulled back down.
-    scrollHeight = 760;
-    act(() => virtuosoProps().totalListHeightChanged?.(760));
-    expect(scroller.scrollTop).toBe(160);
-    scroller.scrollTop = 100;
-    scrollHeight = 1_000;
-    act(() => virtuosoProps().totalListHeightChanged?.(1_000));
-    expect(scroller.scrollTop).toBe(100);
+    expect(layout.topOf("m2")).toBe(50);
   });
 
-  it("anchors one real arrival before paint and ignores its server reconciliation", () => {
-    captured.scrollToIndex?.mockClear();
-    const { rerender } = render(
-      <Transcript
-        sections={[{ day: "Dzisiaj", groups: [group("group-1", "message-1")] }]}
-        label="Wiadomości"
-      />,
+  it("keeps the distance from the end when nothing near the reader survived", () => {
+    const layout = fakeTranscriptLayout();
+    // One long run of one author: a single block, taller than the pane.
+    layout.set({ heights: { run: 2_000 } });
+    const { rerender } = show(<Transcript sections={[{ day: "Dzisiaj", groups: [group("run", "r1", "r2")] }]} label="Wiadomości" />,
     );
-    const scroller = document.createElement("div");
-    let scrollHeight = 600;
-    Object.defineProperties(scroller, {
-      clientHeight: { configurable: true, value: 600 },
-      scrollHeight: { configurable: true, get: () => scrollHeight },
-      scrollTop: { configurable: true, value: 0, writable: true },
-    });
-    act(() => virtuosoProps().scrollerRef?.(scroller));
+    layout.scrollTo(300);
 
-    scrollHeight = 624;
+    // The page before it continues the run, so the block takes the older head's id.
+    layout.set({ heights: { older: 3_000 } });
     rerender(
       <Transcript
-        sections={[
-          {
-            day: "Dzisiaj",
-            groups: [group("group-1", "message-1", "local-2")],
-          },
-        ]}
+        sections={[{ day: "Dzisiaj", groups: [group("older", "r0", "r1", "r2")] }]}
         label="Wiadomości"
       />,
     );
 
-    expect(virtuosoProps().followOutput).toBe(false);
-    expect(scroller.scrollTop).toBe(24);
-    expect(captured.scrollToIndex).not.toHaveBeenCalled();
+    expect(layout.scroller().scrollTop).toBe(1_300);
+  });
 
-    scrollHeight = 640;
+  it("does not move what the reader sees when a row above them grows", () => {
+    const layout = fakeTranscriptLayout();
+    show(<Transcript sections={section(...messages(20))} label="Wiadomości" />);
+    layout.scrollTo(1_000);
+    expect(layout.topOf("m10")).toBe(0);
+
+    // An image in m3, far above the viewport, finished loading.
+    layout.set({ heights: { m3: 400 } });
+    layout.resized();
+
+    expect(layout.topOf("m10")).toBe(0);
+    expect(layout.scroller().scrollTop).toBe(1_300);
+  });
+
+  it("follows content that grows under a reader exactly at the end", () => {
+    const layout = fakeTranscriptLayout();
+    show(<Transcript sections={section(...messages(20))} label="Wiadomości" />);
+    expect(layout.scroller().scrollTop).toBe(1_500);
+
+    layout.set({ heights: { m20: 300 } });
+    layout.resized();
+
+    expect(layout.scroller().scrollTop).toBe(1_700);
+    expect(catchUpButton()).toBeNull();
+  });
+
+  it("leaves a reader 20 px above the end where they are when content grows below", () => {
+    const layout = fakeTranscriptLayout();
+    show(<Transcript sections={section(...messages(20))} label="Wiadomości" />);
+    layout.scrollTo(1_480);
+
+    layout.set({ heights: { m20: 300 } });
+    layout.resized();
+
+    expect(layout.scroller().scrollTop).toBe(1_480);
+    // 220 px from the end is reading, so the way back down appears.
+    expect(catchUpButton()).toBeVisible();
+  });
+
+  it("keeps the end in view when the pane gets shorter under a reader at the end", () => {
+    const layout = fakeTranscriptLayout();
+    show(<Transcript sections={section(...messages(20))} label="Wiadomości" />);
+
+    // The composer grew by a line.
+    layout.set({ viewport: 500 });
+    layout.resized();
+
+    expect(layout.scroller().scrollTop).toBe(1_600);
+  });
+
+  it("opens another conversation at its end when every message is replaced", () => {
+    const layout = fakeTranscriptLayout();
+    const { rerender } = show(<Transcript sections={section(...messages(20))} label="Wiadomości z Ada" />,
+    );
+    layout.scrollTo(200);
+    expect(catchUpButton()).toBeVisible();
+
+    rerender(<Transcript sections={section(...messages(20, "x"))} label="Wiadomości z Ola" />);
+
+    expect(layout.scroller().scrollTop).toBe(1_500);
+    expect(catchUpButton()).toBeNull();
+  });
+
+  it("opens at the end when the first page lands in an empty transcript", () => {
+    const layout = fakeTranscriptLayout();
+    const { rerender } = show(<Transcript sections={[]} label="Wiadomości" />);
+
+    rerender(<Transcript sections={section(...messages(20))} label="Wiadomości" />);
+
+    expect(layout.scroller().scrollTop).toBe(1_500);
+    expect(catchUpButton()).toBeNull();
+  });
+
+  it("does not take the place of a hidden transcript as the reader's", () => {
+    const layout = fakeTranscriptLayout();
+    show(<Transcript sections={section(...messages(20))} label="Wiadomości" />);
+    layout.scrollTo(1_000);
+
+    // Behind a call: no box, everything measures zero, and the offset is lost.
+    layout.set({ viewport: 0 });
+    layout.resized();
+    layout.set({ viewport: 600 });
+    layout.resized();
+
+    // Back in view, at the row that was being read.
+    expect(layout.topOf("m10")).toBe(0);
+    expect(catchUpButton()).toBeVisible();
+  });
+});
+
+describe("Transcript following arrivals", () => {
+  it("follows an arrival before it is painted, and not its server reconciliation", () => {
+    const layout = fakeTranscriptLayout();
+    const ids = messages(10);
+    const { rerender } = show(<Transcript
+        sections={[{ day: "Dzisiaj", groups: [...ids.map((id) => group(id)), group("g", "g1")] }]}
+        label="Wiadomości"
+      />,
+    );
+
+    // A second message from the same author grows the last block in place.
+    layout.set({ heights: { g: 124 } });
     rerender(
       <Transcript
-        sections={[
-          {
-            day: "Dzisiaj",
-            groups: [group("group-1", "message-1", "server-2")],
-          },
-        ]}
+        sections={[{ day: "Dzisiaj", groups: [...ids.map((id) => group(id)), group("g", "g1", "local-2")] }]}
         label="Wiadomości"
       />,
     );
-    // Reconciliation changed the id but not the message count, so the later
-    // height change is not mistaken for another arrival.
-    expect(scroller.scrollTop).toBe(24);
-    expect(captured.scrollToIndex).not.toHaveBeenCalled();
+    expect(layout.scroller().scrollTop).toBe(layout.end());
+
+    // The reader moves a little up, still close enough to count as at the end.
+    layout.scrollTo(layout.end() - 30);
+    const reading = layout.scroller().scrollTop;
+
+    // The server's id replaces the optimistic one and the block re-measures.
+    // That is not a second arrival, so the reader is not pulled down.
+    layout.set({ heights: { g: 140 } });
+    rerender(
+      <Transcript
+        sections={[{ day: "Dzisiaj", groups: [...ids.map((id) => group(id)), group("g", "g1", "server-2")] }]}
+        label="Wiadomości"
+      />,
+    );
+    expect(layout.scroller().scrollTop).toBe(reading);
+  });
+
+  it("does not read a followed row that grows as the reader leaving", () => {
+    const layout = fakeTranscriptLayout();
+    const { rerender } = show(<Transcript sections={section(...messages(20))} label="Wiadomości" />);
+    rerender(<Transcript sections={section(...messages(21))} label="Wiadomości" />);
+
+    // The new message's picture loads. The scroll event for the follow is
+    // delivered after that and before the resize is reported.
+    layout.set({ heights: { m21: 400 } });
+    act(() => fireEvent.scroll(layout.scroller()));
+    expect(catchUpButton()).toBeNull();
+    layout.resized();
+
+    expect(layout.scroller().scrollTop).toBe(layout.end());
+    expect(catchUpButton()).toBeNull();
+  });
+
+  it("follows an arrival for a reader within a few lines of the end", () => {
+    const layout = fakeTranscriptLayout();
+    const { rerender } = show(<Transcript sections={section(...messages(20))} label="Wiadomości" />);
+    layout.scrollTo(1_470);
+
+    rerender(<Transcript sections={section(...messages(21))} label="Wiadomości" />);
+
+    expect(layout.scroller().scrollTop).toBe(1_600);
   });
 });
 
 describe("Transcript own send", () => {
-  afterEach(() => vi.useRealTimers());
-
-  /** A settled transcript with the reader parked well above the newest row. */
   function readerScrolledUp() {
-    vi.useFakeTimers();
-    captured.scrollToIndex?.mockClear();
-    const view = render(
-      <Transcript
-        sections={[{ day: "Dzisiaj", groups: [group("group-1", "message-1")] }]}
-        label="Wiadomości"
-        followOwnSend={0}
-      />,
+    const layout = fakeTranscriptLayout();
+    const view = show(<Transcript sections={section(...messages(20))} label="Wiadomości" followOwnSend={0} />,
     );
-    const scroller = document.createElement("div");
-    const height = { value: 1_000 };
-    Object.defineProperties(scroller, {
-      clientHeight: { configurable: true, value: 600 },
-      scrollHeight: { configurable: true, get: () => height.value },
-      scrollTop: { configurable: true, value: 0, writable: true },
-    });
-    act(() => virtuosoProps().scrollerRef?.(scroller));
-    act(() => virtuosoProps().atBottomStateChange?.(true));
-    act(() => vi.advanceTimersByTime(180));
-
-    // Away from the end, which is what makes the two cases below differ.
-    act(() => virtuosoProps().atBottomStateChange?.(false));
-    scroller.scrollTop = 120;
-    return { ...view, scroller, height };
+    layout.scrollTo(120);
+    return { ...view, layout };
   }
 
   it("goes to your own message even when you were reading further up", () => {
-    const { rerender, scroller, height } = readerScrolledUp();
+    const { rerender, layout } = readerScrolledUp();
 
-    height.value = 1_080;
     rerender(
-      <Transcript
-        sections={[
-          { day: "Dzisiaj", groups: [group("group-1", "message-1", "local-2")] },
-        ]}
-        label="Wiadomości"
-        followOwnSend={1}
-      />,
+      <Transcript sections={section(...messages(21))} label="Wiadomości" followOwnSend={1} />,
     );
 
-    // 1080 - 600: the send is an action, so it commands the view.
-    expect(scroller.scrollTop).toBe(480);
+    // 22 rows in a 600 px pane: the send is an action, so it commands the view.
+    expect(layout.scroller().scrollTop).toBe(1_600);
+    expect(catchUpButton()).toBeNull();
   });
 
   it("leaves a reader alone when the arrival is somebody else's", () => {
-    const { rerender, scroller, height } = readerScrolledUp();
+    const { rerender, layout } = readerScrolledUp();
 
-    height.value = 1_080;
     rerender(
-      <Transcript
-        sections={[
-          { day: "Dzisiaj", groups: [group("group-1", "message-1", "other-2")] },
-        ]}
-        label="Wiadomości"
-        followOwnSend={0}
-      />,
+      <Transcript sections={section(...messages(21))} label="Wiadomości" followOwnSend={0} />,
     );
 
     // Being yanked mid-read is worse than missing a line, so nothing moves.
-    expect(scroller.scrollTop).toBe(120);
+    expect(layout.scroller().scrollTop).toBe(120);
   });
 });
 
 describe("Transcript catch-up button", () => {
-  beforeEach(() => captured.scrollToIndex?.mockClear());
-
   function arrive(rerender: (ui: ReactElement) => void, ...ids: string[]) {
     rerender(<Transcript sections={section(...ids)} label="Wiadomości" />);
   }
 
   it("stays away while the reader is on the newest message", () => {
-    const { rerender } = render(
-      <Transcript sections={section("message-1")} label="Wiadomości" />,
-    );
+    fakeTranscriptLayout();
+    const { rerender } = show(<Transcript sections={section(...messages(20))} label="Wiadomości" />);
 
-    arrive(rerender, "message-1", "message-2");
+    arrive(rerender, ...messages(21));
 
     // The list follows the end for a reader who is on it; nothing to go back to.
-    expect(screen.queryByRole("button", { name: /wiadomości/i })).toBeNull();
+    expect(catchUpButton()).toBeNull();
   });
 
   it("appears as soon as the end is off screen, before anything arrives", async () => {
     const user = userEvent.setup();
-    render(<Transcript sections={section("message-1", "message-2")} label="Wiadomości" />);
+    const layout = fakeTranscriptLayout();
+    show(<Transcript sections={section(...messages(20))} label="Wiadomości" />);
+    const scrollTo = vi.spyOn(layout.scroller(), "scrollTo");
 
-    act(() => virtuosoProps().atBottomStateChange?.(false));
+    layout.scrollTo(1_000);
 
     // Nothing has happened down there yet, so it is an arrow and nothing else.
-    const jump = screen.getByRole("button", {
-      name: "Przejdź do najnowszych wiadomości",
-    });
+    const jump = screen.getByRole("button", { name: "Przejdź do najnowszych wiadomości" });
     expect(jump).toHaveTextContent("");
 
     await user.click(jump);
-    // The end of the list, by its index: day separator, then two blocks.
-    expect(captured.scrollToIndex).toHaveBeenCalledWith(
-      expect.objectContaining({ index: 2, align: "end" }),
-    );
+    expect(scrollTo).toHaveBeenCalledWith({ top: 1_500, behavior: "smooth" });
+  });
+
+  it("counts a reader within a few lines of the end as being there", () => {
+    const layout = fakeTranscriptLayout();
+    show(<Transcript sections={section(...messages(20))} label="Wiadomości" />);
+
+    layout.scrollTo(1_460);
+    expect(catchUpButton()).toBeNull();
+
+    layout.scrollTo(1_440);
+    expect(catchUpButton()).toBeVisible();
   });
 
   it("names itself once a message lands while the reader is away", () => {
-    const { rerender } = render(
-      <Transcript sections={section("message-1")} label="Wiadomości" />,
-    );
+    const layout = fakeTranscriptLayout();
+    const { rerender } = show(<Transcript sections={section(...messages(20))} label="Wiadomości" />);
 
-    act(() => virtuosoProps().atBottomStateChange?.(false));
+    layout.scrollTo(200);
     expect(screen.queryByRole("button", { name: /Nowe wiadomości/ })).toBeNull();
 
-    arrive(rerender, "message-1", "message-2");
+    arrive(rerender, ...messages(21));
     expect(screen.getByRole("button", { name: /Nowe wiadomości/ })).toBeVisible();
   });
 
   it("leaves of its own accord when the reader scrolls back down", () => {
-    const { rerender } = render(
-      <Transcript sections={section("message-1")} label="Wiadomości" />,
-    );
+    const layout = fakeTranscriptLayout();
+    const { rerender } = show(<Transcript sections={section(...messages(20))} label="Wiadomości" />);
 
-    act(() => virtuosoProps().atBottomStateChange?.(false));
-    arrive(rerender, "message-1", "message-2");
+    layout.scrollTo(200);
+    arrive(rerender, ...messages(21));
     expect(screen.getByRole("button", { name: /Nowe wiadomości/ })).toBeVisible();
 
-    act(() => virtuosoProps().atBottomStateChange?.(true));
-    expect(screen.queryByRole("button", { name: /wiadomości/i })).toBeNull();
+    layout.scrollTo(layout.end());
+    expect(catchUpButton()).toBeNull();
   });
 });

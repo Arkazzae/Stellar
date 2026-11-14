@@ -100,8 +100,6 @@ export function DmRoom({
   const t = translation?.t ?? translateForDocument;
   const name = peer.displayName;
 
-  // The transcript rebuilds its scroller when the intro changes identity, so
-  // the element must stay the same one across unrelated renders.
   const intro = useMemo(
     () => (
       <div className="dm-intro">

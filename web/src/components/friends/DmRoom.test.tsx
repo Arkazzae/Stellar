@@ -1,7 +1,6 @@
 import { render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import type { ComponentType, ReactElement } from "react";
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 
 import { ConfirmProvider } from "@/components/primitives/ConfirmDialog";
 import type { MessageGroupVM } from "@/components/room/MessageGroup";
@@ -9,40 +8,9 @@ import type { MessageTranslationOptions } from "@/components/room/attachments/Tr
 import type { TranscriptSectionVM } from "@/components/room/Transcript";
 import type { PersonVM } from "@/components/view-models";
 import { translateMessage } from "@/i18n";
+import { fakeTranscriptLayout } from "@/test/transcriptLayout";
 
 import { DmRoom, type DmRoomProps } from "./DmRoom";
-
-interface VirtuosoProps {
-  "aria-label"?: string;
-  data: Array<{ id: string }>;
-  components?: { Header?: ComponentType };
-  itemContent: (index: number, row: unknown) => ReactElement;
-  startReached?: (index: number) => void;
-}
-
-const list = vi.hoisted(() => ({ props: null as VirtuosoProps | null }));
-
-// Virtuoso measures a scroller jsdom does not lay out, so it renders nothing
-// there. This stand-in draws the header and every row, which is what a reader
-// sees once the list has measured itself.
-vi.mock("react-virtuoso", async () => {
-  const React = await import("react");
-  return {
-    Virtuoso: React.forwardRef<unknown, VirtuosoProps>(function VirtuosoStandIn(props, ref) {
-      list.props = props;
-      React.useImperativeHandle(ref, () => ({ scrollToIndex: () => {} }));
-      const Header = props.components?.Header;
-      return React.createElement(
-        "div",
-        { role: "log", "aria-label": props["aria-label"] },
-        Header === undefined ? null : React.createElement(Header),
-        props.data.map((row, index) =>
-          React.createElement(React.Fragment, { key: row.id }, props.itemContent(index, row)),
-        ),
-      );
-    }),
-  };
-});
 
 function person(id: string, displayName: string, presence: PersonVM["presence"] = "online") {
   return { id, displayName, initials: displayName.slice(0, 2).toUpperCase(), presence };
@@ -90,10 +58,6 @@ function openRoom(overrides: Partial<DmRoomProps> = {}) {
   const view = render(<DmRoom {...props} />, { wrapper: ConfirmProvider });
   return { props, user: userEvent.setup(), ...view };
 }
-
-beforeEach(() => {
-  list.props = null;
-});
 
 describe("DmRoom header", () => {
   it("titles the room with the person and says how reachable they are", () => {
@@ -218,15 +182,6 @@ describe("DmRoom conversation", () => {
     ).toBeTruthy();
   });
 
-  it("keeps the same intro through renders that do not change who it is about", () => {
-    const { rerender, props } = openRoom();
-    const first = list.props?.components;
-
-    rerender(<DmRoom {...props} callActive inCall />);
-
-    expect(list.props?.components).toBe(first);
-  });
-
   it("shows the messages and opens the author's card from them", async () => {
     const sections: TranscriptSectionVM[] = [
       { day: "Dzisiaj", groups: [message("m1", ada.id, "Ada", "Cześć, jesteś?")] },
@@ -240,27 +195,38 @@ describe("DmRoom conversation", () => {
   });
 
   it("asks for older messages when the reader reaches the top, and not while loading them", () => {
+    const layout = fakeTranscriptLayout();
     const onLoadOlderMessages = vi.fn();
-    const { rerender, props } = openRoom({ hasOlderMessages: true, onLoadOlderMessages });
+    const sections: TranscriptSectionVM[] = [
+      {
+        day: "Dzisiaj",
+        groups: Array.from({ length: 20 }, (_, index) =>
+          message(`m${index}`, ada.id, "Ada", `Wiadomość ${index}`),
+        ),
+      },
+    ];
+    const { rerender, props } = openRoom({
+      sections,
+      hasOlderMessages: true,
+      loadingOlderMessages: true,
+      onLoadOlderMessages,
+    });
 
-    list.props?.startReached?.(0);
+    layout.scrollTo(0);
+    expect(onLoadOlderMessages).not.toHaveBeenCalled();
+
+    rerender(<DmRoom {...props} loadingOlderMessages={false} />);
     expect(onLoadOlderMessages).toHaveBeenCalledOnce();
-
-    rerender(
-      <DmRoom
-        {...props}
-        hasOlderMessages
-        loadingOlderMessages
-        onLoadOlderMessages={onLoadOlderMessages}
-      />,
-    );
-    expect(list.props?.startReached).toBeUndefined();
   });
 
   it("does not ask for older messages when the history has none", () => {
-    openRoom({ hasOlderMessages: false, onLoadOlderMessages: vi.fn() });
+    const layout = fakeTranscriptLayout();
+    const onLoadOlderMessages = vi.fn();
+    openRoom({ hasOlderMessages: false, onLoadOlderMessages });
 
-    expect(list.props?.startReached).toBeUndefined();
+    layout.scrollTo(0);
+
+    expect(onLoadOlderMessages).not.toHaveBeenCalled();
   });
 });
 

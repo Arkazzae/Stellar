@@ -8,10 +8,9 @@ const FRESH_MS = 400;
  * reader's attention.
  *
  * `freshId` is the block that has just arrived. Its attachments load eagerly
- * for one short window; a windowed list also remounts old blocks while
- * scrolling, so the last row changing identity is what tells a real arrival
- * apart. Nothing is fresh on the first render: opening a channel is not an
- * arrival.
+ * for one short window, and the last row changing identity is what tells a
+ * real arrival apart. Nothing is fresh on the first render: opening a channel
+ * is not an arrival.
  *
  * `missed` is true once something landed while the reader was away from the
  * end, and clears when they get back. It is what turns the way-back-down arrow
