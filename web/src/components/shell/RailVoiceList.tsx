@@ -1,16 +1,5 @@
 "use client";
 
-import {
-  closestCenter,
-  DndContext,
-  DragOverlay,
-  useDroppable,
-  useSensor,
-  useSensors,
-  KeyboardSensor,
-  PointerSensor,
-} from "@dnd-kit/core";
-import { restrictToVerticalAxis } from "@dnd-kit/modifiers";
 import type { MouseEventHandler, ReactNode } from "react";
 import { createPortal } from "react-dom";
 
@@ -19,39 +8,33 @@ import { ChannelButton } from "@/components/shell/ChannelButton";
 import type { ChannelMenuRaiser } from "@/components/shell/railTypes";
 import type { VoiceMove } from "@/components/shell/useVoiceMove";
 import { VoiceOccupantRow } from "@/components/shell/VoiceOccupantRow";
-import {
-  isVoiceDragData,
-  isVoiceDropData,
-  voiceDropId,
-  voiceKeyboardCoordinates,
-  type VoiceDropData,
-} from "@/components/shell/voiceMove";
+import type { VoiceDragData } from "@/components/shell/voiceMove";
 import type { PersonVM, VoiceChannelVM } from "@/components/view-models";
+import { DragAnnouncer } from "@/lib/drag/DragAnnouncer";
+import { useZoneDrag } from "@/lib/drag/useZoneDrag";
 import { useLanguage } from "@/state/hooks";
 
 function VoiceDropZone({
-  channelId,
-  disabled,
+  zoneRef,
+  isOver,
   children,
 }: {
-  channelId: string;
-  disabled: boolean;
+  zoneRef: (node: HTMLElement | null) => void;
+  isOver: boolean;
   children: ReactNode;
 }) {
-  const { setNodeRef, isOver } = useDroppable({
-    id: voiceDropId(channelId),
-    disabled,
-    data: { type: "voice-channel", channelId } satisfies VoiceDropData,
-  });
   return (
     <div
-      ref={setNodeRef}
+      ref={zoneRef}
       className={isOver ? "voice-channel-drop is-over" : "voice-channel-drop"}
     >
       {children}
     </div>
   );
 }
+
+/** One seated person's drag key: the same person can only sit in one channel at a time. */
+const occupantKey = (channelId: string, personId: string) => `${channelId}:${personId}`;
 
 export interface RailVoiceListProps {
   channels: VoiceChannelVM[];
@@ -72,10 +55,11 @@ export interface RailVoiceListProps {
 /**
  * The voice channels of one rail group, each with the people seated under it.
  *
- * Every list has its own drag context, so a group collapsing or a section
- * being empty never leaves a drop target behind; the shared move state is
- * what ties them together. The overlay is painted only by the list that owns
- * the channel being dragged from.
+ * Every list runs its own drag over its own channels, so a group collapsing or
+ * a section being empty never leaves a drop target behind, and the copy of the
+ * person being carried is painted by the list they are carried from. What a
+ * drop starts, waiting for the server, is shared across the rail through
+ * `move`.
  */
 export function RailVoiceList({
   channels,
@@ -89,62 +73,48 @@ export function RailVoiceList({
   personMenuFor,
 }: RailVoiceListProps) {
   const { t } = useLanguage();
-  const sensors = useSensors(
-    useSensor(PointerSensor, { activationConstraint: { distance: 6 } }),
-    useSensor(KeyboardSensor, { coordinateGetter: voiceKeyboardCoordinates }),
-  );
-  const { dragged } = move;
-  const showOverlay =
-    dragged !== null &&
-    channels.some((channel) => channel.id === dragged.sourceChannelId);
   const nameOf = (channelId: string) =>
     channels.find((channel) => channel.id === channelId)?.name;
+  const movable = (person: PersonVM) =>
+    canMove && person.id !== selfId && move.movingUserId !== person.id;
+
+  const drag = useZoneDrag<VoiceDragData>({
+    items: channels.flatMap((channel) =>
+      channel.occupants
+        .filter(movable)
+        .map((person) => occupantKey(channel.id, person.id)),
+    ),
+    zones: channels.map((channel) => channel.id),
+    homeOf: (dragged) => dragged.sourceChannelId,
+    onDrop: move.onDrop,
+    roleDescription: t("shell.dragHandle"),
+    messages: {
+      lifted: (dragged) => t("shell.dragLifted", { name: dragged.person.displayName }),
+      over: (channelId) => {
+        const name = nameOf(channelId);
+        return name === undefined ? undefined : t("shell.dragOver", { name });
+      },
+      dropped: (dragged, channelId) => {
+        const name = channelId === null ? undefined : nameOf(channelId);
+        return name === undefined
+          ? t("shell.dragCancelled")
+          : t("shell.dragDropped", { user: dragged.person.displayName, channel: name });
+      },
+      cancelled: () => t("shell.dragCancelled"),
+    },
+  });
+  const { carried } = drag;
 
   return (
-    <DndContext
-      sensors={sensors}
-      collisionDetection={closestCenter}
-      modifiers={[restrictToVerticalAxis]}
-      accessibility={{
-        screenReaderInstructions: { draggable: t("shell.dragInstructions") },
-        announcements: {
-          onDragStart: ({ active }) => {
-            const data = active.data.current;
-            return isVoiceDragData(data)
-              ? t("shell.dragLifted", { name: data.person.displayName })
-              : undefined;
-          },
-          onDragOver: ({ over }) => {
-            const data = over?.data.current;
-            if (!isVoiceDropData(data)) return;
-            const name = nameOf(data.channelId);
-            return name === undefined ? undefined : t("shell.dragOver", { name });
-          },
-          onDragEnd: ({ active, over }) => {
-            const drag = active.data.current;
-            const drop = over?.data.current;
-            if (!isVoiceDragData(drag) || !isVoiceDropData(drop)) {
-              return t("shell.dragCancelled");
-            }
-            const name = nameOf(drop.channelId);
-            return name === undefined
-              ? t("shell.dragCancelled")
-              : t("shell.dragDropped", {
-                  user: drag.person.displayName,
-                  channel: name,
-                });
-          },
-          onDragCancel: () => t("shell.dragCancelled"),
-        },
-      }}
-      onDragStart={move.onDragStart}
-      onDragCancel={move.onDragCancel}
-      onDragEnd={move.onDragEnd}
-    >
+    <>
       {channels.map((channel) => {
         const count = channel.occupants.length;
         return (
-          <VoiceDropZone key={channel.id} channelId={channel.id} disabled={!canMove}>
+          <VoiceDropZone
+            key={channel.id}
+            zoneRef={drag.zoneRef(channel.id)}
+            isOver={drag.over === channel.id}
+          >
             <ChannelButton
               kind="voice"
               name={channel.name}
@@ -166,40 +136,56 @@ export function RailVoiceList({
               })}
             />
             <ul className="voice-occupants">
-              {channel.occupants.map((person) => (
-                <VoiceOccupantRow
-                  key={person.id}
-                  person={person}
-                  sourceChannelId={channel.id}
-                  self={person.id === selfId}
-                  draggable={canMove}
-                  moving={move.movingUserId === person.id}
-                  onContextMenu={personMenuFor?.(person)}
-                />
-              ))}
+              {channel.occupants.map((person) => {
+                const key = occupantKey(channel.id, person.id);
+                return (
+                  <VoiceOccupantRow
+                    key={person.id}
+                    person={person}
+                    self={person.id === selfId}
+                    moving={move.movingUserId === person.id}
+                    drag={
+                      movable(person)
+                        ? {
+                            dragging: carried?.key === key,
+                            handle: drag.handle(key, {
+                              type: "voice-occupant",
+                              person,
+                              sourceChannelId: channel.id,
+                            }),
+                          }
+                        : undefined
+                    }
+                    onContextMenu={personMenuFor?.(person)}
+                  />
+                );
+              })}
             </ul>
           </VoiceDropZone>
         );
       })}
-      {typeof document === "undefined"
+      <DragAnnouncer
+        id={drag.instructionsId}
+        instructions={t("shell.dragInstructions")}
+        announcement={drag.announcement}
+      />
+      {carried === null || typeof document === "undefined"
         ? null
         : createPortal(
-            <DragOverlay dropAnimation={null}>
-              {showOverlay ? (
-                <div className="voice-occupant-overlay">
-                  <Avatar
-                    id={dragged.person.id}
-                    displayName={dragged.person.displayName}
-                    initials={dragged.person.initials}
-                    avatarUrl={dragged.person.avatarUrl}
-                    size="xs"
-                  />
-                  <span>{dragged.person.displayName}</span>
-                </div>
-              ) : null}
-            </DragOverlay>,
+            <div className="voice-occupant-carry" style={carried.style}>
+              <div className="voice-occupant-overlay">
+                <Avatar
+                  id={carried.item.person.id}
+                  displayName={carried.item.person.displayName}
+                  initials={carried.item.person.initials}
+                  avatarUrl={carried.item.person.avatarUrl}
+                  size="xs"
+                />
+                <span>{carried.item.person.displayName}</span>
+              </div>
+            </div>,
             document.body,
           )}
-    </DndContext>
+    </>
   );
 }

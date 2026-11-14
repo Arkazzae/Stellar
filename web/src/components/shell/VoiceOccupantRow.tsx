@@ -1,22 +1,30 @@
 "use client";
 
-import { useDraggable } from "@dnd-kit/core";
 import type { MouseEventHandler } from "react";
 
 import { Icon } from "@stellarr/ui/icons";
 import { Avatar } from "@/components/primitives/Avatar";
-import type { VoiceDragData } from "@/components/shell/voiceMove";
 import type { PersonVM } from "@/components/view-models";
+import type { DragHandleProps } from "@/lib/drag/session";
 import { useLanguage } from "@/state/hooks";
+
+/** What the voice list hands a row that may be moved. */
+export interface OccupantDragProps {
+  /** The row is being carried; its copy follows the pointer. */
+  dragging: boolean;
+  handle: DragHandleProps;
+}
 
 export interface VoiceOccupantRowProps {
   person: PersonVM;
-  sourceChannelId: string;
   self: boolean;
-  /** Whether staff may move people at all; you and a person in flight never are. */
-  draggable: boolean;
   /** The server has not confirmed this person's move yet. */
   moving: boolean;
+  /**
+   * Present when staff may move this person: never for you, and never for
+   * someone already in flight.
+   */
+  drag?: OccupantDragProps;
   onContextMenu?: MouseEventHandler<HTMLLIElement>;
 }
 
@@ -25,34 +33,24 @@ export interface VoiceOccupantRowProps {
  *
  * Mute and speech are printed as well as drawn, since this list is where you
  * learn who is on the call. When the row can be moved, the whole row is the
- * drag handle and the keyboard sensor makes it a button.
+ * drag handle, and a focusable button for the keyboard.
  */
 export function VoiceOccupantRow({
   person,
-  sourceChannelId,
   self,
-  draggable,
   moving,
+  drag,
   onContextMenu,
 }: VoiceOccupantRowProps) {
   const { t } = useLanguage();
-  const enabled = draggable && !self && !moving;
-  const { attributes, listeners, setNodeRef, isDragging } = useDraggable({
-    id: `voice-member:${sourceChannelId}:${person.id}`,
-    disabled: !enabled,
-    data: {
-      type: "voice-occupant",
-      person,
-      sourceChannelId,
-    } satisfies VoiceDragData,
-  });
+  const enabled = drag !== undefined;
   const className = [
     "voice-occupant",
     self && "me",
     person.speaking && "speaking",
     person.muted === true && "muted",
     enabled && "is-draggable",
-    isDragging && "is-dragging",
+    drag?.dragging && "is-dragging",
     moving && "is-moving",
   ]
     .filter(Boolean)
@@ -68,17 +66,15 @@ export function VoiceOccupantRow({
 
   return (
     <li
-      ref={setNodeRef}
       className={className}
       onContextMenu={onContextMenu}
       title={enabled ? t("shell.dragVoiceMember") : undefined}
-      {...(enabled ? { ...attributes, ...listeners } : {})}
+      {...(enabled ? { role: "button", tabIndex: 0, ...drag.handle } : {})}
       aria-label={
         enabled
           ? t("shell.moveVoiceMember", { name: person.displayName })
           : undefined
       }
-      aria-roledescription={enabled ? t("shell.dragHandle") : undefined}
       aria-busy={moving || undefined}
     >
       <Avatar

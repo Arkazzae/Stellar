@@ -1,11 +1,6 @@
 import { useState } from "react";
-import type { DragEndEvent, DragStartEvent } from "@dnd-kit/core";
 
-import {
-  isVoiceDragData,
-  voiceMoveRequest,
-  type VoiceDragData,
-} from "@/components/shell/voiceMove";
+import { voiceMoveRequest, type VoiceDragData } from "@/components/shell/voiceMove";
 import { useLanguage } from "@/state/hooks";
 
 export interface VoiceMoveOptions {
@@ -20,26 +15,23 @@ export interface VoiceMoveOptions {
 }
 
 /**
- * The life of one staff move of a person between voice channels: who is being
- * carried, who is waiting for the server to confirm, and the words a screen
- * reader gets at each step.
+ * The life of one staff move of a person between voice channels once they are
+ * dropped: who is waiting for the server to confirm, and what a screen reader
+ * hears while they wait. The drag itself belongs to each rail list; this is
+ * shared by all of them, since a move outlives the list it started in.
  */
 export function useVoiceMove({ onMove, onError }: VoiceMoveOptions) {
   const { t } = useLanguage();
-  const [dragged, setDragged] = useState<VoiceDragData | null>(null);
   const [movingUserId, setMovingUserId] = useState<string | null>(null);
   const [announcement, setAnnouncement] = useState("");
 
-  const onDragStart = (event: DragStartEvent) => {
-    const data = event.active.data.current;
-    if (isVoiceDragData(data)) setDragged(data);
-  };
-
-  const onDragEnd = (event: DragEndEvent) => {
-    setDragged(null);
+  /** A release over `targetChannelId`, or over no channel at all. */
+  const onDrop = (dragged: VoiceDragData, targetChannelId: string | null) => {
     const move = voiceMoveRequest(
-      event.active.data.current,
-      event.over?.data.current,
+      dragged,
+      targetChannelId === null
+        ? undefined
+        : { type: "voice-channel", channelId: targetChannelId },
     );
     if (move === null || onMove === undefined) return;
 
@@ -60,14 +52,7 @@ export function useVoiceMove({ onMove, onError }: VoiceMoveOptions) {
       .finally(() => setMovingUserId(null));
   };
 
-  return {
-    dragged,
-    movingUserId,
-    announcement,
-    onDragStart,
-    onDragEnd,
-    onDragCancel: () => setDragged(null),
-  };
+  return { movingUserId, announcement, onDrop };
 }
 
 export type VoiceMove = ReturnType<typeof useVoiceMove>;
