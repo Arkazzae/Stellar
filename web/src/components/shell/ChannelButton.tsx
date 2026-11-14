@@ -1,29 +1,24 @@
 "use client";
 
-import type {
-  DraggableAttributes,
-  DraggableSyntheticListeners,
-} from "@dnd-kit/core";
-import type { CSSProperties, KeyboardEvent, MouseEvent, Ref } from "react";
+import type { KeyboardEvent, MouseEvent } from "react";
 
 import { Icon } from "@stellarr/ui/icons";
+import type { DragHandleProps } from "@/lib/drag/session";
 import { useLanguage } from "@/state/hooks";
 
 /**
- * The output of `@dnd-kit`'s `useSortable` for the row being carried.
+ * What the sortable list hands the row it may carry.
  *
- * The library owns the pointer sensor, the transform and the keyboard; the row
- * only forwards what it is given. Its activation constraint (a press has to
- * travel a few pixels) is what lets the main button be both the drag handle
- * and a plain click target.
+ * The list owns the pointer, the keyboard and the transform, which it puts on
+ * the element around the row and its threads; the row only forwards the
+ * handle's events to its main button. A press has to travel a few pixels
+ * before it is a drag, which is what lets that button be both the handle and
+ * a plain click target.
  */
 export interface ChannelDragProps {
-  /** `setNodeRef` rather than a ref object: the library owns the node. */
-  setNode: Ref<HTMLDivElement>;
-  style: CSSProperties;
+  /** The row is being carried. */
   dragging: boolean;
-  attributes: DraggableAttributes;
-  listeners: DraggableSyntheticListeners;
+  handle: DragHandleProps;
 }
 
 export interface ChannelButtonProps {
@@ -90,16 +85,15 @@ export function ChannelButton({
     .filter(Boolean)
     .join(" ");
 
-  const { onKeyDown: sortableKeyDown, ...pointerListeners } = drag?.listeners ?? {};
   const handleKeyDown =
     drag === undefined
       ? undefined
       : (event: KeyboardEvent<HTMLButtonElement>) => {
-          // Enter follows the channel; Space stays the sortable keyboard gesture.
-          if (event.key !== "Enter") {
-            sortableKeyDown?.(event);
-            return;
-          }
+          // The handle hears every key first: Space picks the row up, and
+          // while it is carried the arrows, Space, Enter, Tab and Escape are
+          // the drag's. Enter still follows the channel, carried or not.
+          drag.handle.onKeyDown(event);
+          if (event.key !== "Enter") return;
           event.preventDefault();
           onSelect();
         };
@@ -112,18 +106,12 @@ export function ChannelButton({
   );
 
   return (
-    <div
-      ref={drag?.setNode}
-      style={drag?.style}
-      className={className}
-      onContextMenu={onContextMenu}
-    >
+    <div className={className} onContextMenu={onContextMenu}>
       <button
         type="button"
         className="channel-main"
         aria-current={active ? "page" : undefined}
-        {...drag?.attributes}
-        {...pointerListeners}
+        {...drag?.handle}
         onClick={onSelect}
         onKeyDown={handleKeyDown}
       >

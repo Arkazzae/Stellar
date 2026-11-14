@@ -2,6 +2,8 @@ import { fireEvent, render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { describe, expect, it, vi } from "vitest";
 
+import type { DragHandleProps } from "@/lib/drag/session";
+
 import {
   ChannelButton,
   type ChannelDragProps,
@@ -54,25 +56,22 @@ describe("ChannelButton interaction structure", () => {
     expect(onSelect).toHaveBeenCalledOnce();
   });
 
-  it("keeps Enter for selection and Space for sortable keyboard input", async () => {
+  it("hands every key to the drag handle and still follows the channel on Enter", async () => {
     const user = userEvent.setup();
     const onSelect = vi.fn();
     const onOpenSettings = vi.fn();
-    const dragKeyDown = vi.fn();
-    const dragPointerDown = vi.fn();
-    const setNode = vi.fn();
-    const drag: ChannelDragProps = {
-      setNode,
-      style: {},
-      dragging: false,
-      attributes: {} as ChannelDragProps["attributes"],
-      listeners: {
-        onKeyDown: dragKeyDown,
-        onPointerDown: dragPointerDown,
-      } as ChannelDragProps["listeners"],
+    const handle: DragHandleProps = {
+      onPointerDown: vi.fn(),
+      onKeyDown: vi.fn(),
+      onKeyUp: vi.fn(),
+      onBlur: vi.fn(),
+      "aria-describedby": "how-to-sort",
+      "aria-roledescription": "kanał do przestawienia",
+      "aria-pressed": undefined,
     };
+    const drag: ChannelDragProps = { dragging: false, handle };
 
-    const { container } = render(
+    const { container, rerender } = render(
       <ChannelButton
         kind="text"
         name="ogólny"
@@ -88,20 +87,29 @@ describe("ChannelButton interaction structure", () => {
       name: "Ustawienia kanału: ogólny",
     });
 
-    expect(setNode).toHaveBeenCalledWith(row);
     expect(row).not.toHaveAttribute("role");
+    expect(main).toHaveAttribute("aria-describedby", "how-to-sort");
 
     fireEvent.keyDown(main, { key: "Enter" });
     expect(onSelect).toHaveBeenCalledOnce();
-    expect(dragKeyDown).not.toHaveBeenCalled();
 
     fireEvent.keyDown(main, { key: " " });
-    expect(dragKeyDown).toHaveBeenCalledOnce();
+    expect(handle.onKeyDown).toHaveBeenCalledTimes(2);
     expect(onSelect).toHaveBeenCalledOnce();
 
     await user.click(settings);
     expect(onOpenSettings).toHaveBeenCalledOnce();
-    expect(dragPointerDown).not.toHaveBeenCalled();
+    expect(handle.onPointerDown).not.toHaveBeenCalled();
     expect(onSelect).toHaveBeenCalledOnce();
+
+    rerender(
+      <ChannelButton
+        kind="text"
+        name="ogólny"
+        onSelect={onSelect}
+        drag={{ dragging: true, handle }}
+      />,
+    );
+    expect(row).toHaveClass("drag-chosen");
   });
 });
