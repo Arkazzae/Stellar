@@ -1,4 +1,14 @@
 import { codeSource } from "./inline";
+import {
+  canCloseDelimiter,
+  canOpenDelimiter,
+  charAt,
+  charBefore,
+  isWhitespace,
+  runAfter,
+  runBefore,
+  type DelimiterChar,
+} from "./inlineSyntax";
 
 /** A new draft and where the selection should sit in it. */
 export interface TextEdit {
@@ -28,62 +38,27 @@ export function insertEmojiAt(text: string, at: number, glyph: string): TextEdit
 /** Every marker the formatting panel can produce, in the order it shows them. */
 export const FORMAT_MARKERS = ["**", "*", "~~", "||", "`"] as const;
 
-const WHITESPACE = /^\s$/u;
-/** CommonMark counts punctuation and symbols together when deciding flanking. */
-const PUNCTUATION = /^[\p{P}\p{S}]$/u;
-const isSpace = (char: string): boolean => char === "" || WHITESPACE.test(char);
-const isPunctuation = (char: string): boolean => PUNCTUATION.test(char);
-
 /** The formatting a button adds, and whether CommonMark's flanking rules apply. */
 const FLANKING_MARKERS = new Set<string>(["*", "**", "~~"]);
-
-/** The code point that ends just before `index`, or "" at the start. */
-function charBefore(source: string, index: number): string {
-  if (index <= 0) return "";
-  const low = source.charCodeAt(index - 1);
-  const high = source.charCodeAt(index - 2);
-  const pair = low >= 0xdc00 && low <= 0xdfff && high >= 0xd800 && high <= 0xdbff;
-  return source.slice(pair ? index - 2 : index - 1, index);
-}
-
-/** The code point that starts at `index`, or "" at the end. */
-function charAt(source: string, index: number): string {
-  const code = source.codePointAt(index);
-  return code === undefined ? "" : String.fromCodePoint(code);
-}
-
-function runBefore(text: string, index: number, character: string): number {
-  let start = index;
-  while (start > 0 && text[start - 1] === character) start -= 1;
-  return index - start;
-}
-
-function runAfter(text: string, index: number, character: string): number {
-  let end = index;
-  while (end < text.length && text[end] === character) end += 1;
-  return end - index;
-}
 
 /**
  * Whether a marker inserted at `index` may open a span, counting the run of
  * the same character already there. A strike run has to be exactly two, so an
  * adjacent tilde stops it from opening at all.
  */
-function opensAt(text: string, index: number, character: string): boolean {
+function opensAt(text: string, index: number, character: string, length: number): boolean {
   const adjacent = runBefore(text, index, character);
-  if (character === "~" && adjacent > 0) return false;
   const before = charBefore(text, index - adjacent);
   const after = charAt(text, index);
-  return !isSpace(after) && (!isPunctuation(after) || isSpace(before) || isPunctuation(before));
+  return canOpenDelimiter(character as DelimiterChar, before, after, adjacent + length);
 }
 
 /** Whether a marker inserted at `index` may close a span, counting the run after it. */
-function closesAt(text: string, index: number, character: string): boolean {
+function closesAt(text: string, index: number, character: string, length: number): boolean {
   const adjacent = runAfter(text, index, character);
-  if (character === "~" && adjacent > 0) return false;
   const before = charBefore(text, index);
   const after = charAt(text, index + adjacent);
-  return !isSpace(before) && (!isPunctuation(before) || isSpace(after) || isPunctuation(after));
+  return canCloseDelimiter(character as DelimiterChar, before, after, adjacent + length);
 }
 
 /**
@@ -218,9 +193,9 @@ export function toggleMarker(
   }
 
   let coreStart = selectionStart;
-  while (coreStart < selectionEnd && WHITESPACE.test(text[coreStart] ?? "")) coreStart += 1;
+  while (coreStart < selectionEnd && isWhitespace(text[coreStart] ?? "")) coreStart += 1;
   let coreEnd = selectionEnd;
-  while (coreEnd > coreStart && WHITESPACE.test(text[coreEnd - 1] ?? "")) coreEnd -= 1;
+  while (coreEnd > coreStart && isWhitespace(text[coreEnd - 1] ?? "")) coreEnd -= 1;
 
   // Nothing to format: leave an empty pair where the caret can type into it.
   if (coreStart === coreEnd) {
@@ -238,10 +213,10 @@ export function toggleMarker(
     // selection joins the new marker, so flanking is judged at the end of that
     // run. Widen to the neighbouring word rather than leave punctuation-only
     // markers that render as stars.
-    while (!opensAt(text, coreStart, character) && coreStart > 0) {
+    while (!opensAt(text, coreStart, character, marker.length) && coreStart > 0) {
       coreStart -= Math.max(1, runBefore(text, coreStart, character));
     }
-    while (!closesAt(text, coreEnd, character) && coreEnd < text.length) {
+    while (!closesAt(text, coreEnd, character, marker.length) && coreEnd < text.length) {
       coreEnd += Math.max(1, runAfter(text, coreEnd, character));
     }
   }

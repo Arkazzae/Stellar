@@ -1,0 +1,492 @@
+{
+  "description": "Shared message-syntax contract. The web parser and the API's mention extractor read the same message cases; the composer cases pin the edits its formatting buttons produce. Add a grammar case here whenever either side learns a new rule, so both implementations change together.",
+  "members": [
+    "ada",
+    "ada_x",
+    "ada_",
+    "ada__",
+    "bea",
+    "cecylia",
+    "żaneta",
+    "мая"
+  ],
+  "messages": [
+    {
+      "name": "escaped formatting characters stay literal",
+      "content": "\\*a\\* \\_b\\_ \\~\\~c\\~\\~ \\|\\|d\\|\\|",
+      "mentions": [],
+      "inline": [{ "text": "*a* _b_ ~~c~~ ||d||" }],
+      "source": "\\*a\\* \\_b\\_ \\~\\~c\\~\\~ \\|\\|d\\|\\|"
+    },
+    {
+      "name": "an escaped backslash leaves the next marker free",
+      "content": "\\\\*a*",
+      "mentions": [],
+      "inline": [{ "text": "\\" }, { "emphasis": [{ "text": "a" }] }],
+      "source": "\\\\*a*"
+    },
+    {
+      "name": "an escaped at or colon is not a mention or emoji",
+      "content": "\\@ada \\:party: @ada\\_",
+      "mentions": ["ADA"],
+      "inline": [{ "text": "@ada :party: " }, { "mention": "@ada" }, { "text": "_" }],
+      "source": "\\@ada \\:party: @ada\\_"
+    },
+    {
+      "name": "every delimiter kind pairs around words",
+      "content": "**bold** *italic* _italic_ ~~strike~~ ||spoiler||",
+      "mentions": [],
+      "inline": [
+        { "strong": [{ "text": "bold" }] },
+        { "text": " " },
+        { "emphasis": [{ "text": "italic" }] },
+        { "text": " " },
+        { "emphasis": [{ "text": "italic" }] },
+        { "text": " " },
+        { "strike": [{ "text": "strike" }] },
+        { "text": " " },
+        { "spoiler": [{ "text": "spoiler" }] }
+      ]
+    },
+    {
+      "name": "single tildes and lone pipes stay literal",
+      "content": "~one~ ~~~three~~~ a | b | c",
+      "mentions": [],
+      "inline": [{ "text": "~one~ ~~~three~~~ a | b | c" }]
+    },
+    {
+      "name": "long marker runs leave their surplus as text",
+      "content": "***x*** ~one~ ~~~three~~~ |||a|||",
+      "mentions": [],
+      "inline": [
+        { "emphasis": [{ "strong": [{ "text": "x" }] }] },
+        { "text": " ~one~ ~~~three~~~ |" },
+        { "spoiler": [{ "text": "a" }] },
+        { "text": "|" }
+      ]
+    },
+    {
+      "name": "underscores inside words do not format",
+      "content": "snake_case_name and foo__bar__baz",
+      "mentions": [],
+      "inline": [{ "text": "snake_case_name and foo__bar__baz" }]
+    },
+    {
+      "name": "paired underscores format a name while an unpaired one can belong to it",
+      "content": "_@ada_ foo_@ada_ @ada_ __@ada__",
+      "mentions": ["ADA", "ADA_"],
+      "inline": [
+        { "emphasis": [{ "mention": "@ada" }] },
+        { "text": " foo_@ada_ " },
+        { "mention": "@ada_" },
+        { "text": " " },
+        { "strong": [{ "mention": "@ada" }] }
+      ]
+    },
+    {
+      "name": "a code span hides a name",
+      "content": "`@ada`",
+      "mentions": [],
+      "inline": [{ "code": "@ada" }]
+    },
+    {
+      "name": "a code span closes only at a run of the same length",
+      "content": "`` `@ada` ``",
+      "mentions": [],
+      "inline": [{ "code": "`@ada`" }]
+    },
+    {
+      "name": "an unmatched backtick run stays literal and does not hide what follows",
+      "content": "`@ada``",
+      "mentions": ["ADA"],
+      "inline": [{ "text": "`" }, { "mention": "@ada" }, { "text": "``" }]
+    },
+    {
+      "name": "a fenced block hides its name but not the prose after it",
+      "content": "```\n@ada\n```\n@bea",
+      "mentions": ["BEA"],
+      "inline": [
+        { "code": "\n@ada\n" },
+        { "text": "\n" },
+        { "mention": "@bea" }
+      ]
+    },
+    {
+      "name": "three backticks on one line are a code span",
+      "content": "```@ada```",
+      "mentions": [],
+      "inline": [{ "code": "@ada" }]
+    },
+    {
+      "name": "bare addresses lose sentence punctuation and unbalanced parentheses",
+      "content": "patrz https://example.com/a. (https://example.com/a_(b))",
+      "mentions": [],
+      "inline": [
+        { "text": "patrz " },
+        { "link": { "href": "https://example.com/a", "text": "https://example.com/a" } },
+        { "text": ". (" },
+        { "link": { "href": "https://example.com/a_(b)", "text": "https://example.com/a_(b)" } },
+        { "text": ")" }
+      ]
+    },
+    {
+      "name": "a bare address hides its own names but not the next word",
+      "content": "https://x.test/@ada i @bea",
+      "mentions": ["BEA"],
+      "inline": [
+        { "link": { "href": "https://x.test/@ada", "text": "https://x.test/@ada" } },
+        { "text": " i " },
+        { "mention": "@bea" }
+      ]
+    },
+    {
+      "name": "markers inside an address are part of it",
+      "content": "https://x.test/pkg/__init__.py",
+      "mentions": [],
+      "inline": [
+        { "link": { "href": "https://x.test/pkg/__init__.py", "text": "https://x.test/pkg/__init__.py" } }
+      ]
+    },
+    {
+      "name": "formatting around an address still pairs after the address is trimmed",
+      "content": "**https://example.org/a**",
+      "mentions": [],
+      "inline": [
+        { "strong": [{ "link": { "href": "https://example.org/a", "text": "https://example.org/a" } }] }
+      ]
+    },
+    {
+      "name": "a marker left outside a trimmed address pairs with the opening marker",
+      "content": "_https://x_). @ada_",
+      "mentions": ["ADA_"],
+      "inline": [
+        { "emphasis": [{ "link": { "href": "https://x", "text": "https://x" } }] },
+        { "text": "). " },
+        { "mention": "@ada_" }
+      ]
+    },
+    {
+      "name": "a closing marker after the trimmed address keeps the parenthesis inside",
+      "content": "_https://x)_ @ada_",
+      "mentions": ["ADA_"],
+      "inline": [
+        {
+          "emphasis": [
+            { "link": { "href": "https://x", "text": "https://x" } },
+            { "text": ")" }
+          ]
+        },
+        { "text": " " },
+        { "mention": "@ada_" }
+      ]
+    },
+    {
+      "name": "two markers left outside a trimmed address pair as strong",
+      "content": "__https://x__). @ada__",
+      "mentions": ["ADA__"],
+      "inline": [
+        { "strong": [{ "link": { "href": "https://x", "text": "https://x" } }] },
+        { "text": "). " },
+        { "mention": "@ada__" }
+      ]
+    },
+    {
+      "name": "a real http link keeps its label out of mention recognition",
+      "content": "[strona](https://example.com)",
+      "mentions": [],
+      "inline": [
+        { "link": { "href": "https://example.com", "text": "strona" } }
+      ]
+    },
+    {
+      "name": "a non-http link is literal, so its label and a following name are mentions",
+      "content": "[@ada](ftp://example.test/x) @bea",
+      "mentions": ["ADA", "BEA"],
+      "inline": [
+        { "text": "[" },
+        { "mention": "@ada" },
+        { "text": "](ftp://example.test/x) " },
+        { "mention": "@bea" }
+      ]
+    },
+    {
+      "name": "an image is not a link, so its label stays visible",
+      "content": "![@ada](https://example.test/x)",
+      "mentions": ["ADA"],
+      "inline": [
+        { "text": "![" },
+        { "mention": "@ada" },
+        { "text": "](" },
+        { "link": { "href": "https://example.test/x", "text": "https://example.test/x" } },
+        { "text": ")" }
+      ]
+    },
+    {
+      "name": "the inner link wins when links nest",
+      "content": "[[@ada](https://inner.test)](https://outer.test)",
+      "mentions": [],
+      "inline": [
+        { "text": "[" },
+        { "link": { "href": "https://inner.test", "text": "@ada" } },
+        { "text": "](" },
+        { "link": { "href": "https://outer.test", "text": "https://outer.test" } },
+        { "text": ")" }
+      ]
+    },
+    {
+      "name": "a url inside a real link's label is text, and the name after the link is a mention",
+      "content": "[https://x.test/@bea](http://y)@ada",
+      "mentions": ["ADA"],
+      "inline": [
+        { "link": { "href": "http://y", "text": "https://x.test/@bea" } },
+        { "mention": "@ada" }
+      ]
+    },
+    {
+      "name": "unicode names and punctuation follow the same flanking rules",
+      "content": "*@żaneta* i @Мая, *🎉*",
+      "mentions": ["ŻANETA", "МАЯ"],
+      "inline": [
+        { "emphasis": [{ "mention": "@żaneta" }] },
+        { "text": " i " },
+        { "mention": "@Мая" },
+        { "text": ", " },
+        { "emphasis": [{ "text": "🎉" }] }
+      ]
+    },
+    {
+      "name": "punctuation cannot open emphasis against a neighbouring word",
+      "content": "*(a)* and a*(b)*",
+      "mentions": [],
+      "inline": [
+        { "emphasis": [{ "text": "(a)" }] },
+        { "text": " and a*(b)*" }
+      ]
+    },
+    {
+      "name": "a spoiler hides everything inside it, including formatting",
+      "content": "||**zakończenie** filmu|| a || nie",
+      "mentions": [],
+      "inline": [
+        {
+          "spoiler": [
+            { "strong": [{ "text": "zakończenie" }] },
+            { "text": " filmu" }
+          ]
+        },
+        { "text": " a || nie" }
+      ]
+    },
+    {
+      "name": "neighbouring strong runs are written as one",
+      "content": "**a**__b__",
+      "mentions": [],
+      "inline": [
+        { "strong": [{ "text": "a" }] },
+        { "strong": [{ "text": "b" }] }
+      ],
+      "source": "**ab**"
+    },
+    {
+      "name": "neighbouring emphasis runs are written as one",
+      "content": "*a*_b_",
+      "mentions": [],
+      "inline": [
+        { "emphasis": [{ "text": "a" }] },
+        { "emphasis": [{ "text": "b" }] }
+      ],
+      "source": "*ab*"
+    },
+    {
+      "name": "neighbouring spoiler runs are written as one",
+      "content": "||a||||b||",
+      "mentions": [],
+      "inline": [
+        { "spoiler": [{ "text": "a" }] },
+        { "spoiler": [{ "text": "b" }] }
+      ],
+      "source": "||ab||"
+    },
+    {
+      "name": "dots, underscores and hyphens can be part of a name",
+      "content": "@ada_x, @ada_ and @ada__",
+      "mentions": ["ADA_X", "ADA_", "ADA__"],
+      "inline": [
+        { "mention": "@ada_x" },
+        { "text": ", " },
+        { "mention": "@ada_" },
+        { "text": " and " },
+        { "mention": "@ada__" }
+      ]
+    },
+    {
+      "name": "an email address is not a mention",
+      "content": "mail@ada.pl",
+      "mentions": [],
+      "inline": [{ "text": "mail@ada.pl" }]
+    },
+    {
+      "name": "a name glued to an address ends where the address begins",
+      "content": "@adahttps://example.test/x",
+      "mentions": ["ADA"],
+      "inline": [
+        { "mention": "@ada" },
+        { "link": { "href": "https://example.test/x", "text": "https://example.test/x" } }
+      ]
+    },
+    {
+      "name": "an upper-case scheme is not a bare address",
+      "content": "HTTP://example.test/@ada",
+      "mentions": ["ADA"],
+      "inline": [
+        { "text": "HTTP://example.test/" },
+        { "mention": "@ada" }
+      ]
+    },
+    {
+      "name": "an address swallows the names in its query and stops at whitespace",
+      "content": "https://example.test/@ada?x=@bea @cecylia",
+      "mentions": ["CECYLIA"],
+      "inline": [
+        {
+          "link": {
+            "href": "https://example.test/@ada?x=@bea",
+            "text": "https://example.test/@ada?x=@bea"
+          }
+        },
+        { "text": " " },
+        { "mention": "@cecylia" }
+      ]
+    }
+  ],
+  "composer": [
+    {
+      "name": "a plain selection wraps in strong markers",
+      "text": "middle",
+      "start": 0,
+      "end": 6,
+      "marker": "**",
+      "expected": { "text": "**middle**", "selectionStart": 2, "selectionEnd": 8 }
+    },
+    {
+      "name": "whitespace stays outside the markers",
+      "text": "  foo  ",
+      "start": 0,
+      "end": 7,
+      "marker": "**",
+      "expected": { "text": "  **foo**  ", "selectionStart": 4, "selectionEnd": 7 }
+    },
+    {
+      "name": "punctuation stays inside the markers",
+      "text": "Ocena!",
+      "start": 0,
+      "end": 6,
+      "marker": "*",
+      "expected": { "text": "*Ocena!*", "selectionStart": 1, "selectionEnd": 7 }
+    },
+    {
+      "name": "a selection inside a word keeps the word around it",
+      "text": "wording",
+      "start": 1,
+      "end": 4,
+      "marker": "*",
+      "expected": { "text": "w*ord*ing", "selectionStart": 2, "selectionEnd": 5 }
+    },
+    {
+      "name": "a punctuation edge widens the strong run to the neighbouring word",
+      "text": "foo.bar",
+      "start": 3,
+      "end": 6,
+      "marker": "**",
+      "expected": { "text": "fo**o.ba**r", "selectionStart": 4, "selectionEnd": 8 }
+    },
+    {
+      "name": "a punctuation-only selection widens instead of leaving unusable stars",
+      "text": "foo.bar",
+      "start": 3,
+      "end": 4,
+      "marker": "**",
+      "expected": { "text": "fo**o.b**ar", "selectionStart": 4, "selectionEnd": 7 }
+    },
+    {
+      "name": "a spoiler takes punctuation as it is",
+      "text": "foo.bar",
+      "start": 3,
+      "end": 6,
+      "marker": "||",
+      "expected": { "text": "foo||.ba||r", "selectionStart": 5, "selectionEnd": 8 }
+    },
+    {
+      "name": "inline code grows a fence past any backtick run inside",
+      "text": "a`b",
+      "start": 0,
+      "end": 3,
+      "marker": "`",
+      "expected": { "text": "``a`b``", "selectionStart": 2, "selectionEnd": 5 }
+    },
+    {
+      "name": "inline code pads a selection that touches a backtick",
+      "text": "`foo`",
+      "start": 0,
+      "end": 5,
+      "marker": "`",
+      "expected": { "text": "`` `foo` ``", "selectionStart": 3, "selectionEnd": 8 }
+    },
+    {
+      "name": "a code selection inside a word stays inside it",
+      "text": "wording",
+      "start": 1,
+      "end": 4,
+      "marker": "`",
+      "expected": { "text": "w`ord`ing", "selectionStart": 2, "selectionEnd": 5 }
+    },
+    {
+      "name": "a wrapped selection unwraps when selected again",
+      "text": "**bold**",
+      "start": 2,
+      "end": 6,
+      "marker": "**",
+      "expected": { "text": "bold", "selectionStart": 0, "selectionEnd": 4 }
+    },
+    {
+      "name": "a code span unwraps when its content is selected",
+      "text": "`foo`",
+      "start": 1,
+      "end": 4,
+      "marker": "`",
+      "expected": { "text": "foo", "selectionStart": 0, "selectionEnd": 3 }
+    },
+    {
+      "name": "the wrapper's own character is escaped inside a new run",
+      "text": "a**b",
+      "start": 0,
+      "end": 4,
+      "marker": "**",
+      "expected": { "text": "**a\\*\\*b**", "selectionStart": 2, "selectionEnd": 8 }
+    },
+    {
+      "name": "a trailing backslash is doubled so it cannot escape the closing marker",
+      "text": "a\\",
+      "start": 0,
+      "end": 2,
+      "marker": "**",
+      "expected": { "text": "**a\\\\**", "selectionStart": 2, "selectionEnd": 5 }
+    },
+    {
+      "name": "a whitespace-only selection leaves an empty spoiler pair",
+      "text": "a   b",
+      "start": 1,
+      "end": 4,
+      "marker": "~~",
+      "expected": { "text": "a~~~~   b", "selectionStart": 3, "selectionEnd": 3 }
+    },
+    {
+      "name": "a caret gets an empty strong pair",
+      "text": "ab",
+      "start": 1,
+      "end": 1,
+      "marker": "**",
+      "expected": { "text": "a****b", "selectionStart": 3, "selectionEnd": 3 }
+    }
+  ]
+}

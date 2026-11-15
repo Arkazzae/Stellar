@@ -13,6 +13,14 @@
  * procedure, which only relinks spans, so every step is linear in the body.
  */
 
+import {
+  delimiterRun,
+  isBlankUnit,
+  isWhitespace,
+  runLength,
+  type DelimiterChar,
+} from "./inlineSyntax";
+
 export type SpanStyle = "strong" | "emphasis" | "strike" | "spoiler";
 
 export type Span =
@@ -30,50 +38,11 @@ export type Span =
 
 /* ------------------------------------------------------------- characters */
 
-const WHITESPACE = /^\s$/u;
-/** CommonMark counts Unicode punctuation and symbols, so `*🎉*` is emphasis. */
-const PUNCTUATION = /^[\p{P}\p{S}]$/u;
+/** Only ASCII punctuation can be escaped, as in CommonMark. */
 const ASCII_PUNCTUATION = /^[!-/:-@[-`{-~]$/;
 
 /** The characters that may start a construct; everything between them is text. */
 const SPECIAL = /[\\`*_~|[\]]/g;
-
-type DelimiterChar = "*" | "_" | "~" | "|";
-
-/** The code point that ends just before `index`, or "" at the start. */
-function charBefore(source: string, index: number): string {
-  if (index <= 0) return "";
-  const low = source.charCodeAt(index - 1);
-  const high = source.charCodeAt(index - 2);
-  const pair = low >= 0xdc00 && low <= 0xdfff && high >= 0xd800 && high <= 0xdbff;
-  return source.slice(pair ? index - 2 : index - 1, index);
-}
-
-/** The code point that starts at `index`, or "" at the end. */
-function charAt(source: string, index: number): string {
-  const code = source.codePointAt(index);
-  return code === undefined ? "" : String.fromCodePoint(code);
-}
-
-/** Whitespace, or a control character, by UTF-16 unit: no address contains either. */
-function isBlankUnit(code: number): boolean {
-  return code <= 0x20 || code === 0x7f || (code > 0x7f && WHITESPACE.test(String.fromCharCode(code)));
-}
-
-/** The start and end of the body count as whitespace, as a line's ends do in CommonMark. */
-function isSpace(char: string): boolean {
-  return char === "" || WHITESPACE.test(char);
-}
-
-function isPunctuation(char: string): boolean {
-  return PUNCTUATION.test(char);
-}
-
-function runLength(source: string, from: number, char: string): number {
-  let end = from;
-  while (source[end] === char) end += 1;
-  return end - from;
-}
 
 /* ------------------------------------------------------------- span list */
 
@@ -206,37 +175,6 @@ class DelimiterStack {
       this.top = floor;
     }
   }
-}
-
-/**
- * Whether a run can open and close, by CommonMark's flanking rules: a run is
- * left-flanking when it is not followed by whitespace, and not followed by
- * punctuation unless whitespace or punctuation precedes it; right-flanking is
- * the mirror image. `~~` follows `*`, `||` needs no flanking at all.
- */
-function delimiterRun(
-  source: string,
-  index: number,
-  char: DelimiterChar,
-  length: number,
-): { canOpen: boolean; canClose: boolean } {
-  if (char === "|") return { canOpen: length >= 2, canClose: length >= 2 };
-
-  const before = charBefore(source, index);
-  const after = charAt(source, index + length);
-  const left = !isSpace(after) && (!isPunctuation(after) || isSpace(before) || isPunctuation(before));
-  const right = !isSpace(before) && (!isPunctuation(before) || isSpace(after) || isPunctuation(after));
-
-  // Strikethrough is exactly two tildes; a single one is just a tilde.
-  if (char === "~") return { canOpen: left && length === 2, canClose: right && length === 2 };
-  // `_` must not open or close inside a word, so snake_case_name stays as typed.
-  if (char === "_") {
-    return {
-      canOpen: left && (!right || isPunctuation(before)),
-      canClose: right && (!left || isPunctuation(after)),
-    };
-  }
-  return { canOpen: left, canClose: right };
 }
 
 /* ------------------------------------------------------------ the reader */
@@ -488,7 +426,8 @@ class InlineReader {
       const counts = new Int32Array(source.length + 1);
       for (let index = 0; index < source.length; index++) {
         const code = source.charCodeAt(index);
-        const blank = code === 0x20 || (code >= 0x09 && code <= 0x0d) || (code > 0x7f && WHITESPACE.test(String.fromCharCode(code)));
+        const blank = code === 0x20 || (code >= 0x09 && code <= 0x0d) ||
+          (code > 0x7f && isWhitespace(String.fromCharCode(code)));
         counts[index + 1] = (counts[index] ?? 0) + (blank ? 0 : 1);
       }
       this.visibleBefore = counts;
