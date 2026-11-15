@@ -46,9 +46,9 @@ public sealed class ModerationFlowTests
             Assert.False(await db.ServerMembers.AnyAsync(x => x.UserId == Guid.Parse(JoId)));
             Assert.True(await db.ServerBans.AnyAsync(x => x.UserId == Guid.Parse(JoId)));
 
-            // Startup only upgrades the schema; it must never recreate a
+            // The schema step runs on every start; it must never recreate a
             // membership removed by moderation.
-            await DatabaseSchema.UpgradeAsync(db, CancellationToken.None);
+            await DatabaseSchema.PrepareAsync(db, CancellationToken.None);
             Assert.False(await db.ServerMembers.AnyAsync(x => x.UserId == Guid.Parse(JoId)));
         }
 

@@ -315,7 +315,7 @@ static async Task InitializeApplicationAsync(WebApplication app)
     await using (var scope = app.Services.CreateAsyncScope())
     {
         var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
-        await DatabaseSchema.UpgradeAsync(db, stopping);
+        await DatabaseSchema.PrepareAsync(db, stopping);
         await app.Services.GetRequiredService<BackupPolicyStore>().LoadAsync(db, stopping);
         await app.Services.GetRequiredService<CloudflareR2PolicyStore>().LoadAsync(db, stopping);
         // A backup cut short by the last stop left a partial file; it is no backup.

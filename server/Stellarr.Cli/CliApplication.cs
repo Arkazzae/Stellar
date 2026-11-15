@@ -550,7 +550,7 @@ public static class CliApplication
         {
             return (
                 "schema_incompatible",
-                "The database schema is older than this CLI. Start the API once so it can upgrade it, then retry.",
+                "The database lacks a table or column this CLI needs, so it was not created by this release of Stellarr.",
                 CliExit.Conflict);
         }
 

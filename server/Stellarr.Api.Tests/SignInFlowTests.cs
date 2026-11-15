@@ -3,7 +3,6 @@ using System.Net.Http.Json;
 using System.Text.Json;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc.Testing;
-using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using Stellarr.Api.Auth;
@@ -292,96 +291,6 @@ public sealed class SignInFlowTests(StellarrWebApplicationFactory factory)
         Assert.Equal(HttpStatusCode.TooManyRequests, third.StatusCode);
     }
 
-    [Fact]
-    public async Task VolumeFromBeforeSessionsAndEmailLoginGainsThemOnUpgrade()
-    {
-        var path = Path.Combine(Path.GetTempPath(), $"stellarr-auth-upgrade-{Guid.NewGuid():N}.db");
-        var options = new DbContextOptionsBuilder<AppDbContext>().UseSqlite($"Data Source={path}").Options;
-        var userId = Guid.NewGuid();
-
-        try
-        {
-            await using (var old = new AppDbContext(options))
-            {
-                await old.Database.EnsureCreatedAsync();
-                old.Users.Add(NewUser(userId, "veteran"));
-                await old.SaveChangesAsync();
-
-                // The Users table and its neighbours as the first release wrote them.
-                await old.Database.ExecuteSqlRawAsync(
-                    """
-                    DROP INDEX "IX_Users_NormalizedEmail";
-                    ALTER TABLE "Users" DROP COLUMN "Email";
-                    ALTER TABLE "Users" DROP COLUMN "NormalizedEmail";
-                    ALTER TABLE "Users" DROP COLUMN "IsDisabled";
-                    ALTER TABLE "Users" DROP COLUMN "SessionVersion";
-                    DROP TABLE "PasswordResetTokens";
-                    DROP TABLE "UserSessions";
-                    DROP TABLE "DesktopBrowserLogins";
-                    DROP TABLE "ExternalIdentities";
-                    """);
-            }
-
-            await using var upgraded = new AppDbContext(options);
-            await DatabaseSchema.UpgradeAsync(upgraded, CancellationToken.None);
-            // Every start runs the steps again.
-            await DatabaseSchema.UpgradeAsync(upgraded, CancellationToken.None);
-
-            var user = await upgraded.Users.SingleAsync(x => x.Id == userId);
-            Assert.Equal(0, user.SessionVersion);
-            Assert.False(user.IsDisabled);
-            Assert.Null(user.Email);
-
-            var now = DateTime.UtcNow;
-            upgraded.UserSessions.Add(new UserSession
-            {
-                Id = Guid.NewGuid(),
-                UserId = userId,
-                Device = "device",
-                IpAddress = "127.0.0.1",
-                CreatedAt = now,
-                LastSeenAt = now,
-                ExpiresAt = now.AddDays(1),
-            });
-            upgraded.DesktopBrowserLogins.Add(new DesktopBrowserLogin
-            {
-                Id = Guid.NewGuid(),
-                SecretHash = DataModelSupport.Hash(),
-                CreatedAt = now,
-                ExpiresAt = now.AddMinutes(2),
-            });
-            upgraded.ExternalIdentities.Add(new ExternalIdentity
-            {
-                Id = Guid.NewGuid(),
-                UserId = userId,
-                Issuer = "https://identity.test",
-                Subject = "subject",
-                CreatedAt = now,
-            });
-            upgraded.PasswordResetTokens.Add(new PasswordResetToken
-            {
-                Id = Guid.NewGuid(),
-                UserId = userId,
-                TokenHash = DataModelSupport.Hash(),
-                CreatedAt = now,
-                ExpiresAt = now.AddHours(1),
-            });
-            await upgraded.SaveChangesAsync();
-
-            // An address still belongs to one account.
-            var first = NewUser(Guid.NewGuid(), "first");
-            var second = NewUser(Guid.NewGuid(), "second");
-            first.NormalizedEmail = second.NormalizedEmail = "SHARED@EXAMPLE.TEST";
-            upgraded.Users.AddRange(first, second);
-            await Assert.ThrowsAsync<DbUpdateException>(() => upgraded.SaveChangesAsync());
-        }
-        finally
-        {
-            SqliteConnection.ClearAllPools();
-            File.Delete(path);
-        }
-    }
-
     /// <summary>
     /// A client that keeps no cookies of its own, so each test decides which
     /// sign-in a request speaks for.
@@ -403,17 +312,6 @@ public sealed class SignInFlowTests(StellarrWebApplicationFactory factory)
         await db.SaveChangesAsync();
         return user;
     }
-
-    private static User NewUser(Guid id, string username) => new()
-    {
-        Id = id,
-        Username = username,
-        NormalizedUsername = username.ToUpperInvariant(),
-        DisplayName = username,
-        PasswordHash = "hash",
-        AvatarColor = "#777777",
-        CreatedAt = DateTime.UtcNow,
-    };
 
     /// <summary>Signs in and returns the cookies the server set, as a Cookie header.</summary>
     private static async Task<string> SignInAsync(HttpClient client, string identifier)

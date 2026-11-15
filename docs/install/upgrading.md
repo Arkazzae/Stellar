@@ -1,6 +1,6 @@
 # Upgrading
 
-Upgrading replaces the container image while preserving the `stellarr_stellarr_data` volume. The API applies schema updates automatically on startup.
+Upgrading replaces the container image while preserving the `stellarr_stellarr_data` volume.
 
 > [!CAUTION]
 > Never run `docker compose down -v` on a production instance. The `-v` flag deletes the data volume, including all messages, uploads, accounts, and secrets.
@@ -57,12 +57,12 @@ Release notes are published at <https://github.com/Arkazzae/Stellarr/releases>.
 
    Confirm that `docker compose ps` reports `healthy` (which checks both `/health` and `/login`) and `curl` returns `200`.
 
-## Database schema updates
+## Database schema
 
-On startup, the API enables SQLite WAL mode and runs idempotent schema initialization steps (creating missing tables/indexes, adding columns, and backfilling values).
+The API creates the SQLite database, in WAL mode, on the first start of a new data volume. Later starts only make sure its search index and triggers exist; they do not change the tables of an existing database.
 
 > [!WARNING]
-> Schema changes modify the SQLite database in place and are not backward-compatible. Do not start an older container image against a data volume that has already been opened by a newer version; restore your volume backup to roll back.
+> Roll back by restoring the volume backup taken before the upgrade, not by starting an older container image against the same data volume.
 
 ## Rollback
 

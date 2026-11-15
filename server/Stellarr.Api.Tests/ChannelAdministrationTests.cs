@@ -211,36 +211,6 @@ public sealed class ChannelAdministrationTests : IClassFixture<StellarrWebApplic
     }
 
     [Fact]
-    public async Task SectionsAreAddedToADatabaseThatPredatesThem()
-    {
-        using var factory = new StellarrWebApplicationFactory();
-        await using (var scope = factory.Services.CreateAsyncScope())
-        {
-            var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
-            await db.Database.ExecuteSqlRawAsync(
-                """
-                DROP INDEX "IX_Channels_SectionId";
-                ALTER TABLE "Channels" DROP COLUMN "SectionId";
-                DROP TABLE "Sections";
-                """);
-        }
-
-        // Twice: the steps run on every start, also on a database already upgraded.
-        for (var run = 0; run < 2; run++)
-        {
-            await using var scope = factory.Services.CreateAsyncScope();
-            await DatabaseSchema.UpgradeAsync(
-                scope.ServiceProvider.GetRequiredService<AppDbContext>(), CancellationToken.None);
-        }
-
-        using var owner = await SignedInAsync(factory, "maja", "Aurora!2026");
-        var sectionId = await IdOfAsync(await owner.PostAsJsonAsync("/api/admin/sections", new { name = "Wróciła" }));
-        var assigned = await owner.PatchAsJsonAsync(
-            $"/api/admin/channels/{TestData.GeneralChannelId}/section", new { sectionId });
-        Assert.Equal(HttpStatusCode.NoContent, assigned.StatusCode);
-    }
-
-    [Fact]
     public async Task ASystemRoleCannotBeDeletedAndTheOwnerRoleCannotBeEdited()
     {
         using var owner = await SignedInAsync(_factory, "maja", "Aurora!2026");
@@ -411,31 +381,6 @@ public sealed class ChannelAdministrationTests : IClassFixture<StellarrWebApplic
             Assert.Equal(HttpStatusCode.NotFound, (await owner.GetAsync(path)).StatusCode);
             Assert.Equal(HttpStatusCode.NotFound, (await owner.DeleteAsync($"{path}/{role}")).StatusCode);
         }
-    }
-
-    [Fact]
-    public async Task OverridesAreAddedToADatabaseThatPredatesThem()
-    {
-        using var factory = new StellarrWebApplicationFactory();
-        await using (var scope = factory.Services.CreateAsyncScope())
-        {
-            var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
-            await db.Database.ExecuteSqlRawAsync("""DROP TABLE "PermissionOverrides";""");
-        }
-
-        for (var run = 0; run < 2; run++)
-        {
-            await using var scope = factory.Services.CreateAsyncScope();
-            await DatabaseSchema.UpgradeAsync(
-                scope.ServiceProvider.GetRequiredService<AppDbContext>(), CancellationToken.None);
-        }
-
-        using var owner = await SignedInAsync(factory, "maja", "Aurora!2026");
-        var path = $"/api/admin/channels/{TestData.GeneralChannelId}/permissions/{MemberRoleId}";
-        (await owner.PutAsJsonAsync(path, new { allow = ManageMessages, deny = None })).EnsureSuccessStatusCode();
-        (await owner.PutAsJsonAsync(path, new { allow = None, deny = ManageMessages })).EnsureSuccessStatusCode();
-        var listed = JsonDocument.Parse(await owner.GetStringAsync(path[..path.LastIndexOf('/')])).RootElement;
-        Assert.Equal(1, listed.GetArrayLength());
     }
 
     private static async Task<Guid> SectionIdAsync(HttpClient client) =>

@@ -371,50 +371,6 @@ public sealed class MediaStorageTests(StellarrWebApplicationFactory factory)
         Assert.True((await third.WaitAsync(TimeSpan.FromSeconds(10))).Accepted);
     }
 
-    [Fact]
-    public async Task TheAttachmentSchemaStepRestoresWhatAnOlderVolumeLacksAndKeepsItsRows()
-    {
-        using var isolated = new StellarrWebApplicationFactory();
-        await using var scope = isolated.OpenScope(out var db);
-        var uploader = (await AddUsersAsync(db, 1))[0];
-        var attachment = Upload(uploader);
-        db.ImageAttachments.Add(attachment);
-        await db.SaveChangesAsync();
-        await db.Database.ExecuteSqlRawAsync(
-            """
-            ALTER TABLE "ImageAttachments" DROP COLUMN "DurationSeconds";
-            ALTER TABLE "ImageAttachments" DROP COLUMN "PosterObjectKey";
-            ALTER TABLE "ImageAttachments" DROP COLUMN "PosterContentType";
-            ALTER TABLE "ImageAttachments" DROP COLUMN "PosterSizeBytes";
-            ALTER TABLE "ImageAttachments" DROP COLUMN "IsVoiceMessage";
-            DROP TABLE "ObjectDeletions";
-            """);
-
-        await DatabaseSchema.UpgradeAsync(db, default);
-        await DatabaseSchema.UpgradeAsync(db, default);
-
-        var columns = await db.Database
-            .SqlQuery<string>($"""SELECT "name" AS "Value" FROM pragma_table_info('ImageAttachments')""")
-            .ToListAsync();
-        foreach (var column in new[]
-            { "DurationSeconds", "PosterObjectKey", "PosterContentType", "PosterSizeBytes", "IsVoiceMessage" })
-        {
-            Assert.Contains(column, columns);
-        }
-
-        db.ChangeTracker.Clear();
-        var restored = await db.ImageAttachments.SingleAsync(x => x.Id == attachment.Id);
-        Assert.False(restored.IsVoiceMessage);
-        Assert.Null(restored.DurationSeconds);
-
-        db.ObjectDeletions.Add(new ObjectDeletion { ObjectKey = "after/upgrade", QueuedAt = DateTime.UtcNow });
-        await db.SaveChangesAsync();
-        var indexes = await db.Database
-            .SqlQuery<string>($"""SELECT "name" AS "Value" FROM pragma_index_list('ObjectDeletions')""")
-            .ToListAsync();
-        Assert.Contains("IX_ObjectDeletions_QueuedAt", indexes);
-    }
-
     private static async Task<bool> CompletesSoonAsync(Task task) =>
         await Task.WhenAny(task, Task.Delay(150)) == task;
 
