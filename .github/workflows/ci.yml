@@ -60,10 +60,12 @@ jobs:
               echo "$1=false" >> "$GITHUB_OUTPUT"
             fi
           }
-          check server '^(server/|Stellarr\.slnx$|Directory\.Build\.props$|global\.json$|\.github/workflows/ci\.yml$)'
+          # Both test suites consume the same message-formatting contract.
+          # A case added there must check the renderer and the API together.
+          check server '^(server/|tests/contracts/|Stellarr\.slnx$|Directory\.Build\.props$|global\.json$|\.github/workflows/ci\.yml$)'
           # web and cockpit are workspaces of one npm project: a change to the
           # shared packages or to the root manifest or lockfile affects both.
-          check web '^(web/|artifacts/|packages/|package(-lock)?\.json$|branding/icons/|\.github/workflows/ci\.yml$)'
+          check web '^(web/|tests/contracts/|artifacts/|packages/|package(-lock)?\.json$|branding/icons/|\.github/workflows/ci\.yml$)'
           check cockpit '^(cockpit/|packages/|package(-lock)?\.json$|\.github/workflows/ci\.yml$)'
           check media '^(media/|\.github/workflows/ci\.yml$)'
           check image '^(Dockerfile$|\.dockerignore$|artifacts/|infra/|server/.*\.csproj$|server/.*packages\.lock\.json$|packages/|package(-lock)?\.json$|\.npmrc$|(web|cockpit)/package\.json$|media/Cargo\.(toml|lock)$|global\.json$|Directory\.Build\.props$|\.github/workflows/ci\.yml$)'
