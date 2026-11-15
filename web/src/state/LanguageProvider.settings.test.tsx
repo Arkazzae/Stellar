@@ -95,7 +95,7 @@ describe("LanguageProvider settings", () => {
     expect(document.documentElement.dataset.locale).toBe("en");
   });
 
-  it("leaves the cookie alone when the stored locale matches the starting one", async () => {
+  it("leaves the cookie alone when the stored locale matches the server's", async () => {
     window.localStorage.setItem(
       STORAGE_KEY,
       JSON.stringify({ locale: "pl", chatTranslationEnabled: true }),

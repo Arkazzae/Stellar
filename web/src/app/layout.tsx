@@ -2,23 +2,23 @@ import type { Metadata, Viewport } from "next";
 import type { ReactNode } from "react";
 
 import { ThemeScript } from "@/design/themeScript";
-import { InstanceLanguageScript, LocaleScript } from "@/i18n/localeScript";
+import { translateMessage } from "@/i18n";
+import { requestLocale } from "@/i18n/requestLocale";
 import { LanguageProvider } from "@/state/LanguageProvider";
 import { PortsProvider } from "@/state/PortsProvider";
 import { SessionProvider } from "@/state/SessionProvider";
 import { ThemeProvider } from "@/state/ThemeProvider";
 
-import { LocaleGate } from "./LocaleGate";
-
 import "./globals.css";
 
-// No description: it would be words in a language fixed at build time. The
-// pages are kept out of indexes, so only a link preview would have shown it.
-export const metadata: Metadata = {
-  title: "Stellarr",
-  applicationName: "Stellarr",
-  robots: { index: false, follow: false },
-};
+export async function generateMetadata(): Promise<Metadata> {
+  return {
+    title: "Stellarr",
+    description: translateMessage(await requestLocale(), "app.description"),
+    applicationName: "Stellarr",
+    robots: { index: false, follow: false },
+  };
+}
 
 export const viewport: Viewport = {
   themeColor: "#111111",
@@ -31,36 +31,32 @@ export const viewport: Viewport = {
 
 /**
  * A server component, so the static shell stays out of the client bundle and
- * the head scripts run before the first paint.
- *
- * Every page is rendered ahead of time, the same for every person and every
- * instance. The language is chosen in the browser: the instance default
- * arrives as a small script, the locale script picks the person's language
- * and puts it on `<html lang>`, and `LocaleGate` renders the page once React
- * has taken over, in that language.
+ * `ThemeScript` can run before the first paint.
  *
  * Ports and the session wrap every route, /login included, because signing in
  * needs both. The app's own providers start further down, at `AppContainer`.
+ *
+ * The language is resolved per request (see `requestLocale`), which is what
+ * keeps every route out of static rendering. It goes to the client through
+ * `<html lang>` and the provider, so both agree with the server's render.
  */
-export default function RootLayout({ children }: { children: ReactNode }) {
+export default async function RootLayout({ children }: { children: ReactNode }) {
+  const locale = await requestLocale();
+
   return (
-    // The locale and theme scripts write lang, data-locale, data-theme, -scheme
-    // and -contrast onto <html> before React hydrates, so the client can never
-    // match the server's bare element. Those attributes belong to the scripts;
-    // the suppression covers this one element and none of its children.
-    <html suppressHydrationWarning>
+    // ThemeScript writes data-theme, -scheme and -contrast onto <html> before
+    // React hydrates, so the client can never match the server's bare element.
+    // Those attributes belong to the script; the suppression covers this one
+    // element and none of its children.
+    <html lang={locale} data-locale={locale} suppressHydrationWarning>
       <head>
-        <InstanceLanguageScript />
-        <LocaleScript />
         <ThemeScript />
       </head>
       <body>
-        <LanguageProvider>
+        <LanguageProvider initialLocale={locale}>
           <ThemeProvider>
             <PortsProvider>
-              <SessionProvider>
-                <LocaleGate>{children}</LocaleGate>
-              </SessionProvider>
+              <SessionProvider>{children}</SessionProvider>
             </PortsProvider>
           </ThemeProvider>
         </LanguageProvider>

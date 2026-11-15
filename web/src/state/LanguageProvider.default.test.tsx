@@ -49,7 +49,7 @@ describe("the language before anyone chose one", () => {
     expect(screen.getByLabelText("text")).toHaveTextContent("Hello");
   });
 
-  it("starts the provider in the page's language when given none", () => {
+  it("starts the provider in the page's language when the server gave none", () => {
     document.documentElement.lang = "en";
     render(
       <LanguageProvider>
@@ -61,7 +61,7 @@ describe("the language before anyone chose one", () => {
     expect(screen.getByLabelText("title")).toHaveTextContent("Language");
   });
 
-  it("prefers a locale it is given over the page's", () => {
+  it("prefers the server's locale over the page's", () => {
     document.documentElement.lang = "en";
     render(
       <LanguageProvider initialLocale="pl">
