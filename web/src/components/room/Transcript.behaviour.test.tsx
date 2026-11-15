@@ -228,6 +228,24 @@ describe("Transcript older history", () => {
     expect(onLoadOlder).toHaveBeenCalledTimes(2);
   });
 
+  it.each([3, 10])("lets the reader retry a failed page with %i loaded blocks without leaving the margin", (count) => {
+    fakeTranscriptLayout();
+    const onLoadOlder = vi.fn();
+    const props = { sections: section(...blocks(count)), label: "Wiadomości", hasOlder: true, onLoadOlder };
+    const { rerender } = show(<Transcript {...props} />);
+    expect(onLoadOlder).toHaveBeenCalledOnce();
+
+    rerender(<Transcript {...props} loadingOlder />);
+    expect(screen.getByRole("button", { name: "Wczytywanie starszych wiadomości…" })).toBeDisabled();
+    rerender(<Transcript {...props} />);
+    expect(onLoadOlder).toHaveBeenCalledOnce();
+
+    fireEvent.click(screen.getByRole("button", { name: "Wczytaj starsze wiadomości" }));
+    expect(onLoadOlder).toHaveBeenCalledTimes(2);
+    rerender(<Transcript {...props} />);
+    expect(onLoadOlder).toHaveBeenCalledTimes(2);
+  });
+
   it("does not ask from a transcript that is hidden", () => {
     const layout = fakeTranscriptLayout({ viewport: 0 });
     const onLoadOlder = vi.fn();
