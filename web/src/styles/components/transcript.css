@@ -260,6 +260,15 @@
   .att-giphy{display:block}
   .att-giphy-media{display:block;width:100%;text-align:left;border-radius:var(--radius-md)}
   .att-giphy-media picture{display:block}
+  /* GIPHY picks the rendition, so a 9:16 GIF arrives 420 px wide and taller
+     than the pane it is read in. The width cap alone cannot help: the shape
+     has to stay the GIF's own, and the height is the dimension that makes a
+     message a screenful. The viewer still opens the full asset. */
+  .att-giphy img{
+    --att-giphy-max-h:min(400px,50vh);
+    width:auto;max-width:min(var(--att-w),100%);
+    max-height:var(--att-giphy-max-h);object-fit:contain;
+  }
   .att-giphy figcaption,.att-giphy-caption{margin-top:4px;font-size:var(--text-11);color:var(--text-faint)}
   .att-giphy figcaption a{color:inherit}
   .att-giphy figcaption a:hover{color:var(--text);text-decoration:underline}
