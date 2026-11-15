@@ -130,7 +130,7 @@ internal static class SettingsCatalog
         new("public-url", "STELLARR_PUBLIC_URL / STELLARR_DOMAIN / STELLARR_PUBLIC_PORT",
             "Set STELLARR_PUBLIC_URL, or STELLARR_DOMAIN and STELLARR_PUBLIC_PORT, in .env/Compose; then recreate the container.",
             ContainerSettings.PublicUrl),
-        new("tls.domain", "STELLARR_DOMAIN / PUBLIC_HOST",
+        new("tls.domain", "STELLARR_DOMAIN",
             "Set STELLARR_DOMAIN in .env/Compose; the entrypoint also derives TLS and TURN from it. Recreate the container.",
             ContainerSettings.PublicHost),
         new("https-port", "PUBLIC_HTTPS_PORT (from STELLARR_HTTPS_PORT)",
@@ -163,7 +163,7 @@ internal static class SettingsCatalog
             "Set Oidc__CallbackPath in Compose and recreate the container. The normal value is /api/auth/oidc/callback.",
             context => ContainerSettings.ConfigValue(
                 context, "Oidc:CallbackPath", "/api/auth/oidc/callback", "Oidc__CallbackPath")),
-        new("rtc.public-host", "STELLARR_DOMAIN / PUBLIC_HOST",
+        new("rtc.public-host", "STELLARR_DOMAIN",
             "Set STELLARR_DOMAIN in .env/Compose and recreate the container.",
             ContainerSettings.PublicHost),
         new("rtc.turn-port", "STELLARR_TURN_PORT / Rtc__TurnPort",
