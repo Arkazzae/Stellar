@@ -100,4 +100,4 @@ cd Stellarr
 docker compose up -d --build
 ```
 
-The multi-stage `Dockerfile` compiles the .NET API, Next.js web client, Cockpit operator panel, and Rust media server inside Docker, so no local build toolchains are required on the host.
+The multi-stage `Dockerfile` compiles the .NET API and the Rust media server and builds the web client and the Cockpit operator panel as static files inside Docker, so no local build toolchains are required on the host.

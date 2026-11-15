@@ -49,7 +49,8 @@ services:
              npm run dev -- --hostname 0.0.0.0 --port 3000"
     environment:
       # next dev proxies /api, /assets and /hubs to the API. In production
-      # Nginx does that and Next registers no rewrites.
+      # there is no Next server: next build writes static files, Nginx serves
+      # them and proxies the API.
       STELLARR_API_ORIGIN: http://api:5000
       # Next refuses its dev-only chunks to a page opened from a host it does
       # not know. 127.0.0.1 is always allowed; list further names for an IDE

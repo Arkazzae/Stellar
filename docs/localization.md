@@ -11,10 +11,13 @@ Interface language and chat message translation are independent settings:
 
 Setting `STELLARR_LANGUAGE=pl` (or `en`) configures the instance default:
 
-1. **Web client (`web/`)**: Resolves the request locale in order:
-   1. `stellarr_locale` cookie (written only when a user explicitly selects a language in Settings).
-   2. `STELLARR_LANGUAGE` environment variable (read dynamically per request).
-   3. `en`.
+1. **Web client (`web/`)**: The client is a static export, the same files for every instance, so the language is chosen in the browser before the first paint. At every container start the entrypoint writes `STELLARR_LANGUAGE`, when it names a shipped language, to `/stellarr-instance.js`; the page loads that file as a blocking script, and an inline script ([`web/src/i18n/localeScript.tsx`](../web/src/i18n/localeScript.tsx)) then puts the first match of the following on `<html lang>` and `data-locale`:
+   1. The language the person chose on this device (`locale` in `stellarr_language_settings` in `localStorage`).
+   2. The `stellarr_locale` cookie, which remembers that choice and which Cockpit reads too.
+   3. The instance default from `/stellarr-instance.js`.
+   4. `en`.
+
+   The pages are rendered ahead of time without any words: the HTML and the render that hydrates it hold only the shell's skeleton (on `/` and `/invite/<code>`) or the bare canvas, and `LocaleGate` renders the page right after hydration in the language on `<html lang>`. Nothing is shown in a wrong language and hydration cannot mismatch; the cost is that a first visit shows text only once the JavaScript has loaded. Browsers keep `/stellarr-instance.js` for up to an hour, so a changed `STELLARR_LANGUAGE` reaches a browser that loaded the client recently within that hour. `next dev` has no entrypoint and writes the same value inline from its own `STELLARR_LANGUAGE`.
 2. **Cockpit (`cockpit/`)**: Resolves the locale in the browser on load (see [`cockpit/README.md`](../cockpit/README.md)):
    1. `stellarr_locale` cookie.
    2. First match in `navigator.languages` (`pl` or `en`).
@@ -32,7 +35,7 @@ Setting `STELLARR_LANGUAGE=pl` (or `en`) configures the instance default:
 - [web/src/i18n/messages/en.ts](../web/src/i18n/messages/en.ts) is typed with `satisfies Record<keyof typeof pl, string>`, so missing or extra keys fail `npm run typecheck`.
 - Components format strings via `t(key, values)`. `{name}` placeholders are interpolated as plain text without HTML parsing; unprovided placeholders remain literal (`{name}`).
 - `LanguageProvider` persists:
-  - `stellarr_locale` cookie so SSR and client hydration render the same `<html lang>`.
+  - `stellarr_locale` cookie, read by the locale script and by Cockpit.
   - `stellarr_language_settings` in `localStorage` (`locale`, `chatTranslationEnabled`, `chatAutoTranslateEnabled`, `chatTranslationTargetLanguage`).
 
 ### Cockpit (`cockpit/src/i18n/`)
@@ -60,6 +63,7 @@ Setting `STELLARR_LANGUAGE=pl` (or `en`) configures the instance default:
 
 1. **Web client**:
    - Add the locale code to `SUPPORTED_LOCALES` in `web/src/i18n/index.ts`, create `web/src/i18n/messages/<code>.ts`, register it in `catalogs`, and add `language.name.<code>` to all catalogs.
+   - Add the code to the languages `write_instance_language` accepts in `infra/entrypoint.sh`, so `STELLARR_LANGUAGE` can name it as the instance default.
    - Add the native language label to `NATIVE_NAMES` in `web/src/components/account/panes/LanguagePane.tsx`.
    - Add the `Intl` BCP 47 tag to `LOCALE_TAG` in `web/src/lib/format.ts` and verify plural rules (`pluralForm`).
    - If supporting local chat translation for the new language, update `TranslationTargetLanguage` in `web/src/i18n/index.ts`, `primaryPair` in `web/src/lib/chatTranslation/modelStatus.ts`, and `web/public/bergamot-models/registry.json`.
