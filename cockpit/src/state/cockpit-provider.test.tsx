@@ -2,22 +2,22 @@ import { act, render, renderHook, screen, waitFor } from "@testing-library/react
 import { StrictMode } from "react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-import { CockpitApiError, cockpitApi, type CockpitBootstrap, type CockpitLoginStep } from "@/lib/api";
-import { leaveFor } from "@/lib/web-sign-in";
-import { useCockpit } from "@/state/cockpit-context";
-import { CockpitProvider } from "@/state/cockpit-provider";
-import { selectPolish } from "@/test/locale";
+import { CockpitApiError, cockpitApi, type CockpitBootstrap, type CockpitLoginStep } from "../lib/api";
+import { leaveFor } from "../lib/web-sign-in";
+import { useCockpit } from "./cockpit-context";
+import { CockpitProvider } from "./cockpit-provider";
+import { selectPolish } from "../test/locale";
 
 selectPolish();
 
-vi.mock("@/lib/api", async (importOriginal) => ({
-  ...(await importOriginal<typeof import("@/lib/api")>()),
+vi.mock("../lib/api", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("../lib/api")>()),
   cockpitApi: { bootstrap: vi.fn(), login: vi.fn(), logout: vi.fn() },
 }));
 
 // jsdom cannot navigate; the full page load is checked by where it would go.
-vi.mock("@/lib/web-sign-in", async (importOriginal) => ({
-  ...(await importOriginal<typeof import("@/lib/web-sign-in")>()),
+vi.mock("../lib/web-sign-in", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("../lib/web-sign-in")>()),
   leaveFor: vi.fn(),
 }));
 

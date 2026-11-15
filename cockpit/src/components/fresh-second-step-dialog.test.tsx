@@ -1,8 +1,8 @@
 import { render, screen, waitFor } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-import { cockpitApi } from "@/lib/api";
-import { selectPolish } from "@/test/locale";
+import { cockpitApi } from "../lib/api";
+import { selectPolish } from "../test/locale";
 
 import { FreshSecondStepDialog } from "./fresh-second-step-dialog";
 

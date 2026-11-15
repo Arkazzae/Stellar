@@ -3,8 +3,8 @@ import userEvent from "@testing-library/user-event";
 import { MemoryRouter, Route, Routes } from "react-router-dom";
 import { describe, expect, it } from "vitest";
 
-import { NotFoundPage } from "@/pages/not-found-page";
-import { selectPolish } from "@/test/locale";
+import { NotFoundPage } from "./not-found-page";
+import { selectPolish } from "../test/locale";
 
 selectPolish();
 

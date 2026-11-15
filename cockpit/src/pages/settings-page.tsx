@@ -19,9 +19,9 @@ import {
 } from "@stellarr/ui";
 import { useState, type ComponentProps, type FormEvent, type KeyboardEvent, type ReactNode } from "react";
 
-import { PageHeader } from "@/components/page-header";
-import { SecretField } from "@/components/secret-field";
-import { LOCALES, t, type Locale, type MessageKey } from "@/i18n";
+import { PageHeader } from "../components/page-header";
+import { SecretField } from "../components/secret-field";
+import { LOCALES, t, type Locale, type MessageKey } from "../i18n";
 import {
   CockpitApiError,
   cockpitApi,
@@ -31,10 +31,10 @@ import {
   type CockpitSecurityKey,
   type CockpitSettings,
   type CockpitSmtpSecurity,
-} from "@/lib/api";
-import { useCockpitResource } from "@/lib/use-cockpit-resource";
-import { useCockpit } from "@/state/cockpit-context";
-import { useLocale } from "@/state/locale-context";
+} from "../lib/api";
+import { useCockpitResource } from "../lib/use-cockpit-resource";
+import { useCockpit } from "../state/cockpit-context";
+import { useLocale } from "../state/locale-context";
 
 type FieldErrors = Record<string, string[]>;
 /** Edits the settings the page's button saves; the security card keeps its own changes. */

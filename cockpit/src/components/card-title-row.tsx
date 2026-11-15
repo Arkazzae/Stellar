@@ -1,6 +1,6 @@
 import type { ReactNode } from "react";
 
-import { Icon, type IconName } from "@/components/icons/icon";
+import { Icon, type IconName } from "./icons/icon";
 
 /** A card's title row: a quiet icon and the name, with room for a figure or controls at the end. */
 export function CardTitleRow({ icon, title, children }: { icon: IconName; title: string; children?: ReactNode }) {

@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
 
-import { cockpitApi, type CockpitLogEntry, type CockpitLogFilters, type CockpitLogs } from "@/lib/api";
+import { cockpitApi, type CockpitLogEntry, type CockpitLogFilters, type CockpitLogs } from "./api";
 
 export type LogSummary = Pick<CockpitLogs, "levels" | "sources" | "capacity">;
 

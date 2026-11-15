@@ -10,9 +10,9 @@ import {
 } from "@stellarr/ui";
 import { useEffect, useState } from "react";
 
-import { t } from "@/i18n";
-import { onFreshSecondStepRequired } from "@/lib/api";
-import { webFreshConfirmUrl } from "@/lib/web-sign-in";
+import { t } from "../i18n";
+import { onFreshSecondStepRequired } from "../lib/api";
+import { webFreshConfirmUrl } from "../lib/web-sign-in";
 
 /**
  * Opens when the server refuses a sensitive change for want of a second step

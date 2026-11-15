@@ -1,20 +1,20 @@
 import { Alert, AlertDescription, AlertTitle, Button, Card, cx, Spinner } from "@stellarr/ui";
 import { useEffect } from "react";
 
-import { CardTitleRow } from "@/components/card-title-row";
-import { MiniCells, MiniLine, MiniStems } from "@/components/mini-charts";
-import { PageHeader } from "@/components/page-header";
-import { RequestChart } from "@/components/request-chart";
-import { ServiceUptime, UptimeAxis } from "@/components/service-uptime";
-import { StatTile } from "@/components/stat-tile";
-import { StatusBadge } from "@/components/status-badge";
-import { getLocale, t } from "@/i18n";
-import { formatDateTime, formatMegabytes, formatNumber } from "@/i18n/format";
-import { cockpitApi, type CockpitRuntime, type CockpitRuntimeSample } from "@/lib/api";
-import { bucketize } from "@/lib/sparkline";
-import { formatUptime, minuteSlots, serviceSlotStates } from "@/lib/uptime";
-import { useCockpitResource } from "@/lib/use-cockpit-resource";
-import { useMeasuredHeight } from "@/lib/use-measured-height";
+import { CardTitleRow } from "../components/card-title-row";
+import { MiniCells, MiniLine, MiniStems } from "../components/mini-charts";
+import { PageHeader } from "../components/page-header";
+import { RequestChart } from "../components/request-chart";
+import { ServiceUptime, UptimeAxis } from "../components/service-uptime";
+import { StatTile } from "../components/stat-tile";
+import { StatusBadge } from "../components/status-badge";
+import { getLocale, t } from "../i18n";
+import { formatDateTime, formatMegabytes, formatNumber } from "../i18n/format";
+import { cockpitApi, type CockpitRuntime, type CockpitRuntimeSample } from "../lib/api";
+import { bucketize } from "../lib/sparkline";
+import { formatUptime, minuteSlots, serviceSlotStates } from "../lib/uptime";
+import { useCockpitResource } from "../lib/use-cockpit-resource";
+import { useMeasuredHeight } from "../lib/use-measured-height";
 
 const HOUR_MS = 60 * 60 * 1000;
 

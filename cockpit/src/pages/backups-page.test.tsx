@@ -2,16 +2,16 @@ import { render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-import { cockpitApi, type CockpitBackup, type CockpitBackupJob, type CockpitBackups } from "@/lib/api";
-import { BackupsPage } from "@/pages/backups-page";
-import { CockpitContext } from "@/state/cockpit-context";
-import { cockpitValue } from "@/test/cockpit-fixtures";
-import { selectPolish } from "@/test/locale";
+import { cockpitApi, type CockpitBackup, type CockpitBackupJob, type CockpitBackups } from "../lib/api";
+import { BackupsPage } from "./backups-page";
+import { CockpitContext } from "../state/cockpit-context";
+import { cockpitValue } from "../test/cockpit-fixtures";
+import { selectPolish } from "../test/locale";
 
 selectPolish();
 
-vi.mock("@/lib/api", async (importOriginal) => {
-  const original = await importOriginal<typeof import("@/lib/api")>();
+vi.mock("../lib/api", async (importOriginal) => {
+  const original = await importOriginal<typeof import("../lib/api")>();
   return {
     ...original,
     cockpitApi: { ...original.cockpitApi, backups: vi.fn(), createBackup: vi.fn(), verifyBackup: vi.fn() },

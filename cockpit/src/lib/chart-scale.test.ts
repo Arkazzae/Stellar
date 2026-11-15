@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { axisTop } from "@/lib/chart-scale";
+import { axisTop } from "./chart-scale";
 
 describe("axisTop", () => {
   it.each([

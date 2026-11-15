@@ -2,14 +2,14 @@ import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-import { cockpitApi, type CockpitUser, type CockpitUserSecurity } from "@/lib/api";
-import { UserSecuritySheet } from "@/pages/users/user-security-sheet";
-import { selectPolish } from "@/test/locale";
+import { cockpitApi, type CockpitUser, type CockpitUserSecurity } from "../../lib/api";
+import { UserSecuritySheet } from "./user-security-sheet";
+import { selectPolish } from "../../test/locale";
 
 selectPolish();
 
-vi.mock("@/lib/api", async (importOriginal) => {
-  const original = await importOriginal<typeof import("@/lib/api")>();
+vi.mock("../../lib/api", async (importOriginal) => {
+  const original = await importOriginal<typeof import("../../lib/api")>();
   return {
     ...original,
     cockpitApi: {

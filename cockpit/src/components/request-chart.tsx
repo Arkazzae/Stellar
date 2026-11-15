@@ -1,8 +1,8 @@
 import { cx } from "@stellarr/ui";
 import { useState, type KeyboardEvent } from "react";
 
-import { formatNumber } from "@/i18n/format";
-import { axisTop } from "@/lib/chart-scale";
+import { formatNumber } from "../i18n/format";
+import { axisTop } from "../lib/chart-scale";
 
 export interface RequestPoint {
   /** ISO timestamp of the end of the interval. */

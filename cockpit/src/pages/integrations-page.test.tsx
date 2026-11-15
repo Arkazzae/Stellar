@@ -2,15 +2,15 @@ import { render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-import { CockpitApiError, cockpitApi, type CockpitCloudflareR2Settings, type CockpitSettings } from "@/lib/api";
-import { IntegrationsPage } from "@/pages/integrations-page";
-import { selectPolish } from "@/test/locale";
-import { secret, secrets } from "@/test/secrets";
+import { CockpitApiError, cockpitApi, type CockpitCloudflareR2Settings, type CockpitSettings } from "../lib/api";
+import { IntegrationsPage } from "./integrations-page";
+import { selectPolish } from "../test/locale";
+import { secret, secrets } from "../test/secrets";
 
 selectPolish();
 
-vi.mock("@/lib/api", async (importOriginal) => {
-  const original = await importOriginal<typeof import("@/lib/api")>();
+vi.mock("../lib/api", async (importOriginal) => {
+  const original = await importOriginal<typeof import("../lib/api")>();
   return {
     ...original,
     cockpitApi: {

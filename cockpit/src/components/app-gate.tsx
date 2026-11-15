@@ -13,12 +13,12 @@ import {
 } from "@stellarr/ui";
 import { useState, type FormEvent, type ReactNode } from "react";
 
-import { AppShell } from "@/components/app-shell";
-import { BrandMark } from "@/components/brand-mark";
-import { t } from "@/i18n";
-import { CockpitApiError } from "@/lib/api";
-import { WEB_CONFIRM_URL } from "@/lib/web-sign-in";
-import { useCockpit } from "@/state/cockpit-context";
+import { AppShell } from "./app-shell";
+import { BrandMark } from "./brand-mark";
+import { t } from "../i18n";
+import { CockpitApiError } from "../lib/api";
+import { WEB_CONFIRM_URL } from "../lib/web-sign-in";
+import { useCockpit } from "../state/cockpit-context";
 
 function CenteredState({ children }: { children: ReactNode }) {
   return <main className="grid min-h-svh place-items-center bg-muted/30 p-4">{children}</main>;

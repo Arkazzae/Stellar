@@ -1,6 +1,6 @@
 import { createContext, useContext } from "react";
 
-import type { CockpitBootstrap } from "@/lib/api";
+import type { CockpitBootstrap } from "../lib/api";
 
 /** `mfa-required`: the owner is signed in, but the session has not completed the second step Cockpit asks for. */
 export type CockpitPhase = "loading" | "anonymous" | "forbidden" | "mfa-required" | "ready" | "error";
