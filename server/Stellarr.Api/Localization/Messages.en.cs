@@ -257,7 +257,7 @@ public sealed partial class Messages
         MessageKey.AuditSessionRevoked => "revoked the session of {name}",
 
         // Notices and defaults
-        MessageKey.ServerWelcomeNotice => "<b>{name}</b> has joined the server. Say hello!",
+        MessageKey.ServerWelcomeNotice => "**{name}** has joined the server. Say hello!",
         MessageKey.OwnerRoleName => "Owner",
         MessageKey.MemberRoleName => "Member",
         MessageKey.DefaultTextChannelName => "general",

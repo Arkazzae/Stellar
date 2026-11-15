@@ -330,7 +330,7 @@ public sealed class ServerDirectoryFlowTests : IClassFixture<StellarrWebApplicat
         var welcome = await db.Messages.AsNoTracking()
             .Include(x => x.Author)
             .SingleAsync(x => x.AuthorId == userId && x.IsSystem);
-        Assert.Equal("<b>Invited Person</b> dołącza do serwera. Przywitajcie się!", welcome.Content);
+        Assert.Equal("**Invited Person** dołącza do serwera. Przywitajcie się!", welcome.Content);
         Assert.Equal(
             "ogólny",
             await db.Channels.Where(x => x.Id == welcome.ChannelId)

@@ -44,7 +44,7 @@ export interface MessageGroupVM {
    * and the initials stay underneath for everyone it cannot.
    */
   authorAvatarUrl?: string;
-  /** A server notice: server identity, no profile actions, `<b>` allowed in the body. */
+  /** A server notice: server identity, no profile actions, the same body grammar as any message. */
   system?: boolean;
   /**
    * You wrote this. Set by whoever builds the block, because only the provider

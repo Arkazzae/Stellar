@@ -93,8 +93,8 @@ describe("inline text recognisers", () => {
     expect(parseInline("`<b>&\"`")).toEqual([{ kind: "code", text: '<b>&"' }]);
   });
 
-  it("starts a new line for a hard break", () => {
-    expect(parseInline("raz  \ndwa")).toEqual([{ kind: "text", text: "raz\ndwa" }]);
+  it("keeps a line break, and the spaces before it, as typed", () => {
+    expect(parseInline("raz  \ndwa")).toEqual([{ kind: "text", text: "raz  \ndwa" }]);
   });
 
   it("stays readable when markers pile up without end", () => {
@@ -140,16 +140,20 @@ describe("toParts — text and code", () => {
     expect(kinds(toParts(message({ content: "```js\nconst a = 1;" })))).toEqual(["text"]);
   });
 
-  it("passes the system, emoji and mention options to the prose", () => {
+  it("passes the emoji and mention options to the prose", () => {
     const [part] = toParts(message({ content: "<b>@ada</b> :party:" }), {
-      system: true,
       emoji,
       mentions,
     });
 
     expect(part).toMatchObject({
       kind: "text",
-      nodes: [{ kind: "strong", text: "@ada" }, { kind: "text", text: " " }, { kind: "emoji" }],
+      nodes: [
+        { kind: "text", text: "<b>" },
+        { kind: "mention", text: "@ada" },
+        { kind: "text", text: "</b> " },
+        { kind: "emoji" },
+      ],
     });
   });
 });

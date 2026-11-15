@@ -1,3 +1,8 @@
+// The notification uses the transcript's own parse, so a name that is not
+// highlighted there never rings or pops up here: code, links and escaped
+// characters are the same in both.
+import { mentionsUsername } from "@/components/room/messageBody";
+
 export interface MessageNotificationContext {
   authorId: string;
   channelId: string;
@@ -8,27 +13,6 @@ export interface MessageNotificationContext {
   soundEnabled: boolean;
   mentionsOnly?: boolean;
   mutedChannelIds: readonly string[];
-}
-
-/** A mention inside code or a link is text being quoted, not someone being addressed. */
-function withoutCodeAndLinks(content: string): string {
-  return content
-    .replace(/```[\s\S]*?(?:```|$)/g, " ")
-    .replace(/`[^`\n]*(?:`|$)/g, " ")
-    .replace(/<code>[\s\S]*?(?:<\/code>|$)/gi, " ")
-    .replace(/https?:\/\/[^\s<>'"`]+/gi, " ");
-}
-
-function mentionsUsername(content: string, username: string): boolean {
-  const literal = username.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-  // A name continues through letters, digits and `_ . -`, so `@ada` neither
-  // matches inside `@adam` nor inside an address such as `x@ada`. The start
-  // is matched with a plain group because older Safari has no lookbehind.
-  const mention = new RegExp(
-    `(?:^|[^\\p{L}\\p{N}_.-])@${literal}(?![\\p{L}\\p{N}_.-])`,
-    "iu",
-  );
-  return mention.test(withoutCodeAndLinks(content));
 }
 
 export interface MentionNotificationContext {

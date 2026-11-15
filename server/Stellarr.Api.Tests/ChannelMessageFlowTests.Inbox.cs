@@ -41,6 +41,33 @@ public sealed partial class ChannelMessageFlowTests
     }
 
     [Fact]
+    public async Task MentionNotificationsFollowTheTranscriptGrammar()
+    {
+        using var author = await SignInAsync("maja");
+        using var member = await SignInAsync("nils");
+        var path = $"/api/channels/{TestData.ProjectsChannelId}/messages";
+
+        var hidden = "`@nils` [@nils](https://example.test/x) \\@nils";
+        Assert.Equal(
+            HttpStatusCode.Created,
+            (await author.PostAsJsonAsync(path, new { content = hidden, clientMessageId = Guid.NewGuid() })).StatusCode);
+        Assert.DoesNotContain(
+            await MentionsAsync(member),
+            mention => mention.GetProperty("body").GetString() == hidden);
+
+        // HTML and the label of a malformed, non-http link stay literal text,
+        // so the name in them is a mention the transcript shows.
+        var literal = "<code>@nils</code> [@nils](ftp://example.test/x)";
+        Assert.Equal(
+            HttpStatusCode.Created,
+            (await author.PostAsJsonAsync(path, new { content = literal, clientMessageId = Guid.NewGuid() })).StatusCode);
+        var shown = Assert.Single(
+            await MentionsAsync(member),
+            mention => mention.GetProperty("body").GetString() == literal);
+        Assert.Equal("Maja mentioned you", shown.GetProperty("title").GetString());
+    }
+
+    [Fact]
     public async Task AMentionIsAnnouncedToTheMentionedMembersConnectionsOnly()
     {
         using var author = await SignInAsync("maja");

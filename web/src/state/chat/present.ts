@@ -60,7 +60,6 @@ export function presentTranscript(
           return {
             id: message.id,
             parts: toParts(message, {
-              ...(system ? { system: true } : {}),
               emoji: customEmoji,
               mentions,
               extFallback,

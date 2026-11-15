@@ -7,6 +7,7 @@ import { type InterfaceLocale, type TranslationTargetLanguage, type Translator }
 import { documentLocale, translateForDocument } from "@/i18n/defaultLocale";
 import { useTranslatedContent } from "@/lib/chatTranslation/useTranslatedContent";
 
+import { inlineSource } from "../inline";
 import {
   inlineDescendants,
   parseInline,
@@ -29,40 +30,6 @@ export interface TranslatedTextAttachmentProps {
   translation?: MessageTranslationOptions;
   /** New messages jump ahead of older visible rows in the translation queue. */
   priority?: boolean;
-}
-
-const WRAPPERS = { strong: "**", emphasis: "*", strike: "~~", spoiler: "||" } as const;
-
-/**
- * The text the translator is given: the formatting is written back as markup so
- * it survives the round trip, and the translation is parsed again afterwards.
- */
-function sourceText(nodes: readonly InlineNode[]): string {
-  return nodes
-    .map((node) => {
-      switch (node.kind) {
-        case "code":
-          return `\`${node.text}\``;
-        case "strong":
-        case "emphasis":
-        case "strike":
-        case "spoiler": {
-          // A bold run without children came from the system notices' `<b>`.
-          if (node.kind === "strong" && node.children === undefined) {
-            return `<b>${node.text}</b>`;
-          }
-          const inner = node.children === undefined ? node.text : sourceText(node.children);
-          return `${WRAPPERS[node.kind]}${inner}${WRAPPERS[node.kind]}`;
-        }
-        case "emoji":
-          return `:${node.shortcode}:`;
-        case "edited":
-          return "";
-        default:
-          return node.text;
-      }
-    })
-    .join("");
 }
 
 /** Two letters in a row once links are removed; numbers and emoji alone are left as they are. */
@@ -93,8 +60,9 @@ function translatedNodesOf(
     }
   }
 
+  // Only the mentions and emoji the original resolved can resolve again, so
+  // an escaped `\\@name` written back as `@name` cannot start calling anyone.
   const parsed = parseInline(translated, {
-    strong: nodes.some((node) => node.kind === "strong"),
     ...(emoji.size > 0 ? { emoji } : {}),
     ...(mentions.size > 0 ? { mentions } : {}),
   });
@@ -117,7 +85,9 @@ export function TranslatedTextAttachment({
   const [retryKey, setRetryKey] = useState(0);
   const [showOriginal, setShowOriginal] = useState(false);
 
-  const source = useMemo(() => sourceText(nodes), [nodes]);
+  // The formatting is written back as markup so it survives the round trip,
+  // and the translation is parsed again afterwards.
+  const source = useMemo(() => inlineSource(nodes), [nodes]);
   const translatable = isTranslatable(source);
   const trigger = enabled && translatable && (autoTranslate || requested);
   const { translatedContent, loading, error } = useTranslatedContent(

@@ -569,6 +569,9 @@ public sealed class BootstrapFlowTests
         var welcome = Assert.Single(snapshot.GetProperty("messages").EnumerateArray());
         Assert.Equal("system", welcome.GetProperty("author").GetProperty("id").GetString());
         Assert.Equal("system", welcome.GetProperty("author").GetProperty("displayName").GetString());
+        Assert.Equal(
+            "**First Owner** dołącza do serwera. Przywitajcie się!",
+            welcome.GetProperty("content").GetString());
         Assert.Single(snapshot.GetProperty("channelReads").EnumerateObject());
     }
 
