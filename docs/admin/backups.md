@@ -106,10 +106,10 @@ are never removed automatically. A restore moves whole folders, so it refuses
 when one of them is a mount of its own, such as `files/` on a separate disk;
 restore such an instance by hand, as below.
 
-Restore with the release that made the backup or a newer one: a newer release
-upgrades the restored database at start, but an older one cannot read a
-database a newer release has changed. Secrets read from the environment are not
-in the archive, so keep a copy of `.env` with the backups.
+Restore with the release that made the backup: a start creates the schema of a
+new database but does not change the tables of a restored one. Secrets read
+from the environment are not in the archive, so keep a copy of `.env` with the
+backups.
 
 ### Restoring a partial backup
 

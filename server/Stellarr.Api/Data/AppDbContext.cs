@@ -4,9 +4,9 @@ using Stellarr.Api.Domain;
 namespace Stellarr.Api.Data;
 
 /// <remarks>
-/// The DbSet property names are the table names that existing installations
-/// already have, so renaming one is a breaking schema change. Entity mappings
-/// live in <c>Data/Configurations</c>.
+/// The DbSet property names are the table names, which the SQL in
+/// <c>Data/Schema</c> and the CLI's schema check name too. Entity mappings live
+/// in <c>Data/Configurations</c>.
 /// </remarks>
 public sealed class AppDbContext(DbContextOptions<AppDbContext> options) : DbContext(options)
 {

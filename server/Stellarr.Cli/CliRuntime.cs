@@ -380,7 +380,7 @@ internal sealed class CliDatabase(AppDbContext context) : IAsyncDisposable
         {
             throw new CliException(
                 "schema_incompatible",
-                "This database is missing tables or columns this release needs. Start the API once so it can upgrade the schema, then retry. The CLI never migrates or initializes a database.",
+                "This database is missing tables or columns this release needs, so it was not created by this release of Stellarr. The CLI never migrates or initializes a database.",
                 CliExit.Conflict,
                 new { database = context.Database.GetDbConnection().DataSource, missing = missingTables });
         }

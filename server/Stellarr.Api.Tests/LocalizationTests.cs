@@ -324,7 +324,7 @@ public sealed class LocalizationTests
     [Fact]
     public async Task DataWrittenInPolishKeepsItsNamesWhileTheInstanceSpeaksEnglish()
     {
-        // The seeded server is what an installation upgraded from the Polish build looks like.
+        // The seeded server was written while the instance spoke Polish.
         using var factory = new StellarrWebApplicationFactory(
             loadTestData: true,
             new Dictionary<string, string?> { [LanguageOptions.SettingName] = "en" });

@@ -44,60 +44,6 @@ public sealed class HealthEndpointTests(StellarrWebApplicationFactory factory)
     }
 
     [Fact]
-    public async Task WritesToADatabaseThatOlderBuildsExtended()
-    {
-        // Installations created by earlier builds carry columns this model does
-        // not map. Inserts that leave them out must keep working, which holds
-        // because the NOT NULL one has a default and the others are nullable.
-        using var isolated = new StellarrWebApplicationFactory();
-        using var client = isolated.CreateClient();
-        _ = await client.GetAsync("/health/ready");
-
-        await using var scope = isolated.Services.CreateAsyncScope();
-        var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
-        await db.Database.ExecuteSqlRawAsync(
-            """
-            ALTER TABLE "Users" ADD COLUMN "IsBot" INTEGER NOT NULL DEFAULT 0;
-            ALTER TABLE "Messages" ADD COLUMN "SdkInvocationId" TEXT NULL;
-            ALTER TABLE "Messages" ADD COLUMN "SdkInstallationId" TEXT NULL;
-            ALTER TABLE "Messages" ADD COLUMN "SdkModuleId" TEXT NULL;
-            """);
-
-        var user = new User
-        {
-            Id = Guid.NewGuid(),
-            Username = "legacy",
-            NormalizedUsername = "LEGACY",
-            DisplayName = "Legacy",
-            PasswordHash = "hash",
-            AvatarColor = "#777777",
-            CreatedAt = DateTime.UtcNow,
-            Preferences = new UserPreferenceSettings(),
-        };
-        db.Users.Add(user);
-        db.Messages.Add(new Message
-        {
-            Id = Guid.NewGuid(),
-            ChannelId = TestData.GeneralChannelId,
-            AuthorId = user.Id,
-            Content = "written next to extra columns",
-            CreatedAt = DateTime.UtcNow,
-        });
-        await db.SaveChangesAsync();
-
-        Assert.Equal(2, await db.Messages.CountAsync());
-        Assert.True(await db.UserPreferences.AnyAsync(x => x.UserId == user.Id));
-        var messageColumns = await db.Database
-            .SqlQueryRaw<string>("SELECT name AS Value FROM pragma_table_info('Messages')")
-            .ToArrayAsync();
-        Assert.Contains("SdkModuleId", messageColumns);
-        var botFlags = await db.Database
-            .SqlQueryRaw<long>("SELECT \"IsBot\" AS Value FROM \"Users\" WHERE \"Username\" = 'legacy'")
-            .ToArrayAsync();
-        Assert.Equal([0L], botFlags);
-    }
-
-    [Fact]
     public async Task WaitsForTheObjectStoreBeforeServing()
     {
         var storage = new StartingUpObjectStorage(failures: 2);
