@@ -26,8 +26,7 @@ internal static class ContainerSettings
     internal static StartupValue PublicUrl(StartupContext context)
     {
         var explicitUrl = EnvironmentValue(context.Environment, "STELLARR_PUBLIC_URL");
-        var domain = EnvironmentValue(context.Environment, "STELLARR_DOMAIN") ??
-            EnvironmentValue(context.Environment, "PUBLIC_HOST");
+        var domain = EnvironmentValue(context.Environment, "STELLARR_DOMAIN");
         if (domain is null && explicitUrl is null)
         {
             var configured = context.Configuration["Operations:PublicUrl"];
@@ -48,8 +47,7 @@ internal static class ContainerSettings
 
     internal static StartupValue PublicHost(StartupContext context)
     {
-        var domain = EnvironmentValue(context.Environment, "STELLARR_DOMAIN") ??
-            EnvironmentValue(context.Environment, "PUBLIC_HOST");
+        var domain = EnvironmentValue(context.Environment, "STELLARR_DOMAIN");
         return domain is null
             ? new StartupValue("localhost", "entrypoint")
             : new StartupValue(domain, "environment");

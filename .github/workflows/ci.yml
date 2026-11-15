@@ -182,7 +182,7 @@ jobs:
       # image and wait until both the API and the web client answer.
       - name: Start the image and check that it serves
         run: |
-          docker run -d --name stellarr -e PUBLIC_HOST=localhost -p 8443:443 stellarr:ci
+          docker run -d --name stellarr -e STELLARR_DOMAIN=localhost -p 8443:443 stellarr:ci
           for _ in $(seq 1 60); do
             status=$(docker inspect -f '{{.State.Health.Status}}' stellarr)
             [[ $status == healthy || $status == unhealthy ]] && break
