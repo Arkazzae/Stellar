@@ -245,6 +245,14 @@ export function FriendsProvider({ children }: { children: ReactNode }) {
     if (activeDmId !== null) port.markRead(activeDmId);
   }, [port, activeDmId, activeUnread, activeNewest]);
 
+  // Selecting a conversation in the rail only changes which one is open; the
+  // port has no transcript for it yet unless somebody opened it through the
+  // mini profile or a call in this session. Ask for the newest page here so
+  // the room never shows an empty history for a conversation that has one.
+  useEffect(() => {
+    if (activeDmId !== null) void port.loadConversation(activeDmId).catch(() => undefined);
+  }, [port, activeDmId]);
+
   // Blocking either person removes the conversation from the snapshot, but a
   // browser-to-browser connection would outlive that decision, so the private
   // call is closed as soon as its conversation disappears.
