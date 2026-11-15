@@ -25,6 +25,9 @@ COPY cockpit/package.json cockpit/
 COPY packages/stellarr-ui/package.json packages/stellarr-ui/
 RUN npm ci --workspace stellarr-web
 COPY packages/ packages/
+# The prebuild hook copies the browser's prebuilt binaries from artifacts/ into
+# public/ and fails the build on any that differ from artifacts/manifest.json.
+COPY artifacts/ artifacts/
 COPY web/ web/
 WORKDIR /src/web
 ARG NEXT_PUBLIC_GIPHY_API_KEY
@@ -158,6 +161,9 @@ COPY --from=api-build /out/api /opt/stellarr/api
 COPY --from=api-build /out/cli /opt/stellarr/cli
 COPY --from=web-build /src/web/out /srv/web
 COPY --from=media-build /out/stellarr-media /opt/stellarr/media/stellarr-media
+# The origin, hash and licence of every prebuilt browser file travel with the
+# image, next to the notices they refer to.
+COPY artifacts/NOTICES artifacts/manifest.json /usr/share/doc/stellarr/artifacts/
 
 ENV STELLARR_DATA_ROOT=/data/stellarr
 # 49000/udp is the single UDP port of Stellarr Media and carries every call.

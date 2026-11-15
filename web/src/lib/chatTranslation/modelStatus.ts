@@ -3,7 +3,6 @@ import type { TranslationTargetLanguage } from "@/i18n";
 import { openDatabase, requestResult, transactionDone } from "./idb";
 
 const BUNDLED_MODELS = "/bergamot-models";
-const MODEL_PROXY = "/bergamot-models-gcs";
 
 // public/bergamot-worker.js reads the same database, so the name, the store and
 // the `<pair>/<file name>` keys must stay as they are.
@@ -95,14 +94,13 @@ export async function getPairSize(targetLanguage: TranslationTargetLanguage): Pr
   return files === null ? 0 : totalSize(files);
 }
 
-/** Streams a file so the caller can show progress; the bundled copy wins over the proxy. */
+/** Streams the copy the instance serves so the caller can show progress. */
 async function downloadFile(
   pair: string,
   file: ModelFile,
   onBytes: (count: number) => void,
 ): Promise<ArrayBuffer> {
-  let response = await fetch(`${BUNDLED_MODELS}/${pair}/${file.name}`);
-  if (!response.ok) response = await fetch(`${MODEL_PROXY}/${pair}/${file.name}`);
+  const response = await fetch(`${BUNDLED_MODELS}/${pair}/${file.name}`);
   if (!response.ok) throw new Error(`Could not fetch the model file ${file.name}.`);
 
   if (response.body === null) {

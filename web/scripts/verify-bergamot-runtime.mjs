@@ -1,7 +1,7 @@
 // Smoke test for the translation runtime: runs the real worker and WASM in
-// headless Chromium against the files in public/. Models are fetched through a
-// local stand-in for the /bergamot-models-gcs proxy, so the test needs network
-// access to the model bucket but no running Stellarr. It is not part of CI.
+// headless Chromium against the files assembled from artifacts/ into public/.
+// The model files are served from that same directory, so the test needs no
+// network and no running Stellarr. It is not part of CI.
 //
 //   npm run test:translation-runtime        (STELLARR_CHROMIUM overrides the binary)
 import { spawn } from "node:child_process";
@@ -10,9 +10,10 @@ import { createServer } from "node:http";
 import { tmpdir } from "node:os";
 import { extname, join, resolve, sep } from "node:path";
 
+import { assemble } from "../../artifacts/assemble.mjs";
+
 const publicRoot = resolve(import.meta.dirname, "..", "public");
 const chromium = process.env.STELLARR_CHROMIUM ?? "/usr/bin/chromium";
-const modelBucket = "https://storage.googleapis.com/bergamot-models-sandbox/0.3.3";
 const modelFilesPerPair = 3;
 const startupTimeoutMs = 15_000;
 const runTimeoutMs = 120_000;
@@ -46,46 +47,7 @@ const fixturePage = `<!doctype html>
   });
 </script>`;
 
-let proxiedModelFiles = 0;
-
-// The proxy fetches only the files the bundled registry names, as
-// "<pair>/<file>". The address is built from the registry's own entry, never
-// from the request, so a request cannot point the proxy anywhere else.
-async function loadModelFiles() {
-  const registry = JSON.parse(
-    await readFile(join(publicRoot, "bergamot-models", "registry.json"), "utf8"),
-  );
-  const files = new Map();
-  for (const [pair, entries] of Object.entries(registry)) {
-    for (const { name } of Object.values(entries)) {
-      const path = `${pair}/${name}`;
-      files.set(path, path);
-    }
-  }
-  return files;
-}
-
-const modelFiles = await loadModelFiles();
-
-async function proxyModel(requested, response) {
-  const path = modelFiles.get(requested);
-  if (path === undefined) {
-    response.writeHead(404).end();
-    return;
-  }
-  proxiedModelFiles += 1;
-  const upstream = await fetch(`${modelBucket}/${path}`);
-  if (!upstream.ok) {
-    response.writeHead(upstream.status).end();
-    return;
-  }
-  const body = Buffer.from(await upstream.arrayBuffer());
-  response.writeHead(200, {
-    "content-type": "application/octet-stream",
-    "content-length": body.byteLength,
-  });
-  response.end(body);
-}
+let downloadedModelFiles = 0;
 
 async function serveStatic(pathname, response) {
   const file = resolve(publicRoot, `.${pathname}`);
@@ -102,6 +64,9 @@ async function serveStatic(pathname, response) {
     response.writeHead(404).end();
     return;
   }
+  if (pathname.startsWith("/bergamot-models/") && !pathname.endsWith("/registry.json")) {
+    downloadedModelFiles += 1;
+  }
   response.writeHead(200, {
     "content-type": mimeTypes[extname(file)] ?? "application/octet-stream",
     "content-length": body.byteLength,
@@ -115,11 +80,6 @@ const server = createServer(async (request, response) => {
     if (pathname === "/") {
       response.writeHead(200, { "content-type": "text/html; charset=utf-8" });
       response.end(fixturePage);
-    } else if (pathname.startsWith("/bergamot-models-gcs/")) {
-      await proxyModel(pathname.slice("/bergamot-models-gcs/".length), response);
-    } else if (pathname.startsWith("/bergamot-models/") && !pathname.endsWith("/registry.json")) {
-      // Like a Stellarr image: only the registry is bundled, model files are not.
-      response.writeHead(404).end();
     } else {
       await serveStatic(pathname, response);
     }
@@ -202,17 +162,23 @@ async function translateOnce(profile, url) {
   }
 }
 
+const problems = await assemble({ log: console.log });
+if (problems.length > 0) {
+  for (const problem of problems) console.error(`  - ${problem}`);
+  throw new Error("The artifacts in public/ do not match artifacts/manifest.json.");
+}
+
 const profile = await mkdtemp(join(tmpdir(), "stellarr-bergamot-"));
 try {
   const url = `http://127.0.0.1:${await listen()}/`;
 
   const first = await translateOnce(profile, url);
-  if (proxiedModelFiles !== modelFilesPerPair) {
-    throw new Error(`Expected ${modelFilesPerPair} model downloads, saw ${proxiedModelFiles}.`);
+  if (downloadedModelFiles !== modelFilesPerPair) {
+    throw new Error(`Expected ${modelFilesPerPair} model downloads, saw ${downloadedModelFiles}.`);
   }
 
   const second = await translateOnce(profile, url);
-  if (proxiedModelFiles !== modelFilesPerPair) {
+  if (downloadedModelFiles !== modelFilesPerPair) {
     throw new Error("The second session downloaded models that IndexedDB should have kept.");
   }
 
