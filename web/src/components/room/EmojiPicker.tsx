@@ -139,12 +139,13 @@ export function EmojiPicker({
 
   useEffect(() => {
     if (!autoFocus) return;
+    const openingFocus = document.activeElement;
     const frame = requestAnimationFrame(() => {
-      // If the user has already moved focus into the picker by the time this
-      // frame runs, taking it back to the search field would be a jump.
+      // A delayed opening frame must not steal focus after the user has
+      // moved to another control or opened another layer.
       const active = document.activeElement;
       const movedIn = active === searchRef.current || gridRef.current?.contains(active);
-      if (!movedIn) searchRef.current?.focus();
+      if (!movedIn && active === openingFocus) searchRef.current?.focus();
     });
     return () => cancelAnimationFrame(frame);
   }, [autoFocus]);
