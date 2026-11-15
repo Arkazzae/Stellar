@@ -4,6 +4,7 @@
 
 **/node_modules
 **/.next
+web/out
 **/dist
 **/bin
 **/obj
