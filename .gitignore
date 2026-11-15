@@ -48,6 +48,9 @@ docker-compose.override.yaml
 **/TestResults/
 **/artifacts/
 /.artifacts/
+# The top-level artifacts/ is not .NET output but the browser's prebuilt
+# binaries and their manifest.
+!/artifacts/
 *.user
 *.suo
 *.userosscache
