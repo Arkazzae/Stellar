@@ -68,6 +68,12 @@
    * scroller would do the first and break the second.
    */
   .transcript-inner{width:100%;flex:none;margin-top:auto}
+  .tr-older{
+    flex:none;align-self:center;margin:0 20px 12px;padding:6px 10px;
+    color:var(--text-muted);font-size:var(--text-12);border-radius:var(--radius-sm);
+  }
+  .tr-older:hover:not(:disabled){background:var(--surface-overlay);color:var(--text)}
+  .tr-older:disabled{opacity:0.6}
   .day-sep{
     display:flex;align-items:center;gap:12px;color:var(--text-faint);font-size:var(--text-12);
     margin-inline:20px;padding:18px 0 12px;

@@ -25,7 +25,8 @@ interface Options {
  * reach more. It is not asked again from the same oldest block, because a page
  * that failed leaves the rows as they were, and retrying on every settle would
  * hammer a server that is already failing; the next trip into the margin asks
- * again.
+ * again. The explicit load control can retry even when the loaded history is
+ * too short to leave the margin.
  */
 export function useOlderHistory({
   scroller,
@@ -38,11 +39,15 @@ export function useOlderHistory({
   const askedAt = useRef<{ oldest: string | null } | null>(null);
   const near = useRef(false);
 
-  const ask = useEffectEvent(() => {
+  const loadOlder = () => {
     if (!hasOlder || loadingOlder || onLoadOlder === undefined) return;
-    if (askedAt.current !== null && askedAt.current.oldest === oldestId) return;
     askedAt.current = { oldest: oldestId };
     onLoadOlder();
+  };
+
+  const ask = useEffectEvent(() => {
+    if (askedAt.current !== null && askedAt.current.oldest === oldestId) return;
+    loadOlder();
   });
 
   useEffect(() => {
@@ -68,4 +73,6 @@ export function useOlderHistory({
     near.current = element.scrollTop <= OLDER_MARGIN_PX;
     if (near.current) ask();
   }, [scroller, oldestId, hasOlder, loadingOlder, onLoadOlder]);
+
+  return loadOlder;
 }

@@ -363,6 +363,8 @@ export const en = {
   "message.pinned": "Pinned",
   "message.unread": "New messages",
   "message.goLatest": "Go to the latest messages",
+  "message.loadOlder": "Load older messages",
+  "message.loadingOlder": "Loading older messages…",
   "message.edited": "(edited)",
   "message.spoiler": "Spoiler (click to reveal)",
   "message.reactionCount": "{emoji}, reactions: {count}",
