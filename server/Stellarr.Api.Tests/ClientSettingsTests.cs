@@ -53,7 +53,7 @@ public sealed class ClientSettingsTests
         using var client = await SignInAsync(factory, "ilya", "Meteor!2026");
         await using (var scope = factory.OpenScope(out var db))
         {
-            // The first sign-in after the upgrade: no preference row yet.
+            // An account has no preference row until it saves one.
             await db.UserPreferences.Where(x => x.User.Username == "ilya").ExecuteDeleteAsync();
         }
 

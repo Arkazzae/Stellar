@@ -143,50 +143,6 @@ public sealed partial class ChannelMessageFlowTests
         Assert.Equal(HttpStatusCode.Unauthorized, (await anonymous.GetAsync(path)).StatusCode);
     }
 
-    [Fact]
-    public async Task UpgradeRebuildsTheColumnsAndJournalOfAnOlderDatabase()
-    {
-        using var ownFactory = new StellarrWebApplicationFactory();
-        using var client = ownFactory.CreateClient(new Microsoft.AspNetCore.Mvc.Testing.WebApplicationFactoryClientOptions
-        {
-            HandleCookies = true,
-        });
-        (await client.PostAsJsonAsync("/api/auth/login", new { username = "ada", password = "Quasar!2026" }))
-            .EnsureSuccessStatusCode();
-        await using (var scope = ownFactory.OpenScope(out var db))
-        {
-            await db.Database.ExecuteSqlRawAsync(
-                """
-                DROP TRIGGER "Messages_Changes_AfterInsert";
-                DROP TRIGGER "Messages_Changes_AfterUpdate";
-                DROP TRIGGER "Messages_Changes_AfterDelete";
-                DROP TRIGGER "MessageEmbeds_Changes_AfterInsert";
-                DROP TRIGGER "MessageEmbeds_Changes_AfterDelete";
-                DROP TRIGGER "MessageReactions_Changes_AfterInsert";
-                DROP TRIGGER "MessageReactions_Changes_AfterDelete";
-                DROP TRIGGER "Channels_Changes_AfterDelete";
-                DROP TABLE "MessageChanges";
-                DROP INDEX "IX_Messages_ChannelId_PinnedAt";
-                ALTER TABLE "Messages" DROP COLUMN "EditedAt";
-                ALTER TABLE "Messages" DROP COLUMN "PinnedAt";
-                ALTER TABLE "Messages" DROP COLUMN "IsSystem";
-                """);
-
-            await Stellarr.Api.Data.DatabaseSchema.UpgradeAsync(db, default);
-        }
-
-        var cursor = await SyncCursorAsync(client, TestData.GeneralChannelId);
-        var sent = await SendAsync(client, TestData.GeneralChannelId, "po aktualizacji");
-        (await client.PatchAsJsonAsync($"/api/messages/{sent.GetProperty("id").GetString()}", new { content = "zmiana" }))
-            .EnsureSuccessStatusCode();
-
-        var page = await SyncAsync(client, TestData.GeneralChannelId, cursor);
-        Assert.Equal(2, page.GetProperty("changes").GetArrayLength());
-        Assert.All(
-            page.GetProperty("changes").EnumerateArray(),
-            x => Assert.Equal("upsert", x.GetProperty("kind").GetString()));
-    }
-
     private static async Task<string> SyncCursorAsync(HttpClient client, Guid channelId) =>
         (await client.GetFromJsonAsync<JsonElement>($"/api/channels/{channelId}/messages?limit=1"))
             .GetProperty("syncCursor").GetString()!;

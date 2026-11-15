@@ -10,8 +10,7 @@ namespace Stellarr.Api.Tests;
 
 /// <summary>
 /// What keeps the channel index current after a message is stored: the
-/// triggers on the tables a message is made of, and the backfill that
-/// catalogues what a database holds from before them.
+/// triggers on the tables a message is made of.
 /// </summary>
 public sealed class MessageIndexSchemaTests
 {
@@ -68,57 +67,6 @@ public sealed class MessageIndexSchemaTests
                 .ExecuteUpdateAsync(x => x.SetProperty(user => user.DisplayName, newName)));
 
         Assert.Contains(messageId, await SearchAsync(client, newName));
-    }
-
-    [Fact]
-    public async Task ADatabaseWithoutTheCatalogueGetsItBuiltFromItsMessages()
-    {
-        using var factory = new StellarrWebApplicationFactory();
-        using var client = await SignInAsync(factory);
-        var token = NewToken();
-        var plainId = await SendAsync(client, $"zwykła {token}");
-        var attachmentId = Guid.NewGuid();
-        var attachedId = Guid.NewGuid();
-        await WithContextAsync(factory, async db =>
-        {
-            var authorId = await db.Users.Where(x => x.Username == "maja").Select(x => x.Id).SingleAsync();
-            var attachment = new ImageAttachment
-            {
-                Id = attachmentId,
-                UploadedById = authorId,
-                ObjectKey = $"tests/{attachmentId:N}.pdf",
-                FileName = $"zestawienie-{token}.pdf",
-                ContentType = "application/pdf",
-                SizeBytes = 42,
-                CreatedAt = DateTime.UtcNow,
-            };
-            db.ImageAttachments.Add(attachment);
-            db.Messages.Add(new Message
-            {
-                Id = attachedId,
-                ChannelId = TestData.GeneralChannelId,
-                AuthorId = authorId,
-                Content = "z załącznikiem",
-                CreatedAt = DateTime.UtcNow,
-                Attachments = [new MessageAttachment { AttachmentId = attachmentId, Attachment = attachment }],
-            });
-            await db.SaveChangesAsync();
-        });
-
-        // What a database looks like that was written before the index existed.
-        await WithContextAsync(factory, async db =>
-        {
-            await db.Database.ExecuteSqlRawAsync("""DROP TABLE "MessageSearch";""");
-            await db.Database.ExecuteSqlRawAsync("""DROP TABLE "MessageIndexEntries";""");
-            await DatabaseSchema.UpgradeAsync(db, CancellationToken.None);
-        });
-
-        var found = await SearchAsync(client, token);
-        Assert.Contains(plainId, found);
-        Assert.Contains(attachedId.ToString(), found);
-        var media = await ListAsync(client, "media");
-        Assert.Contains(attachedId.ToString(), media);
-        Assert.DoesNotContain(plainId, media);
     }
 
     private static async Task<HttpClient> SignInAsync(StellarrWebApplicationFactory factory)

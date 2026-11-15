@@ -12,7 +12,7 @@ docker compose exec stellarr stellarr sessions list --user arkazz
 ```
 
 > [!NOTE]
-> `help`, `--help`, and `version` do not open the database. Every other command opens the existing SQLite database and never creates or migrates it. If the database schema is older than the CLI, start the container normally once so the API runs its startup schema upgrade, then retry.
+> `help`, `--help`, and `version` do not open the database. Every other command opens the existing SQLite database and never creates or migrates it. A database that lacks tables or columns this release needs is refused with `schema_incompatible`.
 
 ## Data root and container paths
 

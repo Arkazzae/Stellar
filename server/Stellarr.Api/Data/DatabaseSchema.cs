@@ -4,41 +4,23 @@ using Stellarr.Api.Data.Schema;
 namespace Stellarr.Api.Data;
 
 /// <summary>
-/// Creates the SQLite schema of a new installation and brings a database
-/// written by an older build up to date.
+/// Creates the SQLite schema of the instance: every table, column and index
+/// comes from the model, and the steps add what the model cannot express.
 /// </summary>
 public static class DatabaseSchema
 {
     /// <summary>
-    /// Each step is idempotent and runs on every start, including on a database
-    /// that <see cref="UpgradeAsync"/> created a moment earlier. On a new
-    /// database the model has already produced every table, column and index it
-    /// can express, so a step there only adds what the model cannot: triggers
-    /// and virtual tables.
+    /// The triggers and the virtual table on top of the model. Each step is
+    /// idempotent and runs on every start, so a database whose first start was
+    /// cut short between the model and these still gets them.
     /// </summary>
     private static readonly Func<AppDbContext, CancellationToken, Task>[] Steps =
     [
-        AuthenticationSchema.UpgradeAsync,
-        SecuritySchema.UpgradeAsync,
-        ServerSchema.UpgradeAsync,
-        AttachmentSchema.UpgradeAsync,
-        MessageSchema.UpgradeAsync,
-        NotificationSchema.UpgradeAsync,
-        EmbedSchema.UpgradeAsync,
-        MessageReactionSchema.UpgradeAsync,
-        MessageIndexSchema.UpgradeAsync,
-        AccountSchema.UpgradeAsync,
-        SectionSchema.UpgradeAsync,
-        ServerAdministrationSchema.UpgradeAsync,
-        ModerationSchema.UpgradeAsync,
-        SocialSchema.UpgradeAsync,
-        EmojiSchema.UpgradeAsync,
-        SoundboardSchema.UpgradeAsync,
-        OperationsSchema.UpgradeAsync,
-        OperatorAuditSchema.UpgradeAsync,
+        MessageJournalSchema.CreateAsync,
+        MessageIndexSchema.CreateAsync,
     ];
 
-    public static async Task UpgradeAsync(AppDbContext db, CancellationToken cancellationToken)
+    public static async Task PrepareAsync(AppDbContext db, CancellationToken cancellationToken)
     {
         await db.Database.EnsureCreatedAsync(cancellationToken);
         await db.Database.ExecuteSqlRawAsync("PRAGMA journal_mode=WAL;", cancellationToken);
