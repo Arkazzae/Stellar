@@ -26,6 +26,15 @@ describe("AppSkeleton", () => {
     );
   });
 
+  it("carries no words when the language is not known yet", () => {
+    const { container } = render(<AppSkeleton label={null} />);
+
+    expect(container.textContent).toBe("");
+    expect(container.querySelector("[aria-label]")).toBeNull();
+    expect(screen.queryByRole("status")).not.toBeInTheDocument();
+    expect(container.firstElementChild).toHaveAttribute("aria-busy", "true");
+  });
+
   it("keeps the visual placeholders out of the accessibility tree", () => {
     render(<AppSkeleton />);
 

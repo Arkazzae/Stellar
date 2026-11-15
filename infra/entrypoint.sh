@@ -61,6 +61,24 @@ resolve_public_ip() {
   esac
 }
 
+# Writes the script that tells the web client the instance's default language,
+# the one people see until they choose their own. The page loads it before its
+# first paint (web/src/i18n/localeScript.tsx), so one published image serves
+# every language. The value goes into JavaScript, so only a language the
+# client ships is written; anything else leaves the default to the client,
+# which falls back to English, as it always has.
+write_instance_language() {
+  local file="$1" language="${STELLARR_LANGUAGE:-}" value=null
+  case "$language" in
+    en|pl) value="\"$language\"" ;;
+    '') ;;
+    *) echo "STELLARR_LANGUAGE=$language is not a language the web client ships (en, pl); it starts in English for anyone who has not chosen one." >&2 ;;
+  esac
+  mkdir -p "$(dirname "$file")"
+  printf '// The default language of this instance, written from STELLARR_LANGUAGE at start.\nwindow.stellarrInstanceLanguage=%s;\n' \
+    "$value" > "$file"
+}
+
 require_boolean() {
   case "$2" in
     true|false) ;;
@@ -188,6 +206,9 @@ export HOSTNAME="127.0.0.1"
 export PORT="3000"
 
 /usr/local/bin/stellarr-tls-maintenance prepare
+
+# Nginx serves it at /stellarr-instance.js.
+write_instance_language /run/stellarr/stellarr-instance.js
 
 # A disabled transport is closed in coturn, not merely left unadvertised.
 turn_tcp_line="# TURN/TCP client listener enabled"

@@ -42,7 +42,7 @@ describe("LanguageProvider", () => {
     document.documentElement.lang = "pl";
   });
 
-  it("uses the server locale immediately and persists a new selection", async () => {
+  it("uses the starting locale immediately and persists a new selection", async () => {
     const user = userEvent.setup();
     render(
       <LanguageProvider initialLocale="pl">
