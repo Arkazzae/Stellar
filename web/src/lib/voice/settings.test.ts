@@ -3,7 +3,6 @@ import {
   DEFAULT_SETTINGS,
   INPUT_GAIN_MAX_DB,
   INPUT_GAIN_MIN_DB,
-  STORAGE_KEY,
   SETTINGS_VERSION,
   VoiceSettingsStore,
   clampSensitivity,
@@ -168,7 +167,7 @@ describe("parseVoiceSettings", () => {
     expect(parseVoiceSettings({ ...VALID, videoDeviceId: 7 }).videoDeviceId).toBeNull();
   });
 
-  it("clamps playback volume and defaults it for older stored settings", () => {
+  it("clamps playback volume and defaults a missing one", () => {
     expect(parseVoiceSettings({ ...VALID, outputVolume: -1 }).outputVolume).toBe(0);
     expect(parseVoiceSettings({ ...VALID, outputVolume: 900 }).outputVolume).toBe(100);
     expect(parseVoiceSettings({ ...VALID, outputVolume: undefined }).outputVolume).toBe(
@@ -176,7 +175,7 @@ describe("parseVoiceSettings", () => {
     );
   });
 
-  it("clamps soundboard volume and preserves the old effective level", () => {
+  it("clamps soundboard volume and defaults a missing one", () => {
     expect(
       parseVoiceSettings({ ...VALID, soundboardVolume: -1 }).soundboardVolume,
     ).toBe(0);
@@ -186,7 +185,7 @@ describe("parseVoiceSettings", () => {
     expect(
       parseVoiceSettings({ ...VALID, soundboardVolume: undefined })
         .soundboardVolume,
-    ).toBe(VALID.outputVolume);
+    ).toBe(DEFAULT_SETTINGS.soundboardVolume);
   });
 
   it("clamps sensitivity into range and rounds it", () => {
@@ -280,13 +279,21 @@ describe("VoiceSettingsStore", () => {
 
   it("restores what was written", () => {
     const first = new VoiceSettingsStore(storage);
+    first.setOwner("owner");
     first.update({ opusProfile: "clarity", vadSensitivity: 70 });
 
     const second = new VoiceSettingsStore(storage);
-    expect(second.getSnapshot()).toMatchObject({
+    expect(second.setOwner("owner")).toMatchObject({
       opusProfile: "clarity",
       vadSensitivity: 70,
     });
+  });
+
+  it("persists nothing until an account is named", () => {
+    const store = new VoiceSettingsStore(storage);
+
+    expect(store.update({ opusProfile: "clarity" }).opusProfile).toBe("clarity");
+    expect(storage.setItem).not.toHaveBeenCalled();
   });
 
   it("keeps device settings isolated between signed-in users", () => {
@@ -322,57 +329,11 @@ describe("VoiceSettingsStore", () => {
     expect(listener).not.toHaveBeenCalled();
   });
 
-  it("migrates the old global value once to the active account", () => {
-    const legacy = { ...VALID, inputDeviceId: "old-mic" };
-    const migratedStorage = memoryStorage({
-      [STORAGE_KEY]: JSON.stringify(legacy),
-    });
-    const store = new VoiceSettingsStore(migratedStorage);
-
-    expect(store.setOwner("owner")).toMatchObject({ inputDeviceId: "old-mic" });
-    expect(migratedStorage.getItem(storageKeyForUser("owner"))).not.toBeNull();
-    expect(migratedStorage.getItem(STORAGE_KEY)).toBeNull();
-
-    expect(store.setOwner("different-owner")).toMatchObject({
-      inputDeviceId: null,
-      noiseSuppression: "rnnoise",
-    });
-  });
-
-  it("does not hand a legacy value to two accounts when migration is quota-locked", () => {
-    const locked = memoryStorage({ [STORAGE_KEY]: JSON.stringify(VALID) });
-    (locked.setItem as ReturnType<typeof vi.fn>).mockImplementation(() => {
-      throw new DOMException("QuotaExceededError");
-    });
-    const store = new VoiceSettingsStore(locked);
-
-    expect(store.setOwner("first").inputDeviceId).toBe(VALID.inputDeviceId);
-    expect(store.setOwner("second")).toMatchObject({
-      inputDeviceId: null,
-      noiseSuppression: "rnnoise",
-    });
-  });
-
-  it("discards a stale legacy value when the active account is already scoped", () => {
-    const scoped = { ...VALID, inputDeviceId: "current-mic" };
-    const legacy = { ...VALID, inputDeviceId: "someone-elses-mic" };
-    const mixedStorage = memoryStorage({
-      [STORAGE_KEY]: JSON.stringify(legacy),
-      [storageKeyForUser("current")]: JSON.stringify(scoped),
-    });
-    const store = new VoiceSettingsStore(mixedStorage);
-
-    expect(store.setOwner("current").inputDeviceId).toBe("current-mic");
-    expect(mixedStorage.getItem(STORAGE_KEY)).toBeNull();
-    expect(store.setOwner("next")).toMatchObject({
-      inputDeviceId: null,
-      noiseSuppression: "rnnoise",
-    });
-  });
-
   it("recovers from unparseable storage rather than throwing", () => {
-    const store = new VoiceSettingsStore(memoryStorage({ [STORAGE_KEY]: "{not json" }));
-    expect(store.getSnapshot()).toEqual(DEFAULT_SETTINGS);
+    const store = new VoiceSettingsStore(
+      memoryStorage({ [storageKeyForUser("owner")]: "{not json" }),
+    );
+    expect(store.setOwner("owner")).toEqual(DEFAULT_SETTINGS);
   });
 
   it("recovers from storage that throws on read", () => {
@@ -382,7 +343,7 @@ describe("VoiceSettingsStore", () => {
       },
       setItem: () => {},
     } as unknown as Storage;
-    expect(new VoiceSettingsStore(hostile).getSnapshot()).toEqual(DEFAULT_SETTINGS);
+    expect(new VoiceSettingsStore(hostile).setOwner("owner")).toEqual(DEFAULT_SETTINGS);
   });
 
   it("keeps applying a setting even when the write is refused", () => {
@@ -391,6 +352,7 @@ describe("VoiceSettingsStore", () => {
       throw new DOMException("QuotaExceededError");
     });
     const store = new VoiceSettingsStore(full);
+    store.setOwner("owner");
     // Private mode must not stop the change taking effect in this session.
     expect(store.update({ opusProfile: "economy" }).opusProfile).toBe("economy");
   });
