@@ -52,6 +52,15 @@ describe("ChannelCreate rail slice", () => {
     expect(moveButton("Ogłoszenia")).toBeEnabled();
   });
 
+  it.each(["text", "voice"] as const)(
+    "puts the focus in the name field of a new %s channel",
+    (kind) => {
+      render(<Dialog kind={kind} />);
+
+      expect(nameField()).toHaveFocus();
+    },
+  );
+
   it("says what the name will become only while the typed name is reshaped", async () => {
     const user = userEvent.setup();
     const how = "Znak przełącza tekstowy i głosowy, a + przenosi go do innej grupy.";
@@ -93,6 +102,7 @@ describe("ChannelCreate rail slice", () => {
 
     expect(nameField()).toHaveValue("");
     expect(rowGroup()).toHaveTextContent("Tekstowe");
+    expect(nameField()).toHaveFocus();
   });
 
   it("is read-only and says why without permission to create channels", () => {
