@@ -96,6 +96,14 @@ export function ChannelCreate({
     rowRef.current?.scrollIntoView?.({ block: "nearest" });
   }, [focus]);
 
+  // The name is the only answer this dialog asks for, so it takes the focus as
+  // soon as the dialog opens. A child's effects run first, which puts this
+  // after the modal has moved focus onto its close button.
+  useEffect(() => {
+    if (!open || !supported) return;
+    inputRef.current?.focus();
+  }, [open, supported]);
+
   const slug = toChannelSlug(name);
   const locked = !supported || submitting;
   const voice = chosenKind === "voice";
