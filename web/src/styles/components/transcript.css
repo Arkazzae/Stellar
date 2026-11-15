@@ -226,7 +226,17 @@
      block. The original proportions stay intact; the viewer still opens the
      full asset. */
   .att > .att-image{
-    width:auto;max-width:min(400px,100%);max-height:300px;object-fit:contain;
+    --att-image-max-h:300px;
+    width:auto;max-width:min(400px,100%);max-height:var(--att-image-max-h);object-fit:contain;
+  }
+  /* Until it loads, `width:auto` has nothing to size an image by and the row
+     grows when it arrives. With the size measured on upload, the box is the
+     one the rules above will give the loaded image: its own width, or less
+     where the height cap binds, then held to the column by max-width. The
+     1px border on each side sits outside the ratio, hence the 2px. */
+  .att > .att-image.reserved{
+    width:calc(min(var(--att-image-w), (var(--att-image-max-h) - 2px) * var(--att-image-ratio)) + 2px);
+    aspect-ratio:auto var(--att-image-ratio);
   }
   .att-gallery{display:grid;grid-template-columns:repeat(3,1fr);gap:6px;max-width:min(var(--att-w),100%)}
   .att-gallery img{max-width:100%;aspect-ratio:1;object-fit:cover}
@@ -234,11 +244,13 @@
   .att-giphy{display:block}
   .att-giphy-media{display:block;width:100%;text-align:left;border-radius:var(--radius-md)}
   .att-giphy-media picture{display:block}
-  .att-giphy figcaption{margin-top:4px;font-size:var(--text-11);color:var(--text-faint)}
+  .att-giphy figcaption,.att-giphy-caption{margin-top:4px;font-size:var(--text-11);color:var(--text-faint)}
   .att-giphy figcaption a{color:inherit}
   .att-giphy figcaption a:hover{color:var(--text);text-decoration:underline}
+  /* The ratio is the content box's and the border is a transparent 1px, as
+     on the GIF itself, so a 4:3 GIF comes out exactly this tall. */
   .att-giphy-loading{
-    width:min(var(--att-w),100%);aspect-ratio:4/3;
+    width:min(var(--att-w),100%);aspect-ratio:auto 4/3;border:1px solid transparent;
     border-radius:var(--radius-md);background:var(--surface-raised);
   }
   .att-giphy-fallback{
