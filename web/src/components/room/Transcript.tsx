@@ -1,13 +1,13 @@
 "use client";
 
 import { translateForDocument } from "@/i18n/defaultLocale";
-import { useMemo, type ReactNode } from "react";
+import { memo, useCallback, useLayoutEffect, useMemo, useRef, type ReactNode } from "react";
 
 import { Icon } from "@stellarr/ui/icons";
 import type { OpenProfile } from "@/components/view-models";
 import type { CustomEmoji } from "@/ports";
 
-import { MessageGroup } from "./MessageGroup";
+import { MessageGroup, type MessageGroupVM } from "./MessageGroup";
 import type { MessageAction } from "./MessageToolbar";
 import type { MessageTranslationOptions } from "./attachments/TranslatedTextAttachment";
 import type { AttachmentCallbacks } from "./parts";
@@ -93,6 +93,88 @@ export interface TranscriptProps {
 }
 
 /**
+ * One block, separated from the transcript's own state.
+ *
+ * The list is long and every arrival rebuilds its `sections` array. A block
+ * whose group object did not change should not render again: the row accepts
+ * only the values that can change its drawing, and the author callback is
+ * bound here rather than made fresh for every block on every render. That
+ * keeps the React work proportional to what actually changed, without taking
+ * any row out of the document.
+ */
+interface MessageRowProps {
+  group: MessageGroupVM;
+  hideReplyReferences: boolean;
+  editing: { id: string; original: string } | null;
+  fresh: boolean;
+  highlight: boolean;
+  onJumpTo(messageId: string): void;
+  translation?: MessageTranslationOptions;
+  attachments?: AttachmentCallbacks;
+  customEmoji?: readonly CustomEmoji[];
+  canModerate?: boolean;
+  developerMode?: boolean;
+  onEditSave?(messageId: string, text: string): Promise<void> | void;
+  onEditCancel?(): void;
+  onReact?(messageId: string, emoji: string): void;
+  onAction?(messageId: string, action: MessageAction): void;
+  onOpenAuthor?: OpenProfile;
+}
+
+const MessageRow = memo(function MessageRow({
+  group,
+  hideReplyReferences,
+  editing,
+  fresh,
+  highlight,
+  onJumpTo,
+  translation,
+  attachments,
+  customEmoji,
+  canModerate,
+  developerMode,
+  onEditSave,
+  onEditCancel,
+  onReact,
+  onAction,
+  onOpenAuthor,
+}: MessageRowProps) {
+  const openAuthor = useCallback(
+    (anchor: HTMLElement) => onOpenAuthor?.(group.authorId, anchor),
+    [onOpenAuthor, group.authorId],
+  );
+  return (
+    <MessageGroup
+      {...group}
+      replyTo={hideReplyReferences ? undefined : group.replyTo}
+      fresh={fresh}
+      highlight={highlight}
+      onOpenReply={hideReplyReferences ? undefined : onJumpTo}
+      translation={translation}
+      attachments={attachments}
+      customEmoji={customEmoji}
+      canModerate={canModerate}
+      developerMode={developerMode}
+      editing={editing}
+      onEditSave={onEditSave}
+      onEditCancel={onEditCancel}
+      onReact={onReact}
+      onAction={onAction}
+      onOpenAuthor={onOpenAuthor === undefined ? undefined : openAuthor}
+    />
+  );
+});
+
+/** The editor property belongs only to the row that is actually being edited. */
+function editingIn(
+  group: MessageGroupVM,
+  editing: { id: string; original: string } | null | undefined,
+): { id: string; original: string } | null {
+  if (editing === null || editing === undefined) return null;
+  return group.bodies.some((body) => body.id === editing.id) ? editing : null;
+}
+
+/**
  * The message list.
  *
  * Every loaded row is rendered into one plain scroller; nothing is windowed.
@@ -166,6 +248,37 @@ function ReadyTranscript({
   const { freshId, missed, dismissMissed } = useArrivals(rows.at(-1)?.id, atBottom);
 
   /*
+   * The provider rebuilds `runAction` and `saveEdit` when the message list
+   * changes, because both look things up in the loaded messages. Their
+   * identity is not part of what a row draws, and passing it down would make
+   * every row render again for every arrival. The forwarders below are stable
+   * for the life of the transcript and read the newest callback after each
+   * commit; an action still reaches the state the click was made against.
+   * Presence is passed separately so an absent handler still hides its button.
+   */
+  const latest = useRef({
+    onReact,
+    onAction,
+    onEditSave,
+    onEditCancel,
+  });
+  useLayoutEffect(() => {
+    latest.current = { onReact, onAction, onEditSave, onEditCancel };
+  }, [onReact, onAction, onEditSave, onEditCancel]);
+  const forwardReact = useCallback((messageId: string, emoji: string) => {
+    latest.current.onReact?.(messageId, emoji);
+  }, []);
+  const forwardAction = useCallback((messageId: string, action: MessageAction) => {
+    latest.current.onAction?.(messageId, action);
+  }, []);
+  const forwardSave = useCallback((messageId: string, text: string) => {
+    return latest.current.onEditSave?.(messageId, text);
+  }, []);
+  const forwardCancel = useCallback(() => {
+    latest.current.onEditCancel?.();
+  }, []);
+
+  /*
    * The way back down belongs to being scrolled up, not to having missed
    * something: scrolling up is the only way to read anything older than a
    * screen, and the way back used to be the same drag in reverse. What
@@ -210,27 +323,23 @@ function ReadyTranscript({
               ) : row.kind === "unread" ? (
                 <div className="unread-sep">{t("message.unread")}</div>
               ) : (
-                <MessageGroup
-                  {...row.group}
-                  replyTo={hideReplyReferences ? undefined : row.group.replyTo}
+                <MessageRow
+                  group={row.group}
+                  hideReplyReferences={hideReplyReferences}
+                  editing={editingIn(row.group, editing)}
                   fresh={row.id === freshId}
                   highlight={row.id === flashId}
-                  onOpenReply={hideReplyReferences ? undefined : jumpTo}
+                  onJumpTo={jumpTo}
                   translation={translation}
                   attachments={attachments}
                   customEmoji={customEmoji}
                   canModerate={canModerate}
                   developerMode={developerMode}
-                  editing={editing}
-                  onEditSave={onEditSave}
-                  onEditCancel={onEditCancel}
-                  onReact={onReact}
-                  onAction={onAction}
-                  onOpenAuthor={
-                    onOpenAuthor
-                      ? (anchor) => onOpenAuthor(row.group.authorId, anchor)
-                      : undefined
-                  }
+                  onEditSave={onEditSave === undefined ? undefined : forwardSave}
+                  onEditCancel={onEditCancel === undefined ? undefined : forwardCancel}
+                  onReact={onReact === undefined ? undefined : forwardReact}
+                  onAction={onAction === undefined ? undefined : forwardAction}
+                  onOpenAuthor={onOpenAuthor}
                 />
               )}
             </div>

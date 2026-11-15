@@ -68,6 +68,16 @@
    * scroller would do the first and break the second.
    */
   .transcript-inner{width:100%;flex:none;margin-top:auto}
+  /*
+   * A row is an independent layout and style box. Its height still takes part
+   * in the column, but a reaction, hover or edit inside it cannot invalidate
+   * the style of the thousands of rows around it. Paint is deliberately not
+   * contained: the message toolbar hangs above its row.
+   */
+  .transcript-inner > [data-row-id]{
+    contain:layout;
+    contain:layout style;
+  }
   .tr-older{
     flex:none;align-self:center;margin:0 20px 12px;padding:6px 10px;
     color:var(--text-muted);font-size:var(--text-12);border-radius:var(--radius-sm);
