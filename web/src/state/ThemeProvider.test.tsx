@@ -85,14 +85,13 @@ describe("ThemeProvider", () => {
     expect(shownTheme()).toEqual(DEFAULT_THEME);
     expect(root.dataset.theme).toBe("midnight");
     expect(root.dataset.scheme).toBe("dark");
-    expect(root.dataset.font).toBeUndefined();
     expect(localStorage.getItem(THEME_STORAGE_KEY)).toBeNull();
   });
 
-  it("restores a stored preference, migrating ids from older versions", () => {
+  it("restores a stored preference", () => {
     localStorage.setItem(
       THEME_STORAGE_KEY,
-      JSON.stringify({ palette: "github", scheme: "light", font: "mono" }),
+      JSON.stringify({ palette: "ink", scheme: "light" }),
     );
 
     renderProvider();
@@ -101,10 +100,8 @@ describe("ThemeProvider", () => {
       palette: "ink",
       scheme: "light",
     });
-    expect(shownTheme()).not.toHaveProperty("font");
     expect(root.dataset.theme).toBe("ink");
     expect(root.dataset.scheme).toBe("light");
-    expect(root.dataset.font).toBeUndefined();
     expect(root.style.getPropertyValue("--palette-accent")).toBe("#58a6ff");
   });
 

@@ -307,21 +307,6 @@ export const DEFAULT_THEME: ThemePreference = {
 /** One key holding one JSON object, so a partial write can never split the axes. */
 export const THEME_STORAGE_KEY = "stellarr.theme";
 
-/** Ids written by earlier versions, and the current id each one now means. */
-export const LEGACY_PALETTES: Readonly<Record<string, PaletteId>> = {
-  discord: "slate",
-  spotify: "evergreen",
-  steam: "harbor",
-  twitch: "amethyst",
-  "github-dark": "ink",
-  indigo: "midnight",
-  github: "ink",
-  teal: "midnight",
-  amber: "midnight",
-  rose: "midnight",
-  graphite: "midnight",
-};
-
 const PALETTE_IDS: readonly PaletteId[] = PALETTES.map(({ id }) => id);
 const SIZE_IDS: readonly SizePreference[] = SIZES.map(({ id }) => id);
 const DENSITY_IDS: readonly DensityPreference[] = DENSITIES.map(({ id }) => id);
@@ -389,13 +374,6 @@ export const PALETTE_CSS_VARIABLES = Object.fromEntries(
   PALETTES.map((palette) => [palette.id, paletteCssVariables(palette)]),
 ) as Readonly<Record<PaletteId, ThemeCssVariables>>;
 
-/** The id a stored value stands for, once an id from an older version is mapped. */
-function migrate(table: Readonly<Record<string, string>>, value: unknown) {
-  return typeof value === "string" && Object.hasOwn(table, value)
-    ? table[value]
-    : value;
-}
-
 function oneOf<T extends string>(
   allowed: readonly T[],
   value: unknown,
@@ -406,18 +384,14 @@ function oneOf<T extends string>(
 
 /**
  * Narrows anything read back from storage to a usable preference. Each axis
- * falls back on its own instead of the whole object being discarded, which is
- * what lets a preference written before a setting existed keep the others.
+ * falls back on its own instead of the whole object being discarded, so a bad
+ * or missing value costs only its own axis.
  */
 export function normaliseTheme(input: unknown): ThemePreference {
   if (typeof input !== "object" || input === null) return DEFAULT_THEME;
   const raw = input as Partial<Record<keyof ThemePreference, unknown>>;
 
-  const palette = oneOf(
-    PALETTE_IDS,
-    migrate(LEGACY_PALETTES, raw.palette),
-    DEFAULT_THEME.palette,
-  );
+  const palette = oneOf(PALETTE_IDS, raw.palette, DEFAULT_THEME.palette);
   return {
     palette,
     accent: normaliseHex(raw.accent) ?? getPalette(palette).colors.accent,
