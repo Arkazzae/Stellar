@@ -1,30 +1,5 @@
 export const PENDING_INVITE_STORAGE_KEY = "stellarr.pending-invite";
 
-const INVITE_PATH = /^\/invite\/([^/]+)$/;
-
-/** Whether a path has the shape of an invite link, `/invite/<code>`, whatever the code. */
-export function isInvitePath(pathname: string | null): boolean {
-  return INVITE_PATH.test(pathname ?? "");
-}
-
-/**
- * The invite code in a path of the form `/invite/<code>`, decoded, or null.
- *
- * One page serves every invite, so the code comes from the address and not
- * from the route's parameter, which names the one code the page was rendered
- * for.
- */
-export function inviteCodeFromPath(pathname: string | null): string | null {
-  const encoded = INVITE_PATH.exec(pathname ?? "")?.[1];
-  if (encoded === undefined) return null;
-  try {
-    return decodeURIComponent(encoded) || null;
-  } catch {
-    // A malformed escape is not a code anyone was given.
-    return null;
-  }
-}
-
 /**
  * An invite link opened while signed out has to survive the registration or
  * login that follows. It lives in `sessionStorage`, so it belongs to this tab

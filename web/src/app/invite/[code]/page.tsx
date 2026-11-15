@@ -1,17 +1,60 @@
-import { InviteClient } from "./InviteClient";
+"use client";
 
-/**
- * The code this route is rendered ahead of time for. It names no invite (the
- * server's codes are hexadecimal), and the page reads the real code from the
- * address, so this one rendering can be served for every `/invite/<code>`
- * and links already shared keep working without a page per code.
- */
-const RENDERED_CODE = "_";
+import { useRouter } from "next/navigation";
+import { use, useEffect, useState } from "react";
 
-export function generateStaticParams() {
-  return [{ code: RENDERED_CODE }];
-}
+import { ErrorNotice } from "@/components/primitives/ErrorNotice";
+import { rememberPendingInvite } from "@/lib/invites";
+import { useLanguage, usePorts, useSession } from "@/state/hooks";
 
-export default function InvitePage() {
-  return <InviteClient />;
+import { AppSkeleton } from "../../AppSkeleton";
+
+export default function InvitePage({ params }: { params: Promise<{ code: string }> }) {
+  const { code } = use(params);
+  const router = useRouter();
+  const ports = usePorts();
+  const { phase, reload } = useSession();
+  const { t } = useLanguage();
+  const [failed, setFailed] = useState(false);
+
+  useEffect(() => {
+    if (phase === "anonymous") {
+      // Registering comes first; the redirect after it brings the visitor back.
+      rememberPendingInvite(code);
+      router.replace("/register");
+      return;
+    }
+    if (phase !== "ready") return;
+
+    let active = true;
+    ports.directory.joinInvite(code).then(
+      (server) => {
+        if (!active) return;
+        ports.directory.selectServer(server.id);
+        router.replace("/");
+        reload();
+      },
+      () => {
+        if (active) setFailed(true);
+      },
+    );
+    return () => {
+      active = false;
+    };
+  }, [code, phase, ports, reload, router]);
+
+  if (!failed) return <AppSkeleton />;
+
+  return (
+    <main style={{ height: "100%", display: "grid", placeItems: "center", padding: 24 }}>
+      <div style={{ width: "min(420px, 100%)" }}>
+        <ErrorNotice
+          title={t("shell.inviteInvalid")}
+          message={t("shell.inviteInvalidDetail")}
+          icon="link"
+          actions={[{ label: t("common.close"), onClick: () => router.replace("/") }]}
+        />
+      </div>
+    </main>
+  );
 }
