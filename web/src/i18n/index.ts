@@ -13,7 +13,7 @@ export interface LanguageSettings {
   chatTranslationTargetLanguage: TranslationTargetLanguage;
 }
 
-/** Everything but the locale, which comes from the request and not from a default. */
+/** Everything but the locale, which comes from the page and not from a default. */
 export const TRANSLATION_DEFAULTS = {
   chatTranslationEnabled: false,
   chatAutoTranslateEnabled: false,

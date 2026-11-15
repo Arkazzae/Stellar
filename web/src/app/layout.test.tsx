@@ -1,23 +1,18 @@
-import { isValidElement, type ReactElement, type ReactNode } from "react";
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { Children, isValidElement, type ReactElement, type ReactNode } from "react";
+import { renderToStaticMarkup } from "react-dom/server";
+import { afterEach, describe, expect, it, vi } from "vitest";
 
-const cookieJar = new Map<string, string>();
-
-vi.mock("next/headers", () => ({
-  cookies: async () => ({
-    get: (name: string) => {
-      const value = cookieJar.get(name);
-      return value === undefined ? undefined : { name, value };
-    },
-  }),
-}));
-
+import { ThemeScript } from "@/design/themeScript";
+import { InstanceLanguageScript, LocaleScript } from "@/i18n/localeScript";
 import { LanguageProvider } from "@/state/LanguageProvider";
 
-import RootLayout, { generateMetadata } from "./layout";
+import RootLayout, { metadata } from "./layout";
+import { LocaleGate } from "./LocaleGate";
+
+type Element = ReactElement<Record<string, unknown>>;
 
 /** The first element of `type` anywhere under `node`. */
-function find(node: ReactNode, type: unknown): ReactElement<Record<string, unknown>> | null {
+function find(node: ReactNode, type: unknown): Element | null {
   if (Array.isArray(node)) {
     for (const child of node) {
       const found = find(child, type);
@@ -29,41 +24,60 @@ function find(node: ReactNode, type: unknown): ReactElement<Record<string, unkno
   return node.type === type ? node : find(node.props["children"] as ReactNode, type);
 }
 
-describe("the root layout", () => {
-  beforeEach(() => {
-    cookieJar.clear();
-    vi.stubEnv("STELLARR_LANGUAGE", undefined);
-  });
+const page = <p>page</p>;
 
+function layout(): Element {
+  return RootLayout({ children: page }) as Element;
+}
+
+describe("the root layout", () => {
   afterEach(() => {
     vi.unstubAllEnvs();
+    document.cookie = "stellarr_locale=; path=/; max-age=0";
   });
 
-  it("renders English when nobody chose a language", async () => {
-    const page = (await RootLayout({ children: null })) as ReactElement<Record<string, unknown>>;
+  it("leaves the language off <html> for the locale script to write", () => {
+    const html = layout();
 
-    expect(page.props["lang"]).toBe("en");
-    expect(page.props["data-locale"]).toBe("en");
+    expect(html.type).toBe("html");
+    expect(html.props).not.toHaveProperty("lang");
+    expect(html.props).not.toHaveProperty("data-locale");
+    expect(html.props["suppressHydrationWarning"]).toBe(true);
   });
 
-  it("puts the language it resolved on <html> and gives it to the provider", async () => {
-    vi.stubEnv("STELLARR_LANGUAGE", "pl");
-    const instance = (await RootLayout({ children: null })) as ReactElement<Record<string, unknown>>;
-    expect(instance.props["lang"]).toBe("pl");
-    expect(find(instance, LanguageProvider)?.props["initialLocale"]).toBe("pl");
-
-    cookieJar.set("stellarr_locale", "en");
-    const chosen = (await RootLayout({ children: null })) as ReactElement<Record<string, unknown>>;
-    expect(chosen.props["lang"]).toBe("en");
-    expect(find(chosen, LanguageProvider)?.props["initialLocale"]).toBe("en");
-  });
-
-  it("describes the app in the language of the request", async () => {
-    expect((await generateMetadata()).description).toBe("A small, self-hosted place to talk.");
-
-    cookieJar.set("stellarr_locale", "pl");
-    expect((await generateMetadata()).description).toBe(
-      "Małe, samodzielnie hostowane miejsce na rozmowy.",
+  it("loads the instance default, then picks the language, then the theme, all in the head", () => {
+    const head = find(layout(), "head");
+    const scripts = Children.toArray(head?.props["children"] as ReactNode).map(
+      (child) => (child as Element).type,
     );
+
+    expect(scripts).toEqual([InstanceLanguageScript, LocaleScript, ThemeScript]);
+  });
+
+  it("starts the language provider in the page's language and holds the page for the browser", () => {
+    const html = layout();
+
+    expect(find(html, LanguageProvider)?.props["initialLocale"]).toBeUndefined();
+    expect(find(html, LocaleGate)?.props["children"]).toBe(page);
+  });
+
+  it("renders the same head whatever the instance or the person chose", () => {
+    const head = () => renderToStaticMarkup(find(layout(), "head"));
+
+    vi.stubEnv("STELLARR_LANGUAGE", "en");
+    const english = head();
+    vi.stubEnv("STELLARR_LANGUAGE", "pl");
+    document.cookie = "stellarr_locale=pl; path=/";
+
+    expect(head()).toBe(english);
+    expect(english).toContain('<script src="/stellarr-instance.js"></script>');
+  });
+
+  it("keeps the pages out of indexes and describes them in no language", () => {
+    expect(metadata).toEqual({
+      title: "Stellarr",
+      applicationName: "Stellarr",
+      robots: { index: false, follow: false },
+    });
   });
 });

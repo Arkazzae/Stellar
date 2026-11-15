@@ -1668,8 +1668,6 @@ export const en = {
   "voice.mediaSessionChannel": "Voice channel",
   "media.previous": "Previous",
 
-  "app.description": "A small, self-hosted place to talk.",
-
   "format.today": "Today",
   "format.yesterday": "Yesterday",
   "format.agoJustNow": "just now",
