@@ -84,6 +84,7 @@ function stubPort(overrides: Partial<FriendsPort> = {}): FriendsPort {
     hasOlderDmMessages: () => false,
     isLoadingOlderDmMessages: () => false,
     loadOlderDmMessages: vi.fn(async () => {}),
+    loadConversation: vi.fn(async () => {}),
     openConversation: vi.fn(async () => CONVERSATION.id),
     sendDm: vi.fn(async (id) => directMessage("sent", ADA, id)),
     uploadAttachment: vi.fn(async (upload) => attachment(upload.name)),
@@ -451,6 +452,16 @@ describe("FriendsProvider sending", () => {
 
     await waitFor(() => expect(mounted.result.current.ui.activeDmId).toBe("dm-1"));
     expect(port.sendDm).not.toHaveBeenCalled();
+  });
+
+  it("loads an existing conversation selected in the rail", async () => {
+    const port = stubPort();
+    harness.port = port;
+    const mounted = mount();
+
+    act(() => mounted.result.current.ui.openDm(CONVERSATION.id));
+
+    await waitFor(() => expect(port.loadConversation).toHaveBeenCalledWith(CONVERSATION.id));
   });
 });
 

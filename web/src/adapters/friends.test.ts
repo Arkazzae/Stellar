@@ -49,6 +49,36 @@ function api(): SocialApiClient {
 }
 
 describe("friends adapter realtime", () => {
+  it("loads a conversation opened from the rail once, and not again", async () => {
+    const client = api();
+    const message = {
+      id: "dm-1",
+      channelId: CONVERSATION_ID,
+      author: { id: PEER.id, displayName: PEER.displayName },
+      content: "z historii",
+      attachments: [],
+      embeds: [],
+      createdAt: "2026-01-01T00:00:00.000Z",
+    };
+    vi.mocked(client.listDirectMessages).mockResolvedValue({
+      messages: [message],
+      nextCursor: null,
+    });
+    const friends = createFriendsAdapter(client, new FakeRealtimeClient());
+
+    const opening = friends.loadConversation(CONVERSATION_ID);
+    const sameOpening = friends.loadConversation(CONVERSATION_ID);
+    await Promise.all([opening, sameOpening]);
+    await friends.loadConversation(CONVERSATION_ID);
+
+    expect(client.listDirectMessages).toHaveBeenCalledTimes(1);
+    expect(client.listDirectMessages).toHaveBeenCalledWith(CONVERSATION_ID, { limit: 50 });
+    expect(friends.listDmMessages(CONVERSATION_ID).map((item) => item.content)).toEqual([
+      "z historii",
+    ]);
+    friends.dispose?.();
+  });
+
   it("loads older DM pages without replacing the newest page", async () => {
     const realtime = new FakeRealtimeClient();
     const client = api();
