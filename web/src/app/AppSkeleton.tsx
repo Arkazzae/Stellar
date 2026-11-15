@@ -185,8 +185,11 @@ function RosterSkeleton() {
 }
 
 export interface AppSkeletonProps {
-  /** Read once by assistive tech while the app bootstraps. */
-  label?: string;
+  /**
+   * Read once by assistive tech while the app bootstraps. Null leaves the
+   * skeleton without words, for the first paint before the language is known.
+   */
+  label?: string | null;
 }
 
 /**
@@ -199,17 +202,24 @@ export interface AppSkeletonProps {
  */
 export function AppSkeleton({ label }: AppSkeletonProps) {
   const { t } = useLanguage();
-  const accessibleLabel = label ?? t("app.loading");
+  const accessibleLabel = label === undefined ? t("app.loading") : label;
 
   return (
-    <div className={styles.shell} role="region" aria-busy="true" aria-label={accessibleLabel}>
+    <div
+      className={styles.shell}
+      role="region"
+      aria-busy="true"
+      aria-label={accessibleLabel ?? undefined}
+    >
       <ServerRailSkeleton />
       <RailSkeleton />
       <RoomSkeleton />
       <RosterSkeleton />
-      <span className="sr-only" role="status">
-        {accessibleLabel}
-      </span>
+      {accessibleLabel === null ? null : (
+        <span className="sr-only" role="status">
+          {accessibleLabel}
+        </span>
+      )}
     </div>
   );
 }
