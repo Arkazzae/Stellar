@@ -1,3 +1,4 @@
+using System.Text;
 using Microsoft.AspNetCore.SignalR;
 using Microsoft.EntityFrameworkCore;
 using Stellarr.Api.Contracts;
@@ -29,8 +30,10 @@ internal static class ServerWelcome
             return null;
         }
 
-        // The notice is markup, so a name cannot be allowed to open a tag of its own.
-        var name = user.DisplayName.Replace("<", "‹", StringComparison.Ordinal).Replace(">", "›", StringComparison.Ordinal);
+        // The notice is markup, so every punctuation character of the name is
+        // escaped; the transcript shows it as the character that was typed and
+        // it cannot open a span, a link, a mention or an emoji of its own.
+        var name = EscapeAsciiPunctuation(user.DisplayName);
         var message = new Message
         {
             Id = Guid.NewGuid(),
@@ -55,6 +58,33 @@ internal static class ServerWelcome
         message is null
             ? Task.CompletedTask
             : hub.Clients.Group(AppHub.ServerGroup(serverId)).SendAsync("MessageCreated", message.ToDto(messages), cancellationToken);
+
+    /// <summary>
+    /// The name with every ASCII punctuation character after a backslash, the
+    /// one escape the message grammar reads anywhere; everything else, Unicode
+    /// included, needs none.
+    /// </summary>
+    private static string EscapeAsciiPunctuation(string value)
+    {
+        StringBuilder? escaped = null;
+        for (var index = 0; index < value.Length; index++)
+        {
+            var current = value[index];
+            if (!IsAsciiPunctuation(current))
+            {
+                escaped?.Append(current);
+                continue;
+            }
+
+            escaped ??= new StringBuilder(value.Length + 8).Append(value, 0, index);
+            escaped.Append('\\').Append(current);
+        }
+
+        return escaped?.ToString() ?? value;
+    }
+
+    private static bool IsAsciiPunctuation(char value) =>
+        value is (>= '!' and <= '/') or (>= ':' and <= '@') or (>= '[' and <= '`') or (>= '{' and <= '~');
 
     private static async Task<Guid?> FirstTextChannelIdAsync(
         AppDbContext db,

@@ -106,7 +106,7 @@ public sealed class RegistrationFlowTests
         var welcome = await db.Messages.SingleAsync();
         Assert.True(welcome.IsSystem);
         Assert.Equal(channels[0].Id, welcome.ChannelId);
-        Assert.Equal("<b>First Owner</b> dołącza do serwera. Przywitajcie się!", welcome.Content);
+        Assert.Equal("**First Owner** dołącza do serwera. Przywitajcie się!", welcome.Content);
         Assert.Equal(1, await db.UserSessions.CountAsync(x => x.UserId == membership.UserId));
     }
 
@@ -248,11 +248,34 @@ public sealed class RegistrationFlowTests
         var welcome = await db.Messages.SingleAsync(x => x.AuthorId == user.Id);
         Assert.True(welcome.IsSystem);
         Assert.Equal(TestData.GeneralChannelId, welcome.ChannelId);
-        Assert.Equal("<b>Invited ‹b›Person‹/b›</b> dołącza do serwera. Przywitajcie się!", welcome.Content);
+        Assert.Equal(@"**Invited \<b\>Person\<\/b\>** dołącza do serwera. Przywitajcie się!", welcome.Content);
         Assert.Equal(1, await db.Servers.CountAsync());
 
         var session = await client.GetFromJsonAsync<JsonElement>("/api/session");
         Assert.Equal("invited", session.GetProperty("user").GetProperty("username").GetString());
+    }
+
+    [Fact]
+    public async Task WelcomeNoticeEscapesEveryMarkupCharacterInTheDisplayName()
+    {
+        using var factory = new StellarrWebApplicationFactory();
+        var code = await AddInviteAsync(factory);
+        using var client = NewClient(factory);
+
+        using var response = await Register(
+            client,
+            "markup",
+            "Zoë **Admin** <i>@nils</i> ||x||",
+            "markup@example.test",
+            inviteCode: code);
+
+        Assert.Equal(HttpStatusCode.Created, response.StatusCode);
+        await using var scope = factory.OpenScope(out var db);
+        var userId = await db.Users.Where(x => x.Username == "markup").Select(x => x.Id).SingleAsync();
+        var welcome = await db.Messages.SingleAsync(x => x.AuthorId == userId);
+        Assert.Equal(
+            @"**Zoë \*\*Admin\*\* \<i\>\@nils\<\/i\> \|\|x\|\|** dołącza do serwera. Przywitajcie się!",
+            welcome.Content);
     }
 
     [Theory]
@@ -314,7 +337,7 @@ public sealed class RegistrationFlowTests
         Assert.Equal("system", message.GetProperty("author").GetProperty("id").GetString());
         Assert.Equal(TestData.GeneralChannelId.ToString(), message.GetProperty("channelId").GetString());
         Assert.Equal(
-            "<b>Newcomer</b> dołącza do serwera. Przywitajcie się!",
+            "**Newcomer** dołącza do serwera. Przywitajcie się!",
             message.GetProperty("content").GetString());
     }
 
