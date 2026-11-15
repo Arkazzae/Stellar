@@ -88,8 +88,8 @@ Existing user sessions remain valid because the data-protection keys are restore
 
 ### Cockpit and `STELLARR_DOMAIN`
 
-- The operator panel has been renamed from `ops` to **Stellarr Cockpit** and is served at `/cockpit/`.
-- `STELLARR_DOMAIN` replaces `PUBLIC_HOST` as the primary hostname variable (`PUBLIC_HOST` is still read as a fallback when `STELLARR_DOMAIN` is unset).
+- The operator panel is **Stellarr Cockpit**, served at `/cockpit/`.
+- `STELLARR_DOMAIN` is the hostname variable.
 - The public origin used in password-reset links and `/.well-known/stellarr/client` is now derived from environment variables (`https://<STELLARR_DOMAIN>:<STELLARR_PUBLIC_PORT>`, or `STELLARR_PUBLIC_URL` when set) and is read-only in Cockpit. Behind a reverse proxy on port `443`, set `STELLARR_PUBLIC_PORT=443` or `STELLARR_PUBLIC_URL`.
 - In `docker-compose.dev.yml`, `STELLARR_DEV_OPS_PORT` has been renamed to `STELLARR_DEV_COCKPIT_PORT`.
 

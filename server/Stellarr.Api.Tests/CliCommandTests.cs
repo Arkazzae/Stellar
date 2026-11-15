@@ -274,14 +274,6 @@ public sealed class CliCommandTests
                 json.RootElement.GetProperty("data").GetProperty("value").GetString());
         }
 
-        var fallbackHost = new Dictionary<string, string?> { ["PUBLIC_HOST"] = "legacy.example" };
-        using (var json = JsonDocument.Parse(
-            (await fixture.RunWithEnvironmentAsync(fallbackHost, "--json", "config", "get", "public-url")).Output))
-        {
-            Assert.Equal("https://legacy.example",
-                json.RootElement.GetProperty("data").GetProperty("value").GetString());
-        }
-
         var explicitUrl = new Dictionary<string, string?>
         {
             ["STELLARR_DOMAIN"] = "chat.example.com",
