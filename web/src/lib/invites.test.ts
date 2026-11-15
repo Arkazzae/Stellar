@@ -2,7 +2,9 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 
 import {
   PENDING_INVITE_STORAGE_KEY,
+  inviteCodeFromPath,
   inviteExpiry,
+  isInvitePath,
   pendingInvite,
   rememberPendingInvite,
   takePendingInvite,
@@ -11,6 +13,33 @@ import {
 afterEach(() => {
   vi.unstubAllGlobals();
   window.sessionStorage.clear();
+});
+
+describe("the code in an invite link", () => {
+  it("is the last segment of /invite/<code>", () => {
+    expect(inviteCodeFromPath("/invite/3f9a0c1d")).toBe("3f9a0c1d");
+    expect(isInvitePath("/invite/3f9a0c1d")).toBe(true);
+  });
+
+  it("is decoded, since the way back from sign-in encodes it", () => {
+    expect(inviteCodeFromPath(`/invite/${encodeURIComponent("a b/c")}`)).toBe("a b/c");
+  });
+
+  it("is the address's, not the code the page was rendered for", () => {
+    expect(inviteCodeFromPath("/invite/_")).toBe("_");
+  });
+
+  it("is absent from any other path", () => {
+    for (const pathname of ["/", "/invite", "/invite/", "/invite/a/b", "/login", "/invites/a", null]) {
+      expect(inviteCodeFromPath(pathname), String(pathname)).toBeNull();
+      expect(isInvitePath(pathname), String(pathname)).toBe(false);
+    }
+  });
+
+  it("is absent when its escape is malformed, though the path keeps the shape", () => {
+    expect(inviteCodeFromPath("/invite/%E0%A4%A")).toBeNull();
+    expect(isInvitePath("/invite/%E0%A4%A")).toBe(true);
+  });
 });
 
 describe("pending invites", () => {
