@@ -144,6 +144,7 @@ public sealed class SignInFlowTests(StellarrWebApplicationFactory factory)
     [Theory]
     [InlineData("revoked")]
     [InlineData("expired")]
+    [InlineData("absolute-missing")]
     [InlineData("disabled")]
     [InlineData("version-bumped")]
     [InlineData("session-deleted")]
@@ -166,6 +167,10 @@ public sealed class SignInFlowTests(StellarrWebApplicationFactory factory)
                 case "expired":
                     await db.UserSessions.Where(x => x.UserId == account.Id)
                         .ExecuteUpdateAsync(s => s.SetProperty(x => x.ExpiresAt, now.AddMinutes(-1)));
+                    break;
+                case "absolute-missing":
+                    await db.UserSessions.Where(x => x.UserId == account.Id)
+                        .ExecuteUpdateAsync(s => s.SetProperty(x => x.AbsoluteExpiresAt, (DateTime?)null));
                     break;
                 case "disabled":
                     await db.Users.Where(x => x.Id == account.Id)
@@ -251,7 +256,7 @@ public sealed class SignInFlowTests(StellarrWebApplicationFactory factory)
     }
 
     [Fact]
-    public async Task LegacySlidingSessionOlderThanThirtyDaysUsesItsAbsoluteExpiry()
+    public async Task SessionOlderThanThirtyDaysIsAcceptedWithinItsAbsoluteExpiry()
     {
         var account = await CreateAccountAsync();
         using var client = NewClient();

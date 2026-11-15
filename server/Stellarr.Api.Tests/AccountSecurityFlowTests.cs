@@ -390,8 +390,10 @@ public sealed partial class AccountSecurityFlowTests
             x => x.GetProperty("kind").GetString() == "session-revoked");
     }
 
-    [Fact]
-    public async Task RevocationWatcherAbortsAConnectionRevokedByAnotherProcess()
+    [Theory]
+    [InlineData("revoked")]
+    [InlineData("absolute-missing")]
+    public async Task RevocationWatcherAbortsAConnectionEndedByAnotherProcess(string change)
     {
         using var factory = new StellarrWebApplicationFactory();
         var account = await CreateAccountAsync(factory);
@@ -413,8 +415,16 @@ public sealed partial class AccountSecurityFlowTests
 
         await using (var scope = factory.OpenScope(out var db))
         {
-            await db.UserSessions.Where(x => x.Id == sessionId)
-                .ExecuteUpdateAsync(setters => setters.SetProperty(x => x.RevokedAt, DateTime.UtcNow));
+            if (change == "revoked")
+            {
+                await db.UserSessions.Where(x => x.Id == sessionId)
+                    .ExecuteUpdateAsync(setters => setters.SetProperty(x => x.RevokedAt, DateTime.UtcNow));
+            }
+            else
+            {
+                await db.UserSessions.Where(x => x.Id == sessionId)
+                    .ExecuteUpdateAsync(setters => setters.SetProperty(x => x.AbsoluteExpiresAt, (DateTime?)null));
+            }
         }
 
         await watcher.SweepAsync(DateTime.UtcNow, CancellationToken.None);
@@ -763,6 +773,36 @@ public sealed partial class AccountSecurityFlowTests
         Assert.Equal(HttpStatusCode.Unauthorized, actual.StatusCode);
         Assert.Equal(JsonValueKind.Null,
             (await client.GetFromJsonAsync<JsonElement>("/api/session")).GetProperty("user").ValueKind);
+    }
+
+    [Fact]
+    public async Task ReverificationDiesWhenItsParentSessionHasNoAbsoluteExpiry()
+    {
+        using var factory = new StellarrWebApplicationFactory();
+        var account = await CreateAccountAsync(factory);
+        using var client = Client(factory);
+        await LoginAsync(client, account.Username);
+        var enrolled = await EnrollTotpAsync(client, rememberDevice: true);
+
+        var start = await client.PostAsync("/api/me/security/mfa/reverify/start", null);
+        start.EnsureSuccessStatusCode();
+        var challenge = await start.Content.ReadFromJsonAsync<JsonElement>();
+
+        await using (var scope = factory.OpenScope(out var db))
+        {
+            await db.UserSessions.Where(x => x.UserId == account.Id)
+                .ExecuteUpdateAsync(setters =>
+                    setters.SetProperty(x => x.AbsoluteExpiresAt, (DateTime?)null));
+        }
+
+        var actual = await client.PostAsJsonAsync(
+            "/api/auth/mfa/verify",
+            new
+            {
+                challengeId = challenge.GetProperty("challengeId").GetString(),
+                code = enrolled.RecoveryCodes[0],
+            });
+        Assert.Equal(HttpStatusCode.Unauthorized, actual.StatusCode);
     }
 
     [Fact]

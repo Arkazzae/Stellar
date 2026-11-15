@@ -8,11 +8,10 @@ set -Eeuo pipefail
 shopt -s inherit_errexit
 
 data_root="${STELLARR_DATA_ROOT:-/data/stellarr}"
-# STELLARR_DOMAIN is the name people reach the instance at; PUBLIC_HOST is its
-# older name. Without either, TLS and TURN use localhost. The host is exported
-# as PUBLIC_HOST too, so tls-maintenance.sh issues the certificate for it.
-configured_domain="${STELLARR_DOMAIN:-${PUBLIC_HOST:-}}"
-public_host="${configured_domain:-localhost}"
+# STELLARR_DOMAIN is the name people reach the instance at. Without it, TLS
+# and TURN use localhost. It is exported as PUBLIC_HOST too, because
+# tls-maintenance.sh and the coturn template read that name.
+public_host="${STELLARR_DOMAIN:-localhost}"
 export PUBLIC_HOST="$public_host"
 public_https_port="${PUBLIC_HTTPS_PORT:-443}"
 
@@ -164,7 +163,7 @@ export Rtc__PublicHost="$public_host"
 # and desktop clients keep the address they connected to.
 public_port="${STELLARR_PUBLIC_PORT:-$public_https_port}"
 require_port STELLARR_PUBLIC_PORT "$public_port"
-if [[ -n "$configured_domain" || -n "${STELLARR_PUBLIC_URL:-}" ]]; then
+if [[ -n "${STELLARR_DOMAIN:-}" || -n "${STELLARR_PUBLIC_URL:-}" ]]; then
   public_url="$(public_url_for "$public_host" "$public_port" "${STELLARR_PUBLIC_URL:-}")"
   export Operations__PublicUrl="$public_url"
   export Desktop__CanonicalOrigin="$public_url"

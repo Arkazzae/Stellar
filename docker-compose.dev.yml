@@ -126,7 +126,6 @@ services:
       DOTNET_WATCH_SUPPRESS_BROWSER_REFRESH: "1"
       ConnectionStrings__Database: Data Source=/data/stellarr/stellarr-dev.db;Cache=Shared;Pooling=True
       DataRoot: /data/stellarr
-      Rtc__PublicHost: ${PUBLIC_HOST:-localhost}
       Rtc__MediaControlUrl: http://media:5200
       Rtc__MediaControlSecret: stellarr-media-development-secret
       Rtc__MediaPort: ${STELLARR_DEV_MEDIA_PORT:-49100}

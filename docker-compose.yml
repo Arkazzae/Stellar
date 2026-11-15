@@ -31,8 +31,7 @@ services:
       # browsers use: the published STELLARR_HTTPS_PORT, or 443 behind a proxy.
       # The entrypoint builds the public address in mail links and the desktop
       # handshake from them; STELLARR_PUBLIC_URL, when set, overrides it.
-      # PUBLIC_HOST is the older name of STELLARR_DOMAIN.
-      STELLARR_DOMAIN: ${STELLARR_DOMAIN:-${PUBLIC_HOST:-}}
+      STELLARR_DOMAIN: ${STELLARR_DOMAIN:-}
       STELLARR_PUBLIC_PORT: ${STELLARR_PUBLIC_PORT:-${STELLARR_HTTPS_PORT:-8443}}
       STELLARR_PUBLIC_URL: ${STELLARR_PUBLIC_URL:-}
       PUBLIC_IP: ${PUBLIC_IP:-}
