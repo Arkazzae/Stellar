@@ -216,11 +216,14 @@ export function useSortableList({
     const first = current?.spans[0];
     const last = current?.spans[current.spans.length - 1];
     if (current?.via !== "pointer" || !span || !first || !last) return;
-    const shift = clampShift(span, active.y - active.originY + scrolledBy(active), {
+    const travel = active.y - active.originY + scrolledBy(active);
+    const shift = clampShift(span, travel, {
       top: first.top,
       bottom: last.top + last.height,
     });
-    moveTo(current, closestIndex(current.spans, span.top + shift + span.height / 2), shift);
+    // Clamp the drawing only: a tall item cannot reach a short edge row's
+    // original centre while its whole box is held inside the list.
+    moveTo(current, closestIndex(current.spans, span.top + travel + span.height / 2), shift);
   };
 
   const pressPointer = (id: string, event: PointerEvent<HTMLElement>) => {
