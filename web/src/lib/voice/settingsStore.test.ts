@@ -1,11 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import {
-  DEFAULT_SETTINGS,
-  STORAGE_KEY,
-  SETTINGS_VERSION,
-  VoiceSettingsStore,
-  storageKeyForUser,
-} from "./settings";
+import { DEFAULT_SETTINGS, VoiceSettingsStore, storageKeyForUser } from "./settings";
 
 function memoryStorage(seed: Record<string, string> = {}) {
   const map = new Map(Object.entries(seed));
@@ -47,24 +41,7 @@ describe("VoiceSettingsStore.reset", () => {
   });
 });
 
-describe("VoiceSettingsStore legacy migration", () => {
-  it("leaves a corrupt unscoped entry unclaimed for a later sign-in", () => {
-    const storage = memoryStorage({ [STORAGE_KEY]: "{not json" });
-    const store = new VoiceSettingsStore(storage);
-
-    expect(store.setOwner("first")).toEqual(DEFAULT_SETTINGS);
-    expect(storage.getItem(storageKeyForUser("first"))).toBeNull();
-    expect(storage.getItem(STORAGE_KEY)).toBe("{not json");
-
-    // The entry becoming readable again is enough for the next account to take it.
-    storage.setItem(
-      STORAGE_KEY,
-      JSON.stringify({ ...DEFAULT_SETTINGS, version: SETTINGS_VERSION, inputDeviceId: "old-mic" }),
-    );
-    expect(store.setOwner("second").inputDeviceId).toBe("old-mic");
-    expect(storage.getItem(STORAGE_KEY)).toBeNull();
-  });
-
+describe("VoiceSettingsStore.setOwner", () => {
   it("starts from defaults when the active account's own entry is corrupt", () => {
     const storage = memoryStorage({ [storageKeyForUser("owner")]: "][" });
     const store = new VoiceSettingsStore(storage);

@@ -2,8 +2,8 @@ import { describe, expect, it, vi } from "vitest";
 
 import {
   DEFAULT_SETTINGS,
-  STORAGE_KEY,
   VoiceSettingsStore,
+  storageKeyForUser,
 } from "@/lib/voice/settings";
 
 import { createVoiceSettingsAdapter } from "./voiceSettings";
@@ -24,6 +24,7 @@ function memoryStorage() {
 function build() {
   const storage = memoryStorage();
   const store = new VoiceSettingsStore(storage);
+  store.setOwner("owner");
   return { storage, store, adapter: createVoiceSettingsAdapter(store) };
 }
 
@@ -46,7 +47,7 @@ describe("voice settings adapter", () => {
 
     expect(adapter.getSnapshot()).toMatchObject({ inputGainDb: 6, echoCancellation: false });
     expect(listener).toHaveBeenCalledTimes(1);
-    expect(JSON.parse(storage.getItem(STORAGE_KEY) ?? "null")).toMatchObject({
+    expect(JSON.parse(storage.getItem(storageKeyForUser("owner")) ?? "null")).toMatchObject({
       inputGainDb: 6,
       echoCancellation: false,
     });
