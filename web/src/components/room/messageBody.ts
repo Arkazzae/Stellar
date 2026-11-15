@@ -6,41 +6,126 @@
  */
 
 import { resolveCodeLanguage, tokenizeCode } from "./codeLanguages";
-import { inlineText, parseInline, type InlineNode, type ParseInlineOptions } from "./inline";
+import {
+  inlineDescendants,
+  inlineText,
+  parseInline,
+  type InlineNode,
+  type MentionTarget,
+  type ParseInlineOptions,
+} from "./inline";
 import type { MessagePart } from "./partTypes";
 
+/** What ends a line, as `^` and `$` read it in a multiline pattern. */
+function isLineEnd(char: string | undefined): boolean {
+  return char === "\n" || char === "\r" || char === "\u2028" || char === "\u2029";
+}
+
+/** Where the line starting at `from` ends: its line break, or the end of the body. */
+function lineEnd(content: string, from: number): number {
+  let end = from;
+  while (end < content.length && !isLineEnd(content[end])) end += 1;
+  return end;
+}
+
+interface Fence {
+  start: number;
+  end: number;
+  /** The info string: a lexer alias or, as in the mockup, a file name. */
+  info: string;
+  source: string;
+}
+
 /**
- * A fence is ```<info> on its own line, up to a closing ``` on its own line.
- * The info string is a lexer alias or, as in the mockup, a file name.
+ * The fenced blocks of a body, in order. A fence is ```<info> at the start of
+ * a line, up to the first later line that is ``` and nothing but spaces or
+ * tabs; one that never closes is prose.
+ *
+ * Read line by line rather than with a lazy pattern, which would look for a
+ * closing line once per opening one. Here a fence that finds no closing line
+ * ends the search: no later fence could find one either.
  */
-const FENCE = /^```(.*)\n([\s\S]*?)\n?^```[ \t]*$/gm;
+function fences(content: string): Fence[] {
+  const found: Fence[] = [];
+  let line = 0;
+  while (line < content.length) {
+    const infoEnd = lineEnd(content, line);
+    if (!content.startsWith("```", line) || content[infoEnd] !== "\n") {
+      line = infoEnd + 1;
+      continue;
+    }
+
+    const sourceStart = infoEnd + 1;
+    let closing = sourceStart;
+    let closingEnd = lineEnd(content, closing);
+    while (!(content.startsWith("```", closing) && /^[ \t]*$/.test(content.slice(closing + 3, closingEnd)))) {
+      if (closingEnd >= content.length) return found;
+      closing = closingEnd + 1;
+      closingEnd = lineEnd(content, closing);
+    }
+
+    // The line break before the closing ``` belongs to neither side.
+    const sourceEnd = closing > sourceStart && content[closing - 1] === "\n" ? closing - 1 : closing;
+    found.push({
+      start: line,
+      end: closingEnd,
+      info: content.slice(line + 3, infoEnd),
+      source: content.slice(sourceStart, sourceEnd),
+    });
+    line = closingEnd + 1;
+  }
+  return found;
+}
+
+type BodySegment = { kind: "prose"; text: string } | { kind: "code"; fence: Fence };
+
+/** A body cut into its prose and its fenced blocks, in order; prose is trimmed and never empty. */
+function segments(content: string): BodySegment[] {
+  const out: BodySegment[] = [];
+  let cursor = 0;
+  const prose = (raw: string): void => {
+    const text = raw.trim();
+    if (text.length > 0) out.push({ kind: "prose", text });
+  };
+  for (const fence of fences(content)) {
+    prose(content.slice(cursor, fence.start));
+    out.push({ kind: "code", fence });
+    cursor = fence.end;
+  }
+  prose(content.slice(cursor));
+  return out;
+}
 
 /** Splits a body into its prose and its fenced blocks, in order. */
 function textAndCodeParts(content: string, options: ParseInlineOptions): MessagePart[] {
-  const parts: MessagePart[] = [];
-  let cursor = 0;
-
-  const prose = (raw: string): void => {
-    const text = raw.trim();
-    if (text.length > 0) parts.push({ kind: "text", nodes: parseInline(text, options) });
-  };
-
-  for (const match of content.matchAll(FENCE)) {
-    prose(content.slice(cursor, match.index));
-    const authored = (match[1] ?? "").trim();
-    const source = match[2] ?? "";
+  return segments(content).map((segment): MessagePart => {
+    if (segment.kind === "prose") return { kind: "text", nodes: parseInline(segment.text, options) };
+    const authored = segment.fence.info.trim();
+    const { source } = segment.fence;
     const language = resolveCodeLanguage(authored, source);
-    parts.push({
+    return {
       kind: "code",
       lang: language === "plaintext" ? "" : authored,
       source,
       language,
       tokens: tokenizeCode(source, language),
-    });
-    cursor = match.index + match[0].length;
-  }
-  prose(content.slice(cursor));
-  return parts;
+    };
+  });
+}
+
+/**
+ * Whether the body mentions `username` as the transcript would show it. The
+ * same parse decides the highlight and the alert, so a name in code, in a
+ * link's label or in a URL calls nobody.
+ */
+export function mentionsUsername(content: string, username: string): boolean {
+  const target: MentionTarget = { userId: "", username, displayName: username };
+  const mentions = new Map([[username.toLocaleLowerCase(), target]]);
+  return segments(content).some(
+    (segment) =>
+      segment.kind === "prose" &&
+      inlineDescendants(parseInline(segment.text, { mentions })).some((node) => node.kind === "mention"),
+  );
 }
 
 /**

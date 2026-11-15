@@ -8,7 +8,7 @@
  * React escapes on output.
  */
 
-import { Lexer, Marked, type MarkedToken, type Token, type TokenizerExtension } from "marked";
+import { readInline, type Span } from "./inlineGrammar";
 
 /** A run inside a text body. `text` is literal; React escapes it. */
 export type InlineNode =
@@ -49,8 +49,6 @@ export interface MentionTarget {
 }
 
 export interface ParseInlineOptions {
-  /** Allow `<b>`. True only for system notices. */
-  strong?: boolean;
   /**
    * The server's custom emoji, shortcode to image URL. The map is the
    * allow-list: a shortcode without an entry stays literal text.
@@ -68,11 +66,19 @@ const URL_RUN = /https?:\/\/[^\s<>"'`]+/g;
 /** Punctuation that far more often ends the sentence than the URL. */
 const TRAILING = new Set([".", ",", ";", ":", "!", "?", "…", "'", '"']);
 
-function trimUrl(raw: string): string {
+/** The same, with the markers that may close formatting written around a URL. */
+const TRAILING_IN_FORMATTING = new Set([...TRAILING, "*", "_", "~", "|"]);
+
+function trimUrl(raw: string, trailing: ReadonlySet<string> = TRAILING): string {
+  // Brackets still inside the URL, kept up to date as characters come off the
+  // end, so a URL ending in many brackets is not recounted for each one.
+  const inside = new Map<string, number>([["(", 0], [")", 0], ["[", 0], ["]", 0]]);
+  for (const char of raw) if (inside.has(char)) inside.set(char, (inside.get(char) ?? 0) + 1);
+
   let end = raw.length;
   while (end > 0) {
     const last = raw[end - 1] ?? "";
-    if (TRAILING.has(last)) {
+    if (trailing.has(last)) {
       end -= 1;
       continue;
     }
@@ -80,8 +86,9 @@ function trimUrl(raw: string): string {
     // "(see https://x/a)" keeps the paren out, "…/a_(b)" keeps it in.
     if (last === ")" || last === "]") {
       const open = last === ")" ? "(" : "[";
-      const head = raw.slice(0, end);
-      if (head.split(last).length > head.split(open).length) {
+      const closes = inside.get(last) ?? 0;
+      if (closes > (inside.get(open) ?? 0)) {
+        inside.set(last, closes - 1);
         end -= 1;
         continue;
       }
@@ -136,6 +143,22 @@ function replaceInText(
   });
 }
 
+/**
+ * The stretches of `content` that are bare URLs, as offsets. The grammar reads
+ * them as plain text, so the markers inside an address stay part of it
+ * (`https://x/pkg/__init__.py` is one link) while `**https://x/a**` is still a
+ * bold link. A `]` ends the stretch, so a URL can sit in a link's label.
+ */
+function bareUrls(content: string): [start: number, end: number][] {
+  const stretches: [number, number][] = [];
+  for (const match of content.matchAll(URL_RUN)) {
+    const bracket = match[0].indexOf("]");
+    const core = trimUrl(bracket < 0 ? match[0] : match[0].slice(0, bracket), TRAILING_IN_FORMATTING);
+    if (core.length > 0) stretches.push([match.index, match.index + core.length]);
+  }
+  return stretches;
+}
+
 function linkify(nodes: readonly InlineNode[]): InlineNode[] {
   return replaceInText(nodes, URL_RUN, (match) => {
     const href = trimUrl(match[0]);
@@ -188,39 +211,10 @@ function emojify(
   });
 }
 
-/* --------------------------------------------------------------- markdown */
-
-/**
- * `||hidden||`, shown blurred until clicked. What is inside may carry its own
- * formatting, so it is lexed again rather than kept as flat text.
- */
-const SPOILER: TokenizerExtension = {
-  name: "spoiler",
-  level: "inline",
-  start(source) {
-    const at = source.indexOf("||");
-    return at < 0 ? undefined : at;
-  },
-  tokenizer(source) {
-    const match = /^\|\|(?!\|)([\s\S]*?[^\s|])\|\|/.exec(source);
-    if (match === null) return undefined;
-    const inner = match[1] ?? "";
-    return { type: "spoiler", raw: match[0], text: inner, tokens: this.lexer.inlineTokens(inner) };
-  },
-};
-
-interface SpoilerToken {
-  type: "spoiler";
-  raw: string;
-  tokens: Token[];
-}
-
-const LEXER_OPTIONS = new Marked({ gfm: true, extensions: [SPOILER] }).defaults;
+/* -------------------------------------------------------------- formatting */
 
 /** Nesting deeper than this is shown as the text it was typed as. */
 const MAX_DEPTH = 32;
-
-const STYLE_KINDS = { strong: "strong", em: "emphasis", del: "strike" } as const;
 
 export function inlineText(nodes: readonly InlineNode[]): string {
   return nodes
@@ -239,105 +233,165 @@ export function inlineDescendants(nodes: readonly InlineNode[]): InlineNode[] {
   ]);
 }
 
-/**
- * The legacy `<code>…</code>`, and `<b>…</b>` where allowed, are the only HTML
- * honoured. Their content is flat: whatever markup is inside stays literal.
- */
-function legacyTag(
-  tokens: readonly Token[],
-  start: number,
-  allowBold: boolean,
-): { node: InlineNode; end: number } | undefined {
-  const open = tokens[start];
-  if (open?.type !== "html") return undefined;
-  const kind = open.raw === "<code>" ? "code" : allowBold && open.raw === "<b>" ? "strong" : undefined;
-  if (kind === undefined) return undefined;
-
-  const close = kind === "code" ? "</code>" : "</b>";
-  const end = tokens.findIndex((token, index) => index > start && token.raw === close);
-  if (end === -1) return undefined;
-  return { node: { kind, text: tokens.slice(start + 1, end).map((t) => t.raw).join("") }, end };
-}
-
-function inlineFromTokens(
-  tokens: readonly Token[],
-  options: ParseInlineOptions,
-  depth = 0,
-): InlineNode[] {
+function nodesOf(spans: readonly Span[], options: ParseInlineOptions): InlineNode[] {
   const nodes: InlineNode[] = [];
   const append = (node: InlineNode) => {
     const previous = nodes.at(-1);
     if (node.kind === "text" && previous?.kind === "text") previous.text += node.text;
     else nodes.push(node);
   };
-  const literal = (text: string) => {
-    if (text.length === 0) return;
-    const linked = linkify([{ kind: "text", text }]);
+  // Neighbouring text is joined before the recognisers read it, so a `_` that
+  // paired with nothing does not cut `http://a/b_c` or `@jo_x` in two.
+  let plain = "";
+  const flush = () => {
+    if (plain.length === 0) return;
+    const linked = linkify([{ kind: "text", text: plain }]);
     emojify(mentionify(linked, options.mentions), options.emoji).forEach(append);
+    plain = "";
   };
 
-  for (let index = 0; index < tokens.length; index++) {
-    // Only the tokens this lexer can produce are handled; others fall to `default`.
-    const token = tokens[index] as MarkedToken | SpoilerToken;
-    if (depth >= MAX_DEPTH) {
-      append({ kind: "text", text: token.raw });
+  for (const span of spans) {
+    if (span.type === "text") {
+      plain += span.text;
       continue;
     }
-
-    const legacy = legacyTag(tokens, index, options.strong === true);
-    if (legacy !== undefined) {
-      append(legacy.node);
-      index = legacy.end;
-      continue;
-    }
-
-    switch (token.type) {
-      case "strong":
-      case "em":
-      case "del":
-      case "spoiler": {
-        const children = inlineFromTokens(token.tokens, options, depth + 1);
-        const kind = token.type === "spoiler" ? "spoiler" : STYLE_KINDS[token.type];
-        append({ kind, text: inlineText(children), children });
+    flush();
+    switch (span.type) {
+      case "verbatim":
+        append({ kind: "text", text: span.text });
         break;
-      }
-      case "codespan":
-        append({ kind: "code", text: token.text });
-        break;
-      case "escape":
-        append({ kind: "text", text: token.text });
-        break;
-      case "br":
-        append({ kind: "text", text: "\n" });
+      case "code":
+        append({ kind: "code", text: span.text });
         break;
       case "link":
         // Labels are plain: no mentions or emoji inside a link's own text.
-        if (/^https?:\/\//i.test(token.href)) {
-          const label = inlineText(inlineFromTokens(token.tokens, {}, depth + 1));
-          append({ kind: "link", href: token.href, text: label });
-        } else {
-          append({ kind: "text", text: token.raw });
-        }
+        append({ kind: "link", href: span.href, text: span.label });
         break;
-      case "text":
-        literal(token.text);
+      case "styled": {
+        const children = nodesOf(span.children, options);
+        append({ kind: span.style, text: inlineText(children), children });
         break;
-      default:
-        append({ kind: "text", text: token.raw });
+      }
     }
   }
+  flush();
   return nodes;
 }
 
 /**
- * Tokenizes Markdown but never generates or trusts HTML: links must be http(s),
- * images are never loaded, and markup the sender typed stays literal text.
+ * Parses a body into nodes. Only the grammar in `inlineGrammar.ts` is
+ * formatting; links must be http(s), and HTML, images and anything else the
+ * sender typed stay literal text.
  */
 export function parseInline(content: string, options: ParseInlineOptions = {}): InlineNode[] {
   try {
-    return inlineFromTokens(Lexer.lexInline(content, LEXER_OPTIONS), options);
+    return nodesOf(readInline(content, MAX_DEPTH, bareUrls(content)), options);
   } catch {
-    // Pathologically nested input must remain readable.
+    // Whatever goes wrong, the message must remain readable.
     return [{ kind: "text", text: content }];
   }
+}
+
+/* ------------------------------------------------------------ back to text */
+
+/** What would read as markup if a text node were written back as it is. */
+const MARKUP_CHARACTER = /[\\`*_~|[\]]/g;
+/** Where a mention could start, so text that is not one stays text. */
+const MENTION_START = /@(?=[\p{L}\p{N}_.-]{2,32})/gu;
+/** Where a custom emoji shortcode could start, for the same reason. */
+const SHORTCODE_START = /:(?=[a-zA-Z0-9_-]{2,64}:)/g;
+
+const WRAPPERS = { strong: "**", emphasis: "*", strike: "~~", spoiler: "||" } as const;
+
+function escapeMarkup(text: string): string {
+  return text
+    .replace(MARKUP_CHARACTER, "\\$&")
+    .replace(MENTION_START, "\\@")
+    .replace(SHORTCODE_START, "\\:")
+    // A colon written after an http scheme makes an address; breaking the
+    // scheme keeps text that only looks like one as the text it was.
+    .replace(/(https?):\/\//gi, "$1\\://");
+}
+
+/** Whether a bare address reads back as exactly the same link. */
+function isBareSource(href: string): boolean {
+  const [only, ...rest] = bareUrls(href);
+  return rest.length === 0 && only !== undefined && only[0] === 0 && only[1] === href.length;
+}
+
+/** A code span around `code`: a fence longer than any run of backticks inside it. */
+export function codeSource(code: string): string {
+  let longest = 0;
+  for (const run of code.match(/`+/g) ?? []) longest = Math.max(longest, run.length);
+  const fence = "`".repeat(longest + 1);
+  // The space a parser strips is added where a backtick, or a space it would
+  // strip, touches the fence.
+  const spaced = code.startsWith(" ") && code.endsWith(" ") && /[^ ]/.test(code);
+  const pad = code.startsWith("`") || code.endsWith("`") || spaced ? " " : "";
+  return `${fence}${pad}${code}${pad}${fence}`;
+}
+
+type StyledNode = Extract<InlineNode, { kind: "strong" | "emphasis" | "strike" | "spoiler" }>;
+
+function styled(node: InlineNode): node is StyledNode {
+  return node.kind === "strong" || node.kind === "emphasis" ||
+    node.kind === "strike" || node.kind === "spoiler";
+}
+
+/** The inside of a styled node, as markup of its own. */
+function styledSource(node: StyledNode): string {
+  return node.children === undefined ? escapeMarkup(node.text) : inlineSource(node.children);
+}
+
+/**
+ * Markup that renders back into `nodes`: what the translator is given, so the
+ * formatting survives the round trip. Literal markers are escaped, code gets a
+ * fence it cannot contain, and a link keeps its address.
+ *
+ * Two neighbouring runs of one style are written as one run. Their wrappers
+ * would otherwise touch and read as a longer delimiter run, which is not the
+ * same markup. Merging styles that render the same way is invisible; the
+ * translated message keeps both words bold, struck or hidden.
+ */
+export function inlineSource(nodes: readonly InlineNode[]): string {
+  const source: string[] = [];
+  for (let index = 0; index < nodes.length; index += 1) {
+    const node = nodes[index] as InlineNode;
+    if (styled(node)) {
+      let inner = styledSource(node);
+      while (index + 1 < nodes.length && nodes[index + 1]?.kind === node.kind) {
+        index += 1;
+        inner += styledSource(nodes[index] as StyledNode);
+      }
+      source.push(`${WRAPPERS[node.kind]}${inner}${WRAPPERS[node.kind]}`);
+      continue;
+    }
+
+    switch (node.kind) {
+      case "text":
+        source.push(escapeMarkup(node.text));
+        break;
+      case "code":
+        source.push(codeSource(node.text));
+        break;
+      case "link":
+        // A bare address is shorter, but only when it reads back unchanged:
+        // one ending in `.` or `*` would lose that character on the way in.
+        source.push(
+          node.text === node.href && isBareSource(node.href)
+            ? node.href
+            : `[${escapeMarkup(node.text)}](${node.href})`,
+        );
+        break;
+      case "mention":
+        source.push(node.text);
+        break;
+      case "emoji":
+        source.push(`:${node.shortcode}:`);
+        break;
+      case "edited":
+        break;
+    }
+  }
+  return source.join("");
 }

@@ -144,7 +144,7 @@ public sealed class ApiFlowTests : IClassFixture<StellarrWebApplicationFactory>
         Assert.Equal("system", welcome.GetProperty("author").GetProperty("id").GetString());
         Assert.Equal("system", welcome.GetProperty("author").GetProperty("displayName").GetString());
         Assert.Equal(
-            "<b>First Owner</b> dołącza do serwera. Przywitajcie się!",
+            "**First Owner** dołącza do serwera. Przywitajcie się!",
             welcome.GetProperty("content").GetString());
 
         var giphy = await client.GetFromJsonAsync<JsonElement>("/api/config/giphy");

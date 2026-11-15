@@ -41,8 +41,14 @@ describe("parseInline", () => {
   it("allows Markdown http links but never injects HTML or loads Markdown images", () => {
     expect(parseInline("[strona](https://example.com)")[0])
       .toEqual({ kind: "link", text: "strona", href: "https://example.com" });
-    for (const source of ["[klik](javascript:alert(1))", "[klik](data:text/html,x)", "![obraz](https://tracker.test/a.png)"])
+    for (const source of ["[klik](javascript:alert(1))", "[klik](data:text/html,x)"])
       expect(parseInline(source)).toEqual([{ kind: "text", text: source }]);
+    // An image is not a construct: the brackets stay text and the address is a link.
+    expect(parseInline("![obraz](https://tracker.test/a.png)")).toEqual([
+      { kind: "text", text: "![obraz](" },
+      { kind: "link", href: "https://tracker.test/a.png", text: "https://tracker.test/a.png" },
+      { kind: "text", text: ")" },
+    ]);
   });
   it("keeps markup the sender typed as literal text", () => {
     expect(parseInline('<img src=x onerror="alert(1)">')).toEqual([
@@ -50,20 +56,19 @@ describe("parseInline", () => {
     ]);
   });
 
-  it("recognises inline code", () => {
-    expect(parseInline("nowy <code>VoiceClient</code> działa")).toEqual([
+  it("recognises inline code and leaves an HTML code tag as text", () => {
+    expect(parseInline("nowy `VoiceClient` działa")).toEqual([
       { kind: "text", text: "nowy " },
       { kind: "code", text: "VoiceClient" },
       { kind: "text", text: " działa" },
     ]);
+    expect(parseInline("nowy <code>VoiceClient</code> działa")).toEqual([
+      { kind: "text", text: "nowy <code>VoiceClient</code> działa" },
+    ]);
   });
 
-  it("allows <b> only in system notices", () => {
+  it("keeps every HTML tag literal, in a notice too", () => {
     const content = "<b>Jo</b> dołącza do serwera.";
-    expect(parseInline(content, { strong: true })[0]).toEqual({
-      kind: "strong",
-      text: "Jo",
-    });
     expect(parseInline(content)).toEqual([{ kind: "text", text: content }]);
   });
 
@@ -94,9 +99,9 @@ describe("parseInline", () => {
     });
   });
 
-  it("does not treat a code tag inside bold as markup", () => {
-    expect(parseInline("<b><code>x</code></b>", { strong: true })).toEqual([
-      { kind: "strong", text: "<code>x</code>" },
+  it("does not treat a code tag inside strong emphasis as markup", () => {
+    expect(parseInline("**<code>x</code>**")).toEqual([
+      { kind: "strong", text: "<code>x</code>", children: [{ kind: "text", text: "<code>x</code>" }] },
     ]);
   });
 
@@ -433,13 +438,13 @@ describe("toParts", () => {
     });
   });
 
-  it("only honours <b> when the caller says the message is a system notice", () => {
-    const notice = message({ content: "<b>Jo</b> dołącza" });
-    expect(toParts(notice, { system: true })[0]).toMatchObject({
-      nodes: [{ kind: "strong", text: "Jo" }, { kind: "text", text: " dołącza" }],
-    });
+  it("renders a welcome notice with strong emphasis and no HTML", () => {
+    const notice = message({ content: "**Jo** dołącza, a <b>Jo</b> zostaje tekstem" });
     expect(toParts(notice)[0]).toMatchObject({
-      nodes: [{ kind: "text", text: "<b>Jo</b> dołącza" }],
+      nodes: [
+        { kind: "strong", text: "Jo" },
+        { kind: "text", text: " dołącza, a <b>Jo</b> zostaje tekstem" },
+      ],
     });
   });
 });

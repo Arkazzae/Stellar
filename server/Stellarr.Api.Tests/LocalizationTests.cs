@@ -231,7 +231,7 @@ public sealed class LocalizationTests
         Assert.Equal(["Owner", "Member"], await db.ServerRoles.OrderBy(x => x.Position).Select(x => x.Name).ToArrayAsync());
         var channels = await db.Channels.OrderBy(x => x.Position).ToArrayAsync();
         Assert.Equal([("general", ChannelKind.Text), ("voice", ChannelKind.Voice)], channels.Select(x => (x.Name, x.Kind)).ToArray());
-        Assert.Equal("<b>First Owner</b> has joined the server. Say hello!", (await db.Messages.SingleAsync()).Content);
+        Assert.Equal("**First Owner** has joined the server. Say hello!", (await db.Messages.SingleAsync()).Content);
         Assert.Equal("Unknown device", (await db.UserSessions.SingleAsync()).Device);
     }
 
@@ -341,7 +341,7 @@ public sealed class LocalizationTests
         Assert.Equal("Członek", membership.Role.Name);
         var welcome = await db.Messages.SingleAsync(x => x.IsSystem && x.Content.Contains("Newcomer"));
         Assert.Equal(TestData.GeneralChannelId, welcome.ChannelId);
-        Assert.Equal("<b>Newcomer</b> has joined the server. Say hello!", welcome.Content);
+        Assert.Equal("**Newcomer** has joined the server. Say hello!", welcome.Content);
         Assert.Equal("ogólny", (await db.Channels.SingleAsync(x => x.Id == TestData.GeneralChannelId)).Name);
         var bootstrap = await client.GetFromJsonAsync<JsonElement>("/api/bootstrap");
         Assert.Contains(

@@ -186,8 +186,6 @@ function embedPart(embed: MessageEmbed): EmbedPart | VideoEmbedPart | null {
 /* ----------------------------------------------------------------- toParts */
 
 export interface ToPartsOptions {
-  /** System notices may use `<b>`; see `parseInline`. */
-  system?: boolean;
   /** The server's custom emoji, shortcode to image URL. See `ParseInlineOptions`. */
   emoji?: ReadonlyMap<string, string>;
   /** Lower-cased username to the member a mention resolves to. */
@@ -226,7 +224,7 @@ export function toParts(message: Message, options: ToPartsOptions = {}): Message
       const part = embedPart(embed);
       return part === null ? [] : [{ url: embed.url, part }];
     });
-    const inline = { strong: options.system, emoji: options.emoji, mentions: options.mentions };
+    const inline = { emoji: options.emoji, mentions: options.mentions };
     parts.push(
       ...bodyParts(content, inline, new Set(previews.map((preview) => preview.url))),
       ...previews.map((preview) => preview.part),
