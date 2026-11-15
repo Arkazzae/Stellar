@@ -18,4 +18,10 @@
     <ProjectReference Include="../Stellarr.Api/Stellarr.Api.csproj" />
     <ProjectReference Include="../Stellarr.Cli/Stellarr.Cli.csproj" />
   </ItemGroup>
+  <ItemGroup>
+    <!-- The same source the web parser reads, so one case checks both. -->
+    <Content Include="../../tests/contracts/message-syntax.json"
+             Link="test-contracts/message-syntax.json"
+             CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
 </Project>
