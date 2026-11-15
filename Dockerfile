@@ -1,23 +1,25 @@
 # syntax=docker/dockerfile:1.8
 
-# One image runs the whole instance: nginx, the API, coturn and the Stellarr
-# Media server, supervised by supervisord. Nginx also serves the web client and
-# the operator panel, both built as static files. It builds for linux/amd64 and
-# linux/arm64.
+# One image runs the whole instance: nginx, the API, the Next.js server, coturn
+# and the Stellarr Media server, supervised by supervisord. It builds for
+# linux/amd64 and linux/arm64.
 #
-# Stages that produce architecture-neutral output (the web client, the operator
-# panel and the portable API publish) run on the build machine's own platform,
-# so a multi-platform build does not emulate them. The media stage runs there
-# too and cross-compiles for the target, because compiling Rust under emulation
-# would not fit in the release job.
+# Stages that produce architecture-neutral output (the operator panel and the
+# portable API publish) run on the build machine's own platform, so a
+# multi-platform build does not emulate them. The media stage runs there too and
+# cross-compiles for the target, because compiling Rust under emulation would
+# not fit in the release job. The web stage runs per target platform because
+# the standalone server bundles native image-processing binaries.
 
 # The web client and the operator panel are workspaces of one npm project: the
 # root package-lock.json covers both and the shared packages/. Each stage copies
 # every workspace manifest, because npm ci checks the lockfile against all of
 # them, but installs only its own workspace, which links the shared package it
 # depends on. The manifests come before the sources, so that editing a source
-# file keeps the install layer cached.
-FROM --platform=$BUILDPLATFORM node:26-bookworm-slim AS web-build
+# file keeps the install layer cached. With the dependencies hoisted to
+# /src/node_modules, Next.js traces from /src and the standalone output nests
+# the app as web/server.js.
+FROM node:26-bookworm-slim AS web-build
 WORKDIR /src
 COPY package.json package-lock.json ./
 COPY web/package.json web/
@@ -33,14 +35,7 @@ WORKDIR /src/web
 ARG NEXT_PUBLIC_GIPHY_API_KEY
 ENV NEXT_TELEMETRY_DISABLED=1
 ENV NEXT_PUBLIC_GIPHY_API_KEY=${NEXT_PUBLIC_GIPHY_API_KEY}
-# The build writes a static export to out/. Nginx sends a .gz file beside the
-# original to a browser that accepts gzip, so the text formats are compressed
-# here once, at the highest level, instead of on every request. -n leaves the
-# name and time out of each archive, so the same input gives the same file.
-RUN npm run build \
-    && find out -type f \( -name '*.html' -o -name '*.txt' -o -name '*.js' -o -name '*.css' \
-         -o -name '*.json' -o -name '*.svg' -o -name '*.wasm' \) \
-         -exec gzip -9 -k -n {} +
+RUN npm run build
 
 FROM --platform=$BUILDPLATFORM node:26-bookworm-slim AS cockpit-build
 WORKDIR /src
@@ -131,6 +126,8 @@ COPY media/ ./
 RUN cargo build --release --locked --target "$(cat /etc/rust-target)" \
     && install -D "target/$(cat /etc/rust-target)/release/stellarr-media" /out/stellarr-media
 
+FROM node:26-bookworm-slim AS node-runtime
+
 # Target of docker-compose.dev.yml: the SDK with the source bind-mounted.
 FROM mcr.microsoft.com/dotnet/sdk:10.0-noble AS api-dev
 WORKDIR /src/server/Stellarr.Api
@@ -145,9 +142,12 @@ WORKDIR /app
 
 FROM mcr.microsoft.com/dotnet/aspnet:10.0-noble AS final
 
+# libatomic1: the Node binary copied below links against it.
 RUN apt-get update \
-    && apt-get install -y --no-install-recommends ca-certificates coturn curl nginx openssl supervisor \
+    && apt-get install -y --no-install-recommends ca-certificates coturn curl libatomic1 nginx openssl supervisor \
     && rm -rf /var/lib/apt/lists/*
+
+COPY --from=node-runtime /usr/local/bin/node /usr/local/bin/node
 
 COPY infra/nginx.conf /etc/nginx/nginx.conf.template
 COPY infra/turnserver.conf.template /etc/turnserver.conf.template
@@ -159,7 +159,12 @@ COPY --chmod=0755 infra/stellarr-cli.sh /usr/local/bin/stellarr
 COPY --from=cockpit-build /src/cockpit/dist /srv/cockpit
 COPY --from=api-build /out/api /opt/stellarr/api
 COPY --from=api-build /out/cli /opt/stellarr/cli
-COPY --from=web-build /src/web/out /srv/web
+# The standalone output holds node_modules beside web/server.js, so the app sits
+# one level below /opt/stellarr/web, and the static files and public/ go beside
+# that server.js.
+COPY --from=web-build /src/web/.next/standalone /opt/stellarr/web
+COPY --from=web-build /src/web/.next/static /opt/stellarr/web/web/.next/static
+COPY --from=web-build /src/web/public /opt/stellarr/web/web/public
 COPY --from=media-build /out/stellarr-media /opt/stellarr/media/stellarr-media
 # The origin, hash and licence of every prebuilt browser file travel with the
 # image, next to the notices they refer to.
@@ -172,8 +177,7 @@ ENV STELLARR_DATA_ROOT=/data/stellarr
 EXPOSE 80 443 3478/tcp 3478/udp 5349/tcp 5349/udp 49000/udp 49160-49200/udp
 VOLUME ["/data/stellarr"]
 
-# Healthy means both the API and the web client answer: /health reaches the API,
-# and /login is the client's sign-in page, which nginx serves from /srv/web.
+# Healthy means both the API and the web client answer: either can fail on its own.
 HEALTHCHECK --interval=30s --timeout=5s --start-period=60s --retries=5 \
   CMD curl -kfsS -o /dev/null https://127.0.0.1/health && curl -kfsS -o /dev/null https://127.0.0.1/login || exit 1
 
