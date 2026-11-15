@@ -165,7 +165,7 @@ The container entrypoint and TLS maintenance scripts read the following variable
 
 ## Development stack (`docker-compose.dev.yml`)
 
-`docker-compose.dev.yml` runs each service from bind mounts with live reload (`STELLARR_TIME_ZONE` defaults to `Europe/Warsaw`, `STELLARR_INSTANCE_NAME` to `Stellarr Dev`, and `PUBLIC_HOST` sets `Rtc__PublicHost`).
+`docker-compose.dev.yml` runs each service from bind mounts with live reload (`STELLARR_TIME_ZONE` defaults to `Europe/Warsaw` and `STELLARR_INSTANCE_NAME` to `Stellarr Dev`).
 
 | Variable | Default | Description |
 | --- | --- | --- |

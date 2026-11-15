@@ -615,6 +615,7 @@ public sealed class CliCommandTests
                 CreatedAt = DateTime.UtcNow,
                 LastSeenAt = DateTime.UtcNow,
                 ExpiresAt = DateTime.UtcNow.AddDays(1),
+                AbsoluteExpiresAt = DateTime.UtcNow.AddDays(1),
             });
             await db.SaveChangesAsync();
         }
@@ -675,6 +676,7 @@ public sealed class CliCommandTests
                     CreatedAt = now,
                     LastSeenAt = now,
                     ExpiresAt = now.AddDays(1),
+                    AbsoluteExpiresAt = now.AddDays(1),
                 },
                 new UserSession
                 {
@@ -685,6 +687,7 @@ public sealed class CliCommandTests
                     CreatedAt = now,
                     LastSeenAt = now,
                     ExpiresAt = now.AddDays(1),
+                    AbsoluteExpiresAt = now.AddDays(1),
                 });
             db.DesktopBrowserLogins.Add(new DesktopBrowserLogin
             {

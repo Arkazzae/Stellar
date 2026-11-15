@@ -1,5 +1,4 @@
 using Microsoft.EntityFrameworkCore;
-using Stellarr.Api.Auth;
 using Stellarr.Api.Auth.Security;
 using Stellarr.Api.Data;
 using Stellarr.Api.Domain;
@@ -78,7 +77,6 @@ public sealed class SessionRevocationWatcher(
                 x.RevokedAt,
                 x.ExpiresAt,
                 x.AbsoluteExpiresAt,
-                x.CreatedAt,
                 x.SecurityVersion,
                 x.MfaCompletedAt,
                 x.MfaEvidence,
@@ -97,7 +95,7 @@ public sealed class SessionRevocationWatcher(
                 session.RevokedAt is not null ||
                 session.UserIsDisabled ||
                 session.ExpiresAt <= utcNow ||
-                (session.AbsoluteExpiresAt ?? session.CreatedAt.Add(SessionAuthentication.Lifetime)) <= utcNow ||
+                session.AbsoluteExpiresAt is null || session.AbsoluteExpiresAt <= utcNow ||
                 session.SecurityVersion != session.UserSessionVersion ||
                 connection.SecurityVersion != session.UserSessionVersion)
             {

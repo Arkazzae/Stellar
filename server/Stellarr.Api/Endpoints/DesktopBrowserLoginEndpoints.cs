@@ -276,11 +276,10 @@ public static class DesktopBrowserLoginEndpoints
                 x => x.Id == sourceId && x.UserId == userId,
                 cancellationToken)
             : null;
-        var hardEnd = source?.AbsoluteExpiresAt ?? source?.CreatedAt.Add(SessionAuthentication.Lifetime);
         if (source is null ||
             source.RevokedAt is not null ||
             source.ExpiresAt <= now ||
-            hardEnd <= now ||
+            source.AbsoluteExpiresAt is null || source.AbsoluteExpiresAt <= now ||
             login.SecurityVersion != user.SessionVersion ||
             source.SecurityVersion != user.SessionVersion)
         {
@@ -333,7 +332,7 @@ public static class DesktopBrowserLoginEndpoints
         DateTime now,
         CancellationToken cancellationToken) =>
         context.User.FindSessionId() is { } sessionId
-            ? SourceSessionQuery(db, sessionId, userId, now, now - SessionAuthentication.Lifetime)
+            ? SourceSessionQuery(db, sessionId, userId, now)
                 .SingleOrDefaultAsync(cancellationToken)
             : Task.FromResult<UserSession?>(null);
 
@@ -341,16 +340,14 @@ public static class DesktopBrowserLoginEndpoints
         AppDbContext db,
         Guid sessionId,
         Guid userId,
-        DateTime now,
-        DateTime legacyCreatedAfter) =>
+        DateTime now) =>
         db.UserSessions.AsNoTracking().Where(
             x => x.Id == sessionId &&
                 x.UserId == userId &&
                 x.RevokedAt == null &&
                 x.ExpiresAt > now &&
                 !x.User.IsDisabled &&
-                (x.AbsoluteExpiresAt > now ||
-                    (x.AbsoluteExpiresAt == null && x.CreatedAt > legacyCreatedAfter)));
+                x.AbsoluteExpiresAt > now);
 
     /// <summary>
     /// Browser form posts must come from this exact origin. Non-browser clients

@@ -200,14 +200,13 @@ public static class ExternalOidcAuthentication
         var db = context.RequestServices.GetRequiredService<AppDbContext>();
         var cancellationToken = context.RequestAborted;
         var now = DateTime.UtcNow;
-        var legacyCutoff = now - SessionAuthentication.Lifetime;
         var user = await db.Users.SingleOrDefaultAsync(x => x.Id == link.UserId, cancellationToken);
         var sessionActive = user is not null && await db.UserSessions.AsNoTracking().AnyAsync(
             x => x.Id == link.SessionId &&
                 x.UserId == link.UserId &&
                 x.RevokedAt == null &&
                 x.ExpiresAt > now &&
-                (x.AbsoluteExpiresAt > now || (x.AbsoluteExpiresAt == null && x.CreatedAt > legacyCutoff)) &&
+                x.AbsoluteExpiresAt > now &&
                 x.SecurityVersion == link.SecurityVersion,
             cancellationToken);
         if (user is null || !sessionActive || user.IsDisabled || user.SecurityRecoveryRequired ||

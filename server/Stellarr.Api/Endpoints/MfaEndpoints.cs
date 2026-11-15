@@ -620,14 +620,12 @@ public static partial class MfaEndpoints
         if (challenge.ParentSessionId is { } parentSessionId)
         {
             var parentNow = DateTime.UtcNow;
-            var legacyCutoff = parentNow - SessionAuthentication.Lifetime;
             var parentActive = await db.UserSessions.AsNoTracking().AnyAsync(
                 x => x.Id == parentSessionId &&
                     x.UserId == user.Id &&
                     x.RevokedAt == null &&
                     x.ExpiresAt > parentNow &&
-                    (x.AbsoluteExpiresAt > parentNow ||
-                        (x.AbsoluteExpiresAt == null && x.CreatedAt > legacyCutoff)) &&
+                    x.AbsoluteExpiresAt > parentNow &&
                     x.SecurityVersion == user.SessionVersion,
                 cancellationToken);
             if (!parentActive)
@@ -794,14 +792,12 @@ public static partial class MfaEndpoints
         if (challenge.ParentSessionId is { } parentSessionId)
         {
             var parentNow = DateTime.UtcNow;
-            var legacyCutoff = parentNow - SessionAuthentication.Lifetime;
             var parentActive = await db.UserSessions.AsNoTracking().AnyAsync(
                 x => x.Id == parentSessionId &&
                     x.UserId == user.Id &&
                     x.RevokedAt == null &&
                     x.ExpiresAt > parentNow &&
-                    (x.AbsoluteExpiresAt > parentNow ||
-                        (x.AbsoluteExpiresAt == null && x.CreatedAt > legacyCutoff)) &&
+                    x.AbsoluteExpiresAt > parentNow &&
                     x.SecurityVersion == user.SessionVersion,
                 cancellationToken);
             if (!parentActive)

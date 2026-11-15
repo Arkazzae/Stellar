@@ -1,7 +1,6 @@
 import type { Metadata, Viewport } from "next";
 import type { ReactNode } from "react";
 
-import { LegacyPwaCleanup } from "@/components/platform/LegacyPwaCleanup";
 import { ThemeScript } from "@/design/themeScript";
 import { InstanceLanguageScript, LocaleScript } from "@/i18n/localeScript";
 import { LanguageProvider } from "@/state/LanguageProvider";
@@ -56,7 +55,6 @@ export default function RootLayout({ children }: { children: ReactNode }) {
         <ThemeScript />
       </head>
       <body>
-        <LegacyPwaCleanup />
         <LanguageProvider>
           <ThemeProvider>
             <PortsProvider>
