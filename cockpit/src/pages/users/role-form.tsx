@@ -11,9 +11,9 @@ import {
 } from "@stellarr/ui";
 import { useState, type FormEvent } from "react";
 
-import { t } from "@/i18n";
-import { cockpitApi, type CockpitRole } from "@/lib/api";
-import type { Perform } from "@/pages/users/use-access-actions";
+import { t } from "../../i18n";
+import { cockpitApi, type CockpitRole } from "../../lib/api";
+import type { Perform } from "./use-access-actions";
 
 /** The permission keys the server knows, shown as they are stored. */
 const permissionKeys = [

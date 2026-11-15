@@ -2,21 +2,21 @@ import { render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-import { getLocale, setLocale } from "@/i18n";
+import { getLocale, setLocale } from "../i18n";
 
-import { CockpitApiError, cockpitApi, type CockpitSettings } from "@/lib/api";
-import { SettingsPage } from "@/pages/settings-page";
-import { CockpitContext, type CockpitContextValue } from "@/state/cockpit-context";
-import { LocaleProvider } from "@/state/locale-provider";
-import { choose } from "@/test/dropdown";
-import { selectPolish } from "@/test/locale";
-import { secret, secrets } from "@/test/secrets";
-import { cockpitValue } from "@/test/cockpit-fixtures";
+import { CockpitApiError, cockpitApi, type CockpitSettings } from "../lib/api";
+import { SettingsPage } from "./settings-page";
+import { CockpitContext, type CockpitContextValue } from "../state/cockpit-context";
+import { LocaleProvider } from "../state/locale-provider";
+import { choose } from "../test/dropdown";
+import { selectPolish } from "../test/locale";
+import { secret, secrets } from "../test/secrets";
+import { cockpitValue } from "../test/cockpit-fixtures";
 
 selectPolish();
 
-vi.mock("@/lib/api", async (importOriginal) => {
-  const original = await importOriginal<typeof import("@/lib/api")>();
+vi.mock("../lib/api", async (importOriginal) => {
+  const original = await importOriginal<typeof import("../lib/api")>();
   return {
     ...original,
     cockpitApi: {

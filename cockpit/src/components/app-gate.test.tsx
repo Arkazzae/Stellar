@@ -3,11 +3,11 @@ import userEvent from "@testing-library/user-event";
 import { MemoryRouter } from "react-router-dom";
 import { describe, expect, it, vi } from "vitest";
 
-import { AppGate } from "@/components/app-gate";
-import { CockpitApiError } from "@/lib/api";
-import { CockpitContext, type CockpitContextValue } from "@/state/cockpit-context";
-import { selectPolish } from "@/test/locale";
-import { cockpitValue } from "@/test/cockpit-fixtures";
+import { AppGate } from "./app-gate";
+import { CockpitApiError } from "../lib/api";
+import { CockpitContext, type CockpitContextValue } from "../state/cockpit-context";
+import { selectPolish } from "../test/locale";
+import { cockpitValue } from "../test/cockpit-fixtures";
 
 function renderGate(value: CockpitContextValue) {
   return render(

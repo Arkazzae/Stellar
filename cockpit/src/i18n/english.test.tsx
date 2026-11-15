@@ -3,21 +3,21 @@ import userEvent from "@testing-library/user-event";
 import { MemoryRouter, Route, Routes } from "react-router-dom";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-import { AppGate } from "@/components/app-gate";
-import { AppShell } from "@/components/app-shell";
-import { CockpitApiError, cockpitApi, type CockpitBackups, type CockpitRuntime, type CockpitUsers } from "@/lib/api";
-import { BackupsPage } from "@/pages/backups-page";
-import { DashboardPage } from "@/pages/dashboard-page";
-import { NotFoundPage } from "@/pages/not-found-page";
-import { RuntimePage } from "@/pages/runtime-page";
-import { UsersPage } from "@/pages/users-page";
-import { CockpitContext, type CockpitContextValue } from "@/state/cockpit-context";
-import { cockpitValue } from "@/test/cockpit-fixtures";
+import { AppGate } from "../components/app-gate";
+import { AppShell } from "../components/app-shell";
+import { CockpitApiError, cockpitApi, type CockpitBackups, type CockpitRuntime, type CockpitUsers } from "../lib/api";
+import { BackupsPage } from "../pages/backups-page";
+import { DashboardPage } from "../pages/dashboard-page";
+import { NotFoundPage } from "../pages/not-found-page";
+import { RuntimePage } from "../pages/runtime-page";
+import { UsersPage } from "../pages/users-page";
+import { CockpitContext, type CockpitContextValue } from "../state/cockpit-context";
+import { cockpitValue } from "../test/cockpit-fixtures";
 
 // These tests never select a language: English is what the panel shows by default.
 
-vi.mock("@/lib/api", async (importOriginal) => {
-  const original = await importOriginal<typeof import("@/lib/api")>();
+vi.mock("../lib/api", async (importOriginal) => {
+  const original = await importOriginal<typeof import("../lib/api")>();
   return {
     ...original,
     cockpitApi: {
@@ -278,7 +278,7 @@ describe("the unknown page", () => {
 
 describe("api failures", () => {
   it("are reported in English when the backend is unreachable", async () => {
-    const { cockpitApi: real } = await vi.importActual<typeof import("@/lib/api")>("@/lib/api");
+    const { cockpitApi: real } = await vi.importActual<typeof import("../lib/api")>("../lib/api");
     fetchMock.mockRejectedValue(new TypeError("network down"));
 
     await expect(real.bootstrap()).rejects.toMatchObject({
@@ -288,7 +288,7 @@ describe("api failures", () => {
   });
 
   it("name the status when the backend sends no explanation", async () => {
-    const { cockpitApi: real } = await vi.importActual<typeof import("@/lib/api")>("@/lib/api");
+    const { cockpitApi: real } = await vi.importActual<typeof import("../lib/api")>("../lib/api");
     fetchMock.mockResolvedValue(new Response(null, { status: 502 }));
 
     await expect(real.bootstrap()).rejects.toMatchObject({

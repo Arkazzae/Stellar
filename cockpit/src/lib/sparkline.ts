@@ -1,4 +1,4 @@
-import type { CockpitRuntimeSample } from "@/lib/api";
+import type { CockpitRuntimeSample } from "./api";
 
 export interface SparkPoint {
   /** When the bucket ends, as milliseconds. */

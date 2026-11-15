@@ -1,27 +1,27 @@
 import { Badge, Card, cx, Spinner, Tabs, TabsContent, TabsList, TabsTrigger } from "@stellarr/ui";
 import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
 
-import { ActivityChart } from "@/components/activity-chart";
-import { AvailabilityCard } from "@/components/availability-card";
-import { Icon, type IconName } from "@/components/icons/icon";
-import { LineChart } from "@/components/line-chart";
-import { ArcGauge, CapsuleBars, MiniCells, MiniLine, MiniStems, type MiniPoint } from "@/components/mini-charts";
-import { StatTile, TileFigure, TileHeader } from "@/components/stat-tile";
-import { StatusBadge } from "@/components/status-badge";
-import { t, type MessageKey } from "@/i18n";
-import { formatDay, formatNumber, formatTime } from "@/i18n/format";
+import { ActivityChart } from "../components/activity-chart";
+import { AvailabilityCard } from "../components/availability-card";
+import { Icon, type IconName } from "../components/icons/icon";
+import { LineChart } from "../components/line-chart";
+import { ArcGauge, CapsuleBars, MiniCells, MiniLine, MiniStems, type MiniPoint } from "../components/mini-charts";
+import { StatTile, TileFigure, TileHeader } from "../components/stat-tile";
+import { StatusBadge } from "../components/status-badge";
+import { t, type MessageKey } from "../i18n";
+import { formatDay, formatNumber, formatTime } from "../i18n/format";
 import {
   cockpitApi,
   type CockpitActivity,
   type CockpitActivityDay,
   type CockpitRuntime,
   type CockpitServiceId,
-} from "@/lib/api";
-import { readHealth, type HealthSnapshot } from "@/lib/health";
-import { bucketize } from "@/lib/sparkline";
-import { weekOverWeek } from "@/lib/trend";
-import { useCockpitResource } from "@/lib/use-cockpit-resource";
-import { useCockpit } from "@/state/cockpit-context";
+} from "../lib/api";
+import { readHealth, type HealthSnapshot } from "../lib/health";
+import { bucketize } from "../lib/sparkline";
+import { weekOverWeek } from "../lib/trend";
+import { useCockpitResource } from "../lib/use-cockpit-resource";
+import { useCockpit } from "../state/cockpit-context";
 
 type Health = Pick<HealthSnapshot, "api" | "database">;
 

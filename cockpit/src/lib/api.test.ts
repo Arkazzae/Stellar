@@ -9,7 +9,7 @@ import {
   pendingLoginStep,
   type CockpitSettings,
 } from "./api";
-import { selectPolish } from "@/test/locale";
+import { selectPolish } from "../test/locale";
 
 const fetchMock = vi.fn<typeof fetch>();
 

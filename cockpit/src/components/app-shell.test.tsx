@@ -3,10 +3,10 @@ import userEvent from "@testing-library/user-event";
 import { MemoryRouter, Route, Routes } from "react-router-dom";
 import { describe, expect, it } from "vitest";
 
-import { AppShell } from "@/components/app-shell";
-import { CockpitContext, type CockpitContextValue } from "@/state/cockpit-context";
-import { selectPolish } from "@/test/locale";
-import { cockpitValue } from "@/test/cockpit-fixtures";
+import { AppShell } from "./app-shell";
+import { CockpitContext, type CockpitContextValue } from "../state/cockpit-context";
+import { selectPolish } from "../test/locale";
+import { cockpitValue } from "../test/cockpit-fixtures";
 
 function renderShell(path: string, value: CockpitContextValue = cockpitValue(), basename?: string) {
   return render(

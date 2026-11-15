@@ -1,13 +1,13 @@
 import { Alert, AlertDescription, AlertTitle, Badge, Button, Card, Label, Spinner, Switch } from "@stellarr/ui";
 import { useState } from "react";
 
-import { CardTitleRow } from "@/components/card-title-row";
-import { CloudflareSettings } from "@/components/cloudflare-settings";
-import { PageHeader } from "@/components/page-header";
-import { SecretField } from "@/components/secret-field";
-import { t } from "@/i18n";
-import { cockpitApi, type CockpitIntegrationSwitches, type CockpitSecret, type CockpitSettings } from "@/lib/api";
-import { useCockpitResource } from "@/lib/use-cockpit-resource";
+import { CardTitleRow } from "../components/card-title-row";
+import { CloudflareSettings } from "../components/cloudflare-settings";
+import { PageHeader } from "../components/page-header";
+import { SecretField } from "../components/secret-field";
+import { t } from "../i18n";
+import { cockpitApi, type CockpitIntegrationSwitches, type CockpitSecret, type CockpitSettings } from "../lib/api";
+import { useCockpitResource } from "../lib/use-cockpit-resource";
 
 interface Notice {
   message: string;

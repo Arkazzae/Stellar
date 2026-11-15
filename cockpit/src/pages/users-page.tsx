@@ -11,16 +11,16 @@ import {
 } from "@stellarr/ui";
 import { useCallback, useState } from "react";
 
-import { PageHeader } from "@/components/page-header";
-import { t } from "@/i18n";
-import { cockpitApi, type CockpitRole, type CockpitSession, type CockpitUsers } from "@/lib/api";
-import { useCockpitResource } from "@/lib/use-cockpit-resource";
-import { AccountsTab, type AccountFilter } from "@/pages/users/accounts-tab";
-import { RoleForm } from "@/pages/users/role-form";
-import { RolesTab } from "@/pages/users/roles-tab";
-import { SessionsTab } from "@/pages/users/sessions-tab";
-import { useAccessActions } from "@/pages/users/use-access-actions";
-import { UserForm } from "@/pages/users/user-form";
+import { PageHeader } from "../components/page-header";
+import { t } from "../i18n";
+import { cockpitApi, type CockpitRole, type CockpitSession, type CockpitUsers } from "../lib/api";
+import { useCockpitResource } from "../lib/use-cockpit-resource";
+import { AccountsTab, type AccountFilter } from "./users/accounts-tab";
+import { RoleForm } from "./users/role-form";
+import { RolesTab } from "./users/roles-tab";
+import { SessionsTab } from "./users/sessions-tab";
+import { useAccessActions } from "./users/use-access-actions";
+import { UserForm } from "./users/user-form";
 
 interface Access extends CockpitUsers {
   sessions: CockpitSession[];

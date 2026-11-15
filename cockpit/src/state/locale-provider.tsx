@@ -1,7 +1,7 @@
 import { Fragment, useCallback, useMemo, useState, type ReactNode } from "react";
 
-import { getLocale, saveLocale, setLocale, type Locale } from "@/i18n";
-import { LocaleContext } from "@/state/locale-context";
+import { getLocale, saveLocale, setLocale, type Locale } from "../i18n";
+import { LocaleContext } from "./locale-context";
 
 /**
  * Holds the panel's language. Messages are looked up as components render, so

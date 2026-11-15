@@ -1,11 +1,11 @@
 import { Badge, Button, Card, Dropdown, Input, Label, Spinner, Switch } from "@stellarr/ui";
 import { useState, type FormEvent } from "react";
 
-import { CardTitleRow } from "@/components/card-title-row";
-import { SecretField } from "@/components/secret-field";
-import { t, type MessageKey } from "@/i18n";
-import { CockpitApiError, cockpitApi, type CockpitCloudflareR2Settings, type CockpitSecret } from "@/lib/api";
-import { useCockpitResource } from "@/lib/use-cockpit-resource";
+import { CardTitleRow } from "./card-title-row";
+import { SecretField } from "./secret-field";
+import { t, type MessageKey } from "../i18n";
+import { CockpitApiError, cockpitApi, type CockpitCloudflareR2Settings, type CockpitSecret } from "../lib/api";
+import { useCockpitResource } from "../lib/use-cockpit-resource";
 
 const S3_FIELDS: { name: "region" | "bucket"; label: MessageKey; max: number }[] = [
   { name: "region", label: "integrations.cloudflare.region", max: 100 },

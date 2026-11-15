@@ -1,7 +1,7 @@
 import { cx } from "@stellarr/ui";
 import { useId } from "react";
 
-import { useMeasuredBox } from "@/lib/use-measured-box";
+import { useMeasuredBox } from "../lib/use-measured-box";
 
 /**
  * Small charts for the overview's tiles. The tile states its figure in text, so

@@ -1,9 +1,9 @@
 import { Button, Input, Label, Spinner, Switch } from "@stellarr/ui";
 import { useState, type FormEvent } from "react";
 
-import { t, type MessageKey } from "@/i18n";
-import { CockpitApiError, cockpitApi, type CockpitBackupSettings } from "@/lib/api";
-import { useCockpitResource } from "@/lib/use-cockpit-resource";
+import { t, type MessageKey } from "../i18n";
+import { CockpitApiError, cockpitApi, type CockpitBackupSettings } from "../lib/api";
+import { useCockpitResource } from "../lib/use-cockpit-resource";
 
 const NUMBERS: { name: "intervalHours" | "retryMinutes" | "initialDelayMinutes" | "retentionDays"; label: MessageKey; min: number; max: number }[] = [
   { name: "intervalHours", label: "backups.settings.interval", min: 1, max: 8760 },

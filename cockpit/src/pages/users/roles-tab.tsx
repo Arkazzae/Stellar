@@ -14,8 +14,8 @@ import {
   TableRow,
 } from "@stellarr/ui";
 
-import { t } from "@/i18n";
-import type { CockpitRole } from "@/lib/api";
+import { t } from "../../i18n";
+import type { CockpitRole } from "../../lib/api";
 
 interface RolesTabProps {
   roles: CockpitRole[];

@@ -1,6 +1,6 @@
 import { cx } from "@stellarr/ui";
 
-import { initialsOf } from "@/lib/initials";
+import { initialsOf } from "../lib/initials";
 
 interface UserAvatarProps {
   displayName: string;

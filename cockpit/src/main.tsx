@@ -2,19 +2,19 @@ import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
 import { createBrowserRouter, RouterProvider } from "react-router-dom";
 
-import { AppGate } from "@/components/app-gate";
-import { detectLocale, setLocale } from "@/i18n";
-import { BackupsPage } from "@/pages/backups-page";
-import { DashboardPage } from "@/pages/dashboard-page";
-import { IntegrationsPage } from "@/pages/integrations-page";
-import { LogsPage } from "@/pages/logs-page";
-import { NotFoundPage } from "@/pages/not-found-page";
-import { RuntimePage } from "@/pages/runtime-page";
-import { ServersPage } from "@/pages/servers-page";
-import { SettingsPage } from "@/pages/settings-page";
-import { UsersPage } from "@/pages/users-page";
-import { CockpitProvider } from "@/state/cockpit-provider";
-import { LocaleProvider } from "@/state/locale-provider";
+import { AppGate } from "./components/app-gate";
+import { detectLocale, setLocale } from "./i18n";
+import { BackupsPage } from "./pages/backups-page";
+import { DashboardPage } from "./pages/dashboard-page";
+import { IntegrationsPage } from "./pages/integrations-page";
+import { LogsPage } from "./pages/logs-page";
+import { NotFoundPage } from "./pages/not-found-page";
+import { RuntimePage } from "./pages/runtime-page";
+import { ServersPage } from "./pages/servers-page";
+import { SettingsPage } from "./pages/settings-page";
+import { UsersPage } from "./pages/users-page";
+import { CockpitProvider } from "./state/cockpit-provider";
+import { LocaleProvider } from "./state/locale-provider";
 
 import "./index.css";
 

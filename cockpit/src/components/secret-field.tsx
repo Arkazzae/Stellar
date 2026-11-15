@@ -1,9 +1,9 @@
 import { Badge, Button, Input, Label, Spinner } from "@stellarr/ui";
 import { useId, useState, type KeyboardEvent } from "react";
 
-import { t } from "@/i18n";
-import { formatShortDateTime } from "@/i18n/format";
-import { cockpitApi, type CockpitSecret } from "@/lib/api";
+import { t } from "../i18n";
+import { formatShortDateTime } from "../i18n/format";
+import { cockpitApi, type CockpitSecret } from "../lib/api";
 
 interface SecretFieldProps {
   title: string;

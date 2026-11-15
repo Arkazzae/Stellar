@@ -34,14 +34,14 @@ import {
 } from "@stellarr/ui";
 import { useEffect, useState, type FormEvent } from "react";
 
-import { CardTitleRow } from "@/components/card-title-row";
-import { Icon } from "@/components/icons/icon";
-import { PageHeader } from "@/components/page-header";
-import { t } from "@/i18n";
-import { formatNumber, formatShortDateTime } from "@/i18n/format";
-import { cockpitApi, type CockpitServer, type CockpitServerMember } from "@/lib/api";
-import { useCockpitResource } from "@/lib/use-cockpit-resource";
-import { useAccessActions, type Perform } from "@/pages/users/use-access-actions";
+import { CardTitleRow } from "../components/card-title-row";
+import { Icon } from "../components/icons/icon";
+import { PageHeader } from "../components/page-header";
+import { t } from "../i18n";
+import { formatNumber, formatShortDateTime } from "../i18n/format";
+import { cockpitApi, type CockpitServer, type CockpitServerMember } from "../lib/api";
+import { useCockpitResource } from "../lib/use-cockpit-resource";
+import { useAccessActions, type Perform } from "./users/use-access-actions";
 
 /** The form inside the sheet; keyed by server, so each opening starts with no members read. */
 function TransferForm({ server, onDone, perform }: { server: CockpitServer; onDone: () => void; perform: Perform }) {

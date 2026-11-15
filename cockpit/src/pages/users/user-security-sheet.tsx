@@ -13,9 +13,9 @@ import {
 } from "@stellarr/ui";
 import { useCallback, useEffect, useId, useState, type FormEvent } from "react";
 
-import { t, type MessageKey } from "@/i18n";
-import { formatDateTime } from "@/i18n/format";
-import { cockpitApi, type CockpitRecovery, type CockpitUser, type CockpitUserSecurity } from "@/lib/api";
+import { t, type MessageKey } from "../../i18n";
+import { formatDateTime } from "../../i18n/format";
+import { cockpitApi, type CockpitRecovery, type CockpitUser, type CockpitUserSecurity } from "../../lib/api";
 
 interface UserSecuritySheetProps {
   user: CockpitUser;

@@ -1,7 +1,7 @@
 import { render } from "@testing-library/react";
 import { describe, expect, it } from "vitest";
 
-import { UserAvatar } from "@/components/user-avatar";
+import { UserAvatar } from "./user-avatar";
 
 describe("UserAvatar", () => {
   it("shows the initials and no picture", () => {

@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { initialsOf } from "@/lib/initials";
+import { initialsOf } from "./initials";
 
 describe("initialsOf", () => {
   it.each([

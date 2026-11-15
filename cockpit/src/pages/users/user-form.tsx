@@ -12,9 +12,9 @@ import {
 } from "@stellarr/ui";
 import { useState, type FormEvent } from "react";
 
-import { t } from "@/i18n";
-import { cockpitApi, type CockpitRole } from "@/lib/api";
-import type { Perform } from "@/pages/users/use-access-actions";
+import { t } from "../../i18n";
+import { cockpitApi, type CockpitRole } from "../../lib/api";
+import type { Perform } from "./use-access-actions";
 
 /**
  * The characters the server accepts in a login: letters of any alphabet, decimal
