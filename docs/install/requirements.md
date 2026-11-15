@@ -8,10 +8,10 @@ Stellarr runs as a single Docker container. To test it locally on one machine, f
 | --- | --- |
 | Software | Docker Engine with the Compose plugin (`docker compose`) |
 | Architecture | `linux/amd64` or `linux/arm64` |
-| Memory limit | 4 GiB default cap (`STELLARR_CONTAINER_MEMORY_LIMIT`); idle baseline is ~280 MiB |
+| Memory limit | 4 GiB default cap (`STELLARR_CONTAINER_MEMORY_LIMIT`); idle baseline is ~150 MiB (measured on `linux/arm64` with a fresh instance) |
 | CPU limit | 4 CPUs default cap (`STELLARR_CONTAINER_CPUS`) |
 | Process limit | 512 processes (`STELLARR_CONTAINER_PIDS_LIMIT`) |
-| Disk | ~1.1 GB for the image plus the `stellarr_data` volume (database, uploads, keys, secrets, and TLS certificates) |
+| Disk | ~830 MB for the image plus the `stellarr_data` volume (database, uploads, keys, secrets, and TLS certificates) |
 
 Uploads are governed by two storage quotas and a free-space check: 2 GiB per account, 20 GiB total for the instance, and at least 1 GiB of free space remaining on the data volume. See [Configuration](configuration.md#uploads-and-quotas).
 
@@ -29,7 +29,7 @@ Uploads are governed by two storage quotas and a free-space check: 2 GiB per acc
 | `3478` | TCP | TURN over TCP (enabled with `STELLARR_TURN_TCP_ENABLED=true`) | Optional | `STELLARR_TURN_PORT` |
 | `5349` | TCP, UDP | TURN over TLS/DTLS (enabled with `STELLARR_TURNS_ENABLED=true`; requires a trusted TLS certificate) | Optional | `STELLARR_TURNS_PORT` |
 
-Internal services (SQLite, ASP.NET Core, Next.js, and the media control API) listen only inside the container. See [RTC and ports](../rtc-and-ports.md) for relay sizing and troubleshooting.
+Internal services (SQLite, ASP.NET Core, and the media control API) listen only inside the container. See [RTC and ports](../rtc-and-ports.md) for relay sizing and troubleshooting.
 
 ## Behind NAT
 
