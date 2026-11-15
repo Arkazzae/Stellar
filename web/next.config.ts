@@ -1,6 +1,7 @@
 import path from "node:path";
 
 import type { NextConfig } from "next";
+import { PHASE_PRODUCTION_BUILD } from "next/constants";
 
 const apiOrigin = process.env.STELLARR_API_ORIGIN ?? "http://127.0.0.1:5000";
 
@@ -22,72 +23,61 @@ const allowedDevOrigins = [
 
 /**
  * `web/` is a workspace of the repository root, which holds the hoisted
- * `node_modules` and the shared `packages/`. File tracing and Turbopack must
- * start there, or the standalone output misses the hoisted dependencies and the
- * shared package. The output then nests the app as `web/server.js`.
+ * `node_modules` and the shared `packages/`, so Turbopack must start there.
  */
 const workspaceRoot = path.resolve(import.meta.dirname, "..");
 
-const IMMUTABLE = "public, max-age=31536000, immutable";
-const REVALIDATE_HOURLY = "public, max-age=3600, must-revalidate";
+/**
+ * `next build` writes a static export to `out/`, which Nginx serves in the
+ * container: there is no Node server in production. Nginx also does what this
+ * file did for the server it replaced, so its configuration
+ * (`infra/nginx.conf`) holds the legacy redirects, the cache policy and the
+ * compression.
+ *
+ * `next dev` stays a server, without export mode. It proxies the API, which
+ * an export rejects, and renders any invite code, where export mode would
+ * accept only the one the build renders.
+ */
+export default function config(phase: string): NextConfig {
+  const exporting = phase === PHASE_PRODUCTION_BUILD;
 
-function cacheControl(source: string, value: string) {
-  return { source, headers: [{ key: "Cache-Control", value }] };
+  return {
+    reactStrictMode: true,
+    poweredByHeader: false,
+    turbopack: { root: workspaceRoot },
+    // @stellarr/ui is consumed as TypeScript source, with no build step.
+    transpilePackages: ["@stellarr/ui"],
+    allowedDevOrigins,
+    ...(exporting
+      ? { output: "export" }
+      : {
+          experimental: {
+            // Dev rewrites buffer uploads in the Next server. 128 MB is the
+            // transport ceiling of Kestrel and Nginx, so a video within the
+            // API's own 100 MB media limit still arrives as one complete
+            // multipart request.
+            proxyClientMaxBodySize: "128mb",
+          },
+          /**
+           * `next dev` serves the UI on :3000 and the API runs on :5000, so
+           * the same-origin paths the client uses in production are proxied
+           * here, as Nginx proxies them in the container.
+           */
+          async rewrites() {
+            return [
+              {
+                source: "/.well-known/stellarr/client",
+                destination: `${apiOrigin}/.well-known/stellarr/client`,
+              },
+              { source: "/api/:path*", destination: `${apiOrigin}/api/:path*` },
+              { source: "/assets/:path*", destination: `${apiOrigin}/assets/:path*` },
+              { source: "/hubs/:path*", destination: `${apiOrigin}/hubs/:path*` },
+              {
+                source: "/bergamot-models-gcs/:path*",
+                destination: "https://storage.googleapis.com/bergamot-models-sandbox/0.3.3/:path*",
+              },
+            ];
+          },
+        }),
+  };
 }
-
-const nextConfig: NextConfig = {
-  reactStrictMode: true,
-  poweredByHeader: false,
-  output: "standalone",
-  outputFileTracingRoot: workspaceRoot,
-  turbopack: { root: workspaceRoot },
-  // @stellarr/ui is consumed as TypeScript source, with no build step.
-  transpilePackages: ["@stellarr/ui"],
-  allowedDevOrigins,
-  experimental: {
-    // Dev rewrites buffer uploads in the Next server. 128 MB is the transport
-    // ceiling of Kestrel and Nginx, so a video within the API's own 100 MB
-    // media limit still arrives as one complete multipart request.
-    proxyClientMaxBodySize: "128mb",
-  },
-  async redirects() {
-    return [
-      { source: "/rejestracja", destination: "/register", permanent: true },
-      { source: "/zapomniane-haslo", destination: "/forgot-password", permanent: true },
-      { source: "/reset-hasla", destination: "/reset-password", permanent: true },
-    ];
-  },
-  /**
-   * `next dev` serves the UI on :3000 and the API runs on :5000, so the
-   * same-origin paths the client uses in production are proxied here. Nginx
-   * does that in production, where this returns nothing.
-   */
-  async rewrites() {
-    if (process.env.NODE_ENV === "production") return [];
-    return [
-      {
-        source: "/.well-known/stellarr/client",
-        destination: `${apiOrigin}/.well-known/stellarr/client`,
-      },
-      { source: "/api/:path*", destination: `${apiOrigin}/api/:path*` },
-      { source: "/assets/:path*", destination: `${apiOrigin}/assets/:path*` },
-      { source: "/hubs/:path*", destination: `${apiOrigin}/hubs/:path*` },
-      {
-        source: "/bergamot-models-gcs/:path*",
-        destination: "https://storage.googleapis.com/bergamot-models-sandbox/0.3.3/:path*",
-      },
-    ];
-  },
-  async headers() {
-    return [
-      // Self-hosted fonts and the translation codecs never change in place.
-      cacheControl("/fonts/:path*", IMMUTABLE),
-      cacheControl("/codecs/bergamot/:path*", IMMUTABLE),
-      // These URLs are stable but their content can change with a deploy.
-      cacheControl("/bergamot-worker.js", REVALIDATE_HOURLY),
-      cacheControl("/bergamot-models/registry.json", REVALIDATE_HOURLY),
-    ];
-  },
-};
-
-export default nextConfig;
