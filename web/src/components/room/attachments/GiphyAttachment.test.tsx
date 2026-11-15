@@ -50,6 +50,16 @@ describe("GiphyAttachment", () => {
     );
   });
 
+  it("holds the attribution's line while GIPHY is asked, out of reach of assistive tech", () => {
+    vi.mocked(fetchGiphyGif).mockReturnValue(new Promise(() => undefined));
+    render(<GiphyAttachment part={part} customerId="customer" />);
+
+    const caption = screen.getByRole("status").querySelector(".att-giphy-caption");
+    expect(caption).not.toBeNull();
+    expect(caption).toHaveAttribute("aria-hidden", "true");
+    expect(screen.getByRole("status")).toHaveTextContent("Ładowanie GIF-a");
+  });
+
   it("falls back to a link to GIPHY when the GIF cannot be fetched", async () => {
     vi.mocked(fetchGiphyGif).mockRejectedValue(new Error("gone"));
     render(<GiphyAttachment part={part} customerId="customer" />);
