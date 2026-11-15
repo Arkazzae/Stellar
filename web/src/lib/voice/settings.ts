@@ -23,16 +23,15 @@ export { OPUS_PROFILE_KBPS } from "./opusRates";
  */
 export const SETTINGS_VERSION = 1;
 
-/** Key of the pre-account store. It survives only as a migration source. */
-export const STORAGE_KEY = "stellarr.voice.settings";
+const STORAGE_PREFIX = "stellarr.voice.settings";
 
 /**
- * Device-local settings still belong to one signed-in account. A single shared
- * key made a second account in the same browser inherit the previous person's
+ * Device-local settings still belong to one signed-in account, so a second
+ * account in the same browser never inherits the previous person's
  * microphone, output and voice processing.
  */
 export function storageKeyForUser(userId: string): string {
-  return `${STORAGE_KEY}.user.${encodeURIComponent(userId)}`;
+  return `${STORAGE_PREFIX}.user.${encodeURIComponent(userId)}`;
 }
 
 const OPUS_PROFILE_IDS = ["economy", "balanced", "clarity", "premium", "studio"] as const;
@@ -281,8 +280,7 @@ export function parseVoiceSettings(value: unknown): VoiceSettings {
     inputDeviceId: deviceIdOrNull(value["inputDeviceId"]),
     outputDeviceId: deviceIdOrNull(value["outputDeviceId"]),
     outputVolume,
-    // Before this field existed, soundboard clips followed the output volume.
-    soundboardVolume: clampPercent(value["soundboardVolume"], outputVolume),
+    soundboardVolume: clampPercent(value["soundboardVolume"], DEFAULT_SETTINGS.soundboardVolume),
     playbackProfile,
     playbackTuning:
       playbackProfile === "custom"
@@ -382,35 +380,29 @@ function safeStorage(): Storage | null {
  * Settings as external state, so `useSyncExternalStore` can drive the UI and
  * the voice client can subscribe to the same source without React in between.
  *
+ * Nothing is read or written until `setOwner` names the signed-in account;
+ * until then the settings are the defaults, kept in memory.
+ *
  * Storage failures never break a call: unreadable storage starts from defaults
  * and a refused write leaves the change in effect for this session.
  */
 export class VoiceSettingsStore {
-  private settings: VoiceSettings;
+  private settings: VoiceSettings = Object.freeze({ ...DEFAULT_SETTINGS });
   private readonly notifier = new ChangeNotifier();
-  private storageKey = STORAGE_KEY;
-  private legacyClaimed = false;
+  private storageKey: string | null = null;
 
   readonly subscribe = this.notifier.subscribe;
   readonly getSnapshot = (): VoiceSettings => this.settings;
 
-  constructor(private readonly storage: Storage | null = safeStorage()) {
-    this.settings = Object.freeze(this.readCurrent());
-  }
+  constructor(private readonly storage: Storage | null = safeStorage()) {}
 
-  /**
-   * Select the account namespace once bootstrap knows who is signed in.
-   *
-   * The first account upgraded from the unscoped store adopts that value and
-   * removes the ambiguous source. Every later account starts from its own saved
-   * settings, or from clean defaults.
-   */
+  /** Select the account namespace once bootstrap knows who is signed in. */
   setOwner(userId: string): VoiceSettings {
     const key = storageKeyForUser(userId);
     if (key === this.storageKey) return this.settings;
 
     this.storageKey = key;
-    const loaded = Object.freeze(this.loadForOwner());
+    const loaded = Object.freeze(this.read(key));
     // Two accounts with identical values keep the same snapshot object, so
     // useSyncExternalStore does not re-render for a namespace switch alone.
     if (sameSettings(this.settings, loaded)) return this.settings;
@@ -436,64 +428,21 @@ export class VoiceSettingsStore {
     return this.settings;
   }
 
-  private readCurrent(): VoiceSettings {
+  private read(key: string): VoiceSettings {
     try {
-      const raw = this.storage?.getItem(this.storageKey);
+      const raw = this.storage?.getItem(key);
       return (raw ? parseStored(raw) : null) ?? { ...DEFAULT_SETTINGS };
     } catch {
       return { ...DEFAULT_SETTINGS };
     }
   }
 
-  /** Returns whether the value reached storage (or there is no storage to reach). */
-  private write(settings: VoiceSettings): boolean {
+  private write(settings: VoiceSettings): void {
+    if (this.storageKey === null) return;
     try {
       this.storage?.setItem(this.storageKey, JSON.stringify(settings));
-      return true;
     } catch {
-      return false;
+      // The change stays in effect for this session.
     }
-  }
-
-  private removeLegacy(): void {
-    try {
-      this.storage?.removeItem(STORAGE_KEY);
-    } catch {
-      // Namespace isolation still holds for the lifetime of this store.
-    }
-  }
-
-  private loadForOwner(): VoiceSettings {
-    let scoped: string | null;
-    let legacy: string | null = null;
-    try {
-      scoped = this.storage?.getItem(this.storageKey) ?? null;
-      if (!scoped && !this.legacyClaimed) {
-        legacy = this.storage?.getItem(STORAGE_KEY) ?? null;
-      }
-    } catch {
-      return { ...DEFAULT_SETTINGS };
-    }
-
-    if (scoped) {
-      // A scoped value is authoritative. An old unscoped entry is now stale and
-      // must not be offered to a different account on its next sign-in.
-      this.legacyClaimed = true;
-      this.removeLegacy();
-      return parseStored(scoped) ?? { ...DEFAULT_SETTINGS };
-    }
-    if (!legacy) return { ...DEFAULT_SETTINGS };
-
-    // A corrupt entry is not a migration: it stays in place, unclaimed, for the
-    // next sign-in to look at again.
-    const migrated = parseStored(legacy);
-    if (!migrated) return { ...DEFAULT_SETTINGS };
-    // Claimed even when the move below fails: with quota-locked storage a second
-    // sign-in in this runtime must still not receive the same person's value.
-    this.legacyClaimed = true;
-    // The old entry is deleted only once the copy is saved, so a refused write
-    // loses nothing; the in-memory session keeps using the migrated value.
-    if (this.write(migrated)) this.removeLegacy();
-    return migrated;
   }
 }

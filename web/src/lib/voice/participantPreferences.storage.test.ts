@@ -36,7 +36,7 @@ describe("participant preference storage", () => {
     });
   });
 
-  it("reads back what an earlier build stored, including a missing timestamp", () => {
+  it("reads back stored entries, one without a timestamp included", () => {
     const key = participantPreferencesKeyForUser("me");
     const { storage } = memoryStorage({
       [key]: JSON.stringify({
