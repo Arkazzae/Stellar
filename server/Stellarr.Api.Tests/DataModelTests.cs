@@ -46,6 +46,7 @@ public sealed class DataModelTests(StellarrWebApplicationFactory factory)
             CreatedAt = now,
             LastSeenAt = now,
             ExpiresAt = now.AddDays(30),
+            AbsoluteExpiresAt = now.AddDays(30),
         });
         db.PasswordResetTokens.Add(new PasswordResetToken
         {

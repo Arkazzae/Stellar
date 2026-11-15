@@ -104,8 +104,10 @@ public sealed partial class OidcSignInFlowTests
         }
     }
 
-    [Fact]
-    public async Task SessionEndedBeforeTheProviderAnswersLinksNothing()
+    [Theory]
+    [InlineData("revoked")]
+    [InlineData("absolute-missing")]
+    public async Task SessionEndedBeforeTheProviderAnswersLinksNothing(string change)
     {
         using var provider = new FakeProvider();
         using var host = Host(provider);
@@ -116,8 +118,16 @@ public sealed partial class OidcSignInFlowTests
         var result = await browser.LinkAsync(provider, "default", beforeAnswer: async () =>
         {
             await using var scope = factory.OpenScope(out var db);
-            await db.UserSessions.Where(x => x.UserId == account.Id)
-                .ExecuteUpdateAsync(setters => setters.SetProperty(x => x.RevokedAt, DateTime.UtcNow));
+            if (change == "revoked")
+            {
+                await db.UserSessions.Where(x => x.UserId == account.Id)
+                    .ExecuteUpdateAsync(setters => setters.SetProperty(x => x.RevokedAt, DateTime.UtcNow));
+            }
+            else
+            {
+                await db.UserSessions.Where(x => x.UserId == account.Id)
+                    .ExecuteUpdateAsync(setters => setters.SetProperty(x => x.AbsoluteExpiresAt, (DateTime?)null));
+            }
         });
 
         Assert.Equal("/link-account?result=failed", result.Location);

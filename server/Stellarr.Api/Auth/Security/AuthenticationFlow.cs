@@ -194,14 +194,12 @@ public static class AuthenticationFlow
 
         if (challenge.ParentSessionId is { } parentSessionId)
         {
-            var legacyCutoff = now - SessionAuthentication.Lifetime;
             var parentActive = await db.UserSessions.AsNoTracking().AnyAsync(
                 x => x.Id == parentSessionId &&
                     x.UserId == challenge.UserId &&
                     x.RevokedAt == null &&
                     x.ExpiresAt > now &&
-                    (x.AbsoluteExpiresAt > now ||
-                        (x.AbsoluteExpiresAt == null && x.CreatedAt > legacyCutoff)) &&
+                    x.AbsoluteExpiresAt > now &&
                     x.SecurityVersion == challenge.User.SessionVersion,
                 cancellationToken);
             if (!parentActive)

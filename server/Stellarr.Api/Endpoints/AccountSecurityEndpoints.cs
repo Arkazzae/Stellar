@@ -509,15 +509,13 @@ public static partial class AccountSecurityEndpoints
         }
 
         var now = DateTime.UtcNow;
-        var legacyCutoff = now - SessionAuthentication.Lifetime;
         return db.UserSessions.AsNoTracking().SingleOrDefaultAsync(
             x => x.Id == sessionId &&
                 x.UserId == user.Id &&
                 !user.IsDisabled &&
                 x.RevokedAt == null &&
                 x.ExpiresAt > now &&
-                (x.AbsoluteExpiresAt > now ||
-                    (x.AbsoluteExpiresAt == null && x.CreatedAt > legacyCutoff)) &&
+                x.AbsoluteExpiresAt > now &&
                 x.SecurityVersion == user.SessionVersion,
             cancellationToken);
     }

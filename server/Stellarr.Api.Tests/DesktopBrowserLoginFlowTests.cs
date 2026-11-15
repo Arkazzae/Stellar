@@ -224,6 +224,7 @@ public sealed class DesktopBrowserLoginFlowTests
 
     [Theory]
     [InlineData("absolute")]
+    [InlineData("absolute-missing")]
     [InlineData("expired")]
     [InlineData("revoked")]
     [InlineData("version")]
@@ -249,6 +250,9 @@ public sealed class DesktopBrowserLoginFlowTests
             {
                 case "absolute":
                     session.AbsoluteExpiresAt = DateTime.UtcNow.AddMinutes(-1);
+                    break;
+                case "absolute-missing":
+                    session.AbsoluteExpiresAt = null;
                     break;
                 case "expired":
                     session.ExpiresAt = DateTime.UtcNow.AddMinutes(-1);

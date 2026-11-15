@@ -83,18 +83,3 @@ Rolling back restores the entire data volume to the backup snapshot; any message
    ```
 
 Existing user sessions remain valid because the data-protection keys are restored with the archive.
-
-## Migration notes
-
-### Cockpit and `STELLARR_DOMAIN`
-
-- The operator panel is **Stellarr Cockpit**, served at `/cockpit/`.
-- `STELLARR_DOMAIN` is the hostname variable.
-- The public origin used in password-reset links and `/.well-known/stellarr/client` is now derived from environment variables (`https://<STELLARR_DOMAIN>:<STELLARR_PUBLIC_PORT>`, or `STELLARR_PUBLIC_URL` when set) and is read-only in Cockpit. Behind a reverse proxy on port `443`, set `STELLARR_PUBLIC_PORT=443` or `STELLARR_PUBLIC_URL`.
-- In `docker-compose.dev.yml`, `STELLARR_DEV_OPS_PORT` has been renamed to `STELLARR_DEV_COCKPIT_PORT`.
-
-### Language default (`STELLARR_LANGUAGE`)
-
-- Instances now default to English (`STELLARR_LANGUAGE=en`).
-- When upgrading an older Polish-only deployment, set `STELLARR_LANGUAGE=pl` in `.env` to keep server-generated messages, emails, and the default interface language in Polish. Users who explicitly selected a language in their browser keep their preference, and existing database records retain the language in which they were written.
-- The default OIDC sign-in button label changed from `Konto główne` to `Main account`. Set `STELLARR_OIDC_DISPLAY_NAME=Konto główne` to keep the Polish label.

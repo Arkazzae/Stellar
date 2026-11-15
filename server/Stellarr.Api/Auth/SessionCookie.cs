@@ -65,7 +65,6 @@ public static class SessionCookie
                 x.LastSeenAt,
                 x.ExpiresAt,
                 x.AbsoluteExpiresAt,
-                x.CreatedAt,
                 x.RevokedAt,
                 x.SecurityVersion,
                 x.MfaCompletedAt,
@@ -74,11 +73,10 @@ public static class SessionCookie
                 UserIsDisabled = x.User.IsDisabled,
             })
             .SingleOrDefaultAsync(cancellationToken);
-        var absoluteExpiresAt = session?.AbsoluteExpiresAt ?? session?.CreatedAt.Add(SessionAuthentication.Lifetime);
         if (session is null || session.UserIsDisabled || session.SecurityVersion != claims.Version ||
             session.UserSessionVersion != claims.Version ||
             session.RevokedAt is not null || session.ExpiresAt <= now ||
-            absoluteExpiresAt <= now)
+            session.AbsoluteExpiresAt is not { } absoluteExpiresAt || absoluteExpiresAt <= now)
         {
             await RejectAsync(context);
             return;
@@ -100,7 +98,7 @@ public static class SessionCookie
         if (session.LastSeenAt < now - SeenGranularity)
         {
             var renewed = now + SessionAuthentication.Lifetime;
-            var hardEnd = absoluteExpiresAt.GetValueOrDefault(now);
+            var hardEnd = absoluteExpiresAt;
             var expiresAt = session.ExpiresAt < now + RenewalThreshold
                 ? (renewed < hardEnd ? renewed : hardEnd)
                 : session.ExpiresAt;
