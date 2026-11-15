@@ -236,6 +236,35 @@ describe("FriendsProvider realtime", () => {
     adapter.dispose?.();
   });
 
+  it("keeps the view model of an earlier direct message when a new one arrives", async () => {
+    const realtime = new FakeRealtimeClient();
+    const api = socialApi();
+    vi.mocked(api.listDirectMessages).mockResolvedValueOnce({
+      messages: [directMessage("dm-ada-1", ADA, "dm-ada", "2026-01-01T00:00:00.000Z")],
+      nextCursor: null,
+    });
+    const { mounted, adapter } = await mountOnAda(api, realtime);
+    await waitFor(() => expect(bodyIds(mounted)).toEqual(["dm-ada-1"]));
+
+    const before = mounted.result.current.friends.sections
+      .flatMap((section) => section.groups)
+      .flatMap((group) => group.bodies);
+    const first = before.find((body) => body.id === "dm-ada-1");
+
+    act(() => realtime.push(
+      "DirectMessageCreated",
+      directMessage("dm-ada-2", ADA, "dm-ada", "2026-01-01T00:01:00.000Z"),
+    ));
+
+    await waitFor(() => expect(bodyIds(mounted)).toEqual(["dm-ada-1", "dm-ada-2"]));
+    const after = mounted.result.current.friends.sections
+      .flatMap((section) => section.groups)
+      .flatMap((group) => group.bodies);
+    expect(after[0]).toBe(first);
+    expect(after[0]?.parts).toBe(first?.parts);
+    adapter.dispose?.();
+  });
+
   it("shows older messages once they have loaded", async () => {
     const api = socialApi();
     vi.mocked(api.listDirectMessages)

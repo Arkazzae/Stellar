@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import type { Message } from "@/lib/api/types";
 import {
   buildThreadTranscript,
@@ -92,6 +92,65 @@ describe("buildTranscript", () => {
 
     expect(sections).toHaveLength(2);
     expect(sections.map((section) => section.day)).toEqual(["Wczoraj", "Dziś"]);
+  });
+
+  it("keeps unparseable timestamps in an empty day and separate groups", () => {
+    const sections = buildTranscript(
+      [
+        message("bad-1", "ada", "not-a-date"),
+        message("bad-2", "ada", "still-not-a-date"),
+      ],
+      NOW,
+      "en",
+    );
+
+    expect(sections).toHaveLength(1);
+    expect(sections[0]?.day).toBe("");
+    expect(
+      sections[0]?.groups.map((group) => group.messages.map((item) => item.id)),
+    ).toEqual([["bad-1"], ["bad-2"]]);
+  });
+
+  it("formats each contiguous day heading once", () => {
+    const firstDay = new Date(2026, 7, 1, 12, 0, 0);
+    const secondDay = new Date(2026, 7, 2, 12, 0, 0);
+    const at = (day: Date, minute: number) =>
+      new Date(day.getTime() + minute * 60_000).toISOString();
+    const firstIso = at(firstDay, 0);
+    const secondIso = at(secondDay, 0);
+    const messages = [
+      message("a1", "ada", firstIso),
+      message("a2", "ada", at(firstDay, 2)),
+      message("a3", "ada", at(firstDay, 10)),
+      message("a4", "nils", at(firstDay, 11)),
+      message("b1", "ada", secondIso),
+      message("b2", "ada", at(secondDay, 1)),
+    ];
+    const expectedDays = [
+      formatDay(firstIso, NOW, "en"),
+      formatDay(secondIso, NOW, "en"),
+    ];
+
+    const formatter = vi.spyOn(Intl, "DateTimeFormat");
+    let sections: ReturnType<typeof buildTranscript> = [];
+    let formats = 0;
+    try {
+      sections = buildTranscript(messages, NOW, "en");
+      formats = formatter.mock.calls.length;
+    } finally {
+      formatter.mockRestore();
+    }
+
+    expect(formats).toBe(2);
+    expect(sections.map((section) => section.day)).toEqual(expectedDays);
+    expect(
+      sections.map((section) =>
+        section.groups.map((group) => group.messages.map((item) => item.id)),
+      ),
+    ).toEqual([
+      [["a1", "a2"], ["a3"], ["a4"]],
+      [["b1", "b2"]],
+    ]);
   });
 });
 
