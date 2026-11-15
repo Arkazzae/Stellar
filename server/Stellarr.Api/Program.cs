@@ -322,6 +322,11 @@ static async Task InitializeApplicationAsync(WebApplication app)
         BackupJobs.RemoveLeftovers(BackupJobs.Directory(app.Configuration));
     }
 
+    // The development seed cannot keep accounts connected, so it leaves a small
+    // presence fixture on the volume. Reading it here means the first bootstrap
+    // response already shows the mixed roster instead of everybody offline.
+    DevelopmentPresenceSeed.Apply(app.Services);
+
     if (app.Configuration.GetValue<bool>("Storage:SkipInitialization"))
     {
         return;

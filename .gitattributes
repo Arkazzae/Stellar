@@ -5,6 +5,8 @@
 *.woff2 binary
 *.wav binary
 *.mp3 binary
+*.mp4 binary
+*.gif binary
 *.png binary
 
 # Third-party files the browser loads at run time, each checked against the

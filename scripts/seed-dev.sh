@@ -16,7 +16,8 @@ PY_ARGS=()
 usage() {
   cat <<'EOF'
 Seed the Stellarr development SQLite database with sample users, channels,
-multi-day conversations, reactions, mentions, friend graph, and DMs.
+multi-day conversations, reactions, mentions, friend graph, DMs, test media
+and a mixed online/idle/dnd presence for the seeded accounts.
 
 Usage:
   ./scripts/seed-dev.sh [options]
@@ -33,6 +34,10 @@ Options:
   --bootstrap-owner        If the schema exists with 0 servers, create initial
                            owner + Stellarr server before seeding
   --owner-username USER    Owner username for --bootstrap-owner (default: admin)
+  --data-root PATH         The API's DataRoot, where files/ and the presence
+                           fixture live (default: derived from --db/volume)
+  --no-media               Skip screenshots, GIFs and silent clips
+  --no-presence            Skip the online/idle/dnd fixture for seeded accounts
   --no-restart             Do not start the API container again after seeding
   -h, --help               Show this help message
 EOF
@@ -40,7 +45,7 @@ EOF
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
-    --reset|--bootstrap-owner)
+    --reset|--bootstrap-owner|--no-media|--no-presence)
       PY_ARGS+=("$1")
       shift
       ;;
@@ -59,7 +64,7 @@ while [[ $# -gt 0 ]]; do
       VOLUME_NAME="$2"
       shift 2
       ;;
-    --password|--seed|--owner-username)
+    --password|--seed|--owner-username|--data-root)
       [[ $# -ge 2 ]] || { echo "Error: $1 requires a value" >&2; exit 2; }
       PY_ARGS+=("$1" "$2")
       shift 2
@@ -131,7 +136,7 @@ docker run --rm \
   -v "$VOLUME_NAME:/data" \
   -v "$SCRIPT_DIR:/scripts:ro" \
   "$DOCKER_IMAGE" \
-  python3 /scripts/seed-dev.py --db /data/stellarr-dev.db "${PY_ARGS[@]}"
+  python3 -B /scripts/seed-dev.py --db /data/stellarr-dev.db "${PY_ARGS[@]}"
 
 if [[ "$RESTART_NEEDED" -eq 1 && "$NO_RESTART" -eq 0 ]]; then
   restart_api_if_needed
