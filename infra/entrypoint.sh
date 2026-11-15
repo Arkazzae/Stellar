@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 # Container entrypoint: prepares the data volume, exports the settings the
 # services read, renders the coturn and nginx configuration from their
-# templates, and hands over to supervisord.
+# templates, writes the web client's default language, and hands over to
+# supervisord.
 set -Eeuo pipefail
 # Without this a failing `openssl rand` inside $(...) would yield an empty secret.
 shopt -s inherit_errexit
@@ -199,11 +200,6 @@ fi
 unset ASPNETCORE_HTTP_PORTS ASPNETCORE_HTTPS_PORTS
 export ASPNETCORE_URLS="http://127.0.0.1:5000"
 export ASPNETCORE_ENVIRONMENT="${ASPNETCORE_ENVIRONMENT:-Production}"
-
-# Where the Next.js standalone server listens.
-export NODE_ENV="production"
-export HOSTNAME="127.0.0.1"
-export PORT="3000"
 
 /usr/local/bin/stellarr-tls-maintenance prepare
 

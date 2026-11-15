@@ -3,10 +3,10 @@ import { FALLBACK_LOCALE, LANGUAGE_SETTINGS_KEY, LOCALE_COOKIE } from "./default
 
 /**
  * Where the container publishes the instance default. `infra/entrypoint.sh`
- * writes the file from `STELLARR_LANGUAGE` at every start and Nginx serves it
- * with the HTML's cache policy, so a changed setting reaches the next page
- * load. One published image serves every instance, so the default cannot be
- * part of the build.
+ * writes the file from `STELLARR_LANGUAGE` at every start, and Nginx lets a
+ * browser keep it for an hour, so the first paint does not wait for it on
+ * every load. One published image serves every instance, so the default
+ * cannot be part of the build.
  */
 export const INSTANCE_LANGUAGE_PATH = "/stellarr-instance.js";
 
