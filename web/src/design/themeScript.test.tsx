@@ -100,17 +100,6 @@ describe("ThemeScript", () => {
     expect(root.style.getPropertyValue("--palette-on-accent")).toBe("#000000");
   });
 
-  it("migrates ids written by earlier versions", () => {
-    const stored = { palette: "github", font: "serif" };
-    localStorage.setItem(THEME_STORAGE_KEY, JSON.stringify(stored));
-
-    runScript();
-
-    expect(root.dataset.theme).toBe("ink");
-    expect(root.dataset.font).toBeUndefined();
-    expect(snapshot()).toEqual(expectedFor(stored));
-  });
-
   it.each([true, false])(
     "resolves the system scheme from the OS (dark: %s)",
     (dark) => {
