@@ -1,0 +1,1766 @@
+{
+  "format": "stellarr-transcript-benchmark/1",
+  "label": "baseline",
+  "generatedAt": "2026-11-15T15:21:22.786Z",
+  "environment": {
+    "browser": "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome",
+    "viewport": {
+      "width": 1280,
+      "height": 900
+    },
+    "buildMs": 293.173417,
+    "node": "v26.13.0",
+    "platform": "darwin"
+  },
+  "options": {
+    "messages": [
+      1000,
+      10000
+    ],
+    "check": true,
+    "baseline": null,
+    "maxSlowdown": 2
+  },
+  "runs": [
+    {
+      "messages": 1000,
+      "expected": {
+        "rows": 1003,
+        "groups": 1000,
+        "bodies": 1000
+      },
+      "mount": {
+        "count": 1000,
+        "producerMs": 29.799999997019768,
+        "commitMs": 205.09999999403954,
+        "totalMs": 388.79999999701977,
+        "layout": {
+          "frames": 3,
+          "ms": 153.90000000596046,
+          "stable": true
+        },
+        "rows": 1003,
+        "groups": 1000,
+        "entries": 1000,
+        "elements": 34870,
+        "scrollHeight": 145824,
+        "clientHeight": 900,
+        "scrollTop": 144924,
+        "bottomGap": 0,
+        "lastRowVisible": true,
+        "lastRowBottom": 892.109375,
+        "style": {
+          "first": {
+            "contentVisibility": "visible",
+            "containIntrinsicSize": "none",
+            "containIntrinsicHeight": "none"
+          },
+          "far": {
+            "contentVisibility": "visible",
+            "containIntrinsicSize": "none",
+            "containIntrinsicHeight": "none"
+          }
+        },
+        "errors": []
+      },
+      "append": {
+        "count": 200,
+        "producerMs": 23.399999991059303,
+        "commitMs": 99.40000000596046,
+        "totalMs": 145.79999999701977,
+        "layout": {
+          "frames": 3,
+          "ms": 23,
+          "stable": true
+        },
+        "before": {
+          "rows": 1003,
+          "groups": 1000,
+          "entries": 1000,
+          "elements": 34870,
+          "scrollHeight": 145824,
+          "clientHeight": 900,
+          "scrollTop": 144924,
+          "bottomGap": 0,
+          "lastRowVisible": true,
+          "lastRowBottom": 892.109375
+        },
+        "rows": 1203,
+        "groups": 1200,
+        "entries": 1200,
+        "elements": 41833,
+        "scrollHeight": 175137,
+        "clientHeight": 900,
+        "scrollTop": 174237,
+        "bottomGap": 0,
+        "lastRowVisible": true,
+        "lastRowBottom": 892.015625
+      },
+      "prepend": {
+        "count": 200,
+        "producerMs": 23.799999997019768,
+        "commitMs": 83.6000000089407,
+        "totalMs": 154,
+        "anchor": {
+          "id": "m-502",
+          "top": 266.765625,
+          "scrollTop": 73180,
+          "scrollHeight": 175137
+        },
+        "layout": {
+          "frames": 3,
+          "ms": 46.599999994039536,
+          "stable": true
+        },
+        "before": {
+          "rows": 1203,
+          "groups": 1200,
+          "entries": 1200,
+          "elements": 41833,
+          "scrollHeight": 175137,
+          "clientHeight": 900,
+          "scrollTop": 73180,
+          "bottomGap": 101057,
+          "lastRowVisible": false,
+          "lastRowBottom": 101949.015625
+        },
+        "after": {
+          "rows": 1403,
+          "groups": 1400,
+          "entries": 1400,
+          "elements": 48786,
+          "scrollHeight": 203987,
+          "clientHeight": 900,
+          "scrollTop": 102030,
+          "bottomGap": 101057,
+          "lastRowVisible": false,
+          "lastRowBottom": 101949.40625
+        },
+        "id": "m-502",
+        "topBefore": 266.765625,
+        "topAfter": 267.15625,
+        "delta": 0.390625,
+        "scrollTopBefore": 73180,
+        "scrollTopAfter": 102030,
+        "scrollHeightBefore": 175137,
+        "scrollHeightAfter": 203987
+      },
+      "growth": {
+        "growth": 160,
+        "target": "m-490",
+        "targetContentVisibility": "visible",
+        "targetHeightBefore": 288.984375,
+        "targetHeightAfter": 448.984375,
+        "id": "m-502",
+        "topBefore": 267.15625,
+        "topAfter": 267.15625,
+        "delta": 0,
+        "scrollTopBefore": 102030,
+        "scrollTopAfter": 102190,
+        "scrollHeightBefore": 203987,
+        "scrollHeightAfter": 204147
+      },
+      "mediaGrowth": {
+        "growth": 120,
+        "target": "m-494",
+        "targetContentVisibility": "visible",
+        "targetHeightBefore": 426,
+        "targetHeightAfter": 672,
+        "id": "m-502",
+        "topBefore": 267.15625,
+        "topAfter": 267.15625,
+        "delta": 0,
+        "scrollTopBefore": 102190,
+        "scrollTopAfter": 102436,
+        "scrollHeightBefore": 204147,
+        "scrollHeightAfter": 204393
+      },
+      "resize": {
+        "id": "m-502",
+        "topBefore": 267.15625,
+        "topAfter": 267.15625,
+        "delta": 0,
+        "scrollTopBefore": 102436,
+        "scrollTopAfter": 102436,
+        "scrollHeightBefore": 204393,
+        "scrollHeightAfter": 204393
+      },
+      "scroll": {
+        "steps": 80,
+        "delta": 180,
+        "distance": 55099,
+        "startHeight": 204393,
+        "endHeight": 204393,
+        "meanMs": 16.641249999962746,
+        "p50Ms": 16.600000008940697,
+        "p95Ms": 18.5,
+        "maxMs": 21.19999998807907,
+        "over25ms": 0,
+        "over50ms": 0,
+        "longTasks": []
+      },
+      "jumps": [
+        {
+          "fraction": 0.12,
+          "id": "m--32",
+          "waited": {
+            "frames": 94,
+            "ms": 1627.2000000029802,
+            "stable": true
+          },
+          "top": 389.921875,
+          "height": 120,
+          "centreOffset": -0.078125
+        },
+        {
+          "fraction": 0.5,
+          "id": "m-500",
+          "waited": {
+            "frames": 92,
+            "ms": 1645.699999988079,
+            "stable": true
+          },
+          "top": 377.359375,
+          "height": 144.796875,
+          "centreOffset": -0.2421875
+        },
+        {
+          "fraction": 0.88,
+          "id": "m-1032",
+          "waited": {
+            "frames": 93,
+            "ms": 1645.2999999970198,
+            "stable": true
+          },
+          "top": 414.265625,
+          "height": 72,
+          "centreOffset": 0.265625
+        }
+      ],
+      "reply": {
+        "from": "m-570",
+        "id": "m-569",
+        "waited": {
+          "frames": 93,
+          "ms": 1627.7999999970198,
+          "stable": true
+        },
+        "top": 389.5625,
+        "height": 120,
+        "centreOffset": -0.4375
+      },
+      "upwardGrowth": {
+        "growth": 120,
+        "target": "m-551",
+        "targetContentVisibility": "visible",
+        "targetHeightBefore": 277.25,
+        "targetHeightAfter": 397.25,
+        "id": "m-563",
+        "topBefore": 296.578125,
+        "topAfter": 296.578125,
+        "delta": 0,
+        "scrollTopBefore": 111256,
+        "scrollTopAfter": 111376,
+        "scrollHeightBefore": 204393,
+        "scrollHeightAfter": 204513
+      },
+      "editor": {
+        "before": {
+          "rowId": "m-563",
+          "valueLength": 196,
+          "selectionStart": 4,
+          "selectionEnd": 4,
+          "visible": true
+        },
+        "after": {
+          "present": true,
+          "focused": true,
+          "selectionStart": 4,
+          "selectionEnd": 4,
+          "valueLength": 196
+        }
+      },
+      "accessibility": {
+        "found": true,
+        "nodeCount": 42220,
+        "elapsedMs": 391,
+        "names": [
+          "Transcript benchmark",
+          "Benchmark transcript",
+          "New messages"
+        ]
+      },
+      "find": {
+        "marker": "needle-1000-701",
+        "found": true,
+        "selection": "needle-1000-701",
+        "before": {
+          "top": -65993.0625,
+          "bottom": -65849.0625,
+          "height": 144
+        },
+        "after": {
+          "top": -65993.0625,
+          "bottom": -65849.0625,
+          "height": 144
+        },
+        "visible": false
+      },
+      "final": {
+        "rows": 1433,
+        "groups": 1430,
+        "entries": 1430,
+        "elements": 49833,
+        "scrollHeight": 209163,
+        "clientHeight": 900,
+        "scrollTop": 197850,
+        "bottomGap": 10413,
+        "lastRowVisible": false,
+        "lastRowBottom": 11305.125
+      },
+      "style": {
+        "first": {
+          "contentVisibility": "visible",
+          "containIntrinsicSize": "none",
+          "containIntrinsicHeight": "none"
+        },
+        "far": {
+          "contentVisibility": "visible",
+          "containIntrinsicSize": "none",
+          "containIntrinsicHeight": "none"
+        }
+      },
+      "pageErrors": [],
+      "checks": [
+        {
+          "name": "mount.all-rows-in-dom",
+          "ok": true,
+          "detail": {
+            "expected": 1003,
+            "actual": 1003
+          }
+        },
+        {
+          "name": "mount.all-groups-in-dom",
+          "ok": true,
+          "detail": {
+            "expected": 1000,
+            "actual": 1000
+          }
+        },
+        {
+          "name": "mount.all-bodies-in-dom",
+          "ok": true,
+          "detail": {
+            "expected": 1000,
+            "actual": 1000
+          }
+        },
+        {
+          "name": "mount.at-end",
+          "ok": true,
+          "detail": {
+            "bottomGap": 0,
+            "lastRowVisible": true,
+            "lastRowBottom": 892.109375
+          }
+        },
+        {
+          "name": "mount.work-scaling",
+          "ok": true,
+          "detail": {
+            "rows": 1003,
+            "groups": 1000
+          }
+        },
+        {
+          "name": "append.all-rows-in-dom",
+          "ok": true,
+          "detail": {
+            "expected": 1203,
+            "actual": 1203
+          }
+        },
+        {
+          "name": "append.all-groups-in-dom",
+          "ok": true,
+          "detail": {
+            "expected": 1200,
+            "actual": 1200
+          }
+        },
+        {
+          "name": "append.all-bodies-in-dom",
+          "ok": true,
+          "detail": {
+            "expected": 1200,
+            "actual": 1200
+          }
+        },
+        {
+          "name": "append.follows-end",
+          "ok": true,
+          "detail": {
+            "bottomGap": 0,
+            "lastRowVisible": true
+          }
+        },
+        {
+          "name": "prepend.all-rows-in-dom",
+          "ok": true,
+          "detail": {
+            "expected": 1403,
+            "actual": 1403
+          }
+        },
+        {
+          "name": "prepend.all-groups-in-dom",
+          "ok": true,
+          "detail": {
+            "expected": 1400,
+            "actual": 1400
+          }
+        },
+        {
+          "name": "prepend.all-bodies-in-dom",
+          "ok": true,
+          "detail": {
+            "expected": 1400,
+            "actual": 1400
+          }
+        },
+        {
+          "name": "prepend.keeps-anchor",
+          "ok": true,
+          "detail": {
+            "anchor": "m-502",
+            "delta": 0.390625,
+            "topBefore": 266.765625,
+            "topAfter": 267.15625
+          }
+        },
+        {
+          "name": "grow-above.keeps-anchor",
+          "ok": true,
+          "detail": {
+            "anchor": "m-502",
+            "target": "m-490",
+            "delta": 0,
+            "contentVisibility": "visible"
+          }
+        },
+        {
+          "name": "grow-media-above.keeps-anchor",
+          "ok": true,
+          "detail": {
+            "anchor": "m-502",
+            "target": "m-494",
+            "delta": 0,
+            "contentVisibility": "visible"
+          }
+        },
+        {
+          "name": "viewport-resize.keeps-anchor",
+          "ok": true,
+          "detail": {
+            "anchor": "m-502",
+            "delta": 0
+          }
+        },
+        {
+          "name": "jump.0.12.lands-centred",
+          "ok": true,
+          "detail": {
+            "id": "m--32",
+            "centreOffset": -0.078125,
+            "stable": true
+          }
+        },
+        {
+          "name": "jump.0.5.lands-centred",
+          "ok": true,
+          "detail": {
+            "id": "m-500",
+            "centreOffset": -0.2421875,
+            "stable": true
+          }
+        },
+        {
+          "name": "jump.0.88.lands-centred",
+          "ok": true,
+          "detail": {
+            "id": "m-1032",
+            "centreOffset": 0.265625,
+            "stable": true
+          }
+        },
+        {
+          "name": "reply-jump.lands-centred",
+          "ok": true,
+          "detail": {
+            "id": "m-569",
+            "centreOffset": -0.4375
+          }
+        },
+        {
+          "name": "upward-after-jumps.keeps-anchor",
+          "ok": true,
+          "detail": {
+            "anchor": "m-563",
+            "delta": 0,
+            "scrollTop": 111256
+          }
+        },
+        {
+          "name": "edit-focus-survives-append",
+          "ok": true,
+          "detail": {
+            "editor": {
+              "rowId": "m-563",
+              "valueLength": 196,
+              "selectionStart": 4,
+              "selectionEnd": 4,
+              "visible": true
+            },
+            "after": {
+              "present": true,
+              "focused": true,
+              "selectionStart": 4,
+              "selectionEnd": 4,
+              "valueLength": 196
+            }
+          }
+        },
+        {
+          "name": "accessibility.offscreen-row",
+          "ok": true,
+          "detail": {
+            "found": true,
+            "nodeCount": 42220,
+            "elapsedMs": 391,
+            "names": [
+              "Transcript benchmark",
+              "Benchmark transcript",
+              "New messages"
+            ]
+          }
+        },
+        {
+          "name": "native-find.reaches-offscreen",
+          "ok": true,
+          "detail": {
+            "found": true,
+            "selection": "needle-1000-701",
+            "offscreenBefore": true,
+            "beforeTop": -65993.0625,
+            "afterTop": -65993.0625
+          }
+        },
+        {
+          "name": "final.all-rows-in-dom",
+          "ok": true,
+          "detail": {
+            "expected": 1433,
+            "actual": 1433
+          }
+        },
+        {
+          "name": "final.all-groups-in-dom",
+          "ok": true,
+          "detail": {
+            "expected": 1430,
+            "actual": 1430
+          }
+        },
+        {
+          "name": "final.all-bodies-in-dom",
+          "ok": true,
+          "detail": {
+            "expected": 1430,
+            "actual": 1430
+          }
+        },
+        {
+          "name": "no-page-errors",
+          "ok": true,
+          "detail": []
+        }
+      ]
+    },
+    {
+      "messages": 10000,
+      "expected": {
+        "rows": 10017,
+        "groups": 10000,
+        "bodies": 10000
+      },
+      "mount": {
+        "count": 10000,
+        "producerMs": 222.40000000596046,
+        "commitMs": 1784.0999999940395,
+        "totalMs": 3347,
+        "layout": {
+          "frames": 3,
+          "ms": 1340.3999999910593,
+          "stable": true
+        },
+        "rows": 10017,
+        "groups": 10000,
+        "entries": 10000,
+        "elements": 348584,
+        "scrollHeight": 1453387,
+        "clientHeight": 900,
+        "scrollTop": 1452487,
+        "bottomGap": 0,
+        "lastRowVisible": true,
+        "lastRowBottom": 892.328125,
+        "style": {
+          "first": {
+            "contentVisibility": "visible",
+            "containIntrinsicSize": "none",
+            "containIntrinsicHeight": "none"
+          },
+          "far": {
+            "contentVisibility": "visible",
+            "containIntrinsicSize": "none",
+            "containIntrinsicHeight": "none"
+          }
+        },
+        "errors": []
+      },
+      "append": {
+        "count": 200,
+        "producerMs": 234.40000000596046,
+        "commitMs": 496.79999999701977,
+        "totalMs": 882.8000000119209,
+        "layout": {
+          "frames": 3,
+          "ms": 151.6000000089407,
+          "stable": true
+        },
+        "before": {
+          "rows": 10017,
+          "groups": 10000,
+          "entries": 10000,
+          "elements": 348584,
+          "scrollHeight": 1453387,
+          "clientHeight": 900,
+          "scrollTop": 1452487,
+          "bottomGap": 0,
+          "lastRowVisible": true,
+          "lastRowBottom": 892.328125
+        },
+        "rows": 10217,
+        "groups": 10200,
+        "entries": 10200,
+        "elements": 355542,
+        "scrollHeight": 1482529,
+        "clientHeight": 900,
+        "scrollTop": 1481629,
+        "bottomGap": 0,
+        "lastRowVisible": true,
+        "lastRowBottom": 892.109375
+      },
+      "prepend": {
+        "count": 200,
+        "producerMs": 229.3999999910593,
+        "commitMs": 434.20000000298023,
+        "totalMs": 939.5999999940395,
+        "anchor": {
+          "id": "m-4284",
+          "top": 196.15625,
+          "scrollTop": 622284,
+          "scrollHeight": 1482529
+        },
+        "layout": {
+          "frames": 3,
+          "ms": 276,
+          "stable": true
+        },
+        "before": {
+          "rows": 10217,
+          "groups": 10200,
+          "entries": 10200,
+          "elements": 355542,
+          "scrollHeight": 1482529,
+          "clientHeight": 900,
+          "scrollTop": 622284,
+          "bottomGap": 859345,
+          "lastRowVisible": false,
+          "lastRowBottom": 860237.125
+        },
+        "after": {
+          "rows": 10417,
+          "groups": 10400,
+          "entries": 10400,
+          "elements": 362495,
+          "scrollHeight": 1511380,
+          "clientHeight": 900,
+          "scrollTop": 651134,
+          "bottomGap": 859346,
+          "lastRowVisible": false,
+          "lastRowBottom": 860237.5
+        },
+        "id": "m-4284",
+        "topBefore": 196.15625,
+        "topAfter": 196.546875,
+        "delta": 0.390625,
+        "scrollTopBefore": 622284,
+        "scrollTopAfter": 651134,
+        "scrollHeightBefore": 1482529,
+        "scrollHeightAfter": 1511380
+      },
+      "growth": {
+        "growth": 160,
+        "target": "m-4272",
+        "targetContentVisibility": "visible",
+        "targetHeightBefore": 72,
+        "targetHeightAfter": 232,
+        "id": "m-4284",
+        "topBefore": 196.546875,
+        "topAfter": 196.546875,
+        "delta": 0,
+        "scrollTopBefore": 651134,
+        "scrollTopAfter": 651294,
+        "scrollHeightBefore": 1511380,
+        "scrollHeightAfter": 1511540
+      },
+      "mediaGrowth": {
+        "growth": 120,
+        "target": "m-4275",
+        "targetContentVisibility": "visible",
+        "targetHeightBefore": 254.046875,
+        "targetHeightAfter": 476.84375,
+        "id": "m-4284",
+        "topBefore": 196.546875,
+        "topAfter": 196.34375,
+        "delta": -0.203125,
+        "scrollTopBefore": 651294,
+        "scrollTopAfter": 651517,
+        "scrollHeightBefore": 1511540,
+        "scrollHeightAfter": 1511762
+      },
+      "resize": {
+        "id": "m-4284",
+        "topBefore": 196.34375,
+        "topAfter": 196.34375,
+        "delta": 0,
+        "scrollTopBefore": 651517,
+        "scrollTopAfter": 651517,
+        "scrollHeightBefore": 1511762,
+        "scrollHeightAfter": 1511762
+      },
+      "scroll": {
+        "steps": 80,
+        "delta": 180,
+        "distance": 316572,
+        "startHeight": 1511762,
+        "endHeight": 1511762,
+        "meanMs": 55.42874999996275,
+        "p50Ms": 54.19999998807907,
+        "p95Ms": 91.3999999910593,
+        "maxMs": 109.59999999403954,
+        "over25ms": 80,
+        "over50ms": 52,
+        "longTasks": [
+          53,
+          66,
+          89,
+          55,
+          71,
+          54,
+          67,
+          59,
+          54,
+          53,
+          52,
+          66,
+          56,
+          55,
+          53,
+          71,
+          92,
+          52,
+          57,
+          60,
+          56,
+          67,
+          56,
+          54,
+          70,
+          54,
+          53,
+          53,
+          56,
+          53,
+          99,
+          68,
+          52,
+          51,
+          52,
+          69,
+          59,
+          53,
+          65,
+          58,
+          58,
+          59,
+          67,
+          53,
+          54,
+          109,
+          53,
+          66,
+          53,
+          65,
+          55,
+          53,
+          66,
+          52,
+          67,
+          52,
+          54,
+          57,
+          73,
+          96,
+          55,
+          50
+        ]
+      },
+      "jumps": [
+        {
+          "fraction": 0.12,
+          "id": "m-1048",
+          "waited": {
+            "frames": 21,
+            "ms": 1698.5999999940395,
+            "stable": true
+          },
+          "top": 401.828125,
+          "height": 96,
+          "centreOffset": -0.171875
+        },
+        {
+          "fraction": 0.5,
+          "id": "m-5000",
+          "waited": {
+            "frames": 27,
+            "ms": 2595.5,
+            "stable": true
+          },
+          "top": 377.140625,
+          "height": 144.796875,
+          "centreOffset": -0.4609375
+        },
+        {
+          "fraction": 0.88,
+          "id": "m-8952",
+          "waited": {
+            "frames": 22,
+            "ms": 2081.7999999970198,
+            "stable": true
+          },
+          "top": 414.265625,
+          "height": 72,
+          "centreOffset": 0.265625
+        }
+      ],
+      "reply": {
+        "from": "m-5520",
+        "id": "m-5519",
+        "waited": {
+          "frames": 27,
+          "ms": 2492.2000000029802,
+          "stable": true
+        },
+        "top": 390.078125,
+        "height": 120,
+        "centreOffset": 0.078125
+      },
+      "upwardGrowth": {
+        "growth": 120,
+        "target": "m-5501",
+        "targetContentVisibility": "visible",
+        "targetHeightBefore": 144,
+        "targetHeightAfter": 264,
+        "id": "m-5513",
+        "topBefore": 320.296875,
+        "topAfter": 320.296875,
+        "delta": 0,
+        "scrollTopBefore": 830110,
+        "scrollTopAfter": 830230,
+        "scrollHeightBefore": 1511762,
+        "scrollHeightAfter": 1511882
+      },
+      "editor": {
+        "before": {
+          "rowId": "m-5513",
+          "valueLength": 172,
+          "selectionStart": 4,
+          "selectionEnd": 4,
+          "visible": true
+        },
+        "after": {
+          "present": true,
+          "focused": true,
+          "selectionStart": 4,
+          "selectionEnd": 4,
+          "valueLength": 172
+        }
+      },
+      "accessibility": {
+        "found": true,
+        "nodeCount": 307779,
+        "elapsedMs": 2995,
+        "names": [
+          "Transcript benchmark",
+          "Benchmark transcript",
+          "New messages"
+        ]
+      },
+      "find": {
+        "marker": "needle-10000-7001",
+        "found": true,
+        "selection": "needle-10000-7001",
+        "before": {
+          "top": -392274.9375,
+          "bottom": -392130.9375,
+          "height": 144
+        },
+        "after": {
+          "top": -392274.9375,
+          "bottom": -392130.9375,
+          "height": 144
+        },
+        "visible": false
+      },
+      "final": {
+        "rows": 10448,
+        "groups": 10430,
+        "entries": 10430,
+        "elements": 363544,
+        "scrollHeight": 1516104,
+        "clientHeight": 900,
+        "scrollTop": 1439444,
+        "bottomGap": 75760,
+        "lastRowVisible": false,
+        "lastRowBottom": 76651.546875
+      },
+      "style": {
+        "first": {
+          "contentVisibility": "visible",
+          "containIntrinsicSize": "none",
+          "containIntrinsicHeight": "none"
+        },
+        "far": {
+          "contentVisibility": "visible",
+          "containIntrinsicSize": "none",
+          "containIntrinsicHeight": "none"
+        }
+      },
+      "pageErrors": [],
+      "checks": [
+        {
+          "name": "mount.all-rows-in-dom",
+          "ok": true,
+          "detail": {
+            "expected": 10017,
+            "actual": 10017
+          }
+        },
+        {
+          "name": "mount.all-groups-in-dom",
+          "ok": true,
+          "detail": {
+            "expected": 10000,
+            "actual": 10000
+          }
+        },
+        {
+          "name": "mount.all-bodies-in-dom",
+          "ok": true,
+          "detail": {
+            "expected": 10000,
+            "actual": 10000
+          }
+        },
+        {
+          "name": "mount.at-end",
+          "ok": true,
+          "detail": {
+            "bottomGap": 0,
+            "lastRowVisible": true,
+            "lastRowBottom": 892.328125
+          }
+        },
+        {
+          "name": "mount.work-scaling",
+          "ok": true,
+          "detail": {
+            "rows": 10017,
+            "groups": 10000
+          }
+        },
+        {
+          "name": "append.all-rows-in-dom",
+          "ok": true,
+          "detail": {
+            "expected": 10217,
+            "actual": 10217
+          }
+        },
+        {
+          "name": "append.all-groups-in-dom",
+          "ok": true,
+          "detail": {
+            "expected": 10200,
+            "actual": 10200
+          }
+        },
+        {
+          "name": "append.all-bodies-in-dom",
+          "ok": true,
+          "detail": {
+            "expected": 10200,
+            "actual": 10200
+          }
+        },
+        {
+          "name": "append.follows-end",
+          "ok": true,
+          "detail": {
+            "bottomGap": 0,
+            "lastRowVisible": true
+          }
+        },
+        {
+          "name": "prepend.all-rows-in-dom",
+          "ok": true,
+          "detail": {
+            "expected": 10417,
+            "actual": 10417
+          }
+        },
+        {
+          "name": "prepend.all-groups-in-dom",
+          "ok": true,
+          "detail": {
+            "expected": 10400,
+            "actual": 10400
+          }
+        },
+        {
+          "name": "prepend.all-bodies-in-dom",
+          "ok": true,
+          "detail": {
+            "expected": 10400,
+            "actual": 10400
+          }
+        },
+        {
+          "name": "prepend.keeps-anchor",
+          "ok": true,
+          "detail": {
+            "anchor": "m-4284",
+            "delta": 0.390625,
+            "topBefore": 196.15625,
+            "topAfter": 196.546875
+          }
+        },
+        {
+          "name": "grow-above.keeps-anchor",
+          "ok": true,
+          "detail": {
+            "anchor": "m-4284",
+            "target": "m-4272",
+            "delta": 0,
+            "contentVisibility": "visible"
+          }
+        },
+        {
+          "name": "grow-media-above.keeps-anchor",
+          "ok": true,
+          "detail": {
+            "anchor": "m-4284",
+            "target": "m-4275",
+            "delta": -0.203125,
+            "contentVisibility": "visible"
+          }
+        },
+        {
+          "name": "viewport-resize.keeps-anchor",
+          "ok": true,
+          "detail": {
+            "anchor": "m-4284",
+            "delta": 0
+          }
+        },
+        {
+          "name": "jump.0.12.lands-centred",
+          "ok": true,
+          "detail": {
+            "id": "m-1048",
+            "centreOffset": -0.171875,
+            "stable": true
+          }
+        },
+        {
+          "name": "jump.0.5.lands-centred",
+          "ok": true,
+          "detail": {
+            "id": "m-5000",
+            "centreOffset": -0.4609375,
+            "stable": true
+          }
+        },
+        {
+          "name": "jump.0.88.lands-centred",
+          "ok": true,
+          "detail": {
+            "id": "m-8952",
+            "centreOffset": 0.265625,
+            "stable": true
+          }
+        },
+        {
+          "name": "reply-jump.lands-centred",
+          "ok": true,
+          "detail": {
+            "id": "m-5519",
+            "centreOffset": 0.078125
+          }
+        },
+        {
+          "name": "upward-after-jumps.keeps-anchor",
+          "ok": true,
+          "detail": {
+            "anchor": "m-5513",
+            "delta": 0,
+            "scrollTop": 830110
+          }
+        },
+        {
+          "name": "edit-focus-survives-append",
+          "ok": true,
+          "detail": {
+            "editor": {
+              "rowId": "m-5513",
+              "valueLength": 172,
+              "selectionStart": 4,
+              "selectionEnd": 4,
+              "visible": true
+            },
+            "after": {
+              "present": true,
+              "focused": true,
+              "selectionStart": 4,
+              "selectionEnd": 4,
+              "valueLength": 172
+            }
+          }
+        },
+        {
+          "name": "accessibility.offscreen-row",
+          "ok": true,
+          "detail": {
+            "found": true,
+            "nodeCount": 307779,
+            "elapsedMs": 2995,
+            "names": [
+              "Transcript benchmark",
+              "Benchmark transcript",
+              "New messages"
+            ]
+          }
+        },
+        {
+          "name": "native-find.reaches-offscreen",
+          "ok": true,
+          "detail": {
+            "found": true,
+            "selection": "needle-10000-7001",
+            "offscreenBefore": true,
+            "beforeTop": -392274.9375,
+            "afterTop": -392274.9375
+          }
+        },
+        {
+          "name": "final.all-rows-in-dom",
+          "ok": true,
+          "detail": {
+            "expected": 10448,
+            "actual": 10448
+          }
+        },
+        {
+          "name": "final.all-groups-in-dom",
+          "ok": true,
+          "detail": {
+            "expected": 10430,
+            "actual": 10430
+          }
+        },
+        {
+          "name": "final.all-bodies-in-dom",
+          "ok": true,
+          "detail": {
+            "expected": 10430,
+            "actual": 10430
+          }
+        },
+        {
+          "name": "no-page-errors",
+          "ok": true,
+          "detail": []
+        }
+      ]
+    }
+  ],
+  "scaling": [
+    {
+      "name": "scaling.groups-linear",
+      "ok": true,
+      "detail": {
+        "small": 1000,
+        "large": 10000,
+        "ratio": 10,
+        "messagesRatio": 10
+      }
+    },
+    {
+      "name": "scaling.rows-grow",
+      "ok": true,
+      "detail": {
+        "small": 1433,
+        "large": 10448
+      }
+    }
+  ],
+  "checks": [
+    {
+      "name": "mount.all-rows-in-dom",
+      "ok": true,
+      "detail": {
+        "expected": 1003,
+        "actual": 1003
+      }
+    },
+    {
+      "name": "mount.all-groups-in-dom",
+      "ok": true,
+      "detail": {
+        "expected": 1000,
+        "actual": 1000
+      }
+    },
+    {
+      "name": "mount.all-bodies-in-dom",
+      "ok": true,
+      "detail": {
+        "expected": 1000,
+        "actual": 1000
+      }
+    },
+    {
+      "name": "mount.at-end",
+      "ok": true,
+      "detail": {
+        "bottomGap": 0,
+        "lastRowVisible": true,
+        "lastRowBottom": 892.109375
+      }
+    },
+    {
+      "name": "mount.work-scaling",
+      "ok": true,
+      "detail": {
+        "rows": 1003,
+        "groups": 1000
+      }
+    },
+    {
+      "name": "append.all-rows-in-dom",
+      "ok": true,
+      "detail": {
+        "expected": 1203,
+        "actual": 1203
+      }
+    },
+    {
+      "name": "append.all-groups-in-dom",
+      "ok": true,
+      "detail": {
+        "expected": 1200,
+        "actual": 1200
+      }
+    },
+    {
+      "name": "append.all-bodies-in-dom",
+      "ok": true,
+      "detail": {
+        "expected": 1200,
+        "actual": 1200
+      }
+    },
+    {
+      "name": "append.follows-end",
+      "ok": true,
+      "detail": {
+        "bottomGap": 0,
+        "lastRowVisible": true
+      }
+    },
+    {
+      "name": "prepend.all-rows-in-dom",
+      "ok": true,
+      "detail": {
+        "expected": 1403,
+        "actual": 1403
+      }
+    },
+    {
+      "name": "prepend.all-groups-in-dom",
+      "ok": true,
+      "detail": {
+        "expected": 1400,
+        "actual": 1400
+      }
+    },
+    {
+      "name": "prepend.all-bodies-in-dom",
+      "ok": true,
+      "detail": {
+        "expected": 1400,
+        "actual": 1400
+      }
+    },
+    {
+      "name": "prepend.keeps-anchor",
+      "ok": true,
+      "detail": {
+        "anchor": "m-502",
+        "delta": 0.390625,
+        "topBefore": 266.765625,
+        "topAfter": 267.15625
+      }
+    },
+    {
+      "name": "grow-above.keeps-anchor",
+      "ok": true,
+      "detail": {
+        "anchor": "m-502",
+        "target": "m-490",
+        "delta": 0,
+        "contentVisibility": "visible"
+      }
+    },
+    {
+      "name": "grow-media-above.keeps-anchor",
+      "ok": true,
+      "detail": {
+        "anchor": "m-502",
+        "target": "m-494",
+        "delta": 0,
+        "contentVisibility": "visible"
+      }
+    },
+    {
+      "name": "viewport-resize.keeps-anchor",
+      "ok": true,
+      "detail": {
+        "anchor": "m-502",
+        "delta": 0
+      }
+    },
+    {
+      "name": "jump.0.12.lands-centred",
+      "ok": true,
+      "detail": {
+        "id": "m--32",
+        "centreOffset": -0.078125,
+        "stable": true
+      }
+    },
+    {
+      "name": "jump.0.5.lands-centred",
+      "ok": true,
+      "detail": {
+        "id": "m-500",
+        "centreOffset": -0.2421875,
+        "stable": true
+      }
+    },
+    {
+      "name": "jump.0.88.lands-centred",
+      "ok": true,
+      "detail": {
+        "id": "m-1032",
+        "centreOffset": 0.265625,
+        "stable": true
+      }
+    },
+    {
+      "name": "reply-jump.lands-centred",
+      "ok": true,
+      "detail": {
+        "id": "m-569",
+        "centreOffset": -0.4375
+      }
+    },
+    {
+      "name": "upward-after-jumps.keeps-anchor",
+      "ok": true,
+      "detail": {
+        "anchor": "m-563",
+        "delta": 0,
+        "scrollTop": 111256
+      }
+    },
+    {
+      "name": "edit-focus-survives-append",
+      "ok": true,
+      "detail": {
+        "editor": {
+          "rowId": "m-563",
+          "valueLength": 196,
+          "selectionStart": 4,
+          "selectionEnd": 4,
+          "visible": true
+        },
+        "after": {
+          "present": true,
+          "focused": true,
+          "selectionStart": 4,
+          "selectionEnd": 4,
+          "valueLength": 196
+        }
+      }
+    },
+    {
+      "name": "accessibility.offscreen-row",
+      "ok": true,
+      "detail": {
+        "found": true,
+        "nodeCount": 42220,
+        "elapsedMs": 391,
+        "names": [
+          "Transcript benchmark",
+          "Benchmark transcript",
+          "New messages"
+        ]
+      }
+    },
+    {
+      "name": "native-find.reaches-offscreen",
+      "ok": true,
+      "detail": {
+        "found": true,
+        "selection": "needle-1000-701",
+        "offscreenBefore": true,
+        "beforeTop": -65993.0625,
+        "afterTop": -65993.0625
+      }
+    },
+    {
+      "name": "final.all-rows-in-dom",
+      "ok": true,
+      "detail": {
+        "expected": 1433,
+        "actual": 1433
+      }
+    },
+    {
+      "name": "final.all-groups-in-dom",
+      "ok": true,
+      "detail": {
+        "expected": 1430,
+        "actual": 1430
+      }
+    },
+    {
+      "name": "final.all-bodies-in-dom",
+      "ok": true,
+      "detail": {
+        "expected": 1430,
+        "actual": 1430
+      }
+    },
+    {
+      "name": "no-page-errors",
+      "ok": true,
+      "detail": []
+    },
+    {
+      "name": "mount.all-rows-in-dom",
+      "ok": true,
+      "detail": {
+        "expected": 10017,
+        "actual": 10017
+      }
+    },
+    {
+      "name": "mount.all-groups-in-dom",
+      "ok": true,
+      "detail": {
+        "expected": 10000,
+        "actual": 10000
+      }
+    },
+    {
+      "name": "mount.all-bodies-in-dom",
+      "ok": true,
+      "detail": {
+        "expected": 10000,
+        "actual": 10000
+      }
+    },
+    {
+      "name": "mount.at-end",
+      "ok": true,
+      "detail": {
+        "bottomGap": 0,
+        "lastRowVisible": true,
+        "lastRowBottom": 892.328125
+      }
+    },
+    {
+      "name": "mount.work-scaling",
+      "ok": true,
+      "detail": {
+        "rows": 10017,
+        "groups": 10000
+      }
+    },
+    {
+      "name": "append.all-rows-in-dom",
+      "ok": true,
+      "detail": {
+        "expected": 10217,
+        "actual": 10217
+      }
+    },
+    {
+      "name": "append.all-groups-in-dom",
+      "ok": true,
+      "detail": {
+        "expected": 10200,
+        "actual": 10200
+      }
+    },
+    {
+      "name": "append.all-bodies-in-dom",
+      "ok": true,
+      "detail": {
+        "expected": 10200,
+        "actual": 10200
+      }
+    },
+    {
+      "name": "append.follows-end",
+      "ok": true,
+      "detail": {
+        "bottomGap": 0,
+        "lastRowVisible": true
+      }
+    },
+    {
+      "name": "prepend.all-rows-in-dom",
+      "ok": true,
+      "detail": {
+        "expected": 10417,
+        "actual": 10417
+      }
+    },
+    {
+      "name": "prepend.all-groups-in-dom",
+      "ok": true,
+      "detail": {
+        "expected": 10400,
+        "actual": 10400
+      }
+    },
+    {
+      "name": "prepend.all-bodies-in-dom",
+      "ok": true,
+      "detail": {
+        "expected": 10400,
+        "actual": 10400
+      }
+    },
+    {
+      "name": "prepend.keeps-anchor",
+      "ok": true,
+      "detail": {
+        "anchor": "m-4284",
+        "delta": 0.390625,
+        "topBefore": 196.15625,
+        "topAfter": 196.546875
+      }
+    },
+    {
+      "name": "grow-above.keeps-anchor",
+      "ok": true,
+      "detail": {
+        "anchor": "m-4284",
+        "target": "m-4272",
+        "delta": 0,
+        "contentVisibility": "visible"
+      }
+    },
+    {
+      "name": "grow-media-above.keeps-anchor",
+      "ok": true,
+      "detail": {
+        "anchor": "m-4284",
+        "target": "m-4275",
+        "delta": -0.203125,
+        "contentVisibility": "visible"
+      }
+    },
+    {
+      "name": "viewport-resize.keeps-anchor",
+      "ok": true,
+      "detail": {
+        "anchor": "m-4284",
+        "delta": 0
+      }
+    },
+    {
+      "name": "jump.0.12.lands-centred",
+      "ok": true,
+      "detail": {
+        "id": "m-1048",
+        "centreOffset": -0.171875,
+        "stable": true
+      }
+    },
+    {
+      "name": "jump.0.5.lands-centred",
+      "ok": true,
+      "detail": {
+        "id": "m-5000",
+        "centreOffset": -0.4609375,
+        "stable": true
+      }
+    },
+    {
+      "name": "jump.0.88.lands-centred",
+      "ok": true,
+      "detail": {
+        "id": "m-8952",
+        "centreOffset": 0.265625,
+        "stable": true
+      }
+    },
+    {
+      "name": "reply-jump.lands-centred",
+      "ok": true,
+      "detail": {
+        "id": "m-5519",
+        "centreOffset": 0.078125
+      }
+    },
+    {
+      "name": "upward-after-jumps.keeps-anchor",
+      "ok": true,
+      "detail": {
+        "anchor": "m-5513",
+        "delta": 0,
+        "scrollTop": 830110
+      }
+    },
+    {
+      "name": "edit-focus-survives-append",
+      "ok": true,
+      "detail": {
+        "editor": {
+          "rowId": "m-5513",
+          "valueLength": 172,
+          "selectionStart": 4,
+          "selectionEnd": 4,
+          "visible": true
+        },
+        "after": {
+          "present": true,
+          "focused": true,
+          "selectionStart": 4,
+          "selectionEnd": 4,
+          "valueLength": 172
+        }
+      }
+    },
+    {
+      "name": "accessibility.offscreen-row",
+      "ok": true,
+      "detail": {
+        "found": true,
+        "nodeCount": 307779,
+        "elapsedMs": 2995,
+        "names": [
+          "Transcript benchmark",
+          "Benchmark transcript",
+          "New messages"
+        ]
+      }
+    },
+    {
+      "name": "native-find.reaches-offscreen",
+      "ok": true,
+      "detail": {
+        "found": true,
+        "selection": "needle-10000-7001",
+        "offscreenBefore": true,
+        "beforeTop": -392274.9375,
+        "afterTop": -392274.9375
+      }
+    },
+    {
+      "name": "final.all-rows-in-dom",
+      "ok": true,
+      "detail": {
+        "expected": 10448,
+        "actual": 10448
+      }
+    },
+    {
+      "name": "final.all-groups-in-dom",
+      "ok": true,
+      "detail": {
+        "expected": 10430,
+        "actual": 10430
+      }
+    },
+    {
+      "name": "final.all-bodies-in-dom",
+      "ok": true,
+      "detail": {
+        "expected": 10430,
+        "actual": 10430
+      }
+    },
+    {
+      "name": "no-page-errors",
+      "ok": true,
+      "detail": []
+    },
+    {
+      "name": "scaling.groups-linear",
+      "ok": true,
+      "detail": {
+        "small": 1000,
+        "large": 10000,
+        "ratio": 10,
+        "messagesRatio": 10
+      }
+    },
+    {
+      "name": "scaling.rows-grow",
+      "ok": true,
+      "detail": {
+        "small": 1433,
+        "large": 10448
+      }
+    }
+  ],
+  "passed": true
+}

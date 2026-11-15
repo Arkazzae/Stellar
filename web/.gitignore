@@ -4,6 +4,7 @@ next-env.d.ts
 .env*
 !.env.example
 *.tsbuildinfo
+.bench-dist
 
 # The files artifacts/assemble.mjs copies into public/ are ignored in the
 # repository's root .gitignore.
