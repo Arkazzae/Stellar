@@ -37,7 +37,7 @@ flowchart TD
 ## Component responsibilities
 
 - **Next.js (`web/`)**: Serves the web application and implements the browser-side `VoiceClient`. React components read call state from `VoiceState` and trigger actions through `VoiceClient`.
-- **Stellarr Cockpit (`cockpit/`)**: Standalone single-page operator panel served statically by Nginx under `/cockpit/` (`/ops/` redirects with `308`). Calls `/api/cockpit/*` and requires the built-in instance owner role.
+- **Stellarr Cockpit (`cockpit/`)**: Standalone single-page operator panel served statically by Nginx under `/cockpit/`. Calls `/api/cockpit/*` and requires the built-in instance owner role.
 - **ASP.NET Core (`server/Stellarr.Api`)**: Application server handling authentication, sessions, servers, channels, public and direct messages, uploads, presence, and SignalR signaling. It also opens and closes media sessions on `stellarr-media` via its loopback HTTP API and relays SDP/ICE negotiation between browsers and the media server.
 - **Operator CLI (`server/Stellarr.Cli`)**: The `stellarr` binary included in the container image. It inspects instance health, manages settings, encrypted secrets, and user sessions, and stages backups for restore directly against the data volume without starting a second API process. See [Operator CLI](./install/cli.md).
 - **SQLite**: Stores relational application state in WAL mode (`stellarr.db`). Binary attachments are never stored in SQLite.
