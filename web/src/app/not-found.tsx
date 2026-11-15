@@ -11,7 +11,7 @@ import { useLanguage } from "@/state/hooks";
  * broken deployment rather than a wrong address.
  *
  * A client component so it speaks the language the provider in the root layout
- * holds, which follows the person's own choice.
+ * holds, which follows the person's own choice and not only the request.
  */
 export default function NotFound() {
   const { t } = useLanguage();

@@ -9,7 +9,7 @@ import { LanguageProvider } from "@/state/LanguageProvider";
 
 /**
  * The suite starts every test on a Polish page. These tests are the English
- * one: a page the locale script marked `<html lang="en">`, where components
+ * one: a page the server rendered with `<html lang="en">`, where components
  * that were handed no translator still speak English.
  */
 beforeEach(() => {
@@ -36,7 +36,7 @@ describe("screens on an English page", () => {
     expect(screen.getByRole("button", { name: "Profile: Ada" })).toBeInTheDocument();
   });
 
-  it("the provider starts in English when the page is English", () => {
+  it("the provider starts in English when the server chose nothing else", () => {
     render(
       <LanguageProvider>
         <Dropdown options={[]} value="" onChange={vi.fn()} label="Role" />

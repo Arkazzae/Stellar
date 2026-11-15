@@ -1668,6 +1668,8 @@ export const pl = {
   "voice.mediaSessionChannel": "Kanał głosowy",
   "media.previous": "Poprzedni",
 
+  "app.description": "Małe, samodzielnie hostowane miejsce na rozmowy.",
+
   "format.today": "Dziś",
   "format.yesterday": "Wczoraj",
   "format.agoJustNow": "przed chwilą",
