@@ -17,6 +17,8 @@ Seeds the SQLite development database with realistic multi-day activity while pr
   - `Community`: `#polski`, `#lfg-coop`, `#llm-local`, `#random-chat`, `co-op-lounge` (voice)
   - `History & Chill`: `#qa-long-history` (180 messages across multiple calendar days), `chill-room` (voice)
 - **Conversations & Rich Features:** ~700+ messages with replies, edits, pins, emoji reactions, markdown/code blocks, mentions, FTS5 search entries, unread channel markers, mention notifications, friendships, pending friend requests, direct messages, invites, audit log entries, and two secondary servers (`Homelab & Infra`, `Friday Co-op`) for server-rail switching.
+- **Presence:** a mixed `online` / `idle` / `dnd` fixture for the seeded accounts, restored by the API in development so the roster does not look abandoned. Presence is normally process-local and follows live hub connections; the seed leaves `seed-presence.json` on the data volume and the API reads it once at start (so restart the API after seeding with `--no-restart`). Connecting as a seeded account promotes it to a normal live session and drops the seeded fallback.
+- **Test media:** static screenshots, animated GIFs, and two short silent MP4 clips from `scripts/seed-media/` attached to channel messages and DMs. The clips are encoded **without an audio stream**, so nothing squeaks when they autoplay or open in the media viewer. `--no-media` skips all of it, and `--no-presence` skips the status fixture.
 
 ### Usage
 
@@ -29,11 +31,15 @@ Ensure the dev stack has initialized the SQLite database once (`docker compose -
 # Replace previously seeded data cleanly without touching personal accounts
 ./scripts/seed-dev.sh --reset
 
-# Seed a standalone local SQLite file directly via host python3
+# Seed a standalone local SQLite file directly via host python3.
+# Media files and the presence fixture go next to the database unless --data-root says otherwise.
 ./scripts/seed-dev.sh --db ./path/to/stellarr-dev.db --reset
 
 # Initialize an empty schema-only DB (0 servers) with a starter 'admin' server first
 ./scripts/seed-dev.sh --reset --bootstrap-owner
+
+# Skip media or presence for a store that keeps objects elsewhere
+./scripts/seed-dev.sh --no-media --no-presence
 ```
 
-Run `./scripts/seed-dev.sh --help` or `python3 scripts/seed-dev.py --help` for all options.
+Run `./scripts/seed-dev.sh --help` or `python3 scripts/seed-dev.py --help` for all options, including `--data-root`.
