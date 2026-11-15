@@ -205,6 +205,35 @@ describe("RailTextList pointer sorting", () => {
     expect(onReorder).toHaveBeenCalledWith(["t-2", "t-1", "t-3"]);
   });
 
+  it.each([2, 3])("moves a tall first channel to the end of a %i-channel list", (count) => {
+    const { main, node, onReorder } = setup({
+      list: channels.slice(0, count),
+      expanded: ["t-1"],
+    });
+
+    pressAt(main("ogólny"), 116);
+    moveTo(130, 900);
+    expect(translateOf(node("ogólny"))).toBe(`translateY(${32 * (count - 1)}px)`);
+    release(900);
+
+    expect(onReorder).toHaveBeenCalledWith([
+      ...channels.slice(1, count).map((channel) => channel.id),
+      "t-1",
+    ]);
+  });
+
+  it.each([2, 3])("moves a tall last channel to the start of a %i-channel list", (count) => {
+    const list = [...channels.slice(1, count), channels[0]!];
+    const { main, node, onReorder } = setup({ list, expanded: ["t-1"] });
+
+    pressAt(main("ogólny"), 116 + 32 * (count - 1));
+    moveTo(130, 0);
+    expect(translateOf(node("ogólny"))).toBe(`translateY(${-32 * (count - 1)}px)`);
+    release(0);
+
+    expect(onReorder).toHaveBeenCalledWith(["t-1", ...list.slice(0, -1).map((channel) => channel.id)]);
+  });
+
   it("cancels on Escape and still eats the click of the release", () => {
     const { main, node, onReorder, onSelect, said } = setup();
 
