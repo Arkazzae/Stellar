@@ -10,6 +10,21 @@ web/out
 **/obj
 **/TestResults
 **/artifacts
+# The top-level artifacts/ holds the browser's prebuilt binaries, which the web
+# build assembles. Their copies in web/public/ are left out, so a file that a
+# development run assembled can never stand in for that.
+!artifacts
+artifacts/recipes/*/out
+web/public/audio/rnnoise-worklet.js
+web/public/audio/rnnoise.wasm
+web/public/audio/rnnoise_simd.wasm
+web/public/audio/gtcrn-worklet.js
+web/public/audio/gtcrn.wasm
+web/public/audio/speex-worklet.js
+web/public/audio/speex.wasm
+web/public/codecs
+web/public/bergamot-models/*
+!web/public/bergamot-models/registry.json
 media/target
 # **/bin is .NET build output, but src/bin holds extra binaries of a Rust crate.
 !media/src/bin

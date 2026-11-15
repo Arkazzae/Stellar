@@ -41,12 +41,6 @@ describe("Bergamot model loading", () => {
           return Response.json({ plen: files, enpl: files });
         }
 
-        // Production tries a bundled model first and uses the same-origin GCS
-        // proxy when it is not part of the application image.
-        if (url.startsWith("/bergamot-models/")) {
-          return new Response(null, { status: 404 });
-        }
-
         const name = url.split("/").at(-1) ?? "";
         const payload = payloads[name];
         return payload === undefined
@@ -78,7 +72,8 @@ describe("Bergamot model loading", () => {
     await downloadModel("en");
 
     expect(fetchMock).toHaveBeenCalledWith("/bergamot-models/plen/model.bin");
-    expect(fetchMock).toHaveBeenCalledWith("/bergamot-models-gcs/plen/model.bin");
+    expect(fetchMock).toHaveBeenCalledWith("/bergamot-models/plen/lex.bin");
+    expect(fetchMock).toHaveBeenCalledWith("/bergamot-models/plen/vocab.spm");
     expect(fetchMock.mock.calls).toHaveLength(callsAfterFirstDownload);
   });
 });

@@ -78,8 +78,9 @@ coverage.cobertura.xml
 /docs/.vitepress/dist/
 /docs/.vitepress/cache/
 
-# RNNoise is copied deterministically from the locked npm package by
-# web/scripts/copy-audio-assets.mjs. Keep our own VAD worklet tracked.
+# Copies that artifacts/assemble.mjs makes of artifacts/files/ at the paths
+# artifacts/manifest.json serves them under. Our own VAD worklet and the model
+# registry beside them stay tracked.
 /web/public/audio/rnnoise-worklet.js
 /web/public/audio/rnnoise.wasm
 /web/public/audio/rnnoise_simd.wasm
@@ -87,6 +88,12 @@ coverage.cobertura.xml
 /web/public/audio/gtcrn.wasm
 /web/public/audio/speex-worklet.js
 /web/public/audio/speex.wasm
+/web/public/codecs/
+/web/public/bergamot-models/*/
+
+# A recipe builds its outputs here; artifacts/assemble.mjs reads them only when
+# a manifest entry names a recipe. They are not committed.
+/artifacts/recipes/*/out/
 
 # ---------------------------------------------------------------------------
 # Rust
