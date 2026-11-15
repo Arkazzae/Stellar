@@ -105,6 +105,23 @@ describe("EmojiPicker", () => {
     }
   });
 
+  it("does not take focus from a control outside the picker when its opening frame is late", () => {
+    const frames: FrameRequestCallback[] = [];
+    const requestFrame = vi.spyOn(window, "requestAnimationFrame").mockImplementation((callback) => {
+      frames.push(callback);
+      return frames.length;
+    });
+    try {
+      render(<><button type="button">More actions</button><EmojiPicker onPick={vi.fn()} /></>);
+      const outside = screen.getByRole("button", { name: "More actions" });
+      outside.focus();
+      for (const frame of frames) frame(0);
+      expect(outside).toHaveFocus();
+    } finally {
+      requestFrame.mockRestore();
+    }
+  });
+
   it("remembers what was picked and offers it again first", async () => {
     const user = userEvent.setup();
     const { unmount } = render(<EmojiPicker onPick={vi.fn()} />);
