@@ -13,14 +13,21 @@ const LOCALE_TAG: Record<InterfaceLocale, string> = {
 };
 
 /** Formats a timestamp, or returns "" for one that does not parse. */
+function formatWithDate(
+  date: Date,
+  locale: InterfaceLocale,
+  options: Intl.DateTimeFormatOptions,
+): string {
+  if (Number.isNaN(date.getTime())) return "";
+  return new Intl.DateTimeFormat(LOCALE_TAG[locale], options).format(date);
+}
+
 function formatWith(
   iso: string,
   locale: InterfaceLocale,
   options: Intl.DateTimeFormatOptions,
 ): string {
-  const date = new Date(iso);
-  if (Number.isNaN(date.getTime())) return "";
-  return new Intl.DateTimeFormat(LOCALE_TAG[locale], options).format(date);
+  return formatWithDate(new Date(iso), locale, options);
 }
 
 export function formatTime(iso: string, locale: InterfaceLocale): string {
@@ -53,12 +60,11 @@ export function isSameDay(a: Date, b: Date): boolean {
 }
 
 /** A day heading: "Today", "Yesterday", or the weekday and date. */
-export function formatDay(
-  iso: string,
-  now = new Date(),
-  locale: InterfaceLocale = documentLocale(),
+function dayHeading(
+  date: Date,
+  now: Date,
+  locale: InterfaceLocale,
 ): string {
-  const date = new Date(iso);
   if (Number.isNaN(date.getTime())) return "";
   if (isSameDay(date, now)) return translateMessage(locale, "format.today");
 
@@ -66,11 +72,19 @@ export function formatDay(
   yesterday.setDate(now.getDate() - 1);
   if (isSameDay(date, yesterday)) return translateMessage(locale, "format.yesterday");
 
-  return formatWith(iso, locale, {
+  return formatWithDate(date, locale, {
     weekday: "long",
     day: "numeric",
     month: "long",
   });
+}
+
+export function formatDay(
+  iso: string,
+  now = new Date(),
+  locale: InterfaceLocale = documentLocale(),
+): string {
+  return dayHeading(new Date(iso), now, locale);
 }
 
 /**
@@ -182,9 +196,20 @@ export function buildTranscript(
   locale: InterfaceLocale = documentLocale(),
 ): TranscriptSection[] {
   const sections: TranscriptSection[] = [];
+  // One heading per contiguous calendar day. This is call-local on purpose:
+  // a new `now`, locale or timezone must not read a heading cached earlier.
+  let lastDay: { date: Date; label: string } | undefined;
 
   for (const message of messages) {
-    const day = formatDay(message.createdAt, now, locale);
+    const createdAt = new Date(message.createdAt);
+    let day: string;
+    if (lastDay !== undefined && isSameDay(lastDay.date, createdAt)) {
+      day = lastDay.label;
+    } else {
+      day = dayHeading(createdAt, now, locale);
+      lastDay = { date: createdAt, label: day };
+    }
+
     let section = sections.at(-1);
     if (section?.day !== day) {
       section = { day, groups: [] };
@@ -196,7 +221,7 @@ export function buildTranscript(
     const withinWindow =
       last !== undefined &&
       Math.abs(
-        new Date(message.createdAt).getTime() - new Date(last.createdAt).getTime(),
+        createdAt.getTime() - new Date(last.createdAt).getTime(),
       ) <= GROUP_WINDOW_MS;
 
     // A reply always starts its own block: the line above it names a different

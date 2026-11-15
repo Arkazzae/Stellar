@@ -26,6 +26,7 @@ import type {
 import { useAccountContext } from "./AccountProvider";
 import { chatReducer, EMPTY_CHAT_DATA } from "./chat/chatStore";
 import {
+  createTranscriptPresenter,
   memberFaces,
   mentionTargets,
   pinnedRows,
@@ -298,9 +299,10 @@ export function ChatProvider({ children }: { children: ReactNode }) {
     };
   }, [ports, reactionEpoch, user?.id, server, faces, customEmoji, mentions, pinnedIds, t]);
 
+  const present = useMemo(() => createTranscriptPresenter(), []);
   const sections = useMemo(
-    () => presentTranscript(buildTranscript(messages, new Date(), locale), view),
-    [messages, locale, view],
+    () => present(buildTranscript(messages, new Date(), locale), view),
+    [messages, locale, present, view],
   );
 
   const { threadRootId, threadInitialExpanded, threadOpenRevision } = panel;

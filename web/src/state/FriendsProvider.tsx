@@ -13,7 +13,6 @@ import {
 } from "react";
 
 import type { ComposerChip } from "@/components/room/ComposerChips";
-import { toParts } from "@/components/room/parts";
 import type { TranscriptSectionVM } from "@/components/room/Transcript";
 import { translateMessage } from "@/i18n";
 import { buildTranscript, initials } from "@/lib/format";
@@ -30,6 +29,7 @@ import type {
 
 import { useEmoji } from "./EmojiProvider";
 import { useLanguage } from "./LanguageProvider";
+import { createTranscriptPresenter, type PresentationContext } from "./chat/present";
 import { usePorts } from "./PortsProvider";
 import { useSessionContext } from "./SessionProvider";
 import { useUiContext } from "./UiProvider";
@@ -86,6 +86,8 @@ const FriendsContext = createContext<FriendsValue | null>(null);
 
 const NO_MESSAGES: Message[] = [];
 const NO_SECTIONS: TranscriptSectionVM[] = [];
+const NO_MENTIONS: PresentationContext["mentions"] = new Map();
+const NO_PINS: PresentationContext["pinnedIds"] = new Set();
 const MAX_ATTACHMENTS = 10;
 
 interface PendingChip extends ComposerChip {
@@ -183,8 +185,8 @@ function useAttachments(port: FriendsPort) {
  *
  * A provider of its own rather than a branch of `ChatProvider`: that one
  * follows the active channel and talks to `ports.chat`, and a conversation is
- * neither. What they share is how a transcript is built, and that is a function
- * (`buildTranscript` and `toParts`), called here rather than inherited.
+ * neither. What they share is how a transcript is presented, and that is the
+ * same presenter function, called here rather than inherited.
  */
 export function FriendsProvider({ children }: { children: ReactNode }) {
   const { locale, t } = useLanguage();
@@ -252,33 +254,34 @@ export function FriendsProvider({ children }: { children: ReactNode }) {
     void leaveVoice();
   }, [conversations, privateCall, voiceRoomId, leaveVoice]);
 
-  const sections = useMemo<TranscriptSectionVM[]>(() => {
-    if (activeDmId === null) return NO_SECTIONS;
+  const present = useMemo(() => createTranscriptPresenter(), []);
+  const presentation = useMemo<PresentationContext>(() => {
     // Both authors are already `User`s, so no directory lookup is needed.
     const avatars = new Map<string, string>();
     for (const person of [user, active?.peer]) {
       if (person?.avatarUrl !== undefined) avatars.set(person.id, person.avatarUrl);
     }
-    const extFallback = t("attachment.extFallback");
-    return buildTranscript(messages, new Date(), locale).map((section) => ({
-      day: section.day,
-      groups: section.groups.map((group) => {
-        const avatarUrl = avatars.get(group.authorId);
-        return {
-          id: group.key,
-          authorId: group.authorId,
-          authorName: group.authorName,
-          ...(group.authorId === user?.id ? { own: true } : {}),
-          ...(avatarUrl === undefined ? {} : { authorAvatarUrl: avatarUrl }),
-          timestamp: group.startedAt,
-          bodies: group.messages.map((message) => ({
-            id: message.id,
-            parts: toParts(message, { emoji: customEmoji, extFallback }),
-          })),
-        };
-      }),
-    }));
-  }, [activeDmId, messages, user, active, customEmoji, locale, t]);
+    return {
+      selfId: user?.id,
+      // A private conversation has no server notice to name.
+      server: { name: "" },
+      faces: avatars,
+      customEmoji,
+      mentions: NO_MENTIONS,
+      pinnedIds: NO_PINS,
+      reactionsOf: () => [],
+      extFallback: t("attachment.extFallback"),
+    };
+  }, [user, active?.peer, customEmoji, t]);
+
+  const sections = useMemo<TranscriptSectionVM[]>(() => {
+    if (activeDmId === null) {
+      // Presenting nothing releases the conversation that was just closed.
+      present([], presentation);
+      return NO_SECTIONS;
+    }
+    return present(buildTranscript(messages, new Date(), locale), presentation);
+  }, [activeDmId, messages, locale, present, presentation]);
 
   const messagePerson = useCallback(
     (userId: string, text?: string) => {
