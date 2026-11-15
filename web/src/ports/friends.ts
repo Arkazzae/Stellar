@@ -67,6 +67,13 @@ export interface FriendsPort {
   hasOlderDmMessages(id: DmId): boolean;
   isLoadingOlderDmMessages(id: DmId): boolean;
   loadOlderDmMessages(id: DmId): Promise<void>;
+  /**
+   * Loads the newest page of a conversation that is not in memory yet, so
+   * that opening one from the rail does not show an empty transcript. A
+   * conversation that has already been read is left alone; realtime keeps it
+   * current and a reconnect refreshes it.
+   */
+  loadConversation(id: DmId): Promise<void>;
 
   /** Opens (or finds) the conversation with `userId` and returns its id. */
   openConversation(userId: UserId): Promise<DmId>;

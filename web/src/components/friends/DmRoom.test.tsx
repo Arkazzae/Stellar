@@ -172,6 +172,15 @@ describe("DmRoom call", () => {
 });
 
 describe("DmRoom conversation", () => {
+  it("keeps the conversation in the room's second grid track", () => {
+    const { container } = openRoom();
+
+    const body = container.querySelector(".room > .room-body");
+    expect(body).toBeTruthy();
+    expect(body?.querySelector(":scope > .view.active")).toBeTruthy();
+    expect(body?.querySelector(".composer")).toBeTruthy();
+  });
+
   it("begins the history with a line saying whose conversation it is", () => {
     openRoom();
 
