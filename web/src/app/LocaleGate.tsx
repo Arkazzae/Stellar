@@ -4,10 +4,9 @@ import { usePathname } from "next/navigation";
 import type { ReactNode } from "react";
 
 import { useHydrated } from "@/hooks/useHydrated";
+import { isInvitePath } from "@/lib/invites";
 
 import { AppSkeleton } from "./AppSkeleton";
-
-const INVITE_PATH = /^\/invite\/[^/]+$/;
 
 /**
  * Whether an address opens into the signed-in shell, whose skeleton is then
@@ -15,7 +14,7 @@ const INVITE_PATH = /^\/invite\/[^/]+$/;
  * there.
  */
 export function opensIntoShell(pathname: string | null): boolean {
-  return pathname === "/" || INVITE_PATH.test(pathname ?? "");
+  return pathname === "/" || isInvitePath(pathname);
 }
 
 /**
