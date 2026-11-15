@@ -1,5 +1,5 @@
-import { LineChart } from "@/components/line-chart";
-import { formatDay } from "@/i18n/format";
+import { LineChart } from "./line-chart";
+import { formatDay } from "../i18n/format";
 
 export interface ActivityPoint {
   /** The instance's local date, YYYY-MM-DD. */

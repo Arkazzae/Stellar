@@ -1,4 +1,4 @@
-import markSvg from "@/assets/logo/mono.svg?raw";
+import markSvg from "../assets/logo/mono.svg?raw";
 
 /**
  * The one-colour mark (branding/logo/mono.svg, unchanged). It is inlined so its

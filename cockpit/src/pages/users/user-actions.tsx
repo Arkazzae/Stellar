@@ -9,11 +9,11 @@ import {
 } from "@stellarr/ui";
 import { useState } from "react";
 
-import { Icon } from "@/components/icons/icon";
-import { t } from "@/i18n";
-import { cockpitApi, type CockpitRole, type CockpitUser } from "@/lib/api";
-import type { Perform } from "@/pages/users/use-access-actions";
-import { UserSecuritySheet } from "@/pages/users/user-security-sheet";
+import { Icon } from "../../components/icons/icon";
+import { t } from "../../i18n";
+import { cockpitApi, type CockpitRole, type CockpitUser } from "../../lib/api";
+import type { Perform } from "./use-access-actions";
+import { UserSecuritySheet } from "./user-security-sheet";
 
 interface UserActionsProps {
   user: CockpitUser;

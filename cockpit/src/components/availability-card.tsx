@@ -1,12 +1,12 @@
 import { Badge, Card, cx } from "@stellarr/ui";
 
-import { ServiceUptime, UptimeAxis } from "@/components/service-uptime";
-import { TileFigure, TileHeader } from "@/components/stat-tile";
-import { t } from "@/i18n";
-import { formatDateTime } from "@/i18n/format";
-import type { CockpitRuntime } from "@/lib/api";
-import type { HealthCheckState } from "@/lib/health";
-import { formatUptime, minuteSlots, slotStates } from "@/lib/uptime";
+import { ServiceUptime, UptimeAxis } from "./service-uptime";
+import { TileFigure, TileHeader } from "./stat-tile";
+import { t } from "../i18n";
+import { formatDateTime } from "../i18n/format";
+import type { CockpitRuntime } from "../lib/api";
+import type { HealthCheckState } from "../lib/health";
+import { formatUptime, minuteSlots, slotStates } from "../lib/uptime";
 
 function CurrentState({ state }: { state: HealthCheckState }) {
   if (state === "checking") return <Badge variant="secondary">{t("dashboard.health.checking")}</Badge>;

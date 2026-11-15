@@ -18,13 +18,13 @@ import {
 } from "@stellarr/ui";
 import { useEffect, useMemo, useRef, useState } from "react";
 
-import { CardTitleRow } from "@/components/card-title-row";
-import { Icon } from "@/components/icons/icon";
-import { PageHeader } from "@/components/page-header";
-import { getLocale, t, type MessageKey } from "@/i18n";
-import { formatDateTime, formatNumber } from "@/i18n/format";
-import { cockpitApi, type CockpitLogEntry, type CockpitLogLevel } from "@/lib/api";
-import { useLogFeed } from "@/lib/use-log-feed";
+import { CardTitleRow } from "../components/card-title-row";
+import { Icon } from "../components/icons/icon";
+import { PageHeader } from "../components/page-header";
+import { getLocale, t, type MessageKey } from "../i18n";
+import { formatDateTime, formatNumber } from "../i18n/format";
+import { cockpitApi, type CockpitLogEntry, type CockpitLogLevel } from "../lib/api";
+import { useLogFeed } from "../lib/use-log-feed";
 
 const SEARCH_DELAY_MS = 300;
 

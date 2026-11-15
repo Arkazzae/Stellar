@@ -1,5 +1,5 @@
-import { t } from "@/i18n";
-import type { CockpitRuntimeSample, CockpitRuntimeService } from "@/lib/api";
+import { t } from "../i18n";
+import type { CockpitRuntimeSample, CockpitRuntimeService } from "./api";
 
 /** Days and hours are left out when zero; minutes are always shown. */
 export function formatUptime(totalSeconds: number): string {

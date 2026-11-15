@@ -15,13 +15,13 @@ import {
   TableRow,
 } from "@stellarr/ui";
 
-import { Icon } from "@/components/icons/icon";
-import { UserAvatar } from "@/components/user-avatar";
-import { t } from "@/i18n";
-import { formatShortDateTime, lowerCase } from "@/i18n/format";
-import type { CockpitRole, CockpitUser } from "@/lib/api";
-import { UserActions } from "@/pages/users/user-actions";
-import type { Perform } from "@/pages/users/use-access-actions";
+import { Icon } from "../../components/icons/icon";
+import { UserAvatar } from "../../components/user-avatar";
+import { t } from "../../i18n";
+import { formatShortDateTime, lowerCase } from "../../i18n/format";
+import type { CockpitRole, CockpitUser } from "../../lib/api";
+import { UserActions } from "./user-actions";
+import type { Perform } from "./use-access-actions";
 
 export interface AccountFilter {
   query: string;

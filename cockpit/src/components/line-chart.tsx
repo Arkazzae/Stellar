@@ -1,7 +1,7 @@
 import { useId, useState, type KeyboardEvent } from "react";
 
-import { formatNumber } from "@/i18n/format";
-import { axisTop, rem } from "@/lib/chart-scale";
+import { formatNumber } from "../i18n/format";
+import { axisTop, rem } from "../lib/chart-scale";
 
 export interface LinePoint {
   /** Unique within the chart: the date or the time of the point. */

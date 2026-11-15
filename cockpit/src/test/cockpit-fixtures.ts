@@ -1,7 +1,7 @@
 import { vi } from "vitest";
 
-import type { CockpitBootstrap } from "@/lib/api";
-import type { CockpitContextValue } from "@/state/cockpit-context";
+import type { CockpitBootstrap } from "../lib/api";
+import type { CockpitContextValue } from "../state/cockpit-context";
 
 function bootstrapFixture(): CockpitBootstrap {
   return {

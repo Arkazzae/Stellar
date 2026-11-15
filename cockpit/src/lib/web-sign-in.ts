@@ -1,4 +1,4 @@
-import type { CockpitLoginStep } from "@/lib/api";
+import type { CockpitLoginStep } from "./api";
 
 /*
  * The web client's sign-in page, on the same origin: in production Cockpit is

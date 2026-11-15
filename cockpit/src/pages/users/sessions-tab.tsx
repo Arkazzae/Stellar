@@ -14,10 +14,10 @@ import {
   TableRow,
 } from "@stellarr/ui";
 
-import { t } from "@/i18n";
-import { formatShortDateTime } from "@/i18n/format";
-import { cockpitApi, type CockpitSession } from "@/lib/api";
-import type { Perform } from "@/pages/users/use-access-actions";
+import { t } from "../../i18n";
+import { formatShortDateTime } from "../../i18n/format";
+import { cockpitApi, type CockpitSession } from "../../lib/api";
+import type { Perform } from "./use-access-actions";
 
 function SessionClient({ session }: { session: CockpitSession }) {
   if (!session.clientName) {

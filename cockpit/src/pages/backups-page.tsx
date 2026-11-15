@@ -29,22 +29,22 @@ import {
 } from "@stellarr/ui";
 import { useEffect, useState, type FormEvent } from "react";
 
-import { BackupSettings } from "@/components/backup-settings";
-import { Icon } from "@/components/icons/icon";
-import { PageHeader } from "@/components/page-header";
-import { Stat, StatGrid } from "@/components/stats";
-import { t, type MessageKey } from "@/i18n";
-import { formatDateTime, formatMegabytes, formatNumber } from "@/i18n/format";
+import { BackupSettings } from "../components/backup-settings";
+import { Icon } from "../components/icons/icon";
+import { PageHeader } from "../components/page-header";
+import { Stat, StatGrid } from "../components/stats";
+import { t, type MessageKey } from "../i18n";
+import { formatDateTime, formatMegabytes, formatNumber } from "../i18n/format";
 import {
   cockpitApi,
   type CockpitBackup,
   type CockpitBackupChoice,
   type CockpitBackupJob,
   type CockpitBackupPart,
-} from "@/lib/api";
-import { useCockpitResource } from "@/lib/use-cockpit-resource";
-import { leaveFor } from "@/lib/web-sign-in";
-import { useCockpit } from "@/state/cockpit-context";
+} from "../lib/api";
+import { useCockpitResource } from "../lib/use-cockpit-resource";
+import { leaveFor } from "../lib/web-sign-in";
+import { useCockpit } from "../state/cockpit-context";
 
 const formatSize = (bytes: number) => formatMegabytes(bytes, 2);
 

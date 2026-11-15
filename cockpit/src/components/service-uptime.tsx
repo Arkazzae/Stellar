@@ -1,9 +1,9 @@
 import { cx } from "@stellarr/ui";
 import type { ReactNode } from "react";
 
-import { getLocale, t, type MessageKey } from "@/i18n";
-import { formatNumber } from "@/i18n/format";
-import { MINUTE_MS, SLOTS, uptimeShare, type SlotState } from "@/lib/uptime";
+import { getLocale, t, type MessageKey } from "../i18n";
+import { formatNumber } from "../i18n/format";
+import { MINUTE_MS, SLOTS, uptimeShare, type SlotState } from "../lib/uptime";
 
 const SLOT_CLASS: Record<SlotState, string> = {
   up: "bg-success",

@@ -1,4 +1,4 @@
-import type { CockpitSecret, CockpitSecretName } from "@/lib/api";
+import type { CockpitSecret, CockpitSecretName } from "../lib/api";
 
 const VARIABLES: Record<CockpitSecretName, string> = {
   "mail.resend-api-key": "STELLARR_RESEND_API_KEY",

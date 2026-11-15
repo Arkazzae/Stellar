@@ -8,14 +8,14 @@ import {
   type CockpitActivityDay,
   type CockpitOverview,
   type CockpitRuntime,
-} from "@/lib/api";
-import { DashboardPage } from "@/pages/dashboard-page";
-import { CockpitContext, type CockpitContextValue } from "@/state/cockpit-context";
-import { selectPolish } from "@/test/locale";
-import { cockpitValue } from "@/test/cockpit-fixtures";
+} from "../lib/api";
+import { DashboardPage } from "./dashboard-page";
+import { CockpitContext, type CockpitContextValue } from "../state/cockpit-context";
+import { selectPolish } from "../test/locale";
+import { cockpitValue } from "../test/cockpit-fixtures";
 
-vi.mock("@/lib/api", async (importOriginal) => {
-  const original = await importOriginal<typeof import("@/lib/api")>();
+vi.mock("../lib/api", async (importOriginal) => {
+  const original = await importOriginal<typeof import("../lib/api")>();
   return { ...original, cockpitApi: { ...original.cockpitApi, activity: vi.fn(), runtime: vi.fn() } };
 });
 

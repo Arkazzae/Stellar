@@ -1,7 +1,7 @@
 import { Card, cx } from "@stellarr/ui";
 import type { ReactNode } from "react";
 
-import { Icon, type IconName } from "@/components/icons/icon";
+import { Icon, type IconName } from "./icons/icon";
 
 interface TileHeaderProps {
   icon: IconName;

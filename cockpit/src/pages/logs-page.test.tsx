@@ -2,14 +2,14 @@ import { render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-import { cockpitApi, type CockpitLogEntry, type CockpitLogFilters, type CockpitLogs } from "@/lib/api";
-import { LogsPage } from "@/pages/logs-page";
-import { selectPolish } from "@/test/locale";
+import { cockpitApi, type CockpitLogEntry, type CockpitLogFilters, type CockpitLogs } from "../lib/api";
+import { LogsPage } from "./logs-page";
+import { selectPolish } from "../test/locale";
 
 selectPolish();
 
-vi.mock("@/lib/api", async (importOriginal) => {
-  const original = await importOriginal<typeof import("@/lib/api")>();
+vi.mock("../lib/api", async (importOriginal) => {
+  const original = await importOriginal<typeof import("../lib/api")>();
   return { ...original, cockpitApi: { ...original.cockpitApi, logs: vi.fn() } };
 });
 

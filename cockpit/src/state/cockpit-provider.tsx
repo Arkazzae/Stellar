@@ -1,9 +1,9 @@
 import { useCallback, useEffect, useMemo, useState, type ReactNode } from "react";
 
-import { t } from "@/i18n";
-import { COCKPIT_MFA_REQUIRED, CockpitApiError, cockpitApi, type CockpitBootstrap } from "@/lib/api";
-import { leaveFor, webSignInUrl } from "@/lib/web-sign-in";
-import { CockpitContext, type CockpitContextValue, type CockpitPhase } from "@/state/cockpit-context";
+import { t } from "../i18n";
+import { COCKPIT_MFA_REQUIRED, CockpitApiError, cockpitApi, type CockpitBootstrap } from "../lib/api";
+import { leaveFor, webSignInUrl } from "../lib/web-sign-in";
+import { CockpitContext, type CockpitContextValue, type CockpitPhase } from "./cockpit-context";
 
 interface Session {
   phase: CockpitPhase;

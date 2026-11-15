@@ -2,15 +2,15 @@ import { render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { beforeEach, expect, it, vi } from "vitest";
 
-import { CloudflareSettings } from "@/components/cloudflare-settings";
-import { CockpitApiError, cockpitApi, type CockpitCloudflareR2Settings } from "@/lib/api";
-import { choose } from "@/test/dropdown";
-import { selectPolish } from "@/test/locale";
-import { secrets } from "@/test/secrets";
+import { CloudflareSettings } from "./cloudflare-settings";
+import { CockpitApiError, cockpitApi, type CockpitCloudflareR2Settings } from "../lib/api";
+import { choose } from "../test/dropdown";
+import { selectPolish } from "../test/locale";
+import { secrets } from "../test/secrets";
 
 selectPolish();
-vi.mock("@/lib/api", async (importOriginal) => {
-  const original = await importOriginal<typeof import("@/lib/api")>();
+vi.mock("../lib/api", async (importOriginal) => {
+  const original = await importOriginal<typeof import("../lib/api")>();
   return { ...original, cockpitApi: {
     ...original.cockpitApi, cloudflareR2: vi.fn(), updateCloudflareR2: vi.fn(), resetCloudflareR2: vi.fn(),
   } };

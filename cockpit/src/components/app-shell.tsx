@@ -17,13 +17,13 @@ import {
 import { Fragment, useState } from "react";
 import { NavLink, Outlet, useLocation } from "react-router-dom";
 
-import { BrandMark } from "@/components/brand-mark";
-import { FreshSecondStepDialog } from "@/components/fresh-second-step-dialog";
-import { Icon, type IconName } from "@/components/icons/icon";
-import { UserAvatar } from "@/components/user-avatar";
-import { t, type MessageKey } from "@/i18n";
-import type { CockpitOperator } from "@/lib/api";
-import { useCockpit } from "@/state/cockpit-context";
+import { BrandMark } from "./brand-mark";
+import { FreshSecondStepDialog } from "./fresh-second-step-dialog";
+import { Icon, type IconName } from "./icons/icon";
+import { UserAvatar } from "./user-avatar";
+import { t, type MessageKey } from "../i18n";
+import type { CockpitOperator } from "../lib/api";
+import { useCockpit } from "../state/cockpit-context";
 
 const DOCUMENTATION_URL = "https://arkazzae.github.io/Stellarr/";
 
