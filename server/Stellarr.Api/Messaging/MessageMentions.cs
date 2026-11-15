@@ -291,7 +291,7 @@ internal static class MessageMentions
             if (text[index] != 'h' || !TryBareAddressEnd(text, index, out _, out var matchEnd)) continue;
             var bracket = text[index..matchEnd].IndexOf(']');
             var end = bracket < 0 ? matchEnd : index + bracket;
-            while (end > index && (IsTrailingPunctuation(text[end - 1]) || text[end - 1] is '*' or '_' or '~' or '|')) end--;
+            end = TrimAddress(text, index, end, formatting: true);
             if (end > index) found.Add((index, end));
             index = matchEnd - 1;
         }
@@ -652,6 +652,12 @@ internal static class MessageMentions
         matchEnd = index + schemeLength;
         while (matchEnd < text.Length && IsAddressCharacter(text[matchEnd])) matchEnd++;
 
+        end = TrimAddress(text, index, matchEnd, formatting: false);
+        return end > index;
+    }
+
+    private static int TrimAddress(ReadOnlySpan<char> text, int index, int matchEnd, bool formatting)
+    {
         var openParentheses = 0;
         var closeParentheses = 0;
         var openBrackets = 0;
@@ -679,7 +685,7 @@ internal static class MessageMentions
         while (trimmed > index)
         {
             var last = text[trimmed - 1];
-            if (IsTrailingPunctuation(last))
+            if (IsTrailingPunctuation(last) || (formatting && last is '*' or '_' or '~' or '|'))
             {
                 trimmed--;
                 continue;
@@ -702,8 +708,7 @@ internal static class MessageMentions
             break;
         }
 
-        end = trimmed;
-        return end > index;
+        return trimmed;
     }
 
     /* ------------------------------------------------------------- characters */
