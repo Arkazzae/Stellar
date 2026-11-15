@@ -165,48 +165,50 @@ export function DmRoom({
         </div>
       </header>
 
-      <div className="view active">
-        {showTiles ? (
-          <div className="dm-video-stage">
-            <ParticipantTiles
-              people={callPeople}
-              cameraStreams={cameraStreams}
-              localPersonId={localPersonId}
-              participantVolumes={participantVolumes}
-              onParticipantVolumeChange={onParticipantVolumeChange}
-              participantGates={participantGates}
-              onParticipantGateChange={onParticipantGateChange}
-              participantSuppressions={participantSuppressions}
-              onParticipantSuppressionChange={onParticipantSuppressionChange}
-              onOpenProfile={onOpenProfile}
-            />
-          </div>
-        ) : null}
-        <Transcript
-          sections={sections}
-          label={t("dm.messagesWith", { name })}
-          onOpenAuthor={onOpenProfile}
-          customEmoji={customEmoji}
-          translation={translation}
-          attachments={attachments}
-          intro={intro}
-          hasOlder={hasOlderMessages}
-          loadingOlder={loadingOlderMessages}
-          onLoadOlder={onLoadOlderMessages}
-        />
-        <Composer
-          channelName={name}
-          placeholder={t("dm.writeTo", { name })}
-          chips={chips}
-          onSubmit={onSend}
-          onAttach={onAttach}
-          onRemoveChip={onRemoveChip}
-          onRetryChip={onRetryChip}
-          onReorderChips={onReorderChips}
-          customEmoji={customEmoji}
-          locale={translation?.locale}
-          t={t}
-        />
+      <div className="room-body">
+        <div className="view active">
+          {showTiles ? (
+            <div className="dm-video-stage">
+              <ParticipantTiles
+                people={callPeople}
+                cameraStreams={cameraStreams}
+                localPersonId={localPersonId}
+                participantVolumes={participantVolumes}
+                onParticipantVolumeChange={onParticipantVolumeChange}
+                participantGates={participantGates}
+                onParticipantGateChange={onParticipantGateChange}
+                participantSuppressions={participantSuppressions}
+                onParticipantSuppressionChange={onParticipantSuppressionChange}
+                onOpenProfile={onOpenProfile}
+              />
+            </div>
+          ) : null}
+          <Transcript
+            sections={sections}
+            label={t("dm.messagesWith", { name })}
+            onOpenAuthor={onOpenProfile}
+            customEmoji={customEmoji}
+            translation={translation}
+            attachments={attachments}
+            intro={intro}
+            hasOlder={hasOlderMessages}
+            loadingOlder={loadingOlderMessages}
+            onLoadOlder={onLoadOlderMessages}
+          />
+          <Composer
+            channelName={name}
+            placeholder={t("dm.writeTo", { name })}
+            chips={chips}
+            onSubmit={onSend}
+            onAttach={onAttach}
+            onRemoveChip={onRemoveChip}
+            onRetryChip={onRetryChip}
+            onReorderChips={onReorderChips}
+            customEmoji={customEmoji}
+            locale={translation?.locale}
+            t={t}
+          />
+        </div>
       </div>
     </main>
   );

@@ -40,9 +40,13 @@ export function createFriendsAdapter(
 ): FriendsPort {
   const listeners = new Set<() => void>();
   const transcripts = new Map<DmId, Message[]>();
+  /** Conversations whose newest page has been fetched at least once. */
+  const loadedConversations = new Set<DmId>();
   /** Where the next older page starts; null once the transcript is complete. */
   const olderCursors = new Map<DmId, string | null>();
   const olderLoads = new Map<DmId, Promise<void>>();
+  /** Newest-page fetches in flight, so opening one twice asks the server once. */
+  const newestLoads = new Map<DmId, Promise<void>>();
   /** Per conversation, the newest message already reported as read. */
   const reportedRead = new Map<DmId, string>();
   const calls = new Map<DmId, DirectCall>();
@@ -99,7 +103,18 @@ export function createFriendsAdapter(
     // screen stay, but paging continues from the fresh cursor: keeping the old
     // one could skip a page that arrived while the connection was down.
     olderCursors.set(id, page.nextCursor);
+    loadedConversations.add(id);
     emit();
+  };
+
+  const loadConversation = (id: DmId): Promise<void> => {
+    if (loadedConversations.has(id)) return Promise.resolve();
+    const running = newestLoads.get(id);
+    if (running !== undefined) return running;
+
+    const operation = loadNewest(id, true).finally(() => newestLoads.delete(id));
+    newestLoads.set(id, operation);
+    return operation;
   };
 
   const loadOlder = (id: DmId): Promise<void> => {
@@ -197,10 +212,11 @@ export function createFriendsAdapter(
     hasOlderDmMessages: (id) => olderCursors.get(id) != null,
     isLoadingOlderDmMessages: (id) => olderLoads.has(id),
     loadOlderDmMessages: loadOlder,
+    loadConversation,
 
     async openConversation(userId) {
       const id = await api.openDirectConversation(userId);
-      await Promise.all([load(), loadNewest(id, true)]);
+      await Promise.all([load(), loadConversation(id)]);
       return id;
     },
 
@@ -270,8 +286,10 @@ export function createFriendsAdapter(
       for (const unsubscribe of unsubscribers) unsubscribe();
       listeners.clear();
       transcripts.clear();
+      loadedConversations.clear();
       olderCursors.clear();
       olderLoads.clear();
+      newestLoads.clear();
       calls.clear();
     },
   };
