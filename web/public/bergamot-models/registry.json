@@ -1,21 +1,4 @@
 {
-  "roen": {
-    "model": {
-      "name": "model.roen.intgemm.alphas.bin",
-      "size": 17141051,
-      "modelType": "prod"
-    },
-    "lex": {
-      "name": "lex.50.50.roen.s2t.bin",
-      "size": 4691708,
-      "modelType": "prod"
-    },
-    "vocab": {
-      "name": "vocab.roen.spm",
-      "size": 800832,
-      "modelType": "prod"
-    }
-  },
   "plen": {
     "model": {
       "name": "model.plen.intgemm.alphas.bin",
@@ -36,23 +19,6 @@
       "size": 822587,
       "estimatedCompressedSize": 415308,
       "expectedSha256Hash": "a1d27e6f5c0d29f406364ebf0382949d1c0affc750cec4380f3173150552f43e",
-      "modelType": "prod"
-    }
-  },
-  "enro": {
-    "model": {
-      "name": "model.enro.intgemm.alphas.bin",
-      "size": 17141051,
-      "modelType": "prod"
-    },
-    "lex": {
-      "name": "lex.50.50.enro.s2t.bin",
-      "size": 3739880,
-      "modelType": "prod"
-    },
-    "vocab": {
-      "name": "vocab.enro.spm",
-      "size": 801522,
       "modelType": "prod"
     }
   },
