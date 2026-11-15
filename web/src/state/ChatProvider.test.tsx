@@ -163,6 +163,37 @@ describe("what the server pushes", () => {
     expect(ids(result.current)).toEqual(["m1"]);
   });
 
+  it("keeps the view models of earlier messages when a new one arrives", async () => {
+    h.chat.listMessages.mockResolvedValueOnce(
+      page([
+        message("m1", 1),
+        message("m2", 2, { author: { id: "u-bob", displayName: "Bob" } }),
+      ]),
+    );
+    const { result } = await mountLoaded();
+    const before = bodies(result.current);
+    const first = before.find((body) => body.id === "m1");
+    const second = before.find((body) => body.id === "m2");
+    const firstGroup = result.current.sections
+      .flatMap((section) => section.groups)
+      .find((group) => group.id === "m1");
+
+    act(() => h.emit.message(
+      message("m3", 3, { author: { id: "u-bob", displayName: "Bob" } }),
+    ));
+
+    expect(ids(result.current)).toEqual(["m1", "m2", "m3"]);
+    const after = bodies(result.current);
+    expect(after[0]).toBe(first);
+    expect(after[0]?.parts).toBe(first?.parts);
+    expect(after[1]).toBe(second);
+    expect(
+      result.current.sections
+        .flatMap((section) => section.groups)
+        .find((group) => group.id === "m1"),
+    ).toBe(firstGroup);
+  });
+
   it("counts unread messages on the channels you are not reading", async () => {
     twoChannels();
     const { result } = await mountLoaded();
