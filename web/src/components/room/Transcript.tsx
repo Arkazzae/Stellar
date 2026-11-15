@@ -155,7 +155,7 @@ function ReadyTranscript({
     tail,
     followOwnSend,
   });
-  useOlderHistory({
+  const loadOlder = useOlderHistory({
     scroller: scrollerRef,
     oldestId: oldestGroupId(rows),
     hasOlder,
@@ -195,6 +195,11 @@ function ReadyTranscript({
       >
         {/* One box at the top of the column, whatever the intro is made of. */}
         {intro === undefined ? null : <div>{intro}</div>}
+        {hasOlder && onLoadOlder !== undefined ? (
+          <button type="button" className="tr-older" disabled={loadingOlder} onClick={loadOlder}>
+            {t(loadingOlder ? "message.loadingOlder" : "message.loadOlder")}
+          </button>
+        ) : null}
         <div ref={contentRef} className="transcript-inner">
           {rows.map((row) => (
             // One element per row, in the same order as the rows: the scroll

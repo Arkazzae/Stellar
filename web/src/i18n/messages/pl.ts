@@ -361,6 +361,8 @@ export const pl = {
   "message.pinned": "Przypięte",
   "message.unread": "Nowe wiadomości",
   "message.goLatest": "Przejdź do najnowszych wiadomości",
+  "message.loadOlder": "Wczytaj starsze wiadomości",
+  "message.loadingOlder": "Wczytywanie starszych wiadomości…",
   "message.edited": "(edytowano)",
   "message.spoiler": "Spoiler (kliknij, aby odsłonić)",
   "message.reactionCount": "{emoji}, liczba reakcji: {count}",
