@@ -7,7 +7,7 @@ import { Transcript, type TranscriptSectionVM } from "@/components/room/Transcri
 import type { Message } from "@/ports";
 
 import "./bench.css";
-import "@/app/globals.css";
+import "@/app/(web)/globals.css";
 
 import {
   createSectionsProducer,
