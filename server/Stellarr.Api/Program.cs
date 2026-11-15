@@ -320,7 +320,6 @@ static async Task InitializeApplicationAsync(WebApplication app)
         await app.Services.GetRequiredService<CloudflareR2PolicyStore>().LoadAsync(db, stopping);
         // A backup cut short by the last stop left a partial file; it is no backup.
         BackupJobs.RemoveLeftovers(BackupJobs.Directory(app.Configuration));
-        await EmbedRecovery.EnqueueStaleYouTubeAsync(db, app.Services.GetRequiredService<EmbedInbox>(), stopping);
     }
 
     if (app.Configuration.GetValue<bool>("Storage:SkipInitialization"))
