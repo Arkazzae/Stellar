@@ -11,6 +11,7 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "test:translation-runtime": "node scripts/verify-bergamot-runtime.mjs",
+    "bench:transcript": "node scripts/benchmark-transcript.mjs",
     "fonts:sync": "node scripts/sync-theme-fonts.mjs",
     "predev": "node ../artifacts/assemble.mjs",
     "prebuild": "node ../artifacts/assemble.mjs",
@@ -41,6 +42,7 @@
     "jsdom": "^31.0.0",
     "tailwindcss": "^4.3.3",
     "typescript": "^5.9.3",
+    "vite": "^8.2.4",
     "vitest": "^5.1.0"
   }
 }
