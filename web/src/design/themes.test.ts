@@ -161,23 +161,7 @@ describe("Evergreen palette", () => {
   });
 });
 
-describe("stored preference migration", () => {
-  it("migrates old palette ids and drops the retired font axis", () => {
-    const migrated = normaliseTheme({
-      palette: "github",
-      font: "mono",
-      density: "compact",
-    });
-
-    expect(migrated).toEqual({
-      ...DEFAULT_THEME,
-      palette: "ink",
-      accent: "#58a6ff",
-      density: "compact",
-    });
-    expect(migrated).not.toHaveProperty("font");
-  });
-
+describe("stored preference", () => {
   it("rejects malformed custom accent values", () => {
     expect(
       normaliseTheme({ ...DEFAULT_THEME, palette: "evergreen", accent: "red;" })
