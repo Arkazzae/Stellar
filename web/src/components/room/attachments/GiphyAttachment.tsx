@@ -59,8 +59,15 @@ export function GiphyAttachment({ part, customerId, onOpen }: GiphyAttachmentPro
   }
 
   if (current === null || current.gif === null) {
+    // The GIF's size is GIPHY's to tell, so the box is a guess until it
+    // answers. The attribution line is not: it comes with every GIF, so it
+    // is held too, and a 4:3 GIF arrives without moving anything.
     return (
-      <div className="att att-giphy-loading" role="status">
+      <div className="att att-giphy" role="status">
+        <div className="att-giphy-loading" />
+        <div className="att-giphy-caption" aria-hidden="true">
+          {"\u00a0"}
+        </div>
         <span className="sr-only">{t("attachment.loadingGif")}</span>
       </div>
     );
