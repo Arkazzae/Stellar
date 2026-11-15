@@ -33,7 +33,7 @@ To expand the relay range for larger instances or TURN/TCP, update `min-port`/`m
 | `5000/tcp` | ASP.NET Core API and SignalR (`127.0.0.1`) |
 | `5200/tcp` | `stellarr-media` HTTP control API (`127.0.0.1`, authenticated via `secrets/media-control-secret`) |
 
-Nginx routes `/api/`, `/assets/`, `/health`, `/hubs/`, and `/.well-known/stellarr/client` to ASP.NET Core, serves Cockpit statically from `/cockpit/`, proxies `/bergamot-models-gcs/` to the Bergamot model bucket, and serves every other path from the web client's static files in `/srv/web`.
+Nginx routes `/api/`, `/assets/`, `/health`, `/hubs/`, and `/.well-known/stellarr/client` to ASP.NET Core, serves Cockpit statically from `/cockpit/`, and serves every other path, including the local translation runtime and models under `/bergamot-models/` and `/codecs/bergamot/`, from the web client's static files in `/srv/web`. There is no proxy to a model host.
 
 ## NAT and firewall configuration
 
@@ -61,6 +61,10 @@ STELLARR_MEDIA_PORT=49000
 
 > [!WARNING]
 > If `PUBLIC_IP` is unset, `stellarr-media` advertises only the container's internal IPv4 address. Any browser outside the Docker host can then connect only through TURN (`coturn`), and the container logs a startup warning.
+
+### Outbound network
+
+The translation runtime, its WASM and the Polish/English model files are built into the image and served from the same origin as the web client. The container and the browser make no request to a model bucket, CDN or other third-party host for them; `artifacts/manifest.json` records the files and `artifacts/assemble.mjs` checks them during the image build. A firewall may therefore leave this traffic closed without disabling chat translation. Optional integrations such as SMTP, Resend, OIDC and GIPHY connect outward only when configured, and the browser's model cache lives in IndexedDB.
 
 ## Audio and video pipeline
 

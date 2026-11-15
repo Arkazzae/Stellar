@@ -50,3 +50,7 @@ When `STELLARR_DOMAIN` is unset, TLS and TURN fall back to `localhost`, which wo
 
 > [!NOTE]
 > Browsers restrict WebRTC microphone, camera, and screen capture (`getUserMedia` and `getDisplayMedia`) to secure contexts (`https://` or `http://localhost`). Remote deployments must serve the web client over HTTPS.
+
+## Outbound network
+
+The web client, the Bergamot translator WASM, the noise-suppression worklets and the Polish/English chat-translation models are all built into the image. The browser downloads model files from the Stellarr origin (`/bergamot-models/`) into IndexedDB; neither the container nor the browser contacts a model bucket, CDN or other third-party host for them. Opening UDP call ports inbound is therefore the only network change voice and translation need. Other integrations make outbound connections only when configured: SMTP or Resend for mail, OIDC for single sign-on, and GIPHY for GIF search.

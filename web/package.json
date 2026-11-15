@@ -12,9 +12,9 @@
     "test:watch": "vitest",
     "test:translation-runtime": "node scripts/verify-bergamot-runtime.mjs",
     "fonts:sync": "node scripts/sync-theme-fonts.mjs",
-    "predev": "node scripts/copy-audio-assets.mjs",
-    "prebuild": "node scripts/copy-audio-assets.mjs",
-    "pretest": "node scripts/copy-audio-assets.mjs"
+    "predev": "node ../artifacts/assemble.mjs",
+    "prebuild": "node ../artifacts/assemble.mjs",
+    "pretest": "node ../artifacts/assemble.mjs"
   },
   "dependencies": {
     "@microsoft/signalr": "^10.0.11",

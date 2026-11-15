@@ -72,10 +72,6 @@ export default function config(phase: string): NextConfig {
               { source: "/api/:path*", destination: `${apiOrigin}/api/:path*` },
               { source: "/assets/:path*", destination: `${apiOrigin}/assets/:path*` },
               { source: "/hubs/:path*", destination: `${apiOrigin}/hubs/:path*` },
-              {
-                source: "/bergamot-models-gcs/:path*",
-                destination: "https://storage.googleapis.com/bergamot-models-sandbox/0.3.3/:path*",
-              },
             ];
           },
         }),

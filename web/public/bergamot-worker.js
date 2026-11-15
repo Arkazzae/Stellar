@@ -1,7 +1,7 @@
 /**
  * Bergamot translation Web Worker.
- * Loads bergamot-translator WASM, downloads language models on-demand
- * from the Bergamot model registry, caches them in IndexedDB.
+ * Loads bergamot-translator WASM, downloads language models on demand from
+ * the copy the instance serves, caches them in IndexedDB.
  *
  * Protocol:
  *   Main → Worker: { type: "translate", id, text, from, to }
@@ -10,7 +10,6 @@
  */
 
 const MODEL_REGISTRY_URL = "/bergamot-models";
-const MODEL_GCS_URL = "/bergamot-models-gcs";
 
 const BERGAMOT_WASM_BASE = "/codecs/bergamot";
 
@@ -124,13 +123,8 @@ async function fetchModelFile(langPair, fileName) {
   const cached = await idbGet(cacheKey);
   if (cached) return cached;
 
-  // Try local models first, fall back to GCS proxy
   const localUrl = `${MODEL_REGISTRY_URL}/${langPair}/${fileName}`;
-  let response = await fetch(localUrl);
-  if (!response.ok) {
-    const gcsUrl = `${MODEL_GCS_URL}/${langPair}/${fileName}`;
-    response = await fetch(gcsUrl);
-  }
+  const response = await fetch(localUrl);
   if (!response.ok) throw new Error(`Failed to download model ${langPair}/${fileName}`);
   const buffer = await response.arrayBuffer();
   await idbSet(cacheKey, buffer);

@@ -7,9 +7,6 @@
 *.mp3 binary
 *.png binary
 
-# Emscripten glue and WASM binary of the Bergamot translator.
-web/public/codecs/bergamot/** linguist-vendored
-
 # Third-party files the browser loads at run time, each checked against the
 # sha256 in artifacts/manifest.json. A line-ending conversion would break that
 # check, and a diff of them tells a reader nothing.
