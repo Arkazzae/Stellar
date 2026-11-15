@@ -17,6 +17,7 @@ from __future__ import annotations
 import argparse
 import base64
 import hashlib
+import json
 import os
 import random
 import sqlite3
@@ -30,6 +31,51 @@ DEFAULT_DB_PATH = "/data/stellarr-dev.db"
 DEFAULT_SEED_PASSWORD = "dev-seed-2026"
 DEFAULT_RNG_SEED = 20261115
 PBKDF2_ITERATIONS = 210_000
+SEED_MEDIA_DIR = Path(__file__).resolve().parent / "seed-media"
+
+ScriptLine = tuple[str, str] | tuple[str, str, str]
+
+
+@dataclass(frozen=True)
+class MediaAsset:
+    file_name: str
+    content_type: str
+    extension: str
+    folder: str
+    width: int
+    height: int
+    duration_seconds: float | None = None
+    poster_file: str | None = None
+
+
+MEDIA_ASSETS: dict[str, MediaAsset] = {
+    "rail-overview": MediaAsset("channel-rail-overview.png", "image/png", ".png", "images", 1200, 675),
+    "mobile-drawer": MediaAsset("member-drawer-mobile.png", "image/png", ".png", "images", 390, 780),
+    "theme-swatches": MediaAsset("six-themes.png", "image/png", ".png", "images", 960, 540),
+    "release-banner": MediaAsset("stellarr-release-banner.png", "image/png", ".png", "images", 1200, 420),
+    "icon-motion": MediaAsset("icon-motion-preview.gif", "image/gif", ".gif", "images", 320, 240),
+    "scroll-burst": MediaAsset("scroll-burst.gif", "image/gif", ".gif", "images", 320, 240),
+    "scroll-demo": MediaAsset(
+        "scroll-demo.mp4",
+        "video/mp4",
+        ".mp4",
+        "videos",
+        640,
+        360,
+        duration_seconds=6.0,
+        poster_file="scroll-demo.poster.png",
+    ),
+    "voice-quality": MediaAsset(
+        "voice-quality.mp4",
+        "video/mp4",
+        ".mp4",
+        "videos",
+        480,
+        270,
+        duration_seconds=4.0,
+        poster_file="voice-quality.poster.png",
+    ),
+}
 
 USERS_SPEC: list[tuple[str, str, str, str, str, int]] = [
     ("maya", "Maya Lin", "she/her", "Designing the rail polish", "Product & design systems. Coffee snob.", 15),
@@ -97,9 +143,11 @@ SECTIONS_AND_CHANNELS: list[tuple[str, list[tuple[str, str, str]]]] = [
 
 # "viewer" and "owner" tokens are resolved dynamically at runtime to the discovered
 # non-owner viewer (e.g., patryk if present) and server owner (e.g., admin).
-CONVERSATIONS: dict[str, list[tuple[str, str]]] = {
+# Optional 3rd tuple item attaches a test media asset from scripts/seed-media/
+# (always authored by a seeded account so --reset never touches real user files).
+CONVERSATIONS: dict[str, list[ScriptLine]] = {
     "general": [
-        ("maya", "Morning everyone! Just pushed the new channel rail spacing tweaks — curious how it feels on tall server lists."),
+        ("maya", "Morning everyone! Just pushed the new channel rail spacing tweaks — curious how it feels on tall server lists.", "rail-overview"),
         ("viewer", "Looks super crisp already. Wanna test it with 20+ active members and proper multi-day conversations."),
         ("theo", "Wait until we open all sections and jump between channels — great check for unread state and rail sync."),
         ("priya", "Earlier today `BootstrapEndpoints` loaded all read markers in one round trip — took under 2ms on SQLite."),
@@ -108,19 +156,19 @@ CONVERSATIONS: dict[str, list[tuple[str, str]]] = {
         ("jonas", "Anyone hopping into `#co-op-lounge` tonight around 20:30? We still need one more for Deep Rock Galactic."),
         ("filip", "Ja się piszę! Wezmę Scouta, tylko najpierw skończę build kontenera."),
         ("zuzanna", "Dropped a quick accessibility pass on the channel search filter — `Escape` clears the query before closing the dialog."),
-        ("piotr", "Measured frame times on the transcript benchmark: scrolling through 180+ rows stayed pinned under 4ms/frame 🚀"),
+        ("piotr", "Measured frame times on the transcript benchmark: scrolling through 180+ rows stayed pinned under 4ms/frame 🚀", "scroll-demo"),
         ("owner", "Nice! Keep an eye on `stellarr-media` stats too when people jump between voice channels."),
         ("natasha", "Opus `clarity` vs `premium` bitrate profiles are night and day on acoustic guitar tests in `#chill-room`."),
         ("marek", "Backup drill finished on my Unraid box: SQLite online backup + `/data/stellarr/files` tar restored cleanly in 6 seconds."),
         ("lena", "Reminder: passkeys and recovery codes are independent now — test regenerating recovery codes in Account Security if you haven't yet."),
         ("marcus", "Checked TURN over TLS on port 5349 behind a strict firewall earlier — connected on the first ICE pair."),
-        ("sofia", "Mobile viewport drawer feels much snappier now that the backdrop uses the shared layer stack."),
+        ("sofia", "Mobile viewport drawer feels much snappier now that the backdrop uses the shared layer stack.", "mobile-drawer"),
         ("liam", "Anyone else dialing in a new espresso roast today? Pulled a super bright Ethiopian Guji this morning ☕"),
         ("noah", "Just benchmarked the Bergamot Polish-English model in Chrome — translation of a 20-message thread finished in ~180ms."),
         ("elena", "Updated `docs/install/configuration.md` with the simplified static-export Nginx layout and removed the old RustFS notes."),
         ("mateusz", "Sprawdziłem `POST /api/channels/{id}/messages` z równoległymi retry po `ClientMessageId` — zero duplikatów."),
         ("viktor", "Container idle RAM dropped to ~150 MiB after removing Node from the production image."),
-        ("hanna", "Tweaked the hover state on reaction pills across all six themes (`Obsidian`, `Midnight`, `Forest`, `Parchment`, `Slate`, `Rose`)."),
+        ("hanna", "Tweaked the hover state on reaction pills across all six themes (`Obsidian`, `Midnight`, `Forest`, `Parchment`, `Slate`, `Rose`).", "theme-swatches"),
         ("amara", "Running Whisper `large-v3-turbo` locally for voice note transcription tests — crazy accurate on mixed PL/EN."),
         ("lucas", "Nginx `gzip_static on` serves pre-compressed `.gz` assets right out of `/srv/web` with zero runtime CPU."),
         ("claire", "Reminder: Friday co-op poll is open! Factorio Space Age vs Helldivers 2."),
@@ -128,13 +176,13 @@ CONVERSATIONS: dict[str, list[tuple[str, str]]] = {
         ("ania", "Ktoś używa tu skrótów klawiszowych do szybkiego skakania między kanałami? Mega przyspiesza robotę."),
         ("kenji", "Added a QMK macro layer on my split keyboard specifically for mute/deafen shortcuts."),
         ("tomek", "Postawiłem drugą instancję testową za Cloudflare Tunnel i śmiga bez żadnego problemu."),
-        ("kasia", "Uploading the refreshed broken-style icon set later tonight — let me know if any 16px glyph looks soft."),
+        ("kasia", "Uploading the refreshed broken-style icon set later tonight — let me know if any 16px glyph looks soft.", "icon-motion"),
         ("maya", "Love seeing this channel actually busy! Everything holds up super cleanly under real message volume."),
         ("viewer", "Świetnie, zaraz przeklikam wszystkie kanały, wątki i DMy z tym seedem."),
     ],
     "announcements": [
         ("owner", "**Welcome to Stellarr Dev!**\nThis development instance is seeded with 30+ accounts, 16 channels across 4 sections, and hundreds of messages spanning the past two days."),
-        ("priya", "**v2.0 Architecture Milestone**\n- Static web export served directly by Nginx (`~830 MB` total image)\n- Direct filesystem object storage under `/data/stellarr/files` (no RustFS needed)\n- Model-driven SQLite schema with FTS5 prefix search"),
+        ("priya", "**v2.0 Architecture Milestone**\n- Static web export served directly by Nginx (`~830 MB` total image)\n- Direct filesystem object storage under `/data/stellarr/files` (no RustFS needed)\n- Model-driven SQLite schema with FTS5 prefix search", "release-banner"),
         ("theo", "**Voice & SFU Update**\n`stellarr-media` handles all voice rooms over a single UDP port (`49000/udp` in prod, `49100/udp` in dev) built on `str0m`."),
         ("maya", "**Design System Refresh**\nAll six palettes and `@stellarr/ui` primitives are aligned across Web and Cockpit (`/cockpit/`)."),
         ("lena", "**Security Hardening**\nPlain HTTP local development uses `stellarr-dev-session`, while HTTPS production enforces `__Host-stellarr-session`."),
@@ -172,9 +220,9 @@ CONVERSATIONS: dict[str, list[tuple[str, str]]] = {
         ("ania", "Did anyone check how Next 16 Turbopack handles `@stellarr/ui` hot reload in `docker-compose.dev.yml`?"),
         ("ola", "Works great with `WATCHPACK_POLLING=true` — edits in `packages/stellarr-ui/src` show up in ~400ms."),
         ("maya", "Remember `next build` writes a static export (`output: 'export'`), while `next dev` runs as a proxy server for `/api`, `/assets`, and `/hubs`."),
-        ("piotr", "Added `npm run bench:transcript` so we can measure row render regressions objectively."),
+        ("piotr", "Added `npm run bench:transcript` so we can measure row render regressions objectively.", "scroll-demo"),
         ("zuzanna", "Also verified that delayed emoji picker autofocus no longer steals focus when switching channels rapidly."),
-        ("hanna", "Check out the new empty-state illustrations and focus ring offsets — zero layout shift on keyboard tabbing."),
+        ("hanna", "Check out the new empty-state illustrations and focus ring offsets — zero layout shift on keyboard tabbing.", "theme-swatches"),
         ("filip", "Did the `marked` removal cut bundle size much?"),
         ("piotr", "Yeah! Our custom parser in `packages/` is tiny, deterministic, and shares exact rules with backend mention parsing."),
     ],
@@ -185,7 +233,7 @@ CONVERSATIONS: dict[str, list[tuple[str, str]]] = {
         ("marcus", "Checked `STELLARR_MEDIA_ADVERTISE` in dev: advertising `127.0.0.1:49100` lets two local browser tabs connect over UDP without coturn."),
         ("tomek", "And with `--profile turn` we can still test NAT traversal via coturn on port `3478`."),
         ("theo", "Exact command:\n```bash\ndocker compose -f docker-compose.dev.yml --profile turn up\n```"),
-        ("natasha", "Tested RNNoise / `@sapphi-red/web-noise-suppressor` on mechanical keyboard clicks — suppresses Cherry Browns nicely without clipping voice."),
+        ("natasha", "Tested RNNoise / `@sapphi-red/web-noise-suppressor` on mechanical keyboard clicks — suppresses Cherry Browns nicely without clipping voice.", "voice-quality"),
         ("marcus", "Also verified `reset: every session closed` handles API restarts gracefully so stale rooms never linger."),
     ],
     "homelab-infra": [
@@ -200,13 +248,13 @@ CONVERSATIONS: dict[str, list[tuple[str, str]]] = {
     ],
     "polski": [
         ("viewer", "Cześć wszystkim! Sprawdzam właśnie jak wygląda serwer po nowym seedzie."),
-        ("ola", "Hej! Kilkanaście kanałów podzielonych na 4 sekcje i ponad 30 użytkowników wygląda dużo czytelniej."),
+        ("ola", "Hej! Kilkanaście kanałów podzielonych na 4 sekcje i ponad 30 użytkowników wygląda dużo czytelniej.", "rail-overview"),
         ("kuba", "Przewijanie listy kanałów i wyszukiwanie FTS5 z polskimi znakami (ąęćłńóśźż) działa błyskawicznie."),
         ("zuzanna", "Pamiętajcie też przetestować tłumaczenie w locie w przeglądarce — model `pl-en` powinien przełożyć ten wątek bez wysyłania czegokolwiek poza przeglądarkę."),
         ("marek", "Na Unraidzie cały kontener z Nginx, API, coturnem i `stellarr-media` zajmuje teraz ~150 MB RAM na jałowo. Kosmos."),
         ("tomek", "Ktoś chętny dziś na małego co-opa po 21:00? Wbijajcie na `#co-op-lounge` albo piszcie na `#lfg-coop`."),
         ("ania", "Chętnie! Zrobię sobie jeszcze tylko kawę i dołączam ☕"),
-        ("oskar", "Przy okazji wrzucę później zdjęcia nowej obudowy do Raspberry Pi 5 wydrukowanej z PETG."),
+        ("oskar", "Przy okazji wrzucę później zdjęcia nowej obudowy do Raspberry Pi 5 wydrukowanej z PETG.", "mobile-drawer"),
         ("mateusz", "Testujecie dzisiaj też powiadomienia na kanale? @__VIEWER__ rzuć okiem czy dzwonek w inboxie pokazuje wzmiankę."),
         ("filip", "Ja jeszcze ogarniam poprawkę w CLI i za 15 minut wbijam na głosowy."),
     ],
@@ -232,13 +280,13 @@ CONVERSATIONS: dict[str, list[tuple[str, str]]] = {
         ("liam", "Dialed in an Ethiopian washed Guji today: 18g in -> 40g out in 27s at 93°C. Jasmine and bergamot bomb."),
         ("maya", "Which grinder? Switched to SSP MP burrs last month and clarity jumped immediately."),
         ("liam", "DF64 Gen 2 with stock DLC burrs — honestly hard to beat for the price."),
-        ("kasia", "Unpopular opinion: rainy November afternoons are peak coding weather if you have a good lamp and lo-fi beats."),
+        ("kasia", "Unpopular opinion: rainy November afternoons are peak coding weather if you have a good lamp and lo-fi beats.", "icon-motion"),
         ("jonas", "100%. Warm desk lamp + rain outside + mechanical keyboard = zero distractions."),
         ("tomek", "Ktoś oglądał wczorajsze kwalifikacje F1? Ostatnie okrążenie było szalone."),
         ("filip", "Oglądałem! Różnica 0.012s na pole position to jakiś absurd."),
         ("claire", "Weekend bread report: 78% hydration sourdough came out with an ear big enough to hear across the kitchen 🍞"),
         ("oskar", "Just bought a 60% split ortholinear kit — brain hurts trying to type brackets right now."),
-        ("piotr", "Give it 4 days of Monkeytype and you'll never go back to staggered rows."),
+        ("piotr", "Give it 4 days of Monkeytype and you'll never go back to staggered rows.", "scroll-burst"),
     ],
 }
 
@@ -282,13 +330,13 @@ LONG_HISTORY_LINES: list[str] = [
     "Deployment check #{n}: static assets served compressed with `gzip_static` 🚀",
 ]
 
-DM_SCRIPTS: list[tuple[str, str, bool, list[tuple[str, str]]]] = [
+DM_SCRIPTS: list[tuple[str, str, bool, list[ScriptLine]]] = [
     ("viewer", "maya", True, [
         ("maya", "Hej! Wrzuciłam nowe spacingi w lewej kolumnie kanałów."),
         ("viewer", "Super, właśnie sprawdzam większy seed z kilkunastoma kanałami."),
         ("maya", "Daj znać jak scrolluje się lista z sekcjami i zwijaniem!"),
         ("viewer", "Jasne, za chwilę przeklikam."),
-        ("maya", "Dorzuciłam jeszcze poprawkę kontrastu dla nieprzeczytanych liczników na motywie Slate."),
+        ("maya", "Dorzuciłam jeszcze poprawkę kontrastu dla nieprzeczytanych liczników na motywie Slate.", "rail-overview"),
     ]),
     ("viewer", "ola", True, [
         ("ola", "Cześć! Widziałeś jak działa teraz tłumaczenie wiadomości w locie?"),
@@ -298,7 +346,7 @@ DM_SCRIPTS: list[tuple[str, str, bool, list[tuple[str, str]]]] = [
     ("viewer", "theo", False, [
         ("theo", "Hey, media SFU is listening on `127.0.0.1:49100/udp` in dev."),
         ("viewer", "Tested two tabs earlier, ICE connected in under 200ms."),
-        ("theo", "Awesome. Let me know if you want to test screen sharing at 60fps."),
+        ("theo", "Awesome. Let me know if you want to test screen sharing at 60fps.", "voice-quality"),
     ]),
     ("viewer", "kuba", False, [
         ("kuba", "Sprawdzałeś FTS5 po ostatnim czyszczeniu `DatabaseSchema`?"),
@@ -308,7 +356,7 @@ DM_SCRIPTS: list[tuple[str, str, bool, list[tuple[str, str]]]] = [
         ("priya", "Static export cut the production container image down to ~830 MB on disk."),
         ("owner", "Saw that in the commit log, huge win over bundling Node in runtime."),
         ("priya", "Idle RAM dropped to ~150 MiB too!"),
-        ("priya", "Can you verify `/cockpit/` diagnostics looks clean on your side?"),
+        ("priya", "Can you verify `/cockpit/` diagnostics looks clean on your side?", "mobile-drawer"),
     ]),
     ("owner", "lena", True, [
         ("lena", "Audited the session cookie config — plain HTTP dev keeps `stellarr-dev-session` separate from `__Host-stellarr-session`."),
@@ -320,7 +368,7 @@ DM_SCRIPTS: list[tuple[str, str, bool, list[tuple[str, str]]]] = [
     ]),
     ("maya", "kasia", False, [
         ("maya", "Love the broken icon variant in the latest `@stellarr/ui` build!"),
-        ("kasia", "Thanks! Tweaked the stroke caps to align on the 24px grid."),
+        ("kasia", "Thanks! Tweaked the stroke caps to align on the 24px grid.", "icon-motion"),
     ]),
     ("theo", "marcus", False, [
         ("marcus", "Checked TURN over TLS on port 5349 behind a strict firewall — worked first try."),
@@ -366,7 +414,25 @@ REACTIONS_POOL = ["👍", "🔥", "❤️", "🎉", "🚀", "👀", "😂", "�
 AUDIO_PROFILES = ["clarity", "premium", "studio", "balanced"]
 UNREAD_CHANNEL_NAMES = {"backend-dotnet", "frontend-nextjs", "polski", "lfg-coop", "qa-long-history"}
 
+# Presence normally lives only in the API process and follows live hub
+# connections. A seed cannot open one for every fixture account, so it leaves a
+# document on the data volume that the API reads once in development. The cycle
+# keeps a believable mix instead of a wall of green dots; accounts mapped to
+# `offline` are simply absent from the document.
+PRESENCE_FILE_NAME = "seed-presence.json"
+PRESENCE_CYCLE = [
+    "online", "online", "idle", "online", "dnd", "online", "online", "online",
+    "idle", "offline", "online", "online", "dnd", "online", "idle", "online",
+    "offline", "online", "online", "idle", "online", "dnd", "online", "online",
+    "offline", "online", "online", "idle",
+]
+
 SEEDED_USERNAMES = {spec[0] for spec in USERS_SPEC}
+SEEDED_MEDIA_FILENAMES = {asset.file_name for asset in MEDIA_ASSETS.values()} | {
+    "v2-1-release-banner.png",
+    "transcript-scroll-demo.mp4",
+    "voice-room-quality.mp4",
+}
 SEEDED_ROLE_NAMES = {spec[0] for spec in ROLES_SPEC}
 SEEDED_SECTION_NAMES = {name for name, _ in SECTIONS_AND_CHANNELS}
 SEEDED_CHANNEL_NAMES = {cname for _, chs in SECTIONS_AND_CHANNELS for cname, _, _ in chs}
@@ -453,13 +519,68 @@ def placeholders(count: int) -> str:
     return ",".join("?" * count)
 
 
+def infer_data_root(db_path: Path) -> Path:
+    """Where the API's DataRoot sits for a database file.
+
+    The dev compose keeps the database at the root of the data volume, while a
+    production layout puts it under ``db/``. Both resolve to the folder that
+    holds ``files/``, which is what attachments need.
+    """
+    parent = db_path.resolve().parent
+    return parent.parent if parent.name.lower() == "db" else parent
+
+
+def safe_object_path(root: Path, key: str) -> Path | None:
+    """Resolve an object key under the files folder, or None if it escapes it."""
+    if not key or key.startswith(("/", "\\")) or "\x00" in key or "\\" in key:
+        return None
+    if any(segment in ("", ".", "..") for segment in key.split("/")):
+        return None
+    candidate = (root / key).resolve()
+    return candidate if candidate.is_relative_to(root.resolve()) else None
+
+
+def write_object(root: Path, key: str, data: bytes) -> None:
+    path = safe_object_path(root, key)
+    if path is None:
+        raise RuntimeError(f"Refusing to write a seed object outside the files folder: {key}")
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_bytes(data)
+
+
+def delete_object(root: Path, key: str | None) -> None:
+    if not key:
+        return
+    path = safe_object_path(root, key)
+    if path is None:
+        return
+    try:
+        path.unlink()
+    except FileNotFoundError:
+        pass
+
+
+def write_presence_seed(root: Path, users: list[tuple[str, str]]) -> None:
+    """Leave the mixed presence a development API restores for offline accounts."""
+    payload = {
+        "version": 1,
+        "generatedAt": datetime.now(timezone.utc).isoformat(),
+        "users": [{"id": user_id, "presence": presence} for user_id, presence in users],
+    }
+    path = root / PRESENCE_FILE_NAME
+    temporary = path.with_suffix(".json.tmp")
+    temporary.write_text(json.dumps(payload, indent=2) + "\n", encoding="utf-8")
+    temporary.replace(path)
+
+
 def ensure_schema_present(cur: sqlite3.Cursor) -> None:
     required = {
         "Users", "Servers", "ServerAdminSettings", "Sections", "Channels",
         "ServerRoles", "ServerMembers", "Messages", "MessageReactions",
+        "MessageAttachments", "ImageAttachments",
         "ChannelReads", "Friendships", "FriendRequests", "DirectConversations",
-        "DirectMessages", "DirectConversationReads", "UserNotifications",
-        "ServerInvites", "ServerAuditEntries",
+        "DirectMessages", "DirectMessageAttachments", "DirectConversationReads",
+        "UserNotifications", "ServerInvites", "ServerAuditEntries",
     }
     rows = cur.execute("SELECT name FROM sqlite_master WHERE type = 'table';").fetchall()
     existing = {row[0] for row in rows}
@@ -598,7 +719,11 @@ def detect_existing_seed(cur: sqlite3.Cursor, main_server_id: str) -> list[str]:
     return reasons
 
 
-def reset_seeded_data(cur: sqlite3.Cursor, main_server_id: str) -> dict[str, int]:
+def reset_seeded_data(
+    cur: sqlite3.Cursor,
+    main_server_id: str,
+    files_root: Path | None,
+) -> dict[str, int]:
     """Remove only seeded entities cleanly while preserving organic accounts and messages."""
     u_ph = placeholders(len(SEEDED_USERNAMES))
     seeded_user_ids = [
@@ -664,6 +789,35 @@ def reset_seeded_data(cur: sqlite3.Cursor, main_server_id: str) -> dict[str, int
         ]
         if contents and all(c in LEGACY_OWNER_DM_TEXTS for c in contents):
             dm_conv_ids.add(cid)
+
+    # 1b. Attachments owned by seeded accounts. Every seeded attachment is
+    # uploaded by a seeded user from USERS_SPEC, so real user files are never touched.
+    seeded_attachment_ids: list[str] = []
+    seeded_object_keys: set[str] = set()
+    att_clauses = [f"FileName IN ({placeholders(len(SEEDED_MEDIA_FILENAMES))})"]
+    att_params: list[str] = list(SEEDED_MEDIA_FILENAMES)
+    if seeded_user_ids:
+        att_clauses.append(f"UploadedById IN ({placeholders(len(seeded_user_ids))})")
+        att_params.extend(seeded_user_ids)
+    for attachment_id, object_key, poster_key in cur.execute(
+        f"SELECT Id, ObjectKey, PosterObjectKey FROM ImageAttachments WHERE {' OR '.join(att_clauses)}",
+        tuple(att_params),
+    ).fetchall():
+        seeded_attachment_ids.append(attachment_id)
+        if object_key:
+            seeded_object_keys.add(object_key)
+        if poster_key:
+            seeded_object_keys.add(poster_key)
+    if seeded_attachment_ids:
+        sa_ph = placeholders(len(seeded_attachment_ids))
+        attachment_ids = tuple(seeded_attachment_ids)
+        cur.execute(f"DELETE FROM MessageAttachments WHERE AttachmentId IN ({sa_ph})", attachment_ids)
+        cur.execute(f"DELETE FROM DirectMessageAttachments WHERE AttachmentId IN ({sa_ph})", attachment_ids)
+        cur.execute(f"DELETE FROM ImageAttachments WHERE Id IN ({sa_ph})", attachment_ids)
+    if files_root is not None:
+        for object_key in seeded_object_keys:
+            delete_object(files_root, object_key)
+
     if dm_conv_ids:
         dc_ph = placeholders(len(dm_conv_ids))
         dc_ids = tuple(dm_conv_ids)
@@ -826,6 +980,7 @@ def reset_seeded_data(cur: sqlite3.Cursor, main_server_id: str) -> dict[str, int
         "removed_channels": len(seeded_channel_ids),
         "removed_messages": removed_messages,
         "removed_servers": len(seeded_server_ids),
+        "removed_attachments": len(seeded_attachment_ids),
     }
 
 
@@ -960,6 +1115,9 @@ def seed_database(
     reset: bool,
     bootstrap_owner: bool,
     owner_username: str,
+    data_root: Path,
+    include_media: bool,
+    include_presence: bool,
 ) -> dict[str, int]:
     if not db_path.exists():
         raise FileNotFoundError(
@@ -969,6 +1127,14 @@ def seed_database(
     rng = random.Random(rng_seed)
     now = datetime.now(timezone.utc)
     pw_hash = hash_password(password)
+    files_root = data_root / "files"
+    if (include_media or include_presence) and not data_root.is_dir():
+        raise FileNotFoundError(
+            f"Data folder not found at '{data_root}'. Pass --data-root PATH (the API's DataRoot) "
+            "or --no-media --no-presence to seed without attachments and statuses."
+        )
+    if include_media:
+        files_root.mkdir(parents=True, exist_ok=True)
 
     con = sqlite3.connect(str(db_path))
     try:
@@ -1002,7 +1168,7 @@ def seed_database(
                 )
 
             if reset:
-                reset_seeded_data(cur, main_server_id)
+                reset_seeded_data(cur, main_server_id, files_root if files_root.is_dir() else None)
 
             ctx = discover_context(cur, main_server_id, main_created_at_raw)
 
@@ -1156,6 +1322,88 @@ def seed_database(
             viewer_id_for_mentions = ctx.viewer_id or ctx.owner_id
             viewer_uname_for_mentions = ctx.viewer_username or ctx.owner_username
 
+            media_cache: dict[str, bytes] = {}
+            poster_cache: dict[str, bytes] = {}
+
+            def read_seed_media(file_name: str, cache: dict[str, bytes]) -> bytes:
+                cached = cache.get(file_name)
+                if cached is not None:
+                    return cached
+                path = SEED_MEDIA_DIR / file_name
+                if not path.is_file():
+                    raise RuntimeError(
+                        f"Seed media file '{path}' is missing. Restore scripts/seed-media/ or pass --no-media."
+                    )
+                data = path.read_bytes()
+                cache[file_name] = data
+                return data
+
+            def add_attachment(
+                message_id: str,
+                author_uname: str,
+                asset_key: str,
+                created_at: datetime,
+                *,
+                direct: bool = False,
+            ) -> None:
+                if not include_media:
+                    raise RuntimeError("Seed media was requested but --no-media turned attachments off.")
+                if author_uname not in SEEDED_USERNAMES:
+                    raise RuntimeError(
+                        f"Seed attachment '{asset_key}' must belong to a seeded user from USERS_SPEC, not '{author_uname}'."
+                    )
+                asset = MEDIA_ASSETS[asset_key]
+                payload = read_seed_media(asset.file_name, media_cache)
+
+                attachment_id = new_guid()
+                stem = attachment_id.replace("-", "").lower()
+                month = created_at.astimezone(timezone.utc).strftime("%Y/%m")
+                object_key = f"{asset.folder}/{month}/{stem}{asset.extension}"
+                write_object(files_root, object_key, payload)
+
+                poster_key = None
+                poster_type = None
+                poster_size = None
+                if asset.poster_file is not None:
+                    poster = read_seed_media(asset.poster_file, poster_cache)
+                    poster_key = f"posters/{month}/{stem}.png"
+                    poster_type = "image/png"
+                    poster_size = len(poster)
+                    write_object(files_root, poster_key, poster)
+
+                cur.execute(
+                    """INSERT INTO ImageAttachments (
+                        Id, UploadedById, ObjectKey, FileName, ContentType, SizeBytes,
+                        Width, Height, DurationSeconds, IsVoiceMessage,
+                        PosterObjectKey, PosterContentType, PosterSizeBytes, CreatedAt
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?, ?, ?)""",
+                    (
+                        attachment_id,
+                        user_ids[author_uname],
+                        object_key,
+                        asset.file_name,
+                        asset.content_type,
+                        len(payload),
+                        asset.width,
+                        asset.height,
+                        asset.duration_seconds,
+                        poster_key,
+                        poster_type,
+                        poster_size,
+                        fmt_dt(created_at),
+                    ),
+                )
+                if direct:
+                    cur.execute(
+                        "INSERT INTO DirectMessageAttachments (DirectMessageId, AttachmentId) VALUES (?, ?)",
+                        (message_id, attachment_id),
+                    )
+                else:
+                    cur.execute(
+                        "INSERT INTO MessageAttachments (MessageId, AttachmentId) VALUES (?, ?)",
+                        (message_id, attachment_id),
+                    )
+
             def insert_msg(
                 cid: str,
                 author_uname: str,
@@ -1165,6 +1413,7 @@ def seed_database(
                 pinned_at: datetime | None = None,
                 reply_to_id: str | None = None,
                 track_mentions: bool = True,
+                attachment: str | None = None,
             ) -> str:
                 mid = new_guid()
                 cur.execute(
@@ -1182,6 +1431,8 @@ def seed_database(
                         reply_to_id,
                     ),
                 )
+                if attachment is not None:
+                    add_attachment(mid, author_uname, attachment, created_at)
                 prev = latest_msg_at.get(cid)
                 if prev is None or created_at > prev:
                     latest_msg_at[cid] = created_at
@@ -1232,7 +1483,9 @@ def seed_database(
                 base_t = now - timedelta(hours=24)
                 step = timedelta(minutes=int((23 * 60) / max(len(script), 1)))
                 recent_ids: list[str] = []
-                for i, (raw_author, raw_text) in enumerate(script):
+                for i, item in enumerate(script):
+                    raw_author, raw_text = item[0], item[1]
+                    attachment_key = item[2] if (include_media and len(item) > 2) else None
                     author_u, text = resolve_actor_and_text(raw_author, raw_text, ctx, user_ids)
                     t = base_t + step * i + timedelta(seconds=rng.randint(10, 45))
                     if t >= now - timedelta(minutes=3):
@@ -1249,6 +1502,7 @@ def seed_database(
                         pinned_at=pinned,
                         reply_to_id=reply_id,
                         track_mentions=(cname != "general"),
+                        attachment=attachment_key,
                     )
                     recent_ids.append(mid)
                     if i % 2 == 0:
@@ -1408,18 +1662,23 @@ def seed_database(
                 )
                 base_t = now - timedelta(hours=8)
                 last_dm_t = base_t
-                for i, (raw_author, raw_text) in enumerate(msgs):
+                for i, item in enumerate(msgs):
+                    raw_author, raw_text = item[0], item[1]
+                    attachment_key = item[2] if (include_media and len(item) > 2) else None
                     author_u = dm_role_map.get(raw_author, raw_author)
                     txt = raw_text.replace("__VIEWER__", viewer_uname_for_mentions).replace("__OWNER__", ctx.owner_username)
                     t = base_t + timedelta(minutes=25 * i)
                     if t >= now - timedelta(minutes=2):
                         t = now - timedelta(minutes=2 + len(msgs) - i)
                     last_dm_t = t
+                    mid = new_guid()
                     cur.execute(
                         """INSERT INTO DirectMessages (Id, ConversationId, AuthorId, Content, CreatedAt)
                            VALUES (?, ?, ?, ?, ?)""",
-                        (new_guid(), conv_id, user_ids[author_u], txt, fmt_dt(t)),
+                        (mid, conv_id, user_ids[author_u], txt, fmt_dt(t)),
                     )
+                    if attachment_key is not None:
+                        add_attachment(mid, author_u, attachment_key, t, direct=True)
                 read_t_1 = (last_dm_t - timedelta(minutes=40)) if leave_unread_for_first else now
                 for uid_r, rt in [(uid1, read_t_1), (uid2, now)]:
                     cur.execute(
@@ -1560,6 +1819,23 @@ def seed_database(
 
         con.execute("PRAGMA wal_checkpoint(TRUNCATE);")
 
+        presence_entries = 0
+        if include_presence:
+            planned_presence = [
+                (user_ids[spec[0]], PRESENCE_CYCLE[index % len(PRESENCE_CYCLE)])
+                for index, spec in enumerate(USERS_SPEC)
+                if PRESENCE_CYCLE[index % len(PRESENCE_CYCLE)] != "offline"
+            ]
+            write_presence_seed(data_root, planned_presence)
+            presence_entries = len(planned_presence)
+        else:
+            # Leave no stale document behind that would restore statuses for
+            # accounts this run did not create.
+            try:
+                (data_root / PRESENCE_FILE_NAME).unlink()
+            except FileNotFoundError:
+                pass
+
         counts = {
             "users": cur.execute("SELECT COUNT(*) FROM Users").fetchone()[0],
             "servers": cur.execute("SELECT COUNT(*) FROM Servers").fetchone()[0],
@@ -1575,12 +1851,14 @@ def seed_database(
                 (main_server_id,),
             ).fetchone()[0],
             "reactions_total": cur.execute("SELECT COUNT(*) FROM MessageReactions").fetchone()[0],
+            "attachments": cur.execute("SELECT COUNT(*) FROM ImageAttachments").fetchone()[0],
             "fts_rows": cur.execute("SELECT COUNT(*) FROM MessageSearch").fetchone()[0],
             "friendships": cur.execute("SELECT COUNT(*) FROM Friendships").fetchone()[0],
             "friend_requests": cur.execute("SELECT COUNT(*) FROM FriendRequests").fetchone()[0],
             "dm_conversations": cur.execute("SELECT COUNT(*) FROM DirectConversations").fetchone()[0],
             "direct_messages": cur.execute("SELECT COUNT(*) FROM DirectMessages").fetchone()[0],
             "notifications": cur.execute("SELECT COUNT(*) FROM UserNotifications").fetchone()[0],
+            "seed_presence": presence_entries,
         }
         return counts
     finally:
@@ -1623,11 +1901,28 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         default="admin",
         help="Owner username created when --bootstrap-owner initializes an empty database (default: admin).",
     )
+    parser.add_argument(
+        "--data-root",
+        type=Path,
+        default=None,
+        help="The API's DataRoot, where files/ and the presence fixture live (default: derived from --db).",
+    )
+    parser.add_argument(
+        "--no-media",
+        action="store_true",
+        help="Skip seeded screenshots, GIFs and clips (and their object files).",
+    )
+    parser.add_argument(
+        "--no-presence",
+        action="store_true",
+        help="Skip the development presence fixture that gives seeded accounts an online/idle/dnd state.",
+    )
     return parser.parse_args(argv)
 
 
 def main(argv: list[str] | None = None) -> int:
     args = parse_args(argv)
+    data_root = args.data_root if args.data_root is not None else infer_data_root(args.db)
     try:
         counts = seed_database(
             args.db,
@@ -1636,6 +1931,9 @@ def main(argv: list[str] | None = None) -> int:
             reset=args.reset,
             bootstrap_owner=args.bootstrap_owner,
             owner_username=args.owner_username,
+            data_root=data_root,
+            include_media=not args.no_media,
+            include_presence=not args.no_presence,
         )
     except (FileNotFoundError, RuntimeError, sqlite3.Error) as exc:
         print(f"Error: {exc}", file=sys.stderr)

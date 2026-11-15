@@ -47,6 +47,41 @@ public sealed class PresenceTrackerTests
     }
 
     [Fact]
+    public void SeededPresenceShowsWhileOfflineAndConnectingPromotesTheAccountToALiveSession()
+    {
+        var tracker = new PresenceTracker();
+        tracker.SeedPresence([
+            new SeedPresence(MajaId, "idle"),
+            new SeedPresence(AdaId, "dnd"),
+            new SeedPresence(Guid.NewGuid(), "offline"),
+        ]);
+
+        Assert.Equal("idle", tracker.PresenceOf(MajaId));
+        Assert.Equal("idle", tracker.PublicPresenceOf(MajaId, AdaId));
+        Assert.Equal("dnd", tracker.PresenceOf(AdaId));
+
+        tracker.Connect("maja-one", MajaId);
+        Assert.Equal("online", tracker.PresenceOf(MajaId));
+        tracker.SetPresence(MajaId, "dnd");
+        Assert.Equal("dnd", tracker.PresenceOf(MajaId));
+
+        tracker.Disconnect("maja-one");
+        Assert.Equal("offline", tracker.PresenceOf(MajaId));
+    }
+
+    [Fact]
+    public void SeededPresenceObeysTheAccountsVisibilityChoice()
+    {
+        var tracker = new PresenceTracker();
+        tracker.SeedPresence([new SeedPresence(MajaId, "idle")]);
+
+        tracker.SetVisibility(MajaId, showPresence: false);
+
+        Assert.Equal("idle", tracker.PresenceOf(MajaId));
+        Assert.Equal("offline", tracker.PublicPresenceOf(MajaId, AdaId));
+    }
+
+    [Fact]
     public void VoiceSeatBelongsToTheConnectionThatJoinedIt()
     {
         var tracker = new PresenceTracker();

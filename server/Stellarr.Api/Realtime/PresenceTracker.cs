@@ -19,6 +19,9 @@ public sealed record VoiceJoinResult(
 
 public sealed record VoiceMoveResult(IReadOnlyList<string> ConnectionIds, bool Moved);
 
+/// <summary>A status a development seed gives an account that has no connection.</summary>
+public sealed record SeedPresence(Guid UserId, string Presence);
+
 /// <summary>A session of the media server: its opaque id and the run of the media server that created it.</summary>
 public sealed record MediaSession(string SessionId, string Epoch);
 
@@ -68,6 +71,7 @@ public sealed class PresenceTracker(IMediaSessionCloser? mediaSessionCloser = nu
     private readonly Dictionary<Guid, HashSet<string>> _connectionsByUser = [];
     private readonly Dictionary<Guid, string> _chosenPresence = [];
     private readonly Dictionary<Guid, bool> _presenceVisible = [];
+    private readonly Dictionary<Guid, string> _seededPresence = [];
     private readonly Dictionary<string, Seat> _seatByConnection = new(StringComparer.Ordinal);
     private long _snapshotSequence;
 
@@ -104,9 +108,33 @@ public sealed class PresenceTracker(IMediaSessionCloser? mediaSessionCloser = nu
             }
             connections.Add(connectionId);
 
+            _seededPresence.Remove(userId);
             _chosenPresence.TryAdd(userId, Online);
             _presenceVisible[userId] = showPresence;
             return connections.Count == 1;
+        }
+    }
+
+    /// <summary>
+    /// Gives accounts that have no live connection a status of their own. The
+    /// development seed uses it so a seeded instance does not read as a room
+    /// full of people who all signed off; a production tracker never learns one.
+    /// Connecting promotes the account to a real live session and drops the
+    /// seeded fallback.
+    /// </summary>
+    public void SeedPresence(IEnumerable<SeedPresence> presences)
+    {
+        lock (_gate)
+        {
+            foreach (var presence in presences)
+            {
+                if (IsSupportedPresence(presence.Presence) &&
+                    presence.Presence != Offline &&
+                    !_connectionsByUser.ContainsKey(presence.UserId))
+                {
+                    _seededPresence[presence.UserId] = presence.Presence;
+                }
+            }
         }
     }
 
@@ -461,7 +489,9 @@ public sealed class PresenceTracker(IMediaSessionCloser? mediaSessionCloser = nu
     private string ChosenLocked(Guid userId) => _chosenPresence.GetValueOrDefault(userId, Online);
 
     private string PresenceLocked(Guid userId) =>
-        _connectionsByUser.ContainsKey(userId) ? ChosenLocked(userId) : Offline;
+        _connectionsByUser.ContainsKey(userId)
+            ? ChosenLocked(userId)
+            : _seededPresence.GetValueOrDefault(userId, Offline);
 
     private VoiceDeparture? TakeSeat(string connectionId)
     {
