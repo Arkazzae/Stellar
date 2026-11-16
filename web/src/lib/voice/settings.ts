@@ -5,12 +5,12 @@ import {
   CAMERA_PROFILES,
   DEFAULT_CAMERA_QUALITY,
   type CameraQualityId,
-} from "./camera";
+} from "./video/camera";
 import {
   DEFAULT_SCREEN_SHARE_QUALITY,
   SCREEN_SHARE_PROFILES,
   type ScreenShareQualityId,
-} from "./screenShare";
+} from "./video/screenShare";
 
 /** The encoder is built from these, and the settings name them under each stop. */
 export { OPUS_PROFILE_KBPS } from "./opusRates";

@@ -3,7 +3,7 @@
  *
  * Loaded by `AudioWorklet.addModule("/audio/vad-processor.js")`, which parses it
  * as a *module* script — so the `export`s below are legal, and the same file is
- * imported directly by `src/lib/voice/vad.ts` (for the no-AudioWorklet fallback)
+ * imported directly by `src/lib/voice/capture/vad.ts` (for the no-AudioWorklet fallback)
  * and by the unit tests. One implementation, three consumers, no duplication.
  *
  * Why not a fixed RMS threshold: a fixed threshold is wrong in every room. A

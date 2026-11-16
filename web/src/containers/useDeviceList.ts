@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
-import { hasDeviceLabels } from "@/lib/voice/micPipeline";
+import { hasDeviceLabels } from "@/lib/voice/capture/micPipeline";
 import type { MediaDeviceChoice } from "@/ports";
 import { useLanguage } from "@/state/hooks";
 

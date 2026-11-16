@@ -1,6 +1,6 @@
 import type { ChannelId, UserId } from "@/lib/api/types";
 
-import type { NetworkQuality } from "./bitrate";
+import type { NetworkQuality } from "./rtc/bitrate";
 import type { VoiceSettings } from "./settings";
 
 export type VoiceConnectionState =
