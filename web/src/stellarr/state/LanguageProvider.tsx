@@ -20,7 +20,7 @@ import {
   type MessageKey,
   type MessageValues,
 } from "@/i18n";
-import { documentLocale, LOCALE_COOKIE } from "@/i18n/defaultLocale";
+import { documentLocale, LANGUAGE_SETTINGS_KEY, LOCALE_COOKIE } from "@/i18n/defaultLocale";
 
 export type { InterfaceLocale, LanguageSettings, TranslationTargetLanguage } from "@/i18n";
 
@@ -38,14 +38,13 @@ export interface LanguageValue extends LanguageSettings {
   t: (key: MessageKey, values?: MessageValues) => string;
 }
 
-const STORAGE_KEY = "stellarr_language_settings";
 const ONE_YEAR_SECONDS = 365 * 24 * 60 * 60;
 
 const DEFAULTS = TRANSLATION_DEFAULTS;
 
 function readStored(fallbackLocale: InterfaceLocale): LanguageSettings {
   try {
-    const raw = window.localStorage.getItem(STORAGE_KEY);
+    const raw = window.localStorage.getItem(LANGUAGE_SETTINGS_KEY);
     if (raw === null) return { ...DEFAULTS, locale: fallbackLocale };
     const stored = JSON.parse(raw) as Partial<LanguageSettings>;
     const translationEnabled = stored.chatTranslationEnabled === true;
@@ -73,7 +72,7 @@ function persist(settings: LanguageSettings, localeChosen: boolean): void {
     const { locale, ...device } = settings;
     const kept = localeChosen ? locale : readStoredLocale();
     window.localStorage.setItem(
-      STORAGE_KEY,
+      LANGUAGE_SETTINGS_KEY,
       JSON.stringify(kept === undefined ? device : { ...device, locale: kept }),
     );
   } catch {
@@ -85,7 +84,7 @@ function persist(settings: LanguageSettings, localeChosen: boolean): void {
 /** The language the person chose on an earlier visit, if they ever did. */
 function readStoredLocale(): InterfaceLocale | undefined {
   try {
-    const raw = window.localStorage.getItem(STORAGE_KEY);
+    const raw = window.localStorage.getItem(LANGUAGE_SETTINGS_KEY);
     if (raw === null) return undefined;
     const locale = (JSON.parse(raw) as { locale?: unknown } | null)?.locale;
     return isSupportedLocale(locale) ? locale : undefined;

@@ -1,6 +1,6 @@
 "use client";
 
-import Link from "next/link";
+import { Link } from "@stellarr/router";
 import { useEffect, useId, useRef, useState, type FormEvent, type ReactNode } from "react";
 
 import { AuthField } from "@/components/auth/AuthField";

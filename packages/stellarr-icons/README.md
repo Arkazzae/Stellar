@@ -9,9 +9,8 @@ generated table as `ICON_GLYPHS`, `ICON_VARIANTS` and `iconPaths`, and the
 types `IconName`, `IconVariant`, `IconProps`, `IconGlyph` and `IconPath`.
 
 It is consumed as TypeScript source: `exports` points at `src/index.ts` and
-there is no build step for an app. Next.js compiles it through
-`transpilePackages`, and Vitest compiles it as part of the importing
-package. It depends on nothing but React.
+there is no build step for an app. Vite and Vitest compile it as part of the
+importing package. It depends on nothing but React.
 
 One local SVG family in two variants drawn from the same geometry:
 

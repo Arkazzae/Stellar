@@ -7,7 +7,7 @@ import { Transcript, type TranscriptSectionVM } from "@/components/room/transcri
 import type { Message } from "@/ports";
 
 import "./bench.css";
-import "../../src/app/(stellarr)/globals.css";
+import "../../src/stellarr/styles/globals.css";
 
 import {
   createSectionsProducer,

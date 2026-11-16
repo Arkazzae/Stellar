@@ -1,3 +1,5 @@
+import { Router } from "@stellarr/router";
+import { createMemoryHistory } from "@stellarr/router/testing";
 import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { describe, expect, it, vi } from "vitest";
@@ -7,17 +9,17 @@ import { CockpitApiError } from "../lib/api";
 import { CockpitContext, type CockpitContextValue } from "../state/cockpit-context";
 import { selectPolish } from "../test/locale";
 import { cockpitValue } from "../test/cockpit-fixtures";
-
-vi.mock("next/navigation", () => import("../test/navigation"));
-vi.mock("next/link", () => import("../test/navigation").then(({ Link }) => ({ default: Link })));
+import { routes } from "../routes";
 
 function renderGate(value: CockpitContextValue) {
   return render(
-    <CockpitContext.Provider value={value}>
-      <AppGate>
-        <p>Treść strony</p>
-      </AppGate>
-    </CockpitContext.Provider>,
+    <Router routes={routes} history={createMemoryHistory("/cockpit")}>
+      <CockpitContext.Provider value={value}>
+        <AppGate>
+          <p>Treść strony</p>
+        </AppGate>
+      </CockpitContext.Provider>
+    </Router>,
   );
 }
 

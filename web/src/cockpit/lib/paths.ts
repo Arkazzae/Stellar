@@ -1,6 +1,6 @@
 /**
  * Where the panel's routes are mounted: the overview is here, and every other
- * page below it (src/app/(cockpit)/cockpit/).
+ * page below it (see routes.tsx).
  */
 export const COCKPIT_ROOT = "/cockpit";
 

@@ -1,6 +1,6 @@
 "use client";
 
-import { useRouter } from "next/navigation";
+import { useRouter } from "@stellarr/router";
 import { useEffect } from "react";
 
 import { takePendingInvite } from "@/lib/auth/invites";

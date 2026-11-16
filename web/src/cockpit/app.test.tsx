@@ -1,5 +1,4 @@
 import { render, screen } from "@testing-library/react";
-import { renderToString } from "react-dom/server";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type * as ApiModule from "./lib/api";
 
@@ -24,10 +23,13 @@ afterEach(() => {
 });
 
 describe("CockpitApp", () => {
-  it("leaves the panel out of the server's HTML, which cannot know its language", async () => {
+  it("draws the panel on its first render, as nothing renders it before the browser", async () => {
     const CockpitApp = await loadPanel();
 
-    expect(renderToString(<CockpitApp><p>Strona</p></CockpitApp>)).toBe("");
+    render(<CockpitApp><p>Strona</p></CockpitApp>);
+
+    // The gate's status line, while the session is checked.
+    expect(screen.getByRole("status")).toBeTruthy();
   });
 
   it("starts in the browser in the language chosen in the panel's settings", async () => {
