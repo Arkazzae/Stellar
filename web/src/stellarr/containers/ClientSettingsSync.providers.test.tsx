@@ -49,6 +49,7 @@ const ACCOUNT: ClientSettingsSnapshot = {
   language: { locale: "pl", chatTranslationEnabled: true, chatTranslationTargetLanguage: "pl" },
   keybinds: { version: KEYBIND_STORAGE_VERSION, bindings: { ...DEFAULT_KEYBINDINGS, toggleCamera: camera } },
   voice: { ...DEFAULT_SETTINGS, echoCancellation: false, inputDeviceId: "their-mic" },
+  privacy: null,
 };
 
 /** A control that changes the theme the way the appearance pane does. */

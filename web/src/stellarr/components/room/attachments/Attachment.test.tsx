@@ -5,6 +5,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { translateMessage, type Translator } from "@/i18n";
 import { fetchGiphyGif } from "@/lib/giphy/giphy";
 import type * as GiphyModule from "@/lib/giphy/giphy";
+import { giphyChoice } from "@/lib/giphy/giphyChoice";
 
 import { parseInline, tokenizeCode, type MessagePart } from "@/lib/messages/parts";
 
@@ -13,12 +14,17 @@ import { Attachment } from "./Attachment";
 // A GIF that never resolves keeps the tile in its loading state.
 vi.mock("@/lib/giphy/giphy", async (importOriginal) => ({
   ...(await importOriginal<typeof GiphyModule>()),
+  readGiphyConfig: vi.fn(async () => ({ enabled: true, apiKey: "key" })),
   resolveGiphyApiKey: vi.fn(async () => "key"),
   fetchGiphyGif: vi.fn(() => new Promise(() => undefined)),
   trackGiphyAction: vi.fn(),
 }));
 
-beforeEach(() => vi.clearAllMocks());
+beforeEach(() => {
+  vi.clearAllMocks();
+  giphyChoice.set(true);
+  giphyChoice.accountRead();
+});
 
 const image: MessagePart = { kind: "image", src: "/assets/cat", alt: "A cat" };
 const gallery: MessagePart = {

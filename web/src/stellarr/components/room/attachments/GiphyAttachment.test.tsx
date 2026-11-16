@@ -1,14 +1,16 @@
-import { fireEvent, render, screen } from "@testing-library/react";
+import { act, fireEvent, render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import {
   fetchGiphyGif,
+  readGiphyConfig,
   resolveGiphyApiKey,
   trackGiphyAction,
   type GiphyGif,
 } from "@/lib/giphy/giphy";
 import type * as GiphyModule from "@/lib/giphy/giphy";
+import { giphyChoice } from "@/lib/giphy/giphyChoice";
 
 import type { GiphyPart } from "@/lib/messages/parts";
 
@@ -16,6 +18,8 @@ import { GiphyAttachment } from "./GiphyAttachment";
 
 vi.mock("@/lib/giphy/giphy", async (importOriginal) => ({
   ...(await importOriginal<typeof GiphyModule>()),
+  readGiphyConfig: vi.fn(),
+  answeredGiphyConfig: vi.fn(() => undefined),
   resolveGiphyApiKey: vi.fn(),
   fetchGiphyGif: vi.fn(),
   trackGiphyAction: vi.fn(),
@@ -39,6 +43,10 @@ beforeEach(() => {
   vi.mocked(fetchGiphyGif).mockReset();
   vi.mocked(trackGiphyAction).mockReset();
   vi.mocked(resolveGiphyApiKey).mockReset().mockResolvedValue("key");
+  vi.mocked(readGiphyConfig).mockReset().mockResolvedValue({ enabled: true, apiKey: "key" });
+  window.localStorage.clear();
+  giphyChoice.set(true);
+  giphyChoice.accountRead();
 });
 
 describe("GiphyAttachment", () => {
@@ -113,5 +121,83 @@ describe("GiphyAttachment", () => {
 
     await user.click(await screen.findByRole("button", { name: "Powiększ GIF: A dancing cat" }));
     expect(onOpen).toHaveBeenCalledWith([{ src: gif.mediaUrl, alt: gif.alt }], 0);
+  });
+});
+
+describe("GiphyAttachment with the person's GIPHY switch off", () => {
+  beforeEach(() => {
+    giphyChoice.set(false);
+  });
+
+  it("asks GIPHY nothing, and offers the GIF's page and that one GIF", async () => {
+    render(<GiphyAttachment part={part} />);
+
+    expect(screen.getByText("GIF z GIPHY. Wyświetlenie go łączy tę przeglądarkę z GIPHY.")).toBeInTheDocument();
+    const link = screen.getByRole("link", { name: "Otwórz w GIPHY" });
+    expect(link).toHaveAttribute("href", part.pageUrl);
+    expect(link.getAttribute("rel")).toContain("noreferrer");
+    expect(await screen.findByRole("button", { name: "Pokaż GIF" })).toBeInTheDocument();
+    expect(resolveGiphyApiKey).not.toHaveBeenCalled();
+    expect(fetchGiphyGif).not.toHaveBeenCalled();
+    expect(screen.queryByRole("img")).toBeNull();
+  });
+
+  it("loads the one GIF it is asked to, and no other", async () => {
+    const user = userEvent.setup();
+    vi.mocked(fetchGiphyGif).mockResolvedValue(gif);
+    const other: GiphyPart = { kind: "giphy", id: "zzz999", pageUrl: "https://giphy.com/gifs/zzz999" };
+    render(
+      <>
+        <GiphyAttachment part={part} />
+        <GiphyAttachment part={other} />
+      </>,
+    );
+
+    const [first] = await screen.findAllByRole("button", { name: "Pokaż GIF" });
+    await user.click(first!);
+
+    expect(await screen.findByRole("img", { name: "A dancing cat" })).toBeInTheDocument();
+    expect(fetchGiphyGif).toHaveBeenCalledOnce();
+    expect(fetchGiphyGif).toHaveBeenCalledWith("key", "abc123", expect.any(AbortSignal));
+    expect(screen.getAllByRole("button", { name: "Pokaż GIF" })).toHaveLength(1);
+  });
+
+  it("offers no button while the instance offers no GIFs", async () => {
+    vi.mocked(readGiphyConfig).mockResolvedValue({ enabled: false, apiKey: "" });
+    render(<GiphyAttachment part={part} />);
+    await act(async () => {
+      await Promise.resolve();
+    });
+
+    expect(screen.queryByRole("button", { name: "Pokaż GIF" })).toBeNull();
+    expect(screen.getByRole("link", { name: "Otwórz w GIPHY" })).toBeInTheDocument();
+  });
+
+  it("stops showing a GIF once the switch is turned off", async () => {
+    giphyChoice.set(true);
+    vi.mocked(fetchGiphyGif).mockResolvedValue(gif);
+    render(<GiphyAttachment part={part} />);
+    await screen.findByRole("img", { name: "A dancing cat" });
+
+    act(() => giphyChoice.set(false));
+
+    expect(screen.queryByRole("img")).toBeNull();
+    expect(screen.getByRole("link", { name: "Otwórz w GIPHY" })).toBeInTheDocument();
+  });
+});
+
+describe("GiphyAttachment before the account's copy of the switch has come", () => {
+  it("waits without asking GIPHY, then loads once it is on", async () => {
+    giphyChoice.awaitAccount();
+    vi.mocked(fetchGiphyGif).mockResolvedValue(gif);
+    render(<GiphyAttachment part={part} />);
+
+    expect(screen.getByRole("status")).toBeInTheDocument();
+    expect(resolveGiphyApiKey).not.toHaveBeenCalled();
+    expect(fetchGiphyGif).not.toHaveBeenCalled();
+
+    act(() => giphyChoice.accountRead());
+
+    expect(await screen.findByRole("img", { name: "A dancing cat" })).toBeInTheDocument();
   });
 });

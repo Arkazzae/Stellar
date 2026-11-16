@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 
+import { useGifsEnabled, useGiphyAccess } from "@/hooks/useGifsEnabled";
 import {
   fetchGiphyGif,
   GIPHY_REFERRER_POLICY,
@@ -24,12 +25,27 @@ interface Outcome {
 
 const REL = "ugc nofollow noopener noreferrer";
 
+/**
+ * A GIF from GIPHY, loaded by this browser straight from GIPHY.
+ *
+ * It is the one place a GIF in a message reaches GIPHY, so it reads the
+ * person's switch itself. Off, it asks GIPHY nothing: it names the GIF, links
+ * to its page and offers to load this one GIF. While the account's copy of the
+ * switch is still on its way it waits, as if loading.
+ */
 export function GiphyAttachment({ part, onOpen }: GiphyAttachmentProps) {
   const { t } = useLanguage();
+  const access = useGiphyAccess();
+  const offered = useGifsEnabled();
   const [outcome, setOutcome] = useState<Outcome | null>(null);
+  // The GIF the person loaded by hand while the switch is off.
+  const [loadedByHand, setLoadedByHand] = useState<string | null>(null);
   const viewReported = useRef<string | null>(null);
 
+  const load = access === "on" || loadedByHand === part.id;
+
   useEffect(() => {
+    if (!load) return;
     const controller = new AbortController();
     resolveGiphyApiKey()
       .then((key) => fetchGiphyGif(key, part.id, controller.signal))
@@ -38,10 +54,28 @@ export function GiphyAttachment({ part, onOpen }: GiphyAttachmentProps) {
         if (!controller.signal.aborted) setOutcome({ id: part.id, gif: null });
       });
     return () => controller.abort();
-  }, [part.id]);
+  }, [load, part.id]);
+
+  if (access === "off" && !load) {
+    return (
+      <div className="att att-giphy-fallback">
+        <span>{t("attachment.giphyHeld")}</span>
+        <span className="att-giphy-actions">
+          {offered ? (
+            <button type="button" onClick={() => setLoadedByHand(part.id)}>
+              {t("attachment.giphyShow")}
+            </button>
+          ) : null}
+          <a href={part.pageUrl} target="_blank" rel={REL}>
+            {t("attachment.openGiphy")}
+          </a>
+        </span>
+      </div>
+    );
+  }
 
   // An outcome for a previous id says nothing about this one.
-  const current = outcome?.id === part.id ? outcome : null;
+  const current = load && outcome?.id === part.id ? outcome : null;
 
   if (current !== null && current.gif === null) {
     return (

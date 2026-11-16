@@ -112,6 +112,7 @@ export function parseClientSettings(value: unknown, path: string): ClientSetting
     language: section("language"),
     keybinds: section("keybinds"),
     voice: section("voice"),
+    privacy: section("privacy"),
   };
 }
 

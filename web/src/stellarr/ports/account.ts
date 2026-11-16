@@ -69,10 +69,11 @@ export type ImageKind = "avatar" | "banner";
 /**
  * Preferences that belong to a person rather than to a server or a device.
  *
- * The theme, the language, the shortcuts and the voice processing are absent
- * on purpose: the account keeps them too, but as the client's own sections
- * (`loadClientSettings`), which the providers that apply them read and write.
- * Listing them here as well would give one setting two owners.
+ * The theme, the language, the shortcuts, the voice processing and the GIPHY
+ * switch are absent on purpose: the account keeps them too, but as the
+ * client's own sections (`loadClientSettings`), which the providers that apply
+ * them read and write. Listing them here as well would give one setting two
+ * owners.
  */
 export interface UserPreferences {
   /** Notifications. `desktopNotifications` pops up incoming calls. */
@@ -137,7 +138,8 @@ export interface AccountPort {
 
   /**
    * The client's own settings the account keeps, so the theme, the language,
-   * the shortcuts and the voice processing follow the person between devices.
+   * the shortcuts, the voice processing and the privacy choices, such as the
+   * GIPHY switch, follow the person between devices.
    * The device still owns them while it runs; this is where they are kept.
    */
   loadClientSettings(signal?: AbortSignal): Promise<ClientSettingsSnapshot>;

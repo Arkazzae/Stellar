@@ -284,8 +284,9 @@
     border:1px solid var(--line-subtle);border-radius:var(--radius-md);
     color:var(--text-muted);font-size:var(--text-13);
   }
-  .att-giphy-fallback a{flex:none;color:var(--accent-text);font-weight:550}
-  .att-giphy-fallback a:hover{text-decoration:underline}
+  .att-giphy-fallback a,.att-giphy-fallback button{flex:none;color:var(--accent-text);font-weight:550}
+  .att-giphy-fallback a:hover,.att-giphy-fallback button:hover{text-decoration:underline}
+  .att-giphy-actions{display:flex;flex:none;gap:12px}
 
   .att-file{
     display:flex;align-items:center;gap:12px;max-width:min(var(--att-w),100%);

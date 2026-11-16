@@ -46,7 +46,7 @@ describe("account calls", () => {
       run: () => calls.getClientSettings(),
       method: "GET",
       url: "/api/me/settings",
-      answer: { appearance: { palette: "ember" }, language: null, keybinds: null, voice: null },
+      answer: { appearance: { palette: "ember" }, language: null, keybinds: null, voice: null, privacy: null },
     },
     {
       name: "saveClientSettings",

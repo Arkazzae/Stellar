@@ -2,6 +2,8 @@ import { act, render } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import type { UserSettingsProps } from "@/components/account/UserSettings";
+import type * as GiphyModule from "@/lib/giphy/giphy";
+import { giphyChoice } from "@/lib/giphy/giphyChoice";
 import { DEFAULT_SETTINGS, type VoiceSettings } from "@/lib/voice/settings";
 import type { DesktopPort } from "@/ports";
 
@@ -29,6 +31,14 @@ const world = vi.hoisted(() => ({
   playSystemFx: vi.fn(),
   showTestNotification: vi.fn(),
   android: false,
+  gifsOffered: true,
+}));
+
+vi.mock("@/lib/giphy/giphy", async (importOriginal) => ({
+  ...(await importOriginal<typeof GiphyModule>()),
+  readGiphyConfig: async () =>
+    world.gifsOffered ? { enabled: true, apiKey: "key" } : { enabled: false, apiKey: "" },
+  answeredGiphyConfig: () => undefined,
 }));
 
 vi.mock("@/components/account/UserSettings", () => ({
@@ -169,6 +179,9 @@ beforeEach(() => {
   };
   setAccount(50);
   world.ports = { voiceSettings: voiceStore() };
+  world.gifsOffered = true;
+  window.localStorage.clear();
+  giphyChoice.set(true);
 });
 
 describe("UserSettingsContainer", () => {
@@ -214,6 +227,29 @@ describe("UserSettingsContainer", () => {
     ]);
     dialog().blocked?.onUnblock("u-nils");
     expect(world.friends.unblock).toHaveBeenCalledExactlyOnceWith("u-nils");
+  });
+
+  it("hands the privacy pane this browser's GIPHY switch and moves it", async () => {
+    render(<UserSettingsContainer />);
+    await act(async () => {
+      await Promise.resolve();
+    });
+
+    expect(dialog().giphy?.enabled).toBe(true);
+    act(() => dialog().giphy?.onChange(false));
+
+    expect(giphyChoice.isEnabled()).toBe(false);
+    expect(dialog().giphy?.enabled).toBe(false);
+  });
+
+  it("offers no GIPHY switch while the instance offers no GIFs", async () => {
+    world.gifsOffered = false;
+    render(<UserSettingsContainer />);
+    await act(async () => {
+      await Promise.resolve();
+    });
+
+    expect(dialog().giphy).toBeUndefined();
   });
 
   it("hands the appearance pane the account's reduced motion and stores a change", () => {

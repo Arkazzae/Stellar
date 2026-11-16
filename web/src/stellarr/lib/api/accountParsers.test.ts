@@ -72,10 +72,10 @@ describe("parseClientSettings", () => {
   it("keeps each saved section and reads anything else as never saved", () => {
     expect(
       parseClientSettings(
-        { appearance: { palette: "ember" }, language: null, keybinds: [1], voice: "loud" },
+        { appearance: { palette: "ember" }, language: null, keybinds: [1], voice: "loud", privacy: { giphy: false } },
         "/api/me/settings",
       ),
-    ).toEqual({ appearance: { palette: "ember" }, language: null, keybinds: null, voice: null });
+    ).toEqual({ appearance: { palette: "ember" }, language: null, keybinds: null, voice: null, privacy: { giphy: false } });
   });
 
   it("reads an older server's missing sections as never saved", () => {
@@ -84,6 +84,7 @@ describe("parseClientSettings", () => {
       language: null,
       keybinds: null,
       voice: null,
+      privacy: null,
     });
   });
 });
