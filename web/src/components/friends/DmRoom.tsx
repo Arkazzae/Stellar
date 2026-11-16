@@ -32,6 +32,8 @@ export interface DmRoomProps {
   onVideoCall: () => void;
   callPeople: PersonVM[];
   cameraStreams: ReadonlyMap<string, MediaStream>;
+  /** People whose camera is held back for the viewer's link. */
+  heldCameras?: ReadonlySet<string>;
   localPersonId: string;
   participantVolumes: ReadonlyMap<string, number>;
   onParticipantVolumeChange: (personId: string, volume: number) => void;
@@ -79,6 +81,7 @@ export function DmRoom({
   onVideoCall,
   callPeople,
   cameraStreams,
+  heldCameras,
   localPersonId,
   participantVolumes,
   onParticipantVolumeChange,
@@ -115,7 +118,8 @@ export function DmRoom({
     ? t("dm.connected", { name })
     : t(callActive ? "dm.join" : "dm.call", { name });
   const cameraLabel = t(videoOn ? "voiceBar.cameraStop" : "voiceBar.cameraStart");
-  const showTiles = inCall && (videoOn || cameraStreams.size > 0);
+  // A camera held back for the viewer's link still shows its tile, which says so.
+  const showTiles = inCall && (videoOn || cameraStreams.size > 0 || (heldCameras?.size ?? 0) > 0);
 
   return (
     <main className="room dm-room">
@@ -172,6 +176,7 @@ export function DmRoom({
               <ParticipantTiles
                 people={callPeople}
                 cameraStreams={cameraStreams}
+                heldCameras={heldCameras}
                 localPersonId={localPersonId}
                 participantVolumes={participantVolumes}
                 onParticipantVolumeChange={onParticipantVolumeChange}

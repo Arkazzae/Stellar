@@ -70,12 +70,22 @@ export interface VoiceScreenShare {
   hasAudio: boolean;
   /** Playable when this client owns or watches the share. */
   stream: MediaStream | null;
+  /**
+   * A remote share this side watches whose picture the media server holds
+   * back, because this side's downlink has no room for it now.
+   */
+  heldBack?: boolean;
 }
 
 export interface VoiceCamera {
   /** Stable for as long as this capture is active. */
   streamId: string;
   stream: MediaStream | null;
+  /**
+   * A remote camera whose picture the media server holds back, because this
+   * side's downlink has no room for it now.
+   */
+  heldBack?: boolean;
 }
 
 export interface VoicePeer {

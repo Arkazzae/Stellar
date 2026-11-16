@@ -75,19 +75,30 @@ export class TrackDirectory {
     this.place();
   }
 
-  /** The sections to ask the media server for; the directory itself keeps them all. */
+  /**
+   * The sections to ask the media server for, most important first: every
+   * voice, then the picture of the one share being watched and its sound,
+   * then the cameras, each in the order of the directory. The media server
+   * sends every sound whatever the downlink, and takes the pictures in this
+   * order while they fit. The directory itself keeps them all.
+   */
   subscribedMids(preferences: VoiceReceivePreferences): string[] {
-    const mids: string[] = [];
+    const ranked: { rank: number; mid: string }[] = [];
     for (const entry of this.entries.values()) {
       const person = this.env.people.get(entry.userId);
       if (!person) continue;
-      const screen = person.media.roleOf(entry.streamId) === "screen";
-      const wanted = screen
-        ? preferences.screen?.userId === entry.userId && preferences.screen.streamId === entry.streamId
-        : entry.kind === "audio" || preferences.cameras;
-      if (wanted) mids.push(entry.mid);
+      if (person.media.roleOf(entry.streamId) === "screen") {
+        const watched =
+          preferences.screen?.userId === entry.userId && preferences.screen.streamId === entry.streamId;
+        if (watched) ranked.push({ rank: entry.kind === "video" ? 1 : 2, mid: entry.mid });
+      } else if (entry.kind === "audio") {
+        ranked.push({ rank: 0, mid: entry.mid });
+      } else if (preferences.cameras) {
+        ranked.push({ rank: 3, mid: entry.mid });
+      }
     }
-    return mids.sort();
+    // The sort is stable: within a rank the directory's order stands.
+    return ranked.sort((a, b) => a.rank - b.rank).map(({ mid }) => mid);
   }
 
   /** Silence what is not asked for at once, while the list is still on its way to the media server. */
@@ -99,6 +110,7 @@ export class TrackDirectory {
   /** File what can be filed and withdraw what no longer holds. Idempotent. */
   place(): void {
     const { people } = this.env;
+    this.markHeld();
 
     for (const [mid, filing] of [...this.filed]) {
       const entry = this.entries.get(mid);
@@ -163,6 +175,26 @@ export class TrackDirectory {
     for (const [mid, filing] of [...this.filed]) this.unfile(mid, filing);
     this.arrivals.clear();
     this.entries.clear();
+    this.markHeld();
+  }
+
+  /**
+   * Tell everyone which of their pictures the media server holds back for
+   * this side's downlink, so the UI says so instead of showing the last
+   * frame.
+   */
+  private markHeld(): void {
+    let changed = false;
+    for (const person of this.env.people.values()) {
+      const held = new Set<string>();
+      for (const entry of this.entries.values()) {
+        if (entry.kind === "video" && entry.heldBack && entry.userId === person.userId) {
+          held.add(entry.streamId);
+        }
+      }
+      changed = person.media.holdVideo(held) || changed;
+    }
+    if (changed) this.env.personMedia.changed();
   }
 
   private file(mid: string, arrival: Arrival, person: Participant, key: string): void {

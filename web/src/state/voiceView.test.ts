@@ -291,6 +291,23 @@ describe("deriveVoiceView", () => {
 
     it("hands the remote stream over once the viewer opts in", () => {
       expect(remoteShare(true)).toMatchObject({ stream: remoteScreen.stream, watching: true });
+      expect(remoteShare(true)).not.toHaveProperty("heldBack");
+    });
+
+    it("says a watched share is held back and hands over no frozen picture", () => {
+      const held = { ...remoteScreen, heldBack: true };
+      const state = stateWith({ channelId: "voice", connection: "connected", peers: [peer("ada", { screen: held })] });
+
+      expect(deriveVoiceView(inputFor(state, { watching: true })).share).toEqual({
+        ownerId: "ada",
+        ownerName: "ADA",
+        hasAudio: true,
+        stream: null,
+        watching: true,
+        heldBack: true,
+      });
+      // A share nobody watches is not asked for, so nothing of it is held back.
+      expect(deriveVoiceView(inputFor(state, { watching: false })).share).not.toHaveProperty("heldBack");
     });
 
     it("previews the user's own capture as already watched", () => {
@@ -353,6 +370,25 @@ describe("deriveVoiceView", () => {
 
       expect(view.cameraStreams.get("ada")).toBe(remote);
       expect(view.cameraStreams.get("me")).toBe(local);
+    });
+
+    it("shows no frozen frame of a held camera and names whose it is", () => {
+      const stream = {} as MediaStream;
+      const state = stateWith({
+        channelId: "voice",
+        connection: "connected",
+        peers: [
+          peer("ada", { camera: { streamId: "c", stream, heldBack: true } }),
+          peer("ilya", { camera: { streamId: "d", stream } }),
+        ],
+      });
+
+      const view = deriveVoiceView(inputFor(state));
+
+      expect(view.cameraStreams.has("ada")).toBe(false);
+      expect(view.cameraStreams.get("ilya")).toBe(stream);
+      expect([...view.heldCameras]).toEqual(["ada"]);
+      expect(deriveVoiceView(inputFor(stateWith({}))).heldCameras.size).toBe(0);
     });
 
     it("shares one empty map while no camera is on", () => {

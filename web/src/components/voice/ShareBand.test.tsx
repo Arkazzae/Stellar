@@ -55,6 +55,30 @@ describe("ShareBand", () => {
     expect(container.querySelector(".watch-cover .wc-note")).not.toBeNull();
   });
 
+  it("says why a watched share has no picture when it is held back", () => {
+    const { container } = render(
+      <ShareBand
+        share={{
+          ownerId: "maja",
+          ownerName: "Maja",
+          hasAudio: true,
+          stream: null,
+          watching: true,
+          heldBack: true,
+        }}
+        onWatch={vi.fn()}
+        onStopWatching={vi.fn()}
+      />,
+    );
+
+    expect(screen.getByRole("status", { name: "Obraz wstrzymany: za słabe łącze" })).toBeVisible();
+    expect(screen.getByText("Obraz wstrzymany: za słabe łącze")).toBeVisible();
+    expect(container.querySelector("video")).toBeNull();
+    expect(screen.queryByText("Podgląd udostępniania jest niedostępny")).toBeNull();
+    // Watching still, so it can still be stopped.
+    expect(screen.getByRole("button", { name: "Przestań oglądać" })).toBeVisible();
+  });
+
   it("replaces the sharing pill with an in-stream volume control", () => {
     const onVolumeChange = vi.fn();
     const { container } = render(

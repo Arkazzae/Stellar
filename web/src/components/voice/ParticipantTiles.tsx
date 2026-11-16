@@ -7,6 +7,8 @@ export interface ParticipantTilesProps {
   people: PersonVM[];
   /** Camera streams by person id. A missing entry means the avatar fallback. */
   cameraStreams?: ReadonlyMap<string, MediaStream>;
+  /** People whose camera is held back for the viewer's link; their tiles say so. */
+  heldCameras?: ReadonlySet<string>;
   /** Whose preview must be muted to avoid feedback. */
   localPersonId?: string;
   participantVolumes?: ReadonlyMap<string, number>;
@@ -25,6 +27,7 @@ export interface ParticipantTilesProps {
 export function ParticipantTiles({
   people,
   cameraStreams,
+  heldCameras,
   localPersonId,
   participantVolumes,
   onParticipantVolumeChange,
@@ -41,6 +44,7 @@ export function ParticipantTiles({
           key={person.id}
           person={person}
           stream={cameraStreams?.get(person.id) ?? null}
+          held={heldCameras?.has(person.id) ?? false}
           local={person.id === localPersonId}
           volume={participantVolumes?.get(person.id)}
           onVolumeChange={

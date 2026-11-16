@@ -1742,6 +1742,7 @@ export const pl = {
   "dm.callWith": "Rozmowa z {name}",
   "common.choose": "Wybierz…",
   "voice.cameraOf": "Kamera: {name}",
+  "voice.pictureHeldBack": "Obraz wstrzymany: za słabe łącze",
   "attachment.extFallback": "PLIK",
   "theme.size.smDetail": "13,5 px",
   "theme.size.mdDetail": "15 px",

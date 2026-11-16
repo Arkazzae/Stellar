@@ -118,6 +118,7 @@ export function FriendsRoomContainer() {
           }}
           callPeople={voice.people}
           cameraStreams={voice.cameraStreams}
+          heldCameras={voice.heldCameras}
           localPersonId={user?.id ?? ""}
           participantVolumes={voice.participantVolumes}
           onParticipantVolumeChange={voice.setParticipantVolume}

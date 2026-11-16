@@ -2320,7 +2320,9 @@ describe("receiving subscriptions", () => {
 
     client.setReceivePreferences({ screen: { userId: "u-b", streamId: "screen" }, cameras: true });
     expect(sinksPlaying(sound)).toHaveLength(1);
-    await vi.waitFor(() => expect(selections().at(-1)?.mids).toEqual(["b1", "b2", "s1", "s2"]));
+    // Most important first: the voice, the watched share's picture and its
+    // sound, then the camera, which is the first to be held back.
+    await vi.waitFor(() => expect(selections().at(-1)?.mids).toEqual(["b1", "s1", "s2", "b2"]));
     expect(picture.enabled).toBe(true);
     expect(sound.enabled).toBe(true);
     expect(otherPicture.enabled).toBe(false);
@@ -2340,6 +2342,58 @@ describe("receiving subscriptions", () => {
     expect(voice.enabled).toBe(true);
     expect(pc.createOffer).toHaveBeenCalledTimes(1);
     expect(pc.setRemoteDescription).toHaveBeenCalledTimes(2);
+  });
+
+  it("asks for every voice before any picture, each in the directory's order", async () => {
+    const client = build();
+    const pc = await answered(client);
+    announce("u-b", "u-c");
+    state("u-b", { cameraStreamId: "voice-b" });
+    state("u-c", { cameraStreamId: "voice-c", screenStreamId: "screen-c" });
+    client.setReceivePreferences({ screen: { userId: "u-c", streamId: "screen-c" }, cameras: true });
+    await serverOffer(pc, 1, [
+      { mid: "c3", userId: "u-c", kind: "audio", streamId: "screen-c", track: fakeTrack("audio", 2) },
+      { mid: "b2", userId: "u-b", kind: "video", streamId: "voice-b", track: fakeTrack("video") },
+      { mid: "c1", userId: "u-c", kind: "audio", streamId: "voice-c", track: fakeTrack() },
+      { mid: "c2", userId: "u-c", kind: "video", streamId: "screen-c", track: fakeTrack("video") },
+      { mid: "c4", userId: "u-c", kind: "video", streamId: "voice-c", track: fakeTrack("video") },
+      { mid: "b1", userId: "u-b", kind: "audio", streamId: "voice-b", track: fakeTrack() },
+    ]);
+    await vi.waitFor(() =>
+      expect(selections().at(-1)?.mids).toEqual(["c1", "b1", "c2", "c3", "b2", "c4"]),
+    );
+  });
+
+  it("says which picture the media server holds back for this side, and when it is back", async () => {
+    const client = build();
+    const pc = await answered(client);
+    announce("u-b");
+    state("u-b", { cameraStreamId: "voice-b", screenStreamId: "screen-b" });
+    client.setReceivePreferences({ screen: { userId: "u-b", streamId: "screen-b" }, cameras: true });
+    const directory = [
+      { mid: "b1", userId: "u-b", kind: "audio", streamId: "voice-b" },
+      { mid: "b2", userId: "u-b", kind: "video", streamId: "voice-b" },
+      { mid: "s1", userId: "u-b", kind: "video", streamId: "screen-b" },
+    ] as const;
+    await serverOffer(pc, 1, [
+      { ...directory[0], track: fakeTrack() },
+      { ...directory[1], track: fakeTrack("video") },
+      { ...directory[2], track: fakeTrack("video") },
+    ]);
+    expect(peerOf(client, "u-b")?.camera).not.toHaveProperty("heldBack");
+
+    tracks([directory[0], { ...directory[1], heldBack: true }, directory[2]]);
+    await vi.waitFor(() => expect(peerOf(client, "u-b")?.camera?.heldBack).toBe(true));
+    expect(peerOf(client, "u-b")?.screen).not.toHaveProperty("heldBack");
+
+    tracks([directory[0], directory[1], { ...directory[2], heldBack: true }]);
+    await vi.waitFor(() => expect(peerOf(client, "u-b")?.screen?.heldBack).toBe(true));
+    expect(peerOf(client, "u-b")?.camera).not.toHaveProperty("heldBack");
+    // Holding back is not a change of what is asked for.
+    expect(selections().at(-1)?.mids).toEqual(["b1", "s1", "b2"]);
+
+    tracks([...directory]);
+    await vi.waitFor(() => expect(peerOf(client, "u-b")?.screen).not.toHaveProperty("heldBack"));
   });
 
   it("asks for a camera's voice and picture with the directory when the state frame came first", async () => {

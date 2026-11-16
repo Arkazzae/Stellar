@@ -38,6 +38,8 @@ export class RemoteMedia {
   private readonly soundIds = new Set<string>();
   private screenId: string | null = null;
   private cameraId: string | null = null;
+  /** Stream ids of the pictures the media server holds back for this side. */
+  private held = new Set<string>();
 
   /**
    * File an audio stream under `id`. That is the stream's own id unless the
@@ -94,6 +96,16 @@ export class RemoteMedia {
   }
 
   /**
+   * The media server's account of which of this person's pictures it holds
+   * back, by stream id, in place of the last one. True when that changed.
+   */
+  holdVideo(streamIds: ReadonlySet<string>): boolean {
+    if (streamIds.size === this.held.size && [...streamIds].every((id) => this.held.has(id))) return false;
+    this.held = new Set(streamIds);
+    return true;
+  }
+
+  /**
    * A stream id is known to carry video before its track arrives, from the
    * media server's directory.
    */
@@ -143,7 +155,7 @@ export class RemoteMedia {
     const id = this.screenId;
     const stream = id === null ? undefined : this.video.get(id);
     if (id === null || !stream) return null;
-    return { streamId: id, hasAudio: this.soundIds.has(id), stream };
+    return { streamId: id, hasAudio: this.soundIds.has(id), stream, ...this.heldOf(id) };
   }
 
   /** The announced camera, once its video has arrived. */
@@ -151,7 +163,11 @@ export class RemoteMedia {
     const id = this.cameraId;
     const stream = id === null ? undefined : this.video.get(id);
     if (id === null || !stream) return null;
-    return { streamId: id, stream };
+    return { streamId: id, stream, ...this.heldOf(id) };
+  }
+
+  private heldOf(id: string): { heldBack?: true } {
+    return this.held.has(id) ? { heldBack: true } : {};
   }
 
   private clearScreen(): void {
