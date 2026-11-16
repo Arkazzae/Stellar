@@ -13,7 +13,7 @@ Logo, mascot, UI icons, color palette, typography, and usage rules for Stellarr.
 | `logo/tile.png` | `tile.svg` rendered at 512 px, for places that do not take SVG, such as the Unraid template icon |
 | `mascot/` | Astronaut mascot in `mark.svg`, `small.svg`, `mono.svg`, and `tile.svg` variants |
 | `mascot/expressions/` | Eight state expressions: `speaking`, `idle`, `listening`, `happy`, `muted`, `away`, `connecting`, `failed` |
-| [`icons/`](icons/) | 92 standalone UI icons, including formatting and noise-suppression modes; 24 × 24 SVGs with a 1.5 px `currentColor` stroke |
+| [`icons/`](icons/) | 160 standalone UI icons, including formatting and noise-suppression modes; 24 × 24 SVGs with a 1.5 px `currentColor` stroke |
 | `guidelines/stellarr-brand-guidelines.pdf` | Brand guidelines PDF (v1.0 draft) |
 | `guidelines/index.html` | HTML source of the brand guidelines (uses `guidelines/fonts/` for Outfit and JetBrains Mono) |
 
