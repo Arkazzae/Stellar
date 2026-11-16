@@ -783,7 +783,8 @@ internal sealed class CliFixture : IDisposable
 
     internal AppDbContext OpenDb() => new(
         new DbContextOptionsBuilder<AppDbContext>()
-            .UseSqlite($"Data Source={Path.Combine(Root, "db", "stellarr.db")};Mode=ReadWrite;Pooling=False")
+            .UseSqlite(DatabaseConnection.From(
+                $"Data Source={Path.Combine(Root, "db", "stellarr.db")};Mode=ReadWrite;Pooling=False"))
             .Options);
 
     internal async Task<CliRun> RunAsync(params string[] args) =>

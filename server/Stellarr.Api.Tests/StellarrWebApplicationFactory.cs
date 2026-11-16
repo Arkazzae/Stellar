@@ -1,6 +1,5 @@
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc.Testing;
-using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
@@ -20,6 +19,10 @@ public sealed class StellarrWebApplicationFactory : WebApplicationFactory<Progra
     private readonly Action<IServiceCollection>? _configureServices;
     internal FakeEmailDelivery EmailDelivery { get; } = new();
     internal string DataRoot => _dataRoot;
+    internal string DatabasePath => _databasePath;
+
+    /// <summary>What this host is configured with, as an installation would be with its own file.</summary>
+    private string ConfiguredConnectionString => $"Data Source={_databasePath}";
 
     public StellarrWebApplicationFactory() : this(loadTestData: true) { }
 
@@ -50,6 +53,9 @@ public sealed class StellarrWebApplicationFactory : WebApplicationFactory<Progra
         {
             configuration.AddInMemoryCollection(new Dictionary<string, string?>
             {
+                // Only the file differs from an installation: the API adds the
+                // rest of the connection settings as it does in production.
+                ["ConnectionStrings:Database"] = ConfiguredConnectionString,
                 ["Storage:SkipInitialization"] = "true",
                 ["Maintenance:Enabled"] = "false",
                 ["DataRoot"] = _dataRoot,
@@ -71,9 +77,6 @@ public sealed class StellarrWebApplicationFactory : WebApplicationFactory<Progra
         });
         builder.ConfigureServices(services =>
         {
-            services.RemoveAll<DbContextOptions<AppDbContext>>();
-            services.RemoveAll<AppDbContext>();
-            services.AddDbContext<AppDbContext>(options => options.UseSqlite($"Data Source={_databasePath}"));
             services.RemoveAll<IObjectStorage>();
             services.AddSingleton<IObjectStorage, FakeObjectStorage>();
             services.RemoveAll<IEmailDelivery>();
@@ -115,8 +118,11 @@ public sealed class StellarrWebApplicationFactory : WebApplicationFactory<Progra
         {
             // Pooled connections keep the database open, and deleting it under them strands
             // its write-ahead files in the temp directory: about 8 MB for every factory.
-            // Only this factory's pool is cleared; other hosts run in parallel.
-            using (var connection = new Microsoft.Data.Sqlite.SqliteConnection($"Data Source={_databasePath}"))
+            // Only this factory's pool is cleared; other hosts run in parallel. A
+            // pool belongs to the exact connection string, so this is the one
+            // the API opens its connections from.
+            using (var connection = new Microsoft.Data.Sqlite.SqliteConnection(
+                DatabaseConnection.From(ConfiguredConnectionString)))
             {
                 Microsoft.Data.Sqlite.SqliteConnection.ClearPool(connection);
             }

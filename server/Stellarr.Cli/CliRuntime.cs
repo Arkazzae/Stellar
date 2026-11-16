@@ -287,7 +287,7 @@ internal sealed class CliDatabase(AppDbContext context) : IAsyncDisposable
         bool mutation,
         CancellationToken cancellationToken)
     {
-        var connection = new SqliteConnectionStringBuilder
+        var connection = DatabaseConnection.From(new SqliteConnectionStringBuilder
         {
             DataSource = runtime.DatabasePath,
             // ReadOnly for inspection, ReadWrite for a mutation. Never
@@ -296,17 +296,17 @@ internal sealed class CliDatabase(AppDbContext context) : IAsyncDisposable
             Mode = mutation ? SqliteOpenMode.ReadWrite : SqliteOpenMode.ReadOnly,
             Cache = SqliteCacheMode.Shared,
             Pooling = false,
+            // How long a command waits for the API to finish writing before it
+            // fails with database_locked.
             DefaultTimeout = 5,
-        }.ToString();
+        }.ToString());
         var context = new AppDbContext(
             new DbContextOptionsBuilder<AppDbContext>().UseSqlite(connection).Options);
         try
         {
+            // One connection for the whole command. The CLI never changes the
+            // journal mode or runs a schema step.
             await context.Database.OpenConnectionAsync(cancellationToken);
-            // Connection-local pragmas only. The CLI never changes journal mode
-            // or runs a schema step.
-            await context.Database.ExecuteSqlRawAsync("PRAGMA busy_timeout=5000;", cancellationToken);
-            await context.Database.ExecuteSqlRawAsync("PRAGMA foreign_keys=ON;", cancellationToken);
             await VerifySchemaAsync(context, mutation, cancellationToken);
             return new CliDatabase(context);
         }
