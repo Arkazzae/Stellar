@@ -30,11 +30,15 @@ To expand the relay range for larger instances or TURN/TCP, update `min-port`/`m
 
 | Port | Service |
 | --- | --- |
-| `3000/tcp` | Next.js standalone server, web client and Cockpit (`127.0.0.1`) |
 | `5000/tcp` | ASP.NET Core API and SignalR (`127.0.0.1`) |
 | `5200/tcp` | `stellarr-media` HTTP control API (`127.0.0.1`, authenticated via `secrets/media-control-secret`) |
 
-Nginx routes `/api/`, `/assets/`, `/health`, `/hubs/`, and `/.well-known/stellarr/client` to ASP.NET Core and forwards every other path to the Next.js server: the web client, Cockpit under `/cockpit`, and the files of `web/public/`, including the local translation runtime and models under `/bergamot-models/` and `/codecs/bergamot/`. There is no proxy to a model host.
+Nginx routes `/api/`, `/assets/`, `/health`, `/hubs/`, and `/.well-known/stellarr/client` to ASP.NET Core and serves every other path itself: `/stellarr-instance.js`, the instance language the entrypoint writes at every start (see [Localization](./localization.md)), and the static files of the web client and Cockpit in `/opt/stellarr/web`, including the local translation runtime and models under `/bergamot-models/` and `/codecs/bergamot/`. There is no proxy to a model host. A path that names no file is answered by the first of these rules in `infra/nginx.conf`, which follow `web/documents.ts`:
+
+- A path in a folder that holds only files, such as `/static/` or `/bergamot-models/`, or with a dot in its last segment, gets a plain `404`.
+- `/cockpit` and every path below it get Cockpit's document.
+- An address of the web client (`/`, `/login`, `/invite/<code>` and the others in `web/src/stellarr/routes.tsx`) gets the web client's document.
+- Any other path gets the web client's document with status `404`, so the client shows its not-found page.
 
 ## NAT and firewall configuration
 

@@ -27,12 +27,13 @@ Full documentation lives in [`docs/`](docs/README.md):
 
 | Directory | Contents |
 | --- | --- |
-| `web/` | The Next.js app: the web client in `web/src/stellarr/` and Cockpit in `web/src/cockpit/`, with the routes of both in `web/src/app/` |
-| `web/src/cockpit/` | [Stellarr Cockpit](web/src/cockpit/README.md), the instance operator panel (`/cockpit`), served by the same Next.js app |
+| `web/` | The two browser apps, the web client in `web/src/stellarr/` and Cockpit in `web/src/cockpit/`, each with its `main.tsx`, `routes.tsx` and `pages/`. One Vite build writes both as static files to `web/dist/`, from `web/index.html` and `web/cockpit/index.html` |
+| `web/src/cockpit/` | [Stellarr Cockpit](web/src/cockpit/README.md), the instance operator panel (`/cockpit`), built with the web client |
 | `packages/` | Shared packages used by the web client and Cockpit in one npm workspace |
 | `packages/stellarr-ui/` | [`@stellarr/ui`](packages/stellarr-ui/README.md), the components and their stylesheet |
 | `packages/stellarr-icons/` | [`@stellarr/icons`](packages/stellarr-icons/README.md), the icon set, which also builds the SVGs in `branding/icons/` |
-| `artifacts/` | The prebuilt files the browser loads at run time (the noise suppressors, the translation runtime and its models), checked against `manifest.json` and copied into `web/public/` before every development run, build and test |
+| `packages/stellarr-router/` | [`@stellarr/router`](packages/stellarr-router/README.md), the router of the web client and Cockpit |
+| `artifacts/` | The prebuilt files the browser loads at run time (the noise suppressors, the translation runtime and its models). Before every development run, build and test, each is checked against `manifest.json` and written to `web/public/` only where the copy there differs |
 | `server/` | ASP.NET Core API, SignalR hub, operator CLI, and integration tests |
 | `media/` | [Stellarr Media](media/README.md), the Rust WebRTC SFU (`stellarr-media`) |
 | `infra/` | Container entrypoint, Nginx, coturn, supervisord, and TLS scripts |
