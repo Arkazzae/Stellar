@@ -38,6 +38,7 @@ cargo test
 - `tests/core.rs`: deterministic sans-IO tests of room routing, track directory, SDP negotiation, limits, and timeouts on a simulated clock.
 - `tests/media.rs`: in-memory ICE/DTLS/SRTP packet forwarding tests using `str0m` peer instances.
 - `tests/http.rs`: end-to-end tests of the HTTP control API and UDP media forwarding over ephemeral sockets.
+- `tests/downlink.rs`: receivers on poor downlinks (a rate cap with a bounded queue, delay, jitter and burst losses from a seeded model in `tests/common/link.rs`) fed by synthetic voices and cameras: what they get of each, what is held back, and that a steady link never flaps.
 
 For browser interoperability tests against headless Chromium, see [`smoke/README.md`](smoke/README.md):
 
@@ -47,7 +48,7 @@ cd smoke && npm ci && npm run smoke
 
 ## Crate layout
 
-- `src/core/`: sans-IO SFU state machine (rooms, sessions, `str0m::Rtc`, negotiation, and RTP forwarding). Performs no clock or socket I/O.
+- `src/core/`: sans-IO SFU state machine (rooms, sessions, `str0m::Rtc`, negotiation, and RTP forwarding). Performs no clock or socket I/O. `src/core/downlink.rs` measures what each published track costs and fits what each receiver asks for into its estimated downlink.
 - `src/server.rs`: single async event loop driving `core`, the UDP socket, and timers alongside the Axum HTTP server.
 - `src/http.rs`: control API routes and bearer authentication.
 - `src/config.rs`: environment configuration parser.
