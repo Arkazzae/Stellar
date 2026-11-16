@@ -422,7 +422,9 @@ export const pl = {
   "integrations.resend.on": "Poczta idzie teraz przez Resend.",
   "integrations.resend.off": "Poczta idzie teraz przez SMTP.",
   "integrations.giphy.description":
-    "Wyszukiwarka GIF-ów w polu wiadomości klienta web. GIPHY wymaga zapytań z przeglądarki, więc zalogowani użytkownicy dostają klucz.",
+    "Wyszukiwarka GIF-ów w polu wiadomości klienta web i GIF-y w wiadomościach. GIPHY wymaga zapytań z przeglądarki, więc zalogowani użytkownicy dostają klucz.",
+  "integrations.giphy.privacy":
+    "Gdy GIF-y są włączone, przeglądarka każdej osoby, która szuka GIF-a albo go widzi, sama łączy się z GIPHY. GIPHY dostaje wtedy jej adres IP, wpisywane hasła, to, które GIF-y ogląda i wysyła, losowy identyfikator nadany w jej przeglądarce oraz adres tej instancji. Każdy może wyłączyć GIPHY u siebie w ustawieniach, w sekcji Prywatność, i wtedy widzi GIF-y w wiadomościach jako linki.",
   "integrations.giphy.key": "Klucz API",
   "integrations.giphy.check": "Sprawdź połączenie",
   "integrations.giphy.checkDescription": "Pyta GIPHY raz, czy przyjmuje klucz.",

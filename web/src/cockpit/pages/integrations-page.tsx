@@ -110,6 +110,7 @@ function GiphyCard({ settings, apiKey, saving, onToggle, onSecretChanged }: Card
       </CardTitleRow>
       <div className="space-y-5 px-5 py-5">
         <p className="text-sm text-muted-foreground">{t("integrations.giphy.description")}</p>
+        <p className="text-sm text-muted-foreground">{t("integrations.giphy.privacy")}</p>
         <SecretField
           title={t("integrations.giphy.key")}
           secret={apiKey}
