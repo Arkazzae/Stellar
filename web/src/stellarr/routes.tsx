@@ -20,6 +20,10 @@ import ResetPasswordPage from "./pages/ResetPasswordPage";
  * needs. The signed-in app, most of the client's code, is the one part loaded
  * on demand, by the home page (`pages/HomePage.tsx`), so no sign-in page
  * waits for it.
+ *
+ * infra/nginx.conf repeats these addresses, in `map $uri $stellarr_address`:
+ * the container answers them with this document and 200, and any other with
+ * the same document and 404. web/documents.test.ts fails when the two differ.
  */
 export const routes = defineRoutes({
   routes: [
