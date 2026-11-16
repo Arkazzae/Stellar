@@ -22,7 +22,7 @@ import { fileURLToPath } from "node:url";
 import { Client, browserPath, launch, servePage } from "./lib/browser.mjs";
 import { nearestColour, nearestTone, writeFixtures } from "./lib/fixtures.mjs";
 import { Hub, startMedia } from "./lib/media.mjs";
-import { LossyNat } from "./lib/nat.mjs";
+import { LossyNat, isRtp } from "./lib/nat.mjs";
 
 const here = dirname(fileURLToPath(import.meta.url));
 const sleep = (ms) => new Promise((done) => setTimeout(done, ms));
@@ -208,6 +208,174 @@ function summarise(results) {
       return `${r.name}<-[${rows}]`;
     })
     .join(" ");
+}
+
+
+// ------------------------------------------------------------ poor links
+
+/** Chromium's payload type for Opus, in both directions. */
+const OPUS_PT = 111;
+
+/** The poor downlinks of scenario q, slowest last. */
+const CAPS_KBPS = [512, 256, 128];
+/** How long a cap is held before it is measured, and how long it is measured. */
+const SETTLE_MS = 10_000;
+const WINDOW_MS = 10_000;
+
+/** A poor downlink of `kbps`: 300 ms of queue, 40 ms of delay, 15 ms of jitter, 1% lost in bursts of 3. */
+function poorLink(kbps) {
+  return { kbps, queueMs: 300, delayMs: 40, jitterMs: 15, lossMean: 0.01, lossBurst: 3, seed: kbps };
+}
+
+/**
+ * Runs `body` against a second media server that the browsers reach only
+ * through a relay, which can shape the downlink of one of them.
+ */
+async function relayed(s, id, body) {
+  const env = s.env;
+  const nat = await LossyNat.listen();
+  const logFile = join(env.out, `stellarr-media-${id}.log`);
+  const media = await startMedia({ binary: env.binary, logFile, advertisePort: nat.port });
+  nat.target = media.port;
+  const hub = new Hub(media.control);
+  await hub.start();
+  const inner = new Scenario(
+    { ...env, hub, candidate: media.candidate, logText: () => readFileSync(logFile, "utf8") },
+    id,
+  );
+  try {
+    const result = await body(inner, nat);
+    await inner.verifyClean();
+    return result;
+  } finally {
+    await inner.dump().catch(() => {});
+    await inner.cleanup();
+    await hub.stop();
+    await media.stop();
+    nat.close();
+  }
+}
+
+/** Seats `name` and waits until the relay has heard from it; returns its addresses there. */
+async function joinThrough(s, nat, name, options) {
+  const known = new Set(nat.addresses());
+  const client = await s.join(name, options);
+  await waitFor(`${name} to reach the relay`, async () => {
+    const stats = await client.stats();
+    return stats.pair?.state === "succeeded" && nat.addresses().some((a) => !known.has(a));
+  });
+  return { client, addresses: nat.addresses().filter((a) => !known.has(a)) };
+}
+
+/** A camera that costs a real bitrate, in the person's colour. */
+function busyCamera(client, maxBitrate, size = {}) {
+  return client.publish("camera", "video", { busy: { rgb: client.identity.rgb, ...size }, maxBitrate });
+}
+
+/**
+ * What one receiver got between two readings of its statistics: for every
+ * voice the share of packets lost and of samples concealed, the delay of its
+ * jitter buffer and whose tone it carries; for every picture the frames
+ * decoded; and the bitrate received.
+ */
+function receivedBetween(before, after, measured, mapping, ms) {
+  const seconds = ms / 1000;
+  const voices = [];
+  const pictures = [];
+  let bytes = 0;
+  for (const m of mapping) {
+    const b = before.inbound[m.mid] ?? {};
+    const a = after.inbound[m.mid] ?? {};
+    const delta = (field) => (a[field] ?? 0) - (b[field] ?? 0);
+    bytes += delta("bytesReceived");
+    if (m.publication.kind === "audio") {
+      const lost = delta("packetsLost");
+      const received = delta("packetsReceived");
+      const samples = delta("totalSamplesReceived");
+      const emitted = delta("jitterBufferEmittedCount");
+      const tone = measured[m.mid] ? nearestTone(measured[m.mid].peakHz) : null;
+      voices.push({
+        from: m.publisher.name,
+        mid: m.mid,
+        lostPct: lost + received > 0 ? (100 * lost) / (lost + received) : 100,
+        concealedPct: samples > 0 ? (100 * delta("concealedSamples")) / samples : 100,
+        concealmentEvents: delta("concealmentEvents"),
+        jitterBufferMs: emitted > 0 ? (1000 * delta("jitterBufferDelay")) / emitted : null,
+        tone: tone && tone.name === m.publisher.name && tone.error < 30 && measured[m.mid].peakDb > -90,
+      });
+    } else {
+      pictures.push({
+        from: m.publisher.name,
+        mid: m.mid,
+        fps: delta("framesDecoded") / seconds,
+        kbps: (delta("bytesReceived") * 8) / seconds / 1000,
+        freezes: delta("freezeCount"),
+        keyFrames: delta("keyFramesDecoded"),
+      });
+    }
+  }
+  return { voices, pictures, kbps: (bytes * 8) / seconds / 1000 };
+}
+
+function describeWindow(w) {
+  const voices = w.voices
+    .map(
+      (v) =>
+        `${v.from} lost ${v.lostPct.toFixed(1)}% concealed ${v.concealedPct.toFixed(1)}% ` +
+        `jb ${v.jitterBufferMs === null ? "-" : Math.round(v.jitterBufferMs)} ms${v.tone ? "" : " NO TONE"}`,
+    )
+    .join(", ");
+  const pictures = w.pictures
+    .map((p) => `${p.from} ${p.fps.toFixed(1)} fps ${Math.round(p.kbps)} kbit/s${p.held ? " held" : ""}`)
+    .join(", ");
+  const link =
+    w.link === undefined
+      ? ""
+      : `, link ${Math.round(w.link.kbps)} kbit/s (queue drops ${w.link.queueDrops}, burst drops ${w.link.burstDrops})`;
+  return `[${voices}; ${pictures}; received ${Math.round(w.kbps)} kbit/s${link}]`;
+}
+
+/** What a shaped link did since `before`, as a rate of whole datagrams. */
+function linkBetween(before, after, ms) {
+  return {
+    kbps: ((after.deliveredBytes - before.deliveredBytes) * 8) / ms,
+    queueDrops: after.queueDrops - before.queueDrops,
+    burstDrops: after.burstDrops - before.burstDrops,
+  };
+}
+
+/** Percentiles of a list of numbers. */
+function percentiles(values) {
+  const sorted = [...values].sort((x, y) => x - y);
+  const at = (p) => sorted[Math.min(sorted.length - 1, Math.round((sorted.length - 1) * p))];
+  return { n: sorted.length, p50: at(0.5), p95: at(0.95), max: sorted[sorted.length - 1] };
+}
+
+/**
+ * Records when every Opus packet passes the relay on its way up from
+ * `fromAddresses` and on its way down to `toAddresses`, by RTP timestamp,
+ * which the media server keeps. The difference is the time a voice spends in
+ * the media server.
+ */
+function voiceTransit(nat, fromAddresses, toAddresses) {
+  const up = new Map();
+  const transits = [];
+  const tap = (direction, address, data, at) => {
+    if (!isRtp(data, OPUS_PT)) return;
+    const ts = data.readUInt32BE(4);
+    if (direction === "up" && fromAddresses.includes(address)) up.set(ts, at);
+    if (direction === "down" && toAddresses.includes(address) && up.has(ts)) {
+      transits.push(at - up.get(ts));
+      up.delete(ts);
+    }
+  };
+  nat.taps.push(tap);
+  return {
+    stop() {
+      nat.taps = nat.taps.filter((t) => t !== tap);
+      return percentiles(transits);
+    },
+  };
 }
 
 // --------------------------------------------------------------- scenarios
@@ -1076,6 +1244,122 @@ const SCENARIOS = {
         `microphones and C carried on; ${summarise(results)}`,
       results,
     };
+  },
+  /**
+   * One receiver on a poor downlink while the others are on clean links. A
+   * reaches the media server through a relay that puts everything sent to it
+   * through a rate cap with a 300 ms queue, delay, jitter and losses in
+   * bursts; B and C each send a voice and a camera of 250 kbit/s. The cap is
+   * lowered from 512 to 256 to 128 kbit/s and then lifted; each step is held
+   * for 10 s and measured for the next 10 s: what A gets of each voice and
+   * each picture, and the bitrate it receives. B and C must get everything
+   * throughout.
+   */
+  async q(s) {
+    return relayed(s, "q", async (inner, nat) => {
+      const { client: A, addresses } = await joinThrough(inner, nat, "A");
+      const link = nat.shape(addresses, poorLink(CAPS_KBPS[0]));
+      // Each camera goes out only once its publisher has every offer that
+      // the others' arrivals bring, so no publication meets one (see e).
+      const B = await inner.join("B");
+      await directoryReady(B, inner.clients);
+      await busyCamera(B, 250_000);
+      const C = await inner.join("C");
+      await directoryReady(C, inner.clients);
+      await directoryReady(B, inner.clients);
+      await busyCamera(C, 250_000);
+      const { mapping } = await directoryReady(A, inner.clients);
+
+      const windows = [];
+      const steps = [...CAPS_KBPS, null];
+      for (const kbps of steps) {
+        if (kbps === null) nat.unshape(addresses);
+        else link.reshape(poorLink(kbps));
+        await sleep(SETTLE_MS);
+        const before = await A.stats();
+        const linkBefore = { ...link.stats };
+        await sleep(WINDOW_MS);
+        const after = await A.stats();
+        const measured = await A.measure();
+        const w = receivedBetween(before, after, measured, mapping, WINDOW_MS);
+        if (kbps !== null) w.link = linkBetween(linkBefore, link.stats, WINDOW_MS);
+        w.cap = kbps;
+        windows.push(w);
+        console.log(`  q: ${kbps === null ? "clean" : `${kbps} kbit/s`} ${describeWindow(w)}`);
+        if (kbps !== null) {
+          check(w.link.kbps <= kbps * 1.02, `the ${kbps} kbit/s link carried ${w.link.kbps} kbit/s`);
+        }
+      }
+
+      // The others are on clean links and get everything, whatever A's link.
+      const others = [];
+      for (const receiver of [B, C]) others.push(await verifyReceiver(inner.env, receiver, inner.clients));
+      return {
+        summary:
+          windows
+            .map((w) => `${w.cap === null ? "clean" : `${w.cap} kbit/s`} ${describeWindow(w)}`)
+            .join(" | ") + `; ${summarise(others)}`,
+        windows,
+      };
+    });
+  },
+
+  /**
+   * A clean link, for what the media server costs a receiver that has room:
+   * how soon a newcomer sees a camera of 1.5 Mbit/s that is already running,
+   * five times over, and how long a voice spends in the media server while
+   * that camera flows, measured at the relay from the RTP timestamps the
+   * media server keeps.
+   */
+  async r(s) {
+    return relayed(s, "r", async (inner, nat) => {
+      const { client: A, addresses: fromA } = await joinThrough(inner, nat, "A");
+      await busyCamera(A, 1_500_000);
+      await sleep(4000);
+
+      const firstFrames = [];
+      let transit = null;
+      const ROUNDS = 5;
+      for (let round = 0; round < ROUNDS; round += 1) {
+        // Past the one-second window of keyframe requests the last newcomer
+        // opened, so each round measures a start, not that window.
+        if (round > 0) await sleep(1500);
+        const joined = Date.now();
+        const { client: B, addresses: toB } = await joinThrough(inner, nat, "B");
+        const { mapping } = await directoryReady(B, inner.clients);
+        const mid = mapping.find((m) => m.publication.kind === "video").mid;
+        await waitFor(
+          "B's first decoded frame",
+          async () => (await B.stats()).inbound[mid]?.framesDecoded > 0,
+          15_000,
+          20,
+        );
+        firstFrames.push(Date.now() - joined);
+        if (round === ROUNDS - 1) {
+          const tap = voiceTransit(nat, fromA, toB);
+          const before = await B.stats();
+          await sleep(5000);
+          const after = await B.stats();
+          transit = tap.stop();
+          const w = receivedBetween(before, after, await B.measure(), mapping, 5000);
+          transit.received = w;
+          check(w.pictures[0].fps > 20, `B decodes A's camera at ${w.pictures[0].fps} fps`);
+        } else {
+          await leave(B);
+        }
+      }
+      const results = await verifyRoom(inner.env, inner.clients);
+      const camera = transit.received.pictures[0];
+      return {
+        summary:
+          `first frame of a 1.5 Mbit/s camera ${firstFrames.join(", ")} ms after joining; ` +
+          `voice transit p50 ${transit.p50.toFixed(1)} ms, p95 ${transit.p95.toFixed(1)} ms, ` +
+          `max ${transit.max.toFixed(1)} ms over ${transit.n} packets while the camera ran at ` +
+          `${Math.round(camera.kbps)} kbit/s ${camera.fps.toFixed(1)} fps; ${summarise(results)}`,
+        firstFrames,
+        transit,
+      };
+    });
   },
 };
 

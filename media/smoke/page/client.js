@@ -57,6 +57,7 @@ const state = {
   errors: [],
   closed: null,
   audio: null,
+  timers: [],
 };
 
 function run(task) {
@@ -300,7 +301,8 @@ async function start({ sessionId, tuneOpus: tune = false }) {
   return { isSecureContext: window.isSecureContext };
 }
 
-async function capture(kind) {
+async function capture(kind, busy) {
+  if (busy) return busyCamera(busy);
   const constraints =
     kind === "audio"
       ? { audio: { echoCancellation: false, noiseSuppression: false, autoGainControl: false } }
@@ -309,13 +311,50 @@ async function capture(kind) {
 }
 
 /**
+ * A camera that costs what a real one does: blocks of noise around the
+ * person's colour, new every frame, which an encoder cannot squeeze. The
+ * noise averages out, so the colour a receiver measures is still the
+ * person's.
+ */
+function busyCamera({ rgb, width = 640, height = 480, fps = 30 }) {
+  const canvas = document.createElement("canvas");
+  canvas.width = width;
+  canvas.height = height;
+  const ctx = canvas.getContext("2d");
+  const block = 8;
+  const spread = 60;
+  const draw = () => {
+    for (let y = 0; y < height; y += block) {
+      for (let x = 0; x < width; x += block) {
+        const c = rgb.map((v) =>
+          Math.max(0, Math.min(255, Math.round(v + (Math.random() - 0.5) * spread))),
+        );
+        ctx.fillStyle = `rgb(${c[0]},${c[1]},${c[2]})`;
+        ctx.fillRect(x, y, block, block);
+      }
+    }
+  };
+  draw();
+  const stream = canvas.captureStream(fps);
+  const timer = setInterval(draw, 1000 / fps);
+  stream.getVideoTracks()[0].addEventListener("ended", () => clearInterval(timer));
+  state.timers.push(timer);
+  return stream;
+}
+
+/**
  * Publishes the fake microphone or camera. `via` is "transceiver" for
  * addTransceiver(track, { direction: "sendonly", streams }) or "addTrack";
  * `codec` is put first in the codec preferences, `scalabilityMode` is asked
- * of the encoder, and `stereo` tunes an audio track as screen audio.
+ * of the encoder, `maxBitrate` caps it, `stereo` tunes an audio track as
+ * screen audio, and `busy` makes the camera one that costs a real bitrate.
  */
-async function publish(name, kind, { via = "transceiver", codec, scalabilityMode, stereo } = {}) {
-  const stream = await capture(kind);
+async function publish(
+  name,
+  kind,
+  { via = "transceiver", codec, scalabilityMode, maxBitrate, stereo, busy } = {},
+) {
+  const stream = await capture(kind, busy);
   if (stereo) state.stereoStreams.add(stream.id);
   const track = stream.getTracks()[0];
   let transceiver;
@@ -324,7 +363,11 @@ async function publish(name, kind, { via = "transceiver", codec, scalabilityMode
     transceiver = state.pc.getTransceivers().find((t) => t.sender === sender);
   } else {
     const init = { direction: "sendonly", streams: [stream] };
-    if (scalabilityMode) init.sendEncodings = [{ scalabilityMode }];
+    if (scalabilityMode || maxBitrate) {
+      init.sendEncodings = [
+        { ...(scalabilityMode && { scalabilityMode }), ...(maxBitrate && { maxBitrate }) },
+      ];
+    }
     transceiver = state.pc.addTransceiver(track, init);
   }
   if (codec) {
@@ -435,6 +478,15 @@ async function stats() {
         firCount: s.firCount || 0,
         retransmittedPacketsReceived: s.retransmittedPacketsReceived || 0,
         freezeCount: s.freezeCount || 0,
+        totalFreezesDuration: s.totalFreezesDuration || 0,
+        framesReceived: s.framesReceived || 0,
+        framesDropped: s.framesDropped || 0,
+        concealedSamples: s.concealedSamples || 0,
+        silentConcealedSamples: s.silentConcealedSamples || 0,
+        concealmentEvents: s.concealmentEvents || 0,
+        totalSamplesReceived: s.totalSamplesReceived || 0,
+        jitterBufferDelay: s.jitterBufferDelay || 0,
+        jitterBufferEmittedCount: s.jitterBufferEmittedCount || 0,
       };
     }
     if (s.type === "outbound-rtp") {
@@ -546,6 +598,7 @@ function measure() {
 }
 
 function close() {
+  for (const timer of state.timers) clearInterval(timer);
   for (const published of Object.values(state.published)) published.track.stop();
   if (state.pc) state.pc.close();
 }
