@@ -94,9 +94,10 @@ public sealed class UserPreferenceSettings
     /// <summary>
     /// The web client's own settings, one JSON object per section, written as
     /// the client sent them: how the app looks, the language it speaks, the
-    /// call shortcuts and the voice processing. The client validates every
-    /// field on the way back in, so the server only checks the shape and the
-    /// size. Null means no device has saved the section yet.
+    /// call shortcuts, the voice processing, and what the client may share
+    /// with outside services. The client validates every field on the way back
+    /// in, so the server only checks the shape and the size. Null means no
+    /// device has saved the section yet.
     /// </summary>
     public string? AppearanceSettingsJson { get; set; }
 
@@ -108,6 +109,9 @@ public sealed class UserPreferenceSettings
 
     /// <inheritdoc cref="AppearanceSettingsJson"/>
     public string? VoiceSettingsJson { get; set; }
+
+    /// <inheritdoc cref="AppearanceSettingsJson"/>
+    public string? PrivacySettingsJson { get; set; }
 
     public User User { get; set; } = null!;
 }

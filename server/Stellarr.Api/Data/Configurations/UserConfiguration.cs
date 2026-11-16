@@ -43,5 +43,6 @@ internal sealed class UserPreferenceSettingsConfiguration : IEntityTypeConfigura
         entity.Property(x => x.LanguageSettingsJson).HasMaxLength(ClientSettings.MaxLength);
         entity.Property(x => x.KeybindSettingsJson).HasMaxLength(ClientSettings.MaxLength);
         entity.Property(x => x.VoiceSettingsJson).HasMaxLength(ClientSettings.MaxLength);
+        entity.Property(x => x.PrivacySettingsJson).HasMaxLength(ClientSettings.MaxLength);
     }
 }
