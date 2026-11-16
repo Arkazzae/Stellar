@@ -1,4 +1,39 @@
-import { existsSync, readFileSync } from "node:fs";
+/**
+ * The message-syntax contract: `message-syntax.json` beside this file is the
+ * one set of cases both sides of message formatting read.
+ *
+ * - This test checks the renderer's inline nodes and the composer's edits, and
+ *   asks the transcript's own `mentionsUsername` about every member. That is
+ *   the same `mentions` field the API checks, so the two cannot pass
+ *   contradictory cases.
+ * - `server/Stellarr.Api.Tests/MessageSyntaxContractTests.cs` checks the API's
+ *   mention extractor. Its project copies the file to
+ *   `test-contracts/message-syntax.json` in the output directory.
+ *
+ * A grammar rule is not finished until both suites pass the same cases. When
+ * the parser, mention extraction or a formatting button learns a rule, add the
+ * case to the JSON instead of only to one language's tests.
+ *
+ * Shape of the file:
+ * - `members` lists the usernames the cases resolve, once each. A case that
+ *   expects a mention uses one of them, upper case, in `mentions`.
+ * - `messages` holds authored bodies. `inline` is the renderer's expected node
+ *   tree, `mentions` the extractor's expected names (unique, upper case), and
+ *   an optional `source` pins what `inlineSource` writes back. Nodes are
+ *   `{"text": …}`, `{"code": …}`, `{"mention": "@name"}`,
+ *   `{"link": {"href": …, "text": …}}`, or one of `strong`, `emphasis`,
+ *   `strike` and `spoiler` wrapping an array of child nodes.
+ * - `composer` holds a draft, selection and marker, with the exact `TextEdit`
+ *   the formatting button must return.
+ *
+ * Both suites fail when the file is missing, is not valid JSON or has a
+ * malformed case. To run only the contract, from the repository root:
+ *
+ *   (cd web && npx vitest run src/stellarr/lib/messages/messageSyntaxContract.test.ts)
+ *   dotnet test server/Stellarr.Api.Tests/Stellarr.Api.Tests.csproj \
+ *     --filter FullyQualifiedName~MessageSyntaxContractTests
+ */
+import { readFileSync } from "node:fs";
 import { join } from "node:path";
 
 import { describe, expect, it } from "vitest";
@@ -40,11 +75,7 @@ interface Contract {
   composer: ComposerCase[];
 }
 
-/** The corpus lives at the repository root, beside the web and server trees. */
-const CONTRACT_PATH = [
-  join(process.cwd(), "../contracts/message-syntax.json"),
-  join(process.cwd(), "contracts/message-syntax.json"),
-].find(existsSync);
+const CONTRACT_PATH = join(__dirname, "message-syntax.json");
 
 function fail(message: string): never {
   throw new Error(`message-syntax contract: ${message}`);
@@ -175,7 +206,6 @@ function validate(value: unknown): Contract {
 }
 
 function loadContract(): Contract {
-  if (CONTRACT_PATH === undefined) fail("cannot find contracts/message-syntax.json");
   let raw: string;
   try {
     raw = readFileSync(CONTRACT_PATH, "utf8");
