@@ -1,14 +1,14 @@
 # syntax=docker/dockerfile:1.8
 
 # One image runs the whole instance: nginx, the API, coturn and the Stellarr
-# Media server, supervised by supervisord. nginx also serves the web client and
-# the operator panel, Cockpit, under /cockpit, both built as static files. It
-# builds for linux/amd64 and linux/arm64.
+# Media server, supervised by Stellarr Init (init/), which runs as PID 1. nginx
+# also serves the web client and the operator panel, Cockpit, under /cockpit,
+# both built as static files. It builds for linux/amd64 and linux/arm64.
 #
 # Stages whose output is architecture-neutral (the web build and the portable
 # API publish) run on the build machine's own platform, so a multi-platform
-# build does not emulate them. The media stage runs there too and
-# cross-compiles for the target, because compiling Rust under emulation would
+# build does not emulate them. The two Rust stages run there too and
+# cross-compile for the target, because compiling Rust under emulation would
 # not fit in the release job.
 
 # web/ holds both apps, the web client and Cockpit (web/src/cockpit/). It is a
@@ -75,11 +75,12 @@ find . -name '*.rs' -type f | while read -r file; do
 done
 EOF
 
-# aws-lc-rs, the crypto backend of str0m, compiles C, so a cross build needs the
-# target's C compiler and C library as well as the Rust target. Bookworm's
-# glibc 2.36 is older than the 2.39 of the final image, so every symbol the
-# binary links against is there at run time.
-FROM --platform=$BUILDPLATFORM rust:1-slim-bookworm AS media-build
+# The Rust toolchain on the build machine with what a cross build for the
+# target needs: the Rust target, and the target's C compiler and C library,
+# which link both binaries and which aws-lc-rs, the crypto backend of str0m,
+# compiles with. Bookworm's glibc 2.36 is older than the 2.39 of the final
+# image, so every symbol the binaries link against is there at run time.
+FROM --platform=$BUILDPLATFORM rust:1-slim-bookworm AS rust-cross
 ARG BUILDARCH
 ARG TARGETARCH
 # RUSTUP_TOOLCHAIN pins the image's own toolchain even if the crate later adds
@@ -96,7 +97,7 @@ set -eu
 case "$TARGETARCH" in
   amd64) arch=x86_64 cross_gcc=gcc-x86-64-linux-gnu ;;
   arm64) arch=aarch64 cross_gcc=gcc-aarch64-linux-gnu ;;
-  *) echo "Stellarr Media builds for amd64 and arm64, not $TARGETARCH." >&2; exit 1 ;;
+  *) echo "Stellarr's Rust builds for amd64 and arm64, not $TARGETARCH." >&2; exit 1 ;;
 esac
 # A native build already has gcc and libc6-dev in this image.
 if [ "$BUILDARCH" != "$TARGETARCH" ]; then
@@ -107,6 +108,8 @@ fi
 rustup target add "$arch-unknown-linux-gnu"
 echo "$arch-unknown-linux-gnu" > /etc/rust-target
 EOF
+
+FROM rust-cross AS media-build
 WORKDIR /src/media
 COPY --from=media-skeleton /skeleton/ ./
 # The stub's own artifacts are removed in the same layer. The real sources keep
@@ -117,6 +120,16 @@ RUN cargo build --release --locked --target "$(cat /etc/rust-target)" \
 COPY media/ ./
 RUN cargo build --release --locked --target "$(cat /etc/rust-target)" \
     && install -D "target/$(cat /etc/rust-target)/release/stellarr-media" /out/stellarr-media
+
+# Stellarr Init, the process manager that runs as PID 1. It depends on libc
+# alone, which compiles in seconds, so it needs no stage of stubs. The whole
+# crate is copied, tests included: Cargo.toml names the test targets, and a
+# missing one fails the manifest check even when only the binary is built.
+FROM rust-cross AS init-build
+WORKDIR /src/init
+COPY init/ ./
+RUN cargo build --release --locked --target "$(cat /etc/rust-target)" --bin stellarr-init \
+    && install -D "target/$(cat /etc/rust-target)/release/stellarr-init" /out/stellarr-init
 
 # Target of docker-compose.dev.yml: the SDK with the source bind-mounted.
 FROM mcr.microsoft.com/dotnet/sdk:10.0-noble AS api-dev
@@ -133,12 +146,12 @@ WORKDIR /app
 FROM mcr.microsoft.com/dotnet/aspnet:10.0-noble AS final
 
 RUN apt-get update \
-    && apt-get install -y --no-install-recommends ca-certificates coturn curl nginx openssl supervisor \
+    && apt-get install -y --no-install-recommends ca-certificates coturn nginx openssl \
     && rm -rf /var/lib/apt/lists/*
 
 COPY infra/nginx.conf /etc/nginx/nginx.conf.template
 COPY infra/turnserver.conf.template /etc/turnserver.conf.template
-COPY infra/supervisord.conf /etc/supervisor/supervisord.conf
+COPY --from=init-build /out/stellarr-init /usr/local/bin/stellarr-init
 COPY --chmod=0755 infra/entrypoint.sh /usr/local/bin/stellarr-entrypoint
 COPY --chmod=0755 infra/tls-maintenance.sh /usr/local/bin/stellarr-tls-maintenance
 COPY --chmod=0755 infra/stellarr-cli.sh /usr/local/bin/stellarr
@@ -161,20 +174,17 @@ ENV STELLARR_DATA_ROOT=/data/stellarr
 EXPOSE 80 443 3478/tcp 3478/udp 5349/tcp 5349/udp 49000/udp 49160-49200/udp
 VOLUME ["/data/stellarr"]
 
-# Healthy means every service answers, as each can fail on its own:
-# - nginx, and the API with its database: /health goes through nginx to the
-#   API, which answers only once it reaches the database. The apps are files
-#   nginx serves from the image, so fetching a page would prove no more.
-# - the media server: its control API on loopback answers /v1/health from the
-#   task that runs the media plane.
-# - coturn: a STUN binding request on 3478/udp, which no setting closes. The
-#   client waits forever for an answer that does not come, hence the timeout.
-# Each probe has a limit of its own, and together they stay within --timeout.
-HEALTHCHECK --interval=30s --timeout=5s --start-period=60s --retries=5 \
-  CMD curl -kfsS -o /dev/null --max-time 2 https://127.0.0.1/health \
-    && curl -fsS -o /dev/null --max-time 1 http://127.0.0.1:5200/v1/health \
-    && timeout 1 turnutils_stunclient 127.0.0.1 > /dev/null \
-    || exit 1
+# Healthy means every critical service is ready, as stellarr-init reports it.
+# The manager asks each one again every ten seconds and counts it as failing
+# after three misses in a row, about 45 seconds: the API with its database on
+# /health/ready, nginx for a page it serves, the media server's control API on
+# /v1/health, and coturn for a STUN binding answer. A service that exits, or
+# cannot start, fails at once. The manager already waits out a slow answer, so
+# Docker needs fewer misses of its own than when it asked the services itself.
+# The client answers within three seconds, or exits 1 when the manager does
+# not.
+HEALTHCHECK --interval=30s --timeout=5s --start-period=60s --retries=3 \
+  CMD ["/usr/local/bin/stellarr-init", "health"]
 
 ARG VERSION=dev
 ARG REVISION=unknown
