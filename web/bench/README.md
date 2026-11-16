@@ -23,6 +23,10 @@ is not in one of the usual places:
 - `/Applications/Google Chrome.app/Contents/MacOS/Google Chrome`
 - `/Applications/Chromium.app/Contents/MacOS/Chromium`
 
+Chrome gets 60 s to open its DevTools port, and three starts, each with a
+fresh profile, before the run fails with what each start printed.
+`STELLARR_CHROMIUM_START_SECONDS` changes the wait.
+
 Useful options:
 
 | Option | Meaning |

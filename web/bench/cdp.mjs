@@ -34,52 +34,94 @@ export function findChromium() {
 }
 
 /**
+ * How long one start of Chrome may take to open its DevTools port, and how
+ * many starts are tried. A hosted CI runner can be slow enough to miss a
+ * short wait, and a Chrome that fails to come up there one time comes up the
+ * next. STELLARR_CHROMIUM_START_SECONDS changes the wait.
+ */
+const START_SECONDS = Number(process.env.STELLARR_CHROMIUM_START_SECONDS) || 60;
+const START_ATTEMPTS = 3;
+
+/**
+ * One start of Chrome with a fresh profile, up to the moment it says where
+ * its DevTools port is. A start that exits or stays silent is stopped and its
+ * profile removed, and the error carries what Chrome printed.
+ */
+async function start(executable, flags) {
+  const profile = mkdtempSync(join(tmpdir(), "stellarr-transcript-bench-"));
+  const proc = spawn(executable, [...flags, `--user-data-dir=${profile}`, "about:blank"], {
+    stdio: ["ignore", "ignore", "pipe"],
+  });
+  let log = "";
+  proc.stderr.setEncoding("utf8");
+  try {
+    const wsUrl = await new Promise((resolve, reject) => {
+      const timer = setTimeout(
+        () => reject(new Error(`Chrome did not open a DevTools port within ${START_SECONDS} s.\n${log}`)),
+        START_SECONDS * 1000,
+      );
+      proc.stderr.on("data", (chunk) => {
+        log += chunk;
+        const match = /DevTools listening on (ws:\/\/\S+)/.exec(log);
+        if (match === null) return;
+        clearTimeout(timer);
+        resolve(match[1]);
+      });
+      proc.once("error", (error) => {
+        clearTimeout(timer);
+        reject(new Error(`Chrome could not be started: ${error.message}\n${log}`));
+      });
+      proc.once("exit", (code, signal) => {
+        clearTimeout(timer);
+        reject(new Error(`Chrome exited (${code ?? signal}) before opening a DevTools port.\n${log}`));
+      });
+    });
+    return { proc, profile, wsUrl };
+  } catch (error) {
+    if (proc.exitCode === null && proc.signalCode === null) {
+      const exited = new Promise((resolve) => proc.once("exit", resolve));
+      proc.kill("SIGKILL");
+      await exited;
+    }
+    rmSync(profile, { recursive: true, force: true });
+    throw error;
+  }
+}
+
+/**
  * Starts a headless browser and returns a browser handle. Each page gets its
  * own browser context so two runs cannot share React state.
+ *
+ * Only the start is tried again: once Chrome has opened its port, whatever it
+ * does wrong fails the run.
  */
 export async function launch({ width = 1280, height = 900, headless = true } = {}) {
   const executable = findChromium();
-  const profile = mkdtempSync(join(tmpdir(), "stellarr-transcript-bench-"));
-  const proc = spawn(
-    executable,
-    [
-      ...(headless ? ["--headless=new"] : []),
-      "--remote-debugging-port=0",
-      "--remote-debugging-address=127.0.0.1",
-      `--user-data-dir=${profile}`,
-      "--no-first-run",
-      "--no-default-browser-check",
-      "--disable-extensions",
-      "--disable-background-timer-throttling",
-      "--disable-backgrounding-occluded-windows",
-      "--disable-renderer-backgrounding",
-      "--disable-dev-shm-usage",
-      "--mute-audio",
-      `--window-size=${width},${height}`,
-      "about:blank",
-    ],
-    { stdio: ["ignore", "ignore", "pipe"] },
-  );
-
-  let log = "";
-  proc.stderr.setEncoding("utf8");
-  const wsUrl = await new Promise((resolve, reject) => {
-    const timer = setTimeout(
-      () => reject(new Error(`Chrome did not open a DevTools port.\n${log}`)),
-      20_000,
-    );
-    proc.stderr.on("data", (chunk) => {
-      log += chunk;
-      const match = /DevTools listening on (ws:\/\/\S+)/.exec(log);
-      if (match === null) return;
-      clearTimeout(timer);
-      resolve(match[1]);
-    });
-    proc.once("exit", (code) => {
-      clearTimeout(timer);
-      reject(new Error(`Chrome exited (${code}).\n${log}`));
-    });
-  });
+  const flags = [
+    ...(headless ? ["--headless=new"] : []),
+    "--remote-debugging-port=0",
+    "--remote-debugging-address=127.0.0.1",
+    "--no-first-run",
+    "--no-default-browser-check",
+    "--disable-extensions",
+    "--disable-background-timer-throttling",
+    "--disable-backgrounding-occluded-windows",
+    "--disable-renderer-backgrounding",
+    "--disable-dev-shm-usage",
+    "--mute-audio",
+    `--window-size=${width},${height}`,
+  ];
+  const failures = [];
+  let started = null;
+  for (let attempt = 1; started === null && attempt <= START_ATTEMPTS; attempt += 1) {
+    try {
+      started = await start(executable, flags);
+    } catch (error) {
+      failures.push(`Start ${attempt} of ${START_ATTEMPTS}: ${error.message}`);
+    }
+  }
+  if (started === null) throw new Error(`Chrome could not be started.\n\n${failures.join("\n\n")}`);
+  const { proc, profile, wsUrl } = started;
 
   const socket = new WebSocket(wsUrl);
   await new Promise((resolve, reject) => {
