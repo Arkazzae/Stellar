@@ -38,11 +38,10 @@ function Probe() {
 describe("LanguageProvider", () => {
   beforeEach(() => {
     window.localStorage.clear();
-    document.cookie = "stellarr_locale=; path=/; max-age=0";
     document.documentElement.lang = "pl";
   });
 
-  it("uses the server locale immediately and persists a new selection", async () => {
+  it("uses the starting locale immediately and persists a new selection", async () => {
     const user = userEvent.setup();
     render(
       <LanguageProvider initialLocale="pl">
@@ -55,7 +54,7 @@ describe("LanguageProvider", () => {
     expect(screen.getByLabelText("locale")).toHaveTextContent("en");
     expect(screen.getByLabelText("title")).toHaveTextContent("Language");
     expect(document.documentElement).toHaveAttribute("lang", "en");
-    expect(document.cookie).toContain("stellarr_locale=en");
+    // The one place the choice is kept, which the next load's pre-paint script reads.
     expect(JSON.parse(window.localStorage.getItem("stellarr_language_settings") ?? "{}"))
       .toMatchObject({ locale: "en" });
   });
@@ -79,7 +78,7 @@ describe("LanguageProvider", () => {
     );
 
     await waitFor(() => expect(screen.getByLabelText("locale")).toHaveTextContent("en"));
-    expect(document.cookie).toContain("stellarr_locale=en");
+    expect(document.documentElement).toHaveAttribute("lang", "en");
     expect(screen.getByLabelText("auto")).toHaveTextContent("true");
 
     await user.click(screen.getByRole("button", { name: "Target Polish" }));

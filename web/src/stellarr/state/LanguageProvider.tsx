@@ -20,7 +20,7 @@ import {
   type MessageKey,
   type MessageValues,
 } from "@/i18n";
-import { documentLocale, LANGUAGE_SETTINGS_KEY, LOCALE_COOKIE } from "@/i18n/defaultLocale";
+import { documentLocale, LANGUAGE_SETTINGS_KEY } from "@/i18n/defaultLocale";
 
 export type { InterfaceLocale, LanguageSettings, TranslationTargetLanguage } from "@/i18n";
 
@@ -38,7 +38,6 @@ export interface LanguageValue extends LanguageSettings {
   t: (key: MessageKey, values?: MessageValues) => string;
 }
 
-const ONE_YEAR_SECONDS = 365 * 24 * 60 * 60;
 
 const DEFAULTS = TRANSLATION_DEFAULTS;
 
@@ -65,7 +64,8 @@ function readStored(fallbackLocale: InterfaceLocale): LanguageSettings {
  * Stores the device's language settings. The locale goes in only when the
  * person picked one, now or before: what the provider shows when nobody chose
  * is the instance default, and storing it would pin the person to that default
- * after the operator changes it.
+ * after the operator changes it. The document's pre-paint script reads the
+ * same entry (`i18n/localeScript.ts`), so the next load starts in the choice.
  */
 function persist(settings: LanguageSettings, localeChosen: boolean): void {
   try {
@@ -91,10 +91,6 @@ function readStoredLocale(): InterfaceLocale | undefined {
   } catch {
     return undefined;
   }
-}
-
-function rememberLocale(locale: InterfaceLocale): void {
-  document.cookie = `${LOCALE_COOKIE}=${locale}; path=/; max-age=${ONE_YEAR_SECONDS}; SameSite=Lax`;
 }
 
 function applyPatch(current: LanguageSettings, patch: Partial<LanguageSettings>): LanguageSettings {
@@ -134,17 +130,20 @@ export function LanguageProvider({
   initialLocale,
 }: {
   children: ReactNode;
-  /** The server's choice for this request. Without one, the page's own language. */
+  /**
+   * The language to start in. Without one, the page's own: what the
+   * pre-paint script put on `<html lang>`.
+   */
   initialLocale?: InterfaceLocale;
 }) {
   // Read once: the provider itself rewrites `<html lang>` when the locale
   // changes, and that must not look like a new starting point.
   const [pageLocale] = useState(documentLocale);
   const startLocale = initialLocale ?? pageLocale;
-  // The locale from the cookie is the same on the server and in the first
-  // client render. Translation preferences are kept in this browser (the
-  // account's copy arrives later, through ClientSettingsSync), so they
-  // are read after hydration.
+  // The first render speaks the page's language, which the pre-paint script
+  // already chose from the same storage. Translation preferences are kept in
+  // this browser (the account's copy arrives later, through
+  // ClientSettingsSync), so they are read after the first frame.
   const [settings, setSettings] = useState<LanguageSettings>({
     ...DEFAULTS,
     locale: startLocale,
@@ -160,9 +159,7 @@ export function LanguageProvider({
 
   useEffect(() => {
     const frame = requestAnimationFrame(() => {
-      const stored = readStored(startLocale);
-      commit(stored);
-      if (stored.locale !== startLocale) rememberLocale(stored.locale);
+      commit(readStored(startLocale));
     });
     return () => cancelAnimationFrame(frame);
   }, [startLocale, commit]);
@@ -178,7 +175,6 @@ export function LanguageProvider({
       const next = applyPatch(current, patch);
       commit(next);
       persist(next, patch.locale !== undefined);
-      if (next.locale !== current.locale) rememberLocale(next.locale);
     },
     [commit],
   );

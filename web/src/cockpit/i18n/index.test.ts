@@ -6,7 +6,6 @@ import { pl } from "./pl";
 
 afterEach(() => {
   setLocale("en");
-  document.cookie = "stellarr_locale=; path=/; max-age=0";
   localStorage.clear();
   vi.restoreAllMocks();
 });
@@ -31,9 +30,9 @@ describe("detectLocale", () => {
     expect(detectLocale()).toBe("pl");
   });
 
-  it("follows neither the browser's languages nor the web client's cookie", () => {
+  it("follows neither the browser's languages nor the web client's language", () => {
     vi.spyOn(navigator, "languages", "get").mockReturnValue(["pl-PL"]);
-    document.cookie = "stellarr_locale=pl; path=/";
+    localStorage.setItem("stellarr_language_settings", JSON.stringify({ locale: "pl" }));
 
     expect(detectLocale()).toBe("en");
   });
