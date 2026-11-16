@@ -36,6 +36,11 @@ services:
       STELLARR_PUBLIC_URL: ${STELLARR_PUBLIC_URL:-}
       PUBLIC_IP: ${PUBLIC_IP:-}
       PUBLIC_HTTPS_PORT: ${STELLARR_HTTPS_PORT:-8443}
+      # The reverse proxies in front of the container, as the container sees
+      # them. The API takes each person's address from the X-Forwarded-For a
+      # listed proxy sends; with none listed, everyone behind a proxy has its
+      # address.
+      Operations__TrustedProxies: ${STELLARR_TRUSTED_PROXIES:-}
       Rtc__TurnPort: ${STELLARR_TURN_PORT:-3478}
       Rtc__TurnsPort: ${STELLARR_TURNS_PORT:-5349}
       Rtc__TurnTcpEnabled: ${STELLARR_TURN_TCP_ENABLED:-false}
