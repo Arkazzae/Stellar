@@ -161,9 +161,20 @@ ENV STELLARR_DATA_ROOT=/data/stellarr
 EXPOSE 80 443 3478/tcp 3478/udp 5349/tcp 5349/udp 49000/udp 49160-49200/udp
 VOLUME ["/data/stellarr"]
 
-# Healthy means both the API and the web client answer: either can fail on its own.
+# Healthy means every service answers, as each can fail on its own:
+# - nginx, and the API with its database: /health goes through nginx to the
+#   API, which answers only once it reaches the database. The apps are files
+#   nginx serves from the image, so fetching a page would prove no more.
+# - the media server: its control API on loopback answers /v1/health from the
+#   task that runs the media plane.
+# - coturn: a STUN binding request on 3478/udp, which no setting closes. The
+#   client waits forever for an answer that does not come, hence the timeout.
+# Each probe has a limit of its own, and together they stay within --timeout.
 HEALTHCHECK --interval=30s --timeout=5s --start-period=60s --retries=5 \
-  CMD curl -kfsS -o /dev/null https://127.0.0.1/health && curl -kfsS -o /dev/null https://127.0.0.1/login || exit 1
+  CMD curl -kfsS -o /dev/null --max-time 2 https://127.0.0.1/health \
+    && curl -fsS -o /dev/null --max-time 1 http://127.0.0.1:5200/v1/health \
+    && timeout 1 turnutils_stunclient 127.0.0.1 > /dev/null \
+    || exit 1
 
 ARG VERSION=dev
 ARG REVISION=unknown
