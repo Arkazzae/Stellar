@@ -1,6 +1,6 @@
 # @stellarr/ui
 
-Components and helpers shared by the web client (`web/`) and Cockpit (`cockpit/`). The package is private and holds:
+Components and helpers shared by the web client (`web/`) and Cockpit (`web/src/cockpit/`). The package is private and holds:
 
 - `@stellarr/ui`: the components below and the `cx` class-name helper.
 - `@stellarr/ui/styles.css`: the components' stylesheet.
@@ -72,7 +72,7 @@ The `data-*` attributes a component publishes are part of its public surface, `d
 
 All look comes from custom properties, in two tiers. The stylesheet declares none of them.
 
-**System tokens** are required. The app defines every one of them, usually as `var()` of its own palette, so they follow its light and dark schemes. They have no default here. Cockpit's mapping is in [`cockpit/src/index.css`](../../cockpit/src/index.css) and the web client's in [`web/src/styles/ui-tokens.css`](../../web/src/styles/ui-tokens.css).
+**System tokens** are required. The app defines every one of them, usually as `var()` of its own palette, so they follow its light and dark schemes. They have no default here. Cockpit's mapping is in [`web/src/cockpit/index.css`](../../web/src/cockpit/index.css) and the web client's in [`web/src/styles/ui-tokens.css`](../../web/src/styles/ui-tokens.css).
 
 | Token | Used for |
 | --- | --- |
@@ -100,7 +100,7 @@ All look comes from custom properties, in two tiers. The stylesheet declares non
 
 `--ui-unit` is a length. The web client sets `1px`. Cockpit sets `calc(1rem / 16)`, because it scales its root font size with the window on purpose, and every part scales with it. The one length the package keeps in `rem` is the breakpoint of a media query, which cannot read a custom property.
 
-**Component tokens** are optional. A part reads them as `--ui-<component>-<part>-<property>`, with `sm` for the small size, `on` for a checked switch or segment, and `hover` and `pressed` for those states of a button. Each is read with a fallback, which is the web client's look, so an app sets a token only where its own look differs. Cockpit is the one app that deviates, and sets what it needs in `cockpit/src/index.css`.
+**Component tokens** are optional. A part reads them as `--ui-<component>-<part>-<property>`, with `sm` for the small size, `on` for a checked switch or segment, and `hover` and `pressed` for those states of a button. Each is read with a fallback, which is the web client's look, so an app sets a token only where its own look differs. Cockpit is the one app that deviates, and sets what it needs in `web/src/cockpit/index.css`.
 
 The tables show each fallback. A fallback that names another token follows it, so an app that sets the first changes the second too.
 

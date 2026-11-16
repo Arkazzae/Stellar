@@ -32,6 +32,6 @@ Stellarr is a self-hosted text, voice, and video chat for small groups, packaged
 
 ## Component guides
 
-- [Stellarr Cockpit](../cockpit/README.md): operator panel development, locale resolution, and build checks.
+- [Stellarr Cockpit](../web/src/cockpit/README.md): operator panel development, locale resolution, and build checks.
 - [Stellarr Media crate](../media/README.md): building and testing the `stellarr-media` binary and the [Chromium smoke suite](../media/smoke/README.md).
 - [Branding](../branding/README.md): logo, mascot, color palette, typography, and trademark policy.

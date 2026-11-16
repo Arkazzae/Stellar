@@ -12,26 +12,25 @@
 # stage runs per target platform because the standalone server bundles native
 # image-processing binaries.
 
-# The web client is a workspace of one npm project with Cockpit and the shared
-# packages/: the root package-lock.json covers all of them. The stage copies
-# every workspace manifest, because npm ci checks the lockfile against all of
-# them, and installs the web client's workspace, which links Cockpit and the
-# shared package it builds from. The manifests come before the sources, so
-# that editing a source file keeps the install layer cached. With the
-# dependencies hoisted to /src/node_modules, Next.js traces from /src and the
-# standalone output nests the app as web/server.js.
+# web/ holds both apps, the web client and Cockpit (web/src/cockpit/). It is a
+# workspace of one npm project with the shared packages/: the root
+# package-lock.json covers all of them. The stage copies every workspace
+# manifest, because npm ci checks the lockfile against all of them, but
+# installs only web/, which links the shared package it depends on. The
+# manifests come before the sources, so that editing a source file keeps the
+# install layer cached. With the dependencies hoisted to /src/node_modules,
+# Next.js traces from /src and the standalone output nests the app as
+# web/server.js.
 FROM node:26-bookworm-slim AS web-build
 WORKDIR /src
 COPY package.json package-lock.json ./
 COPY web/package.json web/
-COPY cockpit/package.json cockpit/
 COPY packages/stellarr-ui/package.json packages/stellarr-ui/
 RUN npm ci --workspace stellarr-web
 COPY packages/ packages/
 # The prebuild hook copies the browser's prebuilt binaries from artifacts/ into
 # public/ and fails the build on any that differ from artifacts/manifest.json.
 COPY artifacts/ artifacts/
-COPY cockpit/ cockpit/
 COPY web/ web/
 WORKDIR /src/web
 ARG NEXT_PUBLIC_GIPHY_API_KEY

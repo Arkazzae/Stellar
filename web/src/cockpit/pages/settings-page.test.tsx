@@ -1,0 +1,755 @@
+import { render, screen, within } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
+import { beforeEach, describe, expect, it, vi } from "vitest";
+
+import { getLocale, setLocale } from "../i18n";
+
+import { CockpitApiError, cockpitApi, type CockpitSettings } from "../lib/api";
+import { SettingsPage } from "./settings-page";
+import { CockpitContext, type CockpitContextValue } from "../state/cockpit-context";
+import { LocaleProvider } from "../state/locale-provider";
+import { choose } from "../test/dropdown";
+import { selectPolish } from "../test/locale";
+import { secret, secrets } from "../test/secrets";
+import { cockpitValue } from "../test/cockpit-fixtures";
+import type * as ApiModule from "../lib/api";
+
+selectPolish();
+
+vi.mock("../lib/api", async (importOriginal) => {
+  const original = await importOriginal<typeof ApiModule>();
+  return {
+    ...original,
+    cockpitApi: {
+      ...original.cockpitApi,
+      settings: vi.fn(),
+      updateSettings: vi.fn(),
+      sendTestMail: vi.fn(),
+      secrets: vi.fn(),
+      setSecret: vi.fn(),
+    },
+  };
+});
+
+const settingsMock = vi.mocked(cockpitApi.settings);
+const updateMock = vi.mocked(cockpitApi.updateSettings);
+const testMailMock = vi.mocked(cockpitApi.sendTestMail);
+const secretsMock = vi.mocked(cockpitApi.secrets);
+const setSecretMock = vi.mocked(cockpitApi.setSecret);
+
+const stored: CockpitSettings = {
+  instanceName: "Domek",
+  publicUrl: "https://domek.example.net",
+  timeZone: "Europe/Warsaw",
+  mailingEnabled: true,
+  mailProvider: "smtp",
+  mailFromAddress: "stellarr@example.net",
+  resendApiKeyConfigured: true,
+  resendEnabled: false,
+  smtpHost: "smtp.example.net",
+  smtpPort: 587,
+  smtpSecurity: "starttls",
+  smtpUsername: "mailer",
+  smtpPasswordConfigured: true,
+  mailReady: true,
+  giphyEnabled: false,
+  giphyKeyConfigured: false,
+  inviteMailEnabled: true,
+  recoveryMailEnabled: true,
+  alertMailEnabled: false,
+  backupRetentionDays: 14,
+  logRetentionDays: 30,
+  orphanObjectRetentionDays: 7,
+  automaticCleanupEnabled: true,
+  updatedAt: "2025-03-01T10:00:00Z",
+  mfaRequirement: "optional",
+  trustedDeviceDays: 14,
+  authChallengeMinutes: 5,
+  emailCodeMinutes: 8,
+  emailCodeCooldownSeconds: 45,
+  emailCodeMaxAttempts: 5,
+  emailCodeSendsPerHour: 10,
+  cliRecoveryMinutes: 10,
+};
+
+function deferred<T>() {
+  let resolve!: (value: T) => void;
+  const promise = new Promise<T>((res) => {
+    resolve = res;
+  });
+  return { promise, resolve };
+}
+
+async function renderLoaded(settings: CockpitSettings = stored, context: CockpitContextValue = cockpitValue()) {
+  settingsMock.mockResolvedValue(settings);
+  render(
+    <CockpitContext.Provider value={context}>
+      <LocaleProvider>
+        <SettingsPage />
+      </LocaleProvider>
+    </CockpitContext.Provider>,
+  );
+  await screen.findByLabelText("Nazwa instancji");
+  return context;
+}
+
+const input = (label: string) => screen.getByLabelText(label) as HTMLInputElement;
+const toggle = (name: string) => screen.getByRole("switch", { name }) as HTMLButtonElement;
+const button = (name: string) => screen.getByRole("button", { name }) as HTMLButtonElement;
+
+async function replaceText(label: string, text: string) {
+  await userEvent.clear(input(label));
+  await userEvent.type(input(label), text);
+}
+
+beforeEach(() => {
+  settingsMock.mockReset();
+  updateMock.mockReset();
+  testMailMock.mockReset();
+  secretsMock.mockReset();
+  secretsMock.mockResolvedValue(secrets({ "mail.smtp-password": "environment" }));
+  setSecretMock.mockReset();
+});
+
+describe("SettingsPage loading", () => {
+  it("waits for the settings with the save button disabled", () => {
+    settingsMock.mockReturnValue(new Promise(() => {}));
+    render(
+      <CockpitContext.Provider value={cockpitValue()}>
+        <LocaleProvider>
+        <SettingsPage />
+      </LocaleProvider>
+      </CockpitContext.Provider>,
+    );
+
+    expect(screen.getByRole("status").textContent).toContain("Wczytywanie ustawień");
+    expect(button("Zapisz ustawienia").disabled).toBe(true);
+    expect(screen.queryByLabelText("Nazwa instancji")).toBeNull();
+  });
+
+  it("shows why the settings could not be read", async () => {
+    settingsMock.mockRejectedValue(new Error("Backend odpowiedział kodem 500."));
+    render(
+      <CockpitContext.Provider value={cockpitValue()}>
+        <LocaleProvider>
+        <SettingsPage />
+      </LocaleProvider>
+      </CockpitContext.Provider>,
+    );
+
+    expect(await screen.findByText("Nie udało się pobrać ustawień")).toBeTruthy();
+    expect(screen.getByText("Backend odpowiedział kodem 500.")).toBeTruthy();
+    expect(button("Zapisz ustawienia").disabled).toBe(true);
+    expect(screen.queryByRole("status")).toBeNull();
+  });
+
+  it("reads the settings once and shows them in the form", async () => {
+    await renderLoaded();
+
+    expect(settingsMock).toHaveBeenCalledOnce();
+    expect(input("Nazwa instancji").value).toBe("Domek");
+    expect(input("Publiczny adres").value).toBe("https://domek.example.net");
+    expect(input("Strefa czasowa serwera").value).toBe("Europe/Warsaw");
+    expect(input("Backupy, dni").value).toBe("14");
+    expect(input("Logi, dni").value).toBe("30");
+    expect(input("Obiekty, dni").value).toBe("7");
+    expect(input("Adres nadawcy").value).toBe("stellarr@example.net");
+    expect(toggle("Automatyczne sprzątanie").getAttribute("aria-checked")).toBe("true");
+    expect(toggle("Włącz mailing").getAttribute("aria-checked")).toBe("true");
+    expect(toggle("Zaproszenia").getAttribute("aria-checked")).toBe("true");
+    expect(toggle("Alerty operacyjne").getAttribute("aria-checked")).toBe("false");
+    expect(button("Zapisz ustawienia").disabled).toBe(false);
+  });
+
+  it("tells whether the SMTP password is set and which transport is active", async () => {
+    secretsMock.mockResolvedValue(secrets());
+    await renderLoaded({ ...stored, smtpPasswordConfigured: false });
+
+    expect(await screen.findByText("Nie ustawiony")).toBeTruthy();
+    expect(screen.getByText("STELLARR_SMTP_PASSWORD")).toBeTruthy();
+    expect(screen.getByText("SMTP · gotowy")).toBeTruthy();
+    expect(input("Serwer SMTP").value).toBe("smtp.example.net");
+    expect(input("Login").value).toBe("mailer");
+  });
+
+  it("says when Resend replaces SMTP", async () => {
+    await renderLoaded({ ...stored, mailProvider: "resend", resendEnabled: true, mailReady: false });
+
+    expect(screen.getByText("Resend · niegotowy")).toBeTruthy();
+    expect(screen.getByText(/Resend, włączony w Integracjach/)).toBeTruthy();
+  });
+});
+
+describe("SettingsPage saving", () => {
+  it("sends the edited settings, shows the stored result and refreshes the shell", async () => {
+    const context = await renderLoaded();
+    const reply = deferred<CockpitSettings>();
+    updateMock.mockReturnValue(reply.promise);
+    await replaceText("Nazwa instancji", "Nowy dom");
+    await replaceText("Backupy, dni", "30");
+    await userEvent.click(toggle("Alerty operacyjne"));
+
+    await userEvent.click(button("Zapisz ustawienia"));
+
+    expect(updateMock).toHaveBeenCalledExactlyOnceWith({
+      ...stored,
+      instanceName: "Nowy dom",
+      backupRetentionDays: 30,
+      alertMailEnabled: true,
+    });
+    expect(button("Zapisywanie").disabled).toBe(true);
+    expect(context.reload).not.toHaveBeenCalled();
+
+    reply.resolve({ ...stored, instanceName: "Nowy dom (zapisano)", backupRetentionDays: 30, alertMailEnabled: true });
+
+    expect(await screen.findByText("Ustawienia zapisane")).toBeTruthy();
+    expect(input("Nazwa instancji").value).toBe("Nowy dom (zapisano)");
+    expect(context.reload).toHaveBeenCalledOnce();
+    expect(button("Zapisz ustawienia").disabled).toBe(false);
+    expect(settingsMock).toHaveBeenCalledOnce();
+  });
+
+  it("builds the next save on the stored result, not on the first read", async () => {
+    await renderLoaded();
+    updateMock.mockResolvedValue({ ...stored, publicUrl: "https://domek.example.net/" });
+    await userEvent.click(button("Zapisz ustawienia"));
+    await screen.findByText("Ustawienia zapisane");
+
+    await replaceText("Strefa czasowa serwera", "UTC");
+    await userEvent.click(button("Zapisz ustawienia"));
+
+    expect(updateMock).toHaveBeenLastCalledWith({
+      ...stored,
+      publicUrl: "https://domek.example.net/",
+      timeZone: "UTC",
+    });
+  });
+
+  it("shows the public address read-only, as the environment sets it", async () => {
+    await renderLoaded();
+
+    const field = input("Publiczny adres");
+    expect(field.value).toBe("https://domek.example.net");
+    expect(field.readOnly).toBe(true);
+    expect(screen.getByText(/Wynika ze STELLARR_DOMAIN/)).toBeTruthy();
+  });
+
+  it("clears the saved notice as soon as something is edited again", async () => {
+    await renderLoaded();
+    updateMock.mockResolvedValue(stored);
+    await userEvent.click(button("Zapisz ustawienia"));
+    await screen.findByText("Ustawienia zapisane");
+
+    await userEvent.type(input("Nazwa instancji"), "!");
+
+    expect(screen.queryByText("Ustawienia zapisane")).toBeNull();
+  });
+
+  it("shows the server's messages under the fields they belong to", async () => {
+    const context = await renderLoaded();
+    updateMock.mockRejectedValue(
+      new CockpitApiError(400, "Ustawienia są niepoprawne.", {
+        instanceName: ["Nazwa jest wymagana.", "Druga uwaga."],
+        timeZone: ["Nieznana strefa."],
+        mailFromAddress: ["Adres nadawcy jest niepoprawny."],
+        backupRetentionDays: ["Wartość spoza zakresu."],
+        logRetentionDays: ["Za mało dni."],
+        orphanObjectRetentionDays: ["Za dużo dni."],
+      }),
+    );
+
+    await userEvent.click(button("Zapisz ustawienia"));
+
+    expect(await screen.findByText("Ustawienia nie zostały zapisane")).toBeTruthy();
+    expect(screen.getByText("Ustawienia są niepoprawne.")).toBeTruthy();
+    expect(screen.getByText("Nazwa jest wymagana.")).toBeTruthy();
+    expect(screen.queryByText("Druga uwaga.")).toBeNull();
+    for (const [label, message] of [
+      ["Nazwa instancji", "Nazwa jest wymagana."],
+      ["Strefa czasowa serwera", "Nieznana strefa."],
+      ["Adres nadawcy", "Adres nadawcy jest niepoprawny."],
+      ["Backupy, dni", "Wartość spoza zakresu."],
+      ["Logi, dni", "Za mało dni."],
+      ["Obiekty, dni", "Za dużo dni."],
+    ] as const) {
+      const field = input(label);
+      expect(field.getAttribute("aria-invalid")).toBe("true");
+      expect(field.parentElement?.textContent).toContain(message);
+    }
+    expect(screen.queryByText("Ustawienia zapisane")).toBeNull();
+    expect(context.reload).not.toHaveBeenCalled();
+  });
+
+  it("marks the encryption field as refused and points it at the server's message", async () => {
+    const user = userEvent.setup();
+    await renderLoaded();
+    const field = screen.getByRole("combobox", { name: "Szyfrowanie" });
+    expect(field.getAttribute("aria-invalid")).toBeNull();
+    updateMock.mockRejectedValue(
+      new CockpitApiError(400, "Ustawienia są niepoprawne.", { smtpSecurity: ["Nieznany tryb szyfrowania."] }),
+    );
+
+    await userEvent.click(button("Zapisz ustawienia"));
+
+    const message = await screen.findByText("Nieznany tryb szyfrowania.");
+    expect(field.getAttribute("aria-invalid")).toBe("true");
+    expect(field.getAttribute("aria-describedby")).toBe(message.id);
+
+    await choose(user, field, /^TLS od początku/);
+
+    expect(screen.queryByText("Nieznany tryb szyfrowania.")).toBeNull();
+    expect(field.getAttribute("aria-invalid")).toBeNull();
+    expect(field.getAttribute("aria-describedby")).toBeNull();
+  });
+
+  it("keeps the edits after a refusal and drops the messages once the next edit is made", async () => {
+    await renderLoaded();
+    updateMock.mockRejectedValue(
+      new CockpitApiError(400, "Ustawienia są niepoprawne.", { instanceName: ["Nazwa jest wymagana."] }),
+    );
+    await replaceText("Nazwa instancji", "x");
+    await userEvent.click(button("Zapisz ustawienia"));
+    await screen.findByText("Nazwa jest wymagana.");
+    expect(input("Nazwa instancji").value).toBe("x");
+
+    await userEvent.type(input("Nazwa instancji"), "y");
+
+    expect(screen.queryByText("Nazwa jest wymagana.")).toBeNull();
+    expect(screen.queryByText("Ustawienia nie zostały zapisane")).toBeNull();
+    expect(input("Nazwa instancji").getAttribute("aria-invalid")).toBe("false");
+    expect(input("Nazwa instancji").value).toBe("xy");
+  });
+
+  it("explains a save failure that carries no message", async () => {
+    await renderLoaded();
+    updateMock.mockRejectedValue("boom");
+
+    await userEvent.click(button("Zapisz ustawienia"));
+
+    expect(await screen.findByText("Nie udało się zapisać ustawień.")).toBeTruthy();
+  });
+});
+
+describe("SettingsPage mail", () => {
+  it("turns the sender and the mail toggles off together with mailing", async () => {
+    await renderLoaded();
+    expect(input("Adres nadawcy").disabled).toBe(false);
+
+    await userEvent.click(toggle("Włącz mailing"));
+
+    expect(input("Adres nadawcy").disabled).toBe(true);
+    for (const name of ["Zaproszenia", "Odzyskiwanie konta", "Alerty operacyjne"]) {
+      expect(toggle(name).disabled).toBe(true);
+    }
+    expect(input("Odbiorca testu").disabled).toBe(true);
+    expect(button("Wyślij test").disabled).toBe(true);
+    expect(toggle("Włącz mailing").disabled).toBe(false);
+    expect(toggle("Automatyczne sprzątanie").disabled).toBe(false);
+  });
+
+  it("starts with mailing off and nothing enabled for mail", async () => {
+    await renderLoaded({ ...stored, mailingEnabled: false });
+
+    expect(input("Adres nadawcy").disabled).toBe(true);
+    expect(toggle("Zaproszenia").disabled).toBe(true);
+    expect(button("Wyślij test").disabled).toBe(true);
+  });
+
+  it("sends the test mail and reports the transport and the message id", async () => {
+    await renderLoaded();
+    expect(input("Odbiorca testu").value).toBe("");
+    await replaceText("Odbiorca testu", "ja@example.net");
+    const reply = deferred<{ id: string; provider: "smtp" | "resend" }>();
+    testMailMock.mockReturnValue(reply.promise);
+
+    await userEvent.click(button("Wyślij test"));
+
+    expect(testMailMock).toHaveBeenCalledExactlyOnceWith("ja@example.net");
+    expect(button("Wysyłanie").disabled).toBe(true);
+    expect(input("Odbiorca testu").disabled).toBe(true);
+
+    reply.resolve({ id: "msg-42", provider: "smtp" });
+
+    expect((await screen.findByRole("status")).textContent).toBe("SMTP przyjął wiadomość. ID: msg-42");
+    expect(button("Wyślij test").disabled).toBe(false);
+    expect(updateMock).not.toHaveBeenCalled();
+  });
+
+  it("trims the recipient and replaces an earlier result", async () => {
+    await renderLoaded();
+    testMailMock
+      .mockResolvedValueOnce({ id: "msg-1", provider: "smtp" })
+      .mockResolvedValueOnce({ id: "msg-2", provider: "resend" });
+    await replaceText("Odbiorca testu", "ty@example.net");
+    await userEvent.click(button("Wyślij test"));
+    await screen.findByText("SMTP przyjął wiadomość. ID: msg-1");
+
+    await replaceText("Odbiorca testu", "  ja@example.net ");
+    await userEvent.click(button("Wyślij test"));
+
+    expect(await screen.findByText("Resend przyjął wiadomość. ID: msg-2")).toBeTruthy();
+    expect(screen.queryByText("SMTP przyjął wiadomość. ID: msg-1")).toBeNull();
+    expect(testMailMock).toHaveBeenLastCalledWith("ja@example.net");
+  });
+
+  it("shows why the test mail was not sent", async () => {
+    await renderLoaded();
+    testMailMock.mockRejectedValue(new Error("Resend odrzucił klucz."));
+    await replaceText("Odbiorca testu", "ja@example.net");
+
+    await userEvent.click(button("Wyślij test"));
+
+    expect((await screen.findByRole("alert")).textContent).toBe("Resend odrzucił klucz.");
+    expect(screen.queryByRole("status")).toBeNull();
+  });
+
+  it("explains a test mail failure that carries no message", async () => {
+    await renderLoaded();
+    testMailMock.mockRejectedValue("boom");
+    await replaceText("Odbiorca testu", "ja@example.net");
+
+    await userEvent.click(button("Wyślij test"));
+
+    expect(await screen.findByText("Nie udało się wysłać wiadomości testowej.")).toBeTruthy();
+  });
+
+  it("cannot send a test while the transport is not ready", async () => {
+    await renderLoaded({ ...stored, mailReady: false });
+    await replaceText("Odbiorca testu", "ja@example.net");
+    expect(button("Wyślij test").disabled).toBe(true);
+  });
+
+  it("sends the edited SMTP server with the rest of the settings", async () => {
+    const user = userEvent.setup();
+    await renderLoaded();
+    updateMock.mockResolvedValue(stored);
+
+    await replaceText("Serwer SMTP", "mail.example.org");
+    await replaceText("Port", "465");
+    await choose(user, screen.getByRole("combobox", { name: "Szyfrowanie" }), /^TLS od początku/);
+    await userEvent.click(button("Zapisz ustawienia"));
+
+    expect(updateMock).toHaveBeenLastCalledWith({
+      ...stored,
+      smtpHost: "mail.example.org",
+      smtpPort: 465,
+      smtpSecurity: "tls",
+    });
+  });
+
+  it("cannot send a test to an empty recipient", async () => {
+    await renderLoaded();
+
+    await userEvent.clear(input("Odbiorca testu"));
+    expect(button("Wyślij test").disabled).toBe(true);
+
+    await userEvent.type(input("Odbiorca testu"), "   ");
+    expect(button("Wyślij test").disabled).toBe(true);
+  });
+});
+
+describe("SettingsPage panel language", () => {
+  it("switches the panel to English at once and remembers it in this browser", async () => {
+    const user = userEvent.setup();
+    await renderLoaded();
+
+    await choose(user, screen.getByRole("combobox", { name: "Język" }), "English");
+
+    expect(getLocale()).toBe("en");
+    expect(localStorage.getItem("stellarr.cockpit.locale")).toBe("en");
+    expect(await screen.findByLabelText("Instance name")).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Save settings" })).toBeTruthy();
+    // The page is drawn afresh in the new language, so it reads the settings again.
+    expect(settingsMock).toHaveBeenCalledTimes(2);
+
+    setLocale("pl");
+    localStorage.removeItem("stellarr.cockpit.locale");
+  });
+});
+
+describe("SettingsPage SMTP password", () => {
+  it("saves the password on Enter without saving the rest of the settings", async () => {
+    const user = userEvent.setup();
+    await renderLoaded();
+    await screen.findByText("Ze środowiska");
+    setSecretMock.mockResolvedValue(secret("mail.smtp-password", "panel"));
+    secretsMock.mockResolvedValue(secrets({ "mail.smtp-password": "panel" }));
+
+    await user.type(screen.getByLabelText("Hasło SMTP"), "nowe hasło{Enter}");
+
+    expect(setSecretMock).toHaveBeenCalledWith("mail.smtp-password", "nowe hasło");
+    expect(updateMock).not.toHaveBeenCalled();
+    expect(await screen.findByText("Ustawiony tutaj")).toBeTruthy();
+    // Whether mail is ready depends on the password, so the settings are read again.
+    expect(settingsMock).toHaveBeenCalledTimes(2);
+  });
+});
+
+describe("SettingsPage account security", () => {
+  const radio = (name: string) => screen.getByRole("radio", { name: new RegExp(`^${name}`) });
+  const isChecked = (name: string) => radio(name).getAttribute("aria-checked") === "true";
+  const saveSecurity = () => button("Zapisz ustawienia bezpieczeństwa");
+  const warning = () => screen.queryByText("Cockpit poprosi o drugi krok");
+
+  it("shows the stored requirement and limits with nothing to save", async () => {
+    await renderLoaded({
+      ...stored,
+      mfaRequirement: "cockpit",
+      trustedDeviceDays: 30,
+      authChallengeMinutes: 7,
+      emailCodeMinutes: 12,
+      emailCodeCooldownSeconds: 0,
+      emailCodeMaxAttempts: 3,
+      emailCodeSendsPerHour: 20,
+      cliRecoveryMinutes: 15,
+    });
+
+    expect(isChecked("Tylko Cockpit")).toBe(true);
+    for (const name of ["Opcjonalny", "Administratorzy", "Wszyscy"]) expect(isChecked(name)).toBe(false);
+    expect(input("Zaufane urządzenie, dni").value).toBe("30");
+    expect(input("Czas na drugi krok, minuty").value).toBe("7");
+    expect(input("Ważność kodu z maila, minuty").value).toBe("12");
+    expect(input("Odstęp między kodami z maila, sekundy").value).toBe("0");
+    expect(input("Próby na jeden kod z maila").value).toBe("3");
+    expect(input("Kody z maila na godzinę").value).toBe("20");
+    expect(input("Kod odzyskiwania z CLI, minuty").value).toBe("15");
+    // The stored requirement left as it is changes nothing, so it does not warn.
+    expect(warning()).toBeNull();
+    expect(saveSecurity().disabled).toBe(true);
+  });
+
+  it("warns when one requirement other than optional replaces another", async () => {
+    await renderLoaded({ ...stored, mfaRequirement: "admins" });
+    expect(warning()).toBeNull();
+
+    await userEvent.click(radio("Wszyscy"));
+    expect(warning()).toBeTruthy();
+
+    await userEvent.click(radio("Administratorzy"));
+    expect(warning()).toBeNull();
+
+    await userEvent.click(radio("Opcjonalny"));
+    expect(warning()).toBeNull();
+    expect(saveSecurity().disabled).toBe(false);
+  });
+
+  it("describes each requirement in one line", async () => {
+    await renderLoaded();
+
+    expect(isChecked("Opcjonalny")).toBe(true);
+    expect(radio("Administratorzy").textContent).toContain("uprawnieniem „Zarządzanie serwerem”");
+    expect(radio("Wszyscy").textContent).toContain("Wymagany od każdego konta.");
+    expect(radio("Tylko Cockpit").textContent).toContain("Logowanie zostaje bez zmian.");
+  });
+
+  it("warns while a requirement other than optional is picked", async () => {
+    await renderLoaded();
+    expect(warning()).toBeNull();
+
+    await userEvent.click(radio("Administratorzy"));
+    expect(warning()).toBeTruthy();
+    expect(screen.getByText(/Ustawienia, Logowanie i bezpieczeństwo/).textContent).toContain(
+      "można stracić dostęp do Cockpitu",
+    );
+
+    await userEvent.click(radio("Wszyscy"));
+    expect(warning()).toBeTruthy();
+    await userEvent.click(radio("Tylko Cockpit"));
+    expect(warning()).toBeTruthy();
+
+    await userEvent.click(radio("Opcjonalny"));
+    expect(warning()).toBeNull();
+    expect(saveSecurity().disabled).toBe(true);
+  });
+
+  it("limits every field to the range the server accepts", async () => {
+    await renderLoaded();
+
+    for (const [label, min, max] of [
+      ["Zaufane urządzenie, dni", "1", "365"],
+      ["Czas na drugi krok, minuty", "1", "60"],
+      ["Ważność kodu z maila, minuty", "1", "60"],
+      ["Odstęp między kodami z maila, sekundy", "0", "600"],
+      ["Próby na jeden kod z maila", "1", "10"],
+      ["Kody z maila na godzinę", "1", "60"],
+      ["Kod odzyskiwania z CLI, minuty", "1", "60"],
+    ] as const) {
+      expect(input(label).min, label).toBe(min);
+      expect(input(label).max, label).toBe(max);
+      expect(input(label).parentElement?.textContent, label).toContain(`Od ${min} do ${max}.`);
+    }
+
+    await replaceText("Zaufane urządzenie, dni", "366");
+    expect(input("Zaufane urządzenie, dni").getAttribute("aria-invalid")).toBe("true");
+    expect(input("Zaufane urządzenie, dni").parentElement?.textContent).toContain(
+      "Wpisz liczbę całkowitą od 1 do 365.",
+    );
+    expect(saveSecurity().disabled).toBe(true);
+
+    await replaceText("Zaufane urządzenie, dni", "365");
+    expect(input("Zaufane urządzenie, dni").getAttribute("aria-invalid")).toBe("false");
+    expect(saveSecurity().disabled).toBe(false);
+
+    await replaceText("Próby na jeden kod z maila", "11");
+    expect(saveSecurity().disabled).toBe(true);
+    await replaceText("Próby na jeden kod z maila", "10");
+
+    // No wait between email codes is allowed; a zero elsewhere is not.
+    await replaceText("Odstęp między kodami z maila, sekundy", "0");
+    expect(input("Odstęp między kodami z maila, sekundy").getAttribute("aria-invalid")).toBe("false");
+    expect(saveSecurity().disabled).toBe(false);
+    await replaceText("Czas na drugi krok, minuty", "0");
+    expect(input("Czas na drugi krok, minuty").getAttribute("aria-invalid")).toBe("true");
+    expect(saveSecurity().disabled).toBe(true);
+
+    await userEvent.click(saveSecurity());
+    expect(updateMock).not.toHaveBeenCalled();
+  });
+
+  it("saves only the security settings that changed, on the stored rest, without reloading the panel", async () => {
+    const context = await renderLoaded();
+    const reply = deferred<CockpitSettings>();
+    updateMock.mockReturnValue(reply.promise);
+    await replaceText("Nazwa instancji", "Nowy dom");
+    await userEvent.click(radio("Administratorzy"));
+    await replaceText("Zaufane urządzenie, dni", "30");
+    // Changed and set back: not a change.
+    await replaceText("Próby na jeden kod z maila", "3");
+    await replaceText("Próby na jeden kod z maila", "5");
+
+    await userEvent.click(saveSecurity());
+
+    expect(updateMock).toHaveBeenCalledExactlyOnceWith(stored, { mfaRequirement: "admins", trustedDeviceDays: 30 });
+    expect(button("Zapisywanie").disabled).toBe(true);
+    expect(button("Zapisz ustawienia").disabled).toBe(true);
+
+    reply.resolve({ ...stored, mfaRequirement: "admins", trustedDeviceDays: 30 });
+
+    expect((await screen.findByRole("status")).textContent).toBe("Zapisano ustawienia bezpieczeństwa kont.");
+    expect(isChecked("Administratorzy")).toBe(true);
+    expect(input("Zaufane urządzenie, dni").value).toBe("30");
+    // The other card's edit is still an edit, and the saved requirement no longer warns.
+    expect(input("Nazwa instancji").value).toBe("Nowy dom");
+    expect(warning()).toBeNull();
+    expect(saveSecurity().disabled).toBe(true);
+    expect(context.reload).not.toHaveBeenCalled();
+    expect(screen.queryByText("Ustawienia zapisane")).toBeNull();
+
+    updateMock.mockResolvedValue({ ...stored, mfaRequirement: "admins", trustedDeviceDays: 30, instanceName: "Nowy dom" });
+    await userEvent.click(button("Zapisz ustawienia"));
+
+    expect(updateMock).toHaveBeenLastCalledWith({
+      ...stored,
+      mfaRequirement: "admins",
+      trustedDeviceDays: 30,
+      instanceName: "Nowy dom",
+    });
+  });
+
+  it("keeps the security settings out of the page's save and keeps their edits", async () => {
+    await renderLoaded();
+    updateMock.mockResolvedValue({ ...stored, instanceName: "Nowy dom" });
+    await userEvent.click(radio("Wszyscy"));
+    await replaceText("Kody z maila na godzinę", "20");
+    await replaceText("Nazwa instancji", "Nowy dom");
+
+    await userEvent.click(button("Zapisz ustawienia"));
+
+    expect(updateMock).toHaveBeenCalledExactlyOnceWith({ ...stored, instanceName: "Nowy dom" });
+    expect(await screen.findByText("Ustawienia zapisane")).toBeTruthy();
+    expect(isChecked("Wszyscy")).toBe(true);
+    expect(input("Kody z maila na godzinę").value).toBe("20");
+    expect(warning()).toBeTruthy();
+    expect(saveSecurity().disabled).toBe(false);
+  });
+
+  it("saves the card on Enter in one of its fields, not the rest of the page", async () => {
+    await renderLoaded();
+    updateMock.mockResolvedValue({ ...stored, cliRecoveryMinutes: 20 });
+    await replaceText("Nazwa instancji", "Nowy dom");
+    await replaceText("Kod odzyskiwania z CLI, minuty", "20");
+
+    await userEvent.type(input("Kod odzyskiwania z CLI, minuty"), "{Enter}");
+
+    expect(updateMock).toHaveBeenCalledExactlyOnceWith(stored, { cliRecoveryMinutes: 20 });
+    expect(await screen.findByText("Zapisano ustawienia bezpieczeństwa kont.")).toBeTruthy();
+  });
+
+  it("saves the card on Enter in the requirement group, not the rest of the page", async () => {
+    const user = userEvent.setup();
+    await renderLoaded();
+    updateMock.mockResolvedValue({ ...stored, mfaRequirement: "admins" });
+    await replaceText("Nazwa instancji", "Nowy dom");
+    await user.click(radio("Administratorzy"));
+
+    await user.keyboard("{Enter}");
+
+    expect(updateMock).toHaveBeenCalledExactlyOnceWith(stored, { mfaRequirement: "admins" });
+    expect(await screen.findByText("Zapisano ustawienia bezpieczeństwa kont.")).toBeTruthy();
+  });
+
+  it("does not save on Enter in the requirement group while there is nothing to save", async () => {
+    const user = userEvent.setup();
+    await renderLoaded();
+    radio("Opcjonalny").focus();
+
+    await user.keyboard("{Enter}");
+
+    expect(updateMock).not.toHaveBeenCalled();
+  });
+
+  it("moves the requirement with the arrow keys, as a radio group does", async () => {
+    const user = userEvent.setup();
+    await renderLoaded();
+    const group = screen.getByRole("radiogroup", { name: "Drugi krok przy logowaniu" });
+    expect(within(group).getAllByRole("radio")).toHaveLength(4);
+    radio("Opcjonalny").focus();
+
+    await user.keyboard("{ArrowDown}");
+
+    expect(isChecked("Administratorzy")).toBe(true);
+    expect(isChecked("Opcjonalny")).toBe(false);
+    expect(document.activeElement).toBe(radio("Administratorzy"));
+  });
+
+  it("shows the server's messages in the card and keeps the edits", async () => {
+    const context = await renderLoaded();
+    updateMock.mockRejectedValue(
+      new CockpitApiError(400, "Ustawienia są niepoprawne.", {
+        mfaRequirement: ["Nieznany wymóg."],
+        emailCodeMinutes: ["Kod e-mail musi być ważny od 1 do 60 minut.", "Druga uwaga."],
+      }),
+    );
+    await userEvent.click(radio("Wszyscy"));
+    await replaceText("Ważność kodu z maila, minuty", "9");
+
+    await userEvent.click(saveSecurity());
+
+    expect((await screen.findByText("Ustawienia są niepoprawne.")).getAttribute("role")).toBe("alert");
+    expect(screen.getByText("Nieznany wymóg.")).toBeTruthy();
+    const field = input("Ważność kodu z maila, minuty");
+    expect(field.getAttribute("aria-invalid")).toBe("true");
+    expect(field.parentElement?.textContent).toContain("Kod e-mail musi być ważny od 1 do 60 minut.");
+    expect(screen.queryByText("Druga uwaga.")).toBeNull();
+    // The page's own save notices stay for the page's save.
+    expect(screen.queryByText("Ustawienia nie zostały zapisane")).toBeNull();
+    expect(isChecked("Wszyscy")).toBe(true);
+    expect(field.value).toBe("9");
+    expect(context.reload).not.toHaveBeenCalled();
+
+    await userEvent.type(field, "0");
+
+    expect(screen.queryByText("Ustawienia są niepoprawne.")).toBeNull();
+    expect(screen.queryByText("Nieznany wymóg.")).toBeNull();
+  });
+
+  it("explains a security save failure that carries no message", async () => {
+    await renderLoaded();
+    updateMock.mockRejectedValue("boom");
+    await userEvent.click(radio("Administratorzy"));
+
+    await userEvent.click(saveSecurity());
+
+    expect(await screen.findByText("Nie udało się zapisać ustawień.")).toBeTruthy();
+  });
+});

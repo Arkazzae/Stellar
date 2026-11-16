@@ -38,9 +38,9 @@ Setting `STELLARR_LANGUAGE=pl` (or `en`) configures the instance default:
   - `stellarr_locale` cookie, read by the locale script and by Cockpit.
   - `stellarr_language_settings` in `localStorage` (`locale`, `chatTranslationEnabled`, `chatAutoTranslateEnabled`, `chatTranslationTargetLanguage`).
 
-### Cockpit (`cockpit/src/i18n/`)
+### Cockpit (`web/src/cockpit/i18n/`)
 
-- Catalogs live in `cockpit/src/i18n/en.ts` and `cockpit/src/i18n/pl.ts` with matching key sets and `{name}` placeholder interpolation via `t(key, values)`.
+- Catalogs live in `web/src/cockpit/i18n/en.ts` and `web/src/cockpit/i18n/pl.ts` with matching key sets and `{name}` placeholder interpolation via `t(key, values)`.
 
 ### Backend API (`server/Stellarr.Api/Localization/`)
 
@@ -70,13 +70,13 @@ Setting `STELLARR_LANGUAGE=pl` (or `en`) configures the instance default:
    - Add the `Intl` BCP 47 tag to `LOCALE_TAG` in `web/src/lib/format.ts` and verify plural rules (`pluralForm`).
    - If supporting local chat translation for the new language, update `TranslationTargetLanguage` in `web/src/i18n/index.ts`, `primaryPair` in `web/src/lib/chatTranslation/modelStatus.ts`, `artifacts/manifest.json`, `artifacts/NOTICES` and `web/public/bergamot-models/registry.json`. Put the model files under `artifacts/files/bergamot-models/<pair>/` (or add a recipe) and record their sizes and SHA-256 in both JSON files. `artifacts/assemble.mjs` then makes the served copies.
 2. **Cockpit**:
-   - Add `cockpit/src/i18n/<code>.ts` and register the locale in `cockpit/src/i18n/index.ts`.
+   - Add `web/src/cockpit/i18n/<code>.ts` and register the locale in `web/src/cockpit/i18n/index.ts`.
 3. **Backend API**:
    - Add the code to `LanguageOptions.cs`, add `Messages.<code>.cs`, and wire it into `Messages.cs`.
 
 ## Verification
 
-Install dependencies once from the repository root with `npm ci`; `web/` and `cockpit/` are workspaces sharing the root lockfile.
+Install dependencies once from the repository root with `npm ci`; `web/` (the web client and Cockpit) and `packages/` are workspaces sharing the root lockfile.
 
 ```bash
 # Web client
