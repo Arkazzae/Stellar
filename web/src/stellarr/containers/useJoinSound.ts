@@ -1,5 +1,3 @@
-"use client";
-
 import { useCallback, useEffect, useMemo, useState } from "react";
 
 import type { JoinSoundLibrary, JoinSoundServerGroup } from "@/lib/api/types";

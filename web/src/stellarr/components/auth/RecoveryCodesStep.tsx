@@ -1,5 +1,3 @@
-"use client";
-
 import { useState } from "react";
 
 import { AuthFrame, authStyles as styles, type StepFrame } from "@/components/auth/AuthFrame";

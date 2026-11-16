@@ -1,5 +1,3 @@
-"use client";
-
 export interface ScrimProps {
   show: boolean;
   onDismiss: () => void;

@@ -1,5 +1,3 @@
-"use client";
-
 import { useCallback } from "react";
 
 import { ClientDownloadModal } from "@/components/settings/server/ClientDownloadModal";

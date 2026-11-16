@@ -1,5 +1,3 @@
-"use client";
-
 import { useRef, type KeyboardEvent } from "react";
 
 const STEP: Partial<Record<string, number>> = {

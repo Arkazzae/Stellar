@@ -1,5 +1,3 @@
-"use client";
-
 import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from "react";
 
 import { ApiError } from "@/lib/api/errors";

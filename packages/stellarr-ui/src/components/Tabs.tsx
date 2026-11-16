@@ -1,5 +1,3 @@
-"use client";
-
 import { createContext, useContext, useId, type ComponentProps, type KeyboardEvent } from "react";
 
 import { useControllableState } from "../behavior/state";

@@ -1,5 +1,3 @@
-"use client";
-
 import type { Ref } from "react";
 
 import { Icon, type IconName } from "@stellarr/icons";

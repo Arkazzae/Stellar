@@ -1,5 +1,3 @@
-"use client";
-
 import { Switch as UiSwitch } from "@stellarr/ui";
 
 export interface SwitchProps {

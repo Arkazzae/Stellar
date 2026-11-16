@@ -1,5 +1,3 @@
-"use client";
-
 import { useCallback, useMemo, useState } from "react";
 
 import type { ViewerTarget } from "@/components/room/attachments/MediaViewer";

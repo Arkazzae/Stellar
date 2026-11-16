@@ -1,5 +1,3 @@
-"use client";
-
 export interface DragAnnouncerProps {
   /** Referenced by every handle's `aria-describedby`. */
   id: string;

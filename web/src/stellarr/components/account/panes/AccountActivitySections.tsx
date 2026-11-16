@@ -1,5 +1,3 @@
-"use client";
-
 import { Button } from "@stellarr/ui";
 import { useConfirm } from "@/components/primitives/ConfirmDialog";
 import { formatShortDate } from "@/components/settings/paneFormat";

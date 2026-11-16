@@ -1,5 +1,3 @@
-"use client";
-
 import { useCallback, useEffect, type ReactNode } from "react";
 
 import { Scrim } from "@/components/primitives/Scrim";

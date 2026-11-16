@@ -1,5 +1,3 @@
-"use client";
-
 import type { UserMenuActions } from "@/components/roster/UserMenu";
 import {
   useAccount,

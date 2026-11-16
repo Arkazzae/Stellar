@@ -217,7 +217,7 @@ A custom property fails silently, so `npm run tokens:check -w @stellarr/ui` guar
 
 ## Behaviour
 
-`@stellarr/ui/behavior` exports the helpers the components are built from. An overlay an app draws itself (a modal, a popover, a context menu) uses them to share one layer stack with the package's: one Escape closes one layer, a press outside reaches one layer, and the page behind is hidden and locked once, however many layers are open. Like the components, these are for the client: the hooks need `"use client"`.
+`@stellarr/ui/behavior` exports the helpers the components are built from. An overlay an app draws itself (a modal, a popover, a context menu) uses them to share one layer stack with the package's: one Escape closes one layer, a press outside reaches one layer, and the page behind is hidden and locked once, however many layers are open.
 
 | Export | What it does |
 | --- | --- |
@@ -246,8 +246,6 @@ A press goes to the topmost layer that has `onPointerDownOutside`, and to that l
 A popover joins the stack with `useLayer`, and the layers below it stay quiet while it is open:
 
 ```tsx
-"use client";
-
 import { useRef, type ReactNode } from "react";
 import { createPortal } from "react-dom";
 import { useLayer } from "@stellarr/ui/behavior";

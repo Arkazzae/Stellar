@@ -1,5 +1,3 @@
-"use client";
-
 import { Link } from "@stellarr/router";
 import { useId, useState, type ChangeEvent, type FormEvent } from "react";
 

@@ -1,5 +1,3 @@
-"use client";
-
 import { useId, useRef, type KeyboardEvent } from "react";
 
 import { useLayer } from "@stellarr/ui/behavior";

@@ -1,5 +1,3 @@
-"use client";
-
 import { useCallback, useEffect, useRef, useState } from "react";
 
 import { listOutputDevices } from "@/lib/voice/capture/micPipeline";

@@ -1,5 +1,3 @@
-"use client";
-
 import { deleteChannel } from "@/components/confirmations";
 import { useConfirm } from "@/components/primitives/ConfirmDialog";
 import {

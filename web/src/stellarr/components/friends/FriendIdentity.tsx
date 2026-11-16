@@ -1,5 +1,3 @@
-"use client";
-
 import { Avatar, type Presence } from "@/components/primitives/Avatar";
 import type { PersonVM } from "@/components/view-models";
 

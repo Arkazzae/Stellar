@@ -1,5 +1,3 @@
-"use client";
-
 import { type CSSProperties, useState } from "react";
 
 import { Button } from "@stellarr/ui";

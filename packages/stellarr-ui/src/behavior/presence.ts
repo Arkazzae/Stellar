@@ -1,5 +1,3 @@
-"use client";
-
 import { useLayoutEffect, useRef, useState } from "react";
 
 /** The longest exit the package draws, with room to spare; a stuck element still leaves. */

@@ -1,5 +1,3 @@
-"use client";
-
 import { Fragment, useId, useState } from "react";
 
 import { Button } from "@stellarr/ui";

@@ -1,5 +1,3 @@
-"use client";
-
 import { useLanguage } from "@/state/hooks";
 
 /** Why a page of the channel index did not arrive, with a retry when the host has one. */

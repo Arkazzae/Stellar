@@ -1,5 +1,3 @@
-"use client";
-
 import type { MouseEventHandler } from "react";
 
 import { Button } from "@stellarr/ui";

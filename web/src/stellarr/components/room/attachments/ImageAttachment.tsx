@@ -1,5 +1,3 @@
-"use client";
-
 import { useState } from "react";
 
 import type { GalleryImage, GalleryPart, ImagePart } from "@/lib/messages/parts";

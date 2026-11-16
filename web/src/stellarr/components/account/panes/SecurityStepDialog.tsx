@@ -1,5 +1,3 @@
-"use client";
-
 import { createContext, useContext, useId, type ReactNode } from "react";
 
 import { MfaChallengeStep } from "@/components/auth/MfaChallengeStep";

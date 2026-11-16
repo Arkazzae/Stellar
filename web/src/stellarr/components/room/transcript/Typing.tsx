@@ -1,5 +1,3 @@
-"use client";
-
 import { useLanguage } from "@/state/LanguageProvider";
 
 export interface TypingProps {

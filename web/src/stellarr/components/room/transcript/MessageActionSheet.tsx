@@ -1,5 +1,3 @@
-"use client";
-
 import { useEffect, useId, useRef, type RefObject } from "react";
 import { createPortal } from "react-dom";
 

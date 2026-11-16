@@ -1,5 +1,3 @@
-"use client";
-
 import { useCallback, useSyncExternalStore } from "react";
 
 import { Composer } from "@/components/room/composer/Composer";
