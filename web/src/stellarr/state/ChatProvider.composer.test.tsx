@@ -511,6 +511,23 @@ describe("reading", () => {
     expect(h.chat.markChannelRead).toHaveBeenCalledWith("ch-general");
   });
 
+  it("marks the open channel read when the app goes away with the session alive, as on switching servers", async () => {
+    const { unmount } = await mountLoaded();
+
+    unmount();
+
+    expect(h.chat.markChannelRead).toHaveBeenCalledWith("ch-general");
+  });
+
+  it("marks nothing when the app goes away because the session ended, as on signing out", async () => {
+    const { unmount } = await mountLoaded();
+    h.session.hasEnded.mockReturnValue(true);
+
+    unmount();
+
+    expect(h.chat.markChannelRead).not.toHaveBeenCalled();
+  });
+
   it("clears another channel's badge without opening it, and keeps it cleared if the request fails", async () => {
     h.directory.textChannels = [
       { id: "ch-general", name: "general" },

@@ -1,5 +1,6 @@
 import { act, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
+import { useEffect } from "react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { createRuntime, type Runtime } from "@/adapters";
@@ -41,9 +42,23 @@ function Probe() {
   );
 }
 
+/**
+ * Stands in for the signed-in app, mounted while the session is ready, and
+ * says on its way out whether the session had ended.
+ */
+function SignedInApp({ onGone }: { onGone: (ended: boolean) => void }) {
+  const { phase, hasEnded } = useSessionContext();
+  return phase === "ready" ? <GoneProbe hasEnded={hasEnded} onGone={onGone} /> : null;
+}
+
+function GoneProbe({ hasEnded, onGone }: { hasEnded: () => boolean; onGone: (ended: boolean) => void }) {
+  useEffect(() => () => onGone(hasEnded()), [hasEnded, onGone]);
+  return null;
+}
+
 const runtimes: Runtime[] = [];
 
-function mount(api: FullApi) {
+function mount(api: FullApi, onGone: (ended: boolean) => void = () => undefined) {
   const realtime = new FakeRealtimeClient();
   const runtime = createRuntime({ api, realtime });
   runtimes.push(runtime);
@@ -52,6 +67,7 @@ function mount(api: FullApi) {
       <PortsProvider runtime={runtime}>
         <SessionProvider>
           <Probe />
+          <SignedInApp onGone={onGone} />
         </SessionProvider>
       </PortsProvider>
     </LanguageProvider>,
@@ -306,6 +322,57 @@ describe("SessionProvider logout", () => {
 
     await waitFor(() => expect(phase()).toHaveTextContent("anonymous"));
     expect(realtime.getStatus()).toBe("idle");
+  });
+});
+
+describe("SessionProvider as the signed-in app goes away", () => {
+  it("says the session lives on when a reload takes the app away, as switching servers does", async () => {
+    const user = userEvent.setup();
+    const onGone = vi.fn();
+    mount(fullApi(), onGone);
+    await waitFor(() => expect(phase()).toHaveTextContent("ready"));
+
+    await user.click(screen.getByRole("button", { name: "Reload" }));
+
+    expect(onGone).toHaveBeenCalledExactlyOnceWith(false);
+    await waitFor(() => expect(phase()).toHaveTextContent("ready"));
+  });
+
+  it("says the session ended when signing out takes the app away, and not after signing in again", async () => {
+    const user = userEvent.setup();
+    const onGone = vi.fn();
+    mount(fullApi(), onGone);
+    await waitFor(() => expect(phase()).toHaveTextContent("ready"));
+
+    await user.click(screen.getByRole("button", { name: "Log out" }));
+    await waitFor(() => expect(phase()).toHaveTextContent("anonymous"));
+    expect(onGone).toHaveBeenCalledExactlyOnceWith(true);
+
+    await user.click(screen.getByRole("button", { name: "Log in" }));
+    await waitFor(() => expect(phase()).toHaveTextContent("ready"));
+    await user.click(screen.getByRole("button", { name: "Reload" }));
+    expect(onGone).toHaveBeenLastCalledWith(false);
+  });
+
+  it("says the session ended when the server no longer knows it", async () => {
+    const onGone = vi.fn();
+    const { realtime } = mount(fullApi({ session: vi.fn(async () => null) }), onGone);
+    await waitFor(() => expect(realtime.getStatus()).toBe("connected"));
+
+    act(() => realtime.drop());
+
+    await waitFor(() => expect(phase()).toHaveTextContent("anonymous"));
+    expect(onGone).toHaveBeenCalledExactlyOnceWith(true);
+  });
+
+  it("says the session ended when the open server shuts you out", async () => {
+    const onGone = vi.fn();
+    const { realtime } = mount(fullApi(), onGone);
+    await waitFor(() => expect(phase()).toHaveTextContent("ready"));
+
+    act(() => realtime.push("ServerAccessRevoked", { serverId: SERVER.id, kind: "banned" }));
+
+    expect(onGone).toHaveBeenCalledExactlyOnceWith(true);
   });
 });
 
