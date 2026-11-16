@@ -64,7 +64,7 @@ public static class ServerAdministrationEndpoints
                 (x.MaxUses == null || x.Uses < x.MaxUses))
             .OrderByDescending(x => x.CreatedAt)
             .ToListAsync(cancellationToken);
-        var origin = Origin(http.Request);
+        var origin = InviteOrigin(http);
         return Results.Ok(invites.Select(x => x.ToDto(origin)));
     }
 
@@ -115,7 +115,7 @@ public static class ServerAdministrationEndpoints
         await db.SaveChangesAsync(cancellationToken);
 
         await db.Entry(invite).Reference(x => x.CreatedBy).LoadAsync(cancellationToken);
-        return Results.Created($"/api/admin/invites/{invite.Id}", invite.ToDto(Origin(http.Request)));
+        return Results.Created($"/api/admin/invites/{invite.Id}", invite.ToDto(InviteOrigin(http)));
     }
 
     private static async Task<IResult> RevokeInviteAsync(
@@ -406,7 +406,19 @@ public static class ServerAdministrationEndpoints
             .Select(x => x.DisplayName)
             .SingleAsync(cancellationToken);
 
-    private static string Origin(HttpRequest request) => $"{request.Scheme}://{request.Host}";
+    /// <summary>
+    /// Where an invite link leads: the instance's public address, the one
+    /// Cockpit says invitations use, with the scheme and port browsers reach
+    /// it at. The request alone loses the port, as nginx hands the API the
+    /// host without it, and behind another proxy it may not be the public
+    /// address at all. Without a public address the request's is the best
+    /// there is.
+    /// </summary>
+    private static string InviteOrigin(HttpContext http)
+    {
+        var publicUrl = CockpitEndpoints.PublicUrlOf(http.RequestServices.GetRequiredService<IConfiguration>());
+        return publicUrl.Length > 0 ? publicUrl : $"{http.Request.Scheme}://{http.Request.Host}";
+    }
 
     private static IResult Invalid(string field, string message) =>
         Results.ValidationProblem(new Dictionary<string, string[]> { [field] = [message] });
