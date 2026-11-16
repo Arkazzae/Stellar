@@ -6,7 +6,10 @@ import { configDefaults, defineConfig } from "vitest/config";
 export default defineConfig({
   plugins: [react()],
   resolve: {
-    alias: { "@": fileURLToPath(new URL("./src", import.meta.url)) },
+    alias: {
+      "@": fileURLToPath(new URL("./src/stellarr", import.meta.url)),
+      "@cockpit": fileURLToPath(new URL("./src/cockpit", import.meta.url)),
+    },
   },
   test: {
     // A guard against a hung test, not a performance budget. The default 5 s

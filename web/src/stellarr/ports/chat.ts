@@ -54,7 +54,7 @@ export type Unsubscribe = () => void;
  * Everything the text view is allowed to do.
  *
  * Components are written against this rather than the HTTP client or the
- * SignalR hub, so a change of transport stays under `src/adapters/`.
+ * SignalR hub, so a change of transport stays under `src/stellarr/adapters/`.
  */
 export interface ChatPort {
   /** Newest last. The opaque cursor pages backwards through one snapshot. */

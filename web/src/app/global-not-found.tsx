@@ -1,9 +1,9 @@
 import { requestLocale } from "@/i18n/requestLocale";
 
-import { webDocument, webMetadata, webViewport } from "./(web)/document";
-import NotFound from "./(web)/not-found";
+import { webDocument, webMetadata, webViewport } from "./(stellarr)/document";
+import NotFound from "./(stellarr)/not-found";
 
-import "./(web)/globals.css";
+import "./(stellarr)/globals.css";
 
 export const generateMetadata = webMetadata;
 

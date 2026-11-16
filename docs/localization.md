@@ -11,7 +11,7 @@ Interface language and chat message translation are independent settings:
 
 Setting `STELLARR_LANGUAGE=pl` (or `en`) configures the instance default:
 
-1. **Web client (`web/`)**: The server resolves the locale of every request ([`web/src/i18n/requestLocale.ts`](../web/src/i18n/requestLocale.ts)), in order:
+1. **Web client (`web/`)**: The server resolves the locale of every request ([`web/src/stellarr/i18n/requestLocale.ts`](../web/src/stellarr/i18n/requestLocale.ts)), in order:
    1. `stellarr_locale` cookie (written only when a user explicitly selects a language in Settings).
    2. `STELLARR_LANGUAGE` environment variable (read dynamically per request).
    3. `en`.
@@ -25,10 +25,10 @@ Setting `STELLARR_LANGUAGE=pl` (or `en`) configures the instance default:
 
 ## Message catalogs
 
-### Web client (`web/src/i18n/`)
+### Web client (`web/src/stellarr/i18n/`)
 
-- [web/src/i18n/messages/pl.ts](../web/src/i18n/messages/pl.ts) defines the `MessageKey` union.
-- [web/src/i18n/messages/en.ts](../web/src/i18n/messages/en.ts) is typed with `satisfies Record<keyof typeof pl, string>`, so missing or extra keys fail `npm run typecheck`.
+- [web/src/stellarr/i18n/messages/pl.ts](../web/src/stellarr/i18n/messages/pl.ts) defines the `MessageKey` union.
+- [web/src/stellarr/i18n/messages/en.ts](../web/src/stellarr/i18n/messages/en.ts) is typed with `satisfies Record<keyof typeof pl, string>`, so missing or extra keys fail `npm run typecheck`.
 - Components format strings via `t(key, values)`. `{name}` placeholders are interpolated as plain text without HTML parsing; unprovided placeholders remain literal (`{name}`).
 - `LanguageProvider` persists:
   - `stellarr_locale` cookie so SSR and client hydration render the same `<html lang>`.
@@ -52,7 +52,7 @@ Setting `STELLARR_LANGUAGE=pl` (or `en`) configures the instance default:
 2. Missing model files are fetched from `/bergamot-models/<pair>/<file>` on the instance itself, in development and in the image alike. They are not fetched from a third-party service. The files live in `artifacts/files/`, are copied into `web/public/` by `artifacts/assemble.mjs`, and are served by the web client's Next.js server.
 3. Downloaded files are stored in IndexedDB (`bergamot-models`, store `files`) only after full completion. The registry records each file's size and SHA-256, and a test keeps both in agreement with `artifacts/manifest.json`.
 4. A Web Worker loads the local Bergamot WASM runtime (`/codecs/bergamot/`, assembled from `artifacts/files/codecs/bergamot/`) and model off the main thread.
-5. `web/src/lib/chatTranslation/detectLanguage.ts` decides whether a message is Polish, English or neither, on the main thread and with nothing to download: it scores character trigrams against profiles of the two interface catalogues (derived by `web/scripts/derive-language-profiles.mjs`), counts function words of Polish, English and the languages most easily taken for them, and looks at the letters and the script. Messages already in the target language bypass translation; a message it cannot place, because it is too short or in another language, is translated from the other chat language.
+5. `web/src/stellarr/lib/chatTranslation/detectLanguage.ts` decides whether a message is Polish, English or neither, on the main thread and with nothing to download: it scores character trigrams against profiles of the two interface catalogues (derived by `web/scripts/derive-language-profiles.mjs`), counts function words of Polish, English and the languages most easily taken for them, and looks at the letters and the script. Messages already in the target language bypass translation; a message it cannot place, because it is too short or in another language, is translated from the other chat language.
 6. Translations are cached in memory (up to 1,000 entries) and in IndexedDB (`stellarr-chat-translations`, up to 5,000 entries, LRU-trimmed). Concurrent requests for the same text are deduplicated, and visible viewport messages are prioritized.
 
 `artifacts/manifest.json` is the single source of origins for the prebuilt files: each entry records the served path, size, SHA-256, upstream project, exact upstream file or release and SPDX license expression. `artifacts/assemble.mjs` checks every byte against it before writing, fails the build on a missing or changed file, and writes through a temporary file and rename so a bind-mounted development tree cannot expose a half-written worklet or WASM. `artifacts/NOTICES` records the copyright and license notices; the image carries both files under `/usr/share/doc/stellarr/artifacts/`. The worklets, WASM and models keep stable URLs across releases, so the server sends them with `Cache-Control: no-cache` (`headers()` in `web/next.config.ts`): the browser may keep a copy but must revalidate it, which keeps a worklet and the WASM it drives from different releases.
@@ -60,10 +60,10 @@ Setting `STELLARR_LANGUAGE=pl` (or `en`) configures the instance default:
 ## Adding a new language
 
 1. **Web client**:
-   - Add the locale code to `SUPPORTED_LOCALES` in `web/src/i18n/index.ts`, create `web/src/i18n/messages/<code>.ts`, register it in `catalogs`, and add `language.name.<code>` to all catalogs.
-   - Add the native language label to `NATIVE_NAMES` in `web/src/components/account/panes/LanguagePane.tsx`.
-   - Add the `Intl` BCP 47 tag to `LOCALE_TAG` in `web/src/lib/format/format.ts` and verify plural rules (`pluralForm`).
-   - If supporting local chat translation for the new language, update `TranslationTargetLanguage` in `web/src/i18n/index.ts`, `primaryPair` in `web/src/lib/chatTranslation/modelStatus.ts`, `artifacts/manifest.json`, `artifacts/NOTICES` and `web/public/bergamot-models/registry.json`. Put the model files under `artifacts/files/bergamot-models/<pair>/` (or add a recipe) and record their sizes and SHA-256 in both JSON files. `artifacts/assemble.mjs` then makes the served copies.
+   - Add the locale code to `SUPPORTED_LOCALES` in `web/src/stellarr/i18n/index.ts`, create `web/src/stellarr/i18n/messages/<code>.ts`, register it in `catalogs`, and add `language.name.<code>` to all catalogs.
+   - Add the native language label to `NATIVE_NAMES` in `web/src/stellarr/components/account/panes/LanguagePane.tsx`.
+   - Add the `Intl` BCP 47 tag to `LOCALE_TAG` in `web/src/stellarr/lib/format/format.ts` and verify plural rules (`pluralForm`).
+   - If supporting local chat translation for the new language, update `TranslationTargetLanguage` in `web/src/stellarr/i18n/index.ts`, `primaryPair` in `web/src/stellarr/lib/chatTranslation/modelStatus.ts`, `artifacts/manifest.json`, `artifacts/NOTICES` and `web/public/bergamot-models/registry.json`. Put the model files under `artifacts/files/bergamot-models/<pair>/` (or add a recipe) and record their sizes and SHA-256 in both JSON files. `artifacts/assemble.mjs` then makes the served copies.
 2. **Cockpit**:
    - Add `web/src/cockpit/i18n/<code>.ts` and register the locale in `web/src/cockpit/i18n/index.ts`.
 3. **Backend API**:

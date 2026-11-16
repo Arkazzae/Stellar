@@ -14,7 +14,7 @@ vi.mock("next/headers", () => ({
 
 import { LanguageProvider } from "@/state/LanguageProvider";
 
-import NotFound from "./(web)/not-found";
+import NotFound from "./(stellarr)/not-found";
 import GlobalNotFound from "./global-not-found";
 
 /** The first element of `type` anywhere under `node`. */

@@ -2,7 +2,7 @@ import {
   GATE_DEFAULTS,
   VAD_PROCESSOR_NAME,
   sensitivityToThresholds,
-} from "../../../../public/audio/vad-processor.js";
+} from "../../../../../public/audio/vad-processor.js";
 import type { DetectorStages } from "./micCapture";
 import { VAD_WORKLET_URL } from "./vad";
 

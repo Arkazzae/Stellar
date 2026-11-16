@@ -27,7 +27,7 @@ Full documentation lives in [`docs/`](docs/README.md):
 
 | Directory | Contents |
 | --- | --- |
-| `web/` | The Next.js app: the web client and, in `web/src/cockpit/`, Cockpit |
+| `web/` | The Next.js app: the web client in `web/src/stellarr/` and Cockpit in `web/src/cockpit/`, with the routes of both in `web/src/app/` |
 | `web/src/cockpit/` | [Stellarr Cockpit](web/src/cockpit/README.md), the instance operator panel (`/cockpit`), served by the same Next.js app |
 | `packages/` | Shared packages used by the web client and Cockpit in one npm workspace |
 | `packages/stellarr-ui/` | [`@stellarr/ui`](packages/stellarr-ui/README.md), the components and their stylesheet |

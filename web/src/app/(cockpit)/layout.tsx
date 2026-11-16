@@ -1,8 +1,8 @@
 import type { Metadata, Viewport } from "next";
 import type { ReactNode } from "react";
-import { CockpitApp } from "@/cockpit/app";
+import { CockpitApp } from "@cockpit/app";
 
-import "@/cockpit/index.css";
+import "@cockpit/index.css";
 
 // Rendered on each request, as the web client's pages are. A prerendered
 // page would go out with s-maxage=31536000, and a proxy in front of the
@@ -25,7 +25,7 @@ export const viewport: Viewport = {
 
 /**
  * The root layout of Cockpit, the operator panel, whose code is in
- * `src/cockpit/`. It sits beside the web client's root layout in `(web)/` and
+ * `src/cockpit/`. It sits beside the web client's root layout in `(stellarr)/` and
  * shares nothing with it: its own document, stylesheet, language and session.
  * Following a link from one to the other is a full page load, as it is between
  * any two root layouts.

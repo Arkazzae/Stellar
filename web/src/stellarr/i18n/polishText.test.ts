@@ -7,14 +7,14 @@ const SRC = join(process.cwd(), "src");
 const POLISH_LETTER = /[ąćęłńóśźżĄĆĘŁŃÓŚŹŻ]/;
 
 /** Interface text is written once per language, in the catalogs. */
-const isCatalog = (path: string) => path.startsWith("i18n/messages/");
+const isCatalog = (path: string) => path.startsWith("stellarr/i18n/messages/");
 
 /** Cockpit is an app of its own, with its own catalogs and checks (cockpit/i18n/). */
 const isCockpit = (path: string) => path.startsWith("cockpit/");
 
 /** Tests and the fixtures they share assert Polish text on purpose. */
 const isTestCode = (path: string) =>
-  /\.test\.tsx?$/.test(path) || path.startsWith("test/") || /Fixtures\.ts$/.test(path);
+  /\.test\.tsx?$/.test(path) || path.startsWith("stellarr/test/") || /Fixtures\.ts$/.test(path);
 
 /**
  * The few lines outside the catalogs that need a Polish letter, and why. Each
@@ -22,22 +22,22 @@ const isTestCode = (path: string) =>
  */
 const ALLOWED = [
   {
-    file: "lib/format/format.ts",
+    file: "stellarr/lib/format/format.ts",
     line: "[^a-z0-9ąćęłńóśźż-]",
     why: "a channel name keeps the Polish letters, as the server stores it",
   },
   {
-    file: "lib/emoji/emoji.ts",
+    file: "stellarr/lib/emoji/emoji.ts",
     line: '.replaceAll("ł", "l")',
     why: "search folds diacritics, and this letter has no decomposition",
   },
   {
-    file: "lib/chatTranslation/detectLanguage.ts",
+    file: "stellarr/lib/chatTranslation/detectLanguage.ts",
     line: "const POLISH_LETTERS = /[ąćęłńśźż]/g;",
     why: "language detection counts the letters only Polish writes",
   },
   {
-    file: "lib/chatTranslation/detectLanguage.ts",
+    file: "stellarr/lib/chatTranslation/detectLanguage.ts",
     line: '.replace(/ł/g, "l")',
     why: "language detection folds diacritics, and this letter has no decomposition",
   },
