@@ -2,7 +2,7 @@
 # Container entrypoint: prepares the data volume, exports the settings the
 # services read, renders the coturn and nginx configuration from their
 # templates, writes the web client's instance language file, and hands over to
-# supervisord.
+# stellarr-init, the process manager that runs the services as PID 1.
 set -Eeuo pipefail
 # Without this a failing `openssl rand` inside $(...) would yield an empty secret.
 shopt -s inherit_errexit
@@ -231,4 +231,7 @@ write_instance_language /run/stellarr/stellarr-instance.js
 sed -e "s|__PUBLIC_HTTPS_SUFFIX__|$public_https_suffix|g" \
   /etc/nginx/nginx.conf.template > /etc/nginx/nginx.conf
 
-exec /usr/bin/supervisord -c /etc/supervisor/supervisord.conf
+# The services and how each is started, checked and stopped are compiled into
+# stellarr-init (init/src/services.rs). They inherit the environment exported
+# above.
+exec /usr/local/bin/stellarr-init run
