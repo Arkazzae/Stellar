@@ -1,4 +1,4 @@
-import { sensitivityToThresholds } from "../../../../../public/audio/vad-processor.js";
+import { sensitivityToThresholds } from "./detector/vad";
 import { usesWorkletSuppression, type WorkletSuppressor } from "../audioProfiles";
 import { buildGateNode } from "./gateNode";
 import type { DetectorStages } from "./micCapture";

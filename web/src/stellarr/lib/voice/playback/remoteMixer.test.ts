@@ -9,7 +9,7 @@ import {
   clampParticipantVolume,
   type RemoteVoiceMixerDeps,
 } from "./remoteMixer";
-import { sensitivityToThresholds } from "../../../../../public/audio/vad-processor.js";
+import { sensitivityToThresholds } from "../capture/detector/vad";
 import { PLAYBACK_TUNING_PRESETS } from "../settings";
 
 class FakeParam {

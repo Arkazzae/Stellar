@@ -16,6 +16,7 @@ import { basename, extname, join, resolve, sep } from "node:path";
 
 import { build } from "vite";
 
+import { workerBuild } from "../../../worklets.ts";
 import { launch } from "../../cdp.mjs";
 
 const here = import.meta.dirname;
@@ -97,6 +98,11 @@ function parseArgs(argv) {
   return options;
 }
 
+/**
+ * The page, with the detector worklet built as the app's build makes it:
+ * the same worker options and the same minifier, so Chrome runs the bundle
+ * that ships at /audio/detector-worklet.js.
+ */
 async function buildPage(outDir) {
   await build({
     configFile: false,
@@ -104,11 +110,11 @@ async function buildPage(outDir) {
     base: "/",
     publicDir: false,
     resolve: { alias: { "@": resolve(webRoot, "src/stellarr") } },
+    worker: workerBuild("assets"),
     build: {
       outDir,
       emptyOutDir: true,
       target: "es2022",
-      minify: false,
       sourcemap: false,
       reportCompressedSize: false,
     },
@@ -123,10 +129,9 @@ function recordingNames() {
     .sort();
 }
 
-/** The page, the worklet module and the app's sample, the way nginx serves them. */
+/** The page with its worklet, and the app's sample, the way nginx serves them. */
 function serve(distRoot) {
   const fixed = {
-    "/audio/vad-processor.js": resolve(webRoot, "public", "audio", "vad-processor.js"),
     "/sounds/voice-playback-test.mp3": resolve(webRoot, "public", "sounds", "voice-playback-test.mp3"),
   };
   const server = createServer(async (request, response) => {

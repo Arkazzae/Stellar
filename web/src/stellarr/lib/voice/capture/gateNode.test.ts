@@ -1,10 +1,8 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-import {
-  GATE_DEFAULTS,
-  VAD_PROCESSOR_NAME,
-  sensitivityToThresholds,
-} from "../../../../../public/audio/vad-processor.js";
+import { GATE_DEFAULTS } from "./detector/gate";
+import { VAD_PROCESSOR_NAME } from "./detector/messages";
+import { sensitivityToThresholds } from "./detector/vad";
 import { buildGateNode } from "./gateNode";
 import { VAD_WORKLET_URL } from "./vad";
 
