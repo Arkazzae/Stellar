@@ -19,6 +19,11 @@ services:
       dockerfile: Dockerfile
     container_name: stellarr
     restart: unless-stopped
+    # On docker compose stop, the container's process manager stops the
+    # services one at a time, nginx first and the media server last, and kills
+    # whatever is left after 60 s; the API alone may take 35 s to finish. The
+    # default of 10 s would kill them all in the middle of that.
+    stop_grace_period: 75s
     mem_limit: ${STELLARR_CONTAINER_MEMORY_LIMIT:-4g}
     cpus: ${STELLARR_CONTAINER_CPUS:-4}
     pids_limit: ${STELLARR_CONTAINER_PIDS_LIMIT:-512}

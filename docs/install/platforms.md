@@ -13,6 +13,7 @@ The rest of this page is what any installation gives the container. Compose does
 
 - The image is `ghcr.io/arkazzae/stellarr:latest`, the newest stable release, or a version tag such as `1.2` to stay on one release line.
 - One persistent folder or volume is mounted at `/data/stellarr`. It holds the database, uploaded files, the data-protection keys, the generated secrets and the TLS certificates. Back it up whole, with the container stopped: the secrets stored in the database can be read only with the keys next to it. See [Upgrading](upgrading.md).
+- The container is given 75 seconds to stop. Its process manager stops the services one at a time, nginx first and the media server last, and kills whatever is left after 60 seconds; the API alone may take 35. It usually takes a second or two, but Docker's default of 10 seconds would cut a slow stop short. Compose sets `stop_grace_period: 75s`; with plain Docker, create the container with `--stop-timeout=75`, or stop it with `docker stop -t 75`.
 
 ## Address
 
