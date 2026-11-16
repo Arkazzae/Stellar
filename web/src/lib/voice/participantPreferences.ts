@@ -1,4 +1,4 @@
-import { clampParticipantVolume } from "./remoteStrip";
+import { clampParticipantVolume } from "./playback/remoteStrip";
 
 /**
  * How one other person sounds to *you*: volume, gate, noise removal.

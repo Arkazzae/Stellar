@@ -5,7 +5,7 @@ import { useCallback, useSyncExternalStore } from "react";
 import { Composer } from "@/components/room/composer/Composer";
 import { useGifsEnabled } from "@/hooks/useGifsEnabled";
 import type { Translator } from "@/i18n";
-import { captureMicrophone, MicCaptureError } from "@/lib/voice/micPipeline";
+import { captureMicrophone, MicCaptureError } from "@/lib/voice/capture/micPipeline";
 import { VoiceMessageCaptureError } from "@/ports";
 import {
   useChat,

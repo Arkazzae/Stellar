@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 
-import * as camera from "@/lib/voice/camera";
-import * as screenShare from "@/lib/voice/screenShare";
+import * as camera from "@/lib/voice/video/camera";
+import * as screenShare from "@/lib/voice/video/screenShare";
 import * as settings from "@/lib/voice/settings";
 
 import * as ports from "./index";

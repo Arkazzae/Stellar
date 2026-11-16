@@ -167,7 +167,7 @@ Users can pick a personal arrival clip (`UserPreferences.JoinSoundId`) from any 
 | Sharp | 1440p | 30 fps | 5 Mb/s |
 | Ultra | 2160p | 60 fps | 12 Mb/s |
 
-- Profiles are defined in `web/src/lib/voice/screenShare.ts` and applied to both `getDisplayMedia` constraints and `RTCRtpSender` encoding parameters. Switching profiles mid-share updates constraints and sender parameters without re-prompting or renegotiating SDP.
+- Profiles are defined in `web/src/lib/voice/video/screenShare.ts` and applied to both `getDisplayMedia` constraints and `RTCRtpSender` encoding parameters. Switching profiles mid-share updates constraints and sender parameters without re-prompting or renegotiating SDP.
 - Codec preference order: VP9 (with 2–3 temporal layers when supported), AV1, VP8, H.264.
 - Uses `contentHint = "detail"` and `degradationPreference = "maintain-resolution"`.
 - Video senders use `medium` network priority while Opus audio uses `high`.
@@ -176,7 +176,7 @@ Users can pick a personal arrival clip (`UserPreferences.JoinSoundId`) from any 
 
 ## Camera
 
-- Managed by `VoiceClient` (`web/src/lib/voice/camera.ts`), capturing video only.
+- Managed by `VoiceClient` (`web/src/lib/voice/video/camera.ts`), capturing video only.
 - Profiles:
   - **Low**: 854×480 @ 24 fps, 0.7 Mb/s
   - **Standard (default)**: 1280×720 @ 30 fps, 1.5 Mb/s
@@ -194,12 +194,12 @@ Users can pick a personal arrival clip (`UserPreferences.JoinSoundId`) from any 
 | Wire protocol & payload codecs | `web/src/lib/rtc/protocol.ts`, `server/Stellarr.Api/Realtime/RtcProtocol.cs` |
 | Client interface | `web/src/lib/voice/types.ts` (`VoiceClient`, `VoiceState`) |
 | State store | `web/src/lib/voice/store.ts` (`VoiceStateStore`) |
-| Call session management | `web/src/lib/voice/webrtc.ts`, `web/src/lib/voice/webrtcTopology.ts`, `web/src/lib/voice/webrtcParticipant.ts` |
-| Media server client | `web/src/lib/voice/webrtcSfu.ts`, `web/src/lib/voice/webrtcSfuDirectory.ts`, `web/src/lib/voice/webrtcSfuHealth.ts` |
+| Call session management | `web/src/lib/voice/rtc/webrtc.ts`, `web/src/lib/voice/rtc/webrtcTopology.ts`, `web/src/lib/voice/rtc/webrtcParticipant.ts` |
+| Media server client | `web/src/lib/voice/rtc/webrtcSfu.ts`, `web/src/lib/voice/rtc/webrtcSfuDirectory.ts`, `web/src/lib/voice/rtc/webrtcSfuHealth.ts` |
 | Soundboard & arrival sounds | `web/src/adapters/soundboard.ts`, `web/src/containers/useJoinSound.ts`, `SoundboardEndpoints.cs`, `JoinSound.cs`, `AppHub.cs` |
-| Opus, screen, and camera profiles | `web/src/lib/voice/audioProfiles.ts`, `web/src/lib/voice/screenShare.ts`, `web/src/lib/voice/camera.ts` |
-| Microphone DSP & VAD | `web/src/lib/voice/micPipeline.ts`, `web/src/lib/voice/vad.ts`, `web/public/audio/vad-processor.js` |
-| ICE/TURN credential refresh | `web/src/lib/voice/iceSession.ts` |
+| Opus, screen, and camera profiles | `web/src/lib/voice/audioProfiles.ts`, `web/src/lib/voice/video/screenShare.ts`, `web/src/lib/voice/video/camera.ts` |
+| Microphone DSP & VAD | `web/src/lib/voice/capture/micPipeline.ts`, `web/src/lib/voice/capture/vad.ts`, `web/public/audio/vad-processor.js` |
+| ICE/TURN credential refresh | `web/src/lib/voice/rtc/iceSession.ts` |
 | Hub & media server broker | `server/Stellarr.Api/Realtime/`: `AppHub.cs`, `AppHub.Media.cs`, `MediaServerSettings.cs`, `PresenceTracker.cs`, `MediaPlane.cs`, `MediaControlClient.cs`, `MediaEventPump.cs`, `MediaEventOutbox.cs`, `MediaSessionCloser.cs` |
 | Rust SFU media server | `media/` (`stellarr-media`) |
 

@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 
-import { listVideoDevices } from "@/lib/voice/micPipeline";
+import { listVideoDevices } from "@/lib/voice/capture/micPipeline";
 import type { VoiceSettings } from "@/lib/voice/settings";
 import type { CameraTest } from "@/ports";
 import { useLanguage } from "@/state/hooks";

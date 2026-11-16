@@ -19,10 +19,10 @@ import { iceServers } from "@/lib/platform/env";
 import { createPasskey, getPasskey, passkeysSupported } from "@/lib/auth/webauthn";
 import { SignalRRealtimeClient } from "@/lib/realtime/signalr";
 import type { RealtimeClient } from "@/lib/realtime/types";
-import { RuntimeIceProvider } from "@/lib/voice/iceSession";
+import { RuntimeIceProvider } from "@/lib/voice/rtc/iceSession";
 import { ParticipantPreferencesStore } from "@/lib/voice/participantPreferences";
 import { VoiceSettingsStore } from "@/lib/voice/settings";
-import { WebRtcVoiceClient } from "@/lib/voice/webrtc";
+import { WebRtcVoiceClient } from "@/lib/voice/rtc/webrtc";
 import type { Account, Ports, User } from "@/ports";
 import type { DesktopPort } from "@/ports/desktop";
 

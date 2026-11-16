@@ -3,7 +3,7 @@
 import { useMemo, useSyncExternalStore } from "react";
 
 import { ServerSettings } from "@/components/settings/ServerSettings";
-import { applyAudioOutput } from "@/lib/voice/playback";
+import { applyAudioOutput } from "@/lib/voice/playback/playback";
 import {
   useDirectory,
   useEmoji,

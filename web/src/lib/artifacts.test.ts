@@ -15,7 +15,7 @@ import { spawnSync } from "node:child_process";
 
 import { afterAll, describe, expect, it } from "vitest";
 
-import { PROCESSOR_NAME, WORKLET_URL } from "./voice/noiseSuppression";
+import { PROCESSOR_NAME, WORKLET_URL } from "./voice/capture/noiseSuppression";
 
 interface Artifact {
   id: string;
