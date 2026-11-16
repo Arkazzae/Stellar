@@ -6,3 +6,15 @@ publish = false
 
 [dependencies]
 libc = "0.2"
+
+[[bin]]
+name = "stellarr-init"
+path = "src/main.rs"
+
+[profile.release]
+# A panic in PID 1 ends the container either way; aborting does it at once,
+# without unwinding through code that holds children.
+panic = "abort"
+lto = true
+codegen-units = 1
+strip = true
