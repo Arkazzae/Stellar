@@ -30,7 +30,12 @@ Docker pulls `ghcr.io/arkazzae/stellarr`, creates the `stellarr_stellarr_data` v
 docker compose ps
 ```
 
-The container reports `healthy` once every service answers: Nginx and the API with its database (`/health` over HTTPS), the media server (its control API), and `coturn` (a STUN request on `3478/udp`). If startup fails, inspect `docker compose logs`.
+The container reports `healthy` once every service in it answers: Nginx, the API with its database, the media server and `coturn`. If startup fails, see which service does not, and why, with:
+
+```bash
+docker compose exec stellarr stellarr-init status
+docker compose logs
+```
 
 ## 3. Open the web client
 

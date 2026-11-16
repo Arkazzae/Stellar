@@ -117,9 +117,12 @@ mod tests {
     }
 
     #[test]
-    fn the_supervisord_names_are_kept() {
-        // tls-maintenance.sh restarts "turn" by name.
+    fn the_names_scripts_and_docs_use_are_kept() {
+        // tls-maintenance.sh reloads "nginx" and restarts "turn" by name,
+        // and the operator docs name every service.
         let table = Table::new(container()).unwrap();
-        assert!(table.index_of("turn").is_some());
+        for name in ["media", "api", "turn", "nginx", "tls-maintenance"] {
+            assert!(table.index_of(name).is_some(), "{name}");
+        }
     }
 }

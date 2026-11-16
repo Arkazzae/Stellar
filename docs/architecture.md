@@ -44,6 +44,7 @@ flowchart TD
 - **SQLite**: Stores relational application state in WAL mode (`stellarr.db`). Binary attachments are never stored in SQLite.
 - **Uploaded files**: Images, audio, video, and documents are plain files under `/data/stellarr/files/`, each at the path its object key names (for example `audio/2026/11/<id>.webm`). The API writes a file to `files/.incoming/`, flushes it to disk, and only then moves it into place, so a half-written upload never appears under its key. The database records what each file is; clients never read the folder directly, and the API authorizes and streams every download.
 - **coturn**: Provides STUN and short-lived HMAC-authenticated TURN relay. It holds no room or application state and relays TURN allocations directly to the local `stellarr-media` UDP socket.
+- **Stellarr Init (`init/`, Rust)**: The container's process manager, `stellarr-init`, which runs as PID 1. It starts the other services in order, the media server before the API, reaps every process, restarts a service that exits after a pause that grows to 30 seconds, and stops them all in reverse order on `docker stop`. It asks each service again every ten seconds whether it answers; the container's health check is `stellarr-init health`, and `stellarr-init status` and `restart` are what an operator uses. See [Services in the container](./install/platforms.md#services-in-the-container).
 - **Stellarr Media (`media/`, Rust)**: Selective Forwarding Unit (SFU) that carries all call media. It listens on a single UDP port (`49000/udp`) using ICE-lite, terminates DTLS/SRTP per client, and forwards microphone, camera, and screen-share RTP packets without transcoding or mixing while handling per-leg RTCP feedback (NACK, RTX, TWCC, PLI/FIR). Controlled by the API over `127.0.0.1:5200`.
 
 > [!NOTE]
@@ -59,7 +60,7 @@ The API reads revoked sessions and role or policy changes from the database at m
 
 ## Single-container deployment
 
-`supervisord` (`infra/supervisord.conf`) supervises all runtime processes (Stellarr Media, ASP.NET Core, `coturn`, Nginx, and `stellarr-tls-maintenance`) inside one container image backed by `/data/stellarr`. Nginx exposes a single HTTPS origin externally and serves the web client and Cockpit from static files: an address of either app gets that app's document, a missing file gets a plain `404`, and any other address gets the web client's document with status `404`, so the client shows its not-found page.
+`stellarr-init` (`init/`) supervises all runtime processes (Stellarr Media, ASP.NET Core, `coturn`, Nginx, and `stellarr-tls-maintenance`) inside one container image backed by `/data/stellarr`; the services and how each is started, checked and stopped are compiled into it, in `init/src/services.rs`. Nginx exposes a single HTTPS origin externally and serves the web client and Cockpit from static files: an address of either app gets that app's document, a missing file gets a plain `404`, and any other address gets the web client's document with status `404`, so the client shows its not-found page.
 
 > [!TIP]
 > Keeping all services in one container simplifies self-hosting and backups to a single Docker volume. If you ever need to split media onto a separate machine, `stellarr-media` and `coturn` communicate with the API only over their network protocols and can be moved without changing the browser client.

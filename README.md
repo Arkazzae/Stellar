@@ -36,7 +36,8 @@ Full documentation lives in [`docs/`](docs/README.md):
 | `artifacts/` | The prebuilt files the browser loads at run time (the noise suppressors, the translation runtime and its models). Before every development run, build and test, each is checked against `manifest.json` and written to `web/public/` only where the copy there differs |
 | `server/` | ASP.NET Core API, SignalR hub, operator CLI, and integration tests |
 | `media/` | [Stellarr Media](media/README.md), the Rust WebRTC SFU (`stellarr-media`) |
-| `infra/` | Container entrypoint, Nginx, coturn, supervisord, and TLS scripts |
+| `init/` | [Stellarr Init](init/README.md), the container's process manager (`stellarr-init`): it runs the services as PID 1, restarts them, and reports their state and health |
+| `infra/` | Container entrypoint, Nginx, coturn, and TLS scripts |
 | `deploy/` | [Platform templates](deploy/README.md) for the production container, such as Unraid's, and the optional [Cloudflare backup relay](deploy/cloudflare/backup-relay/README.md) |
 | `scripts/` | [Development scripts](scripts/README.md) that seed the local database with realistic activity |
 | `docs/` | VitePress documentation site |

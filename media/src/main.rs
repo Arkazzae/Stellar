@@ -25,7 +25,7 @@ fn main() -> ExitCode {
         );
         EnvFilter::new("info")
     });
-    // Under supervisord the log is a file, where colour codes are noise.
+    // In the container the log goes to a pipe, where colour codes are noise.
     tracing_subscriber::fmt()
         .with_env_filter(filter)
         .with_ansi(std::io::stdout().is_terminal())
@@ -42,7 +42,7 @@ fn main() -> ExitCode {
         }
     };
 
-    // A failure to bind exits with a non-zero status, so supervisord starts
+    // A failure to bind exits with a non-zero status, so stellarr-init starts
     // the process again and the API sees a new epoch.
     match runtime.block_on(server::run(config, shutdown_signal())) {
         Ok(()) => ExitCode::SUCCESS,

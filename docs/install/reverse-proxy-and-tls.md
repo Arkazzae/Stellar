@@ -44,12 +44,14 @@ If the certificate is unreadable or does not match `privkey.pem`, the container 
 
 ### Reloading after certificate renewal
 
-After updating `fullchain.pem` and `privkey.pem` on the host, reload Nginx and restart `coturn`:
+After updating `fullchain.pem` and `privkey.pem` on the host, reload Nginx and restart `coturn` through the container's process manager:
 
 ```bash
-docker compose exec stellarr nginx -s reload
-docker compose exec stellarr supervisorctl -c /etc/supervisor/supervisord.conf restart turn
+docker compose exec stellarr stellarr-init reload nginx
+docker compose exec stellarr stellarr-init restart turn
 ```
+
+`stellarr-init status` then shows both as `ready`; see [Services in the container](platforms.md#services-in-the-container).
 
 > [!NOTE]
 > Restarting `turn` drops any active TURN relay allocations, causing relayed voice participants to briefly reconnect.
