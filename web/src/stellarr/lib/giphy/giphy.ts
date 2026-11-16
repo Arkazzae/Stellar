@@ -127,19 +127,12 @@ export function readGiphyConfig(): Promise<GiphyRuntimeConfig> {
 }
 
 /**
- * The key for GIPHY requests. Stellarr's API decides: when the operator has
- * turned GIFs off, there is no key, even if one was bundled into the build.
- * A bundled key stands in only while the API cannot be asked.
+ * The key for GIPHY requests, which only Stellarr's API hands out: there is
+ * none when the operator has turned GIFs off, and none while the API cannot be
+ * asked.
  */
-export async function resolveGiphyApiKey(bundledKey: string): Promise<string> {
-  let config: GiphyRuntimeConfig;
-  try {
-    config = await readGiphyConfig();
-  } catch (error) {
-    const bundled = bundledKey.trim();
-    if (bundled !== "") return bundled;
-    throw error;
-  }
+export async function resolveGiphyApiKey(): Promise<string> {
+  const config = await readGiphyConfig();
   if (!config.enabled) throw new GiphyError("giphy.keyMissing");
   return config.apiKey;
 }

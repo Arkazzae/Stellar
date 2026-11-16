@@ -75,7 +75,6 @@ export interface ComposerProps {
   /** Raised on keystrokes so a container can throttle a typing notification. */
   onTyping?(): void;
   onAttach?(files: File[]): void;
-  giphyApiKey?: string;
   giphyCustomerId?: string;
   onGif?(pageUrl: string): Promise<void>;
   /** The server's own emoji, offered first in the picker. */
@@ -102,7 +101,6 @@ export function Composer({
   onReorderChips,
   onTyping,
   onAttach,
-  giphyApiKey = "",
   giphyCustomerId = "stellarr",
   onGif,
   customEmoji = [],
@@ -459,7 +457,7 @@ export function Composer({
               <Icon name="plus" size={18} />
             </button>
             {onGif === undefined ? null : (
-              <GifBrowser apiKey={giphyApiKey} customerId={giphyCustomerId} onSelect={onGif} />
+              <GifBrowser customerId={giphyCustomerId} onSelect={onGif} />
             )}
             <button
               ref={emojiTrigger}

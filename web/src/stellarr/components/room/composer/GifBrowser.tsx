@@ -29,7 +29,7 @@ const GIPHY_MARK =
  * response (or a "show more") that belongs to an earlier search is dropped
  * instead of overwriting the current one.
  */
-function useGifResults(apiKey: string, customerId: string, query: string, active: boolean) {
+function useGifResults(customerId: string, query: string, active: boolean) {
   const [items, setItems] = useState<GiphyGif[]>([]);
   const [total, setTotal] = useState(0);
   const [loading, setLoading] = useState(false);
@@ -48,7 +48,7 @@ function useGifResults(apiKey: string, customerId: string, query: string, active
         // A "show more" still in flight belongs to the search being replaced.
         setLoadingMore(false);
         setFailed(false);
-        resolveGiphyApiKey(apiKey)
+        resolveGiphyApiKey()
           .then((key) =>
             fetchGiphyPage({
               apiKey: key,
@@ -78,14 +78,14 @@ function useGifResults(apiKey: string, customerId: string, query: string, active
       window.clearTimeout(timer);
       controller.abort();
     };
-  }, [apiKey, customerId, active, query, attempt]);
+  }, [customerId, active, query, attempt]);
 
   const loadMore = async () => {
     if (loadingMore || items.length >= total) return;
     const current = run.current;
     setLoadingMore(true);
     try {
-      const key = await resolveGiphyApiKey(apiKey);
+      const key = await resolveGiphyApiKey();
       const page = await fetchGiphyPage({
         apiKey: key,
         customerId,
@@ -118,8 +118,6 @@ function useGifResults(apiKey: string, customerId: string, query: string, active
 }
 
 export interface GifBrowserProps {
-  /** The key bundled into the build; empty means ask the API for the runtime one. */
-  apiKey: string;
   /** Sent to GIPHY with every request, as its terms require. */
   customerId: string;
   /** Sends the chosen GIF. A rejection keeps the browser open and shows an error. */
@@ -132,13 +130,13 @@ export interface GifBrowserProps {
  * a close. While open it is a layer on the shared stack: Escape and a press
  * elsewhere close it when no layer above it takes them.
  */
-export function GifBrowser({ apiKey, customerId, onSelect }: GifBrowserProps) {
+export function GifBrowser({ customerId, onSelect }: GifBrowserProps) {
   const { t } = useLanguage();
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState("");
   const [sendingId, setSendingId] = useState<string | null>(null);
   const [sendFailed, setSendFailed] = useState(false);
-  const results = useGifResults(apiKey, customerId, query, open);
+  const results = useGifResults(customerId, query, open);
 
   const panelId = useId();
   const triggerRef = useRef<HTMLButtonElement>(null);

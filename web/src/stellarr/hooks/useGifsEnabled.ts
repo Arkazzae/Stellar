@@ -5,10 +5,10 @@ import { useEffect, useState } from "react";
 import { readGiphyConfig } from "@/lib/giphy/giphy";
 
 /**
- * Whether to offer GIFs, as Stellarr's API says; false until it has answered.
- * When the API cannot be asked, a key bundled into the build keeps them on.
+ * Whether to offer GIFs, as Stellarr's API says; false until it has answered,
+ * and false when it cannot be asked.
  */
-export function useGifsEnabled(bundledKey: string): boolean {
+export function useGifsEnabled(): boolean {
   const [enabled, setEnabled] = useState(false);
 
   useEffect(() => {
@@ -18,13 +18,13 @@ export function useGifsEnabled(bundledKey: string): boolean {
         if (live) setEnabled(config.enabled);
       },
       () => {
-        if (live) setEnabled(bundledKey.trim() !== "");
+        if (live) setEnabled(false);
       },
     );
     return () => {
       live = false;
     };
-  }, [bundledKey]);
+  }, []);
 
   return enabled;
 }
