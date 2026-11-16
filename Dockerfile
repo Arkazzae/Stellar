@@ -84,6 +84,67 @@ while IFS= read -r file; do
 done < /tmp/cli-files
 EOF
 
+# The portable publish carries native libraries for some thirty platforms in
+# runtimes/, about 95 MB, and a platform loads only its own: SQLite's
+# libe_sqlite3.so, and libsodium.so, which NSec.Cryptography loads for the
+# Ed25519 passkeys of Fido2. This stage runs once per target platform, still on
+# the build machine, and keeps what the API's and the CLI's deps files list for
+# the target's runtime identifier, its static archives aside. .NET takes native
+# libraries from that one identifier's folder and does not check that the other
+# files the deps files list are on disk. The build stops here if a listed
+# library is missing or built for another machine, or if the deps files list
+# anything under the identifiers .NET falls back to (linux, unix-<arch>, unix,
+# any), which this would delete.
+FROM api-build AS api-platform
+ARG TARGETARCH
+RUN <<'EOF'
+set -eu
+case "$TARGETARCH" in
+  amd64) rid=linux-x64 machine="3e 00" ;;
+  arm64) rid=linux-arm64 machine="b7 00" ;;
+  *) echo "The API ships for amd64 and arm64, not $TARGETARCH." >&2; exit 1 ;;
+esac
+cd /out/api
+listed=$(grep -ho '"runtimes/[^"]*"' Stellarr.Api.deps.json Stellarr.Cli.deps.json | tr -d '"' | sort -u)
+fallback=$(printf '%s\n' "$listed" | grep -E '^runtimes/(linux|unix|unix-[^/]+|any)/' || true)
+if [ -n "$fallback" ]; then
+  printf 'The deps files list files for a fallback identifier, which this stage would remove:\n%s\n' "$fallback" >&2
+  exit 1
+fi
+keep=$(printf '%s\n' "$listed" | grep "^runtimes/$rid/" | grep -v '\.a$' || true)
+if [ -z "$keep" ]; then
+  echo "The deps files list no native library for $rid." >&2
+  exit 1
+fi
+echo "Keeping the files .NET loads on $rid (pruned on $(uname -m)):"
+for file in $keep; do
+  if [ ! -f "$file" ]; then
+    echo "$file is listed for $rid but was not published." >&2
+    exit 1
+  fi
+  case "$file" in
+    *.so)
+      # ELF magic, a shared object (e_type 3) and the target's e_machine.
+      magic=$(od -An -tx1 -N4 "$file" | tr -s ' ' | sed 's/^ //')
+      header=$(od -An -tx1 -j16 -N4 "$file" | tr -s ' ' | sed 's/^ //')
+      if [ "$magic" != "7f 45 4c 46" ] || [ "$header" != "03 00 $machine" ]; then
+        echo "$file is not a shared library for $rid." >&2
+        exit 1
+      fi
+      ;;
+  esac
+  echo "  $file"
+  mkdir -p "/tmp/kept/$(dirname "$file")"
+  cp -p "$file" "/tmp/kept/$file"
+done
+rm -rf runtimes
+mv /tmp/kept/runtimes runtimes
+if [ "$(find runtimes -type f | sort)" != "$keep" ]; then
+  echo "runtimes/ does not hold exactly the files kept for $rid." >&2
+  exit 1
+fi
+EOF
+
 # The media crate with every Rust file replaced by an empty stub. It changes
 # only when the manifest, the lockfile or the set of files changes, so the
 # dependencies compiled from it stay cached across source edits. Stubbing every
@@ -184,8 +245,9 @@ COPY --chmod=0755 infra/entrypoint.sh /usr/local/bin/stellarr-entrypoint
 COPY --chmod=0755 infra/tls-maintenance.sh /usr/local/bin/stellarr-tls-maintenance
 COPY --chmod=0755 infra/stellarr-cli.sh /usr/local/bin/stellarr
 
-# The API, with the operator CLI's own files added in the api-build stage.
-COPY --from=api-build /out/api /opt/stellarr/api
+# The API, with the operator CLI's own files added and the native libraries of
+# the target platform alone.
+COPY --from=api-platform /out/api /opt/stellarr/api
 # The two apps, which nginx serves: the web client's document at the top,
 # Cockpit's in cockpit/, the build's own files in static/, and the folders of
 # web/public/ beside them.
