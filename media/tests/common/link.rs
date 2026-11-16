@@ -104,6 +104,7 @@ impl LinkShape {
 #[derive(Debug, Clone, Copy, Default)]
 pub struct LinkStats {
     pub offered: u64,
+    /// Delivered to the client so far.
     pub delivered: u64,
     /// Bytes delivered, UDP and IP headers included.
     pub delivered_bytes: u64,
@@ -182,8 +183,6 @@ impl Link {
         let jitter = self.shape.jitter.mul_f64(self.rng.unit());
         let arrival = (departure + self.shape.delay + jitter).max(self.last_arrival.unwrap_or(now));
         self.last_arrival = Some(arrival);
-        self.stats.delivered += 1;
-        self.stats.delivered_bytes += size as u64;
         self.in_flight.push_back((arrival, datagram));
     }
 
@@ -191,7 +190,10 @@ impl Link {
     pub fn due(&mut self, now: Instant) -> Vec<Vec<u8>> {
         let mut out = Vec::new();
         while self.in_flight.front().is_some_and(|(at, _)| *at <= now) {
-            out.push(self.in_flight.pop_front().expect("checked").1);
+            let datagram = self.in_flight.pop_front().expect("checked").1;
+            self.stats.delivered += 1;
+            self.stats.delivered_bytes += (datagram.len() + DATAGRAM_OVERHEAD) as u64;
+            out.push(datagram);
         }
         out
     }

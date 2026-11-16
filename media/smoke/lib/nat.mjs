@@ -55,6 +55,8 @@ export class ShapedLink {
     this.timer = null;
     this.stats = { offered: 0, delivered: 0, deliveredBytes: 0, queueDrops: 0, burstDrops: 0 };
     this.maxQueueingMs = 0;
+    /** How long each Opus packet waited at the bottleneck, in ms, in order. */
+    this.voiceQueueingMs = [];
     this.reshape(shape);
   }
 
@@ -81,6 +83,7 @@ export class ShapedLink {
     }
     this.freeAt = start + size / this.bytesPerMs;
     this.maxQueueingMs = Math.max(this.maxQueueingMs, start - now);
+    if (isRtp(data, 111)) this.voiceQueueingMs.push(start - now);
 
     this.bad = this.bad ? this.random() >= this.leave : this.random() < this.enter;
     if (this.bad) {

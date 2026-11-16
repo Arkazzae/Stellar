@@ -28,7 +28,9 @@ public sealed partial class VoiceRoomTests
         {
             media.Signal(i % 2 == 0 ? majaSession : adaSession, "offer", MediaOffer(i));
         }
-        const string tracks = """{"tracks":[{"mid":"4","userId":"30000000-0000-0000-0000-000000000002","kind":"audio","streamId":"mic"}]}""";
+        // A directory as the media server writes it, with what it holds back
+        // for this browser; the hub relays it as it is.
+        const string tracks = """{"tracks":[{"heldBack":false,"kind":"audio","mid":"4","streamId":"mic","userId":"30000000-0000-0000-0000-000000000002"},{"heldBack":true,"kind":"video","mid":"5","streamId":"mic","userId":"30000000-0000-0000-0000-000000000002"}]}""";
         media.Signal(majaSession, "tracks", tracks);
 
         foreach (var (peer, sessionId, first) in new[] { (maja, majaSession, 2), (ada, adaSession, 1) })

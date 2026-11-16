@@ -328,19 +328,42 @@ function describeWindow(w) {
   const pictures = w.pictures
     .map((p) => `${p.from} ${p.fps.toFixed(1)} fps ${Math.round(p.kbps)} kbit/s${p.held ? " held" : ""}`)
     .join(", ");
+  const queueing = w.link?.voiceQueueing
+    ? `, voice queued p50 ${Math.round(w.link.voiceQueueing.p50)} ms p95 ${Math.round(w.link.voiceQueueing.p95)} ms`
+    : "";
   const link =
     w.link === undefined
       ? ""
-      : `, link ${Math.round(w.link.kbps)} kbit/s (queue drops ${w.link.queueDrops}, burst drops ${w.link.burstDrops})`;
+      : `, link ${Math.round(w.link.kbps)} kbit/s (queue drops ${w.link.queueDrops}, burst drops ${w.link.burstDrops}${queueing})`;
   return `[${voices}; ${pictures}; received ${Math.round(w.kbps)} kbit/s${link}]`;
 }
 
+/** What the media server says of one session's downlink, in kbit/s. */
+async function downlinkOf(hub, sessionId) {
+  const stats = await hub.control.request("GET", "/v1/stats");
+  const session = stats.body.rooms.flatMap((r) => r.sessions).find((x) => x.sessionId === sessionId);
+  const d = session?.downlink;
+  if (!d) return null;
+  const k = (bps) => (bps === null || bps === undefined ? null : Math.round(bps / 1000));
+  return {
+    estimate: k(d.estimateBps),
+    raw: k(d.rawEstimateBps),
+    smoothed: k(d.smoothedEstimateBps),
+    forwarded: k(d.forwardedBps),
+    padding: k(d.paddingBps),
+    held: d.heldBack.map((h) => h.mid).sort(),
+    holds: d.holds,
+    resumes: d.resumes,
+  };
+}
+
 /** What a shaped link did since `before`, as a rate of whole datagrams. */
-function linkBetween(before, after, ms) {
+function linkBetween(before, after, ms, voiceQueueingMs = []) {
   return {
     kbps: ((after.deliveredBytes - before.deliveredBytes) * 8) / ms,
     queueDrops: after.queueDrops - before.queueDrops,
     burstDrops: after.burstDrops - before.burstDrops,
+    voiceQueueing: voiceQueueingMs.length > 0 ? percentiles(voiceQueueingMs) : null,
   };
 }
 
@@ -1249,11 +1272,16 @@ const SCENARIOS = {
    * One receiver on a poor downlink while the others are on clean links. A
    * reaches the media server through a relay that puts everything sent to it
    * through a rate cap with a 300 ms queue, delay, jitter and losses in
-   * bursts; B and C each send a voice and a camera of 250 kbit/s. The cap is
-   * lowered from 512 to 256 to 128 kbit/s and then lifted; each step is held
-   * for 10 s and measured for the next 10 s: what A gets of each voice and
-   * each picture, and the bitrate it receives. B and C must get everything
-   * throughout.
+   * bursts; B sends a voice and a camera of 250 kbit/s, C a camera only, so
+   * that A's one voice fits even the slowest link. The cap is lowered from
+   * 512 to 256 to 128 kbit/s and then lifted. At each cap the allocation is
+   * first left to find the link (timed, within 50 s), and once what it holds
+   * back has been the expected for 10 s, the next 10 s are measured. A's voice loses no more than the
+   * link's own bursts and nothing is dropped for want of room; at 512 B's
+   * camera, first in A's list, is decoded and C's is held back; below that
+   * both are; once the cap is lifted both come back, within 75 s; and what
+   * is held back does not change within a measured window. B and C get
+   * everything throughout.
    */
   async q(s) {
     return relayed(s, "q", async (inner, nat) => {
@@ -1264,30 +1292,117 @@ const SCENARIOS = {
       const B = await inner.join("B");
       await directoryReady(B, inner.clients);
       await busyCamera(B, 250_000);
-      const C = await inner.join("C");
+      // C's camera is its first offer, which no offer of the media server
+      // can meet.
+      const C = await inner.join("C", { mic: false });
+      await busyCamera(C, 250_000);
       await directoryReady(C, inner.clients);
       await directoryReady(B, inner.clients);
-      await busyCamera(C, 250_000);
       const { mapping } = await directoryReady(A, inner.clients);
+      const cameraOf = (name) => mapping.find((m) => m.publisher.name === name && m.publication.kind === "video").mid;
+      const held = (directory) =>
+        directory
+          .filter((t) => t.heldBack)
+          .map((t) => t.mid)
+          .sort()
+          .join(",");
 
       const windows = [];
       const steps = [...CAPS_KBPS, null];
+      let returnMs = null;
+      const settledMs = [];
+      const expectedHeld = (kbps) =>
+        kbps === null ? [] : kbps >= 512 ? [cameraOf("C")] : [cameraOf("B"), cameraOf("C")];
       for (const kbps of steps) {
-        if (kbps === null) nat.unshape(addresses);
-        else link.reshape(poorLink(kbps));
-        await sleep(SETTLE_MS);
+        if (kbps === null) {
+          // Lifted: the pictures come back once the estimator has found the
+          // room, which may take a fresh look of it after a still estimate.
+          nat.unshape(addresses);
+          const lifted = Date.now();
+          await waitFor(
+            "A's cameras to come back on a clean link",
+            async () => held((await A.snapshot()).directory) === "",
+            75_000,
+            250,
+          );
+          returnMs = Date.now() - lifted;
+          console.log(`  q: both cameras back ${returnMs} ms after the cap was lifted`);
+          await sleep(3000);
+        } else {
+          // The allocation first finds the link, from the call's start or
+          // from the step before; the window comes once what it holds back
+          // has been the expected for the whole settle.
+          link.reshape(poorLink(kbps));
+          const capped = Date.now();
+          const expected = [...expectedHeld(kbps)].sort().join(",");
+          let since = null;
+          for (;;) {
+            const now = Date.now();
+            if (held((await A.snapshot()).directory) === expected) since ??= now;
+            else since = null;
+            if (since !== null && now - since >= SETTLE_MS) break;
+            check(now - capped < 60_000, `A's allocation did not settle at ${kbps} kbit/s within 60 s`);
+            await sleep(250);
+          }
+          settledMs.push(`${kbps}: ${since - capped} ms`);
+        }
         const before = await A.stats();
         const linkBefore = { ...link.stats };
+        const queuedFrom = link.voiceQueueingMs.length;
+        const logFrom = (await A.snapshot()).directoryLog.length;
         await sleep(WINDOW_MS);
         const after = await A.stats();
         const measured = await A.measure();
+        const snapshot = await A.snapshot();
         const w = receivedBetween(before, after, measured, mapping, WINDOW_MS);
-        if (kbps !== null) w.link = linkBetween(linkBefore, link.stats, WINDOW_MS);
+        if (kbps !== null) {
+          w.link = linkBetween(linkBefore, link.stats, WINDOW_MS, link.voiceQueueingMs.slice(queuedFrom));
+        }
         w.cap = kbps;
+        const heldNow = held(snapshot.directory);
+        for (const p of w.pictures) p.held = heldNow.split(",").includes(p.mid);
+        // Every directory of the window, starting from the one in force.
+        const directories = snapshot.directoryLog.slice(Math.max(0, logFrom - 1)).map((d) => held(d.tracks));
+        w.changes = directories.filter((d, i) => i > 0 && d !== directories[i - 1]).length;
         windows.push(w);
-        console.log(`  q: ${kbps === null ? "clean" : `${kbps} kbit/s`} ${describeWindow(w)}`);
+        const name = kbps === null ? "clean" : `${kbps} kbit/s`;
+        w.downlink = await downlinkOf(inner.env.hub, A.sessionId);
+        console.log(
+          `  q: ${name} ${describeWindow(w)}, held changed ${w.changes} times; ` +
+            `media server: ${JSON.stringify(w.downlink)}`,
+        );
+
         if (kbps !== null) {
           check(w.link.kbps <= kbps * 1.02, `the ${kbps} kbit/s link carried ${w.link.kbps} kbit/s`);
+          check(w.kbps <= kbps, `A received ${w.kbps} kbit/s on a ${kbps} kbit/s link`);
+          check(w.link.queueDrops === 0, `the ${kbps} kbit/s link dropped ${w.link.queueDrops} for want of room`);
+          const linkLossPct = (100 * w.link.burstDrops) / Math.max(1, link.stats.offered - linkBefore.offered);
+          for (const v of w.voices) {
+            check(v.tone, `${name}: A no longer hears ${v.from}'s tone`);
+            check(
+              v.lostPct <= linkLossPct * 1.5 + 0.5,
+              `${name}: ${v.from}'s voice lost ${v.lostPct.toFixed(1)}% where the link lost ${linkLossPct.toFixed(1)}%`,
+            );
+          }
+        }
+        check(w.changes === 0, `${name}: what is held back changed ${w.changes} times on a steady link`);
+        const expectHeld = expectedHeld(kbps);
+        check(
+          heldNow === [...expectHeld].sort().join(","),
+          `${name}: held back ${heldNow || "nothing"}, not ${expectHeld.join(",") || "nothing"}`,
+        );
+        for (const p of w.pictures) {
+          if (expectHeld.includes(p.mid)) {
+            // Padding toward the first held picture goes out on its
+            // retransmission stream, so a few bytes of old packets may
+            // arrive; nothing of it is decoded.
+            check(
+              p.fps === 0 && p.keyFrames === 0,
+              `${name}: ${p.from}'s held camera still arrives (${p.fps} fps, ${p.keyFrames} keyframes)`,
+            );
+          } else {
+            check(p.fps > 15, `${name}: ${p.from}'s camera decodes at only ${p.fps.toFixed(1)} fps`);
+          }
         }
       }
 
@@ -1298,8 +1413,12 @@ const SCENARIOS = {
         summary:
           windows
             .map((w) => `${w.cap === null ? "clean" : `${w.cap} kbit/s`} ${describeWindow(w)}`)
-            .join(" | ") + `; ${summarise(others)}`,
+            .join(" | ") +
+          `; settled ${settledMs.join(", ")} after each cap; cameras back ${returnMs} ms after the cap was lifted; ` +
+          summarise(others),
         windows,
+        settledMs,
+        returnMs,
       };
     });
   },

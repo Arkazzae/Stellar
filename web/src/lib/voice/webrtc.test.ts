@@ -432,7 +432,13 @@ async function answerOffer(pc: FakePeerConnection): Promise<void> {
   await vi.waitFor(() => expect(pc.signalingState).toBe("stable"));
 }
 
-type Forwarded = MediaTrack & { track?: MediaStreamTrack };
+/** A directory entry as a test writes it: held back only when it says so. */
+type Entry = Omit<MediaTrack, "heldBack"> & { heldBack?: boolean };
+type Forwarded = Entry & { track?: MediaStreamTrack };
+
+function entry({ mid, userId, kind, streamId, heldBack = false }: Entry): MediaTrack {
+  return { mid, userId, kind, streamId, heldBack };
+}
 
 /** The media server offers what it forwards; each entry with a track brings that track. */
 async function serverOffer(
@@ -448,13 +454,13 @@ async function serverOffer(
     type: "offer",
     sdp: SERVER_SDP,
     negotiationId,
-    tracks: forwarded.map(({ mid, userId, kind, streamId }) => ({ mid, userId, kind, streamId })),
+    tracks: forwarded.map(entry),
   });
   await vi.waitFor(() => expect(realtime.mediaOfKind("answer")).toHaveLength(before + 1));
 }
 
-function tracks(list: MediaTrack[]): void {
-  fromServer("tracks", { tracks: list });
+function tracks(list: Entry[]): void {
+  fromServer("tracks", { tracks: list.map(entry) });
 }
 
 function state(
@@ -691,7 +697,7 @@ describe("negotiation", () => {
       type: "offer",
       sdp: SERVER_SDP,
       negotiationId: 1,
-      tracks: [{ mid: "b1", userId: "u-b", kind: "audio", streamId: "mic-b" }],
+      tracks: [{ mid: "b1", userId: "u-b", kind: "audio", streamId: "mic-b", heldBack: false }],
     });
     await new Promise((resolve) => setTimeout(resolve, 0));
 
@@ -2272,7 +2278,7 @@ describe("receiving subscriptions", () => {
       type: "offer",
       sdp: SERVER_SDP,
       negotiationId: 1,
-      tracks: [{ mid: "b1", userId: "u-b", kind: "audio", streamId: "mic-b" }],
+      tracks: [{ mid: "b1", userId: "u-b", kind: "audio", streamId: "mic-b", heldBack: false }],
     });
 
     // Nothing waits on the browser, so the list is one hub round trip ahead.
@@ -2456,7 +2462,7 @@ describe("receiving subscriptions", () => {
     await outlastPace();
     client.setReceivePreferences({ screen: null, cameras: true });
     client.setReceivePreferences({ screen: null, cameras: true });
-    tracks([...directory].reverse().map(({ mid, userId, kind, streamId }) => ({ mid, userId, kind, streamId })));
+    tracks([...directory].reverse());
     blocked.resolve();
     await outlastPace();
     expect(selections()).toHaveLength(before);
@@ -2541,7 +2547,7 @@ describe("receiving subscriptions", () => {
         type: "offer",
         sdp: SERVER_SDP,
         negotiationId: 1,
-        tracks: [{ mid: "b1", userId: "u-b", kind: "audio", streamId: "mic-b" }],
+        tracks: [{ mid: "b1", userId: "u-b", kind: "audio", streamId: "mic-b", heldBack: false }],
       });
       await vi.waitFor(() => expect(selections().filter((list) => list.sessionId === sessionId)).toHaveLength(1));
     }
