@@ -98,3 +98,37 @@ describe("LanguagePane", () => {
     expect(update).toHaveBeenCalledWith({ chatAutoTranslateEnabled: true });
   });
 });
+
+describe("LanguagePane while switching the interface language", () => {
+  const pane = (switching: { locale: "pl" | "en"; failed: boolean }) =>
+    render(
+      <LanguagePane
+        locale="pl"
+        chatTranslationEnabled={false}
+        chatAutoTranslateEnabled={false}
+        chatTranslationTargetLanguage="en"
+        update={vi.fn()}
+        switching={switching}
+        t={(key, values) => translateMessage("pl", key, values)}
+      />,
+    );
+
+  it("marks the pick at once and says its text is on its way", () => {
+    pane({ locale: "en", failed: false });
+
+    expect(screen.getByRole("radio", { name: /English/ })).toHaveAttribute("aria-checked", "true");
+    expect(screen.getByRole("status")).toHaveTextContent("Wczytywanie języka: English…");
+  });
+
+  it("says when the language could not be loaded, and offers to load the page again", async () => {
+    const reload = vi.fn();
+    vi.spyOn(window, "location", "get").mockReturnValue({ ...window.location, reload });
+    pane({ locale: "en", failed: true });
+
+    expect(screen.getByRole("alert")).toHaveTextContent(
+      "Nie udało się wczytać języka English w tej karcie. Jest zapisany jako Twój język",
+    );
+    await userEvent.click(screen.getByRole("button", { name: "Wczytaj stronę ponownie" }));
+    expect(reload).toHaveBeenCalledOnce();
+  });
+});

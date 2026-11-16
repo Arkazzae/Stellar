@@ -11,6 +11,10 @@
     <meta name="application-name" content="Stellarr" />
     <meta name="robots" content="noindex, nofollow" />
     <link rel="icon" href="/src/stellarr/assets/icon.svg" type="image/svg+xml" sizes="any" />
+    <!-- The build writes in a script here that starts fetching, next to the
+         entry, the catalog of the language this browser can already tell it
+         will need (documents.ts). -->
+    <!-- preload -->
     <!-- The instance's default language, from STELLARR_LANGUAGE. One image serves
          every instance, so it cannot be built in: the container writes this file
          when it starts. It blocks on purpose, as the next script reads it. -->
@@ -19,6 +23,9 @@
          and src/stellarr/design/themeScript.ts by vite.config.ts. They put the
          language and theme on <html> before the first paint. -->
     <!-- pre-paint -->
+    <!-- The build writes in a script here that fetches the chosen language's
+         catalog when the one above could not tell it in advance. -->
+    <!-- preload-chosen -->
   </head>
   <body>
     <div id="root"></div>

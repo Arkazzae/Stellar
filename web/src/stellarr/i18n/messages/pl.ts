@@ -314,6 +314,10 @@ export const pl = {
 
   "language.interface.title": "Język interfejsu",
   "language.interface.description": "Daty, elementy sterujące i komunikaty systemowe używają wybranego języka. Treść wiadomości innych osób pozostaje bez zmian.",
+  "language.interface.switching": "Wczytywanie języka: {name}…",
+  "language.interface.switchFailed":
+    "Nie udało się wczytać języka {name} w tej karcie. Jest zapisany jako Twój język, więc Stellarr otworzy się w nim po ponownym wczytaniu strony.",
+  "language.interface.reload": "Wczytaj stronę ponownie",
   "language.name.pl": "Polski",
   "language.name.en": "Angielski",
   "language.translation.title": "Tłumaczenie wiadomości",
