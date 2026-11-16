@@ -12,7 +12,7 @@ import {
 } from "react";
 
 import { useLayer } from "@stellarr/ui/behavior";
-import type { ChannelPanelTab } from "@/components/room/channelPanelModel";
+import type { ChannelPanelTab } from "@/components/room/panels/channelPanelModel";
 import type { FriendsTab, RoomView } from "@/components/view-models";
 import { useMediaQuery } from "@/hooks/useMediaQuery";
 import type { ChannelKind } from "@/ports";

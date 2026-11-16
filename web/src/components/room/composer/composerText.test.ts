@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import { FORMAT_MARKERS, fencedCode, insertEmojiAt, toggleMarker } from "./composerText";
-import { inlineText, parseInline, type InlineNode } from "./inline";
+import { inlineText, parseInline, type InlineNode } from "@/lib/messages/inline";
 
 /** The node kind each panel button should produce. */
 const STYLES = {

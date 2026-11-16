@@ -4,7 +4,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import { fetchGiphyGif, trackGiphyAction, type GiphyGif } from "@/lib/giphy";
 
-import type { GiphyPart } from "../parts";
+import type { GiphyPart } from "@/lib/messages/parts";
 
 import { GiphyAttachment } from "./GiphyAttachment";
 

@@ -1,4 +1,4 @@
-import type { ComposerChip } from "@/components/room/ComposerChips";
+import type { ComposerChip } from "@/components/room/composer/ComposerChips";
 import type { Attachment } from "@/ports";
 
 /** Most files one message carries. */

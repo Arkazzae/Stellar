@@ -5,7 +5,7 @@ import { useId, useState } from "react";
 import { Button } from "@stellarr/ui";
 import { Icon } from "@stellarr/icons";
 import { AnchoredCard } from "@/components/primitives/AnchoredCard";
-import { EmojiPicker } from "@/components/room/EmojiPicker";
+import { EmojiPicker } from "@/components/room/composer/EmojiPicker";
 import { WaveformTrimmer, type DecodedWaveform } from "@/components/settings/WaveformTrimmer";
 import { useLanguage } from "@/state/hooks";
 

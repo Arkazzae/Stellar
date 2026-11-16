@@ -4,11 +4,11 @@ import { useMemo, type ReactNode } from "react";
 
 import { Icon } from "@stellarr/icons";
 import { PresenceDot } from "@/components/primitives/Avatar";
-import { Composer } from "@/components/room/Composer";
-import type { ComposerChip } from "@/components/room/ComposerChips";
+import { Composer } from "@/components/room/composer/Composer";
+import type { ComposerChip } from "@/components/room/composer/ComposerChips";
 import type { MessageTranslationOptions } from "@/components/room/attachments/TranslatedTextAttachment";
-import type { AttachmentCallbacks } from "@/components/room/parts";
-import { Transcript, type TranscriptSectionVM } from "@/components/room/Transcript";
+import type { AttachmentCallbacks } from "@/lib/messages/parts";
+import { Transcript, type TranscriptSectionVM } from "@/components/room/transcript/Transcript";
 import { ParticipantTiles } from "@/components/voice/ParticipantTiles";
 import type { OpenProfile, PersonVM } from "@/components/view-models";
 import { translateForDocument } from "@/i18n/defaultLocale";

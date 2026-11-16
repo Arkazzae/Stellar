@@ -5,7 +5,7 @@ import { useState, type DragEvent } from "react";
 import { Icon } from "@stellarr/icons";
 import { useLanguage } from "@/state/hooks";
 
-import { fileExt } from "./parts";
+import { fileExt } from "@/lib/messages/parts";
 
 export interface ComposerChip {
   id: string;

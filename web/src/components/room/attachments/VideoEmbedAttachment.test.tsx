@@ -2,7 +2,7 @@ import { render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { describe, expect, it } from "vitest";
 
-import type { VideoEmbedPart } from "../parts";
+import type { VideoEmbedPart } from "@/lib/messages/parts";
 import { VideoEmbedAttachment } from "./VideoEmbedAttachment";
 
 const youtube: VideoEmbedPart = {

@@ -2,7 +2,7 @@
 
 import type { KeyboardEvent } from "react";
 
-import type { EmbedPart } from "../parts";
+import type { EmbedPart } from "@/lib/messages/parts";
 
 export interface EmbedAttachmentProps {
   part: EmbedPart;

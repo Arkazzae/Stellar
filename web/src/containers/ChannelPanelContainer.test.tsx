@@ -1,7 +1,7 @@
 import { act, render } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-import type { ChannelPanelProps } from "@/components/room/ChannelPanel";
+import type { ChannelPanelProps } from "@/components/room/panels/ChannelPanel";
 import type { Message } from "@/ports";
 import type { ChatValue, DirectoryValue, UiValue } from "@/state/hooks";
 import { fakeChat, fakeDirectory, fakeLanguage, fakeUi, t } from "@/test/roomFakes";
@@ -26,7 +26,7 @@ vi.mock("@/state/hooks", () => ({
   usePorts: () => mocks.ports,
 }));
 
-vi.mock("@/components/room/ChannelPanel", () => ({
+vi.mock("@/components/room/panels/ChannelPanel", () => ({
   ChannelPanel: (props: ChannelPanelProps) => {
     mocks.panel = props;
     return null;

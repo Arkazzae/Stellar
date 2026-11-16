@@ -4,7 +4,7 @@ import { useMemo } from "react";
 
 import { DmRoom } from "@/components/friends/DmRoom";
 import { FriendsView } from "@/components/friends/FriendsView";
-import { MediaViewer } from "@/components/room/MediaViewer";
+import { MediaViewer } from "@/components/room/attachments/MediaViewer";
 import type {
   FriendRequestVM,
   FriendVM,

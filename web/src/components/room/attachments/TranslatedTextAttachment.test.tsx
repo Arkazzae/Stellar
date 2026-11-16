@@ -4,7 +4,7 @@ import { describe, expect, it, vi } from "vitest";
 
 import { translateMessage } from "@/i18n";
 
-import { parseInline } from "../parts";
+import { parseInline } from "@/lib/messages/parts";
 import { TranslatedTextAttachment } from "./TranslatedTextAttachment";
 
 vi.mock("@/lib/chatTranslation/useTranslatedContent", () => ({

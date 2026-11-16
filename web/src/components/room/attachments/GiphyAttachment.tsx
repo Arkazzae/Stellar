@@ -10,7 +10,7 @@ import {
 } from "@/lib/giphy";
 import { useLanguage } from "@/state/LanguageProvider";
 
-import type { GalleryImage, GiphyPart } from "../parts";
+import type { GalleryImage, GiphyPart } from "@/lib/messages/parts";
 
 export interface GiphyAttachmentProps {
   part: GiphyPart;

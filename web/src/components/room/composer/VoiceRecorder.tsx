@@ -7,8 +7,8 @@ import { Icon } from "@stellarr/icons";
 import type { OpenVoiceMessageCapture } from "@/ports";
 import { useLanguage } from "@/state/hooks";
 
-import { formatMediaTime } from "./attachments/mediaTime";
-import { useAudioPeaks } from "./attachments/peaks";
+import { formatMediaTime } from "../attachments/mediaTime";
+import { useAudioPeaks } from "../attachments/peaks";
 import { useVoiceCapture } from "./useVoiceCapture";
 import { BAR_COUNT, MAX_VOICE_MESSAGE_SECONDS } from "./voiceRecording";
 

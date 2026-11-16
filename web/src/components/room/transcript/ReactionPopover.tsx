@@ -8,7 +8,7 @@ import { useLayer } from "@stellarr/ui/behavior";
 import type { EmojiEntry } from "@/lib/emoji";
 import type { CustomEmoji } from "@/ports";
 
-import { EmojiPicker } from "./EmojiPicker";
+import { EmojiPicker } from "../composer/EmojiPicker";
 
 /**
  * Below this many pixels of room underneath, the popover opens upwards.

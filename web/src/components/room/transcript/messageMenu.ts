@@ -4,16 +4,16 @@ import type { MenuEntry } from "@/components/primitives/ContextMenu";
 import type { Confirm } from "@/components/primitives/ConfirmDialog";
 import type { MessageKey, Translator } from "@/i18n";
 
-import { absoluteUrl, canCopyImages, copyImage } from "./mediaActions";
+import { absoluteUrl, canCopyImages, copyImage } from "../attachments/mediaActions";
 import {
   downloadTarget,
   plainText,
   startDownload,
   type DownloadTarget,
   type PointedAt,
-} from "./messageExport";
+} from "@/lib/messages/messageExport";
 import type { MessageAction } from "./MessageToolbar";
-import type { MessagePart } from "./parts";
+import type { MessagePart } from "@/lib/messages/parts";
 
 export interface MessageMenuInput {
   messageId: string;

@@ -1,8 +1,8 @@
 import { describe, expect, it } from "vitest";
 
 import { collectIndexedPanelItems, collectPanelItems } from "./channelPanelModel";
-import type { MessagePart } from "./parts";
-import type { TranscriptSectionVM } from "./transcriptRows";
+import type { MessagePart } from "@/lib/messages/parts";
+import type { TranscriptSectionVM } from "../transcript/transcriptRows";
 
 function sectionsOf(...parts: MessagePart[][]): TranscriptSectionVM[] {
   return [

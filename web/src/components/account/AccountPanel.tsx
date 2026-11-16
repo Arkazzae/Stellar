@@ -6,7 +6,7 @@ import { Button } from "@stellarr/ui";
 import { Icon } from "@stellarr/icons";
 import { AnchoredCard } from "@/components/primitives/AnchoredCard";
 import { PresenceDot } from "@/components/primitives/Avatar";
-import { EmojiPicker } from "@/components/room/EmojiPicker";
+import { EmojiPicker } from "@/components/room/composer/EmojiPicker";
 import type { CustomEmoji, Presence } from "@/ports";
 import { PRESENCE_VALUES, SELF_PRESENCE_LABEL } from "@/ports";
 import { useLanguage } from "@/state/hooks";

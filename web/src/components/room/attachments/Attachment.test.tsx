@@ -5,7 +5,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { translateMessage, type Translator } from "@/i18n";
 import { fetchGiphyGif } from "@/lib/giphy";
 
-import { parseInline, tokenizeCode, type MessagePart } from "../parts";
+import { parseInline, tokenizeCode, type MessagePart } from "@/lib/messages/parts";
 
 import { Attachment } from "./Attachment";
 

@@ -2,7 +2,7 @@
 
 `message-syntax.json` is the one corpus both sides of message formatting read:
 
-- `web/src/components/room/messageSyntaxContract.test.ts` checks the renderer's
+- `web/src/lib/messages/messageSyntaxContract.test.ts` checks the renderer's
   inline nodes and composer edits, and asks the transcript's own
   `mentionsUsername` about every fixed member. That is the same `mentions`
   field the API checks, so the two consumers cannot pass contradictory cases.
@@ -37,7 +37,7 @@ case; neither skips it.
 From the repository root, with the usual .NET settings:
 
 ```sh
-(cd web && npx vitest run src/components/room/messageSyntaxContract.test.ts)
+(cd web && npx vitest run src/lib/messages/messageSyntaxContract.test.ts)
 dotnet test server/Stellarr.Api.Tests/Stellarr.Api.Tests.csproj \
   --filter FullyQualifiedName~MessageSyntaxContractTests
 ```

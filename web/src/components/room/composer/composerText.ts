@@ -1,4 +1,4 @@
-import { codeSource } from "./inline";
+import { codeSource } from "@/lib/messages/inline";
 import {
   canCloseDelimiter,
   canOpenDelimiter,
@@ -8,7 +8,7 @@ import {
   runAfter,
   runBefore,
   type DelimiterChar,
-} from "./inlineSyntax";
+} from "@/lib/messages/inlineSyntax";
 
 /** A new draft and where the selection should sit in it. */
 export interface TextEdit {

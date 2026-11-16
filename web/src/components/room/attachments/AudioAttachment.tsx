@@ -12,7 +12,7 @@ import { Icon } from "@stellarr/icons";
 import { formatBytes } from "@/lib/format";
 import { useLanguage } from "@/state/hooks";
 
-import type { AudioPart } from "../parts";
+import type { AudioPart } from "@/lib/messages/parts";
 
 import { formatMediaTime } from "./mediaTime";
 import { BAR_COUNT, MAX_PEAK_BYTES, useAudioPeaks } from "./peaks";

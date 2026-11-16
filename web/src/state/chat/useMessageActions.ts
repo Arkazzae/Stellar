@@ -1,7 +1,7 @@
 import { useCallback, useMemo, useState } from "react";
 
-import type { ChannelPanelTab } from "@/components/room/channelPanelModel";
-import type { MessageAction } from "@/components/room/MessageToolbar";
+import type { ChannelPanelTab } from "@/components/room/panels/channelPanelModel";
+import type { MessageAction } from "@/components/room/transcript/MessageToolbar";
 import type { Translator } from "@/i18n";
 import { describeError } from "@/lib/api/errors";
 import type { Message, MessageActionsPort } from "@/ports";
