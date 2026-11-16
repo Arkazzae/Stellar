@@ -38,6 +38,12 @@ describe("defineRoutes", () => {
     expect(table.match("/invite/abc/").params).toEqual({ code: "abc" });
   });
 
+  it("answers an address with runs of slashes as the address with one, as nginx does", () => {
+    expect(table.match("//login").page).toBe(Login);
+    expect(table.match("/invite//x").params).toEqual({ code: "x" });
+    expect(table.claims("///invite//abc//")).toBe(true);
+  });
+
   it("compares fixed segments decoded, as the browser shows them", () => {
     expect(table.match("/log%69n").page).toBe(Login);
   });
@@ -47,7 +53,7 @@ describe("defineRoutes", () => {
   });
 
   it("gives every other address the not-found page", () => {
-    for (const path of ["/nope", "/invite", "/invite//x", "/invite/a/b", "/login/more", "/cockpit"]) {
+    for (const path of ["/nope", "/invite", "/invite/a/b", "/login/more", "/cockpit"]) {
       expect(table.match(path), path).toEqual({ page: NotFound, params: {}, route: null });
     }
   });
@@ -58,7 +64,8 @@ describe("defineRoutes", () => {
 
     expect(table.match(`${run}x`).route).toBeNull();
     expect(table.match(`/invite/abc${run}`).params).toEqual({ code: "abc" });
-    expect(table.claims(`/invite${run}abc`)).toBe(false);
+    expect(table.claims(`/invite${run}abc`)).toBe(true);
+    expect(table.claims(`/nope${run}abc`)).toBe(false);
 
     expect(performance.now() - started).toBeLessThan(250);
   });

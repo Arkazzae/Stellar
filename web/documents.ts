@@ -43,14 +43,33 @@ export function fileDirectories(publicDir: string): string[] {
 }
 
 /**
+ * `pathname` with every run of slashes made one, as nginx's merge_slashes
+ * makes `$uri`: `//cockpit//users/` is `/cockpit/users/`. One walk from start
+ * to end, since anyone can write the address.
+ */
+export function mergeSlashes(pathname: string): string {
+  let merged = "";
+  let start = 0;
+  for (let index = 0; index < pathname.length; index += 1) {
+    if (pathname[index] === "/" && pathname[index + 1] === "/") {
+      merged += pathname.slice(start, index);
+      while (pathname[index + 1] === "/") index += 1;
+      start = index;
+    }
+  }
+  return merged + pathname.slice(start);
+}
+
+/**
  * The document that answers `pathname`, or null when the address names a
  * file, which is served as it is or not at all. A missing file is a 404,
  * never a page: a page in place of a worklet or a model would fail far from
  * the cause. An address names a file when it lies in one of `directories`, or
- * when its last segment has an extension, which no page address has.
+ * when its last segment has an extension, which no page address has. Runs of
+ * slashes count as one, as they do for nginx.
  */
 export function documentFor(pathname: string, directories: readonly string[]): DocumentName | null {
-  const segments = pathname.split("/");
+  const segments = mergeSlashes(pathname).split("/");
   const first = segments[1] ?? "";
   const last = segments.at(-1) ?? "";
   // `/@vite/client`, `/@fs/…` and the like belong to the dev server.
@@ -70,11 +89,25 @@ export function writePrePaint(html: string): string {
   return html.replace(PRE_PAINT_MARKER, scripts);
 }
 
+/**
+ * The path of a request's address, read as a path: `//login` is this
+ * server's /login and not a host, and `//` is a path too, where reading it
+ * against a base would throw. Null for a target that is no path at all.
+ */
+export function requestPath(url: string | undefined): string | null {
+  try {
+    return new URL(`http://localhost${url ?? "/"}`).pathname;
+  } catch {
+    return null;
+  }
+}
+
 /** Answers every GET of an app address with that app's document. */
 function serveDocuments(directories: readonly string[]): Connect.NextHandleFunction {
   return (request, _response, next) => {
     if (request.method !== "GET" && request.method !== "HEAD") return next();
-    const { pathname } = new URL(request.url ?? "/", "http://localhost");
+    const pathname = requestPath(request.url);
+    if (pathname === null) return next();
     const document = documentFor(pathname, directories);
     if (document !== null) request.url = `/${document}`;
     next();
@@ -84,7 +117,7 @@ function serveDocuments(directories: readonly string[]): Connect.NextHandleFunct
 /** Answers the instance's default language, which the container writes in production. */
 function serveInstanceLanguage(language: string | undefined): Connect.NextHandleFunction {
   return (request, response, next) => {
-    if (new URL(request.url ?? "/", "http://localhost").pathname !== INSTANCE_LANGUAGE_PATH) return next();
+    if (requestPath(request.url) !== INSTANCE_LANGUAGE_PATH) return next();
     response.setHeader("Content-Type", "text/javascript; charset=utf-8");
     response.setHeader("Cache-Control", "no-cache");
     response.end(instanceLanguageSource(language));

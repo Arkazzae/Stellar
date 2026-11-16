@@ -13,7 +13,9 @@ import {
   COCKPIT_DOCUMENT,
   documentFor,
   fileDirectories,
+  mergeSlashes,
   PRE_PAINT_MARKER,
+  requestPath,
   WEB_DOCUMENT,
   writePrePaint,
 } from "./documents";
@@ -45,6 +47,37 @@ describe("the addresses each document answers", () => {
     for (const path of ["/", "/login", "/reset-password", "/invite/abc123", "/invite/%E0%A4%A", "/nope", "/login/"]) {
       expect(documentFor(path, directories), path).toBe(WEB_DOCUMENT);
     }
+  });
+
+  it("counts runs of slashes as one, as nginx does, in both apps", () => {
+    for (const path of ["//", "//login", "//register", "//nope", "///invite//abc123", "//login/"]) {
+      expect(documentFor(path, directories), path).toBe(WEB_DOCUMENT);
+    }
+    for (const path of ["//cockpit", "//cockpit//users", "/cockpit//users", "///cockpit/"]) {
+      expect(documentFor(path, directories), path).toBe(COCKPIT_DOCUMENT);
+    }
+    expect(documentFor("//audio//missing.js", directories)).toBeNull();
+    expect(mergeSlashes("//cockpit//users//")).toBe("/cockpit/users/");
+    expect(mergeSlashes("/")).toBe("/");
+  });
+
+  it("reads a request's address as a path, however many slashes lead it", () => {
+    expect(requestPath("//")).toBe("//");
+    expect(requestPath("//login?x=1")).toBe("//login");
+    expect(requestPath("///cockpit//users")).toBe("///cockpit//users");
+    expect(requestPath("/stellarr-instance.js")).toBe("/stellarr-instance.js");
+    // A target that makes no address is left to the server's own handling.
+    expect(requestPath("@")).toBeNull();
+  });
+
+  it("merges a long run of slashes in time linear in its length", () => {
+    const run = "/".repeat(300_000);
+    const started = performance.now();
+
+    expect(mergeSlashes(`${run}login`)).toBe("/login");
+    expect(documentFor(`${run}cockpit${run}users`, directories)).toBe(COCKPIT_DOCUMENT);
+
+    expect(performance.now() - started).toBeLessThan(250);
   });
 
   it("gives /cockpit and everything below it Cockpit's document", () => {
@@ -230,6 +263,30 @@ describe("infra/nginx.conf, which serves the build in the container", () => {
 
   // [^/]* after the dot would rescan the rest of the segment from every dot:
   // 50,000 dots before a slash took seven seconds to match.
+  // nginx merges the slashes of an address (merge_slashes) before the map
+  // sees $uri, and the router merges them before it picks the page, so an
+  // address that starts with two slashes gets the page it names.
+  it("answers an address with runs of slashes as nginx does once it merged them", () => {
+    for (const address of [
+      "//",
+      "//login",
+      "//register",
+      "//nope",
+      "//login/",
+      "///invite//abc123",
+      "//cockpit",
+      "//cockpit//users",
+      "/cockpit//users",
+      "//missing.js",
+      "//audio//missing",
+    ]) {
+      expect(lookUp(entries, mergeSlashes(address)), address).toBe(expectedAnswer(address));
+    }
+    expect(expectedAnswer("//login")).toBe("page");
+    expect(expectedAnswer("//nope")).toBe("missing");
+    expect(expectedAnswer("//cockpit//users")).toBe("cockpit");
+  });
+
   it("answers a long run of dots before a slash in time linear in its length", () => {
     const address = `/${".".repeat(50_000)}/`;
     const started = performance.now();

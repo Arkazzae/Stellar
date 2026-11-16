@@ -110,6 +110,31 @@ describe("Router and Outlet", () => {
     expect(screen.getByText("at /login")).toBeInTheDocument();
   });
 
+  it("shows the page an address names once its runs of slashes are one, as nginx does", () => {
+    const { unmount } = renderAt(createMemoryHistory("//login"));
+    expect(screen.getByText("at /login")).toBeInTheDocument();
+    unmount();
+
+    renderAt(createMemoryHistory("///invite//abc"));
+    expect(screen.getByRole("heading", { name: "Invite abc" })).toBeInTheDocument();
+  });
+
+  it("draws the page an address with leading slashes names in the browser too", () => {
+    const replaceState = vi.fn((_state: unknown, _unused: string, url: string) => {
+      if (url.startsWith("//")) throw new DOMException("cross-origin", "SecurityError");
+    });
+    const fake = {
+      location: { pathname: "//login", search: "", hash: "", origin: "https://chat.example.test" },
+      history: { state: null, replaceState, pushState: vi.fn(), scrollRestoration: "auto" },
+      addEventListener: vi.fn(),
+      removeEventListener: vi.fn(),
+    } as unknown as Window;
+
+    renderAt(createBrowserHistory(fake));
+
+    expect(screen.getByRole("heading", { name: "Login" })).toBeInTheDocument();
+  });
+
   it("pushes a new entry and goes back to the one before", async () => {
     const user = userEvent.setup();
     const history = createMemoryHistory("/");
