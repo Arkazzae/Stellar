@@ -1,9 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-import {
-  AdaptiveVad,
-  sensitivityToThresholds,
-} from "../../../../../public/audio/vad-processor.js";
+import { AdaptiveVad, sensitivityToThresholds } from "./detector/vad";
 import { SpeechDetector, VAD_WORKLET_URL, type SpeechReading } from "./vad";
 
 const SAMPLE_RATE = 48000;

@@ -1,15 +1,17 @@
 /**
- * Runs `vad-processor.js` the way an AudioWorklet runs it.
+ * Runs the detector worklet the way an AudioWorklet runs it.
  *
- * The module registers its processor only when it finds
- * `AudioWorkletProcessor` and `registerProcessor` in its global scope, and the
- * processor reads a free `sampleRate`. Here those three are put on the global
- * object, a separate copy of the module is evaluated (the query string makes
- * it a module of its own, so the copy the app's code imports, which skipped
- * the block, is not reused), and the class it registers is kept. The
- * processor is then driven in render quanta of 128 frames, with messages
- * from the main thread delivered between quanta and its own `postMessage`
- * calls collected with the quantum they were made in.
+ * The worklet's entry, `capture/detector/processor.ts`, extends
+ * `AudioWorkletProcessor`, calls `registerProcessor` and reads a free
+ * `sampleRate`, all of which exist only in an AudioWorkletGlobalScope. Here
+ * those three are put on the global object, the entry is evaluated (the query
+ * string makes it a module of its own, evaluated now whatever else has been
+ * loaded), and the class it registers is kept. The processor is then driven
+ * in render quanta of 128 frames, with messages from the main thread
+ * delivered between quanta and its own `postMessage` calls collected with the
+ * quantum they were made in. The build bundles the same entry into
+ * /audio/detector-worklet.js; the playback check runs that bundle in Chrome
+ * against this record.
  *
  * This is the only file of the harness that knows how the worklet is built.
  * Everything recorded comes out of `process()` and the port: the output
@@ -54,7 +56,7 @@ export interface RegisteredProcessor {
 
 let registration: Promise<RegisteredProcessor> | null = null;
 
-/** The processor class `vad-processor.js` registers, evaluated in a worklet-like scope. */
+/** The processor class the detector worklet registers, evaluated in a worklet-like scope. */
 export function registeredProcessor(): Promise<RegisteredProcessor> {
   registration ??= (async () => {
     const scope = globalThis as Record<string, unknown>;
@@ -71,7 +73,7 @@ export function registeredProcessor(): Promise<RegisteredProcessor> {
     };
     try {
       // @ts-expect-error The query names a separate copy of the module, which TypeScript cannot resolve.
-      await import("../../../public/audio/vad-processor.js?worklet-scope");
+      await import("../../../src/stellarr/lib/voice/capture/detector/processor.ts?worklet-scope");
     } finally {
       for (const [key, value] of Object.entries(saved)) {
         if (value === undefined) delete scope[key];
@@ -80,7 +82,7 @@ export function registeredProcessor(): Promise<RegisteredProcessor> {
     }
     const [first] = registered;
     if (registered.length !== 1 || !first) {
-      throw new Error(`vad-processor.js registered ${registered.length} processors, expected one`);
+      throw new Error(`the detector worklet registered ${registered.length} processors, expected one`);
     }
     return first;
   })();

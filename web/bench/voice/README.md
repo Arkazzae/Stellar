@@ -3,8 +3,9 @@
 A record of what the web client's audio processing does today, made before it
 is rewritten, so that the rewrite can be held to the same sound:
 
-- **capture**: the speech detector, the input gate and the leveller in
-  `web/public/audio/vad-processor.js`, as the app builds them
+- **capture**: the speech detector, the input gate and the leveller of the
+  detector worklet (`web/src/stellarr/lib/voice/capture/detector/`, built
+  into `/audio/detector-worklet.js`), as the app builds them
   (`capture/captureGraph.ts`, `capture/gateNode.ts`, `capture/vad.ts`);
 - **playback**: each remote participant's strip of Web Audio nodes
   (`playback/remoteMixer.ts`, `playback/remoteStrip.ts`,
@@ -92,9 +93,10 @@ it).
 
 ## The capture record
 
-`capture/worklet.ts` evaluates a copy of `vad-processor.js` in a scope that
-has `AudioWorkletProcessor`, `registerProcessor` and `sampleRate`, keeps the
-class it registers, and drives it as the browser would: render quanta of 128
+`capture/worklet.ts` evaluates the worklet's entry,
+`capture/detector/processor.ts`, in a scope that has `AudioWorkletProcessor`,
+`registerProcessor` and `sampleRate`, keeps the class it registers, and
+drives it as the browser would: render quanta of 128
 frames, one mono input, one output, messages from the main thread delivered
 between quanta, `postMessage` calls collected with the quantum they were made
 in. `capture/app.ts` takes each node's options from the app's own code:
@@ -253,9 +255,12 @@ may be committed.
 
 A rewrite changes these files of the harness, not the records:
 
-- `capture/worklet.ts`: that `vad-processor.js` registers one processor
-  class, reads `sampleRate` from its global scope, takes `processorOptions`,
-  and talks through `this.port`;
+- `capture/worklet.ts`: that `capture/detector/processor.ts` registers one
+  processor class, reads `sampleRate` from its global scope, takes
+  `processorOptions`, and talks through `this.port`;
+- `playback/run.mjs`: that the page builds the worklet with `workerBuild`
+  from `web/worklets.ts`, as the app's build does, so the playback check's
+  cross-check runs the minified bundle that ships;
 - `capture/app.ts`: the functions the app builds its nodes with
   (`buildCaptureGraph`, `SpeechDetector.add`, `buildGateNode`) and
   `REMOTE_GATE_SENSITIVITY`;

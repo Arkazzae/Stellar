@@ -12,6 +12,7 @@ import {
   LANGUAGE_HINT_KEY,
   LOCALE_SCRIPT,
 } from "./src/stellarr/i18n/localeScript";
+import { WORKLETS } from "./worklets";
 
 /*
  * The two documents of the build and which addresses each one answers. The
@@ -41,13 +42,14 @@ export type DocumentName = typeof WEB_DOCUMENT | typeof COCKPIT_DOCUMENT;
 /**
  * The directories that hold files and never pages: the top-level ones of
  * `public/` (worklets, codecs, models, fonts, sounds, identity art) and the
- * build's own.
+ * build's own, among them the one it writes the app's worklets to.
  */
 export function fileDirectories(publicDir: string): string[] {
   const served = readdirSync(publicDir, { withFileTypes: true })
     .filter((entry) => entry.isDirectory())
     .map((entry) => entry.name);
-  return [...new Set([...served, BUILD_DIRECTORY])].sort();
+  const worklets = Object.values(WORKLETS).map((file) => file.split("/")[0] ?? file);
+  return [...new Set([...served, BUILD_DIRECTORY, ...worklets])].sort();
 }
 
 /**
@@ -87,10 +89,8 @@ export function documentFor(pathname: string, directories: readonly string[]): D
 
 /**
  * Takes out of `outDir` the TypeScript declarations the build copied from
- * `publicDir` with the rest of it. One sits beside the voice activity
- * worklet (`audio/vad-processor.d.ts`) for the code that imports the
- * worklet's helpers; a browser has no use for it, so it does not ship.
- * Returns the files it removed, relative to `outDir`.
+ * `publicDir` with the rest of it; a browser has no use for one, so none
+ * ships. Returns the files it removed, relative to `outDir`.
  */
 export function removeDeclarations(publicDir: string, outDir: string): string[] {
   const declarations = readdirSync(publicDir, { recursive: true, encoding: "utf8" }).filter((file) =>

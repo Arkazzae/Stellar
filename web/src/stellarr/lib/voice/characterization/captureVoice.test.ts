@@ -1,6 +1,6 @@
 /**
  * The capture record: the speech detector, the gate and the leveller as
- * `vad-processor.js` composes them in its worklet, held to
+ * the detector worklet (`capture/detector/processor.ts`) composes them, held to
  * web/bench/voice/records/capture/. The fixtures are split over three files
  * so that they run side by side. See web/bench/voice/README.md.
  */

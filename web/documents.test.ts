@@ -40,6 +40,7 @@ import {
   LOCALE_SCRIPT,
 } from "./src/stellarr/i18n/localeScript";
 import { routes } from "./src/stellarr/routes";
+import { WORKLETS } from "./worklets";
 
 // The route table keeps its paths to itself, so the tables handed to
 // defineRoutes are kept here, for the check against infra/nginx.conf.
@@ -529,9 +530,6 @@ describe("what the build copies from public/", () => {
     }
   });
 
-  it("would have one to leave out", () => {
-    expect(existsSync(here("public/audio/vad-processor.d.ts"))).toBe(true);
-  });
 });
 
 describe("the files the apps name by address", () => {
@@ -547,7 +545,6 @@ describe("the files the apps name by address", () => {
     "index.html",
     "cockpit/index.html",
     "public/bergamot-worker.js",
-    "public/audio/vad-processor.js",
   ];
   const named = new Map<string, string>();
   for (const source of sources) {
@@ -558,12 +555,13 @@ describe("the files the apps name by address", () => {
   function served(address: string): boolean {
     if (address === INSTANCE_LANGUAGE_PATH) return true;
     if (address.startsWith("/src/")) return existsSync(here(`.${address}`));
+    if (Object.values(WORKLETS).some((file) => address === `/${file}`)) return true;
     return assembled.has(address) || existsSync(here(`public${address}`));
   }
 
   it("finds the addresses the apps load files from", () => {
     expect([...named.keys()]).toEqual(
-      expect.arrayContaining(["/audio/vad-processor.js", "/sounds/calling.wav", "/fonts/outfit-100-900-latin.woff2"]),
+      expect.arrayContaining(["/audio/rnnoise-worklet.js", "/sounds/calling.wav", "/fonts/outfit-100-900-latin.woff2"]),
     );
   });
 
