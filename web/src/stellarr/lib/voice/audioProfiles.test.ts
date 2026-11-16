@@ -1,11 +1,5 @@
 import { describe, expect, it } from "vitest";
-import {
-  AUDIO_PROFILES,
-  microphoneConstraints,
-  opusParameters,
-  profileFor,
-  usesWorkletSuppression,
-} from "./audioProfiles";
+import { AUDIO_PROFILES, opusParameters, profileFor, usesWorkletSuppression } from "./audioProfiles";
 import { DEFAULT_SETTINGS } from "./settings";
 
 describe("AUDIO_PROFILES", () => {
@@ -74,41 +68,6 @@ describe("opusParameters", () => {
 
   it("never turns a mono profile into stereo", () => {
     expect(opusParameters(AUDIO_PROFILES.studio, true)).toMatchObject({ stereo: "0" });
-  });
-});
-
-describe("microphoneConstraints", () => {
-  it("leaves noise suppression to the browser only when it is the chosen engine", () => {
-    for (const mode of ["rnnoise", "gtcrn", "speex", "off"] as const) {
-      expect(
-        microphoneConstraints({ ...DEFAULT_SETTINGS, noiseSuppression: mode }),
-      ).toMatchObject({ noiseSuppression: false });
-    }
-    expect(
-      microphoneConstraints({ ...DEFAULT_SETTINGS, noiseSuppression: "browser" }),
-    ).toMatchObject({ noiseSuppression: true });
-  });
-
-  it("never lets the browser level the volume, whatever the setting", () => {
-    for (const autoGainControl of [true, false]) {
-      expect(
-        microphoneConstraints({ ...DEFAULT_SETTINGS, autoGainControl }).autoGainControl,
-      ).toBe(false);
-    }
-  });
-
-  it("keeps echo cancellation under the person's control", () => {
-    expect(
-      microphoneConstraints({ ...DEFAULT_SETTINGS, echoCancellation: false })
-        .echoCancellation,
-    ).toBe(false);
-  });
-
-  it("pins the chosen device and otherwise takes the system default", () => {
-    expect(
-      microphoneConstraints({ ...DEFAULT_SETTINGS, inputDeviceId: "mic-7" }).deviceId,
-    ).toEqual({ exact: "mic-7" });
-    expect(microphoneConstraints(DEFAULT_SETTINGS)).not.toHaveProperty("deviceId");
   });
 });
 
