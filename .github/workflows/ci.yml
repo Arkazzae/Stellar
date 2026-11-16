@@ -30,6 +30,7 @@ jobs:
       server: ${{ steps.filter.outputs.server }}
       web: ${{ steps.filter.outputs.web }}
       media: ${{ steps.filter.outputs.media }}
+      init: ${{ steps.filter.outputs.init }}
       image: ${{ steps.filter.outputs.image }}
     steps:
       - uses: actions/checkout@v7
@@ -70,8 +71,11 @@ jobs:
           # file as web/ does.
           check web '^(web/|artifacts/|packages/|package(-lock)?\.json$|branding/icons/|infra/(nginx\.conf|entrypoint\.sh)$|\.github/workflows/ci\.yml$)'
           check media '^(media/|\.github/workflows/ci\.yml$)'
+          check init '^(init/|\.github/workflows/ci\.yml$)'
           # vite.config.ts and documents.ts lay out the build that nginx serves.
-          check image '^(Dockerfile$|\.dockerignore$|artifacts/|infra/|server/.*\.csproj$|server/.*packages\.lock\.json$|packages/|package(-lock)?\.json$|\.npmrc$|web/package\.json$|web/(vite\.config|documents)\.ts$|media/Cargo\.(toml|lock)$|global\.json$|Directory\.Build\.props$|\.github/workflows/ci\.yml$)'
+          # The image job drills the process manager in the image, so its
+          # sources count, not only its manifest.
+          check image '^(Dockerfile$|\.dockerignore$|artifacts/|infra/|server/.*\.csproj$|server/.*packages\.lock\.json$|packages/|package(-lock)?\.json$|\.npmrc$|web/package\.json$|web/(vite\.config|documents)\.ts$|media/Cargo\.(toml|lock)$|init/(Cargo\.(toml|lock)$|src/)|global\.json$|Directory\.Build\.props$|\.github/workflows/ci\.yml$)'
 
   server:
     needs: changes
@@ -168,6 +172,39 @@ jobs:
       - run: cargo clippy --locked --all-targets -- -D warnings
       - run: cargo test --locked
 
+  # Stellarr Init, the container's PID 1.
+  init:
+    needs: changes
+    if: needs.changes.outputs.init == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    defaults:
+      run:
+        working-directory: init
+    env:
+      # One scenario runs the test helper as nobody, which must be able to
+      # reach it: the runner's home folder is closed to other users.
+      CARGO_TARGET_DIR: /tmp/init-target
+    steps:
+      - uses: actions/checkout@v7
+      - run: rustup toolchain install stable --profile minimal --component rustfmt,clippy && rustup default stable
+      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
+        with:
+          workspaces: init -> /tmp/init-target
+      - run: cargo fmt --check
+      - run: cargo clippy --locked --all-targets -- -D warnings
+      # The unit tests and the decisions on a fake clock need nothing of the
+      # runner.
+      - run: cargo test --locked --lib --test core
+      # The PID 1 scenarios start the manager in PID namespaces of its own and
+      # run services as nobody, which takes root. The runner allows it through
+      # sudo, so the test binary is built as the runner's user and run as root.
+      - name: Run the PID 1 scenarios
+        run: |
+          bin=$(cargo test --locked --test pid1 --no-run --message-format=json \
+            | jq -r 'select(.profile.test == true and .target.name == "pid1") | .executable')
+          sudo "$bin"
+
   # Builds the image without pushing it, when the Dockerfile, the container
   # configuration or a dependency list changes. On main it also refreshes the
   # build cache that the release workflow reuses.
@@ -188,12 +225,15 @@ jobs:
           cache-from: type=gha
           cache-to: type=gha,mode=max
       # A build can succeed while a process inside cannot start, so run the
-      # image and wait until its health check passes: nginx, the API with its
-      # database, the media server and coturn all answer.
+      # image and wait until its health check passes: stellarr-init reports
+      # nginx, the API with its database, the media server and coturn ready.
+      # Only the interval is shorter than the image's, so that the drills
+      # below see the container's health change within seconds; the check and
+      # its retries are the image's own.
       - name: Start the image
         run: |
           docker run -d --name stellarr -e STELLARR_DOMAIN=localhost -e STELLARR_LANGUAGE=pl \
-            -p 8443:443 stellarr:ci
+            --health-interval 5s -p 8443:443 stellarr:ci
           for _ in $(seq 1 60); do
             status=$(docker inspect -f '{{.State.Health.Status}}' stellarr)
             [[ $status == healthy || $status == unhealthy ]] && break
@@ -294,8 +334,102 @@ jobs:
           docker run --rm --entrypoint bash stellarr:ci -c '
             nodes=$(find / -xdev -type f -name node 2>/dev/null)
             if [[ -n $nodes ]]; then echo "::error::The image has Node.js: $nodes"; exit 1; fi'
+          # stellarr-init runs the services; supervisord, and the Python it
+          # needed, are gone.
+          docker run --rm --entrypoint bash stellarr:ci -c '
+            for tool in supervisord supervisorctl python3; do
+              if command -v "$tool" >/dev/null; then echo "::error::The image has $tool."; exit 1; fi
+            done
+            # A package the base image once knew stays listed, as not installed.
+            for package in supervisor python3 python3-minimal; do
+              status=$(dpkg-query -W -f="\${Status}" "$package" 2>/dev/null || true)
+              if [[ $status == "install ok installed" ]]; then
+                echo "::error::The image has the $package package."; exit 1
+              fi
+            done'
       # The operator CLI ships in the same image and must work without the API.
       - name: Check the packaged operator CLI
         run: |
           docker run --rm --entrypoint stellarr stellarr:ci version
           docker run --rm --entrypoint stellarr stellarr:ci --help >/dev/null
+      # The services run under stellarr-init as PID 1. Each drill takes one of
+      # them down in a different way and checks what health says meanwhile,
+      # that the others keep running, and that it comes back.
+      - name: Drill the process manager
+        run: |
+          fail() {
+            echo "::error::$*"
+            docker exec stellarr stellarr-init status || true
+            docker logs stellarr 2>&1 | grep 'stellarr-init:' | tail -n 40
+            exit 1
+          }
+          field() {
+            docker exec stellarr stellarr-init status --json \
+              | jq -r --arg name "$1" --arg key "$2" '.services[] | select(.name == $name) | .[$key]'
+          }
+          is() { [[ $(field "$1" state) == "$2" ]]; }
+          unhealthy() { ! docker exec stellarr stellarr-init health >/dev/null 2>&1; }
+          # Docker's status, where healthy also means that its last check
+          # passed: a streak of failed checks outlasts a brief failure while
+          # the status still reads healthy.
+          container() {
+            local health
+            health=$(docker inspect -f '{{.State.Health.Status}} {{.State.Health.FailingStreak}}' stellarr)
+            if [[ $1 == healthy ]]; then [[ $health == "healthy 0" ]]; else [[ $health == "$1 "* ]]; fi
+          }
+          # Tries the command after it once a second for up to $1 seconds.
+          within() {
+            local seconds=$1; shift
+            for _ in $(seq "$seconds"); do "$@" && return 0; sleep 1; done
+            "$@"
+          }
+          signal() { docker exec stellarr bash -c "kill -$1 $2"; }
+
+          [[ $(docker exec stellarr cat /proc/1/comm) == stellarr-init ]] || fail "PID 1 is not stellarr-init."
+          docker exec stellarr stellarr-init health || fail "health fails in a healthy container."
+
+          # Killed outright: started again at once, under a new PID.
+          pid=$(field media pid)
+          signal KILL "$pid"
+          within 30 is media ready || fail "media did not come back after SIGKILL."
+          [[ $(field media pid) != "$pid" && $(field media restarts) == 1 ]] || fail "media was not restarted."
+          docker exec stellarr stellarr-init health || fail "health fails after media came back."
+
+          # Alive but silent: health fails after three missed checks, and the
+          # same process is ready again once it answers. It is not restarted.
+          pid=$(field api pid)
+          signal STOP "$pid"
+          if ! within 90 unhealthy; then signal CONT "$pid"; fail "health passed with the API stopped."; fi
+          is api failing || { signal CONT "$pid"; fail "the stopped API is not reported as failing."; }
+          within 30 container unhealthy || { signal CONT "$pid"; fail "the container stayed healthy with the API stopped."; }
+          signal CONT "$pid"
+          within 30 is api ready || fail "the API was not ready again."
+          [[ $(field api pid) == "$pid" ]] || fail "the API was restarted for failing its check."
+          # The next drill counts Docker's failed checks from zero.
+          within 30 container healthy || fail "the container's checks did not pass after the API."
+
+          # Unable to start: the container turns unhealthy while the others
+          # keep serving, and healthy again once it can start.
+          docker exec stellarr chmod -x /usr/bin/turnserver
+          docker exec stellarr stellarr-init restart turn
+          started=$(date +%s)
+          within 60 container unhealthy || fail "the container stayed healthy without coturn."
+          echo "The container was unhealthy $(( $(date +%s) - started )) s after coturn stopped."
+          for name in media api nginx; do is "$name" ready || fail "$name stopped when coturn could not start."; done
+          curl -ksSf -o /dev/null https://localhost:8443/health || fail "the API stopped answering without coturn."
+          docker exec stellarr chmod +x /usr/bin/turnserver
+          within 60 is turn ready || fail "coturn did not start once it could."
+          within 30 container healthy || fail "the container did not become healthy again."
+      # The last step: docker stop sends SIGTERM, and the manager stops the
+      # services in order within its own 60 s, inside the 75 s grace period
+      # docker-compose.yml gives the container.
+      - name: Stop the container
+        run: |
+          started=$(date +%s%3N)
+          docker stop -t 75 stellarr
+          took=$(( $(date +%s%3N) - started ))
+          code=$(docker inspect -f '{{.State.ExitCode}}' stellarr)
+          docker logs stellarr 2>&1 | grep 'stellarr-init:' | tail -n 20
+          echo "docker stop took ${took} ms; the container exited with $code."
+          (( code == 0 )) || { echo "::error::The container exited with $code."; exit 1; }
+          (( took < 75000 )) || { echo "::error::The stop took ${took} ms."; exit 1; }
