@@ -1,51 +1,43 @@
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import {
+  GTCRN_WASM_URL,
   GTCRN_WORKLET_URL,
+  PROCESSOR_NAME,
+  RNNOISE_SIMD_WASM_URL,
+  RNNOISE_WASM_URL,
   RNNOISE_WORKLET_URL,
+  SPEEX_WASM_URL,
   SPEEX_WORKLET_URL,
   attachSuppressor,
   resetSuppressorCacheForTests,
 } from "./noiseSuppression";
 
-const wrapper = vi.hoisted(() => {
-  const node = {
-    connect: vi.fn(),
-    disconnect: vi.fn(),
-    destroy: vi.fn(),
-  };
-  return {
-    node,
-    constructed: [] as string[],
-    loadRnnoise: vi.fn(async () => new ArrayBuffer(8)),
-    loadGtcrn: vi.fn(async () => new ArrayBuffer(8)),
-    loadSpeex: vi.fn(async () => new ArrayBuffer(8)),
-  };
-});
+/** Stands in for the browser's node; records what it was constructed with. */
+class FakeWorkletNode {
+  static created: FakeWorkletNode[] = [];
+  static failWith: Error | null = null;
 
-vi.mock("@sapphi-red/web-noise-suppressor", () => ({
-  loadRnnoise: wrapper.loadRnnoise,
-  loadGtcrn: wrapper.loadGtcrn,
-  loadSpeex: wrapper.loadSpeex,
-  RnnoiseWorkletNode: class RnnoiseWorkletNode {
-    constructor() {
-      wrapper.constructed.push("rnnoise");
-      return wrapper.node;
-    }
-  },
-  GtcrnWorkletNode: class GtcrnWorkletNode {
-    constructor() {
-      wrapper.constructed.push("gtcrn");
-      return wrapper.node;
-    }
-  },
-  SpeexWorkletNode: class SpeexWorkletNode {
-    constructor() {
-      wrapper.constructed.push("speex");
-      return wrapper.node;
-    }
-  },
-}));
+  connect = vi.fn();
+  disconnect = vi.fn();
+  port = { postMessage: vi.fn() };
+
+  constructor(
+    readonly context: AudioContext,
+    readonly name: string,
+    readonly options: AudioWorkletNodeOptions,
+  ) {
+    if (FakeWorkletNode.failWith) throw FakeWorkletNode.failWith;
+    FakeWorkletNode.created.push(this);
+  }
+}
+
+const binaries = new Map<string, ArrayBuffer>();
+const fetchBinary = vi.fn(async (url: string) => {
+  const body = new ArrayBuffer(8);
+  binaries.set(url, body);
+  return { ok: true, status: 200, arrayBuffer: async () => body };
+});
 
 function graph() {
   const context = {
@@ -58,15 +50,21 @@ function graph() {
   return { context, source };
 }
 
+const lastNode = () => FakeWorkletNode.created.at(-1) as FakeWorkletNode;
+
+beforeEach(() => {
+  vi.stubGlobal("AudioWorkletNode", FakeWorkletNode);
+  vi.stubGlobal("fetch", fetchBinary);
+});
+
 afterEach(() => {
   resetSuppressorCacheForTests();
-  wrapper.constructed.length = 0;
-  wrapper.loadRnnoise.mockClear();
-  wrapper.loadGtcrn.mockClear();
-  wrapper.loadSpeex.mockClear();
-  wrapper.node.connect.mockReset();
-  wrapper.node.disconnect.mockReset();
-  wrapper.node.destroy.mockReset();
+  vi.unstubAllGlobals();
+  vi.restoreAllMocks();
+  FakeWorkletNode.created = [];
+  FakeWorkletNode.failWith = null;
+  binaries.clear();
+  fetchBinary.mockClear();
 });
 
 describe("suppressor graph lifecycle", () => {
@@ -76,30 +74,40 @@ describe("suppressor graph lifecycle", () => {
 
     expect(handle).not.toBeNull();
     expect(handle?.kind).toBe("rnnoise");
-    expect(handle?.output).toBe(wrapper.node);
+    expect(handle?.output).toBe(lastNode());
     expect(context.audioWorklet.addModule).toHaveBeenCalledWith(RNNOISE_WORKLET_URL);
-    expect(source.connect).toHaveBeenCalledWith(wrapper.node);
+    expect(source.connect).toHaveBeenCalledWith(lastNode());
     handle?.dispose();
     handle?.dispose();
 
     expect(source.disconnect).toHaveBeenCalledOnce();
-    expect(wrapper.node.destroy).toHaveBeenCalledOnce();
+    expect(lastNode().disconnect).toHaveBeenCalledOnce();
+    // The processors free their WASM state on this one message.
+    expect(lastNode().port.postMessage).toHaveBeenCalledOnce();
+    expect(lastNode().port.postMessage).toHaveBeenCalledWith("destroy");
   });
 
-  it("loads each engine from its own worklet and binary", async () => {
-    const { context, source } = graph();
+  it.each([
+    ["rnnoise", RNNOISE_WORKLET_URL, RNNOISE_SIMD_WASM_URL],
+    ["gtcrn", GTCRN_WORKLET_URL, GTCRN_WASM_URL],
+    ["speex", SPEEX_WORKLET_URL, SPEEX_WASM_URL],
+  ] as const)(
+    "starts %s's processor with one channel and the binary it was served",
+    async (kind, worklet, binary) => {
+      const { context, source } = graph();
 
-    await attachSuppressor("gtcrn", context, source);
-    expect(context.audioWorklet.addModule).toHaveBeenLastCalledWith(GTCRN_WORKLET_URL);
-    expect(wrapper.loadGtcrn).toHaveBeenCalledOnce();
+      await attachSuppressor(kind, context, source);
 
-    await attachSuppressor("speex", context, source);
-    expect(context.audioWorklet.addModule).toHaveBeenLastCalledWith(SPEEX_WORKLET_URL);
-    expect(wrapper.loadSpeex).toHaveBeenCalledOnce();
-
-    expect(wrapper.loadRnnoise).not.toHaveBeenCalled();
-    expect(wrapper.constructed).toEqual(["gtcrn", "speex"]);
-  });
+      expect(context.audioWorklet.addModule).toHaveBeenCalledWith(worklet);
+      expect(fetchBinary).toHaveBeenCalledWith(binary);
+      expect(lastNode().context).toBe(context);
+      expect(lastNode().name).toBe(PROCESSOR_NAME[kind]);
+      expect(lastNode().options).toEqual({
+        processorOptions: { maxChannels: 1, wasmBinary: binaries.get(binary) },
+      });
+      expect(lastNode().options.processorOptions.wasmBinary).toBe(binaries.get(binary));
+    },
+  );
 
   it("fetches a binary once per page and registers a worklet once per context", async () => {
     const { context, source } = graph();
@@ -109,11 +117,46 @@ describe("suppressor graph lifecycle", () => {
     await attachSuppressor("gtcrn", context, source);
     await attachSuppressor("gtcrn", other.context, other.source);
 
-    expect(wrapper.loadGtcrn).toHaveBeenCalledOnce();
+    expect(fetchBinary).toHaveBeenCalledOnce();
     expect(context.audioWorklet.addModule).toHaveBeenCalledOnce();
     expect(other.context.audioWorklet.addModule).toHaveBeenCalledOnce();
+    expect(FakeWorkletNode.created).toHaveLength(3);
+  });
+});
+
+describe("choosing the RNNoise build", () => {
+  it("takes the SIMD build where this engine validates the probe", async () => {
+    // Node runs WebAssembly SIMD, so this also proves the probe is a valid module.
+    const { context, source } = graph();
+
+    await attachSuppressor("rnnoise", context, source);
+
+    expect(fetchBinary).toHaveBeenCalledWith(RNNOISE_SIMD_WASM_URL);
   });
 
+  it("takes the plain build where SIMD is refused", async () => {
+    vi.spyOn(WebAssembly, "validate").mockReturnValue(false);
+    const { context, source } = graph();
+
+    await attachSuppressor("rnnoise", context, source);
+
+    expect(fetchBinary).toHaveBeenCalledWith(RNNOISE_WASM_URL);
+    expect(fetchBinary).not.toHaveBeenCalledWith(RNNOISE_SIMD_WASM_URL);
+  });
+
+  it("takes the plain build where validation itself throws", async () => {
+    vi.spyOn(WebAssembly, "validate").mockImplementation(() => {
+      throw new Error("no WebAssembly here");
+    });
+    const { context, source } = graph();
+
+    await attachSuppressor("rnnoise", context, source);
+
+    expect(fetchBinary).toHaveBeenCalledWith(RNNOISE_WASM_URL);
+  });
+});
+
+describe("falling back to the browser's suppressor", () => {
   it("cleans a partially connected node when construction fails", async () => {
     const { context, source } = graph();
     (source.connect as ReturnType<typeof vi.fn>).mockImplementationOnce(() => {
@@ -122,8 +165,8 @@ describe("suppressor graph lifecycle", () => {
 
     await expect(attachSuppressor("speex", context, source)).resolves.toBeNull();
 
-    expect(wrapper.node.disconnect).toHaveBeenCalledOnce();
-    expect(wrapper.node.destroy).toHaveBeenCalledOnce();
+    expect(lastNode().disconnect).toHaveBeenCalledOnce();
+    expect(lastNode().port.postMessage).toHaveBeenCalledWith("destroy");
   });
 
   it("returns null rather than throwing when the worklet module is missing", async () => {
@@ -132,6 +175,40 @@ describe("suppressor graph lifecycle", () => {
       new Error("404"),
     );
     await expect(attachSuppressor("gtcrn", context, source)).resolves.toBeNull();
+    expect(source.connect).not.toHaveBeenCalled();
+  });
+
+  it("returns null when the binary is not served, rather than starting a silent node", async () => {
+    fetchBinary.mockResolvedValueOnce({
+      ok: false,
+      status: 404,
+      arrayBuffer: async () => new TextEncoder().encode("<!doctype html>").buffer,
+    });
+    const { context, source } = graph();
+
+    await expect(attachSuppressor("gtcrn", context, source)).resolves.toBeNull();
+
+    expect(FakeWorkletNode.created).toHaveLength(0);
+    expect(source.connect).not.toHaveBeenCalled();
+  });
+
+  it("returns null when the processor cannot be constructed", async () => {
+    FakeWorkletNode.failWith = new DOMException("not registered", "InvalidStateError");
+    const { context, source } = graph();
+
+    await expect(attachSuppressor("speex", context, source)).resolves.toBeNull();
+
+    expect(source.connect).not.toHaveBeenCalled();
+  });
+
+  it("returns null where the browser has no AudioWorklet", async () => {
+    vi.unstubAllGlobals();
+    vi.stubGlobal("fetch", fetchBinary);
+    const { source } = graph();
+    const context = {} as AudioContext;
+
+    await expect(attachSuppressor("rnnoise", context, source)).resolves.toBeNull();
+
     expect(source.connect).not.toHaveBeenCalled();
   });
 });

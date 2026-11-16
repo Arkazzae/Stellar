@@ -1,27 +1,19 @@
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { attachSuppressor, resetSuppressorCacheForTests } from "./noiseSuppression";
 
-const wrapper = vi.hoisted(() => ({
-  loadGtcrn: vi.fn(async () => new ArrayBuffer(8)),
-  created: 0,
-}));
+const served = () => ({ ok: true, status: 200, arrayBuffer: async () => new ArrayBuffer(8) });
+const fetchBinary = vi.fn(async (_url: string) => served());
+let created = 0;
 
-vi.mock("@sapphi-red/web-noise-suppressor", () => ({
-  loadRnnoise: vi.fn(),
-  loadSpeex: vi.fn(),
-  loadGtcrn: wrapper.loadGtcrn,
-  RnnoiseWorkletNode: class {},
-  SpeexWorkletNode: class {},
-  GtcrnWorkletNode: class {
-    connect = vi.fn();
-    disconnect = vi.fn();
-    destroy = vi.fn();
-    constructor() {
-      wrapper.created += 1;
-    }
-  },
-}));
+class FakeWorkletNode {
+  connect = vi.fn();
+  disconnect = vi.fn();
+  port = { postMessage: vi.fn() };
+  constructor() {
+    created += 1;
+  }
+}
 
 function graph() {
   const context = {
@@ -31,11 +23,17 @@ function graph() {
   return { context, source };
 }
 
+beforeEach(() => {
+  vi.stubGlobal("AudioWorkletNode", FakeWorkletNode);
+  vi.stubGlobal("fetch", fetchBinary);
+});
+
 afterEach(() => {
   resetSuppressorCacheForTests();
-  wrapper.loadGtcrn.mockReset();
-  wrapper.loadGtcrn.mockImplementation(async () => new ArrayBuffer(8));
-  wrapper.created = 0;
+  vi.unstubAllGlobals();
+  fetchBinary.mockReset();
+  fetchBinary.mockImplementation(async () => served());
+  created = 0;
 });
 
 describe("suppressor loading", () => {
@@ -48,21 +46,30 @@ describe("suppressor loading", () => {
     ]);
 
     expect(handles.every((handle) => handle !== null)).toBe(true);
-    expect(wrapper.loadGtcrn).toHaveBeenCalledOnce();
+    expect(fetchBinary).toHaveBeenCalledOnce();
     expect(context.audioWorklet.addModule).toHaveBeenCalledOnce();
-    expect(wrapper.created).toBe(2);
+    expect(created).toBe(2);
   });
 
   it("retries a failed binary download on the next attach", async () => {
     const { context, source } = graph();
-    wrapper.loadGtcrn.mockRejectedValueOnce(new Error("offline"));
+    fetchBinary.mockRejectedValueOnce(new Error("offline"));
 
     await expect(attachSuppressor("gtcrn", context, source)).resolves.toBeNull();
     expect(source.connect).not.toHaveBeenCalled();
 
     const handle = await attachSuppressor("gtcrn", context, source);
     expect(handle?.kind).toBe("gtcrn");
-    expect(wrapper.loadGtcrn).toHaveBeenCalledTimes(2);
+    expect(fetchBinary).toHaveBeenCalledTimes(2);
+  });
+
+  it("retries a binary the server refused on the next attach", async () => {
+    const { context, source } = graph();
+    fetchBinary.mockResolvedValueOnce({ ...served(), ok: false, status: 503 });
+
+    await expect(attachSuppressor("speex", context, source)).resolves.toBeNull();
+    await expect(attachSuppressor("speex", context, source)).resolves.not.toBeNull();
+    expect(fetchBinary).toHaveBeenCalledTimes(2);
   });
 
   it("registers the worklet again after a failed registration", async () => {

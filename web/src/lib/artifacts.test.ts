@@ -9,12 +9,13 @@ import {
   rmSync,
   writeFileSync,
 } from "node:fs";
-import { createRequire } from "node:module";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { spawnSync } from "node:child_process";
 
 import { afterAll, describe, expect, it } from "vitest";
+
+import { PROCESSOR_NAME, WORKLET_URL } from "./voice/noiseSuppression";
 
 interface Artifact {
   id: string;
@@ -22,7 +23,7 @@ interface Artifact {
   size: number;
   sha256: string;
   source: { file?: string; recipe?: string; output?: string };
-  upstream: { project: string; from: string; verified?: string };
+  upstream: { project: string; from: string; integrity?: string; verified?: string };
   license: string;
 }
 
@@ -30,48 +31,35 @@ const artifactsRoot = join(process.cwd(), "..", "artifacts");
 const readJson = (path: string) => JSON.parse(readFileSync(path, "utf8"));
 
 const manifest: Artifact[] = readJson(join(artifactsRoot, "manifest.json")).artifacts;
-const webPackage = readJson(join(process.cwd(), "package.json"));
-const resolveFromWeb = createRequire(join(process.cwd(), "package.json"));
-
-/** `npm:<name>@<version>/<file>`, with the name possibly scoped. */
-const NPM_FROM = /^npm:((?:@[^/]+\/)?[^@/]+)@([^/]+)\/(.+)$/;
-
-function installedDirectory(name: string): string {
-  const directory = (resolveFromWeb.resolve.paths(name) ?? [])
-    .map((nodeModules) => join(nodeModules, name))
-    .find((candidate) => existsSync(join(candidate, "package.json")));
-  if (directory === undefined) throw new Error(`${name} is not installed`);
-  return directory;
-}
 
 function sha256(bytes: Buffer): string {
   return createHash("sha256").update(bytes).digest("hex");
 }
 
-// The worklets and WASM binaries come from artifacts/, but the node classes
-// that drive them are bundled from the installed package. A dependency update
-// that moves the package on without the committed copies would pair new
-// classes with old worklets. When this fails after an update, copy the files
-// from node_modules into artifacts/files/ and record their new sha256, size
-// and version in artifacts/manifest.json.
-describe("artifacts copied from a dependency of the web client", () => {
-  const copied = manifest.flatMap((artifact) => {
-    const [, name, version, file] = NPM_FROM.exec(artifact.upstream.from) ?? [];
-    return name !== undefined && name in webPackage.dependencies
-      ? [{ artifact, name, version, file: file as string }]
-      : [];
+// The worklets come from artifacts/, the code that starts them is ours in
+// noiseSuppression.ts. Replacing a worklet with another build or version must
+// not leave the two speaking past each other: a node constructed under a name
+// nothing registered throws, and options the processor does not read leave it
+// without a binary.
+describe("the noise-suppression worklets", () => {
+  const engines = Object.entries(WORKLET_URL).map(([kind, url]) => {
+    const source = manifest.find((entry) => `/${entry.path}` === url)?.source.file;
+    return {
+      kind: kind as keyof typeof PROCESSOR_NAME,
+      url,
+      code: source === undefined ? "" : readFileSync(join(artifactsRoot, source), "utf8"),
+    };
   });
 
-  it("include the noise suppressor's worklets and binaries", () => {
-    expect(copied.map(({ name }) => name)).toContain("@sapphi-red/web-noise-suppressor");
+  it.each(engines)("$url registers the processor $kind is started as", ({ kind, code }) => {
+    const registered = [...code.matchAll(/registerProcessor\(\s*[`'"]([^`'"]+)[`'"]/g)];
+    expect(registered.map(([, name]) => name)).toEqual([PROCESSOR_NAME[kind]]);
   });
 
-  it.each(copied)("$artifact.id matches the installed $name", ({ artifact, name, version, file }) => {
-    const directory = installedDirectory(name);
-    const installed = readFileSync(join(directory, file));
-
-    expect(readJson(join(directory, "package.json")).version).toBe(version);
-    expect(sha256(installed)).toBe(artifact.sha256);
+  it.each(engines)("$url reads the options and the message it is given", ({ code }) => {
+    expect(code).toContain("processorOptions.wasmBinary");
+    expect(code).toContain("processorOptions.maxChannels");
+    expect(code).toMatch(/\.data\s*===\s*[`'"]destroy[`'"]/);
   });
 });
 
