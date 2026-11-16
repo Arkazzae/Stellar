@@ -68,9 +68,12 @@ export function Modal({
     return () => cancelAnimationFrame(frame);
   }, [open]);
 
+  const openedFrom = useRef<Element | null>(null);
+
   useEffect(() => {
     if (!open) return;
     const opener = document.activeElement;
+    openedFrom.current = opener;
     focusWithin(wrapRef.current);
     return () => {
       // If the opener left the page, focus stays on <body> rather than jumping
@@ -78,6 +81,19 @@ export function Modal({
       if (opener instanceof HTMLElement && opener.isConnected) opener.focus();
     };
   }, [open]);
+
+  // Some wrappers, `.sv-wrap` among them, are `display: none` until they
+  // have their `open` class, and an element that is not rendered cannot take
+  // the focus: the call above did nothing, and the focus and Tab stayed on
+  // the page behind. Once the wrapper shows, the focus moves in if it is
+  // still where the dialog found it. A menu or card raised from the dialog
+  // in the meantime sits outside its element and keeps the focus it took.
+  useEffect(() => {
+    const wrapper = wrapRef.current;
+    if (!open || !entered || wrapper === null) return;
+    const active = document.activeElement;
+    if (active === openedFrom.current || active === null || active === document.body) focusWithin(wrapper);
+  }, [open, entered]);
 
   useEffect(() => {
     if (!mounted) return;
