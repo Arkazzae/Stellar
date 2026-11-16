@@ -30,10 +30,11 @@ To expand the relay range for larger instances or TURN/TCP, update `min-port`/`m
 
 | Port | Service |
 | --- | --- |
+| `3000/tcp` | Next.js standalone server, web client and Cockpit (`127.0.0.1`) |
 | `5000/tcp` | ASP.NET Core API and SignalR (`127.0.0.1`) |
 | `5200/tcp` | `stellarr-media` HTTP control API (`127.0.0.1`, authenticated via `secrets/media-control-secret`) |
 
-Nginx routes `/api/`, `/assets/`, `/health`, `/hubs/`, and `/.well-known/stellarr/client` to ASP.NET Core, serves Cockpit statically from `/cockpit/`, and serves every other path, including the local translation runtime and models under `/bergamot-models/` and `/codecs/bergamot/`, from the web client's static files in `/srv/web`. There is no proxy to a model host.
+Nginx routes `/api/`, `/assets/`, `/health`, `/hubs/`, and `/.well-known/stellarr/client` to ASP.NET Core and forwards every other path to the Next.js server: the web client, Cockpit under `/cockpit`, and the files of `web/public/`, including the local translation runtime and models under `/bergamot-models/` and `/codecs/bergamot/`. There is no proxy to a model host.
 
 ## NAT and firewall configuration
 

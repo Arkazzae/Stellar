@@ -85,7 +85,7 @@ docker compose down      # remove container and network, preserve data volume
 
 ## Next steps
 
-- **Operator panel**: Sign in with the owner account and open `https://localhost:8443/cockpit/`.
+- **Operator panel**: Sign in with the owner account and open `https://localhost:8443/cockpit`.
 - [Requirements](requirements.md): `PUBLIC_IP` and router port forwarding, required for voice from any other device.
 - [Reverse proxy and TLS](reverse-proxy-and-tls.md): trusted certificates and reverse proxy setup.
 - [Configuration](configuration.md): environment variable reference.
@@ -100,4 +100,4 @@ cd Stellarr
 docker compose up -d --build
 ```
 
-The multi-stage `Dockerfile` compiles the .NET API and the Rust media server and builds the web client and the Cockpit operator panel as static files inside Docker, so no local build toolchains are required on the host.
+The multi-stage `Dockerfile` compiles the .NET API, the Next.js server that renders the web client and the Cockpit operator panel, and the Rust media server inside Docker, so no local build toolchains are required on the host.
