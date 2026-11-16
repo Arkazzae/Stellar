@@ -22,7 +22,7 @@ describe("the Stellarr accent", () => {
 
   it("is the colour the page shows before the theme script has run", () => {
     const fallback = /:root\s*{[^}]*--palette-accent:\s*(#[\da-f]{6})/i.exec(
-      source("src/styles/themes/recipe.css"),
+      source("src/stellarr/styles/themes/recipe.css"),
     )?.[1];
 
     expect(fallback?.toLowerCase()).toBe(STELLARR_ACCENT);

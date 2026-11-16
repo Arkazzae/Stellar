@@ -1,6 +1,13 @@
 import coreWebVitals from "eslint-config-next/core-web-vitals";
 import typescript from "eslint-config-next/typescript";
 
+// The web client and Cockpit share this Next.js app and nothing else, so no
+// file of the web client's, its routes included, imports Cockpit's code.
+const notCockpit = {
+  group: ["@cockpit", "@cockpit/*"],
+  message: "The web client does not use Cockpit's code.",
+};
+
 // The flat exports of eslint-config-next are used directly. Going through
 // FlatCompat re-serialises the Next plugin object, which contains a cycle, and
 // ESLint throws before it lints anything.
@@ -33,10 +40,17 @@ const config = [
     },
   },
   {
+    files: ["src/stellarr/**/*.{ts,tsx}", "src/app/(stellarr)/**/*.{ts,tsx}"],
+    rules: {
+      "no-restricted-imports": ["error", { patterns: [notCockpit] }],
+    },
+  },
+  {
     // Components are presentational: they take data as props and import types
     // from @/ports. Reaching past that into a transport is a lint error, since
-    // a convention only holds until someone is in a hurry.
-    files: ["src/components/**/*.{ts,tsx}"],
+    // a convention only holds until someone is in a hurry. This replaces the
+    // rule above for components, so it bans Cockpit's code as well.
+    files: ["src/stellarr/components/**/*.{ts,tsx}"],
     rules: {
       "no-restricted-imports": [
         "error",
@@ -59,8 +73,9 @@ const config = [
               // state import a component may read.
               allowImportNames: ["useLanguage"],
               message:
-                "Components are presentational. Import types from @/ports and take data as props; wire transports in src/containers or src/state.",
+                "Components are presentational. Import types from @/ports and take data as props; wire transports in src/stellarr/containers or src/stellarr/state.",
             },
+            notCockpit,
           ],
         },
       ],
@@ -90,6 +105,10 @@ const config = [
             {
               group: ["@/*"],
               message: "Cockpit does not use the web client's code; import its own modules by relative path.",
+            },
+            {
+              group: ["@cockpit", "@cockpit/*"],
+              message: "@cockpit/* is how the routes reach Cockpit; import its own modules by relative path.",
             },
           ],
         },

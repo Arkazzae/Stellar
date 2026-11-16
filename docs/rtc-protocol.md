@@ -6,9 +6,9 @@ This page describes how the web client (`VoiceClient`), the SignalR hub (`AppHub
 
 ```mermaid
 flowchart TD
-    UI["React UI Components (web/src/components/)"]
+    UI["React UI Components (web/src/stellarr/components/)"]
 
-    subgraph Client["VoiceClient & VoiceState (web/src/lib/voice/)"]
+    subgraph Client["VoiceClient & VoiceState (web/src/stellarr/lib/voice/)"]
         Lifecycle["Session & Lifecycle (join, leave, mute, recovery)"]
         Capture["Media Capture (mic 48 kHz, camera, screen, system audio)"]
         DSP["Audio Processing (pre-gain, RNNoise / GTCRN / Speex, 80 ms gate, leveler)"]
@@ -78,7 +78,7 @@ UI components interact only with `VoiceClient` and the immutable `VoiceState` sn
 - The backend checks authentication, channel/conversation access, recipient membership, `protocolVersion`, `kind`, and a 128 KiB payload size limit.
 - Occupancy updates (`VoiceParticipantChanged`) for a server voice channel are broadcast to the server; updates for a direct call are sent only to the two participants.
 - Declining a direct call (`DeclineDirectCall`) clears room occupancy and sends `DirectCallDeclined` so the caller releases local capture devices.
-- Payloads are validated by typed codecs (`web/src/lib/rtc/protocol.ts`). A `state` payload has the shape `{ muted, screenStreamId, cameraStreamId }` (`cameraStreamId` is optional; absence indicates the camera is off).
+- Payloads are validated by typed codecs (`web/src/stellarr/lib/rtc/protocol.ts`). A `state` payload has the shape `{ muted, screenStreamId, cameraStreamId }` (`cameraStreamId` is optional; absence indicates the camera is off).
 
 > [!NOTE]
 > `SendVoiceSignal` only accepts `kind: "state"`. `AppHub` rejects `offer`, `answer`, and `candidate` with `HubException("Invalid voice signal.")`. SDP descriptions and ICE candidates are exchanged exclusively with the media server via `OpenMediaSession`, `SendMediaSignal`, `MediaSignal`, and `MediaSessionClosed` (see [Stellarr Media](./stellarr-media.md#hub-leg)).
@@ -87,7 +87,7 @@ Incompatible changes to the envelope or payload format require incrementing `pro
 
 ### Hub methods and events
 
-Defined in `web/src/lib/rtc/protocol.ts` and implemented by `AppHub` in `server/Stellarr.Api/Realtime/`:
+Defined in `web/src/stellarr/lib/rtc/protocol.ts` and implemented by `AppHub` in `server/Stellarr.Api/Realtime/`:
 
 | Type | Name | Description |
 | --- | --- | --- |
@@ -153,7 +153,7 @@ Users can pick a personal arrival clip (`UserPreferences.JoinSoundId`) from any 
 - **Capture format**: 48 kHz, mono.
 - **VAD and metering**: 10 ms analysis frames; speech detection never mutes the track or stops RTP packets.
 - **Input gate**: Enabled by default (user-configurable), 80 ms lookahead, 600 ms hold time, attenuates silence between utterances while keeping RTP continuous.
-- **Opus encoding**: 20 ms packet time, in-band FEC enabled; bitrate profiles live in `web/src/lib/voice/audioProfiles.ts` (Premium default: 64–128 kb/s, DTX off; Studio: 96–256 kb/s, DTX off; Screen audio: 96–160 kb/s stereo).
+- **Opus encoding**: 20 ms packet time, in-band FEC enabled; bitrate profiles live in `web/src/stellarr/lib/voice/audioProfiles.ts` (Premium default: 64–128 kb/s, DTX off; Studio: 96–256 kb/s, DTX off; Screen audio: 96–160 kb/s stereo).
 - **Source separation**: Microphone and screen-share audio use separate tracks, separate Opus profiles, and separate playback elements. Muting affects only the microphone.
 - **Tab visibility**: Hiding and restoring a browser tab never tears down healthy connections; only `disconnected` or `failed` connections trigger repair.
 - **TURN credential refresh**: Long-lived calls refresh TURN credentials before expiration so a media session replaced late in a call always has valid credentials.
@@ -167,7 +167,7 @@ Users can pick a personal arrival clip (`UserPreferences.JoinSoundId`) from any 
 | Sharp | 1440p | 30 fps | 5 Mb/s |
 | Ultra | 2160p | 60 fps | 12 Mb/s |
 
-- Profiles are defined in `web/src/lib/voice/video/screenShare.ts` and applied to both `getDisplayMedia` constraints and `RTCRtpSender` encoding parameters. Switching profiles mid-share updates constraints and sender parameters without re-prompting or renegotiating SDP.
+- Profiles are defined in `web/src/stellarr/lib/voice/video/screenShare.ts` and applied to both `getDisplayMedia` constraints and `RTCRtpSender` encoding parameters. Switching profiles mid-share updates constraints and sender parameters without re-prompting or renegotiating SDP.
 - Codec preference order: VP9 (with 2–3 temporal layers when supported), AV1, VP8, H.264.
 - Uses `contentHint = "detail"` and `degradationPreference = "maintain-resolution"`.
 - Video senders use `medium` network priority while Opus audio uses `high`.
@@ -176,7 +176,7 @@ Users can pick a personal arrival clip (`UserPreferences.JoinSoundId`) from any 
 
 ## Camera
 
-- Managed by `VoiceClient` (`web/src/lib/voice/video/camera.ts`), capturing video only.
+- Managed by `VoiceClient` (`web/src/stellarr/lib/voice/video/camera.ts`), capturing video only.
 - Profiles:
   - **Low**: 854×480 @ 24 fps, 0.7 Mb/s
   - **Standard (default)**: 1280×720 @ 30 fps, 1.5 Mb/s
@@ -191,15 +191,15 @@ Users can pick a personal arrival clip (`UserPreferences.JoinSoundId`) from any 
 
 | Area | Source files |
 | --- | --- |
-| Wire protocol & payload codecs | `web/src/lib/rtc/protocol.ts`, `server/Stellarr.Api/Realtime/RtcProtocol.cs` |
-| Client interface | `web/src/lib/voice/types.ts` (`VoiceClient`, `VoiceState`) |
-| State store | `web/src/lib/voice/store.ts` (`VoiceStateStore`) |
-| Call session management | `web/src/lib/voice/rtc/webrtc.ts`, `web/src/lib/voice/rtc/webrtcTopology.ts`, `web/src/lib/voice/rtc/webrtcParticipant.ts` |
-| Media server client | `web/src/lib/voice/rtc/webrtcSfu.ts`, `web/src/lib/voice/rtc/webrtcSfuDirectory.ts`, `web/src/lib/voice/rtc/webrtcSfuHealth.ts` |
-| Soundboard & arrival sounds | `web/src/adapters/soundboard.ts`, `web/src/containers/useJoinSound.ts`, `SoundboardEndpoints.cs`, `JoinSound.cs`, `AppHub.cs` |
-| Opus, screen, and camera profiles | `web/src/lib/voice/audioProfiles.ts`, `web/src/lib/voice/video/screenShare.ts`, `web/src/lib/voice/video/camera.ts` |
-| Microphone DSP & VAD | `web/src/lib/voice/capture/micPipeline.ts`, `web/src/lib/voice/capture/vad.ts`, `web/public/audio/vad-processor.js` |
-| ICE/TURN credential refresh | `web/src/lib/voice/rtc/iceSession.ts` |
+| Wire protocol & payload codecs | `web/src/stellarr/lib/rtc/protocol.ts`, `server/Stellarr.Api/Realtime/RtcProtocol.cs` |
+| Client interface | `web/src/stellarr/lib/voice/types.ts` (`VoiceClient`, `VoiceState`) |
+| State store | `web/src/stellarr/lib/voice/store.ts` (`VoiceStateStore`) |
+| Call session management | `web/src/stellarr/lib/voice/rtc/webrtc.ts`, `web/src/stellarr/lib/voice/rtc/webrtcTopology.ts`, `web/src/stellarr/lib/voice/rtc/webrtcParticipant.ts` |
+| Media server client | `web/src/stellarr/lib/voice/rtc/webrtcSfu.ts`, `web/src/stellarr/lib/voice/rtc/webrtcSfuDirectory.ts`, `web/src/stellarr/lib/voice/rtc/webrtcSfuHealth.ts` |
+| Soundboard & arrival sounds | `web/src/stellarr/adapters/soundboard.ts`, `web/src/stellarr/containers/useJoinSound.ts`, `SoundboardEndpoints.cs`, `JoinSound.cs`, `AppHub.cs` |
+| Opus, screen, and camera profiles | `web/src/stellarr/lib/voice/audioProfiles.ts`, `web/src/stellarr/lib/voice/video/screenShare.ts`, `web/src/stellarr/lib/voice/video/camera.ts` |
+| Microphone DSP & VAD | `web/src/stellarr/lib/voice/capture/micPipeline.ts`, `web/src/stellarr/lib/voice/capture/vad.ts`, `web/public/audio/vad-processor.js` |
+| ICE/TURN credential refresh | `web/src/stellarr/lib/voice/rtc/iceSession.ts` |
 | Hub & media server broker | `server/Stellarr.Api/Realtime/`: `AppHub.cs`, `AppHub.Media.cs`, `MediaServerSettings.cs`, `PresenceTracker.cs`, `MediaPlane.cs`, `MediaControlClient.cs`, `MediaEventPump.cs`, `MediaEventOutbox.cs`, `MediaSessionCloser.cs` |
 | Rust SFU media server | `media/` (`stellarr-media`) |
 

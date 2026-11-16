@@ -1,6 +1,6 @@
 /**
  * Generates the built-in avatar and banner pairs that accounts without uploaded
- * artwork fall back to (see `src/design/identity.ts`).
+ * artwork fall back to (see `src/stellarr/design/identity.ts`).
  *
  *   node scripts/generate-identity-art.mjs <public-dir>
  *

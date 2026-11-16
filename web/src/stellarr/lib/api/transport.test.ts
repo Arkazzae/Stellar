@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-import { version as PACKAGE_VERSION } from "../../../package.json";
+import { version as PACKAGE_VERSION } from "../../../../package.json";
 import { ApiError } from "./errors";
 import {
   ACTIVE_SERVER_STORAGE_KEY,

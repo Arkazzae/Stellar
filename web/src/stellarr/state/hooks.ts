@@ -3,7 +3,7 @@
  *
  * Each provider exports its hook under a long `use*Context` name; this file
  * gathers the short names in the one place the rest of the app imports from.
- * It is the only barrel in `src/state`, and it re-exports hooks and their value
+ * It is the only barrel in `src/stellarr/state`, and it re-exports hooks and their value
  * types, never the providers, which are composed once in the root layout and
  * in `AppContainer`.
  */

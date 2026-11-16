@@ -19,8 +19,8 @@ Stellarr Cockpit is the instance operator panel, at `/cockpit` on the instance's
 Cockpit is an app of its own inside the web workspace, with no build or server of its own:
 
 - The routes are in [`web/src/app/(cockpit)/`](../app/(cockpit)/): a root layout of Cockpit's own, one page per area (`/cockpit`, `/cockpit/users`, `/cockpit/servers`, `/cockpit/runtime`, `/cockpit/logs`, `/cockpit/backups`, `/cockpit/integrations`, `/cockpit/settings`) and a catch-all that shows the panel's not-found page for any other address under `/cockpit`.
-- Each route imports its page from here (`@/cockpit/pages/<name>`), and the layout imports `CockpitApp` (`app.tsx`) and the stylesheet (`index.css`). `next build` builds the web client and Cockpit together and `next dev` serves both.
-- The layout is separate from the web client's root layout in `web/src/app/(web)/`, so the two apps share no stylesheet, language or providers. Going from one to the other is a full page load. Tailwind scans only this folder for Cockpit's stylesheet, and the web client's leaves it out.
+- Each route imports its page from here (`@cockpit/pages/<name>`), and the layout imports `CockpitApp` (`app.tsx`) and the stylesheet (`index.css`). `next build` builds the web client and Cockpit together and `next dev` serves both.
+- The layout is separate from the web client's root layout in `web/src/app/(stellarr)/`, so the two apps share no stylesheet, language or providers. Going from one to the other is a full page load. Tailwind scans only this folder for Cockpit's stylesheet, and the web client's leaves it out.
 - Code here imports its own modules by relative path and nothing of the web client's; a lint rule in `web/eslint.config.mjs` enforces that.
 - `CockpitApp` holds the session, the language and the gate around the routed page, and renders in the browser only: the language is kept in the browser (see below), so the server sends the document without the panel.
 

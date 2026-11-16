@@ -4,7 +4,7 @@ namespace Stellarr.Api.Embeds;
 
 /// <summary>Finds the links in a message body.</summary>
 /// <remarks>
-/// Follows the rules the web client autolinks by (<c>web/src/lib/messages/parts.ts</c>):
+/// Follows the rules the web client autolinks by (<c>web/src/stellarr/lib/messages/parts.ts</c>):
 /// http and https only, a link runs to the next whitespace or character that
 /// cannot stand in a URL, and punctuation at its end belongs to the sentence.
 /// If the two disagreed, the transcript would show a link the server never

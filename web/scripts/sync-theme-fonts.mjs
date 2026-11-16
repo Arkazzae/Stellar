@@ -1,6 +1,6 @@
 /**
  * Downloads the theme fonts from Google Fonts into `public/fonts` and rewrites
- * `src/styles/themes/font-faces.css` so every face is served from our own
+ * `src/stellarr/styles/themes/font-faces.css` so every face is served from our own
  * origin. The results are committed; run this by hand (`npm run fonts:sync`)
  * only when the list below changes.
  */
@@ -10,7 +10,7 @@ import { fileURLToPath } from "node:url";
 
 const FONT_DIR = fileURLToPath(new URL("../public/fonts", import.meta.url));
 const CSS_FILE = fileURLToPath(
-  new URL("../src/styles/themes/font-faces.css", import.meta.url),
+  new URL("../src/stellarr/styles/themes/font-faces.css", import.meta.url),
 );
 
 // Google serves woff2 files only to a browser it recognises.

@@ -14,24 +14,24 @@ import { parseBlocks } from "@/design/tokenRamp";
 
 const palettesCss = parseBlocks(
   readFileSync(
-    join(process.cwd(), "src/styles/themes/palettes.css"),
+    join(process.cwd(), "src/stellarr/styles/themes/palettes.css"),
     "utf8",
   ),
 );
 const recipeCss = readFileSync(
-  join(process.cwd(), "src/styles/themes/recipe.css"),
+  join(process.cwd(), "src/stellarr/styles/themes/recipe.css"),
   "utf8",
 );
 const railCss = readFileSync(
-  join(process.cwd(), "src/styles/components/rail.css"),
+  join(process.cwd(), "src/stellarr/styles/components/rail.css"),
   "utf8",
 );
 const roomCss = readFileSync(
-  join(process.cwd(), "src/styles/components/room.css"),
+  join(process.cwd(), "src/stellarr/styles/components/room.css"),
   "utf8",
 );
 const rosterCss = readFileSync(
-  join(process.cwd(), "src/styles/components/roster.css"),
+  join(process.cwd(), "src/stellarr/styles/components/roster.css"),
   "utf8",
 );
 

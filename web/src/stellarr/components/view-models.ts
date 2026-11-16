@@ -1,8 +1,8 @@
 /**
  * View models: the shapes presentational components take.
  *
- * Components in `src/components/**` are pure. They render these and raise
- * callbacks; containers in `src/state/**` build them from the ports.
+ * Components in `src/stellarr/components/**` are pure. They render these and raise
+ * callbacks; containers in `src/stellarr/state/**` build them from the ports.
  */
 
 import type { Presence } from "@/ports";
