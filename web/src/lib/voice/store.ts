@@ -83,12 +83,20 @@ function sameScreen(a: VoiceScreenShare | null, b: VoiceScreenShare | null): boo
   return sameOptional(
     a,
     b,
-    (x, y) => x.streamId === y.streamId && x.hasAudio === y.hasAudio && x.stream === y.stream,
+    (x, y) =>
+      x.streamId === y.streamId &&
+      x.hasAudio === y.hasAudio &&
+      x.stream === y.stream &&
+      x.heldBack === y.heldBack,
   );
 }
 
 function sameCamera(a: VoiceCamera | null, b: VoiceCamera | null): boolean {
-  return sameOptional(a, b, (x, y) => x.streamId === y.streamId && x.stream === y.stream);
+  return sameOptional(
+    a,
+    b,
+    (x, y) => x.streamId === y.streamId && x.stream === y.stream && x.heldBack === y.heldBack,
+  );
 }
 
 function sameDiagnostics(a: VoiceDiagnostics, b: VoiceDiagnostics): boolean {

@@ -49,6 +49,18 @@ describe("ParticipantTiles", () => {
     expect(video.srcObject).toBe(stream);
   });
 
+  it("shows the face and a short line for a camera held back, never a frozen picture", () => {
+    const { container } = render(
+      <ParticipantTiles people={[ada, ilya]} cameraStreams={new Map()} heldCameras={new Set([ilya.id])} />,
+    );
+
+    expect(container.querySelector("video")).toBeNull();
+    const line = screen.getByRole("status");
+    expect(line).toHaveTextContent("Obraz wstrzymany: za słabe łącze");
+    expect(line.closest(".tile")).toHaveTextContent("Ilya");
+    expect(screen.getAllByText("Obraz wstrzymany: za słabe łącze")).toHaveLength(1);
+  });
+
   it("opens a local 0–200 percent mixer strip from a remote person's menu", () => {
     const onVolumeChange = vi.fn();
     renderWithConfirm(

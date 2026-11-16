@@ -1744,6 +1744,7 @@ export const en = {
   "dm.callWith": "Call with {name}",
   "common.choose": "Choose…",
   "voice.cameraOf": "Camera: {name}",
+  "voice.pictureHeldBack": "Video paused: your connection is too weak",
   "attachment.extFallback": "FILE",
   "theme.size.smDetail": "13.5 px",
   "theme.size.mdDetail": "15 px",

@@ -13,6 +13,8 @@ export interface ParticipantTileProps {
   person: PersonVM;
   /** Without a stream the tile shows the person's avatar. */
   stream?: MediaStream | null;
+  /** The camera is on, but held back for the viewer's link: the avatar says so. */
+  held?: boolean;
   /** Your own camera: played back muted so the room does not hear itself. */
   local?: boolean;
   /** Receiver-side mixer level. Without it the tile has no mixer strip. */
@@ -31,6 +33,7 @@ export interface ParticipantTileProps {
 export function ParticipantTile({
   person,
   stream,
+  held = false,
   local = false,
   volume,
   onVolumeChange,
@@ -118,6 +121,11 @@ export function ParticipantTile({
           size="xl"
         />
       )}
+      {held && !stream ? (
+        <span className="t-held" role="status">
+          {t("voice.pictureHeldBack")}
+        </span>
+      ) : null}
       <span className="t-name">
         <span>{person.displayName}</span>
       </span>
