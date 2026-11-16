@@ -63,8 +63,11 @@ builder.Services.AddDataProtection()
     .SetApplicationName("Stellarr")
     .PersistKeysToFileSystem(keysDirectory);
 
-builder.Services.AddDbContext<AppDbContext>(options =>
-    options.UseSqlite(builder.Configuration.GetConnectionString("Database")));
+// Read when a context is built rather than here, so that the configuration a
+// host is finally given, a test's included, names the database.
+builder.Services.AddDbContext<AppDbContext>((services, options) => options.UseSqlite(DatabaseConnection.From(
+    services.GetRequiredService<IConfiguration>().GetConnectionString("Database")
+        ?? throw new InvalidOperationException("ConnectionStrings:Database is required."))));
 builder.Services.AddSingleton<PasswordService>();
 builder.Services.AddSingleton<PasskeyRelyingParty>();
 builder.Services.AddSingleton<RegistrationGate>();

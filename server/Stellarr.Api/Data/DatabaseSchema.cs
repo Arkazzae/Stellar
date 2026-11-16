@@ -23,9 +23,10 @@ public static class DatabaseSchema
     public static async Task PrepareAsync(AppDbContext db, CancellationToken cancellationToken)
     {
         await db.Database.EnsureCreatedAsync(cancellationToken);
+        // The journal mode is stored in the database file, so once holds for
+        // every connection. What belongs to a connection is in the connection
+        // string, see DatabaseConnection.
         await db.Database.ExecuteSqlRawAsync("PRAGMA journal_mode=WAL;", cancellationToken);
-        await db.Database.ExecuteSqlRawAsync("PRAGMA foreign_keys=ON;", cancellationToken);
-        await db.Database.ExecuteSqlRawAsync("PRAGMA busy_timeout=5000;", cancellationToken);
 
         foreach (var step in Steps)
         {
