@@ -239,7 +239,9 @@ export async function launch({ width = 1280, height = 900, headless = true } = {
       } catch {
         // Already exited.
       }
-      rmSync(profile, { recursive: true, force: true });
+      // A killed Chrome's helpers may still be writing to the profile for a
+      // moment, which fails a single attempt with ENOTEMPTY.
+      rmSync(profile, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 });
     },
   };
   return browser;
