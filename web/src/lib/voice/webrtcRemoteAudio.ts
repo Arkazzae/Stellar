@@ -3,6 +3,7 @@ import { applyAudioOutput } from "./playback";
 import { RemoteVoiceMixer } from "./remoteMixer";
 import type { PlaybackProfileId, PlaybackTuning, VoiceSettings } from "./settings";
 import type { SpeechDetector } from "./vad";
+import type { VoiceReceivePreferences } from "./types";
 import type { Participant, RemoteVoice } from "./webrtcParticipant";
 import type { AudioRole } from "./webrtcRemoteMedia";
 
@@ -41,6 +42,8 @@ export class RemoteAudio {
   private readonly screenMixer = new RemoteVoiceMixer("off", undefined, 1);
   private host: HTMLElement | null = null;
   private deafened = false;
+  /** The one share whose sound is played; a share nobody chose to watch stays silent. */
+  private watchedScreen: VoiceReceivePreferences["screen"] = null;
 
   constructor(private readonly env: RemoteAudioEnv) {
     const { playbackProfile, playbackTuning } = env.settings();
@@ -73,6 +76,8 @@ export class RemoteAudio {
     person.media.addAudio(stream, id);
     track.onended = () => this.ended(person, id);
     this.route(person);
+    // An unwatched share still exposes its audio availability to the watch UI.
+    this.env.changed();
   }
 
   /**
@@ -116,6 +121,12 @@ export class RemoteAudio {
     for (const person of this.env.people.values()) {
       for (const sinks of voicesOf(person)) sinks.audio.muted = deafened;
     }
+  }
+
+  /** Play the sound of this share alone, or of none, from now on, before the media server has heard. */
+  setWatchedScreen(screen: VoiceReceivePreferences["screen"]): void {
+    this.watchedScreen = screen === null ? null : { ...screen };
+    for (const person of this.env.people.values()) this.reconcile(person, "screen");
   }
 
   applyVolume(person: Participant): void {
@@ -187,7 +198,10 @@ export class RemoteAudio {
 
   /** Make the sinks of one kind play what `person.media` says they should. */
   private reconcile(person: Participant, role: AudioRole): boolean {
-    const wanted = person.media.newestAudio(role);
+    const wanted = person.media.newestAudio(role, (streamId) =>
+      role !== "screen" ||
+      (this.watchedScreen?.userId === person.userId && this.watchedScreen.streamId === streamId),
+    );
     const playing = this.sinksOf(person, role)?.streamId ?? null;
     if ((wanted?.id ?? null) === playing) return false;
 

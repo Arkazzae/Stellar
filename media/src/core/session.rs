@@ -176,12 +176,26 @@ impl OutSection {
 ///
 /// A section starts with the wire sequence number of the first packet it
 /// forwards, so it never begins past a rollover the receiver cannot know
-/// about. The offset stays constant, so a gap the publisher had is a gap the
-/// receiver sees and can ask to be repaired. When the publisher changes its
-/// SSRC the section continues where it was instead of jumping.
+/// about. The offset stays constant while packets are forwarded, so a gap the
+/// publisher had is a gap the receiver sees and can ask to be repaired.
+///
+/// A section the receiver stops asking for skips what arrives meanwhile, and
+/// the first packet after it continues the numbering where it stopped: the
+/// receiver must not ask for what was never meant for it. The timestamps keep
+/// the publisher's clock, so the track stays in step with the ones that were
+/// never paused, as after any silence. When the publisher changes its SSRC
+/// the section continues where it was instead of jumping; a new SSRC brings a
+/// clock of its own, so its timestamps continue from the last one sent.
 #[derive(Debug, Default)]
 pub(crate) struct Rewrite {
     state: Option<RewriteState>,
+    /// The section was paused: the next packet begins a new run of numbers.
+    resume: bool,
+    /// The highest source sequence number of one SSRC that was forwarded
+    /// before a pause or skipped during it. Nothing of that SSRC up to it is
+    /// forwarded again, so a late packet cannot become the first of the next
+    /// run, nor follow it under a new SSRC.
+    resume_after: Option<(Ssrc, u64)>,
 }
 
 #[derive(Debug)]
@@ -191,18 +205,63 @@ struct RewriteState {
     ts_offset: u32,
     last_seq: u64,
     last_ts: u32,
+    /// The first source sequence number of the current run, when a pause
+    /// moved the offset. Older packets were numbered under the old offset and
+    /// would land on numbers already given out.
+    resume_floor: Option<u64>,
 }
 
 impl Rewrite {
+    /// The receiver stopped asking for the section.
+    pub fn pause(&mut self) {
+        self.resume = true;
+        if let Some(state) = &self.state {
+            let last_source = u64::try_from(state.last_seq as i128 + state.seq_offset)
+                .expect("a source sequence previously mapped from u64");
+            self.resume_after = Some(match self.resume_after {
+                Some((ssrc, previous)) if ssrc == state.ssrc => (ssrc, previous.max(last_source)),
+                _ => (state.ssrc, last_source),
+            });
+        }
+    }
+
+    /// A packet arrived while the receiver does not ask for the section.
+    pub fn skip(&mut self, ssrc: Ssrc, seq: u64) {
+        self.resume = true;
+        self.resume_after = Some(match self.resume_after {
+            Some((previous_ssrc, previous)) if previous_ssrc == ssrc => (ssrc, previous.max(seq)),
+            _ => (ssrc, seq),
+        });
+    }
+
     /// The outgoing sequence number and timestamp of an incoming packet, or
     /// `None` for a packet that would land before the start of the section.
     pub fn map(&mut self, ssrc: Ssrc, seq: u64, ts: u32) -> Option<(u64, u32)> {
+        if let Some((skipped, last)) = self.resume_after
+            && skipped == ssrc
+        {
+            if seq <= last {
+                return None;
+            }
+            self.resume_after = None;
+        }
+        let resume = std::mem::take(&mut self.resume);
         let state = match &mut self.state {
-            Some(state) if state.ssrc == ssrc => state,
+            Some(state) if state.ssrc == ssrc => {
+                let offset = seq as i128 - (state.last_seq as i128 + 1);
+                // A pause that skipped nothing leaves the numbering as it
+                // was, and a late repair from before it still fits.
+                if resume && offset != state.seq_offset {
+                    state.seq_offset = offset;
+                    state.resume_floor = Some(seq);
+                }
+                state
+            }
             Some(state) => {
                 state.ssrc = ssrc;
                 state.seq_offset = seq as i128 - (state.last_seq as i128 + 1);
                 state.ts_offset = state.last_ts.wrapping_add(1).wrapping_sub(ts);
+                state.resume_floor = resume.then_some(seq);
                 state
             }
             None => self.state.insert(RewriteState {
@@ -211,9 +270,13 @@ impl Rewrite {
                 ts_offset: 0,
                 last_seq: 0,
                 last_ts: ts,
+                resume_floor: resume.then_some(seq),
             }),
         };
 
+        if state.resume_floor.is_some_and(|floor| seq < floor) {
+            return None;
+        }
         let out_seq = u64::try_from(seq as i128 - state.seq_offset).ok()?;
         let out_ts = ts.wrapping_add(state.ts_offset);
         if out_seq >= state.last_seq {
@@ -258,6 +321,10 @@ pub(crate) struct Session {
     pub negotiation: Negotiation,
     pub published: Vec<Published>,
     pub outs: Vec<OutSection>,
+    /// The mids of this receiver's sections it asked to be sent. A section
+    /// that is not listed is negotiated and named in the directory, but
+    /// nothing is forwarded on it.
+    pub subscriptions: HashSet<String>,
     /// The current section of every track this session receives. A section
     /// whose track was withdrawn is not in it any more, so the same track
     /// sent again on the publisher's same section gets a new one while the
@@ -312,6 +379,7 @@ impl Session {
             negotiation: Negotiation::default(),
             published: Vec::new(),
             outs: Vec::new(),
+            subscriptions: HashSet::new(),
             out_by_source: HashMap::new(),
             server_mids: HashSet::new(),
             ssrc_mids: Vec::new(),
@@ -378,6 +446,10 @@ impl Session {
         self.out_by_source.insert(source, self.outs.len());
         self.outs.push(OutSection::new(source, kind));
         true
+    }
+
+    pub fn is_subscribed(&self, mid: Mid) -> bool {
+        self.subscriptions.contains(&*mid)
     }
 
     /// Withdraws a track from this receiver. Returns whether the browser has
@@ -505,6 +577,68 @@ mod tests {
         // The new source starts anywhere; the section does not jump.
         assert_eq!(r.map(Ssrc::from(2), 7_000_000, 5), Some((102, 12001)));
         assert_eq!(r.map(Ssrc::from(2), 7_000_001, 3005), Some((103, 15001)));
+    }
+
+    #[test]
+    fn rewrite_compacts_a_pause_but_preserves_loss_and_rtp_time_after_resume() {
+        let mut r = Rewrite::default();
+        let ssrc = Ssrc::from(1);
+        assert_eq!(r.map(ssrc, 100, 9000), Some((100, 9000)));
+        r.pause();
+        assert_eq!(r.map(ssrc, 99, 6000), None);
+        r.skip(ssrc, 150);
+        assert_eq!(r.map(ssrc, 149, 156000), None);
+
+        // Fifty source packets were intentionally omitted. Time still advances
+        // with the source to keep this track synchronized with unpaused audio.
+        assert_eq!(r.map(ssrc, 151, 162000), Some((101, 162000)));
+        assert_eq!(r.map(ssrc, 154, 171000), Some((104, 171000)));
+        assert_eq!(r.map(ssrc, 153, 168000), Some((103, 168000)));
+
+        // Late packets of the discarded interval must not reuse new numbers.
+        assert_eq!(r.map(ssrc, 149, 156000), None);
+        r.pause();
+        r.pause();
+        r.skip(ssrc, 299);
+        assert_eq!(r.map(ssrc, 300, 609000), Some((105, 609000)));
+    }
+
+    #[test]
+    fn rewrite_can_start_paused_or_resume_with_another_ssrc() {
+        let mut r = Rewrite::default();
+        r.pause();
+        assert_eq!(r.map(Ssrc::from(1), 42, 9000), Some((42, 9000)));
+        assert_eq!(r.map(Ssrc::from(1), 41, 6000), None);
+        r.pause();
+        assert_eq!(r.map(Ssrc::from(2), 700, 100), Some((43, 9001)));
+        assert_eq!(r.map(Ssrc::from(2), 701, 3100), Some((44, 12001)));
+    }
+
+    #[test]
+    fn rewrite_drops_what_was_skipped_of_an_ssrc_that_was_replaced_meanwhile() {
+        let mut r = Rewrite::default();
+        let (old, new) = (Ssrc::from(1), Ssrc::from(2));
+        assert_eq!(r.map(old, 100, 9000), Some((100, 9000)));
+        r.pause();
+        r.skip(old, 150);
+
+        // The publisher moved to a new SSRC while the section was paused.
+        assert_eq!(r.map(new, 700, 100), Some((101, 9001)));
+        // A late packet of the old one was skipped, and stays skipped.
+        assert_eq!(r.map(old, 149, 156_000), None);
+        assert_eq!(r.map(new, 701, 3100), Some((102, 12001)));
+    }
+
+    #[test]
+    fn rewrite_keeps_its_numbering_across_a_pause_that_skipped_nothing() {
+        let mut r = Rewrite::default();
+        let ssrc = Ssrc::from(1);
+        assert_eq!(r.map(ssrc, 100, 9000), Some((100, 9000)));
+        assert_eq!(r.map(ssrc, 102, 15000), Some((102, 15000)));
+        r.pause();
+        assert_eq!(r.map(ssrc, 103, 18000), Some((103, 18000)));
+        // The gap from before the pause can still be repaired.
+        assert_eq!(r.map(ssrc, 101, 12000), Some((101, 12000)));
     }
 
     #[test]

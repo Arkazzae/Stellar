@@ -15,14 +15,14 @@ export const RTC_SIGNAL_KINDS = ["state"] as const;
 export type RtcSignalKind = (typeof RTC_SIGNAL_KINDS)[number];
 
 /**
- * The kinds of the `MediaSignal` envelope (docs/stellarr-media.md, "Hub leg"). A browser sends `offer`, `answer` and
- * `candidate`; the media server sends `offer`, `answer` and `tracks`, and never
+ * The kinds of the `MediaSignal` envelope (docs/stellarr-media.md, "Hub leg"). A browser sends `offer`, `answer`,
+ * `candidate` and `subscriptions`; the media server sends `offer`, `answer` and `tracks`, and never
  * trickles a candidate.
  */
-export const MEDIA_SIGNAL_KINDS = ["offer", "answer", "candidate", "tracks"] as const;
+export const MEDIA_SIGNAL_KINDS = ["offer", "answer", "candidate", "tracks", "subscriptions"] as const;
 export type MediaSignalKind = (typeof MEDIA_SIGNAL_KINDS)[number];
 
-export const BROWSER_MEDIA_SIGNAL_KINDS = ["offer", "answer", "candidate"] as const;
+export const BROWSER_MEDIA_SIGNAL_KINDS = ["offer", "answer", "candidate", "subscriptions"] as const;
 export type BrowserMediaSignalKind = (typeof BROWSER_MEDIA_SIGNAL_KINDS)[number];
 
 export const MEDIA_SERVER_SIGNAL_KINDS = ["offer", "answer", "tracks"] as const;
@@ -237,6 +237,32 @@ export function encodeMediaCandidate(candidate: RTCIceCandidateInit | null): str
 /** `null` is end-of-candidates and `undefined` a payload that is not a candidate. */
 export function decodeMediaCandidate(payload: string): RTCIceCandidateInit | null | undefined {
   return decodeRtcCandidate(payload);
+}
+
+/** Every receiving section the media server is to forward, and only those: an empty list stops them all. */
+export interface MediaSubscriptions {
+  mids: string[];
+}
+
+export const MAX_MEDIA_SUBSCRIPTIONS = 4096;
+
+/** Printable ASCII without spaces; the media server's receiving mids are short tokens. */
+function isSubscriptionMid(value: unknown): value is string {
+  return typeof value === "string" && /^[\x21-\x7e]{1,16}$/.test(value);
+}
+
+export function encodeMediaSubscriptions(mids: readonly string[]): string {
+  const payload = JSON.stringify({ mids });
+  if (decodeMediaSubscriptions(payload) === null) throw new TypeError("Invalid media subscriptions.");
+  return payload;
+}
+
+export function decodeMediaSubscriptions(payload: string): MediaSubscriptions | null {
+  const record = parseRecord(payload);
+  const mids = record?.mids;
+  if (!Array.isArray(mids) || mids.length > MAX_MEDIA_SUBSCRIPTIONS) return null;
+  if (!mids.every(isSubscriptionMid) || new Set(mids).size !== mids.length) return null;
+  return { mids };
 }
 
 /** The whole directory of the session, never a delta: `{ tracks: [Track] }`. */

@@ -65,7 +65,7 @@ Because all media goes through the container, any browser outside the Docker hos
 | Type | Name | Description |
 | --- | --- | --- |
 | Method | `OpenMediaSession` | Allocate a media session for the caller's active voice seat |
-| Method | `SendMediaSignal` | Send an SDP offer/answer or ICE candidate to `stellarr-media` |
+| Method | `SendMediaSignal` | Send an SDP offer/answer, ICE candidate, or receive subscriptions to `stellarr-media` |
 | Event | `MediaSignal` | Deliver an SDP offer/answer or track directory from `stellarr-media` |
 | Event | `MediaSessionClosed` | Notify the client that the media session was closed by the media server |
 
@@ -88,7 +88,7 @@ Clients call `OpenMediaSession` after every `JoinVoice` (initial join, moderator
   "protocolVersion": 1,
   "channelId": "uuid",
   "sessionId": "opaque",
-  "kind": "offer | answer | candidate | tracks",
+  "kind": "offer | answer | candidate | subscriptions | tracks",
   "payload": "JSON string"
 }
 ```
@@ -100,6 +100,7 @@ Clients call `OpenMediaSession` after every `JoinVoice` (initial join, moderator
 | `offer` | Media → Browser | `{ "type": "offer", "sdp": "…", "negotiationId": 7, "tracks": [Track] }` |
 | `answer` | Browser → Media | `{ "type": "answer", "sdp": "…", "negotiationId": 7 }` |
 | `candidate` | Browser → Media | `RTCIceCandidateInit` object, or `null` (end-of-candidates) |
+| `subscriptions` | Browser → Media | `{ "mids": ["receiving-mid", "…"] }`, every receiving section to forward |
 | `tracks` | Media → Browser | `{ "tracks": [Track] }` |
 
 Each `Track` entry in the directory has the shape:
@@ -108,7 +109,7 @@ Each `Track` entry in the directory has the shape:
 { "mid": "fAk", "userId": "uuid", "kind": "audio | video", "streamId": "…" }
 ```
 
-- **Validation**: `AppHub` verifies `protocolVersion == 1`, `kind` (`offer`, `answer`, or `candidate` from browser), seat ownership, `sessionId` ownership, payload UTF-8 byte length ≤ 128 KiB, and payload schema. Invalid signals throw `HubException("Invalid media signal.")` (or `HubException("Invalid ChannelId.")`).
+- **Validation**: `AppHub` verifies `protocolVersion == 1`, `kind` (`offer`, `answer`, `candidate`, or `subscriptions` from browser), seat ownership, `sessionId` ownership, payload UTF-8 byte length ≤ 128 KiB, and payload schema. Invalid signals throw `HubException("Invalid media signal.")` (or `HubException("Invalid ChannelId.")`).
 - **Control API forwarding**:
   - `409 stale-negotiation` on a stale answer returns normally (`stellarr-media` discards stale answers by design).
   - `422` or `413` throws `HubException("Invalid media signal.")`.
@@ -116,6 +117,20 @@ Each `Track` entry in the directory has the shape:
   - Other failures throw `HubException("Media server is unavailable.")`.
 - **Server-to-browser events**: `MediaSignal` carries only `offer`, `answer`, and `tracks`. `stellarr-media` includes all ICE host candidates directly in its SDP and never trickles candidates.
 - Every `tracks` list contains the complete track directory for the session, never a partial diff.
+
+### Receive subscriptions
+
+`subscriptions` replaces the complete list of the receiving session's SDP mids that `stellarr-media` forwards. A new session is forwarded nothing until it asks, and an empty `mids` array stops everything. A section left out stays negotiated and named in the directory but carries no packets, and so does every section negotiated after the list was sent until a later list names it. A mid the session does not have, or does not have yet, is kept and harmless: it never reaches another session or room, and a list may name a section before the answer that negotiates it.
+
+- A list holds at most 4,096 unique mids, each 1–16 printable ASCII characters without spaces. An invalid list is rejected whole and the previous one stays in force.
+- Subscriptions change forwarding only: the directory, the transceivers and the SDP mids stay as they are, and a new list never renegotiates SDP.
+- A section that is asked for again continues its RTP sequence numbers where it stopped, so the receiver never asks for what was not meant for it, while losses during forwarding stay repairable. Timestamps keep the publisher's clock. Video that resumes asks the publisher for a keyframe through the rate-limited PLI gate, and a receiver's keyframe requests for a section it does not ask for are ignored.
+- The browser asks for every microphone, for the cameras, and for the video and sound of the one screen share it is watching. It sends a new list whenever that changes: with every directory, when the occupancy or a publisher's `state` settles whose track is what, and when watching starts or stops. What is not asked for stops playing locally at once.
+- The list for the sections an offer brings goes before the answer to that offer, without waiting for the offer to be applied, so the sections are asked for by the time they go live. The answer follows it in the same ordered outbox, which can hold the answer back by up to one `SendMediaSignal` round trip. Lists go at most every 250 ms, so the others' `state` frames cannot use up the hub's allowance for media signals, and the last one sent is always the latest wanted.
+- Until a publisher's `state` names a stream, a stream with video counts as a share (see [Track directory](#track-directory)), so a camera and the voice in its stream are asked for once that `state` arrives. A newcomer has the others' `state` before the media server's first offer: the hub sends it the occupancy before anyone can answer it, and the offer comes only after a full negotiation. What a `state` announced stands until the publisher's next one, whichever media session is replaced meanwhile, and the stream of an announced camera stays the voice after the camera stops.
+- `VoiceClient.setReceivePreferences({ screen, cameras })` selects one remote `{ userId, streamId }` or no screen, and whether cameras are received. Microphones are always asked for. The UI keeps cameras on and selects the screen through its watch controls.
+
+This is selective forwarding, not automatic bitrate or video-layer adaptation. A track that is asked for still carries the publisher's encoded quality.
 
 ### Negotiation rules
 
@@ -136,6 +151,8 @@ sequenceDiagram
     H-->>B: MediaSignal(answer)
     M-->>H: Event: signal (offer + tracks, negotiationId)
     H-->>B: MediaSignal(offer + tracks)
+    B->>H: SendMediaSignal(subscriptions)
+    H->>M: POST /v1/sessions/{id}/subscriptions
     B->>H: SendMediaSignal(answer, negotiationId)
     H->>M: POST /v1/sessions/{id}/answer
 ```
@@ -158,7 +175,7 @@ Because all remote media arrives over a single `RTCPeerConnection`, the client a
 - `userId`: Lowercase UUID of the publishing user, bound from the authenticated seat.
 - `streamId`: Stream identifier declared by the publisher (`""` if none), matched against `screenStreamId` and `cameraStreamId` in the publisher's `VoiceSignal` (`kind: "state"`) to distinguish microphone, camera, and screen tracks.
 - **Shared microphone and camera stream**: A publisher places its microphone and camera tracks into a single `MediaStream` (one `msid`) per call and advertises that stream ID as `cameraStreamId` while the camera is active. `stellarr-media` preserves the publisher's `msid` in forwarded offers so receiving browsers keep voice and camera synchronized. Screen shares use a separate `MediaStream`.
-- **Distinguishing microphone vs. screen audio**: On the receiving side, an incoming audio track is treated as the publisher's microphone if its stream matches `cameraStreamId` or if the audio track was registered on that stream before any video track. It is treated as screen-share audio if its stream matches `screenStreamId` or if a video track was registered on that stream first. Because the track directory lists a screen share's video track before its audio track, receivers classify screen audio accurately even before the publisher's `state` signal arrives.
+- **Distinguishing microphone vs. screen audio**: On the receiving side, an incoming audio track is treated as the publisher's microphone if its stream is or was announced as `cameraStreamId` or if the audio track was registered on that stream before any video track. It is treated as screen-share audio if its stream matches `screenStreamId` or if a video track was registered on that stream first. Because the track directory lists a screen share's video track before its audio track, receivers classify screen audio accurately even before the publisher's `state` signal arrives.
 - **Holding unattributed tracks**: Tracks whose `mid` is not yet in the directory, or whose `userId` is not in the current `VoiceParticipantChanged` occupancy snapshot, remain muted/unplayed until both include them.
 - **In-place track swaps**: When a publisher switches capture devices and updates its stream ID without adding a new transceiver, `stellarr-media` emits a `tracks` signal without renegotiating SDP.
 
@@ -237,6 +254,7 @@ A media session is bound to an active voice seat in `PresenceTracker`. `AppHub` 
 | `POST /v1/sessions/{sessionId}/offer` (`{ "sdp" }`) | `204` | `404 unknown-session`, `422 invalid-sdp`, `422 limit-exceeded` |
 | `POST /v1/sessions/{sessionId}/answer` (`{ "sdp", "negotiationId" }`) | `204` | `404 unknown-session`, `409 stale-negotiation`, `422 invalid-sdp` |
 | `POST /v1/sessions/{sessionId}/candidate` (`{ "candidate" }`) | `204` | `404 unknown-session`, `422 invalid-candidate` |
+| `POST /v1/sessions/{sessionId}/subscriptions` (`{ "mids": [...] }`) | `204` | `404 unknown-session`, `422 invalid-request` |
 | `GET /v1/events?epoch=…&after=…&waitMs=…` | `200 { "epoch": "…", "reset": false, "events": [Event] }` | `422 invalid-request` |
 | `GET /v1/stats` | `200 { "epoch": "…", "rooms": [...] }` | None |
 
@@ -292,7 +310,7 @@ Returns immediately when events with `seq > after` exist, or waits up to `waitMs
 
 ### Forwarding
 
-- Every session in a `roomId` receives all tracks published by other sessions in the same room and never receives its own tracks.
+- Every session in a `roomId` negotiates the tracks published by the other sessions in that room, never its own, and is forwarded those its [receive subscriptions](#receive-subscriptions) ask for.
 - Per connection, `stellarr-media` rewrites SSRC, payload type, RTP header extension IDs, and sequence numbers/timestamps while leaving media payloads untouched after SRTP decryption and re-encryption.
 - Supported codecs: Opus, VP9, VP8, H.264, AV1. Publisher codec order is preserved, and publisher Opus `a=fmtp` parameters are echoed back so the browser configures its encoder according to the selected profile.
 - Audio level RTP header extensions are forwarded.
@@ -310,14 +328,15 @@ Returns immediately when events with `seq > after` exist, or waits up to `waitMs
 | Initial connection timeout (ICE + DTLS + SRTP) | 30 s | Closed with `transport-timeout` |
 | Disconnected timeout | 30 s | Closed with `transport-timeout` |
 | Consecutive unanswered server offers | 3 | Closed with `error` |
+| Mids in one receive subscription list | 4,096 | `422 invalid-request`; the previous list stays in force |
 
 ### Current limitations
 
 `stellarr-media` does not currently implement:
 
-- **Downlink adaptation for slow receivers**: Every receiver gets the publisher's full stream, without VP9 temporal-layer dropping or simulcast.
+- **Downlink adaptation for slow receivers**: Every receiver gets the publisher's full stream of each track it asks for, without VP9 temporal-layer dropping or simulcast.
 - **SDP m-line recycling**: Inactive m-lines are not reused within a session. A long session with many track toggles eventually reaches the 128 KiB SDP limit and automatically reconnects with a fresh session.
-- **Selective video subscription or active-speaker filtering**: All published tracks in a room are forwarded to every participant.
+- **Automatic selection of video quality or active-speaker filtering**: Receive subscriptions select whole tracks, chosen by the browser; nothing picks a quality for a receiver or follows who is speaking.
 - **Session persistence across hub reconnects or ICE restarts**: The client opens a new session instead.
 - **IPv6 or direct ICE-TCP**: The media socket uses IPv4 UDP only; clients restricted to TCP connect through `coturn`.
 

@@ -33,7 +33,7 @@ public enum MediaSignalOutcome
     /// <summary><c>409 stale-negotiation</c>: an answer to an offer the media server has already given up.</summary>
     Stale,
 
-    /// <summary><c>422</c>, or <c>413</c> for a body over 256 KiB: the description or the candidate was refused.</summary>
+    /// <summary><c>422</c>, or <c>413</c> for a body over 256 KiB: the signal was refused.</summary>
     Refused,
 }
 
@@ -154,6 +154,13 @@ public sealed class MediaControlClient(
         JsonElement? candidate,
         CancellationToken cancellationToken) =>
         SignalAsync(sessionId, "candidate", new { candidate }, cancellationToken);
+
+    /// <summary>Replaces the receiving session's complete allowlist of forwarded media MIDs.</summary>
+    public Task<MediaSignalOutcome> SendSubscriptionsAsync(
+        string sessionId,
+        IReadOnlyList<string> mids,
+        CancellationToken cancellationToken) =>
+        SignalAsync(sessionId, "subscriptions", new { mids }, cancellationToken);
 
     /// <summary>
     /// Waits for the events after <paramref name="after"/> of the run

@@ -3,7 +3,7 @@ import type { MediaSessionClosedEvent, MediaSignal } from "@/lib/realtime/types"
 import type { MediaServerSignalKind } from "@/lib/rtc/protocol";
 import type { NetworkSample } from "./bitrate";
 import type { MediaCounters, StatsLike } from "./stats";
-import type { VoiceTransportState } from "./types";
+import type { VoiceReceivePreferences, VoiceTransportState } from "./types";
 import type { Link } from "./webrtcPeer";
 
 /** What the topology says about media; the signalling half of the state is the call's own. */
@@ -68,6 +68,10 @@ export interface CallTopology {
   renegotiate(): Promise<void>;
   /** Cap every microphone sender at the adaptive controller's current ceiling. */
   applyMicEncoding(): Promise<void>;
+  /** Choose what to receive; what is no longer wanted stops playing at once. */
+  setReceivePreferences(preferences: VoiceReceivePreferences): void;
+  /** A state announcement can resolve whether a stream is a camera or a screen. */
+  refreshReceivePreferences(): void;
   /** Close every connection and forget every person. Captures stay open. */
   dropAll(): void;
   /** Repair the links that are down, leaving working ones alone. */

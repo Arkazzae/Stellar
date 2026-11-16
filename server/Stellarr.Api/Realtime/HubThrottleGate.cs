@@ -30,9 +30,12 @@ public sealed class HubThrottleGate(TimeProvider? clock = null)
     // The burst and the refill per second, in the order of the policies.
     // Nine people in a mesh restarting ICE at once send around a hundred and
     // twenty candidates within a few seconds; no real client sustains even a
-    // small fraction of the signalling rate afterwards. Typing arrives at
-    // human speed at worst. A media session is opened per seat, rejoin and
-    // replacement, the replacements of one outage being three at most.
+    // small fraction of the signalling rate afterwards. A media session's
+    // signals are its negotiations and the lists of what it receives, which a
+    // browser sends at most four times a second however fast the others
+    // change their state. Typing arrives at human speed at worst. A media
+    // session is opened per seat, rejoin and replacement, the replacements of
+    // one outage being three at most.
     private static readonly (int Burst, double RefillPerSecond)[] Limits =
     [
         (200, 40),

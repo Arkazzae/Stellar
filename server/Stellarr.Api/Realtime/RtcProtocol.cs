@@ -24,7 +24,7 @@ public static class RtcProtocol
 
     /// <summary>What a browser may send the media server with <c>SendMediaSignal</c>.</summary>
     public static readonly FrozenSet<string> MediaSignalKinds =
-        new[] { "offer", "answer", "candidate" }.ToFrozenSet(StringComparer.Ordinal);
+        new[] { "offer", "answer", "candidate", "subscriptions" }.ToFrozenSet(StringComparer.Ordinal);
 
     /// <summary>What the media server may send a browser as <c>MediaSignal</c>.</summary>
     public static readonly FrozenSet<string> MediaServerSignalKinds =

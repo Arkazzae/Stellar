@@ -177,6 +177,18 @@ export function VoiceProvider({ children }: { children: ReactNode }) {
 
   const source = useMemo(() => shareSourceOf(state, userId), [state, userId]);
   const watching = source.key !== null && watchedShareKey === source.key;
+  const watchedScreenUserId = watching ? (source.remote?.userId ?? null) : null;
+  const watchedScreenStreamId = watching ? (source.remote?.screen?.streamId ?? null) : null;
+
+  useEffect(() => {
+    holder.getClient()?.setReceivePreferences({
+      cameras: true,
+      screen:
+        watchedScreenUserId !== null && watchedScreenStreamId !== null
+          ? { userId: watchedScreenUserId, streamId: watchedScreenStreamId }
+          : null,
+    });
+  }, [holder, ports, userId, displayName, watchedScreenUserId, watchedScreenStreamId]);
 
   useVoiceFx({
     soundboard: ports.soundboard,
@@ -205,10 +217,12 @@ export function VoiceProvider({ children }: { children: ReactNode }) {
       }
       if (client === null) {
         if (pendingJoin.current === channelId) return;
+        setWatchedShareKey(null);
         pendingJoin.current = channelId;
         triggerHaptic("light");
         return;
       }
+      setWatchedShareKey(null);
       triggerHaptic("light");
       void client.join(channelId).catch(() => {});
     },
@@ -221,6 +235,7 @@ export function VoiceProvider({ children }: { children: ReactNode }) {
       pendingJoin.current !== null || (client !== null && client.getSnapshot().channelId !== null);
     pendingJoin.current = null;
     if (!inCall) return;
+    setWatchedShareKey(null);
     setPresentation(null);
     triggerHaptic("light");
     setDeafened(false);

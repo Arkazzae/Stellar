@@ -12,7 +12,12 @@ import type {
   VoiceSignal,
 } from "@/lib/realtime/types";
 import type { BrowserMediaSignalKind } from "@/lib/rtc/protocol";
-import { IDLE_VOICE_STATE, type VoiceClient, type VoiceState } from "@/lib/voice/types";
+import {
+  IDLE_VOICE_STATE,
+  type VoiceClient,
+  type VoiceReceivePreferences,
+  type VoiceState,
+} from "@/lib/voice/types";
 import type { VoiceSettings } from "@/lib/voice/settings";
 
 export const TEXT_CHANNEL: Channel = {
@@ -386,6 +391,8 @@ export class FakeVoiceClient implements VoiceClient {
   });
 
   setDeafened = vi.fn();
+
+  setReceivePreferences = vi.fn<(preferences: VoiceReceivePreferences) => void>();
 
   setPeerVolume = vi.fn((userId: string, playbackVolume: number) => {
     this.set({
