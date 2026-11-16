@@ -9,5 +9,3 @@ next-env.d.ts
 # The files artifacts/assemble.mjs copies into public/ are ignored in the
 # repository's root .gitignore.
 
-# Written next to AGENTS.md by `next dev`.
-CLAUDE.md
