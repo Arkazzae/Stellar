@@ -427,7 +427,9 @@ export const en = {
   "integrations.resend.on": "Mail now goes through Resend.",
   "integrations.resend.off": "Mail now goes through SMTP.",
   "integrations.giphy.description":
-    "The GIF search in the web client's message field. GIPHY wants the browser to call it, so signed-in users receive the key.",
+    "The GIF search in the web client's message field, and the GIFs in messages. GIPHY wants the browser to call it, so signed-in users receive the key.",
+  "integrations.giphy.privacy":
+    "With GIFs on, the browser of everyone who searches for or sees a GIF contacts GIPHY itself. GIPHY then receives their IP address, what they search for, which GIFs they see and send, an identifier their browser makes up at random, and the address of this instance. Each person can turn GIPHY off for themselves under Privacy in their settings, and then sees the GIFs in messages as links.",
   "integrations.giphy.key": "API key",
   "integrations.giphy.check": "Check the connection",
   "integrations.giphy.checkDescription": "Asks GIPHY once whether it accepts the key.",
