@@ -111,6 +111,8 @@ jobs:
       - run: npm run test:web
       - run: npm run typecheck:ui
       - run: npm run test:ui
+      - run: npm run typecheck:icons
+      - run: npm run test:icons
       - name: Check long transcript in Chromium
         run: |
           chrome=$(command -v google-chrome || command -v google-chrome-stable || command -v chromium || true)
