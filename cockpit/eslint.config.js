@@ -5,7 +5,6 @@ import reactRefresh from "eslint-plugin-react-refresh";
 import tseslint from "typescript-eslint";
 
 export default tseslint.config(
-  { ignores: ["dist"] },
   {
     files: ["**/*.{ts,tsx}"],
     extends: [js.configs.recommended, ...tseslint.configs.recommended],
@@ -23,9 +22,15 @@ export default tseslint.config(
     },
   },
   {
-    // UI parts come from the shared @stellarr/ui package and icons from
-    // src/components/icons, which draws the package's set. These libraries
-    // were Cockpit's own copy of them; a new import would bring that back.
+    // Tests and their helpers are never hot-reloaded.
+    files: ["src/**/*.test.{ts,tsx}", "src/test/**"],
+    rules: { "react-refresh/only-export-components": "off" },
+  },
+  {
+    // UI parts come from the shared @stellarr/ui package, icons from
+    // src/components/icons, which draws the package's set, and routing from
+    // Next.js. These libraries were Cockpit's own copy of them; a new import
+    // would bring that back.
     files: ["src/**/*.{ts,tsx}"],
     rules: {
       "no-restricted-imports": [
@@ -36,6 +41,7 @@ export default tseslint.config(
             { name: "class-variance-authority", message: "UI parts come from @stellarr/ui." },
             { name: "clsx", message: "join class names with cx from @stellarr/ui." },
             { name: "tailwind-merge", message: "join class names with cx from @stellarr/ui." },
+            { name: "react-router-dom", message: "pages are routes of the web client's Next.js app, under web/src/app/cockpit/." },
           ],
           patterns: [{ group: ["@radix-ui/*"], message: "UI parts come from @stellarr/ui." }],
         },

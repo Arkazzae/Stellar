@@ -109,12 +109,13 @@ function LoginScreen() {
   );
 }
 
-export function AppGate() {
+/** The page a route renders, once the session lets the operator in, or the screen that stands in for it. */
+export function AppGate({ children }: { children: ReactNode }) {
   const { phase, error, reload, logout } = useCockpit();
 
   switch (phase) {
     case "ready":
-      return <AppShell />;
+      return <AppShell>{children}</AppShell>;
     case "anonymous":
       return <LoginScreen />;
     case "loading":
@@ -151,7 +152,7 @@ export function AppGate() {
               <CardDescription>{t("gate.mfa.description")}</CardDescription>
             </CardHeader>
             <CardContent>
-              {/* A plain link: the sign-in page is the web client's, outside this app's router. */}
+              {/* A plain link: the sign-in page renders in the web client's layout, not in this panel's. */}
               <Button asChild>
                 <a href={WEB_CONFIRM_URL}>{t("gate.mfa.confirm")}</a>
               </Button>

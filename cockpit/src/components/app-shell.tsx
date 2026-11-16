@@ -14,8 +14,9 @@ import {
   SheetTitle,
   SheetTrigger,
 } from "@stellarr/ui";
-import { Fragment, useState } from "react";
-import { NavLink, Outlet, useLocation } from "react-router-dom";
+import Link from "next/link";
+import { usePathname } from "next/navigation";
+import { Fragment, useState, type ReactNode } from "react";
 
 import { BrandMark } from "./brand-mark";
 import { FreshSecondStepDialog } from "./fresh-second-step-dialog";
@@ -23,6 +24,7 @@ import { Icon, type IconName } from "./icons/icon";
 import { UserAvatar } from "./user-avatar";
 import { t, type MessageKey } from "../i18n";
 import type { CockpitOperator } from "../lib/api";
+import { COCKPIT_ROOT, cockpitHref } from "../lib/paths";
 import { useCockpit } from "../state/cockpit-context";
 
 const DOCUMENTATION_URL = "https://arkazzae.github.io/Stellarr/";
@@ -40,41 +42,45 @@ interface NavigationGroup {
 }
 
 const navigation: readonly NavigationGroup[] = [
-  { items: [{ labelKey: "nav.overview", href: "/", icon: "apps" }] },
+  { items: [{ labelKey: "nav.overview", href: cockpitHref("/"), icon: "apps" }] },
   {
     labelKey: "nav.group.community",
     items: [
-      { labelKey: "nav.users", href: "/users", icon: "users" },
-      { labelKey: "nav.servers", href: "/servers", icon: "server" },
+      { labelKey: "nav.users", href: cockpitHref("/users"), icon: "users" },
+      { labelKey: "nav.servers", href: cockpitHref("/servers"), icon: "server" },
     ],
   },
   {
     labelKey: "nav.group.system",
     items: [
-      { labelKey: "nav.runtime", href: "/runtime", icon: "cpu" },
-      { labelKey: "nav.logs", href: "/logs", icon: "list" },
-      { labelKey: "nav.backups", href: "/backups", icon: "folder" },
+      { labelKey: "nav.runtime", href: cockpitHref("/runtime"), icon: "cpu" },
+      { labelKey: "nav.logs", href: cockpitHref("/logs"), icon: "list" },
+      { labelKey: "nav.backups", href: cockpitHref("/backups"), icon: "folder" },
     ],
   },
   {
     labelKey: "nav.group.configuration",
     items: [
-      { labelKey: "nav.integrations", href: "/integrations", icon: "link" },
-      { labelKey: "nav.settings", href: "/settings", icon: "gear" },
+      { labelKey: "nav.integrations", href: cockpitHref("/integrations"), icon: "link" },
+      { labelKey: "nav.settings", href: cockpitHref("/settings"), icon: "gear" },
     ],
   },
 ];
 
 const navigationItems = navigation.flatMap((group) => group.items);
 
-/** The root only matches itself; every other item also owns the pages beneath it. */
+/** The overview only matches itself; every other item also owns the pages beneath it. */
 function activeItem(pathname: string): NavigationItem | undefined {
   return navigationItems.find((item) =>
-    item.href === "/" ? pathname === "/" : pathname.startsWith(item.href),
+    item.href === COCKPIT_ROOT
+      ? pathname === COCKPIT_ROOT
+      : pathname === item.href || pathname.startsWith(`${item.href}/`),
   );
 }
 
 function NavigationLinks({ onNavigate }: { onNavigate?: () => void }) {
+  const active = activeItem(usePathname());
+
   return (
     <nav aria-label={t("shell.navigationLabel")} className="flex flex-1 flex-col overflow-y-auto px-3 pb-4">
       {navigation.map((group, index) => (
@@ -82,21 +88,20 @@ function NavigationLinks({ onNavigate }: { onNavigate?: () => void }) {
           {group.labelKey ? (
             <p className="px-3 pt-5 pb-1.5 text-xs font-medium text-muted-foreground">{t(group.labelKey)}</p>
           ) : null}
-          {group.items.map(({ labelKey, href, icon }) => (
-            <NavLink
-              key={href}
-              to={href}
+          {group.items.map((item) => (
+            <Link
+              key={item.href}
+              href={item.href}
               onClick={onNavigate}
-              className={({ isActive }) =>
-                cx(
-                  "flex h-9 items-center gap-3 rounded-md px-3 text-sm font-medium outline-none transition-colors hover:bg-sidebar-accent hover:text-sidebar-foreground focus-visible:ring-2 focus-visible:ring-sidebar-ring",
-                  isActive ? "bg-sidebar-accent text-sidebar-foreground" : "text-muted-foreground",
-                )
-              }
+              aria-current={item === active ? "page" : undefined}
+              className={cx(
+                "flex h-9 items-center gap-3 rounded-md px-3 text-sm font-medium outline-none transition-colors hover:bg-sidebar-accent hover:text-sidebar-foreground focus-visible:ring-2 focus-visible:ring-sidebar-ring",
+                item === active ? "bg-sidebar-accent text-sidebar-foreground" : "text-muted-foreground",
+              )}
             >
-              <Icon name={icon} size={18} />
-              {t(labelKey)}
-            </NavLink>
+              <Icon name={item.icon} size={18} />
+              {t(item.labelKey)}
+            </Link>
           ))}
         </Fragment>
       ))}
@@ -140,7 +145,7 @@ function OperatorMenu({ operator, onLogout }: { operator: CockpitOperator; onLog
         </DropdownMenuLabel>
         <DropdownMenuSeparator />
         <DropdownMenuItem asChild>
-          {/* A plain anchor: the app lives at the site root, outside this panel's /cockpit/ router base. */}
+          {/* A plain anchor: the app has a root layout of its own, so leaving for it is a full page load. */}
           <a href="/">{t("shell.openApp")}</a>
         </DropdownMenuItem>
         <DropdownMenuItem onSelect={onLogout}>
@@ -164,9 +169,10 @@ function Sidebar({ operator, onLogout, onNavigate }: { operator: CockpitOperator
   );
 }
 
-export function AppShell() {
+/** The panel around a page: the sidebar, the header that names the page, and the page itself. */
+export function AppShell({ children }: { children: ReactNode }) {
   const [mobileOpen, setMobileOpen] = useState(false);
-  const { pathname } = useLocation();
+  const pathname = usePathname();
   const { bootstrap, logout } = useCockpit();
   if (!bootstrap) return null;
   const { instance, operator } = bootstrap;
@@ -226,7 +232,7 @@ export function AppShell() {
               itself only when a page cannot shrink to fit. */}
           <main className="relative flex min-h-0 flex-1 flex-col overflow-y-auto">
             <div className="mx-auto flex min-h-0 w-full max-w-[87.5rem] flex-1 flex-col px-4 py-6 sm:px-6 sm:py-8 lg:px-8">
-              <Outlet />
+              {children}
               <FreshSecondStepDialog />
             </div>
           </main>

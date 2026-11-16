@@ -3,8 +3,7 @@
 # production docker-compose.yml is the opposite: one container, everything
 # baked in.
 #
-#   web     :3000  next dev, the chat client
-#   cockpit :3001  vite, the operator panel
+#   web     :3000  next dev, the chat client and Cockpit under /cockpit
 #   api     :5000  dotnet watch, reached by the browser through the web proxy
 #   media   :49100/udp  cargo run under watchexec, Stellarr Media; its control
 #                       API is published on 127.0.0.1:5200
@@ -32,12 +31,12 @@
 name: stellarr-dev
 
 services:
-  # web and cockpit are npm workspaces of the repository root, which has the one
-  # package-lock.json. Each service mounts the whole repository at /app, installs
-  # from the root and runs its dev server from its own folder. Each installs only
-  # its own workspace, which links the shared packages/stellarr-ui it depends on,
-  # so the other app's packages never reach the bind mount. Both services may
-  # rewrite the one lockfile.
+  # web is an npm workspace of the repository root, which has the one
+  # package-lock.json. The service mounts the whole repository at /app,
+  # installs from the root and runs next dev from web/. It installs the web
+  # client's workspace, which links Cockpit (cockpit/) and the shared
+  # packages/stellarr-ui it builds from, so one dev server serves and
+  # hot-reloads both apps. It may rewrite the lockfile.
   web:
     image: node:24-bookworm-slim
     working_dir: /app/web
@@ -48,8 +47,8 @@ services:
       sh -c "(cd /app && npm install -w stellarr-web --no-audit --no-fund) &&
              npm run dev -- --hostname 0.0.0.0 --port 3000"
     environment:
-      # next dev proxies /api, /assets and /hubs to the API. In production
-      # Nginx does that and Next registers no rewrites.
+      # next dev proxies /api, /assets, /health and /hubs to the API. In
+      # production Nginx does that and Next registers no rewrites.
       STELLARR_API_ORIGIN: http://api:5000
       # Next refuses its dev-only chunks to a page opened from a host it does
       # not know. 127.0.0.1 is always allowed; list further names for an IDE
@@ -68,28 +67,13 @@ services:
       # Named volumes keep these directories inside Docker. Without them the
       # bind mount shows the host's copies: node_modules built for another OS
       # and a .next written by a host-side build. Packages that npm cannot
-      # hoist to the root land in the workspace's own node_modules, so that
-      # one needs a volume as well.
+      # hoist to the root land in a workspace's own node_modules, so those
+      # of the web client and of Cockpit, which it builds, need volumes as
+      # well.
       - web_root_node_modules:/app/node_modules
       - web_node_modules:/app/web/node_modules
+      - web_cockpit_node_modules:/app/cockpit/node_modules
       - web_next:/app/web/.next
-    depends_on:
-      - api
-
-  cockpit:
-    image: node:24-bookworm-slim
-    working_dir: /app/cockpit
-    command: >
-      sh -c "(cd /app && npm install -w stellarr-cockpit --no-audit --no-fund) &&
-             npm run dev"
-    environment:
-      STELLARR_API_ORIGIN: http://api:5000
-    ports:
-      - "${STELLARR_DEV_COCKPIT_PORT:-3001}:3001"
-    volumes:
-      - .:/app
-      - cockpit_root_node_modules:/app/node_modules
-      - cockpit_node_modules:/app/cockpit/node_modules
     depends_on:
       - api
 
@@ -204,8 +188,7 @@ services:
 volumes:
   web_root_node_modules:
   web_node_modules:
-  cockpit_root_node_modules:
-  cockpit_node_modules:
+  web_cockpit_node_modules:
   web_next:
   api_obj:
   api_bin:

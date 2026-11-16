@@ -8,7 +8,6 @@
   ],
   "scripts": {
     "build:web": "npm run build -w stellarr-web",
-    "build:cockpit": "npm run build -w stellarr-cockpit",
     "test:web": "npm run test -w stellarr-web",
     "test:cockpit": "npm run test -w stellarr-cockpit",
     "test:ui": "npm run test -w @stellarr/ui",

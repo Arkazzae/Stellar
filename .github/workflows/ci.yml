@@ -65,7 +65,9 @@ jobs:
           check server '^(server/|tests/contracts/|Stellarr\.slnx$|Directory\.Build\.props$|global\.json$|\.github/workflows/ci\.yml$)'
           # web and cockpit are workspaces of one npm project: a change to the
           # shared packages or to the root manifest or lockfile affects both.
-          check web '^(web/|tests/contracts/|artifacts/|packages/|package(-lock)?\.json$|branding/icons/|\.github/workflows/ci\.yml$)'
+          # The web client's build compiles Cockpit, so a change to Cockpit
+          # runs the web job too.
+          check web '^(web/|cockpit/|tests/contracts/|artifacts/|packages/|package(-lock)?\.json$|branding/icons/|\.github/workflows/ci\.yml$)'
           check cockpit '^(cockpit/|packages/|package(-lock)?\.json$|\.github/workflows/ci\.yml$)'
           check media '^(media/|\.github/workflows/ci\.yml$)'
           check image '^(Dockerfile$|\.dockerignore$|artifacts/|infra/|server/.*\.csproj$|server/.*packages\.lock\.json$|packages/|package(-lock)?\.json$|\.npmrc$|(web|cockpit)/package\.json$|media/Cargo\.(toml|lock)$|global\.json$|Directory\.Build\.props$|\.github/workflows/ci\.yml$)'
@@ -153,10 +155,13 @@ jobs:
       - run: npm run lint:cockpit
       - run: npm run typecheck:cockpit
       - run: npm run test:cockpit
-      # The tokens are checked here as well: a change to cockpit/src/index.css
-      # alone runs only this job.
+      # The tokens are checked here as well, as in the web job.
       - run: npm run tokens:check -w @stellarr/ui
-      - run: npm run build:cockpit
+      # Cockpit has no build of its own: the web client's Next.js build
+      # compiles its routes (web/src/app/cockpit/) and sources.
+      - run: npm run build:web
+        env:
+          NEXT_TELEMETRY_DISABLED: "1"
 
   media:
     needs: changes
@@ -213,17 +218,23 @@ jobs:
           if [[ $status != healthy ]] \
              || ! curl -kfsS -o /dev/null https://localhost:8443/health \
              || ! curl -kfsS -o /dev/null https://localhost:8443/login \
+             || ! curl -kfsS -o /dev/null https://localhost:8443/cockpit \
+             || ! curl -kfsS -o /dev/null https://localhost:8443/cockpit/users \
              || ! curl -kfsS -o /dev/null https://localhost:8443/bergamot-models/plen/vocab.plen.spm \
              || ! curl -kfsS -o /dev/null https://localhost:8443/audio/rnnoise-worklet.js \
              || ! curl -kfsS -o /dev/null https://localhost:8443/codecs/bergamot/bergamot-translator-worker.wasm; then
             docker logs stellarr 2>&1 | tail -n 80
             exit 1
           fi
-      # The binaries are served from the image, not proxied to a model host,
-      # and the notices that describe them ship in the same image.
+      # The binaries are served from the image, not proxied to a model host by
+      # Nginx or by a rewrite of the Next.js server, and the notices that
+      # describe them ship in the same image.
       - name: Check the browser artifacts are local
         run: |
-          ! docker run --rm --entrypoint grep stellarr:ci -q 'storage.googleapis.com\|bergamot-models-gcs' /etc/nginx/nginx.conf.template
+          # grep fails on a missing file too, which would pass the check.
+          docker run --rm --entrypoint test stellarr:ci -f /opt/stellarr/web/web/.next/routes-manifest.json
+          ! docker run --rm --entrypoint grep stellarr:ci -q 'storage.googleapis.com\|bergamot-models-gcs' \
+              /etc/nginx/nginx.conf.template /opt/stellarr/web/web/.next/routes-manifest.json
           docker run --rm --entrypoint test stellarr:ci -f /usr/share/doc/stellarr/artifacts/NOTICES
           docker run --rm --entrypoint test stellarr:ci -f /usr/share/doc/stellarr/artifacts/manifest.json
       # The operator CLI ships in the same image and must work without the API.

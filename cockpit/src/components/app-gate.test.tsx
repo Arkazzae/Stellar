@@ -1,6 +1,5 @@
 import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { MemoryRouter } from "react-router-dom";
 import { describe, expect, it, vi } from "vitest";
 
 import { AppGate } from "./app-gate";
@@ -9,13 +8,16 @@ import { CockpitContext, type CockpitContextValue } from "../state/cockpit-conte
 import { selectPolish } from "../test/locale";
 import { cockpitValue } from "../test/cockpit-fixtures";
 
+vi.mock("next/navigation", () => import("../test/navigation"));
+vi.mock("next/link", () => import("../test/navigation").then(({ Link }) => ({ default: Link })));
+
 function renderGate(value: CockpitContextValue) {
   return render(
-    <MemoryRouter>
-      <CockpitContext.Provider value={value}>
-        <AppGate />
-      </CockpitContext.Provider>
-    </MemoryRouter>,
+    <CockpitContext.Provider value={value}>
+      <AppGate>
+        <p>Treść strony</p>
+      </AppGate>
+    </CockpitContext.Provider>,
   );
 }
 
@@ -32,6 +34,13 @@ describe("AppGate by phase", () => {
     renderGate(cockpitValue({ phase: "ready" }));
 
     expect(screen.getAllByRole("navigation", { name: "Nawigacja Cockpitu" }).length).toBeGreaterThan(0);
+    expect(screen.getByRole("main").textContent).toBe("Treść strony");
+  });
+
+  it("keeps the page out of every other phase", () => {
+    renderGate(cockpitValue({ phase: "loading", bootstrap: null }));
+
+    expect(screen.queryByText("Treść strony")).toBeNull();
   });
 
   it("shows a status line while loading", () => {
@@ -57,7 +66,7 @@ describe("AppGate by phase", () => {
     expect(screen.getByText("Cockpit wymaga drugiego kroku")).toBeTruthy();
     expect(screen.getByText(/zaufane urządzenie tu nie wystarcza/)).toBeTruthy();
     const link = screen.getByRole("link", { name: "Potwierdź drugim krokiem" });
-    expect(link.getAttribute("href")).toBe("/login?confirm=1&returnUrl=%2Fcockpit%2F");
+    expect(link.getAttribute("href")).toBe("/login?confirm=1&returnUrl=%2Fcockpit");
     expect(screen.queryByText("To konto nie jest właścicielem")).toBeNull();
     expect(screen.queryByRole("button")).toBeNull();
   });
