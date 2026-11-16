@@ -1,12 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
-import { AUDIO_PROFILES, microphoneConstraints, opusParameters, profileFor } from "../audioProfiles";
-import {
-  MicCaptureError,
-  captureMicrophone,
-  hasDeviceLabels,
-  restoreBrowserNoise,
-  restoreBrowserProcessing,
-} from "./micPipeline";
+import { AUDIO_PROFILES, opusParameters, profileFor } from "../audioProfiles";
+import { MicCaptureError, captureMicrophone, hasDeviceLabels } from "./micPipeline";
 import { DEFAULT_SETTINGS, type VoiceSettings } from "../settings";
 
 function audioTrack(
@@ -30,24 +24,12 @@ function audioTrack(
       if (typeof constraints.noiseSuppression === "boolean") {
         noiseSuppression = constraints.noiseSuppression;
       }
-      const echo = constraints.echoCancellation as unknown as
-        | boolean
-        | { exact?: boolean | "all" | "remote-only" }
-        | undefined;
-      if (typeof echo === "boolean") echoCancellation = echo;
-      else if (echo?.exact !== undefined) echoCancellation = echo.exact;
+      if (typeof constraints.echoCancellation === "boolean") {
+        echoCancellation = constraints.echoCancellation;
+      }
     }),
     getCapabilities: () => ({
       echoCancellation: options.echoCapabilities ?? [true, false],
-    }),
-    getConstraints: () => ({
-      sampleRate: 48_000,
-      echoCancellation:
-        typeof echoCancellation === "string"
-          ? ({ exact: echoCancellation } as unknown as boolean)
-          : echoCancellation === false
-            ? false
-            : true,
     }),
     getSettings: () => ({ channelCount: 1, noiseSuppression, echoCancellation }),
   } as unknown as MediaStreamTrack;
@@ -106,7 +88,7 @@ function handle(dispose = vi.fn(), kind: "rnnoise" | "gtcrn" | "speex" = "rnnois
   return { kind, output: fakeNode(), dispose };
 }
 
-describe("microphoneConstraints", () => {
+describe("Opus profiles", () => {
   it("gives Premium a 128 kbps continuous mono Opus stream with FEC", () => {
     const profile = AUDIO_PROFILES.premium;
     expect(profile).toMatchObject({
@@ -141,54 +123,6 @@ describe("microphoneConstraints", () => {
     expect(AUDIO_PROFILES.clarity.dtx).toBe(false);
     expect(AUDIO_PROFILES.premium.dtx).toBe(false);
     expect(AUDIO_PROFILES.studio.dtx).toBe(false);
-  });
-
-  it("passes echo cancellation through and keeps the browser AGC off", () => {
-    // Automatic volume is our own leveller in the graph, so the device is
-    // opened without the platform's; it is restored only when the graph fails.
-    const constraints = microphoneConstraints(
-      settings({ echoCancellation: false, autoGainControl: true }),
-    );
-    expect(constraints.echoCancellation).toBe(false);
-    expect(constraints.autoGainControl).toBe(false);
-    expect(
-      microphoneConstraints(settings({ autoGainControl: false })).autoGainControl,
-    ).toBe(false);
-  });
-
-  it("turns off the browser suppressor when RNNoise is selected", () => {
-    // Two gates in series chew holes in speech, and the browser's would run
-    // first — RNNoise would only ever see already-damaged audio.
-    expect(microphoneConstraints(settings({ noiseSuppression: "rnnoise" })).noiseSuppression).toBe(
-      false,
-    );
-    expect(microphoneConstraints(settings({ noiseSuppression: "off" })).noiseSuppression).toBe(
-      false,
-    );
-    expect(microphoneConstraints(settings({ noiseSuppression: "browser" })).noiseSuppression).toBe(
-      true,
-    );
-  });
-
-  it("still asks for echo cancellation with RNNoise on", () => {
-    // Echo cancellation is not a noise feature; without it, speakers feed back.
-    const constraints = microphoneConstraints(
-      settings({ noiseSuppression: "rnnoise", echoCancellation: true }),
-    );
-    expect(constraints.echoCancellation).toBe(true);
-  });
-
-  it("requests mono at 48 kHz to match Opus", () => {
-    const constraints = microphoneConstraints(settings());
-    expect(constraints.channelCount).toBe(1);
-    expect(constraints.sampleRate).toBe(48000);
-  });
-
-  it("pins an explicitly chosen device and omits the key otherwise", () => {
-    expect(microphoneConstraints(settings({ inputDeviceId: "mic-9" })).deviceId).toEqual({
-      exact: "mic-9",
-    });
-    expect(microphoneConstraints(settings()).deviceId).toBeUndefined();
   });
 });
 
@@ -626,32 +560,6 @@ describe("browser suppression fallback when RNNoise fails", () => {
   });
 });
 
-describe("restoreBrowserNoise", () => {
-  it("keeps an active voice-isolation constraint while restoring noise suppression", async () => {
-    const track = audioTrack({ echoCancellation: "remote-only" });
-
-    await restoreBrowserNoise(track);
-
-    expect(track.applyConstraints).toHaveBeenCalledWith(
-      expect.objectContaining({
-        echoCancellation: { exact: "remote-only" },
-        noiseSuppression: true,
-      }),
-    );
-  });
-
-  it("trusts an accepted constraint the device does not report on", async () => {
-    // `noiseSuppression: undefined` means "not reported", not "off".
-    const track = audioTrack({ applyConstraints: async () => {} });
-    await expect(restoreBrowserNoise(track)).resolves.toBe("browser");
-  });
-
-  it("returns none when the track cannot take constraints at all", async () => {
-    const track = { kind: "audio" } as unknown as MediaStreamTrack;
-    await expect(restoreBrowserNoise(track)).resolves.toBe("none");
-  });
-});
-
 describe("captureMicrophone — suppressor engines", () => {
   function runningContext(close = vi.fn(async () => undefined)) {
     return () =>
@@ -677,14 +585,6 @@ describe("captureMicrophone — suppressor engines", () => {
       expect(capture.noiseSuppression).toBe(kind);
       expect(capture.processed).toBe(true);
       capture.dispose();
-    }
-  });
-
-  it("opens the device with the browser suppressor off for every engine", () => {
-    for (const kind of ["gtcrn", "speex", "rnnoise"] as const) {
-      expect(microphoneConstraints(settings({ noiseSuppression: kind })).noiseSuppression).toBe(
-        false,
-      );
     }
   });
 
@@ -975,32 +875,5 @@ describe("captureMicrophone — automatic volume and fixed gain", () => {
       expect.any(Number),
     );
     capture.dispose();
-  });
-});
-
-describe("restoreBrowserProcessing", () => {
-  it("restores only what was asked for and reports each honestly", async () => {
-    const track = audioTrack({ noiseSuppression: false });
-    const restored = await restoreBrowserProcessing(track, {
-      noiseSuppression: false,
-      autoGainControl: true,
-    });
-    expect(track.applyConstraints).toHaveBeenCalledWith(
-      expect.objectContaining({ autoGainControl: true }),
-    );
-    expect(track.applyConstraints).not.toHaveBeenCalledWith(
-      expect.objectContaining({ noiseSuppression: true }),
-    );
-    expect(restored).toEqual({ noiseSuppression: "none", autoGain: "browser" });
-  });
-
-  it("does nothing, and claims nothing, when nothing was lost", async () => {
-    const track = audioTrack();
-    const restored = await restoreBrowserProcessing(track, {
-      noiseSuppression: false,
-      autoGainControl: false,
-    });
-    expect(track.applyConstraints).not.toHaveBeenCalled();
-    expect(restored).toEqual({ noiseSuppression: "none", autoGain: "none" });
   });
 });

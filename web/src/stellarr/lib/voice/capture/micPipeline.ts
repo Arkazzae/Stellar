@@ -27,7 +27,6 @@ export type {
   MicCapture,
   MicFailureKind,
 } from "./micCapture";
-export { restoreBrowserNoise, restoreBrowserProcessing } from "./browserProcessing";
 export {
   hasDeviceLabels,
   listInputDevices,

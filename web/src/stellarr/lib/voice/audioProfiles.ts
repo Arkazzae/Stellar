@@ -89,34 +89,6 @@ export function opusParameters(
   };
 }
 
-/**
- * Microphone constraints for the chosen settings.
- *
- * Only the browser's own suppressor is ever left on, and only when it is the
- * chosen one. With a worklet suppressor it is switched off rather than stacked
- * underneath: two noise gates in series chew holes in speech, and the browser's
- * would run first, so the worklet would only ever see already-damaged audio.
- * Echo cancellation stays under the person's control either way. It is not a
- * "noise" feature, and switching it off with speakers is how a call turns into
- * a feedback loop.
- */
-export function microphoneConstraints(settings: VoiceSettings): MediaTrackConstraints {
-  return {
-    echoCancellation: settings.echoCancellation,
-    // Automatic volume is our own leveller in the capture graph (see
-    // `micPipeline`): it learns only from vowels, so it cannot turn the room up
-    // between sentences the way the platform AGC does. The device is therefore
-    // opened with the browser's AGC off whether or not the person wants
-    // automatic volume; the pipeline switches it back on only when the graph
-    // cannot be built.
-    autoGainControl: false,
-    noiseSuppression: settings.noiseSuppression === "browser",
-    channelCount: 1,
-    sampleRate: 48_000,
-    ...(settings.inputDeviceId ? { deviceId: { exact: settings.inputDeviceId } } : {}),
-  };
-}
-
 /** The suppressors that run as an AudioWorklet in our own capture graph. */
 export type WorkletSuppressor = Extract<NoiseSuppressionMode, "rnnoise" | "gtcrn" | "speex">;
 
