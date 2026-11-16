@@ -9,9 +9,13 @@ import type { UserConfig } from "vite";
  * (`import url from "./entry?worker&url"`), which builds every worker entry
  * apart from the app. This names their files: a worklet keeps one address
  * across releases, beside the prebuilt ones in /audio/, and nginx serves
- * everything there with Cache-Control: no-cache (infra/nginx.conf), so a
- * browser asks again at each load and never runs a worklet of another
- * release.
+ * everything there with Cache-Control: no-cache (infra/nginx.conf), so the
+ * browser asks the server each time it loads one. A page of a new release
+ * therefore never gets a cached worklet of an older one. The other way round
+ * is not covered: a tab still open from an older release that first loads a
+ * worklet after a deploy gets the new release's file. A change to what a
+ * worklet and the page say to each other has to keep the older page working,
+ * or give the worklet a new address, as moving the detector here did.
  *
  * Plain enough for Node to load as it is, which the playback benchmark's
  * runner does.
