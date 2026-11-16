@@ -316,6 +316,10 @@ export const en = {
 
   "language.interface.title": "Interface language",
   "language.interface.description": "Dates, controls and system messages use the selected language. Messages written by people are never changed.",
+  "language.interface.switching": "Loading {name}…",
+  "language.interface.switchFailed":
+    "{name} could not be loaded in this tab. It is saved as your language, so Stellarr opens in it once the page is loaded again.",
+  "language.interface.reload": "Load the page again",
   "language.name.pl": "Polish",
   "language.name.en": "English",
   "language.translation.title": "Message translation",

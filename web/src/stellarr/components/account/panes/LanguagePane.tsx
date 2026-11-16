@@ -57,6 +57,8 @@ function fold(text: string): string {
 
 export interface LanguagePaneProps extends LanguageSettings {
   update: (patch: Partial<LanguageSettings>) => void;
+  /** A language picked whose text is still on its way, or could not be had. */
+  switching?: { locale: InterfaceLocale; failed: boolean } | null;
   t: Translator;
 }
 
@@ -258,6 +260,7 @@ export function LanguagePane({
   chatAutoTranslateEnabled,
   chatTranslationTargetLanguage,
   update,
+  switching = null,
   t,
 }: LanguagePaneProps) {
   const { state, download } = useModelStatus(
@@ -277,12 +280,30 @@ export function LanguagePane({
     <>
       <section className="sc" aria-label={t("language.interface.title")}>
         <header className="sc-h">{t("language.interface.title")}</header>
+        {/* The pick is marked at once; the page follows when its text is here. */}
         <LanguageList
           label={t("language.interface.title")}
-          value={locale}
+          value={switching?.locale ?? locale}
           t={t}
           onChange={(next) => update({ locale: next })}
         />
+        {switching === null ? null : switching.failed ? (
+          <ModelLine
+            icon="warning"
+            tone="bad"
+            role="alert"
+            title={t("language.interface.switchFailed", { name: NATIVE_NAMES[switching.locale] })}
+          >
+            <Button type="button" variant="secondary" size="sm" onClick={() => window.location.reload()}>
+              {t("language.interface.reload")}
+            </Button>
+          </ModelLine>
+        ) : (
+          <ModelLine
+            icon="refresh"
+            title={t("language.interface.switching", { name: NATIVE_NAMES[switching.locale] })}
+          />
+        )}
         <p className="lang-foot">{t("language.interface.description")}</p>
       </section>
 

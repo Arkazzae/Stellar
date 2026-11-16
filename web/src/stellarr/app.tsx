@@ -11,8 +11,9 @@ import { ThemeProvider } from "@/state/ThemeProvider";
  * start further down, at `AppContainer`.
  *
  * The language provider starts in the language the document's pre-paint
- * script put on `<html lang>` (`i18n/localeScript.ts`), so the first render
- * speaks the language of the first paint.
+ * script put on `<html lang>` (`i18n/localeScript.ts`), whose catalog
+ * `main.tsx` has loaded, so the first render speaks the language of the first
+ * paint.
  */
 export function StellarrApp({ children }: { children: ReactNode }) {
   return (

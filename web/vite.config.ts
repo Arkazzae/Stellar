@@ -86,10 +86,11 @@ export default defineConfig(({ mode }) => {
       outDir: "dist",
       emptyOutDir: true,
       assetsDir: BUILD_DIRECTORY,
-      // The web client's entry is about 600 kB: the providers every page
-      // needs, among them the ports with the API client, SignalR and voice,
-      // and both message catalogs. The signed-in app is a chunk of its own.
-      chunkSizeWarningLimit: 700,
+      // The largest chunks are the signed-in app, about 460 kB, and the web
+      // client's entry, about 415 kB: the providers every page needs, among
+      // them the ports with the API client, SignalR and voice. Each message
+      // catalog is a chunk of its own, and a page fetches its language's.
+      chunkSizeWarningLimit: 500,
       rolldownOptions: {
         input: {
           web: here(WEB_DOCUMENT),
