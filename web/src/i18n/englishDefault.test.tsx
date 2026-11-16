@@ -3,7 +3,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import { Avatar } from "@/components/primitives/Avatar";
 import { Dropdown } from "@/components/primitives/Dropdown";
-import { LoginScreen } from "@/components/login/LoginScreen";
+import { LoginScreen } from "@/components/auth/LoginScreen";
 import { translateMessage } from "@/i18n";
 import { LanguageProvider } from "@/state/LanguageProvider";
 
