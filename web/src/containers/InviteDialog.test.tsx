@@ -14,7 +14,7 @@ const modal = vi.hoisted(() => ({ onCreateInvite: undefined as (() => Promise<vo
 
 // The real dialog gives its create button no pending state, so the promise it
 // is handed is the only place to see how long a creation takes.
-vi.mock("@/components/settings/InviteModal", () => ({
+vi.mock("@/components/settings/server/InviteModal", () => ({
   InviteModal: (props: { onCreateInvite?: () => Promise<void> }) => {
     modal.onCreateInvite = props.onCreateInvite;
     return null;

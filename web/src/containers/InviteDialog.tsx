@@ -2,7 +2,7 @@
 
 import { useMemo } from "react";
 
-import { InviteModal, type InvitePersonVM } from "@/components/settings/InviteModal";
+import { InviteModal, type InvitePersonVM } from "@/components/settings/server/InviteModal";
 import { describeError } from "@/lib/api/errors";
 import { initials } from "@/lib/format/format";
 import type { MessageKey } from "@/i18n";

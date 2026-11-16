@@ -2,7 +2,7 @@
 
 import { useMemo } from "react";
 
-import { DmRail } from "@/components/shell/DmRail";
+import { DmRail } from "@/components/shell/rail/DmRail";
 import type { DmConversationVM } from "@/components/view-models";
 import { useMediaQuery } from "@/hooks/useMediaQuery";
 import { initials } from "@/lib/format/format";

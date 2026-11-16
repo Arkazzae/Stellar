@@ -4,11 +4,11 @@ import type { MouseEventHandler, ReactNode } from "react";
 import { createPortal } from "react-dom";
 
 import { Avatar } from "@/components/primitives/Avatar";
-import { ChannelButton } from "@/components/shell/ChannelButton";
-import type { ChannelMenuRaiser } from "@/components/shell/railTypes";
-import type { VoiceMove } from "@/components/shell/useVoiceMove";
-import { VoiceOccupantRow } from "@/components/shell/VoiceOccupantRow";
-import type { VoiceDragData } from "@/components/shell/voiceMove";
+import { ChannelButton } from "@/components/shell/rail/ChannelButton";
+import type { ChannelMenuRaiser } from "@/components/shell/rail/railTypes";
+import type { VoiceMove } from "@/components/shell/rail/useVoiceMove";
+import { VoiceOccupantRow } from "@/components/shell/rail/VoiceOccupantRow";
+import type { VoiceDragData } from "@/components/shell/rail/voiceMove";
 import type { PersonVM, VoiceChannelVM } from "@/components/view-models";
 import { DragAnnouncer } from "@/lib/drag/DragAnnouncer";
 import { useZoneDrag } from "@/lib/drag/useZoneDrag";

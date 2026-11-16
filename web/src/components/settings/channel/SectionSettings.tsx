@@ -9,7 +9,7 @@ import { Modal } from "@/components/primitives/Modal";
 import {
   PermissionOverrideEditor,
   type PermissionOverridePatch,
-} from "@/components/settings/PermissionOverrideEditor";
+} from "@/components/settings/channel/PermissionOverrideEditor";
 import { SettingsSection } from "@/components/settings/SettingsSection";
 import type { Translator } from "@/i18n";
 import type { PermissionOverride, Role } from "@/ports";

@@ -2,8 +2,8 @@
 
 import { useSyncExternalStore } from "react";
 
-import { AccountRow } from "@/components/shell/AccountRow";
-import { VoiceDock } from "@/components/shell/VoiceDock";
+import { AccountRow } from "@/components/account/AccountRow";
+import { VoiceDock } from "@/components/voice/VoiceDock";
 import type { PersonVM } from "@/components/view-models";
 import { initials } from "@/lib/format/format";
 import {

@@ -2,8 +2,8 @@
 
 import { useMemo } from "react";
 
-import type { ChannelMenuActions } from "@/components/shell/ChannelMenu";
-import { Rail } from "@/components/shell/Rail";
+import type { ChannelMenuActions } from "@/components/shell/rail/ChannelMenu";
+import { Rail } from "@/components/shell/rail/Rail";
 import type {
   ChannelThreadVM,
   TextChannelVM,

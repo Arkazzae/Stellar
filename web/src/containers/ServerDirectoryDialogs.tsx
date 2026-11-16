@@ -2,12 +2,12 @@
 
 import { useCallback } from "react";
 
-import { ClientDownloadModal } from "@/components/settings/ClientDownloadModal";
+import { ClientDownloadModal } from "@/components/settings/server/ClientDownloadModal";
 import {
   ServerCreateModal,
   ServerDiscoverModal,
   type ServerCreateInput,
-} from "@/components/settings/ServerDirectoryModals";
+} from "@/components/settings/server/ServerDirectoryModals";
 import { getClientReleases } from "@/lib/platform/desktopRelease";
 import { ApiError, describeError } from "@/lib/api/errors";
 import { useDirectory, useLanguage, useSession, useUi } from "@/state/hooks";

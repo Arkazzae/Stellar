@@ -1,7 +1,7 @@
 "use client";
 
 import { Avatar } from "@/components/primitives/Avatar";
-import { formatShortDate } from "@/components/settings/panes/paneFormat";
+import { formatShortDate } from "@/components/settings/paneFormat";
 import { useAsyncAction } from "@/hooks/useAsyncAction";
 import type { Ban } from "@/ports";
 import { useLanguage } from "@/state/hooks";
