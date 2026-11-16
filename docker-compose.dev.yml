@@ -95,11 +95,11 @@ services:
       ASPNETCORE_ENVIRONMENT: Development
       ASPNETCORE_URLS: http://0.0.0.0:5000
       GIPHY_API_KEY: ${GIPHY_API_KEY:-}
-      # Same reason as WATCHPACK_POLLING above: inotify events from the host
-      # do not reach the container.
+      # Same reason as STELLARR_DEV_POLLING above: inotify events from the
+      # host do not reach the container.
       DOTNET_USE_POLLING_FILE_WATCHER: "1"
-      # The browser reaches the API only through the Next.js proxy, so there
-      # is no page of the API's own to refresh. The one HTML response the API
+      # The browser reaches the API only through the web service's proxy, so
+      # there is no page of the API's own to refresh. The one HTML response the API
       # sends is the desktop browser-login confirmation. Its CSP is
       # `default-src 'none'`, which blocks the script that dotnet watch would
       # inject into HTML responses.
@@ -149,8 +149,8 @@ services:
     working_dir: /app
     # cargo run instead of a --locked build, for the same reason as npm install
     # above: Cargo.lock lives on the host, and adding a dependency should not
-    # mean anything more than saving Cargo.toml. watchexec polls, like Next
-    # above, and restarts the server after every change.
+    # mean anything more than saving Cargo.toml. watchexec polls, like the web
+    # service above, and restarts the server after every change.
     command: >
       watchexec --restart --poll=1s --watch src --watch Cargo.toml
         -- cargo run
