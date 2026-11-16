@@ -5,7 +5,15 @@ import { describe, expect, it, vi } from "vitest";
 
 import { Modal } from "./Modal";
 
-function Harness({ exitMs, onClose }: { exitMs?: number; onClose?: () => void }) {
+function Harness({
+  exitMs,
+  onClose,
+  className = "act-modal",
+}: {
+  exitMs?: number;
+  onClose?: () => void;
+  className?: string;
+}) {
   const [open, setOpen] = useState(false);
   return (
     <>
@@ -19,7 +27,7 @@ function Harness({ exitMs, onClose }: { exitMs?: number; onClose?: () => void })
           setOpen(false);
         }}
         labelledBy="title"
-        className="act-modal"
+        className={className}
         exitMs={exitMs}
       >
         <h2 id="title">Settings</h2>
@@ -140,6 +148,61 @@ describe("Modal", () => {
     } finally {
       document.body.style.overflow = "";
     }
+  });
+
+  // The settings dialogs hide their wrapper until it has its open class. A
+  // browser gives no focus to an element that is not rendered; jsdom does, so
+  // the test teaches it that rule and the wrapper's stylesheet.
+  it("takes the focus and holds Tab when its wrapper is hidden until it opens", async () => {
+    const style = document.createElement("style");
+    style.textContent = ".sv-wrap { display: none } .sv-wrap.open { display: flex }";
+    document.head.append(style);
+    const focus = HTMLElement.prototype.focus;
+    const rendered = (element: Element | null): boolean =>
+      element === null || (getComputedStyle(element).display !== "none" && rendered(element.parentElement));
+    const focusIfRendered = vi
+      .spyOn(HTMLElement.prototype, "focus")
+      .mockImplementation(function (this: HTMLElement, options?: FocusOptions) {
+        if (rendered(this)) focus.call(this, options);
+      });
+    try {
+      render(<Harness className="sv-wrap" />);
+      const user = userEvent.setup();
+      // Not through openDialog: until it opens, the hidden dialog has no role to find.
+      await user.click(screen.getByRole("button", { name: "Open" }));
+
+      await waitFor(() => expect(screen.getByRole("button", { name: "First" })).toHaveFocus());
+      await user.tab();
+      await user.tab();
+      await user.tab();
+      expect(screen.getByRole("button", { name: "First" })).toHaveFocus();
+      expect(screen.getByRole("button", { name: "Open" })).not.toHaveFocus();
+    } finally {
+      focusIfRendered.mockRestore();
+      style.remove();
+    }
+  });
+
+  it("leaves the focus with a layer raised from the dialog before its wrapper showed", async () => {
+    const frames: FrameRequestCallback[] = [];
+    const requestFrame = vi
+      .spyOn(window, "requestAnimationFrame")
+      .mockImplementation((callback) => frames.push(callback));
+    render(
+      <>
+        <Harness />
+        <button type="button">Menu item</button>
+      </>,
+    );
+    await openDialog();
+    // A menu raised from the dialog draws outside its element and takes the focus.
+    const menuItem = screen.getByRole("button", { name: "Menu item" });
+    act(() => menuItem.focus());
+
+    act(() => frames.splice(0).forEach((callback) => callback(performance.now())));
+    requestFrame.mockRestore();
+
+    expect(menuItem).toHaveFocus();
   });
 
   it("applies the open class after mount and keeps the dialog for its exit", async () => {
