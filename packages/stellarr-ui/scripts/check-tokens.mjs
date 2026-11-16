@@ -11,7 +11,7 @@ import { fileURLToPath } from "node:url";
 
 const root = fileURLToPath(new URL("../../../", import.meta.url));
 const packageDir = "packages/stellarr-ui";
-/** Each app's stylesheets: Cockpit's code sits inside the web client's folder but is an app of its own. */
+/** Each app's stylesheets: Cockpit's are in its folder, and the web client's are the rest of web/src. */
 const apps = [
   { name: "cockpit", dir: "web/src/cockpit", skip: [] },
   { name: "web", dir: "web/src", skip: ["cockpit"] },

@@ -13,7 +13,7 @@ import {
   framePeakAbs,
   meanSquareToDbfs,
   sensitivityToThresholds,
-} from "../../../../public/audio/vad-processor.js";
+} from "../../../../../public/audio/vad-processor.js";
 
 const SAMPLE_RATE = 48000;
 const FRAME = Math.round((SAMPLE_RATE * VAD_DEFAULTS.frameMs) / 1000);

@@ -3,7 +3,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   AdaptiveVad,
   sensitivityToThresholds,
-} from "../../../../public/audio/vad-processor.js";
+} from "../../../../../public/audio/vad-processor.js";
 import { SpeechDetector, VAD_WORKLET_URL, type SpeechReading } from "./vad";
 
 const SAMPLE_RATE = 48000;

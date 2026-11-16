@@ -1,6 +1,6 @@
 "use client";
 
-import { NotFoundPage } from "@/cockpit/pages/not-found-page";
+import { NotFoundPage } from "@cockpit/pages/not-found-page";
 
 /**
  * Any address under /cockpit that names no page of the panel gets the panel's

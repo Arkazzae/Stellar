@@ -73,7 +73,7 @@ The `data-*` attributes a component publishes are part of its public surface, `d
 
 All look comes from custom properties, in two tiers. The stylesheet declares none of them.
 
-**System tokens** are required. The app defines every one of them, usually as `var()` of its own palette, so they follow its light and dark schemes. They have no default here. Cockpit's mapping is in [`web/src/cockpit/index.css`](../../web/src/cockpit/index.css) and the web client's in [`web/src/styles/ui-tokens.css`](../../web/src/styles/ui-tokens.css).
+**System tokens** are required. The app defines every one of them, usually as `var()` of its own palette, so they follow its light and dark schemes. They have no default here. Cockpit's mapping is in [`web/src/cockpit/index.css`](../../web/src/cockpit/index.css) and the web client's in [`web/src/stellarr/styles/ui-tokens.css`](../../web/src/stellarr/styles/ui-tokens.css).
 
 | Token | Used for |
 | --- | --- |

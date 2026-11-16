@@ -143,7 +143,7 @@ async function buildFixture() {
     publicDir: false,
     plugins: [react()],
     resolve: {
-      alias: { "@": resolve(webRoot, "src") },
+      alias: { "@": resolve(webRoot, "src/stellarr") },
     },
     css: {
       postcss: { plugins: [tailwindcss()] },

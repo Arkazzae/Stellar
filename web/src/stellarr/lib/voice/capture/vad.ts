@@ -6,7 +6,7 @@ import {
   // The worklet module is served verbatim from /public because an AudioWorklet
   // cannot load a bundled chunk. Importing the same file here means the
   // main-thread fallback and the worklet run byte-identical detection logic.
-} from "../../../../public/audio/vad-processor.js";
+} from "../../../../../public/audio/vad-processor.js";
 
 /** What the UI consumes. Nothing above this module knows about dBFS or SNR. */
 export interface SpeechReading {

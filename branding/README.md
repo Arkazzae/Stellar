@@ -46,7 +46,7 @@ Do not use the mascot in place of the application icon, inside buttons or naviga
 
 Primary accent: **Indigo `#6f65d1`** (`oklch(0.570 0.161 284)`, 4.71:1 contrast with white text). Reserve the accent for primary actions, active connections, and speaking indicators. Destructive actions use the danger color.
 
-Default **Midnight** theme palette (`web/src/design/themes.ts` defines all six themes: Midnight, Slate, Evergreen, Harbor, Amethyst, and Ink):
+Default **Midnight** theme palette (`web/src/stellarr/design/themes.ts` defines all six themes: Midnight, Slate, Evergreen, Harbor, Amethyst, and Ink):
 
 | Role | Tokens |
 | --- | --- |
