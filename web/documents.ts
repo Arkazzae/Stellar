@@ -7,9 +7,10 @@ import { INSTANCE_LANGUAGE_PATH, instanceLanguageSource, LOCALE_SCRIPT } from ".
 
 /*
  * The two documents of the build and which addresses each one answers. The
- * dev and preview servers apply these rules below, and the production server
- * has to apply the same ones: every address of an app gets that app's
- * document, and the app's router shows the page.
+ * dev and preview servers apply these rules below, and the production server,
+ * nginx in the container (infra/nginx.conf), has to apply the same ones:
+ * every address of an app gets that app's document, and the app's router
+ * shows the page. documents.test.ts holds nginx's rules against these.
  */
 
 /** The web client's document, which answers every address outside /cockpit. */
