@@ -71,16 +71,21 @@ pub fn container() -> Vec<Service> {
         // taken by the kernel. SIGTERM is nginx's fast shutdown; SIGQUIT,
         // the graceful one, waits for every open WebSocket and so would
         // always run into the deadline. SIGHUP reloads the configuration and
-        // the certificate.
-        Service::new("nginx", &["/usr/sbin/nginx", "-g", "daemon off;"])
-            .ready(Readiness::Http {
-                addr: loopback(80),
-                path: "/index.html".into(),
-                headers: vec![("X-Forwarded-Proto".into(), "https".into())],
-            })
-            .stop(Signal::Term, Duration::from_secs(10))
-            .reload(Signal::Hup)
-            .critical(),
+        // the certificate. -e stderr sends what nginx logs before it has read
+        // its configuration, which keeps no access log and sends errors to
+        // stderr too, to the container's log instead of /var/log/nginx.
+        Service::new(
+            "nginx",
+            &["/usr/sbin/nginx", "-e", "stderr", "-g", "daemon off;"],
+        )
+        .ready(Readiness::Http {
+            addr: loopback(80),
+            path: "/index.html".into(),
+            headers: vec![("X-Forwarded-Proto".into(), "https".into())],
+        })
+        .stop(Signal::Term, Duration::from_secs(10))
+        .reload(Signal::Hup)
+        .critical(),
         // Renews a self-signed certificate twice a day at most and then
         // reloads nginx and restarts turn. The instance works without it
         // for weeks, so it is not critical, and it needs neither of the
