@@ -9,7 +9,8 @@
       "upstream": {
         "project": "https://github.com/sapphi-red/web-noise-suppressor",
         "from": "npm:@sapphi-red/web-noise-suppressor@0.4.1/dist/rnnoise/workletProcessor.js",
-        "verified": "Identical to the file in the npm tarball, whose sha512 matches the registry's integrity and package-lock.json."
+        "integrity": "sha512-hy2GnF079+zi4n9BZUf+GGIQ1IofApAk6rgGMyMQ3soHfz/GKu1pcCsmePyIHVvUuv1LrFudw9BmmBqoOKay5w==",
+        "verified": "Identical to the file in the npm tarball, whose sha512 is the integrity above and the one the registry publishes."
       },
       "license": "MIT AND Apache-2.0"
     },
@@ -22,7 +23,8 @@
       "upstream": {
         "project": "https://github.com/shiguredo/rnnoise-wasm",
         "from": "npm:@sapphi-red/web-noise-suppressor@0.4.1/dist/rnnoise.wasm",
-        "verified": "Identical to the file in the npm tarball (sha512 matches the registry and package-lock.json) and to dist/rnnoise.wasm of @shiguredo/rnnoise-wasm 2022.2.0."
+        "integrity": "sha512-hy2GnF079+zi4n9BZUf+GGIQ1IofApAk6rgGMyMQ3soHfz/GKu1pcCsmePyIHVvUuv1LrFudw9BmmBqoOKay5w==",
+        "verified": "Identical to the file in the npm tarball, whose sha512 is the integrity above and the one the registry publishes, and to dist/rnnoise.wasm of @shiguredo/rnnoise-wasm 2022.2.0."
       },
       "license": "BSD-3-Clause AND Apache-2.0"
     },
@@ -35,7 +37,8 @@
       "upstream": {
         "project": "https://github.com/shiguredo/rnnoise-wasm",
         "from": "npm:@sapphi-red/web-noise-suppressor@0.4.1/dist/rnnoise_simd.wasm",
-        "verified": "Identical to the file in the npm tarball (sha512 matches the registry and package-lock.json) and to dist/rnnoise_simd.wasm of @shiguredo/rnnoise-wasm 2022.2.0."
+        "integrity": "sha512-hy2GnF079+zi4n9BZUf+GGIQ1IofApAk6rgGMyMQ3soHfz/GKu1pcCsmePyIHVvUuv1LrFudw9BmmBqoOKay5w==",
+        "verified": "Identical to the file in the npm tarball, whose sha512 is the integrity above and the one the registry publishes, and to dist/rnnoise_simd.wasm of @shiguredo/rnnoise-wasm 2022.2.0."
       },
       "license": "BSD-3-Clause AND Apache-2.0"
     },
@@ -48,7 +51,8 @@
       "upstream": {
         "project": "https://github.com/sapphi-red/web-noise-suppressor",
         "from": "npm:@sapphi-red/web-noise-suppressor@0.4.1/dist/gtcrn/workletProcessor.js",
-        "verified": "Identical to the file in the npm tarball, whose sha512 matches the registry's integrity and package-lock.json."
+        "integrity": "sha512-hy2GnF079+zi4n9BZUf+GGIQ1IofApAk6rgGMyMQ3soHfz/GKu1pcCsmePyIHVvUuv1LrFudw9BmmBqoOKay5w==",
+        "verified": "Identical to the file in the npm tarball, whose sha512 is the integrity above and the one the registry publishes."
       },
       "license": "MIT"
     },
@@ -61,7 +65,8 @@
       "upstream": {
         "project": "https://github.com/sapphi-red/gtcrn-wasm",
         "from": "npm:@sapphi-red/web-noise-suppressor@0.4.1/dist/gtcrn.wasm",
-        "verified": "Identical to the file in the npm tarball (sha512 matches the registry and package-lock.json) and to dist/gtcrn.wasm of @sapphi-red/gtcrn-wasm 0.0.3."
+        "integrity": "sha512-hy2GnF079+zi4n9BZUf+GGIQ1IofApAk6rgGMyMQ3soHfz/GKu1pcCsmePyIHVvUuv1LrFudw9BmmBqoOKay5w==",
+        "verified": "Identical to the file in the npm tarball, whose sha512 is the integrity above and the one the registry publishes, and to dist/gtcrn.wasm of @sapphi-red/gtcrn-wasm 0.0.3."
       },
       "license": "MIT AND LicenseRef-pffft"
     },
@@ -74,7 +79,8 @@
       "upstream": {
         "project": "https://github.com/sapphi-red/web-noise-suppressor",
         "from": "npm:@sapphi-red/web-noise-suppressor@0.4.1/dist/speex/workletProcessor.js",
-        "verified": "Identical to the file in the npm tarball, whose sha512 matches the registry's integrity and package-lock.json."
+        "integrity": "sha512-hy2GnF079+zi4n9BZUf+GGIQ1IofApAk6rgGMyMQ3soHfz/GKu1pcCsmePyIHVvUuv1LrFudw9BmmBqoOKay5w==",
+        "verified": "Identical to the file in the npm tarball, whose sha512 is the integrity above and the one the registry publishes."
       },
       "license": "MIT"
     },
@@ -87,7 +93,8 @@
       "upstream": {
         "project": "https://github.com/sapphi-red/speex-preprocess-wasm",
         "from": "npm:@sapphi-red/web-noise-suppressor@0.4.1/dist/speex.wasm",
-        "verified": "Identical to the file in the npm tarball (sha512 matches the registry and package-lock.json) and to dist/speex.wasm of @sapphi-red/speex-preprocess-wasm 0.4.0."
+        "integrity": "sha512-hy2GnF079+zi4n9BZUf+GGIQ1IofApAk6rgGMyMQ3soHfz/GKu1pcCsmePyIHVvUuv1LrFudw9BmmBqoOKay5w==",
+        "verified": "Identical to the file in the npm tarball, whose sha512 is the integrity above and the one the registry publishes, and to dist/speex.wasm of @sapphi-red/speex-preprocess-wasm 0.4.0."
       },
       "license": "BSD-3-Clause AND MIT"
     },

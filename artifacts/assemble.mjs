@@ -18,7 +18,9 @@
  *   sha256, size  of those bytes
  *   upstream  { project, from, verified }: the project the file belongs to,
  *             the URL or npm package file it was taken from, and what its
- *             bytes were checked against when it was
+ *             bytes were checked against when it was. A file taken from an
+ *             npm package may also record the tarball's `integrity`, so the
+ *             check can be repeated once no lockfile names the package
  *   license   an SPDX expression
  *
  * Replacing a file, say a prebuilt WASM with one built from source here, is a
