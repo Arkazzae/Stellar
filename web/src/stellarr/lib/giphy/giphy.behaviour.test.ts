@@ -52,41 +52,41 @@ describe("the runtime API key", () => {
     return (await import("./giphy")).resolveGiphyApiKey;
   }
 
-  it("lets the server turn GIFs off even when a key was bundled", async () => {
+  it("lets the server turn GIFs off", async () => {
     const resolveGiphyApiKey = await loadResolver();
     fetchMock.mockResolvedValue(respond({ enabled: false, apiKey: "" }));
 
-    await expect(resolveGiphyApiKey("  bundled  ")).rejects.toThrow(failure("giphy.keyMissing"));
+    await expect(resolveGiphyApiKey()).rejects.toThrow(failure("giphy.keyMissing"));
     expect(fetchMock).toHaveBeenCalledOnce();
   });
 
-  it("uses a bundled key only while the server cannot be asked", async () => {
+  it("has no key while the server cannot be asked", async () => {
     const resolveGiphyApiKey = await loadResolver();
     fetchMock.mockResolvedValue(respond({}, { ok: false, status: 503 }));
 
-    await expect(resolveGiphyApiKey("  bundled  ")).resolves.toBe("bundled");
+    await expect(resolveGiphyApiKey()).rejects.toThrow(failure("giphy.configUnreadable"));
   });
 
   it("hands out no key when the server says GIFs are off, whatever key it sends", async () => {
     const resolveGiphyApiKey = await loadResolver();
     fetchMock.mockResolvedValue(respond({ enabled: false, apiKey: "leftover" }));
 
-    await expect(resolveGiphyApiKey("")).rejects.toThrow(failure("giphy.keyMissing"));
+    await expect(resolveGiphyApiKey()).rejects.toThrow(failure("giphy.keyMissing"));
   });
 
   it("uses the server's key when GIFs are on", async () => {
     const resolveGiphyApiKey = await loadResolver();
     fetchMock.mockResolvedValue(respond({ enabled: true, apiKey: " panel-key " }));
 
-    await expect(resolveGiphyApiKey("bundled")).resolves.toBe("panel-key");
+    await expect(resolveGiphyApiKey()).resolves.toBe("panel-key");
   });
 
   it("asks the server once for callers that overlap or come later", async () => {
     const resolveGiphyApiKey = await loadResolver();
     fetchMock.mockResolvedValue(respond({ apiKey: "from-server" }));
 
-    const keys = await Promise.all([resolveGiphyApiKey(""), resolveGiphyApiKey(" ")]);
-    keys.push(await resolveGiphyApiKey(""));
+    const keys = await Promise.all([resolveGiphyApiKey(), resolveGiphyApiKey()]);
+    keys.push(await resolveGiphyApiKey());
 
     expect(keys).toEqual(["from-server", "from-server", "from-server"]);
     expect(fetchMock).toHaveBeenCalledOnce();
@@ -97,15 +97,15 @@ describe("the runtime API key", () => {
     fetchMock.mockResolvedValueOnce(respond({}, { ok: false, status: 503 }));
     fetchMock.mockResolvedValueOnce(respond({ apiKey: "second-try" }));
 
-    await expect(resolveGiphyApiKey("")).rejects.toThrow(failure("giphy.configUnreadable"));
-    await expect(resolveGiphyApiKey("")).resolves.toBe("second-try");
+    await expect(resolveGiphyApiKey()).rejects.toThrow(failure("giphy.configUnreadable"));
+    await expect(resolveGiphyApiKey()).resolves.toBe("second-try");
   });
 
   it("fails when the server has no key configured", async () => {
     const resolveGiphyApiKey = await loadResolver();
     fetchMock.mockResolvedValue(respond({ apiKey: "   " }));
 
-    await expect(resolveGiphyApiKey("")).rejects.toThrow(failure("giphy.keyMissing"));
+    await expect(resolveGiphyApiKey()).rejects.toThrow(failure("giphy.keyMissing"));
   });
 });
 

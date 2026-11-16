@@ -37,7 +37,7 @@ function page(items: GiphyGif[], totalCount = items.length): GiphyPage {
 }
 
 function renderBrowser(onSelect = vi.fn().mockResolvedValue(undefined)) {
-  render(<GifBrowser apiKey="key" customerId="customer" onSelect={onSelect} />);
+  render(<GifBrowser customerId="customer" onSelect={onSelect} />);
   return { onSelect, trigger: screen.getByRole("button", { name: "Przeglądaj GIF-y" }) };
 }
 

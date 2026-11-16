@@ -31,18 +31,17 @@ export function GiphyAttachment({ part, customerId, onOpen }: GiphyAttachmentPro
   const { t } = useLanguage();
   const [outcome, setOutcome] = useState<Outcome | null>(null);
   const viewReported = useRef<string | null>(null);
-  const apiKey = process.env.NEXT_PUBLIC_GIPHY_API_KEY ?? "";
 
   useEffect(() => {
     const controller = new AbortController();
-    resolveGiphyApiKey(apiKey)
+    resolveGiphyApiKey()
       .then((key) => fetchGiphyGif(key, part.id, customerId, controller.signal))
       .then((gif) => setOutcome({ id: part.id, gif }))
       .catch(() => {
         if (!controller.signal.aborted) setOutcome({ id: part.id, gif: null });
       });
     return () => controller.abort();
-  }, [apiKey, customerId, part.id]);
+  }, [customerId, part.id]);
 
   // An outcome for a previous id says nothing about this one.
   const current = outcome?.id === part.id ? outcome : null;

@@ -85,13 +85,13 @@ describe("giphyIdFromUrl", () => {
 });
 
 describe("GIPHY runtime configuration", () => {
-  it("loads a deployment-time key when no key was bundled", async () => {
+  it("loads the key from Stellarr's API", async () => {
     const request = vi.spyOn(globalThis, "fetch").mockResolvedValue({
       ok: true,
       json: async () => ({ apiKey: " runtime-key " }),
     } as Response);
 
-    await expect(resolveGiphyApiKey("")).resolves.toBe("runtime-key");
+    await expect(resolveGiphyApiKey()).resolves.toBe("runtime-key");
     expect(request).toHaveBeenCalledWith("/api/config/giphy", {
       method: "GET",
       headers: { Accept: "application/json" },
