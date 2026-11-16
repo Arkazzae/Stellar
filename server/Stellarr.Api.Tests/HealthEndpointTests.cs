@@ -1,18 +1,85 @@
 using System.Net;
 using System.Net.Http.Json;
 using System.Text.Json;
+using Microsoft.AspNetCore.Http;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
+using Microsoft.Extensions.Logging;
 using Stellarr.Api.Data;
 using Stellarr.Api.Domain;
+using Stellarr.Api.Logging;
 using Stellarr.Api.Storage;
 
 namespace Stellarr.Api.Tests;
 
-public sealed class HealthEndpointTests(StellarrWebApplicationFactory factory)
+public sealed partial class HealthEndpointTests(StellarrWebApplicationFactory factory)
     : IClassFixture<StellarrWebApplicationFactory>
 {
+    [LoggerMessage(EventId = 1, Level = LogLevel.Information, Message = "{Marker}")]
+    private static partial void LogInformation(ILogger logger, string marker);
+
+    [LoggerMessage(EventId = 2, Level = LogLevel.Warning, Message = "{Marker}")]
+    private static partial void LogWarning(ILogger logger, string marker);
+
+    [Fact]
+    public async Task AProbeLeavesNoLogLinesWhileOtherRequestsKeepTheirs()
+    {
+        using var client = factory.CreateClient();
+        var buffer = factory.Services.GetRequiredService<CockpitLogBuffer>();
+        var newest = buffer.Snapshot(1);
+        var start = newest.Count > 0 ? newest[0].Sequence : -1;
+        var other = $"/api/no-such-route-{Guid.NewGuid():N}";
+
+        Assert.Equal(HttpStatusCode.OK, (await client.GetAsync("/health/ready")).StatusCode);
+        Assert.Equal(HttpStatusCode.OK, (await client.GetAsync("/health/live")).StatusCode);
+        _ = await client.GetAsync(other);
+
+        // The host logs a request's end once the response is out; wait for the
+        // last request's, which comes after the probes'.
+        IReadOnlyList<CockpitLogRecord> lines = [];
+        for (var attempt = 0; attempt < 50; attempt++)
+        {
+            lines = buffer.Snapshot(CockpitLogBuffer.Capacity).Where(line => line.Sequence > start).ToList();
+            if (lines.Any(line => line.Message.Contains("Request finished", StringComparison.Ordinal)
+                    && line.Message.Contains(other, StringComparison.Ordinal)))
+            {
+                break;
+            }
+
+            await Task.Delay(20);
+        }
+
+        Assert.Contains(lines, line => line.Message.Contains("Request starting", StringComparison.Ordinal)
+            && line.Message.Contains(other, StringComparison.Ordinal));
+        Assert.Contains(lines, line => line.Message.Contains("Request finished", StringComparison.Ordinal)
+            && line.Message.Contains(other, StringComparison.Ordinal));
+        Assert.DoesNotContain(lines, line => line.Message.Contains("/health/", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public void DuringAProbeOnlyWarningsAndErrorsAreLogged()
+    {
+        var context = new DefaultHttpContext();
+        context.Request.Path = "/health/ready";
+        var accessor = new HttpContextAccessor { HttpContext = context };
+        var buffer = new CockpitLogBuffer(accessor);
+        using var inner = new LoggerFactory([buffer]);
+        using var quiet = new HealthProbeLogging.QuietLoggerFactory(inner, accessor);
+        var logger = quiet.CreateLogger("HealthEndpointTests");
+
+        LogInformation(logger, "probe information");
+        LogWarning(logger, "probe warning");
+        context.Request.Path = "/health";
+        LogInformation(logger, "another path");
+        accessor.HttpContext = null;
+        LogInformation(logger, "no request");
+
+        Assert.Equal(
+            ["no request", "another path", "probe warning"],
+            buffer.Snapshot(10).Select(line => line.Message));
+    }
+
     [Theory]
     [InlineData("/health/live", "live")]
     [InlineData("/health/ready", "ready")]
