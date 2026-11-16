@@ -29,11 +29,16 @@ Full documentation lives in [`docs/`](docs/README.md):
 | --- | --- |
 | `web/` | The Next.js app: the web client and, in `web/src/cockpit/`, Cockpit |
 | `web/src/cockpit/` | [Stellarr Cockpit](web/src/cockpit/README.md), the instance operator panel (`/cockpit`), served by the same Next.js app |
-| `packages/` | Shared packages used by the web client and Cockpit in one npm workspace: the components ([`@stellarr/ui`](packages/stellarr-ui/README.md)) and the icon set ([`@stellarr/icons`](packages/stellarr-icons/README.md)) |
+| `packages/` | Shared packages used by the web client and Cockpit in one npm workspace |
+| `packages/stellarr-ui/` | [`@stellarr/ui`](packages/stellarr-ui/README.md), the components and their stylesheet |
+| `packages/stellarr-icons/` | [`@stellarr/icons`](packages/stellarr-icons/README.md), the icon set, which also builds the SVGs in `branding/icons/` |
+| `contracts/` | The [message-syntax corpus](contracts/README.md) that the web client's and the API's tests both check |
+| `artifacts/` | The prebuilt files the browser loads at run time (the noise suppressors, the translation runtime and its models), checked against `manifest.json` and copied into `web/public/` before every development run, build and test |
 | `server/` | ASP.NET Core API, SignalR hub, operator CLI, and integration tests |
 | `media/` | [Stellarr Media](media/README.md), the Rust WebRTC SFU (`stellarr-media`) |
 | `infra/` | Container entrypoint, Nginx, coturn, supervisord, and TLS scripts |
 | `deploy/` | [Platform templates](deploy/README.md) for the production container, such as Unraid's, and the optional [Cloudflare backup relay](deploy/cloudflare/backup-relay/README.md) |
+| `scripts/` | [Development scripts](scripts/README.md) that seed the local database with realistic activity |
 | `docs/` | VitePress documentation site |
 | `branding/` | [Logo, mascot, and brand guidelines](branding/README.md), and the [README film](branding/film/README.md) |
 
