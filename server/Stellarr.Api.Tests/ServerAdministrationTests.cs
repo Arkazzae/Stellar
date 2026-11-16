@@ -153,11 +153,13 @@ public sealed class ServerAdministrationTests : IClassFixture<StellarrWebApplica
         Assert.Equal(HttpStatusCode.Forbidden, (await ada.GetAsync("/api/admin/invites")).StatusCode);
         Assert.Equal(HttpStatusCode.Forbidden, (await ada.PostAsync("/api/admin/invites", null)).StatusCode);
         var invite = await CreateInviteAsync(maja);
-        Assert.StartsWith("http", invite.Url, StringComparison.Ordinal);
-        Assert.EndsWith($"/invite/{invite.Code}", invite.Url, StringComparison.Ordinal);
+        // The instance's public address, not the address the request came to
+        // (http://localhost here), which a proxy may have stripped of its port.
+        Assert.Equal($"https://chat.test/invite/{invite.Code}", invite.Url);
 
         var listed = await maja.GetFromJsonAsync<JsonElement[]>("/api/admin/invites");
-        Assert.Contains(listed!, x => x.GetProperty("id").GetString() == invite.Id.ToString());
+        Assert.Contains(listed!, x =>
+            x.GetProperty("id").GetString() == invite.Id.ToString() && x.GetProperty("url").GetString() == invite.Url);
 
         Assert.Equal(HttpStatusCode.NotFound, (await maja.DeleteAsync($"/api/admin/invites/{Guid.NewGuid()}")).StatusCode);
         Assert.Equal(HttpStatusCode.NoContent, (await maja.DeleteAsync($"/api/admin/invites/{invite.Id}")).StatusCode);
