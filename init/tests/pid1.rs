@@ -85,6 +85,8 @@ struct Scenario {
     socket: Option<fn(&Path) -> PathBuf>,
     /// Runs before the manager starts.
     prepare: fn(&Path),
+    /// Starts the manager as a plain child of the test, not as PID 1.
+    plain: bool,
     check: fn(&mut Pid1),
 }
 
@@ -99,6 +101,7 @@ fn scenario(
         shutdown: DEFAULT_SHUTDOWN,
         socket: None,
         prepare: |_| {},
+        plain: false,
         check,
     }
 }
@@ -174,6 +177,12 @@ fn scenarios() -> Vec<Scenario> {
             one_service,
             check_health_without_an_answer,
         ),
+        scenario("health_against_a_trickle", one_service, check_trickle),
+        scenario("stun_readiness", stun, check_stun),
+        Scenario {
+            plain: true,
+            ..scenario("not_pid1", orphan_outside, check_not_pid1)
+        },
     ]
 }
 
@@ -288,15 +297,19 @@ impl Proc {
 }
 
 fn processes_in(ns: &str) -> Vec<Proc> {
+    processes_where(|dir| {
+        fs::read_link(dir.join("ns/pid")).is_ok_and(|link| link.to_string_lossy() == ns)
+    })
+}
+
+/// Every process whose /proc folder passes `keep`.
+fn processes_where(keep: impl Fn(&Path) -> bool) -> Vec<Proc> {
     let mut found = Vec::new();
     for entry in fs::read_dir("/proc").unwrap().flatten() {
         let Ok(pid) = entry.file_name().to_string_lossy().parse::<u32>() else {
             continue;
         };
-        let Ok(link) = fs::read_link(entry.path().join("ns/pid")) else {
-            continue;
-        };
-        if link.to_string_lossy() != ns {
+        if !keep(&entry.path()) {
             continue;
         }
         let Ok(stat) = fs::read_to_string(entry.path().join("stat")) else {
@@ -332,7 +345,8 @@ struct Cli {
 struct Pid1 {
     dir: PathBuf,
     socket: PathBuf,
-    unshare: Child,
+    /// unshare, or the manager itself when the scenario is plain.
+    process: Child,
     /// The manager's PID outside its namespace; `None` if it exited before
     /// it was found.
     pid: Option<u32>,
@@ -349,9 +363,16 @@ impl Pid1 {
             .socket
             .map_or_else(|| dir.join("init.sock"), |f| f(dir));
         let (reader, writer) = std::io::pipe().unwrap();
-        let unshare = Command::new("unshare")
-            .args(["--pid", "--fork", "--kill-child", "--mount-proc"])
-            .arg(std::env::current_exe().unwrap())
+        let mut command = if scenario.plain {
+            Command::new(std::env::current_exe().unwrap())
+        } else {
+            let mut unshare = Command::new("unshare");
+            unshare
+                .args(["--pid", "--fork", "--kill-child", "--mount-proc"])
+                .arg(std::env::current_exe().unwrap());
+            unshare
+        };
+        let process = command
             .env("PID1_MANAGER", scenario.name)
             .env("PID1_DIR", dir)
             .stdin(Stdio::null())
@@ -371,7 +392,7 @@ impl Pid1 {
         let mut pid1 = Pid1 {
             dir: dir.to_path_buf(),
             socket,
-            unshare,
+            process,
             pid: None,
             ns: String::new(),
             log,
@@ -379,9 +400,12 @@ impl Pid1 {
             reader: Some(reader),
             exited: false,
         };
-        let outer = pid1.unshare.id();
+        let outer = pid1.process.id();
         let deadline = Instant::now() + secs(3);
-        while Instant::now() < deadline {
+        if scenario.plain {
+            pid1.pid = Some(outer);
+        }
+        while !scenario.plain && Instant::now() < deadline {
             let child = fs::read_dir("/proc").unwrap().flatten().find_map(|e| {
                 let pid: u32 = e.file_name().to_string_lossy().parse().ok()?;
                 (parent_of(pid) == Some(outer)).then_some(pid)
@@ -393,7 +417,7 @@ impl Pid1 {
                 pid1.ns = ns.to_string_lossy().into_owned();
                 break;
             }
-            if pid1.unshare.try_wait().unwrap().is_some() {
+            if pid1.process.try_wait().unwrap().is_some() {
                 break;
             }
             thread::sleep(ms(5));
@@ -402,7 +426,7 @@ impl Pid1 {
         while Instant::now() < deadline
             && pid1.pid.is_some()
             && !pid1.socket.exists()
-            && pid1.unshare.try_wait().unwrap().is_none()
+            && pid1.process.try_wait().unwrap().is_none()
         {
             thread::sleep(ms(5));
         }
@@ -479,8 +503,49 @@ impl Pid1 {
     fn status(&self) -> StatusReply {
         let asked = Instant::now();
         client::status(&self.socket).unwrap_or_else(|e| {
-            panic!("no status after {:?}: {e}", asked.elapsed());
+            panic!(
+                "no status after {:?}: {e}\n{}",
+                asked.elapsed(),
+                self.diagnose()
+            );
         })
+    }
+
+    /// What the manager's threads are doing, and whether the container ran
+    /// out of memory: for a failure that does not say so itself.
+    fn diagnose(&self) -> String {
+        let mut out = String::new();
+        let Some(pid) = self.pid else {
+            return out;
+        };
+        let tasks = fs::read_dir(format!("/proc/{pid}/task"))
+            .map(|d| d.flatten().collect::<Vec<_>>())
+            .unwrap_or_default();
+        for task in tasks {
+            let read = |name: &str| {
+                fs::read_to_string(task.path().join(name))
+                    .unwrap_or_default()
+                    .trim()
+                    .to_string()
+            };
+            let stat = read("stat");
+            let state = stat
+                .get(stat.rfind(')').map_or(0, |i| i + 2)..)
+                .unwrap_or("");
+            out.push_str(&format!(
+                "task {} {}: state {}, wchan {}, syscall {}\n",
+                task.file_name().to_string_lossy(),
+                read("comm"),
+                state.split(' ').next().unwrap_or("?"),
+                read("wchan"),
+                read("syscall")
+            ));
+        }
+        out.push_str(&format!(
+            "memory.events: {}",
+            fs::read_to_string("/sys/fs/cgroup/memory.events").unwrap_or_default()
+        ));
+        out
     }
 
     fn service(&self, name: &str) -> ServiceLine {
@@ -548,7 +613,7 @@ impl Pid1 {
     /// that took from `since`. Its namespace must be empty then.
     fn wait_exit(&mut self, since: Instant, timeout: Duration) -> (i32, Duration) {
         loop {
-            if let Some(status) = self.unshare.try_wait().unwrap() {
+            if let Some(status) = self.process.try_wait().unwrap() {
                 let took = since.elapsed();
                 self.exited = true;
                 let code = status.code().unwrap_or_else(|| {
@@ -577,9 +642,14 @@ impl Pid1 {
 
     /// Sends SIGTERM and expects exit status 0 within `within`.
     fn stop(&mut self, within: Duration) -> Duration {
+        self.stop_with(libc::SIGTERM, within)
+    }
+
+    /// Sends `signal` and expects exit status 0 within `within`.
+    fn stop_with(&mut self, signal: i32, within: Duration) -> Duration {
         self.assert_no_zombies();
         let sent = Instant::now();
-        self.signal(libc::SIGTERM);
+        self.signal(signal);
         let (code, took) = self.wait_exit(sent, within + secs(5));
         assert_eq!(code, 0, "the manager's exit status");
         assert!(
@@ -599,8 +669,8 @@ impl Drop for Pid1 {
         self.pause_log(false);
         if !self.exited {
             // --kill-child takes the manager and its namespace with it.
-            let _ = self.unshare.kill();
-            let _ = self.unshare.wait();
+            let _ = self.process.kill();
+            let _ = self.process.wait();
         }
         if let Some(reader) = self.reader.take() {
             let _ = reader.join();
@@ -806,7 +876,9 @@ fn check_exits_three_times(t: &mut Pid1) {
     assert_eq!(status.services[0].restarts, 3);
     assert_eq!(next_tries(t, "flaky"), ["0.2s", "0.4s", "0.8s"]);
     assert_eq!(t.cli(&["health"]).code, 0);
-    t.stop(secs(2));
+    // Ctrl-C in a terminal: the same shutdown as SIGTERM.
+    t.stop_with(libc::SIGINT, secs(2));
+    assert!(t.log().contains("shutting down on SIGINT"));
 }
 
 fn crashes_after_a_while(_: &Path) -> Vec<Service> {
@@ -1388,5 +1460,103 @@ fn check_health_without_an_answer(t: &mut Pid1) {
     assert!(stuck.stderr.contains("no answer"), "{}", stuck.stderr);
 
     assert_eq!(t.cli(&["health"]).code, 0);
+    t.stop(secs(2));
+}
+
+fn check_trickle(t: &mut Pid1) {
+    t.wait_ready(&["one"], secs(3));
+    // Something that accepts and then sends a byte now and then, never a
+    // whole reply: no read times out, and only the client's own deadline
+    // ends the wait.
+    let path = t.file("trickle.sock");
+    let listener = UnixListener::bind(&path).unwrap();
+    let server = thread::spawn(move || {
+        let (mut stream, _) = listener.accept().unwrap();
+        for _ in 0..10 {
+            if stream.write_all(b"o").is_err() {
+                return;
+            }
+            thread::sleep(ms(500));
+        }
+    });
+    let started = Instant::now();
+    let output = Command::new(CLI)
+        .args(["--socket", &path.display().to_string(), "health"])
+        .output()
+        .unwrap();
+    let took = started.elapsed();
+    server.join().unwrap();
+    assert_eq!(output.status.code(), Some(1));
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(stderr.contains("did not answer in time"), "{stderr}");
+    assert!(took >= ms(2800) && took < ms(4500), "{took:?}");
+    t.stop(secs(2));
+}
+
+fn stun(_: &Path) -> Vec<Service> {
+    vec![
+        helper("relay", &["--stun", "21230", "--ready-after", "1000"])
+            .ready(Readiness::Stun(lo(21230)))
+            .critical(),
+        helper("after", &[]).needs(&["relay"]),
+    ]
+}
+
+fn check_stun(t: &mut Pid1) {
+    thread::sleep(ms(500));
+    assert_eq!(t.service("relay").state, State::Starting);
+    assert_eq!(t.service("after").state, State::Waiting);
+    assert_eq!(t.cli(&["health"]).code, 1);
+    t.wait_ready(&["relay", "after"], secs(5));
+    let prefix = "stellarr-init: relay: ready after ";
+    let line = t.log_lines(prefix).pop().unwrap();
+    let took: f64 = line[prefix.len()..].trim_end_matches('s').parse().unwrap();
+    assert!(took >= 0.9, "ready after {took}s, before the port opened");
+    assert_eq!(t.cli(&["health"]).code, 0);
+    t.stop(secs(2));
+}
+
+fn orphan_outside(_: &Path) -> Vec<Service> {
+    let once = Backoff {
+        initial: secs(20),
+        max: secs(20),
+        reset_after: secs(60),
+    };
+    vec![
+        helper(
+            "parent",
+            &["--orphan", "--escape", "--exit", "0", "--after", "200"],
+        )
+        .backoff(once),
+    ]
+}
+
+fn check_not_pid1(t: &mut Pid1) {
+    let manager = t.pid();
+    t.wait_until("the parent's exit", secs(3), |s| {
+        s.services[0].state == State::Backoff
+    });
+    let note = format!("running as PID {manager}, not 1; orphans come here");
+    assert!(t.log().contains(&note), "{}", t.log());
+    // A subreaper takes the orphan as PID 1 would.
+    let orphans: Vec<Proc> = processes_where(|_| true)
+        .into_iter()
+        .filter(|p| p.tag() == Some("grandchild"))
+        .collect();
+    assert_eq!(orphans.len(), 1, "{orphans:?}");
+    assert_eq!(parent_of(orphans[0].pid), Some(manager));
+    // It ends on its own and is reaped: no child of the manager is left.
+    let deadline = Instant::now() + secs(3);
+    loop {
+        let left: Vec<Proc> = processes_where(|_| true)
+            .into_iter()
+            .filter(|p| parent_of(p.pid) == Some(manager))
+            .collect();
+        if left.is_empty() {
+            break;
+        }
+        assert!(Instant::now() < deadline, "left behind: {left:?}");
+        thread::sleep(ms(20));
+    }
     t.stop(secs(2));
 }
