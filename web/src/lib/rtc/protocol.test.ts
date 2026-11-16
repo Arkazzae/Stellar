@@ -86,8 +86,8 @@ describe("Stellarr RTC protocol v1", () => {
 });
 
 describe("Stellarr Media hub leg", () => {
-  const mic: MediaTrack = { mid: "4", userId: "u-ola", kind: "audio", streamId: "mic-ola" };
-  const share: MediaTrack = { mid: "5", userId: "u-ola", kind: "video", streamId: "share-ola" };
+  const mic: MediaTrack = { mid: "4", userId: "u-ola", kind: "audio", streamId: "mic-ola", heldBack: false };
+  const share: MediaTrack = { mid: "5", userId: "u-ola", kind: "video", streamId: "share-ola", heldBack: true };
 
   it("names the two methods and two events of the media server's leg", () => {
     expect(RTC_HUB.methods.openMediaSession).toBe("OpenMediaSession");
@@ -158,9 +158,9 @@ describe("Stellarr Media hub leg", () => {
     // its account in lower case.
     const payload =
       '{"negotiationId":1,"sdp":"v=0\\r\\no=- 1 2 IN IP4 0.0.0.0\\r\\n","tracks":[' +
-      '{"kind":"audio","mid":"00D","streamId":"acca9081-8bfa-4421-beaf-13927c77972c",' +
+      '{"heldBack":false,"kind":"audio","mid":"00D","streamId":"acca9081-8bfa-4421-beaf-13927c77972c",' +
       '"userId":"30000000-0000-0000-0000-000000000001"},' +
-      '{"kind":"video","mid":"hnB","streamId":"71aba268-e9bb-43a0-b69e-d98e512505c9",' +
+      '{"heldBack":true,"kind":"video","mid":"hnB","streamId":"71aba268-e9bb-43a0-b69e-d98e512505c9",' +
       '"userId":"30000000-0000-0000-0000-000000000001"}],"type":"offer"}';
 
     expect(decodeMediaServerOffer(payload)).toEqual({
@@ -173,12 +173,14 @@ describe("Stellarr Media hub leg", () => {
           userId: "30000000-0000-0000-0000-000000000001",
           kind: "audio",
           streamId: "acca9081-8bfa-4421-beaf-13927c77972c",
+          heldBack: false,
         },
         {
           mid: "hnB",
           userId: "30000000-0000-0000-0000-000000000001",
           kind: "video",
           streamId: "71aba268-e9bb-43a0-b69e-d98e512505c9",
+          heldBack: true,
         },
       ],
     });
@@ -265,6 +267,9 @@ describe("Stellarr Media hub leg", () => {
       { ...mic, userId: 7 },
       { ...mic, kind: "data" },
       { ...mic, streamId: null },
+      { ...mic, heldBack: undefined },
+      { ...mic, heldBack: "false" },
+      { ...mic, heldBack: 0 },
       "4",
     ]) {
       expect(decodeMediaTracks(JSON.stringify({ tracks: [share, entry] }))).toBeNull();
@@ -289,5 +294,13 @@ describe("Stellarr Media hub leg", () => {
     expect(decodeMediaTrack({ ...mic, codec: "opus" })).toEqual(mic);
     expect(decodeMediaTrack({ ...mic, streamId: "" })).toEqual({ ...mic, streamId: "" });
     expect(decodeMediaTrack(null)).toBeNull();
+  });
+
+  it("says of every entry whether it is held back, and requires it", () => {
+    const entry = { mid: "5", userId: "u-ola", kind: "video", streamId: "share-ola" };
+    expect(decodeMediaTrack({ ...entry, heldBack: true })).toEqual({ ...entry, heldBack: true });
+    expect(decodeMediaTrack({ ...entry, heldBack: false })).toEqual({ ...entry, heldBack: false });
+    expect(decodeMediaTrack(entry)).toBeNull();
+    expect(JSON.parse(encodeMediaTracks([share])).tracks[0].heldBack).toBe(true);
   });
 });

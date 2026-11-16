@@ -763,8 +763,9 @@ fn congestion_feedback_runs_on_each_connection_separately() {
     );
 
     // What B receives carries the transport-wide numbers of B's own
-    // connection: one unbroken sequence over the tracks of both publishers,
-    // which their own numbering could never give.
+    // connection: one rising sequence over the tracks of both publishers,
+    // which their own numbering could never give. Padding and probes toward
+    // B take numbers of the same sequence, so it has gaps where they went.
     let numbers: Vec<u16> = net
         .client(b)
         .received
@@ -778,9 +779,7 @@ fn congestion_feedback_runs_on_each_connection_separately() {
         })
         .collect();
     assert_eq!(numbers.len(), 300);
-    let mut sorted = numbers.clone();
-    sorted.sort_unstable();
-    assert!(sorted.windows(2).all(|w| w[1] == w[0] + 1), "{numbers:?}");
+    assert!(numbers.windows(2).all(|w| w[1] > w[0]), "{numbers:?}");
 }
 
 #[test]

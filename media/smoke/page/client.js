@@ -82,12 +82,20 @@ function record(side, type, sdp, extra = {}) {
 function setDirectory(source, tracks) {
   state.directory = tracks;
   state.directoryLog.push({ at: performance.now(), source, tracks });
-  if (state.subscribeToAll) requestMids(tracks.map((t) => t.mid));
+  if (state.subscribeToAll) {
+    // The order of the list is the order of importance: the voices first,
+    // then the pictures, each in the order the directory has them.
+    const ordered = [
+      ...tracks.filter((t) => t.kind === "audio"),
+      ...tracks.filter((t) => t.kind !== "audio"),
+    ];
+    requestMids(ordered.map((t) => t.mid));
+  }
 }
 
-/** Sends the complete list of sections to forward, unless it is the one sent last. */
+/** Sends the complete list of sections to forward, in order, unless it is the one sent last. */
 function requestMids(mids) {
-  const list = JSON.stringify([...mids].sort());
+  const list = JSON.stringify([...mids]);
   if (list === state.subscribed) return;
   state.subscribed = list;
   send("subscriptions", { mids: JSON.parse(list) });

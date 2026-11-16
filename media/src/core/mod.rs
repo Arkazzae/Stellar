@@ -7,6 +7,7 @@
 //! is what lets the tests drive whole conversations, ICE and DTLS included,
 //! deterministically and faster than real time.
 
+mod downlink;
 mod session;
 
 use std::cmp::Reverse;
@@ -19,6 +20,7 @@ use std::time::{Duration, Instant};
 use rand::Rng;
 use serde::Serialize;
 use serde_json::{Value, json};
+use str0m::bwe::{Bitrate, BweKind};
 use str0m::change::{SdpAnswer, SdpOffer};
 use str0m::crypto::CryptoProvider;
 use str0m::format::PayloadParams;
@@ -32,6 +34,7 @@ use crate::events::{CloseReason, EventBody, EventLog, Poll, SignalKind};
 use crate::sdp_text;
 use crate::stun;
 
+use downlink::{INITIAL_ESTIMATE_BPS, Wanted};
 use session::{
     Counter, OutState, PendingOffer, PtCache, Published, RoomKey, Session, SessionKey, TrackKey,
 };
@@ -60,6 +63,9 @@ pub const MAX_SUBSCRIPTIONS: usize = 4096;
 
 /// The largest datagram the media plane looks at.
 const MAX_DATAGRAM: usize = 2048;
+/// How often a connection reports its statistics, which carry the latest
+/// estimate of its downlink before str0m smooths it.
+const STATS_INTERVAL: Duration = Duration::from_millis(200);
 
 /// A request the control API refuses, with the code of the contract.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -128,6 +134,9 @@ pub struct Track {
     pub user_id: String,
     pub kind: &'static str,
     pub stream_id: String,
+    /// The receiver asks for this picture, and its downlink has no room for
+    /// it now, so nothing of it is sent.
+    pub held_back: bool,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -154,6 +163,44 @@ pub struct SessionStats {
     pub forwarded: usize,
     pub ingress: Traffic,
     pub egress: Traffic,
+    pub downlink: DownlinkStats,
+}
+
+/// What a receiver's downlink is thought to carry and what is sent within it,
+/// in bits per second of RTP payload.
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DownlinkStats {
+    /// The estimate the allocation uses, or str0m's initial guess while no
+    /// feedback has moved it.
+    pub estimate_bps: Option<u64>,
+    /// The estimate as str0m last computed it, and as it last reported it
+    /// smoothed over three seconds; the allocation takes the lower.
+    pub raw_estimate_bps: Option<u64>,
+    pub smoothed_estimate_bps: Option<u64>,
+    /// Whether feedback has moved the estimate and it has settled; nothing
+    /// is held back before.
+    pub measured: bool,
+    /// The rate padding keeps up toward the first held picture, while it
+    /// does.
+    pub padding_bps: u64,
+    pub forwarded_bps: u64,
+    /// What the estimator probes toward: what is forwarded and the first
+    /// picture held back.
+    pub desired_bps: u64,
+    pub held_back: Vec<HeldTrack>,
+    /// How often a picture was held back and came back since the session
+    /// began.
+    pub holds: u64,
+    pub resumes: u64,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct HeldTrack {
+    pub mid: String,
+    pub user_id: String,
+    pub cost_bps: u64,
 }
 
 #[derive(Debug, Clone, Copy, Serialize)]
@@ -191,6 +238,8 @@ enum Work {
         mid: Mid,
         kind: KeyframeRequestKind,
     },
+    /// The estimate of a receiver's downlink moved.
+    Allocate { key: SessionKey },
     Close {
         key: SessionKey,
         reason: CloseReason,
@@ -395,7 +444,30 @@ fn on_event(s: &mut Session, event: Event, now: Instant, work: &mut VecDeque<Wor
             mid: request.mid,
             kind: request.kind,
         }),
+        Event::EgressBitrateEstimate(BweKind::Twcc {
+            estimate,
+            can_probe,
+        }) => {
+            s.downlink
+                .smoothed_estimate(now, estimate.as_u64(), can_probe);
+            queue_allocation(s, work);
+        }
+        Event::PeerStats(stats) => {
+            if let Some(estimate) = stats.bwe_tx {
+                s.downlink.raw_estimate(now, estimate.as_u64());
+                if s.downlink.dirty {
+                    queue_allocation(s, work);
+                }
+            }
+        }
         _ => {}
+    }
+}
+
+fn queue_allocation(s: &mut Session, work: &mut VecDeque<Work>) {
+    if !s.allocation_queued {
+        s.allocation_queued = true;
+        work.push_back(Work::Allocate { key: s.key });
     }
 }
 
@@ -464,6 +536,8 @@ impl Core {
             .set_crypto_provider(self.crypto.clone())
             .set_ice_lite(true)
             .set_rtp_mode(true)
+            .enable_bwe(Some(Bitrate::bps(INITIAL_ESTIMATE_BPS)))
+            .set_stats_interval(Some(STATS_INTERVAL))
             .clear_codecs()
             .enable_opus(true, false)
             .enable_vp9(true)
@@ -645,25 +719,160 @@ impl Core {
             .sessions
             .get_mut(&key)
             .expect("the session was looked up");
+        let before = s.forwarded_mids();
+        s.subscriptions = next;
+        s.subscription_order = mids.to_vec();
+        s.downlink.dirty = true;
+        // What is newly asked for and has no room is held back before a
+        // single packet of it goes out.
+        self.allocate_from(now, key, before);
+        self.run_work(now);
+        Ok(())
+    }
+
+    /// What receiver `key` asks for that is forwarding, in its order, and
+    /// what each costs now.
+    fn wanted_of(&self, now: Instant, key: SessionKey) -> Vec<Wanted> {
+        let Some(s) = self.sessions.get(&key) else {
+            return Vec::new();
+        };
+        let live: HashMap<Mid, &session::OutSection> = s
+            .outs
+            .iter()
+            .filter_map(|o| match o.state {
+                OutState::Live(mid) => Some((mid, o)),
+                _ => None,
+            })
+            .collect();
+        s.subscription_order
+            .iter()
+            .filter_map(|wanted| {
+                let mid = Mid::from(wanted.as_str());
+                let out = live.get(&mid)?;
+                let cost = self
+                    .sessions
+                    .get(&out.source.session)
+                    .and_then(|p| p.published.iter().find(|t| t.mid == out.source.mid))
+                    .map_or(0, |t| t.meter.bps(now));
+                Some(Wanted {
+                    mid,
+                    kind: out.kind,
+                    cost,
+                })
+            })
+            .collect()
+    }
+
+    /// Fits what receiver `key` asks for into its downlink, if anything it
+    /// depends on changed.
+    fn allocate(&mut self, now: Instant, key: SessionKey) {
+        let Some(s) = self.sessions.get(&key) else {
+            return;
+        };
+        let before = s.forwarded_mids();
+        self.allocate_from(now, key, before);
+    }
+
+    /// The allocation, and every change of what is forwarded since `before`:
+    /// a section that stops is paused like one the receiver stops asking
+    /// for, and a picture that starts again asks its publisher for a
+    /// keyframe through the rate limit. A change of what is held back sends
+    /// the receiver its directory.
+    fn allocate_from(&mut self, now: Instant, key: SessionKey, before: HashSet<Mid>) {
+        let wanted = self.wanted_of(now, key);
+        let (mut ctx, sessions) = self.ctx();
+        let Some(s) = sessions.get_mut(&key) else {
+            return;
+        };
+        s.allocation_queued = false;
+        let has_video = wanted.iter().any(|w| w.kind == MediaKind::Video);
+        let changed = if s.downlink.needs_allocation(&wanted) {
+            let live: HashSet<Mid> = s
+                .outs
+                .iter()
+                .filter_map(|o| match o.state {
+                    OutState::Live(mid) => Some(mid),
+                    _ => None,
+                })
+                .collect();
+            s.downlink.retain(|mid| live.contains(&mid));
+            let changed = s.downlink.allocate(now, &wanted);
+            let desired = s.downlink.allocation.desired;
+            let minimum = s.downlink.allocation.minimum;
+            // The estimator probes for what is wanted next, and while a
+            // picture is held back padding keeps the rate it needs up, capped
+            // by the estimate, so the estimate can grow to it. str0m sends no
+            // padding while the link shows congestion.
+            if desired > 0 && s.downlink.bitrate_set != Some((minimum, desired)) {
+                s.downlink.bitrate_set = Some((minimum, desired));
+                let set = || {
+                    s.rtc
+                        .bwe()
+                        .set_bitrate(Bitrate::bps(minimum), Bitrate::bps(desired))
+                };
+                if guard(set).is_err() {
+                    ctx.work.push_back(Work::Close {
+                        key,
+                        reason: CloseReason::Error,
+                    });
+                    return;
+                }
+                ctx.drain(s, now);
+            }
+            if s.downlink.look
+                && let Some(raw) = s.downlink.raw
+            {
+                debug!(session = %s.id, estimate_kbps = raw / 1000, "the downlink estimator takes a fresh look");
+                if guard(|| s.rtc.bwe().reset(Bitrate::bps(raw))).is_err() {
+                    ctx.work.push_back(Work::Close {
+                        key,
+                        reason: CloseReason::Error,
+                    });
+                    return;
+                }
+                ctx.drain(s, now);
+            }
+            if changed {
+                let mut held: Vec<String> = s.downlink.held.iter().map(|m| m.to_string()).collect();
+                held.sort();
+                debug!(
+                    session = %s.id,
+                    estimate_kbps = s.downlink.estimate().map(|e| e / 1000),
+                    forwarded_kbps = s.downlink.allocation.forwarded / 1000,
+                    desired_kbps = desired / 1000,
+                    held = ?held,
+                    "the downlink allocation changed"
+                );
+            }
+            changed
+        } else {
+            false
+        };
+        s.downlink.schedule(now, has_video);
+        ctx.reschedule(s);
+
+        let after = s.forwarded_mids();
         let mut resume_video = Vec::new();
         for out in &mut s.outs {
             let Some(mid) = out.directory_mid() else {
                 continue;
             };
-            let was_enabled = s.subscriptions.contains(&*mid);
-            let enabled = next.contains(&*mid);
-            if was_enabled && !enabled {
+            if before.contains(&mid) && !after.contains(&mid) {
                 out.rewrite.pause();
-            } else if !was_enabled && enabled && out.started && out.kind == MediaKind::Video {
+            } else if !before.contains(&mid)
+                && after.contains(&mid)
+                && out.started
+                && out.kind == MediaKind::Video
+            {
                 resume_video.push(out.source);
             }
         }
-        s.subscriptions = next;
         for source in resume_video {
             self.request_keyframe(now, source.session, source.mid, KeyframeRequestKind::Pli);
         }
-        self.run_work(now);
-        Ok(())
+        if changed {
+            self.send_tracks(key);
+        }
     }
 
     pub fn answer(
@@ -756,6 +965,7 @@ impl Core {
                             .count(),
                         ingress: s.ingress.into(),
                         egress: s.egress.into(),
+                        downlink: self.downlink_stats(now, s),
                     })
                     .collect(),
             })
@@ -765,6 +975,37 @@ impl Core {
         Stats {
             epoch: self.epoch.clone(),
             rooms,
+        }
+    }
+
+    fn downlink_stats(&self, now: Instant, s: &Session) -> DownlinkStats {
+        let d = &s.downlink;
+        let mut held_back: Vec<HeldTrack> = s
+            .outs
+            .iter()
+            .filter_map(|o| {
+                let mid = o.directory_mid().filter(|m| d.held.contains(m))?;
+                let publisher = self.sessions.get(&o.source.session)?;
+                let track = publisher.published.iter().find(|t| t.mid == o.source.mid)?;
+                Some(HeldTrack {
+                    mid: mid.to_string(),
+                    user_id: publisher.user_id.clone(),
+                    cost_bps: track.meter.bps(now),
+                })
+            })
+            .collect();
+        held_back.sort_by(|a, b| a.mid.cmp(&b.mid));
+        DownlinkStats {
+            estimate_bps: d.estimate().or(d.raw),
+            raw_estimate_bps: d.raw,
+            smoothed_estimate_bps: d.smoothed,
+            measured: d.measured,
+            padding_bps: d.allocation.minimum,
+            forwarded_bps: d.allocation.forwarded,
+            desired_bps: d.allocation.desired,
+            held_back,
+            holds: d.holds,
+            resumes: d.resumes,
         }
     }
 
@@ -793,6 +1034,7 @@ impl Core {
                     user_id: publisher.user_id.clone(),
                     kind: kind_name(out.kind),
                     stream_id: track.stream_id.clone(),
+                    held_back: s.is_subscribed(mid) && s.downlink.held.contains(&mid),
                 })
             })
             .collect()
@@ -928,7 +1170,17 @@ impl Core {
                 _ => None,
             })
             .collect();
-        s.remove_outs(|o| matches!(o.state, OutState::Ending(mid) if settled.contains(&mid)));
+        match guard(|| s.retire_ended(|mid| settled.contains(&mid))) {
+            Ok(true) => ctx.drain(s, now),
+            Ok(false) => {}
+            Err(()) => {
+                ctx.work.push_back(Work::Close {
+                    key,
+                    reason: CloseReason::Error,
+                });
+                return Ok(());
+            }
+        }
 
         // What the browser publishes now.
         let mut added = Vec::new();
@@ -956,6 +1208,7 @@ impl Core {
                         kind,
                         stream_id,
                         keyframe: Default::default(),
+                        meter: Default::default(),
                     });
                     added.push((mid, kind));
                 }
@@ -1114,12 +1367,21 @@ impl Core {
                 _ => {}
             }
         }
-        s.remove_outs(|o| matches!(o.state, OutState::Ending(mid) if inactive.contains(&mid)));
+        if guard(|| s.retire_ended(|mid| inactive.contains(&mid))).is_err() {
+            ctx.work.push_back(Work::Close {
+                key,
+                reason: CloseReason::Error,
+            });
+            return Ok(());
+        }
         s.negotiation.unanswered = 0;
         s.generation += 1;
         ctx.drain(s, now);
+        s.downlink.dirty = true;
         debug!(session = %s.id, negotiation = negotiation_id, "accepted a browser answer");
 
+        // Sections that went live may be asked for, and may not fit.
+        self.allocate(now, key);
         self.maybe_offer(now, key);
         Ok(())
     }
@@ -1201,7 +1463,13 @@ impl Core {
             Ok((_, None)) => {
                 // Nothing str0m would negotiate: the withdrawn sections are
                 // gone from the session already.
-                s.remove_outs(|o| matches!(o.state, OutState::Ending(_)));
+                if guard(|| s.retire_ended(|_| true)).is_err() {
+                    ctx.work.push_back(Work::Close {
+                        key,
+                        reason: CloseReason::Error,
+                    });
+                    return false;
+                }
                 ctx.drain(s, now);
                 return false;
             }
@@ -1422,6 +1690,15 @@ impl Core {
             self.request_keyframe(now, key, mid, kind);
         }
 
+        if self
+            .sessions
+            .get(&key)
+            .and_then(|s| s.downlink.next_check)
+            .is_some_and(|t| t <= now)
+        {
+            self.allocate(now, key);
+        }
+
         let (mut ctx, sessions) = self.ctx();
         if let Some(s) = sessions.get_mut(&key) {
             ctx.reschedule(s);
@@ -1438,7 +1715,8 @@ impl Core {
                     kind,
                 } => {
                     let source = self.sessions.get(&receiver).and_then(|s| {
-                        if !s.is_subscribed(mid) {
+                        // A picture that is not sent needs no refresh.
+                        if !s.forwards(mid) {
                             return None;
                         }
                         s.outs
@@ -1450,6 +1728,7 @@ impl Core {
                         self.request_keyframe(now, source.session, source.mid, kind);
                     }
                 }
+                Work::Allocate { key } => self.allocate(now, key),
                 Work::Close { key, reason } => self.close(now, key, Some(reason), true),
             }
         }
@@ -1537,9 +1816,10 @@ impl Core {
         let Some(publisher) = self.sessions.get_mut(&from) else {
             return;
         };
-        let Some(track) = publisher.published.iter().find(|t| t.mid == mid) else {
+        let Some(track) = publisher.published.iter_mut().find(|t| t.mid == mid) else {
             return;
         };
+        track.meter.record(now, packet.payload.len());
         let kind = track.kind;
         let Some(params) = publisher
             .rtc
@@ -1729,7 +2009,7 @@ fn forward_to(
     let OutState::Live(mid) = s.outs[idx].state else {
         return false;
     };
-    if !s.is_subscribed(mid) {
+    if !s.forwards(mid) {
         s.outs[idx].rewrite.skip(packet.header.ssrc, *packet.seq_no);
         return false;
     }
@@ -1800,8 +2080,13 @@ fn forward_to(
         .ext_vals(ext_vals)
         .nackable(kind == MediaKind::Video);
 
+    // Until the estimate counts there is nothing to pace against: video goes
+    // out as it comes, as it did before there was an estimator, so a first
+    // keyframe is never spread over the initial guess. Sounds are never paced.
+    let unpaced = kind == MediaKind::Audio || !s.downlink.measured;
     let written = guard(|| match s.rtc.direct_api().stream_tx_by_mid(mid, None) {
         Some(stream) => {
+            stream.set_unpaced(unpaced);
             stream.write_rtp(write);
             true
         }

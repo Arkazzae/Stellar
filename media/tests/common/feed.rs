@@ -37,6 +37,8 @@ pub struct Feed {
     next: Option<Instant>,
     /// Packets of a voice, frames of a camera.
     pub sent: u32,
+    /// How long after it is first played the feed starts.
+    delay: Duration,
     pub keyframes: u32,
     requests_seen: usize,
 }
@@ -59,9 +61,17 @@ impl Feed {
             started: None,
             next: None,
             sent: 0,
+            delay: Duration::ZERO,
             keyframes: 0,
             requests_seen: 0,
         }
+    }
+
+    /// Starts `delay` after the feed is first played, out of step with
+    /// feeds that start at once.
+    pub fn after(mut self, delay: Duration) -> Feed {
+        self.delay = delay;
+        self
     }
 
     fn interval(&self) -> Duration {
@@ -79,9 +89,9 @@ impl Feed {
     /// Sends whatever is due by `net.now`.
     fn play(&mut self, net: &mut Net) {
         let now = net.now;
-        let next = *self.next.get_or_insert(now);
+        let next = *self.next.get_or_insert(now + self.delay);
         if self.started.is_none() {
-            self.started = Some(now);
+            self.started = Some(next);
         }
         if next > now {
             return;

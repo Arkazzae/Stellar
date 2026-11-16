@@ -10,6 +10,7 @@ use str0m::media::{KeyframeRequestKind, MediaKind, Mid};
 use str0m::rtp::Ssrc;
 use str0m::{IceConnectionState, Rtc};
 
+use super::downlink::{Downlink, RateMeter};
 use super::{
     CONNECT_TIMEOUT, DISCONNECT_TIMEOUT, KEYFRAME_INTERVAL, MAX_SOURCE_ADDRS, OFFER_TIMEOUT,
 };
@@ -102,6 +103,8 @@ pub(crate) struct Published {
     /// names none.
     pub stream_id: String,
     pub keyframe: KeyframeGate,
+    /// What forwarding the track costs a receiver.
+    pub meter: RateMeter,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -325,6 +328,14 @@ pub(crate) struct Session {
     /// that is not listed is negotiated and named in the directory, but
     /// nothing is forwarded on it.
     pub subscriptions: HashSet<String>,
+    /// The same mids in the order the receiver listed them, most important
+    /// first.
+    pub subscription_order: Vec<String>,
+    /// What this receiver's downlink carries, and which of the pictures it
+    /// asks for are held back to stay inside it.
+    pub downlink: Downlink,
+    /// An allocation of the downlink is queued.
+    pub allocation_queued: bool,
     /// The current section of every track this session receives. A section
     /// whose track was withdrawn is not in it any more, so the same track
     /// sent again on the publisher's same section gets a new one while the
@@ -380,6 +391,9 @@ impl Session {
             published: Vec::new(),
             outs: Vec::new(),
             subscriptions: HashSet::new(),
+            subscription_order: Vec::new(),
+            downlink: Downlink::default(),
+            allocation_queued: false,
             out_by_source: HashMap::new(),
             server_mids: HashSet::new(),
             ssrc_mids: Vec::new(),
@@ -433,6 +447,7 @@ impl Session {
                 .pending
                 .as_ref()
                 .map(|p| p.sent_at + OFFER_TIMEOUT),
+            self.downlink.next_check,
         ];
 
         let keyframes = self.published.iter().filter_map(|t| t.keyframe.due());
@@ -450,6 +465,21 @@ impl Session {
 
     pub fn is_subscribed(&self, mid: Mid) -> bool {
         self.subscriptions.contains(&*mid)
+    }
+
+    /// Whether packets are forwarded on the receiving section `mid`: the
+    /// receiver asks for it, and its downlink has room for it.
+    pub fn forwards(&self, mid: Mid) -> bool {
+        self.is_subscribed(mid) && !self.downlink.held.contains(&mid)
+    }
+
+    /// Every section of the directory that is forwarded now.
+    pub fn forwarded_mids(&self) -> HashSet<Mid> {
+        self.outs
+            .iter()
+            .filter_map(OutSection::directory_mid)
+            .filter(|mid| self.forwards(*mid))
+            .collect()
     }
 
     /// Withdraws a track from this receiver. Returns whether the browser has
@@ -487,6 +517,31 @@ impl Session {
             }
         }
         self.remove_outs(|o| matches!(o.state, OutState::OfferedWithdrawn(_)));
+    }
+
+    /// Forgets the withdrawn sections `settled` names, which the browser
+    /// now knows are inactive, and their send streams. A section is never
+    /// used again, and str0m would otherwise keep padding on the stream of
+    /// one that is inactive. Returns whether a stream had to go, which is a
+    /// mutation to drain.
+    pub fn retire_ended(&mut self, settled: impl Fn(Mid) -> bool) -> bool {
+        let mids: Vec<Mid> = self
+            .outs
+            .iter()
+            .filter_map(|o| match o.state {
+                OutState::Ending(mid) if settled(mid) => Some(mid),
+                _ => None,
+            })
+            .collect();
+        self.remove_outs(|o| matches!(o.state, OutState::Ending(mid) if mids.contains(&mid)));
+        let mut removed = false;
+        for mid in mids {
+            let mut api = self.rtc.direct_api();
+            if let Some(ssrc) = api.stream_tx_by_mid(mid, None).map(|t| t.ssrc()) {
+                removed |= api.remove_stream_tx(ssrc);
+            }
+        }
+        removed
     }
 
     pub fn remove_outs(&mut self, remove: impl Fn(&OutSection) -> bool) {

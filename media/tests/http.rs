@@ -695,6 +695,22 @@ async fn reset_and_stats_report_what_the_contract_says() {
     assert!(session["ageMs"].is_u64());
     assert_eq!(session["ingress"], json!({ "packets": 0, "bytes": 0 }));
     assert_eq!(session["egress"], json!({ "packets": 0, "bytes": 0 }));
+    // Nothing has been estimated or held back of a session that is not up.
+    assert_eq!(
+        session["downlink"],
+        json!({
+            "estimateBps": null,
+            "rawEstimateBps": null,
+            "smoothedEstimateBps": null,
+            "measured": false,
+            "paddingBps": 0,
+            "forwardedBps": 0,
+            "desiredBps": 0,
+            "heldBack": [],
+            "holds": 0,
+            "resumes": 0,
+        })
+    );
 
     let reset = post(&server, "/v1/reset", json!({})).await;
     assert_eq!(reset.status, 200);

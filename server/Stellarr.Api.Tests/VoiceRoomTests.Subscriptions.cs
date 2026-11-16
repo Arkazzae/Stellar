@@ -31,6 +31,30 @@ public sealed partial class VoiceRoomTests
     }
 
     [Fact]
+    public async Task TheOrderOfTheListReachesTheMediaServerAsSentSinceItIsThePriority()
+    {
+        var media = new FakeMediaServer();
+        await using var app = new VoiceApp(media);
+        await app.MediaReadyAsync();
+        var maja = await app.ConnectAsync("maja");
+        await maja.JoinAsync(Salon);
+        var sessionId = await maja.OpenMediaAsync(Salon);
+        var path = $"/v1/sessions/{sessionId}/subscriptions";
+
+        // The same sections, most important first, then in another order: a
+        // new order alone is a new list.
+        string[] voicesFirst = ["a1", "a2", "share", "share-sound", "cam-1", "cam-2"];
+        string[] camerasFirst = ["cam-2", "cam-1", "a2", "a1", "share-sound", "share"];
+        await maja.MediaSignalAsync(Salon, sessionId, "subscriptions", JsonSerializer.Serialize(new { mids = voicesFirst }));
+        await maja.MediaSignalAsync(Salon, sessionId, "subscriptions", JsonSerializer.Serialize(new { mids = camerasFirst }));
+
+        var requests = media.Requests.Where(request => request.Path == path).ToArray();
+        Assert.Equal(2, requests.Length);
+        Assert.Equal(voicesFirst, requests[0].Json.GetProperty("mids").EnumerateArray().Select(mid => mid.GetString()!));
+        Assert.Equal(camerasFirst, requests[1].Json.GetProperty("mids").EnumerateArray().Select(mid => mid.GetString()!));
+    }
+
+    [Fact]
     public async Task MalformedSubscriptionAllowlistsNeverReachTheMediaServer()
     {
         var media = new FakeMediaServer();
