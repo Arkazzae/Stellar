@@ -19,8 +19,13 @@ export interface MemoryHistory extends RouterHistory {
   forward(): void;
 }
 
+/**
+ * An address as the address bar would hold it. A rooted one is read as a
+ * path even when it starts with two slashes, which a link would take for
+ * another host: the browser loaded the page, so it is on this origin.
+ */
 function parse(href: string, origin: string): Address {
-  const url = new URL(href, `${origin}/`);
+  const url = href.startsWith("/") ? new URL(`${origin}${href}`) : new URL(href, `${origin}/`);
   return { pathname: canonicalPath(url.pathname), search: url.search, hash: url.hash };
 }
 

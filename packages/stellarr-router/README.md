@@ -75,9 +75,13 @@ expect(history.navigations).toEqual([{ kind: "replace", href: "/register" }]);
   loaded as a new document, replacing the entry for `replace`. Navigating to
   the address already shown changes nothing. Back and Forward render the
   entry's page again.
-- **Trailing slash.** Paths are canonical without one, except the root. The
-  address the page was loaded at is rewritten in place (`/cockpit/` becomes
-  `/cockpit`), and links and navigations are resolved to the canonical path.
+- **Slashes.** Paths are canonical with every run of slashes merged into one,
+  as nginx merges them before it picks the document, and without a trailing
+  slash, except the root. The address the page was loaded at is rewritten in
+  place (`/cockpit/` and `//cockpit` become `/cockpit`), and links and
+  navigations are resolved to the canonical path. An address that starts with
+  two slashes is never written back as it is, which the browser would read as
+  another host and refuse.
 - **Parameters.** `useParams` gives each value decoded. A value whose escapes
   are malformed is `null`, and the route still matches, so a page can say the
   address is unreadable. Fixed segments are compared decoded too.

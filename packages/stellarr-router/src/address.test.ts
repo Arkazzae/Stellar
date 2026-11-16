@@ -18,20 +18,29 @@ describe("canonicalPath", () => {
     expect(canonicalPath("")).toBe("/");
   });
 
-  it("leaves slashes that do not end the path", () => {
-    expect(canonicalPath("/a//b")).toBe("/a//b");
-    expect(canonicalPath("//login")).toBe("//login");
+  it("merges every run of slashes into one, as nginx does before it answers", () => {
+    expect(canonicalPath("/a//b")).toBe("/a/b");
+    expect(canonicalPath("//login")).toBe("/login");
+    expect(canonicalPath("///register")).toBe("/register");
+    expect(canonicalPath("//cockpit//users//")).toBe("/cockpit/users");
+    expect(canonicalPath("//invite//abc123")).toBe("/invite/abc123");
   });
 
-  // A pattern anchored only at the end retries every slash of a run that does
+  it("never yields a path a browser would read as another host", () => {
+    for (const path of ["//login", "///evil.example.test/x", "//", "/\u0000//x"]) {
+      expect(canonicalPath(path).startsWith("//"), path).toBe(false);
+    }
+  });
+
+  // A pattern anchored only at the end retried every slash of a run that does
   // not end the path: 40,000 of them took over a second, and this many would
   // take minutes and freeze the tab. Anyone can put such a run in a link.
   it("takes time linear in the length of a long run of slashes, wherever it is", () => {
     const run = "/".repeat(300_000);
     const started = performance.now();
 
-    expect(canonicalPath(`${run}x`)).toBe(`${run}x`);
-    expect(canonicalPath(`/a${run}b`)).toBe(`/a${run}b`);
+    expect(canonicalPath(`${run}x`)).toBe("/x");
+    expect(canonicalPath(`/a${run}b`)).toBe("/a/b");
     expect(canonicalPath(`/a${run}`)).toBe("/a");
     expect(canonicalPath(run)).toBe("/");
     expect(resolveAddress(`${run}x`, AT_LOGIN, ORIGIN).sameOrigin).toBe(false);
