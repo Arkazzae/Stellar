@@ -79,6 +79,11 @@ export interface MediaTrack {
    * `cameraStreamId` of its `state` frame for a share or a camera.
    */
   streamId: string;
+  /**
+   * This browser asks for the picture, and its downlink has no room for it
+   * now: the media server sends nothing of it until there is.
+   */
+  heldBack: boolean;
 }
 
 /** What the media server offers: the description, its number, and the directory to go with it. */
@@ -281,20 +286,21 @@ export function decodeMediaTracks(payload: string): MediaTrack[] | null {
  * this and `decodeMediaTrack` work on the object inside `tracks`, not on a
  * string.
  */
-export function encodeMediaTrack({ mid, userId, kind, streamId }: MediaTrack): MediaTrack {
-  return { mid, userId, kind, streamId };
+export function encodeMediaTrack({ mid, userId, kind, streamId, heldBack }: MediaTrack): MediaTrack {
+  return { mid, userId, kind, streamId, heldBack };
 }
 
 /** One directory entry from an untrusted value, or null when it is not one. */
 export function decodeMediaTrack(value: unknown): MediaTrack | null {
   if (!isRecord(value)) return null;
-  const { mid, userId, kind, streamId } = value;
+  const { mid, userId, kind, streamId, heldBack } = value;
   if (!isNonEmptyString(mid) || !isNonEmptyString(userId)) return null;
   if (kind !== "audio" && kind !== "video") return null;
   // A stream id is whatever the publisher chose, so any string is one. It is
   // compared, never parsed.
   if (typeof streamId !== "string") return null;
-  return { mid, userId, kind, streamId };
+  if (typeof heldBack !== "boolean") return null;
+  return { mid, userId, kind, streamId, heldBack };
 }
 
 /** A directory names each section once; two entries for one `mid` make it unusable. */
