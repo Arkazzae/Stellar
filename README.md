@@ -32,7 +32,6 @@ Full documentation lives in [`docs/`](docs/README.md):
 | `packages/` | Shared packages used by the web client and Cockpit in one npm workspace |
 | `packages/stellarr-ui/` | [`@stellarr/ui`](packages/stellarr-ui/README.md), the components and their stylesheet |
 | `packages/stellarr-icons/` | [`@stellarr/icons`](packages/stellarr-icons/README.md), the icon set, which also builds the SVGs in `branding/icons/` |
-| `contracts/` | The [message-syntax corpus](contracts/README.md) that the web client's and the API's tests both check |
 | `artifacts/` | The prebuilt files the browser loads at run time (the noise suppressors, the translation runtime and its models), checked against `manifest.json` and copied into `web/public/` before every development run, build and test |
 | `server/` | ASP.NET Core API, SignalR hub, operator CLI, and integration tests |
 | `media/` | [Stellarr Media](media/README.md), the Rust WebRTC SFU (`stellarr-media`) |
