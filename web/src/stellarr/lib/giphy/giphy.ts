@@ -103,11 +103,9 @@ async function requestRuntimeConfig(): Promise<GiphyRuntimeConfig> {
   if (!response.ok) throw new GiphyError("giphy.configUnreadable");
 
   const payload = (await response.json()) as unknown;
-  if (!isRecord(payload)) return { enabled: false, apiKey: "" };
+  if (!isRecord(payload) || payload["enabled"] !== true) return { enabled: false, apiKey: "" };
   const apiKey = nonEmptyString(payload["apiKey"])?.trim() ?? "";
-  // An API from before the switch in Cockpit answers with the key alone; a key meant on.
-  const switchedOn = typeof payload["enabled"] === "boolean" ? payload["enabled"] : true;
-  return { enabled: switchedOn && apiKey !== "", apiKey: switchedOn ? apiKey : "" };
+  return { enabled: apiKey !== "", apiKey };
 }
 
 /**
