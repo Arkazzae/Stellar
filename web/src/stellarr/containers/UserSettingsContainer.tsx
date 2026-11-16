@@ -2,7 +2,9 @@ import { useEffect, useRef, useSyncExternalStore } from "react";
 
 import { UserSettings } from "@/components/account/UserSettings";
 import { useBrowserNotifications } from "@/hooks/useBrowserNotifications";
+import { useGifsEnabled, useGiphyEnabled } from "@/hooks/useGifsEnabled";
 import { playSystemFx } from "@/lib/audio/systemFx";
+import { giphyChoice } from "@/lib/giphy/giphyChoice";
 import { androidNotificationsSupported } from "@/lib/notifications/android";
 import {
   browserNotificationsSupported,
@@ -38,8 +40,9 @@ import { useAccountSecurity } from "./useAccountSecurity";
  * Three owners meet here and none of them knows about the other two: the
  * account port holds the profile and the preferences, `ThemeProvider` holds
  * the theme, and the voice settings live in their own store because the audio
- * pipeline reads them while a call is running. The theme and the voice
- * settings reach the account through `ClientSettingsSync`, not through here.
+ * pipeline reads them while a call is running. The theme, the voice settings
+ * and the GIPHY switch reach the account through `ClientSettingsSync`, not
+ * through here.
  */
 export function UserSettingsContainer() {
   const ports = usePorts();
@@ -54,6 +57,8 @@ export function UserSettingsContainer() {
   const browserNotifications = useBrowserNotifications();
   const { theme, resolved, update: updateTheme, reset: resetTheme } = useTheme();
   const { autostart, setEnabled: setAutostartEnabled } = useAutostart(ports.desktop);
+  const gifsOffered = useGifsEnabled();
+  const giphyEnabled = useGiphyEnabled();
 
   const voiceSettings = useSyncExternalStore(
     ports.voiceSettings.subscribe,
@@ -168,6 +173,7 @@ export function UserSettingsContainer() {
           })),
           onUnblock: friends.unblock,
         }}
+        giphy={gifsOffered ? { enabled: giphyEnabled, onChange: giphyChoice.set } : undefined}
         systemNotifications={{
           supported: browserNotifications.supported,
           permission: browserNotifications.permission,

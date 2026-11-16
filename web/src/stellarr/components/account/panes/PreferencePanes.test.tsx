@@ -38,6 +38,8 @@ describe("PrivacyPane", () => {
     expect(onChange).toHaveBeenNthCalledWith(1, { allowDirectMessages: false });
     expect(onChange).toHaveBeenNthCalledWith(2, { allowFriendRequests: true });
     expect(onChange).toHaveBeenNthCalledWith(3, { showPresence: false });
+    // An instance that offers no GIFs has no GIPHY to switch off.
+    expect(screen.queryByRole("switch", { name: "GIF-y z GIPHY" })).toBeNull();
   });
 
   it("lists the blocked people and unblocks the one asked for", async () => {
@@ -71,6 +73,23 @@ describe("PrivacyPane", () => {
     );
 
     expect(screen.getByText(/Nikogo nie blokujesz/)).toBeVisible();
+  });
+
+  it("offers the GIPHY switch, saying what turning it on sends", async () => {
+    const user = userEvent.setup();
+    const onGiphy = vi.fn();
+    render(
+      <PrivacyPane preferences={preferences} onChange={vi.fn()} giphy={{ enabled: true, onChange: onGiphy }} />,
+    );
+
+    const toggle = screen.getByRole("switch", { name: "GIF-y z GIPHY" });
+    expect(toggle).toBeChecked();
+    expect(
+      screen.getByText(/ta przeglądarka łączy się z GIPHY, kiedy szukasz GIF-a albo go widzisz/),
+    ).toBeVisible();
+
+    await user.click(toggle);
+    expect(onGiphy).toHaveBeenCalledExactlyOnceWith(false);
   });
 });
 

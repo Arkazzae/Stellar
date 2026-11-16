@@ -257,6 +257,7 @@ export function fakeApi(overrides: Partial<ApiClient> = {}): ApiClient {
       language: null,
       keybinds: null,
       voice: null,
+      privacy: null,
     })),
     saveClientSettings: vi.fn(async () => undefined),
     getSoundboard: vi.fn(async () => ({

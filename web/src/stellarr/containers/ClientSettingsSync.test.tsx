@@ -2,13 +2,20 @@ import { act, renderHook } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { DEFAULT_THEME, type ThemePreference } from "@/design/themes";
+import { giphyChoice } from "@/lib/giphy/giphyChoice";
 import { DEFAULT_KEYBINDINGS, KEYBIND_STORAGE_VERSION, type Keybindings } from "@/lib/keybinds/keybinds";
 import { VoiceSettingsStore } from "@/lib/voice/settings";
 import type { ClientSettingsSnapshot } from "@/ports";
 
 import { SAVE_DELAY_MS, useClientSettingsSync } from "./ClientSettingsSync";
 
-const NOTHING_SAVED: ClientSettingsSnapshot = { appearance: null, language: null, keybinds: null, voice: null };
+const NOTHING_SAVED: ClientSettingsSnapshot = {
+  appearance: null,
+  language: null,
+  keybinds: null,
+  voice: null,
+  privacy: null,
+};
 
 const world = vi.hoisted(() => ({
   userId: "u1",
@@ -84,6 +91,9 @@ beforeEach(() => {
     account: { loadClientSettings: world.load, saveClientSettings: world.save },
     voiceSettings: voice(),
   };
+  giphyChoice.set(true);
+  window.localStorage.clear();
+  giphyChoice.awaitAccount();
 });
 
 afterEach(() => {
@@ -98,12 +108,16 @@ describe("useClientSettingsSync", () => {
       language: { locale: "en", chatTranslationEnabled: true, chatTranslationTargetLanguage: "pl" },
       keybinds: { version: KEYBIND_STORAGE_VERSION, bindings: custom },
       voice: { ...voice().getSnapshot(), inputDeviceId: "their-mic", opusProfile: "studio", vadSensitivity: 90 },
+      privacy: { giphy: false },
     }));
     ports.account["loadClientSettings"] = world.load;
 
     sync();
     await settle();
 
+    // GIPHY turned off on another device is off here too, and stays off here.
+    expect(giphyChoice.access()).toBe("off");
+    expect(JSON.parse(window.localStorage.getItem("stellarr.giphy") ?? "null")).toEqual({ enabled: false });
     // Normalised on the way in: an unknown palette is the default one.
     expect(world.updateTheme).toHaveBeenCalledExactlyOnceWith({ ...DEFAULT_THEME, size: "lg" });
     expect(world.updateLanguage).toHaveBeenCalledExactlyOnceWith({
@@ -197,6 +211,46 @@ describe("useClientSettingsSync", () => {
       chatTranslationEnabled: true,
       chatTranslationTargetLanguage: "en",
     });
+  });
+
+  it("keeps GIPHY waiting until the account has answered, then lets it on", async () => {
+    let answer: (value: ClientSettingsSnapshot) => void = () => undefined;
+    world.load = vi.fn(() => new Promise<ClientSettingsSnapshot>((resolve) => (answer = resolve)));
+    ports.account["loadClientSettings"] = world.load;
+    giphyChoice.accountRead();
+
+    sync();
+    expect(giphyChoice.access()).toBe("waiting");
+
+    answer(NOTHING_SAVED);
+    await settle();
+    expect(giphyChoice.access()).toBe("on");
+  });
+
+  it("lets this device's switch stand when the account cannot be asked", async () => {
+    world.load = vi.fn(async () => {
+      throw new Error("offline");
+    });
+    ports.account["loadClientSettings"] = world.load;
+
+    sync();
+    await settle();
+
+    expect(giphyChoice.access()).toBe("on");
+  });
+
+  it("sends the GIPHY switch turned off here as the privacy section alone", async () => {
+    world.load = vi.fn(async () => ({ ...NOTHING_SAVED, privacy: { giphy: true } }));
+    ports.account["loadClientSettings"] = world.load;
+    sync();
+    await settle();
+
+    act(() => giphyChoice.set(false));
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(SAVE_DELAY_MS);
+    });
+
+    expect(world.save).toHaveBeenCalledExactlyOnceWith("privacy", { giphy: false });
   });
 
   it("sends a change once it settles, and not the value it just applied", async () => {

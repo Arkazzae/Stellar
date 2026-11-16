@@ -115,6 +115,16 @@ describe("the runtime API key", () => {
 
     await expect(resolveGiphyApiKey()).rejects.toThrow(failure("giphy.keyMissing"));
   });
+
+  it("keeps the answer at hand once it has come, for components mounted later", async () => {
+    vi.resetModules();
+    const giphy = await import("./giphy");
+    fetchMock.mockResolvedValue(respond({ enabled: true, apiKey: "key" }));
+
+    expect(giphy.answeredGiphyConfig()).toBeUndefined();
+    await giphy.readGiphyConfig();
+    expect(giphy.answeredGiphyConfig()).toEqual({ enabled: true, apiKey: "key" });
+  });
 });
 
 describe("parsing a GIF", () => {

@@ -1,5 +1,6 @@
 import { useEffect, useRef, useSyncExternalStore } from "react";
 
+import { giphyChoice, type GiphyChoice } from "@/lib/giphy/giphyChoice";
 import {
   appearanceFromWire,
   appearanceToWire,
@@ -8,6 +9,8 @@ import {
   keybindsToWire,
   languageFromWire,
   languageToWire,
+  privacyFromWire,
+  privacyToWire,
   stableJson,
   voiceFromWire,
   voiceToWire,
@@ -122,6 +125,7 @@ interface Local {
   language: LanguageValue;
   keybinds: KeybindValue;
   voiceSettings: ReturnType<typeof usePorts>["voiceSettings"];
+  giphy: GiphyChoice;
 }
 
 function localWire(local: Local, section: ClientSettingsSection): Wire {
@@ -134,6 +138,8 @@ function localWire(local: Local, section: ClientSettingsSection): Wire {
       return keybindsToWire(local.keybinds.bindings);
     case "voice":
       return voiceToWire(local.voiceSettings.getSnapshot());
+    case "privacy":
+      return privacyToWire({ giphy: local.giphy.isEnabled() });
   }
 }
 
@@ -169,6 +175,11 @@ function applySection(local: Local, section: ClientSettingsSection, stored: Wire
       local.voiceSettings.update(patch);
       return voiceToWire(local.voiceSettings.getSnapshot());
     }
+    case "privacy": {
+      const { giphy } = privacyFromWire(stored);
+      if (giphy !== undefined) local.giphy.set(giphy);
+      return privacyToWire({ giphy: local.giphy.isEnabled() });
+    }
   }
 }
 
@@ -198,7 +209,8 @@ function load(run: Run, remote: ClientSettingsSnapshot, local: Local): void {
 
 /**
  * Keeps the client's own settings on the account: the theme, the language,
- * the call shortcuts and the voice processing.
+ * the call shortcuts, the voice processing and the privacy choices, which
+ * today are whether this client may contact GIPHY.
  *
  * The device still owns them while it runs, in the providers that apply them,
  * and keeps its own copy for the first paint and the sign-in screen. This only
@@ -224,18 +236,31 @@ export function useClientSettingsSync(): void {
     ports.voiceSettings.getSnapshot,
     ports.voiceSettings.getSnapshot,
   );
+  const giphy = useSyncExternalStore(
+    giphyChoice.subscribe,
+    giphyChoice.isEnabled,
+    giphyChoice.isEnabled,
+  );
   const userId = account.id;
   const run = useRef<Run | null>(null);
-  const local = useRef<Local>({ theme, language, keybinds, voiceSettings: ports.voiceSettings });
+  const local = useRef<Local>({
+    theme,
+    language,
+    keybinds,
+    voiceSettings: ports.voiceSettings,
+    giphy: giphyChoice,
+  });
 
   // First, so that the loader below and the change effects read this render's values.
   useEffect(() => {
-    local.current = { theme, language, keybinds, voiceSettings: ports.voiceSettings };
+    local.current = { theme, language, keybinds, voiceSettings: ports.voiceSettings, giphy: giphyChoice };
   });
 
   useEffect(() => {
     // Not signed in yet: the account is still the blank one.
     if (userId === "") return;
+    // GIPHY waits for the account's copy of the switch, which may be off.
+    giphyChoice.awaitAccount();
     const current: Run = {
       userId,
       port: ports.account,
@@ -250,11 +275,15 @@ export function useClientSettingsSync(): void {
     const controller = new AbortController();
     ports.account.loadClientSettings(controller.signal).then(
       (remote) => {
-        if (!current.disposed) load(current, remote, local.current);
+        if (current.disposed) return;
+        load(current, remote, local.current);
+        giphyChoice.accountRead();
       },
       () => {
         // Offline, or a server without the sections: the device keeps its own
         // settings and nothing is sent until the next sign-in reads them.
+        // Its GIPHY switch stands too, rather than holding GIFs back for good.
+        if (!current.disposed) giphyChoice.accountRead();
       },
     );
 
@@ -284,6 +313,7 @@ export function useClientSettingsSync(): void {
     // The locale is here for what `chosenLocale` reads, not for a value used directly.
     [locale, chatTranslationEnabled, chatTranslationTargetLanguage, chosenLocale],
   );
+  useEffect(() => noteChange(run.current, "privacy", privacyToWire({ giphy })), [giphy]);
   useEffect(() => noteChange(run.current, "keybinds", keybindsToWire(keybinds.bindings)), [keybinds.bindings]);
   useEffect(() => noteChange(run.current, "voice", voiceToWire(voice)), [voice]);
 }

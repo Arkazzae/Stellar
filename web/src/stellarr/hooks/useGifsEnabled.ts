@@ -1,13 +1,14 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, useSyncExternalStore } from "react";
 
-import { readGiphyConfig } from "@/lib/giphy/giphy";
+import { answeredGiphyConfig, readGiphyConfig } from "@/lib/giphy/giphy";
+import { giphyChoice, type GiphyAccess } from "@/lib/giphy/giphyChoice";
 
 /**
- * Whether to offer GIFs, as Stellarr's API says; false until it has answered,
- * and false when it cannot be asked.
+ * Whether the operator offers GIFs, as Stellarr's API says; false until it
+ * has answered, and false when it cannot be asked.
  */
 export function useGifsEnabled(): boolean {
-  const [enabled, setEnabled] = useState(false);
+  const [enabled, setEnabled] = useState(() => answeredGiphyConfig()?.enabled ?? false);
 
   useEffect(() => {
     let live = true;
@@ -25,4 +26,14 @@ export function useGifsEnabled(): boolean {
   }, []);
 
   return enabled;
+}
+
+/** What the person's own switch lets this browser send to GIPHY now. */
+export function useGiphyAccess(): GiphyAccess {
+  return useSyncExternalStore(giphyChoice.subscribe, giphyChoice.access, giphyChoice.access);
+}
+
+/** The person's switch as the settings show it. */
+export function useGiphyEnabled(): boolean {
+  return useSyncExternalStore(giphyChoice.subscribe, giphyChoice.isEnabled, giphyChoice.isEnabled);
 }
