@@ -133,7 +133,7 @@ mkdir -p "$data_root"/{db,files,keys,logs,secrets,tls} /run/nginx
 turn_secret="${TURN_SHARED_SECRET:-$(read_or_create_secret turn-shared-secret)}"
 media_control_secret="${STELLARR_MEDIA_CONTROL_SECRET:-$(read_or_create_secret media-control-secret)}"
 
-export ConnectionStrings__Database="Data Source=$data_root/db/stellarr.db;Cache=Shared;Pooling=True"
+export ConnectionStrings__Database="Data Source=$data_root/db/stellarr.db;Pooling=True"
 export DataRoot="$data_root"
 export Rtc__PublicHost="$public_host"
 
