@@ -151,6 +151,12 @@ export class Client {
     return this.page.evaluate((k) => window.smoke.receiveOnly(k), kind);
   }
 
+  /** Asks for exactly these sections from now on, and waits until the list is posted. */
+  async subscribe(mids) {
+    await this.page.evaluate((m) => window.smoke.subscribe(m), mids);
+    await this.hub.posted(this.sessionId);
+  }
+
   measure() {
     return this.page.evaluate(() => window.smoke.measure());
   }
