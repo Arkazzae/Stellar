@@ -35,14 +35,13 @@ public sealed partial class HealthEndpointTests(StellarrWebApplicationFactory fa
         Assert.Equal(HttpStatusCode.OK, (await client.GetAsync("/health/live")).StatusCode);
         _ = await client.GetAsync(other);
 
-        // The host logs a request's end once the response is out; wait for the
-        // last request's, which comes after the probes'.
+        // A request is logged once its response is out; wait for the last
+        // request's line, which comes after the probes'.
         IReadOnlyList<CockpitLogRecord> lines = [];
         for (var attempt = 0; attempt < 50; attempt++)
         {
             lines = buffer.Snapshot(CockpitLogBuffer.Capacity).Where(line => line.Sequence > start).ToList();
-            if (lines.Any(line => line.Message.Contains("Request finished", StringComparison.Ordinal)
-                    && line.Message.Contains(other, StringComparison.Ordinal)))
+            if (lines.Any(line => line.Message.Contains(other, StringComparison.Ordinal)))
             {
                 break;
             }
@@ -50,10 +49,7 @@ public sealed partial class HealthEndpointTests(StellarrWebApplicationFactory fa
             await Task.Delay(20);
         }
 
-        Assert.Contains(lines, line => line.Message.Contains("Request starting", StringComparison.Ordinal)
-            && line.Message.Contains(other, StringComparison.Ordinal));
-        Assert.Contains(lines, line => line.Message.Contains("Request finished", StringComparison.Ordinal)
-            && line.Message.Contains(other, StringComparison.Ordinal));
+        Assert.Contains(lines, line => line.Message.StartsWith($"GET {other} 404", StringComparison.Ordinal));
         Assert.DoesNotContain(lines, line => line.Message.Contains("/health/", StringComparison.Ordinal));
     }
 

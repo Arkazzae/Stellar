@@ -5,12 +5,11 @@ namespace Stellarr.Api.Logging;
 /// <summary>
 /// Keeps the health probes out of the log. The container's process manager asks
 /// <c>/health/ready</c> every ten seconds, and each request would otherwise write
-/// six entries at information level to the console and to Cockpit's buffer: the
-/// host's request started and finished, the endpoint executing and executed, and
-/// the result's status code and body. While a probe is served, nothing below a
-/// warning is logged, whatever its category; a warning or an error still is, and
-/// a probe that fails is reported by the process manager itself. Every other
-/// request logs as before.
+/// its line from <see cref="RequestLog"/> to the console and to Cockpit's
+/// buffer, and ASP.NET Core's six more where its level is raised to information.
+/// While a probe is served, nothing below a warning is logged, whatever its
+/// category; a warning or an error still is, and a probe that fails is reported
+/// by the process manager itself. Every other request logs as before.
 /// </summary>
 public static class HealthProbeLogging
 {
