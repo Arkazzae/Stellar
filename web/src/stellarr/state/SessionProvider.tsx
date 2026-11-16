@@ -5,6 +5,7 @@ import {
   useEffect,
   useMemo,
   useReducer,
+  useRef,
   useState,
   useSyncExternalStore,
   type ReactNode,
@@ -47,6 +48,12 @@ export interface SessionValue {
   loginPending: boolean;
   loginError: string | null;
   logout: () => Promise<void>;
+  /**
+   * Whether the session has ended by now: signed out here, ended by the
+   * server, or shut out of the open server. For what runs as the signed-in
+   * app goes away, which a reload does too, with the session alive.
+   */
+  hasEnded: () => boolean;
 }
 
 const SessionContext = createContext<SessionValue | null>(null);
@@ -128,6 +135,12 @@ export function SessionProvider({ children }: { children: ReactNode }) {
   const [loginError, setLoginError] = useState<string | null>(null);
   const [presence, setPresence] = useState<Presence>("online");
 
+  // Kept beside the phase rather than read from it: what goes away with the
+  // app asks on its way out, when the phase it last rendered with still says
+  // `ready`.
+  const ended = useRef(false);
+  const hasEnded = useCallback(() => ended.current, []);
+
   const connection = useSyncExternalStore(
     ports.connection.subscribe,
     ports.connection.getStatus,
@@ -162,6 +175,7 @@ export function SessionProvider({ children }: { children: ReactNode }) {
         // "not connected yet", not a deliberate invisible choice. Any other
         // status was advertised by another tab and is safe to inherit.
         setPresence(payload.user.presence === "offline" ? "online" : payload.user.presence);
+        ended.current = false;
         setBoot({
           phase: "ready",
           user: withProfileOf(payload.user, ports.account.getAccount()),
@@ -192,6 +206,7 @@ export function SessionProvider({ children }: { children: ReactNode }) {
     () =>
       runtime.realtime.on("ServerAccessRevoked", ({ serverId, kind }) => {
         if (ports.directory.getServer().id !== serverId) return;
+        ended.current = true;
         setBoot({
           phase: "revoked",
           user: null,
@@ -289,6 +304,7 @@ export function SessionProvider({ children }: { children: ReactNode }) {
     ports.session.check().then(
       (alive) => {
         if (!active || alive) return;
+        ended.current = true;
         void runtime.realtime.stop().catch(() => undefined);
         setLoginError(t("session.unauthorized"));
         setBoot(ANONYMOUS);
@@ -305,6 +321,7 @@ export function SessionProvider({ children }: { children: ReactNode }) {
     try {
       await ports.session.logout();
     } finally {
+      ended.current = true;
       // The socket goes down even when the request failed: the cookie may
       // already be gone, and an open hub would keep pushing into a signed-out tab.
       await runtime.realtime.stop().catch(() => undefined);
@@ -326,8 +343,9 @@ export function SessionProvider({ children }: { children: ReactNode }) {
       loginPending,
       loginError,
       logout,
+      hasEnded,
     }),
-    [boot, connection, presence, login, loginPending, loginError, logout],
+    [boot, connection, presence, login, loginPending, loginError, logout, hasEnded],
   );
 
   return <SessionContext.Provider value={value}>{children}</SessionContext.Provider>;
