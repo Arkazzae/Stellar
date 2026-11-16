@@ -5,7 +5,7 @@ import { readdirSync, readFileSync, rmdirSync, unlinkSync, writeFileSync } from 
 
 const UI = new URL("../ui/", import.meta.url).pathname;
 const KEEP = ["chat", "translate-before", "translated", "voice", "voice-share", "appearance", "cockpit-runtime"];
-const FAMILIES = new Set(["Outfit", "Geist", "__nextjs-Geist", "JetBrains Mono"]);
+const FAMILIES = new Set(["Outfit", "Geist", "JetBrains Mono"]);
 
 const window = {};
 for (const n of KEEP) new Function("window", readFileSync(UI + n + ".js", "utf8"))(window);

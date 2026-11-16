@@ -31,7 +31,7 @@ const IN_PAGE = String.raw`(async () => {
   }
   const clone = document.body.cloneNode(true);
   for (const e of clone.querySelectorAll("[style]")) for (const k of ["transition", "animation", "will-change"]) e.style.removeProperty(k);
-  clone.querySelectorAll("script, nextjs-portal, noscript, template, link, style, iframe").forEach((e) => e.remove());
+  clone.querySelectorAll("script, noscript, template, link, style, iframe").forEach((e) => e.remove());
   [...clone.querySelectorAll("canvas")].forEach((c, i) => {
     if (!canvases[i]) return;
     const img = document.createElement("img");
