@@ -206,6 +206,39 @@ describe("infra/nginx.conf, which serves the build in the container", () => {
       expect(lookUp(entries, address), address).toBe(expectedAnswer(address));
     }
   });
+
+  it("counts an address as a file by a dot in its last segment only", () => {
+    const cases: [address: string, answer: string][] = [
+      ["/missing.js", "file"],
+      ["/web-abc.js.gz", "file"],
+      ["/static/web-abc.js.gz", "file"],
+      ["/a.b.c", "file"],
+      ["/nope/a..b", "file"],
+      ["/a.", "file"],
+      ["/nope/b.", "file"],
+      // A dot in an earlier segment only, or a trailing slash after one.
+      ["/v1.2/users", "missing"],
+      ["/a.b/", "missing"],
+      ["/a.b.c/", "missing"],
+      ["/invite/abc.123/", "page"],
+    ];
+    for (const [address, answer] of cases) {
+      expect(lookUp(entries, address), address).toBe(answer);
+      expect(expectedAnswer(address), address).toBe(answer);
+    }
+  });
+
+  // [^/]* after the dot would rescan the rest of the segment from every dot:
+  // 50,000 dots before a slash took seven seconds to match.
+  it("answers a long run of dots before a slash in time linear in its length", () => {
+    const address = `/${".".repeat(50_000)}/`;
+    const started = performance.now();
+
+    expect(lookUp(entries, address)).toBe("missing");
+    expect(expectedAnswer(address)).toBe("missing");
+
+    expect(performance.now() - started).toBeLessThan(250);
+  });
 });
 
 describe("the instance language file the container writes", () => {
