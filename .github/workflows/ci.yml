@@ -140,6 +140,17 @@ jobs:
               printf '\n```\n'
             } >> "$GITHUB_STEP_SUMMARY"
           fi
+      # Each playback strip and the speech detector's worklet, rendered in
+      # Chromium against web/bench/voice/records/playback.txt.
+      - name: Check voice playback in Chromium
+        run: |
+          chrome=$(command -v google-chrome || command -v google-chrome-stable || command -v chromium || true)
+          if [[ -z $chrome ]]; then
+            echo "::error::Chrome or Chromium is required for the voice playback check."
+            exit 1
+          fi
+          STELLARR_CHROMIUM="$chrome" npm run bench:voice-playback -w stellarr-web -- \
+            --check --out "$RUNNER_TEMP/voice-playback.json"
       # src/paths.ts and branding/icons/ are built from the glyph source in
       # @stellarr/icons; a glyph changed in one place only fails here.
       - run: npm run icons:build -w @stellarr/icons -- --check
