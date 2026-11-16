@@ -35,7 +35,7 @@ use stellarr_init::client;
 use stellarr_init::core::{Phase, State};
 use stellarr_init::manager::{self, Options};
 use stellarr_init::protocol::{ServiceLine, StatusReply};
-use stellarr_init::service::{Backoff, Readiness, Service, Signal};
+use stellarr_init::service::{Backoff, Readiness, Service, Signal, Watch};
 use stellarr_init::sys;
 
 const HELPER: &str = env!("CARGO_BIN_EXE_misbehave");
@@ -179,6 +179,7 @@ fn scenarios() -> Vec<Scenario> {
         ),
         scenario("health_against_a_trickle", one_service, check_trickle),
         scenario("stun_readiness", stun, check_stun),
+        scenario("stops_answering_while_alive", stalls, check_stalls),
         Scenario {
             plain: true,
             ..scenario("not_pid1", orphan_outside, check_not_pid1)
@@ -910,10 +911,7 @@ fn check_crashes_after_a_while(t: &mut Pid1) {
 fn slow_to_become_ready(dir: &Path) -> Vec<Service> {
     vec![
         helper("slow", &["--http", "21050", "--ready-after", "1500"])
-            .ready(Readiness::Http {
-                addr: lo(21050),
-                path: "/ready".into(),
-            })
+            .ready(Readiness::http(lo(21050), "/ready"))
             .critical(),
         helper("after", &["--report", &path(dir, "after")]).needs(&["slow"]),
     ]
@@ -941,10 +939,7 @@ fn check_slow_to_become_ready(t: &mut Pid1) {
 fn never_ready(dir: &Path) -> Vec<Service> {
     vec![
         helper("stuck", &["--http", "21060", "--status", "503"])
-            .ready(Readiness::Http {
-                addr: lo(21060),
-                path: "/".into(),
-            })
+            .ready(Readiness::http(lo(21060), "/"))
             .critical(),
         helper("blocked", &["--report", &path(dir, "blocked")]).needs(&["stuck"]),
         helper("other", &[]),
@@ -1315,10 +1310,7 @@ fn check_socket_clients(t: &mut Pid1) {
 fn startup(dir: &Path) -> Vec<Service> {
     vec![
         helper("slow", &["--http", "21150", "--ready-after", "5000"])
-            .ready(Readiness::Http {
-                addr: lo(21150),
-                path: "/".into(),
-            })
+            .ready(Readiness::http(lo(21150), "/"))
             .critical(),
         helper("after", &["--report", &path(dir, "after")]).needs(&["slow"]),
     ]
@@ -1558,5 +1550,72 @@ fn check_not_pid1(t: &mut Pid1) {
         assert!(Instant::now() < deadline, "left behind: {left:?}");
         thread::sleep(ms(20));
     }
+    t.stop(secs(2));
+}
+
+fn stalls(dir: &Path) -> Vec<Service> {
+    vec![
+        helper(
+            "api",
+            &["--http", "21250", "--stall-file", &path(dir, "stall")],
+        )
+        .ready(Readiness::http(lo(21250), "/health"))
+        // Each miss takes 0.8 s: a check of up to 0.5 s, then 0.3 s apart.
+        .watch(Watch {
+            interval: ms(300),
+            timeout: ms(500),
+            misses: 3,
+        })
+        .critical(),
+        helper("other", &[]).critical(),
+    ]
+}
+
+fn check_stalls(t: &mut Pid1) {
+    t.wait_ready(&["api", "other"], secs(3));
+    let pid = t.service("api").pid;
+    let stall = t.file("stall");
+
+    // A pause shorter than three checks is no failure.
+    fs::write(&stall, "").unwrap();
+    thread::sleep(ms(700));
+    fs::remove_file(&stall).unwrap();
+    let until = Instant::now() + ms(2500);
+    while Instant::now() < until {
+        assert_eq!(
+            t.service("api").state,
+            State::Ready,
+            "a short pause flapped"
+        );
+        thread::sleep(ms(50));
+    }
+
+    // Alive and silent: failing, and left running.
+    fs::write(&stall, "").unwrap();
+    t.wait_until("the failure", secs(6), |s| {
+        s.services[0].state == State::Failing
+    });
+    let health = t.cli(&["health"]);
+    assert_eq!(health.code, 1);
+    assert!(
+        health.stderr.contains("api is failing"),
+        "{}",
+        health.stderr
+    );
+    let api = t.service("api");
+    assert_eq!((api.pid, api.restarts), (pid, 0));
+    assert_eq!(t.service("other").state, State::Ready);
+
+    // Answering again: ready, the same process.
+    fs::remove_file(&stall).unwrap();
+    t.wait_until("the recovery", secs(4), |s| {
+        s.services[0].state == State::Ready
+    });
+    assert_eq!(t.cli(&["health"]).code, 0);
+    let api = t.service("api");
+    assert_eq!((api.pid, api.restarts), (pid, 0));
+    let log = t.log();
+    assert!(log.contains("api: failed its check 3 times in a row; failing, and left running"));
+    assert!(log.contains("api: answers its check again; ready"));
     t.stop(secs(2));
 }

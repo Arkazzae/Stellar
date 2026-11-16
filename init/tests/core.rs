@@ -5,17 +5,17 @@ use std::collections::{BTreeSet, HashMap, HashSet};
 use std::net::{IpAddr, Ipv4Addr, SocketAddr};
 use std::time::{Duration, Instant};
 
-use stellarr_init::core::{Exit, Io, PROBE_INTERVAL, Phase, State, Supervisor};
-use stellarr_init::service::{Backoff, Readiness, Service, Signal, Table};
+use stellarr_init::core::{Exit, Io, PROBE_INTERVAL, PROBE_TIMEOUT, Phase, State, Supervisor};
+use stellarr_init::service::{Backoff, Readiness, Service, Signal, Table, Watch};
 
 const MS: Duration = Duration::from_millis(1);
 const SEC: Duration = Duration::from_secs(1);
 
 fn http(port: u16) -> Readiness {
-    Readiness::Http {
-        addr: SocketAddr::new(IpAddr::V4(Ipv4Addr::LOCALHOST), port),
-        path: "/health".into(),
-    }
+    Readiness::http(
+        SocketAddr::new(IpAddr::V4(Ipv4Addr::LOCALHOST), port),
+        "/health",
+    )
 }
 
 fn svc(name: &str) -> Service {
@@ -32,6 +32,8 @@ struct Fake {
     signals: Vec<(u32, Signal, bool)>,
     /// Probes asked for and not answered yet: service index and run.
     probes: Vec<(usize, u64)>,
+    /// The time each probe was given, in the order they were asked for.
+    timeouts: Vec<Duration>,
     logs: Vec<String>,
 }
 
@@ -50,8 +52,9 @@ impl Io for Fake {
         self.signals.push((pid, signal, group));
     }
 
-    fn probe(&mut self, index: usize, run: u64, _check: &Readiness) {
+    fn probe(&mut self, index: usize, run: u64, _check: &Readiness, timeout: Duration) {
         self.probes.push((index, run));
+        self.timeouts.push(timeout);
     }
 
     fn log(&mut self, line: String) {
@@ -349,6 +352,25 @@ fn a_bad_table_is_refused() {
             "no time to stop",
         ),
         (
+            vec![svc("a").ready(Readiness::Http {
+                addr: lo,
+                path: "/".into(),
+                headers: vec![("X-Evil".into(), "a\r\nHost: b".into())],
+            })],
+            "cannot go in a request",
+        ),
+        (
+            vec![svc("a").ready(Readiness::http(lo, "health"))],
+            "which is not a path",
+        ),
+        (
+            vec![svc("a").watch(Watch {
+                misses: 0,
+                ..Watch::DEFAULT
+            })],
+            "none of them can be zero",
+        ),
+        (
             vec![svc("a").backoff(Backoff {
                 initial: Duration::ZERO,
                 max: SEC,
@@ -413,6 +435,138 @@ fn a_service_with_nothing_to_ask_is_ready_once_it_has_run_long_enough() {
     sim.wait(MS);
     assert_eq!(sim.state("watch"), State::Ready);
     assert_eq!(sim.state("after"), State::Starting);
+    // Nothing to ask later either.
+    sim.ready("after");
+    sim.wait(Duration::from_secs(3600));
+    assert!(sim.io.probes.iter().all(|&(i, _)| i != sim.index("watch")));
+}
+
+#[test]
+fn a_ready_service_is_checked_again_at_every_interval() {
+    let interval = Watch::DEFAULT.interval;
+    let mut sim = Sim::new(vec![svc("a").critical()]);
+    sim.tick();
+    assert_eq!(sim.io.timeouts, [PROBE_TIMEOUT]);
+    sim.ready("a");
+    assert_eq!(sim.sup.next_deadline(), Some(sim.now + interval));
+    sim.wait(interval - MS);
+    assert!(sim.io.probes.is_empty());
+    sim.wait(MS);
+    assert_eq!(sim.io.probes.len(), 1);
+    assert_eq!(sim.io.timeouts.last(), Some(&Watch::DEFAULT.timeout));
+    // While a check runs, the next one is not due.
+    assert_eq!(sim.sup.next_deadline(), None);
+    sim.wait(Watch::DEFAULT.timeout);
+    sim.probe("a", true);
+    assert_eq!(sim.sup.next_deadline(), Some(sim.now + interval));
+    assert_eq!(sim.state("a"), State::Ready);
+}
+
+#[test]
+fn a_service_fails_after_misses_in_a_row_and_is_left_running() {
+    let watch = Watch {
+        interval: 10 * SEC,
+        timeout: 5 * SEC,
+        misses: 3,
+    };
+    let mut sim = Sim::new(vec![svc("a").critical().watch(watch).reload(Signal::Hup)]);
+    sim.tick();
+    sim.ready("a");
+    let pid = sim.pid("a");
+
+    // Two misses and a pass leave it ready, and the count starts over.
+    for ok in [false, false, true, false, false] {
+        sim.wait(watch.interval);
+        sim.probe("a", ok);
+        assert_eq!(sim.state("a"), State::Ready);
+        assert_eq!(sim.sup.health(), Ok(()));
+    }
+    let signals = sim.io.signals.len();
+    sim.wait(watch.interval);
+    sim.probe("a", false);
+    assert_eq!(sim.state("a"), State::Failing);
+    assert_eq!(sim.sup.health(), Err("a is failing".into()));
+    assert_eq!(
+        sim.io.logs.last().unwrap(),
+        "a: failed its check 3 times in a row; failing, and left running"
+    );
+    // Not restarted, nor signalled at all, and still checked.
+    assert_eq!(sim.io.signals.len(), signals);
+    assert_eq!(sim.pid("a"), pid);
+    sim.wait(watch.interval);
+    sim.probe("a", false);
+    assert_eq!(sim.state("a"), State::Failing);
+    // A reload is still taken: it may be what the service needs.
+    assert!(sim.sup.reload("a", &mut sim.io).is_ok());
+
+    sim.wait(watch.interval);
+    sim.probe("a", true);
+    assert_eq!(sim.state("a"), State::Ready);
+    assert_eq!(sim.sup.health(), Ok(()));
+    assert_eq!(
+        sim.io.logs.last().unwrap(),
+        "a: answers its check again; ready"
+    );
+    assert_eq!(sim.status("a").restarts, 0);
+}
+
+#[test]
+fn a_failing_service_holds_back_what_needs_it() {
+    let mut sim = Sim::new(vec![svc("db"), svc("api").needs(&["db"])]);
+    sim.tick();
+    sim.ready("db");
+    sim.ready("api");
+    for _ in 0..Watch::DEFAULT.misses {
+        sim.wait(Watch::DEFAULT.interval);
+        sim.probe("db", false);
+    }
+    assert_eq!(sim.state("db"), State::Failing);
+    // api keeps running, but its next start waits for db to pass again.
+    assert_eq!(sim.state("api"), State::Ready);
+    sim.exit("api", Exit::Code(1));
+    sim.wait(SEC);
+    assert_eq!(sim.state("api"), State::Waiting);
+    assert_eq!(
+        sim.sup.restart("api", sim.now, &mut sim.io),
+        Err("api has not started: it waits for db".into())
+    );
+    sim.wait(Watch::DEFAULT.interval);
+    sim.probe("db", true);
+    assert_eq!(sim.state("api"), State::Starting);
+}
+
+#[test]
+fn a_failing_service_restarts_on_request_and_starts_clean() {
+    let mut sim = Sim::new(vec![svc("a").critical()]);
+    sim.tick();
+    sim.ready("a");
+    for _ in 0..Watch::DEFAULT.misses {
+        sim.wait(Watch::DEFAULT.interval);
+        sim.probe("a", false);
+    }
+    assert_eq!(sim.state("a"), State::Failing);
+    sim.sup.restart("a", sim.now, &mut sim.io).unwrap();
+    sim.exit("a", Exit::Signal(libc::SIGTERM));
+    sim.ready("a");
+    assert_eq!(sim.state("a"), State::Ready);
+    // One miss of the new run does not make it fail.
+    sim.wait(Watch::DEFAULT.interval);
+    sim.probe("a", false);
+    assert_eq!(sim.state("a"), State::Ready);
+}
+
+#[test]
+fn no_check_is_asked_for_once_the_shutdown_has_begun() {
+    let mut sim = Sim::new(vec![svc("a").stop(Signal::Term, 50 * SEC), svc("b")]);
+    sim.tick();
+    sim.ready("a");
+    sim.ready("b");
+    sim.sup.shutdown("SIGTERM", sim.now, &mut sim.io);
+    let asked = sim.io.probes.len();
+    // b is stopping; a waits its turn, still ready, for a long time.
+    sim.wait(40 * SEC);
+    assert_eq!(sim.state("a"), State::Ready);
+    assert_eq!(sim.io.probes.len(), asked);
 }
 
 #[test]
@@ -906,7 +1060,7 @@ fn run_random(seed: u64) {
         for status in sim.sup.status() {
             let running = matches!(
                 status.state,
-                State::Starting | State::Ready | State::Stopping
+                State::Starting | State::Ready | State::Failing | State::Stopping
             );
             assert_eq!(running, status.pid.is_some(), "{context}: {status:?}");
             if let Some(pid) = status.pid {

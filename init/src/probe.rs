@@ -6,13 +6,10 @@ use std::hash::{BuildHasher, RandomState};
 use std::io::{self, Read, Write};
 use std::net::{SocketAddr, TcpStream, UdpSocket};
 use std::os::fd::AsRawFd;
-use std::time::{Duration, Instant};
+use std::time::Instant;
 
 use crate::service::Readiness;
 use crate::sys;
-
-/// How long one check may take before it counts as failed.
-pub const PROBE_TIMEOUT: Duration = Duration::from_secs(2);
 
 /// The most of an HTTP response read while looking for its status line.
 const MAX_RESPONSE: usize = 1024;
@@ -53,9 +50,15 @@ enum Step {
 }
 
 impl Probe {
-    /// Starts a check of run `run` of service `index`. An error means the
-    /// check failed at once, such as a connection refused on the spot.
-    pub fn start(index: usize, run: u64, check: &Readiness, now: Instant) -> io::Result<Probe> {
+    /// Starts a check of run `run` of service `index`, which fails when it
+    /// has no answer by `deadline`. An error means the check failed at once,
+    /// such as a connection refused on the spot.
+    pub fn start(
+        index: usize,
+        run: u64,
+        check: &Readiness,
+        deadline: Instant,
+    ) -> io::Result<Probe> {
         let step = match check {
             Readiness::Running(_) => {
                 return Err(io::Error::other("there is nothing to check"));
@@ -64,9 +67,13 @@ impl Probe {
                 stream: sys::connect_nonblocking(*addr)?,
                 request: None,
             },
-            Readiness::Http { addr, path } => Step::Connecting {
+            Readiness::Http {
+                addr,
+                path,
+                headers,
+            } => Step::Connecting {
                 stream: sys::connect_nonblocking(*addr)?,
-                request: Some(http_request(*addr, path)),
+                request: Some(http_request(*addr, path, headers)),
             },
             Readiness::Stun(addr) => {
                 let local = if addr.is_ipv4() {
@@ -85,7 +92,7 @@ impl Probe {
         Ok(Probe {
             index,
             run,
-            deadline: now + PROBE_TIMEOUT,
+            deadline,
             step,
         })
     }
@@ -147,11 +154,15 @@ fn next(step: Step, revents: i16) -> Result<Step, bool> {
     }
 }
 
-fn http_request(addr: SocketAddr, path: &str) -> Vec<u8> {
-    format!(
-        "GET {path} HTTP/1.1\r\nHost: {addr}\r\nUser-Agent: stellarr-init\r\nConnection: close\r\n\r\n"
-    )
-    .into_bytes()
+fn http_request(addr: SocketAddr, path: &str, headers: &[(String, String)]) -> Vec<u8> {
+    let mut request = format!(
+        "GET {path} HTTP/1.1\r\nHost: {addr}\r\nUser-Agent: stellarr-init\r\nConnection: close\r\n"
+    );
+    for (name, value) in headers {
+        request.push_str(&format!("{name}: {value}\r\n"));
+    }
+    request.push_str("\r\n");
+    request.into_bytes()
 }
 
 fn send(mut stream: TcpStream, request: Vec<u8>, mut sent: usize) -> Result<Step, bool> {
@@ -320,5 +331,16 @@ mod tests {
     #[test]
     fn transaction_ids_differ() {
         assert_ne!(transaction_id(), transaction_id());
+    }
+
+    #[test]
+    fn an_http_check_sends_its_headers() {
+        let addr: SocketAddr = "127.0.0.1:80".parse().unwrap();
+        let headers = vec![("X-Forwarded-Proto".to_string(), "https".to_string())];
+        assert_eq!(
+            String::from_utf8(http_request(addr, "/index.html", &headers)).unwrap(),
+            "GET /index.html HTTP/1.1\r\nHost: 127.0.0.1:80\r\nUser-Agent: stellarr-init\r\n\
+             Connection: close\r\nX-Forwarded-Proto: https\r\n\r\n"
+        );
     }
 }

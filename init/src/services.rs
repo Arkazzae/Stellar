@@ -23,24 +23,26 @@ const fn loopback(port: u16) -> SocketAddr {
 
 /// The services in start order. Only the API needs another service ready
 /// before it starts: it resets the media server on start.
+///
+/// Each check is asked again every ten seconds once the service is ready, so
+/// together they cover what the container's health check asked before this
+/// manager: the API with its database, nginx serving, the media server's
+/// control API, and a STUN answer from coturn.
 pub fn container() -> Vec<Service> {
     vec![
         // Carries every call. It parses packets from the Internet and needs
         // no file and no privilege, so it does not run as root. Its control
-        // API answers /v1/health without the bearer secret once the task
-        // that owns the media plane is running.
+        // API answers /v1/health without the bearer secret, from the task
+        // that runs the media plane, so a stuck plane fails the check.
         Service::new("media", &["/opt/stellarr/media/stellarr-media"])
             .user("nobody")
-            .ready(Readiness::Http {
-                addr: loopback(5200),
-                path: "/v1/health".into(),
-            })
+            .ready(Readiness::http(loopback(5200), "/v1/health"))
             .stop(Signal::Term, Duration::from_secs(5))
             .critical(),
-        // /health/ready answers once the database opens. The host's own
-        // shutdown timeout is HostOptions' default of 30 seconds in .NET 10,
-        // and Program.cs keeps it; the deadline here is longer so that the
-        // host always finishes first.
+        // /health/ready answers only once the API reaches its database. The
+        // host's own shutdown timeout is HostOptions' default of 30 seconds
+        // in .NET 10, and Program.cs keeps it; the deadline here is longer
+        // so that the host always finishes first.
         Service::new(
             "api",
             &[
@@ -50,10 +52,7 @@ pub fn container() -> Vec<Service> {
         )
         .dir("/opt/stellarr/api")
         .needs(&["media"])
-        .ready(Readiness::Http {
-            addr: loopback(5000),
-            path: "/health/ready".into(),
-        })
+        .ready(Readiness::http(loopback(5000), "/health/ready"))
         .stop(Signal::Term, Duration::from_secs(35))
         .critical(),
         // A binding request is the cheapest thing coturn answers, and it
@@ -65,11 +64,20 @@ pub fn container() -> Vec<Service> {
         .ready(Readiness::Stun(loopback(3478)))
         .stop(Signal::Term, Duration::from_secs(5))
         .critical(),
-        // SIGTERM is nginx's fast shutdown. SIGQUIT, the graceful one, waits
-        // for every open WebSocket and so would always run into the
-        // deadline. SIGHUP reloads the configuration and the certificate.
+        // A page nginx serves from the image, asked for over plain HTTP as a
+        // proxy in front would ask, since the check speaks no TLS: without
+        // the header the answer is a redirect to HTTPS. A worker that
+        // accepts nothing fails it, where a TCP connection alone would be
+        // taken by the kernel. SIGTERM is nginx's fast shutdown; SIGQUIT,
+        // the graceful one, waits for every open WebSocket and so would
+        // always run into the deadline. SIGHUP reloads the configuration and
+        // the certificate.
         Service::new("nginx", &["/usr/sbin/nginx", "-g", "daemon off;"])
-            .ready(Readiness::Tcp(loopback(80)))
+            .ready(Readiness::Http {
+                addr: loopback(80),
+                path: "/index.html".into(),
+                headers: vec![("X-Forwarded-Proto".into(), "https".into())],
+            })
             .stop(Signal::Term, Duration::from_secs(10))
             .reload(Signal::Hup)
             .critical(),
