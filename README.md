@@ -29,7 +29,7 @@ Full documentation lives in [`docs/`](docs/README.md):
 | --- | --- |
 | `web/` | The Next.js app: the web client and, in `web/src/cockpit/`, Cockpit |
 | `web/src/cockpit/` | [Stellarr Cockpit](web/src/cockpit/README.md), the instance operator panel (`/cockpit`), served by the same Next.js app |
-| `packages/` | Shared UI packages ([`@stellarr/ui`](packages/stellarr-ui/README.md)) used by the web client and Cockpit in one npm workspace |
+| `packages/` | Shared packages used by the web client and Cockpit in one npm workspace: the components ([`@stellarr/ui`](packages/stellarr-ui/README.md)) and the icon set ([`@stellarr/icons`](packages/stellarr-icons/README.md)) |
 | `server/` | ASP.NET Core API, SignalR hub, operator CLI, and integration tests |
 | `media/` | [Stellarr Media](media/README.md), the Rust WebRTC SFU (`stellarr-media`) |
 | `infra/` | Container entrypoint, Nginx, coturn, supervisord, and TLS scripts |

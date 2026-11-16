@@ -34,7 +34,7 @@ npm run dev -w stellarr-web
 
 It listens on `http://localhost:3000`, serves Cockpit at `http://localhost:3000/cockpit` with hot reload, and proxies `/api`, `/assets`, `/health` and `/hubs` to `STELLARR_API_ORIGIN` (`http://127.0.0.1:5000` by default). `docker-compose.dev.yml` runs the same server in its `web` service.
 
-The UI parts (buttons, fields, cards, tables, tabs, dialogs, sheets, menus, tooltips) and the icons come from the shared [`@stellarr/ui`](../../../packages/stellarr-ui/README.md) package; Cockpit composes its pages from them with Tailwind utilities. `index.css` imports the package's stylesheet and maps Cockpit's palette onto its `--ui-*` tokens.
+The UI parts (buttons, fields, cards, tables, tabs, dialogs, sheets, menus, tooltips) come from the shared [`@stellarr/ui`](../../../packages/stellarr-ui/README.md) package and the icons from [`@stellarr/icons`](../../../packages/stellarr-icons/README.md), which `components/icons/icon.tsx` sizes in rem; Cockpit composes its pages from them with Tailwind utilities. `index.css` imports the package's stylesheet and maps Cockpit's palette onto its `--ui-*` tokens.
 
 In the production container image the same Next.js server renders Cockpit, behind Nginx, on the same origin as the web client. All `/api/cockpit/*` endpoints require an authenticated session with the instance owner role.
 
