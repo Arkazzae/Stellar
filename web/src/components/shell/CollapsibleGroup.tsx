@@ -2,7 +2,7 @@
 
 import type { ReactNode } from "react";
 
-import { Icon } from "@stellarr/ui/icons";
+import { Icon } from "@stellarr/icons";
 
 export interface CollapsibleGroupProps {
   /** Id of the body; the caption button points at it with `aria-controls`. */

@@ -2,7 +2,7 @@
 
 import { useId } from "react";
 
-import { Icon } from "@stellarr/ui/icons";
+import { Icon } from "@stellarr/icons";
 import { Avatar } from "@/components/primitives/Avatar";
 import type { ActiveFriendVM, OpenProfile } from "@/components/view-models";
 import { PRESENCE_LABEL } from "@/ports";

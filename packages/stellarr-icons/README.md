@@ -10,27 +10,27 @@ reference. Every glyph is drawn here from Stellarr's own geometry; nothing is
 traced from or imported out of another icon set.
 
 `Icon` renders it everywhere in the web and desktop clients and in Cockpit;
-import it from `@stellarr/ui/icons`. A `variant` prop picks the variant for one
+import it from `@stellarr/icons`. A `variant` prop picks the variant for one
 icon and `IconVariantProvider` for everything inside it.
 
 ## Files
 
-- [`source/glyphs.ts`](source/glyphs.ts) draws every glyph. A plain path string
-  is the same in both variants; `brk(d, [x, y])` opens the contour at that
-  point in the broken variant.
-- [`source/geometry.ts`](source/geometry.ts) holds the shapes (`rect`,
-  `circle`, `arc`, `poly`), the transforms and the gaps, so corners, circles
-  and gaps keep one measure across the family.
-- [`paths.ts`](paths.ts) is generated: the static table the apps import. Do not
-  edit it by hand.
+- [`src/source/glyphs.ts`](src/source/glyphs.ts) draws every glyph. A plain
+  path string is the same in both variants; `brk(d, [x, y])` opens the
+  contour at that point in the broken variant.
+- [`src/source/geometry.ts`](src/source/geometry.ts) holds the shapes
+  (`rect`, `circle`, `arc`, `poly`), the transforms and the gaps, so corners,
+  circles and gaps keep one measure across the family.
+- [`src/paths.ts`](src/paths.ts) is generated: the static table the apps
+  import. Do not edit it by hand.
 
 After changing the source, build the table and the SVGs in
-[`branding/icons/`](../../../../branding/icons/) from the repository root:
+[`branding/icons/`](../../branding/icons/) from the repository root:
 
 ```sh
-npm run icons:build -w @stellarr/ui              # write
-npm run icons:build -w @stellarr/ui -- --check   # verify, as CI does
-npm run icons:build -w @stellarr/ui -- --audit   # also list strokes that crowd each other
+npm run icons:build -w @stellarr/icons              # write
+npm run icons:build -w @stellarr/icons -- --check   # verify, as CI does
+npm run icons:build -w @stellarr/icons -- --audit   # also list strokes that crowd each other
 ```
 
 ## Drawing rules

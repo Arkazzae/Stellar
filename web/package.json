@@ -20,6 +20,7 @@
   },
   "dependencies": {
     "@microsoft/signalr": "^11.0.0",
+    "@stellarr/icons": "*",
     "@stellarr/ui": "*",
     "next": "16.4.6",
     "react": "19.3.1",

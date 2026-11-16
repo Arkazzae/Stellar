@@ -1,7 +1,7 @@
 "use client";
 
 import { Button } from "@stellarr/ui";
-import { Icon, type IconName } from "@stellarr/ui/icons";
+import { Icon, type IconName } from "@stellarr/icons";
 import type { EnrollMode } from "@/components/auth/MfaEnrollStep";
 import { useConfirm } from "@/components/primitives/ConfirmDialog";
 import { formatShortDate } from "@/components/settings/panes/paneFormat";

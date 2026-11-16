@@ -14,7 +14,7 @@ import {
 import { createPortal } from "react-dom";
 
 import { useLayer } from "@stellarr/ui/behavior";
-import { Icon, type IconName } from "@stellarr/ui/icons";
+import { Icon, type IconName } from "@stellarr/icons";
 
 /** The least room the menu leaves to the edge of the viewport. */
 const MARGIN = 8;

@@ -3,7 +3,7 @@
 import { useId, useState, type ReactNode } from "react";
 
 import { Button } from "@stellarr/ui";
-import { Icon } from "@stellarr/ui/icons";
+import { Icon } from "@stellarr/icons";
 import type { FriendRequestVM, FriendsTab, FriendVM } from "@/components/view-models";
 import type { AddFriendResult } from "@/ports";
 import { useLanguage } from "@/state/LanguageProvider";

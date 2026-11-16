@@ -1,6 +1,6 @@
 "use client";
 
-import { Icon } from "@stellarr/ui/icons";
+import { Icon } from "@stellarr/icons";
 import type { Translator } from "@/i18n";
 
 import { CODE_LANGUAGES, type CodeLanguageId } from "./codeLanguages";

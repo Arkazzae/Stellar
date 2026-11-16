@@ -1,4 +1,4 @@
-import type { IconName } from "@stellarr/ui/icons";
+import type { IconName } from "@stellarr/icons";
 import type { SettingsShellGroup, SettingsShellItem } from "@/components/settings/SettingsShell";
 import type { Translator } from "@/i18n";
 import type { ChannelKind, OpusProfileId } from "@/ports";

@@ -3,7 +3,7 @@
 import { useEffect, useId, useRef, useState } from "react";
 
 import { useLayer } from "@stellarr/ui/behavior";
-import { Icon } from "@stellarr/ui/icons";
+import { Icon } from "@stellarr/icons";
 import {
   fetchGiphyPage,
   resolveGiphyApiKey,

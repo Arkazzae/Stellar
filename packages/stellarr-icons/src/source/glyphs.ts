@@ -7,7 +7,7 @@
  * A plain string is the same in both variants; `brk(d, gap)` names the point
  * where the broken variant opens the contour. `scripts/build-icons.mjs` turns
  * this file into the static table in `../paths.ts` and the SVGs in
- * `branding/icons/`. The rules are in `../README.md`.
+ * `branding/icons/`. The rules are in `../../README.md`.
  */
 import {
   arc,

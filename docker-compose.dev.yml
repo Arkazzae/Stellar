@@ -36,7 +36,7 @@ services:
   # installs from the root and runs next dev from web/, which holds both the
   # web client and Cockpit (web/src/cockpit/), so one dev server serves and
   # hot-reloads both apps. The workspace links the shared packages/stellarr-ui
-  # it depends on. It may rewrite the lockfile.
+  # and packages/stellarr-icons it depends on. It may rewrite the lockfile.
   web:
     image: node:24-bookworm-slim
     working_dir: /app/web

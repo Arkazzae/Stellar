@@ -1,4 +1,4 @@
-import { Icon, type IconName } from "@stellarr/ui/icons";
+import { Icon, type IconName } from "@stellarr/icons";
 
 export interface ErrorNoticeAction {
   label: string;

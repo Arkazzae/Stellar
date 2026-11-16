@@ -2,7 +2,7 @@
 
 import { useId, useState, type ReactNode } from "react";
 
-import { Icon } from "@stellarr/ui/icons";
+import { Icon } from "@stellarr/icons";
 import { Avatar } from "@/components/primitives/Avatar";
 import type { DmConversationVM } from "@/components/view-models";
 import { PRESENCE_LABEL } from "@/ports";

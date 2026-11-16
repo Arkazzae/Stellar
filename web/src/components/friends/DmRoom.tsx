@@ -2,7 +2,7 @@
 
 import { useMemo, type ReactNode } from "react";
 
-import { Icon } from "@stellarr/ui/icons";
+import { Icon } from "@stellarr/icons";
 import { PresenceDot } from "@/components/primitives/Avatar";
 import { Composer } from "@/components/room/Composer";
 import type { ComposerChip } from "@/components/room/ComposerChips";

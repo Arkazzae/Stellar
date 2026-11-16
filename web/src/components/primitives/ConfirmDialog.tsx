@@ -13,7 +13,7 @@ import {
 } from "react";
 
 import { Button } from "@stellarr/ui";
-import { Icon, type IconName } from "@stellarr/ui/icons";
+import { Icon, type IconName } from "@stellarr/icons";
 import { useLanguage } from "@/state/LanguageProvider";
 
 import { Modal } from "./Modal";

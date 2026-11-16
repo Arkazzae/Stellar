@@ -42,8 +42,9 @@ const nextConfig: NextConfig = {
   output: "standalone",
   outputFileTracingRoot: workspaceRoot,
   turbopack: { root: workspaceRoot },
-  // @stellarr/ui is consumed as TypeScript source, with no build step.
-  transpilePackages: ["@stellarr/ui"],
+  // @stellarr/icons and @stellarr/ui are consumed as TypeScript source, with
+  // no build step.
+  transpilePackages: ["@stellarr/icons", "@stellarr/ui"],
   allowedDevOrigins,
   experimental: {
     // Dev rewrites buffer uploads in the Next server. 128 MB is the transport
