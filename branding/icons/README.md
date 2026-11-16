@@ -14,18 +14,19 @@ File names match the app's icon names converted to kebab case:
 `micSlash` → `mic-slash.svg`, `noiseGtcrn` → `noise-gtcrn.svg`.
 
 The files are built from
-[`packages/stellarr-ui/src/icons/source/glyphs.ts`](../../packages/stellarr-ui/src/icons/source/glyphs.ts),
-which also builds the table the web client and Cockpit render. Edit the source
-and rebuild from the repository root:
+[`packages/stellarr-icons/src/source/glyphs.ts`](../../packages/stellarr-icons/src/source/glyphs.ts),
+which also builds the table of [`@stellarr/icons`](../../packages/stellarr-icons/README.md)
+that the web client and Cockpit render. Edit the source and rebuild from the
+repository root:
 
 ```sh
-npm run icons:build -w @stellarr/ui
+npm run icons:build -w @stellarr/icons
 ```
 
 Verify that the SVGs match the app:
 
 ```sh
-npm run icons:build -w @stellarr/ui -- --check
+npm run icons:build -w @stellarr/icons -- --check
 ```
 
 Use an accessible label on the containing control and hide decorative inline
