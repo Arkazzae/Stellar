@@ -33,10 +33,10 @@ name: stellarr-dev
 services:
   # web is an npm workspace of the repository root, which has the one
   # package-lock.json. The service mounts the whole repository at /app,
-  # installs from the root and runs next dev from web/. It installs the web
-  # client's workspace, which links Cockpit (cockpit/) and the shared
-  # packages/stellarr-ui it builds from, so one dev server serves and
-  # hot-reloads both apps. It may rewrite the lockfile.
+  # installs from the root and runs next dev from web/, which holds both the
+  # web client and Cockpit (web/src/cockpit/), so one dev server serves and
+  # hot-reloads both apps. The workspace links the shared packages/stellarr-ui
+  # it depends on. It may rewrite the lockfile.
   web:
     image: node:24-bookworm-slim
     working_dir: /app/web
@@ -67,12 +67,10 @@ services:
       # Named volumes keep these directories inside Docker. Without them the
       # bind mount shows the host's copies: node_modules built for another OS
       # and a .next written by a host-side build. Packages that npm cannot
-      # hoist to the root land in a workspace's own node_modules, so those
-      # of the web client and of Cockpit, which it builds, need volumes as
-      # well.
+      # hoist to the root land in the workspace's own node_modules, so that
+      # one needs a volume as well.
       - web_root_node_modules:/app/node_modules
       - web_node_modules:/app/web/node_modules
-      - web_cockpit_node_modules:/app/cockpit/node_modules
       - web_next:/app/web/.next
     depends_on:
       - api
@@ -188,7 +186,6 @@ services:
 volumes:
   web_root_node_modules:
   web_node_modules:
-  web_cockpit_node_modules:
   web_next:
   api_obj:
   api_bin:

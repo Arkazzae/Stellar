@@ -1,7 +1,7 @@
 import { fileURLToPath } from "node:url";
 
 import react from "@vitejs/plugin-react";
-import { defineConfig } from "vitest/config";
+import { configDefaults, defineConfig } from "vitest/config";
 
 export default defineConfig({
   plugins: [react()],
@@ -9,14 +9,36 @@ export default defineConfig({
     alias: { "@": fileURLToPath(new URL("./src", import.meta.url)) },
   },
   test: {
-    environment: "jsdom",
-    globals: true,
-    setupFiles: ["./vitest.setup.ts"],
-    include: ["src/**/*.test.{ts,tsx}"],
     // A guard against a hung test, not a performance budget. The default 5 s
     // is generous on an idle machine, but the deploy runs this suite right
     // after a containerised `dotnet test`, and under that load the typing
     // simulated by `userEvent` tests ran past it in unrelated files at once.
     testTimeout: 20_000,
+    // The web client and Cockpit are two apps with their own test setup: the
+    // web client's starts every test on a Polish page with an in-memory
+    // localStorage, while Cockpit picks its language itself and its tests use
+    // the browser's storage as it is. `vitest --project cockpit` runs one.
+    projects: [
+      {
+        extends: true,
+        test: {
+          name: "web",
+          environment: "jsdom",
+          globals: true,
+          setupFiles: ["./vitest.setup.ts"],
+          include: ["src/**/*.test.{ts,tsx}"],
+          exclude: [...configDefaults.exclude, "src/cockpit/**"],
+        },
+      },
+      {
+        extends: true,
+        test: {
+          name: "cockpit",
+          environment: "jsdom",
+          setupFiles: ["./src/cockpit/test/setup.ts"],
+          include: ["src/cockpit/**/*.test.{ts,tsx}"],
+        },
+      },
+    ],
   },
 });

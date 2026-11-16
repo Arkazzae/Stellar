@@ -56,5 +56,7 @@
 @import "../../styles/components/emoji.css";
 
 /* Tailwind scans these for class names; the ported component CSS lives outside
-   the JSX, so nothing here needs a safelist. */
+   the JSX, so nothing here needs a safelist. Cockpit's code is another app's,
+   with a stylesheet of its own. */
 @source "../../";
+@source not "../../cockpit";

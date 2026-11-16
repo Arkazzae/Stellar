@@ -21,7 +21,7 @@ updates:
     commit-message:
       prefix: build(deps)
 
-  # web, cockpit and packages/* are workspaces of the root package.json, which
+  # web and packages/* are workspaces of the root package.json, which
   # has the one lockfile, so a single entry updates all of them.
   - package-ecosystem: npm
     directory: /

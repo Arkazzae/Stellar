@@ -11,7 +11,11 @@ import { fileURLToPath } from "node:url";
 
 const root = fileURLToPath(new URL("../../../", import.meta.url));
 const packageDir = "packages/stellarr-ui";
-const apps = ["cockpit", "web"];
+/** Each app's stylesheets: Cockpit's code sits inside the web client's folder but is an app of its own. */
+const apps = [
+  { name: "cockpit", dir: "web/src/cockpit", skip: [] },
+  { name: "web", dir: "web/src", skip: ["cockpit"] },
+];
 const prefix = "--ui-";
 
 const read = (file) => readFileSync(join(root, file), "utf8");
@@ -22,10 +26,10 @@ function withoutComments(css) {
   return css.replace(/\/\*[\s\S]*?\*\//g, (comment) => comment.replace(/[^\n]/g, " "));
 }
 
-/** The CSS files under `dir`, as `{ file, css }` with the comments blanked. */
-function loadCss(dir) {
+/** The CSS files under `dir` but outside its `skip` folders, as `{ file, css }` with the comments blanked. */
+function loadCss(dir, skip = []) {
   return readdirSync(join(root, dir), { recursive: true })
-    .filter((name) => name.endsWith(".css"))
+    .filter((name) => name.endsWith(".css") && !skip.some((folder) => name.startsWith(`${folder}/`)))
     .sort()
     .map((name) => ({ file: join(dir, name), css: withoutComments(read(join(dir, name))) }));
 }
@@ -76,7 +80,7 @@ function packageTokens() {
 function checkApp(app, tokens) {
   const definitions = [];
   const reads = [];
-  for (const { file, css } of loadCss(`${app}/src`)) {
+  for (const { file, css } of loadCss(app.dir, app.skip)) {
     const where = (index) => `${file}:${lineOf(css, index)}`;
     for (const { name, index } of findDefinitions(css)) definitions.push({ name, at: where(index) });
     for (const { name, index } of findReads(css)) reads.push({ name, at: where(index) });
@@ -111,8 +115,8 @@ const defined = [];
 
 for (const app of apps) {
   const result = checkApp(app, tokens);
-  groups.push([app, result.problems]);
-  defined.push(`${app} defines ${result.defined}`);
+  groups.push([app.name, result.problems]);
+  defined.push(`${app.name} defines ${result.defined}`);
 }
 groups.push([
   `${packageDir}/README.md`,

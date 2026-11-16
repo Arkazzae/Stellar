@@ -51,7 +51,7 @@
  * an inset panel beside the sidebar, 8 px from the window's edges, with
  * Cockpit's radius and border. Navigation reads like Cockpit's: small grey
  * group names, and the open page on a rounded tint instead of in the accent.
- * The values are Cockpit's (cockpit/src/index.css and its app shell).
+ * The values are Cockpit's (web/src/cockpit/index.css and its app shell).
  */
 :root {
   /* Cockpit's sidebar is 17rem, 272 px at the default font size. */
