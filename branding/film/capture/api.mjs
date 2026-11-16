@@ -17,7 +17,8 @@ export async function installApi(page) {
 }
 
 export async function api(page, method, path, body, serverId) {
-  const r = await page.eval(`window.__api(${JSON.stringify(method)}, ${JSON.stringify(path)}, ${body === undefined ? "undefined" : JSON.stringify(body)}, ${JSON.stringify(serverId ?? null)})`);
+  // an undefined body arrives as undefined (an empty call argument), so a GET sends no body
+  const r = await page.call((method, path, body, serverId) => window.__api(method, path, body, serverId), method, path, body, serverId ?? null);
   if (r.status >= 400) throw new Error(`${method} ${path} -> ${r.status} ${JSON.stringify(r.json).slice(0, 400)}`);
   return r.json;
 }
