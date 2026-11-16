@@ -437,7 +437,6 @@ describe("Composer GIF browser", () => {
       <Composer
         {...baseProps}
         chips={[]}
-        giphyApiKey="test-key"
         giphyCustomerId="user-1"
         onGif={onGif}
       />,
@@ -452,19 +451,17 @@ describe("Composer GIF browser", () => {
     expect(screen.queryByRole("dialog", { name: "Przeglądarka GIF-ów" })).not.toBeInTheDocument();
   });
 
-  it("keeps the GIF control visible when the key comes from runtime config", () => {
-    render(
-      <Composer
-        {...baseProps}
-        chips={[]}
-        giphyApiKey=""
-        onGif={vi.fn().mockResolvedValue(undefined)}
-      />,
+  it("offers GIFs exactly when the room gives it a way to send one", () => {
+    // Whether they are on is the API's answer, which the room turns into
+    // `onGif`; the composer holds no key of its own to decide with.
+    const { unmount } = render(
+      <Composer {...baseProps} chips={[]} onGif={vi.fn().mockResolvedValue(undefined)} />,
     );
+    expect(screen.getByRole("button", { name: "Przeglądaj GIF-y" })).toBeInTheDocument();
+    unmount();
 
-    expect(
-      screen.getByRole("button", { name: "Przeglądaj GIF-y" }),
-    ).toBeInTheDocument();
+    render(<Composer {...baseProps} chips={[]} />);
+    expect(screen.queryByRole("button", { name: "Przeglądaj GIF-y" })).not.toBeInTheDocument();
   });
 });
 

@@ -36,7 +36,7 @@ describe("GifBrowser", () => {
     // The component deliberately carries a translation fallback, so this
     // focused interaction test needs no route-level provider.
     render(
-      <GifBrowser apiKey="test-key" customerId="customer" onSelect={vi.fn()} />,
+      <GifBrowser customerId="customer" onSelect={vi.fn()} />,
     );
 
     const open = screen.getByRole("button", { name: "Przeglądaj GIF-y" });
@@ -81,7 +81,7 @@ describe("GifBrowser", () => {
     });
 
     render(
-      <GifBrowser apiKey="test-key" customerId="customer" onSelect={onSelect} />,
+      <GifBrowser customerId="customer" onSelect={onSelect} />,
     );
 
     const trigger = screen.getByRole("button", { name: "Przeglądaj GIF-y" });

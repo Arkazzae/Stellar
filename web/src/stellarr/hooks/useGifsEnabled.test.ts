@@ -27,29 +27,32 @@ describe("useGifsEnabled", () => {
     const useGifsEnabled = await loadHook();
     fetchMock.mockResolvedValue(respond({ enabled: true, apiKey: "key" }));
 
-    const { result } = renderHook(() => useGifsEnabled(""));
+    const { result } = renderHook(() => useGifsEnabled());
 
     expect(result.current).toBe(false);
     await waitFor(() => expect(result.current).toBe(true));
   });
 
-  it("offers none when the server says they are off, even with a bundled key", async () => {
+  it("offers none when the server says they are off", async () => {
     const useGifsEnabled = await loadHook();
     fetchMock.mockResolvedValue(respond({ enabled: false, apiKey: "" }));
 
-    const { result } = renderHook(() => useGifsEnabled("bundled"));
+    const { result } = renderHook(() => useGifsEnabled());
 
     await waitFor(() => expect(fetchMock).toHaveBeenCalledOnce());
     await Promise.resolve();
     expect(result.current).toBe(false);
   });
 
-  it("falls back to a bundled key while the server cannot be asked", async () => {
+  it("offers none while the server cannot be asked", async () => {
     const useGifsEnabled = await loadHook();
     fetchMock.mockResolvedValue(respond({}, { ok: false, status: 503 }));
 
-    const { result } = renderHook(() => useGifsEnabled("bundled"));
+    const { result } = renderHook(() => useGifsEnabled());
 
-    await waitFor(() => expect(result.current).toBe(true));
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledOnce());
+    // Long enough for the refusal to settle; it must leave GIFs off.
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(result.current).toBe(false);
   });
 });

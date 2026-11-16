@@ -55,7 +55,6 @@ services:
       # or remote preview.
       STELLARR_ALLOWED_DEV_ORIGINS: ${STELLARR_ALLOWED_DEV_ORIGINS:-}
       STELLARR_LANGUAGE: ${STELLARR_LANGUAGE:-en}
-      NEXT_PUBLIC_GIPHY_API_KEY: ${GIPHY_API_KEY:-}
       NEXT_TELEMETRY_DISABLED: "1"
       # File events do not cross a bind mount on every host (Docker Desktop on
       # macOS and Windows), so Next polls for changes.
