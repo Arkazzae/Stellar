@@ -1,6 +1,6 @@
 "use client";
 
-import { ServerRail } from "@/components/shell/ServerRail";
+import { ServerRail } from "@/components/shell/rail/ServerRail";
 import { useMediaQuery } from "@/hooks/useMediaQuery";
 import { initials } from "@/lib/format/format";
 import {

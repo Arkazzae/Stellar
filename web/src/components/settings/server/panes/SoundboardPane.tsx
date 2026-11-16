@@ -12,10 +12,10 @@ import {
   SoundEditor,
   type SoundDraft,
   type SoundEdit,
-} from "@/components/settings/SoundEditor";
+} from "@/components/settings/sound/SoundEditor";
 import { SettingsSection } from "@/components/settings/SettingsSection";
-import { decodeWaveform, MAX_CLIP_SECONDS } from "@/components/settings/WaveformTrimmer";
-import { useSoundPreview, type SoundPreviewPlayback } from "@/components/settings/soundPreview";
+import { decodeWaveform, MAX_CLIP_SECONDS } from "@/components/settings/sound/WaveformTrimmer";
+import { useSoundPreview, type SoundPreviewPlayback } from "@/components/settings/sound/soundPreview";
 import type { NewSound, Sound, SoundPatch } from "@/ports";
 import { useLanguage } from "@/state/hooks";
 

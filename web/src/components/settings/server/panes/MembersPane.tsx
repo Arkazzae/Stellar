@@ -4,7 +4,7 @@ import type { CSSProperties } from "react";
 
 import { Icon } from "@stellarr/icons";
 import { Avatar } from "@/components/primitives/Avatar";
-import { formatShortDate } from "@/components/settings/panes/paneFormat";
+import { formatShortDate } from "@/components/settings/paneFormat";
 import { SettingsSection } from "@/components/settings/SettingsSection";
 import { useAsyncAction } from "@/hooks/useAsyncAction";
 import type { AdminMember, Role } from "@/ports";

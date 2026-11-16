@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef } from "react";
 
-import type { RailThreads } from "@/components/shell/railTypes";
+import type { RailThreads } from "@/components/shell/rail/railTypes";
 
 /**
  * Keeps keyboard focus on the thread button the visual selection names.

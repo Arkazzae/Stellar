@@ -2,11 +2,11 @@
 
 import { useMemo, useState } from "react";
 
-import { SectionCreate } from "@/components/settings/SectionCreate";
+import { SectionCreate } from "@/components/settings/channel/SectionCreate";
 import {
   SectionSettings,
   type SectionSettingsVM,
-} from "@/components/settings/SectionSettings";
+} from "@/components/settings/channel/SectionSettings";
 import { ApiError, describeError } from "@/lib/api/errors";
 import type { Role } from "@/ports";
 import { useDirectory, useLanguage, usePorts, useUi } from "@/state/hooks";

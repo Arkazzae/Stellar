@@ -8,12 +8,12 @@ import { Switch } from "@/components/primitives/Switch";
 import {
   PermissionOverrideEditor,
   type PermissionOverridePatch,
-} from "@/components/settings/PermissionOverrideEditor";
+} from "@/components/settings/channel/PermissionOverrideEditor";
 import { SettingsSection } from "@/components/settings/SettingsSection";
 import {
   channelLabel,
   type ChannelSettingsVM,
-} from "@/components/settings/channelSettingsModel";
+} from "@/components/settings/channel/channelSettingsModel";
 import { useAsyncAction } from "@/hooks/useAsyncAction";
 import type { PermissionOverride, Role } from "@/ports";
 import { useLanguage } from "@/state/hooks";

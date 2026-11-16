@@ -7,7 +7,7 @@ import { MediaViewer } from "@/components/room/attachments/MediaViewer";
 import { ThreadPanel } from "@/components/room/panels/ThreadPanel";
 import { Transcript } from "@/components/room/transcript/Transcript";
 import { Typing } from "@/components/room/transcript/Typing";
-import { RoomHeader } from "@/components/shell/RoomHeader";
+import { RoomHeader } from "@/components/room/RoomHeader";
 import {
   useAccount,
   useChat,

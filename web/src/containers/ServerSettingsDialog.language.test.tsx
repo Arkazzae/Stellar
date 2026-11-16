@@ -13,7 +13,7 @@ const harness = vi.hoisted(() => ({
   playback: {},
 }));
 
-vi.mock("@/components/settings/ServerSettings", () => ({
+vi.mock("@/components/settings/server/ServerSettings", () => ({
   ServerSettings: ({ soundboard }: { soundboard: { error: string | null } }) => (
     <output aria-label="soundboard error">{soundboard.error ?? "none"}</output>
   ),
