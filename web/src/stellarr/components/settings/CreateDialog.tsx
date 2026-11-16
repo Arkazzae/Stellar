@@ -1,5 +1,3 @@
-"use client";
-
 import { useId, type ReactNode } from "react";
 
 import { Button } from "@stellarr/ui";

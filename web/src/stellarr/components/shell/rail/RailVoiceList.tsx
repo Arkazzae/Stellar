@@ -1,5 +1,3 @@
-"use client";
-
 import type { MouseEventHandler, ReactNode } from "react";
 import { createPortal } from "react-dom";
 

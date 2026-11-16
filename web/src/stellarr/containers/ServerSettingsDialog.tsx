@@ -1,5 +1,3 @@
-"use client";
-
 import { useMemo, useSyncExternalStore } from "react";
 
 import { ServerSettings } from "@/components/settings/server/ServerSettings";

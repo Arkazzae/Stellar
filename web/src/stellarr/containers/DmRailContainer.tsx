@@ -1,5 +1,3 @@
-"use client";
-
 import { useMemo } from "react";
 
 import { DmRail } from "@/components/shell/rail/DmRail";

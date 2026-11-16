@@ -1,5 +1,3 @@
-"use client";
-
 import { ForgotPasswordScreen } from "@/components/auth/ForgotPasswordScreen";
 import { useLanguage, usePorts } from "@/state/hooks";
 

@@ -1,5 +1,3 @@
-"use client";
-
 import { Button } from "@stellarr/ui";
 import { SettingsSection } from "@/components/settings/SettingsSection";
 import { useAsyncAction } from "@/hooks/useAsyncAction";

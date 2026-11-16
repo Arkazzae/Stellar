@@ -1,5 +1,3 @@
-"use client";
-
 import { Fragment, useEffect, useRef, type ReactNode } from "react";
 
 import { Icon, type IconName } from "@stellarr/icons";

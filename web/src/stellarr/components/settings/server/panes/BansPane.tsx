@@ -1,5 +1,3 @@
-"use client";
-
 import { Avatar } from "@/components/primitives/Avatar";
 import { formatShortDate } from "@/components/settings/paneFormat";
 import { useAsyncAction } from "@/hooks/useAsyncAction";

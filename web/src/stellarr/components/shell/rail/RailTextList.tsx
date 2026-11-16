@@ -1,5 +1,3 @@
-"use client";
-
 import { ChannelButton } from "@/components/shell/rail/ChannelButton";
 import { ChannelThreads } from "@/components/shell/rail/ChannelThreads";
 import type {

@@ -1,5 +1,3 @@
-"use client";
-
 import { useState } from "react";
 
 import { Icon, type IconName } from "@stellarr/icons";

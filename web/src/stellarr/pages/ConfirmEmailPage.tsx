@@ -1,5 +1,3 @@
-"use client";
-
 import { Link, useSearchParams } from "@stellarr/router";
 import { useState } from "react";
 

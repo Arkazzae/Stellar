@@ -1,5 +1,3 @@
-"use client";
-
 import { useRef, type CSSProperties, type RefObject } from "react";
 import { createPortal } from "react-dom";
 

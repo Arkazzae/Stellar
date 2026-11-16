@@ -1,5 +1,3 @@
-"use client";
-
 import { translateForDocument } from "@/i18n/defaultLocale";
 import { memo, useCallback, useLayoutEffect, useMemo, useRef, type ReactNode } from "react";
 

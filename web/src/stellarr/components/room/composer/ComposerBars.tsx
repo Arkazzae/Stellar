@@ -1,5 +1,3 @@
-"use client";
-
 import { Icon } from "@stellarr/icons";
 import type { Translator } from "@/i18n";
 

@@ -1,5 +1,3 @@
-"use client";
-
 import { useId } from "react";
 
 import type { MessageKey } from "@/i18n";

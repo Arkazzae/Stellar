@@ -1,5 +1,3 @@
-"use client";
-
 import { useCallback, useMemo, useState } from "react";
 
 import { ChannelPanel } from "@/components/room/panels/ChannelPanel";

@@ -1,5 +1,3 @@
-"use client";
-
 import { documentLocale, translateForDocument } from "@/i18n/defaultLocale";
 import { useState, type MouseEvent } from "react";
 

@@ -1,5 +1,3 @@
-"use client";
-
 import { useEffect, useState } from "react";
 
 import { readGiphyConfig } from "@/lib/giphy/giphy";

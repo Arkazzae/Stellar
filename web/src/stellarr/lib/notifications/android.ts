@@ -1,5 +1,3 @@
-"use client";
-
 import { getAndroidCallBridge } from "@/lib/platform/android/callBridge";
 
 const CALL_ACTION_EVENT = "stellarr:android-call-action";

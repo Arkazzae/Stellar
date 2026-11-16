@@ -1,5 +1,3 @@
-"use client";
-
 import { ConfirmProvider } from "@/components/primitives/ConfirmDialog";
 import { AppShell } from "@/components/shell/AppShell";
 import { AccountProvider } from "@/state/AccountProvider";

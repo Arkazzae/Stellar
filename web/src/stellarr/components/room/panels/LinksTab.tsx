@@ -1,5 +1,3 @@
-"use client";
-
 import { Icon } from "@stellarr/icons";
 import { formatFull } from "@/lib/format/format";
 import { useLanguage } from "@/state/hooks";

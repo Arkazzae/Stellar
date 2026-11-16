@@ -1,5 +1,3 @@
-"use client";
-
 import { useRef, type KeyboardEvent, type PointerEvent } from "react";
 
 import { useLanguage } from "@/state/hooks";

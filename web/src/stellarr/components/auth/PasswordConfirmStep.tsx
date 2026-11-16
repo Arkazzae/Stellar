@@ -1,5 +1,3 @@
-"use client";
-
 import { useId, useRef, useState, type FormEvent } from "react";
 
 import { AuthField } from "@/components/auth/AuthField";
