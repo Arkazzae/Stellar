@@ -55,7 +55,7 @@ Release notes are published at <https://github.com/Arkazzae/Stellarr/releases>.
    docker inspect --format '{{ index .Config.Labels "org.opencontainers.image.version" }}' stellarr
    ```
 
-   Confirm that `docker compose ps` reports `healthy` (which checks Nginx, the API and its database, the media server, and `coturn`) and `curl` returns `200`.
+   Confirm that `docker compose ps` reports `healthy`, which means that every service in the container answers: Nginx, the API and its database, the media server, and `coturn`, and that `curl` returns `200`. If it does not, `docker compose exec stellarr stellarr-init status` shows which service does not; see [Services in the container](platforms.md#services-in-the-container).
 
 ## Database schema
 

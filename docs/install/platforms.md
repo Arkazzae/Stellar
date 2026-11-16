@@ -15,6 +15,31 @@ The rest of this page is what any installation gives the container. Compose does
 - One persistent folder or volume is mounted at `/data/stellarr`. It holds the database, uploaded files, the data-protection keys, the generated secrets and the TLS certificates. Back it up whole, with the container stopped: the secrets stored in the database can be read only with the keys next to it. See [Upgrading](upgrading.md).
 - The container is given 75 seconds to stop. Its process manager stops the services one at a time, nginx first and the media server last, and kills whatever is left after 60 seconds; the API alone may take 35. It usually takes a second or two, but Docker's default of 10 seconds would cut a slow stop short. Compose sets `stop_grace_period: 75s`; with plain Docker, create the container with `--stop-timeout=75`, or stop it with `docker stop -t 75`.
 
+## Services in the container
+
+The container runs Nginx, the API, the media server, coturn and a certificate watcher. Its process manager, `stellarr-init`, runs as PID 1: it starts them in order, starts again any that exits, and keeps asking each one whether it answers. Docker's health check asks the manager in turn, so the container is `healthy` only while every service but the watcher is `ready`.
+
+```bash
+docker compose exec stellarr stellarr-init status          # each service: state, PID, restarts, uptime
+docker compose exec stellarr stellarr-init status --json   # the same, for scripts
+docker compose exec stellarr stellarr-init health          # exits 0 only while the container is healthy
+docker compose exec stellarr stellarr-init restart api     # stops a service and starts it again
+docker compose exec stellarr stellarr-init reload nginx    # reloads Nginx's configuration and certificate
+```
+
+The services are `media`, `api`, `turn`, `nginx` and `tls-maintenance`. Their states:
+
+| State | Meaning |
+| --- | --- |
+| `waiting` | Not started yet: the API waits for the media server to be ready. |
+| `starting` | Running, and not answering yet. |
+| `ready` | Running and answering. |
+| `failing` | Running, but it missed its last three checks, about 45 seconds of silence. The container is unhealthy until it answers again. It is not restarted for this, as a slow machine would only make a restart worse; restart it yourself if it stays stuck. |
+| `backoff` | It exited, and starts again after a pause that grows from 1 to 30 seconds with each quick exit. `status` shows when. |
+| `stopping`, `stopped` | On a restart or while the container stops. |
+
+Each line the manager writes itself starts with `stellarr-init:` in `docker compose logs`, one for every change of state.
+
 ## Address
 
 - `STELLARR_DOMAIN` is the name or IPv4 address people open Stellarr at, for example `chat.example.com`, or `192.168.1.10` on a home network. The self-signed certificate and TURN use it. When it is empty they use `localhost`, which only a browser on the same machine can reach.

@@ -52,6 +52,12 @@ The container is named after the template, so the [operator CLI](cli.md) runs as
 docker exec -it Stellarr stellarr doctor
 ```
 
+and the state of the services inside, as [Services in the container](platforms.md#services-in-the-container) describes, as:
+
+```bash
+docker exec -it Stellarr stellarr-init status
+```
+
 ## Updates
 
 The template follows `latest`. When the Docker page shows an update, **Apply update** pulls the image and restarts the container with the same settings. To stay on one release line, change **Repository** to a version tag such as `ghcr.io/arkazzae/stellarr:1.2`. Read [Upgrading](upgrading.md) before moving to a new major version.
