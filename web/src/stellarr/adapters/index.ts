@@ -111,7 +111,7 @@ export function createRuntime(options: RuntimeOptions = {}): Runtime {
       // ones: one request per join, however many peers the channel has.
       fetchRtc: async () => (await api.bootstrap()).rtc,
       envServers: iceServers,
-      isProduction: process.env.NODE_ENV === "production",
+      isProduction: import.meta.env.PROD,
     });
     // The contract fetched at sign-in is the fallback when that refresh fails.
     ice.seed(rtcConfig?.iceServers);

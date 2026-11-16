@@ -8,7 +8,6 @@ export default defineConfig({
   resolve: {
     alias: {
       "@": fileURLToPath(new URL("./src/stellarr", import.meta.url)),
-      "@cockpit": fileURLToPath(new URL("./src/cockpit", import.meta.url)),
     },
   },
   test: {
@@ -29,7 +28,8 @@ export default defineConfig({
           environment: "jsdom",
           globals: true,
           setupFiles: ["./vitest.setup.ts"],
-          include: ["src/**/*.test.{ts,tsx}"],
+          // documents.test.ts checks the two documents the build writes.
+          include: ["src/**/*.test.{ts,tsx}", "documents.test.ts"],
           exclude: [...configDefaults.exclude, "src/cockpit/**"],
         },
       },

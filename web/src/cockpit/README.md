@@ -1,6 +1,6 @@
 # Stellarr Cockpit
 
-Stellarr Cockpit is the instance operator panel, at `/cockpit` on the instance's own origin. Its code lives here, in `web/src/cockpit/`, beside the web client's; the same Next.js app (`web/`) renders both. It provides:
+Stellarr Cockpit is the instance operator panel, at `/cockpit` on the instance's own origin. Its code lives here, in `web/src/cockpit/`, beside the web client's; the same Vite build (`web/`) writes both as static files. It provides:
 
 - **Overview**: headline metrics with 7-day trends and week-over-week change, 30-day activity across six series, API uptime, the last hour of API and database availability, request and connection charts, and service health status (auto-refreshed every 30 s).
 - **Users**: account management, active sessions, and built-in roles.
@@ -18,11 +18,11 @@ Stellarr Cockpit is the instance operator panel, at `/cockpit` on the instance's
 
 Cockpit is an app of its own inside the web workspace, with no build or server of its own:
 
-- The routes are in [`web/src/app/(cockpit)/`](../app/(cockpit)/): a root layout of Cockpit's own, one page per area (`/cockpit`, `/cockpit/users`, `/cockpit/servers`, `/cockpit/runtime`, `/cockpit/logs`, `/cockpit/backups`, `/cockpit/integrations`, `/cockpit/settings`) and a catch-all that shows the panel's not-found page for any other address under `/cockpit`.
-- Each route imports its page from here (`@cockpit/pages/<name>`), and the layout imports `CockpitApp` (`app.tsx`) and the stylesheet (`index.css`). `next build` builds the web client and Cockpit together and `next dev` serves both.
-- The layout is separate from the web client's root layout in `web/src/app/(stellarr)/`, so the two apps share no stylesheet, language or providers. Going from one to the other is a full page load. Tailwind scans only this folder for Cockpit's stylesheet, and the web client's leaves it out.
+- Its document is [`web/cockpit/index.html`](../../cockpit/index.html), which loads `main.tsx`. `npm run build` builds it with the web client's into `web/dist/`, at `dist/cockpit/index.html`, and `npm run dev` serves both.
+- The addresses are in `routes.tsx`, on [`@stellarr/router`](../../../packages/stellarr-router/README.md): one page per area (`/cockpit`, `/cockpit/users`, `/cockpit/servers`, `/cockpit/runtime`, `/cockpit/logs`, `/cockpit/backups`, `/cockpit/integrations`, `/cockpit/settings`), each from `pages/`, and the panel's not-found page for any other address under `/cockpit`. Every address under `/cockpit` gets this document; the router shows the page.
+- `main.tsx` renders the router, `CockpitApp` (`app.tsx`) and the page, and imports the stylesheet (`index.css`). `CockpitApp` holds the session, the language and the gate around the page.
+- The document is separate from the web client's (`web/index.html`), so the two apps share no stylesheet, language or providers. Going from one to the other is a full page load: a link to `/` is not one of Cockpit's addresses, so the browser loads it. Tailwind scans only this folder for Cockpit's stylesheet, and the web client's leaves it out.
 - Code here imports its own modules by relative path and nothing of the web client's; a lint rule in `web/eslint.config.mjs` enforces that.
-- `CockpitApp` holds the session, the language and the gate around the routed page, and renders in the browser only: the language is kept in the browser (see below), so the server sends the document without the panel.
 
 Development uses the web client's dev server:
 
@@ -32,15 +32,15 @@ npm install
 npm run dev -w stellarr-web
 ```
 
-It listens on `http://localhost:3000`, serves Cockpit at `http://localhost:3000/cockpit` with hot reload, and proxies `/api`, `/assets`, `/health` and `/hubs` to `STELLARR_API_ORIGIN` (`http://127.0.0.1:5000` by default). `docker-compose.dev.yml` runs the same server in its `web` service.
+It listens on `http://localhost:3000`, serves Cockpit at `http://localhost:3000/cockpit` with hot reload, and proxies `/api`, `/assets`, `/health`, `/hubs` and `/.well-known/stellarr/client` to `STELLARR_API_ORIGIN` (`http://127.0.0.1:5000` by default). `docker-compose.dev.yml` runs the same server in its `web` service.
 
 The UI parts (buttons, fields, cards, tables, tabs, dialogs, sheets, menus, tooltips) come from the shared [`@stellarr/ui`](../../../packages/stellarr-ui/README.md) package and the icons from [`@stellarr/icons`](../../../packages/stellarr-icons/README.md), which `components/icons/icon.tsx` sizes in rem; Cockpit composes its pages from them with Tailwind utilities. `index.css` imports the package's stylesheet and maps Cockpit's palette onto its `--ui-*` tokens.
 
-In the production container image the same Next.js server renders Cockpit, behind Nginx, on the same origin as the web client. All `/api/cockpit/*` endpoints require an authenticated session with the instance owner role.
+In the production container image Nginx serves the built files, on the same origin as the web client. All `/api/cockpit/*` endpoints require an authenticated session with the instance owner role.
 
 ## Localization
 
-Cockpit supports English (`en`, default) and Polish (`pl`). The active locale is the one chosen under **Settings**, which this browser keeps in `localStorage` (`stellarr.cockpit.locale`), else `en`. It follows neither the browser's languages nor the web client's `stellarr_locale` cookie.
+Cockpit supports English (`en`, default) and Polish (`pl`). The active locale is the one chosen under **Settings**, which this browser keeps in `localStorage` (`stellarr.cockpit.locale`), else `en`. It follows neither the browser's languages nor the web client's language.
 
 Catalogs live in `i18n/en.ts` and `i18n/pl.ts` and define identical key sets. Components format messages via `t("some.key", { name: value })`.
 
@@ -54,4 +54,4 @@ npm run test:web
 npm run build:web
 ```
 
-Each covers both apps. The tests run as two Vitest projects, `web` and `cockpit` (`web/vitest.config.ts`), each with its own setup; `npx vitest run --project cockpit` in `web/` runs Cockpit's alone. The tests of components that read the address or link within the panel mock `next/navigation` and `next/link` with the stand-in router in `test/navigation.tsx`.
+Each covers both apps. The tests run as two Vitest projects, `web` and `cockpit` (`web/vitest.config.ts`), each with its own setup; `npx vitest run --project cockpit` in `web/` runs Cockpit's alone. The tests of components that read the address or link within the panel render them under `Router` with a memory history from `@stellarr/router/testing`, which lists where each link went.

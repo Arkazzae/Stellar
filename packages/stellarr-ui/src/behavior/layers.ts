@@ -54,8 +54,8 @@ function topmost(handles: keyof Layer): Layer | undefined {
 function onKeyDown(event: KeyboardEvent) {
   // A control that handled the key itself says so by preventing its default.
   // Stopping the event is not enough to go by: in an app whose React root is
-  // the document itself, as with Next.js, React's handlers run on this very
-  // node, and a stopped event still reaches the listeners beside them.
+  // the document itself, React's handlers run on this very node, and a
+  // stopped event still reaches the listeners beside them.
   if (event.defaultPrevented) return;
   if (event.key === "Escape") {
     // A copy, as a layer that takes the key may leave the stack at once.

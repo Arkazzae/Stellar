@@ -46,8 +46,8 @@ import { UserSettingsContainer } from "./UserSettingsContainer";
  * item, a toolbar button, a settings row), so it goes outside all of them: its
  * dialog has to outlive whatever raised it.
  *
- * Session and Ports sit above all of it, in the root layout, because /login
- * needs them and none of this.
+ * Session and Ports sit above all of it, in `StellarrApp` (`app.tsx`),
+ * because /login needs them and none of this.
  */
 export function AppContainer() {
   return (

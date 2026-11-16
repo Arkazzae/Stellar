@@ -96,7 +96,7 @@ export interface VoiceIceProvider {
 export interface RuntimeIceProviderOptions {
   /** Reads `rtc` from `/api/bootstrap`. */
   fetchRtc: () => Promise<RtcConfig | undefined>;
-  /** `NEXT_PUBLIC_ICE_SERVERS`, a development-only fallback. */
+  /** `VITE_ICE_SERVERS`, a development-only fallback. */
   envServers: () => RTCIceServer[];
   isProduction: boolean;
   now?: () => number;

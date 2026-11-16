@@ -13,8 +13,10 @@
     display: none !important;
   }
 
+  /* #root is the element the app renders into (web/index.html). */
   html,
-  body {
+  body,
+  #root {
     height: 100%;
   }
 
