@@ -1,11 +1,13 @@
+// The stylesheet first, so the CSS modules of the components come after it,
+// as the pages' styles did after the layout's.
+import "./styles/globals.css";
+
 import { Outlet, Router } from "@stellarr/router";
 import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
 
 import { StellarrApp } from "./app";
 import { routes } from "./routes";
-
-import "./styles/globals.css";
 
 /**
  * The web client's entry, which `web/index.html` loads. By the time it runs,
