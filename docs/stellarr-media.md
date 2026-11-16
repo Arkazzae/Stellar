@@ -23,7 +23,8 @@ See [Voice and RTC protocol](./rtc-protocol.md) for bootstrap configuration, `Vo
 | Connections per client | Single `RTCPeerConnection` (`bundlePolicy: "max-bundle"`) |
 | Offer direction | Browser offers published tracks (`sendonly`); `stellarr-media` offers forwarded tracks (`sendonly` to the receiver) |
 | Glare resolution | Browser is the impolite peer; `stellarr-media` is the polite peer |
-| Track attribution | Server-issued directory mapping SDP `mid` → `{ userId, kind, streamId }` |
+| Track attribution | Server-issued directory mapping SDP `mid` → `{ userId, kind, streamId, heldBack }` |
+| Downlink adaptation | Per receiver: its downlink is estimated from its own transport-wide feedback; every sound it asks for is sent, its pictures in its order of importance while they fit, and the rest held back for it alone |
 | Direct calls | Routed through the media server just like server voice channels |
 
 ## Topology
@@ -106,8 +107,10 @@ Clients call `OpenMediaSession` after every `JoinVoice` (initial join, moderator
 Each `Track` entry in the directory has the shape:
 
 ```json
-{ "mid": "fAk", "userId": "uuid", "kind": "audio | video", "streamId": "…" }
+{ "mid": "fAk", "userId": "uuid", "kind": "audio | video", "streamId": "…", "heldBack": false }
 ```
+
+`heldBack` is `true` for a picture this receiver asks for that its downlink has no room for now: nothing of it is sent until it is `false` again (see [Downlink adaptation](#downlink-adaptation)). It is always present, and `false` for every sound and for every section the receiver does not ask for. A change of it sends a new `tracks` directory.
 
 - **Validation**: `AppHub` verifies `protocolVersion == 1`, `kind` (`offer`, `answer`, `candidate`, or `subscriptions` from browser), seat ownership, `sessionId` ownership, payload UTF-8 byte length ≤ 128 KiB, and payload schema. Invalid signals throw `HubException("Invalid media signal.")` (or `HubException("Invalid ChannelId.")`).
 - **Control API forwarding**:
@@ -120,17 +123,17 @@ Each `Track` entry in the directory has the shape:
 
 ### Receive subscriptions
 
-`subscriptions` replaces the complete list of the receiving session's SDP mids that `stellarr-media` forwards. A new session is forwarded nothing until it asks, and an empty `mids` array stops everything. A section left out stays negotiated and named in the directory but carries no packets, and so does every section negotiated after the list was sent until a later list names it. A mid the session does not have, or does not have yet, is kept and harmless: it never reaches another session or room, and a list may name a section before the answer that negotiates it.
+`subscriptions` replaces the complete list of the receiving session's SDP mids that `stellarr-media` forwards. A new session is forwarded nothing until it asks, and an empty `mids` array stops everything. The order of the list is the receiver's order of importance, most important first: when its downlink cannot carry every picture it asks for, the order decides which are sent (see [Downlink adaptation](#downlink-adaptation)). The same mids in another order are a new list. A section left out stays negotiated and named in the directory but carries no packets, and so does every section negotiated after the list was sent until a later list names it. A mid the session does not have, or does not have yet, is kept and harmless: it never reaches another session or room, and a list may name a section before the answer that negotiates it.
 
 - A list holds at most 4,096 unique mids, each 1–16 printable ASCII characters without spaces. An invalid list is rejected whole and the previous one stays in force.
 - Subscriptions change forwarding only: the directory, the transceivers and the SDP mids stay as they are, and a new list never renegotiates SDP.
 - A section that is asked for again continues its RTP sequence numbers where it stopped, so the receiver never asks for what was not meant for it, while losses during forwarding stay repairable. Timestamps keep the publisher's clock. Video that resumes asks the publisher for a keyframe through the rate-limited PLI gate, and a receiver's keyframe requests for a section it does not ask for are ignored.
-- The browser asks for every microphone, for the cameras, and for the video and sound of the one screen share it is watching. It sends a new list whenever that changes: with every directory, when the occupancy or a publisher's `state` settles whose track is what, and when watching starts or stops. What is not asked for stops playing locally at once.
+- The browser asks for every microphone first, then for the video and then the sound of the one screen share it is watching, then for the cameras, each group in the order of the directory. It sends a new list whenever that changes: with every directory, when the occupancy or a publisher's `state` settles whose track is what, and when watching starts or stops. What is not asked for stops playing locally at once.
 - The list for the sections an offer brings goes before the answer to that offer, without waiting for the offer to be applied, so the sections are asked for by the time they go live. The answer follows it in the same ordered outbox, which can hold the answer back by up to one `SendMediaSignal` round trip. Lists go at most every 250 ms, so the others' `state` frames cannot use up the hub's allowance for media signals, and the last one sent is always the latest wanted.
 - Until a publisher's `state` names a stream, a stream with video counts as a share (see [Track directory](#track-directory)), so a camera and the voice in its stream are asked for once that `state` arrives. A newcomer has the others' `state` before the media server's first offer: the hub sends it the occupancy before anyone can answer it, and the offer comes only after a full negotiation. What a `state` announced stands until the publisher's next one, whichever media session is replaced meanwhile, and the stream of an announced camera stays the voice after the camera stops.
 - `VoiceClient.setReceivePreferences({ screen, cameras })` selects one remote `{ userId, streamId }` or no screen, and whether cameras are received. Microphones are always asked for. The UI keeps cameras on and selects the screen through its watch controls.
 
-This is selective forwarding, not automatic bitrate or video-layer adaptation. A track that is asked for still carries the publisher's encoded quality.
+Subscriptions choose whole tracks, and the media server then holds back for the receiver whatever pictures of them its downlink cannot carry. A track that is sent carries the publisher's encoded quality: no layer or bitrate is chosen per receiver.
 
 ### Negotiation rules
 
@@ -289,7 +292,19 @@ Returns immediately when events with `seq > after` exist, or waits up to `waitMs
           "published": 2,
           "forwarded": 6,
           "ingress": { "packets": 0, "bytes": 0 },
-          "egress": { "packets": 0, "bytes": 0 }
+          "egress": { "packets": 0, "bytes": 0 },
+          "downlink": {
+            "estimateBps": 431000,
+            "rawEstimateBps": 512000,
+            "smoothedEstimateBps": 431000,
+            "measured": true,
+            "forwardedBps": 281000,
+            "desiredBps": 531000,
+            "paddingBps": 0,
+            "heldBack": [{ "mid": "pmQ", "userId": "uuid", "costBps": 250000 }],
+            "holds": 2,
+            "resumes": 1
+          }
         }
       ]
     }
@@ -298,6 +313,8 @@ Returns immediately when events with `seq > after` exist, or waits up to `waitMs
 ```
 
 `ingress` and `egress` count media payload packets and bytes (excluding RTP headers, RTCP, and RTX retransmissions).
+
+`downlink` is the session's [downlink adaptation](#downlink-adaptation), in bits per second of RTP payload: `estimateBps` is the estimate the allocation uses (the lower of str0m's latest raw estimate and its three-second smoothing, or the initial guess while `measured` is `false`), `forwardedBps` what is sent, `desiredBps` what the estimator probes toward, `paddingBps` the rate padding keeps up toward the first held picture while a trial runs, `heldBack` every picture held back with its publisher and its current cost, and `holds` and `resumes` how often a picture was held back and came back since the session began. Every change of what is held back is also logged at `debug` with the estimate, what is forwarded and what is desired.
 
 ## Media plane behavior
 
@@ -314,7 +331,21 @@ Returns immediately when events with `seq > after` exist, or waits up to `waitMs
 - Per connection, `stellarr-media` rewrites SSRC, payload type, RTP header extension IDs, and sequence numbers/timestamps while leaving media payloads untouched after SRTP decryption and re-encryption.
 - Supported codecs: Opus, VP9, VP8, H.264, AV1. Publisher codec order is preserved, and publisher Opus `a=fmtp` parameters are echoed back so the browser configures its encoder according to the selected profile.
 - Audio level RTP header extensions are forwarded.
-- NACK, RTX, transport-wide congestion control (TWCC), and keyframe requests (PLI/FIR, rate-limited to once per second per track) are handled per leg.
+- NACK, RTX, transport-wide congestion control (TWCC), and keyframe requests (PLI/FIR, rate-limited to once per second per track) are handled per leg. The TWCC feedback of each receiving browser drives the media server's estimate of that receiver's downlink.
+
+### Downlink adaptation
+
+Each receiving session estimates its own downlink and keeps what it sends inside it, so a receiver on a slow link keeps its voices while the pictures that do not fit are held back for it alone. Rates are bits per second of RTP payload, as str0m's estimate is; a link of a given rate on the wire carries less, all the less for small packets such as voices.
+
+- **Estimate.** Every connection runs str0m's send-side estimator, a port of WebRTC's GoogCC, started at 1 Mbit/s and fed by the browser's transport-wide feedback. The allocation takes the lower of the latest raw estimate, read from the connection's statistics every 200 ms, and str0m's three-second smoothing of it, so a drop counts at once and a rise only once it has lasted. Until feedback has moved the estimate off its start and it has settled for a second, nothing is held back and video is not paced: a receiver is sent everything it asks for as it comes, as before there was an estimator. The initial value is a guess, and str0m's first probes report within that second; pacing against it would only hold a first keyframe back (at 1 Mbit/s, a quarter of a second for a 1.5 Mbit/s camera). Then what was sent so far is judged as a picture with room is, below, but against the lower of the two estimates, which the initial guess does not inflate: a link with no room for it sheds it within 2 s, or within 300 ms on a deep drop, while on a good link the estimate has those 2 s to grow past what is being sent.
+- **Cost.** Every published track measures its own payload bitrate as it arrives, over the last two seconds (or, for a new track, over at least half a second), which is what forwarding it costs any receiver.
+- **Allocation.** Every sound a receiver asks for is sent, whatever the estimate. Its pictures follow in the order of its list: each that fits in what the sounds and the pictures before it leave is taken, and one that does not is held back. A held picture still within reach of the estimate (needing at most 1.5 times it) keeps the pictures after it from being taken, so a later one never takes the room an earlier one waits for; one far out of reach does not, so a receiver that cannot have the share it watches still gets cameras that fit. The allocation runs again whenever the estimate, the list or the directory changes, and every 500 ms while the receiver asks for a picture, when a track's cost has moved by a fifth (and at least 8 kbit/s) or a clock below is running.
+- **Holding back.** A held picture is paused exactly as a section left out of the list: its sequence numbers carry on where they stopped, its return asks the publisher for a keyframe through the one-second rate limit, and the receiver's own keyframe requests for it are ignored. Its directory entry says `heldBack: true`. Holding back is for that receiver alone; the publisher and every other receiver are untouched.
+- **Hysteresis.** A sent picture is held back once what it needs has been above 1.1 times the smoothed estimate for 2 s (str0m paces at 1.1 times the estimate, and the smoothed estimate rides out the dip every congestion signal brings), or at once, after 300 ms, when the raw estimate falls below two thirds of what it needs. It comes back once what it needs has been within 85% of the estimate for 4 s; a picture held back again within 30 s of coming back waits twice as long each time, up to 64 s, and one that stays 30 s is steady again. A picture newly asked for is taken if it fits at once. One held back that never had room has no evidence the link carries it, and str0m's estimate can stand well above the link while little is sent: it comes back only during a padding trial toward it, once the estimate has held what it needs for 1 s while the padding sends that much. On a steady link nothing changes.
+- **Probing.** The estimator is asked to look for what is sent plus the first held picture, and no more: str0m probes toward that (at most twice it), and with nothing held back toward what is sent. A picture within reach is also given padding: for six-second trials, padding keeps the rate it needs up, capped by the estimate and suppressed by str0m while the link shows congestion, with rests of 15, 30 and then 60 s after trials that do not bring it back; a rest ends early once the estimate has risen by a quarter since the trial before it. During a trial and for 5 s after, only the raw estimate's deep drop holds a sent picture back, never a dip of the media server's own making. A picture out of reach gets no padding, since a link that cannot carry it is not filled in front of the voices. Whenever a picture is held and no trial runs, and the estimate has stood still for 5 s, the estimator is started again at its current value, which ends str0m's loss-limited state (in which it never probes, and in which a lossy start can leave it on a link that has room) and sends its two first probes. Such looks then wait 10 s, twice as long each time, up to two minutes.
+- **When not even the sounds fit.** They are all still sent, since there is nothing left to hold back, and the link drops what it cannot carry of them. Nothing else is added: no picture and no padding toward one, only str0m's own floor of 50 kbit/s of padding while less than that is sent.
+- **Pacing.** Once the estimate counts, str0m paces video at 1.1 times it; audio is never paced and goes ahead of any video waiting, so voices gain no delay from it.
+- **Bounds.** Everything a receiver sends (its list, its feedback) affects only what is sent to it. Directory updates for what is held back come at most as often as its lists, which the hub limits, or as the hysteresis allows, and the keyframe requests that returns bring go through the per-track rate limit. A withdrawn section's send stream is removed once the browser knows it is inactive, so no padding ever goes out on it.
 
 ### Resource limits
 
@@ -329,14 +360,17 @@ Returns immediately when events with `seq > after` exist, or waits up to `waitMs
 | Disconnected timeout | 30 s | Closed with `transport-timeout` |
 | Consecutive unanswered server offers | 3 | Closed with `error` |
 | Mids in one receive subscription list | 4,096 | `422 invalid-request`; the previous list stays in force |
+| Return of a held-back picture | after 4 s of headroom, doubling to 64 s after each return that lasts under 30 s; one that never had room, after 1 s of padding toward it that the estimate holds | The picture stays held back meanwhile |
+| Padding toward a held-back picture | 6 s trials, rests of 15, 30, then 60 s | Only while the picture needs at most 1.5 times the estimate |
+| Fresh looks of a still estimate | after 5 s, then every 10 s doubling to 2 min | Only while a picture is held back and no padding trial runs |
 
 ### Current limitations
 
 `stellarr-media` does not currently implement:
 
-- **Downlink adaptation for slow receivers**: Every receiver gets the publisher's full stream of each track it asks for, without VP9 temporal-layer dropping or simulcast.
+- **Layer and simulcast selection per receiver**: A receiver is sent a picture whole, at the publisher's quality, or not at all; nothing drops VP9 temporal layers or picks a simulcast encoding for a slow downlink, and sounds are always sent at their publisher's rate.
 - **SDP m-line recycling**: Inactive m-lines are not reused within a session. A long session with many track toggles eventually reaches the 128 KiB SDP limit and automatically reconnects with a fresh session.
-- **Automatic selection of video quality or active-speaker filtering**: Receive subscriptions select whole tracks, chosen by the browser; nothing picks a quality for a receiver or follows who is speaking.
+- **Active-speaker filtering**: Receive subscriptions and the downlink allocation select whole tracks in the order the browser gives; nothing follows who is speaking.
 - **Session persistence across hub reconnects or ICE restarts**: The client opens a new session instead.
 - **IPv6 or direct ICE-TCP**: The media socket uses IPv4 UDP only; clients restricted to TCP connect through `coturn`.
 
