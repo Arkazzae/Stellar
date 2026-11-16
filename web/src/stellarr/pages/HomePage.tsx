@@ -5,6 +5,8 @@ import { ErrorNotice, type ErrorNoticeProps } from "@/components/primitives/Erro
 import { AppSkeleton } from "@/components/shell/AppSkeleton";
 import { useLanguage, useSession } from "@/state/hooks";
 
+import { loadApp } from "./loadApp";
+
 /** Why the page cannot show the app, and the way to recover. */
 function LoadFailed({ title, message, actions }: Pick<ErrorNoticeProps, "title" | "message" | "actions">) {
   return (
@@ -32,7 +34,6 @@ function AppUnavailable() {
   );
 }
 
-const loadApp = () => import("@/containers/AppContainer");
 const AppContainer = lazy(() =>
   loadApp().then(
     ({ AppContainer }) => ({ default: AppContainer }),
@@ -49,9 +50,9 @@ const AppContainer = lazy(() =>
  * reason and a way to recover, never a blank page.
  *
  * The signed-in app is the bulk of the client's code, so it loads on its own.
- * It starts loading as soon as this page opens, alongside the session check,
- * and the skeleton stands in until both are done; the sign-in pages never
- * wait for it.
+ * The pages that lead here fetch it while idle, and at the latest it starts
+ * when this page opens, alongside the session check. The skeleton stands in
+ * until both are done; the sign-in pages never wait for it.
  */
 export default function HomePage() {
   const router = useRouter();

@@ -6,6 +6,8 @@ import { AppSkeleton } from "@/components/shell/AppSkeleton";
 import { rememberPendingInvite } from "@/lib/auth/invites";
 import { useLanguage, usePorts, useSession } from "@/state/hooks";
 
+import { usePrefetchApp } from "./loadApp";
+
 /**
  * Joins the server an invite link names. The code is the last segment of the
  * address, decoded, as the way back from sign-in encodes it; an address whose
@@ -19,6 +21,8 @@ export default function InvitePage() {
   const { phase, reload } = useSession();
   const { t } = useLanguage();
   const [failed, setFailed] = useState(false);
+  // Signed in, an invite ends in the app; signed out, at registration.
+  usePrefetchApp(phase !== "loading");
 
   useEffect(() => {
     if (code === null) return;
