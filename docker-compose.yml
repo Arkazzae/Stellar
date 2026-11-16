@@ -1,5 +1,5 @@
-# Production stack: one container runs Nginx, the API, the web client, coturn
-# and the Stellarr Media server.
+# Production stack: one container runs Nginx, the API, coturn and the Stellarr
+# Media server. Nginx also serves the web client and Cockpit.
 #
 #   docker compose up -d           pulls the published image
 #   docker compose up -d --build   builds the image from this checkout
@@ -17,8 +17,6 @@ services:
     build:
       context: .
       dockerfile: Dockerfile
-      args:
-        NEXT_PUBLIC_GIPHY_API_KEY: ${GIPHY_API_KEY:-}
     container_name: stellarr
     restart: unless-stopped
     mem_limit: ${STELLARR_CONTAINER_MEMORY_LIMIT:-4g}

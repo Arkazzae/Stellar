@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 # Container entrypoint: prepares the data volume, exports the settings the
 # services read, renders the coturn and nginx configuration from their
-# templates, and hands over to supervisord.
+# templates, writes the web client's instance language file, and hands over to
+# supervisord.
 set -Eeuo pipefail
 # Without this a failing `openssl rand` inside $(...) would yield an empty secret.
 shopt -s inherit_errexit
@@ -87,6 +88,25 @@ public_url_for() {
   else
     printf 'https://%s:%s' "$host" "$((10#$port))"
   fi
+}
+
+# Writes the instance's default language from STELLARR_LANGUAGE to the file
+# nginx serves as /stellarr-instance.js, which the web client's document runs
+# before its first paint. One image serves every instance, so the language
+# cannot be part of the build. The value lands in a script, so only a language
+# the client ships is written; anything else is written as null, and the
+# client falls back to English. The bytes are those of instanceLanguageSource
+# in web/src/stellarr/i18n/localeScript.ts, which web/documents.test.ts checks
+# against this function.
+write_instance_language() {
+  local file="$1" language="${STELLARR_LANGUAGE:-}" value=null
+  case "$language" in
+    en|pl) value="\"$language\"" ;;
+    '') ;;
+    *) echo "STELLARR_LANGUAGE=$language is not a language the web client ships (en, pl); it starts in English for anyone who has not chosen one." >&2 ;;
+  esac
+  mkdir -p "$(dirname "$file")"
+  printf 'window.stellarrInstanceLanguage=%s;\n' "$value" > "$file"
 }
 
 require_port PUBLIC_HTTPS_PORT "$public_https_port"
@@ -181,11 +201,6 @@ unset ASPNETCORE_HTTP_PORTS ASPNETCORE_HTTPS_PORTS
 export ASPNETCORE_URLS="http://127.0.0.1:5000"
 export ASPNETCORE_ENVIRONMENT="${ASPNETCORE_ENVIRONMENT:-Production}"
 
-# Where the Next.js standalone server listens.
-export NODE_ENV="production"
-export HOSTNAME="127.0.0.1"
-export PORT="3000"
-
 /usr/local/bin/stellarr-tls-maintenance prepare
 
 # A disabled transport is closed in coturn, not merely left unadvertised.
@@ -210,6 +225,8 @@ sed \
   -e "s|__TURN_TLS_LINE__|$turn_tls_line|g" \
   -e "s|__TURN_DTLS_LINE__|$turn_dtls_line|g" \
   /etc/turnserver.conf.template > /etc/turnserver.conf
+
+write_instance_language /run/stellarr/stellarr-instance.js
 
 sed -e "s|__PUBLIC_HTTPS_SUFFIX__|$public_https_suffix|g" \
   /etc/nginx/nginx.conf.template > /etc/nginx/nginx.conf
