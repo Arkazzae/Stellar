@@ -6,6 +6,7 @@
 //! deadline or a second, and nothing in it waits on anything else. A second
 //! thread writes the manager's log, see [`crate::log`].
 
+use std::collections::HashMap;
 use std::io;
 use std::os::fd::AsRawFd;
 use std::os::unix::process::CommandExt;
@@ -100,6 +101,7 @@ fn supervise(table: Table, options: &Options, log: &Log) -> Result<i32, String> 
         log,
         probes: Vec::new(),
         answers: Vec::new(),
+        stun_ports: HashMap::new(),
     };
     supervisor.tick(Instant::now(), &mut world);
 
@@ -260,6 +262,9 @@ struct World<'a> {
     probes: Vec<Probe>,
     /// Answers of readiness checks, for the supervisor to take next.
     answers: Vec<(usize, u64, bool)>,
+    /// The port each service's STUN checks are sent from, kept from one
+    /// check to the next.
+    stun_ports: HashMap<usize, u16>,
 }
 
 impl World<'_> {
@@ -311,8 +316,14 @@ impl Io for World<'_> {
     }
 
     fn probe(&mut self, index: usize, run: u64, check: &Readiness, timeout: Duration) {
-        match Probe::start(index, run, check, Instant::now() + timeout) {
-            Ok(probe) => self.probes.push(probe),
+        let port = self.stun_ports.get(&index).copied().unwrap_or(0);
+        match Probe::start(index, run, check, Instant::now() + timeout, port) {
+            Ok(probe) => {
+                if let Some(port) = probe.local_port() {
+                    self.stun_ports.insert(index, port);
+                }
+                self.probes.push(probe);
+            }
             Err(_) => self.answers.push((index, run, false)),
         }
     }
