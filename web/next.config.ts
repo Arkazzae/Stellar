@@ -52,6 +52,11 @@ const nextConfig: NextConfig = {
     // ceiling of Kestrel and Nginx, so a video within the API's own 100 MB
     // media limit still arrives as one complete multipart request.
     proxyClientMaxBodySize: "128mb",
+    // The web client and Cockpit each have a root layout, so an address no
+    // route claims is answered by src/app/global-not-found.tsx, a whole
+    // document of its own. A catch-all route that called notFound() instead
+    // would send an empty error shell and leave the page to the browser.
+    globalNotFound: true,
   },
   /**
    * `next dev` serves the UI on :3000 and the API runs on :5000, so the
