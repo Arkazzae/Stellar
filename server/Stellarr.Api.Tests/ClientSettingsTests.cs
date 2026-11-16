@@ -9,7 +9,8 @@ namespace Stellarr.Api.Tests;
 
 /// <summary>
 /// The client's own settings, kept on the account so the theme, language,
-/// shortcuts and voice processing follow a person to every device.
+/// shortcuts, voice processing and privacy choices follow a person to every
+/// device.
 /// </summary>
 public sealed class ClientSettingsTests
 {
@@ -21,7 +22,7 @@ public sealed class ClientSettingsTests
 
         var settings = await ReadJsonAsync(await client.GetAsync("/api/me/settings"));
 
-        foreach (var section in new[] { "appearance", "language", "keybinds", "voice" })
+        foreach (var section in new[] { "appearance", "language", "keybinds", "voice", "privacy" })
         {
             Assert.Equal(JsonValueKind.Null, settings.GetProperty(section).ValueKind);
         }
@@ -61,14 +62,16 @@ public sealed class ClientSettingsTests
             PutAsync(client, "appearance", """{ "size": "lg" }"""),
             PutAsync(client, "language", """{ "locale": "en" }"""),
             PutAsync(client, "keybinds", """{ "version": 1 }"""),
-            PutAsync(client, "voice", """{ "version": 1 }"""));
+            PutAsync(client, "voice", """{ "version": 1 }"""),
+            PutAsync(client, "privacy", """{ "giphy": false }"""));
 
         Assert.All(responses, response => Assert.Equal(HttpStatusCode.NoContent, response.StatusCode));
         var settings = await ReadJsonAsync(await client.GetAsync("/api/me/settings"));
-        foreach (var section in new[] { "appearance", "language", "keybinds", "voice" })
+        foreach (var section in new[] { "appearance", "language", "keybinds", "voice", "privacy" })
         {
             Assert.Equal(JsonValueKind.Object, settings.GetProperty(section).ValueKind);
         }
+        Assert.False(settings.GetProperty("privacy").GetProperty("giphy").GetBoolean());
     }
 
     [Fact]
