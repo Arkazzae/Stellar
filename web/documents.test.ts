@@ -1,7 +1,12 @@
-import { readFileSync } from "node:fs";
+import { execFileSync } from "node:child_process";
+import { mkdtempSync, readFileSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 
-import { describe, expect, it } from "vitest";
+import type * as Router from "@stellarr/router";
+import type { Route } from "@stellarr/router";
+import { describe, expect, it, vi } from "vitest";
 
 import {
   BUILD_DIRECTORY,
@@ -13,8 +18,23 @@ import {
   writePrePaint,
 } from "./documents";
 import { THEME_SCRIPT } from "./src/stellarr/design/themeScript";
-import { translateMessage } from "./src/stellarr/i18n";
-import { INSTANCE_LANGUAGE_PATH, LOCALE_SCRIPT } from "./src/stellarr/i18n/localeScript";
+import { SUPPORTED_LOCALES, translateMessage } from "./src/stellarr/i18n";
+import { INSTANCE_LANGUAGE_PATH, instanceLanguageSource, LOCALE_SCRIPT } from "./src/stellarr/i18n/localeScript";
+import { routes } from "./src/stellarr/routes";
+
+// The route table keeps its paths to itself, so the tables handed to
+// defineRoutes are kept here, for the check against infra/nginx.conf.
+const tables = vi.hoisted(() => [] as (readonly Route[])[]);
+vi.mock("@stellarr/router", async (importOriginal) => {
+  const router = await importOriginal<typeof Router>();
+  return {
+    ...router,
+    defineRoutes: (table: Parameters<typeof router.defineRoutes>[0]) => {
+      tables.push(table.routes);
+      return router.defineRoutes(table);
+    },
+  };
+});
 
 const here = (path: string) => new URL(path, import.meta.url);
 const read = (path: string) => readFileSync(here(path), "utf8");
@@ -104,4 +124,121 @@ describe("Cockpit's document", () => {
     expect(html).toContain('<meta name="robots" content="noindex, nofollow" />');
     expect(html).toContain('media="(prefers-color-scheme: dark)" content="#1b1b1f"');
   });
+});
+
+interface MapEntry {
+  readonly key: string;
+  readonly value: string;
+}
+
+/** The entries of `map $uri $stellarr_address` in infra/nginx.conf, in their order. */
+function addressMap(config: string): MapEntry[] {
+  const block = /map \$uri \$stellarr_address \{\n([\s\S]*?)\n\s*\}/.exec(config)?.[1];
+  if (block === undefined) throw new Error("infra/nginx.conf has no map $uri $stellarr_address.");
+  return [...block.matchAll(/^\s*("[^"]*"|[^\s#]\S*)\s+(\S+);/gm)].map(([, key = "", value = ""]) => ({
+    key: key.replace(/^"(.*)"$/, "$1"),
+    value,
+  }));
+}
+
+/** What nginx's map gives `uri`: an exact key first, then the first regex that matches, then the default. */
+function lookUp(entries: readonly MapEntry[], uri: string): string | undefined {
+  const exact = entries.find(({ key }) => key !== "default" && !key.startsWith("~") && key === uri);
+  const regex = entries.find(({ key }) => key.startsWith("~") && new RegExp(key.slice(1)).test(uri));
+  return (exact ?? regex ?? entries.find(({ key }) => key === "default"))?.value;
+}
+
+/** A route's path with every parameter as `:`, the form both lists are compared in. */
+const routeShape = (path: string) => path.replace(/:[A-Za-z_]\w*/g, ":");
+
+/** A page's regex in nginx's map in that form: `~^/invite/[^/]+/?$` is `/invite/:`. */
+const nginxShape = (key: string) =>
+  key.replace(/^~\^/, "").replace(/\$$/, "").replace(/\/\?$/, "").replaceAll("[^/]+", ":");
+
+/** Addresses of that form, with and without a trailing slash. */
+function addressesOf(shape: string): string[] {
+  const address = shape.replaceAll(":", "abc123");
+  return address === "/" ? [address] : [address, `${address}/`];
+}
+
+/** What answers an address that names no file, as documents.ts and the web client's routes decide. */
+function expectedAnswer(address: string): string {
+  const document = documentFor(address, directories);
+  if (document === null) return "file";
+  if (document === COCKPIT_DOCUMENT) return "cockpit";
+  return routes.claims(address) ? "page" : "missing";
+}
+
+describe("infra/nginx.conf, which serves the build in the container", () => {
+  const entries = addressMap(read("../infra/nginx.conf"));
+  const pages = entries.filter(({ value }) => value === "page").map(({ key }) => nginxShape(key));
+  const routePaths = tables.flatMap((table) => table.map(({ path }) => routeShape(path)));
+
+  it("lists the web client's addresses as its route table does", () => {
+    expect(tables).toHaveLength(1);
+    expect(routePaths.length).toBeGreaterThan(0);
+    expect([...pages].sort()).toEqual([...routePaths].sort());
+  });
+
+  it("counts as files the folders documents.ts does", () => {
+    expect(entries).toContainEqual({ key: `~^/(${directories.join("|")})(/|$)`, value: "file" });
+  });
+
+  it("answers every address that names no file as documents.ts and the route table do", () => {
+    const addresses = [
+      ...[...pages, ...routePaths].flatMap(addressesOf),
+      ...directories.flatMap((directory) => [`/${directory}`, `/${directory}/`, `/${directory}/missing`]),
+      "/cockpit",
+      "/cockpit/",
+      "/cockpit/users",
+      "/cockpit/nope/deeper",
+      "/cockpit/missing.css",
+      "/cockpits",
+      "/nope",
+      "/nope/",
+      "/invite",
+      "/invite/abc123/more",
+      "/invite/abc.123",
+      "/login/more",
+      "/missing.js",
+    ];
+    for (const address of addresses) {
+      expect(lookUp(entries, address), address).toBe(expectedAnswer(address));
+    }
+  });
+});
+
+describe("the instance language file the container writes", () => {
+  const entrypoint = read("../infra/entrypoint.sh");
+  const writer = /^write_instance_language\(\) \{\n[\s\S]*?\n\}\n/m.exec(entrypoint)?.[0];
+
+  /** Runs the entrypoint's writer under bash and returns the file it wrote. */
+  function written(language: string | undefined): string {
+    if (writer === undefined) throw new Error("infra/entrypoint.sh has no write_instance_language.");
+    const directory = mkdtempSync(join(tmpdir(), "stellarr-instance-"));
+    try {
+      const file = join(directory, "stellarr-instance.js");
+      const env = { ...process.env };
+      delete env.STELLARR_LANGUAGE;
+      if (language !== undefined) env.STELLARR_LANGUAGE = language;
+      execFileSync("bash", ["-c", `${writer}\nwrite_instance_language "$1"`, "bash", file], { env, stdio: "ignore" });
+      return readFileSync(file, "utf8");
+    } finally {
+      rmSync(directory, { recursive: true, force: true });
+    }
+  }
+
+  it("is written where nginx serves it from", () => {
+    expect(entrypoint).toContain(`write_instance_language /run/stellarr${INSTANCE_LANGUAGE_PATH}\n`);
+    expect(read("../infra/nginx.conf")).toMatch(
+      new RegExp(`location = ${INSTANCE_LANGUAGE_PATH.replaceAll(".", "\\.")} \\{\\s*root /run/stellarr;`),
+    );
+  });
+
+  it.each([...SUPPORTED_LOCALES, undefined, "", "de", "EN", " pl", 'pl";alert(1);"', "</script>"])(
+    "holds the bytes of instanceLanguageSource for STELLARR_LANGUAGE=%j",
+    (language) => {
+      expect(written(language)).toBe(instanceLanguageSource(language));
+    },
+  );
 });
