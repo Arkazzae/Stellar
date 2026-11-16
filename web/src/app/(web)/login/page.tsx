@@ -9,7 +9,7 @@ import { PasswordConfirmStep } from "@/components/auth/PasswordConfirmStep";
 import { QrCode } from "@/components/auth/QrCode";
 import { RecoveryCodesStep } from "@/components/auth/RecoveryCodesStep";
 import { RecoveryRedeemStep } from "@/components/auth/RecoveryRedeemStep";
-import { LoginScreen } from "@/components/login/LoginScreen";
+import { LoginScreen } from "@/components/auth/LoginScreen";
 import { useSignInFlow } from "@/containers/useSignInFlow";
 import { useRedirectWhenSignedIn } from "@/hooks/useRedirectWhenSignedIn";
 import { safeReturnPath } from "@/lib/auth/returnPath";

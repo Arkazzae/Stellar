@@ -2,7 +2,7 @@
 
 import { useCallback, useRef } from "react";
 
-import { DropOverlay } from "@/components/room/composer/DropOverlay";
+import { DropOverlay } from "@/components/room/DropOverlay";
 import { MediaViewer } from "@/components/room/attachments/MediaViewer";
 import { ThreadPanel } from "@/components/room/panels/ThreadPanel";
 import { Transcript } from "@/components/room/transcript/Transcript";

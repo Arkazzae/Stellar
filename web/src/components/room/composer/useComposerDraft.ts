@@ -7,7 +7,7 @@ import { triggerHaptic } from "@/lib/platform/haptics";
 
 import type { CodeLanguageId } from "@/lib/messages/codeLanguages";
 import type { ComposerChip } from "./ComposerChips";
-import { fencedCode } from "./composerText";
+import { fencedCode } from "@/lib/messages/composerText";
 import { MESSAGE_MAX_LENGTH } from "@/lib/messages/messageLimits";
 
 interface Options {
