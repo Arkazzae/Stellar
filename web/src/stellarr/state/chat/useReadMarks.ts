@@ -9,6 +9,8 @@ interface ReadMarksOptions {
   channelId: string | null;
   messages: Readonly<Record<string, readonly Message[]>>;
   selfId: string | undefined;
+  /** Whether the session has ended by now, asked as a channel is left. */
+  sessionEnded: () => boolean;
 }
 
 /**
@@ -17,7 +19,7 @@ interface ReadMarksOptions {
  * Leaving a channel is what marks it read, not arriving at it. Advancing the
  * mark on arrival would erase the "new messages" line before it was seen.
  */
-export function useReadMarks({ chat, channelId, messages, selfId }: ReadMarksOptions) {
+export function useReadMarks({ chat, channelId, messages, selfId, sessionEnded }: ReadMarksOptions) {
   /** Durable per-channel watermarks, initially seeded by bootstrap. */
   const [marks, setMarks] = useState<Readonly<Record<string, string>>>(() => ({
     ...chat.getReadState(),
@@ -47,12 +49,18 @@ export function useReadMarks({ chat, channelId, messages, selfId }: ReadMarksOpt
   );
 
   // The cleanup runs when `channelId` changes, so the mark lands on the
-  // channel being left, at the moment it stops being on screen.
+  // channel being left, at the moment it stops being on screen. It also runs
+  // when the app goes away. Switching servers does that with the session
+  // alive, and the mark goes out as on any other leave; after a sign-out or
+  // a revoked session it would only meet a 401 or a 403, so it is not sent.
+  // A tab that closes sends none either.
   useEffect(() => {
     if (channelId === null) return;
     const leaving = channelId;
-    return () => markChannelRead(leaving);
-  }, [channelId, markChannelRead]);
+    return () => {
+      if (!sessionEnded()) markChannelRead(leaving);
+    };
+  }, [channelId, markChannelRead, sessionEnded]);
 
   const unreadByChannel = useMemo(
     () => unreadCounts(messages, marks, openedAt, channelId, selfId),

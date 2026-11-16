@@ -167,7 +167,7 @@ export function createChatHarness() {
   // The state providers the chat provider reads, as plain mutable records. Each
   // value is created once, since a fresh object every render would re-run the
   // effects that depend on it.
-  const session: { user: User | null } = { user: SELF };
+  const session = { user: SELF as User | null, hasEnded: vi.fn(() => false) };
   const ui = {
     activeTextChannelId: "ch-general" as string | null,
     selectTextChannel: vi.fn(),

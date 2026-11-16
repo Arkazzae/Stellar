@@ -156,7 +156,7 @@ const NO_PINS: PinnedMessageVM[] = [];
 export function ChatProvider({ children }: { children: ReactNode }) {
   const ports = usePorts();
   const { preferences } = useAccountContext();
-  const { user } = useSessionContext();
+  const { user, hasEnded } = useSessionContext();
   const { members, server, textChannels } = useDirectoryContext();
   const { byShortcode: customEmoji } = useEmoji();
   const { locale, t } = useLanguage();
@@ -264,6 +264,7 @@ export function ChatProvider({ children }: { children: ReactNode }) {
     channelId,
     messages: data.messages,
     selfId: user?.id,
+    sessionEnded: hasEnded,
   });
 
   const pinnedMessages =
