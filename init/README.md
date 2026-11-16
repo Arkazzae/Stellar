@@ -36,7 +36,7 @@ The table is compiled in, in `src/services.rs`:
 
 Together the checks cover what the container's health check asked before this manager: the API and its database, nginx serving, the media server's control API, and a STUN answer from coturn. nginx is asked over plain HTTP, as a proxy in front would ask, because the check speaks no TLS; without the header the answer would be a redirect.
 
-A shutdown stops them one at a time in the reverse of the start order, each with its own deadline, and kills whatever is left 60 s after it began. The container's stop grace period must be longer than that.
+A shutdown stops them one at a time in the reverse of the start order, each with its own deadline, and kills whatever is left 60 s after it began. The container's stop grace period must be longer than that: `docker-compose.yml` sets `stop_grace_period: 75s`, and the Unraid template `--stop-timeout=75`.
 
 ## Behaviour
 

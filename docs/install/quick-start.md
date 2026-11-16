@@ -80,6 +80,8 @@ docker compose stop      # stop the container
 docker compose down      # remove container and network, preserve data volume
 ```
 
+Both stop the services in order and wait up to 75 seconds for them, the `stop_grace_period` in `docker-compose.yml`; it usually takes a second or two. See [Image and data](platforms.md#image-and-data).
+
 > [!CAUTION]
 > `docker compose down -v` permanently deletes the `stellarr_stellarr_data` volume, including all accounts, messages, uploads, and secrets.
 

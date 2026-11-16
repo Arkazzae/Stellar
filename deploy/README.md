@@ -17,7 +17,8 @@ Each folder here packages the production container for one platform, in that pla
 5. **Defaults from `docker-compose.yml`.** Each variable a template sets has the default Compose gives it, under the container-side name (`Rtc__MediaPort`, not `STELLARR_MEDIA_PORT`). Both language variables, `STELLARR_LANGUAGE` and `Stellarr__Language`, are set, since Compose fills both from one value.
 6. **No frozen defaults.** Many platforms keep the values a template wrote when the image is updated. A setting whose default lives in the code, such as the desktop client versions or the OIDC callback path, is left out, so that it keeps following the code.
 7. **Same limits.** The memory, CPU and process limits of `docker-compose.yml` and `no-new-privileges`, where the platform can set them.
-8. **Secrets masked.** Passwords and API keys use the platform's way of hiding a value, where it has one.
+8. **Same stop grace period.** The 75 seconds of `stop_grace_period`, as `--stop-timeout=75` where the platform takes extra `docker run` arguments. The services need up to 60 seconds to stop in order, and Docker's default of 10 would kill them mid-way.
+9. **Secrets masked.** Passwords and API keys use the platform's way of hiding a value, where it has one.
 
 When a default in `docker-compose.yml` changes, change it in every template here as well.
 

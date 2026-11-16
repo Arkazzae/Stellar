@@ -36,6 +36,10 @@ Set **Interface language** and **Server language** to the same value, `en` or `p
 
 Once the container is running, open **WebUI** from its menu on the Docker page. Accept the warning about the self-signed certificate, then create the owner account as in the [Quick start](quick-start.md). For a certificate browsers trust, see [Reverse proxy and TLS](reverse-proxy-and-tls.md).
 
+## Stopping
+
+The template's **Extra Parameters** include `--stop-timeout=75`, which gives the container 75 seconds to stop its services in order, as `docker-compose.yml` does. Keep it when you edit that field: without it, Docker kills the container after 10 seconds.
+
 ## Data and backups
 
 The **Data** path is `/mnt/user/appdata/stellarr` by default. Keep the `appdata` share on a pool drive, and back up the whole folder with the container stopped, as described in [Image and data](platforms.md#image-and-data).
