@@ -52,6 +52,17 @@ describe("defineRoutes", () => {
     }
   });
 
+  it("answers an address with a long run of slashes in time linear in its length", () => {
+    const run = "/".repeat(300_000);
+    const started = performance.now();
+
+    expect(table.match(`${run}x`).route).toBeNull();
+    expect(table.match(`/invite/abc${run}`).params).toEqual({ code: "abc" });
+    expect(table.claims(`/invite${run}abc`)).toBe(false);
+
+    expect(performance.now() - started).toBeLessThan(250);
+  });
+
   it("claims only what a route matches, never the not-found page's addresses", () => {
     expect(table.claims("/")).toBe(true);
     expect(table.claims("/invite/abc")).toBe(true);
