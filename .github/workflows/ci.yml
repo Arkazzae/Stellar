@@ -61,11 +61,11 @@ jobs:
           }
           # Both test suites consume the same message-formatting contract.
           # A case added there must check the renderer and the API together.
-          check server '^(server/|tests/contracts/|Stellarr\.slnx$|Directory\.Build\.props$|global\.json$|\.github/workflows/ci\.yml$)'
+          check server '^(server/|contracts/|Stellarr\.slnx$|Directory\.Build\.props$|global\.json$|\.github/workflows/ci\.yml$)'
           # web/ holds the web client and Cockpit (web/src/cockpit/). It is a
           # workspace of one npm project with the shared packages, so a change
           # to them or to the root manifest or lockfile runs the web job too.
-          check web '^(web/|tests/contracts/|artifacts/|packages/|package(-lock)?\.json$|branding/icons/|\.github/workflows/ci\.yml$)'
+          check web '^(web/|contracts/|artifacts/|packages/|package(-lock)?\.json$|branding/icons/|\.github/workflows/ci\.yml$)'
           check media '^(media/|\.github/workflows/ci\.yml$)'
           check image '^(Dockerfile$|\.dockerignore$|artifacts/|infra/|server/.*\.csproj$|server/.*packages\.lock\.json$|packages/|package(-lock)?\.json$|\.npmrc$|web/package\.json$|media/Cargo\.(toml|lock)$|global\.json$|Directory\.Build\.props$|\.github/workflows/ci\.yml$)'
 
