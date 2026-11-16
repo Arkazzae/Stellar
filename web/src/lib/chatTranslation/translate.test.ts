@@ -1,5 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
+import type { DetectedLanguage } from "./detectLanguage";
+
 vi.mock("./detectLanguage", () => ({ detectLanguage: vi.fn() }));
 
 interface WorkerRequest {
@@ -46,10 +48,10 @@ class FakeWorker {
 }
 
 // Both modules keep their queue and worker in module state.
-async function loadTranslate(detected: string) {
+async function loadTranslate(detected: DetectedLanguage) {
   vi.resetModules();
   const { detectLanguage } = await import("./detectLanguage");
-  vi.mocked(detectLanguage).mockReset().mockResolvedValue(detected);
+  vi.mocked(detectLanguage).mockReset().mockReturnValue(detected);
   return { ...(await import("./translate")), detectLanguage: vi.mocked(detectLanguage) };
 }
 

@@ -1,6 +1,5 @@
 import type { TranslationTargetLanguage } from "@/i18n";
 
-import { detectLanguage } from "./detectLanguage";
 import * as cache from "./translationCache";
 import { runInWorker } from "./translationWorker";
 
@@ -32,7 +31,10 @@ function assumedSource(targetLanguage: TranslationTargetLanguage): TranslationTa
 }
 
 async function run({ text, targetLanguage }: Job): Promise<string> {
-  const detected = await detectLanguage(text);
+  // Loaded with the first job: its word lists and trigram profiles are some
+  // 16 KB that the many sessions which never translate have no use for.
+  const { detectLanguage } = await import("./detectLanguage");
+  const detected = detectLanguage(text);
   if (detected === targetLanguage) return text;
   return runInWorker(
     text,
