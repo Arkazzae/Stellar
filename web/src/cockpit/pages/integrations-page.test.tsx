@@ -201,6 +201,11 @@ describe("IntegrationsPage GIPHY", () => {
     render(<IntegrationsPage />);
     await screen.findByText("GIPHY");
 
+    // What turning GIFs on decides for everyone, said before it can be done.
+    const text = giphyCard().textContent ?? "";
+    expect(text).toContain("przeglądarka każdej osoby, która szuka GIF-a albo go widzi, sama łączy się z GIPHY");
+    expect(text).toContain("adres IP");
+    expect(text).toContain("Każdy może wyłączyć GIPHY u siebie");
     expect(giphySwitch().hasAttribute("disabled")).toBe(true);
     expect(screen.getByText("Najpierw ustaw klucz API.")).toBeTruthy();
     expect((screen.getByRole("button", { name: "Sprawdź połączenie" }) as HTMLButtonElement).disabled).toBe(true);

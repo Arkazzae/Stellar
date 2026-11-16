@@ -69,7 +69,7 @@ STELLARR_MEDIA_PORT=49000
 
 ### Outbound network
 
-The translation runtime, its WASM and the Polish/English model files are built into the image and served from the same origin as the web client. The container and the browser make no request to a model bucket, CDN or other third-party host for them; `artifacts/manifest.json` records the files and `artifacts/assemble.mjs` checks them during the image build. A firewall may therefore leave this traffic closed without disabling chat translation. Optional integrations such as SMTP, Resend, OIDC and GIPHY connect outward only when configured, and the browser's model cache lives in IndexedDB.
+The translation runtime, its WASM and the Polish/English model files are built into the image and served from the same origin as the web client. The container and the browser make no request to a model bucket, CDN or other third-party host for them; `artifacts/manifest.json` records the files and `artifacts/assemble.mjs` checks them during the image build. A firewall may therefore leave this traffic closed without disabling chat translation. Optional integrations such as SMTP, Resend and OIDC connect outward only when configured, and the browser's model cache lives in IndexedDB. GIPHY, once configured and on, is called by the browsers themselves and never through the container: each person's browser contacts GIPHY when they search for or see a GIF, unless they have turned GIPHY off in their privacy settings.
 
 ## Audio and video pipeline
 

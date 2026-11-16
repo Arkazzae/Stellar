@@ -136,7 +136,7 @@ See [Localization](../localization.md).
 
 | Variable | Type | Default | Description |
 | --- | --- | --- | --- |
-| `GIPHY_API_KEY` | string | empty | GIPHY web-integration key for GIF search, provided to signed-in browser clients. Can also be configured and verified in Cockpit under **Integrations** (which takes precedence and takes effect on tab reload without a container restart). When building from source, it is also passed as a build-time fallback used only if the API is unreachable. |
+| `GIPHY_API_KEY` | string | empty | GIPHY key for the GIF search and the GIFs in messages. Signed-in browsers receive it and call GIPHY themselves: with GIFs on, the browser of everyone who searches for or sees a GIF contacts GIPHY, unless that person has turned GIPHY off in their privacy settings. Can also be configured and verified in Cockpit under **Integrations** (which takes precedence and takes effect on tab reload without a container restart). |
 | `STELLARR_EF_COMMAND_LOG_LEVEL` | .NET log level | `Warning` | Log level for `Microsoft.EntityFrameworkCore.Database.Command` (`Information` logs SQL queries). |
 
 ## Container resource limits
