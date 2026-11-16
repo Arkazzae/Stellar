@@ -24,6 +24,7 @@ web/public/codecs
 web/public/bergamot-models/*
 !web/public/bergamot-models/registry.json
 media/target
+init/target
 # **/bin is .NET build output, but src/bin holds extra binaries of a Rust crate.
 !media/src/bin
 # The browser smoke harness of the media server runs on a developer's machine;

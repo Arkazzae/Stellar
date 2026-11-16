@@ -2,8 +2,9 @@
 # Keeps the TLS pair in $STELLARR_DATA_ROOT/tls usable.
 #
 #   prepare  run once by the entrypoint before the services start
-#   watch    run by supervisord; re-checks the pair periodically and reloads
-#            nginx and TURN when a renewal changed the certificate
+#   watch    run by stellarr-init; re-checks the pair periodically, and when a
+#            renewal changed the certificate, has it reload nginx and restart
+#            TURN
 #
 # Only a self-signed certificate is managed here. A pair that an administrator
 # supplied is never overwritten: it can only produce a warning or an error.
@@ -126,10 +127,11 @@ prepare_certificate() {
   fi
 }
 
+# Through the process manager, which signals nginx only once it is ready and
+# logs both. coturn has no reload that takes a new certificate, so it restarts.
 reload_tls_consumers() {
-  /usr/sbin/nginx -s reload || echo "Could not reload nginx after TLS renewal." >&2
-  /usr/bin/supervisorctl -c /etc/supervisor/supervisord.conf restart turn ||
-    echo "Could not restart TURN after TLS renewal." >&2
+  /usr/local/bin/stellarr-init reload nginx || echo "Could not reload nginx after TLS renewal." >&2
+  /usr/local/bin/stellarr-init restart turn || echo "Could not restart TURN after TLS renewal." >&2
 }
 
 fingerprint() {

@@ -132,11 +132,14 @@ When voice fails to connect, check in order:
 5. `49000/udp` (`STELLARR_MEDIA_PORT`) is forwarded to the host on the same external UDP port.
 6. `3478/udp` (`STELLARR_TURN_PORT`) is reachable from the client network.
 7. `49160-49200/udp` (`STELLARR_TURN_RELAY_RANGE`) is open in the host firewall and forwarded on the router.
-8. Container logs show the `media` service running.
+8. `docker compose exec stellarr stellarr-init status` shows `media` and `turn` as `ready`.
 9. Clients receive `MediaSignal` events on `/hubs/app`.
-10. `stellarr-media` lists active sessions as `connected` with advancing `ingress` and `egress` counters:
+10. `stellarr-media` lists active sessions as `connected` with advancing `ingress` and `egress` counters. The image has no HTTP client, so the request goes over bash's own TCP connection:
 
     ```bash
-    docker compose exec stellarr sh -c \
-      'curl -s -H "Authorization: Bearer $(cat /data/stellarr/secrets/media-control-secret)" http://127.0.0.1:5200/v1/stats'
+    docker compose exec stellarr bash -c '
+      exec 3<>/dev/tcp/127.0.0.1/5200
+      printf "GET /v1/stats HTTP/1.0\r\nAuthorization: Bearer %s\r\n\r\n" \
+        "$(cat /data/stellarr/secrets/media-control-secret)" >&3
+      cat <&3'
     ```
