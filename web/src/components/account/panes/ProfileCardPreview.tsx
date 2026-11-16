@@ -2,7 +2,7 @@
 
 import { useRef, type CSSProperties, type RefObject } from "react";
 
-import { Icon } from "@stellarr/ui/icons";
+import { Icon } from "@stellarr/icons";
 import { Avatar } from "@/components/primitives/Avatar";
 import { ProfileBioText } from "@/components/profile/ProfileBio";
 import { defaultIdentityArt, hueFor } from "@/design/identity";

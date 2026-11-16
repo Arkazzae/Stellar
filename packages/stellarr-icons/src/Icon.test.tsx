@@ -91,7 +91,7 @@ describe("Icon", () => {
 });
 
 describe("ICON_GLYPHS", () => {
-  it("is the build of source/glyphs.ts (run npm run icons:build -w @stellarr/ui)", () => {
+  it("is the build of source/glyphs.ts (run npm run icons:build -w @stellarr/icons)", () => {
     expect(NAMES).toEqual(Object.keys(GLYPHS));
     for (const name of NAMES) {
       for (const variant of ICON_VARIANTS) {

@@ -2,7 +2,7 @@
 
 import type { KeyboardEvent, MouseEvent } from "react";
 
-import { Icon } from "@stellarr/ui/icons";
+import { Icon } from "@stellarr/icons";
 import type { DragHandleProps } from "@/lib/drag/session";
 import { useLanguage } from "@/state/hooks";
 

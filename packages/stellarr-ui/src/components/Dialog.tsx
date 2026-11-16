@@ -13,6 +13,8 @@ import {
 } from "react";
 import { createPortal } from "react-dom";
 
+import { Icon } from "@stellarr/icons";
+
 import { focusFirst, trapTab } from "../behavior/focus";
 import { hideOthers, lockScroll, useLayer } from "../behavior/layers";
 import { usePresence } from "../behavior/presence";
@@ -20,7 +22,6 @@ import { useComposedRefs } from "../behavior/refs";
 import { Slot } from "../behavior/slot";
 import { useControllableState } from "../behavior/state";
 import { cx } from "../cx";
-import { Icon } from "../icons/Icon";
 
 interface DialogContextValue {
   open: boolean;

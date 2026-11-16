@@ -3,7 +3,7 @@
 import { Fragment, useId, useState } from "react";
 
 import { Button } from "@stellarr/ui";
-import { Icon, type IconName } from "@stellarr/ui/icons";
+import { Icon, type IconName } from "@stellarr/icons";
 import { DialogClose } from "@/components/primitives/DialogClose";
 import { Modal } from "@/components/primitives/Modal";
 import {

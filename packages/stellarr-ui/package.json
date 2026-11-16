@@ -6,14 +6,15 @@
   "exports": {
     ".": "./src/index.ts",
     "./behavior": "./src/behavior/index.ts",
-    "./icons": "./src/icons/index.ts",
     "./styles.css": "./src/styles.css"
   },
   "scripts": {
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
-    "icons:build": "node scripts/build-icons.mjs",
     "tokens:check": "node scripts/check-tokens.mjs"
+  },
+  "dependencies": {
+    "@stellarr/icons": "*"
   },
   "peerDependencies": {
     "react": "^19",

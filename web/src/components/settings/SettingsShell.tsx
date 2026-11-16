@@ -2,7 +2,7 @@
 
 import { Fragment, useEffect, useRef, type ReactNode } from "react";
 
-import { Icon, type IconName } from "@stellarr/ui/icons";
+import { Icon, type IconName } from "@stellarr/icons";
 import { DialogClose } from "@/components/primitives/DialogClose";
 
 import { SettingsSaveSlot, useSettingsGuard } from "./settingsGuard";

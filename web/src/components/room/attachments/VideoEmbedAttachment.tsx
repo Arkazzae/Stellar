@@ -2,7 +2,7 @@
 
 import { useState, type KeyboardEvent } from "react";
 
-import { Icon } from "@stellarr/ui/icons";
+import { Icon } from "@stellarr/icons";
 import { useLanguage } from "@/state/LanguageProvider";
 
 import type { VideoEmbedPart } from "../parts";

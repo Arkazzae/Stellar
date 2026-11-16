@@ -2,7 +2,7 @@
 
 import { useEffect, useId, useRef, useState } from "react";
 
-import { Icon } from "@stellarr/ui/icons";
+import { Icon } from "@stellarr/icons";
 import { SettingsSaveBar } from "@/components/settings/SettingsSaveBar";
 import { SettingsSection } from "@/components/settings/SettingsSection";
 import {

@@ -1,6 +1,6 @@
 "use client";
 
-import { Icon } from "@stellarr/ui/icons";
+import { Icon } from "@stellarr/icons";
 import { Avatar } from "@/components/primitives/Avatar";
 import { useContextMenu } from "@/components/primitives/ContextMenu";
 import type { PersonVM } from "@/components/view-models";

@@ -2,7 +2,7 @@
 
 import { useCallback, useState } from "react";
 
-import { Icon } from "@stellarr/ui/icons";
+import { Icon } from "@stellarr/icons";
 import { NotificationInbox } from "@/components/shell/NotificationInbox";
 import {
   useDirectory,

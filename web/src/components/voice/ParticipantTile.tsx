@@ -2,7 +2,7 @@
 
 import { useEffect, useRef } from "react";
 
-import { Icon } from "@stellarr/ui/icons";
+import { Icon } from "@stellarr/icons";
 import { Avatar } from "@/components/primitives/Avatar";
 import { useContextMenu } from "@/components/primitives/ContextMenu";
 import { UserMenu } from "@/components/roster/UserMenu";

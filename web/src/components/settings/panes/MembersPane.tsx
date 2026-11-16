@@ -2,7 +2,7 @@
 
 import type { CSSProperties } from "react";
 
-import { Icon } from "@stellarr/ui/icons";
+import { Icon } from "@stellarr/icons";
 import { Avatar } from "@/components/primitives/Avatar";
 import { formatShortDate } from "@/components/settings/panes/paneFormat";
 import { SettingsSection } from "@/components/settings/SettingsSection";

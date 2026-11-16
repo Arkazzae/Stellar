@@ -9,7 +9,7 @@ import {
   kickPerson,
   removeFriend,
 } from "@/components/confirmations";
-import { Icon } from "@stellarr/ui/icons";
+import { Icon } from "@stellarr/icons";
 import {
   useConfirm,
   usePrompt,

@@ -3,7 +3,7 @@
 import { useEffect, useState, type ReactNode } from "react";
 
 import { Button } from "@stellarr/ui";
-import { Icon, type IconName } from "@stellarr/ui/icons";
+import { Icon, type IconName } from "@stellarr/icons";
 import { Segmented } from "@/components/primitives/Segmented";
 import { Switch } from "@/components/primitives/Switch";
 import { useRovingRadio } from "@/components/primitives/useRovingRadio";

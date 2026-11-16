@@ -33,7 +33,7 @@ import {
 } from "@/components/account/panes/SecurityPane";
 import { SoundsPane, type SoundsPaneProps } from "@/components/account/panes/SoundsPane";
 import { VoicePane, type VoicePaneProps } from "@/components/account/panes/VoicePane";
-import { Icon } from "@stellarr/ui/icons";
+import { Icon } from "@stellarr/icons";
 import { Avatar } from "@/components/primitives/Avatar";
 import { DialogClose } from "@/components/primitives/DialogClose";
 import { Modal } from "@/components/primitives/Modal";

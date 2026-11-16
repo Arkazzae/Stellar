@@ -3,7 +3,7 @@
 import { useEffect, useId, useRef } from "react";
 
 import { Button } from "@stellarr/ui";
-import { Icon } from "@stellarr/ui/icons";
+import { Icon } from "@stellarr/icons";
 import { ErrorNotice } from "@/components/primitives/ErrorNotice";
 import {
   INPUT_GAIN_MAX_DB,

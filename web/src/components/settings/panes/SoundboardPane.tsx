@@ -3,7 +3,7 @@
 import { useEffect, useRef, useState, type ChangeEvent } from "react";
 
 import { Button } from "@stellarr/ui";
-import { Icon } from "@stellarr/ui/icons";
+import { Icon } from "@stellarr/icons";
 import { useConfirm } from "@/components/primitives/ConfirmDialog";
 import { Switch } from "@/components/primitives/Switch";
 import {

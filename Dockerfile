@@ -16,7 +16,7 @@
 # workspace of one npm project with the shared packages/: the root
 # package-lock.json covers all of them. The stage copies every workspace
 # manifest, because npm ci checks the lockfile against all of them, but
-# installs only web/, which links the shared package it depends on. The
+# installs only web/, which links the shared packages it depends on. The
 # manifests come before the sources, so that editing a source file keeps the
 # install layer cached. With the dependencies hoisted to /src/node_modules,
 # Next.js traces from /src and the standalone output nests the app as
@@ -25,6 +25,7 @@ FROM node:26-bookworm-slim AS web-build
 WORKDIR /src
 COPY package.json package-lock.json ./
 COPY web/package.json web/
+COPY packages/stellarr-icons/package.json packages/stellarr-icons/
 COPY packages/stellarr-ui/package.json packages/stellarr-ui/
 RUN npm ci --workspace stellarr-web
 COPY packages/ packages/
