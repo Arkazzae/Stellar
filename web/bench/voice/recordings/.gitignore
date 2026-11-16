@@ -1,0 +1,4 @@
+# Recordings of real voices stay on the machine that made them, and so does
+# everything the harness writes beside them. See ../README.md.
+*
+!.gitignore

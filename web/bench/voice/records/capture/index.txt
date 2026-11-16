@@ -1,0 +1,19 @@
+# Capture record index: the delay of each detector configuration, measured on a probe.
+# Every gain in the records is measured against the input delayed by this much.
+# See web/bench/voice/README.md.
+
+latency s0_meter none
+latency s0_gate 3840 (80.00 ms)
+latency s0_level 0 (0.00 ms)
+latency s0_gate+level 3840 (80.00 ms)
+latency s60_meter none
+latency s60_gate 3840 (80.00 ms)
+latency s60_level 0 (0.00 ms)
+latency s60_gate+level 3840 (80.00 ms)
+latency s100_meter none
+latency s100_gate 3840 (80.00 ms)
+latency s100_level 0 (0.00 ms)
+latency s100_gate+level 3840 (80.00 ms)
+latency s85_meter none
+latency remote_meter none
+latency remote_gate_s40 3840 (80.00 ms)
