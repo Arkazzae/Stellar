@@ -46,6 +46,8 @@ const nextConfig: NextConfig = {
   // no build step.
   transpilePackages: ["@stellarr/icons", "@stellarr/ui"],
   allowedDevOrigins,
+  // Keeps `next dev` from generating web/AGENTS.md.
+  agentRules: false,
   experimental: {
     // Dev rewrites buffer uploads in the Next server. 128 MB is the transport
     // ceiling of Kestrel and Nginx, so a video within the API's own 100 MB
