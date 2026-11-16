@@ -155,6 +155,20 @@ export async function launch({ width = 1280, height = 900, headless = true } = {
         targetId,
         cmd,
         errors: pageErrors,
+        /**
+         * Calls `listener(method, params)` for every protocol event of this
+         * page, such as `Network.requestWillBeSent` once `Network.enable` has
+         * been sent. Returns the function that stops it.
+         */
+        on(listener) {
+          const scoped = (message) => {
+            if (message.sessionId === sessionId && message.method !== undefined) {
+              listener(message.method, message.params);
+            }
+          };
+          listeners.add(scoped);
+          return () => listeners.delete(scoped);
+        },
         async goto(url) {
           let timer;
           let listener;
