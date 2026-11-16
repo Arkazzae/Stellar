@@ -17,6 +17,28 @@ describe("canonicalPath", () => {
     expect(canonicalPath("//")).toBe("/");
     expect(canonicalPath("")).toBe("/");
   });
+
+  it("leaves slashes that do not end the path", () => {
+    expect(canonicalPath("/a//b")).toBe("/a//b");
+    expect(canonicalPath("//login")).toBe("//login");
+  });
+
+  // A pattern anchored only at the end retries every slash of a run that does
+  // not end the path: 40,000 of them took over a second, and this many would
+  // take minutes and freeze the tab. Anyone can put such a run in a link.
+  it("takes time linear in the length of a long run of slashes, wherever it is", () => {
+    const run = "/".repeat(300_000);
+    const started = performance.now();
+
+    expect(canonicalPath(`${run}x`)).toBe(`${run}x`);
+    expect(canonicalPath(`/a${run}b`)).toBe(`/a${run}b`);
+    expect(canonicalPath(`/a${run}`)).toBe("/a");
+    expect(canonicalPath(run)).toBe("/");
+    expect(resolveAddress(`${run}x`, AT_LOGIN, ORIGIN).sameOrigin).toBe(false);
+    expect(resolveAddress(`/a${run}`, AT_LOGIN, ORIGIN).pathname).toBe("/a");
+
+    expect(performance.now() - started).toBeLessThan(250);
+  });
 });
 
 describe("resolveAddress", () => {

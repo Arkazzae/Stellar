@@ -10,14 +10,22 @@ export interface RouterLocation {
   readonly key: string;
 }
 
+const SLASH = "/".charCodeAt(0);
+
 /**
  * The one form of a path the router works with: no trailing slash, except
  * for the root. `/login/` and `/login` are the same page, and the address
  * bar is corrected to the second.
+ *
+ * The path comes from the address bar and from links, so anyone can write
+ * it. It is walked back from its end once: a pattern such as `/\/+$/` would
+ * retry every slash of a long run that does not end the path, which takes
+ * time quadratic in its length and can freeze the tab.
  */
 export function canonicalPath(pathname: string): string {
-  const trimmed = pathname.replace(/\/+$/, "");
-  return trimmed === "" ? "/" : trimmed;
+  let end = pathname.length;
+  while (end > 0 && pathname.charCodeAt(end - 1) === SLASH) end -= 1;
+  return end === 0 ? "/" : pathname.slice(0, end);
 }
 
 /** The address as the address bar shows it, without the origin. */
