@@ -13,6 +13,15 @@
 
 #![allow(dead_code)]
 
+mod feed;
+mod link;
+
+// Only the tests of poor links use these.
+#[allow(unused_imports)]
+pub use feed::*;
+#[allow(unused_imports)]
+pub use link::*;
+
 use std::collections::HashMap;
 use std::net::SocketAddr;
 use std::time::{Duration, Instant};
@@ -38,10 +47,12 @@ pub fn addr(s: &str) -> SocketAddr {
     s.parse().unwrap()
 }
 
-/// A packet a client received, with the mid of the section it came on.
+/// A packet a client received, with the mid of the section it came on and
+/// when it arrived.
 pub struct Received {
     pub mid: Mid,
     pub packet: RtpPacket,
+    pub at: Instant,
 }
 
 pub struct Client {
@@ -81,6 +92,11 @@ pub struct Client {
     pub lose_outgoing: Option<(u8, u16)>,
     /// One RTP packet the network loses on its way to this client.
     pub lose_incoming: Option<(u8, u16)>,
+    /// The link from the media server to this client, when it is not a
+    /// clean one.
+    pub downlink: Option<Link>,
+    /// The harness time of the input being handled.
+    pub clock: Instant,
 }
 
 /// Whether a datagram is the RTP packet `rule` names. The fixed RTP header
@@ -165,13 +181,22 @@ impl Client {
                         .stream_rx(&packet.header.ssrc)
                         .map(|s| s.mid())
                         .expect("a packet on a known stream");
-                    self.received.push(Received { mid, packet });
+                    self.received.push(Received {
+                        mid,
+                        packet,
+                        at: self.clock,
+                    });
                 }
                 Output::Event(e) => self.events.push(e),
             }
         }
     }
 }
+
+/// The harness clock's smallest step.
+pub const TICK: Duration = Duration::from_millis(1);
+/// How often in one tick the same parties may ask to be handled again.
+const MAX_ROUNDS: usize = 64;
 
 pub struct Net {
     pub core: Core,
@@ -262,6 +287,8 @@ impl Net {
             sent: 0,
             lose_outgoing: None,
             lose_incoming: None,
+            downlink: None,
+            clock: self.now,
         });
         self.outbox.push(Vec::new());
         self.drain_client(index);
@@ -431,7 +458,9 @@ impl Net {
         self.outbox[i].extend(out);
     }
 
-    /// Moves datagrams until nobody has anything more to send.
+    /// Moves datagrams until nobody has anything more to send. What the
+    /// media server sends a client with a downlink waits on that link until
+    /// the harness clock reaches its arrival.
     pub fn flush(&mut self) {
         loop {
             let mut moved = false;
@@ -467,13 +496,25 @@ impl Net {
                 {
                     continue;
                 }
-                let source = self.clients[i].target.unwrap_or(self.candidates[0]);
-                let c = &mut self.clients[i];
-                let receive = Receive::new(Protocol::Udp, source, c.addr, &out.contents).unwrap();
-                c.rtc
-                    .handle_input(Input::Receive(self.now, receive))
-                    .expect("the client takes the datagram");
-                self.drain_client(i);
+                let now = self.now;
+                match &mut self.clients[i].downlink {
+                    Some(link) => link.push(now, out.contents.to_vec()),
+                    None => self.receive(i, &out.contents),
+                }
+            }
+
+            for i in 0..self.clients.len() {
+                let now = self.now;
+                let due = match &mut self.clients[i].downlink {
+                    Some(link) => link.due(now),
+                    None => continue,
+                };
+                for datagram in due {
+                    moved = true;
+                    if !self.clients[i].blocked && !self.offline {
+                        self.receive(i, &datagram);
+                    }
+                }
             }
 
             if !moved {
@@ -482,19 +523,51 @@ impl Net {
         }
     }
 
-    pub fn step(&mut self, dt: Duration) {
-        self.now += dt;
+    /// Hands a datagram from the media server to client `i`.
+    fn receive(&mut self, i: usize, contents: &[u8]) {
+        let source = self.clients[i].target.unwrap_or(self.candidates[0]);
         let now = self.now;
-        if self.core.poll_timeout().is_some_and(|t| t <= now) {
-            self.core.handle_timeout(now);
+        let c = &mut self.clients[i];
+        c.clock = now;
+        let receive = Receive::new(Protocol::Udp, source, c.addr, contents).unwrap();
+        c.rtc
+            .handle_input(Input::Receive(now, receive))
+            .expect("the client takes the datagram");
+        self.drain_client(i);
+    }
+
+    /// Moves the clock on by `dt`, a millisecond at a time. Whatever falls
+    /// due within a millisecond is handled at its end, as often as it asks
+    /// in a row, so a paced connection sends as fast as it would on its own.
+    pub fn step(&mut self, dt: Duration) {
+        let end = self.now + dt;
+        while self.now < end {
+            self.now = (self.now + TICK).min(end);
+            self.tick();
         }
-        for i in 0..self.clients.len() {
-            if self.clients[i].timeout <= now {
+    }
+
+    fn tick(&mut self) {
+        let now = self.now;
+        for _ in 0..MAX_ROUNDS {
+            let core_due = self.core.poll_timeout().is_some_and(|t| t <= now);
+            let clients_due: Vec<usize> = (0..self.clients.len())
+                .filter(|i| self.clients[*i].timeout <= now && self.clients[*i].failure.is_none())
+                .collect();
+            if !core_due && clients_due.is_empty() {
+                break;
+            }
+            if core_due {
+                self.core.handle_timeout(now);
+            }
+            for i in clients_due {
+                self.clients[i].clock = now;
                 if let Err(e) = self.clients[i].rtc.handle_input(Input::Timeout(now)) {
                     self.clients[i].failure = Some(e.to_string());
                 }
                 self.drain_client(i);
             }
+            self.flush();
         }
         self.flush();
         self.pump();
@@ -528,13 +601,19 @@ impl Net {
     /// Sends one RTP packet on a published section with a payload type of
     /// the client's own numbering.
     pub fn send(&mut self, i: usize, mid: Mid, pt: Pt, payload: &[u8]) {
+        let seq = *self.clients[i].next_seq.get(&mid).unwrap_or(&1);
+        self.send_rtp(i, mid, pt, payload, true, (seq as u32) * 960);
+    }
+
+    /// Sends one RTP packet with a marker and an RTP timestamp of its own.
+    pub fn send_rtp(&mut self, i: usize, mid: Mid, pt: Pt, payload: &[u8], marker: bool, ts: u32) {
         let now = self.now;
         let c = &mut self.clients[i];
         let seq = c.next_seq.entry(mid).or_insert(1);
         let this = *seq;
         *seq += 1;
-        let write = RtpWrite::new(pt, this.into(), (this as u32) * 960, now, payload.to_vec())
-            .marker(true)
+        let write = RtpWrite::new(pt, this.into(), ts, now, payload.to_vec())
+            .marker(marker)
             .nackable(true);
         c.rtc
             .direct_api()
@@ -542,6 +621,7 @@ impl Net {
             .expect("a sending stream")
             .write_rtp(write);
         c.sent += 1;
+        c.clock = now;
         self.drain_client(i);
         self.clients[i]
             .rtc
