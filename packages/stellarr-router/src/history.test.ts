@@ -72,6 +72,30 @@ describe("the browser's history", () => {
     expect(heard).toHaveBeenLastCalledWith("pop");
   });
 
+  it.each([
+    ["//login", "/login"],
+    ["///register/", "/register"],
+    ["//nope", "/nope"],
+    ["//cockpit//users", "/cockpit/users"],
+    ["//", "/"],
+  ])("reads %s, which a browser loads, as the page %s without writing a host into the address bar", (loaded, page) => {
+    // A browser refuses an address that starts with two slashes, as it names
+    // another host: replaceState throws a SecurityError, as here.
+    const replaceState = vi.fn((_state: unknown, _unused: string, url: string) => {
+      if (url.startsWith("//")) throw new DOMException("cross-origin", "SecurityError");
+    });
+    const fake = {
+      location: { pathname: loaded, search: "?q=1", hash: "", origin: "https://chat.example.test" },
+      history: { state: null, replaceState, pushState: vi.fn(), scrollRestoration: "auto" },
+      addEventListener: vi.fn(),
+    } as unknown as Window;
+
+    const history = createBrowserHistory(fake);
+
+    expect(history.location.pathname).toBe(page);
+    expect(replaceState).toHaveBeenLastCalledWith(expect.anything(), "", `${page}?q=1`);
+  });
+
   it("loads another document to leave the app, replacing the entry when asked", () => {
     const assign = vi.fn();
     const replace = vi.fn();

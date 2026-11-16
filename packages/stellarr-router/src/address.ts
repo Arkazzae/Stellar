@@ -13,19 +13,33 @@ export interface RouterLocation {
 const SLASH = "/".charCodeAt(0);
 
 /**
- * The one form of a path the router works with: no trailing slash, except
- * for the root. `/login/` and `/login` are the same page, and the address
- * bar is corrected to the second.
+ * The one form of a path the router works with: every run of slashes is one
+ * slash, and there is no trailing slash, except for the root. `/login/`,
+ * `//login` and `/login` are the same page, and the address bar is corrected
+ * to the last. nginx merges the slashes the same way before it picks the
+ * document, so the page shown is the page the server answered for.
+ *
+ * A path that started with two slashes would also be read as another host
+ * if it were written back to the address bar as it is, and the browser
+ * refuses that with a SecurityError.
  *
  * The path comes from the address bar and from links, so anyone can write
- * it. It is walked back from its end once: a pattern such as `/\/+$/` would
+ * it. It is walked once, from start to end: a pattern such as `/\/+$/` would
  * retry every slash of a long run that does not end the path, which takes
  * time quadratic in its length and can freeze the tab.
  */
 export function canonicalPath(pathname: string): string {
-  let end = pathname.length;
-  while (end > 0 && pathname.charCodeAt(end - 1) === SLASH) end -= 1;
-  return end === 0 ? "/" : pathname.slice(0, end);
+  const segments: string[] = [];
+  let start = -1;
+  for (let index = 0; index <= pathname.length; index += 1) {
+    if (index === pathname.length || pathname.charCodeAt(index) === SLASH) {
+      if (start !== -1) segments.push(pathname.slice(start, index));
+      start = -1;
+    } else if (start === -1) {
+      start = index;
+    }
+  }
+  return `/${segments.join("/")}`;
 }
 
 /** The address as the address bar shows it, without the origin. */

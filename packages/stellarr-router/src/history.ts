@@ -38,7 +38,8 @@ function keyOf(state: unknown): string | null {
 
 /**
  * The history of `window`. On creation it rewrites the address it was loaded
- * at to the canonical path and gives the entry a key, and it takes scroll
+ * at to the canonical path (`//login/` becomes `/login`, the page nginx
+ * answered for) and gives the entry a key, and it takes scroll
  * restoration over from the browser, which would restore a position before
  * the page it belongs to is drawn again.
  */

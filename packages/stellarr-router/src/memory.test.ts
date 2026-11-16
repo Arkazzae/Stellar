@@ -11,6 +11,11 @@ describe("createMemoryHistory", () => {
     expect(history.navigations).toEqual([]);
   });
 
+  it("reads an address that starts with two slashes as a path on this origin", () => {
+    expect(createMemoryHistory("//login").href).toBe("/login");
+    expect(createMemoryHistory("//cockpit//users?x=1").href).toBe("/cockpit/users?x=1");
+  });
+
   it("starts at the root without one", () => {
     expect(createMemoryHistory().href).toBe("/");
   });
