@@ -5,7 +5,7 @@ import { createPortal } from "react-dom";
 
 import { useLayer } from "@stellarr/ui/behavior";
 
-import type { EmojiEntry } from "@/lib/emoji";
+import type { EmojiEntry } from "@/lib/emoji/emoji";
 import type { CustomEmoji } from "@/ports";
 
 import { EmojiPicker } from "../composer/EmojiPicker";

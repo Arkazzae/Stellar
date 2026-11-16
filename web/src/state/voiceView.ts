@@ -1,5 +1,5 @@
 import type { CallVM, PersonVM, ScreenShareVM } from "@/components/view-models";
-import { initials } from "@/lib/format";
+import { initials } from "@/lib/format/format";
 import type { VoicePeer, VoiceState } from "@/lib/voice/types";
 
 /** How a room outside the server directory, such as a DM call, presents itself. */

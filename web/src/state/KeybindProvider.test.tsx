@@ -5,7 +5,7 @@ import {
   DEFAULT_KEYBINDINGS,
   readStoredKeybindings,
   writeStoredKeybindings,
-} from "@/lib/keybinds";
+} from "@/lib/keybinds/keybinds";
 
 import { KeybindProvider, useKeybindContext } from "./KeybindProvider";
 

@@ -5,7 +5,7 @@ import { useMemo } from "react";
 import { DmRail } from "@/components/shell/DmRail";
 import type { DmConversationVM } from "@/components/view-models";
 import { useMediaQuery } from "@/hooks/useMediaQuery";
-import { initials } from "@/lib/format";
+import { initials } from "@/lib/format/format";
 import type { DmConversation } from "@/ports";
 import { useFriends, useLanguage, useSession, useUi } from "@/state/hooks";
 

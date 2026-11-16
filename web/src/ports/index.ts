@@ -2,7 +2,7 @@
  * The only surface the UI may import.
  *
  * A component imports from `@/ports`, `@/components`, `@/design`, `@/state`
- * and `@/lib/format`. It never imports `@/lib/api`, `@/lib/realtime` or
+ * and `@/lib/format/format`. It never imports `@/lib/api`, `@/lib/realtime` or
  * `@/lib/voice`: those are transports, wired to the ports in `@/adapters`.
  */
 

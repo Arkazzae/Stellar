@@ -1,4 +1,4 @@
-import { messageReference } from "@/lib/format";
+import { messageReference } from "@/lib/format/format";
 import type { InterfaceLocale } from "@/i18n";
 import type { Message, MessageReference, ThreadSummary } from "@/ports";
 

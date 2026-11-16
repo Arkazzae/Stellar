@@ -8,8 +8,8 @@
  */
 
 import { translateForDocument } from "@/i18n/defaultLocale";
-import { formatBytes } from "@/lib/format";
-import { giphyIdFromUrl } from "@/lib/giphy";
+import { formatBytes } from "@/lib/format/format";
+import { giphyIdFromUrl } from "@/lib/giphy/giphy";
 import type { Attachment, Message, MessageEmbed } from "@/ports";
 
 import { bodyParts } from "./messageBody";

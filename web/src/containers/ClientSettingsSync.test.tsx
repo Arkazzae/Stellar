@@ -2,7 +2,7 @@ import { act, renderHook } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { DEFAULT_THEME, type ThemePreference } from "@/design/themes";
-import { DEFAULT_KEYBINDINGS, KEYBIND_STORAGE_VERSION, type Keybindings } from "@/lib/keybinds";
+import { DEFAULT_KEYBINDINGS, KEYBIND_STORAGE_VERSION, type Keybindings } from "@/lib/keybinds/keybinds";
 import { VoiceSettingsStore } from "@/lib/voice/settings";
 import type { ClientSettingsSnapshot } from "@/ports";
 

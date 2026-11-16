@@ -2,7 +2,7 @@ import { fireEvent, render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-import { EMOJI } from "@/lib/emoji";
+import { EMOJI } from "@/lib/emoji/emoji";
 
 import { EmojiPicker } from "./EmojiPicker";
 

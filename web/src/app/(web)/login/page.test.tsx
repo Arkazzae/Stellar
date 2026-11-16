@@ -4,7 +4,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { translateMessage, type MessageKey, type MessageValues } from "@/i18n";
 import { ApiError } from "@/lib/api/errors";
-import { PasskeyCancelledError } from "@/lib/webauthn";
+import { PasskeyCancelledError } from "@/lib/auth/webauthn";
 import type {
   AccountSecurity,
   AccountSecurityPort,
@@ -41,7 +41,7 @@ vi.mock("next/navigation", () => ({
   useRouter: () => mocks.router,
   useSearchParams: () => new URLSearchParams(mocks.search),
 }));
-vi.mock("@/lib/leaveFor", () => ({ leaveFor: mocks.leaveFor }));
+vi.mock("@/lib/auth/leaveFor", () => ({ leaveFor: mocks.leaveFor }));
 vi.mock("@/state/hooks", () => ({
   useSession: () => mocks.session,
   usePorts: () => mocks.ports,

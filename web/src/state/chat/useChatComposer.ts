@@ -1,6 +1,6 @@
 import { useCallback, useMemo, useRef, useState } from "react";
 
-import { giphyIdFromUrl } from "@/lib/giphy";
+import { giphyIdFromUrl } from "@/lib/giphy/giphy";
 import type {
   Attachment,
   ChatPort,

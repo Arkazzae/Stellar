@@ -2,7 +2,7 @@ import type { PinnedMessageVM } from "@/components/room/panels/channelPanelModel
 import { toParts, type MentionTarget } from "@/lib/messages/parts";
 import type { TranscriptSectionVM } from "@/components/room/transcript/Transcript";
 import type { InterfaceLocale } from "@/i18n";
-import { messageReference, type TranscriptSection } from "@/lib/format";
+import { messageReference, type TranscriptSection } from "@/lib/format/format";
 import type { Message, Reaction, Server, User } from "@/ports";
 
 /** The one author id the transcript renders as a server notice. */

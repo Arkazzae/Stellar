@@ -3,14 +3,14 @@ import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import { translateMessage, type Translator } from "@/i18n";
-import { fetchGiphyGif } from "@/lib/giphy";
+import { fetchGiphyGif } from "@/lib/giphy/giphy";
 
 import { parseInline, tokenizeCode, type MessagePart } from "@/lib/messages/parts";
 
 import { Attachment } from "./Attachment";
 
 // A GIF that never resolves keeps the tile in its loading state.
-vi.mock("@/lib/giphy", () => ({
+vi.mock("@/lib/giphy/giphy", () => ({
   resolveGiphyApiKey: vi.fn(async () => "key"),
   fetchGiphyGif: vi.fn(() => new Promise(() => undefined)),
   trackGiphyAction: vi.fn(),

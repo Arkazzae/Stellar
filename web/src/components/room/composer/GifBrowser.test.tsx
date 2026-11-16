@@ -10,7 +10,7 @@ const giphy = vi.hoisted(() => ({
   trackAction: vi.fn(),
 }));
 
-vi.mock("@/lib/giphy", () => ({
+vi.mock("@/lib/giphy/giphy", () => ({
   fetchGiphyPage: giphy.fetchPage,
   resolveGiphyApiKey: giphy.resolveApiKey,
   trackGiphyAction: giphy.trackAction,

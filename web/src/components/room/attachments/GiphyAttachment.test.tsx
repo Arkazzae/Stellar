@@ -2,13 +2,13 @@ import { fireEvent, render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-import { fetchGiphyGif, trackGiphyAction, type GiphyGif } from "@/lib/giphy";
+import { fetchGiphyGif, trackGiphyAction, type GiphyGif } from "@/lib/giphy/giphy";
 
 import type { GiphyPart } from "@/lib/messages/parts";
 
 import { GiphyAttachment } from "./GiphyAttachment";
 
-vi.mock("@/lib/giphy", () => ({
+vi.mock("@/lib/giphy/giphy", () => ({
   resolveGiphyApiKey: vi.fn(async () => "key"),
   fetchGiphyGif: vi.fn(),
   trackGiphyAction: vi.fn(),

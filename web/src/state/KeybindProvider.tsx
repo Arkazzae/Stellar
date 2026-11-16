@@ -25,7 +25,7 @@ import {
   type KeybindAction,
   type KeybindRecordingError,
   type Keybindings,
-} from "@/lib/keybinds";
+} from "@/lib/keybinds/keybinds";
 
 import { useUiContext } from "./UiProvider";
 import { useVoiceContext } from "./VoiceProvider";

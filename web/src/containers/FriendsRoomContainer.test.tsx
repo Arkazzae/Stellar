@@ -3,7 +3,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import type { DmRoomProps } from "@/components/friends/DmRoom";
 import type { FriendsViewProps } from "@/components/friends/FriendsView";
-import { formatDate } from "@/lib/format";
+import { formatDate } from "@/lib/format/format";
 import type {
   FriendsValue,
   LanguageValue,

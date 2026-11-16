@@ -15,8 +15,8 @@ import {
 } from "@/lib/api/client";
 import { isUnauthorized } from "@/lib/api/errors";
 import type { Bootstrap, RtcConfig } from "@/lib/api/types";
-import { iceServers } from "@/lib/env";
-import { createPasskey, getPasskey, passkeysSupported } from "@/lib/webauthn";
+import { iceServers } from "@/lib/platform/env";
+import { createPasskey, getPasskey, passkeysSupported } from "@/lib/auth/webauthn";
 import { SignalRRealtimeClient } from "@/lib/realtime/signalr";
 import type { RealtimeClient } from "@/lib/realtime/types";
 import { RuntimeIceProvider } from "@/lib/voice/iceSession";

@@ -1,7 +1,7 @@
 "use client";
 
 import { Icon } from "@stellarr/icons";
-import { formatFull } from "@/lib/format";
+import { formatFull } from "@/lib/format/format";
 import { useLanguage } from "@/state/hooks";
 
 import type { MediaItemVM } from "./channelPanelModel";

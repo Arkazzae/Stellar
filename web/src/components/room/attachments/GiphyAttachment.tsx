@@ -7,7 +7,7 @@ import {
   resolveGiphyApiKey,
   trackGiphyAction,
   type GiphyGif,
-} from "@/lib/giphy";
+} from "@/lib/giphy/giphy";
 import { useLanguage } from "@/state/LanguageProvider";
 
 import type { GalleryImage, GiphyPart } from "@/lib/messages/parts";

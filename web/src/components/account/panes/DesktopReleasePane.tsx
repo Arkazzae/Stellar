@@ -4,8 +4,8 @@ import { useEffect, useMemo, useState } from "react";
 
 import { Button } from "@stellarr/ui";
 import { Icon } from "@stellarr/icons";
-import type { DesktopRelease } from "@/lib/desktopRelease";
-import { formatBytes } from "@/lib/format";
+import type { DesktopRelease } from "@/lib/platform/desktopRelease";
+import { formatBytes } from "@/lib/format/format";
 import { useLanguage } from "@/state/hooks";
 
 export interface DesktopReleasePaneProps {

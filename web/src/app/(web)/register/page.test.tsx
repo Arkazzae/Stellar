@@ -2,7 +2,7 @@ import { render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-import { rememberPendingInvite } from "@/lib/invites";
+import { rememberPendingInvite } from "@/lib/auth/invites";
 import { translateMessage, type MessageKey } from "@/i18n";
 import type { SessionPhase } from "@/state/hooks";
 
