@@ -55,6 +55,34 @@ RUN dotnet publish server/Stellarr.Api/Stellarr.Api.csproj \
     -c Release -o /out/api --no-restore -p:UseAppHost=false -p:Version=${VERSION}
 RUN dotnet publish server/Stellarr.Cli/Stellarr.Cli.csproj \
     -c Release -o /out/cli --no-restore -p:UseAppHost=false -p:Version=${VERSION}
+# The CLI references the API project, so its publish repeats the API's: the
+# assemblies, appsettings.json, the native libraries. Only Stellarr.Cli.dll and
+# its .pdb, .deps.json and .runtimeconfig.json are its own. The image ships one
+# folder, the API's, with the CLI's own files added to it. Every file both
+# publishes hold must be byte for byte the same, or the build stops here: the
+# CLI must never run against an assembly it was not built with.
+RUN <<'EOF'
+set -eu
+cd /out/cli
+find . -type f | sort > /tmp/cli-files
+differing=0
+while IFS= read -r file; do
+  if [ -e "/out/api/$file" ] && ! cmp -s "$file" "/out/api/$file"; then
+    echo "The CLI and the API publish different copies of ${file#./}." >&2
+    differing=1
+  fi
+done < /tmp/cli-files
+if [ "$differing" -ne 0 ]; then
+  exit 1
+fi
+while IFS= read -r file; do
+  if [ ! -e "/out/api/$file" ]; then
+    echo "Adding the CLI's ${file#./} to the API's folder."
+    mkdir -p "/out/api/$(dirname "$file")"
+    cp -p "$file" "/out/api/$file"
+  fi
+done < /tmp/cli-files
+EOF
 
 # The media crate with every Rust file replaced by an empty stub. It changes
 # only when the manifest, the lockfile or the set of files changes, so the
@@ -156,8 +184,8 @@ COPY --chmod=0755 infra/entrypoint.sh /usr/local/bin/stellarr-entrypoint
 COPY --chmod=0755 infra/tls-maintenance.sh /usr/local/bin/stellarr-tls-maintenance
 COPY --chmod=0755 infra/stellarr-cli.sh /usr/local/bin/stellarr
 
+# The API, with the operator CLI's own files added in the api-build stage.
 COPY --from=api-build /out/api /opt/stellarr/api
-COPY --from=api-build /out/cli /opt/stellarr/cli
 # The two apps, which nginx serves: the web client's document at the top,
 # Cockpit's in cockpit/, the build's own files in static/, and the folders of
 # web/public/ beside them.
