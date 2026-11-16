@@ -4,7 +4,7 @@
 
 use std::hash::{BuildHasher, RandomState};
 use std::io::{self, Read, Write};
-use std::net::{SocketAddr, TcpStream, UdpSocket};
+use std::net::{IpAddr, Ipv4Addr, Ipv6Addr, SocketAddr, TcpStream, UdpSocket};
 use std::os::fd::AsRawFd;
 use std::time::Instant;
 
@@ -51,13 +51,15 @@ enum Step {
 
 impl Probe {
     /// Starts a check of run `run` of service `index`, which fails when it
-    /// has no answer by `deadline`. An error means the check failed at once,
-    /// such as a connection refused on the spot.
+    /// has no answer by `deadline`. A STUN check is sent from `local_port`
+    /// when that port is free, from any other otherwise. An error means the
+    /// check failed at once, such as a connection refused on the spot.
     pub fn start(
         index: usize,
         run: u64,
         check: &Readiness,
         deadline: Instant,
+        local_port: u16,
     ) -> io::Result<Probe> {
         let step = match check {
             Readiness::Running(_) => {
@@ -76,12 +78,16 @@ impl Probe {
                 request: Some(http_request(*addr, path, headers)),
             },
             Readiness::Stun(addr) => {
-                let local = if addr.is_ipv4() {
-                    "127.0.0.1:0"
+                let ip = if addr.is_ipv4() {
+                    IpAddr::V4(Ipv4Addr::LOCALHOST)
                 } else {
-                    "[::1]:0"
+                    IpAddr::V6(Ipv6Addr::LOCALHOST)
                 };
-                let socket = UdpSocket::bind(local)?;
+                // From the port of the check before, when there was one and it
+                // is free: coturn then sees one client asking again rather than
+                // a new one every time, and logs no session for each check.
+                let socket =
+                    UdpSocket::bind((ip, local_port)).or_else(|_| UdpSocket::bind((ip, 0)))?;
                 socket.connect(addr)?;
                 socket.set_nonblocking(true)?;
                 let id = transaction_id();
@@ -95,6 +101,14 @@ impl Probe {
             deadline,
             step,
         })
+    }
+
+    /// The local port of a STUN check, for the next one to reuse.
+    pub fn local_port(&self) -> Option<u16> {
+        match &self.step {
+            Step::Stun { socket, .. } => socket.local_addr().ok().map(|a| a.port()),
+            _ => None,
+        }
     }
 
     /// What to wait for on which descriptor.
