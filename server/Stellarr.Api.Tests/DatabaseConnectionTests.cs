@@ -1,7 +1,9 @@
 using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Configuration;
 using Stellarr.Api.Data;
 using Stellarr.Api.Domain;
+using Stellarr.Api.Endpoints;
 
 namespace Stellarr.Api.Tests;
 
@@ -132,6 +134,75 @@ public sealed class DatabaseConnectionTests
 
         await using var checkScope = factory.OpenScope(out var check);
         Assert.Equal(Writers + 1, await check.Users.CountAsync(x => names.Contains(x.Username)));
+    }
+
+    [Fact]
+    public async Task ABackupTakenWhileAnotherConnectionWritesHoldsOnlyWhatWasCommitted()
+    {
+        using var factory = new StellarrWebApplicationFactory(loadTestData: false);
+        var copy = Path.Combine(Path.GetTempPath(), $"stellarr-backup-{Guid.NewGuid():N}.db");
+        var name = DataModelSupport.UniqueName();
+        try
+        {
+            await using var scope = factory.OpenScope(out var writer);
+            await using (var transaction = await writer.Database.BeginTransactionAsync())
+            {
+                writer.Users.Add(NewUser(name));
+                await writer.SaveChangesAsync();
+
+                // With a shared cache the backup would read through the cache
+                // this write holds, and SQLite would refuse it at once.
+                await CockpitEndpoints.CopyDatabaseAsync(
+                    writer.Database.GetConnectionString()!, copy, CancellationToken.None);
+                await transaction.CommitAsync();
+            }
+
+            await using var connection = new SqliteConnection($"Data Source={copy};Mode=ReadOnly;Pooling=False");
+            await connection.OpenAsync();
+            await using var command = connection.CreateCommand();
+            command.CommandText = """SELECT count(*) FROM "Users" WHERE "Username" = $name;""";
+            command.Parameters.AddWithValue("$name", name);
+            Assert.Equal(0L, await command.ExecuteScalarAsync());
+            Assert.Equal(1, await writer.Users.CountAsync(x => x.Username == name));
+        }
+        finally
+        {
+            foreach (var file in new[] { copy, copy + "-wal", copy + "-shm" })
+            {
+                File.Delete(file);
+            }
+        }
+    }
+
+    [Fact]
+    public void ASharedCacheIsRefused() =>
+        Assert.Throws<InvalidOperationException>(
+            () => DatabaseConnection.From("Data Source=stellarr.db;Cache=Shared;Pooling=True"));
+
+    [Fact]
+    public void ForeignKeysStayOnWhateverTheConfigurationSays()
+    {
+        var settings = new SqliteConnectionStringBuilder(
+            DatabaseConnection.From("Data Source=stellarr.db;Foreign Keys=False"));
+
+        Assert.True(settings.ForeignKeys);
+        Assert.Equal("stellarr.db", settings.DataSource);
+    }
+
+    /// <summary>The files an installation and the development stack start from.</summary>
+    [Theory]
+    [InlineData("appsettings.json")]
+    [InlineData("appsettings.Development.json")]
+    public void TheShippedConnectionStringsAreAccepted(string file)
+    {
+        var configured = new ConfigurationBuilder()
+            .SetBasePath(AppContext.BaseDirectory)
+            .AddJsonFile(file, optional: false)
+            .Build()
+            .GetConnectionString("Database");
+
+        Assert.NotNull(configured);
+        Assert.True(new SqliteConnectionStringBuilder(DatabaseConnection.From(configured)).ForeignKeys);
     }
 
     private static AppDbContext Context(string connectionString) =>

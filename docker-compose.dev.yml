@@ -105,7 +105,7 @@ services:
       # `default-src 'none'`, which blocks the script that dotnet watch would
       # inject into HTML responses.
       DOTNET_WATCH_SUPPRESS_BROWSER_REFRESH: "1"
-      ConnectionStrings__Database: Data Source=/data/stellarr/stellarr-dev.db;Cache=Shared;Pooling=True
+      ConnectionStrings__Database: Data Source=/data/stellarr/stellarr-dev.db;Pooling=True
       DataRoot: /data/stellarr
       Rtc__MediaControlUrl: http://media:5200
       Rtc__MediaControlSecret: stellarr-media-development-secret

@@ -294,7 +294,6 @@ internal sealed class CliDatabase(AppDbContext context) : IAsyncDisposable
             // ReadWriteCreate: a missing file is an error, not a new empty
             // installation.
             Mode = mutation ? SqliteOpenMode.ReadWrite : SqliteOpenMode.ReadOnly,
-            Cache = SqliteCacheMode.Shared,
             Pooling = false,
             // How long a command waits for the API to finish writing before it
             // fails with database_locked.

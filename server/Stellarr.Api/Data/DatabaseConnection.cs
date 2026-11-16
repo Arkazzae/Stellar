@@ -18,6 +18,14 @@ public static class DatabaseConnection
     /// pooled or new. The schema depends on it: deletes cascade in SQLite.
     /// </para>
     /// <para>
+    /// A shared cache is refused. The database is in write-ahead logging, where
+    /// a reader goes on from the last commit while another connection writes.
+    /// A shared cache puts the connections of this process on one cache with
+    /// table locks instead: a reader waits for a writer of the same table, and
+    /// an online backup fails at once with SQLITE_BUSY while any of them has a
+    /// write open.
+    /// </para>
+    /// <para>
     /// Nothing is set for a busy database. Microsoft.Data.Sqlite retries a busy
     /// or locked statement itself, every 150 ms, until the command timeout:
     /// <c>Default Timeout</c>, 30 seconds when the string does not set it.
@@ -25,6 +33,18 @@ public static class DatabaseConnection
     /// inside that loop and could neither lengthen nor shorten it.
     /// </para>
     /// </remarks>
-    public static string From(string connectionString) =>
-        new SqliteConnectionStringBuilder(connectionString) { ForeignKeys = true }.ToString();
+    /// <exception cref="InvalidOperationException">The connection string sets <c>Cache=Shared</c>.</exception>
+    public static string From(string connectionString)
+    {
+        var settings = new SqliteConnectionStringBuilder(connectionString);
+        if (settings.Cache == SqliteCacheMode.Shared)
+        {
+            throw new InvalidOperationException(
+                "The database connection string sets Cache=Shared. The database runs in write-ahead logging, " +
+                "which a shared cache defeats within this process; remove Cache=Shared.");
+        }
+
+        settings.ForeignKeys = true;
+        return settings.ToString();
+    }
 }
