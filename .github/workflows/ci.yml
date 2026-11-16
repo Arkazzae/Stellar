@@ -320,6 +320,12 @@ jobs:
                       /bergamot-models/plen/vocab.plen.spm; do
             get "$path" 200
           done
+          # The speech detector's worklet, which the build writes from the
+          # app's source to a fixed address (web/worklets.ts); under another
+          # name it would be missing here.
+          get /audio/detector-worklet.js 200
+          [[ $(header cache-control) == no-cache ]] || fail "/audio/detector-worklet.js is cached."
+          body_has 'registerProcessor(' || fail "/audio/detector-worklet.js registers no processor."
 
           if (( failed )); then
             docker logs stellarr 2>&1 | tail -n 80
