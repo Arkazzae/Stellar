@@ -433,14 +433,7 @@ describe("Composer GIF browser", () => {
       return { ok: true, status: 200, json: async () => body } as Response;
     });
 
-    render(
-      <Composer
-        {...baseProps}
-        chips={[]}
-        giphyCustomerId="user-1"
-        onGif={onGif}
-      />,
-    );
+    render(<Composer {...baseProps} chips={[]} onGif={onGif} />);
 
     await user.click(screen.getByRole("button", { name: "Przeglądaj GIF-y" }));
     await user.click(await screen.findByRole("button", { name: "Wyślij GIF: A person celebrates." }));

@@ -42,7 +42,7 @@ describe("GIPHY failures", () => {
   });
 
   it("name the reason for a refused id", async () => {
-    await expect(fetchGiphyGif("key", "not an id!", "customer")).rejects.toMatchObject({
+    await expect(fetchGiphyGif("key", "not an id!")).rejects.toMatchObject({
       messageKey: "giphy.badId",
     });
   });
@@ -50,7 +50,7 @@ describe("GIPHY failures", () => {
   it("tell a rate limit from any other refusal", async () => {
     const respondWith = (status: number) =>
       vi.spyOn(globalThis, "fetch").mockResolvedValue({ ok: false, status } as Response);
-    const options = { apiKey: "key", customerId: "customer" };
+    const options = { apiKey: "key", locale: "en" } as const;
 
     respondWith(429);
     await expect(fetchGiphyPage(options)).rejects.toMatchObject({

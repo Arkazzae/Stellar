@@ -30,8 +30,12 @@ export function canCopyImages(): boolean {
   );
 }
 
+/**
+ * The media's bytes. No referrer: a GIF is fetched from GIPHY's own host,
+ * which is told nothing of the page, and an upload is the instance's own.
+ */
 async function fetchBlob(src: string): Promise<Blob> {
-  const response = await fetch(src, { credentials: "same-origin" });
+  const response = await fetch(src, { credentials: "same-origin", referrerPolicy: "no-referrer" });
   if (!response.ok) throw new Error(`Fetching ${src} failed`);
   return await response.blob();
 }
@@ -91,7 +95,7 @@ export async function saveFile(src: string, name: string): Promise<void> {
   const anchor = document.createElement("a");
   anchor.href = href;
   anchor.download = name;
-  anchor.rel = "noopener";
+  anchor.rel = "noopener noreferrer";
   document.body.append(anchor);
   anchor.click();
   anchor.remove();

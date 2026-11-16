@@ -2,6 +2,8 @@ import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
+import type * as GiphyModule from "@/lib/giphy/giphy";
+
 import { GifBrowser } from "./GifBrowser";
 
 const giphy = vi.hoisted(() => ({
@@ -10,7 +12,8 @@ const giphy = vi.hoisted(() => ({
   trackAction: vi.fn(),
 }));
 
-vi.mock("@/lib/giphy/giphy", () => ({
+vi.mock("@/lib/giphy/giphy", async (importOriginal) => ({
+  ...(await importOriginal<typeof GiphyModule>()),
   fetchGiphyPage: giphy.fetchPage,
   resolveGiphyApiKey: giphy.resolveApiKey,
   trackGiphyAction: giphy.trackAction,
@@ -35,9 +38,7 @@ describe("GifBrowser", () => {
 
     // The component deliberately carries a translation fallback, so this
     // focused interaction test needs no route-level provider.
-    render(
-      <GifBrowser customerId="customer" onSelect={vi.fn()} />,
-    );
+    render(<GifBrowser onSelect={vi.fn()} />);
 
     const open = screen.getByRole("button", { name: "Przeglądaj GIF-y" });
     expect(open).toHaveAttribute("aria-expanded", "false");
@@ -67,7 +68,6 @@ describe("GifBrowser", () => {
       items: [{
         id: "wave",
         pageUrl: "https://giphy.com/gifs/wave",
-        title: "Machanie",
         alt: "Osoba macha ręką",
         previewUrl: "https://media.giphy.com/preview.gif",
         mediaUrl: "https://media.giphy.com/original.gif",
@@ -80,9 +80,7 @@ describe("GifBrowser", () => {
       totalCount: 1,
     });
 
-    render(
-      <GifBrowser customerId="customer" onSelect={onSelect} />,
-    );
+    render(<GifBrowser onSelect={onSelect} />);
 
     const trigger = screen.getByRole("button", { name: "Przeglądaj GIF-y" });
     await user.click(trigger);

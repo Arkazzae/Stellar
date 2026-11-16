@@ -398,6 +398,5 @@ describe("RoomContainer attachments", () => {
 
     expect(seenThread().attachments).toBe(seenTranscript().attachments);
     expect(seenPanel().callbacks).toBe(seenTranscript().attachments);
-    expect(seenTranscript().attachments?.giphyCustomerId).toBe("u-maja");
   });
 });

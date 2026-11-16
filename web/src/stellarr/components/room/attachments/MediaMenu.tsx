@@ -71,7 +71,7 @@ function entriesFor({ kind, src, name }: MediaMenuTarget, t: Translator): MenuEn
       id: "open",
       label: t("media.openInNewTab"),
       icon: "popout",
-      onSelect: () => void window.open(src, "_blank", "noopener"),
+      onSelect: () => void window.open(src, "_blank", "noopener,noreferrer"),
     },
   );
   return entries;

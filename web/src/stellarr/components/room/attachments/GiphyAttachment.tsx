@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from "react";
 
 import {
   fetchGiphyGif,
+  GIPHY_REFERRER_POLICY,
   resolveGiphyApiKey,
   trackGiphyAction,
   type GiphyGif,
@@ -12,8 +13,6 @@ import type { GalleryImage, GiphyPart } from "@/lib/messages/parts";
 
 export interface GiphyAttachmentProps {
   part: GiphyPart;
-  /** Stable opaque id sent with GIPHY requests and action pingbacks. */
-  customerId: string;
   onOpen?(images: GalleryImage[], index: number): void;
 }
 
@@ -25,7 +24,7 @@ interface Outcome {
 
 const REL = "ugc nofollow noopener noreferrer";
 
-export function GiphyAttachment({ part, customerId, onOpen }: GiphyAttachmentProps) {
+export function GiphyAttachment({ part, onOpen }: GiphyAttachmentProps) {
   const { t } = useLanguage();
   const [outcome, setOutcome] = useState<Outcome | null>(null);
   const viewReported = useRef<string | null>(null);
@@ -33,13 +32,13 @@ export function GiphyAttachment({ part, customerId, onOpen }: GiphyAttachmentPro
   useEffect(() => {
     const controller = new AbortController();
     resolveGiphyApiKey()
-      .then((key) => fetchGiphyGif(key, part.id, customerId, controller.signal))
+      .then((key) => fetchGiphyGif(key, part.id, controller.signal))
       .then((gif) => setOutcome({ id: part.id, gif }))
       .catch(() => {
         if (!controller.signal.aborted) setOutcome({ id: part.id, gif: null });
       });
     return () => controller.abort();
-  }, [customerId, part.id]);
+  }, [part.id]);
 
   // An outcome for a previous id says nothing about this one.
   const current = outcome?.id === part.id ? outcome : null;
@@ -63,7 +62,7 @@ export function GiphyAttachment({ part, customerId, onOpen }: GiphyAttachmentPro
       <div className="att att-giphy" role="status">
         <div className="att-giphy-loading" />
         <div className="att-giphy-caption" aria-hidden="true">
-          {"\u00a0"}
+          {" "}
         </div>
         <span className="sr-only">{t("attachment.loadingGif")}</span>
       </div>
@@ -71,23 +70,26 @@ export function GiphyAttachment({ part, customerId, onOpen }: GiphyAttachmentPro
   }
 
   const { gif } = current;
+  const alt = gif.alt ?? t("gif.untitled");
   const media = (
     <picture>
       {gif.stillUrl === undefined ? null : (
         <source media="(prefers-reduced-motion: reduce)" srcSet={gif.stillUrl} />
       )}
+      {/* The image's referrer policy covers the <source> chosen in its place. */}
       <img
         src={gif.mediaUrl}
-        alt={gif.alt}
+        alt={alt}
         width={gif.width}
         height={gif.height}
         loading="lazy"
+        referrerPolicy={GIPHY_REFERRER_POLICY}
         onError={() => setOutcome({ id: part.id, gif: null })}
         onLoad={() => {
           // GIPHY counts one view per GIF, not one per load event.
           if (viewReported.current === gif.id) return;
           viewReported.current = gif.id;
-          void trackGiphyAction(gif.analytics.onload, customerId);
+          void trackGiphyAction(gif.analytics.onload);
         }}
       />
     </picture>
@@ -101,8 +103,8 @@ export function GiphyAttachment({ part, customerId, onOpen }: GiphyAttachmentPro
         <button
           type="button"
           className="att-giphy-media"
-          aria-label={t("attachment.zoomGif", { alt: gif.alt })}
-          onClick={() => onOpen([{ src: gif.mediaUrl, alt: gif.alt }], 0)}
+          aria-label={t("attachment.zoomGif", { alt })}
+          onClick={() => onOpen([{ src: gif.mediaUrl, alt }], 0)}
         >
           {media}
         </button>

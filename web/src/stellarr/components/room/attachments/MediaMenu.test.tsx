@@ -89,14 +89,14 @@ describe("useMediaMenu", () => {
     expect(screen.queryByRole("menu")).toBeNull();
   });
 
-  it("opens the media in a new tab without handing over the opener", () => {
+  it("opens the media in a new tab without handing over the opener or the page's address", () => {
     stubClipboard(true);
     const open = vi.spyOn(window, "open").mockReturnValue(null);
     raiseMenu(VIDEO);
 
     fireEvent.click(screen.getByRole("menuitem", { name: "Otwórz w nowej karcie" }));
 
-    expect(open).toHaveBeenCalledWith("/files/pies.webm", "_blank", "noopener");
+    expect(open).toHaveBeenCalledWith("/files/pies.webm", "_blank", "noopener,noreferrer");
   });
 
   it.each([

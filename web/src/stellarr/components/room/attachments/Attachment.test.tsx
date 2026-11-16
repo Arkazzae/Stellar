@@ -4,13 +4,15 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import { translateMessage, type Translator } from "@/i18n";
 import { fetchGiphyGif } from "@/lib/giphy/giphy";
+import type * as GiphyModule from "@/lib/giphy/giphy";
 
 import { parseInline, tokenizeCode, type MessagePart } from "@/lib/messages/parts";
 
 import { Attachment } from "./Attachment";
 
 // A GIF that never resolves keeps the tile in its loading state.
-vi.mock("@/lib/giphy/giphy", () => ({
+vi.mock("@/lib/giphy/giphy", async (importOriginal) => ({
+  ...(await importOriginal<typeof GiphyModule>()),
   resolveGiphyApiKey: vi.fn(async () => "key"),
   fetchGiphyGif: vi.fn(() => new Promise(() => undefined)),
   trackGiphyAction: vi.fn(),
@@ -126,14 +128,10 @@ describe("Attachment", () => {
     expect(onCopyCode).toHaveBeenCalledWith(expect.objectContaining({ source: "const x = 1" }));
   });
 
-  it("asks GIPHY on behalf of the host's customer id, or Stellarr's own", async () => {
-    const { rerender } = render(<Attachment part={giphy} />);
+  it("asks GIPHY for the GIF a message holds, with nothing from the host", async () => {
+    render(<Attachment part={giphy} />);
     await vi.waitFor(() => expect(fetchGiphyGif).toHaveBeenCalledTimes(1));
-    expect(fetchGiphyGif).toHaveBeenLastCalledWith("key", "abc123", "stellarr", expect.anything());
-
-    rerender(<Attachment part={giphy} callbacks={{ giphyCustomerId: "customer-7" }} />);
-    await vi.waitFor(() => expect(fetchGiphyGif).toHaveBeenCalledTimes(2));
-    expect(fetchGiphyGif).toHaveBeenLastCalledWith("key", "abc123", "customer-7", expect.anything());
+    expect(fetchGiphyGif).toHaveBeenLastCalledWith("key", "abc123", expect.any(AbortSignal));
   });
 
   it("offers translation of a text part only when the host enables it", () => {

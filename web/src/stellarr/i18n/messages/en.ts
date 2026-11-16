@@ -1665,6 +1665,7 @@ export const en = {
   "gif.popular": "Popular",
   "gif.resultsFor": "Results for “{query}”",
   "gif.poweredBy": "Powered by GIPHY",
+  "gif.untitled": "GIF from GIPHY",
   "voice.volume": "Volume",
   "voice.mediaSessionPrivate": "Private call",
   "voice.mediaSessionChannel": "Voice channel",

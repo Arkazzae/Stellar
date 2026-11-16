@@ -8,13 +8,12 @@ import type { AttachmentCallbacks } from "@/lib/messages/parts";
  * the room open it. The state is the room's own: nothing else in the app opens
  * the lightbox, so it does not go through the UI provider.
  */
-export function useAttachmentViewer(giphyCustomerId: string) {
+export function useAttachmentViewer() {
   const [target, setTarget] = useState<ViewerTarget | null>(null);
   const close = useCallback(() => setTarget(null), []);
 
   const attachments = useMemo<AttachmentCallbacks>(
     () => ({
-      giphyCustomerId,
       onOpenImage: (images, index) => setTarget({ kind: "image", images, index }),
       onPlayVideo: (part) =>
         setTarget({
@@ -34,7 +33,7 @@ export function useAttachmentViewer(giphyCustomerId: string) {
         }
       },
     }),
-    [giphyCustomerId],
+    [],
   );
 
   return { target, close, attachments };
