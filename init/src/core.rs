@@ -10,7 +10,12 @@
 //!
 //! - `waiting`: not running, and something it needs is not ready yet.
 //! - `starting`: running, and not yet ready.
-//! - `ready`: running and ready. It stays ready until the process exits.
+//! - `ready`: running and ready. Its check keeps being asked at the
+//!   service's [`Watch`](crate::service::Watch) interval.
+//! - `failing`: running, ready once, and its check has failed several times
+//!   in a row since. One check that passes makes it ready again. It is not
+//!   restarted for it: a restart loop on a machine that is only slow would do
+//!   more harm than a service reported as failing.
 //! - `backoff`: exited, and waiting to try again.
 //! - `stopping`: asked to stop, by a restart or by the shutdown.
 //! - `stopped`: stopped by the shutdown, for good.
@@ -20,8 +25,12 @@ use std::time::{Duration, Instant};
 
 use crate::service::{Readiness, Service, Signal, Table, signal_name};
 
-/// How long after a failed readiness check the next one starts.
+/// How long after a failed readiness check at start the next one starts.
 pub const PROBE_INTERVAL: Duration = Duration::from_millis(500);
+
+/// How long a readiness check at start may take. The checks of a ready
+/// service take their time from its [`Watch`](crate::service::Watch).
+pub const PROBE_TIMEOUT: Duration = Duration::from_secs(2);
 
 /// How a process ended.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -46,9 +55,10 @@ pub trait Io {
     fn spawn(&mut self, service: &Service) -> Result<u32, String>;
     /// Sends `signal` to the process group `pid` leads, or to `pid` alone.
     fn signal(&mut self, pid: u32, signal: Signal, group: bool);
-    /// Starts a readiness check of run `run` of service `index`. Its answer
-    /// comes back through [`Supervisor::probed`], however it ends.
-    fn probe(&mut self, index: usize, run: u64, check: &Readiness);
+    /// Starts a readiness check of run `run` of service `index`, failed if it
+    /// has no answer within `timeout`. Its answer comes back through
+    /// [`Supervisor::probed`], however it ends.
+    fn probe(&mut self, index: usize, run: u64, check: &Readiness, timeout: Duration);
     /// One line of the manager's log.
     fn log(&mut self, line: String);
 }
@@ -59,6 +69,7 @@ pub enum State {
     Waiting,
     Starting,
     Ready,
+    Failing,
     Backoff,
     Stopping,
     Stopped,
@@ -70,6 +81,7 @@ impl State {
             State::Waiting => "waiting",
             State::Starting => "starting",
             State::Ready => "ready",
+            State::Failing => "failing",
             State::Backoff => "backoff",
             State::Stopping => "stopping",
             State::Stopped => "stopped",
@@ -81,6 +93,7 @@ impl State {
             State::Waiting,
             State::Starting,
             State::Ready,
+            State::Failing,
             State::Backoff,
             State::Stopping,
             State::Stopped,
@@ -136,6 +149,14 @@ enum Run {
     Ready {
         pid: u32,
         since: Instant,
+        /// When the next check is due; `None` while one runs, and for a
+        /// service with nothing to ask.
+        check: Option<Instant>,
+        /// Checks failed in a row.
+        misses: u32,
+        /// Whether `misses` reached the service's limit, until a check
+        /// passes again.
+        failing: bool,
     },
     Backoff {
         until: Instant,
@@ -165,10 +186,32 @@ impl Run {
         match self {
             Run::Waiting => State::Waiting,
             Run::Starting { .. } => State::Starting,
+            Run::Ready { failing: true, .. } => State::Failing,
             Run::Ready { .. } => State::Ready,
             Run::Backoff { .. } => State::Backoff,
             Run::Stopping { .. } => State::Stopping,
             Run::Stopped => State::Stopped,
+        }
+    }
+
+    /// Ready, and not failing its check: what health and the services that
+    /// need it go by.
+    fn is_ready(&self) -> bool {
+        matches!(self, Run::Ready { failing: false, .. })
+    }
+
+    /// The state a service enters when it becomes ready at `now`.
+    fn ready(pid: u32, since: Instant, now: Instant, service: &Service) -> Run {
+        let check = match service.ready {
+            Readiness::Running(_) => None,
+            _ => Some(now + service.watch.interval),
+        };
+        Run::Ready {
+            pid,
+            since,
+            check,
+            misses: 0,
+            failing: false,
         }
     }
 }
@@ -283,6 +326,9 @@ impl Supervisor {
                         }
                     }
                 },
+                Run::Ready {
+                    check: Some(at), ..
+                } if running => consider(at),
                 Run::Stopping {
                     kill_at,
                     killed: false,
@@ -362,27 +408,54 @@ impl Supervisor {
         if slot.run != run {
             return;
         }
-        let Run::Starting {
-            pid,
-            since,
-            probe_at: None,
-        } = slot.state
-        else {
-            return;
-        };
-        if ok {
-            slot.state = Run::Ready { pid, since };
-            io.log(format!(
-                "{}: ready after {}",
-                self.table.services()[index].name,
-                secs(now.saturating_duration_since(since))
-            ));
-        } else {
-            slot.state = Run::Starting {
+        let service = &self.table.services()[index];
+        let name = &service.name;
+        match slot.state {
+            Run::Starting {
                 pid,
                 since,
-                probe_at: Some(now + PROBE_INTERVAL),
-            };
+                probe_at: None,
+            } => {
+                if ok {
+                    slot.state = Run::ready(pid, since, now, service);
+                    io.log(format!(
+                        "{name}: ready after {}",
+                        secs(now.saturating_duration_since(since))
+                    ));
+                } else {
+                    slot.state = Run::Starting {
+                        pid,
+                        since,
+                        probe_at: Some(now + PROBE_INTERVAL),
+                    };
+                }
+            }
+            Run::Ready {
+                pid,
+                since,
+                check: None,
+                misses,
+                failing,
+            } if !matches!(service.ready, Readiness::Running(_)) => {
+                let watch = service.watch;
+                let misses = if ok { 0 } else { misses.saturating_add(1) };
+                let now_failing = misses >= watch.misses;
+                if failing && !now_failing {
+                    io.log(format!("{name}: answers its check again; ready"));
+                } else if !failing && now_failing {
+                    io.log(format!(
+                        "{name}: failed its check {misses} times in a row; failing, and left running"
+                    ));
+                }
+                slot.state = Run::Ready {
+                    pid,
+                    since,
+                    check: Some(now + watch.interval),
+                    misses,
+                    failing: now_failing,
+                };
+            }
+            _ => return,
         }
         self.advance(now, io);
     }
@@ -433,7 +506,7 @@ impl Supervisor {
                     .table
                     .needs(i)
                     .iter()
-                    .filter(|&&j| !matches!(self.slots[j].state, Run::Ready { .. }))
+                    .filter(|&&j| !self.slots[j].state.is_ready())
                     .map(|&j| self.table.services()[j].name.as_str())
                     .collect::<Vec<_>>()
                     .join(", ");
@@ -445,7 +518,7 @@ impl Supervisor {
                 slot.told_waiting = false;
                 io.log(format!("{name}: trying again now, on request"));
             }
-            Run::Starting { pid, since, .. } | Run::Ready { pid, since } => {
+            Run::Starting { pid, since, .. } | Run::Ready { pid, since, .. } => {
                 let (pid, since) = (*pid, *since);
                 io.signal(pid, service.stop_signal, true);
                 slot.failures = 0;
@@ -481,7 +554,8 @@ impl Supervisor {
             return Err(format!("{name} cannot reload; restart it instead"));
         };
         // A process that is not ready may not handle the signal yet, and the
-        // default action of SIGHUP is to end it.
+        // default action of SIGHUP is to end it. One that fails its check has
+        // been ready, and a reload may be what it needs.
         match self.slots[i].state {
             Run::Ready { pid, .. } => {
                 io.signal(pid, signal, false);
@@ -505,7 +579,7 @@ impl Supervisor {
             .slots
             .iter()
             .zip(self.table.services())
-            .filter(|(slot, service)| service.critical && !matches!(slot.state, Run::Ready { .. }))
+            .filter(|(slot, service)| service.critical && !slot.state.is_ready())
             .map(|(slot, service)| format!("{} is {}", service.name, slot.state.state().name()))
             .collect();
         if failing.is_empty() {
@@ -581,7 +655,7 @@ impl Supervisor {
                 } => match &service.ready {
                     Readiness::Running(after) => {
                         if now >= since + *after {
-                            slot.state = Run::Ready { pid, since };
+                            slot.state = Run::ready(pid, since, now, service);
                             io.log(format!(
                                 "{}: ready, running for {}",
                                 service.name,
@@ -598,10 +672,26 @@ impl Supervisor {
                                 since,
                                 probe_at: None,
                             };
-                            io.probe(i, slot.run, check);
+                            io.probe(i, slot.run, check, PROBE_TIMEOUT);
                         }
                     }
                 },
+                Run::Ready {
+                    pid,
+                    since,
+                    check: Some(at),
+                    misses,
+                    failing,
+                } if running && now >= at => {
+                    slot.state = Run::Ready {
+                        pid,
+                        since,
+                        check: None,
+                        misses,
+                        failing,
+                    };
+                    io.probe(i, slot.run, &service.ready, service.watch.timeout);
+                }
                 Run::Stopping {
                     pid,
                     since,
@@ -646,7 +736,7 @@ impl Supervisor {
                 .needs(i)
                 .iter()
                 .copied()
-                .filter(|&j| !matches!(self.slots[j].state, Run::Ready { .. }))
+                .filter(|&j| !self.slots[j].state.is_ready())
                 .collect();
             if missing.is_empty() {
                 self.spawn(i, now, io);
@@ -725,7 +815,7 @@ impl Supervisor {
                     slot.state = Run::Stopped;
                     io.log(format!("{}: stopped", service.name));
                 }
-                Run::Starting { pid, since, .. } | Run::Ready { pid, since } => {
+                Run::Starting { pid, since, .. } | Run::Ready { pid, since, .. } => {
                     io.signal(pid, service.stop_signal, true);
                     let kill_at = (now + service.stop_timeout).min(deadline);
                     slot.state = Run::Stopping {
