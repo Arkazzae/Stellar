@@ -1,5 +1,4 @@
-import { readdirSync, rmSync } from "node:fs";
-import { join } from "node:path";
+import { readdirSync } from "node:fs";
 
 import type { Connect, Plugin, Rollup } from "vite";
 
@@ -85,19 +84,6 @@ export function documentFor(pathname: string, directories: readonly string[]): D
   // `/@vite/client`, `/@fs/…` and the like belong to the dev server.
   if (first.startsWith("@") || directories.includes(first) || last.includes(".")) return null;
   return first === "cockpit" ? COCKPIT_DOCUMENT : WEB_DOCUMENT;
-}
-
-/**
- * Takes out of `outDir` the TypeScript declarations the build copied from
- * `publicDir` with the rest of it; a browser has no use for one, so none
- * ships. Returns the files it removed, relative to `outDir`.
- */
-export function removeDeclarations(publicDir: string, outDir: string): string[] {
-  const declarations = readdirSync(publicDir, { recursive: true, encoding: "utf8" }).filter((file) =>
-    file.endsWith(".d.ts"),
-  );
-  for (const file of declarations) rmSync(join(outDir, file), { force: true });
-  return declarations;
 }
 
 /** Writes the pre-paint scripts into the web client's document at the marker. */
@@ -296,9 +282,6 @@ export function stellarrDocuments(options: DocumentsOptions): Plugin[] {
       configurePreviewServer(server) {
         server.middlewares.use(serveInstanceLanguage(options.instanceLanguage));
         return () => server.middlewares.use(serveDocuments(directories));
-      },
-      writeBundle(output) {
-        if (output.dir !== undefined) removeDeclarations(options.publicDir, output.dir);
       },
     },
     {
