@@ -15,13 +15,13 @@ import type {
   Reaction,
 } from "@/ports";
 
-import { Attachment } from "./attachments/Attachment";
-import type { MessageTranslationOptions } from "./attachments/TranslatedTextAttachment";
-import type { PointedAt } from "./messageExport";
+import { Attachment } from "../attachments/Attachment";
+import type { MessageTranslationOptions } from "../attachments/TranslatedTextAttachment";
+import type { PointedAt } from "@/lib/messages/messageExport";
 import { MessageEditor } from "./MessageEditor";
 import { messageMenuEntries } from "./messageMenu";
 import { MessageToolbar, type MessageAction } from "./MessageToolbar";
-import { isJumbo, type AttachmentCallbacks, type MessagePart } from "./parts";
+import { isJumbo, type AttachmentCallbacks, type MessagePart } from "@/lib/messages/parts";
 import { Reactions } from "./Reactions";
 
 /** One message inside a block: its own id, and what it renders as. */

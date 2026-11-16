@@ -2,14 +2,14 @@
 
 import { useCallback, useMemo, useState } from "react";
 
-import { ChannelPanel } from "@/components/room/ChannelPanel";
+import { ChannelPanel } from "@/components/room/panels/ChannelPanel";
 import {
   collectIndexedPanelItems,
   collectPanelItems,
   type LinkItemVM,
   type MediaItemVM,
-} from "@/components/room/channelPanelModel";
-import type { AttachmentCallbacks } from "@/components/room/parts";
+} from "@/components/room/panels/channelPanelModel";
+import type { AttachmentCallbacks } from "@/lib/messages/parts";
 import type { Message } from "@/ports";
 import { useChat, useDirectory, useUi } from "@/state/hooks";
 

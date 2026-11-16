@@ -4,7 +4,7 @@ import { Button } from "@stellarr/ui";
 import { Icon } from "@stellarr/icons";
 import { useLanguage } from "@/state/LanguageProvider";
 
-import type { FilePart } from "../parts";
+import type { FilePart } from "@/lib/messages/parts";
 
 export interface FileAttachmentProps {
   part: FilePart;

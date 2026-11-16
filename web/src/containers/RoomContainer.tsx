@@ -2,11 +2,11 @@
 
 import { useCallback, useRef } from "react";
 
-import { DropOverlay } from "@/components/room/DropOverlay";
-import { MediaViewer } from "@/components/room/MediaViewer";
-import { ThreadPanel } from "@/components/room/ThreadPanel";
-import { Transcript } from "@/components/room/Transcript";
-import { Typing } from "@/components/room/Typing";
+import { DropOverlay } from "@/components/room/composer/DropOverlay";
+import { MediaViewer } from "@/components/room/attachments/MediaViewer";
+import { ThreadPanel } from "@/components/room/panels/ThreadPanel";
+import { Transcript } from "@/components/room/transcript/Transcript";
+import { Typing } from "@/components/room/transcript/Typing";
 import { RoomHeader } from "@/components/shell/RoomHeader";
 import {
   useAccount,

@@ -5,7 +5,7 @@ import { useState, type KeyboardEvent } from "react";
 import { Icon } from "@stellarr/icons";
 import { useLanguage } from "@/state/LanguageProvider";
 
-import type { VideoEmbedPart } from "../parts";
+import type { VideoEmbedPart } from "@/lib/messages/parts";
 
 import { playerSource, providerLabel } from "./players";
 import { ProviderPlayerFrame } from "./ProviderPlayerFrame";

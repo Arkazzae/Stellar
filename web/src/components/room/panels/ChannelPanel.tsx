@@ -17,7 +17,7 @@ import type {
 import type { IndexStatus } from "./IndexedTab";
 import { LinksTab } from "./LinksTab";
 import { MediaTab } from "./MediaTab";
-import type { AttachmentCallbacks } from "./parts";
+import type { AttachmentCallbacks } from "@/lib/messages/parts";
 import { PinnedTab, type PinnedTabProps } from "./PinnedTab";
 import { SearchPanel } from "./SearchPanel";
 

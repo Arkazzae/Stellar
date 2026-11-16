@@ -1,7 +1,7 @@
 import { fireEvent, render, screen } from "@testing-library/react";
 import { describe, expect, it } from "vitest";
 
-import type { ImagePart } from "../parts";
+import type { ImagePart } from "@/lib/messages/parts";
 
 import { ImageAttachment } from "./ImageAttachment";
 

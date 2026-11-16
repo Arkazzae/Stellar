@@ -15,7 +15,7 @@ import { insertEmojiAt, toggleMarker } from "./composerText";
 import { EmojiPicker } from "./EmojiPicker";
 import { GifBrowser } from "./GifBrowser";
 import { MentionList, mentionOptionId } from "./MentionList";
-import { MESSAGE_MAX_LENGTH } from "./messageLimits";
+import { MESSAGE_MAX_LENGTH } from "@/lib/messages/messageLimits";
 import { useAutosizedField } from "./useAutosizedField";
 import { useComposerDraft } from "./useComposerDraft";
 import { useComposerPopovers } from "./useComposerPopovers";

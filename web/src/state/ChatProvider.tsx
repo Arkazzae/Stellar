@@ -11,10 +11,10 @@ import {
   type ReactNode,
 } from "react";
 
-import type { PinnedMessageVM } from "@/components/room/channelPanelModel";
-import type { ComposerChip } from "@/components/room/ComposerChips";
-import type { MessageAction } from "@/components/room/MessageToolbar";
-import type { TranscriptSectionVM } from "@/components/room/Transcript";
+import type { PinnedMessageVM } from "@/components/room/panels/channelPanelModel";
+import type { ComposerChip } from "@/components/room/composer/ComposerChips";
+import type { MessageAction } from "@/components/room/transcript/MessageToolbar";
+import type { TranscriptSectionVM } from "@/components/room/transcript/Transcript";
 import { buildThreadTranscript, buildTranscript } from "@/lib/format";
 import { findFirstUnreadGroup } from "@/lib/unread";
 import type {

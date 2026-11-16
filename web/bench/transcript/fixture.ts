@@ -6,7 +6,7 @@ import {
   type PresentationContext,
 } from "@/state/chat/present";
 
-import type { TranscriptSectionVM } from "@/components/room/Transcript";
+import type { TranscriptSectionVM } from "@/components/room/transcript/Transcript";
 
 /** One message every 137 s: about 630 messages to a day, so day rows are real. */
 export const STEP_MS = 137_000;

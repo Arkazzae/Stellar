@@ -3,8 +3,8 @@ import userEvent from "@testing-library/user-event";
 import { useState, type ReactNode } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-import { EmojiPicker } from "@/components/room/EmojiPicker";
-import { MessageEditor } from "@/components/room/MessageEditor";
+import { EmojiPicker } from "@/components/room/composer/EmojiPicker";
+import { MessageEditor } from "@/components/room/transcript/MessageEditor";
 import { EmojiPane } from "@/components/settings/panes/EmojiPane";
 import { AppShell } from "@/components/shell/AppShell";
 import { polish } from "@/test/translators";

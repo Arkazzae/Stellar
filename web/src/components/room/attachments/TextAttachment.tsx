@@ -10,7 +10,7 @@ import {
 
 import type { InterfaceLocale, Translator } from "@/i18n";
 
-import type { InlineNode } from "../parts";
+import type { InlineNode } from "@/lib/messages/parts";
 
 /** Eight lines show enough context without letting one message take the room. */
 const COLLAPSED_LINES = 8;

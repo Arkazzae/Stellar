@@ -5,7 +5,7 @@ import { useId, useRef, useState } from "react";
 import { useLayer } from "@stellarr/ui/behavior";
 import { Icon } from "@stellarr/icons";
 import { ProfileBioText } from "@/components/profile/ProfileBio";
-import { EmojiPicker } from "@/components/room/EmojiPicker";
+import { EmojiPicker } from "@/components/room/composer/EmojiPicker";
 import type { CustomEmoji } from "@/ports";
 import { useLanguage } from "@/state/hooks";
 

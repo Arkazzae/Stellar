@@ -13,8 +13,8 @@ import {
   type ImagePart,
   type MessagePart,
   type VideoPart,
-} from "./parts";
-import type { TranscriptSectionVM } from "./transcriptRows";
+} from "@/lib/messages/parts";
+import type { TranscriptSectionVM } from "../transcript/transcriptRows";
 
 /** Which list the panel is showing. Also which topbar button raised it. */
 export type ChannelPanelTab = "search" | "pinned" | "media" | "links";

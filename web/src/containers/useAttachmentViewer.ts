@@ -2,8 +2,8 @@
 
 import { useCallback, useMemo, useState } from "react";
 
-import type { ViewerTarget } from "@/components/room/MediaViewer";
-import type { AttachmentCallbacks } from "@/components/room/parts";
+import type { ViewerTarget } from "@/components/room/attachments/MediaViewer";
+import type { AttachmentCallbacks } from "@/lib/messages/parts";
 
 /**
  * What the lightbox shows, and the callbacks that let any attachment tile in

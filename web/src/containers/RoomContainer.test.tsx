@@ -2,10 +2,10 @@ import { act, fireEvent, render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-import type { ChannelPanelProps } from "@/components/room/ChannelPanel";
-import type { ComposerProps } from "@/components/room/Composer";
-import type { MediaViewerProps } from "@/components/room/MediaViewer";
-import type { TranscriptProps } from "@/components/room/Transcript";
+import type { ChannelPanelProps } from "@/components/room/panels/ChannelPanel";
+import type { ComposerProps } from "@/components/room/composer/Composer";
+import type { MediaViewerProps } from "@/components/room/attachments/MediaViewer";
+import type { TranscriptProps } from "@/components/room/transcript/Transcript";
 import type {
   ChatValue,
   DirectoryValue,
@@ -75,14 +75,14 @@ vi.mock("./NotificationInboxContainer", () => ({
   NotificationInboxButton: () => <button type="button">inbox</button>,
 }));
 
-vi.mock("@/components/room/Transcript", () => ({
+vi.mock("@/components/room/transcript/Transcript", () => ({
   Transcript: (props: TranscriptProps) => {
     mocks.seen.transcript = props;
     return <div role="log" aria-label={props.label} />;
   },
 }));
 
-vi.mock("@/components/room/ThreadPanel", () => ({
+vi.mock("@/components/room/panels/ThreadPanel", () => ({
   ThreadPanel: (props: ThreadPanelStubProps) => {
     mocks.seen.thread = props;
     return (
@@ -93,7 +93,7 @@ vi.mock("@/components/room/ThreadPanel", () => ({
   },
 }));
 
-vi.mock("@/components/room/Composer", () => ({
+vi.mock("@/components/room/composer/Composer", () => ({
   Composer: (props: ComposerProps) => {
     mocks.seen.composers.push(props);
     return (
@@ -111,14 +111,14 @@ vi.mock("@/components/room/Composer", () => ({
   },
 }));
 
-vi.mock("@/components/room/ChannelPanel", () => ({
+vi.mock("@/components/room/panels/ChannelPanel", () => ({
   ChannelPanel: (props: ChannelPanelProps) => {
     mocks.seen.panel = props;
     return <div data-testid="channel-panel" data-open={props.open} data-tab={props.tab} />;
   },
 }));
 
-vi.mock("@/components/room/MediaViewer", () => ({
+vi.mock("@/components/room/attachments/MediaViewer", () => ({
   MediaViewer: (props: MediaViewerProps) => {
     mocks.seen.viewer = props;
     return props.target === null ? null : (

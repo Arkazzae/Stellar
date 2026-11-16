@@ -1,8 +1,8 @@
 import { describe, expect, it } from "vitest";
 
 import { collectIndexedPanelItems, collectPanelItems } from "./channelPanelModel";
-import type { TranscriptSectionVM } from "./Transcript";
-import type { MessagePart } from "./parts";
+import type { TranscriptSectionVM } from "../transcript/Transcript";
+import type { MessagePart } from "@/lib/messages/parts";
 
 function group(id: string, timestamp: string, parts: MessagePart[]) {
   // One body per block here: the panel walks messages, and these fixtures are

@@ -5,10 +5,10 @@ import { useState, type FormEvent } from "react";
 import type { InterfaceLocale, Translator } from "@/i18n";
 import { triggerHaptic } from "@/lib/haptics";
 
-import type { CodeLanguageId } from "./codeLanguages";
+import type { CodeLanguageId } from "@/lib/messages/codeLanguages";
 import type { ComposerChip } from "./ComposerChips";
 import { fencedCode } from "./composerText";
-import { MESSAGE_MAX_LENGTH } from "./messageLimits";
+import { MESSAGE_MAX_LENGTH } from "@/lib/messages/messageLimits";
 
 interface Options {
   chips: readonly ComposerChip[];

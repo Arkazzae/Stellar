@@ -1,6 +1,6 @@
-import type { PinnedMessageVM } from "@/components/room/channelPanelModel";
-import { toParts, type MentionTarget } from "@/components/room/parts";
-import type { TranscriptSectionVM } from "@/components/room/Transcript";
+import type { PinnedMessageVM } from "@/components/room/panels/channelPanelModel";
+import { toParts, type MentionTarget } from "@/lib/messages/parts";
+import type { TranscriptSectionVM } from "@/components/room/transcript/Transcript";
 import type { InterfaceLocale } from "@/i18n";
 import { messageReference, type TranscriptSection } from "@/lib/format";
 import type { Message, Reaction, Server, User } from "@/ports";

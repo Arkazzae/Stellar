@@ -1,6 +1,6 @@
 "use client";
 
-import type { AttachmentCallbacks, MessagePart } from "../parts";
+import type { AttachmentCallbacks, MessagePart } from "@/lib/messages/parts";
 
 import { AudioAttachment } from "./AudioAttachment";
 import { CodeAttachment } from "./CodeAttachment";

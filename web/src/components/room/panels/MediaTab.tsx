@@ -12,7 +12,7 @@ import type {
   FilePart,
   ImagePart,
   VideoPart,
-} from "./parts";
+} from "@/lib/messages/parts";
 
 /** What the grid shows as a tile, and what the list shows as a row. */
 type TileItem = MediaItemVM & { part: ImagePart | VideoPart };

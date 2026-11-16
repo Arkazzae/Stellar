@@ -1,7 +1,7 @@
 import { fireEvent, render, screen } from "@testing-library/react";
 import { describe, expect, it } from "vitest";
 import { translateMessage } from "@/i18n";
-import { parseInline } from "../parts";
+import { parseInline } from "@/lib/messages/parts";
 import { TextAttachment } from "./TextAttachment";
 
 describe("message Markdown", () => {
