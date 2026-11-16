@@ -18,7 +18,7 @@
     "pretest": "node ../artifacts/assemble.mjs"
   },
   "dependencies": {
-    "@microsoft/signalr": "^10.0.11",
+    "@microsoft/signalr": "^11.0.0",
     "@sapphi-red/web-noise-suppressor": "^0.4.1",
     "@stellarr/ui": "*",
     "cld3-asm": "^4.0.0",
