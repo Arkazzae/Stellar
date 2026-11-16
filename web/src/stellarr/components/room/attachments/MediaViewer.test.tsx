@@ -49,6 +49,8 @@ describe("MediaViewer", () => {
 
     const second = screen.getByRole("img", { name: "Drugi obraz" });
     expect(screen.getByText("2 / 3")).toHaveAttribute("aria-live", "polite");
+    // A GIF opens here from GIPHY's host, which is told nothing of the page.
+    expect(second).toHaveAttribute("referrerpolicy", "no-referrer");
 
     fireEvent.pointerDown(second, {
       pointerId: 7,

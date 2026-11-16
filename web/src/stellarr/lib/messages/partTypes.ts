@@ -144,6 +144,4 @@ export interface AttachmentCallbacks {
   onPlayVideo?(part: VideoPart): void;
   onOpenEmbed?(part: EmbedPart): void;
   onCopyCode?(part: CodePart): void;
-  /** Stable opaque id sent with GIPHY requests and action pingbacks. */
-  giphyCustomerId?: string;
 }

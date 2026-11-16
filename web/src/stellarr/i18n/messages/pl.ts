@@ -1663,6 +1663,7 @@ export const pl = {
   "gif.popular": "Popularne",
   "gif.resultsFor": "Wyniki dla „{query}”",
   "gif.poweredBy": "Obsługiwane przez GIPHY",
+  "gif.untitled": "GIF z GIPHY",
   "voice.volume": "Głośność",
   "voice.mediaSessionPrivate": "Rozmowa prywatna",
   "voice.mediaSessionChannel": "Kanał głosowy",

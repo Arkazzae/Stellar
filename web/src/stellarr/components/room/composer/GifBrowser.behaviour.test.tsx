@@ -3,6 +3,7 @@ import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import type { GiphyGif, GiphyPage } from "@/lib/giphy/giphy";
+import type * as GiphyModule from "@/lib/giphy/giphy";
 
 import { GifBrowser } from "./GifBrowser";
 
@@ -12,7 +13,8 @@ const giphy = vi.hoisted(() => ({
   trackAction: vi.fn(),
 }));
 
-vi.mock("@/lib/giphy/giphy", () => ({
+vi.mock("@/lib/giphy/giphy", async (importOriginal) => ({
+  ...(await importOriginal<typeof GiphyModule>()),
   fetchGiphyPage: giphy.fetchPage,
   resolveGiphyApiKey: giphy.resolveApiKey,
   trackGiphyAction: giphy.trackAction,
@@ -22,7 +24,6 @@ function gif(id: string, analytics: GiphyGif["analytics"] = {}): GiphyGif {
   return {
     id,
     pageUrl: `https://giphy.com/gifs/${id}`,
-    title: id,
     alt: `GIF ${id}`,
     previewUrl: `https://media.giphy.com/${id}.gif`,
     mediaUrl: `https://media.giphy.com/${id}-full.gif`,
@@ -37,7 +38,7 @@ function page(items: GiphyGif[], totalCount = items.length): GiphyPage {
 }
 
 function renderBrowser(onSelect = vi.fn().mockResolvedValue(undefined)) {
-  render(<GifBrowser customerId="customer" onSelect={onSelect} />);
+  render(<GifBrowser onSelect={onSelect} />);
   return { onSelect, trigger: screen.getByRole("button", { name: "Przeglądaj GIF-y" }) };
 }
 
@@ -55,11 +56,13 @@ describe("GifBrowser loading", () => {
 
     await userEvent.click(trigger);
 
-    expect(await screen.findByRole("button", { name: "Wyślij GIF: GIF a" })).toBeInTheDocument();
+    const tile = await screen.findByRole("button", { name: "Wyślij GIF: GIF a" });
     expect(screen.getByText("Popularne")).toBeInTheDocument();
     expect(giphy.fetchPage).toHaveBeenCalledWith(
-      expect.objectContaining({ apiKey: "resolved-key", customerId: "customer", query: "" }),
+      expect.objectContaining({ apiKey: "resolved-key", locale: "pl", query: "" }),
     );
+    // GIPHY is not told which page the previews are shown on.
+    expect(tile.querySelector("img")).toHaveAttribute("referrerpolicy", "no-referrer");
   });
 
   it("searches once typing pauses, not on every keystroke", async () => {
@@ -168,10 +171,7 @@ describe("GifBrowser sending", () => {
     await userEvent.click(await screen.findByRole("button", { name: "Wyślij GIF: GIF a" }));
     await screen.findByRole("alert");
 
-    expect(giphy.trackAction).not.toHaveBeenCalledWith(
-      "https://giphy-analytics.giphy.com/sent",
-      expect.anything(),
-    );
+    expect(giphy.trackAction).not.toHaveBeenCalledWith("https://giphy-analytics.giphy.com/sent");
   });
 
   it("reports a view once, however often the image loads", async () => {
@@ -186,10 +186,28 @@ describe("GifBrowser sending", () => {
     fireEvent.load(image);
     fireEvent.load(image);
 
-    expect(giphy.trackAction).toHaveBeenCalledExactlyOnceWith(
-      "https://giphy-analytics.giphy.com/load",
-      "customer",
+    expect(giphy.trackAction).toHaveBeenCalledExactlyOnceWith("https://giphy-analytics.giphy.com/load");
+  });
+
+  it("asks GIPHY in the interface's language", async () => {
+    document.documentElement.lang = "en";
+    giphy.fetchPage.mockResolvedValue(page([gif("a")]));
+    render(<GifBrowser onSelect={vi.fn()} />);
+
+    await userEvent.click(screen.getByRole("button", { name: "Browse GIFs" }));
+
+    await waitFor(() =>
+      expect(giphy.fetchPage).toHaveBeenCalledWith(expect.objectContaining({ locale: "en" })),
     );
+  });
+
+  it("names a GIF GIPHY gave no title in the page's language", async () => {
+    const { alt: _alt, ...untitled } = gif("a");
+    giphy.fetchPage.mockResolvedValue(page([untitled]));
+    const { trigger } = renderBrowser();
+    await userEvent.click(trigger);
+
+    expect(await screen.findByRole("button", { name: "Wyślij GIF: GIF z GIPHY" })).toBeInTheDocument();
   });
 });
 

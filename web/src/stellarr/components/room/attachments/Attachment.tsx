@@ -13,9 +13,6 @@ import {
 import { VideoAttachment } from "./VideoAttachment";
 import { VideoEmbedAttachment } from "./VideoEmbedAttachment";
 
-/** Sent with GIPHY requests when the host supplies no customer id of its own. */
-const DEFAULT_GIPHY_CUSTOMER_ID = "stellarr";
-
 export interface AttachmentProps {
   part: MessagePart;
   callbacks?: AttachmentCallbacks;
@@ -45,13 +42,7 @@ export function Attachment({ part, callbacks = {}, priority = false, translation
     case "video-embed":
       return <VideoEmbedAttachment part={part} />;
     case "giphy":
-      return (
-        <GiphyAttachment
-          part={part}
-          customerId={callbacks.giphyCustomerId ?? DEFAULT_GIPHY_CUSTOMER_ID}
-          onOpen={callbacks.onOpenImage}
-        />
-      );
+      return <GiphyAttachment part={part} onOpen={callbacks.onOpenImage} />;
     case "code":
       return <CodeAttachment part={part} onCopy={callbacks.onCopyCode} />;
   }

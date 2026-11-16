@@ -106,7 +106,8 @@ describe("copyImage", () => {
   }
 
   it("puts a PNG on the clipboard as it is", async () => {
-    vi.stubGlobal("fetch", vi.fn(async () => imageResponse("image/png")));
+    const fetchImage = vi.fn(async () => imageResponse("image/png"));
+    vi.stubGlobal("fetch", fetchImage);
     const write = stubClipboard();
 
     await copyImage("/files/kot.png");
@@ -114,6 +115,8 @@ describe("copyImage", () => {
     const [items] = write.mock.calls[0]!;
     expect(items).toHaveLength(1);
     expect(items![0]!.items["image/png"]!.type).toBe("image/png");
+    // No referrer, for the one host that should not get one: GIPHY's, for a GIF.
+    expect(fetchImage).toHaveBeenCalledWith("/files/kot.png", expect.objectContaining({ referrerPolicy: "no-referrer" }));
   });
 
   it("redraws other formats as PNG before copying", async () => {
