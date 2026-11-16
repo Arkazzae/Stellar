@@ -11,8 +11,9 @@ namespace Stellarr.Api.Endpoints;
 
 /// <summary>
 /// The client's own settings for the signed-in account: the theme, the
-/// language, the call shortcuts and the voice processing, so they follow the
-/// person to every device instead of staying in one browser.
+/// language, the call shortcuts, the voice processing and what the client may
+/// share with outside services, so they follow the person to every device
+/// instead of staying in one browser.
 /// </summary>
 /// <remarks>
 /// Each section is replaced whole, so two devices saving different sections
@@ -42,7 +43,8 @@ public static class ClientSettingsEndpoints
             Parse(ClientSettings.Read(preferences, "appearance")),
             Parse(ClientSettings.Read(preferences, "language")),
             Parse(ClientSettings.Read(preferences, "keybinds")),
-            Parse(ClientSettings.Read(preferences, "voice"))));
+            Parse(ClientSettings.Read(preferences, "voice")),
+            Parse(ClientSettings.Read(preferences, "privacy"))));
     }
 
     private static async Task<IResult> SaveAsync(

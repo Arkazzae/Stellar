@@ -38,7 +38,8 @@ public sealed record ClientSettingsDto(
     JsonElement? Appearance,
     JsonElement? Language,
     JsonElement? Keybinds,
-    JsonElement? Voice);
+    JsonElement? Voice,
+    JsonElement? Privacy);
 
 public sealed record ChangePasswordRequest(string CurrentPassword, string NewPassword);
 

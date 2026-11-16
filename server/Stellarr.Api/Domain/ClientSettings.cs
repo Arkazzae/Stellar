@@ -9,8 +9,12 @@ public static class ClientSettings
     /// </summary>
     public const int MaxLength = 8192;
 
-    /// <summary>The sections a client may save, by the name in the route.</summary>
-    public static readonly IReadOnlyList<string> Sections = ["appearance", "language", "keybinds", "voice"];
+    /// <summary>
+    /// The sections a client may save, by the name in the route: how the app
+    /// looks, the language it speaks, the call shortcuts, the voice processing,
+    /// and what the client may share with outside services.
+    /// </summary>
+    public static readonly IReadOnlyList<string> Sections = ["appearance", "language", "keybinds", "voice", "privacy"];
 
     public static string? Read(UserPreferenceSettings? preferences, string section) => preferences is null
         ? null
@@ -20,6 +24,7 @@ public static class ClientSettings
             "language" => preferences.LanguageSettingsJson,
             "keybinds" => preferences.KeybindSettingsJson,
             "voice" => preferences.VoiceSettingsJson,
+            "privacy" => preferences.PrivacySettingsJson,
             _ => throw new ArgumentOutOfRangeException(nameof(section), section, null),
         };
 
@@ -38,6 +43,9 @@ public static class ClientSettings
                 break;
             case "voice":
                 preferences.VoiceSettingsJson = json;
+                break;
+            case "privacy":
+                preferences.PrivacySettingsJson = json;
                 break;
             default:
                 throw new ArgumentOutOfRangeException(nameof(section), section, null);
