@@ -1,24 +1,25 @@
 # syntax=docker/dockerfile:1.8
 
 # One image runs the whole instance: nginx, the API, the Next.js server, coturn
-# and the Stellarr Media server, supervised by supervisord. It builds for
-# linux/amd64 and linux/arm64.
+# and the Stellarr Media server, supervised by supervisord. The Next.js server
+# renders both the web client and the operator panel, Cockpit, under /cockpit.
+# It builds for linux/amd64 and linux/arm64.
 #
-# Stages that produce architecture-neutral output (the operator panel and the
-# portable API publish) run on the build machine's own platform, so a
-# multi-platform build does not emulate them. The media stage runs there too and
-# cross-compiles for the target, because compiling Rust under emulation would
-# not fit in the release job. The web stage runs per target platform because
-# the standalone server bundles native image-processing binaries.
+# The portable API publish is architecture-neutral, so its stage runs on the
+# build machine's own platform and a multi-platform build does not emulate it.
+# The media stage runs there too and cross-compiles for the target, because
+# compiling Rust under emulation would not fit in the release job. The web
+# stage runs per target platform because the standalone server bundles native
+# image-processing binaries.
 
-# The web client and the operator panel are workspaces of one npm project: the
-# root package-lock.json covers both and the shared packages/. Each stage copies
+# The web client is a workspace of one npm project with Cockpit and the shared
+# packages/: the root package-lock.json covers all of them. The stage copies
 # every workspace manifest, because npm ci checks the lockfile against all of
-# them, but installs only its own workspace, which links the shared package it
-# depends on. The manifests come before the sources, so that editing a source
-# file keeps the install layer cached. With the dependencies hoisted to
-# /src/node_modules, Next.js traces from /src and the standalone output nests
-# the app as web/server.js.
+# them, and installs the web client's workspace, which links Cockpit and the
+# shared package it builds from. The manifests come before the sources, so
+# that editing a source file keeps the install layer cached. With the
+# dependencies hoisted to /src/node_modules, Next.js traces from /src and the
+# standalone output nests the app as web/server.js.
 FROM node:26-bookworm-slim AS web-build
 WORKDIR /src
 COPY package.json package-lock.json ./
@@ -30,23 +31,12 @@ COPY packages/ packages/
 # The prebuild hook copies the browser's prebuilt binaries from artifacts/ into
 # public/ and fails the build on any that differ from artifacts/manifest.json.
 COPY artifacts/ artifacts/
+COPY cockpit/ cockpit/
 COPY web/ web/
 WORKDIR /src/web
 ARG NEXT_PUBLIC_GIPHY_API_KEY
 ENV NEXT_TELEMETRY_DISABLED=1
 ENV NEXT_PUBLIC_GIPHY_API_KEY=${NEXT_PUBLIC_GIPHY_API_KEY}
-RUN npm run build
-
-FROM --platform=$BUILDPLATFORM node:26-bookworm-slim AS cockpit-build
-WORKDIR /src
-COPY package.json package-lock.json ./
-COPY web/package.json web/
-COPY cockpit/package.json cockpit/
-COPY packages/stellarr-ui/package.json packages/stellarr-ui/
-RUN npm ci --workspace stellarr-cockpit
-COPY packages/ packages/
-COPY cockpit/ cockpit/
-WORKDIR /src/cockpit
 RUN npm run build
 
 FROM --platform=$BUILDPLATFORM mcr.microsoft.com/dotnet/sdk:10.0-noble AS api-build
@@ -156,7 +146,6 @@ COPY --chmod=0755 infra/entrypoint.sh /usr/local/bin/stellarr-entrypoint
 COPY --chmod=0755 infra/tls-maintenance.sh /usr/local/bin/stellarr-tls-maintenance
 COPY --chmod=0755 infra/stellarr-cli.sh /usr/local/bin/stellarr
 
-COPY --from=cockpit-build /src/cockpit/dist /srv/cockpit
 COPY --from=api-build /out/api /opt/stellarr/api
 COPY --from=api-build /out/cli /opt/stellarr/cli
 # The standalone output holds node_modules beside web/server.js, so the app sits

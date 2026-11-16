@@ -9,6 +9,9 @@
     "strict": true,
     "noUncheckedIndexedAccess": true,
     "isolatedModules": true,
+    "verbatimModuleSyntax": true,
+    "noImplicitOverride": true,
+    "noFallthroughCasesInSwitch": true,
     "resolveJsonModule": true,
     "skipLibCheck": true,
     "noEmit": true

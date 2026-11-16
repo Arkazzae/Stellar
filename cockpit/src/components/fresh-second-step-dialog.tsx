@@ -12,6 +12,7 @@ import { useEffect, useState } from "react";
 
 import { t } from "../i18n";
 import { onFreshSecondStepRequired } from "../lib/api";
+import { COCKPIT_ROOT } from "../lib/paths";
 import { webFreshConfirmUrl } from "../lib/web-sign-in";
 
 /**
@@ -25,7 +26,7 @@ export function FreshSecondStepDialog() {
   useEffect(() => onFreshSecondStepRequired(() => setOpen(true)), []);
 
   // Read when shown: the page that asked, under Cockpit's own base path.
-  const back = open ? `${window.location.pathname}${window.location.search}` : "/cockpit/";
+  const back = open ? `${window.location.pathname}${window.location.search}` : COCKPIT_ROOT;
 
   return (
     <Dialog open={open} onOpenChange={setOpen}>

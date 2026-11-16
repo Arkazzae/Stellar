@@ -1,4 +1,7 @@
-@import "tailwindcss";
+/* The web client's Next.js build compiles this file, from web/, so Tailwind is
+   told where the panel's class names are; it would otherwise scan the web
+   client's sources instead. */
+@import "tailwindcss" source(".");
 /* After Tailwind, so the components join the components.ui layer inside its
    components layer and a utility in className overrides them. */
 @import "@stellarr/ui/styles.css";

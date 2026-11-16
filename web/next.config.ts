@@ -42,8 +42,10 @@ const nextConfig: NextConfig = {
   output: "standalone",
   outputFileTracingRoot: workspaceRoot,
   turbopack: { root: workspaceRoot },
-  // @stellarr/ui is consumed as TypeScript source, with no build step.
-  transpilePackages: ["@stellarr/ui"],
+  // The shared UI and Cockpit's sources are consumed as TypeScript, with no
+  // build step of their own: this one build compiles the web client and
+  // Cockpit (src/app/cockpit/) together.
+  transpilePackages: ["@stellarr/ui", "stellarr-cockpit"],
   allowedDevOrigins,
   experimental: {
     // Dev rewrites buffer uploads in the Next server. 128 MB is the transport
@@ -65,6 +67,7 @@ const nextConfig: NextConfig = {
       },
       { source: "/api/:path*", destination: `${apiOrigin}/api/:path*` },
       { source: "/assets/:path*", destination: `${apiOrigin}/assets/:path*` },
+      { source: "/health/:path*", destination: `${apiOrigin}/health/:path*` },
       { source: "/hubs/:path*", destination: `${apiOrigin}/hubs/:path*` },
     ];
   },

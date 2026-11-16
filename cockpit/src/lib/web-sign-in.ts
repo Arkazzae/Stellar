@@ -1,11 +1,12 @@
 import type { CockpitLoginStep } from "./api";
+import { COCKPIT_ROOT } from "./paths";
 
 /*
- * The web client's sign-in page, on the same origin: in production Cockpit is
- * served under /cockpit/, so the page shares Cockpit's session and comes back
- * here once the step is done.
+ * The web client's sign-in page, on the same origin and from the same
+ * server, so the page shares Cockpit's session and comes back here once the
+ * step is done.
  */
-const BACK_TO_COCKPIT = `returnUrl=${encodeURIComponent("/cockpit/")}`;
+const BACK_TO_COCKPIT = `returnUrl=${encodeURIComponent(COCKPIT_ROOT)}`;
 
 /**
  * Where a sign-in the password did not finish goes on; the page resumes the
@@ -29,7 +30,7 @@ export function webFreshConfirmUrl(returnPath: string): string {
   return `/login?confirm=1&fresh=1&returnUrl=${encodeURIComponent(returnPath)}`;
 }
 
-/** A full page load: the sign-in page belongs to the web client, not to this app. */
+/** A full page load: the sign-in page renders in the web client's layout, not in this panel's. */
 export function leaveFor(path: string): void {
   window.location.assign(path);
 }

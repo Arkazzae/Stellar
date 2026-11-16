@@ -3,23 +3,24 @@
   "private": true,
   "version": "0.1.0",
   "type": "module",
+  "exports": {
+    ".": "./src/app.tsx",
+    "./pages/*": "./src/pages/*.tsx",
+    "./styles.css": "./src/index.css"
+  },
   "scripts": {
-    "dev": "vite --host 0.0.0.0 --port 3001",
-    "build": "tsc -b && vite build",
     "lint": "eslint .",
     "typecheck": "tsc -b --pretty false",
-    "test": "vitest run",
-    "preview": "vite preview --host 0.0.0.0 --port 4174"
+    "test": "vitest run"
   },
   "dependencies": {
     "@stellarr/ui": "*",
+    "next": "16.4.6",
     "react": "^19.3.1",
-    "react-dom": "^19.3.1",
-    "react-router-dom": "^7.18.5"
+    "react-dom": "^19.3.1"
   },
   "devDependencies": {
     "@eslint/js": "^10.0.1",
-    "@tailwindcss/vite": "^4.3.4",
     "@testing-library/dom": "^10.4.2",
     "@testing-library/react": "^16.3.3",
     "@testing-library/user-event": "^14.6.9",
