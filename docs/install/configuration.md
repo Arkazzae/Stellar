@@ -118,7 +118,7 @@ provider that really requires a second factor and reports it in `amr`.
 
 | Variable | Type | Default | Description |
 | --- | --- | --- | --- |
-| `STELLARR_LANGUAGE` | `en` \| `pl` | `en` | Default interface locale for users without a saved preference, and the language used by the API for error messages, system messages, default server/role/channel names, audit entries, and emails. Stored records keep the language in which they were created. Unknown values abort API startup. The web client's server reads it on every request. |
+| `STELLARR_LANGUAGE` | `en` \| `pl` | `en` | Default interface locale for users without a saved preference, and the language used by the API for error messages, system messages, default server/role/channel names, audit entries, and emails. Stored records keep the language in which they were created. Unknown values abort API startup. The container hands the value to the web client at every start; browsers that loaded the client within the last hour may keep the previous default until that hour is up. |
 
 See [Localization](../localization.md).
 
