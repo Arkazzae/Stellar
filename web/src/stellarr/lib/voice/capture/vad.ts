@@ -1,12 +1,8 @@
-import {
-  AdaptiveVad,
-  LEVEL_STEPS,
-  VAD_PROCESSOR_NAME,
-  sensitivityToThresholds,
-  // The worklet module is served verbatim from /public because an AudioWorklet
-  // cannot load a bundled chunk. Importing the same file here means the
-  // main-thread fallback and the worklet run byte-identical detection logic.
-} from "../../../../../public/audio/vad-processor.js";
+// The worklet is bundled from these same modules, so the main-thread fallback
+// and the worklet run the same detection code.
+import { DETECTOR_WORKLET_URL } from "./detector/address";
+import { LEVEL_STEPS, VAD_PROCESSOR_NAME } from "./detector/messages";
+import { AdaptiveVad, sensitivityToThresholds } from "./detector/vad";
 
 /** What the UI consumes. Nothing above this module knows about dBFS or SNR. */
 export interface SpeechReading {
@@ -22,7 +18,7 @@ export interface SpeechDetectorOptions {
   sensitivity?: number;
 }
 
-export const VAD_WORKLET_URL = "/audio/vad-processor.js";
+export const VAD_WORKLET_URL = DETECTOR_WORKLET_URL;
 
 const DEFAULT_SENSITIVITY = 50;
 /** Matches Opus, and makes the detector's 10 ms frame exactly 480 samples. */

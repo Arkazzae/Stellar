@@ -1,8 +1,6 @@
-import {
-  GATE_DEFAULTS,
-  VAD_PROCESSOR_NAME,
-  sensitivityToThresholds,
-} from "../../../../../public/audio/vad-processor.js";
+import { GATE_DEFAULTS } from "./detector/gate";
+import { VAD_PROCESSOR_NAME } from "./detector/messages";
+import { sensitivityToThresholds } from "./detector/vad";
 import type { DetectorStages } from "./micCapture";
 import { VAD_WORKLET_URL } from "./vad";
 
@@ -14,7 +12,7 @@ const registered = new WeakSet<AudioContext>();
  *
  * The same `AdaptiveVad` that draws the ring around your avatar decides when
  * the others hear you and which frames the leveller may learn from; see
- * `vad-processor.js` for the lookahead that stops the gate clipping the first
+ * `detector/gate.ts` for the lookahead that stops the gate clipping the first
  * syllable. Resolves to null when AudioWorklet is missing or the module will not
  * load, so the capture proceeds without these stages rather than not at all.
  */

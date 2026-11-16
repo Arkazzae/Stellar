@@ -198,7 +198,7 @@ Users can pick a personal arrival clip (`UserPreferences.JoinSoundId`) from any 
 | Media server client | `web/src/stellarr/lib/voice/rtc/webrtcSfu.ts`, `web/src/stellarr/lib/voice/rtc/webrtcSfuDirectory.ts`, `web/src/stellarr/lib/voice/rtc/webrtcSfuHealth.ts` |
 | Soundboard & arrival sounds | `web/src/stellarr/adapters/soundboard.ts`, `web/src/stellarr/containers/useJoinSound.ts`, `SoundboardEndpoints.cs`, `JoinSound.cs`, `AppHub.cs` |
 | Opus, screen, and camera profiles | `web/src/stellarr/lib/voice/audioProfiles.ts`, `web/src/stellarr/lib/voice/video/screenShare.ts`, `web/src/stellarr/lib/voice/video/camera.ts` |
-| Microphone DSP & VAD | `web/src/stellarr/lib/voice/capture/micPipeline.ts`, `web/src/stellarr/lib/voice/capture/vad.ts`, `web/public/audio/vad-processor.js` |
+| Microphone DSP & VAD | `web/src/stellarr/lib/voice/capture/micPipeline.ts`, `web/src/stellarr/lib/voice/capture/vad.ts`, `web/src/stellarr/lib/voice/capture/detector/` (built into the AudioWorklet `/audio/detector-worklet.js`) |
 | ICE/TURN credential refresh | `web/src/stellarr/lib/voice/rtc/iceSession.ts` |
 | Hub & media server broker | `server/Stellarr.Api/Realtime/`: `AppHub.cs`, `AppHub.Media.cs`, `MediaServerSettings.cs`, `PresenceTracker.cs`, `MediaPlane.cs`, `MediaControlClient.cs`, `MediaEventPump.cs`, `MediaEventOutbox.cs`, `MediaSessionCloser.cs` |
 | Rust SFU media server | `media/` (`stellarr-media`) |

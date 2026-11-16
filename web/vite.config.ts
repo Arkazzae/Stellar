@@ -4,6 +4,7 @@ import react from "@vitejs/plugin-react";
 import { defineConfig, loadEnv, type ProxyOptions } from "vite";
 
 import { BUILD_DIRECTORY, COCKPIT_DOCUMENT, stellarrDocuments, WEB_DOCUMENT } from "./documents";
+import { workerBuild } from "./worklets";
 
 const here = (path: string) => fileURLToPath(new URL(path, import.meta.url));
 
@@ -82,6 +83,9 @@ export default defineConfig(({ mode }) => {
     optimizeDeps: {
       entries: [WEB_DOCUMENT, COCKPIT_DOCUMENT],
     },
+    // The speech detector's AudioWorklet, bundled apart and written to
+    // /audio/detector-worklet.js; see worklets.ts.
+    worker: workerBuild(BUILD_DIRECTORY),
     build: {
       outDir: "dist",
       emptyOutDir: true,
