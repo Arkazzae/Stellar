@@ -310,8 +310,8 @@ impl Io for World<'_> {
         }
     }
 
-    fn probe(&mut self, index: usize, run: u64, check: &Readiness) {
-        match Probe::start(index, run, check, Instant::now()) {
+    fn probe(&mut self, index: usize, run: u64, check: &Readiness, timeout: Duration) {
+        match Probe::start(index, run, check, Instant::now() + timeout) {
             Ok(probe) => self.probes.push(probe),
             Err(_) => self.answers.push((index, run, false)),
         }

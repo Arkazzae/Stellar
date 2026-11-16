@@ -12,6 +12,7 @@
 //! --tcp PORT            accepts TCP connections on 127.0.0.1:PORT
 //! --http PORT           answers every HTTP request on 127.0.0.1:PORT
 //! --status CODE         the status the HTTP answers carry, 200 unless given
+//! --stall-file PATH     answers no HTTP request while PATH exists
 //! --stun PORT           answers STUN binding requests on 127.0.0.1:PORT
 //! --ready-after MS      opens the TCP, HTTP or STUN port only this late
 //! --ignore-term         ignores SIGTERM and SIGINT
@@ -28,6 +29,7 @@ use std::fs;
 use std::io::{Read, Write};
 use std::net::{TcpListener, UdpSocket};
 use std::os::unix::process::CommandExt;
+use std::path::PathBuf;
 use std::process::{Command, exit};
 use std::thread;
 use std::time::Duration;
@@ -123,7 +125,8 @@ fn main() {
     }
     if let Some(port) = number("--http") {
         let status = number("--status").unwrap_or(200);
-        serve_after(ready_after, move || serve_http(port as u16, status));
+        let stall = options.get("--stall-file").map(PathBuf::from);
+        serve_after(ready_after, move || serve_http(port as u16, status, stall));
     }
     if let Some(port) = number("--stun") {
         serve_after(ready_after, move || serve_stun(port as u16));
@@ -181,10 +184,18 @@ fn serve_tcp(port: u16) {
     }
 }
 
-fn serve_http(port: u16, status: u64) {
+fn serve_http(port: u16, status: u64, stall: Option<PathBuf>) {
     let listener = TcpListener::bind(("127.0.0.1", port)).unwrap_or_else(|e| fail(&e.to_string()));
+    // Connections taken while the stall file exists, held without an answer,
+    // as a process that is alive but stuck would hold them.
+    let mut held = Vec::new();
     for stream in listener.incoming() {
         let Ok(mut stream) = stream else { continue };
+        if stall.as_ref().is_some_and(|p| p.exists()) {
+            held.push(stream);
+            continue;
+        }
+        held.clear();
         let _ = stream.set_read_timeout(Some(Duration::from_secs(1)));
         let mut request = Vec::new();
         let mut buf = [0u8; 512];

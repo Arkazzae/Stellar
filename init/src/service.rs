@@ -74,23 +74,38 @@ pub fn signal_name(number: i32) -> String {
     }
 }
 
-/// How the manager tells that a running service is ready. Every address is
-/// on loopback: the manager checks its own container only.
+/// How the manager tells that a running service is ready, at start and at
+/// every [`Watch`] interval after. Every address is on loopback: the manager
+/// checks its own container only.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Readiness {
     /// Ready once the process has kept running this long. For a service
-    /// that offers nothing better to ask.
+    /// that offers nothing better to ask; it is not checked after.
     Running(Duration),
     /// Ready once a TCP connection to this address is accepted.
     Tcp(SocketAddr),
-    /// Ready once `GET path` on this address answers with a 2xx status.
-    Http { addr: SocketAddr, path: String },
+    /// Ready once `GET path` on this address, with these extra request
+    /// headers, answers with a 2xx status.
+    Http {
+        addr: SocketAddr,
+        path: String,
+        headers: Vec<(String, String)>,
+    },
     /// Ready once a STUN binding request to this UDP address gets a success
     /// response.
     Stun(SocketAddr),
 }
 
 impl Readiness {
+    /// `GET path` on `addr` without extra headers.
+    pub fn http(addr: SocketAddr, path: &str) -> Readiness {
+        Readiness::Http {
+            addr,
+            path: path.to_string(),
+            headers: Vec::new(),
+        }
+    }
+
     fn addr(&self) -> Option<SocketAddr> {
         match self {
             Readiness::Running(_) => None,
@@ -98,6 +113,29 @@ impl Readiness {
             Readiness::Http { addr, .. } => Some(*addr),
         }
     }
+}
+
+/// How a ready service keeps being checked: every `interval`, each check
+/// given `timeout`. After `misses` failed checks in a row it is reported as
+/// failing, and health fails; one check that passes makes it ready again.
+/// It is never restarted for it, see [`crate::core`].
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct Watch {
+    pub interval: Duration,
+    pub timeout: Duration,
+    pub misses: u32,
+}
+
+impl Watch {
+    /// A service that stops answering is reported after about 45 seconds:
+    /// three checks of up to five seconds, ten seconds apart. A machine that
+    /// is only slow would have to miss three answers of five seconds each in
+    /// a row first.
+    pub const DEFAULT: Watch = Watch {
+        interval: Duration::from_secs(10),
+        timeout: Duration::from_secs(5),
+        misses: 3,
+    };
 }
 
 /// How long the manager waits before it starts a service that exited.
@@ -148,6 +186,8 @@ pub struct Service {
     /// services that need it.
     pub needs: Vec<String>,
     pub ready: Readiness,
+    /// How `ready` keeps being checked once the service is ready.
+    pub watch: Watch,
     /// The signal that asks the process group to stop.
     pub stop_signal: Signal,
     /// How long after `stop_signal` the group gets SIGKILL.
@@ -172,6 +212,7 @@ impl Service {
             group: None,
             needs: Vec::new(),
             ready: Readiness::Running(Duration::from_secs(1)),
+            watch: Watch::DEFAULT,
             stop_signal: Signal::Term,
             stop_timeout: Duration::from_secs(10),
             reload: None,
@@ -207,6 +248,11 @@ impl Service {
 
     pub fn ready(mut self, ready: Readiness) -> Service {
         self.ready = ready;
+        self
+    }
+
+    pub fn watch(mut self, watch: Watch) -> Service {
+        self.watch = watch;
         self
     }
 
@@ -360,6 +406,32 @@ fn check_service(service: &Service) -> Result<(), TableError> {
     {
         return Err(TableError(format!(
             "{name} is checked at {addr}, which is not a loopback address"
+        )));
+    }
+    if let Readiness::Http { path, headers, .. } = &service.ready {
+        let text = |s: &str| !s.is_empty() && s.bytes().all(|b| b.is_ascii_graphic() || b == b' ');
+        if !path.starts_with('/') || path.contains(' ') || !text(path) {
+            return Err(TableError(format!(
+                "{name} is checked at {path:?}, which is not a path"
+            )));
+        }
+        for (header, value) in headers {
+            let token = !header.is_empty()
+                && header
+                    .bytes()
+                    .all(|b| b.is_ascii_alphanumeric() || b == b'-');
+            if !token || !text(value) {
+                return Err(TableError(format!(
+                    "{name} sends the header {header:?}: {value:?}, which cannot go in a request"
+                )));
+            }
+        }
+    }
+    let watch = service.watch;
+    if watch.interval.is_zero() || watch.timeout.is_zero() || watch.misses == 0 {
+        return Err(TableError(format!(
+            "{name} is watched every {:?} with {:?} per check and {} misses allowed; none of them can be zero",
+            watch.interval, watch.timeout, watch.misses
         )));
     }
     if service.stop_timeout.is_zero() {
