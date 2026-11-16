@@ -3,12 +3,44 @@
 import { useRouter } from "@stellarr/router";
 import { lazy, Suspense, useEffect } from "react";
 
-import { ErrorNotice } from "@/components/primitives/ErrorNotice";
+import { ErrorNotice, type ErrorNoticeProps } from "@/components/primitives/ErrorNotice";
 import { AppSkeleton } from "@/components/shell/AppSkeleton";
 import { useLanguage, useSession } from "@/state/hooks";
 
+/** Why the page cannot show the app, and the way to recover. */
+function LoadFailed({ title, message, actions }: Pick<ErrorNoticeProps, "title" | "message" | "actions">) {
+  return (
+    <main style={{ height: "100%", display: "grid", placeItems: "center", padding: 24 }}>
+      <div style={{ width: "min(420px, 100%)" }}>
+        <ErrorNotice title={title} message={message} icon="wifi" actions={actions} />
+      </div>
+    </main>
+  );
+}
+
+/**
+ * Stands in for the app when its code cannot be loaded: the network failed,
+ * or this tab still runs a release the server has replaced, whose files are
+ * gone. Loading the page again brings the current release.
+ */
+function AppUnavailable() {
+  const { t } = useLanguage();
+  return (
+    <LoadFailed
+      title={t("app.loadFailed")}
+      message={t("app.checkConnection")}
+      actions={[{ label: t("common.tryAgain"), onClick: () => window.location.reload() }]}
+    />
+  );
+}
+
 const loadApp = () => import("@/containers/AppContainer");
-const AppContainer = lazy(() => loadApp().then(({ AppContainer }) => ({ default: AppContainer })));
+const AppContainer = lazy(() =>
+  loadApp().then(
+    ({ AppContainer }) => ({ default: AppContainer }),
+    () => ({ default: AppUnavailable }),
+  ),
+);
 
 /**
  * The gate.
@@ -29,7 +61,8 @@ export default function HomePage() {
   const { t } = useLanguage();
 
   useEffect(() => {
-    void loadApp();
+    // A failure shows once the app is wanted, through `AppContainer`.
+    loadApp().catch(() => undefined);
   }, []);
 
   useEffect(() => {
@@ -47,20 +80,15 @@ export default function HomePage() {
   if (phase === "error" || phase === "revoked") {
     const revoked = phase === "revoked";
     return (
-      <main style={{ height: "100%", display: "grid", placeItems: "center", padding: 24 }}>
-        <div style={{ width: "min(420px, 100%)" }}>
-          <ErrorNotice
-            title={revoked ? t("app.accessRevoked") : t("app.loadFailed")}
-            message={error ?? t("app.checkConnection")}
-            icon="wifi"
-            actions={
-              revoked
-                ? [{ label: t("common.logout"), onClick: () => void logout() }]
-                : [{ label: t("common.tryAgain"), onClick: reload }]
-            }
-          />
-        </div>
-      </main>
+      <LoadFailed
+        title={revoked ? t("app.accessRevoked") : t("app.loadFailed")}
+        message={error ?? t("app.checkConnection")}
+        actions={
+          revoked
+            ? [{ label: t("common.logout"), onClick: () => void logout() }]
+            : [{ label: t("common.tryAgain"), onClick: reload }]
+        }
+      />
     );
   }
 
