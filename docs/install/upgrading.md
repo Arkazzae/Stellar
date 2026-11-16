@@ -55,7 +55,7 @@ Release notes are published at <https://github.com/Arkazzae/Stellarr/releases>.
    docker inspect --format '{{ index .Config.Labels "org.opencontainers.image.version" }}' stellarr
    ```
 
-   Confirm that `docker compose ps` reports `healthy` (which checks both `/health` and `/login`) and `curl` returns `200`.
+   Confirm that `docker compose ps` reports `healthy` (which checks Nginx, the API and its database, the media server, and `coturn`) and `curl` returns `200`.
 
 ## Database schema
 

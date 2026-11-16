@@ -12,7 +12,6 @@ flowchart TD
 
     subgraph Container["Stellarr Container (/data/stellarr)"]
         Nginx["Nginx (:443 / :80)"]
-        Next["Next.js server (:3000)"]
         Web["Web client (/)"]
         Cockpit["Stellarr Cockpit (/cockpit)"]
         Api["ASP.NET Core API & SignalR (:5000)"]
@@ -21,9 +20,8 @@ flowchart TD
         Coturn["coturn STUN / TURN (:3478 / :5349)"]
         Media["Stellarr Media SFU (:49000/udp)"]
 
-        Nginx -->|"UI & SSR"| Next
-        Next --> Web
-        Next --> Cockpit
+        Nginx -->|"Static files"| Web
+        Nginx -->|"Static files"| Cockpit
         Nginx -->|"/api, /hubs/app, /assets"| Api
         Api --> Sqlite
         Api --> Files
@@ -38,9 +36,9 @@ flowchart TD
 
 ## Component responsibilities
 
-- **Next.js server (`web/`)**: One Next.js App Router application, built as a standalone server, renders both browser apps; it is the one Node process in the container, and `next dev` is the one development server. The web client and Cockpit each have a root layout of their own, in the route groups `web/src/app/(stellarr)/` and `web/src/app/(cockpit)/`, so neither loads the other's styles, language or providers, and moving between them is a full page load.
-- **Web client (`web/src/stellarr/`, routes in `web/src/app/(stellarr)/`)**: Pages are rendered per request in the person's language, read from the `stellarr_locale` cookie and then `STELLARR_LANGUAGE` (see [Localization](./localization.md)). The sign-in, invite and emailed-link pages read their address on the server. The client implements the browser-side `VoiceClient`; React components read call state from `VoiceState` and trigger actions through `VoiceClient`.
-- **Stellarr Cockpit (`web/src/cockpit/`, routes in `web/src/app/(cockpit)/`)**: The operator panel, under `/cockpit`, an app of its own inside the same Next.js project: its code imports nothing of the web client's. It renders in the browser, in the language chosen in its settings, calls `/api/cockpit/*` and requires the built-in instance owner role.
+- **Browser apps (`web/`)**: One Vite build writes the web client and Cockpit as static files to `web/dist/`, each from a document of its own (`web/index.html` and `web/cockpit/index.html`). The image carries them in `/opt/stellarr/web` and Nginx serves them, so no Node process runs in the container. Each app has its entry (`main.tsx`), its table of addresses (`routes.tsx`, on [`@stellarr/router`](../packages/stellarr-router/README.md)) and its `pages/`. Neither loads the other's styles, language or providers, and moving between them is a full page load. In development, `npm run dev` serves both from Vite's dev server.
+- **Web client (`web/src/stellarr/`)**: Renders in the browser. Before the first paint, scripts in its document put the theme and the language on the page: the language the person chose on this device, else the instance default, else English (see [Localization](./localization.md)). The client implements the browser-side `VoiceClient`; React components read call state from `VoiceState` and trigger actions through `VoiceClient`.
+- **Stellarr Cockpit (`web/src/cockpit/`)**: The operator panel, under `/cockpit`, an app of its own in the same build: its code imports nothing of the web client's. It renders in the browser, in the language chosen in its settings, calls `/api/cockpit/*` and requires the built-in instance owner role.
 - **ASP.NET Core (`server/Stellarr.Api`)**: Application server handling authentication, sessions, servers, channels, public and direct messages, uploads, presence, and SignalR signaling. It also opens and closes media sessions on `stellarr-media` via its loopback HTTP API and relays SDP/ICE negotiation between browsers and the media server.
 - **Operator CLI (`server/Stellarr.Cli`)**: The `stellarr` binary included in the container image. It inspects instance health, manages settings, encrypted secrets, and user sessions, and stages backups for restore directly against the data volume without starting a second API process. See [Operator CLI](./install/cli.md).
 - **SQLite**: Stores relational application state in WAL mode (`stellarr.db`). Binary attachments are never stored in SQLite.
@@ -61,7 +59,7 @@ The API reads revoked sessions and role or policy changes from the database at m
 
 ## Single-container deployment
 
-`supervisord` (`infra/supervisord.conf`) supervises all runtime processes (Stellarr Media, ASP.NET Core, the Next.js server, `coturn`, Nginx, and `stellarr-tls-maintenance`) inside one container image backed by `/data/stellarr`. Nginx exposes a single HTTPS origin externally and proxies the web client and Cockpit to the Next.js server.
+`supervisord` (`infra/supervisord.conf`) supervises all runtime processes (Stellarr Media, ASP.NET Core, `coturn`, Nginx, and `stellarr-tls-maintenance`) inside one container image backed by `/data/stellarr`. Nginx exposes a single HTTPS origin externally and serves the web client and Cockpit from static files: an address of either app gets that app's document, a missing file gets a plain `404`, and any other address gets the web client's document with status `404`, so the client shows its not-found page.
 
 > [!TIP]
 > Keeping all services in one container simplifies self-hosting and backups to a single Docker volume. If you ever need to split media onto a separate machine, `stellarr-media` and `coturn` communicate with the API only over their network protocols and can be moved without changing the browser client.
