@@ -180,6 +180,25 @@ describe("captureMicrophone", () => {
     expect(capture.rawTrack).toBe(ordinary);
   });
 
+  it.each([
+    [true, true, "browser"],
+    [true, false, "none"],
+    [true, "all", "all"],
+    [false, false, "none"],
+  ] as const)(
+    "with echo cancellation %s and the device reporting %s, says it is %s",
+    async (asked, reported, active) => {
+      const track = audioTrack({ echoCancellation: reported });
+
+      const capture = await captureMicrophone(
+        settings({ echoCancellation: asked, noiseSuppression: "off" }),
+        { getUserMedia: async () => audioStream([track]) },
+      );
+
+      expect(capture.echoCancellation).toBe(active);
+    },
+  );
+
   it("does not enable isolation when echo cancellation is switched off", async () => {
     const track = audioTrack({
       echoCancellation: false,

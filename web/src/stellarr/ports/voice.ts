@@ -1,5 +1,9 @@
 import type { JoinSoundServerGroup } from "@/lib/api/types";
-import type { ActiveAutoGain, ActiveNoiseSuppression } from "@/lib/voice/capture/micPipeline";
+import type {
+  ActiveAutoGain,
+  ActiveEchoCancellation,
+  ActiveNoiseSuppression,
+} from "@/lib/voice/capture/micPipeline";
 import type { VoiceSettings } from "@/lib/voice/settings";
 import type { VoiceClient, VoiceState } from "@/lib/voice/types";
 
@@ -53,7 +57,11 @@ export {
 } from "@/lib/voice/video/screenShare";
 export type { ScreenShareQualityId } from "@/lib/voice/video/screenShare";
 /** What the microphone is really doing, as opposed to what was requested. */
-export type { ActiveAutoGain, ActiveNoiseSuppression } from "@/lib/voice/capture/micPipeline";
+export type {
+  ActiveAutoGain,
+  ActiveEchoCancellation,
+  ActiveNoiseSuppression,
+} from "@/lib/voice/capture/micPipeline";
 
 /** Applies to a live call without dropping it. */
 export interface VoiceSettingsPort {
@@ -141,6 +149,11 @@ export interface MicTest {
   gateActive: boolean | null;
   /** Which automatic volume is running: ours, the browser's or none. */
   autoGain: ActiveAutoGain | null;
+  /**
+   * The echo cancellation the device reports. Asking for it does not mean
+   * getting it: a device can report it off. `null` while nothing is open.
+   */
+  echoCancellation: ActiveEchoCancellation | null;
   /**
    * The device the microphone actually opened on. Worth showing for
    * "System default", which names a rule rather than a microphone.

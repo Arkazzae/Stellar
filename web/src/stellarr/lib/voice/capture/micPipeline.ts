@@ -27,6 +27,7 @@ export type {
   MicCapture,
   MicFailureKind,
 } from "./micCapture";
+export type { ActiveEchoCancellation } from "./micDevice";
 export {
   hasDeviceLabels,
   listInputDevices,
@@ -84,6 +85,7 @@ export async function captureMicrophone(
     noiseSuppression: graph?.suppressor ?? (browser.noiseSuppression ? "browser" : "none"),
     gateActive: graph?.gateActive ?? false,
     autoGain: graph?.levelling ? "worklet" : browser.autoGainControl ? "browser" : "none",
+    echoCancellation: browser.echoCancellation,
     setSensitivity: (sensitivity) => graph?.setSensitivity(sensitivity),
     setInputGain: (db) => graph?.setInputGain(db),
     fadeIn: () => graph?.fadeIn(),

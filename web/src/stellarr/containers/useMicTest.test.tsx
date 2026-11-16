@@ -28,6 +28,7 @@ const fakes = vi.hoisted(() => {
       stream,
       rnnoiseActive: false,
       noiseSuppression: "browser" as const,
+      echoCancellation: "none" as const,
       resume: async () => true,
       dispose,
     })),
@@ -81,6 +82,19 @@ describe("useMicTest", () => {
     expect(result.current.activeNoiseSuppression).toBeNull();
     expect(result.current.error).toBe("voiceTest.micFailed");
     expect(fakes.dispose).toHaveBeenCalledOnce();
+    unmount();
+  });
+
+  it("reports the echo cancellation the device confirms, and forgets it when stopped", async () => {
+    const { result, unmount } = renderHook(() => useMicTest({ ...DEFAULT_SETTINGS }));
+    expect(result.current.echoCancellation).toBeNull();
+
+    act(() => result.current.start());
+    await waitFor(() => expect(result.current.running).toBe(true));
+    expect(result.current.echoCancellation).toBe("none");
+
+    act(() => result.current.stop());
+    expect(result.current.echoCancellation).toBeNull();
     unmount();
   });
 });
