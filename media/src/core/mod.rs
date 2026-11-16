@@ -10,7 +10,7 @@
 mod session;
 
 use std::cmp::Reverse;
-use std::collections::{BinaryHeap, HashMap, VecDeque};
+use std::collections::{BinaryHeap, HashMap, HashSet, VecDeque};
 use std::net::SocketAddr;
 use std::panic::{AssertUnwindSafe, catch_unwind};
 use std::sync::Arc;
@@ -55,6 +55,8 @@ pub const MAX_REMOTE_CANDIDATES: usize = 64;
 /// How many addresses the checks of one browser may come from over the life
 /// of its session.
 pub const MAX_SOURCE_ADDRS: usize = 64;
+/// The most mids one list of what a receiver wants sent may hold.
+pub const MAX_SUBSCRIPTIONS: usize = 4096;
 
 /// The largest datagram the media plane looks at.
 const MAX_DATAGRAM: usize = 2048;
@@ -604,6 +606,64 @@ impl Core {
         let result = self.accept_browser_offer(now, key, sdp);
         self.run_work(now);
         result
+    }
+
+    /// Replaces the list of sections this receiver wants sent. Its SDP and
+    /// its directory stay as they are: a section left out keeps its mid and
+    /// simply carries nothing until it is listed again. A session starts with
+    /// an empty list, so it receives nothing it has not asked for. Unknown
+    /// mids are kept, so a list can arrive before the answer that negotiates
+    /// them.
+    pub fn set_subscriptions(
+        &mut self,
+        now: Instant,
+        session_id: &str,
+        mids: &[String],
+    ) -> Result<(), ApiError> {
+        let key = *self.by_id.get(session_id).ok_or(ApiError::UnknownSession)?;
+        if mids.len() > MAX_SUBSCRIPTIONS {
+            return Err(ApiError::InvalidRequest(format!(
+                "mids must contain at most {MAX_SUBSCRIPTIONS} entries."
+            )));
+        }
+        let mut next = HashSet::with_capacity(mids.len());
+        for mid in mids {
+            if mid.is_empty() || mid.len() > 16 || !mid.bytes().all(|b| b.is_ascii_graphic()) {
+                return Err(ApiError::InvalidRequest(
+                    "Each mid must be 1 to 16 ASCII characters without whitespace or controls."
+                        .into(),
+                ));
+            }
+            if !next.insert(mid.clone()) {
+                return Err(ApiError::InvalidRequest(
+                    "mids must not contain duplicates.".into(),
+                ));
+            }
+        }
+
+        let s = self
+            .sessions
+            .get_mut(&key)
+            .expect("the session was looked up");
+        let mut resume_video = Vec::new();
+        for out in &mut s.outs {
+            let Some(mid) = out.directory_mid() else {
+                continue;
+            };
+            let was_enabled = s.subscriptions.contains(&*mid);
+            let enabled = next.contains(&*mid);
+            if was_enabled && !enabled {
+                out.rewrite.pause();
+            } else if !was_enabled && enabled && out.started && out.kind == MediaKind::Video {
+                resume_video.push(out.source);
+            }
+        }
+        s.subscriptions = next;
+        for source in resume_video {
+            self.request_keyframe(now, source.session, source.mid, KeyframeRequestKind::Pli);
+        }
+        self.run_work(now);
+        Ok(())
     }
 
     pub fn answer(
@@ -1378,6 +1438,9 @@ impl Core {
                     kind,
                 } => {
                     let source = self.sessions.get(&receiver).and_then(|s| {
+                        if !s.is_subscribed(mid) {
+                            return None;
+                        }
                         s.outs
                             .iter()
                             .find(|o| o.state == OutState::Live(mid))
@@ -1666,6 +1729,10 @@ fn forward_to(
     let OutState::Live(mid) = s.outs[idx].state else {
         return false;
     };
+    if !s.is_subscribed(mid) {
+        s.outs[idx].rewrite.skip(packet.header.ssrc, *packet.seq_no);
+        return false;
+    }
     if !s.rtc.is_connected() {
         return false;
     }

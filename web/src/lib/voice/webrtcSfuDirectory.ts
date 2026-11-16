@@ -7,6 +7,7 @@ import {
 } from "./webrtcParticipant";
 import type { AudioSectionUse } from "./webrtcPeer";
 import type { RemoteAudio } from "./webrtcRemoteAudio";
+import type { VoiceReceivePreferences } from "./types";
 
 export interface TrackDirectoryEnv {
   /** Everyone the occupancy snapshot names; nobody else's track is played. */
@@ -72,6 +73,27 @@ export class TrackDirectory {
     if (mid === null || this.arrivals.has(mid)) return;
     this.arrivals.set(mid, { track, stream: new MediaStream([track]) });
     this.place();
+  }
+
+  /** The sections to ask the media server for; the directory itself keeps them all. */
+  subscribedMids(preferences: VoiceReceivePreferences): string[] {
+    const mids: string[] = [];
+    for (const entry of this.entries.values()) {
+      const person = this.env.people.get(entry.userId);
+      if (!person) continue;
+      const screen = person.media.roleOf(entry.streamId) === "screen";
+      const wanted = screen
+        ? preferences.screen?.userId === entry.userId && preferences.screen.streamId === entry.streamId
+        : entry.kind === "audio" || preferences.cameras;
+      if (wanted) mids.push(entry.mid);
+    }
+    return mids.sort();
+  }
+
+  /** Silence what is not asked for at once, while the list is still on its way to the media server. */
+  applySubscriptions(mids: readonly string[]): void {
+    const allowed = new Set(mids);
+    for (const [mid, arrival] of this.arrivals) arrival.track.enabled = allowed.has(mid);
   }
 
   /** File what can be filed and withdraw what no longer holds. Idempotent. */
@@ -159,8 +181,11 @@ export class TrackDirectory {
       this.env.remoteAudio.withdraw(person, key);
       return;
     }
-    person.media.removeVideo(key);
-    // A share that ended takes its sound with it, which moves the sinks.
+    // What the person announced stands until they say otherwise. Neither
+    // side's connection is the person: when either is replaced, the same
+    // camera comes back on a new section, and nothing announces it again.
+    person.media.removeVideo(key, true);
+    // The picture was evidence of what the stream's sound is.
     this.env.remoteAudio.route(person);
     this.env.personMedia.changed();
   }

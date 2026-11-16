@@ -336,6 +336,11 @@ describe("RemoteAudio stream lifecycle", () => {
 describe("RemoteAudio shared-screen sound", () => {
   const announceScreen = (peer: Participant, streamId: string | null) =>
     peer.media.announce({ screenStreamId: streamId, cameraStreamId: null });
+  /** Announce the share and choose to watch it, the only share whose sound is played. */
+  const watchScreen = (peer: Participant, streamId: string) => {
+    announceScreen(peer, streamId);
+    audio.setWatchedScreen({ userId: peer.userId, streamId });
+  };
 
   function screenSinks(): HTMLAudioElement[] {
     return [...document.querySelectorAll<HTMLAudioElement>("[data-stellarr-voice-audio] audio")];
@@ -345,7 +350,7 @@ describe("RemoteAudio shared-screen sound", () => {
     const peer = addPeer();
     const voice = fakeStream();
     const share = fakeStream();
-    announceScreen(peer, share.id);
+    watchScreen(peer, share.id);
 
     audio.receive(peer, voice, fakeTrack());
     audio.receive(peer, share, fakeTrack());
@@ -356,13 +361,43 @@ describe("RemoteAudio shared-screen sound", () => {
     expect(changed).toHaveBeenCalled();
   });
 
+  it("plays a share nobody chose to watch on no sink, until it is chosen and while it is", () => {
+    const peer = addPeer();
+    const voice = fakeStream();
+    const share = fakeStream();
+    announceScreen(peer, share.id);
+    audio.receive(peer, voice, fakeTrack());
+    changed.mockClear();
+    audio.receive(peer, share, fakeTrack());
+
+    expect(peer.screenAudio).toBeNull();
+    expect(screenSinks().filter((sink) => sink.srcObject === share)).toHaveLength(0);
+    expect(peer.voice.audio.srcObject).toBe(voice);
+    // The watch control still learns that the share has sound.
+    expect(changed).toHaveBeenCalled();
+
+    // Somebody else's share under the same stream id is not this one.
+    audio.setWatchedScreen({ userId: "u-y", streamId: share.id });
+    expect(peer.screenAudio).toBeNull();
+
+    audio.setWatchedScreen({ userId: peer.userId, streamId: share.id });
+    const sinks = peer.screenAudio!;
+    expect(sinks.audio.srcObject).toBe(share);
+
+    audio.setWatchedScreen(null);
+    expect(peer.screenAudio).toBeNull();
+    expect(sinks.audio.srcObject).toBeNull();
+    expect(sinks.audio.isConnected).toBe(false);
+    expect(peer.voice.audio.srcObject).toBe(voice);
+  });
+
   it("takes a stream off the voice sink once it is announced as a share", () => {
     const peer = addPeer();
     const share = fakeStream();
     audio.receive(peer, share, fakeTrack());
     expect(peer.voice.audio.srcObject).toBe(share);
 
-    announceScreen(peer, share.id);
+    watchScreen(peer, share.id);
     audio.route(peer);
 
     expect(peer.voice).toMatchObject({ streamId: null, processed: false });
@@ -389,7 +424,7 @@ describe("RemoteAudio shared-screen sound", () => {
     peer.gated = true;
     peer.suppressed = true;
     const share = fakeStream();
-    announceScreen(peer, share.id);
+    watchScreen(peer, share.id);
 
     audio.receive(peer, share, fakeTrack());
 
@@ -402,7 +437,7 @@ describe("RemoteAudio shared-screen sound", () => {
     const peer = addPeer();
     peer.playbackVolume = 40;
     const share = fakeStream();
-    announceScreen(peer, share.id);
+    watchScreen(peer, share.id);
     audio.receive(peer, share, fakeTrack());
 
     peer.playbackVolume = 25;
@@ -415,7 +450,7 @@ describe("RemoteAudio shared-screen sound", () => {
     const mixer = withWebAudio();
     const peer = addPeer();
     const share = fakeStream();
-    announceScreen(peer, share.id);
+    watchScreen(peer, share.id);
     audio.receive(peer, share, fakeTrack());
 
     peer.playbackVolume = 80;
@@ -427,7 +462,7 @@ describe("RemoteAudio shared-screen sound", () => {
   it("mutes it when deafened, including a share that starts afterwards", () => {
     const peer = addPeer();
     const first = fakeStream();
-    announceScreen(peer, first.id);
+    watchScreen(peer, first.id);
     audio.receive(peer, first, fakeTrack());
 
     audio.setDeafened(true);
@@ -436,7 +471,7 @@ describe("RemoteAudio shared-screen sound", () => {
     announceScreen(peer, null);
     audio.route(peer);
     const second = fakeStream();
-    announceScreen(peer, second.id);
+    watchScreen(peer, second.id);
     audio.receive(peer, second, fakeTrack());
     expect(peer.screenAudio?.audio.muted).toBe(true);
 
@@ -449,7 +484,7 @@ describe("RemoteAudio shared-screen sound", () => {
     const peer = addPeer();
     const voice = fakeStream();
     const share = fakeStream();
-    announceScreen(peer, share.id);
+    watchScreen(peer, share.id);
     audio.receive(peer, voice, fakeTrack());
     audio.receive(peer, share, fakeTrack());
     const sinks = peer.screenAudio!;
@@ -469,7 +504,7 @@ describe("RemoteAudio shared-screen sound", () => {
     const voice = fakeStream();
     const shareTrack = fakeTrack();
     const share = fakeStream();
-    announceScreen(peer, share.id);
+    watchScreen(peer, share.id);
     audio.receive(peer, voice, fakeTrack());
     audio.receive(peer, share, shareTrack);
 
@@ -488,7 +523,7 @@ describe("RemoteAudio shared-screen sound", () => {
     try {
       const peer = addPeer();
       const share = fakeStream();
-      announceScreen(peer, share.id);
+      watchScreen(peer, share.id);
       audio.receive(peer, share, fakeTrack());
       settings = { ...settings, outputDeviceId: "usb-headphones" };
       setSinkId.mockClear();
@@ -504,7 +539,7 @@ describe("RemoteAudio shared-screen sound", () => {
   it("frees the share's sinks and strip together with the peer", () => {
     const peer = addPeer();
     const share = fakeStream();
-    announceScreen(peer, share.id);
+    watchScreen(peer, share.id);
     audio.receive(peer, share, fakeTrack());
 
     audio.release(peer);

@@ -14,7 +14,7 @@ import { ParticipantPreferencesStore } from "./participantPreferences";
 import { clampParticipantVolume } from "./remoteMixer";
 import { DEFAULT_SETTINGS, needsRecapture, type VoiceSettings } from "./settings";
 import { VoiceStateStore } from "./store";
-import type { VoiceClient, VoiceError, VoicePeer, VoiceState } from "./types";
+import type { VoiceClient, VoiceError, VoicePeer, VoiceReceivePreferences, VoiceState } from "./types";
 import { SpeechDetector } from "./vad";
 import {
   channelKickedError,
@@ -273,6 +273,10 @@ export class WebRtcVoiceClient implements VoiceClient {
   }
 
   getSnapshot = (): VoiceState => this.store.getSnapshot();
+
+  setReceivePreferences(preferences: VoiceReceivePreferences): void {
+    if (!this.disposed) this.topology.setReceivePreferences(preferences);
+  }
 
   subscribe = (listener: () => void): (() => void) => this.store.subscribe(listener);
 
@@ -692,7 +696,10 @@ export class WebRtcVoiceClient implements VoiceClient {
     if (!person) return;
     try {
       const state = decodeRtcState(signal.payload);
-      if (state) receiveRemoteState(this.personMedia, person, state);
+      if (state) {
+        receiveRemoteState(this.personMedia, person, state);
+        this.topology.refreshReceivePreferences();
+      }
     } catch {
       // A single bad frame must not tear down the session.
     }

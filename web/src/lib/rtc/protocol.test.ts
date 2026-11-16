@@ -7,6 +7,7 @@ import {
   decodeMediaServerOffer,
   decodeMediaTrack,
   decodeMediaTracks,
+  decodeMediaSubscriptions,
   decodeRtcCandidate,
   decodeRtcDescription,
   decodeRtcState,
@@ -17,6 +18,7 @@ import {
   encodeMediaServerOffer,
   encodeMediaTrack,
   encodeMediaTracks,
+  encodeMediaSubscriptions,
   encodeRtcCandidate,
   encodeRtcDescription,
   encodeRtcState,
@@ -95,14 +97,16 @@ describe("Stellarr Media hub leg", () => {
   });
 
   it("has a closed kind set, split by who may send which kind", () => {
-    for (const kind of ["offer", "answer", "candidate", "tracks"]) {
+    for (const kind of ["offer", "answer", "candidate", "tracks", "subscriptions"]) {
       expect(isMediaSignalKind(kind)).toBe(true);
     }
     expect(isMediaSignalKind("state")).toBe(false);
     expect(isBrowserMediaSignalKind("candidate")).toBe(true);
+    expect(isBrowserMediaSignalKind("subscriptions")).toBe(true);
     expect(isBrowserMediaSignalKind("tracks")).toBe(false);
     expect(isMediaServerSignalKind("tracks")).toBe(true);
     expect(isMediaServerSignalKind("candidate")).toBe(false);
+    expect(isMediaServerSignalKind("subscriptions")).toBe(false);
   });
 
   it("knows exactly the three reasons a media session is closed for", () => {
@@ -227,6 +231,32 @@ describe("Stellarr Media hub leg", () => {
     expect(JSON.parse(payload)).toEqual({ tracks: [mic, share] });
     expect(decodeMediaTracks(payload)).toEqual([mic, share]);
     expect(decodeMediaTracks('{"tracks":[]}')).toEqual([]);
+  });
+
+  it("round-trips a complete subscriptions allowlist, including an empty one", () => {
+    expect(encodeMediaSubscriptions(["00D", "screen-2"])).toBe('{"mids":["00D","screen-2"]}');
+    expect(decodeMediaSubscriptions(encodeMediaSubscriptions(["00D", "screen-2"]))).toEqual({
+      mids: ["00D", "screen-2"],
+    });
+    expect(decodeMediaSubscriptions(encodeMediaSubscriptions([]))).toEqual({ mids: [] });
+    const limit = Array.from({ length: 4096 }, (_, index) => String(index));
+    expect(decodeMediaSubscriptions(encodeMediaSubscriptions(limit))?.mids).toHaveLength(4096);
+    expect(decodeMediaSubscriptions(encodeMediaSubscriptions(["x".repeat(16)]))).toEqual({
+      mids: ["x".repeat(16)],
+    });
+  });
+
+  it("rejects malformed subscriptions and refuses to encode an invalid allowlist", () => {
+    for (const mids of [
+      ["a", "a"], [""], ["a b"], ["a\tb"], ["a\nb"], ["a\u0000b"], ["\u007f"],
+      ["ż"], ["x".repeat(17)], [42], [null], Array.from({ length: 4097 }, (_, index) => String(index)),
+    ]) {
+      expect(decodeMediaSubscriptions(JSON.stringify({ mids }))).toBeNull();
+      expect(() => encodeMediaSubscriptions(mids as string[])).toThrow(TypeError);
+    }
+    for (const payload of ["not-json", "null", "[]", "{}", '{"mids":"a"}']) {
+      expect(decodeMediaSubscriptions(payload)).toBeNull();
+    }
   });
 
   it("rejects the whole directory when one entry is malformed", () => {

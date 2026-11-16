@@ -259,7 +259,7 @@ internal sealed class FakeMediaServer : HttpMessageHandler
             ("POST", ["v1", "reset"]) => Reset(),
             ("POST", ["v1", "sessions"]) => await CreateSessionAsync(body, cancellationToken),
             ("DELETE", ["v1", "sessions", var id]) => CloseSession(id),
-            ("POST", ["v1", "sessions", var id, "offer" or "answer" or "candidate"]) => TakeSignal(id),
+            ("POST", ["v1", "sessions", var id, "offer" or "answer" or "candidate" or "subscriptions"]) => TakeSignal(id),
             ("GET", ["v1", "events"]) => await PollAsync(recorded.Query, cancellationToken),
             _ => Error(HttpStatusCode.NotFound, "not-found"),
         };

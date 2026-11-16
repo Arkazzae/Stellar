@@ -820,3 +820,215 @@ fn losses_are_repaired_on_each_connection_separately() {
     let expected: Vec<Vec<u8>> = (1..=10u8).map(|n| vec![n, n]).collect();
     assert_eq!(got, expected);
 }
+
+#[test]
+fn receiver_subscriptions_pause_video_without_touching_audio_or_other_receivers() {
+    let mut net = Net::new();
+    let a = net.join(1);
+    let b = net.join(2);
+    let c = net.join(3);
+    let mic = net.publish(a, MediaKind::Audio, "mic-a");
+    let camera = net.publish(a, MediaKind::Video, "cam-a");
+    net.publish(b, MediaKind::Audio, "mic-b");
+    net.publish(c, MediaKind::Audio, "mic-c");
+    net.connect_all();
+    net.run_for(Duration::from_millis(100));
+    let session_b = net.client(b).session_id.clone();
+    let audio_b = mid_from(&net, b, 1, "audio");
+    let video_b = mid_from(&net, b, 1, "video");
+    let video_c = mid_from(&net, c, 1, "video");
+    let directory = net.client(b).directory.clone();
+    let offers = net.client(b).offers_seen.clone();
+
+    // Everything it asked for arrives. From here on b sends its own lists.
+    net.clients[b].subscribe_to_all = false;
+    net.send_audio(a, mic, &[1, 0xaa]);
+    send_video(&mut net, a, camera, &[1]);
+    net.step(Duration::from_millis(20));
+    let keyframes_before = net
+        .client(a)
+        .events
+        .iter()
+        .filter(|e| matches!(e, Event::KeyframeRequest(_)))
+        .count();
+    assert_eq!(keyframes_before, 1);
+    assert_eq!(payloads(&net, b, &video_b), [vec![1]]);
+
+    net.core
+        .set_subscriptions(net.now, &session_b, &[audio_b.clone(), "future-mid".into()])
+        .unwrap();
+    // A list that is refused leaves the last one in force.
+    assert!(
+        net.core
+            .set_subscriptions(net.now, &session_b, &[video_b.clone(), video_b.clone()])
+            .is_err()
+    );
+    for n in 2..=6 {
+        net.send_audio(a, mic, &[n, 0xaa]);
+        send_video(&mut net, a, camera, &[n]);
+        net.step(Duration::from_millis(20));
+    }
+    assert_eq!(payloads(&net, b, &video_b), [vec![1]]);
+    assert_eq!(payloads(&net, b, &audio_b).len(), 6);
+    assert_eq!(payloads(&net, c, &video_c).len(), 6);
+
+    // A paused decoder may ask for refreshes. They must not keep the
+    // publisher making keyframes of a video this receiver does not ask for.
+    net.clients[b]
+        .rtc
+        .direct_api()
+        .stream_rx_by_mid(video_b.as_str().into(), None)
+        .unwrap()
+        .request_keyframe(KeyframeRequestKind::Fir);
+    net.run_for(Duration::from_millis(1100));
+    assert_eq!(
+        net.client(a)
+            .events
+            .iter()
+            .filter(|e| matches!(e, Event::KeyframeRequest(_)))
+            .count(),
+        keyframes_before,
+        "unsubscribed refresh requests are ignored"
+    );
+
+    // Every list replaces the last one, and sending one twice changes nothing.
+    let resumed = [audio_b.clone(), video_b.clone()];
+    net.core
+        .set_subscriptions(net.now, &session_b, &resumed)
+        .unwrap();
+    net.core
+        .set_subscriptions(net.now, &session_b, &resumed)
+        .unwrap();
+    let vp8 = *net.client(a).pt_of(Codec::Vp8);
+    net.clients[a].lose_outgoing = Some((vp8, 8));
+    for n in 7..=10 {
+        net.send_audio(a, mic, &[n, 0xaa]);
+        send_video(&mut net, a, camera, &[n]);
+        net.step(Duration::from_millis(30));
+    }
+    net.run_for(Duration::from_millis(1200));
+
+    let mut received = payloads(&net, b, &video_b);
+    received.sort();
+    assert_eq!(received, [vec![1], vec![7], vec![8], vec![9], vec![10]]);
+    assert!(net.client(a).lose_outgoing.is_none());
+    assert_eq!(payloads(&net, b, &audio_b).len(), 10);
+    assert_eq!(payloads(&net, c, &video_c).len(), 10);
+    let mut sequences: Vec<u64> = net
+        .client(b)
+        .received_on(&video_b)
+        .iter()
+        .map(|p| *p.seq_no)
+        .collect();
+    sequences.sort();
+    assert!(
+        sequences.windows(2).all(|w| w[1] == w[0] + 1),
+        "{sequences:?}"
+    );
+    let first = net.client(b).received_on(&video_b)[0].header.timestamp;
+    let resumed = net
+        .client(b)
+        .received_on(&video_b)
+        .into_iter()
+        .find(|p| p.payload.as_ref() == [7])
+        .unwrap()
+        .header
+        .timestamp;
+    assert_eq!(
+        resumed.wrapping_sub(first),
+        6 * 960,
+        "RTP time is not compacted"
+    );
+    assert_eq!(net.client(b).directory, directory);
+    assert_eq!(net.client(b).offers_seen, offers);
+    let keyframes_after = net
+        .client(a)
+        .events
+        .iter()
+        .filter(|e| matches!(e, Event::KeyframeRequest(_)))
+        .count();
+    assert_eq!(
+        keyframes_after,
+        keyframes_before + 1,
+        "resume PLI is coalesced"
+    );
+}
+
+#[test]
+fn an_empty_subscription_blocks_existing_and_new_tracks_only_for_that_receiver() {
+    let mut net = Net::new();
+    let a = net.join(1);
+    let b = net.join(2);
+    let c = net.join(3);
+    let mic = net.publish(a, MediaKind::Audio, "mic-a");
+    net.publish(b, MediaKind::Audio, "mic-b");
+    net.publish(c, MediaKind::Audio, "mic-c");
+    net.connect_all();
+    let session_b = net.client(b).session_id.clone();
+    net.clients[b].subscribe_to_all = false;
+    net.core
+        .set_subscriptions(net.now, &session_b, &[])
+        .unwrap();
+    let camera = net.publish(a, MediaKind::Video, "cam-a");
+    net.run_for(Duration::from_millis(100));
+    let audio_b = mid_from(&net, b, 1, "audio");
+    let video_b = mid_from(&net, b, 1, "video");
+    let video_c = mid_from(&net, c, 1, "video");
+    for n in 1..=3 {
+        net.send_audio(a, mic, &[n]);
+        send_video(&mut net, a, camera, &[n]);
+        net.step(Duration::from_millis(20));
+    }
+    assert!(payloads(&net, b, &audio_b).is_empty());
+    assert!(payloads(&net, b, &video_b).is_empty());
+    assert_eq!(payloads(&net, c, &video_c).len(), 3);
+
+    // A track that arrived meanwhile is asked for on its own section.
+    let offers = net.client(b).offers_seen.clone();
+    net.core
+        .set_subscriptions(net.now, &session_b, std::slice::from_ref(&video_b))
+        .unwrap();
+    send_video(&mut net, a, camera, &[4]);
+    net.step(Duration::from_millis(20));
+    assert_eq!(payloads(&net, b, &video_b), [vec![4]]);
+    assert!(payloads(&net, b, &audio_b).is_empty());
+    assert_eq!(net.client(b).offers_seen, offers);
+}
+
+#[test]
+fn a_receiver_is_sent_nothing_until_it_asks() {
+    let mut net = Net::new();
+    let a = net.join(1);
+    let b = net.join(2);
+    let c = net.join(3);
+    net.clients[b].subscribe_to_all = false;
+    let mic = net.publish(a, MediaKind::Audio, "mic-a");
+    let camera = net.publish(a, MediaKind::Video, "cam-a");
+    net.publish(b, MediaKind::Audio, "mic-b");
+    net.publish(c, MediaKind::Audio, "mic-c");
+    net.connect_all();
+    net.run_for(Duration::from_millis(100));
+    let audio_b = mid_from(&net, b, 1, "audio");
+    let video_b = mid_from(&net, b, 1, "video");
+    let audio_c = mid_from(&net, c, 1, "audio");
+
+    for n in 1..=3 {
+        net.send_audio(a, mic, &[n]);
+        send_video(&mut net, a, camera, &[n]);
+        net.step(Duration::from_millis(20));
+    }
+    // The sections are negotiated and named, and carry nothing.
+    assert_eq!(net.client(b).directory.len(), 3);
+    assert!(net.client(b).received.is_empty());
+    assert_eq!(payloads(&net, c, &audio_c).len(), 3);
+
+    let session_b = net.client(b).session_id.clone();
+    net.core
+        .set_subscriptions(net.now, &session_b, std::slice::from_ref(&audio_b))
+        .unwrap();
+    net.send_audio(a, mic, &[4]);
+    send_video(&mut net, a, camera, &[4]);
+    net.step(Duration::from_millis(20));
+    assert_eq!(payloads(&net, b, &audio_b), [vec![4]]);
+    assert!(payloads(&net, b, &video_b).is_empty());
+}

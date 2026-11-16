@@ -98,7 +98,7 @@ Defined in `web/src/lib/rtc/protocol.ts` and implemented by `AppHub` in `server/
 | Method | `PlaySoundboard` | Schedule a soundboard clip in the room |
 | Method | `GetRtcClock` | Return server Unix timestamp in milliseconds |
 | Method | `OpenMediaSession` | Open a media session with Stellarr Media for the caller's seat |
-| Method | `SendMediaSignal` | Send an SDP offer/answer or ICE candidate to Stellarr Media |
+| Method | `SendMediaSignal` | Send an SDP offer/answer, ICE candidate, or receive subscriptions to Stellarr Media |
 | Event | `VoiceParticipantChanged` | Room occupancy snapshot: `{ channelId, sequence, participants }` |
 | Event | `VoiceSignal` | Relayed `VoiceSignal` envelope |
 | Event | `VoiceSessionReplaced` | Account joined voice from a newer browser tab |
@@ -170,6 +170,8 @@ Users can pick a personal arrival clip (`UserPreferences.JoinSoundId`) from any 
 - Codec preference order: VP9 (with 2–3 temporal layers when supported), AV1, VP8, H.264.
 - Uses `contentHint = "detail"` and `degradationPreference = "maintain-resolution"`.
 - Video senders use `medium` network priority while Opus audio uses `high`.
+- The media server forwards a remote screen's video and shared sound only to the people watching it (see [receive subscriptions](./stellarr-media.md#receive-subscriptions)). Stopping watching stops both, while the publisher's capture carries on; a new share starts unwatched.
+- These profiles are the most a sender uses; congestion control can send less. A receiver is forwarded a whole track or nothing: no layer or bitrate is chosen per receiver.
 
 ## Camera
 

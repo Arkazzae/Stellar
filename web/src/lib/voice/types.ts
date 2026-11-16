@@ -165,6 +165,12 @@ export const IDLE_VOICE_STATE: VoiceState = Object.freeze({
   diagnostics: IDLE_DIAGNOSTICS,
 });
 
+/** What this receiver wants; voices remain enabled independently of video preferences. */
+export interface VoiceReceivePreferences {
+  screen: { userId: UserId; streamId: string } | null;
+  cameras: boolean;
+}
+
 /**
  * The only RTC surface the UI may touch. Signaling, the connection to the
  * media server and everything else of WebRTC sit behind it and can change
@@ -185,6 +191,8 @@ export interface VoiceClient {
   setMuted(muted: boolean): void;
   /** Silences or restores every remote voice and screen sink; capture is unaffected. */
   setDeafened(deafened: boolean): void;
+  /** Select what the media server forwards; microphone speech is always received. */
+  setReceivePreferences(preferences: VoiceReceivePreferences): void;
   /** Local only; never signalled to the peer. */
   setPeerVolume(userId: UserId, volume: number): void;
   /**

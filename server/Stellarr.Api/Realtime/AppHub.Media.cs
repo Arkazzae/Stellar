@@ -18,6 +18,8 @@ public sealed partial class AppHub
     private const string MediaUnavailable = "Media server is unavailable.";
     private const string InvalidMediaSignal = "Invalid media signal.";
     private const string NotSeated = "Not seated in this voice room.";
+    private const int MaxSubscriptionMids = 4096;
+    private const int MaxSubscriptionMidLength = 16;
 
     /// <summary>
     /// Creates the media session of the caller's seat in
@@ -132,9 +134,49 @@ public sealed partial class AppHub
                 return await mediaControl.SendCandidateAsync(sessionId, null, CancellationToken.None);
             case "candidate" when root.ValueKind == JsonValueKind.Object:
                 return await mediaControl.SendCandidateAsync(sessionId, root, CancellationToken.None);
+            case "subscriptions" when IsSubscriptions(root, out var mids):
+                return await mediaControl.SendSubscriptionsAsync(sessionId, mids, CancellationToken.None);
             default:
                 throw new HubException(InvalidMediaSignal);
         }
+    }
+
+    /// <summary>A complete allowlist of printable ASCII MIDs, including an empty allowlist.</summary>
+    private static bool IsSubscriptions(JsonElement root, out string[] mids)
+    {
+        mids = [];
+        if (root.ValueKind != JsonValueKind.Object ||
+            !root.TryGetProperty("mids", out var entries) ||
+            entries.ValueKind != JsonValueKind.Array ||
+            entries.GetArrayLength() > MaxSubscriptionMids ||
+            root.EnumerateObject().Count(property => property.NameEquals("mids")) != 1)
+        {
+            return false;
+        }
+
+        var values = new string[entries.GetArrayLength()];
+        var seen = new HashSet<string>(StringComparer.Ordinal);
+        var index = 0;
+        foreach (var entry in entries.EnumerateArray())
+        {
+            if (entry.ValueKind != JsonValueKind.String)
+            {
+                return false;
+            }
+
+            var mid = entry.GetString()!;
+            if (mid.Length is 0 or > MaxSubscriptionMidLength ||
+                mid.Any(character => character is <= ' ' or >= '\u007f') ||
+                !seen.Add(mid))
+            {
+                return false;
+            }
+
+            values[index++] = mid;
+        }
+
+        mids = values;
+        return true;
     }
 
     private static JsonDocument ParseMediaPayload(string payload)
