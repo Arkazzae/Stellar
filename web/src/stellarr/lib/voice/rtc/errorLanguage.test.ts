@@ -6,7 +6,7 @@ import { english, polish } from "@/test/translators";
 
 import { captureCamera } from "../video/camera";
 import { IceConfigError, type VoiceIceProvider } from "./iceSession";
-import { openMicrophone } from "../capture/micAcquire";
+import { openMicDevice } from "../capture/micDevice";
 import { captureScreen, classifyScreenError } from "../video/screenShare";
 import { WebRtcVoiceClient, type WebRtcVoiceClientOptions } from "./webrtc";
 import {
@@ -96,8 +96,8 @@ describe("what the voice client tells a person", () => {
     const blocked = () => Promise.reject(new DOMException("", "NotAllowedError"));
 
     await expect(
-      openMicrophone(
-        { inputDeviceId: null, echoCancellation: false } as Parameters<typeof openMicrophone>[0],
+      openMicDevice(
+        { inputDeviceId: null, echoCancellation: false } as Parameters<typeof openMicDevice>[0],
         blocked,
         english,
       ),

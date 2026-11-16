@@ -193,27 +193,26 @@ describe("microphoneConstraints", () => {
 });
 
 describe("captureMicrophone", () => {
-  it("recaptures with full voice isolation when the browser advertises it", async () => {
+  it("keeps the one ordinary capture when the browser advertises full isolation", async () => {
+    // Chrome on macOS grants "all", reports it, and ends the track when it may
+    // not record the system's audio; the call then carried silence.
     const ordinary = audioTrack({
       echoCancellation: true,
       echoCapabilities: [true, false, "remote-only", "all"],
     });
-    const isolated = audioTrack({ echoCancellation: "all" });
-    const getUserMedia = vi
-      .fn()
-      .mockResolvedValueOnce(audioStream([ordinary]))
-      .mockResolvedValueOnce(audioStream([isolated]));
+    const getUserMedia = vi.fn(async () => audioStream([ordinary]));
 
     const capture = await captureMicrophone(settings({ echoCancellation: true }), {
       getUserMedia,
     });
 
-    expect(getUserMedia).toHaveBeenLastCalledWith({
-      audio: expect.objectContaining({ echoCancellation: { exact: "all" } }),
+    expect(getUserMedia).toHaveBeenCalledOnce();
+    expect(getUserMedia).toHaveBeenCalledWith({
+      audio: expect.objectContaining({ echoCancellation: true }),
       video: false,
     });
-    expect(capture.rawTrack).toBe(isolated);
-    expect(ordinary.stop).toHaveBeenCalledOnce();
+    expect(capture.rawTrack).toBe(ordinary);
+    expect(ordinary.stop).not.toHaveBeenCalled();
   });
 
   it("keeps ordinary browser AEC when full isolation is unavailable", async () => {
@@ -231,28 +230,20 @@ describe("captureMicrophone", () => {
     expect(track.getSettings().echoCancellation).toBe(true);
   });
 
-  it("uses remote-only isolation when that is the strongest advertised mode", async () => {
+  it("does not trade the ordinary capture for remote-only isolation either", async () => {
+    // `true` already promises at least what "remote-only" does.
     const ordinary = audioTrack({
       echoCancellation: true,
       echoCapabilities: [true, false, "remote-only"],
     });
-    const isolated = audioTrack({ echoCancellation: "remote-only" });
-    const getUserMedia = vi
-      .fn()
-      .mockResolvedValueOnce(audioStream([ordinary]))
-      .mockResolvedValueOnce(audioStream([isolated]));
+    const getUserMedia = vi.fn(async () => audioStream([ordinary]));
 
     const capture = await captureMicrophone(settings({ echoCancellation: true }), {
       getUserMedia,
     });
 
-    expect(getUserMedia).toHaveBeenLastCalledWith({
-      audio: expect.objectContaining({
-        echoCancellation: { exact: "remote-only" },
-      }),
-      video: false,
-    });
-    expect(capture.rawTrack).toBe(isolated);
+    expect(getUserMedia).toHaveBeenCalledOnce();
+    expect(capture.rawTrack).toBe(ordinary);
   });
 
   it("does not enable isolation when echo cancellation is switched off", async () => {

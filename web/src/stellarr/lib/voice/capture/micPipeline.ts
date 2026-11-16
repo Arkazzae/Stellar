@@ -1,10 +1,15 @@
 import type { Translator } from "@/i18n";
 import { translateForDocument } from "@/i18n/defaultLocale";
 import { profileFor, usesWorkletSuppression } from "../audioProfiles";
-import { browserFallback } from "./browserProcessing";
 import { buildCaptureGraph, type GraphDeps } from "./captureGraph";
-import { browserGetUserMedia, openMicrophone, type GetUserMedia } from "./micAcquire";
 import { MicCaptureError, type MicCapture } from "./micCapture";
+import {
+  browserGetUserMedia,
+  openMicDevice,
+  switchOnBrowserAudio,
+  type BrowserFeature,
+  type GetUserMedia,
+} from "./micDevice";
 import { wantsCaptureGraph, type VoiceSettings } from "../settings";
 
 /**
@@ -52,7 +57,8 @@ export async function captureMicrophone(
     throw new MicCaptureError("unsupported", t("voiceClient.micUnsupported"));
   }
 
-  const { stream: raw, track: rawTrack } = await openMicrophone(settings, getUserMedia, t);
+  const opened = await openMicDevice(settings, getUserMedia, t);
+  const { stream: raw, track: rawTrack } = opened;
   const { contentHint } = profileFor(settings);
   rawTrack.contentHint = contentHint;
 
@@ -60,12 +66,14 @@ export async function captureMicrophone(
   if (graph) graph.track.contentHint = contentHint;
 
   // The device was opened with the browser's suppressor and AGC off to make
-  // room for ours. Whichever of ours is not running gets the browser's put back,
-  // and what is reported is what the device confirms.
-  const fallback = await browserFallback(rawTrack, settings.noiseSuppression, {
-    noise: usesWorkletSuppression(settings.noiseSuppression) && !graph?.suppressor,
-    autoGain: settings.autoGainControl && !graph?.levelling,
-  });
+  // room for ours. Whichever of ours is not running gets the browser's put
+  // back, and what is reported is what the device confirms.
+  const lost: BrowserFeature[] = [];
+  if (usesWorkletSuppression(settings.noiseSuppression) && !graph?.suppressor) {
+    lost.push("noiseSuppression");
+  }
+  if (settings.autoGainControl && !graph?.levelling) lost.push("autoGainControl");
+  const { active: browser } = await switchOnBrowserAudio(opened, lost);
 
   let disposed = false;
   return {
@@ -74,9 +82,9 @@ export async function captureMicrophone(
     monitorStream: graph?.monitorStream ?? raw,
     rawTrack,
     processed: graph !== null,
-    noiseSuppression: graph?.suppressor ?? fallback.noiseSuppression,
+    noiseSuppression: graph?.suppressor ?? (browser.noiseSuppression ? "browser" : "none"),
     gateActive: graph?.gateActive ?? false,
-    autoGain: graph?.levelling ? "worklet" : fallback.autoGain,
+    autoGain: graph?.levelling ? "worklet" : browser.autoGainControl ? "browser" : "none",
     setSensitivity: (sensitivity) => graph?.setSensitivity(sensitivity),
     setInputGain: (db) => graph?.setInputGain(db),
     fadeIn: () => graph?.fadeIn(),
