@@ -7,5 +7,5 @@ import { describe } from "vitest";
 import { captureCases } from "./captureCases";
 
 describe("capture record", () => {
-  captureCases(["fan-speech", "speech-crunching", "buzz", "mains-hum", "breath-chewing"]);
+  captureCases(["fan-speech", "speech-over-fan", "speech-crunching", "buzz", "mains-hum", "breath-chewing"]);
 });

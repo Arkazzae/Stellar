@@ -504,12 +504,15 @@ export const FIXTURES: readonly Fixture[] = [
   {
     name: "talker-loud-after-quiet",
     purpose:
-      "A quiet phrase at -40 dBFS, long enough for the leveller to start lifting it, then a shout at -9 dBFS that peaks near full scale: the leveller's peak guard, its 40 dB/s fall and its 6 dB cut limit, and whether the gain lands before the loud samples leave the gate's delay line.",
+      "A quiet phrase at -40 dBFS, long enough for the leveller to start lifting it, then a shout whose loudest sample is -1 dBFS (about -17 dBFS active): the leveller's peak guard, its 40 dB/s fall and its 6 dB cut limit, and whether the gain lands before the loud samples leave the gate's delay line.",
     seconds: 4.48,
     build() {
       const seconds = this.seconds;
       const quiet = speech(301, LOW_VOICE, [{ gap: 400, words: 5 }], seconds, -40);
       const loud = speech(302, LOW_VOICE, [{ gap: 2400, words: 3 }], seconds, -9);
+      // A microphone stops at full scale; the shout stops at -1 dBFS.
+      const ceiling = dbToGain(-1) / peakAbs(loud.samples);
+      if (ceiling < 1) for (let i = 0; i < loud.samples.length; i += 1) loud.samples[i] = (loud.samples[i] ?? 0) * ceiling;
       return sum(quiet.samples, loud.samples, roomTone(303, quiet.samples.length, -70));
     },
   },
@@ -618,6 +621,17 @@ export const FIXTURES: readonly Fixture[] = [
       const noise = fan(1002, voice.samples.length, -40);
       fadeIn(noise, Math.round(1500 * MS), Math.round(200 * MS));
       return sum(voice.samples, noise, roomTone(1003, voice.samples.length, -72));
+    },
+  },
+  {
+    name: "speech-over-fan",
+    purpose:
+      "A voice only 8 dB over a fan (-40 dBFS) that was running from the first sample, so the warm-up learns it: onsets sit on the on-threshold, and which frames count as speech depends on it at every point of the dial, the remote meter's default included.",
+    seconds: 4.48,
+    build() {
+      const seconds = this.seconds;
+      const voice = speech(1501, LOW_VOICE, [{ gap: 600, words: 3 }, { gap: 500, words: 2 }], seconds, -32);
+      return sum(voice.samples, fan(1502, voice.samples.length, -40), roomTone(1503, voice.samples.length, -72));
     },
   },
   {
