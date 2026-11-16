@@ -5,11 +5,12 @@ Components and helpers shared by the web client (`web/`) and Cockpit (`web/src/c
 - `@stellarr/ui`: the components below and the `cx` class-name helper.
 - `@stellarr/ui/styles.css`: the components' stylesheet.
 - `@stellarr/ui/behavior`: the helpers the components are built from, for an overlay an app draws itself. See [Behaviour](#behaviour).
-- `@stellarr/ui/icons`: Stellarr's icon family in two variants, linear and broken (the default): `Icon`, `IconVariantProvider`, `ICON_GLYPHS` and `iconPaths`, the one registry both apps and [`branding/icons/`](../../branding/icons/) use. How to draw a glyph: [`src/icons/README.md`](src/icons/README.md).
 
 It is consumed as TypeScript source: `exports` points at `src/index.ts` and there is no build step. Next.js compiles it through `transpilePackages`, and Vite and Vitest compile it as part of the importing app.
 
-Inside the package, import with relative paths. The `@/` aliases belong to the apps and do not resolve here. The package depends on nothing but React: no Radix, no clsx, no tailwind-merge.
+Inside the package, import with relative paths. The `@/` aliases belong to the apps and do not resolve here. The package depends on nothing but React and `@stellarr/icons`, which draws the close button of a dialog and the glyphs of a `Dropdown`: no Radix, no clsx, no tailwind-merge.
+
+The icon set is a package of its own, [`@stellarr/icons`](../stellarr-icons/README.md), which the apps import directly.
 
 ## Components
 
@@ -26,7 +27,7 @@ Inside the package, import with relative paths. The `@/` aliases belong to the a
 | `Table`, `TableHeader`, `TableBody`, `TableRow`, `TableHead`, `TableCell` | A table whose header sticks to the area that scrolls it. |
 | `Dialog` + `DialogContent`, `DialogHeader`, `DialogTitle`, `DialogDescription`, `DialogFooter`, `DialogClose`, `DialogTrigger` | A centred modal. |
 | `Sheet` + `SheetContent` (`side`: `right`, `left`), `SheetHeader`, `SheetTitle`, `SheetDescription`, `SheetClose`, `SheetTrigger` | A modal along an edge. |
-| `Dropdown` | A single choice from a list, as a combobox with a listbox popup: one tab stop, arrows, Home and End, and typing to jump, as a `<select>` has. Controlled with `options`, `value` and `onChange`; named by `label`, or by `id` when a visible `<label for>` does it. `variant`: `field` (fills a form row, the default) or `quiet` (a bare control for a bar that is already boxed). An option has a `label`, and optionally a `detail` second line, an `icon`, a `lang` for a label in another language than the page's, and `disabled`. `placeholder` shows when the value names nothing in the list, and the field is empty without one. `name` submits the value with the form, `invalid` draws the field as refused, and `aria-describedby` points it at a hint. |
+| `Dropdown` | A single choice from a list, as a combobox with a listbox popup: one tab stop, arrows, Home and End, and typing to jump, as a `<select>` has. Controlled with `options`, `value` and `onChange`; named by `label`, or by `id` when a visible `<label for>` does it. `variant`: `field` (fills a form row, the default) or `quiet` (a bare control for a bar that is already boxed). An option has a `label`, and optionally a `detail` second line, an `icon` (an `IconName` from `@stellarr/icons`), a `lang` for a label in another language than the page's, and `disabled`. `placeholder` shows when the value names nothing in the list, and the field is empty without one. `name` submits the value with the form, `invalid` draws the field as refused, and `aria-describedby` points it at a hint. |
 | `DropdownMenu` + `DropdownMenuTrigger`, `DropdownMenuContent`, `DropdownMenuItem`, `DropdownMenuLabel`, `DropdownMenuSeparator` | A list of actions under a button. |
 | `Tooltip` + `TooltipTrigger`, `TooltipContent` | A note for the pointer (after `delayDuration`, 300 ms) and the keyboard (at once). |
 | `Spinner` | Work in progress, the icon set's open ring turning. |
@@ -273,6 +274,7 @@ Run these from the repository root, after `npm ci`:
 ```bash
 npm run typecheck:ui
 npm run test:ui
-npm run icons:build -w @stellarr/ui -- --check
 npm run tokens:check -w @stellarr/ui
 ```
+
+The icon set has checks of its own, listed in [its README](../stellarr-icons/README.md#checks).

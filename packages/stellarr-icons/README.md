@@ -1,4 +1,17 @@
-# Stellarr icons
+# @stellarr/icons
+
+Stellarr's icon family, shared by the web client (`web/`), Cockpit
+(`web/src/cockpit/`) and the components of
+[`@stellarr/ui`](../stellarr-ui/README.md). The same source builds the SVG
+files in [`branding/icons/`](../../branding/icons/). The package is private
+and exports `Icon`, `IconVariantProvider` and `DEFAULT_ICON_VARIANT`, the
+generated table as `ICON_GLYPHS`, `ICON_VARIANTS` and `iconPaths`, and the
+types `IconName`, `IconVariant`, `IconProps`, `IconGlyph` and `IconPath`.
+
+It is consumed as TypeScript source: `exports` points at `src/index.ts` and
+there is no build step for an app. Next.js compiles it through
+`transpilePackages`, and Vitest compiles it as part of the importing
+package. It depends on nothing but React.
 
 One local SVG family in two variants drawn from the same geometry:
 
@@ -51,3 +64,13 @@ npm run icons:build -w @stellarr/icons -- --audit   # also list strokes that cro
 - Keep the accessible label on the control; `Icon` itself is decorative.
 
 Brand marks, avatars, emoji content and waveform data are separate assets.
+
+## Checks
+
+Run these from the repository root, after `npm ci`:
+
+```bash
+npm run typecheck:icons
+npm run test:icons
+npm run icons:build -w @stellarr/icons -- --check
+```
