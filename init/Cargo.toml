@@ -11,6 +11,22 @@ libc = "0.2"
 name = "stellarr-init"
 path = "src/main.rs"
 
+# A child that misbehaves on request, for tests/pid1.rs. It lives outside
+# src/bin/ because the repository ignores every bin/ folder. A build of
+# `--bin stellarr-init` leaves it out.
+[[bin]]
+name = "misbehave"
+path = "tests/support/misbehave.rs"
+test = false
+doc = false
+
+# Runs as root in a Linux container and starts every manager in a PID
+# namespace of its own, so it has its own main and runs one scenario at a time.
+[[test]]
+name = "pid1"
+path = "tests/pid1.rs"
+harness = false
+
 [profile.release]
 # A panic in PID 1 ends the container either way; aborting does it at once,
 # without unwinding through code that holds children.
