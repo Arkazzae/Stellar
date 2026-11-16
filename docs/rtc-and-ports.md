@@ -115,7 +115,7 @@ flowchart LR
 
 ### Screen sharing
 
-Four profiles are defined in `web/src/lib/voice/screenShare.ts`, from `720p15` (1 Mb/s) to `2160p60` (12 Mb/s), defaulting to `1080p30` (2.5 Mb/s). VP9 with temporal scalability layers is preferred, and video senders use lower network priority than Opus audio. The sender uploads a single stream that `stellarr-media` forwards to all receivers.
+Four profiles are defined in `web/src/lib/voice/video/screenShare.ts`, from `720p15` (1 Mb/s) to `2160p60` (12 Mb/s), defaulting to `1080p30` (2.5 Mb/s). VP9 with temporal scalability layers is preferred, and video senders use lower network priority than Opus audio. The sender uploads a single stream that `stellarr-media` forwards to all receivers.
 
 ## Diagnostics
 

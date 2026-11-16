@@ -7,9 +7,9 @@ import {
   listInputDevices,
   MicCaptureError,
   type MicCapture,
-} from "@/lib/voice/micPipeline";
+} from "@/lib/voice/capture/micPipeline";
 import { needsRecapture, type VoiceSettings } from "@/lib/voice/settings";
-import { SpeechDetector } from "@/lib/voice/vad";
+import { SpeechDetector } from "@/lib/voice/capture/vad";
 import type {
   ActiveAutoGain,
   ActiveNoiseSuppression,

@@ -28,12 +28,12 @@ const translate = vi.hoisted(() =>
   vi.fn((key: string) => key),
 );
 
-vi.mock("@/lib/voice/micPipeline", () => ({
+vi.mock("@/lib/voice/capture/micPipeline", () => ({
   hasDeviceLabels: () => true,
   listOutputDevices: async () => [],
 }));
 
-vi.mock("@/lib/voice/remoteMixer", () => ({
+vi.mock("@/lib/voice/playback/remoteMixer", () => ({
   RemoteVoiceMixer: class {
     attachElement = mixer.attachElement;
     dispose = mixer.dispose;

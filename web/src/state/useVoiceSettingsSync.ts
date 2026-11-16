@@ -5,7 +5,7 @@ import {
   snapshotVoiceDevices,
   watchVoiceDevices,
   type VoiceDeviceSnapshot,
-} from "@/lib/voice/deviceMonitor";
+} from "@/lib/voice/capture/deviceMonitor";
 import type { Ports } from "@/ports";
 
 import type { VoiceHolder } from "./voiceHolder";

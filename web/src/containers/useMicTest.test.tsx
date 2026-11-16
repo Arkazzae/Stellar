@@ -35,7 +35,7 @@ const fakes = vi.hoisted(() => {
   };
 });
 
-vi.mock("@/lib/voice/micPipeline", () => ({
+vi.mock("@/lib/voice/capture/micPipeline", () => ({
   MicCaptureError: class MicCaptureError extends Error {},
   captureMicrophone: fakes.captureMicrophone,
   hasDeviceLabels: () => true,
@@ -44,7 +44,7 @@ vi.mock("@/lib/voice/micPipeline", () => ({
   ],
 }));
 
-vi.mock("@/lib/voice/vad", () => ({
+vi.mock("@/lib/voice/capture/vad", () => ({
   SpeechDetector: class SpeechDetector {
     add = vi.fn(async () => true);
     dispose = fakes.detectorDispose;

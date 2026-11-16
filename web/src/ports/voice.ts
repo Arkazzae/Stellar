@@ -1,5 +1,5 @@
 import type { JoinSoundServerGroup } from "@/lib/api/types";
-import type { ActiveAutoGain, ActiveNoiseSuppression } from "@/lib/voice/micPipeline";
+import type { ActiveAutoGain, ActiveNoiseSuppression } from "@/lib/voice/capture/micPipeline";
 import type { VoiceSettings } from "@/lib/voice/settings";
 import type { VoiceClient, VoiceState } from "@/lib/voice/types";
 
@@ -43,17 +43,17 @@ export type {
   PlaybackProfileId,
   PlaybackTuning,
 } from "@/lib/voice/settings";
-export { CAMERA_PROFILES } from "@/lib/voice/camera";
-export type { CameraQualityId } from "@/lib/voice/camera";
+export { CAMERA_PROFILES } from "@/lib/voice/video/camera";
+export type { CameraQualityId } from "@/lib/voice/video/camera";
 /** The same for the screen: the control bar offers these while a share is set up. */
 export {
   SCREEN_SHARE_PROFILES,
   SCREEN_SHARE_QUALITY_HINT,
   SCREEN_SHARE_QUALITY_LABEL,
-} from "@/lib/voice/screenShare";
-export type { ScreenShareQualityId } from "@/lib/voice/screenShare";
+} from "@/lib/voice/video/screenShare";
+export type { ScreenShareQualityId } from "@/lib/voice/video/screenShare";
 /** What the microphone is really doing, as opposed to what was requested. */
-export type { ActiveAutoGain, ActiveNoiseSuppression } from "@/lib/voice/micPipeline";
+export type { ActiveAutoGain, ActiveNoiseSuppression } from "@/lib/voice/capture/micPipeline";
 
 /** Applies to a live call without dropping it. */
 export interface VoiceSettingsPort {

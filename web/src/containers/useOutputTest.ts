@@ -2,12 +2,12 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 
-import { listOutputDevices } from "@/lib/voice/micPipeline";
+import { listOutputDevices } from "@/lib/voice/capture/micPipeline";
 import {
   applyAudioOutput,
   audioOutputSelectionSupported,
-} from "@/lib/voice/playback";
-import { RemoteVoiceMixer } from "@/lib/voice/remoteMixer";
+} from "@/lib/voice/playback/playback";
+import { RemoteVoiceMixer } from "@/lib/voice/playback/remoteMixer";
 import type { VoiceSettings } from "@/lib/voice/settings";
 import type { OutputTest } from "@/ports";
 import { useLanguage } from "@/state/hooks";
