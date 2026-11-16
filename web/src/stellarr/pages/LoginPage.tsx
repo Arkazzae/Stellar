@@ -13,6 +13,8 @@ import { useRedirectWhenSignedIn } from "@/hooks/useRedirectWhenSignedIn";
 import { safeReturnPath } from "@/lib/auth/returnPath";
 import { useLanguage, usePorts, useSession } from "@/state/hooks";
 
+import { usePrefetchApp } from "./loadApp";
+
 interface OidcConfiguration {
   enabled?: boolean;
   displayName?: string;
@@ -58,6 +60,7 @@ export default function LoginPage() {
   const params = useSearchParams();
   const oidcError = params.get("oidc_error");
   const returnPath = safeReturnPath(params.get("returnUrl"));
+  usePrefetchApp(phase !== "loading");
   const [providers, setProviders] = useState<ExternalProvider[]>([]);
   const ports = usePorts();
   const [passkeyOffered, setPasskeyOffered] = useState(false);

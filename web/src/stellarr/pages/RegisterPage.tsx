@@ -7,6 +7,8 @@ import { useRedirectWhenSignedIn } from "@/hooks/useRedirectWhenSignedIn";
 import { pendingInvite } from "@/lib/auth/invites";
 import { useLanguage, usePorts, useSession } from "@/state/hooks";
 
+import { usePrefetchApp } from "./loadApp";
+
 export default function RegistrationPage() {
   const ports = usePorts();
   const router = useRouter();
@@ -14,6 +16,7 @@ export default function RegistrationPage() {
   const { t } = useLanguage();
 
   const [setup, setSetup] = useState<boolean | null>(null);
+  usePrefetchApp(setup !== null);
   const [failed, setFailed] = useState(false);
   const [attempt, setAttempt] = useState(0);
 

@@ -18,8 +18,9 @@ import ResetPasswordPage from "./pages/ResetPasswordPage";
  * The pages come with the entry: together they weigh less than a round trip
  * costs, and the entry already holds the ports and the session every page
  * needs. The signed-in app, most of the client's code, is the one part loaded
- * on demand, by the home page (`pages/HomePage.tsx`), so no sign-in page
- * waits for it.
+ * on demand (`pages/loadApp.ts`), so no sign-in page waits for it: the home
+ * page starts it, and the sign-in, registration and invite pages fetch it
+ * while idle.
  *
  * infra/nginx.conf repeats these addresses, in `map $uri $stellarr_address`:
  * the container answers them with this document and 200, and any other with
