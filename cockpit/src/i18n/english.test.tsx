@@ -1,6 +1,5 @@
 import { render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { MemoryRouter, Route, Routes } from "react-router-dom";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { AppGate } from "../components/app-gate";
@@ -13,8 +12,12 @@ import { RuntimePage } from "../pages/runtime-page";
 import { UsersPage } from "../pages/users-page";
 import { CockpitContext, type CockpitContextValue } from "../state/cockpit-context";
 import { cockpitValue } from "../test/cockpit-fixtures";
+import { visit } from "../test/navigation";
 
 // These tests never select a language: English is what the panel shows by default.
+
+vi.mock("next/navigation", () => import("../test/navigation"));
+vi.mock("next/link", () => import("../test/navigation").then(({ Link }) => ({ default: Link })));
 
 vi.mock("../lib/api", async (importOriginal) => {
   const original = await importOriginal<typeof import("../lib/api")>();
@@ -44,11 +47,9 @@ afterEach(() => {
 
 function renderWithSession(ui: React.ReactNode, value: CockpitContextValue = cockpitValue()) {
   return render(
-    <MemoryRouter>
-      <CockpitContext.Provider value={value}>
-        {ui}
-      </CockpitContext.Provider>
-    </MemoryRouter>,
+    <CockpitContext.Provider value={value}>
+      {ui}
+    </CockpitContext.Provider>,
   );
 }
 
@@ -56,7 +57,7 @@ describe("the sign-in screen", () => {
   const anonymous = { phase: "anonymous", bootstrap: null } as const;
 
   it("is in English", () => {
-    renderWithSession(<AppGate />, cockpitValue(anonymous));
+    renderWithSession(<AppGate>Page</AppGate>, cockpitValue(anonymous));
 
     expect(screen.getByText("Log in to Stellarr Cockpit")).toBeTruthy();
     expect(screen.getByLabelText("Username")).toBeTruthy();
@@ -67,7 +68,7 @@ describe("the sign-in screen", () => {
   it("explains too many attempts in English", async () => {
     const user = userEvent.setup();
     const login = vi.fn().mockRejectedValue(new CockpitApiError(429, "Too Many Requests"));
-    renderWithSession(<AppGate />, cockpitValue({ ...anonymous, login }));
+    renderWithSession(<AppGate>Page</AppGate>, cockpitValue({ ...anonymous, login }));
 
     await user.type(screen.getByLabelText("Username"), "owner");
     await user.type(screen.getByLabelText("Password"), "secret");
@@ -81,16 +82,13 @@ describe("the sign-in screen", () => {
 
 describe("the navigation shell", () => {
   it("names the areas and the current page in English", () => {
+    visit("/cockpit/logs");
     render(
-      <MemoryRouter initialEntries={["/logs"]}>
-        <CockpitContext.Provider value={cockpitValue()}>
-          <Routes>
-            <Route element={<AppShell />}>
-              <Route path="*" element={<p>Page</p>} />
-            </Route>
-          </Routes>
-        </CockpitContext.Provider>
-      </MemoryRouter>,
+      <CockpitContext.Provider value={cockpitValue()}>
+        <AppShell>
+          <p>Page</p>
+        </AppShell>
+      </CockpitContext.Provider>,
     );
 
     const [sidebar] = screen.getAllByRole("navigation", { name: "Cockpit navigation" });

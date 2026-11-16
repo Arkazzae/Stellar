@@ -8,7 +8,7 @@ import { snapshot } from "./snap.mjs";
 import { mkdirSync } from "node:fs";
 
 const FILM = new URL("..", import.meta.url).pathname.replace(/\/$/, "");
-const COCKPIT = process.env.STELLARR_FILM_COCKPIT || "http://127.0.0.1:3101";
+const COCKPIT = process.env.STELLARR_FILM_COCKPIT || `${BASE}/cockpit`;
 const SHOTS = FILM + "/out/capture/"; // reference screenshots of the live app, to compare with stills
 mkdirSync(SHOTS, { recursive: true });
 const steps = new Set(process.argv.slice(2));
@@ -123,10 +123,10 @@ try {
   }
   if (want("cockpit")) {
     const c = await b.newPage();
-    await c.goto(COCKPIT + "/", { wait: 3000 });
+    await c.goto(COCKPIT, { wait: 3000 });
     const r = await c.eval(`fetch("/api/auth/login", { method: "POST", credentials: "same-origin", headers: { "Content-Type": "application/json", Accept: "application/json", "X-Stellarr-Client": "cockpit", "X-Stellarr-Client-Version": "0.1.0" }, body: JSON.stringify({ username: "maya", password: "demo-pass-2026" }) }).then(r => r.status)`);
     console.log("cockpit login", r);
-    await c.goto(COCKPIT + "/", { wait: 6000 });
+    await c.goto(COCKPIT, { wait: 6000 });
     const ok = await c.eval(`(() => { const a = [...document.querySelectorAll('a[href]')].find(a => a.getAttribute('href').endsWith("/runtime")); if (!a) return false; a.click(); return true; })()`);
     await sleep(4000);
     await c.shot(SHOTS + "cockpit-runtime.png");

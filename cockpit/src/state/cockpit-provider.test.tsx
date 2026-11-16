@@ -198,9 +198,9 @@ describe("login", () => {
   });
 
   it.each<[CockpitLoginStep, string]>([
-    ["mfa_required", "/login?returnUrl=%2Fcockpit%2F"],
-    ["mfa_enrollment_required", "/login?returnUrl=%2Fcockpit%2F"],
-    ["security_recovery_required", "/login?returnUrl=%2Fcockpit%2F&security_recovery_required=1"],
+    ["mfa_required", "/login?returnUrl=%2Fcockpit"],
+    ["mfa_enrollment_required", "/login?returnUrl=%2Fcockpit"],
+    ["security_recovery_required", "/login?returnUrl=%2Fcockpit&security_recovery_required=1"],
   ])("leaves for the web client's sign-in page when the answer is %s", async (step, target) => {
     bootstrapMock.mockRejectedValueOnce(new CockpitApiError(401, "Brak sesji."));
     const { result } = renderOps();
@@ -224,7 +224,7 @@ describe("login", () => {
 
     expect(loginMock).toHaveBeenCalledWith("owner", "sekret", false);
     expect(leaveForMock).toHaveBeenCalledExactlyOnceWith(
-      "/login?returnUrl=%2Fcockpit%2F&security_recovery_required=1&keep_signed_in=0",
+      "/login?returnUrl=%2Fcockpit&security_recovery_required=1&keep_signed_in=0",
     );
   });
 

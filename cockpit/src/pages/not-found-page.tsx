@@ -1,7 +1,8 @@
 import { Button } from "@stellarr/ui";
-import { Link } from "react-router-dom";
+import Link from "next/link";
 
 import { t } from "../i18n";
+import { COCKPIT_ROOT } from "../lib/paths";
 
 export function NotFoundPage() {
   return (
@@ -13,7 +14,7 @@ export function NotFoundPage() {
           {t("notFound.description")}
         </p>
         <Button asChild className="mt-6">
-          <Link to="/">
+          <Link href={COCKPIT_ROOT}>
             {t("notFound.back")}
           </Link>
         </Button>

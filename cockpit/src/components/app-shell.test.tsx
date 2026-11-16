@@ -1,24 +1,24 @@
 import { render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { MemoryRouter, Route, Routes } from "react-router-dom";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 
 import { AppShell } from "./app-shell";
 import { CockpitContext, type CockpitContextValue } from "../state/cockpit-context";
 import { selectPolish } from "../test/locale";
 import { cockpitValue } from "../test/cockpit-fixtures";
+import { visit } from "../test/navigation";
 
-function renderShell(path: string, value: CockpitContextValue = cockpitValue(), basename?: string) {
+vi.mock("next/navigation", () => import("../test/navigation"));
+vi.mock("next/link", () => import("../test/navigation").then(({ Link }) => ({ default: Link })));
+
+function renderShell(path: string, value: CockpitContextValue = cockpitValue()) {
+  visit(path);
   return render(
-    <MemoryRouter initialEntries={[path]} basename={basename}>
-      <CockpitContext.Provider value={value}>
-        <Routes>
-          <Route element={<AppShell />}>
-            <Route path="*" element={<p>Treść strony</p>} />
-          </Route>
-        </Routes>
-      </CockpitContext.Provider>
-    </MemoryRouter>,
+    <CockpitContext.Provider value={value}>
+      <AppShell>
+        <p>Treść strony</p>
+      </AppShell>
+    </CockpitContext.Provider>,
   );
 }
 
@@ -40,7 +40,7 @@ selectPolish();
 
 describe("AppShell navigation", () => {
   it("lists the eight areas of the panel in order", () => {
-    renderShell("/");
+    renderShell("/cockpit");
 
     const labels = within(sidebarNavigation())
       .getAllByRole("link")
@@ -57,22 +57,40 @@ describe("AppShell navigation", () => {
     ]);
   });
 
+  it("links each area to its page under /cockpit", () => {
+    renderShell("/cockpit");
+
+    const addresses = within(sidebarNavigation())
+      .getAllByRole("link")
+      .map((link) => link.getAttribute("href"));
+    expect(addresses).toEqual([
+      "/cockpit",
+      "/cockpit/users",
+      "/cockpit/servers",
+      "/cockpit/runtime",
+      "/cockpit/logs",
+      "/cockpit/backups",
+      "/cockpit/integrations",
+      "/cockpit/settings",
+    ]);
+  });
+
   it("renders the routed page", () => {
-    renderShell("/users");
+    renderShell("/cockpit/users");
 
     expect(screen.getByRole("main").textContent).toBe("Treść strony");
   });
 
   it.each([
-    ["/", "Przegląd"],
-    ["/users", "Użytkownicy"],
-    ["/users/user-1", "Użytkownicy"],
-    ["/servers", "Serwery"],
-    ["/runtime", "Runtime"],
-    ["/logs", "Logi"],
-    ["/backups", "Backup"],
-    ["/integrations", "Integracje"],
-    ["/settings", "Ustawienia"],
+    ["/cockpit", "Przegląd"],
+    ["/cockpit/users", "Użytkownicy"],
+    ["/cockpit/users/user-1", "Użytkownicy"],
+    ["/cockpit/servers", "Serwery"],
+    ["/cockpit/runtime", "Runtime"],
+    ["/cockpit/logs", "Logi"],
+    ["/cockpit/backups", "Backup"],
+    ["/cockpit/integrations", "Integracje"],
+    ["/cockpit/settings", "Ustawienia"],
   ])("marks the item for %s as the only active one and names it in the header", (path, label) => {
     renderShell(path);
 
@@ -81,14 +99,21 @@ describe("AppShell navigation", () => {
   });
 
   it("matches the root exactly, so an unknown page marks nothing and keeps the product name", () => {
-    renderShell("/missing");
+    renderShell("/cockpit/missing");
+
+    expect(activeLinks()).toEqual([]);
+    expect(within(screen.getByRole("banner")).getByText("Stellarr Cockpit")).toBeTruthy();
+  });
+
+  it("does not take a page whose name only starts like an area's for that area", () => {
+    renderShell("/cockpit/usersettings");
 
     expect(activeLinks()).toEqual([]);
     expect(within(screen.getByRole("banner")).getByText("Stellarr Cockpit")).toBeTruthy();
   });
 
   it("shows the instance name in the header", () => {
-    renderShell("/");
+    renderShell("/cockpit");
 
     expect(within(screen.getByRole("banner")).getByText("Domek")).toBeTruthy();
   });
@@ -97,7 +122,7 @@ describe("AppShell navigation", () => {
 describe("AppShell mobile navigation", () => {
   it("opens the same navigation in a sheet and closes it once a link is followed", async () => {
     const user = userEvent.setup();
-    renderShell("/");
+    renderShell("/cockpit");
 
     await user.click(screen.getByRole("button", { name: "Otwórz nawigację" }));
     const sheet = await screen.findByRole("dialog");
@@ -114,7 +139,7 @@ describe("AppShell mobile navigation", () => {
 describe("AppShell operator menu", () => {
   it("shows who is signed in", async () => {
     const user = userEvent.setup();
-    renderShell("/");
+    renderShell("/cockpit");
 
     await user.click(screen.getByRole("button", { name: /Ola/ }));
 
@@ -123,21 +148,21 @@ describe("AppShell operator menu", () => {
     expect(within(menu).getByText("@owner")).toBeTruthy();
   });
 
-  it("leaves the panel's router base for the app", async () => {
+  it("leaves the panel for the app with a full page load", async () => {
     const user = userEvent.setup();
-    renderShell("/cockpit/users", cockpitValue(), "/cockpit");
+    renderShell("/cockpit/users");
 
     await user.click(screen.getByRole("button", { name: /Ola/ }));
 
     const toApp = await screen.findByRole("menuitem", { name: "Przejdź do aplikacji" });
-    // A router link would resolve to /cockpit/ under this base.
+    // The app has a root layout of its own, so it is a plain link and not the router's.
     expect(toApp.getAttribute("href")).toBe("/");
   });
 
   it("logs out through the session", async () => {
     const user = userEvent.setup();
     const value = cockpitValue();
-    renderShell("/", value);
+    renderShell("/cockpit", value);
 
     await user.click(screen.getByRole("button", { name: /Ola/ }));
     await user.click(await screen.findByRole("menuitem", { name: "Wyloguj się" }));
