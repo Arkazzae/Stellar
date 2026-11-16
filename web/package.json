@@ -20,7 +20,6 @@
   },
   "dependencies": {
     "@microsoft/signalr": "^11.0.0",
-    "@sapphi-red/web-noise-suppressor": "^0.4.1",
     "@stellarr/ui": "*",
     "next": "16.4.6",
     "react": "19.3.1",
