@@ -3,7 +3,7 @@
 # production docker-compose.yml is the opposite: one container, everything
 # baked in.
 #
-#   web     :3000  next dev, the chat client and Cockpit under /cockpit
+#   web     :3000  Vite's dev server, the chat client and Cockpit under /cockpit
 #   api     :5000  dotnet watch, reached by the browser through the web proxy
 #   media   :49100/udp  cargo run under watchexec, Stellarr Media; its control
 #                       API is published on 127.0.0.1:5200
@@ -33,10 +33,11 @@ name: stellarr-dev
 services:
   # web is an npm workspace of the repository root, which has the one
   # package-lock.json. The service mounts the whole repository at /app,
-  # installs from the root and runs next dev from web/, which holds both the
-  # web client and Cockpit (web/src/cockpit/), so one dev server serves and
-  # hot-reloads both apps. The workspace links the shared packages/stellarr-ui
-  # and packages/stellarr-icons it depends on. It may rewrite the lockfile.
+  # installs from the root and runs the dev server from web/, which holds both
+  # the web client and Cockpit (web/src/cockpit/), so one dev server serves and
+  # hot-reloads both apps. The workspace links the shared packages/stellarr-ui,
+  # packages/stellarr-icons and packages/stellarr-router it depends on. It may
+  # rewrite the lockfile.
   web:
     image: node:24-bookworm-slim
     working_dir: /app/web
@@ -45,32 +46,31 @@ services:
     # empty node_modules and reinstall everything on every start.
     command: >
       sh -c "(cd /app && npm install -w stellarr-web --no-audit --no-fund) &&
-             npm run dev -- --hostname 0.0.0.0 --port 3000"
+             npm run dev -- --host 0.0.0.0 --port 3000"
     environment:
-      # next dev proxies /api, /assets, /health and /hubs to the API. In
-      # production Nginx does that and Next registers no rewrites.
+      # The dev server proxies /api, /assets, /health, /hubs and
+      # /.well-known/stellarr/client to the API. In production Nginx does that.
       STELLARR_API_ORIGIN: http://api:5000
-      # Next refuses its dev-only chunks to a page opened from a host it does
-      # not know. 127.0.0.1 is always allowed; list further names for an IDE
-      # or remote preview.
-      STELLARR_ALLOWED_DEV_ORIGINS: ${STELLARR_ALLOWED_DEV_ORIGINS:-}
+      # The dev server answers only the hosts it knows. localhost and IP
+      # addresses always work; list further names for an IDE or remote preview.
+      STELLARR_DEV_ALLOWED_HOSTS: ${STELLARR_DEV_ALLOWED_HOSTS:-}
+      # Answered at /stellarr-instance.js, as the container's entrypoint
+      # writes it in production.
       STELLARR_LANGUAGE: ${STELLARR_LANGUAGE:-en}
-      NEXT_TELEMETRY_DISABLED: "1"
       # File events do not cross a bind mount on every host (Docker Desktop on
-      # macOS and Windows), so Next polls for changes.
-      WATCHPACK_POLLING: ${WATCHPACK_POLLING:-true}
+      # macOS and Windows), so the dev server polls for changes.
+      STELLARR_DEV_POLLING: ${STELLARR_DEV_POLLING:-true}
     ports:
       - "${STELLARR_DEV_WEB_PORT:-3000}:3000"
     volumes:
       - .:/app
       # Named volumes keep these directories inside Docker. Without them the
-      # bind mount shows the host's copies: node_modules built for another OS
-      # and a .next written by a host-side build. Packages that npm cannot
-      # hoist to the root land in the workspace's own node_modules, so that
-      # one needs a volume as well.
+      # bind mount shows the host's copies, built for another OS. Packages that
+      # npm cannot hoist to the root land in the workspace's own node_modules,
+      # which also holds the dev server's cache, so that one needs a volume as
+      # well.
       - web_root_node_modules:/app/node_modules
       - web_node_modules:/app/web/node_modules
-      - web_next:/app/web/.next
     depends_on:
       - api
 
@@ -185,7 +185,6 @@ services:
 volumes:
   web_root_node_modules:
   web_node_modules:
-  web_next:
   api_obj:
   api_bin:
   nuget:

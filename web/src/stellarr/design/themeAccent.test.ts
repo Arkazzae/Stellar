@@ -29,7 +29,7 @@ describe("the Stellarr accent", () => {
   });
 
   it("is the colour of the bars in the app icon", () => {
-    const bars = /<g fill="(#[\da-f]{6})">/i.exec(source("src/app/icon.svg"))?.[1];
+    const bars = /<g fill="(#[\da-f]{6})">/i.exec(source("src/stellarr/assets/icon.svg"))?.[1];
 
     expect(bars?.toLowerCase()).toBe(STELLARR_ACCENT);
   });

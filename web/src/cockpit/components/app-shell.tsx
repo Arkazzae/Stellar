@@ -1,3 +1,4 @@
+import { Link, usePathname } from "@stellarr/router";
 import {
   Button,
   cx,
@@ -14,8 +15,6 @@ import {
   SheetTitle,
   SheetTrigger,
 } from "@stellarr/ui";
-import Link from "next/link";
-import { usePathname } from "next/navigation";
 import { Fragment, useState, type ReactNode } from "react";
 
 import { BrandMark } from "./brand-mark";
@@ -145,7 +144,7 @@ function OperatorMenu({ operator, onLogout }: { operator: CockpitOperator; onLog
         </DropdownMenuLabel>
         <DropdownMenuSeparator />
         <DropdownMenuItem asChild>
-          {/* The app has a root layout of its own, so Next.js loads it as a new page. */}
+          {/* The web client is a document of its own, so this loads it as a new page. */}
           <Link href="/">{t("shell.openApp")}</Link>
         </DropdownMenuItem>
         <DropdownMenuItem onSelect={onLogout}>

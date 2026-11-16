@@ -4,6 +4,12 @@ import { isSupportedLocale, translateMessage, type SupportedLocale, type Transla
 export const FALLBACK_LOCALE: SupportedLocale = "en";
 
 /**
+ * Where this browser keeps the language settings: the interface language
+ * the person picked, if they did, and the chat translation preferences.
+ */
+export const LANGUAGE_SETTINGS_KEY = "stellarr_language_settings";
+
+/**
  * Remembers the person's choice for the next request. The server reads it
  * before it renders, so the first paint is already in the right language.
  */

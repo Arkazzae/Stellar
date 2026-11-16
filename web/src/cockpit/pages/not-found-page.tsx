@@ -1,5 +1,5 @@
 import { Button } from "@stellarr/ui";
-import Link from "next/link";
+import { Link } from "@stellarr/router";
 
 import { t } from "../i18n";
 import { COCKPIT_ROOT } from "../lib/paths";

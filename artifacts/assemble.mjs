@@ -26,8 +26,8 @@
  * Replacing a file, say a prebuilt WASM with one built from source here, is a
  * change to its entry alone: the served path, and so the client, stay the same.
  *
- * Runs from the predev, prebuild and pretest npm hooks of web/, so `next dev`,
- * `next build` and the tests always see the recorded files. Any missing file or
+ * Runs from the predev, prebuild and pretest npm hooks of web/, so the dev
+ * server, the build and the tests always see the recorded files. Any missing file or
  * any difference from the manifest fails the run, in development as in an
  * image build. The bytes are committed, so a missing or different file means a
  * broken checkout or an edit nobody recorded, and neither should reach a

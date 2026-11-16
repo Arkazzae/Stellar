@@ -1,3 +1,5 @@
+import { Router } from "@stellarr/router";
+import { createMemoryHistory } from "@stellarr/router/testing";
 import { render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -12,13 +14,10 @@ import { RuntimePage } from "../pages/runtime-page";
 import { UsersPage } from "../pages/users-page";
 import { CockpitContext, type CockpitContextValue } from "../state/cockpit-context";
 import { cockpitValue } from "../test/cockpit-fixtures";
-import { visit } from "../test/navigation";
 import type * as ApiModule from "../lib/api";
+import { routes } from "../routes";
 
 // These tests never select a language: English is what the panel shows by default.
-
-vi.mock("next/navigation", () => import("../test/navigation"));
-vi.mock("next/link", () => import("../test/navigation").then(({ Link }) => ({ default: Link })));
 
 vi.mock("../lib/api", async (importOriginal) => {
   const original = await importOriginal<typeof ApiModule>();
@@ -46,11 +45,13 @@ afterEach(() => {
   vi.unstubAllGlobals();
 });
 
-function renderWithSession(ui: React.ReactNode, value: CockpitContextValue = cockpitValue()) {
+function renderWithSession(ui: React.ReactNode, value: CockpitContextValue = cockpitValue(), path = "/cockpit") {
   return render(
-    <CockpitContext.Provider value={value}>
-      {ui}
-    </CockpitContext.Provider>,
+    <Router routes={routes} history={createMemoryHistory(path)}>
+      <CockpitContext.Provider value={value}>
+        {ui}
+      </CockpitContext.Provider>
+    </Router>,
   );
 }
 
@@ -83,13 +84,12 @@ describe("the sign-in screen", () => {
 
 describe("the navigation shell", () => {
   it("names the areas and the current page in English", () => {
-    visit("/cockpit/logs");
-    render(
-      <CockpitContext.Provider value={cockpitValue()}>
-        <AppShell>
-          <p>Page</p>
-        </AppShell>
-      </CockpitContext.Provider>,
+    renderWithSession(
+      <AppShell>
+        <p>Page</p>
+      </AppShell>,
+      cockpitValue(),
+      "/cockpit/logs",
     );
 
     const [sidebar] = screen.getAllByRole("navigation", { name: "Cockpit navigation" });

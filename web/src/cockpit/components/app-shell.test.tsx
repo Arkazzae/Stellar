@@ -1,24 +1,27 @@
+import { Router } from "@stellarr/router";
+import { createMemoryHistory, type MemoryHistory } from "@stellarr/router/testing";
 import { render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { describe, expect, it, vi } from "vitest";
+import { describe, expect, it } from "vitest";
 
 import { AppShell } from "./app-shell";
 import { CockpitContext, type CockpitContextValue } from "../state/cockpit-context";
 import { selectPolish } from "../test/locale";
 import { cockpitValue } from "../test/cockpit-fixtures";
-import { currentPath, visit } from "../test/navigation";
+import { routes } from "../routes";
 
-vi.mock("next/navigation", () => import("../test/navigation"));
-vi.mock("next/link", () => import("../test/navigation").then(({ Link }) => ({ default: Link })));
+let history: MemoryHistory;
 
 function renderShell(path: string, value: CockpitContextValue = cockpitValue()) {
-  visit(path);
+  history = createMemoryHistory(path);
   return render(
-    <CockpitContext.Provider value={value}>
-      <AppShell>
-        <p>Treść strony</p>
-      </AppShell>
-    </CockpitContext.Provider>,
+    <Router routes={routes} history={history}>
+      <CockpitContext.Provider value={value}>
+        <AppShell>
+          <p>Treść strony</p>
+        </AppShell>
+      </CockpitContext.Provider>
+    </Router>,
   );
 }
 
@@ -133,6 +136,7 @@ describe("AppShell mobile navigation", () => {
 
     await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
     expect(within(screen.getByRole("banner")).getByText("Runtime")).toBeTruthy();
+    expect(history.navigations).toEqual([{ kind: "push", href: "/cockpit/runtime" }]);
   });
 });
 
@@ -155,10 +159,11 @@ describe("AppShell operator menu", () => {
     await user.click(screen.getByRole("button", { name: /Ola/ }));
 
     const toApp = await screen.findByRole("menuitem", { name: "Przejdź do aplikacji" });
-    // The app's root, not the panel's: the link is not under /cockpit.
+    // The app's root, not the panel's: the link is not under /cockpit, so
+    // following it loads the web client's document.
     expect(toApp.getAttribute("href")).toBe("/");
     await user.click(toApp);
-    expect(currentPath()).toBe("/");
+    expect(history.navigations).toEqual([{ kind: "leave", href: "/", replace: false }]);
   });
 
   it("logs out through the session", async () => {

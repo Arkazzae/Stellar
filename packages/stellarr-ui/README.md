@@ -6,7 +6,7 @@ Components and helpers shared by the web client (`web/`) and Cockpit (`web/src/c
 - `@stellarr/ui/styles.css`: the components' stylesheet.
 - `@stellarr/ui/behavior`: the helpers the components are built from, for an overlay an app draws itself. See [Behaviour](#behaviour).
 
-It is consumed as TypeScript source: `exports` points at `src/index.ts` and there is no build step. Next.js compiles it through `transpilePackages`, and Vite and Vitest compile it as part of the importing app.
+It is consumed as TypeScript source: `exports` points at `src/index.ts` and there is no build step. Vite and Vitest compile it as part of the importing app.
 
 Inside the package, import with relative paths. The `@/` aliases belong to the apps and do not resolve here. The package depends on nothing but React and `@stellarr/icons`, which draws the close button of a dialog and the glyphs of a `Dropdown`: no Radix, no clsx, no tailwind-merge.
 
@@ -237,7 +237,7 @@ A custom property fails silently, so `npm run tokens:check -w @stellarr/ui` guar
 | `Slot` | Renders its one child with its own props merged in, for `asChild` |
 | `composeRefs(...refs)`, `useComposedRefs(...refs)` | Points several refs at one node; the hook keeps the callback stable between renders |
 
-Escape and Tab go to the topmost layer that has a handler for them. They are heard in the bubble phase, so a control inside a layer that handles Escape itself (an inline editor that cancels, a search field that clears) keeps the key by calling `preventDefault()`, and the layer stays open. Preventing the default is the signal, not stopping the event: the stack listens on `document`, and in an app whose React root is the document itself, as with Next.js, React's handlers run on that same node, where a stopped event still reaches the stack. When a layer takes an Escape, the stack stops the event, so a `window` handler does not also act on it. An `onEscape` that returns `false` passes: the next layer down that has `onEscape` is asked, and when every layer passes the key goes on to the page. A side panel that stays open under a dialog passes whenever a dialog is in front of it, even if the panel joined the stack later.
+Escape and Tab go to the topmost layer that has a handler for them. They are heard in the bubble phase, so a control inside a layer that handles Escape itself (an inline editor that cancels, a search field that clears) keeps the key by calling `preventDefault()`, and the layer stays open. Preventing the default is the signal, not stopping the event: the stack listens on `document`, and in an app whose React root is the document itself, React's handlers run on that same node, where a stopped event still reaches the stack. When a layer takes an Escape, the stack stops the event, so a `window` handler does not also act on it. An `onEscape` that returns `false` passes: the next layer down that has `onEscape` is asked, and when every layer passes the key goes on to the page. A side panel that stays open under a dialog passes whenever a dialog is in front of it, even if the panel joined the stack later.
 
 A press goes to the topmost layer that has `onPointerDownOutside`, and to that layer alone. A layer above it with no such handler, such as a tooltip, is skipped. A press is outside when it lands beyond `node()`. A layer whose element is not the whole answer gives `owns(target)` instead, and it decides alone: a dialog whose wrapper is also its backdrop, or a panel whose trigger toggles it. A layer that hears no presses returns `null` from `node`.
 

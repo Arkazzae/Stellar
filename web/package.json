@@ -4,9 +4,9 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "dev": "next dev",
-    "build": "next build",
-    "start": "next start",
+    "dev": "vite --configLoader runner",
+    "build": "vite build --configLoader runner",
+    "preview": "vite preview --configLoader runner",
     "lint": "eslint .",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
@@ -21,6 +21,7 @@
   "dependencies": {
     "@microsoft/signalr": "^11.0.0",
     "@stellarr/icons": "*",
+    "@stellarr/router": "*",
     "@stellarr/ui": "*",
     "next": "16.4.6",
     "react": "19.3.1",

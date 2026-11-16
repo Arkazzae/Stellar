@@ -3,7 +3,7 @@ import type { IceServerConfig } from "@/lib/api/types";
 export interface ResolveIceInput {
   /** `rtc.iceServers` from `/api/bootstrap`, with the per-user TURN credentials. */
   runtime?: readonly IceServerConfig[] | undefined;
-  /** `NEXT_PUBLIC_ICE_SERVERS`, baked in at build time. */
+  /** `VITE_ICE_SERVERS`, baked in at build time. */
   env?: readonly RTCIceServer[] | undefined;
   /** False only in development builds. */
   isProduction: boolean;

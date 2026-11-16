@@ -1,10 +1,10 @@
 import coreWebVitals from "eslint-config-next/core-web-vitals";
 import typescript from "eslint-config-next/typescript";
 
-// The web client and Cockpit share this Next.js app and nothing else, so no
-// file of the web client's, its routes included, imports Cockpit's code.
+// The web client and Cockpit share this workspace and nothing else, so no
+// file of the web client's imports Cockpit's code, by alias or by path.
 const notCockpit = {
-  group: ["@cockpit", "@cockpit/*"],
+  group: ["@cockpit", "@cockpit/*", "**/cockpit", "**/cockpit/**"],
   message: "The web client does not use Cockpit's code.",
 };
 
@@ -17,6 +17,8 @@ const config = [
       ".next/**",
       "node_modules/**",
       "next-env.d.ts",
+      "dist/**",
+      ".bench-dist/**",
       // AudioWorklet modules are served verbatim as plain JavaScript, and
       // `allowJs` is off, so there is nothing here for the TypeScript rules.
       "public/**",
@@ -40,21 +42,31 @@ const config = [
     },
   },
   {
-    files: ["src/stellarr/**/*.{ts,tsx}", "src/app/(stellarr)/**/*.{ts,tsx}"],
+    files: ["src/stellarr/**/*.{ts,tsx}"],
     rules: {
       "no-restricted-imports": ["error", { patterns: [notCockpit] }],
     },
   },
   {
     // Components are presentational: they take data as props and import types
-    // from @/ports. Reaching past that into a transport is a lint error, since
-    // a convention only holds until someone is in a hurry. This replaces the
-    // rule above for components, so it bans Cockpit's code as well.
+    // from @/ports. Reaching past that into a transport, or into the router's
+    // state, is a lint error, since a convention only holds until someone is
+    // in a hurry. A component may render a `Link`; the pages read the address
+    // and navigate. This replaces the rule above for components, so it bans
+    // Cockpit's code as well.
     files: ["src/stellarr/components/**/*.{ts,tsx}"],
     rules: {
       "no-restricted-imports": [
         "error",
         {
+          paths: [
+            {
+              name: "@stellarr/router",
+              importNames: ["Router", "Outlet", "useRouter", "usePathname", "useSearchParams", "useParams"],
+              message:
+                "Components are presentational. Take the address and navigation as props; the pages in src/stellarr/pages read the router.",
+            },
+          ],
           patterns: [
             {
               group: [
@@ -86,8 +98,8 @@ const config = [
     // It reaches its own modules by relative path and none of the web
     // client's. Its UI parts come from @stellarr/ui, its icons from
     // src/cockpit/components/icons, which draws @stellarr/icons, and its
-    // routing from Next.js. These libraries were Cockpit's own copy of them;
-    // a new import would bring that back.
+    // routing from @stellarr/router. These libraries were Cockpit's own copy
+    // of them; a new import would bring that back.
     files: ["src/cockpit/**/*.{ts,tsx}"],
     rules: {
       "no-restricted-imports": [
@@ -98,17 +110,13 @@ const config = [
             { name: "class-variance-authority", message: "UI parts come from @stellarr/ui." },
             { name: "clsx", message: "join class names with cx from @stellarr/ui." },
             { name: "tailwind-merge", message: "join class names with cx from @stellarr/ui." },
-            { name: "react-router-dom", message: "pages are routes under src/app/(cockpit)/cockpit/." },
+            { name: "react-router-dom", message: "the addresses are in src/cockpit/routes.tsx, on @stellarr/router." },
           ],
           patterns: [
             { group: ["@radix-ui/*"], message: "UI parts come from @stellarr/ui." },
             {
-              group: ["@/*"],
+              group: ["@/*", "**/stellarr", "**/stellarr/**"],
               message: "Cockpit does not use the web client's code; import its own modules by relative path.",
-            },
-            {
-              group: ["@cockpit", "@cockpit/*"],
-              message: "@cockpit/* is how the routes reach Cockpit; import its own modules by relative path.",
             },
           ],
         },

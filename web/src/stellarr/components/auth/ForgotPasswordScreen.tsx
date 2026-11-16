@@ -1,6 +1,6 @@
 "use client";
 
-import Link from "next/link";
+import { Link } from "@stellarr/router";
 import { useState, type FormEvent } from "react";
 
 import { type Translator } from "@/i18n";
