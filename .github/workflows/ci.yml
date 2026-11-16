@@ -65,9 +65,13 @@ jobs:
           # web/ holds the web client and Cockpit (web/src/cockpit/). It is a
           # workspace of one npm project with the shared packages, so a change
           # to them or to the root manifest or lockfile runs the web job too.
-          check web '^(web/|artifacts/|packages/|package(-lock)?\.json$|branding/icons/|\.github/workflows/ci\.yml$)'
+          # Its tests also read nginx's configuration and the entrypoint, which
+          # must answer the apps' addresses and write the instance language
+          # file as web/ does.
+          check web '^(web/|artifacts/|packages/|package(-lock)?\.json$|branding/icons/|infra/(nginx\.conf|entrypoint\.sh)$|\.github/workflows/ci\.yml$)'
           check media '^(media/|\.github/workflows/ci\.yml$)'
-          check image '^(Dockerfile$|\.dockerignore$|artifacts/|infra/|server/.*\.csproj$|server/.*packages\.lock\.json$|packages/|package(-lock)?\.json$|\.npmrc$|web/package\.json$|media/Cargo\.(toml|lock)$|global\.json$|Directory\.Build\.props$|\.github/workflows/ci\.yml$)'
+          # vite.config.ts and documents.ts lay out the build that nginx serves.
+          check image '^(Dockerfile$|\.dockerignore$|artifacts/|infra/|server/.*\.csproj$|server/.*packages\.lock\.json$|packages/|package(-lock)?\.json$|\.npmrc$|web/package\.json$|web/(vite\.config|documents)\.ts$|media/Cargo\.(toml|lock)$|global\.json$|Directory\.Build\.props$|\.github/workflows/ci\.yml$)'
 
   server:
     needs: changes
@@ -93,8 +97,6 @@ jobs:
     if: needs.changes.outputs.web == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 20
-    env:
-      NEXT_TELEMETRY_DISABLED: "1"
     steps:
       - uses: actions/checkout@v7
       - uses: actions/setup-node@v7
@@ -113,6 +115,8 @@ jobs:
       - run: npm run test:ui
       - run: npm run typecheck:icons
       - run: npm run test:icons
+      - run: npm run typecheck:router
+      - run: npm run test:router
       - name: Check long transcript in Chromium
         run: |
           chrome=$(command -v google-chrome || command -v google-chrome-stable || command -v chromium || true)
@@ -184,38 +188,112 @@ jobs:
           cache-from: type=gha
           cache-to: type=gha,mode=max
       # A build can succeed while a process inside cannot start, so run the
-      # image and wait until both the API and the web client answer.
-      - name: Start the image and check that it serves
+      # image and wait until its health check passes: nginx, the API with its
+      # database, the media server and coturn all answer.
+      - name: Start the image
         run: |
-          docker run -d --name stellarr -e STELLARR_DOMAIN=localhost -p 8443:443 stellarr:ci
+          docker run -d --name stellarr -e STELLARR_DOMAIN=localhost -e STELLARR_LANGUAGE=pl \
+            -p 8443:443 stellarr:ci
           for _ in $(seq 1 60); do
             status=$(docker inspect -f '{{.State.Health.Status}}' stellarr)
             [[ $status == healthy || $status == unhealthy ]] && break
             sleep 5
           done
           echo "Container health: $status"
-          if [[ $status != healthy ]] \
-             || ! curl -kfsS -o /dev/null https://localhost:8443/health \
-             || ! curl -kfsS -o /dev/null https://localhost:8443/login \
-             || ! curl -kfsS -o /dev/null https://localhost:8443/cockpit \
-             || ! curl -kfsS -o /dev/null https://localhost:8443/cockpit/users \
-             || ! curl -kfsS -o /dev/null https://localhost:8443/bergamot-models/plen/vocab.plen.spm \
-             || ! curl -kfsS -o /dev/null https://localhost:8443/audio/rnnoise-worklet.js \
-             || ! curl -kfsS -o /dev/null https://localhost:8443/codecs/bergamot/bergamot-translator-worker.wasm; then
+          if [[ $status != healthy ]]; then
             docker logs stellarr 2>&1 | tail -n 80
             exit 1
           fi
-      # The binaries are served from the image, not proxied to a model host by
-      # Nginx or by a rewrite of the Next.js server, and the notices that
-      # describe them ship in the same image.
-      - name: Check the browser artifacts are local
+      # nginx serves both apps as web/documents.ts says: a file as it is, an
+      # app's address with that app's document, a missing file with a plain
+      # 404, and any other address with the web client's document and a 404.
+      - name: Check what nginx serves
         run: |
-          # grep fails on a missing file too, which would pass the check.
-          docker run --rm --entrypoint test stellarr:ci -f /opt/stellarr/web/web/.next/routes-manifest.json
-          ! docker run --rm --entrypoint grep stellarr:ci -q 'storage.googleapis.com\|bergamot-models-gcs' \
-              /etc/nginx/nginx.conf.template /opt/stellarr/web/web/.next/routes-manifest.json
+          failed=0
+          fail() { echo "::error::$*"; failed=1; }
+          # GETs $1 as a browser would, keeps the headers and the decoded body,
+          # and checks the status against $2. A request that fails outright
+          # has the status 000.
+          get() {
+            local status
+            status=$(curl -ksS --compressed -D "$RUNNER_TEMP/headers" -o "$RUNNER_TEMP/body" \
+              -w '%{http_code}' "https://localhost:8443$1" || true)
+            [[ $status == "$2" ]] || fail "$1 answered $status, not $2."
+          }
+          header() { grep -i "^$1:" "$RUNNER_TEMP/headers" | cut -d' ' -f2- | tr -d '\r'; }
+          body_has() { grep -qF "$1" "$RUNNER_TEMP/body"; }
+          web_document() { body_has 'src="/stellarr-instance.js"' || fail "$1 is not the web client's document."; }
+          cockpit_document() { body_has '<title>Stellarr Cockpit</title>' || fail "$1 is not Cockpit's document."; }
+          secured() {
+            [[ $(header x-content-type-options) == nosniff && -n $(header referrer-policy) \
+               && -n $(header permissions-policy) ]] || fail "$1 lacks the security headers."
+          }
+
+          get /health 200
+          secured /health
+          for path in /login /invite/abc123; do
+            get "$path" 200
+            web_document "$path"
+          done
+          [[ $(header cache-control) == no-cache ]] || fail "The web client's document is cached."
+          secured "the web client's document"
+          for path in /cockpit /cockpit/users; do
+            get "$path" 200
+            cockpit_document "$path"
+          done
+          [[ $(header cache-control) == no-cache ]] || fail "Cockpit's document is cached."
+          # The app draws its not-found page, and a monitor still sees the 404.
+          get /no-such-page 404
+          web_document /no-such-page
+          # A page in place of a worklet would fail far from its cause.
+          get /audio/no-such-worklet.js 404
+          if body_has '<html'; then fail "A missing file was answered with a document."; fi
+
+          get /login 200
+          script=$(grep -o '/static/[^"]*\.js' "$RUNNER_TEMP/body" | head -n 1 || true)
+          [[ -n $script ]] || fail "The web client's document names no script under /static/."
+          get "$script" 200
+          [[ $(header cache-control) == "public, max-age=31536000, immutable" ]] || fail "$script is not immutable."
+          [[ $(header content-encoding) == gzip ]] || fail "$script is not compressed."
+          secured "$script"
+
+          # The exact bytes of instanceLanguageSource("pl") in
+          # web/src/stellarr/i18n/localeScript.ts.
+          get /stellarr-instance.js 200
+          [[ $(header content-type) == "text/javascript; charset=utf-8" ]] || fail "/stellarr-instance.js has the wrong type."
+          printf 'window.stellarrInstanceLanguage="pl";\n' | cmp -s - "$RUNNER_TEMP/body" \
+            || fail "/stellarr-instance.js does not hold the language the container was given."
+
+          # The browser's prebuilt binaries are served from the image.
+          for path in /audio/rnnoise-worklet.js /codecs/bergamot/bergamot-translator-worker.wasm \
+                      /bergamot-models/plen/vocab.plen.spm; do
+            get "$path" 200
+          done
+
+          if (( failed )); then
+            docker logs stellarr 2>&1 | tail -n 80
+            exit 1
+          fi
+      # The binaries are served from the image, not proxied to a model host,
+      # and the notices that describe them ship in the same image. nginx serves
+      # the apps' files itself, so the image has no Node.js.
+      - name: Check the image's contents
+        run: |
+          docker run --rm --entrypoint test stellarr:ci -f /opt/stellarr/web/index.html
           docker run --rm --entrypoint test stellarr:ci -f /usr/share/doc/stellarr/artifacts/NOTICES
           docker run --rm --entrypoint test stellarr:ci -f /usr/share/doc/stellarr/artifacts/manifest.json
+          # grep exits with 1 when nothing matches, 0 on a match and 2 on an
+          # error such as a missing file; only 1 passes.
+          found=0
+          docker run --rm --entrypoint grep stellarr:ci -rIqE 'storage\.googleapis\.com|bergamot-models-gcs' \
+            /etc/nginx/nginx.conf.template /opt/stellarr/web || found=$?
+          if (( found != 1 )); then
+            echo "::error::The image names a model host, or grep could not read it (exit $found)."
+            exit 1
+          fi
+          docker run --rm --entrypoint bash stellarr:ci -c '
+            nodes=$(find / -xdev -type f -name node 2>/dev/null)
+            if [[ -n $nodes ]]; then echo "::error::The image has Node.js: $nodes"; exit 1; fi'
       # The operator CLI ships in the same image and must work without the API.
       - name: Check the packaged operator CLI
         run: |
