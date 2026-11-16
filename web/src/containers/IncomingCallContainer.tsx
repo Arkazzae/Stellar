@@ -5,7 +5,7 @@ import { useEffect, useRef, useState } from "react";
 import { Icon } from "@stellarr/icons";
 import { Avatar } from "@/components/primitives/Avatar";
 import { playSystemFx, stopSystemFx } from "@/lib/audio/systemFx";
-import { initials } from "@/lib/format";
+import { initials } from "@/lib/format/format";
 import {
   androidNotificationPermission,
   androidNotificationsSupported,

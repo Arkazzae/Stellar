@@ -6,7 +6,7 @@ import { ApiError } from "@/lib/api/errors";
 import { withFreshSecondStep } from "./freshSecondStep";
 
 const leaveFor = vi.hoisted(() => vi.fn());
-vi.mock("@/lib/leaveFor", () => ({ leaveFor }));
+vi.mock("@/lib/auth/leaveFor", () => ({ leaveFor }));
 
 const t: Translator = (key) => key;
 

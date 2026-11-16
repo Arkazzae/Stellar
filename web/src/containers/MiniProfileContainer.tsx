@@ -4,7 +4,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 
 import { MiniProfile } from "@/components/profile/MiniProfile";
 import type { PersonVM, ProfileVM } from "@/components/view-models";
-import { formatDate, initials } from "@/lib/format";
+import { formatDate, initials } from "@/lib/format/format";
 import type { AdminMember, Role, User } from "@/ports";
 import {
   useDirectory,

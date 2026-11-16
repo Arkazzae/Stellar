@@ -10,7 +10,7 @@ import {
   KEYBIND_STORAGE_VERSION,
   parseKeybindings,
   type Keybindings,
-} from "@/lib/keybinds";
+} from "@/lib/keybinds/keybinds";
 import {
   DEFAULT_SETTINGS,
   SETTINGS_VERSION,

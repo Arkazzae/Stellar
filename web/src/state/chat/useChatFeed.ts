@@ -2,7 +2,7 @@ import { useCallback, useEffect, useReducer, useState } from "react";
 
 import type { InterfaceLocale } from "@/i18n";
 import { playSystemFx } from "@/lib/audio/systemFx";
-import { shouldPlayMessageNotificationSound } from "@/lib/notifications";
+import { shouldPlayMessageNotificationSound } from "@/lib/notifications/notifications";
 import type { Message, Ports, UserPreferences } from "@/ports";
 
 import type { ChatDispatch } from "./shared";

@@ -3,7 +3,7 @@ import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { playSystemFx, stopSystemFx } from "@/lib/audio/systemFx";
-import type { AndroidCallBridge } from "@/lib/android/callBridge";
+import type { AndroidCallBridge } from "@/lib/platform/android/callBridge";
 import {
   closeIncomingCallNotification,
   showIncomingCallNotification,

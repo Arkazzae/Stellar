@@ -4,7 +4,7 @@ import { useState } from "react";
 
 import { Icon } from "@stellarr/icons";
 import { AnchoredCard } from "@/components/primitives/AnchoredCard";
-import { formatAgo, formatFull } from "@/lib/format";
+import { formatAgo, formatFull } from "@/lib/format/format";
 import type { InboxNotification, ServerInviteNotificationTarget } from "@/ports";
 import { useLanguage } from "@/state/hooks";
 

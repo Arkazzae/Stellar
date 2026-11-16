@@ -10,7 +10,7 @@ import { Segmented } from "@/components/primitives/Segmented";
 import { Switch } from "@/components/primitives/Switch";
 import { SettingsSection } from "@/components/settings/SettingsSection";
 import type { Translator } from "@/i18n";
-import { toChannelSlug } from "@/lib/format";
+import { toChannelSlug } from "@/lib/format/format";
 import { useLanguage } from "@/state/hooks";
 
 export interface ServerCreateInput {

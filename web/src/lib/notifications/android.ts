@@ -1,6 +1,6 @@
 "use client";
 
-import { getAndroidCallBridge } from "@/lib/android/callBridge";
+import { getAndroidCallBridge } from "@/lib/platform/android/callBridge";
 
 const CALL_ACTION_EVENT = "stellarr:android-call-action";
 const PERMISSION_EVENT = "stellarr:android-notification-permission";

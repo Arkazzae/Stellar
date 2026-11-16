@@ -6,7 +6,7 @@ import { useEffect, useState } from "react";
 import { AuthFrame, authStyles } from "@/components/auth/AuthFrame";
 import { RegisterScreen } from "@/components/auth/RegisterScreen";
 import { useRedirectWhenSignedIn } from "@/hooks/useRedirectWhenSignedIn";
-import { pendingInvite } from "@/lib/invites";
+import { pendingInvite } from "@/lib/auth/invites";
 import { useLanguage, usePorts, useSession } from "@/state/hooks";
 
 export default function RegistrationPage() {

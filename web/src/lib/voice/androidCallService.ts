@@ -1,6 +1,6 @@
 "use client";
 
-import { getAndroidCallBridge } from "@/lib/android/callBridge";
+import { getAndroidCallBridge } from "@/lib/platform/android/callBridge";
 
 /**
  * Tells Android's microphone foreground service whether a call is live, so the

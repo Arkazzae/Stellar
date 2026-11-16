@@ -6,8 +6,8 @@ import type { EnrollMode } from "@/components/auth/MfaEnrollStep";
 import type { SecurityDialogStep } from "@/components/account/panes/SecurityStepDialog";
 import type { MessageKey } from "@/i18n";
 import { ApiError } from "@/lib/api/errors";
-import { leaveFor } from "@/lib/leaveFor";
-import { PasskeyCancelledError } from "@/lib/webauthn";
+import { leaveFor } from "@/lib/auth/leaveFor";
+import { PasskeyCancelledError } from "@/lib/auth/webauthn";
 import type {
   AccountSecurity,
   IdentityProvider,

@@ -12,7 +12,7 @@ import { RecoveryRedeemStep } from "@/components/auth/RecoveryRedeemStep";
 import { LoginScreen } from "@/components/login/LoginScreen";
 import { useSignInFlow } from "@/containers/useSignInFlow";
 import { useRedirectWhenSignedIn } from "@/hooks/useRedirectWhenSignedIn";
-import { safeReturnPath } from "@/lib/returnPath";
+import { safeReturnPath } from "@/lib/auth/returnPath";
 import { useLanguage, usePorts, useSession } from "@/state/hooks";
 
 interface OidcConfiguration {

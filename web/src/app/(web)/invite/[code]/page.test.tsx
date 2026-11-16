@@ -3,7 +3,7 @@ import userEvent from "@testing-library/user-event";
 import { Suspense } from "react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-import { PENDING_INVITE_STORAGE_KEY } from "@/lib/invites";
+import { PENDING_INVITE_STORAGE_KEY } from "@/lib/auth/invites";
 import { translateMessage, type MessageKey } from "@/i18n";
 import type { SessionPhase } from "@/state/hooks";
 

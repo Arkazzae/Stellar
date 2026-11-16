@@ -3,7 +3,7 @@
 import { useState, type FormEvent } from "react";
 
 import type { InterfaceLocale, Translator } from "@/i18n";
-import { triggerHaptic } from "@/lib/haptics";
+import { triggerHaptic } from "@/lib/platform/haptics";
 
 import type { CodeLanguageId } from "@/lib/messages/codeLanguages";
 import type { ComposerChip } from "./ComposerChips";

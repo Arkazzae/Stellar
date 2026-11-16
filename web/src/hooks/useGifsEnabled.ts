@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 
-import { readGiphyConfig } from "@/lib/giphy";
+import { readGiphyConfig } from "@/lib/giphy/giphy";
 
 /**
  * Whether to offer GIFs, as Stellarr's API says; false until it has answered.

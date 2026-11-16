@@ -2,7 +2,7 @@ import type { CSSProperties } from "react";
 
 import type { PersonVM } from "@/components/view-models";
 import { defaultIdentityArt, identityVars } from "@/design/identity";
-import { initials as toInitials } from "@/lib/format";
+import { initials as toInitials } from "@/lib/format/format";
 import { useLanguage } from "@/state/hooks";
 
 /** Taken from the view model so components never import `@/lib/api`. */

@@ -15,8 +15,8 @@ import type { PinnedMessageVM } from "@/components/room/panels/channelPanelModel
 import type { ComposerChip } from "@/components/room/composer/ComposerChips";
 import type { MessageAction } from "@/components/room/transcript/MessageToolbar";
 import type { TranscriptSectionVM } from "@/components/room/transcript/Transcript";
-import { buildThreadTranscript, buildTranscript } from "@/lib/format";
-import { findFirstUnreadGroup } from "@/lib/unread";
+import { buildThreadTranscript, buildTranscript } from "@/lib/format/format";
+import { findFirstUnreadGroup } from "@/lib/messages/unread";
 import type {
   Message,
   MessageReference,

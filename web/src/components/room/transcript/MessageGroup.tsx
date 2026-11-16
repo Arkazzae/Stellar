@@ -8,7 +8,7 @@ import { Avatar } from "@/components/primitives/Avatar";
 import { useConfirm } from "@/components/primitives/ConfirmDialog";
 import { ContextMenu, useContextMenu } from "@/components/primitives/ContextMenu";
 import { identityVars } from "@/design/identity";
-import { formatFull } from "@/lib/format";
+import { formatFull } from "@/lib/format/format";
 import type {
   CustomEmoji,
   MessageReference,

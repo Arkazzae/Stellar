@@ -1,4 +1,4 @@
-import { buildTranscript } from "@/lib/format";
+import { buildTranscript } from "@/lib/format/format";
 import type { Message, MessageReaction } from "@/ports";
 import {
   createTranscriptPresenter,

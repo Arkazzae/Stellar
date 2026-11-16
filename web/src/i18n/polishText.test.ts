@@ -22,12 +22,12 @@ const isTestCode = (path: string) =>
  */
 const ALLOWED = [
   {
-    file: "lib/format.ts",
+    file: "lib/format/format.ts",
     line: "[^a-z0-9ąćęłńóśźż-]",
     why: "a channel name keeps the Polish letters, as the server stores it",
   },
   {
-    file: "lib/emoji.ts",
+    file: "lib/emoji/emoji.ts",
     line: '.replaceAll("ł", "l")',
     why: "search folds diacritics, and this letter has no decomposition",
   },

@@ -10,7 +10,7 @@ import type {
   FriendVM,
   PersonVM,
 } from "@/components/view-models";
-import { formatAgo, formatDate, initials } from "@/lib/format";
+import { formatAgo, formatDate, initials } from "@/lib/format/format";
 import type { User } from "@/ports";
 import {
   useEmoji,

@@ -4,7 +4,7 @@ import { useMemo } from "react";
 
 import { FriendsActivity } from "@/components/friends/FriendsActivity";
 import type { ActiveFriendVM } from "@/components/view-models";
-import { initials } from "@/lib/format";
+import { initials } from "@/lib/format/format";
 import { useDirectory, useFriends, useLanguage, useProfile, useSession } from "@/state/hooks";
 
 export function FriendsActivityContainer() {

@@ -13,7 +13,7 @@ import {
   searchEmoji,
   type EmojiCategoryId,
   type EmojiEntry,
-} from "@/lib/emoji";
+} from "@/lib/emoji/emoji";
 import type { CustomEmoji } from "@/ports";
 import { useLanguage } from "@/state/LanguageProvider";
 

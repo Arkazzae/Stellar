@@ -1,7 +1,7 @@
 import { render, screen, waitFor } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 
-import type { DesktopRelease } from "@/lib/desktopRelease";
+import type { DesktopRelease } from "@/lib/platform/desktopRelease";
 
 import { DesktopReleasePane } from "./DesktopReleasePane";
 

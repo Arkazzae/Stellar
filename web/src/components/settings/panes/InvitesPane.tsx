@@ -7,7 +7,7 @@ import { Icon } from "@stellarr/icons";
 import { SettingsSection } from "@/components/settings/SettingsSection";
 import { useAsyncAction } from "@/hooks/useAsyncAction";
 import type { InterfaceLocale, Translator } from "@/i18n";
-import { inviteExpiry } from "@/lib/invites";
+import { inviteExpiry } from "@/lib/auth/invites";
 import type { Invite } from "@/ports";
 import { useLanguage } from "@/state/hooks";
 

@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { buildTranscript } from "@/lib/format";
+import { buildTranscript } from "@/lib/format/format";
 import type { Message, User } from "@/ports";
 import { at, message } from "@/test/messages";
 
