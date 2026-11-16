@@ -12,6 +12,7 @@ export interface VoiceRoomPresentation {
 }
 
 const NO_CAMERAS: ReadonlyMap<string, MediaStream> = new Map();
+const NONE_HELD: ReadonlySet<string> = new Set();
 
 /** Which screen share is on show, if any, and who owns it. */
 export interface ShareSource {
@@ -82,13 +83,20 @@ function cameraStreamsOf(
   state: VoiceState,
   userId: string | null,
 ): ReadonlyMap<string, MediaStream> {
+  // A held picture is no picture: its last frame would look frozen.
   const cameras = state.peers.flatMap((peer) =>
-    peer.camera?.stream ? [[peer.userId, peer.camera.stream] as const] : [],
+    peer.camera?.stream && !peer.camera.heldBack ? [[peer.userId, peer.camera.stream] as const] : [],
   );
   if (state.localCamera?.stream && userId !== null) {
     cameras.push([userId, state.localCamera.stream]);
   }
   return cameras.length > 0 ? new Map(cameras) : NO_CAMERAS;
+}
+
+/** Whose cameras the media server holds back because this side's downlink has no room. */
+function heldCamerasOf(state: VoiceState): ReadonlySet<string> {
+  const held = state.peers.filter((peer) => !peer.self && peer.camera?.heldBack === true);
+  return held.length > 0 ? new Set(held.map((peer) => peer.userId)) : NONE_HELD;
 }
 
 export interface VoiceViewInput {
@@ -115,6 +123,8 @@ export interface VoiceView {
   share: ScreenShareVM | null;
   privateCall: boolean;
   cameraStreams: ReadonlyMap<string, MediaStream>;
+  /** People whose camera is on but held back for this side's downlink. */
+  heldCameras: ReadonlySet<string>;
   participantVolumes: ReadonlyMap<string, number>;
   participantGates: ReadonlyMap<string, boolean>;
   participantSuppressions: ReadonlyMap<string, boolean>;
@@ -134,6 +144,7 @@ export function deriveVoiceView(input: VoiceViewInput): VoiceView {
     share: deriveShare(input),
     privateCall,
     cameraStreams: cameraStreamsOf(state, userId),
+    heldCameras: heldCamerasOf(state),
     participantVolumes: remoteSettings(state.peers, (peer) => peer.playbackVolume),
     participantGates: remoteSettings(state.peers, (peer) => peer.gated),
     participantSuppressions: remoteSettings(state.peers, (peer) => peer.suppressed),
@@ -208,11 +219,13 @@ function deriveShare(input: VoiceViewInput): ScreenShareVM | null {
   }
   const { remote } = source;
   if (remote?.screen == null) return null;
+  const heldBack = input.watching && remote.screen.heldBack === true;
   return {
     ownerId: remote.userId,
     ownerName: remote.displayName,
     hasAudio: remote.screen.hasAudio,
-    stream: input.watching ? remote.screen.stream : null,
+    stream: input.watching && !heldBack ? remote.screen.stream : null,
     watching: input.watching,
+    ...(heldBack ? { heldBack } : {}),
   };
 }

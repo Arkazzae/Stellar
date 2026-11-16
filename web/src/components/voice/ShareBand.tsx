@@ -48,7 +48,8 @@ export function ShareBand({
   }, [share.stream]);
 
   const screenLabel = t("share.screenLabel", { name: share.ownerName });
-  const unavailable = t("share.previewUnavailable");
+  // Held back, the band says why there is no picture rather than showing none.
+  const unavailable = share.heldBack ? t("voice.pictureHeldBack") : t("share.previewUnavailable");
   const hasPicture = share.stream !== null || Boolean(share.posterUrl);
   const covered = !local && !share.watching;
 

@@ -142,6 +142,21 @@ describe("VoiceStateStore", () => {
     expect(listener).toHaveBeenCalledTimes(1);
   });
 
+  it("notices a picture of a peer being held back and coming back", () => {
+    const store = new VoiceStateStore();
+    const stream = {} as MediaStream;
+    const camera = { streamId: "c", stream };
+    const screen = { streamId: "s", hasAudio: false, stream };
+    store.set({ peers: [peer({ camera, screen })] });
+    const listener = subscribed(store);
+
+    store.set({ peers: [peer({ camera: { ...camera, heldBack: true }, screen })] });
+    store.set({ peers: [peer({ camera: { ...camera, heldBack: true }, screen: { ...screen, heldBack: true } })] });
+    store.set({ peers: [peer({ camera, screen })] });
+
+    expect(listener).toHaveBeenCalledTimes(3);
+  });
+
   it("stops notifying a listener once it unsubscribes", () => {
     const store = new VoiceStateStore();
     const listener = vi.fn();

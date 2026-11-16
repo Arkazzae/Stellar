@@ -58,6 +58,8 @@ export interface VoiceValue {
   /** True when the visible share is this user's own screen. */
   localShare: boolean;
   cameraStreams: ReadonlyMap<string, MediaStream>;
+  /** People whose camera is held back for this side's downlink. */
+  heldCameras: ReadonlySet<string>;
   /** Receiver-side volume strips for remote participants. */
   participantVolumes: ReadonlyMap<string, number>;
   /** Which remote strips are gated locally, by user id. */

@@ -188,4 +188,6 @@ export interface ScreenShareVM {
   /** A still to show before the viewer opts in, when there is no stream. */
   posterUrl?: string;
   watching: boolean;
+  /** Watched, but the picture is held back: the viewer's link has no room for it now. */
+  heldBack?: boolean;
 }

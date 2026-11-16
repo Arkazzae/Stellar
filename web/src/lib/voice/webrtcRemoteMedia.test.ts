@@ -124,6 +124,24 @@ describe("audio streams", () => {
 });
 
 describe("the share and camera shown to the UI", () => {
+  it("says which of them the media server holds back, until it says otherwise", () => {
+    media.addVideo(stream("share"));
+    media.addVideo(stream("cam"));
+    media.announce({ screenStreamId: "share", cameraStreamId: "cam" });
+
+    expect(media.holdVideo(new Set(["cam"]))).toBe(true);
+    expect(media.camera).toMatchObject({ streamId: "cam", heldBack: true });
+    expect(media.screen).not.toHaveProperty("heldBack");
+    // The same account again is no change.
+    expect(media.holdVideo(new Set(["cam"]))).toBe(false);
+
+    expect(media.holdVideo(new Set(["share"]))).toBe(true);
+    expect(media.camera).not.toHaveProperty("heldBack");
+    expect(media.screen).toMatchObject({ streamId: "share", heldBack: true });
+    expect(media.holdVideo(new Set())).toBe(true);
+    expect(media.screen).not.toHaveProperty("heldBack");
+  });
+
   it("shows nothing for an announcement whose video has not arrived", () => {
     media.announce({ screenStreamId: "share", cameraStreamId: "cam" });
 
