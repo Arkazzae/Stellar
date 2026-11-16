@@ -37,7 +37,6 @@ function storedSettings(): Record<string, unknown> {
 describe("the language before anyone chose one", () => {
   beforeEach(() => {
     window.localStorage.clear();
-    document.cookie = "stellarr_locale=; path=/; max-age=0";
   });
 
   it("reads a component rendered without a provider in the page's language", () => {

@@ -9,12 +9,6 @@ export const FALLBACK_LOCALE: SupportedLocale = "en";
  */
 export const LANGUAGE_SETTINGS_KEY = "stellarr_language_settings";
 
-/**
- * Remembers the person's choice for the next request. The server reads it
- * before it renders, so the first paint is already in the right language.
- */
-export const LOCALE_COOKIE = "stellarr_locale";
-
 /** The first candidate that names a shipped locale, or English when none does. */
 export function resolveLocale(
   ...candidates: ReadonlyArray<string | null | undefined>
@@ -25,8 +19,8 @@ export function resolveLocale(
 /**
  * The language the page is in right now.
  *
- * On the client `<html lang>` is where the server's choice for the request
- * lands and where the language provider keeps the person's current one. Only
+ * `<html lang>` is where the document's pre-paint script puts the language it
+ * chose and where the language provider keeps the person's current one. Only
  * entry points that can be called with nothing to ask read it, at call time: a
  * component rendered without a provider, or a formatter or capture function
  * called without a locale or translator. Code that runs inside the app is

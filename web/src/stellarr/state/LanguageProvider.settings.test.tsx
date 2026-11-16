@@ -76,7 +76,6 @@ describe("useLanguage without a provider", () => {
 describe("LanguageProvider settings", () => {
   beforeEach(() => {
     window.localStorage.clear();
-    document.cookie = "stellarr_locale=; path=/; max-age=0";
   });
 
   afterEach(() => {
@@ -95,7 +94,7 @@ describe("LanguageProvider settings", () => {
     expect(document.documentElement.dataset.locale).toBe("en");
   });
 
-  it("leaves the cookie alone when the stored locale matches the server's", async () => {
+  it("keeps the stored settings as they are when the stored locale is the starting one", async () => {
     window.localStorage.setItem(
       STORAGE_KEY,
       JSON.stringify({ locale: "pl", chatTranslationEnabled: true }),
@@ -109,7 +108,10 @@ describe("LanguageProvider settings", () => {
     await hydrated();
 
     expect(shownSettings()).toMatchObject({ locale: "pl", chatTranslationEnabled: true });
-    expect(document.cookie).not.toContain("stellarr_locale");
+    expect(JSON.parse(window.localStorage.getItem(STORAGE_KEY) ?? "{}")).toEqual({
+      locale: "pl",
+      chatTranslationEnabled: true,
+    });
   });
 
   it("does not keep auto-translation from a device where translation is off", async () => {
@@ -278,10 +280,10 @@ describe("LanguageProvider settings", () => {
 
     expect(setItem).toHaveBeenCalled();
     expect(shownSettings()).toMatchObject({ locale: "en" });
-    expect(document.cookie).toContain("stellarr_locale=en");
+    expect(document.documentElement).toHaveAttribute("lang", "en");
   });
 
-  it("does not write a cookie for an update that keeps the locale", async () => {
+  it("stores no locale for an update that keeps it", async () => {
     const user = userEvent.setup();
     render(
       <LanguageProvider>
@@ -291,6 +293,7 @@ describe("LanguageProvider settings", () => {
 
     await user.click(screen.getByRole("button", { name: "enable" }));
 
-    expect(document.cookie).not.toContain("stellarr_locale");
+    // The instance default stays the person's until they pick a language.
+    expect(JSON.parse(window.localStorage.getItem(STORAGE_KEY) ?? "{}")).not.toHaveProperty("locale");
   });
 });

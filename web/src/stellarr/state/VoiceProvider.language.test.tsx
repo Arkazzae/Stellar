@@ -45,7 +45,6 @@ function SwitchToEnglish() {
 
 beforeEach(() => {
   window.localStorage.clear();
-  document.cookie = "stellarr_locale=; path=/; max-age=0";
   harness.ports = {
     createVoice: vi.fn(() => new FakeVoiceClient()),
     voiceSettings: {
