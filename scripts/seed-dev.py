@@ -123,7 +123,7 @@ SECTIONS_AND_CHANNELS: list[tuple[str, list[tuple[str, str, str]]]] = [
     ]),
     ("Engineering", [
         ("backend-dotnet", "text", "ASP.NET Core 10 API, EF Core, SignalR hubs, and CLI."),
-        ("frontend-nextjs", "text", "Next.js web client, React 19 state, and CSS design tokens."),
+        ("frontend-vite", "text", "Web client and Cockpit on Vite, React 19 state, and CSS design tokens."),
         ("rust-media-sfu", "text", "stellarr-media WebRTC SFU, str0m, ICE, and Opus forwarding."),
         ("homelab-infra", "text", "Unraid, Proxmox, ZFS, Nginx, backups, and self-hosting."),
         ("eng-standup", "voice", ""),
@@ -214,12 +214,12 @@ CONVERSATIONS: dict[str, list[ScriptLine]] = {
         ("viewer", "@kuba @mateusz sprawdźcie jeszcze proszę jak zachowuje się `/api/bootstrap` przy 16 kanałach i 30 userach."),
         ("mateusz", "@__VIEWER__ wszystko wraca w jednym zapytaniu poniżej 5ms!"),
     ],
-    "frontend-nextjs": [
+    "frontend-vite": [
         ("ola", "Po ostatnich zmianach w `TranscriptRow` memoizacja robi ogromną różnicę przy szybkich aktualizacjach reakcji."),
         ("piotr", "Isolating `contain: layout style` per row cut forced reflows to near zero when new messages arrive at the bottom."),
-        ("ania", "Did anyone check how Next 16 Turbopack handles `@stellarr/ui` hot reload in `docker-compose.dev.yml`?"),
-        ("ola", "Works great with `WATCHPACK_POLLING=true` — edits in `packages/stellarr-ui/src` show up in ~400ms."),
-        ("maya", "Remember `next build` writes a static export (`output: 'export'`), while `next dev` runs as a proxy server for `/api`, `/assets`, and `/hubs`."),
+        ("ania", "Did anyone check how Vite's dev server handles `@stellarr/ui` hot reload in `docker-compose.dev.yml`?"),
+        ("ola", "Works great with `STELLARR_DEV_POLLING=true` — it polls every 300ms, so edits in `packages/stellarr-ui/src` show up without a restart."),
+        ("maya", "Remember `npm run build` writes both apps as static files to `web/dist/` for nginx, while `npm run dev` proxies `/api`, `/assets`, `/health`, and `/hubs` to the API."),
         ("piotr", "Added `npm run bench:transcript` so we can measure row render regressions objectively.", "scroll-demo"),
         ("zuzanna", "Also verified that delayed emoji picker autofocus no longer steals focus when switching channels rapidly."),
         ("hanna", "Check out the new empty-state illustrations and focus ring offsets — zero layout shift on keyboard tabbing.", "theme-swatches"),
@@ -295,7 +295,7 @@ EXTRA_FILLER_TARGETS: dict[str, int] = {
     "announcements": 8,
     "qa-markdown": 18,
     "backend-dotnet": 36,
-    "frontend-nextjs": 38,
+    "frontend-vite": 38,
     "rust-media-sfu": 34,
     "homelab-infra": 36,
     "polski": 46,
@@ -412,7 +412,7 @@ AUDIT_SPEC: list[tuple[str, str]] = [
 
 REACTIONS_POOL = ["👍", "🔥", "❤️", "🎉", "🚀", "👀", "😂", "💯", "🍿", "🧠", "🛠️", "⚡"]
 AUDIO_PROFILES = ["clarity", "premium", "studio", "balanced"]
-UNREAD_CHANNEL_NAMES = {"backend-dotnet", "frontend-nextjs", "polski", "lfg-coop", "qa-long-history"}
+UNREAD_CHANNEL_NAMES = {"backend-dotnet", "frontend-vite", "polski", "lfg-coop", "qa-long-history"}
 
 # Presence normally lives only in the API process and follows live hub
 # connections. A seed cannot open one for every fixture account, so it leaves a

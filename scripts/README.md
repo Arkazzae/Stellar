@@ -13,7 +13,7 @@ Seeds the SQLite development database with realistic multi-day activity while pr
   - Example logins: `maya` / `dev-seed-2026`, `theo` / `dev-seed-2026`, `ola` / `dev-seed-2026`, `priya` / `dev-seed-2026`.
 - **Sections & Channels:** 14 additional channels (10 text + 4 total voice alongside starter `#general` and `#voice`, totaling 16 channels) organized under 4 sections:
   - `Information`: `#announcements`, `#qa-markdown`
-  - `Engineering`: `#backend-dotnet`, `#frontend-nextjs`, `#rust-media-sfu`, `#homelab-infra`, `eng-standup` (voice)
+  - `Engineering`: `#backend-dotnet`, `#frontend-vite`, `#rust-media-sfu`, `#homelab-infra`, `eng-standup` (voice)
   - `Community`: `#polski`, `#lfg-coop`, `#llm-local`, `#random-chat`, `co-op-lounge` (voice)
   - `History & Chill`: `#qa-long-history` (180 messages across multiple calendar days), `chill-room` (voice)
 - **Conversations & Rich Features:** ~700+ messages with replies, edits, pins, emoji reactions, markdown/code blocks, mentions, FTS5 search entries, unread channel markers, mention notifications, friendships, pending friend requests, direct messages, invites, audit log entries, and two secondary servers (`Homelab & Infra`, `Friday Co-op`) for server-rail switching.
