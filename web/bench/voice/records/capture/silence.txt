@@ -1,0 +1,92 @@
+# Capture record of the fixture "silence". See web/bench/voice/README.md for the notation.
+# Digital silence, then microphone self-noise at -85 dBFS: zeros must teach the floor nothing, the meter must rest at zero, and the gain where there is nothing to measure is written as '-'.
+# Rewritten only by npm run voice:record, in a commit that names the audible change it intends.
+
+fixture silence 1.92 s, 92160 samples at 48000 Hz
+digest 09167f97
+level active -85.0 dBFS, peak -74.7 dBFS
+
+run s0 meter
+  posts 101.3-0
+  speech none
+  out none
+
+run s0 gate
+  posts none
+  speech none
+  gain -*104 x*88
+  peak none
+
+run s0 level
+  posts none
+  speech none
+  gain -*96 0.0*96
+  peak -74.69 >0.95:0 >1:0
+
+run s0 gate+level
+  posts none
+  speech none
+  gain -*104 x*88
+  peak none
+
+run s60 meter
+  posts 101.3-0
+  speech none
+  out none
+
+run s60 gate
+  posts none
+  speech none
+  gain -*104 x*88
+  peak none
+
+run s60 level
+  posts none
+  speech none
+  gain -*96 0.0*96
+  peak -74.69 >0.95:0 >1:0
+
+run s60 gate+level
+  posts none
+  speech none
+  gain -*104 x*88
+  peak none
+
+run s100 meter
+  posts 101.3-0
+  speech none
+  out none
+
+run s100 gate
+  posts none
+  speech none
+  gain -*104 x*88
+  peak none
+
+run s100 level
+  posts none
+  speech none
+  gain -*96 0.0*96
+  peak -74.69 >0.95:0 >1:0
+
+run s100 gate+level
+  posts none
+  speech none
+  gain -*104 x*88
+  peak none
+
+run s85 meter
+  posts 101.3-0
+  speech none
+  out none
+
+run remote meter
+  posts none
+  speech none
+  out none
+
+run remote gate s40
+  posts none
+  speech none
+  gain -*104 x*88
+  peak none
