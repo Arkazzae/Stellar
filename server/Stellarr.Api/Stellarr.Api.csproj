@@ -3,6 +3,13 @@
     <TargetFramework>net10.0</TargetFramework>
     <RootNamespace>Stellarr.Api</RootNamespace>
     <InvariantGlobalization>false</InvariantGlobalization>
+    <!--
+      Workstation GC, not the Server GC the web SDK chooses: an instance
+      serves a small group, and Server GC sizes the heap for a dominant
+      process on a large machine. Measured on the container, it kept the
+      API about 50 MB smaller after a signed-in load with the same latency.
+    -->
+    <ServerGarbageCollection>false</ServerGarbageCollection>
   </PropertyGroup>
   <ItemGroup>
     <PackageReference Include="AWSSDK.S3" Version="4.0.104.12" />
