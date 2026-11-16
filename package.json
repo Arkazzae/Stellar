@@ -9,9 +9,11 @@
     "build:web": "npm run build -w stellarr-web",
     "test:web": "npm run test -w stellarr-web",
     "test:ui": "npm run test -w @stellarr/ui",
+    "test:icons": "npm run test -w @stellarr/icons",
     "lint:web": "npm run lint -w stellarr-web",
     "typecheck:web": "npm run typecheck -w stellarr-web",
-    "typecheck:ui": "npm run typecheck -w @stellarr/ui"
+    "typecheck:ui": "npm run typecheck -w @stellarr/ui",
+    "typecheck:icons": "npm run typecheck -w @stellarr/icons"
   },
   "overrides": {
     "@eslint/config-array": {
