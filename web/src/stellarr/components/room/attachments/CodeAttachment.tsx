@@ -1,5 +1,3 @@
-"use client";
-
 import { useEffect, useId, useMemo, useState } from "react";
 
 import { Button } from "@stellarr/ui";

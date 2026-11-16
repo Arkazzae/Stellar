@@ -1,5 +1,3 @@
-"use client";
-
 import { useEffect, useState, type MouseEvent } from "react";
 
 import { Icon, type IconName } from "@stellarr/icons";

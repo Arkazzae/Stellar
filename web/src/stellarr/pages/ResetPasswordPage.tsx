@@ -1,5 +1,3 @@
-"use client";
-
 import { useSearchParams } from "@stellarr/router";
 
 import { ResetPasswordScreen } from "@/components/auth/ResetPasswordScreen";

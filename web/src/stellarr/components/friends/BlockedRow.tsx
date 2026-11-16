@@ -1,5 +1,3 @@
-"use client";
-
 import { Button } from "@stellarr/ui";
 import type { FriendVM } from "@/components/view-models";
 import { useLanguage } from "@/state/LanguageProvider";

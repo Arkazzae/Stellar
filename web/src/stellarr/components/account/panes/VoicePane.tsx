@@ -1,5 +1,3 @@
-"use client";
-
 import type { CameraTest, MicTest, OutputTest, VoiceSettings } from "@/ports";
 import { useLanguage } from "@/state/hooks";
 

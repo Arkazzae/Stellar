@@ -1,5 +1,3 @@
-"use client";
-
 import { useDirectory, useUi } from "@/state/hooks";
 
 import { ChannelCreateDialog, ChannelSettingsDialog } from "./ChannelDialogs";

@@ -1,5 +1,3 @@
-"use client";
-
 import { useMemo, useState } from "react";
 
 import { SectionCreate } from "@/components/settings/channel/SectionCreate";

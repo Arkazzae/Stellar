@@ -1,5 +1,3 @@
-"use client";
-
 import { Button } from "@stellarr/ui";
 import { Icon, type IconName } from "@stellarr/icons";
 import { SettingsSection } from "@/components/settings/SettingsSection";

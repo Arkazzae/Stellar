@@ -1,5 +1,3 @@
-"use client";
-
 import { useRouter } from "@stellarr/router";
 import { useEffect, useState } from "react";
 

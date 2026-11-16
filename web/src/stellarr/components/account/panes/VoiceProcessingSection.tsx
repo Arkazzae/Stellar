@@ -1,5 +1,3 @@
-"use client";
-
 import type { MessageKey } from "@/i18n";
 import {
   NOISE_MODE_HINT,

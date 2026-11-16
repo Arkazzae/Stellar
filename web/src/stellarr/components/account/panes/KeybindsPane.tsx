@@ -1,5 +1,3 @@
-"use client";
-
 import { Button } from "@stellarr/ui";
 import {
   DEFAULT_KEYBINDINGS,

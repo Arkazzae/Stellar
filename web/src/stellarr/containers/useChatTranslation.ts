@@ -1,5 +1,3 @@
-"use client";
-
 import { useEffect, useMemo } from "react";
 
 import type { MessageTranslationOptions } from "@/components/room/attachments/TranslatedTextAttachment";

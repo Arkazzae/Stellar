@@ -1,5 +1,3 @@
-"use client";
-
 import { IconButton } from "@/components/primitives/IconButton";
 import { formatFull } from "@/lib/format/format";
 import { useLanguage } from "@/state/hooks";

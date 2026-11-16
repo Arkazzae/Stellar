@@ -1,5 +1,3 @@
-"use client";
-
 import type { MentionCandidate } from "@/lib/messages/composerMentions";
 
 export function mentionOptionId(listId: string, candidate: MentionCandidate): string {

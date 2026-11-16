@@ -1,5 +1,3 @@
-"use client";
-
 import { DialogClose } from "@/components/primitives/DialogClose";
 import { useLanguage } from "@/state/hooks";
 

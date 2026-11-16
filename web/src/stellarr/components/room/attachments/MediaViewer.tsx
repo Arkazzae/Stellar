@@ -1,5 +1,3 @@
-"use client";
-
 import { useEffect, useRef, useState, type PointerEvent as ReactPointerEvent } from "react";
 
 import { Button } from "@stellarr/ui";

@@ -1,5 +1,3 @@
-"use client";
-
 import { useMemo } from "react";
 
 import { InviteModal, type InvitePersonVM } from "@/components/settings/server/InviteModal";

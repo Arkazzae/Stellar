@@ -1,5 +1,3 @@
-"use client";
-
 import { useMemo } from "react";
 
 import { ChannelCreate } from "@/components/settings/channel/ChannelCreate";

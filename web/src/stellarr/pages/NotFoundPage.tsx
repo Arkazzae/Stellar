@@ -1,5 +1,3 @@
-"use client";
-
 import { Link } from "@stellarr/router";
 import { Button } from "@stellarr/ui";
 

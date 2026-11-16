@@ -1,5 +1,3 @@
-"use client";
-
 import { useLanguage } from "@/state/hooks";
 
 import styles from "./AppSkeleton.module.css";

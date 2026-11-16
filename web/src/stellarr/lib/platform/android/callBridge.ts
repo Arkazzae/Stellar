@@ -1,5 +1,3 @@
-"use client";
-
 /** What the Android shell exposes to the page as `window.StellarrAndroidCall`. */
 export interface AndroidCallBridge {
   setActive?(active: boolean): void;

@@ -1,5 +1,3 @@
-"use client";
-
 import { Dropdown as SharedDropdown, type DropdownProps } from "@stellarr/ui";
 import { useLanguage } from "@/state/hooks";
 

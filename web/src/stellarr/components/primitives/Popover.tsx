@@ -1,5 +1,3 @@
-"use client";
-
 import { useRef, type ReactNode, type Ref } from "react";
 
 import { useLayer } from "@stellarr/ui/behavior";

@@ -1,5 +1,3 @@
-"use client";
-
 import { useId, useState } from "react";
 
 import { CreateDialog } from "@/components/settings/CreateDialog";

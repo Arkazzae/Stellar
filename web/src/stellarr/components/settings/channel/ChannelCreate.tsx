@@ -1,5 +1,3 @@
-"use client";
-
 import { Fragment, useEffect, useId, useRef, useState } from "react";
 
 import { Icon } from "@stellarr/icons";

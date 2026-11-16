@@ -1,5 +1,3 @@
-"use client";
-
 import { useState } from "react";
 
 import { blockPerson, removeFriend } from "@/components/confirmations";

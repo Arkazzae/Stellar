@@ -1,5 +1,3 @@
-"use client";
-
 import { useId, useState, type ChangeEvent } from "react";
 
 import { Button } from "@stellarr/ui";

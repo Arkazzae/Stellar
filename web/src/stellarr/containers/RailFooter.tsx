@@ -1,5 +1,3 @@
-"use client";
-
 import { useSyncExternalStore } from "react";
 
 import { AccountRow } from "@/components/account/AccountRow";

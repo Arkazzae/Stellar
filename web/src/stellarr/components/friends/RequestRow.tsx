@@ -1,5 +1,3 @@
-"use client";
-
 import { Button } from "@stellarr/ui";
 import { Icon } from "@stellarr/icons";
 import type { FriendRequestVM } from "@/components/view-models";

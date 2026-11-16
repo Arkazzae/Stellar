@@ -1,5 +1,3 @@
-"use client";
-
 import { useRouter } from "@stellarr/router";
 import { lazy, Suspense, useEffect } from "react";
 
