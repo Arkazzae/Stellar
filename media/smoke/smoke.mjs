@@ -666,6 +666,9 @@ const SCENARIOS = {
   async k(s) {
     const A = await s.join("A");
     const B = await s.join("B");
+    // A's first camera must not meet the offer of B's microphone, or the
+    // scenario would be the collision of e by chance.
+    await directoryReady(A, s.clients);
     const steps = [];
 
     const cameraMidAtB = async () => {
@@ -970,6 +973,107 @@ const SCENARIOS = {
       summary:
         `held offers ${heldIds}; C answered ${answers}; C's errors ${JSON.stringify(errors)}; ` +
         `${what}; ${summarise(results)}`,
+      results,
+    };
+  },
+
+  /**
+   * A receiver that asks only for the microphones, as the web client does
+   * while nobody watches a share: a new screen and its sound reach it only
+   * once it asks for them, stop when it stops asking and start again with a
+   * keyframe, all without renegotiating. The microphones and another viewer
+   * carry on throughout.
+   */
+  async p(s) {
+    const A = await s.join("A");
+    const B = await s.join("B");
+    const C = await s.join("C");
+    await verifyRoom(s.env, s.clients);
+    const initial = await directoryReady(B, s.clients);
+    const microphones = initial.mapping.map((m) => m.mid);
+    // From here on B asks for what it wants rather than for every section.
+    await B.subscribe(microphones);
+
+    await A.publish("screen", "video", { codec: "VP9", scalabilityMode: "L1T2" });
+    await A.publish("screen-audio", "audio", { stereo: true });
+    const { mapping, snapshot } = await directoryReady(B, s.clients);
+    const screen = mapping.filter((m) => m.publication.name.startsWith("screen"));
+    check(screen.length === 2, `B has ${screen.length} screen tracks`);
+    const screenVideo = screen.find((m) => m.publication.kind === "video").mid;
+    const { mapping: atC } = await directoryReady(C, s.clients);
+    await firstMedia(C, atC);
+    await sleep(500);
+    const blocked = await B.stats();
+    for (const { mid } of screen) {
+      check((blocked.inbound[mid]?.bytesReceived ?? 0) === 0, `unrequested screen ${mid} reached B`);
+    }
+
+    const allMids = mapping.map((m) => m.mid);
+    const descriptionsBefore = (await B.descriptions()).length;
+    await B.subscribe(allMids);
+    await firstMedia(B, mapping);
+    const playing = await B.stats();
+
+    await B.subscribe(microphones);
+    await sleep(500);
+    const paused = await B.stats();
+    const otherBefore = await C.stats();
+    await sleep(1500);
+    const stillPaused = await B.stats();
+    const otherAfter = await C.stats();
+    for (const { mid } of screen) {
+      check(
+        (stillPaused.inbound[mid]?.bytesReceived ?? 0) === (paused.inbound[mid]?.bytesReceived ?? 0),
+        `paused screen ${mid} still downloads bytes`,
+      );
+    }
+    for (const mid of microphones) {
+      check(
+        stillPaused.inbound[mid].packetsReceived > paused.inbound[mid].packetsReceived,
+        `microphone ${mid} stopped with the screen`,
+      );
+    }
+    const otherVideo = atC.find((m) => m.publication.name === "screen").mid;
+    check(
+      otherAfter.inbound[otherVideo].framesDecoded > otherBefore.inbound[otherVideo].framesDecoded,
+      "pausing B also stopped C's screen",
+    );
+
+    await B.subscribe(allMids);
+    await waitFor("B to decode a fresh keyframe after resuming", async () => {
+      const stats = await B.stats();
+      const video = stats.inbound[screenVideo];
+      return video.framesDecoded > stillPaused.inbound[screenVideo].framesDecoded &&
+        video.keyFramesDecoded > stillPaused.inbound[screenVideo].keyFramesDecoded;
+    });
+    for (const { mid } of screen) {
+      await waitFor(`B's resumed screen ${mid} to advance`, async () =>
+        (await B.stats()).inbound[mid].bytesReceived > stillPaused.inbound[mid].bytesReceived,
+      );
+    }
+    // What was skipped while B did not ask is not a loss to B: the numbers
+    // carry on where they stopped, so nothing is counted lost or asked for.
+    await sleep(1000);
+    const resumedStats = await B.stats();
+    const repairs = screen.map(({ mid }) => {
+      const before = stillPaused.inbound[mid];
+      const after = resumedStats.inbound[mid];
+      const lost = after.packetsLost - before.packetsLost;
+      const nacks = after.nackCount - before.nackCount;
+      check(lost <= 5 && nacks <= 5, `B's resumed ${mid} counts ${lost} lost and sent ${nacks} NACKs`);
+      return `${mid} lost ${lost}, NACKs ${nacks}`;
+    });
+    const resumed = await B.snapshot();
+    check(JSON.stringify(resumed.directory) === JSON.stringify(snapshot.directory), "subscriptions changed the directory");
+    check((await B.descriptions()).length === descriptionsBefore, "subscriptions renegotiated SDP");
+    const results = await verifyRoom(s.env, s.clients);
+    const video = (stats) => stats.inbound[screenVideo];
+    return {
+      summary:
+        `B's screen blocked until asked for; ${video(playing).framesDecoded} frames, then paused at ` +
+        `${video(paused).bytesReceived} bytes for 1.5 s; resumed with keyframes ` +
+        `${video(stillPaused).keyFramesDecoded}->${video(resumedStats).keyFramesDecoded} (${repairs.join(", ")}); ` +
+        `microphones and C carried on; ${summarise(results)}`,
       results,
     };
   },

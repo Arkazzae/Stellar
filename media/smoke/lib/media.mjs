@@ -260,7 +260,9 @@ export class Hub {
         ? { sdp: payload.sdp }
         : kind === "answer"
           ? { sdp: payload.sdp, negotiationId: payload.negotiationId }
-          : { candidate: payload };
+          : kind === "subscriptions"
+            ? { mids: payload.mids }
+            : { candidate: payload };
     const call = { sessionId, kind, at: Date.now(), negotiationId: payload?.negotiationId };
     this.calls.push(call);
     session.outbox = session.outbox.then(async () => {

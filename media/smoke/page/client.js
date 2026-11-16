@@ -1,8 +1,9 @@
 // The smallest client of Stellarr Media that keeps the "Negotiation rules" of
 // docs/stellarr-media.md: one RTCPeerConnection with max-bundle, the browser
 // offers what it publishes and answers what the media server offers, it is
-// the impolite side of a collision, and every arriving track is filed under
-// the person the directory names.
+// the impolite side of a collision, every arriving track is filed under the
+// person the directory names, and it asks for every section the directory
+// names, since the media server forwards nothing it is not asked for.
 //
 // The Node script plays the hub. It calls the functions on `window.smoke` and
 // hands every event of this page's session to `smoke.signal`; the page sends
@@ -42,6 +43,10 @@ const state = {
   chain: Promise.resolve(),
   directory: [],
   directoryLog: [],
+  // Asks for every section of each directory until a scenario says what it
+  // wants instead. The last list sent, so an unchanged one is not sent again.
+  subscribeToAll: true,
+  subscribed: "[]",
   offersIgnored: [],
   offersAnswered: [],
   answersApplied: 0,
@@ -76,6 +81,21 @@ function record(side, type, sdp, extra = {}) {
 function setDirectory(source, tracks) {
   state.directory = tracks;
   state.directoryLog.push({ at: performance.now(), source, tracks });
+  if (state.subscribeToAll) requestMids(tracks.map((t) => t.mid));
+}
+
+/** Sends the complete list of sections to forward, unless it is the one sent last. */
+function requestMids(mids) {
+  const list = JSON.stringify([...mids].sort());
+  if (list === state.subscribed) return;
+  state.subscribed = list;
+  send("subscriptions", { mids: JSON.parse(list) });
+}
+
+/** From now on the page asks for exactly `mids`, whatever the directory says. */
+function subscribe(mids) {
+  state.subscribeToAll = false;
+  requestMids(mids);
 }
 
 /**
@@ -191,7 +211,8 @@ async function handle(event) {
         return;
       }
       // The directory comes with the offer, so it is in hand before any
-      // track of the offer arrives.
+      // track of the offer arrives, and its sections are asked for before
+      // the answer that makes them live.
       setDirectory("offer", payload.tracks);
       record("remote", "offer", payload.sdp, { negotiationId: payload.negotiationId });
       await pc.setRemoteDescription({ type: "offer", sdp: payload.sdp });
@@ -538,6 +559,7 @@ window.smoke = {
     run(() => handle(event));
   },
   receiveOnly,
+  subscribe,
   snapshot,
   stats,
   levels,

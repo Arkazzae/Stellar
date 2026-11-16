@@ -25,8 +25,8 @@ Each scenario prints `PASS` or `FAIL` with the verified metrics and writes `stel
 
 ## Architecture
 
-- `smoke.mjs` acts as the signaling hub: it spawns `stellarr-media` on ephemeral loopback ports, creates/deletes sessions via the HTTP control API, relays browser offers/answers/candidates, and long-polls `/v1/events` (optionally delaying events to stage glare collisions).
-- `page/client.js` implements the browser side of the SFU protocol: a single `RTCPeerConnection` (`max-bundle`), `sendonly` transceivers for published tracks, impolite glare handling, and track attribution via the server directory.
+- `smoke.mjs` acts as the signaling hub: it spawns `stellarr-media` on ephemeral loopback ports, creates/deletes sessions via the HTTP control API, relays browser offers/answers/candidates/subscriptions, and long-polls `/v1/events` (optionally delaying events to stage glare collisions).
+- `page/client.js` implements the browser side of the SFU protocol: a single `RTCPeerConnection` (`max-bundle`), `sendonly` transceivers for published tracks, impolite glare handling, track attribution via the server directory, and receive subscriptions that ask for every section of each directory before answering its offer (scenario `p` chooses its own).
 - Each simulated participant runs in an isolated Chromium instance with a distinct synthetic audio frequency and video color (`lib/fixtures.mjs`). Receivers verify both `RTCPeerConnection.getStats()` counters (`packetsReceived`, `framesDecoded`, `packetsSent`, keyframes, NACKs, RTX, candidate pairs) and the decoded audio frequencies and video frame colors against the track directory.
 
 ## Scenarios
@@ -48,3 +48,4 @@ Each scenario prints `PASS` or `FAIL` with the verified metrics and writes `stel
 | `m` | Receive-only participant (`recvonly` initial offer) receives all published tracks |
 | `n` | Simulated NAT with 1-in-15 packet loss in both directions recovers via per-leg NACK and RTX |
 | `o` | Unanswered server offers time out after 10 s and close the unresponsive session with `error` after 3 strikes without affecting other peers |
+| `p` | A receiver that asks only for the microphones gets nothing of a new screen video and its sound until it asks for them, downloads nothing of them while it stops asking, and resumes with a decoded keyframe, contiguous sequence numbers and no renegotiation; the microphones and another viewer carry on |
