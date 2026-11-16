@@ -170,10 +170,10 @@ The container entrypoint and TLS maintenance scripts read the following variable
 
 | Variable | Default | Description |
 | --- | --- | --- |
-| `STELLARR_DEV_WEB_PORT` | `3000` | Host port for Next.js (`next dev`), which serves the web client and Cockpit under `/cockpit`. |
+| `STELLARR_DEV_WEB_PORT` | `3000` | Host port for Vite's dev server (`npm run dev`), which serves the web client and Cockpit under `/cockpit`. |
 | `STELLARR_DEV_API_PORT` | `5000` | Host port for the ASP.NET Core API (`dotnet watch`). |
 | `STELLARR_DEV_MEDIA_PORT` | `49100` | Host UDP port for `stellarr-media` (advertised on `127.0.0.1`). |
 | `STELLARR_DEV_MEDIA_CONTROL_PORT` | `5200` | Host loopback TCP port (`127.0.0.1:5200`) for the `stellarr-media` control API. |
-| `STELLARR_ALLOWED_DEV_ORIGINS` | empty | Comma-separated hostnames allowed to load Next.js dev chunks (`127.0.0.1` is always allowed). |
-| `STELLARR_API_ORIGIN` | `http://127.0.0.1:5000` | Upstream API origin that `next dev` proxies `/api`, `/assets`, `/health` and `/hubs` to (`http://api:5000` inside `docker-compose.dev.yml`). |
-| `WATCHPACK_POLLING` | `true` | Enables file-system polling in `next dev` for bind mounts. |
+| `STELLARR_DEV_ALLOWED_HOSTS` | empty | Comma-separated further host names the dev server answers, for an IDE or remote preview (`localhost` and IP addresses always work). |
+| `STELLARR_API_ORIGIN` | `http://127.0.0.1:5000` | Upstream API origin that the dev server proxies `/api`, `/assets`, `/health`, `/hubs` and `/.well-known/stellarr/client` to (`http://api:5000` inside `docker-compose.dev.yml`). |
+| `STELLARR_DEV_POLLING` | `true` | Makes the dev server poll for file changes, as file events do not cross a bind mount on every host. |

@@ -30,7 +30,7 @@ Docker pulls `ghcr.io/arkazzae/stellarr`, creates the `stellarr_stellarr_data` v
 docker compose ps
 ```
 
-The container reports `healthy` once both `/health` (API) and `/login` (web client) respond over HTTPS. If startup fails, inspect `docker compose logs`.
+The container reports `healthy` once every service answers: Nginx and the API with its database (`/health` over HTTPS), the media server (its control API), and `coturn` (a STUN request on `3478/udp`). If startup fails, inspect `docker compose logs`.
 
 ## 3. Open the web client
 
@@ -100,4 +100,4 @@ cd Stellarr
 docker compose up -d --build
 ```
 
-The multi-stage `Dockerfile` compiles the .NET API, the Next.js server that renders the web client and the Cockpit operator panel, and the Rust media server inside Docker, so no local build toolchains are required on the host.
+The multi-stage `Dockerfile` compiles the .NET API and the Rust media server and builds the web client and the Cockpit operator panel as static files inside Docker, so no local build toolchains are required on the host.
