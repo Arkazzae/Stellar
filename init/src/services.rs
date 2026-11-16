@@ -38,8 +38,9 @@ pub fn container() -> Vec<Service> {
             .stop(Signal::Term, Duration::from_secs(5))
             .critical(),
         // /health/ready answers once the database opens. The host's own
-        // shutdown timeout is 30 seconds, the .NET default since 8; the
-        // deadline here is longer so that the host always finishes first.
+        // shutdown timeout is HostOptions' default of 30 seconds in .NET 10,
+        // and Program.cs keeps it; the deadline here is longer so that the
+        // host always finishes first.
         Service::new(
             "api",
             &[
