@@ -31,6 +31,16 @@ const ALLOWED = [
     line: '.replaceAll("ł", "l")',
     why: "search folds diacritics, and this letter has no decomposition",
   },
+  {
+    file: "lib/chatTranslation/detectLanguage.ts",
+    line: "const POLISH_LETTERS = /[ąćęłńśźż]/g;",
+    why: "language detection counts the letters only Polish writes",
+  },
+  {
+    file: "lib/chatTranslation/detectLanguage.ts",
+    line: '.replace(/ł/g, "l")',
+    why: "language detection folds diacritics, and this letter has no decomposition",
+  },
 ] as const;
 
 function sourceFiles(directory: string): string[] {
