@@ -9,6 +9,9 @@ const POLISH_LETTER = /[ąćęłńóśźżĄĆĘŁŃÓŚŹŻ]/;
 /** Interface text is written once per language, in the catalogs. */
 const isCatalog = (path: string) => path.startsWith("i18n/messages/");
 
+/** Cockpit is an app of its own, with its own catalogs and checks (cockpit/i18n/). */
+const isCockpit = (path: string) => path.startsWith("cockpit/");
+
 /** Tests and the fixtures they share assert Polish text on purpose. */
 const isTestCode = (path: string) =>
   /\.test\.tsx?$/.test(path) || path.startsWith("test/") || /Fixtures\.ts$/.test(path);
@@ -40,7 +43,7 @@ function sourceFiles(directory: string): string[] {
 
 const files = sourceFiles(SRC)
   .map((path) => ({ path: relative(SRC, path), text: readFileSync(path, "utf8") }))
-  .filter(({ path }) => !isCatalog(path) && !isTestCode(path));
+  .filter(({ path }) => !isCatalog(path) && !isTestCode(path) && !isCockpit(path));
 
 const isAllowed = (path: string, line: string) =>
   ALLOWED.some((entry) => entry.file === path && line.includes(entry.line));

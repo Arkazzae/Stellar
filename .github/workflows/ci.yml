@@ -29,7 +29,6 @@ jobs:
     outputs:
       server: ${{ steps.filter.outputs.server }}
       web: ${{ steps.filter.outputs.web }}
-      cockpit: ${{ steps.filter.outputs.cockpit }}
       media: ${{ steps.filter.outputs.media }}
       image: ${{ steps.filter.outputs.image }}
     steps:
@@ -63,14 +62,12 @@ jobs:
           # Both test suites consume the same message-formatting contract.
           # A case added there must check the renderer and the API together.
           check server '^(server/|tests/contracts/|Stellarr\.slnx$|Directory\.Build\.props$|global\.json$|\.github/workflows/ci\.yml$)'
-          # web and cockpit are workspaces of one npm project: a change to the
-          # shared packages or to the root manifest or lockfile affects both.
-          # The web client's build compiles Cockpit, so a change to Cockpit
-          # runs the web job too.
-          check web '^(web/|cockpit/|tests/contracts/|artifacts/|packages/|package(-lock)?\.json$|branding/icons/|\.github/workflows/ci\.yml$)'
-          check cockpit '^(cockpit/|packages/|package(-lock)?\.json$|\.github/workflows/ci\.yml$)'
+          # web/ holds the web client and Cockpit (web/src/cockpit/). It is a
+          # workspace of one npm project with the shared packages, so a change
+          # to them or to the root manifest or lockfile runs the web job too.
+          check web '^(web/|tests/contracts/|artifacts/|packages/|package(-lock)?\.json$|branding/icons/|\.github/workflows/ci\.yml$)'
           check media '^(media/|\.github/workflows/ci\.yml$)'
-          check image '^(Dockerfile$|\.dockerignore$|artifacts/|infra/|server/.*\.csproj$|server/.*packages\.lock\.json$|packages/|package(-lock)?\.json$|\.npmrc$|(web|cockpit)/package\.json$|media/Cargo\.(toml|lock)$|global\.json$|Directory\.Build\.props$|\.github/workflows/ci\.yml$)'
+          check image '^(Dockerfile$|\.dockerignore$|artifacts/|infra/|server/.*\.csproj$|server/.*packages\.lock\.json$|packages/|package(-lock)?\.json$|\.npmrc$|web/package\.json$|media/Cargo\.(toml|lock)$|global\.json$|Directory\.Build\.props$|\.github/workflows/ci\.yml$)'
 
   server:
     needs: changes
@@ -106,6 +103,8 @@ jobs:
           cache-dependency-path: package-lock.json
       # One install at the repository root covers every workspace.
       - run: npm ci
+      # Lint, typecheck and tests cover both apps in web/: the web client and
+      # Cockpit, whose tests run as their own Vitest project.
       - run: npm run lint:web
       - run: npm run typecheck:ui
       - run: npm run typecheck:web
@@ -134,34 +133,12 @@ jobs:
       # src/icons/paths.ts and branding/icons/ are built from the glyph
       # source in @stellarr/ui; a glyph changed in one place only fails here.
       - run: npm run icons:build -w @stellarr/ui -- --check
-      # Every token the package reads must be defined by each app, spelled as
-      # the package spells it, and listed in its README.
+      # Every token the package reads must be defined by each app, the web
+      # client and Cockpit, spelled as the package spells it, and listed in
+      # its README.
       - run: npm run tokens:check -w @stellarr/ui
+      # One build compiles both apps.
       - run: npm run build:web
-
-  cockpit:
-    needs: changes
-    if: needs.changes.outputs.cockpit == 'true'
-    runs-on: ubuntu-latest
-    timeout-minutes: 15
-    steps:
-      - uses: actions/checkout@v7
-      - uses: actions/setup-node@v7
-        with:
-          node-version: 26
-          cache: npm
-          cache-dependency-path: package-lock.json
-      - run: npm ci
-      - run: npm run lint:cockpit
-      - run: npm run typecheck:cockpit
-      - run: npm run test:cockpit
-      # The tokens are checked here as well, as in the web job.
-      - run: npm run tokens:check -w @stellarr/ui
-      # Cockpit has no build of its own: the web client's Next.js build
-      # compiles its routes (web/src/app/cockpit/) and sources.
-      - run: npm run build:web
-        env:
-          NEXT_TELEMETRY_DISABLED: "1"
 
   media:
     needs: changes

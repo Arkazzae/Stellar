@@ -3,18 +3,14 @@
   "private": true,
   "workspaces": [
     "web",
-    "cockpit",
     "packages/*"
   ],
   "scripts": {
     "build:web": "npm run build -w stellarr-web",
     "test:web": "npm run test -w stellarr-web",
-    "test:cockpit": "npm run test -w stellarr-cockpit",
     "test:ui": "npm run test -w @stellarr/ui",
     "lint:web": "npm run lint -w stellarr-web",
-    "lint:cockpit": "npm run lint -w stellarr-cockpit",
     "typecheck:web": "npm run typecheck -w stellarr-web",
-    "typecheck:cockpit": "npm run typecheck -w stellarr-cockpit",
     "typecheck:ui": "npm run typecheck -w @stellarr/ui"
   },
   "overrides": {
