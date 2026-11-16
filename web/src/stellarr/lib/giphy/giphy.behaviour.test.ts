@@ -83,7 +83,7 @@ describe("the runtime API key", () => {
 
   it("asks the server once for callers that overlap or come later", async () => {
     const resolveGiphyApiKey = await loadResolver();
-    fetchMock.mockResolvedValue(respond({ apiKey: "from-server" }));
+    fetchMock.mockResolvedValue(respond({ enabled: true, apiKey: "from-server" }));
 
     const keys = await Promise.all([resolveGiphyApiKey(), resolveGiphyApiKey()]);
     keys.push(await resolveGiphyApiKey());
@@ -95,7 +95,7 @@ describe("the runtime API key", () => {
   it("asks again after a failure instead of remembering it", async () => {
     const resolveGiphyApiKey = await loadResolver();
     fetchMock.mockResolvedValueOnce(respond({}, { ok: false, status: 503 }));
-    fetchMock.mockResolvedValueOnce(respond({ apiKey: "second-try" }));
+    fetchMock.mockResolvedValueOnce(respond({ enabled: true, apiKey: "second-try" }));
 
     await expect(resolveGiphyApiKey()).rejects.toThrow(failure("giphy.configUnreadable"));
     await expect(resolveGiphyApiKey()).resolves.toBe("second-try");
@@ -103,7 +103,14 @@ describe("the runtime API key", () => {
 
   it("fails when the server has no key configured", async () => {
     const resolveGiphyApiKey = await loadResolver();
-    fetchMock.mockResolvedValue(respond({ apiKey: "   " }));
+    fetchMock.mockResolvedValue(respond({ enabled: true, apiKey: "   " }));
+
+    await expect(resolveGiphyApiKey()).rejects.toThrow(failure("giphy.keyMissing"));
+  });
+
+  it("takes an answer that does not say GIFs are on as off, key or not", async () => {
+    const resolveGiphyApiKey = await loadResolver();
+    fetchMock.mockResolvedValue(respond({ apiKey: "key-alone" }));
 
     await expect(resolveGiphyApiKey()).rejects.toThrow(failure("giphy.keyMissing"));
   });

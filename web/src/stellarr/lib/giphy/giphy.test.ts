@@ -88,7 +88,7 @@ describe("GIPHY runtime configuration", () => {
   it("loads the key from Stellarr's API", async () => {
     const request = vi.spyOn(globalThis, "fetch").mockResolvedValue({
       ok: true,
-      json: async () => ({ apiKey: " runtime-key " }),
+      json: async () => ({ enabled: true, apiKey: " runtime-key " }),
     } as Response);
 
     await expect(resolveGiphyApiKey()).resolves.toBe("runtime-key");
