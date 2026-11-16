@@ -9,7 +9,6 @@ using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Diagnostics;
 using Microsoft.Extensions.DependencyInjection;
-using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Logging;
 using Stellarr.Api.Auth;
 using Stellarr.Api.Data;
@@ -168,19 +167,12 @@ public sealed class BootstrapFlowTests
     [Fact]
     public async Task BootstrapThatLosesTheRaceForTheReadMarkersStillAnswersWithTheStoredOnes()
     {
-        var databasePath = Path.Combine(Path.GetTempPath(), $"stellarr-tests-{Guid.NewGuid():N}.db");
         var otherTabMarkedAt = new DateTime(2026, 1, 2, 3, 4, 5, DateTimeKind.Utc);
-        var otherTab = new BootstrapInAnotherTab(databasePath, JoId, TestData.GeneralChannelId, otherTabMarkedAt);
+        var otherTab = new BootstrapInAnotherTab(JoId, TestData.GeneralChannelId, otherTabMarkedAt);
         using var factory = new StellarrWebApplicationFactory(
             loadTestData: true,
-            databasePath: databasePath,
             configureServices: services =>
-            {
-                services.RemoveAll<DbContextOptions<AppDbContext>>();
-                services.RemoveAll<AppDbContext>();
-                services.AddDbContext<AppDbContext>(options =>
-                    options.UseSqlite($"Data Source={databasePath}").AddInterceptors(otherTab));
-            });
+                services.ConfigureDbContext<AppDbContext>(options => options.AddInterceptors(otherTab)));
         using var client = await SignInAsync(factory, "jo", "Corona!2026");
         var before = DateTime.UtcNow;
 
@@ -682,7 +674,7 @@ public sealed class BootstrapFlowTests
     /// starts the user's read markers, it commits the marker of one channel
     /// from a connection of its own.
     /// </summary>
-    private sealed class BootstrapInAnotherTab(string databasePath, Guid userId, Guid channelId, DateTime markedAt)
+    private sealed class BootstrapInAnotherTab(Guid userId, Guid channelId, DateTime markedAt)
         : SaveChangesInterceptor
     {
         private int _fired;
@@ -692,12 +684,13 @@ public sealed class BootstrapFlowTests
             InterceptionResult<int> result,
             CancellationToken cancellationToken = default)
         {
-            var startsMarkers = eventData.Context!.ChangeTracker.Entries<ChannelRead>()
+            var context = eventData.Context!;
+            var startsMarkers = context.ChangeTracker.Entries<ChannelRead>()
                 .Any(x => x.State == EntityState.Added && x.Entity.UserId == userId);
             if (startsMarkers && Interlocked.Exchange(ref _fired, 1) == 0)
             {
                 await using var other = new AppDbContext(
-                    new DbContextOptionsBuilder<AppDbContext>().UseSqlite($"Data Source={databasePath}").Options);
+                    new DbContextOptionsBuilder<AppDbContext>().UseSqlite(context.Database.GetConnectionString()).Options);
                 other.ChannelReads.Add(new ChannelRead { ChannelId = channelId, UserId = userId, LastReadAt = markedAt });
                 await other.SaveChangesAsync(cancellationToken);
             }
