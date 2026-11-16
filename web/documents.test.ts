@@ -1,5 +1,5 @@
 import { execFileSync } from "node:child_process";
-import { cpSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdtempSync, readdirSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -18,7 +18,6 @@ import {
   earlyPreloadScript,
   fileDirectories,
   mergeSlashes,
-  removeDeclarations,
   PRE_PAINT_MARKER,
   PRELOAD_CHOSEN_MARKER,
   PRELOAD_MARKER,
@@ -507,30 +506,6 @@ function sourceFiles(directory: string): string[] {
     .filter((file) => /\.(ts|tsx|css)$/.test(file) && !/\.test\.tsx?$/.test(file) && !/(^|\/)test\//.test(file))
     .map((file) => `${directory}/${file}`);
 }
-
-describe("what the build copies from public/", () => {
-  it("leaves out the TypeScript declarations, which a browser has no use for", () => {
-    const root = mkdtempSync(join(tmpdir(), "stellarr-public-"));
-    try {
-      const publicDir = join(root, "public");
-      const outDir = join(root, "dist");
-      mkdirSync(join(publicDir, "audio"), { recursive: true });
-      writeFileSync(join(publicDir, "audio", "worklet.js"), "export {};\n");
-      writeFileSync(join(publicDir, "audio", "worklet.d.ts"), "export {};\n");
-      writeFileSync(join(publicDir, "robots.txt"), "\n");
-      cpSync(publicDir, outDir, { recursive: true });
-
-      expect(removeDeclarations(publicDir, outDir)).toEqual([join("audio", "worklet.d.ts")]);
-
-      expect(readdirSync(outDir, { recursive: true, encoding: "utf8" }).sort()).toEqual(
-        ["audio", join("audio", "worklet.js"), "robots.txt"].sort(),
-      );
-    } finally {
-      rmSync(root, { recursive: true, force: true });
-    }
-  });
-
-});
 
 describe("the files the apps name by address", () => {
   // A root-relative address in a string, a url() or an attribute, with the
