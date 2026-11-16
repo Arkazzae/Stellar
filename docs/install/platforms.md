@@ -40,7 +40,7 @@ The services are `media`, `api`, `turn`, `nginx` and `tls-maintenance`. Their st
 
 Each line the manager writes itself starts with `stellarr-init:` in `docker compose logs`, one for every change of state.
 
-Every service writes to that log and to nothing inside the container. The API logs each request it serves; Nginx keeps no access log, as the requests it serves without the API are the apps' files, and logs only its errors. The manager's checks every ten seconds leave no line in either: a check that fails shows as the manager's own line when the service turns `failing`.
+Every service writes to that log and to nothing inside the container. The API logs one line for each request it serves, and its warnings and errors (see [Logs](configuration.md#logs)); Nginx keeps no access log, as the requests it serves without the API are the apps' files, and logs only its errors. The manager's checks every ten seconds leave no line in either: a check that fails shows as the manager's own line when the service turns `failing`.
 
 ## Address
 

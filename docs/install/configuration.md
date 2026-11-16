@@ -139,6 +139,28 @@ See [Localization](../localization.md).
 | `GIPHY_API_KEY` | string | empty | GIPHY key for the GIF search and the GIFs in messages. Signed-in browsers receive it and call GIPHY themselves: with GIFs on, the browser of everyone who searches for or sees a GIF contacts GIPHY, unless that person has turned GIPHY off in their privacy settings. Can also be configured and verified in Cockpit under **Integrations** (which takes precedence and takes effect on tab reload without a container restart). |
 | `STELLARR_EF_COMMAND_LOG_LEVEL` | .NET log level | `Warning` | Log level for `Microsoft.EntityFrameworkCore.Database.Command` (`Information` logs SQL queries). |
 
+## Logs
+
+The API writes its log to the container's log (`docker compose logs`) and to Cockpit's **Logs** page, which keeps the latest 10,000 lines in memory. By default it logs:
+
+- warnings and errors from every part of the API;
+- one line for each request it serves, with the method, the path without its query string, the status and the time taken, such as `POST /api/channels/…/messages 201 in 12 ms`, under the source `Stellarr.Api.Requests`. The container's own health checks leave none;
+- the API's own information: its start, the media server's resets, backups, maintenance.
+
+ASP.NET Core's own lines for each request (six of them), the SQL that Entity Framework runs and the API's outgoing HTTP calls are logged only from warnings up. Any source's level can be set with a `Logging__LogLevel__<source>` variable, in `docker-compose.override.yml`:
+
+```yaml
+services:
+  stellarr:
+    environment:
+      # ASP.NET Core's own six lines for each request
+      Logging__LogLevel__Microsoft.AspNetCore: Information
+      # No line for each request
+      Logging__LogLevel__Stellarr.Api.Requests: Warning
+```
+
+For Entity Framework's SQL, `STELLARR_EF_COMMAND_LOG_LEVEL` in `.env` does the same.
+
 ## Container resource limits
 
 | Variable | Type | Default | Description |
