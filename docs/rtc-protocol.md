@@ -143,6 +143,7 @@ Users can pick a personal arrival clip (`UserPreferences.JoinSoundId`) from any 
 
 - `transport.media = ready` indicates the local session with Stellarr Media is established and no other participants are in the room (`peerCount === 0`).
 - `transport.media = degraded` indicates that a remote participant's audio has not arrived past its 3-second grace window, or that the media session is being replaced (see [Stellarr Media](./stellarr-media.md#proving-media-quickly)).
+- A remote `VoicePeer`'s `camera` and `screen` carry `heldBack: true` while the media server holds that picture back for this side's downlink; the view then offers no stream for it, so no last frame stays on screen.
 
 > [!IMPORTANT]
 > Only one active voice session is allowed per account across tabs and devices. Joining from a second tab replaces the earlier seat and sends `VoiceSessionReplaced` to the previous connection.
@@ -171,7 +172,7 @@ Users can pick a personal arrival clip (`UserPreferences.JoinSoundId`) from any 
 - Uses `contentHint = "detail"` and `degradationPreference = "maintain-resolution"`.
 - Video senders use `medium` network priority while Opus audio uses `high`.
 - The media server forwards a remote screen's video and shared sound only to the people watching it (see [receive subscriptions](./stellarr-media.md#receive-subscriptions)). Stopping watching stops both, while the publisher's capture carries on; a new share starts unwatched.
-- These profiles are the most a sender uses; congestion control can send less. A receiver is forwarded a whole track or nothing: no layer or bitrate is chosen per receiver.
+- These profiles are the most a sender uses; congestion control can send less. A receiver is forwarded a whole track or nothing: no layer or bitrate is chosen per receiver. When a receiver's downlink has no room for the share it watches, the media server holds its picture back for that receiver (see [downlink adaptation](./stellarr-media.md#downlink-adaptation)), and the band shows "Video paused: your connection is too weak" ("Obraz wstrzymany: za słabe łącze") in place of a frozen picture; the picture returns by itself once there is room.
 
 ## Camera
 
@@ -184,6 +185,7 @@ Users can pick a personal arrival clip (`UserPreferences.JoinSoundId`) from any 
 - `cameraStreamId` and `screenStreamId` in the `state` signal distinguish camera and screen tracks regardless of SDP m-line ordering.
 - Camera video shares a `MediaStream` with the microphone (`cameraStreamId`), keeping voice and camera playback synchronized on receivers. Screen shares use a separate `MediaStream`.
 - Switching camera devices uses `RTCRtpSender.replaceTrack` without renegotiating the session. Camera errors or permission denials never interrupt voice audio.
+- A receiver asks for the voices first, then the watched share, then the cameras, and the media server sends the pictures in that order while its downlink has room. A camera held back for the receiver's link shows the person's avatar with "Video paused: your connection is too weak" in place of the picture (`VoiceCamera.heldBack`), and comes back by itself.
 
 ## Key source files
 
