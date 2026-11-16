@@ -11,7 +11,6 @@ import {
   useEmoji,
   useLanguage,
   usePorts,
-  useSession,
 } from "@/state/hooks";
 
 interface RoomComposerProps {
@@ -29,7 +28,6 @@ export function RoomComposer({ channelName, threadRootId }: RoomComposerProps) {
   const chat = useChat();
   // Cockpit can turn GIFs off; then the composer offers no GIF button.
   const gifsEnabled = useGifsEnabled();
-  const { user } = useSession();
   const { members } = useDirectory();
   const { emoji: customEmoji } = useEmoji();
   const { locale, t } = useLanguage();
@@ -76,7 +74,6 @@ export function RoomComposer({ channelName, threadRootId }: RoomComposerProps) {
       onTyping={chat.notifyTyping}
       customEmoji={customEmoji}
       mentionCandidates={members}
-      giphyCustomerId={user?.id ?? "stellarr"}
       {...(gifsEnabled ? { onGif: chat.sendGif } : {})}
       locale={locale}
       t={t}

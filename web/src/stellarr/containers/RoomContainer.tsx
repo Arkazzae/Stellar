@@ -13,7 +13,6 @@ import {
   useEmoji,
   useLanguage,
   useProfile,
-  useSession,
   useUi,
   useVoice,
 } from "@/state/hooks";
@@ -37,7 +36,6 @@ import { useThreadLayout } from "./useThreadLayout";
  */
 export function RoomContainer() {
   const { channels, textChannels, channelName, canManageMessages } = useDirectory();
-  const { user } = useSession();
   const ui = useUi();
   const voice = useVoice();
   const chat = useChat();
@@ -46,7 +44,7 @@ export function RoomContainer() {
   const { preferences } = useAccount();
   const profile = useProfile();
   const translation = useChatTranslation(chat.channelId);
-  const viewer = useAttachmentViewer(user?.id ?? "stellarr");
+  const viewer = useAttachmentViewer();
   const threadLayout = useThreadLayout(chat.thread);
   useJoinFromPopoutLink(ui.joinVoiceChannel);
 

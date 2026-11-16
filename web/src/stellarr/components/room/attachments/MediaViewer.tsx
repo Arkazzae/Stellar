@@ -323,6 +323,9 @@ function ImageStage({
         className="mv-media mv-image"
         src={current.src}
         alt={current.alt}
+        // A GIF opens here from GIPHY's own host, which is told nothing of
+        // the page; an upload is the instance's own and needs no referrer.
+        referrerPolicy="no-referrer"
         draggable={false}
         onPointerDown={onPointerDown}
         onPointerMove={onPointerMove}

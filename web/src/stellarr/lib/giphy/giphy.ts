@@ -1,4 +1,6 @@
-import type { MessageKey } from "@/i18n";
+import type { MessageKey, SupportedLocale } from "@/i18n";
+
+import { giphyCustomerId } from "./customerId";
 
 const API_ROOT = "https://api.giphy.com/v1/gifs";
 const PAGE_HOSTS: ReadonlySet<string> = new Set(["giphy.com", "www.giphy.com"]);
@@ -16,8 +18,12 @@ export interface GiphyAnalytics {
 export interface GiphyGif {
   id: string;
   pageUrl: string;
-  title: string;
-  alt: string;
+  /**
+   * What GIPHY says the GIF shows: its description, or else its title. Absent
+   * when it gave neither; whoever shows the GIF then names it in the reader's
+   * language (`gif.untitled`).
+   */
+  alt?: string;
   username?: string;
   previewUrl: string;
   stillUrl?: string;
@@ -36,7 +42,8 @@ export interface GiphyPage {
 
 export interface GiphySearchOptions {
   apiKey: string;
-  customerId: string;
+  /** The interface language, which GIPHY searches in. */
+  locale: SupportedLocale;
   query?: string;
   offset?: number;
   limit?: number;
@@ -178,7 +185,7 @@ export function parseGiphyGif(value: unknown): GiphyGif | null {
   const still =
     readRendition(images, "fixed_width_still") ??
     readRendition(images, "downsized_still");
-  const title = nonEmptyString(value["title"]) ?? "GIF z GIPHY";
+  const alt = nonEmptyString(value["alt_text"]) ?? nonEmptyString(value["title"]);
   const user = isRecord(value["user"]) ? value["user"] : {};
   const username = nonEmptyString(value["username"]) ?? nonEmptyString(user["username"]);
   const actions = isRecord(value["analytics"]) ? value["analytics"] : {};
@@ -187,8 +194,7 @@ export function parseGiphyGif(value: unknown): GiphyGif | null {
     id,
     pageUrl:
       httpsUrl(value["url"], PAGE_HOSTS)?.toString() ?? `https://giphy.com/gifs/${id}`,
-    title,
-    alt: nonEmptyString(value["alt_text"]) ?? title,
+    ...(alt === undefined ? {} : { alt }),
     ...(username === undefined ? {} : { username }),
     previewUrl: preview.url,
     ...(still === undefined ? {} : { stillUrl: still.url }),
@@ -219,7 +225,18 @@ export function parseGiphyPage(value: unknown): GiphyPage {
   };
 }
 
-/** A GET to the GIPHY API that carries no cookies. */
+/**
+ * The referrer policy of every request to GIPHY's hosts: the API calls and
+ * pings here, and the `<img>` of every GIF. GIPHY is not told which page a GIF
+ * was searched for or shown on.
+ */
+export const GIPHY_REFERRER_POLICY = "no-referrer";
+
+/**
+ * A GET to the GIPHY API with this browser's own `customer_id`, no cookies
+ * and no referrer. The answer is read, so it is a CORS request, and the
+ * browser still names the instance in its `Origin` header.
+ */
 function getFromGiphy(
   path: string,
   params: Record<string, string>,
@@ -227,9 +244,11 @@ function getFromGiphy(
 ): Promise<Response> {
   const url = new URL(`${API_ROOT}/${path}`);
   for (const [name, value] of Object.entries(params)) url.searchParams.set(name, value);
+  url.searchParams.set("customer_id", giphyCustomerId());
   return fetch(url, {
     method: "GET",
     credentials: "omit",
+    referrerPolicy: GIPHY_REFERRER_POLICY,
     headers: { Accept: "application/json" },
     signal,
   });
@@ -238,7 +257,7 @@ function getFromGiphy(
 /** Trending GIFs for an empty query, search results otherwise. */
 export async function fetchGiphyPage({
   apiKey,
-  customerId,
+  locale,
   query = "",
   offset = 0,
   limit = 24,
@@ -249,14 +268,13 @@ export async function fetchGiphyPage({
   const term = query.trim().slice(0, MAX_QUERY_LENGTH);
   const params: Record<string, string> = {
     api_key: apiKey,
-    customer_id: customerId,
     limit: String(Math.min(MAX_PAGE_SIZE, Math.max(1, limit))),
     offset: String(Math.max(0, offset)),
     rating: "pg-13",
   };
   if (term !== "") {
     params["q"] = term;
-    params["lang"] = "pl";
+    params["lang"] = locale;
   }
 
   const response = await getFromGiphy(term === "" ? "trending" : "search", params, signal);
@@ -269,16 +287,11 @@ export async function fetchGiphyPage({
 export async function fetchGiphyGif(
   apiKey: string,
   id: string,
-  customerId: string,
   signal?: AbortSignal,
 ): Promise<GiphyGif> {
   if (!ID_PATTERN.test(id)) throw new GiphyError("giphy.badId");
 
-  const response = await getFromGiphy(
-    id,
-    { api_key: apiKey, customer_id: customerId, rating: "pg-13" },
-    signal,
-  );
+  const response = await getFromGiphy(id, { api_key: apiKey, rating: "pg-13" }, signal);
   if (!response.ok) throw new GiphyError("giphy.gone");
 
   const payload = (await response.json()) as unknown;
@@ -304,18 +317,23 @@ export function giphyIdFromUrl(value: string): string | null {
 /**
  * Reports a view, click or send to GIPHY. Only GIPHY's analytics host is
  * called, so a crafted response cannot turn this into an arbitrary request.
+ * Nothing reads the answer, so the request is `no-cors`, which carries no
+ * `Origin`; with no referrer either, a ping does not name the instance.
  */
-export async function trackGiphyAction(
-  actionUrl: string | undefined,
-  customerId: string,
-): Promise<void> {
+export async function trackGiphyAction(actionUrl: string | undefined): Promise<void> {
   const target = httpsUrl(actionUrl, ANALYTICS_HOSTS);
   if (target === undefined) return;
 
-  target.searchParams.set("customer_id", customerId);
+  target.searchParams.set("customer_id", giphyCustomerId());
   target.searchParams.set("ts", String(Date.now()));
   try {
-    await fetch(target, { method: "GET", credentials: "omit", keepalive: true });
+    await fetch(target, {
+      method: "GET",
+      mode: "no-cors",
+      credentials: "omit",
+      referrerPolicy: GIPHY_REFERRER_POLICY,
+      keepalive: true,
+    });
   } catch {
     // Analytics must never get in the way of browsing or sending a message.
   }

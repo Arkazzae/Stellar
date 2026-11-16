@@ -2,8 +2,10 @@ import { useEffect, useId, useRef, useState } from "react";
 
 import { useLayer } from "@stellarr/ui/behavior";
 import { Icon } from "@stellarr/icons";
+import type { SupportedLocale } from "@/i18n";
 import {
   fetchGiphyPage,
+  GIPHY_REFERRER_POLICY,
   resolveGiphyApiKey,
   trackGiphyAction,
   type GiphyGif,
@@ -25,9 +27,10 @@ const GIPHY_MARK =
  *
  * Nothing loads while the panel is closed. Every new search bumps `run`, so a
  * response (or a "show more") that belongs to an earlier search is dropped
- * instead of overwriting the current one.
+ * instead of overwriting the current one. A search is made in the interface's
+ * language.
  */
-function useGifResults(customerId: string, query: string, active: boolean) {
+function useGifResults(locale: SupportedLocale, query: string, active: boolean) {
   const [items, setItems] = useState<GiphyGif[]>([]);
   const [total, setTotal] = useState(0);
   const [loading, setLoading] = useState(false);
@@ -50,7 +53,7 @@ function useGifResults(customerId: string, query: string, active: boolean) {
           .then((key) =>
             fetchGiphyPage({
               apiKey: key,
-              customerId,
+              locale,
               query,
               limit: PAGE_SIZE,
               signal: controller.signal,
@@ -76,7 +79,7 @@ function useGifResults(customerId: string, query: string, active: boolean) {
       window.clearTimeout(timer);
       controller.abort();
     };
-  }, [customerId, active, query, attempt]);
+  }, [locale, active, query, attempt]);
 
   const loadMore = async () => {
     if (loadingMore || items.length >= total) return;
@@ -86,7 +89,7 @@ function useGifResults(customerId: string, query: string, active: boolean) {
       const key = await resolveGiphyApiKey();
       const page = await fetchGiphyPage({
         apiKey: key,
-        customerId,
+        locale,
         query,
         offset: items.length,
         limit: PAGE_SIZE,
@@ -116,8 +119,6 @@ function useGifResults(customerId: string, query: string, active: boolean) {
 }
 
 export interface GifBrowserProps {
-  /** Sent to GIPHY with every request, as its terms require. */
-  customerId: string;
   /** Sends the chosen GIF. A rejection keeps the browser open and shows an error. */
   onSelect(pageUrl: string): Promise<void>;
 }
@@ -128,13 +129,13 @@ export interface GifBrowserProps {
  * a close. While open it is a layer on the shared stack: Escape and a press
  * elsewhere close it when no layer above it takes them.
  */
-export function GifBrowser({ customerId, onSelect }: GifBrowserProps) {
-  const { t } = useLanguage();
+export function GifBrowser({ onSelect }: GifBrowserProps) {
+  const { t, locale } = useLanguage();
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState("");
   const [sendingId, setSendingId] = useState<string | null>(null);
   const [sendFailed, setSendFailed] = useState(false);
-  const results = useGifResults(customerId, query, open);
+  const results = useGifResults(locale, query, open);
 
   const panelId = useId();
   const triggerRef = useRef<HTMLButtonElement>(null);
@@ -173,10 +174,10 @@ export function GifBrowser({ customerId, onSelect }: GifBrowserProps) {
     if (sendingId !== null) return;
     setSendingId(gif.id);
     setSendFailed(false);
-    void trackGiphyAction(gif.analytics.onclick, customerId);
+    void trackGiphyAction(gif.analytics.onclick);
     try {
       await onSelect(gif.pageUrl);
-      void trackGiphyAction(gif.analytics.onsent, customerId);
+      void trackGiphyAction(gif.analytics.onsent);
       close();
     } catch {
       setSendFailed(true);
@@ -188,7 +189,7 @@ export function GifBrowser({ customerId, onSelect }: GifBrowserProps) {
   const markViewed = (gif: GiphyGif) => {
     if (viewed.current.has(gif.id)) return;
     viewed.current.add(gif.id);
-    void trackGiphyAction(gif.analytics.onload, customerId);
+    void trackGiphyAction(gif.analytics.onload);
   };
 
   const { items, loading, loadingMore, failed } = results;
@@ -276,7 +277,7 @@ export function GifBrowser({ customerId, onSelect }: GifBrowserProps) {
                     type="button"
                     className="gif-tile"
                     key={gif.id}
-                    aria-label={t("gif.send", { alt: gif.alt })}
+                    aria-label={t("gif.send", { alt: gif.alt ?? t("gif.untitled") })}
                     disabled={busy}
                     onClick={() => void send(gif)}
                   >
@@ -288,6 +289,7 @@ export function GifBrowser({ customerId, onSelect }: GifBrowserProps) {
                         src={gif.previewUrl}
                         alt=""
                         loading="lazy"
+                        referrerPolicy={GIPHY_REFERRER_POLICY}
                         onLoad={() => markViewed(gif)}
                       />
                     </picture>

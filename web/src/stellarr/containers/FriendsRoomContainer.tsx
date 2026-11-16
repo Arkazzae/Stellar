@@ -57,7 +57,7 @@ export function FriendsRoomContainer() {
   const translation = useChatTranslation(friends.active?.id);
   // A conversation carries the same pictures, clips and recordings as a text
   // channel, so it opens them in the same viewer.
-  const viewer = useAttachmentViewer(user?.id ?? "stellarr");
+  const viewer = useAttachmentViewer();
 
   const friendList = useMemo<FriendVM[]>(
     () =>

@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import type { MessageKey } from "@/i18n";
 
+import { giphyCustomerId } from "./customerId";
 import {
   fetchGiphyGif,
   fetchGiphyPage,
@@ -156,7 +157,7 @@ describe("parsing a GIF", () => {
     expect(parseGiphyGif(item)).toBeNull();
   });
 
-  it("names an untitled GIF and takes the author from the user object", () => {
+  it("leaves an untitled GIF unnamed, for the reader's language, and takes the author from the user object", () => {
     const parsed = parseGiphyGif(
       gif(
         { downsized: rendition("https://media.giphy.com/d.gif") },
@@ -165,11 +166,19 @@ describe("parsing a GIF", () => {
     );
 
     expect(parsed).toMatchObject({
-      title: "GIF z GIPHY",
-      alt: "GIF z GIPHY",
       username: "from-user",
       pageUrl: "https://giphy.com/gifs/AbCd1234",
     });
+    expect(parsed).not.toHaveProperty("alt");
+  });
+
+  it("describes a GIF by its description, or else its title", () => {
+    const images = { downsized: rendition("https://media.giphy.com/d.gif") };
+
+    expect(parseGiphyGif(gif(images, { title: "Cat", alt_text: "A cat dances." }))?.alt).toBe(
+      "A cat dances.",
+    );
+    expect(parseGiphyGif(gif(images, { title: "Cat" }))?.alt).toBe("Cat");
   });
 
   it("rejects a response without a data list", () => {
@@ -188,91 +197,114 @@ describe("parsing a GIF", () => {
 
 describe("fetching a page", () => {
   const apiKey = "key";
-  const customerId = "customer";
+  const locale = "en";
 
   beforeEach(() => {
     fetchMock.mockResolvedValue(respond({ data: [] }));
   });
 
-  it("lists trending GIFs for an empty query", async () => {
-    await fetchGiphyPage({ apiKey, customerId, query: "   " });
+  it("lists trending GIFs for an empty query, as this browser and from no page", async () => {
+    await fetchGiphyPage({ apiKey, locale, query: "   " });
 
     const { url, init } = lastRequest();
     expect(url.pathname).toBe("/v1/gifs/trending");
     expect(Object.fromEntries(url.searchParams)).toEqual({
       api_key: "key",
-      customer_id: "customer",
+      customer_id: giphyCustomerId(),
       limit: "24",
       offset: "0",
       rating: "pg-13",
     });
-    expect(init).toMatchObject({ method: "GET", credentials: "omit" });
+    expect(init).toMatchObject({ method: "GET", credentials: "omit", referrerPolicy: "no-referrer" });
   });
 
-  it("searches with a trimmed, shortened term in Polish", async () => {
-    await fetchGiphyPage({ apiKey, customerId, query: ` ${"k".repeat(80)} ` });
+  it.each(["en", "pl"] as const)(
+    "searches with a trimmed, shortened term in the interface's language: %s",
+    async (language) => {
+      await fetchGiphyPage({ apiKey, locale: language, query: ` ${"k".repeat(80)} ` });
 
-    const { url } = lastRequest();
-    expect(url.pathname).toBe("/v1/gifs/search");
-    expect(url.searchParams.get("q")).toBe("k".repeat(50));
-    expect(url.searchParams.get("lang")).toBe("pl");
-  });
+      const { url } = lastRequest();
+      expect(url.pathname).toBe("/v1/gifs/search");
+      expect(url.searchParams.get("q")).toBe("k".repeat(50));
+      expect(url.searchParams.get("lang")).toBe(language);
+    },
+  );
 
   it("keeps the page size and offset within what GIPHY accepts", async () => {
-    await fetchGiphyPage({ apiKey, customerId, limit: 500, offset: -3 });
+    await fetchGiphyPage({ apiKey, locale, limit: 500, offset: -3 });
     expect(lastRequest().url.searchParams.get("limit")).toBe("50");
     expect(lastRequest().url.searchParams.get("offset")).toBe("0");
 
-    await fetchGiphyPage({ apiKey, customerId, limit: 0 });
+    await fetchGiphyPage({ apiKey, locale, limit: 0 });
     expect(lastRequest().url.searchParams.get("limit")).toBe("1");
   });
 
   it("passes the abort signal on", async () => {
     const controller = new AbortController();
 
-    await fetchGiphyPage({ apiKey, customerId, signal: controller.signal });
+    await fetchGiphyPage({ apiKey, locale, signal: controller.signal });
 
     expect(lastRequest().init.signal).toBe(controller.signal);
   });
 
   it("does not call GIPHY without a key", async () => {
-    await expect(fetchGiphyPage({ apiKey: "", customerId })).rejects.toThrow(failure("giphy.keyMissing"));
+    await expect(fetchGiphyPage({ apiKey: "", locale })).rejects.toThrow(failure("giphy.keyMissing"));
     expect(fetchMock).not.toHaveBeenCalled();
   });
 
   it("tells a rate limit from any other failure", async () => {
     fetchMock.mockResolvedValueOnce(respond({}, { ok: false, status: 429 }));
-    await expect(fetchGiphyPage({ apiKey, customerId })).rejects.toThrow(failure("giphy.rateLimited"));
+    await expect(fetchGiphyPage({ apiKey, locale })).rejects.toThrow(failure("giphy.rateLimited"));
 
     fetchMock.mockResolvedValueOnce(respond({}, { ok: false, status: 500 }));
-    await expect(fetchGiphyPage({ apiKey, customerId })).rejects.toThrow(failure("giphy.fetchFailed"));
+    await expect(fetchGiphyPage({ apiKey, locale })).rejects.toThrow(failure("giphy.fetchFailed"));
   });
 });
 
 describe("fetching one GIF", () => {
   it("refuses an id that could change the request path", async () => {
-    await expect(fetchGiphyGif("key", "../trending", "customer")).rejects.toThrow(failure("giphy.badId"));
+    await expect(fetchGiphyGif("key", "../trending")).rejects.toThrow(failure("giphy.badId"));
     expect(fetchMock).not.toHaveBeenCalled();
   });
 
-  it("returns the parsed GIF", async () => {
+  it("returns the parsed GIF, asked for as this browser and from no page", async () => {
     fetchMock.mockResolvedValue(
       respond({ data: gif({ downsized: rendition("https://media.giphy.com/d.gif") }) }),
     );
 
-    await expect(fetchGiphyGif("key", "AbCd1234", "customer")).resolves.toMatchObject({
+    await expect(fetchGiphyGif("key", "AbCd1234")).resolves.toMatchObject({
       id: "AbCd1234",
       mediaUrl: "https://media.giphy.com/d.gif",
     });
-    expect(lastRequest().url.pathname).toBe("/v1/gifs/AbCd1234");
+    const { url, init } = lastRequest();
+    expect(url.pathname).toBe("/v1/gifs/AbCd1234");
+    expect(url.searchParams.get("customer_id")).toBe(giphyCustomerId());
+    expect(init).toMatchObject({ credentials: "omit", referrerPolicy: "no-referrer" });
   });
 
   it("reports a GIF that was removed and one that cannot be read", async () => {
     fetchMock.mockResolvedValueOnce(respond({}, { ok: false, status: 404 }));
-    await expect(fetchGiphyGif("key", "AbCd1234", "customer")).rejects.toThrow(failure("giphy.gone"));
+    await expect(fetchGiphyGif("key", "AbCd1234")).rejects.toThrow(failure("giphy.gone"));
 
     fetchMock.mockResolvedValueOnce(respond({ data: { id: "AbCd1234" } }));
-    await expect(fetchGiphyGif("key", "AbCd1234", "customer")).rejects.toThrow(failure("giphy.badGif"));
+    await expect(fetchGiphyGif("key", "AbCd1234")).rejects.toThrow(failure("giphy.badGif"));
+  });
+});
+
+describe("the customer id GIPHY is sent", () => {
+  it("is this browser's own, the same on every kind of request", async () => {
+    fetchMock.mockResolvedValue(
+      respond({ data: gif({ downsized: rendition("https://media.giphy.com/d.gif") }) }),
+    );
+
+    await fetchGiphyGif("key", "AbCd1234");
+    await fetchGiphyPage({ apiKey: "key", locale: "en", query: "cat" }).catch(() => undefined);
+    await trackGiphyAction("https://giphy-analytics.giphy.com/ping?event=seen");
+
+    const sent = fetchMock.mock.calls.map(([target]) => new URL(target as URL).searchParams.get("customer_id"));
+    expect(sent).toHaveLength(3);
+    expect(new Set(sent).size).toBe(1);
+    expect(sent[0]).toMatch(/^[0-9a-f]{32}$/);
   });
 });
 
@@ -293,16 +325,21 @@ describe("recognising a GIF link", () => {
 });
 
 describe("reporting an action to GIPHY", () => {
-  it("sends the customer id and a timestamp to the analytics host", async () => {
+  it("sends the customer id and a timestamp to the analytics host, from no page and no origin", async () => {
     fetchMock.mockResolvedValue(respond({}));
 
-    await trackGiphyAction("https://giphy-analytics.giphy.com/ping?event=seen", "customer");
+    await trackGiphyAction("https://giphy-analytics.giphy.com/ping?event=seen");
 
     const { url, init } = lastRequest();
     expect(url.searchParams.get("event")).toBe("seen");
-    expect(url.searchParams.get("customer_id")).toBe("customer");
+    expect(url.searchParams.get("customer_id")).toBe(giphyCustomerId());
     expect(url.searchParams.get("ts")).toMatch(/^\d+$/);
-    expect(init).toMatchObject({ credentials: "omit", keepalive: true });
+    expect(init).toMatchObject({
+      mode: "no-cors",
+      credentials: "omit",
+      referrerPolicy: "no-referrer",
+      keepalive: true,
+    });
   });
 
   it.each([
@@ -311,7 +348,7 @@ describe("reporting an action to GIPHY", () => {
     "http://giphy-analytics.giphy.com/ping",
     "https://giphy-analytics.giphy.com.evil.example/ping",
   ])("does not call %s", async (actionUrl) => {
-    await trackGiphyAction(actionUrl, "customer");
+    await trackGiphyAction(actionUrl);
 
     expect(fetchMock).not.toHaveBeenCalled();
   });
@@ -320,7 +357,7 @@ describe("reporting an action to GIPHY", () => {
     fetchMock.mockRejectedValue(new TypeError("offline"));
 
     await expect(
-      trackGiphyAction("https://giphy-analytics.giphy.com/ping", "customer"),
+      trackGiphyAction("https://giphy-analytics.giphy.com/ping"),
     ).resolves.toBeUndefined();
   });
 });
