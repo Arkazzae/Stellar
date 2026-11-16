@@ -10,6 +10,7 @@ import { needsRecapture, type VoiceSettings } from "@/lib/voice/settings";
 import { SpeechDetector } from "@/lib/voice/capture/vad";
 import type {
   ActiveAutoGain,
+  ActiveEchoCancellation,
   ActiveNoiseSuppression,
   MicTest,
 } from "@/ports";
@@ -39,6 +40,7 @@ interface Readout {
   noiseSuppression: ActiveNoiseSuppression | null;
   gateActive: boolean | null;
   autoGain: ActiveAutoGain | null;
+  echoCancellation: ActiveEchoCancellation | null;
   deviceId: string | null;
 }
 
@@ -49,6 +51,7 @@ const SILENT: Readout = {
   noiseSuppression: null,
   gateActive: null,
   autoGain: null,
+  echoCancellation: null,
   deviceId: null,
 };
 
@@ -157,6 +160,7 @@ export function useMicTest(settings: VoiceSettings): MicTest {
           noiseSuppression: opened.noiseSuppression,
           gateActive: opened.gateActive,
           autoGain: opened.autoGain,
+          echoCancellation: opened.echoCancellation,
           deviceId: deviceIdOf(opened.rawTrack),
         }));
         // Labels exist now that permission has been granted.
@@ -233,6 +237,7 @@ export function useMicTest(settings: VoiceSettings): MicTest {
     activeNoiseSuppression: readout.noiseSuppression,
     gateActive: readout.gateActive,
     autoGain: readout.autoGain,
+    echoCancellation: readout.echoCancellation,
     activeDeviceLabel:
       devices.find((device) => device.deviceId === readout.deviceId)?.label ?? null,
     start,

@@ -121,6 +121,15 @@ export function VoiceProcessingSection({
         checked={settings.echoCancellation}
         onChange={(echoCancellation) => onChange({ echoCancellation })}
       />
+      {/* The switch asks; the device answers. A browser that cannot cancel
+          echo on this microphone reports it off, and the switch must not
+          stand there as if it were working. Not an error: the microphone
+          works, and headphones do the job. */}
+      {settings.echoCancellation && mic.echoCancellation === "none" ? (
+        <p className="acc-answer mic-truth" role="status">
+          {t("voice.echoCancellationUnavailable")}
+        </p>
+      ) : null}
       <SwitchRow
         label={t("voice.autoGain")}
         detail={t("voice.autoGainDetail")}
