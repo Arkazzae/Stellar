@@ -42,8 +42,8 @@ interface Contract {
 
 /** The corpus lives at the repository root, beside the web and server trees. */
 const CONTRACT_PATH = [
-  join(process.cwd(), "../tests/contracts/message-syntax.json"),
-  join(process.cwd(), "tests/contracts/message-syntax.json"),
+  join(process.cwd(), "../contracts/message-syntax.json"),
+  join(process.cwd(), "contracts/message-syntax.json"),
 ].find(existsSync);
 
 function fail(message: string): never {
@@ -175,7 +175,7 @@ function validate(value: unknown): Contract {
 }
 
 function loadContract(): Contract {
-  if (CONTRACT_PATH === undefined) fail("cannot find tests/contracts/message-syntax.json");
+  if (CONTRACT_PATH === undefined) fail("cannot find contracts/message-syntax.json");
   let raw: string;
   try {
     raw = readFileSync(CONTRACT_PATH, "utf8");
