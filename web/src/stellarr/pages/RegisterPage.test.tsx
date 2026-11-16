@@ -1,6 +1,6 @@
 import { Router } from "@stellarr/router";
 import { createMemoryHistory, type MemoryHistory } from "@stellarr/router/testing";
-import { render, screen } from "@testing-library/react";
+import { act, render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -122,6 +122,31 @@ describe("RegistrationPage", () => {
 
     expect(await screen.findByRole("alert")).toHaveTextContent("Nie udało się założyć konta.");
     expect(mocks.session.reload).not.toHaveBeenCalled();
+  });
+
+  it("keeps the focus on the heading when the form replaces the frame that waited for the server", async () => {
+    let answer: (needed: boolean) => void = () => undefined;
+    mocks.ports.session.needsServerSetup.mockReturnValue(new Promise<boolean>((resolve) => (answer = resolve)));
+    renderRegistration();
+    // Where the router puts the focus after a link led here.
+    screen.getByRole("heading", { name: "Załóż konto" }).focus();
+
+    await act(async () => answer(false));
+
+    const heading = screen.getByRole("heading", { name: "Załóż konto" });
+    expect(await screen.findByRole("textbox", { name: "Login" })).toBeInTheDocument();
+    expect(heading).toHaveFocus();
+  });
+
+  it("gives the account step's heading the focus that the button of the server step had", async () => {
+    mocks.ports.session.needsServerSetup.mockResolvedValue(true);
+    const user = userEvent.setup();
+    renderRegistration();
+    await user.type(await screen.findByRole("textbox", { name: "Nazwa serwera" }), "Ekipa");
+
+    await user.click(screen.getByRole("button", { name: "Dalej: konto właściciela" }));
+
+    expect(screen.getByRole("heading", { name: "Załóż konto" })).toHaveFocus();
   });
 
   it("moves on to the invite once the new session is ready", () => {
