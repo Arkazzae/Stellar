@@ -2,7 +2,7 @@ import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-import type { GiphyGif, GiphyPage } from "@/lib/giphy";
+import type { GiphyGif, GiphyPage } from "@/lib/giphy/giphy";
 
 import { GifBrowser } from "./GifBrowser";
 
@@ -12,7 +12,7 @@ const giphy = vi.hoisted(() => ({
   trackAction: vi.fn(),
 }));
 
-vi.mock("@/lib/giphy", () => ({
+vi.mock("@/lib/giphy/giphy", () => ({
   fetchGiphyPage: giphy.fetchPage,
   resolveGiphyApiKey: giphy.resolveApiKey,
   trackGiphyAction: giphy.trackAction,

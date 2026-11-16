@@ -3,8 +3,8 @@
 import { useRouter } from "next/navigation";
 import { useEffect } from "react";
 
-import { takePendingInvite } from "@/lib/invites";
-import { leaveFor } from "@/lib/leaveFor";
+import { takePendingInvite } from "@/lib/auth/invites";
+import { leaveFor } from "@/lib/auth/leaveFor";
 import type { SessionPhase } from "@/state/hooks";
 
 /**

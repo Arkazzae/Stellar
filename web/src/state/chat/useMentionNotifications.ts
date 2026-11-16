@@ -4,7 +4,7 @@ import type { Translator } from "@/i18n";
 import {
   notificationPreview,
   shouldShowMentionNotification,
-} from "@/lib/notifications";
+} from "@/lib/notifications/notifications";
 import { showMessageNotification } from "@/lib/notifications/browser";
 import type { ChatPort, UserPreferences } from "@/ports";
 

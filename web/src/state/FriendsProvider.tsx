@@ -15,7 +15,7 @@ import {
 import type { ComposerChip } from "@/components/room/composer/ComposerChips";
 import type { TranscriptSectionVM } from "@/components/room/transcript/Transcript";
 import { translateMessage } from "@/i18n";
-import { buildTranscript, initials } from "@/lib/format";
+import { buildTranscript, initials } from "@/lib/format/format";
 import type {
   AddFriendResult,
   Attachment,

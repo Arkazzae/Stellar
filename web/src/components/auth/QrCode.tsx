@@ -2,7 +2,7 @@
 
 import { useMemo } from "react";
 
-import { encodeQr } from "@/lib/qr";
+import { encodeQr } from "@/lib/auth/qr";
 
 import steps from "./SignInSteps.module.css";
 

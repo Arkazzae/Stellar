@@ -6,7 +6,7 @@ import { Button } from "@stellarr/ui";
 import { Icon } from "@stellarr/icons";
 import { Modal } from "@/components/primitives/Modal";
 import { DialogHeader } from "@/components/settings/DialogHeader";
-import { initials } from "@/lib/format";
+import { initials } from "@/lib/format/format";
 import type { Server } from "@/ports";
 import { useLanguage } from "@/state/hooks";
 

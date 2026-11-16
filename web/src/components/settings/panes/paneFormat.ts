@@ -1,5 +1,5 @@
 import type { InterfaceLocale, MessageKey, Translator } from "@/i18n";
-import { pluralForm } from "@/lib/format";
+import { pluralForm } from "@/lib/format/format";
 
 const SHORT_DATE: Record<InterfaceLocale, Intl.DateTimeFormat> = {
   pl: shortDateFormat("pl-PL"),

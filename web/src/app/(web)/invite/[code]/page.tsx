@@ -4,7 +4,7 @@ import { useRouter } from "next/navigation";
 import { use, useEffect, useState } from "react";
 
 import { ErrorNotice } from "@/components/primitives/ErrorNotice";
-import { rememberPendingInvite } from "@/lib/invites";
+import { rememberPendingInvite } from "@/lib/auth/invites";
 import { useLanguage, usePorts, useSession } from "@/state/hooks";
 
 import { AppSkeleton } from "../../AppSkeleton";

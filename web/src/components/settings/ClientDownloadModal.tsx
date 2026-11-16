@@ -6,8 +6,8 @@ import { Button } from "@stellarr/ui";
 import { Icon, type IconName } from "@stellarr/icons";
 import { Modal } from "@/components/primitives/Modal";
 import { DialogHeader } from "@/components/settings/DialogHeader";
-import type { ClientRelease } from "@/lib/desktopRelease";
-import { formatBytes } from "@/lib/format";
+import type { ClientRelease } from "@/lib/platform/desktopRelease";
+import { formatBytes } from "@/lib/format/format";
 import { useLanguage } from "@/state/hooks";
 
 export interface ClientDownloadModalProps {

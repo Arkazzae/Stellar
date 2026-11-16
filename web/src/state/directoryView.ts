@@ -4,7 +4,7 @@ import type {
   TextChannelVM,
   VoiceChannelVM,
 } from "@/components/view-models";
-import { initials } from "@/lib/format";
+import { initials } from "@/lib/format/format";
 import type {
   Channel,
   Section,

@@ -16,7 +16,7 @@ const harness = vi.hoisted(() => ({
 }));
 
 vi.mock("@/lib/audio/systemFx", () => ({ playSystemFx: vi.fn() }));
-vi.mock("@/lib/haptics", () => ({ triggerHaptic: vi.fn() }));
+vi.mock("@/lib/platform/haptics", () => ({ triggerHaptic: vi.fn() }));
 
 vi.mock("./AccountProvider", () => ({
   useAccountContext: () => ({ preferences: harness.preferences }),

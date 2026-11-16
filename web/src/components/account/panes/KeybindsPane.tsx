@@ -9,7 +9,7 @@ import {
   type KeybindAction,
   type KeybindRecordingError,
   type Keybindings,
-} from "@/lib/keybinds";
+} from "@/lib/keybinds/keybinds";
 import { useLanguage } from "@/state/hooks";
 import type { Translator } from "@/i18n";
 

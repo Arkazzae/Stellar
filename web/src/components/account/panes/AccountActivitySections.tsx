@@ -4,7 +4,7 @@ import { Button } from "@stellarr/ui";
 import { useConfirm } from "@/components/primitives/ConfirmDialog";
 import { formatShortDate } from "@/components/settings/panes/paneFormat";
 import type { MessageKey } from "@/i18n";
-import { describeUserAgent } from "@/lib/userAgent";
+import { describeUserAgent } from "@/lib/platform/userAgent";
 import type { SecurityEvent } from "@/ports";
 import { useLanguage } from "@/state/hooks";
 

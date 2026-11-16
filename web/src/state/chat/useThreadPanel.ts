@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useReducer, useState } from "react";
 
 import type { InterfaceLocale } from "@/i18n";
-import { messageReference } from "@/lib/format";
+import { messageReference } from "@/lib/format/format";
 import type {
   ChatPort,
   Message,

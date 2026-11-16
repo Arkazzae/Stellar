@@ -15,7 +15,7 @@ import {
 import type { CallVM, PersonVM, ScreenShareVM } from "@/components/view-models";
 import type { Translator } from "@/i18n";
 import { playSystemFx } from "@/lib/audio/systemFx";
-import { triggerHaptic } from "@/lib/haptics";
+import { triggerHaptic } from "@/lib/platform/haptics";
 import { setAndroidCallActive } from "@/lib/voice/androidCallService";
 // `@/ports` re-exports types only, and the idle state is a value that
 // `useSyncExternalStore` needs before any client exists.

@@ -5,7 +5,7 @@ import { Fragment, useEffect, useId, useRef, useState } from "react";
 import { Icon } from "@stellarr/icons";
 import { channelLabel } from "@/components/settings/channelSettingsModel";
 import { CreateDialog } from "@/components/settings/CreateDialog";
-import { toChannelSlug } from "@/lib/format";
+import { toChannelSlug } from "@/lib/format/format";
 import type { ChannelKind, NewChannel } from "@/ports";
 import { useLanguage } from "@/state/hooks";
 

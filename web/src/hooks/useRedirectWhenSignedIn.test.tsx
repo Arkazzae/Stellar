@@ -1,7 +1,7 @@
 import { renderHook } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-import { PENDING_INVITE_STORAGE_KEY, rememberPendingInvite } from "@/lib/invites";
+import { PENDING_INVITE_STORAGE_KEY, rememberPendingInvite } from "@/lib/auth/invites";
 import type { SessionPhase } from "@/state/hooks";
 
 import { useRedirectWhenSignedIn } from "./useRedirectWhenSignedIn";

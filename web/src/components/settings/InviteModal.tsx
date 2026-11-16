@@ -8,7 +8,7 @@ import { Avatar } from "@/components/primitives/Avatar";
 import { Modal } from "@/components/primitives/Modal";
 import { DialogHeader } from "@/components/settings/DialogHeader";
 import type { PersonVM } from "@/components/view-models";
-import { inviteExpiry } from "@/lib/invites";
+import { inviteExpiry } from "@/lib/auth/invites";
 import { useLanguage } from "@/state/hooks";
 
 export interface InvitePersonVM extends PersonVM {

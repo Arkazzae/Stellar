@@ -3,7 +3,7 @@ import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import { DEFAULT_THEME } from "@/design/themes";
-import { DEFAULT_KEYBINDINGS, KEYBIND_STORAGE_VERSION, readStoredKeybindings } from "@/lib/keybinds";
+import { DEFAULT_KEYBINDINGS, KEYBIND_STORAGE_VERSION, readStoredKeybindings } from "@/lib/keybinds/keybinds";
 import { DEFAULT_SETTINGS, VoiceSettingsStore } from "@/lib/voice/settings";
 import type { ClientSettingsSnapshot } from "@/ports";
 import { KeybindProvider } from "@/state/KeybindProvider";

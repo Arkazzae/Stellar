@@ -3,8 +3,8 @@
 import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from "react";
 
 import { ApiError } from "@/lib/api/errors";
-import { leaveFor } from "@/lib/leaveFor";
-import { PasskeyCancelledError } from "@/lib/webauthn";
+import { leaveFor } from "@/lib/auth/leaveFor";
+import { PasskeyCancelledError } from "@/lib/auth/webauthn";
 import type { MessageKey } from "@/i18n";
 import type { AuthResult, MfaChallenge, MfaCompletion, MfaEnrollment } from "@/ports";
 import { useLanguage, usePorts, useSession } from "@/state/hooks";

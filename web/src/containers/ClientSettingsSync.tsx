@@ -13,7 +13,7 @@ import {
   stableJson,
   voiceFromWire,
   voiceToWire,
-} from "@/lib/clientSettings";
+} from "@/lib/platform/clientSettings";
 import {
   CLIENT_SETTINGS_SECTIONS,
   type AccountPort,

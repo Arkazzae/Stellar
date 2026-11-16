@@ -2,7 +2,7 @@
 
 import { ServerRail } from "@/components/shell/ServerRail";
 import { useMediaQuery } from "@/hooks/useMediaQuery";
-import { initials } from "@/lib/format";
+import { initials } from "@/lib/format/format";
 import {
   useDirectory,
   useFriends,

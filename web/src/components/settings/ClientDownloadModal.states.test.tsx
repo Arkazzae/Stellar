@@ -1,7 +1,7 @@
 import { act, render, screen } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 
-import type { ClientRelease } from "@/lib/desktopRelease";
+import type { ClientRelease } from "@/lib/platform/desktopRelease";
 
 import { ClientDownloadModal } from "./ClientDownloadModal";
 

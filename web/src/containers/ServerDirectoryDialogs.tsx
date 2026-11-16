@@ -8,7 +8,7 @@ import {
   ServerDiscoverModal,
   type ServerCreateInput,
 } from "@/components/settings/ServerDirectoryModals";
-import { getClientReleases } from "@/lib/desktopRelease";
+import { getClientReleases } from "@/lib/platform/desktopRelease";
 import { ApiError, describeError } from "@/lib/api/errors";
 import { useDirectory, useLanguage, useSession, useUi } from "@/state/hooks";
 

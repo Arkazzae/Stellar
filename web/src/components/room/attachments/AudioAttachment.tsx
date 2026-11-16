@@ -9,7 +9,7 @@ import {
 } from "react";
 
 import { Icon } from "@stellarr/icons";
-import { formatBytes } from "@/lib/format";
+import { formatBytes } from "@/lib/format/format";
 import { useLanguage } from "@/state/hooks";
 
 import type { AudioPart } from "@/lib/messages/parts";

@@ -62,7 +62,7 @@ Setting `STELLARR_LANGUAGE=pl` (or `en`) configures the instance default:
 1. **Web client**:
    - Add the locale code to `SUPPORTED_LOCALES` in `web/src/i18n/index.ts`, create `web/src/i18n/messages/<code>.ts`, register it in `catalogs`, and add `language.name.<code>` to all catalogs.
    - Add the native language label to `NATIVE_NAMES` in `web/src/components/account/panes/LanguagePane.tsx`.
-   - Add the `Intl` BCP 47 tag to `LOCALE_TAG` in `web/src/lib/format.ts` and verify plural rules (`pluralForm`).
+   - Add the `Intl` BCP 47 tag to `LOCALE_TAG` in `web/src/lib/format/format.ts` and verify plural rules (`pluralForm`).
    - If supporting local chat translation for the new language, update `TranslationTargetLanguage` in `web/src/i18n/index.ts`, `primaryPair` in `web/src/lib/chatTranslation/modelStatus.ts`, `artifacts/manifest.json`, `artifacts/NOTICES` and `web/public/bergamot-models/registry.json`. Put the model files under `artifacts/files/bergamot-models/<pair>/` (or add a recipe) and record their sizes and SHA-256 in both JSON files. `artifacts/assemble.mjs` then makes the served copies.
 2. **Cockpit**:
    - Add `web/src/cockpit/i18n/<code>.ts` and register the locale in `web/src/cockpit/i18n/index.ts`.

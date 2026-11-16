@@ -1,4 +1,4 @@
-import { countUnread } from "@/lib/unread";
+import { countUnread } from "@/lib/messages/unread";
 import type { Message } from "@/ports";
 
 /**

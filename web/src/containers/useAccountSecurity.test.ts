@@ -3,7 +3,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import { translateMessage, type MessageKey, type MessageValues } from "@/i18n";
 import { ApiError } from "@/lib/api/errors";
-import { PasskeyCancelledError } from "@/lib/webauthn";
+import { PasskeyCancelledError } from "@/lib/auth/webauthn";
 import type { AccountSecurity, AccountSecurityPort, MfaChallenge, SignInChallengePort } from "@/ports";
 
 import { useAccountSecurity } from "./useAccountSecurity";
@@ -14,7 +14,7 @@ const mocks = vi.hoisted(() => ({
   leaveFor: vi.fn(),
 }));
 
-vi.mock("@/lib/leaveFor", () => ({ leaveFor: mocks.leaveFor }));
+vi.mock("@/lib/auth/leaveFor", () => ({ leaveFor: mocks.leaveFor }));
 
 vi.mock("@/state/hooks", () => ({
   usePorts: () => ({

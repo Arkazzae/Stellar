@@ -1,6 +1,6 @@
 import type { Translator } from "@/i18n";
 import { ApiError } from "@/lib/api/errors";
-import { leaveFor } from "@/lib/leaveFor";
+import { leaveFor } from "@/lib/auth/leaveFor";
 
 /** The problem code of a change refused for want of a second step from the last few minutes. */
 export const FRESH_SECOND_STEP_REQUIRED = "fresh-mfa-required";

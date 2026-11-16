@@ -3,7 +3,7 @@ import type { ReactNode } from "react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import { playSystemFx } from "@/lib/audio/systemFx";
-import { triggerHaptic } from "@/lib/haptics";
+import { triggerHaptic } from "@/lib/platform/haptics";
 import { DEFAULT_SETTINGS } from "@/lib/voice/settings";
 import type { VoiceClient } from "@/lib/voice/types";
 import type { Ports, SoundboardState } from "@/ports";
@@ -19,7 +19,7 @@ const harness = vi.hoisted(() => ({
 }));
 
 vi.mock("@/lib/audio/systemFx", () => ({ playSystemFx: vi.fn() }));
-vi.mock("@/lib/haptics", () => ({ triggerHaptic: vi.fn() }));
+vi.mock("@/lib/platform/haptics", () => ({ triggerHaptic: vi.fn() }));
 vi.mock("./AccountProvider", () => ({
   useAccountContext: () => ({ preferences: { joinLeaveSound: true } }),
 }));

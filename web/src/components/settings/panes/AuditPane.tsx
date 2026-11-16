@@ -4,7 +4,7 @@ import { useState } from "react";
 
 import { formatShortDate } from "@/components/settings/panes/paneFormat";
 import type { InterfaceLocale, Translator } from "@/i18n";
-import { formatTime, isSameDay } from "@/lib/format";
+import { formatTime, isSameDay } from "@/lib/format/format";
 import type { AuditEntry } from "@/ports";
 import { useLanguage } from "@/state/hooks";
 
