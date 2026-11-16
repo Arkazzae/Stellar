@@ -423,10 +423,14 @@ impl Pid1 {
             }
             thread::sleep(ms(5));
         }
-        // Ready for requests once it listens, unless it gave up before.
+        // Ready for requests once it listens, unless it gave up before. The
+        // socket file appears when it is bound, a moment before it listens,
+        // and a connection in between is refused; so wait for a connection.
+        // A manager that is already listening, as in another_manager, takes
+        // this one and closes it.
         while Instant::now() < deadline
             && pid1.pid.is_some()
-            && !pid1.socket.exists()
+            && UnixStream::connect(&pid1.socket).is_err()
             && pid1.process.try_wait().unwrap().is_none()
         {
             thread::sleep(ms(5));
