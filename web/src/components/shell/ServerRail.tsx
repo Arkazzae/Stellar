@@ -1,6 +1,6 @@
 "use client";
 
-import { Icon } from "@stellarr/ui/icons";
+import { Icon } from "@stellarr/icons";
 import { RailLauncher, type RailLauncherItem } from "@/components/shell/RailLauncher";
 import { useLanguage } from "@/state/hooks";
 

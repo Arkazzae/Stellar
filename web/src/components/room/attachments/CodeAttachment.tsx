@@ -3,7 +3,7 @@
 import { useEffect, useId, useMemo, useState } from "react";
 
 import { Button } from "@stellarr/ui";
-import { Icon } from "@stellarr/ui/icons";
+import { Icon } from "@stellarr/icons";
 import { useLanguage } from "@/state/hooks";
 
 import {

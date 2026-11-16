@@ -4,7 +4,7 @@ import type { ReactNode } from "react";
 import { useState } from "react";
 
 import { Button } from "@stellarr/ui";
-import { Icon, type IconName } from "@stellarr/ui/icons";
+import { Icon, type IconName } from "@stellarr/icons";
 import { Avatar } from "@/components/primitives/Avatar";
 import type { MessageKey } from "@/i18n";
 import type { UserPreferences } from "@/ports";

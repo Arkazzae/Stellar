@@ -3,7 +3,7 @@
 import { useId, useRef, type KeyboardEvent } from "react";
 
 import { useLayer } from "@stellarr/ui/behavior";
-import { Icon, type IconName } from "@stellarr/ui/icons";
+import { Icon, type IconName } from "@stellarr/icons";
 import { IconButton } from "@/components/primitives/IconButton";
 import type { MessageKey } from "@/i18n";
 import type { Message } from "@/ports";

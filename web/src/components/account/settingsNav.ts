@@ -1,4 +1,4 @@
-import type { IconName } from "@stellarr/ui/icons";
+import type { IconName } from "@stellarr/icons";
 import type { MessageKey } from "@/i18n";
 
 /**

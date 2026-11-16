@@ -3,7 +3,7 @@
 import { useId } from "react";
 
 import { Button } from "@stellarr/ui";
-import { Icon } from "@stellarr/ui/icons";
+import { Icon } from "@stellarr/icons";
 import { ErrorNotice } from "@/components/primitives/ErrorNotice";
 import type { Translator } from "@/i18n";
 import type { JoinSoundPicker } from "@/ports";

@@ -70,7 +70,7 @@ const config = [
     // Cockpit, the operator panel, is an app of its own inside this workspace.
     // It reaches its own modules by relative path and none of the web
     // client's. Its UI parts come from @stellarr/ui, its icons from
-    // src/cockpit/components/icons, which draws the package's set, and its
+    // src/cockpit/components/icons, which draws @stellarr/icons, and its
     // routing from Next.js. These libraries were Cockpit's own copy of them;
     // a new import would bring that back.
     files: ["src/cockpit/**/*.{ts,tsx}"],

@@ -3,7 +3,7 @@
 import { useEffect, useId, useState } from "react";
 
 import { Button } from "@stellarr/ui";
-import { Icon } from "@stellarr/ui/icons";
+import { Icon } from "@stellarr/icons";
 import { Modal } from "@/components/primitives/Modal";
 import { DialogHeader } from "@/components/settings/DialogHeader";
 import { initials } from "@/lib/format";

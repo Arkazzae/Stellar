@@ -2,7 +2,7 @@
 
 import { useState, type DragEvent } from "react";
 
-import { Icon } from "@stellarr/ui/icons";
+import { Icon } from "@stellarr/icons";
 import { useLanguage } from "@/state/hooks";
 
 import { fileExt } from "./parts";

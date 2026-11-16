@@ -2,7 +2,7 @@
 
 import { useId, useState } from "react";
 
-import type { IconName } from "@stellarr/ui/icons";
+import type { IconName } from "@stellarr/icons";
 import { Modal } from "@/components/primitives/Modal";
 import { SettingsShell } from "@/components/settings/SettingsShell";
 import { SettingsGuardProvider, useSettingsGuardHost } from "@/components/settings/settingsGuard";

@@ -2,7 +2,7 @@
 
 import { Fragment, useEffect, useId, useRef, useState } from "react";
 
-import { Icon } from "@stellarr/ui/icons";
+import { Icon } from "@stellarr/icons";
 import { channelLabel } from "@/components/settings/channelSettingsModel";
 import { CreateDialog } from "@/components/settings/CreateDialog";
 import { toChannelSlug } from "@/lib/format";

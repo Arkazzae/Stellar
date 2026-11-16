@@ -11,9 +11,10 @@ import {
 } from "react";
 import { createPortal } from "react-dom";
 
+import { Icon, type IconName } from "@stellarr/icons";
+
 import { allowScroll, useLayer } from "../behavior/layers";
 import { cx } from "../cx";
-import { Icon, type IconName } from "../icons/Icon";
 
 /** Between the field and the list. */
 const GAP = 6;

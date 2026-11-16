@@ -3,7 +3,7 @@
 import { type CSSProperties, useState } from "react";
 
 import { Button } from "@stellarr/ui";
-import { Icon } from "@stellarr/ui/icons";
+import { Icon } from "@stellarr/icons";
 import { Segmented } from "@/components/primitives/Segmented";
 import type { MessageKey } from "@/i18n";
 import { SERVER_PERMISSION_VALUES } from "@/ports";

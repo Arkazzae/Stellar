@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 
-import { Icon } from "@stellarr/ui/icons";
+import { Icon } from "@stellarr/icons";
 import { AnchoredCard } from "@/components/primitives/AnchoredCard";
 import { formatAgo, formatFull } from "@/lib/format";
 import type { InboxNotification, ServerInviteNotificationTarget } from "@/ports";

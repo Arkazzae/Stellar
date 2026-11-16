@@ -1,6 +1,6 @@
 "use client";
 
-import { Icon } from "@stellarr/ui/icons";
+import { Icon } from "@stellarr/icons";
 
 export interface DialogCloseProps {
   /** The button's accessible name, such as "Close" or "Close settings". */

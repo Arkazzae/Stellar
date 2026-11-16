@@ -4,7 +4,7 @@ import { useEffect, useId, useRef, type RefObject } from "react";
 import { createPortal } from "react-dom";
 
 import { useLayer } from "@stellarr/ui/behavior";
-import { Icon, type IconName } from "@stellarr/ui/icons";
+import { Icon, type IconName } from "@stellarr/icons";
 import { focusWithin, trapTab } from "@/components/primitives/focus";
 
 export interface SheetItem {

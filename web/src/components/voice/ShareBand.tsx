@@ -2,7 +2,7 @@
 
 import { useEffect, useId, useRef } from "react";
 
-import { Icon } from "@stellarr/ui/icons";
+import { Icon } from "@stellarr/icons";
 import type { ScreenShareVM } from "@/components/view-models";
 import { useLanguage } from "@/state/LanguageProvider";
 

@@ -3,7 +3,7 @@
 import { useRef, useState } from "react";
 
 import { useLayer } from "@stellarr/ui/behavior";
-import { Icon } from "@stellarr/ui/icons";
+import { Icon } from "@stellarr/icons";
 import type { OpenVoiceMessageCapture } from "@/ports";
 import { useLanguage } from "@/state/hooks";
 

@@ -3,7 +3,7 @@
 import { useEffect, useId, useRef, useState } from "react";
 
 import { Button } from "@stellarr/ui";
-import { Icon } from "@stellarr/ui/icons";
+import { Icon } from "@stellarr/icons";
 import { Switch } from "@/components/primitives/Switch";
 import { countedNoun, formatShortDate } from "@/components/settings/panes/paneFormat";
 import { SettingsSaveBar } from "@/components/settings/SettingsSaveBar";

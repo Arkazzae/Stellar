@@ -3,7 +3,7 @@
 import type { CSSProperties } from "react";
 
 import { Button } from "@stellarr/ui";
-import { Icon, type IconName } from "@stellarr/ui/icons";
+import { Icon, type IconName } from "@stellarr/icons";
 import { Avatar } from "@/components/primitives/Avatar";
 import { Segmented, type SegmentedOption } from "@/components/primitives/Segmented";
 import { Switch } from "@/components/primitives/Switch";

@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 
-import { Icon } from "@stellarr/ui/icons";
+import { Icon } from "@stellarr/icons";
 import { useLanguage } from "@/state/hooks";
 
 /** Files past this many in one drop are left behind. */

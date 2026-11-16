@@ -3,7 +3,7 @@
 import { translateForDocument } from "@/i18n/defaultLocale";
 import { memo, useCallback, useLayoutEffect, useMemo, useRef, type ReactNode } from "react";
 
-import { Icon } from "@stellarr/ui/icons";
+import { Icon } from "@stellarr/icons";
 import type { OpenProfile } from "@/components/view-models";
 import type { CustomEmoji } from "@/ports";
 

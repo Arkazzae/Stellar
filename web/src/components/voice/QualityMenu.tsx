@@ -2,7 +2,7 @@
 
 import { useId, type ReactNode } from "react";
 
-import { Icon, type IconName } from "@stellarr/ui/icons";
+import { Icon, type IconName } from "@stellarr/icons";
 import { Popover, type PopoverTriggerProps } from "@/components/primitives/Popover";
 
 /**

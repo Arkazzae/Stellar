@@ -1,4 +1,4 @@
-import { Icon as StellarrIcon, type IconName } from "@stellarr/ui/icons";
+import { Icon as StellarrIcon, type IconName } from "@stellarr/icons";
 
 export type { IconName };
 
@@ -10,7 +10,7 @@ interface IconProps {
 }
 
 /**
- * Stellarr's icon set from @stellarr/ui, the same glyphs as the web client.
+ * Stellarr's icon set from @stellarr/icons, the same glyphs as the web client.
  * Cockpit draws the box in rem so icons follow the panel's scale (index.css)
  * with the text around them. Icons are decorative: the control that holds one
  * carries the accessible name, so the glyph stays hidden from assistive tech.
