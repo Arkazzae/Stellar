@@ -24,7 +24,7 @@ On first start the container creates a self-signed certificate, so the browser s
   <WebUI>https://[IP]:[PORT:443]/</WebUI>
   <TemplateURL>https://raw.githubusercontent.com/Arkazzae/Stellarr/main/deploy/unraid/stellarr.xml</TemplateURL>
   <Icon>https://raw.githubusercontent.com/Arkazzae/Stellarr/main/branding/logo/tile.png</Icon>
-  <ExtraParams>--memory=4g --cpus=4 --pids-limit=512 --security-opt=no-new-privileges:true</ExtraParams>
+  <ExtraParams>--memory=4g --cpus=4 --pids-limit=512 --security-opt=no-new-privileges:true --stop-timeout=75</ExtraParams>
   <PostArgs/>
   <CPUset/>
   <DateInstalled/>
