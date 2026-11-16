@@ -1,0 +1,92 @@
+# Capture record of the fixture "keyboard". See web/bench/voice/README.md for the notation.
+# Typing at 4-8 keys a second, peaks near -10 dBFS, over a quiet room: the transient test (a sudden rise with a high crest factor) and the voicing test should both keep it out.
+# Rewritten only by npm run voice:record, in a commit that names the audible change it intends.
+
+fixture keyboard 2.56 s, 122880 samples at 48000 Hz
+digest e4b951df
+level active -28.4 dBFS, peak -10.9 dBFS
+
+run s0 meter
+  posts 101.3-0 312.0-3 432.0-2 530.7-3 632.0-2 730.7-1 832.0-3 930.7-1 1032.0-3 1141.3-2 1240.0-0 1341.3-2 1440.0-1 1541.3-3 1640.0-1 1741.3-3 1850.7-2 1952.0-1 2050.7-2 2152.0-1 2250.7-4 2352.0-1 2520.0-0
+  speech none
+  out none
+
+run s0 gate
+  posts none
+  speech none
+  gain -*8 x*248
+  peak none
+
+run s0 level
+  posts none
+  speech none
+  gain 0.0*256
+  peak -10.94 >0.95:0 >1:0
+
+run s0 gate+level
+  posts none
+  speech none
+  gain -*8 x*248
+  peak none
+
+run s60 meter
+  posts 101.3-0 312.0-3 432.0-2 530.7-3 632.0-2 730.7-1 832.0-3 930.7-1 1032.0-3 1141.3-2 1240.0-0 1341.3-2 1440.0-1 1541.3-3 1640.0-1 1741.3-3 1850.7-2 1952.0-1 2050.7-2 2152.0-1 2250.7-4 2352.0-1 2520.0-0
+  speech none
+  out none
+
+run s60 gate
+  posts none
+  speech none
+  gain -*8 x*248
+  peak none
+
+run s60 level
+  posts none
+  speech none
+  gain 0.0*256
+  peak -10.94 >0.95:0 >1:0
+
+run s60 gate+level
+  posts none
+  speech none
+  gain -*8 x*248
+  peak none
+
+run s100 meter
+  posts 101.3-0 312.0-3 432.0-2 530.7-3 632.0-2 730.7-1 832.0-3 930.7-1 1032.0-3 1141.3-2 1240.0-0 1341.3-2 1440.0-1 1541.3-3 1640.0-1 1741.3-3 1850.7-2 1952.0-1 2050.7-2 2152.0-1 2250.7-4 2352.0-1 2520.0-0
+  speech none
+  out none
+
+run s100 gate
+  posts none
+  speech none
+  gain -*8 x*248
+  peak none
+
+run s100 level
+  posts none
+  speech none
+  gain 0.0*130 0.1>2.2*36 2.2>2.5*5 2.5>3.3*13 3.3>6.6*55 6.6>7.6*17
+  peak -5.42 >0.95:0 >1:0
+
+run s100 gate+level
+  posts none
+  speech none
+  gain -*8 x*248
+  peak none
+
+run s85 meter
+  posts 101.3-0 312.0-3 432.0-2 530.7-3 632.0-2 730.7-1 832.0-3 930.7-1 1032.0-3 1141.3-2 1240.0-0 1341.3-2 1440.0-1 1541.3-3 1640.0-1 1741.3-3 1850.7-2 1952.0-1 2050.7-2 2152.0-1 2250.7-4 2352.0-1 2520.0-0
+  speech none
+  out none
+
+run remote meter
+  posts none
+  speech none
+  out none
+
+run remote gate s40
+  posts none
+  speech none
+  gain -*8 x*248
+  peak none

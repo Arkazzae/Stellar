@@ -1,0 +1,92 @@
+# Capture record of the fixture "buzz". See web/bench/voice/README.md for the notation.
+# A transformer buzz (100 Hz and harmonics, -36 dBFS) that starts after 800 ms of quiet: a steady sound with a pitch, so it opens the detector at any sensitivity, the unvoiced limit cannot close it, and only the stationary-noise rule (90 steady frames, then the floor learns fast) lets it go.
+# Rewritten only by npm run voice:record, in a commit that names the audible change it intends.
+
+fixture buzz 3.84 s, 184320 samples at 48000 Hz
+digest d39b0dc2
+level active -36.1 dBFS, peak -28.2 dBFS
+
+run s0 meter
+  posts 101.3-0 821.3-1 850.7+3 952.0+4 2661.3-4
+  speech 850.7-2661.3
+  out none
+
+run s0 gate
+  posts 850.7+3 952.0+4 2661.3-0
+  speech 850.7-2661.3
+  gain -*8 x*76 -22.1>-3.5*2 -0.6>-0.1*2 0.0*178 -0.7>-59.6*62 x*56
+  peak -28.19 >0.95:0 >1:0
+
+run s0 level
+  posts 850.7+3 952.0+4 2661.3-0
+  speech 850.7-2661.3
+  gain 0.0*92 0.1>16.0*267 16.0*25
+  peak -12.23 >0.95:0 >1:0
+
+run s0 gate+level
+  posts 850.7+3 952.0+4 2661.3-0
+  speech 850.7-2661.3
+  gain -*8 x*76 -22.1>-3.5*2 -0.6>-0.1*2 0.0*4 0.1>10.4*174 9.8>-59.9*78 x*40
+  peak -17.86 >0.95:0 >1:0
+
+run s60 meter
+  posts 101.3-0 821.3-1 840.0+3 941.3+4 2930.7-4
+  speech 840.0-2930.7
+  out none
+
+run s60 gate
+  posts 840.0+3 941.3+4 2930.7-0
+  speech 840.0-2930.7
+  gain -*8 x*75 -18.7>-3.2*2 -0.5>-0.1*2 0.0*206 -0.8>-59.7*62 x*29
+  peak -28.19 >0.95:0 >1:0
+
+run s60 level
+  posts 840.0+3 941.3+4 2930.7-0
+  speech 840.0-2930.7
+  gain 0.0*92 0.1>16.0*266 16.0*26
+  peak -12.23 >0.95:0 >1:0
+
+run s60 gate+level
+  posts 840.0+3 941.3+4 2930.7-0
+  speech 840.0-2930.7
+  gain -*8 x*75 -18.7>-3.2*2 -0.5>-0.1*2 0.0>0.1*6 0.2>12.1*200 11.4>-47.5*66 -48.5>-59.1*12 x*13
+  peak -16.19 >0.95:0 >1:0
+
+run s100 meter
+  posts 101.3-0 821.3-1 832.0+2 930.7+4 3112.0-4
+  speech 832.0-3112.0
+  out none
+
+run s100 gate
+  posts 832.0+2 930.7+4 3112.0-0
+  speech 832.0-3112.0
+  gain -*8 x*74 -37.6>-4.3*2 -0.8>-0.1*2 0.0*225 -0.7>-59.5*62 x*11
+  peak -28.19 >0.95:0 >1:0
+
+run s100 level
+  posts 832.0+2 930.7+4 3112.0-0
+  speech 832.0-3112.0
+  gain 0.0*91 0.1>16.0*266 16.0*27
+  peak -12.23 >0.95:0 >1:0
+
+run s100 gate+level
+  posts 832.0+2 930.7+4 3112.0-0
+  speech 832.0-3112.0
+  gain -*8 x*74 -37.6>-4.3*2 -0.8>-0.1*2 0.0*4 0.1>13.2*221 12.6>-28.1*46 -29.1>-54.1*27
+  peak -15.03 >0.95:0 >1:0
+
+run s85 meter
+  posts 101.3-0 821.3-1 832.0+2 930.7+4 3080.0-4
+  speech 832.0-3080.0
+  out none
+
+run remote meter
+  posts 832.0+2 930.7+4 3000.0-0
+  speech 832.0-3000.0
+  out none
+
+run remote gate s40
+  posts 840.0+3 941.3+4 2821.3-0
+  speech 840.0-2821.3
+  gain -*8 x*75 -18.7>-3.2*2 -0.5>-0.1*2 0.0*195 -0.7>-59.6*62 x*40
+  peak -28.19 >0.95:0 >1:0
