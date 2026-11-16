@@ -251,6 +251,32 @@ into the same folder. The system voices' licence does not allow their output
 to be redistributed: neither the files nor anything made from their samples
 may be committed.
 
+## A real call
+
+The records hold the processing; `call/` checks that a call carries it. Two
+Chromes join one voice channel of a running instance on default settings,
+each with a WAV file playing in a loop as its microphone, and each listens to
+what it decodes from the other. It passes when both receivers decode sound,
+and when at each receiver the other person's speaking ring is on for most of
+the time sound arrives, goes out in the pauses, comes on again for the next
+phrase, and is never on after a second of silence. Silence at a receiver is a
+failure whatever the cause. Without `--owner` and `--guest` the microphones
+play the `speech` and `speech-clicks` fixtures, each followed by two seconds of
+a quiet room.
+
+```sh
+npm run build:web
+web/bench/voice/call/start-container.sh <image> web/dist     # prints https://localhost:18743
+node web/bench/voice/call/call.mjs --origin https://localhost:18743 --out result.json
+docker rm -f stellarr-voice-call && docker volume rm stellarr-voice-call-data
+```
+
+`start-container.sh` builds nothing: it runs an existing image with the build
+mounted over the web client the image carries, published on loopback only,
+and the instance lets the first account register. `chrome.sh` adds the flags
+a call needs (a fake camera and microphone, the WAV, no permission prompts)
+to the Chrome `cdp.mjs` starts. A run takes about 40 s.
+
 ## Where the harness touches the implementation
 
 A rewrite changes these files of the harness, not the records:
