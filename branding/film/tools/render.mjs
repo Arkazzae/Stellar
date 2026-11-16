@@ -248,7 +248,16 @@ async function preparePage(c) {
   const cues = (await evaluate("window.__CUES ?? []")) ?? [];
   writeFileSync(join(outDir, "cues.json"), JSON.stringify({ duration, cues }, null, 1));
   const subframes = await evaluate("window.__SUB ?? null");
-  return { c, s, evaluate, duration, subframes };
+  // Calls fn in the page with args sent as values beside it, never pasted into its code. The page
+  // is not navigated again, so its global object is looked up once: one round trip per call.
+  const { result: { objectId } } = await s("Runtime.evaluate", { expression: "globalThis" });
+  const arg = (v) => (typeof v === "number" && !Number.isFinite(v) ? { unserializableValue: String(v) } : { value: v }); // JSON has no NaN or Infinity
+  const call = async (fn, ...args) => {
+    const r = await s("Runtime.callFunctionOn", { functionDeclaration: String(fn), objectId, arguments: args.map(arg), awaitPromise: true, returnByValue: true });
+    if (r.exceptionDetails) throw new Error(r.exceptionDetails.exception?.description ?? r.exceptionDetails.text);
+    return r.result.value;
+  };
+  return { c, s, evaluate, call, duration, subframes };
 }
 
 // With many browsers at once, a single one can get stuck at startup: a timeout and a retry.
@@ -268,7 +277,7 @@ async function openPage(tries = 3) {
 
 async function frame(ctx, t) {
   // After __render(t) we wait one animation frame, so that style and layout are computed.
-  await within(30000, ctx.evaluate(`new Promise((r) => { window.__render(${t}); requestAnimationFrame(() => r()); })`), `frame ${t.toFixed(3)} s`);
+  await within(30000, ctx.call((t) => new Promise((r) => { window.__render(t); requestAnimationFrame(() => r()); }), t), `frame ${t.toFixed(3)} s`);
   const { data } = await within(30000, ctx.s("Page.captureScreenshot", { format: "png", optimizeForSpeed: true }), `screenshot ${t.toFixed(3)} s`);
   return Buffer.from(data, "base64");
 }

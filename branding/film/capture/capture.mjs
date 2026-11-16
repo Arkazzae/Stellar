@@ -27,16 +27,16 @@ const open = async (u, { translation = false } = {}) => {
   pages[u] = p;
   return p;
 };
-const findAndClick = (p, text, scope = "body") => p.eval(`(() => {
-  const want = ${JSON.stringify(text)}, sc = ${JSON.stringify(scope)};
+const findAndClick = (p, text, scope = "body") => p.call((want, sc) => {
   const ctl = [...document.querySelectorAll(sc + ' button, ' + sc + ' a, ' + sc + ' [role=button], ' + sc + ' [role=tab], ' + sc + ' [role=radio], ' + sc + ' [role=option], ' + sc + ' label')]
     .find(e => e.textContent.trim() === want);
   if (ctl) { ctl.click(); return true; }
   const leaf = [...document.querySelectorAll(sc + ' *')].find(e => e.children.length === 0 && e.textContent.trim() === want);
   if (!leaf) return false;
   (leaf.closest('button,a,[role=button],[role=tab],[role=radio],[role=option],label') || leaf).click(); return true;
-})()`);
-const clickByLabel = (p, label) => p.eval(`(() => { const e = document.querySelector('[aria-label=' + JSON.stringify(${JSON.stringify(label)}) + ']'); if (!e) return false; e.click(); return true; })()`);
+}, text, scope);
+// the label is compared with the attribute, not quoted into a selector, so it needs no escaping
+const clickByLabel = (p, label) => p.call((label) => { const e = [...document.querySelectorAll("[aria-label]")].find((e) => e.getAttribute("aria-label") === label); if (!e) return false; e.click(); return true; }, label);
 // a click that finds nothing is reported, because the screen it leads to would come out wrong
 const clickText = async (p, text, scope) => { const ok = await findAndClick(p, text, scope); if (!ok) console.log(`click on "${text}" found nothing`); return ok; };
 const clickLabel = async (p, label) => { const ok = await clickByLabel(p, label); if (!ok) console.log(`click on [aria-label="${label}"] found nothing`); return ok; };
@@ -114,7 +114,7 @@ try {
     for (const n of [...names.slice(1), "Midnight"]) {
       const ok = await clickText(maya, n, "[role=dialog]");
       await sleep(700);
-      palettes[n] = await maya.eval(`({ ok: ${ok}, theme: document.documentElement.dataset.theme, style: document.documentElement.getAttribute("style") })`);
+      palettes[n] = await maya.call((ok) => ({ ok, theme: document.documentElement.dataset.theme, style: document.documentElement.getAttribute("style") }), ok);
       if (n === "Evergreen") await maya.shot(SHOTS + "appearance-evergreen.png");
     }
     const { writeFileSync } = await import("node:fs");

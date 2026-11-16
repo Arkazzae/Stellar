@@ -103,6 +103,20 @@ function makePage(send, listeners, sessionId, targetId) {
       if (r.exceptionDetails) throw new Error("eval: " + (r.exceptionDetails.exception?.description || r.exceptionDetails.text));
       return r.result.value;
     },
+    // Runs fn in the page with args sent beside it as JSON values, so a selector or a label is never
+    // pasted into code and no character in it can change what runs. Otherwise the same as eval: a
+    // returned promise is awaited, the result comes back by value, a page error throws.
+    async call(fn, ...args) {
+      // the page's global object, looked up every time because a navigation replaces it
+      const { result: { objectId } } = await page.cmd("Runtime.evaluate", { expression: "globalThis" });
+      try {
+        const r = await page.cmd("Runtime.callFunctionOn", { functionDeclaration: String(fn), objectId, arguments: args.map((value) => ({ value })), awaitPromise: true, returnByValue: true, userGesture: true });
+        if (r.exceptionDetails) throw new Error("eval: " + (r.exceptionDetails.exception?.description || r.exceptionDetails.text));
+        return r.result.value;
+      } finally {
+        page.cmd("Runtime.releaseObject", { objectId }).catch(() => {});
+      }
+    },
     async waitFor(expression, timeout = 30000) {
       const t0 = Date.now();
       while (Date.now() - t0 < timeout) {
@@ -116,11 +130,11 @@ function makePage(send, listeners, sessionId, targetId) {
       writeFileSync(path, Buffer.from(r.data, "base64"));
     },
     async click(selector) {
-      return page.eval(`(() => { const e = document.querySelector(${JSON.stringify(selector)}); if (!e) throw new Error('no ' + ${JSON.stringify(selector)}); e.click(); return true; })()`);
+      return page.call((sel) => { const e = document.querySelector(sel); if (!e) throw new Error("no " + sel); e.click(); return true; }, selector);
     },
     // a real mouse click at the centre of an element (for components that listen to pointer events)
     async mouse(selector) {
-      const box = await page.eval(`(() => { const e = document.querySelector(${JSON.stringify(selector)}); if (!e) return null; const r = e.getBoundingClientRect(); return { x: r.left + r.width / 2, y: r.top + r.height / 2 }; })()`);
+      const box = await page.call((sel) => { const e = document.querySelector(sel); if (!e) return null; const r = e.getBoundingClientRect(); return { x: r.left + r.width / 2, y: r.top + r.height / 2 }; }, selector);
       if (!box) throw new Error("no element " + selector);
       for (const type of ["mouseMoved", "mousePressed", "mouseReleased"])
         await page.cmd("Input.dispatchMouseEvent", { type, x: box.x, y: box.y, button: "left", clickCount: 1 });
