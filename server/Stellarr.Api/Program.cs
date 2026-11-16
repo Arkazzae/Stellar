@@ -57,6 +57,9 @@ builder.Services.AddSingleton<CockpitLogBuffer>();
 builder.Services.AddSingleton<RuntimeMetrics>();
 builder.Services.AddHostedService<RuntimeSampler>();
 builder.Services.AddSingleton<ILoggerProvider>(services => services.GetRequiredService<CockpitLogBuffer>());
+// The container's process manager asks /health/ready every ten seconds; those
+// requests log nothing below a warning, here or in the console.
+builder.Services.AddQuietHealthProbes();
 // The keys that protect the session cookie live on the data volume, so a
 // restart or a new container does not sign everybody out.
 builder.Services.AddDataProtection()
