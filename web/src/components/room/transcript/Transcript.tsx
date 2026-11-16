@@ -9,8 +9,8 @@ import type { CustomEmoji } from "@/ports";
 
 import { MessageGroup, type MessageGroupVM } from "./MessageGroup";
 import type { MessageAction } from "./MessageToolbar";
-import type { MessageTranslationOptions } from "./attachments/TranslatedTextAttachment";
-import type { AttachmentCallbacks } from "./parts";
+import type { MessageTranslationOptions } from "../attachments/TranslatedTextAttachment";
+import type { AttachmentCallbacks } from "@/lib/messages/parts";
 import {
   messageTail,
   oldestGroupId,

@@ -12,8 +12,8 @@ import {
   type ReactNode,
 } from "react";
 
-import type { ComposerChip } from "@/components/room/ComposerChips";
-import type { TranscriptSectionVM } from "@/components/room/Transcript";
+import type { ComposerChip } from "@/components/room/composer/ComposerChips";
+import type { TranscriptSectionVM } from "@/components/room/transcript/Transcript";
 import { translateMessage } from "@/i18n";
 import { buildTranscript, initials } from "@/lib/format";
 import type {

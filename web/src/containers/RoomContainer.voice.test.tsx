@@ -53,20 +53,20 @@ vi.mock("./callPopout", async (importOriginal) => ({
   useJoinFromPopoutLink: mocks.joinFromPopoutLink,
 }));
 vi.mock("./NotificationInboxContainer", () => ({ NotificationInboxButton: () => null }));
-vi.mock("@/components/room/Transcript", () => ({
+vi.mock("@/components/room/transcript/Transcript", () => ({
   Transcript: () => <div role="log" />,
 }));
-vi.mock("@/components/room/ThreadPanel", () => ({
+vi.mock("@/components/room/panels/ThreadPanel", () => ({
   ThreadPanel: (props: { composer?: ReactNode }) => (
     <aside aria-label="thread-stub">{props.composer}</aside>
   ),
 }));
-vi.mock("@/components/room/Composer", () => ({
+vi.mock("@/components/room/composer/Composer", () => ({
   Composer: (props: { placeholder?: string }) => (
     <form aria-label="composer-stub" data-placeholder={props.placeholder ?? ""} />
   ),
 }));
-vi.mock("@/components/room/ChannelPanel", () => ({
+vi.mock("@/components/room/panels/ChannelPanel", () => ({
   ChannelPanel: (props: { open: boolean }) => (
     <div data-testid="channel-panel" data-open={props.open} />
   ),

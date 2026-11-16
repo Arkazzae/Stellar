@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 
-import type { GalleryImage, GalleryPart, ImagePart } from "../parts";
+import type { GalleryImage, GalleryPart, ImagePart } from "@/lib/messages/parts";
 
 import { reservedImageStyle } from "./imageBox";
 

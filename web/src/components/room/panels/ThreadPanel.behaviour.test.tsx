@@ -6,7 +6,7 @@ import { ThreadPanel } from "./ThreadPanel";
 
 const transcript = vi.hoisted(() => ({ props: null as Record<string, unknown> | null }));
 
-vi.mock("./Transcript", () => ({
+vi.mock("../transcript/Transcript", () => ({
   Transcript: (props: Record<string, unknown>) => {
     transcript.props = props;
     return <div data-testid="transcript" />;

@@ -13,8 +13,8 @@ import {
   tokenizeCode,
   type CodeLanguageId,
   type CodeToken,
-} from "../codeLanguages";
-import type { CodePart } from "../parts";
+} from "@/lib/messages/codeLanguages";
+import type { CodePart } from "@/lib/messages/parts";
 
 export interface CodeAttachmentProps {
   part: CodePart;

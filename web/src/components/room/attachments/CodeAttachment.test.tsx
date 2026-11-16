@@ -2,8 +2,8 @@ import { render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { describe, expect, it, vi } from "vitest";
 
-import { tokenizeCode } from "../codeLanguages";
-import type { CodePart } from "../parts";
+import { tokenizeCode } from "@/lib/messages/codeLanguages";
+import type { CodePart } from "@/lib/messages/parts";
 
 import { CodeAttachment } from "./CodeAttachment";
 

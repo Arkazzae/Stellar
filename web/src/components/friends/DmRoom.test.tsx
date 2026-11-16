@@ -3,9 +3,9 @@ import userEvent from "@testing-library/user-event";
 import { describe, expect, it, vi } from "vitest";
 
 import { ConfirmProvider } from "@/components/primitives/ConfirmDialog";
-import type { MessageGroupVM } from "@/components/room/MessageGroup";
+import type { MessageGroupVM } from "@/components/room/transcript/MessageGroup";
 import type { MessageTranslationOptions } from "@/components/room/attachments/TranslatedTextAttachment";
-import type { TranscriptSectionVM } from "@/components/room/Transcript";
+import type { TranscriptSectionVM } from "@/components/room/transcript/Transcript";
 import type { PersonVM } from "@/components/view-models";
 import { translateMessage } from "@/i18n";
 import { fakeTranscriptLayout } from "@/test/transcriptLayout";

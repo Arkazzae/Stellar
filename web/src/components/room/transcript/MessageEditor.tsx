@@ -4,7 +4,7 @@ import { useEffect, useLayoutEffect, useRef, useState } from "react";
 
 import type { Translator } from "@/i18n";
 
-import { MESSAGE_MAX_LENGTH } from "./messageLimits";
+import { MESSAGE_MAX_LENGTH } from "@/lib/messages/messageLimits";
 
 /** How tall the field may grow before it scrolls: eight lines, like the composer. */
 const MAX_HEIGHT_PX = 8 * 24;

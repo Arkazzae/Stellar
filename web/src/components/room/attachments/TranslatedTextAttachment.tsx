@@ -7,13 +7,13 @@ import { type InterfaceLocale, type TranslationTargetLanguage, type Translator }
 import { documentLocale, translateForDocument } from "@/i18n/defaultLocale";
 import { useTranslatedContent } from "@/lib/chatTranslation/useTranslatedContent";
 
-import { inlineSource } from "../inline";
+import { inlineSource } from "@/lib/messages/inline";
 import {
   inlineDescendants,
   parseInline,
   type InlineNode,
   type MentionTarget,
-} from "../parts";
+} from "@/lib/messages/parts";
 
 import { TextAttachment } from "./TextAttachment";
 

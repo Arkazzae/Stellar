@@ -3,7 +3,7 @@
 import { Icon } from "@stellarr/icons";
 import type { Translator } from "@/i18n";
 
-import { CODE_LANGUAGES, type CodeLanguageId } from "./codeLanguages";
+import { CODE_LANGUAGES, type CodeLanguageId } from "@/lib/messages/codeLanguages";
 
 export interface ComposerReplyBarProps {
   authorName: string;

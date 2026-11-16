@@ -1,7 +1,7 @@
 // The notification uses the transcript's own parse, so a name that is not
 // highlighted there never rings or pops up here: code, links and escaped
 // characters are the same in both.
-import { mentionsUsername } from "@/components/room/messageBody";
+import { mentionsUsername } from "@/lib/messages/messageBody";
 
 export interface MessageNotificationContext {
   authorId: string;

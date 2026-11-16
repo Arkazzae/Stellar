@@ -3,7 +3,7 @@ import { flushSync } from "react-dom";
 import { useLayoutEffect, useState } from "react";
 
 import { ConfirmProvider } from "@/components/primitives/ConfirmDialog";
-import { Transcript, type TranscriptSectionVM } from "@/components/room/Transcript";
+import { Transcript, type TranscriptSectionVM } from "@/components/room/transcript/Transcript";
 import type { Message } from "@/ports";
 
 import "./bench.css";
