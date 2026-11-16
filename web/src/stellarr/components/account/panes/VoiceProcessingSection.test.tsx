@@ -94,11 +94,50 @@ describe("VoiceProcessingSection echo and volume", () => {
     const user = userEvent.setup();
     const { onChange } = setup();
 
-    await user.click(screen.getByRole("switch", { name: "Izolacja głosu i echa" }));
+    await user.click(screen.getByRole("switch", { name: "Usuwanie echa" }));
     expect(onChange).toHaveBeenLastCalledWith({ echoCancellation: false });
 
     await user.click(screen.getByRole("switch", { name: "Automatyczna głośność" }));
     expect(onChange).toHaveBeenLastCalledWith({ autoGainControl: false });
+  });
+
+  it("says, without alarm, when the browser does not cancel echo on this microphone", () => {
+    setup({
+      settings: { echoCancellation: true },
+      mic: { running: true, echoCancellation: "none" },
+    });
+
+    const line = screen.getByText(
+      "Ta przeglądarka nie usuwa echa na tym mikrofonie. W słuchawkach głosy rozmówców do niego nie trafią.",
+    );
+    expect(line).toHaveAttribute("role", "status");
+    expect(line).not.toHaveClass("bad");
+  });
+
+  it.each(["browser", "all", "remote-only"] as const)(
+    "stays quiet about echo cancellation the device reports as %s",
+    (echoCancellation) => {
+      setup({ settings: { echoCancellation: true }, mic: { running: true, echoCancellation } });
+
+      expect(screen.queryByText(/nie usuwa echa/)).toBeNull();
+    },
+  );
+
+  it("stays quiet about echo cancellation when it is switched off or nothing is open", () => {
+    const { rerender } = setup({
+      settings: { echoCancellation: false },
+      mic: { running: true, echoCancellation: "none" },
+    });
+    expect(screen.queryByText(/nie usuwa echa/)).toBeNull();
+
+    rerender(
+      <VoiceProcessingSection
+        settings={{ ...voiceSettings, echoCancellation: true }}
+        onChange={vi.fn()}
+        mic={{ ...idleMic, echoCancellation: null }}
+      />,
+    );
+    expect(screen.queryByText(/nie usuwa echa/)).toBeNull();
   });
 
   it("says when the browser's automatic volume is the one running", () => {

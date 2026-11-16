@@ -1,4 +1,5 @@
 import type { WorkletSuppressor } from "../audioProfiles";
+import type { ActiveEchoCancellation } from "./micDevice";
 
 /** What is *actually* cleaning the microphone, not what was asked for. */
 export type ActiveNoiseSuppression = WorkletSuppressor | "browser" | "none";
@@ -75,6 +76,8 @@ export interface MicCapture {
   gateActive: boolean;
   /** Which automatic volume is running, reported with the same honesty. */
   autoGain: ActiveAutoGain;
+  /** The echo cancellation the device reports, which the person may have asked for in vain. */
+  echoCancellation: ActiveEchoCancellation;
   /** Retune the gate's detector without rebuilding the graph. */
   setSensitivity(sensitivity: number): void;
   /** Retune the fixed gain without rebuilding the graph. No-op without one. */
