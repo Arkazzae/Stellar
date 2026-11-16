@@ -13,6 +13,8 @@
     "test:watch": "vitest",
     "test:translation-runtime": "node scripts/verify-bergamot-runtime.mjs",
     "bench:transcript": "node scripts/benchmark-transcript.mjs",
+    "bench:voice-playback": "node scripts/benchmark-voice-playback.mjs",
+    "voice:record": "node bench/voice/record.mjs",
     "fonts:sync": "node scripts/sync-theme-fonts.mjs",
     "predev": "node ../artifacts/assemble.mjs",
     "prebuild": "node ../artifacts/assemble.mjs",
