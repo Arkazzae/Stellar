@@ -19,8 +19,9 @@
     <ProjectReference Include="../Stellarr.Cli/Stellarr.Cli.csproj" />
   </ItemGroup>
   <ItemGroup>
-    <!-- The same source the web parser reads, so one case checks both. -->
-    <Content Include="../../contracts/message-syntax.json"
+    <!-- The same cases the web parser's test reads, so one case checks both.
+         See web/src/stellarr/lib/messages/messageSyntaxContract.test.ts. -->
+    <Content Include="../../web/src/stellarr/lib/messages/message-syntax.json"
              Link="test-contracts/message-syntax.json"
              CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>

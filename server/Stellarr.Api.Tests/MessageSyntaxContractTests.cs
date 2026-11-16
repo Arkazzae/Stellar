@@ -4,9 +4,10 @@ using Stellarr.Api.Messaging;
 namespace Stellarr.Api.Tests;
 
 /// <summary>
-/// The API reads the same message corpus as the web renderer. A case added
-/// there must satisfy both implementations, so the renderer and the mention
-/// extractor cannot drift apart on escapes, addresses, links or marker runs.
+/// The API reads the same message cases as the web renderer, from
+/// web/src/stellarr/lib/messages/message-syntax.json. A case added there must
+/// satisfy both implementations, so the renderer and the mention extractor
+/// cannot drift apart on escapes, addresses, links or marker runs.
 /// </summary>
 public sealed class MessageSyntaxContractTests
 {
