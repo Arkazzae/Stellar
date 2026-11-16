@@ -3,7 +3,6 @@ using Amazon.S3;
 using Microsoft.AspNetCore.Authentication.Cookies;
 using Microsoft.AspNetCore.DataProtection;
 using Microsoft.AspNetCore.Http.Features;
-using Microsoft.AspNetCore.HttpOverrides;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Options;
 using Stellarr.Api.Auth;
@@ -18,6 +17,7 @@ using Stellarr.Api.Localization;
 using Stellarr.Api.Logging;
 using Stellarr.Api.Mail;
 using Stellarr.Api.Maintenance;
+using Stellarr.Api.Operations;
 using Stellarr.Api.Realtime;
 using Stellarr.Api.Secrets;
 using Stellarr.Api.Storage;
@@ -201,17 +201,6 @@ builder.Services
 builder.Services.AddAuthorization();
 builder.Services.AddRateLimitPolicies(builder.Configuration, builder.Environment);
 
-// The instance runs behind a reverse proxy that the operator controls, so any
-// sender of X-Forwarded-* is trusted rather than a fixed list of proxies.
-builder.Services.Configure<ForwardedHeadersOptions>(options =>
-{
-    options.ForwardedHeaders = ForwardedHeaders.XForwardedFor |
-        ForwardedHeaders.XForwardedHost |
-        ForwardedHeaders.XForwardedProto;
-    options.KnownIPNetworks.Clear();
-    options.KnownProxies.Clear();
-});
-
 if (builder.Environment.IsDevelopment())
 {
     builder.Services.AddCors(options => options.AddDefaultPolicy(policy => policy
@@ -223,11 +212,12 @@ if (builder.Environment.IsDevelopment())
 
 var app = builder.Build();
 
-// Read once before anything is served, so an unusable media server setting
-// stops the API at start instead of at the first call that needs it. It is
-// read from the built host because only there does it see every source of
-// configuration.
+// Read once before anything is served, so an unusable media server or proxy
+// setting stops the API at start instead of at the first call that needs it.
+// They are read from the built host because only there do they see every
+// source of configuration.
 app.Services.GetRequiredService<MediaServerSettings>();
+var trustedProxies = TrustedProxies.Load(app.Configuration);
 
 // Outermost, so it counts the status the client gets, the exception handler's 500 included.
 var runtimeMetrics = app.Services.GetRequiredService<RuntimeMetrics>();
@@ -243,7 +233,9 @@ app.Use(async (context, next) =>
     }
 });
 app.UseExceptionHandler();
-app.UseForwardedHeaders();
+// Before the rate limiter, authentication and the hub, so all of them see the
+// client's address and scheme rather than those of the container's nginx.
+app.UseForwardedHeaders(trustedProxies);
 if (app.Environment.IsDevelopment())
 {
     app.UseCors();
