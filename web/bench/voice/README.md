@@ -19,8 +19,11 @@ noise suppressors and the fixed input gain.
 
 | What | Command | Time |
 | --- | --- | --- |
-| Capture record | `npm run test:web` (three files in `src/stellarr/lib/voice/characterization/`) | about 5 s of CPU, split over three files that run side by side |
-| Playback record | `npm run bench:voice-playback -w stellarr-web -- --check` | about 10 s, most of it starting Chrome |
+| Capture record | `npm run test:web` (three files in `src/stellarr/lib/voice/characterization/`) | about 1.2 s and 3.7 s of CPU, the three files side by side, on a 10-core arm64 Mac |
+| Playback record | `npm run bench:voice-playback -w stellarr-web -- --check` | about 5 s, 2 s of it rendering |
+
+Recordings in `recordings/` add their own time: the five synthetic voices
+described below, 97 s of audio, add about 3.4 s to `test:web`.
 
 The playback check needs Chrome, found as the transcript benchmark finds it
 (`STELLARR_CHROMIUM`, `CHROME`, or a usual install path). In CI it is one more
@@ -66,7 +69,7 @@ number of render quanta and of 10 ms analysis frames.
 | --- | --- | --- |
 | `speech` | 6.72 s | A talker at -26 dBFS, pauses of 300 and 800 ms: onset, lookahead, hangover across words and the short pause (but not at the strict end of the dial), release in the long pause, the leveller lifting the voice. |
 | `talker-quiet` | 6.40 s | A soft high voice at -44 dBFS: the absolute floor the dial moves, the leveller climbing at 6 dB/s to its +18 dB ceiling. |
-| `talker-loud-after-quiet` | 4.48 s | A quiet phrase, then a shout at -9 dBFS peaking near full scale: the peak guard, the 40 dB/s fall, the 6 dB cut limit, and whether the cut lands while the loud samples are still in the gate's delay line. |
+| `talker-loud-after-quiet` | 4.48 s | A quiet phrase, then a shout whose loudest sample is -1 dBFS: the peak guard, the 40 dB/s fall, the 6 dB cut limit, and whether the cut lands while the loud samples are still in the gate's delay line. |
 | `clipping` | 4.48 s | Speech driven 20 dB into hard clipping, then samples past full scale (to 1.6): the clamps in the analysis and what the gate passes of samples over 1. |
 | `cold-start` | 3.84 s | Speech from the first sample: the 120 ms warm-up learns the voice as if it were the room. |
 | `silence` | 1.92 s | Digital zero, then -85 dBFS self-noise: zeros teach the floor nothing; the meter rests at zero. |
@@ -78,6 +81,7 @@ number of render quanta and of 10 ms analysis frames.
 | `buzz` | 3.84 s | A 100 Hz transformer buzz after 800 ms of quiet: pitched and steady, so only the stationary-noise rule closes the gate. |
 | `mains-hum` | 3.84 s | 50 Hz mains hum with a strong 100 Hz after 800 ms of quiet: pitched, but its energy alternates between 10 ms frames. |
 | `fan-speech` | 5.12 s | A fan switching on during a phrase and staying, a second phrase over it: the unvoiced limit, the stationary rule at the top of the dial, speech 14 dB over a fan. |
+| `speech-over-fan` | 4.48 s | A voice only 8 dB over a fan running from the first sample: onsets sit on the on-threshold, so the decisions depend on it everywhere on the dial, the remote meter's default included. |
 
 The playback record uses its own signals, generated in the page: a 31-tone
 multitone (third octaves from 20 Hz to 20 kHz), 1 kHz tones at fixed levels
@@ -121,11 +125,14 @@ Each run is written as (all measured from outside the processor):
 cross-correlation on a probe (white noise while the gate is held open). The
 check compares posts, speech and stops exactly, gains within 0.1 dB (the
 encoding rounds to at most 0.06 dB), peaks within 0.05 dB and the counts past
-0.95 and 1 within 2 samples or 1%. Node runs the same JavaScript on any
-machine, so the capture record has no measured spread; the playback check
-also renders `speech` through Chrome's own AudioWorklet and requires the
-same gains and the same messages in the same order, which is what shows that
-this driver runs the processor as the browser does.
+0.95 and 1 within 2 samples or 1%. The record was made with Node 26 on
+macOS arm64, and repeated runs there are identical. Whether Linux x64 gives
+the same digits was not measured: the first CI run is that test. If a
+fixture's digest differs there, the generator's arithmetic differs, not the
+detector. The playback check also renders `speech` through Chrome's own
+AudioWorklet and requires the same gains and the same messages in the same
+order, which is what shows that this driver runs the processor as the
+browser does.
 
 ## The playback record
 
@@ -160,9 +167,52 @@ seen across the separate Chrome runs the record was made from, and never less
 than a floor: 0.05 dB for the responses, 0.1 dB for the curve and levels,
 0.25 dB for the envelopes, 2 ms for settling times, 0 samples for latency. On
 the machine that made the record, five runs agreed to the last digit, so the
-floors are what is in force. They sit below the smallest deliberate change
-the check was tried against (see the commit that added this harness). The
-spread between machines, or between Chrome builds, was not measured.
+floors are what is in force. The smallest deliberate change the check was
+tried against, moving the presence bell from 3100 to 3200 Hz, moves the
+natural profile's response by 0.06 dB and the studio profile's by 0.19 dB.
+The spread between machines, or between Chrome builds, was not measured.
+
+## What the checks were tried against
+
+Each change below was made alone in the product code and undone; the
+records were left as they are. "Fixtures" counts the capture fixtures whose
+record failed; "playback" is the playback check, where "cross-check" means
+Chrome's AudioWorklet no longer matched the capture record.
+
+| Change | Capture record | Playback check |
+| --- | --- | --- |
+| Hangover of the dial 25+20t → 28+20t frames | 10 fixtures | gated strip, cross-check |
+| Gate release 90 → 100 ms | 12 fixtures | gated strip, cross-check |
+| Gate attack 6 → 10 ms | 13 fixtures | gated strip, cross-check |
+| Gate lookahead 80 → 70 ms | latency index, 14 fixtures | gated strip, cross-check |
+| On-threshold of the dial 14-11t → 14.5-11t dB | 5 fixtures | passes |
+| Absolute floor of the dial -45-23t → -46-23t dBFS | 6 fixtures | app sample, cross-check |
+| Remote default on-threshold 7.5 → 8 dB | `speech-over-fan` only | passes |
+| Remote default off-threshold 3.5 → 3 dB | 3 fixtures | passes |
+| Remote default hangover 45 → 50 frames | 8 fixtures | passes |
+| Remote default absolute floor -68 → -70 dBFS | `talker-quiet` only | passes |
+| Voicing needed for an onset 0.6 → 0.62 | 8 fixtures | app sample, cross-check |
+| Unvoiced limit 60 → 70 frames | `fan-speech`, `speech-over-fan`, `speech-crunching` | app sample |
+| Stationary rule after 90 → 120 frames | `buzz` only | passes |
+| A click closes a held gate after 8 → 12 quiet frames | 9 fixtures | gated strip, cross-check |
+| Leveller target -20 → -19 dBFS | 10 fixtures | app sample, cross-check |
+| Leveller rise 6 → 6.5 dB/s | 14 fixtures | app sample, cross-check |
+| Leveller fall 40 → 30 dB/s | 7 fixtures | app sample, cross-check |
+| Leveller boost limit 18 → 17 dB | 5 fixtures | app sample |
+| Leveller peak ceiling 0.95 → 0.98 | 8 fixtures | cross-check |
+| Order: leveller before the gate | 13 fixtures | app sample, cross-check |
+| Meter posts every 10 → 12 frames | 15 fixtures | app sample, cross-check |
+| Studio high-pass 76 → 80 Hz | passes | studio strips, up to 1 dB |
+| Compressor ratio 1+5a → 1+5.5a | passes | every compressing strip, recordings |
+| Compressor attack 12-9a → 15-9a ms | passes | compressing strips, recordings |
+| Presence bell 3100 → 3200 Hz | passes | every profile with presence |
+| Limiter threshold -1 → -1.5 dB | passes | every strip |
+| Order: limiter before the boost | passes | every strip |
+| Playback gain 1.25 → 1.3 | passes | every strip |
+
+The remote meter's defaults were the one gap the first run found: no
+fixture put speech close enough to its room for the on-threshold to matter,
+which is why `speech-over-fan` exists.
 
 ## Real recordings
 
