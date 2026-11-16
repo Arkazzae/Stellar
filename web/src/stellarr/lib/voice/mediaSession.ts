@@ -11,6 +11,8 @@
  * depend on a lock-screen control being available.
  */
 
+import { APP_ICON_URL } from "@/assets/appIcon";
+
 /** Conferencing actions that TypeScript's DOM typings do not list yet. */
 interface ConferenceMediaSession extends MediaSession {
   setActionHandler(
@@ -64,7 +66,7 @@ export class CallMediaSessionController {
               title: state.title,
               artist: state.subtitle,
               album: "Stellarr",
-              artwork: [{ src: "/icon.svg", sizes: "any", type: "image/svg+xml" }],
+              artwork: [{ src: APP_ICON_URL, sizes: "any", type: "image/svg+xml" }],
             });
     });
     attempt(() => {

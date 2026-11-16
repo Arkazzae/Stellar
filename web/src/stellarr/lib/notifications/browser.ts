@@ -1,3 +1,5 @@
+import { APP_ICON_URL } from "@/assets/appIcon";
+
 export type BrowserNotificationPermission = NotificationPermission | "unsupported";
 
 export interface IncomingCallNotification {
@@ -43,7 +45,7 @@ export async function showIncomingCallNotification(
       body: call.body,
       // The tag makes the system replace a notification instead of stacking one.
       tag: incomingCallNotificationTag(call.id),
-      icon: "/icon.svg",
+      icon: APP_ICON_URL,
       requireInteraction: true,
       data: { url: "/", type: "incoming-call", callId: call.id },
     });
@@ -85,7 +87,7 @@ export function showMessageNotification(message: MessageNotification): boolean {
     const notification = new window.Notification(message.title, {
       body: message.body,
       tag: messageNotificationTag(message.id),
-      icon: "/icon.svg",
+      icon: APP_ICON_URL,
       data: { url: "/", type: "message", messageId: message.id },
     });
     notification.onclick = () => {

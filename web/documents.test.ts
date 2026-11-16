@@ -1,5 +1,5 @@
 import { execFileSync } from "node:child_process";
-import { mkdtempSync, readFileSync, rmSync } from "node:fs";
+import { existsSync, mkdtempSync, readdirSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -274,4 +274,50 @@ describe("the instance language file the container writes", () => {
       expect(written(language)).toBe(instanceLanguageSource(language));
     },
   );
+});
+
+/** The files of a source tree, test code left out. */
+function sourceFiles(directory: string): string[] {
+  return readdirSync(here(directory), { recursive: true, encoding: "utf8" })
+    .filter((file) => /\.(ts|tsx|css)$/.test(file) && !/\.test\.tsx?$/.test(file) && !/(^|\/)test\//.test(file))
+    .map((file) => `${directory}/${file}`);
+}
+
+describe("the files the apps name by address", () => {
+  // A root-relative address in a string, a url() or an attribute, with the
+  // extension of a file. The same sweep over the built files found /icon.svg,
+  // which Next served from src/app/ and the static build does not have.
+  const ADDRESS = /["'`(]\/[\w@./-]+\.(?:svg|png|jpe?g|webp|gif|ico|m?js|css|wasm|json|wav|mp3|ogg|opus|woff2?|ttf|bin|spm|txt|webmanifest|map|html)\b/g;
+  const manifest = JSON.parse(read("../artifacts/manifest.json")) as { artifacts: { path: string }[] };
+  const assembled = new Set(manifest.artifacts.map(({ path }) => `/${path}`));
+  const sources = [
+    ...sourceFiles("src"),
+    ...["stellarr-ui", "stellarr-icons", "stellarr-router"].flatMap((name) => sourceFiles(`../packages/${name}/src`)),
+    "index.html",
+    "cockpit/index.html",
+    "public/bergamot-worker.js",
+    "public/audio/vad-processor.js",
+  ];
+  const named = new Map<string, string>();
+  for (const source of sources) {
+    for (const [match] of read(source).matchAll(ADDRESS)) named.set(match.slice(1), source);
+  }
+
+  /** Whether the instance serves `address`: a file of public/ or of the artifacts, the instance file, or a source the build turns into a file of its own. */
+  function served(address: string): boolean {
+    if (address === INSTANCE_LANGUAGE_PATH) return true;
+    if (address.startsWith("/src/")) return existsSync(here(`.${address}`));
+    return assembled.has(address) || existsSync(here(`public${address}`));
+  }
+
+  it("finds the addresses the apps load files from", () => {
+    expect([...named.keys()]).toEqual(
+      expect.arrayContaining(["/audio/vad-processor.js", "/sounds/calling.wav", "/fonts/outfit-100-900-latin.woff2"]),
+    );
+  });
+
+  it("names only files the build or the instance serves", () => {
+    const missing = [...named].filter(([address]) => !served(address)).map(([address, source]) => `${address} in ${source}`);
+    expect(missing).toEqual([]);
+  });
 });
