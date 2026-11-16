@@ -8,10 +8,10 @@ Stellarr runs as a single Docker container. To test it locally on one machine, f
 | --- | --- |
 | Software | Docker Engine with the Compose plugin (`docker compose`) |
 | Architecture | `linux/amd64` or `linux/arm64` |
-| Memory limit | 4 GiB default cap (`STELLARR_CONTAINER_MEMORY_LIMIT`); the container uses about 137 MiB right after start and about 197 MiB after 4,000 requests (measured on one machine with 10 CPUs and no memory limit) |
+| Memory limit | 4 GiB default cap (`STELLARR_CONTAINER_MEMORY_LIMIT`); the container uses about 127 MiB two minutes after it turns healthy and about 170 MiB after 4,000 requests (measured on one machine with 10 CPUs and no memory limit) |
 | CPU limit | 4 CPUs default cap (`STELLARR_CONTAINER_CPUS`) |
 | Process limit | 512 processes (`STELLARR_CONTAINER_PIDS_LIMIT`) |
-| Disk | 643 MB for the image unpacked (256 MB compressed) plus the `stellarr_data` volume (database, uploads, keys, secrets, and TLS certificates) |
+| Disk | 597 MB for the image unpacked (242 MB compressed) plus the `stellarr_data` volume (database, uploads, keys, secrets, and TLS certificates) |
 
 Uploads are governed by two storage quotas and a free-space check: 2 GiB per account, 20 GiB total for the instance, and at least 1 GiB of free space remaining on the data volume. See [Configuration](configuration.md#uploads-and-quotas).
 
