@@ -9,7 +9,7 @@ import {
   matchMentions,
   type ActiveMention,
   type MentionCandidate,
-} from "./composerMentions";
+} from "@/lib/messages/composerMentions";
 
 interface Options {
   text: string;

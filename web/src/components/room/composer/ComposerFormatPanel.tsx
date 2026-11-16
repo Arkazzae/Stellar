@@ -5,7 +5,7 @@ import type { Ref } from "react";
 import { Icon, type IconName } from "@stellarr/icons";
 import type { MessageKey, Translator } from "@/i18n";
 
-import type { FORMAT_MARKERS } from "./composerText";
+import type { FORMAT_MARKERS } from "@/lib/messages/composerText";
 
 const FORMATS: readonly {
   marker: (typeof FORMAT_MARKERS)[number];

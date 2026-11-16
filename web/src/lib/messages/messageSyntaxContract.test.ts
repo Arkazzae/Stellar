@@ -4,7 +4,7 @@ import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 
 import { inlineSource, parseInline, type InlineNode, type MentionTarget } from "./inline";
-import { toggleMarker, type TextEdit } from "@/components/room/composer/composerText";
+import { toggleMarker, type TextEdit } from "@/lib/messages/composerText";
 import { mentionsUsername } from "./messageBody";
 
 type ExpectedNode =
