@@ -235,6 +235,8 @@ app.Use(async (context, next) =>
         runtimeMetrics.CountResponse(context.Response.StatusCode);
     }
 });
+// One line per request, outside the exception handler so that it logs the 500.
+app.UseRequestLog();
 app.UseExceptionHandler();
 // Before the rate limiter, authentication and the hub, so all of them see the
 // client's address and scheme rather than those of the container's nginx.
