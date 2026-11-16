@@ -22,6 +22,7 @@ import {
   AdvancedPane,
   PrivacyPane,
   type BlockedPeopleProps,
+  type GiphyPreferenceProps,
   type PreferencePaneProps,
   type StartupPreferenceProps,
 } from "@/components/account/panes/PreferencePanes";
@@ -72,6 +73,8 @@ export interface UserSettingsProps {
   preferences: PreferencePaneProps;
   /** The people this account blocked, listed under privacy. */
   blocked?: BlockedPeopleProps;
+  /** The GIPHY switch, under privacy, while the instance offers GIFs. */
+  giphy?: GiphyPreferenceProps;
   systemNotifications?: SystemNotificationPreferenceProps;
   /** The muted channels of the server in view, listed under notifications. */
   mutedChannels?: MutedChannelsProps;
@@ -112,6 +115,7 @@ export function UserSettings({
   security,
   preferences,
   blocked,
+  giphy,
   systemNotifications,
   mutedChannels,
   onPlayMessageSound,
@@ -180,7 +184,7 @@ export function UserSettings({
       case "sesje":
         return security.twoStep ? <AccountActivitySections {...security.twoStep} /> : null;
       case "prywatnosc":
-        return <PrivacyPane {...preferences} blocked={blocked} />;
+        return <PrivacyPane {...preferences} blocked={blocked} giphy={giphy} />;
       case "wyglad":
         return <AppearancePane {...appearance} />;
       case "jezyk":

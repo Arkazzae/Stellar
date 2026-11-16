@@ -101,6 +101,7 @@ export interface GiphyRuntimeConfig {
 }
 
 let pendingConfig: Promise<GiphyRuntimeConfig> | null = null;
+let answeredConfig: GiphyRuntimeConfig | undefined;
 
 async function requestRuntimeConfig(): Promise<GiphyRuntimeConfig> {
   const response = await fetch("/api/config/giphy", {
@@ -124,11 +125,24 @@ export function readGiphyConfig(): Promise<GiphyRuntimeConfig> {
   if (pendingConfig === null) {
     const request = requestRuntimeConfig();
     pendingConfig = request;
-    request.catch(() => {
-      if (pendingConfig === request) pendingConfig = null;
-    });
+    request.then(
+      (config) => {
+        answeredConfig = config;
+      },
+      () => {
+        if (pendingConfig === request) pendingConfig = null;
+      },
+    );
   }
   return pendingConfig;
+}
+
+/**
+ * The API's answer once it has come, so that a component mounted later starts
+ * from it instead of rendering one frame without it.
+ */
+export function answeredGiphyConfig(): GiphyRuntimeConfig | undefined {
+  return answeredConfig;
 }
 
 /**

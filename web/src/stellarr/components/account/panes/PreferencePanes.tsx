@@ -12,9 +12,10 @@ import { VoiceSection } from "./VoiceFields";
  * The switch panes: privacy and advanced.
  *
  * They share one shape, a card of switches each with a sentence saying what it
- * changes, so they share this file and its row. Everything here is stored on
- * the account and follows the person to every device. Notifications grew out
- * of that shape and have their own file.
+ * changes, so they share this file and its row. Everything here follows the
+ * person to every device: the preferences are the account's, and the GIPHY
+ * switch is kept in the privacy section of the client's own settings.
+ * Notifications grew out of that shape and have their own file.
  */
 
 export interface PreferencePaneProps {
@@ -34,6 +35,15 @@ export interface BlockedPerson {
 export interface BlockedPeopleProps {
   people: readonly BlockedPerson[];
   onUnblock: (id: string) => void;
+}
+
+/**
+ * The person's own GIPHY switch. It lives in this browser and follows the
+ * account with the client's other settings, not with the preferences above.
+ */
+export interface GiphyPreferenceProps {
+  enabled: boolean;
+  onChange: (enabled: boolean) => void;
 }
 
 /** Starting with the operating system, offered only by the native client. */
@@ -81,7 +91,12 @@ export function PrivacyPane({
   preferences,
   onChange,
   blocked,
-}: PreferencePaneProps & { blocked?: BlockedPeopleProps }) {
+  giphy,
+}: PreferencePaneProps & {
+  blocked?: BlockedPeopleProps;
+  /** Absent while the instance offers no GIFs, when the switch would change nothing. */
+  giphy?: GiphyPreferenceProps;
+}) {
   const { t } = useLanguage();
   return (
     <>
@@ -107,6 +122,18 @@ export function PrivacyPane({
           onChange={(showPresence) => onChange({ showPresence })}
         />
       </SwitchCard>
+      {giphy === undefined ? null : (
+        <SwitchCard title={t("preference.gifs")}>
+          {/* Here the on side is the one with consequences, so the detail
+              says what turning it on sends, and to whom. */}
+          <PreferenceRow
+            label={t("preference.giphy")}
+            detail={t("preference.giphyDetail")}
+            checked={giphy.enabled}
+            onChange={giphy.onChange}
+          />
+        </SwitchCard>
+      )}
       {blocked === undefined ? null : <BlockedCard {...blocked} />}
     </>
   );

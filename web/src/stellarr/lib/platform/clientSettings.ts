@@ -5,6 +5,7 @@ import {
   type InterfaceLocale,
   type LanguageSettings,
 } from "@/i18n";
+import { GIPHY_DEFAULT_ENABLED } from "@/lib/giphy/giphyChoice";
 import {
   DEFAULT_KEYBINDINGS,
   KEYBIND_STORAGE_VERSION,
@@ -67,6 +68,25 @@ export function languageToWire(
   };
 }
 
+/** What this client may share with outside services, as the person decided. */
+export interface PrivacySettings {
+  /** Whether this browser may contact GIPHY. */
+  giphy: boolean;
+}
+
+/**
+ * The privacy section. Turned off on one device, a service is off on every
+ * device the person signs in on.
+ */
+export function privacyToWire(settings: PrivacySettings): Wire {
+  return { giphy: settings.giphy };
+}
+
+/** The account's privacy choices, field by field; a field it lacks is no choice. */
+export function privacyFromWire(value: Wire): Partial<PrivacySettings> {
+  return typeof value["giphy"] === "boolean" ? { giphy: value["giphy"] } : {};
+}
+
 export function languageFromWire(value: Wire): Partial<LanguageSettings> {
   const patch: Partial<LanguageSettings> = {};
   if (isSupportedLocale(value["locale"])) patch.locale = value["locale"];
@@ -124,5 +144,7 @@ export function defaultWire(section: ClientSettingsSection): Wire {
       return keybindsToWire(DEFAULT_KEYBINDINGS);
     case "voice":
       return voiceToWire(DEFAULT_SETTINGS);
+    case "privacy":
+      return privacyToWire({ giphy: GIPHY_DEFAULT_ENABLED });
   }
 }

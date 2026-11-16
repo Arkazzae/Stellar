@@ -86,7 +86,7 @@ export interface AccountDetails {
 }
 
 /** The parts of the client's own settings that the account keeps, one object each. */
-export const CLIENT_SETTINGS_SECTIONS = ["appearance", "language", "keybinds", "voice"] as const;
+export const CLIENT_SETTINGS_SECTIONS = ["appearance", "language", "keybinds", "voice", "privacy"] as const;
 export type ClientSettingsSection = (typeof CLIENT_SETTINGS_SECTIONS)[number];
 
 /**
