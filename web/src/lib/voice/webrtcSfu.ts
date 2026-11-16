@@ -12,6 +12,7 @@ import {
   encodeBrowserAnswer,
   encodeBrowserOffer,
   encodeMediaCandidate,
+  encodeMediaSubscriptions,
   RTC_PROTOCOL_VERSION,
   type BrowserMediaSignalKind,
   type MediaServerSignalKind,
@@ -19,6 +20,7 @@ import {
 import type { VoiceIceProvider } from "./iceSession";
 import type { ParticipantPreferencesStore } from "./participantPreferences";
 import type { VoiceSettings } from "./settings";
+import type { VoiceReceivePreferences } from "./types";
 import type { VoiceStateStore } from "./store";
 import { mediaServerLostError } from "./webrtcErrors";
 import { expectFreshMedia, readLink } from "./webrtcHealth";
@@ -53,6 +55,15 @@ const DEFAULT_REPLACEMENT_PAUSE_MS = 2_000;
 const MAX_REPLACEMENTS = 3;
 /** The steady round of statistics comes every 3 s; a microphone is late, not missing, until then. */
 const DEFAULT_ARRIVAL_GRACE_MS = 3_000;
+/** The list a media session starts with: no section is forwarded until it is asked for. */
+const NO_SUBSCRIPTIONS = encodeMediaSubscriptions([]);
+/**
+ * A list goes out at most this often. What it holds follows the others'
+ * state frames, which the hub lets one person send far faster than it lets
+ * this side forward signals to the media server; somebody whose state keeps
+ * changing must not use up that allowance and cost everyone their session.
+ */
+const SUBSCRIPTIONS_PACE_MS = 250;
 
 export interface SfuDeps {
   readonly selfUserId: UserId;
@@ -108,6 +119,15 @@ interface MediaSessionLink {
   chain: Promise<void>;
   /** Signals to the hub, one at a time, in the order they were made. */
   outbox: Promise<void>;
+  /**
+   * The list of sections wanted now, the one the outbox will send and the
+   * last one handed to the hub, each encoded.
+   */
+  desiredSubscriptions: string;
+  queuedSubscriptions: string;
+  sentSubscriptions: string;
+  /** Running for the pace after a list was put in the outbox; a change meanwhile waits for it. */
+  subscriptionsPace: ReturnType<typeof setTimeout> | null;
   /** What this side publishes changed since its last offer. */
   wantsOffer: boolean;
   /** The number of the media server offer being answered, echoed in the answer. */
@@ -143,6 +163,7 @@ export class Sfu implements CallTopology {
   /** A connection was lost while the hub was away; the rejoin opens the next one. */
   private waitingForHub = false;
   private replacementTimer: ReturnType<typeof setTimeout> | null = null;
+  private receivePreferences: VoiceReceivePreferences = { screen: null, cameras: true };
 
   constructor(
     /** Everyone else in the call, shared with the client that shows and plays them. */
@@ -223,6 +244,7 @@ export class Sfu implements CallTopology {
     // Whoever just arrived gets what was held for them, and whoever left
     // stops playing, before their sinks go.
     this.session?.directory.place();
+    this.refreshReceivePreferences();
     for (const person of left) this.deps.remoteAudio.release(person);
     // A newcomer cannot tell this side's camera from its screen without it.
     for (const userId of arrived) this.deps.announceTo(userId);
@@ -258,6 +280,20 @@ export class Sfu implements CallTopology {
   async applyMicEncoding(): Promise<void> {
     const sender = this.session?.link.micSender;
     if (sender) await applyEncoding(sender, this.deps.bitrate());
+  }
+
+  setReceivePreferences(preferences: VoiceReceivePreferences): void {
+    this.receivePreferences = {
+      screen: preferences.screen === null ? null : { ...preferences.screen },
+      cameras: preferences.cameras,
+    };
+    this.deps.remoteAudio.setWatchedScreen(this.receivePreferences.screen);
+    this.refreshReceivePreferences();
+  }
+
+  refreshReceivePreferences(): void {
+    const session = this.session;
+    if (session) this.syncSubscriptions(session);
   }
 
   links(): Link[] {
@@ -381,6 +417,12 @@ export class Sfu implements CallTopology {
       }),
       chain: Promise.resolve(),
       outbox: Promise.resolve(),
+      // A new media session forwards nothing until it is asked to, so the
+      // empty list is what the media server already has.
+      desiredSubscriptions: NO_SUBSCRIPTIONS,
+      queuedSubscriptions: NO_SUBSCRIPTIONS,
+      sentSubscriptions: NO_SUBSCRIPTIONS,
+      subscriptionsPace: null,
       wantsOffer: false,
       answering: null,
       upAt: null,
@@ -390,7 +432,9 @@ export class Sfu implements CallTopology {
 
     const { connection } = link;
     connection.ontrack = (event) => {
-      if (this.session === session) session.directory.arrive(event.transceiver?.mid ?? null, event.track);
+      if (this.session !== session) return;
+      session.directory.arrive(event.transceiver?.mid ?? null, event.track);
+      this.syncSubscriptions(session);
     };
     connection.onicecandidate = (event) => {
       void this.post(
@@ -424,6 +468,8 @@ export class Sfu implements CallTopology {
     if (!session) return;
     this.session = null;
     session.closed = true;
+    if (session.subscriptionsPace !== null) clearTimeout(session.subscriptionsPace);
+    session.subscriptionsPace = null;
     session.directory.clear();
     this.health.forget();
 
@@ -555,8 +601,10 @@ export class Sfu implements CallTopology {
       // ours and offers again.
       if (link.makingOffer || connection.signalingState !== "stable") return;
       // In hand before the description is applied, so every track the offer
-      // brings finds its section named.
+      // brings finds its section named, and the list that asks for them
+      // leaves ahead of the answer that makes them live.
       session.directory.update(offer.tracks);
+      this.syncSubscriptions(session);
       session.answering = offer.negotiationId;
       try {
         await this.negotiator.receive(link, { type: "offer", sdp: offer.sdp });
@@ -580,7 +628,10 @@ export class Sfu implements CallTopology {
       }
     } else {
       const tracks = decodeMediaTracks(signal.payload);
-      if (tracks) session.directory.update(tracks);
+      if (tracks) {
+        session.directory.update(tracks);
+        this.syncSubscriptions(session);
+      }
     }
 
     if (session.wantsOffer) await this.offerIfWanted(session);
@@ -604,30 +655,91 @@ export class Sfu implements CallTopology {
    * Send one signal after every signal made before it. A description the hub
    * refuses leaves this side waiting for an answer that never comes, so that
    * session is replaced; a lost candidate costs nothing, since the media
-   * server learns this side's address from its checks.
+   * server learns this side's address from its checks. A payload given as a
+   * function is read when the signal's turn comes, and null sends nothing.
    */
   private async post(
     session: MediaSessionLink,
     kind: BrowserMediaSignalKind,
-    payload: string,
+    payload: string | (() => string | null),
     vital: boolean,
   ): Promise<void> {
-    const signal: MediaSignal<BrowserMediaSignalKind> = {
-      protocolVersion: RTC_PROTOCOL_VERSION,
-      channelId: session.channelId,
-      sessionId: session.id,
-      kind,
-      payload,
-    };
-    const sent = session.outbox.then(() =>
-      session.closed ? undefined : this.deps.realtime.sendMediaSignal(signal),
-    );
+    const sent = session.outbox.then(() => {
+      if (session.closed) return undefined;
+      const body = typeof payload === "string" ? payload : payload();
+      if (body === null) return undefined;
+      const signal: MediaSignal<BrowserMediaSignalKind> = {
+        protocolVersion: RTC_PROTOCOL_VERSION,
+        channelId: session.channelId,
+        sessionId: session.id,
+        kind,
+        payload: body,
+      };
+      return this.deps.realtime.sendMediaSignal(signal);
+    });
     session.outbox = sent.catch(() => undefined);
     try {
       await sent;
     } catch {
       if (vital) this.lose(session);
     }
+  }
+
+  /**
+   * Ask the media server for what this side wants now: every voice, the
+   * cameras unless they are turned off, and the one share being watched.
+   * What is not asked for stops playing here at once, before the list has
+   * reached the media server.
+   */
+  private syncSubscriptions(session: MediaSessionLink): void {
+    const mids = session.directory.subscribedMids(this.receivePreferences);
+    session.directory.applySubscriptions(mids);
+    let payload: string;
+    try {
+      payload = encodeMediaSubscriptions(mids);
+    } catch {
+      // Only a directory the media server never makes could name such a section.
+      this.lose(session);
+      return;
+    }
+    session.desiredSubscriptions = payload;
+    this.flushSubscriptions(session);
+  }
+
+  /**
+   * Put a list in the outbox, unless the wanted one is in it already or one
+   * went in less than the pace ago; then one goes in when the pace is up. A
+   * list replaces the last one whole, so the one in the outbox is read when
+   * its turn comes: it is the list wanted by then, and nothing when that is
+   * what the media server has already. It shares the outbox with the
+   * descriptions, and a refused one replaces the session like they do.
+   */
+  private flushSubscriptions(session: MediaSessionLink): void {
+    if (
+      session.closed ||
+      session.subscriptionsPace !== null ||
+      session.desiredSubscriptions === session.queuedSubscriptions
+    ) {
+      return;
+    }
+    session.queuedSubscriptions = session.desiredSubscriptions;
+    session.subscriptionsPace = setTimeout(() => {
+      session.subscriptionsPace = null;
+      this.flushSubscriptions(session);
+    }, SUBSCRIPTIONS_PACE_MS);
+    void this.post(
+      session,
+      "subscriptions",
+      () => {
+        const latest = session.desiredSubscriptions;
+        // What goes now is what the outbox holds, so the pace does not send it again.
+        session.queuedSubscriptions = latest;
+        if (latest === session.sentSubscriptions) return null;
+        session.sentSubscriptions = latest;
+        return latest;
+      },
+      true,
+    );
   }
 
   /** Replace `session` if it is still the current one. */

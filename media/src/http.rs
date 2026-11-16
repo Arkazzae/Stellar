@@ -58,6 +58,7 @@ pub fn router(state: AppState) -> Router {
         .route("/v1/sessions/{id}/offer", post(offer))
         .route("/v1/sessions/{id}/answer", post(answer))
         .route("/v1/sessions/{id}/candidate", post(candidate))
+        .route("/v1/sessions/{id}/subscriptions", post(subscriptions))
         .route("/v1/events", get(events))
         .route("/v1/stats", get(stats))
         .route_layer(middleware::from_fn_with_state(state.clone(), authorize));
@@ -335,6 +336,34 @@ async fn candidate(
                 "candidate must be an object or null.".into(),
             )),
         }
+    })
+    .await
+}
+
+async fn subscriptions(
+    State(state): State<AppState>,
+    Path(id): Path<String>,
+    body: Result<Bytes, BytesRejection>,
+) -> Response {
+    let Some(body) = session_body(body, ApiError::InvalidRequest) else {
+        return too_large();
+    };
+    session_call(&state, id, body, |core, now, id, body| {
+        let Some(values) = body.get("mids").and_then(Value::as_array) else {
+            return Err(ApiError::InvalidRequest(
+                "mids is a required array of strings.".into(),
+            ));
+        };
+        let mids: Option<Vec<String>> = values
+            .iter()
+            .map(|v| v.as_str().map(str::to_owned))
+            .collect();
+        let Some(mids) = mids else {
+            return Err(ApiError::InvalidRequest(
+                "mids must contain only strings.".into(),
+            ));
+        };
+        core.set_subscriptions(now, id, &mids)
     })
     .await
 }

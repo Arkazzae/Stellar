@@ -893,6 +893,7 @@ describe("the directory", () => {
   it("tells camera, screen and microphone apart by the state frame and the directory's ids", async () => {
     const { attach } = playback();
     const { client, pc } = await ready();
+    client.setReceivePreferences({ screen: { userId: "u-b", streamId: "scr-b" }, cameras: true });
     announce("u-b");
     const voice = fakeTrack();
     const face = fakeTrack("video");
@@ -2231,6 +2232,326 @@ describe("remote voice", () => {
   });
 });
 
+describe("receiving subscriptions", () => {
+  const selections = () => realtime.mediaOfKind("subscriptions").map((signal) =>
+    ({ sessionId: signal.sessionId, mids: (JSON.parse(signal.payload) as { mids: string[] }).mids }),
+  );
+  /** Longer than the least time between two lists. */
+  const outlastPace = () => new Promise((resolve) => setTimeout(resolve, 300));
+
+  it("sends no list while there is nothing to ask for", async () => {
+    const client = build();
+    const pc = await answered(client);
+    // A new media session forwards nothing, which is what an empty list says.
+    expect(realtime.media.map((signal) => signal.kind)).toEqual(["offer"]);
+
+    // Nobody the occupancy names has a section yet.
+    await serverOffer(pc, 1, [
+      { mid: "b1", userId: "u-b", kind: "audio", streamId: "mic-b", track: fakeTrack() },
+    ]);
+    expect(selections()).toEqual([]);
+
+    announce("u-b");
+    await vi.waitFor(() =>
+      expect(selections()).toEqual([{ sessionId: "media-session-1", mids: ["b1"] }]),
+    );
+  });
+
+  it("asks for what an offer brings before applying it, and answers after", async () => {
+    const client = build();
+    const pc = await answered(client);
+    announce("u-b");
+    const applying = deferred<void>();
+    const apply = pc.setRemoteDescription.getMockImplementation()!;
+    pc.setRemoteDescription.mockImplementationOnce(async (description) => {
+      await applying.promise;
+      await apply(description);
+    });
+    pc.incoming.push({ mid: "b1", track: fakeTrack() });
+    fromServer("offer", {
+      type: "offer",
+      sdp: SERVER_SDP,
+      negotiationId: 1,
+      tracks: [{ mid: "b1", userId: "u-b", kind: "audio", streamId: "mic-b" }],
+    });
+
+    // Nothing waits on the browser, so the list is one hub round trip ahead.
+    await vi.waitFor(() =>
+      expect(selections()).toEqual([{ sessionId: "media-session-1", mids: ["b1"] }]),
+    );
+    expect(realtime.mediaOfKind("answer")).toHaveLength(0);
+    applying.resolve();
+    await vi.waitFor(() => expect(realtime.mediaOfKind("answer")).toHaveLength(1));
+    expect(realtime.media.map((signal) => signal.kind)).toEqual(["offer", "subscriptions", "answer"]);
+  });
+
+  it("receives voices and cameras by default; watching selects only that publisher's screen and sound", async () => {
+    const client = build();
+    const pc = await answered(client);
+    announce("u-b", "u-c");
+    state("u-b", { cameraStreamId: "voice-b", screenStreamId: "screen" });
+    state("u-c", { screenStreamId: "screen" });
+    const voice = fakeTrack();
+    const face = fakeTrack("video");
+    const picture = fakeTrack("video");
+    const sound = fakeTrack("audio", 2);
+    const otherPicture = fakeTrack("video");
+    const otherSound = fakeTrack("audio", 2);
+    await serverOffer(pc, 1, [
+      { mid: "b1", userId: "u-b", kind: "audio", streamId: "voice-b", track: voice },
+      { mid: "b2", userId: "u-b", kind: "video", streamId: "voice-b", track: face },
+      { mid: "s1", userId: "u-b", kind: "video", streamId: "screen", track: picture },
+      { mid: "s2", userId: "u-b", kind: "audio", streamId: "screen", track: sound },
+      { mid: "c1", userId: "u-c", kind: "video", streamId: "screen", track: otherPicture },
+      { mid: "c2", userId: "u-c", kind: "audio", streamId: "screen", track: otherSound },
+    ]);
+    expect(selections()).toEqual([{ sessionId: "media-session-1", mids: ["b1", "b2"] }]);
+    expect(picture.enabled).toBe(false);
+    expect(sound.enabled).toBe(false);
+    expect(sinksPlaying(sound)).toHaveLength(0);
+    // The full directory and the idle tracks still make the share discoverable.
+    expect(peerOf(client, "u-b")?.screen).toMatchObject({ streamId: "screen", hasAudio: true });
+
+    client.setReceivePreferences({ screen: { userId: "u-b", streamId: "screen" }, cameras: true });
+    expect(sinksPlaying(sound)).toHaveLength(1);
+    await vi.waitFor(() => expect(selections().at(-1)?.mids).toEqual(["b1", "b2", "s1", "s2"]));
+    expect(picture.enabled).toBe(true);
+    expect(sound.enabled).toBe(true);
+    expect(otherPicture.enabled).toBe(false);
+    expect(otherSound.enabled).toBe(false);
+    const [audible] = sinksPlaying(sound);
+
+    client.setReceivePreferences({ screen: null, cameras: true });
+    // The sound stops at once, before the list has gone anywhere.
+    expect(audible?.srcObject).toBeNull();
+    expect(sinksPlaying(sound)).toHaveLength(0);
+    expect(picture.enabled).toBe(false);
+    await vi.waitFor(() => expect(selections().at(-1)?.mids).toEqual(["b1", "b2"]));
+
+    client.setReceivePreferences({ screen: null, cameras: false });
+    await vi.waitFor(() => expect(selections().at(-1)?.mids).toEqual(["b1"]));
+    expect(face.enabled).toBe(false);
+    expect(voice.enabled).toBe(true);
+    expect(pc.createOffer).toHaveBeenCalledTimes(1);
+    expect(pc.setRemoteDescription).toHaveBeenCalledTimes(2);
+  });
+
+  it("asks for a camera's voice and picture with the directory when the state frame came first", async () => {
+    // The order every newcomer sees: the occupancy, then the others' state
+    // frames through the hub, and only then the media server's offer.
+    const client = build();
+    const pc = await answered(client);
+    announce("u-b");
+    state("u-b", { cameraStreamId: "voice-b" });
+    await serverOffer(pc, 1, [
+      { mid: "b1", userId: "u-b", kind: "audio", streamId: "voice-b", track: fakeTrack() },
+      { mid: "b2", userId: "u-b", kind: "video", streamId: "voice-b", track: fakeTrack("video") },
+    ]);
+    expect(selections()).toEqual([{ sessionId: "media-session-1", mids: ["b1", "b2"] }]);
+  });
+
+  it("still asks for a camera's voice and picture when its publisher comes back on a new session", async () => {
+    // This side arrived after the camera was on, so only the state frame
+    // tells its voice from a share's sound, and the publisher does not send
+    // it again for a new media session of its own.
+    const client = build();
+    const pc = await answered(client);
+    announce("u-b");
+    state("u-b", { cameraStreamId: "voice-b" });
+    await serverOffer(pc, 1, [
+      { mid: "b1", userId: "u-b", kind: "audio", streamId: "voice-b", track: fakeTrack() },
+      { mid: "b2", userId: "u-b", kind: "video", streamId: "voice-b", track: fakeTrack("video") },
+    ]);
+    await serverOffer(pc, 2, []);
+    const voice = fakeTrack();
+    await serverOffer(pc, 3, [
+      { mid: "b3", userId: "u-b", kind: "audio", streamId: "voice-b", track: voice },
+      { mid: "b4", userId: "u-b", kind: "video", streamId: "voice-b", track: fakeTrack("video") },
+    ]);
+
+    await vi.waitFor(() => expect(selections().at(-1)?.mids).toEqual(["b3", "b4"]));
+    expect(sinksPlaying(voice)).toHaveLength(1);
+    expect(peerOf(client, "u-b")?.camera).toMatchObject({ streamId: "voice-b" });
+  });
+
+  it("keeps asking for the voice of a camera that stopped while its picture is still listed", async () => {
+    const client = build();
+    const pc = await answered(client);
+    announce("u-b");
+    state("u-b", { cameraStreamId: "voice-b" });
+    await serverOffer(pc, 1, [
+      { mid: "b1", userId: "u-b", kind: "audio", streamId: "voice-b", track: fakeTrack() },
+      { mid: "b2", userId: "u-b", kind: "video", streamId: "voice-b", track: fakeTrack("video") },
+    ]);
+
+    state("u-b", { cameraStreamId: null });
+    // Somebody arrives before the offer that withdraws the camera.
+    announce("u-b", "u-c");
+    await outlastPace();
+    expect(selections().at(-1)?.mids).toContain("b1");
+  });
+
+  it("does not ask for a share that has ended while the directory still names it", async () => {
+    const client = build();
+    const pc = await answered(client);
+    announce("u-b");
+    state("u-b", { screenStreamId: "scr-b" });
+    await serverOffer(pc, 1, [
+      { mid: "b1", userId: "u-b", kind: "audio", streamId: "mic-b", track: fakeTrack() },
+      { mid: "s1", userId: "u-b", kind: "video", streamId: "scr-b", track: fakeTrack("video") },
+      { mid: "s2", userId: "u-b", kind: "audio", streamId: "scr-b", track: fakeTrack() },
+    ]);
+    expect(selections()).toEqual([{ sessionId: "media-session-1", mids: ["b1"] }]);
+
+    // The state frame comes through the hub, ahead of the offer that drops the share.
+    state("u-b", { screenStreamId: null });
+    await outlastPace();
+    expect(selections()).toEqual([{ sessionId: "media-session-1", mids: ["b1"] }]);
+  });
+
+  it("resolves late stream announcements and occupancy without allowing an unknown screen", async () => {
+    const client = build();
+    const pc = await answered(client);
+    const voice = fakeTrack();
+    const face = fakeTrack("video");
+    await serverOffer(pc, 1, [
+      { mid: "b1", userId: "u-b", kind: "audio", streamId: "voice-b", track: voice },
+      { mid: "b2", userId: "u-b", kind: "video", streamId: "voice-b", track: face },
+    ]);
+    expect(selections()).toEqual([]);
+    announce("u-b");
+    state("u-b", { cameraStreamId: "voice-b" });
+    await vi.waitFor(() => expect(selections().at(-1)?.mids).toEqual(["b1", "b2"]));
+
+    client.setReceivePreferences({ screen: null, cameras: false });
+    await vi.waitFor(() => expect(selections().at(-1)?.mids).toEqual(["b1"]));
+    announce();
+    await vi.waitFor(() => expect(selections().at(-1)?.mids).toEqual([]));
+    expect(voice.enabled).toBe(false);
+  });
+
+  it("sends an equal list once, and not at all once it was overtaken in the outbox", async () => {
+    const client = build();
+    const pc = await answered(client);
+    announce("u-b");
+    state("u-b", { screenStreamId: "scr-b" });
+    const directory: Forwarded[] = [
+      { mid: "b1", userId: "u-b", kind: "audio", streamId: "mic-b", track: fakeTrack() },
+      { mid: "s1", userId: "u-b", kind: "video", streamId: "scr-b", track: fakeTrack("video") },
+      { mid: "s2", userId: "u-b", kind: "audio", streamId: "scr-b", track: fakeTrack() },
+    ];
+    await serverOffer(pc, 1, directory);
+    const before = selections().length;
+    const blocked = deferred<void>();
+    realtime.sendMediaSignal.mockImplementation(async (signal) => {
+      realtime.media.push(signal);
+      if (signal.kind === "candidate") await blocked.promise;
+    });
+    pc.onicecandidate?.({ candidate: null });
+    await vi.waitFor(() => expect(realtime.mediaOfKind("candidate")).toHaveLength(1));
+
+    // Both lists wait behind the candidate; the second puts back the first.
+    await outlastPace();
+    client.setReceivePreferences({ screen: { userId: "u-b", streamId: "scr-b" }, cameras: true });
+    await outlastPace();
+    client.setReceivePreferences({ screen: null, cameras: true });
+    client.setReceivePreferences({ screen: null, cameras: true });
+    tracks([...directory].reverse().map(({ mid, userId, kind, streamId }) => ({ mid, userId, kind, streamId })));
+    blocked.resolve();
+    await outlastPace();
+    expect(selections()).toHaveLength(before);
+    expect(selections().at(-1)?.mids).toEqual(["b1"]);
+  });
+
+  it("paces a list that keeps changing and always ends on the latest", async () => {
+    const client = build();
+    const pc = await answered(client);
+    announce("u-b");
+    state("u-b", { screenStreamId: "scr-b" });
+    const picture = fakeTrack("video");
+    await serverOffer(pc, 1, [
+      { mid: "b1", userId: "u-b", kind: "audio", streamId: "mic-b", track: fakeTrack() },
+      { mid: "s1", userId: "u-b", kind: "video", streamId: "scr-b", track: picture },
+    ]);
+    const before = selections().length;
+    const started = Date.now();
+
+    // Somebody who keeps calling the same stream a share and a camera, as
+    // fast as the hub relays their state frames.
+    for (let flip = 0; flip < 41; flip += 1) {
+      state("u-b", flip % 2 === 0 ? { cameraStreamId: "scr-b" } : { screenStreamId: "scr-b" });
+      // What plays follows at once; only the list waits.
+      expect(picture.enabled).toBe(flip % 2 === 0);
+      await new Promise((resolve) => setTimeout(resolve, 25));
+    }
+    await outlastPace();
+    const lists = selections().length - before;
+    expect(lists).toBeGreaterThan(0);
+    expect(lists).toBeLessThanOrEqual(Math.ceil((Date.now() - started) / 250) + 1);
+    expect(selections().at(-1)?.mids).toEqual(["b1", "s1"]);
+  });
+
+  it("asks a replacement session again for the latest preferences once its directory arrives", async () => {
+    const client = build();
+    const pc = await answered(client);
+    announce("u-b", "u-c");
+    state("u-b", { screenStreamId: "scr-b" });
+    state("u-c", { screenStreamId: "scr-c" });
+    client.setReceivePreferences({ screen: { userId: "u-b", streamId: "scr-b" }, cameras: true });
+    const forwarded = (): Forwarded[] => [
+      { mid: "b1", userId: "u-b", kind: "audio", streamId: "mic-b", track: fakeTrack() },
+      { mid: "b2", userId: "u-b", kind: "video", streamId: "scr-b", track: fakeTrack("video") },
+      { mid: "c1", userId: "u-c", kind: "video", streamId: "scr-c", track: fakeTrack("video") },
+      { mid: "c2", userId: "u-c", kind: "audio", streamId: "scr-c", track: fakeTrack() },
+    ];
+    await serverOffer(pc, 1, forwarded());
+    expect(selections().at(-1)).toEqual({ sessionId: "media-session-1", mids: ["b1", "b2"] });
+
+    pc.setState("failed");
+    client.setReceivePreferences({ screen: { userId: "u-c", streamId: "scr-c" }, cameras: false });
+    await vi.waitFor(() => expect(realtime.mediaOfKind("offer").at(-1)?.sessionId).toBe("media-session-2"));
+    const next = latestConnection();
+    const signalsOfNext = () =>
+      realtime.media.filter((signal) => signal.sessionId === "media-session-2").map((signal) => signal.kind);
+    // The new session has the empty list a session starts with.
+    expect(signalsOfNext()).toEqual(["offer"]);
+
+    await answerOffer(next);
+    // The roles the state frames gave outlive the connection they were learnt on.
+    await serverOffer(next, 1, forwarded());
+    expect(signalsOfNext()).toEqual(["offer", "subscriptions", "answer"]);
+    expect(selections().at(-1)).toEqual({ sessionId: "media-session-2", mids: ["b1", "c1", "c2"] });
+  });
+
+  it("replaces a session whose list is refused, and gives up after the last replacement", async () => {
+    realtime.sendMediaSignal.mockImplementation(async (signal) => {
+      realtime.media.push(signal);
+      if (signal.kind === "subscriptions") throw new Error("Invalid media signal.");
+    });
+    const client = build();
+    await client.join(CHANNEL);
+    announce("u-b");
+    for (let n = 1; n <= 4; n += 1) {
+      const sessionId = `media-session-${n}`;
+      await vi.waitFor(() => expect(realtime.mediaOfKind("offer").at(-1)?.sessionId).toBe(sessionId));
+      const pc = latestConnection();
+      await answerOffer(pc);
+      pc.incoming.push({ mid: "b1", track: fakeTrack() });
+      fromServer("offer", {
+        type: "offer",
+        sdp: SERVER_SDP,
+        negotiationId: 1,
+        tracks: [{ mid: "b1", userId: "u-b", kind: "audio", streamId: "mic-b" }],
+      });
+      await vi.waitFor(() => expect(selections().filter((list) => list.sessionId === sessionId)).toHaveLength(1));
+    }
+
+    await vi.waitFor(() => expect(client.getSnapshot().transport.media).toBe("failed"));
+    expect(realtime.openMediaSession).toHaveBeenCalledTimes(4);
+    expect(client.getSnapshot().error?.kind).toBe("transport");
+  });
+});
+
 describe("remote shares and cameras", () => {
   async function seatedB(client: WebRtcVoiceClient): Promise<FakePeerConnection> {
     const pc = await answered(client);
@@ -2257,6 +2578,7 @@ describe("remote shares and cameras", () => {
 
   it("moves a share's sound off the voice once the state frame names it", async () => {
     const client = build();
+    client.setReceivePreferences({ screen: { userId: "u-b", streamId: "scr-b" }, cameras: true });
     const pc = await seatedB(client);
     const voice = fakeTrack();
     const sound = fakeTrack("audio", 2);
@@ -2275,6 +2597,7 @@ describe("remote shares and cameras", () => {
 
   it("plays somebody's shared sound at the volume chosen for them", async () => {
     const client = build();
+    client.setReceivePreferences({ screen: { userId: "u-b", streamId: "scr-b" }, cameras: true });
     const pc = await seatedB(client);
     const sound = fakeTrack("audio", 2);
     state("u-b", { screenStreamId: "scr-b" });

@@ -202,7 +202,7 @@ describe("a share or camera that ends", () => {
     expect(media.hasAudio("share")).toBe(false);
   });
 
-  it("forgets a withdrawn share completely, so its id cannot come back", () => {
+  it("forgets a withdrawn share, so its id cannot come back as a share or a voice", () => {
     media.addVideo(stream("share"));
     media.addAudio(stream("share"));
     media.announce({ screenStreamId: "share", cameraStreamId: null });
@@ -211,7 +211,25 @@ describe("a share or camera that ends", () => {
 
     expect(media.screen).toBeNull();
     expect(media.hasAudio("share")).toBe(false);
+    // Its picture is still listed until the directory withdraws it.
+    expect(media.roleOf("share")).toBe("screen");
+    media.removeVideo("share");
     expect(media.roleOf("share")).toBe("microphone");
+  });
+
+  it("keeps the announced camera's stream the voice after the camera stops", () => {
+    // Filed after the directory named the picture, as for anyone who arrives
+    // once the camera is on: only the announcement says it is the voice.
+    media.learnVideo("voice");
+    media.addAudio(stream("voice"));
+    media.announce({ screenStreamId: null, cameraStreamId: "voice" });
+    expect(media.roleOf("voice")).toBe("microphone");
+
+    media.announce(NO_ANNOUNCEMENT);
+    media.learnVideo("voice");
+
+    expect(media.camera).toBeNull();
+    expect(media.roleOf("voice")).toBe("microphone");
   });
 
   it("does not hand a stale camera stream to a later screen role", () => {

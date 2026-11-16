@@ -174,6 +174,7 @@ async fn every_other_route_needs_the_secret() {
         ("POST", "/v1/sessions/x/offer"),
         ("POST", "/v1/sessions/x/answer"),
         ("POST", "/v1/sessions/x/candidate"),
+        ("POST", "/v1/sessions/x/subscriptions"),
         ("GET", "/v1/events?epoch=x&after=0"),
         ("GET", "/v1/stats"),
     ];
@@ -290,7 +291,7 @@ async fn offers_answers_and_candidates_use_the_contract_codes() {
     let mut browser_b = browser();
 
     // Unknown sessions.
-    for route in ["offer", "answer", "candidate"] {
+    for route in ["offer", "answer", "candidate", "subscriptions"] {
         let reply = post(
             &server,
             &format!("/v1/sessions/nobody/{route}"),
@@ -455,6 +456,53 @@ async fn offers_answers_and_candidates_use_the_contract_codes() {
         assert_eq!(reply.body["error"], "invalid-candidate");
     }
 
+    server.shutdown().await.unwrap();
+}
+
+#[tokio::test]
+async fn subscriptions_replace_a_validated_receiver_mid_allowlist() {
+    let server = start().await;
+    let session = create(&server, 1).await;
+    let path = format!("/v1/sessions/{session}/subscriptions");
+    for mids in [
+        Vec::<String>::new(),
+        vec!["future-mid".into(), "0123456789abcdef".into()],
+        (0..4096).map(|i| format!("m{i}")).collect(),
+    ] {
+        let reply = post(&server, &path, json!({ "mids": mids })).await;
+        assert_eq!(reply.status, 204, "{}", reply.body);
+        assert_eq!(reply.body, Value::Null);
+    }
+
+    for body in [
+        json!({}),
+        json!([]),
+        json!({ "mids": null }),
+        json!({ "mids": "mid" }),
+        json!({ "mids": [1] }),
+        json!({ "mids": [""] }),
+        json!({ "mids": ["same", "same"] }),
+        json!({ "mids": ["0123456789abcdefg"] }),
+        json!({ "mids": ["has space"] }),
+        json!({ "mids": ["has\ttab"] }),
+        json!({ "mids": ["has\nnewline"] }),
+        json!({ "mids": ["control\u{7f}"] }),
+        json!({ "mids": ["żółć"] }),
+        json!({ "mids": (0..4097).map(|i| format!("m{i}")).collect::<Vec<_>>() }),
+    ] {
+        let reply = post(&server, &path, body.clone()).await;
+        assert_eq!(reply.status, 422, "{body}");
+        assert_eq!(reply.body["error"], "invalid-request", "{body}");
+    }
+    let reply = request(&server, "POST", &path, Some(SECRET), Some("{")).await;
+    assert_eq!(reply.status, 422);
+    assert_eq!(reply.body["error"], "invalid-request");
+
+    let big = json!({ "mids": ["x".repeat(300 * 1024)] }).to_string();
+    let reply = request(&server, "POST", &path, Some(SECRET), Some(&big)).await;
+    assert_eq!(reply.status, 413);
+    assert_eq!(reply.body["error"], "payload-too-large");
+    assert!(all_events(&server, server.epoch()).await.is_empty());
     server.shutdown().await.unwrap();
 }
 
@@ -738,6 +786,16 @@ async fn relay(server: &Server, clients: &mut [&mut UdpClient], seen: &mut u64) 
         else {
             continue;
         };
+        // A browser asks for the tracks it is told of; nothing is sent to it
+        // otherwise.
+        if let Some(tracks) = event["payload"]["tracks"].as_array() {
+            let mids: Vec<&str> = tracks.iter().filter_map(|t| t["mid"].as_str()).collect();
+            let path = format!("/v1/sessions/{}/subscriptions", c.session);
+            assert_eq!(
+                post(server, &path, json!({ "mids": mids })).await.status,
+                204
+            );
+        }
         let sdp = event["payload"]["sdp"].as_str().unwrap_or_default();
         match event["kind"].as_str() {
             Some("answer") => {

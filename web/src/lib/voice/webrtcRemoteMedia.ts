@@ -24,9 +24,11 @@ export class RemoteMedia {
   /** Stream ids known to carry video, from the directory or a track. */
   private readonly videoIds = new Set<string>();
   /**
-   * Stream ids whose sound was filed while no picture was known on them: the
-   * person's voice. A camera is sent in the voice's stream, so the picture
-   * that joins it later must not turn the voice into a share's sound.
+   * Stream ids whose sound was filed while no picture was known on them, or
+   * that the person announced as their camera's: the person's voice. A camera
+   * is sent in the voice's stream, so the picture that joins it later must not
+   * turn the voice into a share's sound, nor must the picture that is still
+   * listed after the camera stopped.
    */
   private readonly voiceIds = new Set<string>();
   /**
@@ -80,12 +82,14 @@ export class RemoteMedia {
    * audio is. True when an announced share or camera ended with it, which takes
    * a share's sound along: the caller has to place the audio streams again.
    */
-  removeVideo(streamId: string): boolean {
+  removeVideo(streamId: string, preserveAnnouncement = false): boolean {
     this.video.delete(streamId);
     this.videoIds.delete(streamId);
     const announced = streamId === this.screenId || streamId === this.cameraId;
-    if (streamId === this.screenId) this.clearScreen();
-    if (streamId === this.cameraId) this.clearCamera();
+    if (!preserveAnnouncement) {
+      if (streamId === this.screenId) this.clearScreen();
+      if (streamId === this.cameraId) this.clearCamera();
+    }
     return announced;
   }
 
@@ -99,14 +103,16 @@ export class RemoteMedia {
 
   /**
    * Take the person's own account of their screen and camera. A stream id that
-   * is replaced or withdrawn is forgotten completely, so it can never come
-   * back later under another role.
+   * is replaced or withdrawn is forgotten, so it can never come back later
+   * under another role: a share's stream still counts as a picture for as
+   * long as the directory lists it, and a camera's as the voice.
    */
   announce(announcement: MediaAnnouncement): void {
     if (announcement.screenStreamId !== this.screenId) this.clearScreen();
     if (announcement.cameraStreamId !== this.cameraId) this.clearCamera();
     this.screenId = announcement.screenStreamId;
     this.cameraId = announcement.cameraStreamId;
+    if (this.cameraId !== null) this.voiceIds.add(this.cameraId);
   }
 
   /**
@@ -124,10 +130,10 @@ export class RemoteMedia {
   }
 
   /** The most recently received audio stream with this role. */
-  newestAudio(role: AudioRole): MediaStream | null {
+  newestAudio(role: AudioRole, accepts: (streamId: string) => boolean = () => true): MediaStream | null {
     let newest: MediaStream | null = null;
     for (const [id, stream] of this.audio) {
-      if (this.roleOf(id) === role) newest = stream;
+      if (this.roleOf(id) === role && accepts(id)) newest = stream;
     }
     return newest;
   }
@@ -152,8 +158,9 @@ export class RemoteMedia {
     const id = this.screenId;
     if (id === null) return;
     this.screenId = null;
+    // Still known to carry a picture until its video is withdrawn, so neither
+    // its sound nor its picture is taken for the voice or a camera meanwhile.
     this.video.delete(id);
-    this.videoIds.delete(id);
     // The share's sound goes with it.
     this.audio.delete(id);
     this.soundIds.delete(id);

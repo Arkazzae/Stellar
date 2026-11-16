@@ -60,6 +60,10 @@ pub struct Client {
     pub received: Vec<Received>,
     /// The latest directory the client was given.
     pub directory: Vec<Value>,
+    /// Asks for every track of each directory it is given, as a browser that
+    /// shows everything would. The tests of the list itself turn it off and
+    /// send their own.
+    pub subscribe_to_all: bool,
     pub offers_seen: Vec<u64>,
     pub answer_results: Vec<Result<(), ApiError>>,
     pub ignore_offers: bool,
@@ -246,6 +250,7 @@ impl Net {
             events: Vec::new(),
             received: Vec::new(),
             directory: Vec::new(),
+            subscribe_to_all: true,
             offers_seen: Vec::new(),
             answer_results: Vec::new(),
             ignore_offers: false,
@@ -360,7 +365,9 @@ impl Net {
                 let c = &mut self.clients[i];
                 c.offers_seen.push(id);
                 c.directory = payload["tracks"].as_array().unwrap().clone();
+                self.subscribe_to_directory(i);
                 // Impolite: a server offer that collides with our own is ignored.
+                let c = &self.clients[i];
                 if c.ignore_offers || c.pending.is_some() {
                     return;
                 }
@@ -380,8 +387,25 @@ impl Net {
             }
             "tracks" => {
                 self.clients[i].directory = payload["tracks"].as_array().unwrap().clone();
+                self.subscribe_to_directory(i);
             }
             other => panic!("unknown signal {other}"),
+        }
+    }
+
+    /// The list goes out with the directory that names the sections, before
+    /// the answer that negotiates them, which is the order a browser uses.
+    fn subscribe_to_directory(&mut self, i: usize) {
+        let c = &self.clients[i];
+        if !c.subscribe_to_all {
+            return;
+        }
+        let (session, mids) = (c.session_id.clone(), c.directory_mids());
+        match self.core.set_subscriptions(self.now, &session, &mids) {
+            // The directory of a session that closed meanwhile is still
+            // delivered; its list has nowhere to go.
+            Ok(()) | Err(ApiError::UnknownSession) => {}
+            Err(e) => panic!("the directory's own mids are a valid list: {e:?}"),
         }
     }
 
