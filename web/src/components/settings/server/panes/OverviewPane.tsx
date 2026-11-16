@@ -5,7 +5,7 @@ import { useEffect, useId, useRef, useState } from "react";
 import { Button } from "@stellarr/ui";
 import { Icon } from "@stellarr/icons";
 import { Switch } from "@/components/primitives/Switch";
-import { countedNoun, formatShortDate } from "@/components/settings/panes/paneFormat";
+import { countedNoun, formatShortDate } from "@/components/settings/paneFormat";
 import { SettingsSaveBar } from "@/components/settings/SettingsSaveBar";
 import { SettingsSection } from "@/components/settings/SettingsSection";
 import { useAsyncAction } from "@/hooks/useAsyncAction";

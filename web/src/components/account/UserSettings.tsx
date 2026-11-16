@@ -45,7 +45,7 @@ import {
 import {
   AppearancePane,
   type AppearancePaneProps,
-} from "@/components/settings/panes/AppearancePane";
+} from "@/components/account/panes/AppearancePane";
 import { type Translator } from "@/i18n";
 import { translateForDocument } from "@/i18n/defaultLocale";
 import type { Account } from "@/ports";

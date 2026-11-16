@@ -7,22 +7,22 @@ import {
   DangerPane,
   NotificationsPane,
   PermissionsPane,
-} from "@/components/settings/ChannelActionPanes";
-import { ChannelOverviewPane } from "@/components/settings/ChannelFormPanes";
+} from "@/components/settings/channel/ChannelActionPanes";
+import { ChannelOverviewPane } from "@/components/settings/channel/ChannelFormPanes";
 import {
   channelLabel,
   initialPane,
   navigationFor,
   type ChannelSettingsPaneKey,
   type ChannelSettingsVM,
-} from "@/components/settings/channelSettingsModel";
-import type { PermissionOverridePatch } from "@/components/settings/PermissionOverrideEditor";
+} from "@/components/settings/channel/channelSettingsModel";
+import type { PermissionOverridePatch } from "@/components/settings/channel/PermissionOverrideEditor";
 import { SettingsShell } from "@/components/settings/SettingsShell";
 import { SettingsGuardProvider, useSettingsGuardHost } from "@/components/settings/settingsGuard";
 import type { ChannelPatch, PermissionOverride, Role } from "@/ports";
 import { useLanguage } from "@/state/hooks";
 
-export type { ChannelSettingsVM } from "@/components/settings/channelSettingsModel";
+export type { ChannelSettingsVM } from "@/components/settings/channel/channelSettingsModel";
 
 export interface ChannelSettingsProps {
   open: boolean;

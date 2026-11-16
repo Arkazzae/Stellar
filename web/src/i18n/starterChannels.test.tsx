@@ -3,7 +3,7 @@ import userEvent from "@testing-library/user-event";
 import { useState } from "react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-import { ServerCreateModal } from "@/components/settings/ServerCreateModal";
+import { ServerCreateModal } from "@/components/settings/server/ServerCreateModal";
 import { LanguageProvider } from "@/state/LanguageProvider";
 import { useLanguage } from "@/state/hooks";
 

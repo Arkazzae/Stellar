@@ -1,7 +1,7 @@
 import { fireEvent, render, screen } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-import type { RailThreads } from "@/components/shell/railTypes";
+import type { RailThreads } from "@/components/shell/rail/railTypes";
 import type { ChannelThreadVM, TextChannelVM } from "@/components/view-models";
 import {
   layOutRail,

@@ -9,7 +9,7 @@ import {
   channelIcon,
   channelLabel,
   type ChannelSettingsVM,
-} from "@/components/settings/channelSettingsModel";
+} from "@/components/settings/channel/channelSettingsModel";
 import { useAsyncAction } from "@/hooks/useAsyncAction";
 import type { MessageKey } from "@/i18n";
 import type { ChannelKind, ChannelPatch } from "@/ports";

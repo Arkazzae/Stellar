@@ -6,8 +6,8 @@ import { answerConfirm, renderWithConfirm } from "@/test/confirm";
 
 import { SoundboardPane, type SoundboardPaneProps } from "./SoundboardPane";
 
-vi.mock("@/components/settings/WaveformTrimmer", async () => {
-  const actual = await vi.importActual("@/components/settings/WaveformTrimmer");
+vi.mock("@/components/settings/sound/WaveformTrimmer", async () => {
+  const actual = await vi.importActual("@/components/settings/sound/WaveformTrimmer");
   return {
     ...actual,
     decodeWaveform: vi.fn().mockResolvedValue({

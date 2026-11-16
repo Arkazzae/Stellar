@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useState } from "react";
 
-import type { PermissionOverridePatch } from "@/components/settings/PermissionOverrideEditor";
+import type { PermissionOverridePatch } from "@/components/settings/channel/PermissionOverrideEditor";
 import type { PermissionOverride, PermissionTargetType } from "@/ports";
 import { usePorts } from "@/state/hooks";
 

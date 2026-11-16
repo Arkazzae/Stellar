@@ -1,11 +1,11 @@
 "use client";
 
-import { ChannelButton } from "@/components/shell/ChannelButton";
-import { ChannelThreads } from "@/components/shell/ChannelThreads";
+import { ChannelButton } from "@/components/shell/rail/ChannelButton";
+import { ChannelThreads } from "@/components/shell/rail/ChannelThreads";
 import type {
   ChannelMenuRaiser,
   RailThreads,
-} from "@/components/shell/railTypes";
+} from "@/components/shell/rail/railTypes";
 import type { TextChannelVM } from "@/components/view-models";
 import { DragAnnouncer } from "@/lib/drag/DragAnnouncer";
 import { useSortableList } from "@/lib/drag/useSortableList";

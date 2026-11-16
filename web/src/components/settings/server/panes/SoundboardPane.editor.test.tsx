@@ -5,11 +5,11 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { ConfirmProvider } from "@/components/primitives/ConfirmDialog";
 import { answerConfirm, renderWithConfirm } from "@/test/confirm";
 
-import { decodeWaveform } from "../WaveformTrimmer";
+import { decodeWaveform } from "@/components/settings/sound/WaveformTrimmer";
 import { SoundboardPane, type SoundboardPaneProps } from "./SoundboardPane";
 
-vi.mock("@/components/settings/WaveformTrimmer", async () => {
-  const actual = await vi.importActual("@/components/settings/WaveformTrimmer");
+vi.mock("@/components/settings/sound/WaveformTrimmer", async () => {
+  const actual = await vi.importActual("@/components/settings/sound/WaveformTrimmer");
   return {
     ...actual,
     decodeWaveform: vi.fn(),

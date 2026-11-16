@@ -1,6 +1,6 @@
 import { useState } from "react";
 
-import { voiceMoveRequest, type VoiceDragData } from "@/components/shell/voiceMove";
+import { voiceMoveRequest, type VoiceDragData } from "@/components/shell/rail/voiceMove";
 import { useLanguage } from "@/state/hooks";
 
 export interface VoiceMoveOptions {

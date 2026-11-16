@@ -2,8 +2,8 @@
 
 import { useMemo } from "react";
 
-import { ChannelCreate } from "@/components/settings/ChannelCreate";
-import { ChannelSettings, type ChannelSettingsVM } from "@/components/settings/ChannelSettings";
+import { ChannelCreate } from "@/components/settings/channel/ChannelCreate";
+import { ChannelSettings, type ChannelSettingsVM } from "@/components/settings/channel/ChannelSettings";
 import { ApiError, describeError } from "@/lib/api/errors";
 import type { OpusProfileId, Role } from "@/ports";
 import { useAccount, useDirectory, useLanguage, usePorts, useUi } from "@/state/hooks";

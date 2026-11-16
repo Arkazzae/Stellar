@@ -5,7 +5,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { EmojiPicker } from "@/components/room/composer/EmojiPicker";
 import { MessageEditor } from "@/components/room/transcript/MessageEditor";
-import { EmojiPane } from "@/components/settings/panes/EmojiPane";
+import { EmojiPane } from "@/components/settings/server/panes/EmojiPane";
 import { AppShell } from "@/components/shell/AppShell";
 import { polish } from "@/test/translators";
 

@@ -8,19 +8,19 @@ import { UserMenu, type UserMenuActions } from "@/components/roster/UserMenu";
 import {
   ChannelMenu,
   type ChannelMenuActions,
-} from "@/components/shell/ChannelMenu";
-import { CollapsibleGroup } from "@/components/shell/CollapsibleGroup";
-import { RailHeader } from "@/components/shell/RailHeader";
-import { RailSection } from "@/components/shell/RailSection";
-import { RailTextList } from "@/components/shell/RailTextList";
-import { RailVoiceList } from "@/components/shell/RailVoiceList";
+} from "@/components/shell/rail/ChannelMenu";
+import { CollapsibleGroup } from "@/components/shell/rail/CollapsibleGroup";
+import { RailHeader } from "@/components/shell/rail/RailHeader";
+import { RailSection } from "@/components/shell/rail/RailSection";
+import { RailTextList } from "@/components/shell/rail/RailTextList";
+import { RailVoiceList } from "@/components/shell/rail/RailVoiceList";
 import type {
   ChannelMenuRaiser,
   ChannelMenuTarget,
   RailThreads,
-} from "@/components/shell/railTypes";
-import { useThreadFocus } from "@/components/shell/useThreadFocus";
-import { useVoiceMove } from "@/components/shell/useVoiceMove";
+} from "@/components/shell/rail/railTypes";
+import { useThreadFocus } from "@/components/shell/rail/useThreadFocus";
+import { useVoiceMove } from "@/components/shell/rail/useVoiceMove";
 import type {
   ChannelThreadVM,
   PersonVM,
@@ -30,7 +30,7 @@ import type {
 } from "@/components/view-models";
 import { useLanguage } from "@/state/hooks";
 
-export { voiceMoveRequest } from "@/components/shell/voiceMove";
+export { voiceMoveRequest } from "@/components/shell/rail/voiceMove";
 
 export interface RailProps {
   serverName: string;
