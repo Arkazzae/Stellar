@@ -117,7 +117,7 @@ provider that really requires a second factor and reports it in `amr`.
 
 | Variable | Type | Default | Description |
 | --- | --- | --- | --- |
-| `STELLARR_LANGUAGE` | `en` \| `pl` | `en` | Default interface locale for users without a saved preference, and the language used by the API for error messages, system messages, default server/role/channel names, audit entries, and emails. Stored records keep the language in which they were created. Unknown values abort API startup. The container hands the value to the web client at every start; browsers that loaded the client within the last hour may keep the previous default until that hour is up. |
+| `STELLARR_LANGUAGE` | `en` \| `pl` | `en` | Default interface locale for users without a saved preference, and the language used by the API for error messages, system messages, default server/role/channel names, audit entries, and emails. Stored records keep the language in which they were created. Unknown values abort API startup. The web client's server reads it on every request. |
 
 See [Localization](../localization.md).
 
@@ -169,11 +169,10 @@ The container entrypoint and TLS maintenance scripts read the following variable
 
 | Variable | Default | Description |
 | --- | --- | --- |
-| `STELLARR_DEV_WEB_PORT` | `3000` | Host port for Next.js (`next dev`). |
-| `STELLARR_DEV_COCKPIT_PORT` | `3001` | Host port for Cockpit (`vite`). |
+| `STELLARR_DEV_WEB_PORT` | `3000` | Host port for Next.js (`next dev`), which serves the web client and Cockpit under `/cockpit`. |
 | `STELLARR_DEV_API_PORT` | `5000` | Host port for the ASP.NET Core API (`dotnet watch`). |
 | `STELLARR_DEV_MEDIA_PORT` | `49100` | Host UDP port for `stellarr-media` (advertised on `127.0.0.1`). |
 | `STELLARR_DEV_MEDIA_CONTROL_PORT` | `5200` | Host loopback TCP port (`127.0.0.1:5200`) for the `stellarr-media` control API. |
 | `STELLARR_ALLOWED_DEV_ORIGINS` | empty | Comma-separated hostnames allowed to load Next.js dev chunks (`127.0.0.1` is always allowed). |
-| `STELLARR_API_ORIGIN` | `http://127.0.0.1:5000` | Upstream API origin proxied by the web (`/api`, `/assets`, `/hubs`) and Cockpit (`/api`, `/health`) dev servers (`http://api:5000` inside `docker-compose.dev.yml`). |
+| `STELLARR_API_ORIGIN` | `http://127.0.0.1:5000` | Upstream API origin that `next dev` proxies `/api`, `/assets`, `/health` and `/hubs` to (`http://api:5000` inside `docker-compose.dev.yml`). |
 | `WATCHPACK_POLLING` | `true` | Enables file-system polling in `next dev` for bind mounts. |
