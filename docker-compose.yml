@@ -53,8 +53,9 @@ services:
       Desktop__RecommendedVersion: ${STELLARR_DESKTOP_RECOMMENDED_VERSION:-0.1.3}
       Stellarr__InstanceId: ${STELLARR_INSTANCE_ID:-}
       Stellarr__InstanceName: ${STELLARR_INSTANCE_NAME:-Stellarr}
-      # One setting for the instance language: the web server reads
-      # STELLARR_LANGUAGE on every request and the API reads Stellarr:Language.
+      # One setting for the instance language: the entrypoint writes
+      # STELLARR_LANGUAGE for the web client at every start and the API reads
+      # Stellarr:Language.
       STELLARR_LANGUAGE: ${STELLARR_LANGUAGE:-en}
       Stellarr__Language: ${STELLARR_LANGUAGE:-en}
       Mail__Enabled: ${STELLARR_MAIL_ENABLED:-true}
