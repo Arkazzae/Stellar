@@ -1,10 +1,17 @@
 import { readdirSync, rmSync } from "node:fs";
 import { join } from "node:path";
 
-import type { Connect, Plugin } from "vite";
+import type { Connect, Plugin, Rollup } from "vite";
 
 import { THEME_SCRIPT } from "./src/stellarr/design/themeScript";
-import { INSTANCE_LANGUAGE_PATH, instanceLanguageSource, LOCALE_SCRIPT } from "./src/stellarr/i18n/localeScript";
+import { SUPPORTED_LOCALES, type SupportedLocale } from "./src/stellarr/i18n";
+import { LANGUAGE_SETTINGS_KEY } from "./src/stellarr/i18n/defaultLocale";
+import {
+  INSTANCE_LANGUAGE_PATH,
+  instanceLanguageSource,
+  LANGUAGE_HINT_KEY,
+  LOCALE_SCRIPT,
+} from "./src/stellarr/i18n/localeScript";
 
 /*
  * The two documents of the build and which addresses each one answers. The
@@ -118,6 +125,124 @@ export function requestPath(url: string | undefined): string | null {
   }
 }
 
+/**
+ * Where the build writes the two preload scripts: the first ahead of the
+ * instance file, the second after the locale script.
+ */
+export const PRELOAD_MARKER = "<!-- preload -->";
+export const PRELOAD_CHOSEN_MARKER = "<!-- preload-chosen -->";
+
+/** Each language's catalog, by its path in the source; each is a chunk of its own. */
+export const CATALOG_MODULES: Readonly<Record<SupportedLocale, string>> = {
+  pl: "src/stellarr/i18n/messages/pl.ts",
+  en: "src/stellarr/i18n/messages/en.ts",
+};
+
+/** The files the document fetches ahead of the entry's own requests for them. */
+export interface PreloadPlan {
+  /** Per language, its catalog's chunk and whatever it imports that the entry does not. */
+  catalogs: Record<SupportedLocale, string[]>;
+}
+
+/** A chunk and every chunk it imports, directly or not. */
+function staticClosure(chunks: ReadonlyMap<string, Rollup.OutputChunk>, fileName: string, into = new Set<string>()): Set<string> {
+  if (into.has(fileName)) return into;
+  into.add(fileName);
+  for (const imported of chunks.get(fileName)?.imports ?? []) staticClosure(chunks, imported, into);
+  return into;
+}
+
+/**
+ * Reads from the bundle which files hold the catalogs, leaving out what the
+ * entry already loads. It refuses a build in which a catalog is part of the
+ * entry's own files: then the split this plan exists for has been lost, and
+ * the entry carries both catalogs again.
+ */
+export function preloadPlan(bundle: Rollup.OutputBundle, entry: string, base = "/"): PreloadPlan {
+  const chunks = new Map(
+    Object.values(bundle)
+      .filter((output): output is Rollup.OutputChunk => output.type === "chunk")
+      .map((chunk) => [chunk.fileName, chunk]),
+  );
+  const loaded = staticClosure(chunks, entry);
+  const filesOf = (path: string): string[] => {
+    const chunk = [...chunks.values()].find((candidate) => candidate.facadeModuleId?.endsWith(`/${path}`) === true);
+    if (chunk === undefined) throw new Error(`The build has no chunk of its own for ${path}.`);
+    if (loaded.has(chunk.fileName)) {
+      throw new Error(`${path} is in ${chunk.fileName}, which the entry loads anyway; it should be a chunk of its own.`);
+    }
+    return [...staticClosure(chunks, chunk.fileName)].filter((file) => !loaded.has(file)).map((file) => `${base}${file}`);
+  };
+  const plan: PreloadPlan = {
+    catalogs: { pl: filesOf(CATALOG_MODULES.pl), en: filesOf(CATALOG_MODULES.en) },
+  };
+  if (plan.catalogs.pl.some((file) => plan.catalogs.en.includes(file))) {
+    throw new Error("The two catalogs share a chunk, so a page would fetch both.");
+  }
+  return plan;
+}
+
+/**
+ * Adds a `modulepreload` link for `href` unless one is there already. The
+ * entry's own `import()` of the module then takes the one already fetched.
+ */
+const PRELOAD_FUNCTION =
+  'function preload(href){if(document.querySelector(\'link[rel="modulepreload"][href="\'+href+\'"]\'))return;' +
+  'var link=document.createElement("link");link.rel="modulepreload";link.setAttribute("crossorigin","");link.href=href;document.head.appendChild(link)}';
+
+/**
+ * Runs first in `<head>`, ahead of the instance file, which blocks the parser
+ * for a round trip while the browser already fetches the entry. When this
+ * browser can tell the page's language already, from the person's stored
+ * choice or else the hint the locale script left on the last load, it asks
+ * for that catalog now, next to the entry.
+ *
+ * The guess is the locale script's own answer except on the one load after an
+ * operator changes the instance default; then the next script fetches the
+ * right catalog too.
+ */
+export function earlyPreloadScript(plan: PreloadPlan): string {
+  return `(function(){
+var CATALOGS=${JSON.stringify(plan.catalogs)},SUPPORTED=${JSON.stringify(SUPPORTED_LOCALES)};
+${PRELOAD_FUNCTION}
+function pick(value){return SUPPORTED.indexOf(value)<0?null:value}
+var guess=null;
+try{var raw=localStorage.getItem(${JSON.stringify(LANGUAGE_SETTINGS_KEY)});if(raw)guess=pick(JSON.parse(raw).locale);if(!guess)guess=pick(localStorage.getItem(${JSON.stringify(LANGUAGE_HINT_KEY)}))}catch(e){}
+if(guess)CATALOGS[guess].forEach(preload);
+})()`;
+}
+
+/**
+ * Runs after the locale script and asks for the catalog of the language it
+ * chose, which on a browser's first load could not be told in advance. When
+ * the first script guessed right, the link is there and nothing more is asked.
+ */
+export function chosenPreloadScript(plan: PreloadPlan): string {
+  return `(function(){
+var CATALOGS=${JSON.stringify(plan.catalogs)};
+${PRELOAD_FUNCTION}
+(CATALOGS[document.documentElement.lang]||[]).forEach(preload);
+})()`;
+}
+
+const inline = (source: string) => `<script>${source.replaceAll("</", "<\\/")}</script>`;
+
+/**
+ * Writes the two preload scripts at their markers. The dev server has no
+ * bundle to read and serves modules one by one anyway, so it gets none
+ * (`plan` null).
+ */
+export function writePreload(html: string, plan: PreloadPlan | null): string {
+  for (const marker of [PRELOAD_MARKER, PRELOAD_CHOSEN_MARKER]) {
+    if (!html.includes(marker)) {
+      throw new Error(`The web client's document has no ${marker} for the preload scripts.`);
+    }
+  }
+  return html
+    .replace(PRELOAD_MARKER, plan === null ? "" : inline(earlyPreloadScript(plan)))
+    .replace(PRELOAD_CHOSEN_MARKER, plan === null ? "" : inline(chosenPreloadScript(plan)));
+}
+
 /** Answers every GET of an app address with that app's document. */
 function serveDocuments(directories: readonly string[]): Connect.NextHandleFunction {
   return (request, _response, next) => {
@@ -150,27 +275,46 @@ export interface DocumentsOptions {
 /**
  * The two documents in the dev and preview servers: the pre-paint scripts in
  * the web client's, each app's document for its addresses, and the instance
- * language file.
+ * language file. Once the build knows its files, the web client's document
+ * also gets the preload scripts.
  */
-export function stellarrDocuments(options: DocumentsOptions): Plugin {
+export function stellarrDocuments(options: DocumentsOptions): Plugin[] {
   const directories = fileDirectories(options.publicDir);
-  return {
-    name: "stellarr-documents",
-    transformIndexHtml: {
-      order: "pre",
-      handler: (html, context) => (context.path === `/${WEB_DOCUMENT}` ? writePrePaint(html) : html),
+  let base = "/";
+  return [
+    {
+      name: "stellarr-documents",
+      transformIndexHtml: {
+        order: "pre",
+        handler: (html, context) => (context.path === `/${WEB_DOCUMENT}` ? writePrePaint(html) : html),
+      },
+      configureServer(server) {
+        server.middlewares.use(serveInstanceLanguage(options.instanceLanguage));
+        // After Vite's own middlewares have served what exists, before its 404.
+        return () => server.middlewares.use(serveDocuments(directories));
+      },
+      configurePreviewServer(server) {
+        server.middlewares.use(serveInstanceLanguage(options.instanceLanguage));
+        return () => server.middlewares.use(serveDocuments(directories));
+      },
+      writeBundle(output) {
+        if (output.dir !== undefined) removeDeclarations(options.publicDir, output.dir);
+      },
     },
-    configureServer(server) {
-      server.middlewares.use(serveInstanceLanguage(options.instanceLanguage));
-      // After Vite's own middlewares have served what exists, before its 404.
-      return () => server.middlewares.use(serveDocuments(directories));
+    {
+      name: "stellarr-preload",
+      configResolved(config) {
+        base = config.base;
+      },
+      transformIndexHtml: {
+        // After the bundle is written, when the chunks' names are known.
+        order: "post",
+        handler: (html, context) => {
+          if (context.path !== `/${WEB_DOCUMENT}`) return html;
+          const { bundle, chunk } = context;
+          return writePreload(html, bundle === undefined || chunk === undefined ? null : preloadPlan(bundle, chunk.fileName, base));
+        },
+      },
     },
-    configurePreviewServer(server) {
-      server.middlewares.use(serveInstanceLanguage(options.instanceLanguage));
-      return () => server.middlewares.use(serveDocuments(directories));
-    },
-    writeBundle(output) {
-      if (output.dir !== undefined) removeDeclarations(options.publicDir, output.dir);
-    },
-  };
+  ];
 }

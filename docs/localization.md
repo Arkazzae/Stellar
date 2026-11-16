@@ -58,7 +58,8 @@ Setting `STELLARR_LANGUAGE=pl` (or `en`) configures the instance default:
 ## Adding a new language
 
 1. **Web client**:
-   - Add the locale code to `SUPPORTED_LOCALES` in `web/src/stellarr/i18n/index.ts`, create `web/src/stellarr/i18n/messages/<code>.ts`, register it in `catalogs`, and add `language.name.<code>` to all catalogs.
+   - Add the locale code to `SUPPORTED_LOCALES` in `web/src/stellarr/i18n/index.ts`, create `web/src/stellarr/i18n/messages/<code>.ts`, and add `language.name.<code>` to all catalogs.
+   - Each catalog is a chunk of its own, so name the new one in `LOADERS` in `web/src/stellarr/i18n/index.ts` (how the app fetches it), `CATALOGS` in `web/src/stellarr/i18n/localeScript.ts` (the build's copy, for the documents' text) and `CATALOG_MODULES` and `preloadPlan` in `web/documents.ts` (what a document fetches ahead of the entry), and give it its lines in `CATALOG_UNAVAILABLE` in `web/src/stellarr/i18n/messages/unavailable.ts`, which a page shows when its catalog cannot be fetched; `npm run typecheck` fails until each of these has it. The tests load every catalog before they start, in `web/vitest.setup.ts`, so add it there too.
    - Add the code to the languages `write_instance_language` accepts in `infra/entrypoint.sh`, so `STELLARR_LANGUAGE` can name it as the instance default. `web/documents.test.ts` fails until it does.
    - Add the native language label to `NATIVE_NAMES` in `web/src/stellarr/components/account/panes/LanguagePane.tsx`.
    - Add the `Intl` BCP 47 tag to `LOCALE_TAG` in `web/src/stellarr/lib/format/format.ts` and verify plural rules (`pluralForm`).

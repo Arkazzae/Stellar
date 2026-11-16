@@ -5,6 +5,7 @@ import {
   INSTANCE_LANGUAGE_GLOBAL,
   INSTANCE_LANGUAGE_PATH,
   instanceLanguageSource,
+  LANGUAGE_HINT_KEY,
   LOCALE_SCRIPT,
 } from "./localeScript";
 
@@ -114,6 +115,25 @@ describe("LOCALE_SCRIPT", () => {
     load("pl");
 
     expect(root.lang).toBe("pl");
+  });
+
+  it("leaves the language a person with no choice gets as the next load's hint, whatever this one chose", () => {
+    choose("en");
+    load("pl");
+    expect(localStorage.getItem(LANGUAGE_HINT_KEY)).toBe("pl");
+
+    // An operator who names no supported language leaves people in English.
+    load("de");
+    expect(localStorage.getItem(LANGUAGE_HINT_KEY)).toBe("en");
+  });
+
+  it("decides without the hint, which only guesses which catalog to fetch early", () => {
+    localStorage.setItem(LANGUAGE_HINT_KEY, "pl");
+
+    load("en");
+
+    expect(root.lang).toBe("en");
+    expect(localStorage.getItem(LANGUAGE_HINT_KEY)).toBe("en");
   });
 });
 

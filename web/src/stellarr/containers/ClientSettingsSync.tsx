@@ -301,6 +301,9 @@ export function useClientSettingsSync(): void {
   }, [userId, ports.account]);
 
   const { chatTranslationEnabled, chatTranslationTargetLanguage, locale, chosenLocale } = language;
+  // A language picked before its catalog has arrived is already the stored
+  // choice, so it goes up now, not only once the page has switched to it.
+  const switchingTo = language.switching?.locale;
 
   useEffect(() => noteChange(run.current, "appearance", appearanceToWire(theme.theme)), [theme.theme]);
   useEffect(
@@ -310,8 +313,9 @@ export function useClientSettingsSync(): void {
         "language",
         languageToWire({ chatTranslationEnabled, chatTranslationTargetLanguage }, chosenLocale()),
       ),
-    // The locale is here for what `chosenLocale` reads, not for a value used directly.
-    [locale, chatTranslationEnabled, chatTranslationTargetLanguage, chosenLocale],
+    // The locale and the pending switch are here for what `chosenLocale`
+    // reads, not for a value used directly.
+    [locale, switchingTo, chatTranslationEnabled, chatTranslationTargetLanguage, chosenLocale],
   );
   useEffect(() => noteChange(run.current, "privacy", privacyToWire({ giphy })), [giphy]);
   useEffect(() => noteChange(run.current, "keybinds", keybindsToWire(keybinds.bindings)), [keybinds.bindings]);

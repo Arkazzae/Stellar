@@ -11,7 +11,9 @@ import {
 
 import {
   TRANSLATION_DEFAULTS,
+  catalogLoaded,
   isSupportedLocale,
+  loadCatalog,
   translateMessage,
   type InterfaceLocale,
   type LanguageSettings,
@@ -22,8 +24,23 @@ import { documentLocale, LANGUAGE_SETTINGS_KEY } from "@/i18n/defaultLocale";
 
 export type { InterfaceLocale, LanguageSettings, TranslationTargetLanguage } from "@/i18n";
 
+/**
+ * A language picked whose catalog is still on its way, or could not be had.
+ * The page stays in its language meanwhile; the choice is already stored.
+ */
+export interface LanguageSwitch {
+  locale: InterfaceLocale;
+  failed: boolean;
+}
+
 export interface LanguageValue extends LanguageSettings {
+  /**
+   * Changes the settings. A new interface language whose catalog is not here
+   * yet is stored at once and shown once its catalog arrives; see `switching`.
+   */
   update: (patch: Partial<LanguageSettings>) => void;
+  /** The language being switched to, while its catalog is fetched or after it failed. */
+  switching: LanguageSwitch | null;
   /**
    * The interface language the person picked, now or on an earlier visit, or
    * undefined while they have not: what shows then is the instance default,
@@ -107,6 +124,7 @@ function standaloneValue(locale: InterfaceLocale): LanguageValue {
     ...DEFAULTS,
     locale,
     update: () => undefined,
+    switching: null,
     chosenLocale: () => undefined,
     text: (polish, english) => (locale === "en" ? english : polish),
     t: (key, values) => translateMessage(locale, key, values),
@@ -149,6 +167,9 @@ export function LanguageProvider({
   // Lets `update` see changes made earlier in the same tick, before React
   // has re-rendered with them.
   const latest = useRef(settings);
+  const [switching, setSwitching] = useState<LanguageSwitch | null>(null);
+  // The language whose catalog is being fetched; a later pick replaces it.
+  const requested = useRef<InterfaceLocale | null>(null);
 
   const commit = useCallback((next: LanguageSettings) => {
     latest.current = next;
@@ -157,7 +178,10 @@ export function LanguageProvider({
 
   useEffect(() => {
     const frame = requestAnimationFrame(() => {
-      commit(readStored(startLocale));
+      const stored = readStored(startLocale);
+      // The pre-paint script chose the page's language from the same entry,
+      // so its catalog is the one loaded; anything else waits for a pick.
+      commit(catalogLoaded(stored.locale) ? stored : { ...stored, locale: startLocale });
     });
     return () => cancelAnimationFrame(frame);
   }, [startLocale, commit]);
@@ -170,9 +194,38 @@ export function LanguageProvider({
   const update = useCallback(
     (patch: Partial<LanguageSettings>) => {
       const current = latest.current;
-      const next = applyPatch(current, patch);
+      const { locale: wanted, ...rest } = patch;
+      if (wanted === undefined || wanted === current.locale || catalogLoaded(wanted)) {
+        if (wanted !== undefined) {
+          requested.current = null;
+          setSwitching(null);
+        }
+        const next = applyPatch(current, patch);
+        commit(next);
+        persist(next, wanted !== undefined);
+        return;
+      }
+
+      // Everything else applies now. The language is stored now as well, so
+      // that the account hears of it and the next load starts in it; the page
+      // shows it once its catalog has arrived, and keeps the old one if the
+      // catalog cannot be had.
+      const next = applyPatch(current, rest);
       commit(next);
-      persist(next, patch.locale !== undefined);
+      persist({ ...next, locale: wanted }, true);
+      requested.current = wanted;
+      setSwitching({ locale: wanted, failed: false });
+      loadCatalog(wanted).then(
+        () => {
+          if (requested.current !== wanted) return;
+          requested.current = null;
+          setSwitching(null);
+          commit({ ...latest.current, locale: wanted });
+        },
+        () => {
+          if (requested.current === wanted) setSwitching({ locale: wanted, failed: true });
+        },
+      );
     },
     [commit],
   );
@@ -188,8 +241,8 @@ export function LanguageProvider({
   );
 
   const value = useMemo<LanguageValue>(
-    () => ({ ...settings, update, chosenLocale: readStoredLocale, text, t }),
-    [settings, update, text, t],
+    () => ({ ...settings, update, switching, chosenLocale: readStoredLocale, text, t }),
+    [settings, update, switching, text, t],
   );
 
   return <LanguageContext.Provider value={value}>{children}</LanguageContext.Provider>;

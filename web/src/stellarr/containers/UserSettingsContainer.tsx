@@ -255,6 +255,7 @@ export function UserSettingsContainer() {
           chatAutoTranslateEnabled: language.chatAutoTranslateEnabled,
           chatTranslationTargetLanguage: language.chatTranslationTargetLanguage,
           update: language.update,
+          switching: language.switching,
           t: language.t,
         }}
         t={language.t}

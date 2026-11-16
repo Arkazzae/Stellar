@@ -4,6 +4,8 @@ import { useLayoutEffect, useState } from "react";
 
 import { ConfirmProvider } from "@/components/primitives/ConfirmDialog";
 import { Transcript, type TranscriptSectionVM } from "@/components/room/transcript/Transcript";
+import { loadCatalog } from "@/i18n";
+import { documentLocale } from "@/i18n/defaultLocale";
 import type { Message } from "@/ports";
 
 import "./bench.css";
@@ -30,6 +32,9 @@ interface Anchor {
 }
 
 const root = createRoot(document.getElementById("bench-root")!);
+// The transcript translates as it renders, as in the app, which renders only
+// once its language's catalog is here. Fetched now, awaited before timing.
+const catalog = loadCatalog(documentLocale());
 let setView: ((view: View) => void) | null = null;
 let jumpTo: ((messageId: string) => void) | null = null;
 let messages: Message[] = [];
@@ -217,6 +222,7 @@ function Bench({ initial }: { initial: View }) {
 async function mount(count: number): Promise<Record<string, unknown>> {
   if (started) throw new Error("mount may only be called once");
   started = true;
+  await catalog;
   messages = withMarker(makeMessages(0, count), count);
   marker = markerFor(count);
   produce = createSectionsProducer();

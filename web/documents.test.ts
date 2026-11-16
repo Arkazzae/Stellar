@@ -6,23 +6,39 @@ import { fileURLToPath } from "node:url";
 
 import type * as Router from "@stellarr/router";
 import type { Route } from "@stellarr/router";
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import type { Rollup } from "vite";
 
 import {
   BUILD_DIRECTORY,
+  CATALOG_MODULES,
+  chosenPreloadScript,
   COCKPIT_DOCUMENT,
   documentFor,
+  earlyPreloadScript,
   fileDirectories,
   mergeSlashes,
   removeDeclarations,
   PRE_PAINT_MARKER,
+  PRELOAD_CHOSEN_MARKER,
+  PRELOAD_MARKER,
+  preloadPlan,
   requestPath,
   WEB_DOCUMENT,
   writePrePaint,
+  writePreload,
+  type PreloadPlan,
 } from "./documents";
 import { THEME_SCRIPT } from "./src/stellarr/design/themeScript";
 import { SUPPORTED_LOCALES, translateMessage } from "./src/stellarr/i18n";
-import { INSTANCE_LANGUAGE_PATH, instanceLanguageSource, LOCALE_SCRIPT } from "./src/stellarr/i18n/localeScript";
+import { LANGUAGE_SETTINGS_KEY } from "./src/stellarr/i18n/defaultLocale";
+import {
+  INSTANCE_LANGUAGE_GLOBAL,
+  INSTANCE_LANGUAGE_PATH,
+  instanceLanguageSource,
+  LANGUAGE_HINT_KEY,
+  LOCALE_SCRIPT,
+} from "./src/stellarr/i18n/localeScript";
 import { routes } from "./src/stellarr/routes";
 
 // The route table keeps its paths to itself, so the tables handed to
@@ -133,6 +149,32 @@ describe("the web client's document", () => {
 
   it("refuses a document that lost its marker", () => {
     expect(() => writePrePaint("<head></head>")).toThrow(/pre-paint/);
+    expect(() => writePreload("<head></head>", null)).toThrow(/preload/);
+  });
+
+  it("keeps a place for one preload script ahead of the instance file and one after the locale script", () => {
+    const early = head.indexOf(PRELOAD_MARKER);
+    const chosen = head.indexOf(PRELOAD_CHOSEN_MARKER);
+
+    expect(early).toBeGreaterThan(0);
+    expect(early).toBeLessThan(head.indexOf(`<script src="${INSTANCE_LANGUAGE_PATH}"`));
+    expect(chosen).toBeGreaterThan(head.indexOf(LOCALE_SCRIPT));
+    expect(chosen).toBeGreaterThan(head.indexOf(THEME_SCRIPT));
+  });
+
+  it("gets the preload scripts from the build, and none from the dev server", () => {
+    const plan: PreloadPlan = { catalogs: { pl: ["/static/pl-1.js"], en: ["/static/en-1.js"] } };
+
+    const built = writePreload(html, plan);
+    expect(built).toContain(`<script>${earlyPreloadScript(plan)}</script>`);
+    expect(built).toContain(`<script>${chosenPreloadScript(plan)}</script>`);
+    expect(built).not.toContain(PRELOAD_MARKER);
+    expect(built).not.toContain(PRELOAD_CHOSEN_MARKER);
+
+    const dev = writePreload(html, null);
+    expect(dev).not.toContain(PRELOAD_MARKER);
+    expect(dev).not.toContain(PRELOAD_CHOSEN_MARKER);
+    expect(dev).not.toContain("modulepreload");
   });
 
   it("carries the metadata the app had", () => {
@@ -141,6 +183,130 @@ describe("the web client's document", () => {
     expect(head).toContain('<meta name="theme-color" content="#111111" />');
     expect(head).toContain("width=device-width, initial-scale=1, maximum-scale=5, viewport-fit=cover");
     expect(head).toContain('<link rel="icon" href="/src/stellarr/assets/icon.svg"');
+  });
+});
+
+/** A chunk of a build, as the bundle describes it to the plugin. */
+function chunk(fileName: string, module: string | null, imports: string[] = []) {
+  return { type: "chunk", fileName, facadeModuleId: module === null ? null : `/repo/web/${module}`, imports };
+}
+
+function bundleOf(...chunks: ReturnType<typeof chunk>[]): Rollup.OutputBundle {
+  return Object.fromEntries(chunks.map((item) => [item.fileName, item])) as unknown as Rollup.OutputBundle;
+}
+
+const ENTRY = "static/web-1.js";
+
+describe("what the document fetches ahead of the entry", () => {
+  const build = bundleOf(
+    chunk(ENTRY, "src/stellarr/main.tsx", ["static/src-1.js"]),
+    chunk("static/src-1.js", null),
+    chunk("static/pl-1.js", CATALOG_MODULES.pl),
+    chunk("static/en-1.js", CATALOG_MODULES.en),
+  );
+
+  it("is each catalog's chunk", () => {
+    expect(preloadPlan(build, ENTRY)).toEqual({
+      catalogs: { pl: ["/static/pl-1.js"], en: ["/static/en-1.js"] },
+    });
+  });
+
+  it("refuses a build whose entry carries a catalog again", () => {
+    const merged = bundleOf(
+      chunk(ENTRY, "src/stellarr/main.tsx", ["static/src-1.js"]),
+      chunk("static/src-1.js", CATALOG_MODULES.en),
+      chunk("static/pl-1.js", CATALOG_MODULES.pl),
+    );
+
+    expect(() => preloadPlan(merged, ENTRY)).toThrow(/which the entry loads anyway/);
+  });
+
+  it("refuses a build with no chunk of its own for a catalog", () => {
+    const missing = bundleOf(chunk(ENTRY, "src/stellarr/main.tsx"), chunk("static/pl-1.js", CATALOG_MODULES.pl));
+
+    expect(() => preloadPlan(missing, ENTRY)).toThrow(/no chunk of its own/);
+  });
+
+  it("refuses catalogs that share a chunk, since a page would fetch both", () => {
+    const shared = bundleOf(
+      chunk(ENTRY, "src/stellarr/main.tsx"),
+      chunk("static/pl-1.js", CATALOG_MODULES.pl, ["static/words-1.js"]),
+      chunk("static/en-1.js", CATALOG_MODULES.en, ["static/words-1.js"]),
+      chunk("static/words-1.js", null),
+    );
+
+    expect(() => preloadPlan(shared, ENTRY)).toThrow(/share a chunk/);
+  });
+});
+
+describe("the preload scripts", () => {
+  const plan: PreloadPlan = {
+    catalogs: { pl: ["/static/pl-1.js"], en: ["/static/en-1.js"] },
+  };
+  const preloaded = () =>
+    [...document.head.querySelectorAll<HTMLLinkElement>('link[rel="modulepreload"]')].map(
+      (link) => link.getAttribute("href") ?? "",
+    );
+
+  /**
+   * Runs the head's scripts in the document's order on a page at `path`: the
+   * first preload script, the instance file, the locale script, the second
+   * preload script. Returns what the first asked for and what both did.
+   */
+  function load(path: string, instanceLanguage: string | null) {
+    window.history.replaceState(null, "", path);
+    new Function(earlyPreloadScript(plan))();
+    const early = preloaded();
+    (0, eval)(instanceLanguageSource(instanceLanguage));
+    (0, eval)(LOCALE_SCRIPT);
+    new Function(chosenPreloadScript(plan))();
+    return { early, all: preloaded() };
+  }
+
+  beforeEach(() => {
+    localStorage.clear();
+    document.head.innerHTML = "";
+  });
+
+  afterEach(() => {
+    document.head.innerHTML = "";
+    delete (window as Window & { [INSTANCE_LANGUAGE_GLOBAL]?: unknown })[INSTANCE_LANGUAGE_GLOBAL];
+    window.history.replaceState(null, "", "/");
+  });
+
+  it("on a browser's first load, wait for the instance file and fetch only the chosen language", () => {
+    expect(load("/login", "en")).toEqual({ early: [], all: ["/static/en-1.js"] });
+    // Fetched the way the entry's script tag fetches, so its import takes the module.
+    expect(document.head.querySelector('link[rel="modulepreload"]')?.getAttribute("crossorigin")).toBe("");
+    document.head.innerHTML = "";
+    localStorage.clear();
+    expect(load("/register", "pl")).toEqual({ early: [], all: ["/static/pl-1.js"] });
+  });
+
+  it("on the next load, ask for the same language ahead of the instance file, once", () => {
+    load("/login", "pl");
+    document.head.innerHTML = "";
+
+    expect(load("/login", "pl")).toEqual({ early: ["/static/pl-1.js"], all: ["/static/pl-1.js"] });
+  });
+
+  it("ask early for the language the person chose, whatever the instance says", () => {
+    localStorage.setItem(LANGUAGE_SETTINGS_KEY, JSON.stringify({ locale: "en" }));
+    localStorage.setItem(LANGUAGE_HINT_KEY, "pl");
+
+    expect(load("/login", "pl")).toEqual({ early: ["/static/en-1.js"], all: ["/static/en-1.js"] });
+    expect(document.documentElement.lang).toBe("en");
+  });
+
+  it("fetch the new default too on the one load after the operator changes it, and paint in it", () => {
+    load("/login", "en");
+    document.head.innerHTML = "";
+
+    expect(load("/login", "pl")).toEqual({ early: ["/static/en-1.js"], all: ["/static/en-1.js", "/static/pl-1.js"] });
+    expect(document.documentElement.lang).toBe("pl");
+
+    document.head.innerHTML = "";
+    expect(load("/login", "pl").all).toEqual(["/static/pl-1.js"]);
   });
 });
 

@@ -2,7 +2,15 @@ import "@testing-library/jest-dom/vitest";
 import { cleanup } from "@testing-library/react";
 import { afterEach, beforeEach, vi } from "vitest";
 
+import { loadCatalog } from "./src/stellarr/i18n";
+
 afterEach(cleanup);
+
+// The app fetches one catalog before it renders; the suite asserts text in
+// both languages and renders components on their own, so both are loaded
+// before any test runs. A test that resets the module registry gets an empty
+// one again and loads what it needs itself.
+await Promise.all([loadCatalog("pl"), loadCatalog("en")]);
 
 // The suite asserts Polish text, and most tests render without a language
 // provider. Such components follow the page's language, so each test starts on
