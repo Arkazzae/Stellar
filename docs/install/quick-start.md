@@ -30,7 +30,7 @@ Docker pulls `ghcr.io/arkazzae/stellarr`, creates the `stellarr_stellarr_data` v
 docker compose ps
 ```
 
-The container reports `healthy` once every service in it answers: Nginx, the API with its database, the media server and `coturn`. If startup fails, see which service does not, and why, with:
+The container reports `healthy` once Nginx, the API and database, `stellarr-media`, and `coturn` all pass their readiness checks. If startup fails, inspect service state and logs:
 
 ```bash
 docker compose exec stellarr stellarr-init status
@@ -47,11 +47,11 @@ Open `https://localhost:8443` in your browser.
 ## 4. Create the owner account
 
 1. Select **Create account**.
-2. In the server setup step, choose a server name, an optional description, and the first text channel. Keep the voice channel enabled if you want to test voice next; you can also rename it or leave it out.
+2. In the server setup step, choose a server name, an optional description, and the first text channel. Keep the voice channel enabled if you want to test voice next; you can rename or remove it later.
 3. Continue to the owner account step. Enter a display name, username (3–32 characters: letters, digits, `.`, `-`, `_`), email, and password (at least 8 characters).
 4. Select **Create account and server**.
 
-The account and its private server are created together. This first account becomes the instance owner. You can return to the server step before submitting, and change the server settings later. Subsequent accounts require an invite link and skip server setup.
+The first account becomes the instance owner and is created together with its server. Subsequent accounts require an invite link and skip server setup.
 
 ## 5. Invite a second user
 
@@ -62,10 +62,10 @@ The account and its private server are created together. This first account beco
    https://localhost/invite/22b115a390a20370
    ```
 
-3. If you are not running on port `443`, include your HTTPS port in the URL before sharing it (for example, `https://localhost:8443/invite/22b115a390a20370`).
+3. If you are testing on `localhost:8443` without `STELLARR_DOMAIN` or `STELLARR_PUBLIC_URL` set, add `:8443` before opening the link (for example, `https://localhost:8443/invite/22b115a390a20370`).
 
 > [!WARNING]
-> Invite URLs are built from the `Host` header without the external port. When exposing HTTPS on a port other than `443`, append `:8443` (or your configured `STELLARR_HTTPS_PORT`) to the link.
+> When `STELLARR_DOMAIN` and `STELLARR_PUBLIC_URL` are unset, invite URLs fall back to the request `Host` header without non-443 ports. Once `STELLARR_DOMAIN` (with `STELLARR_PUBLIC_PORT`) or `STELLARR_PUBLIC_URL` is configured, invite links include the public origin automatically.
 
 ## 6. Join and test voice
 
@@ -76,7 +76,7 @@ The account and its private server are created together. This first account beco
 > [!IMPORTANT]
 > Local testing on one machine works without extra network setup because both browsers run on the Docker host. For calls from any other device (including another machine on your LAN), set `PUBLIC_IP` in `.env` and forward UDP port `49000` (`STELLARR_MEDIA_PORT`) on your router. See [Requirements](requirements.md#behind-nat).
 
-If voice remains stuck on connecting or fails across networks, follow the checklist in [RTC and ports](../rtc-and-ports.md#diagnostics).
+If voice stays on connecting or fails across networks, follow the checklist in [RTC and ports](../rtc-and-ports.md#diagnostics).
 
 ## Stop or remove
 
@@ -85,7 +85,7 @@ docker compose stop      # stop the container
 docker compose down      # remove container and network, preserve data volume
 ```
 
-Both stop the services in order and wait up to 75 seconds for them, the `stop_grace_period` in `docker-compose.yml`; it usually takes a second or two. See [Image and data](platforms.md#image-and-data).
+Both commands stop services gracefully (Compose allows up to `stop_grace_period: 75s`, though shutdown normally finishes in a couple of seconds). See [Running without Docker Compose](configuration.md#running-without-docker-compose) if using plain `docker run`.
 
 > [!CAUTION]
 > `docker compose down -v` permanently deletes the `stellarr_stellarr_data` volume, including all accounts, messages, uploads, and secrets.
@@ -93,7 +93,7 @@ Both stop the services in order and wait up to 75 seconds for them, the `stop_gr
 ## Next steps
 
 - **Operator panel**: Sign in with the owner account and open `https://localhost:8443/cockpit`.
-- [Requirements](requirements.md): `PUBLIC_IP` and router port forwarding, required for voice from any other device.
+- [Requirements](requirements.md): `PUBLIC_IP` and router port forwarding for voice from external devices.
 - [Reverse proxy and TLS](reverse-proxy-and-tls.md): trusted certificates and reverse proxy setup.
 - [Configuration](configuration.md): environment variable reference.
 
@@ -107,4 +107,4 @@ cd Stellarr
 docker compose up -d --build
 ```
 
-The multi-stage `Dockerfile` compiles the .NET API and the Rust media server and builds the web client and the Cockpit operator panel as static files inside Docker, so no local build toolchains are required on the host.
+The multi-stage `Dockerfile` builds the web client, Cockpit, .NET API, Rust media server, and `stellarr-init` inside Docker. No local toolchains are required on the host.

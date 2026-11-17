@@ -40,21 +40,21 @@ CA-signed certificates are never overwritten by the container. Self-signed certi
 If the certificate is unreadable or does not match `privkey.pem`, the container logs an error and exits with status `1`. If a mounted CA-signed certificate expires within 7 days, the container logs a warning on startup.
 
 > [!WARNING]
-> Mount the directory (`./certs:/data/stellarr/tls:ro`), not individual files. Single-file bind mounts retain the original inode across atomic file replacements on the host, preventing renewals from propagating into the container. Also ensure the directory contains regular files rather than symlinks pointing outside the mount (such as Certbot `live/` symlinks; copy them with `cp -L`).
+> Mount the directory (`./certs:/data/stellarr/tls:ro`), not individual files. Single-file bind mounts keep the original inode across atomic replacements on the host, preventing renewals from reaching the container. Also ensure the directory holds regular files rather than symlinks pointing outside the mount (for Certbot `live/`, copy with `cp -L`).
 
 ### Reloading after certificate renewal
 
-After updating `fullchain.pem` and `privkey.pem` on the host, reload Nginx and restart `coturn` through the container's process manager:
+After updating `fullchain.pem` and `privkey.pem` on the host, reload Nginx and restart `coturn` through `stellarr-init`:
 
 ```bash
 docker compose exec stellarr stellarr-init reload nginx
 docker compose exec stellarr stellarr-init restart turn
 ```
 
-`stellarr-init status` then shows both as `ready`; see [Services in the container](platforms.md#services-in-the-container).
+`stellarr-init status` then reports both as `ready`. See [Container services](../architecture.md#container-services-stellarr-init).
 
 > [!NOTE]
-> Restarting `turn` drops any active TURN relay allocations, causing relayed voice participants to briefly reconnect.
+> Restarting `turn` drops active TURN relay allocations, causing relayed voice participants to briefly reconnect.
 
 ### TURN over TLS (`turns:`)
 
@@ -64,7 +64,7 @@ Setting `STELLARR_TURNS_ENABLED=true` enables TURN over TLS/DTLS on `STELLARR_TU
 
 When an external reverse proxy terminates TLS on port `443` and forwards HTTP to the container's HTTP port (`8888` by default), set in `.env`:
 
-```bash
+```dotenv
 STELLARR_DOMAIN=chat.example.com
 STELLARR_PUBLIC_PORT=443
 STELLARR_HTTP_PORT=127.0.0.1:8888
@@ -77,11 +77,11 @@ Binding `STELLARR_HTTP_PORT` to `127.0.0.1` prevents external clients from bypas
 | Requirement | Reason |
 | --- | --- |
 | `X-Forwarded-Proto: https` | Without this header, container Nginx redirects HTTP requests to `https://<host>:<STELLARR_HTTPS_PORT>/`. |
-| Preserve `Host` (`$http_host`) | Used to construct invite URLs and the discovery origin when `STELLARR_PUBLIC_URL` is unset. |
-| Append the client's address to `X-Forwarded-For` | The API takes each person's address from it once the proxy is listed in `STELLARR_TRUSTED_PROXIES`; see [Client addresses](#client-addresses). |
+| Preserve `Host` (`$http_host`) | Used as the fallback origin when `STELLARR_PUBLIC_URL` is unset. |
+| Append client IP to `X-Forwarded-For` | Lets the API resolve real client IPs once the proxy is listed in `STELLARR_TRUSTED_PROXIES`. |
 | Forward `Upgrade` and `Connection` headers | Required for SignalR WebSocket connections under `/hubs/app`. |
-| Allow request bodies up to `128 MiB` | Video uploads can be up to 100 MiB; container Nginx allows up to 128 MiB. |
-| Read timeout above 20 seconds | SignalR sends a keep-alive every 15 seconds and WebSockets ping every 20 seconds. |
+| Allow request bodies up to `128 MiB` | Video uploads can be up to `100 MiB`; container Nginx allows up to `128 MiB`. |
+| Read timeout above `20 s` | SignalR sends keep-alives every `15 s` and WebSockets ping every `20 s`. |
 
 ### Example: Nginx
 
@@ -119,47 +119,46 @@ Verify the setup by checking `curl https://chat.example.com/health` (returns `{"
 
 ### Client addresses
 
-Behind a proxy, every request reaches the container from the proxy. Until the proxy is listed in `STELLARR_TRUSTED_PROXIES`, the API takes the proxy's address for everyone behind it: the session list, security events and trusted devices show the proxy, and everyone shares one budget of each per-address rate limit, so one person who tries to sign in ten times in a minute locks everyone else out of signing in for the rest of that minute.
+Behind a proxy, every request reaches Stellarr from the proxy's address. Until you list that proxy in `STELLARR_TRUSTED_PROXIES`:
 
-List the proxy by the address the container sees it connect from:
+- Active sessions, security events, and trusted devices all show the proxy's IP instead of each user's IP.
+- Every user shares the same per-IP rate-limit bucket, so one user failing sign-in repeatedly can lock out everyone else.
 
-```bash
+Configure `STELLARR_TRUSTED_PROXIES` with the IPv4/IPv6 addresses or CIDR networks of the proxies connecting to the container (comma- or space-separated):
+
+```dotenv
 STELLARR_TRUSTED_PROXIES=172.18.0.5
 ```
 
-Container Nginx appends the address that connected to it to `X-Forwarded-For`, and the API reads the header from the right. As long as the address it has reached is a listed proxy, it moves to the entry before it, the address that proxy saw; the first address that is not a listed proxy is the client's. So the proxy has to end the header with the address it saw, as Nginx does with `$proxy_add_x_forwarded_for` in the example above, rather than pass on the header it received unchanged; check that your proxy does. Then:
+How Stellarr resolves the client IP:
 
-- A header sent by anyone that is not a listed proxy changes nothing.
-- Whatever a client writes into `X-Forwarded-For` itself sits before the address its proxy appended, so it is never read.
-- When another proxy sits in front of yours, such as a CDN, its address is the one recorded unless it is listed too.
+- Container Nginx appends the connecting address to `X-Forwarded-For`, and the API walks that header from **right to left**, skipping any address listed in `STELLARR_TRUSTED_PROXIES`. The first unlisted IP becomes the client address.
+- Your proxy must **append** the client IP it observed (as Nginx `$proxy_add_x_forwarded_for` does) rather than forwarding an untrusted header unchanged. Client-spoofed values sit to the left and are ignored.
+- If a CDN or upstream proxy sits in front of your reverse proxy, list its CIDR ranges too; otherwise its edge IP is recorded as the client IP.
+- Invalid entries (hostnames, non-zero host bits such as `10.0.0.1/24`, or `0.0.0.0/0`) abort API startup with an error naming the entry.
 
-The value is a list of IPv4 and IPv6 addresses and CIDR networks, separated by commas or spaces. A host name, a network with bits set past its prefix (`10.0.0.1/24` instead of `10.0.0.0/24`) or one that covers every address stops the API at start, and the container log names the entry.
+#### Finding and pinning the proxy address
 
-#### Which address to list
-
-The address the container sees is not always the one the proxy has:
-
-| Where the proxy runs | Address the container sees |
+| Proxy placement | Address seen by the container |
 | --- | --- |
-| In a container on the same Docker network as Stellarr, proxying to `http://stellarr:80` | The proxy container's address on that network |
-| On the Docker host, proxying to the published port (`http://127.0.0.1:8888`) | The gateway of Stellarr's network |
-| In a container on another Docker network, proxying to the published port on the host | The gateway of Stellarr's network |
+| Container on the same Docker network (`http://stellarr:80`) | The proxy container's IP on that network |
+| Host process or container on another network hitting `127.0.0.1:8888` | The gateway IP of Stellarr's Docker network |
 
-The gateway of the network Docker Compose created for Stellarr:
+To inspect the gateway IP of Compose's network:
 
 ```bash
 docker network inspect stellarr_default --format '{{range .IPAM.Config}}{{.Gateway}}{{end}}'
 ```
 
-To check, leave `STELLARR_TRUSTED_PROXIES` empty, sign in through the proxy and list your sessions:
+Or check empirically: leave `STELLARR_TRUSTED_PROXIES` empty, sign in through the proxy, and run:
 
 ```bash
 docker compose exec stellarr stellarr sessions list --user <your-username>
 ```
 
-The session you just opened is listed first, and ends with the address the container sees (`from 172.18.0.5`). Set `STELLARR_TRUSTED_PROXIES` to it, run `docker compose up -d`, sign in again, and the new session shows your own address.
+Your newest session appears first and shows the connecting IP (`from 172.18.0.5`). Set `STELLARR_TRUSTED_PROXIES` to that address, run `docker compose up -d`, sign in again, and confirm the new session shows your real IP.
 
-Docker assigns these addresses when it creates a network or a container, so they can change: a proxy container's when it is recreated, a network's gateway when the network is (`docker compose down` removes it). Give the proxy container a fixed `ipv4_address`, or fix the subnet of Stellarr's network in `docker-compose.override.yml`, which makes its gateway the subnet's first address (`172.30.0.1` here). An existing network keeps its subnet until it is recreated, so run `docker compose down` and then `docker compose up -d` after adding it:
+Because Docker assigns container IPs and network subnets dynamically across recreations (`docker compose down` / container updates), give the proxy container a static `ipv4_address` or pin the Compose network subnet in `docker-compose.override.yml` (then run `docker compose down && docker compose up -d`):
 
 ```yaml
 networks:
@@ -170,7 +169,7 @@ networks:
 ```
 
 > [!WARNING]
-> Every connection from a listed address is believed. The gateway is also where Docker makes other connections to the published ports come from: those from other programs on the host and from containers on other networks. Listing the gateway trusts them all, so keep the published ports out of their reach. `STELLARR_HTTP_PORT` can be bound to `127.0.0.1` as above, but `STELLARR_HTTPS_PORT` takes a port number only and stays published on every address of the host. Where that matters, put the proxy on Stellarr's Docker network and list its own address instead. Docker Desktop (macOS, Windows) forwards published ports itself, and connections arrive from the gateway or from `192.168.65.1` depending on the address they were made to, so listing either one there trusts far more than the proxy.
+> Only trust the exact proxy address when possible. Listing the Docker network gateway trusts every connection arriving through Docker's host forwarding, including other local programs or containers on different networks. `STELLARR_HTTP_PORT` can be bound to `127.0.0.1`, whereas `STELLARR_HTTPS_PORT` binds all host interfaces. On Docker Desktop (macOS and Windows), forwarded connections may arrive from either the gateway or `192.168.65.1`, so avoid trusting broad gateway ranges on shared machines.
 
 ## What does not go through the proxy
 
