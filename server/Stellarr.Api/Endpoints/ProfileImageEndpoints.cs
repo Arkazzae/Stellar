@@ -39,7 +39,7 @@ public static class ProfileImageEndpoints
     public static IEndpointRouteBuilder MapProfileImageEndpoints(this IEndpointRouteBuilder endpoints)
     {
         var images = endpoints.MapGroup("/api/me/images").RequireAuthorization();
-        images.MapPost("/{kind}", UploadAsync).DisableAntiforgery();
+        images.MapPost("/{kind}", UploadAsync).DisableAntiforgery().RequireRateLimiting(RateLimitPolicies.Uploads);
         images.MapDelete("/{kind}", RemoveAsync);
         return endpoints;
     }
@@ -50,6 +50,7 @@ public static class ProfileImageEndpoints
         ClaimsPrincipal principal,
         AppDbContext db,
         MediaStorage mediaStorage,
+        UploadAdmissionGate admissionGate,
         IHubContext<AppHub> hub,
         PresenceTracker presence,
         Messages messages,
@@ -67,6 +68,13 @@ public static class ProfileImageEndpoints
         }
 
         var user = await AccountEndpoints.FindCurrentAsync(principal, db, cancellationToken);
+        var admission = await admissionGate.TryEnterAsync(db, user.Id, file.Length, cancellationToken);
+        if (!admission.Accepted)
+        {
+            return UploadEndpoints.NoRoom(admission.Failure, messages);
+        }
+        await using var lease = admission.Lease;
+
         var id = Guid.NewGuid();
         var key = $"profiles/{user.Id:N}/{image.Name}/{id:N}{inspection.Spec.Extension}";
         await mediaStorage.StoreAsync(key, file, cancellationToken);

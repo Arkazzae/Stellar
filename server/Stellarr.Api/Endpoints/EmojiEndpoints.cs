@@ -28,7 +28,7 @@ public static partial class EmojiEndpoints
             .RequireAuthorization()
             .AddEndpointFilter<ServerMembershipFilter>();
         emoji.MapGet("", ListAsync);
-        emoji.MapPost("", UploadAsync).DisableAntiforgery();
+        emoji.MapPost("", UploadAsync).DisableAntiforgery().RequireRateLimiting(RateLimitPolicies.Uploads);
         emoji.MapDelete("/{emojiId:guid}", DeleteAsync);
         emoji.MapGet("/{emojiId:guid}/image", GetImageAsync);
         return endpoints;
@@ -54,6 +54,7 @@ public static partial class EmojiEndpoints
         HttpContext http,
         AppDbContext db,
         MediaStorage mediaStorage,
+        UploadAdmissionGate admissionGate,
         IHubContext<AppHub> hub,
         Messages messages,
         CancellationToken cancellationToken)
@@ -99,6 +100,13 @@ public static partial class EmojiEndpoints
         {
             return Refusal(inspection, messages);
         }
+
+        var admission = await admissionGate.TryEnterAsync(db, userId, file.Length, cancellationToken);
+        if (!admission.Accepted)
+        {
+            return UploadEndpoints.NoRoom(admission.Failure, messages);
+        }
+        await using var lease = admission.Lease;
 
         var id = Guid.NewGuid();
         var key = $"emoji/{DateTimeOffset.UtcNow:yyyy/MM}/{id:N}{inspection.Spec.Extension}";

@@ -206,7 +206,7 @@ public static class UploadEndpoints
         return null;
     }
 
-    private static IResult NoRoom(UploadAdmissionFailure failure, Messages messages) => Results.Problem(
+    internal static IResult NoRoom(UploadAdmissionFailure failure, Messages messages) => Results.Problem(
         statusCode: StatusCodes.Status507InsufficientStorage,
         title: messages.Get(MessageKey.StorageFull),
         detail: messages.Get(failure switch
