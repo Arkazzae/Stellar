@@ -109,14 +109,16 @@ service's answer as follows:
 | `404`, `410` | `Gone`; the browser subscription no longer exists and the row is removed. |
 | `408`, `425`, `429`, `5xx`, timeout or network failure | `Retry`; the outbox applies its own backoff and attempt cap. |
 | `401`, `403` | `Retry`; this is an operator VAPID configuration problem, not a dead subscription. |
-| Other `4xx` (for example `400`, `413`) | `Gone`; this payload or subscription cannot succeed by repeating it. |
-| Redirect (`3xx`) | `Gone`; the transport never follows it. |
+| Other `4xx` (for example `400`, `413`) | `Retry`; this payload or request cannot succeed by repeating it, but the browser subscription remains valid, so the outbox bounds the attempts and fails the row rather than deleting the endpoint. |
+| Redirect (`3xx`) | `Retry`; the transport never follows it, and the subscription is kept. |
 
 The JSON body is camelCase (`id`, `title`, `body`, `url`, `tag`), encrypted by
 the maintained `WebPush` library. It is capped at 3072 UTF-8 bytes before
-encryption and sent with a 300-second TTL. Invalid subscription keys are
-retired rather than retried forever. Endpoint URLs, subscription keys, the
-VAPID private key and the signed `Authorization` header are never logged.
+encryption and sent with a 300-second TTL. A payload over the cap is not sent
+and is retried only within the outbox's attempt bound. Invalid subscription
+keys or an invalid endpoint are retired (`Gone`) rather than retried forever.
+Endpoint URLs, subscription keys, the VAPID private key and the signed
+`Authorization` header are never logged.
 
 ## Upgrade and client notes
 
