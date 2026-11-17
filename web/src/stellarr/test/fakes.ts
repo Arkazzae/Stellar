@@ -195,6 +195,14 @@ export function fakeApi(overrides: Partial<ApiClient> = {}): ApiClient {
     })),
     markAllNotificationsRead: vi.fn(async () => 0),
     deleteNotification: vi.fn(async () => {}),
+    getNotificationDelivery: vi.fn(async () => ({
+      emailAvailable: true,
+      emailVerified: true,
+      pushAvailable: true,
+      applicationServerKey: "BEl6c3RhbGxhcnItdGVzdA",
+    })),
+    savePushSubscription: vi.fn(async () => "push-row-1"),
+    deletePushSubscription: vi.fn(async () => {}),
     editMessage: vi.fn(async (messageId: string, content: string) => ({
       id: messageId,
       channelId: TEXT_CHANNEL.id,

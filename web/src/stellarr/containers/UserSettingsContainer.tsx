@@ -29,6 +29,7 @@ import { useAutostart } from "./useAutostart";
 import { useCameraTest } from "./useCameraTest";
 import { useJoinSound } from "./useJoinSound";
 import { useMicTest } from "./useMicTest";
+import { useNotificationDelivery } from "./useNotificationDelivery";
 import { useOutputTest } from "./useOutputTest";
 import { SecurityStepDialog } from "@/components/account/panes/SecurityStepDialog";
 
@@ -128,6 +129,7 @@ export function UserSettingsContainer() {
   // pickers all land in this one dialog.
   const open =
     ui.modal === "account" || ui.modal === "profile" || ui.modal === "voice";
+  const notificationDelivery = useNotificationDelivery(open);
 
   // Opening a device is a transport, and a component may not reach past
   // `@/ports` to do it, so the microphone, speaker and camera tests live here.
@@ -195,6 +197,7 @@ export function UserSettingsContainer() {
               }
             : {}),
         }}
+        notificationDelivery={notificationDelivery ?? undefined}
         mutedChannels={{
           serverName: directory.server.name,
           channels: mutedHere,

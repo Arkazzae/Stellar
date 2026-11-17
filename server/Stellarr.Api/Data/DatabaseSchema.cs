@@ -20,6 +20,10 @@ public static class DatabaseSchema
         ChannelPostTimeSchema.CreateAsync,
         MessageJournalSchema.CreateAsync,
         MessageIndexSchema.CreateAsync,
+        // The push table is referenced by the activity outbox, so it comes
+        // first even though the outbox only stores its id.
+        PushSubscriptionSchema.CreateAsync,
+        NotificationDeliverySchema.CreateAsync,
     ];
 
     public static async Task PrepareAsync(AppDbContext db, CancellationToken cancellationToken)

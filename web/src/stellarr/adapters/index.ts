@@ -32,6 +32,7 @@ import { createChatAdapter, createTypingAdapter } from "./chat";
 import { createDirectoryAdapter } from "./directory";
 import { createFriendsAdapter } from "./friends";
 import { createMessageActionsAdapter, ReactionStore } from "./messageActions";
+import { createNotificationDeliveryAdapter } from "./notificationDelivery";
 import { createNotificationAdapter } from "./notifications";
 import { createConnectionAdapter, createPresenceAdapter } from "./presence";
 import { ChannelReadStore } from "./readState";
@@ -133,6 +134,7 @@ export function createRuntime(options: RuntimeOptions = {}): Runtime {
   };
 
   const account = createAccountAdapter(api);
+  const notificationDelivery = createNotificationDeliveryAdapter(api);
   const friends = createFriendsAdapter(api, realtime);
   const soundboard = createSoundboardAdapter(api, realtime, voiceSettingsStore.getSnapshot);
   const messageActions = createMessageActionsAdapter(api, realtime, reactionStore);
@@ -212,6 +214,7 @@ export function createRuntime(options: RuntimeOptions = {}): Runtime {
       },
     },
     account,
+    notificationDelivery,
     security: {
       get: () => api.getAccountSecurity(),
       startEnrollment: (password) => api.startMfaEnrollment(password),

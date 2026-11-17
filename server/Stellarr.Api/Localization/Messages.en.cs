@@ -286,6 +286,15 @@ public sealed partial class Messages
         MessageKey.EmailChangeIgnore => "If this was not you, ignore this message. The address on the account will stay the same.",
         MessageKey.DeliveryTestSubject => "Mail test from {instance}",
         MessageKey.DeliveryTestBody => "Resend accepted the test message from {instance}.",
+        // Activity notices deliberately name no sender, server, channel or
+        // message: the mail leaves the instance and may outlive any of them.
+        MessageKey.NotificationMentionSubject => "New mention on Stellarr",
+        MessageKey.NotificationMentionBody => "Someone mentioned you in a channel. Open Stellarr to read it.",
+        MessageKey.NotificationMentionPushTitle => "New mention",
+        MessageKey.NotificationDirectMessageSubject => "New direct message on Stellarr",
+        MessageKey.NotificationDirectMessageBody => "You have a new direct message. Open Stellarr to read it.",
+        MessageKey.NotificationDirectMessagePushTitle => "New direct message",
+        MessageKey.NotificationOpenButton => "Open Stellarr",
     };
 #pragma warning restore CS8524
 }

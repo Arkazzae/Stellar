@@ -7,6 +7,7 @@ using Stellarr.Api.Data;
 using Stellarr.Api.Domain;
 using Stellarr.Api.Localization;
 using Stellarr.Api.Messaging;
+using Stellarr.Api.Notifications;
 using Stellarr.Api.Realtime;
 
 namespace Stellarr.Api.Endpoints;
@@ -235,6 +236,10 @@ public static class DirectMessageEndpoints
             db.DirectMessages.Add(message);
             await db.SaveChangesAsync(cancellationToken);
             await AdvanceReadAsync(db, conversationId, selfId, message.CreatedAt, cancellationToken);
+            // Only the peer is a recipient. The row commits with the message,
+            // and the replay path above never reaches this transaction.
+            await NotificationOutbox.EnqueueDirectMessageAsync(db, message, peerId, cancellationToken);
+            await db.SaveChangesAsync(cancellationToken);
             await transaction.CommitAsync(cancellationToken);
         }
         catch (DbUpdateException exception) when (

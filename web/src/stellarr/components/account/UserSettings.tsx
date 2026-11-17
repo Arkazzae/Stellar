@@ -16,6 +16,7 @@ import {
 import {
   UserNotificationsPane,
   type MutedChannelsProps,
+  type NotificationDeliveryProps,
   type SystemNotificationPreferenceProps,
 } from "@/components/account/panes/NotificationsPane";
 import {
@@ -76,6 +77,8 @@ export interface UserSettingsProps {
   /** The GIPHY switch, under privacy, while the instance offers GIFs. */
   giphy?: GiphyPreferenceProps;
   systemNotifications?: SystemNotificationPreferenceProps;
+  /** Account e-mail/push choices and this device's push enrollment. */
+  notificationDelivery?: NotificationDeliveryProps;
   /** The muted channels of the server in view, listed under notifications. */
   mutedChannels?: MutedChannelsProps;
   /** Plays the message sound once, from the notifications pane. */
@@ -117,6 +120,7 @@ export function UserSettings({
   blocked,
   giphy,
   systemNotifications,
+  notificationDelivery,
   mutedChannels,
   onPlayMessageSound,
   ownRingtone,
@@ -194,6 +198,7 @@ export function UserSettings({
           <UserNotificationsPane
             {...preferences}
             systemNotifications={systemNotifications}
+            delivery={notificationDelivery}
             muted={mutedChannels}
             onPlaySound={onPlayMessageSound}
             ringtone={ownRingtone}

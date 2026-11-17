@@ -8,6 +8,7 @@ using Stellarr.Api.Domain;
 using Stellarr.Api.Embeds;
 using Stellarr.Api.Localization;
 using Stellarr.Api.Messaging;
+using Stellarr.Api.Notifications;
 using Stellarr.Api.Realtime;
 
 namespace Stellarr.Api.Endpoints;
@@ -262,6 +263,10 @@ public static class MessageEndpoints
         var mentions = await MessageMentions.AddNotificationsAsync(db, serverId, message, cancellationToken);
         if (mentions.Count > 0)
         {
+            // External deliveries are rows like the inbox entries, written
+            // before the commit. No provider is contacted here; the dispatcher
+            // does that after it can see the stored message.
+            await NotificationOutbox.EnqueueMentionsAsync(db, message, mentions, cancellationToken);
             await db.SaveChangesAsync(cancellationToken);
         }
 
