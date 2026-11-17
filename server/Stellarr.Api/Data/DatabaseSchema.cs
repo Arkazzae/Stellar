@@ -17,6 +17,7 @@ public static class DatabaseSchema
     private static readonly Func<AppDbContext, CancellationToken, Task>[] Steps =
     [
         EmailChangeSchema.CreateAsync,
+        ChannelPostTimeSchema.CreateAsync,
         MessageJournalSchema.CreateAsync,
         MessageIndexSchema.CreateAsync,
     ];

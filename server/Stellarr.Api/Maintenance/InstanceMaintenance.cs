@@ -123,10 +123,18 @@ public sealed class InstanceMaintenance(
     /// <returns>How many attachments were removed and their objects queued for deletion.</returns>
     private async Task<int> QueueOrphansAsync(DateTime cutoff, DateTime queuedAt, CancellationToken cancellationToken)
     {
-        // Avatars, banners and server icons are spared by the storage service,
-        // which looks at the address that names them.
+        // Exclude address-based references before the batch limit. Otherwise
+        // old avatars can fill every batch and indefinitely hide real orphans.
+        var profileUrls = await db.Users.AsNoTracking()
+            .Select(x => new { x.AvatarUrl, x.BannerUrl }).ToListAsync(cancellationToken);
+        var iconUrls = await db.Servers.AsNoTracking().Select(x => x.IconUrl).ToListAsync(cancellationToken);
+        var protectedIds = profileUrls.SelectMany(x => new[] { x.AvatarUrl, x.BannerUrl }).Concat(iconUrls)
+            .Where(url => url is not null && url.StartsWith("/assets/", StringComparison.Ordinal))
+            .Select(url => Guid.TryParse(url!["/assets/".Length..], out var id) ? id : Guid.Empty)
+            .Where(id => id != Guid.Empty).Distinct().ToArray();
         var orphanIds = await db.ImageAttachments.AsNoTracking()
             .Where(x => x.CreatedAt < cutoff &&
+                !protectedIds.Contains(x.Id) &&
                 !db.MessageAttachments.Any(link => link.AttachmentId == x.Id) &&
                 !db.DirectMessageAttachments.Any(link => link.AttachmentId == x.Id) &&
                 !db.MessageEmbeds.Any(embed => embed.ThumbnailAttachmentId == x.Id) &&
