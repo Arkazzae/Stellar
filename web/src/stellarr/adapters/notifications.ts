@@ -11,6 +11,19 @@ export function createNotificationAdapter(
     markRead: (notificationId, signal) => api.markNotificationRead(notificationId, signal),
     markAllRead: (signal) => api.markAllNotificationsRead(signal),
     delete: (notificationId, signal) => api.deleteNotification(notificationId, signal),
-    onChanged: (listener) => realtime.on("NotificationInboxChanged", listener),
+    onChanged(listener) {
+      let previous = realtime.getStatus();
+      const stopEvents = realtime.on("NotificationInboxChanged", listener);
+      const stopStatus = realtime.subscribeStatus(() => {
+        const next = realtime.getStatus();
+        const recovered = next === "connected" && previous !== "connected";
+        previous = next;
+        if (recovered) listener({ global: true });
+      });
+      return () => {
+        stopEvents();
+        stopStatus();
+      };
+    },
   };
 }

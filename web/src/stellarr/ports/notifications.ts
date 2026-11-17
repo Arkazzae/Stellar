@@ -58,9 +58,9 @@ export interface NotificationPage {
   lastSequence: number;
 }
 
-/** `global` marks an invitation, which belongs to the account rather than to one server. */
+/** `global` invalidates every inbox, including after a missed run of socket events. */
 export interface NotificationInboxChangedEvent {
-  serverId: string;
+  serverId?: string;
   sequence?: number;
   global?: boolean;
 }
