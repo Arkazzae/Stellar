@@ -24,7 +24,7 @@ public static class ServerEndpoints
             .RequireAuthorization()
             .AddEndpointFilter<ServerMembershipFilter>();
         server.MapPatch("", UpdateAsync);
-        server.MapPost("/icon", UploadIconAsync).DisableAntiforgery();
+        server.MapPost("/icon", UploadIconAsync).DisableAntiforgery().RequireRateLimiting(RateLimitPolicies.Uploads);
         server.MapDelete("/icon", RemoveIconAsync);
         return endpoints;
     }
@@ -69,6 +69,7 @@ public static class ServerEndpoints
         HttpContext http,
         AppDbContext db,
         MediaStorage mediaStorage,
+        UploadAdmissionGate admissionGate,
         IHubContext<AppHub> hub,
         Messages messages,
         CancellationToken cancellationToken)
@@ -83,6 +84,13 @@ public static class ServerEndpoints
         {
             return Refusal(inspection.Failure, messages);
         }
+
+        var admission = await admissionGate.TryEnterAsync(db, http.User.RequireUserId(), file.Length, cancellationToken);
+        if (!admission.Accepted)
+        {
+            return UploadEndpoints.NoRoom(admission.Failure, messages);
+        }
+        await using var lease = admission.Lease;
 
         var id = Guid.NewGuid();
         var key = $"servers/{server.Id:N}/icon/{id:N}{inspection.Spec.Extension}";

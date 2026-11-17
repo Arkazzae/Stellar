@@ -101,6 +101,11 @@ public sealed class UploadAdmissionGate : IDisposable
             .SumAsync(x => (long?)x.SizeBytes + (x.PosterSizeBytes ?? 0), cancellationToken) ?? 0;
         var totalStored = await attachments
             .SumAsync(x => (long?)x.SizeBytes + (x.PosterSizeBytes ?? 0), cancellationToken) ?? 0;
+        // Emoji have object bytes of their own, rather than attachment rows.
+        userStored += await db.ServerEmoji.AsNoTracking().Where(x => x.UploadedById == userId)
+            .SumAsync(x => (long?)x.SizeBytes, cancellationToken) ?? 0;
+        totalStored += await db.ServerEmoji.AsNoTracking()
+            .SumAsync(x => (long?)x.SizeBytes, cancellationToken) ?? 0;
 
         var userReserved = _reservedByUser.GetValueOrDefault(userId);
         if (WouldExceed(userStored, userReserved, requestedBytes, _options.MaxStoredBytesPerUser))
