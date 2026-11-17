@@ -35,13 +35,10 @@ export const en = {
   "settings.sections": "Settings sections",
   "settings.logout": "Log out",
 
-  "desktopRelease.sectionTitle": "Stellarr Desktop for Arch Linux",
   "desktopRelease.loading": "Checking the latest release…",
   "desktopRelease.failed": "The release could not be checked. Try again later.",
-  "desktopRelease.empty": "The administrator has not published an Arch Linux package yet.",
   "desktopRelease.version": "Version {version}",
   "desktopRelease.meta": "{size} · published {date}",
-  "desktopRelease.download": "Download package",
   "client.title": "The Stellarr app",
   "client.subtitle": "Pick the client for your system.",
   "client.web": "Browser",
@@ -50,8 +47,6 @@ export const en = {
   "client.empty": "The administrator has not published a downloadable app yet.",
   "client.download": "Download",
   "client.androidInstall": "After downloading, open the APK on your phone. Android may ask you to allow app installs from the browser.",
-  "desktopRelease.system": "System",
-  "desktopRelease.install": "After downloading, run: sudo pacman -U ./{fileName}",
 
   "auth.email": "Email",
   "auth.password": "Password",

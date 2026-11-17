@@ -11,7 +11,6 @@ import {
   screenVideoCodecList,
   tuneAudioSections,
   tuneLocalDescription,
-  tuneOpusSdp,
 } from "./sdp";
 
 /** A Chrome-shaped audio offer, trimmed to the lines that matter. */
@@ -86,9 +85,12 @@ describe("mergeFmtpParameters", () => {
   });
 });
 
-describe("tuneOpusSdp", () => {
+describe("tuneAudioSections with the product Opus tuning", () => {
   it("sets every parameter the product needs on the Opus payload type", () => {
-    const tuned = tuneOpusSdp(CHROME_AUDIO);
+    const tuned = tuneAudioSections(CHROME_AUDIO, () => ({
+      parameters: OPUS_FMTP_PARAMETERS,
+      ptime: OPUS_PTIME,
+    }));
     expect(fmtpMap(tuned, "111")).toMatchObject({
       useinbandfec: "1",
       usedtx: "0",
@@ -107,7 +109,10 @@ describe("tuneOpusSdp", () => {
   });
 
   it("adds a=ptime:20 once", () => {
-    const tuned = tuneOpusSdp(CHROME_AUDIO);
+    const tuned = tuneAudioSections(CHROME_AUDIO, () => ({
+      parameters: OPUS_FMTP_PARAMETERS,
+      ptime: OPUS_PTIME,
+    }));
     const ptimes = audioLines(tuned).filter((line) => line.startsWith("a=ptime:"));
     expect(ptimes).toEqual([`a=ptime:${OPUS_PTIME}`]);
   });
@@ -117,25 +122,42 @@ describe("tuneOpusSdp", () => {
       "a=rtpmap:63 red/48000/2",
       "a=ptime:60\r\na=rtpmap:63 red/48000/2",
     );
-    const ptimes = audioLines(tuneOpusSdp(withPtime)).filter((line) =>
-      line.startsWith("a=ptime:"),
-    );
+    const ptimes = audioLines(
+      tuneAudioSections(withPtime, () => ({
+        parameters: OPUS_FMTP_PARAMETERS,
+        ptime: OPUS_PTIME,
+      })),
+    ).filter((line) => line.startsWith("a=ptime:"));
     expect(ptimes).toEqual(["a=ptime:20"]);
   });
 
   it("does not touch the red or telephone-event fmtp lines", () => {
-    const tuned = tuneOpusSdp(CHROME_AUDIO);
+    const tuned = tuneAudioSections(CHROME_AUDIO, () => ({
+      parameters: OPUS_FMTP_PARAMETERS,
+      ptime: OPUS_PTIME,
+    }));
     expect(fmtpFor(tuned, "63")).toBe("111/111");
   });
 
   it("is idempotent — re-tuning a tuned SDP changes nothing", () => {
-    const once = tuneOpusSdp(CHROME_AUDIO);
-    expect(tuneOpusSdp(once)).toBe(once);
+    const once = tuneAudioSections(CHROME_AUDIO, () => ({
+      parameters: OPUS_FMTP_PARAMETERS,
+      ptime: OPUS_PTIME,
+    }));
+    expect(
+      tuneAudioSections(once, () => ({
+        parameters: OPUS_FMTP_PARAMETERS,
+        ptime: OPUS_PTIME,
+      })),
+    ).toBe(once);
   });
 
   it("creates an fmtp line when the browser emitted none", () => {
     const bare = CHROME_AUDIO.replace("a=fmtp:111 minptime=10;useinbandfec=1\r\n", "");
-    const tuned = tuneOpusSdp(bare);
+    const tuned = tuneAudioSections(bare, () => ({
+      parameters: OPUS_FMTP_PARAMETERS,
+      ptime: OPUS_PTIME,
+    }));
     expect(fmtpMap(tuned, "111")).toMatchObject({ usedtx: "0", minptime: "10" });
     // Inserted immediately after its rtpmap, where a parser expects it.
     const lines = audioLines(tuned);
@@ -145,7 +167,10 @@ describe("tuneOpusSdp", () => {
   });
 
   it("preserves CRLF line endings and the trailing blank line", () => {
-    const tuned = tuneOpusSdp(CHROME_AUDIO);
+    const tuned = tuneAudioSections(CHROME_AUDIO, () => ({
+      parameters: OPUS_FMTP_PARAMETERS,
+      ptime: OPUS_PTIME,
+    }));
     expect(tuned.includes("\r\n")).toBe(true);
     expect(tuned.endsWith("\r\n")).toBe(true);
     expect(tuned).not.toMatch(/[^\r]\n/);
@@ -153,7 +178,10 @@ describe("tuneOpusSdp", () => {
 
   it("handles LF-only SDP without introducing CRLF", () => {
     const lf = CHROME_AUDIO.replace(/\r\n/g, "\n");
-    const tuned = tuneOpusSdp(lf);
+    const tuned = tuneAudioSections(lf, () => ({
+      parameters: OPUS_FMTP_PARAMETERS,
+      ptime: OPUS_PTIME,
+    }));
     expect(tuned.includes("\r")).toBe(false);
     expect(fmtpMap(tuned, "111")["usedtx"]).toBe("0");
   });
@@ -166,7 +194,10 @@ describe("tuneOpusSdp", () => {
       "a=fmtp:96 x-google-start-bitrate=800",
       "",
     ].join("\r\n");
-    const tuned = tuneOpusSdp(withVideo);
+    const tuned = tuneAudioSections(withVideo, () => ({
+      parameters: OPUS_FMTP_PARAMETERS,
+      ptime: OPUS_PTIME,
+    }));
     expect(fmtpFor(tuned, "96")).toBe("x-google-start-bitrate=800");
     expect(audioLines(tuned).filter((l) => l.startsWith("a=ptime:"))).toHaveLength(1);
   });
@@ -178,18 +209,43 @@ describe("tuneOpusSdp", () => {
       "a=rtpmap:8 PCMA/8000",
       "",
     ].join("\r\n");
-    expect(tuneOpusSdp(noOpus)).toBe(noOpus);
+    expect(
+      tuneAudioSections(noOpus, () => ({
+        parameters: OPUS_FMTP_PARAMETERS,
+        ptime: OPUS_PTIME,
+      })),
+    ).toBe(noOpus);
   });
 
   it("returns SDP with no audio section untouched", () => {
     const videoOnly = ["v=0", "m=video 9 UDP/TLS/RTP/SAVPF 96", ""].join("\r\n");
-    expect(tuneOpusSdp(videoOnly)).toBe(videoOnly);
+    expect(
+      tuneAudioSections(videoOnly, () => ({
+        parameters: OPUS_FMTP_PARAMETERS,
+        ptime: OPUS_PTIME,
+      })),
+    ).toBe(videoOnly);
   });
 
   it("degrades safely on empty or missing input", () => {
-    expect(tuneOpusSdp("")).toBe("");
-    expect(tuneOpusSdp(undefined)).toBe("");
-    expect(tuneOpusSdp(null)).toBe("");
+    expect(
+      tuneAudioSections("", () => ({
+        parameters: OPUS_FMTP_PARAMETERS,
+        ptime: OPUS_PTIME,
+      })),
+    ).toBe("");
+    expect(
+      tuneAudioSections(undefined, () => ({
+        parameters: OPUS_FMTP_PARAMETERS,
+        ptime: OPUS_PTIME,
+      })),
+    ).toBe("");
+    expect(
+      tuneAudioSections(null, () => ({
+        parameters: OPUS_FMTP_PARAMETERS,
+        ptime: OPUS_PTIME,
+      })),
+    ).toBe("");
   });
 
   it("tunes every Opus payload type when a stack offers more than one", () => {
@@ -197,7 +253,10 @@ describe("tuneOpusSdp", () => {
       "a=rtpmap:9 G722/8000",
       "a=rtpmap:112 opus/48000/2\r\na=rtpmap:9 G722/8000",
     );
-    const tuned = tuneOpusSdp(dual);
+    const tuned = tuneAudioSections(dual, () => ({
+      parameters: OPUS_FMTP_PARAMETERS,
+      ptime: OPUS_PTIME,
+    }));
     expect(fmtpMap(tuned, "111")["usedtx"]).toBe("0");
     expect(fmtpMap(tuned, "112")["usedtx"]).toBe("0");
   });
@@ -327,7 +386,10 @@ describe("multiple audio sections", () => {
   it("tunes every audio section, not just the first", () => {
     // The old implementation stopped at the first audio m-line, which left
     // shared screen audio running on whatever the browser defaulted to.
-    const tuned = tuneOpusSdp(MIC_AND_SCREEN);
+    const tuned = tuneAudioSections(MIC_AND_SCREEN, () => ({
+      parameters: OPUS_FMTP_PARAMETERS,
+      ptime: OPUS_PTIME,
+    }));
     const sections = tuned.split("m=audio").length - 1;
     expect(sections).toBe(2);
     expect(tuned.match(/usedtx=0/g)).toHaveLength(2);
@@ -335,7 +397,10 @@ describe("multiple audio sections", () => {
   });
 
   it("leaves the video section alone", () => {
-    const tuned = tuneOpusSdp(MIC_AND_SCREEN);
+    const tuned = tuneAudioSections(MIC_AND_SCREEN, () => ({
+      parameters: OPUS_FMTP_PARAMETERS,
+      ptime: OPUS_PTIME,
+    }));
     expect(tuned).toContain("a=rtpmap:96 VP8/90000");
     expect(tuned).not.toMatch(/a=fmtp:96/);
   });
@@ -388,8 +453,16 @@ describe("multiple audio sections", () => {
   });
 
   it("is still idempotent across several sections", () => {
-    const once = tuneOpusSdp(MIC_AND_SCREEN);
-    expect(tuneOpusSdp(once)).toBe(once);
+    const once = tuneAudioSections(MIC_AND_SCREEN, () => ({
+      parameters: OPUS_FMTP_PARAMETERS,
+      ptime: OPUS_PTIME,
+    }));
+    expect(
+      tuneAudioSections(once, () => ({
+        parameters: OPUS_FMTP_PARAMETERS,
+        ptime: OPUS_PTIME,
+      })),
+    ).toBe(once);
   });
 });
 

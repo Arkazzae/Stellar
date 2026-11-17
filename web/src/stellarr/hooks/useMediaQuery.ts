@@ -27,17 +27,3 @@ export function useMediaQuery(query: string, serverValue: boolean): boolean {
 
   return useSyncExternalStore(subscribe, getSnapshot, () => serverValue);
 }
-
-/**
- * Which side panels overlay the content instead of sitting beside it. The
- * rail needs 768px and the roster 1200px, the same breakpoints the style
- * sheets use.
- */
-export function useLayoutMode(): {
-  railOverlay: boolean;
-  rosterOverlay: boolean;
-} {
-  const wide = useMediaQuery("(min-width: 768px)", true);
-  const extraWide = useMediaQuery("(min-width: 1200px)", true);
-  return { railOverlay: !wide, rosterOverlay: !extraWide };
-}

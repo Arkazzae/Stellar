@@ -1,14 +1,12 @@
 import { act, renderHook } from "@testing-library/react";
 import { renderToString } from "react-dom/server";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { useLayoutMode, useMediaQuery } from "./useMediaQuery";
+import { useMediaQuery } from "./useMediaQuery";
 
 const originalMatchMedia = window.matchMedia;
-const originalInnerWidth = window.innerWidth;
 
 afterEach(() => {
   window.matchMedia = originalMatchMedia;
-  window.innerWidth = originalInnerWidth;
 });
 
 /** A matchMedia whose answer a test can flip, notifying whoever listens. */
@@ -96,34 +94,5 @@ describe("useMediaQuery", () => {
     rerender({ query: "(max-width: 600px)" });
 
     expect(result.current).toBe(true);
-  });
-});
-
-describe("useLayoutMode", () => {
-  it.each([
-    { width: 500, railOverlay: true, rosterOverlay: true },
-    { width: 767, railOverlay: true, rosterOverlay: true },
-    { width: 768, railOverlay: false, rosterOverlay: true },
-    { width: 1199, railOverlay: false, rosterOverlay: true },
-    { width: 1200, railOverlay: false, rosterOverlay: false },
-  ])(
-    "overlays rail $railOverlay and roster $rosterOverlay at $width px",
-    ({ width, ...expected }) => {
-      window.innerWidth = width;
-
-      const { result } = renderHook(() => useLayoutMode());
-
-      expect(result.current).toEqual(expected);
-    },
-  );
-
-  it("renders the wide layout on the server", () => {
-    window.innerWidth = 500;
-    function Probe() {
-      const { railOverlay, rosterOverlay } = useLayoutMode();
-      return <>{`${railOverlay}/${rosterOverlay}`}</>;
-    }
-
-    expect(renderToString(<Probe />)).toBe("false/false");
   });
 });
