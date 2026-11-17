@@ -49,10 +49,18 @@ up() {
   exit 1
 }
 
+# The code the API wrote to its log at this start, which the first account founds the instance with.
+setup_code() {
+  compose logs api 2>/dev/null | sed -n 's/.*Setup code: \([A-Z0-9-]*\)\..*/\1/p' | tail -n 1
+}
+
 capture() {
   up
   trap down EXIT
-  (cd capture && export STELLARR_FILM_WEB=$WEB STELLARR_FILM_COCKPIT=$COCKPIT && node seed.mjs && node capture.mjs && node pack.mjs)
+  local code
+  code=$(setup_code)
+  if [ -z "$code" ]; then echo "the API logged no setup code; see: ./film.sh logs" >&2; exit 1; fi
+  (cd capture && export STELLARR_FILM_WEB=$WEB STELLARR_FILM_COCKPIT=$COCKPIT STELLARR_FILM_SETUP_CODE=$code && node seed.mjs && node capture.mjs && node pack.mjs)
   down
   trap - EXIT
   echo "captured; reference screenshots of the live app are in out/capture/. Next: ./film.sh stills"

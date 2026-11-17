@@ -1,7 +1,8 @@
 // Fills an EMPTY throwaway instance with the film's demo world: fictional people with example.com
 // addresses, a server called Friday Crew, a conversation, friendships and a direct message.
 // Never point it at an instance with real accounts: the first registration becomes the instance owner.
-//   STELLARR_FILM_WEB=http://127.0.0.1:3100 node seed.mjs
+// It founds the instance with the setup code the API logged at its start, which film.sh reads.
+//   STELLARR_FILM_WEB=http://127.0.0.1:3100 STELLARR_FILM_SETUP_CODE=<code from the log> node seed.mjs
 import { launch, sleep } from "./cdp.mjs";
 import { BASE, installApi, api } from "./api.mjs";
 
@@ -26,7 +27,8 @@ const page = async () => {
 try {
   // the first account founds the instance: a server with #general and a voice channel
   const maya = await page();
-  ids.maya = (await api(maya, "POST", "/api/auth/register", { username: "maya", displayName: "Maya", email: "maya@example.com", password: PASS })).id;
+  const setupCode = process.env.STELLARR_FILM_SETUP_CODE;
+  ids.maya = (await api(maya, "POST", "/api/auth/register", { username: "maya", displayName: "Maya", email: "maya@example.com", password: PASS, setupCode })).id;
   pages.maya = maya;
   const boot = await api(maya, "GET", "/api/bootstrap");
   const S = boot.server.id;
