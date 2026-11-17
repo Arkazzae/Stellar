@@ -71,6 +71,7 @@ export function createFriendsAdapter(
 
   let inflight: Promise<void> | null = null;
   let reloadAfter = false;
+  let pendingPresence: Map<string, User["presence"]> | null = null;
 
   /** Concurrent callers share one request; a request made meanwhile reruns it. */
   const load = (): Promise<void> => {
@@ -78,15 +79,25 @@ export function createFriendsAdapter(
       reloadAfter = true;
       return inflight;
     }
+    const updates = new Map<string, User["presence"]>();
+    pendingPresence = updates;
     inflight = (async () => {
       const state = await api.getSocialState();
-      friends = state.friends;
-      requests = state.requests;
+      const fresh = (user: User): User => {
+        const presence = updates.get(user.id);
+        return presence === undefined ? user : { ...user, presence };
+      };
+      friends = state.friends.map((friend) => ({ ...friend, user: fresh(friend.user) }));
+      requests = state.requests.map((request) => ({ ...request, user: fresh(request.user) }));
       blocked = state.blocked;
-      conversations = withCalls(state.conversations);
+      conversations = withCalls(state.conversations.map((conversation) => ({
+        ...conversation,
+        peer: fresh(conversation.peer),
+      })));
       emit();
     })().finally(() => {
       inflight = null;
+      pendingPresence = null;
       if (reloadAfter) {
         reloadAfter = false;
         void load().catch(() => undefined);
@@ -95,10 +106,13 @@ export function createFriendsAdapter(
     return inflight;
   };
 
-  const loadNewest = async (id: DmId, replace: boolean): Promise<void> => {
+  const loadNewest = async (id: DmId): Promise<void> => {
+    // Buffer pushes while the first page is in flight. Conversations that
+    // have never been opened do not otherwise need a transcript cache.
+    if (!transcripts.has(id)) transcripts.set(id, []);
     const page = await api.listDirectMessages(id, { limit: PAGE_SIZE });
     const loaded = transcripts.get(id) ?? NO_MESSAGES;
-    transcripts.set(id, replace ? page.messages : mergeMessages(loaded, page.messages));
+    transcripts.set(id, mergeMessages(page.messages, loaded));
     // A reconnect starts a new server-side snapshot. The messages already on
     // screen stay, but paging continues from the fresh cursor: keeping the old
     // one could skip a page that arrived while the connection was down.
@@ -112,7 +126,7 @@ export function createFriendsAdapter(
     const running = newestLoads.get(id);
     if (running !== undefined) return running;
 
-    const operation = loadNewest(id, true).finally(() => newestLoads.delete(id));
+    const operation = loadNewest(id).finally(() => newestLoads.delete(id));
     newestLoads.set(id, operation);
     return operation;
   };
@@ -146,6 +160,18 @@ export function createFriendsAdapter(
   let lastStatus = realtime.getStatus();
 
   const unsubscribers = [
+    realtime.on("PresenceChanged", ({ userId, presence }) => {
+      pendingPresence?.set(userId, presence);
+      const update = (user: User): User =>
+        user.id === userId && user.presence !== presence ? { ...user, presence } : user;
+      friends = friends.map((friend) => ({ ...friend, user: update(friend.user) }));
+      requests = requests.map((request) => ({ ...request, user: update(request.user) }));
+      conversations = conversations.map((conversation) => ({
+        ...conversation,
+        peer: update(conversation.peer),
+      }));
+      emit();
+    }),
     realtime.on("SocialChanged", () => {
       void load().catch(() => undefined);
     }),
@@ -197,7 +223,7 @@ export function createFriendsAdapter(
       // not leave a transcript behind for good.
       void Promise.all([
         load(),
-        ...[...transcripts.keys()].map((id) => loadNewest(id, false)),
+        ...[...transcripts.keys()].map((id) => loadNewest(id)),
       ]).catch(() => undefined);
     }),
   ];

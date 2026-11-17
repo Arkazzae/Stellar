@@ -236,3 +236,55 @@ describe("friends adapter realtime", () => {
     friends.dispose?.();
   });
 });
+
+describe("live changes during social reads", () => {
+  it("keeps pushed messages before and during the first history response without duplicates", async () => {
+    const realtime = new FakeRealtimeClient();
+    const client = api();
+    let finish!: (page: { messages: typeof incoming[]; nextCursor: string | null }) => void;
+    const incoming = {
+      id: "live-1", channelId: CONVERSATION_ID,
+      author: { id: PEER.id, displayName: PEER.displayName },
+      content: "arrived live", attachments: [], embeds: [], createdAt: "2026-01-02T00:00:00Z",
+    };
+    vi.mocked(client.listDirectMessages).mockImplementationOnce(() => new Promise((resolve) => { finish = resolve; }));
+    const friends = createFriendsAdapter(client, realtime);
+    realtime.push("DirectMessageCreated", incoming);
+    const loading = friends.loadConversation(CONVERSATION_ID);
+    const second = { ...incoming, id: "live-2", createdAt: "2026-01-03T00:00:00Z" };
+    realtime.push("DirectMessageCreated", second);
+    finish({ messages: [incoming], nextCursor: null });
+    await loading;
+    expect(friends.listDmMessages(CONVERSATION_ID).map((message) => message.id)).toEqual(["live-1", "live-2"]);
+    friends.dispose?.();
+  });
+
+  it("updates friend and DM presence from the hub and stops on disposal", async () => {
+    const realtime = new FakeRealtimeClient();
+    const friends = createFriendsAdapter(api(), realtime);
+    await friends.load();
+    realtime.push("PresenceChanged", { userId: PEER.id, presence: "offline" });
+    expect(friends.listFriends()[0]?.user.presence).toBe("offline");
+    expect(friends.listConversations()[0]?.peer.presence).toBe("offline");
+    friends.dispose?.();
+    realtime.push("PresenceChanged", { userId: PEER.id, presence: "online" });
+    expect(friends.listFriends()[0]?.user.presence).toBe("offline");
+  });
+
+  it("keeps a live presence change that arrives during the initial social snapshot", async () => {
+    const realtime = new FakeRealtimeClient();
+    const client = api();
+    let finish!: (state: SocialState) => void;
+    vi.mocked(client.getSocialState).mockImplementationOnce(
+      () => new Promise((resolve) => { finish = resolve; }),
+    );
+    const friends = createFriendsAdapter(client, realtime);
+    const loading = friends.load();
+    realtime.push("PresenceChanged", { userId: PEER.id, presence: "offline" });
+    finish(STATE);
+    await loading;
+    expect(friends.listFriends()[0]?.user.presence).toBe("offline");
+    expect(friends.listConversations()[0]?.peer.presence).toBe("offline");
+    friends.dispose?.();
+  });
+});
