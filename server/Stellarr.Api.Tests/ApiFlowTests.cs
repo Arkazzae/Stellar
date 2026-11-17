@@ -132,6 +132,7 @@ public sealed class ApiFlowTests : IClassFixture<StellarrWebApplicationFactory>
             displayName = "First Owner",
             email = "owner@example.test",
             password = "Production!2026",
+            setupCode = factory.SetupCode,
         });
         Assert.Equal(HttpStatusCode.Created, registration.StatusCode);
 

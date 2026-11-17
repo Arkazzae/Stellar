@@ -225,7 +225,7 @@ public sealed class LocalizationTests
         using var factory = EnglishHost();
         using var client = SignedInClient(factory);
 
-        await RegisterOwnerAsync(client);
+        await RegisterOwnerAsync(factory, client);
 
         await using var scope = factory.OpenScope(out var db);
         Assert.Equal(["Owner", "Member"], await db.ServerRoles.OrderBy(x => x.Position).Select(x => x.Name).ToArrayAsync());
@@ -240,7 +240,7 @@ public sealed class LocalizationTests
     {
         using var factory = EnglishHost();
         using var client = SignedInClient(factory);
-        await RegisterOwnerAsync(client);
+        await RegisterOwnerAsync(factory, client);
 
         using var created = await client.PostAsJsonAsync("/api/servers", new { name = "Crew" });
 
@@ -260,7 +260,7 @@ public sealed class LocalizationTests
     {
         using var factory = EnglishHost();
         using var client = SignedInClient(factory);
-        await RegisterOwnerAsync(client);
+        await RegisterOwnerAsync(factory, client);
         await using (var scope = factory.OpenScope(out var db))
         {
             db.ServerAuditEntries.Add(new ServerAuditEntry
@@ -287,7 +287,7 @@ public sealed class LocalizationTests
     {
         using var factory = EnglishHost();
         using var client = SignedInClient(factory);
-        await RegisterOwnerAsync(client);
+        await RegisterOwnerAsync(factory, client);
 
         using var response = await client.PostAsJsonAsync("/api/auth/password/forgot", new { email = "owner@example.test" });
 
@@ -368,11 +368,11 @@ public sealed class LocalizationTests
     private static HttpClient SignedInClient(StellarrWebApplicationFactory factory) =>
         factory.CreateClient(new WebApplicationFactoryClientOptions { AllowAutoRedirect = false, HandleCookies = true });
 
-    private static async Task RegisterOwnerAsync(HttpClient client)
+    private static async Task RegisterOwnerAsync(StellarrWebApplicationFactory factory, HttpClient client)
     {
         using var response = await client.PostAsJsonAsync(
             "/api/auth/register",
-            new { username = "owner", displayName = "First Owner", email = "owner@example.test", password = "Corona!2026" });
+            new { username = "owner", displayName = "First Owner", email = "owner@example.test", password = "Corona!2026", setupCode = factory.SetupCode });
         response.EnsureSuccessStatusCode();
     }
 }

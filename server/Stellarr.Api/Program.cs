@@ -75,6 +75,7 @@ builder.Services.AddDbContext<AppDbContext>((services, options) => options.UseSq
 builder.Services.AddSingleton<PasswordService>();
 builder.Services.AddSingleton<PasskeyRelyingParty>();
 builder.Services.AddSingleton<RegistrationGate>();
+builder.Services.AddSingleton<SetupCode>();
 builder.Services.AddSingleton<ServerMutationGate>();
 builder.Services.AddSingleton<PresenceTracker>();
 builder.Services.AddSingleton<HubConnectionRegistry>();
@@ -325,6 +326,7 @@ static async Task InitializeApplicationAsync(WebApplication app)
     {
         var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
         await DatabaseSchema.PrepareAsync(db, stopping);
+        await IssueSetupCodeAsync(app, db, stopping);
         await app.Services.GetRequiredService<BackupPolicyStore>().LoadAsync(db, stopping);
         await app.Services.GetRequiredService<CloudflareR2PolicyStore>().LoadAsync(db, stopping);
         // A backup cut short by the last stop left a partial file; it is no backup.
@@ -356,6 +358,28 @@ static async Task InitializeApplicationAsync(WebApplication app)
             StartupLog.StorageNotReady(app.Logger, attempt, maxAttempts, exception.Message);
             await Task.Delay(TimeSpan.FromSeconds(1), stopping);
         }
+    }
+}
+
+// An instance without accounts is founded by whoever creates the first one.
+// The code that registration asks for is shown here, in the log, which only
+// the operator reads; a new one at every start until the owner exists.
+static async Task IssueSetupCodeAsync(WebApplication app, AppDbContext db, CancellationToken cancellationToken)
+{
+    if (await db.Users.AnyAsync(cancellationToken))
+    {
+        return;
+    }
+
+    var code = app.Services.GetRequiredService<SetupCode>().Issue();
+    var publicUrl = CockpitEndpoints.PublicUrlOf(app.Configuration);
+    if (publicUrl.Length > 0)
+    {
+        StartupLog.SetupCodeIssued(app.Logger, code, $"{publicUrl}/setup");
+    }
+    else
+    {
+        StartupLog.SetupCodeIssuedWithoutAddress(app.Logger, code);
     }
 }
 

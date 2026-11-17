@@ -31,6 +31,7 @@ public sealed partial class Messages
         MessageKey.InviteUnusable => "The invite has expired, reached its use limit or is invalid.",
         MessageKey.InviteRequired => "An invite is required to create an account on an existing instance.",
         MessageKey.InviteServerGone => "The server the invite points to no longer exists.",
+        MessageKey.SetupCodeInvalid => "Enter the setup code from the server's log. Each start of the server shows a new one; use the latest.",
         MessageKey.InstanceHasNoMemberRole => "The instance has no role for new users.",
         MessageKey.UsernameInvalid => "Username must be 3–32 characters: letters, digits, dot, hyphen or underscore.",
         MessageKey.RegistrationDisplayNameLength => "Display name must be 1 to 64 characters long.",

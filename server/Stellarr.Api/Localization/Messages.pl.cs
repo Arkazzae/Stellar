@@ -29,6 +29,7 @@ public sealed partial class Messages
         MessageKey.InviteUnusable => "Zaproszenie wygasło, osiągnęło limit użyć albo jest nieprawidłowe.",
         MessageKey.InviteRequired => "Do utworzenia konta na istniejącej instancji wymagane jest zaproszenie.",
         MessageKey.InviteServerGone => "Serwer wskazany przez zaproszenie już nie istnieje.",
+        MessageKey.SetupCodeInvalid => "Wpisz kod konfiguracji z logu serwera. Przy każdym uruchomieniu serwer pokazuje nowy; użyj ostatniego.",
         MessageKey.InstanceHasNoMemberRole => "Instancja nie ma roli dla nowych użytkowników.",
         MessageKey.UsernameInvalid => "Nazwa użytkownika musi mieć 3–32 znaki: litery, cyfry, kropkę, myślnik lub podkreślenie.",
         MessageKey.RegistrationDisplayNameLength => "Nazwa widoczna musi mieć od 1 do 64 znaków.",

@@ -553,6 +553,7 @@ public sealed class BootstrapFlowTests
             displayName = "First Owner",
             email = "owner@example.test",
             password = "Production!2026",
+            setupCode = factory.SetupCode,
         })).EnsureSuccessStatusCode();
 
         var snapshot = await client.GetFromJsonAsync<JsonElement>("/api/bootstrap");
