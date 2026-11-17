@@ -36,10 +36,10 @@ public sealed class LinkUnfurler(
 
     private readonly EmbedOptions _options = options.Value;
 
-    public async Task<PageCard?> FetchCardAsync(Uri url, CancellationToken cancellationToken)
+    public Task<PageCard?> FetchCardAsync(Uri url, CancellationToken cancellationToken) =>
+        FetchAsync<PageCard>(url, async (response, bodyToken) =>
     {
-        using var response = await SendAsync(url, cancellationToken);
-        if (response?.Content.Headers.ContentType is not { MediaType: { } mediaType } contentType ||
+        if (response.Content.Headers.ContentType is not { MediaType: { } mediaType } contentType ||
             !PageTypes.Contains(mediaType, StringComparer.OrdinalIgnoreCase))
         {
             return null;
@@ -48,7 +48,7 @@ public sealed class LinkUnfurler(
         // A page that outgrows the cap while it streams is still read as far
         // as the cap: what a card needs is in the head, and the head comes
         // first. One that announces a size over the cap is not read at all.
-        if (await CappedBody.ReadAsync(response.Content, _options.MaxHtmlBytes, allowTruncated: true, cancellationToken)
+        if (await CappedBody.ReadAsync(response.Content, _options.MaxHtmlBytes, allowTruncated: true, bodyToken)
             is not { } bytes)
         {
             return null;
@@ -57,12 +57,12 @@ public sealed class LinkUnfurler(
         // Relative addresses resolve against where the redirects ended, not
         // against the link as it was posted.
         return OpenGraph.Parse(Decode(bytes, contentType), response.RequestMessage?.RequestUri ?? url);
-    }
+    }, cancellationToken);
 
-    public async Task<FetchedImage?> FetchImageAsync(Uri url, CancellationToken cancellationToken)
+    public Task<FetchedImage?> FetchImageAsync(Uri url, CancellationToken cancellationToken) =>
+        FetchAsync<FetchedImage>(url, async (response, bodyToken) =>
     {
-        using var response = await SendAsync(url, cancellationToken);
-        if (response?.Content.Headers.ContentType?.MediaType?.ToLowerInvariant() is not { } mediaType ||
+        if (response.Content.Headers.ContentType?.MediaType?.ToLowerInvariant() is not { } mediaType ||
             !ImageValidation.IsAllowedContentType(mediaType))
         {
             return null;
@@ -70,7 +70,7 @@ public sealed class LinkUnfurler(
 
         // Half an image is not an image, so one over the cap is dropped and not
         // stored cut short.
-        if (await CappedBody.ReadAsync(response.Content, _options.MaxImageBytes, allowTruncated: false, cancellationToken)
+        if (await CappedBody.ReadAsync(response.Content, _options.MaxImageBytes, allowTruncated: false, bodyToken)
             is not { Length: > 0 } bytes)
         {
             return null;
@@ -82,17 +82,14 @@ public sealed class LinkUnfurler(
         return ImageValidation.MatchesSignature(mediaType, bytes)
             ? new FetchedImage(bytes, mediaType, "preview" + ImageValidation.ExtensionFor(mediaType))
             : null;
-    }
+    }, cancellationToken);
 
     /// <summary>
-    /// Requests <paramref name="url"/> and returns the response when it is a
-    /// success, else null.
+    /// The same deadline covers connecting, headers and the entire body read.
     /// </summary>
-    /// <remarks>
-    /// The deadline ends with the headers; the body is read under the caller's
-    /// token alone.
-    /// </remarks>
-    private async Task<HttpResponseMessage?> SendAsync(Uri url, CancellationToken cancellationToken)
+    private async Task<T?> FetchAsync<T>(
+        Uri url, Func<HttpResponseMessage, CancellationToken, Task<T?>> read,
+        CancellationToken cancellationToken) where T : class
     {
         if (url.Scheme != Uri.UriSchemeHttp && url.Scheme != Uri.UriSchemeHttps)
         {
@@ -105,16 +102,12 @@ public sealed class LinkUnfurler(
             deadline.CancelAfter(TimeSpan.FromSeconds(_options.TimeoutSeconds));
 
             using var request = new HttpRequestMessage(HttpMethod.Get, url);
-            var response = await client.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, deadline.Token);
-            if (response.IsSuccessStatusCode)
-            {
-                return response;
-            }
-
-            response.Dispose();
-            return null;
+            using var response = await client.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, deadline.Token);
+            return response.IsSuccessStatusCode ? await read(response, deadline.Token) : null;
         }
-        catch (Exception exception) when (exception is HttpRequestException or OperationCanceledException or InvalidOperationException)
+        catch (Exception exception) when (
+            exception is HttpRequestException or IOException or InvalidOperationException ||
+            (exception is OperationCanceledException && !cancellationToken.IsCancellationRequested))
         {
             // This includes the address check's refusal, which surfaces as a
             // failed connect. Nobody asked for a report, only pasted a link.
