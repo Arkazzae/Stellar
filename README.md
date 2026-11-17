@@ -47,7 +47,7 @@ curl -fsSL https://raw.githubusercontent.com/Arkazzae/Stellarr/main/.env.example
 docker compose up -d
 ```
 
-Open **`https://localhost:8443`** in your browser, accept the self-signed certificate warning, and create the first account—it automatically becomes the server owner. To open the operator panel later, visit **`https://localhost:8443/cockpit`**.
+Open **`https://localhost:8443`** in your browser, accept the self-signed certificate warning, and create the owner account with the setup code from the container's log (`docker compose logs stellarr | grep "Setup code"`). To open the operator panel later, visit **`https://localhost:8443/cockpit`**.
 
 ### Inviting friends over the internet
 

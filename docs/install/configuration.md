@@ -177,6 +177,7 @@ The API writes logs to container stdout/stderr (`docker compose logs`) and to Co
 - Warnings and errors from all components
 - One summary line per API request (`POST /api/channels/…/messages 201 in 12 ms` under `Stellarr.Api.Requests`), excluding routine container health checks
 - Operational lifecycle events (startup, media server resets, backups, maintenance)
+- The [setup code](quick-start.md#4-create-the-owner-account) for the owner account, at each start while the instance has no account, as a warning so that it shows even with the log set to `Warning`
 
 Framework HTTP diagnostics (`Microsoft.AspNetCore`), Entity Framework SQL (`Microsoft.EntityFrameworkCore.Database.Command`), and outgoing HTTP client calls default to `Warning` and above. Override any category in `docker-compose.override.yml`:
 

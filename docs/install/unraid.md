@@ -32,7 +32,7 @@ Open **Docker → Add Container**, select **Stellarr** under **Template**, and r
 
 ## 3. First start
 
-Start the container and click **WebUI** from its menu on the Docker tab. Accept the self-signed certificate warning, then create the owner account as described in the [Quick start](quick-start.md#4-create-the-owner-account).
+Start the container and click **WebUI** from its menu on the Docker tab. Accept the self-signed certificate warning, then create the owner account as described in the [Quick start](quick-start.md#4-create-the-owner-account). The setup code it asks for is in the container's log, which **Logs** in the same menu opens: use the last line that starts with `Setup code:`.
 
 For a browser-trusted certificate or reverse proxy setup, see [Reverse proxy and TLS](reverse-proxy-and-tls.md).
 
