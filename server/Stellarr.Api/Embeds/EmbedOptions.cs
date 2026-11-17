@@ -16,9 +16,8 @@ public sealed class EmbedOptions
     public int MaxPerMessage { get; set; } = 2;
 
     /// <summary>
-    /// How long a host may take to answer a request. For a page or an image the
-    /// deadline ends with the headers, so what a host sends after that is not
-    /// bounded by it; YouTube's small oEmbed response is read under it entirely.
+    /// How long a host may take for one complete request, including the body
+    /// of a page, preview image or YouTube oEmbed response.
     /// </summary>
     public int TimeoutSeconds { get; set; } = 6;
 
