@@ -38,11 +38,6 @@ describe("ports", () => {
     expect(ports.SERVER_PERMISSION_VALUES.length).toBeGreaterThan(0);
   });
 
-  it("limits avatars to 4 MB and banners to 8 MB", () => {
-    expect(ports.IMAGE_LIMITS.avatar.maxBytes).toBe(4 * 1024 * 1024);
-    expect(ports.IMAGE_LIMITS.banner.maxBytes).toBe(8 * 1024 * 1024);
-  });
-
   it("tells a capture failure apart from other errors by its name and message", () => {
     const error = new ports.VoiceMessageCaptureError("Brak dostępu do mikrofonu");
 

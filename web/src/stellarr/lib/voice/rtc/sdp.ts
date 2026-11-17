@@ -225,15 +225,6 @@ export function tuneAudioSections(
   });
 }
 
-/** Apply one set of Opus parameters to every audio section of an SDP. */
-export function tuneOpusSdp(
-  sdp: string | undefined | null,
-  parameters: Readonly<Record<string, string>> = OPUS_FMTP_PARAMETERS,
-  ptime: number = OPUS_PTIME,
-): string {
-  return tuneAudioSections(sdp, () => ({ parameters, ptime }));
-}
-
 /**
  * Move Opus to the front of every audio m-line's payload list.
  *

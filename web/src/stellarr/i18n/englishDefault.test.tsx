@@ -1,11 +1,10 @@
 import { render, screen } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-import { Avatar } from "@/components/primitives/Avatar";
-import { Dropdown } from "@/components/primitives/Dropdown";
 import { LoginScreen } from "@/components/auth/LoginScreen";
+import { Avatar } from "@/components/primitives/Avatar";
 import { translateMessage } from "@/i18n";
-import { LanguageProvider } from "@/state/LanguageProvider";
+import { LanguageProvider, useLanguage } from "@/state/LanguageProvider";
 
 /**
  * The suite starts every test on a Polish page. These tests are the English
@@ -16,18 +15,24 @@ beforeEach(() => {
   document.documentElement.lang = "en";
 });
 
+/** The copy a localized component reads from the provider. */
+function LanguageProbe() {
+  const { locale, t, text } = useLanguage();
+  return (
+    <div>
+      <output aria-label="locale">{locale}</output>
+      <output aria-label="title">{t("settings.language.title")}</output>
+      <output aria-label="greeting">{text("Cześć", "Hello")}</output>
+    </div>
+  );
+}
+
 describe("screens on an English page", () => {
   it("sign-in reads in English without a provider", () => {
     render(<LoginScreen onSubmit={vi.fn()} />);
 
     expect(screen.getByRole("heading", { name: "Log in" })).toBeInTheDocument();
     expect(screen.getByRole("textbox", { name: "Username or email" })).toBeInTheDocument();
-  });
-
-  it("a dropdown with nothing chosen asks to choose", () => {
-    render(<Dropdown options={[]} value="" onChange={vi.fn()} label="Role" />);
-
-    expect(screen.getByText("Choose…")).toBeInTheDocument();
   });
 
   it("an avatar that opens a profile names it in English", () => {
@@ -39,11 +44,13 @@ describe("screens on an English page", () => {
   it("the provider starts in English when the server chose nothing else", () => {
     render(
       <LanguageProvider>
-        <Dropdown options={[]} value="" onChange={vi.fn()} label="Role" />
+        <LanguageProbe />
       </LanguageProvider>,
     );
 
-    expect(screen.getByText("Choose…")).toBeInTheDocument();
+    expect(screen.getByLabelText("locale")).toHaveTextContent("en");
+    expect(screen.getByLabelText("title")).toHaveTextContent("Language");
+    expect(screen.getByLabelText("greeting")).toHaveTextContent("Hello");
   });
 });
 
@@ -53,11 +60,15 @@ describe("the same screens for a person who chose Polish", () => {
     render(
       <LanguageProvider initialLocale="pl">
         <LoginScreen onSubmit={vi.fn()} t={(key, values) => translateMessage("pl", key, values)} />
-        <Dropdown options={[]} value="" onChange={vi.fn()} label="Rola" />
+        <Avatar id="u1" displayName="Ada" onOpen={vi.fn()} />
+        <LanguageProbe />
       </LanguageProvider>,
     );
 
     expect(screen.getByRole("heading", { name: "Zaloguj się" })).toBeInTheDocument();
-    expect(screen.getByText("Wybierz…")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Profil: Ada" })).toBeInTheDocument();
+    expect(screen.getByLabelText("locale")).toHaveTextContent("pl");
+    expect(screen.getByLabelText("title")).toHaveTextContent("Język");
+    expect(screen.getByLabelText("greeting")).toHaveTextContent("Cześć");
   });
 });

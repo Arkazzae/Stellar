@@ -1,3 +1,4 @@
+import { Dropdown } from "@stellarr/ui";
 import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { useState, type ReactNode } from "react";
@@ -12,7 +13,6 @@ import { polish } from "@/test/translators";
 import { AnchoredCard } from "./AnchoredCard";
 import { ConfirmProvider, useConfirm } from "./ConfirmDialog";
 import { ContextMenu } from "./ContextMenu";
-import { Dropdown } from "./Dropdown";
 import { Modal } from "./Modal";
 import { Popover } from "./Popover";
 
