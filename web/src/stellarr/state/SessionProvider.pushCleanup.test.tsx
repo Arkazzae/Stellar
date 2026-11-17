@@ -4,7 +4,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { createRuntime, type Runtime } from "@/adapters";
 import { NOTIFICATION_WORKER_PATH } from "@/lib/notifications/push";
-import { BOOTSTRAP, FakeRealtimeClient, SERVER } from "@/test/fakes";
+import { FakeRealtimeClient, SERVER } from "@/test/fakes";
 import { fullApi, type FullApi } from "@/test/runtime";
 
 import { LanguageProvider } from "./LanguageProvider";
