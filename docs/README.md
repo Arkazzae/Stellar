@@ -3,36 +3,37 @@
 Stellarr is a self-hosted text, voice, and video chat for small groups, packaged as a single Docker container.
 
 > [!TIP]
-> To try Stellarr locally on your machine in a few minutes, start with the [Quick start](install/quick-start.md). Before exposing an instance to friends over the internet, check the [Requirements](install/requirements.md#behind-nat) for `PUBLIC_IP` and UDP port forwarding.
+> To try Stellarr locally in a few minutes, start with the [Quick start](install/quick-start.md). Before exposing an instance to friends over the internet, review [Requirements](install/requirements.md#behind-nat) for `PUBLIC_IP` and UDP port forwarding.
 
 ## Self-hosting
 
-- [Requirements](install/requirements.md): host resources, published ports, and NAT forwarding for voice calls.
 - [Quick start](install/quick-start.md): start a local instance with Docker Compose, create the owner account, and test voice.
-- [Platforms](install/platforms.md): what any installation gives the container, and the platforms with a template of their own.
-  - [Unraid](install/unraid.md): install from the Unraid template and keep its port variables in step with the port mappings.
-- [Configuration](install/configuration.md): environment variables for production and development stacks.
-- [Operator CLI](install/cli.md): inspect health, edit settings, rotate secrets, and manage accounts and sessions via `docker exec` or on a stopped volume.
-- [Account security](install/account-security.md): second steps and passkeys, the instance policy, trusted devices, identity providers, and recovering a locked-out account.
-- [Reverse proxy and TLS](install/reverse-proxy-and-tls.md): custom TLS certificates, reverse proxy configuration, and non-HTTP WebRTC ports.
-- [Upgrading](install/upgrading.md): volume backups, image upgrades, rollbacks, and version migrations.
+- [Requirements](install/requirements.md): host resources, published ports, NAT forwarding, and outbound network traffic.
+- [Configuration](install/configuration.md): environment variables for production, development, and non-Compose deployments.
+- [Reverse proxy and TLS](install/reverse-proxy-and-tls.md): custom TLS certificates, reverse proxy configuration, trusted proxies, and WebRTC ports.
+- [Unraid](install/unraid.md): install and update from the Unraid template.
+- [Upgrading](install/upgrading.md): volume backups, image upgrades, schema updates, and rollbacks.
 
 ## Administration
 
-- [Activity notifications](notifications.md): e-mail and Web Push delivery for mentions and direct messages, privacy, retries, and upgrades.
-- [Automatic backups](admin/backups.md): schedules, verification, the local checkpoint, and a recovery drill.
-- [Cloudflare R2 offsite backups](admin/cloudflare-r2.md): the R2 integration, its Worker relay, bucket policies, and a Deploy to Cloudflare button.
+- [Operator CLI](admin/cli.md): inspect health, edit settings, rotate secrets, manage sessions, and stage backups with `stellarr`.
+- [Account security](admin/account-security.md): second-factor methods, passkeys, OIDC linking, instance MFA policy, and account recovery.
+- [Automatic backups](admin/backups.md): scheduled backups, archive verification, local retention, and full or partial restore procedures.
+- [Cloudflare R2 offsite backups](admin/cloudflare-r2.md): direct S3 uploads, the Backup Relay Worker, retention, and security notes.
+- [Activity notifications](admin/notifications.md): opt-in email and Web Push delivery, VAPID key setup, privacy guarantees, and retry behavior.
 
 ## Reference
 
-- [Architecture](architecture.md): container processes, how requests and call media flow through them, and persistent storage.
-- [RTC and ports](rtc-and-ports.md): port mappings, NAT/TURN behavior, audio/video pipeline, and call diagnostics.
-- [Voice and RTC protocol](rtc-protocol.md): SignalR voice signaling, client state, audio processing, screen sharing, and camera profiles.
-- [Stellarr Media](stellarr-media.md): Rust SFU media server, SDP negotiation rules, track directory, and loopback control API.
-- [Localization](localization.md): interface locales, server message catalogs, and local in-browser chat translation.
+- [Architecture](architecture.md): container services, Nginx routing, persistent storage, security, and authorization rules.
+- [RTC and ports](rtc-and-ports.md): published ports, TURN relay sizing, NAT/firewall rules, and call diagnostics.
+- [Voice and RTC protocol](rtc-protocol.md): SignalR signaling, client state model, audio/video pipeline, screen sharing, and camera profiles.
+- [Stellarr Media](stellarr-media.md): Rust SFU media server, SDP negotiation, receive subscriptions, downlink adaptation, and loopback control API.
+- [Localization](localization.md): interface locales, server message catalogs, client-side Bergamot chat translation, and adding a language.
 
 ## Component guides
 
-- [Stellarr Cockpit](../web/src/cockpit/README.md): operator panel development, locale resolution, and build checks.
+- [Stellarr Cockpit](../web/src/cockpit/README.md): operator panel architecture, localization, and checks.
 - [Stellarr Media crate](../media/README.md): building and testing the `stellarr-media` binary and the [Chromium smoke suite](../media/smoke/README.md).
+- [Stellarr Init](../init/README.md): PID 1 process manager, readiness probes, control socket, and PID-namespace tests.
+- [Platform templates](../deploy/README.md): packaging rules for non-Compose templates and the Cloudflare backup relay.
 - [Branding](../branding/README.md): logo, mascot, color palette, typography, and trademark policy.

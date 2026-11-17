@@ -1,26 +1,25 @@
 # Automatic backups
 
-Production Docker Compose enables a full backup every 24 hours, starting five
-minutes after startup. Open **Cockpit → Backups → Backup settings** to configure
-the schedule, retries, startup delay and local retention. Offsite copies are a
-separate integration, configured under **Integrations**; [Cloudflare R2](cloudflare-r2.md)
-is the supported destination.
+Production Docker Compose runs an automatic full backup every 24 hours, starting five minutes after startup. Configure the schedule and retention in **Cockpit → Backups → Backup settings**. To keep offsite copies, enable [Cloudflare R2](cloudflare-r2.md) under **Cockpit → Integrations**.
 
-Panel policy changes take effect without a restart, by the next scheduler check
-(within one minute once the startup delay has elapsed). A running archive creation
-finishes. Successful-cycle and retry dates are recalculated using the saved
-interval and retry settings. Configuration changes require a fresh second step
-when the owner's account has MFA enabled.
+## What a backup includes
 
-The saved panel policy overrides deployment defaults. **Restore deployment
-defaults** removes that policy override; local retention remains in the existing
-instance settings. The schedule policy is included in database and key backups.
+Cockpit creates two kinds of backups:
 
-Alternatively, configure defaults in `.env` and recreate the container with
-`docker compose up -d`. Direct API deployments opt in with `Backups__Enabled=true`.
-The first run happens after the startup delay; later runs are measured from the
-last successful completion in UTC. This is an interval, not a wall-clock cron job.
-A missed interval runs once after restart, without replaying every missed run.
+- **Database-only backup**: A single SQLite online snapshot (`.db`).
+- **Full backup**: A `.zip` archive with a `manifest.json` and four parts:
+  1. SQLite online snapshot (`stellarr.db`)
+  2. Uploaded objects (`objects/`)
+  3. Data-protection keys (`keys/`)
+  4. Instance files (`secrets/`, `tls/`, `releases/`)
+
+> [!IMPORTANT]
+> Automatic backups always create **full backups** and fail if any referenced upload is missing. Because `.env` is never stored inside archives, keep a separate copy of `.env` alongside your backups.
+
+## Schedule and configuration
+
+- **Cockpit**: Changes under **Backups → Backup settings** apply within one minute without a restart. Updating the policy requires a fresh second factor if MFA is enabled on the owner account. Use **Restore deployment defaults** to fall back to `.env`.
+- **Environment defaults**: Set defaults in `.env` and run `docker compose up -d`. Direct API deployments opt in with `Backups__Enabled=true`.
 
 ```dotenv
 STELLARR_BACKUP_ENABLED=true
@@ -29,111 +28,65 @@ STELLARR_BACKUP_RETRY_MINUTES=15
 STELLARR_BACKUP_INITIAL_DELAY_MINUTES=5
 ```
 
-A cycle contains SQLite's online snapshot, every readable object, data-protection
-keys, and the instance's `secrets`, `tls` and `releases` folders. It verifies the
-archive before publishing it and rejects automatic copies with missing objects.
-An archive backup already running in Cockpit defers the scheduled job. Scheduled
-and manual archive jobs share the same concurrency gate and progress display.
-The audit associates scheduled creation with the current instance owner and
-marks it `[automatic]`; the owner did not initiate that request.
+How the scheduler works:
 
-Cockpit's Backups page shows the policy, last successful cycle, next attempt,
-whether an offsite destination is active, any pending upload and the failure
-state. When an offsite destination is enabled it must succeed before a cycle is
-recorded as successful. Local success alone is not offsite success. Details of
-failures are in the API logs. Configure external monitoring to alert when there
-has been no success for longer than the interval plus the expected backup
-duration; this implementation does not send email alerts.
-
-The checkpoint is `${DataRoot}/automatic-backup.json`, outside the pruned backups
-folder. It contains no credentials. Writes replace the checkpoint atomically.
-A failed upload retries the same local archive after the retry interval, including
-after restart. If local retention has already removed that pending archive, the
-next attempt makes a fresh full backup. A crash before the pending checkpoint is
-written may leave an extra verified local archive. Run one API process per data
-volume, as with the existing SQLite deployment; the job lock is process-local.
-
-The backup domain knows only an `IBackupDestination` contract. Concrete
-destinations live under `Integrations`; enabling Cloudflare R2 does not change
-the backup schedule or the local retention policy.
+- Intervals run in UTC from the **last successful completion**, not on a wall-clock cron. A missed run triggers once after restart without catching up skipped cycles.
+- Manual and scheduled backups share one lock, so a manual run defers the scheduled job. Automatic entries appear in the audit log under the owner account tagged `[automatic]`.
+- With an offsite destination enabled, a cycle succeeds only after the offsite upload also finishes. Failed uploads retry the same local `.zip` at the retry interval (tracked in `${DataRoot}/automatic-backup.json`).
+- Stellarr does not send email alerts on backup failure. Monitor **Cockpit → Backups** (and container logs) or watch completion timestamps externally.
+- Run only one API process per `/data/stellarr` volume so the process-local lock stays exclusive.
 
 ## Restoring a backup
 
-The operator CLI restores a full backup: an archive with all four parts. Test
-the copies by restoring one on an isolated instance before relying on them.
+The [operator CLI](cli.md) restores **full backups** automatically. Test restores periodically on an isolated instance before relying on them.
 
-1. Put the archive in the instance's backups folder if Cockpit does not already
-   list it. If you downloaded it from R2, first compare its SHA-256 with the
-   remote `sha256` metadata.
+1. Copy the archive into `/data/stellarr/backups/` if Cockpit does not already list it. For archives downloaded from R2, verify the SHA-256 against the remote `sha256` metadata first:
 
-   ```sh
+   ```bash
    docker compose cp ./backup-20261114-030000-<id>.zip stellarr:/data/stellarr/backups/
    ```
 
-2. Stage it. The CLI checks the manifest, every entry name, the database's
-   integrity and every entry's bytes, then copies the archive to
-   `restore/staged.zip` on the data volume. Nothing is replaced yet.
+2. Stage the restore. The CLI checks `manifest.json`, entry paths, SQLite integrity, and every entry's CRC-32 and size, then copies the archive to `restore/staged.zip`:
 
-   ```sh
+   ```bash
    docker compose exec stellarr stellarr backup restore backup-20261114-030000-<id>.zip --yes
    ```
 
-3. Restart the container. Before any service starts, the entrypoint replaces
-   `db/`, `files/`, `keys/`, `secrets/`, `tls/` and `releases/` with the
-   archive's and moves the folders it replaces to `restore/previous-<time>/`.
-   `logs/`, `backups/` and the automatic backup checkpoint stay as they are.
+3. Restart the container. Before services start, the entrypoint replaces `db/`, `files/`, `keys/`, `secrets/`, `tls/`, and `releases/`, moving the old folders to `restore/previous-<time>/`:
 
-   ```sh
+   ```bash
    docker compose restart stellarr
    ```
 
-4. Verify owner login, historical messages, downloads, avatars, integrations
-   and a newly created backup. Record the recovery time and the last recovered
-   data. Then delete `restore/previous-<time>/`; until then, moving its folders
-   back undoes the restore.
+   (`logs/`, `backups/`, and `automatic-backup.json` are preserved.)
 
-`restore/last-restore.json` records what the last start did. An archive the
-start refuses, for example one damaged since it was staged, leaves the data as
-it was and is kept as `restore/refused-<time>.zip`; the instance then starts on
-its previous data. If putting the archive in place fails part-way and the
-previous folders cannot be moved back, the start leaves `restore/broken`, and
-the container refuses to start until the volume is repaired and that file is
-removed. `stellarr backup cancel` drops a staged archive before the restart.
+4. Verify owner login, message history, downloads, avatars, integrations, and creating a fresh backup. Delete `restore/previous-<time>/` once verified; moving those folders back undoes the restore.
 
-The volume needs room for the instance's data, the staged archive and the
-unpacked copy at once. `restore/previous-<time>/` and `restore/refused-<time>.zip`
-are never removed automatically. A restore moves whole folders, so it refuses
-when one of them is a mount of its own, such as `files/` on a separate disk;
-restore such an instance by hand, as below.
+### Restore safeguards
 
-Restore with the release that made the backup: a start creates the schema of a
-new database but does not change the tables of a restored one. Secrets read
-from the environment are not in the archive, so keep a copy of `.env` with the
-backups.
+| Behavior | Detail |
+| --- | --- |
+| Status record | `restore/last-restore.json` logs what the last container start did. |
+| Cancel before restart | Run `docker compose exec stellarr stellarr backup cancel`. |
+| Corrupted staged archive | Live data stays untouched, the archive moves to `restore/refused-<time>.zip`, and the container boots normally. |
+| Interrupted folder swap | If rollback also fails, startup creates `restore/broken` and refuses to boot until you repair the volume and delete that marker. |
+| Disk space | `/data/stellarr` needs room for live data, `restore/staged.zip`, and unpacked files at once. `previous-*` and `refused-*` files are not auto-pruned. |
+| Sub-mounts | Automatic restore refuses if subdirectories such as `files/` are separate mounts. Restore manually instead. |
+| Version match | Restore onto the same Stellarr release that wrote the backup. |
 
-### Restoring a partial backup
+### Restoring a partial or database-only backup
 
-A database-only backup (a single `.db` file) and an archive without all four
-parts are restored by hand, into a stopped instance:
+A standalone `.db` file or an archive missing any of the four full-backup parts must be restored manually with the container stopped:
 
-1. Stop the instance and keep a separate copy of its data volume.
-2. Put the database at `db/stellarr.db`, with no `stellarr.db-wal` or
-   `stellarr.db-shm` left beside it.
-3. Put the contents of `keys/` into `keys/`. A database without the keys it was
-   written with cannot read the secrets stored in it.
-4. Copy every file under `objects/` into `files/`, keeping its relative path:
-   the archive's `objects/` folder has the same layout as `files/`.
-5. Put the contents of `instance/` into the data root, keeping relative paths,
-   and make the files under `secrets/` and `tls/` readable by their owner only.
-6. Start the instance and verify it as above.
+1. Stop the container (`docker compose stop`) and keep a copy of `/data/stellarr`.
+2. Place the `.db` file at `db/stellarr.db` and remove any leftover `db/stellarr.db-wal` or `db/stellarr.db-shm`.
+3. Copy `keys/` alongside the database so encrypted TOTP seeds and Cockpit secrets remain readable.
+4. Copy `objects/` into `files/`, keeping relative paths.
+5. Copy `instance/` into `/data/stellarr/`, keeping relative paths, and keep `secrets/` and `tls/` readable by owner only.
+6. Start the container (`docker compose start`) and verify data and login.
 
-SQLite is a consistent online snapshot; the object store and instance files are
-read over time. This is not a transaction spanning SQLite and the object store.
-The snapshot is taken before listing objects. Its referenced attachment, poster,
-and emoji keys are included even if an object disappears before that listing, so
-missing data is reported in the manifest instead of silently omitted. Verification
-checks every ZIP entry's CRC-32 and uncompressed length, and restore repeats those
-checks while unpacking before replacing live data.
-For a strict point-in-time recovery drill, pause writes while making the backup.
-Daily intervals imply roughly a 24-hour data-loss window plus backup duration;
-failed cycles extend it. Measure recovery time from the drill rather than assuming it.
+## Consistency and recovery expectations
+
+- SQLite uses an online snapshot taken before listing objects. Files uploaded mid-backup are not covered by a cross-system transaction, and missing referenced objects are recorded in `manifest.json` (and rejected for automatic backups).
+- Entry CRC-32 and uncompressed sizes are checked both during staging and while unpacking at startup.
+- A 24-hour interval gives roughly a 24-hour maximum data-loss window (plus backup duration). Measure actual recovery time during a test drill.

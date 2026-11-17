@@ -23,18 +23,18 @@ Always take a full volume backup while the container is stopped so SQLite (`stel
      tar czf /backup/stellarr-data-$(date +%F).tar.gz -C /data .
    ```
 
-The archive contains the SQLite database, uploaded objects, session keys, shared secrets, and TLS private key. Store it securely off-host.
+The archive contains the SQLite database, uploaded objects, session keys, shared secrets, and TLS private key. Store it securely off-host alongside a copy of your `.env` file.
 
 > [!TIP]
-> You can also create backups from Cockpit (**Backups**) while the instance is running. A database-only backup produces a single SQLite file; a full backup creates a `.zip` archive containing the database, uploaded objects, data-protection keys, and instance files (`secrets/`, `tls/`, desktop releases) with a `manifest.json`. Because Cockpit stores backups in `/data/stellarr/backups` on the same volume, download copies off-host and keep a copy of your `.env` file alongside them. To restore a Cockpit full backup, stage it with `stellarr backup restore` and restart the container; see [Restoring a backup](../admin/backups.md#restoring-a-backup).
+> You can also create full `.zip` backups from **Cockpit → Backups** while the instance is running (or automate them; see [Automatic backups](../admin/backups.md)). Download copies off-host. To restore a Cockpit archive later, use `stellarr backup restore` and restart the container.
 
 ## 2. Pull and start the new version
 
 Release notes are published at <https://github.com/Arkazzae/Stellarr/releases>.
 
-1. Update `STELLARR_VERSION` in `.env` (or keep `latest` to track the newest stable release):
+1. Update `STELLARR_VERSION` in `.env` (or keep `latest` to follow stable releases):
 
-   ```bash
+   ```dotenv
    STELLARR_VERSION=1.2.3
    ```
 
@@ -45,7 +45,7 @@ Release notes are published at <https://github.com/Arkazzae/Stellarr/releases>.
    docker compose up -d
    ```
 
-   If `STELLARR_VERSION` references a tag that does not exist in GHCR, `docker compose` attempts a local build and fails if no `Dockerfile` is present.
+   If `STELLARR_VERSION` names a tag that does not exist in GHCR, `docker compose` attempts a local build and fails if no `Dockerfile` is present.
 
 3. Verify the upgrade:
 
@@ -55,20 +55,18 @@ Release notes are published at <https://github.com/Arkazzae/Stellarr/releases>.
    docker inspect --format '{{ index .Config.Labels "org.opencontainers.image.version" }}' stellarr
    ```
 
-   Confirm that `docker compose ps` reports `healthy`, which means that every service in the container answers: Nginx, the API and its database, the media server, and `coturn`, and that `curl` returns `200`. If it does not, `docker compose exec stellarr stellarr-init status` shows which service does not; see [Services in the container](platforms.md#services-in-the-container).
+   Confirm `docker compose ps` reports `healthy` (every internal service passes readiness checks) and `curl` returns `200`. If startup fails, inspect `docker compose exec stellarr stellarr-init status` and `docker compose logs`.
 
 ## Database schema
 
-The API creates the SQLite database, in WAL mode, on the first start of a new data volume. Later starts run idempotent schema steps, including adding the account-security bindings on pending email changes and creating the per-channel send-time table used by slow mode. Existing roles and memberships are preserved.
-
-Pending email-change links created before the security bindings were added are invalidated; request a new link after upgrading. Slow mode is backfilled from retained messages, then records successful sends independently of message deletion. History clients may receive already-seen messages once when continuing a cursor from the previous version; the web client merges them by message ID before continuing with the new cursor.
+On a new volume, the API initializes SQLite in WAL mode from the data model. On subsequent starts and upgrades, startup applies idempotent schema preparation steps (such as auxiliary tables, full-text indexes, and triggers) while keeping existing servers, roles, memberships, messages, and settings intact.
 
 > [!WARNING]
-> Roll back by restoring the volume backup taken before the upgrade, not by starting an older container image against the same data volume.
+> Do not downgrade by starting an older image directly against an upgraded volume. Roll back by restoring the pre-upgrade volume backup instead.
 
 ## Rollback
 
-Rolling back restores the entire data volume to the backup snapshot; any messages, uploads, or accounts created since the backup are lost.
+Rolling back restores the entire data volume to the pre-upgrade snapshot; any messages, uploads, or accounts created after the backup are lost.
 
 1. Stop the stack and restore the archive:
 
@@ -78,7 +76,7 @@ Rolling back restores the entire data volume to the backup snapshot; any message
      sh -c "find /data -mindepth 1 -delete && tar xzf /backup/stellarr-data-YYYY-MM-DD.tar.gz -C /data"
    ```
 
-2. Set `STELLARR_VERSION` in `.env` to the previous version tag and start the container:
+2. Set `STELLARR_VERSION` in `.env` back to the previous version tag and start the container:
 
    ```bash
    docker compose up -d
