@@ -3432,3 +3432,58 @@ describe("camera", () => {
     expect(realtime.leaveVoice).not.toHaveBeenCalled();
   });
 });
+
+describe("overlapping voice intentions", () => {
+  it("resets locally before a slow leave ack and starts the next call only after it", async () => {
+    const client = build();
+    const original = await joined(client);
+    const ack = deferred<void>();
+    realtime.leaveVoice.mockReturnValueOnce(ack.promise);
+    const leaving = client.leave();
+    expect(client.getSnapshot().channelId).toBeNull();
+    expect(original.close).toHaveBeenCalled();
+    const joining = client.join(TARGET_CHANNEL);
+    expect(getUserMedia).toHaveBeenCalledTimes(1);
+    ack.resolve();
+    await Promise.all([leaving, joining]);
+    expect(client.getSnapshot()).toMatchObject({ channelId: TARGET_CHANNEL, connection: "connected" });
+    expect(latestConnection().close).not.toHaveBeenCalled();
+  });
+
+  it("cancels a queued switch when the user hangs up before the leave ack", async () => {
+    const client = build();
+    await joined(client);
+    const ack = deferred<void>();
+    realtime.leaveVoice.mockReturnValueOnce(ack.promise);
+    const switching = client.join(TARGET_CHANNEL);
+    await client.leave();
+    ack.resolve();
+    await switching;
+    expect(client.getSnapshot()).toMatchObject({ channelId: null, connection: "idle" });
+    expect(getUserMedia).toHaveBeenCalledTimes(1);
+    expect(realtime.joinVoice).toHaveBeenCalledTimes(1);
+  });
+
+  it("lets only the latest of several queued channel selections join", async () => {
+    const client = build();
+    await joined(client);
+    const ack = deferred<void>();
+    realtime.leaveVoice.mockReturnValueOnce(ack.promise);
+    const first = client.join(TARGET_CHANNEL);
+    const latest = client.join("third-room");
+    ack.resolve();
+    await Promise.all([first, latest]);
+    expect(client.getSnapshot().channelId).toBe("third-room");
+    expect(realtime.joinVoice).not.toHaveBeenCalledWith(TARGET_CHANNEL);
+    expect(getUserMedia).toHaveBeenCalledTimes(2);
+  });
+
+  it("updates the local name without reopening capture or transport", async () => {
+    const client = build();
+    const pc = await joined(client);
+    client.setDisplayName("New name");
+    expect(client.getSnapshot().peers.find((peer) => peer.self)?.displayName).toBe("New name");
+    expect(getUserMedia).toHaveBeenCalledTimes(1);
+    expect(pc.close).not.toHaveBeenCalled();
+  });
+});
