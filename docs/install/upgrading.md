@@ -59,7 +59,9 @@ Release notes are published at <https://github.com/Arkazzae/Stellarr/releases>.
 
 ## Database schema
 
-The API creates the SQLite database, in WAL mode, on the first start of a new data volume. Later starts only make sure its search index and triggers exist; they do not change the tables of an existing database.
+The API creates the SQLite database, in WAL mode, on the first start of a new data volume. Later starts run idempotent schema steps, including adding the account-security bindings on pending email changes and creating the per-channel send-time table used by slow mode. Existing roles and memberships are preserved.
+
+Pending email-change links created before the security bindings were added are invalidated; request a new link after upgrading. Slow mode is backfilled from retained messages, then records successful sends independently of message deletion. History clients may receive already-seen messages once when continuing a cursor from the previous version; the web client merges them by message ID before continuing with the new cursor.
 
 > [!WARNING]
 > Roll back by restoring the volume backup taken before the upgrade, not by starting an older container image against the same data volume.
