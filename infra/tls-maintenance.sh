@@ -37,8 +37,12 @@ certificate_is_self_signed() {
   local subject issuer
   subject="$(openssl x509 -in "$fullchain" -noout -subject -nameopt RFC2253 2>/dev/null || true)"
   issuer="$(openssl x509 -in "$fullchain" -noout -issuer -nameopt RFC2253 2>/dev/null || true)"
+  # Ownership does not expire with the certificate. Check its own signature,
+  # but leave validity dates to expires_within so an expired managed pair is
+  # still renewed. Matching names alone would also accept a self-issued
+  # certificate signed by somebody else's key.
   [[ -n "$subject" && "${subject#subject=}" == "${issuer#issuer=}" ]] &&
-    openssl verify -CAfile "$fullchain" "$fullchain" >/dev/null 2>&1
+    openssl verify -no_check_time -check_ss_sig -CAfile "$fullchain" "$fullchain" >/dev/null 2>&1
 }
 
 certificate_matches_host() {
