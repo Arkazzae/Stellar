@@ -1,4 +1,3 @@
-using System.Diagnostics.CodeAnalysis;
 using Microsoft.AspNetCore.SignalR;
 using Microsoft.EntityFrameworkCore;
 using Stellarr.Api.Auth;
@@ -28,62 +27,6 @@ public static class ModerationEndpoints
         moderation.MapDelete("/bans/{userId:guid}", UnbanAsync);
         moderation.MapDelete("/members/{userId:guid}", KickAsync);
         return endpoints;
-    }
-
-    /// <summary>
-    /// Finds the member a moderator acts on, or says why the moderator may not.
-    /// Nobody acts on themselves, on the owner, or on a member whose role does
-    /// not rank below their own; the owner outranks everybody else.
-    /// </summary>
-    /// <param name="channelId">
-    /// The channel the action is about. Its overrides then apply to the
-    /// moderator's privileges; without it the role's privileges decide.
-    /// </param>
-    internal static async Task<ModerationLookup> FindTargetAsync(
-        AppDbContext db,
-        Guid serverId,
-        Guid actorId,
-        Guid targetId,
-        ServerPrivileges required,
-        CancellationToken cancellationToken,
-        Guid? channelId = null)
-    {
-        if (actorId == targetId)
-        {
-            return ModerationLookup.Refused(Results.Forbid());
-        }
-
-        var actor = await db.ServerMembers
-            .Include(x => x.Role)
-            .Include(x => x.User)
-            .FirstOrDefaultAsync(x => x.ServerId == serverId && x.UserId == actorId, cancellationToken);
-        if (actor is null)
-        {
-            return ModerationLookup.Refused(Results.Forbid());
-        }
-
-        var allowed = channelId is { } channel
-            ? await ServerAccess.HasAsync(db, actorId, serverId, channel, required, cancellationToken)
-            : actor.Role.Permissions.HasFlag(required);
-        if (!allowed)
-        {
-            return ModerationLookup.Refused(Results.Forbid());
-        }
-
-        var target = await db.ServerMembers
-            .Include(x => x.Role)
-            .Include(x => x.User)
-            .FirstOrDefaultAsync(x => x.ServerId == serverId && x.UserId == targetId, cancellationToken);
-        if (target is null)
-        {
-            return ModerationLookup.Refused(Results.NotFound());
-        }
-
-        var outranked = target.Role.IsOwner ||
-            (!actor.Role.IsOwner && target.Role.Position <= actor.Role.Position);
-        return outranked
-            ? ModerationLookup.Refused(Results.Forbid())
-            : new ModerationLookup(actor, target, Refusal: null);
     }
 
     private static async Task<IResult> ListBansAsync(
@@ -126,11 +69,12 @@ public static class ModerationEndpoints
         }
 
         var serverId = http.RequireActiveServerId();
-        var lookup = await FindTargetAsync(
-            db, serverId, http.User.RequireUserId(), userId, ServerPrivileges.ManageBans, cancellationToken);
-        if (lookup.IsRefused)
+        await using var transaction = await db.Database.BeginTransactionAsync(cancellationToken);
+        var lookup = await ServerAuthorization.BanMemberAsync(
+            db, http.User.RequireUserId(), serverId, userId, cancellationToken);
+        if (!lookup.Allowed)
         {
-            return lookup.Refusal;
+            return Refusal(lookup);
         }
 
         var ban = new ServerBan
@@ -143,6 +87,10 @@ public static class ModerationEndpoints
             User = lookup.Target.User,
             BannedBy = lookup.Actor.User,
         };
+        // Policy lookups are detached. Existing users must remain unchanged
+        // when the new ban graph is attached.
+        db.Attach(lookup.Actor.User);
+        db.Attach(lookup.Target.User);
         db.ServerBans.Add(ban);
         db.ServerMembers.Remove(lookup.Target);
         if (!await TrySaveRemovalAsync(db, cancellationToken))
@@ -150,6 +98,7 @@ public static class ModerationEndpoints
             return Results.Conflict();
         }
 
+        await transaction.CommitAsync(cancellationToken);
         await PublishRemovalAsync(serverId, userId, "banned", db, presence, hub);
         return Results.Created($"/api/admin/bans/{userId}", ban.ToDto());
     }
@@ -188,11 +137,12 @@ public static class ModerationEndpoints
         CancellationToken cancellationToken)
     {
         var serverId = http.RequireActiveServerId();
-        var lookup = await FindTargetAsync(
-            db, serverId, http.User.RequireUserId(), userId, ServerPrivileges.ModerateMembers, cancellationToken);
-        if (lookup.IsRefused)
+        await using var transaction = await db.Database.BeginTransactionAsync(cancellationToken);
+        var lookup = await ServerAuthorization.KickMemberAsync(
+            db, http.User.RequireUserId(), serverId, userId, cancellationToken);
+        if (!lookup.Allowed)
         {
-            return lookup.Refusal;
+            return Refusal(lookup);
         }
 
         db.ServerMembers.Remove(lookup.Target);
@@ -201,6 +151,7 @@ public static class ModerationEndpoints
             return Results.Conflict();
         }
 
+        await transaction.CommitAsync(cancellationToken);
         await PublishRemovalAsync(serverId, userId, "kicked", db, presence, hub);
         return Results.NoContent();
     }
@@ -274,13 +225,6 @@ public static class ModerationEndpoints
         }
     }
 
-    /// <summary>The outcome of <see cref="FindTargetAsync"/>: the two members, or the answer to give instead.</summary>
-    internal sealed record ModerationLookup(ServerMember? Actor, ServerMember? Target, IResult? Refusal)
-    {
-        [MemberNotNullWhen(true, nameof(Refusal))]
-        [MemberNotNullWhen(false, nameof(Actor), nameof(Target))]
-        public bool IsRefused => Refusal is not null;
-
-        internal static ModerationLookup Refused(IResult refusal) => new(Actor: null, Target: null, refusal);
-    }
+    internal static IResult Refusal(MemberAuthorization decision) =>
+        decision.Failure == AuthorizationFailure.NotFound ? Results.NotFound() : Results.Forbid();
 }

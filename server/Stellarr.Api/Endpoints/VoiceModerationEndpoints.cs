@@ -1,9 +1,7 @@
 using Microsoft.AspNetCore.SignalR;
-using Microsoft.EntityFrameworkCore;
 using Stellarr.Api.Auth;
 using Stellarr.Api.Contracts;
 using Stellarr.Api.Data;
-using Stellarr.Api.Domain;
 using Stellarr.Api.Realtime;
 
 namespace Stellarr.Api.Endpoints;
@@ -34,27 +32,17 @@ public static class VoiceModerationEndpoints
         CancellationToken cancellationToken)
     {
         var serverId = http.RequireActiveServerId();
-        if (await CountVoiceChannelsAsync(db, serverId, [channelId], cancellationToken) != 1)
+        await using var transaction = await db.Database.BeginTransactionAsync(cancellationToken);
+        var lookup = await ServerAuthorization.KickVoiceMemberAsync(
+            db, http.User.RequireUserId(), serverId, channelId, userId, cancellationToken);
+        if (!lookup.Allowed)
         {
-            return Results.NotFound();
-        }
-
-        // The channel's own overrides decide here, since the action is about this channel.
-        var lookup = await ModerationEndpoints.FindTargetAsync(
-            db,
-            serverId,
-            http.User.RequireUserId(),
-            userId,
-            ServerPrivileges.ModerateMembers,
-            cancellationToken,
-            channelId);
-        if (lookup.IsRefused)
-        {
-            return lookup.Refusal;
+            return ModerationEndpoints.Refusal(lookup);
         }
 
         var seated = presence.VoiceConnectionIds(userId, channelId);
         presence.RemoveUserFromVoiceChannels(userId, new HashSet<Guid> { channelId });
+        await transaction.CommitAsync(cancellationToken);
         if (seated.Count > 0)
         {
             await hub.Clients.Clients(seated).SendAsync(
@@ -77,19 +65,15 @@ public static class VoiceModerationEndpoints
         CancellationToken cancellationToken)
     {
         var serverId = http.RequireActiveServerId();
-        var lookup = await ModerationEndpoints.FindTargetAsync(
-            db, serverId, http.User.RequireUserId(), userId, ServerPrivileges.ModerateMembers, cancellationToken);
-        if (lookup.IsRefused)
-        {
-            return lookup.Refusal;
-        }
-
+        await using var transaction = await db.Database.BeginTransactionAsync(cancellationToken);
         var targetChannelId = request.TargetChannelId;
-        Guid[] rooms = [.. new[] { channelId, targetChannelId }.Distinct()];
-        if (await CountVoiceChannelsAsync(db, serverId, rooms, cancellationToken) != rooms.Length)
+        var lookup = await ServerAuthorization.MoveVoiceMemberAsync(
+            db, http.User.RequireUserId(), serverId, channelId, targetChannelId, userId, cancellationToken);
+        if (!lookup.Allowed)
         {
-            return Results.NotFound();
+            return ModerationEndpoints.Refusal(lookup);
         }
+        Guid[] rooms = [.. new[] { channelId, targetChannelId }.Distinct()];
 
         if (channelId == targetChannelId)
         {
@@ -104,6 +88,7 @@ public static class VoiceModerationEndpoints
             return Results.Conflict();
         }
 
+        await transaction.CommitAsync(cancellationToken);
         await hub.Clients.Clients(move.ConnectionIds).SendAsync(
             "VoiceChannelMoved",
             new { fromChannelId = channelId.ToString(), toChannelId = targetChannelId.ToString() },
@@ -116,12 +101,4 @@ public static class VoiceModerationEndpoints
         return Results.NoContent();
     }
 
-    private static async Task<int> CountVoiceChannelsAsync(
-        AppDbContext db,
-        Guid serverId,
-        Guid[] channelIds,
-        CancellationToken cancellationToken) =>
-        await db.Channels.AsNoTracking().CountAsync(
-            x => channelIds.Contains(x.Id) && x.ServerId == serverId && x.Kind == ChannelKind.Voice,
-            cancellationToken);
 }

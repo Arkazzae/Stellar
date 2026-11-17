@@ -267,7 +267,15 @@ public sealed class ChannelAdministrationTests : IClassFixture<StellarrWebApplic
         Assert.Equal(HttpStatusCode.Conflict, (await AssignAsync(steward, AdaId, OwnerRoleId)).StatusCode);
         Assert.Equal(HttpStatusCode.NotFound, (await AssignAsync(steward, AdaId, Guid.NewGuid())).StatusCode);
         Assert.Equal(HttpStatusCode.NotFound, (await AssignAsync(steward, Guid.NewGuid(), MemberRoleId)).StatusCode);
-        Assert.Equal(HttpStatusCode.NoContent, (await AssignAsync(steward, AdaId, MemberRoleId)).StatusCode);
+        // Demoting a stronger role is a privileged change too: the old
+        // rights and hierarchy matter, even when the new role has no rights.
+        Assert.Equal(HttpStatusCode.Forbidden, (await AssignAsync(steward, AdaId, MemberRoleId)).StatusCode);
+        await using (var scope = factory.OpenScope(out var db))
+        {
+            Assert.Equal(ModeratorRoleId, (await db.ServerMembers.SingleAsync(
+                x => x.ServerId == TestData.ServerId && x.UserId == AdaId)).RoleId);
+        }
+        Assert.Equal(HttpStatusCode.NoContent, (await AssignAsync(owner, AdaId, MemberRoleId)).StatusCode);
     }
 
     [Fact]

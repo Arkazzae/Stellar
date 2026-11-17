@@ -146,6 +146,31 @@ public sealed class ServerAccessTests(StellarrWebApplicationFactory factory)
     }
 
     [Fact]
+    public async Task EmptyRequirementsStillRequireARealScopeAndMembership()
+    {
+        await using var scope = factory.OpenScope(out var db);
+        Assert.True(await ServerAuthorization.AllowsAsync(
+            db, IlyaId, PermissionScope.Channel(TestData.ServerId, TestData.GeneralChannelId), ServerPrivileges.None));
+        Assert.False(await ServerAuthorization.AllowsAsync(db, IlyaId, default, ServerPrivileges.None));
+        Assert.False(await ServerAuthorization.AllowsAsync(
+            db, IlyaId, PermissionScope.Channel(TestData.ServerId, Guid.NewGuid()), ServerPrivileges.None));
+        Assert.False(await ServerAuthorization.AllowsAsync(
+            db, Guid.NewGuid(), PermissionScope.Server(TestData.ServerId), ServerPrivileges.None));
+        Assert.False(await ServerAuthorization.AllowsAsync(
+            db, MajaId, PermissionScope.Server(TestData.ServerId), (ServerPrivileges)(1 << 20)));
+    }
+
+    [Fact]
+    public async Task DisablingAnAccountRevokesItsPermissionWithoutChangingItsRole()
+    {
+        await using var scope = factory.OpenScope(out var db);
+        var member = await AddMemberAsync(db, ServerPrivileges.All);
+        Assert.True(await HasOnChannelAsync(db, member, TestData.GeneralChannelId, ServerPrivileges.ManageMessages));
+        await db.Users.Where(x => x.Id == member.UserId).ExecuteUpdateAsync(x => x.SetProperty(user => user.IsDisabled, true));
+        Assert.False(await HasOnChannelAsync(db, member, TestData.GeneralChannelId, ServerPrivileges.ManageMessages));
+    }
+
+    [Fact]
     public async Task SectionOverrideDecidesWhatARoleMayDoToTheSection()
     {
         await using var scope = factory.OpenScope(out var db);
