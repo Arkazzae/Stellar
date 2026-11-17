@@ -13,7 +13,7 @@ import {
   parseRecord,
 } from "../capture/record";
 import { buildFixture, fixtureByName } from "../fixtures";
-import { compare, formatTolerances, parseTolerances, spread, tolerancesFrom } from "./compare";
+import { compare, formatTolerances, spread, tolerancesFrom, tolerancesInForce, type Comparison } from "./compare";
 import { characterise, levelStats, measureLatency } from "./measure";
 import { decode, throughDetector, throughStrip, type StripSpec } from "./render";
 
@@ -178,8 +178,9 @@ window.__voice = {
   spread(texts: string[]): string {
     return formatTolerances(spread(texts));
   },
-  compare(recordedText: string, freshText: string): string[] {
+  /** What disagrees, and the largest difference of each kind against its tolerance. */
+  compare(recordedText: string, freshText: string): Comparison {
     const recorded = parseRecord(recordedText);
-    return compare(recorded, parseRecord(freshText), parseTolerances(recorded.header.get("tolerance")));
+    return compare(recorded, parseRecord(freshText), tolerancesInForce(recorded));
   },
 };
