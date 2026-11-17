@@ -21,6 +21,13 @@ public static class RateLimitPolicies
     /// a fresh proof takes three calls, which left the shared budget empty.
     /// </summary>
     public const string SecurityWrite = "security-write";
+
+    /// <summary>
+    /// The anonymous look at an invite before joining. A page asks once per
+    /// visit; the budget leaves room for a few people behind one address and
+    /// none for walking through codes.
+    /// </summary>
+    public const string InvitePreview = "invite-preview";
     public const string Uploads = "uploads";
 
     public static IServiceCollection AddRateLimitPolicies(
@@ -40,6 +47,7 @@ public static class RateLimitPolicies
         var loginPoll = PermitLimit("LoginPoll", 120);
         var authWrite = PermitLimit("AuthWrite", 5);
         var securityWrite = PermitLimit("SecurityWrite", 30);
+        var invitePreview = PermitLimit("InvitePreview", 30);
         var uploadsPerMinute = PermitLimit("Uploads", 30);
         var concurrentUploads = environment.IsEnvironment("Testing")
             ? 100
@@ -52,6 +60,7 @@ public static class RateLimitPolicies
             AddPerAddressPolicy(options, LoginPoll, loginPoll, TimeSpan.FromMinutes(1));
             AddPerAddressPolicy(options, AuthWrite, authWrite, TimeSpan.FromMinutes(15));
             AddPerAddressPolicy(options, SecurityWrite, securityWrite, TimeSpan.FromMinutes(15));
+            AddPerAddressPolicy(options, InvitePreview, invitePreview, TimeSpan.FromMinutes(1));
             AddInstanceUploadPolicy(options, concurrentUploads, uploadsPerMinute);
         });
     }

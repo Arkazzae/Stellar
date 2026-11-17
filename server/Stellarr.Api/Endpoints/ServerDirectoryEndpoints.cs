@@ -39,8 +39,56 @@ public static class ServerDirectoryEndpoints
         servers.MapGet("/discover", DiscoverAsync);
         servers.MapPost("", CreateAsync);
         servers.MapPost("/{serverId:guid}/join", JoinPublicAsync);
+        // Read by the page an invite link opens, before anybody signs in.
+        endpoints.MapGet("/api/invites/{code}", PreviewInviteAsync).RequireRateLimiting(RateLimitPolicies.InvitePreview);
         endpoints.MapPost("/api/invites/{code}/join", JoinWithInviteAsync).RequireAuthorization();
         return endpoints;
+    }
+
+    /// <summary>
+    /// The invite behind the code, tracked by <paramref name="db"/>, while it
+    /// can still be used: it has neither expired nor run out of uses. Joining,
+    /// registering and the preview all ask this, so the three agree.
+    /// </summary>
+    internal static async Task<ServerInvite?> FindUsableInviteAsync(
+        AppDbContext db,
+        string code,
+        DateTime now,
+        CancellationToken cancellationToken)
+    {
+        var normalized = code.Trim().ToLowerInvariant();
+        var invite = await db.ServerInvites.Include(x => x.Channel)
+            .FirstOrDefaultAsync(x => x.Code == normalized, cancellationToken);
+        return invite is null || invite.ExpiresAt <= now || invite.MaxUses <= invite.Uses ? null : invite;
+    }
+
+    /// <summary>
+    /// Where an invite leads and who sent it. Every invite that cannot be used,
+    /// whether unknown, revoked, expired, used up or pointing at a deleted
+    /// server, gets the same answer, so that nobody trying codes learns which
+    /// ones once existed.
+    /// </summary>
+    private static async Task<IResult> PreviewInviteAsync(
+        string code,
+        HttpContext http,
+        AppDbContext db,
+        Messages messages,
+        CancellationToken cancellationToken)
+    {
+        http.Response.Headers.CacheControl = "no-store";
+        var invite = await FindUsableInviteAsync(db, code, DateTime.UtcNow, cancellationToken);
+        var server = invite is null
+            ? null
+            : await db.Servers.AsNoTracking().FirstOrDefaultAsync(x => x.Id == invite.ServerId, cancellationToken);
+        if (invite is null || server is null)
+        {
+            return Results.Problem(
+                statusCode: StatusCodes.Status404NotFound,
+                title: messages.Get(MessageKey.InviteUnusable));
+        }
+
+        await db.Entry(invite).Reference(x => x.CreatedBy).LoadAsync(cancellationToken);
+        return Results.Ok(invite.ToPreview(server));
     }
 
     /// <summary>
@@ -249,11 +297,8 @@ public static class ServerDirectoryEndpoints
         Messages messages,
         CancellationToken cancellationToken)
     {
-        var normalized = code.Trim().ToLowerInvariant();
-        var now = DateTime.UtcNow;
-        var invite = await db.ServerInvites.Include(x => x.Channel)
-            .FirstOrDefaultAsync(x => x.Code == normalized, cancellationToken);
-        if (invite is null || invite.ExpiresAt <= now || invite.MaxUses <= invite.Uses)
+        var invite = await FindUsableInviteAsync(db, code, DateTime.UtcNow, cancellationToken);
+        if (invite is null)
         {
             return Results.NotFound();
         }
