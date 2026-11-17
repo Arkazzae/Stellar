@@ -1,4 +1,4 @@
-import { useCallback, useMemo, useState } from "react";
+import { useCallback, useMemo, useRef, useState } from "react";
 
 import type { Message, MessageActionsPort } from "@/ports";
 
@@ -21,6 +21,8 @@ export function useMessageEdit(
     null,
   );
 
+  const pending = useRef(new Map<string, { cancelled: boolean }>());
+
   /**
    * Saves a rewrite. The transcript is updated straight away and rolled back
    * if the server refuses, the same bargain sending makes. A failure leaves
@@ -41,21 +43,28 @@ export function useMessageEdit(
         return;
       }
 
+      const operation = { cancelled: false };
+      pending.current.set(messageId, operation);
+      const editedAt = new Date().toISOString();
       dispatch({
         type: "rewritten",
         channelId: before.channelId,
         messageId,
         content: next,
-        editedAt: new Date().toISOString(),
+        editedAt,
       });
       setEditing(null);
 
       try {
         await actions.edit(messageId, next);
       } catch (error) {
-        dispatch({ type: "shown", message: before });
-        setEditing({ id: messageId, original: before.content });
+        dispatch({ type: "edit-rollback", before, content: next, editedAt });
+        if (!operation.cancelled && pending.current.get(messageId) === operation) {
+          setEditing({ id: messageId, original: before.content });
+        }
         throw error;
+      } finally {
+        if (pending.current.get(messageId) === operation) pending.current.delete(messageId);
       }
     },
     [actions, messages, dispatch],
@@ -71,8 +80,11 @@ export function useMessageEdit(
 
   /** A message was deleted: stop editing it. */
   const forgetEdit = useCallback(
-    (messageId: string) =>
-      setEditing((current) => (current?.id === messageId ? null : current)),
+    (messageId: string) => {
+      const operation = pending.current.get(messageId);
+      if (operation) operation.cancelled = true;
+      setEditing((current) => (current?.id === messageId ? null : current));
+    },
     [],
   );
 
