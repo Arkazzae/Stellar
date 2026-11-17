@@ -4,6 +4,8 @@ using System.Net.Sockets;
 using System.Text;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
+using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.DependencyInjection.Extensions;
 using Stellarr.Api.Embeds;
 
 namespace Stellarr.Api.Tests;
@@ -71,6 +73,85 @@ public sealed class LinkUnfurlerConnectionTests
 
         Assert.Null(await CreateUnfurler(allowPrivate: true, maxHtmlBytes: 1024)
             .FetchCardAsync(server.Address, CancellationToken.None));
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task BodyStallTimesOutAndTheNextFetchCanFinish(bool image)
+    {
+        using var stalled = new PageServer(async (stream, stopped) =>
+        {
+            var type = image ? "image/png" : "text/html";
+            await stream.WriteAsync(Encoding.ASCII.GetBytes(
+                $"HTTP/1.1 200 OK\r\nContent-Type: {type}\r\nContent-Length: 100\r\n\r\n"), stopped);
+            await Task.Delay(Timeout.Infinite, stopped);
+        });
+        using var healthy = new PageServer(Page("text/html", "<title>Next card</title>"u8.ToArray()));
+        var unfurler = CreateUnfurler(allowPrivate: true, timeoutSeconds: 1);
+        if (image)
+        {
+            Assert.Null(await unfurler.FetchImageAsync(stalled.Address, CancellationToken.None)
+                .WaitAsync(TimeSpan.FromSeconds(8)));
+        }
+        else
+        {
+            Assert.Null(await unfurler.FetchCardAsync(stalled.Address, CancellationToken.None)
+                .WaitAsync(TimeSpan.FromSeconds(8)));
+        }
+
+        Assert.Equal("Next card", (await unfurler.FetchCardAsync(healthy.Address, CancellationToken.None))?.Title);
+    }
+
+    [Fact]
+    public async Task CallerCancellationInterruptsTheBodyRead()
+    {
+        var headersSent = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        using var server = new PageServer(async (stream, stopped) =>
+        {
+            await stream.WriteAsync(
+                "HTTP/1.1 200 OK\r\nContent-Type: text/html\r\nContent-Length: 100\r\n\r\n"u8.ToArray(), stopped);
+            headersSent.TrySetResult();
+            await Task.Delay(Timeout.Infinite, stopped);
+        });
+        using var cancellation = new CancellationTokenSource();
+        var pending = CreateUnfurler(allowPrivate: true).FetchCardAsync(server.Address, cancellation.Token);
+        await headersSent.Task.WaitAsync(TimeSpan.FromSeconds(8));
+        cancellation.Cancel();
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(() => pending.WaitAsync(TimeSpan.FromSeconds(8)));
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task StalledBodyCannotBlockTheWorkersNextMessage(bool image)
+    {
+        var bodyStarted = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        using var stalled = new PageServer(async (stream, stopped) =>
+        {
+            var type = image ? "image/png" : "text/html";
+            await stream.WriteAsync(Encoding.ASCII.GetBytes(
+                $"HTTP/1.1 200 OK\r\nContent-Type: {type}\r\nContent-Length: 100\r\n\r\n"), stopped);
+            bodyStarted.TrySetResult();
+            await Task.Delay(Timeout.Infinite, stopped);
+        });
+        using var imagePage = new PageServer(Page("text/html", Encoding.UTF8.GetBytes(
+            $"<title>Image times out</title><meta property=\"og:image\" content=\"{stalled.Address}\">")));
+        using var healthy = new PageServer(Page("text/html", "<title>Worker continued</title>"u8.ToArray()));
+        using var factory = new StellarrWebApplicationFactory(loadTestData: true, configureServices: services =>
+        {
+            services.RemoveAll<ILinkUnfurler>();
+            services.AddSingleton<ILinkUnfurler>(CreateUnfurler(allowPrivate: true, timeoutSeconds: 1));
+        });
+        var (client, cookie) = await EmbedPipelineTests.SignInAsync(factory);
+        await using var updates = await EmbedUpdates.ConnectAsync(factory, cookie);
+        await EmbedPipelineTests.PostAsync(client, (image ? imagePage.Address : stalled.Address).ToString());
+        await bodyStarted.Task.WaitAsync(TimeSpan.FromSeconds(8));
+        var next = await EmbedPipelineTests.PostAsync(client, healthy.Address.ToString());
+
+        var update = await updates.WaitForAsync(next);
+        Assert.Equal("Worker continued", Assert.Single(update.GetProperty("embeds").EnumerateArray())
+            .GetProperty("title").GetString());
     }
 
     [Fact]
