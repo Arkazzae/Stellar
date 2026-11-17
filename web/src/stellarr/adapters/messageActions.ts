@@ -16,24 +16,59 @@ const copyAll = (reactions: MessageReaction[]): MessageReaction[] =>
 
 /**
  * The reactions every message currently has, fed by history pages and by hub
- * aggregates. Whichever arrives first for a message is kept as the baseline.
+ * aggregates. HTTP reads repair missed events without replacing newer live
+ * changes or a snapshot from a more recent request.
  */
 export class ReactionStore {
   readonly #byMessage = new Map<MessageId, MessageReaction[]>();
   readonly #handlers = new Set<ReactionHandler>();
   #selfUserId: UserId | undefined;
+  #revision = 0;
+  readonly #changed = new Map<MessageId, Map<string, number>>();
+  readonly #snapshots = new Map<MessageId, number>();
+
+  /** Capture before starting an HTTP read; newer live aggregates still win. */
+  checkpoint(): number {
+    return ++this.#revision;
+  }
 
   setSelfUserId(userId: UserId): void {
     this.#selfUserId = userId;
   }
 
-  /** Records reactions of messages not seen before; known messages keep theirs. */
-  ingest(messages: Message[]): void {
+  /**
+   * HTTP snapshots repair missed events, including removed reactions. Live
+   * changes after the request began win per emoji, rather than preventing the
+   * rest of the snapshot from repairing stale counts.
+   */
+  ingest(messages: Message[], checkpoint?: number): void {
     for (const message of messages) {
-      // A hub aggregate can beat the history request that returns the same
-      // message. It is newer than the page, so the page must not replace it.
-      if (this.#byMessage.has(message.id)) continue;
-      this.#byMessage.set(message.id, copyAll(message.reactions ?? []));
+      if (checkpoint === undefined && this.#byMessage.has(message.id)) continue;
+      if (checkpoint !== undefined) {
+        if ((this.#snapshots.get(message.id) ?? -1) > checkpoint) continue;
+        this.#snapshots.set(message.id, checkpoint);
+      }
+      const current = this.#byMessage.get(message.id) ?? [];
+      const next = new Map(
+        (message.reactions ?? []).map((reaction) => [reaction.emoji, { ...reaction }]),
+      );
+      if (checkpoint !== undefined) {
+        for (const [emoji, revision] of this.#changed.get(message.id) ?? []) {
+          if (revision <= checkpoint) continue;
+          const live = current.find((reaction) => reaction.emoji === emoji);
+          if (live) next.set(emoji, { ...live });
+          else next.delete(emoji);
+        }
+      }
+      const result = [...next.values()];
+      const changed = current.length !== result.length || current.some((reaction) => {
+        const replacement = next.get(reaction.emoji);
+        return replacement?.count !== reaction.count || replacement.mine !== reaction.mine;
+      });
+      this.#byMessage.set(message.id, result);
+      if (changed) {
+        for (const handler of this.#handlers) handler(message.id, copyAll(result));
+      }
     }
   }
 
@@ -52,6 +87,9 @@ export class ReactionStore {
    * user. An aggregate that changes nothing is not announced.
    */
   apply(update: MessageReactionChanged): void {
+    const changes = this.#changed.get(update.messageId) ?? new Map<string, number>();
+    changes.set(update.emoji, ++this.#revision);
+    this.#changed.set(update.messageId, changes);
     const current = this.#byMessage.get(update.messageId) ?? [];
     const existing = current.find((reaction) => reaction.emoji === update.emoji);
     const mine =
@@ -74,6 +112,9 @@ export class ReactionStore {
 
   reset(): void {
     this.#byMessage.clear();
+    this.#changed.clear();
+    this.#snapshots.clear();
+    this.#revision = 0;
     this.#selfUserId = undefined;
   }
 }

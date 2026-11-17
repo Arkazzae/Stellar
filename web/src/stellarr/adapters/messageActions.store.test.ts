@@ -138,3 +138,33 @@ describe("message actions adapter", () => {
     expect(changed).toHaveBeenCalledOnce();
   });
 });
+
+describe("authoritative reaction snapshots", () => {
+  it("repairs old counts, mine, additions and removals after missed events", () => {
+    const store = new ReactionStore();
+    store.ingest([message("m-1", [{ emoji: "👍", count: 4, mine: true }, { emoji: "🎉", count: 1, mine: false }])]);
+    const checkpoint = store.checkpoint();
+    store.ingest([message("m-1", [{ emoji: "👍", count: 1, mine: false }])], checkpoint);
+    expect(store.get("m-1")).toEqual([{ emoji: "👍", count: 1, mine: false }]);
+    store.ingest([message("m-1", [])], store.checkpoint());
+    expect(store.get("m-1")).toEqual([]);
+  });
+
+  it("keeps newer live changes per emoji while repairing the rest of the snapshot", () => {
+    const store = new ReactionStore();
+    store.ingest([message("m-1", [{ emoji: "👍", count: 4, mine: false }, { emoji: "🎉", count: 1, mine: false }])]);
+    const checkpoint = store.checkpoint();
+    store.apply(change({ emoji: "👍", count: 0, added: false }));
+    store.ingest([message("m-1", [{ emoji: "👍", count: 5, mine: true }, { emoji: "🎉", count: 3, mine: true }])], checkpoint);
+    expect(store.get("m-1")).toEqual([{ emoji: "🎉", count: 3, mine: true }]);
+  });
+
+  it("does not let a slower earlier HTTP read replace the reconnect snapshot", () => {
+    const store = new ReactionStore();
+    const older = store.checkpoint();
+    const newer = store.checkpoint();
+    store.ingest([message("m-1", [])], newer);
+    store.ingest([message("m-1", [{ emoji: "👍", count: 4, mine: true }])], older);
+    expect(store.get("m-1")).toEqual([]);
+  });
+});
