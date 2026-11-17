@@ -47,13 +47,12 @@ public static class MessageHistoryEndpoints
             return Results.NotFound();
         }
 
-        // A first request freezes the result set at the moment it was made.
-        // Messages that arrive while the reader pages back therefore cannot
-        // shift the offsets and make an older row be skipped or shown twice.
+        // New arrivals stay outside the snapshot; a stable message key keeps
+        // deletions from shifting subsequent pages.
         HistoryCursor page;
         if (cursor is null)
         {
-            page = new HistoryCursor(channelId, DateTime.UtcNow, 0);
+            page = new HistoryCursor(channelId, DateTime.UtcNow);
         }
         else if (!HistoryCursor.TryDecode(cursor, out page) || page.ScopeId != channelId)
         {
@@ -66,12 +65,18 @@ public static class MessageHistoryEndpoints
         var syncSequence = await db.MessageChanges.AsNoTracking()
             .Where(x => x.ChannelId == channelId)
             .MaxAsync(x => (long?)x.Sequence, cancellationToken) ?? 0;
-        var rows = await db.Messages.AsNoTracking()
+        var query = db.Messages.AsNoTracking()
             .WithMessageDetails()
-            .Where(x => x.ChannelId == channelId && x.CreatedAt <= page.Snapshot)
+            .Where(x => x.ChannelId == channelId && x.CreatedAt <= page.Snapshot);
+        if (page.BeforeCreatedAt is { } before && page.BeforeId is { } beforeId)
+        {
+            query = query.Where(x => x.CreatedAt < before ||
+                (x.CreatedAt == before && x.Id.CompareTo(beforeId) < 0));
+        }
+
+        var rows = await query
             .OrderByDescending(x => x.CreatedAt)
             .ThenByDescending(x => x.Id)
-            .Skip(page.Offset)
             .Take(pageSize + 1)
             .AsSplitQuery()
             .ToListAsync(cancellationToken);
@@ -82,7 +87,7 @@ public static class MessageHistoryEndpoints
         var items = rows.Take(pageSize).Reverse().Select(x => x.ToDto(messages, viewerId)).ToArray();
         return Results.Ok(new MessageHistoryPageDto(
             items,
-            hasMore ? (page with { Offset = page.Offset + pageSize }).Encode() : null,
+            hasMore ? (page with { BeforeCreatedAt = rows[pageSize - 1].CreatedAt, BeforeId = rows[pageSize - 1].Id }).Encode() : null,
             syncSequence.ToString(CultureInfo.InvariantCulture)));
     }
 
