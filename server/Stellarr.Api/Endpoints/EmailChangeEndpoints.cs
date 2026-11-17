@@ -70,6 +70,10 @@ public static partial class EmailChangeEndpoints
 
         var userId = context.User.RequireUserId();
         var user = await db.Users.SingleAsync(x => x.Id == userId, cancellationToken);
+        if (context.User.FindSessionId() is not { } sessionId)
+        {
+            return Results.Unauthorized();
+        }
         // Checked before the password, so a stolen session cannot use this form
         // to try passwords on an account that has a second step.
         if (!await MfaPolicy.HasFreshSecondStepAsync(db, user.Id, context.User.FindSessionId(), cancellationToken))
@@ -104,6 +108,8 @@ public static partial class EmailChangeEndpoints
         {
             Id = Guid.NewGuid(),
             UserId = user.Id,
+            SessionId = sessionId,
+            SecurityVersion = user.SessionVersion,
             NewEmail = email,
             NormalizedNewEmail = normalized,
             TokenHash = Hash(token),
@@ -154,12 +160,25 @@ public static partial class EmailChangeEndpoints
         var hash = Hash(token);
         var change = await db.EmailChangeRequests.Include(x => x.User)
             .SingleOrDefaultAsync(x => x.TokenHash == hash, cancellationToken);
-        if (change is null || change.UsedAt is not null || change.ExpiresAt <= now || change.User.IsDisabled)
+        if (change is null || change.UsedAt is not null || change.ExpiresAt <= now || change.User.IsDisabled ||
+            change.User.SecurityRecoveryRequired || change.SecurityVersion != change.User.SessionVersion ||
+            change.SessionId is not { } sessionId)
         {
             return Outcome("invalid");
         }
 
         var user = change.User;
+        // Recovery/password/factor changes advance the account epoch; signing
+        // out or revoking this one session also cancels its pending changes.
+        // The link may still be opened on a different device.
+        if (!await db.UserSessions.AnyAsync(x =>
+                x.Id == sessionId && x.UserId == user.Id && x.RevokedAt == null &&
+                x.ExpiresAt > now && x.AbsoluteExpiresAt > now &&
+                x.SecurityVersion == user.SessionVersion, cancellationToken))
+        {
+            return Outcome("invalid");
+        }
+
         if (await db.Users.AnyAsync(x => x.NormalizedEmail == change.NormalizedNewEmail && x.Id != user.Id, cancellationToken))
         {
             return Outcome("taken");
