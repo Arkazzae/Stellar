@@ -63,6 +63,7 @@ export interface LoadedPage {
 export type ChatAction =
   /** A message to show that is not news: an optimistic send, a search hit, a rollback. */
   | { type: "shown"; message: Message }
+  | { type: "edit-rollback"; before: Message; content: string; editedAt: string }
   /** A message pushed by the server. Replies also count on their thread. */
   | { type: "received"; message: Message }
   | { type: "updated"; message: Message; locale: InterfaceLocale }
@@ -135,6 +136,22 @@ export function chatReducer(state: ChatData, action: ChatAction): ChatData {
           state.messages,
           channelId,
           mergeMessage(state.messages[channelId], action.message),
+        ),
+      });
+    }
+    case "edit-rollback": {
+      const { before, content, editedAt } = action;
+      return patch(state, {
+        messages: edit(state.messages, before.channelId, (bucket) =>
+          updateLoaded(bucket, before.id, (current) => {
+            if (current.content !== content || current.editedAt !== editedAt) return current;
+            const { editedAt: _editedAt, ...rest } = current;
+            return {
+              ...rest,
+              content: before.content,
+              ...(before.editedAt === undefined ? {} : { editedAt: before.editedAt }),
+            };
+          }),
         ),
       });
     }
