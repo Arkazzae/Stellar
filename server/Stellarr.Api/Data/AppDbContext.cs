@@ -40,6 +40,7 @@ public sealed class AppDbContext(DbContextOptions<AppDbContext> options) : DbCon
     public DbSet<ServerAdminSettings> ServerAdminSettings => Set<ServerAdminSettings>();
     public DbSet<Channel> Channels => Set<Channel>();
     public DbSet<ChannelRead> ChannelReads => Set<ChannelRead>();
+    public DbSet<ChannelPostTime> ChannelPostTimes => Set<ChannelPostTime>();
     public DbSet<Section> Sections => Set<Section>();
     public DbSet<PermissionOverride> PermissionOverrides => Set<PermissionOverride>();
     public DbSet<ServerEmoji> ServerEmoji => Set<ServerEmoji>();
