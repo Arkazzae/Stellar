@@ -15,10 +15,22 @@ internal static class CommandSupport
         var server = await query
             .OrderBy(x => x.CreatedAt).ThenBy(x => x.Id)
             .FirstOrDefaultAsync(cancellationToken);
-        return server ?? throw new CliException(
-            "instance_not_found",
-            "The database has no instance server yet. Finish setting up Stellarr through the web client first.",
-            CliExit.NotFound);
+        if (server is not null)
+        {
+            return server;
+        }
+
+        // An instance is set up once it has an account. One whose people
+        // deleted every server since cannot be set up again.
+        throw await db.Users.AsNoTracking().AnyAsync(cancellationToken)
+            ? new CliException(
+                "instance_not_found",
+                "The instance has accounts but no server: the last one was deleted.",
+                CliExit.NotFound)
+            : new CliException(
+                "instance_not_found",
+                "Stellarr is not set up yet. Create the owner account in the web client with the setup code from the container's log.",
+                CliExit.NotFound);
     }
 
     internal static async Task<User> ResolveUserAsync(
