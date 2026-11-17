@@ -199,3 +199,16 @@ describe("chat adapter focus", () => {
     expect(joinChannel).toHaveBeenCalledWith(TEXT_CHANNEL.id);
   });
 });
+
+it("reconciles known reactions from journal catchup after reconnect", async () => {
+  const reactions = new ReactionStore();
+  reactions.ingest([withReaction]);
+  const chat = createChatAdapter(fakeApi({
+    syncMessages: async () => ({
+      changes: [{ kind: "upsert", messageId: withReaction.id, message: { ...withReaction, reactions: [] }, cursor: "2" }],
+      nextCursor: "2", hasMore: false, resetRequired: false,
+    }),
+  }), new FakeRealtimeClient(), reactions);
+  await chat.syncMessages(TEXT_CHANNEL.id, "1");
+  expect(reactions.get(withReaction.id)).toEqual([]);
+});

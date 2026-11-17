@@ -23,7 +23,10 @@ export function createChatAdapter(
   reactions?: ReactionStore,
   reads?: ChannelReadStore,
 ): ChatPort {
-  const remember = (messages: Message[]): void => reactions?.ingest(messages);
+  const remember = (messages: Message[], checkpoint?: number): void => {
+    if (checkpoint === undefined) reactions?.ingest(messages);
+    else reactions?.ingest(messages, checkpoint);
+  };
   const stopReadSync =
     reads === undefined
       ? NOTHING_TO_STOP
@@ -31,40 +34,46 @@ export function createChatAdapter(
 
   return {
     async listMessages(channelId, options) {
+      const checkpoint = reactions?.checkpoint();
       const page = await api.listMessages(channelId, options);
-      remember(page.messages);
+      remember(page.messages, checkpoint);
       return page;
     },
 
     async syncMessages(channelId, after) {
+      const checkpoint = reactions?.checkpoint();
       const page = await api.syncMessages(channelId, after);
-      remember(page.changes.flatMap(({ message }) => (message === undefined ? [] : [message])));
+      remember(page.changes.flatMap(({ message }) => (message === undefined ? [] : [message])), checkpoint);
       return page;
     },
 
     listThreads: (channelId) => api.listThreads(channelId),
 
     async getThread(channelId, rootId) {
+      const checkpoint = reactions?.checkpoint();
       const messages = await api.getThread(channelId, rootId);
-      remember(messages);
+      remember(messages, checkpoint);
       return messages;
     },
 
     async listIndexed(channelId, options) {
+      const checkpoint = reactions?.checkpoint();
       const page = await api.listIndexedMessages(channelId, options);
-      remember(page.messages);
+      remember(page.messages, checkpoint);
       return page;
     },
 
     async search(channelId, query) {
+      const checkpoint = reactions?.checkpoint();
       const messages = await api.searchMessages(channelId, query);
-      remember(messages);
+      remember(messages, checkpoint);
       return messages;
     },
 
     async listPinned(channelId) {
+      const checkpoint = reactions?.checkpoint();
       const messages = await api.listPinnedMessages(channelId);
-      remember(messages);
+      remember(messages, checkpoint);
       return messages;
     },
 
