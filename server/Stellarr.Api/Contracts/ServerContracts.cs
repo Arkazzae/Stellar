@@ -79,6 +79,26 @@ public sealed record ServerInviteDto(
 /// <param name="ChannelId">The channel a new member lands in; without one the invite is server-wide.</param>
 public sealed record CreateInviteRequest(Guid? ChannelId);
 
+/// <summary>
+/// What anybody holding an invite link may learn before joining: where it
+/// leads and who sent it. The sender appears as members see them, without
+/// the username or id of their account, and nothing is said about the
+/// server's members.
+/// </summary>
+/// <param name="Channel">The channel the invite points to; null for a server-wide invite.</param>
+/// <param name="ExpiresAt">Null for an invite that does not expire.</param>
+public sealed record InvitePreviewDto(
+    InvitePreviewServerDto Server,
+    InvitePreviewChannelDto? Channel,
+    InvitePreviewInviterDto Inviter,
+    DateTime? ExpiresAt);
+
+public sealed record InvitePreviewServerDto(string Id, string Name, string Description, string? IconUrl);
+
+public sealed record InvitePreviewChannelDto(string Id, string Name);
+
+public sealed record InvitePreviewInviterDto(string DisplayName, string AvatarColor, string? AvatarUrl);
+
 public sealed record AuditEntryDto(string Id, string Summary, DateTime At);
 
 public sealed record NotificationSettingsDto(
@@ -135,6 +155,13 @@ public static class ServerContractMappings
         server.IsPublic,
         invite.ChannelId?.ToString(),
         invite.Channel?.Name);
+
+    /// <remarks>The invite's author and channel must be loaded.</remarks>
+    public static InvitePreviewDto ToPreview(this ServerInvite invite, StellarrServer server) => new(
+        new InvitePreviewServerDto(server.Id.ToString(), server.Name, server.Description, server.IconUrl),
+        invite.Channel is { } channel ? new InvitePreviewChannelDto(channel.Id.ToString(), channel.Name) : null,
+        new InvitePreviewInviterDto(invite.CreatedBy.DisplayName, invite.CreatedBy.AvatarColor, invite.CreatedBy.AvatarUrl),
+        invite.ExpiresAt?.AsUtc());
 
     /// <remarks>The invite's author and channel must be loaded.</remarks>
     public static ServerInviteDto ToDto(this ServerInvite invite, string origin) => new(

@@ -68,7 +68,7 @@ public static partial class RegistrationEndpoints
         ServerInvite? invite = null;
         if (!string.IsNullOrWhiteSpace(request.InviteCode))
         {
-            invite = await FindUsableInviteAsync(db, request.InviteCode, now, cancellationToken);
+            invite = await ServerDirectoryEndpoints.FindUsableInviteAsync(db, request.InviteCode, now, cancellationToken);
             if (invite is null)
             {
                 return InviteProblem(messages.Get(MessageKey.InviteUnusable));
@@ -238,18 +238,6 @@ public static partial class RegistrationEndpoints
         }
 
         return errors;
-    }
-
-    /// <summary>The invite behind the code, or null when there is none or it has expired or run out.</summary>
-    private static async Task<ServerInvite?> FindUsableInviteAsync(
-        AppDbContext db,
-        string code,
-        DateTime now,
-        CancellationToken cancellationToken)
-    {
-        var normalized = code.Trim().ToLowerInvariant();
-        var invite = await db.ServerInvites.FirstOrDefaultAsync(x => x.Code == normalized, cancellationToken);
-        return invite is null || invite.ExpiresAt <= now || invite.MaxUses <= invite.Uses ? null : invite;
     }
 
     private static IResult InviteProblem(string message) =>
