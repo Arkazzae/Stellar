@@ -46,12 +46,25 @@ Open `https://localhost:8443` in your browser.
 
 ## 4. Create the owner account
 
-1. Select **Create account**.
-2. In the server setup step, choose a server name, an optional description, and the first text channel. Keep the voice channel enabled if you want to test voice next; you can rename or remove it later.
-3. Continue to the owner account step. Enter a display name, username (3–32 characters: letters, digits, `.`, `-`, `_`), email, and password (at least 8 characters).
-4. Select **Create account and server**.
+Until the instance has an account, the web client opens its setup page, `https://localhost:8443/setup`. Creating the owner account there takes a setup code that the container writes to its log, so nobody who reaches the address before you can take the instance over. Find it with:
 
-The first account becomes the instance owner and is created together with its server. Subsequent accounts require an invite link and skip server setup.
+```bash
+docker compose logs stellarr | grep "Setup code"
+```
+
+`docker logs stellarr` shows the same log. The line reads:
+
+```text
+Setup code: K7QM-2XWP-9HDA. Open /setup at the address of this instance to create the owner account.
+```
+
+With `STELLARR_DOMAIN` or `STELLARR_PUBLIC_URL` set, it gives the full address instead, such as `https://chat.example.com/setup`. Every start of the container draws a new code, so after a restart use the last line. Case, spaces and dashes do not matter when you type it.
+
+1. Enter the setup code and the owner account: a display name, username (3–32 characters: letters, digits, `.`, `-`, `_`), email, and password (at least 8 characters).
+2. Continue to the server step. Choose a server name, an optional description, and the first text channel. Keep the voice channel enabled if you want to test voice next; you can rename or remove it later.
+3. Create the account and the server.
+
+The first account becomes the instance owner and is created together with its server, in the last step, so a page closed halfway leaves nothing behind. After that the setup code stops working. Subsequent accounts require an invite link and skip server setup.
 
 ## 5. Invite a second user
 
