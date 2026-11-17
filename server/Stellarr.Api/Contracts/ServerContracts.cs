@@ -3,13 +3,16 @@ using Stellarr.Api.Domain;
 
 namespace Stellarr.Api.Contracts;
 
+/// <param name="InitialServer">The server an empty instance starts with; ignored once it has an account.</param>
+/// <param name="SetupCode">The code from the log that founds an empty instance; ignored once it has an account.</param>
 public sealed record RegisterRequest(
     string Username,
     string DisplayName,
     string Email,
     string Password,
     string? InviteCode = null,
-    CreateServerRequest? InitialServer = null);
+    CreateServerRequest? InitialServer = null,
+    string? SetupCode = null);
 
 public sealed record ServerDto(
     string Id,

@@ -30,6 +30,7 @@ public enum MessageKey
     InviteUnusable,
     InviteRequired,
     InviteServerGone,
+    SetupCodeInvalid,
     InstanceHasNoMemberRole,
     UsernameInvalid,
     RegistrationDisplayNameLength,
