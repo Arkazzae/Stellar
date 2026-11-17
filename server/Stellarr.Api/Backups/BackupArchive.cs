@@ -78,7 +78,8 @@ public sealed record BackupSources(
     string InstanceName,
     IReadOnlyList<string> EnvironmentSecrets,
     string WorkDirectory,
-    string DataRoot);
+    string DataRoot,
+    string? DatabaseSnapshotPath = null);
 
 /// <summary>How far a running backup has got; read by Cockpit while it runs.</summary>
 public sealed class BackupProgress
@@ -146,16 +147,22 @@ public static class BackupArchive
             if (parts.HasFlag(BackupParts.Database))
             {
                 progress.Phase = BackupPartNames.Database;
-                var snapshot = Path.Combine(sources.WorkDirectory, $".snapshot-{Guid.NewGuid():N}.partial");
+                var snapshot = sources.DatabaseSnapshotPath ?? Path.Combine(sources.WorkDirectory, $".snapshot-{Guid.NewGuid():N}.partial");
                 try
                 {
-                    await CockpitEndpoints.CopyDatabaseAsync(sources.DatabaseConnectionString, snapshot, cancellationToken);
+                    if (sources.DatabaseSnapshotPath is null)
+                    {
+                        await CockpitEndpoints.CopyDatabaseAsync(sources.DatabaseConnectionString, snapshot, cancellationToken);
+                    }
                     databaseBytes = new FileInfo(snapshot).Length;
                     await AddFileAsync(zip, snapshot, DatabaseEntry, CompressionLevel.Optimal, cancellationToken);
                 }
                 finally
                 {
-                    File.Delete(snapshot);
+                    if (sources.DatabaseSnapshotPath is null)
+                    {
+                        File.Delete(snapshot);
+                    }
                 }
             }
 
@@ -310,11 +317,11 @@ public static class BackupArchive
                 return $"The archive holds {instance} instance files; its manifest names {manifest.InstanceFiles}.";
             }
 
-            // Reading every entry to its end checks that none is cut short or damaged.
+            // ZipArchive's read streams do not check CRCs; uncompressed media
+            // can otherwise change bytes and still be reported as verified.
             foreach (var entry in zip.Entries)
             {
-                await using var stream = await entry.OpenAsync(cancellationToken);
-                await stream.CopyToAsync(Stream.Null, cancellationToken);
+                await BackupEntryIntegrity.CopyAsync(entry, Stream.Null, cancellationToken);
             }
 
             return "ok";

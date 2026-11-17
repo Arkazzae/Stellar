@@ -129,6 +129,11 @@ parts are restored by hand, into a stopped instance:
 
 SQLite is a consistent online snapshot; the object store and instance files are
 read over time. This is not a transaction spanning SQLite and the object store.
+The snapshot is taken before listing objects. Its referenced attachment, poster,
+and emoji keys are included even if an object disappears before that listing, so
+missing data is reported in the manifest instead of silently omitted. Verification
+checks every ZIP entry's CRC-32 and uncompressed length, and restore repeats those
+checks while unpacking before replacing live data.
 For a strict point-in-time recovery drill, pause writes while making the backup.
 Daily intervals imply roughly a 24-hour data-loss window plus backup duration;
 failed cycles extend it. Measure recovery time from the drill rather than assuming it.
