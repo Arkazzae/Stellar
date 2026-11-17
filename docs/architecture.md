@@ -1,8 +1,8 @@
 # Architecture
 
-Stellarr runs inside a single Docker container backed by one persistent volume (`/data/stellarr`). Every HTTP request enters through Nginx, while WebRTC voice and video traffic goes directly to `stellarr-media` (or through `coturn` when UDP hole punching fails).
+Stellarr runs inside a single Docker container backed by one persistent volume (`/data/stellarr`). All HTTP and WebSocket traffic enters through Nginx, while WebRTC voice and video go directly to `stellarr-media` (or through `coturn` when direct UDP fails).
 
-See [Voice and RTC protocol](./rtc-protocol.md) for client state and signaling messages, and [Stellarr Media](./stellarr-media.md) for the Rust SFU media server.
+See [Voice and RTC protocol](./rtc-protocol.md) for client state and SignalR signaling, and [Stellarr Media](./stellarr-media.md) for the Rust SFU media server.
 
 ## System overview
 
@@ -36,55 +36,82 @@ flowchart TD
 
 ## Component responsibilities
 
-- **Browser apps (`web/`)**: One Vite build writes the web client and Cockpit as static files to `web/dist/`, each from a document of its own (`web/index.html` and `web/cockpit/index.html`). The image carries them in `/opt/stellarr/web` and Nginx serves them, so no Node process runs in the container. Each app has its entry (`main.tsx`), its table of addresses (`routes.tsx`, on [`@stellarr/router`](../packages/stellarr-router/README.md)) and its `pages/`. Neither loads the other's styles, language or providers, and moving between them is a full page load. In development, `npm run dev` serves both from Vite's dev server.
-- **Web client (`web/src/stellarr/`)**: Renders in the browser. Before the first paint, scripts in its document put the theme and the language on the page: the language the person chose on this device, else the instance default, else English (see [Localization](./localization.md)). The client implements the browser-side `VoiceClient`; React components read call state from `VoiceState` and trigger actions through `VoiceClient`.
-- **Stellarr Cockpit (`web/src/cockpit/`)**: The operator panel, under `/cockpit`, an app of its own in the same build: its code imports nothing of the web client's. It renders in the browser, in the language chosen in its settings, calls `/api/cockpit/*` and requires the built-in instance owner role.
-- **ASP.NET Core (`server/Stellarr.Api`)**: Application server handling authentication, sessions, servers, channels, public and direct messages, uploads, presence, and SignalR signaling. It also opens and closes media sessions on `stellarr-media` via its loopback HTTP API and relays SDP/ICE negotiation between browsers and the media server.
-- **Operator CLI (`server/Stellarr.Cli`)**: The `stellarr` binary included in the container image. It inspects instance health, manages settings, encrypted secrets, and user sessions, and stages backups for restore directly against the data volume without starting a second API process. See [Operator CLI](./install/cli.md).
-- **SQLite**: Stores relational application state in WAL mode (`stellarr.db`). Binary attachments are never stored in SQLite.
-- **Uploaded files**: Images, audio, video, and documents are plain files under `/data/stellarr/files/`, each at the path its object key names (for example `audio/2026/11/<id>.webm`). The API writes a file to `files/.incoming/`, flushes it to disk, and only then moves it into place, so a half-written upload never appears under its key. The database records what each file is; clients never read the folder directly, and the API authorizes and streams every download.
-- **coturn**: Provides STUN and short-lived HMAC-authenticated TURN relay. It holds no room or application state and relays TURN allocations directly to the local `stellarr-media` UDP socket.
-- **Stellarr Init (`init/`, Rust)**: The container's process manager, `stellarr-init`, which runs as PID 1. It starts the other services in order, the media server before the API, reaps every process, restarts a service that exits after a pause that grows to 30 seconds, and stops them all in reverse order on `docker stop`. It asks each service again every ten seconds whether it answers; the container's health check is `stellarr-init health`, and `stellarr-init status` and `restart` are what an operator uses. See [Services in the container](./install/platforms.md#services-in-the-container).
-- **Stellarr Media (`media/`, Rust)**: Selective Forwarding Unit (SFU) that carries all call media. It listens on a single UDP port (`49000/udp`) using ICE-lite, terminates DTLS/SRTP per client, and forwards microphone, camera, and screen-share RTP packets without transcoding or mixing while handling per-leg RTCP feedback (NACK, RTX, TWCC, PLI/FIR). Controlled by the API over `127.0.0.1:5200`.
+- **Browser apps (`web/`)**: One Vite build emits the web client (`web/index.html`) and Cockpit (`web/cockpit/index.html`) as static files in `web/dist/`. Nginx serves them from `/opt/stellarr/web`, so no Node.js runtime ships in production. Each app has its own `main.tsx`, `routes.tsx` ([`@stellarr/router`](../packages/stellarr-router/README.md)), and `pages/` and imports nothing from the other. In development, `npm run dev` serves both.
+- **Web client (`web/src/stellarr/`)**: Browser client for text, voice, and video. Bootstrap scripts apply the saved theme and locale before first paint (see [Localization](./localization.md)). React UI consumes `VoiceState` snapshots and calls `VoiceClient`.
+- **Stellarr Cockpit (`web/src/cockpit/`)**: Standalone operator SPA at `/cockpit`, backed by `/api/cockpit/*` endpoints requiring the owner role, with its own locale setting.
+- **ASP.NET Core (`server/Stellarr.Api`)**: Control plane for auth, sessions, servers, channels, messages, uploads, presence, notifications, backups, and SignalR signaling. Opens and closes SFU sessions on `stellarr-media` over `127.0.0.1:5200` and relays SDP/ICE negotiation.
+- **Operator CLI (`server/Stellarr.Cli`)**: The `stellarr` binary for checking health, editing settings and encrypted secrets, managing sessions/security, and staging backup restores directly on `/data/stellarr`. See [Operator CLI](./admin/cli.md).
+- **SQLite**: Stores relational application state in WAL mode (`db/stellarr.db`). Binary files are never stored in SQLite.
+- **Uploaded files**: Plain files under `/data/stellarr/files/` by object key (for example, `audio/2026/11/<id>.webm`). Uploads write to `files/.incoming/`, flush to disk, and move atomically into place. The API authorizes and streams every download.
+- **coturn**: Stateless STUN and HMAC-authenticated TURN relay forwarding allocations to the local `stellarr-media` UDP socket.
+- **Stellarr Init (`init/`, Rust)**: PID 1 supervisor (`stellarr-init`). Starts services in dependency order (`media` before `api`), checks readiness every 10 s, restarts exited processes with backoff up to 30 s, reaps zombies, and stops services in reverse order on shutdown. See [Container services](#container-services-stellarr-init).
+- **Stellarr Media (`media/`, Rust)**: Selective Forwarding Unit (SFU) on UDP `49000` using ICE-lite and DTLS-SRTP. Forwards microphone, camera, and screen-share RTP packets without transcoding or mixing, handling per-leg RTCP feedback and per-receiver downlink adaptation.
 
 > [!NOTE]
-> Because `stellarr-media` terminates SRTP on each connection to forward packets between participants, call audio and video are decrypted in the media server's memory on your host and are not end-to-end encrypted between browsers.
+> Because `stellarr-media` terminates DTLS-SRTP on each leg to forward packets, call audio and video are decrypted in `stellarr-media` memory on your host rather than end-to-end encrypted between browsers.
 
 ## Account security
 
-Every way in (password, passkey, registration, an OIDC provider, and the desktop app's browser sign-in) ends in one authentication decision. A completed first proof either opens a revocable session or, when a second step or a first method is due, a short-lived challenge bound to the browser; only a session can call the API or join the hubs. A session records how it began, when its second step last happened, its security version, and an absolute end that renewing the cookie cannot pass. A sign-in without "Keep me signed in" gets a cookie that ends with the browser and a session that ends after 12 hours.
-
-The second steps are an authenticator app (TOTP), a code by email, a passkey or security key, and single-use recovery codes. Passkeys are checked with Fido2 against the host of `Operations:PublicUrl`, never the request's `Host`, and a passkey sign-in requires user verification, so it counts as both steps. TOTP seeds and email codes are encrypted with the instance's data-protection keys; recovery codes and trusted-device tokens are stored only as digests. Changes that could hand the instance or an account to someone else need a second step from the last five minutes in the same session, and a remembered trusted device never counts as one.
-
-The API reads revoked sessions and role or policy changes from the database at most once per second and closes the matching WebSocket connections, which ends their voice and media sessions. Security events are recorded per account, and verified addresses can be alerted through the configured mail transport. See [Account security](./install/account-security.md) for the policies and for recovering a locked-out account.
+- **Unified authentication**: Password, passkey, registration, OIDC sign-in, and desktop handoff resolve through one decision, issuing either a revocable session or a short-lived browser-bound challenge when a second step or enrollment is required.
+- **Session properties**: Sessions record their sign-in origin, latest second-step timestamp, security version, and absolute expiry. Unchecking **Keep me signed in** issues a browser-session cookie capped at 12 hours server-side.
+- **Second factors and secrets**: Supports TOTP apps, email codes, passkeys/hardware keys (Fido2 checked against `Operations:PublicUrl`, never `Host`), and single-use recovery codes. TOTP seeds and email codes are encrypted with `/data/stellarr/keys`; recovery codes and trusted-device tokens are stored only as digests.
+- **High-risk actions and live revocation**: Sensitive instance/account changes require a second step completed within the last 5 minutes in the same session (trusted devices do not qualify). The API polls session/role revocations at most once per second and immediately closes matching SignalR and media connections. See [Account security](./admin/account-security.md).
 
 ## Server authorization
 
-`ServerAuthorization` owns permission decisions. `PermissionScope` names a server, a section within that server, or a channel within that server; a missing resource, disabled account, or absent membership denies access. HTTP handlers and realtime permission checks share this evaluator through `ServerAccess`. Decisions are read from the database for each operation, without a permission cache. The same API rules apply to browser, desktop, and mobile clients.
+HTTP handlers and SignalR checks evaluate permissions through `ServerAuthorization` (`ServerAccess`) directly against SQLite, without caching, using `PermissionScope` (server, section, or channel). Missing resources, disabled accounts, and missing memberships always deny access.
 
-Effective permissions start with the member's server role, then apply the section override, then the channel override. At each level an explicit deny wins over an allow; a channel override can replace the inherited section decision. Server operations use the base role. A lower role position means a higher rank, and equal positions do not outrank one another.
+- **Inheritance**: Effective permissions start from the member's base server role, then apply section overrides, then channel overrides. At each level, an explicit deny overrides an allow; a channel override can replace an inherited section decision.
+- **Role hierarchy**: Lower role position values represent higher rank; equal positions do not outrank one another. The owner role's base permissions are immutable (and the owner can repair legacy overrides on their own role).
+- **Delegation checks**: Managing roles, assigning roles, setting overrides, reparenting channels, and moderating members/voice all enforce both rank hierarchy and possession of every affected permission bit:
 
-Delegation is a separate decision from using a permission:
-
-| Operation | Additional requirements |
+| Operation | Authorization rules |
 | --- | --- |
-| Create a role | Base `manageRoles`; every granted bit is held in the actor's base role. New roles are placed below existing roles. |
-| Edit or delete a role | Base `manageRoles`; outrank the affected role; hold its existing and proposed rights, including live scoped grants. Deletion also checks the fallback role. |
-| Assign a role | Base `manageMembers`; outrank both the member's current role and the destination role; hold both roles' rights, including live scoped grants. Self-assignment and owner assignment are refused. |
-| Set or clear an override | Base and scoped `manageRoles`; outrank the affected role; hold every bit in both the old and new allow/deny masks at the server and scoped levels. Removing a deny is a permission change too. |
-| Move a channel between sections | Manage the source channel and destination section (or server). If any role's effective permissions change, also enforce delegation rights, hierarchy, and the changed bits in both contexts. |
-| Kick or ban a member | The corresponding server permission, a lower-ranked target, and no self-targeting or owner removal. |
-| Kick or move a voice participant | Scoped `moderateMembers` and the same hierarchy rules. Moving checks both source and destination voice channels. |
+| Create role | Base `manageRoles`; actor must hold every granted bit in their base role (new roles sit below existing roles). |
+| Edit or delete role | Base `manageRoles`; must outrank the role and hold both existing and proposed bits (including live scoped grants). Deletion also checks the fallback role. |
+| Assign role | Base `manageMembers`; must outrank and hold all rights of both current and target roles (self-assignment and owner assignment are forbidden). |
+| Set or clear override | Base and scoped `manageRoles`; must outrank the role and hold all bits in both old and new allow/deny masks (including removing a deny). |
+| Move channel across sections | Manage source channel and destination section/server; if effective role permissions change, enforces full delegation, hierarchy, and bit checks across both contexts. |
+| Kick or ban member | Server permission + lower-ranked target; cannot target self or owner. |
+| Kick or move in voice | Scoped `moderateMembers` + hierarchy; moves validate both source and destination voice channels. |
 
-The owner role's base permissions stay immutable. The owner can repair overrides on their own owner role, including legacy overrides that deny `manageRoles`; other roles cannot change their own overrides. Deleted override targets do not count as live grants. Existing roles, memberships, and overrides are preserved rather than silently rewritten.
+Mutations commit together with audit entries in a single database transaction before emitting realtime notifications. On the primary instance server, role and override changes also require a fresh second step under the active MFA policy.
 
-Role changes, override writes, channel reparenting, and moderation authorize and mutate within one database transaction. Realtime notifications follow a successful commit. On the instance server, role and override mutations, including channel moves that change permissions, also require a fresh second step under the configured account-security policy.
-
-The web client keeps its selected server per tab, and sends that scope explicitly on HTTP requests and the SignalR connection. UI permissions help present available actions; the API remains authoritative.
+The web client tracks its selected server per tab and passes it explicitly on HTTP and SignalR calls.
 
 ## Single-container deployment
 
-`stellarr-init` (`init/`) supervises all runtime processes (Stellarr Media, ASP.NET Core, `coturn`, Nginx, and `stellarr-tls-maintenance`) inside one container image backed by `/data/stellarr`; the services and how each is started, checked and stopped are compiled into it, in `init/src/services.rs`. Nginx exposes a single HTTPS origin externally and serves the web client and Cockpit from static files: an address of either app gets that app's document, a missing file gets a plain `404`, and any other address gets the web client's document with status `404`, so the client shows its not-found page.
+`stellarr-init` supervises all five container processes (`media`, `api`, `turn`, `nginx`, `tls-maintenance` defined in `init/src/services.rs`) behind `/data/stellarr`. See [`init/README.md`](../init/README.md) for control socket details.
 
 > [!TIP]
-> Keeping all services in one container simplifies self-hosting and backups to a single Docker volume. If you ever need to split media onto a separate machine, `stellarr-media` and `coturn` communicate with the API only over their network protocols and can be moved without changing the browser client.
+> Keeping all services in one container reduces deployment and backup to a single volume. If you later need dedicated media hardware, `stellarr-media` and `coturn` communicate only over network protocols and can be separated without changing browser clients.
+
+### Container services (`stellarr-init`)
+
+```bash
+docker compose exec stellarr stellarr-init status          # state, PID, restarts, uptime
+docker compose exec stellarr stellarr-init status --json   # JSON output for scripts
+docker compose exec stellarr stellarr-init health          # exits 0 only when healthy
+docker compose exec stellarr stellarr-init restart api     # restart one service immediately
+docker compose exec stellarr stellarr-init reload nginx    # reload Nginx config and TLS cert
+```
+
+| State | Meaning |
+| --- | --- |
+| `waiting` | Waiting on a dependency (for example, `api` waits for `media`). |
+| `starting` | Process started; readiness probe has not succeeded yet. |
+| `ready` | Running and passing readiness checks. |
+| `failing` | Missed three consecutive checks (~45 s); marks the container unhealthy without restarting a slow process. |
+| `backoff` | Exited and waiting before restart (1 s to 30 s). |
+| `stopping`, `stopped` | Shutting down or stopped during restart/exit. |
+
+All service logs go to container stdout/stderr (`docker compose logs`), including `stellarr-init:` state transitions. Routine health probes write no log lines, and Nginx disables access logging because API requests are logged by the API itself.
+
+### Nginx routing
+
+Nginx exposes one HTTPS origin, proxies `/api/`, `/assets/`, `/health`, `/hubs/`, and `/.well-known/stellarr/client` to ASP.NET Core (`127.0.0.1:5000`), and serves `/stellarr-instance.js` plus static files in `/opt/stellarr/web` (including `/bergamot-models/` and `/codecs/bergamot/`):
+
+- Asset directories (`/static/`, `/bergamot-models/`, etc.) and paths with a dot in the final segment return a plain `404` when missing.
+- `/cockpit` and paths under it serve Cockpit's `index.html`.
+- Known web-client routes (`/`, `/login`, `/invite/<code>`, etc., matching `web/src/stellarr/routes.tsx`) serve the web client's `index.html`.
+- Any other path returns the web client's `index.html` with HTTP `404` so the app renders its not-found view.
