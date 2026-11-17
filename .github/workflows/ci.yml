@@ -150,7 +150,17 @@ jobs:
             exit 1
           fi
           STELLARR_CHROMIUM="$chrome" npm run bench:voice-playback -w stellarr-web -- \
-            --check --out "$RUNNER_TEMP/voice-playback.json"
+            --check --out "$RUNNER_TEMP/voice-playback.json" --summary "$RUNNER_TEMP/voice-playback.md"
+      # The largest difference of each kind against its tolerance, and the
+      # Chrome the record was made with and the one on the runner, pass or fail.
+      - name: Report voice playback check
+        if: always()
+        run: |
+          if [[ -f $RUNNER_TEMP/voice-playback.md ]]; then
+            cat "$RUNNER_TEMP/voice-playback.md" >> "$GITHUB_STEP_SUMMARY"
+          else
+            printf '### Voice playback check\n\nNo report: the check did not run, or stopped before it compared anything; see its step.\n' >> "$GITHUB_STEP_SUMMARY"
+          fi
       # src/paths.ts and branding/icons/ are built from the glyph source in
       # @stellarr/icons; a glyph changed in one place only fails here.
       - run: npm run icons:build -w @stellarr/icons -- --check

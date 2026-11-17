@@ -48,13 +48,15 @@ function usage() {
     "  --record           write records/playback.txt from fresh runs",
     "  --repeat <n>       separate browser runs (default 1, or 3 with --record)",
     "  --out <path>       also write a JSON result here",
+    "  --summary <path>   also write the margins as Markdown, for a CI step summary",
+    "  --measured <path>  also write the first run's measurements, in the record's format",
     "  --timeout <s>      per-run timeout in seconds (default 600)",
     "  --headed           show the browser (debugging only)",
   ].join("\n");
 }
 
 function parseArgs(argv) {
-  const options = { mode: "check", repeat: null, out: null, timeout: 600, headed: false };
+  const options = { mode: "check", repeat: null, out: null, summary: null, measured: null, timeout: 600, headed: false };
   for (let index = 0; index < argv.length; index += 1) {
     const argument = argv[index];
     const equals = argument.indexOf("=");
@@ -77,6 +79,12 @@ function parseArgs(argv) {
         break;
       case "--out":
         options.out = resolve(process.cwd(), takeValue() ?? "");
+        break;
+      case "--summary":
+        options.summary = resolve(process.cwd(), takeValue() ?? "");
+        break;
+      case "--measured":
+        options.measured = resolve(process.cwd(), takeValue() ?? "");
         break;
       case "--timeout":
         options.timeout = Number(takeValue());
@@ -199,6 +207,56 @@ async function closeQuietly(browser) {
   }
 }
 
+/** The larger margin of each kind over two runs' comparisons. */
+function widest(current, next) {
+  if (current.length === 0) return next;
+  return current.map((margin, index) => {
+    const other = next[index];
+    return other && other.worst > margin.worst ? other : margin;
+  });
+}
+
+function figure(value, unit) {
+  const digits = unit === "dB" ? 2 : unit === "dB·ms" ? 1 : 0;
+  return `${value.toFixed(digits)} ${unit}`;
+}
+
+/**
+ * The largest difference of each kind against its tolerance, with the two
+ * Chrome versions, as plain text for the log and as Markdown for a CI step
+ * summary: the next change of Chrome on a runner reads from either.
+ */
+function marginsReport(margins, recordedWith, chrome, agreement) {
+  const rows = margins.map((m) => ({
+    ...m,
+    share: m.tolerance > 0 ? `${Math.round((m.worst / m.tolerance) * 100)}%` : m.worst > 0 ? "over" : "0%",
+  }));
+  const width = Math.max(...rows.map((row) => row.kind.length), 4);
+  const text = [
+    `Recorded with ${recordedWith || "?"}, checked with ${chrome}.`,
+    `${"kind".padEnd(width)}  largest     tolerance   used  where`,
+    ...rows.map(
+      (row) =>
+        `${row.kind.padEnd(width)}  ${figure(row.worst, row.unit).padEnd(10)}  ${figure(row.tolerance, row.unit).padEnd(10)}  ${row.share.padStart(4)}  ${row.where}`,
+    ),
+  ].join("\n");
+  const markdown = (problems) =>
+    [
+      "### Voice playback check",
+      "",
+      `${problems.length === 0 ? "Passed" : `Failed: ${problems.length} problem(s)`}. Recorded with ${recordedWith || "?"}, checked with ${chrome}.`,
+      "",
+      `Capture node in Chrome's AudioWorklet against the Node record: ${agreement || "not run"}.`,
+      "",
+      "| Kind | Largest difference | Tolerance | Used | Where |",
+      "| --- | ---: | ---: | ---: | --- |",
+      ...rows.map((row) => `| ${row.kind} | ${figure(row.worst, row.unit)} | ${figure(row.tolerance, row.unit)} | ${row.share} | ${row.where} |`),
+      ...(problems.length > 0 ? ["", ...problems.slice(0, 20).map((problem) => `- ${problem}`)] : []),
+      "",
+    ].join("\n");
+  return { text, markdown };
+}
+
 async function main() {
   const options = parseArgs(process.argv.slice(2));
   const distRoot = mkdtempSync(join(tmpdir(), "stellarr-voice-playback-"));
@@ -209,7 +267,10 @@ async function main() {
   const problems = [];
   const recordings = [];
   let chrome = "";
+  let recordedWith = "";
   let crossCheck = [];
+  let crossCheckAgreement = "";
+  let margins = [];
   let last = null;
   try {
     for (let run = 1; run <= options.repeat; run += 1) {
@@ -228,6 +289,7 @@ async function main() {
     const speech = await readFile(speechRecord, "utf8");
     const checked = await page.eval(`window.__voice.crossCheck(${JSON.stringify(speech)})`);
     crossCheck = checked.problems;
+    crossCheckAgreement = checked.agreement;
     console.log(`Capture node in Chrome's AudioWorklet, fixture speech: ${checked.agreement}`);
     for (const problem of crossCheck) problems.push(`capture in Chrome vs the Node record: ${problem}`);
 
@@ -249,11 +311,13 @@ async function main() {
         if (recordedChrome && recordedChrome !== chrome) {
           console.log(`Recorded with Chrome ${recordedChrome}, checking with Chrome ${chrome}.`);
         }
+        recordedWith = recordedChrome ?? "";
         for (const [index, text] of texts.entries()) {
           const found = await page.eval(
             `window.__voice.compare(${JSON.stringify(recorded)}, ${JSON.stringify(text)})`,
           );
-          for (const problem of found) problems.push(`run ${index + 1}: ${problem}`);
+          for (const problem of found.problems) problems.push(`run ${index + 1}: ${problem}`);
+          margins = widest(margins, found.margins);
         }
       }
     }
@@ -273,9 +337,9 @@ async function main() {
         console.log(`${name}: recorded beside it, not checked`);
       } else {
         const found = await page.eval(`window.__voice.compare(${JSON.stringify(before)}, ${JSON.stringify(text)})`);
-        recordings.push({ name, status: found.length === 0 ? "matches" : "differs", problems: found });
-        for (const problem of found) problems.push(`${name}: ${problem}`);
-        console.log(`${name}: ${found.length === 0 ? "matches its record" : `${found.length} differences`}`);
+        recordings.push({ name, status: found.problems.length === 0 ? "matches" : "differs", problems: found.problems });
+        for (const problem of found.problems) problems.push(`${name}: ${problem}`);
+        console.log(`${name}: ${found.problems.length === 0 ? "matches its record" : `${found.problems.length} differences`}`);
       }
     }
   } finally {
@@ -284,11 +348,21 @@ async function main() {
     await rm(distRoot, { recursive: true, force: true });
   }
 
+  if (options.measured && texts[0]) {
+    await mkdir(resolve(options.measured, ".."), { recursive: true });
+    await writeFile(options.measured, texts[0]);
+  }
+  const report = marginsReport(margins, recordedWith, chrome, crossCheckAgreement);
+  if (margins.length > 0) console.log(`\n${report.text}\n`);
+  if (options.summary) {
+    await mkdir(resolve(options.summary, ".."), { recursive: true });
+    await writeFile(options.summary, report.markdown(problems));
+  }
   if (options.out) {
     await mkdir(resolve(options.out, ".."), { recursive: true });
     await writeFile(
       options.out,
-      `${JSON.stringify({ format: "stellarr-voice-playback/1", mode: options.mode, chrome, runs: texts.length, crossCheck, recordings, problems, passed: problems.length === 0 }, null, 2)}\n`,
+      `${JSON.stringify({ format: "stellarr-voice-playback/2", mode: options.mode, recordedWith, chrome, runs: texts.length, crossCheck, margins, recordings, problems, passed: problems.length === 0 }, null, 2)}\n`,
     );
   }
   for (const problem of problems.slice(0, 40)) console.log(`FAIL ${problem}`);
