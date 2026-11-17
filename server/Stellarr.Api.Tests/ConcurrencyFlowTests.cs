@@ -15,6 +15,8 @@ public sealed class ConcurrencyFlowTests
         using var factory = new StellarrWebApplicationFactory(loadTestData: false);
         using var first = Client(factory);
         using var second = Client(factory);
+        // Read before either request: the one that founds the instance spends it.
+        var setupCode = factory.SetupCode;
 
         var responses = await Task.WhenAll(
             first.PostAsJsonAsync("/api/auth/register", new
@@ -23,6 +25,7 @@ public sealed class ConcurrencyFlowTests
                 displayName = "First Owner",
                 email = "first-owner@example.test",
                 password = "Nebula!2026",
+                setupCode,
             }),
             second.PostAsJsonAsync("/api/auth/register", new
             {
@@ -30,6 +33,7 @@ public sealed class ConcurrencyFlowTests
                 displayName = "Second Member",
                 email = "second-member@example.test",
                 password = "Nebula!2026",
+                setupCode,
             }));
 
         Assert.Contains(responses, response => response.StatusCode == HttpStatusCode.Created);

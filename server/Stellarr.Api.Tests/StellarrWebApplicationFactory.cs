@@ -21,6 +21,14 @@ public sealed class StellarrWebApplicationFactory : WebApplicationFactory<Progra
     internal string DataRoot => _dataRoot;
     internal string DatabasePath => _databasePath;
 
+    /// <summary>
+    /// The code this host's log shows, which founding the instance takes. A
+    /// host made with <c>WithWebHostBuilder</c> is another host with a code of
+    /// its own.
+    /// </summary>
+    internal string SetupCode => Services.GetRequiredService<Stellarr.Api.Auth.SetupCode>().Current
+        ?? throw new InvalidOperationException("The instance had an account when this host started, so it has no setup code.");
+
     /// <summary>What this host is configured with, as an installation would be with its own file.</summary>
     private string ConfiguredConnectionString => $"Data Source={_databasePath}";
 

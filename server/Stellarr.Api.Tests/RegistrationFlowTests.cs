@@ -1,15 +1,18 @@
 using System.Net;
 using System.Net.Http.Json;
 using System.Text.Json;
+using System.Text.RegularExpressions;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Http.Connections;
 using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.AspNetCore.SignalR.Client;
+using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using Stellarr.Api.Auth;
 using Stellarr.Api.Data;
 using Stellarr.Api.Domain;
+using Stellarr.Api.Logging;
 
 namespace Stellarr.Api.Tests;
 
@@ -18,6 +21,7 @@ public sealed class RegistrationFlowTests
     private const string Password = "Production!2026";
     private const string InviteRequired = "Do utworzenia konta na istniejącej instancji wymagane jest zaproszenie.";
     private const string InviteUnusable = "Zaproszenie wygasło, osiągnęło limit użyć albo jest nieprawidłowe.";
+    private const string SetupCodeInvalid = "Wpisz kod konfiguracji z logu serwera. Przy każdym uruchomieniu serwer pokazuje nowy; użyj ostatniego.";
 
     [Theory]
     [InlineData("spotkania", 2)]
@@ -28,12 +32,13 @@ public sealed class RegistrationFlowTests
         using var client = NewClient(factory);
         using var status = await client.GetAsync("/api/auth/registration");
         Assert.Equal("no-store", status.Headers.CacheControl?.ToString());
-        Assert.True((await status.Content.ReadFromJsonAsync<JsonElement>()).GetProperty("needsServerSetup").GetBoolean());
+        Assert.True((await status.Content.ReadFromJsonAsync<JsonElement>()).GetProperty("setupRequired").GetBoolean());
 
         using var response = await client.PostAsJsonAsync("/api/auth/register", new
         {
             username = "owner", displayName = "Owner", email = "owner@example.test", password = Password,
             initialServer = new { name = "  Nocna ekipa  ", description = "  Wspólne gry  ", textChannelName = "  GRY  ", voiceChannelName = voice },
+            setupCode = factory.SetupCode,
         });
         Assert.Equal(HttpStatusCode.Created, response.StatusCode);
         await using var scope = factory.OpenScope(out var db);
@@ -45,14 +50,14 @@ public sealed class RegistrationFlowTests
         Assert.Equal("gry", (await db.Channels.SingleAsync(x => x.Kind == ChannelKind.Text)).Name);
         Assert.Equal(1, (await db.ServerMembers.SingleAsync()).OwnerSlot);
         var configured = await client.GetFromJsonAsync<JsonElement>("/api/auth/registration");
-        Assert.False(configured.GetProperty("needsServerSetup").GetBoolean());
+        Assert.False(configured.GetProperty("setupRequired").GetBoolean());
     }
 
     [Theory]
-    [InlineData(" ", "gry", "rozmowa")]
-    [InlineData("Ekipa", "ze spacją", "rozmowa")]
-    [InlineData("Ekipa", "gry", "GRY")]
-    public async Task InvalidInitialServerDoesNotCreateAnAccountOrInstance(string name, string text, string voice)
+    [InlineData(" ", "gry", "rozmowa", "server")]
+    [InlineData("Ekipa", "ze spacją", "rozmowa", "channels")]
+    [InlineData("Ekipa", "gry", "GRY", "channels")]
+    public async Task InvalidInitialServerDoesNotCreateAnAccountOrInstance(string name, string text, string voice, string field)
     {
         using var factory = new StellarrWebApplicationFactory(loadTestData: false);
         using var client = NewClient(factory);
@@ -60,8 +65,10 @@ public sealed class RegistrationFlowTests
         {
             username = "owner", displayName = "Owner", email = "owner@example.test", password = Password,
             initialServer = new { name, textChannelName = text, voiceChannelName = voice },
+            setupCode = factory.SetupCode,
         });
         Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+        Assert.Equal([field], (await ErrorsOf(response)).Keys.ToArray());
         await using var scope = factory.OpenScope(out var db);
         Assert.False(await db.Users.AnyAsync());
         Assert.False(await db.Servers.AnyAsync());
@@ -74,7 +81,7 @@ public sealed class RegistrationFlowTests
         using var factory = new StellarrWebApplicationFactory(loadTestData: false);
         using var client = NewClient(factory);
 
-        using var response = await Register(client, "owner", "First Owner", "owner@example.test");
+        using var response = await Register(client, "owner", "First Owner", "owner@example.test", setupCode: factory.SetupCode);
 
         Assert.Equal(HttpStatusCode.Created, response.StatusCode);
         var created = await response.Content.ReadFromJsonAsync<JsonElement>();
@@ -115,7 +122,7 @@ public sealed class RegistrationFlowTests
     {
         using var factory = new StellarrWebApplicationFactory(loadTestData: false);
         using var client = NewClient(factory);
-        (await Register(client, "owner", "Owner", "Owner@Example.test")).EnsureSuccessStatusCode();
+        (await Register(client, "owner", "Owner", "Owner@Example.test", setupCode: factory.SetupCode)).EnsureSuccessStatusCode();
 
         using var other = NewClient(factory);
         using var login = await other.PostAsJsonAsync(
@@ -131,20 +138,146 @@ public sealed class RegistrationFlowTests
     }
 
     [Fact]
-    public async Task LaterRegistrationWithoutAnInviteIsRefused()
+    public async Task LaterRegistrationWithoutAnInviteIsRefusedEvenWithTheSetupCode()
     {
         using var factory = new StellarrWebApplicationFactory(loadTestData: false);
+        var setupCode = factory.SetupCode;
         using var first = NewClient(factory);
-        (await Register(first, "owner", "Owner", "owner@example.test")).EnsureSuccessStatusCode();
+        (await Register(first, "owner", "Owner", "owner@example.test", setupCode: setupCode)).EnsureSuccessStatusCode();
         using var second = NewClient(factory);
 
-        using var response = await Register(second, "second", "Second", "second@example.test");
+        using var response = await Register(second, "second", "Second", "second@example.test", setupCode: setupCode);
 
         Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
         Assert.Equal(new Dictionary<string, string[]> { ["inviteCode"] = [InviteRequired] }, await ErrorsOf(response));
         await using var scope = factory.OpenScope(out var db);
         Assert.Equal(1, await db.Users.CountAsync());
+        Assert.Equal(1, await db.Servers.CountAsync());
         Assert.Equal(1, await db.ServerMembers.CountAsync());
+    }
+
+    [Theory]
+    [InlineData(null)]
+    [InlineData("")]
+    [InlineData("K7QM-2XWP-9HDA")]
+    public async Task FoundingWithoutTheSetupCodeWritesNothingAndLeavesTheCodeValid(string? setupCode)
+    {
+        using var factory = new StellarrWebApplicationFactory(loadTestData: false);
+        using var client = NewClient(factory);
+
+        using var refused = await Register(client, "owner", "Owner", "owner@example.test", setupCode: setupCode);
+
+        Assert.Equal(HttpStatusCode.BadRequest, refused.StatusCode);
+        Assert.Equal(new Dictionary<string, string[]> { ["setupCode"] = [SetupCodeInvalid] }, await ErrorsOf(refused));
+        await using (var scope = factory.OpenScope(out var db))
+        {
+            Assert.False(await db.Users.AnyAsync());
+            Assert.False(await db.Servers.AnyAsync());
+            Assert.False(await db.UserSessions.AnyAsync());
+        }
+
+        var status = await client.GetFromJsonAsync<JsonElement>("/api/auth/registration");
+        Assert.True(status.GetProperty("setupRequired").GetBoolean());
+        using var founded = await Register(client, "owner", "Owner", "owner@example.test", setupCode: factory.SetupCode);
+        Assert.Equal(HttpStatusCode.Created, founded.StatusCode);
+    }
+
+    [Theory]
+    [InlineData("lower case")]
+    [InlineData("no dashes")]
+    [InlineData("spaces")]
+    public async Task TheSetupCodeIsAcceptedWhateverItsCaseSpacesAndDashes(string typing)
+    {
+        using var factory = new StellarrWebApplicationFactory(loadTestData: false);
+        using var client = NewClient(factory);
+        var code = factory.SetupCode;
+        var typed = typing switch
+        {
+            "lower case" => code.ToLowerInvariant(),
+            "no dashes" => code.Replace("-", ""),
+            _ => $"  {code.Replace('-', ' ')}\t",
+        };
+
+        using var response = await Register(client, "owner", "Owner", "owner@example.test", setupCode: typed);
+
+        Assert.Equal(HttpStatusCode.Created, response.StatusCode);
+    }
+
+    [Fact]
+    public async Task AnInstanceWhoseServersAreAllGoneCannotBeFoundedAgain()
+    {
+        // The seeded accounts arrive after the host has started, so this host
+        // still holds the code it drew for an empty database.
+        using var factory = new StellarrWebApplicationFactory();
+        var setupCode = factory.SetupCode;
+        using var owner = NewClient(factory);
+        (await owner.PostAsJsonAsync("/api/auth/login", new { username = "maja", password = "Aurora!2026" }))
+            .EnsureSuccessStatusCode();
+        Assert.Equal(HttpStatusCode.NoContent, (await owner.DeleteAsync("/api/admin/server")).StatusCode);
+        using var visitor = NewClient(factory);
+
+        var status = await visitor.GetFromJsonAsync<JsonElement>("/api/auth/registration");
+        using var response = await visitor.PostAsJsonAsync("/api/auth/register", new
+        {
+            username = "newcomer", displayName = "Newcomer", email = "newcomer@example.test", password = Password,
+            initialServer = new { name = "Moja instancja" },
+            setupCode,
+        });
+
+        Assert.False(status.GetProperty("setupRequired").GetBoolean());
+        Assert.Equal(new Dictionary<string, string[]> { ["inviteCode"] = [InviteRequired] }, await ErrorsOf(response));
+        await using var scope = factory.OpenScope(out var db);
+        Assert.False(await db.Servers.AnyAsync());
+        Assert.False(await db.Users.AnyAsync(x => x.Username == "newcomer"));
+    }
+
+    [Fact]
+    public async Task EachStartOfAnEmptyInstanceLogsANewCodeAndOnlyThatOneFoundsIt()
+    {
+        var databasePath = Path.Combine(Path.GetTempPath(), $"stellarr-setup-{Guid.NewGuid():N}.db");
+        var dataRoot = Path.Combine(Path.GetTempPath(), $"stellarr-setup-{Guid.NewGuid():N}");
+        StellarrWebApplicationFactory Start() => new(
+            loadTestData: false, databasePath: databasePath, dataRoot: dataRoot, deleteStorageOnDispose: false);
+        try
+        {
+            string earlier;
+            using (var first = Start())
+            {
+                earlier = LoggedSetupCode(first);
+            }
+
+            using (var second = Start())
+            {
+                var current = LoggedSetupCode(second);
+                using var client = NewClient(second);
+
+                using var stale = await Register(client, "owner", "Owner", "owner@example.test", setupCode: earlier);
+                using var founded = await Register(client, "owner", "Owner", "owner@example.test", setupCode: current);
+
+                Assert.NotEqual(earlier, current);
+                Assert.Equal(new Dictionary<string, string[]> { ["setupCode"] = [SetupCodeInvalid] }, await ErrorsOf(stale));
+                Assert.Equal(HttpStatusCode.Created, founded.StatusCode);
+            }
+
+            using var restarted = Start();
+            Assert.Empty(SetupLines(restarted));
+            var status = await NewClient(restarted).GetFromJsonAsync<JsonElement>("/api/auth/registration");
+            Assert.False(status.GetProperty("setupRequired").GetBoolean());
+        }
+        finally
+        {
+            using (var connection = new SqliteConnection(DatabaseConnection.From($"Data Source={databasePath}")))
+            {
+                SqliteConnection.ClearPool(connection);
+            }
+
+            foreach (var path in new[] { databasePath, databasePath + "-wal", databasePath + "-shm" })
+            {
+                File.Delete(path);
+            }
+
+            if (Directory.Exists(dataRoot)) Directory.Delete(dataRoot, recursive: true);
+        }
     }
 
     [Theory]
@@ -182,7 +315,8 @@ public sealed class RegistrationFlowTests
         Assert.Equal(
             new Dictionary<string, string[]> { ["password"] = ["Hasło może mieć najwyżej 256 znaków."] },
             await ErrorsOf(response));
-        using var accepted = await Register(client, "owner", "Owner", "owner@example.test", new string('p', 256));
+        using var accepted = await Register(
+            client, "owner", "Owner", "owner@example.test", new string('p', 256), setupCode: factory.SetupCode);
         Assert.Equal(HttpStatusCode.Created, accepted.StatusCode);
     }
 
@@ -347,10 +481,12 @@ public sealed class RegistrationFlowTests
         using var factory = new StellarrWebApplicationFactory(loadTestData: false);
         using var first = NewClient(factory);
         using var second = NewClient(factory);
+        // Read before either request: the one that founds the instance spends it.
+        var setupCode = factory.SetupCode;
 
         var responses = await Task.WhenAll(
-            Register(first, "first-owner", "First", "first@example.test"),
-            Register(second, "second-owner", "Second", "second@example.test"));
+            Register(first, "first-owner", "First", "first@example.test", setupCode: setupCode),
+            Register(second, "second-owner", "Second", "second@example.test", setupCode: setupCode));
 
         Assert.Equal(
             [HttpStatusCode.Created, HttpStatusCode.BadRequest],
@@ -404,6 +540,23 @@ public sealed class RegistrationFlowTests
         Assert.Equal([HttpStatusCode.BadRequest, HttpStatusCode.BadRequest, HttpStatusCode.TooManyRequests], statuses);
     }
 
+    /// <summary>The code in the one line this host logged about it, as the operator reads it there.</summary>
+    private static string LoggedSetupCode(StellarrWebApplicationFactory factory)
+    {
+        var line = Assert.Single(SetupLines(factory));
+        var match = Regex.Match(
+            line,
+            @"^Setup code: ([2-9A-HJ-NP-Z]{4}-[2-9A-HJ-NP-Z]{4}-[2-9A-HJ-NP-Z]{4})\. Open https://chat\.test/setup to create the owner account\.$");
+        Assert.True(match.Success, line);
+        return match.Groups[1].Value;
+    }
+
+    private static string[] SetupLines(StellarrWebApplicationFactory factory) =>
+        factory.Services.GetRequiredService<CockpitLogBuffer>().Snapshot(CockpitLogBuffer.Capacity)
+            .Select(x => x.Message)
+            .Where(x => x.StartsWith("Setup code", StringComparison.Ordinal))
+            .ToArray();
+
     private static HttpClient NewClient(StellarrWebApplicationFactory factory) =>
         factory.CreateClient(new WebApplicationFactoryClientOptions { AllowAutoRedirect = false, HandleCookies = true });
 
@@ -413,8 +566,9 @@ public sealed class RegistrationFlowTests
         string displayName,
         string email,
         string password = Password,
-        string? inviteCode = null) =>
-        client.PostAsJsonAsync("/api/auth/register", new { username, displayName, email, password, inviteCode });
+        string? inviteCode = null,
+        string? setupCode = null) =>
+        client.PostAsJsonAsync("/api/auth/register", new { username, displayName, email, password, inviteCode, setupCode });
 
     private static async Task<Dictionary<string, string[]>> ErrorsOf(HttpResponseMessage response)
     {
