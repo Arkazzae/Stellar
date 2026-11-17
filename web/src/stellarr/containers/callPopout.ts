@@ -7,10 +7,14 @@ import { useEffect } from "react";
  */
 let launchConsumed = false;
 
-export function popOutCall(channelId: string): void {
+export function popOutCall(channelId: string, serverId: string): void {
+  if (serverId.length === 0) return;
   const url = new URL(window.location.href);
   url.searchParams.set("popout", "1");
   url.searchParams.set("voiceChannel", channelId);
+  // A named window can already exist on another server. Its session storage
+  // is independent, so the launch address must carry the target explicitly.
+  url.searchParams.set("serverId", serverId);
   window.open(url, "stellarr-call", "popup,width=1100,height=760");
 }
 

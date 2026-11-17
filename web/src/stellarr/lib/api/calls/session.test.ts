@@ -1,8 +1,8 @@
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { jsonResponse, mockFetch, noContent, sentRequest } from "@/test/http";
 
-import { ACTIVE_SERVER_STORAGE_KEY } from "../transport";
+import { ACTIVE_SERVER_STORAGE_KEY, rememberActiveServerId, request } from "../transport";
 import { sessionCalls } from "./session";
 
 const fetchMock = mockFetch();
@@ -16,6 +16,8 @@ const BOOTSTRAP = {
   sections: [],
   members: [USER],
 };
+
+afterEach(() => window.history.replaceState({}, "", "/"));
 
 describe("signing in and out", () => {
   it("checks whether the instance needs its first server", async () => {
@@ -71,16 +73,68 @@ describe("signing in and out", () => {
 });
 
 describe("bootstrap", () => {
+  const POPOUT_SERVER = "84ef8596-b119-42a4-94ee-a34c8be86ae3";
+
+  it("retargets a reused popout before bootstrap and allows later manual switching", async () => {
+    rememberActiveServerId("previous-window-server");
+    window.history.replaceState({}, "", `/?popout=1&voiceChannel=voice-2&serverId=${POPOUT_SERVER}`);
+    fetchMock.mockResolvedValueOnce(jsonResponse({
+      ...BOOTSTRAP,
+      server: { ...BOOTSTRAP.server, id: POPOUT_SERVER },
+    }));
+
+    await calls.bootstrap();
+
+    expect(sentRequest(fetchMock).headers.get("X-Stellarr-Server")).toBe(POPOUT_SERVER);
+    expect(window.sessionStorage.getItem(ACTIVE_SERVER_STORAGE_KEY)).toBe(POPOUT_SERVER);
+    expect(new URLSearchParams(window.location.search).has("serverId")).toBe(false);
+    expect(new URLSearchParams(window.location.search).get("voiceChannel")).toBe("voice-2");
+
+    rememberActiveServerId("s-2");
+    fetchMock.mockResolvedValueOnce(jsonResponse(BOOTSTRAP));
+    await calls.bootstrap();
+    expect(sentRequest(fetchMock, 1).headers.get("X-Stellarr-Server")).toBe("s-2");
+  });
+
+  it("does not fall back when the explicitly launched popout server is forbidden", async () => {
+    rememberActiveServerId("previous-window-server");
+    window.history.replaceState({}, "", `/?popout=1&serverId=${POPOUT_SERVER}`);
+    fetchMock.mockResolvedValue(new Response(null, { status: 403 }));
+
+    await expect(calls.bootstrap()).rejects.toMatchObject({ kind: "forbidden" });
+
+    expect(fetchMock).toHaveBeenCalledOnce();
+    expect(sentRequest(fetchMock).headers.get("X-Stellarr-Server")).toBe(POPOUT_SERVER);
+    expect(new URLSearchParams(window.location.search).get("serverId")).toBe(POPOUT_SERVER);
+  });
+
+  it.each(["", "not-a-server"])("rejects the invalid popout server %j without requesting a default", async (serverId) => {
+    window.history.replaceState({}, "", `/?popout=1&serverId=${serverId}`);
+
+    await expect(calls.bootstrap()).rejects.toMatchObject({ kind: "invalid" });
+
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it("refuses a response from a different server than the popout requested", async () => {
+    window.history.replaceState({}, "", `/?popout=1&serverId=${POPOUT_SERVER}`);
+    fetchMock.mockResolvedValue(jsonResponse(BOOTSTRAP));
+
+    await expect(calls.bootstrap()).rejects.toMatchObject({ kind: "malformed" });
+
+    expect(window.sessionStorage.getItem(ACTIVE_SERVER_STORAGE_KEY)).toBeNull();
+  });
+
   it("remembers the server it was answered for", async () => {
     fetchMock.mockResolvedValue(jsonResponse(BOOTSTRAP));
 
     await calls.bootstrap();
 
-    expect(window.localStorage.getItem(ACTIVE_SERVER_STORAGE_KEY)).toBe("s-2");
+    expect(window.sessionStorage.getItem(ACTIVE_SERVER_STORAGE_KEY)).toBe("s-2");
   });
 
   it("sends the remembered server and asks again without it once it is refused", async () => {
-    window.localStorage.setItem(ACTIVE_SERVER_STORAGE_KEY, "s-gone");
+    rememberActiveServerId("s-gone");
     fetchMock
       .mockResolvedValueOnce(new Response(null, { status: 403 }))
       .mockResolvedValueOnce(jsonResponse(BOOTSTRAP));
@@ -90,11 +144,11 @@ describe("bootstrap", () => {
     expect(fetchMock).toHaveBeenCalledTimes(2);
     expect(sentRequest(fetchMock, 0).headers.get("X-Stellarr-Server")).toBe("s-gone");
     expect(sentRequest(fetchMock, 1).headers.has("X-Stellarr-Server")).toBe(false);
-    expect(window.localStorage.getItem(ACTIVE_SERVER_STORAGE_KEY)).toBe("s-2");
+    expect(window.sessionStorage.getItem(ACTIVE_SERVER_STORAGE_KEY)).toBe("s-2");
   });
 
   it("asks only once more, and reports a second refusal", async () => {
-    window.localStorage.setItem(ACTIVE_SERVER_STORAGE_KEY, "s-gone");
+    rememberActiveServerId("s-gone");
     fetchMock.mockImplementation(() => Promise.resolve(new Response(null, { status: 403 })));
 
     await expect(calls.bootstrap()).rejects.toMatchObject({ kind: "forbidden" });
@@ -111,7 +165,7 @@ describe("bootstrap", () => {
   });
 
   it("does not retry other failures", async () => {
-    window.localStorage.setItem(ACTIVE_SERVER_STORAGE_KEY, "s-1");
+    rememberActiveServerId("s-1");
     fetchMock.mockResolvedValue(new Response(null, { status: 500 }));
 
     await expect(calls.bootstrap()).rejects.toMatchObject({ kind: "server" });
@@ -126,5 +180,10 @@ describe("bootstrap", () => {
     fetchMock.mockResolvedValue(jsonResponse(BOOTSTRAP));
 
     await expect(calls.bootstrap()).resolves.toMatchObject({ server: { id: "s-2" } });
+    vi.spyOn(Storage.prototype, "getItem").mockImplementation(() => {
+      throw new DOMException("blocked", "SecurityError");
+    });
+    await request("/api/admin/channels", { method: "POST" });
+    expect(sentRequest(fetchMock, 1).headers.get("X-Stellarr-Server")).toBe("s-2");
   });
 });

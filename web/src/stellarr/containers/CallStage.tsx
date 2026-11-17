@@ -25,7 +25,7 @@ export function CallStage({ fullscreenTarget }: CallStageProps) {
   const ui = useUi();
   const profile = useProfile();
   const { user } = useSession();
-  const { canManageServer } = useDirectory();
+  const { server, canManageServer } = useDirectory();
   const ports = usePorts();
 
   // The device settings straight from the store the pipelines read, so what
@@ -84,7 +84,7 @@ export function CallStage({ fullscreenTarget }: CallStageProps) {
         onToggleCinema={ui.toggleCinema}
         onLeave={ui.leaveCall}
         onPopOut={() => {
-          if (joinedChannelId !== null) popOutCall(joinedChannelId);
+          if (joinedChannelId !== null) popOutCall(joinedChannelId, server.id);
         }}
       />
     </>

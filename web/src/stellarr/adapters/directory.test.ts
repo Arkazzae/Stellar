@@ -30,7 +30,7 @@ function hydratedStore(): DirectoryStore {
   return store;
 }
 
-afterEach(() => window.localStorage.clear());
+afterEach(() => window.sessionStorage.clear());
 
 describe("directory adapter reads", () => {
   it("falls back to a placeholder server before the bootstrap arrives", () => {
@@ -66,7 +66,7 @@ describe("directory adapter server switching", () => {
 
     directory.selectServer(HARBOR.id);
 
-    expect(window.localStorage.getItem(ACTIVE_SERVER_STORAGE_KEY)).toBe(HARBOR.id);
+    expect(window.sessionStorage.getItem(ACTIVE_SERVER_STORAGE_KEY)).toBe(HARBOR.id);
   });
 
   it("delegates creating and joining to the server actions", async () => {

@@ -6,7 +6,7 @@ import {
   type ILogger,
   type IRetryPolicy,
 } from "@microsoft/signalr";
-import { ACTIVE_SERVER_STORAGE_KEY } from "@/lib/api/client";
+import { readActiveServerId } from "@/lib/api/transport";
 import type { ChannelId, Presence, RtcConfig } from "@/lib/api/types";
 import { RTC_HUB, type BrowserMediaSignalKind } from "@/lib/rtc/protocol";
 import { ChangeNotifier, Emitter } from "./emitter";
@@ -88,11 +88,7 @@ const buildConnection: SignalRConnectionFactory = (hubUrl) =>
 const HUB_EVENTS = Object.keys(HUB_DECODERS) as RealtimeEventName[];
 
 function activeServerId(): string | null {
-  try {
-    return window.localStorage.getItem(ACTIVE_SERVER_STORAGE_KEY);
-  } catch {
-    return null;
-  }
+  return readActiveServerId() ?? null;
 }
 
 /**

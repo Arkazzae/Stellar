@@ -80,6 +80,8 @@ The owner role's base permissions stay immutable. The owner can repair overrides
 
 Role changes, override writes, channel reparenting, and moderation authorize and mutate within one database transaction. Realtime notifications follow a successful commit. On the instance server, role and override mutations, including channel moves that change permissions, also require a fresh second step under the configured account-security policy.
 
+The web client keeps its selected server per tab, and sends that scope explicitly on HTTP requests and the SignalR connection. UI permissions help present available actions; the API remains authoritative.
+
 ## Single-container deployment
 
 `stellarr-init` (`init/`) supervises all runtime processes (Stellarr Media, ASP.NET Core, `coturn`, Nginx, and `stellarr-tls-maintenance`) inside one container image backed by `/data/stellarr`; the services and how each is started, checked and stopped are compiled into it, in `init/src/services.rs`. Nginx exposes a single HTTPS origin externally and serves the web client and Cockpit from static files: an address of either app gets that app's document, a missing file gets a plain `404`, and any other address gets the web client's document with status `404`, so the client shows its not-found page.

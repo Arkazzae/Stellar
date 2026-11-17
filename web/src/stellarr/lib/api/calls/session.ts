@@ -27,6 +27,18 @@ type SessionCalls = Pick<
 
 const BOOTSTRAP_PATH = "/api/bootstrap";
 
+/** A reused popout must bootstrap the launching tab's server, not its old one. */
+function popoutServerId(): string | undefined {
+  if (typeof window === "undefined") return undefined;
+  const params = new URLSearchParams(window.location.search);
+  if (params.get("popout") !== "1" || !params.has("serverId")) return undefined;
+  const serverId = params.get("serverId")!;
+  if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(serverId)) {
+    throw new ApiError("invalid", "The popout names an invalid server", 400);
+  }
+  return serverId;
+}
+
 /** An explicit null user, bare or enveloped, is an anonymous visitor. */
 const parseSessionAnswer: Parse<User | null> = (value, path) => {
   const user = unwrap(value, "user");
@@ -95,8 +107,26 @@ export function sessionCalls(): SessionCalls {
     },
 
     async bootstrap(signal) {
-      const bootstrap = await fetchBootstrap(signal);
+      const target = popoutServerId();
+      // A launch instruction is an explicit target. A refused target must not
+      // silently fall back to another membership and dial a foreign channel.
+      const bootstrap = target === undefined
+        ? await fetchBootstrap(signal)
+        : await getJson(BOOTSTRAP_PATH, parseBootstrap, signal, {
+            Accept: "application/json",
+            "X-Stellarr-Server": target,
+          });
+      if (target !== undefined && bootstrap.server.id.toLowerCase() !== target.toLowerCase()) {
+        throw new ApiError("malformed", "The popout bootstrapped a different server", 200);
+      }
       rememberActiveServerId(bootstrap.server.id);
+      if (target !== undefined) {
+        // The target is now this window's selection. Consume the one-time
+        // instruction so manual server switching in the window still works.
+        const url = new URL(window.location.href);
+        url.searchParams.delete("serverId");
+        window.history.replaceState(window.history.state, "", url);
+      }
       return bootstrap;
     },
   };
