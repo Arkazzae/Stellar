@@ -31,7 +31,7 @@ flowchart TD
     Transport <-->|"DTLS-SRTP media & RTCP feedback"| SFU
 ```
 
-UI components interact only with `VoiceClient` and the immutable `VoiceState` snapshot; they never import SignalR, `RTCPeerConnection`, audio worklets, or media-server internals directly.
+UI components interact only with `VoiceClient` and immutable `VoiceState` snapshots; they never import SignalR, `RTCPeerConnection`, audio worklets, or media-server internals directly.
 
 ## Bootstrap configuration
 
@@ -56,11 +56,11 @@ UI components interact only with `VoiceClient` and the immutable `VoiceState` sn
 
 - `iceServers` is populated per request with a STUN URL, an HMAC-authenticated TURN URL, and (when `Rtc:TurnsEnabled` is `true`) a `turns:` URL.
 - `mediaServer` is `udp://<Rtc:PublicHost>:<Rtc:MediaPort>`.
-- The client checks `protocolVersion` before opening media devices and stops with an `unsupported` error if it is not `1`.
+- The client validates `protocolVersion === 1` before opening media devices and stops with an `unsupported` error otherwise.
 
 ## Signaling
 
-`VoiceSignal` broadcasts a participant's mute and stream state to others in the room using the following envelope:
+`VoiceSignal` broadcasts a participant's mute and stream state to others in the room:
 
 ```json
 {
@@ -74,16 +74,16 @@ UI components interact only with `VoiceClient` and the immutable `VoiceState` sn
 ```
 
 - `channelId` identifies an RTC room: either a server voice channel or a two-user direct conversation.
-- Clients omit `fromUserId`; `AppHub` populates it from the authenticated session. When `toUserId` is omitted, the hub broadcasts the signal to all other participants in the room.
-- The backend checks authentication, channel/conversation access, recipient membership, `protocolVersion`, `kind`, and a 128 KiB payload size limit.
-- Occupancy updates (`VoiceParticipantChanged`) for a server voice channel are broadcast to the server; updates for a direct call are sent only to the two participants.
-- Declining a direct call (`DeclineDirectCall`) clears room occupancy and sends `DirectCallDeclined` so the caller releases local capture devices.
-- Payloads are validated by typed codecs (`web/src/stellarr/lib/rtc/protocol.ts`). A `state` payload has the shape `{ muted, screenStreamId, cameraStreamId }` (`cameraStreamId` is optional; absence indicates the camera is off).
+- Clients omit `fromUserId`; `AppHub` populates it from the authenticated session. When `toUserId` is omitted, the signal broadcasts to all other participants in the room.
+- The backend validates authentication, room membership, recipient membership, `protocolVersion`, `kind`, and a 128 KiB payload limit.
+- Occupancy updates (`VoiceParticipantChanged`) for server voice channels broadcast to the server; direct-call occupancy updates go only to the two participants.
+- Declining a direct call (`DeclineDirectCall`) clears room occupancy and sends `DirectCallDeclined` so the caller releases capture devices.
+- Payloads are validated by typed codecs (`web/src/stellarr/lib/rtc/protocol.ts`). A `state` payload has `{ muted, screenStreamId, cameraStreamId }` (`cameraStreamId` is optional; absence means camera off).
 
 > [!NOTE]
-> `SendVoiceSignal` only accepts `kind: "state"`. `AppHub` rejects `offer`, `answer`, and `candidate` with `HubException("Invalid voice signal.")`. SDP descriptions and ICE candidates are exchanged exclusively with the media server via `OpenMediaSession`, `SendMediaSignal`, `MediaSignal`, and `MediaSessionClosed` (see [Stellarr Media](./stellarr-media.md#hub-leg)).
+> `SendVoiceSignal` accepts only `kind: "state"`. `AppHub` rejects `offer`, `answer`, and `candidate` with `HubException("Invalid voice signal.")`. SDP descriptions and ICE candidates flow exclusively via `OpenMediaSession`, `SendMediaSignal`, `MediaSignal`, and `MediaSessionClosed` (see [Stellarr Media](./stellarr-media.md#hub-leg)).
 
-Incompatible changes to the envelope or payload format require incrementing `protocolVersion`. Optional fields can be added within version `1`.
+Breaking changes to the envelope or payload require incrementing `protocolVersion`. Optional fields may be added within version `1`.
 
 ### Hub methods and events
 
@@ -98,7 +98,7 @@ Defined in `web/src/stellarr/lib/rtc/protocol.ts` and implemented by `AppHub` in
 | Method | `PlaySoundboard` | Schedule a soundboard clip in the room |
 | Method | `GetRtcClock` | Return server Unix timestamp in milliseconds |
 | Method | `OpenMediaSession` | Open a media session with Stellarr Media for the caller's seat |
-| Method | `SendMediaSignal` | Send an SDP offer/answer, ICE candidate, or receive subscriptions to Stellarr Media |
+| Method | `SendMediaSignal` | Send an SDP offer/answer, ICE candidate, or receive subscriptions to `stellarr-media` |
 | Event | `VoiceParticipantChanged` | Room occupancy snapshot: `{ channelId, sequence, participants }` |
 | Event | `VoiceSignal` | Relayed `VoiceSignal` envelope |
 | Event | `VoiceSessionReplaced` | Account joined voice from a newer browser tab |
@@ -106,33 +106,32 @@ Defined in `web/src/stellarr/lib/rtc/protocol.ts` and implemented by `AppHub` in
 | Event | `SoundboardPlayed` | Scheduled soundboard clip broadcast |
 | Event | `JoinSoundPlayed` | Scheduled arrival sound broadcast |
 | Event | `SoundboardChanged` | Server soundboard catalog updated |
-| Event | `MediaSignal` | SDP offer/answer or track directory from Stellarr Media |
+| Event | `MediaSignal` | SDP offer/answer or track directory from `stellarr-media` |
 | Event | `MediaSessionClosed` | Stellarr Media ended the caller's media session |
 
 Clients ignore any `VoiceParticipantChanged` snapshot whose `sequence` is older than the highest sequence already applied for that room.
 
 ### Soundboard synchronization
 
-Soundboard playback uses the SignalR hub rather than mixing clips into the microphone track:
+Soundboard clips synchronize over SignalR rather than mixing into microphone audio:
 
-- `PlaySoundboard(channelId, soundId)` verifies that the caller holds a seat in `channelId`, checks server membership and permissions, and enforces a 5-second per-user cooldown (when rate limiting is enabled).
-- `GetRtcClock()` lets clients estimate their clock offset using half the round-trip time.
-- `SoundboardPlayed` broadcasts clip metadata and a shared `startsAtUnixMs` timestamp scheduled 750 ms in the future.
-- Each receiver fetches and decodes the audio asset, then schedules the trimmed segment in `AudioContext` (clipping the leading offset if the event arrived late).
+- `PlaySoundboard(channelId, soundId)` verifies the caller's seat, permissions, and a 5-second per-user cooldown.
+- `GetRtcClock()` estimates client-server clock offset using half the round-trip time.
+- `SoundboardPlayed` carries clip metadata and a `startsAtUnixMs` timestamp scheduled `750 ms` in the future.
+- Each receiver fetches/decodes the clip and schedules playback in `AudioContext`, trimming the leading offset if the event arrived late.
 
 ### Arrival sound
 
 Users can pick a personal arrival clip (`UserPreferences.JoinSoundId`) from any server they belong to:
 
-- Membership in the clip's source server is verified both when saving preferences and upon `JoinVoice`.
-- `JoinSoundPlayed` reuses `SoundboardPlayedDto` with `triggeredByUserId` set to the joining user and `startsAtUnixMs` 750 ms in the future.
-- Clips are capped at `JoinSound.MaxSeconds` (5 s) and rate-limited by `JoinSound.Cooldown` (30 s per user; cooldown suppresses the clip without blocking `JoinVoice`).
-- `AttachmentAccess` permits downloading a join-sound asset whenever the listener shares a server or direct conversation with the clip's owner.
-- The local `joinLeaveSound` user preference mutes both standard join/leave tones and remote arrival clips (`setArrivalsAudible`).
+- Membership in the clip's source server is verified when saving preferences and on `JoinVoice`.
+- `JoinSoundPlayed` reuses `SoundboardPlayedDto` (`startsAtUnixMs` +750 ms), capped at `JoinSound.MaxSeconds` (`5 s`) and rate-limited by `JoinSound.Cooldown` (`30 s` per user; cooldown skips the clip without blocking join).
+- `AttachmentAccess` permits downloading the clip when the listener shares a server or DM conversation with its owner.
+- The local `joinLeaveSound` preference mutes both standard join/leave tones and remote arrival clips (`setArrivalsAudible`).
 
 ## State model
 
-`VoiceState` separates hub signaling state from WebRTC media transport state:
+`VoiceState` separates SignalR signaling state from WebRTC media transport state:
 
 | Field | Values | Meaning |
 | --- | --- | --- |
@@ -141,22 +140,58 @@ Users can pick a personal arrival clip (`UserPreferences.JoinSoundId`) from any 
 | `peerCount` | `number` | Number of remote participants seated in the room |
 | `connectedPeerCount` | `number` | Number of remote participants with active incoming audio |
 
-- `transport.media = ready` indicates the local session with Stellarr Media is established and no other participants are in the room (`peerCount === 0`).
-- `transport.media = degraded` indicates that a remote participant's audio has not arrived past its 3-second grace window, or that the media session is being replaced (see [Stellarr Media](./stellarr-media.md#proving-media-quickly)).
-- A remote `VoicePeer`'s `camera` and `screen` carry `heldBack: true` while the media server holds that picture back for this side's downlink; the view then offers no stream for it, so no last frame stays on screen.
+- `transport.media = ready`: local media session is connected with `peerCount === 0`.
+- `transport.media = degraded`: a remote participant's audio has not arrived within its 3-second grace window, or session replacement is in progress (see [Proving media quickly](./stellarr-media.md#proving-media-quickly)).
+- When `stellarr-media` holds back a remote video stream due to receiver downlink limits, the corresponding `VoicePeer` camera or screen sets `heldBack: true`, and the UI suppresses the frozen video element rather than leaving a stale frame on screen.
 
 > [!IMPORTANT]
 > Only one active voice session is allowed per account across tabs and devices. Joining from a second tab replaces the earlier seat and sends `VoiceSessionReplaced` to the previous connection.
 
 ## Audio
 
-- **Capture format**: 48 kHz, mono.
-- **VAD and metering**: 10 ms analysis frames; speech detection never mutes the track or stops RTP packets.
-- **Input gate**: Enabled by default (user-configurable), 80 ms lookahead, 600 ms hold time, attenuates silence between utterances while keeping RTP continuous.
-- **Opus encoding**: 20 ms packet time, in-band FEC enabled; bitrate profiles live in `web/src/stellarr/lib/voice/audioProfiles.ts` (Premium default: 64–128 kb/s, DTX off; Studio: 96–256 kb/s, DTX off; Screen audio: 96–160 kb/s stereo).
-- **Source separation**: Microphone and screen-share audio use separate tracks, separate Opus profiles, and separate playback elements. Muting affects only the microphone.
-- **Tab visibility**: Hiding and restoring a browser tab never tears down healthy connections; only `disconnected` or `failed` connections trigger repair.
-- **TURN credential refresh**: Long-lived calls refresh TURN credentials before expiration so a media session replaced late in a call always has valid credentials.
+### Opus bitrate profiles
+
+| Profile | Max bitrate | Min adaptation bitrate | Channels | DTX | In-band FEC | Packet time |
+| --- | ---: | ---: | --- | --- | --- | ---: |
+| Economy | 32 kb/s | 16 kb/s | mono | yes | yes | 20 ms |
+| Balanced | 64 kb/s | 24 kb/s | mono | no | yes | 20 ms |
+| Clarity | 96 kb/s | 32 kb/s | mono | no | yes | 20 ms |
+| Premium (default) | 128 kb/s | 64 kb/s | mono | no | yes | 20 ms |
+| Studio | 256 kb/s | 96 kb/s | mono | no | yes | 20 ms |
+| Screen audio | 160 kb/s | 96 kb/s | stereo (when negotiated) | no | yes | 20 ms |
+
+WebRTC handles fast congestion control, while the client adapts the Opus bitrate ceiling gradually from smoothed packet-loss and RTT stats (`RTCRtpSender.getStats()` / `setParameters()`) with hysteresis.
+
+### Capture, processing, and playback chain
+
+```mermaid
+flowchart LR
+    subgraph Send["Send Chain (Browser)"]
+        Mic["Mic Capture (48 kHz mono)"] --> Gain["Input Pre-gain (-12 to +24 dB)"]
+        Gain --> Denoise["Noise Suppression (RNNoise / GTCRN / Speex / Browser)"]
+        Denoise --> Gate["VAD, 80 ms Gate & Auto Leveler"]
+        Gate --> Opus["Opus Encoder (20 ms, in-band FEC)"]
+    end
+
+    SFU["Stellarr Media SFU (:49000/udp)"]
+
+    subgraph Receive["Receive Chain (Browser)"]
+        Vol["Per-user Volume (0-200%)"] --> EQ["4-band Voice EQ & Compressor"]
+        EQ --> Out["Audio Output"]
+    end
+
+    Opus -->|"SRTP"| SFU -->|"SRTP"| Vol
+```
+
+1. **Capture and gain**: `getUserMedia` at `48 kHz` mono, followed by fixed pre-gain (`-12 dB` to `+24 dB`).
+2. **Noise suppression**: `rnnoise` (default), `gtcrn`, `speex` (local WASM `AudioWorklet`s from `web/public/audio/`), `browser`, or `off`. Worklet failures fall back to `browser` with a degraded indicator.
+3. **VAD, input gate, and leveler**:
+   - The audio-thread detector inspects `10 ms` frames using noise-floor estimation, hysteresis, hangover, and transient/click rejection (peak-to-RMS ratio and `60–400 Hz` pitch check). Speech detection never mutes the track or stops RTP packets.
+   - The **input gate** (on by default) uses an `80 ms` lookahead buffer and `600 ms` hold time, attenuating silence without stopping continuous RTP.
+   - The **automatic leveler** updates gain only on voiced frames so background noise is not amplified.
+4. **Source separation**: Microphone and screen-share audio use separate tracks, separate Opus profiles (`web/src/stellarr/lib/voice/audioProfiles.ts`), and separate playback elements. Muting affects only the microphone.
+5. **Receive chain**: Remote microphones pass through per-user volume (`0–200%`) and optional Web Audio 4-band EQ + compressor (`Off`, `Natural`, `Studio`, `Broadcast`, or `Custom` `±12 dB` at `160 Hz`, `360 Hz`, `3.1 kHz`, and `8 kHz`). Screen-share audio bypasses voice EQ.
+6. **Per-account storage and resilience**: Device and audio settings are stored per account ID in `localStorage`. Hiding/restoring a browser tab never tears down healthy connections, and long calls refresh TURN credentials before expiry.
 
 ## Screen sharing
 
@@ -167,25 +202,25 @@ Users can pick a personal arrival clip (`UserPreferences.JoinSoundId`) from any 
 | Sharp | 1440p | 30 fps | 5 Mb/s |
 | Ultra | 2160p | 60 fps | 12 Mb/s |
 
-- Profiles are defined in `web/src/stellarr/lib/voice/video/screenShare.ts` and applied to both `getDisplayMedia` constraints and `RTCRtpSender` encoding parameters. Switching profiles mid-share updates constraints and sender parameters without re-prompting or renegotiating SDP.
-- Codec preference order: VP9 (with 2–3 temporal layers when supported), AV1, VP8, H.264.
-- Uses `contentHint = "detail"` and `degradationPreference = "maintain-resolution"`.
-- Video senders use `medium` network priority while Opus audio uses `high`.
-- The media server forwards a remote screen's video and shared sound only to the people watching it (see [receive subscriptions](./stellarr-media.md#receive-subscriptions)). Stopping watching stops both, while the publisher's capture carries on; a new share starts unwatched.
-- These profiles are the most a sender uses; congestion control can send less. A receiver is forwarded a whole track or nothing: no layer or bitrate is chosen per receiver. When a receiver's downlink has no room for the share it watches, the media server holds its picture back for that receiver (see [downlink adaptation](./stellarr-media.md#downlink-adaptation)), and the band shows "Video paused: your connection is too weak" ("Obraz wstrzymany: za słabe łącze") in place of a frozen picture; the picture returns by itself once there is room.
+- Profiles live in `web/src/stellarr/lib/voice/video/screenShare.ts` and update both `getDisplayMedia` constraints and `RTCRtpSender` parameters live without renegotiation or re-prompting.
+- Codec preference order: VP9 (2–3 temporal layers when supported), AV1, VP8, H.264.
+- Uses `contentHint = "detail"` and `degradationPreference = "maintain-resolution"`, with `medium` network priority (below Opus `high`).
+- **Opt-in forwarding**: `stellarr-media` forwards screen video and screen audio only to receivers watching that share ([receive subscriptions](./stellarr-media.md#receive-subscriptions)). New shares start unwatched, and stopping watching halts forwarding without affecting the publisher.
+- **Whole-track caps**: Profiles are upper bitrate limits. Tracks forward whole without per-receiver transcoding or simulcast selection.
+- **Low-bandwidth pause**: If a receiver's downlink lacks headroom ([downlink adaptation](./stellarr-media.md#downlink-adaptation)), `stellarr-media` holds the video back (`heldBack: true`) and the UI shows a paused notice until capacity recovers.
 
 ## Camera
 
-- Managed by `VoiceClient` (`web/src/stellarr/lib/voice/video/camera.ts`), capturing video only.
-- Profiles:
-  - **Low**: 854×480 @ 24 fps, 0.7 Mb/s
-  - **Standard (default)**: 1280×720 @ 30 fps, 1.5 Mb/s
-  - **High**: 1920×1080 @ 30 fps, 3.0 Mb/s
-- Uses `contentHint = "motion"` and `degradationPreference = "maintain-framerate"`.
-- `cameraStreamId` and `screenStreamId` in the `state` signal distinguish camera and screen tracks regardless of SDP m-line ordering.
-- Camera video shares a `MediaStream` with the microphone (`cameraStreamId`), keeping voice and camera playback synchronized on receivers. Screen shares use a separate `MediaStream`.
-- Switching camera devices uses `RTCRtpSender.replaceTrack` without renegotiating the session. Camera errors or permission denials never interrupt voice audio.
-- A receiver asks for the voices first, then the watched share, then the cameras, and the media server sends the pictures in that order while its downlink has room. A camera held back for the receiver's link shows the person's avatar with "Video paused: your connection is too weak" in place of the picture (`VoiceCamera.heldBack`), and comes back by itself.
+| Profile | Resolution | Frame rate | Max bitrate |
+| --- | --- | ---: | ---: |
+| Low | 854×480 | 24 fps | 0.7 Mb/s |
+| Standard (default) | 1280×720 | 30 fps | 1.5 Mb/s |
+| High | 1920×1080 | 30 fps | 3.0 Mb/s |
+
+- Managed by `VoiceClient` (`web/src/stellarr/lib/voice/video/camera.ts`), capturing video only with `contentHint = "motion"` and `degradationPreference = "maintain-framerate"`.
+- Camera video shares a single `MediaStream` with the microphone (`cameraStreamId`) for A/V sync; screen shares use a separate `MediaStream` (`screenStreamId`).
+- Switching camera devices uses `RTCRtpSender.replaceTrack` without SDP renegotiation; camera failures never interrupt voice audio.
+- Receivers prioritize subscriptions as: voices → watched screen share → cameras. If a receiver's downlink cannot carry a camera, `stellarr-media` sets `VoiceCamera.heldBack` and the UI falls back to the speaker's avatar with a paused-video indicator until bandwidth returns.
 
 ## Key source files
 
@@ -198,7 +233,7 @@ Users can pick a personal arrival clip (`UserPreferences.JoinSoundId`) from any 
 | Media server client | `web/src/stellarr/lib/voice/rtc/webrtcSfu.ts`, `web/src/stellarr/lib/voice/rtc/webrtcSfuDirectory.ts`, `web/src/stellarr/lib/voice/rtc/webrtcSfuHealth.ts` |
 | Soundboard & arrival sounds | `web/src/stellarr/adapters/soundboard.ts`, `web/src/stellarr/containers/useJoinSound.ts`, `SoundboardEndpoints.cs`, `JoinSound.cs`, `AppHub.cs` |
 | Opus, screen, and camera profiles | `web/src/stellarr/lib/voice/audioProfiles.ts`, `web/src/stellarr/lib/voice/video/screenShare.ts`, `web/src/stellarr/lib/voice/video/camera.ts` |
-| Microphone DSP & VAD | `web/src/stellarr/lib/voice/capture/micPipeline.ts`, `web/src/stellarr/lib/voice/capture/vad.ts`, `web/src/stellarr/lib/voice/capture/detector/` (built into the AudioWorklet `/audio/detector-worklet.js`) |
+| Microphone DSP & VAD | `web/src/stellarr/lib/voice/capture/micPipeline.ts`, `web/src/stellarr/lib/voice/capture/vad.ts`, `web/src/stellarr/lib/voice/capture/detector/` (built into `/audio/detector-worklet.js`) |
 | ICE/TURN credential refresh | `web/src/stellarr/lib/voice/rtc/iceSession.ts` |
 | Hub & media server broker | `server/Stellarr.Api/Realtime/`: `AppHub.cs`, `AppHub.Media.cs`, `MediaServerSettings.cs`, `PresenceTracker.cs`, `MediaPlane.cs`, `MediaControlClient.cs`, `MediaEventPump.cs`, `MediaEventOutbox.cs`, `MediaSessionCloser.cs` |
 | Rust SFU media server | `media/` (`stellarr-media`) |

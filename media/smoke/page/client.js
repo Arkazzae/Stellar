@@ -21,7 +21,7 @@ const OPUS_TUNING = {
   minptime: "10",
 };
 
-/** The screen audio profile of docs/rtc-and-ports.md: 160 kb/s in stereo. */
+/** The screen audio profile of docs/rtc-protocol.md: 160 kb/s in stereo. */
 const SCREEN_AUDIO_TUNING = {
   ...OPUS_TUNING,
   maxaveragebitrate: "160000",
