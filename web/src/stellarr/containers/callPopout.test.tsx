@@ -89,14 +89,36 @@ describe("popOutCall", () => {
     const open = vi.spyOn(window, "open").mockReturnValue(null);
     openedAt("?keep=this");
 
-    popOutCall("ch-salon");
+    popOutCall("ch-salon", "server-1");
 
     const [url, name, features] = open.mock.calls[0]!;
     const opened = new URL(String(url));
     expect(opened.searchParams.get("popout")).toBe("1");
     expect(opened.searchParams.get("voiceChannel")).toBe("ch-salon");
+    expect(opened.searchParams.get("serverId")).toBe("server-1");
     expect(opened.searchParams.get("keep")).toBe("this");
     expect(name).toBe("stellarr-call");
     expect(features).toMatch(/popup/);
+  });
+
+  it("carries the new server when reusing the named call window", async () => {
+    const { popOutCall } = await freshModule();
+    const open = vi.spyOn(window, "open").mockReturnValue(null);
+    popOutCall("voice-1", "server-1");
+    popOutCall("voice-2", "server-2");
+
+    expect(open.mock.calls.map(([, name]) => name)).toEqual(["stellarr-call", "stellarr-call"]);
+    const second = new URL(String(open.mock.calls[1]![0]));
+    expect(second.searchParams.get("serverId")).toBe("server-2");
+    expect(second.searchParams.get("voiceChannel")).toBe("voice-2");
+  });
+
+  it("does not launch a call before a server has been selected", async () => {
+    const { popOutCall } = await freshModule();
+    const open = vi.spyOn(window, "open").mockReturnValue(null);
+
+    popOutCall("voice-1", "");
+
+    expect(open).not.toHaveBeenCalled();
   });
 });

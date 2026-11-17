@@ -85,7 +85,7 @@ const people = {
 const api = (page, method, path, body) =>
   page.eval(`(async () => {
     const headers = { Accept: "application/json", "X-Stellarr-Client": "web", "X-Stellarr-Client-Version": "2.0.0" };
-    const server = localStorage.getItem("stellarr.active-server");
+    const server = sessionStorage.getItem("stellarr.active-server");
     if (server) headers["X-Stellarr-Server"] = server;
     const init = { method: ${JSON.stringify(method)}, headers, credentials: "same-origin" };
     ${body === undefined ? "" : `headers["Content-Type"] = "application/json"; init.body = ${JSON.stringify(JSON.stringify(body))};`}

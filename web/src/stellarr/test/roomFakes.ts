@@ -71,6 +71,7 @@ export function fakeChat(overrides: Partial<ChatValue> = {}): ChatValue {
 
 export function fakeDirectory(overrides: Partial<DirectoryValue> = {}): DirectoryValue {
   return {
+    server: { id: "84ef8596-b119-42a4-94ee-a34c8be86ae3", name: "Orbit" },
     channels: [],
     textChannels: [{ id: "ch-general", name: "general", kind: "text", topic: "Anything." }],
     members: [],

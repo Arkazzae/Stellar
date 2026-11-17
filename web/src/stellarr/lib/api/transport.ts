@@ -1,8 +1,11 @@
 import { ApiError, statusToKind } from "./errors";
 import { isRecord } from "./expect";
 
-/** Where the browser remembers which server the account is working in. */
+/** The server selected in this tab; session storage survives a reload without changing other tabs. */
 export const ACTIVE_SERVER_STORAGE_KEY = "stellarr.active-server";
+
+let activeServerId: string | undefined;
+let selectionLoaded = false;
 
 export const JSON_HEADERS: HeadersInit = {
   "Content-Type": "application/json",
@@ -23,28 +26,35 @@ const CLIENT_KIND = "web";
 const CLIENT_VERSION = "2.0.0";
 
 export function readActiveServerId(): string | undefined {
-  try {
-    return window.localStorage.getItem(ACTIVE_SERVER_STORAGE_KEY) ?? undefined;
-  } catch {
-    // No `window` while prerendering, and storage throws when it is blocked.
-    return undefined;
+  if (!selectionLoaded) {
+    selectionLoaded = true;
+    try {
+      activeServerId = window.sessionStorage.getItem(ACTIVE_SERVER_STORAGE_KEY) ?? undefined;
+    } catch {
+      // A fresh runtime has no selection when storage cannot be read.
+    }
   }
+  return activeServerId;
 }
 
-/** Remembers the server the account is working in; best effort, like the read. */
+/** The runtime owns the selection; persistence is only a convenience for reloads. */
 export function rememberActiveServerId(serverId: string): void {
+  activeServerId = serverId;
+  selectionLoaded = true;
   try {
-    window.localStorage.setItem(ACTIVE_SERVER_STORAGE_KEY, serverId);
+    window.sessionStorage.setItem(ACTIVE_SERVER_STORAGE_KEY, serverId);
   } catch {
-    // Without storage the server falls back to the account's default.
+    // Storage failure must not retarget this runtime's requests.
   }
 }
 
 export function forgetActiveServerId(): void {
+  activeServerId = undefined;
+  selectionLoaded = true;
   try {
-    window.localStorage.removeItem(ACTIVE_SERVER_STORAGE_KEY);
+    window.sessionStorage.removeItem(ACTIVE_SERVER_STORAGE_KEY);
   } catch {
-    // Nothing was remembered if nothing can be stored.
+    // A stale persisted value cannot override this runtime's cleared choice.
   }
 }
 
@@ -64,7 +74,9 @@ export async function request(
   headers.set("X-Stellarr-Client", CLIENT_KIND);
   headers.set("X-Stellarr-Client-Version", CLIENT_VERSION);
   const serverId = path.startsWith("/api/") ? readActiveServerId() : undefined;
-  if (serverId !== undefined) headers.set("X-Stellarr-Server", serverId);
+  if (serverId !== undefined && !headers.has("X-Stellarr-Server")) {
+    headers.set("X-Stellarr-Server", serverId);
+  }
 
   try {
     return await fetch(path, {

@@ -3,6 +3,7 @@ import { cleanup } from "@testing-library/react";
 import { afterEach, beforeEach, vi } from "vitest";
 
 import { loadCatalog } from "./src/stellarr/i18n";
+import { forgetActiveServerId } from "./src/stellarr/lib/api/transport";
 
 afterEach(cleanup);
 
@@ -23,7 +24,11 @@ function showPolishPage(): void {
 }
 
 showPolishPage();
-beforeEach(showPolishPage);
+beforeEach(() => {
+  showPolishPage();
+  window.sessionStorage.clear();
+  forgetActiveServerId();
+});
 
 /**
  * jsdom has no `matchMedia`. This answers `min-width` and `max-width` queries

@@ -75,8 +75,9 @@ export async function getJson<T>(
   path: string,
   parse: Parse<T>,
   signal?: AbortSignal,
+  headers: HeadersInit = ACCEPT_JSON,
 ): Promise<T> {
-  const response = await succeed(path, { method: "GET", headers: ACCEPT_JSON }, signal);
+  const response = await succeed(path, { method: "GET", headers }, signal);
   return parse(await readJson(response, path), path);
 }
 

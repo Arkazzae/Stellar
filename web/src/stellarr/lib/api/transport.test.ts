@@ -51,7 +51,7 @@ beforeEach(() => {
 afterEach(() => {
   vi.unstubAllGlobals();
   vi.restoreAllMocks();
-  window.localStorage.clear();
+  window.sessionStorage.clear();
 });
 
 describe("request", () => {
@@ -115,7 +115,7 @@ describe("request", () => {
 
   describe("addressing the active server", () => {
     it("sends the stored server with calls under /api/", async () => {
-      window.localStorage.setItem("stellarr.active-server", "srv-orbit");
+      rememberActiveServerId("srv-orbit");
 
       await request("/api/channels/c-1/messages", {});
 
@@ -124,15 +124,15 @@ describe("request", () => {
 
     it("keeps the active server under the stellarr.active-server key", () => {
       expect(ACTIVE_SERVER_STORAGE_KEY).toBe("stellarr.active-server");
-      window.localStorage.setItem("stellarr.active-server", "srv-orbit");
+      rememberActiveServerId("srv-orbit");
 
       expect(readActiveServerId()).toBe("srv-orbit");
     });
 
-    it("follows the stored server as it changes", async () => {
-      window.localStorage.setItem("stellarr.active-server", "srv-orbit");
+    it("follows explicit selections in this runtime", async () => {
+      rememberActiveServerId("srv-orbit");
       await request("/api/bootstrap", {});
-      window.localStorage.setItem("stellarr.active-server", "srv-lagoon");
+      rememberActiveServerId("srv-lagoon");
       await request("/api/bootstrap", {});
 
       const servers = fetchMock.mock.calls.map(([, init]) =>
@@ -148,7 +148,7 @@ describe("request", () => {
     });
 
     it("does not address paths outside /api/ to a server", async () => {
-      window.localStorage.setItem("stellarr.active-server", "srv-orbit");
+      rememberActiveServerId("srv-orbit");
 
       await request("/assets/avatar", {});
 
@@ -256,5 +256,48 @@ describe("problemDetail", () => {
     expect(await problemDetail(problem({ detail: "" }))).toBeNull();
     expect(await problemDetail(problem([]))).toBeNull();
     expect(await problemDetail(new Response("oops", { status: 400 }))).toBeNull();
+  });
+});
+
+describe("tab isolation", () => {
+  it("restores a persisted selection once when a new runtime starts", async () => {
+    window.sessionStorage.setItem(ACTIVE_SERVER_STORAGE_KEY, "server-a");
+    vi.resetModules();
+    const reloaded = await import("./transport");
+    expect(reloaded.readActiveServerId()).toBe("server-a");
+    window.sessionStorage.setItem(ACTIVE_SERVER_STORAGE_KEY, "server-b");
+    expect(reloaded.readActiveServerId()).toBe("server-a");
+    reloaded.forgetActiveServerId();
+  });
+
+  it("keeps selection and switching authoritative when all storage operations fail", async () => {
+    for (const method of ["getItem", "setItem", "removeItem"] as const) {
+      vi.spyOn(Storage.prototype, method).mockImplementation(() => {
+        throw new DOMException("blocked", "SecurityError");
+      });
+    }
+    rememberActiveServerId("server-a");
+    await request("/api/admin/channels", { method: "POST" });
+    rememberActiveServerId("server-b");
+    await request("/api/admin/channels", { method: "POST" });
+    forgetActiveServerId();
+    await request("/api/bootstrap", {});
+
+    expect(fetchMock.mock.calls.map(([, init]) => new Headers(init?.headers).get("X-Stellarr-Server")))
+      .toEqual(["server-a", "server-b", null]);
+  });
+
+  it("keeps this tab's target when another tab writes the old shared preference", async () => {
+    rememberActiveServerId("server-a");
+    window.localStorage.setItem(ACTIVE_SERVER_STORAGE_KEY, "server-b");
+    await request("/api/admin/channels", { method: "POST" });
+    expect(sentHeaders().get("X-Stellarr-Server")).toBe("server-a");
+    expect(window.sessionStorage.getItem(ACTIVE_SERVER_STORAGE_KEY)).toBe("server-a");
+  });
+
+  it("honors an explicit target instead of substituting the tab selection", async () => {
+    rememberActiveServerId("server-a");
+    await request("/api/admin/channels", { headers: { "X-Stellarr-Server": "server-b" } });
+    expect(sentHeaders().get("X-Stellarr-Server")).toBe("server-b");
   });
 });
