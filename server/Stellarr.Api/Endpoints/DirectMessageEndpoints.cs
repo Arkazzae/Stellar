@@ -120,7 +120,7 @@ public static class DirectMessageEndpoints
         HistoryCursor page;
         if (cursor is null)
         {
-            page = new HistoryCursor(conversationId, DateTime.UtcNow, 0);
+            page = new HistoryCursor(conversationId, DateTime.UtcNow);
         }
         else if (!HistoryCursor.TryDecode(cursor, out page) || page.ScopeId != conversationId)
         {
@@ -128,19 +128,27 @@ public static class DirectMessageEndpoints
         }
 
         var pageSize = limit ?? DefaultPageSize;
-        var rows = await db.DirectMessages.AsNoTracking()
+        var query = db.DirectMessages.AsNoTracking()
             .WithMessageDetails()
-            .Where(x => x.ConversationId == conversationId && x.CreatedAt <= page.Snapshot)
+            .Where(x => x.ConversationId == conversationId && x.CreatedAt <= page.Snapshot);
+        if (page.BeforeCreatedAt is { } before && page.BeforeId is { } beforeId)
+        {
+            query = query.Where(x => x.CreatedAt < before ||
+                (x.CreatedAt == before && x.Id.CompareTo(beforeId) < 0));
+        }
+
+        var rows = await query
             .OrderByDescending(x => x.CreatedAt)
             .ThenByDescending(x => x.Id)
-            .Skip(page.Offset)
             .Take(pageSize + 1)
             .AsSplitQuery()
             .ToListAsync(cancellationToken);
 
         return Results.Ok(new DirectMessageHistoryPageDto(
             [.. rows.Take(pageSize).Reverse().Select(x => x.ToDto())],
-            rows.Count > pageSize ? (page with { Offset = page.Offset + pageSize }).Encode() : null));
+            rows.Count > pageSize
+                ? (page with { BeforeCreatedAt = rows[pageSize - 1].CreatedAt, BeforeId = rows[pageSize - 1].Id }).Encode()
+                : null));
     }
 
     private static async Task<IResult> CreateMessageAsync(

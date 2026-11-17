@@ -4,49 +4,70 @@ using System.Buffers.Text;
 namespace Stellarr.Api.Messaging;
 
 /// <summary>
-/// Where a reader is in the history of a channel or a conversation: the
-/// moment the first page was requested, and how many messages before it have
-/// been delivered. Pinning the moment keeps messages that arrive while the
-/// reader pages back from shifting the offsets.
+/// A snapshot ceiling and the last delivered key. Deleting any delivered row,
+/// including the anchor, cannot move the next page past an unread message.
 /// </summary>
-/// <param name="ScopeId">The channel or conversation the cursor belongs to.</param>
-internal readonly record struct HistoryCursor(Guid ScopeId, DateTime Snapshot, int Offset)
+internal readonly record struct HistoryCursor(
+    Guid ScopeId, DateTime Snapshot, DateTime? BeforeCreatedAt = null, Guid? BeforeId = null)
 {
-    private const int ScopeIdSize = 16;
-    private const int Size = ScopeIdSize + sizeof(long) + sizeof(int);
+    private const byte Version = 1;
+    private const int LegacySize = 28;
+    private const int Size = 49;
 
-    /// <summary>The opaque text clients hand back to get the next page.</summary>
     public string Encode()
     {
+        if (BeforeCreatedAt is not { } before || BeforeId is not { } id)
+        {
+            throw new InvalidOperationException("A continuation cursor requires a message key.");
+        }
+
         Span<byte> bytes = stackalloc byte[Size];
-        ScopeId.TryWriteBytes(bytes);
-        BinaryPrimitives.WriteInt64BigEndian(bytes[ScopeIdSize..], Snapshot.Ticks);
-        BinaryPrimitives.WriteInt32BigEndian(bytes[(ScopeIdSize + sizeof(long))..], Offset);
+        bytes[0] = Version;
+        ScopeId.TryWriteBytes(bytes[1..17]);
+        BinaryPrimitives.WriteInt64BigEndian(bytes[17..25], Snapshot.Ticks);
+        BinaryPrimitives.WriteInt64BigEndian(bytes[25..33], before.Ticks);
+        id.TryWriteBytes(bytes[33..]);
         return Base64Url.EncodeToString(bytes);
     }
 
     public static bool TryDecode(string encoded, out HistoryCursor cursor)
     {
         cursor = default;
-        if (!Base64Url.IsValid(encoded, out var decodedLength) || decodedLength != Size)
+        if (!Base64Url.IsValid(encoded, out var length) || (length != Size && length != LegacySize))
         {
             return false;
         }
 
-        Span<byte> bytes = stackalloc byte[Size];
+        Span<byte> bytes = stackalloc byte[length];
         Base64Url.DecodeFromChars(encoded, bytes);
+        if (length == LegacySize)
+        {
+            var snapshot = BinaryPrimitives.ReadInt64BigEndian(bytes[16..24]);
+            var offset = BinaryPrimitives.ReadInt32BigEndian(bytes[24..]);
+            if (!ValidTicks(snapshot) || offset < 0)
+            {
+                return false;
+            }
 
-        var ticks = BinaryPrimitives.ReadInt64BigEndian(bytes[ScopeIdSize..]);
-        var offset = BinaryPrimitives.ReadInt32BigEndian(bytes[(ScopeIdSize + sizeof(long))..]);
-        if (ticks < 0 || ticks > DateTime.MaxValue.Ticks || offset < 0)
+            // Old cursors cannot identify their last row after a deletion.
+            // Restart their original snapshot once, allowing clients to merge
+            // already-seen IDs, instead of silently skipping unread rows.
+            cursor = new HistoryCursor(new Guid(bytes[..16]), new DateTime(snapshot, DateTimeKind.Utc));
+            return true;
+        }
+
+        var ticks = BinaryPrimitives.ReadInt64BigEndian(bytes[17..25]);
+        var beforeTicks = BinaryPrimitives.ReadInt64BigEndian(bytes[25..33]);
+        if (bytes[0] != Version || !ValidTicks(ticks) || !ValidTicks(beforeTicks) || beforeTicks > ticks)
         {
             return false;
         }
 
         cursor = new HistoryCursor(
-            new Guid(bytes[..ScopeIdSize]),
-            new DateTime(ticks, DateTimeKind.Utc),
-            offset);
+            new Guid(bytes[1..17]), new DateTime(ticks, DateTimeKind.Utc),
+            new DateTime(beforeTicks, DateTimeKind.Utc), new Guid(bytes[33..]));
         return true;
     }
+
+    private static bool ValidTicks(long ticks) => ticks >= 0 && ticks <= DateTime.MaxValue.Ticks;
 }
