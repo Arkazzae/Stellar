@@ -1,12 +1,10 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   getClientReleases,
-  getDesktopRelease,
   type ClientRelease,
-  type DesktopRelease,
 } from "./desktopRelease";
 
-const desktop: DesktopRelease = {
+const desktop: ClientRelease = {
   version: "1.4.0",
   publishedAt: "2026-05-01T10:00:00Z",
   notes: "Fixes",
@@ -52,33 +50,6 @@ describe("getClientReleases", () => {
 
     await expect(getClientReleases()).rejects.toThrow(
       "Client releases request failed with 503.",
-    );
-  });
-});
-
-describe("getDesktopRelease", () => {
-  it("returns the published desktop build", async () => {
-    const fetchMock = respondWith(desktop);
-
-    await expect(getDesktopRelease()).resolves.toEqual(desktop);
-
-    expect(fetchMock).toHaveBeenCalledWith(
-      "/api/desktop/release",
-      expect.objectContaining({ credentials: "same-origin" }),
-    );
-  });
-
-  it("returns null when no build is published", async () => {
-    respondWith({}, 404);
-
-    await expect(getDesktopRelease()).resolves.toBeNull();
-  });
-
-  it("reports the status of any other failure", async () => {
-    respondWith({}, 500);
-
-    await expect(getDesktopRelease()).rejects.toThrow(
-      "Desktop release request failed with 500.",
     );
   });
 });

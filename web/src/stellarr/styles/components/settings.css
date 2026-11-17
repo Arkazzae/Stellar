@@ -846,26 +846,8 @@
   .danger-section > .sc-b{border-color:color-mix(in oklab,var(--danger-line) 55%,var(--line-subtle))}
 
   /* ---------- WYDANIE DESKTOPOWE ---------- */
-  .desktop-release{max-width:760px}
-  .desktop-release-body{display:flex;flex-direction:column;gap:18px}
   .desktop-release-state{margin:0;color:var(--text-faint);font-size:var(--text-13);line-height:1.5}
   .desktop-release-state.bad{color:var(--danger-text)}
-  .desktop-release-copy{display:flex;align-items:center;justify-content:space-between;gap:20px;--ui-button-gap:7px}
-  .desktop-release-copy > div{display:flex;min-width:0;flex-direction:column;gap:4px}
-  .desktop-release-copy b{font-size:var(--text-15);font-weight:600;color:var(--text)}
-  .desktop-release-copy span{font-size:var(--text-13);color:var(--text-faint);font-variant-numeric:tabular-nums}
-  .desktop-release-notes{margin:0;max-width:68ch;color:var(--text-muted);font-size:var(--text-13);line-height:1.55}
-  .desktop-release-details{display:flex;flex-direction:column;margin:0;border-top:1px solid var(--line-subtle)}
-  .desktop-release-details > div{display:grid;grid-template-columns:120px minmax(0,1fr);gap:16px;padding:12px 0;border-bottom:1px solid var(--line-subtle)}
-  .desktop-release-details dt{font-size:var(--text-12);font-weight:550;color:var(--text-faint)}
-  .desktop-release-details dd{min-width:0;margin:0;font-size:var(--text-13);color:var(--text-muted)}
-  .desktop-release-details code{display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font:var(--text-12)/1.4 ui-monospace,SFMono-Regular,Menlo,monospace}
-  .desktop-release-install{margin:0}
-  @media (max-width:560px){
-    .desktop-release-copy{align-items:stretch;flex-direction:column;--ui-button-min-height:44px}
-    .desktop-release-copy > a{align-self:flex-start}
-    .desktop-release-details > div{grid-template-columns:minmax(0,1fr);gap:5px}
-  }
 
   @media (max-width:1023px){
     .sv-wrap{padding:16px}

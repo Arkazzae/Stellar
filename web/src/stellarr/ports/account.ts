@@ -149,9 +149,3 @@ export interface AccountPort {
 
 export type { ClientSettingsSection, ClientSettingsSnapshot };
 export { CLIENT_SETTINGS_SECTIONS } from "@/lib/api/types";
-
-/** The largest image the server accepts for each kind. */
-export const IMAGE_LIMITS: Record<ImageKind, { maxBytes: number }> = {
-  avatar: { maxBytes: 4 * 1024 * 1024 },
-  banner: { maxBytes: 8 * 1024 * 1024 },
-};
