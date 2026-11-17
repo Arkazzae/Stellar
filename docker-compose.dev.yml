@@ -124,6 +124,10 @@ services:
       Mail__ResendApiKey: ${STELLARR_RESEND_API_KEY:-}
       Mail__FromAddress: ${STELLARR_MAIL_FROM:-}
       Mail__FromName: ${STELLARR_MAIL_FROM_NAME:-Stellarr}
+      Push__Enabled: ${STELLARR_PUSH_ENABLED:-false}
+      Push__Subject: ${STELLARR_PUSH_SUBJECT:-}
+      Push__PublicKey: ${STELLARR_PUSH_PUBLIC_KEY:-}
+      Push__PrivateKey: ${STELLARR_PUSH_PRIVATE_KEY:-}
     ports:
       # Published so the API can be called with curl; the browser uses :3000.
       - "${STELLARR_DEV_API_PORT:-5000}:5000"

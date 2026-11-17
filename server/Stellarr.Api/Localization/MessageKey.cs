@@ -285,4 +285,11 @@ public enum MessageKey
     EmailChangeIgnore,
     DeliveryTestSubject,
     DeliveryTestBody,
+    NotificationMentionSubject,
+    NotificationMentionBody,
+    NotificationMentionPushTitle,
+    NotificationDirectMessageSubject,
+    NotificationDirectMessageBody,
+    NotificationDirectMessagePushTitle,
+    NotificationOpenButton,
 }

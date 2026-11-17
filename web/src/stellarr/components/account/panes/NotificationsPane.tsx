@@ -1,9 +1,10 @@
 import type { ReactNode } from "react";
-import { useState } from "react";
+import { useId, useState } from "react";
 
 import { Button } from "@stellarr/ui";
 import { Icon, type IconName } from "@stellarr/icons";
 import { Avatar } from "@/components/primitives/Avatar";
+import { Switch } from "@/components/primitives/Switch";
 import type { MessageKey } from "@/i18n";
 import type { UserPreferences } from "@/ports";
 import { useLanguage } from "@/state/hooks";
@@ -54,8 +55,46 @@ export interface MutedChannelsProps {
   onUnmute: (channelId: string) => void;
 }
 
+/** How this browser stands with Web Push, as the pane says it. */
+export interface NotificationDeliveryDeviceProps {
+  supported: boolean;
+  permission: NotificationPermission | "unsupported";
+  /** `stale` means an older account or session left its subscription behind. */
+  status: "idle" | "enrolled" | "stale";
+  pending: boolean;
+  error: MessageKey | null;
+}
+
+/**
+ * Account-wide e-mail and push choices, plus the separate enrollment of this
+ * device. The switches are stored on the account; enrolling the device is a
+ * browser action with its own consent and never changes a global switch.
+ */
+export interface NotificationDeliveryProps {
+  loading: boolean;
+  loadFailed: boolean;
+  emailAvailable: boolean;
+  emailVerified: boolean;
+  pushAvailable: boolean;
+  /** A key was supplied; without one Web Push cannot be offered. */
+  pushKeyAvailable: boolean;
+  emailEnabled: boolean;
+  pushEnabled: boolean;
+  savingEmail: boolean;
+  savingPush: boolean;
+  emailError: MessageKey | null;
+  pushError: MessageKey | null;
+  device: NotificationDeliveryDeviceProps;
+  onEmailChange(enabled: boolean): void;
+  onPushChange(enabled: boolean): void;
+  onEnableDevice(): void;
+  onDisableDevice(): void;
+  onReload(): void;
+}
+
 export interface UserNotificationsPaneProps extends PreferencePaneProps {
   systemNotifications?: SystemNotificationPreferenceProps;
+  delivery?: NotificationDeliveryProps;
   muted?: MutedChannelsProps;
   /** Plays the message sound once, so the choice is made by ear. */
   onPlaySound?: () => void;
@@ -435,20 +474,210 @@ function MutedCard({ serverName, channels, elsewhere, onUnmute }: MutedChannelsP
   );
 }
 
+function SwitchRow({
+  label,
+  detail,
+  checked,
+  disabled,
+  error,
+  onChange,
+}: {
+  label: string;
+  detail: string;
+  checked: boolean;
+  disabled: boolean;
+  error: MessageKey | null;
+  onChange: (checked: boolean) => void;
+}) {
+  const { t } = useLanguage();
+  return (
+    <div className="frm-row">
+      <span className="frm-lab">
+        {label}
+        <span>{detail}</span>
+        {error === null ? null : (
+          <span className="frm-detail-error" role="alert">
+            {t(error)}
+          </span>
+        )}
+      </span>
+      <div className="frm-ctl frm-switch">
+        <Switch
+          checked={checked}
+          onChange={onChange}
+          label={label}
+          disabled={disabled}
+        />
+      </div>
+    </div>
+  );
+}
+
+/**
+ * Delivery over e-mail and Web Push. The two switches belong to the account;
+ * the device row below them only enrolls the browser in front of the person.
+ * Keeping them apart is what lets a phone and a laptop choose different
+ * devices while one global choice says whether push is wanted at all.
+ */
+function DeliveryCard({ delivery }: { delivery: NotificationDeliveryProps }) {
+  const { t } = useLanguage();
+  const titleId = useId();
+  const { loading, loadFailed, device } = delivery;
+
+  const emailUsable = delivery.emailAvailable && delivery.emailVerified;
+  const pushUsable = delivery.pushAvailable && delivery.pushKeyAvailable;
+  const checking = loading || loadFailed;
+
+  const emailDetail = loadFailed
+    ? t("preference.deliveryLoadFailed")
+    : delivery.emailAvailable
+      ? delivery.emailVerified
+        ? t("preference.emailDetail")
+        : t("preference.emailUnverified")
+      : t("preference.emailUnavailable");
+
+  const pushDetail = loadFailed
+    ? t("preference.deliveryLoadFailed")
+    : !delivery.pushAvailable
+      ? t("preference.pushUnavailable")
+      : !delivery.pushKeyAvailable
+        ? t("preference.pushDeviceUnavailable")
+        : t("preference.pushDetail");
+
+  let deviceDetail: string;
+  let control: ReactNode;
+  if (!device.supported) {
+    deviceDetail = t("preference.pushDeviceUnsupported");
+    control = (
+      <span className="nt-state">
+        <Icon name="monitor" size={15} />
+        {t("preference.pushDeviceUnsupported")}
+      </span>
+    );
+  } else if (!pushUsable) {
+    deviceDetail = t("preference.pushDeviceUnavailable");
+    control = (
+      <span className="nt-state">
+        <Icon name="lock" size={15} />
+        {t("preference.pushDeviceUnavailable")}
+      </span>
+    );
+  } else if (device.permission === "denied") {
+    deviceDetail = t("preference.pushDeviceBlocked");
+    control = (
+      <span className="nt-state">
+        <Icon name="lock" size={15} />
+        {t("preference.pushDeviceBlocked")}
+      </span>
+    );
+  } else if (device.status === "enrolled") {
+    deviceDetail = t("preference.pushDeviceEnrolled");
+    control = (
+      <Button
+        type="button"
+        variant="secondary"
+        size="sm"
+        disabled={device.pending}
+        onClick={delivery.onDisableDevice}
+      >
+        {t("preference.pushDeviceDisable")}
+      </Button>
+    );
+  } else {
+    deviceDetail = device.pending
+      ? t("preference.pushDevicePending")
+      : device.status === "stale"
+        ? t("preference.pushDeviceStale")
+        : t("preference.pushDeviceIdle");
+    control = (
+      <Button
+        type="button"
+        size="sm"
+        disabled={device.pending || checking}
+        onClick={delivery.onEnableDevice}
+      >
+        {device.pending
+          ? t("preference.pushDevicePending")
+          : device.status === "stale"
+            ? t("preference.pushDeviceReplace")
+            : t("preference.pushDeviceEnable")}
+      </Button>
+    );
+  }
+
+  return (
+    <section className="sc" aria-labelledby={titleId}>
+      <header className="sc-h" id={titleId}>
+        {t("preference.delivery")}
+      </header>
+      <div className="sc-b">
+        <p className="nt-note">{t("preference.deliveryIntro")}</p>
+        {loading ? <p className="nt-note">{t("preference.deliveryLoading")}</p> : null}
+        {loadFailed ? (
+          <div className="frm-row nt-solo">
+            <span className="frm-lab">
+              <span className="frm-detail-error" role="alert">
+                {t("preference.deliveryLoadFailed")}
+              </span>
+            </span>
+            <div className="frm-ctl">
+              <Button type="button" variant="secondary" size="sm" onClick={delivery.onReload}>
+                {t("preference.deliveryReload")}
+              </Button>
+            </div>
+          </div>
+        ) : null}
+        <div className="frm">
+          <SwitchRow
+            label={t("preference.emailNotifications")}
+            detail={emailDetail}
+            checked={delivery.emailEnabled}
+            disabled={checking || delivery.savingEmail || !emailUsable}
+            error={delivery.emailError}
+            onChange={delivery.onEmailChange}
+          />
+          <SwitchRow
+            label={t("preference.pushNotifications")}
+            detail={pushDetail}
+            checked={delivery.pushEnabled}
+            disabled={checking || delivery.savingPush || !pushUsable}
+            error={delivery.pushError}
+            onChange={delivery.onPushChange}
+          />
+          <div className="frm-row">
+            <span className="frm-lab">
+              {t("preference.pushDevice")}
+              <span>{deviceDetail}</span>
+              {device.error === null ? null : (
+                <span className="frm-detail-error" role="alert">
+                  {t(device.error)}
+                </span>
+              )}
+            </span>
+            <div className="frm-ctl">{control}</div>
+          </div>
+        </div>
+      </div>
+    </section>
+  );
+}
+
 /**
  * Which events interrupt you, and how.
  *
  * The table of what reaches you is where it is set: a cell that is a setting
  * of its own is a switch in place, so a choice and its consequence are the
  * same thing on screen. Below it is only what a table cannot say: whether the
- * device allows pop-ups at all, and the muted channels, which were set in the
- * channel list and never seen again. Everything but the device's permission is
- * stored on the account and follows the person to every device.
+ * instance can deliver e-mail or push, whether this device is enrolled, whether
+ * the device allows pop-ups at all, and the muted channels, which were set in
+ * the channel list and never seen again. The account choices follow the person
+ * to every device; enrolling a device in push is done on that device.
  */
 export function UserNotificationsPane({
   preferences,
   onChange,
   systemNotifications,
+  delivery,
   muted,
   onPlaySound,
   ringtone = true,
@@ -461,6 +690,8 @@ export function UserNotificationsPane({
         cells={cellsOf(preferences, onChange, systemNotifications, ringtone)}
         onPlaySound={onPlaySound}
       />
+
+      {delivery === undefined ? null : <DeliveryCard delivery={delivery} />}
 
       {systemNotifications === undefined ? null : (
         <section className="sc">

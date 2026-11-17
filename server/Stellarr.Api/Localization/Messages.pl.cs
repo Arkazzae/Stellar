@@ -284,6 +284,15 @@ public sealed partial class Messages
         MessageKey.EmailChangeIgnore => "Jeśli to nie Ty, zignoruj tę wiadomość. Adres konta pozostanie bez zmian.",
         MessageKey.DeliveryTestSubject => "Test poczty z {instance}",
         MessageKey.DeliveryTestBody => "Resend poprawnie przyjął wiadomość testową z {instance}.",
+        // Powiadomienia aktywności celowo nie podają nadawcy, serwera, kanału
+        // ani treści: poczta opuszcza instancję i może przeżyć każde z nich.
+        MessageKey.NotificationMentionSubject => "Nowa wzmianka w Stellarr",
+        MessageKey.NotificationMentionBody => "Ktoś wspomniał o Tobie na kanale. Otwórz Stellarr, aby to przeczytać.",
+        MessageKey.NotificationMentionPushTitle => "Nowa wzmianka",
+        MessageKey.NotificationDirectMessageSubject => "Nowa wiadomość prywatna w Stellarr",
+        MessageKey.NotificationDirectMessageBody => "Masz nową wiadomość prywatną. Otwórz Stellarr, aby ją przeczytać.",
+        MessageKey.NotificationDirectMessagePushTitle => "Nowa wiadomość prywatna",
+        MessageKey.NotificationOpenButton => "Otwórz Stellarr",
     };
 #pragma warning restore CS8524
 }

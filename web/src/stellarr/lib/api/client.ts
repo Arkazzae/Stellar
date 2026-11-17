@@ -1,4 +1,8 @@
 import type { UploadMediaMetadata } from "@/lib/media/probe";
+import type {
+  NotificationDeliveryCapabilities,
+  PushSubscriptionInput,
+} from "@/ports/notificationDelivery";
 import type { InboxNotification, NotificationPage } from "@/ports/notifications";
 
 import { accountCalls } from "./calls/account";
@@ -6,6 +10,7 @@ import { channelCalls } from "./calls/channels";
 import { libraryCalls } from "./calls/library";
 import { memberCalls } from "./calls/members";
 import { messageCalls } from "./calls/messages";
+import { notificationDeliveryCalls } from "./calls/notificationDelivery";
 import { notificationCalls } from "./calls/notifications";
 import { serverCalls } from "./calls/server";
 import { securityCalls } from "./calls/security";
@@ -243,6 +248,12 @@ export interface ApiClient {
   /** Resolves to how many rows changed. */
   markAllNotificationsRead(signal?: AbortSignal): Promise<number>;
   deleteNotification(notificationId: string, signal?: AbortSignal): Promise<void>;
+  /** Account-global delivery capabilities, independent of the active server. */
+  getNotificationDelivery(signal?: AbortSignal): Promise<NotificationDeliveryCapabilities>;
+  /** Binds this browser's push subscription; resolves to the server row id. */
+  savePushSubscription(input: PushSubscriptionInput, signal?: AbortSignal): Promise<string>;
+  /** Forgets this browser's endpoint on the server, leaving it subscribed locally. */
+  deletePushSubscription(endpoint: string, signal?: AbortSignal): Promise<void>;
   /**
    * The channel's pinned messages, newest pin first.
    *
@@ -508,6 +519,7 @@ export function createHttpApiClient(): ApiClient & SocialApiClient & AdminApiCli
     ...libraryCalls(),
     ...messageCalls(),
     ...notificationCalls(),
+    ...notificationDeliveryCalls(),
     ...accountCalls(),
     ...socialCalls(),
   };

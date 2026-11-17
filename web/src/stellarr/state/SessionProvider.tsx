@@ -317,8 +317,19 @@ export function SessionProvider({ children }: { children: ReactNode }) {
     };
   }, [connection, ports, runtime, signedIn, t]);
 
+  // A revoked or expired session cannot be used to remove its push row, but
+  // the browser must still stop holding a subscription for it. The server's
+  // session binding is what decides delivery; this only frees the device.
+  useEffect(() => {
+    if (boot.phase !== "anonymous" && boot.phase !== "revoked") return;
+    void ports.notificationDelivery.releaseDevice().catch(() => undefined);
+  }, [boot.phase, ports]);
+
   const logout = useCallback(async () => {
     try {
+      // Before the session goes: the server can still recognise the endpoint
+      // and forget its row. The local unsubscribe happens inside regardless.
+      await ports.notificationDelivery.releaseDevice().catch(() => undefined);
       await ports.session.logout();
     } finally {
       ended.current = true;

@@ -175,6 +175,14 @@ fi
 export TURN_SHARED_SECRET="$turn_secret"
 export Rtc__TurnSharedSecret="$turn_secret"
 
+# Web Push settings may arrive under either name: Compose maps the STELLARR_*
+# variables explicitly, and an operator running the image directly can use the
+# same names here. An explicit Push__* value always wins.
+export Push__Enabled="${Push__Enabled:-${STELLARR_PUSH_ENABLED:-false}}"
+export Push__Subject="${Push__Subject:-${STELLARR_PUSH_SUBJECT:-}}"
+export Push__PublicKey="${Push__PublicKey:-${STELLARR_PUSH_PUBLIC_KEY:-}}"
+export Push__PrivateKey="${Push__PrivateKey:-${STELLARR_PUSH_PRIVATE_KEY:-}}"
+
 # Stellarr Media carries every call. Its candidates are the public address,
 # when one is known, and the container's own address, which is where coturn
 # relays a browser that needs TURN. STELLARR_MEDIA_ADVERTISE, when set,

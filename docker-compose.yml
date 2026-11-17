@@ -70,6 +70,12 @@ services:
       Mail__ResendApiKey: ${STELLARR_RESEND_API_KEY:-}
       Mail__FromAddress: ${STELLARR_MAIL_FROM:-}
       Mail__FromName: ${STELLARR_MAIL_FROM_NAME:-Stellarr}
+      # Web Push is optional; without a valid pair the API reports push as
+      # unavailable instead of failing to start. See docs/admin/web-push.md.
+      Push__Enabled: ${STELLARR_PUSH_ENABLED:-false}
+      Push__Subject: ${STELLARR_PUSH_SUBJECT:-}
+      Push__PublicKey: ${STELLARR_PUSH_PUBLIC_KEY:-}
+      Push__PrivateKey: ${STELLARR_PUSH_PRIVATE_KEY:-}
       Oidc__Enabled: ${STELLARR_OIDC_ENABLED:-false}
       Oidc__Authority: ${STELLARR_OIDC_ISSUER:-}
       Oidc__ClientId: ${STELLARR_OIDC_CLIENT_ID:-}
