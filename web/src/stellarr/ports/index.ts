@@ -12,6 +12,7 @@ export type * from "./desktop";
 export type * from "./directory";
 export { SERVER_PERMISSION_VALUES } from "./directory";
 export type * from "./friends";
+export type * from "./notificationDelivery";
 export type * from "./notifications";
 export type * from "./presence";
 export type * from "./security";
@@ -26,6 +27,7 @@ import type { ChatPort, MessageActionsPort, TypingPort } from "./chat";
 import type { DesktopPort } from "./desktop";
 import type { DirectoryPort, ServerAdminPort } from "./directory";
 import type { FriendsPort } from "./friends";
+import type { NotificationDeliveryPort } from "./notificationDelivery";
 import type { NotificationPort } from "./notifications";
 import type { ConnectionPort, PresencePort } from "./presence";
 import type { AccountSecurityPort } from "./security";
@@ -49,6 +51,7 @@ export interface Ports {
   admin: ServerAdminPort;
   friends: FriendsPort;
   notifications: NotificationPort;
+  notificationDelivery: NotificationDeliveryPort;
   soundboard: SoundboardPort;
   voiceSettings: VoiceSettingsPort;
   /**

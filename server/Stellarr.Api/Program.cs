@@ -17,6 +17,7 @@ using Stellarr.Api.Localization;
 using Stellarr.Api.Logging;
 using Stellarr.Api.Mail;
 using Stellarr.Api.Maintenance;
+using Stellarr.Api.Notifications;
 using Stellarr.Api.Operations;
 using Stellarr.Api.Realtime;
 using Stellarr.Api.Secrets;
@@ -136,6 +137,13 @@ builder.Services.AddHostedService<MaintenanceWorker>();
 
 builder.Services.Configure<MailOptions>(builder.Configuration.GetSection(MailOptions.SectionName));
 builder.Services.AddScoped<InstanceSecrets>();
+// Activity mail and push share one durable outbox. The dispatcher is separate
+// from the send endpoints, so no provider is ever called inside a message
+// transaction. Web Push is optional configuration; the extension registers a
+// delivery that reports itself unavailable when it has no keys.
+builder.Services.AddWebPushNotifications(builder.Configuration);
+builder.Services.AddScoped<NotificationDeliveryDispatcher>();
+builder.Services.AddHostedService<NotificationDeliveryWorker>();
 builder.Services.AddSingleton<BackupJobs>();
 builder.Services.AddOptions<AutomaticBackupOptions>()
     .Bind(builder.Configuration.GetSection(AutomaticBackupOptions.SectionName))
@@ -297,6 +305,7 @@ app.MapServerAdministrationEndpoints();
 app.MapModerationEndpoints();
 app.MapVoiceModerationEndpoints();
 app.MapNotificationEndpoints();
+app.MapPushNotificationEndpoints();
 app.MapSocialEndpoints();
 app.MapDirectMessageEndpoints();
 app.MapEmojiEndpoints();

@@ -1,8 +1,11 @@
+import type { NotificationDeliveryCapabilities } from "@/ports/notificationDelivery";
+
 import { parseMessage } from "./chatParsers";
 import { ApiError } from "./errors";
 import {
   definedField,
   expectArray,
+  expectBoolean,
   expectRecord,
   expectString,
   optionalNumber,
@@ -131,6 +134,35 @@ export function parseAccount(value: unknown, path = "/api/me"): AccountDetails {
     ...definedField("avatarUrl", optionalString(record, "avatarUrl")),
     ...definedField("bannerUrl", optionalString(record, "bannerUrl")),
   };
+}
+
+/**
+ * What the account may receive away from the app. An empty key is read as no
+ * key: a configured instance always sends a non-empty VAPID public key.
+ */
+export function parseNotificationDelivery(
+  value: unknown,
+  path = "/api/me/notification-delivery",
+): NotificationDeliveryCapabilities {
+  const record = expectRecord(value, path);
+  const rawKey = record["applicationServerKey"];
+  if (rawKey !== null && rawKey !== undefined && typeof rawKey !== "string") {
+    throw new ApiError("malformed", `${path}: "applicationServerKey" must be a string or null`);
+  }
+  return {
+    emailAvailable: expectBoolean(record, "emailAvailable", path),
+    emailVerified: expectBoolean(record, "emailVerified", path),
+    pushAvailable: expectBoolean(record, "pushAvailable", path),
+    applicationServerKey: typeof rawKey === "string" && rawKey.trim() !== "" ? rawKey : null,
+  };
+}
+
+/** The id of the row that now binds an endpoint to the current user and session. */
+export function parsePushSubscriptionSaved(
+  value: unknown,
+  path = "/api/me/push-subscriptions",
+): string {
+  return expectString(expectRecord(value, path), "id", path);
 }
 
 const EMAIL_CHANGE_ANSWERS: readonly EmailChangeAnswer[] = [
