@@ -470,6 +470,70 @@ public sealed partial class AccountSecurityFlowTests
     }
 
     [Fact]
+    public async Task ASecondStepAtSignInSaysWhoseAccountItIsFor()
+    {
+        using var factory = new StellarrWebApplicationFactory();
+        var account = await CreateAccountAsync(factory);
+        await AddConfirmedTotpAsync(factory, account);
+        using var client = Client(factory);
+
+        var login = await LoginAsync(client, account.Username);
+        var pending = await client.GetFromJsonAsync<JsonElement>("/api/auth/mfa/pending");
+
+        Assert.Equal("mfa_required", login.GetProperty("status").GetString());
+        foreach (var challenge in new[] { login, pending })
+        {
+            var named = challenge.GetProperty("account");
+            Assert.Equal(account.DisplayName, named.GetProperty("displayName").GetString());
+            Assert.Equal(account.Username, named.GetProperty("username").GetString());
+            Assert.Equal(account.AvatarColor, named.GetProperty("avatarColor").GetString());
+            Assert.Equal(JsonValueKind.Null, named.GetProperty("avatarUrl").ValueKind);
+        }
+    }
+
+    [Fact]
+    public async Task ARegistrationThatMustEnrollFirstSaysWhoseAccountItIs()
+    {
+        using var factory = new StellarrWebApplicationFactory();
+        await SetRequirementAsync(factory, MfaRequirements.Everyone);
+        string inviteCode;
+        await using (var scope = factory.OpenScope(out var db))
+        {
+            inviteCode = "enrolfirst" + Guid.NewGuid().ToString("N")[..6];
+            db.ServerInvites.Add(new ServerInvite
+            {
+                Id = Guid.NewGuid(),
+                ServerId = TestData.ServerId,
+                CreatedById = await db.Users.Where(x => x.Username == "maja").Select(x => x.Id).SingleAsync(),
+                Code = inviteCode,
+                CreatedAt = DateTime.UtcNow,
+            });
+            await db.SaveChangesAsync();
+        }
+
+        using var client = Client(factory);
+
+        using var response = await client.PostAsJsonAsync("/api/auth/register", new
+        {
+            username = "newcomer", displayName = "New Comer", email = "newcomer@example.test", password = Password, inviteCode,
+        });
+        var challenge = await response.Content.ReadFromJsonAsync<JsonElement>();
+        var pending = await client.GetFromJsonAsync<JsonElement>("/api/auth/mfa/pending");
+
+        Assert.Equal(HttpStatusCode.Created, response.StatusCode);
+        Assert.Equal("mfa_enrollment_required", challenge.GetProperty("status").GetString());
+        await using var verification = factory.OpenScope(out var context);
+        var color = await context.Users.Where(x => x.Username == "newcomer").Select(x => x.AvatarColor).SingleAsync();
+        foreach (var described in new[] { challenge, pending })
+        {
+            var named = described.GetProperty("account");
+            Assert.Equal("New Comer", named.GetProperty("displayName").GetString());
+            Assert.Equal("newcomer", named.GetProperty("username").GetString());
+            Assert.Equal(color, named.GetProperty("avatarColor").GetString());
+        }
+    }
+
+    [Fact]
     public async Task FactorChangesRequireRecentActualMfaNotPasswordOrTrustedSession()
     {
         using var factory = new StellarrWebApplicationFactory();

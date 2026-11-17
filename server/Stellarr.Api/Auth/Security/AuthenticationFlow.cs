@@ -138,6 +138,7 @@ public static class AuthenticationFlow
             methods.Select(x => x.ToDto()).ToArray(),
             trusted,
             methods.Any(x => x.Type == MfaMethodTypes.Email),
+            new MfaChallengeAccountDto(user.DisplayName, user.Username, user.AvatarColor, user.AvatarUrl),
             (int)policy.TrustedDeviceLifetime.TotalDays,
             context.RequestServices.GetRequiredService<PasskeyRelyingParty>().Available);
     }
