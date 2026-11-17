@@ -1,6 +1,7 @@
 import { HubConnectionState, type HubConnection } from "@microsoft/signalr";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { ACTIVE_SERVER_STORAGE_KEY } from "@/lib/api/client";
+import { rememberActiveServerId } from "@/lib/api/transport";
 import { HUB_DECODERS } from "./hubPayloads";
 import { SignalRRealtimeClient } from "./signalr";
 
@@ -72,7 +73,7 @@ beforeEach(() => {
 
 afterEach(() => {
   vi.useRealTimers();
-  window.localStorage.removeItem(ACTIVE_SERVER_STORAGE_KEY);
+  window.sessionStorage.removeItem(ACTIVE_SERVER_STORAGE_KEY);
 });
 
 describe("SignalRRealtimeClient status", () => {
@@ -133,7 +134,7 @@ describe("SignalRRealtimeClient status", () => {
 
 describe("SignalRRealtimeClient hub address", () => {
   it("appends the active server to the configured hub", async () => {
-    window.localStorage.setItem(ACTIVE_SERVER_STORAGE_KEY, "server 1");
+    rememberActiveServerId("server 1");
     const { client, factory } = clientWith(fakeHub());
     client.configureRtc({ signalingHub: "/hubs/rtc-v2" });
 
@@ -143,7 +144,7 @@ describe("SignalRRealtimeClient hub address", () => {
   });
 
   it("extends an existing query string with &", async () => {
-    window.localStorage.setItem(ACTIVE_SERVER_STORAGE_KEY, "s1");
+    rememberActiveServerId("s1");
     const { client, factory } = clientWith(fakeHub());
     client.configureRtc({ signalingHub: "/hubs/rtc?v=2" });
 

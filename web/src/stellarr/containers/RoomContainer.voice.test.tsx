@@ -246,6 +246,7 @@ describe("RoomContainer call controls", () => {
     const [url, name] = open.mock.calls[0]!;
     expect(String(url)).toContain("popout=1");
     expect(String(url)).toContain("voiceChannel=ch-salon");
+    expect(new URL(String(url)).searchParams.get("serverId")).toBe(mocks.directory.server.id);
     expect(name).toBe("stellarr-call");
     open.mockRestore();
   });

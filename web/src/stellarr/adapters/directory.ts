@@ -1,4 +1,4 @@
-import { ACTIVE_SERVER_STORAGE_KEY } from "@/lib/api/client";
+import { rememberActiveServerId } from "@/lib/api/transport";
 import type { Server } from "@/lib/api/types";
 import type { DirectoryPort } from "@/ports";
 
@@ -70,8 +70,7 @@ export function createDirectoryAdapter(
     },
 
     selectServer(serverId) {
-      if (typeof window === "undefined") return;
-      window.localStorage.setItem(ACTIVE_SERVER_STORAGE_KEY, serverId);
+      rememberActiveServerId(serverId);
     },
   };
 }
