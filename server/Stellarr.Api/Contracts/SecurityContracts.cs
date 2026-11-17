@@ -12,6 +12,7 @@ public sealed record MfaMethodDto(
     string? EmailAddress,
     bool Pending);
 
+/// <param name="Account">Whose account the challenge is for, so the second step can say so.</param>
 public sealed record MfaChallengeDto(
     string Status,
     string ChallengeId,
@@ -20,8 +21,19 @@ public sealed record MfaChallengeDto(
     IReadOnlyList<MfaMethodDto> Methods,
     bool TrustedDeviceAvailable,
     bool EmailCodeAvailable,
+    MfaChallengeAccountDto Account,
     int TrustedDeviceDays = 14,
     bool PasskeyAvailable = false);
+
+/// <summary>
+/// The account a pending challenge belongs to, as the person who passed the
+/// first step already knows it.
+/// </summary>
+public sealed record MfaChallengeAccountDto(
+    string DisplayName,
+    string Username,
+    string AvatarColor,
+    string? AvatarUrl);
 
 public sealed record MfaVerifyRequest(
     string ChallengeId,
