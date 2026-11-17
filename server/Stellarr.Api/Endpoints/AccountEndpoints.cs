@@ -325,10 +325,8 @@ public static class AccountEndpoints
         Guid userId,
         CancellationToken cancellationToken)
     {
-        var serverGroups = (await MemberServerIdsAsync(db, userId, cancellationToken))
-            .Select(AppHub.ServerGroup)
-            .ToArray();
-        await hub.Clients.Groups(serverGroups).SendAsync(
+        var audience = await PresenceAudience.GroupsAsync(db, userId, cancellationToken);
+        await hub.Clients.Groups(audience).SendAsync(
             "PresenceChanged",
             new { userId = userId.ToString(), presence = presence.PublicPresenceOf(userId) },
             cancellationToken);

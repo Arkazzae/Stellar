@@ -11,7 +11,7 @@ using Stellarr.Api.Realtime;
 
 namespace Stellarr.Api.Tests;
 
-public sealed class HubPresenceTests(StellarrWebApplicationFactory factory)
+public sealed partial class HubPresenceTests(StellarrWebApplicationFactory factory)
     : IClassFixture<StellarrWebApplicationFactory>
 {
     private static readonly TimeSpan Patience = TimeSpan.FromSeconds(10);
