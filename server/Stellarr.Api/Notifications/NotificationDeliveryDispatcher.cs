@@ -83,37 +83,34 @@ public sealed class NotificationDeliveryDispatcher(
         foreach (var item in claimed)
         {
             cancellationToken.ThrowIfCancellationRequested();
-            var target = await PrepareAsync(item, utcNow, cancellationToken);
-            if (target is null)
-            {
-                Complete(item, NotificationDeliveryStatuses.Cancelled, utcNow);
-                await db.SaveChangesAsync(cancellationToken);
-                continue;
-            }
-
-            if (item.Channel == NotificationDeliveryChannels.Email && mailing is null)
-            {
-                // A row claimed in the same batch before the setup vanished.
-                Retry(item, utcNow);
-                await db.SaveChangesAsync(cancellationToken);
-                continue;
-            }
-
             try
             {
-                var outcome = await DeliverAsync(item, target, mailing, cancellationToken);
-                if (outcome == DeliveryOutcome.Sent)
-                {
-                    Complete(item, NotificationDeliveryStatuses.Sent, utcNow);
-                    delivered++;
-                }
-                else if (outcome == DeliveryOutcome.Gone)
+                var target = await PrepareAsync(item, utcNow, cancellationToken);
+                if (target is null)
                 {
                     Complete(item, NotificationDeliveryStatuses.Cancelled, utcNow);
                 }
+                else if (item.Channel == NotificationDeliveryChannels.Email && mailing is null)
+                {
+                    // A row claimed in the same batch before the setup vanished.
+                    Retry(item, utcNow);
+                }
                 else
                 {
-                    Retry(item, utcNow);
+                    var outcome = await DeliverAsync(item, target, mailing, cancellationToken);
+                    if (outcome == DeliveryOutcome.Sent)
+                    {
+                        Complete(item, NotificationDeliveryStatuses.Sent, utcNow);
+                        delivered++;
+                    }
+                    else if (outcome == DeliveryOutcome.Gone)
+                    {
+                        Complete(item, NotificationDeliveryStatuses.Cancelled, utcNow);
+                    }
+                    else
+                    {
+                        Retry(item, utcNow);
+                    }
                 }
             }
             catch (Exception exception) when (exception is not OperationCanceledException)
