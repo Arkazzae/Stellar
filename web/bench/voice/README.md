@@ -32,8 +32,14 @@ step in the web job:
 
 ```sh
 STELLARR_CHROMIUM="$chrome" npm run bench:voice-playback -w stellarr-web -- \
-  --check --out "$RUNNER_TEMP/voice-playback.json"
+  --check --out "$RUNNER_TEMP/voice-playback.json" --summary "$RUNNER_TEMP/voice-playback.md"
 ```
+
+Pass or fail, it prints the Chrome the record was made with and the one it
+ran in, and for each kind of measurement the largest difference it found, the
+tolerance, and where; `--summary` writes the same as Markdown, which CI adds
+to the job's summary. `--measured <file>` keeps the run's own measurements in
+the record's format, to compare with the record line by line.
 
 ## Re-recording
 
@@ -164,15 +170,39 @@ sample through each profile (`level`: RMS, peak and the 50th, 90th and 99th
 percentile of 50 ms blocks); the sample through the capture node in Chrome.
 
 Chrome's compressor is its own implementation, so the playback record is held
-to tolerances, written in its header. Each is four times the largest spread
-seen across the separate Chrome runs the record was made from, and never less
-than a floor: 0.05 dB for the responses, 0.1 dB for the curve and levels,
-0.25 dB for the envelopes, 2 ms for settling times, 0 samples for latency. On
-the machine that made the record, five runs agreed to the last digit, so the
-floors are what is in force. The smallest deliberate change the check was
-tried against, moving the presence bell from 3100 to 3200 Hz, moves the
-natural profile's response by 0.06 dB and the studio profile's by 0.19 dB.
-The spread between machines, or between Chrome builds, was not measured.
+to tolerances. The record writes down four times the largest spread seen
+across the separate Chrome runs it was made from; the check applies that, but
+never less than a floor in `playback/compare.ts`. On one machine runs agree to
+the last digit, so the floors are what is in force, and they are set by what
+differs between platforms. Against the record, made on macOS arm64 with
+Chrome 155, Linux gave measurements identical to the digit with the record's
+own Chrome 155 on x64, with Chrome 157 on x64 (the CI runner's) and with
+Debian's Chromium 156 on arm64. What differed is the platform, not the
+processor or the Chrome version:
+
+| Kind | Largest difference on Linux | Floor |
+| --- | ---: | ---: |
+| latency | 0 samples | 0 samples |
+| frequency response | 0.01 dB | 0.05 dB |
+| output against input level | 0.01 dB | 0.1 dB |
+| envelope, per 1 ms block | 0.26 dB (the release of the `off` strips) | 0.6 dB |
+| envelope area after the step | 4.2 dB·ms | 10 dB·ms |
+| settling time | 2 ms | 5 ms |
+| overshoot, levels of the sample | 0 dB | 0.1 dB |
+| gains of the gated strip and the capture node | 0 dB | 0.25 dB |
+
+An envelope is compared block by block in level, without a tolerance in
+time: offline rendering is sample-accurate, every step landed on the same
+block on every platform, and the differences were levels on the flat part of
+a release, so a block matching its neighbour would have hidden little of
+them and would loosen the check exactly at the steps, where attack and
+release changes show. Because a release a few per cent slower moves no single
+block far, the check also compares each envelope's area: the sum, from the
+step on, of how far the output sits from the level it ends at. Lengthening the
+studio compressor's release by 10 ms moved no block by more than 0.2 dB but
+moved that area by 40 dB·ms. The smallest change the check was tried against,
+moving the presence bell from 3100 to 3200 Hz, moves the natural profile's
+response by 0.06 dB and the studio profile's by 0.19 dB.
 
 ## What the checks were tried against
 
@@ -204,13 +234,21 @@ Chrome's AudioWorklet no longer matched the capture record.
 | Leveller peak ceiling 0.95 → 0.98 | 8 fixtures | cross-check |
 | Order: leveller before the gate | 13 fixtures | app sample, cross-check |
 | Meter posts every 10 → 12 frames | 15 fixtures | app sample, cross-check |
-| Studio high-pass 76 → 80 Hz | passes | studio strips, up to 1 dB |
-| Compressor ratio 1+5a → 1+5.5a | passes | every compressing strip, recordings |
-| Compressor attack 12-9a → 15-9a ms | passes | compressing strips, recordings |
-| Presence bell 3100 → 3200 Hz | passes | every profile with presence |
-| Limiter threshold -1 → -1.5 dB | passes | every strip |
-| Order: limiter before the boost | passes | every strip |
-| Playback gain 1.25 → 1.3 | passes | every strip |
+| Studio high-pass 76 → 80 Hz | passes | response 1.02 dB, envelope 0.90 dB, area 19.7 dB·ms |
+| Compressor ratio 1+5a → 1+5.5a | passes | response 0.21 dB, curve 0.20 dB, area 12.8 dB·ms, overshoot |
+| Compressor attack 12-9a → 15-9a ms | passes | envelope 3.40 dB, area 10.9 dB·ms, overshoot 0.37 dB, response, gains |
+| Compressor release 140+160a → 150+160a ms | passes | area 40.6 dB·ms only |
+| Presence bell 3100 → 3200 Hz | passes | response 0.48 dB, curve, area 17.7 dB·ms |
+| Limiter threshold -1 → -1.5 dB | passes | response, curve, area 27.3 dB·ms, settling 6 ms, overshoot |
+| Limiter attack 2 → 3 ms | passes | envelope 1.20 dB, response 0.17 dB |
+| Limiter release 80 → 90 ms | passes | area 15.0 dB·ms, response 0.11 dB |
+| Order: limiter before the boost | passes | every kind, by many times its tolerance |
+| Playback gain 1.25 → 1.3 | passes | response 0.35 dB, curve 0.34 dB, area 22.7 dB·ms, gains |
+
+The playback figures are against the cross-platform floors above. The
+compressor's release is the case the area exists for: under the first floors
+only the 2 ms settling tolerance caught it, and settling had to widen to 5 ms
+when Linux moved the `off` strips' settling by 2 ms.
 
 The remote meter's defaults were the one gap the first run found: no
 fixture put speech close enough to its room for the on-threshold to matter,
