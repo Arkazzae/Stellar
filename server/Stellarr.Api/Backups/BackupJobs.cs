@@ -104,6 +104,7 @@ public sealed partial class BackupJobs(
     {
         var directory = Directory(configuration);
         var partial = Path.Combine(directory, PartialPrefix + job.Id + PartialExtension);
+        string? snapshot = null;
         var succeeded = false;
         try
         {
@@ -113,13 +114,26 @@ public sealed partial class BackupJobs(
             var db = services.GetRequiredService<AppDbContext>();
             var storage = services.GetRequiredService<IObjectStorage>();
             var messages = services.GetRequiredService<Messages>();
+            var connectionString = db.Database.GetDbConnection().ConnectionString;
+            var keysDirectory = KeysDirectory(services);
+            var dataRoot = Path.GetFullPath(configuration["DataRoot"] ?? "data");
+
+            // An upload publishes its object before committing its row. Taking
+            // the snapshot first makes every upload named by it eligible for
+            // the later listing, even while people continue sending files.
+            if (job.Parts.HasFlag(BackupParts.Database))
+            {
+                EnsureSpace(directory, Estimate(BackupParts.Database, connectionString, [], keysDirectory, dataRoot), messages);
+                snapshot = Path.Combine(directory, $".snapshot-{Guid.NewGuid():N}.partial");
+                await CockpitEndpoints.CopyDatabaseAsync(connectionString, snapshot, cancellationToken);
+            }
 
             IReadOnlyList<StoredObjectInfo> objects = [];
             if (job.Parts.HasFlag(BackupParts.Objects))
             {
                 try
                 {
-                    objects = await ListAsync(storage, cancellationToken);
+                    objects = await ListAsync(storage, snapshot, cancellationToken);
                 }
                 catch (Exception exception) when (exception is not OperationCanceledException)
                 {
@@ -133,9 +147,6 @@ public sealed partial class BackupJobs(
                 _running = job with { Progress = progress };
             }
 
-            var connectionString = db.Database.GetDbConnection().ConnectionString;
-            var keysDirectory = KeysDirectory(services);
-            var dataRoot = Path.GetFullPath(configuration["DataRoot"] ?? "data");
             EnsureSpace(directory, Estimate(job.Parts, connectionString, objects, keysDirectory, dataRoot), messages);
 
             var server = await db.Servers.AsNoTracking().SingleAsync(x => x.Id == serverId, cancellationToken);
@@ -148,7 +159,7 @@ public sealed partial class BackupJobs(
             var manifest = await BackupArchive.WriteAsync(
                 partial,
                 job.Parts,
-                new BackupSources(connectionString, storage, objects, keysDirectory, server.Name, environmentSecrets, directory, dataRoot),
+                new BackupSources(connectionString, storage, objects, keysDirectory, server.Name, environmentSecrets, directory, dataRoot, snapshot),
                 progress,
                 cancellationToken);
             if (automatic)
@@ -194,6 +205,12 @@ public sealed partial class BackupJobs(
         }
         finally
         {
+            if (snapshot is not null)
+            {
+                File.Delete(snapshot);
+                File.Delete(snapshot + "-wal");
+                File.Delete(snapshot + "-shm");
+            }
             lock (_gate)
             {
                 _running = null;
@@ -211,15 +228,44 @@ public sealed partial class BackupJobs(
             ? repository.Directory.FullName
             : Path.Combine(configuration["DataRoot"] ?? "data", "keys");
 
-    private static async Task<IReadOnlyList<StoredObjectInfo>> ListAsync(IObjectStorage storage, CancellationToken cancellationToken)
+    private static async Task<IReadOnlyList<StoredObjectInfo>> ListAsync(
+        IObjectStorage storage, string? databaseSnapshot, CancellationToken cancellationToken)
     {
-        var objects = new List<StoredObjectInfo>();
+        var objects = new Dictionary<string, StoredObjectInfo>(StringComparer.Ordinal);
         await foreach (var item in storage.ListAsync(cancellationToken))
         {
-            objects.Add(item);
+            objects[item.Key] = item;
         }
 
-        return objects;
+        if (databaseSnapshot is not null)
+        {
+            // Deletions can run after the snapshot too. Retain every key the
+            // snapshot refers to even if it disappeared before the listing,
+            // so its absence is reported and automatic backups fail safely.
+            await using var connection = new SqliteConnection(new SqliteConnectionStringBuilder
+            {
+                DataSource = databaseSnapshot,
+                Mode = SqliteOpenMode.ReadOnly,
+                Pooling = false,
+            }.ToString());
+            await connection.OpenAsync(cancellationToken);
+            await using var command = connection.CreateCommand();
+            command.CommandText = """
+                SELECT "ObjectKey", "SizeBytes" FROM "ImageAttachments"
+                UNION ALL
+                SELECT "PosterObjectKey", coalesce("PosterSizeBytes", 0) FROM "ImageAttachments" WHERE "PosterObjectKey" IS NOT NULL
+                UNION ALL
+                SELECT "ObjectKey", "SizeBytes" FROM "ServerEmoji";
+                """;
+            await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+            while (await reader.ReadAsync(cancellationToken))
+            {
+                var key = reader.GetString(0);
+                objects.TryAdd(key, new StoredObjectInfo(key, reader.GetInt64(1)));
+            }
+        }
+
+        return objects.Values.OrderBy(item => item.Key, StringComparer.Ordinal).ToArray();
     }
 
     /// <summary>About how many bytes the archive will take, before the zip compresses the database.</summary>

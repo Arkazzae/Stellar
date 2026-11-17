@@ -344,10 +344,9 @@ public static class BackupRestore
 
             var path = Path.Combine(unpacked, relative);
             Directory.CreateDirectory(Path.GetDirectoryName(path)!);
-            await using (var source = await entry.OpenAsync(cancellationToken))
             await using (var target = new FileStream(path, FileMode.CreateNew, FileAccess.Write, FileShare.None, 81920, useAsync: true))
             {
-                await source.CopyToAsync(target, cancellationToken);
+                await BackupEntryIntegrity.CopyAsync(entry, target, cancellationToken);
                 target.Flush(flushToDisk: true);
             }
 
