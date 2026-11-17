@@ -75,11 +75,11 @@ public sealed class WebPushDeliveryTests
     [InlineData(200, PushDeliveryResult.Delivered)]
     [InlineData(201, PushDeliveryResult.Delivered)]
     [InlineData(204, PushDeliveryResult.Delivered)]
-    [InlineData(400, PushDeliveryResult.Gone)]
-    [InlineData(302, PushDeliveryResult.Gone)]
+    [InlineData(400, PushDeliveryResult.Retry)]
+    [InlineData(302, PushDeliveryResult.Retry)]
     [InlineData(404, PushDeliveryResult.Gone)]
     [InlineData(410, PushDeliveryResult.Gone)]
-    [InlineData(413, PushDeliveryResult.Gone)]
+    [InlineData(413, PushDeliveryResult.Retry)]
     [InlineData(401, PushDeliveryResult.Retry)]
     [InlineData(403, PushDeliveryResult.Retry)]
     [InlineData(408, PushDeliveryResult.Retry)]
@@ -212,7 +212,7 @@ public sealed class WebPushDeliveryTests
         var payload = Payload with { Body = new string('x', WebPushDelivery.MaxPayloadBytes * 2) };
 
         Assert.Equal(
-            PushDeliveryResult.Gone,
+            PushDeliveryResult.Retry,
             await delivery.SendAsync(Record(subscription), payload, CancellationToken.None));
         Assert.Null(handler.Request);
     }
