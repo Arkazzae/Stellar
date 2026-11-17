@@ -566,3 +566,36 @@ describe("reading", () => {
     expect(result.current.unreadByChannel).toEqual({});
   });
 });
+
+it("does not resurrect a message or its editor when a pending edit fails after deletion", async () => {
+  h.chat.listMessages.mockResolvedValueOnce(page([message("m1", 1)]));
+  const refusal = deferred<void>();
+  h.messageActions.edit.mockReturnValueOnce(refusal.promise);
+  const { result } = await mountLoaded();
+  let saving!: Promise<void>;
+  act(() => { saving = result.current.saveEdit("m1", "better"); });
+  const rejected = saving.catch(() => undefined);
+  act(() => h.emit.deleted("ch-general", "m1"));
+  await act(async () => {
+    refusal.reject(new Error("gone"));
+    await rejected;
+  });
+  expect(ids(result.current)).toEqual([]);
+  expect(result.current.editing).toBeNull();
+});
+
+it("keeps a newer server edit when an older optimistic edit is rejected", async () => {
+  h.chat.listMessages.mockResolvedValueOnce(page([message("m1", 1)]));
+  const refusal = deferred<void>();
+  h.messageActions.edit.mockReturnValueOnce(refusal.promise);
+  const { result } = await mountLoaded();
+  let saving!: Promise<void>;
+  act(() => { saving = result.current.saveEdit("m1", "my edit"); });
+  const rejected = saving.catch(() => undefined);
+  act(() => h.emit.updated(message("m1", 1, { content: "newer server edit", editedAt: at(9) })));
+  await act(async () => {
+    refusal.reject(new Error("conflict"));
+    await rejected;
+  });
+  expect(textOf(result.current, "m1")).toContain("newer server edit");
+});
