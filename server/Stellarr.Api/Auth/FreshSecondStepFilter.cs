@@ -43,9 +43,11 @@ public sealed class FreshSecondStepFilter : IEndpointFilter
 /// </summary>
 public sealed class InstanceServerFreshSecondStepFilter : IEndpointFilter
 {
-    public async ValueTask<object?> InvokeAsync(EndpointFilterInvocationContext context, EndpointFilterDelegate next)
+    public async ValueTask<object?> InvokeAsync(EndpointFilterInvocationContext context, EndpointFilterDelegate next) =>
+        await RefusalAsync(context.HttpContext) ?? await next(context);
+
+    public static async Task<IResult?> RefusalAsync(HttpContext http)
     {
-        var http = context.HttpContext;
         var db = http.RequestServices.GetRequiredService<AppDbContext>();
         var instanceId = await db.Servers.AsNoTracking()
             .OrderBy(x => x.CreatedAt).ThenBy(x => x.Id)
@@ -53,9 +55,9 @@ public sealed class InstanceServerFreshSecondStepFilter : IEndpointFilter
             .FirstOrDefaultAsync(http.RequestAborted);
         if (instanceId != http.RequireActiveServerId())
         {
-            return await next(context);
+            return null;
         }
 
-        return await FreshSecondStepFilter.RefusalAsync(http) ?? await next(context);
+        return await FreshSecondStepFilter.RefusalAsync(http);
     }
 }

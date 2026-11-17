@@ -58,6 +58,28 @@ The second steps are an authenticator app (TOTP), a code by email, a passkey or 
 
 The API reads revoked sessions and role or policy changes from the database at most once per second and closes the matching WebSocket connections, which ends their voice and media sessions. Security events are recorded per account, and verified addresses can be alerted through the configured mail transport. See [Account security](./install/account-security.md) for the policies and for recovering a locked-out account.
 
+## Server authorization
+
+`ServerAuthorization` owns permission decisions. `PermissionScope` names a server, a section within that server, or a channel within that server; a missing resource, disabled account, or absent membership denies access. HTTP handlers and realtime permission checks share this evaluator through `ServerAccess`. Decisions are read from the database for each operation, without a permission cache. The same API rules apply to browser, desktop, and mobile clients.
+
+Effective permissions start with the member's server role, then apply the section override, then the channel override. At each level an explicit deny wins over an allow; a channel override can replace the inherited section decision. Server operations use the base role. A lower role position means a higher rank, and equal positions do not outrank one another.
+
+Delegation is a separate decision from using a permission:
+
+| Operation | Additional requirements |
+| --- | --- |
+| Create a role | Base `manageRoles`; every granted bit is held in the actor's base role. New roles are placed below existing roles. |
+| Edit or delete a role | Base `manageRoles`; outrank the affected role; hold its existing and proposed rights, including live scoped grants. Deletion also checks the fallback role. |
+| Assign a role | Base `manageMembers`; outrank both the member's current role and the destination role; hold both roles' rights, including live scoped grants. Self-assignment and owner assignment are refused. |
+| Set or clear an override | Base and scoped `manageRoles`; outrank the affected role; hold every bit in both the old and new allow/deny masks at the server and scoped levels. Removing a deny is a permission change too. |
+| Move a channel between sections | Manage the source channel and destination section (or server). If any role's effective permissions change, also enforce delegation rights, hierarchy, and the changed bits in both contexts. |
+| Kick or ban a member | The corresponding server permission, a lower-ranked target, and no self-targeting or owner removal. |
+| Kick or move a voice participant | Scoped `moderateMembers` and the same hierarchy rules. Moving checks both source and destination voice channels. |
+
+The owner role's base permissions stay immutable. The owner can repair overrides on their own owner role, including legacy overrides that deny `manageRoles`; other roles cannot change their own overrides. Deleted override targets do not count as live grants. Existing roles, memberships, and overrides are preserved rather than silently rewritten.
+
+Role changes, override writes, channel reparenting, and moderation authorize and mutate within one database transaction. Realtime notifications follow a successful commit. On the instance server, role and override mutations, including channel moves that change permissions, also require a fresh second step under the configured account-security policy.
+
 ## Single-container deployment
 
 `stellarr-init` (`init/`) supervises all runtime processes (Stellarr Media, ASP.NET Core, `coturn`, Nginx, and `stellarr-tls-maintenance`) inside one container image backed by `/data/stellarr`; the services and how each is started, checked and stopped are compiled into it, in `init/src/services.rs`. Nginx exposes a single HTTPS origin externally and serves the web client and Cockpit from static files: an address of either app gets that app's document, a missing file gets a plain `404`, and any other address gets the web client's document with status `404`, so the client shows its not-found page.

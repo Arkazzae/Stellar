@@ -170,6 +170,7 @@ public static class SectionEndpoints
         AppDbContext db,
         CancellationToken cancellationToken)
     {
+        await using var transaction = await db.Database.BeginTransactionAsync(cancellationToken);
         var serverId = http.RequireActiveServerId();
         var userId = http.User.RequireUserId();
         var channel = await db.Channels.FirstOrDefaultAsync(
@@ -179,30 +180,24 @@ public static class SectionEndpoints
             return Results.NotFound();
         }
 
-        if (!await ServerAccess.HasAsync(
-                db, userId, serverId, channel.Id, ServerPrivileges.ManageChannels, cancellationToken))
+        if (request.SectionId is { } targetId && !await db.Sections.AnyAsync(
+                x => x.Id == targetId && x.ServerId == serverId, cancellationToken))
+        {
+            return Results.NotFound();
+        }
+        var decision = await ServerAuthorization.MoveChannelAsync(db, userId, serverId, channel.Id, request.SectionId, cancellationToken);
+        if (!decision.Allowed)
         {
             return Results.Forbid();
         }
-
-        // Moving a channel in needs the right to manage the section it lands in
-        // as well as the channel it leaves.
-        if (request.SectionId is { } targetId)
+        if (decision.ChangesPermissions && await InstanceServerFreshSecondStepFilter.RefusalAsync(http) is { } refusal)
         {
-            if (!await db.Sections.AnyAsync(x => x.Id == targetId && x.ServerId == serverId, cancellationToken))
-            {
-                return Results.NotFound();
-            }
-
-            if (!await ServerAccess.HasForSectionAsync(
-                    db, userId, serverId, targetId, ServerPrivileges.ManageChannels, cancellationToken))
-            {
-                return Results.Forbid();
-            }
+            return refusal;
         }
 
         channel.SectionId = request.SectionId;
         await db.SaveChangesAsync(cancellationToken);
+        await transaction.CommitAsync(cancellationToken);
         return Results.NoContent();
     }
 
