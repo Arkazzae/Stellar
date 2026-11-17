@@ -70,7 +70,7 @@ public sealed partial class AppHub(
         // the account was offline and then race to connect.
         if (becameConnected)
         {
-            await Clients.Groups(serverIds.Select(ServerGroup))
+            await Clients.Groups(await PresenceAudience.GroupsAsync(db, userId))
                 .SendAsync("PresenceChanged", PresenceUpdate(userId, presence.PublicPresenceOf(userId)));
         }
         await Clients.Caller.SendAsync("PresenceChanged", PresenceUpdate(userId, presence.PresenceOf(userId)));
@@ -92,7 +92,7 @@ public sealed partial class AppHub(
         if (becameOffline && Context.User is { } user)
         {
             var userId = user.RequireUserId();
-            var groups = (await MemberServerIdsAsync(userId)).Select(ServerGroup);
+            var groups = await PresenceAudience.GroupsAsync(db, userId);
             await Clients.Groups(groups).SendAsync("PresenceChanged", PresenceUpdate(userId, PresenceTracker.Offline));
         }
 
@@ -112,7 +112,7 @@ public sealed partial class AppHub(
             return;
         }
 
-        var groups = (await MemberServerIdsAsync(userId)).Select(ServerGroup);
+        var groups = await PresenceAudience.GroupsAsync(db, userId);
         await Clients.Groups(groups).SendAsync("PresenceChanged", PresenceUpdate(userId, presence.PublicPresenceOf(userId)));
         await Clients.Caller.SendAsync("PresenceChanged", PresenceUpdate(userId, value));
     }
