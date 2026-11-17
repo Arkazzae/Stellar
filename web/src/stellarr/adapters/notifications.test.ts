@@ -39,3 +39,21 @@ describe("notification adapter", () => {
     unsubscribe();
   });
 });
+
+it("invalidates the inbox after reconnect even if no inbox event was delivered", async () => {
+  const realtime = new FakeRealtimeClient();
+  await realtime.start();
+  const notifications = createNotificationAdapter(fakeApi(), realtime);
+  const changed = vi.fn();
+  const stop = notifications.onChanged(changed);
+  realtime.drop();
+  expect(changed).not.toHaveBeenCalled();
+  await realtime.start();
+  expect(changed).toHaveBeenCalledExactlyOnceWith({ global: true });
+  await realtime.start();
+  expect(changed).toHaveBeenCalledOnce();
+  stop();
+  realtime.drop();
+  await realtime.start();
+  expect(changed).toHaveBeenCalledOnce();
+});
