@@ -32,10 +32,12 @@ public static class PermissionOverrideEndpoints
         overrides.MapPut("/{roleId:guid}", (
             Guid targetId, Guid roleId, SetPermissionOverrideRequest request,
             HttpContext http, AppDbContext db, Messages messages, CancellationToken cancellationToken) =>
-            SetAsync(targetType, targetId, roleId, request, http, db, messages, cancellationToken));
+            SetAsync(targetType, targetId, roleId, request, http, db, messages, cancellationToken))
+            .AddEndpointFilter<InstanceServerFreshSecondStepFilter>();
         overrides.MapDelete("/{roleId:guid}", (
             Guid targetId, Guid roleId, HttpContext http, AppDbContext db, CancellationToken cancellationToken) =>
-            ClearAsync(targetType, targetId, roleId, http, db, cancellationToken));
+            ClearAsync(targetType, targetId, roleId, http, db, cancellationToken))
+            .AddEndpointFilter<InstanceServerFreshSecondStepFilter>();
     }
 
     private static async Task<IResult> ListAsync(
@@ -66,6 +68,7 @@ public static class PermissionOverrideEndpoints
         Messages messages,
         CancellationToken cancellationToken)
     {
+        await using var transaction = await db.Database.BeginTransactionAsync(cancellationToken);
         if (await RefuseAsync(targetType, targetId, http, db, cancellationToken) is { } refusal)
         {
             return refusal;
@@ -87,6 +90,12 @@ public static class PermissionOverrideEndpoints
             return Invalid(messages.Get(MessageKey.PermissionAllowedAndDenied));
         }
 
+        if (!await ServerAuthorization.CanChangeOverrideAsync(
+                db, http.User.RequireUserId(), Scope(targetType, serverId, targetId), roleId, allow, deny, cancellationToken))
+        {
+            return Results.Forbid();
+        }
+
         var current = await db.PermissionOverrides.FirstOrDefaultAsync(
             x => x.TargetType == targetType && x.TargetId == targetId && x.RoleId == roleId, cancellationToken);
         if (allow == ServerPrivileges.None && deny == ServerPrivileges.None)
@@ -97,6 +106,7 @@ public static class PermissionOverrideEndpoints
                 await db.SaveChangesAsync(cancellationToken);
             }
 
+            await transaction.CommitAsync(cancellationToken);
             return Results.Ok(new PermissionOverrideDto(roleId.ToString(), [], []));
         }
 
@@ -115,7 +125,9 @@ public static class PermissionOverrideEndpoints
 
         current.AllowMask = allow;
         current.DenyMask = deny;
-        return await db.TrySaveChangesAsync(cancellationToken) ? Results.Ok(current.ToDto()) : Results.Conflict();
+        if (!await db.TrySaveChangesAsync(cancellationToken)) return Results.Conflict();
+        await transaction.CommitAsync(cancellationToken);
+        return Results.Ok(current.ToDto());
     }
 
     private static async Task<IResult> ClearAsync(
@@ -126,14 +138,28 @@ public static class PermissionOverrideEndpoints
         AppDbContext db,
         CancellationToken cancellationToken)
     {
+        await using var transaction = await db.Database.BeginTransactionAsync(cancellationToken);
         if (await RefuseAsync(targetType, targetId, http, db, cancellationToken) is { } refusal)
         {
             return refusal;
         }
 
+        var serverId = http.RequireActiveServerId();
+        if (!await db.ServerRoles.AnyAsync(x => x.Id == roleId && x.ServerId == serverId, cancellationToken))
+        {
+            return Results.NotFound();
+        }
+        if (!await ServerAuthorization.CanChangeOverrideAsync(
+                db, http.User.RequireUserId(), Scope(targetType, serverId, targetId), roleId,
+                ServerPrivileges.None, ServerPrivileges.None, cancellationToken))
+        {
+            return Results.Forbid();
+        }
+
         await db.PermissionOverrides
             .Where(x => x.TargetType == targetType && x.TargetId == targetId && x.RoleId == roleId)
             .ExecuteDeleteAsync(cancellationToken);
+        await transaction.CommitAsync(cancellationToken);
         return Results.NoContent();
     }
 
@@ -163,6 +189,11 @@ public static class PermissionOverrideEndpoints
             ? null
             : Results.Forbid();
     }
+
+    private static PermissionScope Scope(PermissionTargetType type, Guid serverId, Guid targetId) =>
+        type == PermissionTargetType.Channel
+            ? PermissionScope.Channel(serverId, targetId)
+            : PermissionScope.Section(serverId, targetId);
 
     private static IResult Invalid(string message) =>
         Results.ValidationProblem(new Dictionary<string, string[]> { ["permissions"] = [message] });

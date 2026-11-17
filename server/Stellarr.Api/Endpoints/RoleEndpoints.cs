@@ -29,7 +29,7 @@ public static class RoleEndpoints
         // On the instance server, as in Cockpit, granting powers needs a fresh second step.
         admin.MapPost("/roles", CreateRoleAsync).AddEndpointFilter<InstanceServerFreshSecondStepFilter>();
         admin.MapPatch("/roles/{roleId:guid}", UpdateRoleAsync).AddEndpointFilter<InstanceServerFreshSecondStepFilter>();
-        admin.MapDelete("/roles/{roleId:guid}", DeleteRoleAsync);
+        admin.MapDelete("/roles/{roleId:guid}", DeleteRoleAsync).AddEndpointFilter<InstanceServerFreshSecondStepFilter>();
         admin.MapGet("/members", ListMembersAsync);
         admin.MapPatch("/members/{userId:guid}/role", AssignRoleAsync).AddEndpointFilter<InstanceServerFreshSecondStepFilter>();
         return endpoints;
@@ -72,6 +72,7 @@ public static class RoleEndpoints
         Messages messages,
         CancellationToken cancellationToken)
     {
+        await using var transaction = await db.Database.BeginTransactionAsync(cancellationToken);
         var serverId = http.RequireActiveServerId();
         var held = await ServerAccess.GetAsync(db, http.User.RequireUserId(), serverId, cancellationToken);
         if (!held.HasFlag(ServerPrivileges.ManageRoles))
@@ -89,7 +90,7 @@ public static class RoleEndpoints
             return Results.Conflict();
         }
 
-        if (ExceedsHeld(draft.Permissions, held))
+        if (!await ServerAuthorization.CanCreateRoleAsync(db, http.User.RequireUserId(), serverId, draft.Permissions, cancellationToken))
         {
             return Results.Forbid();
         }
@@ -111,6 +112,7 @@ public static class RoleEndpoints
             return Results.Conflict();
         }
 
+        await transaction.CommitAsync(cancellationToken);
         return Results.Created($"/api/admin/roles/{role.Id}", role.ToDto(0));
     }
 
@@ -123,6 +125,7 @@ public static class RoleEndpoints
         Messages messages,
         CancellationToken cancellationToken)
     {
+        await using var transaction = await db.Database.BeginTransactionAsync(cancellationToken);
         var serverId = http.RequireActiveServerId();
         var held = await ServerAccess.GetAsync(db, http.User.RequireUserId(), serverId, cancellationToken);
         if (!held.HasFlag(ServerPrivileges.ManageRoles))
@@ -157,7 +160,7 @@ public static class RoleEndpoints
             return Results.Conflict();
         }
 
-        if (ExceedsHeld(draft.Permissions, held))
+        if (!await ServerAuthorization.CanEditRoleAsync(db, http.User.RequireUserId(), role, draft.Permissions, cancellationToken))
         {
             return Results.Forbid();
         }
@@ -170,6 +173,7 @@ public static class RoleEndpoints
             return Results.Conflict();
         }
 
+        await transaction.CommitAsync(cancellationToken);
         var holders = db.ServerMembers.Where(x => x.RoleId == role.Id);
         await NotifyAsync(hub, serverId, await holders.Select(x => x.UserId).ToListAsync(cancellationToken),
             role.Permissions, cancellationToken);
@@ -183,6 +187,7 @@ public static class RoleEndpoints
         IHubContext<AppHub> hub,
         CancellationToken cancellationToken)
     {
+        await using var transaction = await db.Database.BeginTransactionAsync(cancellationToken);
         var serverId = http.RequireActiveServerId();
         var held = await ServerAccess.GetAsync(db, http.User.RequireUserId(), serverId, cancellationToken);
         if (!held.HasFlag(ServerPrivileges.ManageRoles))
@@ -202,23 +207,20 @@ public static class RoleEndpoints
             return Results.Conflict();
         }
 
-        if (ExceedsHeld(role.Permissions, held))
+        // Its members fall back to the plain member role rather than to nothing.
+        var fallback = await db.ServerRoles.AsNoTracking().SingleAsync(
+            x => x.ServerId == serverId && x.IsSystem && !x.IsOwner, cancellationToken);
+        if (!await ServerAuthorization.CanDeleteRoleAsync(db, http.User.RequireUserId(), role, fallback, cancellationToken))
         {
             return Results.Forbid();
         }
 
-        // Its members fall back to the plain member role rather than to nothing.
-        var fallback = await db.ServerRoles.AsNoTracking().SingleAsync(
-            x => x.ServerId == serverId && x.IsSystem && !x.IsOwner, cancellationToken);
         var holders = await db.ServerMembers.Where(x => x.RoleId == role.Id)
             .Select(x => x.UserId).ToListAsync(cancellationToken);
-        await using (var transaction = await db.Database.BeginTransactionAsync(cancellationToken))
-        {
-            await db.ServerMembers.Where(x => x.RoleId == role.Id)
-                .ExecuteUpdateAsync(x => x.SetProperty(member => member.RoleId, fallback.Id), cancellationToken);
-            await db.ServerRoles.Where(x => x.Id == role.Id).ExecuteDeleteAsync(cancellationToken);
-            await transaction.CommitAsync(cancellationToken);
-        }
+        await db.ServerMembers.Where(x => x.RoleId == role.Id)
+            .ExecuteUpdateAsync(x => x.SetProperty(member => member.RoleId, fallback.Id), cancellationToken);
+        await db.ServerRoles.Where(x => x.Id == role.Id).ExecuteDeleteAsync(cancellationToken);
+        await transaction.CommitAsync(cancellationToken);
 
         await NotifyAsync(hub, serverId, holders, fallback.Permissions, cancellationToken);
         return Results.NoContent();
@@ -232,6 +234,7 @@ public static class RoleEndpoints
         IHubContext<AppHub> hub,
         CancellationToken cancellationToken)
     {
+        await using var transaction = await db.Database.BeginTransactionAsync(cancellationToken);
         var serverId = http.RequireActiveServerId();
         var actorId = http.User.RequireUserId();
         var held = await ServerAccess.GetAsync(db, actorId, serverId, cancellationToken);
@@ -256,18 +259,17 @@ public static class RoleEndpoints
             return Results.Conflict();
         }
 
-        if (ExceedsHeld(role.Permissions, held))
+        if (!await ServerAuthorization.CanAssignRoleAsync(db, actorId, member, role, cancellationToken))
         {
             return Results.Forbid();
         }
 
         member.RoleId = role.Id;
         await db.SaveChangesAsync(cancellationToken);
+        await transaction.CommitAsync(cancellationToken);
         await NotifyAsync(hub, serverId, [userId], role.Permissions, cancellationToken);
         return Results.NoContent();
     }
-
-    private static bool ExceedsHeld(ServerPrivileges wanted, ServerPrivileges held) => (wanted & ~held) != 0;
 
     internal static RoleDraft? Validate(string? name, string? color, IEnumerable<string>? permissionNames)
     {
