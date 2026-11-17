@@ -1,45 +1,33 @@
 # Platform templates
 
-Each folder here packages the production container for one platform, in that platform's own format. A platform that installs from a Compose file starts from [`docker-compose.yml`](../docker-compose.yml) rather than from a copy of it.
+Each folder here packages the production container for a non-Compose platform. Platforms that install from Compose use [`docker-compose.yml`](../docker-compose.yml) directly rather than a copy of it.
 
 | Platform | Template | Guide |
 | --- | --- | --- |
-| Unraid | [`unraid/stellarr.xml`](unraid/stellarr.xml) | [docs/install/unraid.md](../docs/install/unraid.md) |
+| Unraid | [`unraid/stellarr.xml`](unraid/stellarr.xml) | [`docs/install/unraid.md`](../docs/install/unraid.md) |
 
 ## Rules every template keeps
 
-`docker-compose.yml` is the reference. A template starts the same container with the same settings, so that an instance behaves the same whichever way it was installed.
+`docker-compose.yml` is the reference. Every template must start the container with matching defaults and limits:
 
-1. **Same image.** `ghcr.io/arkazzae/stellarr:latest` by default, with a version tag as the way to stay on one release line.
+1. **Same image.** `ghcr.io/arkazzae/stellarr:latest` by default, allowing a version tag (such as `1.2`) to stay on one release line.
 2. **Same data path.** One persistent folder or volume mounted at `/data/stellarr`.
-3. **Same ports and default host ports.** Every port `docker-compose.yml` publishes, with its protocol and default host port. The TURN relay range keeps the same numbers on the host as in the container.
-4. **Port variables that name the host side.** The container cannot see the port mappings, and it tells browsers the ports to use. Each template sets `PUBLIC_HTTPS_PORT`, `Rtc__MediaPort`, `Rtc__TurnPort` and `Rtc__TurnsPort` to the host side of the matching mapping, and tells the person installing it to change both together. [Platforms](../docs/install/platforms.md) lists the pairs.
-5. **Defaults from `docker-compose.yml`.** Each variable a template sets has the default Compose gives it, under the container-side name (`Rtc__MediaPort`, not `STELLARR_MEDIA_PORT`). Both language variables, `STELLARR_LANGUAGE` and `Stellarr__Language`, are set, since Compose fills both from one value.
-6. **No frozen defaults.** Many platforms keep the values a template wrote when the image is updated. A setting whose default lives in the code, such as the desktop client versions or the OIDC callback path, is left out, so that it keeps following the code.
-7. **Same limits.** The memory, CPU and process limits of `docker-compose.yml` and `no-new-privileges`, where the platform can set them.
-8. **Same stop grace period.** The 75 seconds of `stop_grace_period`, as `--stop-timeout=75` where the platform takes extra `docker run` arguments. The services need up to 60 seconds to stop in order, and Docker's default of 10 would kill them mid-way.
-9. **Secrets masked.** Passwords and API keys use the platform's way of hiding a value, where it has one.
+3. **Same ports and default host ports.** Every port `docker-compose.yml` publishes, with matching protocol and default host port. Keep the TURN relay range (`49160-49200/udp`) mapped 1:1.
+4. **Port variables matching host mappings.** The container cannot inspect host port mappings, so templates expose `PUBLIC_HTTPS_PORT`, `Rtc__MediaPort`, `Rtc__TurnPort`, and `Rtc__TurnsPort` and instruct operators to keep them equal to the host ports (see [Running without Docker Compose](../docs/install/configuration.md#running-without-docker-compose)).
+5. **Defaults from `docker-compose.yml`.** Use container-side names (`Rtc__MediaPort`, not `STELLARR_MEDIA_PORT`) and set both `STELLARR_LANGUAGE` and `Stellarr__Language`.
+6. **No frozen code defaults.** Omit settings whose defaults live in code (desktop client versions, OIDC callback path) so updates keep following new releases.
+7. **Same limits.** Apply the memory (`4g`), CPU (`4`), PID (`512`), and `no-new-privileges` limits of `docker-compose.yml` where supported.
+8. **Same stop grace period.** Pass `--stop-timeout=75` where extra Docker flags are supported so `stellarr-init` has time to stop services cleanly.
+9. **Secrets masked.** Hide password and API key inputs using the platform's secret masking.
 
-When a default in `docker-compose.yml` changes, change it in every template here as well.
+When a default in `docker-compose.yml` changes, update every template here to match.
 
 ## Adding a platform
 
-1. Put the template in `deploy/<platform>/`, keeping the rules above.
-2. Start the container with exactly the template's settings: its ports, variables and extra arguments, and a scratch volume. Check that it becomes healthy, that `http://localhost:8888/` redirects to the HTTPS host port, and that `docker exec <container> stellarr doctor` passes.
-3. Write the guide in `docs/install/<platform>.md`, covering only what is specific to the platform, and link it from [`docs/README.md`](../docs/README.md), the table in [Platforms](../docs/install/platforms.md) and the table above.
+1. Place the template in `deploy/<platform>/`, following the rules above.
+2. Start the container from the template with a scratch volume and verify it reaches `healthy`, `http://localhost:8888/` redirects to HTTPS, and `docker exec <container> stellarr doctor` passes.
+3. Add a platform guide at `docs/install/<platform>.md` covering only platform-specific steps, and link it from [`docs/README.md`](../docs/README.md) and the table above.
 
-Automatic full backups are described in [the backup and recovery guide](../docs/admin/backups.md);
-optional Cloudflare R2 offsite storage is an integration described in
-[the R2 guide](../docs/admin/cloudflare-r2.md). Production Compose enables
-daily local copies by default; R2 requires separate bucket credentials.
+## Other folders
 
-## Cloudflare backup relay
-
-[`cloudflare/backup-relay/`](cloudflare/backup-relay/README.md) is an optional
-Worker that receives completed archives and writes them to R2 through a binding.
-It has its own Deploy to Cloudflare button:
-
-[![Deploy to Cloudflare](https://deploy.workers.cloudflare.com/button)](https://deploy.workers.cloudflare.com/?url=https://github.com/Arkazzae/Stellarr/tree/main/deploy/cloudflare/backup-relay)
-
-The Worker is not a Stellarr platform template. Stellarr stays in its container;
-the Worker is only the offsite backup destination.
+- [`cloudflare/backup-relay/`](cloudflare/backup-relay/README.md): optional Cloudflare Worker for offsite backups (see [Cloudflare R2 offsite backups](../docs/admin/cloudflare-r2.md) and [Automatic backups](../docs/admin/backups.md)).
