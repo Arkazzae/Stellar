@@ -150,6 +150,7 @@ public sealed class RegistrationFlowTests
 
         Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
         Assert.Equal(new Dictionary<string, string[]> { ["inviteCode"] = [InviteRequired] }, await ErrorsOf(response));
+        Assert.Null(factory.Services.GetRequiredService<SetupCode>().Current);
         await using var scope = factory.OpenScope(out var db);
         Assert.Equal(1, await db.Users.CountAsync());
         Assert.Equal(1, await db.Servers.CountAsync());
