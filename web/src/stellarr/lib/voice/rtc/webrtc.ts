@@ -138,8 +138,13 @@ export class WebRtcVoiceClient implements VoiceClient {
    * left can never resurrect it.
    */
   private session = 0;
+  /** Orders user intentions even while the hub is still acknowledging a leave. */
+  private intent = 0;
+  private leaving: Promise<void> | null = null;
+  private selfDisplayName: string;
 
   constructor(private readonly options: WebRtcVoiceClientOptions) {
+    this.selfDisplayName = options.selfDisplayName;
     this.t = options.translate ?? translateForDocument;
     this.settings = options.getSettings?.() ?? { ...DEFAULT_SETTINGS };
     const profile = profileFor(this.settings);
@@ -305,7 +310,12 @@ export class WebRtcVoiceClient implements VoiceClient {
     // contexts now: doing it later in `ontrack` makes Brave/Chromium leave them
     // suspended even though RTP continues to arrive normally.
     this.preparePlayback();
-    if (this.channelId) await this.leave();
+    // Teardown is synchronous locally, but the next join must wait for its
+    // hub invocation. A later click (including hangup) cancels this intention.
+    const leaving = this.channelId ? this.leave() : this.leaving;
+    const intent = ++this.intent;
+    if (leaving) await leaving;
+    if (this.disposed || intent !== this.intent) return;
 
     const session = ++this.session;
     this.channelId = channelId;
@@ -367,6 +377,7 @@ export class WebRtcVoiceClient implements VoiceClient {
   }
 
   async leave(): Promise<void> {
+    this.intent += 1;
     const wasJoined = this.channelId !== null;
     this.channelId = null;
     this.session += 1;
@@ -384,14 +395,18 @@ export class WebRtcVoiceClient implements VoiceClient {
     this.options.ice.endSession();
     this.voiceStream = null;
 
-    if (wasJoined) {
-      try {
-        await this.options.realtime.leaveVoice();
-      } catch {
-        // Leaving locally must always succeed, even if the hub is gone.
-      }
-    }
+    // The old acknowledgement must never reset a newer call's UI.
     this.store.reset();
+    if (!wasJoined) return;
+    const leaving = this.options.realtime.leaveVoice().catch(() => {
+      // Leaving locally always succeeds, even when the hub is gone.
+    });
+    this.leaving = leaving;
+    try {
+      await leaving;
+    } finally {
+      if (this.leaving === leaving) this.leaving = null;
+    }
   }
 
   /**
@@ -432,6 +447,12 @@ export class WebRtcVoiceClient implements VoiceClient {
     this.speech.dispose();
     this.remoteAudio.dispose();
     this.lifecycle.stop();
+  }
+
+  setDisplayName(displayName: string): void {
+    if (this.selfDisplayName === displayName) return;
+    this.selfDisplayName = displayName;
+    if (this.channelId !== null) this.publishPeers();
   }
 
   setMuted(muted: boolean): void {
@@ -708,8 +729,10 @@ export class WebRtcVoiceClient implements VoiceClient {
   /** Leave, then show why: the server ended this seat, not the person. */
   private async endWithError(error: VoiceError): Promise<void> {
     if (this.channelId === null) return;
-    await this.leave();
-    if (!this.disposed) this.store.set({ connection: "failed", error });
+    const leaving = this.leave();
+    const intent = this.intent;
+    await leaving;
+    if (!this.disposed && intent === this.intent) this.store.set({ connection: "failed", error });
   }
 
   /**
@@ -916,7 +939,7 @@ export class WebRtcVoiceClient implements VoiceClient {
   private selfPeer(speaking: boolean): VoicePeer {
     return {
       userId: this.options.selfUserId,
-      displayName: this.options.selfDisplayName,
+      displayName: this.selfDisplayName,
       muted: this.store.getSnapshot().muted,
       speaking,
       level: this.selfLevel,

@@ -201,12 +201,12 @@ describe("VoiceProvider joining and leaving", () => {
     expect(view.result.current.privateCall).toBe(false);
   });
 
-  it("does nothing when asked to leave without a call", async () => {
+  it("cancels a client intention even while idle without playing feedback", async () => {
     const view = mount();
 
     await act(() => view.result.current.leave());
 
-    expect(fake().leave).not.toHaveBeenCalled();
+    expect(fake().leave).toHaveBeenCalledOnce();
     expect(triggerHaptic).not.toHaveBeenCalled();
   });
 
@@ -343,3 +343,14 @@ function Reader(): ReactNode {
   const voice: VoiceValue = useVoiceContext();
   return voice.channelId;
 }
+
+it("keeps a live call when the account's display name changes", () => {
+  const view = mount();
+  act(() => view.result.current.join("voice"));
+  harness.user = { id: "self", displayName: "Renamed" };
+  view.rerender();
+  expect(fake().dispose).not.toHaveBeenCalled();
+  expect(harness.ports.createVoice).toHaveBeenCalledOnce();
+  expect(fake().setDisplayName).toHaveBeenCalledWith("Renamed");
+  expect(view.result.current.channelId).toBe("voice");
+});

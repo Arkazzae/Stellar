@@ -123,15 +123,21 @@ export function VoiceProvider({ children }: { children: ReactNode }) {
     [],
   );
 
+  const currentName = useRef(displayName);
+  useEffect(() => {
+    currentName.current = displayName;
+    holder.getClient()?.setDisplayName(displayName);
+  }, [displayName, holder]);
+
   useEffect(() => {
     if (userId === null) return;
-    const client = ports.createVoice({ userId, displayName, translate });
+    const client = ports.createVoice({ userId, displayName: currentName.current, translate });
     holder.attach(client);
     const queued = pendingJoin.current;
     pendingJoin.current = null;
     if (queued !== null) void client.join(queued).catch(() => {});
     return () => holder.detach();
-  }, [holder, ports, userId, displayName, translate]);
+  }, [holder, ports, userId, translate]);
 
   const state = useSyncExternalStore(holder.subscribe, holder.getState, () => IDLE_VOICE_STATE);
   const startedAt = useSyncExternalStore(holder.subscribe, holder.getStartedAt, () => null);
@@ -188,7 +194,7 @@ export function VoiceProvider({ children }: { children: ReactNode }) {
           ? { userId: watchedScreenUserId, streamId: watchedScreenStreamId }
           : null,
     });
-  }, [holder, ports, userId, displayName, watchedScreenUserId, watchedScreenStreamId]);
+  }, [holder, ports, userId, watchedScreenUserId, watchedScreenStreamId]);
 
   useVoiceFx({
     soundboard: ports.soundboard,
@@ -234,7 +240,12 @@ export function VoiceProvider({ children }: { children: ReactNode }) {
     const inCall =
       pendingJoin.current !== null || (client !== null && client.getSnapshot().channelId !== null);
     pendingJoin.current = null;
-    if (!inCall) return;
+    if (!inCall) {
+      // A channel switch can be queued behind a slow leave acknowledgement
+      // while the local snapshot is already idle. Hangup still cancels it.
+      await client?.leave();
+      return;
+    }
     setWatchedShareKey(null);
     setPresentation(null);
     triggerHaptic("light");

@@ -198,6 +198,8 @@ export interface VoiceClient {
    * person go. A call that has no seat joins again.
    */
   reconnect(): Promise<void>;
+  /** Updates the local identity without reopening any call media. */
+  setDisplayName(displayName: string): void;
   setMuted(muted: boolean): void;
   /** Silences or restores every remote voice and screen sink; capture is unaffected. */
   setDeafened(deafened: boolean): void;
