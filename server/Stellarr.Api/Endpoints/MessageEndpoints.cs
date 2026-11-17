@@ -233,9 +233,10 @@ public static class MessageEndpoints
         Guid userId,
         CancellationToken cancellationToken)
     {
-        var lastMessageAt = await db.Messages.AsNoTracking()
-            .Where(x => x.ChannelId == channel.Id && x.AuthorId == userId && !x.IsSystem)
-            .MaxAsync(x => (DateTime?)x.CreatedAt, cancellationToken);
+        var lastMessageAt = await db.ChannelPostTimes.AsNoTracking()
+            .Where(x => x.ChannelId == channel.Id && x.UserId == userId)
+            .Select(x => (DateTime?)x.LastPostedAt)
+            .SingleOrDefaultAsync(cancellationToken);
         var mayPostAt = lastMessageAt?.AddSeconds(channel.SlowModeSeconds);
         var now = DateTime.UtcNow;
         return mayPostAt > now ? Math.Max(1, (int)Math.Ceiling((mayPostAt.Value - now).TotalSeconds)) : null;
