@@ -3,13 +3,13 @@
 Stellarr Cockpit is the instance operator panel, at `/cockpit` on the instance's own origin. Its code lives here, in `web/src/cockpit/`, beside the web client's; the same Vite build (`web/`) writes both as static files. It provides:
 
 - **Overview**: headline metrics with 7-day trends and week-over-week change, 30-day activity across six series, API uptime, the last hour of API and database availability, request and connection charts, and service health status (auto-refreshed every 30 s).
-- **Users**: account management, active sessions, and built-in roles.
+- **Users**: account management, active sessions, built-in roles, MFA recovery, and OIDC identity unlinking.
 - **Servers**: list of servers on the instance with ownership transfer and deletion.
 - **Runtime**: 60-minute process telemetry (requests, errors, CPU, memory, connections, database latency) and per-minute availability across all container services.
 - **Logs**: paged, searchable, and filterable 10,000-line in-memory log stream with TSV export.
-- **Backups**: background database snapshots or full `.zip` archives (database, object store, data-protection keys, and instance files) with manifest verification and retention pruning.
+- **Backups**: background database snapshots or full `.zip` archives (database, object store, data-protection keys, and instance files) with manifest verification, scheduling policy, and retention pruning.
 - **Integrations**: Resend mail delivery, GIPHY GIF search, and the optional Cloudflare R2 backup destination, with key checks.
-- **Settings**: instance name, time zone, retention windows, SMTP server configuration, and panel language.
+- **Settings**: instance name, time zone, retention windows, SMTP configuration, instance MFA policy, and panel language.
 
 > [!NOTE]
 > Secrets saved in Cockpit (the SMTP password, Resend API key, and GIPHY API key) are encrypted with the instance's data-protection keys, take precedence over environment variables, and are never returned to the browser.
