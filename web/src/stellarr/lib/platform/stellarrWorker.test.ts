@@ -100,7 +100,7 @@ function loadWorker(initial = release("r1")) {
 
   /** What the worker answers a request with, or null when it leaves the request to the network. */
   async function ask(path: string, mode = "navigate", method = "GET"): Promise<string | null> {
-    const event = { request: { method, mode, url: `${ORIGIN}${path}` }, respondWith: vi.fn() };
+    const event = { request: { method, mode, url: `${ORIGIN}${path}` }, respondWith: vi.fn(), waitUntil: vi.fn() };
     listeners.get("fetch")?.(event);
     const answer = event.respondWith.mock.calls[0]?.[0] as Promise<Response> | undefined;
     return answer === undefined ? null : (await answer).text();
@@ -260,6 +260,19 @@ describe("taking a new release", () => {
     expect(worker.caches.stores.has("stellarr-shell:r1")).toBe(false);
   });
 
+  it("stores the shell again when the pointer names a cache that is gone or empty", async () => {
+    const worker = loadWorker(release("r1"));
+    await worker.adopt();
+    await worker.caches.delete("stellarr-shell:r1");
+    await worker.caches.open("stellarr-shell:r1");
+    worker.network.requests.length = 0;
+
+    await expect(worker.adopt()).resolves.toEqual({ ok: true, id: "r1" });
+
+    expect(worker.network.requests.map(({ path }) => path)).toContain("/static/app.js");
+    await expect(worker.ask("/")).resolves.toBe("document of r1");
+  });
+
   it("does not fetch the shell again for the release it already keeps", async () => {
     const worker = loadWorker(release("r1"));
     await worker.adopt();
@@ -270,26 +283,39 @@ describe("taking a new release", () => {
 });
 
 describe("the instance file", () => {
-  it("is asked from the network every time, past the HTTP cache", async () => {
+  const instance = (worker: ReturnType<typeof loadWorker>) => worker.ask("/stellarr-instance.js", "no-cors");
+  const settle = () => new Promise((done) => setTimeout(done, 0));
+
+  it("is fetched in the ordinary way and kept when there is no copy yet", async () => {
     const worker = loadWorker();
-    await expect(worker.ask("/stellarr-instance.js", "no-cors")).resolves.toBe(worker.network.instance);
+    await expect(instance(worker)).resolves.toBe(worker.network.instance);
     const [request] = worker.network.requests;
-    expect(request?.init).toEqual(expect.objectContaining({ cache: "reload" }));
+    expect(request?.init).toBeUndefined();
+    expect(worker.caches.stores.get("stellarr-kept")?.entries.has("/stellarr-instance.js")).toBe(true);
   });
 
-  it("is answered from the last copy only when the network fails", async () => {
+  it("is answered from the copy at once and refreshed behind it", async () => {
     const worker = loadWorker();
-    await worker.ask("/stellarr-instance.js", "no-cors");
+    await instance(worker);
     worker.network.instance = "changed";
-    await expect(worker.ask("/stellarr-instance.js", "no-cors")).resolves.toBe("changed");
+    worker.network.requests.length = 0;
+    await expect(instance(worker)).resolves.toBe("window.stellarrInstanceLanguage = 'pl';");
+    await settle();
+    expect(worker.network.requests.map(({ path }) => path)).toEqual(["/stellarr-instance.js"]);
+    await expect(instance(worker)).resolves.toBe("changed");
+  });
+
+  it("is still answered from the copy when the network is gone", async () => {
+    const worker = loadWorker();
+    await instance(worker);
     worker.network.offline.add("/stellarr-instance.js");
-    await expect(worker.ask("/stellarr-instance.js", "no-cors")).resolves.toBe("changed");
+    await expect(instance(worker)).resolves.toBe(worker.network.instance);
   });
 
   it("fails as the network does when there is no copy", async () => {
     const worker = loadWorker();
     worker.network.offline.add("/stellarr-instance.js");
-    await expect(worker.ask("/stellarr-instance.js", "no-cors")).rejects.toThrow("Failed to fetch");
+    await expect(instance(worker)).rejects.toThrow("Failed to fetch");
   });
 });
 
