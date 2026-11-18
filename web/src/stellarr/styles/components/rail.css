@@ -230,8 +230,9 @@
    * and once dropped the row eases from where it was let go into its slot.
    *
    * No `touch-action` on the rows on purpose: a finger swiping along the rail
-   * has to scroll it, as it always has. The browser takes that gesture and the
-   * drag it may have started is cancelled.
+   * has to scroll it, as it always has. A finger lifts a row by holding it
+   * still instead (lib/drag/pointer.ts), and no callout or selection may get
+   * in the way of that hold.
    */
   .rail-scroll[data-sorting]{cursor:grabbing}
   /* Nothing in the rail is hovered while it scrolls under a carried row: a
@@ -254,6 +255,9 @@
   .rail-cap:has(+ .collapsible [data-drag-over]) .group-caption,
   .rail-section:has([data-drag-over]) .rail-section-cap .group-caption{
     background:var(--surface-overlay);color:var(--text);
+  }
+  .rail-scroll .channel-main[aria-roledescription]{
+    -webkit-touch-callout:none;-webkit-user-select:none;user-select:none;
   }
   /* The collapse caret owns the trailing edge. The separate create button is
      overlaid just before it, keeping two valid sibling buttons without making
