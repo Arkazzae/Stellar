@@ -148,6 +148,18 @@ public sealed class ChannelSectionAuthorizationTests
         await state.ExpectMoveAsync(Guid.NewGuid(), HttpStatusCode.NotFound);
     }
 
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task AMoveSentWithTheChannelOrderObeysTheSameDelegationRules(bool managesRoles)
+    {
+        using var state = await MoveScenario.CreateAsync(managesRoles ? Delegator : ChannelManager | ServerPrivileges.ManageMessages);
+        await state.OverrideAsync(state.LowerRole, state.Destination, PermissionTargetType.Section,
+            deny: ServerPrivileges.ManageMessages);
+        await state.ExpectOrderedMoveAsync(state.Destination,
+            managesRoles ? HttpStatusCode.NoContent : HttpStatusCode.Forbidden);
+    }
+
     private sealed class MoveScenario : IDisposable
     {
         internal StellarrWebApplicationFactory Factory { get; } = new();
@@ -187,6 +199,31 @@ public sealed class ChannelSectionAuthorizationTests
             Assert.Equal(expected, response.StatusCode);
             await WithDbAsync(async db => Assert.Equal(expected == HttpStatusCode.NoContent ? destination : Source,
                 (await db.Channels.SingleAsync(x => x.Id == TestData.GeneralChannelId)).SectionId));
+        }
+
+        /// <summary>The same move sent with the whole channel order, reversed; a refusal keeps both.</summary>
+        internal async Task ExpectOrderedMoveAsync(Guid? destination, HttpStatusCode expected)
+        {
+            var before = await OrderAsync();
+            var reversed = before.AsEnumerable().Reverse().ToArray();
+            using var response = await Client.PutAsJsonAsync("/api/admin/channels/order", new
+            {
+                channelIds = reversed,
+                move = new { channelId = TestData.GeneralChannelId, sectionId = destination },
+            });
+            Assert.Equal(expected, response.StatusCode);
+            var applied = expected == HttpStatusCode.NoContent;
+            Assert.Equal(applied ? reversed : before, await OrderAsync());
+            await WithDbAsync(async db => Assert.Equal(applied ? destination : Source,
+                (await db.Channels.SingleAsync(x => x.Id == TestData.GeneralChannelId)).SectionId));
+        }
+
+        private async Task<Guid[]> OrderAsync()
+        {
+            Guid[] order = [];
+            await WithDbAsync(async db => order = await db.Channels.Where(x => x.ServerId == TestData.ServerId)
+                .OrderBy(x => x.Position).Select(x => x.Id).ToArrayAsync());
+            return order;
         }
 
         internal async Task WithDbAsync(Func<AppDbContext, Task> action)
