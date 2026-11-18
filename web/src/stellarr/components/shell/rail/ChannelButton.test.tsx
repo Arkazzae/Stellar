@@ -2,7 +2,7 @@ import { fireEvent, render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { describe, expect, it, vi } from "vitest";
 
-import type { SortHandleProps } from "@/lib/drag/useListSort";
+import type { DragHandleProps } from "@/lib/drag/useRailDrag";
 
 import { ChannelButton } from "./ChannelButton";
 
@@ -57,7 +57,7 @@ describe("ChannelButton interaction structure", () => {
     const user = userEvent.setup();
     const onSelect = vi.fn();
     const onOpenSettings = vi.fn();
-    const handle: SortHandleProps = {
+    const handle: DragHandleProps = {
       ref: vi.fn(),
       onPointerDown: vi.fn(),
       onKeyDown: vi.fn(),
