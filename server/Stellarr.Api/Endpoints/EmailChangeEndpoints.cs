@@ -21,9 +21,10 @@ public sealed record EmailChangeConfirmRequest(string? Token);
 /// <summary>
 /// Changing the account's address. The address receives the sign-in codes,
 /// the security alerts and the password reset links, so a change asks for the
-/// current password and, once the account has one, a fresh second step; and
-/// the new address must prove it receives mail before it replaces the old
-/// one, which is told afterwards.
+/// current password and, once the account has one, a fresh second step (an
+/// account without a password gives the fresh proof alone); and the new
+/// address must prove it receives mail before it replaces the old one, which
+/// is told afterwards.
 /// </summary>
 public static partial class EmailChangeEndpoints
 {
@@ -81,9 +82,15 @@ public static partial class EmailChangeEndpoints
             return Outcome("second-step-required");
         }
 
-        if (request.Password is null || !passwords.Verify(request.Password, user.PasswordHash))
+        // An account made through a provider has no password to give; its
+        // fresh proof stands in, and this form says it wants the second step.
+        switch (await AccountSecurityEndpoints.PasswordOrFreshProofAsync(
+                    context, db, user, request.Password, passwords, cancellationToken))
         {
-            return Outcome("wrong-password");
+            case PasswordProof.WrongPassword:
+                return Outcome("wrong-password");
+            case PasswordProof.FreshProofNeeded:
+                return Outcome("second-step-required");
         }
 
         var normalized = email.ToUpperInvariant();

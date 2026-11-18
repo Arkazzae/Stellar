@@ -15,7 +15,7 @@ public sealed class ExternalOidcOptions
     public const string DefaultProviderId = "default";
 
     /// <summary>Ids a named provider cannot take: the original one, and the words of the routes.</summary>
-    private static readonly string[] ReservedIds = [DefaultProviderId, "login", "callback", "link"];
+    private static readonly string[] ReservedIds = [DefaultProviderId, "login", "callback", "link", "reauthenticate", "pending"];
 
     public bool Enabled { get; init; }
     public string Authority { get; init; } = "";
@@ -185,6 +185,11 @@ public sealed class ExternalOidcProvider
         ? "/api/auth/oidc/link"
         : $"/api/auth/oidc/{Id}/link";
 
+    /// <summary>Where a signed-in account goes, with a ticket, to sign in at this provider again as proof.</summary>
+    public string ReauthenticatePath => Id == ExternalOidcOptions.DefaultProviderId
+        ? "/api/auth/oidc/reauthenticate"
+        : $"/api/auth/oidc/{Id}/reauthenticate";
+
     public bool IsConfigured =>
         Enabled &&
         Uri.TryCreate(Authority, UriKind.Absolute, out var authority) &&
@@ -227,14 +232,7 @@ public sealed class ExternalOidcProvider
     /// </summary>
     public bool PassedSecondStep(IEnumerable<string> amr, string? authTime, DateTimeOffset now)
     {
-        if (!TrustProviderMfa ||
-            !long.TryParse(authTime, System.Globalization.NumberStyles.None, System.Globalization.CultureInfo.InvariantCulture, out var seconds))
-        {
-            return false;
-        }
-
-        var signedIn = DateTimeOffset.FromUnixTimeSeconds(Math.Clamp(seconds, 0, 253402300799));
-        if (signedIn > now + ClockSkew || signedIn < now - ProviderMfaMaxAge - ClockSkew)
+        if (!TrustProviderMfa || !SignedInRecently(authTime, now))
         {
             return false;
         }
@@ -244,6 +242,22 @@ public sealed class ExternalOidcProvider
             .ToHashSet(StringComparer.Ordinal);
         return amr.Any(accepted.Contains);
     }
+
+    /// <summary>
+    /// Whether the provider's <c>auth_time</c> says the person signed in there
+    /// within <see cref="ProviderMfaMaxAge"/>. A missing or unreadable time
+    /// does not count.
+    /// </summary>
+    public static bool SignedInRecently(string? authTime, DateTimeOffset now) =>
+        SignedInAt(authTime) is { } signedIn &&
+        signedIn <= now + ClockSkew &&
+        signedIn >= now - ProviderMfaMaxAge - ClockSkew;
+
+    /// <summary>When the provider's <c>auth_time</c> says the person signed in there; null when it is missing or unreadable.</summary>
+    public static DateTimeOffset? SignedInAt(string? authTime) =>
+        long.TryParse(authTime, System.Globalization.NumberStyles.None, System.Globalization.CultureInfo.InvariantCulture, out var seconds)
+            ? DateTimeOffset.FromUnixTimeSeconds(Math.Clamp(seconds, 0, 253402300799))
+            : null;
 
     internal ExternalOidcProvider Named(string id, string callbackPath) => new()
     {

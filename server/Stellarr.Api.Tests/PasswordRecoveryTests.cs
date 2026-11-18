@@ -174,6 +174,26 @@ public sealed partial class PasswordRecoveryTests
     }
 
     /// <summary>Asks for a link for the account's address and returns the token in the mail it was sent.</summary>
+    [Fact]
+    public async Task AnAccountWithoutAPasswordGetsItsFirstOneThroughTheLink()
+    {
+        using var factory = await CreateFactoryAsync();
+        await using (var scope = factory.OpenScope(out var db))
+        {
+            await db.Users.Where(x => x.Username == "jo")
+                .ExecuteUpdateAsync(setters => setters.SetProperty(x => x.PasswordHash, (string?)null));
+        }
+
+        using var client = CreateClient(factory);
+        var token = await RequestLinkAsync(factory, client);
+        var reset = await client.PostAsJsonAsync("/api/auth/password/reset", new { token, newPassword = NewPassword });
+
+        Assert.Equal(HttpStatusCode.NoContent, reset.StatusCode);
+        Assert.Equal(
+            HttpStatusCode.OK,
+            (await client.PostAsJsonAsync("/api/auth/login", new { username = "jo", password = NewPassword })).StatusCode);
+    }
+
     private static async Task<string> RequestLinkAsync(StellarrWebApplicationFactory factory, HttpClient client)
     {
         var before = factory.EmailDelivery.Messages.Count;

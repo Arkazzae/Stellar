@@ -16,6 +16,14 @@ public sealed class PasswordServiceTests
     }
 
     [Theory]
+    [InlineData("")]
+    [InlineData("correct horse battery staple")]
+    public void AccountWithoutAPasswordMatchesNothing(string password)
+    {
+        Assert.False(_passwords.Verify(password, null));
+    }
+
+    [Theory]
     [MemberData(nameof(MalformedHashes))]
     public void RejectsMalformedHashWithoutThrowing(string encoded)
     {

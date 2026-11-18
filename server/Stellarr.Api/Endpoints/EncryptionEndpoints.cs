@@ -194,6 +194,7 @@ public static class EncryptionEndpoints
     private static async Task<IResult> ReplaceBackupAsync(
         ReplaceBackupRequest request,
         ClaimsPrincipal principal,
+        HttpContext http,
         AppDbContext db,
         PasswordService passwords,
         IHubContext<AppHub> hub,
@@ -206,9 +207,9 @@ public static class EncryptionEndpoints
         }
 
         var user = await db.Users.AsNoTracking().SingleAsync(x => x.Id == principal.RequireUserId(), cancellationToken);
-        if (request.CurrentPassword is null || !passwords.Verify(request.CurrentPassword, user.PasswordHash))
+        if (await ProofRefusalAsync(http, db, user, request.CurrentPassword, passwords, messages, cancellationToken) is { } refused)
         {
-            return PasswordIncorrect(messages);
+            return refused;
         }
 
         var key = await db.AccountKeys.AsNoTracking().SingleOrDefaultAsync(x => x.UserId == user.Id, cancellationToken);
@@ -258,6 +259,7 @@ public static class EncryptionEndpoints
     private static async Task<IResult> ResetAsync(
         ResetAccountKeyRequest request,
         ClaimsPrincipal principal,
+        HttpContext http,
         AppDbContext db,
         PasswordService passwords,
         IHubContext<AppHub> hub,
@@ -270,9 +272,9 @@ public static class EncryptionEndpoints
         }
 
         var user = await db.Users.SingleAsync(x => x.Id == principal.RequireUserId(), cancellationToken);
-        if (request.CurrentPassword is null || !passwords.Verify(request.CurrentPassword, user.PasswordHash))
+        if (await ProofRefusalAsync(http, db, user, request.CurrentPassword, passwords, messages, cancellationToken) is { } refused)
         {
-            return PasswordIncorrect(messages);
+            return refused;
         }
 
         if (!await db.AccountKeys.AnyAsync(x => x.UserId == user.Id, cancellationToken))
@@ -525,6 +527,29 @@ public static class EncryptionEndpoints
 
     private static IResult BackupMissing(Messages messages) => DirectEncryption.Problem(
         messages, StatusCodes.Status404NotFound, Codes.BackupMissing, MessageKey.EncryptionBackupMissing);
+
+    /// <summary>
+    /// The password a new PIN or new keys ask for, or null when it is given.
+    /// An account made through a provider has none to give, so it gives the
+    /// fresh proof of any other security change instead: the second step the
+    /// filter already asked for when it has one, else a sign-in from the last
+    /// few minutes, here or at one of its providers. Its refusal is the
+    /// filter's, which the client answers with that proof.
+    /// </summary>
+    private static async Task<IResult?> ProofRefusalAsync(
+        HttpContext http,
+        AppDbContext db,
+        User user,
+        string? password,
+        PasswordService passwords,
+        Messages messages,
+        CancellationToken cancellationToken) =>
+        await AccountSecurityEndpoints.PasswordOrFreshProofAsync(http, db, user, password, passwords, cancellationToken) switch
+        {
+            PasswordProof.WrongPassword => PasswordIncorrect(messages),
+            PasswordProof.FreshProofNeeded => FreshSecondStepFilter.Refusal(messages),
+            _ => null,
+        };
 
     private static IResult PasswordIncorrect(Messages messages) => DirectEncryption.Problem(
         messages, StatusCodes.Status403Forbidden, Codes.PasswordIncorrect, MessageKey.EncryptionPasswordIncorrect);
