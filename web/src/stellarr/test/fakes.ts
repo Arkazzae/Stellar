@@ -89,6 +89,8 @@ export function fakeApi(overrides: Partial<ApiClient> = {}): ApiClient {
       throw new ApiError("not-found", "No such invite.", 404);
     }),
     signInProviders: vi.fn(async () => []),
+    pendingIdentity: vi.fn(async () => null),
+    dropPendingIdentity: vi.fn(async () => {}),
     login: vi.fn(async () => ({ kind: "signed-in" as const, user: SELF })),
     register: vi.fn(async () => ({ kind: "signed-in" as const, user: SELF })),
     pendingChallenge: vi.fn(async () => {
@@ -124,6 +126,7 @@ export function fakeApi(overrides: Partial<ApiClient> = {}): ApiClient {
       passkeyAvailable: false,
       identities: [],
       identityProviders: [],
+      hasPassword: true,
     })),
     listSecurityEvents: vi.fn(async () => []),
     startMfaEnrollment: vi.fn(async () => {
@@ -142,6 +145,8 @@ export function fakeApi(overrides: Partial<ApiClient> = {}): ApiClient {
     requestEmailChange: vi.fn(async () => "sent" as const),
     confirmEmailChange: vi.fn(async () => "changed" as const),
     removeIdentity: vi.fn(async () => {}),
+    startReauthentication: vi.fn(async () => "/api/auth/oidc/reauthenticate?ticket=t"),
+    setPassword: vi.fn(async () => {}),
     requestPasswordReset: vi.fn(async () => {}),
     resetPassword: vi.fn(async () => {}),
     logout: vi.fn(async () => {}),

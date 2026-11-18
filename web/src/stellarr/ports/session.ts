@@ -7,10 +7,13 @@ import type {
   MfaCompletion,
   MfaEnrollment,
   MfaVerifyInput,
+  PendingIdentity,
   SignInProvider,
 } from "@/lib/api/types";
 
 export type {
+  IdentityLinkOutcome,
+  PendingIdentity,
   AuthResult,
   ChallengeAccount,
   InvitePreview,
@@ -28,7 +31,13 @@ export interface RegistrationInput {
   username: string;
   displayName: string;
   email: string;
-  password: string;
+  /** Absent for an account made through a provider (`external`). */
+  password?: string;
+  /**
+   * Makes the account from the identity a provider confirmed for this
+   * browser, with no password; the provider must be allowed to.
+   */
+  external?: boolean;
   inviteCode?: string;
   initialServer?: {
     name: string;
@@ -91,6 +100,13 @@ export interface SessionPort {
   invitePreview(code: string): Promise<InvitePreview>;
   /** The identity providers to offer on the account pages, none when there are none. */
   signInProviders(): Promise<SignInProvider[]>;
+  /**
+   * The identity a provider confirmed that no account here is linked to,
+   * waiting for this browser for a few minutes; null when none waits.
+   */
+  pendingIdentity(): Promise<PendingIdentity | null>;
+  /** Forgets the waiting identity: the visitor went back to the sign-in page. */
+  dropPendingIdentity(): Promise<void>;
   bootstrap(): Promise<Bootstrap>;
   login(input: LoginInput): Promise<AuthResult>;
   register(input: RegistrationInput): Promise<AuthResult>;

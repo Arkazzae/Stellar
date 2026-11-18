@@ -24,16 +24,19 @@ type SecurityCalls = Pick<
   | "revokeOtherSessions"
   | "startIdentityLink"
   | "removeIdentity"
+  | "startReauthentication"
+  | "setPassword"
 >;
 
-/** Only the server's own link routes are followed. */
+/** Only the server's own link and re-authentication routes are followed. */
 const LINK_ADDRESS = /^\/api\/auth\/oidc\/([a-z0-9-]+\/)?link\?ticket=[^\s]+$/;
+const REAUTHENTICATION_ADDRESS = /^\/api\/auth\/oidc\/([a-z0-9-]+\/)?reauthenticate\?ticket=[^\s]+$/;
 
-function parseLinkAddress(value: unknown, path: string): string {
+const parseAddress = (route: RegExp) => (value: unknown, path: string): string => {
   const url = expectString(expectRecord(value, path), "url", path);
-  if (!LINK_ADDRESS.test(url)) throw new ApiError("malformed", `${path}: not a link address`);
+  if (!route.test(url)) throw new ApiError("malformed", `${path}: not an address of this server's sign-in routes`);
   return url;
-}
+};
 
 const withPassword = (password?: string) => (password === undefined ? {} : { password });
 
@@ -85,10 +88,20 @@ export function securityCalls(): SecurityCalls {
         "POST",
         route`/api/me/security/identities/${providerId}/link`,
         withPassword(password),
-        parseLinkAddress,
+        parseAddress(LINK_ADDRESS),
       ),
 
     removeIdentity: (identityId, password) =>
       sendVoid("POST", route`/api/me/security/identities/${identityId}/remove`, withPassword(password)),
+
+    startReauthentication: (providerId) =>
+      sendJson(
+        "POST",
+        route`/api/me/security/identities/${providerId}/reauthenticate`,
+        {},
+        parseAddress(REAUTHENTICATION_ADDRESS),
+      ),
+
+    setPassword: (newPassword) => sendVoid("POST", "/api/me/security/password", { newPassword }),
   };
 }

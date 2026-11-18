@@ -3,7 +3,7 @@ import { ApiError, isUnauthorized } from "../errors";
 import { parseInvitePreview } from "../directoryParsers";
 import { expectBoolean, expectRecord, expectString, unwrap } from "../expect";
 import { parseBootstrap, parseEmailConfirmAnswer, parseUser } from "../parsers";
-import { parseAuthResult, parseSignInProviders } from "../securityParsers";
+import { parseAuthResult, parsePendingIdentity, parseSignInProviders } from "../securityParsers";
 import {
   forgetActiveServerId,
   readActiveServerId,
@@ -11,7 +11,7 @@ import {
 } from "../transport";
 import type { Bootstrap, User } from "../types";
 import type { Parse } from "./http";
-import { getJson, route, sendJson, sendVoid } from "./http";
+import { deleteResource, getJson, route, sendJson, sendVoid } from "./http";
 
 type SessionCalls = Pick<
   ApiClient,
@@ -19,6 +19,8 @@ type SessionCalls = Pick<
   | "instanceName"
   | "invitePreview"
   | "signInProviders"
+  | "pendingIdentity"
+  | "dropPendingIdentity"
   | "login"
   | "register"
   | "requestPasswordReset"
@@ -86,6 +88,19 @@ export function sessionCalls(): SessionCalls {
     invitePreview: (code, signal) => getJson(route`/api/invites/${code}`, parseInvitePreview, signal),
 
     signInProviders: (signal) => getJson("/api/auth/oidc", parseSignInProviders, signal),
+
+    async pendingIdentity(signal) {
+      try {
+        return await getJson("/api/auth/oidc/pending", parsePendingIdentity, signal);
+      } catch (error) {
+        // None waits for this browser, it ran out, or its provider is gone.
+        if (error instanceof ApiError && error.status === 404) return null;
+        throw error;
+      }
+    },
+
+    // One that is already gone is as forgotten as it can be.
+    dropPendingIdentity: () => deleteResource("/api/auth/oidc/pending"),
 
     login: (input, signal) =>
       sendJson("POST", "/api/auth/login", input, parseAuthResult, signal),
