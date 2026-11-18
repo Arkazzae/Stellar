@@ -120,18 +120,6 @@ describe("server admin adapter change callbacks", () => {
     expect(onChannelDeleted).toHaveBeenCalledWith("ch-new");
   });
 
-  it("clears a channel's section locally when it is moved out of one", async () => {
-    const assignChannelSection = vi.fn(async () => {});
-    const { adapter, onChannelChanged } = build({ assignChannelSection });
-
-    await adapter.assignChannelSection("ch-1", "sec-1");
-    expect(onChannelChanged).toHaveBeenLastCalledWith("ch-1", { sectionId: "sec-1" });
-
-    await adapter.assignChannelSection("ch-1", null);
-    expect(assignChannelSection).toHaveBeenLastCalledWith("ch-1", null);
-    expect(onChannelChanged).toHaveBeenLastCalledWith("ch-1", { sectionId: undefined });
-  });
-
   it("reports section creation, rename and deletion", async () => {
     const section: Section = { id: "sec-1", name: "Gry", position: 0 };
     const renamed = { ...section, name: "Planszówki" };

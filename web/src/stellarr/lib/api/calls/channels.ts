@@ -15,7 +15,6 @@ type ChannelCalls = Pick<
   | "updateChannel"
   | "deleteChannel"
   | "reorderChannels"
-  | "assignChannelSection"
   | "kickVoiceMember"
   | "moveVoiceMember"
   | "createSection"
@@ -48,9 +47,6 @@ export function channelCalls(): ChannelCalls {
         move === undefined ? { channelIds } : { channelIds, move },
         signal,
       ),
-
-    assignChannelSection: (channelId, sectionId, signal) =>
-      sendVoid("PATCH", route`/api/admin/channels/${channelId}/section`, { sectionId }, signal),
 
     kickVoiceMember: (channelId, userId, signal) =>
       sendVoid(

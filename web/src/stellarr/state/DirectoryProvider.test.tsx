@@ -374,6 +374,39 @@ describe("DirectoryProvider actions", () => {
     ]);
   });
 
+  it("files a channel from the channel menu at the end of the section's channels, in the same request", async () => {
+    const api = fullApi();
+    function FileButton() {
+      const directory = useDirectoryContext();
+      return (
+        <button type="button" onClick={() => void directory.moveChannelToSection("a", "sec-1")}>
+          File
+        </button>
+      );
+    }
+    await mount(
+      (directory) => directory.channels.map((item) => item.id),
+      {
+        channels: [
+          channel("a", 0),
+          channel("b", 1, "sec-1"),
+          { ...channel("v", 2, "sec-1"), kind: "voice" },
+          channel("c", 3, "sec-1"),
+        ],
+      },
+      api,
+      <FileButton />,
+    );
+
+    await userEvent.click(screen.getByRole("button", { name: "File" }));
+
+    // After the section's text channels; its voice channel is another list.
+    expect(api.reorderChannels).toHaveBeenCalledExactlyOnceWith(["b", "c", "v", "a"], {
+      channelId: "a",
+      sectionId: "sec-1",
+    });
+  });
+
   it("lists the servers the account belongs to", async () => {
     await mount((directory) => directory.servers.map((server) => server.id));
 

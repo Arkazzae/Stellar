@@ -28,6 +28,7 @@ export function RailContainer() {
     voiceChannels,
     sections,
     moveChannel,
+    moveChannelToSection,
     canAccessServerSettings,
     canManageServer,
     canManageChannels,
@@ -113,9 +114,7 @@ export function RailContainer() {
     ...(canSection
       ? {
           sections,
-          onMoveToSection: (channelId: string, sectionId: string | null) => {
-            void admin.assignChannelSection(channelId, sectionId);
-          },
+          onMoveToSection: moveChannelToSection,
         }
       : {}),
     ...(canManageChannels && admin.supported.channels

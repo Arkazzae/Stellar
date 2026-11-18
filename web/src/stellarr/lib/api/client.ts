@@ -439,11 +439,6 @@ export interface AdminApiClient {
   ): Promise<Section>;
   deleteSection(sectionId: string, signal?: AbortSignal): Promise<void>;
   reorderSections(sectionIds: string[], signal?: AbortSignal): Promise<void>;
-  assignChannelSection(
-    channelId: string,
-    sectionId: string | null,
-    signal?: AbortSignal,
-  ): Promise<void>;
   listPermissionOverrides(
     targetType: PermissionTargetType,
     targetId: string,

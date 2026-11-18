@@ -29,6 +29,8 @@ export interface DirectoryValue extends DirectoryView {
    * same request as the order.
    */
   moveChannel: (move: ChannelMove) => Promise<void>;
+  /** Files a channel at the end of a section's channels of its kind, or of the loose ones. */
+  moveChannelToSection: (channelId: string, sectionId: string | null) => Promise<void>;
   createServer: (input: NewServer) => Promise<Server>;
   discoverServers: () => Promise<Server[]>;
   joinServer: (serverId: string) => Promise<Server>;
@@ -103,24 +105,38 @@ export function DirectoryProvider({ children }: { children: ReactNode }) {
     [snapshot.channels],
   );
 
-  const value = useMemo<DirectoryValue>(
-    () => ({
+  const value = useMemo<DirectoryValue>(() => {
+    const moveChannel = ({ channelId, sectionId, order }: ChannelMove) => {
+      const from = snapshot.channels.find((channel) => channel.id === channelId)?.sectionId;
+      return directory.reorderChannels(
+        spliceGroupOrder(snapshot.channels, order),
+        (from ?? null) === sectionId ? undefined : { channelId, sectionId },
+      );
+    };
+    return {
       ...deriveDirectoryView(snapshot, textChannels),
-      moveChannel: ({ channelId, sectionId, order }) => {
-        const from = snapshot.channels.find((channel) => channel.id === channelId)?.sectionId;
-        return directory.reorderChannels(
-          spliceGroupOrder(snapshot.channels, order),
-          (from ?? null) === sectionId ? undefined : { channelId, sectionId },
+      moveChannel,
+      moveChannelToSection: (channelId, sectionId) => {
+        const kind = snapshot.channels.find((channel) => channel.id === channelId)?.kind;
+        const group = snapshot.channels.filter(
+          (channel) =>
+            channel.kind === kind &&
+            channel.id !== channelId &&
+            (channel.sectionId ?? null) === sectionId,
         );
+        return moveChannel({
+          channelId,
+          sectionId,
+          order: [...group.map((channel) => channel.id), channelId],
+        });
       },
       createServer: directory.createServer,
       discoverServers: directory.discoverServers,
       joinServer: directory.joinServer,
       joinInvite: directory.joinInvite,
       selectServer: directory.selectServer,
-    }),
-    [snapshot, textChannels, directory],
-  );
+    };
+  }, [snapshot, textChannels, directory]);
 
   return <DirectoryContext.Provider value={value}>{children}</DirectoryContext.Provider>;
 }
