@@ -1,0 +1,29 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Stellarr | Overview</title>
+    <meta name="description" content="Self-hosted text, voice and video chat for a group of friends. One Docker container, translation in the browser, screen sharing up to 2160p." />
+    <meta name="theme-color" content="#020203" />
+    <link rel="icon" type="image/svg+xml" href="../branding/logo/small.svg" />
+  </head>
+  <body>
+    <canvas id="gl" aria-hidden="true"></canvas>
+
+    <main id="ui">
+      <section class="page" data-page="0" aria-label="Overview"></section>
+      <section class="page" data-page="1" aria-label="About"></section>
+      <section class="page" data-page="2" aria-label="Get started"></section>
+    </main>
+
+    <div id="preloader" role="status" aria-live="polite">
+      <p>Talk on your own server</p>
+      <div id="preloader-bar"><div></div></div>
+    </div>
+
+    <p id="nogl" hidden>This page draws its scene with WebGL 2, which your browser does not support or has turned off. Turn on hardware acceleration or try a current browser.</p>
+
+    <script type="module" src="/src/main.js"></script>
+  </body>
+</html>
