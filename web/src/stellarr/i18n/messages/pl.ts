@@ -867,6 +867,8 @@ export const pl = {
   "voiceError.screenShare": "Nie udało się udostępnić ekranu.",
   "voiceError.titleMic": "Mikrofon nie działa",
   "voiceError.titleUnsupported": "Rozmowy głosowe są niedostępne",
+  "voiceError.titleEncryption": "Połączenie szyfrowane się nie zaczęło",
+  "voiceError.encryption": "Tej rozmowy nie da się teraz zaszyfrować, więc połączenie się nie zaczęło.",
   "voiceError.titleIceConfig": "Problem z konfiguracją połączenia",
   "voiceError.titleSignaling": "Problem z połączeniem rozmowy",
   "voiceError.titleTransport": "Problem z dźwiękiem rozmowy",
@@ -1875,6 +1877,10 @@ export const pl = {
   "voiceClient.iceRefreshFailed": "Nie udało się odświeżyć konfiguracji TURN. Ponawiam próbę.",
   "voiceClient.iceRefreshPartial": "Nie wszystkie połączenia przyjęły odświeżoną konfigurację TURN.",
   "voiceClient.joinFailed": "Nie udało się dołączyć do rozmowy głosowej. Spróbuj ponownie.",
+  "voiceClient.callEncryptionUnsupported":
+    "Ta rozmowa jest szyfrowana end-to-end, a\u00a0ta przeglądarka nie potrafi szyfrować połączeń, więc połączenie się nie zaczęło. Zadzwoń z\u00a0innej przeglądarki.",
+  "voiceClient.callKeysFailed":
+    "Nie udało się wczytać kluczy szyfrowania tej rozmowy, więc połączenie się nie zaczęło. Spróbuj ponownie.",
   "voiceClient.moveFailed": "Nie udało się przełączyć kanału głosowego. Dołącz ponownie.",
   "voiceClient.rejoinFailed": "Nie udało się wrócić do kanału głosowego. Spróbuj dołączyć ponownie.",
   "voiceClient.signalingFailed": "Sygnalizacja głosowa zawiodła. Sprawdź połączenie i dołącz ponownie.",

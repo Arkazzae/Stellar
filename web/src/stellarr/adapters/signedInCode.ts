@@ -13,6 +13,7 @@ import type { RealtimeClient } from "@/lib/realtime/types";
 import { RuntimeIceProvider } from "@/lib/voice/rtc/iceSession";
 import { WebRtcVoiceClient } from "@/lib/voice/rtc/webrtc";
 import { ParticipantPreferencesStore } from "@/lib/voice/participantPreferences";
+import type { CallKeySource } from "@/lib/voice/e2ee/callCrypto";
 import type { VoiceSettingsStore } from "@/lib/voice/settings";
 import type { CreateVoiceOptions, VoicePort } from "@/ports";
 
@@ -26,10 +27,12 @@ export interface VoiceDependencies {
   /** The contract fetched at sign-in, absent until the boot payload is in. */
   rtcConfig: RtcConfig | undefined;
   settings: VoiceSettingsStore;
+  /** The keys of private calls in encrypted conversations. */
+  callEncryption: CallKeySource;
 }
 
 export function createWebRtcVoice(
-  { api, realtime, rtcConfig, settings }: VoiceDependencies,
+  { api, realtime, rtcConfig, settings, callEncryption }: VoiceDependencies,
   { userId, displayName, translate }: CreateVoiceOptions,
 ): VoicePort {
   const ice = new RuntimeIceProvider({
@@ -45,6 +48,7 @@ export function createWebRtcVoice(
     realtime,
     selfUserId: userId,
     selfDisplayName: displayName,
+    callEncryption,
     translate,
     ice,
     // How each other person sounds to this account outlives the call and the

@@ -126,9 +126,11 @@ describe("receiveRemoteState", () => {
       muted: true,
       screenStreamId: "share",
       cameraStreamId: "face",
+      encrypted: true,
     });
 
     expect(person.muted).toBe(true);
+    expect(person.encrypted).toBe(true);
     expect(person.media.roleOf("share")).toBe("screen");
     expect(route).toHaveBeenCalledWith(person);
     expect(changed).toHaveBeenCalled();

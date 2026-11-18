@@ -4,6 +4,13 @@ import type { ChannelId, RtcConfig, UserId } from "@/lib/api/types";
 import type { RealtimeClient, VoiceSignal } from "@/lib/realtime/types";
 import { decodeRtcState, encodeRtcState, RTC_PROTOCOL_VERSION } from "@/lib/rtc/protocol";
 import { profileFor } from "../audioProfiles";
+import {
+  CallCrypto,
+  callEncryptionPath,
+  type CallCryptoPath,
+  type CallKeys,
+  type CallKeySource,
+} from "../e2ee/callCrypto";
 import { AdaptiveBitrateController } from "./bitrate";
 import { cameraIsSupported } from "../video/camera";
 import { LifecycleWatcher } from "./lifecycle";
@@ -14,9 +21,18 @@ import { ParticipantPreferencesStore } from "../participantPreferences";
 import { clampParticipantVolume } from "../playback/remoteMixer";
 import { DEFAULT_SETTINGS, needsRecapture, type VoiceSettings } from "../settings";
 import { VoiceStateStore } from "../store";
-import type { VoiceClient, VoiceError, VoicePeer, VoiceReceivePreferences, VoiceState } from "../types";
+import type {
+  VoiceClient,
+  VoiceError,
+  VoiceJoinOptions,
+  VoicePeer,
+  VoiceReceivePreferences,
+  VoiceState,
+} from "../types";
 import { SpeechDetector } from "../capture/vad";
 import {
+  callKeysError,
+  callUnsupportedError,
   channelKickedError,
   iceConfigError,
   joinFailedError,
@@ -46,6 +62,13 @@ export interface WebRtcVoiceClientOptions {
   realtime: RealtimeClient;
   selfUserId: UserId;
   selfDisplayName: string;
+  /**
+   * The keys of private calls in encrypted conversations. Without it every
+   * call is plain, as a server channel's always is.
+   */
+  callEncryption?: CallKeySource;
+  /** Makes the frame worker of an encrypted call; tests hand in their own. */
+  createFrameWorker?: () => Worker;
   /**
    * Called once per voice session and read once per connection to the media
    * server, so replacing a connection costs no `/api/bootstrap` call.
@@ -131,6 +154,18 @@ export class WebRtcVoiceClient implements VoiceClient {
    * and the voice in sync; the stream itself carries no tracks.
    */
   private voiceStream: MediaStream | null = null;
+  /**
+   * The frame encryption of the call in progress, or null for a plain one.
+   * Decided once per call, before the seat is taken, and kept through every
+   * replaced connection until the call ends.
+   */
+  private crypto: CallCrypto | null = null;
+  /** The room is a private conversation, whose call may be encrypted. */
+  private privateCall = false;
+  /** Following the other side into encryption is under way. */
+  private following = false;
+  /** A plain private call listens for its conversation being switched on. */
+  private stopWatchingSwitch: (() => void) | null = null;
 
   /**
    * Bumped on every join and leave. Every async continuation checks it before
@@ -274,6 +309,7 @@ export class WebRtcVoiceClient implements VoiceClient {
       transportChanged: () => this.health.syncTransport(),
       probe: () => this.health.probe(),
       voiceStreamId: () => this.voiceStream?.id ?? null,
+      crypto: () => this.crypto,
     });
   }
 
@@ -287,7 +323,7 @@ export class WebRtcVoiceClient implements VoiceClient {
 
   // ---------------------------------------------------------------- session
 
-  async join(channelId: ChannelId): Promise<void> {
+  async join(channelId: ChannelId, options: VoiceJoinOptions = {}): Promise<void> {
     if (this.disposed) return;
     const incompatibility = rtcIncompatibility(this.t, this.options.rtc);
     if (incompatibility) {
@@ -305,6 +341,11 @@ export class WebRtcVoiceClient implements VoiceClient {
       return;
     }
     if (this.channelId === channelId && this.store.getSnapshot().connection !== "failed") return;
+
+    // A private call joined again, from the failure notice or a reconnect,
+    // stays private even when the caller does not say so; read before the
+    // leave below forgets it.
+    const privateCall = options.private ?? (channelId === this.channelId && this.privateCall);
 
     // This method starts in the channel button's user gesture. Create the audio
     // contexts now: doing it later in `ontrack` makes Brave/Chromium leave them
@@ -328,7 +369,27 @@ export class WebRtcVoiceClient implements VoiceClient {
       degraded: null,
       cameraSupported: this.cameraIsSupported(),
       peers: [this.selfPeer(false)],
+      encrypted: false,
     });
+
+    // Before the microphone and before the seat: the other side rings as
+    // soon as this side sits down, so a call that cannot be what its
+    // conversation requires never gets that far.
+    this.privateCall = privateCall;
+    // A server channel's call is plain and goes straight on.
+    const decided = this.privateCall
+      ? await this.decideEncryption(channelId)
+      : { crypto: null, error: null };
+    if (this.isStale(session)) {
+      decided.crypto?.dispose();
+      return;
+    }
+    if (decided.error !== null) {
+      this.abortJoin(decided.error);
+      return;
+    }
+    this.adoptCrypto(decided.crypto);
+    if (decided.crypto === null) this.watchSwitch(channelId);
 
     const opened = await this.openMicrophone(session);
     if (!opened) return;
@@ -384,6 +445,8 @@ export class WebRtcVoiceClient implements VoiceClient {
 
     for (const unsubscribe of this.unsubscribes.splice(0)) unsubscribe();
     this.topology.dropAll();
+    this.endEncryption();
+    this.privateCall = false;
 
     this.health.stop();
     this.lifecycle.stop();
@@ -420,7 +483,7 @@ export class WebRtcVoiceClient implements VoiceClient {
     const channelId = this.channelId;
     if (this.disposed || channelId === null) return;
     if (this.store.getSnapshot().connection === "failed") {
-      await this.join(channelId);
+      await this.join(channelId, { private: this.privateCall });
       return;
     }
 
@@ -720,6 +783,9 @@ export class WebRtcVoiceClient implements VoiceClient {
       if (state) {
         receiveRemoteState(this.personMedia, person, state);
         this.topology.refreshReceivePreferences();
+        // They encrypt and this side does not: their frames are held back
+        // until this side follows them, as the call it joined is encrypted.
+        if (state.encrypted && this.crypto === null) void this.follow();
       }
     } catch {
       // A single bad frame must not tear down the session.
@@ -748,6 +814,9 @@ export class WebRtcVoiceClient implements VoiceClient {
     if (this.channelId === null || this.channelId === targetChannelId) return;
 
     this.topology.dropAll();
+    // Only a server channel is ever moved, and its call is never encrypted.
+    this.endEncryption();
+    this.privateCall = false;
     this.channelId = targetChannelId;
     this.store.set({
       channelId: targetChannelId,
@@ -856,7 +925,99 @@ export class WebRtcVoiceClient implements VoiceClient {
       muted: this.store.getSnapshot().muted,
       screenStreamId: this.screen.streamId,
       cameraStreamId: this.camera.streamId,
+      encrypted: this.crypto !== null,
     });
+  }
+
+  // ------------------------------------------------------------- encryption
+
+  /**
+   * How the call in `channelId` is protected, from the conversation's state
+   * read now. A server channel, and a private call the server says is not
+   * encrypted, are plain. A conversation that is encrypted gets its call
+   * encrypted or no call: there is never a plain fallback.
+   */
+  private async decideEncryption(
+    channelId: ChannelId,
+  ): Promise<{ crypto: CallCrypto | null; error: VoiceError | null }> {
+    const source = this.options.callEncryption;
+    if (!this.privateCall || source === undefined) return { crypto: null, error: null };
+    let keys: CallKeys | null;
+    try {
+      keys = await source.keys(channelId);
+    } catch (cause) {
+      const unsupported = (cause as { reason?: unknown } | null)?.reason === "unsupported";
+      return { crypto: null, error: unsupported ? callUnsupportedError(this.t) : callKeysError(this.t) };
+    }
+    if (keys === null) return { crypto: null, error: null };
+    const path = callEncryptionPath();
+    if (path === null) return { crypto: null, error: callUnsupportedError(this.t) };
+    return { crypto: this.makeCrypto(channelId, keys, path), error: null };
+  }
+
+  private makeCrypto(channelId: ChannelId, keys: CallKeys, path: CallCryptoPath): CallCrypto {
+    return new CallCrypto({
+      conversationId: channelId,
+      keys,
+      source: this.options.callEncryption!,
+      path,
+      onStatus: () => this.publishPeers(),
+      ...(this.options.createFrameWorker ? { createWorker: this.options.createFrameWorker } : {}),
+    });
+  }
+
+  private adoptCrypto(crypto: CallCrypto | null): void {
+    this.crypto = crypto;
+    this.store.set({ encrypted: crypto !== null });
+  }
+
+  private endEncryption(): void {
+    this.stopWatchingSwitch?.();
+    this.stopWatchingSwitch = null;
+    this.crypto?.dispose();
+    this.crypto = null;
+  }
+
+  /** A plain private call follows its conversation into encryption when both switch it on. */
+  private watchSwitch(channelId: ChannelId): void {
+    const source = this.options.callEncryption;
+    if (!this.privateCall || source === undefined) return;
+    this.stopWatchingSwitch = source.subscribe(channelId, (event) => {
+      if (event === "on") void this.follow();
+    });
+  }
+
+  /**
+   * Turn this plain private call into an encrypted one, on a new connection:
+   * the other side encrypts (it called while the conversation was encrypted,
+   * which keeps its call encrypted until it ends), or the conversation was
+   * switched on. A browser that cannot stays plain, and plays nothing of
+   * anybody who encrypts.
+   */
+  private async follow(): Promise<void> {
+    const source = this.options.callEncryption;
+    const channelId = this.channelId;
+    if (this.following || this.crypto !== null || !this.privateCall || source === undefined || channelId === null) {
+      return;
+    }
+    const path = callEncryptionPath();
+    if (path === null) return;
+    this.following = true;
+    const session = this.session;
+    try {
+      const keys = await source.follow(channelId);
+      if (this.isStale(session) || this.crypto !== null) return;
+      this.stopWatchingSwitch?.();
+      this.stopWatchingSwitch = null;
+      this.adoptCrypto(this.makeCrypto(channelId, keys, path));
+      this.publishPeers();
+      void this.broadcastState();
+      await this.topology.renew();
+    } catch {
+      // No key to follow with: the call stays as it is.
+    } finally {
+      this.following = false;
+    }
   }
 
   /**
@@ -920,7 +1081,8 @@ export class WebRtcVoiceClient implements VoiceClient {
     this.health.stop();
     this.lifecycle.stop();
     this.options.ice.endSession();
-    this.store.set({ connection: "failed", error });
+    this.endEncryption();
+    this.store.set({ connection: "failed", error, encrypted: false });
   }
 
   private markConnected(): void {
@@ -953,22 +1115,31 @@ export class WebRtcVoiceClient implements VoiceClient {
   }
 
   private publishPeers(): void {
+    // Only an encrypted call, or a plain one with somebody encrypting in it,
+    // can have anything that does not decrypt.
+    const people = [...this.people.values()];
+    const sealed =
+      this.crypto !== null || people.some((person) => person.encrypted) ? this.topology.undecryptable() : null;
     this.store.set({
       peers: [
         this.selfPeer(this.selfSpeaking),
-        ...[...this.people.values()].map((person) => ({
-          userId: person.userId,
-          displayName: person.displayName,
-          muted: person.muted,
-          speaking: person.speaking && !person.muted,
-          level: person.level,
-          playbackVolume: person.playbackVolume,
-          gated: person.gated,
-          suppressed: person.suppressed,
-          self: false,
-          screen: person.media.screen,
-          camera: person.media.camera,
-        })),
+        ...people.map((person) => {
+          const undecryptable = sealed?.get(person.userId);
+          return {
+            userId: person.userId,
+            displayName: person.displayName,
+            muted: person.muted,
+            speaking: person.speaking && !person.muted,
+            level: person.level,
+            playbackVolume: person.playbackVolume,
+            gated: person.gated,
+            suppressed: person.suppressed,
+            self: false,
+            screen: person.media.screen,
+            camera: person.media.camera,
+            ...(undecryptable === undefined ? {} : { undecryptable }),
+          };
+        }),
       ],
     });
   }

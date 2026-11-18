@@ -27,7 +27,7 @@ import { createAccountAdapter } from "./account";
 import { createServerAdminAdapter } from "./admin";
 import { createChatAdapter, createTypingAdapter } from "./chat";
 import { createDirectoryAdapter } from "./directory";
-import { createEncryption } from "./encryption";
+import { callKeySource, createEncryption } from "./encryption";
 import { createFriendsAdapter } from "./friends";
 import { createMessageActionsAdapter, ReactionStore } from "./messageActions";
 import { createNotificationDeliveryAdapter } from "./notificationDelivery";
@@ -120,7 +120,14 @@ export function createRuntime(options: RuntimeOptions = {}): Runtime {
   // along with the app, so it is there whenever a call can be started.
   const createVoice: Ports["createVoice"] = (voiceOptions) =>
     loadedSignedInCode().createWebRtcVoice(
-      { api, realtime, rtcConfig, settings: voiceSettingsStore },
+      {
+        api,
+        realtime,
+        rtcConfig,
+        settings: voiceSettingsStore,
+        // A private call's room is its conversation, whose keys it uses.
+        callEncryption: callKeySource(encryption.client),
+      },
       voiceOptions,
     );
 

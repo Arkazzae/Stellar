@@ -21,6 +21,7 @@ const MESSAGE_KEY: Record<VoiceError["kind"], MessageKey> = {
   "channel-kicked": "voiceError.channelKicked",
   camera: "voiceError.camera",
   "screen-share": "voiceError.screenShare",
+  encryption: "voiceError.encryption",
 };
 
 const TITLE_KEY: Record<VoiceError["kind"], MessageKey> = {
@@ -34,6 +35,7 @@ const TITLE_KEY: Record<VoiceError["kind"], MessageKey> = {
   "channel-kicked": "voiceError.titleChannelKicked",
   camera: "voiceError.titleCamera",
   "screen-share": "voiceError.titleScreenShare",
+  encryption: "voiceError.titleEncryption",
 };
 
 /** The sentence the room shows for an RTC failure, or null when there is none. */
@@ -44,7 +46,12 @@ export function voiceErrorForUi(
   if (error === null) return null;
   // A recoverable failure already names the participant, device or permission
   // involved. A broad sentence in its place would read better and help less.
-  if (error.recoverable === true || error.kind === "camera" || error.kind === "screen-share") {
+  if (
+    error.recoverable === true ||
+    error.kind === "camera" ||
+    error.kind === "screen-share" ||
+    error.kind === "encryption"
+  ) {
     return error.message;
   }
   return t(MESSAGE_KEY[error.kind]);
