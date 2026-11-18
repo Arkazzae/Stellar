@@ -1001,6 +1001,12 @@
     .app.dm-space.roster-open {
       grid-template-columns: var(--servers-w) var(--rail-w) minmax(0, 1fr) var(--roster-w);
     }
+
+    /* Shut, the track is 0px wide but the panel's border is not; it leaves
+       the flow, as the roster does in cinema mode. */
+    .app.dm-space:not(.roster-open) .dm-profile {
+      display: none;
+    }
   }
 
   @media (max-width: 767px) {
