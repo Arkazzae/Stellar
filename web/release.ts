@@ -2,9 +2,9 @@ import { createHash } from "node:crypto";
 import { readdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join, relative, sep } from "node:path";
 
-import type { Plugin } from "vite";
+import type { Plugin, Rollup } from "vite";
 
-import { WEB_DOCUMENT } from "./documents";
+import { BUILD_DIRECTORY, fileDirectories, WEB_DOCUMENT } from "./documents";
 
 /*
  * The release id: what a running page compares to learn that the server has
@@ -16,6 +16,11 @@ import { WEB_DOCUMENT } from "./documents";
  * `cache: "no-store"` besides. The web client's document carries it in a
  * <meta>, which is how a loaded page learns which release it is itself. An id
  * baked into a chunk would change that chunk, and a chunk's name is its content.
+ *
+ * The file also lists the web client's shell, which the service worker keeps
+ * a copy of (public/stellarr-worker.js), and the folders that hold only
+ * files, with which the worker tells the web client's addresses from the
+ * rest the way `documentFor` does.
  */
 
 /** Where the build writes the release file, from the web root. */
@@ -50,9 +55,74 @@ export function stampDocument(html: string, id: string): string {
   return html.replace("</head>", `  <meta name="${RELEASE_META}" content="${id}" />\n  </head>`);
 }
 
+/** What the service worker needs to know of a release. */
+export interface ReleaseManifest {
+  id: string;
+  /** The files of the web client's shell, by address, its document first. */
+  shell: string[];
+  /** The folders that hold only files and never pages; see `fileDirectories`. */
+  directories: string[];
+}
+
 /** The contents of /release.json. */
-export function releaseFile(id: string): string {
-  return `${JSON.stringify({ id })}\n`;
+export function releaseFile(manifest: ReleaseManifest): string {
+  return `${JSON.stringify(manifest)}\n`;
+}
+
+/** How a chunk of the build reaches the others and its styles. */
+export interface ChunkLinks {
+  imports: readonly string[];
+  dynamicImports: readonly string[];
+  css: readonly string[];
+}
+
+/** The links of each chunk of a bundle, by file name. */
+export function chunkLinks(bundle: Rollup.OutputBundle): Map<string, ChunkLinks> {
+  const links = new Map<string, ChunkLinks>();
+  for (const output of Object.values(bundle)) {
+    if (output.type !== "chunk") continue;
+    links.set(output.fileName, {
+      imports: output.imports,
+      dynamicImports: output.dynamicImports,
+      css: [...(output.viteMetadata?.importedCss ?? [])],
+    });
+  }
+  return links;
+}
+
+/** An address in the build's own folders, in the text of a file that names one. */
+const BUILD_ADDRESS = new RegExp(`/(?:${BUILD_DIRECTORY}|fonts)/[\\w.-]+`, "g");
+
+/** The files whose text may name others: documents, scripts and styles. */
+const TEXT_FILE = new RegExp("[.](?:html|js|css)$");
+
+/**
+ * The files of the web client's shell: its document and what the document and
+ * the signed-in app load from /static/ and /fonts/. That is the document's
+ * own scripts and styles, every chunk they import, on demand or not, and the
+ * images and fonts that any of these name. Cockpit's own files are not
+ * among them, for the web client's document leads nowhere near them. Nor is
+ * anything outside those two folders: the worklets, codecs, models and
+ * sounds keep going to the network.
+ *
+ * `read` gives the text of a file of the build, or null when it has none.
+ */
+export function shellFiles(chunks: ReadonlyMap<string, ChunkLinks>, read: (file: string) => string | null): string[] {
+  const shell = new Set([WEB_DOCUMENT]);
+  const pending = [WEB_DOCUMENT];
+  const visit = (file: string) => {
+    if (shell.has(file) || read(file) === null) return;
+    shell.add(file);
+    pending.push(file);
+  };
+  for (let file = pending.pop(); file !== undefined; file = pending.pop()) {
+    const links = chunks.get(file);
+    for (const linked of [...(links?.imports ?? []), ...(links?.dynamicImports ?? []), ...(links?.css ?? [])]) visit(linked);
+    if (!TEXT_FILE.test(file)) continue;
+    for (const [address] of (read(file) ?? "").matchAll(BUILD_ADDRESS)) visit(address.slice(1));
+  }
+  const others = [...shell].filter((file) => file !== WEB_DOCUMENT).sort();
+  return [WEB_DOCUMENT, ...others].map((file) => `/${file}`);
 }
 
 /** Every file below `directory`, by its path from there with forward slashes. */
@@ -68,26 +138,33 @@ function readTree(directory: string): Map<string, Uint8Array> {
 
 /**
  * Writes the release into a finished build: the id of everything in the
- * output directory, in the web client's document and in /release.json. It
- * runs once the build has written its files, public/ among them, since the
- * id has to cover all of them; the document is hashed as the build wrote it,
- * before the id is in it.
+ * output directory, in the web client's document and in /release.json, with
+ * the shell's files. It runs once the build has written its files, public/
+ * among them, since the id has to cover all of them; the document is hashed
+ * as the build wrote it, before the id is in it.
  */
-export function stellarrRelease(): Plugin {
+export function stellarrRelease(options: { publicDir: string }): Plugin {
   let outDir = "";
+  let chunks = new Map<string, ChunkLinks>();
   return {
     name: "stellarr-release",
     apply: "build",
     configResolved(config) {
       outDir = join(config.root, config.build.outDir);
     },
+    generateBundle(_options, bundle) {
+      chunks = chunkLinks(bundle);
+    },
     closeBundle() {
       const files = readTree(outDir);
       const document = files.get(WEB_DOCUMENT);
       if (document === undefined) return;
       const id = releaseId(files);
+      const read = (file: string) => (files.has(file) ? Buffer.from(files.get(file) ?? []).toString("utf8") : null);
+      const shell = shellFiles(chunks, read);
+      const directories = fileDirectories(options.publicDir);
       writeFileSync(join(outDir, WEB_DOCUMENT), stampDocument(Buffer.from(document).toString("utf8"), id));
-      writeFileSync(join(outDir, RELEASE_FILE), releaseFile(id));
+      writeFileSync(join(outDir, RELEASE_FILE), releaseFile({ id, shell, directories }));
     },
   };
 }

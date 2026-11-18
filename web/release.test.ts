@@ -1,7 +1,15 @@
 import { describe, expect, it } from "vitest";
 
 import { RELEASE_META as CLIENT_META, RELEASE_PATH as CLIENT_PATH } from "./src/stellarr/lib/platform/release";
-import { releaseFile, releaseId, RELEASE_META, RELEASE_PATH, stampDocument } from "./release";
+import {
+  releaseFile,
+  releaseId,
+  RELEASE_META,
+  RELEASE_PATH,
+  shellFiles,
+  stampDocument,
+  type ChunkLinks,
+} from "./release";
 
 const bytes = (text: string) => new TextEncoder().encode(text);
 const files = (entries: Record<string, string>) => new Map(Object.entries(entries).map(([path, text]) => [path, bytes(text)]));
@@ -45,8 +53,55 @@ describe("what the build writes the id into", () => {
     expect(() => stampDocument("<p>no head</p>", "abc")).toThrow();
   });
 
-  it("writes the id into the file the page asks for", () => {
-    expect(JSON.parse(releaseFile("abc"))).toEqual({ id: "abc" });
+  it("writes the manifest into the file the page and the worker ask for", () => {
+    const manifest = { id: "abc", shell: ["/index.html"], directories: ["static"] };
+    expect(JSON.parse(releaseFile(manifest))).toEqual(manifest);
+  });
+});
+
+describe("the files of the web client's shell", () => {
+  const links = (imports: string[] = [], dynamicImports: string[] = [], css: string[] = []): ChunkLinks => ({ imports, dynamicImports, css });
+  const chunks = new Map([
+    ["static/web.js", links(["static/shared.js"], ["static/app.js"], ["static/web.css"])],
+    ["static/shared.js", links()],
+    ["static/app.js", links(["static/shared.js"])],
+    ["static/cockpit.js", links(["static/shared.js"], [], ["static/cockpit.css"])],
+  ]);
+  const texts: Record<string, string> = {
+    "index.html": '<script src="/static/web.js"></script><link href="/static/icon.svg">',
+    "static/web.js": "",
+    "static/shared.js": "",
+    "static/app.js": 'import("/static/mascot.png"); fetch("/audio/detector-worklet.js"); "/static/gone.svg"',
+    "static/web.css": "src: url(/fonts/outfit.woff2)",
+    "static/cockpit.js": "",
+    "static/cockpit.css": "src: url(/static/cockpit-only.woff2)",
+    "static/icon.svg": "",
+    "static/mascot.png": "",
+    "fonts/outfit.woff2": "",
+    "audio/detector-worklet.js": "",
+    "static/cockpit-only.woff2": "",
+  };
+  const read = (file: string) => texts[file] ?? null;
+
+  it("holds the document, what it loads, on demand or not, and what those name", () => {
+    expect(shellFiles(chunks, read)).toEqual([
+      "/index.html",
+      "/fonts/outfit.woff2",
+      "/static/app.js",
+      "/static/icon.svg",
+      "/static/mascot.png",
+      "/static/shared.js",
+      "/static/web.css",
+      "/static/web.js",
+    ]);
+  });
+
+  it("leaves out Cockpit's files, other folders and names with no file", () => {
+    const shell = shellFiles(chunks, read);
+    expect(shell).not.toContain("/static/cockpit.js");
+    expect(shell).not.toContain("/static/cockpit-only.woff2");
+    expect(shell).not.toContain("/audio/detector-worklet.js");
+    expect(shell).not.toContain("/static/gone.svg");
   });
 });
 
