@@ -87,12 +87,18 @@ public static class SecurityEvents
         CancellationToken cancellationToken)    {
         var user = await db.Users.AsNoTracking()
             .Where(x => x.Id == userId)
-            .Select(x => new { x.NormalizedEmail, x.Email })
+            .Select(x => new { x.NormalizedEmail, x.Email, x.ProviderVerifiedEmail })
             .SingleOrDefaultAsync(cancellationToken);
         if (user?.NormalizedEmail is not { Length: > 0 } normalized ||
             user.Email?.Trim() is not { Length: > 0 } recipient)
         {
             return null;
+        }
+
+        // The address the provider vouched for when the account was made through it.
+        if (user.ProviderVerifiedEmail == normalized)
+        {
+            return recipient;
         }
 
         var verified = await db.MfaMethods.AsNoTracking()

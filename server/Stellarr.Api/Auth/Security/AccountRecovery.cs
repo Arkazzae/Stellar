@@ -46,16 +46,8 @@ public static class AccountRecovery
         }
 
         var now = DateTime.UtcNow;
-        var verifiedEmailMethod = user.NormalizedEmail is { Length: > 0 } normalizedEmail
-            ? await db.MfaMethods.AsNoTracking().FirstOrDefaultAsync(
-                x => x.UserId == user.Id &&
-                    x.Type == MfaMethodTypes.Email &&
-                    x.ConfirmedAt != null &&
-                    x.RevokedAt == null &&
-                    x.EmailAddress == normalizedEmail,
-                cancellationToken)
-            : null;
-        var alertRecipient = verifiedEmailMethod is null ? null : user.Email?.Trim();
+        // Read before the methods go, since an e-mail method is what verifies most addresses.
+        var alertRecipient = await SecurityEvents.VerifiedEmailAsync(db, user.Id, cancellationToken);
         var methods = await db.MfaMethods
             .Where(x => x.UserId == user.Id && x.RevokedAt == null)
             .ExecuteUpdateAsync(setters => setters.SetProperty(x => x.RevokedAt, now), cancellationToken);

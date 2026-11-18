@@ -38,6 +38,10 @@ public sealed partial class Messages
         MessageKey.EmailInvalid => "Enter a valid e-mail address.",
         MessageKey.UsernameTaken => "This username is already taken.",
         MessageKey.EmailTaken => "An account with this e-mail address already exists.",
+        MessageKey.ProviderSignUpExpired => "The sign-in at the provider has expired. Log in through the provider again, then create the account.",
+        MessageKey.ProviderSignUpClosed => "Accounts cannot be created through {provider} here. Ask the owner of the instance, or create an account with a password.",
+        MessageKey.ProviderSignUpNotForSetup => "The owner's account is created with a password and the setup code, at /setup.",
+        MessageKey.ProviderIdentityAlreadyLinked => "This {provider} account is already linked to an account here. Log in through {provider} instead.",
 
         // Channels and sections
         MessageKey.ChannelNameOrKindInvalid => "The channel name or type is invalid.",

@@ -519,7 +519,8 @@ public sealed partial class OidcSignInFlowTests(StellarrWebApplicationFactory fa
     private WebApplicationFactory<Program> Host(
         FakeProvider provider,
         FakeProvider? work = null,
-        bool trustProviderMfa = false) => factory.WithWebHostBuilder(builder =>
+        bool trustProviderMfa = false,
+        StellarrWebApplicationFactory? instance = null) => (instance ?? factory).WithWebHostBuilder(builder =>
     {
         if (work is not null)
         {

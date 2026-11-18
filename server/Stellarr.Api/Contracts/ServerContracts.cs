@@ -5,14 +5,20 @@ namespace Stellarr.Api.Contracts;
 
 /// <param name="InitialServer">The server an empty instance starts with; ignored once it has an account.</param>
 /// <param name="SetupCode">The code from the log that founds an empty instance; ignored once it has an account.</param>
+/// <param name="External">
+/// Creates the account from the identity a provider confirmed for this
+/// browser, with no password, when that provider may create accounts. It
+/// takes an invite like any other registration, and never founds an instance.
+/// </param>
 public sealed record RegisterRequest(
     string Username,
     string DisplayName,
     string Email,
-    string Password,
+    string? Password,
     string? InviteCode = null,
     CreateServerRequest? InitialServer = null,
-    string? SetupCode = null);
+    string? SetupCode = null,
+    bool External = false);
 
 public sealed record ServerDto(
     string Id,

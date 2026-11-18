@@ -35,6 +35,10 @@ public sealed partial class Messages
         MessageKey.RegistrationDisplayNameLength => "Nazwa widoczna musi mieć od 1 do 64 znaków.",
         MessageKey.EmailInvalid => "Podaj poprawny adres e-mail.",
         MessageKey.UsernameTaken => "Ta nazwa użytkownika jest już zajęta.",
+        MessageKey.ProviderSignUpExpired => "Logowanie u dostawcy wygasło. Zaloguj się przez niego jeszcze raz, a potem załóż konto.",
+        MessageKey.ProviderSignUpClosed => "Przez dostawcę {provider} nie można tu zakładać kont. Poproś właściciela instancji albo załóż konto z hasłem.",
+        MessageKey.ProviderSignUpNotForSetup => "Konto właściciela zakłada się hasłem i kodem konfiguracji, na stronie /setup.",
+        MessageKey.ProviderIdentityAlreadyLinked => "To konto u dostawcy {provider} jest już połączone z kontem na tym serwerze. Zaloguj się przez dostawcę {provider}.",
         MessageKey.EmailTaken => "Konto z tym adresem e-mail już istnieje.",
 
         // Channels and sections
