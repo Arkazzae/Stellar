@@ -62,6 +62,11 @@ public sealed class AppDbContext(DbContextOptions<AppDbContext> options) : DbCon
     public DbSet<DirectMessage> DirectMessages => Set<DirectMessage>();
     public DbSet<DirectMessageAttachment> DirectMessageAttachments => Set<DirectMessageAttachment>();
     public DbSet<DirectConversationRead> DirectConversationReads => Set<DirectConversationRead>();
+    public DbSet<AccountKey> AccountKeys => Set<AccountKey>();
+    public DbSet<AccountKeyBackup> AccountKeyBackups => Set<AccountKeyBackup>();
+    public DbSet<EncryptionDevice> EncryptionDevices => Set<EncryptionDevice>();
+    public DbSet<EncryptionEpoch> EncryptionEpochs => Set<EncryptionEpoch>();
+    public DbSet<EncryptionEnvelope> EncryptionEnvelopes => Set<EncryptionEnvelope>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder) =>
         modelBuilder.ApplyConfigurationsFromAssembly(typeof(AppDbContext).Assembly);
