@@ -46,6 +46,7 @@ vi.mock("./RoomContainer", () => ({ RoomContainer: standIn("channel-room") }));
 vi.mock("./FriendsRoomContainer", () => ({ FriendsRoomContainer: standIn("friends-room") }));
 vi.mock("./RosterContainer", () => ({ RosterContainer: standIn("roster") }));
 vi.mock("./DmProfileContainer", () => ({ DmProfileContainer: standIn("dm-profile") }));
+vi.mock("./DmCallChatContainer", () => ({ DmCallChatContainer: standIn("dm-call-chat") }));
 vi.mock("./ModalsContainer", () => ({ ModalsContainer: standIn("modals") }));
 vi.mock("./UserSettingsContainer", () => ({ UserSettingsContainer: standIn("user-settings") }));
 vi.mock("./ClientSettingsSync", () => ({ ClientSettingsSync: standIn("client-settings-sync") }));
@@ -119,6 +120,26 @@ describe("AppContainer", () => {
     render(<AppContainer />);
 
     expect(screen.getByTestId("dm-profile").closest(".app")).toHaveClass("roster-open");
+  });
+
+  it("holds the column open for the chat beside the call, and shuts the chat with it", async () => {
+    setStubs({
+      ui: { space: "dm", activeDmId: "dm-ada", profilePanelOpen: false, callChatOpen: true },
+      friends: { active: { id: "dm-ada" } as never },
+    });
+    // A drawer, which Escape shuts.
+    const width = window.innerWidth;
+    window.innerWidth = 800;
+    try {
+      render(<AppContainer />);
+
+      expect(screen.getByTestId("dm-call-chat").closest(".app")).toHaveClass("roster-open");
+      await userEvent.setup().keyboard("{Escape}");
+      expect(stubs.ui.setCallChatOpen).toHaveBeenCalledWith(false);
+      expect(stubs.ui.setProfilePanelOpen).not.toHaveBeenCalled();
+    } finally {
+      window.innerWidth = width;
+    }
   });
 
   it("mounts the overlays outside the grid", () => {

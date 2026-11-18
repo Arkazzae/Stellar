@@ -13,6 +13,7 @@ import { UiProvider } from "@/state/UiProvider";
 import { VoiceProvider } from "@/state/VoiceProvider";
 
 import { ClientSettingsSync } from "./ClientSettingsSync";
+import { DmCallChatContainer } from "./DmCallChatContainer";
 import { DmProfileContainer } from "./DmProfileContainer";
 import { DmRailContainer } from "./DmRailContainer";
 import { FriendsRoomContainer } from "./FriendsRoomContainer";
@@ -81,8 +82,9 @@ function Shell() {
   const { active } = useFriends();
   const dm = ui.space === "dm";
   // The roster's column, beside a conversation, holds the other person's
-  // profile. The Friends view lists people itself, so there it stays shut.
-  const profile = dm && active !== null;
+  // profile, or during its call the chat; one at a time. The Friends view
+  // lists people itself, so there it stays shut.
+  const conversation = dm && active !== null;
 
   return (
     <>
@@ -93,12 +95,27 @@ function Shell() {
         // channel rail a drag state, and neither should survive a switch.
         rail={dm ? <DmRailContainer /> : <RailContainer />}
         room={dm ? <FriendsRoomContainer /> : <RoomContainer />}
-        roster={dm ? (profile ? <DmProfileContainer /> : null) : <RosterContainer />}
+        roster={
+          dm ? (
+            conversation ? (
+              <>
+                <DmProfileContainer />
+                <DmCallChatContainer />
+              </>
+            ) : null
+          ) : (
+            <RosterContainer />
+          )
+        }
         dmSpace={dm}
         railOpen={ui.railOpen}
         onRailOpenChange={ui.setRailOpen}
-        rosterOpen={dm ? profile && ui.profilePanelOpen : ui.rosterOpen}
-        onRosterOpenChange={dm ? ui.setProfilePanelOpen : ui.setRosterOpen}
+        rosterOpen={
+          dm ? conversation && (ui.profilePanelOpen || ui.callChatOpen) : ui.rosterOpen
+        }
+        onRosterOpenChange={
+          dm ? (ui.callChatOpen ? ui.setCallChatOpen : ui.setProfilePanelOpen) : ui.setRosterOpen
+        }
         stageFull={ui.cinema}
         onExitStageFull={() => ui.setCinema(false)}
       />

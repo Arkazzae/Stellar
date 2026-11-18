@@ -272,6 +272,8 @@
   /* Layout constants the shell grid and the drawers both read. */
   --rail-w: 248px;
   --roster-w: 264px;
+  /* The panel beside a channel's messages, and the chat beside a call. */
+  --cp-w: 320px;
   --roster-mini-w: 60px;
   /* The persistent servers / DM column. */
   --servers-rail-w: 68px;
