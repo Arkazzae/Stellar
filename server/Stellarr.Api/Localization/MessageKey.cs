@@ -101,6 +101,7 @@ public enum MessageKey
     CockpitRecoverDisabled,
     CockpitRecoveryReasonInvalid,
     CockpitLastWayIn,
+    CockpitProviderSignUpMissing,
     AuditAccountRecovered,
     AuditIdentityUnlinked,
     CockpitAuditServerTransferred,
@@ -262,6 +263,8 @@ public enum MessageKey
     AuditRoleCreated,
     AuditRoleUpdated,
     AuditSessionRevoked,
+    AuditProviderSignUpAllowed,
+    AuditProviderSignUpStopped,
 
     // End-to-end encryption of private conversations
     EncryptionAccountKeyMissing,

@@ -21,7 +21,7 @@ public static class AuthEndpoints
 
         group.MapPost("/login", LoginAsync).RequireRateLimiting(RateLimitPolicies.Login);
         group.MapPost("/logout", LogoutAsync).RequireAuthorization();
-        group.MapGet("/oidc", GetOidcStatus);
+        group.MapGet("/oidc", GetOidcStatusAsync);
         group.MapGet("/oidc/pending", GetPendingIdentityAsync).RequireRateLimiting(RateLimitPolicies.LoginPoll);
         group.MapDelete("/oidc/pending", DropPendingIdentityAsync).RequireRateLimiting(RateLimitPolicies.AuthWrite);
         group.MapGet("/oidc/login", ChallengeOidc).RequireRateLimiting(RateLimitPolicies.Login);
@@ -114,11 +114,17 @@ public static class AuthEndpoints
 
     /// <summary>
     /// The providers the sign-in page offers, each with its button's name and
-    /// address. <c>enabled</c> and <c>displayName</c> describe the first one,
-    /// as clients from before several providers read them.
+    /// address, and whether it may create accounts for people with an invite.
+    /// <c>enabled</c> and <c>displayName</c> describe the first one, as
+    /// clients from before several providers read them.
     /// </summary>
-    private static IResult GetOidcStatus(ExternalOidcOptions options, Messages messages)
+    private static async Task<IResult> GetOidcStatusAsync(
+        ExternalOidcOptions options,
+        AppDbContext db,
+        Messages messages,
+        CancellationToken cancellationToken)
     {
+        var allowing = await ProviderSignUp.AllowingAsync(db, cancellationToken);
         var providers = options.ConfiguredProviders()
             .Select(provider => new
             {
@@ -127,6 +133,7 @@ public static class AuthEndpoints
                     ? messages.Get(MessageKey.OidcDefaultName)
                     : provider.DisplayName,
                 loginUrl = provider.LoginPath,
+                signUp = allowing.Contains(provider.Id),
             })
             .ToArray();
         return Results.Ok(new
@@ -164,7 +171,8 @@ public static class AuthEndpoints
             new IdentityProviderDto(provider.Id, AccountSecurityEndpoints.ProviderName(provider, messages)),
             identity.DisplayName,
             identity.Email,
-            PendingIdentities.SuggestUsername(identity)));
+            PendingIdentities.SuggestUsername(identity),
+            await ProviderSignUp.AllowedAsync(db, provider.Id, cancellationToken)));
     }
 
     /// <summary>Forgets the identity this browser waits with: the visitor went back to the sign-in page.</summary>

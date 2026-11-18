@@ -31,6 +31,7 @@ public sealed class AppDbContext(DbContextOptions<AppDbContext> options) : DbCon
     public DbSet<StellarrServer> Servers => Set<StellarrServer>();
     public DbSet<OperationsSettings> OperationsSettings => Set<OperationsSettings>();
     public DbSet<InstanceSecret> InstanceSecrets => Set<InstanceSecret>();
+    public DbSet<IdentityProviderSetting> IdentityProviderSettings => Set<IdentityProviderSetting>();
     public DbSet<SoundboardSound> SoundboardSounds => Set<SoundboardSound>();
     public DbSet<ServerRole> ServerRoles => Set<ServerRole>();
     public DbSet<ServerMember> ServerMembers => Set<ServerMember>();

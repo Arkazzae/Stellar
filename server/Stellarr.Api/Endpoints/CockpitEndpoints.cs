@@ -63,6 +63,9 @@ public static partial class CockpitEndpoints
         cockpit.MapPut("/desktop-release", UpdateDesktopReleaseAsync).AddEndpointFilter<FreshSecondStepFilter>();
         cockpit.MapPost("/mail/test", SendTestMailAsync);
         cockpit.MapPost("/integrations/giphy/test", TestGiphyAsync);
+        cockpit.MapGet("/integrations/identity-providers", GetIdentityProvidersAsync);
+        cockpit.MapPut("/integrations/identity-providers/{providerId}", SetProviderSignUpAsync)
+            .AddEndpointFilter<FreshSecondStepFilter>();
         cockpit.MapGet("/secrets", GetSecretsAsync);
         cockpit.MapPut("/secrets/{name}", SetSecretAsync).AddEndpointFilter<FreshSecondStepFilter>();
         cockpit.MapDelete("/secrets/{name}", ClearSecretAsync).AddEndpointFilter<FreshSecondStepFilter>();
