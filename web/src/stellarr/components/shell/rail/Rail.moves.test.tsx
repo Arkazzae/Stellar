@@ -343,19 +343,20 @@ describe("Rail voice moves", () => {
     fireEvent.click(document.body);
   }
 
-  it("asks for the person to be moved to the channel they were dropped on", async () => {
+  it("asks for the person to be moved to the channel they were dropped on, in any section", async () => {
     const onMoveVoiceMember = vi.fn(async () => {});
     setup({ onMoveVoiceMember });
 
+    // Warsztat sits in Projekty, 333 px down the rail.
     pressAt(occupant(), JO_MIDDLE);
-    moveTo(JO_MIDDLE + 8, SESJA + 10);
-    expect(zone("Sesja")).toHaveClass("is-over");
-    expect(zone("Salon")).not.toHaveClass("is-over");
+    moveTo(JO_MIDDLE + 8, 343);
+    await nextFrame();
+    expect(zone("Warsztat")).toHaveAttribute("data-drop-over");
+    expect(zone("Salon")).not.toHaveAttribute("data-drop-over");
     expect(document.querySelector(".voice-occupant-carry")).toHaveTextContent("Jo");
-    release(SESJA + 10);
-    fireEvent.click(document.body);
+    letGo(343);
 
-    expect(onMoveVoiceMember).toHaveBeenCalledWith("u-2", "v-1", "v-2");
+    expect(onMoveVoiceMember).toHaveBeenCalledExactlyOnceWith("u-2", "v-1", "v-3");
     expect(document.querySelector(".voice-occupant-carry")).toBeNull();
     await waitFor(() =>
       expect(screen.getByText("Przeniesiono użytkownika Jo.")).toBeInTheDocument(),
@@ -397,21 +398,23 @@ describe("Rail voice moves", () => {
     fireEvent.keyDown(occupant(), { key: "Escape" });
 
     expect(onMoveVoiceMember).not.toHaveBeenCalled();
-    expect(zone("Sesja")).not.toHaveClass("is-over");
+    expect(zone("Sesja")).not.toHaveAttribute("data-drop-over");
   });
 
-  it("moves a person with the keyboard, one channel per arrow", () => {
+  it("moves a person with the keyboard, one channel per arrow across the sections", () => {
     const onMoveVoiceMember = vi.fn();
     setup({ onMoveVoiceMember });
 
     fireEvent.keyDown(occupant(), { key: " " });
     fireEvent.keyDown(occupant(), { key: "ArrowDown" });
-    expect(zone("Sesja")).toHaveClass("is-over");
-    // The last channel of the list is as far as the arrows go.
+    expect(zone("Sesja")).toHaveAttribute("data-drop-over");
+    fireEvent.keyDown(occupant(), { key: "ArrowDown" });
+    expect(said()).toBe("Nad kanałem Warsztat.");
+    // Projekty's Warsztat is the last voice channel; the arrows stop there.
     fireEvent.keyDown(occupant(), { key: "ArrowDown" });
     fireEvent.keyDown(occupant(), { key: " " });
 
-    expect(onMoveVoiceMember).toHaveBeenCalledWith("u-2", "v-1", "v-2");
+    expect(onMoveVoiceMember).toHaveBeenCalledExactlyOnceWith("u-2", "v-1", "v-3");
   });
 
   it("drops the drag when the person leaves the call mid-way", () => {

@@ -17,8 +17,8 @@ export interface VoiceMoveOptions {
 /**
  * The life of one staff move of a person between voice channels once they are
  * dropped: who is waiting for the server to confirm, and what a screen reader
- * hears while they wait. The drag itself belongs to each rail list; this is
- * shared by all of them, since a move outlives the list it started in.
+ * hears while they wait. The drag itself is the rail's; this outlives it,
+ * since a move is only done when the server says so.
  */
 export function useVoiceMove({ onMove, onError }: VoiceMoveOptions) {
   const { t } = useLanguage();

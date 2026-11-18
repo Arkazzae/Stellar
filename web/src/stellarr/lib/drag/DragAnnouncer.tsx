@@ -3,25 +3,26 @@ import { useSyncExternalStore } from "react";
 import type { Announcer } from "./announcer";
 
 export interface DragAnnouncerProps {
-  /** Referenced by every handle's `aria-describedby`. */
-  id: string;
-  /** How to drag with the keyboard, read once when a handle is focused. */
-  instructions: string;
+  /** How to drag each kind of handle with the keyboard, each read once when such a handle is focused. */
+  instructions: readonly { id: string; text: string }[];
   /** The latest pick-up, move, drop or cancel. */
-  announcement: string;
+  announcer: Announcer;
 }
 
 /**
- * The screen-reader side of a drag: the instructions its handles point at, and
- * a live region that says what each step did. Each drag renders its own, so it
- * never speaks over the rail's move status.
+ * The screen-reader side of a drag: the instructions its handles point at,
+ * and a live region that says what each step did. It reads the announcer
+ * itself, so a step re-renders only this.
  */
-export function DragAnnouncer({ id, instructions, announcement }: DragAnnouncerProps) {
+export function DragAnnouncer({ instructions, announcer }: DragAnnouncerProps) {
+  const announcement = useSyncExternalStore(announcer.subscribe, announcer.read, announcer.read);
   return (
     <>
-      <span id={id} hidden>
-        {instructions}
-      </span>
+      {instructions.map(({ id, text }) => (
+        <span key={id} id={id} hidden>
+          {text}
+        </span>
+      ))}
       <span
         className="sr-only live-contained"
         role="status"
@@ -32,13 +33,4 @@ export function DragAnnouncer({ id, instructions, announcement }: DragAnnouncerP
       </span>
     </>
   );
-}
-
-/** A `DragAnnouncer` that reads an `Announcer`, so a step re-renders only this. */
-export function LiveDragAnnouncer({
-  announcer,
-  ...props
-}: Omit<DragAnnouncerProps, "announcement"> & { announcer: Announcer }) {
-  const announcement = useSyncExternalStore(announcer.subscribe, announcer.read, announcer.read);
-  return <DragAnnouncer {...props} announcement={announcement} />;
 }
