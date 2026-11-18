@@ -31,6 +31,15 @@ internal sealed class OperationsSettingsConfiguration : IEntityTypeConfiguration
     }
 }
 
+internal sealed class IdentityProviderSettingConfiguration : IEntityTypeConfiguration<IdentityProviderSetting>
+{
+    public void Configure(EntityTypeBuilder<IdentityProviderSetting> entity)
+    {
+        entity.HasKey(x => x.ProviderId);
+        entity.Property(x => x.ProviderId).HasMaxLength(32);
+    }
+}
+
 internal sealed class InstanceSecretConfiguration : IEntityTypeConfiguration<InstanceSecret>
 {
     public void Configure(EntityTypeBuilder<InstanceSecret> entity)

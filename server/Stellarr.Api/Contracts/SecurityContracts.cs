@@ -149,11 +149,13 @@ public sealed record IdentityChangeRequest(string? Password);
 /// browser it came back to may see it.
 /// </summary>
 /// <param name="Username">A login to suggest for an account made from it, made from what the provider said.</param>
+/// <param name="SignUp">Whether its provider may create an account for someone with an invite.</param>
 public sealed record PendingIdentityDto(
     IdentityProviderDto Provider,
     string? DisplayName,
     string? Email,
-    string Username);
+    string Username,
+    bool SignUp);
 
 /// <summary>The first password of an account made through a provider.</summary>
 public sealed record SetPasswordRequest(string? NewPassword);
