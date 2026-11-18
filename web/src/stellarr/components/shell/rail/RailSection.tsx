@@ -64,7 +64,9 @@ export function RailSection({
         )}
       </div>
       <div className={open ? "collapsible" : "collapsible closed"} inert={!open}>
-        {empty ? <p className="rail-section-empty">{t("section.empty")}</p> : children}
+        <div className="collapsible-body">
+          {empty ? <p className="rail-section-empty">{t("section.empty")}</p> : children}
+        </div>
       </div>
     </div>
   );

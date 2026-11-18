@@ -20,8 +20,8 @@ export interface CollapsibleGroupProps {
  * The caption and collapsible body shared by every rail group: text channels,
  * voice channels, and each section that wraps a pair of them.
  *
- * CSS collapses the body with `max-height`, which leaves its rows focusable,
- * so `inert` is what takes a closed group out of the tab order.
+ * CSS collapses the body to a zero-height grid row, which leaves its rows
+ * focusable, so `inert` is what takes a closed group out of the tab order.
  */
 export function CollapsibleGroup({
   id,
@@ -52,7 +52,7 @@ export function CollapsibleGroup({
         {actions}
       </div>
       <div id={id} className={open ? "collapsible" : "collapsible closed"} inert={!open}>
-        {children}
+        <div className="collapsible-body">{children}</div>
       </div>
     </>
   );
