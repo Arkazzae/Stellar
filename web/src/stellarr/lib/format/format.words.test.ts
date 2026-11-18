@@ -7,6 +7,7 @@ import {
   formatAgo,
   formatDate,
   formatDay,
+  formatShortAgo,
   formatTime,
   messageReference,
   toChannelSlug,
@@ -63,6 +64,32 @@ describe("formatAgo", () => {
 
   it("survives an unparseable timestamp", () => {
     expect(formatAgo("nope", NOW, "pl")).toBe("");
+  });
+});
+
+describe("formatShortAgo", () => {
+  // NOW is a Monday evening.
+  const at = (month: number, day: number, hours: number, year = 2026) =>
+    new Date(year, month, day, hours, 0, 0).toISOString();
+  const spaced = (text: string) => text.replace(/\s/gu, " ");
+
+  it.each<[string, string, string]>([
+    [secondsBefore(20), "teraz", "now"],
+    [secondsBefore(2 * MINUTE), "2 min", "2 mins"],
+    [secondsBefore(5 * HOUR), "5 godz.", "5 hrs"],
+    [at(7, 9, 22), "23 godz.", "23 hrs"],
+    [at(7, 9, 12), "wczoraj", "yesterday"],
+    [at(7, 7, 12), "pt.", "Fri"],
+    [at(7, 4, 9), "wt.", "Tue"],
+    [at(7, 3, 12), "3 sie", "3 Aug"],
+    [at(2, 12, 12, 2025), "12 mar 2025", "12 Mar 2025"],
+  ])("shortens %s to %s and %s", (iso, polish, english) => {
+    expect(spaced(formatShortAgo(iso, NOW, "pl"))).toBe(polish);
+    expect(spaced(formatShortAgo(iso, NOW, "en"))).toBe(english);
+  });
+
+  it("survives an unparseable timestamp", () => {
+    expect(formatShortAgo("nope", NOW, "pl")).toBe("");
   });
 });
 

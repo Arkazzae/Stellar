@@ -128,6 +128,45 @@ export function formatAgo(iso: string, now: Date, locale: InterfaceLocale): stri
   return formatDate(iso, locale);
 }
 
+/**
+ * When, in as few characters as a list's corner allows: "2 min", "5 godz.",
+ * "wczoraj", "pon.", "12 lis". The step widens with age, so the newest rows
+ * say how long ago and the older ones say which day.
+ *
+ * Every word comes from `Intl`, in the locale's own abbreviations.
+ */
+export function formatShortAgo(iso: string, now: Date, locale: InterfaceLocale): string {
+  const date = new Date(iso);
+  if (Number.isNaN(date.getTime())) return "";
+  const tag = LOCALE_TAG[locale];
+
+  const minutes = Math.floor(Math.max(0, now.getTime() - date.getTime()) / 60_000);
+  const unit = (count: number, name: "minute" | "hour") =>
+    new Intl.NumberFormat(tag, { style: "unit", unit: name, unitDisplay: "short" }).format(count);
+
+  if (minutes < 1) return new Intl.RelativeTimeFormat(tag, { numeric: "auto" }).format(0, "second");
+  if (minutes < 60) return unit(minutes, "minute");
+  if (minutes < 24 * 60) return unit(Math.floor(minutes / 60), "hour");
+
+  const yesterday = new Date(now);
+  yesterday.setDate(now.getDate() - 1);
+  if (isSameDay(date, yesterday)) {
+    return new Intl.RelativeTimeFormat(tag, { numeric: "auto" }).format(-1, "day");
+  }
+
+  // Within the week a weekday is unambiguous; it would not be a week later.
+  const weekAgo = new Date(now);
+  weekAgo.setDate(now.getDate() - 6);
+  weekAgo.setHours(0, 0, 0, 0);
+  if (date >= weekAgo) return formatWithDate(date, locale, { weekday: "short" });
+
+  return formatWithDate(date, locale, {
+    day: "numeric",
+    month: "short",
+    ...(date.getFullYear() === now.getFullYear() ? {} : { year: "numeric" }),
+  });
+}
+
 export function formatBytes(bytes: number): string {
   if (bytes < 1024) return `${bytes} B`;
   if (bytes < 1024 * 1024) return `${Math.round(bytes / 1024)} KB`;
