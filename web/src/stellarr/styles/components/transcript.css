@@ -12,7 +12,7 @@
   }
   /*
    * The scroller. A column, so that a transcript too short to scroll can sit
-   * its rows at the bottom of the pane while the intro stays at the top.
+   * its rows, and the intro above them, at the bottom of the pane.
    *
    * `overflow-anchor:none` because the transcript keeps the reader's row in
    * place itself (`useTranscriptScroll`), in every browser and at every
@@ -68,6 +68,10 @@
    * scroller would do the first and break the second.
    */
   .transcript-inner{width:100%;flex:none;margin-top:auto}
+  /* A history with a beginning travels with it: the left-over space goes above
+     the intro, and the rows follow it directly. */
+  .transcript-intro{flex:none;margin-top:auto}
+  .transcript-intro ~ .transcript-inner{margin-top:0}
   /*
    * A row is an independent layout and style box. Its height still takes part
    * in the column, but a reaction, hover or edit inside it cannot invalidate
