@@ -92,9 +92,12 @@ describe("useMicTest", () => {
     act(() => result.current.start());
     await waitFor(() => expect(result.current.running).toBe(true));
     expect(result.current.echoCancellation).toBe("none");
+    // And which suppressor it was opened for, which a pick still settling has not reached.
+    expect(result.current.requestedNoiseSuppression).toBe(DEFAULT_SETTINGS.noiseSuppression);
 
     act(() => result.current.stop());
     expect(result.current.echoCancellation).toBeNull();
+    expect(result.current.requestedNoiseSuppression).toBeNull();
     unmount();
   });
 });

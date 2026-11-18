@@ -1,9 +1,10 @@
-import { renderHook } from "@testing-library/react";
+import { act, renderHook } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { DEFAULT_SETTINGS, type VoiceSettings } from "@/lib/voice/settings";
 import { FakeVoiceClient } from "@/test/fakes";
 
+import { NOISE_SETTLE_MS } from "./useSettledVoiceSettings";
 import { useVoiceSettingsSync } from "./useVoiceSettingsSync";
 import { VoiceHolder } from "./voiceHolder";
 
@@ -149,5 +150,50 @@ describe("useVoiceSettingsSync", () => {
     await devices.replace([]);
 
     expect(voiceSettings.update).not.toHaveBeenCalled();
+  });
+
+  it("hands the client only the noise mode that stays, not those passed on the way to it", () => {
+    let current: VoiceSettings = { ...DEFAULT_SETTINGS, noiseSuppression: "off" };
+    const listeners = new Set<() => void>();
+    const { holder, client, soundboard } = setup();
+    const voiceSettings = {
+      getSnapshot: () => current,
+      subscribe: (listener: () => void) => {
+        listeners.add(listener);
+        return () => void listeners.delete(listener);
+      },
+      update: vi.fn(),
+      reset: vi.fn(),
+    };
+    const ports = { voiceSettings, soundboard } as unknown as Parameters<
+      typeof useVoiceSettingsSync
+    >[0]["ports"];
+    const change = (patch: Partial<VoiceSettings>) =>
+      act(() => {
+        current = { ...current, ...patch };
+        for (const listener of listeners) listener();
+      });
+    renderHook(() =>
+      useVoiceSettingsSync({ holder, ports, userId: "me", arrivals: true, deafened: false }),
+    );
+    client.applySettings.mockClear();
+
+    // The dock's button, pressed three times to reach Speex.
+    change({ noiseSuppression: "rnnoise" });
+    act(() => vi.advanceTimersByTime(300));
+    change({ noiseSuppression: "gtcrn" });
+    act(() => vi.advanceTimersByTime(300));
+    change({ noiseSuppression: "speex" });
+    // Anything else still goes through at once.
+    change({ outputVolume: 70 });
+    act(() => vi.advanceTimersByTime(NOISE_SETTLE_MS));
+
+    const modes = client.applySettings.mock.calls.map(([applied]) => applied.noiseSuppression);
+    expect(modes).not.toContain("rnnoise");
+    expect(modes).not.toContain("gtcrn");
+    expect(modes.at(-1)).toBe("speex");
+    expect(client.applySettings).toHaveBeenCalledWith(
+      expect.objectContaining({ noiseSuppression: "off", outputVolume: 70 }),
+    );
   });
 });

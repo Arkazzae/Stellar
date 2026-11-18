@@ -8,6 +8,7 @@ import {
 } from "@/lib/voice/capture/deviceMonitor";
 import type { Ports } from "@/ports";
 
+import { useSettledVoiceSettings } from "./useSettledVoiceSettings";
 import type { VoiceHolder } from "./voiceHolder";
 
 interface VoiceSyncInput {
@@ -51,11 +52,13 @@ export function useVoiceSettingsSync({ holder, ports, userId, arrivals, deafened
   }, [voiceSettings, userId]);
 
   // The client reads the snapshot before a join and then follows every change
-  // while it is alive. Screen quality is a local sender preference that
-  // channels never cap or rewrite.
+  // while it is alive, except a noise suppression mode that is only being
+  // passed on the way to another. Screen quality is a local sender preference
+  // that channels never cap or rewrite.
+  const applied = useSettledVoiceSettings(settings);
   useEffect(() => {
-    void holder.getClient()?.applySettings(settings);
-  }, [holder, settings]);
+    void holder.getClient()?.applySettings(applied);
+  }, [holder, applied]);
 
   useEffect(() => {
     soundboard.setVolume(settings.soundboardVolume);

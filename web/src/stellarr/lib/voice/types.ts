@@ -1,5 +1,6 @@
 import type { ChannelId, UserId } from "@/lib/api/types";
 
+import type { WorkletSuppressor } from "./audioProfiles";
 import type { NetworkQuality } from "./rtc/bitrate";
 import type { VoiceSettings } from "./settings";
 
@@ -162,9 +163,24 @@ export interface VoiceState {
   noiseSuppressionActive: boolean;
   /** Set when a requested processing mode silently degraded. */
   degraded: string | null;
+  /**
+   * The chosen suppressor's files on their way, once the download has run
+   * long enough to be worth showing. Null otherwise, in a call or not.
+   */
+  suppressorDownload: SuppressorDownload | null;
   diagnostics: VoiceDiagnostics;
   /** This side encrypts and decrypts the call's frames end to end. */
   encrypted: boolean;
+}
+
+/** How far the chosen engine's download has come. */
+export interface SuppressorDownload {
+  kind: WorkletSuppressor;
+  /**
+   * Whole percent of the bytes received, never more than 100 and never lower
+   * than it was; null while the total is unknown.
+   */
+  percent: number | null;
 }
 
 export const IDLE_VOICE_STATE: VoiceState = Object.freeze({
@@ -181,6 +197,7 @@ export const IDLE_VOICE_STATE: VoiceState = Object.freeze({
   cameraSupported: false,
   noiseSuppressionActive: false,
   degraded: null,
+  suppressorDownload: null,
   diagnostics: IDLE_DIAGNOSTICS,
   encrypted: false,
 });
@@ -240,7 +257,8 @@ export interface VoiceClient {
   /**
    * Applies changed settings to a live call. Replaces the outgoing track on
    * the connection when a capture-affecting setting changed, without dropping
-   * the call.
+   * the call. A newly chosen noise suppressor's files start downloading here,
+   * in a call or not.
    */
   applySettings(settings: VoiceSettings): Promise<void>;
   /** Must be called synchronously from the click, or the user gesture is lost. */

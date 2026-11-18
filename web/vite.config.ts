@@ -3,6 +3,7 @@ import { fileURLToPath } from "node:url";
 import react from "@vitejs/plugin-react";
 import { defineConfig, loadEnv, type ProxyOptions } from "vite";
 
+import { stellarrArtifactSizes } from "./artifactSizes";
 import { bundleReport } from "./bundleReport";
 import { BUILD_DIRECTORY, COCKPIT_DOCUMENT, stellarrDocuments, WEB_DOCUMENT } from "./documents";
 import { stellarrRelease } from "./release";
@@ -76,6 +77,7 @@ export default defineConfig(({ mode }) => {
     plugins: [
       react(),
       stellarrDocuments({ instanceLanguage: env.STELLARR_LANGUAGE, publicDir: here("public") }),
+      stellarrArtifactSizes(),
       bundleReport(),
       stellarrRelease({ publicDir: here("public") }),
     ],
