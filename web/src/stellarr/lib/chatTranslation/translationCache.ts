@@ -100,13 +100,19 @@ async function trimStored(database: IDBDatabase): Promise<void> {
   await transactionDone(transaction);
 }
 
+/**
+ * Keeps a translation in memory and, unless `persist` is false, in IndexedDB.
+ * The plaintext of an end-to-end encrypted message, and so its translation,
+ * must never be written to disk, so those stay in this tab's memory only.
+ */
 export async function set(
   key: string,
   translation: string,
   targetLanguage: TranslationTargetLanguage,
+  options: { persist?: boolean } = {},
 ): Promise<void> {
   remember(key, translation);
-  if (typeof indexedDB === "undefined") return;
+  if (options.persist === false || typeof indexedDB === "undefined") return;
 
   try {
     const database = await openCache();
@@ -127,4 +133,21 @@ export async function set(
   } catch {
     // The stored copy is an optimisation; the memory copy is already in place.
   }
+}
+
+/**
+ * Forgets every translation, in memory and on disk. Signing out calls it: the
+ * stored copy can hold the text of the private messages of whoever signed out.
+ */
+export async function clearAll(): Promise<void> {
+  memory.clear();
+  writesSinceTrim = 0;
+  if (typeof indexedDB === "undefined") return;
+  await new Promise<void>((resolve) => {
+    const request = indexedDB.deleteDatabase(DB_NAME);
+    // Blocked means a connection is still open; the deletion finishes once it closes.
+    request.onsuccess = () => resolve();
+    request.onerror = () => resolve();
+    request.onblocked = () => resolve();
+  });
 }

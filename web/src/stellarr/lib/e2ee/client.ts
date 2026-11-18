@@ -639,6 +639,7 @@ export function createE2eeClient(options: E2eeClientOptions) {
     const stored = new Map(message.attachments.map((attachment) => [attachment.id, attachment]));
     return {
       ...withoutCiphertext(message),
+      decrypted: true,
       content: payload.text,
       attachments: payload.attachments.map((item) => attachmentView(item, stored.get(item.id), message.id)),
     };

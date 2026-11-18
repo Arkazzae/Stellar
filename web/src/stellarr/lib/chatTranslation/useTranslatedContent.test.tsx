@@ -62,7 +62,7 @@ describe("useTranslatedContent", () => {
     const { result } = render({ content: "Good morning", target: "pl", priority: true });
 
     await waitFor(() => expect(result.current.translatedContent).toBe("Dzień dobry"));
-    expect(translateMock).toHaveBeenCalledWith("Good morning", "pl", { priority: true });
+    expect(translateMock).toHaveBeenCalledWith("Good morning", "pl", { priority: true, persist: true });
   });
 
   it("reports a failure and tries again when the retry key changes", async () => {

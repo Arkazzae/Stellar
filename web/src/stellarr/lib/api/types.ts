@@ -369,6 +369,8 @@ export interface Message {
    * the one entry that stands for a run of them.
    */
   sealed?: SealedMessages;
+  /** Set by the client on the plaintext of an end-to-end encrypted message. */
+  decrypted?: true;
 }
 
 /** An encrypted direct message as the server stores it: opaque to it. */
