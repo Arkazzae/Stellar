@@ -67,7 +67,12 @@ function speakingApplier(peers: readonly VoicePeer[]) {
       const peer = byId.get(person.id);
       return peer === undefined
         ? person
-        : { ...person, speaking: peer.speaking, muted: peer.muted };
+        : {
+            ...person,
+            speaking: peer.speaking,
+            muted: peer.muted,
+            ...(peer.undecryptable === undefined ? {} : { undecryptable: peer.undecryptable }),
+          };
     });
 }
 
@@ -83,9 +88,12 @@ function cameraStreamsOf(
   state: VoiceState,
   userId: string | null,
 ): ReadonlyMap<string, MediaStream> {
-  // A held picture is no picture: its last frame would look frozen.
+  // A held picture is no picture: its last frame would look frozen. Nor is
+  // one that does not decrypt, of which nothing is played.
   const cameras = state.peers.flatMap((peer) =>
-    peer.camera?.stream && !peer.camera.heldBack ? [[peer.userId, peer.camera.stream] as const] : [],
+    peer.camera?.stream && !peer.camera.heldBack && !peer.undecryptable?.video
+      ? [[peer.userId, peer.camera.stream] as const]
+      : [],
   );
   if (state.localCamera?.stream && userId !== null) {
     cameras.push([userId, state.localCamera.stream]);
@@ -161,6 +169,7 @@ function deriveCall(input: VoiceViewInput, privateCall: boolean): CallVM | null 
     channelId: state.channelId,
     channelName: roomName,
     ...(privateCall ? { privateCall: true } : {}),
+    ...(state.encrypted ? { encrypted: true } : {}),
     startedAt,
     muted: state.muted,
     deafened: input.deafened,
@@ -199,6 +208,7 @@ function derivePeople(
         presence: "online",
         speaking: peer.speaking,
         muted: peer.muted,
+        ...(peer.undecryptable === undefined ? {} : { undecryptable: peer.undecryptable }),
       }),
     );
   return [...listed, ...negotiated];

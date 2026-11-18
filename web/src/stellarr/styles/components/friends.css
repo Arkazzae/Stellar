@@ -269,6 +269,14 @@
     background: var(--danger-line);
   }
 
+  /* A call this browser cannot answer: the line beside it says why. */
+  .dm-call-answer[aria-disabled="true"],
+  .dm-call-answer[aria-disabled="true"]:hover {
+    background: var(--surface-overlay);
+    color: var(--text-faint);
+    cursor: not-allowed;
+  }
+
   /* The server rail's own unread mark, on the messages entry. */
   .srv-badge {
     position: absolute;
@@ -763,6 +771,15 @@
 
   .dm-room .pill-bar {
     margin-left: auto;
+  }
+
+  /* A call this browser cannot make: the buttons stay, faint, and their
+     title says why. */
+  .dm-room .pill-btn[aria-disabled="true"],
+  .dm-room .pill-btn[aria-disabled="true"]:hover {
+    background: none;
+    color: var(--text-faint);
+    cursor: not-allowed;
   }
 
   /* The beginning of the history, right above its first message. */

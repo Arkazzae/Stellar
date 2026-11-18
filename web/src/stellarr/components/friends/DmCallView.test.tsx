@@ -41,10 +41,31 @@ describe("DmCallView", () => {
     const { container, rerender, props } = openCall({ ringing: true });
     expect(within(middle(container)).getByText("Dzwonię…")).toBeTruthy();
     expect(container.querySelector("time")).toBeNull();
+    // Only a call this side really encrypts says it is encrypted.
+    expect(within(middle(container)).queryByText("Szyfrowane end-to-end")).toBeNull();
 
-    rerender(<DmCallView {...props} ringing={false} status="Łączenie" />);
+    rerender(<DmCallView {...props} ringing={false} status="Łączenie" encrypted />);
     expect(within(middle(container)).getByText("Łączenie")).toBeTruthy();
+    expect(within(middle(container)).getByText("Szyfrowane end-to-end")).toBeTruthy();
     expect(container.querySelector("time")).toBeNull();
+  });
+
+  it("says whose sound or picture does not decrypt, and shows no picture of theirs", () => {
+    const camera = {} as MediaStream;
+    const { container, rerender, props } = openCall({
+      peer: { ...ada, undecryptable: { audio: true, video: false } },
+    });
+    expect(within(middle(container)).getByText("Nie można odszyfrować dźwięku od Ada")).toBeTruthy();
+
+    rerender(
+      <DmCallView
+        {...props}
+        peer={{ ...ada, undecryptable: { audio: true, video: true } }}
+        cameraStreams={new Map([[ada.id, camera]])}
+      />,
+    );
+    expect(within(middle(container)).getByText("Nie można odszyfrować dźwięku ani obrazu od Ada")).toBeTruthy();
+    expect(middle(container).querySelector("video")).toBeNull();
   });
 
   it("puts the other person's camera in place of their face, and yours in your tile", () => {

@@ -21,6 +21,8 @@ export interface DmCallViewProps extends ParticipantTileSources {
   since: number | null;
   /** Stands in for the duration while the call is not up, such as "Connecting". */
   status?: string;
+  /** The call is encrypted end to end, which the line under the name says. */
+  encrypted?: boolean;
   /** Null while nobody shares a screen. */
   share: ScreenShareVM | null;
   /** The screen is your own, which plays back muted. */
@@ -54,6 +56,7 @@ export function DmCallView({
   ringing,
   since,
   status,
+  encrypted = false,
   share,
   localShare = false,
   onWatchShare,
@@ -97,11 +100,11 @@ export function DmCallView({
         ) : (
           <div className="dm-call-who">
             <ParticipantTile {...them} className={ringing ? "dm-call-face ringing" : "dm-call-face"} />
-            {/* One item for now; a second, such as how the call is protected,
-                takes its place before it behind a separating dot. */}
-            {meta === null ? null : (
+            {/* How long, then how the call is protected, behind a dot. */}
+            {meta === null && !encrypted ? null : (
               <p className="dm-call-meta">
-                <span>{meta}</span>
+                {meta === null ? null : <span>{meta}</span>}
+                {encrypted ? <span>{t("dm.callEncrypted")}</span> : null}
               </p>
             )}
           </div>

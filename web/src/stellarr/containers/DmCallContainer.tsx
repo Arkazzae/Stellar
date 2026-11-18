@@ -62,6 +62,7 @@ export function DmCallContainer({ fullscreenTarget }: DmCallContainerProps) {
     ...toPerson(conversation.peer),
     speaking: heard?.speaking,
     muted: heard?.muted,
+    ...(heard?.undecryptable === undefined ? {} : { undecryptable: heard.undecryptable }),
   };
   const selfSpeaking = voice.people.find((person) => person.id === user.id)?.speaking;
   // Your own face from the session: the call's own entry for you has none.
@@ -79,6 +80,7 @@ export function DmCallContainer({ fullscreenTarget }: DmCallContainerProps) {
       ringing={friends.ringing}
       since={call?.startedAt ?? null}
       {...(statusKey === null ? {} : { status: t(statusKey) })}
+      encrypted={voice.state.encrypted}
       share={voice.share}
       localShare={voice.localShare}
       onWatchShare={voice.watchShare}

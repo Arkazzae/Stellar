@@ -210,6 +210,44 @@ describe("IncomingCallContainer", () => {
     });
   });
 
+  describe("an encrypted conversation's call", () => {
+    const encrypted = (): DmConversation => ({
+      ...ringing(),
+      encryption: { state: "on", requestedById: null, requestedAt: null, enabledAt: "2026-01-01T00:00:00.000Z", currentEpochId: "e-1" },
+    });
+
+    afterEach(() => vi.unstubAllGlobals());
+
+    it("is answered encrypted, and says so, where this browser can encrypt it", async () => {
+      vi.stubGlobal("RTCRtpScriptTransform", class {});
+      const user = userEvent.setup();
+      setConversations(encrypted());
+      render(<IncomingCallContainer />);
+
+      expect(screen.getByText("Dzwoni do Ciebie · Szyfrowane end-to-end")).toBeInTheDocument();
+      await user.click(screen.getByRole("button", { name: "Odbierz" }));
+      expect(stubs.friends.callConversation).toHaveBeenCalledWith("dm-ola");
+    });
+
+    it("cannot be answered where this browser cannot encrypt it, and says why", async () => {
+      const user = userEvent.setup();
+      setConversations(encrypted());
+      render(<IncomingCallContainer />);
+
+      expect(
+        screen.getByText(
+          "Nie odbierzesz tutaj: rozmowa jest szyfrowana end-to-end, a ta przeglądarka nie potrafi szyfrować połączeń.",
+        ),
+      ).toBeInTheDocument();
+      expect(screen.queryByText(/Szyfrowane end-to-end/)).toBeNull();
+      await user.click(screen.getByRole("button", { name: "Odbierz" }));
+      expect(stubs.friends.callConversation).not.toHaveBeenCalled();
+      // It can still be declined.
+      await user.click(screen.getByRole("button", { name: "Odrzuć" }));
+      expect(stubs.friends.declineCall).toHaveBeenCalledWith("dm-ola");
+    });
+  });
+
   describe("inside the Android shell", () => {
     it("hands the ring to the native notification and plays no sound of its own", () => {
       const bridge = installBridge();

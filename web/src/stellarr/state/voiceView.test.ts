@@ -391,6 +391,22 @@ describe("deriveVoiceView", () => {
       expect(deriveVoiceView(inputFor(stateWith({}))).heldCameras.size).toBe(0);
     });
 
+    it("hands over no picture that does not decrypt, and says whose sound or picture it is", () => {
+      const stream = {} as MediaStream;
+      const state = stateWith({
+        channelId: "voice",
+        connection: "connected",
+        encrypted: true,
+        peers: [peer("ada", { camera: { streamId: "c", stream }, undecryptable: { audio: false, video: true } })],
+      });
+
+      const view = deriveVoiceView(inputFor(state));
+
+      expect(view.cameraStreams.has("ada")).toBe(false);
+      expect(view.people.find((person) => person.id === "ada")?.undecryptable).toEqual({ audio: false, video: true });
+      expect(view.call?.encrypted).toBe(true);
+    });
+
     it("shares one empty map while no camera is on", () => {
       const first = deriveVoiceView(inputFor(stateWith({}))).cameraStreams;
       const second = deriveVoiceView(inputFor(stateWith({ channelId: "x" }))).cameraStreams;
