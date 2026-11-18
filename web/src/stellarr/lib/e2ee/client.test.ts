@@ -77,6 +77,8 @@ describe("encryption client", () => {
       expect(read.content).toBe("login: klub.kajakowy");
       expect(read.encrypted).toBeUndefined();
       expect(read.sealed).toBeUndefined();
+      // Marked, so that nothing derived from it (a translation) is written to disk.
+      expect(read.decrypted).toBe(true);
     });
 
     it("seals a changed ciphertext and a message naming files it does not carry", async () => {

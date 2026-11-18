@@ -29,9 +29,10 @@ const IDLE: TranslationResult = { translatedContent: null, loading: false, error
 export function useTranslatedContent(
   content: string,
   targetLanguage: TranslationTargetLanguage,
-  options: { trigger: boolean; priority?: boolean; retryKey?: number },
+  options: { trigger: boolean; priority?: boolean; retryKey?: number; persist?: boolean },
 ): TranslationResult {
   const { trigger, priority, retryKey } = options;
+  const persist = options.persist !== false;
   const [outcome, setOutcome] = useState<Outcome | null>(null);
   const requested = trigger && content.trim().length > 0;
 
@@ -44,7 +45,7 @@ export function useTranslatedContent(
       }
     };
 
-    translate(content, targetLanguage, { priority }).then(
+    translate(content, targetLanguage, { priority, persist }).then(
       (translation) => finish(translation, null),
       (reason: unknown) => {
         // Leaving the room cancels queued work, which is not a failure to report.
@@ -55,7 +56,7 @@ export function useTranslatedContent(
     return () => {
       current = false;
     };
-  }, [requested, content, targetLanguage, priority, retryKey]);
+  }, [requested, content, targetLanguage, priority, retryKey, persist]);
 
   if (!requested) return IDLE;
   const settled =

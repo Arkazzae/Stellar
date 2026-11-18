@@ -21,6 +21,8 @@ export interface MessageTranslationOptions {
   autoTranslate: boolean;
   targetLanguage: TranslationTargetLanguage;
   t: Translator;
+  /** False keeps translations out of the stored cache: the text was end-to-end encrypted. */
+  persist?: boolean;
 }
 
 export interface TranslatedTextAttachmentProps {
@@ -91,7 +93,7 @@ export function TranslatedTextAttachment({
   const { translatedContent, loading, error } = useTranslatedContent(
     source,
     targetLanguage,
-    { trigger, priority, retryKey },
+    { trigger, priority, retryKey, persist: translation?.persist !== false },
   );
 
   const differs = translatedContent !== null && translatedContent !== source;

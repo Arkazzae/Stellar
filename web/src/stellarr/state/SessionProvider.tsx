@@ -12,6 +12,7 @@ import {
 } from "react";
 
 import type { MessageKey, Translator } from "@/i18n";
+import { clearAll as clearTranslations } from "@/lib/chatTranslation/translationCache";
 import type { Account, AuthResult, ConnectionStatus, Presence, User } from "@/ports";
 
 import { useLanguage } from "./LanguageProvider";
@@ -307,6 +308,7 @@ export function SessionProvider({ children }: { children: ReactNode }) {
         ended.current = true;
         // Signed out elsewhere: the keys of a session that ended go too.
         void ports.encryption.forget().catch(() => undefined);
+        void clearTranslations().catch(() => undefined);
         void runtime.realtime.stop().catch(() => undefined);
         setLoginError(t("session.unauthorized"));
         setBoot(ANONYMOUS);
@@ -335,6 +337,8 @@ export function SessionProvider({ children }: { children: ReactNode }) {
       // This browser's encryption keys go with the session; the server stops
       // counting its device on its own once the session ends.
       await ports.encryption.forget().catch(() => undefined);
+      // Stored translations can hold the text of this person's private messages.
+      await clearTranslations().catch(() => undefined);
       await ports.session.logout();
     } finally {
       ended.current = true;
