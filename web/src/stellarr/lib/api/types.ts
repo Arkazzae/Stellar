@@ -518,12 +518,39 @@ export interface RegisterInput {
   email: string;
   password: string;
   inviteCode?: string;
+  /** The first server, sent only by the registration that founds the instance. */
   initialServer?: {
     name: string;
     description: string;
     textChannelName: string;
+    /** Empty for no voice channel. */
     voiceChannelName: string;
   };
+  /**
+   * The code the API writes to its log while the instance has no account.
+   * The founding registration needs it; later ones send none.
+   */
+  setupCode?: string;
+}
+
+/**
+ * What an invite link leads to, as anyone who holds the link may see it
+ * before signing in: the server, who invited, and for how long.
+ */
+export interface InvitePreview {
+  server: { id: string; name: string; description: string; iconUrl: string | null };
+  /** The channel the invite names, or null when it names none. */
+  channel: { id: string; name: string } | null;
+  inviter: { displayName: string; avatarColor: string; avatarUrl: string | null };
+  /** Null for an invite that does not expire. */
+  expiresAt: string | null;
+}
+
+/** An identity provider the account pages offer to sign in with, by the address that starts it. */
+export interface SignInProvider {
+  displayName: string;
+  /** A sign-in route of this server: `/api/auth/oidc/login`, or `/api/auth/oidc/<id>/login`. */
+  loginUrl: string;
 }
 
 export interface SendMessageInput {
@@ -615,6 +642,19 @@ export interface MfaChallenge {
   trustedDeviceDays: number;
   /** The server can register and check passkeys: it has a public HTTPS address. */
   passkeyAvailable: boolean;
+  /**
+   * Whose sign-in this is. Every challenge a sign-in or a registration starts
+   * names it; one started from the account settings may not.
+   */
+  account?: ChallengeAccount;
+}
+
+/** The account a second step belongs to, as the step shows it. */
+export interface ChallengeAccount {
+  displayName: string;
+  username: string;
+  avatarColor: string;
+  avatarUrl: string | null;
 }
 
 /** What the first step of a sign-in or a registration led to. */

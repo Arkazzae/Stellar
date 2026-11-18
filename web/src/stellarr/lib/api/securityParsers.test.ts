@@ -4,6 +4,7 @@ import { ApiError } from "./errors";
 import {
   parseAccountSecurity,
   parseAuthResult,
+  parseSignInProviders,
   parseMfaChallenge,
   parseMfaCompletion,
   parseMfaEnrollment,
@@ -43,7 +44,13 @@ const SIGN_IN_CHALLENGE = {
   "trustedDeviceAvailable": false,
   "emailCodeAvailable": false,
   "trustedDeviceDays": 14,
-  "passkeyAvailable": true
+  "passkeyAvailable": true,
+  "account": {
+    "displayName": "Maja",
+    "username": "maja",
+    "avatarColor": "oklch(0.58 0.14 84)",
+    "avatarUrl": null
+  }
 };
 
 const ENROLLMENT = {
@@ -54,7 +61,13 @@ const ENROLLMENT = {
   "methods": [],
   "trustedDeviceAvailable": false,
   "emailCodeAvailable": false,
-  "trustedDeviceDays": 14
+  "trustedDeviceDays": 14,
+  "account": {
+    "displayName": "Maja",
+    "username": "maja",
+    "avatarColor": "oklch(0.58 0.14 84)",
+    "avatarUrl": null
+  }
 };
 
 const TOTP_STARTED = {
@@ -184,8 +197,17 @@ describe("parseAuthResult", () => {
         emailCodeAvailable: false,
         trustedDeviceDays: 14,
         passkeyAvailable: true,
+        account: { displayName: "Maja", username: "maja", avatarColor: "oklch(0.58 0.14 84)", avatarUrl: null },
       },
     });
+  });
+
+  it("refuses a sign-in challenge that does not say whose account it is", () => {
+    const { account: _account, ...anonymous } = SIGN_IN_CHALLENGE;
+
+    expect(() => parseAuthResult(anonymous, "/api/auth/login")).toThrow(ApiError);
+    // A proof the account settings asked for may leave the account out.
+    expect(parseMfaChallenge(anonymous, "/api/me/security/mfa/reverify/start").account).toBeUndefined();
   });
 
   it("reads a required first method as an enrollment", () => {
@@ -209,6 +231,31 @@ describe("parseMfaChallenge", () => {
   it("refuses a purpose it does not know", () => {
     expect(() =>
       parseMfaChallenge({ ...SIGN_IN_CHALLENGE, purpose: "anything" }, "/api/auth/mfa/pending"),
+    ).toThrow(ApiError);
+  });
+});
+
+describe("parseSignInProviders", () => {
+  it("takes the providers by name and sign-in route, and refuses an address off this server", () => {
+    const answer = {
+      enabled: true,
+      displayName: "Authentik",
+      providers: [
+        { id: "default", displayName: " Authentik ", loginUrl: "/api/auth/oidc/login" },
+        { id: "work", displayName: "Praca", loginUrl: "/api/auth/oidc/work/login" },
+      ],
+    };
+
+    expect(parseSignInProviders(answer, "/api/auth/oidc")).toEqual([
+      { displayName: "Authentik", loginUrl: "/api/auth/oidc/login" },
+      { displayName: "Praca", loginUrl: "/api/auth/oidc/work/login" },
+    ]);
+    expect(parseSignInProviders({ enabled: false, displayName: "x", providers: [] }, "/api/auth/oidc")).toEqual([]);
+    expect(() =>
+      parseSignInProviders(
+        { providers: [{ displayName: "Evil", loginUrl: "https://evil.example/login" }] },
+        "/api/auth/oidc",
+      ),
     ).toThrow(ApiError);
   });
 });

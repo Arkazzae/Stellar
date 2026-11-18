@@ -1,8 +1,9 @@
 import type { ApiClient } from "../client";
 import { ApiError, isUnauthorized } from "../errors";
-import { expectBoolean, expectRecord, unwrap } from "../expect";
+import { parseInvitePreview } from "../directoryParsers";
+import { expectBoolean, expectRecord, expectString, unwrap } from "../expect";
 import { parseBootstrap, parseEmailConfirmAnswer, parseUser } from "../parsers";
-import { parseAuthResult } from "../securityParsers";
+import { parseAuthResult, parseSignInProviders } from "../securityParsers";
 import {
   forgetActiveServerId,
   readActiveServerId,
@@ -10,11 +11,14 @@ import {
 } from "../transport";
 import type { Bootstrap, User } from "../types";
 import type { Parse } from "./http";
-import { getJson, sendJson, sendVoid } from "./http";
+import { getJson, route, sendJson, sendVoid } from "./http";
 
 type SessionCalls = Pick<
   ApiClient,
-  | "needsServerSetup"
+  | "setupRequired"
+  | "instanceName"
+  | "invitePreview"
+  | "signInProviders"
   | "login"
   | "register"
   | "requestPasswordReset"
@@ -67,11 +71,22 @@ async function fetchBootstrap(signal?: AbortSignal): Promise<Bootstrap> {
 
 export function sessionCalls(): SessionCalls {
   return {
-    needsServerSetup: (signal) => getJson(
+    setupRequired: (signal) => getJson(
       "/api/auth/registration",
-      (value, path) => expectBoolean(expectRecord(value, path), "needsServerSetup", path),
+      (value, path) => expectBoolean(expectRecord(value, path), "setupRequired", path),
       signal,
     ),
+
+    instanceName: (signal) => getJson(
+      "/.well-known/stellarr/client",
+      (value, path) => expectString(expectRecord(value, path), "instanceName", path),
+      signal,
+    ),
+
+    invitePreview: (code, signal) => getJson(route`/api/invites/${code}`, parseInvitePreview, signal),
+
+    signInProviders: (signal) => getJson("/api/auth/oidc", parseSignInProviders, signal),
+
     login: (input, signal) =>
       sendJson("POST", "/api/auth/login", input, parseAuthResult, signal),
 

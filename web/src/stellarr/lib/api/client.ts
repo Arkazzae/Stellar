@@ -34,6 +34,7 @@ import type {
   ClientSettingsSnapshot,
   DirectMessageHistoryPage,
   FriendRequestAnswer,
+  InvitePreview,
   JoinSoundLibrary,
   LoginInput,
   Message,
@@ -56,6 +57,7 @@ import type {
   Section,
   SecurityEvent,
   SendMessageInput,
+  SignInProvider,
   Server,
   ServerBan,
   ServerMember,
@@ -92,7 +94,14 @@ export {
  * last argument, except `logout`.
  */
 export interface ApiClient {
-  needsServerSetup(signal?: AbortSignal): Promise<boolean>;
+  /** True while the instance has no account at all, and the first one founds it. */
+  setupRequired(signal?: AbortSignal): Promise<boolean>;
+  /** The instance's name, from the anonymous discovery document. */
+  instanceName(signal?: AbortSignal): Promise<string>;
+  /** What an invite link leads to; 404 for any invite that cannot be used. */
+  invitePreview(code: string, signal?: AbortSignal): Promise<InvitePreview>;
+  /** The identity providers the sign-in page offers, none when there are none. */
+  signInProviders(signal?: AbortSignal): Promise<SignInProvider[]>;
   login(input: LoginInput, signal?: AbortSignal): Promise<AuthResult>;
   register(input: RegisterInput, signal?: AbortSignal): Promise<AuthResult>;
   /** The challenge this browser left unfinished, after a reload or an OIDC redirect. */

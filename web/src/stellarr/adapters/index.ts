@@ -165,7 +165,10 @@ export function createRuntime(options: RuntimeOptions = {}): Runtime {
   const ports: Ports = {
     ...(options.desktop === undefined ? {} : { desktop: options.desktop }),
     session: {
-      needsServerSetup: () => api.needsServerSetup(),
+      setupRequired: () => api.setupRequired(),
+      instanceName: () => api.instanceName(),
+      invitePreview: (code) => api.invitePreview(code),
+      signInProviders: () => api.signInProviders(),
       bootstrap: () => api.bootstrap(),
       login: (input) => api.login(input),
       register: (input) => api.register(input),
