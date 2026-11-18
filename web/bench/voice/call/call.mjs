@@ -3,7 +3,7 @@
 // from the other, and whether the speaking ring it draws follows that sound.
 //
 //   node bench/voice/call/call.mjs --origin https://localhost:18743 [--out result.json]
-//                                  [--owner a.wav --guest b.wav]
+//                                  [--owner a.wav --guest b.wav] [--container name]
 //
 // Without --owner and --guest the microphones play speech from the harness's
 // fixtures, each followed by two seconds of a quiet room so that the ring has
@@ -13,8 +13,13 @@
 // the receiver is a failure whatever the cause), and when at each receiver the
 // other person's ring is on for most of the time sound arrives, goes out in
 // the pauses, comes on again for the next phrase, and is never on after a
-// second of silence. The instance must let anyone register the first account;
-// start-container.sh starts one from an image with a build of web/ mounted.
+// second of silence. start-container.sh starts an instance from an image with
+// a build of web/ mounted. Its first account founds the instance with the
+// setup code the API writes to its log at every start: the script reads it
+// from `docker logs` of the container (stellarr-voice-call, the name
+// start-container.sh gives, unless --container names another), or takes it
+// from STELLARR_SETUP_CODE.
+import { spawnSync } from "node:child_process";
 import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
@@ -33,17 +38,40 @@ const SAMPLE_MS = 50;
 const WATCH_MS = 16_000;
 
 function parseArgs(argv) {
-  const options = { origin: "https://localhost:18743", out: null, owner: null, guest: null };
+  const options = {
+    origin: "https://localhost:18743",
+    out: null,
+    owner: null,
+    guest: null,
+    container: "stellarr-voice-call",
+  };
   for (let index = 0; index < argv.length; index += 1) {
     const flag = argv[index];
     const value = argv[index + 1];
-    if (!["--origin", "--out", "--owner", "--guest"].includes(flag) || value === undefined) {
+    if (!["--origin", "--out", "--owner", "--guest", "--container"].includes(flag) || value === undefined) {
       throw new Error(`Unknown or incomplete option ${flag}`);
     }
-    options[flag.slice(2)] = flag === "--origin" ? value.replace(/\/$/, "") : resolve(value);
+    options[flag.slice(2)] =
+      flag === "--origin" ? value.replace(/\/$/, "") : flag === "--container" ? value : resolve(value);
     index += 1;
   }
   return options;
+}
+
+/**
+ * The code the API logged at the container's last start, which the first
+ * account founds the instance with. Every start draws a new one, so the last
+ * line counts.
+ */
+function setupCode(container) {
+  if (process.env.STELLARR_SETUP_CODE) return process.env.STELLARR_SETUP_CODE;
+  const logs = spawnSync("docker", ["logs", container], { encoding: "utf8" });
+  const codes = [...`${logs.stdout ?? ""}${logs.stderr ?? ""}`.matchAll(/Setup code: ([A-Z0-9-]+)\./g)];
+  const code = codes.at(-1)?.[1];
+  if (code === undefined) {
+    throw new Error(`No setup code in the log of ${container}; pass --container, or set STELLARR_SETUP_CODE`);
+  }
+  return code;
 }
 
 /** Speech from the fixtures, then two seconds of a quiet room, as 16-bit WAV. */
@@ -93,7 +121,7 @@ const api = (page, method, path, body) =>
     return { status: response.status, body: await response.text() };
   })()`);
 
-async function signIn(origin, who, inviteCode) {
+async function signIn(origin, who, { inviteCode, container }) {
   const { page, username, display } = people[who];
   let response = await api(page, "POST", "/api/auth/login", { username, password: PASSWORD });
   if (response.status >= 400) {
@@ -104,7 +132,10 @@ async function signIn(origin, who, inviteCode) {
       password: PASSWORD,
       ...(inviteCode
         ? { inviteCode }
-        : { initialServer: { name: "Check", description: "", textChannelName: "general", voiceChannelName: "lounge" } }),
+        : {
+            setupCode: setupCode(container),
+            initialServer: { name: "Check", description: "", textChannelName: "general", voiceChannelName: "lounge" },
+          }),
     });
   }
   if (response.status >= 400) throw new Error(`${who}: sign-in failed ${response.status} ${response.body}`);
@@ -226,10 +257,10 @@ try {
   }
 
   // The owner registers with a server of their own and invites the guest.
-  await signIn(options.origin, "owner");
+  await signIn(options.origin, "owner", { container: options.container });
   const invite = await api(people.owner.page, "POST", "/api/admin/invites");
   const code = JSON.parse(invite.body).url?.split("/").pop();
-  await signIn(options.origin, "guest", code);
+  await signIn(options.origin, "guest", { inviteCode: code });
 
   for (const who of Object.keys(people)) {
     result[who] = { settings: await voiceSettings(who) };
