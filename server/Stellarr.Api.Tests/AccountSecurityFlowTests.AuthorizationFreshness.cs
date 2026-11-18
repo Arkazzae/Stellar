@@ -16,8 +16,10 @@ public sealed partial class AccountSecurityFlowTests
     [InlineData("override-delete")]
     [InlineData("role-delete")]
     [InlineData("reparent")]
+    [InlineData("ordered-reparent")]
     public async Task InstancePermissionChangesRequireFreshMfaIncludingInheritedChanges(string operation)
     {
+        var reparents = operation.EndsWith("reparent", StringComparison.Ordinal);
         using var factory = new StellarrWebApplicationFactory();
         using var owner = Client(factory);
         await LoginAsync(owner, "maja", "Aurora!2026");
@@ -33,13 +35,13 @@ public sealed partial class AccountSecurityFlowTests
                 Position = 25, Permissions = ServerPrivileges.ManageMessages,
             });
             db.Sections.Add(new Section { Id = destination, ServerId = TestData.ServerId, Name = "Destination", Position = 20 });
-            if (operation is "override-delete" or "reparent")
+            if (operation == "override-delete" || reparents)
             {
                 db.PermissionOverrides.Add(new PermissionOverride
                 {
                     Id = Guid.NewGuid(), ServerId = TestData.ServerId, RoleId = roleId,
-                    TargetType = operation == "reparent" ? PermissionTargetType.Section : PermissionTargetType.Channel,
-                    TargetId = operation == "reparent" ? destination : TestData.GeneralChannelId,
+                    TargetType = reparents ? PermissionTargetType.Section : PermissionTargetType.Channel,
+                    TargetId = reparents ? destination : TestData.GeneralChannelId,
                     DenyMask = ServerPrivileges.ManageMessages,
                 });
             }
@@ -54,8 +56,25 @@ public sealed partial class AccountSecurityFlowTests
                 new { allow = Array.Empty<string>(), deny = AuthorizationFreshnessMessagePermission }),
             "override-delete" => owner.DeleteAsync($"/api/admin/channels/{TestData.GeneralChannelId}/permissions/{roleId}"),
             "role-delete" => owner.DeleteAsync($"/api/admin/roles/{roleId}"),
+            "ordered-reparent" => ReorderIntoDestinationAsync(),
             _ => owner.PatchAsJsonAsync($"/api/admin/channels/{TestData.GeneralChannelId}/section", new { sectionId = destination }),
         };
+
+        // A drop into another rail group: the same move, sent with the whole order.
+        async Task<HttpResponseMessage> ReorderIntoDestinationAsync()
+        {
+            Guid[] order;
+            await using (var scope = factory.OpenScope(out var db))
+            {
+                order = await db.Channels.Where(x => x.ServerId == TestData.ServerId)
+                    .OrderBy(x => x.Position).Select(x => x.Id).ToArrayAsync();
+            }
+            return await owner.PutAsJsonAsync("/api/admin/channels/order", new
+            {
+                channelIds = order,
+                move = new { channelId = TestData.GeneralChannelId, sectionId = destination },
+            });
+        }
         using var stale = await ChangeAsync();
         Assert.Equal(HttpStatusCode.Forbidden, stale.StatusCode);
         Assert.Equal(FreshSecondStepFilter.Code,
@@ -64,7 +83,7 @@ public sealed partial class AccountSecurityFlowTests
         {
             Assert.True(await db.ServerRoles.AnyAsync(x => x.Id == roleId));
             Assert.Null((await db.Channels.SingleAsync(x => x.Id == TestData.GeneralChannelId)).SectionId);
-            Assert.Equal(operation is "override-delete" or "reparent" ? 1 : 0,
+            Assert.Equal(operation == "override-delete" || reparents ? 1 : 0,
                 await db.PermissionOverrides.CountAsync(x => x.RoleId == roleId));
         }
 

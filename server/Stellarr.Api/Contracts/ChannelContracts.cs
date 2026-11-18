@@ -14,7 +14,20 @@ public sealed record UpdateChannelRequest(
     string? AudioProfile,
     int? UserLimit);
 
-public sealed record ReorderChannelsRequest(IReadOnlyList<Guid> ChannelIds);
+/// <summary>
+/// Every channel of the server in its new order. <c>Move</c>, when present,
+/// also files one channel under a section in the same change, so a channel
+/// dropped into another rail group never lands in one half of the move.
+/// </summary>
+public sealed record ReorderChannelsRequest(IReadOnlyList<Guid> ChannelIds, ChannelSectionMove? Move = null);
+
+/// <summary>A null <c>SectionId</c> takes the channel out of its section.</summary>
+public sealed record ChannelSectionMove(Guid ChannelId, Guid? SectionId);
+
+/// <summary>Hub payload: the server's channels in order, each with its section.</summary>
+public sealed record ChannelLayoutDto(string ServerId, IReadOnlyList<ChannelPlacementDto> Channels);
+
+public sealed record ChannelPlacementDto(string Id, string? SectionId);
 
 public sealed record CreateSectionRequest(string? Name);
 
