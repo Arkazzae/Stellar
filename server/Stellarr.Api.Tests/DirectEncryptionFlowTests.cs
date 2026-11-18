@@ -431,6 +431,57 @@ public sealed class DirectEncryptionFlowTests
     }
 
     [Fact]
+    public async Task LinesAboutKeysStayInTheHistoryWithoutMovingTheConversationUp()
+    {
+        using var factory = new StellarrWebApplicationFactory();
+        using var maja = await ReadyAsync(factory, "maja");
+        using var ada = await ReadyAsync(factory, "ada");
+        var withAda = await OpenAsync(maja, "ada");
+        var withIlya = await OpenAsync(maja, "ilya");
+        await EnableAsync(maja, ada, withAda);
+        var epochId = await RotateAsync(maja, withAda);
+        var sent = await SendEncryptedAsync(maja, withAda, epochId);
+        var messageId = (await JsonAsync(sent)).GetProperty("id").GetString();
+        Assert.Equal(HttpStatusCode.Created, (await SendPlainAsync(maja, withIlya, "hej")).StatusCode);
+
+        async Task<(string[] Order, JsonElement WithAda)> ListAsync()
+        {
+            var conversations = (await maja.GetFromJsonAsync<JsonElement>("/api/social")).GetProperty("conversations").EnumerateArray().ToArray();
+            return ([.. conversations.Select(x => x.GetProperty("id").GetString()!)], conversations.Single(x => x.GetProperty("id").GetString() == withAda));
+        }
+
+        var (before, listed) = await ListAsync();
+        Assert.Equal([withIlya, withAda], before);
+        var updatedAt = listed.GetProperty("updatedAt").GetDateTime();
+
+        using var adaPhone = await SignInAsync(factory, "ada");
+        await RegisterDeviceAsync(adaPhone);
+        var reset = await ada.PostAsJsonAsync("/api/me/encryption/account-key/reset", new
+        {
+            currentPassword = People["ada"].Password,
+            algorithm = "x25519",
+            publicKey = Bytes(32),
+            backup = Backup(Bytes(32)),
+        });
+        Assert.Equal(HttpStatusCode.OK, reset.StatusCode);
+
+        var (after, unmoved) = await ListAsync();
+        Assert.Equal([withIlya, withAda], after);
+        Assert.Equal(messageId, unmoved.GetProperty("lastMessage").GetProperty("id").GetString());
+        Assert.Equal(JsonValueKind.Null, unmoved.GetProperty("lastMessage").GetProperty("system").ValueKind);
+        Assert.Equal(updatedAt, unmoved.GetProperty("updatedAt").GetDateTime());
+        Assert.Equal(
+            ["encryption_requested:maja", "encryption_enabled:ada", "device_added:ada", "keys_reset:ada"],
+            await TimelineAsync(maja, withAda));
+
+        // A switch is news, and moves it up like a message does.
+        Assert.Equal(HttpStatusCode.OK, (await SwitchAsync(ada, withAda, "disable")).StatusCode);
+        var (switched, moved) = await ListAsync();
+        Assert.Equal([withAda, withIlya], switched);
+        Assert.Equal("encryption_disabled", moved.GetProperty("lastMessage").GetProperty("system").GetProperty("kind").GetString());
+    }
+
+    [Fact]
     public async Task BothPeopleHearAboutSwitchesEpochsAndNewDevices()
     {
         using var factory = new StellarrWebApplicationFactory();

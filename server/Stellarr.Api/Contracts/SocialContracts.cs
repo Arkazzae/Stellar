@@ -29,9 +29,13 @@ public sealed record FriendDto(UserDto User, DateTime Since);
 /// <param name="Direction">"incoming" when the viewer may answer it, "outgoing" when they sent it.</param>
 public sealed record FriendRequestDto(string Id, UserDto User, string Direction, DateTime SentAt);
 
-/// <param name="LastMessage">The newest message or timeline line; null while there is none.</param>
+/// <param name="LastMessage">
+/// The newest message or line about switching encryption; null while there is
+/// none. Lines about somebody's keys are left out, so they do not move the
+/// conversation up the list.
+/// </param>
 /// <param name="Unread">Messages of the peer after the viewer's read marker.</param>
-/// <param name="UpdatedAt">The last message's time, or the conversation's own while it is empty.</param>
+/// <param name="UpdatedAt">The time of <paramref name="LastMessage"/>, or the conversation's own while there is none.</param>
 public sealed record DirectConversationDto(
     string Id,
     UserDto Peer,
