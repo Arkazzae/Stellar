@@ -196,6 +196,7 @@ public static partial class EmailChangeEndpoints
         var previous = user.NormalizedEmail;
         user.Email = change.NewEmail;
         user.NormalizedEmail = change.NormalizedNewEmail;
+        user.ProviderVerifiedEmail = null;
         change.UsedAt = now;
 
         // Codes and reset links sent to the old address stop working with it.
