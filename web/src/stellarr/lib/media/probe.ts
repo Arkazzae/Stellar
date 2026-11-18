@@ -1,3 +1,13 @@
+import {
+  ANIMATION_HEAD_BYTES,
+  PREVIEW_JPEG_QUALITY,
+  PREVIEW_WEBP_QUALITY,
+  isAnimatedImage,
+  mayHavePreview,
+  previewIsWorthSending,
+  previewSize,
+} from "./imagePreview";
+
 /** Metadata measured from the exact local file before it is uploaded. */
 export interface UploadMediaMetadata {
   durationSeconds?: number;
@@ -5,6 +15,8 @@ export interface UploadMediaMetadata {
   height?: number;
   /** A bounded JPEG frame generated from a local video. */
   poster?: Blob;
+  /** A bounded still copy of a local image, WebP or JPEG, for small views. */
+  preview?: Blob;
   /** Marks audio captured in the composer rather than uploaded as a file. */
   voiceMessage?: boolean;
 }
@@ -31,13 +43,92 @@ export async function probeMedia(file: File): Promise<UploadMediaMetadata> {
 async function probeImage(file: File): Promise<UploadMediaMetadata> {
   if (typeof createImageBitmap !== "function") return {};
   try {
-    const bitmap = await createImageBitmap(file);
-    const { width, height } = bitmap;
-    bitmap.close();
-    return { width, height };
+    // The declared orientation is applied, so a phone photo's size and preview
+    // are those of the picture as it is meant to be seen.
+    const bitmap = await createImageBitmap(file, { imageOrientation: "from-image" });
+    try {
+      const { width, height } = bitmap;
+      const preview = await withinBudget(makePreview(bitmap, file));
+      return { width, height, ...(preview === undefined ? {} : { preview }) };
+    } finally {
+      bitmap.close();
+    }
   } catch {
     return {};
   }
+}
+
+/** Resolves undefined when the work fails or outlasts the probe's budget. */
+function withinBudget<T>(work: Promise<T | undefined>): Promise<T | undefined> {
+  return new Promise((resolve) => {
+    const timer = setTimeout(() => resolve(undefined), PROBE_TIMEOUT_MS);
+    const settle = (value: T | undefined) => {
+      clearTimeout(timer);
+      resolve(value);
+    };
+    work.then(settle, () => settle(undefined));
+  });
+}
+
+/** Where a preview is drawn and encoded: an offscreen canvas where there is one. */
+interface Surface {
+  encode(type: string, quality: number): Promise<Blob | null>;
+}
+
+function surfaceFor(bitmap: ImageBitmap, width: number, height: number): Surface | null {
+  if (typeof OffscreenCanvas === "function") {
+    const canvas = new OffscreenCanvas(width, height);
+    const context = canvas.getContext("2d");
+    if (context === null) return null;
+    draw(context, bitmap, width, height);
+    return { encode: (type, quality) => canvas.convertToBlob({ type, quality }) };
+  }
+  if (typeof document === "undefined") return null;
+  const canvas = document.createElement("canvas");
+  canvas.width = width;
+  canvas.height = height;
+  const context = canvas.getContext("2d");
+  if (context === null) return null;
+  draw(context, bitmap, width, height);
+  return {
+    encode: (type, quality) => new Promise((resolve) => canvas.toBlob(resolve, type, quality)),
+  };
+}
+
+function draw(
+  context: CanvasRenderingContext2D | OffscreenCanvasRenderingContext2D,
+  bitmap: ImageBitmap,
+  width: number,
+  height: number,
+): void {
+  context.imageSmoothingEnabled = true;
+  context.imageSmoothingQuality = "high";
+  context.drawImage(bitmap, 0, 0, width, height);
+}
+
+/**
+ * The reduced copy of an image, or undefined when the original should be used
+ * as it is: an animation, a vector, a file that is already small, or a browser
+ * that cannot encode a copy that keeps what the original has.
+ */
+async function makePreview(bitmap: ImageBitmap, file: File): Promise<Blob | undefined> {
+  if (!mayHavePreview(file.type) || bitmap.width <= 0 || bitmap.height <= 0) return undefined;
+  const head = new Uint8Array(await file.slice(0, ANIMATION_HEAD_BYTES).arrayBuffer());
+  if (isAnimatedImage(head)) return undefined;
+
+  const size = previewSize(bitmap.width, bitmap.height);
+  const surface = surfaceFor(bitmap, size.width, size.height);
+  if (surface === null) return undefined;
+
+  let encoded = await surface.encode("image/webp", PREVIEW_WEBP_QUALITY);
+  // A browser that cannot encode WebP quietly answers with a PNG. JPEG is the
+  // fallback only for a JPEG original, since it cannot hold transparency.
+  if (encoded?.type !== "image/webp") {
+    if (file.type !== "image/jpeg") return undefined;
+    encoded = await surface.encode("image/jpeg", PREVIEW_JPEG_QUALITY);
+    if (encoded?.type !== "image/jpeg") return undefined;
+  }
+  return previewIsWorthSending(encoded.size, file.size) ? encoded : undefined;
 }
 
 async function probePlayable(
