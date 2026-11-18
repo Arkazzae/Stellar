@@ -19,6 +19,8 @@ export interface DropConfig {
   carriable: readonly string[];
   /** The zone a key starts in, where the keyboard begins. */
   homeOf: (key: string) => string;
+  /** Whether `zone` takes `key`; absent, every zone does. A key's home always does. */
+  accepts?: (key: string, zone: string) => boolean;
   messages: DropMessages;
   /** A release over `zone`, or over none. Not called for a cancel. */
   commit: (key: string, zone: string | null) => void;
@@ -28,12 +30,21 @@ interface Zone extends Span {
   id: string;
 }
 
-/** Every open zone, in rail order, measured in content pixels; null when one is not on the page. */
-function measureZones(stage: Stage, lists: readonly SortList[], kind: string): Zone[] | null {
+/**
+ * Every open zone that takes `key`, in rail order, measured in content
+ * pixels; null when one is not on the page.
+ */
+function measureZones(
+  stage: Stage,
+  { lists, zoneKind, homeOf, accepts }: DropConfig & { lists: readonly SortList[] },
+  key: string,
+): Zone[] | null {
+  const home = homeOf(key);
   const zones: Zone[] = [];
   for (const list of lists) {
-    if (list.kind !== kind || list.closed) continue;
+    if (list.kind !== zoneKind || list.closed) continue;
     for (const id of list.items) {
+      if (id !== home && accepts !== undefined && !accepts(key, id)) continue;
       const node = stage.items.get(id);
       if (node === undefined) return null;
       zones.push({ id, top: layoutTop(node, stage.scroller), height: node.offsetHeight });
@@ -68,12 +79,11 @@ export function createDropMotion(
   press: { y: number; scrollTop: number } | null,
   host: CopyHost,
 ): Motion & { copy: (node: HTMLElement | null) => void } | null {
-  const { lists, zoneKind, homeOf } = config();
-  let zones = measureZones(stage, lists, zoneKind);
+  let zones = measureZones(stage, config(), key);
   if (zones === null) return null;
   // The handle's box, where the copy starts, read before anything is written.
   const box = handle.getBoundingClientRect();
-  const home = homeOf(key);
+  const home = config().homeOf(key);
   let over: string | null = press === null ? home : null;
   let y = press?.y ?? 0;
   let scrollTop = press?.scrollTop ?? 0;
@@ -165,12 +175,14 @@ export function createDropMotion(
       return stage.handles.get(key) ?? null;
     },
     committed: () => {
-      const { carriable, lists: now } = config();
+      const now = config();
       // The person left the call, or was moved by someone else.
-      if (!carriable.includes(key)) return false;
+      if (!now.carriable.includes(key)) return false;
       // The calls only changed size, or the channels moved: measure again.
-      zones = measureZones(stage, now, zoneKind);
+      zones = measureZones(stage, now, key);
       if (zones === null) return false;
+      // A channel that stopped taking the key, as one that filled up, is no target.
+      if (!zones.some((zone) => zone.id === over)) moveOver(null);
       if (press === null) align();
       else moveOver(zoneAt());
       return true;

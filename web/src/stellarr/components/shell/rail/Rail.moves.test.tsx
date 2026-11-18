@@ -519,3 +519,108 @@ describe("Rail voice moves", () => {
     expect(onMoveVoiceMember).not.toHaveBeenCalled();
   });
 });
+
+describe("Rail: carrying yourself", () => {
+  const maja: PersonVM = { id: "me", displayName: "Maja", initials: "MA", presence: "online" };
+  /** You in Salon instead of Jo, so the rail keeps the layout drawn at the top. */
+  const SEATED: VoiceChannelVM[] = [{ ...VOICE[0]!, occupants: [maja] }, ...VOICE.slice(1)];
+  const MAJA_MIDDLE = 140 + ROW + 15;
+  const self = () =>
+    screen.getByRole("button", { name: "Maja, przenieś do innego kanału głosowego" });
+  const zone = (name: string) => channel(name).closest(".voice-channel-drop")!;
+
+  function dragSelfTo(y: number) {
+    pressAt(self(), MAJA_MIDDLE);
+    moveTo(MAJA_MIDDLE + 8, y);
+    letGo(y);
+  }
+
+  it("joins the channel you drop yourself on, as a click would, and never asks for a staff move", () => {
+    const onJoinVoiceChannel = vi.fn();
+    const onMoveVoiceMember = vi.fn();
+    setup({ voiceChannels: SEATED, onJoinVoiceChannel, onMoveVoiceMember });
+
+    // Warsztat sits in Projekty, 333 px down the rail.
+    dragSelfTo(343);
+
+    expect(onJoinVoiceChannel).toHaveBeenCalledExactlyOnceWith("v-3");
+    expect(onMoveVoiceMember).not.toHaveBeenCalled();
+    expect(said()).toBe("Przenosimy Cię na kanał Warsztat.");
+    expect(screen.getByText("Maja").closest("li")).not.toHaveAttribute("aria-busy");
+  });
+
+  it("lets you carry yourself without the right to move others, whose rows stay plain", () => {
+    const onJoinVoiceChannel = vi.fn();
+    setup({
+      voiceChannels: [{ ...VOICE[0]!, occupants: [maja, jo] }, ...VOICE.slice(1)],
+      onJoinVoiceChannel,
+    });
+
+    const others = screen.getByText("Jo").closest("li");
+    expect(others).not.toHaveAttribute("role");
+    expect(others).not.toHaveAttribute("aria-roledescription");
+
+    fireEvent.keyDown(self(), { key: " " });
+    expect(said()).toBe("Podniesiono Cię.");
+    fireEvent.keyDown(self(), { key: "ArrowDown" });
+    fireEvent.keyDown(self(), { key: " " });
+    expect(onJoinVoiceChannel).toHaveBeenCalledExactlyOnceWith("v-2");
+  });
+
+  it("does nothing for a drop back on your own channel, or for a cancel", () => {
+    const onJoinVoiceChannel = vi.fn();
+    setup({ voiceChannels: SEATED, onJoinVoiceChannel });
+
+    dragSelfTo(140 + 10);
+    expect(said()).toBe("Anulowano przenoszenie.");
+    fireEvent.keyDown(self(), { key: " " });
+    fireEvent.keyDown(self(), { key: "ArrowDown" });
+    fireEvent.keyDown(self(), { key: "Escape" });
+
+    expect(onJoinVoiceChannel).not.toHaveBeenCalled();
+  });
+
+  it("passes over a full channel, which you could not join by clicking either", async () => {
+    const onJoinVoiceChannel = vi.fn();
+    setup({
+      voiceChannels: [
+        SEATED[0]!,
+        { ...VOICE[1]!, occupants: [jo], userLimit: 1 },
+        { ...VOICE[2]!, userLimit: 2 },
+      ],
+      onJoinVoiceChannel,
+    });
+
+    const sesja = railTop(zone("Sesja"));
+    pressAt(self(), MAJA_MIDDLE);
+    moveTo(MAJA_MIDDLE + 8, sesja + 10);
+    await nextFrame();
+    expect(zone("Sesja")).not.toHaveAttribute("data-drop-over");
+    letGo(sesja + 10);
+    expect(onJoinVoiceChannel).not.toHaveBeenCalled();
+
+    fireEvent.keyDown(self(), { key: " " });
+    fireEvent.keyDown(self(), { key: "ArrowDown" });
+    expect(said()).toBe("Nad kanałem Warsztat.");
+    fireEvent.keyDown(self(), { key: " " });
+    expect(onJoinVoiceChannel).toHaveBeenCalledExactlyOnceWith("v-3");
+  });
+
+  it("stops targeting a channel that fills up while you are carried over it", () => {
+    const onJoinVoiceChannel = vi.fn();
+    const sesja = { ...VOICE[1]!, userLimit: 1 };
+    const { rerender } = setup({
+      voiceChannels: [SEATED[0]!, sesja, VOICE[2]!],
+      onJoinVoiceChannel,
+    });
+
+    fireEvent.keyDown(self(), { key: " " });
+    fireEvent.keyDown(self(), { key: "ArrowDown" });
+    expect(zone("Sesja")).toHaveAttribute("data-drop-over");
+    rerender({ voiceChannels: [SEATED[0]!, { ...sesja, occupants: [jo] }, VOICE[2]!] });
+    expect(zone("Sesja")).not.toHaveAttribute("data-drop-over");
+    fireEvent.keyDown(self(), { key: " " });
+
+    expect(onJoinVoiceChannel).not.toHaveBeenCalled();
+  });
+});

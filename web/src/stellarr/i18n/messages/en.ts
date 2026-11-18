@@ -1631,6 +1631,8 @@ export const en = {
   "shell.dragOver": "Over channel {name}.",
   "shell.dragDropped": "Dropped user {user} on channel {channel}.",
   "shell.dragCancelled": "Move cancelled.",
+  "shell.dragSelfLifted": "Picked you up.",
+  "shell.dragSelfDropped": "Moving you to channel {channel}.",
   "shell.reorderHandle": "sortable channel",
   "shell.reorderInstructions": "Press Space to pick up the channel. Use the arrows to move it, Space to drop it, Escape to cancel.",
   "shell.reorderLifted": "Picked up channel {name}, position {position} of {count} in {group}.",

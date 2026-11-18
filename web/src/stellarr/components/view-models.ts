@@ -110,6 +110,8 @@ export interface VoiceChannelVM {
   occupants: PersonVM[];
   /** The rail section this channel is grouped under; absent if unsectioned. */
   sectionId?: string;
+  /** How many people the channel seats; absent when it seats anyone who comes. */
+  userLimit?: number;
 }
 
 /** A private thread as the rail lists it. */
