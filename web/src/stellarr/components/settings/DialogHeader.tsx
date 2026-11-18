@@ -1,4 +1,5 @@
 import { DialogClose } from "@/components/primitives/DialogClose";
+import { Sticker, type StickerName } from "@/components/primitives/MascotArt";
 import { useLanguage } from "@/state/hooks";
 
 export interface DialogHeaderProps {
@@ -14,6 +15,8 @@ export interface DialogHeaderProps {
    * list to pick from rather than a form to fill in.
    */
   centered?: boolean;
+  /** The mascot above the title, for a dialog that marks a first step. */
+  sticker?: StickerName;
 }
 
 /**
@@ -30,12 +33,18 @@ export function DialogHeader({
   onClose,
   closeDisabled = false,
   centered = false,
+  sticker,
 }: DialogHeaderProps) {
   const { t } = useLanguage();
 
   return (
     <header className={centered ? "am-head centered" : "am-head"}>
       <DialogClose label={t("common.close")} onClose={onClose} disabled={closeDisabled} />
+      {sticker === undefined ? null : (
+        <span className="am-art">
+          <Sticker name={sticker} size="main" align={centered ? "center" : "start"} />
+        </span>
+      )}
       <h2 id={titleId}>{title}</h2>
       <p>{detail}</p>
     </header>
