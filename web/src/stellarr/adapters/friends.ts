@@ -2,7 +2,8 @@ import type { SocialApiClient } from "@/lib/api/client";
 import { ApiError } from "@/lib/api/errors";
 import type { Attachment, VoiceOccupant } from "@/lib/api/types";
 import { LAZY_ATTACHMENT_PREFIX, type E2eeEvent, type EncryptedUpload } from "@/lib/e2ee/client";
-import { probeMedia, type UploadMediaMetadata } from "@/lib/media/probe";
+import { measureUpload } from "@/lib/media/measureUpload";
+import type { UploadMediaMetadata } from "@/lib/media/probe";
 import type { RealtimeClient } from "@/lib/realtime/types";
 import type {
   DmConversation,
@@ -406,7 +407,7 @@ export function createFriendsAdapter(
     },
 
     async uploadAttachment(id, file) {
-      const metadata = await probeMedia(file);
+      const metadata = await measureUpload(file);
       if (conversations.find((item) => item.id === id)?.encryption?.state !== "on") {
         return api.uploadAttachment(file, metadata);
       }

@@ -1,6 +1,6 @@
 import type { ApiClient } from "@/lib/api/client";
 import type { Attachment, ChannelId, Message, UserId } from "@/lib/api/types";
-import { probeMedia } from "@/lib/media/probe";
+import { measureUpload } from "@/lib/media/measureUpload";
 import type { RealtimeClient } from "@/lib/realtime/types";
 import type { ChatPort, SendMessage, TypingPort } from "@/ports";
 
@@ -97,7 +97,7 @@ export function createChatAdapter(
     },
 
     async uploadAttachment(file, options): Promise<Attachment> {
-      const measured = await probeMedia(file);
+      const measured = await measureUpload(file);
       return api.uploadAttachment(file, {
         ...measured,
         ...(options?.durationSeconds === undefined
