@@ -1,15 +1,18 @@
+using Microsoft.AspNetCore.SignalR;
 using Microsoft.EntityFrameworkCore;
 using Stellarr.Api.Auth;
 using Stellarr.Api.Contracts;
 using Stellarr.Api.Data;
 using Stellarr.Api.Domain;
 using Stellarr.Api.Localization;
+using Stellarr.Api.Realtime;
 
 namespace Stellarr.Api.Endpoints;
 
 /// <summary>
 /// The collapsible groups of the channel rail. A section is a label over the
-/// server-wide channel order; it owns no order of its channels.
+/// server-wide channel order; it owns no order of its channels, and a channel
+/// is filed under one together with that order (<see cref="ChannelEndpoints"/>).
 /// </summary>
 public static class SectionEndpoints
 {
@@ -24,11 +27,6 @@ public static class SectionEndpoints
         sections.MapPut("/order", ReorderAsync);
         sections.MapPatch("/{sectionId:guid}", RenameAsync);
         sections.MapDelete("/{sectionId:guid}", DeleteAsync);
-
-        endpoints.MapGroup("/api/admin/channels")
-            .RequireAuthorization()
-            .AddEndpointFilter<ServerMembershipFilter>()
-            .MapPatch("/{channelId:guid}/section", AssignChannelAsync);
         return endpoints;
     }
 
@@ -103,6 +101,7 @@ public static class SectionEndpoints
         ReorderSectionsRequest request,
         HttpContext http,
         AppDbContext db,
+        IHubContext<AppHub> hub,
         Messages messages,
         CancellationToken cancellationToken)
     {
@@ -131,6 +130,10 @@ public static class SectionEndpoints
         }
 
         await db.SaveChangesAsync(cancellationToken);
+        await hub.Clients.Group(AppHub.ServerGroup(serverId)).SendAsync(
+            "SectionOrderChanged",
+            new SectionOrderDto(serverId.ToString(), order.Select(x => x.id.ToString()).ToArray()),
+            cancellationToken);
         return Results.NoContent();
     }
 
@@ -161,44 +164,6 @@ public static class SectionEndpoints
             .Where(x => x.Id == section.Id && !db.Channels.Any(channel => channel.SectionId == x.Id))
             .ExecuteDeleteAsync(cancellationToken);
         return deleted == 0 ? Results.Conflict() : Results.NoContent();
-    }
-
-    private static async Task<IResult> AssignChannelAsync(
-        Guid channelId,
-        AssignChannelSectionRequest request,
-        HttpContext http,
-        AppDbContext db,
-        CancellationToken cancellationToken)
-    {
-        await using var transaction = await db.Database.BeginTransactionAsync(cancellationToken);
-        var serverId = http.RequireActiveServerId();
-        var userId = http.User.RequireUserId();
-        var channel = await db.Channels.FirstOrDefaultAsync(
-            x => x.Id == channelId && x.ServerId == serverId, cancellationToken);
-        if (channel is null)
-        {
-            return Results.NotFound();
-        }
-
-        if (request.SectionId is { } targetId && !await db.Sections.AnyAsync(
-                x => x.Id == targetId && x.ServerId == serverId, cancellationToken))
-        {
-            return Results.NotFound();
-        }
-        var decision = await ServerAuthorization.MoveChannelAsync(db, userId, serverId, channel.Id, request.SectionId, cancellationToken);
-        if (!decision.Allowed)
-        {
-            return Results.Forbid();
-        }
-        if (decision.ChangesPermissions && await InstanceServerFreshSecondStepFilter.RefusalAsync(http) is { } refusal)
-        {
-            return refusal;
-        }
-
-        channel.SectionId = request.SectionId;
-        await db.SaveChangesAsync(cancellationToken);
-        await transaction.CommitAsync(cancellationToken);
-        return Results.NoContent();
     }
 
     private static bool IsValidName(string name) => name.Length is >= 1 and <= MaxNameLength;

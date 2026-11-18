@@ -35,8 +35,8 @@ public sealed record UpdateSectionRequest(string? Name);
 
 public sealed record ReorderSectionsRequest(IReadOnlyList<Guid> SectionIds);
 
-/// <summary>A null <c>SectionId</c> takes the channel out of its section.</summary>
-public sealed record AssignChannelSectionRequest(Guid? SectionId);
+/// <summary>Hub payload: the server's sections in their new order.</summary>
+public sealed record SectionOrderDto(string ServerId, IReadOnlyList<string> SectionIds);
 
 /// <summary>What one role is allowed and denied on top of its own permissions, in wire names.</summary>
 public sealed record PermissionOverrideDto(
