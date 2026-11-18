@@ -47,6 +47,8 @@ export interface Participant {
   readonly media: RemoteMedia;
   /** The person says they encrypt their frames end to end. */
   encrypted: boolean;
+  /** A state signal of theirs has arrived, so `encrypted` is their word, not a default. */
+  stateKnown: boolean;
 }
 
 export interface ParticipantInit {
@@ -72,6 +74,7 @@ export function createParticipant(init: ParticipantInit): Participant {
     screenAudio: null,
     media: new RemoteMedia(),
     encrypted: false,
+    stateKnown: false,
   };
 }
 
@@ -118,6 +121,7 @@ export function receiveRemoteState(
 ): void {
   person.muted = state.muted;
   person.encrypted = state.encrypted;
+  person.stateKnown = true;
   person.media.announce(state);
   mediaChanged(env, person);
 }
