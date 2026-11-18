@@ -1,9 +1,11 @@
+using Microsoft.AspNetCore.SignalR;
 using Microsoft.EntityFrameworkCore;
 using Stellarr.Api.Auth;
 using Stellarr.Api.Contracts;
 using Stellarr.Api.Data;
 using Stellarr.Api.Domain;
 using Stellarr.Api.Localization;
+using Stellarr.Api.Realtime;
 
 namespace Stellarr.Api.Endpoints;
 
@@ -148,16 +150,23 @@ public static class ChannelEndpoints
         return await db.TrySaveChangesAsync(cancellationToken) ? Results.Ok(channel.ToDto()) : Results.Conflict();
     }
 
+    /// <summary>
+    /// Sets the order of every channel and, with a move, the section of one of
+    /// them: one transaction and one broadcast, so nobody sees a channel moved
+    /// to another group but not yet placed in it.
+    /// </summary>
     private static async Task<IResult> ReorderAsync(
         ReorderChannelsRequest request,
         HttpContext http,
         AppDbContext db,
+        IHubContext<AppHub> hub,
         Messages messages,
         CancellationToken cancellationToken)
     {
+        await using var transaction = await db.Database.BeginTransactionAsync(cancellationToken);
         var serverId = http.RequireActiveServerId();
-        if (!await ServerAccess.HasAsync(
-                db, http.User.RequireUserId(), serverId, ServerPrivileges.ManageChannels, cancellationToken))
+        var userId = http.User.RequireUserId();
+        if (!await ServerAccess.HasAsync(db, userId, serverId, ServerPrivileges.ManageChannels, cancellationToken))
         {
             return Results.Forbid();
         }
@@ -170,6 +179,33 @@ public static class ChannelEndpoints
             return Invalid("channelIds", messages.Get(MessageKey.ChannelOrderIncomplete));
         }
 
+        if (request.Move is { } move)
+        {
+            // The order names every channel of the server, so a moved channel
+            // missing from it belongs to another server.
+            var moved = channels.FirstOrDefault(x => x.Id == move.ChannelId);
+            if (moved is null || (move.SectionId is { } sectionId && !await db.Sections.AnyAsync(
+                    x => x.Id == sectionId && x.ServerId == serverId, cancellationToken)))
+            {
+                return Results.NotFound();
+            }
+
+            // The same rules as assigning a section on its own: a section can
+            // change who may see or edit the channel.
+            var decision = await ServerAuthorization.MoveChannelAsync(
+                db, userId, serverId, moved.Id, move.SectionId, cancellationToken);
+            if (!decision.Allowed)
+            {
+                return Results.Forbid();
+            }
+            if (decision.ChangesPermissions && await InstanceServerFreshSecondStepFilter.RefusalAsync(http) is { } refusal)
+            {
+                return refusal;
+            }
+
+            moved.SectionId = move.SectionId;
+        }
+
         var positions = order.ToDictionary(x => x.id, x => x.position);
         foreach (var channel in channels)
         {
@@ -177,6 +213,14 @@ public static class ChannelEndpoints
         }
 
         await db.SaveChangesAsync(cancellationToken);
+        await transaction.CommitAsync(cancellationToken);
+
+        var layout = new ChannelLayoutDto(
+            serverId.ToString(),
+            channels.OrderBy(x => x.Position)
+                .Select(x => new ChannelPlacementDto(x.Id.ToString(), x.SectionId?.ToString()))
+                .ToArray());
+        await hub.Clients.Group(AppHub.ServerGroup(serverId)).SendAsync("ChannelLayoutChanged", layout, cancellationToken);
         return Results.NoContent();
     }
 

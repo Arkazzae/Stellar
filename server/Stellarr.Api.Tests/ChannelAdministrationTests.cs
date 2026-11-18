@@ -64,6 +64,49 @@ public sealed class ChannelAdministrationTests : IClassFixture<StellarrWebApplic
     }
 
     [Fact]
+    public async Task AChannelDroppedIntoASectionChangesOrderAndSectionInOneAnnouncedChange()
+    {
+        using var factory = new StellarrWebApplicationFactory();
+        using var owner = await SignedInAsync(factory, "maja", "Aurora!2026");
+        var sectionId = await IdOfAsync(await owner.PostAsJsonAsync("/api/admin/sections", new { name = "Projekty" }));
+        await using var listener = await HubListenerAsync(factory, "jo", "Corona!2026", "ChannelLayoutChanged");
+        var ids = await ChannelIdsAsync(owner);
+        var order = ids.Skip(1).Append(ids[0]).ToArray();
+
+        Assert.Equal(
+            HttpStatusCode.NoContent,
+            (await ReorderAsync(owner, order, new { channelId = ids[0], sectionId })).StatusCode);
+
+        var layout = await listener.NextAsync();
+        Assert.Equal(TestData.ServerId.ToString(), layout.GetProperty("serverId").GetString());
+        var placed = layout.GetProperty("channels").EnumerateArray().ToArray();
+        Assert.Equal(order.Select(x => x.ToString()), placed.Select(x => x.GetProperty("id").GetString()));
+        Assert.Equal(sectionId, placed[^1].GetProperty("sectionId").GetString());
+
+        // What the hub announced is what the next bootstrap reads.
+        using var bootstrap = JsonDocument.Parse(await owner.GetStringAsync("/api/bootstrap"));
+        var channels = bootstrap.RootElement.GetProperty("channels").EnumerateArray().ToArray();
+        Assert.Equal(order.Select(x => x.ToString()), channels.Select(x => x.GetProperty("id").GetString()));
+        Assert.Equal(sectionId, channels[^1].GetProperty("sectionId").GetString());
+    }
+
+    [Fact]
+    public async Task AMoveToAnUnknownSectionOrChannelChangesNothing()
+    {
+        using var owner = await SignedInAsync(_factory, "maja", "Aurora!2026");
+        var ids = await ChannelIdsAsync(owner);
+        var reversed = ids.AsEnumerable().Reverse().ToArray();
+
+        Assert.Equal(
+            HttpStatusCode.NotFound,
+            (await ReorderAsync(owner, reversed, new { channelId = ids[0], sectionId = Guid.NewGuid() })).StatusCode);
+        Assert.Equal(
+            HttpStatusCode.NotFound,
+            (await ReorderAsync(owner, reversed, new { channelId = Guid.NewGuid(), sectionId = (Guid?)null })).StatusCode);
+        Assert.Equal(ids, await ChannelIdsAsync(owner));
+    }
+
+    [Fact]
     public async Task ChannelNamesAreUniqueWithinTheServerWhateverTheirCase()
     {
         using var owner = await SignedInAsync(_factory, "maja", "Aurora!2026");
@@ -284,7 +327,7 @@ public sealed class ChannelAdministrationTests : IClassFixture<StellarrWebApplic
         using var factory = new StellarrWebApplicationFactory();
         using var owner = await SignedInAsync(factory, "maja", "Aurora!2026");
         var duty = await CreateRoleAsync(owner, "Dyżurni", "manageMessages");
-        await using var listener = await PermissionListenerAsync(factory, "jo", "Corona!2026");
+        await using var listener = await HubListenerAsync(factory, "jo", "Corona!2026", "PermissionsChanged");
 
         Assert.Equal(HttpStatusCode.NoContent, (await AssignAsync(owner, JoId, duty)).StatusCode);
         var granted = await listener.NextAsync();
@@ -407,9 +450,9 @@ public sealed class ChannelAdministrationTests : IClassFixture<StellarrWebApplic
     private static Task<HttpResponseMessage> AssignAsync(HttpClient client, Guid userId, object roleId) =>
         client.PatchAsJsonAsync($"/api/admin/members/{userId}/role", new { roleId });
 
-    /// <summary>A hub connection of one account that keeps every PermissionsChanged it is sent.</summary>
-    private static async Task<PermissionListener> PermissionListenerAsync(
-        StellarrWebApplicationFactory factory, string username, string password)
+    /// <summary>A hub connection of one account that keeps every <paramref name="hubEvent"/> it is sent.</summary>
+    private static async Task<HubListener> HubListenerAsync(
+        StellarrWebApplicationFactory factory, string username, string password, string hubEvent)
     {
         using var client = factory.CreateClient(new WebApplicationFactoryClientOptions { HandleCookies = false });
         using var login = await client.PostAsJsonAsync("/api/auth/login", new { username, password });
@@ -423,7 +466,7 @@ public sealed class ChannelAdministrationTests : IClassFixture<StellarrWebApplic
                 options.HttpMessageHandlerFactory = _ => factory.Server.CreateHandler();
             })
             .Build();
-        var listener = new PermissionListener(connection);
+        var listener = new HubListener(connection, hubEvent);
 
         // The hub speaks first once the connection has joined its groups.
         var joined = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
@@ -433,15 +476,15 @@ public sealed class ChannelAdministrationTests : IClassFixture<StellarrWebApplic
         return listener;
     }
 
-    private sealed class PermissionListener : IAsyncDisposable
+    private sealed class HubListener : IAsyncDisposable
     {
         private readonly HubConnection _connection;
         private readonly System.Threading.Channels.Channel<JsonElement> _events = System.Threading.Channels.Channel.CreateUnbounded<JsonElement>();
 
-        public PermissionListener(HubConnection connection)
+        public HubListener(HubConnection connection, string hubEvent)
         {
             _connection = connection;
-            connection.On<JsonElement>("PermissionsChanged", payload => _events.Writer.TryWrite(payload));
+            connection.On<JsonElement>(hubEvent, payload => _events.Writer.TryWrite(payload));
         }
 
         public async Task<JsonElement> NextAsync() =>
@@ -450,8 +493,8 @@ public sealed class ChannelAdministrationTests : IClassFixture<StellarrWebApplic
         public ValueTask DisposeAsync() => _connection.DisposeAsync();
     }
 
-    private static Task<HttpResponseMessage> ReorderAsync(HttpClient client, IEnumerable<Guid> ids) =>
-        client.PutAsJsonAsync("/api/admin/channels/order", new { channelIds = ids });
+    private static Task<HttpResponseMessage> ReorderAsync(HttpClient client, IEnumerable<Guid> ids, object? move = null) =>
+        client.PutAsJsonAsync("/api/admin/channels/order", new { channelIds = ids, move });
 
     private static Task<HttpResponseMessage> CreateAsync(HttpClient client, string name, string kind) =>
         client.PostAsJsonAsync("/api/admin/channels", new { name, kind });
