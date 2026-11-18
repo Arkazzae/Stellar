@@ -455,6 +455,16 @@
   .di-btn.noise.rnnoise{color:var(--accent-text)}
   .di-btn.noise.browser{color:var(--info-text)}
   .di-btn.noise.off{color:var(--text-faint)}
+  /* The chosen engine downloading: the ring runs round the button's own edge
+     and the mark steps back inside it, so neither touches the other and the
+     button keeps its size. */
+  .di-btn.noise{position:relative}
+  .di-btn.noise .progress-ring{position:absolute;inset:0}
+  .di-btn.noise .noise-icon{transition:transform var(--dur-base) var(--ease-standard)}
+  .di-btn.noise.downloading .noise-icon{transform:scale(0.78)}
+  @media (prefers-reduced-motion: reduce){
+    .di-btn.noise .noise-icon{transition:none}
+  }
   .di-btn.danger:hover{background:var(--danger-soft);color:var(--danger-text)}
   .dock-item.act:hover .di-btn.ghost{color:var(--text)}
   .dock-sep{display:none}

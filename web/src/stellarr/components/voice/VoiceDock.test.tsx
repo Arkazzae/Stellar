@@ -2,13 +2,14 @@ import { render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { describe, expect, it, vi } from "vitest";
 
-import type { NoiseSuppressionMode } from "@/ports";
+import type { NoiseSuppressionMode, SuppressorDownload } from "@/ports";
 
 import { VoiceDock, type VoiceDockProps } from "./VoiceDock";
 
 function props(
   noiseSuppression: NoiseSuppressionMode,
   onChangeNoiseSuppression: VoiceDockProps["onChangeNoiseSuppression"],
+  noiseDownload: SuppressorDownload | null = null,
 ): VoiceDockProps {
   return {
     call: {
@@ -29,6 +30,7 @@ function props(
     onChangeSoundboardVolume: vi.fn(),
     cameraSupported: true,
     noiseSuppression,
+    noiseDownload,
     onChangeNoiseSuppression,
     onToggleMute: vi.fn(),
     onToggleDeafen: vi.fn(),
@@ -76,13 +78,17 @@ describe("VoiceDock noise suppression", () => {
     await user.click(rnnoise);
     expect(onChange).toHaveBeenLastCalledWith("gtcrn");
 
-    rerender(<VoiceDock {...props("gtcrn", onChange)} />);
-    await user.click(
-      screen.getByRole("button", { name: "Tłumienie: GTCRN. Następne: Speex." }),
-    );
+    // GTCRN's files still on their way: the button says how far, and is busy.
+    rerender(<VoiceDock {...props("gtcrn", onChange, { kind: "gtcrn", percent: 40 })} />);
+    const gtcrn = screen.getByRole("button", {
+      name: "Tłumienie: GTCRN, pobrano 40%. Następne: Speex.",
+    });
+    expect(gtcrn).toHaveAttribute("aria-busy", "true");
+    await user.click(gtcrn);
     expect(onChange).toHaveBeenLastCalledWith("speex");
 
-    rerender(<VoiceDock {...props("speex", onChange)} />);
+    // Pressed on past it, the download is no longer this button's to show.
+    rerender(<VoiceDock {...props("speex", onChange, { kind: "gtcrn", percent: 90 })} />);
     await user.click(
       screen.getByRole("button", { name: "Tłumienie: Speex. Następne: klasyczne." }),
     );

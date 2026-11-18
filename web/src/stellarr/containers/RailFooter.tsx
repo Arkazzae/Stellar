@@ -52,6 +52,7 @@ export function RailVoiceDock() {
       }
       cameraSupported={voice.cameraSupported}
       noiseSuppression={settings.noiseSuppression}
+      noiseDownload={voice.suppressorDownload}
       onChangeNoiseSuppression={(noiseSuppression) =>
         voiceSettings.update({ noiseSuppression })
       }

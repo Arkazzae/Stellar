@@ -23,6 +23,7 @@ import {
   useSession,
   useTheme,
   useUi,
+  useVoice,
 } from "@/state/hooks";
 
 import { useAutostart } from "./useAutostart";
@@ -138,6 +139,7 @@ export function UserSettingsContainer() {
   // The test reopens the microphone for a new suppressor as a call does, so
   // it waits as a call does for the choice to stay put.
   const mic = useMicTest(useSettledVoiceSettings(voiceSettings));
+  const { suppressorDownload } = useVoice();
   const output = useOutputTest(voiceSettings);
   const camera = useCameraTest(voiceSettings);
   const joinSound = useJoinSound(open);
@@ -258,6 +260,7 @@ export function UserSettingsContainer() {
           mic,
           output,
           camera,
+          suppressorDownload,
         }}
         language={{
           locale: language.locale,
