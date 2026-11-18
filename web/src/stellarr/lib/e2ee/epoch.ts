@@ -34,6 +34,24 @@ export function importEpochKey(raw: Bytes): Promise<CryptoKey> {
   return crypto.subtle.importKey("raw", raw, "AES-GCM", false, ["encrypt", "decrypt"]);
 }
 
+/** An epoch key this browser holds, in the two forms it is used in. */
+export interface OpenedEpoch {
+  /** AES-GCM, for messages and files. */
+  key: CryptoKey;
+  /**
+   * The same bytes as an HKDF key, from which a call derives a key per sender
+   * track (lib/voice/e2ee/sframe.ts). Neither form can be exported.
+   */
+  callBase: CryptoKey;
+}
+
+export async function openEpochKey(raw: Bytes): Promise<OpenedEpoch> {
+  return {
+    key: await importEpochKey(raw),
+    callBase: await crypto.subtle.importKey("raw", raw, "HKDF", false, ["deriveBits"]),
+  };
+}
+
 async function keyEncryptionKey(
   shared: ArrayBuffer,
   context: WrapContext,
@@ -82,7 +100,7 @@ export async function unwrapEpochKey(
   envelope: SealedEnvelope,
   privateKey: CryptoKey,
   context: Omit<WrapContext, "recipientKeyId">,
-): Promise<CryptoKey> {
+): Promise<OpenedEpoch> {
   const full: WrapContext = { ...context, recipientKeyId: envelope.recipientKeyId };
   const shared = await agree(privateKey, await importPublicKey(envelope.ephemeralPublicKey));
   const key = await keyEncryptionKey(shared, full, "decrypt");
@@ -94,5 +112,5 @@ export async function unwrapEpochKey(
     ),
   );
   if (raw.length !== EPOCH_KEY_LENGTH) throw new Error("An epoch key is 32 bytes.");
-  return importEpochKey(raw);
+  return openEpochKey(raw);
 }

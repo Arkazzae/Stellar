@@ -4,7 +4,9 @@ import { describe, expect, it } from "vitest";
 
 import { decryptFile, encryptFile, OPAQUE_TYPE, shownType } from "./attachment";
 import { bytesOf, concatBytes, fromBase64, toBase64, utf8 } from "./bytes";
-import { importEpochKey, newEpochKey, unwrapEpochKey, wrapEpochKey } from "./epoch";
+import { deriveFrameKey, keyIdOf, openFrame, parseFrame, sealFrame } from "@/lib/voice/e2ee/sframe";
+
+import { importEpochKey, newEpochKey, openEpochKey, unwrapEpochKey, wrapEpochKey } from "./epoch";
 import { exportPrivateKey, exportPublicKey, generateKeyPair, privateKeyMatches } from "./keys";
 import { decryptPayload, encryptPayload, parsePayload, type MessagePayload } from "./message";
 import { derivePinKeys, openBackup, sealBackup, verifierOf } from "./pin";
@@ -35,7 +37,23 @@ describe("epoch key wrapping", () => {
     const payload: MessagePayload = { v: 1, text: "ok", attachments: [] };
     const message = { conversationId: CONVERSATION, epochId: EPOCH, authorId: AUTHOR };
     const sealed = await encryptPayload(await importEpochKey(raw), message, payload);
-    expect(await decryptPayload(opened, message, sealed.iv, sealed.ciphertext)).toEqual(payload);
+    expect(await decryptPayload(opened.key, message, sealed.iv, sealed.ciphertext)).toEqual(payload);
+  });
+
+  it("yields the call base the raw key's call frames are keyed from, and neither form leaves", async () => {
+    const recipient = await generateKeyPair(false);
+    const raw = newEpochKey();
+    const envelope = await wrapEpochKey(raw, await exportPublicKey(recipient.publicKey), context);
+    const { key, callBase } = await unwrapEpochKey(envelope, recipient.privateKey, context);
+    expect([key.extractable, callBase.extractable]).toEqual([false, false]);
+
+    const kid = keyIdOf(1, new Uint8Array(6));
+    const frame = { epochId: EPOCH, conversationId: CONVERSATION, senderId: AUTHOR };
+    const fromRaw = await deriveFrameKey((await openEpochKey(raw)).callBase, frame, kid, "encrypt");
+    const fromEnvelope = await deriveFrameKey(callBase, frame, kid, "decrypt");
+    expect([...fromEnvelope.salt]).toEqual([...fromRaw.salt]);
+    const sealed = await sealFrame(fromRaw, kid, 0, utf8("głos"), 0);
+    expect(new TextDecoder().decode(await openFrame(fromEnvelope, parseFrame(sealed)!, sealed))).toBe("głos");
   });
 
   it("does not open for another key, in another conversation or epoch, or once changed", async () => {
