@@ -1,45 +1,22 @@
-import { useMemo } from "react";
+import { useCallback, useMemo, useRef } from "react";
 
 import { DmRoom } from "@/components/friends/DmRoom";
 import { FriendsView } from "@/components/friends/FriendsView";
-import { MediaViewer } from "@/components/room/attachments/MediaViewer";
-import type {
-  FriendRequestVM,
-  FriendVM,
-  PersonVM,
-} from "@/components/view-models";
-import { formatAgo, formatDate, initials } from "@/lib/format/format";
-import type { User } from "@/ports";
-import {
-  useEmoji,
-  useFriends,
-  useLanguage,
-  useProfile,
-  useSession,
-  useUi,
-  useVoice,
-} from "@/state/hooks";
+import type { FriendRequestVM, FriendVM } from "@/components/view-models";
+import { formatAgo, formatDate } from "@/lib/format/format";
+import { useFriends, useLanguage, useProfile, useUi, useVoice } from "@/state/hooks";
 
-import { NotificationInboxButton } from "./NotificationInboxContainer";
+import { DmCallContainer } from "./DmCallContainer";
+import { DmChatContainer } from "./DmChatContainer";
 import { FriendsActivityContainer } from "./FriendsActivityContainer";
-import { useAttachmentViewer } from "./useAttachmentViewer";
-import { useChatTranslation } from "./useChatTranslation";
+import { NotificationInboxButton } from "./NotificationInboxContainer";
+import { toPerson } from "./toPerson";
 
 /**
  * How long a video call waits before switching the camera on. The camera can
  * only be toggled once the call exists, and the join starts just before it.
  */
 const CAMERA_AFTER_JOIN_MS = 500;
-
-export function toPerson(user: User): PersonVM {
-  return {
-    id: user.id,
-    displayName: user.displayName,
-    initials: initials(user.displayName),
-    presence: user.presence,
-    ...(user.avatarUrl === undefined ? {} : { avatarUrl: user.avatarUrl }),
-  };
-}
 
 /**
  * What the room shows on the messages side of the app: one conversation, or
@@ -51,13 +28,11 @@ export function FriendsRoomContainer() {
   const friends = useFriends();
   const profile = useProfile();
   const voice = useVoice();
-  const { user } = useSession();
-  const { emoji: customEmoji } = useEmoji();
   const { locale } = useLanguage();
-  const translation = useChatTranslation(friends.active?.id);
-  // A conversation carries the same pictures, clips and recordings as a text
-  // channel, so it opens them in the same viewer.
-  const viewer = useAttachmentViewer();
+  // Full screen takes the whole room, as on a channel: the bar's narrow layout
+  // follows the room's width, which then is the screen's.
+  const room = useRef<HTMLElement>(null);
+  const fullscreenTarget = useCallback(() => room.current, []);
 
   const friendList = useMemo<FriendVM[]>(
     () =>
@@ -97,55 +72,34 @@ export function FriendsRoomContainer() {
     const inCall = voice.channelId === conversation.id;
     const status = conversation.peer.customStatus?.trim();
     return (
-      <>
-        <DmRoom
-          peer={toPerson(conversation.peer)}
-          username={conversation.peer.username}
-          {...(status ? { status } : {})}
-          sections={friends.sections}
-          railOpen={ui.railOpen}
-          onToggleRail={ui.toggleRail}
-          profilePanelOpen={ui.profilePanelOpen}
-          onToggleProfilePanel={ui.toggleProfilePanel}
-          onSend={friends.send}
-          hasOlderMessages={friends.hasOlderMessages}
-          loadingOlderMessages={friends.loadingOlderMessages}
-          onLoadOlderMessages={friends.loadOlderMessages}
-          callActive={(conversation.callParticipants?.length ?? 0) > 0}
-          inCall={inCall}
-          onCall={() => friends.callConversation(conversation.id)}
-          videoOn={voice.call?.cameraOn ?? false}
-          onVideoCall={() => {
-            if (inCall) {
-              voice.toggleCamera();
-              return;
-            }
-            friends.callConversation(conversation.id);
-            window.setTimeout(voice.toggleCamera, CAMERA_AFTER_JOIN_MS);
-          }}
-          callPeople={voice.people}
-          cameraStreams={voice.cameraStreams}
-          heldCameras={voice.heldCameras}
-          localPersonId={user?.id ?? ""}
-          participantVolumes={voice.participantVolumes}
-          onParticipantVolumeChange={voice.setParticipantVolume}
-          participantGates={voice.participantGates}
-          onParticipantGateChange={voice.setParticipantGate}
-          participantSuppressions={voice.participantSuppressions}
-          onParticipantSuppressionChange={voice.setParticipantSuppression}
-          chips={friends.chips}
-          onAttach={friends.attach}
-          onRemoveChip={friends.removeChip}
-          onRetryChip={friends.retryChip}
-          onReorderChips={friends.reorderChips}
-          onOpenProfile={profile.toggle}
-          customEmoji={customEmoji}
-          translation={translation}
-          attachments={viewer.attachments}
-          notificationButton={<NotificationInboxButton />}
-        />
-        <MediaViewer target={viewer.target} onClose={viewer.close} />
-      </>
+      <DmRoom
+        ref={room}
+        peer={toPerson(conversation.peer)}
+        {...(status ? { status } : {})}
+        railOpen={ui.railOpen}
+        onToggleRail={ui.toggleRail}
+        profilePanelOpen={ui.profilePanelOpen}
+        onToggleProfilePanel={ui.toggleProfilePanel}
+        callActive={(conversation.callParticipants?.length ?? 0) > 0}
+        inCall={inCall}
+        onCall={() => friends.callConversation(conversation.id)}
+        videoOn={voice.call?.cameraOn ?? false}
+        onVideoCall={() => {
+          if (inCall) {
+            voice.toggleCamera();
+            return;
+          }
+          friends.callConversation(conversation.id);
+          window.setTimeout(voice.toggleCamera, CAMERA_AFTER_JOIN_MS);
+        }}
+        chatOpen={ui.callChatOpen}
+        onToggleChat={ui.toggleCallChat}
+        notificationButton={<NotificationInboxButton />}
+      >
+        {/* The call has the room while you are in it; its messages move
+            into the column beside it. */}
+        {inCall ? <DmCallContainer fullscreenTarget={fullscreenTarget} /> : <DmChatContainer />}
+      </DmRoom>
     );
   }
 

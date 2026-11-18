@@ -262,6 +262,56 @@ describe("UiProvider profile panel", () => {
   });
 });
 
+describe("UiProvider beside a conversation's call", () => {
+  it("starts empty, holds the chat or the profile one at a time, and lets go when the call ends", () => {
+    harness.voice = { ...harness.voice, channelId: "dm-1" };
+    const { result, rerender } = mountUi(DESKTOP);
+    act(() => result.current.openDm("dm-1"));
+    // The profile sits beside the conversation here; the call has the room.
+    expect(result.current).toMatchObject({
+      inConversationCall: true,
+      profilePanelOpen: false,
+      callChatOpen: false,
+    });
+
+    act(() => result.current.toggleCallChat());
+    expect(result.current).toMatchObject({ callChatOpen: true, profilePanelOpen: false });
+
+    act(() => result.current.toggleProfilePanel());
+    expect(result.current).toMatchObject({ callChatOpen: false, profilePanelOpen: true });
+
+    act(() => result.current.setCallChatOpen(true));
+    harness.voice = { ...harness.voice, channelId: null };
+    rerender();
+    expect(result.current).toMatchObject({
+      inConversationCall: false,
+      callChatOpen: false,
+      profilePanelOpen: true,
+    });
+
+    // The next call in the same conversation starts empty again.
+    harness.voice = { ...harness.voice, channelId: "dm-1" };
+    rerender();
+    expect(result.current).toMatchObject({ callChatOpen: false, profilePanelOpen: false });
+  });
+
+  it("is a drawer on a phone, exclusive with the rail and shut with the other drawers", () => {
+    harness.voice = { ...harness.voice, channelId: "dm-1" };
+    const { result } = mountUi(PHONE);
+    act(() => result.current.openDm("dm-1"));
+
+    act(() => result.current.setCallChatOpen(true));
+    act(() => result.current.setRailOpen(true));
+    expect(result.current).toMatchObject({ railOpen: true, callChatOpen: false });
+
+    act(() => result.current.setCallChatOpen(true));
+    expect(result.current).toMatchObject({ railOpen: false, callChatOpen: true });
+
+    act(() => result.current.closeDrawers());
+    expect(result.current.callChatOpen).toBe(false);
+  });
+});
+
 describe("UiProvider channel panel", () => {
   it("toggles per tab: the same tab closes the panel, another tab switches to it", () => {
     const { result } = mountUi();
@@ -343,6 +393,10 @@ describe("UiProvider dialogs", () => {
 });
 
 describe("UiProvider cinema", () => {
+  beforeEach(() => {
+    harness.voice = { ...harness.voice, channelId: "ch-salon" };
+  });
+
   it("toggles, and Escape leaves it without reaching the drawers' listener", () => {
     const { result } = mountUi();
     const drawers = vi.fn();
@@ -365,5 +419,18 @@ describe("UiProvider cinema", () => {
     fireEvent.keyDown(document, { key: "Escape" });
 
     expect(result.current.cinema).toBe(true);
+  });
+
+  it("ends with its call, however the call ends, and does not start the next one", () => {
+    const { result, rerender } = mountUi();
+    act(() => result.current.setCinema(true));
+
+    harness.voice = { ...harness.voice, channelId: null };
+    rerender();
+    expect(result.current.cinema).toBe(false);
+
+    harness.voice = { ...harness.voice, channelId: "ch-salon" };
+    rerender();
+    expect(result.current.cinema).toBe(false);
   });
 });

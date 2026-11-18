@@ -32,18 +32,29 @@ vi.mock("@/state/hooks", () => ({
   useVoice: () => mocks.voice,
   useLanguage: () => mocks.language,
   useProfile: () => mocks.profile,
-  useSession: () => ({ user: { id: "u-maja" } }),
-  useEmoji: () => ({ emoji: [] }),
 }));
 
 vi.mock("./NotificationInboxContainer", () => ({
   NotificationInboxButton: () => <button type="button">inbox</button>,
 }));
 
+vi.mock("./DmChatContainer", () => ({
+  DmChatContainer: () => <div data-testid="dm-chat" />,
+}));
+
+vi.mock("./DmCallContainer", () => ({
+  DmCallContainer: () => <div data-testid="dm-call" />,
+}));
+
 vi.mock("@/components/friends/DmRoom", () => ({
   DmRoom: (props: DmRoomProps) => {
     mocks.seen.room = props;
-    return <div data-testid="dm-room">{props.notificationButton}</div>;
+    return (
+      <div data-testid="dm-room">
+        {props.notificationButton}
+        {props.children}
+      </div>
+    );
   },
 }));
 
@@ -202,45 +213,31 @@ describe("FriendsRoomContainer with a conversation", () => {
     expect(screen.getByRole("button", { name: "inbox" })).toBeInTheDocument();
     expect(room().peer).toMatchObject({ id: "u-ada", displayName: "Ada Lovelace" });
     expect(room()).toMatchObject({
-      username: "ada",
       status: "w trasie",
       profilePanelOpen: mocks.ui.profilePanelOpen,
       onToggleProfilePanel: mocks.ui.toggleProfilePanel,
+      chatOpen: mocks.ui.callChatOpen,
+      onToggleChat: mocks.ui.toggleCallChat,
     });
   });
 
-  it("sends, pages and attaches through the friends state", () => {
-    render(<FriendsRoomContainer />);
-
-    expect(room()).toMatchObject({
-      onSend: mocks.friends.send,
-      onLoadOlderMessages: mocks.friends.loadOlderMessages,
-      onAttach: mocks.friends.attach,
-      onRemoveChip: mocks.friends.removeChip,
-      onRetryChip: mocks.friends.retryChip,
-      onReorderChips: mocks.friends.reorderChips,
-      onOpenProfile: mocks.profile.toggle,
-      localPersonId: "u-maja",
-    });
-  });
-
-  it("opens the conversation's pictures and clips in the media viewer", () => {
-    render(<FriendsRoomContainer />);
-
-    expect(typeof room().attachments?.onOpenImage).toBe("function");
-    expect(typeof room().attachments?.onPlayVideo).toBe("function");
-  });
-
-  it("knows whether someone is in the conversation's call and whether you are", () => {
+  it("shows the messages until you are in the call, and then the call", () => {
     mocks.friends = fakeFriends({
       active: { ...conversation, callParticipants: ["u-ada"] },
     });
     const rendered = render(<FriendsRoomContainer />);
-    expect(room()).toMatchObject({ callActive: true, inCall: false });
+    expect(room()).toMatchObject({ callActive: true, inCall: false, videoOn: false });
+    expect(screen.getByTestId("dm-chat")).toBeInTheDocument();
+    expect(screen.queryByTestId("dm-call")).toBeNull();
 
-    mocks.voice = fakeVoice({ channelId: "dm-ada" });
+    mocks.voice = fakeVoice({
+      channelId: "dm-ada",
+      call: { cameraOn: true } as VoiceValue["call"],
+    });
     rendered.rerender(<FriendsRoomContainer />);
-    expect(room()).toMatchObject({ callActive: true, inCall: true });
+    expect(room()).toMatchObject({ callActive: true, inCall: true, videoOn: true });
+    expect(screen.getByTestId("dm-call")).toBeInTheDocument();
+    expect(screen.queryByTestId("dm-chat")).toBeNull();
   });
 
   it("starts or joins the conversation's call", () => {
@@ -271,29 +268,5 @@ describe("FriendsRoomContainer with a conversation", () => {
 
     expect(mocks.voice.toggleCamera).toHaveBeenCalledOnce();
     expect(mocks.friends.callConversation).not.toHaveBeenCalled();
-  });
-
-  it("gives the call its people and tells the room whether the camera is on", () => {
-    mocks.voice = fakeVoice({
-      people: [{ id: "u-ada" }] as VoiceValue["people"],
-      call: { cameraOn: true } as VoiceValue["call"],
-    });
-
-    render(<FriendsRoomContainer />);
-
-    expect(room().callPeople).toBe(mocks.voice.people);
-    expect(room().videoOn).toBe(true);
-    expect(room().onParticipantVolumeChange).toBe(mocks.voice.setParticipantVolume);
-  });
-
-  it("passes the translation settings on", () => {
-    mocks.language = fakeLanguage({
-      chatTranslationEnabled: true,
-      chatTranslationTargetLanguage: "pl",
-    });
-
-    render(<FriendsRoomContainer />);
-
-    expect(room().translation).toMatchObject({ enabled: true, targetLanguage: "pl" });
   });
 });

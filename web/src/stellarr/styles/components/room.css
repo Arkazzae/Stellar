@@ -1,7 +1,6 @@
 @layer components {
   /* ---------- ROOM ---------- */
   .room{
-    --cp-w:320px;
     --thread-w:480px;
     position:relative;
     background:var(--surface-room);
