@@ -2,6 +2,7 @@ import { execFileSync } from "node:child_process";
 import { existsSync, mkdtempSync, readdirSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { runInNewContext } from "node:vm";
 import { fileURLToPath } from "node:url";
 
 import type * as Router from "@stellarr/router";
@@ -544,5 +545,20 @@ describe("the files the apps name by address", () => {
   it("names only files the build or the instance serves", () => {
     const missing = [...named].filter(([address]) => !served(address)).map(([address, source]) => `${address} in ${source}`);
     expect(missing).toEqual([]);
+  });
+});
+
+describe("the service worker, which tells the addresses of the web client apart", () => {
+  const worker = { self: { addEventListener: () => undefined } } as unknown as {
+    isWebAddress(pathname: string, directories: string[]): boolean;
+  };
+  runInNewContext(read("public/stellarr-worker.js"), worker);
+  const directories = fileDirectories(fileURLToPath(here("public")));
+
+  it.each([
+    "/", "/login", "/login/", "/invite/abc", "/some/deep/page", "//login", "/cockpit", "/cockpit/users", "//cockpit//users/",
+    "/static/web.js", "/fonts/outfit.woff2", "/audio/detector-worklet.js", "/sounds/a.wav", "/index.html", "/robots.txt", "/a.b/c", "/users/x.y",
+  ])("answers %s as documentFor does", (pathname) => {
+    expect(worker.isWebAddress(pathname, directories)).toBe(documentFor(pathname, directories) === WEB_DOCUMENT);
   });
 });
