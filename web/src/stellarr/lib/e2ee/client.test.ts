@@ -453,6 +453,23 @@ describe("encryption client", () => {
       const withPoster = (await ola.client.decode(clip)).attachments[0];
       expect(new Uint8Array(await urls.get(withPoster?.posterUrl ?? "")!.arrayBuffer())).toEqual(new Uint8Array([255, 216, 255]));
 
+      const photo = await ada.client.uploadFile(new File([new Uint8Array([137, 80, 78, 71])], "big.png", { type: "image/png" }), {
+        width: 4000,
+        height: 3000,
+        preview: new Blob([new Uint8Array([82, 73, 70, 70])], { type: "image/webp" }),
+      });
+      expect(photo.attachmentIds).toHaveLength(2);
+      expect(photo.payload.preview).toMatchObject({ type: "image/webp", size: 4 });
+      await ada.client.send(server.conversationId, { text: "", uploads: [photo], clientMessageId: crypto.randomUUID() });
+      const wirePhoto = stored(server);
+      expect(wirePhoto.attachments).toHaveLength(2);
+      await ola.client.decode(wirePhoto);
+      await vi.waitFor(async () => {
+        const view = (await ola.client.decode(wirePhoto)).attachments[0];
+        expect(view?.url).toMatch(/^blob:test/);
+        expect(new Uint8Array(await urls.get(view?.previewUrl ?? "")!.arrayBuffer())).toEqual(new Uint8Array([82, 73, 70, 70]));
+      });
+
       const opened = await ola.client.openAttachment(document.payload.id);
       expect(opened?.type).toBe("application/octet-stream");
       expect(await urls.get(opened?.url ?? "")?.text()).toBe("tajny raport");

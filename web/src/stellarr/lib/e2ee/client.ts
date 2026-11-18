@@ -102,7 +102,7 @@ export type UnlockResult =
 
 /** One encrypted upload, ready to go into a message. */
 export interface EncryptedUpload {
-  /** The file's upload id and its poster's, all of which the message must list. */
+  /** The file's upload id and its poster's or preview's, all of which the message must list. */
   attachmentIds: string[];
   payload: PayloadAttachment;
 }
@@ -595,6 +595,16 @@ export function createE2eeClient(options: E2eeClientOptions) {
     void decryptToUrl(uploadId, file, shownAs).then(() => emit({ type: "attachments", messageId }));
   }
 
+  /** The object URL of a sealed picture that travels beside a file; decryption starts when it is not ready. */
+  function pictureUrl(picture: PayloadAttachment["poster"], messageId: string): string | undefined {
+    if (picture === undefined || !shownType(picture.type).startsWith("image/")) return undefined;
+    const url = objectUrls.get(picture.id);
+    if (url === undefined) {
+      decryptSoon(picture.id, { url: `/assets/${picture.id}`, key: picture.key, iv: picture.iv, type: picture.type }, shownType(picture.type), messageId);
+    }
+    return url;
+  }
+
   function attachmentView(item: PayloadAttachment, stored: Attachment | undefined, messageId: string): Attachment {
     const type = shownType(item.type);
     const base = {
@@ -611,20 +621,16 @@ export function createE2eeClient(options: E2eeClientOptions) {
     const eager = (type.startsWith("image/") || type.startsWith("audio/")) && item.size <= EAGER_LIMIT;
     if (eager) {
       const url = objectUrls.get(item.id);
-      if (url !== undefined) return { ...base, contentType: type, url };
+      const previewUrl = type.startsWith("image/") ? pictureUrl(item.preview, messageId) : undefined;
+      if (url !== undefined) {
+        return { ...base, contentType: type, url, ...(previewUrl === undefined ? {} : { previewUrl }) };
+      }
       decryptSoon(item.id, { url: serverUrl, key: item.key, iv: item.iv, type }, type, messageId);
       // Until it is ready (or if it fails) it is a file card without a link.
       return { ...base, contentType: OPAQUE_TYPE, url: "" };
     }
     if (type.startsWith("video/")) {
-      let posterUrl: string | undefined;
-      const poster = item.poster;
-      if (poster !== undefined && shownType(poster.type).startsWith("image/")) {
-        posterUrl = objectUrls.get(poster.id);
-        if (posterUrl === undefined) {
-          decryptSoon(poster.id, { url: `/assets/${poster.id}`, key: poster.key, iv: poster.iv, type: poster.type }, shownType(poster.type), messageId);
-        }
-      }
+      const posterUrl = pictureUrl(item.poster, messageId);
       return {
         ...base,
         contentType: type,
@@ -926,37 +932,32 @@ export function createE2eeClient(options: E2eeClientOptions) {
       }
       // Every file the plaintext names must be one the message itself lists.
       const listed = new Set(message.attachments.map((attachment) => attachment.id));
-      const named = payload.attachments.flatMap((item) => (item.poster ? [item.id, item.poster.id] : [item.id]));
+      const named = payload.attachments.flatMap((item) => [item.id, ...(item.poster ? [item.poster.id] : []), ...(item.preview ? [item.preview.id] : [])]);
       if (named.some((id) => !listed.has(id))) return sealed(message, "lost");
       payloads.set(message.id, payload);
       return present(message, payload);
     },
 
-    /** Encrypts and uploads one file (and its video poster) for an encrypted conversation. */
+    /** Encrypts and uploads one file (and its video poster or image preview) for an encrypted conversation. */
     async uploadFile(file: File, metadata: UploadMediaMetadata): Promise<EncryptedUpload> {
       const sealedFile = await encryptFile(file);
       const uploaded = await api.uploadEncryptedFile(sealedFile.data);
       const type = file.type === "" ? OPAQUE_TYPE : file.type;
-      let poster: PayloadAttachment["poster"];
-      if (metadata.poster !== undefined) {
-        const sealedPoster = await encryptFile(metadata.poster);
-        const posterUpload = await api.uploadEncryptedFile(sealedPoster.data);
-        poster = {
-          id: posterUpload.id,
-          key: sealedPoster.key,
-          iv: sealedPoster.iv,
-          type: metadata.poster.type || "image/jpeg",
-          size: metadata.poster.size,
-        };
-        objectUrls.set(posterUpload.id, URL.createObjectURL(metadata.poster));
-      }
+      const sealPicture = async (picture: Blob): Promise<NonNullable<PayloadAttachment["poster"]>> => {
+        const sealed = await encryptFile(picture);
+        const upload = await api.uploadEncryptedFile(sealed.data);
+        objectUrls.set(upload.id, URL.createObjectURL(picture));
+        return { id: upload.id, key: sealed.key, iv: sealed.iv, type: picture.type || "image/jpeg", size: picture.size };
+      };
+      const poster = metadata.poster === undefined ? undefined : await sealPicture(metadata.poster);
+      const preview = metadata.preview === undefined ? undefined : await sealPicture(metadata.preview);
       const shown = shownType(type);
       if (shown.startsWith("image/") || shown.startsWith("audio/")) {
         // The sender already has the bytes; nothing to download back.
         objectUrls.set(uploaded.id, URL.createObjectURL(new Blob([file], { type: shown })));
       }
       return {
-        attachmentIds: poster === undefined ? [uploaded.id] : [uploaded.id, poster.id],
+        attachmentIds: [uploaded.id, ...(poster ? [poster.id] : []), ...(preview ? [preview.id] : [])],
         payload: {
           id: uploaded.id,
           key: sealedFile.key,
@@ -969,6 +970,7 @@ export function createE2eeClient(options: E2eeClientOptions) {
           ...(metadata.durationSeconds === undefined ? {} : { duration: metadata.durationSeconds }),
           ...(metadata.voiceMessage === true ? { voice: true } : {}),
           ...(poster === undefined ? {} : { poster }),
+          ...(preview === undefined ? {} : { preview }),
         },
       };
     },
