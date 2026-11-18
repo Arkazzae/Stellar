@@ -1,10 +1,13 @@
+import { Icon, type IconName } from "@stellarr/icons";
 import { useEffect, useId, useRef, useState, type FormEvent, type ReactNode } from "react";
 
-import { AuthField } from "@/components/auth/AuthField";
-import { AuthFrame, authStyles as styles, type StepFrame } from "@/components/auth/AuthFrame";
+import { AuthField, FormError } from "@/components/auth/AuthField";
+import { AuthFrame, type StepFrame } from "@/components/auth/AuthFrame";
 import type { Translator } from "@/i18n";
 import type { MfaChallenge, MfaEnrollment } from "@/ports";
 
+import styles from "./AuthControls.module.css";
+import { CodeCells } from "./CodeCells";
 import steps from "./SignInSteps.module.css";
 
 export type EnrollMode = "totp" | "email" | "passkey";
@@ -38,12 +41,17 @@ export interface MfaEnrollStepProps {
   passkeysSupported?: boolean;
 }
 
+const ROW_ICON: Record<EnrollMode, IconName> = { passkey: "key", totp: "mobile", email: "mail" };
+
 /** "ABCD EFGH IJKL", which is easier to copy by eye than one long run. */
 const grouped = (secret: string) => secret.replace(/(.{4})/g, "$1 ").trim();
 
 /**
  * Sets up the first method when a sign-in requires one, or a replacement after
  * an operator's recovery. The key is shown once and never kept by the client.
+ *
+ * The code is not sent on its sixth digit here, unlike at sign-in: the name
+ * and the trust choice may still follow it.
  */
 export function MfaEnrollStep({
   challenge,
@@ -122,7 +130,14 @@ export function MfaEnrollStep({
     onModeChange(next);
   };
 
-  const fieldState = { invalid: Boolean(message), errorId: message ? errorId : undefined };
+  const others: { mode: EnrollMode; name: string; detail: string }[] = [
+    ...(passkey
+      ? [{ mode: "passkey" as const, name: t("auth.mfa.wayPasskey"), detail: t("auth.mfa.wayPasskeyDetail") }]
+      : []),
+    { mode: "totp" as const, name: t("auth.mfa.wayTotp"), detail: t("auth.mfa.wayTotpDetail") },
+    { mode: "email" as const, name: t("auth.mfa.wayEmail"), detail: t("auth.enroll.wayEmailDetail") },
+  ].filter((row) => row.mode !== mode);
+
   const ready =
     mode === "passkey" || (mode === "email" ? emailRetryAfter !== null : secret !== undefined);
 
@@ -142,6 +157,7 @@ export function MfaEnrollStep({
             ? t("auth.enroll.voluntaryDescription")
             : t("auth.enroll.description")
       }
+      scene="second-step"
     >
       <form className={styles.form} onSubmit={submit} noValidate>
         {mode === "totp" ? (
@@ -161,7 +177,7 @@ export function MfaEnrollStep({
                   <code className={steps.keyValue} aria-labelledby={`${errorId}-key`}>
                     {grouped(secret)}
                   </code>
-                  <button type="button" className={steps.copy} onClick={() => void copy()}>
+                  <button type="button" className={`${styles.button} ${styles.secondary}`} onClick={() => void copy()}>
                     {copied ? t("auth.enroll.copied") : t("auth.enroll.copy")}
                   </button>
                 </div>
@@ -175,7 +191,7 @@ export function MfaEnrollStep({
             <p className={steps.note}>{t("auth.enroll.emailDescription")}</p>
             <button
               type="button"
-              className={styles.externalLogin}
+              className={`${styles.button} ${styles.secondary} ${styles.wide}`}
               onClick={onSendEmailCode}
               disabled={pending || (emailRetryAfter !== null && emailRetryAfter > 0)}
             >
@@ -204,21 +220,20 @@ export function MfaEnrollStep({
               />
             ) : null}
             {mode === "passkey" ? null : (
-              <AuthField
-                ref={codeRef}
-                label={t("auth.mfa.code")}
-                hint={mode === "totp" ? t("auth.enroll.codeHint") : t("auth.mfa.emailSent")}
-                name="code"
-                type="text"
-                inputMode="numeric"
-                autoComplete="one-time-code"
-                spellCheck={false}
-                maxLength={8}
-                value={code}
-                onChange={(event) => setCode(event.target.value)}
-                disabled={pending}
-                {...fieldState}
-              />
+              <>
+                <CodeCells
+                  ref={codeRef}
+                  label={t("auth.mfa.code")}
+                  value={code}
+                  onChange={setCode}
+                  disabled={pending}
+                  invalid={Boolean(message)}
+                  errorId={message ? errorId : undefined}
+                />
+                <p className={styles.hint}>
+                  {mode === "totp" ? t("auth.enroll.codeHint") : t("auth.mfa.emailSent")}
+                </p>
+              </>
             )}
 
             <label className={styles.check}>
@@ -233,14 +248,10 @@ export function MfaEnrollStep({
           </>
         ) : null}
 
-        {message ? (
-          <p className={styles.error} id={errorId} role="alert">
-            {message}
-          </p>
-        ) : null}
+        {message ? <FormError id={errorId}>{message}</FormError> : null}
 
         {ready ? (
-          <button type="submit" className={styles.submit} disabled={pending}>
+          <button type="submit" className={`${styles.button} ${styles.primary} ${styles.wide}`} disabled={pending}>
             {pending
               ? t("auth.mfa.pending")
               : mode === "passkey"
@@ -250,26 +261,35 @@ export function MfaEnrollStep({
         ) : null}
       </form>
 
-      <nav className={styles.links} aria-label={t("auth.mfa.otherWays")}>
-        {mode !== "passkey" && passkey ? (
-          <button type="button" className={styles.textLink} onClick={() => switchTo("passkey")}>
-            {t("auth.enroll.usePasskey")}
-          </button>
-        ) : null}
-        {mode !== "totp" ? (
-          <button type="button" className={styles.textLink} onClick={() => switchTo("totp")}>
-            {t("auth.enroll.useTotp")}
-          </button>
-        ) : null}
-        {mode !== "email" ? (
-          <button type="button" className={styles.textLink} onClick={() => switchTo("email")}>
-            {t("auth.enroll.useEmail")}
-          </button>
-        ) : null}
-        <button type="button" className={styles.textLink} onClick={onCancel}>
+      <section className={styles.stack} aria-labelledby={`${errorId}-others`}>
+        <h2 className={styles.miniHead} id={`${errorId}-others`}>
+          {t("auth.enroll.otherWays")}
+        </h2>
+        <div className={styles.rows}>
+          {others.map((row) => (
+            <button
+              key={row.mode}
+              type="button"
+              className={styles.row}
+              onClick={() => switchTo(row.mode)}
+              disabled={pending}
+            >
+              <Icon name={ROW_ICON[row.mode]} size={20} />
+              <span>
+                <strong>{row.name}</strong>
+                <small>{row.detail}</small>
+              </span>
+              <Icon name="caret" size={16} />
+            </button>
+          ))}
+        </div>
+      </section>
+
+      <div>
+        <button type="button" className={styles.link} onClick={onCancel}>
           {cancelLabel ?? t("auth.mfa.cancel")}
         </button>
-      </nav>
+      </div>
     </Frame>
   );
 }

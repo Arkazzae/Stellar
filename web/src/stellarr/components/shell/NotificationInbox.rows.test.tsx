@@ -127,7 +127,7 @@ describe("notification rows", () => {
   it("leaves an invitation without a join button when joining is not offered", () => {
     inbox({ items: [INVITE_ROW] });
 
-    expect(screen.getByText("Zaproszenie na Nebula")).toBeInTheDocument();
+    expect(screen.getByText("Zaproszenie na serwer Nebula")).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "Dołącz do serwera" })).toBeNull();
   });
 });

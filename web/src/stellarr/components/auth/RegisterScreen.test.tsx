@@ -2,79 +2,78 @@ import { render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { describe, expect, it, vi } from "vitest";
 
+import type { MessageKey } from "@/i18n";
+import { polishAsRead } from "@/test/translators";
+
 import { RegisterScreen } from "./RegisterScreen";
 
+const t = polishAsRead;
+const field = (key: MessageKey) => screen.getByRole("textbox", { name: t(key) });
+const INVITE = { server: "Stellarr Dev", inviter: "Ada" };
+
 describe("RegisterScreen", () => {
-  it("validates the setup and keeps account values when editing the server", async () => {
+  it("suggests a login from the display name until one of the person's own is typed", async () => {
     const user = userEvent.setup();
-    const onSubmit = vi.fn(async () => true);
-    render(<RegisterScreen onSubmit={onSubmit} needsServerSetup />);
-    await user.click(screen.getByRole("button", { name: "Dalej: konto właściciela" }));
-    expect(screen.getByRole("textbox", { name: "Nazwa serwera" })).toHaveFocus();
-    await user.type(screen.getByRole("textbox", { name: "Nazwa serwera" }), "Nasza ekipa");
-    const voice = screen.getByRole("textbox", { name: "Pierwszy kanał głosowy" });
-    await user.clear(voice);
-    await user.type(voice, "ogólny");
-    await user.click(screen.getByRole("button", { name: "Dalej: konto właściciela" }));
-    expect(screen.getByRole("alert")).toHaveTextContent("różne nazwy");
-    await user.click(screen.getByRole("checkbox", { name: "Dodaj kanał głosowy" }));
-    await user.click(screen.getByRole("button", { name: "Dalej: konto właściciela" }));
-    await user.type(screen.getByRole("textbox", { name: "Nazwa widoczna" }), "Maja");
-    await user.click(screen.getByRole("button", { name: "Wróć do serwera" }));
-    expect(screen.getByRole("textbox", { name: "Nazwa serwera" })).toHaveValue("Nasza ekipa");
-    expect(screen.getByRole("checkbox", { name: "Dodaj kanał głosowy" })).not.toBeChecked();
-    await user.click(screen.getByRole("button", { name: "Dalej: konto właściciela" }));
-    expect(screen.getByRole("textbox", { name: "Nazwa widoczna" })).toHaveValue("Maja");
-    await user.type(screen.getByRole("textbox", { name: "Login" }), "maja");
-    await user.type(screen.getByRole("textbox", { name: "E-mail" }), "maja@example.com");
-    await user.type(screen.getByLabelText("Hasło"), "haslo123");
-    await user.type(screen.getByLabelText("Powtórz hasło"), "haslo123");
-    await user.click(screen.getByRole("button", { name: "Utwórz konto i serwer" }));
-    expect(onSubmit).toHaveBeenCalledWith(expect.objectContaining({
-      initialServer: { name: "Nasza ekipa", description: "", textChannelName: "ogólny", voiceChannelName: "" },
-    }));
+    render(<RegisterScreen t={t} invite={INVITE} onSubmit={vi.fn()} />);
+
+    await user.type(field("auth.register.displayName"), "Łukasz Żółć");
+    expect(field("auth.register.username")).toHaveValue("lukasz.zolc");
+
+    await user.clear(field("auth.register.username"));
+    await user.type(field("auth.register.username"), "luk");
+    await user.type(field("auth.register.displayName"), "-Nowak");
+    expect(field("auth.register.username")).toHaveValue("luk");
+
+    // Emptied, the field goes back to following the name.
+    await user.clear(field("auth.register.username"));
+    await user.type(field("auth.register.displayName"), "!");
+    expect(field("auth.register.username")).toHaveValue("lukasz.zolc-nowak");
   });
 
-  it("moves through invalid fields in visual order", async () => {
+  it("walks the problems in visual order and sends the form once it is complete", async () => {
     const user = userEvent.setup();
-    const onSubmit = vi.fn(async () => true);
-    render(<RegisterScreen onSubmit={onSubmit} />);
+    const onSubmit = vi.fn(async () => null);
+    render(<RegisterScreen t={t} invite={INVITE} onSubmit={onSubmit} />);
+    const send = () => user.click(screen.getByRole("button", { name: t("auth.register.submit") }));
 
-    const displayName = screen.getByRole("textbox", { name: "Nazwa widoczna" });
-    const username = screen.getByRole("textbox", { name: "Login" });
-    const email = screen.getByRole("textbox", { name: "E-mail" });
-    const password = screen.getByLabelText("Hasło");
-    const confirm = screen.getByLabelText("Powtórz hasło");
-    const submit = screen.getByRole("button", { name: "Załóż konto" });
-
-    await user.click(submit);
-    expect(displayName).toHaveFocus();
-    expect(displayName).toHaveAttribute("aria-invalid", "true");
-
-    await user.type(displayName, "Maja");
-    await user.click(submit);
-    expect(username).toHaveFocus();
-
-    await user.type(username, "maja");
-    await user.click(submit);
-    expect(email).toHaveFocus();
-
-    await user.type(email, "maja@example.com");
-    await user.click(submit);
-    expect(password).toHaveFocus();
-
-    await user.type(password, "haslo123");
-    await user.click(submit);
-    expect(confirm).toHaveFocus();
+    await send();
+    expect(field("auth.register.displayName")).toHaveFocus();
+    await user.type(field("auth.register.displayName"), " Ola Nowak ");
+    await user.clear(field("auth.register.username"));
+    await user.type(field("auth.register.username"), "ol");
+    await send();
+    expect(field("auth.register.username")).toHaveAttribute("aria-invalid", "true");
+    await user.type(field("auth.register.username"), "a");
+    await send();
+    expect(field("auth.email")).toHaveFocus();
+    await user.type(field("auth.email"), "ola@example.com");
+    await user.type(screen.getByLabelText(t("auth.password")), "krotkie");
+    await send();
+    expect(screen.getByRole("alert")).toHaveTextContent(t("auth.password.length"));
     expect(onSubmit).not.toHaveBeenCalled();
 
-    await user.type(confirm, "haslo123");
-    await user.click(submit);
-    expect(onSubmit).toHaveBeenCalledWith({
-      displayName: "Maja",
-      username: "maja",
-      email: "maja@example.com",
-      password: "haslo123",
+    await user.type(screen.getByLabelText(t("auth.password")), "12");
+    await send();
+    expect(onSubmit).toHaveBeenCalledExactlyOnceWith({
+      displayName: "Ola Nowak",
+      username: "ola",
+      email: "ola@example.com",
+      password: "krotkie12",
     });
+  });
+
+  it("puts what the server refused on its field", async () => {
+    const user = userEvent.setup();
+    const onSubmit = vi.fn(async () => ({ field: "username", message: t("auth.register.usernameTaken") }));
+    render(<RegisterScreen t={t} invite={INVITE} onSubmit={onSubmit} />);
+
+    await user.type(field("auth.register.displayName"), "Ola");
+    await user.type(field("auth.email"), "ola@example.com");
+    await user.type(screen.getByLabelText(t("auth.password")), "kawa rower 2026");
+    await user.click(screen.getByRole("button", { name: t("auth.register.submit") }));
+
+    expect(await screen.findByRole("alert")).toHaveTextContent(t("auth.register.usernameTaken"));
+    expect(field("auth.register.username")).toHaveAttribute("aria-invalid", "true");
+    expect(field("auth.register.username")).toHaveFocus();
   });
 });

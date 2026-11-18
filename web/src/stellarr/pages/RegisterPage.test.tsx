@@ -4,79 +4,86 @@ import { act, render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-import { rememberPendingInvite } from "@/lib/auth/invites";
-import { translateMessage, type MessageKey } from "@/i18n";
+import { ApiError } from "@/lib/api/errors";
+import { pendingInvite, rememberPendingInvite } from "@/lib/auth/invites";
 import { routes } from "@/routes";
+import type { InvitePreview } from "@/ports";
 import type { SessionPhase } from "@/state/hooks";
+import { polishAsRead } from "@/test/translators";
 
 import RegistrationPage from "./RegisterPage";
 
 const mocks = vi.hoisted(() => ({
   session: { phase: "anonymous" as SessionPhase, reload: vi.fn() },
-  ports: { session: { register: vi.fn(), setupRequired: vi.fn() } },
+  ports: { session: { register: vi.fn(), invitePreview: vi.fn(), instanceName: vi.fn() } },
 }));
 
 vi.mock("@/state/hooks", () => ({
   useSession: () => mocks.session,
   usePorts: () => mocks.ports,
-  useLanguage: () => ({ t: (key: MessageKey) => translateMessage("pl", key) }),
+  useLanguage: () => ({ t }),
 }));
+
+const t = polishAsRead;
+
+const PREVIEW: InvitePreview = {
+  server: { id: "s-1", name: "Stellarr Dev", description: "", iconUrl: null },
+  channel: null,
+  inviter: { displayName: "Ada", avatarColor: "oklch(0.58 0.14 24)", avatarUrl: null },
+  expiresAt: null,
+};
 
 let history: MemoryHistory;
 
-function renderRegistration() {
+async function renderRegistration() {
   history = createMemoryHistory("/register");
-  return render(
-    <Router routes={routes} history={history}>
-      <RegistrationPage />
-    </Router>,
-  );
+  await act(async () => {
+    render(
+      <Router routes={routes} history={history}>
+        <RegistrationPage />
+      </Router>,
+    );
+  });
 }
 
 async function fillAndSubmit() {
   const user = userEvent.setup();
   await user.type(await screen.findByRole("textbox", { name: "Nazwa widoczna" }), "Maja");
-  await user.type(screen.getByRole("textbox", { name: "Login" }), "maja");
   await user.type(screen.getByRole("textbox", { name: "E-mail" }), "maja@example.com");
   await user.type(screen.getByLabelText("Hasło"), "haslo123");
-  await user.type(screen.getByLabelText("Powtórz hasło"), "haslo123");
-  await user.click(screen.getByRole("button", { name: /Załóż konto|Utwórz konto i serwer/ }));
+  await user.click(screen.getByRole("button", { name: t("auth.register.submit") }));
 }
 
 beforeEach(() => {
   vi.resetAllMocks();
   mocks.session.phase = "anonymous";
   window.sessionStorage.clear();
-  mocks.ports.session.setupRequired.mockResolvedValue(false);
+  mocks.ports.session.invitePreview.mockResolvedValue(PREVIEW);
+  mocks.ports.session.instanceName.mockResolvedValue("Stellarr Dev");
 });
 
 describe("RegistrationPage", () => {
-  it("configures the first server before creating its owner", async () => {
-    mocks.ports.session.setupRequired.mockResolvedValue(true);
-    mocks.ports.session.register.mockResolvedValue({});
+  it("asks for an invite link instead of a form the server would refuse, and opens the invite", async () => {
     const user = userEvent.setup();
-    renderRegistration();
-    await user.type(await screen.findByRole("textbox", { name: "Nazwa serwera" }), "Ekipa");
-    await user.click(screen.getByRole("button", { name: "Dalej: konto właściciela" }));
+    await renderRegistration();
+
+    expect(screen.queryByRole("textbox", { name: "Nazwa widoczna" })).toBeNull();
+    await user.type(screen.getByRole("textbox", { name: t("auth.invite.linkLabel") }), "chat.example/invite/k7qm2xwp");
+    await user.click(screen.getByRole("button", { name: t("auth.invite.open") }));
+
+    expect(history.navigations.at(-1)).toEqual({ kind: "push", href: "/invite/k7qm2xwp" });
     expect(mocks.ports.session.register).not.toHaveBeenCalled();
-    await fillAndSubmit();
-    expect(mocks.ports.session.register).toHaveBeenCalledWith(expect.objectContaining({
-      initialServer: { name: "Ekipa", description: "", textChannelName: "ogólny", voiceChannelName: "rozmowa" },
-    }));
   });
 
-  it("retries a failed configuration check", async () => {
-    mocks.ports.session.setupRequired.mockRejectedValueOnce(new Error("offline")).mockResolvedValue(true);
-    renderRegistration();
-    expect(await screen.findByRole("alert")).toHaveTextContent("Nie udało się sprawdzić");
-    await userEvent.setup().click(screen.getByRole("button", { name: "Spróbuj ponownie" }));
-    expect(await screen.findByRole("textbox", { name: "Nazwa serwera" })).toBeVisible();
-  });
+  it("registers with the invite the visitor arrived with, says where it leads, and keeps it for the redirect", async () => {
+    rememberPendingInvite("abc123");
+    mocks.ports.session.register.mockResolvedValue({ kind: "signed-in", user: {} });
+    await renderRegistration();
 
-  it("registers the account and asks the session to start over", async () => {
-    mocks.ports.session.register.mockResolvedValue({ kind: "signed-in", user: { id: "u-1", username: "maja", displayName: "Maja", presence: "online" } });
-    renderRegistration();
-
+    expect(
+      await screen.findByText(t("auth.register.descriptionInvite", { server: "Stellarr Dev", inviter: "Ada" })),
+    ).toBeVisible();
+    expect(mocks.ports.session.invitePreview).toHaveBeenCalledExactlyOnceWith("abc123");
     await fillAndSubmit();
 
     expect(mocks.ports.session.register).toHaveBeenCalledExactlyOnceWith({
@@ -84,76 +91,52 @@ describe("RegistrationPage", () => {
       username: "maja",
       email: "maja@example.com",
       password: "haslo123",
+      inviteCode: "abc123",
     });
     expect(mocks.session.reload).toHaveBeenCalledOnce();
-  });
-
-  it("registers with the invite the visitor arrived with and keeps it for the redirect", async () => {
-    mocks.ports.session.register.mockResolvedValue({ kind: "signed-in", user: { id: "u-1", username: "maja", displayName: "Maja", presence: "online" } });
-    rememberPendingInvite("abc123");
-    renderRegistration();
-
-    await fillAndSubmit();
-
-    expect(mocks.ports.session.register).toHaveBeenCalledWith(
-      expect.objectContaining({ inviteCode: "abc123" }),
-    );
-    expect(window.sessionStorage.getItem("stellarr.pending-invite")).toBe("abc123");
+    // The redirect after the session takes the invite, not the registration.
+    expect(pendingInvite()).toBe("abc123");
   });
 
   it("leaves a required second-step setup to the sign-in page, without starting the app", async () => {
-    mocks.ports.session.register.mockResolvedValue({
-      kind: "challenge",
-      challenge: { enrollment: true, challengeId: "c-1", purpose: "enrollment", methods: [] },
-    });
-    renderRegistration();
-
-    await fillAndSubmit();
-
-    expect(history.navigations).toEqual([{ kind: "replace", href: "/login" }]);
-    expect(mocks.session.reload).not.toHaveBeenCalled();
-  });
-
-  it("says the account could not be created when the server refuses", async () => {
-    mocks.ports.session.register.mockRejectedValue(new Error("taken"));
-    renderRegistration();
-
-    await fillAndSubmit();
-
-    expect(await screen.findByRole("alert")).toHaveTextContent("Nie udało się założyć konta.");
-    expect(mocks.session.reload).not.toHaveBeenCalled();
-  });
-
-  it("keeps the focus on the heading when the form replaces the frame that waited for the server", async () => {
-    let answer: (needed: boolean) => void = () => undefined;
-    mocks.ports.session.setupRequired.mockReturnValue(new Promise<boolean>((resolve) => (answer = resolve)));
-    renderRegistration();
-    // Where the router puts the focus after a link led here.
-    screen.getByRole("heading", { name: "Załóż konto" }).focus();
-
-    await act(async () => answer(false));
-
-    const heading = screen.getByRole("heading", { name: "Załóż konto" });
-    expect(await screen.findByRole("textbox", { name: "Login" })).toBeInTheDocument();
-    expect(heading).toHaveFocus();
-  });
-
-  it("gives the account step's heading the focus that the button of the server step had", async () => {
-    mocks.ports.session.setupRequired.mockResolvedValue(true);
-    const user = userEvent.setup();
-    renderRegistration();
-    await user.type(await screen.findByRole("textbox", { name: "Nazwa serwera" }), "Ekipa");
-
-    await user.click(screen.getByRole("button", { name: "Dalej: konto właściciela" }));
-
-    expect(screen.getByRole("heading", { name: "Załóż konto" })).toHaveFocus();
-  });
-
-  it("moves on to the invite once the new session is ready", () => {
-    mocks.session.phase = "ready";
     rememberPendingInvite("abc123");
+    mocks.ports.session.register.mockResolvedValue({ kind: "challenge", challenge: {} });
+    await renderRegistration();
 
-    renderRegistration();
+    await fillAndSubmit();
+
+    expect(history.navigations.at(-1)).toEqual({ kind: "replace", href: "/login" });
+    expect(mocks.session.reload).not.toHaveBeenCalled();
+  });
+
+  it("names the field the server refused", async () => {
+    rememberPendingInvite("abc123");
+    mocks.ports.session.register.mockRejectedValue(
+      new ApiError("invalid", "400", 400, { fields: { username: "Login zajęty." } }),
+    );
+    await renderRegistration();
+
+    await fillAndSubmit();
+
+    expect(await screen.findByRole("alert")).toHaveTextContent(t("auth.register.usernameTaken"));
+    expect(screen.getByRole("textbox", { name: "Login" })).toHaveAttribute("aria-invalid", "true");
+  });
+
+  it("forgets an invite that no longer works and asks for a new link", async () => {
+    rememberPendingInvite("gone");
+    mocks.ports.session.invitePreview.mockRejectedValue(new ApiError("not-found", "404", 404));
+    await renderRegistration();
+
+    expect(await screen.findByRole("alert")).toHaveTextContent(t("auth.register.inviteRefused"));
+    expect(screen.getByRole("textbox", { name: t("auth.invite.linkLabel") })).toBeVisible();
+    expect(pendingInvite()).toBeNull();
+  });
+
+  it("moves on to the invite once the new session is ready", async () => {
+    rememberPendingInvite("abc123");
+    mocks.session.phase = "ready";
+
+    await renderRegistration();
 
     expect(history.navigations).toEqual([{ kind: "replace", href: "/invite/abc123" }]);
   });

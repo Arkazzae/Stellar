@@ -1,0 +1,48 @@
+import type { MessageKey, Translator } from "@/i18n";
+import { passwordStrength, type PasswordScore } from "@/lib/auth/passwordStrength";
+
+import styles from "./AuthControls.module.css";
+
+const LABEL: Record<Exclude<PasswordScore, 0>, MessageKey> = {
+  1: "auth.strength.weak",
+  2: "auth.strength.good",
+  3: "auth.strength.strong",
+};
+
+const HINT = {
+  short: "auth.strength.short",
+  guessable: "auth.strength.guessable",
+  length: "auth.strength.length",
+} as const satisfies Record<string, MessageKey>;
+
+/** The three bars of the mark, lit as far as the password deserves, and why not further. */
+export function StrengthBars({ lit }: { lit: number }) {
+  return (
+    <span className={styles.bars} aria-hidden="true">
+      {[1, 2, 3].map((bar) => (
+        <i key={bar} data-on={bar <= lit || undefined} />
+      ))}
+    </span>
+  );
+}
+
+export function StrengthMeter({ password, username, t }: { password: string; username: string; t: Translator }) {
+  const { score, hint } = passwordStrength(password, username);
+  const label = score === 0 ? (hint === "short" ? t("auth.strength.tooShort") : null) : t(LABEL[score]);
+
+  return (
+    <p className={styles.meter} aria-live="polite">
+      <StrengthBars lit={score} />
+      <span>
+        {label === null ? (
+          t("auth.strength.empty")
+        ) : (
+          <>
+            <strong>{label}</strong>
+            {hint === null ? null : ` · ${t(HINT[hint])}`}
+          </>
+        )}
+      </span>
+    </p>
+  );
+}
