@@ -1113,6 +1113,19 @@
     pointer-events: none;
   }
 
+  /* The chat's button counts what arrived while it was shut, with the pill
+     a channel row uses, worn on the button's corner. */
+  .dm-chat-toggle {
+    position: relative;
+  }
+
+  .dm-chat-toggle .ch-unread {
+    position: absolute;
+    top: -6px;
+    right: -6px;
+    box-shadow: 0 0 0 2px var(--surface-room);
+  }
+
   /* ---------- CHAT BESIDE A CALL ---------- */
   /* The roster's panel and header around the conversation's own transcript
      and composer, at the channel panel's width and a tighter density. */

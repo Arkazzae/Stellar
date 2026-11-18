@@ -197,7 +197,7 @@ export function FriendsProvider({ children }: { children: ReactNode }) {
   const { friends: port } = usePorts();
   const { byShortcode: customEmoji } = useEmoji();
   const { user } = useSessionContext();
-  const { activeDmId, openDm } = useUiContext();
+  const { activeDmId, openDm, inConversationCall, callChatOpen, cinema } = useUiContext();
   const {
     join: joinVoice,
     leave: leaveVoice,
@@ -243,11 +243,17 @@ export function FriendsProvider({ children }: { children: ReactNode }) {
   // reload, a message arriving while it is open) is not left unread. The port
   // reports each newest message once, so the refresh a read causes is not read
   // again.
+  //
+  // Read means seen. During the conversation's call the room shows the call,
+  // and the messages are on screen only while the chat beside it is open (and
+  // not stepped aside for cinema); until then they stay unread and the chat's
+  // button counts them.
   const activeUnread = active?.unread ?? 0;
   const activeNewest = active?.lastMessage?.id ?? null;
+  const transcriptShown = !inConversationCall || (callChatOpen && !cinema);
   useEffect(() => {
-    if (activeDmId !== null) port.markRead(activeDmId);
-  }, [port, activeDmId, activeUnread, activeNewest]);
+    if (activeDmId !== null && transcriptShown) port.markRead(activeDmId);
+  }, [port, activeDmId, activeUnread, activeNewest, transcriptShown]);
 
   // Selecting a conversation in the rail only changes which one is open; the
   // port has no transcript for it yet unless somebody opened it through the
