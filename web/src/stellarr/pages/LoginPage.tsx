@@ -11,43 +11,36 @@ import { PasswordConfirmStep } from "@/components/auth/PasswordConfirmStep";
 import { QrCode } from "@/components/auth/QrCode";
 import { RecoveryCodesStep } from "@/components/auth/RecoveryCodesStep";
 import { RecoveryRedeemStep } from "@/components/auth/RecoveryRedeemStep";
+import { UnlinkedIdentityScreen } from "@/components/auth/UnlinkedIdentityScreen";
 import { useSignInFlow } from "@/containers/useSignInFlow";
 import { useSignInProviders, useInstanceName } from "@/hooks/useInstanceFacts";
 import { useRedirectWhenSignedIn } from "@/hooks/useRedirectWhenSignedIn";
 import type { Translator } from "@/i18n";
+import { pendingInvite, rememberPendingInvite } from "@/lib/auth/invites";
 import { safeReturnPath } from "@/lib/auth/returnPath";
+import type { PendingIdentity } from "@/ports";
 import { useInstanceSetup, useLanguage, usePorts, useSession } from "@/state/hooks";
 
 import { usePrefetchApp } from "./loadApp";
 
+/** The form that makes an account through the provider, with the invite this tab remembered. */
+export const PROVIDER_SIGN_UP = "/register?with=provider";
+
+/** The identity waiting for this browser, as the page for it needs it. */
+type Waiting =
+  | { state: "loading" }
+  | { state: "ready"; identity: PendingIdentity }
+  /** None waits: it ran out, was used, or the browser never had one. */
+  | { state: "gone" }
+  | { state: "failed" };
+
 /**
- * The identity provider confirmed someone the instance cannot sign in, or
- * the round trip failed. Either way the password form is the way on, and
- * the page says so before it shows it.
+ * The round trip to the identity provider failed or was cancelled. The
+ * password form is the way on, and the page says so before it shows it.
  */
-function ProviderProblem({
-  t,
-  notLinked,
-  instanceName,
-  onContinue,
-}: {
-  t: Translator;
-  notLinked: boolean;
-  instanceName: string | null;
-  onContinue(): void;
-}) {
+function ProviderFailed({ t, onContinue }: { t: Translator; onContinue(): void }) {
   return (
-    <AuthFrame
-      outcome="failure"
-      title={notLinked ? t("auth.oidc.notLinkedTitle") : t("auth.oidc.failedTitle")}
-      description={
-        notLinked
-          ? instanceName === null
-            ? t("auth.oidc.notLinked")
-            : t("auth.oidc.notLinkedNamed", { instance: instanceName })
-          : t("auth.oidc.failed")
-      }
-    >
+    <AuthFrame outcome="failure" title={t("auth.oidc.failedTitle")} description={t("auth.oidc.failed")}>
       <button type="button" className={`${controls.button} ${controls.primary} ${controls.wide}`} onClick={onContinue}>
         {t("auth.oidc.usePassword")}
       </button>
@@ -62,6 +55,7 @@ export default function LoginPage() {
   const router = useRouter();
   const params = useSearchParams();
   const oidcError = params.get("oidc_error");
+  const unlinked = params.get("oidc") === "unlinked";
   const returnPath = safeReturnPath(params.get("returnUrl"));
   usePrefetchApp(phase !== "loading");
   const providers = useSignInProviders();
@@ -72,16 +66,56 @@ export default function LoginPage() {
   // A recovery after the identity provider says which choice it left with.
   const [keepSignedIn, setKeepSignedIn] = useState(params.get("keep_signed_in") !== "0");
   const [providerProblemSeen, setProviderProblemSeen] = useState(false);
+  const [waiting, setWaiting] = useState<Waiting>({ state: "loading" });
+  const [waitingAttempt, setWaitingAttempt] = useState(0);
   const flow = useSignInFlow({
     recoveryRequired: params.get("security_recovery_required") === "1",
     confirm,
     fresh: params.get("fresh") === "1",
     keepSignedIn,
   });
+  const linkOutcome = flow.identityLink;
 
   // A confirmation leaves only once the second step is done, not as soon as
-  // the session is found to be signed in.
-  useRedirectWhenSignedIn(confirm && flow.step.kind !== "done" ? "loading" : phase, returnPath);
+  // the session is found to be signed in; a sign-in that linked an identity
+  // leaves through the page that says how the link went.
+  useRedirectWhenSignedIn(
+    linkOutcome !== null || (confirm && flow.step.kind !== "done") ? "loading" : phase,
+    returnPath,
+  );
+
+  useEffect(() => {
+    if (phase !== "ready" || linkOutcome === null) return;
+    const invite = pendingInvite();
+    const next = returnPath ?? (invite === null ? null : `/invite/${encodeURIComponent(invite)}`);
+    router.replace(
+      `/link-account?result=${linkOutcome}${next === null ? "" : `&returnUrl=${encodeURIComponent(next)}`}`,
+    );
+  }, [linkOutcome, phase, returnPath, router]);
+
+  useEffect(() => {
+    if (!unlinked || phase !== "anonymous") return;
+    let active = true;
+    ports.session.pendingIdentity().then(
+      (identity) => active && setWaiting(identity === null ? { state: "gone" } : { state: "ready", identity }),
+      () => active && setWaiting({ state: "failed" }),
+    );
+    return () => {
+      active = false;
+    };
+  }, [phase, ports, unlinked, waitingAttempt]);
+
+  // Sent to the provider from the registration form with an invite in hand,
+  // the visitor goes straight on to the account made through it.
+  const signUpNext =
+    unlinked &&
+    returnPath === PROVIDER_SIGN_UP &&
+    waiting.state === "ready" &&
+    waiting.identity.signUp &&
+    pendingInvite() !== null;
+  useEffect(() => {
+    if (signUpNext) router.replace(PROVIDER_SIGN_UP);
+  }, [router, signUpNext]);
 
   useEffect(() => {
     if (!flow.passkeysSupported) return;
@@ -99,15 +133,8 @@ export default function LoginPage() {
   if (phase === "error") return <ServerUnreachable t={t} onRetry={reload} />;
   if (phase === "anonymous" && setup.failed) return <ServerUnreachable t={t} onRetry={setup.retry} />;
 
-  if ((oidcError === "not_linked" || oidcError === "failed") && !providerProblemSeen) {
-    return (
-      <ProviderProblem
-        t={t}
-        notLinked={oidcError === "not_linked"}
-        instanceName={instanceName}
-        onContinue={() => setProviderProblemSeen(true)}
-      />
-    );
+  if (oidcError === "failed" && !providerProblemSeen) {
+    return <ProviderFailed t={t} onContinue={() => setProviderProblemSeen(true)} />;
   }
 
   const { step } = flow;
@@ -180,6 +207,55 @@ export default function LoginPage() {
         error={flow.error}
         onSubmit={flow.redeem}
         onBack={flow.cancel}
+      />
+    );
+  }
+
+  if (unlinked) {
+    if (waiting.state === "failed") {
+      return <ServerUnreachable t={t} onRetry={() => setWaitingAttempt((count) => count + 1)} />;
+    }
+    if (waiting.state === "gone") {
+      return (
+        <AuthFrame outcome="failure" title={t("auth.unlinked.goneTitle")} description={t("auth.unlinked.gone")}>
+          <button
+            type="button"
+            className={`${controls.button} ${controls.primary} ${controls.wide}`}
+            onClick={() => router.replace("/login")}
+          >
+            {t("auth.invite.backToLogin")}
+          </button>
+        </AuthFrame>
+      );
+    }
+    if (waiting.state === "loading" || phase !== "anonymous" || step.kind === "resuming" || signUpNext) {
+      return (
+        <AuthFrame scene="unlinked" title={t("auth.unlinked.checkingTitle")} description={t("auth.unlinked.checking")}>
+          {null}
+        </AuthFrame>
+      );
+    }
+    return (
+      <UnlinkedIdentityScreen
+        t={t}
+        identity={waiting.identity}
+        instanceName={instanceName}
+        inviteRemembered={pendingInvite() !== null}
+        pending={loginPending || flow.pending}
+        error={flow.error ?? loginError}
+        onLink={(username, password) => void flow.submitPassword(username, password, keepSignedIn, true)}
+        onInvite={(code) => {
+          if (code !== null) rememberPendingInvite(code);
+          router.push(PROVIDER_SIGN_UP);
+        }}
+        onBack={() => {
+          void ports.session.dropPendingIdentity().catch(() => undefined);
+          router.replace(
+            returnPath === null || returnPath === PROVIDER_SIGN_UP
+              ? "/login"
+              : `/login?returnUrl=${encodeURIComponent(returnPath)}`,
+          );
+        }}
       />
     );
   }

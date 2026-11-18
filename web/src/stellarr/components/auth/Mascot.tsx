@@ -15,7 +15,9 @@ export type AuthScene =
   | "password"
   | "setup-owner"
   | "setup-server"
-  | "setup-invite";
+  | "setup-invite"
+  /** A provider confirmed someone no account here is linked to. */
+  | "unlinked";
 
 /**
  * An outcome page shows a sticker at every width, and no scene: something
@@ -33,6 +35,7 @@ const SCENES: Record<AuthScene, { scene: string; sticker: StickerName }> = {
   "setup-owner": { scene: "65-home-server-workshop", sticker: "25-self-hosting" },
   "setup-server": { scene: "61-launch-mission", sticker: "04-creating-channel" },
   "setup-invite": { scene: "64-shared-cinema", sticker: "30-release" },
+  unlinked: { scene: "63-translation-orbit", sticker: "27-connecting" },
 };
 
 const OUTCOMES: Record<OutcomeSticker, StickerName> = {

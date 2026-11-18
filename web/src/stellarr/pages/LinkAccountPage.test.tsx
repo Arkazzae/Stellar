@@ -48,6 +48,22 @@ describe("LinkAccountPage", () => {
   });
 
   it.each([
+    ["confirmed", "linkAccount.confirmedTitle", "/channels/abc"],
+    ["unconfirmed", "linkAccount.unconfirmedTitle", "/channels/abc"],
+  ] as const)("says a fresh sign-in at the provider was %s and leads back where it was asked", (result, title, back) => {
+    show(`?result=${result}&returnUrl=${encodeURIComponent(back)}`);
+
+    expect(screen.getByRole("heading", { name: t(title) })).toBeVisible();
+    expect(screen.getByRole("link", { name: t("linkAccount.back") })).toHaveAttribute("href", back);
+  });
+
+  it("leads only to this origin, whatever the address says", () => {
+    show(`?result=linked&returnUrl=${encodeURIComponent("//evil.example/")}`);
+
+    expect(screen.getByRole("link", { name: t("linkAccount.back") })).toHaveAttribute("href", "/");
+  });
+
+  it.each([
     ["a repeated result", "?result=linked&result=linked"],
     ["an unknown result", "?result=hacked"],
     ["no result", ""],

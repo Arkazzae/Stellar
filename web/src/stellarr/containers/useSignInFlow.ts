@@ -4,7 +4,7 @@ import { ApiError } from "@/lib/api/errors";
 import { leaveFor } from "@/lib/auth/leaveFor";
 import { PasskeyCancelledError } from "@/lib/auth/webauthn";
 import type { MessageKey } from "@/i18n";
-import type { AuthResult, MfaChallenge, MfaCompletion, MfaEnrollment } from "@/ports";
+import type { AuthResult, IdentityLinkOutcome, MfaChallenge, MfaCompletion, MfaEnrollment } from "@/ports";
 import { useLanguage, usePorts, useSession } from "@/state/hooks";
 
 import type { EnrollMode } from "@/components/auth/MfaEnrollStep";
@@ -29,8 +29,16 @@ export interface SignInFlow {
   error: string | null;
   /** Seconds left before another email code during enrollment; null before the first one. */
   enrollEmailWait: number | null;
-  /** `keepSignedIn` false asks for a session that ends with the browser. */
-  submitPassword(username: string, password: string, keepSignedIn?: boolean): Promise<void>;
+  /**
+   * How linking the identity waiting for this browser went, once a sign-in
+   * that asked for it is complete; null until then.
+   */
+  identityLink: IdentityLinkOutcome | null;
+  /**
+   * `keepSignedIn` false asks for a session that ends with the browser;
+   * `linkPending` links the identity a provider confirmed once it is done.
+   */
+  submitPassword(username: string, password: string, keepSignedIn?: boolean, linkPending?: boolean): Promise<void>;
   verify(input: { methodId?: string; code: string; rememberDevice: boolean }): void;
   continueOnTrustedDevice(): void;
   sendEmailCode(methodId: string): Promise<number | null>;
@@ -101,6 +109,7 @@ export function useSignInFlow({
   const [pending, setPending] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [emailWaitUntil, setEmailWaitUntil] = useState<number | null>(null);
+  const [identityLink, setIdentityLink] = useState<IdentityLinkOutcome | null>(null);
   const [now, setNow] = useState(() => Date.now());
   const resumed = useRef(false);
   const confirming = useRef(false);
@@ -235,6 +244,7 @@ export function useSignInFlow({
 
   const complete = useCallback(
     (completion: MfaCompletion) => {
+      if (completion.identityLink !== undefined) setIdentityLink(completion.identityLink);
       if (completion.recoveryCodes !== undefined && completion.recoveryCodes.length > 0) {
         setStep({ kind: "codes", codes: completion.recoveryCodes, username: completion.user.username });
         return;
@@ -260,6 +270,7 @@ export function useSignInFlow({
 
   const follow = useCallback(
     (result: AuthResult | null) => {
+      if (result?.kind === "signed-in" && result.identityLink !== undefined) setIdentityLink(result.identityLink);
       if (result === null || result.kind === "signed-in") return;
       if (result.kind === "recovery-required") {
         setStep({ kind: "redeem" });
@@ -294,11 +305,12 @@ export function useSignInFlow({
     error,
     enrollEmailWait:
       emailWaitUntil === null ? null : Math.max(0, Math.ceil((emailWaitUntil - now) / 1000)),
+    identityLink,
 
-    async submitPassword(username, password, keepSignedIn = true) {
+    async submitPassword(username, password, keepSignedIn = true, linkPending = false) {
       setError(null);
       keep.current = keepSignedIn;
-      follow(await login(username, password, keepSignedIn));
+      follow(await login(username, password, keepSignedIn, linkPending));
     },
 
     verify(input) {

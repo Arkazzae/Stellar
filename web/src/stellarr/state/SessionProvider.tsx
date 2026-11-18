@@ -45,8 +45,15 @@ export interface SessionValue {
    * The first step of a sign-in. The app boots only when that was enough;
    * a challenge or a pending recovery is handed back for the sign-in page to
    * finish, and null means the attempt failed and `loginError` says why.
+   * `linkPending` asks to link the identity a provider confirmed for this
+   * browser once the sign-in is complete.
    */
-  login: (username: string, password: string, keepSignedIn?: boolean) => Promise<AuthResult | null>;
+  login: (
+    username: string,
+    password: string,
+    keepSignedIn?: boolean,
+    linkPending?: boolean,
+  ) => Promise<AuthResult | null>;
   loginPending: boolean;
   loginError: string | null;
   logout: () => Promise<void>;
@@ -270,7 +277,7 @@ export function SessionProvider({ children }: { children: ReactNode }) {
   }, [ports, signedIn, connection, presence]);
 
   const login = useCallback(
-    async (username: string, password: string, keepSignedIn = true) => {
+    async (username: string, password: string, keepSignedIn = true, linkPending = false) => {
       setLoginPending(true);
       setLoginError(null);
       try {
@@ -278,6 +285,7 @@ export function SessionProvider({ children }: { children: ReactNode }) {
           username,
           password,
           ...(keepSignedIn ? {} : { keepSignedIn: false }),
+          ...(linkPending ? { linkPending: true } : {}),
         });
         // A second factor is still due: nothing may boot, open the hub or
         // join voice until the challenge is answered.

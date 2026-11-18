@@ -569,6 +569,32 @@
   overflow-wrap: anywhere;
 }
 
+/* A row that opens in place: its form sits under it, inside the same box. */
+.choice + .choice {
+  border-top: 1px solid var(--line);
+}
+
+.choice > .row {
+  width: 100%;
+}
+
+.choice[data-open] > .row > svg:last-child {
+  transform: none;
+}
+
+.expand {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  padding: 0 14px 16px 48px;
+}
+
+@media (max-width: 420px) {
+  .expand {
+    padding-left: 14px;
+  }
+}
+
 /* Six cells drawn over one input, which keeps the platform's one-time-code
    autofill, paste and screen-reader behaviour. */
 .cells {
