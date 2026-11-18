@@ -33,6 +33,8 @@ describe("first page", () => {
         channelId: "ch-general",
         page: { messages: [message("a", 1), message("b", 2)], nextCursor: "older" },
         pendingIds: none,
+      keepOlder: true,
+      window: null,
       },
     ]);
     expect(ids(state.messages["ch-general"])).toEqual(["a", "b"]);
@@ -53,6 +55,8 @@ describe("first page", () => {
         channelId: "ch-general",
         page: { messages: [message("c", 3)], nextCursor: "p2" },
         pendingIds: none,
+      keepOlder: true,
+      window: null,
       },
       {
         type: "older-page",
@@ -72,6 +76,8 @@ describe("realtime", () => {
       channelId: "ch-general",
       page: { messages: [message("a", 1)], nextCursor: null },
       pendingIds: none,
+      keepOlder: true,
+      window: null,
     },
   ]);
 
@@ -145,6 +151,8 @@ describe("catching up", () => {
       channelId: "ch-general",
       page: { messages: [message("a", 1), message("b", 2)], nextCursor: null },
       pendingIds: none,
+      keepOlder: true,
+      window: null,
     },
     { type: "pins-set", channelId: "ch-general", messages: [message("b", 2, { pinnedAt: at(3) })] },
   ]);
@@ -157,13 +165,14 @@ describe("catching up", () => {
         { cursor: "1", kind: "delete", messageId: "b" },
         { cursor: "2", kind: "upsert", messageId: "c", message: message("c", 3, { pinnedAt: at(4) }) },
       ],
+      cursor: "2",
     }], seeded);
     expect(ids(state.messages["ch-general"])).toEqual(["a", "c"]);
     expect(ids(state.pins["ch-general"])).toEqual(["c"]);
   });
 
   it("ignores an empty journal page", () => {
-    expect(run([{ type: "synced", channelId: "ch-general", changes: [] }], seeded)).toBe(seeded);
+    expect(run([{ type: "synced", channelId: "ch-general", changes: [], cursor: "9" }], seeded)).toBe(seeded);
   });
 
   it("rebuilds the window on a reset but keeps an unsent message", () => {
@@ -173,6 +182,7 @@ describe("catching up", () => {
       channelId: "ch-general",
       page: { messages: [message("z", 5)], nextCursor: "n" },
       pendingIds: new Set(["draft"]),
+      cursor: "c-new",
     }], withDraft);
     expect(ids(state.messages["ch-general"])).toEqual(["z", "draft"]);
     expect(state.nextCursor["ch-general"]).toBe("n");
@@ -231,5 +241,83 @@ describe("local changes", () => {
     const state = run([{ type: "older-loading", channelId: "c", loading: true }]);
     expect(state.loadingOlder.c).toBe(true);
     expect(run([{ type: "older-loading", channelId: "c", loading: false }], state).loadingOlder.c).toBe(false);
+  });
+});
+
+describe("the window the device may keep", () => {
+  const open = (extra: Partial<Extract<ChatAction, { type: "first-page" }>> = {}): ChatAction => ({
+    type: "first-page",
+    channelId: "ch-general",
+    page: { messages: [message("a", 5), message("b", 6)], nextCursor: "older" },
+    pendingIds: none,
+    keepOlder: true,
+    window: { cursor: "c1", floor: message("a", 5) },
+    ...extra,
+  });
+
+  it("moves its cursor with the journal page that was applied, in the same step", () => {
+    const state = run([
+      open(),
+      {
+        type: "synced",
+        channelId: "ch-general",
+        changes: [{ cursor: "2", kind: "upsert", messageId: "c", message: message("c", 7) }],
+        cursor: "c2",
+      },
+    ]);
+    expect(ids(state.messages["ch-general"])).toEqual(["a", "b", "c"]);
+    expect(state.windows["ch-general"]?.cursor).toBe("c2");
+  });
+
+  it("lowers its floor when an older page is read, and not for a page of nothing but the start", () => {
+    const state = run([
+      open(),
+      {
+        type: "older-page",
+        channelId: "ch-general",
+        page: { messages: [message("x", 1), message("y", 2)], nextCursor: "oldest" },
+      },
+    ]);
+    expect(state.windows["ch-general"]?.floor?.id).toBe("x");
+
+    const atStart = run([
+      { type: "older-page", channelId: "ch-general", page: { messages: [message("w", 0)], nextCursor: null } },
+    ], state);
+    expect(atStart.windows["ch-general"]?.floor).toBeNull();
+  });
+
+  it("takes the fresh page's cursor and floor on a reset", () => {
+    const state = run([
+      open(),
+      {
+        type: "reset",
+        channelId: "ch-general",
+        page: { messages: [message("z", 9)], nextCursor: "n" },
+        pendingIds: none,
+        cursor: "c-fresh",
+      },
+    ]);
+    expect(state.windows["ch-general"]).toEqual({ cursor: "c-fresh", floor: message("z", 9) });
+  });
+
+  it("is not set by a message that is only shown, such as a search hit", () => {
+    const state = run([open(), { type: "shown", message: message("far", 1) }]);
+    expect(state.windows["ch-general"]?.floor?.id).toBe("a");
+  });
+});
+
+describe("a window painted from the device", () => {
+  it("shows the stored messages and marks the channel restored, not loaded", () => {
+    const state = run([{ type: "stored-window", channelId: "ch-general", messages: [message("a", 1)] }]);
+    expect(ids(state.messages["ch-general"])).toEqual(["a"]);
+    expect(state.restored["ch-general"]).toBe(true);
+    expect(state.loaded["ch-general"]).toBeUndefined();
+  });
+
+  it("is ignored once the server has answered", () => {
+    const loaded = run([{ type: "first-page-failed", channelId: "ch-general" }]);
+    expect(run([{ type: "stored-window", channelId: "ch-general", messages: [message("a", 1)] }], loaded)).toBe(
+      loaded,
+    );
   });
 });

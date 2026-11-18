@@ -31,7 +31,7 @@ import {
   presentTranscript,
   type PresentationContext,
 } from "./chat/present";
-import type { PendingIds, SyncCursors } from "./chat/shared";
+import type { PendingIds, RestoredWindows, SyncCursors } from "./chat/shared";
 import { NO_MESSAGES } from "./chat/timeline";
 import { useAttachmentQueue } from "./chat/useAttachmentQueue";
 import { useChannelPages } from "./chat/useChannelPages";
@@ -175,6 +175,7 @@ export function ChatProvider({ children }: { children: ReactNode }) {
   const [data, dispatch] = useReducer(chatReducer, EMPTY_CHAT_DATA);
   const pendingIds: PendingIds = useRef(new Set<string>());
   const syncCursors: SyncCursors = useRef<Record<string, string>>({});
+  const restored: RestoredWindows = useRef({});
 
   // Keyed by content, because a new list rejoins and replays every channel
   // (`useReconnectSync`). The directory hands over new channel objects for
@@ -249,6 +250,7 @@ export function ChatProvider({ children }: { children: ReactNode }) {
     dispatch,
     pendingIds,
     syncCursors,
+    restored,
   });
   useReconnectSync({
     connected: connection === "connected",
@@ -257,6 +259,7 @@ export function ChatProvider({ children }: { children: ReactNode }) {
     dispatch,
     pendingIds,
     syncCursors,
+    restored,
     onRemoved,
   });
   const reads = useReadMarks({
