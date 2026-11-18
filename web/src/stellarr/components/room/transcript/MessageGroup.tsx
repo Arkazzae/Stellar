@@ -239,6 +239,7 @@ export function MessageGroup({
             canModerate,
             developerMode,
             onAction: onAction && ((action) => onAction(menuBody.id, action)),
+            ...(attachments?.resolveOriginal === undefined ? {} : { resolveOriginal: attachments.resolveOriginal }),
             confirm,
             t,
           })}

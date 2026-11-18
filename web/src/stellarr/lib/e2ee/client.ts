@@ -619,13 +619,18 @@ export function createE2eeClient(options: E2eeClientOptions) {
     };
     const serverUrl = stored?.url ?? `/assets/${item.id}`;
     lazyFiles.set(item.id, { url: serverUrl, key: item.key, iv: item.iv, type });
+    // An image that has a preview is shown from the preview alone: its original
+    // is fetched and decrypted only when it is opened, saved or copied.
+    if (type.startsWith("image/") && item.preview !== undefined && shownType(item.preview.type).startsWith("image/")) {
+      const previewUrl = pictureUrl(item.preview, messageId);
+      // Until the preview is ready (or if it fails) it is a file card without a link.
+      if (previewUrl === undefined) return { ...base, contentType: OPAQUE_TYPE, url: "" };
+      return { ...base, contentType: type, url: objectUrls.get(item.id) ?? `${LAZY_ATTACHMENT_PREFIX}${item.id}`, previewUrl };
+    }
     const eager = (type.startsWith("image/") || type.startsWith("audio/")) && item.size <= EAGER_LIMIT;
     if (eager) {
       const url = objectUrls.get(item.id);
-      const previewUrl = type.startsWith("image/") ? pictureUrl(item.preview, messageId) : undefined;
-      if (url !== undefined) {
-        return { ...base, contentType: type, url, ...(previewUrl === undefined ? {} : { previewUrl }) };
-      }
+      if (url !== undefined) return { ...base, contentType: type, url };
       decryptSoon(item.id, { url: serverUrl, key: item.key, iv: item.iv, type }, type, messageId);
       // Until it is ready (or if it fails) it is a file card without a link.
       return { ...base, contentType: OPAQUE_TYPE, url: "" };

@@ -1,4 +1,4 @@
-import { act, fireEvent, render, screen } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { describe, expect, it, vi } from "vitest";
 
@@ -44,6 +44,24 @@ function swipe(
 }
 
 describe("MediaViewer", () => {
+  it("fetches an original that was left unread, showing the preview until it arrives", async () => {
+    const resolveOriginal = vi.fn(async (_src: string) => "blob:original");
+    const target: ViewerTarget = {
+      kind: "image",
+      index: 0,
+      images: [{ src: "e2ee:u1", preview: "blob:preview", alt: "Kot" }],
+    };
+    render(<MediaViewer target={target} onClose={vi.fn()} resolveOriginal={resolveOriginal} />);
+
+    expect(screen.getByRole("img", { name: "Kot" })).toHaveAttribute("src", "blob:preview");
+    expect(screen.getByRole("button", { name: "Pobierz" })).toBeDisabled();
+    expect(resolveOriginal).toHaveBeenCalledWith("e2ee:u1");
+
+    await waitFor(() => {
+      expect(screen.getByRole("link", { name: "Pobierz" })).toHaveAttribute("href", "blob:original");
+    });
+  });
+
   it("shows the preview first and swaps in the original once it has loaded", () => {
     const loaders: Array<{ src: string; onload: (() => void) | null }> = [];
     vi.stubGlobal(

@@ -47,7 +47,7 @@ export function DmChatContainer() {
         attachments={viewer.attachments}
         {...encryptionView}
       />
-      <MediaViewer target={viewer.target} onClose={viewer.close} />
+      <MediaViewer target={viewer.target} onClose={viewer.close} resolveOriginal={viewer.attachments.resolveOriginal} />
     </>
   );
 }
