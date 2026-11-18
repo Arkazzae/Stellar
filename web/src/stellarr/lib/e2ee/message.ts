@@ -28,6 +28,8 @@ export interface PayloadAttachment {
   duration?: number;
   voice?: boolean;
   poster?: PayloadPoster;
+  /** A reduced copy of an image, sealed like a poster, for small views. */
+  preview?: PayloadPoster;
 }
 
 export interface MessagePayload {
@@ -95,12 +97,14 @@ function parsePoster(value: unknown): PayloadPoster | null {
 
 function parseAttachment(value: unknown): PayloadAttachment | null {
   if (!isRecord(value)) return null;
-  const { id, key, iv, name, type, size, width, height, duration, voice, poster } = value;
+  const { id, key, iv, name, type, size, width, height, duration, voice, poster, preview } = value;
   if (!isString(id) || !isString(key) || !isString(iv) || !isString(name) || !isString(type) || !isCount(size)) {
     return null;
   }
   const parsedPoster = poster === undefined ? undefined : parsePoster(poster);
   if (parsedPoster === null) return null;
+  const parsedPreview = preview === undefined ? undefined : parsePoster(preview);
+  if (parsedPreview === null) return null;
   return {
     id,
     key,
@@ -114,6 +118,7 @@ function parseAttachment(value: unknown): PayloadAttachment | null {
     ...(isCount(duration) ? { duration } : {}),
     ...(voice === true ? { voice: true } : {}),
     ...(parsedPoster === undefined ? {} : { poster: parsedPoster }),
+    ...(parsedPreview === undefined ? {} : { preview: parsedPreview }),
   };
 }
 
