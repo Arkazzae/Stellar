@@ -3,6 +3,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { ApiError } from "@/lib/api/errors";
 import type { Message } from "@/lib/api/types";
 import { FakeEncryptionServer } from "@/test/e2eeServer";
+import { deriveFrameKey, keyIdOf } from "@/lib/voice/e2ee/sframe";
 
 import { fromBase64, toBase64, utf8 } from "./bytes";
 import { createE2eeClient, E2eeError, LAZY_ATTACHMENT_PREFIX, type E2eeEvent } from "./client";
@@ -265,6 +266,63 @@ describe("encryption client", () => {
         server.failNext("createConversationEpoch", problem(409, "epoch-stale", { currentEpochId: null }));
       }
       await expect(send(ada, "x")).rejects.toEqual(new E2eeError("gave-up"));
+    });
+  });
+
+  describe("calls", () => {
+    const frameKeyOf = async (base: CryptoKey, epochId: string, server: FakeEncryptionServer, senderId: string) =>
+      deriveFrameKey(base, { epochId, conversationId: server.conversationId, senderId }, keyIdOf(1, new Uint8Array(6)), "encrypt");
+
+    it("hands a call the epoch the next message would use, and both people derive the same frame keys from it", async () => {
+      const { server, ada, ola, adaId } = await pair();
+
+      const adaKeys = await ada.client.callKeys(server.conversationId);
+      const olaKeys = await ola.client.callKeys(server.conversationId);
+
+      expect(adaKeys?.self).toBe(adaId);
+      expect(olaKeys?.send.epochId).toBe(adaKeys?.send.epochId);
+      expect(epochCalls(server)).toHaveLength(1);
+      const [a, b] = [
+        await frameKeyOf(adaKeys!.send.base, adaKeys!.send.epochId, server, adaId),
+        await frameKeyOf(olaKeys!.send.base, olaKeys!.send.epochId, server, adaId),
+      ];
+      expect(a.salt).toEqual(b.salt);
+      expect(adaKeys!.send.base.extractable).toBe(false);
+    });
+
+    it("calls in the clear only on the server's word that the conversation is not encrypted", async () => {
+      const server = new FakeEncryptionServer("Ada", "Ola");
+      const [adaId] = server.userIds();
+      const ada = browser(server, adaId, "ada-1");
+      await ada.client.start(adaId);
+      expect(await ada.client.callKeys(server.conversationId)).toBeNull();
+
+      const { server: on, ada: encrypted } = await pair();
+      on.failNext("getConversationKeys", new ApiError("network", "network", 0));
+      await expect(encrypted.client.callKeys(on.conversationId)).rejects.toThrow();
+    });
+
+    it("refuses a call where this browser cannot encrypt", async () => {
+      const { server, olaId } = await pair();
+      const old = browser(server, olaId, "ola-old", createMemoryKeyStore(), { probe: async () => "unsupported" });
+      await old.client.start(olaId);
+      await expect(old.client.callKeys(server.conversationId)).rejects.toMatchObject({ reason: "unsupported" });
+    });
+
+    it("follows a call under way into its epoch after the switch went off, and finds an epoch a frame names", async () => {
+      const { server, ada, ola } = await pair();
+      const during = await ada.client.callKeys(server.conversationId);
+      await ola.client.switchConversation(server.conversationId, "disable");
+
+      expect(await ola.client.callKeys(server.conversationId)).toBeNull();
+      const followed = await ola.client.followCall(server.conversationId);
+      expect(followed.send.epochId).toBe(during?.send.epochId);
+
+      const late = browser(server, ola.userId, "ola-late", ola.store);
+      await late.client.start(ola.userId);
+      const named = await late.client.callEpoch(server.conversationId, during!.send.sequence);
+      expect(named?.epochId).toBe(during?.send.epochId);
+      expect(await late.client.callEpoch(server.conversationId, 99)).toBeNull();
     });
   });
 
