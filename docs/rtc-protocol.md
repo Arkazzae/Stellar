@@ -184,7 +184,7 @@ flowchart LR
 ```
 
 1. **Capture and gain**: `getUserMedia` at `48 kHz` mono, followed by fixed pre-gain (`-12 dB` to `+24 dB`).
-2. **Noise suppression**: `rnnoise` (default), `gtcrn`, `speex` (local WASM `AudioWorklet`s from `web/public/audio/`), `browser`, or `off`. Worklet failures fall back to `browser` with a degraded indicator.
+2. **Noise suppression**: `browser` (default), `rnnoise`, `gtcrn`, `speex` (local WASM `AudioWorklet`s from `web/public/audio/`), or `off`. Worklet failures fall back to `browser` with a degraded indicator.
 3. **VAD, input gate, and leveler**:
    - The audio-thread detector inspects `10 ms` frames using noise-floor estimation, hysteresis, hangover, and transient/click rejection (peak-to-RMS ratio and `60–400 Hz` pitch check). Speech detection never mutes the track or stops RTP packets.
    - The **input gate** (on by default) uses an `80 ms` lookahead buffer and `600 ms` hold time, attenuating silence without stopping continuous RTP.

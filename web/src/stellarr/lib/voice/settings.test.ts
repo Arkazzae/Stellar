@@ -65,7 +65,7 @@ describe("parseVoiceSettings", () => {
 
   it("accepts the Premium profile and uses it for a fresh install", () => {
     expect(DEFAULT_SETTINGS.opusProfile).toBe("premium");
-    expect(DEFAULT_SETTINGS.noiseSuppression).toBe("rnnoise");
+    expect(DEFAULT_SETTINGS.noiseSuppression).toBe("browser");
     expect(parseVoiceSettings({ ...VALID, opusProfile: "premium" }).opusProfile).toBe(
       "premium",
     );
@@ -255,7 +255,7 @@ describe("needsRecapture", () => {
 
     for (const patch of [
       { inputDeviceId: "other" },
-      { noiseSuppression: "browser" as const },
+      { noiseSuppression: "rnnoise" as const },
       { echoCancellation: false },
       { autoGainControl: false },
     ]) {
@@ -303,7 +303,7 @@ describe("VoiceSettingsStore", () => {
 
     expect(store.setOwner("user-b")).toMatchObject({
       inputDeviceId: null,
-      noiseSuppression: "rnnoise",
+      noiseSuppression: "browser",
     });
     store.update({ inputDeviceId: "mic-b", noiseSuppression: "browser" });
 
@@ -410,7 +410,7 @@ describe("input gain", () => {
   });
 
   it("is retuned live under a graph, and reopens the device only when it is the sole reason for one", () => {
-    // The defaults already carry a graph (RNNoise, gate, leveller): the slider is live.
+    // The defaults already carry a graph (the gate and the leveller): the slider is live.
     expect(wantsCaptureGraph(DEFAULT_SETTINGS)).toBe(true);
     expect(needsRecapture(DEFAULT_SETTINGS, { ...DEFAULT_SETTINGS, inputGainDb: 6 })).toBe(false);
 
