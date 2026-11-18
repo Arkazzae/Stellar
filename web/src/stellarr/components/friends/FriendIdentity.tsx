@@ -38,7 +38,6 @@ export function FriendIdentity({
         displayName={person.displayName}
         initials={person.initials}
         avatarUrl={person.avatarUrl}
-        size="md"
         presence={presence}
         offline={presence === undefined ? true : undefined}
       />

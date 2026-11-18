@@ -101,7 +101,7 @@ export function FriendsLists({
       detail={
         since && friend.since !== undefined
           ? t("friends.since", { date: friend.since })
-          : undefined
+          : friend.customStatus
       }
       onMessage={() => onMessage(friend.person.id)}
       onCall={() => onCall(friend.person.id)}

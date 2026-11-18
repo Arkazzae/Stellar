@@ -116,6 +116,8 @@ export interface DmConversationVM {
   unread: number;
   /** Someone is occupying this conversation's private RTC room. */
   callActive?: boolean;
+  /** When the last message was sent, shortened ("2 min", "wczoraj"). Absent before the first. */
+  time?: { text: string; iso: string };
 }
 
 /** Which list the Friends view shows. "add" is a panel, not a filter. */
@@ -128,6 +130,8 @@ export interface FriendVM {
   username: string;
   /** Formatted date the friendship began. Absent for a blocked person. */
   since?: string;
+  /** What they say about themselves, trimmed; absent when they say nothing. */
+  customStatus?: string;
 }
 
 /** A reachable friend and the activity visible to the signed-in user. */

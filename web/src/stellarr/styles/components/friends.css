@@ -14,99 +14,31 @@
    *
    * The messages side of the app reuses the shell rather than restating it: the
    * rail is `.rail` with different contents, the room is `.room` with a
-   * different header, and the transcript and composer are the same components
-   * the channels use. Only the parts that genuinely differ live here.
+   * different header, the profile beside a conversation is the roster's panel,
+   * and the transcript and composer are the same components the channels use.
+   * Only the parts that genuinely differ live here.
    *
-   * Accent stays rationed. On this surface it marks
-   * exactly two things: the row you are on, and a request waiting for an
-   * answer. An unread count is *not* one of them — it is carried by weight and
-   * a neutral pill, so a rail with six unread threads does not turn into six
-   * warm badges competing with the send button.
+   * A row that stands for a person has one shape on this side, in the rail, in
+   * the Friends lists and beside them: 44px, a 32px face, 12px to the name, a
+   * 14px name over a 12px line. Something waiting for you (an unread message,
+   * a request) is the accent pill the channels use for unread, so the two
+   * sides of the app say "new" the same way.
+   *
+   * Sizes are the type roles and spacing steps from `recipe.css`; weights are
+   * 400, 500 and 600. Header titles keep the shell's own sizes.
    */
 
-  /* ---------- RAIL: HEADER ---------- */
-  .dm-rail .rail-header {
-    gap: 6px;
-  }
-
-  .dm-back:active {
-    background: var(--surface-base);
-  }
-
-  .dm-home {
-    flex: 1;
-    min-width: 0;
-    height: 34px;
-    padding: 0 10px;
-    border-radius: var(--radius-sm);
-    display: inline-flex;
-    align-items: center;
-    gap: 9px;
-    color: var(--text-muted);
-    font-size: var(--text-14);
-    font-weight: 550;
-    text-align: left;
-    transition:
-      background var(--dur-fast) var(--ease-standard),
-      color var(--dur-fast) var(--ease-standard);
-  }
-
-  .dm-home:hover {
-    background: var(--surface-overlay);
-    color: var(--text);
-  }
-
-  .dm-home[aria-current="page"] {
-    background: var(--accent-soft);
-    color: var(--text);
-  }
-
-  .dm-home .glyph {
-    display: inline-flex;
-    flex: none;
-    color: var(--text-faint);
-  }
-
-  .dm-home[aria-current="page"] .glyph {
-    color: var(--accent-text);
-  }
-
-  .dm-home .name {
-    flex: 1;
-    min-width: 0;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-  }
-
-  /* Something is waiting for you to answer it — one of the two accent moments. */
-  .badge {
-    min-width: 18px;
-    height: 18px;
-    padding: 0 5px;
-    border-radius: 9px;
-    flex: none;
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    background: var(--accent);
-    color: var(--on-accent);
-    font-size: var(--text-11);
-    font-weight: 600;
-    font-variant-numeric: tabular-nums;
-  }
-
-  /* ---------- RAIL: SEARCH ---------- */
+  /* ---------- RAIL ---------- */
+  /* The search heads the list it filters, inside the scrolling column. */
   .dm-find {
-    flex: none;
     position: relative;
-    padding: 10px;
-    border-bottom: 1px solid var(--line-subtle);
+    margin: 0 0 var(--sp-2);
   }
 
-  .dm-find .glyph {
+  .dm-find .glyph,
+  .fr-find .glyph {
     position: absolute;
-    left: 20px;
+    left: var(--sp-2);
     top: 50%;
     transform: translateY(-50%);
     display: inline-flex;
@@ -118,13 +50,18 @@
   .fr-find input {
     width: 100%;
     height: 32px;
-    padding: 0 10px 0 32px;
+    padding: 0 var(--sp-2) 0 var(--sp-8);
     border-radius: var(--radius-sm);
     background: var(--surface-field);
     border: 1px solid transparent;
     color: var(--text);
-    font-size: var(--text-13);
+    font-size: var(--fs-body);
     transition: border-color var(--dur-fast) var(--ease-standard);
+  }
+
+  .dm-find input::placeholder,
+  .fr-find input::placeholder {
+    color: var(--text-faint);
   }
 
   .dm-find input:hover,
@@ -138,45 +75,141 @@
     display: none;
   }
 
-  /* ---------- RAIL: CONVERSATIONS ---------- */
-  .group-caption .cap-act {
-    width: 22px;
-    height: 22px;
-    border-radius: var(--radius-sm);
+  /* Friends is a channel row. A channel's count gives way to its cog under the
+     pointer; this row has no cog, so its request count stays. */
+  .dm-rail .channel:hover .ch-unread,
+  .dm-rail .channel:focus-within .ch-unread {
     display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    color: var(--text-faint);
-    transition:
-      background var(--dur-fast) var(--ease-standard),
-      color var(--dur-fast) var(--ease-standard);
-  }
-
-  .group-caption .cap-act:hover {
-    background: var(--surface-overlay);
-    color: var(--accent-text);
   }
 
   .dm-list {
     list-style: none;
     padding: 0;
     margin: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
   }
 
-  .dm-item {
-    position: relative;
+  .dm-row {
+    width: 100%;
+    height: 44px;
+    padding: 0 var(--sp-2);
+    border-radius: var(--radius-sm);
+    display: flex;
+    align-items: center;
+    gap: var(--sp-3);
+    text-align: left;
+    color: var(--text-muted);
+    transition:
+      background var(--dur-fast) var(--ease-standard),
+      color var(--dur-fast) var(--ease-standard);
+  }
+
+  .dm-row:hover {
+    background: var(--surface-overlay);
+    color: var(--text);
+    --pdot-line: var(--surface-overlay);
+  }
+
+  /* The open conversation looks like the open channel: the room's own ground,
+     reaching into the rail. */
+  .dm-row[aria-current="page"] {
+    background: var(--surface-base);
+    color: var(--text);
+    --pdot-line: var(--surface-base);
+  }
+
+  .dm-txt {
+    min-width: 0;
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    line-height: 1.3;
+  }
+
+  /* Each line is a row of its own: the name line has room before the name for
+     a mark about the conversation, the time at its end; the preview line ends
+     in the count or the call. */
+  .dm-line {
+    display: flex;
+    align-items: center;
+    gap: var(--sp-1);
+    min-width: 0;
+  }
+
+  .dm-line > svg {
+    flex: none;
+    color: var(--text-faint);
+  }
+
+  .dm-name {
+    min-width: 0;
+    font-size: var(--fs-label);
+    font-weight: var(--fw-medium);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  .dm-time {
+    flex: none;
+    margin-left: auto;
+    padding-left: var(--sp-2);
+    font-size: var(--fs-meta);
+    color: var(--text-faint);
+    font-variant-numeric: tabular-nums;
+    white-space: nowrap;
+  }
+
+  .dm-last {
+    flex: 1;
+    min-width: 0;
+    font-size: var(--fs-meta);
+    color: var(--text-faint);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  .dm-row.unread .dm-name {
+    font-weight: var(--fw-strong);
+    color: var(--text);
+  }
+
+  .dm-row.unread .dm-last {
+    color: var(--text-muted);
   }
 
   .dm-call-live {
-    width: 24px;
-    height: 24px;
-    border-radius: 50%;
+    flex: none;
+    display: inline-flex;
+    color: var(--live);
+  }
+
+  .dm-empty {
+    font-size: var(--fs-body);
+    line-height: 1.5;
+    color: var(--text-faint);
+    padding: var(--sp-1) var(--sp-2) var(--sp-2);
+  }
+
+  /* Something is waiting for you to answer it. */
+  .badge {
+    min-width: 18px;
+    height: 18px;
+    padding: 0 5px;
+    border-radius: 9px;
     flex: none;
     display: inline-flex;
     align-items: center;
     justify-content: center;
-    background: var(--accent-soft);
-    color: var(--accent-text);
+    background: var(--accent);
+    color: var(--on-accent);
+    font-size: var(--fs-micro);
+    font-weight: var(--fw-strong);
+    font-variant-numeric: tabular-nums;
   }
 
   /* Incoming calls float above either app space without taking over the room. */
@@ -241,99 +274,6 @@
     background: var(--danger-line);
   }
 
-  .dm-row {
-    width: 100%;
-    height: 44px;
-    padding: 0 8px;
-    border-radius: var(--radius-sm);
-    display: flex;
-    align-items: center;
-    gap: 10px;
-    text-align: left;
-    color: var(--text-muted);
-    transition:
-      background var(--dur-fast) var(--ease-standard),
-      color var(--dur-fast) var(--ease-standard);
-  }
-
-  .dm-row:hover {
-    background: var(--surface-overlay);
-    color: var(--text);
-  }
-
-  .dm-row[aria-current="page"] {
-    background: var(--accent-soft);
-    color: var(--text);
-  }
-
-  .dm-row[aria-current="page"]::before {
-    content: "";
-    position: absolute;
-    left: -4px;
-    top: 8px;
-    bottom: 8px;
-    width: 2px;
-    border-radius: 1px;
-    background: var(--accent-quiet);
-  }
-
-  .dm-txt {
-    min-width: 0;
-    flex: 1;
-    display: flex;
-    flex-direction: column;
-    line-height: 1.3;
-  }
-
-  .dm-txt b {
-    font-size: var(--text-14);
-    font-weight: 500;
-    white-space: nowrap;
-    overflow: hidden;
-    text-overflow: ellipsis;
-  }
-
-  .dm-last {
-    font-size: var(--text-12);
-    color: var(--text-faint);
-    white-space: nowrap;
-    overflow: hidden;
-    text-overflow: ellipsis;
-  }
-
-  /* Unread reads in greyscale: heavier name, brighter preview, a counted pill. */
-  .dm-item.unread .dm-txt b {
-    font-weight: 650;
-    color: var(--text);
-  }
-
-  .dm-item.unread .dm-last {
-    color: var(--text-muted);
-  }
-
-  .dm-unread {
-    min-width: 20px;
-    height: 18px;
-    padding: 0 6px;
-    border-radius: 9px;
-    flex: none;
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    background: var(--surface-pop);
-    color: var(--text);
-    font-size: var(--text-11);
-    font-weight: 600;
-    font-variant-numeric: tabular-nums;
-  }
-
-  .dm-empty {
-    font-size: var(--text-13);
-    line-height: 1.5;
-    color: var(--text-faint);
-    padding: 4px 8px 8px;
-  }
-
   /* The server rail's own unread mark, on the messages entry. */
   .srv-badge {
     position: absolute;
@@ -362,10 +302,10 @@
   .fr-tabs {
     display: flex;
     align-items: center;
-    gap: 2px;
+    gap: var(--sp-1);
     flex: 1;
     min-width: 0;
-    margin-left: 6px;
+    margin-left: var(--sp-2);
     overflow-x: auto;
     /* A tab strip that scrolls must not also draw a bar under the header. */
     scrollbar-width: none;
@@ -376,14 +316,14 @@
   }
 
   .fr-tab {
-    height: 30px;
-    padding: 0 12px;
+    height: 32px;
+    padding: 0 var(--sp-3);
     border-radius: var(--radius-sm);
     display: inline-flex;
     align-items: center;
-    gap: 7px;
+    gap: var(--sp-2);
     flex: none;
-    font-size: var(--text-13);
+    font-size: var(--fs-body);
     color: var(--text-muted);
     white-space: nowrap;
     transition:
@@ -399,13 +339,13 @@
   .fr-tab.on {
     background: var(--surface-overlay);
     color: var(--text);
-    font-weight: 600;
+    font-weight: var(--fw-strong);
   }
 
   /* The primary button's `sm` size carries the shape; only the icon gap and the
      pressed state are this button's own. */
   .fr-add {
-    --ui-button-gap: 7px;
+    --ui-button-gap: var(--sp-2);
     --ui-button-white-space: nowrap;
   }
 
@@ -419,7 +359,8 @@
     min-width: 0;
     min-height: 0;
     overflow-y: auto;
-    padding: 20px 0 40px;
+    padding: var(--sp-5) 0 var(--sp-8);
+    --pdot-line: var(--surface-room);
   }
 
   /*
@@ -439,204 +380,7 @@
     display: flex;
     flex-direction: column;
     min-height: 100%;
-    padding: 0 20px;
-  }
-
-  /* ---------- FRIEND ACTIVITY ---------- */
-  .fr-activity {
-    display: none;
-    grid-column: 2;
-    grid-row: 1 / -1;
-    min-width: 0;
-    min-height: 0;
-    flex-direction: column;
-    padding: 20px 16px;
-    background: var(--surface-sidebar);
-    border-left: 1px solid var(--line);
-  }
-
-  .fr-activity-header {
-    display: flex;
-    align-items: baseline;
-    justify-content: space-between;
-    gap: 12px;
-    flex: none;
-    margin-bottom: 16px;
-  }
-
-  .fr-activity-header h3 {
-    font-size: var(--text-18);
-    line-height: 1.4;
-    font-weight: 600;
-  }
-
-  .fr-activity-header > span {
-    color: var(--text-faint);
-    font-size: var(--text-12);
-    font-variant-numeric: tabular-nums;
-  }
-
-  .fr-activity-list {
-    display: flex;
-    flex-direction: column;
-    gap: 8px;
-    min-height: 0;
-    overflow-y: auto;
-    overscroll-behavior: contain;
-    padding: 2px;
-    margin: -2px;
-  }
-
-  .fr-activity-item {
-    flex: none;
-    padding: 12px;
-    border-radius: 12px;
-    background: var(--surface-raised);
-  }
-
-  .fr-activity-person {
-    display: flex;
-    align-items: center;
-    gap: 8px;
-  }
-
-  .fr-activity-profile {
-    display: flex;
-    align-items: center;
-    gap: 10px;
-    min-width: 0;
-    flex: 1;
-    text-align: left;
-    border-radius: var(--radius-sm);
-  }
-
-  .fr-activity-who {
-    display: flex;
-    flex-direction: column;
-    min-width: 0;
-    gap: 2px;
-  }
-
-  .fr-activity-who > b {
-    font-size: var(--text-14);
-    font-weight: 600;
-    line-height: 1.4;
-  }
-
-  .fr-activity-who > b,
-  .fr-activity-status {
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-  }
-
-  .fr-activity-status {
-    color: var(--text-muted);
-    font-size: var(--text-12);
-    line-height: 1.4;
-  }
-
-  .fr-activity-profile:hover .fr-activity-who > b {
-    text-decoration: underline;
-    text-underline-offset: 3px;
-  }
-
-  .fr-activity-message {
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    flex: none;
-    width: 30px;
-    height: 30px;
-    color: var(--text-faint);
-    border-radius: var(--radius-sm);
-    transition:
-      background var(--dur-fast) var(--ease-standard),
-      color var(--dur-fast) var(--ease-standard);
-  }
-
-  .fr-activity-message:hover {
-    background: var(--surface-overlay);
-    color: var(--text);
-  }
-
-  .fr-activity-context {
-    display: flex;
-    align-items: center;
-    gap: 9px;
-    margin-top: 12px;
-    padding-top: 10px;
-    border-top: 1px solid var(--line-subtle);
-    font-size: var(--text-12);
-    color: var(--text-muted);
-  }
-
-  .fr-activity-context > svg {
-    flex: none;
-    color: var(--live);
-  }
-
-  .fr-activity-context > span {
-    display: flex;
-    flex-direction: column;
-    min-width: 0;
-    gap: 2px;
-  }
-
-  .fr-activity-context b {
-    font-weight: 500;
-  }
-
-  .fr-activity-context > span > span {
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-  }
-
-  .fr-activity-empty {
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    justify-content: center;
-    flex: 1;
-    width: 100%;
-    min-height: 0;
-    padding: 24px 8px;
-    gap: 8px;
-    text-align: center;
-  }
-
-  .fr-activity-empty h4 {
-    font-size: var(--text-14);
-    font-weight: 600;
-  }
-
-  .fr-activity-empty p {
-    color: var(--text-muted);
-    font-size: var(--text-13);
-    line-height: 1.6;
-    overflow-wrap: anywhere;
-  }
-
-  @media (min-width: 1200px) {
-    .room.friends.has-activity {
-      grid-template-columns: minmax(0, 1fr) var(--roster-w);
-    }
-
-    .fr-activity {
-      display: flex;
-    }
-  }
-
-  @media (pointer: coarse) {
-    .fr-activity-profile {
-      min-height: 44px;
-    }
-
-    .fr-activity-message {
-      width: 44px;
-      height: 44px;
-    }
+    padding: 0 var(--sp-5);
   }
 
   /* Spans the list it filters, so its right edge lands where the row actions
@@ -644,17 +388,7 @@
   .fr-find {
     position: relative;
     flex: none;
-    margin-bottom: 22px;
-  }
-
-  .fr-find .glyph {
-    position: absolute;
-    left: 10px;
-    top: 50%;
-    transform: translateY(-50%);
-    display: inline-flex;
-    color: var(--text-faint);
-    pointer-events: none;
+    margin-bottom: var(--sp-8);
   }
 
   .fr-section {
@@ -664,15 +398,16 @@
   }
 
   .fr-section + .fr-section {
-    margin-top: 24px;
+    margin-top: var(--sp-6);
   }
 
+  /* The roster's caption: the count reads as part of it. */
   .fr-section .group-caption {
     flex: none;
     justify-content: flex-start;
-    gap: 5px;
-    margin: 0 0 4px;
-    padding: 0 8px;
+    gap: var(--sp-1);
+    margin: 0 0 var(--sp-1);
+    padding: 0 var(--sp-2);
   }
 
   .fr-section .group-caption .count {
@@ -681,34 +416,43 @@
 
   .fr-section .group-caption .count::before {
     content: "·";
-    margin-right: 5px;
+    margin-right: var(--sp-1);
   }
 
   .fr-list {
     list-style: none;
     padding: 0;
     margin: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
   }
 
+  /* A roster row with its actions out: no rule between rows, the wash under
+     the pointer is what tells one from the next. */
   .fr-row {
     position: relative;
     display: flex;
     align-items: center;
-    gap: 12px;
-    min-height: 58px;
-    padding: 8px;
-    border-top: 1px solid var(--line-subtle);
+    gap: var(--sp-3);
+    height: 44px;
+    padding: 0 var(--sp-2);
     border-radius: var(--radius-md);
     transition: background var(--dur-fast) var(--ease-standard);
   }
 
   .fr-row:hover {
     background: var(--surface-overlay);
+    --pdot-line: var(--surface-overlay);
   }
 
   .fr-row.offline .av,
   .fr-row.offline .fr-who {
-    opacity: 0.75;
+    opacity: 0.6;
+  }
+
+  .fr-open {
+    align-self: stretch;
   }
 
   .fr-who {
@@ -723,19 +467,18 @@
   .fr-who b {
     display: flex;
     align-items: baseline;
-    gap: 7px;
+    gap: var(--sp-2);
     min-width: 0;
-    font-size: var(--text-15);
-    font-weight: 600;
+    font-size: var(--fs-label);
+    font-weight: var(--fw-medium);
     white-space: nowrap;
     overflow: hidden;
-    text-overflow: ellipsis;
   }
 
-  /* Keep both identifiers discoverable. A long display name used to consume
-     the anonymous flex item and clip the @username completely on a phone. */
+  /* The name gives way first, the handle after it: a long display name must
+     not push the @username out of a phone-width row. */
   .fr-display-name {
-    flex: 1;
+    flex: 0 1 auto;
     min-width: 0;
     overflow: hidden;
     text-overflow: ellipsis;
@@ -744,18 +487,19 @@
   /* Always visible, never hover-only: the username is how you add someone, so
      it is information, not decoration. */
   .fr-tag {
-    flex: none;
+    flex: 0 1 auto;
+    min-width: 0;
     max-width: min(45%, 180px);
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
-    font-size: var(--text-13);
-    font-weight: 400;
+    font-size: var(--fs-body);
+    font-weight: var(--fw-regular);
     color: var(--text-faint);
   }
 
   .fr-state {
-    font-size: var(--text-13);
+    font-size: var(--fs-meta);
     color: var(--text-faint);
     white-space: nowrap;
     overflow: hidden;
@@ -766,32 +510,38 @@
     position: relative;
     display: flex;
     align-items: center;
-    gap: 6px;
+    gap: var(--sp-1);
     flex: none;
   }
 
+  /* Quiet: no fill until the pointer is on one. They stay visible, since a
+     row's actions that only appear on hover cannot be found by touch. */
   .fr-act {
-    width: 34px;
-    height: 34px;
-    border-radius: 50%;
+    width: 32px;
+    height: 32px;
+    border-radius: var(--radius-sm);
     display: inline-flex;
     align-items: center;
     justify-content: center;
-    background: var(--surface-pop);
-    color: var(--text-muted);
+    color: var(--text-faint);
     transition:
       background var(--dur-fast) var(--ease-standard),
       color var(--dur-fast) var(--ease-standard);
   }
 
-  .fr-act:hover:not(:disabled) {
-    background: var(--surface-overlay);
+  .fr-act:hover:not(:disabled),
+  .fr-act[aria-expanded="true"] {
+    background: var(--surface-pop);
     color: var(--text);
   }
 
   .fr-act:disabled {
     opacity: 0.55;
     cursor: not-allowed;
+  }
+
+  .fr-act.ok {
+    color: var(--text-muted);
   }
 
   .fr-act.ok:hover {
@@ -805,19 +555,19 @@
   /* Portaled beyond the scrolling list, so the last row never clips it. */
   .fr-pop {
     width: 200px;
-    padding: 6px;
+    padding: var(--sp-1);
   }
 
   .fr-menu-item {
     width: 100%;
     height: 32px;
-    padding: 0 10px;
+    padding: 0 var(--sp-2);
     border-radius: var(--radius-sm);
     display: flex;
     align-items: center;
-    gap: 8px;
+    gap: var(--sp-2);
     text-align: left;
-    font-size: var(--text-13);
+    font-size: var(--fs-body);
     color: var(--text-muted);
     transition:
       background var(--dur-fast) var(--ease-standard),
@@ -841,16 +591,16 @@
     flex: 1;
     width: 100%;
     min-height: 168px;
-    margin: 4px 0 0;
-    padding: 26px 22px;
+    margin: var(--sp-1) 0 0;
+    padding: var(--sp-6);
     display: flex;
     flex-direction: column;
     align-items: center;
     justify-content: center;
-    gap: 5px;
+    gap: var(--sp-1);
     text-align: center;
-    font-size: var(--text-13);
-    line-height: 1.55;
+    font-size: var(--fs-label);
+    line-height: 1.5;
     color: var(--text-muted);
   }
 
@@ -859,8 +609,8 @@
   }
 
   .fr-empty b {
-    font-size: var(--text-14);
-    font-weight: 600;
+    font-size: var(--fs-title);
+    font-weight: var(--fw-strong);
     color: var(--text-muted);
   }
 
@@ -870,7 +620,7 @@
     justify-content: center;
     width: 40px;
     height: 40px;
-    margin-bottom: 5px;
+    margin-bottom: var(--sp-1);
     border-radius: 50%;
     background: var(--surface-overlay);
     color: var(--accent-text);
@@ -878,7 +628,7 @@
 
   .fr-empty-act {
     display: inline-flex;
-    margin-top: 11px;
+    margin-top: var(--sp-3);
   }
 
   /* ---------- ROOM: ADD A FRIEND ---------- */
@@ -887,23 +637,23 @@
   }
 
   .fr-add-panel h3 {
-    font-size: var(--text-18);
-    font-weight: 600;
+    font-size: var(--fs-title);
+    font-weight: var(--fw-strong);
     line-height: 1.3;
-    margin-bottom: 6px;
+    margin-bottom: var(--sp-2);
   }
 
   .fr-help {
-    font-size: var(--text-13);
-    line-height: 1.55;
+    font-size: var(--fs-label);
+    line-height: 1.5;
     color: var(--text-faint);
-    margin-bottom: 16px;
+    margin-bottom: var(--sp-4);
   }
 
   .fr-add-form {
     display: flex;
     align-items: center;
-    gap: 10px;
+    gap: var(--sp-2);
     flex-wrap: wrap;
     --ui-button-disabled-opacity: 0.45;
   }
@@ -911,13 +661,13 @@
   .fr-add-form input {
     flex: 1;
     min-width: 220px;
-    height: 42px;
-    padding: 0 14px;
+    height: 40px;
+    padding: 0 var(--sp-3);
     border-radius: var(--radius-sm);
     background: var(--surface-field);
     border: 1px solid var(--line);
     color: var(--text);
-    font-size: var(--text-14);
+    font-size: var(--fs-label);
     transition: border-color var(--dur-fast) var(--ease-standard);
   }
 
@@ -934,9 +684,9 @@
   }
 
   .fr-answer {
-    margin-top: 12px;
-    font-size: var(--text-13);
-    line-height: 1.55;
+    margin-top: var(--sp-3);
+    font-size: var(--fs-label);
+    line-height: 1.5;
   }
 
   .fr-answer.ok {
@@ -947,70 +697,310 @@
     color: var(--danger-text);
   }
 
-  /* ---------- ROOM: ONE CONVERSATION ---------- */
-  .dm-room .room-header h2 {
+  /* ---------- FRIEND ACTIVITY ---------- */
+  /*
+   * The roster's panel, minus the panel: its header and its person rows, in
+   * the room's second track. Text sits 16px from the column's edge, as in
+   * every side column on this side.
+   */
+  .fr-activity {
+    display: none;
+    grid-column: 2;
+    grid-row: 1 / -1;
     min-width: 0;
+    min-height: 0;
+    flex-direction: column;
+    background: var(--surface-sidebar);
+    border-left: 1px solid var(--line);
+  }
+
+  .fr-activity .roster-list {
+    padding: var(--sp-3) var(--sp-2) var(--sp-4);
+  }
+
+  .fr-activity .who {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+  }
+
+  .person-sub {
+    display: block;
+    font-size: var(--fs-meta);
+    line-height: 1.3;
+    color: var(--text-faint);
+    white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
   }
 
-  .dm-presence {
-    flex: none;
-    display: inline-flex;
+  .fr-activity-empty {
+    display: flex;
+    flex-direction: column;
     align-items: center;
-    gap: 7px;
-    padding-left: 12px;
-    border-left: 1px solid var(--line-subtle);
-    font-size: var(--text-13);
-    color: var(--text-faint);
+    justify-content: center;
+    min-height: 100%;
+    padding: var(--sp-6) var(--sp-2);
+    gap: var(--sp-2);
+    text-align: center;
+  }
+
+  .fr-activity-empty h4 {
+    font-size: var(--fs-title);
+    font-weight: var(--fw-strong);
+  }
+
+  .fr-activity-empty p {
+    color: var(--text-muted);
+    font-size: var(--fs-label);
+    line-height: 1.5;
+    overflow-wrap: anywhere;
+  }
+
+  @media (min-width: 1200px) {
+    .room.friends.has-activity {
+      grid-template-columns: minmax(0, 1fr) var(--roster-w);
+    }
+
+    .fr-activity {
+      display: flex;
+    }
+  }
+
+  /* ---------- ROOM: ONE CONVERSATION ---------- */
+  .dm-title {
+    min-width: 0;
+  }
+
+  /* The title is the person, and pressing it shows who they are. It keeps
+     the channel title's type: `.room-header h2` sets it, the button inherits. */
+  .dm-who {
+    max-width: 100%;
+    display: flex;
+    align-items: center;
+    gap: var(--sp-3);
+    border-radius: var(--radius-sm);
+    --pdot-line: var(--surface-room);
+  }
+
+  .dm-who-name {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
     white-space: nowrap;
   }
 
-  /* The dot is `avatar.css`'s, in all four of its shapes. The only thing the
-     header owns is the colour it is cut against: this row sits on the room's
-     ground, not on a raised panel. */
-  .dm-presence .pdot {
-    --pdot-line: var(--surface-base);
+  .dm-who:hover .dm-who-name {
+    text-decoration: underline;
+    text-underline-offset: 3px;
   }
 
   .dm-room .pill-bar {
     margin-left: auto;
   }
 
+  /* The beginning of the history, right above its first message. */
   .dm-intro {
-    padding: 40px 20px 4px;
+    padding: var(--sp-6) var(--sp-5) var(--sp-5);
     display: flex;
     flex-direction: column;
     align-items: flex-start;
-    gap: 12px;
+    gap: 2px;
+  }
+
+  .dm-intro .av {
+    margin-bottom: var(--sp-3);
   }
 
   .dm-intro h3 {
-    font-size: var(--text-28);
-    font-weight: 650;
-    line-height: 1.15;
+    font-size: var(--fs-display);
+    font-weight: var(--fw-strong);
+    line-height: 28px;
+  }
+
+  .dm-handle {
+    font-size: var(--fs-label);
+    color: var(--text-faint);
   }
 
   .dm-intro p {
     max-width: var(--measure);
-    font-size: var(--text-14);
-    line-height: 1.55;
+    margin-top: var(--sp-2);
+    font-size: var(--fs-label);
+    line-height: 1.5;
+    color: var(--text-muted);
+  }
+
+  .dm-intro-act {
+    display: flex;
+    gap: var(--sp-2);
+    margin-top: var(--sp-4);
+  }
+
+  /* ---------- PROFILE BESIDE A CONVERSATION ---------- */
+  /* The roster's panel and header; only the body is this panel's own. */
+  .pp-body {
+    flex: 1;
+    min-height: 0;
+    overflow-y: auto;
+    padding: var(--sp-5) var(--sp-2) var(--sp-4);
+  }
+
+  .pp-who {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 2px;
+    padding: 0 var(--sp-2) var(--sp-4);
+  }
+
+  .pp-who .av {
+    margin-bottom: var(--sp-3);
+  }
+
+  .pp-who h4 {
+    max-width: 100%;
+    font-size: var(--fs-display);
+    font-weight: var(--fw-strong);
+    line-height: 28px;
+    overflow-wrap: anywhere;
+  }
+
+  .pp-handle {
+    font-size: var(--fs-body);
     color: var(--text-faint);
   }
 
-  .dm-intro p b {
-    font-weight: 600;
+  .pp-status {
+    max-width: 100%;
+    margin-top: var(--sp-2);
+    font-size: var(--fs-body);
+    line-height: 1.5;
     color: var(--text-muted);
+    overflow-wrap: anywhere;
+  }
+
+  .pp-facts {
+    display: grid;
+    gap: var(--sp-3);
+    margin: 0;
+    padding: var(--sp-4) var(--sp-2);
+    border-top: 1px solid var(--line-subtle);
+  }
+
+  .pp-facts dt {
+    font-size: var(--fs-meta);
+    color: var(--text-faint);
+  }
+
+  .pp-facts dd {
+    margin: 2px 0 0;
+    font-size: var(--fs-body);
+    color: var(--text);
+  }
+
+  .pp-actions {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    padding-top: var(--sp-2);
+    border-top: 1px solid var(--line-subtle);
+  }
+
+  .pp-row {
+    width: 100%;
+    min-height: 32px;
+    padding: 0 var(--sp-2);
+    border-radius: var(--radius-md);
+    display: flex;
+    align-items: center;
+    gap: var(--sp-2);
+    text-align: left;
+    font-size: var(--fs-body);
+    color: var(--text-muted);
+    transition:
+      background var(--dur-fast) var(--ease-standard),
+      color var(--dur-fast) var(--ease-standard);
+  }
+
+  .pp-row > svg {
+    flex: none;
+    color: var(--text-faint);
+  }
+
+  .pp-row-text {
+    flex: 1;
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+  }
+
+  /* A row with a second line carries a title, which reads at full strength. */
+  .pp-row.two {
+    align-items: flex-start;
+    padding: var(--sp-2);
+  }
+
+  /* Centres the icon on the title's line rather than on the whole row. */
+  .pp-row.two > svg {
+    margin-top: 1px;
+  }
+
+  .pp-row.two .pp-row-label {
+    font-weight: var(--fw-medium);
+    color: var(--text);
+  }
+
+  .pp-row-detail {
+    font-size: var(--fs-meta);
+    line-height: 1.4;
+    color: var(--text-faint);
+  }
+
+  .pp-row.has-trailing > :last-child {
+    flex: none;
+  }
+
+  button.pp-row:hover {
+    background: var(--surface-overlay);
+    color: var(--text);
+  }
+
+  button.pp-row:hover > svg {
+    color: var(--text-muted);
+  }
+
+  button.pp-row.danger:hover {
+    background: var(--danger-soft);
+    color: var(--danger-text);
+  }
+
+  button.pp-row.danger:hover > svg {
+    color: var(--danger-text);
+  }
+
+  @media (pointer: coarse) {
+    .pp-row {
+      min-height: 44px;
+    }
   }
 
   /* ---------- SHELL ---------- */
   /*
-   * DM space has no channel roster. Friends owns its activity panel inside
-   * the room; opening a private conversation uses that space for messages.
+   * The messages side has no channel roster. Friends owns its activity panel
+   * inside the room; beside a conversation, the roster's track holds the
+   * profile when it is open, and is a drawer below 1024 as the roster is.
    */
   .app.dm-space,
   .app.dm-space.roster-open {
     grid-template-columns: var(--servers-w) var(--rail-w) minmax(0, 1fr) 0px;
+  }
+
+  @media (min-width: 1024px) {
+    .app.dm-space.roster-open {
+      grid-template-columns: var(--servers-w) var(--rail-w) minmax(0, 1fr) var(--roster-w);
+    }
   }
 
   @media (max-width: 767px) {
@@ -1029,11 +1019,11 @@
     }
 
     .fr-inner {
-      padding: 0 16px;
+      padding: 0 var(--sp-4);
     }
 
     .fr-body {
-      padding-top: 16px;
+      padding-top: var(--sp-4);
     }
 
     /* On a phone the four list tabs need a real row. Compressing them between
@@ -1046,9 +1036,9 @@
       display: grid;
       grid-template-columns: auto auto minmax(0, 1fr) auto;
       grid-template-rows: 52px 52px;
-      column-gap: 8px;
+      column-gap: var(--sp-2);
       row-gap: 0;
-      padding-inline: 12px;
+      padding-inline: var(--sp-3);
     }
 
     .friends .burger {
@@ -1088,7 +1078,7 @@
       align-self: stretch;
       width: 100%;
       margin-left: 0;
-      padding-bottom: 4px;
+      padding-bottom: var(--sp-1);
       scroll-snap-type: x proximity;
       overscroll-behavior-x: contain;
     }
@@ -1105,7 +1095,6 @@
       font-size: var(--text-16);
     }
 
-    .dm-home,
     .dm-call-answer,
     .dm-call-decline {
       min-height: 44px;
@@ -1131,18 +1120,14 @@
       height: auto;
     }
 
-    /* The header has a title, a tab strip and a primary action in 375px; the
-       presence word is the one part the room repeats elsewhere. */
-    .dm-presence {
+    /* The topic gives way (the shared header rule), and so does the panel's
+       button: the face and the name beside it open the profile instead. */
+    .dm-profile-toggle {
       display: none;
     }
 
     .dm-intro {
-      padding: 28px 16px 4px;
-    }
-
-    .dm-intro h3 {
-      font-size: var(--text-24);
+      padding: var(--sp-6) var(--sp-4) var(--sp-5);
     }
   }
 
@@ -1158,14 +1143,6 @@
 
     .fr-add-form > button {
       width: 100%;
-    }
-  }
-
-  @media (max-width: 359px) {
-    /* Four essential actions already occupy most of a 320px DM header. The
-       decorative @ repeats the meaning of the conversation title. */
-    .dm-room .room-header > .glyph {
-      display: none;
     }
   }
 

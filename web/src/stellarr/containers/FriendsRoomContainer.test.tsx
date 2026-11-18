@@ -116,10 +116,10 @@ describe("FriendsRoomContainer without a conversation", () => {
     expect(screen.getByRole("button", { name: "inbox" })).toBeInTheDocument();
   });
 
-  it("lists friends alphabetically with the date the friendship began", () => {
+  it("lists friends alphabetically with the date the friendship began and their own status", () => {
     mocks.friends = fakeFriends({
       friends: [
-        { user: BOB, since: "2026-03-01T10:00:00Z" },
+        { user: { ...BOB, customStatus: "  w trasie  " }, since: "2026-03-01T10:00:00Z" },
         { user: ADA, since: "2026-01-15T10:00:00Z" },
       ],
     });
@@ -136,6 +136,7 @@ describe("FriendsRoomContainer without a conversation", () => {
         person: expect.objectContaining({ id: "u-bob", initials: "BO" }),
         username: "bob",
         since: formatDate("2026-03-01T10:00:00Z", "pl"),
+        customStatus: "w trasie",
       },
     ]);
   });
@@ -163,12 +164,14 @@ describe("FriendsRoomContainer without a conversation", () => {
     expect(view().blocked[0]).not.toHaveProperty("since");
   });
 
-  it("hands every action to the friends state, and the tab to the ui", () => {
+  it("hands every action to the friends state, and the tab and search request to the ui", () => {
     render(<FriendsRoomContainer />);
 
     expect(view()).toMatchObject({
       tab: "all",
       onTabChange: mocks.ui.setFriendsTab,
+      searchRequested: mocks.ui.friendsSearchRequested,
+      onSearchFocused: mocks.ui.takeFriendsSearch,
       onMessage: mocks.friends.messagePerson,
       onCall: mocks.friends.callPerson,
       onRemove: mocks.friends.remove,
@@ -188,13 +191,22 @@ describe("FriendsRoomContainer with a conversation", () => {
     mocks.friends = fakeFriends({ active: conversation });
   });
 
-  it("shows that conversation, not the list", () => {
+  it("shows that conversation, not the list, with what the person says about themselves", () => {
+    mocks.friends = fakeFriends({
+      active: { ...conversation, peer: { ...ADA, customStatus: "  w trasie  " } },
+    });
     render(<FriendsRoomContainer />);
 
     expect(screen.getByTestId("dm-room")).toBeInTheDocument();
     expect(screen.queryByTestId("friends-view")).toBeNull();
     expect(screen.getByRole("button", { name: "inbox" })).toBeInTheDocument();
     expect(room().peer).toMatchObject({ id: "u-ada", displayName: "Ada Lovelace" });
+    expect(room()).toMatchObject({
+      username: "ada",
+      status: "w trasie",
+      profilePanelOpen: mocks.ui.profilePanelOpen,
+      onToggleProfilePanel: mocks.ui.toggleProfilePanel,
+    });
   });
 
   it("sends, pages and attaches through the friends state", () => {

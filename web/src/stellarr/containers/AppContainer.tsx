@@ -7,12 +7,13 @@ import { EmojiProvider } from "@/state/EmojiProvider";
 import { FriendsProvider } from "@/state/FriendsProvider";
 import { KeybindProvider } from "@/state/KeybindProvider";
 import { NotificationProvider } from "@/state/NotificationProvider";
-import { useUi } from "@/state/hooks";
+import { useFriends, useUi } from "@/state/hooks";
 import { ProfileProvider } from "@/state/ProfileProvider";
 import { UiProvider } from "@/state/UiProvider";
 import { VoiceProvider } from "@/state/VoiceProvider";
 
 import { ClientSettingsSync } from "./ClientSettingsSync";
+import { DmProfileContainer } from "./DmProfileContainer";
 import { DmRailContainer } from "./DmRailContainer";
 import { FriendsRoomContainer } from "./FriendsRoomContainer";
 import { IncomingCallContainer } from "./IncomingCallContainer";
@@ -77,7 +78,11 @@ export function AppContainer() {
 
 function Shell() {
   const ui = useUi();
+  const { active } = useFriends();
   const dm = ui.space === "dm";
+  // The roster's column, beside a conversation, holds the other person's
+  // profile. The Friends view lists people itself, so there it stays shut.
+  const profile = dm && active !== null;
 
   return (
     <>
@@ -88,15 +93,12 @@ function Shell() {
         // channel rail a drag state, and neither should survive a switch.
         rail={dm ? <DmRailContainer /> : <RailContainer />}
         room={dm ? <FriendsRoomContainer /> : <RoomContainer />}
-        // Only on a channel. The friends list already says who is around and
-        // the rail names every conversation, so in DM space the track collapses
-        // rather than showing a second copy of either.
-        roster={dm ? null : <RosterContainer />}
+        roster={dm ? (profile ? <DmProfileContainer /> : null) : <RosterContainer />}
         dmSpace={dm}
         railOpen={ui.railOpen}
         onRailOpenChange={ui.setRailOpen}
-        rosterOpen={ui.rosterOpen}
-        onRosterOpenChange={ui.setRosterOpen}
+        rosterOpen={dm ? profile && ui.profilePanelOpen : ui.rosterOpen}
+        onRosterOpenChange={dm ? ui.setProfilePanelOpen : ui.setRosterOpen}
         stageFull={ui.cinema}
         onExitStageFull={() => ui.setCinema(false)}
       />

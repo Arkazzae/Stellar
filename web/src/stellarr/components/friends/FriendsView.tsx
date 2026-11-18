@@ -1,4 +1,4 @@
-import { useId, useState, type ReactNode } from "react";
+import { useEffect, useId, useRef, useState, type ReactNode } from "react";
 
 import { Button } from "@stellarr/ui";
 import { Icon } from "@stellarr/icons";
@@ -14,6 +14,12 @@ import { useAddFriend } from "./useAddFriend";
 export interface FriendsViewProps extends FriendsListActions {
   tab: FriendsTab;
   onTabChange: (tab: FriendsTab) => void;
+  /**
+   * Somebody wants to find a person to write to: the search takes focus as
+   * soon as it is on screen, and says so through `onSearchFocused`.
+   */
+  searchRequested?: boolean;
+  onSearchFocused?: () => void;
   friends: FriendVM[];
   requests: FriendRequestVM[];
   blocked: FriendVM[];
@@ -36,6 +42,8 @@ export interface FriendsViewProps extends FriendsListActions {
 export function FriendsView({
   tab,
   onTabChange,
+  searchRequested = false,
+  onSearchFocused,
   friends,
   requests,
   blocked,
@@ -50,10 +58,18 @@ export function FriendsView({
   const idBase = useId();
   const searchId = useId();
   const [query, setQuery] = useState("");
+  const searchRef = useRef<HTMLInputElement>(null);
   const form = useAddFriend(onAddFriend);
 
   const adding = tab === "add";
   const incoming = requests.filter((request) => request.direction === "incoming").length;
+
+  // The field only exists off the add tab, so the request waits for it.
+  useEffect(() => {
+    if (!searchRequested || searchRef.current === null) return;
+    searchRef.current.focus();
+    onSearchFocused?.();
+  }, [searchRequested, adding, onSearchFocused]);
 
   return (
     <main className={activityPanel ? "room friends has-activity" : "room friends"}>
@@ -118,6 +134,7 @@ export function FriendsView({
                   {t("friends.searchFriends")}
                 </label>
                 <input
+                  ref={searchRef}
                   id={searchId}
                   type="search"
                   value={query}

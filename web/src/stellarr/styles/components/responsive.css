@@ -282,10 +282,8 @@
     }
 
     button.group-caption,
-    .rail-switch,
     .rail-act,
     .rail-add,
-    .group-caption .cap-act,
     .acc-open,
     .cp-tab,
     .react-chip,
@@ -296,10 +294,8 @@
       min-height: 44px;
     }
 
-    .rail-switch,
     .rail-act,
-    .rail-add,
-    .group-caption .cap-act {
+    .rail-add {
       min-width: 44px;
     }
 
