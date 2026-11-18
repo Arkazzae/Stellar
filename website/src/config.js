@@ -11,6 +11,9 @@ export const SETTLE = 0.3;
 
 export const FOV = 28;
 
+// World units the camera drops on portrait screens in the last section.
+export const PORTRAIT_LIFT = 1.1;
+
 // The camera follows one continuous path. `t` is the scroll position.
 // Lengths are in world units: the mark is 1.06 wide and its top sits at 1.18.
 // `bend` is the ground curvature (1 / 2R). Each section reaches its pose at
@@ -26,6 +29,6 @@ export const CAMERA = [
   key(1.5, [-0.8, 1.18, 5.45], [-0.82, 0.68, 0], 0.0125),
   key(2.15, [-1.2, 1.2, 5.25], [-0.82, 0.68, 0], 0.0125),
   // Get started: rising away from the mark, which rests above the footer.
-  key(2.5, [0.3, 3.6, 8.2], [0, -0.65, 0], 0.035),
-  key(3.2, [0.15, 3.9, 8.8], [0, -0.65, 0], 0.035),
+  key(2.5, [0.3, 3.758, 8.446], [0, -0.62, 0], 0.035),
+  key(3.2, [0.15, 4.067, 9.064], [0, -0.62, 0], 0.035),
 ];
