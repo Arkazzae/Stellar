@@ -78,7 +78,7 @@ UI components interact only with `VoiceClient` and immutable `VoiceState` snapsh
 - The backend validates authentication, room membership, recipient membership, `protocolVersion`, `kind`, and a 128 KiB payload limit.
 - Occupancy updates (`VoiceParticipantChanged`) for server voice channels broadcast to the server; direct-call occupancy updates go only to the two participants.
 - Declining a direct call (`DeclineDirectCall`) clears room occupancy and sends `DirectCallDeclined` so the caller releases capture devices.
-- Payloads are validated by typed codecs (`web/src/stellarr/lib/rtc/protocol.ts`). A `state` payload has `{ muted, screenStreamId, cameraStreamId }` (`cameraStreamId` is optional; absence means camera off).
+- Payloads are validated by typed codecs (`web/src/stellarr/lib/rtc/protocol.ts`). A `state` payload has `{ muted, screenStreamId, cameraStreamId, encrypted }` (`cameraStreamId` is optional, absence means camera off; `encrypted` is optional, absence means the sender does not encrypt its frames). A client in a private call that does not encrypt while the other person does plays nothing of them and follows them into encryption (see [End-to-end encrypted calls](./stellarr-media.md#end-to-end-encrypted-calls)).
 
 > [!NOTE]
 > `SendVoiceSignal` accepts only `kind: "state"`. `AppHub` rejects `offer`, `answer`, and `candidate` with `HubException("Invalid voice signal.")`. SDP descriptions and ICE candidates flow exclusively via `OpenMediaSession`, `SendMediaSignal`, `MediaSignal`, and `MediaSessionClosed` (see [Stellarr Media](./stellarr-media.md#hub-leg)).

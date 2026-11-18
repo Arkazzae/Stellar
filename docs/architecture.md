@@ -48,7 +48,7 @@ flowchart TD
 - **Stellarr Media (`media/`, Rust)**: Selective Forwarding Unit (SFU) on UDP `49000` using ICE-lite and DTLS-SRTP. Forwards microphone, camera, and screen-share RTP packets without transcoding or mixing, handling per-leg RTCP feedback and per-receiver downlink adaptation.
 
 > [!NOTE]
-> Because `stellarr-media` terminates DTLS-SRTP on each leg to forward packets, call audio and video are decrypted in `stellarr-media` memory on your host rather than end-to-end encrypted between browsers.
+> Because `stellarr-media` terminates DTLS-SRTP on each leg to forward packets, call audio and video are decrypted in `stellarr-media` memory on your host, except in a direct call whose conversation has end-to-end encryption on. That call is encrypted frame by frame in the two browsers, and `stellarr-media` forwards payloads it cannot read; see [End-to-end encrypted calls](./stellarr-media.md#end-to-end-encrypted-calls).
 
 ## Account security
 
