@@ -30,8 +30,9 @@ public sealed partial class OidcSignInFlowTests
         var pending = await client.GetFromJsonAsync<JsonElement>("/api/auth/oidc/pending");
         // Whose identity at which provider, and nothing about the accounts here.
         Assert.Equal(
-            ["provider", "displayName", "email", "username"],
+            ["provider", "displayName", "email", "username", "signUp"],
             pending.EnumerateObject().Select(x => x.Name).ToArray());
+        Assert.False(pending.GetProperty("signUp").GetBoolean());
         Assert.Equal("default", pending.GetProperty("provider").GetProperty("id").GetString());
         Assert.Equal("Test IdP", pending.GetProperty("provider").GetProperty("displayName").GetString());
         Assert.Equal("Ola Łęcka", pending.GetProperty("displayName").GetString());

@@ -101,6 +101,7 @@ public sealed partial class Messages
         MessageKey.CockpitCannotRecoverSelf => "You cannot recover your own account in Cockpit. Use the CLI: stellarr security recover.",
         MessageKey.CockpitRecoverDisabled => "The account is disabled. Enable it before recovering its security.",
         MessageKey.CockpitRecoveryReasonInvalid => "Give a reason of 3 to 500 characters.",
+        MessageKey.CockpitProviderSignUpMissing => "Say whether the provider may create accounts: true or false.",
         MessageKey.CockpitLastWayIn => "This provider is the only way {name} can log in. They need to set a password or add a passkey in their settings before it can be unlinked.",
         MessageKey.AuditAccountRecovered => "recovered the security of the account {name}",
         MessageKey.AuditIdentityUnlinked => "unlinked a provider account from the account {name}",
@@ -262,6 +263,8 @@ public sealed partial class Messages
         MessageKey.AuditAccountEnabled => "enabled the account {name}",
         MessageKey.AuditRoleCreated => "created the role {name}",
         MessageKey.AuditRoleUpdated => "updated the role {name}",
+        MessageKey.AuditProviderSignUpAllowed => "let {provider} create accounts for people with an invite",
+        MessageKey.AuditProviderSignUpStopped => "stopped {provider} from creating accounts",
         MessageKey.AuditSessionRevoked => "revoked the session of {name}",
 
         // End-to-end encryption of private conversations

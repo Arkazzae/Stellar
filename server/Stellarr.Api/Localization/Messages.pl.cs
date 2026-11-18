@@ -99,6 +99,7 @@ public sealed partial class Messages
         MessageKey.CockpitCannotRecoverSelf => "Własnego konta nie odzyskasz w Cockpicie. Użyj CLI: stellarr security recover.",
         MessageKey.CockpitRecoverDisabled => "Konto jest wyłączone. Włącz je przed odzyskaniem zabezpieczeń.",
         MessageKey.CockpitRecoveryReasonInvalid => "Podaj powód od 3 do 500 znaków.",
+        MessageKey.CockpitProviderSignUpMissing => "Podaj, czy dostawca może zakładać konta: true albo false.",
         MessageKey.CockpitLastWayIn => "Ten dostawca to jedyny sposób logowania na konto {name}. Zanim go odłączysz, ta osoba musi ustawić hasło albo dodać klucz dostępu w swoich ustawieniach.",
         MessageKey.AuditAccountRecovered => "odzyskał(a) zabezpieczenia konta {name}",
         MessageKey.AuditIdentityUnlinked => "odłączył(a) konto u dostawcy od konta {name}",
@@ -260,6 +261,8 @@ public sealed partial class Messages
         MessageKey.AuditAccountEnabled => "włączył(a) konto {name}",
         MessageKey.AuditRoleCreated => "utworzył(a) rolę {name}",
         MessageKey.AuditRoleUpdated => "zaktualizował(a) rolę {name}",
+        MessageKey.AuditProviderSignUpAllowed => "pozwolił(a) dostawcy {provider} zakładać konta osobom z zaproszeniem",
+        MessageKey.AuditProviderSignUpStopped => "wyłączył(a) zakładanie kont przez dostawcę {provider}",
         MessageKey.AuditSessionRevoked => "unieważnił(a) sesję {name}",
 
         // Szyfrowanie end-to-end rozmów prywatnych
