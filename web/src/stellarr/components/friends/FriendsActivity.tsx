@@ -45,9 +45,6 @@ export function FriendsActivity({ friends, onOpenProfile, onMessage }: FriendsAc
   return (
     <aside className="fr-activity" aria-labelledby={titleId}>
       <div className="roster-head">
-        <span className="glyph" aria-hidden="true">
-          <Icon name="pulse" size={18} />
-        </span>
         <h3 id={titleId}>{t("friends.activeNow")}</h3>
       </div>
 
