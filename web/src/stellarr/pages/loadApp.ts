@@ -1,10 +1,16 @@
 import { useEffect } from "react";
 
+import { loadSignedInCode } from "@/adapters/signedInLoader";
+
 /**
- * The signed-in app, a chunk of its own and most of the client's code. Every
- * caller shares the one module the browser fetches.
+ * The signed-in app, a chunk of its own and most of the client's code, and
+ * with it the socket and voice code that only it uses. Every caller shares
+ * the one set of modules the browser fetches. A failure of either rejects, so
+ * the home page shows the app as unavailable instead of an app whose socket
+ * never opens.
  */
-export const loadApp = () => import("@/containers/AppContainer");
+export const loadApp = () =>
+  Promise.all([import("@/containers/AppContainer"), loadSignedInCode()]).then(([app]) => app);
 
 /** How long a page waits for the browser to be idle before fetching the app anyway. */
 const IDLE_TIMEOUT_MS = 2000;
