@@ -1,7 +1,8 @@
-import type { ReactNode, Ref } from "react";
+import { useState, type ReactNode, type Ref } from "react";
 
 import { Icon } from "@stellarr/icons";
 import { Avatar } from "@/components/primitives/Avatar";
+import { ErrorNotice } from "@/components/primitives/ErrorNotice";
 import type { PersonVM } from "@/components/view-models";
 import { PRESENCE_LABEL } from "@/ports";
 import { useLanguage } from "@/state/LanguageProvider";
@@ -35,7 +36,8 @@ export interface DmRoomProps {
   encrypted?: boolean;
   /**
    * Why this browser cannot call in this conversation, which is encrypted:
-   * the call buttons stay, unusable, and say so.
+   * the call buttons stay, unusable, and pressing one says why where a
+   * failed call would.
    */
   callBlocked?: string;
   /** Under the header: the conversation, or its call while you are in it. */
@@ -85,10 +87,14 @@ export function DmRoom({
     ? t("dm.connected", { name })
     : t(callActive ? "dm.join" : "dm.call", { name });
   const cameraLabel = t(videoOn ? "voiceBar.cameraStop" : "voiceBar.cameraStart");
-  // A blocked call keeps its buttons in reach, so the reason can be read
-  // from them, and does nothing when pressed.
+  // A blocked call keeps its buttons in reach. Pressing one starts nothing
+  // and shows the reason, in the notice a failed call would have, which a
+  // touch screen and a screenshot can read where a title cannot.
   const blocked = callBlocked !== undefined && !inCall;
   const blockedProps = blocked ? { "aria-disabled": true, "aria-description": callBlocked } : {};
+  const [refusedFor, setRefusedFor] = useState<string | null>(null);
+  const refusal = blocked && refusedFor === peer.id ? callBlocked : null;
+  const refuse = () => setRefusedFor(peer.id);
 
   return (
     <main className={inCall ? "room dm-room in-call" : "room dm-room"} ref={ref}>
@@ -140,7 +146,7 @@ export function DmRoom({
             aria-label={callLabel}
             aria-pressed={inCall}
             {...blockedProps}
-            onClick={blocked ? undefined : onCall}
+            onClick={blocked ? refuse : onCall}
           >
             <Icon name="phone" size={16} />
           </button>
@@ -151,7 +157,7 @@ export function DmRoom({
             aria-label={cameraLabel}
             aria-pressed={videoOn}
             {...blockedProps}
-            onClick={blocked ? undefined : onVideoCall}
+            onClick={blocked ? refuse : onVideoCall}
           >
             <Icon name="camera" size={16} />
           </button>
@@ -190,7 +196,19 @@ export function DmRoom({
       </header>
 
       <div className="room-body">
-        <div className="view active">{children}</div>
+        <div className="view active">
+          {refusal === null ? null : (
+            <div className="voice-problem-slot">
+              <ErrorNotice
+                title={t("voiceError.titleEncryption")}
+                message={refusal}
+                icon="lock"
+                actions={[{ label: t("common.close"), onClick: () => setRefusedFor(null) }]}
+              />
+            </div>
+          )}
+          {children}
+        </div>
       </div>
     </main>
   );
