@@ -199,7 +199,7 @@ function isWebAddress(pathname, directories) {
 
 /*
  * How a request is answered: "document" and "file" from the shell's copy,
- * "instance" from the network with the copy as a fallback, and "network" for
+ * "instance" from its last copy, and "network" for
  * everything the worker leaves alone. `directories` is null while no shell is
  * kept.
  */
@@ -246,31 +246,30 @@ async function fromShell(request, url, route) {
   return fetch(request);
 }
 
-/**
- * The instance file asked from the network every time, past the HTTP cache,
- * since it is written at each start of the container. The copy of the last
- * answer is used only when the network fails.
+/*
+ * The instance file, from the last copy at once when there is one, and
+ * refreshed from the network behind it with an ordinary fetch, so the hour
+ * of freshness nginx gives it still holds and a load never waits on it. A change of
+ * the instance language reaches the page one load later. With no copy yet
+ * the fetch is waited for and its answer kept.
  */
-async function fromNetworkFirst(request) {
-  let response;
-  try {
-    response = await fetch(request, { cache: "reload" });
-  } catch (error) {
-    const kept = await caches.open(KEPT_CACHE).then((cache) => cache.match(INSTANCE_PATH), () => undefined);
-    if (kept !== undefined) return kept;
-    throw error;
-  }
-  if (response.ok) {
-    await caches.open(KEPT_CACHE).then((cache) => cache.put(INSTANCE_PATH, response.clone())).catch(() => undefined);
-  }
-  return response;
+async function fromKeptCopy(request, event) {
+  const cache = await caches.open(KEPT_CACHE).catch(() => null);
+  const kept = cache === null ? undefined : await cache.match(INSTANCE_PATH).catch(() => undefined);
+  const refresh = fetch(request).then(async (response) => {
+    if (response.ok && cache !== null) await cache.put(INSTANCE_PATH, response.clone()).catch(() => undefined);
+    return response;
+  });
+  if (kept === undefined) return refresh;
+  event.waitUntil(refresh.catch(() => undefined));
+  return kept;
 }
 
-async function answer(request, url) {
+async function answer(request, url, event) {
   await loadCurrent();
   const directories = current === null ? null : current.directories;
   const route = routeOf(request.method, request.mode, url, self.location.origin, directories);
-  if (route === "instance") return fromNetworkFirst(request);
+  if (route === "instance") return fromKeptCopy(request, event);
   if (route === "network") return fetch(request);
   return fromShell(request, url, route);
 }
@@ -282,7 +281,7 @@ self.addEventListener("fetch", (event) => {
   // counts as a page, which only lets more requests through to `answer`.
   const directories = current === undefined ? [] : current === null ? null : current.directories;
   if (routeOf(request.method, request.mode, url, self.location.origin, directories) === "network") return;
-  event.respondWith(answer(request, url));
+  event.respondWith(answer(request, url, event));
 });
 
 function isAddress(value) {
@@ -304,6 +303,16 @@ async function fetchManifest() {
     manifest.directories.every((directory) => typeof directory === "string");
   if (!valid) throw new Error("The release file is not a release.");
   return manifest;
+}
+
+/** Whether the cache of a shell holds its document: a pointer can name a cache that is gone. */
+async function shellIsHeld(id) {
+  try {
+    const cache = await caches.open(SHELL_CACHE_PREFIX + id);
+    return (await cache.match(DOCUMENT_PATH)) !== undefined;
+  } catch {
+    return false;
+  }
 }
 
 /** Fetches every file of the shell into a cache of its own, past the HTTP cache. */
@@ -357,7 +366,7 @@ async function forgetShellsBut(keep) {
 async function takeRelease() {
   const manifest = await fetchManifest();
   const held = await loadCurrent();
-  if (held !== null && held.id === manifest.id) return manifest.id;
+  if (held !== null && held.id === manifest.id && (await shellIsHeld(held.id))) return manifest.id;
   const name = await storeShell(manifest);
   await switchTo(manifest);
   await forgetShellsBut(name).catch(() => undefined);
