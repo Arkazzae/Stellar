@@ -2,10 +2,12 @@ import { useEffect } from "react";
 
 import type { ChatPort, MessageSyncChange } from "@/ports";
 
+import { settleFirstPage } from "./firstPage";
 import {
   PAGE_SIZE,
   type ChatDispatch,
   type PendingIds,
+  type RestoredWindows,
   type SyncCursors,
 } from "./shared";
 import { refreshThreads } from "./useThreadCatalogue";
@@ -15,6 +17,7 @@ interface CatchUp {
   dispatch: ChatDispatch;
   pendingIds: PendingIds;
   syncCursors: SyncCursors;
+  restored: RestoredWindows;
   /** A message was deleted on the server; composer state pointing at it must go. */
   onRemoved: (messageId: string) => void;
 }
@@ -23,9 +26,10 @@ function applyChanges(
   { chat, dispatch, onRemoved }: CatchUp,
   channelId: string,
   changes: readonly MessageSyncChange[],
+  cursor: string,
 ): void {
   if (changes.length === 0) return;
-  dispatch({ type: "synced", channelId, changes });
+  dispatch({ type: "synced", channelId, changes, cursor });
   for (const change of changes) {
     if (change.kind === "delete") onRemoved(change.messageId);
   }
@@ -45,21 +49,15 @@ async function catchUp(
   channelId: string,
   isActive: () => boolean,
 ): Promise<void> {
-  const { chat, dispatch, pendingIds, syncCursors } = env;
+  const { chat, dispatch, pendingIds, syncCursors, restored } = env;
   try {
     await chat.focusChannel(channelId);
     let cursor = syncCursors.current[channelId];
     if (cursor === undefined) {
       const page = await chat.listMessages(channelId, { limit: PAGE_SIZE });
       if (!isActive()) return;
-      dispatch({
-        type: "first-page",
-        channelId,
-        page,
-        pendingIds: new Set(pendingIds.current),
-      });
-      cursor = page.syncCursor;
-      syncCursors.current[channelId] = cursor;
+      dispatch(settleFirstPage({ pendingIds, syncCursors, restored }, channelId, page));
+      cursor = syncCursors.current[channelId] ?? page.syncCursor;
     }
 
     // Read the authoritative side list before draining the journal. A pin
@@ -85,6 +83,7 @@ async function catchUp(
           channelId,
           page: fresh,
           pendingIds: new Set(pendingIds.current),
+          cursor: fresh.syncCursor,
         });
         void refreshThreads(chat, dispatch, channelId).catch(() => undefined);
         cursor = fresh.syncCursor;
@@ -98,7 +97,7 @@ async function catchUp(
         }
         continue;
       }
-      applyChanges(env, channelId, page.changes);
+      applyChanges(env, channelId, page.changes, page.nextCursor);
       cursor = page.nextCursor;
       syncCursors.current[channelId] = cursor;
       if (!page.hasMore) break;
@@ -120,17 +119,18 @@ export function useReconnectSync({
   dispatch,
   pendingIds,
   syncCursors,
+  restored,
   onRemoved,
 }: CatchUp & { connected: boolean; channelIds: readonly string[] }): void {
   useEffect(() => {
     if (!connected) return;
     let active = true;
-    const env = { chat, dispatch, pendingIds, syncCursors, onRemoved };
+    const env = { chat, dispatch, pendingIds, syncCursors, restored, onRemoved };
     for (const channelId of channelIds) {
       void catchUp(env, channelId, () => active);
     }
     return () => {
       active = false;
     };
-  }, [connected, channelIds, chat, dispatch, pendingIds, syncCursors, onRemoved]);
+  }, [connected, channelIds, chat, dispatch, pendingIds, syncCursors, restored, onRemoved]);
 }

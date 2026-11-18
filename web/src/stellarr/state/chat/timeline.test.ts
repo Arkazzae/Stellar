@@ -4,6 +4,8 @@ import { message } from "@/test/messages";
 
 import {
   applySyncChanges,
+  floorOf,
+  lowerFloor,
   mergeAll,
   mergeMessage,
   reconcileLatest,
@@ -146,5 +148,63 @@ describe("settleOptimistic", () => {
     );
     expect(ids(next)).toEqual(["server"]);
     expect(next[0]?.content).toBe("from http");
+  });
+});
+
+describe("keeping older messages under a page", () => {
+  it("leaves them out when the caller says they do not join the page", () => {
+    const current = [message("old", 1), message("kept", 6)];
+    const next = reconcileLatest(current, [message("kept", 6), message("new", 8)], new Set(), false);
+    expect(ids(next)).toEqual(["kept", "new"]);
+  });
+
+  it("still keeps an unsent message when they are left out", () => {
+    const next = reconcileLatest(
+      [message("old", 1), message("draft", 2)],
+      [message("a", 6)],
+      new Set(["draft"]),
+      false,
+    );
+    expect(ids(next)).toEqual(["draft", "a"]);
+  });
+});
+
+describe("floors", () => {
+  it("is the oldest message of a page, and nothing when the page reaches the start", () => {
+    const messages = [message("b", 2), message("a", 1)];
+    expect(floorOf({ messages, nextCursor: "n" })?.id).toBe("a");
+    expect(floorOf({ messages, nextCursor: null })).toBeNull();
+  });
+
+  it("takes the lower of two, with the start of the channel lowest", () => {
+    expect(lowerFloor(message("a", 1), message("b", 2))?.id).toBe("a");
+    expect(lowerFloor(message("b", 2), message("a", 1))?.id).toBe("a");
+    expect(lowerFloor(message("a", 1), null)).toBeNull();
+  });
+});
+
+describe("a journal page over a window with a floor", () => {
+  it("ignores a change to an unloaded message below the floor", () => {
+    const bucket = [message("b", 5)];
+    const next = applySyncChanges(
+      bucket,
+      [{ cursor: "1", kind: "upsert", messageId: "far", message: message("far", 1) }],
+      message("b", 5),
+    );
+    expect(ids(next)).toEqual(["b"]);
+  });
+
+  it("still applies a change to a loaded message and to a new one", () => {
+    const bucket = [message("b", 5)];
+    const next = applySyncChanges(
+      bucket,
+      [
+        { cursor: "1", kind: "upsert", messageId: "b", message: message("b", 5, { content: "x" }) },
+        { cursor: "2", kind: "upsert", messageId: "n", message: message("n", 9) },
+      ],
+      message("b", 5),
+    );
+    expect(ids(next)).toEqual(["b", "n"]);
+    expect(next[0]?.content).toBe("x");
   });
 });
