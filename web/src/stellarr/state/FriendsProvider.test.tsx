@@ -87,7 +87,7 @@ function stubPort(overrides: Partial<FriendsPort> = {}): FriendsPort {
     loadConversation: vi.fn(async () => {}),
     openConversation: vi.fn(async () => CONVERSATION.id),
     sendDm: vi.fn(async (id) => directMessage("sent", ADA, id)),
-    uploadAttachment: vi.fn(async (upload) => attachment(upload.name)),
+    uploadAttachment: vi.fn(async (_conversationId, upload) => attachment(upload.name)),
     markRead: vi.fn(),
     declineCall: vi.fn(async () => {}),
     addFriend: vi.fn(async () => "sent" as const),
@@ -397,9 +397,10 @@ describe("FriendsProvider sending", () => {
     const uploadAttachment = vi
       .fn()
       .mockRejectedValueOnce(new Error("too big"))
-      .mockImplementation(async (upload: File) => attachment(upload.name));
+      .mockImplementation(async (_conversationId: string, upload: File) => attachment(upload.name));
     harness.port = stubPort({ uploadAttachment });
     const mounted = mount();
+    act(() => mounted.result.current.ui.openDm("dm-1"));
     act(() => mounted.result.current.friends.attach([file("a.txt")]));
     await waitFor(() => expect(chipStatuses(mounted)).toEqual(["error"]));
     const [failed] = mounted.result.current.friends.chips;
@@ -421,6 +422,7 @@ describe("FriendsProvider sending", () => {
     const mounted = mount();
     const names = Array.from({ length: 12 }, (_, index) => `f${index}.txt`);
 
+    act(() => mounted.result.current.ui.openDm("dm-1"));
     act(() => mounted.result.current.friends.attach(names.map(file)));
     await waitFor(() => expect(chipStatuses(mounted)).toEqual(Array(10).fill("ready")));
     act(() => mounted.result.current.friends.attach([file("extra.txt")]));

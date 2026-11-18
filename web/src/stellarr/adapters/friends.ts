@@ -1,6 +1,8 @@
 import type { SocialApiClient } from "@/lib/api/client";
-import type { VoiceOccupant } from "@/lib/api/types";
-import { probeMedia } from "@/lib/media/probe";
+import { ApiError } from "@/lib/api/errors";
+import type { Attachment, VoiceOccupant } from "@/lib/api/types";
+import { LAZY_ATTACHMENT_PREFIX, type E2eeEvent, type EncryptedUpload } from "@/lib/e2ee/client";
+import { probeMedia, type UploadMediaMetadata } from "@/lib/media/probe";
 import type { RealtimeClient } from "@/lib/realtime/types";
 import type {
   DmConversation,
@@ -14,6 +16,56 @@ import type {
 
 const NO_MESSAGES: Message[] = [];
 const PAGE_SIZE = 50;
+
+/**
+ * What the friends adapter needs of the encryption client: turning a direct
+ * message into what the reader sees, and sending one encrypted. Without it
+ * every message is taken as it came, which is what a plain conversation is.
+ */
+export interface DmCodec {
+  decode(message: Message): Promise<Message>;
+  send(
+    conversationId: string,
+    input: { text: string; uploads: readonly EncryptedUpload[]; clientMessageId: string },
+  ): Promise<Message>;
+  uploadFile(file: File, metadata: UploadMediaMetadata): Promise<EncryptedUpload>;
+  openAttachment(uploadId: string): Promise<{ url: string; type: string } | null>;
+  subscribe(listener: (event: E2eeEvent) => void): () => void;
+}
+
+const PLAIN: DmCodec = {
+  decode: async (message) => message,
+  send: () => Promise.reject(new Error("This client cannot encrypt.")),
+  uploadFile: () => Promise.reject(new Error("This client cannot encrypt.")),
+  openAttachment: async () => null,
+  subscribe: () => () => undefined,
+};
+
+/**
+ * Lines about someone's keys stay in the history but are not news: they do not
+ * become the rail's last message, move the conversation, or count as unread.
+ */
+function isQuiet(message: Message): boolean {
+  return message.line?.kind === "device_added" || message.line?.kind === "keys_reset";
+}
+
+/** The peer's messages count as unread, and of the lines only a request waiting for an answer. */
+function countsAsUnread(message: Message, peerId: string): boolean {
+  if (message.author.id !== peerId) return false;
+  return message.line === undefined || message.line.kind === "encryption_requested";
+}
+
+/** A decoded message that may read differently once keys or files arrive. */
+function unfinished(message: Message): boolean {
+  return message.sealed !== undefined || message.attachments.some((attachment) => attachment.url === "");
+}
+
+/** Thrown before sending a plain upload into an encrypted conversation, or the reverse. */
+function kindMismatch(): ApiError {
+  return new ApiError("server", "attachments do not match the conversation's encryption", 409, {
+    code: "attachment-kind-mismatch",
+  });
+}
 
 interface DirectCall {
   /** Stable while the call lasts, through mute and speaking updates. */
@@ -37,8 +89,13 @@ function mergeMessages(
 export function createFriendsAdapter(
   api: SocialApiClient,
   realtime: RealtimeClient,
+  codec: DmCodec = PLAIN,
 ): FriendsPort {
   const listeners = new Set<() => void>();
+  /** The wire form of every decoded message that may read differently later. */
+  const pending = new Map<string, Message>();
+  /** This session's encrypted uploads by upload id, waiting to be sent. */
+  const encryptedUploads = new Map<string, EncryptedUpload>();
   const transcripts = new Map<DmId, Message[]>();
   /** Conversations whose newest page has been fetched at least once. */
   const loadedConversations = new Set<DmId>();
@@ -59,6 +116,44 @@ export function createFriendsAdapter(
 
   const emit = (): void => {
     for (const listener of listeners) listener();
+  };
+
+  const remembered = (wire: Message, decoded: Message): Message => {
+    if (unfinished(decoded)) pending.set(wire.id, wire);
+    else pending.delete(wire.id);
+    return decoded;
+  };
+
+  /** Plain messages and lines need no work and are taken as they are. */
+  const decode = async (message: Message): Promise<Message> =>
+    message.encrypted === undefined ? message : remembered(message, await codec.decode(message));
+
+  const decodeAll = (messages: readonly Message[]): Promise<Message[]> => Promise.all(messages.map(decode));
+
+  const replaceMessage = (decoded: Message): void => {
+    const transcript = transcripts.get(decoded.channelId);
+    if (transcript !== undefined && transcript.some((item) => item.id === decoded.id)) {
+      transcripts.set(
+        decoded.channelId,
+        transcript.map((item) => (item.id === decoded.id ? decoded : item)),
+      );
+    }
+    conversations = conversations.map((conversation) =>
+      conversation.lastMessage?.id === decoded.id ? { ...conversation, lastMessage: decoded } : conversation,
+    );
+  };
+
+  /** Keys or files arrived: whatever was sealed or still loading is decoded again. */
+  const decodeAgain = async (event: E2eeEvent): Promise<void> => {
+    const wires = [...pending.values()].filter((wire) =>
+      event.type === "attachments"
+        ? wire.id === event.messageId
+        : event.type === "keys" && (event.conversationId === undefined || wire.channelId === event.conversationId),
+    );
+    if (wires.length === 0) return;
+    const decoded = await Promise.all(wires.map((wire) => codec.decode(wire).then((out) => remembered(wire, out))));
+    for (const message of decoded) replaceMessage(message);
+    emit();
   };
 
   const withCalls = (items: readonly DmConversation[]): DmConversation[] =>
@@ -83,6 +178,12 @@ export function createFriendsAdapter(
     pendingPresence = updates;
     inflight = (async () => {
       const state = await api.getSocialState();
+      const lastMessages = await decodeAll(
+        state.conversations.flatMap((conversation) =>
+          conversation.lastMessage === undefined ? [] : [conversation.lastMessage],
+        ),
+      );
+      const decodedLast = new Map(lastMessages.map((message) => [message.id, message]));
       const fresh = (user: User): User => {
         const presence = updates.get(user.id);
         return presence === undefined ? user : { ...user, presence };
@@ -90,10 +191,14 @@ export function createFriendsAdapter(
       friends = state.friends.map((friend) => ({ ...friend, user: fresh(friend.user) }));
       requests = state.requests.map((request) => ({ ...request, user: fresh(request.user) }));
       blocked = state.blocked;
-      conversations = withCalls(state.conversations.map((conversation) => ({
-        ...conversation,
-        peer: fresh(conversation.peer),
-      })));
+      conversations = withCalls(state.conversations.map((conversation) => {
+        const last = conversation.lastMessage;
+        return {
+          ...conversation,
+          peer: fresh(conversation.peer),
+          ...(last === undefined ? {} : { lastMessage: decodedLast.get(last.id) ?? last }),
+        };
+      }));
       emit();
     })().finally(() => {
       inflight = null;
@@ -111,12 +216,13 @@ export function createFriendsAdapter(
     // have never been opened do not otherwise need a transcript cache.
     if (!transcripts.has(id)) transcripts.set(id, []);
     const page = await api.listDirectMessages(id, { limit: PAGE_SIZE });
-    const loaded = transcripts.get(id) ?? NO_MESSAGES;
-    transcripts.set(id, mergeMessages(page.messages, loaded));
     // A reconnect starts a new server-side snapshot. The messages already on
     // screen stay, but paging continues from the fresh cursor: keeping the old
     // one could skip a page that arrived while the connection was down.
     olderCursors.set(id, page.nextCursor);
+    const messages = await decodeAll(page.messages);
+    const loaded = transcripts.get(id) ?? NO_MESSAGES;
+    transcripts.set(id, mergeMessages(messages, loaded));
     loadedConversations.add(id);
     emit();
   };
@@ -139,8 +245,9 @@ export function createFriendsAdapter(
 
     const operation = api
       .listDirectMessages(id, { cursor, limit: PAGE_SIZE })
-      .then((page) => {
-        transcripts.set(id, mergeMessages(page.messages, transcripts.get(id) ?? NO_MESSAGES));
+      .then(async (page) => {
+        const messages = await decodeAll(page.messages);
+        transcripts.set(id, mergeMessages(messages, transcripts.get(id) ?? NO_MESSAGES));
         olderCursors.set(id, page.nextCursor);
       })
       .finally(() => {
@@ -155,6 +262,27 @@ export function createFriendsAdapter(
   const changeThenReload = async (change: () => Promise<void>): Promise<void> => {
     await change();
     await load();
+  };
+
+  const arrived = (message: Message): void => {
+    const id = message.channelId;
+    const transcript = transcripts.get(id);
+    if (transcript !== undefined && !transcript.some((item) => item.id === message.id)) {
+      transcripts.set(id, mergeMessages(transcript, [message]));
+    }
+    if (!isQuiet(message)) {
+      conversations = conversations.map((conversation) => {
+        if (conversation.id !== id) return conversation;
+        const newer =
+          conversation.lastMessage === undefined || conversation.lastMessage.createdAt <= message.createdAt;
+        return {
+          ...conversation,
+          ...(newer ? { lastMessage: message, updatedAt: message.createdAt } : {}),
+          unread: countsAsUnread(message, conversation.peer.id) ? conversation.unread + 1 : conversation.unread,
+        };
+      });
+    }
+    emit();
   };
 
   let lastStatus = realtime.getStatus();
@@ -177,23 +305,15 @@ export function createFriendsAdapter(
     }),
 
     realtime.on("DirectMessageCreated", (message) => {
-      const id = message.channelId;
-      const transcript = transcripts.get(id);
-      if (transcript !== undefined && !transcript.some((item) => item.id === message.id)) {
-        transcripts.set(id, [...transcript, message]);
-      }
+      // A plain message is applied at once, an encrypted one once it is
+      // decrypted; the sorted merge puts it in its place either way.
+      if (message.encrypted === undefined) arrived(message);
+      else void decode(message).then(arrived, () => undefined);
+    }),
+
+    realtime.on("DirectEncryptionChanged", ({ conversationId, encryption }) => {
       conversations = conversations.map((conversation) =>
-        conversation.id !== id
-          ? conversation
-          : {
-              ...conversation,
-              lastMessage: message,
-              updatedAt: message.createdAt,
-              unread:
-                message.author.id === conversation.peer.id
-                  ? conversation.unread + 1
-                  : conversation.unread,
-            },
+        conversation.id === conversationId ? { ...conversation, encryption } : conversation,
       );
       emit();
     }),
@@ -226,6 +346,9 @@ export function createFriendsAdapter(
         ...[...transcripts.keys()].map((id) => loadNewest(id)),
       ]).catch(() => undefined);
     }),
+    codec.subscribe((event) => {
+      if (event.type !== "status") void decodeAgain(event).catch(() => undefined);
+    }),
   ];
 
   return {
@@ -247,12 +370,32 @@ export function createFriendsAdapter(
     },
 
     async sendDm(id, input) {
-      const message = await api.sendDirectMessage(
-        id,
-        input.content,
-        input.attachmentIds,
-        input.clientMessageId,
-      );
+      const encrypted = conversations.find((item) => item.id === id)?.encryption?.state === "on";
+      let message: Message;
+      try {
+        if (encrypted) {
+          const uploads = input.attachmentIds.map((uploadId) => encryptedUploads.get(uploadId));
+          if (uploads.some((upload) => upload === undefined)) throw kindMismatch();
+          message = await codec.send(id, {
+            text: input.content,
+            uploads: uploads.filter((upload) => upload !== undefined),
+            clientMessageId: input.clientMessageId,
+          });
+        } else {
+          if (input.attachmentIds.some((uploadId) => encryptedUploads.has(uploadId))) throw kindMismatch();
+          message = await api.sendDirectMessage(
+            id,
+            input.content,
+            input.attachmentIds,
+            input.clientMessageId,
+          );
+        }
+      } catch (cause) {
+        // The switch may have moved under this send; the list says where it is now.
+        void load().catch(() => undefined);
+        throw cause;
+      }
+      for (const uploadId of input.attachmentIds) encryptedUploads.delete(uploadId);
       const transcript = transcripts.get(id) ?? NO_MESSAGES;
       if (!transcript.some((item) => item.id === message.id)) {
         transcripts.set(id, [...transcript, message]);
@@ -262,8 +405,26 @@ export function createFriendsAdapter(
       return message;
     },
 
-    async uploadAttachment(file) {
-      return api.uploadAttachment(file, await probeMedia(file));
+    async uploadAttachment(id, file) {
+      const metadata = await probeMedia(file);
+      if (conversations.find((item) => item.id === id)?.encryption?.state !== "on") {
+        return api.uploadAttachment(file, metadata);
+      }
+      const upload = await codec.uploadFile(file, metadata);
+      encryptedUploads.set(upload.payload.id, upload);
+      const attachment: Attachment = {
+        id: upload.payload.id,
+        url: "",
+        name: file.name,
+        contentType: upload.payload.type,
+        size: file.size,
+      };
+      return attachment;
+    },
+
+    openAttachment(url) {
+      if (!url.startsWith(LAZY_ATTACHMENT_PREFIX)) return Promise.resolve(null);
+      return codec.openAttachment(url.slice(LAZY_ATTACHMENT_PREFIX.length));
     },
 
     markRead(id) {
@@ -317,6 +478,8 @@ export function createFriendsAdapter(
       olderLoads.clear();
       newestLoads.clear();
       calls.clear();
+      pending.clear();
+      encryptedUploads.clear();
     },
   };
 }

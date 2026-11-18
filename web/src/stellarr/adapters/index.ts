@@ -13,6 +13,7 @@ import {
   type ApiClient,
   type SocialApiClient,
 } from "@/lib/api/client";
+import { encryptionCalls, type EncryptionApiClient } from "@/lib/api/calls/encryption";
 import { isUnauthorized } from "@/lib/api/errors";
 import type { Bootstrap, RtcConfig } from "@/lib/api/types";
 import { iceServers } from "@/lib/platform/env";
@@ -30,6 +31,7 @@ import { createAccountAdapter } from "./account";
 import { createServerAdminAdapter } from "./admin";
 import { createChatAdapter, createTypingAdapter } from "./chat";
 import { createDirectoryAdapter } from "./directory";
+import { createEncryption } from "./encryption";
 import { createFriendsAdapter } from "./friends";
 import { createMessageActionsAdapter, ReactionStore } from "./messageActions";
 import { createNotificationDeliveryAdapter } from "./notificationDelivery";
@@ -59,6 +61,8 @@ export interface RuntimeOptions {
   realtime?: RealtimeClient;
   /** Operating-system preferences, supplied by the desktop shell only. */
   desktop?: DesktopPort;
+  /** The encryption routes; same-origin HTTP by default. */
+  encryption?: EncryptionApiClient;
 }
 
 /** Copies the profile fields of the signed-in account onto their directory row. */
@@ -135,7 +139,8 @@ export function createRuntime(options: RuntimeOptions = {}): Runtime {
 
   const account = createAccountAdapter(api);
   const notificationDelivery = createNotificationDeliveryAdapter(api);
-  const friends = createFriendsAdapter(api, realtime);
+  const encryption = createEncryption(options.encryption ?? encryptionCalls(), realtime);
+  const friends = createFriendsAdapter(api, realtime, encryption.client);
   const soundboard = createSoundboardAdapter(api, realtime, voiceSettingsStore.getSnapshot);
   const messageActions = createMessageActionsAdapter(api, realtime, reactionStore);
   const typing = createTypingAdapter(realtime);
@@ -249,6 +254,7 @@ export function createRuntime(options: RuntimeOptions = {}): Runtime {
     ),
     admin,
     friends,
+    encryption: encryption.port,
     notifications: createNotificationAdapter(api, realtime),
     soundboard,
     voiceSettings: createVoiceSettingsAdapter(voiceSettingsStore),
@@ -269,11 +275,15 @@ export function createRuntime(options: RuntimeOptions = {}): Runtime {
       reactionStore.ingest(bootstrap.messages);
       readStore.hydrate(bootstrap.channelReads);
       await account.hydrate(bootstrap.user);
+      // Not awaited: only an encrypted message waits for the keys, and the
+      // friends adapter decodes through the same client, which waits for them.
+      void encryption.client.start(bootstrap.user.id);
       await Promise.all([friends.load(), soundboard.load()]);
     },
     dispose() {
       stopMirroringAccount();
       stopFollowingHub();
+      encryption.dispose();
       friends.dispose?.();
       soundboard.dispose();
       messageActions.dispose?.();
