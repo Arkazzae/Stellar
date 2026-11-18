@@ -71,6 +71,12 @@ function ConversationRow({ conversation, current, onSelect }: ConversationRowPro
           {/* The name line also holds whatever marks the conversation itself
               before the name, so the name and the time stay on one row. */}
           <span className="dm-line">
+            {conversation.encrypted ? (
+              <span className="dm-row-lock" title={t("e2ee.lock")}>
+                <Icon name="lock" size={13} />
+                <span className="sr-only">{t("e2ee.lock")}</span>
+              </span>
+            ) : null}
             <b className="dm-name">{peer.displayName}</b>
             <span className="sr-only">{presence}</span>
             {time === undefined ? null : (

@@ -6,6 +6,7 @@ import type {
   ChatValue,
   DirectoryValue,
   EmojiValue,
+  EncryptionValue,
   FriendsValue,
   ProfileValue,
   SessionValue,
@@ -29,6 +30,7 @@ export interface HookStubs {
   chat: ChatValue;
   directory: DirectoryValue;
   emoji: EmojiValue;
+  encryption: EncryptionValue;
   friends: FriendsValue;
   ports: Ports;
   profile: ProfileValue;
@@ -86,6 +88,27 @@ function defaults(): HookStubs {
       selectServer: vi.fn(),
     }),
     emoji: stub<EmojiValue>({ emoji: [] }),
+    encryption: stub<EncryptionValue>({
+      status: {
+        support: "supported",
+        accountKey: null,
+        backup: null,
+        unlocked: false,
+        deviceId: null,
+        deviceLimit: false,
+        revision: 0,
+      },
+      dialog: null,
+      openDialog: vi.fn(),
+      closeDialog: vi.fn(),
+      switching: null,
+      switchError: null,
+      switchOn: vi.fn(),
+      switchOff: vi.fn(),
+      runSwitch: vi.fn(),
+      dismissedRequests: new Set<string>(),
+      dismissRequest: vi.fn(),
+    }),
     friends: stub<FriendsValue>({
       friends: [],
       requests: [],
@@ -94,6 +117,8 @@ function defaults(): HookStubs {
       incoming: 0,
       unread: 0,
       active: null,
+      encryptionLines: { liveRequestId: null, declinedIds: new Set<string>() },
+      openAttachment: vi.fn(async () => null),
       messagePerson: vi.fn(),
       callConversation: vi.fn(),
       declineCall: vi.fn(),
@@ -120,6 +145,11 @@ function defaults(): HookStubs {
         getSnapshot: () => VOICE_SETTINGS,
         subscribe: () => () => {},
         update: vi.fn(),
+      },
+      encryption: {
+        listDevices: vi.fn(async () => []),
+        safetyCode: vi.fn(async () => null),
+        verification: vi.fn(async () => null),
       },
     }),
     profile: stub<ProfileValue>({ open: null, toggle: vi.fn(), close: vi.fn() }),
@@ -204,6 +234,7 @@ export const hooksModule = {
   useChat: () => stubs.chat,
   useDirectory: () => stubs.directory,
   useEmoji: () => stubs.emoji,
+  useEncryption: () => stubs.encryption,
   useFriends: () => stubs.friends,
   usePorts: () => stubs.ports,
   useProfile: () => stubs.profile,

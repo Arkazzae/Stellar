@@ -31,6 +31,8 @@ export interface DmRoomProps {
   /** Messages that arrived while the chat was shut; its button counts them. */
   chatUnread?: number;
   notificationButton?: ReactNode;
+  /** End-to-end encryption is on: a lock beside the name. */
+  encrypted?: boolean;
   /** Under the header: the conversation, or its call while you are in it. */
   children: ReactNode;
   /** The room, which is what a call asks to put into full screen. */
@@ -63,6 +65,7 @@ export function DmRoom({
   onToggleChat,
   chatUnread = 0,
   notificationButton,
+  encrypted = false,
   children,
   ref,
 }: DmRoomProps) {
@@ -109,6 +112,12 @@ export function DmRoom({
               title={presence}
             />
             <span className="dm-who-name">{name}</span>
+            {encrypted ? (
+              <span className="dm-lock" title={t("e2ee.lock")}>
+                <Icon name="lock" size={14} />
+                <span className="sr-only">{t("e2ee.lock")}</span>
+              </span>
+            ) : null}
           </button>
         </h2>
         <span className="topic">{topic}</span>

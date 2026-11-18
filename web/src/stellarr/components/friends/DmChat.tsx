@@ -1,9 +1,11 @@
 import { useMemo, type ReactNode } from "react";
 
+import { Icon } from "@stellarr/icons";
 import { Avatar } from "@/components/primitives/Avatar";
 import type { MessageTranslationOptions } from "@/components/room/attachments/TranslatedTextAttachment";
 import { Composer } from "@/components/room/composer/Composer";
 import type { ComposerChip } from "@/components/room/composer/ComposerChips";
+import type { MessageGroupVM, TranscriptNotice } from "@/components/room/transcript/MessageGroup";
 import { Transcript, type TranscriptSectionVM } from "@/components/room/transcript/Transcript";
 import type { OpenProfile, PersonVM } from "@/components/view-models";
 import { translateForDocument } from "@/i18n/defaultLocale";
@@ -33,6 +35,12 @@ export interface DmChatProps {
   attachments?: AttachmentCallbacks;
   /** One action under the intro's sentence. */
   introAction?: ReactNode;
+  /** The intro's sentence, when it has more to say than the plain one. */
+  introText?: string;
+  /** Draws the entries that are not messages (encryption lines, sealed history). */
+  renderNotice?(notice: TranscriptNotice, group: MessageGroupVM): ReactNode;
+  /** Writing is not possible here, and this says why; the composer gives way to it. */
+  composerBlocked?: string;
 }
 
 /**
@@ -61,6 +69,9 @@ export function DmChat({
   translation,
   attachments,
   introAction,
+  introText,
+  renderNotice,
+  composerBlocked,
 }: DmChatProps) {
   const t = translation?.t ?? translateForDocument;
   const name = peer.displayName;
@@ -77,11 +88,11 @@ export function DmChat({
         />
         <h3>{name}</h3>
         <span className="dm-handle">@{username}</span>
-        <p>{t("dm.intro")}</p>
+        <p>{introText ?? t("dm.intro")}</p>
         {introAction === undefined ? null : <div className="dm-intro-act">{introAction}</div>}
       </div>
     ),
-    [peer.id, peer.initials, peer.avatarUrl, name, username, introAction, t],
+    [peer.id, peer.initials, peer.avatarUrl, name, username, introAction, introText, t],
   );
 
   return (
@@ -97,20 +108,28 @@ export function DmChat({
         hasOlder={hasOlderMessages}
         loadingOlder={loadingOlderMessages}
         onLoadOlder={onLoadOlderMessages}
+        renderNotice={renderNotice}
       />
-      <Composer
-        channelName={name}
-        placeholder={t("dm.writeTo", { name })}
-        chips={chips}
-        onSubmit={onSend}
-        onAttach={onAttach}
-        onRemoveChip={onRemoveChip}
-        onRetryChip={onRetryChip}
-        onReorderChips={onReorderChips}
-        customEmoji={customEmoji}
-        locale={translation?.locale}
-        t={t}
-      />
+      {composerBlocked === undefined ? (
+        <Composer
+          channelName={name}
+          placeholder={t("dm.writeTo", { name })}
+          chips={chips}
+          onSubmit={onSend}
+          onAttach={onAttach}
+          onRemoveChip={onRemoveChip}
+          onRetryChip={onRetryChip}
+          onReorderChips={onReorderChips}
+          customEmoji={customEmoji}
+          locale={translation?.locale}
+          t={t}
+        />
+      ) : (
+        <div className="dm-composer-off" role="note">
+          <Icon name="lock" size={16} />
+          <span>{composerBlocked}</span>
+        </div>
+      )}
     </>
   );
 }

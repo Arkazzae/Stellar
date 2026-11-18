@@ -63,6 +63,8 @@ vi.mock("@/lib/notifications/browser", () => ({
   showTestNotification: (title: string, body: string) => world.showTestNotification(title, body),
 }));
 
+vi.mock("./useEncryptionSettings", () => ({ useEncryptionSettings: () => undefined }));
+
 vi.mock("@/state/hooks", () => ({
   useAccount: () => world.account,
   useDirectory: () => world.directory,

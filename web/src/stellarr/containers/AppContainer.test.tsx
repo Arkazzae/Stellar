@@ -35,6 +35,7 @@ vi.mock("@/state/EmojiProvider", () => ({ EmojiProvider: providerNamed("Emoji") 
 vi.mock("@/state/VoiceProvider", () => ({ VoiceProvider: providerNamed("Voice") }));
 vi.mock("@/state/UiProvider", () => ({ UiProvider: providerNamed("Ui") }));
 vi.mock("@/state/KeybindProvider", () => ({ KeybindProvider: providerNamed("Keybind") }));
+vi.mock("@/state/EncryptionProvider", () => ({ EncryptionProvider: providerNamed("Encryption") }));
 vi.mock("@/state/FriendsProvider", () => ({ FriendsProvider: providerNamed("Friends") }));
 vi.mock("@/state/ChatProvider", () => ({ ChatProvider: providerNamed("Chat") }));
 vi.mock("@/state/ProfileProvider", () => ({ ProfileProvider: providerNamed("Profile") }));
@@ -49,6 +50,7 @@ vi.mock("./DmProfileContainer", () => ({ DmProfileContainer: standIn("dm-profile
 vi.mock("./DmCallChatContainer", () => ({ DmCallChatContainer: standIn("dm-call-chat") }));
 vi.mock("./ModalsContainer", () => ({ ModalsContainer: standIn("modals") }));
 vi.mock("./UserSettingsContainer", () => ({ UserSettingsContainer: standIn("user-settings") }));
+vi.mock("./EncryptionDialogsContainer", () => ({ EncryptionDialogsContainer: standIn("encryption-dialogs") }));
 vi.mock("./ClientSettingsSync", () => ({ ClientSettingsSync: standIn("client-settings-sync") }));
 vi.mock("./MiniProfileContainer", () => ({ MiniProfileContainer: standIn("mini-profile") }));
 vi.mock("./IncomingCallContainer", () => ({ IncomingCallContainer: standIn("incoming-call") }));
@@ -81,6 +83,7 @@ describe("AppContainer", () => {
       "Voice",
       "Ui",
       "Keybind",
+      "Encryption",
       "Friends",
       "Chat",
       "Profile",

@@ -116,6 +116,8 @@ export interface DmConversationVM {
   unread: number;
   /** Someone is occupying this conversation's private RTC room. */
   callActive?: boolean;
+  /** End-to-end encryption is on: a lock before the name. */
+  encrypted?: boolean;
   /** When the last message was sent, shortened ("2 min", "wczoraj"). Absent before the first. */
   time?: { text: string; iso: string };
 }

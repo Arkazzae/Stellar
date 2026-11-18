@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 
+import { lineText } from "@/components/friends/encryptionCopy";
 import { DmRail } from "@/components/shell/rail/DmRail";
 import type { DmConversationVM } from "@/components/view-models";
 import { useMediaQuery } from "@/hooks/useMediaQuery";
@@ -38,9 +39,20 @@ function previewOf(
   selfId: string,
 ): string {
   const { lastMessage } = conversation;
+  if (!inCall(conversation) && lastMessage?.line !== undefined) {
+    // A line says what happened in its own words, already about the reader.
+    const { line } = lastMessage;
+    return lineText(t, line, lastMessage.author.displayName, {
+      self: line.actorId === selfId,
+      live: line.kind === "encryption_requested" && conversation.encryption?.state === "requested",
+      peerName: conversation.peer.displayName,
+    });
+  }
   const content = inCall(conversation)
     ? t("dm.callPreview")
-    : lastMessage?.content;
+    : lastMessage?.sealed !== undefined
+      ? t("e2ee.preview.sealed")
+      : lastMessage?.content;
   if (content === undefined) return t("dm.firstMessage");
   // The rail is one line; a pasted paragraph must not decide its height.
   const flat = content.replace(/\s+/g, " ").trim();
@@ -80,6 +92,7 @@ export function DmRailContainer() {
           preview: previewOf(t, conversation, selfId),
           unread: conversation.unread,
           ...(inCall(conversation) ? { callActive: true } : {}),
+          ...(conversation.encryption?.state === "on" ? { encrypted: true } : {}),
           ...(sentAt === undefined
             ? {}
             : { time: { text: formatShortAgo(sentAt, now, locale), iso: sentAt } }),

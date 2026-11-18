@@ -43,6 +43,8 @@
 /* Last on purpose: the DM space collapses the roster track and has to outrank
    both the redesign layer in `chrome.css` and the breakpoints above it. */
 @import "./components/friends.css";
+/* After `friends.css`: the encryption lines, blocks and dialogs of a conversation. */
+@import "./components/encryption.css";
 /* After the redesign layer in `chrome.css` on purpose: the card sizes an avatar
    that only the voice tile had geometry for, and its triggers restyle rows the
    layers above already own. */
