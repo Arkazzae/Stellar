@@ -33,6 +33,8 @@ media/smoke
 
 # The project site has its own build and is not part of the image.
 website
+# Neither are the native apps.
+client
 
 # Instance data and credentials never belong in an image.
 data
