@@ -1,3 +1,4 @@
+import { previewFileName } from "@/lib/media/imagePreview";
 import type { Message } from "../types";
 import type { ApiClient } from "../client";
 import { ApiError } from "../errors";
@@ -167,6 +168,9 @@ export function messageCalls(): MessageCalls {
       if (metadata?.width !== undefined) form.append("width", String(metadata.width));
       if (metadata?.height !== undefined) form.append("height", String(metadata.height));
       if (metadata?.poster !== undefined) form.append("poster", metadata.poster, "poster.jpg");
+      if (metadata?.preview !== undefined) {
+        form.append("preview", metadata.preview, previewFileName(metadata.preview));
+      }
       if (metadata?.voiceMessage === true) form.append("voiceMessage", "true");
       return postForm(
         UPLOAD_PATH,

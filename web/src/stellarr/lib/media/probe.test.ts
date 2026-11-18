@@ -52,6 +52,106 @@ describe("probeMedia for an image", () => {
   });
 });
 
+describe("probeMedia preview of an image", () => {
+  const big = (type: string, size = 1000) => new File([new Uint8Array(size)], "photo", { type });
+
+  /** An offscreen canvas that answers each encode request with the next scripted blob. */
+  function encodeAs(...answers: Array<{ type: string; size: number } | null>) {
+    const convertToBlob = vi.fn(async (_options: { type: string; quality: number }) => {
+      const answer = answers.shift() ?? null;
+      return answer === null ? null : new Blob([new Uint8Array(answer.size)], { type: answer.type });
+    });
+    const created: Array<{ width: number; height: number }> = [];
+    class FakeCanvas {
+      constructor(width: number, height: number) {
+        created.push({ width, height });
+      }
+      getContext() {
+        return { drawImage: vi.fn(), imageSmoothingEnabled: false, imageSmoothingQuality: "low" };
+      }
+      convertToBlob = convertToBlob;
+    }
+    vi.stubGlobal("OffscreenCanvas", FakeCanvas);
+    return { convertToBlob, created };
+  }
+
+  function decode(width: number, height: number) {
+    const close = vi.fn();
+    const create = vi.fn(async (_file: Blob, _options?: unknown) => ({ width, height, close }));
+    vi.stubGlobal("createImageBitmap", create);
+    return { close, create };
+  }
+
+  it("encodes WebP at 0.8 inside 1280 by 1280 and reports the original's size", async () => {
+    const { close, create } = decode(4000, 3000);
+    const canvas = encodeAs({ type: "image/webp", size: 300 });
+
+    const metadata = await probeMedia(big("image/png"));
+
+    expect(create).toHaveBeenCalledWith(expect.anything(), { imageOrientation: "from-image" });
+    expect(canvas.created).toEqual([{ width: 1280, height: 960 }]);
+    expect(canvas.convertToBlob).toHaveBeenCalledWith({ type: "image/webp", quality: 0.8 });
+    expect(metadata).toMatchObject({ width: 4000, height: 3000 });
+    expect(metadata.preview?.type).toBe("image/webp");
+    expect(close).toHaveBeenCalledTimes(1);
+  });
+
+  it("falls back to JPEG at 0.82 for a JPEG when the browser answers a PNG", async () => {
+    decode(2000, 1000);
+    const canvas = encodeAs({ type: "image/png", size: 900 }, { type: "image/jpeg", size: 200 });
+
+    const metadata = await probeMedia(big("image/jpeg"));
+
+    expect(canvas.convertToBlob).toHaveBeenNthCalledWith(2, { type: "image/jpeg", quality: 0.82 });
+    expect(metadata.preview?.type).toBe("image/jpeg");
+  });
+
+  it("sends no preview for a non-JPEG when WebP cannot be encoded", async () => {
+    decode(2000, 1000);
+    const canvas = encodeAs({ type: "image/png", size: 100 });
+
+    const metadata = await probeMedia(big("image/png"));
+
+    expect(canvas.convertToBlob).toHaveBeenCalledTimes(1);
+    expect(metadata).toEqual({ width: 2000, height: 1000 });
+  });
+
+  it("sends none when the preview is over 60% of the original or over 1 MiB", async () => {
+    decode(2000, 1000);
+    encodeAs({ type: "image/webp", size: 601 });
+    expect((await probeMedia(big("image/png"))).preview).toBeUndefined();
+
+    encodeAs({ type: "image/webp", size: 1024 * 1024 + 1 });
+    expect((await probeMedia(big("image/png", 4 * 1024 * 1024))).preview).toBeUndefined();
+  });
+
+  it("makes no preview of an animation or a vector", async () => {
+    decode(100, 100);
+    const canvas = encodeAs({ type: "image/webp", size: 10 });
+    const gif = new File([new Uint8Array([71, 73, 70, 56, 57, 97, 0, 0, 0, 0])], "a.gif", {
+      type: "image/gif",
+    });
+
+    expect(await probeMedia(gif)).toEqual({ width: 100, height: 100 });
+    expect(await probeMedia(big("image/svg+xml"))).toEqual({ width: 100, height: 100 });
+    expect(canvas.convertToBlob).not.toHaveBeenCalled();
+  });
+
+  it("uploads without a preview when encoding throws or outlasts the budget", async () => {
+    decode(2000, 1000);
+    const failing = encodeAs();
+    failing.convertToBlob.mockRejectedValueOnce(new Error("no"));
+    expect(await probeMedia(big("image/png"))).toEqual({ width: 2000, height: 1000 });
+
+    vi.useFakeTimers();
+    const slow = encodeAs();
+    slow.convertToBlob.mockReturnValue(new Promise(() => {}));
+    const pending = probeMedia(big("image/png"));
+    await vi.advanceTimersByTimeAsync(10_000);
+    await expect(pending).resolves.toEqual({ width: 2000, height: 1000 });
+  });
+});
+
 interface Playback {
   duration: number;
   videoWidth: number;
