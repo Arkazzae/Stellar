@@ -90,13 +90,13 @@ describe("FriendsActivityContainer", () => {
 
     setStubs({ friends: { friends: [friend({ ...ADA, presence: "offline" })] } });
     rerender(<FriendsActivityContainer />);
-    expect(screen.getByText("Na razie jest cicho")).toBeInTheDocument();
+    expect(screen.getByText("Gdy znajomi pojawią się w sieci, zobaczysz ich tutaj.")).toBeInTheDocument();
     expect(screen.queryByText("Ada")).not.toBeInTheDocument();
 
     setStubs({ friends: { friends: [friend(OLA)] } });
     rerender(<FriendsActivityContainer />);
     expect(screen.getByText("Ola")).toBeInTheDocument();
-    expect(screen.queryByText("Na razie jest cicho")).not.toBeInTheDocument();
+    expect(screen.queryByText("Gdy znajomi pojawią się w sieci, zobaczysz ich tutaj.")).not.toBeInTheDocument();
   });
 
   it("opens the selected profile and starts a private message with that friend", async () => {

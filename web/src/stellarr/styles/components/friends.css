@@ -180,19 +180,14 @@
     color: var(--live);
   }
 
-  /* No conversation yet, or none the search matches: the mascot, lined up
-     with the sentence under it. */
-  .dm-empty {
-    display: flex;
-    flex-direction: column;
-    gap: var(--sp-3);
-    padding: var(--sp-1) var(--sp-2) var(--sp-2);
-  }
-
-  .dm-empty p {
+  /* An empty side column says so in one faint line where its text starts,
+     with no mark and no heading: here, and in Active now. */
+  .dm-empty,
+  .fr-activity-empty {
     font-size: var(--fs-body);
     line-height: 1.5;
     color: var(--text-faint);
+    padding: var(--sp-1) var(--sp-2) var(--sp-2);
   }
 
   /* Something is waiting for you to answer it. */
@@ -732,29 +727,6 @@
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
-  }
-
-  .fr-activity-empty {
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    justify-content: center;
-    min-height: 100%;
-    padding: var(--sp-6) var(--sp-2);
-    gap: var(--sp-2);
-    text-align: center;
-  }
-
-  .fr-activity-empty h4 {
-    font-size: var(--fs-title);
-    font-weight: var(--fw-strong);
-  }
-
-  .fr-activity-empty p {
-    color: var(--text-muted);
-    font-size: var(--fs-label);
-    line-height: 1.5;
-    overflow-wrap: anywhere;
   }
 
   @media (min-width: 1200px) {

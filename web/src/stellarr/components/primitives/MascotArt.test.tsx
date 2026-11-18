@@ -9,16 +9,16 @@ const shown = String(styles.shown);
 
 describe("Sticker", () => {
   it("reads the exported file at any size and shows it only once it has loaded", () => {
-    const { container, rerender } = render(<Sticker name="02-first-message" size="column" />);
+    const { container, rerender } = render(<Sticker name="05-invite-friends" size="main" />);
     const first = container.querySelector("img") as HTMLImageElement;
 
-    expect(first).toHaveAttribute("src", "/mascot/02-first-message-104.webp");
+    expect(first).toHaveAttribute("src", "/mascot/05-invite-friends-104.webp");
     expect(first).not.toHaveClass(shown);
     fireEvent.load(first);
     expect(first).toHaveClass(shown);
 
     // Another moment starts out of sight again, and a file that fails stays there.
-    rerender(<Sticker name="33-finding-message" size="main" />);
+    rerender(<Sticker name="33-finding-message" size="page" />);
     const second = container.querySelector("img") as HTMLImageElement;
     expect(second).toHaveAttribute("src", "/mascot/33-finding-message-104.webp");
     fireEvent.error(second);
