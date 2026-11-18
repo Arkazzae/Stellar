@@ -84,6 +84,9 @@ export function VoiceProcessingSection({
 }: VoiceProcessingSectionProps) {
   const { t } = useLanguage();
   const active = mic.activeNoiseSuppression;
+  // Judged against what the open microphone was asked for: a pick that has
+  // not reached it yet is a wait, not a failure.
+  const requested = mic.requestedNoiseSuppression ?? settings.noiseSuppression;
 
   return (
     <>
@@ -106,10 +109,10 @@ export function VoiceProcessingSection({
           exist: a panel that shows "RNNoise" over an unsuppressed microphone is
           worse than one that shows nothing. Only worth saying while a capture
           is open and only when it disagrees with the choice above. */}
-      {active !== null && active !== EXPECTED_NOISE[settings.noiseSuppression] ? (
+      {active !== null && active !== EXPECTED_NOISE[requested] ? (
         <p className="acc-answer bad mic-truth" role="status">
           {t("voice.selectedNoiseMismatch", {
-            selected: t(NOISE_RUNGS[settings.noiseSuppression].label),
+            selected: t(NOISE_RUNGS[requested].label),
             active: t(ACTIVE_NOISE_LABEL[active]),
           })}
         </p>

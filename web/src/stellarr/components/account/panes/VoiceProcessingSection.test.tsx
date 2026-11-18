@@ -65,11 +65,26 @@ describe("VoiceProcessingSection noise reduction", () => {
   });
 
   it("stays quiet when the suppressor is the one that was asked for", () => {
-    setup({
+    const { rerender } = setup({
       settings: { noiseSuppression: "browser" },
       mic: { running: true, activeNoiseSuppression: "browser" },
     });
 
+    expect(screen.queryByText(/mikrofon czyści teraz/)).toBeNull();
+
+    // GTCRN was just picked and has not reached the open microphone yet.
+    rerender(
+      <VoiceProcessingSection
+        settings={{ ...voiceSettings, noiseSuppression: "gtcrn" }}
+        onChange={vi.fn()}
+        mic={{
+          ...idleMic,
+          running: true,
+          activeNoiseSuppression: "browser",
+          requestedNoiseSuppression: "browser",
+        }}
+      />,
+    );
     expect(screen.queryByText(/mikrofon czyści teraz/)).toBeNull();
   });
 

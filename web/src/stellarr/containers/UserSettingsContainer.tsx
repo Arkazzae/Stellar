@@ -32,6 +32,7 @@ import { useMicTest } from "./useMicTest";
 import { useNotificationDelivery } from "./useNotificationDelivery";
 import { useOutputTest } from "./useOutputTest";
 import { SecurityStepDialog } from "@/components/account/panes/SecurityStepDialog";
+import { useSettledVoiceSettings } from "@/state/useSettledVoiceSettings";
 
 import { useAccountSecurity } from "./useAccountSecurity";
 import { useEncryptionSettings } from "./useEncryptionSettings";
@@ -134,7 +135,9 @@ export function UserSettingsContainer() {
 
   // Opening a device is a transport, and a component may not reach past
   // `@/ports` to do it, so the microphone, speaker and camera tests live here.
-  const mic = useMicTest(voiceSettings);
+  // The test reopens the microphone for a new suppressor as a call does, so
+  // it waits as a call does for the choice to stay put.
+  const mic = useMicTest(useSettledVoiceSettings(voiceSettings));
   const output = useOutputTest(voiceSettings);
   const camera = useCameraTest(voiceSettings);
   const joinSound = useJoinSound(open);

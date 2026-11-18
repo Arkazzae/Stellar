@@ -3,8 +3,13 @@ import { fileURLToPath } from "node:url";
 import react from "@vitejs/plugin-react";
 import { configDefaults, defineConfig } from "vitest/config";
 
+import { stellarrArtifactSizes } from "./artifactSizes";
+
+// The test scripts load this file with `--configLoader runner`, as the build
+// does vite.config.ts, so the local import above needs no file extension.
 export default defineConfig({
-  plugins: [react()],
+  // The sizes of the prebuilt files, which the client reads as the build gives them.
+  plugins: [react(), stellarrArtifactSizes()],
   resolve: {
     alias: {
       "@": fileURLToPath(new URL("./src/stellarr", import.meta.url)),

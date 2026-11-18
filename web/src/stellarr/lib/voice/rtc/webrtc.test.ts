@@ -22,7 +22,10 @@ import { RemoteVoiceMixer } from "../playback/remoteMixer";
 import { DEFAULT_SETTINGS, type VoiceSettings } from "../settings";
 import { SpeechDetector } from "../capture/vad";
 import type { CallKeyEvent, CallKeys } from "../e2ee/callCrypto";
+import { GTCRN_WASM_URL, resetSuppressorCacheForTests } from "../capture/noiseSuppression";
+import { DOWNLOAD_SHOWN_AFTER_MS } from "../capture/suppressorDownload";
 import { WebRtcVoiceClient, type WebRtcVoiceClientOptions } from "./webrtc";
+import artifactSizes from "virtual:artifact-sizes";
 
 const CHANNEL = "ch-salon";
 const TARGET_CHANNEL = "ch-nocna-zmiana";
@@ -3733,5 +3736,39 @@ describe("overlapping voice intentions", () => {
     expect(client.getSnapshot().peers.find((peer) => peer.self)?.displayName).toBe("New name");
     expect(getUserMedia).toHaveBeenCalledTimes(1);
     expect(pc.close).not.toHaveBeenCalled();
+  });
+});
+
+describe("the chosen suppressor's download", () => {
+  afterEach(() => {
+    resetSuppressorCacheForTests();
+  });
+
+  it("starts outside a call, and shows how far it got against the size the build recorded", async () => {
+    vi.useFakeTimers();
+    let body: ReadableStreamDefaultController<Uint8Array> | null = null;
+    const fetch = vi.fn(
+      async (_url: string) =>
+        new Response(new ReadableStream<Uint8Array>({ start: (controller) => void (body = controller) })),
+    );
+    vi.stubGlobal("fetch", fetch);
+    const client = build();
+
+    void client.applySettings({ ...settings, noiseSuppression: "gtcrn" });
+    await vi.advanceTimersByTimeAsync(0);
+    expect(fetch).toHaveBeenCalledExactlyOnceWith(GTCRN_WASM_URL);
+
+    const size = artifactSizes[GTCRN_WASM_URL.slice(1)] ?? 0;
+    body!.enqueue(new Uint8Array(Math.ceil(size * 0.4)));
+    await vi.advanceTimersByTimeAsync(0);
+    expect(client.getSnapshot().suppressorDownload).toBeNull();
+
+    await vi.advanceTimersByTimeAsync(DOWNLOAD_SHOWN_AFTER_MS);
+    expect(client.getSnapshot().suppressorDownload).toEqual({ kind: "gtcrn", percent: 40 });
+
+    body!.enqueue(new Uint8Array(size - Math.ceil(size * 0.4)));
+    body!.close();
+    await vi.advanceTimersByTimeAsync(0);
+    expect(client.getSnapshot().suppressorDownload).toBeNull();
   });
 });
