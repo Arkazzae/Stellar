@@ -121,6 +121,66 @@ public sealed class NotificationDeliveryTests
     }
 
     [Fact]
+    public async Task AnEncryptedDirectMessageIsAnnouncedWithNothingOfItsTextOrEnvelope()
+    {
+        var push = new FakeWebPushDelivery();
+        using var factory = NewFactory(push);
+        // Ada signs in before her address becomes a second step she would be asked for.
+        using var maja = await LoginAsync(factory, "maja", "Aurora!2026");
+        using var ada = await LoginAsync(factory, "ada", "Quasar!2026");
+        await AddPushSubscriptionAsync(factory, AdaId, "https://push.example.test/ada");
+        await VerifyEmailAsync(factory, AdaId, "ada@example.test");
+        await SetPreferencesAsync(factory, AdaId, email: true, push: true);
+        foreach (var client in new[] { maja, ada })
+        {
+            await EncryptionTestKit.SetUpAsync(client);
+            await EncryptionTestKit.RegisterDeviceAsync(client);
+        }
+
+        var conversationId = (await OpenConversationAsync(maja, AdaId)).ToString();
+        await EncryptionTestKit.EnableAsync(maja, ada, conversationId);
+        var epochId = await EncryptionTestKit.RotateAsync(maja, conversationId);
+        var uploadId = await EncryptionTestKit.UploadEncryptedAsync(maja);
+        var messageId = Guid.NewGuid();
+        var iv = EncryptionTestKit.Bytes(12);
+        var ciphertext = EncryptionTestKit.Bytes(96);
+        var sent = await maja.PostAsJsonAsync($"/api/social/conversations/{conversationId}/messages", new
+        {
+            clientMessageId = messageId,
+            attachmentIds = new[] { uploadId },
+            encrypted = new { epochId, iv, ciphertext },
+        });
+        Assert.Equal(HttpStatusCode.Created, sent.StatusCode);
+        Assert.Equal(2, (await DeliveryRowsAsync(factory, messageId)).Length);
+
+        Assert.Equal(2, await DispatchAsync(factory));
+
+        // Nothing the message carried may leave in a notice: not the bytes in
+        // either spelling, not the epoch, the upload or the sender.
+        var secrets = new[]
+        {
+            Convert.ToBase64String(ciphertext), Convert.ToHexString(ciphertext),
+            Convert.ToBase64String(iv), Convert.ToHexString(iv),
+            epochId, uploadId, conversationId, "Maja",
+        };
+        var mail = Assert.Single(factory.EmailDelivery.Messages);
+        Assert.Equal("New direct message on Stellarr", mail.Subject);
+        Assert.Contains("You have a new direct message", mail.Text, StringComparison.Ordinal);
+        var sentPush = Assert.Single(push.Sent);
+        Assert.Equal("New direct message", sentPush.Payload.Title);
+        Assert.Equal("You have a new direct message. Open Stellarr to read it.", sentPush.Payload.Body);
+        var pushed = string.Join(
+            ' ', sentPush.Payload.Id, sentPush.Payload.Title, sentPush.Payload.Body, sentPush.Payload.Url, sentPush.Payload.Tag);
+        foreach (var secret in secrets)
+        {
+            Assert.DoesNotContain(secret, mail.Subject, StringComparison.OrdinalIgnoreCase);
+            Assert.DoesNotContain(secret, mail.Text, StringComparison.OrdinalIgnoreCase);
+            Assert.DoesNotContain(secret, mail.Html, StringComparison.OrdinalIgnoreCase);
+            Assert.DoesNotContain(secret, pushed, StringComparison.OrdinalIgnoreCase);
+        }
+    }
+
+    [Fact]
     public async Task ConcurrentAndSequentialClientMessageReplaysCreateOneSetOfJobs()
     {
         using var factory = NewFactory(new FakeWebPushDelivery());
