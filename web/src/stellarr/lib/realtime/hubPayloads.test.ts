@@ -61,7 +61,7 @@ describe("hub payload decoders", () => {
     expect(HUB_DECODERS.PermissionsChanged({ serverId: "s1", permissions: "all" })).toBeNull();
   });
 
-  it("reads a channel layout whole, or not at all", () => {
+  it("reads a channel layout or a section order whole, or not at all", () => {
     expect(
       HUB_DECODERS.ChannelLayoutChanged({
         serverId: "s1",
@@ -81,6 +81,11 @@ describe("hub payload decoders", () => {
         channels: [{ id: "c-2", sectionId: "sec-1" }, { sectionId: null }],
       }),
     ).toBeNull();
+    expect(HUB_DECODERS.SectionOrderChanged({ serverId: "s1", sectionIds: ["b", "a"] })).toEqual({
+      serverId: "s1",
+      sectionIds: ["b", "a"],
+    });
+    expect(HUB_DECODERS.SectionOrderChanged({ serverId: "s1", sectionIds: ["b", 2] })).toBeNull();
   });
 
   it("accepts only kicked or banned as the reason for lost access", () => {
