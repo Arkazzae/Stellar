@@ -45,7 +45,8 @@ public static class AuthenticationFlow
         CancellationToken cancellationToken,
         bool? requiredOverride = null,
         bool shortLived = false,
-        bool secondStepAtProvider = false)
+        bool secondStepAtProvider = false,
+        Guid? pendingIdentityId = null)
     {
         var methods = await ConfirmedMethodsAsync(db, user.Id, cancellationToken);
         if (user.SecurityRecoveryRequired)
@@ -75,6 +76,7 @@ public static class AuthenticationFlow
         var challenge = await CreateChallengeAsync(
             db, context, user, primarySource, purpose, policy, messages, cancellationToken,
             shortLived: shortLived);
+        challenge.PendingIdentityId = pendingIdentityId;
         return new AuthStart(
             await DescribeAsync(db, context, user, challenge, methods, policy, cancellationToken),
             null);
@@ -125,7 +127,10 @@ public static class AuthenticationFlow
         SecurityPolicy policy,
         CancellationToken cancellationToken)
     {
+        // A remembered device skips the step but proves nothing now, and a
+        // link asks for the proof a link from the settings would.
         var trusted = challenge.Purpose != AuthChallengePurposes.Reverify &&
+            challenge.PendingIdentityId is null &&
             await TrustedDevices.FindAsync(db, user.Id, context, cancellationToken) is not null;
         var status = challenge.Purpose is AuthChallengePurposes.Mfa or AuthChallengePurposes.Reverify
             ? "mfa_required"

@@ -78,8 +78,14 @@ public static class AuthEndpoints
 
         var policy = await MfaPolicy.LoadAsync(db, cancellationToken);
         var shortLived = request.KeepSignedIn == false;
+        // The identity to link is the one this browser waits with now; the
+        // link itself waits for the whole sign-in, second step included.
+        var pendingId = request.LinkPending
+            ? (await PendingIdentities.FindAsync(db, context, cancellationToken))?.Id
+            : null;
         var start = await AuthenticationFlow.StartAsync(
-            db, context, user, "password", policy, messages, cancellationToken, shortLived: shortLived);
+            db, context, user, "password", policy, messages, cancellationToken, shortLived: shortLived,
+            pendingIdentityId: pendingId);
         if (start.RecoveryRequired)
         {
             return Results.Ok(new { status = "security_recovery_required" });
@@ -93,7 +99,13 @@ public static class AuthEndpoints
                 await SecurityEvents.VerifiedEmailAsync(db, user.Id, cancellationToken));
             await db.SaveChangesAsync(cancellationToken);
             await SessionAuthentication.SignInAsync(context, user, session.Id, shortLived);
-            return Results.Ok(user.ToDto("online"));
+            if (!request.LinkPending)
+            {
+                return Results.Ok(user.ToDto("online"));
+            }
+
+            var linked = await IdentityLinking.LinkPendingAsync(db, context, user, pendingId, cancellationToken);
+            return Results.Ok(new LinkedSignInDto(user.ToDto("online"), linked));
         }
 
         await db.SaveChangesAsync(cancellationToken);

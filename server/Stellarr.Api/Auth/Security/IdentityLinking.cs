@@ -72,6 +72,31 @@ public static class IdentityLinking
     }
 
     /// <summary>
+    /// Links the identity waiting for this browser to the account that has
+    /// just signed in, as the sign-in asked. It runs once the session exists,
+    /// so a refusal never undoes the sign-in; the waiting identity is used up
+    /// either way. <paramref name="pendingId"/> is the identity the sign-in
+    /// saw: one that replaced it since is not linked in its place.
+    /// </summary>
+    public static async Task<string> LinkPendingAsync(
+        AppDbContext db,
+        HttpContext context,
+        User user,
+        Guid? pendingId,
+        CancellationToken cancellationToken)
+    {
+        if (pendingId is null ||
+            await PendingIdentities.TakeAsync(db, context, cancellationToken, pendingId) is not { } pending ||
+            context.RequestServices.GetRequiredService<ExternalOidcOptions>().Find(pending.ProviderId) is not { } provider)
+        {
+            SecurityCookies.ClearPendingIdentity(context);
+            return IdentityLinkOutcomes.Failed;
+        }
+
+        return await LinkAsync(db, context, user, provider, pending.Issuer, pending.Subject, cancellationToken);
+    }
+
+    /// <summary>
     /// Adds the link and its security event without saving, for an account
     /// that is being created with it and cannot have a link yet.
     /// </summary>
