@@ -94,10 +94,13 @@ export default defineConfig(({ mode }) => {
       outDir: "dist",
       emptyOutDir: true,
       assetsDir: BUILD_DIRECTORY,
-      // The largest chunks are the signed-in app, about 460 kB, and the web
-      // client's entry, about 415 kB: the providers every page needs, among
-      // them the ports with the API client, SignalR and voice. Each message
-      // catalog is a chunk of its own, and a page fetches its language's.
+      // The largest chunks are the signed-in app, about 490 kB, and the web
+      // client's entry and the chunk it shares with the app, about 320 kB
+      // each: the providers every page needs and React. SignalR and voice are
+      // a chunk of their own, about 140 kB, which arrives with the app, and
+      // each message catalog is one too, of which a page loads its language's.
+      // What the web document loads up front is held to a budget in
+      // bundleReport.ts, which this limit does not replace.
       chunkSizeWarningLimit: 500,
       rolldownOptions: {
         input: {
