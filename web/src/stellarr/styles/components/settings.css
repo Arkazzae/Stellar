@@ -1047,6 +1047,9 @@
   .am-head.centered h2{font-size:var(--text-24)}
   .am-head.centered p{max-width:42ch;margin-inline:auto}
   .am-head .dlg-x{position:absolute;top:14px;right:14px}
+  /* The mascot over the title of a dialog that marks a first step. */
+  .am-art{display:flex;margin-bottom:var(--sp-3)}
+  .am-head.centered .am-art{justify-content:center}
   /*
    * The bottom row. Every button in it takes an equal share of the width, and
    * a lone one takes all of it. Cancel is a filled neutral rather than an
