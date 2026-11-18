@@ -1,3 +1,4 @@
+import { placeholderFromBase64 } from "@/lib/media/placeholder";
 import { bytesOf, fromUtf8, randomBytes, utf8, type Bytes } from "./bytes";
 
 /**
@@ -30,6 +31,8 @@ export interface PayloadAttachment {
   poster?: PayloadPoster;
   /** A reduced copy of an image, sealed like a poster, for small views. */
   preview?: PayloadPoster;
+  /** The image in a few bytes, standard padded base64; it never leaves the ciphertext. */
+  placeholder?: string;
 }
 
 export interface MessagePayload {
@@ -97,7 +100,7 @@ function parsePoster(value: unknown): PayloadPoster | null {
 
 function parseAttachment(value: unknown): PayloadAttachment | null {
   if (!isRecord(value)) return null;
-  const { id, key, iv, name, type, size, width, height, duration, voice, poster, preview } = value;
+  const { id, key, iv, name, type, size, width, height, duration, voice, poster, preview, placeholder } = value;
   if (!isString(id) || !isString(key) || !isString(iv) || !isString(name) || !isString(type) || !isCount(size)) {
     return null;
   }
@@ -119,6 +122,8 @@ function parseAttachment(value: unknown): PayloadAttachment | null {
     ...(voice === true ? { voice: true } : {}),
     ...(parsedPoster === undefined ? {} : { poster: parsedPoster }),
     ...(parsedPreview === undefined ? {} : { preview: parsedPreview }),
+    // Only a cosmetic stand-in: bytes that do not decode are left out, not fatal.
+    ...(isString(placeholder) && placeholderFromBase64(placeholder) !== null ? { placeholder } : {}),
   };
 }
 

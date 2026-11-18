@@ -1,4 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { placeholderFromBase64 } from "./placeholder";
 import { probeMedia } from "./probe";
 
 const objectUrl = "blob:probe-test";
@@ -8,6 +9,8 @@ function fileOf(type: string): File {
 }
 
 beforeEach(() => {
+  // jsdom has no canvas; the probe is told so quietly instead of through a console notice.
+  vi.spyOn(HTMLCanvasElement.prototype, "getContext").mockReturnValue(null);
   vi.spyOn(URL, "createObjectURL").mockReturnValue(objectUrl);
   vi.spyOn(URL, "revokeObjectURL").mockImplementation(() => {});
 });
@@ -67,7 +70,16 @@ describe("probeMedia preview of an image", () => {
         created.push({ width, height });
       }
       getContext() {
-        return { drawImage: vi.fn(), imageSmoothingEnabled: false, imageSmoothingQuality: "low" };
+        return {
+          drawImage: vi.fn(),
+          getImageData: (_x: number, _y: number, w: number, h: number) => ({
+            width: w,
+            height: h,
+            data: new Uint8ClampedArray(w * h * 4).fill(200),
+          }),
+          imageSmoothingEnabled: false,
+          imageSmoothingQuality: "low",
+        };
       }
       convertToBlob = convertToBlob;
     }
@@ -89,7 +101,7 @@ describe("probeMedia preview of an image", () => {
     const metadata = await probeMedia(big("image/png"));
 
     expect(create).toHaveBeenCalledWith(expect.anything(), { imageOrientation: "from-image" });
-    expect(canvas.created).toEqual([{ width: 1280, height: 960 }]);
+    expect(canvas.created).toEqual([{ width: 32, height: 24 }, { width: 1280, height: 960 }]);
     expect(canvas.convertToBlob).toHaveBeenCalledWith({ type: "image/webp", quality: 0.8 });
     expect(metadata).toMatchObject({ width: 4000, height: 3000 });
     expect(metadata.preview?.type).toBe("image/webp");
@@ -113,7 +125,8 @@ describe("probeMedia preview of an image", () => {
     const metadata = await probeMedia(big("image/png"));
 
     expect(canvas.convertToBlob).toHaveBeenCalledTimes(1);
-    expect(metadata).toEqual({ width: 2000, height: 1000 });
+    expect(metadata).toMatchObject({ width: 2000, height: 1000 });
+    expect(metadata.preview).toBeUndefined();
   });
 
   it("sends none when the preview is over 60% of the original or over 1 MiB", async () => {
@@ -132,23 +145,46 @@ describe("probeMedia preview of an image", () => {
       type: "image/gif",
     });
 
-    expect(await probeMedia(gif)).toEqual({ width: 100, height: 100 });
-    expect(await probeMedia(big("image/svg+xml"))).toEqual({ width: 100, height: 100 });
+    expect(await probeMedia(gif)).toMatchObject({ width: 100, height: 100 });
+    expect(await probeMedia(big("image/svg+xml"))).toMatchObject({ width: 100, height: 100 });
     expect(canvas.convertToBlob).not.toHaveBeenCalled();
+  });
+
+  it("describes every decoded picture, an animation's first frame included, within 32 pixels", async () => {
+    decode(4000, 1000);
+    const canvas = encodeAs({ type: "image/webp", size: 300 });
+    const gif = new File([new Uint8Array([71, 73, 70, 56, 57, 97, 0, 0, 0, 0])], "a.gif", {
+      type: "image/gif",
+    });
+
+    const metadata = await probeMedia(gif);
+
+    expect(metadata.preview).toBeUndefined();
+    expect(placeholderFromBase64(metadata.placeholder ?? "")?.length).toBeLessThanOrEqual(32);
+    expect(canvas.created).toEqual([{ width: 32, height: 8 }]);
+  });
+
+  it("uploads without a placeholder when the pixels cannot be read", async () => {
+    decode(100, 100);
+    encodeAs();
+    vi.spyOn(HTMLCanvasElement.prototype, "getContext").mockReturnValue(null);
+    vi.stubGlobal("OffscreenCanvas", undefined);
+
+    expect(await probeMedia(big("image/png"))).toEqual({ width: 100, height: 100 });
   });
 
   it("uploads without a preview when encoding throws or outlasts the budget", async () => {
     decode(2000, 1000);
     const failing = encodeAs();
     failing.convertToBlob.mockRejectedValueOnce(new Error("no"));
-    expect(await probeMedia(big("image/png"))).toEqual({ width: 2000, height: 1000 });
+    expect(await probeMedia(big("image/png"))).toMatchObject({ width: 2000, height: 1000 });
 
     vi.useFakeTimers();
     const slow = encodeAs();
     slow.convertToBlob.mockReturnValue(new Promise(() => {}));
     const pending = probeMedia(big("image/png"));
     await vi.advanceTimersByTimeAsync(10_000);
-    await expect(pending).resolves.toEqual({ width: 2000, height: 1000 });
+    await expect(pending).resolves.toMatchObject({ width: 2000, height: 1000 });
   });
 });
 

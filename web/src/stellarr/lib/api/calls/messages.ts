@@ -171,6 +171,7 @@ export function messageCalls(): MessageCalls {
       if (metadata?.preview !== undefined) {
         form.append("preview", metadata.preview, previewFileName(metadata.preview));
       }
+      if (metadata?.placeholder !== undefined) form.append("placeholder", metadata.placeholder);
       if (metadata?.voiceMessage === true) form.append("voiceMessage", "true");
       return postForm(
         UPLOAD_PATH,

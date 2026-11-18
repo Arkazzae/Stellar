@@ -843,7 +843,9 @@ describe("http api client", () => {
       width: 4000,
       height: 3000,
       preview: new Blob(["webp"], { type: "image/webp" }),
+      placeholder: "AAAA",
     });
+    expect((fetchMock.mock.calls[0]?.[1]?.body as FormData).get("placeholder")).toBe("AAAA");
     const webp = (fetchMock.mock.calls[0]?.[1]?.body as FormData).get("preview");
     expect(webp).toBeInstanceOf(File);
     expect((webp as File).name).toBe("preview.webp");
@@ -854,6 +856,7 @@ describe("http api client", () => {
 
     await api.uploadAttachment(file, { width: 10, height: 10 });
     expect((fetchMock.mock.calls[2]?.[1]?.body as FormData).has("preview")).toBe(false);
+    expect((fetchMock.mock.calls[2]?.[1]?.body as FormData).has("placeholder")).toBe(false);
   });
 
   it("marks an uploaded recording as a voice message", async () => {
