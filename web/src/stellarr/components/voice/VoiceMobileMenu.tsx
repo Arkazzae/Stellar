@@ -46,7 +46,8 @@ export interface VoiceMobileMenuProps {
   onToggleFullscreen: () => void;
   onSelectMicrophone: () => void;
   onSelectCamera: () => void;
-  onPlaySound: (soundId: string) => void;
+  /** Absent where the call has no soundboard. */
+  onPlaySound?: (soundId: string) => void;
   /** Absent when this member may not invite. */
   onInvite?: () => void;
 }
@@ -117,11 +118,13 @@ export function VoiceMobileMenu({
               active={sharing}
               onClick={run(onToggleShare)}
             />
-            <Action
-              icon="board"
-              label={t("voice.soundboard")}
-              onClick={() => setView("sounds")}
-            />
+            {onPlaySound === undefined ? null : (
+              <Action
+                icon="board"
+                label={t("voice.soundboard")}
+                onClick={() => setView("sounds")}
+              />
+            )}
             {onInvite === undefined ? null : (
               <Action
                 icon="userAdd"
@@ -154,7 +157,7 @@ export function VoiceMobileMenu({
             />
           </div>
         </>
-      ) : (
+      ) : onPlaySound === undefined ? null : (
         <>
           <div className="vc-mobile-menu-head sounds">
             <button

@@ -9,6 +9,10 @@ import { useLanguage } from "@/state/LanguageProvider";
 
 export interface ParticipantTileProps {
   person: PersonVM;
+  /** The name on the tile, where it is not the person's own, such as "You". */
+  label?: string;
+  /** Where the tile sits in a layout of its own rather than the grid. */
+  className?: string;
   /** Without a stream the tile shows the person's avatar. */
   stream?: MediaStream | null;
   /** The camera is on, but held back for the viewer's link: the avatar says so. */
@@ -30,6 +34,8 @@ export interface ParticipantTileProps {
 /** One person on the voice stage. */
 export function ParticipantTile({
   person,
+  label,
+  className,
   stream,
   held = false,
   local = false,
@@ -66,6 +72,7 @@ export function ParticipantTile({
 
   const classes = [
     "tile",
+    className,
     hasMenu && "has-actions",
     person.speaking && "speaking",
     person.muted && "muted",
@@ -125,7 +132,7 @@ export function ParticipantTile({
         </span>
       ) : null}
       <span className="t-name">
-        <span>{person.displayName}</span>
+        <span>{label ?? person.displayName}</span>
       </span>
       <span className="t-mic" aria-hidden="true">
         <Icon name="micSlash" size={14} />
