@@ -310,8 +310,11 @@ docker rm -f stellarr-voice-call && docker volume rm stellarr-voice-call-data
 ```
 
 `start-container.sh` builds nothing: it runs an existing image with the build
-mounted over the web client the image carries, published on loopback only,
-and the instance lets the first account register. `chrome.sh` adds the flags
+mounted over the web client the image carries, published on loopback only.
+The first account founds the instance with the setup code the API logs at
+start, which `call.mjs` reads with `docker logs stellarr-voice-call`
+(`--container` names another container, `STELLARR_SETUP_CODE` gives the code
+directly). `chrome.sh` adds the flags
 a call needs (a fake camera and microphone, the WAV, no permission prompts)
 to the Chrome `cdp.mjs` starts. A run takes about 40 s.
 
