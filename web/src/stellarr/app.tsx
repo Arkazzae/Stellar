@@ -3,6 +3,7 @@ import type { ReactNode } from "react";
 import { InstanceSetupProvider } from "@/state/InstanceSetupProvider";
 import { LanguageProvider } from "@/state/LanguageProvider";
 import { PortsProvider } from "@/state/PortsProvider";
+import { ReleaseWatcher } from "@/state/ReleaseWatcher";
 import { SessionProvider } from "@/state/SessionProvider";
 import { ThemeProvider } from "@/state/ThemeProvider";
 
@@ -16,12 +17,16 @@ import { ThemeProvider } from "@/state/ThemeProvider";
  * script put on `<html lang>` (`i18n/localeScript.ts`), whose catalog
  * `main.tsx` has loaded, so the first render speaks the language of the first
  * paint.
+ *
+ * The release watcher sits next to the session, in the ports, so that every
+ * page keeps itself on the server's release, the sign-in pages included.
  */
 export function StellarrApp({ children }: { children: ReactNode }) {
   return (
     <LanguageProvider>
       <ThemeProvider>
         <PortsProvider>
+          <ReleaseWatcher />
           <SessionProvider>
             <InstanceSetupProvider>{children}</InstanceSetupProvider>
           </SessionProvider>
