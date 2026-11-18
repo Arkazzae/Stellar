@@ -615,6 +615,7 @@ export function createE2eeClient(options: E2eeClientOptions) {
       ...(item.height === undefined ? {} : { height: item.height }),
       ...(item.duration === undefined ? {} : { durationSeconds: item.duration }),
       ...(item.voice === true ? { isVoiceMessage: true } : {}),
+      ...(item.placeholder === undefined ? {} : { placeholder: item.placeholder }),
     };
     const serverUrl = stored?.url ?? `/assets/${item.id}`;
     lazyFiles.set(item.id, { url: serverUrl, key: item.key, iv: item.iv, type });
@@ -971,6 +972,7 @@ export function createE2eeClient(options: E2eeClientOptions) {
           ...(metadata.voiceMessage === true ? { voice: true } : {}),
           ...(poster === undefined ? {} : { poster }),
           ...(preview === undefined ? {} : { preview }),
+          ...(metadata.placeholder === undefined ? {} : { placeholder: metadata.placeholder }),
         },
       };
     },

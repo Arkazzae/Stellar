@@ -270,6 +270,8 @@ export interface Attachment {
   posterUrl?: string;
   /** A reduced still copy of an uploaded image, for small views. */
   previewUrl?: string;
+  /** The picture in a few bytes, standard padded base64; see `lib/media/placeholder`. */
+  placeholder?: string;
   /** A recording made in the composer and sent on its own. */
   isVoiceMessage?: boolean;
 }

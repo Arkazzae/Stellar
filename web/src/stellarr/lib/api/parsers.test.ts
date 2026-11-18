@@ -169,6 +169,7 @@ describe("parseAttachment", () => {
         durationSeconds: 12.5,
         posterUrl: "/assets/a-1-poster",
         previewUrl: "/assets/a-1/preview",
+        placeholder: "AAAA",
         isVoiceMessage: true,
       },
       "/p",
@@ -180,6 +181,7 @@ describe("parseAttachment", () => {
       durationSeconds: 12.5,
       posterUrl: "/assets/a-1-poster",
       previewUrl: "/assets/a-1/preview",
+      placeholder: "AAAA",
       isVoiceMessage: true,
     });
   });

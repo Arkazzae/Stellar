@@ -399,17 +399,17 @@ describe("toParts", () => {
         name: `${id}.png`,
         contentType: "image/png",
         url: `u/${id}`,
-        ...(previewUrl === undefined ? {} : { previewUrl }),
+        ...(previewUrl === undefined ? {} : { previewUrl, placeholder: "AAAA" }),
       });
 
     expect(toParts(message({ attachments: [image("x", "u/x/preview")] }))).toEqual([
-      { kind: "image", src: "u/x", preview: "u/x/preview", alt: "x.png" },
+      { kind: "image", src: "u/x", preview: "u/x/preview", placeholder: "AAAA", alt: "x.png" },
     ]);
     expect(toParts(message({ attachments: [image("x", "u/x/preview"), image("y")] }))).toEqual([
       {
         kind: "gallery",
         images: [
-          { src: "u/x", preview: "u/x/preview", alt: "x.png" },
+          { src: "u/x", preview: "u/x/preview", placeholder: "AAAA", alt: "x.png" },
           { src: "u/y", alt: "y.png" },
         ],
       },

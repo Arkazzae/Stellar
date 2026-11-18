@@ -1,3 +1,4 @@
+import { encodePlaceholder, placeholderToBase64, type Pixels } from "./placeholder";
 import {
   ANIMATION_HEAD_BYTES,
   PREVIEW_JPEG_QUALITY,
@@ -17,6 +18,8 @@ export interface UploadMediaMetadata {
   poster?: Blob;
   /** A bounded still copy of a local image, WebP or JPEG, for small views. */
   preview?: Blob;
+  /** The picture in a few bytes as base64, for a blurred stand-in while it loads. */
+  placeholder?: string;
   /** Marks audio captured in the composer rather than uploaded as a file. */
   voiceMessage?: boolean;
 }
@@ -27,6 +30,8 @@ const FRAME_TIMEOUT_MS = 3_000;
 const POSTER_MAX_WIDTH = 960;
 const POSTER_MAX_HEIGHT = 540;
 const POSTER_JPEG_QUALITY = 0.82;
+/** The placeholder is described from a drawing no larger than this on its longer side. */
+const PLACEHOLDER_MAX_EDGE = 32;
 
 /**
  * Lets the browser's own decoders inspect a file about to be uploaded. What
@@ -48,8 +53,14 @@ async function probeImage(file: File): Promise<UploadMediaMetadata> {
     const bitmap = await createImageBitmap(file, { imageOrientation: "from-image" });
     try {
       const { width, height } = bitmap;
+      const placeholder = makePlaceholder(bitmap);
       const preview = await withinBudget(makePreview(bitmap, file));
-      return { width, height, ...(preview === undefined ? {} : { preview }) };
+      return {
+        width,
+        height,
+        ...(preview === undefined ? {} : { preview }),
+        ...(placeholder === undefined ? {} : { placeholder }),
+      };
     } finally {
       bitmap.close();
     }
@@ -73,6 +84,8 @@ function withinBudget<T>(work: Promise<T | undefined>): Promise<T | undefined> {
 /** Where a preview is drawn and encoded: an offscreen canvas where there is one. */
 interface Surface {
   encode(type: string, quality: number): Promise<Blob | null>;
+  /** The drawn pixels, not premultiplied. */
+  read(): Pixels;
 }
 
 function surfaceFor(bitmap: ImageBitmap, width: number, height: number): Surface | null {
@@ -81,7 +94,10 @@ function surfaceFor(bitmap: ImageBitmap, width: number, height: number): Surface
     const context = canvas.getContext("2d");
     if (context === null) return null;
     draw(context, bitmap, width, height);
-    return { encode: (type, quality) => canvas.convertToBlob({ type, quality }) };
+    return {
+      encode: (type, quality) => canvas.convertToBlob({ type, quality }),
+      read: () => context.getImageData(0, 0, width, height),
+    };
   }
   if (typeof document === "undefined") return null;
   const canvas = document.createElement("canvas");
@@ -92,6 +108,7 @@ function surfaceFor(bitmap: ImageBitmap, width: number, height: number): Surface
   draw(context, bitmap, width, height);
   return {
     encode: (type, quality) => new Promise((resolve) => canvas.toBlob(resolve, type, quality)),
+    read: () => context.getImageData(0, 0, width, height),
   };
 }
 
@@ -104,6 +121,24 @@ function draw(
   context.imageSmoothingEnabled = true;
   context.imageSmoothingQuality = "high";
   context.drawImage(bitmap, 0, 0, width, height);
+}
+
+/**
+ * The picture described in a few bytes, from the first frame of an animation
+ * too. Undefined when nothing could be drawn: the upload goes on without it.
+ */
+function makePlaceholder(bitmap: ImageBitmap): string | undefined {
+  try {
+    if (bitmap.width <= 0 || bitmap.height <= 0) return undefined;
+    const scale = Math.min(1, PLACEHOLDER_MAX_EDGE / Math.max(bitmap.width, bitmap.height));
+    const width = Math.max(1, Math.round(bitmap.width * scale));
+    const height = Math.max(1, Math.round(bitmap.height * scale));
+    const surface = surfaceFor(bitmap, width, height);
+    if (surface === null) return undefined;
+    return placeholderToBase64(encodePlaceholder(surface.read()));
+  } catch {
+    return undefined;
+  }
 }
 
 /**
