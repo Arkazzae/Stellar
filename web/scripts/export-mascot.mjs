@@ -26,6 +26,7 @@ const brand = join(dirname(fileURLToPath(import.meta.url)), "..", "..", "brandin
 /** The scenes beside the form on a wide screen: 2:3, drawn 400 by 600. */
 const ILLUSTRATIONS = [
   "61-launch-mission",
+  "63-translation-orbit",
   "64-shared-cinema",
   "65-home-server-workshop",
   "66-cockpit-observation",
