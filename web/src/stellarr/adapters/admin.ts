@@ -84,10 +84,6 @@ export function createServerAdminAdapter(
       await api.deleteSection(sectionId);
       onSectionDeleted?.(sectionId);
     },
-    async assignChannelSection(channelId, sectionId) {
-      await api.assignChannelSection(channelId, sectionId);
-      onChannelChanged?.(channelId, { sectionId: sectionId ?? undefined });
-    },
 
     listPermissionOverrides: (type, id) => api.listPermissionOverrides(type, id),
     setPermissionOverride: (type, id, roleId, patch) =>

@@ -50,20 +50,6 @@ describe("channel calls", () => {
       body: { channelIds: ["c-2", "c-1"], move: { channelId: "c-1", sectionId: null } },
     },
     {
-      name: "assignChannelSection to a section",
-      run: () => calls.assignChannelSection("c-1", "sec-1"),
-      method: "PATCH",
-      url: "/api/admin/channels/c-1/section",
-      body: { sectionId: "sec-1" },
-    },
-    {
-      name: "assignChannelSection to no section",
-      run: () => calls.assignChannelSection("c-1", null),
-      method: "PATCH",
-      url: "/api/admin/channels/c-1/section",
-      body: { sectionId: null },
-    },
-    {
       name: "kickVoiceMember",
       run: () => calls.kickVoiceMember("voice-1", "u-2"),
       method: "DELETE",

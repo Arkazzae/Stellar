@@ -35,8 +35,11 @@ export interface ChannelMenuActions {
   developerMode?: boolean;
   /** Every section this server has, offered as "Move to…" targets. */
   sections?: readonly { id: string; name: string }[];
-  /** Managers only; needs both a section to offer and somewhere to send it. */
-  onMoveToSection?: (channelId: string, sectionId: string | null) => void;
+  /**
+   * Managers only; needs both a section to offer and somewhere to send it.
+   * The channel goes to the end of that section's channels of its kind.
+   */
+  onMoveToSection?: (channelId: string, sectionId: string | null) => Promise<void> | void;
 }
 
 export interface ChannelMenuProps extends ChannelMenuActions {

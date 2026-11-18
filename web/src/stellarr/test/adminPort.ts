@@ -37,7 +37,6 @@ export function fakeAdminPort(overrides: Partial<ServerAdminPort> = {}): ServerA
     createSection: vi.fn(async () => {}),
     updateSection: vi.fn(async () => {}),
     deleteSection: vi.fn(async () => {}),
-    assignChannelSection: vi.fn(async () => {}),
     listPermissionOverrides: vi.fn(async () => []),
     setPermissionOverride: vi.fn(async (_type, _id, roleId, patch) => ({ roleId, ...patch })),
     deletePermissionOverride: vi.fn(async () => {}),

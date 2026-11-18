@@ -215,10 +215,11 @@ export function Rail({
           ctx.onContextMenu(event);
         };
 
-  const moveChannel = async (move: ChannelMove) => {
+  /** A change to the rail's layout, which says so when the server refuses it. */
+  const rearrange = async (change: () => Promise<void> | void) => {
     setMoveError(null);
     try {
-      await onMoveChannel(move);
+      await change();
     } catch {
       setMoveError(t("rail.reorderFailed"));
     }
@@ -287,7 +288,9 @@ export function Rail({
   } = useListSort({
     lists,
     onMove: ({ id, list, order }) =>
-      void moveChannel({ channelId: id, sectionId: listOf(list)?.sectionId ?? null, order }),
+      void rearrange(() =>
+        onMoveChannel({ channelId: id, sectionId: listOf(list)?.sectionId ?? null, order }),
+      ),
     roleDescription: t("shell.reorderHandle"),
     messages: {
       lifted: (id, place) => t("shell.reorderLifted", placeWords(id, place)),
@@ -363,11 +366,18 @@ export function Rail({
       />
     ) : null;
 
+  const fileChannel = channelMenu?.onMoveToSection;
   let openMenu: ReactNode = null;
   if (ctx.at !== null && menu?.type === "channel" && channelMenu !== undefined) {
     openMenu = (
       <ChannelMenu
         {...channelMenu}
+        {...(fileChannel === undefined
+          ? {}
+          : {
+              onMoveToSection: (channelId: string, sectionId: string | null) =>
+                void rearrange(() => fileChannel(channelId, sectionId)),
+            })}
         at={ctx.at}
         channelId={menu.channel.id}
         kind={menu.channel.kind}
