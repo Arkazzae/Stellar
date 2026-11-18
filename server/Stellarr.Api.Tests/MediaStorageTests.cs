@@ -15,13 +15,14 @@ public sealed class MediaStorageTests(StellarrWebApplicationFactory factory)
     private static readonly Guid SeededMessageId = Guid.Parse("40000000-0000-0000-0000-000000000001");
 
     [Fact]
-    public async Task AnUnreferencedAttachmentIsQueuedWithItsPosterAndItsRowIsRemoved()
+    public async Task AnUnreferencedAttachmentIsQueuedWithItsPosterAndPreviewAndItsRowIsRemoved()
     {
         await using var scope = factory.OpenScope(out var db);
         var mediaStorage = scope.ServiceProvider.GetRequiredService<MediaStorage>();
         var uploader = (await AddUsersAsync(db, 1))[0];
         var attachment = Upload(uploader);
         attachment.PosterObjectKey = $"posters/{Guid.NewGuid():N}.jpg";
+        attachment.PreviewObjectKey = $"previews/{Guid.NewGuid():N}.webp";
         db.ImageAttachments.Add(attachment);
         await db.SaveChangesAsync();
         var queuedAt = new DateTime(2026, 3, 1, 10, 0, 0, DateTimeKind.Utc);
@@ -32,9 +33,9 @@ public sealed class MediaStorageTests(StellarrWebApplicationFactory factory)
         Assert.True(removed);
         Assert.False(await db.ImageAttachments.AnyAsync(x => x.Id == attachment.Id));
         var queued = await db.ObjectDeletions
-            .Where(x => x.ObjectKey == attachment.ObjectKey || x.ObjectKey == attachment.PosterObjectKey)
+            .Where(x => x.ObjectKey == attachment.ObjectKey || x.ObjectKey == attachment.PosterObjectKey || x.ObjectKey == attachment.PreviewObjectKey)
             .ToListAsync();
-        Assert.Equal(2, queued.Count);
+        Assert.Equal(3, queued.Count);
         Assert.All(queued, x => Assert.Equal(queuedAt, x.QueuedAt));
     }
 
@@ -253,18 +254,19 @@ public sealed class MediaStorageTests(StellarrWebApplicationFactory factory)
     }
 
     [Fact]
-    public async Task TheUserQuotaCountsStoredBytesPostersAndUploadsInFlight()
+    public async Task TheUserQuotaCountsStoredBytesPostersPreviewsAndUploadsInFlight()
     {
         await using var scope = factory.OpenScope(out var db);
         var user = (await AddUsersAsync(db, 1))[0];
         var stored = Upload(user);
         stored.SizeBytes = 50;
         stored.PosterSizeBytes = 10;
+        stored.PreviewSizeBytes = 5;
         db.ImageAttachments.Add(stored);
         await db.SaveChangesAsync();
         using var gate = Gate(new UploadOptions { MaxStoredBytesPerUser = 100, MinimumFreeDataRootBytes = 0 });
 
-        Assert.Equal(UploadAdmissionFailure.UserQuota, (await gate.TryEnterAsync(db, user.Id, 41, default)).Failure);
+        Assert.Equal(UploadAdmissionFailure.UserQuota, (await gate.TryEnterAsync(db, user.Id, 36, default)).Failure);
 
         var first = await gate.TryEnterAsync(db, user.Id, 30, default);
         Assert.True(first.Accepted);
@@ -301,7 +303,7 @@ public sealed class MediaStorageTests(StellarrWebApplicationFactory factory)
     {
         await using var scope = factory.OpenScope(out var db);
         var users = await AddUsersAsync(db, 2);
-        var stored = await db.ImageAttachments.SumAsync(x => (long?)x.SizeBytes + (x.PosterSizeBytes ?? 0)) ?? 0;
+        var stored = await db.ImageAttachments.SumAsync(x => (long?)x.SizeBytes + (x.PosterSizeBytes ?? 0) + (x.PreviewSizeBytes ?? 0)) ?? 0;
         using var gate = Gate(new UploadOptions { MaxStoredBytes = stored + 10, MinimumFreeDataRootBytes = 0 });
 
         Assert.Equal(UploadAdmissionFailure.InstanceQuota, (await gate.TryEnterAsync(db, users[0].Id, 11, default)).Failure);

@@ -102,6 +102,7 @@ public sealed class MaintenanceTests
         var recentId = Guid.NewGuid();
         const string orphanKey = "maintenance/orphan.bin";
         const string posterKey = "maintenance/orphan-poster.bin";
+        const string previewKey = "maintenance/orphan-preview.bin";
         const string referencedKey = "maintenance/referenced.bin";
         const string avatarKey = "maintenance/avatar.bin";
         const string recentKey = "maintenance/recent.bin";
@@ -118,6 +119,9 @@ public sealed class MaintenanceTests
             orphan.PosterObjectKey = posterKey;
             orphan.PosterContentType = "image/webp";
             orphan.PosterSizeBytes = 1;
+            orphan.PreviewObjectKey = previewKey;
+            orphan.PreviewContentType = "image/webp";
+            orphan.PreviewSizeBytes = 1;
             db.ImageAttachments.AddRange(
                 orphan,
                 Attachment(referencedId, user.Id, referencedKey, now.AddDays(-10)),
@@ -140,7 +144,7 @@ public sealed class MaintenanceTests
             });
             await db.SaveChangesAsync();
 
-            foreach (var key in new[] { orphanKey, posterKey, referencedKey, avatarKey, recentKey })
+            foreach (var key in new[] { orphanKey, posterKey, previewKey, referencedKey, avatarKey, recentKey })
             {
                 await storage.PutAsync(key, new MemoryStream([1]), default);
             }
@@ -183,6 +187,7 @@ public sealed class MaintenanceTests
             Assert.True(await db.ImageAttachments.AnyAsync(x => x.Id == recentId));
             Assert.False(storage.Contains(orphanKey));
             Assert.False(storage.Contains(posterKey));
+            Assert.False(storage.Contains(previewKey));
             Assert.True(storage.Contains(referencedKey));
             Assert.True(storage.Contains(avatarKey));
             Assert.True(storage.Contains(recentKey));

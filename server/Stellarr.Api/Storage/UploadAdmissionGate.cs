@@ -98,9 +98,9 @@ public sealed class UploadAdmissionGate : IDisposable
         var attachments = db.ImageAttachments.AsNoTracking();
         var userStored = await attachments
             .Where(x => x.UploadedById == userId)
-            .SumAsync(x => (long?)x.SizeBytes + (x.PosterSizeBytes ?? 0), cancellationToken) ?? 0;
+            .SumAsync(x => (long?)x.SizeBytes + (x.PosterSizeBytes ?? 0) + (x.PreviewSizeBytes ?? 0), cancellationToken) ?? 0;
         var totalStored = await attachments
-            .SumAsync(x => (long?)x.SizeBytes + (x.PosterSizeBytes ?? 0), cancellationToken) ?? 0;
+            .SumAsync(x => (long?)x.SizeBytes + (x.PosterSizeBytes ?? 0) + (x.PreviewSizeBytes ?? 0), cancellationToken) ?? 0;
         // Emoji have object bytes of their own, rather than attachment rows.
         userStored += await db.ServerEmoji.AsNoTracking().Where(x => x.UploadedById == userId)
             .SumAsync(x => (long?)x.SizeBytes, cancellationToken) ?? 0;

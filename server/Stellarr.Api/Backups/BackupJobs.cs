@@ -255,6 +255,8 @@ public sealed partial class BackupJobs(
                 UNION ALL
                 SELECT "PosterObjectKey", coalesce("PosterSizeBytes", 0) FROM "ImageAttachments" WHERE "PosterObjectKey" IS NOT NULL
                 UNION ALL
+                SELECT "PreviewObjectKey", coalesce("PreviewSizeBytes", 0) FROM "ImageAttachments" WHERE "PreviewObjectKey" IS NOT NULL
+                UNION ALL
                 SELECT "ObjectKey", "SizeBytes" FROM "ServerEmoji";
                 """;
             await using var reader = await command.ExecuteReaderAsync(cancellationToken);
