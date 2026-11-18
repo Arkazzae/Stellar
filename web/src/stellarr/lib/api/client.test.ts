@@ -830,6 +830,32 @@ describe("http api client", () => {
     expect(body.get("poster")).toBeInstanceOf(File);
   });
 
+  it("sends an image's preview under a name that matches its encoding", async () => {
+    fetchMock.mockImplementation(async () =>
+      jsonResponse(
+        { id: "a-photo", name: "photo.png", contentType: "image/png", size: 9, url: "/assets/a-photo" },
+        201,
+      ),
+    );
+
+    const file = new File(["photo"], "photo.png", { type: "image/png" });
+    await api.uploadAttachment(file, {
+      width: 4000,
+      height: 3000,
+      preview: new Blob(["webp"], { type: "image/webp" }),
+    });
+    const webp = (fetchMock.mock.calls[0]?.[1]?.body as FormData).get("preview");
+    expect(webp).toBeInstanceOf(File);
+    expect((webp as File).name).toBe("preview.webp");
+
+    await api.uploadAttachment(file, { preview: new Blob(["jpeg"], { type: "image/jpeg" }) });
+    const jpeg = (fetchMock.mock.calls[1]?.[1]?.body as FormData).get("preview");
+    expect((jpeg as File).name).toBe("preview.jpg");
+
+    await api.uploadAttachment(file, { width: 10, height: 10 });
+    expect((fetchMock.mock.calls[2]?.[1]?.body as FormData).has("preview")).toBe(false);
+  });
+
   it("marks an uploaded recording as a voice message", async () => {
     fetchMock.mockResolvedValue(
       jsonResponse(
