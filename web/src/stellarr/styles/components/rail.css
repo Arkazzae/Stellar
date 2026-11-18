@@ -118,7 +118,8 @@
   .rail-act:hover{background:var(--surface-overlay);color:var(--text)}
   .rail-act.invite:hover{color:var(--accent-text)}
 
-  .rail-scroll{flex:1;overflow-y:auto;padding:12px 8px;min-height:0}
+  /* Positioned, so a channel drag measures every row from here. */
+  .rail-scroll{flex:1;overflow-y:auto;padding:12px 8px;min-height:0;position:relative}
   .group-caption{font-size:var(--text-12);color:var(--text-faint);padding:0 8px;margin:16px 0 4px;display:flex;align-items:center;justify-content:space-between}
   .rail-scroll .group-caption:first-child,
   .rail-scroll .rail-cap:first-child .group-caption{margin-top:0}
@@ -219,24 +220,40 @@
   }
   .channel-thread:hover .channel-thread-meta,
   .channel-thread[aria-current="page"] .channel-thread-meta{color:var(--text-muted)}
-  /* The channel being carried, lifted off the list. */
+  /* A composer pill being carried, lifted off its row. */
   .drag-chosen{background:var(--surface-overlay);box-shadow:0 4px 14px oklch(0 0 0 / 0.45);cursor:grabbing}
   /*
-   * Sorting text channels. What moves is the row together with its open
-   * threads, by transform only, so nothing reflows under the pointer. The
-   * others slide out of its way; the one under the pointer follows it with no
-   * delay, and once dropped it eases from where it was let go into its slot.
+   * Sorting channels. What moves is the row together with its open threads or
+   * its people, by transform only, and the rest of the rail moves out of its
+   * way the same way, group by group, so nothing reflows under the pointer.
+   * The carried row follows the pointer with no delay, everything else slides,
+   * and once dropped the row eases from where it was let go into its slot.
    *
-   * No `touch-action` here on purpose: a finger swiping along the rail has to
-   * scroll it, as it always has. The browser takes that gesture and the drag it
-   * may have started is cancelled.
+   * No `touch-action` on the rows on purpose: a finger swiping along the rail
+   * has to scroll it, as it always has. The browser takes that gesture and the
+   * drag it may have started is cancelled.
    */
-  .text-channel-node.is-sorting,
-  .text-channel-node[data-settling]{transition:transform var(--dur-base) var(--ease-standard)}
-  .text-channel-node.is-dragging{
-    position:relative;z-index:1;
-    /* Threads carried under the row stay readable over the rows they cross. */
+  .rail-scroll[data-sorting]{cursor:grabbing}
+  /* Nothing in the rail is hovered while it scrolls under a carried row: a
+     hover change would restyle it before every frame of the edge scroll. */
+  .rail-scroll[data-sorting] > *{pointer-events:none}
+  /* Open groups stop clipping, or a row carried out of one would vanish at its edge. */
+  .rail-scroll[data-sorting] .collapsible:not(.closed) > .collapsible-body{overflow:visible}
+  .rail-scroll [data-drag="shifted"],
+  .rail-scroll [data-drag="carried"][data-via="keyboard"],
+  .rail-scroll [data-settling]{transition:transform var(--dur-base) var(--ease-standard)}
+  .rail-scroll [data-drag="carried"]{
+    position:relative;z-index:2;
+    /* Threads and people carried under the row stay readable over what they cross. */
     background:var(--surface-sidebar);border-radius:var(--radius-sm);
+  }
+  .rail-scroll [data-drag="carried"] > .channel{
+    background:var(--surface-overlay);box-shadow:0 4px 14px oklch(0 0 0 / 0.45);
+  }
+  /* A collapsed group taking the drop shows nothing below its caption, so the caption answers. */
+  .rail-cap:has(+ .collapsible [data-drag-over]) .group-caption,
+  .rail-section:has([data-drag-over]) .rail-section-cap .group-caption{
+    background:var(--surface-overlay);color:var(--text);
   }
   /* The collapse caret owns the trailing edge. The separate create button is
      overlaid just before it, keeping two valid sibling buttons without making
@@ -262,8 +279,10 @@
    * separated instead — a hairline above, a folder mark, and the name in the
    * body colour rather than the caption's faint one.
    */
-  .rail-section{margin-top:14px;padding-top:12px;border-top:1px solid var(--line-subtle)}
-  .rail-section-cap{margin-bottom:2px}
+  /* The hairline belongs to the caption, so it moves with it when a drag
+     shifts the caption alone. */
+  .rail-section{margin-top:14px}
+  .rail-section-cap{margin-bottom:2px;padding-top:12px;border-top:1px solid var(--line-subtle);min-height:35px}
   .rail-section-cap .group-caption{
     display:flex;align-items:center;gap:7px;flex:1;min-width:0;
     color:var(--text-muted);font-weight:600;letter-spacing:0;text-transform:none;
@@ -378,7 +397,7 @@
   }
   @media (prefers-reduced-motion: reduce){
     .ch-threads-toggle,.channel-threads,.channel-thread{transition:none}
-    .text-channel-node.is-sorting,.text-channel-node[data-settling]{transition:none}
+    .rail-scroll [data-drag],.rail-scroll [data-settling]{transition:none}
   }
   /* ---------- „coś trwa na kanale" ---------- */
   .dock-item{

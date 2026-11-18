@@ -214,7 +214,7 @@ export function useZoneDrag<T>({
       const handle = event.currentTarget;
       const active = openSession(handle, 0);
       session.current = active;
-      watchPage(active, handle, () => {
+      watchPage(active.listening.signal, handle, () => {
         if (session.current === active) finish(false);
       });
       // Re-align the copy when the list scrolls under it, by wheel or by `reveal`.

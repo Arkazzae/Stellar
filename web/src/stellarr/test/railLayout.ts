@@ -1,79 +1,72 @@
-import { fireEvent } from "@testing-library/react";
+import { act, fireEvent } from "@testing-library/react";
 import { vi } from "vitest";
 
-/** Where the rail's lists begin, and the heights the style sheets give their rows. */
-export const TEXT_TOP = 100;
-export const VOICE_TOP = 400;
+/** The heights the style sheets give the rail's fixed parts, in px. */
 export const ROW = 32;
 export const THREAD_ROW = 44;
 export const OCCUPANT_ROW = 30;
+export const CAPTION = 22;
+export const SECTION_CAPTION = 35;
+export const EMPTY_NOTE = 26;
 
-function box(top: number, height: number, left = 8, width = 232): DOMRect {
-  return {
-    x: left,
-    y: top,
-    top,
-    left,
-    width,
-    height,
-    bottom: top + height,
-    right: left + width,
-    toJSON: () => ({}),
-  } as DOMRect;
+function heightOf(element: Element): number {
+  if (element.matches(".collapsible.closed, .channel-threads.closed, [hidden], .sr-only")) return 0;
+  if (element.matches(".channel")) return ROW;
+  if (element.matches(".rail-section-cap")) return SECTION_CAPTION;
+  if (element.matches(".rail-cap")) return CAPTION;
+  if (element.matches(".voice-occupants > li")) return OCCUPANT_ROW;
+  if (element.matches(".channel-threads > li")) return THREAD_ROW;
+  if (element.matches(".rail-section-empty")) return EMPTY_NOTE;
+  return [...element.children].reduce((sum, child) => sum + heightOf(child), 0);
 }
 
-function translateY(element: HTMLElement): number {
-  return Number(/translateY\((-?[\d.]+)px\)/.exec(element.style.transform)?.[1] ?? 0);
-}
-
-function textNodeHeight(node: Element): number {
-  const threads = node.querySelector(".channel-threads:not(.closed)");
-  return ROW + (threads?.children.length ?? 0) * THREAD_ROW;
-}
-
-function zoneHeight(zone: Element): number {
-  return ROW + zone.querySelectorAll(".voice-occupants > li").length * OCCUPANT_ROW;
-}
-
-/** The top of `element` when its siblings matching `selector` are stacked from `start`. */
-function stackedTop(element: Element, selector: string, start: number, height: (node: Element) => number) {
-  let top = start;
-  for (const sibling of element.ownerDocument.querySelectorAll(selector)) {
+/**
+ * Where `element` starts in the rail's content, every element stacked right
+ * below the siblings before it: what `offsetTop` reads from the positioned
+ * `.rail-scroll`, before any transform and however far it has scrolled.
+ */
+export function railTop(element: Element): number {
+  const parent = element.parentElement;
+  if (parent === null || element.matches(".rail-scroll")) return 0;
+  let top = railTop(parent);
+  for (const sibling of parent.children) {
     if (sibling === element) break;
-    top += height(sibling);
+    top += heightOf(sibling);
   }
   return top;
 }
 
+function translateY(element: Element): number {
+  if (!(element instanceof HTMLElement)) return 0;
+  return Number(/translateY\((-?[\d.]+)px\)/.exec(element.style.transform)?.[1] ?? 0);
+}
+
 /**
- * jsdom lays nothing out, so this stands in for the rail's layout: text
- * channels stacked from `TEXT_TOP` in document order, each as tall as its row
- * and open threads, voice channels from `VOICE_TOP` with their occupants, and
- * a transform moving a box the way it would on screen. It reads the document
- * on every call, so a reorder or an opened thread list is laid out again.
+ * jsdom lays nothing out, so this stands in for the rail's layout: every
+ * element of the rail stacked in document order from the top of the
+ * unscrolled `.rail-scroll`, rows, captions, threads and people at the
+ * heights the style sheets give them, and a collapsed group or thread list
+ * at none. It reads the document on every call, so a reorder or a group
+ * closing is laid out again. Viewport boxes add the element's own transform,
+ * the way a carried copy is drawn.
  */
 export function layOutRail() {
-  return vi
-    .spyOn(HTMLElement.prototype, "getBoundingClientRect")
-    .mockImplementation(function (this: HTMLElement) {
-      if (this.classList.contains("text-channel-node")) {
-        const top = stackedTop(this, ".text-channel-node", TEXT_TOP, textNodeHeight);
-        return box(top + translateY(this), textNodeHeight(this));
-      }
-      if (this.classList.contains("voice-channel-drop")) {
-        return box(stackedTop(this, ".voice-channel-drop", VOICE_TOP, zoneHeight), zoneHeight(this));
-      }
-      const zone = this.closest(".voice-channel-drop");
-      if (this.matches(".voice-occupants > li") && zone !== null) {
-        const rows = [...zone.querySelectorAll(".voice-occupants > li")];
-        const top =
-          stackedTop(zone, ".voice-channel-drop", VOICE_TOP, zoneHeight) +
-          ROW +
-          rows.indexOf(this) * OCCUPANT_ROW;
-        return box(top, OCCUPANT_ROW, 36, 200);
-      }
-      return box(0, 0, 0, 0);
-    });
+  vi.spyOn(HTMLElement.prototype, "offsetTop", "get").mockImplementation(function (this: HTMLElement) {
+    return railTop(this);
+  });
+  vi.spyOn(HTMLElement.prototype, "offsetHeight", "get").mockImplementation(function (
+    this: HTMLElement,
+  ) {
+    return heightOf(this);
+  });
+  vi.spyOn(HTMLElement.prototype, "getBoundingClientRect").mockImplementation(function (
+    this: HTMLElement,
+  ) {
+    const inRail = this.closest(".rail-scroll") !== null;
+    const top = inRail ? railTop(this) + translateY(this) : 0;
+    const height = this.matches(".rail-scroll") ? 600 : inRail ? heightOf(this) : 0;
+    return { x: 8, y: top, top, left: 8, width: 232, height, bottom: top + height, right: 240, toJSON: () => ({}) } as DOMRect;
+  });
 }
 
 /** jsdom has no pointer capture; a drag asks for it once it starts. */
@@ -106,6 +99,11 @@ export function moveTo(...path: number[]) {
 
 export function release(y: number) {
   fireEvent.pointerUp(document, { pointerId: 1, isPrimary: true, button: 0, clientX: 40, clientY: y });
+}
+
+/** Lets the frame a pointer drag draws in run. */
+export async function nextFrame() {
+  await act(() => new Promise<void>((resolve) => requestAnimationFrame(() => resolve())));
 }
 
 export function translateOf(element: Element | null): string {

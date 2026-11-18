@@ -118,9 +118,9 @@ export function followScroll(session: DragSession, onScroll: () => void) {
  * A keyboard drag ends when the page it measured changes under it: the window
  * resized or the tab hidden. A pointer drag gets the same from `trackPointer`.
  */
-export function watchPage(session: DragSession, element: Element, onCancel: () => void) {
+export function watchPage(signal: AbortSignal, element: Element, onCancel: () => void) {
   const document = element.ownerDocument;
-  const options = { signal: session.listening.signal };
+  const options = { signal };
   document.defaultView?.addEventListener("resize", onCancel, options);
   document.addEventListener(
     "visibilitychange",

@@ -2,12 +2,9 @@ import { fireEvent, render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { describe, expect, it, vi } from "vitest";
 
-import type { DragHandleProps } from "@/lib/drag/session";
+import type { SortHandleProps } from "@/lib/drag/useListSort";
 
-import {
-  ChannelButton,
-  type ChannelDragProps,
-} from "./ChannelButton";
+import { ChannelButton } from "./ChannelButton";
 
 describe("ChannelButton interaction structure", () => {
   it("renders selection, thread disclosure and settings as sibling buttons", async () => {
@@ -60,24 +57,23 @@ describe("ChannelButton interaction structure", () => {
     const user = userEvent.setup();
     const onSelect = vi.fn();
     const onOpenSettings = vi.fn();
-    const handle: DragHandleProps = {
+    const handle: SortHandleProps = {
+      ref: vi.fn(),
       onPointerDown: vi.fn(),
       onKeyDown: vi.fn(),
       onKeyUp: vi.fn(),
       onBlur: vi.fn(),
       "aria-describedby": "how-to-sort",
       "aria-roledescription": "kanał do przestawienia",
-      "aria-pressed": undefined,
     };
-    const drag: ChannelDragProps = { dragging: false, handle };
 
-    const { container, rerender } = render(
+    const { container } = render(
       <ChannelButton
         kind="text"
         name="ogólny"
         onOpenSettings={onOpenSettings}
         onSelect={onSelect}
-        drag={drag}
+        drag={handle}
       />,
     );
 
@@ -101,15 +97,5 @@ describe("ChannelButton interaction structure", () => {
     expect(onOpenSettings).toHaveBeenCalledOnce();
     expect(handle.onPointerDown).not.toHaveBeenCalled();
     expect(onSelect).toHaveBeenCalledOnce();
-
-    rerender(
-      <ChannelButton
-        kind="text"
-        name="ogólny"
-        onSelect={onSelect}
-        drag={{ dragging: true, handle }}
-      />,
-    );
-    expect(row).toHaveClass("drag-chosen");
   });
 });

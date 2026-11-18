@@ -15,6 +15,7 @@ import { RailVoiceList } from "@/components/shell/rail/RailVoiceList";
 import type {
   ChannelMenuRaiser,
   ChannelMenuTarget,
+  RailSortRefs,
   RailThreads,
 } from "@/components/shell/rail/railTypes";
 import { useThreadFocus } from "@/components/shell/rail/useThreadFocus";
@@ -27,9 +28,23 @@ import type {
   TextChannelVM,
   VoiceChannelVM,
 } from "@/components/view-models";
+import { LiveDragAnnouncer } from "@/lib/drag/DragAnnouncer";
+import { useListSort, type SortList, type SortPlace } from "@/lib/drag/useListSort";
 import { useLanguage } from "@/state/hooks";
 
 export { voiceMoveRequest } from "@/components/shell/rail/voiceMove";
+
+/** One group's channels of one kind, as the rail's sort sees them. */
+interface RailList extends SortList {
+  sectionId: string | null;
+  /** What the group is called when a screen reader says where a channel is. */
+  name: string;
+  /** The id of the collapsible body the list is in. */
+  body: string;
+}
+
+const listId = (kind: "text" | "voice", sectionId: string | null) =>
+  `${kind}:${sectionId ?? ""}`;
 
 export interface RailProps {
   serverName: string;
@@ -209,6 +224,93 @@ export function Rail({
     }
   };
 
+  // Every group of the rail is a list of one sort, so a channel can be
+  // dragged into any group of its kind. Sorting is for whoever may edit the
+  // channels; anyone else gets plain rows.
+  const canSort = canManageChannels;
+  const looseText = textChannels.filter((channel) => channel.sectionId === undefined);
+  const looseVoice = voiceChannels.filter((channel) => channel.sectionId === undefined);
+  const grouped = sections.map((section) => ({
+    section,
+    text: textChannels.filter((channel) => channel.sectionId === section.id),
+    voice: voiceChannels.filter((channel) => channel.sectionId === section.id),
+  }));
+  const ids = (channels: { id: string }[]) => channels.map((channel) => channel.id);
+  const lists: RailList[] = [
+    {
+      id: listId("text", null),
+      kind: "text",
+      items: ids(looseText),
+      closed: !textOpen,
+      sectionId: null,
+      name: t("shell.textChannels"),
+      body: `${railId}-text`,
+    },
+    {
+      id: listId("voice", null),
+      kind: "voice",
+      items: ids(looseVoice),
+      closed: !voiceOpen,
+      sectionId: null,
+      name: t("shell.voiceChannels"),
+      body: `${railId}-voice`,
+    },
+    ...grouped.flatMap(({ section, text, voice }) => {
+      const group = {
+        closed: closedSections.has(section.id),
+        sectionId: section.id,
+        name: section.name,
+        body: `${railId}-section-${section.id}`,
+      };
+      return [
+        { ...group, id: listId("text", section.id), kind: "text", items: ids(text) },
+        { ...group, id: listId("voice", section.id), kind: "voice", items: ids(voice) },
+      ];
+    }),
+  ];
+  const listOf = (id: string) => lists.find((list) => list.id === id);
+  const channelName = (id: string) =>
+    [...textChannels, ...voiceChannels].find((channel) => channel.id === id)?.name ?? "";
+  const placeWords = (id: string, { list, position, count }: SortPlace) => ({
+    name: channelName(id),
+    position,
+    count,
+    group: listOf(list)?.name ?? "",
+  });
+  const {
+    container: sortContainer,
+    list: sortList,
+    item: sortItem,
+    handle: sortHandle,
+    announcer: sortAnnouncer,
+    instructionsId: sortInstructionsId,
+  } = useListSort({
+    lists,
+    onMove: ({ id, list, order }) =>
+      void moveChannel({ channelId: id, sectionId: listOf(list)?.sectionId ?? null, order }),
+    roleDescription: t("shell.reorderHandle"),
+    messages: {
+      lifted: (id, place) => t("shell.reorderLifted", placeWords(id, place)),
+      moved: (id, place) => t("shell.reorderMoved", placeWords(id, place)),
+      dropped: (id, place) => t("shell.reorderDropped", placeWords(id, place)),
+      cancelled: () => t("shell.reorderCancelled"),
+    },
+    // The rows of a closed group cannot take focus; the caption that opens it can.
+    focusClosed: (list) => {
+      const body = listOf(list)?.body;
+      return (
+        [...document.querySelectorAll<HTMLElement>("[aria-controls]")].find(
+          (caption) => caption.getAttribute("aria-controls") === body,
+        ) ?? null
+      );
+    },
+  });
+  const sortRefs = (list: string): RailSortRefs => ({
+    list: sortList(list),
+    item: sortItem,
+    ...(canSort ? { handle: sortHandle } : {}),
+  });
+
   const registerThread = useThreadFocus(threadsByChannel, activeThreadId, hidden);
   const threads: RailThreads = {
     byChannel: threadsByChannel,
@@ -231,10 +333,10 @@ export function Rail({
       onSelect={onSelectTextChannel}
       onOpenSettings={openSettings}
       menuFor={raiseChannelMenu}
-      onReorder={(order, channelId) => void moveChannel({ channelId, sectionId, order })}
+      sort={sortRefs(listId("text", sectionId))}
     />
   );
-  const voiceList = (channels: VoiceChannelVM[]) => (
+  const voiceList = (channels: VoiceChannelVM[], sectionId: string | null) => (
     <RailVoiceList
       channels={channels}
       activeChannelId={activeChannelId}
@@ -245,6 +347,7 @@ export function Rail({
       onOpenSettings={openSettings}
       menuFor={raiseChannelMenu}
       personMenuFor={raisePersonMenu}
+      sort={sortRefs(listId("voice", sectionId))}
     />
   );
 
@@ -308,19 +411,16 @@ export function Rail({
         onInvite={canManageServer ? onInvite : undefined}
       />
 
-      <div className="rail-scroll">
+      <div className="rail-scroll" ref={sortContainer}>
         <CollapsibleGroup
           id={`${railId}-text`}
           caption={t("shell.textChannels")}
-          captionTitle={t("shell.dragChannel")}
+          captionTitle={canSort ? t("shell.dragChannel") : undefined}
           open={textOpen}
           onToggle={() => setTextOpen((open) => !open)}
           actions={createAction("text")}
         >
-          {textList(
-            textChannels.filter((channel) => channel.sectionId === undefined),
-            null,
-          )}
+          {textList(looseText, null)}
         </CollapsibleGroup>
         <CollapsibleGroup
           id={`${railId}-voice`}
@@ -329,36 +429,27 @@ export function Rail({
           onToggle={() => setVoiceOpen((open) => !open)}
           actions={createAction("voice")}
         >
-          {voiceList(voiceChannels.filter((channel) => channel.sectionId === undefined))}
+          {voiceList(looseVoice, null)}
         </CollapsibleGroup>
 
-        {sections.map((section) => {
-          const sectionText = textChannels.filter(
-            (channel) => channel.sectionId === section.id,
-          );
-          const sectionVoice = voiceChannels.filter(
-            (channel) => channel.sectionId === section.id,
-          );
-          return (
-            <RailSection
-              key={section.id}
-              name={section.name}
-              open={!closedSections.has(section.id)}
-              onToggle={() =>
-                setClosedSections((current) => toggled(current, section.id))
-              }
-              empty={sectionText.length === 0 && sectionVoice.length === 0}
-              onOpenSettings={
-                canManageChannels && onOpenSectionSettings !== undefined
-                  ? () => onOpenSectionSettings(section.id)
-                  : undefined
-              }
-            >
-              {sectionText.length === 0 ? null : textList(sectionText, section.id)}
-              {sectionVoice.length === 0 ? null : voiceList(sectionVoice)}
-            </RailSection>
-          );
-        })}
+        {grouped.map(({ section, text, voice }) => (
+          <RailSection
+            key={section.id}
+            id={`${railId}-section-${section.id}`}
+            name={section.name}
+            open={!closedSections.has(section.id)}
+            onToggle={() => setClosedSections((current) => toggled(current, section.id))}
+            empty={text.length === 0 && voice.length === 0}
+            onOpenSettings={
+              canManageChannels && onOpenSectionSettings !== undefined
+                ? () => onOpenSectionSettings(section.id)
+                : undefined
+            }
+          >
+            {textList(text, section.id)}
+            {voiceList(voice, section.id)}
+          </RailSection>
+        ))}
 
         {moveError === null ? null : (
           <p className="rail-move-error" role="alert">
@@ -367,6 +458,11 @@ export function Rail({
         )}
       </div>
 
+      <LiveDragAnnouncer
+        id={sortInstructionsId}
+        instructions={t("shell.reorderInstructions")}
+        announcer={sortAnnouncer}
+      />
       <span className="sr-only" aria-live="polite">
         {move.announcement}
       </span>
