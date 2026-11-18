@@ -180,6 +180,9 @@ export function UserSecuritySheet({ user, open, onOpenChange }: UserSecurityShee
 
               <section className="space-y-2">
                 <h3 className="font-medium">{t("userSecurity.identities")}</h3>
+                {security.hasPassword ? null : (
+                  <p className="text-muted-foreground">{t("userSecurity.noPassword")}</p>
+                )}
                 {security.identities.length === 0 ? (
                   <p className="text-muted-foreground">{t("userSecurity.noIdentities")}</p>
                 ) : (

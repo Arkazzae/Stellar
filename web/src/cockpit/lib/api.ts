@@ -281,6 +281,8 @@ export interface CockpitUserSecurity {
   userId: string;
   /** An operator's recovery is waiting for the account to set up a new method. */
   recoveryRequired: boolean;
+  /** False for an account made through a provider that has not set a password. */
+  hasPassword: boolean;
   methods: { id: string; type: string; name: string; confirmed: boolean; createdAt: string; lastUsedAt: string | null }[];
   remainingRecoveryCodes: number;
   trustedDevices: number;
@@ -321,6 +323,14 @@ export interface CockpitSecret {
 
 /** An integration switch the operator flipped; one left out stays as stored. */
 export type CockpitIntegrationSwitches = Partial<Pick<CockpitSettings, "resendEnabled" | "giphyEnabled">>;
+
+/** A sign-in provider configured in the environment, and the owner's switch for it. */
+export interface CockpitIdentityProvider {
+  id: string;
+  displayName: string;
+  /** It may create an account, with no password, for someone who has an invite. */
+  signUp: boolean;
+}
 
 export type CockpitSecurityKey =
   | "mfaRequirement"
@@ -584,6 +594,14 @@ export const cockpitApi = {
     request<CockpitCloudflareR2Settings>("/api/cockpit/integrations/cloudflare/r2", { method: "PUT", body: settings }),
   resetCloudflareR2: () =>
     request<CockpitCloudflareR2Settings>("/api/cockpit/integrations/cloudflare/r2", { method: "DELETE" }),
+  identityProviders: (signal?: AbortSignal) =>
+    request<CockpitIdentityProvider[]>("/api/cockpit/integrations/identity-providers", {}, signal),
+  /** Asks for a fresh second step, like other security changes. */
+  setProviderSignUp: (providerId: string, signUp: boolean) =>
+    request<CockpitIdentityProvider>(`/api/cockpit/integrations/identity-providers/${segment(providerId)}`, {
+      method: "PUT",
+      body: { signUp },
+    }),
   /**
    * The database alone comes back at once as a plain SQLite file; anything
    * more starts an archive in the background and comes back as its job.

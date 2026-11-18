@@ -25,6 +25,8 @@ vi.mock("../lib/api", async (importOriginal) => {
       cloudflareR2: vi.fn(),
       updateCloudflareR2: vi.fn(),
       resetCloudflareR2: vi.fn(),
+      identityProviders: vi.fn(),
+      setProviderSignUp: vi.fn(),
     },
   };
 });
@@ -90,6 +92,9 @@ beforeEach(() => {
   cloudflareMock.mockResolvedValue(cloudflare);
   updateCloudflareMock.mockReset();
   vi.mocked(cockpitApi.resetCloudflareR2).mockReset();
+  vi.mocked(cockpitApi.identityProviders).mockReset();
+  vi.mocked(cockpitApi.identityProviders).mockResolvedValue([]);
+  vi.mocked(cockpitApi.setProviderSignUp).mockReset();
 });
 
 describe("IntegrationsPage", () => {
@@ -265,5 +270,30 @@ describe("IntegrationsPage Cloudflare R2", () => {
 
     expect(updateCloudflareMock).toHaveBeenCalledWith({ ...cloudflare, bucket: "private-backups" });
     expect(await within(card).findByText("Zapisano. Następna wysyłka kopii użyje tego połączenia.")).toBeTruthy();
+  });
+
+});
+
+describe("IntegrationsPage sign-in providers", () => {
+  it("lets a sign-in provider create accounts for people with an invite, and says so", async () => {
+    const user = userEvent.setup();
+    const providersMock = vi.mocked(cockpitApi.identityProviders);
+    providersMock.mockResolvedValue([
+      { id: "default", displayName: "Authentik", signUp: false },
+      { id: "work", displayName: "Praca", signUp: false },
+    ]);
+    vi.mocked(cockpitApi.setProviderSignUp).mockResolvedValue({ id: "work", displayName: "Praca", signUp: true });
+    render(<IntegrationsPage />);
+
+    const toggle = await screen.findByRole("switch", { name: /^Dostawca Praca zakłada konta/ });
+    providersMock.mockResolvedValue([
+      { id: "default", displayName: "Authentik", signUp: false },
+      { id: "work", displayName: "Praca", signUp: true },
+    ]);
+    await user.click(toggle);
+
+    expect(cockpitApi.setProviderSignUp).toHaveBeenCalledExactlyOnceWith("work", true);
+    expect((await screen.findByRole("status")).textContent).toContain("Dostawca Praca zakłada teraz konta");
+    expect(toggle.getAttribute("aria-checked")).toBe("true");
   });
 });

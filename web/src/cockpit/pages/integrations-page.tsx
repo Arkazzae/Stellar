@@ -6,7 +6,13 @@ import { CloudflareSettings } from "../components/cloudflare-settings";
 import { PageHeader } from "../components/page-header";
 import { SecretField } from "../components/secret-field";
 import { t } from "../i18n";
-import { cockpitApi, type CockpitIntegrationSwitches, type CockpitSecret, type CockpitSettings } from "../lib/api";
+import {
+  cockpitApi,
+  type CockpitIdentityProvider,
+  type CockpitIntegrationSwitches,
+  type CockpitSecret,
+  type CockpitSettings,
+} from "../lib/api";
 import { useCockpitResource } from "../lib/use-cockpit-resource";
 
 interface Notice {
@@ -155,6 +161,75 @@ function GiphyCard({ settings, apiKey, saving, onToggle, onSecretChanged }: Card
   );
 }
 
+/**
+ * The sign-in providers come from the environment; whether each may create
+ * accounts for people with an invite is the owner's call, here. A switch is a
+ * security change, so the server may ask for a fresh second step first.
+ */
+function SignInProvidersCard() {
+  const { data, error, refresh } = useCockpitResource(
+    cockpitApi.identityProviders,
+    t("integrations.providers.loadFailed"),
+  );
+  const [saving, setSaving] = useState(false);
+  const [notice, setNotice] = useState<Notice | null>(null);
+
+  async function toggle(provider: CockpitIdentityProvider, signUp: boolean) {
+    setSaving(true);
+    setNotice(null);
+    try {
+      await cockpitApi.setProviderSignUp(provider.id, signUp);
+      await refresh();
+      setNotice({
+        message: t(signUp ? "integrations.providers.on" : "integrations.providers.off", {
+          provider: provider.displayName,
+        }),
+        error: false,
+      });
+    } catch (cause) {
+      setNotice({
+        message: cause instanceof Error ? cause.message : t("integrations.providers.saveFailed"),
+        error: true,
+      });
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  return (
+    <Card className="gap-0 py-0">
+      <CardTitleRow icon="login" title={t("integrations.providers.title")}>
+        {data && data.length > 0 ? (
+          <Badge variant="outline">{t("integrations.providers.count", { count: data.length })}</Badge>
+        ) : null}
+      </CardTitleRow>
+      <div className="space-y-5 px-5 py-5">
+        <p className="text-sm text-muted-foreground">{t("integrations.providers.description")}</p>
+        {error ? <p role="alert" className="text-sm text-danger">{error}</p> : null}
+        {data && data.length === 0 ? (
+          <p className="text-sm text-muted-foreground">{t("integrations.providers.none")}</p>
+        ) : null}
+        {data?.map((provider) => (
+          <SwitchRow
+            key={provider.id}
+            id={`provider-${provider.id}-sign-up`}
+            label={t("integrations.providers.signUp", { provider: provider.displayName })}
+            description={t("integrations.providers.signUpDescription")}
+            checked={provider.signUp}
+            disabled={saving}
+            onCheckedChange={(signUp) => void toggle(provider, signUp)}
+          />
+        ))}
+        {notice ? (
+          <p role={notice.error ? "alert" : "status"} className={notice.error ? "text-sm text-danger" : "text-sm text-success"}>
+            {notice.message}
+          </p>
+        ) : null}
+      </div>
+    </Card>
+  );
+}
+
 export function IntegrationsPage() {
   const { data, error, loading, refresh } = useCockpitResource(cockpitApi.settings, t("integrations.loadFailed"));
   const secrets = useCockpitResource(cockpitApi.secrets, t("secret.loadFailed"));
@@ -232,6 +307,7 @@ export function IntegrationsPage() {
               }
               onSecretChanged={secretChanged}
             />
+            <SignInProvidersCard />
             <CloudflareSettings secrets={secrets.data ?? []} onSecretChanged={secretChanged} />
           </div>
         </div>
