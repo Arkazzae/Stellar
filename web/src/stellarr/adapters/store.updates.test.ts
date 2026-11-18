@@ -161,12 +161,32 @@ describe("DirectoryStore channels", () => {
     ]);
   });
 
-  it("puts channels missing from a new order after the listed ones", () => {
+  it("moves a channel and files it under a section in one publish", () => {
     const store = storeWith({ channels: three });
+    const published = vi.fn();
+    store.subscribe(published);
 
-    store.setChannelOrder(["c-3"]);
+    store.setChannelLayout([
+      { id: "c-3", sectionId: "sec-1" },
+      { id: "c-1", sectionId: null },
+    ]);
 
+    // c-2 was not named: it keeps its place after the rest.
     expect(ids(store.getSnapshot().channels)).toEqual(["c-3", "c-1", "c-2"]);
+    expect(store.getSnapshot().channels.map((item) => item.sectionId)).toEqual([
+      "sec-1",
+      undefined,
+      undefined,
+    ]);
+    expect(published).toHaveBeenCalledOnce();
+
+    // The hub's echo of the same layout publishes nothing.
+    store.setChannelLayout([
+      { id: "c-3", sectionId: "sec-1" },
+      { id: "c-1", sectionId: null },
+      { id: "c-2", sectionId: null },
+    ]);
+    expect(published).toHaveBeenCalledOnce();
   });
 
   it("drops the voice occupancy of a removed channel", () => {

@@ -1,5 +1,5 @@
 import { rememberActiveServerId } from "@/lib/api/transport";
-import type { Server } from "@/lib/api/types";
+import type { Channel, ChannelPlacement, ChannelSectionMove, Server } from "@/lib/api/types";
 import type { DirectoryPort } from "@/ports";
 
 import type { DirectoryStore } from "./store";
@@ -8,16 +8,21 @@ import type { DirectoryStore } from "./store";
 const UNKNOWN_SERVER: Server = { id: "", name: "Stellarr" };
 
 type PersistOrder = (orderedIds: string[]) => Promise<void>;
+type PersistChannelOrder = (orderedIds: string[], move?: ChannelSectionMove) => Promise<void>;
+
+const placementsOf = (channels: readonly Channel[]): ChannelPlacement[] =>
+  channels.map(({ id, sectionId }) => ({ id, sectionId: sectionId ?? null }));
 
 /**
  * `DirectoryPort` over the shared directory store.
  *
  * Reordering is optimistic: the store changes at once so a drag does not snap
- * back, and the previous order returns if the server refuses.
+ * back, and the previous order, with every channel's section, returns if the
+ * server refuses.
  */
 export function createDirectoryAdapter(
   store: DirectoryStore,
-  persistOrder?: PersistOrder,
+  persistOrder?: PersistChannelOrder,
   persistSectionOrder?: PersistOrder,
   serverActions?: {
     create: DirectoryPort["createServer"];
@@ -34,21 +39,28 @@ export function createDirectoryAdapter(
     listPermissions: () => store.getSnapshot().permissions,
     onChanged: (handler) => store.subscribe(handler),
 
-    reorderChannels: (orderedIds) =>
-      reorder(
-        orderedIds,
-        store.getSnapshot().channels.map((channel) => channel.id),
-        (ids) => store.setChannelOrder(ids),
-        persistOrder,
-      ),
+    reorderChannels: (orderedIds, move) => {
+      const before = placementsOf(store.getSnapshot().channels);
+      const sectionOf = new Map(before.map(({ id, sectionId }) => [id, sectionId]));
+      const after = orderedIds.map((id) => ({
+        id,
+        sectionId: id === move?.channelId ? move.sectionId : (sectionOf.get(id) ?? null),
+      }));
+      return persistOptimistically(
+        () => store.setChannelLayout(after),
+        () => store.setChannelLayout(before),
+        persistOrder && (() => persistOrder(orderedIds, move)),
+      );
+    },
 
-    reorderSections: (orderedIds) =>
-      reorder(
-        orderedIds,
-        store.getSnapshot().sections.map((section) => section.id),
-        (ids) => store.setSectionOrder(ids),
-        persistSectionOrder,
-      ),
+    reorderSections: (orderedIds) => {
+      const before = store.getSnapshot().sections.map((section) => section.id);
+      return persistOptimistically(
+        () => store.setSectionOrder(orderedIds),
+        () => store.setSectionOrder(before),
+        persistSectionOrder && (() => persistSectionOrder(orderedIds)),
+      );
+    },
 
     async createServer(input) {
       if (serverActions === undefined) throw new Error("Server creation is unavailable.");
@@ -75,18 +87,17 @@ export function createDirectoryAdapter(
   };
 }
 
-async function reorder(
-  orderedIds: string[],
-  previousIds: string[],
-  apply: (ids: string[]) => void,
-  persist: PersistOrder | undefined,
+async function persistOptimistically(
+  apply: () => void,
+  restore: () => void,
+  persist: (() => Promise<void>) | undefined,
 ): Promise<void> {
-  apply(orderedIds);
+  apply();
   if (persist === undefined) return;
   try {
-    await persist(orderedIds);
+    await persist();
   } catch (error) {
-    apply(previousIds);
+    restore();
     throw error;
   }
 }

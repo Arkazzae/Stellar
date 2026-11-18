@@ -4,6 +4,7 @@ import { useEffect, type ReactNode } from "react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { createRuntime, type Runtime } from "@/adapters";
+import type { ChannelMove } from "@/components/view-models";
 import type { Bootstrap, Channel, ServerPermission, User } from "@/lib/api/types";
 import { BOOTSTRAP, FakeRealtimeClient, SELF, SERVER, TEXT_CHANNEL, VOICE_CHANNEL } from "@/test/fakes";
 import { fullApi, type FullApi } from "@/test/runtime";
@@ -317,35 +318,60 @@ describe("DirectoryProvider permission flags", () => {
   });
 });
 
-function ReorderButton({ group }: { group: string[] }) {
+function MoveButton({ move }: { move: ChannelMove }) {
   const directory = useDirectoryContext();
   return (
-    <button type="button" onClick={() => void directory.reorderChannelGroup(group)}>
-      Reorder
+    <button type="button" onClick={() => void directory.moveChannel(move)}>
+      Move
     </button>
   );
 }
 
 describe("DirectoryProvider actions", () => {
-  it("persists a group reorder as one order for the whole server", async () => {
-    const channel = (id: string, position: number): Channel => ({
-      id,
-      name: id,
-      kind: "text",
-      position,
-    });
+  const channel = (id: string, position: number, sectionId?: string): Channel => ({
+    id,
+    name: id,
+    kind: "text",
+    position,
+    ...(sectionId === undefined ? {} : { sectionId }),
+  });
+
+  it("persists a move inside one group as one order for the whole server", async () => {
     const api = fullApi();
     await mount(
       (directory) => directory.channels.map((item) => item.id),
-      { channels: [channel("a", 0), channel("b", 1), channel("c", 2), channel("d", 3)] },
+      { channels: [channel("a", 0), channel("b", 1, "sec-1"), channel("c", 2), channel("d", 3)] },
       api,
-      <ReorderButton group={["c", "a"]} />,
+      <MoveButton move={{ channelId: "c", sectionId: null, order: ["c", "a", "d"] }} />,
     );
 
-    await userEvent.click(screen.getByRole("button", { name: "Reorder" }));
+    await userEvent.click(screen.getByRole("button", { name: "Move" }));
 
-    expect(api.reorderChannels).toHaveBeenCalledWith(["c", "b", "a", "d"]);
+    expect(api.reorderChannels).toHaveBeenCalledExactlyOnceWith(["c", "b", "a", "d"], undefined);
     expect(result()).toEqual(["c", "b", "a", "d"]);
+  });
+
+  it("sends a drop into another section as the whole order with the move, in one request", async () => {
+    const api = fullApi();
+    await mount(
+      (directory) => directory.channels.map((item) => [item.id, item.sectionId]),
+      { channels: [channel("a", 0), channel("b", 1, "sec-1"), channel("c", 2, "sec-1")] },
+      api,
+      // "a" lands between b and c of the section.
+      <MoveButton move={{ channelId: "a", sectionId: "sec-1", order: ["b", "a", "c"] }} />,
+    );
+
+    await userEvent.click(screen.getByRole("button", { name: "Move" }));
+
+    expect(api.reorderChannels).toHaveBeenCalledExactlyOnceWith(["b", "a", "c"], {
+      channelId: "a",
+      sectionId: "sec-1",
+    });
+    expect(result()).toEqual([
+      ["b", "sec-1"],
+      ["a", "sec-1"],
+      ["c", "sec-1"],
+    ]);
   });
 
   it("lists the servers the account belongs to", async () => {

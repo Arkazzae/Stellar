@@ -84,7 +84,7 @@ function defaults(): HookStubs {
       canManageChannels: false,
       canModerateMembers: false,
       canManageBans: false,
-      reorderChannelGroup: vi.fn(async () => {}),
+      moveChannel: vi.fn(async () => {}),
       selectServer: vi.fn(),
     }),
     emoji: stub<EmojiValue>({ emoji: [] }),

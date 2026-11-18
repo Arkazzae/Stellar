@@ -1,5 +1,6 @@
 import type {
   ChannelId,
+  ChannelPlacement,
   ChannelReadChanged,
   ConversationEncryption,
   EncryptionEpoch,
@@ -125,6 +126,12 @@ export interface ServerAccessRevokedEvent {
   kind: "kicked" | "banned";
 }
 
+export interface ChannelLayoutChangedEvent {
+  serverId: string;
+  /** Every channel of the server in order, each with its section. */
+  channels: ChannelPlacement[];
+}
+
 export interface PermissionsChangedEvent {
   serverId: string;
   permissions: ServerPermission[];
@@ -144,6 +151,8 @@ export interface RealtimeEventMap {
   TypingChanged: TypingChangedEvent;
   ChannelReadChanged: ChannelReadChanged;
   ServerUpdated: Server;
+  /** Someone reordered the channels or moved one to another section. */
+  ChannelLayoutChanged: ChannelLayoutChangedEvent;
   PresenceChanged: PresenceChangedEvent;
   /** Public profile fields changed for one server member. */
   UserUpdated: User;

@@ -14,7 +14,7 @@ import {
 } from "@/lib/api/encryptionParsers";
 import { isRecord } from "@/lib/api/expect";
 import { isPresence, SERVER_PERMISSION_VALUES } from "@/lib/api/types";
-import type { ServerPermission } from "@/lib/api/types";
+import type { ChannelPlacement, ServerPermission } from "@/lib/api/types";
 import {
   isMediaServerSignalKind,
   isMediaSessionCloseReason,
@@ -96,6 +96,23 @@ const decodeAccessRevoked: HubDecoder<"ServerAccessRevoked"> = (payload) => {
   const { serverId, kind } = payload;
   return typeof serverId === "string" && (kind === "kicked" || kind === "banned")
     ? { serverId, kind }
+    : null;
+};
+
+/** All or nothing: a layout missing a channel would drop it from the rail. */
+const decodeChannelLayout: HubDecoder<"ChannelLayoutChanged"> = (payload) => {
+  if (!isRecord(payload)) return null;
+  const { serverId, channels } = payload;
+  if (typeof serverId !== "string" || !Array.isArray(channels)) return null;
+  const placed = channels.map((item) => {
+    if (!isRecord(item)) return null;
+    const { id, sectionId } = item;
+    if (typeof id !== "string") return null;
+    if (sectionId !== null && sectionId !== undefined && typeof sectionId !== "string") return null;
+    return { id, sectionId: sectionId ?? null };
+  });
+  return placed.every((item): item is ChannelPlacement => item !== null)
+    ? { serverId, channels: placed }
     : null;
 };
 
@@ -223,6 +240,7 @@ export const HUB_DECODERS: { [E in RealtimeEventName]: HubDecoder<E> } = {
   TypingChanged: strings("channelId", "userId", "displayName", "expiresAt"),
   ChannelReadChanged: parsed(parseChannelRead),
   ServerUpdated: parsed(parseServer),
+  ChannelLayoutChanged: decodeChannelLayout,
   PresenceChanged: decodePresence,
   UserUpdated: parsed((payload) => parseUser(payload, "UserUpdated")),
   SocialChanged: () => ({}),

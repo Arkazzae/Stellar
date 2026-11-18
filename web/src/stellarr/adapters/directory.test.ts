@@ -99,35 +99,38 @@ describe("directory adapter server switching", () => {
 });
 
 describe("directory adapter reordering", () => {
-  it("applies the new channel order at once and persists it", async () => {
+  it("applies a move into a section at once and persists it as one change", async () => {
     const store = hydratedStore();
     const persist = vi.fn(async () => undefined);
     const directory = createDirectoryAdapter(store, persist);
+    const move = { channelId: "ch-a", sectionId: "sec-2" };
 
-    const pending = directory.reorderChannels(["ch-c", "ch-a", "ch-b"]);
+    const pending = directory.reorderChannels(["ch-b", "ch-c", "ch-a"], move);
 
-    expect(directory.listChannels().map((channel) => channel.id)).toEqual([
-      "ch-c",
-      "ch-a",
-      "ch-b",
+    expect(directory.listChannels().map(({ id, sectionId }) => [id, sectionId])).toEqual([
+      ["ch-b", undefined],
+      ["ch-c", undefined],
+      ["ch-a", "sec-2"],
     ]);
     await pending;
-    expect(persist).toHaveBeenCalledWith(["ch-c", "ch-a", "ch-b"]);
+    expect(persist).toHaveBeenCalledExactlyOnceWith(["ch-b", "ch-c", "ch-a"], move);
   });
 
-  it("puts the previous channel order back and rethrows when persisting fails", async () => {
+  it("puts the order and the section back and rethrows when persisting fails", async () => {
     const store = hydratedStore();
     const failure = new Error("offline");
     const directory = createDirectoryAdapter(store, async () => {
       throw failure;
     });
 
-    await expect(directory.reorderChannels(["ch-c", "ch-b", "ch-a"])).rejects.toBe(failure);
+    await expect(
+      directory.reorderChannels(["ch-c", "ch-b", "ch-a"], { channelId: "ch-a", sectionId: "sec-1" }),
+    ).rejects.toBe(failure);
 
-    expect(directory.listChannels().map((channel) => channel.id)).toEqual([
-      "ch-a",
-      "ch-b",
-      "ch-c",
+    expect(directory.listChannels().map(({ id, sectionId }) => [id, sectionId])).toEqual([
+      ["ch-a", undefined],
+      ["ch-b", undefined],
+      ["ch-c", undefined],
     ]);
   });
 

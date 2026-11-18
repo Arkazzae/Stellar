@@ -112,6 +112,27 @@ describe("runtime realtime wiring", () => {
     expect(runtime.ports.directory.listServers()[0]?.name).toBe("Orbit II");
   });
 
+  it("follows a channel layout someone else changed, on the server that is open", async () => {
+    const second: Channel = { id: "ch-second", name: "second", kind: "text", position: 5 };
+    const { runtime, realtime } = await hydrated({ channels: [TEXT_CHANNEL, second] });
+    const layout = (serverId: string) => ({
+      serverId,
+      channels: [
+        { id: second.id, sectionId: "sec-1" },
+        { id: TEXT_CHANNEL.id, sectionId: null },
+      ],
+    });
+
+    realtime.push("ChannelLayoutChanged", layout(OTHER_SERVER.id));
+    expect(runtime.ports.directory.listChannels()[0]?.id).toBe(TEXT_CHANNEL.id);
+
+    realtime.push("ChannelLayoutChanged", layout(SERVER.id));
+    expect(runtime.ports.directory.listChannels().map(({ id, sectionId }) => [id, sectionId])).toEqual([
+      [second.id, "sec-1"],
+      [TEXT_CHANNEL.id, undefined],
+    ]);
+  });
+
   it("applies permissions only for the server that is open", async () => {
     const { runtime, realtime } = await hydrated();
 
@@ -205,7 +226,7 @@ describe("runtime options", () => {
 
     await runtime.ports.directory.reorderChannels([second.id, TEXT_CHANNEL.id]);
 
-    expect(client.reorderChannels).toHaveBeenCalledWith([second.id, TEXT_CHANNEL.id]);
+    expect(client.reorderChannels).toHaveBeenCalledWith([second.id, TEXT_CHANNEL.id], undefined);
     expect(runtime.ports.directory.listChannels().map((channel) => channel.id)).toEqual([
       second.id,
       TEXT_CHANNEL.id,

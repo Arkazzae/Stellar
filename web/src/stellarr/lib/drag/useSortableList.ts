@@ -42,8 +42,8 @@ export interface SortMessages {
 export interface SortableListOptions {
   /** The items in display order. */
   ids: readonly string[];
-  /** The complete new order, after a drop that changed it. */
-  onReorder: (order: string[]) => void;
+  /** The complete new order, after a drop that changed it, and the item that moved. */
+  onReorder: (order: string[], id: string) => void;
   messages: SortMessages;
   /** Read out in place of the handle's own role. */
   roleDescription: string;
@@ -204,7 +204,7 @@ export function useSortableList({
       return;
     }
     setAnnouncement(say.dropped(current.id, current.to + 1, current.ids.length));
-    if (current.to !== current.from) reorder(moveItem(current.ids, current.from, current.to));
+    if (current.to !== current.from) reorder(moveItem(current.ids, current.from, current.to), current.id);
   };
 
   /** Pointer drags: where the carried item is drawn, and the slot it is over. */
