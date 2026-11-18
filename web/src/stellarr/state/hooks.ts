@@ -23,6 +23,10 @@ export {
   type FriendsValue,
 } from "./FriendsProvider";
 export {
+  useInstanceSetupContext as useInstanceSetup,
+  type InstanceSetupValue,
+} from "./InstanceSetupProvider";
+export {
   useKeybindContext as useKeybinds,
   type KeybindValue,
 } from "./KeybindProvider";

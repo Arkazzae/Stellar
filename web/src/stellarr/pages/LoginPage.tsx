@@ -16,7 +16,7 @@ import { useSignInProviders, useInstanceName } from "@/hooks/useInstanceFacts";
 import { useRedirectWhenSignedIn } from "@/hooks/useRedirectWhenSignedIn";
 import type { Translator } from "@/i18n";
 import { safeReturnPath } from "@/lib/auth/returnPath";
-import { useLanguage, usePorts, useSession } from "@/state/hooks";
+import { useInstanceSetup, useLanguage, usePorts, useSession } from "@/state/hooks";
 
 import { usePrefetchApp } from "./loadApp";
 
@@ -57,6 +57,7 @@ function ProviderProblem({
 
 export default function LoginPage() {
   const { phase, loginPending, loginError, reload } = useSession();
+  const setup = useInstanceSetup();
   const { t } = useLanguage();
   const router = useRouter();
   const params = useSearchParams();
@@ -96,6 +97,7 @@ export default function LoginPage() {
   }, [flow.passkeysSupported, ports]);
 
   if (phase === "error") return <ServerUnreachable t={t} onRetry={reload} />;
+  if (phase === "anonymous" && setup.failed) return <ServerUnreachable t={t} onRetry={setup.retry} />;
 
   if ((oidcError === "not_linked" || oidcError === "failed") && !providerProblemSeen) {
     return (
@@ -204,6 +206,9 @@ export default function LoginPage() {
       error={flow.error ?? loginError}
       checking={
         phase === "loading" ||
+        // Until it is known whether the instance has an owner yet: a fresh
+        // one leads to /setup, and this form would only flash past.
+        (phase === "anonymous" && setup.setupRequired !== false) ||
         step.kind === "resuming" ||
         step.kind === "done" ||
         (confirm && phase === "ready" && flow.error === null)
