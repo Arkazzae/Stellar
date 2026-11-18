@@ -4,6 +4,7 @@ import react from "@vitejs/plugin-react";
 import { defineConfig, loadEnv, type ProxyOptions } from "vite";
 
 import { BUILD_DIRECTORY, COCKPIT_DOCUMENT, stellarrDocuments, WEB_DOCUMENT } from "./documents";
+import { stellarrRelease } from "./release";
 import { workerBuild } from "./worklets";
 
 const here = (path: string) => fileURLToPath(new URL(path, import.meta.url));
@@ -74,6 +75,7 @@ export default defineConfig(({ mode }) => {
     plugins: [
       react(),
       stellarrDocuments({ instanceLanguage: env.STELLARR_LANGUAGE, publicDir: here("public") }),
+      stellarrRelease(),
     ],
     resolve: {
       alias: { "@": here("src/stellarr") },
