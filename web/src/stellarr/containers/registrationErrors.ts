@@ -33,3 +33,18 @@ export function registrationIssue(cause: unknown, t: Translator): FormIssue<Regi
   }
   return { field: null, message: t("auth.register.failed") };
 }
+
+/**
+ * What an account made through a provider can be refused for besides its
+ * fields: the provider's confirmation ran out (400), the provider may no
+ * longer create accounts (403), or its identity got linked to an account
+ * meanwhile (409). Each says what to do instead.
+ */
+export function providerSignUpIssue(cause: unknown, t: Translator, provider: string): FormIssue<RegistrationField> {
+  if (cause instanceof ApiError && cause.fields === undefined) {
+    if (cause.status === 400) return { field: null, message: t("auth.providerSignUp.expired") };
+    if (cause.status === 403) return { field: null, message: t("auth.providerSignUp.closed", { provider }) };
+    if (cause.status === 409) return { field: null, message: t("auth.providerSignUp.linked", { provider }) };
+  }
+  return registrationIssue(cause, t);
+}
