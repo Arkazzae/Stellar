@@ -1,19 +1,34 @@
-// Headless Chromium and the pages that play the clients.
+// The browsers and the pages that play the clients.
 //
 // Each person runs in a browser of their own, because Chromium's fake devices
 // are configured per process and every person needs their own tone and
-// colour. The page is served from 127.0.0.1, which is a secure context, so
-// getUserMedia works without TLS.
+// colour. Firefox and WebKit have no such devices, so there the page makes
+// the person's tone and colour itself (STELLARR_SMOKE_ENGINE). The page is
+// served from 127.0.0.1, which is a secure context, so getUserMedia and
+// WebCrypto work without TLS.
 
-import { createReadStream, existsSync } from "node:fs";
+import { createReadStream, existsSync, readFileSync } from "node:fs";
 import { createServer } from "node:http";
-import { join } from "node:path";
+import { stripTypeScriptTypes } from "node:module";
+import { dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
 
-import { chromium } from "playwright-core";
+import { chromium, firefox, webkit } from "playwright-core";
 
 const BROWSERS = ["/usr/bin/chromium", "/usr/bin/google-chrome-stable"];
 
+/** "chromium" (the default), "firefox" or "webkit". */
+export function engine() {
+  const name = process.env.STELLARR_SMOKE_ENGINE ?? "chromium";
+  if (!["chromium", "firefox", "webkit"].includes(name)) {
+    throw new Error(`STELLARR_SMOKE_ENGINE=${name} is not chromium, firefox or webkit`);
+  }
+  return name;
+}
+
 export function browserPath() {
+  // Firefox and WebKit are Playwright's own builds.
+  if (engine() !== "chromium") return null;
   const chosen = process.env.STELLARR_SMOKE_BROWSER ?? BROWSERS.find((path) => existsSync(path));
   if (!chosen || !existsSync(chosen)) {
     throw new Error("no Chromium found; set STELLARR_SMOKE_BROWSER to its executable");
@@ -26,13 +41,33 @@ export function browserPath() {
 const PAGE_FILES = new Map([
   ["/", { name: "index.html", type: "text/html" }],
   ["/client.js", { name: "client.js", type: "text/javascript" }],
+  ["/copy-worker.js", { name: "copy-worker.js", type: "text/javascript" }],
 ]);
+
+// The web client's own frame worker and frame format, served with their
+// types stripped, so the harness encrypts with the very code the app runs.
+const E2EE_DIR = join(dirname(fileURLToPath(import.meta.url)), "../../../web/src/stellarr/lib/voice/e2ee");
+const E2EE_FILES = new Map([
+  ["/frame-worker.js", "frameWorker.ts"],
+  ["/sframe.js", "sframe.ts"],
+]);
+
+function moduleOf(file) {
+  const source = stripTypeScriptTypes(readFileSync(join(E2EE_DIR, file), "utf8"));
+  // A browser resolves only full paths; the bundler resolves the bare one.
+  return source.replace(/from "\.\/sframe"/g, 'from "./sframe.js"');
+}
 
 /** Serves the client page on a spare loopback port. */
 export function servePage(dir) {
   const server = createServer((request, response) => {
     if (request.url === "/favicon.ico") {
       response.writeHead(204).end();
+      return;
+    }
+    const module = E2EE_FILES.get(request.url);
+    if (module !== undefined) {
+      response.writeHead(200, { "content-type": "text/javascript" }).end(moduleOf(module));
       return;
     }
     const file = PAGE_FILES.get(request.url);
@@ -54,24 +89,51 @@ export function servePage(dir) {
 }
 
 export function launch(executablePath, identity) {
-  return chromium.launch({
-    executablePath,
-    headless: true,
-    args: [
-      "--use-fake-device-for-media-stream",
-      "--use-fake-ui-for-media-stream",
-      "--autoplay-policy=no-user-gesture-required",
-      `--use-file-for-fake-audio-capture=${identity.audio}`,
-      `--use-file-for-fake-video-capture=${identity.video}`,
-    ],
-  });
+  switch (engine()) {
+    case "firefox":
+      return firefox.launch({
+        headless: true,
+        firefoxUserPrefs: {
+          "media.navigator.permission.disabled": true,
+          "media.navigator.streams.fake": true,
+          "media.autoplay.default": 0,
+          "media.autoplay.blocking_policy": 0,
+          // The media server is on loopback, and so is every candidate it sends.
+          "media.peerconnection.ice.loopback": true,
+          "media.peerconnection.ice.obfuscate_host_addresses": false,
+        },
+      });
+    case "webkit":
+      return webkit.launch({ headless: true });
+    default:
+      return chromium.launch({
+        executablePath,
+        headless: true,
+        args: [
+          "--use-fake-device-for-media-stream",
+          "--use-fake-ui-for-media-stream",
+          "--autoplay-policy=no-user-gesture-required",
+          "--allow-loopback-in-peer-connection",
+          `--use-file-for-fake-audio-capture=${identity.audio}`,
+          `--use-file-for-fake-video-capture=${identity.video}`,
+        ],
+      });
+  }
 }
 
 /** One person: a page, its media session and what it published. */
 export class Client {
-  static async open({ browser, url, hub, identity, roomId, userId, tuneOpus = false }) {
+  /**
+   * `e2ee` encrypts every frame this person sends and opens every frame it
+   * receives: `{ conversationId, epochs: [{ sequence, epochId, key }], send,
+   * worker? }`, with keys in base64. `initScript` runs in the page before its
+   * own script.
+   */
+  static async open({ browser, url, hub, identity, roomId, userId, tuneOpus = false, e2ee = null, cbr = false, initScript = null }) {
     const sessionId = await hub.createSession(roomId, userId);
-    const context = await browser.newContext({ permissions: ["microphone", "camera"] });
+    const chromiumEngine = engine() === "chromium";
+    const context = await browser.newContext(chromiumEngine ? { permissions: ["microphone", "camera"] } : {});
+    if (initScript) await context.addInitScript(initScript);
     const page = await context.newPage();
     const client = new Client({ hub, identity, roomId, userId, sessionId, context, page });
 
@@ -93,7 +155,13 @@ export class Client {
     const started = await page.evaluate((options) => window.smoke.start(options), {
       sessionId,
       tuneOpus,
+      cbr,
+      userId,
+      e2ee,
+      // Without fake devices the page draws the person's colour and plays their tone.
+      synthetic: chromiumEngine ? null : { toneHz: identity.toneHz, rgb: identity.rgb },
     });
+    client.started = started;
     if (!started.isSecureContext) throw new Error("the page is not a secure context");
 
     hub.attach(sessionId, (event) =>
@@ -163,6 +231,16 @@ export class Client {
 
   descriptions() {
     return this.page.evaluate(() => window.smoke.descriptions());
+  }
+
+  /** The frame worker's counters and what it reported, for an encrypted page. */
+  e2eeStats() {
+    return this.page.evaluate(() => window.smoke.e2eeStats());
+  }
+
+  /** Hands the frame worker more epochs and, unless `send` is undefined, the one to send under. */
+  e2eeEpochs(epochs, send) {
+    return this.page.evaluate(([e, s]) => window.smoke.e2eeEpochs(e, s), [epochs, send]);
   }
 
   /** Leaves as the hub does on LeaveVoice: the session first, then the page. */
