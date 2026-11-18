@@ -39,6 +39,7 @@ import { useChatComposer } from "./chat/useChatComposer";
 import { useChatFeed } from "./chat/useChatFeed";
 import { useMentionNotifications } from "./chat/useMentionNotifications";
 import { useMessageActions } from "./chat/useMessageActions";
+import { useMessageStore } from "./chat/useMessageStore";
 import { useMessageEdit } from "./chat/useMessageEdit";
 import { useReadMarks } from "./chat/useReadMarks";
 import { useReconnectSync } from "./chat/useReconnectSync";
@@ -252,6 +253,17 @@ export function ChatProvider({ children }: { children: ReactNode }) {
     syncCursors,
     restored,
   });
+  useMessageStore({
+    userId: user?.id ?? null,
+    serverId: server.id,
+    channelId,
+    channelIds: textChannelIds,
+    data,
+    dispatch,
+    pendingIds,
+    syncCursors,
+    restored,
+  });
   useReconnectSync({
     connected: connection === "connected",
     channelIds: textChannelIds,
@@ -368,7 +380,8 @@ export function ChatProvider({ children }: { children: ReactNode }) {
       unreadByChannel: reads.unreadByChannel,
       markChannelRead: reads.markChannelRead,
       firstUnreadGroupId,
-      loading: channelId !== null && data.loaded[channelId] !== true,
+      loading:
+        channelId !== null && data.loaded[channelId] !== true && data.restored[channelId] !== true,
       loadingOlder: channelId !== null && data.loadingOlder[channelId] === true,
       hasOlder: channelId !== null && typeof data.nextCursor[channelId] === "string",
       typingNames: (channelId === null ? undefined : typing[channelId]) ?? NO_NAMES,
