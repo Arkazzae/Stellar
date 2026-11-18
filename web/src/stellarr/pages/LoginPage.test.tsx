@@ -38,6 +38,7 @@ const mocks = vi.hoisted(() => ({
   },
   ports: {} as object,
   providers: vi.fn<() => Promise<SignInProvider[]>>(),
+  setup: { setupRequired: false as boolean | null, failed: false, retry: vi.fn(), markSetUp: vi.fn() },
   leaveFor: vi.fn(),
   search: "",
 }));
@@ -45,6 +46,7 @@ const mocks = vi.hoisted(() => ({
 vi.mock("@/lib/auth/leaveFor", () => ({ leaveFor: mocks.leaveFor }));
 vi.mock("@/state/hooks", () => ({
   useSession: () => mocks.session,
+  useInstanceSetup: () => mocks.setup,
   usePorts: () => mocks.ports,
   useLanguage: () => ({
     t: (key: MessageKey, values?: MessageValues) => translateMessage("pl", key, values),
@@ -185,6 +187,7 @@ beforeEach(() => {
   mocks.session.loginError = null;
   mocks.search = "";
   mocks.providers = vi.fn(async () => []);
+  mocks.setup = { setupRequired: false, failed: false, retry: vi.fn(), markSetUp: vi.fn() };
 });
 
 describe("LoginPage", () => {
@@ -242,8 +245,16 @@ describe("LoginPage", () => {
     expect(await screen.findByRole("alert")).toHaveTextContent("Nieprawidłowy login lub hasło.");
   });
 
-  it("shows no form while the session is being checked", () => {
+  it("shows no form while the session or the instance's state is being checked", () => {
     mocks.session.phase = "loading";
+    const { unmount } = renderLogin();
+    expect(screen.getByText("Sprawdzanie sesji…")).toBeInTheDocument();
+    expect(screen.queryByLabelText("Hasło")).not.toBeInTheDocument();
+    unmount();
+
+    // Signed out on an instance that may still wait for its owner: /setup is next.
+    mocks.session.phase = "anonymous";
+    mocks.setup.setupRequired = null;
     renderLogin();
     expect(screen.getByText("Sprawdzanie sesji…")).toBeInTheDocument();
     expect(screen.queryByLabelText("Hasło")).not.toBeInTheDocument();
@@ -252,10 +263,17 @@ describe("LoginPage", () => {
   it("says the server does not answer instead of offering a form, and asks again", async () => {
     const user = userEvent.setup();
     mocks.session.phase = "error";
-    renderLogin();
+    const { unmount } = renderLogin();
     await user.click(screen.getByRole("button", { name: t("auth.offline.retry") }));
     expect(mocks.session.reload).toHaveBeenCalledOnce();
     expect(screen.queryByLabelText("Hasło")).toBeNull();
+    unmount();
+
+    mocks.session.phase = "anonymous";
+    mocks.setup.failed = true;
+    renderLogin();
+    await user.click(screen.getByRole("button", { name: t("auth.offline.retry") }));
+    expect(mocks.setup.retry).toHaveBeenCalledOnce();
   });
 
   it("leaves for the app when a session already works", () => {
