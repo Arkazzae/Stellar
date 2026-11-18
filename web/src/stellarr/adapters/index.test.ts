@@ -7,6 +7,7 @@ import { fullApi, type FullApi } from "@/test/runtime";
 import { polish } from "@/test/translators";
 
 import { __resetRuntime, createRuntime, getRuntime, type Runtime } from "./index";
+import { loadSignedInCode } from "./signedInLoader";
 
 const PEER: User = { id: "u-ada", username: "ada", displayName: "Ada", presence: "online" };
 const OTHER_SERVER = { id: "srv-other", name: "Other" };
@@ -216,6 +217,7 @@ describe("voice", () => {
   it("creates an idle voice client for the signed-in person", async () => {
     const { runtime } = await hydrated();
 
+    await loadSignedInCode();
     const voice = runtime.ports.createVoice({
       userId: SELF.id,
       displayName: SELF.displayName,
@@ -238,5 +240,15 @@ describe("getRuntime", () => {
     const second = getRuntime();
     runtimes.push(second);
     expect(second).not.toBe(first);
+  });
+});
+
+describe("the realtime client", () => {
+  it("is the injected one as it is", () => {
+    const realtime = new FakeRealtimeClient();
+    const runtime = createRuntime({ api: fullApi(), realtime });
+    runtimes.splice(0, 0, runtime);
+
+    expect(runtime.realtime).toBe(realtime);
   });
 });

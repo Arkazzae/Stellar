@@ -25,6 +25,8 @@ vi.mock("@/state/hooks", () => ({
     t: (key: MessageKey, values?: MessageValues) => translateMessage("pl", key, values),
   }),
 }));
+// The socket and voice code that comes with the app is not what this page checks.
+vi.mock("@/adapters/signedInLoader", () => ({ loadSignedInCode: async () => ({}) }));
 vi.mock("@/containers/AppContainer", () => ({
   AppContainer: () => <div data-testid="app" />,
 }));

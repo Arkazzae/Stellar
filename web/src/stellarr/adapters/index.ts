@@ -16,14 +16,10 @@ import {
 import { encryptionCalls, type EncryptionApiClient } from "@/lib/api/calls/encryption";
 import { isUnauthorized } from "@/lib/api/errors";
 import type { Bootstrap, RtcConfig } from "@/lib/api/types";
-import { iceServers } from "@/lib/platform/env";
 import { createPasskey, getPasskey, passkeysSupported } from "@/lib/auth/webauthn";
-import { SignalRRealtimeClient } from "@/lib/realtime/signalr";
+import { DeferredRealtimeClient } from "@/lib/realtime/deferred";
 import type { RealtimeClient } from "@/lib/realtime/types";
-import { RuntimeIceProvider } from "@/lib/voice/rtc/iceSession";
-import { ParticipantPreferencesStore } from "@/lib/voice/participantPreferences";
 import { VoiceSettingsStore } from "@/lib/voice/settings";
-import { WebRtcVoiceClient } from "@/lib/voice/rtc/webrtc";
 import type { Account, Ports, User } from "@/ports";
 import type { DesktopPort } from "@/ports/desktop";
 
@@ -40,6 +36,7 @@ import { createConnectionAdapter, createPresenceAdapter } from "./presence";
 import { ChannelReadStore } from "./readState";
 import { createSoundboardAdapter } from "./soundboard";
 import { DirectoryStore } from "./store";
+import { loadedSignedInCode, loadSignedInCode } from "./signedInLoader";
 import { createVoiceSettingsAdapter } from "./voiceSettings";
 
 export interface Runtime {
@@ -101,41 +98,25 @@ function followHub(realtime: RealtimeClient, store: DirectoryStore): () => void 
   };
 }
 
+/** The browser's socket, fetched with the signed-in code and not before it is needed. */
+const loadRealtime = () => loadSignedInCode().then((code) => code.createSignalRClient());
+
 export function createRuntime(options: RuntimeOptions = {}): Runtime {
   const api = options.api ?? createHttpApiClient();
-  const realtime = options.realtime ?? new SignalRRealtimeClient();
+  const realtime = options.realtime ?? new DeferredRealtimeClient(loadRealtime);
   const store = new DirectoryStore();
   const voiceSettingsStore = new VoiceSettingsStore();
   const reactionStore = new ReactionStore();
   const readStore = new ChannelReadStore();
   let rtcConfig: RtcConfig | undefined;
 
-  const createVoice: Ports["createVoice"] = ({ userId, displayName, translate }) => {
-    const ice = new RuntimeIceProvider({
-      // TURN credentials are per user and expire, so each join asks for fresh
-      // ones: one request per join, however many peers the channel has.
-      fetchRtc: async () => (await api.bootstrap()).rtc,
-      envServers: iceServers,
-      isProduction: import.meta.env.PROD,
-    });
-    // The contract fetched at sign-in is the fallback when that refresh fails.
-    ice.seed(rtcConfig?.iceServers);
-    return new WebRtcVoiceClient({
-      realtime,
-      selfUserId: userId,
-      selfDisplayName: displayName,
-      translate,
-      ice,
-      // How each other person sounds to this account outlives the call and the
-      // tab, in this browser only.
-      participantPreferences: new ParticipantPreferencesStore(undefined, userId),
-      // An instance without RTC is incompatible too, so a missing contract
-      // becomes an explicit sentinel instead of an assumed v1.
-      rtc: rtcConfig ?? { protocolVersion: 0 },
-      getSettings: voiceSettingsStore.getSnapshot,
-      updateSettings: (patch) => voiceSettingsStore.update(patch),
-    });
-  };
+  // The voice client comes with the signed-in code, which `loadApp` fetches
+  // along with the app, so it is there whenever a call can be started.
+  const createVoice: Ports["createVoice"] = (voiceOptions) =>
+    loadedSignedInCode().createWebRtcVoice(
+      { api, realtime, rtcConfig, settings: voiceSettingsStore },
+      voiceOptions,
+    );
 
   const account = createAccountAdapter(api);
   const notificationDelivery = createNotificationDeliveryAdapter(api);
