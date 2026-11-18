@@ -176,6 +176,7 @@ public enum MessageKey
     StarterChannelNameInvalid,
     StarterChannelNamesCollide,
     ServerHasNoMemberRole,
+    InstanceServerCannotBeDeleted,
 
     // Soundboard
     SoundAttachmentInvalid,

@@ -205,16 +205,18 @@ public sealed class RegistrationFlowTests
     }
 
     [Fact]
-    public async Task AnInstanceWhoseServersAreAllGoneCannotBeFoundedAgain()
+    public async Task AnInstanceWithAccountsButNoServerCannotBeFoundedAgain()
     {
         // The seeded accounts arrive after the host has started, so this host
-        // still holds the code it drew for an empty database.
+        // still holds the code it drew for an empty database. The API keeps
+        // the instance server, so only an edit of the database removes it.
         using var factory = new StellarrWebApplicationFactory();
         var setupCode = factory.SetupCode;
-        using var owner = NewClient(factory);
-        (await owner.PostAsJsonAsync("/api/auth/login", new { username = "maja", password = "Aurora!2026" }))
-            .EnsureSuccessStatusCode();
-        Assert.Equal(HttpStatusCode.NoContent, (await owner.DeleteAsync("/api/admin/server")).StatusCode);
+        await using (var edit = factory.OpenScope(out var database))
+        {
+            await database.Servers.ExecuteDeleteAsync();
+        }
+
         using var visitor = NewClient(factory);
 
         var status = await visitor.GetFromJsonAsync<JsonElement>("/api/auth/registration");
