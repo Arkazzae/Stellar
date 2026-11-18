@@ -143,6 +143,8 @@ public sealed partial class Messages
         MessageKey.UploadOverLimit => "The attachment exceeds the limit.",
         MessageKey.UploadTypeMismatch => "Invalid attachment format",
         MessageKey.UploadPosterInvalid => "The video preview is invalid.",
+        MessageKey.UploadPreviewInvalid => "The image preview is invalid.",
+        MessageKey.UploadPlaceholderInvalid => "The image placeholder is invalid.",
         MessageKey.VoiceMessageInvalid => "A voice message must be an audio recording of up to {minutes} minutes.",
         MessageKey.MediaDurationInvalid => "The duration of the file is invalid.",
         MessageKey.MediaDimensionsInvalid => "The dimensions of the file are invalid.",

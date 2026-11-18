@@ -142,6 +142,8 @@ public enum MessageKey
     UploadOverLimit,
     UploadTypeMismatch,
     UploadPosterInvalid,
+    UploadPreviewInvalid,
+    UploadPlaceholderInvalid,
     VoiceMessageInvalid,
     MediaDurationInvalid,
     MediaDimensionsInvalid,

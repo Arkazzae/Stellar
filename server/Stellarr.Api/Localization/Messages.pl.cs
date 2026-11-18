@@ -141,6 +141,8 @@ public sealed partial class Messages
         MessageKey.UploadOverLimit => "Załącznik przekracza limit.",
         MessageKey.UploadTypeMismatch => "Nieprawidłowy format załącznika",
         MessageKey.UploadPosterInvalid => "Podgląd wideo jest nieprawidłowy.",
+        MessageKey.UploadPreviewInvalid => "Podgląd obrazu jest nieprawidłowy.",
+        MessageKey.UploadPlaceholderInvalid => "Zastępczy obraz jest nieprawidłowy.",
         MessageKey.VoiceMessageInvalid => "Wiadomość głosowa musi być nagraniem audio o długości do {minutes} minut.",
         MessageKey.MediaDurationInvalid => "Czas trwania pliku jest nieprawidłowy.",
         MessageKey.MediaDimensionsInvalid => "Wymiary pliku są nieprawidłowe.",
