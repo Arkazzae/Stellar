@@ -176,10 +176,10 @@ public sealed partial class OidcSignInFlowTests
         using (var refused = await client.PostAsJsonAsync($"/api/me/security/identities/{identityId}/remove", new { }))
         {
             Assert.Equal(HttpStatusCode.Conflict, refused.StatusCode);
+            var problem = await refused.Content.ReadFromJsonAsync<JsonElement>();
+            Assert.Equal("last-way-in", problem.GetProperty("code").GetString());
             Assert.Contains(
-                "Najpierw ustaw hasło albo dodaj klucz dostępu",
-                (await refused.Content.ReadFromJsonAsync<JsonElement>()).GetProperty("title").GetString(),
-                StringComparison.Ordinal);
+                "Najpierw ustaw hasło albo dodaj klucz dostępu", problem.GetProperty("title").GetString(), StringComparison.Ordinal);
         }
 
         // A passkey is a way in of its own, so the identity can go; the
@@ -206,6 +206,7 @@ public sealed partial class OidcSignInFlowTests
 
         Assert.Equal(HttpStatusCode.NoContent, unlinked.StatusCode);
         Assert.Equal(HttpStatusCode.Conflict, lastPasskey.StatusCode);
+        Assert.Equal("last-way-in", (await lastPasskey.Content.ReadFromJsonAsync<JsonElement>()).GetProperty("code").GetString());
         await using var check = factory.OpenScope(out var checkDb);
         Assert.Null((await checkDb.MfaMethods.SingleAsync(x => x.Id == passkeyId)).RevokedAt);
     }

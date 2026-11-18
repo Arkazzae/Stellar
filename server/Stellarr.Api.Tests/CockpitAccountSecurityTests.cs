@@ -107,6 +107,7 @@ public sealed class CockpitAccountSecurityTests
         Assert.False(security.GetProperty("hasPassword").GetBoolean());
         Assert.Equal(HttpStatusCode.Conflict, unlink.StatusCode);
         var problem = await unlink.Content.ReadFromJsonAsync<JsonElement>();
+        Assert.Equal("last-way-in", problem.GetProperty("code").GetString());
         Assert.Contains("musi ustawić hasło albo dodać klucz dostępu", problem.GetProperty("title").GetString(), StringComparison.Ordinal);
         await using var check = factory.OpenScope(out var checkDb);
         Assert.True(await checkDb.ExternalIdentities.AnyAsync(x => x.Id == ada.IdentityId));
