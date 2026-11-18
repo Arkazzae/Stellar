@@ -1,7 +1,7 @@
 import type { KeyboardEvent, MouseEvent } from "react";
 
 import { Icon } from "@stellarr/icons";
-import type { SortHandleProps } from "@/lib/drag/useListSort";
+import type { DragHandleProps } from "@/lib/drag/useRailDrag";
 import { useLanguage } from "@/state/hooks";
 
 export interface ChannelButtonProps {
@@ -33,7 +33,7 @@ export interface ChannelButtonProps {
    * element around the row; a press has to travel a few pixels before it is
    * a drag, which is what lets the button be both handle and click target.
    */
-  drag?: SortHandleProps;
+  drag?: DragHandleProps;
 }
 
 const MAX_UNREAD_SHOWN = 99;

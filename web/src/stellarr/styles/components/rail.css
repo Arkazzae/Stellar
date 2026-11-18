@@ -234,17 +234,17 @@
    * still instead (lib/drag/pointer.ts), and no callout or selection may get
    * in the way of that hold.
    */
-  .rail-scroll[data-sorting]{cursor:grabbing}
+  .rail-scroll[data-dragging]{cursor:grabbing}
   /* Nothing in the rail is hovered while it scrolls under a carried row: a
      hover change would restyle it before every frame of the edge scroll. */
-  .rail-scroll[data-sorting] > *{pointer-events:none}
+  .rail-scroll[data-dragging] > *{pointer-events:none}
   /* Open groups stop clipping, or a row carried out of one would vanish at its edge. */
-  .rail-scroll[data-sorting] .collapsible:not(.closed) > .collapsible-body{overflow:visible}
+  .rail-scroll[data-dragging="sort"] .collapsible:not(.closed) > .collapsible-body{overflow:visible}
   /* Rows and captions start the drag with a transform already, so moving
      one out of the way only changes a value: gaining a transform would lay
      the rail out again. Never the carried row's own groups, whose stacking
      would keep it under the groups below. */
-  .rail-scroll[data-sorting] :is(.rail-cap, .rail-list > *, .rail-section-empty):not([data-drag="carried"]){
+  .rail-scroll[data-dragging="sort"] :is(.rail-cap, .rail-list > *, .rail-section-empty):not([data-drag="carried"]){
     transform:translateY(0);
   }
   .rail-scroll [data-drag="shifted"],
@@ -345,22 +345,22 @@
     border:1px dashed transparent;
     transition:border-color var(--dur-fast) var(--ease-standard);
   }
-  .voice-channel-drop.is-over{background:var(--surface-overlay)}
-  .voice-channel-drop.is-over::after{border-color:var(--line-strong)}
+  .voice-channel-drop[data-drop-over]{background:var(--surface-overlay)}
+  .voice-channel-drop[data-drop-over]::after{border-color:var(--line-strong)}
   /* The name of the channel taking them, brought up to full contrast — the
      one thing that has to be unambiguous while the pointer is moving. */
-  .voice-channel-drop.is-over .channel .name{color:var(--text)}
+  .voice-channel-drop[data-drop-over] .channel .name{color:var(--text)}
 
   .voice-occupants{list-style:none;padding:2px 4px 4px 28px}
   .voice-occupants li{display:flex;align-items:center;gap:8px;height:30px;padding:0 4px;border-radius:var(--radius-sm);font-size:var(--text-13);color:var(--text-muted)}
   .voice-occupants li.me{color:var(--text);animation:msgIn 200ms var(--ease-standard)}
-  .voice-occupants li.is-draggable{cursor:grab;user-select:none;-webkit-user-drag:none}
+  .voice-occupants li.is-draggable{cursor:grab;user-select:none;-webkit-user-select:none;-webkit-touch-callout:none;-webkit-user-drag:none}
   .voice-occupants li.is-draggable:active{cursor:grabbing}
   .voice-occupants li.is-draggable:hover{background:var(--surface-overlay);color:var(--text)}
   .voice-occupants li.is-draggable:focus-visible{
     outline:2px solid var(--accent);outline-offset:1px;color:var(--text);
   }
-  .voice-occupants li.is-dragging{opacity:0.35}
+  .voice-occupants li[data-drag="lifted"]{opacity:0.35}
   .voice-occupants li.is-moving{opacity:0.55;cursor:progress}
   /* Fixed height and an avatar that cannot be squeezed: the chip follows the
      pointer over boxes of every width, and a face that reflows into an ellipse

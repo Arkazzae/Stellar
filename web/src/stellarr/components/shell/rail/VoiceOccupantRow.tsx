@@ -3,15 +3,8 @@ import type { MouseEventHandler } from "react";
 import { Icon } from "@stellarr/icons";
 import { Avatar } from "@/components/primitives/Avatar";
 import type { PersonVM } from "@/components/view-models";
-import type { DragHandleProps } from "@/lib/drag/session";
+import type { DragHandleProps } from "@/lib/drag/useRailDrag";
 import { useLanguage } from "@/state/hooks";
-
-/** What the voice list hands a row that may be moved. */
-export interface OccupantDragProps {
-  /** The row is being carried; its copy follows the pointer. */
-  dragging: boolean;
-  handle: DragHandleProps;
-}
 
 export interface VoiceOccupantRowProps {
   person: PersonVM;
@@ -20,9 +13,10 @@ export interface VoiceOccupantRowProps {
   moving: boolean;
   /**
    * Present when staff may move this person: never for you, and never for
-   * someone already in flight.
+   * someone already in flight. The rail marks the row while its copy is
+   * carried.
    */
-  drag?: OccupantDragProps;
+  drag?: DragHandleProps;
   onContextMenu?: MouseEventHandler<HTMLLIElement>;
 }
 
@@ -48,7 +42,6 @@ export function VoiceOccupantRow({
     person.speaking && "speaking",
     person.muted === true && "muted",
     enabled && "is-draggable",
-    drag?.dragging && "is-dragging",
     moving && "is-moving",
   ]
     .filter(Boolean)
@@ -67,7 +60,7 @@ export function VoiceOccupantRow({
       className={className}
       onContextMenu={onContextMenu}
       title={enabled ? t("shell.dragVoiceMember") : undefined}
-      {...(enabled ? { role: "button", tabIndex: 0, ...drag.handle } : {})}
+      {...(enabled ? { role: "button", tabIndex: 0, ...drag } : {})}
       aria-label={
         enabled
           ? t("shell.moveVoiceMember", { name: person.displayName })
