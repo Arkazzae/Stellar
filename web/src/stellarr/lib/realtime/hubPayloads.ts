@@ -116,6 +116,16 @@ const decodeChannelLayout: HubDecoder<"ChannelLayoutChanged"> = (payload) => {
     : null;
 };
 
+/** All or nothing too: a section missing from the order would sink to the end. */
+const decodeSectionOrder: HubDecoder<"SectionOrderChanged"> = (payload) => {
+  if (!isRecord(payload)) return null;
+  const { serverId, sectionIds } = payload;
+  if (typeof serverId !== "string" || !Array.isArray(sectionIds)) return null;
+  return sectionIds.every((id): id is string => typeof id === "string")
+    ? { serverId, sectionIds }
+    : null;
+};
+
 const decodeInboxChanged: HubDecoder<"NotificationInboxChanged"> = (payload) => {
   if (!isRecord(payload)) return null;
   const { serverId, sequence, global } = payload;
@@ -241,6 +251,7 @@ export const HUB_DECODERS: { [E in RealtimeEventName]: HubDecoder<E> } = {
   ChannelReadChanged: parsed(parseChannelRead),
   ServerUpdated: parsed(parseServer),
   ChannelLayoutChanged: decodeChannelLayout,
+  SectionOrderChanged: decodeSectionOrder,
   PresenceChanged: decodePresence,
   UserUpdated: parsed((payload) => parseUser(payload, "UserUpdated")),
   SocialChanged: () => ({}),

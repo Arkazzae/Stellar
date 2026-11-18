@@ -112,9 +112,21 @@ describe("runtime realtime wiring", () => {
     expect(runtime.ports.directory.listServers()[0]?.name).toBe("Orbit II");
   });
 
-  it("follows a channel layout someone else changed, on the server that is open", async () => {
+  it("follows a channel layout and a section order someone else changed, on the server that is open", async () => {
     const second: Channel = { id: "ch-second", name: "second", kind: "text", position: 5 };
-    const { runtime, realtime } = await hydrated({ channels: [TEXT_CHANNEL, second] });
+    const { runtime, realtime } = await hydrated({
+      channels: [TEXT_CHANNEL, second],
+      sections: [
+        { id: "sec-1", name: "Gry", position: 0 },
+        { id: "sec-2", name: "Muzyka", position: 1 },
+      ],
+    });
+
+    realtime.push("SectionOrderChanged", { serverId: OTHER_SERVER.id, sectionIds: ["sec-2", "sec-1"] });
+    expect(runtime.ports.directory.listSections()[0]?.id).toBe("sec-1");
+    realtime.push("SectionOrderChanged", { serverId: SERVER.id, sectionIds: ["sec-2", "sec-1"] });
+    expect(runtime.ports.directory.listSections().map((section) => section.id)).toEqual(["sec-2", "sec-1"]);
+
     const layout = (serverId: string) => ({
       serverId,
       channels: [
