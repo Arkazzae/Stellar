@@ -29,3 +29,18 @@ The scene needs WebGL 2. Without it the page shows a notice and the sections sti
 ## Branding
 
 The logo, the astronaut, the icons and the fonts are read from [`branding/`](../branding), not copied. The 3D mark is built from `branding/logo/mark.svg`, the fonts are loaded from `branding/guidelines/fonts/`, and the header logo, the astronaut and the icons in `index.html` are inlined from `branding/logo/small.svg`, `branding/mascot/expressions/happy.svg` and `branding/icons/linear/`. Redrawing the logo reaches the scene on the next build; the inlined SVGs in `index.html` have to be updated by hand to match.
+
+## Deploy
+
+The site is a Cloudflare Pages project named `stellarr`, with `main` as its production branch. Pages builds nothing itself; the site is built from a checkout of the repository and uploaded:
+
+```bash
+cd website
+npm ci
+npm run build
+npx wrangler pages deploy dist --project-name stellarr --branch main
+```
+
+The build reads the logo, astronaut, icons and fonts from `branding/`, so it needs the whole repository checked out, not only `website/`. A `--branch` other than `main` gives a preview address instead of production. Wrangler is not a dependency of the project; `npx` fetches it when the command runs.
+
+`public/_headers` lets browsers keep the hashed files in `dist/assets/` for a year. Every other file, `index.html` included, is revalidated on each visit, so a new build shows up at once.
