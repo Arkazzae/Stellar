@@ -83,7 +83,7 @@ public static partial class CockpitEndpoints
             .Select(x => x.UserId)
             .ToArrayAsync(cancellationToken);
         var attachmentBytes = await db.ImageAttachments.AsNoTracking()
-            .SumAsync(x => (long?)(x.SizeBytes + (x.PosterSizeBytes ?? 0)), cancellationToken) ?? 0;
+            .SumAsync(x => (long?)(x.SizeBytes + (x.PosterSizeBytes ?? 0) + (x.PreviewSizeBytes ?? 0)), cancellationToken) ?? 0;
         var emojiBytes = await db.ServerEmoji.AsNoTracking()
             .Where(x => x.ServerId == server.Id)
             .SumAsync(x => (long?)x.SizeBytes, cancellationToken) ?? 0;

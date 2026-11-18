@@ -95,7 +95,7 @@ public sealed class MediaStorage(AppDbContext db, IObjectStorage storage, ILogge
 
     /// <summary>
     /// Deletes the attachment behind an <c>/assets/{id}</c> address, together with its
-    /// poster, unless something still points at it.
+    /// poster or preview, unless something still points at it.
     /// </summary>
     /// <param name="uploadedById">When set, only an attachment this account uploaded qualifies.</param>
     /// <returns>True when the attachment was removed and its objects queued for deletion.</returns>
@@ -118,7 +118,7 @@ public sealed class MediaStorage(AppDbContext db, IObjectStorage storage, ILogge
             return false;
         }
 
-        await QueueDeletionAsync([attachment.ObjectKey, attachment.PosterObjectKey], queuedAt, cancellationToken);
+        await QueueDeletionAsync([attachment.ObjectKey, attachment.PosterObjectKey, attachment.PreviewObjectKey], queuedAt, cancellationToken);
         db.ImageAttachments.Remove(attachment);
         try
         {

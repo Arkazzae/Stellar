@@ -31,6 +31,21 @@ public sealed class ImageAttachment
     public long? PosterSizeBytes { get; set; }
 
     /// <summary>
+    /// A reduced still copy of an uploaded image, made by the uploader's
+    /// browser, so that a small tile need not download the original.
+    /// </summary>
+    public string? PreviewObjectKey { get; set; }
+
+    public string? PreviewContentType { get; set; }
+    public long? PreviewSizeBytes { get; set; }
+
+    /// <summary>
+    /// A few bytes, as padded base64, a client turns into a blurred stand-in
+    /// while the image loads. The server stores the text and never reads the bytes.
+    /// </summary>
+    public string? Placeholder { get; set; }
+
+    /// <summary>
     /// Bytes a browser encrypted for an encrypted conversation. The server only
     /// knows their size: it neither inspects nor describes them, and they may
     /// be attached to encrypted direct messages only.

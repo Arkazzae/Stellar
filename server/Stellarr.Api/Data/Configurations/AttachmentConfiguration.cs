@@ -16,6 +16,9 @@ internal sealed class ImageAttachmentConfiguration : IEntityTypeConfiguration<Im
         entity.Property(x => x.IsVoiceMessage).HasDefaultValue(false);
         entity.Property(x => x.PosterObjectKey).HasMaxLength(512);
         entity.Property(x => x.PosterContentType).HasMaxLength(80);
+        entity.Property(x => x.PreviewObjectKey).HasMaxLength(512);
+        entity.Property(x => x.PreviewContentType).HasMaxLength(80);
+        entity.Property(x => x.Placeholder).HasMaxLength(44);
     }
 }
 
