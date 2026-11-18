@@ -114,6 +114,47 @@ describe("the one reload per release", () => {
   });
 });
 
+describe("the order of an update with a service worker", () => {
+  it("has the worker keep the shell before the guard is written and the page reloads", async () => {
+    const order: string[] = [];
+    const { watcher } = watcherWith({
+      keepShell: vi.fn(async () => {
+        order.push("keep");
+        return true;
+      }),
+      writeReloadedFor: vi.fn(() => void order.push("remember")),
+      reload: vi.fn(() => void order.push("reload")),
+    });
+    await watcher.check();
+    expect(order).toEqual(["keep", "remember", "reload"]);
+  });
+
+  it("stays as it is, without using up its one reload, when the worker could not keep the shell", async () => {
+    const { deps, watcher } = watcherWith({ keepShell: vi.fn(async () => false) });
+    await watcher.check();
+    expect(deps.reload).not.toHaveBeenCalled();
+    expect(deps.writeReloadedFor).not.toHaveBeenCalled();
+    expect(watcher.state).toBe("current");
+    deps.keepShell = vi.fn(async () => true);
+    await watcher.check();
+    expect(deps.reload).toHaveBeenCalledTimes(1);
+  });
+
+  it("asks the worker to keep the shell of the release the page already runs", async () => {
+    const { deps, watcher } = watcherWith({ fetchLatest: vi.fn(async () => "a"), keepShell: vi.fn(async () => true) });
+    await watcher.check();
+    expect(deps.keepShell).toHaveBeenCalledTimes(1);
+    expect(deps.reload).not.toHaveBeenCalled();
+  });
+
+  it("does not ask the worker for a release it was stuck on", async () => {
+    const { deps, watcher } = watcherWith({ readReloadedFor: vi.fn(() => "b"), keepShell: vi.fn(async () => true) });
+    await watcher.check();
+    expect(deps.keepShell).not.toHaveBeenCalled();
+    expect(watcher.state).toBe("stuck");
+  });
+});
+
 function startWatching() {
   let status: ConnectionStatus = "idle";
   const listeners = new Set<() => void>();
