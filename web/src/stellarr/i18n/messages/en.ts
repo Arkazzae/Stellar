@@ -1709,6 +1709,7 @@ export const en = {
   "shell.voiceRequestingMic": "Waiting for microphone",
   "shell.voiceScreen": "Your screen",
   "shell.voiceConnected": "Connected",
+  "shell.voiceRinging": "Calling",
   "shell.voiceQualityMeasuring": "Measuring…",
   "shell.voiceQualityGood": "Good",
   "shell.voiceQualityFair": "Fair",

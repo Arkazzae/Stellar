@@ -1707,6 +1707,7 @@ export const pl = {
   "shell.voiceRequestingMic": "Czekam na mikrofon",
   "shell.voiceScreen": "Twój ekran",
   "shell.voiceConnected": "Połączono",
+  "shell.voiceRinging": "Dzwonię",
   "shell.voiceQualityMeasuring": "Pomiar…",
   "shell.voiceQualityGood": "Dobra",
   "shell.voiceQualityFair": "Średnia",

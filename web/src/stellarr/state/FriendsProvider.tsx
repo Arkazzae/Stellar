@@ -60,6 +60,12 @@ export interface FriendsValue {
   /** Starts or joins the call attached to an existing conversation. */
   callConversation: (conversationId: string) => void;
   declineCall: (conversationId: string) => void;
+  /**
+   * You are in a private call the other person has not joined, so on their
+   * side it rings. Read from the call's occupancy, the way the receiving side
+   * reads an incoming call: the RTC layer lists the person before they come.
+   */
+  ringing: boolean;
   /** Sends into the open conversation. No-op when there is none. */
   send: (text: string) => Promise<void>;
   hasOlderMessages: boolean;
@@ -260,6 +266,15 @@ export function FriendsProvider({ children }: { children: ReactNode }) {
     void leaveVoice();
   }, [conversations, privateCall, voiceRoomId, leaveVoice]);
 
+  const joinedCall = privateCall
+    ? conversations.find((item) => item.id === voiceRoomId)
+    : undefined;
+  const ringing =
+    joinedCall !== undefined &&
+    !(joinedCall.callParticipants ?? []).some(
+      (participant) => participant.userId === joinedCall.peer.id,
+    );
+
   const present = useMemo(() => createTranscriptPresenter(), []);
   const presentation = useMemo<PresentationContext>(() => {
     // Both authors are already `User`s, so no directory lookup is needed.
@@ -438,6 +453,7 @@ export function FriendsProvider({ children }: { children: ReactNode }) {
       messagePerson,
       callPerson,
       callConversation,
+      ringing,
       send,
       hasOlderMessages,
       loadingOlderMessages,
@@ -460,6 +476,7 @@ export function FriendsProvider({ children }: { children: ReactNode }) {
       messagePerson,
       callPerson,
       callConversation,
+      ringing,
       send,
       hasOlderMessages,
       loadingOlderMessages,
