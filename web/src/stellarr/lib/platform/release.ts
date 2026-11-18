@@ -1,5 +1,7 @@
 import type { ConnectionPort, ConnectionStatus } from "@/ports/presence";
 
+import { keepShell } from "./worker";
+
 /**
  * Keeps a running page on the release the server serves.
  *
@@ -47,6 +49,12 @@ export interface ReleaseWatcherDeps {
   /** May throw, as storage does. */
   writeReloadedFor(id: string): void;
   reload(): void;
+  /**
+   * Has the service worker keep the shell of the release the server serves
+   * now (`keepShell` in `./worker`). False means the worker could not, and
+   * the page must not reload. Absent where there is no worker to ask.
+   */
+  keepShell?(): Promise<boolean>;
 }
 
 export interface ReleaseWatcher {
@@ -73,6 +81,9 @@ export function createReleaseWatcher(deps: ReleaseWatcherDeps): ReleaseWatcher {
     if (latest === null) return;
     if (latest === deps.running) {
       setState("current");
+      // Not waited for: a worker that has no copy of this release yet takes
+      // it now, for the next load.
+      void deps.keepShell?.();
       return;
     }
     // One reload per release id, so a release that a reload does not bring
@@ -83,6 +94,21 @@ export function createReleaseWatcher(deps: ReleaseWatcherDeps): ReleaseWatcher {
         setState("stuck");
         return;
       }
+    } catch {
+      setState("stuck");
+      return;
+    }
+    // With a worker in control a plain reload would bring the old shell back,
+    // so the worker stores the new one first. When it cannot, the page stays
+    // as it is and the next check tries again.
+    if (deps.keepShell !== undefined) {
+      setState("updating");
+      if (!(await deps.keepShell())) {
+        setState("current");
+        return;
+      }
+    }
+    try {
       deps.writeReloadedFor(latest);
     } catch {
       setState("stuck");
@@ -192,6 +218,7 @@ export function releaseWatcher(): ReleaseWatcher {
     readReloadedFor: () => window.sessionStorage.getItem(RELOADED_FOR_KEY),
     writeReloadedFor: (id) => window.sessionStorage.setItem(RELOADED_FOR_KEY, id),
     reload: () => window.location.reload(),
+    keepShell,
   });
   return shared;
 }

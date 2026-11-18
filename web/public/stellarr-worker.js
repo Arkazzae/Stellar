@@ -1,9 +1,11 @@
 /*
  * Stellarr's service worker.
  *
- * This file is served as-is from the site root. It is the one worker of the
- * origin's scope, which has room for one. It handles push and clicks, and
- * does not intercept fetches or cache anything.
+ * This file is served as-is from the site root and registered by every page
+ * of the web client at start. It is the one worker of the origin's scope,
+ * which has room for one, so it does two jobs: it handles push and clicks,
+ * and it keeps the web client's shell for the release in use and answers
+ * from it (see "The shell" below).
  *
  * The push payload is { id, title, body, url, tag }. The server sends `tag`
  * with the same value the live page uses for that event when it has one, so a
@@ -141,12 +143,263 @@ async function openNotification(value) {
   await self.clients.openWindow(target);
 }
 
+/*
+ * The shell.
+ *
+ * The worker keeps a copy of the web client's shell for the release the page
+ * last switched to: the web document and the files under /static/ and /fonts/
+ * that it and the signed-in app need, as /release.json lists them. A
+ * navigation to the web client is answered from that copy without waiting for
+ * the network, and so is a file of the shell. Everything else goes to the
+ * network as if the worker were not there: Cockpit, the API and the hub, the
+ * worklets, codecs, models and sounds.
+ *
+ * A release is taken in this order, which keeps parts of two releases apart:
+ * every file of the new shell is fetched and stored in a cache of its own, and
+ * only then is the pointer to the current shell moved to it. The page reloads
+ * after that. Nothing is deleted before the switch, and a store that fails
+ * leaves the pointer where it was.
+ */
+
+const RELEASE_URL = "/release.json";
+const DOCUMENT_PATH = "/index.html";
+const INSTANCE_PATH = "/stellarr-instance.js";
+
+// One cache per release, named by its id, holding the files of its shell.
+const SHELL_CACHE_PREFIX = "stellarr-shell:";
+// The cache that outlives releases: the pointer to the current shell and the
+// last answer for the instance file.
+const KEPT_CACHE = "stellarr-kept";
+const CURRENT_KEY = "/current";
+
+const ADOPT_MESSAGE = "stellarr-adopt";
+
+// What nginx hands to the API; never the web client's address, whatever the
+// path rules say. Repeats infra/nginx.conf.
+const API_PATH = /^\/(api|assets|health|hubs|\.well-known)(\/|$)/;
+const BUILD_FILE_PATH = /^\/(static|fonts)\//;
+
+function mergeSlashes(pathname) {
+  return pathname.replace(/\/{2,}/g, "/");
+}
+
+/*
+ * Whether the web client's document answers `pathname`. This is the rule of
+ * documentFor in web/documents.ts, with the folders that hold only files as
+ * the release file gives them; documents.test.ts holds the two to the same
+ * answers.
+ */
+function isWebAddress(pathname, directories) {
+  const segments = mergeSlashes(pathname).split("/");
+  const first = segments[1] || "";
+  const last = segments[segments.length - 1] || "";
+  if (first.startsWith("@") || directories.includes(first) || last.includes(".")) return false;
+  return first !== "cockpit";
+}
+
+/*
+ * How a request is answered: "document" and "file" from the shell's copy,
+ * "instance" from the network with the copy as a fallback, and "network" for
+ * everything the worker leaves alone. `directories` is null while no shell is
+ * kept.
+ */
+function routeOf(method, mode, url, origin, directories) {
+  if (method !== "GET" || url.origin !== origin) return "network";
+  if (url.pathname === INSTANCE_PATH) return "instance";
+  if (directories === null || API_PATH.test(mergeSlashes(url.pathname))) return "network";
+  if (mode === "navigate") return isWebAddress(url.pathname, directories) ? "document" : "network";
+  return BUILD_FILE_PATH.test(url.pathname) ? "file" : "network";
+}
+
+// The shell this worker answers from: undefined until the pointer has been
+// read, null when no shell is kept, else { id, directories }.
+let current;
+
+async function readCurrent() {
+  const kept = await caches.open(KEPT_CACHE);
+  const stored = await kept.match(CURRENT_KEY);
+  if (stored === undefined) return null;
+  const { id, directories } = await stored.json();
+  return typeof id === "string" && Array.isArray(directories) ? { id, directories } : null;
+}
+
+async function loadCurrent() {
+  if (current === undefined) {
+    try {
+      current = await readCurrent();
+    } catch {
+      current = null;
+    }
+  }
+  return current;
+}
+
+/** The shell's copy of a file, or the network's when the copy has none. */
+async function fromShell(request, url, route) {
+  try {
+    const cache = await caches.open(SHELL_CACHE_PREFIX + current.id);
+    const kept = await cache.match(route === "document" ? DOCUMENT_PATH : url.pathname);
+    if (kept !== undefined) return kept;
+  } catch {
+    // A cache that cannot be read is no cache.
+  }
+  return fetch(request);
+}
+
+/**
+ * The instance file asked from the network every time, past the HTTP cache,
+ * since it is written at each start of the container. The copy of the last
+ * answer is used only when the network fails.
+ */
+async function fromNetworkFirst(request) {
+  let response;
+  try {
+    response = await fetch(request, { cache: "reload" });
+  } catch (error) {
+    const kept = await caches.open(KEPT_CACHE).then((cache) => cache.match(INSTANCE_PATH), () => undefined);
+    if (kept !== undefined) return kept;
+    throw error;
+  }
+  if (response.ok) {
+    await caches.open(KEPT_CACHE).then((cache) => cache.put(INSTANCE_PATH, response.clone())).catch(() => undefined);
+  }
+  return response;
+}
+
+async function answer(request, url) {
+  await loadCurrent();
+  const directories = current === null ? null : current.directories;
+  const route = routeOf(request.method, request.mode, url, self.location.origin, directories);
+  if (route === "instance") return fromNetworkFirst(request);
+  if (route === "network") return fetch(request);
+  return fromShell(request, url, route);
+}
+
+self.addEventListener("fetch", (event) => {
+  const request = event.request;
+  const url = new URL(request.url);
+  // Until the pointer is read, the folders are not known and every folder
+  // counts as a page, which only lets more requests through to `answer`.
+  const directories = current === undefined ? [] : current === null ? null : current.directories;
+  if (routeOf(request.method, request.mode, url, self.location.origin, directories) === "network") return;
+  event.respondWith(answer(request, url));
+});
+
+function isAddress(value) {
+  return typeof value === "string" && value.startsWith("/") && !value.startsWith("//");
+}
+
+/** The release the server serves now, with the files of its shell. */
+async function fetchManifest() {
+  const response = await fetch(RELEASE_URL, { cache: "no-store" });
+  if (!response.ok) throw new Error("The release file is not there.");
+  const manifest = await response.json();
+  const valid =
+    typeof manifest.id === "string" &&
+    manifest.id !== "" &&
+    Array.isArray(manifest.shell) &&
+    manifest.shell.every(isAddress) &&
+    manifest.shell.includes(DOCUMENT_PATH) &&
+    Array.isArray(manifest.directories) &&
+    manifest.directories.every((directory) => typeof directory === "string");
+  if (!valid) throw new Error("The release file is not a release.");
+  return manifest;
+}
+
+/** Fetches every file of the shell into a cache of its own, past the HTTP cache. */
+async function storeShell(manifest) {
+  const name = SHELL_CACHE_PREFIX + manifest.id;
+  // What an earlier attempt that failed half way left behind.
+  await caches.delete(name);
+  try {
+    const cache = await caches.open(name);
+    await Promise.all(
+      manifest.shell.map(async (path) => {
+        const response = await fetch(path, { cache: "reload" });
+        if (!response.ok) throw new Error(path + " answered " + response.status + ".");
+        await cache.put(path, response);
+      }),
+    );
+    // A server that moved on while the files were fetched would hand over
+    // the document of one release and the files of another.
+    const document = await cache.match(DOCUMENT_PATH);
+    if (document === undefined || !(await document.text()).includes(manifest.id)) {
+      throw new Error("The document is not the one of release " + manifest.id + ".");
+    }
+  } catch (error) {
+    await caches.delete(name).catch(() => false);
+    throw error;
+  }
+  return name;
+}
+
+/** Makes the stored shell the one the worker answers from. */
+async function switchTo(manifest) {
+  const kept = await caches.open(KEPT_CACHE);
+  const pointer = JSON.stringify({ id: manifest.id, directories: manifest.directories });
+  await kept.put(CURRENT_KEY, new Response(pointer, { headers: { "Content-Type": "application/json" } }));
+  current = { id: manifest.id, directories: manifest.directories };
+}
+
+/** Deletes every shell but `keep`, the copies of releases that are over. */
+async function forgetShellsBut(keep) {
+  for (const name of await caches.keys()) {
+    if (name.startsWith(SHELL_CACHE_PREFIX) && name !== keep) await caches.delete(name);
+  }
+}
+
+/*
+ * Takes the release the server serves now: stores its whole shell, moves the
+ * pointer to it, and only then deletes the copies of older releases. A
+ * failure before the move leaves the pointer and the old shell as they were,
+ * and the partial copy is deleted. Resolves to the id of the release taken.
+ */
+async function takeRelease() {
+  const manifest = await fetchManifest();
+  const held = await loadCurrent();
+  if (held !== null && held.id === manifest.id) return manifest.id;
+  const name = await storeShell(manifest);
+  await switchTo(manifest);
+  await forgetShellsBut(name).catch(() => undefined);
+  return manifest.id;
+}
+
+// Messages that arrive while a release is being taken share the one run.
+let taking = null;
+
+function takeOnce() {
+  taking = taking || takeRelease().finally(() => {
+    taking = null;
+  });
+  return taking;
+}
+
 self.addEventListener("install", (event) => {
   event.waitUntil(self.skipWaiting());
 });
 
+// What a crash in the middle of taking a release left behind.
+async function forgetStaleShells() {
+  const held = await loadCurrent();
+  await forgetShellsBut(held === null ? null : SHELL_CACHE_PREFIX + held.id);
+}
+
 self.addEventListener("activate", (event) => {
-  event.waitUntil(self.clients.claim());
+  event.waitUntil(Promise.all([self.clients.claim(), forgetStaleShells().catch(() => undefined)]));
+});
+
+// A page asks for the release it has found and gets an answer on the port it
+// sends: { ok: true, id } once the shell is stored and switched to, or
+// { ok: false } when it could not be, with the old shell still in place.
+self.addEventListener("message", (event) => {
+  const data = event.data;
+  if (typeof data !== "object" || data === null || data.type !== ADOPT_MESSAGE) return;
+  const port = event.ports[0];
+  const reply = takeOnce().then(
+    (id) => ({ ok: true, id }),
+    () => ({ ok: false }),
+  );
+  event.waitUntil(reply.then((result) => (port === undefined ? undefined : port.postMessage(result))));
 });
 
 self.addEventListener("push", (event) => {
