@@ -1,6 +1,7 @@
 import type { NotificationDeliveryCapabilities } from "@/ports/notificationDelivery";
 
 import { parseMessage } from "./chatParsers";
+import { parseConversationEncryption } from "./encryptionParsers";
 import { ApiError } from "./errors";
 import {
   definedField,
@@ -213,6 +214,7 @@ function parseSocialConversation(value: unknown, path: string): SocialConversati
       : { lastMessage: parseMessage(lastMessage, `${path}.lastMessage`) }),
     unread: optionalNumber(record, "unread") ?? 0,
     updatedAt: expectString(record, "updatedAt", path),
+    encryption: parseConversationEncryption(record["encryption"], `${path}.encryption`),
   };
 }
 

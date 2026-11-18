@@ -1,6 +1,8 @@
 import type {
   ChannelId,
   ChannelReadChanged,
+  ConversationEncryption,
+  EncryptionEpoch,
   Message,
   MessageDeleted,
   MessageEmbedsUpdate,
@@ -176,6 +178,14 @@ export interface RealtimeEventMap {
   EmojiChanged: Record<string, never>;
   /** A private inbox row was created, read or removed on the active server. */
   NotificationInboxChanged: NotificationInboxChangedEvent;
+  /** A conversation's encryption switch moved; to both people. */
+  DirectEncryptionChanged: { conversationId: string; encryption: ConversationEncryption };
+  /** A new epoch, with the envelopes for every key of the receiving person. */
+  DirectEncryptionEpochCreated: { conversationId: string; epoch: EncryptionEpoch };
+  /** Someone in an encrypted conversation gained or lost a device, or reset: a new epoch is due. */
+  DirectEncryptionKeysChanged: { conversationId: string; userId: UserId };
+  /** This account's keys, backup or devices changed: read them again. */
+  EncryptionAccountChanged: Record<string, never>;
 }
 
 export type RealtimeEventName = keyof RealtimeEventMap;
