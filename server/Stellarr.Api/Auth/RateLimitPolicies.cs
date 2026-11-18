@@ -30,6 +30,14 @@ public static class RateLimitPolicies
     public const string InvitePreview = "invite-preview";
     public const string Uploads = "uploads";
 
+    /// <summary>
+    /// Tries of the encryption PIN, counted per address here and per account
+    /// by <see cref="AccountAttemptLimitFilter"/>: the limiter runs before
+    /// authentication, so it cannot tell whose PIN is being tried. Both only
+    /// slow guessing down; the backup itself is deleted after ten wrong PINs.
+    /// </summary>
+    public const string PinUnlock = "pin-unlock";
+
     public static IServiceCollection AddRateLimitPolicies(
         this IServiceCollection services,
         IConfiguration configuration,
@@ -49,10 +57,12 @@ public static class RateLimitPolicies
         var securityWrite = PermitLimit("SecurityWrite", 30);
         var invitePreview = PermitLimit("InvitePreview", 30);
         var uploadsPerMinute = PermitLimit("Uploads", 30);
+        var pinUnlock = PermitLimit("PinUnlock", 5);
         var concurrentUploads = environment.IsEnvironment("Testing")
             ? 100
             : Math.Clamp(configuration.GetValue<int?>("Uploads:MaxConcurrentUploads") ?? 4, 1, 32);
 
+        services.AddSingleton(new AccountAttemptLimiter(pinUnlock, PinUnlockWindow));
         return services.AddRateLimiter(options =>
         {
             options.RejectionStatusCode = StatusCodes.Status429TooManyRequests;
@@ -61,9 +71,12 @@ public static class RateLimitPolicies
             AddPerAddressPolicy(options, AuthWrite, authWrite, TimeSpan.FromMinutes(15));
             AddPerAddressPolicy(options, SecurityWrite, securityWrite, TimeSpan.FromMinutes(15));
             AddPerAddressPolicy(options, InvitePreview, invitePreview, TimeSpan.FromMinutes(1));
+            AddPerAddressPolicy(options, PinUnlock, pinUnlock, PinUnlockWindow);
             AddInstanceUploadPolicy(options, concurrentUploads, uploadsPerMinute);
         });
     }
+
+    private static readonly TimeSpan PinUnlockWindow = TimeSpan.FromMinutes(15);
 
     /// <summary>
     /// Uploads that run at once, queued briefly, and uploads per minute, both
@@ -98,4 +111,39 @@ public static class RateLimitPolicies
                 QueueLimit = 0,
                 AutoReplenishment = true,
             }));
+}
+
+/// <summary>
+/// A fixed window of attempts for each signed-in account, for routes that
+/// <see cref="RateLimitPolicies"/> can only count per address.
+/// </summary>
+public sealed class AccountAttemptLimiter(int permitLimit, TimeSpan window) : IDisposable
+{
+    private readonly PartitionedRateLimiter<Guid> _limiter = PartitionedRateLimiter.Create<Guid, Guid>(
+        userId => RateLimitPartition.GetFixedWindowLimiter(
+            userId,
+            _ => new FixedWindowRateLimiterOptions
+            {
+                PermitLimit = permitLimit,
+                Window = window,
+                QueueLimit = 0,
+                AutoReplenishment = true,
+            }));
+
+    public bool TryAcquire(Guid userId)
+    {
+        using var lease = _limiter.AttemptAcquire(userId);
+        return lease.IsAcquired;
+    }
+
+    public void Dispose() => _limiter.Dispose();
+}
+
+/// <summary>Answers 429, like the address limits do, once the account has used its attempts.</summary>
+public sealed class AccountAttemptLimitFilter(AccountAttemptLimiter limiter) : IEndpointFilter
+{
+    public async ValueTask<object?> InvokeAsync(EndpointFilterInvocationContext context, EndpointFilterDelegate next) =>
+        limiter.TryAcquire(context.HttpContext.User.RequireUserId())
+            ? await next(context)
+            : Results.StatusCode(StatusCodes.Status429TooManyRequests);
 }
