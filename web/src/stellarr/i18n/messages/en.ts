@@ -489,6 +489,7 @@ export const en = {
   "room.showPeople": "Show people",
   "room.messagesOn": "Messages in #{channel}",
   "rail.reorderFailed": "The channel order could not be saved.",
+  "rail.sectionOrderFailed": "The section order could not be saved.",
 
   "notifications.title": "Notifications",
   "notifications.open": "Open notifications",
