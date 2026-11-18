@@ -98,7 +98,8 @@ public static class SocialEndpoints
                         Person(PeerId(x, userId)),
                         last?.ToDto(),
                         unreadCounts.GetValueOrDefault(x.Id),
-                        last?.CreatedAt ?? x.CreatedAt);
+                        last?.CreatedAt ?? x.CreatedAt,
+                        x.ToEncryptionDto());
                 })
                 .OrderByDescending(x => x.UpdatedAt)
                 .ToArray()));
@@ -123,6 +124,8 @@ public static class SocialEndpoints
     /// <summary>
     /// What the viewer has not read: the other person's messages after the
     /// read marker, or after the conversation began while there is no marker.
+    /// Of the timeline lines only a request to switch encryption on counts,
+    /// because it waits for the viewer's answer.
     /// </summary>
     private static async Task<Dictionary<Guid, int>> UnreadCountsAsync(
         AppDbContext db,
@@ -138,6 +141,7 @@ public static class SocialEndpoints
             from read in readRows.DefaultIfEmpty()
             where conversationIds.Contains(message.ConversationId) &&
                 message.AuthorId != userId &&
+                (message.SystemKind == null || message.SystemKind == DirectSystemKinds.EncryptionRequested) &&
                 message.CreatedAt > (read == null ? conversation.CreatedAt : read.LastReadAt)
             group message by message.ConversationId into unread
             select new { ConversationId = unread.Key, Count = unread.Count() })
