@@ -28,6 +28,7 @@ import type {
   TextChannelVM,
   VoiceChannelVM,
 } from "@/components/view-models";
+import type { MessageKey } from "@/i18n";
 import { useLanguage } from "@/state/hooks";
 
 export { voiceMoveRequest } from "@/components/shell/rail/voiceMove";
@@ -208,12 +209,15 @@ export function Rail({
         };
 
   /** A change to the rail's layout, which says so when the server refuses it. */
-  const rearrange = async (change: () => Promise<void> | void) => {
+  const rearrange = async (
+    change: () => Promise<void> | void,
+    failed: MessageKey = "rail.reorderFailed",
+  ) => {
     setMoveError(null);
     try {
       await change();
     } catch {
-      setMoveError(t("rail.reorderFailed"));
+      setMoveError(t(failed));
     }
   };
 
@@ -248,7 +252,10 @@ export function Rail({
     ...(onMoveVoiceMember === undefined ? {} : { onDropPerson: move.onDrop }),
     ...(onMoveSection === undefined
       ? {}
-      : { onMoveSection: (order: string[]) => void rearrange(() => onMoveSection(order)) }),
+      : {
+          onMoveSection: (order: string[]) =>
+            void rearrange(() => onMoveSection(order), "rail.sectionOrderFailed"),
+        }),
   });
 
   const registerThread = useThreadFocus(threadsByChannel, activeThreadId, hidden);
