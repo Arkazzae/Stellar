@@ -31,6 +31,9 @@ public static class UploadEndpoints
         api.MapPost("/uploads/images", UploadAsync)
             .DisableAntiforgery()
             .RequireRateLimiting(RateLimitPolicies.Uploads);
+        api.MapPost("/uploads/encrypted", UploadEncryptedAsync)
+            .DisableAntiforgery()
+            .RequireRateLimiting(RateLimitPolicies.Uploads);
 
         return endpoints;
     }
@@ -131,6 +134,82 @@ public static class UploadEndpoints
 
         return Results.Created($"/assets/{id}", attachment.ToDto());
     }
+
+    /// <summary>
+    /// Accepts a file a browser encrypted for an encrypted conversation, or the
+    /// poster of such a video. The bytes are opaque: only their size is checked,
+    /// against the largest size any kind of upload may have plus the
+    /// authentication tag, and against the storage quotas. Nothing is read from
+    /// them, and nothing about them is stored but their size.
+    /// </summary>
+    private static async Task<IResult> UploadEncryptedAsync(
+        [FromForm] IFormFile file,
+        ClaimsPrincipal principal,
+        AppDbContext db,
+        MediaStorage mediaStorage,
+        UploadAdmissionGate admissionGate,
+        IOptions<UploadOptions> uploadOptions,
+        Messages messages,
+        CancellationToken cancellationToken)
+    {
+        if (file.Length <= 0)
+        {
+            return Invalid("file", messages.Get(MessageKey.FileEmpty));
+        }
+
+        if (file.Length > MaxEncryptedBytes(uploadOptions.Value))
+        {
+            return Results.Problem(
+                statusCode: StatusCodes.Status413PayloadTooLarge,
+                title: messages.Get(MessageKey.UploadTooLarge),
+                detail: messages.Get(MessageKey.UploadOverLimit));
+        }
+
+        var userId = principal.RequireUserId();
+        var admission = await admissionGate.TryEnterAsync(db, userId, file.Length, cancellationToken);
+        if (!admission.Accepted)
+        {
+            return NoRoom(admission.Failure, messages);
+        }
+
+        await using var lease = admission.Lease;
+
+        var id = Guid.NewGuid();
+        var key = $"encrypted/{DateTimeOffset.UtcNow.ToString("yyyy/MM", CultureInfo.InvariantCulture)}/{id:N}.bin";
+        var attachment = new ImageAttachment
+        {
+            Id = id,
+            UploadedById = userId,
+            ObjectKey = key,
+            FileName = "encrypted.bin",
+            ContentType = EncryptedContentType,
+            SizeBytes = file.Length,
+            IsEncrypted = true,
+            CreatedAt = DateTime.UtcNow,
+        };
+
+        try
+        {
+            await mediaStorage.StoreAsync(key, file, cancellationToken);
+            db.ImageAttachments.Add(attachment);
+            await db.SaveChangesAsync(cancellationToken);
+        }
+        catch
+        {
+            await mediaStorage.RollbackAsync([key]);
+            throw;
+        }
+
+        return Results.Created($"/assets/{id}", attachment.ToDto());
+    }
+
+    /// <summary>What every encrypted upload is stored and served as.</summary>
+    internal const string EncryptedContentType = "application/octet-stream";
+
+    /// <summary>The largest plain upload, encrypted: AES-GCM adds its tag and nothing else.</summary>
+    internal static long MaxEncryptedBytes(UploadOptions options) =>
+        new[] { options.MaxImageBytes, options.MaxAudioBytes, options.MaxVideoBytes, options.MaxFileBytes }.Max() +
+        EncryptionLimits.TagBytes;
 
     /// <summary>The still image that stands in for a video before it plays.</summary>
     private sealed record PosterUpload(IFormFile File, UploadSpec Spec, string Key);
