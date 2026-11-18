@@ -94,6 +94,7 @@ export function FriendsRoomContainer() {
         }}
         chatOpen={ui.callChatOpen}
         onToggleChat={ui.toggleCallChat}
+        chatUnread={conversation.unread}
         notificationButton={<NotificationInboxButton />}
       >
         {/* The call has the room while you are in it; its messages move
