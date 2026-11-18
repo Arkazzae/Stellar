@@ -2,6 +2,7 @@ using System.Net;
 using System.Net.Http.Json;
 using System.Text.Json;
 using Microsoft.AspNetCore.Mvc.Testing;
+using Microsoft.EntityFrameworkCore;
 using Stellarr.Api.Domain;
 
 namespace Stellarr.Api.Tests;
@@ -17,6 +18,16 @@ public sealed class InvitePreviewFlowTests
         using var maja = await SignInAsync(factory);
         var toChannel = await CreateInviteAsync(maja, new { channelId = TestData.GeneralChannelId });
         var serverWide = await AddInviteAsync(factory, maxUses: null, uses: 0, expiresAt: null);
+        var iconUrl = $"/assets/{Guid.NewGuid()}";
+        var avatarUrl = $"/assets/{Guid.NewGuid()}";
+        await using (var scope = factory.OpenScope(out var db))
+        {
+            await db.Servers.Where(x => x.Id == TestData.ServerId)
+                .ExecuteUpdateAsync(setters => setters.SetProperty(x => x.IconUrl, iconUrl));
+            await db.Users.Where(x => x.Id == MajaId)
+                .ExecuteUpdateAsync(setters => setters.SetProperty(x => x.AvatarUrl, avatarUrl));
+        }
+
         using var anonymous = factory.CreateClient();
 
         using var response = await anonymous.GetAsync($"/api/invites/{toChannel.Code}");
@@ -30,6 +41,7 @@ public sealed class InvitePreviewFlowTests
         Assert.Equal(TestData.ServerId.ToString(), server.GetProperty("id").GetString());
         Assert.Equal("Orbit", server.GetProperty("name").GetString());
         Assert.Equal("Integration test server", server.GetProperty("description").GetString());
+        // Stored images are served only to a session, so anybody else gets none.
         Assert.Equal(JsonValueKind.Null, server.GetProperty("iconUrl").ValueKind);
         var channel = preview.GetProperty("channel");
         Assert.Equal(["id", "name"], Names(channel));
@@ -44,7 +56,9 @@ public sealed class InvitePreviewFlowTests
         Assert.Equal(toChannel.ExpiresAt, preview.GetProperty("expiresAt").GetDateTime());
 
         var signedIn = await maja.GetFromJsonAsync<JsonElement>($"/api/invites/{toChannel.Code}");
-        Assert.Equal(preview.GetRawText(), signedIn.GetRawText());
+        Assert.Equal(iconUrl, signedIn.GetProperty("server").GetProperty("iconUrl").GetString());
+        Assert.Equal(avatarUrl, signedIn.GetProperty("inviter").GetProperty("avatarUrl").GetString());
+        Assert.Equal("Orbit", signedIn.GetProperty("server").GetProperty("name").GetString());
 
         var wide = await anonymous.GetFromJsonAsync<JsonElement>($"/api/invites/{serverWide}");
         Assert.Equal(JsonValueKind.Null, wide.GetProperty("channel").ValueKind);

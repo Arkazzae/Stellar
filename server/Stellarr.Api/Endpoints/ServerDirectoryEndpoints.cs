@@ -88,7 +88,7 @@ public static class ServerDirectoryEndpoints
         }
 
         await db.Entry(invite).Reference(x => x.CreatedBy).LoadAsync(cancellationToken);
-        return Results.Ok(invite.ToPreview(server));
+        return Results.Ok(invite.ToPreview(server, withImages: http.User.Identity?.IsAuthenticated == true));
     }
 
     /// <summary>
