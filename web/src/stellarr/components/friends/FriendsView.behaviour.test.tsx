@@ -144,11 +144,13 @@ describe("FriendsView tabs", () => {
 });
 
 describe("FriendsView lists", () => {
-  it("lists only people who are not offline under 'W sieci'", () => {
-    view({ initialTab: "online" });
+  it("lists only people who are not offline under 'W sieci', with what they say about themselves", () => {
+    view({ initialTab: "online", friends: [kasia, tomek, { ...ada, customStatus: "w trasie" }] });
 
     expect(screen.getByText("Kasia")).toBeTruthy();
+    expect(screen.getByText("W sieci", { selector: ".fr-state" })).toBeTruthy();
     expect(screen.getByText("Ada")).toBeTruthy();
+    expect(screen.getByText("w trasie")).toBeTruthy();
     expect(screen.queryByText("Tomek")).toBeNull();
   });
 

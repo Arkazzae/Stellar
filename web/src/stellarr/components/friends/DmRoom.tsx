@@ -1,7 +1,7 @@
 import { useMemo, type ReactNode } from "react";
 
 import { Icon } from "@stellarr/icons";
-import { PresenceDot } from "@/components/primitives/Avatar";
+import { Avatar } from "@/components/primitives/Avatar";
 import { Composer } from "@/components/room/composer/Composer";
 import type { ComposerChip } from "@/components/room/composer/ComposerChips";
 import type { MessageTranslationOptions } from "@/components/room/attachments/TranslatedTextAttachment";
@@ -14,9 +14,16 @@ import { PRESENCE_LABEL, type CustomEmoji } from "@/ports";
 
 export interface DmRoomProps {
   peer: PersonVM;
+  /** Without the "@"; the intro prints it under the name. */
+  username: string;
+  /** What the person says about themselves, beside the presence word in the header. */
+  status?: string;
   sections: TranscriptSectionVM[];
   railOpen: boolean;
   onToggleRail: () => void;
+  /** The profile beside the conversation, and the header controls that show it. */
+  profilePanelOpen: boolean;
+  onToggleProfilePanel: () => void;
   onSend: (text: string) => Promise<void>;
   hasOlderMessages?: boolean;
   loadingOlderMessages?: boolean;
@@ -44,7 +51,7 @@ export interface DmRoomProps {
   onRemoveChip: (chipId: string) => void;
   onRetryChip: (chipId: string) => void;
   onReorderChips: (from: number, to: number) => void;
-  /** From an author in the transcript, from a tile, and from the name in the header. */
+  /** From an author in the transcript and from a tile. */
   onOpenProfile: OpenProfile;
   /** The server's own emoji: the picker and the reaction bar both offer them. */
   customEmoji?: readonly CustomEmoji[];
@@ -52,6 +59,8 @@ export interface DmRoomProps {
   /** The same picture, clip and recording actions the channel transcript uses. */
   attachments?: AttachmentCallbacks;
   notificationButton?: ReactNode;
+  /** One action under the intro's sentence. */
+  introAction?: ReactNode;
 }
 
 /**
@@ -59,15 +68,20 @@ export interface DmRoomProps {
  *
  * The same room as a channel (header, transcript, composer), with three
  * differences that are the point of the surface: the title is a person, so it
- * carries a presence word; the header offers a call to that person instead of
- * tools for a channel; and the history has a beginning, which is stated once
- * at the top of the scroller rather than assumed.
+ * wears their face and its topic says how reachable they are; the header
+ * offers a call to that person and their profile instead of tools for a
+ * channel; and the history has a beginning, stated once above the first
+ * message rather than assumed.
  */
 export function DmRoom({
   peer,
+  username,
+  status,
   sections,
   railOpen,
   onToggleRail,
+  profilePanelOpen,
+  onToggleProfilePanel,
   onSend,
   hasOlderMessages = false,
   loadingOlderMessages = false,
@@ -97,18 +111,30 @@ export function DmRoom({
   translation,
   attachments,
   notificationButton,
+  introAction,
 }: DmRoomProps) {
   const t = translation?.t ?? translateForDocument;
   const name = peer.displayName;
+  const presence = t(PRESENCE_LABEL[peer.presence]);
+  const topic = status ? `${presence} · ${status}` : presence;
 
   const intro = useMemo(
     () => (
       <div className="dm-intro">
+        <Avatar
+          id={peer.id}
+          displayName={name}
+          initials={peer.initials}
+          avatarUrl={peer.avatarUrl}
+          size="xl"
+        />
         <h3>{name}</h3>
-        <p>{t("dm.intro", { name })}</p>
+        <span className="dm-handle">@{username}</span>
+        <p>{t("dm.intro")}</p>
+        {introAction === undefined ? null : <div className="dm-intro-act">{introAction}</div>}
       </div>
     ),
-    [name, t],
+    [peer.id, peer.initials, peer.avatarUrl, name, username, introAction, t],
   );
 
   const callTitle = inCall ? t("dm.inCall") : t(callActive ? "dm.joinCall" : "dm.startCall");
@@ -131,19 +157,30 @@ export function DmRoom({
         >
           <Icon name="list" size={18} />
         </button>
-        <span className="glyph" aria-hidden="true">
-          <Icon name="at" size={18} />
-        </span>
-        <h2>{name}</h2>
-        {/* Shape and word, not colour: the dot the faces wear, with the word it
-            stands for beside it. */}
-        <span className="dm-presence">
-          <PresenceDot presence={peer.presence} />
-          {t(PRESENCE_LABEL[peer.presence])}
-        </span>
+        {/* The face and the name raise the profile as well: on a phone they
+            are the way to it, because the panel's own button does not fit. */}
+        <h2 className="dm-title">
+          <button
+            type="button"
+            className="dm-who"
+            aria-expanded={profilePanelOpen}
+            onClick={onToggleProfilePanel}
+          >
+            <Avatar
+              id={peer.id}
+              displayName={name}
+              initials={peer.initials}
+              avatarUrl={peer.avatarUrl}
+              size="xs"
+              presence={peer.presence}
+              title={presence}
+            />
+            <span className="dm-who-name">{name}</span>
+          </button>
+        </h2>
+        <span className="topic">{topic}</span>
 
         <div className="pill-bar auto" role="toolbar" aria-label={t("dm.toolbar")}>
-          {notificationButton}
           <button
             type="button"
             className={inCall ? "pill-btn on" : "pill-btn"}
@@ -163,6 +200,17 @@ export function DmRoom({
             onClick={onVideoCall}
           >
             <Icon name="camera" size={16} />
+          </button>
+          {notificationButton}
+          <button
+            type="button"
+            className="pill-btn dm-profile-toggle"
+            title={t("common.profile")}
+            aria-label={t("common.profile")}
+            aria-pressed={profilePanelOpen}
+            onClick={onToggleProfilePanel}
+          >
+            <Icon name="channelPanel" size={16} />
           </button>
         </div>
       </header>

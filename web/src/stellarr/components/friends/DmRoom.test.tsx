@@ -1,4 +1,4 @@
-import { render, screen } from "@testing-library/react";
+import { render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { describe, expect, it, vi } from "vitest";
 
@@ -32,9 +32,12 @@ function message(id: string, authorId: string, authorName: string, text: string)
 function openRoom(overrides: Partial<DmRoomProps> = {}) {
   const props: DmRoomProps = {
     peer: ada,
+    username: "ada",
     sections: [],
     railOpen: false,
     onToggleRail: vi.fn(),
+    profilePanelOpen: false,
+    onToggleProfilePanel: vi.fn(),
     onSend: vi.fn().mockResolvedValue(undefined),
     callActive: false,
     inCall: false,
@@ -61,10 +64,23 @@ function openRoom(overrides: Partial<DmRoomProps> = {}) {
 
 describe("DmRoom header", () => {
   it("titles the room with the person and says how reachable they are", () => {
-    openRoom({ peer: person("u-ada", "Ada", "dnd") });
+    openRoom({ peer: person("u-ada", "Ada", "dnd"), status: "w trasie do Gdańska" });
 
     expect(screen.getByRole("heading", { level: 2, name: "Ada" })).toBeTruthy();
-    expect(screen.getByText("Nie przeszkadzać")).toBeTruthy();
+    expect(screen.getByText("Nie przeszkadzać · w trasie do Gdańska")).toBeTruthy();
+  });
+
+  it("shows and hides the profile from its button and from the person's name", async () => {
+    const { user, props } = openRoom({ profilePanelOpen: true });
+
+    const toggle = screen.getByRole("button", { name: "Profil" });
+    const name = screen.getByRole("button", { name: "Ada" });
+    expect(toggle).toHaveAttribute("aria-pressed", "true");
+    expect(name).toHaveAttribute("aria-expanded", "true");
+
+    await user.click(toggle);
+    await user.click(name);
+    expect(props.onToggleProfilePanel).toHaveBeenCalledTimes(2);
   });
 
   it("exposes the state of the conversation drawer from the burger", async () => {
@@ -181,14 +197,18 @@ describe("DmRoom conversation", () => {
     expect(body?.querySelector(".composer")).toBeTruthy();
   });
 
-  it("begins the history with a line saying whose conversation it is", () => {
-    openRoom();
+  it("begins the history with whose conversation it is and who can read it", () => {
+    openRoom({ introAction: <button type="button">Działanie</button> });
 
-    expect(screen.getByRole("log", { name: "Wiadomości z Ada" })).toBeTruthy();
-    expect(screen.getByRole("heading", { level: 3, name: "Ada" })).toBeTruthy();
+    const log = screen.getByRole("log", { name: "Wiadomości z Ada" });
+    expect(within(log).getByRole("heading", { level: 3, name: "Ada" })).toBeTruthy();
+    expect(within(log).getByText("@ada")).toBeTruthy();
     expect(
-      screen.getByText("To początek Twojej rozmowy z Ada. Widzicie ją tylko wy dwoje."),
+      within(log).getByText(
+        "To początek Waszej rozmowy. Wiadomości są zapisane na serwerze bez szyfrowania, więc ma do nich dostęp jego administrator.",
+      ),
     ).toBeTruthy();
+    expect(within(log).getByRole("button", { name: "Działanie" })).toBeTruthy();
   });
 
   it("shows the messages and opens the author's card from them", async () => {

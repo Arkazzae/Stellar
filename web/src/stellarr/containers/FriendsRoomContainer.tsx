@@ -31,7 +31,7 @@ import { useChatTranslation } from "./useChatTranslation";
  */
 const CAMERA_AFTER_JOIN_MS = 500;
 
-function toPerson(user: User): PersonVM {
+export function toPerson(user: User): PersonVM {
   return {
     id: user.id,
     displayName: user.displayName,
@@ -62,11 +62,15 @@ export function FriendsRoomContainer() {
   const friendList = useMemo<FriendVM[]>(
     () =>
       friends.friends
-        .map((friend) => ({
-          person: toPerson(friend.user),
-          username: friend.user.username,
-          since: formatDate(friend.since, locale),
-        }))
+        .map((friend) => {
+          const customStatus = friend.user.customStatus?.trim();
+          return {
+            person: toPerson(friend.user),
+            username: friend.user.username,
+            since: formatDate(friend.since, locale),
+            ...(customStatus ? { customStatus } : {}),
+          };
+        })
         .sort((a, b) => a.person.displayName.localeCompare(b.person.displayName, locale)),
     [friends.friends, locale],
   );
@@ -91,13 +95,18 @@ export function FriendsRoomContainer() {
   const conversation = friends.active;
   if (conversation !== null) {
     const inCall = voice.channelId === conversation.id;
+    const status = conversation.peer.customStatus?.trim();
     return (
       <>
         <DmRoom
           peer={toPerson(conversation.peer)}
+          username={conversation.peer.username}
+          {...(status ? { status } : {})}
           sections={friends.sections}
           railOpen={ui.railOpen}
           onToggleRail={ui.toggleRail}
+          profilePanelOpen={ui.profilePanelOpen}
+          onToggleProfilePanel={ui.toggleProfilePanel}
           onSend={friends.send}
           hasOlderMessages={friends.hasOlderMessages}
           loadingOlderMessages={friends.loadingOlderMessages}
@@ -144,6 +153,8 @@ export function FriendsRoomContainer() {
     <FriendsView
       tab={ui.friendsTab}
       onTabChange={ui.setFriendsTab}
+      searchRequested={ui.friendsSearchRequested}
+      onSearchFocused={ui.takeFriendsSearch}
       friends={friendList}
       requests={requests}
       blocked={blocked}

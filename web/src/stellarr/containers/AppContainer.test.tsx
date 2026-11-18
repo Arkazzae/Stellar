@@ -45,6 +45,7 @@ vi.mock("./DmRailContainer", () => ({ DmRailContainer: standIn("dm-rail") }));
 vi.mock("./RoomContainer", () => ({ RoomContainer: standIn("channel-room") }));
 vi.mock("./FriendsRoomContainer", () => ({ FriendsRoomContainer: standIn("friends-room") }));
 vi.mock("./RosterContainer", () => ({ RosterContainer: standIn("roster") }));
+vi.mock("./DmProfileContainer", () => ({ DmProfileContainer: standIn("dm-profile") }));
 vi.mock("./ModalsContainer", () => ({ ModalsContainer: standIn("modals") }));
 vi.mock("./UserSettingsContainer", () => ({ UserSettingsContainer: standIn("user-settings") }));
 vi.mock("./ClientSettingsSync", () => ({ ClientSettingsSync: standIn("client-settings-sync") }));
@@ -106,7 +107,18 @@ describe("AppContainer", () => {
     expect(screen.queryByTestId("channel-rail")).not.toBeInTheDocument();
     expect(screen.queryByTestId("channel-room")).not.toBeInTheDocument();
     expect(screen.queryByTestId("roster")).not.toBeInTheDocument();
+    expect(screen.queryByTestId("dm-profile")).not.toBeInTheDocument();
     expect(screen.getByTestId("friends-room").closest(".app")).toHaveClass("dm-space");
+  });
+
+  it("gives the roster's column to the profile beside an open conversation", () => {
+    setStubs({
+      ui: { space: "dm", activeDmId: "dm-ada", profilePanelOpen: true },
+      friends: { active: { id: "dm-ada" } as never },
+    });
+    render(<AppContainer />);
+
+    expect(screen.getByTestId("dm-profile").closest(".app")).toHaveClass("roster-open");
   });
 
   it("mounts the overlays outside the grid", () => {
