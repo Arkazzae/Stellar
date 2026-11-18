@@ -1,12 +1,13 @@
 // Real-browser benchmark for dragging in the channel rail. It builds the web
 // client, serves it on loopback, answers its API from fixture.mjs and drags a
 // channel down a rail of about 150 channels in ten sections, in the Chrome
-// already installed on the machine.
+// already installed on the machine. A second drag carries a person seated in
+// the first voice channel down the rail the same way.
 //
-//   npm run bench:rail-drag -- [--throttle 1,4] [--out result.json] [--shot drag.png]
+//   npm run bench:rail-drag -- [--throttle 1,4] [--drag rows,people] [--out result.json] [--shot drag.png]
 //
-// For each CPU throttling rate it reports, over the pointer moves of one drag:
-// React commits per move (split by whether the move changed the target slot),
+// For each drag and CPU throttling rate it reports, over its pointer moves:
+// React commits per move (split by whether the move changed the target),
 // the components those commits rendered, forced style and layout work (style
 // or layout run from inside script, which is a read after a write), and the
 // page's main-thread tasks: the longest, the 95th percentile and the total.
@@ -39,7 +40,16 @@ const MIME = {
 
 function parseArgs(argv) {
   // Long enough at the bottom edge for the rail to scroll through every section.
-  const options = { throttle: [1, 4], out: null, shot: null, headed: false, keepDist: false, step: 4, hold: 400 };
+  const options = {
+    throttle: [1, 4],
+    drag: ["rows", "people"],
+    out: null,
+    shot: null,
+    headed: false,
+    keepDist: false,
+    step: 4,
+    hold: 400,
+  };
   for (let index = 0; index < argv.length; index += 1) {
     const [flag, inline] = argv[index].split("=", 2);
     const value = () => inline ?? argv[++index];
@@ -56,6 +66,9 @@ function parseArgs(argv) {
       case "--step":
         options.step = Number(value());
         break;
+      case "--drag":
+        options.drag = value().split(",").filter((drag) => drag in GRABS);
+        break;
       case "--hold":
         options.hold = Number(value());
         break;
@@ -67,7 +80,7 @@ function parseArgs(argv) {
         break;
       default:
         throw new Error(
-          `Unknown option ${argv[index]}. Options: --throttle 1,4  --out <file>  --shot <file.png>  ` +
+          `Unknown option ${argv[index]}. Options: --throttle 1,4  --drag rows,people  --out <file>  --shot <file.png>  ` +
             "--step <px per move>  --hold <moves at the edge>  --headed  --keep-dist",
         );
     }
@@ -257,7 +270,13 @@ function readTrace(events, fromMark, toMark) {
 
 const frame = (page) => page.eval("new Promise((done) => requestAnimationFrame(() => setTimeout(done, 0)))");
 
-async function scenario(browser, origin, rate, options) {
+/** What each drag presses on, and the requests that tell its drop happened. */
+const GRABS = {
+  rows: { handle: ".rail .text-channel-node .channel-main", sent: /^\/api\/admin\/channels\/order$/ },
+  people: { handle: '.rail .voice-occupants li[role="button"]', sent: /^\/api\/admin\/channels\/[^/]+\/members\// },
+};
+
+async function scenario(browser, origin, rate, drag, options) {
   const page = await browser.newPage();
   const api = createApi(buildServer());
   page.on((method, params) => {
@@ -283,7 +302,7 @@ async function scenario(browser, origin, rate, options) {
 
   const start = await page.eval(`(() => {
     const scroll = document.querySelector('.rail-scroll').getBoundingClientRect();
-    const row = document.querySelector('.rail .text-channel-node .channel-main').getBoundingClientRect();
+    const row = document.querySelector(${JSON.stringify(GRABS[drag].handle)}).getBoundingClientRect();
     return { x: Math.round(row.left + 40), y: Math.round(row.top + row.height / 2), bottom: Math.floor(scroll.bottom) };
   })()`);
 
@@ -335,10 +354,10 @@ async function scenario(browser, origin, rate, options) {
     await mouse("mouseMoved", y);
     await frame(page);
     moves += 1;
-    if (options.shot !== null && !shotTaken && rate === options.throttle[0] && y > start.y + 260) {
+    if (options.shot !== null && !shotTaken && rate === options.throttle[0] && y > start.y + Math.min(260, (edge - start.y) / 2)) {
       shotTaken = true;
       const { data } = await page.cmd("Page.captureScreenshot", { format: "png" });
-      await writeFile(options.shot, Buffer.from(data, "base64"));
+      await writeFile(options.shot.replace(/(\.png)?$/, `-${drag}.png`), Buffer.from(data, "base64"));
     }
   }
   // Held at the bottom edge, the rail scrolls under the carried channel.
@@ -348,9 +367,14 @@ async function scenario(browser, origin, rate, options) {
     await frame(page);
     moves += 1;
   }
+  // Up off the list's bottom padding, onto its last row, where a drop lands.
+  await page.eval("window.__railBench.moved()");
+  await mouse("mouseMoved", edge - 20);
+  await frame(page);
+  moves += 1;
   await mark("moved");
   await page.eval("window.__railBench.released()");
-  await mouse("mouseReleased", edge, { buttons: 0 });
+  await mouse("mouseReleased", edge - 20, { buttons: 0 });
   for (let index = 0; index < 5; index += 1) await frame(page);
   await mark("dropped");
   const scrolled = await page.eval(`(() => {
@@ -387,6 +411,7 @@ async function scenario(browser, origin, rate, options) {
   };
 
   return {
+    drag,
     throttle: rate,
     moves,
     slotChanges: changed.length,
@@ -403,13 +428,13 @@ async function scenario(browser, origin, rate, options) {
     lift: { commits: bench.lift.commits, components: bench.lift.components.length, ...readTrace(trace, "lift", "moves") },
     moving: readTrace(trace, "moves", "moved"),
     drop: { commits: bench.drop.commits, components: bench.drop.components.length, ...readTrace(trace, "moved", "dropped") },
-    sent: api.requests.filter((request) => request.path.startsWith("/api/admin/channels")),
+    sent: api.requests.filter((request) => GRABS[drag].sent.test(request.path)),
   };
 }
 
 function print(result) {
   const lines = [
-    `CPU ${result.throttle}x  ${result.moves} moves, ${result.slotChanges} slot changes, ` +
+    `${result.drag}, CPU ${result.throttle}x  ${result.moves} moves, ${result.slotChanges} target changes, ` +
       `rail scrolled ${result.scrolled.top} of ${result.scrolled.max} px`,
     `  commits per move      slot unchanged ${result.commitsPerMove.slotUnchanged.mean} (max ${result.commitsPerMove.slotUnchanged.max})` +
       `   slot changed ${result.commitsPerMove.slotChanged.mean} (max ${result.commitsPerMove.slotChanged.max})`,
@@ -438,8 +463,8 @@ const { server, origin } = await serve();
 const browser = await launch({ width: 1280, height: 900, headless: !options.headed });
 const results = [];
 try {
-  for (const rate of options.throttle) {
-    const result = await scenario(browser, origin, rate, options);
+  for (const drag of options.drag) for (const rate of options.throttle) {
+    const result = await scenario(browser, origin, rate, drag, options);
     print(result);
     results.push(result);
   }
