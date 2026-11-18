@@ -6,9 +6,9 @@ import type { StickerName } from "@/components/primitives/MascotArt";
  *
  * A sticker marks such a moment in the main area or a dialog, one at a time
  * on a screen. The side columns (the rail, Active now) say they are empty in
- * a faint line instead, and rows, headers, the start of a conversation
- * (which shows the person), calls and the lines about a conversation carry
- * none.
+ * a faint line instead, and forms (adding a friend), rows, headers, the start
+ * of a conversation (which shows the person), calls and the lines about a
+ * conversation carry none.
  */
 export const MESSAGES_STICKERS = {
   /** A Friends search that matched nobody. */
@@ -21,8 +21,6 @@ export const MESSAGES_STICKERS = {
   noRequests: "10-reading",
   /** Friends, blocked: nobody is. */
   nobodyBlocked: "55-moderation",
-  /** The form that adds a friend. */
-  addFriend: "38-high-five",
   /** The first PIN for encrypted conversations. */
   pinSetup: "41-avatar-online",
   /** The safety code two people compare. */

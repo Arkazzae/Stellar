@@ -189,6 +189,16 @@
     gap: var(--sp-4);
   }
 
+  /* Under a centred header with the mascot, the body reads down the middle
+     too: the step, the notes and the pair of faces. */
+  .enc-body.centered {
+    text-align: center;
+  }
+
+  .enc-body.centered .enc-pair {
+    justify-content: center;
+  }
+
   .enc-step {
     font-size: var(--fs-meta);
     color: var(--text-faint);
