@@ -109,6 +109,7 @@ function mediaOf(part: MessagePart, id: string, origin: Origin): MediaItemVM[] {
             src: image.src,
             alt: image.alt,
             ...(image.preview === undefined ? {} : { preview: image.preview }),
+            ...(image.placeholder === undefined ? {} : { placeholder: image.placeholder }),
           },
           ...origin,
         }))

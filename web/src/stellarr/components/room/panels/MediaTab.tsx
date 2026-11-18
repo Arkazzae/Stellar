@@ -1,4 +1,6 @@
+import { useState } from "react";
 import { Icon } from "@stellarr/icons";
+import { placeholderStyle } from "@/components/room/attachments/placeholderStyle";
 import { formatFull } from "@/lib/format/format";
 import { useLanguage } from "@/state/hooks";
 
@@ -31,6 +33,8 @@ function ImageTile({
   onOpen(): void;
 }) {
   const { t } = useLanguage();
+  const shown = part.preview ?? part.src;
+  const [settled, setSettled] = useState<string | null>(null);
   return (
     <button
       type="button"
@@ -39,7 +43,14 @@ function ImageTile({
       aria-label={t("room.zoomImage", { alt: part.alt, when })}
       onClick={onOpen}
     >
-      <img src={part.preview ?? part.src} alt={part.alt} loading="lazy" />
+      <img
+        style={settled === shown ? undefined : placeholderStyle(part.placeholder)}
+        src={shown}
+        alt={part.alt}
+        loading="lazy"
+        onLoad={() => setSettled(shown)}
+        onError={() => setSettled(shown)}
+      />
     </button>
   );
 }

@@ -3,6 +3,7 @@ import { useState } from "react";
 import type { GalleryImage, GalleryPart, ImagePart } from "@/lib/messages/parts";
 
 import { reservedImageStyle } from "./imageBox";
+import { placeholderStyle } from "./placeholderStyle";
 
 /** Gallery tiles are square thumbnails of this size. */
 const TILE_PX = 200;
@@ -18,14 +19,10 @@ export function ImageAttachment({ part, onOpen }: ImageAttachmentProps) {
     return (
       <div className="att att-gallery">
         {part.images.map((image, index) => (
-          <img
+          <GalleryTile
             key={`${image.src}-${index}`}
-            src={image.preview ?? image.src}
-            alt={image.alt}
-            data-media-index={index}
-            width={TILE_PX}
-            height={TILE_PX}
-            loading="lazy"
+            image={image}
+            index={index}
             onClick={onOpen && (() => onOpen(part.images, index))}
           />
         ))}
@@ -33,6 +30,36 @@ export function ImageAttachment({ part, onOpen }: ImageAttachmentProps) {
     );
   }
   return <LoneImage part={part} onOpen={onOpen} />;
+}
+
+function GalleryTile({
+  image,
+  index,
+  onClick,
+}: {
+  image: GalleryImage;
+  index: number;
+  onClick?(): void;
+}) {
+  // The stand-in is the tile's background until the file is in, and goes then:
+  // a picture with transparency must not show the blur through itself.
+  const shown = image.preview ?? image.src;
+  const [settled, setSettled] = useState<string | null>(null);
+  const settle = () => setSettled(shown);
+  return (
+    <img
+      style={settled === shown ? undefined : placeholderStyle(image.placeholder)}
+      src={shown}
+      alt={image.alt}
+      data-media-index={index}
+      width={TILE_PX}
+      height={TILE_PX}
+      loading="lazy"
+      onLoad={settle}
+      onError={settle}
+      onClick={onClick}
+    />
+  );
 }
 
 function LoneImage({ part, onOpen }: { part: ImagePart; onOpen: ImageAttachmentProps["onOpen"] }) {
@@ -43,6 +70,7 @@ function LoneImage({ part, onOpen }: { part: ImagePart; onOpen: ImageAttachmentP
   const shown = part.preview ?? part.src;
   const [settled, setSettled] = useState<string | null>(null);
   const reserved = settled === shown ? undefined : reservedImageStyle(part.width, part.height);
+  const stand = settled === shown ? undefined : placeholderStyle(part.placeholder);
   const settle = () => setSettled(shown);
 
   // A lone image is a gallery of one, so the viewer takes the same shape
@@ -55,7 +83,7 @@ function LoneImage({ part, onOpen }: { part: ImagePart; onOpen: ImageAttachmentP
     <div className="att">
       <img
         className={reserved === undefined ? "att-image" : "att-image reserved"}
-        style={reserved}
+        style={reserved === undefined ? stand : { ...reserved, ...stand }}
         src={shown}
         alt={part.alt}
         data-media-index={0}
