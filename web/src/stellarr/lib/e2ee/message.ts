@@ -1,4 +1,4 @@
-import { placeholderFromBase64 } from "@/lib/media/placeholder";
+import { placeholderFromBase64 } from "@/lib/media/placeholderText";
 import { bytesOf, fromUtf8, randomBytes, utf8, type Bytes } from "./bytes";
 
 /**

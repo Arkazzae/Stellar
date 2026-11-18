@@ -1,4 +1,5 @@
-import { placeholderDataUrl, placeholderFromBase64 } from "./placeholder";
+import { placeholderDataUrl } from "./placeholder";
+import { placeholderFromBase64 } from "./placeholderText";
 
 /** Each entry is a few kilobytes, so a long session scrolling through history keeps only the latest. */
 export const PLACEHOLDER_URL_CACHE_LIMIT = 300;

@@ -74,8 +74,3 @@ export function previewSize(width: number, height: number): { width: number; hei
 export function previewIsWorthSending(previewBytes: number, originalBytes: number): boolean {
   return previewBytes <= PREVIEW_MAX_BYTES && previewBytes <= originalBytes * PREVIEW_MAX_SHARE;
 }
-
-/** The file name the upload form gives a preview, by what it was encoded as. */
-export function previewFileName(preview: Blob): string {
-  return preview.type === "image/webp" ? "preview.webp" : "preview.jpg";
-}
