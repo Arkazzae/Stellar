@@ -61,8 +61,9 @@ export interface ReleaseWatcher {
   readonly state: ReleaseState;
   subscribe(listener: () => void): () => void;
   /**
-   * Asks the server now. Calls that overlap share one question, and a call
-   * starts the retries over: see `RETRY_FIRST_MS`.
+   * Asks the server now. A call that overlaps one under way is answered by
+   * it, and by one more question after it. A call starts the retries over: see
+   * `RETRY_FIRST_MS`.
    */
   check(): Promise<void>;
   /** Cancels a retry that is waiting. */
@@ -83,6 +84,7 @@ export function createReleaseWatcher(deps: ReleaseWatcherDeps): ReleaseWatcher {
   const listeners = new Set<() => void>();
   let state: ReleaseState = "current";
   let asking: Promise<void> | null = null;
+  let askedAgain = false;
 
   const setState = (next: ReleaseState) => {
     if (state === next) return;
@@ -163,7 +165,13 @@ export function createReleaseWatcher(deps: ReleaseWatcherDeps): ReleaseWatcher {
       retryTimer = undefined;
       retryDelay = RETRY_FIRST_MS;
     }
-    asking ??= ask()
+    // A check asked for while one is under way may mean the server has moved
+    // on since that one asked, so it gets one more when the first is done.
+    if (asking !== null) {
+      if (!retrying) askedAgain = true;
+      return asking;
+    }
+    asking = ask()
       .then((outcome) => {
         if (outcome !== "retry" || retryTimer !== undefined) return;
         retryTimer = setTimeout(() => {
@@ -174,6 +182,9 @@ export function createReleaseWatcher(deps: ReleaseWatcherDeps): ReleaseWatcher {
       })
       .finally(() => {
         asking = null;
+        if (!askedAgain) return;
+        askedAgain = false;
+        void start(true);
       });
     return asking;
   }

@@ -58,10 +58,14 @@ describe("comparing the running release with the server's", () => {
     expect(deps.reload).not.toHaveBeenCalled();
   });
 
-  it("asks the server once for checks that overlap", async () => {
-    const { deps, watcher } = watcherWith();
-    await Promise.all([watcher.check(), watcher.check()]);
-    expect(deps.fetchLatest).toHaveBeenCalledTimes(1);
+  it("asks once more after a check that a second one overlapped, since the server may have moved on", async () => {
+    let latest = "a";
+    const { deps, watcher } = watcherWith({ fetchLatest: vi.fn(async () => latest) });
+    const first = watcher.check();
+    latest = "b";
+    await Promise.all([first, watcher.check()]);
+    await vi.waitFor(() => expect(deps.reload).toHaveBeenCalledTimes(1));
+    expect(deps.fetchLatest).toHaveBeenCalledTimes(2);
   });
 });
 

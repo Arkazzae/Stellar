@@ -273,6 +273,17 @@ describe("taking a new release", () => {
     await expect(worker.ask("/")).resolves.toBe("document of r1");
   });
 
+  it("takes the release the server serves by the time a second message is handled, not the one under way", async () => {
+    const worker = loadWorker(release("r1"));
+    const first = worker.adopt();
+    worker.network.release = release("r2");
+    const second = worker.adopt();
+    // The server moved on while the first run fetched, so its files are of r2.
+    await expect(first).resolves.toEqual({ ok: false });
+    await expect(second).resolves.toEqual({ ok: true, id: "r2" });
+    await expect(worker.ask("/")).resolves.toBe("document of r2");
+  });
+
   it("does not fetch the shell again for the release it already keeps", async () => {
     const worker = loadWorker(release("r1"));
     await worker.adopt();
