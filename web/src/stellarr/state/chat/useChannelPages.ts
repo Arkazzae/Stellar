@@ -3,10 +3,12 @@ import { useCallback, useEffect, useRef } from "react";
 import type { ChatPort } from "@/ports";
 
 import type { ChatData } from "./chatStore";
+import { settleFirstPage } from "./firstPage";
 import {
   PAGE_SIZE,
   type ChatDispatch,
   type PendingIds,
+  type RestoredWindows,
   type SyncCursors,
 } from "./shared";
 
@@ -18,6 +20,7 @@ interface ChannelPagesOptions {
   dispatch: ChatDispatch;
   pendingIds: PendingIds;
   syncCursors: SyncCursors;
+  restored: RestoredWindows;
 }
 
 /**
@@ -33,6 +36,7 @@ export function useChannelPages({
   dispatch,
   pendingIds,
   syncCursors,
+  restored,
 }: ChannelPagesOptions): { loadOlder: () => void } {
   const initialInFlight = useRef(new Set<string>());
   const olderInFlight = useRef(new Set<string>());
@@ -52,22 +56,15 @@ export function useChannelPages({
     initialInFlight.current.add(channelId);
     void chat
       .listMessages(channelId, { limit: PAGE_SIZE })
-      .then((page) => {
-        syncCursors.current[channelId] = page.syncCursor;
-        dispatch({
-          type: "first-page",
-          channelId,
-          page,
-          pendingIds: new Set(pendingIds.current),
-        });
-      })
+      .then((page) =>
+        dispatch(settleFirstPage({ pendingIds, syncCursors, restored }, channelId, page)))
       // The channel simply stays as it is; the transcript is not the place to
       // report a failed page load.
       .catch(() => dispatch({ type: "first-page-failed", channelId }))
       .finally(() => {
         initialInFlight.current.delete(channelId);
       });
-  }, [chat, channelId, loaded, dispatch, pendingIds, syncCursors]);
+  }, [chat, channelId, loaded, dispatch, pendingIds, syncCursors, restored]);
 
   /*
    * The pinned list, once per channel opened.

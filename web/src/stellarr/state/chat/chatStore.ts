@@ -15,7 +15,10 @@ import {
 } from "./threads";
 import {
   applySyncChanges,
+  floorOf,
+  lowerFloor,
   mergeAll,
+  type Mark,
   mergeMessage,
   reconcileLatest,
   removeMessage,
@@ -23,6 +26,18 @@ import {
   settleOptimistic,
   updateLoaded,
 } from "./timeline";
+
+/**
+ * What the device may keep of a channel: the journal cursor that belongs to
+ * exactly the messages from `floor` upward. The two change in the same step of
+ * the reducer, so a snapshot of the state never pairs a cursor with messages
+ * that are older than it. `floor` is null when the run reaches the beginning
+ * of the channel.
+ */
+export interface ChannelWindow {
+  cursor: string;
+  floor: Mark | null;
+}
 
 /** What the server has told this tab about every channel it has looked at. */
 export interface ChatData {
@@ -41,6 +56,10 @@ export interface ChatData {
   pinsLoaded: Readonly<Record<string, boolean>>;
   threads: Readonly<Record<string, ThreadSummary[]>>;
   threadsLoaded: Readonly<Record<string, boolean>>;
+  /** Set once the server has answered for the channel; what the device keeps. */
+  windows: Readonly<Record<string, ChannelWindow>>;
+  /** The transcript was painted from the device before the server answered. */
+  restored: Readonly<Record<string, boolean>>;
 }
 
 export const EMPTY_CHAT_DATA: ChatData = {
@@ -52,6 +71,8 @@ export const EMPTY_CHAT_DATA: ChatData = {
   pinsLoaded: {},
   threads: {},
   threadsLoaded: {},
+  windows: {},
+  restored: {},
 };
 
 /** A history page, whatever endpoint produced it. */
@@ -79,7 +100,13 @@ export type ChatAction =
       channelId: string;
       page: LoadedPage;
       pendingIds: ReadonlySet<string>;
+      /** False when what is held below the page does not join it. */
+      keepOlder: boolean;
+      /** What the device may keep from now on; null leaves the window as it is. */
+      window: ChannelWindow | null;
     }
+  /** The newest window of a channel as the device kept it, shown until the server answers. */
+  | { type: "stored-window"; channelId: string; messages: readonly Message[] }
   | { type: "first-page-failed"; channelId: string }
   | { type: "older-loading"; channelId: string; loading: boolean }
   | { type: "older-page"; channelId: string; page: LoadedPage }
@@ -88,8 +115,16 @@ export type ChatAction =
       channelId: string;
       page: LoadedPage;
       pendingIds: ReadonlySet<string>;
+      /** The journal cursor of the fresh page. */
+      cursor: string;
     }
-  | { type: "synced"; channelId: string; changes: readonly MessageSyncChange[] }
+  | {
+      type: "synced";
+      channelId: string;
+      changes: readonly MessageSyncChange[];
+      /** Where the journal stands once these changes are in. */
+      cursor: string;
+    }
   | { type: "pins-set"; channelId: string; messages: readonly Message[] }
   | { type: "pins-settled"; channelId: string }
   | { type: "threads-set"; channelId: string; threads: readonly ThreadSummary[] }
@@ -200,15 +235,29 @@ export function chatReducer(state: ChatData, action: ChatAction): ChatData {
       });
     }
     case "first-page": {
-      const { channelId, page, pendingIds } = action;
+      const { channelId, page, pendingIds, keepOlder, window } = action;
       return patch(state, {
         messages: put(
           state.messages,
           channelId,
-          reconcileLatest(state.messages[channelId], page.messages, pendingIds),
+          reconcileLatest(state.messages[channelId], page.messages, pendingIds, keepOlder),
         ),
         nextCursor: put(state.nextCursor, channelId, page.nextCursor),
         loaded: put(state.loaded, channelId, true),
+        windows: window === null ? state.windows : put(state.windows, channelId, window),
+      });
+    }
+    case "stored-window": {
+      const { channelId, messages } = action;
+      // The server has answered already, or has failed to: it is the newer word.
+      if (state.loaded[channelId] === true || messages.length === 0) return state;
+      return patch(state, {
+        messages: put(
+          state.messages,
+          channelId,
+          mergeAll(state.messages[channelId], messages),
+        ),
+        restored: put(state.restored, channelId, true),
       });
     }
     case "first-page-failed":
@@ -222,6 +271,7 @@ export function chatReducer(state: ChatData, action: ChatAction): ChatData {
       });
     case "older-page": {
       const { channelId, page } = action;
+      const window = state.windows[channelId];
       return patch(state, {
         messages: put(
           state.messages,
@@ -229,10 +279,19 @@ export function chatReducer(state: ChatData, action: ChatAction): ChatData {
           mergeAll(state.messages[channelId], page.messages),
         ),
         nextCursor: put(state.nextCursor, channelId, page.nextCursor),
+        // The page continues from the cursor below the window, so the run now
+        // reaches as low as the page does.
+        windows:
+          window === undefined
+            ? state.windows
+            : put(state.windows, channelId, {
+                ...window,
+                floor: lowerFloor(window.floor, floorOf(page)),
+              }),
       });
     }
     case "reset": {
-      const { channelId, page, pendingIds } = action;
+      const { channelId, page, pendingIds, cursor } = action;
       return patch(state, {
         messages: put(
           state.messages,
@@ -240,17 +299,23 @@ export function chatReducer(state: ChatData, action: ChatAction): ChatData {
           resetWindow(state.messages[channelId], page.messages, pendingIds),
         ),
         nextCursor: put(state.nextCursor, channelId, page.nextCursor),
+        windows: put(state.windows, channelId, { cursor, floor: floorOf(page) }),
       });
     }
     case "synced": {
-      const { channelId, changes } = action;
+      const { channelId, changes, cursor } = action;
       if (changes.length === 0) return state;
+      const window = state.windows[channelId];
       return patch(state, {
         messages: put(
           state.messages,
           channelId,
-          applySyncChanges(state.messages[channelId], changes),
+          applySyncChanges(state.messages[channelId], changes, window?.floor),
         ),
+        windows:
+          window === undefined
+            ? state.windows
+            : put(state.windows, channelId, { ...window, cursor }),
         pins: edit(state.pins, channelId, (pins) => applyPinChanges(pins, changes)),
       });
     }
