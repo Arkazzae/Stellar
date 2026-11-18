@@ -487,6 +487,7 @@ export const pl = {
   "room.showPeople": "Pokaż osoby",
   "room.messagesOn": "Wiadomości na #{channel}",
   "rail.reorderFailed": "Nie udało się zapisać kolejności kanałów.",
+  "rail.sectionOrderFailed": "Nie udało się zapisać kolejności sekcji.",
 
   "notifications.title": "Powiadomienia",
   "notifications.open": "Otwórz powiadomienia",
