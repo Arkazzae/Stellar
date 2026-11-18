@@ -175,6 +175,7 @@ public sealed partial class Messages
         MessageKey.StarterChannelNameInvalid => "Nazwa kanału startowego jest nieprawidłowa.",
         MessageKey.StarterChannelNamesCollide => "Kanały startowe muszą mieć różne nazwy.",
         MessageKey.ServerHasNoMemberRole => "Serwer nie ma roli dla nowych członków.",
+        MessageKey.InstanceServerCannotBeDeleted => "To serwer instancji, więc nie można go usunąć.",
 
         // Soundboard
         MessageKey.SoundAttachmentInvalid => "Wybierz przesłany plik audio z rozpoznanym czasem trwania.",

@@ -62,9 +62,10 @@ public static partial class RegistrationEndpoints
         // critical section, so two first registrations cannot both found it.
         await using var turn = await gate.EnterAsync(cancellationToken);
 
-        // Empty means no account at all. An instance whose people deleted
-        // every server is not empty: it takes an invite like any other, and
-        // nobody can found it again.
+        // Empty means no account at all. An instance with accounts but no
+        // server, which only an edit of the database could leave now, is not
+        // empty: it takes an invite like any other, and nobody can found it
+        // again.
         var founding = !await db.Users.AnyAsync(cancellationToken);
         if (founding && !setup.Matches(request.SetupCode))
         {

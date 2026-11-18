@@ -20,12 +20,13 @@ internal static class CommandSupport
             return server;
         }
 
-        // An instance is set up once it has an account. One whose people
-        // deleted every server since cannot be set up again.
+        // An instance is set up once it has an account. The API keeps its
+        // first server, so only an edit of the database leaves accounts
+        // without one, and such an instance cannot be set up again.
         throw await db.Users.AsNoTracking().AnyAsync(cancellationToken)
             ? new CliException(
                 "instance_not_found",
-                "The instance has accounts but no server: the last one was deleted.",
+                "The database has accounts but no server.",
                 CliExit.NotFound)
             : new CliException(
                 "instance_not_found",

@@ -39,7 +39,8 @@ public static class ServerAdministrationEndpoints
         admin.MapGet("/notifications", GetNotificationsAsync);
         admin.MapPatch("/notifications", UpdateNotificationsAsync);
         // Handing a server over or deleting it cannot be undone; on the instance
-        // server a hand-over makes someone else the instance owner.
+        // server a hand-over makes someone else the instance owner, and the
+        // instance server cannot be deleted at all.
         admin.MapPost("/server/transfer", TransferAsync).AddEndpointFilter<FreshSecondStepFilter>();
         admin.MapDelete("/server", DeleteServerAsync).AddEndpointFilter<FreshSecondStepFilter>();
         return endpoints;
@@ -330,6 +331,7 @@ public static class ServerAdministrationEndpoints
     private static async Task<IResult> DeleteServerAsync(
         HttpContext http,
         AppDbContext db,
+        Messages messages,
         CancellationToken cancellationToken)
     {
         var actor = new Actor(http.RequireActiveServerId(), http.User.RequireUserId());
@@ -338,6 +340,17 @@ public static class ServerAdministrationEndpoints
                 cancellationToken))
         {
             return Results.Forbid();
+        }
+
+        // The instance server carries the instance's settings, and owning it
+        // is what opens Cockpit. Without it, whoever owned the next server, or
+        // created one, would run the instance. Cockpit refuses it as well.
+        if (await InstanceAccess.FindAdministeredServerAsync(db, actor.UserId, cancellationToken) is { } instance &&
+            instance.Id == actor.ServerId)
+        {
+            return Results.Problem(
+                statusCode: StatusCodes.Status409Conflict,
+                title: messages.Get(MessageKey.InstanceServerCannotBeDeleted));
         }
 
         return await ServerOwnership.DeleteAsync(db, actor.ServerId, cancellationToken)

@@ -177,6 +177,7 @@ public sealed partial class Messages
         MessageKey.StarterChannelNameInvalid => "The name of the starter channel is invalid.",
         MessageKey.StarterChannelNamesCollide => "The starter channels must have different names.",
         MessageKey.ServerHasNoMemberRole => "The server has no role for new members.",
+        MessageKey.InstanceServerCannotBeDeleted => "This is the instance's server, so it cannot be deleted.",
 
         // Soundboard
         MessageKey.SoundAttachmentInvalid => "Pick an uploaded audio file with a known duration.",
