@@ -244,7 +244,8 @@
      one out of the way only changes a value: gaining a transform would lay
      the rail out again. Never the carried row's own groups, whose stacking
      would keep it under the groups below. */
-  .rail-scroll[data-dragging="sort"] :is(.rail-cap, .rail-list > *, .rail-section-empty):not([data-drag="carried"]){
+  .rail-scroll[data-dragging="sort"] :is(.rail-cap, .rail-list > *, .rail-section-empty):not([data-drag="carried"]),
+  .rail-scroll[data-dragging="sort"] .rail-sections > :not([data-drag="carried"]):not(:has([data-drag="carried"])){
     transform:translateY(0);
   }
   .rail-scroll [data-drag="shifted"],
@@ -258,12 +259,14 @@
   .rail-scroll [data-drag="carried"] > .channel{
     background:var(--surface-overlay);box-shadow:0 4px 14px oklch(0 0 0 / 0.45);
   }
+  /* A carried section lifts whole, caption and channels together. */
+  .rail-scroll .rail-section[data-drag="carried"]{box-shadow:0 4px 14px oklch(0 0 0 / 0.45)}
   /* A collapsed group taking the drop shows nothing below its caption, so the caption answers. */
   .rail-cap:has(+ .collapsible [data-drag-over]) .group-caption,
   .rail-section:has([data-drag-over]) .rail-section-cap .group-caption{
     background:var(--surface-overlay);color:var(--text);
   }
-  .rail-scroll .channel-main[aria-roledescription]{
+  .rail-scroll :is(.channel-main, .group-caption)[aria-roledescription]{
     -webkit-touch-callout:none;-webkit-user-select:none;user-select:none;
   }
   /* The collapse caret owns the trailing edge. The separate create button is

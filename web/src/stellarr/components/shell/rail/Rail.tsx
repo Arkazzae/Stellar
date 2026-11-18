@@ -79,6 +79,11 @@ export interface RailProps {
   channelMenu?: ChannelMenuActions;
   /** Right-click actions for a person seated under a voice channel. */
   voiceMemberMenu?: UserMenuActions;
+  /**
+   * A section dragged by its caption: the complete new order of the
+   * sections. Absent leaves the captions as plain buttons.
+   */
+  onMoveSection?: (order: string[]) => Promise<void> | void;
   /** Staff-only move; dropping on the source channel is ignored. */
   onMoveVoiceMember?: (
     userId: string,
@@ -152,6 +157,7 @@ export function Rail({
   onOpenChannelSettings,
   onCreateChannel,
   onOpenSectionSettings,
+  onMoveSection,
   channelMenu,
   voiceMemberMenu,
   onMoveVoiceMember,
@@ -221,7 +227,13 @@ export function Rail({
     text: textChannels.filter((channel) => channel.sectionId === section.id),
     voice: voiceChannels.filter((channel) => channel.sectionId === section.id),
   }));
-  const { container: dragContainer, refsFor, carry, layer: dragLayer } = useRailMoves({
+  const {
+    container: dragContainer,
+    refsFor,
+    sectionRefs: { list: sectionsList, item: sectionItem, handle: sectionHandle },
+    carry,
+    layer: dragLayer,
+  } = useRailMoves({
     railId,
     textChannels,
     voiceChannels,
@@ -234,6 +246,9 @@ export function Rail({
     selfId,
     movingUserId: move.movingUserId,
     ...(onMoveVoiceMember === undefined ? {} : { onDropPerson: move.onDrop }),
+    ...(onMoveSection === undefined
+      ? {}
+      : { onMoveSection: (order: string[]) => void rearrange(() => onMoveSection(order)) }),
   });
 
   const registerThread = useThreadFocus(threadsByChannel, activeThreadId, hidden);
@@ -364,24 +379,29 @@ export function Rail({
           {voiceList(looseVoice, null)}
         </CollapsibleGroup>
 
-        {grouped.map(({ section, text, voice }) => (
-          <RailSection
-            key={section.id}
-            id={`${railId}-section-${section.id}`}
-            name={section.name}
-            open={!closedSections.has(section.id)}
-            onToggle={() => setClosedSections((current) => toggled(current, section.id))}
-            empty={text.length === 0 && voice.length === 0}
-            onOpenSettings={
-              canManageChannels && onOpenSectionSettings !== undefined
-                ? () => onOpenSectionSettings(section.id)
-                : undefined
-            }
-          >
-            {textList(text, section.id)}
-            {voiceList(voice, section.id)}
-          </RailSection>
-        ))}
+        {/* The sections are sorted as one list, under the loose groups. */}
+        <div className="rail-sections" ref={sectionsList}>
+          {grouped.map(({ section, text, voice }) => (
+            <RailSection
+              key={section.id}
+              itemRef={sectionItem(section.id)}
+              drag={sectionHandle?.(section.id)}
+              id={`${railId}-section-${section.id}`}
+              name={section.name}
+              open={!closedSections.has(section.id)}
+              onToggle={() => setClosedSections((current) => toggled(current, section.id))}
+              empty={text.length === 0 && voice.length === 0}
+              onOpenSettings={
+                canManageChannels && onOpenSectionSettings !== undefined
+                  ? () => onOpenSectionSettings(section.id)
+                  : undefined
+              }
+            >
+              {textList(text, section.id)}
+              {voiceList(voice, section.id)}
+            </RailSection>
+          ))}
+        </div>
 
         {moveError === null ? null : (
           <p className="rail-move-error" role="alert">

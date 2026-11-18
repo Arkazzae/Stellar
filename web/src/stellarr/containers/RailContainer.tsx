@@ -29,6 +29,7 @@ export function RailContainer() {
     sections,
     moveChannel,
     moveChannelToSection,
+    reorderSections,
     canAccessServerSettings,
     canManageServer,
     canManageChannels,
@@ -158,7 +159,9 @@ export function RailContainer() {
       onMoveChannel={moveChannel}
       onOpenChannelSettings={ui.openChannelSettings}
       onCreateChannel={ui.openCreateChannel}
-      {...(canSection ? { onOpenSectionSettings: ui.openSectionSettings } : {})}
+      {...(canSection
+        ? { onOpenSectionSettings: ui.openSectionSettings, onMoveSection: reorderSections }
+        : {})}
       channelMenu={channelMenu}
       voiceMemberMenu={memberMenu}
       {...(canModerate && admin.moveVoiceMember !== undefined

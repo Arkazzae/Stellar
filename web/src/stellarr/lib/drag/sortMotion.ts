@@ -86,15 +86,25 @@ function measure(stage: Stage, model: readonly SortList[], id: string) {
       if (itemNode === undefined) return null;
       spans.push({ top: layoutTop(itemNode, scroller), height: itemNode.offsetHeight });
     }
+    // Items spaced apart, as sections are, each take the gap after them
+    // along: an item moved elsewhere leaves its gap and brings one.
+    const [first, second] = spans;
+    const gap =
+      first === undefined || second === undefined
+        ? 0
+        : Math.max(0, second.top - first.top - first.height);
+    const spaced = spans.map((span) => ({ top: span.top, height: span.height + gap }));
     const top = layoutTop(wrapper, scroller);
-    measured.push({ items: spans, end: list.closed ? top : top + wrapper.offsetHeight, closed: list.closed });
+    measured.push({
+      items: spaced,
+      end: list.closed ? top : top + wrapper.offsetHeight + gap,
+      closed: list.closed,
+    });
   }
-  const carried: CarriedSpan = {
-    list: targets.indexOf(home),
-    index: homeList.items.indexOf(id),
-    top: layoutTop(node, scroller),
-    height: node.offsetHeight,
-  };
+  const index = homeList.items.indexOf(id);
+  const span = measured[targets.indexOf(home)]?.items[index];
+  if (span === undefined) return null;
+  const carried: CarriedSpan = { list: targets.indexOf(home), index, ...span };
   const slots = slotsOf(measured, carried);
   const lands = slots.map((slot) => slot.lands);
   return {
