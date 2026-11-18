@@ -160,6 +160,13 @@ public sealed class AuthChallenge
     public bool ShortLived { get; set; }
 
     /// <summary>
+    /// The identity waiting for this browser that the password sign-in asked
+    /// to link. It is linked only once the challenge completes with a real
+    /// second step, never on the password alone.
+    /// </summary>
+    public Guid? PendingIdentityId { get; set; }
+
+    /// <summary>
     /// The options of the passkey ceremony this challenge started, exactly as
     /// the server generated them. The answer is checked against these, never
     /// against options sent back by the browser, and they are cleared on use.

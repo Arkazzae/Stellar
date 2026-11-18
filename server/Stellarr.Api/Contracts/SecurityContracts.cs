@@ -82,11 +82,16 @@ public sealed record MfaEmailConfirmRequest(
     string? Name,
     bool RememberDevice = false);
 
+/// <param name="IdentityLink">
+/// How linking the identity the sign-in asked for came out, when it asked;
+/// see <see cref="Auth.Security.IdentityLinkOutcomes"/>.
+/// </param>
 public sealed record MfaCompleteDto(
     string Status,
     UserDto User,
     IReadOnlyList<string>? RecoveryCodes = null,
-    DateTime? TrustedDeviceExpiresAt = null);
+    DateTime? TrustedDeviceExpiresAt = null,
+    string? IdentityLink = null);
 
 public sealed record MfaEnrollmentDto(
     string MethodId,
