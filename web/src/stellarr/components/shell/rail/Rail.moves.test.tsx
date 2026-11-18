@@ -362,6 +362,22 @@ describe("Rail voice moves", () => {
     );
   });
 
+  it("targets the channel at the copy's height even when the pointer leaves the rail sideways", () => {
+    const onMoveVoiceMember = vi.fn();
+    setup({ onMoveVoiceMember });
+
+    pressAt(occupant(), JO_MIDDLE);
+    fireEvent.pointerMove(document, {
+      pointerId: 1,
+      isPrimary: true,
+      clientX: 900,
+      clientY: SESJA + 10,
+    });
+    letGo(SESJA + 10);
+
+    expect(onMoveVoiceMember).toHaveBeenCalledWith("u-2", "v-1", "v-2");
+  });
+
   it("moves nobody when released outside every channel", () => {
     const onMoveVoiceMember = vi.fn();
     setup({ onMoveVoiceMember });
@@ -370,6 +386,18 @@ describe("Rail voice moves", () => {
 
     expect(onMoveVoiceMember).not.toHaveBeenCalled();
     expect(screen.getByText("Anulowano przenoszenie.")).toBeInTheDocument();
+  });
+
+  it("puts the person back on Escape", () => {
+    const onMoveVoiceMember = vi.fn();
+    setup({ onMoveVoiceMember });
+
+    fireEvent.keyDown(occupant(), { key: "Enter" });
+    fireEvent.keyDown(occupant(), { key: "ArrowDown" });
+    fireEvent.keyDown(occupant(), { key: "Escape" });
+
+    expect(onMoveVoiceMember).not.toHaveBeenCalled();
+    expect(zone("Sesja")).not.toHaveClass("is-over");
   });
 
   it("moves a person with the keyboard, one channel per arrow", () => {
