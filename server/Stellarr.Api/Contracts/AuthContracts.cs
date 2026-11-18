@@ -3,7 +3,17 @@ using Stellarr.Api.Domain;
 namespace Stellarr.Api.Contracts;
 
 /// <param name="KeepSignedIn">False asks for a short-lived session; left out, the session is kept.</param>
-public sealed record LoginRequest(string Username, string Password, bool? KeepSignedIn = null);
+/// <param name="LinkPending">
+/// Links the identity a provider confirmed for this browser, which no account
+/// is linked to, once this sign-in completes, second step and all.
+/// </param>
+public sealed record LoginRequest(string Username, string Password, bool? KeepSignedIn = null, bool LinkPending = false);
+
+/// <summary>
+/// A sign-in that asked to link the identity waiting for this browser, and
+/// how the link came out, in <see cref="Auth.Security.IdentityLinkOutcomes"/>.
+/// </summary>
+public sealed record LinkedSignInDto(UserDto User, string IdentityLink);
 
 public sealed record DesktopBrowserExchangeRequest(string RequestId, string Secret);
 

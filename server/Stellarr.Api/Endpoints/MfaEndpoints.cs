@@ -103,6 +103,13 @@ public static partial class MfaEndpoints
             return ChallengeProblem(ChallengeStatus.SecurityChanged, messages);
         }
 
+        // A sign-in that links a provider asks for the step a link from the
+        // settings would, which a remembered device does not stand in for.
+        if (request.UseTrustedDevice && challenge.PendingIdentityId is not null)
+        {
+            return MethodUnavailable(messages);
+        }
+
         if (await FailureBudgetSpentAsync(db, challenge.UserId, messages, cancellationToken) is { } spent)
         {
             return spent;
@@ -678,7 +685,9 @@ public static partial class MfaEndpoints
 
         await SessionAuthentication.SignInAsync(context, user, session.Id, challenge.ShortLived);
         SecurityCookies.ClearPreauth(context);
-        return Results.Ok(new MfaCompleteDto("ok", user.ToDto("online"), codes, trustedExpiresAt));
+        return Results.Ok(new MfaCompleteDto(
+            "ok", user.ToDto("online"), codes, trustedExpiresAt,
+            await LinkAskedForAsync(db, context, challenge, user, cancellationToken)));
     }
 
     private static Task<IResult> CompleteAsync(
@@ -849,8 +858,24 @@ public static partial class MfaEndpoints
             "ok",
             user.ToDto("online"),
             codes,
-            trustedExpiresAt));
+            trustedExpiresAt,
+            await LinkAskedForAsync(db, context, challenge, user, cancellationToken)));
     }
+
+    /// <summary>
+    /// The link a password sign-in asked for, made now that the sign-in is
+    /// complete and its session saved, so a refusal leaves the person signed
+    /// in. Null for a challenge that asked for none.
+    /// </summary>
+    private static async Task<string?> LinkAskedForAsync(
+        AppDbContext db,
+        HttpContext context,
+        AuthChallenge challenge,
+        User user,
+        CancellationToken cancellationToken) =>
+        challenge.PendingIdentityId is { } pendingId
+            ? await IdentityLinking.LinkPendingAsync(db, context, user, pendingId, cancellationToken)
+            : null;
 
     private static bool IsEnrollmentPurpose(string purpose) =>
         purpose is AuthChallengePurposes.Enrollment or AuthChallengePurposes.Recovery;
