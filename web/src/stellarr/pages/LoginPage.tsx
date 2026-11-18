@@ -16,15 +16,12 @@ import { useSignInFlow } from "@/containers/useSignInFlow";
 import { useSignInProviders, useInstanceName } from "@/hooks/useInstanceFacts";
 import { useRedirectWhenSignedIn } from "@/hooks/useRedirectWhenSignedIn";
 import type { Translator } from "@/i18n";
-import { pendingInvite, rememberPendingInvite } from "@/lib/auth/invites";
+import { PROVIDER_SIGN_UP, pendingInvite, rememberPendingInvite } from "@/lib/auth/invites";
 import { safeReturnPath } from "@/lib/auth/returnPath";
 import type { PendingIdentity } from "@/ports";
 import { useInstanceSetup, useLanguage, usePorts, useSession } from "@/state/hooks";
 
 import { usePrefetchApp } from "./loadApp";
-
-/** The form that makes an account through the provider, with the invite this tab remembered. */
-export const PROVIDER_SIGN_UP = "/register?with=provider";
 
 /** The identity waiting for this browser, as the page for it needs it. */
 type Waiting =

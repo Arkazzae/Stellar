@@ -7,7 +7,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { ApiError } from "@/lib/api/errors";
 import { pendingInvite, rememberPendingInvite } from "@/lib/auth/invites";
 import { routes } from "@/routes";
-import type { InvitePreview } from "@/ports";
+import type { InvitePreview, PendingIdentity } from "@/ports";
 import type { SessionPhase } from "@/state/hooks";
 import { polishAsRead } from "@/test/translators";
 
@@ -15,7 +15,15 @@ import RegistrationPage from "./RegisterPage";
 
 const mocks = vi.hoisted(() => ({
   session: { phase: "anonymous" as SessionPhase, reload: vi.fn() },
-  ports: { session: { register: vi.fn(), invitePreview: vi.fn(), instanceName: vi.fn() } },
+  ports: {
+    session: {
+      register: vi.fn(),
+      invitePreview: vi.fn(),
+      instanceName: vi.fn(),
+      signInProviders: vi.fn(),
+      pendingIdentity: vi.fn(),
+    },
+  },
 }));
 
 vi.mock("@/state/hooks", () => ({
@@ -35,8 +43,8 @@ const PREVIEW: InvitePreview = {
 
 let history: MemoryHistory;
 
-async function renderRegistration() {
-  history = createMemoryHistory("/register");
+async function renderRegistration(path = "/register") {
+  history = createMemoryHistory(path);
   await act(async () => {
     render(
       <Router routes={routes} history={history}>
@@ -58,8 +66,12 @@ beforeEach(() => {
   vi.resetAllMocks();
   mocks.session.phase = "anonymous";
   window.sessionStorage.clear();
+  // A session port of its own, so the providers asked once per port are asked again.
+  mocks.ports.session = { ...mocks.ports.session };
   mocks.ports.session.invitePreview.mockResolvedValue(PREVIEW);
   mocks.ports.session.instanceName.mockResolvedValue("Stellarr Dev");
+  mocks.ports.session.signInProviders.mockResolvedValue([]);
+  mocks.ports.session.pendingIdentity.mockResolvedValue(null);
 });
 
 describe("RegistrationPage", () => {
@@ -139,5 +151,61 @@ describe("RegistrationPage", () => {
     await renderRegistration();
 
     expect(history.navigations).toEqual([{ kind: "replace", href: "/invite/abc123" }]);
+  });
+
+  it("offers the providers that may create accounts, each coming back to the account made through it", async () => {
+    rememberPendingInvite("abc123");
+    mocks.ports.session.signInProviders.mockResolvedValue([
+      { id: "default", displayName: "Authentik", loginUrl: "/api/auth/oidc/login", signUp: true },
+      { id: "work", displayName: "Praca", loginUrl: "/api/auth/oidc/work/login", signUp: false },
+    ]);
+    await renderRegistration();
+
+    expect(
+      await screen.findByRole("link", { name: t("auth.register.withProvider", { provider: "Authentik" }) }),
+    ).toHaveAttribute("href", "/api/auth/oidc/login?returnUrl=%2Fregister%3Fwith%3Dprovider");
+    expect(screen.queryByRole("link", { name: t("auth.register.withProvider", { provider: "Praca" }) })).toBeNull();
+  });
+});
+
+describe("RegistrationPage through a provider", () => {
+  const OLA: PendingIdentity = {
+    provider: { id: "default", displayName: "Authentik" },
+    displayName: "Ola Nowak",
+    email: "ola@example.test",
+    username: "ola.nowak",
+    signUp: true,
+  };
+
+  beforeEach(() => {
+    rememberPendingInvite("k7qm");
+    mocks.ports.session.pendingIdentity.mockResolvedValue(OLA);
+  });
+
+  it("makes the account from what the provider said, with the invite and no password", async () => {
+    mocks.ports.session.register.mockResolvedValue({ kind: "signed-in", user: {} });
+    await renderRegistration("/register?with=provider");
+
+    expect(await screen.findByRole("textbox", { name: "Nazwa widoczna" })).toHaveValue("Ola Nowak");
+    expect(screen.queryByLabelText("Hasło")).toBeNull();
+    await userEvent.setup().click(screen.getByRole("button", { name: t("auth.register.submit") }));
+
+    expect(mocks.ports.session.register).toHaveBeenCalledExactlyOnceWith({
+      displayName: "Ola Nowak",
+      username: "ola.nowak",
+      email: "ola@example.test",
+      external: true,
+      inviteCode: "k7qm",
+    });
+    expect(mocks.session.reload).toHaveBeenCalledOnce();
+  });
+
+  it("says to sign in at the provider again when its confirmation ran out", async () => {
+    mocks.ports.session.register.mockRejectedValue(new ApiError("invalid", "400", 400));
+    await renderRegistration("/register?with=provider");
+
+    await userEvent.setup().click(await screen.findByRole("button", { name: t("auth.register.submit") }));
+
+    expect(await screen.findByRole("alert")).toHaveTextContent(t("auth.providerSignUp.expired"));
   });
 });

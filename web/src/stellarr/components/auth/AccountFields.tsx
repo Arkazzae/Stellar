@@ -28,14 +28,15 @@ export interface FormIssue<F extends string = string> {
 /**
  * The values of a new account. The login follows the display name, made
  * into a plain login, until the person types one of their own; emptying the
- * field hands it back to the suggestion.
+ * field hands it back to the suggestion. Values given at the start, such as
+ * what an identity provider said, count as typed.
  */
-export function useAccountValues(): {
+export function useAccountValues(initial: Partial<AccountValues> = {}): {
   values: AccountValues;
   change(field: AccountField, value: string): void;
 } {
-  const [values, setValues] = useState<AccountValues>(EMPTY);
-  const [ownUsername, setOwnUsername] = useState(false);
+  const [values, setValues] = useState<AccountValues>(() => ({ ...EMPTY, ...initial }));
+  const [ownUsername, setOwnUsername] = useState(() => (initial.username ?? "") !== "");
 
   const change = useCallback(
     (field: AccountField, value: string) => {
@@ -52,8 +53,15 @@ export function useAccountValues(): {
   return { values, change };
 }
 
-/** The first problem in visual order, so repeated submits walk down the form. */
-export function accountProblem(values: AccountValues, t: Translator): FormIssue<AccountField> | null {
+/**
+ * The first problem in visual order, so repeated submits walk down the form.
+ * An account made through a provider has no password to check.
+ */
+export function accountProblem(
+  values: AccountValues,
+  t: Translator,
+  { password = true }: { password?: boolean } = {},
+): FormIssue<AccountField> | null {
   const displayName = values.displayName.trim();
   if (displayName.length === 0 || displayName.length > 64) {
     return { field: "displayName", message: t("auth.register.displayNameInvalid") };
@@ -64,7 +72,7 @@ export function accountProblem(values: AccountValues, t: Translator): FormIssue<
   if (!/^[^\s@]+@[^\s@]+$/.test(values.email.trim())) {
     return { field: "email", message: t("auth.register.emailInvalid") };
   }
-  if (values.password.length < MIN_PASSWORD_LENGTH || values.password.length > MAX_PASSWORD_LENGTH) {
+  if (password && (values.password.length < MIN_PASSWORD_LENGTH || values.password.length > MAX_PASSWORD_LENGTH)) {
     return { field: "password", message: t("auth.password.length") };
   }
   return null;
@@ -86,6 +94,7 @@ export function AccountFields({
   errorId,
   disabled,
   previewTag,
+  password = true,
 }: {
   t: Translator;
   values: AccountValues;
@@ -95,6 +104,8 @@ export function AccountFields({
   disabled: boolean;
   /** What the preview line is: how others will see you, or the owner. */
   previewTag: string;
+  /** False for an account made through a provider, which signs in there. */
+  password?: boolean;
 }) {
   const status = (field: AccountField) => ({
     invalid: issue?.field === field,
@@ -150,17 +161,21 @@ export function AccountFields({
         disabled={disabled}
         {...status("email")}
       />
-      <PasswordField
-        t={t}
-        label={t("auth.password")}
-        name="password"
-        autoComplete="new-password"
-        value={values.password}
-        onChange={(event) => onChange("password", event.target.value)}
-        disabled={disabled}
-        {...status("password")}
-      />
-      <StrengthMeter password={values.password} username={values.username} t={t} />
+      {password ? (
+        <>
+          <PasswordField
+            t={t}
+            label={t("auth.password")}
+            name="password"
+            autoComplete="new-password"
+            value={values.password}
+            onChange={(event) => onChange("password", event.target.value)}
+            disabled={disabled}
+            {...status("password")}
+          />
+          <StrengthMeter password={values.password} username={values.username} t={t} />
+        </>
+      ) : null}
     </>
   );
 }

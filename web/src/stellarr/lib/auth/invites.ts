@@ -1,6 +1,13 @@
 export const PENDING_INVITE_STORAGE_KEY = "stellarr.pending-invite";
 
 /**
+ * The form that makes an account from the identity a provider confirmed,
+ * with the invite this tab remembered. A provider's sign-in started for a
+ * new account comes back here.
+ */
+export const PROVIDER_SIGN_UP = "/register?with=provider";
+
+/**
  * An invite link opened while signed out has to survive the registration or
  * login that follows. It lives in `sessionStorage`, so it belongs to this tab
  * and is gone when the tab closes.
