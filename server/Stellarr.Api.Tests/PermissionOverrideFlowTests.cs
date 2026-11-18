@@ -118,7 +118,7 @@ public sealed class PermissionOverrideFlowTests : IClassFixture<StellarrWebAppli
         var section = await owner.PostAsJsonAsync("/api/admin/sections", new { name = "Sekcja precedencji" });
         var sectionId = (await JsonDocument.ParseAsync(await section.Content.ReadAsStreamAsync()))
             .RootElement.GetProperty("id").GetString()!;
-        await owner.PatchAsJsonAsync($"/api/admin/channels/{GeneralChannelId}/section", new { sectionId });
+        await ChannelSections.FileAsync(owner, GeneralChannelId, sectionId);
 
         // Członek has no base permissions; the section grants ManageMessages...
         await owner.PutAsJsonAsync(
@@ -135,7 +135,7 @@ public sealed class PermissionOverrideFlowTests : IClassFixture<StellarrWebAppli
             JoId, Guid.Parse(GeneralChannelId), ServerPrivileges.ManageMessages));
 
         // Cleanup so this fixture-shared channel doesn't leak state into other tests.
-        await owner.PatchAsJsonAsync($"/api/admin/channels/{GeneralChannelId}/section", new { sectionId = (string?)null });
+        await ChannelSections.FileAsync(owner, GeneralChannelId, null);
         await owner.DeleteAsync($"/api/admin/sections/{sectionId}");
         await owner.PutAsJsonAsync(
             $"/api/admin/channels/{GeneralChannelId}/permissions/{MemberRoleId}",

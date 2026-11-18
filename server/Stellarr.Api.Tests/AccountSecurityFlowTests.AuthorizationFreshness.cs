@@ -16,10 +16,9 @@ public sealed partial class AccountSecurityFlowTests
     [InlineData("override-delete")]
     [InlineData("role-delete")]
     [InlineData("reparent")]
-    [InlineData("ordered-reparent")]
     public async Task InstancePermissionChangesRequireFreshMfaIncludingInheritedChanges(string operation)
     {
-        var reparents = operation.EndsWith("reparent", StringComparison.Ordinal);
+        var reparents = operation == "reparent";
         using var factory = new StellarrWebApplicationFactory();
         using var owner = Client(factory);
         await LoginAsync(owner, "maja", "Aurora!2026");
@@ -56,25 +55,8 @@ public sealed partial class AccountSecurityFlowTests
                 new { allow = Array.Empty<string>(), deny = AuthorizationFreshnessMessagePermission }),
             "override-delete" => owner.DeleteAsync($"/api/admin/channels/{TestData.GeneralChannelId}/permissions/{roleId}"),
             "role-delete" => owner.DeleteAsync($"/api/admin/roles/{roleId}"),
-            "ordered-reparent" => ReorderIntoDestinationAsync(),
-            _ => owner.PatchAsJsonAsync($"/api/admin/channels/{TestData.GeneralChannelId}/section", new { sectionId = destination }),
+            _ => ChannelSections.FileAsync(owner, TestData.GeneralChannelId, destination),
         };
-
-        // A drop into another rail group: the same move, sent with the whole order.
-        async Task<HttpResponseMessage> ReorderIntoDestinationAsync()
-        {
-            Guid[] order;
-            await using (var scope = factory.OpenScope(out var db))
-            {
-                order = await db.Channels.Where(x => x.ServerId == TestData.ServerId)
-                    .OrderBy(x => x.Position).Select(x => x.Id).ToArrayAsync();
-            }
-            return await owner.PutAsJsonAsync("/api/admin/channels/order", new
-            {
-                channelIds = order,
-                move = new { channelId = TestData.GeneralChannelId, sectionId = destination },
-            });
-        }
         using var stale = await ChangeAsync();
         Assert.Equal(HttpStatusCode.Forbidden, stale.StatusCode);
         Assert.Equal(FreshSecondStepFilter.Code,
@@ -109,8 +91,7 @@ public sealed partial class AccountSecurityFlowTests
         await AddConfirmedTotpAsync(factory, await FindUserAsync(factory, ownerId));
         await SetSessionMfaTimeAsync(factory, ownerId, DateTime.UtcNow.AddMinutes(-15));
 
-        using var response = await owner.PatchAsJsonAsync(
-            $"/api/admin/channels/{TestData.GeneralChannelId}/section", new { sectionId = destination });
+        using var response = await ChannelSections.FileAsync(owner, TestData.GeneralChannelId, destination);
         Assert.Equal(HttpStatusCode.NoContent, response.StatusCode);
         await using var check = factory.OpenScope(out var checkDb);
         Assert.Equal(destination, (await checkDb.Channels.SingleAsync(x => x.Id == TestData.GeneralChannelId)).SectionId);
