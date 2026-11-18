@@ -8,7 +8,10 @@ import { createChatAdapter } from "./chat";
 import { ReactionStore } from "./messageActions";
 import { ChannelReadStore } from "./readState";
 
-vi.mock("@/lib/media/probe", () => ({ probeMedia: vi.fn(async () => ({ width: 640, height: 480 })) }));
+const preview = new Blob(["webp"], { type: "image/webp" });
+vi.mock("@/lib/media/probe", () => ({
+  probeMedia: vi.fn(async () => ({ width: 640, height: 480, preview, placeholder: "AAAA" })),
+}));
 
 const withReaction: Message = {
   id: "m-1",
@@ -124,7 +127,12 @@ describe("chat adapter uploads", () => {
     await chat.uploadAttachment(file);
 
     expect(probeMedia).toHaveBeenCalledWith(file);
-    expect(uploadAttachment).toHaveBeenCalledWith(file, { width: 640, height: 480 });
+    expect(uploadAttachment).toHaveBeenCalledWith(file, {
+      width: 640,
+      height: 480,
+      preview,
+      placeholder: "AAAA",
+    });
   });
 
   it("adds the recorded duration and the voice message mark when the composer gives them", async () => {
@@ -136,6 +144,8 @@ describe("chat adapter uploads", () => {
     expect(uploadAttachment).toHaveBeenCalledWith(file, {
       width: 640,
       height: 480,
+      preview,
+      placeholder: "AAAA",
       durationSeconds: 12.5,
       voiceMessage: true,
     });
