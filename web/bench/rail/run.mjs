@@ -9,7 +9,7 @@
 // React commits per move (split by whether the move changed the target slot),
 // the components those commits rendered, forced style and layout work (style
 // or layout run from inside script, which is a read after a write), and the
-// longest task on the page's main thread.
+// page's main-thread tasks: the longest, the 95th percentile and the total.
 //
 // STELLARR_CHROMIUM (or CHROME) points at the browser when it is not in a
 // usual place; see web/bench/cdp.mjs.
@@ -216,6 +216,7 @@ function readTrace(events, fromMark, toMark) {
     }
   }
   const result = { forcedLayouts: 0, forcedStyle: 0, longestTask: 0, tasksOver50: 0, forcedBy: {} };
+  const tasks = [];
   const blame = (event) => {
     const caller = event.caller ?? "(no stack)";
     result.forcedBy[caller] = (result.forcedBy[caller] ?? 0) + 1;
@@ -235,15 +236,22 @@ function readTrace(events, fromMark, toMark) {
         result.forcedStyle += 1;
         blame(event);
       }
-      if (event.name === "RunTask") {
+      if (event.name === "RunTask" && !stack.some((parent) => parent.name === "RunTask")) {
         const length = (event.end - event.start) / 1000;
+        tasks.push(length);
         result.longestTask = Math.max(result.longestTask, length);
         if (length > 50) result.tasksOver50 += 1;
       }
       stack.push(event);
     }
   }
-  result.longestTask = Math.round(result.longestTask * 10) / 10;
+  const round = (value) => Math.round(value * 10) / 10;
+  tasks.sort((a, b) => a - b);
+  result.longestTask = round(result.longestTask);
+  // The longest task swings with whatever else the machine runs; the 95th
+  // percentile and the total are steadier.
+  result.p95Task = round(tasks[Math.floor(tasks.length * 0.95)] ?? 0);
+  result.busy = round(tasks.reduce((sum, length) => sum + length, 0));
   return result;
 }
 
@@ -411,6 +419,8 @@ function print(result) {
       `${Object.keys(result.moving.forcedBy).length === 0 ? "" : `, from ${JSON.stringify(result.moving.forcedBy)}`}`,
     `  longest task          ${result.moving.longestTask} ms while moving (${result.moving.tasksOver50} over 50 ms),` +
       ` ${result.lift.longestTask} ms lift, ${result.drop.longestTask} ms drop`,
+    `  main thread moving    p95 task ${result.moving.p95Task} ms, busy ${result.moving.busy} ms` +
+      ` (${Math.round((result.moving.busy / result.moves) * 100) / 100} ms per move)`,
     `  lift                  ${result.lift.commits} commits, ${result.lift.components} components, ` +
       `${result.lift.forcedLayouts} forced layouts, ${result.lift.forcedStyle} forced style`,
     `  drop                  ${result.drop.commits} commits, ${result.drop.components} components, ` +
