@@ -132,6 +132,22 @@ describe("UiProvider navigation", () => {
     expect(result.current.space).toBe("server");
   });
 
+  it("starts a conversation on everyone, with the search asked for until the view takes it", () => {
+    const { result } = mountUi();
+    act(() => result.current.openDm("dm-1"));
+
+    act(() => result.current.newConversation());
+    expect(result.current).toMatchObject({
+      space: "dm",
+      activeDmId: null,
+      friendsTab: "all",
+      friendsSearchRequested: true,
+    });
+
+    act(() => result.current.takeFriendsSearch());
+    expect(result.current.friendsSearchRequested).toBe(false);
+  });
+
   it("keeps its value when only the voice object changes, and calls the newest join", () => {
     const { result, rerender } = mountUi();
     const before = result.current;
@@ -216,6 +232,33 @@ describe("UiProvider drawers", () => {
 
     act(() => result.current.toggleRoster());
     expect(result.current).toMatchObject({ railOpen: false, rosterOpen: true });
+  });
+});
+
+describe("UiProvider profile panel", () => {
+  it("opens where the roster would and is closed apart from it", () => {
+    expect(mountUi(LAPTOP).result.current.profilePanelOpen).toBe(false);
+    const { result } = mountUi(DESKTOP);
+    expect(result.current.profilePanelOpen).toBe(true);
+
+    act(() => result.current.toggleProfilePanel());
+
+    expect(result.current).toMatchObject({ profilePanelOpen: false, rosterOpen: true });
+  });
+
+  it("is a drawer on a phone: exclusive with the rail and shut by navigation", () => {
+    const { result } = mountUi(PHONE);
+    expect(result.current.profilePanelOpen).toBe(false);
+
+    act(() => result.current.toggleProfilePanel());
+    act(() => result.current.setRailOpen(true));
+    expect(result.current).toMatchObject({ railOpen: true, profilePanelOpen: false });
+
+    act(() => result.current.setProfilePanelOpen(true));
+    expect(result.current).toMatchObject({ railOpen: false, profilePanelOpen: true });
+
+    act(() => result.current.openDm("dm-2"));
+    expect(result.current.profilePanelOpen).toBe(false);
   });
 });
 

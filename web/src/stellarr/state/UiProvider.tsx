@@ -68,6 +68,15 @@ interface PanelsValue {
   toggleChannelPanel: (tab: ChannelPanelTab) => void;
   showChannelPanelTab: (tab: ChannelPanelTab) => void;
   closeChannelPanel: () => void;
+
+  /**
+   * The profile beside an open conversation. It takes the roster's column, so
+   * it keeps the roster's rules: a track from 1024px, open by default where
+   * the roster would be, and a drawer below that.
+   */
+  profilePanelOpen: boolean;
+  setProfilePanelOpen: (open: boolean) => void;
+  toggleProfilePanel: () => void;
 }
 
 interface DialogsValue {
@@ -95,6 +104,15 @@ export interface UiValue extends PanelsValue, DialogsValue {
   setFriendsTab: (tab: FriendsTab) => void;
   /** Leaves the server for the Friends view. */
   openFriends: () => void;
+  /**
+   * Starts a conversation: the Friends view, on everyone, with the search
+   * waiting for a name. The search takes the request when it can see it and
+   * hands it back with `takeFriendsSearch`, so the view focuses the field
+   * whether it was already on screen or mounts because of this.
+   */
+  newConversation: () => void;
+  friendsSearchRequested: boolean;
+  takeFriendsSearch: () => void;
   openDm: (id: string) => void;
   /** Back to the server rail and whatever channel it was last on. */
   openServer: () => void;
@@ -115,12 +133,13 @@ export interface UiValue extends PanelsValue, DialogsValue {
 }
 
 /**
- * The rail drawer, the roster and the channel panel.
+ * The rail drawer, the roster, the channel panel and the profile beside a
+ * conversation.
  *
- * Below 1024px the roster is a drawer, and below 1280px so is the channel
- * panel; drawers share one mobile layer, so opening one dismisses the others.
- * Above those widths the panels are grid tracks that the person arranges and
- * that navigation must leave alone.
+ * Below 1024px the roster and the profile are drawers, and below 1280px so is
+ * the channel panel; drawers share one mobile layer, so opening one dismisses
+ * the others. Above those widths the panels are grid tracks that the person
+ * arranges and that navigation must leave alone.
  */
 function usePanels(): PanelsValue {
   const rosterIsDrawer = useMediaQuery("(max-width: 1023px)", false);
@@ -139,10 +158,15 @@ function usePanels(): PanelsValue {
   const [rosterDrawerOpen, setRosterDrawerOpen] = useState(false);
   const [channelPanel, setChannelPanel] = useState<ChannelPanelTab | null>(null);
   const [channelPanelTab, setChannelPanelTab] = useState<ChannelPanelTab>("pinned");
+  const [profilePreference, setProfilePreference] = useState<boolean | null>(null);
+  const [profileDrawerOpen, setProfileDrawerOpen] = useState(false);
 
   const rosterOpen = rosterIsDrawer
     ? rosterDrawerOpen
     : (rosterPreference ?? rosterFits);
+  const profilePanelOpen = rosterIsDrawer
+    ? profileDrawerOpen
+    : (profilePreference ?? rosterFits);
 
   const setRosterOpen = useCallback(
     (open: boolean) => {
@@ -157,9 +181,24 @@ function usePanels(): PanelsValue {
     [channelPanelIsDrawer, rosterIsDrawer],
   );
 
+  const setProfilePanelOpen = useCallback(
+    (open: boolean) => {
+      if (!rosterIsDrawer) {
+        setProfilePreference(open);
+        return;
+      }
+      if (open) setRailState(false);
+      setProfileDrawerOpen(open);
+    },
+    [rosterIsDrawer],
+  );
+
   const setRailOpen = useCallback(
     (open: boolean) => {
-      if (open && rosterIsDrawer) setRosterDrawerOpen(false);
+      if (open && rosterIsDrawer) {
+        setRosterDrawerOpen(false);
+        setProfileDrawerOpen(false);
+      }
       if (open && channelPanelIsDrawer) setChannelPanel(null);
       setRailState(open);
     },
@@ -168,7 +207,10 @@ function usePanels(): PanelsValue {
 
   const closeDrawers = useCallback(() => {
     setRailState(false);
-    if (rosterIsDrawer) setRosterOpen(false);
+    if (rosterIsDrawer) {
+      setRosterOpen(false);
+      setProfileDrawerOpen(false);
+    }
     if (channelPanelIsDrawer) setChannelPanel(null);
   }, [channelPanelIsDrawer, rosterIsDrawer, setRosterOpen]);
 
@@ -194,6 +236,10 @@ function usePanels(): PanelsValue {
   const closeChannelPanel = useCallback(() => setChannelPanel(null), []);
   const toggleRail = useCallback(() => setRailOpen(!railOpen), [setRailOpen, railOpen]);
   const toggleRoster = useCallback(() => setRosterOpen(!rosterOpen), [setRosterOpen, rosterOpen]);
+  const toggleProfilePanel = useCallback(
+    () => setProfilePanelOpen(!profilePanelOpen),
+    [setProfilePanelOpen, profilePanelOpen],
+  );
 
   return useMemo(
     () => ({
@@ -209,6 +255,9 @@ function usePanels(): PanelsValue {
       toggleChannelPanel,
       showChannelPanelTab,
       closeChannelPanel,
+      profilePanelOpen,
+      setProfilePanelOpen,
+      toggleProfilePanel,
     }),
     [
       railOpen,
@@ -223,6 +272,9 @@ function usePanels(): PanelsValue {
       toggleChannelPanel,
       showChannelPanelTab,
       closeChannelPanel,
+      profilePanelOpen,
+      setProfilePanelOpen,
+      toggleProfilePanel,
     ],
   );
 }
@@ -326,6 +378,7 @@ export function UiProvider({ children }: { children: ReactNode }) {
   const [space, setSpace] = useState<Space>("server");
   const [activeDmId, setActiveDmId] = useState<string | null>(null);
   const [friendsTab, setFriendsTab] = useState<FriendsTab>("online");
+  const [friendsSearchRequested, setFriendsSearchRequested] = useState(false);
   const [cinema, setCinema] = useState(false);
 
   const activeTextChannelId = selectedTextId ?? firstTextChannelId;
@@ -348,6 +401,14 @@ export function UiProvider({ children }: { children: ReactNode }) {
     setActiveDmId(null);
     closeDrawers();
   }, [closeDrawers]);
+
+  const newConversation = useCallback(() => {
+    setFriendsTab("all");
+    setFriendsSearchRequested(true);
+    openFriends();
+  }, [openFriends]);
+
+  const takeFriendsSearch = useCallback(() => setFriendsSearchRequested(false), []);
 
   const openDm = useCallback(
     (id: string) => {
@@ -414,6 +475,9 @@ export function UiProvider({ children }: { children: ReactNode }) {
       friendsTab,
       setFriendsTab,
       openFriends,
+      newConversation,
+      friendsSearchRequested,
+      takeFriendsSearch,
       openDm,
       openServer,
       activeTextChannelId,
@@ -434,6 +498,9 @@ export function UiProvider({ children }: { children: ReactNode }) {
       activeDmId,
       friendsTab,
       openFriends,
+      newConversation,
+      friendsSearchRequested,
+      takeFriendsSearch,
       openDm,
       openServer,
       activeTextChannelId,
