@@ -262,8 +262,12 @@ export function createListSort() {
 
   const follow = (current: Drag, scrollTop: number) => {
     const held = heldTop(current, scrollTop);
-    draw(current, held);
-    moveTo(current, nearestSlot(current.slots, held));
+    const slot = nearestSlot(current.slots, held);
+    moveTo(current, slot);
+    // Over a closed list, which opens no room, the item docks right below
+    // the caption that lights up, rather than hiding it under the pointer.
+    const target = current.slots[slot];
+    draw(current, target?.room === 0 ? target.lands : held);
   };
 
   const frameOf = (current: Drag) => current.node.ownerDocument.defaultView ?? window;
