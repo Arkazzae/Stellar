@@ -1,4 +1,4 @@
-import { useEffect, useState, type MouseEvent } from "react";
+import { useState, type MouseEvent } from "react";
 
 import { Icon, type IconName } from "@stellarr/icons";
 import type { CallVM } from "@/components/view-models";
@@ -6,6 +6,8 @@ import { SoundboardPopover } from "@/components/voice/SoundboardPopover";
 import type { MessageKey } from "@/i18n";
 import type { NoiseSuppressionMode, Sound } from "@/ports";
 import { useLanguage } from "@/state/hooks";
+
+import { CallClock } from "./CallClock";
 
 interface NoiseStep {
   /** What one more press switches to; the five modes form a ring. */
@@ -23,7 +25,8 @@ const NOISE_STEPS: Record<NoiseSuppressionMode, NoiseStep> = {
   browser: { next: "off", icon: "noiseBrowser", name: "shell.noiseSuppression.classic" },
 };
 
-const HEADLINE: Record<CallVM["headline"], MessageKey> = {
+/** What the dock and the call view call each state of a call. */
+export const CALL_HEADLINE: Record<CallVM["headline"], MessageKey> = {
   "requesting-mic": "shell.voiceRequestingMic",
   connecting: "shell.voiceConnecting",
   screen: "shell.voiceScreen",
@@ -43,6 +46,11 @@ const QUALITY: Record<CallVM["connectionQuality"], MessageKey> = {
 export interface VoiceDockProps {
   /** No call means the dock is present but `.hidden`, as in the mockup. */
   call: CallVM | null;
+  /**
+   * A private call the other person has not joined yet. Once connected, the
+   * dock says it is calling them, and keeps no time: nothing has started.
+   */
+  ringing?: boolean;
   sounds: Sound[];
   /** False renders the soundboard tiles disabled rather than hiding them. */
   soundboardSupported?: boolean;
@@ -59,27 +67,6 @@ export interface VoiceDockProps {
   onPlaySound: (soundId: string) => void;
   /** Clicking the status row while something is live jumps back to the channel. */
   onReturnToChannel: () => void;
-}
-
-/**
- * Whole seconds since `startedAt`.
- *
- * It starts at 0 on the server render and on the first client pass and only
- * then follows the clock: reading `Date.now()` during render would differ
- * between the two and break hydration.
- */
-function useElapsedSeconds(startedAt: number): number {
-  const [seconds, setSeconds] = useState(0);
-
-  useEffect(() => {
-    const tick = () =>
-      setSeconds(Math.max(0, Math.floor((Date.now() - startedAt) / 1000)));
-    tick();
-    const timer = window.setInterval(tick, 1000);
-    return () => window.clearInterval(timer);
-  }, [startedAt]);
-
-  return seconds;
 }
 
 interface DockToggleProps {
@@ -122,12 +109,11 @@ function DockToggle({
   );
 }
 
-const twoDigits = (value: number) => String(value).padStart(2, "0");
-
 type LiveDockProps = Omit<VoiceDockProps, "call"> & { call: CallVM };
 
 function LiveDock({
   call,
+  ringing = false,
   sounds,
   soundboardSupported = true,
   soundboardVolume,
@@ -145,10 +131,10 @@ function LiveDock({
 }: LiveDockProps) {
   const { t } = useLanguage();
   const [boardOpen, setBoardOpen] = useState(false);
-  const seconds = useElapsedSeconds(call.startedAt);
 
-  const minutes = Math.floor(seconds / 60);
-  const rest = seconds % 60;
+  const connected = call.headline === "connected" && !ringing;
+  const headline: MessageKey =
+    ringing && call.headline === "connected" ? "shell.voiceRinging" : CALL_HEADLINE[call.headline];
   const latency = call.latencyMs === null ? null : Math.round(call.latencyMs);
   const quality = t(QUALITY[call.connectionQuality]);
   const qualitySummary =
@@ -200,9 +186,9 @@ function LiveDock({
           }
         >
           <span className="di-txt">
-            <b className={call.headline === "connected" ? "ok" : undefined}>
-              <span>{t(HEADLINE[call.headline])}</span>
-              {call.headline === "connected" ? (
+            <b className={connected ? "ok" : undefined}>
+              <span>{t(headline)}</span>
+              {connected ? (
                 <span
                   className={`voice-connection-quality ${call.connectionQuality}`}
                   title={qualitySummary}
@@ -216,10 +202,12 @@ function LiveDock({
             </b>
             <span className="di-where">
               <span className="di-channel">{call.channelName}</span>
-              <i aria-hidden="true">·</i>
-              <time dateTime={`PT${minutes}M${rest}S`}>
-                {`${twoDigits(minutes)}:${twoDigits(rest)}`}
-              </time>
+              {ringing ? null : (
+                <>
+                  <i aria-hidden="true">·</i>
+                  <CallClock since={call.startedAt} />
+                </>
+              )}
             </span>
           </span>
           <button
