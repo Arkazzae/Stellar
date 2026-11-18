@@ -114,10 +114,17 @@ function imageRunPart(run: readonly Attachment[]): MessagePart {
       kind: "image",
       src: first.url,
       alt: first.name,
-      ...defined({ width: first.width, height: first.height }),
+      ...defined({ preview: first.previewUrl, width: first.width, height: first.height }),
     };
   }
-  return { kind: "gallery", images: run.map((image) => ({ src: image.url, alt: image.name })) };
+  return {
+    kind: "gallery",
+    images: run.map((image) => ({
+      src: image.url,
+      alt: image.name,
+      ...defined({ preview: image.previewUrl }),
+    })),
+  };
 }
 
 /** Attachments in order, with consecutive images collapsed into one gallery. */

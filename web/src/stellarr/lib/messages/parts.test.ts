@@ -392,6 +392,30 @@ describe("toParts", () => {
     expect(parts[1]).toMatchObject({ kind: "file", ext: "BIN" });
   });
 
+  it("carries a preview of an image to its part, alone or in a gallery", () => {
+    const image = (id: string, previewUrl?: string) =>
+      attachment({
+        id,
+        name: `${id}.png`,
+        contentType: "image/png",
+        url: `u/${id}`,
+        ...(previewUrl === undefined ? {} : { previewUrl }),
+      });
+
+    expect(toParts(message({ attachments: [image("x", "u/x/preview")] }))).toEqual([
+      { kind: "image", src: "u/x", preview: "u/x/preview", alt: "x.png" },
+    ]);
+    expect(toParts(message({ attachments: [image("x", "u/x/preview"), image("y")] }))).toEqual([
+      {
+        kind: "gallery",
+        images: [
+          { src: "u/x", preview: "u/x/preview", alt: "x.png" },
+          { src: "u/y", alt: "y.png" },
+        ],
+      },
+    ]);
+  });
+
   it("formats a file's size and uses measured media metadata", () => {
     const parts = toParts(
       message({

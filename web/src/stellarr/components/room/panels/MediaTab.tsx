@@ -39,7 +39,7 @@ function ImageTile({
       aria-label={t("room.zoomImage", { alt: part.alt, when })}
       onClick={onOpen}
     >
-      <img src={part.src} alt={part.alt} loading="lazy" />
+      <img src={part.preview ?? part.src} alt={part.alt} loading="lazy" />
     </button>
   );
 }
@@ -134,9 +134,18 @@ export function MediaTab({
   const tiles = media.filter(isTile);
   const rows = media.filter(isRow);
   const images = tiles.flatMap(({ id, part }) =>
-    part.kind === "image" ? [{ id, src: part.src, alt: part.alt }] : [],
+    part.kind === "image"
+      ? [
+          {
+            id,
+            src: part.src,
+            alt: part.alt,
+            ...(part.preview === undefined ? {} : { preview: part.preview }),
+          },
+        ]
+      : [],
   );
-  const gallery = images.map(({ src, alt }) => ({ src, alt }));
+  const gallery = images.map(({ id: _id, ...image }) => image);
 
   return (
     <IndexedTab

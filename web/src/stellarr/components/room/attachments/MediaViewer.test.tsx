@@ -1,4 +1,4 @@
-import { fireEvent, render, screen } from "@testing-library/react";
+import { act, fireEvent, render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { describe, expect, it, vi } from "vitest";
 
@@ -44,6 +44,34 @@ function swipe(
 }
 
 describe("MediaViewer", () => {
+  it("shows the preview first and swaps in the original once it has loaded", () => {
+    const loaders: Array<{ src: string; onload: (() => void) | null }> = [];
+    vi.stubGlobal(
+      "Image",
+      class {
+        src = "";
+        onload: (() => void) | null = null;
+        constructor() {
+          loaders.push(this);
+        }
+      },
+    );
+    const target: ViewerTarget = {
+      kind: "image",
+      index: 0,
+      images: [{ src: "/assets/a", preview: "/assets/a/preview", alt: "Kot" }],
+    };
+    render(<MediaViewer target={target} onClose={vi.fn()} />);
+
+    const image = screen.getByRole("img", { name: "Kot" });
+    expect(image).toHaveAttribute("src", "/assets/a/preview");
+    expect(loaders.map((loader) => loader.src)).toEqual(["/assets/a"]);
+
+    act(() => loaders[0]?.onload?.());
+    expect(image).toHaveAttribute("src", "/assets/a");
+    vi.unstubAllGlobals();
+  });
+
   it("moves through an image gallery with a deliberate horizontal touch swipe", () => {
     render(<MediaViewer target={gallery} onClose={vi.fn()} />);
 
