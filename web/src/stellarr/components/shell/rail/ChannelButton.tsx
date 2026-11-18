@@ -1,23 +1,8 @@
 import type { KeyboardEvent, MouseEvent } from "react";
 
 import { Icon } from "@stellarr/icons";
-import type { DragHandleProps } from "@/lib/drag/session";
+import type { SortHandleProps } from "@/lib/drag/useListSort";
 import { useLanguage } from "@/state/hooks";
-
-/**
- * What the sortable list hands the row it may carry.
- *
- * The list owns the pointer, the keyboard and the transform, which it puts on
- * the element around the row and its threads; the row only forwards the
- * handle's events to its main button. A press has to travel a few pixels
- * before it is a drag, which is what lets that button be both the handle and
- * a plain click target.
- */
-export interface ChannelDragProps {
-  /** The row is being carried. */
-  dragging: boolean;
-  handle: DragHandleProps;
-}
 
 export interface ChannelButtonProps {
   kind: "text" | "voice";
@@ -42,7 +27,13 @@ export interface ChannelButtonProps {
   onSelect: () => void;
   /** Right-click. Without it the browser's own menu is left alone. */
   onContextMenu?: (event: MouseEvent<HTMLElement>) => void;
-  drag?: ChannelDragProps;
+  /**
+   * Makes the main button the handle the rail sorts this row by. The rail
+   * owns the pointer, the keyboard and the transform, which it puts on the
+   * element around the row; a press has to travel a few pixels before it is
+   * a drag, which is what lets the button be both handle and click target.
+   */
+  drag?: SortHandleProps;
 }
 
 const MAX_UNREAD_SHOWN = 99;
@@ -74,12 +65,7 @@ export function ChannelButton({
 }: ChannelButtonProps) {
   const { t } = useLanguage();
 
-  const className = [
-    "channel",
-    active && "active",
-    unread > 0 && "unread",
-    drag?.dragging && "drag-chosen",
-  ]
+  const className = ["channel", active && "active", unread > 0 && "unread"]
     .filter(Boolean)
     .join(" ");
 
@@ -90,7 +76,7 @@ export function ChannelButton({
           // The handle hears every key first: Space picks the row up, and
           // while it is carried the arrows, Space, Enter, Tab and Escape are
           // the drag's. Enter still follows the channel, carried or not.
-          drag.handle.onKeyDown(event);
+          drag.onKeyDown(event);
           if (event.key !== "Enter") return;
           event.preventDefault();
           onSelect();
@@ -109,7 +95,7 @@ export function ChannelButton({
         type="button"
         className="channel-main"
         aria-current={active ? "page" : undefined}
-        {...drag?.handle}
+        {...drag}
         onClick={onSelect}
         onKeyDown={handleKeyDown}
       >

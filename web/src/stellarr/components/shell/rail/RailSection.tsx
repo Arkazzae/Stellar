@@ -4,6 +4,8 @@ import { Icon } from "@stellarr/icons";
 import { useLanguage } from "@/state/hooks";
 
 export interface RailSectionProps {
+  /** Id of the body; the caption button points at it with `aria-controls`. */
+  id: string;
   name: string;
   open: boolean;
   onToggle: () => void;
@@ -15,6 +17,10 @@ export interface RailSectionProps {
    * caption keeps just the way in.
    */
   onOpenSettings?: () => void;
+  /**
+   * The section's lists, rendered even when empty: an empty list still marks
+   * where a channel dragged into the section would go.
+   */
   children: ReactNode;
 }
 
@@ -22,10 +28,10 @@ export interface RailSectionProps {
  * A named, collapsible group of channels.
  *
  * Not a `CollapsibleGroup`: the caption holds the folder mark, the name and
- * the caret as direct children of its button, and neither the button nor the
- * body is linked by id.
+ * the caret as direct children of its button.
  */
 export function RailSection({
+  id,
   name,
   open,
   onToggle,
@@ -41,6 +47,7 @@ export function RailSection({
           type="button"
           className="group-caption"
           aria-expanded={open}
+          aria-controls={id}
           onClick={onToggle}
         >
           <span className="rail-section-mark" aria-hidden="true">
@@ -63,9 +70,10 @@ export function RailSection({
           </button>
         )}
       </div>
-      <div className={open ? "collapsible" : "collapsible closed"} inert={!open}>
+      <div id={id} className={open ? "collapsible" : "collapsible closed"} inert={!open}>
         <div className="collapsible-body">
-          {empty ? <p className="rail-section-empty">{t("section.empty")}</p> : children}
+          {children}
+          {empty ? <p className="rail-section-empty">{t("section.empty")}</p> : null}
         </div>
       </div>
     </div>

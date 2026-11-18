@@ -1,90 +1,129 @@
 import { describe, expect, it } from "vitest";
 
 import {
-  clampShift,
-  closestIndex,
   edgeScrollSpeed,
-  moveItem,
+  nearestSlot,
   revealDelta,
-  sortOffsets,
+  shiftAt,
+  shiftBreaks,
+  slotsOf,
   spanAt,
   stepIndex,
+  type CarriedSpan,
+  type MeasuredList,
   type Span,
 } from "./geometry";
+import { planShifts, type Block } from "./layout";
 
-/** Three 32 px rows stacked from y = 100, the middle one with two 44 px threads open. */
-const rows: Span[] = [
-  { top: 100, height: 32 },
-  { top: 132, height: 120 },
-  { top: 252, height: 32 },
+/*
+ * Two lists of 32 px rows with a 40 px caption between them:
+ *
+ *   list 0: a 100, b 132 (two 44 px threads open, 120 tall), c 252; ends at 284
+ *   list 1: d 324, e 356; ends at 388
+ *   list 2: closed, under its caption at 428
+ */
+const rows = (...tops: [number, number][]): Span[] => tops.map(([top, height]) => ({ top, height }));
+const lists: MeasuredList[] = [
+  { items: rows([100, 32], [132, 120], [252, 32]), end: 284, closed: false },
+  { items: rows([324, 32], [356, 32]), end: 388, closed: false },
+  { items: rows([428, 32]), end: 428, closed: true },
 ];
+const carryA: CarriedSpan = { list: 0, index: 0, top: 100, height: 32 };
 
-describe("moveItem", () => {
-  it("lands a downward move on the slot it was dropped on, not one short of it", () => {
-    expect(moveItem(["a", "b", "c"], 0, 2)).toEqual(["b", "c", "a"]);
+describe("slotsOf", () => {
+  it("lands each slot where the carried item would be after the drop", () => {
+    const slots = slotsOf(lists, carryA);
+
+    expect(slots.map(({ list, index, lands }) => [list, index, lands])).toEqual([
+      // Its own place, then below b and c, each lifted by the 32 px it left.
+      [0, 0, 100],
+      [0, 1, 220],
+      [0, 2, 252],
+      // The next list: before d, before e, at its end.
+      [1, 0, 292],
+      [1, 1, 324],
+      [1, 2, 356],
+      // A closed list: one slot, at its end, right under its caption.
+      [2, 1, 396],
+    ]);
+    expect(slots.at(-1)?.room).toBe(0);
   });
 
-  it("moves upwards and leaves the source untouched", () => {
-    const ids = ["a", "b", "c"];
-    expect(moveItem(ids, 2, 0)).toEqual(["c", "a", "b"]);
-    expect(ids).toEqual(["a", "b", "c"]);
-  });
+  it("makes no room in the list a tall item leaves, and room for all of it in front", () => {
+    const carryB: CarriedSpan = { list: 0, index: 1, top: 132, height: 120 };
+    const slots = slotsOf(lists, carryB);
 
-  it("keeps the order when the item stays where it was", () => {
-    expect(moveItem(["a", "b", "c"], 1, 1)).toEqual(["a", "b", "c"]);
-  });
-});
-
-describe("closestIndex", () => {
-  it("picks the row whose centre is nearest, however tall it is", () => {
-    expect(closestIndex(rows, 116)).toBe(0);
-    // Past the midpoint between the first centre (116) and the tall one (192).
-    expect(closestIndex(rows, 160)).toBe(1);
-    expect(closestIndex(rows, 300)).toBe(2);
-  });
-
-  it("finds nothing in an empty list", () => {
-    expect(closestIndex([], 10)).toBe(-1);
-  });
-});
-
-describe("sortOffsets", () => {
-  it("moves nothing while the item is over its own slot", () => {
-    expect(sortOffsets(rows, 1, 1)).toEqual([0, 0, 0]);
-  });
-
-  it("shifts the others by the carried item's own height, threads included", () => {
-    // The tall row goes last: the bottom row rises by 120, the tall one drops by 32.
-    expect(sortOffsets(rows, 1, 2)).toEqual([0, 32, -120]);
-    // A short row goes below the tall one: the tall one rises by 32 only.
-    expect(sortOffsets(rows, 0, 1)).toEqual([120, -32, 0]);
-  });
-
-  it("keeps the spacing between positions", () => {
-    const spaced: Span[] = [
-      { top: 0, height: 30 },
-      { top: 34, height: 30 },
-      { top: 68, height: 30 },
-    ];
-    expect(sortOffsets(spaced, 2, 0)).toEqual([34, 34, -68]);
-  });
-
-  it("gives an empty list nothing to move", () => {
-    expect(sortOffsets([], 0, 0)).toEqual([]);
+    // Before a, its own place, then below c once c has risen by 120.
+    expect(slots.slice(0, 3).map((slot) => slot.lands)).toEqual([100, 132, 164]);
+    expect(slots[3]?.room).toBe(120);
   });
 });
 
-describe("clampShift", () => {
-  const bounds = { top: 100, bottom: 284 };
+describe("nearestSlot", () => {
+  it("picks the slot that lands nearest the held top; the first wins a tie", () => {
+    const slots = slotsOf(lists, carryA);
 
-  it("keeps the carried row inside the list", () => {
-    expect(clampShift(rows[0]!, -50, bounds)).toBe(0);
-    expect(clampShift(rows[0]!, 500, bounds)).toBe(152);
-    expect(clampShift(rows[2]!, -500, bounds)).toBe(-152);
+    expect(nearestSlot(slots, 90)).toBe(0);
+    expect(nearestSlot(slots, 160)).toBe(0);
+    expect(nearestSlot(slots, 161)).toBe(1);
+    expect(nearestSlot(slots, 300)).toBe(3);
+    expect(nearestSlot(slots, 900)).toBe(slots.length - 1);
+    expect(nearestSlot([], 10)).toBe(-1);
+  });
+});
+
+describe("shiftAt", () => {
+  it("closes up behind the carried item and opens in front of it, and nowhere else", () => {
+    const slots = slotsOf(lists, carryA);
+    const beforeE = slots.find((slot) => slot.list === 1 && slot.index === 1)!;
+
+    expect(shiftAt(132, carryA, beforeE)).toBe(-32);
+    expect(shiftAt(300, carryA, beforeE)).toBe(-32);
+    expect(shiftAt(356, carryA, beforeE)).toBe(0);
+    expect(shiftAt(60, carryA, beforeE)).toBe(0);
+    // Over its own place nothing moves.
+    expect(shiftAt(132, carryA, slots[0]!)).toBe(0);
   });
 
-  it("passes a shift that stays inside unchanged", () => {
-    expect(clampShift(rows[0]!, 40, bounds)).toBe(40);
+  it("only closes up for a closed list, which shows nothing it takes", () => {
+    const slots = slotsOf(lists, carryA);
+
+    expect(shiftAt(500, carryA, slots.at(-1)!)).toBe(-32);
+  });
+});
+
+describe("planShifts", () => {
+  const node = () => document.createElement("div");
+  const leaf = (top: number, height: number): Block => ({
+    node: node(),
+    top,
+    height,
+    children: null,
+    holdsCarried: false,
+  });
+
+  it("moves whole blocks, opening only the ones the change runs through or that hold the item", () => {
+    const carried = leaf(100, 32);
+    const b = leaf(132, 120);
+    const c = leaf(252, 32);
+    const listZero: Block = { node: node(), top: 100, height: 184, children: [carried, b, c], holdsCarried: true };
+    const caption = leaf(284, 40);
+    const d = leaf(324, 32);
+    const e = leaf(356, 32);
+    const listOne: Block = { node: node(), top: 324, height: 64, children: [d, e], holdsCarried: false };
+    const below = leaf(388, 200);
+    const slot = slotsOf(lists, carryA).find((each) => each.list === 1 && each.index === 1)!;
+
+    const moves = planShifts([listZero, caption, listOne, below], carried.node, shiftBreaks(carryA, slot), (y) =>
+      shiftAt(y, carryA, slot),
+    );
+
+    expect([...moves]).toEqual([
+      [b.node, -32],
+      [c.node, -32],
+      [caption.node, -32],
+      [d.node, -32],
+    ]);
   });
 });
 

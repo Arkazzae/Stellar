@@ -1,9 +1,11 @@
 /**
- * The arithmetic behind the rail's two drags, kept apart from the DOM so it
- * can be checked without a layout engine.
+ * The arithmetic behind the rail's drags, kept apart from the DOM so it can be
+ * checked without a layout engine.
  *
- * Both drags are locked to the vertical axis, so every measure here is a
- * vertical extent in viewport pixels.
+ * Every drag is locked to the vertical axis, so every measure here is a
+ * vertical extent. Sorting works in content pixels, measured from the top of
+ * the scrolling list, which scrolling does not change; the voice drop zones
+ * work in viewport pixels.
  */
 
 export interface Span {
@@ -16,20 +18,72 @@ export interface Bounds {
   bottom: number;
 }
 
-/** `items` with the entry at `from` taken out and put back at `to`. */
-export function moveItem<T>(items: readonly T[], from: number, to: number): T[] {
-  const next = [...items];
-  const [moved] = next.splice(from, 1);
-  if (moved !== undefined) next.splice(to, 0, moved);
-  return next;
+/** One list of a sort as it was measured. */
+export interface MeasuredList {
+  /** Its items in order, the carried one included where it sits. */
+  items: readonly Span[];
+  /** Where an item put after the last one would start. */
+  end: number;
+  /**
+   * A collapsed list shows nothing it holds: it takes a drop at its end,
+   * unseen, and opens no room for it.
+   */
+  closed: boolean;
 }
 
-/** The index of the span whose centre is nearest `centre`; the first wins a tie. */
-export function closestIndex(spans: readonly Span[], centre: number): number {
+/** The item being sorted: which list it is in, at which index, and where. */
+export interface CarriedSpan extends Span {
+  list: number;
+  index: number;
+}
+
+/** Somewhere the carried item can be dropped. */
+export interface Slot {
+  list: number;
+  /** Its index in that list once dropped, counted without the carried item. */
+  index: number;
+  /** Where in the measured layout it goes in: the rest of the rail from here moves down. */
+  at: number;
+  /** How far the rest of the rail moves down for it: the item's height, or 0 in a closed list. */
+  room: number;
+  /** Where the carried item's top lands; for a closed list, right below its caption. */
+  lands: number;
+}
+
+/**
+ * Every slot of `lists`, in rail order.
+ *
+ * Taking the carried item out lifts everything below it by its height, so a
+ * slot further down lands that much higher than where it goes in. An open
+ * list has a slot before each item and one at its end; a closed one has just
+ * the end, which the item reaches when it is held right below the caption
+ * that names the list, where the caption stays in sight.
+ */
+export function slotsOf(lists: readonly MeasuredList[], carried: CarriedSpan): Slot[] {
+  const lands = (at: number) => (at > carried.top ? at - carried.height : at);
+  return lists.flatMap((list, index) => {
+    const items =
+      index === carried.list ? list.items.filter((_, item) => item !== carried.index) : list.items;
+    if (list.closed) {
+      return [{ list: index, index: items.length, at: list.end, room: 0, lands: lands(list.end) }];
+    }
+    const at = [...items.map((item) => item.top), list.end];
+    return at.map((y, slot) => ({
+      list: index,
+      index: slot,
+      at: y,
+      room: carried.height,
+      lands: lands(y),
+    }));
+  });
+}
+
+/** The slot whose landing place is nearest `top`; the first wins a tie. */
+export function nearestSlot(slots: readonly Slot[], top: number): number {
   let best = -1;
   let bestDistance = Infinity;
-  spans.forEach((span, index) => {
-    const distance = Math.abs(span.top + span.height / 2 - centre);
+  slots.forEach((slot, index) => {
+    const distance = Math.abs(slot.lands - top);
     if (distance < bestDistance) {
       best = index;
       bestDistance = distance;
@@ -39,40 +93,19 @@ export function closestIndex(spans: readonly Span[], centre: number): number {
 }
 
 /**
- * How far each item has to move for the one at `from` to sit at `to`.
- *
- * Items keep their own heights, so a channel with its threads open moves as
- * one block, and each position keeps the gap that followed it. The entry at
- * `from` is where the carried item will land; the others are the shifts that
- * make room for it. `spans` are in list order.
+ * How far whatever starts at `y` in the measured layout moves while the
+ * carried item is over `slot`: up by the item's height once below where it
+ * was taken from, and down by the room the slot opens once below where it
+ * goes in. Between the two the rail closes up behind the item and opens in
+ * front of it; outside them both cancel out.
  */
-export function sortOffsets(spans: readonly Span[], from: number, to: number): number[] {
-  const offsets = spans.map(() => 0);
-  const first = spans[0];
-  if (first === undefined) return offsets;
-
-  let top = first.top;
-  moveItem(
-    spans.map((_, index) => index),
-    from,
-    to,
-  ).forEach((index, position) => {
-    const span = spans[index];
-    const here = spans[position];
-    const next = spans[position + 1];
-    if (span === undefined || here === undefined) return;
-    offsets[index] = top - span.top;
-    const gap = next === undefined ? 0 : next.top - (here.top + here.height);
-    top += span.height + gap;
-  });
-  return offsets;
+export function shiftAt(y: number, carried: Span, slot: Slot): number {
+  return (y >= carried.top + carried.height ? -carried.height : 0) + (y >= slot.at ? slot.room : 0);
 }
 
-/** `shift` limited so that `span`, moved by it, stays inside `bounds`. */
-export function clampShift(span: Span, shift: number, bounds: Bounds): number {
-  const up = bounds.top - span.top;
-  const down = bounds.bottom - (span.top + span.height);
-  return Math.min(down, Math.max(up, shift));
+/** The places where `shiftAt` changes, which a block moved as one must not straddle. */
+export function shiftBreaks(carried: Span, slot: Slot): number[] {
+  return [carried.top + carried.height, slot.at];
 }
 
 /** One keyboard step from `index` among `count` targets, stopping at either end. */

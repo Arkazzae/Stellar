@@ -1,6 +1,17 @@
-import type { MouseEventHandler } from "react";
+import type { MouseEventHandler, RefCallback } from "react";
 
 import type { ChannelThreadVM } from "@/components/view-models";
+import type { SortHandleProps } from "@/lib/drag/useListSort";
+
+/** What one rail list takes from the rail's sort. */
+export interface RailSortRefs {
+  /** The list's own element, which also marks where an empty list is. */
+  list: RefCallback<HTMLElement>;
+  /** The element of a row that moves, with whatever it carries. */
+  item: (channelId: string) => RefCallback<HTMLElement>;
+  /** Absent when the reader may not sort: the rows are plain buttons then. */
+  handle?: (channelId: string) => SortHandleProps;
+}
 
 /** What the context menu needs to know about the row it was raised on. */
 export interface ChannelMenuTarget {
