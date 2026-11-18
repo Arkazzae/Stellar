@@ -18,9 +18,10 @@ import {
   type SortList,
   type SortPlace,
 } from "@/lib/drag/useRailDrag";
+import type { MessageKey } from "@/i18n";
 import { useLanguage } from "@/state/hooks";
 
-/** One group's channels of one kind, as the rail's sort sees them. */
+/** One group's channels of one kind, or the sections themselves, as the rail's sort sees them. */
 interface RailList extends SortList {
   sectionId: string | null;
   /** What the group is called when a screen reader says where a channel is. */
@@ -31,6 +32,9 @@ interface RailList extends SortList {
 
 export const listId = (kind: "text" | "voice", sectionId: string | null) =>
   `${kind}:${sectionId ?? ""}`;
+
+/** The sections are one more list, below the loose groups, which stay on top. */
+const SECTIONS = "sections";
 
 /** One seated person's carry key: the same person can only sit in one channel at a time. */
 const occupantKey = (channelId: string, personId: string) => `${channelId}:${personId}`;
@@ -53,6 +57,8 @@ export interface RailMovesOptions {
   movingUserId: string | null;
   /** Absent leaves people as plain rows. */
   onDropPerson?: (dragged: VoiceDragData, targetChannelId: string | null) => void;
+  /** Absent leaves the section captions as plain buttons. */
+  onMoveSection?: (order: string[]) => void;
 }
 
 /**
@@ -101,7 +107,8 @@ function DragLayer({
 
 /**
  * Every drag of the rail, set up over its groups: channels sorted across
- * every group of their kind, and people carried onto any voice channel.
+ * every group of their kind, sections sorted by their captions, and people
+ * carried onto any voice channel.
  */
 export function useRailMoves({
   railId,
@@ -116,9 +123,11 @@ export function useRailMoves({
   selfId,
   movingUserId,
   onDropPerson,
+  onMoveSection,
 }: RailMovesOptions) {
   const { t } = useLanguage();
   const channelInstructions = useId();
+  const sectionInstructions = useId();
   const personInstructions = useId();
 
   const ids = (channels: { id: string }[]) => channels.map((channel) => channel.id);
@@ -155,16 +164,29 @@ export function useRailMoves({
         { ...group, id: listId("voice", section.id), kind: "voice", items: ids(voiceChannels.filter(inSection)) },
       ];
     }),
+    {
+      id: SECTIONS,
+      kind: "section",
+      items: ids(sections),
+      closed: false,
+      sectionId: null,
+      name: "",
+      body: "",
+    },
   ];
   const listOf = (id: string) => lists.find((list) => list.id === id);
   const channelName = (id: string) =>
     [...textChannels, ...voiceChannels].find((channel) => channel.id === id)?.name ?? "";
+  const sectionName = (id: string) => sections.find((section) => section.id === id)?.name;
   const placeWords = (id: string, { list, position, count }: SortPlace) => ({
-    name: channelName(id),
+    name: sectionName(id) ?? channelName(id),
     position,
     count,
     group: listOf(list)?.name ?? "",
   });
+  /** The channel sentence, or the section one when a section is what is carried. */
+  const said = (channel: MessageKey, section: MessageKey) => (id: string, place: SortPlace) =>
+    t(place.list === SECTIONS ? section : channel, placeWords(id, place));
 
   // Who can be carried now: never you, and never someone already on the way.
   const carriable = new Map<string, VoiceDragData>();
@@ -183,13 +205,16 @@ export function useRailMoves({
 
   const { container, list, item, handle, carry, copy, announcer, carrying } = useRailDrag({
     lists,
-    onMove: ({ id, list, order }) =>
-      onMoveChannel({ channelId: id, sectionId: listOf(list)?.sectionId ?? null, order }),
+    onMove: ({ id, list, order }) => {
+      if (list === SECTIONS) onMoveSection?.(order);
+      else onMoveChannel({ channelId: id, sectionId: listOf(list)?.sectionId ?? null, order });
+    },
     messages: {
-      lifted: (id, place) => t("shell.reorderLifted", placeWords(id, place)),
-      moved: (id, place) => t("shell.reorderMoved", placeWords(id, place)),
-      dropped: (id, place) => t("shell.reorderDropped", placeWords(id, place)),
-      cancelled: () => t("shell.reorderCancelled"),
+      lifted: said("shell.reorderLifted", "shell.sectionLifted"),
+      moved: said("shell.reorderMoved", "shell.sectionMoved"),
+      dropped: said("shell.reorderDropped", "shell.sectionDropped"),
+      cancelled: (id) =>
+        t(sectionName(id) === undefined ? "shell.reorderCancelled" : "shell.sectionCancelled"),
     },
     // The rows of a closed group cannot take focus; the caption that opens it can.
     focusClosed: (list) => {
@@ -230,6 +255,10 @@ export function useRailMoves({
 
   const channelHandle = { roleDescription: t("shell.reorderHandle"), instructionsId: channelInstructions };
   const personHandle = { roleDescription: t("shell.dragHandle"), instructionsId: personInstructions };
+  const sectionHandle = {
+    roleDescription: t("shell.sectionHandle"),
+    instructionsId: sectionInstructions,
+  };
 
   return {
     container,
@@ -239,6 +268,14 @@ export function useRailMoves({
       item,
       ...(canSortChannels ? { handle: (id: string) => handle(id, channelHandle) } : {}),
     }),
+    /** What the sections take from the drags: their list, each one, and its caption as the handle. */
+    sectionRefs: {
+      list: list(SECTIONS),
+      item,
+      ...(onMoveSection === undefined
+        ? {}
+        : { handle: (id: string) => handle(id, sectionHandle) }),
+    },
     /** The handle that carries a seated person, for whoever can be carried. */
     carry: (channelId: string, person: PersonVM): DragHandleProps | undefined => {
       const key = occupantKey(channelId, person.id);
@@ -249,6 +286,7 @@ export function useRailMoves({
         announcer={announcer}
         instructions={[
           { id: channelInstructions, text: t("shell.reorderInstructions") },
+          { id: sectionInstructions, text: t("shell.sectionInstructions") },
           { id: personInstructions, text: t("shell.dragInstructions") },
         ]}
         carrying={carrying}

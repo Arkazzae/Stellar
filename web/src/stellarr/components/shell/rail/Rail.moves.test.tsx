@@ -66,15 +66,32 @@ function applyMove<T extends TextChannelVM | VoiceChannelVM>(channels: T[], move
 
 /** The rail over channels that take its moves, as the directory store would. */
 function LiveRail(props: RailProps) {
-  const [shown, setShown] = useState({ from: props, text: props.textChannels, voice: props.voiceChannels });
-  if (shown.from !== props) {
-    setShown({ from: props, text: props.textChannels, voice: props.voiceChannels });
-  }
+  const fresh = (from: RailProps) => ({
+    from,
+    text: from.textChannels,
+    voice: from.voiceChannels,
+    sections: from.sections ?? [],
+  });
+  const [shown, setShown] = useState(() => fresh(props));
+  if (shown.from !== props) setShown(fresh(props));
+  const { onMoveSection } = props;
   return (
     <Rail
       {...props}
       textChannels={shown.text}
       voiceChannels={shown.voice}
+      sections={shown.sections}
+      {...(onMoveSection === undefined
+        ? {}
+        : {
+            onMoveSection: (order: string[]) => {
+              setShown((current) => ({
+                ...current,
+                sections: order.flatMap((id) => current.sections.filter((section) => section.id === id)),
+              }));
+              return onMoveSection(order);
+            },
+          })}
       onMoveChannel={(move) => {
         setShown((current) => ({
           ...current,
@@ -325,6 +342,51 @@ describe("Rail channel sorting", () => {
       sectionId: "sec-1",
       order: ["v-3", "v-2"],
     });
+  });
+});
+
+describe("Rail section sorting", () => {
+  const caption = (name: string) => screen.getByRole("button", { name });
+
+  it("moves a section by its caption, below the loose groups, and a click still closes it", () => {
+    const onMoveSection = vi.fn();
+    setup({ onMoveSection });
+
+    // Archiwum (365) goes above Projekty (234): its caption is pressed 17 px
+    // into the section, and its top is held where Projekty's is.
+    pressAt(caption("Archiwum"), 382);
+    moveTo(390, 251);
+    letGo(251);
+    expect(onMoveSection).toHaveBeenCalledExactlyOnceWith(["sec-2", "sec-1"]);
+    expect(said()).toBe("Upuszczono sekcję Archiwum na pozycji 1 z 2.");
+
+    fireEvent.click(caption("Projekty"));
+    expect(caption("Projekty")).toHaveAttribute("aria-expanded", "false");
+  });
+
+  it("walks a section down with the keyboard and keeps focus on its caption", () => {
+    const onMoveSection = vi.fn();
+    setup({ onMoveSection });
+    const projekty = caption("Projekty");
+    projekty.focus();
+
+    fireEvent.keyDown(projekty, { key: " " });
+    expect(said()).toBe("Podniesiono sekcję Projekty, pozycja 1 z 2.");
+    fireEvent.keyDown(projekty, { key: "ArrowDown" });
+    fireEvent.keyDown(projekty, { key: " " });
+
+    expect(onMoveSection).toHaveBeenCalledExactlyOnceWith(["sec-2", "sec-1"]);
+    expect(caption("Projekty")).toHaveFocus();
+  });
+
+  it("leaves the captions plain buttons for whoever may not reorder sections", () => {
+    const { onMoveChannel } = setup();
+
+    expect(caption("Projekty")).not.toHaveAttribute("aria-roledescription");
+    pressAt(caption("Archiwum"), 382);
+    moveTo(390, 251);
+    letGo(251);
+    expect(onMoveChannel).not.toHaveBeenCalled();
   });
 });
 

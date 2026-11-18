@@ -1,6 +1,7 @@
-import type { ReactNode } from "react";
+import type { ReactNode, RefCallback } from "react";
 
 import { Icon } from "@stellarr/icons";
+import type { DragHandleProps } from "@/lib/drag/useRailDrag";
 import { useLanguage } from "@/state/hooks";
 
 export interface RailSectionProps {
@@ -22,6 +23,14 @@ export interface RailSectionProps {
    * where a channel dragged into the section would go.
    */
   children: ReactNode;
+  /** The section as the rail sorts it, caption and channels together. */
+  itemRef?: RefCallback<HTMLElement>;
+  /**
+   * Makes the caption the handle the rail sorts sections by: a press has to
+   * travel a few pixels before it is a drag, so a click still opens or
+   * closes the section.
+   */
+  drag?: DragHandleProps;
 }
 
 /**
@@ -38,16 +47,19 @@ export function RailSection({
   empty,
   onOpenSettings,
   children,
+  itemRef,
+  drag,
 }: RailSectionProps) {
   const { t } = useLanguage();
   return (
-    <div className="rail-section">
+    <div className="rail-section" ref={itemRef}>
       <div className="rail-cap rail-section-cap">
         <button
           type="button"
           className="group-caption"
           aria-expanded={open}
           aria-controls={id}
+          {...drag}
           onClick={onToggle}
         >
           <span className="rail-section-mark" aria-hidden="true">
