@@ -116,7 +116,7 @@ describe("VoiceProvider client lifecycle", () => {
     harness.user = { id: "self", displayName: "Self" };
     view.rerender();
 
-    expect(fake().join).toHaveBeenCalledWith("voice");
+    expect(fake().join).toHaveBeenCalledWith("voice", { private: false });
   });
 
   it("drops a queued join when the caller leaves before a client exists", async () => {
@@ -148,7 +148,7 @@ describe("VoiceProvider joining and leaving", () => {
     act(() => view.result.current.join("voice"));
 
     expect(harness.ports.soundboard.preparePlayback).toHaveBeenCalled();
-    expect(fake().join).toHaveBeenCalledWith("voice");
+    expect(fake().join).toHaveBeenCalledWith("voice", { private: false });
     expect(triggerHaptic).toHaveBeenCalledWith("light");
   });
 
@@ -167,6 +167,13 @@ describe("VoiceProvider joining and leaving", () => {
     act(() => view.result.current.join("dm", { label: "Ada", privateCall: true }));
     act(() => fake().set({ connection: "connected" }));
 
+    // The client decides the call by the conversation's encryption, also
+    // when it is joined again without being told what the room is.
+    expect(fake().join).toHaveBeenCalledWith("dm", { private: true });
+    act(() => fake().set({ connection: "failed" }));
+    act(() => view.result.current.join("dm"));
+    expect(fake().join).toHaveBeenLastCalledWith("dm", { private: true });
+    act(() => fake().set({ connection: "connected" }));
     expect(view.result.current.call).toMatchObject({
       channelId: "dm",
       channelName: "Ada",

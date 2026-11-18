@@ -257,6 +257,27 @@ export function preferOpusInSdp(sdp: string | undefined | null): string {
 }
 
 /**
+ * Drop the header extension `uri` from every section of `kind`, so it is not
+ * negotiated and nothing sent on those sections carries it.
+ */
+export function withoutHeaderExtension(sdp: string | undefined | null, uri: string, kind: string): string {
+  return editSdp(sdp, (lines) => {
+    let changed = false;
+    for (const section of mediaSections(lines).reverse()) {
+      if (section.kind !== kind) continue;
+      for (let index = section.end - 1; index > section.start; index -= 1) {
+        const line = lines[index] ?? "";
+        if (/^a=extmap:\d+(?:\/\w+)?\s/.test(line) && line.split(/\s+/)[1] === uri) {
+          lines.splice(index, 1);
+          changed = true;
+        }
+      }
+    }
+    return changed;
+  });
+}
+
+/**
  * How each audio section of a local description should be tuned.
  *
  * `byMid` is authoritative, since the caller knows which transceiver carries

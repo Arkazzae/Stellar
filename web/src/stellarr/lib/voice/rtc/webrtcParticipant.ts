@@ -45,6 +45,8 @@ export interface Participant {
   screenAudio: RemoteVoice | null;
   /** Every remote stream seen, so routing can be re-evaluated at will. */
   readonly media: RemoteMedia;
+  /** The person says they encrypt their frames end to end. */
+  encrypted: boolean;
 }
 
 export interface ParticipantInit {
@@ -69,6 +71,7 @@ export function createParticipant(init: ParticipantInit): Participant {
     voice: init.createVoice(),
     screenAudio: null,
     media: new RemoteMedia(),
+    encrypted: false,
   };
 }
 
@@ -114,6 +117,7 @@ export function receiveRemoteState(
   state: RtcStatePayload,
 ): void {
   person.muted = state.muted;
+  person.encrypted = state.encrypted;
   person.media.announce(state);
   mediaChanged(env, person);
 }

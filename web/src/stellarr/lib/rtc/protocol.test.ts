@@ -67,16 +67,20 @@ describe("Stellarr RTC protocol v1", () => {
       muted: true,
       screenStreamId: "screen-1",
       cameraStreamId: "camera-1",
+      encrypted: true,
     };
     expect(decodeRtcState(encodeRtcState(state))).toEqual(state);
     expect(decodeRtcState('{"muted":true}')).toBeNull();
     expect(decodeRtcState('{"muted":"yes","screenStreamId":null}')).toBeNull();
+    // A side that does not say it encrypts does not.
+    expect(decodeRtcState('{"muted":false,"screenStreamId":null}')).toMatchObject({ encrypted: false });
+    expect(decodeRtcState('{"muted":false,"screenStreamId":null,"encrypted":"yes"}')).toBeNull();
   });
 
   it("accepts cameraStreamId as an optional RTC v1 extension", () => {
     expect(
       decodeRtcState('{"muted":false,"screenStreamId":null}'),
-    ).toEqual({ muted: false, screenStreamId: null, cameraStreamId: null });
+    ).toEqual({ muted: false, screenStreamId: null, cameraStreamId: null, encrypted: false });
     expect(
       decodeRtcState(
         '{"muted":false,"screenStreamId":null,"cameraStreamId":42}',

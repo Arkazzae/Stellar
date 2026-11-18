@@ -102,12 +102,14 @@ export function VoiceProvider({ children }: { children: ReactNode }) {
   const [holder] = useState(() => new VoiceHolder());
   // A join asked for before the client exists is honoured, not lost. It is a
   // ref because nothing renders it: it is read back once, when a client appears.
-  const pendingJoin = useRef<string | null>(null);
+  const pendingJoin = useRef<{ channelId: string; private: boolean } | null>(null);
   const [deafened, setDeafened] = useState(false);
   // The opt-in names one concrete stream, so a new stream is opt-in by
   // construction and no state needs syncing from the render phase.
   const [watchedShareKey, setWatchedShareKey] = useState<string | null>(null);
   const [presentation, setPresentation] = useState<PresentedRoom | null>(null);
+  // The same, read by `join` without waiting for a render.
+  const presented = useRef<PresentedRoom | null>(null);
 
   const userId = user?.id ?? null;
   const displayName = user?.displayName ?? "";
@@ -135,7 +137,7 @@ export function VoiceProvider({ children }: { children: ReactNode }) {
     holder.attach(client);
     const queued = pendingJoin.current;
     pendingJoin.current = null;
-    if (queued !== null) void client.join(queued).catch(() => {});
+    if (queued !== null) void client.join(queued.channelId, { private: queued.private }).catch(() => {});
     return () => holder.detach();
   }, [holder, ports, userId, translate]);
 
@@ -213,7 +215,17 @@ export function VoiceProvider({ children }: { children: ReactNode }) {
       // Runs inside the click's user activation. Priming Web Audio here lets
       // clips received later from another participant pass the autoplay policy.
       ports.soundboard.preparePlayback();
-      setPresentation(next === undefined ? null : { ...next, id: channelId });
+      // Joining the same room again without saying what it is, as the
+      // notice's "join again" does, keeps what it was: a private call stays
+      // one, and is decided by its encryption again.
+      const room =
+        next !== undefined
+          ? { ...next, id: channelId }
+          : presented.current?.id === channelId
+            ? presented.current
+            : null;
+      presented.current = room;
+      setPresentation(room);
       const client = holder.getClient();
       if (
         client?.getSnapshot().channelId === channelId &&
@@ -221,16 +233,18 @@ export function VoiceProvider({ children }: { children: ReactNode }) {
       ) {
         return;
       }
+      // A private conversation's call is decided by its encryption first.
+      const privateCall = room?.privateCall === true;
       if (client === null) {
-        if (pendingJoin.current === channelId) return;
+        if (pendingJoin.current?.channelId === channelId) return;
         setWatchedShareKey(null);
-        pendingJoin.current = channelId;
+        pendingJoin.current = { channelId, private: privateCall };
         triggerHaptic("light");
         return;
       }
       setWatchedShareKey(null);
       triggerHaptic("light");
-      void client.join(channelId).catch(() => {});
+      void client.join(channelId, { private: privateCall }).catch(() => {});
     },
     [holder, ports],
   );
@@ -247,6 +261,7 @@ export function VoiceProvider({ children }: { children: ReactNode }) {
       return;
     }
     setWatchedShareKey(null);
+    presented.current = null;
     setPresentation(null);
     triggerHaptic("light");
     setDeafened(false);

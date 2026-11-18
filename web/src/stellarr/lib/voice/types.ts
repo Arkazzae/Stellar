@@ -55,7 +55,9 @@ export type VoiceErrorKind =
   | "session-replaced"
   | "channel-kicked"
   | "camera"
-  | "screen-share";
+  | "screen-share"
+  /** An encrypted conversation's call that cannot be made encrypted, so it is not made. */
+  | "encryption";
 
 export interface VoiceError {
   kind: VoiceErrorKind;
@@ -106,6 +108,11 @@ export interface VoicePeer {
   screen: VoiceScreenShare | null;
   /** Null when the participant's camera is off. */
   camera: VoiceCamera | null;
+  /**
+   * In an encrypted call: this person's sound or picture reaches this side
+   * but does not decrypt, so nothing of it is played. Absent when all is well.
+   */
+  undecryptable?: { audio: boolean; video: boolean };
 }
 
 /** Coarse, non-alarming call health for the dock. */
@@ -156,6 +163,8 @@ export interface VoiceState {
   /** Set when a requested processing mode silently degraded. */
   degraded: string | null;
   diagnostics: VoiceDiagnostics;
+  /** This side encrypts and decrypts the call's frames end to end. */
+  encrypted: boolean;
 }
 
 export const IDLE_VOICE_STATE: VoiceState = Object.freeze({
@@ -173,9 +182,19 @@ export const IDLE_VOICE_STATE: VoiceState = Object.freeze({
   noiseSuppressionActive: false,
   degraded: null,
   diagnostics: IDLE_DIAGNOSTICS,
+  encrypted: false,
 });
 
 /** What this receiver wants; voices remain enabled independently of video preferences. */
+export interface VoiceJoinOptions {
+  /**
+   * The room is a private conversation. Its call is decided from the
+   * conversation's encryption before anything is opened: encrypted, plain,
+   * or not at all.
+   */
+  private?: boolean;
+}
+
 export interface VoiceReceivePreferences {
   screen: { userId: UserId; streamId: string } | null;
   cameras: boolean;
@@ -191,7 +210,7 @@ export interface VoiceReceivePreferences {
 export interface VoiceClient {
   getSnapshot(): VoiceState;
   subscribe(listener: () => void): () => void;
-  join(channelId: ChannelId): Promise<void>;
+  join(channelId: ChannelId, options?: VoiceJoinOptions): Promise<void>;
   leave(): Promise<void>;
   /**
    * Repair the call in progress without leaving it: the others never see this

@@ -21,6 +21,7 @@ import { ParticipantPreferencesStore } from "../participantPreferences";
 import { RemoteVoiceMixer } from "../playback/remoteMixer";
 import { DEFAULT_SETTINGS, type VoiceSettings } from "../settings";
 import { SpeechDetector } from "../capture/vad";
+import type { CallKeyEvent, CallKeys } from "../e2ee/callCrypto";
 import { WebRtcVoiceClient, type WebRtcVoiceClientOptions } from "./webrtc";
 
 const CHANNEL = "ch-salon";
@@ -48,6 +49,8 @@ class FakeMediaStream {
 
 class FakeSender {
   parameters = { encodings: [{}] } as unknown as RTCRtpSendParameters;
+  /** The encrypting transform of an encrypted call. */
+  transform?: unknown;
   constructor(public track: MediaStreamTrack | null) {}
   replaceTrack = vi.fn(async (next: MediaStreamTrack | null) => {
     this.track = next;
@@ -61,13 +64,17 @@ class FakeSender {
 
 class FakeTransceiver {
   setCodecPreferences = vi.fn();
+  /** What a receiving transform is put on, as on a browser's receiver. */
+  readonly receiver: { track: { kind: string }; transform?: unknown };
   constructor(
     readonly sender: FakeSender,
     readonly kind: "audio" | "video",
     public direction: RTCRtpTransceiverDirection,
     public mid: string | null,
     readonly streamId: string | null,
-  ) {}
+  ) {
+    this.receiver = { track: { kind } };
+  }
 }
 
 interface Incoming {
@@ -89,7 +96,12 @@ class FakePeerConnection {
 
   onicecandidate: ((event: { candidate: RTCIceCandidate | null }) => void) | null = null;
   ontrack:
-    | ((event: { track: MediaStreamTrack; streams: MediaStream[]; transceiver: FakeTransceiver }) => void)
+    | ((event: {
+        track: MediaStreamTrack;
+        streams: MediaStream[];
+        transceiver: FakeTransceiver;
+        receiver: FakeTransceiver["receiver"];
+      }) => void)
     | null = null;
   onnegotiationneeded: (() => void) | null = null;
   onconnectionstatechange: (() => void) | null = null;
@@ -165,7 +177,7 @@ class FakePeerConnection {
         null,
       );
       this.transceivers.push(transceiver);
-      this.ontrack?.({ track, streams: [], transceiver });
+      this.ontrack?.({ track, streams: [], transceiver, receiver: transceiver.receiver });
     }
   });
 
@@ -465,7 +477,12 @@ function tracks(list: Entry[]): void {
 
 function state(
   fromUserId: string,
-  payload: { muted?: boolean; screenStreamId?: string | null; cameraStreamId?: string | null },
+  payload: {
+    muted?: boolean;
+    screenStreamId?: string | null;
+    cameraStreamId?: string | null;
+    encrypted?: boolean;
+  },
 ): void {
   realtime.emit("VoiceSignal", {
     protocolVersion: RTC_PROTOCOL_VERSION,
@@ -476,6 +493,7 @@ function state(
       muted: payload.muted ?? false,
       screenStreamId: payload.screenStreamId ?? null,
       cameraStreamId: payload.cameraStreamId ?? null,
+      ...(payload.encrypted === undefined ? {} : { encrypted: payload.encrypted }),
     }),
   });
 }
@@ -1772,6 +1790,7 @@ describe("joining and leaving", () => {
       muted: false,
       screenStreamId: null,
       cameraStreamId: null,
+      encrypted: false,
     });
   });
 
@@ -2901,7 +2920,12 @@ describe("live settings", () => {
     await vi.waitFor(() => expect(statesSent()).toHaveLength(1));
     const [frame] = statesSent();
     expect(frame?.toUserId).toBeUndefined();
-    expect(JSON.parse(frame!.payload)).toEqual({ muted: false, screenStreamId: null, cameraStreamId: null });
+    expect(JSON.parse(frame!.payload)).toEqual({
+      muted: false,
+      screenStreamId: null,
+      cameraStreamId: null,
+      encrypted: false,
+    });
   });
 
   it("sends no state when the microphone did not move", async () => {
@@ -3430,6 +3454,201 @@ describe("camera", () => {
       expect.objectContaining({ encodings: [expect.objectContaining({ maxBitrate: 3_000_000 })] }),
     );
     expect(realtime.leaveVoice).not.toHaveBeenCalled();
+  });
+});
+
+describe("encrypted private calls", () => {
+  /** A worker that only records what the call tells it. */
+  class RecordingWorker {
+    static made: RecordingWorker[] = [];
+    readonly posted: { type: string; sequence?: number | null }[] = [];
+    onmessage: ((event: MessageEvent) => void) | null = null;
+    terminated = false;
+    constructor() {
+      RecordingWorker.made.push(this);
+    }
+    postMessage(message: { type: string }) {
+      this.posted.push(message);
+    }
+    terminate() {
+      this.terminated = true;
+    }
+  }
+
+  const KEYS: CallKeys = {
+    self: "u-a",
+    send: { sequence: 1, epochId: "epoch-1", base: { type: "secret" } as CryptoKey },
+  };
+
+  function keySource(keys: () => Promise<CallKeys | null>) {
+    const listeners = new Set<(event: CallKeyEvent) => void>();
+    return {
+      keys: vi.fn(keys),
+      follow: vi.fn(async () => KEYS),
+      epoch: vi.fn(async () => null),
+      subscribe: vi.fn((_conversation: string, listener: (event: CallKeyEvent) => void) => {
+        listeners.add(listener);
+        return () => listeners.delete(listener);
+      }),
+      emit: (event: CallKeyEvent) => listeners.forEach((listener) => listener(event)),
+    };
+  }
+
+  function encrypting(source: ReturnType<typeof keySource>) {
+    return build({
+      callEncryption: source,
+      createFrameWorker: () => new RecordingWorker() as unknown as Worker,
+    });
+  }
+
+  /** Join the conversation's call and have the first offer answered. */
+  async function calling(client: WebRtcVoiceClient): Promise<FakePeerConnection> {
+    await client.join(CHANNEL, { private: true });
+    const pc = latestConnection();
+    await answerOffer(pc);
+    return pc;
+  }
+
+  /** The browser has WebRTC Encoded Transform; each transform records what it was made for. */
+  function withTransforms(): unknown[] {
+    const made: unknown[] = [];
+    vi.stubGlobal(
+      "RTCRtpScriptTransform",
+      class {
+        constructor(_worker: unknown, options: unknown) {
+          made.push(options);
+        }
+      },
+    );
+    vi.stubGlobal("RTCRtpReceiver", {
+      getCapabilities: (kind: string) => ({
+        codecs:
+          kind === "audio"
+            ? [{ mimeType: "audio/opus" }, { mimeType: "audio/telephone-event" }]
+            : [{ mimeType: "video/VP8" }, { mimeType: "video/H264" }, { mimeType: "video/rtx" }],
+      }),
+    });
+    return made;
+  }
+
+  beforeEach(() => {
+    RecordingWorker.made = [];
+  });
+
+  it("does not open the microphone or take the seat where this browser cannot encrypt the call", async () => {
+    const source = keySource(async () => KEYS);
+    const client = encrypting(source);
+
+    await client.join(CHANNEL, { private: true });
+
+    expect(getUserMedia).not.toHaveBeenCalled();
+    expect(realtime.joinVoice).not.toHaveBeenCalled();
+    expect(client.getSnapshot()).toMatchObject({ connection: "failed", error: { kind: "encryption" }, encrypted: false });
+    expect(RecordingWorker.made).toHaveLength(0);
+  });
+
+  it("does not call at all when the conversation's keys cannot be read", async () => {
+    withTransforms();
+    const source = keySource(async () => {
+      throw new Error("offline");
+    });
+    const client = encrypting(source);
+
+    await client.join(CHANNEL, { private: true });
+
+    expect(getUserMedia).not.toHaveBeenCalled();
+    expect(realtime.joinVoice).not.toHaveBeenCalled();
+    expect(client.getSnapshot().error?.kind).toBe("encryption");
+
+    // Joined again from the notice, which does not say the room is private,
+    // it is still decided by the conversation's encryption.
+    await client.join(CHANNEL);
+    expect(source.keys).toHaveBeenCalledTimes(2);
+    expect(realtime.joinVoice).not.toHaveBeenCalled();
+  });
+
+  it("calls in the clear when the server says the conversation is not encrypted, and never asks for a channel", async () => {
+    withTransforms();
+    const source = keySource(async () => null);
+    const client = encrypting(source);
+
+    await client.join(CHANNEL);
+    expect(source.keys).not.toHaveBeenCalled();
+    await client.leave();
+    await client.join(CHANNEL, { private: true });
+
+    expect(source.keys).toHaveBeenCalledTimes(1);
+    expect(realtime.joinVoice).toHaveBeenCalledTimes(2);
+    expect(client.getSnapshot().encrypted).toBe(false);
+    expect(RecordingWorker.made).toHaveLength(0);
+    expect(latestConnection().transceivers[0]?.sender.transform).toBeUndefined();
+  });
+
+  it("encrypts every sender and receiver, says so to the other side, and keeps its keys through a replaced connection", async () => {
+    const transforms = withTransforms();
+    const source = keySource(async () => KEYS);
+    const client = encrypting(source);
+
+    const pc = await calling(client);
+    await vi.waitFor(() => expect(statesSent().length).toBeGreaterThan(0));
+    await hearB(pc);
+
+    expect(client.getSnapshot().encrypted).toBe(true);
+    expect(pc.transceivers[0]?.sender.transform).toBeDefined();
+    expect(transforms).toEqual([
+      { role: "send", kind: "audio", label: "tx:1" },
+      { role: "receive", kind: "audio", label: "rx:2", sender: "u-b" },
+    ]);
+    expect(JSON.parse(statesSent().at(-1)?.payload ?? "{}")).toMatchObject({ encrypted: true });
+    const offer = payloadOf(realtime.mediaOfKind("offer")[0]).sdp;
+    expect(fmtpOf(offer, "0")).toContain("cbr=1");
+    expect(fmtpOf(offer, "0")).toContain("usedtx=0");
+    expect(pc.transceivers[0]?.setCodecPreferences).toHaveBeenLastCalledWith([{ mimeType: "audio/opus" }]);
+
+    pc.setState("failed");
+    await vi.waitFor(() => expect(FakePeerConnection.instances).toHaveLength(2));
+    await vi.waitFor(() => expect(latestConnection().transceivers[0]?.sender.transform).toBeDefined());
+    expect(RecordingWorker.made).toHaveLength(1);
+    expect(source.keys).toHaveBeenCalledTimes(1);
+
+    await client.leave();
+    expect(RecordingWorker.made[0]?.terminated).toBe(true);
+    expect(client.getSnapshot().encrypted).toBe(false);
+  });
+
+  it("plays nothing of a person who encrypts while this side does not, then follows them on a new connection", async () => {
+    withTransforms();
+    const source = keySource(async () => null);
+    const following = deferred<CallKeys>();
+    source.follow.mockReturnValueOnce(following.promise);
+    const client = encrypting(source);
+    const pc = await calling(client);
+    const voice = await hearB(pc);
+
+    state("u-b", { encrypted: true });
+
+    // Their frames would play as noise: nothing of them plays meanwhile.
+    expect(voice.enabled).toBe(false);
+    expect(peerOf(client, "u-b")?.undecryptable).toEqual({ audio: true, video: false });
+    expect(source.follow).toHaveBeenCalledWith(CHANNEL);
+
+    following.resolve(KEYS);
+    await vi.waitFor(() => expect(FakePeerConnection.instances).toHaveLength(2));
+    expect(client.getSnapshot().encrypted).toBe(true);
+    expect(latestConnection().transceivers[0]?.sender.transform).toBeDefined();
+    expect(JSON.parse(statesSent().at(-1)?.payload ?? "{}")).toMatchObject({ encrypted: true });
+  });
+
+  it("follows its conversation into encryption when both switch it on during a plain call", async () => {
+    withTransforms();
+    const source = keySource(async () => null);
+    const client = encrypting(source);
+    await calling(client);
+
+    source.emit("on");
+
+    await vi.waitFor(() => expect(client.getSnapshot().encrypted).toBe(true));
+    await vi.waitFor(() => expect(FakePeerConnection.instances).toHaveLength(2));
   });
 });
 

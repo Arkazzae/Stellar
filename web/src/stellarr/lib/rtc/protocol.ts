@@ -62,6 +62,12 @@ export interface RtcStatePayload {
   screenStreamId: string | null;
   /** Optional on the wire so clients that predate it can ignore it. */
   cameraStreamId: string | null;
+  /**
+   * This side encrypts its frames end to end. A side that does not, in a
+   * private call, plays nothing of this person and follows them into
+   * encryption; absent on the wire means false.
+   */
+  encrypted: boolean;
 }
 
 /**
@@ -172,11 +178,12 @@ export function decodeRtcState(payload: string): RtcStatePayload | null {
   const record = parseRecord(payload);
   if (record === null) return null;
 
-  const { muted, screenStreamId, cameraStreamId = null } = record;
+  const { muted, screenStreamId, cameraStreamId = null, encrypted = false } = record;
   if (typeof muted !== "boolean") return null;
   if (screenStreamId !== null && typeof screenStreamId !== "string") return null;
   if (cameraStreamId !== null && typeof cameraStreamId !== "string") return null;
-  return { muted, screenStreamId, cameraStreamId };
+  if (typeof encrypted !== "boolean") return null;
+  return { muted, screenStreamId, cameraStreamId, encrypted };
 }
 
 // The payloads of the `MediaSignal` envelope, one encoder and one decoder per

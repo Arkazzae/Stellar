@@ -1,8 +1,15 @@
 import { AUDIO_PROFILES, opusParameters, profileFor } from "../audioProfiles";
+import type { CallCrypto } from "../e2ee/callCrypto";
+import {
+  AUDIO_LEVEL_EXTENSION,
+  ENCRYPTED_OPUS_PARAMETERS,
+  restrictForEncryption,
+} from "../e2ee/encryptedMedia";
 import { RecoveryWatchdog } from "./lifecycle";
 import {
   opusFirstCodecList,
   tuneLocalDescription,
+  withoutHeaderExtension,
   type AudioSectionTuning,
   type AudioTuningPlan,
 } from "./sdp";
@@ -39,6 +46,8 @@ export interface Link {
   /** An offer of this side's is being made; a media server offer that meets it is ignored. */
   makingOffer: boolean;
   readonly flow: MediaFlow;
+  /** The frame encryption of an encrypted call, on every sender and receiver; null in a plain call. */
+  readonly crypto: CallCrypto | null;
 }
 
 export interface LinkRecovery {
@@ -52,16 +61,20 @@ export interface LinkRecovery {
 export interface LinkInit {
   iceServers: RTCIceServer[];
   recovery: LinkRecovery;
+  crypto?: CallCrypto | null;
 }
 
 export function createLink(init: LinkInit): Link {
   const { recovery } = init;
+  const crypto = init.crypto ?? null;
   const connection = new RTCPeerConnection({
     iceServers: init.iceServers,
     // Every Stellarr connection speaks BUNDLE. Gathering one transport avoids
     // multiplying TURN allocations when more tracks are added later.
     bundlePolicy: "max-bundle",
-  });
+    // Chromium's older frame API works only on a connection made for it.
+    ...(crypto?.needsEncodedStreams ? { encodedInsertableStreams: true } : {}),
+  } as RTCConfiguration);
 
   const link: Link = {
     connection,
@@ -83,6 +96,7 @@ export function createLink(init: LinkInit): Link {
       lastSent: 0,
       lastReceived: 0,
     },
+    crypto,
   };
   return link;
 }
@@ -97,7 +111,11 @@ export function createLink(init: LinkInit): Link {
  * always a new section the media server accepts.
  */
 export function addSender(link: Link, track: MediaStreamTrack, stream: MediaStream): RTCRtpSender {
-  return link.connection.addTransceiver(track, { direction: "sendonly", streams: [stream] }).sender;
+  const { sender } = link.connection.addTransceiver(track, { direction: "sendonly", streams: [stream] });
+  // In an encrypted call, from the sender's very first frame. A later
+  // `replaceTrack` keeps the transform.
+  link.crypto?.attachSender(sender, track.kind === "video" ? "video" : "audio");
+  return sender;
 }
 
 /**
@@ -191,6 +209,8 @@ export class Negotiator {
 
   private async describe(link: Link, type: "offer" | "answer"): Promise<void> {
     const { connection } = link;
+    const encrypted = link.crypto !== null;
+    if (encrypted) restrictForEncryption(connection, link.screenVideoSender);
     const description =
       type === "offer" ? await connection.createOffer() : await connection.createAnswer();
     const plan = audioTuningPlan(
@@ -198,8 +218,12 @@ export class Negotiator {
       this.env.settings(),
       this.env.screenAudioStereo(),
       this.env.audioUse.bind(this.env),
+      encrypted,
     );
-    const tuned = tuneLocalDescription(description, plan);
+    let tuned = tuneLocalDescription(description, plan);
+    if (encrypted && tuned.sdp) {
+      tuned = { ...tuned, sdp: withoutHeaderExtension(tuned.sdp, AUDIO_LEVEL_EXTENSION, "audio") };
+    }
 
     try {
       await connection.setLocalDescription(tuned);
@@ -226,15 +250,20 @@ function audioTuningPlan(
   settings: VoiceSettings,
   stereo: boolean,
   audioUse: NegotiatorEnv["audioUse"],
+  encrypted: boolean,
 ): AudioTuningPlan {
+  // An encrypted call sends every voice at a constant bitrate, so packet
+  // sizes and gaps do not follow speech (`encryptedMedia`).
+  const sealed = (parameters: Record<string, string>) =>
+    encrypted ? { ...parameters, ...ENCRYPTED_OPUS_PARAMETERS } : parameters;
   const speech = profileFor(settings);
   const speechTuning: AudioSectionTuning = {
-    parameters: opusParameters(speech),
+    parameters: sealed(opusParameters(speech)),
     ptime: speech.ptime,
   };
   const music = AUDIO_PROFILES.music;
   const musicTuning: AudioSectionTuning = {
-    parameters: opusParameters(music, stereo),
+    parameters: sealed(opusParameters(music, stereo)),
     ptime: music.ptime,
   };
 
@@ -251,7 +280,7 @@ function audioTuningPlan(
   // Whatever somebody else shares may have two channels; saying so costs
   // nothing when it has one.
   const receivedTuning: AudioSectionTuning = {
-    parameters: opusParameters(music, true),
+    parameters: sealed(opusParameters(music, true)),
     ptime: music.ptime,
   };
   const tunings: Record<AudioSectionUse, AudioSectionTuning> = {

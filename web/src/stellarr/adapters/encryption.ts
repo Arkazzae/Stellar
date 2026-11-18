@@ -4,6 +4,7 @@ import { createIndexedDbKeyStore, createMemoryKeyStore } from "@/lib/e2ee/store"
 import { probeE2eeSupport } from "@/lib/e2ee/support";
 import { describeUserAgent } from "@/lib/platform/userAgent";
 import type { RealtimeClient } from "@/lib/realtime/types";
+import type { CallKeySource } from "@/lib/voice/e2ee/callCrypto";
 import type { EncryptionPort } from "@/ports";
 
 /** "Chrome, macOS", in no language in particular: the server stores it as it is. */
@@ -17,6 +18,23 @@ function deviceLabel(): string {
 function webLock<T>(name: string, task: () => Promise<T>): Promise<T> {
   const locks = typeof navigator === "undefined" ? undefined : navigator.locks;
   return locks === undefined ? task() : locks.request(name, task);
+}
+
+/** The keys of private calls, from the same client that encrypts the conversation's messages. */
+export function callKeySource(client: E2eeClient): CallKeySource {
+  return {
+    keys: (conversationId) => client.callKeys(conversationId),
+    follow: (conversationId) => client.followCall(conversationId),
+    epoch: (conversationId, sequence) => client.callEpoch(conversationId, sequence),
+    subscribe: (conversationId, listener) =>
+      client.subscribe((event) => {
+        if (event.type === "keys" && (event.conversationId === undefined || event.conversationId === conversationId)) {
+          listener("keys");
+        } else if (event.type === "switch" && event.conversationId === conversationId) {
+          listener(event.state === "on" ? "on" : "off");
+        }
+      }),
+  };
 }
 
 export interface EncryptionRuntime {

@@ -61,6 +61,7 @@ function isSameState(a: VoiceState, b: VoiceState): boolean {
     a.cameraSupported === b.cameraSupported &&
     a.noiseSuppressionActive === b.noiseSuppressionActive &&
     a.degraded === b.degraded &&
+    a.encrypted === b.encrypted &&
     sameTransport(a.transport, b.transport) &&
     sameScreen(a.localScreen, b.localScreen) &&
     sameCamera(a.localCamera, b.localCamera) &&
@@ -132,6 +133,8 @@ function samePeer(a: VoicePeer, b: VoicePeer | undefined): boolean {
     a.self === b.self &&
     sameScreen(a.screen, b.screen) &&
     sameCamera(a.camera, b.camera) &&
+    a.undecryptable?.audio === b.undecryptable?.audio &&
+    a.undecryptable?.video === b.undecryptable?.video &&
     // Eight steps are plenty for a level meter; jitter must not re-render.
     Math.round(a.level * 8) === Math.round(b.level * 8)
   );
