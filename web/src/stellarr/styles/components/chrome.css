@@ -8,11 +8,15 @@
   button.group-caption:hover{color:var(--text-muted)}
   .group-caption .caret{transition:transform var(--dur-base) var(--ease-standard);display:inline-flex}
   .group-caption[aria-expanded="false"] .caret{transform:rotate(-90deg)}
+  /* The one grid row eases between 0fr and 1fr, so a group opens to its full
+     height however many channels it holds; a max-height to ease towards would
+     cut off whatever is below it. */
   .collapsible{
-    overflow:hidden;max-height:600px;
-    transition:max-height var(--dur-slow) var(--ease-standard), opacity var(--dur-slow) var(--ease-standard);
+    display:grid;grid-template-rows:1fr;
+    transition:grid-template-rows var(--dur-slow) var(--ease-standard), opacity var(--dur-slow) var(--ease-standard);
   }
-  .collapsible.closed{max-height:0;opacity:0}
+  .collapsible.closed{grid-template-rows:0fr;opacity:0}
+  .collapsible-body{min-height:0;overflow:hidden}
 
   /* ---------- KONTO: STATUS ---------- */
   .account .who span{display:flex;align-items:center;gap:4px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
