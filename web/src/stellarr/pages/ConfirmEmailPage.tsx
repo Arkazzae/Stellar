@@ -1,7 +1,8 @@
 import { Link, useSearchParams } from "@stellarr/router";
 import { useState } from "react";
 
-import { AuthFrame, authStyles as styles } from "@/components/auth/AuthFrame";
+import controls from "@/components/auth/AuthControls.module.css";
+import { AuthFrame } from "@/components/auth/AuthFrame";
 import type { MessageKey } from "@/i18n";
 import { singleQueryValue } from "@/lib/auth/query";
 import { useLanguage, usePorts } from "@/state/hooks";
@@ -14,6 +15,8 @@ const TITLE: Record<Outcome, MessageKey> = {
   taken: "confirmEmail.notChangedTitle",
   failed: "confirmEmail.notChangedTitle",
 };
+
+const PRIMARY = `${controls.button} ${controls.primary} ${controls.wide}`;
 
 const DESCRIPTION: Record<Outcome, MessageKey> = {
   changed: "confirmEmail.changed",
@@ -50,8 +53,8 @@ export default function ConfirmEmailPage() {
 
   if (outcome === null) {
     return (
-      <AuthFrame title={t("confirmEmail.title")} description={t("confirmEmail.description")}>
-        <button type="button" className={styles.submit} onClick={() => void confirm()} disabled={pending}>
+      <AuthFrame outcome="mail" title={t("confirmEmail.title")} description={t("confirmEmail.description")}>
+        <button type="button" className={PRIMARY} onClick={() => void confirm()} disabled={pending}>
           {pending ? t("common.saving") : t("confirmEmail.confirm")}
         </button>
       </AuthFrame>
@@ -59,13 +62,17 @@ export default function ConfirmEmailPage() {
   }
 
   return (
-    <AuthFrame title={t(TITLE[outcome])} description={t(DESCRIPTION[outcome])}>
+    <AuthFrame
+      outcome={outcome === "changed" ? "success" : outcome === "failed" ? "offline" : "failure"}
+      title={t(TITLE[outcome])}
+      description={t(DESCRIPTION[outcome])}
+    >
       {outcome === "failed" ? (
-        <button type="button" className={styles.submit} onClick={() => void confirm()} disabled={pending}>
+        <button type="button" className={PRIMARY} onClick={() => void confirm()} disabled={pending}>
           {t("confirmEmail.retry")}
         </button>
       ) : (
-        <Link className={styles.submit} href="/">
+        <Link className={PRIMARY} href="/">
           {t("linkAccount.back")}
         </Link>
       )}

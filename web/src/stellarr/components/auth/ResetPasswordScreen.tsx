@@ -1,12 +1,20 @@
 import { Link } from "@stellarr/router";
-import { useState, type FormEvent } from "react";
+import { useId, useState, type FormEvent } from "react";
 
 import { type Translator } from "@/i18n";
 import { translateForDocument } from "@/i18n/defaultLocale";
+import { MIN_PASSWORD_LENGTH } from "@/lib/auth/passwordStrength";
 
-import { AuthField } from "./AuthField";
-import { AuthFrame, authStyles as styles } from "./AuthFrame";
+import { FormError, PasswordField } from "./AuthField";
+import styles from "./AuthControls.module.css";
+import { AuthFrame } from "./AuthFrame";
+import { StrengthMeter } from "./StrengthMeter";
 
+/**
+ * Sets the new password from the mailed link. "Show" lets a person check
+ * what they typed, so there is no second field to type it into again.
+ * Saving it ends every other session of the account, and the page says so.
+ */
 export function ResetPasswordScreen({
   token,
   onSubmit,
@@ -16,8 +24,8 @@ export function ResetPasswordScreen({
   onSubmit: (token: string, password: string) => Promise<void>;
   t?: Translator;
 }) {
+  const errorId = useId();
   const [password, setPassword] = useState("");
-  const [confirm, setConfirm] = useState("");
   const [pending, setPending] = useState(false);
   const [changed, setChanged] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -25,12 +33,8 @@ export function ResetPasswordScreen({
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     if (pending) return;
-    if (password.length < 8) {
-      setError(t("auth.password.tooShort"));
-      return;
-    }
-    if (password !== confirm) {
-      setError(t("auth.password.mismatch"));
+    if (password.length < MIN_PASSWORD_LENGTH) {
+      setError(t("auth.password.length"));
       return;
     }
     setPending(true);
@@ -39,7 +43,6 @@ export function ResetPasswordScreen({
       await onSubmit(token, password);
       setChanged(true);
       setPassword("");
-      setConfirm("");
     } catch {
       setError(t("auth.reset.invalid"));
     } finally {
@@ -49,63 +52,44 @@ export function ResetPasswordScreen({
 
   if (!token) {
     return (
-      <AuthFrame
-        title={t("auth.reset.missingTitle")}
-        description={t("auth.reset.missingDescription")}
-      >
-        <Link className={styles.textLink} href="/forgot-password">
+      <AuthFrame scene="password" title={t("auth.reset.missingTitle")} description={t("auth.reset.missingDescription")}>
+        <Link className={`${styles.button} ${styles.primary} ${styles.wide}`} href="/forgot-password">
           {t("auth.reset.newLink")}
         </Link>
       </AuthFrame>
     );
   }
 
+  if (changed) {
+    return (
+      <AuthFrame scene="password" title={t("auth.reset.successTitle")} description={t("auth.reset.success")}>
+        <Link className={`${styles.button} ${styles.primary} ${styles.wide}`} href="/login">
+          {t("auth.reset.goLogin")}
+        </Link>
+      </AuthFrame>
+    );
+  }
+
   return (
-    <AuthFrame title={t("auth.reset.title")} description={t("auth.reset.description")}>
-      {changed ? (
-        <>
-          <p className={styles.success} role="status">
-            {t("auth.reset.success")}
-          </p>
-          <nav className={styles.links}>
-            <Link className={styles.textLink} href="/login">
-              {t("auth.reset.goLogin")}
-            </Link>
-          </nav>
-        </>
-      ) : (
-        <form className={styles.form} onSubmit={submit} noValidate>
-          <AuthField
-            label={t("auth.reset.newPassword")}
-            hint={t("auth.reset.passwordHint")}
-            name="password"
-            type="password"
-            autoComplete="new-password"
-            minLength={8}
-            value={password}
-            onChange={(event) => setPassword(event.target.value)}
-            disabled={pending}
-          />
-          <AuthField
-            label={t("auth.reset.confirmPassword")}
-            name="confirmPassword"
-            type="password"
-            autoComplete="new-password"
-            value={confirm}
-            onChange={(event) => setConfirm(event.target.value)}
-            disabled={pending}
-            invalid={confirm.length > 0 && confirm !== password}
-          />
-          {error ? (
-            <p className={styles.error} role="alert">
-              {error}
-            </p>
-          ) : null}
-          <button className={styles.submit} type="submit" disabled={pending}>
-            {pending ? t("auth.reset.pending") : t("auth.reset.submit")}
-          </button>
-        </form>
-      )}
+    <AuthFrame scene="password" title={t("auth.reset.title")} description={t("auth.reset.description")}>
+      <form className={styles.form} onSubmit={(event) => void submit(event)} noValidate>
+        <PasswordField
+          t={t}
+          label={t("auth.reset.newPassword")}
+          name="password"
+          autoComplete="new-password"
+          value={password}
+          onChange={(event) => setPassword(event.target.value)}
+          disabled={pending}
+          invalid={Boolean(error)}
+          errorId={error ? errorId : undefined}
+        />
+        <StrengthMeter password={password} username="" t={t} />
+        {error ? <FormError id={errorId}>{error}</FormError> : null}
+        <button className={`${styles.button} ${styles.primary} ${styles.wide}`} type="submit" disabled={pending}>
+          {pending ? t("auth.reset.pending") : t("auth.reset.submit")}
+        </button>
+      </form>
     </AuthFrame>
   );
 }

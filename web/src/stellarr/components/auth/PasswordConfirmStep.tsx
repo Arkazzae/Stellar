@@ -1,8 +1,10 @@
 import { useId, useRef, useState, type FormEvent } from "react";
 
-import { AuthField } from "@/components/auth/AuthField";
-import { AuthFrame, authStyles as styles, type StepFrame } from "@/components/auth/AuthFrame";
+import { FormError, PasswordField } from "@/components/auth/AuthField";
+import { AuthFrame, type StepFrame } from "@/components/auth/AuthFrame";
 import type { Translator } from "@/i18n";
+
+import styles from "./AuthControls.module.css";
 
 export interface PasswordConfirmStepProps {
   t: Translator;
@@ -38,13 +40,13 @@ export function PasswordConfirmStep({
   };
 
   return (
-    <Frame title={t("security.password.title")} description={t("security.password.description")}>
+    <Frame title={t("security.password.title")} description={t("security.password.description")} scene="second-step">
       <form className={styles.form} onSubmit={submit} noValidate>
-        <AuthField
+        <PasswordField
           ref={fieldRef}
+          t={t}
           label={t("auth.password")}
           name="password"
-          type="password"
           autoComplete="current-password"
           value={password}
           onChange={(event) => setPassword(event.target.value)}
@@ -53,21 +55,17 @@ export function PasswordConfirmStep({
           invalid={Boolean(error)}
           errorId={error ? errorId : undefined}
         />
-        {error ? (
-          <p className={styles.error} id={errorId} role="alert">
-            {error}
-          </p>
-        ) : null}
-        <button type="submit" className={styles.submit} disabled={pending}>
+        {error ? <FormError id={errorId}>{error}</FormError> : null}
+        <button type="submit" className={`${styles.button} ${styles.primary} ${styles.wide}`} disabled={pending}>
           {pending ? t("auth.mfa.pending") : t("security.password.submit")}
         </button>
       </form>
       {onBack ? (
-        <nav className={styles.links} aria-label={t("auth.login.options")}>
-          <button type="button" className={styles.textLink} onClick={onBack}>
+        <div>
+          <button type="button" className={styles.link} onClick={onBack}>
             {t("common.cancel")}
           </button>
-        </nav>
+        </div>
       ) : null}
     </Frame>
   );

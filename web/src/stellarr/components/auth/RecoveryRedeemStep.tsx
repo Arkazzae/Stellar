@@ -1,8 +1,10 @@
 import { useId, useRef, useState, type FormEvent } from "react";
 
-import { AuthField } from "@/components/auth/AuthField";
-import { AuthFrame, authStyles as styles } from "@/components/auth/AuthFrame";
+import { AuthField, FormError } from "@/components/auth/AuthField";
+import { AuthFrame } from "@/components/auth/AuthFrame";
 import type { Translator } from "@/i18n";
+
+import styles from "./AuthControls.module.css";
 
 export interface RecoveryRedeemStepProps {
   t: Translator;
@@ -38,7 +40,7 @@ export function RecoveryRedeemStep({ t, pending, error, onSubmit, onBack }: Reco
   };
 
   return (
-    <AuthFrame title={t("auth.recover.title")} description={t("auth.recover.description")}>
+    <AuthFrame title={t("auth.recover.title")} description={t("auth.recover.description")} scene="second-step">
       <form className={styles.form} onSubmit={submit} noValidate>
         <AuthField
           ref={fieldRef}
@@ -48,26 +50,23 @@ export function RecoveryRedeemStep({ t, pending, error, onSubmit, onBack }: Reco
           autoComplete="off"
           autoCapitalize="none"
           spellCheck={false}
+          className={styles.mono}
           value={credential}
           onChange={(event) => setCredential(event.target.value)}
           disabled={pending}
           invalid={Boolean(message)}
           errorId={message ? errorId : undefined}
         />
-        {message ? (
-          <p className={styles.error} id={errorId} role="alert">
-            {message}
-          </p>
-        ) : null}
-        <button type="submit" className={styles.submit} disabled={pending}>
+        {message ? <FormError id={errorId}>{message}</FormError> : null}
+        <button type="submit" className={`${styles.button} ${styles.primary} ${styles.wide}`} disabled={pending}>
           {pending ? t("auth.mfa.pending") : t("auth.recover.submit")}
         </button>
       </form>
-      <nav className={styles.links} aria-label={t("auth.login.options")}>
-        <button type="button" className={styles.textLink} onClick={onBack}>
+      <div>
+        <button type="button" className={styles.link} onClick={onBack}>
           {t("auth.recover.back")}
         </button>
-      </nav>
+      </div>
     </AuthFrame>
   );
 }

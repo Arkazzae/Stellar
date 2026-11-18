@@ -1,72 +1,76 @@
-import { useSearchParams } from "@stellarr/router";
+import { useRouter, useSearchParams } from "@stellarr/router";
 import { useEffect, useState } from "react";
 
+import { AuthFrame } from "@/components/auth/AuthFrame";
+import controls from "@/components/auth/AuthControls.module.css";
+import { LoginScreen } from "@/components/auth/LoginScreen";
 import { MfaChallengeStep } from "@/components/auth/MfaChallengeStep";
 import { MfaEnrollStep } from "@/components/auth/MfaEnrollStep";
+import { ServerUnreachable } from "@/components/auth/Outcomes";
 import { PasswordConfirmStep } from "@/components/auth/PasswordConfirmStep";
 import { QrCode } from "@/components/auth/QrCode";
 import { RecoveryCodesStep } from "@/components/auth/RecoveryCodesStep";
 import { RecoveryRedeemStep } from "@/components/auth/RecoveryRedeemStep";
-import { LoginScreen } from "@/components/auth/LoginScreen";
 import { useSignInFlow } from "@/containers/useSignInFlow";
+import { useSignInProviders, useInstanceName } from "@/hooks/useInstanceFacts";
 import { useRedirectWhenSignedIn } from "@/hooks/useRedirectWhenSignedIn";
+import type { Translator } from "@/i18n";
 import { safeReturnPath } from "@/lib/auth/returnPath";
 import { useLanguage, usePorts, useSession } from "@/state/hooks";
 
 import { usePrefetchApp } from "./loadApp";
 
-interface OidcConfiguration {
-  enabled?: boolean;
-  displayName?: string;
-  providers?: { displayName?: unknown; loginUrl?: unknown }[];
-}
-
-interface ExternalProvider {
-  displayName: string;
-  loginUrl: string;
-}
-
-const ORIGINAL_LOGIN = "/api/auth/oidc/login";
-
 /**
- * The identity providers the instance offers, none when sign-in is by
- * password only. A server from before several providers names one, which
- * signs in at the original address. Only addresses of this server's own
- * sign-in routes are followed.
+ * The identity provider confirmed someone the instance cannot sign in, or
+ * the round trip failed. Either way the password form is the way on, and
+ * the page says so before it shows it.
  */
-async function fetchExternalProviders(signal: AbortSignal): Promise<ExternalProvider[]> {
-  const response = await fetch("/api/auth/oidc", { credentials: "include", signal });
-  if (!response.ok) return [];
-  const configuration = (await response.json()) as OidcConfiguration;
-  if (!configuration.enabled) return [];
-  const listed = (Array.isArray(configuration.providers) ? configuration.providers : []).flatMap((provider) =>
-    typeof provider.loginUrl === "string" && /^\/api\/auth\/oidc\/([a-z0-9-]+\/)?login$/.test(provider.loginUrl)
-      ? [
-          {
-            displayName: typeof provider.displayName === "string" ? provider.displayName.trim() : "",
-            loginUrl: provider.loginUrl,
-          },
-        ]
-      : [],
+function ProviderProblem({
+  t,
+  notLinked,
+  instanceName,
+  onContinue,
+}: {
+  t: Translator;
+  notLinked: boolean;
+  instanceName: string | null;
+  onContinue(): void;
+}) {
+  return (
+    <AuthFrame
+      outcome="failure"
+      title={notLinked ? t("auth.oidc.notLinkedTitle") : t("auth.oidc.failedTitle")}
+      description={
+        notLinked
+          ? instanceName === null
+            ? t("auth.oidc.notLinked")
+            : t("auth.oidc.notLinkedNamed", { instance: instanceName })
+          : t("auth.oidc.failed")
+      }
+    >
+      <button type="button" className={`${controls.button} ${controls.primary} ${controls.wide}`} onClick={onContinue}>
+        {t("auth.oidc.usePassword")}
+      </button>
+    </AuthFrame>
   );
-  return listed.length > 0
-    ? listed
-    : [{ displayName: configuration.displayName?.trim() ?? "", loginUrl: ORIGINAL_LOGIN }];
 }
 
 export default function LoginPage() {
-  const { phase, loginPending, loginError } = useSession();
+  const { phase, loginPending, loginError, reload } = useSession();
   const { t } = useLanguage();
+  const router = useRouter();
   const params = useSearchParams();
   const oidcError = params.get("oidc_error");
   const returnPath = safeReturnPath(params.get("returnUrl"));
   usePrefetchApp(phase !== "loading");
-  const [providers, setProviders] = useState<ExternalProvider[]>([]);
+  const providers = useSignInProviders();
+  const instanceName = useInstanceName();
   const ports = usePorts();
   const [passkeyOffered, setPasskeyOffered] = useState(false);
   const confirm = params.get("confirm") === "1";
   // A recovery after the identity provider says which choice it left with.
   const [keepSignedIn, setKeepSignedIn] = useState(params.get("keep_signed_in") !== "0");
+  const [providerProblemSeen, setProviderProblemSeen] = useState(false);
   const flow = useSignInFlow({
     recoveryRequired: params.get("security_recovery_required") === "1",
     confirm,
@@ -77,13 +81,6 @@ export default function LoginPage() {
   // A confirmation leaves only once the second step is done, not as soon as
   // the session is found to be signed in.
   useRedirectWhenSignedIn(confirm && flow.step.kind !== "done" ? "loading" : phase, returnPath);
-
-  useEffect(() => {
-    const controller = new AbortController();
-    // The password form still works when the provider cannot be reached.
-    fetchExternalProviders(controller.signal).then(setProviders, () => undefined);
-    return () => controller.abort();
-  }, []);
 
   useEffect(() => {
     if (!flow.passkeysSupported) return;
@@ -98,12 +95,18 @@ export default function LoginPage() {
     };
   }, [flow.passkeysSupported, ports]);
 
-  const externalError =
-    oidcError === "not_linked"
-      ? t("auth.login.oidcNotLinked")
-      : oidcError === "failed"
-        ? t("auth.login.oidcFailed")
-        : null;
+  if (phase === "error") return <ServerUnreachable t={t} onRetry={reload} />;
+
+  if ((oidcError === "not_linked" || oidcError === "failed") && !providerProblemSeen) {
+    return (
+      <ProviderProblem
+        t={t}
+        notLinked={oidcError === "not_linked"}
+        instanceName={instanceName}
+        onContinue={() => setProviderProblemSeen(true)}
+      />
+    );
+  }
 
   const { step } = flow;
   if (step.kind === "challenge") {
@@ -117,6 +120,9 @@ export default function LoginPage() {
         onUseTrustedDevice={flow.continueOnTrustedDevice}
         onSendEmailCode={flow.sendEmailCode}
         onCancel={flow.cancel}
+        // Signed in already, the step only confirms who is there: going back
+        // leaves for the app, so it is no way to switch accounts.
+        showAccount={!confirm}
         // A trusted device cannot stand in for a fresh second step.
         offerTrust={step.challenge.purpose !== "reverify"}
         passkeysSupported={flow.passkeysSupported}
@@ -179,6 +185,7 @@ export default function LoginPage() {
   return (
     <LoginScreen
       t={t}
+      instanceName={instanceName}
       // A login that needs nothing more re-runs the session bootstrap, and the
       // redirect hook navigates once it reports ready. Any further step stays
       // on this page.
@@ -205,11 +212,10 @@ export default function LoginPage() {
         href: `${provider.loginUrl}?returnUrl=${encodeURIComponent(returnPath ?? "/")}${
           keepSignedIn ? "" : "&keepSignedIn=false"
         }`,
-        label: t("auth.login.oidc", {
-          provider: provider.displayName || t("auth.login.oidcProvider"),
-        }),
+        name: provider.displayName,
+        label: t("auth.login.oidc", { provider: provider.displayName }),
       }))}
-      externalError={externalError}
+      onInviteCode={(code) => router.push(`/invite/${encodeURIComponent(code)}`)}
     />
   );
 }

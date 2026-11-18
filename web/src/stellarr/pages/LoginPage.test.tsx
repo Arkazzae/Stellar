@@ -2,7 +2,8 @@ import { Router } from "@stellarr/router";
 import { createMemoryHistory, type MemoryHistory } from "@stellarr/router/testing";
 import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
+import { polishAsRead } from "@/test/translators";
 
 import { translateMessage, type MessageKey, type MessageValues } from "@/i18n";
 import { ApiError } from "@/lib/api/errors";
@@ -13,6 +14,7 @@ import type {
   AuthResult,
   MfaChallenge,
   SignInChallengePort,
+  SignInProvider,
 } from "@/ports";
 import { routes } from "@/routes";
 import type { SessionPhase } from "@/state/hooks";
@@ -35,6 +37,7 @@ const mocks = vi.hoisted(() => ({
     signIn: vi.fn<(input: { keepSignedIn?: boolean }) => Promise<AuthResult>>(),
   },
   ports: {} as object,
+  providers: vi.fn<() => Promise<SignInProvider[]>>(),
   leaveFor: vi.fn(),
   search: "",
 }));
@@ -48,16 +51,7 @@ vi.mock("@/state/hooks", () => ({
   }),
 }));
 
-function answerOidc(response: Response | Error) {
-  const fetchMock = vi.fn(async () => {
-    if (response instanceof Error) throw response;
-    return response;
-  });
-  vi.stubGlobal("fetch", fetchMock);
-  return fetchMock;
-}
-
-const configuration = (body: object) => Response.json(body);
+const KEYCLOAK: SignInProvider = { displayName: "Keycloak", loginUrl: "/api/auth/oidc/login" };
 
 let history: MemoryHistory;
 
@@ -99,11 +93,12 @@ const CHALLENGE: MfaChallenge = {
   emailCodeAvailable: true,
   trustedDeviceDays: 14,
   passkeyAvailable: false,
+  account: { displayName: "Maja", username: "maja", avatarColor: "oklch(0.58 0.14 84)", avatarUrl: null },
 };
 
 const MAJA = { id: "u-1", username: "maja", displayName: "Maja", presence: "online" as const };
 
-const t = (key: MessageKey, values?: MessageValues) => translateMessage("pl", key, values);
+const t = polishAsRead;
 
 function fakeChallengePort(overrides: Partial<SignInChallengePort> = {}): SignInChallengePort {
   return {
@@ -173,6 +168,8 @@ beforeEach(() => {
       passkeysSupported: () => mocks.passkeys.supported,
       passkeySignInAvailable: () => mocks.passkeys.available(),
       signInWithPasskey: (input: { keepSignedIn?: boolean }) => mocks.passkeys.signIn(input),
+      instanceName: async () => "Stellarr Dev",
+      signInProviders: () => mocks.providers(),
     },
     get security() {
       return mocks.security;
@@ -187,11 +184,7 @@ beforeEach(() => {
   mocks.session.loginPending = false;
   mocks.session.loginError = null;
   mocks.search = "";
-  answerOidc(configuration({ enabled: false }));
-});
-
-afterEach(() => {
-  vi.unstubAllGlobals();
+  mocks.providers = vi.fn(async () => []);
 });
 
 describe("LoginPage", () => {
@@ -207,7 +200,7 @@ describe("LoginPage", () => {
   });
 
   it("asks for a session that ends with the browser when told not to keep it", async () => {
-    answerOidc(configuration({ enabled: true, displayName: "Keycloak" }));
+    mocks.providers = vi.fn(async () => [KEYCLOAK]);
     const user = userEvent.setup();
     renderLogin();
 
@@ -216,7 +209,7 @@ describe("LoginPage", () => {
     await user.click(keep);
 
     // The provider's link carries the choice as well as the form.
-    expect(await screen.findByRole("link", { name: "Zaloguj przez Keycloak" })).toHaveAttribute(
+    expect(await screen.findByRole("link", { name: "Zaloguj się przez Keycloak" })).toHaveAttribute(
       "href",
       "/api/auth/oidc/login?returnUrl=%2F&keepSignedIn=false",
     );
@@ -251,11 +244,18 @@ describe("LoginPage", () => {
 
   it("shows no form while the session is being checked", () => {
     mocks.session.phase = "loading";
-
     renderLogin();
-
     expect(screen.getByText("Sprawdzanie sesji…")).toBeInTheDocument();
     expect(screen.queryByLabelText("Hasło")).not.toBeInTheDocument();
+  });
+
+  it("says the server does not answer instead of offering a form, and asks again", async () => {
+    const user = userEvent.setup();
+    mocks.session.phase = "error";
+    renderLogin();
+    await user.click(screen.getByRole("button", { name: t("auth.offline.retry") }));
+    expect(mocks.session.reload).toHaveBeenCalledOnce();
+    expect(screen.queryByLabelText("Hasło")).toBeNull();
   });
 
   it("leaves for the app when a session already works", () => {
@@ -266,77 +266,46 @@ describe("LoginPage", () => {
     expect(history.navigations).toEqual([{ kind: "replace", href: "/" }]);
   });
 
-  it("offers the external provider the instance reports, by its name", async () => {
-    const fetchMock = answerOidc(configuration({ enabled: true, displayName: " Keycloak " }));
+  it("offers every identity provider the instance lists, each at its own address", async () => {
+    mocks.providers = vi.fn(async () => [KEYCLOAK, { displayName: "Work", loginUrl: "/api/auth/oidc/work/login" }]);
 
     renderLogin();
 
-    const link = await screen.findByRole("link", { name: "Zaloguj przez Keycloak" });
-    expect(link).toHaveAttribute("href", "/api/auth/oidc/login?returnUrl=%2F");
-    expect(fetchMock).toHaveBeenCalledWith(
-      "/api/auth/oidc",
-      expect.objectContaining({ credentials: "include" }),
-    );
-  });
-
-  it("offers every provider the instance lists, each at its own address", async () => {
-    answerOidc(
-      configuration({
-        enabled: true,
-        displayName: "Keycloak",
-        providers: [
-          { id: "default", displayName: "Keycloak", loginUrl: "/api/auth/oidc/login" },
-          { id: "work", displayName: "Work", loginUrl: "/api/auth/oidc/work/login" },
-          // Not one of this server's routes: never offered.
-          { id: "evil", displayName: "Evil", loginUrl: "https://evil.example/login" },
-        ],
-      }),
-    );
-
-    renderLogin();
-
-    expect(await screen.findByRole("link", { name: "Zaloguj przez Work" })).toHaveAttribute(
+    expect(await screen.findByRole("link", { name: "Zaloguj się przez Work" })).toHaveAttribute(
       "href",
       "/api/auth/oidc/work/login?returnUrl=%2F",
     );
-    expect(screen.getByRole("link", { name: "Zaloguj przez Keycloak" })).toHaveAttribute(
+    expect(screen.getByRole("link", { name: "Zaloguj się przez Keycloak" })).toHaveAttribute(
       "href",
       "/api/auth/oidc/login?returnUrl=%2F",
     );
-    expect(screen.queryByRole("link", { name: "Zaloguj przez Evil" })).toBeNull();
   });
 
-  it("falls back to a generic provider name when the instance gives none", async () => {
-    answerOidc(configuration({ enabled: true, displayName: "  " }));
+  it("offers only the password when the providers cannot be read", async () => {
+    mocks.providers = vi.fn(async () => {
+      throw new ApiError("network", "offline");
+    });
 
     renderLogin();
-
-    expect(await screen.findByRole("link", { name: "Zaloguj przez konto główne" })).toBeVisible();
-  });
-
-  it.each([
-    ["is switched off", () => answerOidc(configuration({ enabled: false }))],
-    ["answers with an error", () => answerOidc(new Response("nope", { status: 500 }))],
-    ["cannot be reached", () => answerOidc(new TypeError("offline"))],
-  ])("offers only the password when the external provider %s", async (_case, arrange) => {
-    const fetchMock = arrange();
-
-    renderLogin();
-    await vi.waitFor(() => expect(fetchMock).toHaveBeenCalled());
+    await vi.waitFor(() => expect(mocks.providers).toHaveBeenCalled());
     expect(await screen.findByLabelText("Hasło")).toBeInTheDocument();
 
-    expect(screen.queryByRole("link", { name: /Zaloguj przez/ })).not.toBeInTheDocument();
+    expect(screen.queryByRole("link", { name: /Zaloguj się przez/ })).not.toBeInTheDocument();
   });
 
   it.each([
-    ["not_linked", "To konto główne nie jest jeszcze połączone"],
-    ["failed", "Logowanie przez konto główne nie powiodło się."],
-  ])("explains an external sign-in that ended with %s", async (code, message) => {
+    ["not_linked", "auth.oidc.notLinkedTitle"],
+    ["failed", "auth.oidc.failedTitle"],
+  ] as const)("explains an identity provider sign-in that ended with %s, then offers the password", async (code, title) => {
     mocks.search = `oidc_error=${code}`;
+    const user = userEvent.setup();
 
     renderLogin();
 
-    expect(await screen.findByRole("alert")).toHaveTextContent(message);
+    expect(await screen.findByRole("heading", { name: t(title) })).toBeVisible();
+    expect(screen.queryByLabelText("Hasło")).toBeNull();
+    await user.click(screen.getByRole("button", { name: t("auth.oidc.usePassword") }));
+    expect(screen.getByLabelText("Hasło")).toBeVisible();
   });
 
   it("ignores an unknown external sign-in error", async () => {
@@ -346,6 +315,17 @@ describe("LoginPage", () => {
 
     expect(await screen.findByLabelText("Hasło")).toBeInTheDocument();
     expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+  });
+
+  it("opens the invite a pasted link names", async () => {
+    const user = userEvent.setup();
+    renderLogin();
+
+    await user.click(await screen.findByRole("button", { name: t("auth.login.haveInvite") }));
+    await user.type(screen.getByRole("textbox", { name: t("auth.invite.linkLabel") }), "https://chat.example/invite/k7qm2xwp");
+    await user.click(screen.getByRole("button", { name: t("auth.invite.open") }));
+
+    expect(history.navigations.at(-1)).toEqual({ kind: "push", href: "/invite/k7qm2xwp" });
   });
 });
 
@@ -366,9 +346,9 @@ describe("LoginPage second factor", () => {
     expect(await screen.findByRole("heading", { name: t("auth.mfa.totpTitle") })).toBeVisible();
     expect(mocks.session.reload).not.toHaveBeenCalled();
 
-    await user.type(screen.getByRole("textbox", { name: t("auth.mfa.code") }), "123 456");
+    // The sixth digit sends the code; the trust choice is made before it.
     await user.click(screen.getByRole("checkbox", { name: t("auth.mfa.remember", { days: 14 }) }));
-    await user.click(screen.getByRole("button", { name: t("auth.mfa.submit") }));
+    await user.type(screen.getByRole("textbox", { name: t("auth.mfa.code") }), "123 456");
 
     expect(mocks.challenge.verify).toHaveBeenCalledExactlyOnceWith({
       challengeId: "c-1",
@@ -392,9 +372,9 @@ describe("LoginPage second factor", () => {
     const user = await signInTo({ kind: "challenge", challenge: CHALLENGE });
 
     await user.type(await screen.findByRole("textbox", { name: t("auth.mfa.code") }), "000000");
-    await user.click(screen.getByRole("button", { name: t("auth.mfa.submit") }));
 
     expect(await screen.findByRole("alert")).toHaveTextContent(t("auth.mfa.codeInvalid"));
+    expect(mocks.challenge.verify).toHaveBeenCalledOnce();
     expect(screen.getByRole("heading", { name: t("auth.mfa.totpTitle") })).toBeVisible();
     expect(mocks.session.reload).not.toHaveBeenCalled();
   });
@@ -408,7 +388,6 @@ describe("LoginPage second factor", () => {
     const user = await signInTo({ kind: "challenge", challenge: CHALLENGE });
 
     await user.type(await screen.findByRole("textbox", { name: t("auth.mfa.code") }), "000000");
-    await user.click(screen.getByRole("button", { name: t("auth.mfa.submit") }));
 
     expect(await screen.findByRole("alert")).toHaveTextContent(t("auth.mfa.expired"));
     expect(screen.getByRole("button", { name: "Zaloguj się" })).toBeVisible();
@@ -417,7 +396,7 @@ describe("LoginPage second factor", () => {
   it("sends an email code on request and counts down to the next one", async () => {
     const user = await signInTo({ kind: "challenge", challenge: CHALLENGE });
 
-    await user.click(await screen.findByRole("button", { name: t("auth.mfa.useEmail") }));
+    await user.click(await screen.findByRole("button", { name: new RegExp(t("auth.mfa.wayEmail")) }));
     expect(screen.getByText(t("auth.mfa.emailDescription", { address: "maja@example.test" }))).toBeVisible();
     await user.click(screen.getByRole("button", { name: t("auth.mfa.sendEmail") }));
 
@@ -428,7 +407,7 @@ describe("LoginPage second factor", () => {
   it("takes a recovery code without a method", async () => {
     const user = await signInTo({ kind: "challenge", challenge: CHALLENGE });
 
-    await user.click(await screen.findByRole("button", { name: t("auth.mfa.useRecovery") }));
+    await user.click(await screen.findByRole("button", { name: new RegExp(t("auth.mfa.wayRecovery")) }));
     await user.type(screen.getByRole("textbox", { name: t("auth.mfa.recoveryCode") }), "AAAA-BBBB");
     await user.click(screen.getByRole("button", { name: t("auth.mfa.submit") }));
 
@@ -461,10 +440,11 @@ describe("LoginPage second factor", () => {
     expect(screen.queryByLabelText("Hasło")).toBeNull();
   });
 
-  it("cancels on the server and returns to the password", async () => {
+  it("cancels on the server and returns to the password when the account is not the visitor's", async () => {
     const user = await signInTo({ kind: "challenge", challenge: CHALLENGE });
 
-    await user.click(await screen.findByRole("button", { name: t("auth.mfa.cancel") }));
+    expect(await screen.findByText("@maja")).toBeVisible();
+    await user.click(screen.getByRole("button", { name: t("auth.mfa.notMe") }));
 
     expect(mocks.challenge.cancel).toHaveBeenCalledOnce();
     expect(screen.getByRole("button", { name: "Zaloguj się" })).toBeVisible();
@@ -535,7 +515,7 @@ describe("LoginPage second factor", () => {
   });
 
   it("carries only a same-origin return path to the identity provider", async () => {
-    vi.stubGlobal("fetch", vi.fn(async () => configuration({ enabled: true, displayName: "Authentik" })));
+    mocks.providers = vi.fn(async () => [{ displayName: "Authentik", loginUrl: "/api/auth/oidc/login" }]);
     mocks.search = "returnUrl=%2F%2Fevil.example";
     const { unmount } = renderLogin();
     expect(await screen.findByRole("link", { name: /Authentik/ })).toHaveAttribute(
@@ -607,8 +587,9 @@ describe("LoginPage confirming a signed-in session", () => {
     expect(await screen.findByRole("heading", { name: t("auth.mfa.totpTitle") })).toBeVisible();
     expect(mocks.leaveFor).not.toHaveBeenCalled();
     expect(screen.queryByRole("checkbox")).toBeNull();
+    // Signed in already, the step names no account to switch from.
+    expect(screen.queryByRole("button", { name: t("auth.mfa.notMe") })).toBeNull();
     await user.type(screen.getByRole("textbox", { name: t("auth.mfa.code") }), "123456");
-    await user.click(screen.getByRole("button", { name: t("auth.mfa.submit") }));
 
     await waitFor(() => expect(mocks.leaveFor).toHaveBeenCalledExactlyOnceWith("/cockpit/"));
     expect(mocks.session.reload).not.toHaveBeenCalled();
@@ -660,7 +641,7 @@ describe("LoginPage with passkeys", () => {
     renderLogin();
 
     await user.click(await screen.findByRole("checkbox", { name: t("auth.login.keepSignedIn") }));
-    await user.click(await screen.findByRole("button", { name: t("auth.login.passkey") }));
+    await user.click(await screen.findByRole("button", { name: t("auth.login.passkeyFull") }));
 
     expect(mocks.passkeys.signIn).toHaveBeenCalledExactlyOnceWith({ keepSignedIn: false });
     await waitFor(() => expect(mocks.session.reload).toHaveBeenCalledOnce());
@@ -671,7 +652,7 @@ describe("LoginPage with passkeys", () => {
     mocks.passkeys.available = vi.fn(async () => true);
     const { unmount } = renderLogin();
     await screen.findByRole("textbox", { name: "Login lub e-mail" });
-    expect(screen.queryByRole("button", { name: t("auth.login.passkey") })).toBeNull();
+    expect(screen.queryByRole("button", { name: t("auth.login.passkeyFull") })).toBeNull();
     expect(mocks.passkeys.available).not.toHaveBeenCalled();
     unmount();
 
@@ -679,7 +660,7 @@ describe("LoginPage with passkeys", () => {
     mocks.passkeys.available = vi.fn(async () => false);
     renderLogin();
     await waitFor(() => expect(mocks.passkeys.available).toHaveBeenCalled());
-    expect(screen.queryByRole("button", { name: t("auth.login.passkey") })).toBeNull();
+    expect(screen.queryByRole("button", { name: t("auth.login.passkeyFull") })).toBeNull();
   });
 
   it("says a closed passkey prompt was not used, not that it was wrong", async () => {
@@ -691,7 +672,7 @@ describe("LoginPage with passkeys", () => {
     const user = userEvent.setup();
     renderLogin();
 
-    await user.click(await screen.findByRole("button", { name: t("auth.login.passkey") }));
+    await user.click(await screen.findByRole("button", { name: t("auth.login.passkeyFull") }));
 
     expect(await screen.findByRole("alert")).toHaveTextContent(t("auth.passkey.cancelled"));
     expect(mocks.session.reload).not.toHaveBeenCalled();
@@ -746,7 +727,7 @@ describe("LoginPage with passkeys", () => {
     const enrollment = { ...CHALLENGE, enrollment: true, purpose: "enrollment" as const, methods: [], passkeyAvailable: true };
     const user = await signInTo({ kind: "challenge", challenge: enrollment });
 
-    await user.click(await screen.findByRole("button", { name: t("auth.enroll.usePasskey") }));
+    await user.click(await screen.findByRole("button", { name: new RegExp(t("auth.mfa.wayPasskey")) }));
     expect(screen.getByText(t("auth.enroll.passkeyDescription"))).toBeVisible();
     await user.click(screen.getByRole("button", { name: t("auth.enroll.createPasskey") }));
 
@@ -765,6 +746,6 @@ describe("LoginPage with passkeys", () => {
     await signInTo({ kind: "challenge", challenge: enrollment });
 
     await screen.findByText("JBSW Y3DP EHPK 3PXP");
-    expect(screen.queryByRole("button", { name: t("auth.enroll.usePasskey") })).toBeNull();
+    expect(screen.queryByRole("button", { name: new RegExp(t("auth.mfa.wayPasskey")) })).toBeNull();
   });
 });
