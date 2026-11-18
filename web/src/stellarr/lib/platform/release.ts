@@ -60,9 +60,24 @@ export interface ReleaseWatcherDeps {
 export interface ReleaseWatcher {
   readonly state: ReleaseState;
   subscribe(listener: () => void): () => void;
-  /** Asks the server now. Calls that overlap share one question. */
+  /**
+   * Asks the server now. Calls that overlap share one question, and a call
+   * starts the retries over: see `RETRY_FIRST_MS`.
+   */
   check(): Promise<void>;
+  /** Cancels a retry that is waiting. */
+  stop(): void;
 }
+
+/**
+ * When a check could not settle, because the server gave no answer or the
+ * worker could not keep the shell, the page asks again after this long and
+ * then after twice as long, up to the cap, until it is current or stuck. A
+ * tab left open and visible would otherwise stay on the old release until it
+ * was hidden and shown again.
+ */
+export const RETRY_FIRST_MS = 15_000;
+export const RETRY_MAX_MS = 300_000;
 
 export function createReleaseWatcher(deps: ReleaseWatcherDeps): ReleaseWatcher {
   const listeners = new Set<() => void>();
@@ -75,16 +90,20 @@ export function createReleaseWatcher(deps: ReleaseWatcherDeps): ReleaseWatcher {
     for (const listener of [...listeners]) listener();
   };
 
-  async function ask(): Promise<void> {
-    if (deps.running === null) return;
+  let retryTimer: ReturnType<typeof setTimeout> | undefined;
+  let retryDelay = RETRY_FIRST_MS;
+
+  /** Resolves to "retry" when the check could not settle whether the page is current. */
+  async function ask(): Promise<"done" | "retry"> {
+    if (deps.running === null) return "done";
     const latest = await deps.fetchLatest();
-    if (latest === null) return;
+    if (latest === null) return "retry";
     if (latest === deps.running) {
       setState("current");
       // Not waited for: a worker that has no copy of this release yet takes
       // it now, for the next load.
       void deps.keepShell?.();
-      return;
+      return "done";
     }
     // One reload per release id, so a release that a reload does not bring
     // cannot send the page round in circles. A tab that cannot remember
@@ -92,11 +111,11 @@ export function createReleaseWatcher(deps: ReleaseWatcherDeps): ReleaseWatcher {
     try {
       if (deps.readReloadedFor() === latest) {
         setState("stuck");
-        return;
+        return "done";
       }
     } catch {
       setState("stuck");
-      return;
+      return "done";
     }
     // With a worker in control a plain reload would bring the old shell back,
     // so the worker stores the new one first. When it cannot, the page stays
@@ -105,17 +124,18 @@ export function createReleaseWatcher(deps: ReleaseWatcherDeps): ReleaseWatcher {
       setState("updating");
       if (!(await deps.keepShell())) {
         setState("current");
-        return;
+        return "retry";
       }
     }
     try {
       deps.writeReloadedFor(latest);
     } catch {
       setState("stuck");
-      return;
+      return "done";
     }
     setState("updating");
     deps.reload();
+    return "done";
   }
 
   return {
@@ -129,12 +149,34 @@ export function createReleaseWatcher(deps: ReleaseWatcherDeps): ReleaseWatcher {
       };
     },
     check() {
-      asking ??= ask().finally(() => {
-        asking = null;
-      });
-      return asking;
+      return start(false);
+    },
+    stop() {
+      clearTimeout(retryTimer);
+      retryTimer = undefined;
     },
   };
+
+  function start(retrying: boolean): Promise<void> {
+    if (!retrying) {
+      clearTimeout(retryTimer);
+      retryTimer = undefined;
+      retryDelay = RETRY_FIRST_MS;
+    }
+    asking ??= ask()
+      .then((outcome) => {
+        if (outcome !== "retry" || retryTimer !== undefined) return;
+        retryTimer = setTimeout(() => {
+          retryTimer = undefined;
+          void start(true);
+        }, retryDelay);
+        retryDelay = Math.min(retryDelay * 2, RETRY_MAX_MS);
+      })
+      .finally(() => {
+        asking = null;
+      });
+    return asking;
+  }
 }
 
 export interface ReleaseTriggers {
@@ -180,6 +222,7 @@ export function watchRelease(watcher: ReleaseWatcher, triggers: ReleaseTriggers)
   triggers.window.addEventListener("online", onOnline);
   void watcher.check();
   return () => {
+    watcher.stop();
     unsubscribe();
     triggers.document.removeEventListener("visibilitychange", onVisibility);
     triggers.window.removeEventListener("online", onOnline);
