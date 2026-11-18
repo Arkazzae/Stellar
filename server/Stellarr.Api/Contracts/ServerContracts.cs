@@ -90,6 +90,7 @@ public sealed record CreateInviteRequest(Guid? ChannelId);
 /// </summary>
 /// <param name="Channel">The channel the invite points to; null for a server-wide invite.</param>
 /// <param name="ExpiresAt">Null for an invite that does not expire.</param>
+/// <remarks>The server's icon and the sender's avatar are null for a caller who is not signed in.</remarks>
 public sealed record InvitePreviewDto(
     InvitePreviewServerDto Server,
     InvitePreviewChannelDto? Channel,
@@ -159,11 +160,17 @@ public static class ServerContractMappings
         invite.ChannelId?.ToString(),
         invite.Channel?.Name);
 
+    /// <param name="withImages">
+    /// Whether to name the icon and the avatar. They are served only to a
+    /// session, so for anybody else their addresses would be broken images.
+    /// </param>
     /// <remarks>The invite's author and channel must be loaded.</remarks>
-    public static InvitePreviewDto ToPreview(this ServerInvite invite, StellarrServer server) => new(
-        new InvitePreviewServerDto(server.Id.ToString(), server.Name, server.Description, server.IconUrl),
+    public static InvitePreviewDto ToPreview(this ServerInvite invite, StellarrServer server, bool withImages) => new(
+        new InvitePreviewServerDto(
+            server.Id.ToString(), server.Name, server.Description, withImages ? server.IconUrl : null),
         invite.Channel is { } channel ? new InvitePreviewChannelDto(channel.Id.ToString(), channel.Name) : null,
-        new InvitePreviewInviterDto(invite.CreatedBy.DisplayName, invite.CreatedBy.AvatarColor, invite.CreatedBy.AvatarUrl),
+        new InvitePreviewInviterDto(
+            invite.CreatedBy.DisplayName, invite.CreatedBy.AvatarColor, withImages ? invite.CreatedBy.AvatarUrl : null),
         invite.ExpiresAt?.AsUtc());
 
     /// <remarks>The invite's author and channel must be loaded.</remarks>
