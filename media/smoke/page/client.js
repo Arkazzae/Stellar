@@ -58,7 +58,125 @@ const state = {
   closed: null,
   audio: null,
   timers: [],
+  cbr: false,
+  userId: null,
+  // The person's tone and colour, made in the page where there are no fake devices.
+  synthetic: null,
+  // The frame worker of an encrypted page, and why a page that must encrypt cannot.
+  e2ee: null,
+  refused: null,
 };
+
+// ------------------------------------------------------------ encryption
+//
+// An encrypted page runs the web client's own frame worker (served from
+// web/src/stellarr/lib/voice/e2ee) on every sender and receiver, as an
+// encrypted call does, keyed from epochs the script hands it.
+
+function fromBase64(text) {
+  return Uint8Array.from(atob(text), (c) => c.charCodeAt(0));
+}
+
+/** "script" for RTCRtpScriptTransform, "streams" for Chromium's createEncodedStreams, or null. */
+function transformPath(wanted) {
+  const script = typeof RTCRtpScriptTransform === "function";
+  const streams = typeof RTCRtpSender !== "undefined" && "createEncodedStreams" in RTCRtpSender.prototype;
+  if (wanted === "streams") return streams ? "streams" : null;
+  if (script) return "script";
+  return streams ? "streams" : null;
+}
+
+async function workerEpochs(epochs) {
+  return Promise.all(
+    epochs.map(async ({ sequence, epochId, key }) => ({
+      sequence,
+      epochId,
+      base: await crypto.subtle.importKey("raw", fromBase64(key), "HKDF", false, ["deriveBits"]),
+    })),
+  );
+}
+
+async function startE2ee(options) {
+  const path = transformPath(options.path);
+  if (path === null) {
+    // An encrypted call never goes out in the clear: this page publishes nothing.
+    state.refused = "no encoded transforms";
+    return;
+  }
+  // "frame" is the app's worker; "touch" and "copy" are the harness's baselines.
+  const kind = options.worker ?? "frame";
+  const worker =
+    kind === "frame"
+      ? new Worker("/frame-worker.js", { type: "module" })
+      : new Worker("/copy-worker.js", { name: kind });
+  const e2ee = { worker, kind, path, pending: new Map(), next: 0, statuses: [], needs: [], receivers: [] };
+  worker.onmessage = ({ data }) => {
+    if (data.type === "stats") {
+      e2ee.pending.get(data.id)?.(data);
+      e2ee.pending.delete(data.id);
+    } else if (data.type === "status") {
+      e2ee.statuses.push({ at: performance.now(), label: data.label, failing: data.failing });
+    } else if (data.type === "need-epoch") {
+      e2ee.needs.push({ at: performance.now(), sequence: data.sequence });
+    }
+  };
+  worker.onerror = (event) => state.errors.push(`frame worker: ${event.message}`);
+  worker.postMessage({ type: "init", conversationId: options.conversationId, self: state.userId });
+  worker.postMessage({ type: "epochs", epochs: await workerEpochs(options.epochs) });
+  worker.postMessage({ type: "send", sequence: options.send });
+  state.e2ee = e2ee;
+}
+
+function attachTransform(target, options) {
+  const e2ee = state.e2ee;
+  if (!e2ee) return;
+  if (e2ee.path === "script") {
+    target.transform = new RTCRtpScriptTransform(e2ee.worker, options);
+    return;
+  }
+  const { readable, writable } = target.createEncodedStreams();
+  e2ee.worker.postMessage({ type: "streams", readable, writable, options }, [readable, writable]);
+}
+
+/** Receivers wait for the directory to name whose frames they open. */
+function bindReceivers() {
+  const e2ee = state.e2ee;
+  if (!e2ee) return;
+  for (const receiver of e2ee.receivers) {
+    if (receiver.bound) continue;
+    const entry = state.directory.find((t) => t.mid === receiver.mid);
+    if (!entry) continue;
+    receiver.bound = true;
+    e2ee.worker.postMessage({ type: "bind", label: receiver.label, sender: entry.userId });
+  }
+}
+
+/** Tells the worker what each sender negotiated, for a browser whose frames do not say. */
+function codecHints() {
+  const e2ee = state.e2ee;
+  if (!e2ee) return;
+  for (const [name, published] of Object.entries(state.published)) {
+    const mimeType = published.transceiver.sender.getParameters().codecs?.[0]?.mimeType;
+    if (mimeType) e2ee.worker.postMessage({ type: "codec", label: `tx:${name}`, mimeType });
+  }
+}
+
+async function e2eeStats() {
+  const e2ee = state.e2ee;
+  if (!e2ee) return { refused: state.refused };
+  const id = ++e2ee.next;
+  const reply = await new Promise((resolve) => {
+    e2ee.pending.set(id, resolve);
+    e2ee.worker.postMessage({ type: "stats", id });
+  });
+  return { path: e2ee.path, kind: e2ee.kind, transforms: reply.transforms, statuses: e2ee.statuses, needs: e2ee.needs };
+}
+
+async function e2eeEpochs(epochs, send) {
+  const e2ee = state.e2ee;
+  e2ee.worker.postMessage({ type: "epochs", epochs: await workerEpochs(epochs) });
+  if (send !== undefined && send !== null) e2ee.worker.postMessage({ type: "send", sequence: send });
+}
 
 function run(task) {
   const result = state.chain.then(task);
@@ -82,6 +200,7 @@ function record(side, type, sdp, extra = {}) {
 function setDirectory(source, tracks) {
   state.directory = tracks;
   state.directoryLog.push({ at: performance.now(), source, tracks });
+  bindReceivers();
   if (state.subscribeToAll) {
     // The order of the list is the order of importance: the voices first,
     // then the pictures, each in the order the directory has them.
@@ -125,7 +244,9 @@ function tuneSection(section) {
 
   const msid = lines.find((line) => line.startsWith("a=msid:"));
   const stream = msid ? msid.slice("a=msid:".length).split(" ")[0] : null;
-  const tuning = state.stereoStreams.has(stream) ? SCREEN_AUDIO_TUNING : OPUS_TUNING;
+  const base = state.stereoStreams.has(stream) ? SCREEN_AUDIO_TUNING : OPUS_TUNING;
+  // An encrypted call's voice may ask for a constant bitrate.
+  const tuning = state.cbr ? { ...base, cbr: "1" } : base;
 
   const [media, port, proto, ...pts] = lines[0].split(" ");
   const ordered = [...pts.filter((p) => opus.has(p)), ...pts.filter((p) => !opus.has(p))];
@@ -208,6 +329,7 @@ async function handle(event) {
       record("remote", "answer", payload.sdp);
       await pc.setRemoteDescription({ type: "answer", sdp: payload.sdp });
       state.answersApplied += 1;
+      codecHints();
       return;
     }
     case "offer": {
@@ -272,6 +394,18 @@ function attach(arrival) {
 function onTrack(event) {
   const mid = event.transceiver.mid;
   const entry = state.directory.find((t) => t.mid === mid);
+  if (state.e2ee) {
+    // Every receiver gets a transform, bound to the publisher the directory
+    // names; one the directory does not name yet drops what it gets.
+    const label = `rx:${mid}`;
+    attachTransform(event.receiver, {
+      role: "receive",
+      kind: event.track.kind,
+      label,
+      ...(entry ? { sender: entry.userId } : {}),
+    });
+    state.e2ee.receivers.push({ mid, label, bound: Boolean(entry) });
+  }
   const arrival = {
     at: performance.now(),
     mid,
@@ -294,10 +428,16 @@ function onTrack(event) {
   state.arrivals.push(arrival);
 }
 
-async function start({ sessionId, tuneOpus: tune = false }) {
+async function start({ sessionId, tuneOpus: tune = false, cbr = false, userId = null, e2ee = null, synthetic = null }) {
   state.sessionId = sessionId;
   state.tuneOpus = tune;
-  const pc = new RTCPeerConnection({ iceServers: [], bundlePolicy: "max-bundle" });
+  state.cbr = cbr;
+  state.userId = userId;
+  state.synthetic = synthetic;
+  if (e2ee) await startE2ee(e2ee);
+  const config = { iceServers: [], bundlePolicy: "max-bundle" };
+  if (state.e2ee?.path === "streams") config.encodedInsertableStreams = true;
+  const pc = new RTCPeerConnection(config);
   state.pc = pc;
   pc.addEventListener("track", onTrack);
   pc.addEventListener("icecandidate", (event) => {
@@ -306,11 +446,89 @@ async function start({ sessionId, tuneOpus: tune = false }) {
   pc.addEventListener("negotiationneeded", () => {
     state.negotiationNeeded += 1;
   });
-  return { isSecureContext: window.isSecureContext };
+  return {
+    isSecureContext: window.isSecureContext,
+    e2eePath: state.e2ee ? state.e2ee.path : null,
+    refused: state.refused,
+    userAgent: navigator.userAgent,
+  };
 }
 
-async function capture(kind, busy) {
+/** The person's tone or colour made in the page, for an engine without fake devices. */
+function syntheticCapture(kind) {
+  const { toneHz, rgb } = state.synthetic;
+  if (kind === "audio") {
+    const ctx = audioContext();
+    const oscillator = ctx.createOscillator();
+    oscillator.frequency.value = toneHz;
+    const gain = ctx.createGain();
+    gain.gain.value = 0.3;
+    const destination = ctx.createMediaStreamDestination();
+    oscillator.connect(gain).connect(destination);
+    oscillator.start();
+    return destination.stream;
+  }
+  const canvas = document.createElement("canvas");
+  canvas.width = 320;
+  canvas.height = 240;
+  const g = canvas.getContext("2d");
+  let x = 0;
+  // A small moving square keeps the encoder making frames, as the fake camera does.
+  const draw = () => {
+    g.fillStyle = `rgb(${rgb[0]},${rgb[1]},${rgb[2]})`;
+    g.fillRect(0, 0, 320, 240);
+    g.fillStyle = `rgb(${Math.min(255, rgb[0] + 60)},${Math.min(255, rgb[1] + 60)},${Math.min(255, rgb[2] + 60)})`;
+    g.fillRect(x, 108, 24, 24);
+    x = (x + 4) % 296;
+  };
+  draw();
+  const stream = canvas.captureStream(30);
+  state.timers.push(setInterval(draw, 1000 / 30));
+  return stream;
+}
+
+/**
+ * Something like speech for an encoder: a voice-band tone with noise that
+ * comes and goes in bursts of a few hundred milliseconds, so a variable
+ * bitrate shows in the packet sizes.
+ */
+function speechLike() {
+  const ctx = audioContext();
+  const tone = ctx.createOscillator();
+  tone.frequency.value = 220;
+  tone.type = "sawtooth";
+  const noise = ctx.createBufferSource();
+  const buffer = ctx.createBuffer(1, ctx.sampleRate * 2, ctx.sampleRate);
+  const samples = buffer.getChannelData(0);
+  for (let i = 0; i < samples.length; i += 1) samples[i] = Math.random() * 2 - 1;
+  noise.buffer = buffer;
+  noise.loop = true;
+  const noiseLevel = ctx.createGain();
+  noiseLevel.gain.value = 0.2;
+  const gate = ctx.createGain();
+  gate.gain.value = 0;
+  const destination = ctx.createMediaStreamDestination();
+  tone.connect(gate);
+  noise.connect(noiseLevel).connect(gate);
+  gate.connect(destination);
+  tone.start();
+  noise.start();
+  const pattern = [400, 150, 250, 500, 300, 200];
+  let step = 0;
+  state.timers.push(
+    setInterval(() => {
+      step += 1;
+      gate.gain.setTargetAtTime(step % 2 === 0 ? 0.4 : 0, ctx.currentTime, 0.01);
+      tone.frequency.setValueAtTime(180 + (step % 5) * 40, ctx.currentTime);
+    }, pattern[step % pattern.length]),
+  );
+  return destination.stream;
+}
+
+async function capture(kind, busy, pattern) {
   if (busy) return busyCamera(busy);
+  if (kind === "audio" && pattern === "speech") return speechLike();
+  if (state.synthetic) return syntheticCapture(kind);
   const constraints =
     kind === "audio"
       ? { audio: { echoCancellation: false, noiseSuppression: false, autoGainControl: false } }
@@ -360,9 +578,10 @@ function busyCamera({ rgb, width = 640, height = 480, fps = 30 }) {
 async function publish(
   name,
   kind,
-  { via = "transceiver", codec, scalabilityMode, maxBitrate, stereo, busy } = {},
+  { via = "transceiver", codec, scalabilityMode, maxBitrate, stereo, busy, pattern } = {},
 ) {
-  const stream = await capture(kind, busy);
+  if (state.refused) throw new Error(`refused to publish: ${state.refused}`);
+  const stream = await capture(kind, busy, pattern);
   if (stereo) state.stereoStreams.add(stream.id);
   const track = stream.getTracks()[0];
   let transceiver;
@@ -377,6 +596,15 @@ async function publish(
       ];
     }
     transceiver = state.pc.addTransceiver(track, init);
+  }
+  // From the sender's first frame on, before anything is negotiated.
+  attachTransform(transceiver.sender, { role: "send", kind, label: `tx:${name}` });
+  if (state.e2ee && !codec) {
+    // As the web client does: an encrypted call offers only what can be
+    // encrypted. WebKit would otherwise send H.264, which never leaves.
+    const allowed = kind === "audio" ? ["audio/opus"] : ["video/vp8", "video/vp9", "video/rtx", "video/red", "video/ulpfec"];
+    const all = RTCRtpReceiver.getCapabilities(kind).codecs;
+    transceiver.setCodecPreferences(all.filter((c) => allowed.includes(c.mimeType.toLowerCase())));
   }
   if (codec) {
     // The codec is moved to the front and nothing is removed, as the screen
@@ -609,6 +837,7 @@ function close() {
   for (const timer of state.timers) clearInterval(timer);
   for (const published of Object.values(state.published)) published.track.stop();
   if (state.pc) state.pc.close();
+  if (state.e2ee) state.e2ee.worker.terminate();
 }
 
 window.smoke = {
@@ -627,4 +856,6 @@ window.smoke = {
   measure,
   descriptions: () => state.descriptions,
   close,
+  e2eeStats,
+  e2eeEpochs,
 };
