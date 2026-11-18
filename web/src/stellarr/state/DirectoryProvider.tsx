@@ -31,6 +31,8 @@ export interface DirectoryValue extends DirectoryView {
   moveChannel: (move: ChannelMove) => Promise<void>;
   /** Files a channel at the end of a section's channels of its kind, or of the loose ones. */
   moveChannelToSection: (channelId: string, sectionId: string | null) => Promise<void>;
+  /** The sections in a new order, applied at once and put back if refused. */
+  reorderSections: (order: string[]) => Promise<void>;
   createServer: (input: NewServer) => Promise<Server>;
   discoverServers: () => Promise<Server[]>;
   joinServer: (serverId: string) => Promise<Server>;
@@ -130,6 +132,7 @@ export function DirectoryProvider({ children }: { children: ReactNode }) {
           order: [...group.map((channel) => channel.id), channelId],
         });
       },
+      reorderSections: directory.reorderSections,
       createServer: directory.createServer,
       discoverServers: directory.discoverServers,
       joinServer: directory.joinServer,
