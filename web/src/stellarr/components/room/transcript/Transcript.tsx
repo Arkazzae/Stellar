@@ -304,8 +304,10 @@ function ReadyTranscript({
         aria-relevant="additions"
         aria-label={label}
       >
-        {/* One box at the top of the column, whatever the intro is made of. */}
-        {intro === undefined ? null : <div>{intro}</div>}
+        {/* One box, whatever the intro is made of. It takes the space a short
+            history leaves over, so the intro sits right above the first
+            message instead of a gap opening between them. */}
+        {intro === undefined ? null : <div className="transcript-intro">{intro}</div>}
         {hasOlder && onLoadOlder !== undefined ? (
           <button type="button" className="tr-older" disabled={loadingOlder} onClick={loadOlder}>
             {t(loadingOlder ? "message.loadingOlder" : "message.loadOlder")}
