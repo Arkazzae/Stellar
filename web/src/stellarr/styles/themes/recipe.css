@@ -281,6 +281,35 @@
      three different distances from the bottom edge. */
   --dock-h: 78px;
 
+  /*
+   * Spacing on a 4px grid, and the roles the type scale plays. The sizes are
+   * the `--text-*` steps in `theme.css`; a role names which step a kind of
+   * text takes, so two lists that both show a name show it the same way.
+   * Adopted by the messages side first (`friends.css`).
+   */
+  --sp-1: 4px;
+  --sp-2: 8px;
+  --sp-3: 12px;
+  --sp-4: 16px;
+  --sp-5: 20px;
+  --sp-6: 24px;
+  --sp-8: 32px;
+  /* Uppercase captions and the counts in pills. */
+  --fs-micro: var(--text-11);
+  /* Previews, times, the second line of a row. */
+  --fs-meta: var(--text-12);
+  /* Topic, handle, status, panel and menu rows. */
+  --fs-body: var(--text-13);
+  /* Names in lists, and running paragraphs. */
+  --fs-label: var(--text-14);
+  /* Section and empty-state headings. */
+  --fs-title: var(--text-16);
+  /* A person's name where it is the subject of the view. */
+  --fs-display: var(--text-20);
+  --fw-regular: 400;
+  --fw-medium: 500;
+  --fw-strong: 600;
+
   --dur-fast: 90ms;
   --dur-base: 140ms;
   --dur-slow: 200ms;
