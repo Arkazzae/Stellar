@@ -228,6 +228,13 @@ export interface TranscriptSection {
   groups: MessageGroup[];
 }
 
+/**
+ * A message that is a line about the conversation rather than something said,
+ * or a run of messages this browser cannot read: it stands alone, and nothing
+ * joins it.
+ */
+const standsAlone = (message: Message) => message.line !== undefined || message.sealed !== undefined;
+
 /** Splits a flat message list into day sections and author groups. */
 export function buildTranscript(
   messages: Message[],
@@ -270,7 +277,10 @@ export function buildTranscript(
       group.authorId === message.author.id &&
       withinWindow &&
       !group.messages[0]?.replyTo &&
-      !message.replyTo;
+      !message.replyTo &&
+      last !== undefined &&
+      !standsAlone(last) &&
+      !standsAlone(message);
 
     if (joinsGroup) {
       group.messages.push(message);

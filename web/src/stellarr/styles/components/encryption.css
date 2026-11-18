@@ -1,0 +1,349 @@
+@layer components {
+  /* ---------- END-TO-END ENCRYPTION OF A CONVERSATION ---------- */
+
+  /* The lock beside the person's name: after it in the title, before it in the rail. */
+  .dm-lock {
+    flex: none;
+    display: inline-flex;
+    color: var(--text-faint);
+  }
+
+  .dm-intro-act .ui-button {
+    gap: var(--sp-2);
+  }
+
+  .dm-row-lock {
+    flex: none;
+    display: inline-flex;
+    margin-right: var(--sp-1);
+    color: var(--text-faint);
+  }
+
+  /*
+   * A line about the conversation sits on the message grid: its icon in the
+   * avatar column, its words where a message's text starts.
+   */
+  .dm-sys {
+    display: grid;
+    grid-template-columns: 40px minmax(0, 1fr);
+    column-gap: 12px;
+    align-items: center;
+    margin: var(--sp-4) 0;
+    padding: 0 20px;
+    font-size: var(--fs-body);
+    line-height: 1.5;
+    color: var(--text-muted);
+  }
+
+  .dm-notice-ico {
+    display: inline-flex;
+    justify-content: center;
+    color: var(--text-faint);
+  }
+
+  .dm-sys.ok .dm-notice-ico {
+    color: var(--live);
+  }
+
+  .dm-sys.warn .dm-notice-ico {
+    color: var(--warn-text);
+  }
+
+  .dm-sys-act {
+    font-weight: var(--fw-medium);
+    color: var(--accent-text);
+  }
+
+  .dm-sys-act:hover {
+    text-decoration: underline;
+    text-underline-offset: 3px;
+  }
+
+  .dm-sys-act:disabled {
+    opacity: 0.6;
+  }
+
+  /* The other person's request, waiting for an answer. */
+  .dm-req {
+    display: flex;
+    gap: var(--sp-3);
+    max-width: 600px;
+    margin: var(--sp-4) 20px var(--sp-2);
+    padding: var(--sp-4);
+    border: 1px solid var(--line);
+    border-radius: var(--radius-lg);
+    background: var(--surface-raised);
+  }
+
+  .dm-req .dm-notice-ico {
+    flex: none;
+    padding-top: 2px;
+    color: var(--text-muted);
+  }
+
+  .dm-req-txt b {
+    display: block;
+    font-size: var(--fs-label);
+    font-weight: var(--fw-strong);
+    line-height: 20px;
+  }
+
+  .dm-req-txt p {
+    margin-top: var(--sp-1);
+    font-size: var(--fs-body);
+    line-height: 1.5;
+    color: var(--text-muted);
+  }
+
+  .dm-req-acts {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--sp-2);
+    margin-top: var(--sp-3);
+  }
+
+  /* Messages this browser cannot read, counted in one block. */
+  .dm-sealed {
+    display: flex;
+    align-items: center;
+    gap: var(--sp-3);
+    margin: var(--sp-2) 20px;
+    padding: var(--sp-3) var(--sp-4);
+    border: 1px dashed var(--line-strong);
+    border-radius: var(--radius-md);
+    font-size: var(--fs-body);
+    color: var(--text-muted);
+  }
+
+  .dm-sealed .dm-notice-ico {
+    flex: none;
+  }
+
+  .dm-sealed-txt {
+    flex: 1;
+    min-width: 0;
+    line-height: 1.45;
+  }
+
+  .dm-sealed-txt b {
+    display: block;
+    font-size: var(--fs-label);
+    font-weight: var(--fw-medium);
+    color: var(--text);
+  }
+
+  .dm-sealed .ui-button {
+    flex: none;
+  }
+
+  /* Where the composer would be, when this browser cannot write here. */
+  .dm-composer-off {
+    flex: none;
+    display: flex;
+    align-items: center;
+    gap: var(--sp-2);
+    margin: 0 20px 20px;
+    padding: var(--sp-3) var(--sp-4);
+    border-radius: var(--radius-lg);
+    background: var(--surface-field);
+    border: 1px solid var(--line-subtle);
+    font-size: var(--fs-body);
+    line-height: 1.45;
+    color: var(--text-muted);
+  }
+
+  .dm-composer-off svg {
+    flex: none;
+    color: var(--text-faint);
+  }
+
+  /* The profile row's second line in a colour that says where it stands. */
+  .pp-tone.ok {
+    color: var(--live);
+  }
+
+  .pp-tone.warn {
+    color: var(--warn-text);
+  }
+
+  .pp-tone.bad {
+    color: var(--danger-text);
+  }
+
+  .pp-row.has-trailing .ui-switch {
+    margin-top: 2px;
+  }
+
+  /* ---------- DIALOGS ---------- */
+
+  /* Above the user settings, below a security step and a question raised over them. */
+  .act-modal.enc-dialog {
+    z-index: 97;
+  }
+
+  .enc-dialog .am-card {
+    width: min(448px, 100%);
+  }
+
+  .enc-body {
+    gap: var(--sp-4);
+  }
+
+  .enc-step {
+    font-size: var(--fs-meta);
+    color: var(--text-faint);
+    font-variant-numeric: tabular-nums;
+  }
+
+  .enc-lead {
+    font-size: var(--fs-body);
+    color: var(--text-muted);
+  }
+
+  .enc-note {
+    font-size: var(--fs-body);
+    line-height: 1.45;
+    color: var(--text-faint);
+  }
+
+  .enc-err {
+    font-size: var(--fs-body);
+    line-height: 1.45;
+    color: var(--danger-text);
+    text-align: center;
+  }
+
+  .enc-link {
+    align-self: center;
+    font-size: var(--fs-body);
+    font-weight: var(--fw-medium);
+    color: var(--accent-text);
+  }
+
+  .enc-link:hover {
+    text-decoration: underline;
+    text-underline-offset: 3px;
+  }
+
+  .enc-field {
+    display: flex;
+    flex-direction: column;
+  }
+
+  /* Six boxes under one real field. */
+  .pin-input {
+    position: relative;
+    align-self: center;
+  }
+
+  .pin-field {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    opacity: 0;
+    font-size: 16px;
+    caret-color: transparent;
+    cursor: text;
+  }
+
+  .pin-boxes {
+    display: flex;
+    gap: var(--sp-2);
+    pointer-events: none;
+  }
+
+  .pin-box {
+    width: 44px;
+    height: 52px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: var(--radius-md);
+    background: var(--surface-field);
+    border: 1px solid var(--line);
+  }
+
+  .pin-box:nth-child(3) {
+    margin-right: var(--sp-2);
+  }
+
+  .pin-box.fill::after {
+    content: "";
+    width: 10px;
+    height: 10px;
+    border-radius: 50%;
+    background: var(--text);
+  }
+
+  .pin-box.cur {
+    border-color: var(--accent);
+    box-shadow: 0 0 0 3px var(--accent-soft);
+  }
+
+  .pin-input.err .pin-box {
+    border-color: var(--danger-line);
+  }
+
+  .pin-input.err .pin-box.fill::after {
+    background: var(--danger-text);
+  }
+
+  .pin-field:disabled + .pin-boxes {
+    opacity: 0.6;
+  }
+
+  .enc-pair {
+    display: flex;
+    align-items: center;
+    gap: var(--sp-2);
+    font-size: var(--fs-body);
+    color: var(--text-muted);
+  }
+
+  .enc-code {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: var(--sp-3) var(--sp-2);
+    padding: var(--sp-4) var(--sp-3);
+    border-radius: var(--radius-md);
+    background: var(--surface-field);
+    font-size: var(--fs-title);
+    font-weight: var(--fw-medium);
+    letter-spacing: 0.06em;
+    text-align: center;
+    font-variant-numeric: tabular-nums;
+    color: var(--text);
+  }
+
+  .enc-row-acts {
+    display: inline-flex;
+    flex-wrap: wrap;
+    justify-content: flex-end;
+    gap: var(--sp-2);
+  }
+
+  @media (max-width: 767px) {
+    .dm-sys,
+    .dm-sealed,
+    .dm-req {
+      margin-inline: 16px;
+    }
+
+    .dm-sys {
+      padding: 0;
+    }
+
+    .dm-composer-off {
+      margin: 0 16px 12px;
+    }
+
+    .pin-box {
+      width: 40px;
+      height: 48px;
+    }
+
+    .enc-code {
+      grid-template-columns: repeat(3, 1fr);
+    }
+  }
+}

@@ -78,6 +78,8 @@ export interface DmProfilePanelProps {
   onRemoveFriend: () => void;
   onBlock: () => void;
   onUnblock: () => void;
+  /** Rows about end-to-end encryption, first among the actions. */
+  encryption?: ReactNode;
 }
 
 /**
@@ -102,6 +104,7 @@ export function DmProfilePanel({
   onRemoveFriend,
   onBlock,
   onUnblock,
+  encryption,
 }: DmProfilePanelProps) {
   const { t } = useLanguage();
   const confirm = useConfirm();
@@ -156,6 +159,7 @@ export function DmProfilePanel({
           )}
 
           <div className="pp-actions">
+            {encryption}
             <ProfileAction icon="user" label={t("dm.fullProfile")} onClick={onOpenProfile} />
             {relation === "friend" ? (
               <ProfileAction

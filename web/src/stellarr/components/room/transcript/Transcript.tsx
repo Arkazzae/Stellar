@@ -5,7 +5,7 @@ import { Icon } from "@stellarr/icons";
 import type { OpenProfile } from "@/components/view-models";
 import type { CustomEmoji } from "@/ports";
 
-import { MessageGroup, type MessageGroupVM } from "./MessageGroup";
+import { MessageGroup, type MessageGroupVM, type TranscriptNotice } from "./MessageGroup";
 import type { MessageAction } from "./MessageToolbar";
 import type { MessageTranslationOptions } from "../attachments/TranslatedTextAttachment";
 import type { AttachmentCallbacks } from "@/lib/messages/parts";
@@ -74,6 +74,11 @@ export interface TranscriptProps {
    * behind this only moves when the channel is left.
    */
   firstUnreadGroupId?: string | null;
+  /**
+   * Draws a block that is a notice rather than messages. Without it such a
+   * block renders as an ordinary one.
+   */
+  renderNotice?(notice: TranscriptNotice, group: MessageGroupVM): ReactNode;
   /** Loads the next backwards page when the reader reaches the oldest row. */
   onLoadOlder?(): void;
   hasOlder?: boolean;
@@ -218,6 +223,7 @@ function ReadyTranscript({
   intro,
   firstUnreadGroupId = null,
   followOwnSend,
+  renderNotice,
   onLoadOlder,
   hasOlder = false,
   loadingOlder = false,
@@ -322,6 +328,8 @@ function ReadyTranscript({
                 <div className="day-sep">{row.day}</div>
               ) : row.kind === "unread" ? (
                 <div className="unread-sep">{t("message.unread")}</div>
+              ) : row.group.notice !== undefined && renderNotice !== undefined ? (
+                renderNotice(row.group.notice, row.group)
               ) : (
                 <MessageRow
                   group={row.group}

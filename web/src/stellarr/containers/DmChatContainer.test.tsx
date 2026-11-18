@@ -21,6 +21,8 @@ vi.mock("@/state/hooks", () => ({
   useEmoji: () => ({ emoji: [] }),
 }));
 
+vi.mock("./useDmEncryption", () => ({ useDmEncryptionView: () => ({}) }));
+
 vi.mock("@/components/friends/DmChat", () => ({
   DmChat: (props: DmChatProps) => {
     mocks.seen = props;

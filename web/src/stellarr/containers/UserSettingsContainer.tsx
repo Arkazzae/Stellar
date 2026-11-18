@@ -34,6 +34,7 @@ import { useOutputTest } from "./useOutputTest";
 import { SecurityStepDialog } from "@/components/account/panes/SecurityStepDialog";
 
 import { useAccountSecurity } from "./useAccountSecurity";
+import { useEncryptionSettings } from "./useEncryptionSettings";
 
 /**
  * The user settings dialog, assembled.
@@ -138,6 +139,7 @@ export function UserSettingsContainer() {
   const camera = useCameraTest(voiceSettings);
   const joinSound = useJoinSound(open);
   const accountSecurity = useAccountSecurity(open);
+  const encryption = useEncryptionSettings(open);
 
   return (
     <>
@@ -162,6 +164,7 @@ export function UserSettingsContainer() {
           onChangePassword: account.changePassword,
           onConfirmSecondStep: accountSecurity.confirmSecondStep,
         }}
+        encryption={encryption}
         preferences={{
           preferences: account.preferences,
           onChange: persistPreferences,

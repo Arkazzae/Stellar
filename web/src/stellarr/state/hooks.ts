@@ -19,6 +19,11 @@ export {
 } from "./DirectoryProvider";
 export { useEmoji, type EmojiValue } from "./EmojiProvider";
 export {
+  useEncryptionContext as useEncryption,
+  type EncryptionDialog,
+  type EncryptionValue,
+} from "./EncryptionProvider";
+export {
   useFriendsContext as useFriends,
   type FriendsValue,
 } from "./FriendsProvider";

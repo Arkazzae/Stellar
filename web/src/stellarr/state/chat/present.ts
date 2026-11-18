@@ -200,7 +200,14 @@ function presentGroup(
   const face = system ? server.iconUrl : faces.get(group.authorId);
   // A reply always starts its own block, so the head message is the one that
   // answers something.
-  const answered = group.messages[0]?.replyTo;
+  const head = group.messages[0];
+  const answered = head?.replyTo;
+  const notice: GroupVM["notice"] =
+    head?.line !== undefined
+      ? { kind: "line", line: head.line, actorName: group.authorName }
+      : head?.sealed !== undefined
+        ? { kind: "sealed", reason: head.sealed.reason, count: head.sealed.count }
+        : undefined;
   const candidate: GroupVM = {
     id: group.key,
     ...(answered === undefined || answered === null ? {} : { replyTo: answered }),
@@ -213,6 +220,7 @@ function presentGroup(
     // One entry per message: a block can hold several, and each of them is
     // separately editable and deletable.
     bodies,
+    ...(notice === undefined ? {} : { notice }),
   };
 
   const previous = cache?.groups.get(group.key);
