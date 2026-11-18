@@ -6,6 +6,8 @@ import {
   createReleaseWatcher,
   fetchLatestRelease,
   runningRelease,
+  RETRY_FIRST_MS,
+  RETRY_MAX_MS,
   VISIBLE_CHECK_INTERVAL_MS,
   watchRelease,
   type ReleaseWatcherDeps,
@@ -155,6 +157,74 @@ describe("the order of an update with a service worker", () => {
   });
 });
 
+describe("asking again when a check could not settle", () => {
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  it("retries with a delay that doubles up to the cap, until the page is current", async () => {
+    vi.useFakeTimers();
+    const answers: (string | null)[] = [];
+    const { deps, watcher } = watcherWith({ fetchLatest: vi.fn(async () => (answers.length > 0 ? (answers.shift() as string | null) : "a")) });
+    answers.push(null, null, null);
+    await watcher.check();
+    await vi.advanceTimersByTimeAsync(RETRY_FIRST_MS - 1);
+    expect(deps.fetchLatest).toHaveBeenCalledTimes(1);
+    await vi.advanceTimersByTimeAsync(1);
+    expect(deps.fetchLatest).toHaveBeenCalledTimes(2);
+    await vi.advanceTimersByTimeAsync(2 * RETRY_FIRST_MS);
+    expect(deps.fetchLatest).toHaveBeenCalledTimes(3);
+    await vi.advanceTimersByTimeAsync(4 * RETRY_FIRST_MS);
+    expect(deps.fetchLatest).toHaveBeenCalledTimes(4);
+    expect(watcher.state).toBe("current");
+    await vi.advanceTimersByTimeAsync(RETRY_MAX_MS * 2);
+    expect(deps.fetchLatest).toHaveBeenCalledTimes(4);
+  });
+
+  it("never waits longer than the cap", async () => {
+    vi.useFakeTimers();
+    const { deps, watcher } = watcherWith({ fetchLatest: vi.fn(async () => null) });
+    await watcher.check();
+    await vi.advanceTimersByTimeAsync(RETRY_MAX_MS * 10);
+    const calls = vi.mocked(deps.fetchLatest).mock.calls.length;
+    await vi.advanceTimersByTimeAsync(RETRY_MAX_MS);
+    expect(vi.mocked(deps.fetchLatest).mock.calls.length).toBe(calls + 1);
+  });
+
+  it("retries an update the worker could not keep, and reloads once it can", async () => {
+    vi.useFakeTimers();
+    const keep = vi.fn(async () => false);
+    const { deps, watcher } = watcherWith({ keepShell: keep });
+    await watcher.check();
+    expect(deps.reload).not.toHaveBeenCalled();
+    keep.mockResolvedValue(true);
+    await vi.advanceTimersByTimeAsync(RETRY_FIRST_MS);
+    expect(deps.reload).toHaveBeenCalledTimes(1);
+  });
+
+  it("starts the delay over for a check a trigger caused, and stops at stuck", async () => {
+    vi.useFakeTimers();
+    const answers: (string | null)[] = [null, null];
+    const { deps, watcher } = watcherWith({ fetchLatest: vi.fn(async () => (answers.length > 0 ? (answers.shift() as string | null) : "b")), readReloadedFor: vi.fn(() => "b") });
+    await watcher.check();
+    await vi.advanceTimersByTimeAsync(RETRY_FIRST_MS);
+    expect(deps.fetchLatest).toHaveBeenCalledTimes(2);
+    await watcher.check();
+    expect(watcher.state).toBe("stuck");
+    await vi.advanceTimersByTimeAsync(RETRY_MAX_MS * 2);
+    expect(deps.fetchLatest).toHaveBeenCalledTimes(3);
+  });
+
+  it("does not retry once stopped", async () => {
+    vi.useFakeTimers();
+    const { deps, watcher } = watcherWith({ fetchLatest: vi.fn(async () => null) });
+    await watcher.check();
+    watcher.stop();
+    await vi.advanceTimersByTimeAsync(RETRY_MAX_MS * 2);
+    expect(deps.fetchLatest).toHaveBeenCalledTimes(1);
+  });
+});
+
 function startWatching() {
   let status: ConnectionStatus = "idle";
   const listeners = new Set<() => void>();
@@ -168,7 +238,7 @@ function startWatching() {
   const doc = Object.assign(new EventTarget(), { visibilityState: "visible" as DocumentVisibilityState });
   const win = new EventTarget();
   let clock = 1_000_000;
-  const watcher = { state: "current" as const, subscribe: vi.fn(() => () => undefined), check: vi.fn(async () => undefined) };
+  const watcher = { state: "current" as const, subscribe: vi.fn(() => () => undefined), check: vi.fn(async () => undefined), stop: vi.fn() };
   const stop = watchRelease(watcher, { connection, document: doc, window: win, now: () => clock });
   watcher.check.mockClear();
   return {
@@ -194,7 +264,7 @@ function startWatching() {
 describe("when the page checks", () => {
   it("checks as it starts", () => {
     let checks = 0;
-    const watcher = { state: "current" as const, subscribe: () => () => undefined, check: async () => void (checks += 1) };
+    const watcher = { state: "current" as const, subscribe: () => () => undefined, check: async () => void (checks += 1), stop: () => undefined };
     const connection: ConnectionPort = { getStatus: () => "idle", subscribe: () => () => undefined };
     const stop = watchRelease(watcher, { connection, document, window, now: () => 0 });
     stop();
