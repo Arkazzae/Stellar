@@ -8,18 +8,23 @@
 //
 //   node smoke.mjs            every scenario
 //   node smoke.mjs a e        only these
+//   node smoke.mjs xa xc      encrypted-call scenarios, which run only when named
+//
+// STELLARR_SMOKE_E2EE=1 runs every scenario as an encrypted call, and
+// STELLARR_SMOKE_ENGINE=firefox or webkit runs them in that engine.
 //
 // It prints one PASS or FAIL line per scenario and exits non-zero when any
 // failed. The media server log, the descriptions every page exchanged and the
 // numbers behind each line are written to the output directory it names.
 
-import { randomUUID } from "node:crypto";
+import { execFileSync } from "node:child_process";
+import { randomBytes, randomUUID } from "node:crypto";
 import { mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
-import { tmpdir } from "node:os";
+import { loadavg, tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
-import { Client, browserPath, launch, servePage } from "./lib/browser.mjs";
+import { Client, browserPath, engine, launch, servePage } from "./lib/browser.mjs";
 import { nearestColour, nearestTone, writeFixtures } from "./lib/fixtures.mjs";
 import { Hub, startMedia } from "./lib/media.mjs";
 import { LossyNat, isRtp } from "./lib/nat.mjs";
@@ -41,6 +46,66 @@ async function waitFor(what, probe, timeout = 15_000, interval = 200) {
     if (Date.now() > end) throw new Failure(`timed out after ${timeout} ms waiting for ${what}`);
     await sleep(interval);
   }
+}
+
+// --------------------------------------------------------- encrypted calls
+
+/** An epoch as the encryption client holds it: a sequence, an id and 32 random bytes. */
+function newEpoch(sequence) {
+  return { sequence, epochId: randomUUID(), key: randomBytes(32).toString("base64") };
+}
+
+/** Runs every scenario encrypted with STELLARR_SMOKE_E2EE=1, or by Chromium's older API with =streams. */
+function e2eeFromEnv() {
+  const value = process.env.STELLARR_SMOKE_E2EE;
+  if (!value) return null;
+  if (value === "1") return {};
+  if (value === "streams") return { path: "streams" };
+  throw new Error(`STELLARR_SMOKE_E2EE=${value} is not 1 or streams`);
+}
+
+function transformOf(stats, label) {
+  return stats?.transforms?.find((t) => t.label === label) ?? null;
+}
+
+function droppedOf(transform, ...reasons) {
+  if (!transform) return null;
+  const counted = reasons.length === 0 ? Object.keys(transform.dropped) : reasons;
+  return counted.reduce((total, reason) => total + (transform.dropped[reason] ?? 0), 0);
+}
+
+/** CPU seconds used so far by the browser that plays `identity`, with every process under it. */
+function browserCpuSeconds(identity) {
+  const rows = execFileSync("ps", ["-axo", "pid=,ppid=,time=,command="], { encoding: "utf8" })
+    .split("\n")
+    .map((line) => line.trim().match(/^(\d+)\s+(\d+)\s+(\S+)\s+(.*)$/))
+    .filter(Boolean)
+    .map(([, pid, ppid, time, command]) => ({ pid: Number(pid), ppid: Number(ppid), time, command }));
+  const seconds = (time) =>
+    time
+      .split(":")
+      .map(Number)
+      .reduce((total, part) => total * 60 + part, 0);
+  const root = rows.find(
+    (r) => r.command.includes(`fake-video-capture=${identity.video}`) && !r.command.includes("--type="),
+  );
+  if (!root) return null;
+  const tree = new Set([root.pid]);
+  for (let grew = true; grew; ) {
+    grew = false;
+    for (const r of rows) {
+      if (!tree.has(r.pid) && tree.has(r.ppid)) {
+        tree.add(r.pid);
+        grew = true;
+      }
+    }
+  }
+  return rows.filter((r) => tree.has(r.pid)).reduce((total, r) => total + seconds(r.time), 0);
+}
+
+/** The one-minute load average, so a run on a busy machine can be told apart. */
+function loadAverage() {
+  return Number(loadavg()[0].toFixed(2));
 }
 
 // ------------------------------------------------------------------ checks
@@ -182,7 +247,8 @@ async function verifyReceiver(env, receiver, clients) {
 
   const pair = after.pair;
   check(pair, `${receiver.name} has no selected candidate pair`);
-  const remote = `${pair.remote.address}:${pair.remote.port}`;
+  // WebKit leaves the address out of its statistics; the port still tells.
+  const remote = `${pair.remote.address ?? env.candidate.split(":")[0]}:${pair.remote.port}`;
   check(
     remote === env.candidate,
     `${receiver.name}'s selected pair ends at ${remote}, not at the media server ${env.candidate}`,
@@ -408,15 +474,24 @@ class Scenario {
     this.env = env;
     this.id = id;
     this.room = randomUUID();
+    // The epoch every person of an encrypted room holds, as the conversation's
+    // epoch envelopes would give it to them.
+    this.epoch = newEpoch(1);
     this.clients = [];
     this.allowIgnoredOffers = false;
     this.tolerated = new Set();
     this.logFrom = env.logText().length;
   }
 
-  /** Seats a person. A tunes Opus in its descriptions like the web client. */
-  async join(name, { mic = true, via } = {}) {
+  /**
+   * Seats a person. A tunes Opus in its descriptions like the web client.
+   * `e2ee` encrypts this person's frames: undefined takes the run's
+   * (STELLARR_SMOKE_E2EE), null none, and an object is laid over the room's
+   * epoch. `cbr` asks A's voice encoder for a constant bitrate.
+   */
+  async join(name, { mic = true, via, e2ee, cbr = false, initScript = null, pattern } = {}) {
     const identity = this.env.identities.find((i) => i.name === name);
+    const wanted = e2ee === undefined ? (this.env.e2ee ? { ...this.env.e2ee } : null) : e2ee;
     const client = await Client.open({
       browser: this.env.browsers[name],
       url: this.env.url,
@@ -425,7 +500,18 @@ class Scenario {
       roomId: this.room,
       userId: randomUUID(),
       tuneOpus: name === "A",
+      cbr,
+      initScript,
+      e2ee:
+        wanted === null
+          ? null
+          : { conversationId: this.room, epochs: [this.epoch], send: this.epoch.sequence, ...wanted },
     });
+    if (pattern) {
+      this.clients.push(client);
+      if (mic) await client.publish("mic", "audio", { pattern });
+      return client;
+    }
     this.clients.push(client);
     if (mic) await client.publish("mic", "audio", via ? { via } : {});
     return client;
@@ -1480,6 +1566,408 @@ const SCENARIOS = {
       };
     });
   },
+
+  // ------------------------------------------------- encrypted calls
+  // Run only when named. Every person runs the web client's frame worker on
+  // every sender and receiver, keyed from an epoch the script hands out.
+
+  /**
+   * What each codec makes of encryption: A publishes a voice and a camera in
+   * every video codec the media server forwards, and B, encrypted too, gets
+   * the voice, VP8 and VP9 (with temporal layers) in A's colour, while H.264
+   * and AV1 never leave A, since they cannot be sent encrypted.
+   */
+  async xa(s) {
+    const A = await s.join("A", { e2ee: {} });
+    const wanted = [
+      { name: "vp8", codec: "VP8", encrypts: true },
+      { name: "vp9", codec: "VP9", encrypts: true },
+      { name: "vp9-l1t3", codec: "VP9", scalabilityMode: "L1T3", encrypts: true },
+      { name: "h264", codec: "H264", encrypts: false },
+      { name: "av1", codec: "AV1", encrypts: false },
+    ];
+    const skipped = [];
+    for (const w of wanted) {
+      try {
+        await A.publish(w.name, "video", { codec: w.codec, ...(w.scalabilityMode && { scalabilityMode: w.scalabilityMode }) });
+      } catch (error) {
+        // An engine without the codec or the layers has nothing to show here.
+        skipped.push(`${w.name} (${String(error.message ?? error).slice(0, 60)})`);
+      }
+    }
+    const B = await s.join("B", { e2ee: {} });
+    const { mapping } = await directoryReady(B, s.clients);
+    await sleep(8000);
+    const [sent, got, measured, txWorker, rxWorker] = [
+      await A.stats(),
+      await B.stats(),
+      await B.measure(),
+      await A.e2eeStats(),
+      await B.e2eeStats(),
+    ];
+    const rows = [];
+    for (const publication of A.publications) {
+      const m = mapping.find((x) => x.publisher === A && x.publication.name === publication.name);
+      const tx = sent.outbound[publication.mid] ?? {};
+      const rx = got.inbound[m.mid] ?? {};
+      const media = measured[m.mid];
+      const sender = transformOf(txWorker, `tx:${publication.name}`);
+      const receiver = transformOf(rxWorker, `rx:${m.mid}`);
+      const row = {
+        track: publication.name,
+        codec: tx.codec ?? rx.codec ?? null,
+        framesEncoded: tx.framesEncoded ?? 0,
+        sealed: sender?.passed ?? 0,
+        refusedByCodec: sender?.dropped.codec ?? 0,
+        framesDecoded: rx.framesDecoded ?? 0,
+        opened: receiver?.passed ?? 0,
+        dropped: droppedOf(receiver, "plain", "failed", "unknown-epoch", "unbound"),
+        colour: media?.rgb ? nearestColour(media.rgb) : null,
+        tone: media?.peakHz ? nearestTone(media.peakHz) : null,
+        peakDb: media?.peakDb ?? null,
+      };
+      rows.push(row);
+      const spec = wanted.find((w) => w.name === publication.name);
+      if (publication.kind === "audio") {
+        check(row.opened > 0 && row.dropped === 0, `B opened ${row.opened} and dropped ${row.dropped} of A's voice`);
+        check(row.tone?.name === "A" && row.tone.error < 30 && row.peakDb > -90, `B does not hear A's tone: ${JSON.stringify(row)}`);
+      } else if (spec.encrypts) {
+        check(row.sealed > 0 && row.opened > 0 && row.framesDecoded > 0, `${row.track} was not sealed, opened and decoded: ${JSON.stringify(row)}`);
+        check(row.dropped === 0, `B dropped ${row.dropped} frames of ${row.track}`);
+        check(row.colour?.name === "A" && row.colour.distance < 100, `${row.track} decodes to the wrong picture: ${JSON.stringify(row)}`);
+      } else {
+        check(row.sealed === 0 && row.framesDecoded === 0, `${row.track} left A or was decoded: ${JSON.stringify(row)}`);
+      }
+    }
+    for (const row of rows) console.log(`  ${s.id}: ${JSON.stringify(row)}`);
+    return {
+      summary:
+        `${engine()} via ${B.started.e2eePath}; ` +
+        rows
+          .map((r) =>
+            r.track === "mic"
+              ? `mic ${r.codec}: opened ${r.opened}, tone ${r.tone?.name ?? "-"}`
+              : `${r.track} ${r.codec ?? "-"}: encoded ${r.framesEncoded}, sealed ${r.sealed}, refused ${r.refusedByCodec}, B decoded ${r.framesDecoded}, colour ${r.colour?.name ?? "-"}`,
+          )
+          .join("; ") +
+        (skipped.length > 0 ? `; not offered here: ${skipped.join(", ")}` : ""),
+      rows,
+    };
+  },
+
+  /**
+   * A wrong key: B holds another key under the same epoch. The media server
+   * forwards everything, B plays nothing of A, says A's sound and picture are
+   * failing and asks for keyframes; the same holds the other way.
+   */
+  async xb(s) {
+    const A = await s.join("A", { e2ee: {} });
+    await A.publish("camera", "video");
+    const wrong = { ...s.epoch, key: newEpoch(1).key };
+    const B = await s.join("B", { e2ee: { epochs: [wrong] } });
+    await B.publish("camera", "video");
+    await directoryReady(B, s.clients);
+    await sleep(6000);
+    const rows = [];
+    for (const [receiver, sender] of [
+      [B, A],
+      [A, B],
+    ]) {
+      const { mapping } = await directoryReady(receiver, s.clients);
+      const [stats, measured, worker] = [await receiver.stats(), await receiver.measure(), await receiver.e2eeStats()];
+      for (const m of mapping.filter((x) => x.publisher === sender)) {
+        const rx = stats.inbound[m.mid] ?? {};
+        const t = transformOf(worker, `rx:${m.mid}`);
+        const media = measured[m.mid];
+        const row = {
+          at: receiver.name,
+          from: sender.name,
+          kind: m.publication.kind,
+          packetsReceived: rx.packetsReceived ?? 0,
+          framesDecoded: rx.framesDecoded ?? 0,
+          opened: t?.passed ?? 0,
+          failed: t?.dropped.failed ?? 0,
+          keyframeRequests: t?.keyframeRequests ?? 0,
+          failing: worker.statuses.filter((x) => x.label === `rx:${m.mid}`).map((x) => x.failing),
+          tone: media?.peakHz ? nearestTone(media.peakHz) : null,
+          peakDb: media?.peakDb ?? null,
+        };
+        rows.push(row);
+        check(row.packetsReceived > 0, `${row.at} got no packets of ${row.from}'s ${row.kind}; the media server should forward them: ${JSON.stringify(row)}`);
+        check(row.opened === 0, `${row.at} opened ${row.from}'s ${row.kind} under a wrong key: ${JSON.stringify(row)}`);
+        check(row.failed > 0, `${row.at} saw no frame of ${row.from}'s ${row.kind} fail: ${JSON.stringify(row)}`);
+        check(row.failing.includes(true), `${row.at} never said ${row.from}'s ${row.kind} is failing`);
+        if (row.kind === "video") {
+          check(row.framesDecoded === 0, `${row.at} decoded ${row.framesDecoded} frames of ${row.from}`);
+          if (B.started.e2eePath === "script") check(row.keyframeRequests > 0, `${row.at} never asked for a keyframe`);
+        } else {
+          check(!(row.tone?.name === row.from && row.peakDb > -90), `${row.at} hears ${row.from}'s tone`);
+        }
+      }
+    }
+    return {
+      summary: rows
+        .map((r) => `${r.at}<-${r.from} ${r.kind}: ${r.packetsReceived} packets, ${r.framesDecoded} decoded, ${r.failed} failed, ${r.keyframeRequests} keyframe requests`)
+        .join("; "),
+      rows,
+    };
+  },
+
+  /**
+   * The epoch changes during a call. In the order a client arranges, both
+   * sides hold the new epoch before either sends under it, and nothing is
+   * dropped. In the worst order the sender moves first: the receiver drops
+   * the frames of the unknown epoch, asks for it at most once a second, and
+   * the picture comes back once it has it.
+   */
+  async xc(s) {
+    // The two sides renegotiate after joining, as in scenario e.
+    s.allowIgnoredOffers = true;
+    const A = await s.join("A", { e2ee: {} });
+    await A.publish("camera", "video");
+    const B = await s.join("B", { e2ee: {} });
+    await B.publish("camera", "video");
+    await verifyRoom(s.env, s.clients);
+    const { mapping } = await directoryReady(A, s.clients);
+    const camB = mapping.find((m) => m.publisher === B && m.publication.kind === "video").mid;
+    const micB = mapping.find((m) => m.publisher === B && m.publication.kind === "audio").mid;
+    const drops = async () => {
+      const worker = await A.e2eeStats();
+      return {
+        video: droppedOf(transformOf(worker, `rx:${camB}`), "unknown-epoch", "failed"),
+        audio: droppedOf(transformOf(worker, `rx:${micB}`), "unknown-epoch", "failed"),
+        needs: worker.needs.length,
+      };
+    };
+    let samples = [];
+    async function decodedGap(work, ms) {
+      // The longest stretch in which B's camera decoded nothing new at A.
+      samples = [];
+      const end = Date.now() + ms;
+      const running = work();
+      while (Date.now() < end) {
+        samples.push({ at: Date.now(), frames: (await A.stats()).inbound[camB]?.framesDecoded ?? 0 });
+        await sleep(100);
+      }
+      await running;
+      let longest = 0;
+      let last = samples[0].at;
+      for (let i = 1; i < samples.length; i += 1) {
+        if (samples[i].frames > samples[i - 1].frames) {
+          longest = Math.max(longest, samples[i].at - last);
+          last = samples[i].at;
+        }
+      }
+      return Math.max(longest, samples[samples.length - 1].at - last);
+    }
+
+    // Arranged: both get epoch 2, then each switches after a grace period.
+    const second = newEpoch(2);
+    const before = await drops();
+    const arrangedGap = await decodedGap(async () => {
+      await A.e2eeEpochs([second]);
+      await B.e2eeEpochs([second]);
+      await sleep(1500);
+      await B.e2eeEpochs([], 2);
+      await A.e2eeEpochs([], 2);
+    }, 5000);
+    const arranged = await drops();
+    check(
+      arranged.video === before.video && arranged.audio === before.audio,
+      `the arranged rotation dropped ${arranged.video - before.video} video and ${arranged.audio - before.audio} audio frames`,
+    );
+
+    // Worst order: B sends under epoch 3 two seconds before A has it.
+    const third = newEpoch(3);
+    let learnt = 0;
+    const worstGap = await decodedGap(async () => {
+      await B.e2eeEpochs([third], 3);
+      await sleep(2000);
+      learnt = Date.now();
+      await A.e2eeEpochs([third]);
+    }, 8000);
+    const worst = await drops();
+    check(worst.video > arranged.video && worst.audio > arranged.audio, "A dropped nothing of an epoch it did not have");
+    check(worst.needs - arranged.needs >= 1 && worst.needs - arranged.needs <= 3, `A asked for the epoch ${worst.needs - arranged.needs} times in 2 s`);
+    // The first sample after A learnt the epoch in which B's picture moved on.
+    const back = samples.find((x, i) => i > 0 && x.at >= learnt && x.frames > samples[i - 1].frames);
+    check(back !== undefined, "B's picture never came back after A learnt the epoch");
+    const recovered = back.at;
+    const results = await verifyRoom(s.env, s.clients);
+    return {
+      summary:
+        `both first: 0 dropped, longest picture gap ${arrangedGap} ms; ` +
+        `sender first: A dropped ${worst.video - arranged.video} video and ${worst.audio - arranged.audio} audio frames, ` +
+        `asked for the epoch ${worst.needs - arranged.needs} times, longest picture gap ${worstGap} ms, ` +
+        `picture back within ${recovered - learnt} ms of A learning the epoch; ${summarise(results)}`,
+      arrangedGap,
+      worstGap,
+    };
+  },
+
+  /**
+   * A browser without encoded transforms in an encrypted call: it publishes
+   * nothing, and nothing of it reaches anybody.
+   */
+  async xd(s) {
+    const A = await s.join("A", { e2ee: {} });
+    const strip = () => {
+      delete window.RTCRtpScriptTransform;
+      delete RTCRtpSender.prototype.createEncodedStreams;
+      delete RTCRtpReceiver.prototype.createEncodedStreams;
+    };
+    const C = await s.join("C", { mic: false, e2ee: {}, initScript: strip });
+    let refusal = null;
+    try {
+      await C.publish("mic", "audio");
+    } catch (error) {
+      refusal = String(error.message ?? error);
+    }
+    check(C.started.refused !== null, `C did not notice it cannot encrypt: ${JSON.stringify(C.started)}`);
+    check(refusal?.includes("refused"), "C published in an encrypted call without encrypting");
+    await sleep(2000);
+    const offers = s.env.hub.calls.filter((c) => c.sessionId === C.sessionId && c.kind === "offer");
+    const snapshot = await A.snapshot();
+    check(snapshot.directory.every((t) => t.userId !== C.userId), "A's directory lists a track of C");
+    s.tolerated.add(C.sessionId);
+    return { summary: `C refused (${C.started.refused}); offers from C: ${offers.length}; A has nothing of C` };
+  },
+
+  /**
+   * What encryption costs a browser: a voice and a busy camera (640x480, up
+   * to 1.2 Mbit/s) each way, without a transform, through a worker that
+   * passes frames on untouched, through one that copies them once, and
+   * encrypted. The modes are interleaved, twice each, so a machine busy with
+   * something else hurts them alike; the CPU is the whole browser's, from ps.
+   */
+  async xe(s) {
+    check(engine() === "chromium", "the CPU is read from Chromium's processes only");
+    const modes = [
+      ["none", null],
+      ["touch", { worker: "touch" }],
+      ["copy", { worker: "copy" }],
+      ["encrypted", {}],
+    ];
+    const runs = [];
+    for (const [name, e2ee] of [...modes, ...modes]) {
+      s.room = randomUUID();
+      const A = await s.join("A", { e2ee });
+      await busyCamera(A, 1_200_000);
+      const B = await s.join("B", { e2ee });
+      await busyCamera(B, 1_200_000);
+      await verifyRoom(s.env, s.clients);
+      await sleep(6000);
+      const ids = s.env.identities;
+      const windowMs = 20_000;
+      const load = loadAverage();
+      const cpu0 = [browserCpuSeconds(ids[0]), browserCpuSeconds(ids[1])];
+      const st0 = await A.stats();
+      await sleep(windowMs);
+      const cpu1 = [browserCpuSeconds(ids[0]), browserCpuSeconds(ids[1])];
+      const st1 = await A.stats();
+      const pct = (i) => (cpu0[i] === null ? null : (100 * (cpu1[i] - cpu0[i])) / (windowMs / 1000));
+      const video = (st) => Object.values(st.inbound).find((x) => x.kind === "video" && x.packetsReceived > 0);
+      const camera = (st) => Object.values(st.outbound).find((x) => x.kind === "video");
+      const row = {
+        mode: name,
+        cpuA: pct(0),
+        cpuB: pct(1),
+        load,
+        cameraKbps: Math.round(((camera(st1).bytesSent - camera(st0).bytesSent) * 8) / windowMs),
+        receivedFps: (video(st1).framesDecoded - video(st0).framesDecoded) / (windowMs / 1000),
+        downlinkA: await downlinkOf(s.env.hub, A.sessionId),
+      };
+      runs.push(row);
+      console.log(`  xe: ${JSON.stringify(row)}`);
+      for (const c of [...s.clients]) await leave(c);
+      s.clients = [];
+    }
+    const mean = (mode) => {
+      const rows = runs.filter((r) => r.mode === mode);
+      const values = rows.flatMap((r) => [r.cpuA, r.cpuB]).filter((v) => v !== null);
+      return values.reduce((a, b) => a + b, 0) / values.length;
+    };
+    // The frame format alone, in the page, by frame size.
+    const A = await s.join("A", { e2ee: null, mic: false });
+    const bench = await A.page.evaluate(async () => {
+      const f = await import("/sframe.js");
+      const base = await crypto.subtle.importKey("raw", crypto.getRandomValues(new Uint8Array(32)), "HKDF", false, ["deriveBits"]);
+      const kid = f.keyIdOf(1, crypto.getRandomValues(new Uint8Array(6)));
+      const context = { epochId: crypto.randomUUID(), conversationId: crypto.randomUUID(), senderId: crypto.randomUUID() };
+      const sealing = await f.deriveFrameKey(base, context, kid, "encrypt");
+      const opening = await f.deriveFrameKey(base, context, kid, "decrypt");
+      const rows = [];
+      for (const size of [160, 1200, 6000, 30000]) {
+        const frame = crypto.getRandomValues(new Uint8Array(size));
+        const sealed = [];
+        const n = 500;
+        let started = performance.now();
+        for (let i = 0; i < n; i += 1) sealed.push(await f.sealFrame(sealing, kid, i, frame, 0));
+        const seal = ((performance.now() - started) * 1000) / n;
+        started = performance.now();
+        for (let i = 0; i < n; i += 1) await f.openFrame(opening, f.parseFrame(sealed[i]), sealed[i]);
+        const open = ((performance.now() - started) * 1000) / n;
+        rows.push({ size, sealUs: Number(seal.toFixed(1)), openUs: Number(open.toFixed(1)) });
+      }
+      return rows;
+    });
+    return {
+      summary:
+        ["none", "touch", "copy", "encrypted"].map((m) => `${m} ${mean(m).toFixed(1)}%`).join(", ") +
+        ` of one core per browser (mean of 2 runs x 2 browsers); per frame ` +
+        bench.map((r) => `${r.size} B seal ${r.sealUs} us open ${r.openUs} us`).join(", "),
+      runs,
+      bench,
+    };
+  },
+
+  /**
+   * What a variable bitrate gives away: the same speech-like voice sent with
+   * and without a constant bitrate, encrypted, read as the sizes of the frames
+   * the sender's worker sealed and the bitrate on the wire.
+   */
+  async xf(s) {
+    const rows = [];
+    for (const cbr of [false, true]) {
+      s.room = randomUUID();
+      const A = await s.join("A", { e2ee: {}, cbr, pattern: "speech" });
+      const B = await s.join("B", { e2ee: {}, mic: false });
+      await B.receiveOnly("audio");
+      await directoryReady(B, s.clients);
+      await sleep(3000);
+      const w0 = transformOf(await A.e2eeStats(), "tx:mic");
+      const st0 = await A.stats();
+      await sleep(10_000);
+      const w1 = transformOf(await A.e2eeStats(), "tx:mic");
+      const st1 = await A.stats();
+      const frames = w1.frames - w0.frames;
+      const bytes = w1.bytesIn - w0.bytesIn;
+      const squares = w1.sizeSquares - w0.sizeSquares;
+      const meanSize = bytes / frames;
+      const mic = (st) => Object.values(st.outbound).find((x) => x.kind === "audio");
+      const row = {
+        cbr,
+        frames,
+        meanBytes: Number(meanSize.toFixed(1)),
+        sdBytes: Number(Math.sqrt(Math.max(0, squares / frames - meanSize * meanSize)).toFixed(1)),
+        minBytes: w1.sizeMin,
+        maxBytes: w1.sizeMax,
+        kbps: Math.round(((mic(st1).bytesSent - mic(st0).bytesSent) * 8) / 10_000),
+      };
+      rows.push(row);
+      console.log(`  xf: ${JSON.stringify(row)}`);
+      for (const c of [...s.clients]) await leave(c);
+      s.clients = [];
+    }
+    const [vbr, cbr] = rows;
+    check(cbr.sdBytes < vbr.sdBytes, `the constant bitrate varies more than the variable one: ${JSON.stringify(rows)}`);
+    return {
+      summary: rows
+        .map((r) => `${r.cbr ? "CBR" : "VBR"}: ${r.kbps} kbit/s, frames ${r.meanBytes} ± ${r.sdBytes} B (${r.minBytes}..${r.maxBytes})`)
+        .join("; "),
+      rows,
+    };
+  },
 };
 
 async function settle(s) {
@@ -1500,9 +1988,14 @@ for (const signal of ["SIGINT", "SIGTERM"]) {
 
 async function main() {
   const wanted = process.argv.slice(2);
+  const e2ee = e2eeFromEnv();
+  // The encrypted-call scenarios run only when named. Run encrypted, scenario i
+  // has nothing to prove: H.264 and AV1 cannot be sent encrypted (scenario xa).
   const ids = Object.keys(SCENARIOS)
     .sort()
-    .filter((id) => wanted.length === 0 || wanted.includes(id));
+    .filter((id) =>
+      wanted.length > 0 ? wanted.includes(id) : !id.startsWith("x") && !(e2ee && id === "i"),
+    );
   const out =
     process.env.STELLARR_SMOKE_OUT ?? mkdtempSync(join(tmpdir(), "stellarr-media-smoke-"));
   mkdirSync(out, { recursive: true });
@@ -1511,7 +2004,7 @@ async function main() {
     process.env.STELLARR_MEDIA_BINARY ?? resolve(here, "../target/release/stellarr-media");
   const logFile = join(out, "stellarr-media.log");
   const executablePath = browserPath();
-  console.log(`browser ${executablePath}\noutput ${out}`);
+  console.log(`browser ${engine()} ${executablePath ?? "(Playwright's own)"}\noutput ${out}`);
 
   const cleanup = [];
   let failed = 0;
@@ -1545,8 +2038,9 @@ async function main() {
       browsers,
       out,
       logText: () => readFileSync(logFile, "utf8"),
+      e2ee,
     };
-    console.log(`media server pid ${media.pid}, candidate ${media.candidate}`);
+    console.log(`media server pid ${media.pid}, candidate ${media.candidate}, encrypted ${e2ee ? JSON.stringify(e2ee) : "no"}`);
 
     const report = {};
     for (const id of ids) {
