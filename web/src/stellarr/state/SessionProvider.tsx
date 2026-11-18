@@ -305,6 +305,8 @@ export function SessionProvider({ children }: { children: ReactNode }) {
       (alive) => {
         if (!active || alive) return;
         ended.current = true;
+        // Signed out elsewhere: the keys of a session that ended go too.
+        void ports.encryption.forget().catch(() => undefined);
         void runtime.realtime.stop().catch(() => undefined);
         setLoginError(t("session.unauthorized"));
         setBoot(ANONYMOUS);
@@ -330,6 +332,9 @@ export function SessionProvider({ children }: { children: ReactNode }) {
       // Before the session goes: the server can still recognise the endpoint
       // and forget its row. The local unsubscribe happens inside regardless.
       await ports.notificationDelivery.releaseDevice().catch(() => undefined);
+      // This browser's encryption keys go with the session; the server stops
+      // counting its device on its own once the session ends.
+      await ports.encryption.forget().catch(() => undefined);
       await ports.session.logout();
     } finally {
       ended.current = true;
