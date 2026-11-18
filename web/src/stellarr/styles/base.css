@@ -97,6 +97,17 @@
     left: -9999px;
   }
 
+  /* A live region that speaks often, as a drag does on every new place:
+     fixed, sized and contained, so a new sentence lays out nothing else. */
+  .sr-only.live-contained {
+    position: fixed;
+    top: 0;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    contain: strict;
+  }
+
   /* The measure cap for prose inside the room. */
   .measure {
     max-width: var(--measure);
