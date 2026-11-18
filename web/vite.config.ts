@@ -75,7 +75,7 @@ export default defineConfig(({ mode }) => {
     plugins: [
       react(),
       stellarrDocuments({ instanceLanguage: env.STELLARR_LANGUAGE, publicDir: here("public") }),
-      stellarrRelease(),
+      stellarrRelease({ publicDir: here("public") }),
     ],
     resolve: {
       alias: { "@": here("src/stellarr") },
