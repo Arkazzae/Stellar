@@ -62,7 +62,10 @@ function EncryptionFrame({
   open: boolean;
   title: string;
   detail: string;
-  /** The mascot above the title, on the dialogs that mark a first step. */
+  /**
+   * The mascot above the title, on the dialogs that mark a first step. Such a
+   * dialog reads down the middle, header and body alike.
+   */
   sticker?: StickerName;
   onClose(): void;
   closeDisabled?: boolean;
@@ -97,7 +100,7 @@ function EncryptionFrame({
           onClose={onClose}
           closeDisabled={closeDisabled}
         />
-        <div className="dlg-body enc-body">{children}</div>
+        <div className={sticker === undefined ? "dlg-body enc-body" : "dlg-body enc-body centered"}>{children}</div>
         <div className="dlg-foot">{foot}</div>
       </form>
     </Modal>

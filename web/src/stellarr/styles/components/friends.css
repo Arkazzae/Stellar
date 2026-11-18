@@ -625,12 +625,6 @@
     max-width: var(--measure);
   }
 
-  /* The mascot starts where the heading under it starts. */
-  .fr-add-art {
-    display: flex;
-    margin-bottom: var(--sp-3);
-  }
-
   .fr-add-panel h3 {
     font-size: var(--fs-title);
     font-weight: var(--fw-strong);

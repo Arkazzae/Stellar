@@ -1,10 +1,8 @@
 import { useId } from "react";
 
 import { Button } from "@stellarr/ui";
-import { Sticker } from "@/components/primitives/MascotArt";
 import { useLanguage } from "@/state/LanguageProvider";
 
-import { MESSAGES_STICKERS } from "./stickers";
 import type { AddFriendForm } from "./useAddFriend";
 
 /** The "Dodaj znajomego" form and the sentence the server answers it with. */
@@ -16,9 +14,6 @@ export function AddFriendPanel({ form }: { form: AddFriendForm }) {
 
   return (
     <section className="fr-add-panel" aria-label={t("friends.addFriend")}>
-      <span className="fr-add-art">
-        <Sticker name={MESSAGES_STICKERS.addFriend} size="main" />
-      </span>
       <h3>{t("friends.addFriend")}</h3>
       <p className="fr-help">{t("friends.addHelp")}</p>
       <form

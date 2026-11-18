@@ -15,7 +15,10 @@ export interface DialogHeaderProps {
    * list to pick from rather than a form to fill in.
    */
   centered?: boolean;
-  /** The mascot above the title, for a dialog that marks a first step. */
+  /**
+   * The mascot centred above the title, for a dialog that marks a first
+   * step. A header with one is always centred.
+   */
   sticker?: StickerName;
 }
 
@@ -38,11 +41,11 @@ export function DialogHeader({
   const { t } = useLanguage();
 
   return (
-    <header className={centered ? "am-head centered" : "am-head"}>
+    <header className={centered || sticker !== undefined ? "am-head centered" : "am-head"}>
       <DialogClose label={t("common.close")} onClose={onClose} disabled={closeDisabled} />
       {sticker === undefined ? null : (
         <span className="am-art">
-          <Sticker name={sticker} size="main" align={centered ? "center" : "start"} />
+          <Sticker name={sticker} size="main" align="center" />
         </span>
       )}
       <h2 id={titleId}>{title}</h2>
