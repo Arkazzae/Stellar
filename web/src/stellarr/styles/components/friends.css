@@ -180,11 +180,19 @@
     color: var(--live);
   }
 
+  /* No conversation yet, or none the search matches: the mascot, lined up
+     with the sentence under it. */
   .dm-empty {
+    display: flex;
+    flex-direction: column;
+    gap: var(--sp-3);
+    padding: var(--sp-1) var(--sp-2) var(--sp-2);
+  }
+
+  .dm-empty p {
     font-size: var(--fs-body);
     line-height: 1.5;
     color: var(--text-faint);
-    padding: var(--sp-1) var(--sp-2) var(--sp-2);
   }
 
   /* Something is waiting for you to answer it. */
@@ -578,7 +586,8 @@
   }
 
   /* The same anatomy as every other empty list in the app (`.asset-empty`):
-     a mark, what is empty, one sentence, and the way out where there is one. */
+     a mark, what is empty, one sentence, and the way out where there is one.
+     Here the mark is the mascot. */
   .fr-empty {
     flex: 1;
     width: 100%;
@@ -606,16 +615,9 @@
     color: var(--text-muted);
   }
 
-  .fr-empty-mark {
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    width: 40px;
-    height: 40px;
-    margin-bottom: var(--sp-1);
-    border-radius: 50%;
-    background: var(--surface-overlay);
-    color: var(--accent-text);
+  .fr-empty-art {
+    display: flex;
+    margin-bottom: var(--sp-3);
   }
 
   .fr-empty-act {
@@ -626,6 +628,12 @@
   /* ---------- ROOM: ADD A FRIEND ---------- */
   .fr-add-panel {
     max-width: var(--measure);
+  }
+
+  /* The mascot starts where the heading under it starts. */
+  .fr-add-art {
+    display: flex;
+    margin-bottom: var(--sp-3);
   }
 
   .fr-add-panel h3 {

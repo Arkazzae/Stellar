@@ -1,6 +1,6 @@
 import type { ReactNode } from "react";
 
-import { Icon, type IconName } from "@stellarr/icons";
+import { Sticker, type StickerName } from "@/components/primitives/MascotArt";
 
 export interface FriendsSectionProps {
   caption: string;
@@ -24,7 +24,8 @@ export function FriendsSection({ caption, count, empty, children }: FriendsSecti
 }
 
 export interface FriendsEmptyProps {
-  icon: IconName;
+  /** The mascot marking the moment, from `MESSAGES_STICKERS`. */
+  sticker: StickerName;
   title: string;
   detail: string;
   /** The button that fills the list, when there is one. */
@@ -34,13 +35,14 @@ export interface FriendsEmptyProps {
 /**
  * An empty list in the shape the rest of the app uses for one: a mark, what is
  * empty, a sentence about it and the action that fixes it. A bare grey line
- * would read as missing content rather than as a state.
+ * would read as missing content rather than as a state. The mark is the
+ * mascot, centred over the text.
  */
-export function FriendsEmpty({ icon, title, detail, action }: FriendsEmptyProps) {
+export function FriendsEmpty({ sticker, title, detail, action }: FriendsEmptyProps) {
   return (
     <div className="fr-empty">
-      <span className="fr-empty-mark" aria-hidden="true">
-        <Icon name={icon} size={20} />
+      <span className="fr-empty-art">
+        <Sticker name={sticker} size="main" align="center" />
       </span>
       <b>{title}</b>
       <span className="fr-empty-detail">{detail}</span>

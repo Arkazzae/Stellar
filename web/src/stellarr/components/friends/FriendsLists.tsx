@@ -14,6 +14,7 @@ import { FriendRow } from "./FriendRow";
 import { TAB_LABEL } from "./FriendsTabList";
 import { FriendsEmpty, FriendsSection } from "./FriendsSection";
 import { RequestRow } from "./RequestRow";
+import { MESSAGES_STICKERS } from "./stickers";
 
 /** What a row can do. Every row names a person, so every row opens their card. */
 export interface FriendsListActions {
@@ -82,7 +83,7 @@ export function FriendsLists({
   );
   const noMatches = (detail: MessageKey) => (
     <FriendsEmpty
-      icon="search"
+      sticker={MESSAGES_STICKERS.noMatch}
       title={t("friends.queryEmptyTitle")}
       detail={t(detail, { query: typed })}
       action={
@@ -125,8 +126,10 @@ export function FriendsLists({
             needle.length > 0 ? (
               noMatches("friends.onlineQueryEmpty")
             ) : (
+              // With no friends at all the tab says what the full list says,
+              // and shows the same sticker.
               <FriendsEmpty
-                icon="wave"
+                sticker={nobody ? MESSAGES_STICKERS.noFriends : MESSAGES_STICKERS.nobodyOnline}
                 title={t(nobody ? "friends.allEmptyTitle" : "friends.onlineEmptyTitle")}
                 detail={t(nobody ? "friends.allEmpty" : "friends.onlineEmpty")}
                 action={addAction}
@@ -149,7 +152,7 @@ export function FriendsLists({
               noMatches("friends.allQueryEmpty")
             ) : (
               <FriendsEmpty
-                icon="users"
+                sticker={MESSAGES_STICKERS.noFriends}
                 title={t("friends.allEmptyTitle")}
                 detail={t("friends.allEmpty")}
                 action={addAction}
@@ -168,7 +171,7 @@ export function FriendsLists({
           count={requests.length}
           empty={
             <FriendsEmpty
-              icon="send"
+              sticker={MESSAGES_STICKERS.noRequests}
               title={t("friends.pendingEmptyTitle")}
               detail={t("friends.pendingEmpty")}
               action={addAction}
@@ -200,7 +203,7 @@ export function FriendsLists({
               // Not blocking anybody is already the state, so there is no
               // action to offer.
               <FriendsEmpty
-                icon="ban"
+                sticker={MESSAGES_STICKERS.nobodyBlocked}
                 title={t("friends.blockedEmptyTitle")}
                 detail={t("friends.blockedEmpty")}
               />
