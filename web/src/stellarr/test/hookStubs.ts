@@ -97,6 +97,7 @@ function defaults(): HookStubs {
       messagePerson: vi.fn(),
       callConversation: vi.fn(),
       declineCall: vi.fn(),
+      ringing: false,
       addFriend: vi.fn(async () => "sent"),
       accept: vi.fn(),
       decline: vi.fn(),

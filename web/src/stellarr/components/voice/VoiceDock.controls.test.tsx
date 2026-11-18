@@ -69,6 +69,14 @@ describe("VoiceDock status", () => {
     expect(screen.getByText("01:08")).toBeInTheDocument();
   });
 
+  it("says it is calling and keeps no time until the other person joins a private call", () => {
+    render(<VoiceDock {...props({ call: call({ channelName: "Ada" }), ringing: true })} />);
+
+    expect(screen.getByText("Dzwonię")).toBeInTheDocument();
+    expect(screen.getByText("Ada")).toBeInTheDocument();
+    expect(document.querySelector("time")).toBeNull();
+  });
+
   it("says which channel the call is in and what state it is in", () => {
     render(<VoiceDock {...props({ call: call({ headline: "reconnecting" }) })} />);
 

@@ -7,6 +7,7 @@ import { initials } from "@/lib/format/format";
 import {
   useAccount,
   useEmoji,
+  useFriends,
   usePorts,
   useSession,
   useUi,
@@ -31,6 +32,7 @@ const UNKNOWN_SELF: PersonVM = {
 export function RailVoiceDock() {
   const ui = useUi();
   const voice = useVoice();
+  const { ringing } = useFriends();
   const { voiceSettings } = usePorts();
   const settings = useSyncExternalStore(
     voiceSettings.subscribe,
@@ -41,6 +43,7 @@ export function RailVoiceDock() {
   return (
     <VoiceDock
       call={voice.call}
+      ringing={ringing}
       sounds={voice.sounds}
       soundboardSupported={voice.soundboardEnabled}
       soundboardVolume={settings.soundboardVolume}

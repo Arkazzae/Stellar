@@ -579,6 +579,24 @@ describe("FriendsProvider calls", () => {
     });
   });
 
+  it("rings while the other person has not taken their seat in your private call", () => {
+    const maja = { userId: "u-maja", displayName: "Maja", muted: false };
+    const ada = { userId: ADA.id, displayName: ADA.displayName, muted: false };
+    let conversations = [{ ...CONVERSATION, callParticipants: [maja] }];
+    harness.port = stubPort({ listConversations: () => conversations });
+    harness.voice = { ...harness.voice, privateCall: true, channelId: "dm-1" };
+    const mounted = mount();
+    expect(mounted.result.current.friends.ringing).toBe(true);
+
+    conversations = [{ ...CONVERSATION, callParticipants: [maja, ada] }];
+    mounted.rerender();
+    expect(mounted.result.current.friends.ringing).toBe(false);
+
+    harness.voice = { ...harness.voice, privateCall: false, channelId: "ch-salon" };
+    mounted.rerender();
+    expect(mounted.result.current.friends.ringing).toBe(false);
+  });
+
   it("leaves a private call whose conversation has gone, and keeps one that is still there", () => {
     harness.port = stubPort();
     harness.voice = { ...harness.voice, privateCall: true, channelId: "dm-1" };
