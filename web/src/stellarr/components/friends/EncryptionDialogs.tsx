@@ -321,6 +321,11 @@ export interface NewPinDialogProps {
   /** The current password was refused: the dialog goes back to it. */
   passwordError: string | null;
   error: string | null;
+  /**
+   * False for an account made through a provider, which has no password to
+   * give and proves itself as the server asks once the PIN is sent.
+   */
+  withPassword?: boolean;
   onSubmit(input: { password: string; pin: string }): void;
   onClose(): void;
 }
@@ -332,7 +337,16 @@ type NewPinStep = "password" | "pin" | "repeat";
  * twice. The second step of signing in, when the server asks for it, is the
  * security dialog's, raised by whoever sends this.
  */
-export function NewPinDialog({ open, mode, pending, passwordError, error, onSubmit, onClose }: NewPinDialogProps) {
+export function NewPinDialog({
+  open,
+  mode,
+  pending,
+  passwordError,
+  error,
+  withPassword = true,
+  onSubmit,
+  onClose,
+}: NewPinDialogProps) {
   const { t } = useLanguage();
   const errorId = useId();
   const passwordId = useId();
@@ -348,6 +362,8 @@ export function NewPinDialog({ open, mode, pending, passwordError, error, onSubm
     setAgain("");
     setMismatch(false);
   });
+  // Known once the account is read, which may be after the dialog opened.
+  if (!withPassword && step === "password") setStep("pin");
   const [lastPasswordError, setLastPasswordError] = useState(passwordError);
   if (lastPasswordError !== passwordError) {
     setLastPasswordError(passwordError);

@@ -2,7 +2,7 @@ import { useCallback, useState } from "react";
 
 import { avatarColor } from "@/design/identity";
 import type { Translator } from "@/i18n";
-import { MIN_PASSWORD_LENGTH } from "@/lib/auth/passwordStrength";
+import { MAX_PASSWORD_LENGTH, MIN_PASSWORD_LENGTH } from "@/lib/auth/passwordStrength";
 import { isValidUsername, suggestUsername, USERNAME_MAX_LENGTH } from "@/lib/auth/username";
 
 import { AuthField, PasswordField } from "./AuthField";
@@ -16,8 +16,6 @@ export type AccountField = "displayName" | "username" | "email" | "password";
 export type AccountValues = Record<AccountField, string>;
 
 const EMPTY: AccountValues = { displayName: "", username: "", email: "", password: "" };
-
-const MAX_PASSWORD_LENGTH = 256;
 
 /** What the form or the server found wrong, and with which field, if any. */
 export interface FormIssue<F extends string = string> {

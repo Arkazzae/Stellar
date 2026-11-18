@@ -3,6 +3,7 @@ import userEvent from "@testing-library/user-event";
 import { describe, expect, it, vi } from "vitest";
 
 import type { Account, EmailChangeResult, PasswordChangeResult } from "@/ports";
+import { ConfirmProvider } from "@/components/primitives/ConfirmDialog";
 import { renderWithConfirm } from "@/test/confirm";
 
 import { SecurityPane, type SecurityPaneProps } from "./SecurityPane";
@@ -27,7 +28,8 @@ function setup(overrides: Partial<SecurityPaneProps> = {}) {
     onChangePassword: vi.fn(async (): Promise<PasswordChangeResult> => "changed"),
     ...overrides,
   };
-  const view = render(<SecurityPane {...props} />);
+  // The second-step sections ask before a removal, through the app's dialog.
+  const view = props.twoStep === undefined ? render(<SecurityPane {...props} />) : renderWithConfirm(<SecurityPane {...props} />);
   return { props, ...view };
 }
 
@@ -288,5 +290,70 @@ describe("SecurityPane order", () => {
 
     const headings = [...document.querySelectorAll(".sc-h")].map((header) => header.textContent);
     expect(headings).toEqual(["Logowanie dwuetapowe", "Hasło i e-mail", "Logowanie przez dostawcę"]);
+  });
+});
+
+describe("SecurityPane for an account without a password", () => {
+  const passwordless = { twoStep: securityProps({ security: { ...SECURITY, hasPassword: false } }) };
+
+  it("sets a first password instead of changing one, and says so once the row can change it", async () => {
+    const user = userEvent.setup();
+    const onSetPassword = vi.fn(async () => "set" as const);
+    const { props, rerender } = setup({ ...passwordless, onSetPassword });
+
+    expect(screen.queryByRole("button", { name: "Zmień hasło" })).toBeNull();
+    await user.click(screen.getByRole("button", { name: "Ustaw hasło" }));
+    await user.type(screen.getByLabelText(/^Nowe hasło/), "nowehaslo1");
+    await user.type(screen.getByLabelText(/Powtórz nowe hasło/), "nowehaslo1");
+    await user.click(screen.getByRole("button", { name: "Ustaw hasło" }));
+
+    expect(onSetPassword).toHaveBeenCalledExactlyOnceWith("nowehaslo1");
+    expect(props.onChangePassword).not.toHaveBeenCalled();
+    // The refreshed state has a password now, and the change replaces the setting.
+    rerender(
+      <ConfirmProvider>
+        <SecurityPane {...props} twoStep={securityProps({ security: SECURITY })} />
+      </ConfirmProvider>,
+    );
+    expect(screen.getByRole("button", { name: "Zmień hasło" })).toBeVisible();
+    expect(screen.getByRole("status")).toHaveTextContent("Hasło jest ustawione");
+  });
+
+  it("says at the field that the server refused the password, and keeps one too long from going", async () => {
+    const user = userEvent.setup();
+    const onSetPassword = vi.fn(async () => "refused" as const);
+    setup({ ...passwordless, onSetPassword });
+
+    await user.click(screen.getByRole("button", { name: "Ustaw hasło" }));
+    await user.type(screen.getByLabelText(/^Nowe hasło/), "nowehaslo1");
+    await user.type(screen.getByLabelText(/Powtórz nowe hasło/), "nowehaslo1");
+    await user.click(screen.getByRole("button", { name: "Ustaw hasło" }));
+
+    expect(screen.getByLabelText(/^Nowe hasło/)).toHaveAttribute("aria-invalid", "true");
+    expect(screen.getByRole("alert")).toHaveTextContent("Hasło musi mieć od 8 do 256 znaków.");
+
+    const tooLong = "x".repeat(257);
+    await user.clear(screen.getByLabelText(/^Nowe hasło/));
+    await user.click(screen.getByLabelText(/^Nowe hasło/));
+    await user.paste(tooLong);
+    await user.clear(screen.getByLabelText(/Powtórz nowe hasło/));
+    await user.click(screen.getByLabelText(/Powtórz nowe hasło/));
+    await user.paste(tooLong);
+    expect(screen.getByRole("button", { name: "Ustaw hasło" })).toBeDisabled();
+    expect(onSetPassword).toHaveBeenCalledOnce();
+  });
+
+  it("asks for a new address without a password it does not have", async () => {
+    const user = userEvent.setup();
+    const { props } = setup(passwordless);
+
+    await user.click(screen.getByRole("button", { name: "Zmień e-mail" }));
+    const field = screen.getByRole("textbox", { name: "Nowy adres e-mail" });
+    await user.clear(field);
+    await user.type(field, "ola@example.com");
+    expect(screen.queryByLabelText("Obecne hasło")).toBeNull();
+    await user.click(screen.getByRole("button", { name: "Wyślij link" }));
+
+    expect(props.onChangeEmail).toHaveBeenCalledExactlyOnceWith("ola@example.com", "");
   });
 });

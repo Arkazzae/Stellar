@@ -65,9 +65,12 @@ async function succeed(
  * validation problem carries the fields it refused.
  */
 async function refuse(response: Response, path: string): Promise<never> {
-  const code = response.status === 403 ? await problemCode(response) : null;
+  // A refusal for want of a fresh proof (403) and one that keeps an account's
+  // last way in (409) name their reason, for the client to say it.
+  const { status } = response;
+  const code = status === 403 || status === 409 ? await problemCode(response) : null;
   if (code !== null) {
-    throw new ApiError(statusToKind(403), `${path} responded 403`, 403, { code });
+    throw new ApiError(statusToKind(status), `${path} responded ${status}`, status, { code });
   }
   const fields = response.status === 400 ? await problemFields(response) : null;
   if (fields !== null) {

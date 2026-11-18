@@ -38,8 +38,10 @@ export function EncryptionDialogsContainer() {
   const session = useSession();
   const { t, locale } = useLanguage();
   // Its own instance: a new PIN raised from a conversation needs the same
-  // second step the settings ask for, with the settings shut.
-  const security = useAccountSecurity(false);
+  // second step the settings ask for, with the settings shut. It reads the
+  // account while that dialog is open, to know whether it has a password,
+  // and nothing else the settings show.
+  const security = useAccountSecurity(dialog?.kind === "newPin", { withSessions: false });
 
   const [pending, setPending] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -215,6 +217,7 @@ export function EncryptionDialogsContainer() {
         pending={pending}
         passwordError={passwordError}
         error={error}
+        withPassword={security.sections.security?.hasPassword !== false}
         onSubmit={(input) => void newPin(input)}
         onClose={close}
       />
