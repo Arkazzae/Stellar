@@ -356,7 +356,195 @@ export interface Message {
   replyTo?: MessageReference;
   /** Durable aggregates, from the point of view of the signed-in reader. */
   reactions?: MessageReaction[];
+  /**
+   * Direct messages only: the end-to-end encrypted body, with `content` empty.
+   * The friends adapter decrypts it and takes this field off, so nothing above
+   * the adapter ever holds ciphertext.
+   */
+  encrypted?: EncryptedBody;
+  /** Direct messages only: an entry about the conversation itself, not a message. */
+  line?: TimelineLine;
+  /**
+   * Set by the client on an encrypted message this browser cannot read, and on
+   * the one entry that stands for a run of them.
+   */
+  sealed?: SealedMessages;
 }
+
+/** An encrypted direct message as the server stores it: opaque to it. */
+export interface EncryptedBody {
+  epochId: string;
+  /** base64, 12 bytes. */
+  iv: string;
+  /** base64, AES-GCM output with its tag. */
+  ciphertext: string;
+}
+
+export const TIMELINE_LINE_KINDS = [
+  "encryption_requested",
+  "encryption_request_cancelled",
+  "encryption_enabled",
+  "encryption_disabled",
+  "device_added",
+  "keys_reset",
+] as const;
+export type TimelineLineKind = (typeof TIMELINE_LINE_KINDS)[number];
+
+export interface TimelineLine {
+  kind: TimelineLineKind;
+  /** The person it is about; also the entry's author. */
+  actorId: UserId;
+}
+
+/**
+ * Why this browser cannot read an encrypted message.
+ *
+ * `pin`: the account key opens it, and the account key is in the PIN backup.
+ * `lost`: nothing this browser has or can get opens it (an epoch from before a
+ * reset, or one wrapped before this account had a key).
+ * `unsupported`: this browser cannot do the cryptography at all.
+ */
+export type SealedReason = "pin" | "lost" | "unsupported";
+
+export interface SealedMessages {
+  reason: SealedReason;
+  /** How many messages the entry stands for; 1 straight from the adapter. */
+  count: number;
+}
+
+/* --------------------------------------------------------- encryption */
+
+export type ConversationEncryptionState = "off" | "requested" | "on";
+
+export interface ConversationEncryption {
+  state: ConversationEncryptionState;
+  /** Only while "requested". */
+  requestedById: UserId | null;
+  requestedAt: string | null;
+  /** Only while "on": when it was switched on this time. */
+  enabledAt: string | null;
+  /** Only while "on"; null until the first epoch after switching on. */
+  currentEpochId: string | null;
+}
+
+export const ENCRYPTION_OFF: ConversationEncryption = {
+  state: "off",
+  requestedById: null,
+  requestedAt: null,
+  enabledAt: null,
+  currentEpochId: null,
+};
+
+/** Every byte field below is base64 with padding, as on the wire. */
+export interface PublicKeyRecord {
+  keyId: string;
+  algorithm: string;
+  publicKey: string;
+  createdAt: string;
+}
+
+export interface KeyBackupStatus {
+  iterations: number;
+  failedAttempts: number;
+  remainingAttempts: number;
+  updatedAt: string;
+}
+
+export interface OwnDevice {
+  /** Also the device's key id. */
+  id: string;
+  algorithm: string;
+  publicKey: string;
+  /** "Chrome, macOS", as the browser described itself. */
+  label: string;
+  createdAt: string;
+  lastSeenAt: string;
+  /** The device of the session asking. */
+  current: boolean;
+}
+
+export interface EncryptionAccount {
+  accountKey: PublicKeyRecord | null;
+  backup: KeyBackupStatus | null;
+  device: OwnDevice | null;
+}
+
+export interface KeyBackupInput {
+  salt: string;
+  iterations: number;
+  verifier: string;
+  iv: string;
+  ciphertext: string;
+}
+
+export interface BackupParameters {
+  salt: string;
+  iterations: number;
+  remainingAttempts: number;
+}
+
+export interface UnlockedBackup {
+  accountKeyId: string;
+  iv: string;
+  ciphertext: string;
+}
+
+export interface DeviceKeyRecord {
+  keyId: string;
+  algorithm: string;
+  publicKey: string;
+  createdAt: string;
+}
+
+export interface RecipientKey {
+  keyId: string;
+  kind: "account" | "device";
+  userId: UserId;
+}
+
+export interface EpochEnvelope {
+  recipientKeyId: string;
+  ephemeralPublicKey: string;
+  iv: string;
+  ciphertext: string;
+}
+
+export interface EncryptionEpoch {
+  id: string;
+  sequence: number;
+  previousEpochId: string | null;
+  createdById: UserId;
+  createdAt: string;
+  /** Exactly the keys the epoch was wrapped for. */
+  recipients: RecipientKey[];
+  /** Only the reader's own. */
+  envelopes: EpochEnvelope[];
+}
+
+export interface PersonKeys {
+  userId: UserId;
+  accountKey: PublicKeyRecord | null;
+  devices: DeviceKeyRecord[];
+}
+
+export interface ConversationKeys {
+  conversationId: string;
+  encryption: ConversationEncryption;
+  self: PersonKeys;
+  peer: PersonKeys;
+  currentDeviceKeyId: string | null;
+  /** Exactly what a new epoch must be wrapped for, right now. */
+  recipients: RecipientKey[];
+  currentEpoch: EncryptionEpoch | null;
+}
+
+export interface EpochPage {
+  currentEpochId: string | null;
+  epochs: EncryptionEpoch[];
+  hasMore: boolean;
+}
+
+export type EncryptionSwitchAction = "request" | "cancel" | "confirm" | "disable";
 
 export interface MessageReaction {
   emoji: string;
@@ -581,6 +769,8 @@ export interface SocialConversation {
   lastMessage?: Message;
   unread: number;
   updatedAt: string;
+  /** Absent from a server that predates encryption: off. */
+  encryption?: ConversationEncryption;
 }
 
 export interface SocialState {

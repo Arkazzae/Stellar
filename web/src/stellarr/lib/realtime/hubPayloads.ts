@@ -7,6 +7,11 @@ import {
   parseSoundboardSound,
   parseUser,
 } from "@/lib/api/client";
+import {
+  parseEncryptionChanged,
+  parseEpochCreated,
+  parseKeysChanged,
+} from "@/lib/api/encryptionParsers";
 import { isRecord } from "@/lib/api/expect";
 import { isPresence, SERVER_PERMISSION_VALUES } from "@/lib/api/types";
 import type { ServerPermission } from "@/lib/api/types";
@@ -221,6 +226,10 @@ export const HUB_DECODERS: { [E in RealtimeEventName]: HubDecoder<E> } = {
   PresenceChanged: decodePresence,
   UserUpdated: parsed((payload) => parseUser(payload, "UserUpdated")),
   SocialChanged: () => ({}),
+  DirectEncryptionChanged: parsed((payload) => parseEncryptionChanged(payload, "DirectEncryptionChanged")),
+  DirectEncryptionEpochCreated: parsed((payload) => parseEpochCreated(payload, "DirectEncryptionEpochCreated")),
+  DirectEncryptionKeysChanged: parsed((payload) => parseKeysChanged(payload, "DirectEncryptionKeysChanged")),
+  EncryptionAccountChanged: () => ({}),
   PermissionsChanged: decodePermissions,
   ServerMemberRemoved: strings("serverId", "userId"),
   ServerAccessRevoked: decodeAccessRevoked,

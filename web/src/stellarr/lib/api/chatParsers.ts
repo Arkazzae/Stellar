@@ -18,10 +18,12 @@ import type {
   NotificationTone,
 } from "@/ports/notifications";
 
+import { TIMELINE_LINE_KINDS } from "./types";
 import type {
   Attachment,
   ChannelReadChanged,
   DirectMessageHistoryPage,
+  EncryptedBody,
   Message,
   MessageEmbed,
   MessageEmbedsUpdate,
@@ -32,6 +34,7 @@ import type {
   MessageSyncChange,
   MessageSyncPage,
   ThreadSummary,
+  TimelineLine,
 } from "./types";
 
 export function parseAttachment(value: unknown, path: string): Attachment {
@@ -122,11 +125,33 @@ export function parseReactionChanged(
   };
 }
 
+/** A direct message's encrypted body; absent on every plain message. */
+function parseEncryptedBody(value: unknown, path: string): EncryptedBody | undefined {
+  if (value === null || value === undefined) return undefined;
+  const record = expectRecord(value, path);
+  return {
+    epochId: expectString(record, "epochId", path),
+    iv: expectString(record, "iv", path),
+    ciphertext: expectString(record, "ciphertext", path),
+  };
+}
+
+/** A timeline entry; one of a kind this client does not know is left out. */
+function parseTimelineLine(value: unknown, path: string): TimelineLine | undefined {
+  if (value === null || value === undefined) return undefined;
+  const record = expectRecord(value, path);
+  const kind = TIMELINE_LINE_KINDS.find((known) => known === record["kind"]);
+  if (kind === undefined) return undefined;
+  return { kind, actorId: expectString(record, "actorId", path) };
+}
+
 export function parseMessage(value: unknown, path = "message"): Message {
   const record = expectRecord(value, path);
   const author = expectRecord(record["author"], `${path}.author`);
   const authorId = expectString(author, "id", `${path}.author`);
   const replyTo = parseReference(record["replyTo"]);
+  const encrypted = parseEncryptedBody(record["encrypted"], `${path}.encrypted`);
+  const line = parseTimelineLine(record["system"], `${path}.system`);
   return {
     id: expectString(record, "id", path),
     channelId: expectString(record, "channelId", path),
@@ -143,6 +168,8 @@ export function parseMessage(value: unknown, path = "message"): Message {
     // majority of messages, which were never edited or pinned.
     ...definedField("editedAt", optionalString(record, "editedAt")),
     ...definedField("pinnedAt", optionalString(record, "pinnedAt")),
+    ...(encrypted === undefined ? {} : { encrypted }),
+    ...(line === undefined ? {} : { line }),
   };
 }
 
