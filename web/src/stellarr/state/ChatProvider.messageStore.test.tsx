@@ -185,3 +185,18 @@ describe("a device that cannot keep messages", () => {
     expect(mounted.result.current.loading).toBe(false);
   });
 });
+
+describe("channels that can no longer be read", () => {
+  it("loses its stored window when the session starts", async () => {
+    const store = createMessageStore({ userId: SELF.id, serverId: "srv" });
+    await store.keepOnly(["ch-general", "ch-gone"]);
+    await store.write("ch-gone", [message("a", 1, { channelId: "ch-gone" })], "c", new Set());
+
+    mount();
+
+    await waitFor(async () => {
+      await store.keepOnly(["ch-general", "ch-gone"]);
+      expect(await store.read("ch-gone")).toBeUndefined();
+    });
+  });
+});
