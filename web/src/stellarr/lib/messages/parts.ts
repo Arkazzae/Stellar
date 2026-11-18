@@ -254,7 +254,7 @@ const JUMBO_MAX = 3;
 const GRAPHEMES =
   typeof Intl.Segmenter === "function" ? new Intl.Segmenter(undefined, { granularity: "grapheme" }) : null;
 
-function graphemes(text: string): string[] {
+export function graphemes(text: string): string[] {
   return GRAPHEMES === null ? [...text] : Array.from(GRAPHEMES.segment(text), (piece) => piece.segment);
 }
 

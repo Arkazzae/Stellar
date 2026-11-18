@@ -82,12 +82,10 @@ export function RailAccount() {
           ...(user.avatarUrl === undefined ? {} : { avatarUrl: user.avatarUrl }),
         };
 
-  const openSettings = () => ui.openModal("account");
-
   return (
     <AccountRow
       user={self}
-      onOpenSettings={openSettings}
+      onOpenSettings={() => ui.openModal("account")}
       panel={{
         presence,
         customStatus: account.customStatus,
@@ -96,7 +94,6 @@ export function RailAccount() {
         onSaveCustomStatus: (customStatus) => {
           void update({ customStatus }).catch(() => undefined);
         },
-        onOpenSettings: openSettings,
         onLogout: () => {
           void logout();
         },
