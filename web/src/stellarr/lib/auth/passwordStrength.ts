@@ -6,10 +6,12 @@
  * symbols, and the meter says so. Variety helps a password that is long
  * already. A password that holds a word every list of leaked passwords
  * starts with, or the person's own login, stays weak however long it is.
- * The server enforces only the minimum; this is advice, not a rule.
+ * The server enforces only the length; this is advice, not a rule.
  */
 
+/** The shortest and the longest password the server takes, as its password policy says. */
 export const MIN_PASSWORD_LENGTH = 8;
+export const MAX_PASSWORD_LENGTH = 256;
 
 export type PasswordScore = 0 | 1 | 2 | 3;
 

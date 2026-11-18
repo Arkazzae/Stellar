@@ -2,9 +2,17 @@ import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from "
 
 import { ApiError } from "@/lib/api/errors";
 import { leaveFor } from "@/lib/auth/leaveFor";
+import { providerProof } from "@/lib/auth/providerProof";
 import { PasskeyCancelledError } from "@/lib/auth/webauthn";
 import type { MessageKey } from "@/i18n";
-import type { AuthResult, IdentityLinkOutcome, MfaChallenge, MfaCompletion, MfaEnrollment } from "@/ports";
+import type {
+  AuthResult,
+  IdentityLinkOutcome,
+  IdentityProvider,
+  MfaChallenge,
+  MfaCompletion,
+  MfaEnrollment,
+} from "@/ports";
 import { useLanguage, usePorts, useSession } from "@/state/hooks";
 
 import type { EnrollMode } from "@/components/auth/MfaEnrollStep";
@@ -20,6 +28,8 @@ export type SignInStep =
   | { kind: "redeem" }
   /** The password, before a signed-in account sets up its first method to confirm with. */
   | { kind: "confirm-password" }
+  /** The same, for an account without a password: a fresh sign-in at one of its providers. */
+  | { kind: "confirm-provider"; providers: IdentityProvider[] }
   /** A signed-in session is confirmed and may go back to where it came from. */
   | { kind: "done" };
 
@@ -48,6 +58,8 @@ export interface SignInFlow {
   redeem(credential: string): void;
   finishCodes(): void;
   confirmPassword(password: string): void;
+  /** Leaves for the provider to sign in there again; it comes back to this page. */
+  confirmWithProvider(provider: IdentityProvider): void;
   cancel(): void;
   /** This browser can use passkeys; false until the page runs in one. */
   passkeysSupported: boolean;
@@ -202,8 +214,9 @@ export function useSignInFlow({
         try {
           enter(await security.startEnrollment());
         } catch (cause) {
-          if (cause instanceof ApiError && cause.status === 403) setStep({ kind: "confirm-password" });
-          else throw cause;
+          if (!(cause instanceof ApiError) || cause.status !== 403) throw cause;
+          const providers = providerProof(state);
+          setStep(providers === null ? { kind: "confirm-password" } : { kind: "confirm-provider", providers });
         }
       } catch (cause) {
         setStep({ kind: "password" });
@@ -438,6 +451,18 @@ export function useSignInFlow({
               ? t("security.password.wrong")
               : challengeErrorMessage(cause, t, t("auth.mfa.failed")),
           );
+        }
+      });
+    },
+
+    confirmWithProvider(provider) {
+      void run(async () => {
+        try {
+          const address = await security.startReauthentication(provider.id);
+          // Back to this confirmation, which then finds the sign-in fresh.
+          leaveFor(`${address}&returnUrl=${encodeURIComponent(`${window.location.pathname}${window.location.search}`)}`);
+        } catch (cause) {
+          setError(challengeErrorMessage(cause, t, t("auth.mfa.failed")));
         }
       });
     },

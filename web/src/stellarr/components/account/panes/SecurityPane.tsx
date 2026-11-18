@@ -1,7 +1,9 @@
 import { useId, useState, type ChangeEvent } from "react";
 
 import { Button } from "@stellarr/ui";
+import type { SetPasswordOutcome } from "@/containers/useAccountSecurity";
 import type { Translator } from "@/i18n";
+import { MAX_PASSWORD_LENGTH, MIN_PASSWORD_LENGTH } from "@/lib/auth/passwordStrength";
 import type { Account, EmailChangeResult, PasswordChangeResult } from "@/ports";
 import { useLanguage } from "@/state/hooks";
 
@@ -11,8 +13,6 @@ import {
   type AccountSecuritySectionsProps,
 } from "./AccountSecuritySections";
 
-/** The server rejects shorter passwords too; checking here saves a round trip. */
-const MIN_PASSWORD_LENGTH = 8;
 const MAX_EMAIL_LENGTH = 320;
 
 export interface SecurityPaneProps {
@@ -23,6 +23,11 @@ export interface SecurityPaneProps {
   /** Mails a link to the new address; the address changes when it is opened. */
   onChangeEmail(email: string, password: string): Promise<EmailChangeResult>;
   onChangePassword(current: string, next: string): Promise<PasswordChangeResult>;
+  /**
+   * The first password of an account without one, after the proof any other
+   * change needs; offered instead of the change when the account has none.
+   */
+  onSetPassword?(password: string): Promise<SetPasswordOutcome>;
   /**
    * Asks for a fresh second step; true once it is passed, false when the
    * person closes it. The change is then tried again.
@@ -121,6 +126,7 @@ interface EditorProps {
 function EmailItem({
   savedEmail,
   supported,
+  passwordless,
   onChangeEmail,
   onConfirmSecondStep,
   open,
@@ -129,6 +135,8 @@ function EmailItem({
 }: EditorProps & {
   savedEmail: string;
   supported: boolean;
+  /** The account has no password to give; a recent sign-in stands in for it. */
+  passwordless: boolean;
   onChangeEmail: SecurityPaneProps["onChangeEmail"];
 }) {
   const { t } = useLanguage();
@@ -160,7 +168,7 @@ function EmailItem({
   }
 
   const value = draft.trim();
-  const canSave = !saving && value.length > 0 && value !== savedEmail && password.length > 0;
+  const canSave = !saving && value.length > 0 && value !== savedEmail && (passwordless || password.length > 0);
   const empty = savedEmail.length === 0;
 
   const save = async () => {
@@ -228,18 +236,22 @@ function EmailItem({
               setAnswer(null);
             }}
           />
-          <Field
-            full
-            label={t("account.currentPassword")}
-            type="password"
-            autoComplete="current-password"
-            value={password}
-            invalid={answer === "wrong-password"}
-            onChange={(event) => {
-              setPassword(event.target.value);
-              setAnswer(null);
-            }}
-          />
+          {passwordless ? (
+            <p className="sec-note">{t("account.emailNoPasswordNote")}</p>
+          ) : (
+            <Field
+              full
+              label={t("account.currentPassword")}
+              type="password"
+              autoComplete="current-password"
+              value={password}
+              invalid={answer === "wrong-password"}
+              onChange={(event) => {
+                setPassword(event.target.value);
+                setAnswer(null);
+              }}
+            />
+          )}
           <p className="sec-note">{t("account.emailLinkNote")}</p>
           <div className="sec-form-actions">
             <Button type="button" variant="quiet" onClick={onClose}>
@@ -271,7 +283,12 @@ function PasswordItem({
   open,
   onOpen,
   onClose,
-}: EditorProps & { onChangePassword: SecurityPaneProps["onChangePassword"] }) {
+  note = null,
+}: EditorProps & {
+  onChangePassword: SecurityPaneProps["onChangePassword"];
+  /** Said until something else is: a first password was just set, and this row replaced that one. */
+  note?: string | null;
+}) {
   const { t } = useLanguage();
   const titleId = useId();
   const [fields, setFields] = useState(NO_PASSWORDS);
@@ -375,13 +392,139 @@ function PasswordItem({
         </form>
       ) : null}
 
-      {answer === null ? null : (
+      {answer === null ? (
+        note === null ? null : (
+          <p className="sec-answer" data-tone="ok" role="status">
+            {note}
+          </p>
+        )
+      ) : (
         <p
           className="sec-answer"
           data-tone={answer === "changed" ? "ok" : "bad"}
           role={answer === "changed" ? "status" : "alert"}
         >
           {passwordAnswerText(t, answer)}
+        </p>
+      )}
+    </section>
+  );
+}
+
+const NO_NEW_PASSWORD = { next: "", confirm: "" };
+
+/**
+ * The password of an account made through a provider, which has none yet.
+ * Setting one adds a way in, so it asks for the proof any other change
+ * does; when that proof is a fresh sign-in at the provider, the page leaves
+ * and the password is set again afterwards.
+ */
+function SetPasswordItem({
+  onSetPassword,
+  onSet,
+  open,
+  onOpen,
+  onClose,
+}: Omit<EditorProps, "onConfirmSecondStep"> & {
+  onSetPassword: NonNullable<SecurityPaneProps["onSetPassword"]>;
+  /** The password is set; the row that changes it takes this one's place. */
+  onSet(): void;
+}) {
+  const { t } = useLanguage();
+  const titleId = useId();
+  const [fields, setFields] = useState(NO_NEW_PASSWORD);
+  const [saving, setSaving] = useState(false);
+  const [answer, setAnswer] = useState<SetPasswordOutcome | null>(null);
+
+  const [wasOpen, setWasOpen] = useState(open);
+  if (wasOpen !== open) {
+    setWasOpen(open);
+    setFields(NO_NEW_PASSWORD);
+    if (open) setAnswer(null);
+  }
+
+  const mismatch = fields.confirm.length > 0 && fields.next !== fields.confirm;
+  const tooLong = fields.next.length > MAX_PASSWORD_LENGTH;
+  // A password the server refuses is said at its field, in the language of the reader.
+  const lengthProblem = tooLong || answer === "refused" ? t("auth.password.length") : undefined;
+  const canSet =
+    !saving && fields.next.length >= MIN_PASSWORD_LENGTH && !tooLong && fields.next === fields.confirm;
+
+  const edit = (field: keyof typeof NO_NEW_PASSWORD) => (event: ChangeEvent<HTMLInputElement>) => {
+    setFields((previous) => ({ ...previous, [field]: event.target.value }));
+    setAnswer(null);
+  };
+
+  const submit = async () => {
+    setSaving(true);
+    setAnswer(null);
+    const result = await onSetPassword(fields.next);
+    setSaving(false);
+    setAnswer(result);
+    if (result === "set") onSet();
+  };
+
+  const sentence: Record<Exclude<SetPasswordOutcome, "refused">, string> = {
+    set: t("account.passwordSet"),
+    failed: t("account.passwordSetFailed"),
+    "proof-needed": t("account.passwordProofNeeded"),
+  };
+
+  return (
+    <section className="sec-item" aria-labelledby={titleId}>
+      <div className="sec-row">
+        <span className="sec-copy">
+          <b id={titleId}>{t("account.password")}</b>
+          <small>{t("account.noPasswordDetail")}</small>
+        </span>
+        {open ? null : (
+          <Button type="button" variant="secondary" size="sm" onClick={onOpen}>
+            {t("account.setPassword")}
+          </Button>
+        )}
+      </div>
+
+      {open ? (
+        <form
+          className="sec-form"
+          onSubmit={(event) => {
+            event.preventDefault();
+            if (canSet) void submit();
+          }}
+        >
+          <Field
+            label={t("account.newPassword")}
+            type="password"
+            autoComplete="new-password"
+            hint={t("account.passwordMinLength")}
+            value={fields.next}
+            invalid={lengthProblem !== undefined}
+            problem={lengthProblem}
+            onChange={edit("next")}
+          />
+          <Field
+            label={t("account.repeatNewPassword")}
+            type="password"
+            autoComplete="new-password"
+            value={fields.confirm}
+            invalid={mismatch}
+            problem={mismatch ? t("account.passwordMismatch") : undefined}
+            onChange={edit("confirm")}
+          />
+          <div className="sec-form-actions">
+            <Button type="button" variant="quiet" onClick={onClose}>
+              {t("common.cancel")}
+            </Button>
+            <Button type="submit" variant="primary" disabled={!canSet}>
+              {saving ? t("common.saving") : t("account.setPassword")}
+            </Button>
+          </div>
+        </form>
+      ) : null}
+
+      {answer === null || answer === "refused" ? null : (
+        <p className="sec-answer" data-tone={answer === "set" ? "ok" : "bad"} role={answer === "set" ? "status" : "alert"}>
+          {sentence[answer]}
         </p>
       )}
     </section>
@@ -403,11 +546,15 @@ export function SecurityPane({
   twoStep,
   onChangeEmail,
   onChangePassword,
+  onSetPassword,
   onConfirmSecondStep,
 }: SecurityPaneProps) {
   const { t } = useLanguage();
   const [editor, setEditor] = useState<Editor>(null);
+  const [passwordJustSet, setPasswordJustSet] = useState(false);
   const email = account.email ?? "";
+  // Known once the security state is in; until then the account reads as having one.
+  const passwordless = twoStep?.security?.hasPassword === false;
 
   // An answer that arrives after the other editor was opened leaves it alone.
   const close = (which: Exclude<Editor, null>) =>
@@ -428,19 +575,37 @@ export function SecurityPane({
       <section className="sc">
         <header className="sc-h">{t("account.passwordAndEmail")}</header>
         <div className="sc-b sec-list">
-          <PasswordItem
-            open={editor === "password"}
-            onOpen={() => setEditor("password")}
-            onClose={() => close("password")}
-            onChangePassword={onChangePassword}
-            onConfirmSecondStep={onConfirmSecondStep}
-          />
+          {passwordless && onSetPassword !== undefined ? (
+            <SetPasswordItem
+              open={editor === "password"}
+              onOpen={() => setEditor("password")}
+              onClose={() => close("password")}
+              onSetPassword={onSetPassword}
+              onSet={() => {
+                setPasswordJustSet(true);
+                close("password");
+              }}
+            />
+          ) : (
+            <PasswordItem
+              open={editor === "password"}
+              onOpen={() => {
+                setPasswordJustSet(false);
+                setEditor("password");
+              }}
+              onClose={() => close("password")}
+              onChangePassword={onChangePassword}
+              onConfirmSecondStep={onConfirmSecondStep}
+              note={passwordJustSet ? t("account.passwordSet") : null}
+            />
+          )}
           <EmailItem
             open={editor === "email"}
             onOpen={() => setEditor("email")}
             onClose={() => close("email")}
             savedEmail={email}
             supported={emailSupported}
+            passwordless={passwordless}
             onChangeEmail={onChangeEmail}
             onConfirmSecondStep={onConfirmSecondStep}
           />

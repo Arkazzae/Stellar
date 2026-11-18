@@ -152,6 +152,11 @@ describe("sendVoid", () => {
     });
   });
 
+  it("carries the code of a conflict that gives one", async () => {
+    fetchMock.mockResolvedValue(jsonResponse({ title: "The only way in.", code: "last-way-in" }, 409));
+    await expect(sendVoid("POST", "/api/x", {})).rejects.toMatchObject({ status: 409, code: "last-way-in" });
+  });
+
   it("leaves the code out of a refusal without one", async () => {
     fetchMock.mockResolvedValue(jsonResponse({ title: "No." }, 403));
     const error = await sendVoid("POST", "/api/x", {}).catch((cause: unknown) => cause);
