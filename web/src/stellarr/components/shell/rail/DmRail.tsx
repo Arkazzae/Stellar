@@ -1,9 +1,7 @@
 import { useId, useState, type ReactNode } from "react";
 
 import { Icon } from "@stellarr/icons";
-import { MESSAGES_STICKERS } from "@/components/friends/stickers";
 import { Avatar } from "@/components/primitives/Avatar";
-import { Sticker } from "@/components/primitives/MascotArt";
 import type { DmConversationVM } from "@/components/view-models";
 import { PRESENCE_LABEL } from "@/ports";
 import { useLanguage } from "@/state/hooks";
@@ -217,21 +215,11 @@ export function DmRail({
             ))}
           </ul>
         ) : (
-          <div className="dm-empty">
-            <Sticker
-              name={
-                conversations.length === 0
-                  ? MESSAGES_STICKERS.noConversations
-                  : MESSAGES_STICKERS.noMatch
-              }
-              size="column"
-            />
-            <p>
-              {conversations.length === 0
-                ? t("shell.noConversations")
-                : t("shell.noConversationMatch", { query: typed })}
-            </p>
-          </div>
+          <p className="dm-empty">
+            {conversations.length === 0
+              ? t("shell.noConversations")
+              : t("shell.noConversationMatch", { query: typed })}
+          </p>
         )}
       </div>
 
