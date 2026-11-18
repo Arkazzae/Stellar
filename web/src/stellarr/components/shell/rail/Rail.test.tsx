@@ -140,15 +140,6 @@ describe("Rail voice occupants", () => {
       targetChannelId: "v-2",
     });
   });
-
-  it("does not expose the administrator's own voice row as draggable", () => {
-    setup([person({ id: "me", displayName: "Maja" })], {
-      onMoveVoiceMember: vi.fn(async () => {}),
-    });
-
-    expect(row("Maja")).not.toHaveAttribute("role", "button");
-    expect(row("Maja")).not.toHaveClass("is-draggable");
-  });
 });
 
 describe("Rail server administration", () => {

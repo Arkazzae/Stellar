@@ -1629,6 +1629,8 @@ export const pl = {
   "shell.dragOver": "Nad kanałem {name}.",
   "shell.dragDropped": "Upuszczono użytkownika {user} na kanale {channel}.",
   "shell.dragCancelled": "Anulowano przenoszenie.",
+  "shell.dragSelfLifted": "Podniesiono Cię.",
+  "shell.dragSelfDropped": "Przenosimy Cię na kanał {channel}.",
   "shell.reorderHandle": "kanał do przestawienia",
   "shell.reorderInstructions": "Naciśnij spację, aby podnieść kanał. Strzałkami przesuń go, spacją upuść, Escape anuluje.",
   "shell.reorderLifted": "Podniesiono kanał {name}, pozycja {position} z {count} w grupie {group}.",

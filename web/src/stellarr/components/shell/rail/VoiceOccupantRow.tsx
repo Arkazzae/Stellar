@@ -12,8 +12,8 @@ export interface VoiceOccupantRowProps {
   /** The server has not confirmed this person's move yet. */
   moving: boolean;
   /**
-   * Present when staff may move this person: never for you, and never for
-   * someone already in flight. The rail marks the row while its copy is
+   * Present for your own seat, and when staff may move this person and they
+   * are not already in flight. The rail marks the row while its copy is
    * carried.
    */
   drag?: DragHandleProps;

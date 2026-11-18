@@ -221,8 +221,8 @@ export function Rail({
     }
   };
 
-  // Sorting channels is for whoever may edit them, and moving people for
-  // staff; anyone else gets plain rows.
+  // Sorting channels is for whoever may edit them, and moving other people
+  // for staff; anyone else gets plain rows, but for their own seat.
   const canSort = canManageChannels;
   const looseText = textChannels.filter((channel) => channel.sectionId === undefined);
   const looseVoice = voiceChannels.filter((channel) => channel.sectionId === undefined);
@@ -248,6 +248,7 @@ export function Rail({
     canSortChannels: canSort,
     onMoveChannel: (channelMove) => void rearrange(() => onMoveChannel(channelMove)),
     selfId,
+    onJoin: onJoinVoiceChannel,
     movingUserId: move.movingUserId,
     ...(onMoveVoiceMember === undefined ? {} : { onDropPerson: move.onDrop }),
     ...(onMoveSection === undefined

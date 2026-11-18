@@ -149,6 +149,10 @@ export function deriveDirectoryView(
       name: channel.name,
       occupants: peopleOn(channel.id),
       ...(channel.sectionId === undefined ? {} : { sectionId: channel.sectionId }),
+      // The server reads 0 as no limit.
+      ...(channel.userLimit === undefined || channel.userLimit === 0
+        ? {}
+        : { userLimit: channel.userLimit }),
     }));
 
   const inVoice = new Map<string, PersonVM>();

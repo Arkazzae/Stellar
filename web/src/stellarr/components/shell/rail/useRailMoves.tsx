@@ -51,11 +51,13 @@ export interface RailMovesOptions {
   /** Whether channels can be sorted at all; without it the rows are plain buttons. */
   canSortChannels: boolean;
   onMoveChannel: (move: ChannelMove) => void;
-  /** Whose own row is never carried. */
+  /** Whose own row carries them to the channel they drop it on, by joining it. */
   selfId: string;
+  /** Joins a voice channel, as a click on it does. */
+  onJoin: (channelId: string) => void;
   /** Whose move the server has not confirmed yet, and who is not carried meanwhile. */
   movingUserId: string | null;
-  /** Absent leaves people as plain rows. */
+  /** Absent leaves everyone but you as plain rows. */
   onDropPerson?: (dragged: VoiceDragData, targetChannelId: string | null) => void;
   /** Absent leaves the section captions as plain buttons. */
   onMoveSection?: (order: string[]) => void;
@@ -108,7 +110,8 @@ function DragLayer({
 /**
  * Every drag of the rail, set up over its groups: channels sorted across
  * every group of their kind, sections sorted by their captions, and people
- * carried onto any voice channel.
+ * carried onto any voice channel: others by staff, and you by yourself onto a
+ * channel you can join.
  */
 export function useRailMoves({
   railId,
@@ -121,6 +124,7 @@ export function useRailMoves({
   canSortChannels,
   onMoveChannel,
   selfId,
+  onJoin,
   movingUserId,
   onDropPerson,
   onMoveSection,
@@ -188,20 +192,29 @@ export function useRailMoves({
   const said = (channel: MessageKey, section: MessageKey) => (id: string, place: SortPlace) =>
     t(place.list === SECTIONS ? section : channel, placeWords(id, place));
 
-  // Who can be carried now: never you, and never someone already on the way.
+  // Who can be carried now: you, wherever you sit, and for staff everyone
+  // else not already on the way.
   const carriable = new Map<string, VoiceDragData>();
-  if (onDropPerson !== undefined) {
-    for (const channel of voiceChannels) {
-      for (const person of channel.occupants) {
-        if (person.id === selfId || person.id === movingUserId) continue;
-        carriable.set(occupantKey(channel.id, person.id), {
-          type: "voice-occupant",
-          person,
-          sourceChannelId: channel.id,
-        });
-      }
+  for (const channel of voiceChannels) {
+    for (const person of channel.occupants) {
+      const you = person.id === selfId;
+      if (!you && (onDropPerson === undefined || person.id === movingUserId)) continue;
+      carriable.set(occupantKey(channel.id, person.id), {
+        type: "voice-occupant",
+        person,
+        sourceChannelId: channel.id,
+      });
     }
   }
+  const isSelf = (key: string) => carriable.get(key)?.person.id === selfId;
+  // A full channel turns newcomers away, as the server does on a click.
+  const joinable = (id: string) => {
+    const channel = voiceChannels.find((each) => each.id === id);
+    return (
+      channel !== undefined &&
+      (channel.userLimit === undefined || channel.occupants.length < channel.userLimit)
+    );
+  };
 
   const { container, list, item, handle, carry, copy, announcer, carrying } = useRailDrag({
     lists,
@@ -225,32 +238,43 @@ export function useRailMoves({
         ) ?? null
       );
     },
-    ...(onDropPerson === undefined
-      ? {}
-      : {
-          drops: {
-            zoneKind: "voice",
-            carriable: [...carriable.keys()],
-            homeOf: (key) => carriable.get(key)?.sourceChannelId ?? "",
-            messages: {
-              lifted: (key) =>
-                t("shell.dragLifted", { name: carriable.get(key)?.person.displayName ?? "" }),
-              over: (channelId) => t("shell.dragOver", { name: channelName(channelId) }),
-              dropped: (key, channelId) =>
-                channelId === null
-                  ? t("shell.dragCancelled")
-                  : t("shell.dragDropped", {
-                      user: carriable.get(key)?.person.displayName ?? "",
-                      channel: channelName(channelId),
-                    }),
-              cancelled: () => t("shell.dragCancelled"),
-            },
-            commit: (key, channelId) => {
-              const dragged = carriable.get(key);
-              if (dragged !== undefined) onDropPerson(dragged, channelId);
-            },
-          },
-        }),
+    drops: {
+      zoneKind: "voice",
+      carriable: [...carriable.keys()],
+      homeOf: (key) => carriable.get(key)?.sourceChannelId ?? "",
+      // Staff move people wherever they like; you go only where a click would take you.
+      accepts: (key, channelId) => !isSelf(key) || joinable(channelId),
+      messages: {
+        lifted: (key) =>
+          isSelf(key)
+            ? t("shell.dragSelfLifted")
+            : t("shell.dragLifted", { name: carriable.get(key)?.person.displayName ?? "" }),
+        over: (channelId) => t("shell.dragOver", { name: channelName(channelId) }),
+        dropped: (key, channelId) => {
+          if (channelId === null) return t("shell.dragCancelled");
+          if (!isSelf(key)) {
+            return t("shell.dragDropped", {
+              user: carriable.get(key)?.person.displayName ?? "",
+              channel: channelName(channelId),
+            });
+          }
+          return channelId === carriable.get(key)?.sourceChannelId
+            ? t("shell.dragCancelled")
+            : t("shell.dragSelfDropped", { channel: channelName(channelId) });
+        },
+        cancelled: () => t("shell.dragCancelled"),
+      },
+      commit: (key, channelId) => {
+        const dragged = carriable.get(key);
+        if (dragged === undefined) return;
+        // You switch channels the way a click does, never through the staff move.
+        if (isSelf(key)) {
+          if (channelId !== null && channelId !== dragged.sourceChannelId) onJoin(channelId);
+        } else {
+          onDropPerson?.(dragged, channelId);
+        }
+      },
+    },
   });
 
   const channelHandle = { roleDescription: t("shell.reorderHandle"), instructionsId: channelInstructions };
