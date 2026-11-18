@@ -1,4 +1,4 @@
-import type { VoiceOccupant } from "@/lib/api/types";
+import type { UserId, VoiceOccupant } from "@/lib/api/types";
 import type { MediaSessionClosedEvent, MediaSignal } from "@/lib/realtime/types";
 import type { MediaServerSignalKind } from "@/lib/rtc/protocol";
 import type { NetworkSample } from "./bitrate";
@@ -87,4 +87,8 @@ export interface CallTopology {
   transport(): TransportReport;
   /** Read every link's statistics; reading changes nothing until the round is settled. */
   sample(): Promise<StatsRound>;
+  /** The call's protection changed: replace the connection now, the new way. */
+  renew(): Promise<void>;
+  /** Whose sound or picture this side cannot decrypt now, by user. */
+  undecryptable(): ReadonlyMap<UserId, { audio: boolean; video: boolean }>;
 }

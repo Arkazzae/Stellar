@@ -43,6 +43,7 @@ import type { RemoteAudio } from "./webrtcRemoteAudio";
 import { TrackDirectory } from "./webrtcSfuDirectory";
 import { SfuHealth } from "./webrtcSfuHealth";
 import type { CallTopology, StatsRound, TransportReport } from "./webrtcTopology";
+import type { CallCrypto } from "../e2ee/callCrypto";
 
 const DEFAULT_RECOVERY_GRACE_MS = 10_000;
 /**
@@ -104,6 +105,12 @@ export interface SfuDeps {
   probe(): void;
   /** The id of the stream this side's microphone and camera are sent in. */
   voiceStreamId(): string | null;
+  /**
+   * The frame encryption of the call, or null for a plain call. Read for
+   * every connection, so a replacement keeps the call's keys, and a call
+   * that turns encrypted (`renew`) gets them on its next one.
+   */
+  crypto(): CallCrypto | null;
 }
 
 /** One media session of the seat, and the one connection that belongs to it. */
@@ -270,6 +277,50 @@ export class Sfu implements CallTopology {
     this.replace();
   }
 
+  /**
+   * The call changed how it is protected: replace the connection now, with a
+   * fresh budget of replacements, so the next one is made the new way.
+   */
+  async renew(): Promise<void> {
+    if (this.deps.activeSession() === null) return;
+    this.cancelReplacement();
+    this.attempts = 0;
+    this.exhausted = false;
+    this.waitingForHub = false;
+    await this.open();
+  }
+
+  /**
+   * Whose sound or picture this side cannot open now: a section of theirs
+   * whose frames stopped opening, or everything of somebody who encrypts
+   * while this side does not.
+   */
+  undecryptable(): Map<UserId, { audio: boolean; video: boolean }> {
+    const out = new Map<UserId, { audio: boolean; video: boolean }>();
+    const mark = (userId: UserId, kind: "audio" | "video") => {
+      const entry = out.get(userId) ?? { audio: false, video: false };
+      entry[kind] = true;
+      out.set(userId, entry);
+    };
+    const session = this.session;
+    const crypto = session?.link.crypto ?? null;
+    if (session && crypto) {
+      const receivers = new Map(
+        session.link.connection.getTransceivers().map((transceiver) => [transceiver.mid, transceiver.receiver]),
+      );
+      for (const { mid, userId, kind } of session.directory.filedSections()) {
+        const receiver = receivers.get(mid);
+        if (receiver && crypto.failing(receiver)) mark(userId, kind);
+      }
+    }
+    for (const person of this.people.values()) {
+      if (!this.held(person)) continue;
+      mark(person.userId, "audio");
+      if (person.media.camera !== null || person.media.screen !== null) mark(person.userId, "video");
+    }
+    return out;
+  }
+
   // ------------------------------------------------------- what is published
 
   renegotiate(): Promise<void> {
@@ -405,6 +456,7 @@ export class Sfu implements CallTopology {
       // reach for credentials that have expired.
       iceServers: this.deps.ice.current(),
       recovery: this.recovery,
+      crypto: this.deps.crypto(),
     });
     const session: MediaSessionLink = {
       id,
@@ -433,7 +485,16 @@ export class Sfu implements CallTopology {
     const { connection } = link;
     connection.ontrack = (event) => {
       if (this.session !== session) return;
-      session.directory.arrive(event.transceiver?.mid ?? null, event.track);
+      const mid = event.transceiver?.mid ?? null;
+      // The directory comes with the offer, ahead of its tracks, and names
+      // whose frames the receiver opens; one it does not name opens nothing.
+      link.crypto?.attachReceiver(
+        event.receiver,
+        event.track.kind === "video" ? "video" : "audio",
+        mid,
+        mid === null ? null : session.directory.publisherOf(mid),
+      );
+      session.directory.arrive(mid, event.track);
       this.syncSubscriptions(session);
     };
     connection.onicecandidate = (event) => {
@@ -474,6 +535,7 @@ export class Sfu implements CallTopology {
     this.health.forget();
 
     const { link } = session;
+    link.crypto?.forgetTransforms();
     link.watchdog.dispose();
     const { connection } = link;
     connection.ontrack = null;
@@ -604,6 +666,7 @@ export class Sfu implements CallTopology {
       // brings finds its section named, and the list that asks for them
       // leaves ahead of the answer that makes them live.
       session.directory.update(offer.tracks);
+      this.bindReceivers(session);
       this.syncSubscriptions(session);
       session.answering = offer.negotiationId;
       try {
@@ -626,10 +689,12 @@ export class Sfu implements CallTopology {
         this.lose(session);
         return;
       }
+      link.crypto?.noteCodecs();
     } else {
       const tracks = decodeMediaTracks(signal.payload);
       if (tracks) {
         session.directory.update(tracks);
+        this.bindReceivers(session);
         this.syncSubscriptions(session);
       }
     }
@@ -692,7 +757,7 @@ export class Sfu implements CallTopology {
    * reached the media server.
    */
   private syncSubscriptions(session: MediaSessionLink): void {
-    const mids = session.directory.subscribedMids(this.receivePreferences);
+    const mids = session.directory.subscribedMids(this.receivePreferences, (person) => this.held(person));
     session.directory.applySubscriptions(mids);
     let payload: string;
     try {
@@ -740,6 +805,19 @@ export class Sfu implements CallTopology {
       },
       true,
     );
+  }
+
+  /**
+   * Somebody who encrypts while this side does not: their frames would play
+   * as noise, so nothing of them is asked for until this side follows them.
+   */
+  private held(person: Participant): boolean {
+    return person.encrypted && this.deps.crypto() === null;
+  }
+
+  /** Receivers that arrived before the directory named their section learn whose they are. */
+  private bindReceivers(session: MediaSessionLink): void {
+    session.link.crypto?.bind((mid) => session.directory.publisherOf(mid));
   }
 
   /** Replace `session` if it is still the current one. */

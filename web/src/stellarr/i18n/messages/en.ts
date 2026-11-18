@@ -869,6 +869,8 @@ export const en = {
   "voiceError.screenShare": "Could not share the screen.",
   "voiceError.titleMic": "Microphone is not working",
   "voiceError.titleUnsupported": "Voice calls are unavailable",
+  "voiceError.titleEncryption": "The encrypted call did not start",
+  "voiceError.encryption": "This call cannot be encrypted now, so it did not start.",
   "voiceError.titleIceConfig": "Connection configuration problem",
   "voiceError.titleSignaling": "Call connection problem",
   "voiceError.titleTransport": "Call audio problem",
@@ -1877,6 +1879,10 @@ export const en = {
   "voiceClient.iceRefreshFailed": "Could not refresh the TURN configuration. Trying again.",
   "voiceClient.iceRefreshPartial": "Not every connection accepted the refreshed TURN configuration.",
   "voiceClient.joinFailed": "Could not join the voice call. Try again.",
+  "voiceClient.callEncryptionUnsupported":
+    "This conversation is end-to-end encrypted, and this browser cannot encrypt calls, so the call did not start. Call from another browser.",
+  "voiceClient.callKeysFailed":
+    "Could not load this conversation's encryption keys, so the call did not start. Try again.",
   "voiceClient.moveFailed": "Could not switch voice channels. Join again.",
   "voiceClient.rejoinFailed": "Could not return to the voice channel. Try joining again.",
   "voiceClient.signalingFailed": "Voice signalling failed. Check your connection and join again.",

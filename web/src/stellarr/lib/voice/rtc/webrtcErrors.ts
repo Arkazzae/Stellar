@@ -60,6 +60,18 @@ export const joinFailedError = (t: Translator): VoiceError => ({
   message: t("voiceClient.joinFailed"),
 });
 
+/** The conversation is encrypted and this browser cannot encrypt a call, so none is made. */
+export const callUnsupportedError = (t: Translator): VoiceError => ({
+  kind: "encryption",
+  message: t("voiceClient.callEncryptionUnsupported"),
+});
+
+/** The conversation may be encrypted and its keys could not be had, so no call is made. */
+export const callKeysError = (t: Translator): VoiceError => ({
+  kind: "encryption",
+  message: t("voiceClient.callKeysFailed"),
+});
+
 export const moveFailedError = (t: Translator): VoiceError => ({
   kind: "signaling",
   message: t("voiceClient.moveFailed"),

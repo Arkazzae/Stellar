@@ -82,11 +82,12 @@ export class TrackDirectory {
    * sends every sound whatever the downlink, and takes the pictures in this
    * order while they fit. The directory itself keeps them all.
    */
-  subscribedMids(preferences: VoiceReceivePreferences): string[] {
+  subscribedMids(preferences: VoiceReceivePreferences, held: (person: Participant) => boolean = () => false): string[] {
     const ranked: { rank: number; mid: string }[] = [];
     for (const entry of this.entries.values()) {
       const person = this.env.people.get(entry.userId);
-      if (!person) continue;
+      // Somebody whose frames this side cannot open is not asked for at all.
+      if (!person || held(person)) continue;
       if (person.media.roleOf(entry.streamId) === "screen") {
         const watched =
           preferences.screen?.userId === entry.userId && preferences.screen.streamId === entry.streamId;
@@ -99,6 +100,16 @@ export class TrackDirectory {
     }
     // The sort is stable: within a rank the directory's order stands.
     return ranked.sort((a, b) => a.rank - b.rank).map(({ mid }) => mid);
+  }
+
+  /** Whose track the media server says the section `mid` carries, or null before it says. */
+  publisherOf(mid: string): UserId | null {
+    return this.entries.get(mid)?.userId ?? null;
+  }
+
+  /** Every section whose track is filed under somebody, with whose it is and its kind. */
+  filedSections(): { mid: string; userId: UserId; kind: "audio" | "video" }[] {
+    return [...this.filed].map(([mid, filing]) => ({ mid, userId: filing.person.userId, kind: filing.kind }));
   }
 
   /** Silence what is not asked for at once, while the list is still on its way to the media server. */
