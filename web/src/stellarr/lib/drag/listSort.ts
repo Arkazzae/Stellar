@@ -15,7 +15,7 @@ import {
   type Slot,
 } from "./geometry";
 import { layoutTop, measureBlocks, planShifts, writeShifts, type Block } from "./layout";
-import { trackPointer, type PointerDrag } from "./pointer";
+import { holdFingerOn, trackPointer, type PointerDrag } from "./pointer";
 import { carryKey, restoreFocus, watchPage } from "./session";
 
 /** One list of a sort, in display order. */
@@ -63,6 +63,7 @@ type Ref = (node: HTMLElement | null) => void | (() => void);
 interface Drag {
   id: string;
   via: "pointer" | "keyboard";
+  finger: boolean;
   /** The lists when the drag began; any other set of lists ends it. */
   model: readonly SortList[];
   /** The lists of the item's kind, as indices into `model`, in order. */
@@ -304,6 +305,7 @@ export function createListSort() {
     id: string,
     via: Drag["via"],
     handle: HTMLElement,
+    finger: boolean,
     pressedAt = 0,
   ): Drag | null => {
     if (config === null || scroller === null) return null;
@@ -315,6 +317,7 @@ export function createListSort() {
     const current: Drag = {
       id,
       via,
+      finger,
       model: config.lists,
       handle,
       ...measured,
@@ -454,11 +457,12 @@ export function createListSort() {
     pressing?.cancel();
     const handle = event.currentTarget;
     const pressedAt = event.clientY;
+    const finger = event.pointerType === "touch";
     let current: Drag | null = null;
     const press = trackPointer(event.nativeEvent, handle, {
       onStart: () => {
         pressing = null;
-        current = begin(id, "pointer", handle, pressedAt);
+        current = begin(id, "pointer", handle, finger, pressedAt);
         if (current === null) {
           press.cancel();
           return;
@@ -509,7 +513,7 @@ export function createListSort() {
       spaceTaken = true;
       pressing?.cancel();
       const handle = event.currentTarget;
-      const started = begin(id, "keyboard", handle);
+      const started = begin(id, "keyboard", handle, false);
       if (started === null) return;
       watchPage(started.listening.signal, handle, () => {
         if (drag === started) finish(false);
@@ -562,7 +566,16 @@ export function createListSort() {
     },
     list: (id: string) => cached(`list:${id}`, () => registry(lists, id)),
     item: (id: string) => cached(`item:${id}`, () => registry(items, id)),
-    handleRef: (id: string) => cached(`handle:${id}`, () => registry(handles, id)),
+    handleRef: (id: string) =>
+      cached(`handle:${id}`, () => (node: HTMLElement | null) => {
+        if (node === null) return;
+        handles.set(id, node);
+        const release = holdFingerOn(node, () => drag?.finger === true);
+        return () => {
+          release();
+          if (handles.get(id) === node) handles.delete(id);
+        };
+      }),
     pressPointer,
     keyDown,
     keyUp: (event: KeyboardEvent<HTMLElement>) => {
