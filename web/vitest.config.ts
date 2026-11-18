@@ -29,8 +29,9 @@ export default defineConfig({
           globals: true,
           setupFiles: ["./vitest.setup.ts"],
           // documents.test.ts checks the two documents the build writes,
-          // release.test.ts the id the build gives the release.
-          include: ["src/**/*.test.{ts,tsx}", "documents.test.ts", "release.test.ts"],
+          // release.test.ts the id the build gives the release, and
+          // bundleReport.test.ts the report and budget of the first document.
+          include: ["src/**/*.test.{ts,tsx}", "documents.test.ts", "release.test.ts", "bundleReport.test.ts"],
           exclude: [...configDefaults.exclude, "src/cockpit/**"],
         },
       },
