@@ -19,6 +19,8 @@ export interface AccountSecuritySectionsProps {
   security: AccountSecurity | null;
   loadError: string | null;
   actionError: string | null;
+  /** What went wrong with linking or unlinking a provider, said under the providers. */
+  identityError?: string | null;
   busy: boolean;
   /** Starts adding a method, on the way of proving it that was picked, or the app's. */
   onAddMethod(mode?: EnrollMode): void;
@@ -161,17 +163,17 @@ export function TwoStepSection({
   ) : null;
 
   if (methods.length === 0) {
+    // An account made through a provider has no password for a thief to steal.
+    const [offTitle, offLead]: [MessageKey, MessageKey] = security.hasPassword
+      ? ["security.twoStep.offTitle", "security.twoStep.offLead"]
+      : ["security.twoStep.offTitleNoPassword", "security.twoStep.offLeadNoPassword"];
     return (
       <section className="sc">
         {header}
         <div className="sc-b sec-card">
           <div className="sec-hero">
-            <b>
-              {t(security.mfaRequired ? "security.twoStep.requiredTitle" : "security.twoStep.offTitle")}
-            </b>
-            <span>
-              {t(security.mfaRequired ? "security.twoStep.requiredLead" : "security.twoStep.offLead")}
-            </span>
+            <b>{t(security.mfaRequired ? "security.twoStep.requiredTitle" : offTitle)}</b>
+            <span>{t(security.mfaRequired ? "security.twoStep.requiredLead" : offLead)}</span>
           </div>
           <div className="sec-ways">
             {ways.map((way) => (
@@ -289,6 +291,7 @@ export function TwoStepSection({
 export function IdentitiesSection({
   security,
   busy,
+  identityError = null,
   onLinkIdentity,
   onUnlinkIdentity,
 }: AccountSecuritySectionsProps) {
@@ -356,6 +359,11 @@ export function IdentitiesSection({
             </Button>
           </div>
         ))}
+        {identityError === null ? null : (
+          <p className="sec-answer" data-tone="bad" role="alert">
+            {identityError}
+          </p>
+        )}
       </div>
     </section>
   );

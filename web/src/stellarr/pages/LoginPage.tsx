@@ -8,6 +8,7 @@ import { MfaChallengeStep } from "@/components/auth/MfaChallengeStep";
 import { MfaEnrollStep } from "@/components/auth/MfaEnrollStep";
 import { ServerUnreachable } from "@/components/auth/Outcomes";
 import { PasswordConfirmStep } from "@/components/auth/PasswordConfirmStep";
+import { ProviderConfirmStep } from "@/components/auth/ProviderConfirmStep";
 import { QrCode } from "@/components/auth/QrCode";
 import { RecoveryCodesStep } from "@/components/auth/RecoveryCodesStep";
 import { RecoveryRedeemStep } from "@/components/auth/RecoveryRedeemStep";
@@ -163,6 +164,18 @@ export default function LoginPage() {
         pending={flow.pending}
         error={flow.error}
         onSubmit={flow.confirmPassword}
+        onBack={flow.cancel}
+      />
+    );
+  }
+  if (step.kind === "confirm-provider") {
+    return (
+      <ProviderConfirmStep
+        t={t}
+        providers={step.providers}
+        pending={flow.pending}
+        error={flow.error}
+        onConfirm={flow.confirmWithProvider}
         onBack={flow.cancel}
       />
     );

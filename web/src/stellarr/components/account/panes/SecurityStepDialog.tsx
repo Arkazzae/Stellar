@@ -3,15 +3,18 @@ import { createContext, useContext, useId, type ReactNode } from "react";
 import { MfaChallengeStep } from "@/components/auth/MfaChallengeStep";
 import { MfaEnrollStep, type EnrollMode } from "@/components/auth/MfaEnrollStep";
 import { PasswordConfirmStep } from "@/components/auth/PasswordConfirmStep";
+import { ProviderConfirmStep } from "@/components/auth/ProviderConfirmStep";
 import { QrCode } from "@/components/auth/QrCode";
 import { RecoveryCodesStep } from "@/components/auth/RecoveryCodesStep";
 import { Modal } from "@/components/primitives/Modal";
 import { DialogHeader } from "@/components/settings/DialogHeader";
 import type { Translator } from "@/i18n";
-import type { MfaChallenge, MfaEnrollment } from "@/ports";
+import type { IdentityProvider, MfaChallenge, MfaEnrollment } from "@/ports";
 
 export type SecurityDialogStep =
   | { kind: "password" }
+  /** A fresh sign-in at one of these providers, for an account without a password. */
+  | { kind: "provider"; providers: IdentityProvider[] }
   | { kind: "reverify"; challenge: MfaChallenge }
   | { kind: "enroll"; challenge: MfaChallenge; mode: EnrollMode; enrollment: MfaEnrollment | null }
   | { kind: "codes"; codes: string[] };
@@ -24,6 +27,8 @@ export interface SecurityStepDialogProps {
   error: string | null;
   emailRetryAfter: number | null;
   onPassword(password: string): void;
+  /** Leaves for the provider to sign in there again; the browser comes back afterwards. */
+  onReauthenticate(provider: IdentityProvider): void;
   onVerify(input: { methodId?: string; code: string; rememberDevice: boolean }): void;
   onSendEmailCode(methodId: string): Promise<number | null>;
   onEnrollModeChange(mode: EnrollMode): void;
@@ -62,8 +67,9 @@ function DialogStepFrame({
 
 /**
  * The proof and setup steps a change to the account's security runs through:
- * the password before a first method, a fresh code before any other change,
- * the setup itself and the recovery codes it issues.
+ * the password before a first method (a fresh sign-in at a provider for an
+ * account without one), a fresh code before any other change, the setup
+ * itself and the recovery codes it issues.
  */
 export function SecurityStepDialog({
   step,
@@ -73,6 +79,7 @@ export function SecurityStepDialog({
   error,
   emailRetryAfter,
   onPassword,
+  onReauthenticate,
   onVerify,
   onSendEmailCode,
   onEnrollModeChange,
@@ -94,6 +101,15 @@ export function SecurityStepDialog({
             pending={pending}
             error={error}
             onSubmit={onPassword}
+            frame={DialogStepFrame}
+          />
+        ) : step?.kind === "provider" ? (
+          <ProviderConfirmStep
+            t={t}
+            providers={step.providers}
+            pending={pending}
+            error={error}
+            onConfirm={onReauthenticate}
             frame={DialogStepFrame}
           />
         ) : step?.kind === "reverify" ? (

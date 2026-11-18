@@ -287,4 +287,95 @@ describe("useAccountSecurity", () => {
     expect(mocks.challenge.cancel).toHaveBeenCalledOnce();
     expect(result.current.dialog.step).toBeNull();
   });
+
+  describe("for an account made through a provider, with no password", () => {
+    const PROVIDER = { id: "default", displayName: "Authentik" };
+    const PASSWORDLESS = state({
+      hasPassword: false,
+      methods: [],
+      identities: [{ id: "i-1", providerId: "default", name: "Authentik", createdAt: "2026-11-12T17:00:00Z" }],
+      identityProviders: [PROVIDER, { id: "work", displayName: "Work" }],
+    });
+
+    it("proves it with a fresh sign-in at its own provider, and comes back to this page", async () => {
+      mocks.leaveFor.mockReset();
+      vi.mocked(mocks.security.get).mockResolvedValue(PASSWORDLESS);
+      vi.mocked(mocks.security.removeIdentity).mockRejectedValueOnce(forbidden());
+      window.history.replaceState({}, "", "/channels/abc");
+      const { result } = await mounted();
+
+      act(() => result.current.sections.onUnlinkIdentity(PASSWORDLESS.identities[0]!));
+      await waitFor(() => expect(result.current.dialog.step).toEqual({ kind: "provider", providers: [PROVIDER] }));
+      act(() => result.current.dialog.onReauthenticate(PROVIDER));
+
+      await waitFor(() =>
+        expect(mocks.leaveFor).toHaveBeenCalledExactlyOnceWith(
+          "/api/auth/oidc/reauthenticate?ticket=t&returnUrl=%2Fchannels%2Fabc",
+        ),
+      );
+      expect(mocks.security.startReauthentication).toHaveBeenCalledExactlyOnceWith("default");
+      window.history.replaceState({}, "", "/");
+    });
+
+    it("says why its last way in cannot go", async () => {
+      vi.mocked(mocks.security.get).mockResolvedValue(PASSWORDLESS);
+      vi.mocked(mocks.security.removeIdentity).mockRejectedValueOnce(
+        new ApiError("invalid", "409", 409, { code: "last-way-in" }),
+      );
+      const { result } = await mounted();
+
+      act(() => result.current.sections.onUnlinkIdentity(PASSWORDLESS.identities[0]!));
+
+      await waitFor(() => expect(result.current.sections.identityError).toBe(t("security.identities.lastWayIn")));
+      expect(result.current.sections.actionError).toBeNull();
+    });
+
+    it("reads the account first when the proof is asked from outside the settings", async () => {
+      vi.mocked(mocks.security.get).mockResolvedValue(PASSWORDLESS);
+      const { result } = renderHook(() => useAccountSecurity(false));
+
+      act(() => void result.current.confirmSecondStep());
+
+      await waitFor(() => expect(result.current.dialog.step).toEqual({ kind: "provider", providers: [PROVIDER] }));
+      expect(mocks.security.startReverification).not.toHaveBeenCalled();
+    });
+
+    it("sets a first password, and stops where the proof leaves the page", async () => {
+      vi.mocked(mocks.security.get).mockResolvedValue(PASSWORDLESS);
+      const { result } = await mounted();
+
+      await expect(result.current.setPassword("Nowe!Haslo2026")).resolves.toBe("set");
+      expect(mocks.security.setPassword).toHaveBeenCalledExactlyOnceWith("Nowe!Haslo2026");
+
+      vi.mocked(mocks.security.setPassword).mockRejectedValueOnce(forbidden());
+      let outcome: Promise<string> = Promise.resolve("");
+      act(() => {
+        outcome = result.current.setPassword("Nowe!Haslo2026");
+      });
+      await waitFor(() => expect(result.current.dialog.step?.kind).toBe("provider"));
+      act(() => result.current.dialog.onClose());
+
+      await expect(outcome).resolves.toBe("proof-needed");
+      expect(mocks.security.setPassword).toHaveBeenCalledTimes(2);
+    });
+
+    it("tells a password the server refuses from one that could not be set", async () => {
+      vi.mocked(mocks.security.get).mockResolvedValue(PASSWORDLESS);
+      const { result } = await mounted();
+      vi.mocked(mocks.security.setPassword)
+        .mockRejectedValueOnce(new ApiError("invalid", "400", 400, { fields: { newPassword: "Too long." } }))
+        .mockRejectedValueOnce(new ApiError("server", "500", 500));
+
+      await expect(result.current.setPassword("x".repeat(300))).resolves.toBe("refused");
+      await expect(result.current.setPassword("Nowe!Haslo2026")).resolves.toBe("failed");
+    });
+
+    it("reads only the account where no sessions are shown", async () => {
+      vi.mocked(mocks.security.get).mockResolvedValue(PASSWORDLESS);
+      const { result } = renderHook(() => useAccountSecurity(true, { withSessions: false }));
+
+      await waitFor(() => expect(result.current.sections.security).toEqual(PASSWORDLESS));
+      expect(mocks.security.listSessions).not.toHaveBeenCalled();
+    });
+  });
 });

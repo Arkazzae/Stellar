@@ -11,12 +11,16 @@ import { EncryptionDialogsContainer } from "./EncryptionDialogsContainer";
 
 vi.mock("@/state/hooks", async () => (await import("@/test/hookStubs")).hooksModule);
 
-const security = vi.hoisted(() => ({ confirmSecondStep: vi.fn(async () => true) }));
+const security = vi.hoisted(() => ({ confirmSecondStep: vi.fn(async () => true), hasPassword: true, opened: vi.fn() }));
 vi.mock("./useAccountSecurity", () => ({
-  useAccountSecurity: () => ({
-    confirmSecondStep: security.confirmSecondStep,
-    dialog: { step: null, pending: false, error: null, emailRetryAfter: null, onClose: vi.fn() },
-  }),
+  useAccountSecurity: (...args: unknown[]) => {
+    security.opened(...args);
+    return {
+      confirmSecondStep: security.confirmSecondStep,
+      sections: { security: { hasPassword: security.hasPassword } },
+      dialog: { step: null, pending: false, error: null, emailRetryAfter: null, onClose: vi.fn() },
+    };
+  },
 }));
 
 function port(overrides: Partial<EncryptionPort> = {}): EncryptionPort {
@@ -46,6 +50,7 @@ const pinField = () => screen.getByLabelText("PIN, 6 cyfr");
 beforeEach(() => {
   resetStubs();
   security.confirmSecondStep.mockClear();
+  security.hasPassword = true;
 });
 
 describe("EncryptionDialogsContainer", () => {
@@ -129,5 +134,26 @@ describe("EncryptionDialogsContainer", () => {
 
     expect(await screen.findByRole("alert")).toHaveTextContent("To nie jest Twoje obecne hasło.");
     expect(screen.getByLabelText("Obecne hasło")).toHaveValue("");
+  });
+
+  it("asks an account without a password for no password, and for the fresh proof when the server wants it", async () => {
+    security.hasPassword = false;
+    const changePin = vi
+      .fn()
+      .mockRejectedValueOnce(new ApiError("forbidden", "fresh", 403, { code: "fresh-mfa-required" }))
+      .mockResolvedValueOnce(undefined);
+    const user = open({ kind: "newPin", mode: "change" }, port({ changePin }));
+
+    expect(screen.queryByLabelText("Obecne hasło")).toBeNull();
+    await user.type(pinField(), "864200");
+    await user.click(screen.getByRole("button", { name: "Dalej" }));
+    await user.type(pinField(), "864200");
+    await user.click(screen.getByRole("button", { name: "Ustaw PIN" }));
+
+    await waitFor(() => expect(changePin).toHaveBeenCalledTimes(2));
+    expect(security.confirmSecondStep).toHaveBeenCalledOnce();
+    expect(changePin.mock.calls[1]?.[1]).toBe("");
+    // It reads the account for the dialog, and not the sessions the settings list.
+    expect(security.opened).toHaveBeenLastCalledWith(true, { withSessions: false });
   });
 });

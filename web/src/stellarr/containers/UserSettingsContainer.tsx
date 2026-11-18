@@ -162,6 +162,7 @@ export function UserSettingsContainer() {
           twoStep: accountSecurity.sections,
           onChangeEmail: (email, password) => account.requestEmailChange(email, password),
           onChangePassword: account.changePassword,
+          onSetPassword: accountSecurity.setPassword,
           onConfirmSecondStep: accountSecurity.confirmSecondStep,
         }}
         encryption={encryption}
