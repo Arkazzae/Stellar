@@ -172,9 +172,7 @@ public static partial class CockpitEndpoints
 
         if (!await WaysIn.RemainAsync(db, oidc, user, cancellationToken, withoutIdentity: identity.Id))
         {
-            return Results.Problem(
-                statusCode: StatusCodes.Status409Conflict,
-                title: messages.Get(MessageKey.CockpitLastWayIn, ("name", user.DisplayName)));
+            return WaysIn.Refusal(messages.Get(MessageKey.CockpitLastWayIn, ("name", user.DisplayName)));
         }
 
         db.ExternalIdentities.Remove(identity);

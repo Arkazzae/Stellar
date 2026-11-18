@@ -120,9 +120,7 @@ public static partial class AccountSecurityEndpoints
 
         if (!await WaysIn.RemainAsync(db, oidc, user, cancellationToken, withoutIdentity: identity.Id))
         {
-            return Results.Problem(
-                statusCode: StatusCodes.Status409Conflict,
-                title: messages.Get(MessageKey.SecurityLastWayInIdentity));
+            return WaysIn.Refusal(messages.Get(MessageKey.SecurityLastWayInIdentity));
         }
 
         db.ExternalIdentities.Remove(identity);

@@ -274,9 +274,7 @@ public static partial class AccountSecurityEndpoints
         if (method.Type == MfaMethodTypes.Passkey &&
             !await WaysIn.RemainAsync(db, oidc, user, cancellationToken, withoutMethod: method.Id))
         {
-            return Results.Problem(
-                statusCode: StatusCodes.Status409Conflict,
-                title: messages.Get(MessageKey.SecurityLastWayInPasskey));
+            return WaysIn.Refusal(messages.Get(MessageKey.SecurityLastWayInPasskey));
         }
 
         var remaining = await db.MfaMethods.CountAsync(
