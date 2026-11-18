@@ -3,7 +3,7 @@ import { bytesOf, fromBase64, randomBytes, toBase64 } from "./bytes";
 /**
  * One file of an encrypted message, sealed on its own.
  *
- * Every file and every video poster gets a fresh AES-256 key, carried inside
+ * Every file, video poster and image preview gets a fresh AES-256 key, carried inside
  * the message's plaintext, so the server stores bytes it cannot read and a key
  * for one file opens nothing else.
  */
