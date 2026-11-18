@@ -31,6 +31,7 @@ jobs:
       web: ${{ steps.filter.outputs.web }}
       media: ${{ steps.filter.outputs.media }}
       init: ${{ steps.filter.outputs.init }}
+      website: ${{ steps.filter.outputs.website }}
       image: ${{ steps.filter.outputs.image }}
     steps:
       - uses: actions/checkout@v7
@@ -72,6 +73,9 @@ jobs:
           check web '^(web/|artifacts/|packages/|package(-lock)?\.json$|branding/icons/|infra/(nginx\.conf|entrypoint\.sh)$|\.github/workflows/ci\.yml$)'
           check media '^(media/|\.github/workflows/ci\.yml$)'
           check init '^(init/|\.github/workflows/ci\.yml$)'
+          # website/ is the project site, its own npm project outside the root
+          # workspaces. It reads the logo, mascot, icons and fonts from branding/.
+          check website '^(website/|branding/(logo|mascot|icons/linear|guidelines/fonts)/|\.github/workflows/ci\.yml$)'
           # vite.config.ts and documents.ts lay out the build that nginx serves.
           # The image job drills the process manager in the image, so its
           # sources count, not only its manifest.
@@ -225,6 +229,25 @@ jobs:
           bin=$(cargo test --locked --test pid1 --no-run --message-format=json \
             | jq -r 'select(.profile.test == true and .target.name == "pid1") | .executable')
           sudo "$bin"
+
+  # The project site.
+  website:
+    needs: changes
+    if: needs.changes.outputs.website == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    defaults:
+      run:
+        working-directory: website
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 26
+          cache: npm
+          cache-dependency-path: website/package-lock.json
+      - run: npm ci
+      - run: npm run build
 
   # Builds the image without pushing it, when the Dockerfile, the container
   # configuration or a dependency list changes. On main it also refreshes the
