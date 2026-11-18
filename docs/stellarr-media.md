@@ -26,6 +26,7 @@ See [Voice and RTC protocol](./rtc-protocol.md) for bootstrap configuration, `Vo
 | Track attribution | Server-issued directory mapping SDP `mid` → `{ userId, kind, streamId, heldBack }` |
 | Downlink adaptation | Per-receiver GoogCC BWE: all subscribed audio forwards; video forwards in subscription priority order while headroom allows, holding excess video back per receiver |
 | Direct calls | Routed through the media server just like server voice channels |
+| End-to-end encryption | A direct call in a conversation with end-to-end encryption on is encrypted frame by frame in the browsers; the media server forwards payloads it cannot read (see [End-to-end encrypted calls](#end-to-end-encrypted-calls)) |
 
 ## Topology
 
@@ -329,9 +330,9 @@ Returns immediately when events with `seq > after` exist, or waits up to `waitMs
 ### Forwarding
 
 - Every session in a `roomId` negotiates the tracks published by the other sessions in that room, never its own, and is forwarded those its [receive subscriptions](#receive-subscriptions) ask for.
-- Per connection, `stellarr-media` rewrites SSRC, payload type, RTP header extension IDs, and sequence numbers/timestamps while leaving media payloads untouched after SRTP decryption and re-encryption.
+- Per connection, `stellarr-media` rewrites SSRC, payload type, RTP header extension IDs, and sequence numbers/timestamps while leaving media payloads untouched after SRTP decryption and re-encryption. It never reads a payload, which is what lets an [end-to-end encrypted call](#end-to-end-encrypted-calls) pass through it unchanged.
 - Supported codecs: Opus, VP9, VP8, H.264, AV1. Publisher codec order is preserved, and publisher Opus `a=fmtp` parameters are echoed back so the browser configures its encoder according to the selected profile.
-- Audio level RTP header extensions are forwarded.
+- Audio level RTP header extensions are forwarded (an end-to-end encrypted call does not negotiate them).
 - NACK, RTX, transport-wide congestion control (TWCC), and keyframe requests (PLI/FIR, rate-limited to once per second per track) are handled per leg. The TWCC feedback of each receiving browser drives the media server's estimate of that receiver's downlink.
 
 ### Downlink adaptation
@@ -384,7 +385,41 @@ Each receiving session runs independent GoogCC bandwidth estimation (`str0m`) fr
 - **IPv6 or direct ICE-TCP**: The media socket uses IPv4 UDP only; clients restricted to TCP connect through `coturn`.
 
 > [!WARNING]
-> Call media is encrypted in transit between each browser and `stellarr-media` (DTLS-SRTP), not end-to-end encrypted between browsers. Because `stellarr-media` terminates SRTP on each leg to forward packets, audio and video are decrypted in process memory on the host running the container.
+> Call media is encrypted in transit between each browser and `stellarr-media` (DTLS-SRTP). Because `stellarr-media` terminates SRTP on each leg to forward packets, the audio and video of server voice channels, and of direct calls in conversations without end-to-end encryption, are decrypted in process memory on the host running the container. Only a direct call in a conversation with end-to-end encryption on is encrypted between the two browsers; see [End-to-end encrypted calls](#end-to-end-encrypted-calls) for what the server still sees.
+
+## End-to-end encrypted calls
+
+A direct call in a conversation whose end-to-end encryption is on is encrypted in the two browsers, frame by frame, with keys the server never holds. `stellarr-media` forwards it like any other call: it needs no setting and no change, because it never reads a payload.
+
+### When a call is encrypted
+
+- The browser decides before it takes the seat, so before the other side rings, from the conversation's encryption state read from the API at that moment. An encrypted conversation's call is encrypted or does not happen: a browser that cannot encrypt, or cannot load the keys, does not join, and never falls back to a call in the clear.
+- The call button of an encrypted conversation is disabled with the reason in a browser that cannot encrypt calls (no WebRTC Encoded Transform, no WebCrypto X25519, a page not served over HTTPS, or an account that already holds keys in its maximum number of browsers). An incoming call there says it cannot be answered in this browser and why.
+- A call stays as it began: switching encryption off during an encrypted call keeps that call encrypted until it ends. A browser that joins it later in the clear sees the other side announce `encrypted: true` in its `state` signal, plays nothing of them, and moves its own connection to encryption with the conversation's newest epoch it can open. A plain call whose conversation is switched on moves to encryption the same way.
+- Every media session of the call, including the replacements after a lost connection, uses the same keys; each new connection draws new key ids.
+- The call view shows "End-to-end encrypted" under the other person's name only while this browser encrypts the call, and a person whose sound or picture arrives but does not decrypt is shown as such; nothing that fails to decrypt is played.
+
+### Frame format
+
+Each encoded frame becomes `clear prefix | header | AES-256-GCM ciphertext | tag (16 B) | prefix length (1 B)`, using WebRTC Encoded Transform (`RTCRtpScriptTransform`, or Chromium's `createEncodedStreams`) in a dedicated worker (`web/src/stellarr/lib/voice/e2ee/frameWorker.ts`, format in `sframe.ts`).
+
+- **Header**: the RFC 9605 section 4.3 header: a config byte, then a 64-bit key id and a frame counter, each in as few bytes as it takes.
+- **Clear prefix**: what the receiving browser's depacketizer must read before the receiving transform runs. Opus and VP9 keep nothing in the clear. VP8 keeps its 3-byte frame tag on a delta frame and 10 bytes on a keyframe (the tag, the start code and the frame size). H.264 and AV1 cannot be encrypted this way (their packetizers parse the frame), so encrypted calls negotiate only Opus, VP8 and VP9, sending and receiving, and a frame of any other codec is never sent.
+- **Associated data**: the clear prefix, the header and the length byte, so none of them can be changed in transit.
+- **Keys**: the conversation's current epoch key (the one its next message would be encrypted with; see the conversation's epochs in the encryption API) is imported as a non-extractable HKDF key. Each sender track draws a key id of 16 bits of epoch sequence and 48 random bits per connection and epoch; its AES key and 12-byte nonce salt are HKDF-SHA-256 of the epoch key with the epoch id as salt and `stellarr/e2ee/call/v1|conversationId|senderUserId|keyIdHex` as info. The nonce is the salt XORed with the counter.
+- **Receivers** take the sender's user id from the media server's track directory, so a frame reflected back to its sender, or relabelled as another person's, does not open. A receiver derives the key of an unknown key id on demand, fetches an epoch it does not hold (at most once a second) and drops that epoch's frames meanwhile, rejects a counter it has already accepted (a 128-frame sliding window, advanced only by frames that verify), and asks for a keyframe at most once a second until one opens.
+- **Rotation**: when the conversation's keys change (a device added or removed, a key reset), the next message's epoch is handed to every receiver at once and the senders move to it 1.5 s later.
+
+### What the media server still sees
+
+End-to-end encryption hides what is said and shown, not that a call takes place. Whoever runs the server, or can read its memory and traffic, still has:
+
+- **Who, when and how long**: the seats and the call's occupancy, the hub signals (`state` with mute, stream ids and whether the sender encrypts), and the track directory (which user publishes which microphone, camera and screen, and when each starts and stops).
+- **RTP and RTCP metadata**: SSRCs, sequence numbers, timestamps, marker bits and payload types (so the codec), NACKs, keyframe requests, receiver reports and transport-wide congestion control feedback, the bandwidth estimates and which pictures are held back, and every participant's IP address.
+- **Sizes and timing**: the size and timing of every packet. Encrypted calls send their voice at a constant bitrate without discontinuous transmission, and do not negotiate the audio-level header extension, so the voice's packets do not follow speech. Pictures stay variable: their sizes show motion and keyframes.
+- **The clear bytes and headers of each frame**: a VP8 frame's tag (keyframe or not, frame size), a VP8 keyframe's dimensions, and each frame's key id (with the epoch sequence) and counter.
+
+What the keys cover follows the conversation's devices: every active device of both people can open the epoch, and so the call. See the conversation's safety code to confirm whose keys these are.
 
 ## Process configuration
 
