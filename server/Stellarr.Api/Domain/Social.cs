@@ -41,9 +41,31 @@ public sealed class DirectConversation
     public Guid UserBId { get; set; }
     public DateTime CreatedAt { get; set; }
 
+    /// <summary>Off, asked for by one of the two, or on once the other confirmed.</summary>
+    public DirectEncryptionState EncryptionState { get; set; }
+
+    /// <summary>Who asked for encryption, while it is <see cref="DirectEncryptionState.Requested"/>.</summary>
+    public Guid? EncryptionRequestedById { get; set; }
+
+    public DateTime? EncryptionRequestedAt { get; set; }
+
+    /// <summary>When encryption was last switched on, while it is <see cref="DirectEncryptionState.On"/>.</summary>
+    public DateTime? EncryptionEnabledAt { get; set; }
+
+    /// <summary>
+    /// The epoch new messages must be encrypted with. Null while encryption is
+    /// not on, and right after it was switched on, until the first epoch.
+    /// </summary>
+    public Guid? CurrentEpochId { get; set; }
+
     public ICollection<DirectMessage> Messages { get; set; } = [];
 }
 
+/// <summary>
+/// A message, or a line of the timeline such as encryption being switched on.
+/// An encrypted message keeps its content empty and carries the ciphertext;
+/// a timeline line has a <see cref="SystemKind"/> and its actor as the author.
+/// </summary>
 public sealed class DirectMessage
 {
     public Guid Id { get; set; }
@@ -51,6 +73,15 @@ public sealed class DirectMessage
     public Guid AuthorId { get; set; }
     public required string Content { get; set; }
     public DateTime CreatedAt { get; set; }
+
+    /// <summary>The epoch an encrypted message was encrypted with; null for a plain message.</summary>
+    public Guid? EncryptedEpochId { get; set; }
+
+    public byte[]? EncryptedIv { get; set; }
+    public byte[]? EncryptedCiphertext { get; set; }
+
+    /// <summary>One of <see cref="DirectSystemKinds"/> for a timeline line, null for a message.</summary>
+    public string? SystemKind { get; set; }
 
     public User Author { get; set; } = null!;
     public ICollection<DirectMessageAttachment> Attachments { get; set; } = [];

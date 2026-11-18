@@ -242,6 +242,119 @@ public sealed class DataModelTests(StellarrWebApplicationFactory factory)
     }
 
     [Fact]
+    public async Task EncryptionKeysDevicesAndEpochsLeaveWithTheirAccountAndConversation()
+    {
+        await using var scope = factory.OpenScope(out var db);
+        var users = await AddUsersAsync(db, 3);
+        var (leaving, peer, other) = (users[0], users[1], users[2]);
+        var now = DateTime.UtcNow;
+        var session = new UserSession
+        {
+            Id = Guid.NewGuid(),
+            UserId = leaving.Id,
+            Device = "Firefox on Linux",
+            IpAddress = "203.0.113.7",
+            CreatedAt = now,
+            LastSeenAt = now,
+            ExpiresAt = now.AddDays(30),
+            AbsoluteExpiresAt = now.AddDays(30),
+        };
+        db.UserSessions.Add(session);
+        db.AccountKeys.Add(new AccountKey
+        {
+            UserId = leaving.Id,
+            KeyId = Guid.NewGuid(),
+            Algorithm = EncryptionAlgorithms.X25519,
+            PublicKey = new byte[32],
+            CreatedAt = now,
+        });
+        db.AccountKeyBackups.Add(new AccountKeyBackup
+        {
+            UserId = leaving.Id,
+            Salt = new byte[16],
+            Iterations = 600_000,
+            Verifier = new byte[32],
+            Iv = new byte[12],
+            Ciphertext = new byte[64],
+            UpdatedAt = now,
+        });
+        var device = new EncryptionDevice
+        {
+            Id = Guid.NewGuid(),
+            UserId = leaving.Id,
+            SessionId = session.Id,
+            Algorithm = EncryptionAlgorithms.X25519,
+            PublicKey = new byte[32],
+            Label = "Firefox, Linux",
+            CreatedAt = now,
+            LastSeenAt = now,
+        };
+        db.EncryptionDevices.Add(device);
+        var conversation = Conversation(leaving, peer);
+        conversation.EncryptionState = DirectEncryptionState.On;
+        var kept = Conversation(peer, other);
+        db.DirectConversations.AddRange(conversation, kept);
+        var epoch = new EncryptionEpoch
+        {
+            Id = Guid.NewGuid(),
+            ConversationId = conversation.Id,
+            Sequence = 1,
+            CreatedById = peer.Id,
+            CreatedAt = now,
+            Envelopes =
+            [
+                new EncryptionEnvelope
+                {
+                    RecipientKeyId = device.Id,
+                    RecipientUserId = leaving.Id,
+                    RecipientKind = "device",
+                    EphemeralPublicKey = new byte[32],
+                    Iv = new byte[12],
+                    Ciphertext = new byte[48],
+                },
+            ],
+        };
+        db.EncryptionEpochs.Add(epoch);
+        db.DirectMessages.Add(new DirectMessage
+        {
+            Id = Guid.NewGuid(),
+            ConversationId = conversation.Id,
+            AuthorId = peer.Id,
+            Content = "",
+            CreatedAt = now,
+            EncryptedEpochId = epoch.Id,
+            EncryptedIv = new byte[12],
+            EncryptedCiphertext = new byte[40],
+        });
+        await db.SaveChangesAsync();
+
+        // A second device for the same session must replace the first, not join it.
+        db.EncryptionDevices.Add(new EncryptionDevice
+        {
+            Id = Guid.NewGuid(),
+            UserId = leaving.Id,
+            SessionId = session.Id,
+            Algorithm = EncryptionAlgorithms.X25519,
+            PublicKey = new byte[32],
+            Label = "Firefox, Linux",
+            CreatedAt = now,
+            LastSeenAt = now,
+        });
+        await Assert.ThrowsAsync<DbUpdateException>(() => db.SaveChangesAsync());
+        db.ChangeTracker.Clear();
+
+        await db.Users.Where(x => x.Id == leaving.Id).ExecuteDeleteAsync();
+
+        Assert.False(await db.AccountKeys.AnyAsync(x => x.UserId == leaving.Id));
+        Assert.False(await db.AccountKeyBackups.AnyAsync(x => x.UserId == leaving.Id));
+        Assert.False(await db.EncryptionDevices.AnyAsync(x => x.UserId == leaving.Id));
+        Assert.False(await db.EncryptionEpochs.AnyAsync(x => x.Id == epoch.Id));
+        Assert.False(await db.EncryptionEnvelopes.AnyAsync(x => x.EpochId == epoch.Id));
+        Assert.False(await db.DirectMessages.AnyAsync(x => x.ConversationId == conversation.Id));
+        Assert.True(await db.DirectConversations.AnyAsync(x => x.Id == kept.Id));
+    }
+
+    [Fact]
     public async Task DeletingAChannelDetachesItsInvitesAndRemovesItsReadMarks()
     {
         await using var scope = factory.OpenScope(out var db);

@@ -29,6 +29,14 @@ public sealed class ImageAttachment
 
     public string? PosterContentType { get; set; }
     public long? PosterSizeBytes { get; set; }
+
+    /// <summary>
+    /// Bytes a browser encrypted for an encrypted conversation. The server only
+    /// knows their size: it neither inspects nor describes them, and they may
+    /// be attached to encrypted direct messages only.
+    /// </summary>
+    public bool IsEncrypted { get; set; }
+
     public DateTime CreatedAt { get; set; }
 }
 

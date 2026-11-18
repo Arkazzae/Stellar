@@ -49,6 +49,7 @@ internal sealed class DirectConversationConfiguration : IEntityTypeConfiguration
     {
         entity.HasKey(x => x.Id);
         entity.HasIndex(x => new { x.UserAId, x.UserBId }).IsUnique();
+        entity.Property(x => x.EncryptionState).HasConversion<string>().HasMaxLength(16);
         entity.HasOne<User>().WithMany().HasForeignKey(x => x.UserAId)
             .OnDelete(DeleteBehavior.Cascade);
         entity.HasOne<User>().WithMany().HasForeignKey(x => x.UserBId)
@@ -63,7 +64,10 @@ internal sealed class DirectMessageConfiguration : IEntityTypeConfiguration<Dire
         entity.HasKey(x => x.Id);
         entity.HasIndex(x => new { x.ConversationId, x.CreatedAt });
         entity.Property(x => x.Content).HasMaxLength(MessageLimits.MaxContentLength);
+        entity.Property(x => x.SystemKind).HasMaxLength(64);
         entity.HasOne<DirectConversation>().WithMany(x => x.Messages).HasForeignKey(x => x.ConversationId)
+            .OnDelete(DeleteBehavior.Cascade);
+        entity.HasOne<EncryptionEpoch>().WithMany().HasForeignKey(x => x.EncryptedEpochId)
             .OnDelete(DeleteBehavior.Cascade);
         entity.HasOne(x => x.Author).WithMany().HasForeignKey(x => x.AuthorId)
             .OnDelete(DeleteBehavior.Restrict);
