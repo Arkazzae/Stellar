@@ -4,7 +4,7 @@ import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
 import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js';
 import { OutputPass } from 'three/addons/postprocessing/OutputPass.js';
 import { ShaderPass } from 'three/addons/postprocessing/ShaderPass.js';
-import { CAMERA, FOV } from '../config.js';
+import { CAMERA, FOV, PORTRAIT_LIFT } from '../config.js';
 import { Mark, FOOTPRINT, LOCKUP } from './mark.js';
 import { Floor } from './floor.js';
 
@@ -244,6 +244,11 @@ export class Stage {
       const shift = LOCKUP.lockupCentre * (1 - THREE.MathUtils.smoothstep(t, 0, 0.6));
       pos.x -= shift;
       tgt.x -= shift;
+      // The install card fills the lower half of a tall screen, so in the
+      // last section the mark is lifted into the space above it.
+      const lift = PORTRAIT_LIFT * THREE.MathUtils.smoothstep(t, 2.2, 2.5);
+      pos.y -= lift;
+      tgt.y -= lift;
     }
     const reach = pos.distanceTo(tgt);
     const sway = 0.012 * reach * t;
