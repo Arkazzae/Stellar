@@ -22,6 +22,9 @@ public static class AssetEndpoints
         endpoints.MapGet("/assets/{attachmentId:guid}/poster", GetPosterAsync)
             .RequireAuthorization()
             .WithName("GetAttachmentPoster");
+        endpoints.MapGet("/assets/{attachmentId:guid}/preview", GetPreviewAsync)
+            .RequireAuthorization()
+            .WithName("GetAttachmentPreview");
 
         return endpoints;
     }
@@ -100,16 +103,40 @@ public static class AssetEndpoints
     {
         var attachment = await FindReadableAsync(db, principal, attachmentId, cancellationToken);
         // The upload records a poster's key and type together.
-        if (attachment?.PosterObjectKey is not { } posterKey || attachment.PosterContentType is not { } posterType)
-        {
-            return Results.NotFound();
-        }
+        return attachment?.PosterObjectKey is { } key && attachment.PosterContentType is { } type
+            ? await ServeStillAsync(http, storage, key, type, attachment.PosterSizeBytes, cancellationToken)
+            : Results.NotFound();
+    }
 
+    private static async Task<IResult> GetPreviewAsync(
+        Guid attachmentId,
+        ClaimsPrincipal principal,
+        HttpContext http,
+        AppDbContext db,
+        IObjectStorage storage,
+        CancellationToken cancellationToken)
+    {
+        var attachment = await FindReadableAsync(db, principal, attachmentId, cancellationToken);
+        // The upload records a preview's key and type together.
+        return attachment?.PreviewObjectKey is { } key && attachment.PreviewContentType is { } type
+            ? await ServeStillAsync(http, storage, key, type, attachment.PreviewSizeBytes, cancellationToken)
+            : Results.NotFound();
+    }
+
+    /// <summary>Writes a poster or preview, which are small and always sent whole.</summary>
+    private static async Task<IResult> ServeStillAsync(
+        HttpContext http,
+        IObjectStorage storage,
+        string key,
+        string contentType,
+        long? sizeBytes,
+        CancellationToken cancellationToken)
+    {
         try
         {
-            var stored = await storage.GetAsync(posterKey, null, cancellationToken);
-            http.Response.ContentType = posterType;
-            http.Response.ContentLength = attachment.PosterSizeBytes ?? stored.Length;
+            var stored = await storage.GetAsync(key, null, cancellationToken);
+            http.Response.ContentType = contentType;
+            http.Response.ContentLength = sizeBytes ?? stored.Length;
             await using var body = stored.Stream;
             await body.CopyToAsync(http.Response.Body, cancellationToken);
             return Results.Empty;

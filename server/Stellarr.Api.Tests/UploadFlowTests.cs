@@ -438,13 +438,13 @@ public sealed partial class UploadFlowTests(StellarrWebApplicationFactory factor
         return document.RootElement.Clone();
     }
 
-    /// <summary>Stores everything except posters, which it refuses as an unreachable store would.</summary>
-    private sealed class PosterRejectingStorage(FakeObjectStorage inner) : IObjectStorage
+    /// <summary>Stores everything except the objects under one prefix, which it refuses as an unreachable store would.</summary>
+    private sealed class PosterRejectingStorage(FakeObjectStorage inner, string prefix = "posters/") : IObjectStorage
     {
         public Task PrepareAsync(CancellationToken cancellationToken) => inner.PrepareAsync(cancellationToken);
 
         public Task PutAsync(string key, Stream data, CancellationToken cancellationToken) =>
-            key.StartsWith("posters/", StringComparison.Ordinal)
+            key.StartsWith(prefix, StringComparison.Ordinal)
                 ? throw new IOException("The object store went away.")
                 : inner.PutAsync(key, data, cancellationToken);
 

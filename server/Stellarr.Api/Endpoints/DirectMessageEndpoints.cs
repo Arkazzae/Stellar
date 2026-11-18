@@ -24,8 +24,9 @@ public static class DirectMessageEndpoints
     private const int MaxAttachments = 10;
 
     /// <summary>
-    /// An encrypted video brings its poster as an upload of its own, since the
-    /// server cannot make one from bytes it cannot read.
+    /// An encrypted video brings its poster, and an encrypted image its preview,
+    /// as an upload of its own, since the server cannot make one from bytes it
+    /// cannot read.
     /// </summary>
     private const int MaxEncryptedUploads = 2 * MaxAttachments;
 
