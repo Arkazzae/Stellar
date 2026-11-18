@@ -22,7 +22,7 @@ export default function RegistrationPage() {
 
   useEffect(() => {
     let active = true;
-    ports.session.needsServerSetup().then((needed) => {
+    ports.session.setupRequired().then((needed) => {
       if (active) setSetup(needed && pendingInvite() === null);
     }).catch(() => { if (active) setFailed(true); });
     return () => { active = false; };

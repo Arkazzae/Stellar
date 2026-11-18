@@ -20,12 +20,51 @@ const BOOTSTRAP = {
 afterEach(() => window.history.replaceState({}, "", "/"));
 
 describe("signing in and out", () => {
-  it("checks whether the instance needs its first server", async () => {
-    fetchMock.mockResolvedValue(jsonResponse({ needsServerSetup: true }));
-    await expect(calls.needsServerSetup()).resolves.toBe(true);
+  it("checks whether the instance still waits for its first account", async () => {
+    fetchMock.mockResolvedValue(jsonResponse({ setupRequired: true }));
+    await expect(calls.setupRequired()).resolves.toBe(true);
     expect(sentRequest(fetchMock).url).toBe("/api/auth/registration");
-    fetchMock.mockResolvedValue(jsonResponse({ needsServerSetup: "yes" }));
-    await expect(calls.needsServerSetup()).rejects.toMatchObject({ kind: "malformed" });
+    fetchMock.mockResolvedValue(jsonResponse({ needsServerSetup: false }));
+    await expect(calls.setupRequired()).rejects.toMatchObject({ kind: "malformed" });
+  });
+
+  it("reads the instance's name from the discovery document", async () => {
+    fetchMock.mockResolvedValue(jsonResponse({ product: "stellarr", instanceName: "Stellarr Dev", apiProtocol: 1 }));
+    await expect(calls.instanceName()).resolves.toBe("Stellarr Dev");
+    expect(sentRequest(fetchMock).url).toBe("/.well-known/stellarr/client");
+  });
+
+  it("previews an invite by its code, and treats a refused one as not found", async () => {
+    fetchMock.mockResolvedValueOnce(
+      jsonResponse({
+        server: { id: "s-1", name: "Stellarr Dev", description: "", iconUrl: null },
+        channel: null,
+        inviter: { displayName: "Ada", avatarColor: "oklch(0.58 0.14 24)", avatarUrl: null },
+        expiresAt: null,
+      }),
+    );
+
+    await expect(calls.invitePreview("k7/qm")).resolves.toEqual({
+      server: { id: "s-1", name: "Stellarr Dev", description: "", iconUrl: null },
+      channel: null,
+      inviter: { displayName: "Ada", avatarColor: "oklch(0.58 0.14 24)", avatarUrl: null },
+      expiresAt: null,
+    });
+    expect(sentRequest(fetchMock).url).toBe("/api/invites/k7%2Fqm");
+
+    fetchMock.mockResolvedValueOnce(jsonResponse({ title: "Not Found" }, 404));
+    await expect(calls.invitePreview("gone")).rejects.toMatchObject({ kind: "not-found" });
+  });
+
+  it("names the fields a refused registration got wrong", async () => {
+    fetchMock.mockResolvedValue(
+      jsonResponse({ title: "One or more validation errors occurred.", errors: { setupCode: ["Kod jest nieprawidłowy."] } }, 400),
+    );
+
+    await expect(
+      calls.register({ username: "owner", email: "o@example.org", password: "pw", displayName: "O", setupCode: "K7QM" }),
+    ).rejects.toMatchObject({ kind: "invalid", fields: { setupCode: "Kod jest nieprawidłowy." } });
+    expect(sentRequest(fetchMock).body).toMatchObject({ setupCode: "K7QM" });
   });
 
   it("posts the credentials and reads the user from an envelope", async () => {

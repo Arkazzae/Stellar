@@ -1,6 +1,6 @@
 import { expectArray } from "../expect";
 import { ApiError, statusToKind } from "../errors";
-import { fail, JSON_HEADERS, problemCode, readJson, request } from "../transport";
+import { fail, JSON_HEADERS, problemCode, problemFields, readJson, request } from "../transport";
 
 /**
  * The few shapes every HTTP call of the client comes down to, so the request
@@ -61,12 +61,17 @@ async function succeed(
 
 /**
  * Throws for a failed response. A refusal can say why, such as a second
- * step that is not fresh enough, and the error then carries that code.
+ * step that is not fresh enough, and the error then carries that code; a
+ * validation problem carries the fields it refused.
  */
 async function refuse(response: Response, path: string): Promise<never> {
   const code = response.status === 403 ? await problemCode(response) : null;
   if (code !== null) {
     throw new ApiError(statusToKind(403), `${path} responded 403`, 403, { code });
+  }
+  const fields = response.status === 400 ? await problemFields(response) : null;
+  if (fields !== null) {
+    throw new ApiError(statusToKind(400), `${path} responded 400`, 400, { fields });
   }
   fail(response, path);
 }
