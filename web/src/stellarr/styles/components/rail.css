@@ -240,6 +240,13 @@
   .rail-scroll[data-sorting] > *{pointer-events:none}
   /* Open groups stop clipping, or a row carried out of one would vanish at its edge. */
   .rail-scroll[data-sorting] .collapsible:not(.closed) > .collapsible-body{overflow:visible}
+  /* Rows and captions start the drag with a transform already, so moving
+     one out of the way only changes a value: gaining a transform would lay
+     the rail out again. Never the carried row's own groups, whose stacking
+     would keep it under the groups below. */
+  .rail-scroll[data-sorting] :is(.rail-cap, .rail-list > *, .rail-section-empty):not([data-drag="carried"]){
+    transform:translateY(0);
+  }
   .rail-scroll [data-drag="shifted"],
   .rail-scroll [data-drag="carried"][data-via="keyboard"],
   .rail-scroll [data-settling]{transition:transform var(--dur-base) var(--ease-standard)}
