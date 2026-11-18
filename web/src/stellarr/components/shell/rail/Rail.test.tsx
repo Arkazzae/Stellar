@@ -33,7 +33,7 @@ function setup(occupants: PersonVM[], overrides: Partial<RailProps> = {}) {
     onJoinVoiceChannel: vi.fn(),
     onEditServer: vi.fn(),
     onInvite: vi.fn(),
-    onReorderChannelGroup: vi.fn(),
+    onMoveChannel: vi.fn(),
     ...overrides,
   };
 

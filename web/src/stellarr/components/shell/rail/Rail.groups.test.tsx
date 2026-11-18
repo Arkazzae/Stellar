@@ -27,7 +27,7 @@ function setup(overrides: Partial<RailProps> = {}) {
     onJoinVoiceChannel: vi.fn(),
     onEditServer: vi.fn(),
     onInvite: vi.fn(),
-    onReorderChannelGroup: vi.fn(),
+    onMoveChannel: vi.fn(),
     ...overrides,
   };
   render(
@@ -224,7 +224,7 @@ describe("Rail thread focus", () => {
           onJoinVoiceChannel={vi.fn()}
           onEditServer={vi.fn()}
           onInvite={vi.fn()}
-          onReorderChannelGroup={vi.fn()}
+          onMoveChannel={vi.fn()}
         />
       </ConfirmProvider>
     );

@@ -27,7 +27,7 @@ export function RailContainer() {
     textChannels,
     voiceChannels,
     sections,
-    reorderChannelGroup,
+    moveChannel,
     canAccessServerSettings,
     canManageServer,
     canManageChannels,
@@ -156,7 +156,7 @@ export function RailContainer() {
       onJoinVoiceChannel={ui.joinVoiceChannel}
       onEditServer={() => ui.openModal("settings")}
       onInvite={() => ui.openModal("invite")}
-      onReorderChannelGroup={reorderChannelGroup}
+      onMoveChannel={moveChannel}
       onOpenChannelSettings={ui.openChannelSettings}
       onCreateChannel={ui.openCreateChannel}
       {...(canSection ? { onOpenSectionSettings: ui.openSectionSettings } : {})}

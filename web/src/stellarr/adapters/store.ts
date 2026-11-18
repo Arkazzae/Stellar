@@ -2,6 +2,7 @@ import type {
   Bootstrap,
   Channel,
   ChannelId,
+  ChannelPlacement,
   Presence,
   Section,
   Server,
@@ -131,9 +132,28 @@ export class DirectoryStore {
     });
   }
 
-  /** Channels missing from `orderedIds` keep their relative order, after the rest. */
-  setChannelOrder(orderedIds: ChannelId[]): void {
-    this.#update({ channels: inOrder(this.#snapshot.channels, orderedIds) });
+  /**
+   * The order of the channels and the section of each, in one publish, so
+   * the rail never shows a channel moved but not yet placed. Channels missing
+   * from `placements` keep their section and relative order, after the rest.
+   * An unchanged layout publishes nothing: the hub echoes every reorder back
+   * to the client that made it, and a fresh snapshot would end a drag that
+   * began since.
+   */
+  setChannelLayout(placements: readonly ChannelPlacement[]): void {
+    const sections = new Map(placements.map(({ id, sectionId }) => [id, sectionId]));
+    const placed = this.#snapshot.channels.map((channel) => {
+      const sectionId = sections.get(channel.id);
+      if (sectionId === undefined || sectionId === (channel.sectionId ?? null)) return channel;
+      return sectionId === null ? withoutSection(channel) : { ...channel, sectionId };
+    });
+    const channels = inOrder(
+      placed,
+      placements.map(({ id }) => id),
+    );
+    const current = this.#snapshot.channels;
+    if (channels.every((channel, index) => channel === current[index])) return;
+    this.#update({ channels });
   }
 
   removeChannel(channelId: ChannelId): void {

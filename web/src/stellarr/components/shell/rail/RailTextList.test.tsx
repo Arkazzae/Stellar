@@ -97,7 +97,7 @@ describe("RailTextList keyboard sorting", () => {
     expect(said()).toBe("Kanał ogólny, pozycja 3 z 3.");
 
     fireEvent.keyDown(main("ogólny"), { key: " " });
-    expect(onReorder).toHaveBeenCalledWith(["t-2", "t-3", "t-1"]);
+    expect(onReorder).toHaveBeenCalledWith(["t-2", "t-3", "t-1"], "t-1");
     expect(said()).toBe("Upuszczono kanał ogólny na pozycji 3 z 3.");
     expect(translateOf(node("plany"))).toBe("");
   });
@@ -173,7 +173,7 @@ describe("RailTextList pointer sorting", () => {
     // The click the browser sends after the release must not open the channel.
     fireEvent.click(main("ogólny"));
 
-    expect(onReorder).toHaveBeenCalledWith(["t-2", "t-1", "t-3"]);
+    expect(onReorder).toHaveBeenCalledWith(["t-2", "t-1", "t-3"], "t-1");
     expect(onSelect).not.toHaveBeenCalled();
     // Let go between slots, it eases into the one it was dropped on.
     expect(node("ogólny")).toHaveAttribute("data-settling");
@@ -189,7 +189,7 @@ describe("RailTextList pointer sorting", () => {
 
     release(900);
     fireEvent.click(main("ogólny"));
-    expect(onReorder).toHaveBeenCalledWith(["t-2", "t-3", "t-1"]);
+    expect(onReorder).toHaveBeenCalledWith(["t-2", "t-3", "t-1"], "t-1");
   });
 
   it("moves a channel's open threads with it and makes room for all of them", () => {
@@ -202,7 +202,7 @@ describe("RailTextList pointer sorting", () => {
 
     release(200);
     fireEvent.click(main("ogólny"));
-    expect(onReorder).toHaveBeenCalledWith(["t-2", "t-1", "t-3"]);
+    expect(onReorder).toHaveBeenCalledWith(["t-2", "t-1", "t-3"], "t-1");
   });
 
   it.each([2, 3])("moves a tall first channel to the end of a %i-channel list", (count) => {
@@ -219,7 +219,7 @@ describe("RailTextList pointer sorting", () => {
     expect(onReorder).toHaveBeenCalledWith([
       ...channels.slice(1, count).map((channel) => channel.id),
       "t-1",
-    ]);
+    ], "t-1");
   });
 
   it.each([2, 3])("moves a tall last channel to the start of a %i-channel list", (count) => {
@@ -231,7 +231,7 @@ describe("RailTextList pointer sorting", () => {
     expect(translateOf(node("ogólny"))).toBe(`translateY(${-32 * (count - 1)}px)`);
     release(0);
 
-    expect(onReorder).toHaveBeenCalledWith(["t-1", ...list.slice(0, -1).map((channel) => channel.id)]);
+    expect(onReorder).toHaveBeenCalledWith(["t-1", ...list.slice(0, -1).map((channel) => channel.id)], "t-1");
   });
 
   it("cancels on Escape and still eats the click of the release", () => {

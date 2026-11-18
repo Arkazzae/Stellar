@@ -213,6 +213,19 @@ export interface Channel {
   sectionId?: string;
 }
 
+/** Where one channel sits in the rail: its place in the order is where it is listed. */
+export interface ChannelPlacement {
+  id: ChannelId;
+  /** Null outside sections. */
+  sectionId: string | null;
+}
+
+/** One channel filed under another section, or under none, as part of a reorder. */
+export interface ChannelSectionMove {
+  channelId: ChannelId;
+  sectionId: string | null;
+}
+
 /** Everything but the name is optional and falls back to what the server seeds. */
 export interface NewServer {
   name: string;

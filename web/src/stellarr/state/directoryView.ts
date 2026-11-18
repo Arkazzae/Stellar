@@ -191,7 +191,9 @@ export function deriveDirectoryView(
  * The channel endpoint takes a single order for the whole server, while a drag
  * reorders one rail group. The existing order is walked in place, and wherever
  * a slot belongs to the dragged group it takes the next id from the new
- * sequence. Every channel outside the group keeps the position it had.
+ * sequence. Every channel outside the group keeps the position it had. A
+ * channel dropped in from another group brings its old slot along, which is
+ * all the group it left needs: its own channels keep their order.
  */
 export function spliceGroupOrder(
   channels: readonly Channel[],

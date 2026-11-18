@@ -2,6 +2,7 @@ import type {
   Channel,
   ChannelId,
   ChannelKind,
+  ChannelSectionMove,
   NewServer,
   Section,
   Server,
@@ -25,8 +26,12 @@ export interface DirectoryPort {
   listSections(): Section[];
   listPermissions(): ServerPermission[];
   onChanged(handler: () => void): Unsubscribe;
-  /** Rail drag-and-drop: applied locally at once, persisted by the adapter. */
-  reorderChannels(orderedIds: ChannelId[]): Promise<void>;
+  /**
+   * Rail drag-and-drop: the whole order, and with `move` the one channel that
+   * changes section, as one change. Applied locally at once, persisted by the
+   * adapter, and put back whole if the server refuses.
+   */
+  reorderChannels(orderedIds: ChannelId[], move?: ChannelSectionMove): Promise<void>;
   /** Dragging section headers; same optimistic handling as channels. */
   reorderSections(orderedIds: string[]): Promise<void>;
   createServer(input: NewServer): Promise<Server>;

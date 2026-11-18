@@ -52,7 +52,7 @@ function setup(overrides: Partial<RailProps> = {}) {
     onJoinVoiceChannel: vi.fn(),
     onEditServer: vi.fn(),
     onInvite: vi.fn(),
-    onReorderChannelGroup: vi.fn(),
+    onMoveChannel: vi.fn(),
     ...overrides,
   };
   const view = (next: RailProps) => (
@@ -96,39 +96,39 @@ beforeEach(() => {
 
 describe("Rail text channel order", () => {
   it("reports the whole group in its new order after a drop", () => {
-    const { onReorderChannelGroup } = setup();
+    const { onMoveChannel } = setup();
 
     dragText("luzem", 2, 0);
 
-    expect(onReorderChannelGroup).toHaveBeenCalledWith(["t-3", "t-1", "t-2"]);
+    expect(onMoveChannel).toHaveBeenCalledWith({ channelId: "t-3", sectionId: null, order: ["t-3", "t-1", "t-2"] });
   });
 
   it("lands a channel dragged downwards on the slot it was dropped on", () => {
-    const { onReorderChannelGroup } = setup();
+    const { onMoveChannel } = setup();
 
     dragText("ogólny", 0, 2);
 
-    expect(onReorderChannelGroup).toHaveBeenCalledWith(["t-2", "t-3", "t-1"]);
+    expect(onMoveChannel).toHaveBeenCalledWith({ channelId: "t-1", sectionId: null, order: ["t-2", "t-3", "t-1"] });
   });
 
   it("reports nothing when a channel is dropped back on its own slot", () => {
-    const { onReorderChannelGroup, onSelectTextChannel } = setup();
+    const { onMoveChannel, onSelectTextChannel } = setup();
 
     pressAt(channel("plany"), centreOf(1));
     moveTo(centreOf(1) + 10, centreOf(1) + 4);
     release(centreOf(1) + 4);
     fireEvent.click(channel("plany"));
 
-    expect(onReorderChannelGroup).not.toHaveBeenCalled();
+    expect(onMoveChannel).not.toHaveBeenCalled();
     expect(onSelectTextChannel).not.toHaveBeenCalled();
   });
 
   it("says the order was not saved, then clears the notice on the next try", async () => {
-    const onReorderChannelGroup = vi
+    const onMoveChannel = vi
       .fn()
       .mockRejectedValueOnce(new Error("offline"))
       .mockResolvedValueOnce(undefined);
-    setup({ onReorderChannelGroup });
+    setup({ onMoveChannel });
 
     dragText("luzem", 2, 0);
     expect(await screen.findByRole("alert")).toHaveTextContent(

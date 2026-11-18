@@ -61,6 +61,28 @@ describe("hub payload decoders", () => {
     expect(HUB_DECODERS.PermissionsChanged({ serverId: "s1", permissions: "all" })).toBeNull();
   });
 
+  it("reads a channel layout whole, or not at all", () => {
+    expect(
+      HUB_DECODERS.ChannelLayoutChanged({
+        serverId: "s1",
+        channels: [{ id: "c-2", sectionId: "sec-1" }, { id: "c-1", sectionId: null }],
+      }),
+    ).toEqual({
+      serverId: "s1",
+      channels: [
+        { id: "c-2", sectionId: "sec-1" },
+        { id: "c-1", sectionId: null },
+      ],
+    });
+    // One unreadable channel would otherwise vanish from the rail.
+    expect(
+      HUB_DECODERS.ChannelLayoutChanged({
+        serverId: "s1",
+        channels: [{ id: "c-2", sectionId: "sec-1" }, { sectionId: null }],
+      }),
+    ).toBeNull();
+  });
+
   it("accepts only kicked or banned as the reason for lost access", () => {
     expect(HUB_DECODERS.ServerAccessRevoked({ serverId: "s1", kind: "banned" })).toEqual({
       serverId: "s1",

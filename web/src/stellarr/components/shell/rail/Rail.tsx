@@ -20,6 +20,7 @@ import type {
 import { useThreadFocus } from "@/components/shell/rail/useThreadFocus";
 import { useVoiceMove } from "@/components/shell/rail/useVoiceMove";
 import type {
+  ChannelMove,
   ChannelThreadVM,
   PersonVM,
   SectionVM,
@@ -59,12 +60,8 @@ export interface RailProps {
   onJoinVoiceChannel: (id: string) => void;
   onEditServer: () => void;
   onInvite: () => void;
-  /**
-   * Dragging inside one rail group — a section's text list, or the
-   * unsectioned bucket. `newGroupOrder` is that group's complete, freshly
-   * ordered id list; every channel outside it keeps its own position.
-   */
-  onReorderChannelGroup: (newGroupOrder: string[]) => Promise<void> | void;
+  /** A channel dropped in the rail; every channel outside its group keeps its position. */
+  onMoveChannel: (move: ChannelMove) => Promise<void> | void;
   onOpenChannelSettings?: (id: string) => void;
   onCreateChannel?: (kind: "text" | "voice") => void;
   /**
@@ -150,7 +147,7 @@ export function Rail({
   onJoinVoiceChannel,
   onEditServer,
   onInvite,
-  onReorderChannelGroup,
+  onMoveChannel,
   onOpenChannelSettings,
   onCreateChannel,
   onOpenSectionSettings,
@@ -203,10 +200,10 @@ export function Rail({
           ctx.onContextMenu(event);
         };
 
-  const reorderGroup = async (order: string[]) => {
+  const moveChannel = async (move: ChannelMove) => {
     setMoveError(null);
     try {
-      await onReorderChannelGroup(order);
+      await onMoveChannel(move);
     } catch {
       setMoveError(t("rail.reorderFailed"));
     }
@@ -225,7 +222,7 @@ export function Rail({
   };
   const openSettings = canManageChannels ? onOpenChannelSettings : undefined;
 
-  const textList = (channels: TextChannelVM[]) => (
+  const textList = (channels: TextChannelVM[], sectionId: string | null) => (
     <RailTextList
       channels={channels}
       activeChannelId={activeChannelId}
@@ -234,7 +231,7 @@ export function Rail({
       onSelect={onSelectTextChannel}
       onOpenSettings={openSettings}
       menuFor={raiseChannelMenu}
-      onReorder={(order) => void reorderGroup(order)}
+      onReorder={(order, channelId) => void moveChannel({ channelId, sectionId, order })}
     />
   );
   const voiceList = (channels: VoiceChannelVM[]) => (
@@ -320,7 +317,10 @@ export function Rail({
           onToggle={() => setTextOpen((open) => !open)}
           actions={createAction("text")}
         >
-          {textList(textChannels.filter((channel) => channel.sectionId === undefined))}
+          {textList(
+            textChannels.filter((channel) => channel.sectionId === undefined),
+            null,
+          )}
         </CollapsibleGroup>
         <CollapsibleGroup
           id={`${railId}-voice`}
@@ -354,7 +354,7 @@ export function Rail({
                   : undefined
               }
             >
-              {sectionText.length === 0 ? null : textList(sectionText)}
+              {sectionText.length === 0 ? null : textList(sectionText, section.id)}
               {sectionVoice.length === 0 ? null : voiceList(sectionVoice)}
             </RailSection>
           );
