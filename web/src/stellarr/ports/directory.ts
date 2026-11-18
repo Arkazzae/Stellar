@@ -68,8 +68,6 @@ export interface ServerAdminPort {
   createSection(input: { name: string }): Promise<void>;
   updateSection(sectionId: string, patch: { name?: string }): Promise<void>;
   deleteSection(sectionId: string): Promise<void>;
-  /** Moves a channel into a section, or out of one when `sectionId` is null. */
-  assignChannelSection(channelId: ChannelId, sectionId: string | null): Promise<void>;
 
   /**
    * Per-role allow/deny narrowing for one channel or section. Gated on
