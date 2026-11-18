@@ -527,7 +527,7 @@ export const en = {
   "account.aboutMe": "About me",
   "account.yourStatus": "Your status",
   "account.statusPlaceholder": "How are you feeling?",
-  "account.startStatusWith": "Start status with {emoji}",
+  "account.clearStatus": "Clear status",
   "account.formatting": "Bio formatting",
   "account.bold": "Bold",
   "account.italic": "Italic",

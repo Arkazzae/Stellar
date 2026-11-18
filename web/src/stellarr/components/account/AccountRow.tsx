@@ -28,7 +28,7 @@ export function AccountRow({
   const { t } = useLanguage();
   const [open, setOpen] = useState(false);
 
-  /** Every action on the panel except picking a status ends the visit. */
+  /** Signing out ends the visit; a status or a presence keeps the panel up. */
   const closing = (action: () => void) => () => {
     action();
     setOpen(false);
@@ -76,7 +76,6 @@ export function AccountRow({
           {...panel}
           // Picking a status leaves the panel open: the dot beside the name
           // confirms it, and the next thing may be a line of status text.
-          onOpenSettings={closing(panel.onOpenSettings)}
           onLogout={closing(panel.onLogout)}
         />
       </Popover>
