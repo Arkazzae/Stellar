@@ -1,6 +1,6 @@
 import type { OpenProfile, PersonVM } from "@/components/view-models";
 
-import { ParticipantTile } from "./ParticipantTile";
+import { ParticipantTile, type ParticipantTileProps } from "./ParticipantTile";
 
 export interface ParticipantTilesProps {
   /** Only the people on this channel. */
@@ -20,49 +20,57 @@ export interface ParticipantTilesProps {
   onOpenProfile?: OpenProfile;
 }
 
+/** What feeds the tiles of a call, by person: everything but the people. */
+export type ParticipantTileSources = Omit<ParticipantTilesProps, "people">;
+
+/**
+ * One person's tile, fed from the call's maps: their camera or the note that
+ * it is held back, their mixer strip and their menu. Every layout of a call
+ * takes its tiles from here, so none of them wires a person differently.
+ */
+export function participantTileProps(
+  person: PersonVM,
+  {
+    cameraStreams,
+    heldCameras,
+    localPersonId,
+    participantVolumes,
+    onParticipantVolumeChange,
+    participantGates,
+    onParticipantGateChange,
+    participantSuppressions,
+    onParticipantSuppressionChange,
+    onOpenProfile,
+  }: ParticipantTileSources,
+): ParticipantTileProps {
+  return {
+    person,
+    stream: cameraStreams?.get(person.id) ?? null,
+    held: heldCameras?.has(person.id) ?? false,
+    local: person.id === localPersonId,
+    volume: participantVolumes?.get(person.id),
+    onVolumeChange:
+      onParticipantVolumeChange && ((volume) => onParticipantVolumeChange(person.id, volume)),
+    gated: participantGates?.get(person.id),
+    onGateChange:
+      onParticipantGateChange && ((gated) => onParticipantGateChange(person.id, gated)),
+    suppressed: participantSuppressions?.get(person.id),
+    onSuppressionChange:
+      onParticipantSuppressionChange &&
+      ((suppressed) => onParticipantSuppressionChange(person.id, suppressed)),
+    onOpenProfile,
+  };
+}
+
 /**
  * The grid of tiles. Whether it shows as a grid, a strip or not at all is
  * decided by the state classes on the stage around it.
  */
-export function ParticipantTiles({
-  people,
-  cameraStreams,
-  heldCameras,
-  localPersonId,
-  participantVolumes,
-  onParticipantVolumeChange,
-  participantGates,
-  onParticipantGateChange,
-  participantSuppressions,
-  onParticipantSuppressionChange,
-  onOpenProfile,
-}: ParticipantTilesProps) {
+export function ParticipantTiles({ people, ...sources }: ParticipantTilesProps) {
   return (
     <div className={people.length === 1 ? "tiles single" : "tiles"}>
       {people.map((person) => (
-        <ParticipantTile
-          key={person.id}
-          person={person}
-          stream={cameraStreams?.get(person.id) ?? null}
-          held={heldCameras?.has(person.id) ?? false}
-          local={person.id === localPersonId}
-          volume={participantVolumes?.get(person.id)}
-          onVolumeChange={
-            onParticipantVolumeChange &&
-            ((volume) => onParticipantVolumeChange(person.id, volume))
-          }
-          gated={participantGates?.get(person.id)}
-          onGateChange={
-            onParticipantGateChange &&
-            ((gated) => onParticipantGateChange(person.id, gated))
-          }
-          suppressed={participantSuppressions?.get(person.id)}
-          onSuppressionChange={
-            onParticipantSuppressionChange &&
-            ((suppressed) => onParticipantSuppressionChange(person.id, suppressed))
-          }
-          onOpenProfile={onOpenProfile}
-        />
+        <ParticipantTile key={person.id} {...participantTileProps(person, sources)} />
       ))}
     </div>
   );

@@ -42,7 +42,8 @@ export interface VoiceControlBarProps {
   /** Drives the cinema toggle's icon, title and pressed state. */
   cinema: boolean;
 
-  sounds: Sound[];
+  /** What the soundboard offers; see `onPlaySound`. */
+  sounds?: Sound[];
   soundboardSupported?: boolean;
 
   /** Device settings, applied to the call already in progress. */
@@ -62,12 +63,14 @@ export interface VoiceControlBarProps {
   onSelectMicrophone: () => void;
   onSelectCamera: () => void;
   onToggleShare: () => void;
-  onPlaySound: (soundId: string) => void;
+  /** Absent where the call has no soundboard, which is a private one. */
+  onPlaySound?: (soundId: string) => void;
   /** Absent when this member may not create or send server invitations. */
   onInvite?: () => void;
   onToggleCinema: () => void;
   onLeave: () => void;
-  onPopOut: () => void;
+  /** Absent where the call has no window of its own to move to. */
+  onPopOut?: () => void;
 }
 
 /**
@@ -83,7 +86,7 @@ export function VoiceControlBar({
   cameraPending = false,
   sharing,
   cinema,
-  sounds,
+  sounds = [],
   soundboardSupported,
   settings,
   onChangeSettings,
@@ -274,27 +277,29 @@ export function VoiceControlBar({
               <CaretButton label={t("voiceBar.screenQuality")} {...trigger} />
             )}
           />
-          <SoundboardPopover
-            sounds={sounds}
-            open={boardOpen}
-            onOpenChange={setBoardOpen}
-            onPlaySound={onPlaySound}
-            volume={settings.soundboardVolume}
-            onVolumeChange={changeSoundboardVolume}
-            supported={soundboardSupported}
-            className="vc-pop"
-            renderTrigger={(triggerProps) => (
-              <button
-                type="button"
-                className="vc-btn"
-                title={t("voice.soundboard")}
-                aria-label={t("voice.soundboard")}
-                {...triggerProps}
-              >
-                <Icon name="board" size={19} />
-              </button>
-            )}
-          />
+          {onPlaySound === undefined ? null : (
+            <SoundboardPopover
+              sounds={sounds}
+              open={boardOpen}
+              onOpenChange={setBoardOpen}
+              onPlaySound={onPlaySound}
+              volume={settings.soundboardVolume}
+              onVolumeChange={changeSoundboardVolume}
+              supported={soundboardSupported}
+              className="vc-pop"
+              renderTrigger={(triggerProps) => (
+                <button
+                  type="button"
+                  className="vc-btn"
+                  title={t("voice.soundboard")}
+                  aria-label={t("voice.soundboard")}
+                  {...triggerProps}
+                >
+                  <Icon name="board" size={19} />
+                </button>
+              )}
+            />
+          )}
         </div>
 
         <button
@@ -309,15 +314,17 @@ export function VoiceControlBar({
       </div>
 
       <div className="vc-side right">
-        <button
-          type="button"
-          className="vc-plain"
-          title={t("voiceBar.popOut")}
-          aria-label={t("voiceBar.popOut")}
-          onClick={onPopOut}
-        >
-          <Icon name="popout" size={18} />
-        </button>
+        {onPopOut === undefined ? null : (
+          <button
+            type="button"
+            className="vc-plain"
+            title={t("voiceBar.popOut")}
+            aria-label={t("voiceBar.popOut")}
+            onClick={onPopOut}
+          >
+            <Icon name="popout" size={18} />
+          </button>
+        )}
       </div>
     </div>
   );
