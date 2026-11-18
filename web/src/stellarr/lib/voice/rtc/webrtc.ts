@@ -310,6 +310,12 @@ export class WebRtcVoiceClient implements VoiceClient {
       probe: () => this.health.probe(),
       voiceStreamId: () => this.voiceStream?.id ?? null,
       crypto: () => this.crypto,
+      // A private call that does not encrypt plays nothing of a person until
+      // their state says they do not either: their frames could be ciphertext,
+      // which would play as noise. One who does is followed (`follow`), or
+      // stays unplayed and shown as not decrypting.
+      holds: (person) =>
+        this.privateCall && this.crypto === null && (!person.stateKnown || person.encrypted),
     });
   }
 

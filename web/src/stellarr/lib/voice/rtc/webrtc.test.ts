@@ -3639,6 +3639,35 @@ describe("encrypted private calls", () => {
     expect(JSON.parse(statesSent().at(-1)?.payload ?? "{}")).toMatchObject({ encrypted: true });
   });
 
+  it("plays nothing of the other person in a plain private call until their state says they do not encrypt", async () => {
+    withTransforms();
+    const source = keySource(async () => null);
+    const client = encrypting(source);
+    const pc = await calling(client);
+    const voice = await hearB(pc);
+
+    // Their frames could be ciphertext, which would play as noise.
+    expect(voice.enabled).toBe(false);
+    expect(peerOf(client, "u-b")?.undecryptable).toBeUndefined();
+
+    state("u-b", { encrypted: false });
+    expect(voice.enabled).toBe(true);
+  });
+
+  it("shows a person who encrypts as not decrypting where this browser cannot follow, and plays nothing of them", async () => {
+    // No encoded transforms in this browser.
+    const source = keySource(async () => null);
+    const client = encrypting(source);
+    const pc = await calling(client);
+    const voice = await hearB(pc);
+
+    state("u-b", { encrypted: true });
+
+    expect(voice.enabled).toBe(false);
+    expect(peerOf(client, "u-b")?.undecryptable).toEqual({ audio: true, video: false });
+    expect(source.follow).not.toHaveBeenCalled();
+  });
+
   it("follows its conversation into encryption when both switch it on during a plain call", async () => {
     withTransforms();
     const source = keySource(async () => null);

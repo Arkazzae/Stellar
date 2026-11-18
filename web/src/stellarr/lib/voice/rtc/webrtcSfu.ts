@@ -111,6 +111,12 @@ export interface SfuDeps {
    * that turns encrypted (`renew`) gets them on its next one.
    */
   crypto(): CallCrypto | null;
+  /**
+   * Whether nothing of `person` may be asked for or played yet: in a private
+   * call this side does not encrypt, somebody whose frames could be
+   * ciphertext, which would play as noise.
+   */
+  holds(person: Participant): boolean;
 }
 
 /** One media session of the seat, and the one connection that belongs to it. */
@@ -314,7 +320,8 @@ export class Sfu implements CallTopology {
       }
     }
     for (const person of this.people.values()) {
-      if (!this.held(person)) continue;
+      // Somebody who says they encrypt, while this side does not.
+      if (this.deps.crypto() !== null || !person.encrypted) continue;
       mark(person.userId, "audio");
       if (person.media.camera !== null || person.media.screen !== null) mark(person.userId, "video");
     }
@@ -808,11 +815,11 @@ export class Sfu implements CallTopology {
   }
 
   /**
-   * Somebody who encrypts while this side does not: their frames would play
-   * as noise, so nothing of them is asked for until this side follows them.
+   * Somebody whose frames this side may not be able to open: nothing of them
+   * is asked for, so nothing of them plays (`SfuDeps.holds`).
    */
   private held(person: Participant): boolean {
-    return person.encrypted && this.deps.crypto() === null;
+    return this.deps.holds(person);
   }
 
   /** Receivers that arrived before the directory named their section learn whose they are. */
