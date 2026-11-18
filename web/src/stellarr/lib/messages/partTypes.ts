@@ -18,6 +18,7 @@ export interface ImagePart {
   src: string;
   /** A reduced copy that small views load in place of the original. */
   preview?: string;
+  placeholder?: string;
   alt: string;
   width?: number;
   height?: number;
@@ -27,6 +28,7 @@ export interface GalleryImage {
   src: string;
   /** A reduced copy that small views load in place of `src`. */
   preview?: string;
+  placeholder?: string;
   alt: string;
 }
 

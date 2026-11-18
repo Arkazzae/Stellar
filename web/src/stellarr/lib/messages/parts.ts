@@ -114,7 +114,12 @@ function imageRunPart(run: readonly Attachment[]): MessagePart {
       kind: "image",
       src: first.url,
       alt: first.name,
-      ...defined({ preview: first.previewUrl, width: first.width, height: first.height }),
+      ...defined({
+        preview: first.previewUrl,
+        placeholder: first.placeholder,
+        width: first.width,
+        height: first.height,
+      }),
     };
   }
   return {
@@ -122,7 +127,7 @@ function imageRunPart(run: readonly Attachment[]): MessagePart {
     images: run.map((image) => ({
       src: image.url,
       alt: image.name,
-      ...defined({ preview: image.previewUrl }),
+      ...defined({ preview: image.previewUrl, placeholder: image.placeholder }),
     })),
   };
 }

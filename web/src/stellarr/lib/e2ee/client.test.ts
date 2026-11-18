@@ -457,7 +457,9 @@ describe("encryption client", () => {
         width: 4000,
         height: 3000,
         preview: new Blob([new Uint8Array([82, 73, 70, 70])], { type: "image/webp" }),
+        placeholder: "AAAA",
       });
+      expect(photo.payload.placeholder).toBe("AAAA");
       expect(photo.attachmentIds).toHaveLength(2);
       expect(photo.payload.preview).toMatchObject({ type: "image/webp", size: 4 });
       await ada.client.send(server.conversationId, { text: "", uploads: [photo], clientMessageId: crypto.randomUUID() });
@@ -467,6 +469,7 @@ describe("encryption client", () => {
       await vi.waitFor(async () => {
         const view = (await ola.client.decode(wirePhoto)).attachments[0];
         expect(view?.url).toMatch(/^blob:test/);
+        expect(view?.placeholder).toBe("AAAA");
         expect(new Uint8Array(await urls.get(view?.previewUrl ?? "")!.arrayBuffer())).toEqual(new Uint8Array([82, 73, 70, 70]));
       });
 
