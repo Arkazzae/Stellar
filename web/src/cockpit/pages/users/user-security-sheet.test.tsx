@@ -42,6 +42,7 @@ const ADA = {
 const SECURITY: CockpitUserSecurity = {
   userId: "u-ada",
   recoveryRequired: false,
+  hasPassword: true,
   methods: [
     { id: "m-1", type: "totp", name: "Telefon", confirmed: true, createdAt: "2026-11-12T10:00:00Z", lastUsedAt: null },
   ],
