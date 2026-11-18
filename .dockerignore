@@ -31,6 +31,9 @@ init/target
 # in the context it would only invalidate the cached media build.
 media/smoke
 
+# The project site has its own build and is not part of the image.
+website
+
 # Instance data and credentials never belong in an image.
 data
 **/secrets
