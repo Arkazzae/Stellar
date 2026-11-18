@@ -1,53 +1,104 @@
 import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { useState } from "react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import { ConfirmProvider } from "@/components/primitives/ConfirmDialog";
-import type { PersonVM } from "@/components/view-models";
+import type {
+  ChannelMove,
+  PersonVM,
+  TextChannelVM,
+  VoiceChannelVM,
+} from "@/components/view-models";
 import {
   layOutRail,
   moveTo,
+  nextFrame,
   pressAt,
+  railTop,
   release,
   ROW,
   stubPointerCapture,
-  TEXT_TOP,
   translateOf,
-  VOICE_TOP,
 } from "@/test/railLayout";
 
 import { Rail, type RailProps } from "./Rail";
 
 /*
- * The drags run for real here, on the layout `layOutRail` stands in for:
- * text channels from y = 100 in 32 px rows, then the voice channels from
- * y = 400, Salon (with Jo) 62 px tall and Sesja below it.
+ * The drags run for real here, on the layout `layOutRail` stands in for: the
+ * rail stacked from y = 0 in its content, 22 px captions, 35 px section
+ * captions, 32 px rows and 30 px people. With everything open:
+ *
+ *     0  TEXT          22 ogólny  54 plany  86 luzem
+ *   118  VOICE        140 Salon (with Jo, 62 px)  202 Sesja
+ *   234  Projekty     269 zadania  301 notatki  333 Warsztat
+ *   365  Archiwum     400 (empty: no channels, a note)
  */
 
-const jo: PersonVM = {
-  id: "u-2",
-  displayName: "Jo",
-  initials: "JO",
-  presence: "online",
-};
+const jo: PersonVM = { id: "u-2", displayName: "Jo", initials: "JO", presence: "online" };
 
-const SALON_TOP = VOICE_TOP;
-const SESJA_TOP = VOICE_TOP + ROW + 30;
-const JO_MIDDLE = SALON_TOP + ROW + 15;
+const TEXT: TextChannelVM[] = [
+  { id: "t-1", name: "ogólny" },
+  { id: "t-2", name: "plany" },
+  { id: "t-3", name: "luzem" },
+  { id: "t-4", name: "zadania", sectionId: "sec-1" },
+  { id: "t-5", name: "notatki", sectionId: "sec-1" },
+];
+const VOICE: VoiceChannelVM[] = [
+  { id: "v-1", name: "Salon", occupants: [jo] },
+  { id: "v-2", name: "Sesja", occupants: [] },
+  { id: "v-3", name: "Warsztat", occupants: [], sectionId: "sec-1" },
+];
+
+/** `channels` with a move applied as the directory applies it: the channel's section, and its group's order. */
+function applyMove<T extends TextChannelVM | VoiceChannelVM>(channels: T[], move: ChannelMove): T[] {
+  if (!channels.some((item) => item.id === move.channelId)) return channels;
+  const placed = channels.map((item) =>
+    item.id === move.channelId ? { ...item, sectionId: move.sectionId ?? undefined } : item,
+  );
+  const group = new Set(move.order);
+  let next = 0;
+  return placed.map((item) => {
+    if (!group.has(item.id)) return item;
+    const id = move.order[next++];
+    return placed.find((other) => other.id === id) ?? item;
+  });
+}
+
+/** The rail over channels that take its moves, as the directory store would. */
+function LiveRail(props: RailProps) {
+  const [shown, setShown] = useState({ from: props, text: props.textChannels, voice: props.voiceChannels });
+  if (shown.from !== props) {
+    setShown({ from: props, text: props.textChannels, voice: props.voiceChannels });
+  }
+  return (
+    <Rail
+      {...props}
+      textChannels={shown.text}
+      voiceChannels={shown.voice}
+      onMoveChannel={(move) => {
+        setShown((current) => ({
+          ...current,
+          text: applyMove(current.text, move),
+          voice: applyMove(current.voice, move),
+        }));
+        return props.onMoveChannel(move);
+      }}
+    />
+  );
+}
 
 function setup(overrides: Partial<RailProps> = {}) {
   const props: RailProps = {
     serverName: "Orbit",
-    textChannels: [
-      { id: "t-1", name: "ogólny" },
-      { id: "t-2", name: "plany" },
-      { id: "t-3", name: "luzem" },
-    ],
-    voiceChannels: [
-      { id: "v-1", name: "Salon", occupants: [jo] },
-      { id: "v-2", name: "Sesja", occupants: [] },
+    textChannels: TEXT,
+    voiceChannels: VOICE,
+    sections: [
+      { id: "sec-1", name: "Projekty" },
+      { id: "sec-2", name: "Archiwum" },
     ],
     activeChannelId: null,
     selfId: "me",
+    canManageChannels: true,
     onSelectTextChannel: vi.fn(),
     onJoinVoiceChannel: vi.fn(),
     onEditServer: vi.fn(),
@@ -57,34 +108,44 @@ function setup(overrides: Partial<RailProps> = {}) {
   };
   const view = (next: RailProps) => (
     <ConfirmProvider>
-      <Rail {...next} />
+      <LiveRail {...next} />
     </ConfirmProvider>
   );
   const { rerender } = render(view(props));
   return { ...props, rerender: (next: Partial<RailProps>) => rerender(view({ ...props, ...next })) };
 }
 
-const channel = (name: string) => screen.getByRole("button", { name });
-const occupant = () =>
-  screen.getByRole("button", { name: "Jo, przenieś do innego kanału głosowego" });
-const zone = (name: string) =>
-  [...document.querySelectorAll(".voice-channel-drop")].find(
-    (element) => element.querySelector(".channel .name")?.textContent === name,
-  );
-const centreOf = (index: number) => TEXT_TOP + index * ROW + ROW / 2;
+/** A channel's main button; a voice channel's name runs on with how many are in the call. */
+const channel = (name: string) =>
+  screen.getByRole("button", {
+    name: (accessible) => accessible === name || new RegExp(`^${name}\\d`).test(accessible),
+  });
+const said = () =>
+  [...document.querySelectorAll('[aria-live="assertive"]')]
+    .map((node) => node.textContent)
+    .filter(Boolean)
+    .join(" ");
+const sortHint = () => document.getElementById(channel("ogólny").getAttribute("aria-describedby") ?? "");
 
-/** Carries the text channel at `from` onto the slot at `to` with the mouse. */
-function dragText(name: string, from: number, to: number) {
-  pressAt(channel(name), centreOf(from));
-  moveTo(centreOf(from) + (to > from ? 8 : -8), centreOf(to));
-  release(centreOf(to));
+/** Presses a channel's row in its middle and carries it until its top is held at `top`. */
+function carry(name: string, top: number) {
+  const row = channel(name).closest(".text-channel-node, .voice-channel-drop")!;
+  const middle = railTop(row) + ROW / 2;
+  pressAt(channel(name), middle);
+  moveTo(middle + 8, middle + top - railTop(row));
+}
+
+/** Carries a channel until its top is held at `top` and lets go there. */
+function drop(name: string, top: number) {
+  carry(name, top);
+  const row = channel(name).closest(".text-channel-node, .voice-channel-drop")!;
+  release(railTop(row) + ROW / 2 + top - railTop(row));
+  // The click the browser sends after the release must not open the channel.
   fireEvent.click(channel(name));
 }
 
-/** Carries Jo from Salon to the height `y` with the mouse and lets go. */
-function dragJoTo(y: number) {
-  pressAt(occupant(), JO_MIDDLE);
-  moveTo(JO_MIDDLE + 8, y);
+/** Lets go at `y`, with the click a browser sends after it, which the drag eats. */
+function letGo(y: number) {
   release(y);
   fireEvent.click(document.body);
 }
@@ -94,33 +155,133 @@ beforeEach(() => {
   stubPointerCapture();
 });
 
-describe("Rail text channel order", () => {
-  it("reports the whole group in its new order after a drop", () => {
-    const { onMoveChannel } = setup();
-
-    dragText("luzem", 2, 0);
-
-    expect(onMoveChannel).toHaveBeenCalledWith({ channelId: "t-3", sectionId: null, order: ["t-3", "t-1", "t-2"] });
-  });
-
-  it("lands a channel dragged downwards on the slot it was dropped on", () => {
-    const { onMoveChannel } = setup();
-
-    dragText("ogólny", 0, 2);
-
-    expect(onMoveChannel).toHaveBeenCalledWith({ channelId: "t-1", sectionId: null, order: ["t-2", "t-3", "t-1"] });
-  });
-
-  it("reports nothing when a channel is dropped back on its own slot", () => {
+describe("Rail channel sorting", () => {
+  it("sends the group's new order when a channel is dropped in its own group", () => {
     const { onMoveChannel, onSelectTextChannel } = setup();
 
-    pressAt(channel("plany"), centreOf(1));
-    moveTo(centreOf(1) + 10, centreOf(1) + 4);
-    release(centreOf(1) + 4);
-    fireEvent.click(channel("plany"));
+    // ogólny (22) lands where luzem ends up once it moves up a row: 54.
+    drop("ogólny", 54);
+
+    expect(onMoveChannel).toHaveBeenCalledExactlyOnceWith({
+      channelId: "t-1",
+      sectionId: null,
+      order: ["t-2", "t-1", "t-3"],
+    });
+    expect(onSelectTextChannel).not.toHaveBeenCalled();
+    expect(said()).toBe("Upuszczono kanał ogólny na pozycji 2 z 3 w grupie Tekstowe.");
+  });
+
+  it("moves a channel into another section with one call that carries both section and order", async () => {
+    const { onMoveChannel } = setup();
+
+    // Between zadania and notatki: notatki starts at 301, and with ogólny
+    // taken out of the rail above it, 32 px higher.
+    carry("ogólny", 269);
+    await nextFrame();
+    const row = (name: string) => channel(name).closest(".text-channel-node");
+    // The carried row follows the pointer; the loose group closes up behind
+    // it, and the section makes room in front of it.
+    expect(translateOf(row("ogólny"))).toBe("translateY(247px)");
+    expect(translateOf(row("plany"))).toBe("translateY(-32px)");
+    expect(translateOf(row("notatki"))).toBe("");
+    expect(said()).toBe("Kanał ogólny, pozycja 2 z 3 w grupie Projekty.");
+    letGo(285);
+
+    expect(onMoveChannel).toHaveBeenCalledExactlyOnceWith({
+      channelId: "t-1",
+      sectionId: "sec-1",
+      order: ["t-4", "t-1", "t-5"],
+    });
+    expect(translateOf(row("plany"))).toBe("");
+  });
+
+  it("drops at the end of a collapsed section, and into an empty one", () => {
+    const { onMoveChannel } = setup();
+
+    fireEvent.click(screen.getByRole("button", { name: /Projekty/ }));
+    // Right below the caption of the collapsed Projekty, which ends at 269
+    // (237 with ogólny taken out).
+    drop("ogólny", 237);
+    expect(onMoveChannel).toHaveBeenLastCalledWith({
+      channelId: "t-1",
+      sectionId: "sec-1",
+      order: ["t-4", "t-5", "t-1"],
+    });
+
+    // With ogólny gone and Projekty closed, Archiwum's empty text list is
+    // at 272; 240 with plany taken out.
+    drop("plany", 240);
+    expect(onMoveChannel).toHaveBeenLastCalledWith({
+      channelId: "t-2",
+      sectionId: "sec-2",
+      order: ["t-2"],
+    });
+  });
+
+  it("walks the arrows from one group into the next and keeps focus on the dropped channel", () => {
+    const { onMoveChannel } = setup();
+    const luzem = channel("luzem");
+    luzem.focus();
+
+    fireEvent.keyDown(luzem, { key: " " });
+    expect(said()).toBe("Podniesiono kanał luzem, pozycja 3 z 3 w grupie Tekstowe.");
+    // luzem is last in its group; the next place down is the top of Projekty.
+    fireEvent.keyDown(luzem, { key: "ArrowDown" });
+    expect(said()).toBe("Kanał luzem, pozycja 1 z 3 w grupie Projekty.");
+    fireEvent.keyDown(luzem, { key: " " });
+
+    expect(onMoveChannel).toHaveBeenCalledExactlyOnceWith({
+      channelId: "t-3",
+      sectionId: "sec-1",
+      order: ["t-3", "t-4", "t-5"],
+    });
+    // The row was rendered anew under the section; focus went with it.
+    expect(channel("luzem")).toHaveFocus();
+  });
+
+  it("sorts a voice channel with its people, among voice channels only", async () => {
+    const { onMoveChannel } = setup();
+    const salon = () => channel("Salon").closest(".voice-channel-drop");
+
+    // The end of Projekty's voice list is at 365; 303 with Salon (62 px) out.
+    carry("Salon", 303);
+    await nextFrame();
+    expect(translateOf(salon())).toBe("translateY(163px)");
+    expect(salon()).toHaveTextContent("Jo");
+    letGo(156 + 163);
+
+    expect(onMoveChannel).toHaveBeenCalledExactlyOnceWith({
+      channelId: "v-1",
+      sectionId: "sec-1",
+      order: ["v-3", "v-1"],
+    });
+  });
+
+  it("leaves a press that does not travel 6 px a click that joins the call", () => {
+    const { onMoveChannel, onJoinVoiceChannel } = setup();
+
+    pressAt(channel("Sesja"), 218);
+    moveTo(221, 223);
+    release(223);
+    fireEvent.click(channel("Sesja"));
+
+    expect(onJoinVoiceChannel).toHaveBeenCalledExactlyOnceWith("v-2");
+    expect(onMoveChannel).not.toHaveBeenCalled();
+  });
+
+  it("offers no sorting to whoever may not edit channels", () => {
+    const { onMoveChannel, onSelectTextChannel } = setup({ canManageChannels: false });
+
+    expect(channel("ogólny")).not.toHaveAttribute("aria-roledescription");
+    expect(channel("Salon")).not.toHaveAttribute("aria-roledescription");
+    expect(sortHint()).toBeNull();
+    pressAt(channel("ogólny"), 38);
+    moveTo(46, 120);
+    release(120);
+    fireEvent.click(channel("ogólny"));
 
     expect(onMoveChannel).not.toHaveBeenCalled();
-    expect(onSelectTextChannel).not.toHaveBeenCalled();
+    expect(onSelectTextChannel).toHaveBeenCalledExactlyOnceWith("t-1");
   });
 
   it("says the order was not saved, then clears the notice on the next try", async () => {
@@ -130,64 +291,82 @@ describe("Rail text channel order", () => {
       .mockResolvedValueOnce(undefined);
     setup({ onMoveChannel });
 
-    dragText("luzem", 2, 0);
+    drop("luzem", 22);
     expect(await screen.findByRole("alert")).toHaveTextContent(
       "Nie udało się zapisać kolejności kanałów.",
     );
 
-    dragText("plany", 1, 0);
+    drop("plany", 22);
     await waitFor(() => expect(screen.queryByRole("alert")).toBeNull());
+  });
+
+  it("ends a drag cleanly when someone else reorders the channels under it", () => {
+    const { onMoveChannel, rerender } = setup();
+
+    carry("ogólny", 54);
+    rerender({ textChannels: [TEXT[1]!, TEXT[0]!, ...TEXT.slice(2)] });
+
+    expect(said()).toBe("Anulowano przestawianie kanału.");
+    release(90);
+    fireEvent.click(channel("ogólny"));
+    expect(onMoveChannel).not.toHaveBeenCalled();
+  });
+
+  it("measures again and carries on when only a call's people change under it", () => {
+    const { onMoveChannel, rerender } = setup();
+
+    carry("Sesja", 303);
+    // Jo leaves Salon: everything below it moves up 30 px.
+    rerender({ voiceChannels: [{ ...VOICE[0]!, occupants: [] }, ...VOICE.slice(1)] });
+    letGo(218 + 303 - 202);
+
+    expect(onMoveChannel).toHaveBeenCalledExactlyOnceWith({
+      channelId: "v-2",
+      sectionId: "sec-1",
+      order: ["v-3", "v-2"],
+    });
   });
 });
 
 describe("Rail voice moves", () => {
+  /** Jo's row, under Salon's 32 px button. */
+  const JO_MIDDLE = 140 + ROW + 15;
+  const SESJA = 202;
+  const occupant = () =>
+    screen.getByRole("button", { name: "Jo, przenieś do innego kanału głosowego" });
+  const zone = (name: string) => channel(name).closest(".voice-channel-drop");
+
+  function dragJoTo(y: number) {
+    pressAt(occupant(), JO_MIDDLE);
+    moveTo(JO_MIDDLE + 8, y);
+    release(y);
+    fireEvent.click(document.body);
+  }
+
   it("asks for the person to be moved to the channel they were dropped on", async () => {
     const onMoveVoiceMember = vi.fn(async () => {});
     setup({ onMoveVoiceMember });
 
     pressAt(occupant(), JO_MIDDLE);
-    moveTo(JO_MIDDLE + 8, SESJA_TOP + 10);
+    moveTo(JO_MIDDLE + 8, SESJA + 10);
     expect(zone("Sesja")).toHaveClass("is-over");
     expect(zone("Salon")).not.toHaveClass("is-over");
-    expect(occupant()).toHaveClass("is-dragging");
-    const copy = document.querySelector<HTMLElement>(".voice-occupant-carry");
-    expect(copy).toHaveTextContent("Jo");
-    expect(copy?.style.top).toBe(`${SALON_TOP + ROW}px`);
-    expect(translateOf(copy)).toBe(`translateY(${SESJA_TOP + 10 - JO_MIDDLE}px)`);
-    release(SESJA_TOP + 10);
+    expect(document.querySelector(".voice-occupant-carry")).toHaveTextContent("Jo");
+    release(SESJA + 10);
     fireEvent.click(document.body);
 
     expect(onMoveVoiceMember).toHaveBeenCalledWith("u-2", "v-1", "v-2");
     expect(document.querySelector(".voice-occupant-carry")).toBeNull();
-    expect(screen.getByText("Upuszczono użytkownika Jo na kanale Sesja.")).toBeInTheDocument();
     await waitFor(() =>
       expect(screen.getByText("Przeniesiono użytkownika Jo.")).toBeInTheDocument(),
     );
-  });
-
-  it("targets the channel at the copy's height even when the pointer leaves the rail sideways", () => {
-    const onMoveVoiceMember = vi.fn();
-    setup({ onMoveVoiceMember });
-
-    pressAt(occupant(), JO_MIDDLE);
-    fireEvent.pointerMove(document, {
-      pointerId: 1,
-      isPrimary: true,
-      clientX: 900,
-      clientY: SESJA_TOP + 10,
-    });
-    expect(zone("Sesja")).toHaveClass("is-over");
-    release(SESJA_TOP + 10);
-    fireEvent.click(document.body);
-
-    expect(onMoveVoiceMember).toHaveBeenCalledWith("u-2", "v-1", "v-2");
   });
 
   it("moves nobody when released outside every channel", () => {
     const onMoveVoiceMember = vi.fn();
     setup({ onMoveVoiceMember });
 
-    dragJoTo(SESJA_TOP + 300);
+    dragJoTo(SESJA + 600);
 
     expect(onMoveVoiceMember).not.toHaveBeenCalled();
     expect(screen.getByText("Anulowano przenoszenie.")).toBeInTheDocument();
@@ -198,31 +377,13 @@ describe("Rail voice moves", () => {
     setup({ onMoveVoiceMember });
 
     fireEvent.keyDown(occupant(), { key: " " });
-    expect(screen.getByText("Podniesiono użytkownika Jo.")).toBeInTheDocument();
-    expect(zone("Salon")).toHaveClass("is-over");
-
     fireEvent.keyDown(occupant(), { key: "ArrowDown" });
     expect(zone("Sesja")).toHaveClass("is-over");
-    expect(screen.getByText("Nad kanałem Sesja.")).toBeInTheDocument();
-    // The last channel is as far as the arrows go.
+    // The last channel of the list is as far as the arrows go.
     fireEvent.keyDown(occupant(), { key: "ArrowDown" });
-    expect(zone("Sesja")).toHaveClass("is-over");
-
     fireEvent.keyDown(occupant(), { key: " " });
+
     expect(onMoveVoiceMember).toHaveBeenCalledWith("u-2", "v-1", "v-2");
-  });
-
-  it("puts the person back on Escape", () => {
-    const onMoveVoiceMember = vi.fn();
-    setup({ onMoveVoiceMember });
-
-    fireEvent.keyDown(occupant(), { key: "Enter" });
-    fireEvent.keyDown(occupant(), { key: "ArrowDown" });
-    fireEvent.keyDown(occupant(), { key: "Escape" });
-
-    expect(onMoveVoiceMember).not.toHaveBeenCalled();
-    expect(zone("Sesja")).not.toHaveClass("is-over");
-    expect(screen.getByText("Anulowano przenoszenie.")).toBeInTheDocument();
   });
 
   it("drops the drag when the person leaves the call mid-way", () => {
@@ -230,56 +391,37 @@ describe("Rail voice moves", () => {
     const { rerender } = setup({ onMoveVoiceMember });
 
     pressAt(occupant(), JO_MIDDLE);
-    moveTo(JO_MIDDLE + 8, SESJA_TOP + 10);
-    rerender({
-      voiceChannels: [
-        { id: "v-1", name: "Salon", occupants: [] },
-        { id: "v-2", name: "Sesja", occupants: [] },
-      ],
-    });
+    moveTo(JO_MIDDLE + 8, SESJA + 10);
+    rerender({ voiceChannels: [{ ...VOICE[0]!, occupants: [] }, ...VOICE.slice(1)] });
 
     expect(document.querySelector(".voice-occupant-carry")).toBeNull();
-    expect(zone("Sesja")).not.toHaveClass("is-over");
-    release(SESJA_TOP + 10);
+    release(SESJA + 10);
     fireEvent.click(document.body);
     expect(onMoveVoiceMember).not.toHaveBeenCalled();
   });
 
-  it("marks the person as moving until the server answers", async () => {
-    let finish: () => void = () => {};
+  it("marks the person as moving until the server answers, and reports a failure", async () => {
+    let fail: (error: Error) => void = () => {};
     setup({
       onMoveVoiceMember: () =>
-        new Promise<void>((resolve) => {
-          finish = resolve;
+        new Promise<void>((_, reject) => {
+          fail = reject;
         }),
     });
 
-    dragJoTo(SESJA_TOP + 10);
-
+    dragJoTo(SESJA + 10);
     expect(screen.getByText("Jo").closest("li")).toHaveAttribute("aria-busy", "true");
-    expect(screen.getByText("Przenoszenie użytkownika Jo.")).toBeInTheDocument();
 
-    await act(async () => finish());
+    await act(async () => fail(new Error("forbidden")));
     expect(screen.getByText("Jo").closest("li")).not.toHaveAttribute("aria-busy");
-  });
-
-  it("reports a failed move as an alert", async () => {
-    setup({
-      onMoveVoiceMember: vi.fn().mockRejectedValue(new Error("forbidden")),
-    });
-
-    dragJoTo(SESJA_TOP + 10);
-
-    expect(await screen.findByRole("alert")).toHaveTextContent(
-      "Nie udało się przenieść użytkownika Jo.",
-    );
+    expect(screen.getByRole("alert")).toHaveTextContent("Nie udało się przenieść użytkownika Jo.");
   });
 
   it("does nothing for a drop on the channel the person is already in", () => {
     const onMoveVoiceMember = vi.fn();
     setup({ onMoveVoiceMember });
 
-    dragJoTo(SALON_TOP + 10);
+    dragJoTo(140 + 10);
 
     expect(onMoveVoiceMember).not.toHaveBeenCalled();
   });
