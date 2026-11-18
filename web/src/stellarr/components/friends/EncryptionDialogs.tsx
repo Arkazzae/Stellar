@@ -2,12 +2,14 @@ import { useId, useRef, useState, type FormEvent, type ReactNode } from "react";
 
 import { Button } from "@stellarr/ui";
 import { Avatar } from "@/components/primitives/Avatar";
+import type { StickerName } from "@/components/primitives/MascotArt";
 import { Modal } from "@/components/primitives/Modal";
 import { DialogHeader } from "@/components/settings/DialogHeader";
 import type { PersonVM } from "@/components/view-models";
 import { useLanguage } from "@/state/LanguageProvider";
 
 import { PinInput, useSettledFocus } from "./PinInput";
+import { MESSAGES_STICKERS } from "./stickers";
 
 const PIN_LENGTH = 6;
 
@@ -50,6 +52,7 @@ function EncryptionFrame({
   open,
   title,
   detail,
+  sticker,
   onClose,
   closeDisabled = false,
   onSubmit,
@@ -59,6 +62,8 @@ function EncryptionFrame({
   open: boolean;
   title: string;
   detail: string;
+  /** The mascot above the title, on the dialogs that mark a first step. */
+  sticker?: StickerName;
   onClose(): void;
   closeDisabled?: boolean;
   onSubmit(): void;
@@ -84,7 +89,14 @@ function EncryptionFrame({
           onSubmit();
         }}
       >
-        <DialogHeader titleId={titleId} title={title} detail={detail} onClose={onClose} closeDisabled={closeDisabled} />
+        <DialogHeader
+          titleId={titleId}
+          title={title}
+          detail={detail}
+          sticker={sticker}
+          onClose={onClose}
+          closeDisabled={closeDisabled}
+        />
         <div className="dlg-body enc-body">{children}</div>
         <div className="dlg-foot">{foot}</div>
       </form>
@@ -150,6 +162,7 @@ export function PinSetupDialog({ open, pending, error, onSubmit, onClose }: PinS
       open={open}
       title={t("e2ee.setup.title")}
       detail={t("e2ee.setup.detail")}
+      sticker={MESSAGES_STICKERS.pinSetup}
       onClose={onClose}
       closeDisabled={pending}
       onSubmit={submit}
@@ -454,6 +467,7 @@ export function SafetyCodeDialog({ open, self, peer, groups, error, mismatch, on
       open={open}
       title={t("e2ee.safety.title")}
       detail={t("e2ee.safety.detail")}
+      sticker={MESSAGES_STICKERS.safetyCode}
       onClose={onClose}
       onSubmit={mismatch ? onClose : onSame}
       foot={
