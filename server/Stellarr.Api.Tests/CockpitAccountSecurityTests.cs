@@ -88,6 +88,30 @@ public sealed class CockpitAccountSecurityTests
             x => x.UserId == ada.UserId && x.Kind == SecurityEventKinds.IdentityUnlinked));
     }
 
+    [Fact]
+    public async Task OwnerCannotUnlinkTheOnlyWayAnAccountSignsIn()
+    {
+        using var factory = new StellarrWebApplicationFactory();
+        var ada = await PrepareAdaAsync(factory);
+        await using (var scope = factory.OpenScope(out var db))
+        {
+            await db.Users.Where(x => x.Id == ada.UserId)
+                .ExecuteUpdateAsync(setters => setters.SetProperty(x => x.PasswordHash, (string?)null));
+        }
+
+        using var owner = await OwnerAsync(factory);
+        var security = await owner.GetFromJsonAsync<JsonElement>($"/api/cockpit/users/{ada.UserId}/security");
+        using var unlink = await owner.PostAsync(
+            $"/api/cockpit/users/{ada.UserId}/identities/{ada.IdentityId}/remove", content: null);
+
+        Assert.False(security.GetProperty("hasPassword").GetBoolean());
+        Assert.Equal(HttpStatusCode.Conflict, unlink.StatusCode);
+        var problem = await unlink.Content.ReadFromJsonAsync<JsonElement>();
+        Assert.Contains("musi ustawić hasło albo dodać klucz dostępu", problem.GetProperty("title").GetString(), StringComparison.Ordinal);
+        await using var check = factory.OpenScope(out var checkDb);
+        Assert.True(await checkDb.ExternalIdentities.AnyAsync(x => x.Id == ada.IdentityId));
+    }
+
     private sealed record Prepared(Guid UserId, Guid IdentityId);
 
     private static async Task<Prepared> PrepareAdaAsync(StellarrWebApplicationFactory factory)

@@ -271,6 +271,58 @@ public sealed class AccountSecurityCliTests
     }
 
     [Fact]
+    public async Task UnlinkWarnsOfTheLastWayInAsTheServerCountsIt()
+    {
+        using var fixture = await CliFixture.StartAsync();
+        var identityId = Guid.NewGuid();
+        await using (var scope = fixture.Factory.Services.CreateAsyncScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+            var user = await db.Users.SingleAsync(x => x.Username == "jo");
+            user.PasswordHash = null;
+            db.ExternalIdentities.AddRange(
+                new ExternalIdentity
+                {
+                    Id = identityId,
+                    UserId = user.Id,
+                    Issuer = "https://work.example.test",
+                    Subject = "jo-at-work",
+                    ProviderId = "work",
+                    CreatedAt = DateTime.UtcNow,
+                },
+                new ExternalIdentity
+                {
+                    Id = Guid.NewGuid(),
+                    UserId = user.Id,
+                    Issuer = "https://lab.example.test",
+                    Subject = "jo-at-lab",
+                    ProviderId = "lab",
+                    CreatedAt = DateTime.UtcNow,
+                });
+            await db.SaveChangesAsync();
+        }
+
+        var labConfigured = new Dictionary<string, string?>
+        {
+            ["Oidc__Providers__lab__Authority"] = "https://lab.example.test",
+            ["Oidc__Providers__lab__ClientId"] = "stellarr",
+            ["Oidc__Providers__lab__ClientSecret"] = "lab-secret",
+        };
+
+        // The other identity is at a provider this instance does not have: no way in.
+        var labGone = await fixture.RunInteractiveWithEnvironmentAsync(
+            "n\n", new Dictionary<string, string?>(), "security", "unlink", "jo", identityId.ToString());
+        var labHere = await fixture.RunInteractiveWithEnvironmentAsync(
+            "n\n", labConfigured, "security", "unlink", "jo", identityId.ToString());
+
+        Assert.Contains("last way in", labGone.Output, StringComparison.Ordinal);
+        Assert.DoesNotContain("last way in", labHere.Output, StringComparison.Ordinal);
+        Assert.Contains("Will unlink", labHere.Output, StringComparison.Ordinal);
+        await using var check = fixture.OpenDb();
+        Assert.True(await check.ExternalIdentities.AnyAsync(x => x.Id == identityId));
+    }
+
+    [Fact]
     public async Task ConfigListsTheIdentityProvidersWithoutTheirSecrets()
     {
         using var fixture = await CliFixture.StartAsync();

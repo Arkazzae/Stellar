@@ -6,7 +6,14 @@ public sealed class User
     public required string Username { get; set; }
     public required string NormalizedUsername { get; set; }
     public required string DisplayName { get; set; }
-    public required string PasswordHash { get; set; }
+
+    /// <summary>
+    /// Null for an account made through an identity provider, which signs in
+    /// there until it sets a password of its own. A password sign-in to it
+    /// fails the way a wrong password does.
+    /// </summary>
+    public string? PasswordHash { get; set; }
+
     public string? Email { get; set; }
     public string? NormalizedEmail { get; set; }
     public bool IsDisabled { get; set; }

@@ -52,6 +52,7 @@ public static partial class CockpitEndpoints
         {
             userId = user.Id.ToString(),
             recoveryRequired = user.SecurityRecoveryRequired,
+            hasPassword = user.PasswordHash is not null,
             methods = methods.Select(x => new
             {
                 id = x.Id.ToString(),
@@ -143,14 +144,20 @@ public static partial class CockpitEndpoints
         });
     }
 
+    /// <summary>
+    /// Removes a provider link, unless it is the only way the account signs
+    /// in: the owner cannot give it a password, so the person adds one first.
+    /// </summary>
     private static async Task<IResult> UnlinkUserIdentityAsync(
         Guid userId,
         Guid identityId,
         HttpContext http,
         AppDbContext db,
+        ExternalOidcOptions oidc,
         Messages messages,
         CancellationToken cancellationToken)
     {
+        await using var transaction = await WaysIn.HoldAccountAsync(db, userId, cancellationToken);
         if (await MemberUserAsync(http, db, userId, cancellationToken) is not { } user)
         {
             return Results.NotFound();
@@ -161,6 +168,13 @@ public static partial class CockpitEndpoints
         if (identity is null)
         {
             return Results.NotFound();
+        }
+
+        if (!await WaysIn.RemainAsync(db, oidc, user, cancellationToken, withoutIdentity: identity.Id))
+        {
+            return Results.Problem(
+                statusCode: StatusCodes.Status409Conflict,
+                title: messages.Get(MessageKey.CockpitLastWayIn, ("name", user.DisplayName)));
         }
 
         db.ExternalIdentities.Remove(identity);
@@ -174,6 +188,7 @@ public static partial class CockpitEndpoints
             messages.Get(MessageKey.AuditIdentityUnlinked, ("name", user.DisplayName)),
             cancellationToken);
         await db.SaveChangesAsync(cancellationToken);
+        await transaction.CommitAsync(cancellationToken);
         return Results.NoContent();
     }
 

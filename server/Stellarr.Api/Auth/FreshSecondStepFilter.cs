@@ -29,11 +29,18 @@ public sealed class FreshSecondStepFilter : IEndpointFilter
             return null;
         }
 
-        return Results.Problem(
-            statusCode: StatusCodes.Status403Forbidden,
-            title: http.RequestServices.GetRequiredService<Messages>().Get(MessageKey.FreshSecondStepRequired),
-            extensions: new Dictionary<string, object?> { ["code"] = Code });
+        return Refusal(http.RequestServices.GetRequiredService<Messages>());
     }
+
+    /// <summary>
+    /// The 403 that refuses a change for want of a fresh proof, with the code
+    /// the clients answer by asking for it. An account without a password
+    /// gets the same when its sign-in is too old to stand in for one.
+    /// </summary>
+    public static IResult Refusal(Messages messages) => Results.Problem(
+        statusCode: StatusCodes.Status403Forbidden,
+        title: messages.Get(MessageKey.FreshSecondStepRequired),
+        extensions: new Dictionary<string, object?> { ["code"] = Code });
 }
 
 /// <summary>

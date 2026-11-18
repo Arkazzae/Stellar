@@ -419,6 +419,40 @@ public sealed class EncryptionAccountFlowTests
         [.. (await KeysAsync(client, conversationId)).GetProperty("peer").GetProperty("devices").EnumerateArray()
             .Select(x => x.GetProperty("keyId").GetString()!)];
 
+    [Fact]
+    public async Task AnAccountWithoutAPasswordGetsNewKeysWithAFreshSignInInstead()
+    {
+        using var factory = new StellarrWebApplicationFactory();
+        using var maja = await ReadyAsync(factory, "maja");
+        var majaId = People["maja"].Id;
+        await using (var scope = factory.OpenScope(out var db))
+        {
+            await db.Users.Where(x => x.Id == majaId)
+                .ExecuteUpdateAsync(setters => setters.SetProperty(x => x.PasswordHash, (string?)null));
+        }
+
+        async Task SignedInAtAsync(DateTime when)
+        {
+            await using var scope = factory.OpenScope(out var db);
+            await db.UserSessions.Where(x => x.UserId == majaId)
+                .ExecuteUpdateAsync(setters => setters
+                    .SetProperty(x => x.AuthenticatedAt, when)
+                    .SetProperty(x => x.CreatedAt, when));
+        }
+
+        object Reset() => new { currentPassword = "", algorithm = "x25519", publicKey = Bytes(32), backup = Backup(Bytes(32)) };
+
+        // No password to give: an old sign-in gets the refusal the client answers with a fresh one.
+        await SignedInAtAsync(DateTime.UtcNow.AddHours(-1));
+        Assert.Equal(
+            (HttpStatusCode.Forbidden, "fresh-mfa-required"),
+            await RefusalAsync(await maja.PostAsJsonAsync("/api/me/encryption/account-key/reset", Reset())));
+
+        await SignedInAtAsync(DateTime.UtcNow);
+        using var reset = await maja.PostAsJsonAsync("/api/me/encryption/account-key/reset", Reset());
+        Assert.Equal(HttpStatusCode.OK, reset.StatusCode);
+    }
+
     private static async Task AddTotpAsync(StellarrWebApplicationFactory factory, Guid userId)
     {
         await using var scope = factory.OpenScope(out var db);

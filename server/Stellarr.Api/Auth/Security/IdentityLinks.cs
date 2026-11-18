@@ -5,8 +5,18 @@ using Microsoft.AspNetCore.DataProtection;
 
 namespace Stellarr.Api.Auth.Security;
 
-/// <summary>The signed-in session a link to an identity provider is made for.</summary>
-public sealed record IdentityLinkRequest(Guid UserId, Guid SessionId, int SecurityVersion, string ProviderId);
+/// <summary>
+/// The signed-in session a round trip to an identity provider is made for:
+/// to link the account to the provider, or, with <paramref name="Reauthenticate"/>,
+/// to prove at a provider it is already linked to that the person is still
+/// the one signed in.
+/// </summary>
+public sealed record IdentityLinkRequest(
+    Guid UserId,
+    Guid SessionId,
+    int SecurityVersion,
+    string ProviderId,
+    bool Reauthenticate = false);
 
 /// <summary>
 /// Linking an account to an identity provider takes two requests. A JSON
@@ -19,6 +29,11 @@ public sealed record IdentityLinkRequest(Guid UserId, Guid SessionId, int Securi
 /// The provider answers with a cross-site POST, which the session cookie does
 /// not ride. So the session travels in the provider's protected state and is
 /// checked again in the database when the answer comes, never by the cookie.
+///
+/// A fresh sign-in at a provider the account is linked to goes the same way.
+/// It is the proof an account without a password gives for a sensitive change
+/// once its own sign-in is a few minutes old: the ticket needs no proof, since
+/// the round trip is the proof.
 /// </summary>
 public static class IdentityLinks
 {
@@ -60,17 +75,19 @@ public static class IdentityLinks
             request.UserId.ToString("N"),
             request.SessionId.ToString("N"),
             request.SecurityVersion.ToString(CultureInfo.InvariantCulture),
-            request.ProviderId);
+            request.ProviderId,
+            request.Reauthenticate ? "reauthenticate" : "link");
 
     private static IdentityLinkRequest? Read(string? value)
     {
         var parts = value?.Split('|');
-        return parts is { Length: 4 } &&
+        return parts is { Length: 5 } &&
             Guid.TryParseExact(parts[0], "N", out var userId) &&
             Guid.TryParseExact(parts[1], "N", out var sessionId) &&
             int.TryParse(parts[2], NumberStyles.None, CultureInfo.InvariantCulture, out var version) &&
-            parts[3].Length > 0
-                ? new IdentityLinkRequest(userId, sessionId, version, parts[3])
+            parts[3].Length > 0 &&
+            parts[4] is "link" or "reauthenticate"
+                ? new IdentityLinkRequest(userId, sessionId, version, parts[3], parts[4] == "reauthenticate")
                 : null;
     }
 }

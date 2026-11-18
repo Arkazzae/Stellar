@@ -17,6 +17,8 @@ public sealed class PasswordService
     private const int SaltSize = 16;
     private const int HashSize = 32;
 
+    private static readonly byte[] NoPasswordSalt = new byte[SaltSize];
+
     public string Hash(string password)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(password);
@@ -26,8 +28,19 @@ public sealed class PasswordService
         return string.Join('$', Scheme, Iterations, Convert.ToBase64String(salt), Convert.ToBase64String(hash));
     }
 
-    public bool Verify(string password, string encoded)
+    /// <summary>
+    /// Whether the password matches the stored hash. An account without a
+    /// password matches nothing, after the same work a real check does, so
+    /// how long the answer takes does not tell it from a wrong password.
+    /// </summary>
+    public bool Verify(string password, string? encoded)
     {
+        if (encoded is null)
+        {
+            _ = Derive(password, NoPasswordSalt, Iterations);
+            return false;
+        }
+
         var parts = encoded.Split('$');
         if (parts.Length != 4 ||
             parts[0] != Scheme ||

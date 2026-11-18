@@ -28,6 +28,10 @@ public static class AuthEndpoints
             ChallengeLink(ExternalOidcOptions.DefaultProviderId, ticket, context, options, protection))
             .RequireRateLimiting(RateLimitPolicies.Login);
         group.MapGet("/oidc/{id}/link", ChallengeLink).RequireRateLimiting(RateLimitPolicies.Login);
+        group.MapGet("/oidc/reauthenticate", (string? ticket, string? returnUrl, HttpContext context, ExternalOidcOptions options, IDataProtectionProvider protection) =>
+            ChallengeReauthentication(ExternalOidcOptions.DefaultProviderId, ticket, returnUrl, context, options, protection))
+            .RequireRateLimiting(RateLimitPolicies.Login);
+        group.MapGet("/oidc/{id}/reauthenticate", ChallengeReauthentication).RequireRateLimiting(RateLimitPolicies.Login);
 
         return endpoints;
     }
@@ -151,11 +155,7 @@ public static class AuthEndpoints
         }
 
         var request = IdentityLinks.ReadTicket(protection, ticket);
-        if (request is null ||
-            request.ProviderId != provider.Id ||
-            context.User.Identity?.IsAuthenticated != true ||
-            context.User.RequireUserId() != request.UserId ||
-            context.User.FindSessionId() != request.SessionId)
+        if (request is not { Reauthenticate: false } || !TicketFitsSession(request, provider, context))
         {
             return Results.Redirect("/link-account?result=failed");
         }
@@ -164,6 +164,44 @@ public static class AuthEndpoints
         IdentityLinks.Remember(properties, request);
         return Results.Challenge(properties, [provider.Scheme]);
     }
+
+    /// <summary>
+    /// Sends a signed-in account to a provider it is linked to, to sign in
+    /// there again as the proof a sensitive change asks for. The ticket is
+    /// bound like a link's; the answer acts on this session and comes back to
+    /// <paramref name="returnUrl"/> on this origin, through the page that says
+    /// how it went.
+    /// </summary>
+    private static IResult ChallengeReauthentication(
+        string id,
+        string? ticket,
+        string? returnUrl,
+        HttpContext context,
+        ExternalOidcOptions options,
+        IDataProtectionProvider protection)
+    {
+        if (options.Find(id) is not { } provider)
+        {
+            return Results.NotFound();
+        }
+
+        var request = IdentityLinks.ReadTicket(protection, ticket);
+        if (request is not { Reauthenticate: true } || !TicketFitsSession(request, provider, context))
+        {
+            return Results.Redirect(ExternalOidcAuthentication.ReauthenticationPage(confirmed: false, returnUrl));
+        }
+
+        var properties = new AuthenticationProperties { RedirectUri = ExternalOidcOptions.SafeReturnUrl(returnUrl) };
+        IdentityLinks.Remember(properties, request);
+        return Results.Challenge(properties, [provider.Scheme]);
+    }
+
+    /// <summary>A ticket names this provider and the very session presenting it.</summary>
+    private static bool TicketFitsSession(IdentityLinkRequest request, ExternalOidcProvider provider, HttpContext context) =>
+        request.ProviderId == provider.Id &&
+        context.User.Identity?.IsAuthenticated == true &&
+        context.User.RequireUserId() == request.UserId &&
+        context.User.FindSessionId() == request.SessionId;
 
     private static IResult Challenge(ExternalOidcProvider? provider, string? returnUrl, bool? keepSignedIn)
     {
