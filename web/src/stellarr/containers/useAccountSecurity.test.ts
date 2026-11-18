@@ -52,6 +52,7 @@ const state = (overrides: Partial<AccountSecurity> = {}): AccountSecurity => ({
   identities: [],
   identityProviders: [],
   emailCodeAvailable: false,
+  hasPassword: true,
   ...overrides,
 });
 
@@ -78,6 +79,8 @@ beforeEach(() => {
     listSessions: vi.fn(async () => []),
     revokeSession: vi.fn(async () => {}),
     revokeOtherSessions: vi.fn(async () => {}),
+    startReauthentication: vi.fn(async () => "/api/auth/oidc/reauthenticate?ticket=t"),
+    setPassword: vi.fn(async () => {}),
     startIdentityLink: vi.fn(async () => "/api/auth/oidc/link?ticket=t"),
     removeIdentity: vi.fn(async () => {}),
   };

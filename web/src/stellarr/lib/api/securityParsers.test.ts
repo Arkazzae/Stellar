@@ -8,6 +8,7 @@ import {
   parseMfaChallenge,
   parseMfaCompletion,
   parseMfaEnrollment,
+  parsePendingIdentity,
 } from "./securityParsers";
 
 // Answers recorded from a running API, so the shapes are the server's own.
@@ -78,6 +79,7 @@ const TOTP_STARTED = {
 };
 
 const SECURITY = {
+  "hasPassword": true,
   "requirement": "optional",
   "mfaRequired": true,
   "freshMfa": true,
@@ -222,6 +224,17 @@ describe("parseAuthResult", () => {
     });
   });
 
+  it("says how linking the waiting identity went, in the link page's words only", () => {
+    expect(parseAuthResult({ user: SIGNED_IN, identityLink: "taken" }, "/api/auth/login")).toMatchObject({
+      kind: "signed-in",
+      identityLink: "taken",
+    });
+    expect(() => parseAuthResult({ user: SIGNED_IN, identityLink: "maybe" }, "/api/auth/login")).toThrow(ApiError);
+    expect(parseMfaCompletion({ ...COMPLETED, identityLink: "linked" }, "/api/auth/mfa/verify").identityLink).toBe(
+      "linked",
+    );
+  });
+
   it("refuses a status it does not know rather than guessing", () => {
     expect(() => parseAuthResult({ status: "mfa_maybe" }, "/api/auth/login")).toThrow(ApiError);
   });
@@ -242,13 +255,13 @@ describe("parseSignInProviders", () => {
       displayName: "Authentik",
       providers: [
         { id: "default", displayName: " Authentik ", loginUrl: "/api/auth/oidc/login" },
-        { id: "work", displayName: "Praca", loginUrl: "/api/auth/oidc/work/login" },
+        { id: "work", displayName: "Praca", loginUrl: "/api/auth/oidc/work/login", signUp: true },
       ],
     };
 
     expect(parseSignInProviders(answer, "/api/auth/oidc")).toEqual([
-      { displayName: "Authentik", loginUrl: "/api/auth/oidc/login" },
-      { displayName: "Praca", loginUrl: "/api/auth/oidc/work/login" },
+      { id: "default", displayName: "Authentik", loginUrl: "/api/auth/oidc/login", signUp: false },
+      { id: "work", displayName: "Praca", loginUrl: "/api/auth/oidc/work/login", signUp: true },
     ]);
     expect(parseSignInProviders({ enabled: false, displayName: "x", providers: [] }, "/api/auth/oidc")).toEqual([]);
     expect(() =>
@@ -257,6 +270,29 @@ describe("parseSignInProviders", () => {
         "/api/auth/oidc",
       ),
     ).toThrow(ApiError);
+  });
+});
+
+describe("parsePendingIdentity", () => {
+  it("reads whose identity waits at which provider, with or without an address", () => {
+    expect(
+      parsePendingIdentity(
+        {
+          provider: { id: "default", displayName: "Authentik" },
+          displayName: "Ola Nowak",
+          email: null,
+          username: "ola.nowak",
+          signUp: true,
+        },
+        "/api/auth/oidc/pending",
+      ),
+    ).toEqual({
+      provider: { id: "default", displayName: "Authentik" },
+      displayName: "Ola Nowak",
+      email: null,
+      username: "ola.nowak",
+      signUp: true,
+    });
   });
 });
 
