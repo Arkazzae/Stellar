@@ -139,9 +139,13 @@ public static class AssetEndpoints
                 : null;
     }
 
-    /// <summary>Plain files are offered as downloads. Media is played in the page.</summary>
+    /// <summary>
+    /// Plain files are offered as downloads, and so are encrypted bytes, which
+    /// only a browser with the key can make anything of. Media is played in the page.
+    /// </summary>
     private static bool IsGenericFile(ImageAttachment attachment) =>
-        AttachmentValidation.TryGetSpec(attachment.ContentType, out var spec) && spec.Kind == UploadKind.File;
+        attachment.IsEncrypted ||
+        (AttachmentValidation.TryGetSpec(attachment.ContentType, out var spec) && spec.Kind == UploadKind.File);
 
     /// <summary>Reads the first range of a <c>Range</c> header, or null for anything it does not serve.</summary>
     /// <remarks>
