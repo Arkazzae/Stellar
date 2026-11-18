@@ -4,6 +4,7 @@ import { AccountProvider } from "@/state/AccountProvider";
 import { ChatProvider } from "@/state/ChatProvider";
 import { DirectoryProvider } from "@/state/DirectoryProvider";
 import { EmojiProvider } from "@/state/EmojiProvider";
+import { EncryptionProvider } from "@/state/EncryptionProvider";
 import { FriendsProvider } from "@/state/FriendsProvider";
 import { KeybindProvider } from "@/state/KeybindProvider";
 import { NotificationProvider } from "@/state/NotificationProvider";
@@ -16,6 +17,7 @@ import { ClientSettingsSync } from "./ClientSettingsSync";
 import { DmCallChatContainer } from "./DmCallChatContainer";
 import { DmProfileContainer } from "./DmProfileContainer";
 import { DmRailContainer } from "./DmRailContainer";
+import { EncryptionDialogsContainer } from "./EncryptionDialogsContainer";
 import { FriendsRoomContainer } from "./FriendsRoomContainer";
 import { IncomingCallContainer } from "./IncomingCallContainer";
 import { MiniProfileContainer } from "./MiniProfileContainer";
@@ -59,13 +61,15 @@ export function AppContainer() {
               <VoiceProvider>
                 <UiProvider>
                   <KeybindProvider>
-                    <FriendsProvider>
-                      <ChatProvider>
-                        <ProfileProvider>
-                          <Shell />
-                        </ProfileProvider>
-                      </ChatProvider>
-                    </FriendsProvider>
+                    <EncryptionProvider>
+                      <FriendsProvider>
+                        <ChatProvider>
+                          <ProfileProvider>
+                            <Shell />
+                          </ProfileProvider>
+                        </ChatProvider>
+                      </FriendsProvider>
+                    </EncryptionProvider>
                   </KeybindProvider>
                 </UiProvider>
               </VoiceProvider>
@@ -125,6 +129,8 @@ function Shell() {
       {/* Above the shell and beside the dialogs: these are raised from inside
           any of them and have to outlive whatever raised them. */}
       <UserSettingsContainer />
+      {/* Raised from the conversation, its profile and the settings alike. */}
+      <EncryptionDialogsContainer />
       {/* Renders nothing; keeps the theme, language, shortcuts and voice
           settings on the account. */}
       <ClientSettingsSync />

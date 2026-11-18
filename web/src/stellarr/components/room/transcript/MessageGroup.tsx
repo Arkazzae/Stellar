@@ -11,6 +11,8 @@ import type {
   CustomEmoji,
   MessageReference,
   Reaction,
+  SealedReason,
+  TimelineLine,
 } from "@/ports";
 
 import { Attachment } from "../attachments/Attachment";
@@ -29,6 +31,14 @@ export interface MessageBodyVM {
   reactions?: Reaction[];
   pinned?: boolean;
 }
+
+/**
+ * A row that is not somebody's message: a line about the conversation, or
+ * messages this browser cannot read. The transcript's owner draws it.
+ */
+export type TranscriptNotice =
+  | { kind: "line"; line: TimelineLine; actorName: string }
+  | { kind: "sealed"; reason: SealedReason; count: number };
 
 /** What one author block on screen is. */
 export interface MessageGroupVM {
@@ -63,6 +73,8 @@ export interface MessageGroupVM {
   bodies: MessageBodyVM[];
   /** The message this block answers; the line above it names the original. */
   replyTo?: MessageReference;
+  /** Set when the block is a notice rather than messages; see `TranscriptNotice`. */
+  notice?: TranscriptNotice;
 }
 
 export interface MessageGroupProps extends MessageGroupVM {

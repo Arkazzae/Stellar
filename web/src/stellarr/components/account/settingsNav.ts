@@ -9,6 +9,7 @@ export type UserSettingsPaneKey =
   | "konto"
   | "bezpieczenstwo"
   | "sesje"
+  | "szyfrowanie"
   | "prywatnosc"
   | "wyglad"
   | "jezyk"
@@ -40,6 +41,11 @@ export const USER_SETTINGS_PANES: Record<UserSettingsPaneKey, UserSettingsPane> 
     icon: "mobile",
     title: "settings.sessions.title",
     detail: "settings.sessions.detail",
+  },
+  szyfrowanie: {
+    icon: "lock",
+    title: "settings.encryption.title",
+    detail: "settings.encryption.detail",
   },
   prywatnosc: {
     icon: "shield",
@@ -96,7 +102,7 @@ export const USER_SETTINGS_GROUPS: readonly {
 }[] = [
   {
     caption: "settings.group.account",
-    panes: ["konto", "bezpieczenstwo", "sesje", "prywatnosc"],
+    panes: ["konto", "bezpieczenstwo", "sesje", "szyfrowanie", "prywatnosc"],
   },
   {
     caption: "settings.group.app",

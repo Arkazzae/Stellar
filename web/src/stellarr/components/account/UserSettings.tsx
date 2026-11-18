@@ -1,6 +1,7 @@
 import { Fragment, useEffect, useId, useRef, useState } from "react";
 
 import { AccountActivitySections } from "@/components/account/panes/AccountActivitySections";
+import { EncryptionPane, type EncryptionPaneProps } from "@/components/account/panes/EncryptionPane";
 import {
   AccountPane,
   type AccountPaneProps,
@@ -71,6 +72,8 @@ export interface UserSettingsProps {
   account: Account;
   accountPane: Omit<AccountPaneProps, "account">;
   security: Omit<SecurityPaneProps, "account">;
+  /** The PIN and the browsers holding keys for encrypted conversations. */
+  encryption?: EncryptionPaneProps;
   preferences: PreferencePaneProps;
   /** The people this account blocked, listed under privacy. */
   blocked?: BlockedPeopleProps;
@@ -116,6 +119,7 @@ export function UserSettings({
   account,
   accountPane,
   security,
+  encryption,
   preferences,
   blocked,
   giphy,
@@ -187,6 +191,8 @@ export function UserSettings({
         return <SecurityPane account={account} {...security} />;
       case "sesje":
         return security.twoStep ? <AccountActivitySections {...security.twoStep} /> : null;
+      case "szyfrowanie":
+        return encryption === undefined ? null : <EncryptionPane {...encryption} />;
       case "prywatnosc":
         return <PrivacyPane {...preferences} blocked={blocked} giphy={giphy} />;
       case "wyglad":
