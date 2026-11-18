@@ -131,4 +131,62 @@
       transition-duration: 0.01ms;
     }
   }
+
+  /*
+   * A download on its way (`ProgressRing`). The fill is the accent, as the
+   * translation model's bar is, over a track in the line colour, so a few
+   * percent still read as a share of a whole. An unknown amount turns at the
+   * spinner's pace; where motion is reduced it stands still as a broken ring,
+   * which no share looks like.
+   */
+  .progress-ring {
+    flex: none;
+    display: block;
+    overflow: visible;
+  }
+
+  .progress-ring circle {
+    fill: none;
+  }
+
+  .progress-ring-track {
+    stroke: var(--line);
+  }
+
+  .progress-ring-fill {
+    stroke: var(--accent);
+    stroke-linecap: round;
+    transition: stroke-dasharray var(--dur-slow) linear;
+  }
+
+  .progress-ring.unknown {
+    animation: ui-spin 1s linear infinite;
+  }
+
+  .progress-ring.unknown .progress-ring-fill {
+    stroke-dasharray: 28 100;
+    transition: none;
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .progress-ring-fill {
+      transition: none;
+    }
+
+    .progress-ring.unknown {
+      animation: none;
+    }
+
+    .progress-ring.unknown .progress-ring-fill {
+      stroke-dasharray: 6.5 6;
+    }
+  }
+
+  html[data-reduced-motion="true"] .progress-ring.unknown {
+    animation: none;
+  }
+
+  html[data-reduced-motion="true"] .progress-ring.unknown .progress-ring-fill {
+    stroke-dasharray: 6.5 6;
+  }
 }

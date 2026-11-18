@@ -19,6 +19,8 @@ export interface SegmentedOption<T extends string> {
    * rather than by position: a permission's "deny" is red wherever it sits.
    */
   tone?: string;
+  /** The choice is still taking effect, such as a download; published as `aria-busy`. */
+  busy?: boolean;
 }
 
 /**
@@ -107,6 +109,7 @@ export function Segmented<T extends string>({
             aria-checked={on}
             data-state={on ? "checked" : "unchecked"}
             data-tone={option.tone}
+            aria-busy={option.busy || undefined}
             title={option.title}
             tabIndex={index === tabStop ? 0 : -1}
             disabled={disabled}

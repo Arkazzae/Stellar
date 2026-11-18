@@ -5,6 +5,7 @@ import {
   type ActiveNoiseSuppression,
   type MicTest,
   type NoiseSuppressionMode,
+  type SuppressorDownload,
   type VoiceSettings,
 } from "@/ports";
 import { useLanguage } from "@/state/hooks";
@@ -20,7 +21,7 @@ const NOISE_ORDER: readonly NoiseSuppressionMode[] = [
   "off",
 ];
 
-/** The artwork is shared with the noise button in the voice dock. */
+/** Each mode's name, and the sentence under the row while it is chosen. */
 const NOISE_RUNGS: Record<NoiseSuppressionMode, Rung> = {
   browser: {
     label: NOISE_MODE_LABEL.browser,
@@ -71,6 +72,8 @@ export interface VoiceProcessingSectionProps {
   settings: VoiceSettings;
   onChange: (patch: Partial<VoiceSettings>) => void;
   mic: MicTest;
+  /** The chosen engine's files on their way, drawn on its choice. */
+  download?: SuppressorDownload | null;
 }
 
 /**
@@ -81,12 +84,25 @@ export function VoiceProcessingSection({
   settings,
   onChange,
   mic,
+  download = null,
 }: VoiceProcessingSectionProps) {
   const { t } = useLanguage();
   const active = mic.activeNoiseSuppression;
   // Judged against what the open microphone was asked for: a pick that has
   // not reached it yet is a wait, not a failure.
   const requested = mic.requestedNoiseSuppression ?? settings.noiseSuppression;
+  const name = download ? t(NOISE_MODE_LABEL[download.kind]) : "";
+  const progress =
+    download?.kind === settings.noiseSuppression
+      ? {
+          value: download.kind,
+          percent: download.percent,
+          title:
+            download.percent === null
+              ? t("voice.noise.downloadingUnknown", { name })
+              : t("voice.noise.downloading", { name, percent: download.percent }),
+        }
+      : null;
 
   return (
     <>
@@ -99,6 +115,7 @@ export function VoiceProcessingSection({
             value={settings.noiseSuppression}
             onChange={(noiseSuppression) => onChange({ noiseSuppression })}
             label={t("voice.noiseReduction")}
+            progress={progress}
           />
         </div>
       </div>

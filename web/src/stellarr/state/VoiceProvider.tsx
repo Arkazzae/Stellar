@@ -18,7 +18,7 @@ import { setAndroidCallActive } from "@/lib/voice/androidCallService";
 // `@/ports` re-exports types only, and the idle state is a value that
 // `useSyncExternalStore` needs before any client exists.
 import { IDLE_VOICE_STATE, type VoiceState } from "@/lib/voice/types";
-import type { Sound, SoundboardState } from "@/ports";
+import type { Sound, SoundboardState, SuppressorDownload } from "@/ports";
 
 import { useAccountContext } from "./AccountProvider";
 import { useDirectoryContext } from "./DirectoryProvider";
@@ -65,6 +65,8 @@ export interface VoiceValue {
   /** Which remote strips run through a local suppressor, by user id. */
   participantSuppressions: ReadonlyMap<string, boolean>;
   cameraSupported: boolean;
+  /** The chosen noise suppressor's files on their way, in a call or not. */
+  suppressorDownload: SuppressorDownload | null;
   sounds: Sound[];
   soundboard: SoundboardState;
   /** False disables the tiles: unsupported, in a private call, or cooling down. */
@@ -380,6 +382,7 @@ export function VoiceProvider({ children }: { children: ReactNode }) {
       problem,
       localShare: state.localScreen !== null,
       cameraSupported: state.cameraSupported,
+      suppressorDownload: state.suppressorDownload,
       sounds: soundboard.sounds,
       soundboard,
       soundboardEnabled: !view.privateCall && soundboard.supported && !soundCooling,

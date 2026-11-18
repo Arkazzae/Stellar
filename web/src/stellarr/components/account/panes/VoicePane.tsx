@@ -1,4 +1,10 @@
-import type { CameraTest, MicTest, OutputTest, VoiceSettings } from "@/ports";
+import type {
+  CameraTest,
+  MicTest,
+  OutputTest,
+  SuppressorDownload,
+  VoiceSettings,
+} from "@/ports";
 import { useLanguage } from "@/state/hooks";
 
 import { VoiceCameraCheck } from "./VoiceCameraSection";
@@ -18,6 +24,8 @@ export interface VoicePaneProps {
   mic: MicTest;
   output: OutputTest;
   camera: CameraTest;
+  /** The chosen noise suppressor's files on their way, shown on its choice. */
+  suppressorDownload?: SuppressorDownload | null;
 }
 
 /**
@@ -44,6 +52,7 @@ export function VoicePane({
   mic,
   output,
   camera,
+  suppressorDownload = null,
 }: VoicePaneProps) {
   const { t } = useLanguage();
 
@@ -60,7 +69,12 @@ export function VoicePane({
                 onVadCommit={onVadCommit}
                 mic={mic}
               />
-              <VoiceProcessingSection settings={settings} onChange={onChange} mic={mic} />
+              <VoiceProcessingSection
+                settings={settings}
+                onChange={onChange}
+                mic={mic}
+                download={suppressorDownload}
+              />
               <VoiceAudioQualityRow settings={settings} onChange={onChange} />
             </div>
           </div>

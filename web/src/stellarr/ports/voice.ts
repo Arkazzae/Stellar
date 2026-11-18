@@ -18,7 +18,7 @@ import type { Unsubscribe } from "./chat";
  */
 export type VoicePort = VoiceClient;
 export type { VoiceState, VoiceSettings };
-export type { VoiceReceivePreferences } from "@/lib/voice/types";
+export type { SuppressorDownload, VoiceReceivePreferences } from "@/lib/voice/types";
 
 /**
  * The words for each audio profile and noise mode.
