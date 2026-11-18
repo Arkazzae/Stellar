@@ -61,6 +61,12 @@ function partTarget(part: MessagePart, media: number): DownloadTarget | undefine
   }
 }
 
+/**
+ * The prefix of an address that stands for an encrypted file not fetched yet;
+ * it must be resolved before it is saved, copied or shown.
+ */
+export const LAZY_LINK_PREFIX = "e2ee:";
+
 /** Where in a message the pointer was; indexes are absent when it was over neither. */
 export interface PointedAt {
   part: number | null;

@@ -147,6 +147,12 @@ export interface AttachmentCallbacks {
    * neighbours to step through.
    */
   onOpenImage?(images: GalleryImage[], index: number): void;
+  /**
+   * Turns the address of a picture whose original is fetched only on demand
+   * (a private conversation's) into one that can be shown, saved or copied;
+   * null when it cannot be read. Any other address comes back as it is.
+   */
+  resolveOriginal?(src: string): Promise<string | null>;
   onDownloadFile?(part: FilePart): void;
   onPlayVideo?(part: VideoPart): void;
   onOpenEmbed?(part: EmbedPart): void;

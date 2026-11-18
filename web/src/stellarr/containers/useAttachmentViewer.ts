@@ -38,6 +38,10 @@ export function useAttachmentViewer(openEncrypted?: OpenEncrypted) {
   const attachments = useMemo<AttachmentCallbacks>(
     () => ({
       onOpenImage: (images, index) => setTarget({ kind: "image", images, index }),
+      resolveOriginal: (src) => {
+        if (!src.startsWith(ENCRYPTED_LINK)) return Promise.resolve(src);
+        return Promise.resolve(openEncrypted?.(src)).then((opened) => opened?.url ?? null);
+      },
       onPlayVideo: (part) => {
         const show = (src: string) =>
           setTarget({

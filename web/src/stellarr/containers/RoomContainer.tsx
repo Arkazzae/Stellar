@@ -190,7 +190,7 @@ export function RoomContainer() {
         enabled={!inVoice && activeText !== undefined}
         onDropFiles={chat.attach}
       />
-      <MediaViewer target={viewer.target} onClose={viewer.close} />
+      <MediaViewer target={viewer.target} onClose={viewer.close} resolveOriginal={viewer.attachments.resolveOriginal} />
     </main>
   );
 }

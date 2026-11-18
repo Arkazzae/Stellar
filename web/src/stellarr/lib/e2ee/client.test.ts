@@ -468,10 +468,16 @@ describe("encryption client", () => {
       await ola.client.decode(wirePhoto);
       await vi.waitFor(async () => {
         const view = (await ola.client.decode(wirePhoto)).attachments[0];
-        expect(view?.url).toMatch(/^blob:test/);
+        expect(view?.url).toBe(`${LAZY_ATTACHMENT_PREFIX}${photo.payload.id}`);
         expect(view?.placeholder).toBe("AAAA");
         expect(new Uint8Array(await urls.get(view?.previewUrl ?? "")!.arrayBuffer())).toEqual(new Uint8Array([82, 73, 70, 70]));
       });
+
+      // The original is decrypted only when it is asked for.
+      const original = await ola.client.openAttachment(photo.payload.id);
+      expect(original?.type).toBe("image/png");
+      expect(new Uint8Array(await urls.get(original?.url ?? "")!.arrayBuffer())).toEqual(new Uint8Array([137, 80, 78, 71]));
+      expect((await ola.client.decode(wirePhoto)).attachments[0]?.url).toBe(original?.url);
 
       const opened = await ola.client.openAttachment(document.payload.id);
       expect(opened?.type).toBe("application/octet-stream");
