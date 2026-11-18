@@ -3,7 +3,7 @@ import { createMemoryHistory, type MemoryHistory } from "@stellarr/router/testin
 import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { polishAsRead } from "@/test/translators";
+import { polish, polishAsRead } from "@/test/translators";
 
 import { translateMessage, type MessageKey, type MessageValues } from "@/i18n";
 import { ApiError } from "@/lib/api/errors";
@@ -13,6 +13,7 @@ import type {
   AccountSecurityPort,
   AuthResult,
   MfaChallenge,
+  PendingIdentity,
   SignInChallengePort,
   SignInProvider,
 } from "@/ports";
@@ -38,6 +39,8 @@ const mocks = vi.hoisted(() => ({
   },
   ports: {} as object,
   providers: vi.fn<() => Promise<SignInProvider[]>>(),
+  pendingIdentity: vi.fn<() => Promise<PendingIdentity | null>>(),
+  dropPendingIdentity: vi.fn<() => Promise<void>>(),
   setup: { setupRequired: false as boolean | null, failed: false, retry: vi.fn(), markSetUp: vi.fn() },
   leaveFor: vi.fn(),
   search: "",
@@ -175,6 +178,8 @@ beforeEach(() => {
       signInWithPasskey: (input: { keepSignedIn?: boolean }) => mocks.passkeys.signIn(input),
       instanceName: async () => "Stellarr Dev",
       signInProviders: () => mocks.providers(),
+      pendingIdentity: () => mocks.pendingIdentity(),
+      dropPendingIdentity: () => mocks.dropPendingIdentity(),
     },
     get security() {
       return mocks.security;
@@ -190,7 +195,10 @@ beforeEach(() => {
   mocks.session.loginError = null;
   mocks.search = "";
   mocks.providers = vi.fn(async () => []);
+  mocks.pendingIdentity = vi.fn(async () => null);
+  mocks.dropPendingIdentity = vi.fn(async () => {});
   mocks.setup = { setupRequired: false, failed: false, retry: vi.fn(), markSetUp: vi.fn() };
+  window.sessionStorage.clear();
 });
 
 describe("LoginPage", () => {
@@ -202,7 +210,7 @@ describe("LoginPage", () => {
     await user.type(screen.getByLabelText("Hasło"), "haslo123");
     await user.click(screen.getByRole("button", { name: "Zaloguj się" }));
 
-    expect(mocks.session.login).toHaveBeenCalledExactlyOnceWith("maja", "haslo123", true);
+    expect(mocks.session.login).toHaveBeenCalledExactlyOnceWith("maja", "haslo123", true, false);
   });
 
   it("asks for a session that ends with the browser when told not to keep it", async () => {
@@ -222,7 +230,7 @@ describe("LoginPage", () => {
     await user.type(screen.getByRole("textbox", { name: "Login lub e-mail" }), "maja");
     await user.type(screen.getByLabelText("Hasło"), "haslo123");
     await user.click(screen.getByRole("button", { name: "Zaloguj się" }));
-    expect(mocks.session.login).toHaveBeenCalledExactlyOnceWith("maja", "haslo123", false);
+    expect(mocks.session.login).toHaveBeenCalledExactlyOnceWith("maja", "haslo123", false, false);
   });
 
   it("keeps the choice through an operator's recovery after the password", async () => {
@@ -314,16 +322,13 @@ describe("LoginPage", () => {
     expect(screen.queryByRole("link", { name: /Zaloguj się przez/ })).not.toBeInTheDocument();
   });
 
-  it.each([
-    ["not_linked", "auth.oidc.notLinkedTitle"],
-    ["failed", "auth.oidc.failedTitle"],
-  ] as const)("explains an identity provider sign-in that ended with %s, then offers the password", async (code, title) => {
-    mocks.search = `oidc_error=${code}`;
+  it("explains an identity provider sign-in that failed, then offers the password", async () => {
+    mocks.search = "oidc_error=failed";
     const user = userEvent.setup();
 
     renderLogin();
 
-    expect(await screen.findByRole("heading", { name: t(title) })).toBeVisible();
+    expect(await screen.findByRole("heading", { name: t("auth.oidc.failedTitle") })).toBeVisible();
     expect(screen.queryByLabelText("Hasło")).toBeNull();
     await user.click(screen.getByRole("button", { name: t("auth.oidc.usePassword") }));
     expect(screen.getByLabelText("Hasło")).toBeVisible();
@@ -768,5 +773,115 @@ describe("LoginPage with passkeys", () => {
 
     await screen.findByText("JBSW Y3DP EHPK 3PXP");
     expect(screen.queryByRole("button", { name: new RegExp(t("auth.mfa.wayPasskey")) })).toBeNull();
+  });
+});
+
+describe("LoginPage for an identity no account is linked to", () => {
+  const OLA: PendingIdentity = {
+    provider: { id: "default", displayName: "Authentik" },
+    displayName: "Ola Nowak",
+    email: "ola@example.test",
+    username: "ola.nowak",
+    signUp: true,
+  };
+
+  /** Signs in from the page's own form, which asks to link the identity. */
+  async function linkWithPassword() {
+    const user = userEvent.setup();
+    const view = renderLogin();
+    await user.click(await screen.findByRole("button", { name: new RegExp(t("auth.unlinked.haveAccountNamed", { instance: "Stellarr Dev" })) }));
+    await user.type(screen.getByRole("textbox", { name: "Login lub e-mail" }), "maja");
+    await user.type(screen.getByLabelText("Hasło"), "haslo123");
+    // The name keeps the catalog's non-breaking space, as the role query reads it.
+    await user.click(screen.getByRole("button", { name: polish("auth.unlinked.linkSubmit") }));
+    return { user, view };
+  }
+
+  beforeEach(() => {
+    mocks.search = "oidc=unlinked";
+    mocks.pendingIdentity = vi.fn(async () => OLA);
+  });
+
+  it("signs in with the password, asks to link, and leaves through the page that says how it went", async () => {
+    mocks.search = "oidc=unlinked&returnUrl=%2Finvite%2Fabc";
+    mocks.session.login = vi.fn(async (): Promise<AuthResult> => ({ kind: "signed-in", user: MAJA, identityLink: "linked" }));
+
+    const { view } = await linkWithPassword();
+
+    expect(mocks.session.login).toHaveBeenCalledExactlyOnceWith("maja", "haslo123", true, true);
+    mocks.session.phase = "ready";
+    view.rerender(<LoginPage />);
+    await waitFor(() =>
+      expect(history.navigations).toEqual([
+        { kind: "replace", href: "/link-account?result=linked&returnUrl=%2Finvite%2Fabc" },
+      ]),
+    );
+  });
+
+  it("links only once the second step is done, and says then how it went", async () => {
+    mocks.session.login = vi.fn(async (): Promise<AuthResult> => ({ kind: "challenge", challenge: CHALLENGE }));
+    mocks.challenge = fakeChallengePort({ verify: vi.fn(async () => ({ user: MAJA, identityLink: "taken" as const })) });
+
+    const { user, view } = await linkWithPassword();
+    await user.click(await screen.findByRole("button", { name: new RegExp(t("auth.mfa.wayRecovery")) }));
+    await user.type(screen.getByRole("textbox", { name: t("auth.mfa.recoveryCode") }), "AAAA-BBBB");
+    await user.click(screen.getByRole("button", { name: t("auth.mfa.submit") }));
+    await waitFor(() => expect(mocks.challenge.verify).toHaveBeenCalled());
+    mocks.session.phase = "ready";
+    view.rerender(<LoginPage />);
+
+    await waitFor(() => expect(history.navigations).toEqual([{ kind: "replace", href: "/link-account?result=taken" }]));
+  });
+
+  it.each([
+    ["pasted", null],
+    ["remembered from an invite page", "k7qm"],
+  ])("goes on to an account made through the provider with the invite %s", async (_case, remembered) => {
+    if (remembered !== null) window.sessionStorage.setItem("stellarr.pending-invite", remembered);
+    const user = userEvent.setup();
+    renderLogin();
+
+    await user.click(await screen.findByRole("button", { name: new RegExp(t("auth.unlinked.haveInvite")) }));
+    if (remembered === null) {
+      await user.type(screen.getByRole("textbox", { name: t("auth.invite.linkLabel") }), "https://chat.example/invite/k7qm");
+      await user.click(screen.getByRole("button", { name: t("auth.invite.open") }));
+    }
+
+    expect(window.sessionStorage.getItem("stellarr.pending-invite")).toBe("k7qm");
+    expect(history.navigations).toEqual([{ kind: "push", href: "/register?with=provider" }]);
+  });
+
+  it("offers no account through a provider that may not create one", async () => {
+    mocks.pendingIdentity = vi.fn(async () => ({ ...OLA, signUp: false }));
+    renderLogin();
+
+    expect(await screen.findByRole("button", { name: new RegExp(t("auth.unlinked.haveAccountNamed", { instance: "Stellarr Dev" })) })).toBeVisible();
+    expect(screen.queryByRole("button", { name: new RegExp(t("auth.unlinked.haveInvite")) })).toBeNull();
+  });
+
+  it("goes straight on to the account through the provider when that is where the visitor was headed", async () => {
+    mocks.search = "oidc=unlinked&returnUrl=%2Fregister%3Fwith%3Dprovider";
+    window.sessionStorage.setItem("stellarr.pending-invite", "k7qm");
+
+    renderLogin();
+
+    await waitFor(() => expect(history.navigations).toEqual([{ kind: "replace", href: "/register?with=provider" }]));
+  });
+
+  it("forgets the identity when the visitor goes back to the login", async () => {
+    const user = userEvent.setup();
+    renderLogin();
+
+    await user.click(await screen.findByRole("button", { name: t("auth.invite.backToLogin") }));
+
+    expect(mocks.dropPendingIdentity).toHaveBeenCalledOnce();
+    expect(history.navigations).toEqual([{ kind: "replace", href: "/login" }]);
+  });
+
+  it("says the provider's confirmation ran out when none waits for this browser", async () => {
+    mocks.pendingIdentity = vi.fn(async () => null);
+    renderLogin();
+
+    expect(await screen.findByRole("heading", { name: t("auth.unlinked.goneTitle") })).toBeVisible();
   });
 });
