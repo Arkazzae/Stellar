@@ -555,8 +555,7 @@
   /* Exactly the bottom band: its hairline is the band's top edge, and the
      name centres on the same line as the launcher and the composer. */
   .account{position:relative;border-top:1px solid var(--line-subtle);height:var(--dock-h);padding:0 8px 0 16px;display:flex;align-items:center;gap:6px;flex:none;--ui-button-disabled-opacity:0.4}
-  /* The status form's save button is disabled whenever nothing has changed and
-     keeps its own cursor, so only the row's own buttons are named here. */
+  /* Only the row's own buttons: the panel inside it styles its own controls. */
   .account > button:disabled{cursor:not-allowed}
   .account .who{min-width:0;flex:1}
   .account .who b{display:block;font-size:var(--text-13);font-weight:550;line-height:1.3}

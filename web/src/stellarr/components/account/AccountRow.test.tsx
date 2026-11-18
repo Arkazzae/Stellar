@@ -17,7 +17,6 @@ function setup(overrides: Partial<AccountRowProps> = {}) {
       customStatus: "",
       onSetPresence: vi.fn(),
       onSaveCustomStatus: vi.fn(),
-      onOpenSettings: vi.fn(),
       onLogout: vi.fn(),
     },
     ...overrides,
@@ -42,7 +41,6 @@ describe("AccountRow", () => {
         customStatus: "🎧 na słuchawkach",
         onSetPresence: vi.fn(),
         onSaveCustomStatus: vi.fn(),
-        onOpenSettings: vi.fn(),
         onLogout: vi.fn(),
       },
     });
