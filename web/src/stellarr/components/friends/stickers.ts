@@ -18,7 +18,7 @@ export const MESSAGES_STICKERS = {
   /** Friends, before the first friend, on the online tab as on the full list. */
   noFriends: "05-invite-friends",
   /** Friends, pending: no request either way. */
-  noRequests: "03-empty-channel",
+  noRequests: "10-reading",
   /** Friends, blocked: nobody is. */
   nobodyBlocked: "55-moderation",
   /** The form that adds a friend. */
@@ -26,7 +26,7 @@ export const MESSAGES_STICKERS = {
   /** Active now, with nobody active. */
   nobodyActive: "29-away",
   /** The first PIN for encrypted conversations. */
-  pinSetup: "42-do-not-disturb",
+  pinSetup: "41-avatar-online",
   /** The safety code two people compare. */
   safetyCode: "41-avatar-online",
 } as const satisfies Record<string, StickerName>;

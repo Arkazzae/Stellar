@@ -10,9 +10,9 @@ import styles from "./MascotArt.module.css";
 export type StickerName =
   | "01-welcome"
   | "02-first-message"
-  | "03-empty-channel"
   | "04-creating-channel"
   | "05-invite-friends"
+  | "10-reading"
   | "25-self-hosting"
   | "27-connecting"
   | "28-offline"
@@ -21,7 +21,6 @@ export type StickerName =
   | "33-finding-message"
   | "38-high-five"
   | "41-avatar-online"
-  | "42-do-not-disturb"
   | "51-quiet-night"
   | "55-moderation";
 
