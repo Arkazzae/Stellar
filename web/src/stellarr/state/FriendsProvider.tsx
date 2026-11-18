@@ -13,6 +13,7 @@ import {
 import type { ComposerChip } from "@/components/room/composer/ComposerChips";
 import type { TranscriptSectionVM } from "@/components/room/transcript/Transcript";
 import { translateMessage } from "@/i18n";
+import { ApiError } from "@/lib/api/errors";
 import { buildTranscript, initials } from "@/lib/format/format";
 import type {
   AddFriendResult,
@@ -25,6 +26,7 @@ import type {
   User,
 } from "@/ports";
 
+import { createSealedCollapser, encryptionLineFacts, type EncryptionLineFacts } from "./dmTimeline";
 import { useEmoji } from "./EmojiProvider";
 import { useLanguage } from "./LanguageProvider";
 import { createTranscriptPresenter, type PresentationContext } from "./chat/present";
@@ -48,6 +50,10 @@ export interface FriendsValue {
   active: DmConversation | null;
   /** The open conversation's transcript, grouped the way the room renders it. */
   sections: TranscriptSectionVM[];
+  /** What the open conversation's encryption lines mean now. */
+  encryptionLines: EncryptionLineFacts;
+  /** Decrypts an encrypted file shown as a link; null when it cannot be read. */
+  openAttachment: (url: string) => Promise<{ url: string; type: string } | null>;
 
   /**
    * Opens the conversation with this person, creating it if there is none, and
@@ -90,12 +96,15 @@ const FriendsContext = createContext<FriendsValue | null>(null);
 
 const NO_MESSAGES: Message[] = [];
 const NO_SECTIONS: TranscriptSectionVM[] = [];
+const NO_LINES: EncryptionLineFacts = { liveRequestId: null, declinedIds: new Set() };
 const NO_MENTIONS: PresentationContext["mentions"] = new Map();
 const NO_PINS: PresentationContext["pinnedIds"] = new Set();
 const MAX_ATTACHMENTS = 10;
 
 interface PendingChip extends ComposerChip {
   file: File;
+  /** Uploads are made for one conversation: encrypted there or not. */
+  conversationId: string;
   attachment: Attachment | null;
 }
 
@@ -105,7 +114,7 @@ function useSocial<T>(port: FriendsPort, read: () => T): T {
 }
 
 /** The attachments waiting to go out with the next message. */
-function useAttachments(port: FriendsPort) {
+function useAttachments(port: FriendsPort, conversationId: string | null) {
   const { t } = useLanguage();
   const [chips, setChips] = useState<PendingChip[]>([]);
 
@@ -118,7 +127,7 @@ function useAttachments(port: FriendsPort) {
   const upload = useCallback(
     (chip: PendingChip) => {
       patch(chip.id, { status: "uploading", error: undefined });
-      void port.uploadAttachment(chip.file).then(
+      void port.uploadAttachment(chip.conversationId, chip.file).then(
         (attachment) =>
           patch(chip.id, { status: "ready", attachment, error: undefined }),
         () => patch(chip.id, { status: "error", error: t("attachment.uploadFailed") }),
@@ -129,19 +138,21 @@ function useAttachments(port: FriendsPort) {
 
   const attach = useCallback(
     (files: File[]) => {
+      if (conversationId === null) return;
       for (const file of files.slice(0, Math.max(0, MAX_ATTACHMENTS - chips.length))) {
         const chip: PendingChip = {
           id: `dm-chip-${crypto.randomUUID()}`,
           name: file.name,
           status: "uploading",
           file,
+          conversationId,
           attachment: null,
         };
         setChips((current) => [...current, chip]);
         upload(chip);
       }
     },
-    [chips.length, upload],
+    [chips.length, upload, conversationId],
   );
 
   const retry = useCallback(
@@ -170,6 +181,11 @@ function useAttachments(port: FriendsPort) {
     setChips((current) => current.filter((chip) => !ids.has(chip.id)));
   }, []);
 
+  /** The conversation's switch moved since they were attached: upload them again as it is now. */
+  const reupload = useCallback(() => {
+    for (const chip of chips) upload(chip);
+  }, [chips, upload]);
+
   const view = useMemo<ComposerChip[]>(
     () =>
       chips.map(({ id, name, status, error }) => ({
@@ -181,7 +197,7 @@ function useAttachments(port: FriendsPort) {
     [chips],
   );
 
-  return { chips, view, attach, retry, remove, reorder, discard };
+  return { chips, view, attach, retry, remove, reorder, discard, reupload };
 }
 
 /**
@@ -213,7 +229,8 @@ export function FriendsProvider({ children }: { children: ReactNode }) {
     remove: removeChip,
     reorder: reorderChips,
     discard: discardChips,
-  } = useAttachments(port);
+    reupload: reuploadChips,
+  } = useAttachments(port, activeDmId);
   const failedSend = useRef<{ fingerprint: string; clientMessageId: string } | null>(
     null,
   );
@@ -301,14 +318,27 @@ export function FriendsProvider({ children }: { children: ReactNode }) {
     };
   }, [user, active?.peer, customEmoji, t]);
 
+  const collapseSealed = useMemo(() => createSealedCollapser(), []);
   const sections = useMemo<TranscriptSectionVM[]>(() => {
     if (activeDmId === null) {
       // Presenting nothing releases the conversation that was just closed.
       present([], presentation);
       return NO_SECTIONS;
     }
-    return present(buildTranscript(messages, new Date(), locale), presentation);
-  }, [activeDmId, messages, locale, present, presentation]);
+    const shown = collapseSealed(messages);
+    return present(buildTranscript(shown, new Date(), locale), presentation);
+  }, [activeDmId, messages, locale, present, presentation, collapseSealed]);
+
+  const activeEncryption = active?.encryption;
+  const encryptionLines = useMemo(
+    () => (activeDmId === null ? NO_LINES : encryptionLineFacts(messages, activeEncryption)),
+    [activeDmId, messages, activeEncryption],
+  );
+
+  const openAttachment = useCallback(
+    (url: string) => port.openAttachment?.(url) ?? Promise.resolve(null),
+    [port],
+  );
 
   const messagePerson = useCallback(
     (userId: string, text?: string) => {
@@ -354,6 +384,7 @@ export function FriendsProvider({ children }: { children: ReactNode }) {
         await port.sendDm(activeDmId, { content: text, attachmentIds, clientMessageId });
       } catch (cause) {
         failedSend.current = { fingerprint, clientMessageId };
+        if (cause instanceof ApiError && cause.code === "attachment-kind-mismatch") reuploadChips();
         throw cause;
       }
       if (failedSend.current?.clientMessageId === clientMessageId) {
@@ -361,7 +392,7 @@ export function FriendsProvider({ children }: { children: ReactNode }) {
       }
       discardChips(new Set(chips.map((chip) => chip.id)));
     },
-    [port, activeDmId, chips, discardChips],
+    [port, activeDmId, chips, discardChips, reuploadChips],
   );
 
   const joinConversationCall = useCallback(
@@ -456,6 +487,8 @@ export function FriendsProvider({ children }: { children: ReactNode }) {
       unread: conversations.reduce((total, item) => total + item.unread, 0),
       active,
       sections,
+      encryptionLines,
+      openAttachment,
       messagePerson,
       callPerson,
       callConversation,
@@ -479,6 +512,8 @@ export function FriendsProvider({ children }: { children: ReactNode }) {
       conversations,
       active,
       sections,
+      encryptionLines,
+      openAttachment,
       messagePerson,
       callPerson,
       callConversation,

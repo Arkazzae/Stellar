@@ -1,9 +1,19 @@
 import type {
   Attachment,
+  ConversationEncryption,
   Message,
   User,
   UserId,
   VoiceOccupant,
+} from "@/lib/api/types";
+
+export type {
+  ConversationEncryption,
+  ConversationEncryptionState,
+  SealedMessages,
+  SealedReason,
+  TimelineLine,
+  TimelineLineKind,
 } from "@/lib/api/types";
 
 import type { Unsubscribe } from "./chat";
@@ -34,11 +44,16 @@ export interface DmConversation {
   id: DmId;
   /** The other person; self is never in here. */
   peer: User;
-  /** Newest message, for the rail's second line. Absent on an empty thread. */
+  /**
+   * Newest message, for the rail's second line. Absent on an empty thread.
+   * Already decrypted, or sealed; never a line about someone's keys.
+   */
   lastMessage?: Message;
   unread: number;
   /** ISO 8601 of `lastMessage`, or of the moment the thread was opened. */
   updatedAt: string;
+  /** Where the end-to-end switch stands; absent means off. */
+  encryption?: ConversationEncryption;
   /** Ephemeral RTC occupancy; absent or empty means there is no call to join. */
   callParticipants?: readonly VoiceOccupant[];
   /** Stable for one occupancy lifetime, through mute and speaking updates. */
@@ -77,11 +92,24 @@ export interface FriendsPort {
 
   /** Opens (or finds) the conversation with `userId` and returns its id. */
   openConversation(userId: UserId): Promise<DmId>;
+  /**
+   * Sends plain or encrypted, as the conversation's switch stands. The
+   * attachments are uploads `uploadAttachment` made for this conversation.
+   */
   sendDm(
     id: DmId,
     input: { content: string; attachmentIds: string[]; clientMessageId: string },
   ): Promise<Message>;
-  uploadAttachment(file: File): Promise<Attachment>;
+  /**
+   * Uploads a file for a message in this conversation: encrypted in the
+   * browser first while the conversation is encrypted.
+   */
+  uploadAttachment(id: DmId, file: File): Promise<Attachment>;
+  /**
+   * An encrypted file that is shown as a link (a document, a video), decrypted
+   * on demand. The link is the attachment's `url`, which starts with `e2ee:`.
+   */
+  openAttachment?(url: string): Promise<{ url: string; type: string } | null>;
   markRead(id: DmId): void;
   /** Rejects the current private RTC attempt and releases its caller. */
   declineCall(id: DmId): Promise<void>;
