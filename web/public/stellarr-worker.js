@@ -373,14 +373,21 @@ async function takeRelease() {
   return manifest.id;
 }
 
-// Messages that arrive while a release is being taken share the one run.
+// Messages that arrive while a release is being taken wait for that run and
+// then take whatever the server serves by then, since a run that began before
+// a release changed would otherwise answer for the old one.
 let taking = null;
 
 function takeOnce() {
-  taking = taking || takeRelease().finally(() => {
-    taking = null;
+  const run = taking === null ? takeRelease() : taking.then(takeRelease, takeRelease);
+  taking = run;
+  run.then(
+    () => undefined,
+    () => undefined,
+  ).then(() => {
+    if (taking === run) taking = null;
   });
-  return taking;
+  return run;
 }
 
 self.addEventListener("install", (event) => {
