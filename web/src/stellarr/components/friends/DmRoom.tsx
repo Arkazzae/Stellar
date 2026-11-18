@@ -33,6 +33,11 @@ export interface DmRoomProps {
   notificationButton?: ReactNode;
   /** End-to-end encryption is on: a lock beside the name. */
   encrypted?: boolean;
+  /**
+   * Why this browser cannot call in this conversation, which is encrypted:
+   * the call buttons stay, unusable, and say so.
+   */
+  callBlocked?: string;
   /** Under the header: the conversation, or its call while you are in it. */
   children: ReactNode;
   /** The room, which is what a call asks to put into full screen. */
@@ -66,6 +71,7 @@ export function DmRoom({
   chatUnread = 0,
   notificationButton,
   encrypted = false,
+  callBlocked,
   children,
   ref,
 }: DmRoomProps) {
@@ -79,6 +85,10 @@ export function DmRoom({
     ? t("dm.connected", { name })
     : t(callActive ? "dm.join" : "dm.call", { name });
   const cameraLabel = t(videoOn ? "voiceBar.cameraStop" : "voiceBar.cameraStart");
+  // A blocked call keeps its buttons in reach, so the reason can be read
+  // from them, and does nothing when pressed.
+  const blocked = callBlocked !== undefined && !inCall;
+  const blockedProps = blocked ? { "aria-disabled": true, "aria-description": callBlocked } : {};
 
   return (
     <main className={inCall ? "room dm-room in-call" : "room dm-room"} ref={ref}>
@@ -126,20 +136,22 @@ export function DmRoom({
           <button
             type="button"
             className={inCall ? "pill-btn on" : "pill-btn"}
-            title={callTitle}
+            title={blocked ? callBlocked : callTitle}
             aria-label={callLabel}
             aria-pressed={inCall}
-            onClick={onCall}
+            {...blockedProps}
+            onClick={blocked ? undefined : onCall}
           >
             <Icon name="phone" size={16} />
           </button>
           <button
             type="button"
             className={videoOn ? "pill-btn on" : "pill-btn"}
-            title={cameraLabel}
+            title={blocked ? callBlocked : cameraLabel}
             aria-label={cameraLabel}
             aria-pressed={videoOn}
-            onClick={onVideoCall}
+            {...blockedProps}
+            onClick={blocked ? undefined : onVideoCall}
           >
             <Icon name="camera" size={16} />
           </button>

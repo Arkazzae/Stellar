@@ -593,6 +593,22 @@ export const pl = {
   "dm.writeTo": "Napisz do @{name}",
   "dm.youPrefix": "Ty: {content}",
   "dm.calling": "Dzwonię…",
+  "dm.callEncrypted": "Szyfrowane end-to-end",
+  "voice.undecryptableAudio": "Nie można odszyfrować dźwięku od {name}",
+  "voice.undecryptableVideo": "Nie można odszyfrować obrazu od {name}",
+  "voice.undecryptableBoth": "Nie można odszyfrować dźwięku ani obrazu od {name}",
+  "dm.callBlocked.unsupported":
+    "Ta rozmowa jest szyfrowana end-to-end, a\u00a0ta przeglądarka nie potrafi szyfrować połączeń. Zadzwoń z\u00a0innej przeglądarki.",
+  "dm.callBlocked.insecure":
+    "Ta rozmowa jest szyfrowana end-to-end, a\u00a0ta strona nie jest otwarta przez HTTPS. Otwórz ją przez HTTPS, żeby zadzwonić.",
+  "dm.callBlocked.deviceLimit":
+    "Twoje konto ma klucze na tylu przeglądarkach, na ilu może. Usuń klucze starej w\u00a0ustawieniach szyfrowania, żeby dzwonić stąd.",
+  "dm.incomingBlocked.unsupported":
+    "Nie odbierzesz tutaj: rozmowa jest szyfrowana end-to-end, a\u00a0ta przeglądarka nie potrafi szyfrować połączeń.",
+  "dm.incomingBlocked.insecure":
+    "Nie odbierzesz tutaj: rozmowa jest szyfrowana end-to-end, a\u00a0ta strona nie jest otwarta przez HTTPS.",
+  "dm.incomingBlocked.deviceLimit":
+    "Nie odbierzesz tutaj: Twoje konto ma klucze na tylu przeglądarkach, na ilu może.",
   "dm.you": "Ty",
   "dm.chat": "Czat",
   "dm.closeChat": "Zamknij czat",

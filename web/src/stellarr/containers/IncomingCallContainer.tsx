@@ -20,6 +20,8 @@ import {
 import type { DmConversation } from "@/ports";
 import { useAccount, useFriends, useLanguage, useVoice } from "@/state/hooks";
 
+import { INCOMING_BLOCKED_KEY, useCallBlock } from "./useCallBlock";
+
 type RingingConversation = DmConversation & { callId: string };
 
 /**
@@ -102,6 +104,9 @@ export function IncomingCallContainer() {
   }, [androidAction, friends]);
 
   const incoming = findIncoming(friends.conversations, joinedChannelId);
+  // An encrypted conversation's call is answered encrypted, or not here.
+  const block = useCallBlock(incoming);
+  const encrypted = incoming?.encryption?.state === "on" && block === null;
   const callId = incoming?.callId ?? null;
   const conversationId = incoming?.id ?? null;
   const callerName = incoming?.peer.displayName ?? null;
@@ -165,14 +170,19 @@ export function IncomingCallContainer() {
       />
       <span className="dm-call-copy">
         <b>{peer.displayName}</b>
-        <span>{t("dm.callingYou")}</span>
+        {block !== null ? (
+          <span className="dm-call-blocked">{t(INCOMING_BLOCKED_KEY[block])}</span>
+        ) : (
+          <span>{encrypted ? `${t("dm.callingYou")} · ${t("dm.callEncrypted")}` : t("dm.callingYou")}</span>
+        )}
       </span>
       <button
         type="button"
         className="dm-call-answer"
         title={t("dm.answer")}
         aria-label={t("dm.answer")}
-        onClick={() => friends.callConversation(incoming.id)}
+        {...(block === null ? {} : { "aria-disabled": true })}
+        onClick={block === null ? () => friends.callConversation(incoming.id) : undefined}
       >
         <Icon name="phone" size={18} />
       </button>

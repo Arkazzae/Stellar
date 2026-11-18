@@ -36,7 +36,7 @@ export function ParticipantTile({
   person,
   label,
   className,
-  stream,
+  stream: given,
   held = false,
   local = false,
   volume,
@@ -50,6 +50,8 @@ export function ParticipantTile({
   const video = useRef<HTMLVideoElement>(null);
   const menu = useContextMenu();
   const { t } = useLanguage();
+  // A picture that does not decrypt is no picture: nothing of it is played.
+  const stream = person.undecryptable?.video ? null : given;
 
   // `srcObject` is a property, never an attribute. Clearing it on the way out
   // drops the element's hold on the tracks, so a stopped camera does not leave
@@ -62,6 +64,17 @@ export function ParticipantTile({
       element.srcObject = null;
     };
   }, [stream]);
+
+  // In an encrypted call: what of theirs reaches this side and does not decrypt.
+  const undecryptable = person.undecryptable;
+  const sealed =
+    undecryptable === undefined || (!undecryptable.audio && !undecryptable.video)
+      ? null
+      : undecryptable.audio && undecryptable.video
+        ? "voice.undecryptableBoth"
+        : undecryptable.audio
+          ? "voice.undecryptableAudio"
+          : "voice.undecryptableVideo";
 
   // Your own tile has nobody to turn down, so it never offers the strip.
   const mixer =
@@ -126,7 +139,11 @@ export function ParticipantTile({
           size="xl"
         />
       )}
-      {held && !stream ? (
+      {sealed !== null ? (
+        <span className="t-held t-sealed" role="status">
+          {t(sealed, { name: person.displayName })}
+        </span>
+      ) : held && !stream ? (
         <span className="t-held" role="status">
           {t("voice.pictureHeldBack")}
         </span>

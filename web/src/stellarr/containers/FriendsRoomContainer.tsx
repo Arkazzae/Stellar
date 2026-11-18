@@ -11,6 +11,7 @@ import { DmChatContainer } from "./DmChatContainer";
 import { FriendsActivityContainer } from "./FriendsActivityContainer";
 import { NotificationInboxButton } from "./NotificationInboxContainer";
 import { toPerson } from "./toPerson";
+import { CALL_BLOCKED_KEY, useCallBlock } from "./useCallBlock";
 
 /**
  * How long a video call waits before switching the camera on. The camera can
@@ -28,7 +29,7 @@ export function FriendsRoomContainer() {
   const friends = useFriends();
   const profile = useProfile();
   const voice = useVoice();
-  const { locale } = useLanguage();
+  const { locale, t } = useLanguage();
   // Full screen takes the whole room, as on a channel: the bar's narrow layout
   // follows the room's width, which then is the screen's.
   const room = useRef<HTMLElement>(null);
@@ -68,6 +69,7 @@ export function FriendsRoomContainer() {
   );
 
   const conversation = friends.active;
+  const callBlock = useCallBlock(conversation);
   if (conversation !== null) {
     const inCall = voice.channelId === conversation.id;
     const status = conversation.peer.customStatus?.trim();
@@ -97,6 +99,7 @@ export function FriendsRoomContainer() {
         chatUnread={conversation.unread}
         notificationButton={<NotificationInboxButton />}
         encrypted={conversation.encryption?.state === "on"}
+        {...(callBlock === null ? {} : { callBlocked: t(CALL_BLOCKED_KEY[callBlock]) })}
       >
         {/* The call has the room while you are in it; its messages move
             into the column beside it. */}

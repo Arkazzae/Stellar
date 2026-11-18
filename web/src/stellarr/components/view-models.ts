@@ -20,6 +20,8 @@ export interface PersonVM {
   muted?: boolean;
   /** Overrides the id-derived colour when the server supplies one. */
   color?: string;
+  /** In an encrypted call: their sound or picture arrives but does not decrypt. */
+  undecryptable?: { audio: boolean; video: boolean };
 }
 
 /**
@@ -174,6 +176,8 @@ export interface CallVM {
   channelName: string;
   /** A direct-conversation RTC room rather than a public server channel. */
   privateCall?: boolean;
+  /** This side encrypts the call end to end. */
+  encrypted?: boolean;
   /** Epoch ms the call started, for the dock's elapsed counter. */
   startedAt: number;
   muted: boolean;
