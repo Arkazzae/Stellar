@@ -131,7 +131,7 @@ export interface PreloadPlan {
 }
 
 /** A chunk and every chunk it imports, directly or not. */
-function staticClosure(chunks: ReadonlyMap<string, Rollup.OutputChunk>, fileName: string, into = new Set<string>()): Set<string> {
+export function staticClosure(chunks: ReadonlyMap<string, Rollup.OutputChunk>, fileName: string, into = new Set<string>()): Set<string> {
   if (into.has(fileName)) return into;
   into.add(fileName);
   for (const imported of chunks.get(fileName)?.imports ?? []) staticClosure(chunks, imported, into);
