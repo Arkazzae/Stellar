@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 
-import { releaseFile, releaseId, RELEASE_META, stampDocument } from "./release";
+import { RELEASE_META as CLIENT_META, RELEASE_PATH as CLIENT_PATH } from "./src/stellarr/lib/platform/release";
+import { releaseFile, releaseId, RELEASE_META, RELEASE_PATH, stampDocument } from "./release";
 
 const bytes = (text: string) => new TextEncoder().encode(text);
 const files = (entries: Record<string, string>) => new Map(Object.entries(entries).map(([path, text]) => [path, bytes(text)]));
@@ -46,5 +47,12 @@ describe("what the build writes the id into", () => {
 
   it("writes the id into the file the page asks for", () => {
     expect(JSON.parse(releaseFile("abc"))).toEqual({ id: "abc" });
+  });
+});
+
+describe("the page's side of it", () => {
+  it("asks for the file and the meta the build writes", () => {
+    expect(CLIENT_PATH).toBe(RELEASE_PATH);
+    expect(CLIENT_META).toBe(RELEASE_META);
   });
 });
