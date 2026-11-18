@@ -162,6 +162,18 @@ describe("FriendsProvider derived state", () => {
     expect(harness.port.markRead).toHaveBeenCalledWith("dm-1");
     expect(result.current.friends.active).toBe(CONVERSATION);
   });
+
+  it("leaves the conversation unread during its call while the chat is shut, and reads it when the chat opens", () => {
+    harness.port = stubPort();
+    harness.voice = { ...harness.voice, privateCall: true, channelId: "dm-1" };
+    const { result } = mount();
+
+    act(() => result.current.ui.openDm("dm-1"));
+    expect(harness.port.markRead).not.toHaveBeenCalled();
+
+    act(() => result.current.ui.setCallChatOpen(true));
+    expect(harness.port.markRead).toHaveBeenCalledExactlyOnceWith("dm-1");
+  });
 });
 
 describe("FriendsProvider realtime", () => {

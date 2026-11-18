@@ -6,6 +6,9 @@ import type { PersonVM } from "@/components/view-models";
 import { PRESENCE_LABEL } from "@/ports";
 import { useLanguage } from "@/state/LanguageProvider";
 
+/** The most a pill spells out, as on a channel. */
+const MAX_UNREAD_SHOWN = 99;
+
 export interface DmRoomProps {
   peer: PersonVM;
   /** What the person says about themselves, beside the presence word in the header. */
@@ -25,6 +28,8 @@ export interface DmRoomProps {
   /** The messages beside the call, which the header offers while you are in it. */
   chatOpen: boolean;
   onToggleChat: () => void;
+  /** Messages that arrived while the chat was shut; its button counts them. */
+  chatUnread?: number;
   notificationButton?: ReactNode;
   /** Under the header: the conversation, or its call while you are in it. */
   children: ReactNode;
@@ -56,6 +61,7 @@ export function DmRoom({
   onVideoCall,
   chatOpen,
   onToggleChat,
+  chatUnread = 0,
   notificationButton,
   children,
   ref,
@@ -132,13 +138,20 @@ export function DmRoom({
           {inCall ? (
             <button
               type="button"
-              className="pill-btn"
+              className="pill-btn dm-chat-toggle"
               title={t("dm.chat")}
-              aria-label={t("dm.chat")}
+              aria-label={
+                chatUnread > 0 ? t("dm.chatUnread", { count: chatUnread }) : t("dm.chat")
+              }
               aria-pressed={chatOpen}
               onClick={onToggleChat}
             >
               <Icon name="thread" size={16} />
+              {chatUnread > 0 ? (
+                <span className="ch-unread" aria-hidden="true">
+                  {chatUnread > MAX_UNREAD_SHOWN ? `${MAX_UNREAD_SHOWN}+` : chatUnread}
+                </span>
+              ) : null}
             </button>
           ) : (
             <button

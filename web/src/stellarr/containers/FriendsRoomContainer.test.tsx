@@ -204,7 +204,7 @@ describe("FriendsRoomContainer with a conversation", () => {
 
   it("shows that conversation, not the list, with what the person says about themselves", () => {
     mocks.friends = fakeFriends({
-      active: { ...conversation, peer: { ...ADA, customStatus: "  w trasie  " } },
+      active: { ...conversation, unread: 2, peer: { ...ADA, customStatus: "  w trasie  " } },
     });
     render(<FriendsRoomContainer />);
 
@@ -218,6 +218,7 @@ describe("FriendsRoomContainer with a conversation", () => {
       onToggleProfilePanel: mocks.ui.toggleProfilePanel,
       chatOpen: mocks.ui.callChatOpen,
       onToggleChat: mocks.ui.toggleCallChat,
+      chatUnread: 2,
     });
   });
 

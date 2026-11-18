@@ -118,6 +118,13 @@ describe("DmRoom call", () => {
     expect(props.onToggleProfilePanel).toHaveBeenCalledOnce();
   });
 
+  it("counts on the chat's button the messages that arrived while it was shut", () => {
+    openRoom({ inCall: true, chatUnread: 3 });
+
+    const chat = screen.getByRole("button", { name: "Czat, nieprzeczytane: 3" });
+    expect(chat).toHaveTextContent("3");
+  });
+
   it("turns the camera on and off from the header", async () => {
     const { user, props } = openRoom();
 

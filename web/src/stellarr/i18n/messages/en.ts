@@ -567,6 +567,7 @@ export const en = {
   "dm.you": "You",
   "dm.chat": "Chat",
   "dm.closeChat": "Close chat",
+  "dm.chatUnread": "Chat, {count} unread",
 
   "app.loading": "Loading server…",
   "app.loadFailed": "The server could not be loaded",
