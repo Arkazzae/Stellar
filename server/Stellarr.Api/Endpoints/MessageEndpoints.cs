@@ -117,7 +117,7 @@ public static class MessageEndpoints
         var attachments = submission.AttachmentIds.Length == 0
             ? []
             : await db.ImageAttachments
-                .Where(x => submission.AttachmentIds.Contains(x.Id) && x.UploadedById == userId)
+                .Where(x => submission.AttachmentIds.Contains(x.Id) && x.UploadedById == userId && !x.IsEncrypted)
                 .ToListAsync(cancellationToken);
         if (attachments.Count != submission.AttachmentIds.Length)
         {

@@ -309,6 +309,7 @@ app.MapNotificationEndpoints();
 app.MapPushNotificationEndpoints();
 app.MapSocialEndpoints();
 app.MapDirectMessageEndpoints();
+app.MapDirectEncryptionEndpoints();
 app.MapEncryptionEndpoints();
 app.MapEmojiEndpoints();
 app.MapSoundboardEndpoints();
