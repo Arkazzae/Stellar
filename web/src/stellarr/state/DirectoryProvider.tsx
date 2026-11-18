@@ -9,6 +9,7 @@ import {
   type ReactNode,
 } from "react";
 
+import type { ChannelMove } from "@/components/view-models";
 import type { NewServer, Server, VoiceOccupant } from "@/ports";
 
 import {
@@ -23,11 +24,11 @@ import { usePorts } from "./PortsProvider";
 
 export interface DirectoryValue extends DirectoryView {
   /**
-   * Reorders channels within one rail group, a section or the unsectioned
-   * bucket, and leaves every other channel where it was. `newGroupOrder` is the
-   * complete, freshly ordered id list of that one group.
+   * Places a channel dropped in the rail and leaves every other channel where
+   * it was. A drop into another group changes the channel's section in the
+   * same request as the order.
    */
-  reorderChannelGroup: (newGroupOrder: string[]) => Promise<void>;
+  moveChannel: (move: ChannelMove) => Promise<void>;
   createServer: (input: NewServer) => Promise<Server>;
   discoverServers: () => Promise<Server[]>;
   joinServer: (serverId: string) => Promise<Server>;
@@ -105,8 +106,13 @@ export function DirectoryProvider({ children }: { children: ReactNode }) {
   const value = useMemo<DirectoryValue>(
     () => ({
       ...deriveDirectoryView(snapshot, textChannels),
-      reorderChannelGroup: (newGroupOrder) =>
-        directory.reorderChannels(spliceGroupOrder(snapshot.channels, newGroupOrder)),
+      moveChannel: ({ channelId, sectionId, order }) => {
+        const from = snapshot.channels.find((channel) => channel.id === channelId)?.sectionId;
+        return directory.reorderChannels(
+          spliceGroupOrder(snapshot.channels, order),
+          (from ?? null) === sectionId ? undefined : { channelId, sectionId },
+        );
+      },
       createServer: directory.createServer,
       discoverServers: directory.discoverServers,
       joinServer: directory.joinServer,

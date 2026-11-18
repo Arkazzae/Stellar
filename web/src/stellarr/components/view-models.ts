@@ -86,6 +86,15 @@ export interface SectionVM {
   name: string;
 }
 
+/** A channel dropped in the rail, in its own group or another one. */
+export interface ChannelMove {
+  channelId: string;
+  /** The section of the group it landed in; null outside sections. */
+  sectionId: string | null;
+  /** That group's complete id list in its new order, the moved channel included. */
+  order: string[];
+}
+
 /** A compact thread row nested below its text channel in the rail. */
 export interface ChannelThreadVM {
   id: string;

@@ -41,8 +41,13 @@ export function channelCalls(): ChannelCalls {
     deleteChannel: (channelId, signal) =>
       deleteResource(route`/api/admin/channels/${channelId}`, signal),
 
-    reorderChannels: (channelIds, signal) =>
-      sendVoid("PUT", "/api/admin/channels/order", { channelIds }, signal),
+    reorderChannels: (channelIds, move, signal) =>
+      sendVoid(
+        "PUT",
+        "/api/admin/channels/order",
+        move === undefined ? { channelIds } : { channelIds, move },
+        signal,
+      ),
 
     assignChannelSection: (channelId, sectionId, signal) =>
       sendVoid("PATCH", route`/api/admin/channels/${channelId}/section`, { sectionId }, signal),

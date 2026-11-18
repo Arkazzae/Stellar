@@ -18,8 +18,8 @@ export interface RailTextListProps {
   /** Already gated on who may edit; absent hides the cog. */
   onOpenSettings?: (channelId: string) => void;
   menuFor?: ChannelMenuRaiser;
-  /** The list's complete id order after a drop that changed it. */
-  onReorder: (order: string[]) => void;
+  /** The list's complete id order after a drop that changed it, and the channel that moved. */
+  onReorder: (order: string[], channelId: string) => void;
 }
 
 /**

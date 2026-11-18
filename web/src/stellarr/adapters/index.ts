@@ -81,7 +81,7 @@ function withProfileOf(member: User, account: Account): User {
 
 /**
  * Keeps the directory in step with what the hub announces about the server and
- * the people on it. Returns one function that cancels all four subscriptions.
+ * the people on it. Returns one function that cancels every subscription.
  */
 function followHub(realtime: RealtimeClient, store: DirectoryStore): () => void {
   const isCurrent = (serverId: string): boolean =>
@@ -89,6 +89,9 @@ function followHub(realtime: RealtimeClient, store: DirectoryStore): () => void 
   const subscriptions = [
     realtime.on("UserUpdated", (user) => store.setUser(user)),
     realtime.on("ServerUpdated", (server) => store.setServer(server)),
+    realtime.on("ChannelLayoutChanged", ({ serverId, channels }) => {
+      if (isCurrent(serverId)) store.setChannelLayout(channels);
+    }),
     realtime.on("PermissionsChanged", ({ serverId, permissions }) => {
       if (isCurrent(serverId)) store.setPermissions(permissions);
     }),
@@ -243,7 +246,7 @@ export function createRuntime(options: RuntimeOptions = {}): Runtime {
     connection: createConnectionAdapter(realtime),
     directory: createDirectoryAdapter(
       store,
-      (orderedIds) => api.reorderChannels(orderedIds),
+      (orderedIds, move) => api.reorderChannels(orderedIds, move),
       (orderedIds) => api.reorderSections(orderedIds),
       {
         create: (input) => api.createServer(input),

@@ -43,6 +43,13 @@ describe("channel calls", () => {
       body: { channelIds: ["c-2", "c-1"] },
     },
     {
+      name: "reorderChannels with a channel moved to another section",
+      run: () => calls.reorderChannels(["c-2", "c-1"], { channelId: "c-1", sectionId: null }),
+      method: "PUT",
+      url: "/api/admin/channels/order",
+      body: { channelIds: ["c-2", "c-1"], move: { channelId: "c-1", sectionId: null } },
+    },
+    {
       name: "assignChannelSection to a section",
       run: () => calls.assignChannelSection("c-1", "sec-1"),
       method: "PATCH",

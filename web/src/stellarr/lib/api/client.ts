@@ -29,6 +29,7 @@ import type {
   Channel,
   ChannelId,
   ChannelReadChanged,
+  ChannelSectionMove,
   ChannelUpdateInput,
   ClientSettingsSection,
   ClientSettingsSnapshot,
@@ -424,7 +425,12 @@ export interface AdminApiClient {
     signal?: AbortSignal,
   ): Promise<Channel>;
   deleteChannel(channelId: string, signal?: AbortSignal): Promise<void>;
-  reorderChannels(channelIds: string[], signal?: AbortSignal): Promise<void>;
+  /** The whole order, and with `move` one channel filed under another section in the same change. */
+  reorderChannels(
+    channelIds: string[],
+    move?: ChannelSectionMove,
+    signal?: AbortSignal,
+  ): Promise<void>;
   createSection(input: { name: string }, signal?: AbortSignal): Promise<Section>;
   updateSection(
     sectionId: string,
