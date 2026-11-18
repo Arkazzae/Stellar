@@ -6,24 +6,23 @@ import type { DmConversationVM } from "@/components/view-models";
 import { PRESENCE_LABEL } from "@/ports";
 import { useLanguage } from "@/state/hooks";
 
-/**
- * A row shows the last message rather than a status, so the presence dot is the
- * only sign of whether the person is around. It needs a word behind it for
- * anyone who cannot see the colour.
- */
+/** The most a pill spells out, as on a channel. */
+const MAX_COUNT_SHOWN = 99;
+
+const counted = (count: number) =>
+  count > MAX_COUNT_SHOWN ? `${MAX_COUNT_SHOWN}+` : String(count);
+
 export interface DmRailProps {
-  /** Returns directly to the last selected server channel. */
-  onBackToServer: () => void;
   /** True while the Friends view is showing rather than a conversation. */
   friendsActive: boolean;
   onOpenFriends: () => void;
-  /** Incoming friend requests waiting for an answer; the badge on the Friends row. */
+  /** Incoming friend requests waiting for an answer; the count on the Friends row. */
   pending: number;
   conversations: DmConversationVM[];
   activeDmId: string | null;
   onSelect: (id: string) => void;
-  /** Opens the Friends view on its "add a friend" tab. */
-  onAddFriend: () => void;
+  /** Opens the Friends view on everyone, with its search ready for a name. */
+  onNewConversation: () => void;
   /** `<VoiceDock>`, composed by the container. */
   voiceDock?: ReactNode;
   /** `<AccountRow>`, composed by the container. */
@@ -42,16 +41,21 @@ interface ConversationRowProps {
   onSelect: (id: string) => void;
 }
 
+/**
+ * A row shows the last message rather than a status, so the presence dot is
+ * the only sign of whether the person is around. It needs a word behind it for
+ * anyone who cannot see the colour.
+ */
 function ConversationRow({ conversation, current, onSelect }: ConversationRowProps) {
   const { t } = useLanguage();
-  const { peer } = conversation;
+  const { peer, unread, time } = conversation;
   const presence = t(PRESENCE_LABEL[peer.presence]);
 
   return (
-    <li className={conversation.unread > 0 ? "dm-item unread" : "dm-item"}>
+    <li>
       <button
         type="button"
-        className="dm-row"
+        className={unread > 0 ? "dm-row unread" : "dm-row"}
         aria-current={current ? "page" : undefined}
         onClick={() => onSelect(conversation.id)}
       >
@@ -64,24 +68,31 @@ function ConversationRow({ conversation, current, onSelect }: ConversationRowPro
           title={presence}
         />
         <span className="dm-txt">
-          <b>{peer.displayName}</b>
-          <span className="sr-only">{presence}</span>
-          <span className="dm-last">{conversation.preview}</span>
+          {/* The name line also holds whatever marks the conversation itself
+              before the name, so the name and the time stay on one row. */}
+          <span className="dm-line">
+            <b className="dm-name">{peer.displayName}</b>
+            <span className="sr-only">{presence}</span>
+            {time === undefined ? null : (
+              <time className="dm-time" dateTime={time.iso}>
+                {time.text}
+              </time>
+            )}
+          </span>
+          <span className="dm-line">
+            <span className="dm-last">{conversation.preview}</span>
+            {unread > 0 ? (
+              <span className="ch-unread">
+                {counted(unread)}
+                <span className="sr-only">{t("shell.unreadConversation")}</span>
+              </span>
+            ) : conversation.callActive ? (
+              <span className="dm-call-live" title={t("shell.activeCall")} aria-label={t("shell.activeCall")}>
+                <Icon name="phone" size={14} />
+              </span>
+            ) : null}
+          </span>
         </span>
-        {conversation.unread > 0 ? (
-          <span className="dm-unread">
-            {conversation.unread}
-            <span className="sr-only">{t("shell.unreadConversation")}</span>
-          </span>
-        ) : conversation.callActive ? (
-          <span
-            className="dm-call-live"
-            title={t("shell.activeCall")}
-            aria-label={t("shell.activeCall")}
-          >
-            <Icon name="phone" size={14} />
-          </span>
-        ) : null}
       </button>
     </li>
   );
@@ -90,23 +101,22 @@ function ConversationRow({ conversation, current, onSelect }: ConversationRowPro
 /**
  * The rail on the messages side of the app.
  *
- * It is the same column, with the same 52px header and account row, as the
- * server rail: the two are one panel showing different contents. What changes
- * is what a row is. A channel is a place; a conversation is a person, so its
- * row carries a face, a presence ring and the last thing that was said.
+ * The same column, with the same header and account row, as the server rail:
+ * the two are one panel showing different contents. The server column beside
+ * it is the way back, so the header only names the side and offers to start
+ * a conversation.
  *
- * Friends sits in the header rather than in the list because it is not one of
- * the conversations; it is where you go when you do not want one of them.
+ * Friends is a row like a channel, because it is a place you go to, and the
+ * conversations below it are people: a face, the last thing said, and when.
  */
 export function DmRail({
-  onBackToServer,
   friendsActive,
   onOpenFriends,
   pending,
   conversations,
   activeDmId,
   onSelect,
-  onAddFriend,
+  onNewConversation,
   voiceDock,
   account,
   hidden = false,
@@ -131,68 +141,61 @@ export function DmRail({
       inert={hidden}
     >
       <div className="rail-header">
+        <h1>{t("dm.messages")}</h1>
         <button
           type="button"
-          className="rail-switch dm-back"
-          title={t("shell.returnToServer")}
-          aria-label={t("shell.returnToServer")}
-          onClick={onBackToServer}
+          className="rail-act"
+          title={t("dm.newConversation")}
+          aria-label={t("dm.newConversation")}
+          onClick={onNewConversation}
         >
-          <Icon name="caretL" size={17} />
+          <Icon name="edit" size={16} />
         </button>
-        <button
-          type="button"
-          className="dm-home"
-          aria-current={friendsActive ? "page" : undefined}
-          onClick={onOpenFriends}
-        >
-          <span className="glyph" aria-hidden="true">
-            <Icon name="users" size={17} />
-          </span>
-          <span className="name">{t("friends.title")}</span>
-          {pending > 0 ? (
-            <span className="badge">
-              {pending}
-              <span className="sr-only">
-                {pending === 1
-                  ? t("shell.pendingInvite.one")
-                  : t("shell.pendingInvite.many")}
-              </span>
-            </span>
-          ) : null}
-        </button>
-      </div>
-
-      <div className="dm-find">
-        <label className="sr-only" htmlFor={searchId}>
-          {t("shell.findConversation")}
-        </label>
-        <span className="glyph" aria-hidden="true">
-          <Icon name="search" size={15} />
-        </span>
-        <input
-          id={searchId}
-          type="search"
-          value={query}
-          placeholder={t("shell.findConversation")}
-          autoComplete="off"
-          onChange={(event) => setQuery(event.target.value)}
-        />
       </div>
 
       <div className="rail-scroll">
-        <div className="group-caption">
-          {t("shell.privateMessages")}
+        <div className="dm-find">
+          <label className="sr-only" htmlFor={searchId}>
+            {t("shell.findConversation")}
+          </label>
+          <span className="glyph" aria-hidden="true">
+            <Icon name="search" size={15} />
+          </span>
+          <input
+            id={searchId}
+            type="search"
+            value={query}
+            placeholder={t("shell.findConversation")}
+            autoComplete="off"
+            onChange={(event) => setQuery(event.target.value)}
+          />
+        </div>
+
+        <div className={friendsActive ? "channel active" : "channel"}>
           <button
             type="button"
-            className="cap-act"
-            title={t("shell.addFriend")}
-            aria-label={t("shell.addFriend")}
-            onClick={onAddFriend}
+            className="channel-main"
+            aria-current={friendsActive ? "page" : undefined}
+            onClick={onOpenFriends}
           >
-            <Icon name="userAdd" size={15} />
+            <span className="glyph" aria-hidden="true">
+              <Icon name="users" size={16} />
+            </span>
+            <span className="name">{t("friends.title")}</span>
+            {pending > 0 ? (
+              <span className="ch-unread">
+                {counted(pending)}
+                <span className="sr-only">
+                  {pending === 1
+                    ? t("shell.pendingInvite.one")
+                    : t("shell.pendingInvite.many")}
+                </span>
+              </span>
+            ) : null}
           </button>
         </div>
+
+        <h2 className="group-caption">{t("shell.privateMessages")}</h2>
 
         {shown.length > 0 ? (
           <ul className="dm-list">

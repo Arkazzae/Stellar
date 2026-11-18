@@ -27,14 +27,13 @@ function conversation(
 
 function baseProps(overrides: Partial<DmRailProps> = {}): DmRailProps {
   return {
-    onBackToServer: vi.fn(),
     friendsActive: false,
     onOpenFriends: vi.fn(),
     pending: 0,
     conversations: [conversation("1", "Maja"), conversation("2", "Ola")],
     activeDmId: null,
     onSelect: vi.fn(),
-    onAddFriend: vi.fn(),
+    onNewConversation: vi.fn(),
     ...overrides,
   };
 }
@@ -118,30 +117,24 @@ describe("DmRail conversations", () => {
 });
 
 describe("DmRail header", () => {
-  it("reports the Friends view as the current page while it is showing", () => {
-    setup({ friendsActive: true });
-
-    expect(screen.getByRole("button", { name: /Znajomi/ })).toHaveAttribute(
-      "aria-current",
-      "page",
-    );
-  });
-
-  it("badges pending friend requests with a spoken count", () => {
-    setup({ pending: 2 });
-
-    expect(screen.getByRole("button", { name: /Znajomi.*2.*zaproszenia oczekują/ }))
-      .toBeInTheDocument();
-  });
-
-  it("opens the add-friend tab without a server-column toggle", async () => {
+  it("names the side, and reports Friends as the current page with its spoken request count", async () => {
     const user = userEvent.setup();
-    const { onAddFriend } = setup();
+    const { onOpenFriends } = setup({ friendsActive: true, pending: 2 });
 
-    await user.click(screen.getByRole("button", { name: "Dodaj znajomego" }));
-    expect(screen.queryByRole("button", { name: "Serwery i wiadomości prywatne" })).not.toBeInTheDocument();
+    expect(screen.getByRole("heading", { level: 1, name: "Wiadomości" })).toBeInTheDocument();
+    const friends = screen.getByRole("button", { name: /Znajomi.*2.*zaproszenia oczekują/ });
+    expect(friends).toHaveAttribute("aria-current", "page");
+    await user.click(friends);
+    expect(onOpenFriends).toHaveBeenCalledOnce();
+  });
 
-    expect(onAddFriend).toHaveBeenCalledOnce();
+  it("starts a new conversation from the header", async () => {
+    const user = userEvent.setup();
+    const { onNewConversation } = setup();
+
+    await user.click(screen.getByRole("button", { name: "Nowa rozmowa" }));
+
+    expect(onNewConversation).toHaveBeenCalledOnce();
   });
 
   it("makes a shut drawer inert, and an open rail interactive", () => {

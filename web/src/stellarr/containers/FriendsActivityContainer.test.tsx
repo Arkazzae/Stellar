@@ -50,10 +50,10 @@ describe("FriendsActivityContainer", () => {
     }
   });
 
-  it("puts known calls first and shows the visible server channel and custom status", () => {
+  it("puts known calls first and says where they are, or what they wrote about themselves", () => {
     setStubs({
       friends: {
-        friends: [ADA, { ...OLA, customStatus: "  Piszę muzykę  " }, ZOSIA].map(friend),
+        friends: [{ ...ADA, customStatus: "  Piszę muzykę  " }, OLA, ZOSIA].map(friend),
         conversations: [{
           id: "dm-zosia", peer: ZOSIA, unread: 0, updatedAt: "2026-01-01T12:00:00Z",
           callParticipants: [{ userId: ZOSIA.id, displayName: ZOSIA.displayName, muted: false }],
@@ -68,12 +68,11 @@ describe("FriendsActivityContainer", () => {
 
     const rows = within(panel()).getAllByRole("listitem");
     expect(rows[0]).toHaveTextContent("Ola");
-    expect(rows[0]).toHaveTextContent("Piszę muzykę");
-    expect(rows[0]).toHaveTextContent("Salon · Orbit");
+    expect(rows[0]).toHaveTextContent("Na kanale Salon w Orbit");
     expect(rows[1]).toHaveTextContent("Zosia");
     expect(rows[1]).toHaveTextContent("W rozmowie");
     expect(rows[2]).toHaveTextContent("Ada");
-    expect(rows[2]).not.toHaveTextContent("W rozmowie");
+    expect(within(rows[2]!).getByText("Piszę muzykę")).toBeInTheDocument();
   });
 
   it("updates the list as friends arrive, leave or stop a call", () => {
@@ -82,11 +81,11 @@ describe("FriendsActivityContainer", () => {
       directory: { voiceChannels: [{ id: "voice", name: "Salon", occupants: [occupant(ADA)] }] },
     });
     const { rerender } = render(<FriendsActivityContainer />);
-    expect(screen.getByText("Salon · Orbit")).toBeInTheDocument();
+    expect(screen.getByText("Na kanale Salon w Orbit")).toBeInTheDocument();
 
     setStubs({ directory: { voiceChannels: [] } });
     rerender(<FriendsActivityContainer />);
-    expect(screen.queryByText("W rozmowie")).not.toBeInTheDocument();
+    expect(screen.queryByText("Na kanale Salon w Orbit")).not.toBeInTheDocument();
     expect(screen.getByText("Ada")).toBeInTheDocument();
 
     setStubs({ friends: { friends: [friend({ ...ADA, presence: "offline" })] } });

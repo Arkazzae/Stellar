@@ -160,8 +160,8 @@ export interface PresenceDotProps {
 }
 
 /**
- * The avatar's status dot on its own, for the DM room header, which shows it
- * beside a name instead of on a face.
+ * The avatar's status dot on its own, for a place that shows it beside a word
+ * instead of on a face, such as the presence picker.
  */
 export function PresenceDot({ presence, className }: PresenceDotProps) {
   const classes = ["pdot", presence, className].filter(Boolean).join(" ");

@@ -19,9 +19,10 @@ export interface AppShellProps {
   stageFull?: boolean;
   onExitStageFull?: () => void;
   /**
-   * The messages side of the app is showing. A conversation has no channel
-   * roster, so the grid collapses that track; the width belongs to the grid,
-   * which is why this is a class on it and not a prop on the panel.
+   * The messages side of the app is showing. It has no channel roster, so the
+   * grid collapses that track unless the profile beside a conversation holds
+   * it open; the width belongs to the grid, which is why this is a class on it
+   * and not a prop on the panel.
    */
   dmSpace?: boolean;
 }

@@ -25,16 +25,21 @@ function conversation(
   };
 }
 
-function message(authorId: string, content: string): DmConversation["lastMessage"] {
+function message(
+  authorId: string,
+  content: string,
+  createdAt = new Date().toISOString(),
+): DmConversation["lastMessage"] {
   return {
     id: `m-${authorId}`,
     author: { id: authorId },
     content,
+    createdAt,
   } as DmConversation["lastMessage"];
 }
 
 function rowOf(name: string): HTMLElement {
-  const row = screen.getByText(name, { selector: "b" }).closest<HTMLElement>(".dm-item");
+  const row = screen.getByText(name, { selector: "b" }).closest<HTMLElement>("li");
   if (row === null) throw new Error(`no conversation row for ${name}`);
   return row;
 }
@@ -53,14 +58,18 @@ describe("DmRailContainer", () => {
     expect(within(rowOf("Ola")).getByText("Napisz pierwszą wiadomość")).toBeInTheDocument();
   });
 
-  it("flattens the last message onto one line and credits you for your own", () => {
+  it("flattens the last message onto one line, credits you for your own and says when", () => {
+    const fiveMinutesAgo = new Date(Date.now() - 5 * 60_000).toISOString();
     setConversations([
-      conversation("ola", "Ola", { lastMessage: message("u-ola", "dobra\n\n  wiadomość") }),
+      conversation("ola", "Ola", {
+        lastMessage: message("u-ola", "dobra\n\n  wiadomość", fiveMinutesAgo),
+      }),
       conversation("kuba", "Kuba", { lastMessage: message(SELF, "no to jedziemy") }),
     ]);
     render(<DmRailContainer />);
 
     expect(within(rowOf("Ola")).getByText("dobra wiadomość")).toBeInTheDocument();
+    expect(within(rowOf("Ola")).getByText("5 min")).toHaveAttribute("datetime", fiveMinutesAgo);
     expect(within(rowOf("Kuba")).getByText("Ty: no to jedziemy")).toBeInTheDocument();
   });
 
@@ -87,7 +96,7 @@ describe("DmRailContainer", () => {
     ).toBeInTheDocument();
   });
 
-  it("opens a conversation, and the friends view on its add tab", async () => {
+  it("opens a conversation, and starts a new one from the header", async () => {
     setConversations([conversation("ola", "Ola")]);
     const user = userEvent.setup();
     render(<DmRailContainer />);
@@ -95,8 +104,7 @@ describe("DmRailContainer", () => {
     await user.click(within(rowOf("Ola")).getByRole("button"));
     expect(stubs.ui.openDm).toHaveBeenCalledWith("ola");
 
-    await user.click(screen.getByRole("button", { name: "Dodaj znajomego" }));
-    expect(stubs.ui.setFriendsTab).toHaveBeenCalledWith("add");
-    expect(stubs.ui.openFriends).toHaveBeenCalled();
+    await user.click(screen.getByRole("button", { name: "Nowa rozmowa" }));
+    expect(stubs.ui.newConversation).toHaveBeenCalledOnce();
   });
 });

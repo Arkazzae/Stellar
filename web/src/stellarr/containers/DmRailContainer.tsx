@@ -1,9 +1,9 @@
-import { useMemo } from "react";
+import { useEffect, useMemo, useState } from "react";
 
 import { DmRail } from "@/components/shell/rail/DmRail";
 import type { DmConversationVM } from "@/components/view-models";
 import { useMediaQuery } from "@/hooks/useMediaQuery";
-import { initials } from "@/lib/format/format";
+import { formatShortAgo, initials } from "@/lib/format/format";
 import type { DmConversation } from "@/ports";
 import { useFriends, useLanguage, useSession, useUi } from "@/state/hooks";
 
@@ -13,6 +13,18 @@ type Translate = ReturnType<typeof useLanguage>["t"];
 
 const inCall = (conversation: DmConversation) =>
   (conversation.callParticipants?.length ?? 0) > 0;
+
+/** "2 min" has to become "3 min" without anything else happening. */
+const CLOCK_TICK_MS = 60_000;
+
+function useMinuteClock(): Date {
+  const [now, setNow] = useState(() => new Date());
+  useEffect(() => {
+    const timer = window.setInterval(() => setNow(new Date()), CLOCK_TICK_MS);
+    return () => window.clearInterval(timer);
+  }, []);
+  return now;
+}
 
 /**
  * What the rail's second line says about a conversation.
@@ -41,9 +53,10 @@ function previewOf(
 export function DmRailContainer() {
   const ui = useUi();
   const friends = useFriends();
-  const { t } = useLanguage();
+  const { t, locale } = useLanguage();
   const { user } = useSession();
   const selfId = user?.id ?? "";
+  const now = useMinuteClock();
 
   // Below 768 the rail is a drawer; shut, it is off screen and must be inert.
   const railIsDrawer = useMediaQuery("(max-width: 767px)", false);
@@ -51,7 +64,8 @@ export function DmRailContainer() {
   const conversations = useMemo<DmConversationVM[]>(
     () =>
       friends.conversations.map((conversation) => {
-        const { peer } = conversation;
+        const { peer, lastMessage } = conversation;
+        const sentAt = lastMessage?.createdAt;
         return {
           id: conversation.id,
           peer: {
@@ -66,24 +80,23 @@ export function DmRailContainer() {
           preview: previewOf(t, conversation, selfId),
           unread: conversation.unread,
           ...(inCall(conversation) ? { callActive: true } : {}),
+          ...(sentAt === undefined
+            ? {}
+            : { time: { text: formatShortAgo(sentAt, now, locale), iso: sentAt } }),
         };
       }),
-    [friends.conversations, selfId, t],
+    [friends.conversations, selfId, t, now, locale],
   );
 
   return (
     <DmRail
-      onBackToServer={ui.openServer}
       friendsActive={ui.activeDmId === null}
       onOpenFriends={ui.openFriends}
       pending={friends.incoming}
       conversations={conversations}
       activeDmId={ui.activeDmId}
       onSelect={ui.openDm}
-      onAddFriend={() => {
-        ui.setFriendsTab("add");
-        ui.openFriends();
-      }}
+      onNewConversation={ui.newConversation}
       voiceDock={<RailVoiceDock />}
       account={<RailAccount />}
       hidden={railIsDrawer && !ui.railOpen}

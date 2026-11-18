@@ -47,6 +47,13 @@ describe("FriendsView", () => {
     );
   });
 
+  it("puts the cursor in the search when a new conversation asks for it, and says so", () => {
+    const props = view("all", { searchRequested: true, onSearchFocused: vi.fn() });
+
+    expect(screen.getByRole("searchbox", { name: "Szukaj wśród znajomych" })).toHaveFocus();
+    expect(props.onSearchFocused).toHaveBeenCalledOnce();
+  });
+
   it("carries the way out of an empty list, not only the fact of it", async () => {
     const user = userEvent.setup();
     const props = view("all");
