@@ -38,6 +38,18 @@ export function takePendingInvite(): string | null {
   return code;
 }
 
+/**
+ * The invite code in what someone pasted: a whole link, with or without its
+ * scheme, or the bare code. Null when it is neither, so the form can say so
+ * instead of opening a page that cannot work.
+ */
+export function inviteCodeFrom(input: string): string | null {
+  const text = input.trim();
+  const linked = /(?:^|\/)invite\/([^/?#\s]+)\/?(?:[?#]\S*)?$/.exec(text);
+  const code = linked?.[1] ?? text;
+  return /^[A-Za-z0-9_-]{1,128}$/.test(code) ? code : null;
+}
+
 const MINUTE = 60_000;
 const HOUR = 60 * MINUTE;
 const DAY = 24 * HOUR;

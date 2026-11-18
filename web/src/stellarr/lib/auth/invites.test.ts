@@ -2,6 +2,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 
 import {
   PENDING_INVITE_STORAGE_KEY,
+  inviteCodeFrom,
   inviteExpiry,
   pendingInvite,
   rememberPendingInvite,
@@ -55,6 +56,23 @@ describe("pending invites", () => {
     expect(() => rememberPendingInvite("abc123")).not.toThrow();
     expect(pendingInvite()).toBeNull();
     expect(takePendingInvite()).toBeNull();
+  });
+});
+
+describe("inviteCodeFrom", () => {
+  it("finds the code in a whole link, a link without its scheme, or the code alone", () => {
+    expect(inviteCodeFrom("https://stellarr.example.com/invite/k7qm2xwp")).toBe("k7qm2xwp");
+    expect(inviteCodeFrom("  stellarr.example.com/invite/k7qm2xwp/ ")).toBe("k7qm2xwp");
+    expect(inviteCodeFrom("http://10.0.0.5:3000/invite/ab_c-1?utm=chat#top")).toBe("ab_c-1");
+    expect(inviteCodeFrom("k7qm2xwp")).toBe("k7qm2xwp");
+  });
+
+  it("refuses what is no invite, so no page that cannot work opens", () => {
+    expect(inviteCodeFrom("")).toBeNull();
+    expect(inviteCodeFrom("https://stellarr.example.com/login")).toBeNull();
+    expect(inviteCodeFrom("https://stellarr.example.com/invite/")).toBeNull();
+    expect(inviteCodeFrom("two words")).toBeNull();
+    expect(inviteCodeFrom("https://stellarr.example.com/invite/a%2Fb")).toBeNull();
   });
 });
 
