@@ -47,6 +47,24 @@ internal sealed class ExternalIdentityConfiguration : IEntityTypeConfiguration<E
     }
 }
 
+internal sealed class PendingExternalIdentityConfiguration : IEntityTypeConfiguration<PendingExternalIdentity>
+{
+    public void Configure(EntityTypeBuilder<PendingExternalIdentity> entity)
+    {
+        entity.HasKey(x => x.Id);
+        entity.HasIndex(x => x.ExpiresAt);
+        entity.Property(x => x.SecretHash).HasMaxLength(64);
+        entity.Property(x => x.ProviderId).HasMaxLength(32);
+        entity.Property(x => x.Issuer).HasMaxLength(512);
+        entity.Property(x => x.Subject).HasMaxLength(255);
+        entity.Property(x => x.Email).HasMaxLength(320);
+        entity.Property(x => x.DisplayName).HasMaxLength(64);
+        entity.Property(x => x.PreferredUsername).HasMaxLength(64);
+        entity.Property(x => x.Amr).HasMaxLength(256);
+        entity.Property(x => x.AuthTime).HasMaxLength(32);
+    }
+}
+
 internal sealed class UserSessionConfiguration : IEntityTypeConfiguration<UserSession>
 {
     public void Configure(EntityTypeBuilder<UserSession> entity)

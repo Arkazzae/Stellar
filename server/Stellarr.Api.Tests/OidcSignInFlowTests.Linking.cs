@@ -170,7 +170,7 @@ public sealed partial class OidcSignInFlowTests
         Assert.Equal(HttpStatusCode.NoContent, unlink.StatusCode);
         using var client = BrowserClient(host);
         using var callback = await SignInThroughProviderAsync(client, provider, "/");
-        Assert.Equal("/login?oidc_error=not_linked", callback.Headers.Location!.OriginalString);
+        Assert.Equal("/login?oidc=unlinked", callback.Headers.Location!.OriginalString);
     }
 
     private async Task<User> CreatePasswordAccountAsync()
