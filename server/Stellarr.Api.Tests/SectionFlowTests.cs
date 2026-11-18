@@ -35,8 +35,7 @@ public sealed class SectionFlowTests : IClassFixture<StellarrWebApplicationFacto
             Assert.Equal("Ważne", renamedJson.RootElement.GetProperty("name").GetString());
         }
 
-        var assigned = await owner.PatchAsJsonAsync(
-            $"/api/admin/channels/{GeneralChannelId}/section", new { sectionId });
+        var assigned = await ChannelSections.FileAsync(owner, GeneralChannelId, sectionId);
         Assert.Equal(HttpStatusCode.NoContent, assigned.StatusCode);
 
         using (var bootstrap = JsonDocument.Parse(
@@ -54,8 +53,7 @@ public sealed class SectionFlowTests : IClassFixture<StellarrWebApplicationFacto
         var blockedDelete = await owner.DeleteAsync($"/api/admin/sections/{sectionId}");
         Assert.Equal(HttpStatusCode.Conflict, blockedDelete.StatusCode);
 
-        var unassigned = await owner.PatchAsJsonAsync(
-            $"/api/admin/channels/{GeneralChannelId}/section", new { sectionId = (string?)null });
+        var unassigned = await ChannelSections.FileAsync(owner, GeneralChannelId, null);
         Assert.Equal(HttpStatusCode.NoContent, unassigned.StatusCode);
 
         var deleted = await owner.DeleteAsync($"/api/admin/sections/{sectionId}");

@@ -91,6 +91,24 @@ public sealed class ChannelAdministrationTests : IClassFixture<StellarrWebApplic
     }
 
     [Fact]
+    public async Task ANewSectionOrderIsAnnouncedToTheServer()
+    {
+        using var factory = new StellarrWebApplicationFactory();
+        using var owner = await SignedInAsync(factory, "maja", "Aurora!2026");
+        var first = await IdOfAsync(await owner.PostAsJsonAsync("/api/admin/sections", new { name = "Pierwsza" }));
+        var second = await IdOfAsync(await owner.PostAsJsonAsync("/api/admin/sections", new { name = "Druga" }));
+        await using var listener = await HubListenerAsync(factory, "jo", "Corona!2026", "SectionOrderChanged");
+
+        Assert.Equal(
+            HttpStatusCode.NoContent,
+            (await owner.PutAsJsonAsync("/api/admin/sections/order", new { sectionIds = new[] { second, first } })).StatusCode);
+
+        var order = await listener.NextAsync();
+        Assert.Equal(TestData.ServerId.ToString(), order.GetProperty("serverId").GetString());
+        Assert.Equal([second, first], order.GetProperty("sectionIds").EnumerateArray().Select(x => x.GetString()));
+    }
+
+    [Fact]
     public async Task AMoveToAnUnknownSectionOrChannelChangesNothing()
     {
         using var owner = await SignedInAsync(_factory, "maja", "Aurora!2026");
@@ -219,7 +237,7 @@ public sealed class ChannelAdministrationTests : IClassFixture<StellarrWebApplic
         var channelId = await IdOfAsync(await CreateAsync(owner, $"held-{Guid.NewGuid():N}", "text"));
         Assert.Equal(
             HttpStatusCode.NoContent,
-            (await owner.PatchAsJsonAsync($"/api/admin/channels/{channelId}/section", new { sectionId })).StatusCode);
+            (await ChannelSections.FileAsync(owner, channelId, sectionId)).StatusCode);
 
         Assert.Equal(HttpStatusCode.Conflict, (await owner.DeleteAsync($"/api/admin/sections/{sectionId}")).StatusCode);
 
@@ -241,16 +259,14 @@ public sealed class ChannelAdministrationTests : IClassFixture<StellarrWebApplic
         using var moderator = await SignedInAsync(_factory, "ada", "Quasar!2026");
         var sectionId = await IdOfAsync(await owner.PostAsJsonAsync(
             "/api/admin/sections", new { name = $"Target-{Guid.NewGuid():N}" }));
-        var path = $"/api/admin/channels/{TestData.GeneralChannelId}/section";
+        var channel = TestData.GeneralChannelId;
 
         Assert.Equal(
             HttpStatusCode.NotFound,
-            (await owner.PatchAsJsonAsync(path, new { sectionId = Guid.NewGuid() })).StatusCode);
-        Assert.Equal(HttpStatusCode.Forbidden, (await moderator.PatchAsJsonAsync(path, new { sectionId })).StatusCode);
-        Assert.Equal(HttpStatusCode.NoContent, (await owner.PatchAsJsonAsync(path, new { sectionId })).StatusCode);
-        Assert.Equal(
-            HttpStatusCode.NoContent,
-            (await owner.PatchAsJsonAsync(path, new { sectionId = (string?)null })).StatusCode);
+            (await ChannelSections.FileAsync(owner, channel, Guid.NewGuid())).StatusCode);
+        Assert.Equal(HttpStatusCode.Forbidden, (await ChannelSections.FileAsync(moderator, channel, sectionId)).StatusCode);
+        Assert.Equal(HttpStatusCode.NoContent, (await ChannelSections.FileAsync(owner, channel, sectionId)).StatusCode);
+        Assert.Equal(HttpStatusCode.NoContent, (await ChannelSections.FileAsync(owner, channel, null)).StatusCode);
     }
 
     [Fact]

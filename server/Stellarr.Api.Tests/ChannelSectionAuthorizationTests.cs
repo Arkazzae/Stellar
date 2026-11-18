@@ -194,8 +194,7 @@ public sealed class ChannelSectionAuthorizationTests
 
         internal async Task ExpectMoveAsync(Guid? destination, HttpStatusCode expected, HttpClient? client = null)
         {
-            using var response = await (client ?? Client).PatchAsJsonAsync(
-                $"/api/admin/channels/{TestData.GeneralChannelId}/section", new { sectionId = destination });
+            using var response = await ChannelSections.FileAsync(client ?? Client, TestData.GeneralChannelId, destination);
             Assert.Equal(expected, response.StatusCode);
             await WithDbAsync(async db => Assert.Equal(expected == HttpStatusCode.NoContent ? destination : Source,
                 (await db.Channels.SingleAsync(x => x.Id == TestData.GeneralChannelId)).SectionId));
