@@ -1,0 +1,70 @@
+/*
+ * The mascot art: the stickers that mark a moment, and the account screens'
+ * scenes.
+ *
+ * Sizes and trims live here rather than with the placements, because this
+ * file is outside the app's cascade layers and would win over them anyway.
+ */
+
+/* Out of sight until it has loaded, so a file that fails never shows as a
+   broken image. */
+.art {
+  opacity: 0;
+}
+
+.art.shown {
+  opacity: 1;
+}
+
+/* The account screens' art rises into place as it arrives; elsewhere it
+   simply appears. */
+.rise {
+  transform: translateY(8px);
+  transition: opacity 350ms var(--ease-standard), transform 350ms var(--ease-standard);
+}
+
+.rise.shown {
+  transform: none;
+}
+
+/* On the spacing grid: 64 in a narrow column, 96 in the main area and in
+   dialogs. The account screens keep their own 104. */
+.column {
+  --sticker: calc(var(--sp-8) * 2);
+}
+
+.main {
+  --sticker: calc(var(--sp-8) * 3);
+}
+
+.page {
+  --sticker: 104px;
+}
+
+/* The art's own transparent margin is trimmed above and below, so the text
+   under it sits as close as it would under a heading, and on the left where
+   it lines up with text that starts there. At 104 this is 6, 10 and 8. */
+.sticker {
+  width: var(--sticker);
+  height: var(--sticker);
+  margin: calc(var(--sticker) * -6 / 104) 0 calc(var(--sticker) * -10 / 104);
+}
+
+.start {
+  margin-left: calc(var(--sticker) * -8 / 104);
+}
+
+/* Stickers have no outline, and on a light page their white body would melt
+   into the background, so a hairline of shadow draws the edge. The scenes
+   carry dark outlines and need nothing. */
+:global([data-scheme="light"]) .sticker {
+  filter: drop-shadow(0 0 0.8px oklch(var(--shadow-color) / 0.7))
+    drop-shadow(0 3px 8px oklch(var(--shadow-color) / 0.12));
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .rise {
+    transform: none;
+    transition: none;
+  }
+}

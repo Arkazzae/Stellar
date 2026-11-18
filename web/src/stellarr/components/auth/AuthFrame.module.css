@@ -9,7 +9,9 @@
  * worked or did not, a server that does not answer) show the sticker at
  * every width. The 960px is the narrowest at which both columns fit at full
  * size with room between them; AuthFrame.tsx asks the same query, so only
- * the picture the layout shows is fetched.
+ * the picture the layout shows is fetched. The sticker's size, trim, light
+ * scheme edge and entrance are the shared ones in
+ * `primitives/MascotArt.module.css`.
  *
  * Vertical rhythm comes from the column's own gap, so no child carries a
  * stray margin that has to be cancelled somewhere else.
@@ -134,34 +136,6 @@
   object-fit: contain;
 }
 
-/* The sticker's own transparent margin is trimmed so it lines up with the text. */
-.sticker {
-  width: 104px;
-  height: 104px;
-  margin: -6px 0 -10px -8px;
-}
-
-/* Stickers have no outline, and on a light page their white body would melt
-   into the canvas, so a hairline of shadow draws the edge. The scenes carry
-   dark outlines and need nothing. */
-:global([data-scheme="light"]) .sticker {
-  filter: drop-shadow(0 0 0.8px oklch(var(--shadow-color) / 0.7))
-    drop-shadow(0 3px 8px oklch(var(--shadow-color) / 0.12));
-}
-
-/* The art never holds up the form: it fades in when it has loaded, and one
-   that fails stays out of sight. */
-.mascot {
-  opacity: 0;
-  transform: translateY(8px);
-  transition: opacity 350ms var(--ease-standard), transform 350ms var(--ease-standard);
-}
-
-.mascot.shown {
-  opacity: 1;
-  transform: none;
-}
-
 @media (max-width: 959px) {
   .screen {
     align-items: start;
@@ -177,12 +151,5 @@
 @media (max-width: 420px) {
   .heading {
     font-size: 25px;
-  }
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .mascot {
-    transform: none;
-    transition: none;
   }
 }

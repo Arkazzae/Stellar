@@ -1,9 +1,10 @@
 import { useLayoutEffect, useRef, type ComponentType, type ReactNode } from "react";
 
+import { Sticker } from "@/components/primitives/MascotArt";
 import { useMediaQuery } from "@/hooks/useMediaQuery";
 
 import styles from "./AuthFrame.module.css";
-import { SceneImage, StickerImage, sceneArt, stickerArt, type AuthScene, type OutcomeSticker } from "./Mascot";
+import { SceneImage, sceneArt, stickerArt, type AuthScene, type OutcomeSticker } from "./Mascot";
 
 export type { AuthScene, OutcomeSticker } from "./Mascot";
 
@@ -98,7 +99,7 @@ export function AuthFrame({ title, description, scene, outcome, headingAction, c
     <div className={styles.column}>
       <header className={styles.header}>
         <StellarrLockup />
-        {sticker === null ? null : <StickerImage name={sticker} />}
+        {sticker === null ? null : <Sticker name={sticker} size="page" rise />}
         <div className={styles.titles}>
           {headingAction}
           <h1 ref={heading} className={styles.heading} tabIndex={-1}>
