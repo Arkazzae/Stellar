@@ -83,7 +83,12 @@ const ACCOUNT = {
 
 export function fakeApi(overrides: Partial<ApiClient> = {}): ApiClient {
   return {
-    needsServerSetup: vi.fn(async () => false),
+    setupRequired: vi.fn(async () => false),
+    instanceName: vi.fn(async () => "Stellarr Dev"),
+    invitePreview: vi.fn(async () => {
+      throw new ApiError("not-found", "No such invite.", 404);
+    }),
+    signInProviders: vi.fn(async () => []),
     login: vi.fn(async () => ({ kind: "signed-in" as const, user: SELF })),
     register: vi.fn(async () => ({ kind: "signed-in" as const, user: SELF })),
     pendingChallenge: vi.fn(async () => {

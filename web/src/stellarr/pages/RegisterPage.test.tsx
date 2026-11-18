@@ -13,7 +13,7 @@ import RegistrationPage from "./RegisterPage";
 
 const mocks = vi.hoisted(() => ({
   session: { phase: "anonymous" as SessionPhase, reload: vi.fn() },
-  ports: { session: { register: vi.fn(), needsServerSetup: vi.fn() } },
+  ports: { session: { register: vi.fn(), setupRequired: vi.fn() } },
 }));
 
 vi.mock("@/state/hooks", () => ({
@@ -47,12 +47,12 @@ beforeEach(() => {
   vi.resetAllMocks();
   mocks.session.phase = "anonymous";
   window.sessionStorage.clear();
-  mocks.ports.session.needsServerSetup.mockResolvedValue(false);
+  mocks.ports.session.setupRequired.mockResolvedValue(false);
 });
 
 describe("RegistrationPage", () => {
   it("configures the first server before creating its owner", async () => {
-    mocks.ports.session.needsServerSetup.mockResolvedValue(true);
+    mocks.ports.session.setupRequired.mockResolvedValue(true);
     mocks.ports.session.register.mockResolvedValue({});
     const user = userEvent.setup();
     renderRegistration();
@@ -66,7 +66,7 @@ describe("RegistrationPage", () => {
   });
 
   it("retries a failed configuration check", async () => {
-    mocks.ports.session.needsServerSetup.mockRejectedValueOnce(new Error("offline")).mockResolvedValue(true);
+    mocks.ports.session.setupRequired.mockRejectedValueOnce(new Error("offline")).mockResolvedValue(true);
     renderRegistration();
     expect(await screen.findByRole("alert")).toHaveTextContent("Nie udało się sprawdzić");
     await userEvent.setup().click(screen.getByRole("button", { name: "Spróbuj ponownie" }));
@@ -126,7 +126,7 @@ describe("RegistrationPage", () => {
 
   it("keeps the focus on the heading when the form replaces the frame that waited for the server", async () => {
     let answer: (needed: boolean) => void = () => undefined;
-    mocks.ports.session.needsServerSetup.mockReturnValue(new Promise<boolean>((resolve) => (answer = resolve)));
+    mocks.ports.session.setupRequired.mockReturnValue(new Promise<boolean>((resolve) => (answer = resolve)));
     renderRegistration();
     // Where the router puts the focus after a link led here.
     screen.getByRole("heading", { name: "Załóż konto" }).focus();
@@ -139,7 +139,7 @@ describe("RegistrationPage", () => {
   });
 
   it("gives the account step's heading the focus that the button of the server step had", async () => {
-    mocks.ports.session.needsServerSetup.mockResolvedValue(true);
+    mocks.ports.session.setupRequired.mockResolvedValue(true);
     const user = userEvent.setup();
     renderRegistration();
     await user.type(await screen.findByRole("textbox", { name: "Nazwa serwera" }), "Ekipa");

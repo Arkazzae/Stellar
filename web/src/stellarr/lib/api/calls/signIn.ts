@@ -6,6 +6,7 @@ import {
   parseMfaChallenge,
   parseMfaCompletion,
   parseMfaEnrollment,
+  parseSignInChallenge,
 } from "../securityParsers";
 import { expectRecord } from "../expect";
 import { JSON_HEADERS, readJson, request } from "../transport";
@@ -64,7 +65,7 @@ const passkeyOptions = (value: unknown, path: string) => expectRecord(value, pat
  */
 export function signInCalls(): SignInCalls {
   return {
-    pendingChallenge: (signal) => getJson("/api/auth/mfa/pending", parseMfaChallenge, signal),
+    pendingChallenge: (signal) => getJson("/api/auth/mfa/pending", parseSignInChallenge, signal),
 
     cancelChallenge: () => sendVoid("POST", "/api/auth/mfa/cancel"),
 

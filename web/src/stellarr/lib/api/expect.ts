@@ -89,6 +89,20 @@ export function optionalString(
   return typeof value === "string" ? value : undefined;
 }
 
+/** A string the server sends as null when there is none. Anything else is malformed. */
+export function nullableString(
+  source: Record<string, unknown>,
+  key: string,
+  path: string,
+): string | null {
+  const value = source[key];
+  if (value === null || value === undefined) return null;
+  if (typeof value !== "string") {
+    throw new ApiError("malformed", `${path}: "${key}" must be a string or null`);
+  }
+  return value;
+}
+
 export function optionalNumber(
   source: Record<string, unknown>,
   key: string,

@@ -16,6 +16,7 @@ import {
   expectRecord,
   expectString,
   isRecord,
+  nullableString,
   optionalList,
   optionalNumber,
   optionalString,
@@ -25,6 +26,7 @@ import { SERVER_PERMISSION_VALUES } from "./types";
 import type {
   Bootstrap,
   Channel,
+  InvitePreview,
   JoinSoundLibrary,
   RtcConfig,
   Section,
@@ -148,6 +150,33 @@ export function parseInvite(value: unknown, path: string): ApiInvite {
     uses: optionalNumber(record, "uses") ?? 0,
     maxUses: typeof maxUses === "number" ? maxUses : null,
     expiresAt: typeof expiresAt === "string" ? expiresAt : null,
+  };
+}
+
+/** What an invite link leads to, shown before signing in. */
+export function parseInvitePreview(value: unknown, path: string): InvitePreview {
+  const record = expectRecord(value, path);
+  const server = expectRecord(record["server"], `${path}.server`);
+  const channel = record["channel"];
+  const inviter = expectRecord(record["inviter"], `${path}.inviter`);
+  const channelRecord = channel === null ? null : expectRecord(channel, `${path}.channel`);
+  return {
+    server: {
+      id: expectString(server, "id", path),
+      name: expectString(server, "name", path),
+      description: expectString(server, "description", path),
+      iconUrl: nullableString(server, "iconUrl", path),
+    },
+    channel:
+      channelRecord === null
+        ? null
+        : { id: expectString(channelRecord, "id", path), name: expectString(channelRecord, "name", path) },
+    inviter: {
+      displayName: expectString(inviter, "displayName", path),
+      avatarColor: expectString(inviter, "avatarColor", path),
+      avatarUrl: nullableString(inviter, "avatarUrl", path),
+    },
+    expiresAt: nullableString(record, "expiresAt", path),
   };
 }
 

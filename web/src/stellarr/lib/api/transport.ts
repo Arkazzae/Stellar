@@ -121,6 +121,26 @@ export async function problemCode(response: Response): Promise<string | null> {
   }
 }
 
+/**
+ * The refused fields of a validation problem (`{ errors: { field: ["…"] } }`),
+ * each with its first message; null when the body is no such problem.
+ */
+export async function problemFields(response: Response): Promise<Record<string, string> | null> {
+  let payload: unknown;
+  try {
+    payload = await response.clone().json();
+  } catch {
+    return null;
+  }
+  const errors = isRecord(payload) ? payload["errors"] : undefined;
+  if (!isRecord(errors)) return null;
+  const fields: Record<string, string> = {};
+  for (const [field, messages] of Object.entries(errors)) {
+    if (Array.isArray(messages) && typeof messages[0] === "string") fields[field] = messages[0];
+  }
+  return Object.keys(fields).length > 0 ? fields : null;
+}
+
 /** Throws the `ApiError` for a failed response, classified by its status. */
 export function fail(response: Response, path: string): never {
   throw new ApiError(

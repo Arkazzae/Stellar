@@ -1,15 +1,19 @@
 import type {
   AuthResult,
   Bootstrap,
+  InvitePreview,
   LoginInput,
   MfaChallenge,
   MfaCompletion,
   MfaEnrollment,
   MfaVerifyInput,
+  SignInProvider,
 } from "@/lib/api/types";
 
 export type {
   AuthResult,
+  ChallengeAccount,
+  InvitePreview,
   MfaChallenge,
   MfaCompletion,
   MfaEnrollment,
@@ -17,6 +21,7 @@ export type {
   MfaMethodType,
   MfaPurpose,
   MfaVerifyInput,
+  SignInProvider,
 } from "@/lib/api/types";
 
 export interface RegistrationInput {
@@ -29,8 +34,11 @@ export interface RegistrationInput {
     name: string;
     description: string;
     textChannelName: string;
+    /** Empty for no voice channel. */
     voiceChannelName: string;
   };
+  /** The code from the API's log, which the registration founding the instance needs. */
+  setupCode?: string;
 }
 
 /**
@@ -75,7 +83,14 @@ export interface SignInChallengePort {
 
 /** Signing in and out, and the one payload the app boots from. */
 export interface SessionPort {
-  needsServerSetup(): Promise<boolean>;
+  /** True while the instance has no account at all, so the first one founds it. */
+  setupRequired(): Promise<boolean>;
+  /** The instance's name, which every visitor may read. */
+  instanceName(): Promise<string>;
+  /** What an invite link leads to. Any invite that cannot be used is a 404. */
+  invitePreview(code: string): Promise<InvitePreview>;
+  /** The identity providers to offer on the account pages, none when there are none. */
+  signInProviders(): Promise<SignInProvider[]>;
   bootstrap(): Promise<Bootstrap>;
   login(input: LoginInput): Promise<AuthResult>;
   register(input: RegistrationInput): Promise<AuthResult>;

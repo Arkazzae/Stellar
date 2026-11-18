@@ -6,12 +6,14 @@ import {
   expectSafeInteger,
   expectString,
   isRecord,
+  nullableString,
   optionalString,
 } from "./expect";
 import { parseUser } from "./parsers";
 import type {
   AccountSecurity,
   AuthResult,
+  ChallengeAccount,
   MfaChallenge,
   MfaCompletion,
   MfaEnrollment,
@@ -20,6 +22,7 @@ import type {
   MfaPurpose,
   OwnSession,
   SecurityEvent,
+  SignInProvider,
   TrustedDevice,
 } from "./types";
 
@@ -55,12 +58,27 @@ export function parseMfaMethod(value: unknown, path: string): MfaMethod {
   };
 }
 
+function parseChallengeAccount(value: unknown, path: string): ChallengeAccount {
+  const record = expectRecord(value, path);
+  return {
+    displayName: expectString(record, "displayName", path),
+    username: expectString(record, "username", path),
+    avatarColor: expectString(record, "avatarColor", path),
+    avatarUrl: nullableString(record, "avatarUrl", path),
+  };
+}
+
+/**
+ * A second-step challenge. One a sign-in or a registration started names
+ * whose it is; one the account settings started may leave that out.
+ */
 export function parseMfaChallenge(value: unknown, path: string): MfaChallenge {
   const record = expectRecord(value, path);
   const status = expectString(record, "status", path);
   if (status !== "mfa_required" && status !== "mfa_enrollment_required") {
     throw new ApiError("malformed", `${path}: "${status}" is not a challenge`);
   }
+  const account = record["account"];
   return {
     enrollment: status === "mfa_enrollment_required",
     challengeId: expectString(record, "challengeId", path),
@@ -73,7 +91,19 @@ export function parseMfaChallenge(value: unknown, path: string): MfaChallenge {
     emailCodeAvailable: expectBoolean(record, "emailCodeAvailable", path),
     trustedDeviceDays: expectSafeInteger(record, "trustedDeviceDays", path),
     passkeyAvailable: record["passkeyAvailable"] === true,
+    ...(account === undefined || account === null
+      ? {}
+      : { account: parseChallengeAccount(account, `${path}.account`) }),
   };
+}
+
+/** A challenge of a sign-in or a registration, which always names the account. */
+export function parseSignInChallenge(value: unknown, path: string): MfaChallenge {
+  const challenge = parseMfaChallenge(value, path);
+  if (challenge.account === undefined) {
+    throw new ApiError("malformed", `${path}: a sign-in challenge names its "account"`);
+  }
+  return challenge;
 }
 
 /**
@@ -87,9 +117,26 @@ export function parseAuthResult(value: unknown, path: string): AuthResult {
     : value;
   if (isRecord(payload) && typeof payload["status"] === "string") {
     if (payload["status"] === "security_recovery_required") return { kind: "recovery-required" };
-    return { kind: "challenge", challenge: parseMfaChallenge(payload, path) };
+    return { kind: "challenge", challenge: parseSignInChallenge(payload, path) };
   }
   return { kind: "signed-in", user: parseUser(payload, path) };
+}
+
+/**
+ * The identity providers the instance offers, none when sign-in is by
+ * password only. Only the addresses of this server's own sign-in routes are
+ * taken; anything else is malformed.
+ */
+export function parseSignInProviders(value: unknown, path: string): SignInProvider[] {
+  const record = expectRecord(value, path);
+  return expectArray(record["providers"], `${path}.providers`).map((item, index) => {
+    const provider = expectRecord(item, `${path}.providers[${index}]`);
+    const loginUrl = expectString(provider, "loginUrl", path);
+    if (!/^\/api\/auth\/oidc\/([a-z0-9-]+\/)?login$/.test(loginUrl)) {
+      throw new ApiError("malformed", `${path}.providers[${index}]: "${loginUrl}" is not a sign-in route`);
+    }
+    return { displayName: expectString(provider, "displayName", path).trim(), loginUrl };
+  });
 }
 
 export function parseMfaCompletion(value: unknown, path: string): MfaCompletion {

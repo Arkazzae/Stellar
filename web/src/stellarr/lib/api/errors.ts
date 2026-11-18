@@ -23,12 +23,22 @@ export class ApiError extends Error {
   readonly code?: string;
   /** The `details` extension of the ProblemDetails, when present. */
   readonly details?: Readonly<Record<string, unknown>>;
+  /**
+   * The fields a validation problem refused, each with the server's first
+   * message for it. The keys say what to fix; the messages are in the
+   * instance's language, which may not be the reader's.
+   */
+  readonly fields?: Readonly<Record<string, string>>;
 
   constructor(
     kind: ApiErrorKind,
     message: string,
     status = 0,
-    problem?: { code?: string; details?: Readonly<Record<string, unknown>> },
+    problem?: {
+      code?: string;
+      details?: Readonly<Record<string, unknown>>;
+      fields?: Readonly<Record<string, string>>;
+    },
   ) {
     super(message);
     this.name = "ApiError";
@@ -36,6 +46,7 @@ export class ApiError extends Error {
     this.status = status;
     if (problem?.code !== undefined) this.code = problem.code;
     if (problem?.details !== undefined) this.details = problem.details;
+    if (problem?.fields !== undefined) this.fields = problem.fields;
   }
 }
 
