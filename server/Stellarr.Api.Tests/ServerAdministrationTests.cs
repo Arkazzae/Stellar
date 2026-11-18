@@ -120,6 +120,32 @@ public sealed class ServerAdministrationTests : IClassFixture<StellarrWebApplica
     }
 
     [Fact]
+    public async Task TheInstanceServerCannotBeDeletedSoNobodyElseTakesTheInstanceOver()
+    {
+        // A host of its own: Ada's new server must not land on the shared one.
+        using var factory = new StellarrWebApplicationFactory();
+        using var maja = await SignInAsync(factory, "maja", "Aurora!2026");
+        using var ada = await SignInAsync(factory, "ada", "Quasar!2026");
+
+        using var refused = await maja.DeleteAsync("/api/admin/server");
+        (await ada.PostAsJsonAsync("/api/servers", new { name = "Nowy serwer Ady" })).EnsureSuccessStatusCode();
+
+        Assert.Equal(HttpStatusCode.Conflict, refused.StatusCode);
+        Assert.Equal("application/problem+json", refused.Content.Headers.ContentType?.MediaType);
+        Assert.Equal(
+            "To serwer instancji, więc nie można go usunąć.",
+            (await refused.Content.ReadFromJsonAsync<JsonElement>()).GetProperty("title").GetString());
+        await using (var scope = factory.OpenScope(out var db))
+        {
+            Assert.True(await db.Servers.AnyAsync(x => x.Id == TestData.ServerId));
+        }
+
+        // Had it gone, Ada's server would now be the oldest and Cockpit hers.
+        Assert.Equal(HttpStatusCode.Forbidden, (await ada.GetAsync("/api/cockpit/bootstrap")).StatusCode);
+        Assert.Equal(HttpStatusCode.OK, (await maja.GetAsync("/api/cockpit/bootstrap")).StatusCode);
+    }
+
+    [Fact]
     public async Task RegisteringWithARevokedInviteIsAValidationError()
     {
         var server = await SeedServerAsync();
@@ -502,9 +528,16 @@ public sealed class ServerAdministrationTests : IClassFixture<StellarrWebApplica
         return listener;
     }
 
-    private async Task<HttpClient> SignInAsync(string username, string password, SeededServer? server)
+    private Task<HttpClient> SignInAsync(string username, string password, SeededServer? server) =>
+        SignInAsync(_factory, username, password, server);
+
+    private static async Task<HttpClient> SignInAsync(
+        StellarrWebApplicationFactory factory,
+        string username,
+        string password,
+        SeededServer? server = null)
     {
-        var client = _factory.CreateClient(new Microsoft.AspNetCore.Mvc.Testing.WebApplicationFactoryClientOptions
+        var client = factory.CreateClient(new Microsoft.AspNetCore.Mvc.Testing.WebApplicationFactoryClientOptions
         {
             AllowAutoRedirect = false,
             HandleCookies = true,
