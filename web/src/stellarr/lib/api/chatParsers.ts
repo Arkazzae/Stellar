@@ -49,6 +49,7 @@ export function parseAttachment(value: unknown, path: string): Attachment {
     ...definedField("height", optionalNumber(record, "height")),
     ...definedField("durationSeconds", optionalNumber(record, "durationSeconds")),
     ...definedField("posterUrl", optionalString(record, "posterUrl")),
+    ...definedField("previewUrl", optionalString(record, "previewUrl")),
     ...(record["isVoiceMessage"] === true ? { isVoiceMessage: true } : {}),
   };
 }

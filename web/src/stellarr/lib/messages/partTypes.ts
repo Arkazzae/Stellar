@@ -14,7 +14,10 @@ export interface TextPart {
 
 export interface ImagePart {
   kind: "image";
+  /** The original: what the viewer, saving and copying use. */
   src: string;
+  /** A reduced copy that small views load in place of the original. */
+  preview?: string;
   alt: string;
   width?: number;
   height?: number;
@@ -22,6 +25,8 @@ export interface ImagePart {
 
 export interface GalleryImage {
   src: string;
+  /** A reduced copy that small views load in place of `src`. */
+  preview?: string;
   alt: string;
 }
 

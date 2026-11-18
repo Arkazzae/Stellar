@@ -268,6 +268,8 @@ export interface Attachment {
   durationSeconds?: number;
   /** A frame the server extracted from the uploaded video. */
   posterUrl?: string;
+  /** A reduced still copy of an uploaded image, for small views. */
+  previewUrl?: string;
   /** A recording made in the composer and sent on its own. */
   isVoiceMessage?: boolean;
 }

@@ -104,7 +104,12 @@ function mediaOf(part: MessagePart, id: string, origin: Origin): MediaItemVM[] {
       return part.images
         .map((image, at) => ({
           id: `${id}:${at}`,
-          part: { kind: "image" as const, src: image.src, alt: image.alt },
+          part: {
+            kind: "image" as const,
+            src: image.src,
+            alt: image.alt,
+            ...(image.preview === undefined ? {} : { preview: image.preview }),
+          },
           ...origin,
         }))
         .reverse();
