@@ -13,7 +13,9 @@ public sealed record AttachmentDto(
     string Url,
     double? DurationSeconds,
     string? PosterUrl,
-    bool IsVoiceMessage);
+    bool IsVoiceMessage,
+    string? PreviewUrl,
+    string? Placeholder);
 
 /// <summary>An unfurled link under a message.</summary>
 /// <param name="Kind">"link" for a card, "video" for something with a player.</param>
@@ -183,7 +185,9 @@ public static class MessageContractMappings
         $"/assets/{attachment.Id}",
         attachment.DurationSeconds,
         attachment.PosterObjectKey is null ? null : $"/assets/{attachment.Id}/poster",
-        attachment.IsVoiceMessage);
+        attachment.IsVoiceMessage,
+        attachment.PreviewObjectKey is null ? null : $"/assets/{attachment.Id}/preview",
+        attachment.Placeholder);
 
     public static MessageEmbedDto ToDto(this MessageEmbed embed) => new(
         embed.Id.ToString(),
