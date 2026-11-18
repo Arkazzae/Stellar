@@ -37,6 +37,14 @@ describe("messageMenuEntries for an image", () => {
     expect(resolveOriginal).toHaveBeenCalledWith("e2ee:u1");
   });
 
+  it("offers no address to copy for an original that is fetched on demand", () => {
+    const ids = (src: string) =>
+      menuFor(src).flatMap((entry) => (typeof entry === "object" ? [entry.id] : []));
+
+    expect(ids("e2ee:u1")).not.toContain("copy-image-link");
+    expect(ids("/assets/a")).toContain("copy-image-link");
+  });
+
   it("does not ask for an address that is already usable", () => {
     vi.spyOn(HTMLAnchorElement.prototype, "click").mockImplementation(() => {});
     const resolveOriginal = vi.fn(async (_src: string) => "unused");
