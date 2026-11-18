@@ -8,7 +8,7 @@ Stellarr Cockpit is the instance operator panel, at `/cockpit` on the instance's
 - **Runtime**: 60-minute process telemetry (requests, errors, CPU, memory, connections, database latency) and per-minute availability across all container services.
 - **Logs**: paged, searchable, and filterable 10,000-line in-memory log stream with TSV export.
 - **Backups**: background database snapshots or full `.zip` archives (database, object store, data-protection keys, and instance files) with manifest verification, scheduling policy, and retention pruning.
-- **Integrations**: Resend mail delivery, GIPHY GIF search, and the optional Cloudflare R2 backup destination, with key checks.
+- **Integrations**: Resend mail delivery, GIPHY GIF search, the sign-in providers (whether each may create accounts for people with an invite), and the optional Cloudflare R2 backup destination, with key checks.
 - **Settings**: instance name, time zone, retention windows, SMTP configuration, instance MFA policy, and panel language.
 
 > [!NOTE]
