@@ -1,4 +1,4 @@
-import { previewFileName } from "@/lib/media/imagePreview";
+import { previewFileName } from "@/lib/media/previewName";
 import type { Message } from "../types";
 import type { ApiClient } from "../client";
 import { ApiError } from "../errors";
