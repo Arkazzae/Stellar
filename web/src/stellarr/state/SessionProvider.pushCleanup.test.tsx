@@ -3,7 +3,7 @@ import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { createRuntime, type Runtime } from "@/adapters";
-import { NOTIFICATION_WORKER_PATH } from "@/lib/notifications/push";
+import { WORKER_PATH } from "@/lib/platform/worker";
 import { FakeRealtimeClient, SERVER } from "@/test/fakes";
 import { fullApi, type FullApi } from "@/test/runtime";
 
@@ -29,7 +29,7 @@ const pushManager = {
 };
 const serviceWorker = {
   getRegistration: vi.fn(async () => ({
-    active: { scriptURL: new URL(NOTIFICATION_WORKER_PATH, window.location.href).href },
+    active: { scriptURL: new URL(WORKER_PATH, window.location.href).href },
     waiting: null,
     installing: null,
     pushManager,

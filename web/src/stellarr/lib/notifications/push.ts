@@ -1,3 +1,4 @@
+import { WORKER_PATH, WORKER_SCOPE } from "@/lib/platform/worker";
 import type { PushSubscriptionInput } from "@/ports/notificationDelivery";
 
 /**
@@ -9,8 +10,6 @@ import type { PushSubscriptionInput } from "@/ports/notificationDelivery";
  * subscription: its endpoint and keys are delivery credentials.
  */
 
-export const NOTIFICATION_WORKER_PATH = "/notification-worker.js";
-export const NOTIFICATION_WORKER_SCOPE = "/";
 
 /** How long a freshly registered worker may take to become active. */
 const WORKER_TIMEOUT_MS = 8_000;
@@ -101,7 +100,7 @@ export function requestDeviceNotificationPermission(): Promise<NotificationPermi
 
 /** The worker URL as an absolute same-origin address. */
 function workerUrl(): string {
-  return new URL(NOTIFICATION_WORKER_PATH, window.location.href).href;
+  return new URL(WORKER_PATH, window.location.href).href;
 }
 
 function isOurWorker(registration: ServiceWorkerRegistration): boolean {
@@ -135,7 +134,7 @@ export async function getNotificationWorkerRegistration(): Promise<ServiceWorker
   if (!runnable()) return null;
   try {
     const registration = await timeout(
-      navigator.serviceWorker.getRegistration(NOTIFICATION_WORKER_PATH),
+      navigator.serviceWorker.getRegistration(WORKER_PATH),
       INSPECTION_TIMEOUT_MS,
       "worker",
     );
@@ -178,8 +177,8 @@ async function registerWorker(): Promise<ServiceWorkerRegistration> {
   let registration: ServiceWorkerRegistration;
   try {
     registration = await timeout(
-      navigator.serviceWorker.register(NOTIFICATION_WORKER_PATH, {
-        scope: NOTIFICATION_WORKER_SCOPE,
+      navigator.serviceWorker.register(WORKER_PATH, {
+        scope: WORKER_SCOPE,
       }),
       WORKER_TIMEOUT_MS,
       "worker",

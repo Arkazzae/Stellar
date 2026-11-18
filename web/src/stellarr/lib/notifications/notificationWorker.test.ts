@@ -5,7 +5,7 @@ import { runInNewContext } from "node:vm";
 import { describe, expect, it, vi } from "vitest";
 
 const SOURCE = readFileSync(
-  resolve(process.cwd(), "public/notification-worker.js"),
+  resolve(process.cwd(), "public/stellarr-worker.js"),
   "utf8",
 );
 

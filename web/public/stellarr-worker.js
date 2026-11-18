@@ -1,9 +1,9 @@
 /*
- * Stellarr's Web Push service worker.
+ * Stellarr's service worker.
  *
- * This file is served as-is from the site root and is registered only when a
- * person explicitly enrolls this device. It handles push and clicks, and does
- * not intercept fetches or cache anything.
+ * This file is served as-is from the site root. It is the one worker of the
+ * origin's scope, which has room for one. It handles push and clicks, and
+ * does not intercept fetches or cache anything.
  *
  * The push payload is { id, title, body, url, tag }. The server sends `tag`
  * with the same value the live page uses for that event when it has one, so a
