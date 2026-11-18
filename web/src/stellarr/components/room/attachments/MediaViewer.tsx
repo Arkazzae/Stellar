@@ -6,6 +6,8 @@ import { IconButton } from "@/components/primitives/IconButton";
 import { Modal } from "@/components/primitives/Modal";
 import { useLanguage } from "@/state/hooks";
 
+import { LAZY_LINK_PREFIX } from "@/lib/messages/messageExport";
+
 import { useMediaMenu, type MediaMenuTarget } from "./MediaMenu";
 
 /**
@@ -32,9 +34,15 @@ export type ViewerTarget =
 export interface MediaViewerProps {
   target: ViewerTarget | null;
   onClose(): void;
+  /**
+   * Fetches an original that was left unread until now, for a picture whose
+   * address is not yet usable; the viewer shows its preview meanwhile.
+   */
+  resolveOriginal?(src: string): Promise<string | null>;
 }
 
 const LABEL_ID = "media-viewer-title";
+
 
 /** Travel before a touch is classified as a swipe or as a scroll. */
 const SWIPE_START_PX = 8;
@@ -75,7 +83,7 @@ function currentMedia(target: ViewerTarget, index: number): MediaMenuTarget {
  * It sits on the `Modal` the settings dialogs use, which supplies the focus
  * trap, the Escape handler and the scroll lock.
  */
-export function MediaViewer({ target, onClose }: MediaViewerProps) {
+export function MediaViewer({ target, onClose, resolveOriginal }: MediaViewerProps) {
   const { t } = useLanguage();
   // The gallery position lives here: nothing outside this dialog cares which
   // image is on screen, and a host would only hand it straight back.
@@ -95,6 +103,26 @@ export function MediaViewer({ target, onClose }: MediaViewerProps) {
 
   const galleryLength = target?.kind === "image" ? target.images.length : 0;
 
+  // An original that is fetched on demand is asked for when its picture comes
+  // on screen. What came back replaces its address, so the stage, the download
+  // link and the menu all use the usable one.
+  const [resolved, setResolved] = useState<Record<string, string>>({});
+  const wanted = target?.kind === "image" ? (target.images[index] ?? target.images[0])?.src : undefined;
+  useEffect(() => {
+    if (wanted === undefined || resolveOriginal === undefined || resolved[wanted] !== undefined) return;
+    let current = true;
+    void resolveOriginal(wanted).then((url) => {
+      if (current && url !== null && url !== wanted) setResolved((all) => ({ ...all, [wanted]: url }));
+    });
+    return () => {
+      current = false;
+    };
+  }, [wanted, resolveOriginal, resolved]);
+  const shownTarget: ViewerTarget | null =
+    target?.kind === "image"
+      ? { ...target, images: target.images.map((image) => ({ ...image, src: resolved[image.src] ?? image.src })) }
+      : target;
+
   useEffect(() => {
     if (galleryLength < 2) return;
     const onKeyDown = (event: KeyboardEvent) => {
@@ -107,7 +135,7 @@ export function MediaViewer({ target, onClose }: MediaViewerProps) {
     return () => document.removeEventListener("keydown", onKeyDown);
   }, [galleryLength]);
 
-  const media = target === null ? null : currentMedia(target, index);
+  const media = shownTarget === null ? null : currentMedia(shownTarget, index);
 
   return (
     <Modal open={target !== null} onClose={onClose} labelledBy={LABEL_ID} className="mv-wrap">
@@ -120,18 +148,25 @@ export function MediaViewer({ target, onClose }: MediaViewerProps) {
                 {index + 1} / {galleryLength}
               </span>
             ) : null}
-            <Button asChild variant="quiet" size="icon-sm">
-              <a
-                href={media.src}
-                target="_blank"
-                rel="noopener noreferrer"
-                aria-label={t("media.download")}
-                title={t("media.download")}
-                download=""
-              >
+            {media.src.startsWith(LAZY_LINK_PREFIX) ? (
+              // The original is still being fetched and decrypted.
+              <Button variant="quiet" size="icon-sm" disabled aria-label={t("media.download")} title={t("media.download")}>
                 <Icon name="download" size={16} />
-              </a>
-            </Button>
+              </Button>
+            ) : (
+              <Button asChild variant="quiet" size="icon-sm">
+                <a
+                  href={media.src}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  aria-label={t("media.download")}
+                  title={t("media.download")}
+                  download=""
+                >
+                  <Icon name="download" size={16} />
+                </a>
+              </Button>
+            )}
             <IconButton
               icon="x"
               size={18}
@@ -154,7 +189,7 @@ export function MediaViewer({ target, onClose }: MediaViewerProps) {
           >
             {target.kind === "image" ? (
               <ImageStage
-                images={target.images}
+                images={shownTarget?.kind === "image" ? shownTarget.images : target.images}
                 index={index}
                 onStep={
                   galleryLength > 1
@@ -254,7 +289,7 @@ function ImageStage({
   const currentSrc = current?.src;
   const hasPreview = current?.preview !== undefined;
   useEffect(() => {
-    if (currentSrc === undefined || !hasPreview) return;
+    if (currentSrc === undefined || !hasPreview || currentSrc.startsWith(LAZY_LINK_PREFIX)) return;
     const original = new Image();
     original.onload = () => setLoaded(currentSrc);
     original.src = currentSrc;

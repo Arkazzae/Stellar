@@ -9,6 +9,7 @@ import {
   downloadTarget,
   plainText,
   startDownload,
+  LAZY_LINK_PREFIX,
   type DownloadTarget,
   type PointedAt,
 } from "@/lib/messages/messageExport";
@@ -25,6 +26,8 @@ export interface MessageMenuInput {
   canModerate: boolean;
   /** Adds "copy identifier", as the preference in the advanced settings promises. */
   developerMode: boolean;
+  /** Fetches an encrypted original that was left unread until it is saved or copied. */
+  resolveOriginal?(src: string): Promise<string | null>;
   /** Absent leaves the menu with only what needs no handler: copying and saving. */
   onAction?(action: MessageAction): void;
   confirm: Confirm;
@@ -36,7 +39,26 @@ function copy(text: string): void {
   void navigator.clipboard?.writeText(text).catch(() => undefined);
 }
 
-function imageEntries(target: DownloadTarget, t: Translator): MenuEntry[] {
+/** Runs the action on the address, once an original that was left unread has been fetched. */
+function withOriginal(
+  href: string,
+  resolve: MessageMenuInput["resolveOriginal"],
+  act: (href: string) => void,
+): void {
+  if (resolve === undefined || !href.startsWith(LAZY_LINK_PREFIX)) {
+    act(href);
+    return;
+  }
+  void resolve(href).then((url) => {
+    if (url !== null) act(url);
+  });
+}
+
+function imageEntries(
+  target: DownloadTarget,
+  t: Translator,
+  resolve: MessageMenuInput["resolveOriginal"],
+): MenuEntry[] {
   const entries: MenuEntry[] = [];
   // The desktop client has no browser menu behind this one to fall back on, so
   // "copy image" exists here or nowhere.
@@ -48,7 +70,7 @@ function imageEntries(target: DownloadTarget, t: Translator): MenuEntry[] {
       onSelect: () => {
         // A picture that cannot be read was never going to reach the clipboard;
         // its address, offered next, still can.
-        void copyImage(target.href).catch(() => undefined);
+        withOriginal(target.href, resolve, (href) => void copyImage(href).catch(() => undefined));
       },
     });
   }
@@ -103,9 +125,9 @@ export function messageMenuEntries(input: MessageMenuInput): MenuEntry[] {
       id: "download",
       label: t("common.download"),
       icon: "download",
-      onSelect: () => startDownload(file),
+      onSelect: () => withOriginal(file.href, input.resolveOriginal, (href) => startDownload({ ...file, href })),
     });
-    if (file.image === true) entries.push(...imageEntries(file, t));
+    if (file.image === true) entries.push(...imageEntries(file, t, input.resolveOriginal));
   }
   entries.push({
     id: "copy",
