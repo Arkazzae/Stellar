@@ -37,19 +37,18 @@ const ILLUSTRATIONS = [
 
 /**
  * The stickers: above the heading of an account screen, and over the empty
- * and first-time states of messages and Friends. Exported 104 square, the
- * largest they are drawn; smaller ones take the same files.
+ * and first-time states in the main area of Friends and in the encryption
+ * dialogs. Exported 104 square, the largest they are drawn; smaller ones
+ * take the same files.
  */
 const STICKERS = [
   "01-welcome",
-  "02-first-message",
   "04-creating-channel",
   "05-invite-friends",
   "10-reading",
   "25-self-hosting",
   "27-connecting",
   "28-offline",
-  "29-away",
   "30-release",
   "33-finding-message",
   "38-high-five",

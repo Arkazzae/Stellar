@@ -9,14 +9,12 @@ import styles from "./MascotArt.module.css";
  */
 export type StickerName =
   | "01-welcome"
-  | "02-first-message"
   | "04-creating-channel"
   | "05-invite-friends"
   | "10-reading"
   | "25-self-hosting"
   | "27-connecting"
   | "28-offline"
-  | "29-away"
   | "30-release"
   | "33-finding-message"
   | "38-high-five"
@@ -79,13 +77,12 @@ export function MascotImage({
 }
 
 /**
- * The sizes a sticker is drawn at: `column` in a narrow column (the rail, a
- * side panel), `main` in the main area and in dialogs, `page` above the
- * heading of an account screen.
+ * The sizes a sticker is drawn at: `main` in the main area and in dialogs,
+ * `page` above the heading of an account screen.
  */
-export type StickerSize = "column" | "main" | "page";
+export type StickerSize = "main" | "page";
 
-const STICKER_PIXELS: Record<StickerSize, number> = { column: 64, main: 96, page: 104 };
+const STICKER_PIXELS: Record<StickerSize, number> = { main: 96, page: 104 };
 
 export interface StickerProps {
   name: StickerName;

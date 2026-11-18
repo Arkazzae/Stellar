@@ -2,13 +2,10 @@ import { useId } from "react";
 
 import { Icon } from "@stellarr/icons";
 import { Avatar } from "@/components/primitives/Avatar";
-import { Sticker } from "@/components/primitives/MascotArt";
 import type { ActiveFriendVM, OpenProfile } from "@/components/view-models";
 import type { Translator } from "@/i18n";
 import { PRESENCE_LABEL } from "@/ports";
 import { useLanguage } from "@/state/LanguageProvider";
-
-import { MESSAGES_STICKERS } from "./stickers";
 
 export interface FriendsActivityProps {
   friends: ActiveFriendVM[];
@@ -56,11 +53,7 @@ export function FriendsActivity({ friends, onOpenProfile, onMessage }: FriendsAc
 
       <div className="roster-list">
         {friends.length === 0 ? (
-          <div className="fr-activity-empty">
-            <Sticker name={MESSAGES_STICKERS.nobodyActive} size="column" align="center" />
-            <h4>{t("friends.activityEmptyTitle")}</h4>
-            <p>{t("friends.activityEmpty")}</p>
-          </div>
+          <p className="fr-activity-empty">{t("friends.activityEmpty")}</p>
         ) : (
           <ul className="person-list">
             {friends.map((entry) => {
