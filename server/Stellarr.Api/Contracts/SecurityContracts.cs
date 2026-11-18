@@ -128,7 +128,8 @@ public sealed record AccountSecurityDto(
     bool SecurityRecoveryRequired = false,
     bool PasskeyAvailable = false,
     IReadOnlyList<LinkedIdentityDto>? Identities = null,
-    IReadOnlyList<IdentityProviderDto>? IdentityProviders = null);
+    IReadOnlyList<IdentityProviderDto>? IdentityProviders = null,
+    bool HasPassword = true);
 
 /// <summary>An identity at a provider this account signs in with.</summary>
 public sealed record LinkedIdentityDto(string Id, string? ProviderId, string Name, DateTime CreatedAt);
@@ -137,6 +138,9 @@ public sealed record LinkedIdentityDto(string Id, string? ProviderId, string Nam
 public sealed record IdentityProviderDto(string Id, string DisplayName);
 
 public sealed record IdentityChangeRequest(string? Password);
+
+/// <summary>The first password of an account made through a provider.</summary>
+public sealed record SetPasswordRequest(string? NewPassword);
 
 /// <summary>One of the account's signed-in devices, as its owner sees it.</summary>
 public sealed record OwnSessionDto(

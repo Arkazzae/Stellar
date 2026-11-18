@@ -1,4 +1,6 @@
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Configuration;
+using Stellarr.Api.Auth;
 using Stellarr.Api.Auth.Security;
 using Stellarr.Api.Data;
 using Stellarr.Api.Domain;
@@ -98,7 +100,7 @@ internal static class SecurityCommands
             {
                 id = identity.Id.ToString(),
                 issuer = identity.Issuer,
-                providerId = identity.ProviderId,
+                providerId = WaysIn.ProviderOf(identity),
                 createdAt = identity.CreatedAt,
             }).ToArray(),
             events = events.Select(securityEvent => new
@@ -129,7 +131,7 @@ internal static class SecurityCommands
         lines.Add($"Unused recovery codes: {remainingCodes}");
         lines.Add($"Linked identities: {identities.Length}");
         lines.AddRange(identities.Select(identity =>
-            $"  {identity.Id}  {identity.Issuer}  {identity.ProviderId ?? "(provider not recorded)"}  linked {identity.CreatedAt:O}"));
+            $"  {identity.Id}  {identity.Issuer}  {WaysIn.ProviderOf(identity)}  linked {identity.CreatedAt:O}"));
         lines.Add($"Recent security events: {events.Length}");
         return new CliResult("security.show", data, lines);
     }
@@ -171,9 +173,20 @@ internal static class SecurityCommands
                 $"{user.Username} has no linked identity '{identityId}'. Take the id from `security show`.",
                 CliExit.NotFound);
 
+        // The web refuses to remove an account's last way in; an operator may
+        // have a reason to, so the CLI only says so before asking. It reads
+        // the providers from the same settings the server does; one it cannot
+        // see counts for nothing, so it warns rather more often, never less.
+        var oidc = runtime.Configuration.GetSection(ExternalOidcOptions.SectionName).Get<ExternalOidcOptions>()
+            ?? new ExternalOidcOptions();
+        var lastWayIn = !await WaysIn.RemainAsync(db, oidc, user, cancellationToken, withoutIdentity: identity.Id);
         runtime.Confirm(
             $"Will unlink {identity.Issuer} from {user.DisplayName} ({user.Username}); " +
-            "that identity will no longer sign in to the account. Sessions already open stay open; end them with `sessions revoke`.");
+            "that identity will no longer sign in to the account. Sessions already open stay open; end them with `sessions revoke`." +
+            (lastWayIn
+                ? " It looks like the account's last way in: no password, no passkey and no other identity at a provider " +
+                    "configured here, so only a password reset by mail would open it."
+                : ""));
 
         db.ExternalIdentities.Remove(identity);
         SecurityEvents.Record(

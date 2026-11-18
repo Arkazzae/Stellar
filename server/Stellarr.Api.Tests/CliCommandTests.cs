@@ -604,7 +604,7 @@ public sealed class CliCommandTests
         {
             var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
             var user = await db.Users.SingleAsync(x => x.Username == "jo");
-            passwordHash = user.PasswordHash;
+            passwordHash = user.PasswordHash!;
             sessionId = Guid.NewGuid();
             db.UserSessions.Add(new UserSession
             {
@@ -800,6 +800,12 @@ internal sealed class CliFixture : IDisposable
         IReadOnlyDictionary<string, string?> environment,
         params string[] args) =>
         await RunCommandAsync("", interactive: false, args, environment);
+
+    internal async Task<CliRun> RunInteractiveWithEnvironmentAsync(
+        string stdin,
+        IReadOnlyDictionary<string, string?> environment,
+        params string[] args) =>
+        await RunCommandAsync(stdin, interactive: true, args, environment);
 
     private async Task<CliRun> RunCommandAsync(
         string stdin,

@@ -9,6 +9,19 @@ using Stellarr.Api.Realtime;
 
 namespace Stellarr.Api.Endpoints;
 
+/// <summary>What a change that asks for the current password got for it.</summary>
+internal enum PasswordProof
+{
+    /// <summary>The password, or for an account without one the fresh proof that stands in for it.</summary>
+    Given,
+
+    /// <summary>A password that is not the one of the account.</summary>
+    WrongPassword,
+
+    /// <summary>An account without a password whose sign-in is too old to stand in for one.</summary>
+    FreshProofNeeded,
+}
+
 /// <summary>The signed-in account's own security state, methods and history.</summary>
 public static partial class AccountSecurityEndpoints
 {
@@ -30,6 +43,9 @@ public static partial class AccountSecurityEndpoints
             .RequireRateLimiting(RateLimitPolicies.SecurityWrite);
         group.MapPost("/identities/{identityId:guid}/remove", RemoveIdentityAsync)
             .RequireRateLimiting(RateLimitPolicies.SecurityWrite);
+        group.MapPost("/identities/{providerId}/reauthenticate", StartReauthenticationAsync)
+            .RequireRateLimiting(RateLimitPolicies.SecurityWrite);
+        group.MapPost("/password", SetPasswordAsync).RequireRateLimiting(RateLimitPolicies.SecurityWrite);
         return endpoints;
     }
 
@@ -85,7 +101,8 @@ public static partial class AccountSecurityEndpoints
             await IdentitiesAsync(db, oidc, messages, userId, cancellationToken),
             oidc.ConfiguredProviders()
                 .Select(provider => new IdentityProviderDto(provider.Id, ProviderName(provider, messages)))
-                .ToArray()));
+                .ToArray(),
+            user.PasswordHash is not null));
     }
 
     private static async Task<IResult> GetEventsAsync(
@@ -219,6 +236,7 @@ public static partial class AccountSecurityEndpoints
         RemoveMfaMethodRequest request,
         HttpContext context,
         AppDbContext db,
+        ExternalOidcOptions oidc,
         PasswordService passwords,
         Messages messages,
         CancellationToken cancellationToken)
@@ -251,6 +269,14 @@ public static partial class AccountSecurityEndpoints
             return Results.Problem(
                 statusCode: StatusCodes.Status404NotFound,
                 title: messages.Get(MessageKey.SecurityMethodNotFound));
+        }
+
+        if (method.Type == MfaMethodTypes.Passkey &&
+            !await WaysIn.RemainAsync(db, oidc, user, cancellationToken, withoutMethod: method.Id))
+        {
+            return Results.Problem(
+                statusCode: StatusCodes.Status409Conflict,
+                title: messages.Get(MessageKey.SecurityLastWayInPasskey));
         }
 
         var remaining = await db.MfaMethods.CountAsync(
@@ -305,6 +331,59 @@ public static partial class AccountSecurityEndpoints
         await db.SaveChangesAsync(cancellationToken);
         await transaction.CommitAsync(cancellationToken);
         await SessionAuthentication.SignInAsync(context, user, currentSessionId, lifetime.ShortLived);
+        return Results.NoContent();
+    }
+
+    /// <summary>
+    /// The first password of an account made through a provider. It adds a
+    /// way in, like linking a provider, so it asks for the same fresh proof;
+    /// the sessions already open stay, as nothing about them was in doubt.
+    /// An account that has a password changes it in the account endpoints,
+    /// with the current one.
+    /// </summary>
+    private static async Task<IResult> SetPasswordAsync(
+        SetPasswordRequest request,
+        HttpContext context,
+        AppDbContext db,
+        PasswordService passwords,
+        Messages messages,
+        CancellationToken cancellationToken)
+    {
+        if (PasswordPolicy.Violation(request.NewPassword, messages) is { } problem)
+        {
+            return Results.ValidationProblem(new Dictionary<string, string[]> { ["newPassword"] = [problem] });
+        }
+
+        await using var transaction = await db.Database.BeginTransactionAsync(
+            System.Data.IsolationLevel.Serializable, cancellationToken);
+        var userId = context.User.RequireUserId();
+        await db.Database.ExecuteSqlInterpolatedAsync(
+            $"UPDATE \"Users\" SET \"SessionVersion\" = \"SessionVersion\" WHERE \"Id\" = {userId};",
+            cancellationToken);
+        var user = await db.Users.FindAsync([userId], cancellationToken);
+        if (user is null)
+        {
+            return Results.NotFound();
+        }
+
+        if (user.PasswordHash is not null)
+        {
+            return Results.Problem(
+                statusCode: StatusCodes.Status409Conflict,
+                title: messages.Get(MessageKey.SecurityPasswordAlreadySet));
+        }
+
+        if (await PasswordOrFreshProofAsync(context, db, user, password: null, passwords, cancellationToken) is not PasswordProof.Given)
+        {
+            return FreshSecondStepFilter.Refusal(messages);
+        }
+
+        user.PasswordHash = passwords.Hash(request.NewPassword!);
+        SecurityEvents.Record(
+            db, user.Id, SecurityEventKinds.PasswordChanged, context, "password set",
+            await SecurityEvents.VerifiedEmailAsync(db, user.Id, cancellationToken));
+        await db.SaveChangesAsync(cancellationToken);
+        await transaction.CommitAsync(cancellationToken);
         return Results.NoContent();
     }
 
@@ -460,9 +539,12 @@ public static partial class AccountSecurityEndpoints
     /// A factor lifecycle change needs a recent actual MFA proof for an
     /// MFA-enabled account. Password or remembered trust alone is not enough.
     /// First enrollment instead accepts a recent primary proof or the current
-    /// password.
+    /// password. An account without a password has only the recent primary
+    /// proof: a sign-in in the last few minutes, or a fresh one at one of its
+    /// providers (see <see cref="Auth.Security.IdentityLinks"/>), never
+    /// nothing.
     /// </summary>
-    private static async Task<bool> CanChangeSecurityAsync(
+    internal static async Task<bool> CanChangeSecurityAsync(
         HttpContext context,
         AppDbContext db,
         User user,
@@ -490,14 +572,42 @@ public static partial class AccountSecurityEndpoints
             IsRecentPrimary(session);
     }
 
+    /// <summary>
+    /// The proof a change that asks for the current password takes: that
+    /// password when the account has one, and when it has none, the fresh
+    /// proof any other security change takes (see
+    /// <see cref="CanChangeSecurityAsync"/>). A change refused for want of
+    /// that proof answers with <see cref="FreshSecondStepFilter.Refusal"/>,
+    /// or with its own word for it where it answers in outcomes.
+    /// </summary>
+    internal static async Task<PasswordProof> PasswordOrFreshProofAsync(
+        HttpContext context,
+        AppDbContext db,
+        User user,
+        string? password,
+        PasswordService passwords,
+        CancellationToken cancellationToken)
+    {
+        if (user.PasswordHash is not null)
+        {
+            return password is not null && passwords.Verify(password, user.PasswordHash)
+                ? PasswordProof.Given
+                : PasswordProof.WrongPassword;
+        }
+
+        return await CanChangeSecurityAsync(context, db, user, password: null, passwords, cancellationToken)
+            ? PasswordProof.Given
+            : PasswordProof.FreshProofNeeded;
+    }
+
     private static bool IsRecentMfa(UserSession session) =>
         session.MfaCompletedAt is { } completed &&
         completed >= DateTime.UtcNow - MfaPolicy.FreshMfaWindow;
 
-    private static bool IsRecentPrimary(UserSession session) =>
+    internal static bool IsRecentPrimary(UserSession session) =>
         (session.AuthenticatedAt ?? session.CreatedAt) >= DateTime.UtcNow - MfaPolicy.FreshMfaWindow;
 
-    private static Task<UserSession?> CurrentSessionAsync(
+    internal static Task<UserSession?> CurrentSessionAsync(
         HttpContext context,
         AppDbContext db,
         User user,
