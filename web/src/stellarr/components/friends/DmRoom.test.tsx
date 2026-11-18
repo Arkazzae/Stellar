@@ -134,4 +134,21 @@ describe("DmRoom call", () => {
 
     expect(props.onVideoCall).toHaveBeenCalledOnce();
   });
+
+  it("makes no call where this browser cannot encrypt one, and says why on both buttons", async () => {
+    const reason = "Ta przeglądarka nie potrafi szyfrować połączeń.";
+    const { user, props } = openRoom({ callBlocked: reason });
+
+    const call = screen.getByRole("button", { name: "Zadzwoń do Ada" });
+    const camera = screen.getByRole("button", { name: "Włącz kamerę" });
+    await user.click(call);
+    await user.click(camera);
+
+    expect(props.onCall).not.toHaveBeenCalled();
+    expect(props.onVideoCall).not.toHaveBeenCalled();
+    for (const button of [call, camera]) {
+      expect(button).toHaveAttribute("aria-disabled", "true");
+      expect(button).toHaveAttribute("title", reason);
+    }
+  });
 });

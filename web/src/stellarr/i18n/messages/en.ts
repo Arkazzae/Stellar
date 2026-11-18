@@ -595,6 +595,22 @@ export const en = {
   "dm.writeTo": "Message @{name}",
   "dm.youPrefix": "You: {content}",
   "dm.calling": "Calling…",
+  "dm.callEncrypted": "End-to-end encrypted",
+  "voice.undecryptableAudio": "Cannot decrypt sound from {name}",
+  "voice.undecryptableVideo": "Cannot decrypt video from {name}",
+  "voice.undecryptableBoth": "Cannot decrypt sound or video from {name}",
+  "dm.callBlocked.unsupported":
+    "This conversation is end-to-end encrypted, and this browser cannot encrypt calls. Call from another browser.",
+  "dm.callBlocked.insecure":
+    "This conversation is end-to-end encrypted, and this page is not open over HTTPS. Open it over HTTPS to call.",
+  "dm.callBlocked.deviceLimit":
+    "Your account holds keys in as many browsers as it can. Remove the keys of an old one in the encryption settings to call from here.",
+  "dm.incomingBlocked.unsupported":
+    "You cannot answer here: the conversation is end-to-end encrypted, and this browser cannot encrypt calls.",
+  "dm.incomingBlocked.insecure":
+    "You cannot answer here: the conversation is end-to-end encrypted, and this page is not open over HTTPS.",
+  "dm.incomingBlocked.deviceLimit":
+    "You cannot answer here: your account holds keys in as many browsers as it can.",
   "dm.you": "You",
   "dm.chat": "Chat",
   "dm.closeChat": "Close chat",

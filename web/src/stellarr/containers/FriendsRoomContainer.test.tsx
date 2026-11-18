@@ -32,6 +32,7 @@ vi.mock("@/state/hooks", () => ({
   useVoice: () => mocks.voice,
   useLanguage: () => mocks.language,
   useProfile: () => mocks.profile,
+  useEncryption: () => ({ status: { support: "supported", deviceLimit: false } }),
 }));
 
 vi.mock("./NotificationInboxContainer", () => ({
