@@ -62,6 +62,8 @@ function isSameState(a: VoiceState, b: VoiceState): boolean {
     a.noiseSuppressionActive === b.noiseSuppressionActive &&
     a.degraded === b.degraded &&
     a.encrypted === b.encrypted &&
+    a.suppressorDownload?.kind === b.suppressorDownload?.kind &&
+    a.suppressorDownload?.percent === b.suppressorDownload?.percent &&
     sameTransport(a.transport, b.transport) &&
     sameScreen(a.localScreen, b.localScreen) &&
     sameCamera(a.localCamera, b.localCamera) &&

@@ -66,6 +66,7 @@ const mic: MicTest = {
   speaking: false,
   error: null,
   activeNoiseSuppression: null,
+  requestedNoiseSuppression: null,
   gateActive: null,
   autoGain: null,
   echoCancellation: null,

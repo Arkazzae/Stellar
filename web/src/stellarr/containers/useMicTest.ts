@@ -13,6 +13,7 @@ import type {
   ActiveEchoCancellation,
   ActiveNoiseSuppression,
   MicTest,
+  NoiseSuppressionMode,
 } from "@/ports";
 import { useLanguage } from "@/state/hooks";
 
@@ -38,6 +39,7 @@ interface Readout {
   peak: number;
   speaking: boolean;
   noiseSuppression: ActiveNoiseSuppression | null;
+  requestedNoiseSuppression: NoiseSuppressionMode | null;
   gateActive: boolean | null;
   autoGain: ActiveAutoGain | null;
   echoCancellation: ActiveEchoCancellation | null;
@@ -49,6 +51,7 @@ const SILENT: Readout = {
   peak: 0,
   speaking: false,
   noiseSuppression: null,
+  requestedNoiseSuppression: null,
   gateActive: null,
   autoGain: null,
   echoCancellation: null,
@@ -124,7 +127,8 @@ export function useMicTest(settings: VoiceSettings): MicTest {
 
     void (async () => {
       try {
-        const opened = await captureMicrophone(applied.current, { translate: t });
+        const asked = applied.current;
+        const opened = await captureMicrophone(asked, { translate: t });
         if (token !== run.current) {
           opened.dispose();
           return;
@@ -158,6 +162,7 @@ export function useMicTest(settings: VoiceSettings): MicTest {
         setReadout((shown) => ({
           ...shown,
           noiseSuppression: opened.noiseSuppression,
+          requestedNoiseSuppression: asked.noiseSuppression,
           gateActive: opened.gateActive,
           autoGain: opened.autoGain,
           echoCancellation: opened.echoCancellation,
@@ -235,6 +240,7 @@ export function useMicTest(settings: VoiceSettings): MicTest {
     speaking: readout.speaking,
     error,
     activeNoiseSuppression: readout.noiseSuppression,
+    requestedNoiseSuppression: readout.requestedNoiseSuppression,
     gateActive: readout.gateActive,
     autoGain: readout.autoGain,
     echoCancellation: readout.echoCancellation,

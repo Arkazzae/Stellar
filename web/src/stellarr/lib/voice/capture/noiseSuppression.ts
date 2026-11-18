@@ -124,11 +124,41 @@ const WASM_URL: Record<WorkletSuppressor, () => string> = {
  * its body would reach the worklet, fail to compile there off the main thread,
  * and leave a processor that keeps running and writes nothing, a microphone
  * gone silent instead of one falling back to the browser's suppressor.
+ *
+ * The body is read as a stream so `onBytes` can follow it. What it counts are
+ * the bytes after the content encoding is undone; the response's
+ * Content-Length counts them before, and nginx serves each binary as its
+ * precompressed .gz, so no total is taken from the response.
  */
-async function fetchBinary(url: string): Promise<ArrayBuffer> {
+async function fetchBinary(
+  url: string,
+  onBytes: (received: number) => void,
+): Promise<ArrayBuffer> {
   const response = await fetch(url);
   if (!response.ok) throw new Error(`${url} answered ${response.status}`);
-  return response.arrayBuffer();
+  const reader = response.body?.getReader();
+  if (!reader) {
+    const whole = await response.arrayBuffer();
+    onBytes(whole.byteLength);
+    return whole;
+  }
+
+  const chunks: Uint8Array[] = [];
+  let received = 0;
+  for (;;) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    chunks.push(value);
+    received += value.byteLength;
+    onBytes(received);
+  }
+  const binary = new Uint8Array(received);
+  let offset = 0;
+  for (const chunk of chunks) {
+    binary.set(chunk, offset);
+    offset += chunk.byteLength;
+  }
+  return binary.buffer;
 }
 
 function createNode(
@@ -159,6 +189,76 @@ function remember<K, V>(cache: Map<K, Promise<V>>, key: K, load: () => Promise<V
 
 const binaryCache = new Map<WorkletSuppressor, Promise<ArrayBuffer>>();
 const registeredWorklets = new WeakMap<AudioContext, Map<WorkletSuppressor, Promise<void>>>();
+
+/**
+ * Where one engine's binary has got to. Each download is reported from the
+ * moment it starts to one final phase, whoever started it: a capture, the
+ * remote mixer, or a choice made ahead of any capture.
+ */
+export interface SuppressorDownloadEvent {
+  kind: WorkletSuppressor;
+  /** The file as served; which RNNoise build it is depends on the browser. */
+  url: string;
+  /** Bytes of the binary received so far. */
+  received: number;
+  phase: "loading" | "done" | "failed";
+}
+
+type DownloadWatcher = (event: SuppressorDownloadEvent) => void;
+
+const downloadWatchers = new Set<DownloadWatcher>();
+
+/** Hear about every binary download from now on; returns the way to stop. */
+export function watchSuppressorDownloads(watcher: DownloadWatcher): () => void {
+  downloadWatchers.add(watcher);
+  return () => {
+    downloadWatchers.delete(watcher);
+  };
+}
+
+function report(event: SuppressorDownloadEvent): void {
+  for (const watcher of [...downloadWatchers]) {
+    try {
+      watcher(event);
+    } catch {
+      // Whoever is watching cannot fail the download.
+    }
+  }
+}
+
+/**
+ * The engine's binary, fetched once per page. The final phase is reported
+ * after `remember` has evicted a failed load, so whoever hears "failed" and
+ * asks again gets a new download rather than the same rejection.
+ */
+function loadBinary(kind: WorkletSuppressor): Promise<ArrayBuffer> {
+  const cached = binaryCache.get(kind);
+  if (cached) return cached;
+
+  const url = WASM_URL[kind]();
+  report({ kind, url, received: 0, phase: "loading" });
+  const loading = remember(binaryCache, kind, () =>
+    fetchBinary(url, (received) => report({ kind, url, received, phase: "loading" })),
+  );
+  loading.then(
+    (binary) => report({ kind, url, received: binary.byteLength, phase: "done" }),
+    () => report({ kind, url, received: 0, phase: "failed" }),
+  );
+  return loading;
+}
+
+/**
+ * Fetch an engine's binary ahead of the capture that will need it, so the
+ * capture finds it here. Resolves to whether it arrived. A failure is
+ * evicted like any other, so the capture tries again and falls back to the
+ * browser's suppressor as it always has.
+ */
+export function preloadSuppressor(kind: WorkletSuppressor): Promise<boolean> {
+  return loadBinary(kind).then(
+    () => true,
+    () => false,
+  );
+}
 
 function registerWorklet(kind: WorkletSuppressor, context: AudioContext): Promise<void> {
   let registered = registeredWorklets.get(context);
@@ -202,7 +302,7 @@ export async function attachSuppressor(
   let node: AudioWorkletNode | null = null;
   try {
     await registerWorklet(kind, context);
-    const wasmBinary = await remember(binaryCache, kind, () => fetchBinary(WASM_URL[kind]()));
+    const wasmBinary = await loadBinary(kind);
 
     const created = createNode(kind, context, wasmBinary);
     node = created;
@@ -226,7 +326,8 @@ export async function attachSuppressor(
   }
 }
 
-/** Test seam: forget the cached binaries between cases. */
+/** Test seam: forget the cached binaries, and who was watching them, between cases. */
 export function resetSuppressorCacheForTests(): void {
   binaryCache.clear();
+  downloadWatchers.clear();
 }

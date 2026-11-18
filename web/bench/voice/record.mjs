@@ -19,8 +19,10 @@ function run(command, args, env = {}) {
   if (result.status !== 0) process.exit(result.status ?? 1);
 }
 
-run("npx", ["vitest", "run", "--project", "web", "src/stellarr/lib/voice/characterization/"], {
-  STELLARR_VOICE_RECORD: "1",
-});
+run(
+  "npx",
+  ["vitest", "run", "--configLoader", "runner", "--project", "web", "src/stellarr/lib/voice/characterization/"],
+  { STELLARR_VOICE_RECORD: "1" },
+);
 run(process.execPath, ["bench/voice/playback/run.mjs", "--record", "--repeat", "5", ...process.argv.slice(2)]);
 console.log("\nRecorded. Review the diff of web/bench/voice/records/ before committing it.");

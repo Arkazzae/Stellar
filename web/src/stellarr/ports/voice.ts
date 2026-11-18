@@ -4,7 +4,7 @@ import type {
   ActiveEchoCancellation,
   ActiveNoiseSuppression,
 } from "@/lib/voice/capture/micPipeline";
-import type { VoiceSettings } from "@/lib/voice/settings";
+import type { NoiseSuppressionMode, VoiceSettings } from "@/lib/voice/settings";
 import type { VoiceClient, VoiceState } from "@/lib/voice/types";
 
 import type { Unsubscribe } from "./chat";
@@ -141,6 +141,13 @@ export interface MicTest {
    * running. `null` while nothing is open.
    */
   activeNoiseSuppression: ActiveNoiseSuppression | null;
+  /**
+   * The mode the open microphone was asked for. A new choice reaches the test
+   * only once it has stayed put, so for a moment after a pick this is still
+   * the previous one, and what is running has to be judged against it.
+   * `null` while nothing is open.
+   */
+  requestedNoiseSuppression: NoiseSuppressionMode | null;
   /**
    * Whether the input gate is really in the capture graph. `null` while
    * nothing is open; `false` with the gate switched on means this browser has

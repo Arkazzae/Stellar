@@ -30,6 +30,7 @@ import type {
   VoiceState,
 } from "../types";
 import { SpeechDetector } from "../capture/vad";
+import { SuppressorDownloads } from "../capture/suppressorDownload";
 import {
   callKeysError,
   callUnsupportedError,
@@ -140,6 +141,8 @@ export class WebRtcVoiceClient implements VoiceClient {
   private readonly health: CallHealth;
   private readonly topology: CallTopology;
   private readonly settingsQueue: SettingsQueue;
+  /** Fetches a chosen suppressor ahead of the capture and says how far it got. */
+  private readonly downloads: SuppressorDownloads;
   private readonly t: Translator;
 
   private channelId: ChannelId | null = null;
@@ -277,6 +280,9 @@ export class WebRtcVoiceClient implements VoiceClient {
       (change) => this.applySettingsNow(change),
       () => this.disposed,
     );
+    this.downloads = new SuppressorDownloads(this.settings.noiseSuppression, {
+      publish: (suppressorDownload) => this.store.set({ suppressorDownload }),
+    });
     this.store.set({ cameraSupported: this.cameraIsSupported() });
   }
 
@@ -466,6 +472,8 @@ export class WebRtcVoiceClient implements VoiceClient {
 
     // The old acknowledgement must never reset a newer call's UI.
     this.store.reset();
+    // A download outlives the call it started in.
+    this.store.set({ suppressorDownload: this.downloads.current });
     if (!wasJoined) return;
     const leaving = this.options.realtime.leaveVoice().catch(() => {
       // Leaving locally always succeeds, even when the hub is gone.
@@ -512,6 +520,7 @@ export class WebRtcVoiceClient implements VoiceClient {
 
   dispose(): void {
     this.disposed = true;
+    this.downloads.dispose();
     void this.leave();
     this.speech.dispose();
     this.remoteAudio.dispose();
@@ -595,6 +604,9 @@ export class WebRtcVoiceClient implements VoiceClient {
    * as recoverable rather than fatal.
    */
   applySettings(next: VoiceSettings): Promise<void> {
+    // Before the queue: a download needs no capture, and outside a call there
+    // is none to wait for.
+    if (!this.disposed) this.downloads.choose(next.noiseSuppression);
     return this.settingsQueue.push({
       settings: next,
       recaptureMic: false,
