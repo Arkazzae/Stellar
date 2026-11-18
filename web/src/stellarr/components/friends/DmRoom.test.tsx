@@ -135,20 +135,27 @@ describe("DmRoom call", () => {
     expect(props.onVideoCall).toHaveBeenCalledOnce();
   });
 
-  it("makes no call where this browser cannot encrypt one, and says why on both buttons", async () => {
+  it("makes no call where this browser cannot encrypt one, and says why when pressed", async () => {
     const reason = "Ta przeglądarka nie potrafi szyfrować połączeń.";
     const { user, props } = openRoom({ callBlocked: reason });
 
     const call = screen.getByRole("button", { name: "Zadzwoń do Ada" });
     const camera = screen.getByRole("button", { name: "Włącz kamerę" });
+    expect(screen.queryByRole("alert")).toBeNull();
     await user.click(call);
+
+    // The reason is shown where a failed call is announced, not only in a title.
+    expect(screen.getByRole("alert")).toHaveTextContent(reason);
+    await user.click(screen.getByRole("button", { name: "Zamknij" }));
+    expect(screen.queryByRole("alert")).toBeNull();
     await user.click(camera);
+    expect(screen.getByRole("alert")).toHaveTextContent(reason);
 
     expect(props.onCall).not.toHaveBeenCalled();
     expect(props.onVideoCall).not.toHaveBeenCalled();
     for (const button of [call, camera]) {
       expect(button).toHaveAttribute("aria-disabled", "true");
-      expect(button).toHaveAttribute("title", reason);
+      expect(button).toHaveAttribute("aria-description", reason);
     }
   });
 });
