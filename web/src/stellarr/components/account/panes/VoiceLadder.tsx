@@ -1,3 +1,4 @@
+import { ProgressRing } from "@/components/primitives/ProgressRing";
 import { Segmented, type SegmentedOption } from "@/components/primitives/Segmented";
 import type { MessageKey } from "@/i18n";
 import { useLanguage } from "@/state/hooks";
@@ -16,6 +17,11 @@ export interface LadderProps<T extends string> {
   onChange: (value: T) => void;
   /** Names the group for assistive technology. */
   label: string;
+  /**
+   * A rung whose choice is still arriving, such as a download: it carries a
+   * ring before its name, and `title` says how far it got in place of the hint.
+   */
+  progress?: { value: T; percent: number | null; title: string } | null;
 }
 
 /**
@@ -32,15 +38,19 @@ export function Ladder<T extends string>({
   value,
   onChange,
   label,
+  progress = null,
 }: LadderProps<T>) {
   const { t } = useLanguage();
-  const options = order.map(
-    (id): SegmentedOption<T> => ({
-      value: id,
-      label: t(rungs[id].label),
-      title: t(rungs[id].hint),
-    }),
-  );
+  const options = order.map((id): SegmentedOption<T> => {
+    const option = { value: id, label: t(rungs[id].label), title: t(rungs[id].hint) };
+    if (progress?.value !== id) return option;
+    return {
+      ...option,
+      title: progress.title,
+      busy: true,
+      leading: <ProgressRing percent={progress.percent} size={10} className="ladder-ring" />,
+    };
+  });
 
   return (
     <>

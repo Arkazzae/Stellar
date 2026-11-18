@@ -88,6 +88,7 @@ vi.mock("@/state/hooks", () => ({
     reset: vi.fn(),
   }),
   useUi: () => ({ modal: world.modal, closeModal: world.closeModal }),
+  useVoice: () => ({ suppressorDownload: null }),
 }));
 
 vi.mock("./useAccountSecurity", () => ({

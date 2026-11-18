@@ -1,10 +1,11 @@
 import { useState, type MouseEvent } from "react";
 
 import { Icon, type IconName } from "@stellarr/icons";
+import { ProgressRing } from "@/components/primitives/ProgressRing";
 import type { CallVM } from "@/components/view-models";
 import { SoundboardPopover } from "@/components/voice/SoundboardPopover";
 import type { MessageKey } from "@/i18n";
-import type { NoiseSuppressionMode, Sound } from "@/ports";
+import type { NoiseSuppressionMode, Sound, SuppressorDownload } from "@/ports";
 import { useLanguage } from "@/state/hooks";
 
 import { CallClock } from "./CallClock";
@@ -12,7 +13,7 @@ import { CallClock } from "./CallClock";
 interface NoiseStep {
   /** What one more press switches to; the five modes form a ring. */
   next: NoiseSuppressionMode;
-  /** The same OFF, WEB, DSP, AI and AI+ marks as in voice settings. */
+  /** The OFF, WEB, DSP, AI and AI+ marks of the icon set. */
   icon: IconName;
   name: MessageKey;
 }
@@ -62,6 +63,11 @@ export interface VoiceDockProps {
   cameraSupported?: boolean;
   onToggleShare: () => void;
   noiseSuppression: NoiseSuppressionMode;
+  /**
+   * An engine's files on their way. Drawn on the noise button only while it
+   * is the engine the button shows, so pressing on past it hides the ring.
+   */
+  noiseDownload?: SuppressorDownload | null;
   onChangeNoiseSuppression: (mode: NoiseSuppressionMode) => void;
   onLeave: () => void;
   onPlaySound: (soundId: string) => void;
@@ -124,6 +130,7 @@ function LiveDock({
   cameraSupported = false,
   onToggleShare,
   noiseSuppression,
+  noiseDownload = null,
   onChangeNoiseSuppression,
   onLeave,
   onPlaySound,
@@ -143,10 +150,14 @@ function LiveDock({
       : t("shell.voiceQualityDetail", { quality, latency });
 
   const noise = NOISE_STEPS[noiseSuppression];
-  const noiseLabel = t("shell.noiseSuppressionCycle", {
-    current: t(noise.name),
-    next: t(NOISE_STEPS[noise.next].name),
-  });
+  const download = noiseDownload?.kind === noiseSuppression ? noiseDownload : null;
+  const noiseNames = { current: t(noise.name), next: t(NOISE_STEPS[noise.next].name) };
+  const noiseLabel =
+    download === null
+      ? t("shell.noiseSuppressionCycle", noiseNames)
+      : download.percent === null
+        ? t("shell.noiseSuppressionDownloadingUnknown", noiseNames)
+        : t("shell.noiseSuppressionDownloading", { ...noiseNames, percent: download.percent });
 
   const cameraLabel = call.cameraPending
     ? t("voiceBar.cameraStarting")
@@ -212,12 +223,14 @@ function LiveDock({
           </span>
           <button
             type="button"
-            className={`di-btn noise ${noiseSuppression}`}
+            className={`di-btn noise ${noiseSuppression}${download ? " downloading" : ""}`}
             title={noiseLabel}
             aria-label={noiseLabel}
+            aria-busy={download ? true : undefined}
             data-noise-mode={noiseSuppression}
             onClick={() => onChangeNoiseSuppression(noise.next)}
           >
+            {download ? <ProgressRing percent={download.percent} size={28} /> : null}
             <Icon name={noise.icon} size={24} className={`noise-icon ${noiseSuppression}`} />
           </button>
           <button

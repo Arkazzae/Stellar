@@ -322,6 +322,8 @@
   }
   .ladder:has(> :nth-child(4):last-child){--ui-segmented-columns:repeat(4,minmax(0,1fr))}
   .ladder:has(> :nth-child(3):last-child){--ui-segmented-columns:repeat(3,minmax(0,1fr))}
+  /* A choice whose files are still arriving: the ring stands before its name. */
+  .ladder .ladder-ring{margin-right:4px}
   /* The one line the row costs: what the current choice actually means. */
   .ladder-note{
     margin-top:10px;color:var(--text-faint);font-size:var(--text-12);line-height:1.45;
