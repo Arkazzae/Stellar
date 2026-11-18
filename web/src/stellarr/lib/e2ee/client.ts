@@ -19,7 +19,7 @@ import type { UploadMediaMetadata } from "@/lib/media/probe";
 
 import { decryptFile, encryptFile, OPAQUE_TYPE, shownType } from "./attachment";
 import { fromBase64, sameBytes, toBase64, type Bytes } from "./bytes";
-import { importEpochKey, newEpochKey, unwrapEpochKey, wrapEpochKey } from "./epoch";
+import { newEpochKey, openEpochKey, unwrapEpochKey, wrapEpochKey, type OpenedEpoch } from "./epoch";
 import {
   exportPrivateKey,
   exportPublicKey,
@@ -68,7 +68,9 @@ export type E2eeEvent =
   /** Keys arrived or changed: a message that was sealed may open now. */
   | { type: "keys"; conversationId?: string }
   /** A message's files finished decrypting; decode it again to show them. */
-  | { type: "attachments"; messageId: string };
+  | { type: "attachments"; messageId: string }
+  /** The conversation's switch moved; a call in it may have to follow. */
+  | { type: "switch"; conversationId: string; state: ConversationEncryption["state"] };
 
 export type E2eeFailure =
   | "unsupported"
@@ -189,9 +191,16 @@ interface ConversationState {
   epochsLoad: Promise<void> | null;
   /** Epoch ids looked for and not found since the last change. */
   missing: Set<string>;
-  opened: Map<string, CryptoKey>;
+  opened: Map<string, OpenedEpoch>;
   /** Rotation is decided one send at a time, so two sends never race to create epochs. */
   queue: Promise<unknown>;
+}
+
+/** The epoch the next message or call frame goes out under. */
+interface SendingEpoch {
+  epochId: string;
+  sequence: number;
+  opened: OpenedEpoch;
 }
 
 interface LocalAccountKey {
@@ -439,7 +448,7 @@ export function createE2eeClient(options: E2eeClientOptions) {
     return found;
   }
 
-  async function openEpoch(conversationId: string, epoch: EncryptionEpoch): Promise<CryptoKey | null> {
+  async function openEpoch(conversationId: string, epoch: EncryptionEpoch): Promise<OpenedEpoch | null> {
     const state = conversation(conversationId);
     const opened = state.opened.get(epoch.id);
     if (opened !== undefined) return opened;
@@ -451,7 +460,7 @@ export function createE2eeClient(options: E2eeClientOptions) {
     for (const [envelope, privateKey] of attempts) {
       if (envelope === undefined || privateKey === undefined) continue;
       try {
-        const key = await unwrapEpochKey(
+        const key: OpenedEpoch = await unwrapEpochKey(
           {
             recipientKeyId: envelope.recipientKeyId,
             ephemeralPublicKey: fromBase64(envelope.ephemeralPublicKey),
@@ -507,13 +516,13 @@ export function createE2eeClient(options: E2eeClientOptions) {
       previousEpochId: keys.encryption.currentEpochId,
       envelopes,
     });
-    const key = await importEpochKey(raw);
+    const opened = await openEpochKey(raw);
     const state = conversation(conversationId);
     remember(state, epoch);
-    state.opened.set(epoch.id, key);
+    state.opened.set(epoch.id, opened);
     keys.currentEpoch = epoch;
     keys.encryption = { ...keys.encryption, currentEpochId: epoch.id };
-    return { epochId: epoch.id, key };
+    return { epochId: epoch.id, sequence: epoch.sequence, opened };
   }
 
   /**
@@ -522,7 +531,7 @@ export function createE2eeClient(options: E2eeClientOptions) {
    * open the current one, or when the keys it was wrapped for are no longer
    * exactly today's.
    */
-  async function decideEpoch(conversationId: string): Promise<{ epochId: string; key: CryptoKey }> {
+  async function decideEpoch(conversationId: string): Promise<SendingEpoch> {
     for (let attempt = 0; attempt < MAX_ATTEMPTS; attempt += 1) {
       const keys = await keysOf(conversationId, attempt > 0);
       if (keys.encryption.state !== "on") {
@@ -536,8 +545,8 @@ export function createE2eeClient(options: E2eeClientOptions) {
         current.id === keys.encryption.currentEpochId &&
         sameRecipients(current.recipients, keys.recipients)
       ) {
-        const key = await openEpoch(conversationId, conversation(conversationId).epochs.get(current.id) ?? current);
-        if (key !== null) return { epochId: current.id, key };
+        const opened = await openEpoch(conversationId, conversation(conversationId).epochs.get(current.id) ?? current);
+        if (opened !== null) return { epochId: current.id, sequence: current.sequence, opened };
       }
       try {
         return await createEpoch(conversationId, keys);
@@ -554,7 +563,7 @@ export function createE2eeClient(options: E2eeClientOptions) {
     throw new E2eeError("gave-up");
   }
 
-  function epochForSending(conversationId: string) {
+  function epochForSending(conversationId: string): Promise<SendingEpoch> {
     const state = conversation(conversationId);
     const run = state.queue.then(
       () => decideEpoch(conversationId),
@@ -669,6 +678,32 @@ export function createE2eeClient(options: E2eeClientOptions) {
     const state = conversation(conversationId);
     if (state.keys !== null) state.keys = { ...state.keys, encryption };
     state.keysStale = true;
+    emit({ type: "switch", conversationId, state: encryption.state });
+  }
+
+  /**
+   * The keys of a private call in `conversationId`, from the server's word
+   * read now. Null only when the server says the conversation is not
+   * encrypted. Whatever else stops this browser from encrypting (no
+   * support, no device, offline, no key it can open) throws, and the caller
+   * does not call: an encrypted conversation's call is encrypted or does not
+   * happen. The epoch is the one the next message would go out under, so a
+   * call rotates on the same rules as a send; asked again during the call,
+   * after keys changed, it hands out the epoch to move to.
+   */
+  async function callKeys(conversationId: string): Promise<CallKeys | null> {
+    await ready;
+    const user = requireUser();
+    const keys = await keysOf(conversationId, true);
+    if (keys.encryption.state !== "on") return null;
+    if (support !== "supported") throw new E2eeError("unsupported");
+    if (device?.id === undefined || device.id === null) await sync();
+    if (device?.id === undefined || device.id === null) throw new E2eeError("no-device");
+    const sending = await epochForSending(conversationId);
+    return {
+      self: user,
+      send: { sequence: sending.sequence, epochId: sending.epochId, base: sending.opened.callBase },
+    };
   }
 
   /* ------------------------------------------------------------ the client */
@@ -923,12 +958,12 @@ export function createE2eeClient(options: E2eeClientOptions) {
       const { epochId, iv, ciphertext } = message.encrypted;
       const conversationId = message.channelId;
       const epoch = await epochFor(conversationId, epochId);
-      const key = epoch === null ? null : await openEpoch(conversationId, epoch);
-      if (key === null) return sealed(message, sealedReason(epoch));
+      const opened = epoch === null ? null : await openEpoch(conversationId, epoch);
+      if (opened === null) return sealed(message, sealedReason(epoch));
       let payload: MessagePayload;
       try {
         payload = await decryptPayload(
-          key,
+          opened.key,
           { conversationId, epochId, authorId: message.author.id },
           fromBase64(iv),
           fromBase64(ciphertext),
@@ -1000,8 +1035,8 @@ export function createE2eeClient(options: E2eeClientOptions) {
       const attachmentIds = input.uploads.flatMap((upload) => upload.attachmentIds);
       let networkRetries = 0;
       for (let attempt = 0; attempt < MAX_ATTEMPTS; attempt += 1) {
-        const { epochId, key } = await epochForSending(conversationId);
-        const body = await encryptPayload(key, { conversationId, epochId, authorId: user }, payload);
+        const { epochId, opened } = await epochForSending(conversationId);
+        const body = await encryptPayload(opened.key, { conversationId, epochId, authorId: user }, payload);
         try {
           const message = await api.sendEncryptedDirectMessage(conversationId, {
             clientMessageId: input.clientMessageId,
@@ -1037,6 +1072,55 @@ export function createE2eeClient(options: E2eeClientOptions) {
       if (file === undefined) return null;
       const url = await decryptToUrl(uploadId, file, file.type);
       return url === null ? null : { url, type: file.type };
+    },
+
+    /* ---------------- calls */
+
+    callKeys,
+
+    /**
+     * The keys for joining an encrypted call already under way, whatever the
+     * switch says now: the conversation's own sending epoch while it is
+     * encrypted, otherwise the newest epoch this browser can open. Throws when
+     * there is none.
+     */
+    async followCall(conversationId: string): Promise<CallKeys> {
+      const keys = await callKeys(conversationId);
+      if (keys !== null) return keys;
+      if (support !== "supported") throw new E2eeError("unsupported");
+      await loadEpochs(conversationId);
+      const newestFirst = [...conversation(conversationId).epochs.values()].sort((a, b) => b.sequence - a.sequence);
+      for (const epoch of newestFirst) {
+        const opened = await openEpoch(conversationId, epoch);
+        if (opened !== null) {
+          return { self: requireUser(), send: { sequence: epoch.sequence, epochId: epoch.id, base: opened.callBase } };
+        }
+      }
+      throw new E2eeError("gave-up");
+    },
+
+    /**
+     * The epoch a call frame names by the low 16 bits of its sequence, loaded
+     * when this browser has not seen it yet. Null when it cannot be had.
+     */
+    async callEpoch(conversationId: string, sequence: number): Promise<CallEpoch | null> {
+      const state = conversation(conversationId);
+      const find = () =>
+        [...state.epochs.values()]
+          .filter((epoch) => (epoch.sequence & 0xffff) === (sequence & 0xffff))
+          .sort((a, b) => b.sequence - a.sequence)[0];
+      let found = find();
+      if (found === undefined) {
+        try {
+          await loadEpochs(conversationId);
+        } catch {
+          return null;
+        }
+        found = find();
+      }
+      if (found === undefined) return null;
+      const opened = await openEpoch(conversationId, found);
+      return opened === null ? null : { sequence: found.sequence, epochId: found.id, base: opened.callBase };
     },
 
     /* ---------------- safety code */
@@ -1075,3 +1159,18 @@ export function createE2eeClient(options: E2eeClientOptions) {
 }
 
 export type E2eeClient = ReturnType<typeof createE2eeClient>;
+
+/** An epoch as a call needs it: what its frames name, and the base their keys come from. */
+export interface CallEpoch {
+  sequence: number;
+  epochId: string;
+  /** The epoch key as a non-extractable HKDF key. */
+  base: CryptoKey;
+}
+
+export interface CallKeys {
+  /** The signed-in user, whose id goes into every key this side sends under. */
+  self: string;
+  /** The epoch to send under. */
+  send: CallEpoch;
+}
