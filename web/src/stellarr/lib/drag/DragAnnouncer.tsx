@@ -22,7 +22,12 @@ export function DragAnnouncer({ id, instructions, announcement }: DragAnnouncerP
       <span id={id} hidden>
         {instructions}
       </span>
-      <span className="sr-only" role="status" aria-live="assertive" aria-atomic="true">
+      <span
+        className="sr-only live-contained"
+        role="status"
+        aria-live="assertive"
+        aria-atomic="true"
+      >
         {announcement}
       </span>
     </>
