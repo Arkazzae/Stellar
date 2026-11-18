@@ -1,8 +1,8 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
+import { WORKER_PATH, WORKER_SCOPE } from "@/lib/platform/worker";
+
 import {
-  NOTIFICATION_WORKER_PATH,
-  NOTIFICATION_WORKER_SCOPE,
   PushEnrollmentError,
   decodeApplicationServerKey,
   disableDevicePush,
@@ -47,7 +47,7 @@ class FakePushManager {
 
 class FakeRegistration {
   readonly active = {
-    scriptURL: new URL(NOTIFICATION_WORKER_PATH, window.location.href).href,
+    scriptURL: new URL(WORKER_PATH, window.location.href).href,
     addEventListener: vi.fn(),
     removeEventListener: vi.fn(),
   };
@@ -120,7 +120,7 @@ describe("inspecting Web Push without enrolling", () => {
       endpoint: "https://push.example/sub-1",
     });
 
-    expect(serviceWorker.getRegistration).toHaveBeenCalledWith(NOTIFICATION_WORKER_PATH);
+    expect(serviceWorker.getRegistration).toHaveBeenCalledWith(WORKER_PATH);
     expect(serviceWorker.register).not.toHaveBeenCalled();
     expect(registration.pushManager.getSubscription).toHaveBeenCalledOnce();
   });
@@ -167,8 +167,8 @@ describe("enrolling this device", () => {
     });
 
     expect(serviceWorker.register).toHaveBeenCalledExactlyOnceWith(
-      NOTIFICATION_WORKER_PATH,
-      { scope: NOTIFICATION_WORKER_SCOPE },
+      WORKER_PATH,
+      { scope: WORKER_SCOPE },
     );
     expect(push.subscribe).toHaveBeenCalledExactlyOnceWith({
       userVisibleOnly: true,
