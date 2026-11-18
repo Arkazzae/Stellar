@@ -114,6 +114,29 @@ public sealed partial class OidcSignInFlowTests
     }
 
     [Fact]
+    public async Task TicketForAFreshSignInStartsNoLinkAndALinkTicketNoFreshSignIn()
+    {
+        using var provider = new FakeProvider();
+        using var host = Host(provider);
+        using var client = BrowserClient(host);
+        await CreatePasswordlessAccountAsync(provider);
+        (await SignInThroughProviderAsync(client, provider, "/")).Dispose();
+        using var reauthenticate = await client.PostAsJsonAsync("/api/me/security/identities/default/reauthenticate", new { });
+        var reauthentication = (await reauthenticate.Content.ReadFromJsonAsync<JsonElement>()).GetProperty("url").GetString()!;
+        // The fresh sign-in's ticket needs no proof, so it must not open a link.
+        using var link = await client.PostAsJsonAsync("/api/me/security/identities/default/link", new { });
+        var linkUrl = (await link.Content.ReadFromJsonAsync<JsonElement>()).GetProperty("url").GetString()!;
+        var reauthenticationTicket = reauthentication[(reauthentication.IndexOf("ticket=", StringComparison.Ordinal) + 7)..];
+        var linkTicket = linkUrl[(linkUrl.IndexOf("ticket=", StringComparison.Ordinal) + 7)..];
+
+        using var linkWithFreshTicket = await client.GetAsync($"/api/auth/oidc/link?ticket={reauthenticationTicket}");
+        using var freshWithLinkTicket = await client.GetAsync($"/api/auth/oidc/reauthenticate?ticket={linkTicket}");
+
+        Assert.Equal("/link-account?result=failed", linkWithFreshTicket.Headers.Location!.OriginalString);
+        Assert.Equal("/link-account?result=unconfirmed", freshWithLinkTicket.Headers.Location!.OriginalString);
+    }
+
+    [Fact]
     public async Task FreshSignInAsSomeoneElseAtTheProviderConfirmsNothing()
     {
         using var provider = new FakeProvider();
