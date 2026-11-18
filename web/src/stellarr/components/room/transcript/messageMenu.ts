@@ -74,12 +74,16 @@ function imageEntries(
       },
     });
   }
-  entries.push({
-    id: "copy-image-link",
-    label: t("media.copyImageLink"),
-    icon: "link",
-    onSelect: () => copy(absoluteUrl(target.href)),
-  });
+  // The link of an original that is fetched on demand is internal to the app
+  // and means nothing once pasted elsewhere.
+  if (!target.href.startsWith(LAZY_LINK_PREFIX)) {
+    entries.push({
+      id: "copy-image-link",
+      label: t("media.copyImageLink"),
+      icon: "link",
+      onSelect: () => copy(absoluteUrl(target.href)),
+    });
+  }
   return entries;
 }
 
