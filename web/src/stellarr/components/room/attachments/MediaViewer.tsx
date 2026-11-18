@@ -18,7 +18,7 @@ export type ViewerTarget =
   | {
       kind: "image";
       /** The whole gallery, so the arrows can move inside it. */
-      images: { src: string; alt: string }[];
+      images: { src: string; alt: string; preview?: string }[];
       index: number;
     }
   | {
@@ -229,7 +229,7 @@ function ImageStage({
   index,
   onStep,
 }: {
-  images: { src: string; alt: string }[];
+  images: { src: string; alt: string; preview?: string }[];
   index: number;
   /** Absent for a single image, which has nowhere to go. */
   onStep?(delta: number): void;
@@ -248,7 +248,23 @@ function ImageStage({
     imageRef.current?.style.removeProperty("--mv-drag-x");
   }, [index, current?.src]);
 
+  // The reduced copy is on screen at once, and the original replaces it when it
+  // has loaded in the background, so opening a large photo is never a blank wait.
+  const [loaded, setLoaded] = useState<string | null>(null);
+  const currentSrc = current?.src;
+  const hasPreview = current?.preview !== undefined;
+  useEffect(() => {
+    if (currentSrc === undefined || !hasPreview) return;
+    const original = new Image();
+    original.onload = () => setLoaded(currentSrc);
+    original.src = currentSrc;
+    return () => {
+      original.onload = null;
+    };
+  }, [currentSrc, hasPreview]);
+
   if (current === undefined) return null;
+  const shown = current.preview !== undefined && loaded !== current.src ? current.preview : current.src;
 
   const onPointerDown = (event: ReactPointerEvent<HTMLImageElement>) => {
     const touchLike = event.pointerType === "touch" || event.pointerType === "pen";
@@ -321,7 +337,7 @@ function ImageStage({
       <img
         ref={imageRef}
         className="mv-media mv-image"
-        src={current.src}
+        src={shown}
         alt={current.alt}
         // A GIF opens here from GIPHY's own host, which is told nothing of
         // the page; an upload is the instance's own and needs no referrer.
