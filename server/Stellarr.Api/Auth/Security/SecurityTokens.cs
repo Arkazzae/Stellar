@@ -103,6 +103,8 @@ public static class SecurityCookies
     private const string TrustDev = "stellarr-dev-trust";
     private const string PasskeyHost = "__Host-stellarr-passkey";
     private const string PasskeyDev = "stellarr-dev-passkey";
+    private const string PendingIdentityHost = "__Host-stellarr-pending-identity";
+    private const string PendingIdentityDev = "stellarr-dev-pending-identity";
 
     public static void SetPreauth(HttpContext context, Guid challengeId, string secret, DateTime expiresAt)
     {
@@ -146,6 +148,19 @@ public static class SecurityCookies
     public static void ClearPasskey(HttpContext context) =>
         context.Response.Cookies.Delete(PasskeyName(context), CookieOptions(context, DateTime.UnixEpoch));
 
+    /// <summary>Binds an identity no account is linked to yet to the browser the provider sent back.</summary>
+    public static void SetPendingIdentity(HttpContext context, Guid pendingId, string secret, DateTime expiresAt) =>
+        context.Response.Cookies.Append(
+            PendingIdentityName(context),
+            $"{pendingId:N}.{secret}",
+            CookieOptions(context, expiresAt));
+
+    public static (Guid Id, string Secret)? ReadPendingIdentity(HttpContext context) =>
+        Split(context.Request.Cookies[PendingIdentityName(context)]);
+
+    public static void ClearPendingIdentity(HttpContext context) =>
+        context.Response.Cookies.Delete(PendingIdentityName(context), CookieOptions(context, DateTime.UnixEpoch));
+
     public static void SetTrustedDevice(HttpContext context, string token, DateTime expiresAt) =>
         context.Response.Cookies.Append(TrustName(context), token, CookieOptions(context, expiresAt));
 
@@ -160,6 +175,9 @@ public static class SecurityCookies
     private static string TrustName(HttpContext context) => context.Request.IsHttps ? TrustHost : TrustDev;
 
     private static string PasskeyName(HttpContext context) => context.Request.IsHttps ? PasskeyHost : PasskeyDev;
+
+    private static string PendingIdentityName(HttpContext context) =>
+        context.Request.IsHttps ? PendingIdentityHost : PendingIdentityDev;
 
     private static CookieOptions CookieOptions(HttpContext context, DateTime expiresAt) => new()
     {

@@ -80,6 +80,7 @@ public sealed class InstanceMaintenance(
         await db.AuthChallenges.Where(x => x.ExpiresAt < ephemeral).ExecuteDeleteAsync(cancellationToken);
         await db.EmailOtpCodes.Where(x => x.ExpiresAt < ephemeral).ExecuteDeleteAsync(cancellationToken);
         await db.CliRecoveryCredentials.Where(x => x.ExpiresAt < ephemeral).ExecuteDeleteAsync(cancellationToken);
+        await db.PendingExternalIdentities.Where(x => x.ExpiresAt < ephemeral).ExecuteDeleteAsync(cancellationToken);
 
         var oldDevices = utcNow.AddDays(-30);
         await db.TrustedDevices.Where(x => x.ExpiresAt < oldDevices).ExecuteDeleteAsync(cancellationToken);

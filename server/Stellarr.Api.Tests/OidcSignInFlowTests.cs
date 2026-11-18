@@ -144,7 +144,7 @@ public sealed partial class OidcSignInFlowTests(StellarrWebApplicationFactory fa
         // The same subject at another issuer is another person.
         using var callback = await SignInThroughProviderAsync(client, work, "/", providerId: "work");
 
-        Assert.Equal("/login?oidc_error=not_linked", callback.Headers.Location!.OriginalString);
+        Assert.Equal("/login?oidc=unlinked", callback.Headers.Location!.OriginalString);
         var session = await client.GetFromJsonAsync<JsonElement>("/api/session");
         Assert.Equal(JsonValueKind.Null, session.GetProperty("user").ValueKind);
     }
@@ -249,7 +249,7 @@ public sealed partial class OidcSignInFlowTests(StellarrWebApplicationFactory fa
 
         using var callback = await SignInThroughProviderAsync(client, provider, "/");
 
-        Assert.Equal("/login?oidc_error=not_linked", callback.Headers.Location!.OriginalString);
+        Assert.Equal("/login?oidc=unlinked", callback.Headers.Location!.OriginalString);
         var session = await client.GetFromJsonAsync<JsonElement>("/api/session");
         Assert.Equal(JsonValueKind.Null, session.GetProperty("user").ValueKind);
     }
@@ -664,16 +664,42 @@ public sealed partial class OidcSignInFlowTests(StellarrWebApplicationFactory fa
         /// <summary>The nonce of the sign-in under way, which the token must echo.</summary>
         public string Nonce { get; set; } = "";
 
+        /// <summary>More claims in the identity token, such as the profile.</summary>
+        public Dictionary<string, object> TokenClaims { get; } = new(StringComparer.Ordinal);
+
+        /// <summary>
+        /// The profile the userinfo endpoint answers with. Null, the default,
+        /// means the provider has no such endpoint.
+        /// </summary>
+        public Dictionary<string, object>? UserInfo
+        {
+            get => _userInfo;
+            set
+            {
+                _userInfo = value;
+                Configuration.UserInfoEndpoint = value is null ? null : $"{IssuerUrl}/userinfo";
+            }
+        }
+
+        private Dictionary<string, object>? _userInfo;
+
         protected override Task<HttpResponseMessage> SendAsync(
             HttpRequestMessage request,
             CancellationToken cancellationToken)
         {
+            if (request.Method == HttpMethod.Get && UserInfo is { } profile &&
+                request.RequestUri?.AbsoluteUri == Configuration.UserInfoEndpoint)
+            {
+                var answer = new Dictionary<string, object>(profile, StringComparer.Ordinal) { ["sub"] = Subject };
+                return Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK) { Content = JsonContent.Create(answer) });
+            }
+
             if (request.Method != HttpMethod.Post || request.RequestUri?.AbsoluteUri != Configuration.TokenEndpoint)
             {
                 return Task.FromResult(new HttpResponseMessage(HttpStatusCode.NotFound));
             }
 
-            var claims = new Dictionary<string, object> { ["sub"] = Subject, ["nonce"] = Nonce };
+            var claims = new Dictionary<string, object>(TokenClaims, StringComparer.Ordinal) { ["sub"] = Subject, ["nonce"] = Nonce };
             if (Amr is { } amr)
             {
                 claims["amr"] = amr;

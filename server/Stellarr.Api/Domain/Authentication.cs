@@ -55,6 +55,52 @@ public sealed class ExternalIdentity
     public User User { get; set; } = null!;
 }
 
+/// <summary>
+/// An identity a provider confirmed that no account is linked to, kept for
+/// a few minutes for the browser the provider sent back. That browser may
+/// link it to the account it then signs in to with a password, or, with an
+/// invite and a provider allowed to, make an account with it. Nothing links
+/// it by its e-mail address. The browser holds the secret in an HttpOnly
+/// cookie; only its digest is stored.
+/// </summary>
+public sealed class PendingExternalIdentity
+{
+    public Guid Id { get; set; }
+    public required string SecretHash { get; set; }
+
+    /// <summary>The configured provider it came back from.</summary>
+    public required string ProviderId { get; set; }
+
+    public required string Issuer { get; set; }
+    public required string Subject { get; set; }
+
+    /// <summary>The address as the provider gave it, and whether the provider said it is verified.</summary>
+    public string? Email { get; set; }
+
+    public bool EmailVerified { get; set; }
+
+    /// <summary>The <c>name</c> the provider gave, to prefill a new account's display name.</summary>
+    public string? DisplayName { get; set; }
+
+    /// <summary>The provider's <c>preferred_username</c>, the first source of a suggested login.</summary>
+    public string? PreferredUsername { get; set; }
+
+    /// <summary>
+    /// The provider's <c>amr</c>, comma-separated, and <c>auth_time</c>, so an
+    /// account made from this identity signs in under the rules a sign-in
+    /// through the provider follows, judged when the account is made.
+    /// </summary>
+    public string Amr { get; set; } = "";
+
+    public string? AuthTime { get; set; }
+
+    /// <summary>"Keep me signed in" was off when the person left for the provider.</summary>
+    public bool ShortLived { get; set; }
+
+    public DateTime CreatedAt { get; set; }
+    public DateTime ExpiresAt { get; set; }
+}
+
 /// <summary>A revocable login, carried by one claim in the encrypted cookie.</summary>
 public sealed class UserSession
 {
