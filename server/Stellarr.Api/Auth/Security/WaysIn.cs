@@ -14,6 +14,15 @@ namespace Stellarr.Api.Auth.Security;
 /// </summary>
 public static class WaysIn
 {
+    /// <summary>The problem code of a refusal to remove the last way in, so a client can say it in its own words.</summary>
+    public const string RefusalCode = "last-way-in";
+
+    /// <summary>The 409 that refuses to remove the last way in, with <paramref name="title"/> as its sentence.</summary>
+    public static IResult Refusal(string title) => Results.Problem(
+        statusCode: StatusCodes.Status409Conflict,
+        title: title,
+        extensions: new Dictionary<string, object?> { ["code"] = RefusalCode });
+
     /// <summary>
     /// Whether the account still has a way in once the identity or the method
     /// named is gone. A second-step method other than a passkey signs nobody in
