@@ -142,3 +142,10 @@ describe("pinnedRows", () => {
     expect(row?.authorName).toBe("Orbit");
   });
 });
+
+describe("presentTranscript and end-to-end encryption", () => {
+  it("marks the body of a decrypted message, so its translation is never stored", () => {
+    const [group] = groups([message("m-1", 0), message("m-2", 1, { decrypted: true })]);
+    expect(group?.bodies.map((body) => body.encrypted === true)).toEqual([false, true]);
+  });
+});

@@ -174,6 +174,7 @@ function presentBody(
   const body: BodyVM = {
     id: message.id,
     parts,
+    ...(message.decrypted === true ? { encrypted: true } : {}),
     ...(pinned ? { pinned: true } : {}),
     ...(reactions.length > 0 ? { reactions } : {}),
   };

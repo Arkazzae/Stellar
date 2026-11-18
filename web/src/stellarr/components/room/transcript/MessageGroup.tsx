@@ -1,5 +1,5 @@
 import { documentLocale, translateForDocument } from "@/i18n/defaultLocale";
-import { useState, type MouseEvent } from "react";
+import { useMemo, useState, type MouseEvent } from "react";
 
 import { Icon } from "@stellarr/icons";
 import { Avatar } from "@/components/primitives/Avatar";
@@ -28,6 +28,8 @@ import { Reactions } from "./Reactions";
 export interface MessageBodyVM {
   id: string;
   parts: MessagePart[];
+  /** The plaintext of an end-to-end encrypted message: its translation stays in memory. */
+  encrypted?: boolean;
   reactions?: Reaction[];
   pinned?: boolean;
 }
@@ -202,6 +204,11 @@ export function MessageGroup({
   );
   const locale = translation?.locale ?? documentLocale();
   const t = translation?.t ?? translateForDocument;
+  // The same settings, held in memory only, for the plaintext of an encrypted message.
+  const privateTranslation = useMemo(
+    () => (translation === undefined ? undefined : { ...translation, persist: false }),
+    [translation],
+  );
 
   // A notice from the server is not a person, so nothing about it opens a
   // profile — the server avatar and name stay inert.
@@ -324,7 +331,7 @@ export function MessageGroup({
                       part={part}
                       callbacks={attachments}
                       priority={fresh}
-                      translation={translation}
+                      translation={body.encrypted === true ? privateTranslation : translation}
                     />
                   </div>
                 ))

@@ -19,6 +19,11 @@ export class TranslationCancelledError extends Error {
 export interface TranslateOptions {
   /** Jump ahead of work that is already waiting, for messages the reader is looking at. */
   priority?: boolean;
+  /**
+   * False keeps the translation in this tab's memory and out of IndexedDB,
+   * for the plaintext of an end-to-end encrypted message.
+   */
+  persist?: boolean;
 }
 
 const waiting: Job[] = [];
@@ -78,12 +83,13 @@ async function translateUncached(
   text: string,
   targetLanguage: TranslationTargetLanguage,
   priority: boolean,
+  persist: boolean,
 ): Promise<string> {
-  const stored = await cache.get(key);
+  const stored = persist ? await cache.get(key) : undefined;
   if (stored !== undefined) return stored;
 
   const translation = await schedule(text, targetLanguage, priority);
-  await cache.set(key, translation, targetLanguage);
+  await cache.set(key, translation, targetLanguage, { persist });
   return translation;
 }
 
@@ -112,6 +118,7 @@ export function translate(
     trimmed,
     targetLanguage,
     options.priority === true,
+    options.persist !== false,
   ).finally(() => sharedRequests.delete(key));
   sharedRequests.set(key, request);
   return request;
