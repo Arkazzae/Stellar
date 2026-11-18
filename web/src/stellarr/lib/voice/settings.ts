@@ -38,8 +38,9 @@ const OPUS_PROFILE_IDS = ["economy", "balanced", "clarity", "premium", "studio"]
 export type OpusProfileId = (typeof OPUS_PROFILE_IDS)[number];
 
 /**
- * `rnnoise`, `gtcrn` and `speex` all run locally in an AudioWorklet from the
- * same package; `browser` is the platform's own suppressor; `off` is raw.
+ * `rnnoise`, `gtcrn` and `speex` each run locally as a WASM binary in an
+ * AudioWorklet, served from /audio/ (see `capture/noiseSuppression.ts`);
+ * `browser` is the platform's own suppressor; `off` is raw.
  */
 const NOISE_MODES = ["browser", "rnnoise", "gtcrn", "speex", "off"] as const;
 export type NoiseSuppressionMode = (typeof NOISE_MODES)[number];
@@ -141,10 +142,11 @@ export const DEFAULT_SETTINGS: VoiceSettings = Object.freeze({
   cameraQuality: DEFAULT_CAMERA_QUALITY,
   opusProfile: "premium",
   screenShareQuality: DEFAULT_SCREEN_SHARE_QUALITY,
-  // RNNoise is the strongest local option and falls back to the browser's
-  // suppressor when AudioWorklet or WASM is unavailable. A stored explicit
-  // choice still wins for every returning user.
-  noiseSuppression: "rnnoise",
+  // The browser's own suppressor is always there and has nothing to download.
+  // The three engines are opt-in, and their files are fetched only once one
+  // is chosen, so no call waits on a download nobody asked for. A stored
+  // explicit choice still wins.
+  noiseSuppression: "browser",
   echoCancellation: true,
   autoGainControl: true,
   inputGainDb: 0,

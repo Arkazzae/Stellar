@@ -127,7 +127,7 @@ describe("opening the device", () => {
       audio: {
         echoCancellation: true,
         autoGainControl: false,
-        noiseSuppression: false,
+        noiseSuppression: true,
         channelCount: 1,
         sampleRate: 48_000,
       },
@@ -136,7 +136,7 @@ describe("opening the device", () => {
     expect(opened.track).toBe(device);
     expect(opened.active).toEqual({
       echoCancellation: "browser",
-      noiseSuppression: false,
+      noiseSuppression: true,
       autoGainControl: false,
     });
   });
