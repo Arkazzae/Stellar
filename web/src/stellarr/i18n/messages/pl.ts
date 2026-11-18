@@ -561,6 +561,10 @@ export const pl = {
   "dm.messagesWith": "Wiadomości z {name}",
   "dm.writeTo": "Napisz do @{name}",
   "dm.youPrefix": "Ty: {content}",
+  "dm.calling": "Dzwonię…",
+  "dm.you": "Ty",
+  "dm.chat": "Czat",
+  "dm.closeChat": "Zamknij czat",
 
   "app.loading": "Wczytywanie serwera…",
   "app.loadFailed": "Nie udało się wczytać serwera",

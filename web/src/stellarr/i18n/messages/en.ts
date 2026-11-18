@@ -563,6 +563,10 @@ export const en = {
   "dm.messagesWith": "Messages with {name}",
   "dm.writeTo": "Message @{name}",
   "dm.youPrefix": "You: {content}",
+  "dm.calling": "Calling…",
+  "dm.you": "You",
+  "dm.chat": "Chat",
+  "dm.closeChat": "Close chat",
 
   "app.loading": "Loading server…",
   "app.loadFailed": "The server could not be loaded",

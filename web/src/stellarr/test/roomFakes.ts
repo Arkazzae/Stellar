@@ -95,6 +95,8 @@ export function fakeUi(overrides: Partial<UiValue> = {}): UiValue {
     toggleRail: vi.fn(),
     profilePanelOpen: false,
     toggleProfilePanel: vi.fn(),
+    callChatOpen: false,
+    toggleCallChat: vi.fn(),
     friendsSearchRequested: false,
     takeFriendsSearch: vi.fn(),
     toggleChannelPanel: vi.fn(),

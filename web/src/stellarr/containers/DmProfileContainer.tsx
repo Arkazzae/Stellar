@@ -2,7 +2,7 @@ import { DmProfilePanel } from "@/components/friends/DmProfilePanel";
 import { formatDate } from "@/lib/format/format";
 import { useFriends, useLanguage, useProfile, useSession, useUi } from "@/state/hooks";
 
-import { toPerson } from "./FriendsRoomContainer";
+import { toPerson } from "./toPerson";
 import { relationTo } from "./relationTo";
 
 /**

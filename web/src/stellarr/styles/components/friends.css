@@ -1,12 +1,4 @@
 @layer components {
-  .dm-video-stage {
-    min-height: 220px;
-    max-height: 42%;
-    padding: 12px;
-    border-bottom: 1px solid var(--line);
-    background: var(--bg);
-  }
-  .dm-video-stage .tiles { height: 100%; }
   /*
    * ==========================================================================
    * FRIENDS AND DIRECT MESSAGES
@@ -837,6 +829,363 @@
     margin-top: var(--sp-4);
   }
 
+  /* ---------- CALL IN A CONVERSATION ---------- */
+  /*
+   * The call has the room. The other person is in the middle, you are the
+   * tile in the corner, the bar is under both. Everyone is a voice tile
+   * (`ParticipantTile`), so these rules place and size tiles and ring the
+   * face; the camera, the mute mark and the menu are the tile's own.
+   */
+  .dm-call {
+    position: relative;
+    flex: 1;
+    min-height: 0;
+    display: flex;
+    flex-direction: column;
+    background: var(--surface-room);
+    /* The corner keys on the call's own width: with the chat beside it the
+       call can be phone-narrow on a desktop, and the bar's narrow layout
+       already keys on the room's. */
+    container: dm-call / inline-size;
+  }
+
+  /* A size container, so a frame can be the largest 16:9 that fits it. */
+  .dm-call-stage {
+    flex: 1;
+    min-height: 0;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    padding: var(--sp-6) var(--sp-5) var(--sp-4);
+    container: dm-call-stage / size;
+  }
+
+  .dm-call-who {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: var(--sp-1);
+    max-width: 100%;
+    text-align: center;
+  }
+
+  /* The face: the tile without its card. The avatar, then the name with the
+     mute mark after it, then the note when a camera is held back. */
+  .tile.dm-call-face,
+  .tile.dm-call-face.speaking {
+    width: auto;
+    max-width: 100%;
+    aspect-ratio: auto;
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto auto minmax(0, 1fr);
+    align-items: center;
+    column-gap: var(--sp-2);
+    row-gap: var(--sp-1);
+    background: none;
+    border: 0;
+    border-radius: 0;
+    box-shadow: none;
+    cursor: default;
+  }
+
+  .dm-call-face .av {
+    --av-size: 128px;
+    --av-face: 40px;
+    grid-column: 1 / -1;
+    grid-row: 1;
+    justify-self: center;
+    margin-bottom: var(--sp-5);
+    /* The ring of a speaking tile, drawn round the face with a gap. */
+    outline: 3px solid transparent;
+    outline-offset: 6px;
+    transition:
+      outline-color var(--dur-base) var(--ease-standard),
+      box-shadow var(--dur-base) var(--ease-standard);
+  }
+
+  .dm-call-face.speaking .av {
+    outline-color: var(--accent);
+    box-shadow: 0 0 24px 9px oklch(0.618 0.185 278 / 0.2);
+  }
+
+  /* Calling: a ring that waits rather than one that lights up. */
+  .dm-call-face.ringing .av {
+    outline-color: var(--line-strong);
+  }
+
+  .dm-call-face .t-name {
+    position: static;
+    grid-column: 2;
+    grid-row: 2;
+    max-width: none;
+    padding: 0;
+    background: none;
+    font-size: var(--fs-display);
+    font-weight: var(--fw-strong);
+    line-height: 28px;
+  }
+
+  .dm-call-face .t-mic {
+    position: static;
+    grid-column: 3;
+    grid-row: 2;
+    display: inline-flex;
+  }
+
+  .dm-call-face:not(.muted) .t-mic {
+    display: none;
+  }
+
+  /* The note keeps its line: the tile is as wide as what it holds. */
+  .dm-call-face .t-held {
+    grid-column: 1 / -1;
+    grid-row: 3;
+    max-width: none;
+    padding: 0;
+  }
+
+  /* The menu follows the name instead of sitting on the ring. */
+  .dm-call-face .tile-more {
+    position: static;
+    grid-column: 4;
+    grid-row: 2;
+    justify-self: start;
+  }
+
+  /* Duration, or what stands in for it. More than one item takes a dot
+     between them. */
+  .dm-call-meta {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--sp-1);
+    font-size: var(--fs-body);
+    line-height: 20px;
+    color: var(--text-muted);
+    font-variant-numeric: tabular-nums;
+  }
+
+  .dm-call-meta > * + *::before {
+    content: "·";
+    margin-right: var(--sp-1);
+  }
+
+  /* A camera or a screen in the middle: the largest 16:9 frame the stage
+     holds, the picture contained in it. */
+  .tile.dm-call-frame,
+  .dm-call-stage .share-band {
+    flex: none;
+    width: min(100cqw, 100cqh * 16 / 9);
+    max-width: none;
+    max-height: none;
+    aspect-ratio: 16 / 9;
+    border-radius: var(--radius-lg);
+  }
+
+  .tile.dm-call-frame {
+    cursor: default;
+  }
+
+  .tile.dm-call-frame > video {
+    object-fit: contain;
+  }
+
+  /* With a screen in the middle there are two tiles in the corner; the
+     frame keeps clear of them rather than running under. */
+  .dm-call.sharing .dm-call-stage {
+    padding-right: calc(192px + var(--sp-5) * 2);
+  }
+
+  /* You, and above you the other person while a screen has the middle. */
+  .dm-call-corner {
+    position: absolute;
+    right: var(--sp-5);
+    bottom: var(--sp-5);
+    z-index: 2;
+    width: 192px;
+    display: flex;
+    flex-direction: column;
+    gap: var(--sp-3);
+  }
+
+  .tile.dm-call-small {
+    width: 100%;
+    max-width: none;
+    gap: 0;
+    cursor: default;
+  }
+
+  .dm-call-small .av {
+    --av-size: 48px;
+    --av-face: 16px;
+  }
+
+  .dm-call-small .t-name {
+    left: var(--sp-2);
+    bottom: var(--sp-2);
+    max-width: calc(100% - var(--sp-4));
+  }
+
+  /* Media and its veil stay dark in a light theme (`recipe.css`), so the
+     name on the veil stays light. */
+  .dm-call-small .t-name,
+  .dm-call-frame .t-name {
+    color: oklch(0.96 0 0);
+  }
+
+  /* The mute mark sits in the name label rather than across the tile. */
+  .tile.dm-call-small .t-mic {
+    top: auto;
+    right: auto;
+    left: 14px;
+    bottom: 13px;
+    z-index: 1;
+  }
+
+  .dm-call-small.muted .t-name {
+    padding-left: 26px;
+  }
+
+  /* Cinema: the screen keeps the room; the tiles step aside, as on a
+     channel's stage. */
+  .dm-call.cinema .dm-call-corner {
+    display: none;
+  }
+
+  .dm-call.cinema .dm-call-stage {
+    padding: 0;
+  }
+
+  @container dm-call (max-width: 767px) {
+    .dm-call-stage {
+      padding: var(--sp-4);
+    }
+
+    .dm-call-face .av {
+      --av-size: 112px;
+      --av-face: 36px;
+    }
+
+    /* Narrow, the bar spans the width; the corner moves to the top. */
+    .dm-call-corner {
+      top: var(--sp-4);
+      right: var(--sp-4);
+      bottom: auto;
+      width: 112px;
+      gap: var(--sp-2);
+    }
+
+    .dm-call.sharing .dm-call-stage {
+      padding-right: var(--sp-4);
+    }
+
+    .dm-call-small .av {
+      --av-size: 32px;
+      --av-face: 12px;
+    }
+
+    .dm-call-small .t-name {
+      left: var(--sp-1);
+      bottom: var(--sp-1);
+      max-width: calc(100% - var(--sp-2));
+      font-size: var(--fs-meta);
+    }
+
+    .tile.dm-call-small .t-mic {
+      left: 9px;
+      bottom: 8px;
+    }
+
+    .dm-call-small .tile-more {
+      display: none;
+    }
+  }
+
+  /* Cinema takes the header too, as on a channel's stage. */
+  .app.stage-full .dm-room.in-call {
+    grid-template-rows: 0 minmax(0, 1fr);
+  }
+
+  .app.stage-full .dm-room.in-call > .room-header {
+    height: 0;
+    border-bottom-width: 0;
+    opacity: 0;
+    pointer-events: none;
+  }
+
+  /* ---------- CHAT BESIDE A CALL ---------- */
+  /* The roster's panel and header around the conversation's own transcript
+     and composer, at the channel panel's width and a tighter density. */
+  .app:has(> .dm-chat:not([inert])) {
+    --roster-w: var(--cp-w);
+  }
+
+  .dm-chat-body {
+    flex: 1;
+    min-height: 0;
+    display: flex;
+    flex-direction: column;
+    --msg-pad-y: 4px;
+    --msg-leading: 1.45;
+    --msg-line-gap: 0px;
+  }
+
+  .dm-chat .transcript {
+    padding-top: var(--sp-4);
+  }
+
+  .dm-chat .msg-group {
+    padding-inline: var(--sp-4);
+  }
+
+  .dm-chat .dm-intro {
+    padding: var(--sp-5) var(--sp-4) var(--sp-4);
+  }
+
+  .dm-chat .composer {
+    padding-inline: var(--sp-3);
+  }
+
+  /* The panel is phone-narrow at any window width, so its composer takes the
+     phone's row (see `composer.css`): the field, one button for everything
+     else, and send. */
+  .dm-chat .composer .comp-lead {
+    display: none;
+  }
+
+  .dm-chat .composer .comp-mobile-more {
+    display: inline-flex;
+  }
+
+  .dm-chat .composer .comp-mobile-more[aria-expanded="true"] {
+    background: var(--surface-overlay);
+    color: var(--text);
+  }
+
+  .dm-chat .composer .comp-actions {
+    position: absolute;
+    left: 0;
+    right: 0;
+    bottom: calc(100% + var(--sp-2));
+    z-index: 30;
+    display: none;
+    grid-template-columns: repeat(auto-fit, minmax(40px, 1fr));
+    gap: var(--sp-1);
+    padding: 6px;
+    border-radius: var(--radius-lg);
+    background: var(--surface-pop);
+    box-shadow: var(--elev-drawer);
+  }
+
+  .dm-chat .composer .comp-actions.mobile-open {
+    display: grid;
+  }
+
+  .dm-chat .composer .comp-actions .attach {
+    width: 100%;
+    border-radius: var(--radius-sm);
+  }
+
   /* ---------- PROFILE BESIDE A CONVERSATION ---------- */
   /* The roster's panel and header; only the body is this panel's own. */
   .pp-body {
@@ -990,7 +1339,8 @@
   /*
    * The messages side has no channel roster. Friends owns its activity panel
    * inside the room; beside a conversation, the roster's track holds the
-   * profile when it is open, and is a drawer below 1024 as the roster is.
+   * profile or, during the call, the chat, whichever is open, and is a drawer
+   * below 1024 as the roster is.
    */
   .app.dm-space,
   .app.dm-space.roster-open {
@@ -1002,10 +1352,23 @@
       grid-template-columns: var(--servers-w) var(--rail-w) minmax(0, 1fr) var(--roster-w);
     }
 
-    /* Shut, the track is 0px wide but the panel's border is not; it leaves
-       the flow, as the roster does in cinema mode. */
-    .app.dm-space:not(.roster-open) .dm-profile {
+    /* Cinema gives the call the column as well. */
+    .app.dm-space.stage-full.roster-open {
+      grid-template-columns: var(--servers-w) var(--rail-w) minmax(0, 1fr) 0px;
+    }
+
+    /* Shut, a panel's track is 0px wide but its border is not, and the
+       other panel may hold the track; it leaves the flow, as the roster does
+       in cinema mode. */
+    .app.dm-space .roster[inert] {
       display: none;
+    }
+  }
+
+  @media (max-width: 1023px) {
+    /* Two drawers share the column; only the open one comes in. */
+    .app.dm-space .roster[inert] {
+      transform: translateX(calc(100% + env(safe-area-inset-right)));
     }
   }
 
@@ -1132,6 +1495,12 @@
       display: none;
     }
 
+    /* The chat is the composer's drawer: wider than the profile's three
+       fifths, with a strip of the call left to tap back to. */
+    .dm-chat {
+      width: min(var(--cp-w), calc(100% - 56px));
+    }
+
     .dm-intro {
       padding: var(--sp-6) var(--sp-4) var(--sp-5);
     }
@@ -1152,35 +1521,4 @@
     }
   }
 
-  @media (max-width: 767px) and (max-height: 480px) and (orientation: landscape) {
-    /* The desktop 220px floor left only one clipped transcript line at
-       640×360. In a short landscape room, spend a proportional slice on the
-       call while preserving useful history and composer space below it. */
-    .dm-video-stage {
-      height: 42%;
-      min-height: 120px;
-    }
-
-    .dm-video-stage .tiles {
-      align-content: stretch;
-    }
-
-    .dm-video-stage .tile {
-      height: 100%;
-      max-height: none;
-      aspect-ratio: auto;
-    }
-
-    .dm-video-stage .av {
-      --av-size: var(--av-md);
-      --av-face: 13px;
-    }
-
-    /* The title and explanatory copy repeat the header and otherwise become
-       taller than the remaining transcript viewport. Actual messages keep
-       the reclaimed space. */
-    .dm-video-stage + .transcript-area .dm-intro {
-      display: none;
-    }
-  }
 }

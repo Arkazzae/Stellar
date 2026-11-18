@@ -72,11 +72,32 @@ interface PanelsValue {
   /**
    * The profile beside an open conversation. It takes the roster's column, so
    * it keeps the roster's rules: a track from 1024px, open by default where
-   * the roster would be, and a drawer below that.
+   * the roster would be, and a drawer below that. During the conversation's
+   * call it shares that column with the chat and starts shut.
    */
   profilePanelOpen: boolean;
   setProfilePanelOpen: (open: boolean) => void;
   toggleProfilePanel: () => void;
+
+  /**
+   * The conversation's messages beside its call. While you are in the open
+   * conversation's call the room shows the call, and the messages move into
+   * the profile's column; the column holds one of the two at a time.
+   */
+  callChatOpen: boolean;
+  setCallChatOpen: (open: boolean) => void;
+  toggleCallChat: () => void;
+}
+
+/** What the profile's column holds during a call in the open conversation. */
+type CallSide = "chat" | "profile";
+
+interface CallSideChoice {
+  /** The call it was made in. */
+  room: string;
+  /** Whether the column was a drawer when it was made. */
+  drawer: boolean;
+  side: CallSide;
 }
 
 interface DialogsValue {
@@ -100,6 +121,8 @@ export interface UiValue extends PanelsValue, DialogsValue {
   space: Space;
   /** The open conversation in DM space; null means the Friends view itself. */
   activeDmId: string | null;
+  /** You are in the open conversation's call, which then has the room. */
+  inConversationCall: boolean;
   friendsTab: FriendsTab;
   setFriendsTab: (tab: FriendsTab) => void;
   /** Leaves the server for the Friends view. */
@@ -133,15 +156,17 @@ export interface UiValue extends PanelsValue, DialogsValue {
 }
 
 /**
- * The rail drawer, the roster, the channel panel and the profile beside a
- * conversation.
+ * The rail drawer, the roster, the channel panel and the profile or chat
+ * beside a conversation. `callRoom` is the open conversation while you are in
+ * its call, and null otherwise; `joinedRoom` is the call you are in, wherever
+ * you are looking.
  *
  * Below 1024px the roster and the profile are drawers, and below 1280px so is
  * the channel panel; drawers share one mobile layer, so opening one dismisses
  * the others. Above those widths the panels are grid tracks that the person
  * arranges and that navigation must leave alone.
  */
-function usePanels(): PanelsValue {
+function usePanels(callRoom: string | null, joinedRoom: string | null): PanelsValue {
   const rosterIsDrawer = useMediaQuery("(max-width: 1023px)", false);
   const channelPanelIsDrawer = useMediaQuery("(max-width: 1279px)", false);
   const rosterFits = useMediaQuery("(min-width: 1440px)", true);
@@ -160,13 +185,32 @@ function usePanels(): PanelsValue {
   const [channelPanelTab, setChannelPanelTab] = useState<ChannelPanelTab>("pinned");
   const [profilePreference, setProfilePreference] = useState<boolean | null>(null);
   const [profileDrawerOpen, setProfileDrawerOpen] = useState(false);
+  /*
+   * A call starts with the column empty: the call gets the whole room. The
+   * choice made during it names the call and the layout it was made in, and
+   * shows only while both still hold, so an ended call cannot leave the chat
+   * behind. Leaving the call however it ends forgets the choice during
+   * render, so the next call in the same conversation starts empty as well.
+   */
+  const [callSideChoice, setCallSideChoice] = useState<CallSideChoice | null>(null);
+  if (callSideChoice !== null && callSideChoice.room !== joinedRoom) setCallSideChoice(null);
 
   const rosterOpen = rosterIsDrawer
     ? rosterDrawerOpen
     : (rosterPreference ?? rosterFits);
-  const profilePanelOpen = rosterIsDrawer
-    ? profileDrawerOpen
-    : (profilePreference ?? rosterFits);
+  const callSide =
+    callRoom !== null &&
+    callSideChoice?.room === callRoom &&
+    callSideChoice.drawer === rosterIsDrawer
+      ? callSideChoice.side
+      : null;
+  const profilePanelOpen =
+    callRoom !== null
+      ? callSide === "profile"
+      : rosterIsDrawer
+        ? profileDrawerOpen
+        : (profilePreference ?? rosterFits);
+  const callChatOpen = callSide === "chat";
 
   const setRosterOpen = useCallback(
     (open: boolean) => {
@@ -181,8 +225,27 @@ function usePanels(): PanelsValue {
     [channelPanelIsDrawer, rosterIsDrawer],
   );
 
+  const showCallSide = useCallback(
+    (side: CallSide, open: boolean) => {
+      if (callRoom === null) return;
+      if (open && rosterIsDrawer) setRailState(false);
+      setCallSideChoice((current) =>
+        open
+          ? { room: callRoom, drawer: rosterIsDrawer, side }
+          : current?.side === side
+            ? null
+            : current,
+      );
+    },
+    [callRoom, rosterIsDrawer],
+  );
+
   const setProfilePanelOpen = useCallback(
     (open: boolean) => {
+      if (callRoom !== null) {
+        showCallSide("profile", open);
+        return;
+      }
       if (!rosterIsDrawer) {
         setProfilePreference(open);
         return;
@@ -190,7 +253,12 @@ function usePanels(): PanelsValue {
       if (open) setRailState(false);
       setProfileDrawerOpen(open);
     },
-    [rosterIsDrawer],
+    [callRoom, rosterIsDrawer, showCallSide],
+  );
+
+  const setCallChatOpen = useCallback(
+    (open: boolean) => showCallSide("chat", open),
+    [showCallSide],
   );
 
   const setRailOpen = useCallback(
@@ -198,6 +266,7 @@ function usePanels(): PanelsValue {
       if (open && rosterIsDrawer) {
         setRosterDrawerOpen(false);
         setProfileDrawerOpen(false);
+        setCallSideChoice(null);
       }
       if (open && channelPanelIsDrawer) setChannelPanel(null);
       setRailState(open);
@@ -210,6 +279,7 @@ function usePanels(): PanelsValue {
     if (rosterIsDrawer) {
       setRosterOpen(false);
       setProfileDrawerOpen(false);
+      setCallSideChoice(null);
     }
     if (channelPanelIsDrawer) setChannelPanel(null);
   }, [channelPanelIsDrawer, rosterIsDrawer, setRosterOpen]);
@@ -240,6 +310,10 @@ function usePanels(): PanelsValue {
     () => setProfilePanelOpen(!profilePanelOpen),
     [setProfilePanelOpen, profilePanelOpen],
   );
+  const toggleCallChat = useCallback(
+    () => setCallChatOpen(!callChatOpen),
+    [setCallChatOpen, callChatOpen],
+  );
 
   return useMemo(
     () => ({
@@ -258,6 +332,9 @@ function usePanels(): PanelsValue {
       profilePanelOpen,
       setProfilePanelOpen,
       toggleProfilePanel,
+      callChatOpen,
+      setCallChatOpen,
+      toggleCallChat,
     }),
     [
       railOpen,
@@ -275,6 +352,9 @@ function usePanels(): PanelsValue {
       profilePanelOpen,
       setProfilePanelOpen,
       toggleProfilePanel,
+      callChatOpen,
+      setCallChatOpen,
+      toggleCallChat,
     ],
   );
 }
@@ -368,22 +448,39 @@ export function UiProvider({ children }: { children: ReactNode }) {
   });
   const voiceChannelId = voice.channelId;
 
-  const panels = usePanels();
+  const [space, setSpace] = useState<Space>("server");
+  const [activeDmId, setActiveDmId] = useState<string | null>(null);
+  // A conversation's call is its own room, named by the conversation's id.
+  const callRoom =
+    space === "dm" && activeDmId !== null && activeDmId === voiceChannelId ? activeDmId : null;
+
+  const panels = usePanels(callRoom, voiceChannelId);
   const { closeDrawers } = panels;
   const dialogs = useDialogs(closeDrawers);
   const { modal } = dialogs;
 
   const [roomView, setRoomView] = useState<RoomView>("text");
   const [selectedTextId, setSelectedTextId] = useState<string | null>(null);
-  const [space, setSpace] = useState<Space>("server");
-  const [activeDmId, setActiveDmId] = useState<string | null>(null);
   const [friendsTab, setFriendsTab] = useState<FriendsTab>("online");
   const [friendsSearchRequested, setFriendsSearchRequested] = useState(false);
-  const [cinema, setCinema] = useState(false);
+  /*
+   * Cinema belongs to the call it was turned on in, so it ends with that call
+   * however the call ends: the other person declining a private call, a lost
+   * connection, or leaving. A flag would outlive a call that ended without
+   * `leaveCall` and keep the next view's column shut. The next call in the
+   * same room is another call, so leaving forgets the room during render.
+   */
+  const [cinemaRoom, setCinemaRoom] = useState<string | null>(null);
+  if (cinemaRoom !== null && cinemaRoom !== voiceChannelId) setCinemaRoom(null);
+  const cinema = cinemaRoom !== null && cinemaRoom === voiceChannelId;
 
   const activeTextChannelId = selectedTextId ?? firstTextChannelId;
 
-  const toggleCinema = useCallback(() => setCinema((on) => !on), []);
+  const setCinema = useCallback(
+    (on: boolean) => setCinemaRoom(on ? voiceRef.current.channelId : null),
+    [],
+  );
+  const toggleCinema = useCallback(() => setCinema(!cinema), [setCinema, cinema]);
 
   const selectTextChannel = useCallback(
     (channelId: string) => {
@@ -440,7 +537,7 @@ export function UiProvider({ children }: { children: ReactNode }) {
     setCinema(false);
     void voiceRef.current.leave();
     setRoomView("text");
-  }, []);
+  }, [setCinema]);
 
   // The dock shows in a conversation too, but the stage only exists on the
   // server side.
@@ -472,6 +569,7 @@ export function UiProvider({ children }: { children: ReactNode }) {
       roomView,
       space,
       activeDmId,
+      inConversationCall: callRoom !== null,
       friendsTab,
       setFriendsTab,
       openFriends,
@@ -496,6 +594,7 @@ export function UiProvider({ children }: { children: ReactNode }) {
       roomView,
       space,
       activeDmId,
+      callRoom,
       friendsTab,
       openFriends,
       newConversation,
@@ -506,6 +605,7 @@ export function UiProvider({ children }: { children: ReactNode }) {
       activeTextChannelId,
       voiceChannelId,
       cinema,
+      setCinema,
       toggleCinema,
       selectTextChannel,
       joinVoiceChannel,
