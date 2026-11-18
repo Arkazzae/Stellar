@@ -2,7 +2,12 @@ import { describe, expect, it } from "vitest";
 
 import type { Channel, VoiceOccupant } from "@/ports";
 
-import { sameOccupancy, serverMark, spliceGroupOrder } from "./directoryView";
+import {
+  deriveDirectoryView,
+  sameOccupancy,
+  serverMark,
+  spliceGroupOrder,
+} from "./directoryView";
 
 const channel = (id: string): Channel => ({ id, name: id, kind: "text" });
 const occupant = (userId: string): VoiceOccupant => ({ userId, displayName: userId, muted: false });
@@ -48,5 +53,27 @@ describe("serverMark", () => {
     ["", "ST"],
   ])("marks %j as %s", (name, mark) => {
     expect(serverMark(name)).toBe(mark);
+  });
+});
+
+describe("deriveDirectoryView", () => {
+  it("keeps a voice channel's seat limit, which decides who can join it, and none for 0", () => {
+    const view = deriveDirectoryView({
+      server: { id: "s", name: "Orbit" },
+      servers: [],
+      channels: [
+        { id: "small", name: "small", kind: "voice", userLimit: 2 },
+        { id: "open", name: "open", kind: "voice", userLimit: 0 },
+      ],
+      sections: [],
+      members: [],
+      permissions: [],
+      occupancy: new Map([["small", [occupant("ada")]]]),
+    });
+
+    expect(view.voiceChannels.map(({ id, userLimit }) => ({ id, userLimit }))).toEqual([
+      { id: "small", userLimit: 2 },
+      { id: "open", userLimit: undefined },
+    ]);
   });
 });
