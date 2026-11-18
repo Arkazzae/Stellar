@@ -40,7 +40,7 @@ export type DocumentName = typeof WEB_DOCUMENT | typeof COCKPIT_DOCUMENT;
 
 /**
  * The directories that hold files and never pages: the top-level ones of
- * `public/` (worklets, codecs, models, fonts, sounds, identity art) and the
+ * `public/` (worklets, codecs, models, fonts, sounds, identity and mascot art) and the
  * build's own, among them the one it writes the app's worklets to.
  */
 export function fileDirectories(publicDir: string): string[] {
