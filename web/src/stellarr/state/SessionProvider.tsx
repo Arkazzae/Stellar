@@ -13,6 +13,7 @@ import {
 
 import type { MessageKey, Translator } from "@/i18n";
 import { clearAll as clearTranslations } from "@/lib/chatTranslation/translationCache";
+import { wipeAll as wipeStoredMessages, wipeServer as wipeStoredServer } from "@/lib/messageStore/messageStore";
 import type { Account, AuthResult, ConnectionStatus, Presence, User } from "@/ports";
 
 import { useLanguage } from "./LanguageProvider";
@@ -206,6 +207,8 @@ export function SessionProvider({ children }: { children: ReactNode }) {
   useEffect(
     () =>
       runtime.realtime.on("ServerAccessRevoked", ({ serverId, kind }) => {
+        // Whatever server it is, what this device kept of it is no longer theirs to read.
+        void wipeStoredServer(serverId);
         if (ports.directory.getServer().id !== serverId) return;
         ended.current = true;
         setBoot({
@@ -309,6 +312,7 @@ export function SessionProvider({ children }: { children: ReactNode }) {
         // Signed out elsewhere: the keys of a session that ended go too.
         void ports.encryption.forget().catch(() => undefined);
         void clearTranslations().catch(() => undefined);
+        void wipeStoredMessages().catch(() => undefined);
         void runtime.realtime.stop().catch(() => undefined);
         setLoginError(t("session.unauthorized"));
         setBoot(ANONYMOUS);
@@ -339,6 +343,7 @@ export function SessionProvider({ children }: { children: ReactNode }) {
       await ports.encryption.forget().catch(() => undefined);
       // Stored translations can hold the text of this person's private messages.
       await clearTranslations().catch(() => undefined);
+      await wipeStoredMessages().catch(() => undefined);
       await ports.session.logout();
     } finally {
       ended.current = true;
