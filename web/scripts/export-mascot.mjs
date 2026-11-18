@@ -1,13 +1,14 @@
 /**
- * Exports the mascot art the account screens show from the brand files
+ * Exports the mascot art the app shows from the brand files
  * (`branding/mascot/`) to WebP, at the size each is drawn and twice that.
  *
  *   node scripts/export-mascot.mjs <public-dir>
  *
  * writes `<public-dir>/mascot/<name>-<width>.webp`. It needs `cwebp` on the
  * PATH. The output is committed; run it again only when the list below or a
- * brand file changes, and keep it in step with
- * `src/stellarr/components/auth/mascot.ts`.
+ * brand file changes, and keep it in step with `StickerName` in
+ * `src/stellarr/components/primitives/MascotArt.tsx` and the scenes in
+ * `src/stellarr/components/auth/Mascot.tsx`.
  */
 import { execFileSync } from "node:child_process";
 import { mkdirSync } from "node:fs";
@@ -34,18 +35,28 @@ const ILLUSTRATIONS = [
   "70-launch-party",
 ];
 
-/** The stickers above the heading on a narrow screen and on outcome pages: drawn 104 square. */
+/**
+ * The stickers: above the heading of an account screen, and over the empty
+ * and first-time states of messages and Friends. Exported 104 square, the
+ * largest they are drawn; smaller ones take the same files.
+ */
 const STICKERS = [
   "01-welcome",
+  "02-first-message",
+  "03-empty-channel",
   "04-creating-channel",
   "05-invite-friends",
   "25-self-hosting",
   "27-connecting",
   "28-offline",
+  "29-away",
   "30-release",
   "33-finding-message",
   "38-high-five",
   "41-avatar-online",
+  "42-do-not-disturb",
+  "51-quiet-night",
+  "55-moderation",
 ];
 
 const directory = join(outputRoot, "mascot");
