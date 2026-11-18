@@ -717,13 +717,24 @@ export interface LoginInput {
   password: string;
   /** False asks for a session that ends with the browser; left out, it is kept. */
   keepSignedIn?: boolean;
+  /**
+   * Links the identity a provider confirmed for this browser once the
+   * sign-in is complete, second step and all.
+   */
+  linkPending?: boolean;
 }
 
 export interface RegisterInput {
   username: string;
   displayName: string;
   email: string;
-  password: string;
+  /** Absent for an account made through a provider (`external`). */
+  password?: string;
+  /**
+   * Makes the account from the identity a provider confirmed for this
+   * browser, with no password, when that provider may create accounts.
+   */
+  external?: boolean;
   inviteCode?: string;
   /** The first server, sent only by the registration that founds the instance. */
   initialServer?: {
@@ -755,10 +766,31 @@ export interface InvitePreview {
 
 /** An identity provider the account pages offer to sign in with, by the address that starts it. */
 export interface SignInProvider {
+  id: string;
   displayName: string;
   /** A sign-in route of this server: `/api/auth/oidc/login`, or `/api/auth/oidc/<id>/login`. */
   loginUrl: string;
+  /** The owner lets it create accounts for people with an invite. */
+  signUp: boolean;
 }
+
+/**
+ * An identity a provider confirmed that no account here is linked to, as
+ * the browser it came back to sees it. It says nothing about the accounts
+ * here.
+ */
+export interface PendingIdentity {
+  provider: { id: string; displayName: string };
+  displayName: string | null;
+  email: string | null;
+  /** A login to suggest for an account made from it; empty when none could be made. */
+  username: string;
+  /** Its provider may create an account for someone with an invite. */
+  signUp: boolean;
+}
+
+/** How linking an identity came out, in the words the link page reads. */
+export type IdentityLinkOutcome = "linked" | "taken" | "other" | "failed";
 
 export interface SendMessageInput {
   content: string;
@@ -868,7 +900,8 @@ export interface ChallengeAccount {
 
 /** What the first step of a sign-in or a registration led to. */
 export type AuthResult =
-  | { kind: "signed-in"; user: User }
+  /** `identityLink` says how linking the waiting identity went, when the sign-in asked for it. */
+  | { kind: "signed-in"; user: User; identityLink?: IdentityLinkOutcome }
   | { kind: "challenge"; challenge: MfaChallenge }
   /** An operator reset the account's security; only a recovery credential gets back in. */
   | { kind: "recovery-required" };
@@ -889,6 +922,8 @@ export interface MfaCompletion {
   recoveryCodes?: string[];
   /** When this browser stops being trusted, if it just became so. */
   trustedDeviceExpiresAt?: string;
+  /** How linking the waiting identity went, when the sign-in asked for it. */
+  identityLink?: IdentityLinkOutcome;
 }
 
 /** A method being set up. The secret is shown once and never stored by the client. */
@@ -944,6 +979,8 @@ export interface AccountSecurity {
   identities: LinkedIdentity[];
   /** The providers the account can link itself to. */
   identityProviders: IdentityProvider[];
+  /** False for an account made through a provider until it sets a password. */
+  hasPassword: boolean;
 }
 
 /** An identity at a provider the account signs in with. */

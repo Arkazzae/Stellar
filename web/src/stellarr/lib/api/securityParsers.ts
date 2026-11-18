@@ -14,6 +14,7 @@ import type {
   AccountSecurity,
   AuthResult,
   ChallengeAccount,
+  IdentityLinkOutcome,
   MfaChallenge,
   MfaCompletion,
   MfaEnrollment,
@@ -21,12 +22,14 @@ import type {
   MfaMethodType,
   MfaPurpose,
   OwnSession,
+  PendingIdentity,
   SecurityEvent,
   SignInProvider,
   TrustedDevice,
 } from "./types";
 
 const METHOD_TYPES: readonly MfaMethodType[] = ["totp", "email", "passkey"];
+const LINK_OUTCOMES: readonly IdentityLinkOutcome[] = ["linked", "taken", "other", "failed"];
 const PURPOSES: readonly MfaPurpose[] = ["mfa", "enrollment", "recovery", "reverify"];
 
 function oneOf<T extends string>(
@@ -112,14 +115,33 @@ export function parseSignInChallenge(value: unknown, path: string): MfaChallenge
  * that says only an operator's recovery credential gets back in.
  */
 export function parseAuthResult(value: unknown, path: string): AuthResult {
-  const payload = isRecord(value) && isRecord(value["user"]) && !("status" in value)
-    ? value["user"]
-    : value;
+  const enveloped = isRecord(value) && isRecord(value["user"]) && !("status" in value);
+  const payload = enveloped ? value["user"] : value;
   if (isRecord(payload) && typeof payload["status"] === "string") {
     if (payload["status"] === "security_recovery_required") return { kind: "recovery-required" };
     return { kind: "challenge", challenge: parseSignInChallenge(payload, path) };
   }
-  return { kind: "signed-in", user: parseUser(payload, path) };
+  const user = parseUser(payload, path);
+  // A sign-in that asked to link the waiting identity says how that went.
+  return enveloped && isRecord(value) && value["identityLink"] !== undefined
+    ? { kind: "signed-in", user, identityLink: oneOf(LINK_OUTCOMES, value, "identityLink", path) }
+    : { kind: "signed-in", user };
+}
+
+/** The identity waiting for this browser, as the page for it shows it. */
+export function parsePendingIdentity(value: unknown, path: string): PendingIdentity {
+  const record = expectRecord(value, path);
+  const provider = expectRecord(record["provider"], `${path}.provider`);
+  return {
+    provider: {
+      id: expectString(provider, "id", `${path}.provider`),
+      displayName: expectString(provider, "displayName", `${path}.provider`),
+    },
+    displayName: nullableString(record, "displayName", path),
+    email: nullableString(record, "email", path),
+    username: expectString(record, "username", path),
+    signUp: expectBoolean(record, "signUp", path),
+  };
 }
 
 /**
@@ -135,7 +157,12 @@ export function parseSignInProviders(value: unknown, path: string): SignInProvid
     if (!/^\/api\/auth\/oidc\/([a-z0-9-]+\/)?login$/.test(loginUrl)) {
       throw new ApiError("malformed", `${path}.providers[${index}]: "${loginUrl}" is not a sign-in route`);
     }
-    return { displayName: expectString(provider, "displayName", path).trim(), loginUrl };
+    return {
+      id: expectString(provider, "id", path),
+      displayName: expectString(provider, "displayName", path).trim(),
+      loginUrl,
+      signUp: provider["signUp"] === true,
+    };
   });
 }
 
@@ -146,7 +173,11 @@ export function parseMfaCompletion(value: unknown, path: string): MfaCompletion 
   }
   const codes = record["recoveryCodes"];
   const trustedDeviceExpiresAt = optionalString(record, "trustedDeviceExpiresAt");
+  const identityLink = record["identityLink"];
   return {
+    ...(identityLink === undefined || identityLink === null
+      ? {}
+      : { identityLink: oneOf(LINK_OUTCOMES, record, "identityLink", path) }),
     user: parseUser(record["user"], `${path}.user`),
     ...(codes === null || codes === undefined
       ? {}
@@ -251,6 +282,7 @@ export function parseAccountSecurity(value: unknown, path: string): AccountSecur
         };
       },
     ),
+    hasPassword: expectBoolean(record, "hasPassword", path),
   };
 }
 

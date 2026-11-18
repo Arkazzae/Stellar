@@ -56,6 +56,16 @@ describe("signing in and out", () => {
     await expect(calls.invitePreview("gone")).rejects.toMatchObject({ kind: "not-found" });
   });
 
+  it("reads the identity waiting for this browser as none once it is gone, and forgets it", async () => {
+    fetchMock.mockResolvedValueOnce(jsonResponse({ title: "Not Found" }, 404));
+    await expect(calls.pendingIdentity()).resolves.toBeNull();
+    expect(sentRequest(fetchMock).url).toBe("/api/auth/oidc/pending");
+
+    fetchMock.mockResolvedValueOnce(noContent());
+    await calls.dropPendingIdentity();
+    expect(sentRequest(fetchMock, 1)).toMatchObject({ url: "/api/auth/oidc/pending", method: "DELETE" });
+  });
+
   it("names the fields a refused registration got wrong", async () => {
     fetchMock.mockResolvedValue(
       jsonResponse({ title: "One or more validation errors occurred.", errors: { setupCode: ["Kod jest nieprawidłowy."] } }, 400),

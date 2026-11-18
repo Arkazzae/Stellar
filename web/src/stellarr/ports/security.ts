@@ -35,6 +35,17 @@ export interface AccountSecurityPort {
    * goes there with a full page load; it comes back to /link-account.
    */
   startIdentityLink(providerId: string, password?: string): Promise<string>;
-  /** Stops an identity from signing in to this account. */
+  /**
+   * Stops an identity from signing in to this account. Refused with 409 when
+   * it is the account's last way in.
+   */
   removeIdentity(identityId: string, password?: string): Promise<void>;
+  /**
+   * The address that sends the browser to a provider the account is linked
+   * to, to sign in there again: the proof an account without a password and
+   * without a second step gives. It comes back to /link-account.
+   */
+  startReauthentication(providerId: string): Promise<string>;
+  /** The first password of an account without one, after the same proof. */
+  setPassword(newPassword: string): Promise<void>;
 }

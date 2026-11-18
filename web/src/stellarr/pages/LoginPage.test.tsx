@@ -53,7 +53,7 @@ vi.mock("@/state/hooks", () => ({
   }),
 }));
 
-const KEYCLOAK: SignInProvider = { displayName: "Keycloak", loginUrl: "/api/auth/oidc/login" };
+const KEYCLOAK: SignInProvider = { id: "default", displayName: "Keycloak", loginUrl: "/api/auth/oidc/login", signUp: false };
 
 let history: MemoryHistory;
 
@@ -137,6 +137,7 @@ const SECURE: AccountSecurity = {
   identities: [],
   identityProviders: [],
   emailCodeAvailable: true,
+  hasPassword: true,
 };
 
 function fakeSecurityPort(overrides: Partial<AccountSecurityPort> = {}): AccountSecurityPort {
@@ -152,6 +153,8 @@ function fakeSecurityPort(overrides: Partial<AccountSecurityPort> = {}): Account
     revokeOtherSessions: vi.fn(async () => {}),
     startIdentityLink: vi.fn(async () => "/api/auth/oidc/link?ticket=t"),
     removeIdentity: vi.fn(async () => {}),
+    startReauthentication: vi.fn(async () => "/api/auth/oidc/reauthenticate?ticket=t"),
+    setPassword: vi.fn(async () => {}),
     ...overrides,
   };
 }
@@ -285,7 +288,7 @@ describe("LoginPage", () => {
   });
 
   it("offers every identity provider the instance lists, each at its own address", async () => {
-    mocks.providers = vi.fn(async () => [KEYCLOAK, { displayName: "Work", loginUrl: "/api/auth/oidc/work/login" }]);
+    mocks.providers = vi.fn(async () => [KEYCLOAK, { id: "work", displayName: "Work", loginUrl: "/api/auth/oidc/work/login", signUp: false }]);
 
     renderLogin();
 
@@ -533,7 +536,7 @@ describe("LoginPage second factor", () => {
   });
 
   it("carries only a same-origin return path to the identity provider", async () => {
-    mocks.providers = vi.fn(async () => [{ displayName: "Authentik", loginUrl: "/api/auth/oidc/login" }]);
+    mocks.providers = vi.fn(async () => [{ id: "default", displayName: "Authentik", loginUrl: "/api/auth/oidc/login", signUp: false }]);
     mocks.search = "returnUrl=%2F%2Fevil.example";
     const { unmount } = renderLogin();
     expect(await screen.findByRole("link", { name: /Authentik/ })).toHaveAttribute(

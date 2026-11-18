@@ -54,6 +54,7 @@ import type {
   EmailChangeAnswer,
   EmailConfirmAnswer,
   PasswordChangeAnswer,
+  PendingIdentity,
   RegisterInput,
   Section,
   SecurityEvent,
@@ -103,6 +104,9 @@ export interface ApiClient {
   invitePreview(code: string, signal?: AbortSignal): Promise<InvitePreview>;
   /** The identity providers the sign-in page offers, none when there are none. */
   signInProviders(signal?: AbortSignal): Promise<SignInProvider[]>;
+  /** The identity a provider confirmed that no account is linked to, waiting for this browser; null when none. */
+  pendingIdentity(signal?: AbortSignal): Promise<PendingIdentity | null>;
+  dropPendingIdentity(): Promise<void>;
   login(input: LoginInput, signal?: AbortSignal): Promise<AuthResult>;
   register(input: RegisterInput, signal?: AbortSignal): Promise<AuthResult>;
   /** The challenge this browser left unfinished, after a reload or an OIDC redirect. */
@@ -164,6 +168,13 @@ export interface ApiClient {
   /** After the proof, the address the browser goes to, to link the account to the provider. */
   startIdentityLink(providerId: string, password?: string): Promise<string>;
   removeIdentity(identityId: string, password?: string): Promise<void>;
+  /**
+   * The address that sends the browser to a provider the account is linked
+   * to, to sign in there again as the proof an account without a password gives.
+   */
+  startReauthentication(providerId: string): Promise<string>;
+  /** The first password of an account without one; refused with 403 without a fresh proof. */
+  setPassword(newPassword: string): Promise<void>;
   listOwnSessions(signal?: AbortSignal): Promise<OwnSession[]>;
   /** Refused with 409 for the current session, which ends through logout. */
   revokeOwnSession(sessionId: string): Promise<void>;
