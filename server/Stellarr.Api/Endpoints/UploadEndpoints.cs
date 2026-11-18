@@ -15,6 +15,8 @@ namespace Stellarr.Api.Endpoints;
 public static class UploadEndpoints
 {
     private const long MaximumPosterBytes = 2 * 1024 * 1024;
+    private const long MaximumPreviewBytes = 1024 * 1024;
+    private const int MaximumPlaceholderBytes = 32;
     private const double MaximumMediaDurationSeconds = 30 * 24 * 60 * 60;
     private const int MaximumMediaDimension = 32_768;
     private const int MaximumFileNameStemLength = 200;
@@ -44,6 +46,8 @@ public static class UploadEndpoints
         [FromForm] int? width,
         [FromForm] int? height,
         [FromForm] IFormFile? poster,
+        [FromForm] IFormFile? preview,
+        [FromForm] string? placeholder,
         [FromForm] bool? voiceMessage,
         ClaimsPrincipal principal,
         AppDbContext db,
@@ -83,11 +87,33 @@ public static class UploadEndpoints
                 $"posters/{month}/{id:N}{posterInspection.Spec.Extension}");
         }
 
+        PreviewUpload? previewUpload = null;
+        if (preview is not null)
+        {
+            var previewInspection = await mediaStorage.InspectImageAsync(preview, MaximumPreviewBytes, cancellationToken);
+            if (spec.Kind != UploadKind.Image ||
+                !previewInspection.Accepted ||
+                previewInspection.Spec.ContentType is not ("image/webp" or "image/jpeg"))
+            {
+                return Invalid("preview", messages.Get(MessageKey.UploadPreviewInvalid));
+            }
+
+            previewUpload = new PreviewUpload(
+                preview,
+                previewInspection.Spec,
+                $"previews/{month}/{id:N}{previewInspection.Spec.Extension}");
+        }
+
+        if (placeholder is not null && (spec.Kind != UploadKind.Image || !IsPlaceholder(placeholder)))
+        {
+            return Invalid("placeholder", messages.Get(MessageKey.UploadPlaceholderInvalid));
+        }
+
         var userId = principal.RequireUserId();
         var admission = await admissionGate.TryEnterAsync(
             db,
             userId,
-            file.Length + (posterUpload?.File.Length ?? 0),
+            file.Length + (posterUpload?.File.Length ?? 0) + (previewUpload?.File.Length ?? 0),
             cancellationToken);
         if (!admission.Accepted)
         {
@@ -112,6 +138,10 @@ public static class UploadEndpoints
             PosterObjectKey = posterUpload?.Key,
             PosterContentType = posterUpload?.Spec.ContentType,
             PosterSizeBytes = posterUpload?.File.Length,
+            PreviewObjectKey = previewUpload?.Key,
+            PreviewContentType = previewUpload?.Spec.ContentType,
+            PreviewSizeBytes = previewUpload?.File.Length,
+            Placeholder = placeholder,
             CreatedAt = DateTime.UtcNow,
         };
 
@@ -123,12 +153,17 @@ public static class UploadEndpoints
                 await mediaStorage.StoreAsync(posterUpload.Key, posterUpload.File, cancellationToken);
             }
 
+            if (previewUpload is not null)
+            {
+                await mediaStorage.StoreAsync(previewUpload.Key, previewUpload.File, cancellationToken);
+            }
+
             db.ImageAttachments.Add(attachment);
             await db.SaveChangesAsync(cancellationToken);
         }
         catch
         {
-            await mediaStorage.RollbackAsync([key, posterUpload?.Key]);
+            await mediaStorage.RollbackAsync([key, posterUpload?.Key, previewUpload?.Key]);
             throw;
         }
 
@@ -213,6 +248,26 @@ public static class UploadEndpoints
 
     /// <summary>The still image that stands in for a video before it plays.</summary>
     private sealed record PosterUpload(IFormFile File, UploadSpec Spec, string Key);
+
+    /// <summary>The reduced copy of an image that a small tile shows instead of the original.</summary>
+    private sealed record PreviewUpload(IFormFile File, UploadSpec Spec, string Key);
+
+    /// <summary>
+    /// Whether the text is standard padded base64 of one to
+    /// <see cref="MaximumPlaceholderBytes"/> bytes. Only the shape is checked;
+    /// the bytes mean something to clients alone.
+    /// </summary>
+    private static bool IsPlaceholder(string value)
+    {
+        if (value.Length == 0 || value.Length % 4 != 0 || value.Any(char.IsWhiteSpace))
+        {
+            return false;
+        }
+
+        Span<byte> decoded = stackalloc byte[MaximumPlaceholderBytes];
+        // A text that decodes to more than fits is refused by the same call.
+        return Convert.TryFromBase64String(value, decoded, out var written) && written > 0;
+    }
 
     private static IResult Refusal(UploadInspection inspection, Messages messages) => inspection.Failure switch
     {
