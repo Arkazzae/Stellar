@@ -16,6 +16,14 @@ public sealed class User
 
     public string? Email { get; set; }
     public string? NormalizedEmail { get; set; }
+
+    /// <summary>
+    /// The address, normalized, that an identity provider said was verified
+    /// when the account was made through it. It counts as verified, like one
+    /// confirmed by an e-mail code, for as long as it is still the account's
+    /// address; a change of address clears it.
+    /// </summary>
+    public string? ProviderVerifiedEmail { get; set; }
     public bool IsDisabled { get; set; }
 
     /// <summary>Incremented when credentials change, which invalidates older cookies.</summary>

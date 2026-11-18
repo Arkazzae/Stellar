@@ -17,6 +17,11 @@ namespace Stellarr.Api.Endpoints;
 /// roles and channels, and an owner, and it takes the setup code from the
 /// log. Every later one needs the code of an invite and joins the server that
 /// invite belongs to.
+///
+/// A later one may also come from the identity a provider confirmed for this
+/// browser, when the owner lets that provider create accounts: it has no
+/// password, it is linked to the identity, and it signs in as a sign-in
+/// through the provider would.
 /// </summary>
 public static partial class RegistrationEndpoints
 {
@@ -42,6 +47,7 @@ public static partial class RegistrationEndpoints
         PasswordService passwords,
         RegistrationGate gate,
         SetupCode setup,
+        ExternalOidcOptions oidc,
         Messages messages,
         IHubContext<AppHub> hub,
         HttpContext context,
@@ -51,6 +57,29 @@ public static partial class RegistrationEndpoints
         if (problems.Count > 0)
         {
             return Results.ValidationProblem(problems);
+        }
+
+        PendingExternalIdentity? pending = null;
+        ExternalOidcProvider? provider = null;
+        if (request.External)
+        {
+            pending = await PendingIdentities.FindAsync(db, context, cancellationToken);
+            provider = pending is null ? null : oidc.Find(pending.ProviderId);
+            if (pending is null || provider is null)
+            {
+                return Results.Problem(
+                    statusCode: StatusCodes.Status400BadRequest,
+                    title: messages.Get(MessageKey.ProviderSignUpExpired));
+            }
+
+            if (!await ProviderSignUp.AllowedAsync(db, provider.Id, cancellationToken))
+            {
+                return Results.Problem(
+                    statusCode: StatusCodes.Status403Forbidden,
+                    title: messages.Get(
+                        MessageKey.ProviderSignUpClosed,
+                        ("provider", AccountSecurityEndpoints.ProviderName(provider, messages))));
+            }
         }
 
         var username = request.Username.Trim();
@@ -67,6 +96,14 @@ public static partial class RegistrationEndpoints
         // empty: it takes an invite like any other, and nobody can found it
         // again.
         var founding = !await db.Users.AnyAsync(cancellationToken);
+        if (founding && pending is not null)
+        {
+            // The owner's account is made with a password and the setup code.
+            return Results.Problem(
+                statusCode: StatusCodes.Status409Conflict,
+                title: messages.Get(MessageKey.ProviderSignUpNotForSetup));
+        }
+
         if (founding && !setup.Matches(request.SetupCode))
         {
             return Results.ValidationProblem(new Dictionary<string, string[]>
@@ -79,6 +116,11 @@ public static partial class RegistrationEndpoints
         if (taken.Count > 0)
         {
             return Results.ValidationProblem(taken);
+        }
+
+        if (pending is not null && await IdentityTakenAsync(db, pending, cancellationToken))
+        {
+            return IdentityLinkedProblem(provider!, messages);
         }
 
         var now = DateTime.UtcNow;
@@ -131,11 +173,22 @@ public static partial class RegistrationEndpoints
             DisplayName = request.DisplayName.Trim(),
             Email = email,
             NormalizedEmail = normalizedEmail,
-            PasswordHash = passwords.Hash(request.Password),
+            // The address counts as verified only when it is the one the
+            // provider said it verified, not merely one it knows.
+            ProviderVerifiedEmail = pending is { EmailVerified: true, Email: { } vouched } &&
+                string.Equals(vouched, email, StringComparison.OrdinalIgnoreCase)
+                    ? normalizedEmail
+                    : null,
+            PasswordHash = pending is null ? passwords.Hash(request.Password!) : null,
             AvatarColor = $"oklch(0.58 0.14 {(uint)id.GetHashCode() % 360})",
             CreatedAt = now,
         };
         db.Users.Add(user);
+        if (pending is not null)
+        {
+            // A new account is told nothing by mail about its first link.
+            IdentityLinking.Stage(db, context, id, provider!, pending.Issuer, pending.Subject, alertRecipient: null);
+        }
         db.ServerMembers.Add(new ServerMember
         {
             ServerId = server.Id,
@@ -160,8 +213,16 @@ public static partial class RegistrationEndpoints
                 (role.Permissions & ServerPrivileges.ManageServer) == ServerPrivileges.ManageServer,
             _ => null,
         };
+        // An account made through a provider signs in as a sign-in through it
+        // would: the provider's second step counts when the instance trusts
+        // it and it is still recent now.
+        var shortLived = pending?.ShortLived ?? false;
         var start = await AuthenticationFlow.StartAsync(
-            db, context, user, "registration", policy, messages, cancellationToken, required);
+            db, context, user, pending is null ? "registration" : "oidc", policy, messages, cancellationToken,
+            required,
+            shortLived: shortLived,
+            secondStepAtProvider: pending is not null && provider!.PassedSecondStep(
+                pending.Amr.Split(',', StringSplitOptions.RemoveEmptyEntries), pending.AuthTime, DateTimeOffset.UtcNow));
         if (start.Session is { } session)
         {
             db.UserSessions.Add(session);
@@ -182,7 +243,18 @@ public static partial class RegistrationEndpoints
                 return Results.ValidationProblem(taken);
             }
 
+            if (pending is not null && await IdentityTakenAsync(db, pending, cancellationToken))
+            {
+                return IdentityLinkedProblem(provider!, messages);
+            }
+
             throw;
+        }
+
+        if (pending is not null)
+        {
+            // Used up: the identity is the account's now.
+            await PendingIdentities.TakeAsync(db, context, cancellationToken, pending.Id);
         }
 
         if (founding)
@@ -195,8 +267,10 @@ public static partial class RegistrationEndpoints
         await ServerWelcome.PublishAsync(hub, server.Id, welcome, messages, CancellationToken.None);
         if (start.Session is not null)
         {
-            // Registration offers no choice; the new account stays signed in.
-            await SessionAuthentication.SignInAsync(context, user, start.Session.Id, shortLived: false);
+            // A registration with a password offers no choice and the account
+            // stays signed in; one through a provider keeps the choice made
+            // before leaving for it.
+            await SessionAuthentication.SignInAsync(context, user, start.Session.Id, shortLived);
             return Results.Created("/api/me", user.ToDto("online"));
         }
 
@@ -206,7 +280,7 @@ public static partial class RegistrationEndpoints
     private static Dictionary<string, string[]> Validate(RegisterRequest request, Messages messages)
     {
         var errors = new Dictionary<string, string[]>(StringComparer.Ordinal);
-        if (PasswordPolicy.Violation(request.Password, messages) is { } passwordProblem)
+        if (!request.External && PasswordPolicy.Violation(request.Password, messages) is { } passwordProblem)
         {
             errors["password"] = [passwordProblem];
         }
@@ -259,6 +333,24 @@ public static partial class RegistrationEndpoints
 
         return errors;
     }
+
+    private static Task<bool> IdentityTakenAsync(
+        AppDbContext db,
+        PendingExternalIdentity pending,
+        CancellationToken cancellationToken) =>
+        db.ExternalIdentities.AsNoTracking()
+            .AnyAsync(x => x.Issuer == pending.Issuer && x.Subject == pending.Subject, cancellationToken);
+
+    /// <summary>
+    /// The identity got linked to an account meanwhile. It is the person's
+    /// own, so saying so tells them nothing about anybody else.
+    /// </summary>
+    private static IResult IdentityLinkedProblem(ExternalOidcProvider provider, Messages messages) =>
+        Results.Problem(
+            statusCode: StatusCodes.Status409Conflict,
+            title: messages.Get(
+                MessageKey.ProviderIdentityAlreadyLinked,
+                ("provider", AccountSecurityEndpoints.ProviderName(provider, messages))));
 
     private static IResult InviteProblem(string message) =>
         Results.ValidationProblem(new Dictionary<string, string[]> { ["inviteCode"] = [message] });

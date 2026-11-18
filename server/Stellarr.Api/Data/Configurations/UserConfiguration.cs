@@ -17,6 +17,7 @@ internal sealed class UserConfiguration : IEntityTypeConfiguration<User>
         entity.Property(x => x.PasswordHash).HasMaxLength(512);
         entity.Property(x => x.Email).HasMaxLength(320);
         entity.Property(x => x.NormalizedEmail).HasMaxLength(320);
+        entity.Property(x => x.ProviderVerifiedEmail).HasMaxLength(320);
         entity.Property(x => x.AvatarColor).HasMaxLength(48);
         entity.Property(x => x.AvatarUrl).HasMaxLength(256);
         entity.Property(x => x.BannerUrl).HasMaxLength(256);

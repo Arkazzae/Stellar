@@ -37,6 +37,10 @@ public enum MessageKey
     EmailInvalid,
     UsernameTaken,
     EmailTaken,
+    ProviderSignUpExpired,
+    ProviderSignUpClosed,
+    ProviderSignUpNotForSetup,
+    ProviderIdentityAlreadyLinked,
 
     // Channels and sections
     ChannelNameOrKindInvalid,
