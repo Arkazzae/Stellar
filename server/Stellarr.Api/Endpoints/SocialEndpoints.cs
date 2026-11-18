@@ -105,6 +105,11 @@ public static class SocialEndpoints
                 .ToArray()));
     }
 
+    /// <summary>
+    /// The newest message of each conversation, or line about its encryption.
+    /// A line about somebody's keys stays in the history but is left out here:
+    /// a new sign-in is no reason to move a conversation up the list.
+    /// </summary>
     private static async Task<Dictionary<Guid, DirectMessage>> LastMessagesAsync(
         AppDbContext db,
         Guid[] conversationIds,
@@ -113,7 +118,11 @@ public static class SocialEndpoints
             .Where(message =>
                 conversationIds.Contains(message.ConversationId) &&
                 message.Id == db.DirectMessages
-                    .Where(candidate => candidate.ConversationId == message.ConversationId)
+                    .Where(candidate =>
+                        candidate.ConversationId == message.ConversationId &&
+                        (candidate.SystemKind == null ||
+                         (candidate.SystemKind != DirectSystemKinds.DeviceAdded &&
+                          candidate.SystemKind != DirectSystemKinds.KeysReset)))
                     .OrderByDescending(candidate => candidate.CreatedAt)
                     .ThenByDescending(candidate => candidate.Id)
                     .Select(candidate => candidate.Id)
