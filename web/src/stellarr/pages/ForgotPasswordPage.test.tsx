@@ -7,7 +7,7 @@ import { translateMessage, type MessageKey } from "@/i18n";
 import ForgotPasswordPage from "./ForgotPasswordPage";
 
 const mocks = vi.hoisted(() => ({
-  ports: { session: { requestPasswordReset: vi.fn() } },
+  ports: { session: { requestPasswordReset: vi.fn(), instanceName: vi.fn() } },
 }));
 
 vi.mock("@/state/hooks", () => ({
@@ -23,6 +23,7 @@ describe("ForgotPasswordPage", () => {
   it("asks the server to mail a reset link to the typed address", async () => {
     const user = userEvent.setup();
     mocks.ports.session.requestPasswordReset.mockResolvedValue(undefined);
+    mocks.ports.session.instanceName.mockResolvedValue("Stellarr Dev");
     render(<ForgotPasswordPage />);
 
     await user.type(screen.getByRole("textbox", { name: "E-mail" }), "maja@example.com");
@@ -31,6 +32,8 @@ describe("ForgotPasswordPage", () => {
     expect(mocks.ports.session.requestPasswordReset).toHaveBeenCalledExactlyOnceWith(
       "maja@example.com",
     );
-    expect(await screen.findByRole("status")).toBeInTheDocument();
+    expect(
+      await screen.findByRole("heading", { name: translateMessage("pl", "auth.forgot.sentTitle") }),
+    ).toBeVisible();
   });
 });

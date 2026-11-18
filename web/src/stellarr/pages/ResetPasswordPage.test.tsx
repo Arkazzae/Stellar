@@ -37,7 +37,6 @@ describe("ResetPasswordPage", () => {
     renderWithQuery("?token=mailed-token");
 
     await user.type(screen.getByLabelText("Nowe hasło"), "haslo1234");
-    await user.type(screen.getByLabelText("Powtórz nowe hasło"), "haslo1234");
     await user.click(screen.getByRole("button", { name: "Ustaw nowe hasło" }));
 
     expect(mocks.ports.session.resetPassword).toHaveBeenCalledExactlyOnceWith(
@@ -52,7 +51,6 @@ describe("ResetPasswordPage", () => {
     renderWithQuery("?token=a%2Bb%3D%3D");
 
     await user.type(screen.getByLabelText("Nowe hasło"), "haslo1234");
-    await user.type(screen.getByLabelText("Powtórz nowe hasło"), "haslo1234");
     await user.click(screen.getByRole("button", { name: "Ustaw nowe hasło" }));
 
     expect(mocks.ports.session.resetPassword).toHaveBeenCalledExactlyOnceWith("a+b==", "haslo1234");

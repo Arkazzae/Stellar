@@ -1,6 +1,7 @@
 import { Link, useSearchParams } from "@stellarr/router";
 
-import { AuthFrame, authStyles as styles } from "@/components/auth/AuthFrame";
+import controls from "@/components/auth/AuthControls.module.css";
+import { AuthFrame } from "@/components/auth/AuthFrame";
 import type { MessageKey } from "@/i18n";
 import { singleQueryValue } from "@/lib/auth/query";
 import { useLanguage } from "@/state/hooks";
@@ -29,10 +30,11 @@ export default function LinkAccountPage() {
   const { t } = useLanguage();
   return (
     <AuthFrame
+      outcome={outcome === "linked" ? "success" : "failure"}
       title={outcome === "linked" ? t("linkAccount.linkedTitle") : t("linkAccount.failedTitle")}
       description={t(DESCRIPTION[outcome])}
     >
-      <Link className={styles.submit} href="/">
+      <Link className={`${controls.button} ${controls.primary} ${controls.wide}`} href="/">
         {t("linkAccount.back")}
       </Link>
     </AuthFrame>

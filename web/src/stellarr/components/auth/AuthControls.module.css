@@ -1,0 +1,799 @@
+/*
+ * The controls of the account screens: fields, buttons, the second step's
+ * code cells and method list, the password meter, the previews of an account
+ * and a server. The sign-in steps use them inside the settings dialog too, so
+ * nothing here depends on the page around them.
+ */
+
+.form,
+.stack {
+  display: flex;
+  flex-direction: column;
+}
+
+.form {
+  gap: 16px;
+}
+
+.stack {
+  gap: 10px;
+}
+
+.field {
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+  min-width: 0;
+}
+
+.labelRow {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.label {
+  color: var(--text-muted);
+  font-size: var(--text-13);
+  font-weight: 500;
+}
+
+.optional {
+  color: var(--text-faint);
+  font-weight: 400;
+}
+
+/* The box around an input, so a prefix and a trailing button sit inside the
+   same outline as the text. */
+.control {
+  display: flex;
+  align-items: center;
+  min-width: 0;
+  height: 44px;
+  border-radius: var(--radius-md);
+  background: var(--surface-field);
+  box-shadow: inset 0 0 0 1px var(--line);
+  transition: box-shadow var(--dur-fast) var(--ease-standard);
+}
+
+.control:hover {
+  box-shadow: inset 0 0 0 1px var(--line-strong);
+}
+
+.control:focus-within {
+  box-shadow: inset 0 0 0 1.5px var(--accent), 0 0 0 3px var(--accent-soft);
+}
+
+.control[data-invalid] {
+  box-shadow: inset 0 0 0 1.5px var(--danger-line);
+}
+
+.control[data-disabled] {
+  opacity: 0.55;
+}
+
+.control input {
+  flex: 1;
+  min-width: 0;
+  height: 100%;
+  padding: 0 14px;
+  border: 0;
+  border-radius: inherit;
+  background: none;
+  color: var(--text);
+  font: inherit;
+  font-size: var(--text-15);
+  outline: none;
+}
+
+.control input::placeholder {
+  color: var(--text-faint);
+  opacity: 0.8;
+}
+
+.control input:disabled {
+  cursor: not-allowed;
+}
+
+.mono {
+  font-family: var(--font-mono);
+}
+
+.control input.mono {
+  font-family: var(--font-mono);
+  font-size: var(--text-14);
+}
+
+/* The desktop app's credential broker owns the password, so the field is a
+   text field the browser does not offer to save, masked by the style alone. */
+.control input.masked {
+  -webkit-text-security: disc;
+}
+
+.lead {
+  display: flex;
+  align-items: center;
+  padding-left: 13px;
+  color: var(--text-faint);
+}
+
+.lead + input {
+  padding-left: 6px;
+}
+
+.toggle {
+  flex: none;
+  align-self: stretch;
+  padding: 0 12px;
+  border-radius: 0 var(--radius-md) var(--radius-md) 0;
+  color: var(--text-muted);
+  font-size: var(--text-13);
+  font-weight: 500;
+}
+
+.toggle:hover {
+  color: var(--text);
+}
+
+.hint {
+  margin: 0;
+  color: var(--text-faint);
+  font-size: var(--text-12);
+  line-height: 1.45;
+}
+
+/* What went wrong and what to do, with the icon carrying the colour so the
+   sentence stays readable in every palette. */
+.error {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  margin: 0;
+  padding: 10px 12px;
+  border-radius: var(--radius-md);
+  background: var(--danger-soft);
+  color: var(--text);
+  font-size: var(--text-14);
+  line-height: 1.45;
+}
+
+.error svg {
+  flex: none;
+  margin-top: 1px;
+  color: var(--danger-line);
+}
+
+.success {
+  margin: 0;
+  color: var(--live);
+  font-size: var(--text-14);
+  line-height: 1.5;
+}
+
+.checking {
+  margin: 0;
+  color: var(--text-muted);
+  font-size: var(--text-14);
+}
+
+.check {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  color: var(--text-muted);
+  font-size: var(--text-14);
+  line-height: 1.4;
+  cursor: pointer;
+}
+
+.check input {
+  flex: none;
+  width: 17px;
+  height: 17px;
+  margin: 1px 0 0;
+  accent-color: var(--accent);
+}
+
+.button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 9px;
+  min-width: 0;
+  min-height: 44px;
+  padding: 0 16px;
+  border-radius: var(--radius-md);
+  font-size: var(--text-15);
+  font-weight: 600;
+  text-decoration: none;
+  white-space: nowrap;
+  transition: background var(--dur-fast) var(--ease-standard);
+}
+
+.button span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.primary {
+  background: var(--accent);
+  color: var(--on-accent);
+}
+
+.primary:hover:not(:disabled) {
+  background: var(--accent-hover);
+}
+
+.primary:active:not(:disabled) {
+  background: var(--accent-quiet);
+}
+
+.secondary {
+  background: var(--surface-raised);
+  color: var(--text);
+  box-shadow: inset 0 0 0 1px var(--line);
+  font-weight: 500;
+}
+
+.secondary:hover:not(:disabled) {
+  background: var(--surface-overlay);
+}
+
+.secondary svg {
+  flex: none;
+  color: var(--text-muted);
+}
+
+.button:disabled {
+  cursor: default;
+  opacity: 0.65;
+}
+
+.wide {
+  width: 100%;
+}
+
+.button:focus-visible,
+.toggle:focus-visible,
+.link:focus-visible,
+.row:focus-visible,
+.miniButton:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+.divider {
+  display: grid;
+  grid-template-columns: 1fr auto 1fr;
+  align-items: center;
+  gap: 12px;
+  color: var(--text-faint);
+  font-size: var(--text-12);
+}
+
+.divider::before,
+.divider::after {
+  height: 1px;
+  background: var(--line);
+  content: "";
+}
+
+/* The passkey and the identity providers, two to a row. An odd one out
+   takes the whole row. */
+.alternatives {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+}
+
+.alternatives > :last-child:nth-child(odd) {
+  grid-column: 1 / -1;
+}
+
+.link {
+  border-radius: var(--radius-sm);
+  color: var(--text);
+  font-weight: 500;
+  text-decoration: underline;
+  text-decoration-color: var(--line-strong);
+  text-underline-offset: 3px;
+}
+
+.link:hover {
+  text-decoration-color: currentColor;
+}
+
+.link.small {
+  color: var(--text-muted);
+  font-size: var(--text-13);
+}
+
+.foot {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 10px;
+  padding-top: 18px;
+  border-top: 1px solid var(--line);
+  color: var(--text-muted);
+  font-size: var(--text-14);
+  line-height: 1.5;
+}
+
+.foot p {
+  margin: 0;
+}
+
+.foot .field {
+  align-self: stretch;
+}
+
+.inlineRow {
+  display: flex;
+  gap: 8px;
+}
+
+.inlineRow .control {
+  flex: 1;
+}
+
+.inlineRow .button {
+  flex: none;
+}
+
+.miniHead {
+  margin: 0;
+  color: var(--text-faint);
+  font-size: var(--text-13);
+  font-weight: 600;
+}
+
+/* An account or a server in one line: a face, a name and what goes under it. */
+.chip {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+  padding: 8px;
+  border-radius: var(--radius-lg);
+  background: var(--surface-raised);
+  box-shadow: inset 0 0 0 1px var(--line-subtle);
+}
+
+.preview {
+  padding: 10px 12px;
+}
+
+.who {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+  line-height: 1.3;
+}
+
+.who strong,
+.who small {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.who strong {
+  color: var(--text);
+  font-size: var(--text-14);
+  font-weight: 600;
+}
+
+.who strong.placeholder {
+  color: var(--text-faint);
+  font-weight: 500;
+}
+
+.who small {
+  color: var(--text-faint);
+  font-size: var(--text-13);
+}
+
+.tag {
+  flex: none;
+  color: var(--text-faint);
+  font-size: var(--text-12);
+}
+
+.face {
+  position: relative;
+  display: grid;
+  flex: none;
+  place-items: center;
+  width: 34px;
+  height: 34px;
+  overflow: hidden;
+  border-radius: 50%;
+  background: var(--face, var(--surface-overlay));
+  color: var(--on-accent);
+  font-size: var(--text-13);
+  font-weight: 600;
+  transition: background var(--dur-slow) var(--ease-standard);
+}
+
+.face.small {
+  width: 22px;
+  height: 22px;
+  font-size: 10px;
+}
+
+.face.empty {
+  background: none;
+  box-shadow: inset 0 0 0 1.5px var(--line-strong);
+  color: var(--text-faint);
+}
+
+.face img {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+/* The colours of the open server's tile in the rail (`.srv-item.on` in
+   rail.css), so a server looks the same here as right after joining. */
+.tile {
+  display: grid;
+  flex: none;
+  place-items: center;
+  width: 48px;
+  height: 48px;
+  overflow: hidden;
+  border-radius: 15px;
+  background: var(--accent-soft);
+  color: var(--text);
+  font-size: var(--text-16);
+  font-weight: 700;
+  letter-spacing: 0.01em;
+}
+
+.tile.large {
+  width: 60px;
+  height: 60px;
+  border-radius: 19px;
+  font-size: 21px;
+}
+
+.tile.empty {
+  background: var(--surface-field);
+  color: var(--text-faint);
+}
+
+.tile img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.miniButton {
+  flex: none;
+  padding: 5px 10px;
+  border-radius: var(--radius-sm);
+  background: var(--surface-field);
+  color: var(--text-muted);
+  font-size: var(--text-13);
+}
+
+.miniButton:hover {
+  color: var(--text);
+}
+
+.channels {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 12px;
+  color: var(--text-muted);
+  font-size: var(--text-13);
+}
+
+.channels span {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  min-width: 0;
+}
+
+.channels svg {
+  flex: none;
+  color: var(--text-faint);
+}
+
+/* Other ways to confirm: one row each, with a line that says what it needs. */
+.rows {
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  border-radius: var(--radius-lg);
+  box-shadow: inset 0 0 0 1px var(--line);
+}
+
+.row {
+  display: grid;
+  grid-template-columns: 20px 1fr 16px;
+  align-items: center;
+  gap: 14px;
+  padding: 13px 14px;
+  border-radius: 0;
+  color: var(--text);
+  text-align: left;
+}
+
+.row + .row {
+  border-top: 1px solid var(--line);
+}
+
+.row:hover:not(:disabled) {
+  background: var(--surface-hover);
+}
+
+.row:disabled {
+  cursor: default;
+  opacity: 0.65;
+}
+
+.row > svg {
+  color: var(--text-muted);
+}
+
+/* The caret points down in the icon set; here it says "go on". */
+.row > svg:last-child {
+  color: var(--text-faint);
+  transform: rotate(-90deg);
+}
+
+.row span {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.row strong {
+  font-size: var(--text-15);
+  font-weight: 500;
+}
+
+.row small {
+  color: var(--text-faint);
+  font-size: var(--text-13);
+  line-height: 1.4;
+  overflow-wrap: anywhere;
+}
+
+/* Six cells drawn over one input, which keeps the platform's one-time-code
+   autofill, paste and screen-reader behaviour. */
+.cells {
+  position: relative;
+  display: grid;
+  grid-template-columns: repeat(6, 1fr);
+  gap: 8px;
+}
+
+.cells input {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  border: 0;
+  background: none;
+  color: transparent;
+  caret-color: transparent;
+  font-size: 16px;
+  opacity: 0;
+  cursor: text;
+}
+
+.cell {
+  display: grid;
+  place-items: center;
+  height: 54px;
+  border-radius: var(--radius-md);
+  background: var(--surface-field);
+  box-shadow: inset 0 0 0 1px var(--line);
+  color: var(--text);
+  font-family: var(--font-mono);
+  font-size: 22px;
+  font-weight: 500;
+}
+
+/* A gap after the third digit, as authenticator apps show the code. */
+.cell:nth-of-type(4) {
+  margin-left: 10px;
+}
+
+.cells:focus-within .cell[data-current] {
+  box-shadow: inset 0 0 0 1.5px var(--accent), 0 0 0 3px var(--accent-soft);
+}
+
+.cells[data-invalid] .cell {
+  box-shadow: inset 0 0 0 1.5px var(--danger-line);
+}
+
+.cells[data-disabled] {
+  opacity: 0.65;
+}
+
+/* The password meter: three bars, as in the mark. */
+.meter {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-height: 18px;
+  color: var(--text-faint);
+  font-size: var(--text-12);
+  line-height: 1.4;
+}
+
+.meter strong {
+  color: var(--text);
+  font-weight: 500;
+}
+
+.bars {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  gap: 3px;
+  height: 16px;
+}
+
+.bars i {
+  display: block;
+  width: 5px;
+  border-radius: 3px;
+  background: var(--line);
+  transition: background var(--dur-slow) var(--ease-standard);
+}
+
+.bars i:nth-child(1) {
+  height: 9px;
+}
+
+.bars i:nth-child(2) {
+  height: 16px;
+}
+
+.bars i:nth-child(3) {
+  height: 12px;
+}
+
+.bars i[data-on] {
+  background: var(--accent);
+}
+
+.steps {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin: 0;
+  color: var(--text-faint);
+  font-size: var(--text-13);
+}
+
+.steps strong {
+  color: var(--text-muted);
+  font-weight: 500;
+}
+
+.switchRow {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  color: var(--text-muted);
+  font-size: var(--text-14);
+}
+
+/* The invite: whose server, who asks, and where it leads. */
+.invite {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 12px;
+}
+
+.from {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0;
+  color: var(--text-muted);
+  font-size: var(--text-14);
+}
+
+.from strong {
+  color: var(--text);
+  font-weight: 600;
+}
+
+.serverName {
+  margin: 0;
+  color: var(--text);
+  font-size: 30px;
+  font-weight: 600;
+  line-height: 1.15;
+  letter-spacing: -0.015em;
+  overflow-wrap: anywhere;
+}
+
+.serverName:focus {
+  outline: none;
+}
+
+.serverDescription {
+  margin: 0;
+  color: var(--text-muted);
+  line-height: 1.5;
+  overflow-wrap: anywhere;
+}
+
+.facts {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 16px;
+  margin: 0;
+  padding: 0;
+  color: var(--text-faint);
+  font-size: var(--text-13);
+  list-style: none;
+}
+
+.facts li {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.linkBox {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  height: 48px;
+  padding-left: 14px;
+  border-radius: var(--radius-md);
+  background: var(--surface-field);
+  box-shadow: inset 0 0 0 1px var(--line);
+}
+
+.linkBox output {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  font-size: var(--text-13);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.linkBox .button {
+  min-height: 36px;
+  margin-right: 6px;
+  padding: 0 12px;
+  font-size: var(--text-14);
+}
+
+@media (max-width: 767px), (pointer: coarse) {
+  /* Safari zooms the page when a touch-focused field is under 16px. Landscape
+     phones can be wider than any width rule, so the input method counts too. */
+  .control input,
+  .control input.mono {
+    font-size: var(--text-16);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .control,
+  .button,
+  .face,
+  .bars i {
+    transition: none;
+  }
+}

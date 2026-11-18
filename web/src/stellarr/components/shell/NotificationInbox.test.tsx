@@ -123,7 +123,7 @@ describe("notification inbox", () => {
       onJoinInvite,
     });
 
-    expect(screen.getByText("Zaproszenie na Nebula")).toBeTruthy();
+    expect(screen.getByText("Zaproszenie na serwer Nebula")).toBeTruthy();
     expect(screen.getByText("Maja zaprasza Cię na serwer Nebula.")).toBeTruthy();
     await user.click(screen.getByRole("button", { name: "Dołącz do serwera" }));
     expect(onJoinInvite).toHaveBeenCalledWith("join-me");

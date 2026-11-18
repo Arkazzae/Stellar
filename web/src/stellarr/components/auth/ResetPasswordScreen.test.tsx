@@ -2,56 +2,38 @@ import { render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { describe, expect, it, vi } from "vitest";
 
+import { polishAsRead } from "@/test/translators";
+
 import { ResetPasswordScreen } from "./ResetPasswordScreen";
 
-const newPassword = () => screen.getByLabelText("Nowe hasło");
-const confirmation = () => screen.getByLabelText("Powtórz nowe hasło");
-const submit = () => screen.getByRole("button", { name: "Ustaw nowe hasło" });
+const t = polishAsRead;
+const newPassword = () => screen.getByLabelText(t("auth.reset.newPassword"));
+const submit = () => screen.getByRole("button", { name: t("auth.reset.submit") });
 
 describe("ResetPasswordScreen", () => {
   it("refuses a password under 8 characters before calling onSubmit", async () => {
     const user = userEvent.setup();
     const onSubmit = vi.fn(async () => undefined);
-    render(<ResetPasswordScreen token="abc" onSubmit={onSubmit} />);
+    render(<ResetPasswordScreen token="abc" t={t} onSubmit={onSubmit} />);
 
     await user.type(newPassword(), "short");
-    await user.type(confirmation(), "short");
     await user.click(submit());
 
     expect(onSubmit).not.toHaveBeenCalled();
-    expect(screen.getByRole("alert")).toHaveTextContent("Hasło musi mieć co najmniej 8 znaków.");
+    expect(screen.getByRole("alert")).toHaveTextContent(t("auth.password.length"));
   });
 
-  it("refuses two fields that disagree before calling onSubmit", async () => {
+  it("sends the token with the new password, then says other sessions ended and leads to the login", async () => {
     const user = userEvent.setup();
     const onSubmit = vi.fn(async () => undefined);
-    render(<ResetPasswordScreen token="abc" onSubmit={onSubmit} />);
+    render(<ResetPasswordScreen token="abc" t={t} onSubmit={onSubmit} />);
 
     await user.type(newPassword(), "haslo1234");
-    await user.type(confirmation(), "haslo4321");
-
-    expect(confirmation()).toHaveAttribute("aria-invalid", "true");
-    await user.click(submit());
-
-    expect(onSubmit).not.toHaveBeenCalled();
-    expect(screen.getByRole("alert")).toHaveTextContent("Hasła nie są takie same.");
-  });
-
-  it("sends the token with the new password and then points to the login", async () => {
-    const user = userEvent.setup();
-    const onSubmit = vi.fn(async () => undefined);
-    render(<ResetPasswordScreen token="abc" onSubmit={onSubmit} />);
-
-    await user.type(newPassword(), "haslo1234");
-    await user.type(confirmation(), "haslo1234");
     await user.click(submit());
 
     expect(onSubmit).toHaveBeenCalledExactlyOnceWith("abc", "haslo1234");
-    expect(await screen.findByRole("status")).toHaveTextContent("Hasło zostało zmienione.");
-    expect(screen.getByRole("link", { name: "Przejdź do logowania" })).toHaveAttribute(
-      "href",
-      "/login",
-    );
+    expect(await screen.findByText(t("auth.reset.success"))).toBeVisible();
+    expect(screen.getByRole("link", { name: t("auth.reset.goLogin") })).toHaveAttribute("href", "/login");
   });
 
   it("explains that the link is no longer valid when the request is rejected", async () => {
@@ -59,23 +41,12 @@ describe("ResetPasswordScreen", () => {
     const onSubmit = vi.fn(async () => {
       throw new Error("expired");
     });
-    render(<ResetPasswordScreen token="abc" onSubmit={onSubmit} />);
+    render(<ResetPasswordScreen token="abc" t={t} onSubmit={onSubmit} />);
 
     await user.type(newPassword(), "haslo1234");
-    await user.type(confirmation(), "haslo1234");
     await user.click(submit());
 
-    expect(await screen.findByRole("alert")).toHaveTextContent("Link jest nieprawidłowy");
+    expect(await screen.findByRole("alert")).toHaveTextContent(t("auth.reset.invalid"));
     expect(newPassword()).toBeEnabled();
-  });
-
-  it("offers a new link instead of a form when the address has no token", () => {
-    render(<ResetPasswordScreen token="" onSubmit={vi.fn()} />);
-
-    expect(screen.queryByLabelText("Nowe hasło")).not.toBeInTheDocument();
-    expect(screen.getByRole("link", { name: "Wyślij nowy link" })).toHaveAttribute(
-      "href",
-      "/forgot-password",
-    );
   });
 });

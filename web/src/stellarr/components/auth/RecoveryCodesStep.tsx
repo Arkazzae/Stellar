@@ -1,8 +1,9 @@
 import { useState } from "react";
 
-import { AuthFrame, authStyles as styles, type StepFrame } from "@/components/auth/AuthFrame";
+import { AuthFrame, type StepFrame } from "@/components/auth/AuthFrame";
 import type { Translator } from "@/i18n";
 
+import styles from "./AuthControls.module.css";
 import steps from "./SignInSteps.module.css";
 
 export interface RecoveryCodesStepProps {
@@ -50,7 +51,7 @@ export function RecoveryCodesStep({
   };
 
   return (
-    <Frame title={t("auth.codes.title")} description={t("auth.codes.description")}>
+    <Frame title={t("auth.codes.title")} description={t("auth.codes.description")} scene="second-step">
       <div className={styles.form}>
         <ul className={steps.codes} aria-label={t("auth.codes.title")}>
           {codes.map((code) => (
@@ -58,10 +59,10 @@ export function RecoveryCodesStep({
           ))}
         </ul>
         <div className={steps.actions}>
-          <button type="button" className={steps.copy} onClick={() => void copy()}>
+          <button type="button" className={`${styles.button} ${styles.secondary}`} onClick={() => void copy()}>
             {copied ? t("auth.codes.copied") : t("auth.codes.copy")}
           </button>
-          <button type="button" className={steps.copy} onClick={download}>
+          <button type="button" className={`${styles.button} ${styles.secondary}`} onClick={download}>
             {t("auth.codes.download")}
           </button>
         </div>
@@ -69,7 +70,7 @@ export function RecoveryCodesStep({
           <input type="checkbox" checked={saved} onChange={(event) => setSaved(event.target.checked)} />
           <span>{t("auth.codes.saved")}</span>
         </label>
-        <button type="button" className={styles.submit} disabled={!saved} onClick={onDone}>
+        <button type="button" className={`${styles.button} ${styles.primary} ${styles.wide}`} disabled={!saved} onClick={onDone}>
           {doneLabel ?? t("auth.codes.continue")}
         </button>
       </div>

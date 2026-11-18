@@ -1,32 +1,42 @@
-import { render, screen } from "@testing-library/react";
+import { act, render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 
-import { ForgotPasswordScreen } from "./ForgotPasswordScreen";
+import { polishAsRead } from "@/test/translators";
+
+import { ForgotPasswordScreen, RESEND_AFTER_SECONDS } from "./ForgotPasswordScreen";
+
+const t = polishAsRead;
+
+afterEach(() => {
+  vi.useRealTimers();
+});
 
 describe("ForgotPasswordScreen", () => {
-  it("keeps the submit button off until an address is typed", async () => {
-    const user = userEvent.setup();
-    render(<ForgotPasswordScreen onSubmit={vi.fn()} />);
-
-    const submit = screen.getByRole("button", { name: "Wyślij link do zmiany hasła" });
-    expect(submit).toBeDisabled();
-
-    await user.type(screen.getByRole("textbox", { name: "E-mail" }), "maja@example.com");
-    expect(submit).toBeEnabled();
-  });
-
-  it("sends the trimmed address and then confirms without echoing the form", async () => {
-    const user = userEvent.setup();
+  it("sends the trimmed address, says where it went, and sends it again only after a minute", async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime });
     const onSubmit = vi.fn(async () => undefined);
-    render(<ForgotPasswordScreen onSubmit={onSubmit} />);
+    render(<ForgotPasswordScreen t={t} instanceName="Stellarr Dev" onSubmit={onSubmit} />);
 
     await user.type(screen.getByRole("textbox", { name: "E-mail" }), " maja@example.com ");
-    await user.click(screen.getByRole("button", { name: "Wyślij link do zmiany hasła" }));
+    await user.click(screen.getByRole("button", { name: t("auth.forgot.submit") }));
 
     expect(onSubmit).toHaveBeenCalledExactlyOnceWith("maja@example.com");
-    expect(await screen.findByRole("status")).toHaveTextContent("Sprawdź skrzynkę pocztową.");
-    expect(screen.queryByRole("textbox", { name: "E-mail" })).not.toBeInTheDocument();
+    expect(
+      await screen.findByText(t("auth.forgot.sentNamed", { address: "maja@example.com", instance: "Stellarr Dev" })),
+    ).toBeVisible();
+    expect(
+      screen.getByRole("button", { name: t("auth.forgot.resendIn", { seconds: RESEND_AFTER_SECONDS }) }),
+    ).toBeDisabled();
+
+    await act(async () => {
+      vi.advanceTimersByTime(RESEND_AFTER_SECONDS * 1000);
+    });
+    await user.click(screen.getByRole("button", { name: t("auth.forgot.resend") }));
+
+    expect(onSubmit).toHaveBeenCalledTimes(2);
+    expect(onSubmit).toHaveBeenLastCalledWith("maja@example.com");
   });
 
   it("says the request failed and keeps the form so it can be retried", async () => {
@@ -34,12 +44,12 @@ describe("ForgotPasswordScreen", () => {
     const onSubmit = vi.fn(async () => {
       throw new Error("offline");
     });
-    render(<ForgotPasswordScreen onSubmit={onSubmit} />);
+    render(<ForgotPasswordScreen t={t} onSubmit={onSubmit} />);
 
     await user.type(screen.getByRole("textbox", { name: "E-mail" }), "maja@example.com");
-    await user.click(screen.getByRole("button", { name: "Wyślij link do zmiany hasła" }));
+    await user.click(screen.getByRole("button", { name: t("auth.forgot.submit") }));
 
-    expect(await screen.findByRole("alert")).toHaveTextContent("Nie udało się wysłać prośby.");
+    expect(await screen.findByRole("alert")).toHaveTextContent(t("auth.forgot.failed"));
     expect(screen.getByRole("textbox", { name: "E-mail" })).toBeEnabled();
   });
 });
