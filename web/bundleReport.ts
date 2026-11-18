@@ -135,15 +135,35 @@ export function formatReport(report: BundleReport, groupLimit = 25): string {
   ].join("\n");
 }
 
-/** Prints the report once the bundle is complete. */
-export function bundleReport(): Plugin {
+/** Prints the report once the bundle is complete, and fails the build when the up-front files are over budget. */
+export function bundleReport(budget = UP_FRONT_BUDGET_GZIP): Plugin {
   return {
     name: "stellarr-bundle-report",
     apply: "build",
     generateBundle(_options, bundle) {
       const entry = webEntry(bundle);
       if (entry === undefined) return;
-      console.log(`\n${formatReport(reportBundle(bundle, entry))}\n`);
+      const report = reportBundle(bundle, entry);
+      console.log(`\n${formatReport(report)}\n`);
+      const violation = budgetViolation(report, budget);
+      if (violation !== null) this.error(violation);
     },
   };
+}
+
+/**
+ * What the web document may load up front, in gzipped bytes: the files the
+ * sign-in page waits for before it can paint. About 5% above what the build
+ * measured when the signed-in app's socket and voice code left them, so that
+ * ordinary growth passes and a library pulled into the entry does not. Raise it
+ * on purpose, with the report in hand, never to make a build pass.
+ */
+export const UP_FRONT_BUDGET_GZIP = 259_000;
+
+/** The message that names every file and its size when the report is over `limit`, or null when it is not. */
+export function budgetViolation(report: BundleReport, limit: number): string | null {
+  const total = report.files.reduce((sum, file) => sum + file.gzip, 0);
+  if (total <= limit) return null;
+  const files = report.files.map((file) => `  ${file.fileName}: ${file.gzip} bytes gzipped`).join("\n");
+  return `The web document loads ${total} bytes gzipped up front, over its budget of ${limit} (${total - limit} too many):\n${files}`;
 }
