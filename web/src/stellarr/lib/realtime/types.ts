@@ -126,6 +126,12 @@ export interface ServerAccessRevokedEvent {
   kind: "kicked" | "banned";
 }
 
+export interface SectionOrderChangedEvent {
+  serverId: string;
+  /** Every section of the server, in its new order. */
+  sectionIds: string[];
+}
+
 export interface ChannelLayoutChangedEvent {
   serverId: string;
   /** Every channel of the server in order, each with its section. */
@@ -153,6 +159,8 @@ export interface RealtimeEventMap {
   ServerUpdated: Server;
   /** Someone reordered the channels or moved one to another section. */
   ChannelLayoutChanged: ChannelLayoutChangedEvent;
+  /** Someone reordered the sections. */
+  SectionOrderChanged: SectionOrderChangedEvent;
   PresenceChanged: PresenceChangedEvent;
   /** Public profile fields changed for one server member. */
   UserUpdated: User;

@@ -92,6 +92,9 @@ function followHub(realtime: RealtimeClient, store: DirectoryStore): () => void 
     realtime.on("ChannelLayoutChanged", ({ serverId, channels }) => {
       if (isCurrent(serverId)) store.setChannelLayout(channels);
     }),
+    realtime.on("SectionOrderChanged", ({ serverId, sectionIds }) => {
+      if (isCurrent(serverId)) store.setSectionOrder(sectionIds);
+    }),
     realtime.on("PermissionsChanged", ({ serverId, permissions }) => {
       if (isCurrent(serverId)) store.setPermissions(permissions);
     }),

@@ -176,8 +176,12 @@ export class DirectoryStore {
     });
   }
 
-  setSectionOrder(orderedIds: string[]): void {
-    this.#update({ sections: inOrder(this.#snapshot.sections, orderedIds) });
+  /** Like the channel layout, an unchanged order publishes nothing. */
+  setSectionOrder(orderedIds: readonly string[]): void {
+    const sections = inOrder(this.#snapshot.sections, orderedIds);
+    const current = this.#snapshot.sections;
+    if (sections.every((section, index) => section === current[index])) return;
+    this.#update({ sections });
   }
 
   removeSection(sectionId: string): void {
@@ -213,7 +217,7 @@ function byOrder(a: Section, b: Section): number {
   return a.position - b.position || a.name.localeCompare(b.name);
 }
 
-function inOrder<T extends { id: string }>(items: T[], orderedIds: string[]): T[] {
+function inOrder<T extends { id: string }>(items: T[], orderedIds: readonly string[]): T[] {
   const rank = new Map(orderedIds.map((id, position) => [id, position]));
   const rankOf = ({ id }: T): number => rank.get(id) ?? orderedIds.length;
   return [...items].sort((a, b) => rankOf(a) - rankOf(b));
