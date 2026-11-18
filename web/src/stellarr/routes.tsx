@@ -9,6 +9,7 @@ import LoginPage from "./pages/LoginPage";
 import NotFoundPage from "./pages/NotFoundPage";
 import RegisterPage from "./pages/RegisterPage";
 import ResetPasswordPage from "./pages/ResetPasswordPage";
+import SetupPage from "./pages/SetupPage";
 
 /**
  * The web client's addresses. Everything under /cockpit belongs to Cockpit,
@@ -31,6 +32,7 @@ export const routes = defineRoutes({
     { path: "/", page: HomePage },
     { path: "/login", page: LoginPage },
     { path: "/register", page: RegisterPage },
+    { path: "/setup", page: SetupPage },
     { path: "/forgot-password", page: ForgotPasswordPage },
     { path: "/reset-password", page: ResetPasswordPage },
     { path: "/confirm-email", page: ConfirmEmailPage },
