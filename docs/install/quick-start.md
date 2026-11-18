@@ -60,13 +60,15 @@ Setup code: K7QM-2XWP-9HDA. Open /setup at the address of this instance to creat
 
 With `STELLARR_DOMAIN` or `STELLARR_PUBLIC_URL` set, it gives the full address instead, such as `https://chat.example.com/setup`. Every start of the container draws a new code, so after a restart use the last line. Case, spaces and dashes do not matter when you type it.
 
-1. Enter the setup code and the owner account: a display name, username (3–32 characters: letters, digits, `.`, `-`, `_`), email, and password (at least 8 characters).
+1. Enter the setup code and the owner account: a display name, username (3–32 characters: letters, digits, `.`, `-`, `_`), email, and password (at least 8 characters). Select **Next: first server**.
 2. Continue to the server step. Choose a server name, an optional description, and the first text channel. Keep the voice channel enabled if you want to test voice next; you can rename or remove it later.
-3. Create the account and the server.
+3. Select **Create account and server**.
 
 The first account becomes the instance owner and is created together with its server, in the last step, so a page closed halfway leaves nothing behind. After that the setup code stops working. Subsequent accounts require an invite link and skip server setup.
 
 ## 5. Invite a second user
+
+The last setup step shows an invite link with **Copy**. To make another one later:
 
 1. In the channel list header, click **Invite to server** next to the server name.
 2. Click **New invite link** to generate an invite URL:
@@ -82,7 +84,7 @@ The first account becomes the instance owner and is created together with its se
 
 ## 6. Join and test voice
 
-1. Open the invite link in a second browser profile or private window, accept the certificate warning, and register a second account.
+1. Open the invite link in a second browser profile or private window, accept the certificate warning, select **Create an account and join**, and register a second account.
 2. In both browser windows, join the voice channel you configured during setup and grant microphone access.
 3. Verify two-way audio and check the connection indicator (`Connected`) in the bottom-left status bar.
 
