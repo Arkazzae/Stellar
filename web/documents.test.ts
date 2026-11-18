@@ -28,6 +28,7 @@ import {
   writePreload,
   type PreloadPlan,
 } from "./documents";
+import { RELEASE_PATH } from "./release";
 import { THEME_SCRIPT } from "./src/stellarr/design/themeScript";
 import { SUPPORTED_LOCALES, translateMessage } from "./src/stellarr/i18n";
 import { LANGUAGE_SETTINGS_KEY } from "./src/stellarr/i18n/defaultLocale";
@@ -526,9 +527,9 @@ describe("the files the apps name by address", () => {
     for (const [match] of read(source).matchAll(ADDRESS)) named.set(match.slice(1), source);
   }
 
-  /** Whether the instance serves `address`: a file of public/ or of the artifacts, the instance file, or a source the build turns into a file of its own. */
+  /** Whether the instance serves `address`: a file of public/ or of the artifacts, the instance file, the release file, or a source the build turns into a file of its own. */
   function served(address: string): boolean {
-    if (address === INSTANCE_LANGUAGE_PATH) return true;
+    if (address === INSTANCE_LANGUAGE_PATH || address === RELEASE_PATH) return true;
     if (address.startsWith("/src/")) return existsSync(here(`.${address}`));
     if (Object.values(WORKLETS).some((file) => address === `/${file}`)) return true;
     return assembled.has(address) || existsSync(here(`public${address}`));

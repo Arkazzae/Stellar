@@ -28,8 +28,9 @@ export default defineConfig({
           environment: "jsdom",
           globals: true,
           setupFiles: ["./vitest.setup.ts"],
-          // documents.test.ts checks the two documents the build writes.
-          include: ["src/**/*.test.{ts,tsx}", "documents.test.ts"],
+          // documents.test.ts checks the two documents the build writes,
+          // release.test.ts the id the build gives the release.
+          include: ["src/**/*.test.{ts,tsx}", "documents.test.ts", "release.test.ts"],
           exclude: [...configDefaults.exclude, "src/cockpit/**"],
         },
       },
