@@ -93,7 +93,7 @@ OpenID Connect sign-in is optional; local username/password sign-in remains avai
 
 ### Additional OIDC providers
 
-You can configure extra OIDC providers in `docker-compose.override.yml` under `environment`, keyed by a provider ID of `1–32` lowercase letters, digits, or hyphens (excluding `default`, `login`, and `callback`). Each provider gets its own login button and callback URL `<public-url>/api/auth/oidc/<id>/callback`:
+You can configure extra OIDC providers in `docker-compose.override.yml` under `environment`, keyed by a provider ID of `1–32` lowercase letters, digits, or hyphens (excluding `default`, `login`, `callback`, `link`, `reauthenticate`, and `pending`). Each provider gets its own login button and callback URL `<public-url>/api/auth/oidc/<id>/callback`:
 
 ```yaml
 services:
@@ -110,6 +110,9 @@ services:
 
 - A provider is enabled only when its issuer is HTTPS and both client ID and secret are configured; an invalid provider ID stops the API at startup.
 - Users link their accounts to a provider from **Settings → Login and security → Sign-in providers** (see [Account security](../admin/account-security.md#linking-an-identity-provider)). Identities are matched strictly by `(issuer, subject)`, never by email address.
+- Someone the provider confirms whose identity is linked to no account can link it by signing in with their password on the page that follows, or, with an invite, create an account through the provider when the owner allows it in **Cockpit → Integrations → Sign-in providers** (off by default). See [Signing in with an identity no account is linked to](../admin/account-security.md#signing-in-with-an-identity-no-account-is-linked-to).
+- Stellarr asks for the `openid profile email` scopes and reads `name`, `preferred_username`, `email`, and `email_verified` from the ID token or the userinfo endpoint to fill in a new account; only an address the provider marks as verified counts as verified.
+- An account without a password confirms sensitive changes by signing in at its provider again, so the provider must return `auth_time` and should honour `prompt=login` and `max_age`: the 5 minutes for the change count from `auth_time`.
 
 ### Trusting provider MFA
 

@@ -1,6 +1,6 @@
 # Account security
 
-Stellarr supports second-factor authentication (TOTP apps, email codes, and passkeys or hardware security keys), OIDC identity linking, trusted devices, and operator-assisted recovery.
+Stellarr supports second-factor authentication (TOTP apps, email codes, and passkeys or hardware security keys), OIDC identity linking, accounts created through a provider without a password, trusted devices, and operator-assisted recovery.
 
 ## Second-factor methods
 
@@ -17,7 +17,9 @@ The same settings pane shows **trusted devices**, **active sessions** (allowing 
 
 ### Proof for sensitive account changes
 
-Adding or removing methods, regenerating recovery codes, linking or unlinking an OIDC provider, and changing passwords require fresh proof: either a second factor completed within the **last 5 minutes**, or the current password if the account has no second factor yet. Security-change endpoints allow up to 30 requests per IP every 15 minutes.
+Adding or removing methods, regenerating recovery codes, linking or unlinking an OIDC provider, and changing or setting passwords require fresh proof: either a second factor completed within the **last 5 minutes**, or, if the account has no second factor yet, the current password or a sign-in from the last 5 minutes. Security-change endpoints allow up to 30 requests per IP every 15 minutes.
+
+An account [without a password](#accounts-without-a-password) and without a second factor has only the recent sign-in. Once its own sign-in is more than 5 minutes old, the settings send it to one of its linked providers to sign in again: Stellarr asks the provider for `prompt=login` and `max_age=300`, accepts the answer only when the provider's `auth_time` is within the last 5 minutes and the identity is the account's own, and then counts the session as signed in at that `auth_time`, not when the answer arrived. A provider that honours `prompt=login` asks for the credentials again, which leaves the full 5 minutes; one that lets the person through on a sign-in of its own from 3 minutes ago leaves 2. The browser comes back to a page that says whether it worked; the person opens the settings again to make the change.
 
 ## Passkeys
 
@@ -37,10 +39,40 @@ When OIDC is enabled (see [Single sign-on](../install/configuration.md#single-si
 - Links are bound per `(issuer, subject)`. One provider identity cannot be linked to two Stellarr accounts, and an account cannot link two identities from the same provider.
 - By default, OIDC sign-in still requires Stellarr's own second factor unless `TrustProviderMfa` is enabled for that provider.
 - Operators can inspect links with `stellarr security show` and remove them via Cockpit or `stellarr security unlink`. Operator MFA recovery preserves OIDC links.
+- Nothing is ever linked by matching an email address.
+
+### Signing in with an identity no account is linked to
+
+When a provider confirms someone whose identity is linked to no account, Stellarr keeps that identity for **10 minutes**, bound to the browser by an HttpOnly cookie, and shows a page that names the identity (name, email, provider) and offers two ways on. The page never says whether the provider's email address belongs to an account here.
+
+- **I have an account on {instance}**: the person signs in with their username or email and password, and the identity is linked to that account. The link is made only once the whole sign-in is done: right away when the account needs nothing more, otherwise after its second step (a remembered device does not count for this; a real second factor does). The rules of a link from the settings apply. When the identity was linked to another account meanwhile, or the account already has an identity at that provider, the sign-in still succeeds and a page says why nothing was linked. A link records the same security event as one from the settings.
+- **I have an invite link**: offered only when the instance owner lets the provider [create accounts](#creating-an-account-through-a-provider).
+- **Back to login** forgets the waiting identity.
+
+### Creating an account through a provider
+
+In **Cockpit → Integrations → Sign-in providers**, the instance owner can let each configured provider create accounts for people who have an invite. The switch is off for every provider until turned on; changing it asks for a fresh second step like other sensitive Cockpit changes and is recorded in the audit log.
+
+With the switch on, someone the provider confirmed can create an account from an invite link, either from the page above or with **Create with {provider}, no password** on the registration form. The form is filled in from the provider (display name, a suggested username, email address), and the person can change any of it. The account:
+
+- has no password, is linked to the identity, and joins the invite's server;
+- counts its email address as verified only when it is the address the provider reported as verified;
+- signs in the way a provider sign-in does: the provider's second factor counts when `TrustProviderMfa` is on and the provider's `auth_time` is recent, and otherwise the instance's own second-step policy applies.
+
+The owner's account is never created this way: an empty instance is founded at `/setup` with a password and the setup code.
+
+## Accounts without a password
+
+An account created through a provider has no password until its owner sets one under **Settings → Login and security**, behind the same fresh proof as other changes.
+
+- A password sign-in to such an account fails exactly like a wrong password.
+- Its email address can be changed without a password, and so can the PIN or the keys of its encrypted direct messages: the fresh proof stands in for the password.
+- Its last way in (a password, a passkey, or an identity at a configured provider) cannot be unlinked or removed, in the settings or in Cockpit; the person adds another way first. `stellarr security unlink` warns before removing it, counting the providers configured where it runs.
+- **Forgot password** still works when the account has an email address, and sets a first password. Operator recovery works too: the person signs in through the provider and redeems the credential.
 
 ## Changing an account's email address
 
-Because the email address receives email 2FA codes, security alerts, and password-reset links, changing it under **Settings → Login and security** requires the current password plus a fresh second factor (if enabled), as well as configured mail delivery:
+Because the email address receives email 2FA codes, security alerts, and password-reset links, changing it under **Settings → Login and security** requires the current password (or, for an account without one, the fresh proof described above) plus a fresh second factor (if enabled), as well as configured mail delivery:
 
 1. Stellarr emails a confirmation link (valid for 60 minutes) to the **new** address.
 2. The address updates only after the confirmation link is opened and submitted.
@@ -84,6 +116,7 @@ With `admins` or `everyone`, users without a second-factor method are guided thr
 Even when `mfa.requirement` is `optional`, once the owner account has a second factor enabled, high-risk actions in Cockpit (and equivalent role/ownership changes on the instance's primary server) require a second factor completed within the last 5 minutes:
 
 - Creating accounts, modifying account status, or changing server roles and permissions
+- Letting a sign-in provider create accounts, or stopping it
 - Transferring or deleting servers
 - Editing secrets, desktop releases, account security settings, or mail transport settings
 - Downloading backups
@@ -109,7 +142,7 @@ What operator recovery does:
 
 1. Revokes all MFA methods, trusted devices, active sessions, approved desktop handoffs, and unused recovery codes on the account (while keeping OIDC links intact).
 2. Prints a **one-time CLI recovery credential** valid for `mfa.cli-recovery-minutes` (`10` minutes by default). Deliver it to the user over a trusted channel.
-3. Locks normal session issuance until the user signs in with their password, redeems the one-time credential, and enrolls a replacement second factor (which issues fresh recovery codes).
+3. Locks normal session issuance until the user signs in (with their password or a linked provider), redeems the one-time credential, and enrolls a replacement second factor (which issues fresh recovery codes).
 
 > [!NOTE]
 > The **instance owner's** own account can only be recovered via the CLI (`stellarr security recover`), because recovery revokes all active sessions including the current Cockpit session.
