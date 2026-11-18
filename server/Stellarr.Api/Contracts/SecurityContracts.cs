@@ -139,6 +139,17 @@ public sealed record IdentityProviderDto(string Id, string DisplayName);
 
 public sealed record IdentityChangeRequest(string? Password);
 
+/// <summary>
+/// An identity a provider confirmed that no account is linked to, as the
+/// browser it came back to may see it.
+/// </summary>
+/// <param name="Username">A login to suggest for an account made from it, made from what the provider said.</param>
+public sealed record PendingIdentityDto(
+    IdentityProviderDto Provider,
+    string? DisplayName,
+    string? Email,
+    string Username);
+
 /// <summary>The first password of an account made through a provider.</summary>
 public sealed record SetPasswordRequest(string? NewPassword);
 

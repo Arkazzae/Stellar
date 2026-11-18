@@ -22,6 +22,8 @@ public static class AuthEndpoints
         group.MapPost("/login", LoginAsync).RequireRateLimiting(RateLimitPolicies.Login);
         group.MapPost("/logout", LogoutAsync).RequireAuthorization();
         group.MapGet("/oidc", GetOidcStatus);
+        group.MapGet("/oidc/pending", GetPendingIdentityAsync).RequireRateLimiting(RateLimitPolicies.LoginPoll);
+        group.MapDelete("/oidc/pending", DropPendingIdentityAsync).RequireRateLimiting(RateLimitPolicies.AuthWrite);
         group.MapGet("/oidc/login", ChallengeOidc).RequireRateLimiting(RateLimitPolicies.Login);
         group.MapGet("/oidc/{id}/login", ChallengeNamedOidc).RequireRateLimiting(RateLimitPolicies.Login);
         group.MapGet("/oidc/link", (string? ticket, HttpContext context, ExternalOidcOptions options, IDataProtectionProvider protection) =>
@@ -124,6 +126,43 @@ public static class AuthEndpoints
                     : options.DisplayName),
             providers,
         });
+    }
+
+    /// <summary>
+    /// The identity a provider confirmed that this browser waits with, as the
+    /// sign-in page shows it: whose it is at which provider, and a login to
+    /// suggest for a new account. It says nothing about the accounts here,
+    /// not even whether the address belongs to one. 404 when there is none,
+    /// it ran out or its provider is no longer configured.
+    /// </summary>
+    private static async Task<IResult> GetPendingIdentityAsync(
+        HttpContext context,
+        AppDbContext db,
+        ExternalOidcOptions options,
+        Messages messages,
+        CancellationToken cancellationToken)
+    {
+        if (await PendingIdentities.FindAsync(db, context, cancellationToken) is not { } identity ||
+            options.Find(identity.ProviderId) is not { } provider)
+        {
+            return Results.NotFound();
+        }
+
+        return Results.Ok(new PendingIdentityDto(
+            new IdentityProviderDto(provider.Id, AccountSecurityEndpoints.ProviderName(provider, messages)),
+            identity.DisplayName,
+            identity.Email,
+            PendingIdentities.SuggestUsername(identity)));
+    }
+
+    /// <summary>Forgets the identity this browser waits with: the visitor went back to the sign-in page.</summary>
+    private static async Task<IResult> DropPendingIdentityAsync(
+        HttpContext context,
+        AppDbContext db,
+        CancellationToken cancellationToken)
+    {
+        await PendingIdentities.DropAsync(db, context, cancellationToken);
+        return Results.NoContent();
     }
 
     /// <summary>The original address: the provider configured first.</summary>

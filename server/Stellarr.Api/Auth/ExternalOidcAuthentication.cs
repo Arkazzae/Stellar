@@ -14,13 +14,19 @@ namespace Stellarr.Api.Auth;
 /// <summary>
 /// Lets a person sign in through the configured OpenID Connect providers. A
 /// provider only proves who they are: an account is signed in when that
-/// identity was linked to it, by the account itself after a fresh proof or by
-/// an operator, never by matching an e-mail address. The result is the same
-/// revocable session a password sign-in gets.
+/// identity was linked to it, by the account itself or by an operator, never
+/// by matching an e-mail address. The result is the same revocable session a
+/// password sign-in gets.
+///
+/// An identity no account is linked to is kept for the browser for a few
+/// minutes (<see cref="PendingIdentities"/>), and the sign-in page offers to
+/// link it to an account signed in with a password, or to make an account
+/// with it from an invite.
 /// </summary>
 public static class ExternalOidcAuthentication
 {
-    private const string NotLinked = "external_identity_not_linked";
+    /// <summary>The request item that carries an unlinked identity from its token to the end of the sign-in.</summary>
+    private static readonly object UnlinkedItem = new();
 
     public static AuthenticationBuilder AddExternalOidc(
         this AuthenticationBuilder authentication,
@@ -86,6 +92,19 @@ public static class ExternalOidcAuthentication
 
                         return Task.CompletedTask;
                     },
+                    OnUserInformationReceived = context =>
+                    {
+                        if (context.HttpContext.Items[UnlinkedItem] is UnlinkedIdentity unlinked)
+                        {
+                            unlinked.TakeProfile(context.User.RootElement);
+                        }
+
+                        return Task.CompletedTask;
+                    },
+                    OnTicketReceived = context =>
+                        context.HttpContext.Items[UnlinkedItem] is UnlinkedIdentity unlinked
+                            ? KeepUnlinkedAsync(context, provider, unlinked)
+                            : Task.CompletedTask,
                     OnRemoteFailure = RedirectToLoginAsync,
                 };
             });
@@ -134,7 +153,11 @@ public static class ExternalOidcAuthentication
             .SingleOrDefaultAsync(cancellationToken);
         if (userId is null)
         {
-            context.Fail(NotLinked);
+            // Kept once the provider's profile is in, which a provider may
+            // send from its userinfo endpoint after the token.
+            var unlinked = new UnlinkedIdentity(issuer, subject);
+            unlinked.TakeProfile(context.Principal);
+            context.HttpContext.Items[UnlinkedItem] = unlinked;
             return;
         }
 
@@ -326,6 +349,54 @@ public static class ExternalOidcAuthentication
         return back == "/" ? page : $"{page}&returnUrl={Uri.EscapeDataString(back)}";
     }
 
+    /// <summary>
+    /// Keeps the identity for this browser and sends it to the sign-in page,
+    /// which says nobody here is linked to it and what can be done. Nothing
+    /// is signed in: the provider's principal never reaches the cookie.
+    /// </summary>
+    private static async Task KeepUnlinkedAsync(
+        TicketReceivedContext context,
+        ExternalOidcProvider provider,
+        UnlinkedIdentity unlinked)
+    {
+        var db = context.HttpContext.RequestServices.GetRequiredService<AppDbContext>();
+        var shortLived = IsShortLived(context.Properties);
+        await PendingIdentities.KeepAsync(
+            db,
+            context.HttpContext,
+            new PendingExternalIdentity
+            {
+                SecretHash = "",
+                ProviderId = provider.Id,
+                Issuer = unlinked.Issuer,
+                Subject = unlinked.Subject,
+                Email = unlinked.Email,
+                EmailVerified = unlinked.Email is not null && unlinked.EmailVerified,
+                DisplayName = unlinked.Name,
+                PreferredUsername = unlinked.PreferredUsername,
+                Amr = unlinked.Amr,
+                AuthTime = unlinked.AuthTime,
+                ShortLived = shortLived,
+            },
+            context.HttpContext.RequestAborted);
+
+        var page = "/login?oidc=unlinked";
+        // By now the handler has moved the address it was to return to here.
+        var returnUrl = ExternalOidcOptions.SafeReturnUrl(context.ReturnUri);
+        if (returnUrl != "/")
+        {
+            page += $"&returnUrl={Uri.EscapeDataString(returnUrl)}";
+        }
+
+        if (shortLived)
+        {
+            page += "&keep_signed_in=0";
+        }
+
+        context.Response.Redirect(page);
+        context.HandleResponse();
+    }
+
     /// <summary>Sends a failed or cancelled sign-in back to the login page, saying roughly why.</summary>
     private static Task RedirectToLoginAsync(RemoteFailureContext context)
     {
@@ -339,13 +410,95 @@ public static class ExternalOidcAuthentication
             return Task.CompletedTask;
         }
 
-        var error = context.Failure?.Message.Contains(NotLinked, StringComparison.Ordinal) == true
-            ? "not_linked"
-            : context.Request.Query["error"] == "access_denied"
-                ? "cancelled"
-                : "failed";
-        context.Response.Redirect($"/login?oidc_error={Uri.EscapeDataString(error)}");
+        var error = context.Request.Query["error"] == "access_denied" ? "cancelled" : "failed";
+        context.Response.Redirect($"/login?oidc_error={error}");
         context.HandleResponse();
         return Task.CompletedTask;
+    }
+
+    /// <summary>
+    /// What the provider said about an identity nobody is linked to: from the
+    /// token first, then from the userinfo endpoint, whose profile wins where
+    /// it has one. Values longer than the columns are cut, never refused.
+    /// </summary>
+    private sealed class UnlinkedIdentity(string issuer, string subject)
+    {
+        public string Issuer { get; } = issuer;
+        public string Subject { get; } = subject;
+        public string? Email { get; private set; }
+        public bool EmailVerified { get; private set; }
+        public string? Name { get; private set; }
+        public string? PreferredUsername { get; private set; }
+        public string Amr { get; private set; } = "";
+        public string? AuthTime { get; private set; }
+
+        public void TakeProfile(System.Security.Claims.ClaimsPrincipal? principal)
+        {
+            string? Claim(string type) => principal?.FindFirst(type)?.Value;
+            Email = Address(Claim("email")) ?? Email;
+            EmailVerified = string.Equals(Claim("email_verified"), "true", StringComparison.OrdinalIgnoreCase);
+            Name = Clip(Claim("name") ?? JoinNames(Claim("given_name"), Claim("family_name")), 64) ?? Name;
+            PreferredUsername = Clip(Claim("preferred_username"), 64) ?? PreferredUsername;
+            Amr = Clip(string.Join(',', principal?.FindAll("amr").Select(claim => claim.Value) ?? []), 256) ?? "";
+            AuthTime = Clip(Claim("auth_time"), 32);
+        }
+
+        public void TakeProfile(System.Text.Json.JsonElement profile)
+        {
+            string? Text(string name) =>
+                profile.TryGetProperty(name, out var value) && value.ValueKind == System.Text.Json.JsonValueKind.String
+                    ? value.GetString()
+                    : null;
+            if (Address(Text("email")) is { } email)
+            {
+                // What userinfo says about the address counts only where it
+                // says it: a repeat of the token's address that leaves the
+                // verification out keeps the token's word for it, and another
+                // address is verified only when userinfo says so.
+                bool? stated = profile.TryGetProperty("email_verified", out var verified)
+                    ? verified.ValueKind == System.Text.Json.JsonValueKind.True ||
+                        string.Equals(Text("email_verified"), "true", StringComparison.OrdinalIgnoreCase)
+                    : null;
+                if (!string.Equals(email, Email, StringComparison.OrdinalIgnoreCase))
+                {
+                    Email = email;
+                    EmailVerified = stated == true;
+                }
+                else if (stated is { } same)
+                {
+                    EmailVerified = same;
+                }
+            }
+
+            Name = Clip(Text("name") ?? JoinNames(Text("given_name"), Text("family_name")), 64) ?? Name;
+            PreferredUsername = Clip(Text("preferred_username"), 64) ?? PreferredUsername;
+        }
+
+        private static string? Address(string? value) =>
+            value?.Trim() is { Length: > 0 and <= 320 } email && System.Net.Mail.MailAddress.TryCreate(email, out _)
+                ? email
+                : null;
+
+        private static string? JoinNames(string? given, string? family) =>
+            string.Join(' ', new[] { given, family }.Where(part => !string.IsNullOrWhiteSpace(part)).Select(part => part!.Trim()))
+                is { Length: > 0 } joined ? joined : null;
+
+        private static string? Clip(string? value, int maximum)
+        {
+            var text = value?.Trim();
+            if (string.IsNullOrEmpty(text))
+            {
+                return null;
+            }
+
+            if (text.Length <= maximum)
+            {
+                return text;
+            }
+
+            // Never cut a surrogate pair in half.
+            var end = char.IsLowSurrogate(text[maximum]) ? maximum - 1 : maximum;
+            return text[..end].TrimEnd();
+        }
     }
 }
