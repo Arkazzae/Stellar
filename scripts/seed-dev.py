@@ -433,11 +433,7 @@ PRESENCE_CYCLE = [
 ]
 
 SEEDED_USERNAMES = {spec[0] for spec in USERS_SPEC}
-SEEDED_MEDIA_FILENAMES = {asset.file_name for asset in MEDIA_ASSETS.values()} | {
-    "v2-1-release-banner.png",
-    "transcript-scroll-demo.mp4",
-    "voice-room-quality.mp4",
-}
+SEEDED_DISPLAY_NAMES = {spec[1] for spec in USERS_SPEC}
 SEEDED_ROLE_NAMES = {spec[0] for spec in ROLES_SPEC}
 SEEDED_SECTION_NAMES = {name for name, _ in SECTIONS_AND_CHANNELS}
 SEEDED_CHANNEL_NAMES = {cname for _, chs in SECTIONS_AND_CHANNELS for cname, _, _ in chs}
@@ -445,20 +441,12 @@ SEEDED_EXTRA_SERVER_NAMES = {spec[0] for spec in EXTRA_SERVERS}
 SEEDED_INVITE_CODES = {spec[0] for spec in INVITES_SPEC}
 SEEDED_AUDIT_SUMMARIES = {spec[1] for spec in AUDIT_SPEC}
 
-# Exact historical general/DM lines that may exist from prior scratch seed runs so
-# `--reset` cleans them safely without touching organic user messages.
-LEGACY_GENERAL_TEXTS = {
-    "Morning everyone! Just pushed the new channel rail spacing tweaks — curious how it feels on tall server lists.",
-    "Looks super crisp already. Wanna stress test it with a few hundred channels and a bunch of active threads.",
-    "Looks super crisp already. Wanna test it with 20+ active members and proper multi-day conversations.",
-    "Nice! Keep an eye on `stellarr-media` stats too when people jump between voice channels.",
-    "Świetnie, zaraz przeklikam wszystkie panele z tym dużym seedem.",
-    "Świetnie, zaraz przeklikam wszystkie kanały, wątki i DMy z tym seedem.",
+# The lines #general gets in the name of the owner and the viewer, who are
+# real accounts. #general itself stays on --reset, so these are found by their
+# text; none of them carries a __VIEWER__ or __OWNER__ placeholder.
+SEEDED_GENERAL_LINES_OF_REAL_ACCOUNTS = {
+    line[1] for line in CONVERSATIONS["general"] if line[0] in ("owner", "viewer")
 }
-LEGACY_OWNER_DM_TEXTS = (
-    "Dev database is preserved across rebuilds — let me know if you need anything reset.",
-    "All good, keeping existing accounts intact.",
-)
 
 
 @dataclass(frozen=True)
@@ -797,262 +785,203 @@ def reset_seeded_data(
     main_server_id: str,
     files_root: Path | None,
 ) -> dict[str, int]:
-    """Remove only seeded entities cleanly while preserving organic accounts and messages."""
-    u_ph = placeholders(len(SEEDED_USERNAMES))
-    seeded_user_ids = [
-        row[0]
-        for row in cur.execute(
-            f"SELECT Id FROM Users WHERE Username IN ({u_ph})",
-            tuple(SEEDED_USERNAMES),
-        ).fetchall()
-    ]
+    """Remove what earlier seed runs added, and what the seeded accounts did since.
 
-    srv_ph = placeholders(len(SEEDED_EXTRA_SERVER_NAMES))
-    seeded_server_ids = [
-        row[0]
-        for row in cur.execute(
-            f"SELECT Id FROM Servers WHERE Name IN ({srv_ph})",
-            tuple(SEEDED_EXTRA_SERVER_NAMES),
-        ).fetchall()
-    ]
+    Accounts, servers, channels and messages the seed did not make stay, with
+    two exceptions: whatever a seeded account wrote or uploaded anywhere goes
+    with the account, and so does a conversation with one. The message
+    journal (MessageChanges) keeps the deletions, so clients that cached the
+    seeded messages drop them on their next sync.
+    """
+    def ids(sql: str, params: tuple = ()) -> list[str]:
+        return [row[0] for row in cur.execute(sql, params).fetchall()]
 
-    sec_ph = placeholders(len(SEEDED_SECTION_NAMES))
-    seeded_section_ids = [
-        row[0]
-        for row in cur.execute(
-            f"SELECT Id FROM Sections WHERE ServerId = ? AND Name IN ({sec_ph})",
-            (main_server_id, *SEEDED_SECTION_NAMES),
-        ).fetchall()
-    ]
+    def any_in(column: str, values: list[str]) -> tuple[str, list[str]]:
+        if not values:
+            return "", []
+        return f"{column} IN ({placeholders(len(values))})", list(values)
 
-    ch_ph = placeholders(len(SEEDED_CHANNEL_NAMES))
-    channel_clauses = [f"(ServerId = ? AND Name IN ({ch_ph}))"]
-    channel_params: list[str] = [main_server_id, *SEEDED_CHANNEL_NAMES]
-    if seeded_section_ids:
-        channel_clauses.append(f"SectionId IN ({placeholders(len(seeded_section_ids))})")
-        channel_params.extend(seeded_section_ids)
-    if seeded_server_ids:
-        channel_clauses.append(f"ServerId IN ({placeholders(len(seeded_server_ids))})")
-        channel_params.extend(seeded_server_ids)
-    seeded_channel_ids = [
-        row[0]
-        for row in cur.execute(
-            f"SELECT DISTINCT Id FROM Channels WHERE {' OR '.join(channel_clauses)}",
-            tuple(channel_params),
-        ).fetchall()
-    ]
+    def delete_where(table: str, clauses: list[tuple[str, list[str]]]) -> int:
+        live = [(clause, params) for clause, params in clauses if params]
+        if not live:
+            return 0
+        cur.execute(
+            f"DELETE FROM {table} WHERE " + " OR ".join(clause for clause, _ in live),
+            tuple(param for _, params in live for param in params),
+        )
+        return cur.rowcount
 
-    # 1. Seeded DMs (involving at least one seeded user, plus exact legacy 2-line DM if present)
-    dm_conv_ids: set[str] = set()
+    seeded_user_ids = ids(
+        f"SELECT Id FROM Users WHERE Username IN ({placeholders(len(SEEDED_USERNAMES))})",
+        tuple(SEEDED_USERNAMES),
+    )
+    seeded_server_ids = ids(
+        f"SELECT Id FROM Servers WHERE Name IN ({placeholders(len(SEEDED_EXTRA_SERVER_NAMES))})",
+        tuple(SEEDED_EXTRA_SERVER_NAMES),
+    )
+    seeded_section_ids = ids(
+        f"SELECT Id FROM Sections WHERE ServerId = ? AND Name IN ({placeholders(len(SEEDED_SECTION_NAMES))})",
+        (main_server_id, *SEEDED_SECTION_NAMES),
+    )
+    channel_clauses = [
+        (
+            f"(ServerId = ? AND Name IN ({placeholders(len(SEEDED_CHANNEL_NAMES))}))",
+            [main_server_id, *SEEDED_CHANNEL_NAMES],
+        ),
+        any_in("SectionId", seeded_section_ids),
+        any_in("ServerId", seeded_server_ids),
+    ]
+    live_channel_clauses = [(clause, params) for clause, params in channel_clauses if params]
+    seeded_channel_ids = ids(
+        "SELECT DISTINCT Id FROM Channels WHERE " + " OR ".join(clause for clause, _ in live_channel_clauses),
+        tuple(param for _, params in live_channel_clauses for param in params),
+    )
+    user_set = set(seeded_user_ids)
+    channel_set = set(seeded_channel_ids)
+
+    # 1. Messages: all of the seeded channels, all a seeded account wrote
+    #    anywhere, and the seeded lines of real accounts in #general. Their
+    #    reactions, attachment links, embeds and search rows cascade.
+    general_lines = sorted(SEEDED_GENERAL_LINES_OF_REAL_ACCOUNTS)
+    message_clauses = [
+        (
+            f"""(IsSystem = 0 AND Content IN ({placeholders(len(general_lines))})
+                 AND ChannelId IN (SELECT Id FROM Channels WHERE ServerId = ?))""",
+            [*general_lines, main_server_id],
+        ),
+        any_in("ChannelId", seeded_channel_ids),
+        any_in("AuthorId", seeded_user_ids),
+    ]
+    live = [(clause, params) for clause, params in message_clauses if params]
+    where = " OR ".join(clause for clause, _ in live)
+    params = tuple(param for _, values in live for param in values)
+    # A real account's last post time in a channel that stays is worked out
+    # again from what remains, so a seeded line no longer counts for slow mode.
+    post_time_pairs = {
+        (channel_id, author_id)
+        for channel_id, author_id in cur.execute(
+            f"SELECT DISTINCT ChannelId, AuthorId FROM Messages WHERE {where}", params
+        ).fetchall()
+        if channel_id not in channel_set and author_id not in user_set
+    }
+    cur.execute(f"DELETE FROM Messages WHERE {where}", params)
+    removed_messages = cur.rowcount
+    for channel_id, author_id in sorted(post_time_pairs):
+        cur.execute("DELETE FROM ChannelPostTimes WHERE ChannelId = ? AND UserId = ?", (channel_id, author_id))
+        cur.execute(
+            """INSERT INTO ChannelPostTimes (ChannelId, UserId, LastPostedAt)
+               SELECT ChannelId, AuthorId, max(CreatedAt) FROM Messages
+               WHERE ChannelId = ? AND AuthorId = ? AND IsSystem = 0
+               GROUP BY ChannelId, AuthorId""",
+            (channel_id, author_id),
+        )
+
+    # 2. Conversations with a seeded account, with their messages, links to
+    #    files, read markers and encryption epochs, which all cascade.
+    delete_where("DirectConversations", [any_in("UserAId", seeded_user_ids), any_in("UserBId", seeded_user_ids)])
+
+    # 3. What a seeded account made that would keep it from being deleted.
+    object_keys: set[str] = set()
     if seeded_user_ids:
-        su_ph = placeholders(len(seeded_user_ids))
-        for row in cur.execute(
-            f"SELECT Id FROM DirectConversations WHERE UserAId IN ({su_ph}) OR UserBId IN ({su_ph})",
-            (*seeded_user_ids, *seeded_user_ids),
-        ).fetchall():
-            dm_conv_ids.add(row[0])
-    for row in cur.execute("SELECT Id FROM DirectConversations").fetchall():
-        cid = row[0]
-        contents = [
-            r[0]
-            for r in cur.execute(
-                "SELECT Content FROM DirectMessages WHERE ConversationId = ?",
-                (cid,),
-            ).fetchall()
-        ]
-        if contents and all(c in LEGACY_OWNER_DM_TEXTS for c in contents):
-            dm_conv_ids.add(cid)
+        object_keys.update(ids(
+            f"SELECT ObjectKey FROM ServerEmoji WHERE UploadedById IN ({placeholders(len(seeded_user_ids))})",
+            tuple(seeded_user_ids),
+        ))
+    delete_where("ServerEmoji", [any_in("UploadedById", seeded_user_ids)])
+    delete_where("SoundboardSounds", [any_in("CreatedById", seeded_user_ids)])
+    delete_where("ServerBans", [any_in("BannedById", seeded_user_ids)])
+    delete_where("SecurityNotifications", [any_in("UserId", seeded_user_ids)])
 
-    # 1b. Attachments owned by seeded accounts. Every seeded attachment is
-    # uploaded by a seeded user from USERS_SPEC, so real user files are never touched.
+    # 4. Uploads of seeded accounts: every seeded attachment, and any file
+    #    somebody uploaded while signed in as one.
     seeded_attachment_ids: list[str] = []
-    seeded_object_keys: set[str] = set()
-    att_clauses = [f"FileName IN ({placeholders(len(SEEDED_MEDIA_FILENAMES))})"]
-    att_params: list[str] = list(SEEDED_MEDIA_FILENAMES)
     if seeded_user_ids:
-        att_clauses.append(f"UploadedById IN ({placeholders(len(seeded_user_ids))})")
-        att_params.extend(seeded_user_ids)
-    for attachment_id, object_key, poster_key in cur.execute(
-        f"SELECT Id, ObjectKey, PosterObjectKey FROM ImageAttachments WHERE {' OR '.join(att_clauses)}",
-        tuple(att_params),
-    ).fetchall():
-        seeded_attachment_ids.append(attachment_id)
-        if object_key:
-            seeded_object_keys.add(object_key)
-        if poster_key:
-            seeded_object_keys.add(poster_key)
-    if seeded_attachment_ids:
-        sa_ph = placeholders(len(seeded_attachment_ids))
-        attachment_ids = tuple(seeded_attachment_ids)
-        cur.execute(f"DELETE FROM MessageAttachments WHERE AttachmentId IN ({sa_ph})", attachment_ids)
-        cur.execute(f"DELETE FROM DirectMessageAttachments WHERE AttachmentId IN ({sa_ph})", attachment_ids)
-        cur.execute(f"DELETE FROM ImageAttachments WHERE Id IN ({sa_ph})", attachment_ids)
-    if files_root is not None:
-        for object_key in seeded_object_keys:
-            delete_object(files_root, object_key)
+        for attachment_id, *keys in cur.execute(
+            f"""SELECT Id, ObjectKey, PosterObjectKey, PreviewObjectKey FROM ImageAttachments
+                WHERE UploadedById IN ({placeholders(len(seeded_user_ids))})""",
+            tuple(seeded_user_ids),
+        ).fetchall():
+            seeded_attachment_ids.append(attachment_id)
+            object_keys.update(key for key in keys if key)
+    delete_where("MessageAttachments", [any_in("AttachmentId", seeded_attachment_ids)])
+    delete_where("DirectMessageAttachments", [any_in("AttachmentId", seeded_attachment_ids)])
+    delete_where("ImageAttachments", [any_in("Id", seeded_attachment_ids)])
 
-    if dm_conv_ids:
-        dc_ph = placeholders(len(dm_conv_ids))
-        dc_ids = tuple(dm_conv_ids)
-        cur.execute(f"DELETE FROM DirectConversationReads WHERE ConversationId IN ({dc_ph})", dc_ids)
-        cur.execute(
-            f"""DELETE FROM DirectMessageAttachments
-                WHERE DirectMessageId IN (SELECT Id FROM DirectMessages WHERE ConversationId IN ({dc_ph}))""",
-            dc_ids,
-        )
-        cur.execute(f"DELETE FROM DirectMessages WHERE ConversationId IN ({dc_ph})", dc_ids)
-        cur.execute(f"DELETE FROM DirectConversations WHERE Id IN ({dc_ph})", dc_ids)
+    # 5. Friendships and requests of seeded accounts.
+    delete_where("FriendRequests", [any_in("SenderId", seeded_user_ids), any_in("ReceiverId", seeded_user_ids)])
+    delete_where("Friendships", [any_in("UserAId", seeded_user_ids), any_in("UserBId", seeded_user_ids)])
 
-    # 2. Friendships & requests touching seeded users
-    if seeded_user_ids:
-        su_ph = placeholders(len(seeded_user_ids))
-        cur.execute(
-            f"DELETE FROM FriendRequests WHERE SenderId IN ({su_ph}) OR ReceiverId IN ({su_ph})",
-            (*seeded_user_ids, *seeded_user_ids),
-        )
-        cur.execute(
-            f"DELETE FROM Friendships WHERE UserAId IN ({su_ph}) OR UserBId IN ({su_ph})",
-            (*seeded_user_ids, *seeded_user_ids),
-        )
+    # 6. Inbox entries: of seeded accounts, about seeded channels or servers,
+    #    and real accounts' mentions written in a seeded account's name.
+    display_names = sorted(SEEDED_DISPLAY_NAMES)
+    delete_where("UserNotifications", [
+        any_in("UserId", seeded_user_ids),
+        any_in("TargetChannelId", seeded_channel_ids),
+        any_in("ServerId", seeded_server_ids),
+        (
+            f"""(ServerId = ? AND SourcePackageId = 'stellarr.mention'
+                 AND SourceModuleName IN ({placeholders(len(display_names))}))""",
+            [main_server_id, *display_names],
+        ),
+    ])
 
-    # 3. Notifications touching seeded users, channels, or servers
-    notif_clauses: list[str] = []
-    notif_params: list[str] = []
-    if seeded_user_ids:
-        notif_clauses.append(f"UserId IN ({placeholders(len(seeded_user_ids))})")
-        notif_params.extend(seeded_user_ids)
-    if seeded_channel_ids:
-        notif_clauses.append(f"TargetChannelId IN ({placeholders(len(seeded_channel_ids))})")
-        notif_params.extend(seeded_channel_ids)
-    if seeded_server_ids:
-        notif_clauses.append(f"ServerId IN ({placeholders(len(seeded_server_ids))})")
-        notif_params.extend(seeded_server_ids)
-    if notif_clauses:
-        cur.execute(f"DELETE FROM UserNotifications WHERE {' OR '.join(notif_clauses)}", tuple(notif_params))
+    # 7. Invites and audit entries.
+    delete_where("ServerInvites", [
+        any_in("Code", sorted(SEEDED_INVITE_CODES)),
+        any_in("CreatedById", seeded_user_ids),
+        any_in("ServerId", seeded_server_ids),
+    ])
+    delete_where("ServerAuditEntries", [
+        (
+            f"(ServerId = ? AND Summary IN ({placeholders(len(SEEDED_AUDIT_SUMMARIES))}))",
+            [main_server_id, *sorted(SEEDED_AUDIT_SUMMARIES)],
+        ),
+        any_in("ActorId", seeded_user_ids),
+        any_in("ServerId", seeded_server_ids),
+    ])
 
-    # 4. Invites & Audit log entries
-    inv_clauses = [f"Code IN ({placeholders(len(SEEDED_INVITE_CODES))})"]
-    inv_params: list[str] = list(SEEDED_INVITE_CODES)
-    if seeded_user_ids:
-        inv_clauses.append(f"CreatedById IN ({placeholders(len(seeded_user_ids))})")
-        inv_params.extend(seeded_user_ids)
-    if seeded_server_ids:
-        inv_clauses.append(f"ServerId IN ({placeholders(len(seeded_server_ids))})")
-        inv_params.extend(seeded_server_ids)
-    cur.execute(f"DELETE FROM ServerInvites WHERE {' OR '.join(inv_clauses)}", tuple(inv_params))
+    # 8. Read markers, channels and sections.
+    delete_where("ChannelReads", [any_in("ChannelId", seeded_channel_ids), any_in("UserId", seeded_user_ids)])
+    delete_where("Channels", [any_in("Id", seeded_channel_ids)])
+    delete_where("Sections", [any_in("Id", seeded_section_ids)])
 
-    audit_clauses = [f"(ServerId = ? AND Summary IN ({placeholders(len(SEEDED_AUDIT_SUMMARIES))}))"]
-    audit_params: list[str] = [main_server_id, *SEEDED_AUDIT_SUMMARIES]
-    if seeded_user_ids:
-        audit_clauses.append(f"ActorId IN ({placeholders(len(seeded_user_ids))})")
-        audit_params.extend(seeded_user_ids)
-    if seeded_server_ids:
-        audit_clauses.append(f"ServerId IN ({placeholders(len(seeded_server_ids))})")
-        audit_params.extend(seeded_server_ids)
-    cur.execute(f"DELETE FROM ServerAuditEntries WHERE {' OR '.join(audit_clauses)}", tuple(audit_params))
-
-    # 5. Messages in seeded channels + seeded messages in preserved main server channels
-    removed_messages = 0
-    if seeded_channel_ids:
-        sc_ph = placeholders(len(seeded_channel_ids))
-        cur.execute(f"DELETE FROM Messages WHERE ChannelId IN ({sc_ph})", tuple(seeded_channel_ids))
-        removed_messages += cur.rowcount
-
-    main_non_seeded_msg_clauses = [f"(c.ServerId = ? AND m.Content IN ({placeholders(len(LEGACY_GENERAL_TEXTS))}))"]
-    main_msg_params: list[str] = [main_server_id, *LEGACY_GENERAL_TEXTS]
-    if seeded_user_ids:
-        main_non_seeded_msg_clauses.append(f"m.AuthorId IN ({placeholders(len(seeded_user_ids))})")
-        main_msg_params.extend(seeded_user_ids)
-    legacy_msg_ids = [
-        row[0]
-        for row in cur.execute(
-            f"""SELECT m.Id FROM Messages m
-                JOIN Channels c ON c.Id = m.ChannelId
-                WHERE {' OR '.join(main_non_seeded_msg_clauses)}""",
-            tuple(main_msg_params),
-        ).fetchall()
-    ]
-    if legacy_msg_ids:
-        lm_ph = placeholders(len(legacy_msg_ids))
-        cur.execute(f"DELETE FROM Messages WHERE Id IN ({lm_ph})", tuple(legacy_msg_ids))
-        removed_messages += cur.rowcount
-        cur.execute(f"DELETE FROM MessageChanges WHERE MessageId IN ({lm_ph})", tuple(legacy_msg_ids))
-
-    # 6. ChannelReads, Channels, Sections
-    cr_clauses: list[str] = []
-    cr_params: list[str] = []
-    if seeded_channel_ids:
-        cr_clauses.append(f"ChannelId IN ({placeholders(len(seeded_channel_ids))})")
-        cr_params.extend(seeded_channel_ids)
-    if seeded_user_ids:
-        cr_clauses.append(f"UserId IN ({placeholders(len(seeded_user_ids))})")
-        cr_params.extend(seeded_user_ids)
-    if cr_clauses:
-        cur.execute(f"DELETE FROM ChannelReads WHERE {' OR '.join(cr_clauses)}", tuple(cr_params))
-
-    if seeded_channel_ids:
-        sc_ph = placeholders(len(seeded_channel_ids))
-        cur.execute(f"DELETE FROM Channels WHERE Id IN ({sc_ph})", tuple(seeded_channel_ids))
-    if seeded_section_ids:
-        ss_ph = placeholders(len(seeded_section_ids))
-        cur.execute(f"DELETE FROM Sections WHERE Id IN ({ss_ph})", tuple(seeded_section_ids))
-
-    # 7. Members & Roles (reassign preserved members away from seeded custom roles first)
+    # 9. Members and roles; real members move off seeded roles first.
     member_role_row = cur.execute(
         """SELECT Id FROM ServerRoles
            WHERE ServerId = ? AND IsSystem = 1 AND IsOwner = 0
            ORDER BY Position DESC LIMIT 1""",
         (main_server_id,),
     ).fetchone()
-    role_ph = placeholders(len(SEEDED_ROLE_NAMES))
-    seeded_custom_role_ids = [
-        row[0]
-        for row in cur.execute(
-            f"""SELECT Id FROM ServerRoles
-                WHERE ServerId = ? AND IsSystem = 0 AND IsOwner = 0 AND Name IN ({role_ph})""",
-            (main_server_id, *SEEDED_ROLE_NAMES),
-        ).fetchall()
-    ]
+    seeded_custom_role_ids = ids(
+        f"""SELECT Id FROM ServerRoles
+            WHERE ServerId = ? AND IsSystem = 0 AND IsOwner = 0
+            AND Name IN ({placeholders(len(SEEDED_ROLE_NAMES))})""",
+        (main_server_id, *SEEDED_ROLE_NAMES),
+    )
     if member_role_row and seeded_custom_role_ids:
-        sr_ph = placeholders(len(seeded_custom_role_ids))
         cur.execute(
-            f"UPDATE ServerMembers SET RoleId = ? WHERE ServerId = ? AND RoleId IN ({sr_ph})",
+            f"UPDATE ServerMembers SET RoleId = ? WHERE ServerId = ? AND RoleId IN ({placeholders(len(seeded_custom_role_ids))})",
             (member_role_row[0], main_server_id, *seeded_custom_role_ids),
         )
-
-    sm_clauses: list[str] = []
-    sm_params: list[str] = []
-    if seeded_user_ids:
-        sm_clauses.append(f"UserId IN ({placeholders(len(seeded_user_ids))})")
-        sm_params.extend(seeded_user_ids)
-    if seeded_server_ids:
-        sm_clauses.append(f"ServerId IN ({placeholders(len(seeded_server_ids))})")
-        sm_params.extend(seeded_server_ids)
-    if sm_clauses:
-        cur.execute(f"DELETE FROM ServerMembers WHERE {' OR '.join(sm_clauses)}", tuple(sm_params))
-
-    if seeded_custom_role_ids:
-        sr_ph = placeholders(len(seeded_custom_role_ids))
-        cur.execute(f"DELETE FROM ServerRoles WHERE Id IN ({sr_ph})", tuple(seeded_custom_role_ids))
+    delete_where("ServerMembers", [any_in("UserId", seeded_user_ids), any_in("ServerId", seeded_server_ids)])
+    delete_where("ServerRoles", [any_in("Id", seeded_custom_role_ids)])
     if member_role_row:
         cur.execute("UPDATE ServerRoles SET Position = 1 WHERE Id = ?", (member_role_row[0],))
 
-    # 8. Secondary servers & seeded users
-    if seeded_server_ids:
-        sv_ph = placeholders(len(seeded_server_ids))
-        cur.execute(f"DELETE FROM Sections WHERE ServerId IN ({sv_ph})", tuple(seeded_server_ids))
-        cur.execute(f"DELETE FROM ServerRoles WHERE ServerId IN ({sv_ph})", tuple(seeded_server_ids))
-        cur.execute(f"DELETE FROM ServerAdminSettings WHERE ServerId IN ({sv_ph})", tuple(seeded_server_ids))
-        cur.execute(f"DELETE FROM Servers WHERE Id IN ({sv_ph})", tuple(seeded_server_ids))
-    if seeded_user_ids:
-        su_ph = placeholders(len(seeded_user_ids))
-        cur.execute(f"DELETE FROM Users WHERE Id IN ({su_ph})", tuple(seeded_user_ids))
+    # 10. The secondary servers, with what hangs off them, and the accounts,
+    #     whose sessions, keys, preferences and read markers cascade.
+    delete_where("Servers", [any_in("Id", seeded_server_ids)])
+    delete_where("Users", [any_in("Id", seeded_user_ids)])
+
+    if files_root is not None:
+        for object_key in sorted(object_keys):
+            delete_object(files_root, object_key)
 
     return {
         "removed_users": len(seeded_user_ids),
+        "removed_servers": len(seeded_server_ids),
         "removed_channels": len(seeded_channel_ids),
         "removed_messages": removed_messages,
-        "removed_servers": len(seeded_server_ids),
         "removed_attachments": len(seeded_attachment_ids),
     }
 
@@ -1240,8 +1169,9 @@ def seed_database(
                     + "). Re-run with --reset to cleanly replace seeded data."
                 )
 
+            removed: dict[str, int] = {}
             if reset:
-                reset_seeded_data(cur, main_server_id, files_root if files_root.is_dir() else None)
+                removed = reset_seeded_data(cur, main_server_id, files_root if files_root.is_dir() else None)
 
             ctx = discover_context(cur, main_server_id, main_created_at_raw)
 
@@ -1335,13 +1265,8 @@ def seed_database(
                 all_active_users.append(ctx.viewer_username)
             all_active_users.extend(u[0] for u in USERS_SPEC)
 
-            # 3. Sections & Channels on primary server
-            cur.execute(
-                """UPDATE Channels
-                   SET Topic = 'Main hangout for announcements, quick questions, and daily chat.'
-                   WHERE Id = ? AND (Topic IS NULL OR Topic = '')""",
-                (ctx.general_channel_id,),
-            )
+            # 3. Sections & Channels on primary server. The starter channels
+            # belong to the instance and are left as they are.
 
             chan_pos = ctx.next_channel_pos
             sec_pos = ctx.next_section_pos
@@ -1624,10 +1549,10 @@ def seed_database(
                 for cname, cid in text_channels:
                     last_t = latest_msg_at.get(cid)
                     read_at = (last_t - timedelta(hours=3)) if (cname in UNREAD_CHANNEL_NAMES and last_t) else now
+                    # A marker the account already has (in #general) stays,
+                    # since --reset could not give the old one back.
                     cur.execute(
-                        """INSERT INTO ChannelReads (ChannelId, UserId, LastReadAt)
-                           VALUES (?, ?, ?)
-                           ON CONFLICT(ChannelId, UserId) DO UPDATE SET LastReadAt = excluded.LastReadAt""",
+                        "INSERT OR IGNORE INTO ChannelReads (ChannelId, UserId, LastReadAt) VALUES (?, ?, ?)",
                         (cid, vid, fmt_dt(read_at)),
                     )
 
@@ -1933,6 +1858,7 @@ def seed_database(
                 pass
 
         counts = {
+            **removed,
             "users": cur.execute("SELECT COUNT(*) FROM Users").fetchone()[0],
             "servers": cur.execute("SELECT COUNT(*) FROM Servers").fetchone()[0],
             "sections_main": cur.execute("SELECT COUNT(*) FROM Sections WHERE ServerId = ?", (main_server_id,)).fetchone()[0],
