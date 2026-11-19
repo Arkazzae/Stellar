@@ -1,5 +1,7 @@
 import { IDLE_VOICE_STATE, type VoiceClient, type VoiceState } from "@/lib/voice/types";
 
+import { VoiceSeats } from "./voiceSeats";
+
 /**
  * Holds whichever voice client is currently live and republishes its snapshot
  * to React through `useSyncExternalStore`.
@@ -15,6 +17,8 @@ export class VoiceHolder {
   #state: VoiceState = IDLE_VOICE_STATE;
   #startedAt: number | null = null;
   readonly #listeners = new Set<() => void>();
+  /** The ring and microphone of each person in the call, for whoever draws one of them. */
+  readonly seats = new VoiceSeats();
 
   subscribe = (listener: () => void): (() => void) => {
     this.#listeners.add(listener);
@@ -62,7 +66,9 @@ export class VoiceHolder {
     if (next.channelId !== this.#state.channelId) {
       this.#startedAt = next.channelId === null ? null : Date.now();
     }
+    const peersChanged = next.peers !== this.#state.peers;
     this.#state = next;
+    if (peersChanged) this.seats.take(next.peers);
   }
 
   #notify(): void {

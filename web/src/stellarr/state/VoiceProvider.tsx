@@ -11,6 +11,7 @@ import {
 } from "react";
 
 import type { CallVM, PersonVM, ScreenShareVM } from "@/components/view-models";
+import { VoiceSeatContext } from "@/components/voice/useVoiceSeat";
 import type { Translator } from "@/i18n";
 import { playSystemFx } from "@/lib/audio/systemFx";
 import { triggerHaptic } from "@/lib/platform/haptics";
@@ -90,7 +91,24 @@ export interface VoiceValue {
   setParticipantSuppression: (userId: string, suppressed: boolean) => void;
 }
 
+/**
+ * Live reads of each person's local strip, the same object for as long as the
+ * provider lives. Whoever takes them from here reads the call when it needs
+ * to, instead of rendering for every snapshot of it.
+ */
+export interface VoiceLive {
+  /** Fires on every snapshot of the call; the getters below then read it anew. */
+  subscribe: (listener: () => void) => () => void;
+  participantVolumeOf: (userId: string) => number | undefined;
+  participantGateOf: (userId: string) => boolean | undefined;
+  participantSuppressionOf: (userId: string) => boolean | undefined;
+  setParticipantVolume: (userId: string, volume: number) => void;
+  setParticipantGate: (userId: string, gated: boolean) => void;
+  setParticipantSuppression: (userId: string, suppressed: boolean) => void;
+}
+
 const VoiceContext = createContext<VoiceValue | null>(null);
+const VoiceLiveContext = createContext<VoiceLive | null>(null);
 
 type PresentedRoom = VoiceRoomPresentation & { id: string };
 
@@ -337,6 +355,21 @@ export function VoiceProvider({ children }: { children: ReactNode }) {
     [holder],
   );
 
+  const live = useMemo<VoiceLive>(() => {
+    // Remote people only, as the strips are: your own has no receiver side.
+    const remote = (userId: string) =>
+      holder.getState().peers.find((peer) => !peer.self && peer.userId === userId);
+    return {
+      subscribe: holder.subscribe,
+      participantVolumeOf: (userId) => remote(userId)?.playbackVolume,
+      participantGateOf: (userId) => remote(userId)?.gated,
+      participantSuppressionOf: (userId) => remote(userId)?.suppressed,
+      setParticipantVolume,
+      setParticipantGate,
+      setParticipantSuppression,
+    };
+  }, [holder, setParticipantVolume, setParticipantGate, setParticipantSuppression]);
+
   const hangUp = useCallback(() => {
     void leave();
   }, [leave]);
@@ -418,13 +451,29 @@ export function VoiceProvider({ children }: { children: ReactNode }) {
     ],
   );
 
-  return <VoiceContext.Provider value={value}>{children}</VoiceContext.Provider>;
+  // The seats and the live reads never change, so these two providers never
+  // render anything below them; only the call's own value does.
+  return (
+    <VoiceSeatContext.Provider value={holder.seats}>
+      <VoiceLiveContext.Provider value={live}>
+        <VoiceContext.Provider value={value}>{children}</VoiceContext.Provider>
+      </VoiceLiveContext.Provider>
+    </VoiceSeatContext.Provider>
+  );
 }
 
 export function useVoiceContext(): VoiceValue {
   const value = useContext(VoiceContext);
   if (value === null) {
     throw new Error("useVoice must be used inside <VoiceProvider>");
+  }
+  return value;
+}
+
+export function useVoiceLiveContext(): VoiceLive {
+  const value = useContext(VoiceLiveContext);
+  if (value === null) {
+    throw new Error("useVoiceLive must be used inside <VoiceProvider>");
   }
   return value;
 }

@@ -4,6 +4,7 @@ import { Icon } from "@stellarr/icons";
 import { Avatar } from "@/components/primitives/Avatar";
 import type { PersonVM } from "@/components/view-models";
 import type { DragHandleProps } from "@/lib/drag/useRailDrag";
+import { useVoiceSeat } from "@/components/voice/useVoiceSeat";
 import { useLanguage } from "@/state/hooks";
 
 export interface VoiceOccupantRowProps {
@@ -26,6 +27,9 @@ export interface VoiceOccupantRowProps {
  * Mute and speech are printed as well as drawn, since this list is where you
  * learn who is on the call. When the row can be moved, the whole row is the
  * drag handle, and a focusable button for the keyboard.
+ *
+ * Someone in this client's call is drawn from their seat, which the row
+ * follows on its own; anyone else from what the server says of them.
  */
 export function VoiceOccupantRow({
   person,
@@ -35,12 +39,15 @@ export function VoiceOccupantRow({
   onContextMenu,
 }: VoiceOccupantRowProps) {
   const { t } = useLanguage();
+  const seat = useVoiceSeat(person.id);
+  const speaking = seat?.speaking ?? person.speaking === true;
+  const muted = seat?.muted ?? person.muted === true;
   const enabled = drag !== undefined;
   const className = [
     "voice-occupant",
     self && "me",
-    person.speaking && "speaking",
-    person.muted === true && "muted",
+    speaking && "speaking",
+    muted && "muted",
     enabled && "is-draggable",
     moving && "is-moving",
   ]
@@ -49,9 +56,9 @@ export function VoiceOccupantRow({
 
   const state = moving
     ? t("shell.moving")
-    : person.muted === true
+    : muted
       ? t("shell.muted")
-      : person.speaking
+      : speaking
         ? t("roster.speaking")
         : t("roster.silent");
 
@@ -74,10 +81,10 @@ export function VoiceOccupantRow({
         initials={person.initials}
         avatarUrl={person.avatarUrl}
         size="xs"
-        speaking={person.speaking}
+        speaking={speaking}
       />
       <span className="occ-name">{person.displayName}</span>
-      {person.muted === true ? (
+      {muted ? (
         <span className="occ-mic" aria-hidden="true">
           <Icon name="micSlash" size={13} />
         </span>

@@ -168,6 +168,21 @@ export interface FriendRequestVM {
   when: string;
 }
 
+/** What a seat shows of someone in this client's call: the ring and the microphone. */
+export interface VoiceSeatVM {
+  readonly speaking: boolean;
+  readonly muted: boolean;
+}
+
+/**
+ * Where a row reads one person's seat, and hears when it changes. Null for
+ * anyone outside this client's call.
+ */
+export interface VoiceSeatSource {
+  get(userId: string): VoiceSeatVM | null;
+  subscribe(userId: string, listener: () => void): () => void;
+}
+
 /** Which pane the room shows. Voice replaces the transcript, never splits it. */
 export type RoomView = "text" | "voice";
 

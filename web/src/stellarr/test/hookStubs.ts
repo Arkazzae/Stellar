@@ -11,6 +11,7 @@ import type {
   ProfileValue,
   SessionValue,
   UiValue,
+  VoiceLive,
   VoiceValue,
 } from "@/state/hooks";
 import { useLanguage } from "@/state/LanguageProvider";
@@ -37,6 +38,7 @@ export interface HookStubs {
   session: SessionValue;
   ui: UiValue;
   voice: VoiceValue;
+  voiceLive: VoiceLive;
 }
 
 /** The stores the containers read are far wider than any one test needs. */
@@ -211,6 +213,15 @@ function defaults(): HookStubs {
       toggleShare: vi.fn(),
       playSound: vi.fn(),
     }),
+    voiceLive: stub<VoiceLive>({
+      subscribe: () => () => undefined,
+      participantVolumeOf: () => undefined,
+      participantGateOf: () => undefined,
+      participantSuppressionOf: () => undefined,
+      setParticipantVolume: vi.fn(),
+      setParticipantGate: vi.fn(),
+      setParticipantSuppression: vi.fn(),
+    }),
   };
 }
 
@@ -242,5 +253,6 @@ export const hooksModule = {
   useSession: () => stubs.session,
   useUi: () => stubs.ui,
   useVoice: () => stubs.voice,
+  useVoiceLive: () => stubs.voiceLive,
   useLanguage,
 };

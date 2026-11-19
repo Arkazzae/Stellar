@@ -5,7 +5,7 @@ import {
   useFriends,
   usePorts,
   useProfile,
-  useVoice,
+  useVoiceLive,
 } from "@/state/hooks";
 
 /**
@@ -15,11 +15,15 @@ import {
  * moderation are the same everywhere; the roster adds the friendship items on
  * top. Moderation needs both halves: the member must hold the permission, and
  * the adapter must have a persisted endpoint behind it.
+ *
+ * The listener's strip is read from the call when the menu asks, and the open
+ * menu watches it, so the lists that offer this menu do not render for every
+ * snapshot of the call.
  */
 export function useMemberMenu(): UserMenuActions {
   const { voiceChannels, canModerateMembers, canManageBans } = useDirectory();
   const { admin } = usePorts();
-  const voice = useVoice();
+  const voice = useVoiceLive();
   const profile = useProfile();
   const friends = useFriends();
   const { preferences } = useAccount();
@@ -32,13 +36,13 @@ export function useMemberMenu(): UserMenuActions {
   return {
     onOpenProfile: profile.toggle,
     onMessage: (userId) => friends.messagePerson(userId),
-    participantVolumeOf: (userId) => voice.participantVolumes.get(userId),
+    participantVolumeOf: voice.participantVolumeOf,
     onParticipantVolumeChange: voice.setParticipantVolume,
-    participantGateOf: (userId) => voice.participantGates.get(userId),
+    participantGateOf: voice.participantGateOf,
     onParticipantGateChange: voice.setParticipantGate,
-    participantSuppressionOf: (userId) =>
-      voice.participantSuppressions.get(userId),
+    participantSuppressionOf: voice.participantSuppressionOf,
     onParticipantSuppressionChange: voice.setParticipantSuppression,
+    watchParticipants: voice.subscribe,
     canKick: canModerateMembers && admin.supported.moderation,
     canBan: canManageBans && admin.supported.moderation,
     ...(admin.kickFromChannel === undefined

@@ -2,11 +2,7 @@ import { useMemo } from "react";
 
 import type { ChannelMenuActions } from "@/components/shell/rail/ChannelMenu";
 import { Rail } from "@/components/shell/rail/Rail";
-import type {
-  ChannelThreadVM,
-  TextChannelVM,
-  VoiceChannelVM,
-} from "@/components/view-models";
+import type { ChannelThreadVM, TextChannelVM } from "@/components/view-models";
 import { useMediaQuery } from "@/hooks/useMediaQuery";
 import {
   useAccount,
@@ -15,7 +11,6 @@ import {
   usePorts,
   useSession,
   useUi,
-  useVoice,
 } from "@/state/hooks";
 
 import { RailAccount, RailVoiceDock } from "./RailFooter";
@@ -37,7 +32,6 @@ export function RailContainer() {
   } = useDirectory();
   const { user } = useSession();
   const ui = useUi();
-  const voice = useVoice();
   const { admin } = usePorts();
   const { preferences, setPreferences } = useAccount();
   const memberMenu = useMemberMenu();
@@ -80,18 +74,6 @@ export function RailContainer() {
         ]),
       ),
     [threadsByChannel],
-  );
-
-  // Speech is RTC state, not presence: it only exists for the call this client
-  // is in, and the rail shows it as a ring on the occupant.
-  const { applySpeaking } = voice;
-  const voiceRows = useMemo<VoiceChannelVM[]>(
-    () =>
-      voiceChannels.map((channel) => ({
-        ...channel,
-        occupants: applySpeaking(channel.occupants),
-      })),
-    [voiceChannels, applySpeaking],
   );
 
   const canSection = canManageChannels && admin.supported.sections;
@@ -140,7 +122,9 @@ export function RailContainer() {
         );
         if (summary !== undefined) openThread(summary);
       }}
-      voiceChannels={voiceRows}
+      // Speech is RTC state, not presence: it only exists for the call this
+      // client is in, and each occupant row follows its own seat for it.
+      voiceChannels={voiceChannels}
       sections={sections}
       activeChannelId={ui.activeChannelId}
       selfId={user?.id ?? ""}
