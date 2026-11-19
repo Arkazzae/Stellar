@@ -331,6 +331,10 @@
      one thing that has to be unambiguous while the pointer is moving. */
   .voice-channel-drop[data-drop-over] .channel .name{color:var(--text)}
 
+  /* A call nobody is in keeps its list for the first person to land in, but
+     not its padding: 6px under an empty channel would push the next channel
+     or caption further down than any other row does. */
+  .voice-occupants:empty{padding:0}
   .voice-occupants{list-style:none;padding:2px 4px 4px 28px}
   .voice-occupants li{display:flex;align-items:center;gap:8px;height:30px;padding:0 4px;border-radius:var(--radius-sm);font-size:var(--text-13);color:var(--text-muted)}
   .voice-occupants li.me{color:var(--text);animation:msgIn 200ms var(--ease-standard)}
