@@ -1,5 +1,5 @@
 /**
- * The suppressor comparison's page. compare.mjs builds it with Vite, opens it
+ * The suppressor comparison's page. run.mjs builds it with Vite, opens it
  * in Chrome and calls `window.__suppressor`.
  *
  * "After" is the app as it is: `attachSuppressor` loads the engine's worklet
