@@ -64,6 +64,7 @@ export function CallStage({ fullscreenTarget }: CallStageProps) {
       />
       <VoiceControlBar
         muted={voice.state.muted}
+        deafened={voice.call?.deafened ?? false}
         cameraOn={voice.call?.cameraOn ?? false}
         cameraPending={voice.state.cameraPending}
         sharing={voice.localShare}
@@ -75,6 +76,7 @@ export function CallStage({ fullscreenTarget }: CallStageProps) {
         cameraSupported={voice.cameraSupported}
         fullscreenTarget={fullscreenTarget}
         onToggleMute={voice.toggleMute}
+        onToggleDeafen={voice.toggleDeafen}
         onToggleCamera={voice.toggleCamera}
         onSelectMicrophone={openDeviceSettings}
         onSelectCamera={openDeviceSettings}

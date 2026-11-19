@@ -96,12 +96,15 @@ export function SoundboardGrid({
 export interface SoundboardPopoverProps extends SoundboardGridProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
-  /** Extra panel classes, such as `vc-pop` in the control bar. */
+  /** Extra panel classes, beside `board`. */
   className?: string;
   renderTrigger: (props: PopoverTriggerProps) => ReactNode;
 }
 
-/** The soundboard as a panel that hangs off its trigger. */
+/**
+ * The soundboard as a panel that hangs off its trigger. Where it hangs is the
+ * place's: over the dock in the rail, over its own control in the call's bar.
+ */
 export function SoundboardPopover({
   open,
   onOpenChange,
