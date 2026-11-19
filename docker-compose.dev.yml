@@ -14,7 +14,9 @@
 #
 # The first start installs the npm packages, restores the NuGet packages and
 # compiles the media server's crates into named volumes, so it is slow. Later
-# starts reuse them.
+# starts reuse them. The web service checks the browser's binaries before it
+# starts, and those that artifacts/recipes/ builds from source have to be built
+# on the host first, once: `docker buildx bake recipes`.
 #
 # Voice between two tabs on one machine needs no TURN server. Start the turn
 # profile to test a connection that has to cross a NAT. It uses the host

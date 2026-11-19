@@ -29,10 +29,11 @@ Development uses the web client's dev server:
 ```bash
 # from the repository root
 npm install
+docker buildx bake recipes   # once, and again when artifacts/recipes/ changes
 npm run dev -w stellarr-web
 ```
 
-It listens on `http://localhost:3000`, serves Cockpit at `http://localhost:3000/cockpit` with hot reload, and proxies `/api`, `/assets`, `/health`, `/hubs` and `/.well-known/stellarr/client` to `STELLARR_API_ORIGIN` (`http://127.0.0.1:5000` by default). `docker-compose.dev.yml` runs the same server in its `web` service.
+The bake builds the browser binaries that [`artifacts/recipes/`](../../../artifacts/recipes/README.md) makes from source; the dev server, the tests and the build check every binary against `artifacts/manifest.json` before they start. The dev server listens on `http://localhost:3000`, serves Cockpit at `http://localhost:3000/cockpit` with hot reload, and proxies `/api`, `/assets`, `/health`, `/hubs` and `/.well-known/stellarr/client` to `STELLARR_API_ORIGIN` (`http://127.0.0.1:5000` by default). `docker-compose.dev.yml` runs the same server in its `web` service.
 
 The UI parts (buttons, fields, cards, tables, tabs, dialogs, sheets, menus, tooltips) come from the shared [`@stellarr/ui`](../../../packages/stellarr-ui/README.md) package and the icons from [`@stellarr/icons`](../../../packages/stellarr-icons/README.md), which `components/icons/icon.tsx` sizes in rem; Cockpit composes its pages from them with Tailwind utilities. `index.css` imports the package's stylesheet and maps Cockpit's palette onto its `--ui-*` tokens.
 

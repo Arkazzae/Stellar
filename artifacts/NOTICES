@@ -4,8 +4,9 @@ Stellarr third-party notices
 Stellarr itself is licensed under the MIT License; see LICENSE in the source
 repository.
 
-This file covers the prebuilt files the browser loads at run time and that are
-committed under artifacts/files/. The authoritative list is
+This file covers the third-party files the browser loads at run time: those
+committed under artifacts/files/, and those artifacts/recipes/ builds from
+third-party source. The authoritative list is
 artifacts/manifest.json. Each entry there records the logical id, served path,
 SHA-256, byte size, upstream origin and SPDX license expression. This file
 records the upstream projects and the copyright and license notices those
@@ -20,7 +21,6 @@ Noise suppression
 Files:
   audio/rnnoise-worklet.js
   audio/gtcrn-worklet.js
-  audio/speex-worklet.js
 
 Upstream: @sapphi-red/web-noise-suppressor 0.4.1
   https://github.com/sapphi-red/web-noise-suppressor
@@ -55,18 +55,26 @@ Copyright (c) 2024 Rong Xiaobin
 Files:
   audio/speex.wasm
 
-Upstream: @sapphi-red/speex-preprocess-wasm 0.4.0, built from xiph/speexdsp
-  https://github.com/sapphi-red/speex-preprocess-wasm
+Built here by artifacts/recipes/speex/ from xiph/speexdsp at commit
+7a158783df74efe7c2d1c6ee8363c1e695c71226: the preprocessor alone
+(libspeexdsp/preprocess.c, filterbank.c, fftwrap.c and smallft.c with the
+headers they include), statically linked with the parts of wasi-libc, from
+wasi-sdk 33, that it calls: musl's atan, sin, cos, exp, log and pow, dlmalloc,
+and wasi-libc's own sbrk and abort. The worklet that drives it,
+audio/speex-worklet.js, is Stellarr's own code.
   https://github.com/xiph/speexdsp
-License: MIT (speex-preprocess-wasm) and BSD-3-Clause (speexdsp)
-Copyright 2002-2008 Xiph.org Foundation
-Copyright 2002-2008 Jean-Marc Valin
-Copyright 2005-2007 Analog Devices Inc.
-Copyright 2005-2008 Commonwealth Scientific and Industrial Research
-                        Organisation (CSIRO)
-Copyright 1993, 2002, 2006 David Rowe
-Copyright 2003 EpicGames
-Copyright 1992-1994 Jutta Degener, Carsten Bormann
+  https://github.com/WebAssembly/wasi-libc
+License: BSD-3-Clause (SpeexDSP); MIT (musl, Arm's exp, log and pow, and
+wasi-libc's own code, which is also offered under Apache-2.0); the SunPro
+notice below (musl's atan, sin and cos); CC0-1.0 (dlmalloc)
+Copyright 1994-2002 Xiph.Org Foundation
+Copyright 2002-2007 Jean-Marc Valin
+Copyright 2003-2006 Epic Games
+Copyright 2005-2020 Rich Felker, et al. (musl)
+Copyright 2018 Arm Limited
+Copyright 1993 Sun Microsystems, Inc.
+dlmalloc: written by Doug Lea and released to the public domain, as
+explained at http://creativecommons.org/publicdomain/zero/1.0/
 
 Local chat translation
 ----------------------
@@ -147,6 +155,25 @@ INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN
 CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
 ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
 POSSIBILITY OF SUCH DAMAGE.
+
+SunPro notice
+
+musl's atan, sin and cos carry the first form, the kernels they call
+(__sin, __cos, __rem_pio2 and __rem_pio2_large) the second.
+
+Copyright (C) 1993 by Sun Microsystems, Inc. All rights reserved.
+
+Developed at SunPro, a Sun Microsystems, Inc. business.
+Permission to use, copy, modify, and distribute this
+software is freely granted, provided that this notice
+is preserved.
+
+Copyright (C) 1993 by Sun Microsystems, Inc. All rights reserved.
+
+Developed at SunSoft, a Sun Microsystems, Inc. business.
+Permission to use, copy, modify, and distribute this
+software is freely granted, provided that this notice
+is preserved.
 
 PFFFT (FFTPACK/UCAR) License
 

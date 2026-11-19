@@ -89,8 +89,8 @@ export default defineConfig(({ mode }) => {
     optimizeDeps: {
       entries: [WEB_DOCUMENT, COCKPIT_DOCUMENT],
     },
-    // The speech detector's AudioWorklet, bundled apart and written to
-    // /audio/detector-worklet.js; see worklets.ts.
+    // The speech detector's and Speex's AudioWorklets, each bundled apart and
+    // written to its own address under /audio/; see worklets.ts.
     worker: workerBuild(BUILD_DIRECTORY),
     build: {
       outDir: "dist",
