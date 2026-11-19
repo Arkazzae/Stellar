@@ -33,6 +33,7 @@ import { VoiceHolder } from "./voiceHolder";
 import { voiceProblemForUi, type VoiceProblem } from "./voiceProblems";
 import {
   deriveVoiceView,
+  sameCall,
   shareSourceOf,
   type VoiceRoomPresentation,
 } from "./voiceView";
@@ -107,8 +108,41 @@ export interface VoiceLive {
   setParticipantSuppression: (userId: string, suppressed: boolean) => void;
 }
 
+/**
+ * What the call dock draws and does: the call's summary and its controls,
+ * without the people in it. It changes when the summary does, so speech,
+ * levels and statistics that the dock does not show never render it.
+ */
+export type VoiceCallValue = Pick<
+  VoiceValue,
+  | "call"
+  | "sounds"
+  | "soundboard"
+  | "soundboardEnabled"
+  | "privateCall"
+  | "cameraSupported"
+  | "suppressorDownload"
+  | "toggleMute"
+  | "toggleDeafen"
+  | "toggleCamera"
+  | "toggleShare"
+  | "playSound"
+>;
+
 const VoiceContext = createContext<VoiceValue | null>(null);
 const VoiceLiveContext = createContext<VoiceLive | null>(null);
+const VoiceCallContext = createContext<VoiceCallValue | null>(null);
+
+/**
+ * The previous value for as long as `same` says nothing changed, so whatever
+ * is built on it keeps its identity too.
+ */
+function useSettled<T>(value: T, same: (a: T, b: T) => boolean): T {
+  const [settled, setSettled] = useState(value);
+  if (settled === value || same(settled, value)) return settled;
+  setSettled(value);
+  return value;
+}
 
 type PresentedRoom = VoiceRoomPresentation & { id: string };
 
@@ -400,10 +434,15 @@ export function VoiceProvider({ children }: { children: ReactNode }) {
     [state, userId, displayName, startedAt, deafened, room, roomName, watching, occupantsOf, source],
   );
   const problem = useMemo(() => voiceProblemForUi(state.error, t), [state.error, t]);
+  const call = useSettled(view.call, sameCall);
+  // The cooldown is not here: it ticks every second, and only the panel
+  // reads it, from the board's own live store.
+  const soundboardEnabled = !view.privateCall && soundboard.supported;
 
   const value = useMemo<VoiceValue>(
     () => ({
       ...view,
+      call,
       state,
       channelId: state.channelId,
       error: problem?.message ?? null,
@@ -413,9 +452,7 @@ export function VoiceProvider({ children }: { children: ReactNode }) {
       suppressorDownload: state.suppressorDownload,
       sounds: soundboard.sounds,
       soundboard,
-      // The cooldown is not here: it ticks every second, and only the panel
-      // reads it, from the board's own live store.
-      soundboardEnabled: !view.privateCall && soundboard.supported,
+      soundboardEnabled,
       join,
       leave,
       reconnect,
@@ -432,9 +469,11 @@ export function VoiceProvider({ children }: { children: ReactNode }) {
     }),
     [
       view,
+      call,
       state,
       problem,
       soundboard,
+      soundboardEnabled,
       join,
       leave,
       reconnect,
@@ -451,12 +490,44 @@ export function VoiceProvider({ children }: { children: ReactNode }) {
     ],
   );
 
-  // The seats and the live reads never change, so these two providers never
-  // render anything below them; only the call's own value does.
+  const dock = useMemo<VoiceCallValue>(
+    () => ({
+      call,
+      sounds: soundboard.sounds,
+      soundboard,
+      soundboardEnabled,
+      privateCall: view.privateCall,
+      cameraSupported: state.cameraSupported,
+      suppressorDownload: state.suppressorDownload,
+      toggleMute,
+      toggleDeafen,
+      toggleCamera,
+      toggleShare,
+      playSound,
+    }),
+    [
+      call,
+      soundboard,
+      soundboardEnabled,
+      view.privateCall,
+      state.cameraSupported,
+      state.suppressorDownload,
+      toggleMute,
+      toggleDeafen,
+      toggleCamera,
+      toggleShare,
+      playSound,
+    ],
+  );
+
+  // The seats and the live reads never change, and the dock's value only with
+  // what it shows; only the call's own value changes with every snapshot.
   return (
     <VoiceSeatContext.Provider value={holder.seats}>
       <VoiceLiveContext.Provider value={live}>
-        <VoiceContext.Provider value={value}>{children}</VoiceContext.Provider>
+        <VoiceCallContext.Provider value={dock}>
+          <VoiceContext.Provider value={value}>{children}</VoiceContext.Provider>
+        </VoiceCallContext.Provider>
       </VoiceLiveContext.Provider>
     </VoiceSeatContext.Provider>
   );
@@ -474,6 +545,14 @@ export function useVoiceLiveContext(): VoiceLive {
   const value = useContext(VoiceLiveContext);
   if (value === null) {
     throw new Error("useVoiceLive must be used inside <VoiceProvider>");
+  }
+  return value;
+}
+
+export function useVoiceCallContext(): VoiceCallValue {
+  const value = useContext(VoiceCallContext);
+  if (value === null) {
+    throw new Error("useVoiceCall must be used inside <VoiceProvider>");
   }
   return value;
 }

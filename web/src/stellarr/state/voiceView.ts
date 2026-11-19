@@ -42,6 +42,27 @@ export function shareSourceOf(state: VoiceState, userId: string | null): ShareSo
   return { key: null, ownerId: null, remote: null };
 }
 
+/** Whether two call summaries draw the same dock, so the older one can be kept. */
+export function sameCall(a: CallVM | null, b: CallVM | null): boolean {
+  if (a === b) return true;
+  if (a === null || b === null) return false;
+  return (
+    a.channelId === b.channelId &&
+    a.channelName === b.channelName &&
+    a.privateCall === b.privateCall &&
+    a.encrypted === b.encrypted &&
+    a.startedAt === b.startedAt &&
+    a.muted === b.muted &&
+    a.deafened === b.deafened &&
+    a.cameraOn === b.cameraOn &&
+    a.cameraPending === b.cameraPending &&
+    a.sharing === b.sharing &&
+    a.latencyMs === b.latencyMs &&
+    a.connectionQuality === b.connectionQuality &&
+    a.headline === b.headline
+  );
+}
+
 /** The dock's headline: a live screen outranks transport status. */
 export function callHeadline(state: VoiceState): CallVM["headline"] {
   const { connection, transport } = state;
