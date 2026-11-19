@@ -1,7 +1,14 @@
 import type { ApiClient } from "@/lib/api/client";
+import type { SoundboardPlayedEvent } from "@/lib/api/types";
 import type { RealtimeClient } from "@/lib/realtime/types";
 import type { VoiceSettings } from "@/lib/voice/settings";
-import type { Sound, SoundboardPort, SoundboardState } from "@/ports";
+import type {
+  Sound,
+  SoundboardLive,
+  SoundboardPlay,
+  SoundboardPort,
+  SoundboardState,
+} from "@/ports";
 
 import { createSoundboardAudio } from "./soundboardAudio";
 
@@ -40,6 +47,11 @@ export function createSoundboardAdapter(
   let serverOffsetMs = 0;
   let readyAt = 0;
   let cooldownTimer: ReturnType<typeof setTimeout> | null = null;
+  /** The live store: plays under way and the cooldown in whole seconds. */
+  const liveListeners = new Set<() => void>();
+  let playing: readonly SoundboardPlay[] = [];
+  const playTimers = new Set<ReturnType<typeof setTimeout>>();
+  let cooldownSeconds = 0;
   let arrivalsAudible = true;
   let loading: Promise<void> | null = null;
   let reloadRequested = false;
@@ -58,9 +70,71 @@ export function createSoundboardAdapter(
     notify();
   };
 
+  const notifyLive = (): void => {
+    if (disposed) return;
+    for (const listener of liveListeners) listener();
+  };
+
   const stopCooldownTimer = (): void => {
     if (cooldownTimer !== null) clearTimeout(cooldownTimer);
     cooldownTimer = null;
+  };
+
+  /**
+   * Counts the cooldown down in whole seconds, waking once a second exactly
+   * when the count drops, and ends it at zero.
+   */
+  const tickCooldown = (): void => {
+    cooldownTimer = null;
+    const left = readyAt - Date.now();
+    const seconds = left > 0 ? Math.ceil(left / 1000) : 0;
+    if (seconds === 0) readyAt = 0;
+    if (seconds !== cooldownSeconds) {
+      cooldownSeconds = seconds;
+      notifyLive();
+    }
+    if (seconds > 0) cooldownTimer = setTimeout(tickCooldown, left - (seconds - 1) * 1000);
+  };
+
+  const endCooldown = (): void => {
+    stopCooldownTimer();
+    readyAt = 0;
+    if (cooldownSeconds !== 0) {
+      cooldownSeconds = 0;
+      notifyLive();
+    }
+  };
+
+  /** A clip pressed on the board starts in the room: kept from its arrival until its end. */
+  const startPlay = (event: SoundboardPlayedEvent): void => {
+    const startsAt = event.startsAtUnixMs - serverOffsetMs;
+    const length = Math.max(0, event.sound.trimEndSeconds - event.sound.trimStartSeconds);
+    const play: SoundboardPlay = {
+      playbackId: event.playbackId,
+      sound: event.sound,
+      userId: event.triggeredByUserId,
+      startsAt,
+      endsAt: startsAt + (Number.isFinite(length) ? length : 0) * 1000,
+    };
+    const wait = play.endsAt - Date.now();
+    if (wait <= 0) return;
+    playing = [...playing, play];
+    notifyLive();
+    const timer = setTimeout(() => {
+      playTimers.delete(timer);
+      playing = playing.filter((item) => item !== play);
+      notifyLive();
+    }, wait);
+    playTimers.add(timer);
+  };
+
+  const live: SoundboardLive = {
+    subscribe(listener) {
+      liveListeners.add(listener);
+      return () => liveListeners.delete(listener);
+    },
+    playing: () => playing,
+    cooldownSeconds: () => cooldownSeconds,
   };
 
   const syncClock = async (): Promise<void> => {
@@ -121,6 +195,7 @@ export function createSoundboardAdapter(
       if (!state.sounds.some((sound) => sound.id === event.sound.id)) {
         patchState({ sounds: [...state.sounds, event.sound] });
       }
+      startPlay(event);
       audio.schedule(event, serverOffsetMs).catch(() => {
         patchState({ error: "soundboard.playFailed" });
       });
@@ -150,6 +225,7 @@ export function createSoundboardAdapter(
     getSnapshot: () => state,
     load,
     cooldownRemaining: () => Math.max(0, readyAt - Date.now()),
+    live,
 
     subscribe(listener) {
       listeners.add(listener);
@@ -181,15 +257,14 @@ export function createSoundboardAdapter(
       }
       audio.prepare();
       if (state.settings.rateLimited) {
+        stopCooldownTimer();
         readyAt = Date.now() + COOLDOWN_MS;
-        notify();
-        cooldownTimer = setTimeout(notify, COOLDOWN_MS);
+        tickCooldown();
       }
       try {
         await realtime.playSoundboard(channelId, soundId);
       } catch {
-        readyAt = 0;
-        stopCooldownTimer();
+        endCooldown();
         patchState({ error: "soundboard.playRejected" });
       }
     },
@@ -276,8 +351,11 @@ export function createSoundboardAdapter(
       for (const unsubscribe of unsubscribers) unsubscribe();
       announcements.clear();
       stopCooldownTimer();
+      for (const timer of playTimers) clearTimeout(timer);
+      playTimers.clear();
       audio.close();
       listeners.clear();
+      liveListeners.clear();
     },
   };
 }

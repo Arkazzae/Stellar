@@ -52,6 +52,35 @@ export interface SoundboardPort {
   /** Milliseconds until `play` is accepted again; 0 when ready. */
   cooldownRemaining(): number;
   subscribe(listener: () => void): Unsubscribe;
+  /**
+   * What is playing in the room and how long this person waits, apart from
+   * the board's state: they change every second, and only the soundboard
+   * panel and the stage's tiles show them.
+   */
+  live: SoundboardLive;
+}
+
+/** One of the board's clips under way in the room. */
+export interface SoundboardPlay {
+  playbackId: string;
+  sound: Sound;
+  /** Who pressed it. */
+  userId: UserId;
+  /** When the room hears it start and end, on this device's clock in milliseconds. */
+  startsAt: number;
+  endsAt: number;
+}
+
+/**
+ * A small store of plain snapshots: each stays the same value until what it
+ * describes changes, so a reader re-renders only for its own part.
+ */
+export interface SoundboardLive {
+  subscribe(listener: () => void): Unsubscribe;
+  /** The board's clips under way, oldest first; the same array until one starts or ends. */
+  playing(): readonly SoundboardPlay[];
+  /** Whole seconds until this person may play again; 0 when they may now. */
+  cooldownSeconds(): number;
 }
 
 export interface SoundboardState {
