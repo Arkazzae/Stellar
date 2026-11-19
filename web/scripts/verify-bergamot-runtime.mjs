@@ -18,8 +18,9 @@ const chromium = process.env.STELLARR_CHROMIUM ?? "/usr/bin/chromium";
 const startupTimeoutMs = 15_000;
 const runTimeoutMs = 180_000;
 
-// Two sentences each, so the text goes through the engine's sentence splitting.
-// The expected words are a floor for a translation, not its wording.
+// The first two hold two sentences each, so the text goes through the engine's
+// sentence splitting. The expected words are a floor for a translation, not its
+// wording.
 const cases = [
   {
     from: "pl",
@@ -33,6 +34,23 @@ const cases = [
     text: "It rained last night, so we stayed at home. It was very nice.",
     expect: [/pada/i, /\bdomu\b/i, /\bmił/i],
   },
+  // A writer's apostrophes, quotes, & and < come back as they were; the 1.0
+  // models made "5 > 3 & & 2" of the first.
+  {
+    from: "pl",
+    to: "en",
+    text: 'Nie wiem, czy 5 > 3 && 2 < 4 to "prawda".',
+    expect: [/\bdon't\b/, /5 > 3 && 2 < 4/, /"/],
+  },
+  {
+    from: "en",
+    to: "pl",
+    text: `I don't know if 5 > 3 && 2 < 4 is "true".`,
+    expect: [/\bnie wiem\b/i, /5 > 3 && 2 < 4/, /"/],
+  },
+  // Replies the models say twice, which the worker says once.
+  { from: "pl", to: "en", text: "Dzięki!", expect: [/^Thanks!$/] },
+  { from: "en", to: "pl", text: "No.", expect: [/^Nie\.$/] },
 ];
 
 const mimeTypes = {

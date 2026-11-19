@@ -2,35 +2,35 @@
   "plen": {
     "model": {
       "name": "model.plen.intgemm.alphas.bin",
-      "size": 17140899,
-      "sha256": "172a5f1d44bf8dd6a6eec3868b13b33ce265f3530e898fe11a80b739b821726e"
+      "size": 31561787,
+      "sha256": "06dbab3baa3bbceab746bc6a3bba807878f38536382c03acddf59d3edf3b5d94"
     },
     "lex": {
       "name": "lex.50.50.plen.s2t.bin",
-      "size": 4898024,
-      "sha256": "863afade0ba058fb0173fedef3d1fb14d0dcabc24c3b4584cb1fed8f84d6d879"
+      "size": 4964208,
+      "sha256": "b295dfefa7022a62e105276e8c39fdfd67bffe588f4fd78583edd4e04ee0cb3b"
     },
     "vocab": {
       "name": "vocab.plen.spm",
-      "size": 822587,
-      "sha256": "a1d27e6f5c0d29f406364ebf0382949d1c0affc750cec4380f3173150552f43e"
+      "size": 821612,
+      "sha256": "2000f182efa8ce5f69bc3f9e574666b5bc2c0af684eedd32f69d15aa9021ea85"
     }
   },
   "enpl": {
     "model": {
       "name": "model.enpl.intgemm.alphas.bin",
-      "size": 17140899,
-      "sha256": "60d45f43a5ac869a80f899751d2d1f0f456da9815d26db70e4d2e0fd18ed4a8f"
+      "size": 31561787,
+      "sha256": "b0b59716bcc8f46b8dc6ab5c32a2732acaad42a5a6d9ae9b472526a1bb0d71d4"
     },
     "lex": {
       "name": "lex.50.50.enpl.s2t.bin",
-      "size": 3642112,
-      "sha256": "409fbf5856cec372dffe0a3aa3c89462e2efbd783557272af84800a67195c38c"
+      "size": 3540052,
+      "sha256": "d7d7b364673f633763c9f8f2e8ee9c7a184e92f4086e8b84abe870a2a8dbe5d5"
     },
     "vocab": {
       "name": "vocab.enpl.spm",
-      "size": 822587,
-      "sha256": "a1d27e6f5c0d29f406364ebf0382949d1c0affc750cec4380f3173150552f43e"
+      "size": 821612,
+      "sha256": "2000f182efa8ce5f69bc3f9e574666b5bc2c0af684eedd32f69d15aa9021ea85"
     }
   }
 }
