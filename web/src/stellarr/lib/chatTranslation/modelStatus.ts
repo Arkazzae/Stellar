@@ -4,8 +4,10 @@ import { openDatabase, requestResult, transactionDone } from "./idb";
 
 const BUNDLED_MODELS = "/bergamot-models";
 
-// public/bergamot-worker.js reads the same database, so the name, the store and
-// the `<pair>/<file name>` keys must stay as they are.
+// public/bergamot-worker.js reads and writes the same database. Both store a
+// file under its SHA-256 from the registry, and only after checking the bytes
+// against it, so a stored file is reused only while the registry names exactly
+// those bytes, whatever the file is called.
 const DB_NAME = "bergamot-models";
 const DB_VERSION = 1;
 const STORE = "files";
@@ -13,6 +15,7 @@ const STORE = "files";
 interface ModelFile {
   name: string;
   size: number;
+  sha256: string;
 }
 
 interface PairEntry {
@@ -82,7 +85,7 @@ export async function getModelStatus(
 
   const database = await openModels();
   try {
-    const stored = await Promise.all(files.map((file) => isStored(database, `${pair}/${file.name}`)));
+    const stored = await Promise.all(files.map((file) => isStored(database, file.sha256)));
     return stored.every(Boolean) ? "ready" : "not-downloaded";
   } finally {
     database.close();
@@ -127,9 +130,30 @@ async function downloadFile(
   return content.buffer;
 }
 
+async function sha256(content: ArrayBuffer): Promise<string> {
+  const digest = new Uint8Array(await crypto.subtle.digest("SHA-256", content));
+  return Array.from(digest, (byte) => byte.toString(16).padStart(2, "0")).join("");
+}
+
 async function store(database: IDBDatabase, key: string, content: ArrayBuffer): Promise<void> {
   const transaction = database.transaction(STORE, "readwrite");
   transaction.objectStore(STORE).put(content, key);
+  await transactionDone(transaction);
+}
+
+/**
+ * Removes the files no pair of the registry names, those of an earlier
+ * release, which would otherwise stay on the device for good.
+ */
+async function keepOnly(database: IDBDatabase, registry: Record<string, PairEntry>): Promise<void> {
+  const named = new Set(
+    Object.values(registry).flatMap((entry) => [entry.model, entry.lex, entry.vocab].map((file) => file.sha256)),
+  );
+  const transaction = database.transaction(STORE, "readwrite");
+  const files = transaction.objectStore(STORE);
+  for (const key of await requestResult(files.getAllKeys())) {
+    if (typeof key !== "string" || !named.has(key)) files.delete(key);
+  }
   await transactionDone(transaction);
 }
 
@@ -148,9 +172,9 @@ export async function downloadModel(
 
   const database = await openModels();
   try {
+    await keepOnly(database, await loadRegistry());
     for (const file of files) {
-      const key = `${pair}/${file.name}`;
-      if (await isStored(database, key)) {
+      if (await isStored(database, file.sha256)) {
         finished += file.size;
         report();
         continue;
@@ -164,7 +188,10 @@ export async function downloadModel(
       if (file.size > 0 && content.byteLength !== file.size) {
         throw new Error(`The downloaded model file ${file.name} is incomplete.`);
       }
-      await store(database, key, content);
+      if ((await sha256(content)) !== file.sha256) {
+        throw new Error(`The downloaded model file ${file.name} is not the one the registry lists.`);
+      }
+      await store(database, file.sha256, content);
     }
     onProgress?.(100);
   } finally {
