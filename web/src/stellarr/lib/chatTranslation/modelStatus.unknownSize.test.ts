@@ -1,22 +1,25 @@
 import "fake-indexeddb/auto";
 
+import { createHash } from "node:crypto";
+
 import { beforeAll, describe, expect, it, vi } from "vitest";
 
 import { downloadModel, getModelStatus } from "./modelStatus";
 
+const model = new Uint8Array([1, 2, 3, 4, 5]);
+const lex = new Uint8Array([6, 7, 8]);
+const vocab = new Uint8Array([9, 10, 11, 12]);
+const payloads: Record<string, Uint8Array> = { "model.bin": model, "lex.bin": lex, "vocab.spm": vocab };
+
+const sha256 = (bytes: Uint8Array) => createHash("sha256").update(bytes).digest("hex");
+
 // A listed size of 0 means the registry does not know the size of the file.
 const registry = {
   plen: {
-    model: { name: "model.bin", size: 5 },
-    lex: { name: "lex.bin", size: 0 },
-    vocab: { name: "vocab.spm", size: 4 },
+    model: { name: "model.bin", size: 5, sha256: sha256(model) },
+    lex: { name: "lex.bin", size: 0, sha256: sha256(lex) },
+    vocab: { name: "vocab.spm", size: 4, sha256: sha256(vocab) },
   },
-};
-
-const payloads: Record<string, Uint8Array> = {
-  "model.bin": new Uint8Array([1, 2, 3, 4, 5]),
-  "lex.bin": new Uint8Array([6, 7, 8]),
-  "vocab.spm": new Uint8Array([9, 10, 11, 12]),
 };
 
 function removeModelDatabase(): Promise<void> {

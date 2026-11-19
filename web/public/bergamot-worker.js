@@ -36,8 +36,10 @@ const ALIGNMENT = { model: 256, lex: 64, vocab: 64 };
 
 // ── IndexedDB ──
 //
-// src/stellarr/lib/chatTranslation/modelStatus.ts reads the same database, so
-// the name, the store and the `<pair>/<file name>` keys must stay as they are.
+// src/stellarr/lib/chatTranslation/modelStatus.ts reads and writes the same
+// database. A file is stored under its SHA-256, which registry.json lists, so
+// a file is only reused while the registry names exactly those bytes, and is
+// only stored once its bytes have been checked against it.
 
 const DB_NAME = "bergamot-models";
 const DB_STORE = "files";
@@ -80,6 +82,26 @@ async function idbSet(key, value) {
   }
 }
 
+/** Deletes every stored file whose hash is not in `keep`. */
+async function idbKeepOnly(keep) {
+  const db = await openDB();
+  try {
+    await new Promise((resolve, reject) => {
+      const tx = db.transaction(DB_STORE, "readwrite");
+      const store = tx.objectStore(DB_STORE);
+      const req = store.getAllKeys();
+      req.onsuccess = () => {
+        for (const key of req.result) if (!keep.has(key)) store.delete(key);
+      };
+      tx.oncomplete = () => resolve();
+      tx.onerror = () => reject(tx.error);
+      tx.onabort = () => reject(tx.error);
+    });
+  } finally {
+    db.close();
+  }
+}
+
 // ── Model registry ──
 
 let registryRequest = null;
@@ -99,15 +121,39 @@ function loadRegistry() {
   return registryRequest;
 }
 
+let pruning = null;
+
+/**
+ * Once per worker, removes the files the registry no longer names: those of
+ * an earlier release, which would otherwise stay on the device for good.
+ */
+function pruneStoredFiles(registry) {
+  pruning ??= idbKeepOnly(
+    new Set(Object.values(registry).flatMap((pair) => Object.values(pair).map((file) => file.sha256))),
+  ).catch((error) => {
+    // A failed cleanup costs disk space, not a translation.
+    pruning = null;
+    console.warn("[bergamot] could not remove stale model files:", error);
+  });
+  return pruning;
+}
+
+async function sha256(buffer) {
+  const digest = new Uint8Array(await crypto.subtle.digest("SHA-256", buffer));
+  return Array.from(digest, (byte) => byte.toString(16).padStart(2, "0")).join("");
+}
+
 async function modelFile(pair, file) {
-  const key = `${pair}/${file.name}`;
-  const stored = await idbGet(key);
+  const stored = await idbGet(file.sha256);
   if (stored !== undefined) return stored;
 
   const response = await fetch(`${MODELS}/${pair}/${file.name}`);
   if (!response.ok) throw new Error(`Failed to download model ${pair}/${file.name}`);
   const buffer = await response.arrayBuffer();
-  await idbSet(key, buffer);
+  if ((await sha256(buffer)) !== file.sha256) {
+    throw new Error(`The model file ${pair}/${file.name} is not the one the registry lists`);
+  }
+  await idbSet(file.sha256, buffer);
   return buffer;
 }
 
@@ -225,6 +271,7 @@ async function handleTranslate(from, to, text) {
   if (text.trim() === "") return text;
 
   const registry = await loadRegistry();
+  await pruneStoredFiles(registry);
 
   let languages;
   if (registry[`${from}${to}`]) languages = [[from, to]];
