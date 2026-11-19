@@ -73,10 +73,11 @@ export class DirectoryStore {
     this.#publish(EMPTY);
   }
 
+  /** A presence the directory already shows publishes nothing. */
   setPresence(userId: UserId, presence: Presence): void {
-    this.#replaceMembers((member) =>
-      member.id === userId ? { ...member, presence } : member,
-    );
+    const member = this.#snapshot.members.find((item) => item.id === userId);
+    if (member === undefined || member.presence === presence) return;
+    this.#replaceMembers((item) => (item === member ? { ...item, presence } : item));
   }
 
   setUser(user: User): void {
@@ -116,7 +117,13 @@ export class DirectoryStore {
     this.#update({ server: iconUrl === undefined ? rest : { ...rest, iconUrl } });
   }
 
+  /**
+   * The hub sends a room's whole list on every change in it, mute and display
+   * name included; a list that says what the directory already shows
+   * publishes nothing.
+   */
   setOccupants(channelId: ChannelId, occupants: VoiceOccupant[]): void {
+    if (sameOccupants(this.#snapshot.occupancy[channelId] ?? [], occupants)) return;
     this.#update({ occupancy: { ...this.#snapshot.occupancy, [channelId]: occupants } });
   }
 
@@ -207,6 +214,21 @@ export class DirectoryStore {
     this.#snapshot = next;
     for (const listener of this.#listeners) listener();
   }
+}
+
+function sameOccupants(a: readonly VoiceOccupant[], b: readonly VoiceOccupant[]): boolean {
+  return (
+    a.length === b.length &&
+    a.every((occupant, index) => {
+      const other = b[index];
+      return (
+        other !== undefined &&
+        occupant.userId === other.userId &&
+        occupant.displayName === other.displayName &&
+        occupant.muted === other.muted
+      );
+    })
+  );
 }
 
 function byPosition(a: Channel, b: Channel): number {

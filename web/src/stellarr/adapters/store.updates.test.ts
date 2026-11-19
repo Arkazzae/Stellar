@@ -77,12 +77,17 @@ describe("DirectoryStore snapshots", () => {
 });
 
 describe("DirectoryStore members", () => {
-  it("changes only the presence of the named member", () => {
+  it("changes only the presence of the named member, and publishes nothing when it stays", () => {
     const store = storeWith({ members: [SELF, JO] });
 
     store.setPresence(JO.id, "online");
 
     expect(store.getSnapshot().members).toEqual([SELF, { ...JO, presence: "online" }]);
+    expect(store.getSnapshot().members[0]).toBe(SELF);
+    const listener = vi.fn();
+    store.subscribe(listener);
+    store.setPresence(JO.id, "online");
+    expect(listener).not.toHaveBeenCalled();
   });
 
   it("replaces a member with the updated profile", () => {
@@ -202,13 +207,18 @@ describe("DirectoryStore channels", () => {
     expect(store.getSnapshot().occupancy).toEqual({ "c-2": [occupant] });
   });
 
-  it("replaces the occupants of one voice channel", () => {
+  it("replaces the occupants of one voice channel, and publishes nothing for the same list again", () => {
     const store = storeWith({ channels: three });
     const occupants = [{ userId: JO.id, displayName: JO.displayName, muted: true }];
 
     store.setOccupants("c-3", occupants);
 
     expect(store.getSnapshot().occupancy["c-3"]).toBe(occupants);
+    const listener = vi.fn();
+    store.subscribe(listener);
+    store.setOccupants("c-3", [{ ...occupants[0]! }]);
+    store.setOccupants("c-2", []);
+    expect(listener).not.toHaveBeenCalled();
   });
 });
 

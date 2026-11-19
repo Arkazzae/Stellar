@@ -1,9 +1,11 @@
 import { describe, expect, it } from "vitest";
 
-import type { Channel, VoiceOccupant } from "@/ports";
+import type { Channel, User, VoiceOccupant } from "@/ports";
 
 import {
+  createDirectoryViewDeriver,
   deriveDirectoryView,
+  type DirectorySnapshot,
   sameOccupancy,
   serverMark,
   spliceGroupOrder,
@@ -75,5 +77,69 @@ describe("deriveDirectoryView", () => {
       { id: "small", userLimit: 2 },
       { id: "open", userLimit: undefined },
     ]);
+  });
+});
+
+describe("createDirectoryViewDeriver", () => {
+  const user = (id: string): User => ({ id, username: id, displayName: id, presence: "online" });
+  const snapshot = (patch: Partial<DirectorySnapshot>): DirectorySnapshot => ({
+    server: { id: "s", name: "Orbit" },
+    servers: [],
+    channels: [
+      { id: "lounge", name: "lounge", kind: "voice" },
+      { id: "studio", name: "studio", kind: "voice" },
+    ],
+    sections: [],
+    members: [],
+    permissions: [],
+    occupancy: new Map(),
+    ...patch,
+  });
+
+  it("hands back whatever says the same as before, and anew only what changed", () => {
+    const derive = createDirectoryViewDeriver();
+    const ada = user("ada");
+    const bo = user("bo");
+    const first = derive(
+      snapshot({
+        members: [ada, bo],
+        occupancy: new Map([
+          ["lounge", [occupant("ada")]],
+          ["studio", [occupant("bo")]],
+        ]),
+      }),
+    );
+
+    // A presence change replaces one member; a hub frame brings fresh objects
+    // for a room in which nothing changed, and a mute in the other one.
+    const next = derive(
+      snapshot({
+        members: [ada, { ...bo, presence: "idle" }],
+        occupancy: new Map([
+          ["lounge", [occupant("ada")]],
+          ["studio", [{ ...occupant("bo"), muted: true }]],
+        ]),
+      }),
+    );
+
+    expect(next.people[0]).toBe(first.people[0]);
+    expect(next.people[1]).toEqual({ ...first.people[1], presence: "idle" });
+    expect(next.voiceChannels[0]).toBe(first.voiceChannels[0]);
+    expect(next.voiceChannels[1]?.occupants[0]?.muted).toBe(true);
+    expect(next.occupantsOf("lounge")).toBe(first.occupantsOf("lounge"));
+
+    const quiet = derive(
+      snapshot({
+        members: next.members,
+        occupancy: new Map([
+          ["lounge", [occupant("ada")]],
+          ["studio", [{ ...occupant("bo"), muted: true }]],
+        ]),
+      }),
+    );
+    expect(quiet.voiceChannels).toBe(next.voiceChannels);
+    expect(quiet.people).toBe(next.people);
+    expect(quiet.inVoice).toBe(next.inVoice);
+    expect(quiet.occupantsOf).toBe(next.occupantsOf);
   });
 });
