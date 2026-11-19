@@ -253,6 +253,8 @@ export const hooksModule = {
   useSession: () => stubs.session,
   useUi: () => stubs.ui,
   useVoice: () => stubs.voice,
+  // The dock's slice is a part of the call's value.
+  useVoiceCall: () => stubs.voice,
   useVoiceLive: () => stubs.voiceLive,
   useLanguage,
 };
