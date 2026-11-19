@@ -1,6 +1,7 @@
 import type { OpenProfile, PersonVM } from "@/components/view-models";
 
 import { ParticipantTile, type ParticipantTileProps } from "./ParticipantTile";
+import { useTileGrid } from "./useTileGrid";
 
 export interface ParticipantTilesProps {
   /** Only the people on this channel. */
@@ -64,11 +65,14 @@ export function participantTileProps(
 
 /**
  * The grid of tiles. Whether it shows as a grid, a strip or not at all is
- * decided by the state classes on the stage around it.
+ * decided by the state classes on the stage around it; as a grid, it is as
+ * even as the room allows (`useTileGrid`).
  */
 export function ParticipantTiles({ people, ...sources }: ParticipantTilesProps) {
+  const grid = useTileGrid(people.length);
+
   return (
-    <div className={people.length === 1 ? "tiles single" : "tiles"}>
+    <div ref={grid} className="tiles">
       {people.map((person) => (
         <ParticipantTile key={person.id} {...participantTileProps(person, sources)} />
       ))}
