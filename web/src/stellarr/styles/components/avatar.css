@@ -37,9 +37,9 @@
     font-size: var(--av-face);
     font-weight: 600;
     line-height: 1;
-    /* The initials sit on the person's own hue, which the component publishes
-       as `--person-bg`. The fallback is the neutral disc for anything without
-       an identity to derive a colour from. */
+    /* The built-in mascot, or the initials, sit on the person's own hue, which
+       the component publishes as `--person-bg`. The fallback is the neutral
+       disc for anything without an identity to derive a colour from. */
     color: var(--on-accent);
     background: var(--person-bg, var(--surface-overlay));
     -webkit-user-select: none;

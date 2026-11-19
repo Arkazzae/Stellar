@@ -57,6 +57,7 @@ export function ProfileCardPreview({
           <img
             src={account.bannerUrl || defaultIdentityArt(account.id).bannerUrl}
             alt=""
+            className={account.bannerUrl ? undefined : "banner-art"}
           />
           <span className="pf-veil">
             <Icon name="camera" size={18} />
