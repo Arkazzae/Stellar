@@ -8,6 +8,26 @@ This guide starts a local Stellarr instance on a single machine, creates the own
 - Free host ports `8443`, `8888`, `3478`, `5349`, `49000`, and `49160-49200`. If a port is in use, override the corresponding variable in `.env` (see [Requirements](requirements.md#ports)).
 - A second browser profile or private window to test a two-user call.
 
+## One-click install
+
+The repository includes `install.sh`, which checks the host, prepares `.env`, starts the container, and prints the setup page and setup code. From a checkout:
+
+```bash
+git clone https://github.com/Arkazzae/Stellarr.git
+cd Stellarr
+./install.sh
+```
+
+Or run it without a checkout:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/Arkazzae/Stellarr/main/install.sh | bash
+```
+
+The installer asks for the public hostname, public IP, and ports, offers to install Docker when it is missing, and preserves an existing `.env` on later runs. Use `--yes` for unattended installs, `--dir` to choose the install directory, `--build` to build the image from the checkout, and `--help` for all options.
+
+The rest of this guide describes the same steps manually.
+
 ## 1. Download Compose and environment files
 
 ```bash
