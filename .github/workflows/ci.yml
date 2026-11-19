@@ -69,17 +69,21 @@ jobs:
           # to them or to the root manifest or lockfile runs the web job too.
           # Its tests also read nginx's configuration and the entrypoint, which
           # must answer the apps' addresses and write the instance language
-          # file as web/ does.
-          check web '^(web/|artifacts/|packages/|package(-lock)?\.json$|branding/icons/|infra/(nginx\.conf|entrypoint\.sh)$|\.github/workflows/ci\.yml$)'
+          # file as web/ does. It checks the recipes' outputs against the
+          # manifest, so the Dockerfile stages and the bake file that build
+          # them count too.
+          check web '^(web/|artifacts/|packages/|package(-lock)?\.json$|branding/icons/|infra/(nginx\.conf|entrypoint\.sh)$|Dockerfile$|docker-bake\.hcl$|\.github/workflows/ci\.yml$)'
           check media '^(media/|\.github/workflows/ci\.yml$)'
           check init '^(init/|\.github/workflows/ci\.yml$)'
           # website/ is the project site, its own npm project outside the root
           # workspaces. It reads the logo, mascot, icons and fonts from branding/.
           check website '^(website/|branding/(logo|mascot|icons/linear|guidelines/fonts)/|\.github/workflows/ci\.yml$)'
-          # vite.config.ts and documents.ts lay out the build that nginx serves.
-          # The image job drills the process manager in the image, so its
-          # sources count, not only its manifest.
-          check image '^(Dockerfile$|\.dockerignore$|artifacts/|infra/|server/.*\.csproj$|server/.*packages\.lock\.json$|packages/|package(-lock)?\.json$|\.npmrc$|web/package\.json$|web/(vite\.config|documents)\.ts$|media/Cargo\.(toml|lock)$|init/(Cargo\.(toml|lock)$|src/)|global\.json$|Directory\.Build\.props$|\.github/workflows/ci\.yml$)'
+          # vite.config.ts, documents.ts and worklets.ts lay out the build that
+          # nginx serves. The image job drills the process manager in the
+          # image, so its sources count, not only its manifest. It takes the
+          # recipes' outputs from the recipes job, which builds them with the
+          # bake file.
+          check image '^(Dockerfile$|docker-bake\.hcl$|\.dockerignore$|artifacts/|infra/|server/.*\.csproj$|server/.*packages\.lock\.json$|packages/|package(-lock)?\.json$|\.npmrc$|web/package\.json$|web/(vite\.config|documents|worklets)\.ts$|media/Cargo\.(toml|lock)$|init/(Cargo\.(toml|lock)$|src/)|global\.json$|Directory\.Build\.props$|\.github/workflows/ci\.yml$)'
 
   server:
     needs: changes
@@ -100,13 +104,59 @@ jobs:
       - run: dotnet build Stellarr.slnx --no-restore --configuration Release
       - run: dotnet test Stellarr.slnx --no-build --configuration Release
 
-  web:
+  # The recipes of artifacts/recipes/ build some of the browser's binaries from
+  # source. This is the one job of a run that builds them; the web and image
+  # jobs take its outputs, so neither depends on how long a recipe takes. Each
+  # recipe keeps a GitHub Actions cache of its own (docker-bake.hcl). A run
+  # reads the caches of its own branch or pull request and of main, so a
+  # recipe that did not change costs seconds, and one that did is built once,
+  # here, and again only when it changes again.
+  recipes:
     needs: changes
+    if: needs.changes.outputs.web == 'true' || needs.changes.outputs.image == 'true'
+    runs-on: ubuntu-latest
+    # Room for a cold build of the slowest recipe.
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v7
+      - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
+      - name: Build the recipes
+        uses: docker/bake-action@59cb1203cd42bcefd40a1b6d73b589e48c86040e # v7.5.0
+        env:
+          RECIPE_CACHE: gha
+        with:
+          source: .
+          files: docker-bake.hcl
+          targets: recipes
+      # The manifest records one sha256 per output, and these are the bytes a
+      # runner built: the summary keeps them next to the run.
+      - name: Report the outputs
+        run: |
+          {
+            printf '### Recipe outputs\n\n```\n'
+            (cd artifacts/recipes && sha256sum */out/*)
+            printf '```\n'
+          } >> "$GITHUB_STEP_SUMMARY"
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: recipe-outputs
+          path: artifacts/recipes/*/out/
+          if-no-files-found: error
+          retention-days: 7
+
+  web:
+    needs: [changes, recipes]
     if: needs.changes.outputs.web == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
       - uses: actions/checkout@v7
+      # Every npm script below assembles the browser's binaries first, the
+      # recipes' outputs among them.
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: recipe-outputs
+          path: artifacts/recipes/
       - uses: actions/setup-node@v7
         with:
           node-version: 26
@@ -253,7 +303,7 @@ jobs:
   # configuration or a dependency list changes. On main it also refreshes the
   # build cache that the release workflow reuses.
   image:
-    needs: changes
+    needs: [changes, recipes]
     if: needs.changes.outputs.image == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 30
@@ -261,10 +311,29 @@ jobs:
       - uses: actions/checkout@v7
       - name: Check TLS certificate renewal
         run: bash infra/tests/tls-maintenance.test.sh
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: recipe-outputs
+          path: artifacts/recipes/
+      # A build context named like a stage replaces that stage, so each
+      # recipe-<name> stage is the recipes job's output instead of a build of
+      # its own here. The rest of the Dockerfile is built as a release builds
+      # it.
+      - id: recipes
+        name: Hand the recipes' outputs to the build
+        run: |
+          {
+            echo 'contexts<<EOF'
+            for out in artifacts/recipes/*/out; do
+              echo "recipe-$(basename "$(dirname "$out")")=$out"
+            done
+            echo 'EOF'
+          } >> "$GITHUB_OUTPUT"
       - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
       - uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
         with:
           context: .
+          build-contexts: ${{ steps.recipes.outputs.contexts }}
           platforms: linux/amd64
           load: true
           tags: stellarr:ci
@@ -350,17 +419,24 @@ jobs:
           printf 'window.stellarrInstanceLanguage="pl";\n' | cmp -s - "$RUNNER_TEMP/body" \
             || fail "/stellarr-instance.js does not hold the language the container was given."
 
-          # The browser's prebuilt binaries are served from the image.
+          # The browser's binaries are served from the image, committed and
+          # built by a recipe alike.
           for path in /audio/rnnoise-worklet.js /codecs/bergamot/bergamot-translator-worker.wasm \
                       /bergamot-models/plen/vocab.plen.spm; do
             get "$path" 200
           done
-          # The speech detector's worklet, which the build writes from the
-          # app's source to a fixed address (web/worklets.ts); under another
-          # name it would be missing here.
-          get /audio/detector-worklet.js 200
-          [[ $(header cache-control) == no-cache ]] || fail "/audio/detector-worklet.js is cached."
-          body_has 'registerProcessor(' || fail "/audio/detector-worklet.js registers no processor."
+          get /audio/speex.wasm 200
+          speex=$(jq -r '.artifacts[] | select(.path == "audio/speex.wasm") | .sha256' artifacts/manifest.json)
+          [[ $(sha256sum < "$RUNNER_TEMP/body" | cut -d' ' -f1) == "$speex" ]] \
+            || fail "/audio/speex.wasm is not the binary the manifest records."
+          # The worklets the build writes from the app's source to a fixed
+          # address (web/worklets.ts); under another name one would be missing
+          # here.
+          for path in /audio/detector-worklet.js /audio/speex-worklet.js; do
+            get "$path" 200
+            [[ $(header cache-control) == no-cache ]] || fail "$path is cached."
+            body_has 'registerProcessor(' || fail "$path registers no processor."
+          done
 
           if (( failed )); then
             docker logs stellarr 2>&1 | tail -n 80

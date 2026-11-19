@@ -29,9 +29,12 @@
  * Runs from the predev, prebuild and pretest npm hooks of web/, so the dev
  * server, the build and the tests always see the recorded files. Any missing file or
  * any difference from the manifest fails the run, in development as in an
- * image build. The bytes are committed, so a missing or different file means a
- * broken checkout or an edit nobody recorded, and neither should reach a
- * browser or be hidden by the client falling back to something else.
+ * image build. A committed file that is missing or different means a broken
+ * checkout or an edit nobody recorded. A recipe's output that is missing has
+ * not been built yet, and one that differs was built from other inputs, such
+ * as an out/ folder left from before the recipe changed. None of these should
+ * reach a browser or be hidden by the client falling back to something else.
+ * This script never builds a recipe itself; `docker buildx bake recipes` does.
  *
  *   node artifacts/assemble.mjs
  */
@@ -147,15 +150,20 @@ export async function assemble({ log = () => {} } = {}) {
     const source = sourceFile(entry.source);
     const bytes = await readIfPresent(source);
     if (bytes === null) {
-      const hint = entry.source.recipe === undefined ? "" : " (build the recipe first)";
+      const hint =
+        entry.source.recipe === undefined
+          ? ""
+          : " (build the recipes first: docker buildx bake recipes, at the repository root)";
       problems.push(`${name}: ${source} is missing${hint}`);
       continue;
     }
     const hash = sha256(bytes);
     if (bytes.byteLength !== entry.size || hash !== entry.sha256) {
+      const hint =
+        entry.source.recipe === undefined ? "" : " (rebuild the recipes: docker buildx bake recipes)";
       problems.push(
         `${name}: ${source} is ${bytes.byteLength} bytes with sha256 ${hash}, ` +
-          `the manifest records ${entry.size} bytes with sha256 ${entry.sha256}`,
+          `the manifest records ${entry.size} bytes with sha256 ${entry.sha256}${hint}`,
       );
       continue;
     }
