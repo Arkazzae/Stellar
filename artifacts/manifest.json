@@ -85,29 +85,29 @@
     },
     {
       "id": "translation/bergamot-glue",
-      "path": "codecs/bergamot/bergamot-translator-worker.js",
-      "source": { "file": "files/codecs/bergamot/bergamot-translator-worker.js" },
-      "sha256": "c119d3af0995aae1747c904f8db8e49447144330e4c7bf0ace410a6a0e22edf0",
-      "size": 82410,
+      "path": "codecs/bergamot/bergamot-translator.js",
+      "source": { "recipe": "bergamot", "output": "bergamot-translator.js" },
+      "sha256": "d922c29474b05d7ddf5ee8a30dcd6d332e0898eaae8f483779b2044dbf02e180",
+      "size": 91869,
       "upstream": {
-        "project": "https://github.com/browsermt/bergamot-translator",
-        "from": "https://github.com/browsermt/bergamot-translator/releases/download/v0.4.5/bergamot-translator-worker.js",
-        "verified": "Identical to the v0.4.5 release asset, built from commit 05a8778. GitHub publishes no digest for it."
+        "project": "https://github.com/mozilla/translations",
+        "from": "https://github.com/mozilla/translations.git#1de4a085d3a7afb625c51a60aabb5ad298e4059f",
+        "verified": "Built here from that commit, v0.6.0 of the engine, by artifacts/recipes/bergamot/, with Emscripten 3.1.8 on linux/amd64, in the same build as the WASM beside it, whose bytes are Mozilla's. No published copy has these bytes: Firefox keeps the glue in its own source tree (toolkit/components/translations/bergamot-translator/), built from eea6e5a8, patched and reformatted by its linter."
       },
-      "license": "MPL-2.0"
+      "license": "MPL-2.0 AND (MIT OR NCSA)"
     },
     {
       "id": "translation/bergamot-wasm",
-      "path": "codecs/bergamot/bergamot-translator-worker.wasm",
-      "source": { "file": "files/codecs/bergamot/bergamot-translator-worker.wasm" },
-      "sha256": "95a2b58dd6773bf1b3f345d71f9149928b9f75f4ec9c9064c0b3e42c298671b2",
-      "size": 5174294,
+      "path": "codecs/bergamot/bergamot-translator.wasm",
+      "source": { "recipe": "bergamot", "output": "bergamot-translator.wasm" },
+      "sha256": "a3a89d9ad0a4ed8f27bf3e403701b23f5709816f6376438503f2fa5b0182c2dc",
+      "size": 4960506,
       "upstream": {
-        "project": "https://github.com/browsermt/bergamot-translator",
-        "from": "npm:@browsermt/bergamot-translator@0.4.5/worker/bergamot-translator-worker.wasm",
-        "verified": "Identical to the file in the 0.4.5 npm tarball, whose sha512 matches the registry's integrity. It is not the v0.4.5 release asset, which is a different build; the glue above is."
+        "project": "https://github.com/mozilla/translations",
+        "from": "https://github.com/mozilla/translations.git#1de4a085d3a7afb625c51a60aabb5ad298e4059f",
+        "verified": "Built here from that commit, v0.6.0 of the engine, by artifacts/recipes/bergamot/, with Emscripten 3.1.8 on linux/amd64. Byte for byte the attachment Firefox downloads: Remote Settings, collection translations-wasm, bergamot-translator version 3.0 (release v0.6.0, revision 1de4a085), 4960506 bytes, sha256 a3a89d9ad0a4ed8f27bf3e403701b23f5709816f6376438503f2fa5b0182c2dc."
       },
-      "license": "MPL-2.0 AND MIT AND Apache-2.0 AND BSD-3-Clause AND BSD-3-Clause WITH PCRE2-exception"
+      "license": "MPL-2.0 AND MIT AND Apache-2.0 AND Apache-2.0 WITH LLVM-exception AND BSD-3-Clause AND BSD-2-Clause AND Zlib AND CC0-1.0 AND (MIT OR NCSA)"
     },
     {
       "id": "translation/plen-model",

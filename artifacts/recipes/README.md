@@ -5,6 +5,7 @@ A recipe builds one or more of the files in [`../manifest.json`](../manifest.jso
 | Recipe | Builds | From |
 | --- | --- | --- |
 | [`speex/`](speex/) | `speex.wasm`, served at `/audio/speex.wasm` | SpeexDSP's preprocessor, with wasi-sdk |
+| [`bergamot/`](bergamot/) | `bergamot-translator.wasm` and its glue `bergamot-translator.js`, served under `/codecs/bergamot/` | Mozilla's Bergamot translation engine at v0.6.0, with Emscripten 3.1.8 on linux/amd64 |
 
 ## Building them
 
@@ -14,7 +15,7 @@ docker buildx bake recipes
 
 From the repository root, with Docker and its buildx plugin (Docker Desktop has both). It builds every recipe named in [`../../docker-bake.hcl`](../../docker-bake.hcl) into its `out/` folder, from the same Dockerfile stages the image build runs. Run it once in a fresh checkout or worktree, and again after a recipe changes, before `npm run dev`, `npm test` or `npm run build` in `web/`. Those run [`../assemble.mjs`](../assemble.mjs) first, which reads the outputs from `out/` and refuses a missing one or one whose bytes differ from the manifest; it never starts Docker itself. The `web` service of `docker-compose.dev.yml` sees the outputs through its bind mount, so the same command, run on the host, serves it too.
 
-A build that is already cached takes seconds. A cold one fetches the recipe's toolchain first; Speex's, the wasi-sdk image, is 776 MB compressed.
+A build that is already cached takes seconds. A cold one fetches the recipe's toolchain first; Speex's, the wasi-sdk image, is 776 MB compressed. Bergamot's is a 318 MB Emscripten archive; the recipe runs emulated on an arm64 machine (see "A reproducible result"), and a cold build of it took 13 to 28 minutes on a busy Apple one.
 
 ## What a recipe is
 
