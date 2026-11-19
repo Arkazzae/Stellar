@@ -2,7 +2,15 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 
 import type { Bootstrap, Channel, User } from "@/lib/api/types";
 import type { DesktopPort } from "@/ports/desktop";
-import { BOOTSTRAP, fakeApi, FakeRealtimeClient, SELF, SERVER, TEXT_CHANNEL } from "@/test/fakes";
+import {
+  BOOTSTRAP,
+  fakeApi,
+  FakeRealtimeClient,
+  SELF,
+  SERVER,
+  TEXT_CHANNEL,
+  VOICE_CHANNEL,
+} from "@/test/fakes";
 import { fullApi, type FullApi } from "@/test/runtime";
 import { polish } from "@/test/translators";
 
@@ -189,6 +197,24 @@ describe("runtime realtime wiring", () => {
 
     const row = runtime.ports.presence.listMembers().find((member) => member.id === SELF.id);
     expect(row).not.toHaveProperty("avatarUrl");
+  });
+});
+
+describe("runtime after a hub reconnect", () => {
+  it("reloads the bootstrap after the hub comes back, and not on the first connection", async () => {
+    const seated = { [VOICE_CHANNEL.id]: [{ userId: PEER.id, displayName: PEER.displayName, muted: false }] };
+    const client = fullApi({ bootstrap: vi.fn(async () => bootstrap({ voice: {} })) });
+    const { runtime, realtime } = await hydrated({ voice: seated }, client);
+
+    await realtime.start();
+    expect(client.bootstrap).not.toHaveBeenCalled();
+
+    // Ada left while the hub was away; nothing told this side.
+    realtime.drop();
+    await realtime.start();
+
+    await vi.waitFor(() => expect(runtime.ports.presence.occupantsOf(VOICE_CHANNEL.id)).toEqual([]));
+    expect(client.bootstrap).toHaveBeenCalledTimes(1);
   });
 });
 

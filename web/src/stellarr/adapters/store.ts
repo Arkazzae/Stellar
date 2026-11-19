@@ -35,6 +35,16 @@ const EMPTY: DirectorySnapshot = {
 
 type Listener = () => void;
 
+/** A part of the directory a change can touch: a field, one room's list or one member. */
+type Part =
+  | "server"
+  | "servers"
+  | "channels"
+  | "sections"
+  | "permissions"
+  | `room:${ChannelId}`
+  | `member:${UserId}`;
+
 /**
  * The directory every read-only port reads from.
  *
@@ -49,6 +59,9 @@ type Listener = () => void;
 export class DirectoryStore {
   #snapshot: DirectorySnapshot = EMPTY;
   readonly #listeners = new Set<Listener>();
+  /** Changes made so far, and the change that last touched each part. */
+  #changes = 0;
+  readonly #touched = new Map<Part, number>();
 
   getSnapshot = (): DirectorySnapshot => this.#snapshot;
 
@@ -58,6 +71,7 @@ export class DirectoryStore {
   };
 
   hydrate(bootstrap: Bootstrap): void {
+    this.#touched.clear();
     this.#publish({
       server: bootstrap.server,
       servers: bootstrap.servers,
@@ -70,21 +84,84 @@ export class DirectoryStore {
   }
 
   reset(): void {
+    this.#touched.clear();
     this.#publish(EMPTY);
+  }
+
+  /**
+   * Where the changes stand now. A resync takes it before it asks for the
+   * bootstrap, to tell what the hub or this client changed meanwhile.
+   */
+  mark(): number {
+    return this.#changes;
+  }
+
+  /**
+   * Brings the directory back in step with a bootstrap fetched after the hub
+   * came back, since the hub does not replay what it sent while away.
+   *
+   * Whatever says the same as before stays the very object it was, so only
+   * what really changed renders and a drag in progress goes on. A part that
+   * changed after `mark`, such as a room the hub sent a list for or a channel
+   * order just dropped, keeps what it has: that is newer than the bootstrap.
+   * A bootstrap for another server changes nothing.
+   */
+  resync(bootstrap: Bootstrap, mark: number): void {
+    const current = this.#snapshot;
+    if (current.server === null || current.server.id !== bootstrap.server.id) return;
+    const stale = (part: Part) => (this.#touched.get(part) ?? 0) <= mark;
+    const take = <T>(part: Part, now: T, next: T, keep: (now: T, next: T) => T): T =>
+      stale(part) ? keep(now, next) : now;
+
+    const voice = bootstrap.voice ?? {};
+    let occupancy = current.occupancy;
+    for (const channelId of new Set([...Object.keys(current.occupancy), ...Object.keys(voice)])) {
+      const now = current.occupancy[channelId];
+      if (!stale(`room:${channelId}`)) continue;
+      const next = voice[channelId] ?? [];
+      if (sameOccupants(now ?? [], next)) continue;
+      occupancy = { ...occupancy, [channelId]: next };
+    }
+
+    const live = new Map(current.members.map((member) => [member.id, member]));
+    const members = keptList(
+      current.members,
+      bootstrap.members.flatMap((member) => {
+        if (stale(`member:${member.id}`)) return [member];
+        // Changed here meanwhile: kept as it is now, or gone if it was removed.
+        const now = live.get(member.id);
+        return now === undefined ? [] : [now];
+      }),
+    );
+
+    const next: DirectorySnapshot = {
+      server: take("server", current.server, bootstrap.server, kept),
+      servers: take("servers", current.servers, bootstrap.servers, keptList),
+      channels: take("channels", current.channels, [...bootstrap.channels].sort(byPosition), keptList),
+      sections: take("sections", current.sections, [...bootstrap.sections].sort(byOrder), keptList),
+      members,
+      permissions: take("permissions", current.permissions, bootstrap.permissions, keptList),
+      occupancy,
+    };
+    const parts = Object.keys(next) as (keyof DirectorySnapshot)[];
+    if (parts.some((part) => next[part] !== current[part])) this.#publish(next);
   }
 
   /** A presence the directory already shows publishes nothing. */
   setPresence(userId: UserId, presence: Presence): void {
+    this.#touch(`member:${userId}`);
     const member = this.#snapshot.members.find((item) => item.id === userId);
     if (member === undefined || member.presence === presence) return;
     this.#replaceMembers((item) => (item === member ? { ...item, presence } : item));
   }
 
   setUser(user: User): void {
+    this.#touch(`member:${user.id}`);
     this.#replaceMembers((member) => (member.id === user.id ? user : member));
   }
 
   removeMember(userId: UserId): void {
+    this.#touch(`member:${userId}`);
     const occupancy = Object.fromEntries(
       Object.entries(this.#snapshot.occupancy).map(([channelId, occupants]) => [
         channelId,
@@ -98,10 +175,12 @@ export class DirectoryStore {
   }
 
   setPermissions(permissions: ServerPermission[]): void {
+    this.#touch("permissions");
     this.#update({ permissions: [...permissions] });
   }
 
   setServer(server: Server): void {
+    this.#touch("server", "servers");
     this.#update({
       server,
       servers: this.#snapshot.servers.map((item) =>
@@ -113,6 +192,7 @@ export class DirectoryStore {
   setServerIcon(iconUrl: string | undefined): void {
     const current = this.#snapshot.server;
     if (current === null) return;
+    this.#touch("server");
     const { iconUrl: _previous, ...rest } = current;
     this.#update({ server: iconUrl === undefined ? rest : { ...rest, iconUrl } });
   }
@@ -123,15 +203,18 @@ export class DirectoryStore {
    * publishes nothing.
    */
   setOccupants(channelId: ChannelId, occupants: VoiceOccupant[]): void {
+    this.#touch(`room:${channelId}`);
     if (sameOccupants(this.#snapshot.occupancy[channelId] ?? [], occupants)) return;
     this.#update({ occupancy: { ...this.#snapshot.occupancy, [channelId]: occupants } });
   }
 
   addChannel(channel: Channel): void {
+    this.#touch("channels");
     this.#update({ channels: [...this.#snapshot.channels, channel].sort(byPosition) });
   }
 
   setChannelSettings(channelId: ChannelId, patch: Partial<Channel>): void {
+    this.#touch("channels");
     this.#update({
       channels: this.#snapshot.channels.map((channel) =>
         channel.id === channelId ? { ...channel, ...patch } : channel,
@@ -148,6 +231,7 @@ export class DirectoryStore {
    * began since.
    */
   setChannelLayout(placements: readonly ChannelPlacement[]): void {
+    this.#touch("channels");
     const sections = new Map(placements.map(({ id, sectionId }) => [id, sectionId]));
     const placed = this.#snapshot.channels.map((channel) => {
       const sectionId = sections.get(channel.id);
@@ -164,6 +248,7 @@ export class DirectoryStore {
   }
 
   removeChannel(channelId: ChannelId): void {
+    this.#touch("channels", `room:${channelId}`);
     const { [channelId]: _closed, ...occupancy } = this.#snapshot.occupancy;
     this.#update({
       channels: this.#snapshot.channels.filter((channel) => channel.id !== channelId),
@@ -172,10 +257,12 @@ export class DirectoryStore {
   }
 
   addSection(section: Section): void {
+    this.#touch("sections");
     this.#update({ sections: [...this.#snapshot.sections, section].sort(byOrder) });
   }
 
   setSection(section: Section): void {
+    this.#touch("sections");
     this.#update({
       sections: this.#snapshot.sections.map((item) =>
         item.id === section.id ? section : item,
@@ -185,6 +272,7 @@ export class DirectoryStore {
 
   /** Like the channel layout, an unchanged order publishes nothing. */
   setSectionOrder(orderedIds: readonly string[]): void {
+    this.#touch("sections");
     const sections = inOrder(this.#snapshot.sections, orderedIds);
     const current = this.#snapshot.sections;
     if (sections.every((section, index) => section === current[index])) return;
@@ -192,6 +280,7 @@ export class DirectoryStore {
   }
 
   removeSection(sectionId: string): void {
+    this.#touch("sections", "channels");
     this.#update({
       sections: this.#snapshot.sections.filter((section) => section.id !== sectionId),
       // The server refuses to delete a section that channels still use, but a
@@ -200,6 +289,11 @@ export class DirectoryStore {
         channel.sectionId === sectionId ? withoutSection(channel) : channel,
       ),
     });
+  }
+
+  #touch(...parts: Part[]): void {
+    this.#changes += 1;
+    for (const part of parts) this.#touched.set(part, this.#changes);
   }
 
   #replaceMembers(replace: (member: User) => User): void {
@@ -214,6 +308,36 @@ export class DirectoryStore {
     this.#snapshot = next;
     for (const listener of this.#listeners) listener();
   }
+}
+
+/** `previous` when `next` says the same, compared as the plain data both are. */
+function kept<T>(previous: T, next: T): T {
+  return samePlain(previous, next) ? previous : next;
+}
+
+/** Equal as JSON data, whatever order the fields came in; an absent field and `undefined` are one. */
+function samePlain(a: unknown, b: unknown): boolean {
+  if (a === b) return true;
+  if (typeof a !== "object" || typeof b !== "object" || a === null || b === null) return false;
+  if (Array.isArray(a) !== Array.isArray(b)) return false;
+  const fields = (value: object) =>
+    Object.entries(value).filter(([, field]) => field !== undefined);
+  const left = fields(a);
+  const right = new Map(fields(b));
+  return left.length === right.size && left.every(([key, field]) => samePlain(field, right.get(key)));
+}
+
+/** Each item kept as it was where it says the same, and the list itself when every item is. */
+function keptList<T extends string | { id: string }>(previous: T[], next: readonly T[]): T[] {
+  const key = (item: T) => (typeof item === "string" ? item : item.id);
+  const before = new Map(previous.map((item) => [key(item), item]));
+  const items = next.map((item) => {
+    const old = before.get(key(item));
+    return old === undefined ? item : kept(old, item);
+  });
+  return items.length === previous.length && items.every((item, index) => item === previous[index])
+    ? previous
+    : items;
 }
 
 function sameOccupants(a: readonly VoiceOccupant[], b: readonly VoiceOccupant[]): boolean {
