@@ -25,13 +25,13 @@ import { Rail, type RailProps } from "./Rail";
 
 /*
  * The drags run for real here, on the layout `layOutRail` stands in for: the
- * rail stacked from y = 0 in its content, 22 px captions, 35 px section
- * captions, 32 px rows and 30 px people. With everything open:
+ * rail stacked from y = 0 in its content, 22 px captions, 32 px rows and
+ * 30 px people. With everything open:
  *
  *     0  TEXT          22 ogólny  54 plany  86 luzem
  *   118  VOICE        140 Salon (with Jo, 62 px)  202 Sesja
- *   234  Projekty     269 zadania  301 notatki  333 Warsztat
- *   365  Archiwum     400 (empty: no channels, a note)
+ *   234  Projekty     256 zadania  288 notatki  320 Warsztat
+ *   352  Archiwum     374 (empty: no channels, a note)
  */
 
 const jo: PersonVM = { id: "u-2", displayName: "Jo", initials: "JO", presence: "online" };
@@ -191,18 +191,18 @@ describe("Rail channel sorting", () => {
   it("moves a channel into another section with one call that carries both section and order", async () => {
     const { onMoveChannel } = setup();
 
-    // Between zadania and notatki: notatki starts at 301, and with ogólny
+    // Between zadania and notatki: notatki starts at 288, and with ogólny
     // taken out of the rail above it, 32 px higher.
-    carry("ogólny", 269);
+    carry("ogólny", 256);
     await nextFrame();
     const row = (name: string) => channel(name).closest(".text-channel-node");
     // The carried row follows the pointer; the loose group closes up behind
     // it, and the section makes room in front of it.
-    expect(translateOf(row("ogólny"))).toBe("translateY(247px)");
+    expect(translateOf(row("ogólny"))).toBe("translateY(234px)");
     expect(translateOf(row("plany"))).toBe("translateY(-32px)");
     expect(translateOf(row("notatki"))).toBe("");
     expect(said()).toBe("Kanał ogólny, pozycja 2 z 3 w grupie Projekty.");
-    letGo(285);
+    letGo(272);
 
     expect(onMoveChannel).toHaveBeenCalledExactlyOnceWith({
       channelId: "t-1",
@@ -216,9 +216,9 @@ describe("Rail channel sorting", () => {
     const { onMoveChannel } = setup();
 
     fireEvent.click(screen.getByRole("button", { name: /Projekty/ }));
-    // Right below the caption of the collapsed Projekty, which ends at 269
-    // (237 with ogólny taken out).
-    drop("ogólny", 237);
+    // Right below the caption of the collapsed Projekty, which ends at 256
+    // (224 with ogólny taken out).
+    drop("ogólny", 224);
     expect(onMoveChannel).toHaveBeenLastCalledWith({
       channelId: "t-1",
       sectionId: "sec-1",
@@ -226,8 +226,8 @@ describe("Rail channel sorting", () => {
     });
 
     // With ogólny gone and Projekty closed, Archiwum's empty text list is
-    // at 272; 240 with plany taken out.
-    drop("plany", 240);
+    // at 246; 214 with plany taken out.
+    drop("plany", 214);
     expect(onMoveChannel).toHaveBeenLastCalledWith({
       channelId: "t-2",
       sectionId: "sec-2",
@@ -260,12 +260,12 @@ describe("Rail channel sorting", () => {
     const { onMoveChannel } = setup();
     const salon = () => channel("Salon").closest(".voice-channel-drop");
 
-    // The end of Projekty's voice list is at 365; 303 with Salon (62 px) out.
-    carry("Salon", 303);
+    // The end of Projekty's voice list is at 352; 290 with Salon (62 px) out.
+    carry("Salon", 290);
     await nextFrame();
-    expect(translateOf(salon())).toBe("translateY(163px)");
+    expect(translateOf(salon())).toBe("translateY(150px)");
     expect(salon()).toHaveTextContent("Jo");
-    letGo(156 + 163);
+    letGo(156 + 150);
 
     expect(onMoveChannel).toHaveBeenCalledExactlyOnceWith({
       channelId: "v-1",
@@ -332,10 +332,10 @@ describe("Rail channel sorting", () => {
   it("measures again and carries on when only a call's people change under it", () => {
     const { onMoveChannel, rerender } = setup();
 
-    carry("Sesja", 303);
+    carry("Sesja", 290);
     // Jo leaves Salon: everything below it moves up 30 px.
     rerender({ voiceChannels: [{ ...VOICE[0]!, occupants: [] }, ...VOICE.slice(1)] });
-    letGo(218 + 303 - 202);
+    letGo(218 + 290 - 202);
 
     expect(onMoveChannel).toHaveBeenCalledExactlyOnceWith({
       channelId: "v-2",
@@ -352,10 +352,10 @@ describe("Rail section sorting", () => {
     const onMoveSection = vi.fn();
     setup({ onMoveSection });
 
-    // Archiwum (365) goes above Projekty (234): its caption is pressed 17 px
+    // Archiwum (352) goes above Projekty (234): its caption is pressed 17 px
     // into the section, and its top is held where Projekty's is.
-    pressAt(caption("Archiwum"), 382);
-    moveTo(390, 251);
+    pressAt(caption("Archiwum"), 369);
+    moveTo(377, 251);
     letGo(251);
     expect(onMoveSection).toHaveBeenCalledExactlyOnceWith(["sec-2", "sec-1"]);
     expect(said()).toBe("Upuszczono sekcję Archiwum na pozycji 1 z 2.");
@@ -383,8 +383,8 @@ describe("Rail section sorting", () => {
     const { onMoveChannel } = setup();
 
     expect(caption("Projekty")).not.toHaveAttribute("aria-roledescription");
-    pressAt(caption("Archiwum"), 382);
-    moveTo(390, 251);
+    pressAt(caption("Archiwum"), 369);
+    moveTo(377, 251);
     letGo(251);
     expect(onMoveChannel).not.toHaveBeenCalled();
   });
@@ -409,14 +409,14 @@ describe("Rail voice moves", () => {
     const onMoveVoiceMember = vi.fn(async () => {});
     setup({ onMoveVoiceMember });
 
-    // Warsztat sits in Projekty, 333 px down the rail.
+    // Warsztat sits in Projekty, 320 px down the rail.
     pressAt(occupant(), JO_MIDDLE);
-    moveTo(JO_MIDDLE + 8, 343);
+    moveTo(JO_MIDDLE + 8, 330);
     await nextFrame();
     expect(zone("Warsztat")).toHaveAttribute("data-drop-over");
     expect(zone("Salon")).not.toHaveAttribute("data-drop-over");
     expect(document.querySelector(".voice-occupant-carry")).toHaveTextContent("Jo");
-    letGo(343);
+    letGo(330);
 
     expect(onMoveVoiceMember).toHaveBeenCalledExactlyOnceWith("u-2", "v-1", "v-3");
     expect(document.querySelector(".voice-occupant-carry")).toBeNull();
@@ -540,8 +540,8 @@ describe("Rail: carrying yourself", () => {
     const onMoveVoiceMember = vi.fn();
     setup({ voiceChannels: SEATED, onJoinVoiceChannel, onMoveVoiceMember });
 
-    // Warsztat sits in Projekty, 333 px down the rail.
-    dragSelfTo(343);
+    // Warsztat sits in Projekty, 320 px down the rail.
+    dragSelfTo(330);
 
     expect(onJoinVoiceChannel).toHaveBeenCalledExactlyOnceWith("v-3");
     expect(onMoveVoiceMember).not.toHaveBeenCalled();

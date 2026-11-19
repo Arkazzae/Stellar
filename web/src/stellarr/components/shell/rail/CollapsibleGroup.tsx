@@ -1,6 +1,7 @@
 import type { ReactNode } from "react";
 
 import { Icon } from "@stellarr/icons";
+import type { DragHandleProps } from "@/lib/drag/useRailDrag";
 
 export interface CollapsibleGroupProps {
   /** Id of the body; the caption button points at it with `aria-controls`. */
@@ -11,8 +12,8 @@ export interface CollapsibleGroupProps {
   onToggle: () => void;
   /** Controls beside the caption, such as the "+" that creates a channel. */
   actions?: ReactNode;
-  /** Extra class on the caption row, for a section's own spacing. */
-  className?: string;
+  /** Makes the caption the handle its group is sorted by; a click still toggles it. */
+  drag?: DragHandleProps;
   children: ReactNode;
 }
 
@@ -30,18 +31,19 @@ export function CollapsibleGroup({
   open,
   onToggle,
   actions,
-  className,
+  drag,
   children,
 }: CollapsibleGroupProps) {
   return (
     <>
-      <div className={["rail-cap", className].filter(Boolean).join(" ")}>
+      <div className="rail-cap">
         <button
           type="button"
           className="group-caption"
           aria-expanded={open}
           aria-controls={id}
           title={captionTitle}
+          {...drag}
           onClick={onToggle}
         >
           {caption}{" "}
