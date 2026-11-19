@@ -93,6 +93,19 @@ describe("VoiceStateStore", () => {
     expect(listener).toHaveBeenCalledTimes(1);
   });
 
+  it("keeps the RTP counters beside the snapshot, where moving them renders nothing", () => {
+    const store = new VoiceStateStore();
+    const listener = subscribed(store);
+
+    store.setCounters({ bytesSent: 400, bytesReceived: 560, packetsSent: 5, packetsReceived: 7 });
+
+    expect(listener).not.toHaveBeenCalled();
+    expect(store.getCounters().packetsReceived).toBe(7);
+    store.set({ muted: true });
+    store.reset();
+    expect(store.getCounters().packetsReceived).toBe(0);
+  });
+
   it("ignores loss and round-trip jitter below what the readout displays", () => {
     const store = new VoiceStateStore();
     store.set({ diagnostics: { ...IDLE_DIAGNOSTICS, lossFraction: 0.0101, rttMs: 40.2 } });

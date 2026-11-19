@@ -124,11 +124,6 @@ export interface VoiceDiagnostics {
   /** 0..1 */
   lossFraction: number | null;
   rttMs: number | null;
-  /** Cumulative audio RTP counters of the connection to the media server. */
-  bytesSent: number;
-  bytesReceived: number;
-  packetsSent: number;
-  packetsReceived: number;
 }
 
 export const IDLE_DIAGNOSTICS: VoiceDiagnostics = Object.freeze({
@@ -136,10 +131,6 @@ export const IDLE_DIAGNOSTICS: VoiceDiagnostics = Object.freeze({
   bitrate: null,
   lossFraction: null,
   rttMs: null,
-  bytesSent: 0,
-  bytesReceived: 0,
-  packetsSent: 0,
-  packetsReceived: 0,
 });
 
 export interface VoiceState {
