@@ -7,7 +7,7 @@ import { DEFAULT_SETTINGS } from "@/lib/voice/settings";
 import type { Ports, SoundboardState } from "@/ports";
 import { FakeVoiceClient } from "@/test/fakes";
 
-import { VoiceProvider, useVoiceContext } from "./VoiceProvider";
+import { VoiceProvider, useVoiceCallContext, useVoiceContext } from "./VoiceProvider";
 
 const harness = vi.hoisted(() => ({
   client: undefined as unknown as VoiceClient,
@@ -230,5 +230,33 @@ describe("VoiceProvider arrival sounds", () => {
     // The soundboard is told as well: an arrival clip is the same
     // announcement, only longer.
     expect(harness.ports.soundboard.setArrivalsAudible).toHaveBeenCalledWith(false);
+  });
+});
+
+describe("VoiceProvider call dock", () => {
+  it("leaves the dock alone while only speech moves, and follows a mute", async () => {
+    const docks: unknown[] = [];
+    function Dock() {
+      docks.push(useVoiceCallContext());
+      return null;
+    }
+    render(
+      <VoiceProvider>
+        <Dock />
+      </VoiceProvider>,
+    );
+    await waitFor(() => expect(harness.ports.createVoice).toHaveBeenCalledOnce());
+    const client = harness.client as FakeVoiceClient;
+    const ada = { ...peer("ada", "unused"), screen: null };
+    act(() => client.set({ channelId: "voice", connection: "connected", peers: [ada] }));
+    const rendered = docks.length;
+
+    act(() => client.set({ peers: [{ ...ada, speaking: true }] }));
+    act(() => client.set({ peers: [{ ...ada, speaking: false }] }));
+    expect(docks).toHaveLength(rendered);
+
+    act(() => client.set({ muted: true }));
+    expect(docks).toHaveLength(rendered + 1);
+    expect(docks.at(-1)).toMatchObject({ call: { muted: true } });
   });
 });

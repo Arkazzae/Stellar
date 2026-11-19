@@ -65,7 +65,9 @@ export {
 } from "./UiProvider";
 export {
   useVoiceContext as useVoice,
+  useVoiceCallContext as useVoiceCall,
   useVoiceLiveContext as useVoiceLive,
+  type VoiceCallValue,
   type VoiceLive,
   type VoiceValue,
 } from "./VoiceProvider";

@@ -11,7 +11,7 @@ import {
   usePorts,
   useSession,
   useUi,
-  useVoice,
+  useVoiceCall,
 } from "@/state/hooks";
 
 /** Stands in until the boot payload lands; a rail renders one frame before it. */
@@ -31,7 +31,8 @@ const UNKNOWN_SELF: PersonVM = {
  */
 export function RailVoiceDock() {
   const ui = useUi();
-  const voice = useVoice();
+  // The dock's own slice of the call: a ring that flips in it renders nothing here.
+  const voice = useVoiceCall();
   const { ringing } = useFriends();
   const { voiceSettings, soundboard } = usePorts();
   const settings = useSyncExternalStore(
