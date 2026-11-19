@@ -24,6 +24,7 @@ import type { UserConfig } from "vite";
 /** Each worklet entry, by its path from web/, and the file the build writes it to. */
 export const WORKLETS: Readonly<Record<string, string>> = Object.freeze({
   "src/stellarr/lib/voice/capture/detector/processor.ts": "audio/detector-worklet.js",
+  "src/stellarr/lib/voice/capture/speex/processor.ts": "audio/speex-worklet.js",
 });
 
 const entries = new Map(
