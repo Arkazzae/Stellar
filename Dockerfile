@@ -65,6 +65,21 @@ RUN --network=none sh /src/recipe/build.sh /out
 FROM --platform=linux/amd64 scratch AS recipe-bergamot
 COPY --from=recipe-bergamot-build /out/ /
 
+# Xiph's RNNoise with its model, the RNNoise noise suppressor
+# (artifacts/recipes/rnnoise/). The model is not in the repository: the
+# commit's model_version names the archive by its sha256, and its
+# download_model.sh fetches it from media.xiph.org, which this pins instead.
+FROM --platform=$RECIPE_PLATFORM ghcr.io/webassembly/wasi-sdk:wasi-sdk-33@sha256:f4d3519a6d4b36e8fd541019e13cb8d232980d9586e2b185f872ab97ea15bcfd AS recipe-rnnoise-build
+ADD https://github.com/xiph/rnnoise.git#70f1d256acd4b34a572f999a05c87bf00b67730d /src/rnnoise
+ADD --checksum=sha256:0a8755f8e2d834eff6a54714ecc7d75f9932e845df35f8b59bc52a7cfe6e8b37 \
+    https://media.xiph.org/rnnoise/models/rnnoise_data-0a8755f8e2d834eff6a54714ecc7d75f9932e845df35f8b59bc52a7cfe6e8b37.tar.gz \
+    /src/rnnoise_data.tar.gz
+COPY artifacts/recipes/rnnoise/ /src/recipe/
+RUN --network=none sh /src/recipe/build.sh /src/rnnoise /src/rnnoise_data.tar.gz /out
+
+FROM --platform=$RECIPE_PLATFORM scratch AS recipe-rnnoise
+COPY --from=recipe-rnnoise-build /out/ /
+
 # web/ holds both apps, the web client and Cockpit (web/src/cockpit/). It is a
 # workspace of one npm project with the shared packages/: the root
 # package-lock.json covers all of them. The stage copies every workspace
@@ -87,6 +102,7 @@ COPY packages/ packages/
 COPY artifacts/ artifacts/
 COPY --from=recipe-speex / artifacts/recipes/speex/out/
 COPY --from=recipe-bergamot / artifacts/recipes/bergamot/out/
+COPY --from=recipe-rnnoise / artifacts/recipes/rnnoise/out/
 COPY web/ web/
 WORKDIR /src/web
 # The build writes both apps to dist/. nginx sends the .gz file beside the
