@@ -2,18 +2,22 @@
  * Neural and DSP noise suppressors for the microphone path.
  *
  * Three engines, each a WASM binary driven by an AudioWorklet processor on the
- * render thread, so none of them competes with React for the main thread. The
- * processors and binaries are prebuilt files from web-noise-suppressor and the
- * projects it builds on, served from /audio/ (see artifacts/manifest.json);
- * this module is the main-thread side that loads and starts them. Everything
- * is loaded lazily: the binaries weigh 150-200 KB and most sessions ask for
- * exactly one.
+ * render thread, so none of them competes with React for the main thread.
+ * Speex is ours: artifacts/recipes/speex/ builds its binary from SpeexDSP's
+ * source, and its processor, `speex/processor.ts`, is built into
+ * /audio/speex-worklet.js like the detector's. RNNoise's and GTCRN's
+ * processors and binaries are still prebuilt files from web-noise-suppressor
+ * and the projects it builds on. All are served from /audio/ (see
+ * artifacts/manifest.json); this module is the main-thread side that loads
+ * and starts them. Everything is loaded lazily: the binaries weigh 60-200 KB
+ * and most sessions ask for exactly one.
  *
  * - `rnnoise`: Xiph's RNNoise. Cheap and good on steady background noise, weak
  *   on impulsive sounds such as keys or chewing.
  * - `gtcrn`: a larger network with a far better record on non-stationary noise,
- *   at a higher CPU cost. It runs at 48 kHz natively, so it never band-limits
- *   the voice.
+ *   at a higher CPU cost. The build served here takes 768-sample frames at
+ *   48 kHz, resamples them 3:1 and runs the model at 16 kHz, so it passes
+ *   nothing above 8 kHz: it band-limits the voice to wideband.
  * - `speex`: SpeexDSP's `preprocess`, classic spectral subtraction. The lightest
  *   option and the least effective.
  *
@@ -25,13 +29,15 @@
  */
 
 import type { WorkletSuppressor } from "../audioProfiles";
+import { SPEEX_WORKLET_URL } from "./speex/address";
+import { SPEEX_PROCESSOR_NAME } from "./speex/messages";
 
 export const RNNOISE_WORKLET_URL = "/audio/rnnoise-worklet.js";
 export const RNNOISE_WASM_URL = "/audio/rnnoise.wasm";
 export const RNNOISE_SIMD_WASM_URL = "/audio/rnnoise_simd.wasm";
 export const GTCRN_WORKLET_URL = "/audio/gtcrn-worklet.js";
 export const GTCRN_WASM_URL = "/audio/gtcrn.wasm";
-export const SPEEX_WORKLET_URL = "/audio/speex-worklet.js";
+export { SPEEX_WORKLET_URL };
 export const SPEEX_WASM_URL = "/audio/speex.wasm";
 
 export const WORKLET_URL: Record<WorkletSuppressor, string> = {
@@ -41,13 +47,14 @@ export const WORKLET_URL: Record<WorkletSuppressor, string> = {
 };
 
 /**
- * The name each worklet module registers its processor under. The worklets are
- * served byte for byte as they were published, so these are theirs to choose.
+ * The name each worklet module registers its processor under. The RNNoise and
+ * GTCRN worklets are served byte for byte as they were published, so their
+ * names are theirs to choose; Speex's is ours.
  */
 export const PROCESSOR_NAME: Record<WorkletSuppressor, string> = {
   rnnoise: "@sapphi-red/web-noise-suppressor/rnnoise",
   gtcrn: "@sapphi-red/web-noise-suppressor/gtcrn",
-  speex: "@sapphi-red/web-noise-suppressor/speex",
+  speex: SPEEX_PROCESSOR_NAME,
 };
 
 export type NoiseSuppressionStatus = "inactive" | "loading" | "active" | "unavailable";
@@ -62,10 +69,11 @@ export interface NoiseSuppressorHandle {
 }
 
 /**
- * What every one of the three processors reads from `processorOptions`, and
- * all it reads. The binary is copied into the render thread with the options
- * and instantiated there; each of the `maxChannels` channels gets its own
- * suppressor state, and a mono microphone needs one.
+ * What the processors read from `processorOptions`, and all they read. The
+ * binary is copied into the render thread with the options and instantiated
+ * there. The published RNNoise and GTCRN processors give each of the
+ * `maxChannels` channels its own suppressor state, and a mono microphone needs
+ * one; Speex's processor is mono and reads only the binary.
  */
 interface ProcessorOptions {
   maxChannels: number;
@@ -77,12 +85,14 @@ interface ProcessorOptions {
  * WASM state. Disconnecting alone frees nothing: a processor without input
  * still reports itself alive and keeps its heap.
  *
- * The worklets as published (0.4.1) listen for it with addEventListener and
- * never start their port, which leaves its messages queued: in Chromium the
- * processors were seen not to hear it. Going by their code, their state then
- * lasts as long as the AudioContext. The capture graph closes its context on
- * every recapture; the remote mixer keeps one for the whole call. It is sent
- * regardless, so a build that starts its port needs nothing here.
+ * Speex hears it: its processor frees the preprocessor's state, returns false
+ * from then on and outputs silence. The RNNoise and GTCRN worklets as
+ * published (0.4.1) listen for it with addEventListener and never start their
+ * port, which leaves its messages queued: in Chromium they were seen not to
+ * hear it. Going by their code, their state then lasts as long as the
+ * AudioContext. The capture graph closes its context on every recapture; the
+ * remote mixer keeps one, with GTCRN in it, for the whole call. It is sent to
+ * every engine regardless.
  */
 const DESTROY = "destroy";
 

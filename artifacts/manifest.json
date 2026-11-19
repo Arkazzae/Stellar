@@ -71,32 +71,17 @@
       "license": "MIT AND LicenseRef-pffft"
     },
     {
-      "id": "noise-suppression/speex-worklet",
-      "path": "audio/speex-worklet.js",
-      "source": { "file": "files/audio/speex-worklet.js" },
-      "sha256": "45f7a654c859aa8d61cdd9f57c907592abc71558495b0c7965e3be1e9c6b249c",
-      "size": 11166,
-      "upstream": {
-        "project": "https://github.com/sapphi-red/web-noise-suppressor",
-        "from": "npm:@sapphi-red/web-noise-suppressor@0.4.1/dist/speex/workletProcessor.js",
-        "integrity": "sha512-hy2GnF079+zi4n9BZUf+GGIQ1IofApAk6rgGMyMQ3soHfz/GKu1pcCsmePyIHVvUuv1LrFudw9BmmBqoOKay5w==",
-        "verified": "Identical to the file in the npm tarball, whose sha512 is the integrity above and the one the registry publishes."
-      },
-      "license": "MIT"
-    },
-    {
       "id": "noise-suppression/speex-wasm",
       "path": "audio/speex.wasm",
-      "source": { "file": "files/audio/speex.wasm" },
-      "sha256": "bdd0a587bd7b0054589c3585b6b74390784d11265e43360bb3d1d09bf34ad788",
-      "size": 56268,
+      "source": { "recipe": "speex", "output": "speex.wasm" },
+      "sha256": "abfe2165d4d4445596ca53869db48c374374dfe9cc83c12c17ed65c986f5246a",
+      "size": 61084,
       "upstream": {
-        "project": "https://github.com/sapphi-red/speex-preprocess-wasm",
-        "from": "npm:@sapphi-red/web-noise-suppressor@0.4.1/dist/speex.wasm",
-        "integrity": "sha512-hy2GnF079+zi4n9BZUf+GGIQ1IofApAk6rgGMyMQ3soHfz/GKu1pcCsmePyIHVvUuv1LrFudw9BmmBqoOKay5w==",
-        "verified": "Identical to the file in the npm tarball, whose sha512 is the integrity above and the one the registry publishes, and to dist/speex.wasm of @sapphi-red/speex-preprocess-wasm 0.4.0."
+        "project": "https://github.com/xiph/speexdsp",
+        "from": "https://github.com/xiph/speexdsp.git#7a158783df74efe7c2d1c6ee8363c1e695c71226",
+        "verified": "Built here from that commit by artifacts/recipes/speex/, in the wasi-sdk 33 image its stage in the root Dockerfile pins by digest. The build gave these bytes on arm64 and on amd64 build machines. On the voice fixtures it puts out, sample for sample, what the build it replaced did (dist/speex.wasm of @sapphi-red/speex-preprocess-wasm 0.4.0 with its worklet), and web/bench/voice/records/speex.txt holds that output."
       },
-      "license": "BSD-3-Clause AND MIT"
+      "license": "BSD-3-Clause AND MIT AND SunPro AND CC0-1.0"
     },
     {
       "id": "translation/bergamot-glue",
