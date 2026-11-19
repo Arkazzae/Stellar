@@ -271,6 +271,35 @@ describe("live changes during social reads", () => {
     expect(friends.listFriends()[0]?.user.presence).toBe("offline");
   });
 
+  it("leaves every list as it was, and tells nobody, for a stranger's presence or a room that did not change", async () => {
+    const realtime = new FakeRealtimeClient();
+    const friends = createFriendsAdapter(api(), realtime);
+    await friends.load();
+    realtime.push("VoiceParticipantChanged", {
+      channelId: "lounge",
+      participants: [{ userId: "user-bo", displayName: "Bo", muted: false }],
+    });
+    const lists = [friends.listFriends(), friends.listRequests(), friends.listConversations()];
+    const listener = vi.fn();
+    friends.onChanged(listener);
+
+    realtime.push("PresenceChanged", { userId: "user-bo", presence: "idle" });
+    realtime.push("VoiceParticipantChanged", {
+      channelId: "lounge",
+      participants: [{ userId: "user-bo", displayName: "Bo", muted: false }],
+    });
+    realtime.push("VoiceParticipantChanged", {
+      channelId: "studio",
+      participants: [{ userId: "user-cyd", displayName: "Cyd", muted: true }],
+    });
+
+    expect([friends.listFriends(), friends.listRequests(), friends.listConversations()]).toEqual(lists);
+    expect(friends.listConversations()).toBe(lists[2]);
+    expect(friends.listFriends()).toBe(lists[0]);
+    expect(listener).not.toHaveBeenCalled();
+    friends.dispose?.();
+  });
+
   it("keeps a live presence change that arrives during the initial social snapshot", async () => {
     const realtime = new FakeRealtimeClient();
     const client = api();
