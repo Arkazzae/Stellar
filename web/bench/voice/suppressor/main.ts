@@ -15,9 +15,12 @@ import {
   type NoiseSuppressorHandle,
 } from "@/lib/voice/capture/noiseSuppression";
 import type { WorkletSuppressor } from "@/lib/voice/audioProfiles";
+import { RnnoiseDenoiser, instantiateRnnoise } from "@/lib/voice/capture/rnnoise/denoiser";
 import { measureLatency } from "../capture/record";
 import { QUANTUM, SAMPLE_RATE } from "../dsp";
-import { LATENCY_PROBE, buildFixture, fixtureByName } from "../fixtures";
+import { LATENCY_PROBE, TALKERS, buildFixture, fixtureByName } from "../fixtures";
+import { decodeWav } from "../wav";
+import { ROOMS, measure, mixtures, type Measures } from "./quality";
 
 declare global {
   interface Window {
@@ -58,6 +61,8 @@ type Side = "before" | "after";
 interface Rendered {
   output: Float32Array;
   firstSound: number;
+  /** Wall time of the render itself, in ms. */
+  ms: number;
 }
 
 function firstSound(samples: Float32Array): number {
@@ -74,8 +79,10 @@ async function node(side: Side, kind: WorkletSuppressor, context: OfflineAudioCo
   }
   const { processor, binary } = await loadBefore();
   await context.audioWorklet.addModule("/before/worklet.js");
+  // The published worklets read the binary; ours for RNNoise takes it
+  // compiled, so that an earlier build of it can stand on this side too.
   const created = new AudioWorkletNode(context, processor, {
-    processorOptions: { maxChannels: 1, wasmBinary: binary.slice(0) },
+    processorOptions: { maxChannels: 1, wasmBinary: binary.slice(0), module: await WebAssembly.compile(binary) },
   });
   source.connect(created);
   return { output: created, handle: null as NoiseSuppressorHandle | null };
@@ -102,9 +109,25 @@ async function render(side: Side, kind: WorkletSuppressor, input: Float32Array, 
       await context.resume();
     });
   }
+  const started = performance.now();
   const rendered = await context.startRendering();
+  const ms = performance.now() - started;
   const samples = rendered.getChannelData(0).slice();
-  return { output: samples, firstSound: firstSound(samples) };
+  return { output: samples, firstSound: firstSound(samples), ms };
+}
+
+/** How long `input` takes to render through a gain of one: the part of a render no engine adds. */
+async function renderPlain(input: Float32Array): Promise<number> {
+  const context = new OfflineAudioContext(1, input.length, SAMPLE_RATE);
+  const buffer = context.createBuffer(1, input.length, SAMPLE_RATE);
+  buffer.getChannelData(0).set(input);
+  const source = context.createBufferSource();
+  source.buffer = buffer;
+  source.connect(context.createGain()).connect(context.destination);
+  source.start();
+  const started = performance.now();
+  await context.startRendering();
+  return performance.now() - started;
 }
 
 async function latency(side: Side, kind: WorkletSuppressor): Promise<number | null> {
@@ -205,6 +228,206 @@ async function destroyed(kind: WorkletSuppressor) {
   return { before: await check("before"), after: await check("after") };
 }
 
+export interface MixtureResult {
+  name: string;
+  talker: string;
+  room: string;
+  recorded: boolean;
+  seconds: number;
+  before: Measures;
+  after: Measures;
+  /** Render time each side added over a plain render, in ms per 10 ms of audio. */
+  cost: { before: number; after: number };
+}
+
+/** The talkers: the synthetic ones of fixtures.ts and every recording the runner serves. */
+async function talkers() {
+  const out = TALKERS.map((talker) => ({ name: talker.name, samples: talker.build(), recorded: false }));
+  const names = (await (await fetch("/__recordings")).json()) as string[];
+  for (const name of names) {
+    const wav = decodeWav(new Uint8Array(await (await fetch(`/__recordings/${encodeURIComponent(name)}`)).arrayBuffer()));
+    if (wav.sampleRate !== SAMPLE_RATE) throw new Error(`${name} is at ${wav.sampleRate} Hz, not ${SAMPLE_RATE}`);
+    out.push({ name: name.replace(/\.wav$/, "").toLowerCase(), samples: wav.samples, recorded: true });
+  }
+  return out;
+}
+
+/**
+ * Every talker in every room through both sides, measured against the clean
+ * talker (quality.ts), or only the mixtures named in `only`. With `write`,
+ * the input, the clean talker and both outputs go to the runner too.
+ */
+async function quality(kind: WorkletSuppressor, write = false, only: string[] | null = null) {
+  const results: MixtureResult[] = [];
+  for (const mixture of mixtures(await talkers())) {
+    if (only !== null && !only.includes(mixture.name)) continue;
+    const plain = await renderPlain(mixture.input);
+    const a = await render("before", kind, mixture.input);
+    const b = await render("after", kind, mixture.input);
+    if (write) {
+      await keep(`${mixture.name}.input`, mixture.input);
+      await keep(`${mixture.name}.clean`, mixture.clean);
+      await keep(`${mixture.name}.before`, a.output);
+      await keep(`${mixture.name}.now`, b.output);
+    }
+    const frames = mixture.input.length / 480;
+    results.push({
+      name: mixture.name,
+      talker: mixture.talker,
+      room: mixture.room,
+      recorded: mixture.recorded,
+      seconds: mixture.input.length / SAMPLE_RATE,
+      before: measure(mixture, a.output),
+      after: measure(mixture, b.output),
+      cost: { before: (a.ms - plain) / frames, after: (b.ms - plain) / frames },
+    });
+  }
+  return { rooms: ROOMS.map(({ name, label }) => ({ name, label })), results };
+}
+
+/**
+ * A node that passes its input through, records it, and notes every gap of
+ * 6 ms or more between two of its render calls (a quantum is 2.7 ms): a
+ * context renders all its nodes on one thread, so a node built while this
+ * one runs shows up as a gap in its calls.
+ */
+const TAP = `
+class Tap extends AudioWorkletProcessor {
+  constructor() {
+    super();
+    this.chunks = [];
+    this.first = -1;
+    this.last = 0;
+    this.gaps = [];
+    this.port.onmessage = () => {
+      this.port.postMessage({ first: this.first, gaps: this.gaps, samples: this.chunks });
+    };
+  }
+  process(inputs, outputs) {
+    const now = Date.now();
+    if (this.last !== 0 && now - this.last >= 6) this.gaps.push([now, now - this.last]);
+    this.last = now;
+    const input = inputs[0][0];
+    if (input) {
+      if (this.first < 0) this.first = currentFrame;
+      this.chunks.push(input.slice());
+      outputs[0][0].set(input);
+    }
+    return true;
+  }
+}
+registerProcessor("bench-tap", Tap);
+`;
+
+interface TapReport {
+  first: number;
+  gaps: Array<[number, number]>;
+  samples: Float32Array[];
+}
+
+async function tapReport(node: AudioWorkletNode): Promise<TapReport> {
+  return new Promise((resolve) => {
+    node.port.onmessage = (event: MessageEvent<TapReport>) => resolve(event.data);
+    node.port.postMessage("report");
+  });
+}
+
+/**
+ * What the RNNoise processor's constructor does to the render thread, timed
+ * here on the main thread, which runs the same engine: instantiating a module
+ * that was compiled elsewhere (what compiling takes is reported too: it would
+ * be the render thread's if the processor compiled), making the state, and then the first quanta,
+ * whose code may not have been optimised yet. A render quantum is 2.67 ms.
+ */
+async function rnnoiseConstruction() {
+  const binary = await (await fetch("/audio/rnnoise.wasm")).arrayBuffer();
+  let started = performance.now();
+  const module = await WebAssembly.compile(binary);
+  const compileMs = performance.now() - started;
+  started = performance.now();
+  const exports = instantiateRnnoise(module);
+  const instantiateMs = performance.now() - started;
+  started = performance.now();
+  const denoiser = new RnnoiseDenoiser(exports);
+  const createMs = performance.now() - started;
+  const talker = TALKERS[0]?.build() ?? new Float32Array(0);
+  const output = new Float32Array(QUANTUM);
+  const times: number[] = [];
+  for (let at = 0; at + QUANTUM <= talker.length && times.length < 400; at += QUANTUM) {
+    started = performance.now();
+    denoiser.run(talker.subarray(at, at + QUANTUM), output);
+    times.push(performance.now() - started);
+  }
+  denoiser.destroy();
+  const largest = (values: number[]) => Math.max(...values);
+  return { compileMs, instantiateMs, createMs, firstQuantaMs: largest(times.slice(0, 40)), laterQuantaMs: largest(times.slice(200)) };
+}
+
+/**
+ * The engine in a real-time AudioContext, through attachSuppressor as the
+ * app calls it: a talker played through it must come out as sound, and the
+ * render thread must keep its pace while the node is built. A second tap,
+ * fed by an oscillator and unconnected to the engine, notes the gaps in the
+ * render calls; `attachMs` is the time on the main thread, compile included.
+ */
+async function realtime(kind: WorkletSuppressor) {
+  resetSuppressorCacheForTests();
+  const context = new AudioContext({ sampleRate: SAMPLE_RATE });
+  await context.resume();
+  const url = URL.createObjectURL(new Blob([TAP], { type: "text/javascript" }));
+  await context.audioWorklet.addModule(url);
+  URL.revokeObjectURL(url);
+
+  const clock = new AudioWorkletNode(context, "bench-tap");
+  const pace = context.createOscillator();
+  pace.connect(clock).connect(context.destination);
+  pace.start();
+
+  const talker = TALKERS[0]?.build() ?? new Float32Array(0);
+  const buffer = context.createBuffer(1, talker.length, SAMPLE_RATE);
+  buffer.getChannelData(0).set(talker);
+  const source = context.createBufferSource();
+  source.buffer = buffer;
+  source.loop = true;
+  const tap = new AudioWorkletNode(context, "bench-tap");
+  tap.connect(context.destination);
+
+  await sleep(500);
+  const startedAt = Date.now();
+  const handle = await attachSuppressor(kind, context, source);
+  const attachMs = Date.now() - startedAt;
+  if (handle === null) {
+    await context.close();
+    return { attached: false };
+  }
+  handle.output.connect(tap);
+  const playedFrom = context.currentTime;
+  source.start();
+  await sleep(3000);
+
+  const paceReport = await tapReport(clock);
+  const heard = await tapReport(tap);
+  handle.dispose();
+  await context.close();
+
+  const flat = new Float32Array(heard.samples.length * QUANTUM);
+  heard.samples.forEach((chunk, index) => flat.set(chunk, index * QUANTUM));
+  // From a second after the talker starts: past the engine's own delay.
+  const from = Math.round((playedFrom + 1) * SAMPLE_RATE) - heard.first;
+  const window = flat.subarray(Math.max(0, from));
+  return {
+    attached: true,
+    construction: kind === "rnnoise" ? await rnnoiseConstruction() : null,
+    attachMs,
+    soundDb: db(energy(window) / Math.max(1, window.length)),
+    // Gaps in the pace tap's render calls from the moment attach began until 300 ms after it resolved.
+    gapsDuringAttach: paceReport.gaps.filter(([at]) => at >= startedAt && at <= startedAt + attachMs + 300).map(([, gap]) => gap),
+    gapsBefore: paceReport.gaps.filter(([at]) => at < startedAt).map(([, gap]) => gap),
+    // For scale: how long the window the gaps of `gapsDuringAttach` come from is, and the one before it.
+    windowMs: attachMs + 300,
+  };
+}
+
 /** Whether `attachSuppressor` gives null when the server answers 404 for the binary. */
 async function missingBinary(kind: WorkletSuppressor, path: string): Promise<boolean> {
   resetSuppressorCacheForTests();
@@ -219,4 +442,4 @@ async function missingBinary(kind: WorkletSuppressor, path: string): Promise<boo
   }
 }
 
-window.__suppressor = { ready: true, compare, destroyed, missingBinary };
+window.__suppressor = { ready: true, compare, quality, destroyed, missingBinary, realtime };

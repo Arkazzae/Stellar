@@ -22,7 +22,7 @@
 // the browser when it is not in a usual place; see ../../cdp.mjs.
 import { spawnSync } from "node:child_process";
 import { createServer } from "node:http";
-import { existsSync, mkdtempSync, readFileSync } from "node:fs";
+import { existsSync, mkdtempSync, readFileSync, readdirSync } from "node:fs";
 import { mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { extname, join, resolve, sep } from "node:path";
@@ -37,6 +37,12 @@ const here = import.meta.dirname;
 const webRoot = resolve(here, "..", "..", "..");
 const repositoryRoot = resolve(webRoot, "..");
 const publicAudio = resolve(webRoot, "public", "audio");
+const recordings = resolve(here, "..", "recordings");
+
+/** The WAV files in recordings/, which stay on this machine (see its .gitignore). */
+function recordingNames() {
+  return readdirSync(recordings).filter((name) => name.endsWith(".wav")).sort();
+}
 
 const ENGINES = ["speex", "rnnoise", "gtcrn"];
 
@@ -58,6 +64,9 @@ function usage() {
     "  --before-worklet <path>   the earlier worklet, instead of a revision's",
     "  --before-wasm <path>      the earlier binary, instead of a revision's",
     `  --fixtures <a,b,...>      fixtures of web/bench/voice/fixtures.ts (default ${DEFAULT_FIXTURES.join(",")})`,
+    "  --after-wasm <path>       serve this binary to the current side in place of the engine's own",
+    "  --quality                 also measure both sides on talkers mixed with rooms, against the clean talker",
+    "  --mixtures <a,b,...>      with --quality, only these mixtures, named <talker>.<room> (see the printed rooms)",
     "  --require-identical       fail unless every fixture comes out sample for sample the same",
     "  --write-outputs <dir>     write each fixture's input and both outputs there as 32-bit float WAV",
     "  --out <path>              also write the result as JSON",
@@ -74,6 +83,9 @@ function parseArgs(argv) {
     beforeWasm: null,
     fixtures: DEFAULT_FIXTURES,
     requireIdentical: false,
+    afterWasm: null,
+    quality: false,
+    mixtures: null,
     writeOutputs: null,
     out: null,
     timeout: 600,
@@ -107,6 +119,15 @@ function parseArgs(argv) {
         break;
       case "--require-identical":
         options.requireIdentical = true;
+        break;
+      case "--after-wasm":
+        options.afterWasm = resolve(process.cwd(), takeValue() ?? "");
+        break;
+      case "--quality":
+        options.quality = true;
+        break;
+      case "--mixtures":
+        options.mixtures = (takeValue() ?? "").split(",");
         break;
       case "--write-outputs":
         options.writeOutputs = resolve(process.cwd(), takeValue() ?? "");
@@ -186,10 +207,12 @@ function readBody(request) {
 /**
  * The page and its worklets, web/public/audio/ for the files the app takes
  * from artifacts/, the earlier files at /before/, /__missing, through which
- * the page makes one path answer 404, and /__output/, where it hands over
- * samples to be written as WAV files into `outputs`.
+ * the page makes one path answer 404, /__output/, where it hands over
+ * samples to be written as WAV files into `outputs`, and /__recordings/, the
+ * WAV files of recordings/. `afterWasm`, when given, is served in place of
+ * the binary at its path.
  */
-function serve(distRoot, earlier, outputs) {
+function serve(distRoot, earlier, outputs, afterWasm) {
   let missing = null;
   const state = { lastBinary: null };
   const server = createServer(async (request, response) => {
@@ -218,7 +241,19 @@ function serve(distRoot, earlier, outputs) {
       if (pathname === missing) throw new Error("made missing");
       let body;
       let type;
-      if (pathname === "/before/worklet.js") {
+      if (pathname === "/__recordings") {
+        body = Buffer.from(JSON.stringify(recordingNames()));
+        type = "application/json";
+      } else if (pathname.startsWith("/__recordings/")) {
+        const name = decodeURIComponent(pathname.slice("/__recordings/".length));
+        if (!recordingNames().includes(name)) throw new Error("not a recording");
+        body = await readFile(join(recordings, name));
+        type = "audio/wav";
+      } else if (afterWasm !== null && pathname === afterWasm.path) {
+        state.lastBinary = pathname.slice(1);
+        body = readFileSync(afterWasm.file);
+        type = MIME[".wasm"];
+      } else if (pathname === "/before/worklet.js") {
         body = earlier.worklet();
         type = MIME[".js"];
       } else if (pathname === "/before/binary.wasm") {
@@ -258,6 +293,53 @@ function withTimeout(promise, seconds, what) {
 // JSON from the page carries -Infinity, the level of silence, as null.
 const figure = (value, digits = 1) => (typeof value === "number" && Number.isFinite(value) ? value.toFixed(digits) : "-inf");
 
+const mean = (values) => {
+  const finite = values.filter((value) => typeof value === "number" && Number.isFinite(value));
+  return finite.length === 0 ? NaN : finite.reduce((sum, value) => sum + value, 0) / finite.length;
+};
+
+/**
+ * The quality measures, averaged over the talkers of each room, the
+ * synthetic talkers and the recordings apart: a network trained on real
+ * speech can take the synthesiser for noise.
+ */
+function printQuality({ rooms, results }) {
+  const median = (values) => values.sort((a, b) => a - b)[Math.floor(values.length / 2)];
+  const latency = (side) => median(results.map((row) => row[side].latency));
+  console.log(`\nquality against the clean talker (latency from correlation with the talker, median: before ${latency("before")}, now ${latency("after")} samples)`);
+  console.log("each cell: before / now, in dB; cost in ms of render time per 10 ms of audio");
+  const columns = [
+    ["noise down", (m) => m.noiseReduction],
+    ["SI-SDR", (m) => m.siSdr],
+    ["speech", (m) => m.speech],
+    [">4 kHz", (m) => m.above4k],
+    [">8 kHz", (m) => m.above8k],
+    ["onset", (m) => m.onset],
+    ["worst onset", (m) => m.onsetWorst],
+  ];
+  for (const recorded of [false, true]) {
+    const group = results.filter((row) => row.recorded === recorded);
+    if (group.length === 0) continue;
+    const talkers = [...new Set(group.map((row) => row.talker))];
+    console.log(`\n${recorded ? "recordings" : "synthetic talkers"}: ${talkers.join(", ")}`);
+    console.log(["room".padEnd(8), "SI-SDR in".padEnd(10), ...columns.map(([name]) => name.padEnd(14)), "cost"].join(" "));
+    for (const room of rooms) {
+      const rows = group.filter((row) => row.room === room.name);
+      if (rows.length === 0) continue;
+      const pair = (pick) => `${figure(mean(rows.map((row) => pick(row.before))))} / ${figure(mean(rows.map((row) => pick(row.after))))}`;
+      console.log(
+        [
+          room.name.padEnd(8),
+          figure(mean(rows.map((row) => row.before.siSdrInput))).padEnd(10),
+          ...columns.map(([, pick]) => pair(pick).padEnd(14)),
+          `${figure(mean(rows.map((row) => row.cost.before)), 3)} / ${figure(mean(rows.map((row) => row.cost.after)), 3)}`,
+        ].join(" "),
+      );
+    }
+  }
+  console.log(`\nrooms: ${rooms.map((room) => `${room.name} = ${room.label}`).join("; ")}`);
+}
+
 async function main() {
   const options = parseArgs(process.argv.slice(2));
   const earlier = {
@@ -276,12 +358,14 @@ async function main() {
   const distRoot = mkdtempSync(join(tmpdir(), "stellarr-voice-suppressor-"));
   console.log("Building the comparison page...");
   await buildPage(distRoot);
-  const { server, state, url } = await serve(distRoot, earlier, options.writeOutputs);
+  // Every engine's binary is served at /audio/<engine>.wasm.
+  const afterWasm = options.afterWasm === null ? null : { path: `/audio/${options.engine}.wasm`, file: options.afterWasm };
+  const { server, state, url } = await serve(distRoot, earlier, options.writeOutputs, afterWasm);
   const problems = [];
   let result = null;
   let browser = null;
   try {
-    browser = await launch({ width: 800, height: 600, headless: !options.headed });
+    browser = await launch({ width: 800, height: 600, headless: !options.headed, flags: ["--disable-audio-output"] });
     const page = await browser.newPage();
     await page.goto(url);
     await page.waitFor("window.__suppressor?.ready === true", 60_000);
@@ -290,6 +374,10 @@ async function main() {
       comparison: await page.eval(
         `window.__suppressor.compare(${JSON.stringify(options.engine)}, ${JSON.stringify(options.fixtures)}, ${options.writeOutputs !== null})`,
       ),
+      quality: options.quality
+        ? await page.eval(`window.__suppressor.quality(${JSON.stringify(options.engine)}, ${options.writeOutputs !== null}, ${JSON.stringify(options.mixtures)})`)
+        : null,
+      realtime: await page.eval(`window.__suppressor.realtime(${JSON.stringify(options.engine)})`),
       destroyed: await page.eval(`window.__suppressor.destroyed(${JSON.stringify(options.engine)})`),
       // The binary the app fetched for this engine, which may be a SIMD build.
       missingBinaryGivesNull: await page.eval(
@@ -306,7 +394,7 @@ async function main() {
 
   const { latencies, results } = result.comparison;
   console.log(`\n${options.engine} in ${result.chrome}`);
-  console.log(`latency: before ${latencies.before ?? "none"} samples, now ${latencies.after ?? "none"} samples`);
+  console.log(`latency by the noise probe: before ${latencies.before ?? "none"} samples, now ${latencies.after ?? "none"} samples (a suppressor removes the noise; --quality measures it on speech)`);
   console.log("fixture            differing   largest      difference         output (before / now)   first sound");
   for (const row of results) {
     const identical = row.differing === 0;
@@ -324,6 +412,25 @@ async function main() {
     if (row.firstSound.before > row.firstSound.after) {
       problems.push(`${row.fixture}: the earlier engine sounded only from sample ${row.firstSound.before}; it had not loaded`);
     }
+  }
+  if (result.quality !== null) printQuality(result.quality);
+  const live = result.realtime;
+  if (!live.attached) {
+    problems.push("a real-time context got no suppressor from attachSuppressor");
+  } else {
+    const largest = (gaps) => (gaps.length === 0 ? 0 : Math.max(...gaps));
+    console.log(
+      `real time: attached in ${live.attachMs} ms on the main thread; the talker comes out at ${figure(live.soundDb)} dBFS; ` +
+        `the render thread's calls were ${live.gapsBefore.length} times 6 ms or more apart before attach (largest ${largest(live.gapsBefore)} ms) ` +
+        `and ${live.gapsDuringAttach.length} times during it (largest ${largest(live.gapsDuringAttach)} ms)`,
+    );
+    if (live.construction !== null) {
+      const c = live.construction;
+      console.log(
+        `construction: compile ${figure(c.compileMs, 1)} ms (off the render thread), then on it instantiate ${figure(c.instantiateMs, 2)} ms, state ${figure(c.createMs, 2)} ms, then the first 40 quanta at most ${figure(c.firstQuantaMs, 2)} ms and later ones at most ${figure(c.laterQuantaMs, 2)} ms (a quantum lasts 2.67 ms)`,
+      );
+    }
+    if (!(live.soundDb > -60)) problems.push(`real time: the talker came out at ${figure(live.soundDb)} dBFS, not as sound`);
   }
   const { before, after } = result.destroyed;
   console.log(
