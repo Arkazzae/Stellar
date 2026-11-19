@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 
 import type { Bootstrap, Channel, User } from "@/lib/api/types";
-import { BOOTSTRAP, SELF } from "@/test/fakes";
+import { BOOTSTRAP, SELF, VOICE_CHANNEL } from "@/test/fakes";
 
 import { DirectoryStore } from "./store";
 
@@ -258,5 +258,53 @@ describe("DirectoryStore sections", () => {
     expect(store.getSnapshot().channels[0]).toEqual(channel("c-1", "alpha"));
     expect(store.getSnapshot().channels[0]).not.toHaveProperty("sectionId");
     expect(store.getSnapshot().channels[1]?.sectionId).toBe("s-2");
+  });
+});
+
+describe("DirectoryStore resync", () => {
+  const seat = (user: User, muted = false) => ({ userId: user.id, displayName: user.displayName, muted });
+
+  it("takes the bootstrap for what did not change meanwhile, and keeps whatever says the same", () => {
+    const store = storeWith({ members: [SELF, JO], voice: { [VOICE_CHANNEL.id]: [seat(JO)] } });
+    const before = store.getSnapshot();
+    const mark = store.mark();
+
+    // Jo left the call and came online while the hub was away.
+    store.resync({ ...BOOTSTRAP, members: [SELF, { ...JO, presence: "online" }], voice: {} }, mark);
+
+    const after = store.getSnapshot();
+    expect(after.occupancy[VOICE_CHANNEL.id]).toEqual([]);
+    expect(after.members[1]?.presence).toBe("online");
+    expect(after.members[0]).toBe(before.members[0]);
+    expect(after.channels).toBe(before.channels);
+    expect(after.server).toBe(before.server);
+  });
+
+  it("keeps what the hub or this client changed while the bootstrap was on its way", () => {
+    const store = storeWith({ members: [SELF, JO] });
+    const mark = store.mark();
+    const seats = [seat(SELF, true)];
+    store.setOccupants(VOICE_CHANNEL.id, seats);
+    store.setPresence(JO.id, "dnd");
+    store.setChannelLayout([{ id: VOICE_CHANNEL.id, sectionId: null }]);
+    const channels = store.getSnapshot().channels;
+
+    store.resync({ ...BOOTSTRAP, members: [SELF, JO], voice: {} }, mark);
+
+    expect(store.getSnapshot().occupancy[VOICE_CHANNEL.id]).toBe(seats);
+    expect(store.getSnapshot().members[1]?.presence).toBe("dnd");
+    expect(store.getSnapshot().channels).toBe(channels);
+  });
+
+  it("publishes nothing when the bootstrap says what the directory shows, or is another server's", () => {
+    const store = storeWith({ members: [SELF, JO] });
+    const listener = vi.fn();
+    store.subscribe(listener);
+
+    store.resync({ ...BOOTSTRAP, members: [{ ...SELF }, { ...JO }], channels: [...BOOTSTRAP.channels] }, store.mark());
+    store.resync({ ...BOOTSTRAP, server: { id: "srv-other", name: "Other" }, members: [] }, store.mark());
+
+    expect(listener).not.toHaveBeenCalled();
+    expect(store.getSnapshot().members).toHaveLength(2);
   });
 });
