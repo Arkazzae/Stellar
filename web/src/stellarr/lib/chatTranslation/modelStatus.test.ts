@@ -1,6 +1,8 @@
 import "fake-indexeddb/auto";
 
-import { beforeAll, describe, expect, it, vi } from "vitest";
+import { createHash } from "node:crypto";
+
+import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import {
   downloadModel,
@@ -9,17 +11,17 @@ import {
   primaryPair,
 } from "./modelStatus";
 
-const files = {
-  model: { name: "model.bin", size: 5 },
-  lex: { name: "lex.bin", size: 3 },
-  vocab: { name: "vocab.spm", size: 4 },
-} as const;
+const model = new Uint8Array([1, 2, 3, 4, 5]);
+const lex = new Uint8Array([6, 7, 8]);
+const vocab = new Uint8Array([9, 10, 11, 12]);
+const payloads: Record<string, Uint8Array> = { "model.bin": model, "lex.bin": lex, "vocab.spm": vocab };
 
-const payloads: Record<string, Uint8Array> = {
-  "model.bin": new Uint8Array([1, 2, 3, 4, 5]),
-  "lex.bin": new Uint8Array([6, 7, 8]),
-  "vocab.spm": new Uint8Array([9, 10, 11, 12]),
-};
+const sha256 = (bytes: Uint8Array) => createHash("sha256").update(bytes).digest("hex");
+const listed = (name: string, bytes: Uint8Array) => ({ name, size: bytes.byteLength, sha256: sha256(bytes) });
+const files = { model: listed("model.bin", model), lex: listed("lex.bin", lex), vocab: listed("vocab.spm", vocab) };
+
+/** What the stand-in server sends for a file name, when it differs from `payloads`. */
+let served: Record<string, Uint8Array> = {};
 
 function removeModelDatabase(): Promise<void> {
   return new Promise((resolve, reject) => {
@@ -29,9 +31,31 @@ function removeModelDatabase(): Promise<void> {
   });
 }
 
+function withStore<T>(mode: IDBTransactionMode, ask: (store: IDBObjectStore) => IDBRequest<T>): Promise<T> {
+  return new Promise((resolve, reject) => {
+    const open = indexedDB.open("bergamot-models", 1);
+    open.onupgradeneeded = () => open.result.createObjectStore("files");
+    open.onerror = () => reject(open.error);
+    open.onsuccess = () => {
+      const database = open.result;
+      const request = ask(database.transaction("files", mode).objectStore("files"));
+      request.onsuccess = () => {
+        database.close();
+        resolve(request.result);
+      };
+      request.onerror = () => reject(request.error);
+    };
+  });
+}
+
+const storeFile = (key: string, bytes: Uint8Array) =>
+  withStore("readwrite", (store) => store.put(bytes.slice().buffer, key));
+const storedKeys = () => withStore("readonly", (store) => store.getAllKeys());
+
 describe("Bergamot model loading", () => {
-  beforeAll(async () => {
+  beforeEach(async () => {
     await removeModelDatabase();
+    served = {};
 
     vi.stubGlobal(
       "fetch",
@@ -42,7 +66,7 @@ describe("Bergamot model loading", () => {
         }
 
         const name = url.split("/").at(-1) ?? "";
-        const payload = payloads[name];
+        const payload = served[name] ?? payloads[name];
         return payload === undefined
           ? new Response(null, { status: 404 })
           : new Response(payload.slice().buffer as ArrayBuffer, { status: 200 });
@@ -75,5 +99,28 @@ describe("Bergamot model loading", () => {
     expect(fetchMock).toHaveBeenCalledWith("/bergamot-models/plen/lex.bin");
     expect(fetchMock).toHaveBeenCalledWith("/bergamot-models/plen/vocab.spm");
     expect(fetchMock.mock.calls).toHaveLength(callsAfterFirstDownload);
+  });
+
+  it("does not use a stored file the registry no longer lists, and removes it", async () => {
+    // Files an earlier release left: one under the name it was stored by, one
+    // under the hash of a model this registry has replaced.
+    await storeFile("plen/model.bin", model);
+    await storeFile(sha256(new Uint8Array([0])), new Uint8Array([0]));
+
+    expect(await getModelStatus("en")).toBe("not-downloaded");
+
+    await downloadModel("en");
+
+    expect(vi.mocked(fetch)).toHaveBeenCalledWith("/bergamot-models/plen/model.bin");
+    expect((await storedKeys()).sort()).toEqual(Object.values(files).map((file) => file.sha256).sort());
+  });
+
+  it("refuses a download whose bytes are not the ones the registry lists", async () => {
+    served = { "lex.bin": new Uint8Array([6, 7, 9]) };
+
+    await expect(downloadModel("en")).rejects.toThrow("lex.bin");
+
+    expect(await storedKeys()).not.toContain(files.lex.sha256);
+    expect(await getModelStatus("en")).toBe("not-downloaded");
   });
 });
