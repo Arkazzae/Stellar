@@ -4,6 +4,7 @@ import { IconButton } from "@/components/primitives/IconButton";
 import { PersonRow, personState } from "@/components/roster/PersonRow";
 import type { UserMenuActions } from "@/components/roster/UserMenu";
 import type { OpenProfile, PersonVM } from "@/components/view-models";
+import { useVoiceSeat } from "@/components/voice/useVoiceSeat";
 import { useLanguage } from "@/state/LanguageProvider";
 
 /**
@@ -80,6 +81,40 @@ export function PersonGroup({
   );
 }
 
+/**
+ * One face of the closed list. There is no name in this column, so the face
+ * is the control and carries the name and state itself; in a call the state
+ * is its seat's, which it follows on its own.
+ */
+function MiniPerson({
+  person,
+  inCall,
+  onOpenProfile,
+}: {
+  person: PersonVM;
+  inCall: boolean;
+  onOpenProfile: OpenProfile;
+}) {
+  const { t } = useLanguage();
+  const seat = useVoiceSeat(person.id);
+  const speaking = inCall && (seat?.speaking ?? person.speaking === true);
+  const description = `${person.displayName}, ${personState({ ...person, speaking }, inCall, t)}`;
+  return (
+    <Avatar
+      id={person.id}
+      displayName={person.displayName}
+      initials={person.initials}
+      avatarUrl={person.avatarUrl}
+      dim={person.presence === "offline"}
+      speaking={speaking}
+      presence={inCall ? undefined : person.presence}
+      label={description}
+      title={description}
+      onOpen={(anchor) => onOpenProfile(person.id, anchor)}
+    />
+  );
+}
+
 /** The panel of people: a column of faces, and beside it the full grouped list. */
 export function Roster({
   open,
@@ -111,27 +146,14 @@ export function Roster({
           onClick={onExpand}
         />
         <div className="mini-list">
-          {[...online, ...offline].map((person) => {
-            const inCall = voiceUserIds.has(person.id);
-            // There is no name in this column, so the face is the control and
-            // carries the name and state itself.
-            const description = `${person.displayName}, ${personState(person, inCall, t)}`;
-            return (
-              <Avatar
-                key={person.id}
-                id={person.id}
-                displayName={person.displayName}
-                initials={person.initials}
-                avatarUrl={person.avatarUrl}
-                dim={person.presence === "offline"}
-                speaking={inCall && person.speaking}
-                presence={inCall ? undefined : person.presence}
-                label={description}
-                title={description}
-                onOpen={(anchor) => onOpenProfile(person.id, anchor)}
-              />
-            );
-          })}
+          {[...online, ...offline].map((person) => (
+            <MiniPerson
+              key={person.id}
+              person={person}
+              inCall={voiceUserIds.has(person.id)}
+              onOpenProfile={onOpenProfile}
+            />
+          ))}
         </div>
       </div>
 
