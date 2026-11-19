@@ -11,6 +11,38 @@
 # cross-compile for the target, because compiling Rust under emulation would
 # not fit in the release job.
 
+# The recipes of artifacts/recipes/ build some of the files the browser loads
+# from source. Each has a stage, or a few, that fetch its pinned inputs and
+# run its build file, and a FROM scratch stage, recipe-<name>, that holds only
+# its outputs; web-build copies those into the recipe's out/ folder before the
+# build checks them against artifacts/manifest.json. `docker buildx bake
+# recipes` (docker-bake.hcl) builds the same stages into
+# artifacts/recipes/<name>/out/ for development and for CI's recipes job,
+# which hands them to the image job in place of these stages.
+#
+# A recipe's stages hold every pin of that recipe: a toolchain image or base
+# image by the digest of its multi-platform index, each source by commit, and
+# each other download by its sha256. Fetching is done in steps of its own;
+# the compile runs with --network=none, so it can only use what was pinned.
+# The manifest records one sha256 per output, so the bytes must not depend on
+# the machine: by default the stages run on the build machine's platform,
+# and RECIPE_PLATFORM moves them to another one to prove that, as
+# `docker buildx bake recipes --set '*.args.RECIPE_PLATFORM=linux/amd64'`.
+# A recipe whose toolchain is a different build on each host pins its stages
+# to linux/amd64 instead, and says so beside them.
+ARG RECIPE_PLATFORM=$BUILDPLATFORM
+
+# SpeexDSP's preprocessor, the Speex noise suppressor (artifacts/recipes/speex/).
+FROM --platform=$RECIPE_PLATFORM ghcr.io/webassembly/wasi-sdk:wasi-sdk-33@sha256:f4d3519a6d4b36e8fd541019e13cb8d232980d9586e2b185f872ab97ea15bcfd AS recipe-speex-build
+ADD https://github.com/xiph/speexdsp.git#7a158783df74efe7c2d1c6ee8363c1e695c71226 /src/speexdsp
+COPY artifacts/recipes/speex/ /src/recipe/
+RUN --network=none sh /src/recipe/build.sh /src/speexdsp /out
+
+# On RECIPE_PLATFORM like the build, not on the target: web-build, which
+# copies from it, then stays one stage for every platform of the image.
+FROM --platform=$RECIPE_PLATFORM scratch AS recipe-speex
+COPY --from=recipe-speex-build /out/ /
+
 # web/ holds both apps, the web client and Cockpit (web/src/cockpit/). It is a
 # workspace of one npm project with the shared packages/: the root
 # package-lock.json covers all of them. The stage copies every workspace
@@ -27,9 +59,11 @@ COPY packages/stellarr-router/package.json packages/stellarr-router/
 COPY packages/stellarr-ui/package.json packages/stellarr-ui/
 RUN npm ci --workspace stellarr-web
 COPY packages/ packages/
-# The prebuild hook copies the browser's prebuilt binaries from artifacts/ into
-# public/ and fails the build on any that differ from artifacts/manifest.json.
+# The prebuild hook copies the browser's binaries from artifacts/ into public/
+# and fails the build on any that differ from artifacts/manifest.json: the
+# committed ones, and those the recipes build, each into its out/ folder.
 COPY artifacts/ artifacts/
+COPY --from=recipe-speex / artifacts/recipes/speex/out/
 COPY web/ web/
 WORKDIR /src/web
 # The build writes both apps to dist/. nginx sends the .gz file beside the
