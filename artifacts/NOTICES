@@ -19,7 +19,6 @@ Noise suppression
 -----------------
 
 Files:
-  audio/rnnoise-worklet.js
   audio/gtcrn-worklet.js
 
 Upstream: @sapphi-red/web-noise-suppressor 0.4.1
@@ -29,16 +28,41 @@ Copyright (c) 2022 翠 / green
 
 Files:
   audio/rnnoise.wasm
-  audio/rnnoise_simd.wasm
 
-Upstream: @shiguredo/rnnoise-wasm 2022.2.0, built from xiph/rnnoise
-  https://github.com/shiguredo/rnnoise-wasm
+Built here by artifacts/recipes/rnnoise/ from xiph/rnnoise at commit
+70f1d256acd4b34a572f999a05c87bf00b67730d: src/denoise.c, rnn.c, pitch.c,
+kiss_fft.c, celt_lpc.c, nnet.c, parse_lpcnet_weights.c and rnnoise_tables.c
+with the headers they include, and Stellarr's own recipes/rnnoise/nnet_simd.c
+in place of src/nnet_default.c (the same arithmetic on WebAssembly SIMD). The
+network's weights are the full model, src/rnnoise_data.c of
+rnnoise_data-0a8755f8e2d834eff6a54714ecc7d75f9932e845df35f8b59bc52a7cfe6e8b37.tar.gz
+from https://media.xiph.org/rnnoise/models/, the archive the commit's
+model_version names. The model carries no licence file or header of its own:
+RNNoise's COPYING, below as BSD-3-Clause, is the only licence the project
+states for what it distributes, and its README says the models are trained on
+publicly available datasets (datasets.txt, listing OpenSLR and Hi-Fi TTS
+corpora). The binary is statically linked with the parts of wasi-libc, from
+wasi-sdk 33, that it calls: musl's log10 (the SunPro notice below), strcmp and
+the stdio exit stubs, dlmalloc, and wasi-libc's own sbrk and abort. The
+worklet that drives it, audio/rnnoise-worklet.js, is Stellarr's own code.
   https://github.com/xiph/rnnoise
-License: Apache-2.0 (rnnoise-wasm) and BSD-3-Clause (rnnoise)
-Copyright (c) 2017, Mozilla
-Copyright (c) 2007-2017, Jean-Marc Valin
-Copyright (c) 2005-2017, Xiph.Org Foundation
-Copyright (c) 2003-2004, Mark Borgerding
+  https://github.com/WebAssembly/wasi-libc
+License: BSD-3-Clause (RNNoise); MIT (musl and wasi-libc's own code, which is
+also offered under Apache-2.0); the SunPro notice below (musl's log10);
+CC0-1.0 (dlmalloc)
+Copyright (c) 2007-2017, 2024 Jean-Marc Valin
+Copyright (c) 2017-2019 Mozilla
+Copyright (c) 2023 Amazon
+Copyright (c) 2018 Gregor Richards
+Copyright (c) 2008-2011 Octasic Inc.
+Copyright (c) 2007-2008 CSIRO
+Copyright (c) 2005-2017 Xiph.Org Foundation
+Copyright (c) 2003-2004 Mark Borgerding
+Copyright (c) 2013 Parrot
+Copyright 2005-2020 Rich Felker, et al. (musl)
+Copyright 1993 Sun Microsystems, Inc.
+dlmalloc: written by Doug Lea and released to the public domain, as
+explained at http://creativecommons.org/publicdomain/zero/1.0/
 
 Files:
   audio/gtcrn.wasm
@@ -323,10 +347,10 @@ SOFTWARE.
 
 Apache License, Version 2.0
 
-The full Apache License 2.0 text follows. It applies to the rnnoise-wasm
-build, to SentencePiece and the part of Abseil it bundles in the Bergamot
-WASM, and, with the LLVM exceptions above, to libc++, libc++abi and
-compiler-rt there.
+The full Apache License 2.0 text follows. It applies to wasi-libc, where
+it is offered beside the MIT License, to SentencePiece and the part of
+Abseil it bundles in the Bergamot WASM, and, with the LLVM exceptions
+above, to libc++, libc++abi and compiler-rt there.
 
                                  Apache License
                            Version 2.0, January 2004

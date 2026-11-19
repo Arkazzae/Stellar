@@ -1,46 +1,17 @@
 {
   "artifacts": [
     {
-      "id": "noise-suppression/rnnoise-worklet",
-      "path": "audio/rnnoise-worklet.js",
-      "source": { "file": "files/audio/rnnoise-worklet.js" },
-      "sha256": "1e06facbb3d7459b89769aa4247cd4b71263e6662e4da0c54763f3bf06f5893b",
-      "size": 64483,
-      "upstream": {
-        "project": "https://github.com/sapphi-red/web-noise-suppressor",
-        "from": "npm:@sapphi-red/web-noise-suppressor@0.4.1/dist/rnnoise/workletProcessor.js",
-        "integrity": "sha512-hy2GnF079+zi4n9BZUf+GGIQ1IofApAk6rgGMyMQ3soHfz/GKu1pcCsmePyIHVvUuv1LrFudw9BmmBqoOKay5w==",
-        "verified": "Identical to the file in the npm tarball, whose sha512 is the integrity above and the one the registry publishes."
-      },
-      "license": "MIT AND Apache-2.0"
-    },
-    {
       "id": "noise-suppression/rnnoise-wasm",
       "path": "audio/rnnoise.wasm",
-      "source": { "file": "files/audio/rnnoise.wasm" },
-      "sha256": "8b60a2ab88fdae2d1a9f940249d0eb072f28ba8e796f7304347b4e07839c8853",
-      "size": 152656,
+      "source": { "recipe": "rnnoise", "output": "rnnoise.wasm" },
+      "sha256": "2bf153f7b34378891a0dd92bb377bc3180eb337e44b11ae4259a8a2b2261d97e",
+      "size": 3611686,
       "upstream": {
-        "project": "https://github.com/shiguredo/rnnoise-wasm",
-        "from": "npm:@sapphi-red/web-noise-suppressor@0.4.1/dist/rnnoise.wasm",
-        "integrity": "sha512-hy2GnF079+zi4n9BZUf+GGIQ1IofApAk6rgGMyMQ3soHfz/GKu1pcCsmePyIHVvUuv1LrFudw9BmmBqoOKay5w==",
-        "verified": "Identical to the file in the npm tarball, whose sha512 is the integrity above and the one the registry publishes, and to dist/rnnoise.wasm of @shiguredo/rnnoise-wasm 2022.2.0."
+        "project": "https://github.com/xiph/rnnoise",
+        "from": "https://github.com/xiph/rnnoise.git#70f1d256acd4b34a572f999a05c87bf00b67730d, with the model https://media.xiph.org/rnnoise/models/rnnoise_data-0a8755f8e2d834eff6a54714ecc7d75f9932e845df35f8b59bc52a7cfe6e8b37.tar.gz",
+        "verified": "Built here from that commit and the model archive its model_version names by sha256, by artifacts/recipes/rnnoise/, in the wasi-sdk 33 image its stage in the root Dockerfile pins by digest."
       },
-      "license": "BSD-3-Clause AND Apache-2.0"
-    },
-    {
-      "id": "noise-suppression/rnnoise-simd-wasm",
-      "path": "audio/rnnoise_simd.wasm",
-      "source": { "file": "files/audio/rnnoise_simd.wasm" },
-      "sha256": "378fd17c294db15ee4e818ba5ef072242a21c8ad7445b483f7f46d7dc4f2c253",
-      "size": 157234,
-      "upstream": {
-        "project": "https://github.com/shiguredo/rnnoise-wasm",
-        "from": "npm:@sapphi-red/web-noise-suppressor@0.4.1/dist/rnnoise_simd.wasm",
-        "integrity": "sha512-hy2GnF079+zi4n9BZUf+GGIQ1IofApAk6rgGMyMQ3soHfz/GKu1pcCsmePyIHVvUuv1LrFudw9BmmBqoOKay5w==",
-        "verified": "Identical to the file in the npm tarball, whose sha512 is the integrity above and the one the registry publishes, and to dist/rnnoise_simd.wasm of @shiguredo/rnnoise-wasm 2022.2.0."
-      },
-      "license": "BSD-3-Clause AND Apache-2.0"
+      "license": "BSD-3-Clause AND MIT AND SunPro AND CC0-1.0"
     },
     {
       "id": "noise-suppression/gtcrn-worklet",
