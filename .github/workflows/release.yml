@@ -39,6 +39,21 @@ jobs:
           tags: |
             type=semver,pattern={{version}}
             type=semver,pattern={{major}}.{{minor}}
+      # Read only: the caches CI fills on main, the image job's and one per
+      # recipe of artifacts/recipes/, which the recipes job writes and the
+      # image job does not build. A cache written under a tag would never be
+      # used again.
+      - id: cache
+        name: List the caches to read
+        run: |
+          {
+            echo 'from<<EOF'
+            echo 'type=gha'
+            for recipe in artifacts/recipes/*/; do
+              echo "type=gha,scope=recipe-$(basename "$recipe")"
+            done
+            echo 'EOF'
+          } >> "$GITHUB_OUTPUT"
       - id: build
         uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
         with:
@@ -52,9 +67,7 @@ jobs:
             REVISION=${{ github.sha }}
           provenance: mode=max
           sbom: true
-          # Read only: the cache the CI image job fills on main. A cache written
-          # under a tag would never be used again.
-          cache-from: type=gha
+          cache-from: ${{ steps.cache.outputs.from }}
       # Storage records need an organization-owned repository.
       - uses: actions/attest@v4
         with:
