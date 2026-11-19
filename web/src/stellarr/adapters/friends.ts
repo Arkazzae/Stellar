@@ -74,6 +74,29 @@ interface DirectCall {
   participants: readonly VoiceOccupant[];
 }
 
+/** `next` itself, or `previous` when both hold the very same items in the same order. */
+function sameItems<T>(previous: T[], next: T[]): T[] {
+  return previous.length === next.length && next.every((item, index) => item === previous[index])
+    ? previous
+    : next;
+}
+
+/** A room's frame that says what the last one did, mute and names included. */
+function sameParticipants(a: readonly VoiceOccupant[], b: readonly VoiceOccupant[]): boolean {
+  return (
+    a.length === b.length &&
+    a.every((participant, index) => {
+      const other = b[index];
+      return (
+        other !== undefined &&
+        participant.userId === other.userId &&
+        participant.displayName === other.displayName &&
+        participant.muted === other.muted
+      );
+    })
+  );
+}
+
 function mergeMessages(
   current: readonly Message[],
   incoming: readonly Message[],
@@ -157,13 +180,22 @@ export function createFriendsAdapter(
     emit();
   };
 
-  const withCalls = (items: readonly DmConversation[]): DmConversation[] =>
-    items.map(({ callParticipants: _participants, callId: _id, ...conversation }) => {
-      const call = calls.get(conversation.id);
-      return call === undefined
-        ? conversation
-        : { ...conversation, callParticipants: call.participants, callId: call.id };
-    });
+  /**
+   * Each conversation with the call it has now. One whose call did not change
+   * is handed back as it was, and so is the list when none did.
+   */
+  const withCalls = (items: DmConversation[]): DmConversation[] =>
+    sameItems(
+      items,
+      items.map((item) => {
+        const call = calls.get(item.id);
+        if (item.callId === call?.id && item.callParticipants === call?.participants) return item;
+        const { callParticipants: _participants, callId: _id, ...conversation } = item;
+        return call === undefined
+          ? conversation
+          : { ...conversation, callParticipants: call.participants, callId: call.id };
+      }),
+    );
 
   let inflight: Promise<void> | null = null;
   let reloadAfter = false;
@@ -291,14 +323,39 @@ export function createFriendsAdapter(
   const unsubscribers = [
     realtime.on("PresenceChanged", ({ userId, presence }) => {
       pendingPresence?.set(userId, presence);
-      const update = (user: User): User =>
-        user.id === userId && user.presence !== presence ? { ...user, presence } : user;
-      friends = friends.map((friend) => ({ ...friend, user: update(friend.user) }));
-      requests = requests.map((request) => ({ ...request, user: update(request.user) }));
-      conversations = conversations.map((conversation) => ({
-        ...conversation,
-        peer: update(conversation.peer),
-      }));
+      // Only the entries of the person whose presence moved are replaced; a
+      // stranger's presence changes no list, and nobody is told.
+      const moved = (user: User) => user.id === userId && user.presence !== presence;
+      const nextFriends = sameItems(
+        friends,
+        friends.map((friend) =>
+          moved(friend.user) ? { ...friend, user: { ...friend.user, presence } } : friend,
+        ),
+      );
+      const nextRequests = sameItems(
+        requests,
+        requests.map((request) =>
+          moved(request.user) ? { ...request, user: { ...request.user, presence } } : request,
+        ),
+      );
+      const nextConversations = sameItems(
+        conversations,
+        conversations.map((conversation) =>
+          moved(conversation.peer)
+            ? { ...conversation, peer: { ...conversation.peer, presence } }
+            : conversation,
+        ),
+      );
+      if (
+        nextFriends === friends &&
+        nextRequests === requests &&
+        nextConversations === conversations
+      ) {
+        return;
+      }
+      friends = nextFriends;
+      requests = nextRequests;
+      conversations = nextConversations;
       emit();
     }),
     realtime.on("SocialChanged", () => {
@@ -324,13 +381,16 @@ export function createFriendsAdapter(
       // little and closes a race for a brand-new DM, whose call can be
       // announced before the SocialChanged that introduces the conversation.
       // `withCalls` only shows entries whose ids turn out to be DMs.
+      const known = calls.get(event.channelId);
       if (event.participants.length === 0) {
         calls.delete(event.channelId);
-      } else {
-        const id = calls.get(event.channelId)?.id ?? `${event.channelId}:${++callCount}`;
+      } else if (known === undefined || !sameParticipants(known.participants, event.participants)) {
+        const id = known?.id ?? `${event.channelId}:${++callCount}`;
         calls.set(event.channelId, { id, participants: event.participants });
       }
-      conversations = withCalls(conversations);
+      const next = withCalls(conversations);
+      if (next === conversations) return;
+      conversations = next;
       emit();
     }),
 
