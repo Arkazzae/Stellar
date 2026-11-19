@@ -162,6 +162,24 @@ describe("starting RNNoise", () => {
     expect(source.connect).not.toHaveBeenCalled();
   });
 
+  it("returns null, and frees the node, when the processor never says it is ready", async () => {
+    vi.useFakeTimers();
+    try {
+      FakeWorkletNode.rnnoise = "silent";
+      const { context, source } = graph();
+
+      const attached = attachSuppressor("rnnoise", context, source);
+      await vi.advanceTimersByTimeAsync(3000);
+
+      await expect(attached).resolves.toBeNull();
+      expect(source.connect).not.toHaveBeenCalled();
+      expect(lastNode().port.postMessage).toHaveBeenCalledWith("destroy");
+      expect(lastNode().disconnect).toHaveBeenCalled();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it("returns null, and frees the node, when the processor fails to start", async () => {
     FakeWorkletNode.rnnoise = "error";
     const { context, source } = graph();
