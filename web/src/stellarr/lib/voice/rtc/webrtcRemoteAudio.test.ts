@@ -277,7 +277,6 @@ describe("RemoteAudio stream lifecycle", () => {
     const mixer = withWebAudio();
     const peer = addPeer();
     peer.speaking = true;
-    peer.level = 0.7;
     const track = fakeTrack();
     audio.receive(peer, fakeStream(), track);
     changed.mockClear();
@@ -287,7 +286,7 @@ describe("RemoteAudio stream lifecycle", () => {
     expect(peer.voice).toMatchObject({ processed: false, streamId: null });
     expect(peer.voice.audio.srcObject).toBeNull();
     expect(peer.voice.decoder.srcObject).toBeNull();
-    expect(peer).toMatchObject({ speaking: false, level: 0 });
+    expect(peer.speaking).toBe(false);
     expect(speech.remove).toHaveBeenCalledWith("u-z");
     expect(mixer.remove).toHaveBeenCalledWith("u-z");
     expect(changed).toHaveBeenCalled();

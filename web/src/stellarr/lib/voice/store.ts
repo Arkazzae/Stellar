@@ -153,8 +153,6 @@ function samePeer(a: VoicePeer, b: VoicePeer | undefined): boolean {
     sameScreen(a.screen, b.screen) &&
     sameCamera(a.camera, b.camera) &&
     a.undecryptable?.audio === b.undecryptable?.audio &&
-    a.undecryptable?.video === b.undecryptable?.video &&
-    // Eight steps are plenty for a level meter; jitter must not re-render.
-    Math.round(a.level * 8) === Math.round(b.level * 8)
+    a.undecryptable?.video === b.undecryptable?.video
   );
 }

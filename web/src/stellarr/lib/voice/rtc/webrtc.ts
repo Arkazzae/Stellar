@@ -29,7 +29,7 @@ import type {
   VoiceReceivePreferences,
   VoiceState,
 } from "../types";
-import { SpeechDetector } from "../capture/vad";
+import { SpeechDetector, type SpeechReading } from "../capture/vad";
 import { SuppressorDownloads } from "../capture/suppressorDownload";
 import {
   callKeysError,
@@ -147,7 +147,6 @@ export class WebRtcVoiceClient implements VoiceClient {
 
   private channelId: ChannelId | null = null;
   private settings: VoiceSettings;
-  private selfLevel = 0;
   private selfSpeaking = false;
   private disposed = false;
   private deviceSnapshot: VoiceDeviceSnapshot | null = null;
@@ -193,21 +192,9 @@ export class WebRtcVoiceClient implements VoiceClient {
     // In-memory unless the composition root hands over a persisted store.
     this.preferences = options.participantPreferences ?? new ParticipantPreferencesStore(null);
 
-    this.speech = new SpeechDetector(
-      (id, reading) => {
-        if (id === options.selfUserId) {
-          this.selfLevel = reading.level;
-          this.selfSpeaking = reading.speaking && !this.store.getSnapshot().muted;
-        } else {
-          const person = this.people.get(id);
-          if (!person) return;
-          person.level = reading.level;
-          person.speaking = reading.speaking;
-        }
-        this.publishPeers();
-      },
-      { sensitivity: this.settings.vadSensitivity },
-    );
+    this.speech = new SpeechDetector((id, reading) => this.hear(id, reading), {
+      sensitivity: this.settings.vadSensitivity,
+    });
     this.lifecycle = new LifecycleWatcher({
       onResume: () => {
         void this.recoverAfterResume();
@@ -740,7 +727,6 @@ export class WebRtcVoiceClient implements VoiceClient {
 
   private releaseMicrophone(): void {
     this.microphone.release();
-    this.selfLevel = 0;
     this.selfSpeaking = false;
   }
 
@@ -1122,7 +1108,6 @@ export class WebRtcVoiceClient implements VoiceClient {
       displayName: this.selfDisplayName,
       muted: this.store.getSnapshot().muted,
       speaking,
-      level: this.selfLevel,
       playbackVolume: 100,
       gated: false,
       suppressed: false,
@@ -1130,6 +1115,24 @@ export class WebRtcVoiceClient implements VoiceClient {
       screen: this.screen.local,
       camera: this.camera.local,
     };
+  }
+
+  /**
+   * What the detector decided about one voice. Only speech is published:
+   * nothing draws a voice's level, and the detector posts one many times a
+   * second, silence included.
+   */
+  private hear(id: UserId, reading: SpeechReading): void {
+    if (id === this.options.selfUserId) {
+      const speaking = reading.speaking && !this.store.getSnapshot().muted;
+      if (speaking === this.selfSpeaking) return;
+      this.selfSpeaking = speaking;
+    } else {
+      const person = this.people.get(id);
+      if (!person || person.speaking === reading.speaking) return;
+      person.speaking = reading.speaking;
+    }
+    this.publishPeers();
   }
 
   private publishPeers(): void {
@@ -1148,7 +1151,6 @@ export class WebRtcVoiceClient implements VoiceClient {
             displayName: person.displayName,
             muted: person.muted,
             speaking: person.speaking && !person.muted,
-            level: person.level,
             playbackVolume: person.playbackVolume,
             gated: person.gated,
             suppressed: person.suppressed,

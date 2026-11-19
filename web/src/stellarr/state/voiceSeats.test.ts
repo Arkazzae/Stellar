@@ -10,7 +10,6 @@ function peer(userId: string, patch: Partial<VoicePeer> = {}): VoicePeer {
     displayName: userId,
     muted: false,
     speaking: false,
-    level: 0,
     playbackVolume: 100,
     gated: false,
     suppressed: false,

@@ -538,6 +538,14 @@ function nextRound(): void {
   vi.setSystemTime(Date.now() + 3_000);
 }
 
+/** What the speech detector decided about one voice. */
+function hear(client: WebRtcVoiceClient, userId: string, reading: { speaking: boolean; level: number }): void {
+  (client as unknown as { hear(id: string, reading: { speaking: boolean; level: number }): void }).hear(
+    userId,
+    reading,
+  );
+}
+
 async function sampleStats(client: WebRtcVoiceClient): Promise<void> {
   await (client as unknown as { sampleStats(): Promise<void> }).sampleStats();
 }
@@ -2166,6 +2174,23 @@ describe("mute and deafen", () => {
 });
 
 describe("remote voice", () => {
+  it("publishes when a voice starts speaking, and nothing for its level alone", async () => {
+    const client = build();
+    await joined(client);
+    announce("u-b");
+    const listener = vi.fn();
+    client.subscribe(listener);
+
+    hear(client, "u-b", { speaking: false, level: 0.2 });
+    hear(client, "u-a", { speaking: false, level: 0.4 });
+    expect(listener).not.toHaveBeenCalled();
+
+    hear(client, "u-b", { speaking: true, level: 0.6 });
+    hear(client, "u-b", { speaking: true, level: 0.9 });
+    expect(peerOf(client, "u-b")?.speaking).toBe(true);
+    expect(listener).toHaveBeenCalledTimes(1);
+  });
+
   it("keeps the raw stream off the speakers while the mixer plays a voice", async () => {
     const attach = vi.spyOn(RemoteVoiceMixer.prototype, "attach").mockReturnValue(true);
     vi.spyOn(RemoteVoiceMixer.prototype, "resume").mockResolvedValue(true);

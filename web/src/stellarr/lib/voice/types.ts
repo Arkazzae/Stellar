@@ -96,8 +96,6 @@ export interface VoicePeer {
   displayName: string;
   muted: boolean;
   speaking: boolean;
-  /** Smoothed input level, 0..1. */
-  level: number;
   /** Receiver-side volume for this participant, 0 to 200. */
   playbackVolume: number;
   /** Local only: this person's strip is muted between words. */
