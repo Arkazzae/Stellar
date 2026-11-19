@@ -79,7 +79,7 @@
       "upstream": {
         "project": "https://github.com/xiph/speexdsp",
         "from": "https://github.com/xiph/speexdsp.git#7a158783df74efe7c2d1c6ee8363c1e695c71226",
-        "verified": "Built here from that commit by artifacts/recipes/speex/, in the wasi-sdk 33 image its stage in the root Dockerfile pins by digest. The build gave these bytes on arm64 and on amd64 build machines. On the voice fixtures it puts out, sample for sample, what the build it replaced did (dist/speex.wasm of @sapphi-red/speex-preprocess-wasm 0.4.0 with its worklet), and web/bench/voice/records/suppressor/speex.txt holds that output."
+        "verified": "Built here from that commit by artifacts/recipes/speex/, in the wasi-sdk 33 image its stage in the root Dockerfile pins by digest. The build gave these bytes on arm64 and on amd64 build machines. Driven by our worklet, it puts out, sample for sample, what the build it replaced did (dist/speex.wasm of @sapphi-red/speex-preprocess-wasm 0.4.0 with its worklet) for every input within full scale: seven of the eight voice fixtures. Past full scale our worklet clamps where the old one wrapped, which only the clipping fixture reaches. web/bench/voice/records/suppressor/speex.txt holds the output."
       },
       "license": "BSD-3-Clause AND MIT AND SunPro AND CC0-1.0"
     },

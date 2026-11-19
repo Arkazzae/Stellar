@@ -138,8 +138,17 @@ export interface FixtureComparison {
   outputDbfs: { before: number; after: number };
 }
 
-/** Each fixture through both sides, compared sample by sample once aligned by latency. */
-async function compare(kind: WorkletSuppressor, fixtures: string[]) {
+/** Hands samples to the runner, which writes them as a WAV file for listening. */
+async function keep(file: string, samples: Float32Array): Promise<void> {
+  const response = await fetch(`/__output/${encodeURIComponent(file)}`, { method: "POST", body: samples.slice() });
+  if (!response.ok) throw new Error(`the runner did not take ${file}`);
+}
+
+/**
+ * Each fixture through both sides, compared sample by sample once aligned by
+ * latency. With `write`, the input and both outputs go to the runner too.
+ */
+async function compare(kind: WorkletSuppressor, fixtures: string[], write = false) {
   // The current side first: the runner serves the earlier binary for the
   // path the current side fetched.
   const after = await latency("after", kind);
@@ -150,6 +159,11 @@ async function compare(kind: WorkletSuppressor, fixtures: string[]) {
     const input = buildFixture(fixtureByName(name));
     const a = await render("before", kind, input);
     const b = await render("after", kind, input);
+    if (write) {
+      await keep(`${name}.input`, input);
+      await keep(`${name}.before`, a.output);
+      await keep(`${name}.now`, b.output);
+    }
     let differing = 0;
     let largest = 0;
     let sum = 0;

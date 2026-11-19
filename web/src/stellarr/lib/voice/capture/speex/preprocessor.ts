@@ -13,7 +13,8 @@
  * including the parts that look odd: the frame is one render quantum (128
  * samples, 2.7 ms at 48 kHz) where SpeexDSP's time constants assume 20 ms,
  * denoise is on and every other setting is the library's default, and the
- * samples cross to int16 and back as that engine moved them. See `run`.
+ * samples cross to int16 and back as that engine moved them, except that a
+ * sample past full scale is clamped where it wrapped. See `run`.
  */
 
 /** What speex.wasm exports: its memory, an allocator and the preprocessor's API. */
@@ -37,6 +38,8 @@ const SPEEX_PREPROCESS_SET_DENOISE = 0;
 
 /** int16 full scale as the replaced engine took it, both ways: 2^15 - 1, not 2^15. */
 const INT16_SCALE = 32767;
+const INT16_MAX = 32767;
+const INT16_MIN = -32768;
 
 const INT16_BYTES = 2;
 const INT32_BYTES = 4;
@@ -74,12 +77,13 @@ export class SpeexPreprocessor {
    * Nothing is allocated unless the module's memory has grown since the last
    * frame, which a running state never makes it do.
    *
-   * The conversion is the replaced engine's, step for step: each sample times
-   * 32767, stored into an Int16Array, which truncates towards zero and wraps
-   * past the int16 range instead of clamping (1.1 comes back as about -0.9);
-   * then each int16 divided by 32767. A sample outside [-1, 1] only reaches
-   * this with input gain above 0 dB, and wrapping is what Speex has always
-   * done with it here.
+   * Each sample is multiplied by 32767, clamped to the int16 range and stored
+   * into an Int16Array, which truncates towards zero; each int16 comes back
+   * divided by 32767. A sample within full scale therefore gives the very
+   * int16 the replaced engine gave it. Past full scale, which input gain
+   * above 0 dB reaches, that engine let the store wrap: 1.1 came back as
+   * about -0.9, a peak turned into its opposite, which is heard as a crackle.
+   * The clamp holds it at full scale instead.
    */
   run(input: Float32Array, output: Float32Array): void {
     if (this.state === 0) throw new Error("the Speex state was destroyed");
@@ -89,7 +93,10 @@ export class SpeexPreprocessor {
       this.samples = samples;
     }
     const size = this.frameSize;
-    for (let i = 0; i < size; i += 1) samples[i] = (input[i] as number) * INT16_SCALE;
+    for (let i = 0; i < size; i += 1) {
+      const scaled = (input[i] as number) * INT16_SCALE;
+      samples[i] = scaled > INT16_MAX ? INT16_MAX : scaled < INT16_MIN ? INT16_MIN : scaled;
+    }
     this.speex.speex_preprocess_run(this.state, this.frame);
     for (let i = 0; i < size; i += 1) output[i] = (samples[i] as number) / INT16_SCALE;
   }
