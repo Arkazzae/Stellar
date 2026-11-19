@@ -1,7 +1,8 @@
 // Smoke test for the translation runtime: runs the real worker and WASM in
-// headless Chromium against the files assembled from artifacts/ into public/.
-// The model files are served from that same directory, so the test needs no
-// network and no running Stellarr. It is not part of CI.
+// headless Chromium against the files assembled from artifacts/ into public/,
+// and translates Polish into English and English into Polish. The model files
+// are served from that same directory, so the test needs no network and no
+// running Stellarr. It is not part of CI.
 //
 //   npm run test:translation-runtime        (STELLARR_CHROMIUM overrides the binary)
 import { spawn } from "node:child_process";
@@ -14,9 +15,25 @@ import { assemble } from "../../artifacts/assemble.mjs";
 
 const publicRoot = resolve(import.meta.dirname, "..", "public");
 const chromium = process.env.STELLARR_CHROMIUM ?? "/usr/bin/chromium";
-const modelFilesPerPair = 3;
 const startupTimeoutMs = 15_000;
-const runTimeoutMs = 120_000;
+const runTimeoutMs = 180_000;
+
+// Two sentences each, so the text goes through the engine's sentence splitting.
+// The expected words are a floor for a translation, not its wording.
+const cases = [
+  {
+    from: "pl",
+    to: "en",
+    text: "Wczoraj wieczorem padał deszcz, więc zostaliśmy w domu. Było bardzo miło.",
+    expect: [/\brain/i, /\bhome\b/i, /\bnice\b/i],
+  },
+  {
+    from: "en",
+    to: "pl",
+    text: "It rained last night, so we stayed at home. It was very nice.",
+    expect: [/pada/i, /\bdomu\b/i, /\bmił/i],
+  },
+];
 
 const mimeTypes = {
   ".js": "text/javascript; charset=utf-8",
@@ -24,27 +41,95 @@ const mimeTypes = {
   ".wasm": "application/wasm",
 };
 
+// Runs the real worker after watching what it cannot report itself: which
+// matrix multiplication the engine chose, which comes as a line it prints,
+// and whether it split the text with Intl.Segmenter.
+const probeWorker = `
+const report = { printed: [], segmenters: [], mozIntGemm: typeof WebAssembly.mozIntGemm };
+const NativeSegmenter = Intl.Segmenter;
+Intl.Segmenter = class extends NativeSegmenter {
+  constructor(locale, options) {
+    super(locale, options);
+    report.segmenters.push(locale + "/" + options?.granularity);
+  }
+};
+const debug = console.debug.bind(console);
+console.debug = (...parts) => {
+  report.printed.push(parts.join(" "));
+  debug(...parts);
+};
+self.addEventListener("message", ({ data }) => {
+  if (data.type === "probe") self.postMessage({ type: "probe", report });
+});
+importScripts("/bergamot-worker.js");
+`;
+
+// Files an earlier release could have left in the model database: one under
+// the name the worker used to store it by, one under a hash no registry
+// lists. Neither may be used, and the worker must remove both.
+const staleKeys = ["plen/model.plen.intgemm.alphas.bin", "0".repeat(64)];
+
 // The page reports through its title, which the DevTools target list exposes
 // without a protocol session.
 const fixturePage = `<!doctype html>
 <meta charset="utf-8">
 <title>BERGAMOT_PENDING</title>
 <script>
-  const worker = new Worker("/bergamot-worker.js");
-  const give = (verdict, detail) => {
-    document.title = "BERGAMOT_" + verdict + " " + detail;
+  const cases = ${JSON.stringify(cases.map(({ from, to, text }) => ({ from, to, text })))};
+  const staleKeys = ${JSON.stringify(staleKeys)};
+
+  function withStore(mode, use) {
+    return new Promise((resolve, reject) => {
+      const open = indexedDB.open("bergamot-models", 1);
+      open.onupgradeneeded = () => open.result.createObjectStore("files");
+      open.onerror = () => reject(open.error);
+      open.onsuccess = () => {
+        const database = open.result;
+        const request = use(database.transaction("files", mode).objectStore("files"));
+        request.onsuccess = () => {
+          database.close();
+          resolve(request.result);
+        };
+        request.onerror = () => reject(request.error);
+      };
+    });
+  }
+
+  async function run() {
+    for (const key of staleKeys) {
+      await withStore("readwrite", (store) => store.put(new ArrayBuffer(8), key));
+    }
+
+    const worker = new Worker("/probe-worker.js");
+    const replies = new Map();
+    worker.onmessage = ({ data }) => replies.get(data.type === "probe" ? "probe" : data.id)?.(data);
+    worker.onerror = (event) => give("ERROR", event.message || "worker error");
+    const ask = (key, message) =>
+      new Promise((resolve) => {
+        replies.set(key, resolve);
+        worker.postMessage(message);
+      });
+
+    const translations = [];
+    for (const [index, item] of cases.entries()) {
+      const reply = await ask(index, { type: "translate", id: index, ...item });
+      if (reply.type !== "result") return give("ERROR", reply.message);
+      translations.push(reply.translation);
+    }
+    const { report } = await ask("probe", { type: "probe" });
+    const keys = await withStore("readonly", (store) => store.getAllKeys());
     worker.terminate();
-  };
-  worker.onerror = (event) => give("ERROR", event.message || "worker error");
-  worker.onmessage = ({ data }) =>
-    data.type === "result" ? give("OK", data.translation) : give("ERROR", data.message);
-  worker.postMessage({
-    type: "translate",
-    id: 1,
-    from: "pl",
-    to: "en",
-    text: "To jest test lokalnego tłumaczenia.",
-  });
+    // The target list escapes the title as HTML. Percent-encoding, apostrophes
+    // included, which encodeURIComponent leaves as they are, gives it nothing
+    // to escape.
+    give("OK", encodeURIComponent(JSON.stringify({ translations, report, keys })).replaceAll("'", "%27"));
+  }
+
+  function give(verdict, detail) {
+    document.title = "BERGAMOT_" + verdict + " " + detail;
+  }
+
+  run().catch((error) => give("ERROR", error.message || String(error)));
 </script>`;
 
 let downloadedModelFiles = 0;
@@ -80,6 +165,9 @@ const server = createServer(async (request, response) => {
     if (pathname === "/") {
       response.writeHead(200, { "content-type": "text/html; charset=utf-8" });
       response.end(fixturePage);
+    } else if (pathname === "/probe-worker.js") {
+      response.writeHead(200, { "content-type": mimeTypes[".js"] });
+      response.end(probeWorker);
     } else {
       await serveStatic(pathname, response);
     }
@@ -142,8 +230,8 @@ async function waitForVerdict(port, url) {
     const title = targets.find((target) => target.type === "page" && target.url === url)?.title;
     const verdict = /^BERGAMOT_(OK|ERROR) ([\s\S]*)$/.exec(title ?? "");
     if (verdict !== null) {
-      if (verdict[1] === "OK" && verdict[2].trim() !== "") return verdict[2].trim();
-      throw new Error(`Bergamot runtime failed: ${verdict[2] || "empty translation"}`);
+      if (verdict[1] === "OK") return JSON.parse(decodeURIComponent(verdict[2]));
+      throw new Error(`Bergamot runtime failed: ${verdict[2] || "no detail"}`);
     }
     await new Promise((resolveWait) => setTimeout(resolveWait, 250));
   }
@@ -151,7 +239,7 @@ async function waitForVerdict(port, url) {
 }
 
 /** One browser session; the profile directory keeps IndexedDB between sessions. */
-async function translateOnce(profile, url) {
+async function runSession(profile, url) {
   const { browser, debuggingPort } = startChromium(profile, url);
   const exited = new Promise((resolveExit) => browser.once("exit", resolveExit));
   try {
@@ -162,29 +250,64 @@ async function translateOnce(profile, url) {
   }
 }
 
+/** Throws unless the session translated both ways on the engine's own paths. */
+function check(session, { translations, report, keys }, listedHashes) {
+  for (const [index, { from, to, expect }] of cases.entries()) {
+    const translation = translations[index];
+    if (!expect.every((pattern) => pattern.test(translation))) {
+      throw new Error(`${session}: ${from}→${to} gave "${translation}", which lacks ${expect.join(" or ")}.`);
+    }
+  }
+  // Chromium has no built-in matrix multiplication for the engine to import.
+  if (report.mozIntGemm !== "undefined" || !report.printed.some((line) => line.includes("Using fallback gemm"))) {
+    throw new Error(`${session}: the engine did not take its own matrix multiplication: ${report.printed}`);
+  }
+  for (const language of new Set(cases.map(({ from }) => from))) {
+    if (!report.segmenters.includes(`${language}/sentence`)) {
+      throw new Error(`${session}: no Intl.Segmenter split ${language} into sentences: ${report.segmenters}`);
+    }
+  }
+  if (JSON.stringify([...keys].sort()) !== JSON.stringify([...listedHashes].sort())) {
+    throw new Error(`${session}: IndexedDB holds ${keys}, not exactly the files the registry lists.`);
+  }
+}
+
 const problems = await assemble({ log: console.log });
 if (problems.length > 0) {
   for (const problem of problems) console.error(`  - ${problem}`);
   throw new Error("The artifacts in public/ do not match artifacts/manifest.json.");
 }
 
+const registry = JSON.parse(await readFile(join(publicRoot, "bergamot-models", "registry.json"), "utf8"));
+const pairs = cases.map(({ from, to }) => registry[`${from}${to}`]);
+// A file both pairs share, the vocabulary, is stored once and fetched once.
+const listedHashes = new Set(pairs.flatMap((files) => Object.values(files).map((file) => file.sha256)));
+
 const profile = await mkdtemp(join(tmpdir(), "stellarr-bergamot-"));
 try {
   const url = `http://127.0.0.1:${await listen()}/`;
 
-  const first = await translateOnce(profile, url);
-  if (downloadedModelFiles !== modelFilesPerPair) {
-    throw new Error(`Expected ${modelFilesPerPair} model downloads, saw ${downloadedModelFiles}.`);
+  const first = await runSession(profile, url);
+  check("first session", first, listedHashes);
+  if (downloadedModelFiles !== listedHashes.size) {
+    throw new Error(`Expected ${listedHashes.size} model downloads, saw ${downloadedModelFiles}.`);
   }
 
-  const second = await translateOnce(profile, url);
-  if (downloadedModelFiles !== modelFilesPerPair) {
+  const second = await runSession(profile, url);
+  check("second session", second, listedHashes);
+  if (downloadedModelFiles !== listedHashes.size) {
     throw new Error("The second session downloaded models that IndexedDB should have kept.");
   }
 
-  console.log(`[bergamot] first session:  ${first}`);
-  console.log(`[bergamot] second session: ${second}`);
-  console.log("[bergamot] WASM, model loading and IndexedDB reuse verified");
+  for (const [index, { from, to, text }] of cases.entries()) {
+    console.log(`[bergamot] ${from}→${to}: ${text}`);
+    console.log(`[bergamot]   first session:  ${first.translations[index]}`);
+    console.log(`[bergamot]   second session: ${second.translations[index]}`);
+  }
+  console.log(
+    "[bergamot] WASM with its fallback matrix multiplication, Intl.Segmenter, " +
+      "model loading, IndexedDB reuse and removal of stale files verified",
+  );
 } finally {
   await new Promise((resolveClose) => server.close(resolveClose));
   await rm(profile, { recursive: true, force: true });
