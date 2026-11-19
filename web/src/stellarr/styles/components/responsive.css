@@ -284,6 +284,7 @@
     button.group-caption,
     .rail-act,
     .rail-add,
+    .rail-section-cog,
     .acc-open,
     .cp-tab,
     .react-chip,
@@ -295,16 +296,24 @@
     }
 
     .rail-act,
-    .rail-add {
+    .rail-add,
+    .rail-section-cog {
       min-width: 44px;
     }
 
     /* Channel administration cannot depend on hover. The row supplies the
        height, and the trailing action gets a full finger-width target. */
-    .rail-add {
+    .rail-add,
+    .rail-section-cog {
       opacity: 1;
       pointer-events: auto;
       right: 20px;
+    }
+
+    /* That target reaches 64px in from the edge, so a long section name stops
+       4px before it, and a tap on the end of the name still opens the section. */
+    .rail-cap:has(> .rail-section-cog) .rail-section-name {
+      margin-right: 50px;
     }
 
     .ch-cog {

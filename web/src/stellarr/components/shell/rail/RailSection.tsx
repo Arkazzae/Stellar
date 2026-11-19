@@ -1,6 +1,7 @@
 import type { ReactNode, RefCallback } from "react";
 
 import { Icon } from "@stellarr/icons";
+import { CollapsibleGroup } from "@/components/shell/rail/CollapsibleGroup";
 import type { DragHandleProps } from "@/lib/drag/useRailDrag";
 import { useLanguage } from "@/state/hooks";
 
@@ -34,10 +35,9 @@ export interface RailSectionProps {
 }
 
 /**
- * A named, collapsible group of channels.
- *
- * Not a `CollapsibleGroup`: the caption holds the folder mark, the name and
- * the caret as direct children of its button.
+ * A named, collapsible group of channels, under the same caption as the text
+ * and voice groups: one look for every group in the rail. The wrapper is what
+ * the rail sorts, caption and channels together.
  */
 export function RailSection({
   id,
@@ -53,41 +53,30 @@ export function RailSection({
   const { t } = useLanguage();
   return (
     <div className="rail-section" ref={itemRef}>
-      <div className="rail-cap rail-section-cap">
-        <button
-          type="button"
-          className="group-caption"
-          aria-expanded={open}
-          aria-controls={id}
-          {...drag}
-          onClick={onToggle}
-        >
-          <span className="rail-section-mark" aria-hidden="true">
-            <Icon name="folder" size={12} />
-          </span>
-          <span className="rail-section-name">{name}</span>
-          <span className="caret">
-            <Icon name="caret" size={10} />
-          </span>
-        </button>
-        {onOpenSettings === undefined ? null : (
-          <button
-            type="button"
-            className="rail-section-cog"
-            title={t("settings.sectionSettings")}
-            aria-label={t("section.settingsNamed", { name })}
-            onClick={onOpenSettings}
-          >
-            <Icon name="gear" size={14} />
-          </button>
-        )}
-      </div>
-      <div id={id} className={open ? "collapsible" : "collapsible closed"} inert={!open}>
-        <div className="collapsible-body">
-          {children}
-          {empty ? <p className="rail-section-empty">{t("section.empty")}</p> : null}
-        </div>
-      </div>
+      <CollapsibleGroup
+        id={id}
+        // Its own element, so a long name can end in an ellipsis.
+        caption={<span className="rail-section-name">{name}</span>}
+        open={open}
+        onToggle={onToggle}
+        drag={drag}
+        actions={
+          onOpenSettings === undefined ? null : (
+            <button
+              type="button"
+              className="rail-section-cog"
+              title={t("settings.sectionSettings")}
+              aria-label={t("section.settingsNamed", { name })}
+              onClick={onOpenSettings}
+            >
+              <Icon name="gear" size={14} />
+            </button>
+          )
+        }
+      >
+        {children}
+        {empty ? <p className="rail-section-empty">{t("section.empty")}</p> : null}
+      </CollapsibleGroup>
     </div>
   );
 }

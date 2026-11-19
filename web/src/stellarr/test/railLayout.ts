@@ -6,13 +6,11 @@ export const ROW = 32;
 export const THREAD_ROW = 44;
 export const OCCUPANT_ROW = 30;
 export const CAPTION = 22;
-export const SECTION_CAPTION = 35;
 export const EMPTY_NOTE = 26;
 
 function heightOf(element: Element): number {
   if (element.matches(".collapsible.closed, .channel-threads.closed, [hidden], .sr-only")) return 0;
   if (element.matches(".channel")) return ROW;
-  if (element.matches(".rail-section-cap")) return SECTION_CAPTION;
   if (element.matches(".rail-cap")) return CAPTION;
   if (element.matches(".voice-occupants > li")) return OCCUPANT_ROW;
   if (element.matches(".channel-threads > li")) return THREAD_ROW;
