@@ -1,4 +1,4 @@
-import type { MouseEventHandler } from "react";
+import { memo, useMemo, type MouseEventHandler } from "react";
 
 import { Icon } from "@stellarr/icons";
 import { Avatar } from "@/components/primitives/Avatar";
@@ -18,7 +18,8 @@ export interface VoiceOccupantRowProps {
    * carried.
    */
   drag?: DragHandleProps;
-  onContextMenu?: MouseEventHandler<HTMLLIElement>;
+  /** Builds the row's right-click handler; the same function for every row. */
+  menuFor?: (person: PersonVM) => MouseEventHandler<HTMLElement>;
 }
 
 /**
@@ -31,14 +32,15 @@ export interface VoiceOccupantRowProps {
  * Someone in this client's call is drawn from their seat, which the row
  * follows on its own; anyone else from what the server says of them.
  */
-export function VoiceOccupantRow({
+export const VoiceOccupantRow = memo(function VoiceOccupantRow({
   person,
   self,
   moving,
   drag,
-  onContextMenu,
+  menuFor,
 }: VoiceOccupantRowProps) {
   const { t } = useLanguage();
+  const onContextMenu = useMemo(() => menuFor?.(person), [menuFor, person]);
   const seat = useVoiceSeat(person.id);
   const speaking = seat?.speaking ?? person.speaking === true;
   const muted = seat?.muted ?? person.muted === true;
@@ -92,4 +94,4 @@ export function VoiceOccupantRow({
       <span className="sr-only">{state}</span>
     </li>
   );
-}
+});

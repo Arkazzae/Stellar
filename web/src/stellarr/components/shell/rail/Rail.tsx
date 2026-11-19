@@ -1,4 +1,11 @@
-import { useId, useState, type MouseEvent, type ReactNode } from "react";
+import {
+  useCallback,
+  useId,
+  useMemo,
+  useState,
+  type MouseEvent,
+  type ReactNode,
+} from "react";
 
 import { Icon } from "@stellarr/icons";
 import { useContextMenu } from "@/components/primitives/ContextMenu";
@@ -28,6 +35,7 @@ import type {
   TextChannelVM,
   VoiceChannelVM,
 } from "@/components/view-models";
+import { useStableHandler } from "@/hooks/useStableHandler";
 import type { MessageKey } from "@/i18n";
 import { useLanguage } from "@/state/hooks";
 
@@ -193,20 +201,37 @@ export function Rail({
   const ctx = useContextMenu();
   const [menu, setMenu] = useState<RailMenu | null>(null);
 
-  const raiseChannelMenu: ChannelMenuRaiser | undefined =
-    channelMenu === undefined
-      ? undefined
-      : (channel) => (event: MouseEvent<HTMLElement>) => {
-          setMenu({ type: "channel", channel });
-          ctx.onContextMenu(event);
-        };
-  const raisePersonMenu =
-    voiceMemberMenu === undefined
-      ? undefined
-      : (person: PersonVM) => (event: MouseEvent<HTMLElement>) => {
-          setMenu({ type: "person", person });
-          ctx.onContextMenu(event);
-        };
+  // Everything a row is handed is the same function for the rail's whole
+  // life, so the rows can be memoised and render only when they changed.
+  const raise = useStableHandler((target: RailMenu, event: MouseEvent<HTMLElement>) => {
+    setMenu(target);
+    ctx.onContextMenu(event);
+  });
+  const hasChannelMenu = channelMenu !== undefined;
+  const hasPersonMenu = voiceMemberMenu !== undefined;
+  const raiseChannelMenu = useMemo<ChannelMenuRaiser | undefined>(
+    () =>
+      hasChannelMenu
+        ? (channel) => (event) => raise({ type: "channel", channel }, event)
+        : undefined,
+    [hasChannelMenu, raise],
+  );
+  const raisePersonMenu = useMemo(
+    () =>
+      hasPersonMenu
+        ? (person: PersonVM) => (event: MouseEvent<HTMLElement>) =>
+            raise({ type: "person", person }, event)
+        : undefined,
+    [hasPersonMenu, raise],
+  );
+  const selectText = useStableHandler(onSelectTextChannel);
+  const joinVoice = useStableHandler(onJoinVoiceChannel);
+  const openThread = useStableHandler(onOpenThread);
+  const openSettings = useStableHandler(canManageChannels ? onOpenChannelSettings : undefined);
+  const toggleThreads = useCallback(
+    (channelId: string) => setExpandedThreads((current) => toggled(current, channelId)),
+    [],
+  );
 
   /** A change to the rail's layout, which says so when the server refuses it. */
   const rearrange = async (
@@ -235,6 +260,7 @@ export function Rail({
     container: dragContainer,
     refsFor,
     sectionRefs: { list: sectionsList, item: sectionItem, handle: sectionHandle },
+    canMoveOthers,
     carry,
     layer: dragLayer,
   } = useRailMoves({
@@ -265,12 +291,10 @@ export function Rail({
     activeId: activeThreadId,
     openingId: openingThreadId,
     expanded: expandedThreads,
-    onToggle: (channelId) =>
-      setExpandedThreads((current) => toggled(current, channelId)),
-    onOpen: onOpenThread,
+    onToggle: toggleThreads,
+    onOpen: openThread,
     register: registerThread,
   };
-  const openSettings = canManageChannels ? onOpenChannelSettings : undefined;
 
   const textList = (channels: TextChannelVM[], sectionId: string | null) => (
     <RailTextList
@@ -278,7 +302,7 @@ export function Rail({
       activeChannelId={activeChannelId}
       threads={threads}
       isMuted={channelMenu?.isMuted}
-      onSelect={onSelectTextChannel}
+      onSelect={selectText}
       onOpenSettings={openSettings}
       menuFor={raiseChannelMenu}
       sort={refsFor("text", sectionId)}
@@ -290,11 +314,12 @@ export function Rail({
       activeChannelId={activeChannelId}
       selfId={selfId}
       movingUserId={move.movingUserId}
-      onJoin={onJoinVoiceChannel}
+      onJoin={joinVoice}
       onOpenSettings={openSettings}
       menuFor={raiseChannelMenu}
       personMenuFor={raisePersonMenu}
       sort={refsFor("voice", sectionId)}
+      canMoveOthers={canMoveOthers}
       carry={carry}
     />
   );

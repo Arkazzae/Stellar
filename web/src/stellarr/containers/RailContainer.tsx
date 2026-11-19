@@ -1,4 +1,4 @@
-import { useMemo } from "react";
+import { memo, useMemo, useState } from "react";
 
 import type { ChannelMenuActions } from "@/components/shell/rail/ChannelMenu";
 import { Rail } from "@/components/shell/rail/Rail";
@@ -16,7 +16,28 @@ import {
 import { RailAccount, RailVoiceDock } from "./RailFooter";
 import { useMemberMenu } from "./useMemberMenu";
 
-export function RailContainer() {
+/**
+ * Puts each text channel's unread count on it, handing back the same object
+ * for a channel whose count did not move, so a message in one channel renders
+ * that channel's row alone.
+ */
+function unreadCounter() {
+  const shown = new WeakMap<TextChannelVM, TextChannelVM>();
+  return (channel: TextChannelVM, unread: number): TextChannelVM => {
+    const before = shown.get(channel);
+    if (before?.unread === unread) return before;
+    const next = { ...channel, unread };
+    shown.set(channel, next);
+    return next;
+  };
+}
+
+/**
+ * The server's rail. It takes no props, so the shell rendering around it does
+ * not render it; it follows the directory, the chat and the account, and its
+ * rows follow their own seats.
+ */
+export const RailContainer = memo(function RailContainer() {
   const {
     server,
     textChannels,
@@ -50,13 +71,10 @@ export function RailContainer() {
 
   // The directory knows what the channels are; only the chat knows which of
   // them said something while you were reading a different one.
+  const [withUnread] = useState(unreadCounter);
   const texts = useMemo<TextChannelVM[]>(
-    () =>
-      textChannels.map((channel) => ({
-        ...channel,
-        unread: unreadByChannel[channel.id] ?? 0,
-      })),
-    [textChannels, unreadByChannel],
+    () => textChannels.map((channel) => withUnread(channel, unreadByChannel[channel.id] ?? 0)),
+    [textChannels, unreadByChannel, withUnread],
   );
 
   const threadRows = useMemo<Record<string, ChannelThreadVM[]>>(
@@ -163,4 +181,4 @@ export function RailContainer() {
       hidden={railIsDrawer && !ui.railOpen}
     />
   );
-}
+});

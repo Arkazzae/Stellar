@@ -1,7 +1,8 @@
-import type { MouseEventHandler } from "react";
+import { memo, useCallback, useMemo, type MouseEventHandler, type RefCallback } from "react";
 
 import { ChannelButton } from "@/components/shell/rail/ChannelButton";
 import type { ChannelMenuRaiser, RailSortRefs } from "@/components/shell/rail/railTypes";
+import { carries } from "@/components/shell/rail/useRailMoves";
 import { VoiceOccupantRow } from "@/components/shell/rail/VoiceOccupantRow";
 import type { PersonVM, VoiceChannelVM } from "@/components/view-models";
 import type { DragHandleProps } from "@/lib/drag/useRailDrag";
@@ -21,9 +22,92 @@ export interface RailVoiceListProps {
   personMenuFor?: (person: PersonVM) => MouseEventHandler<HTMLElement>;
   /** Where this list sits in the rail's sort of channels. */
   sort: RailSortRefs;
-  /** The handle that carries a person to another channel; undefined for whoever cannot be moved. */
-  carry?: (channelId: string, person: PersonVM) => DragHandleProps | undefined;
+  /** Staff may carry people other than themselves; you can always carry yourself. */
+  canMoveOthers?: boolean;
+  /** The handle that carries a seated person to another channel. */
+  carry?: (channelId: string, personId: string) => DragHandleProps;
 }
+
+interface VoiceChannelNodeProps {
+  channel: VoiceChannelVM;
+  active: boolean;
+  selfId: string;
+  /** Whose move is unconfirmed, when they sit here; null otherwise. */
+  movingUserId: string | null;
+  onJoin: (channelId: string) => void;
+  onOpenSettings?: (channelId: string) => void;
+  menuFor?: ChannelMenuRaiser;
+  personMenuFor?: (person: PersonVM) => MouseEventHandler<HTMLElement>;
+  itemRef: RefCallback<HTMLElement>;
+  drag?: DragHandleProps;
+  canMoveOthers: boolean;
+  carry?: (channelId: string, personId: string) => DragHandleProps;
+}
+
+/**
+ * One voice channel with the people seated under it. Everything it takes
+ * stays the same object while the channel does, so another channel's seat
+ * moving, or the rail rendering for a message elsewhere, does not render it.
+ */
+const VoiceChannelNode = memo(function VoiceChannelNode({
+  channel,
+  active,
+  selfId,
+  movingUserId,
+  onJoin,
+  onOpenSettings,
+  menuFor,
+  personMenuFor,
+  itemRef,
+  drag,
+  canMoveOthers,
+  carry,
+}: VoiceChannelNodeProps) {
+  const { t } = useLanguage();
+  const { id, name, sectionId } = channel;
+  const count = channel.occupants.length;
+  const select = useCallback(() => onJoin(id), [onJoin, id]);
+  const openSettings = useMemo(
+    () => (onOpenSettings === undefined ? undefined : () => onOpenSettings(id)),
+    [onOpenSettings, id],
+  );
+  const contextMenu = useMemo(
+    () => menuFor?.({ id, kind: "voice", name, unread: 0, sectionId }),
+    [menuFor, id, name, sectionId],
+  );
+
+  return (
+    <div ref={itemRef} className="voice-channel-drop">
+      <ChannelButton
+        kind="voice"
+        name={name}
+        active={active}
+        count={count}
+        countLabel={t("shell.peopleInCall", { count })}
+        onOpenSettings={openSettings}
+        onSelect={select}
+        onContextMenu={contextMenu}
+        drag={drag}
+      />
+      <ul className="voice-occupants">
+        {channel.occupants.map((person) => (
+          <VoiceOccupantRow
+            key={person.id}
+            person={person}
+            self={person.id === selfId}
+            moving={movingUserId === person.id}
+            drag={
+              carry !== undefined && carries(person.id, { selfId, canMoveOthers, movingUserId })
+                ? carry(id, person.id)
+                : undefined
+            }
+            menuFor={personMenuFor}
+          />
+        ))}
+      </ul>
+    </div>
+  );
+});
 
 /**
  * The voice channels of one rail group, each with the people seated under it.
@@ -43,50 +127,30 @@ export function RailVoiceList({
   menuFor,
   personMenuFor,
   sort: { list, item, handle },
+  canMoveOthers = false,
   carry,
 }: RailVoiceListProps) {
-  const { t } = useLanguage();
-
   return (
     <div className="rail-list" ref={list}>
-      {channels.map((channel) => {
-        const count = channel.occupants.length;
-        return (
-          <div key={channel.id} ref={item(channel.id)} className="voice-channel-drop">
-            <ChannelButton
-              kind="voice"
-              name={channel.name}
-              active={channel.id === activeChannelId}
-              count={count}
-              countLabel={t("shell.peopleInCall", { count })}
-              onOpenSettings={
-                onOpenSettings === undefined ? undefined : () => onOpenSettings(channel.id)
-              }
-              onSelect={() => onJoin(channel.id)}
-              onContextMenu={menuFor?.({
-                id: channel.id,
-                kind: "voice",
-                name: channel.name,
-                unread: 0,
-                sectionId: channel.sectionId,
-              })}
-              drag={handle?.(channel.id)}
-            />
-            <ul className="voice-occupants">
-              {channel.occupants.map((person) => (
-                <VoiceOccupantRow
-                  key={person.id}
-                  person={person}
-                  self={person.id === selfId}
-                  moving={movingUserId === person.id}
-                  drag={carry?.(channel.id, person)}
-                  onContextMenu={personMenuFor?.(person)}
-                />
-              ))}
-            </ul>
-          </div>
-        );
-      })}
+      {channels.map((channel) => (
+        <VoiceChannelNode
+          key={channel.id}
+          channel={channel}
+          active={channel.id === activeChannelId}
+          selfId={selfId}
+          movingUserId={
+            channel.occupants.some((person) => person.id === movingUserId) ? movingUserId : null
+          }
+          onJoin={onJoin}
+          onOpenSettings={onOpenSettings}
+          menuFor={menuFor}
+          personMenuFor={personMenuFor}
+          itemRef={item(channel.id)}
+          drag={handle?.(channel.id)}
+          canMoveOthers={canMoveOthers}
+          carry={carry}
+        />
+      ))}
     </div>
   );
 }
