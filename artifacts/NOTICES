@@ -145,9 +145,14 @@ Files:
   bergamot-models/enpl/lex.50.50.enpl.s2t.bin
   bergamot-models/enpl/vocab.enpl.spm
 
-Upstream: Mozilla Firefox Translations models, pl-en and en-pl version 1.0
-  https://github.com/mozilla/firefox-translations-models
-License: MPL-2.0
+Upstream: Mozilla's translation models, pl-en version 2.0 and en-pl version
+2.1, as Firefox downloads them from Remote Settings (collection
+translations-models), trained with mozilla/translations
+  https://github.com/mozilla/translations
+License: MPL-2.0, which the README of mozilla/translations (main branch, the
+section on the model registry) states for them: "The model files are
+distributed under the MPL 2.0 license." The Remote Settings records and the
+model registry carry no licence field.
 
 License texts
 -------------
