@@ -2148,6 +2148,21 @@ describe("mute and deafen", () => {
     expect(peerOf(client, "u-b")?.muted).toBe(true);
   });
 
+  it("takes the hub's word on a microphone only until the person has given their own", async () => {
+    const client = build();
+    await joined(client);
+    announce({ userId: "u-b", muted: true });
+    expect(peerOf(client, "u-b")?.muted).toBe(true);
+
+    state("u-b", { muted: true });
+    // A rejoin seats them unmuted on the hub until their next frame arrives.
+    announce({ userId: "u-b", muted: false });
+    expect(peerOf(client, "u-b")?.muted).toBe(true);
+
+    state("u-b", { muted: false });
+    expect(peerOf(client, "u-b")?.muted).toBe(false);
+  });
+
   it("deafens remote voices at once and restores them", async () => {
     const client = build();
     const pc = await answered(client);
