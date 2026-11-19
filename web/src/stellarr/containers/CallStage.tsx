@@ -70,7 +70,9 @@ export function CallStage({ fullscreenTarget }: CallStageProps) {
         sharing={voice.localShare}
         cinema={ui.cinema}
         sounds={voice.sounds}
-        soundboardSupported={voice.soundboardEnabled}
+        soundboardSupported={voice.soundboardEnabled && voice.soundboard.canPlay}
+        soundboardLive={ports.soundboard.live}
+        onManageSounds={voice.soundboard.canManage ? () => ui.openModal("soundboard") : undefined}
         settings={settings}
         onChangeSettings={(patch) => ports.voiceSettings.update(patch)}
         cameraSupported={voice.cameraSupported}

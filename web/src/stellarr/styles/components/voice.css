@@ -444,7 +444,13 @@
       width:34px;height:34px;flex:none;display:inline-flex;align-items:center;justify-content:center;
       border-radius:10px;background:var(--surface-overlay);color:inherit;
     }
-    .vc-mobile-menu .dp-grid{--dp-tile:58px}
+    /* The sounds view: the menu's head with its way back is the panel's head,
+       the countdown and the volume at its end, and the menu scrolls rather
+       than the pads. */
+    .vc-mobile-menu .sb-head{padding:0 0 6px}
+    .vc-mobile-menu .sb-head > .vc-mobile-menu-head{padding:0 2px}
+    .vc-mobile-menu .sb-head-btn{width:44px;height:44px}
+    .vc-mobile-menu .sb-grid{--sb-pad:44px;max-height:none}
   }
 
   @media (max-width:359px){
