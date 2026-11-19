@@ -1,12 +1,12 @@
 /**
  * The suppressor record: what our noise suppressors' own binaries make of the
  * fixtures, checked against `records/suppressor/`, or written there when
- * STELLARR_VOICE_RECORD=1. Speex is the one engine so far.
+ * STELLARR_VOICE_RECORD=1. Speex and RNNoise are the engines so far.
  *
- * The binary is the one the browser loads, web/public/audio/speex.wasm, which
- * artifacts/assemble.mjs has checked against the manifest, driven in Node
- * through the worklet's own wrapper (`capture/speex/preprocessor.ts`) one
- * render quantum at a time, as the processor drives it. WebAssembly's
+ * The binary is the one the browser loads, web/public/audio/<engine>.wasm,
+ * which artifacts/assemble.mjs has checked against the manifest, driven in
+ * Node through the worklet's own wrapper (`capture/<engine>/`) one render
+ * quantum at a time, as the processor drives it. WebAssembly's
  * arithmetic is the same on every machine, so the output is held exactly, by
  * digest; the gains and the peak say what moved when it does not match.
  *
@@ -19,26 +19,35 @@
  * | `gain` | per 10 ms, RMS(out) / RMS(input delayed by the latency) in dB, as in the capture record |
  * | `peak` | the largest output sample in dBFS, and how many went past 0.95 and past 1 |
  *
- * The header holds the frame, the latency measured on the probe, and every
- * setting of the preprocessor as a new state reports it through
- * speex_preprocess_ctl, with denoise set on as the wrapper sets it.
+ * The header holds the frame, the latency and, for Speex, every setting of
+ * the preprocessor as a new state reports it through speex_preprocess_ctl,
+ * with denoise set on as the wrapper sets it. Speex's latency is measured on
+ * the white-noise probe; RNNoise removes that noise, so its latency is
+ * measured on a talker, and its output is digested as the float bits it
+ * really is, not as int16.
  */
 import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
 import {
+  FRAME,
+  RnnoiseDenoiser,
+  instantiateRnnoise,
+} from "../../../src/stellarr/lib/voice/capture/rnnoise/denoiser";
+import {
   SpeexPreprocessor,
   instantiateSpeex,
   type SpeexExports,
 } from "../../../src/stellarr/lib/voice/capture/speex/preprocessor";
 import { QUANTUM, SAMPLE_RATE, fixed } from "../dsp";
-import { LATENCY_PROBE, buildFixture, fixtureByName } from "../fixtures";
+import { LATENCY_PROBE, TALKERS, buildFixture, fixtureByName } from "../fixtures";
+import { LEAD_IN, estimateLatency } from "./quality";
 import { blockGains, compareGains, encodeGains, formatPeak, formatRecord, measureLatency, parseRecord } from "../capture/record";
 
 const here = dirname(fileURLToPath(import.meta.url));
 export const RECORD_DIR = join(here, "..", "records", "suppressor");
-const BINARY = join(here, "..", "..", "..", "public", "audio", "speex.wasm");
+const AUDIO = join(here, "..", "..", "..", "public", "audio");
 
 export const recording = process.env.STELLARR_VOICE_RECORD === "1";
 
@@ -46,7 +55,7 @@ export const recording = process.env.STELLARR_VOICE_RECORD === "1";
  * Steady noise alone and under speech, the quiet room, silence, impulses, a
  * pitched buzz, and samples past full scale.
  */
-export const SPEEX_FIXTURES = [
+export const FIXTURES = [
   "speech",
   "speech-over-fan",
   "fan-speech",
@@ -57,11 +66,41 @@ export const SPEEX_FIXTURES = [
   "clipping",
 ] as const;
 
-let compiled: WebAssembly.Module | null = null;
+const compiled = new Map<string, WebAssembly.Module>();
 
-function speexModule(): WebAssembly.Module {
-  compiled ??= new WebAssembly.Module(readFileSync(BINARY));
-  return compiled;
+function moduleOf(file: string): WebAssembly.Module {
+  let module = compiled.get(file);
+  if (module === undefined) {
+    module = new WebAssembly.Module(readFileSync(join(AUDIO, file)));
+    compiled.set(file, module);
+  }
+  return module;
+}
+
+const speexModule = () => moduleOf("speex.wasm");
+
+/** `input` through a fresh denoiser, a render quantum at a time, as the worklet runs it. */
+export function runRnnoise(input: Float32Array): Float32Array {
+  const denoiser = new RnnoiseDenoiser(instantiateRnnoise(moduleOf("rnnoise.wasm")));
+  const output = new Float32Array(input.length);
+  for (let at = 0; at + QUANTUM <= input.length; at += QUANTUM) {
+    denoiser.run(input.subarray(at, at + QUANTUM), output.subarray(at, at + QUANTUM));
+  }
+  denoiser.destroy();
+  return output;
+}
+
+/** FNV-1a over the bit patterns of float32 values: RNNoise's output, exactly as it is. */
+function digestFloat32(values: Float32Array): string {
+  const bits = new Uint32Array(values.buffer, values.byteOffset, values.length);
+  let hash = 0x811c9dc5;
+  for (const value of bits) {
+    for (let shift = 0; shift < 32; shift += 8) {
+      hash ^= (value >>> shift) & 0xff;
+      hash = Math.imul(hash, 0x01000193) >>> 0;
+    }
+  }
+  return hash.toString(16).padStart(8, "0");
 }
 
 /** `input` through a fresh preprocessor, a render quantum at a time, as the worklet runs it. */
@@ -140,33 +179,22 @@ function settings(): string {
   return values.join(", ");
 }
 
-export interface Outcome {
-  name: string;
-  problems: string[];
-  /** True when this run wrote the record instead of checking it. */
-  written: boolean;
+export type EngineName = "speex" | "rnnoise";
+
+interface Engine {
+  file: string;
+  /** What the record's first header line says the binary is. */
+  binary: string;
+  title: string;
+  header(latency: number | null): Array<[string, string]>;
+  latency(): number | null;
+  run(input: Float32Array): Float32Array;
+  /** The identity of what the binary is given, and of what it gives back. */
+  digestInput(input: Float32Array): string;
+  digestOutput(output: Float32Array): string;
 }
 
-const FILE = "speex.txt";
-
-function readRecord(): string | null {
-  try {
-    return readFileSync(join(RECORD_DIR, FILE), "utf8");
-  } catch {
-    return null;
-  }
-}
-
-function header(latency: number | null): Array<[string, string]> {
-  return [
-    ["binary", "web/public/audio/speex.wasm, through capture/speex/preprocessor.ts"],
-    ["frame", `${QUANTUM} samples at ${SAMPLE_RATE} Hz (${fixed((QUANTUM * 1000) / SAMPLE_RATE, 2)} ms)`],
-    ["latency", latency === null ? "none" : `${latency} (${fixed(latency / 48, 2)} ms)`],
-    ["settings", settings()],
-  ];
-}
-
-function measuredLatency(): number | null {
+function speexLatency(): number | null {
   const probe = LATENCY_PROBE.build();
   return measureLatency(probe, runSpeex(probe), {
     start: LATENCY_PROBE.windowStart,
@@ -175,35 +203,102 @@ function measuredLatency(): number | null {
   });
 }
 
-function speexRun(name: string, latency: number): Array<[string, string]> {
+/** RNNoise takes the probe's noise out, so its latency is read off a talker after a silent lead-in. */
+function rnnoiseLatency(): number {
+  const talker = (TALKERS[1] as (typeof TALKERS)[number]).build();
+  const input = new Float32Array(LEAD_IN + talker.length);
+  input.set(talker, LEAD_IN);
+  return estimateLatency(input, runRnnoise(input));
+}
+
+export const ENGINES: Record<EngineName, Engine> = {
+  speex: {
+    file: "speex.txt",
+    binary: "web/public/audio/speex.wasm, through capture/speex/preprocessor.ts",
+    title: "Suppressor record of Speex: what speex.wasm makes of each fixture. See web/bench/voice/README.md.",
+    header: (latency) => [
+      ["binary", "web/public/audio/speex.wasm, through capture/speex/preprocessor.ts"],
+      ["frame", `${QUANTUM} samples at ${SAMPLE_RATE} Hz (${fixed((QUANTUM * 1000) / SAMPLE_RATE, 2)} ms)`],
+      ["latency", latency === null ? "none" : `${latency} (${fixed(latency / 48, 2)} ms)`],
+      ["settings", settings()],
+    ],
+    latency: speexLatency,
+    run: runSpeex,
+    digestInput: (input) => digestInt16(binaryInput(input)),
+    digestOutput: (output) => digestInt16(binaryOutput(output)),
+  },
+  rnnoise: {
+    file: "rnnoise.txt",
+    binary: "web/public/audio/rnnoise.wasm, through capture/rnnoise/denoiser.ts",
+    title: "Suppressor record of RNNoise: what rnnoise.wasm makes of each fixture. See web/bench/voice/README.md.",
+    header: (latency) => [
+      ["binary", "web/public/audio/rnnoise.wasm, through capture/rnnoise/denoiser.ts"],
+      ["frame", `${QUANTUM} samples in a render quantum, ${FRAME} to the library, at ${SAMPLE_RATE} Hz (${fixed((FRAME * 1000) / SAMPLE_RATE, 2)} ms)`],
+      ["latency", latency === null ? "none" : `${latency} (${fixed(latency / 48, 2)} ms)`],
+    ],
+    latency: rnnoiseLatency,
+    run: runRnnoise,
+    // What the binary is given: the fixture, as the int16-range floats the wrapper scales it to.
+    digestInput: (input) => digestInt16(rnnoiseInput(input)),
+    digestOutput: digestFloat32,
+  },
+};
+
+/** The fixture as the wrapper hands it over, to the int16 it rounds to: its identity, which is as far as the fixture matters. */
+function rnnoiseInput(input: Float32Array): Int16Array {
+  const values = new Int16Array(input.length);
+  for (let i = 0; i < input.length; i += 1) {
+    values[i] = Math.max(-32768, Math.min(32767, Math.round((input[i] as number) * 32768)));
+  }
+  return values;
+}
+
+export interface Outcome {
+  name: string;
+  problems: string[];
+  /** True when this run wrote the record instead of checking it. */
+  written: boolean;
+}
+
+function readRecord(file: string): string | null {
+  try {
+    return readFileSync(join(RECORD_DIR, file), "utf8");
+  } catch {
+    return null;
+  }
+}
+
+function engineRun(engine: Engine, name: string, latency: number): Array<[string, string]> {
   const input = buildFixture(fixtureByName(name));
-  const output = runSpeex(input);
+  const output = engine.run(input);
   return [
-    ["input", digestInt16(binaryInput(input))],
-    ["output", digestInt16(binaryOutput(output))],
+    ["input", engine.digestInput(input)],
+    ["output", engine.digestOutput(output)],
     ["gain", encodeGains(blockGains(input, output, latency))],
     ["peak", formatPeak(output)],
   ];
 }
 
 /**
- * The whole record, checked or written. A run whose input digest moved is
- * reported as a changed fixture, not as changed sound.
+ * The whole record of one engine, checked or written. A run whose input
+ * digest moved is reported as a changed fixture, not as changed sound.
  */
-export function checkSpeex(): Outcome {
-  const latency = measuredLatency();
-  const runs = SPEEX_FIXTURES.map((name) => ({ label: name, lines: speexRun(name, latency ?? 0) }));
-  const text = formatRecord(header(latency), runs, [
-    "Suppressor record of Speex: what speex.wasm makes of each fixture. See web/bench/voice/README.md.",
+export function checkEngine(name: EngineName): Outcome {
+  const engine = ENGINES[name];
+  const file = engine.file;
+  const latency = engine.latency();
+  const runs = FIXTURES.map((fixture) => ({ label: fixture, lines: engineRun(engine, fixture, latency ?? 0) }));
+  const text = formatRecord(engine.header(latency), runs, [
+    engine.title,
     "Rewritten only by npm run voice:record, in a commit that names the audible change it intends.",
   ]);
   if (recording) {
     mkdirSync(RECORD_DIR, { recursive: true });
-    writeFileSync(join(RECORD_DIR, FILE), text);
-    return { name: FILE, problems: [], written: true };
+    writeFileSync(join(RECORD_DIR, file), text);
+    return { name: file, problems: [], written: true };
   }
-  const recordedText = readRecord();
-  if (recordedText === null) return { name: FILE, problems: ["no record; run npm run voice:record"], written: false };
+  const recordedText = readRecord(file);
+  if (recordedText === null) return { name: file, problems: ["no record; run npm run voice:record"], written: false };
 
   const recorded = parseRecord(recordedText);
   const fresh = parseRecord(text);
@@ -229,7 +324,7 @@ export function checkSpeex(): Outcome {
     problems.push(`${run.label}: the output differs; ${gains ?? "every 10 ms block within 0.1 dB of the record"}${peak}`);
   }
   for (const label of byLabel.keys()) problems.push(`${label}: recorded, no longer run`);
-  return { name: FILE, problems, written: false };
+  return { name: file, problems, written: false };
 }
 
 /** One line per problem, for an assertion message. */
