@@ -95,7 +95,7 @@ async function start(executable, flags) {
  * Only the start is tried again: once Chrome has opened its port, whatever it
  * does wrong fails the run.
  */
-export async function launch({ width = 1280, height = 900, headless = true } = {}) {
+export async function launch({ width = 1280, height = 900, headless = true, flags: extraFlags = [] } = {}) {
   const executable = findChromium();
   const flags = [
     ...(headless ? ["--headless=new"] : []),
@@ -110,6 +110,7 @@ export async function launch({ width = 1280, height = 900, headless = true } = {
     "--disable-dev-shm-usage",
     "--mute-audio",
     `--window-size=${width},${height}`,
+    ...extraFlags,
   ];
   const failures = [];
   let started = null;
