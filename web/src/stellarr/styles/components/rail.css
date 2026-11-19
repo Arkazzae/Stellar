@@ -337,7 +337,8 @@
   .voice-occupants:empty{padding:0}
   .voice-occupants{list-style:none;padding:2px 4px 4px 28px}
   .voice-occupants li{display:flex;align-items:center;gap:8px;height:30px;padding:0 4px;border-radius:var(--radius-sm);font-size:var(--text-13);color:var(--text-muted)}
-  .voice-occupants li.me{color:var(--text);animation:msgIn 200ms var(--ease-standard)}
+  .voice-occupants li.me{color:var(--text)}
+  .voice-occupants li.me.arriving{animation:msgIn 200ms var(--ease-standard)}
   .voice-occupants li.is-draggable{cursor:grab;user-select:none;-webkit-user-select:none;-webkit-touch-callout:none;-webkit-user-drag:none}
   .voice-occupants li.is-draggable:active{cursor:grabbing}
   .voice-occupants li.is-draggable:hover{background:var(--surface-overlay);color:var(--text)}

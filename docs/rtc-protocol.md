@@ -150,6 +150,8 @@ Users can pick a personal arrival clip (`UserPreferences.JoinSoundId`) from any 
 > [!IMPORTANT]
 > Only one active voice session is allowed per account across tabs and devices. Joining from a second tab replaces the earlier seat and sends `VoiceSessionReplaced` to the previous connection.
 
+A client that switches rooms calls `JoinVoice` for the new room without calling `LeaveVoice` first. The hub moves the seat and sends both rooms' snapshots, so nobody sees the person leave one room before they arrive in the other. The client still closes its media session and opens a new one for the new room. If the switch ends before the seat moves, because the join fails or the person hangs up, the client calls `LeaveVoice` to free the seat it kept.
+
 ## Audio
 
 ### Opus bitrate profiles

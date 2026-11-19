@@ -24,6 +24,7 @@ import type {
   ChannelMenuTarget,
   RailThreads,
 } from "@/components/shell/rail/railTypes";
+import { useArrivals } from "@/components/shell/rail/useArrivals";
 import { useRailMoves } from "@/components/shell/rail/useRailMoves";
 import { useThreadFocus } from "@/components/shell/rail/useThreadFocus";
 import { useVoiceMove } from "@/components/shell/rail/useVoiceMove";
@@ -286,6 +287,7 @@ export function Rail({
   });
 
   const registerThread = useThreadFocus(threadsByChannel, activeThreadId, hidden);
+  const arrives = useArrivals(voiceChannels);
   const threads: RailThreads = {
     byChannel: threadsByChannel,
     activeId: activeThreadId,
@@ -321,6 +323,7 @@ export function Rail({
       sort={refsFor("voice", sectionId)}
       canMoveOthers={canMoveOthers}
       carry={carry}
+      arrives={arrives}
     />
   );
 
