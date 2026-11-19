@@ -156,12 +156,13 @@ export class CallHealth {
     }
 
     round.settle(store.getSnapshot().muted);
-    await this.publishDiagnostics(round.readings, totals, signalingRttMs);
+    // Beside the snapshot: they move with every packet and nothing draws them.
+    store.setCounters(totals);
+    await this.publishDiagnostics(round.readings, signalingRttMs);
   }
 
   private async publishDiagnostics(
     readings: readonly LinkReading[],
-    totals: MediaCounters,
     signalingRttMs: number | null,
   ): Promise<void> {
     const { store, bitrate } = this.env;
@@ -170,19 +171,16 @@ export class CallHealth {
 
     if (!worst) {
       // Before a link reports end-to-end timing, the signalling round trip
-      // keeps the dock informative.
+      // keeps the dock informative. Without either, the readout stays.
       const rttMs = signalingRttMs;
+      if (rttMs === null) return;
       store.set({
-        diagnostics:
-          rttMs === null
-            ? { ...previous, ...totals }
-            : {
-                ...previous,
-                quality: classify({ lossFraction: 0, rttMs }),
-                lossFraction: null,
-                rttMs,
-                ...totals,
-              },
+        diagnostics: {
+          ...previous,
+          quality: classify({ lossFraction: 0, rttMs }),
+          lossFraction: null,
+          rttMs,
+        },
       });
       return;
     }
@@ -196,7 +194,6 @@ export class CallHealth {
         bitrate: decision.bitrate,
         lossFraction: worst.lossFraction,
         rttMs: worst.rttMs,
-        ...totals,
       },
     });
     if (decision.changed) await this.env.topology().applyMicEncoding();

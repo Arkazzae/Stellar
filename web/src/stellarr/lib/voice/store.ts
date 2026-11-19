@@ -1,4 +1,5 @@
 import { ChangeNotifier } from "@/lib/realtime/emitter";
+import type { MediaCounters } from "./rtc/stats";
 import {
   IDLE_VOICE_STATE,
   type VoiceCamera,
@@ -9,6 +10,13 @@ import {
   type VoiceTransportState,
 } from "./types";
 
+const NO_COUNTERS: MediaCounters = Object.freeze({
+  bytesSent: 0,
+  bytesReceived: 0,
+  packetsSent: 0,
+  packetsReceived: 0,
+});
+
 /**
  * Immutable snapshot holder shared by every `VoiceClient` implementation.
  * Snapshots are frozen and replaced only when something actually changed, so
@@ -16,9 +24,21 @@ import {
  */
 export class VoiceStateStore {
   private state: VoiceState = IDLE_VOICE_STATE;
+  private counters: MediaCounters = NO_COUNTERS;
   private readonly notifier = new ChangeNotifier();
 
   getSnapshot = (): VoiceState => this.state;
+
+  /**
+   * The cumulative audio RTP counters of the connection to the media server,
+   * as of the last statistics sample. They move with every packet and nothing
+   * draws them, so they sit beside the snapshot and never re-render anything.
+   */
+  getCounters = (): MediaCounters => this.counters;
+
+  setCounters(counters: MediaCounters): void {
+    this.counters = Object.freeze({ ...counters });
+  }
 
   subscribe = (listener: () => void): (() => void) => this.notifier.subscribe(listener);
 
@@ -30,6 +50,7 @@ export class VoiceStateStore {
   }
 
   reset(): void {
+    this.counters = NO_COUNTERS;
     if (this.state === IDLE_VOICE_STATE) return;
     this.state = IDLE_VOICE_STATE;
     this.notifier.notify();
@@ -110,11 +131,7 @@ function sameDiagnostics(a: VoiceDiagnostics, b: VoiceDiagnostics): boolean {
       // The readout shows whole percent and whole milliseconds, so finer
       // movement must not re-render the tree.
       bucket(a.lossFraction, 1000) === bucket(b.lossFraction, 1000) &&
-      bucket(a.rttMs, 1) === bucket(b.rttMs, 1) &&
-      a.bytesSent === b.bytesSent &&
-      a.bytesReceived === b.bytesReceived &&
-      a.packetsSent === b.packetsSent &&
-      a.packetsReceived === b.packetsReceived)
+      bucket(a.rttMs, 1) === bucket(b.rttMs, 1))
   );
 }
 

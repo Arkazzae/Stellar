@@ -149,7 +149,7 @@ describe("CallHealth diagnostics", () => {
     await health.sample();
 
     expect(settle).toHaveBeenCalledWith(true);
-    expect(store.getSnapshot().diagnostics).toMatchObject({
+    expect(store.getCounters()).toEqual({
       packetsSent: 5,
       packetsReceived: 7,
       bytesSent: 400,
@@ -220,7 +220,7 @@ describe("CallHealth diagnostics", () => {
     await health.sample();
 
     expect(settle).not.toHaveBeenCalled();
-    expect(store.getSnapshot().diagnostics.packetsSent).toBe(0);
+    expect(store.getCounters().packetsSent).toBe(0);
   });
 
   it("takes no samples outside a session", async () => {
