@@ -41,6 +41,12 @@ export interface SoundboardPort {
   create(input: NewSound): Promise<Sound>;
   update(soundId: string, patch: SoundPatch): Promise<Sound>;
   delete(soundId: string): Promise<void>;
+  /**
+   * Puts the sounds in this order at once and saves it. `soundIds` names
+   * every sound of the board once; when the server refuses, the board goes
+   * back to the order it had and the promise rejects.
+   */
+  reorderSounds(soundIds: string[]): Promise<void>;
   updateSettings(patch: Partial<SoundboardSettings>): Promise<void>;
   dispose(): void;
   /** Milliseconds until `play` is accepted again; 0 when ready. */
@@ -52,6 +58,8 @@ export interface SoundboardState {
   sounds: Sound[];
   settings: SoundboardSettings;
   canManage: boolean;
+  /** Whether this person may play the board's sounds in a call; the hub applies the same rule. */
+  canPlay: boolean;
   supported: boolean;
   loading: boolean;
   /** What went wrong, as a catalog key for the reader to translate. */
