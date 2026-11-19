@@ -126,7 +126,9 @@
   /* Kropka „+" ma być na tej samej linii co kapitalik, nie pod nią. */
   .rail-cap{margin:16px 0 4px}
   .rail-cap .group-caption{margin:0}
-  .rail-scroll .rail-cap:first-child{margin-top:0}
+  /* Only the rail's first caption: a section's caption is the first child of
+     its section too, and keeps the space above it. */
+  .rail-scroll > .rail-cap:first-child{margin-top:0}
   .group-caption .hint{font-size:var(--text-10);opacity:0.7}
 
   .channel{
@@ -262,19 +264,19 @@
   /* A carried section lifts whole, caption and channels together. */
   .rail-scroll .rail-section[data-drag="carried"]{box-shadow:0 4px 14px oklch(0 0 0 / 0.45)}
   /* A collapsed group taking the drop shows nothing below its caption, so the caption answers. */
-  .rail-cap:has(+ .collapsible [data-drag-over]) .group-caption,
-  .rail-section:has([data-drag-over]) .rail-section-cap .group-caption{
+  .rail-cap:has(+ .collapsible [data-drag-over]) .group-caption{
     background:var(--surface-overlay);color:var(--text);
   }
   .rail-scroll :is(.channel-main, .group-caption)[aria-roledescription]{
     -webkit-touch-callout:none;-webkit-user-select:none;user-select:none;
   }
-  /* The collapse caret owns the trailing edge. The separate create button is
-     overlaid just before it, keeping two valid sibling buttons without making
-     the caret look stranded between the caption and the "+". */
+  /* The collapse caret owns the trailing edge. The separate create or section
+     settings button is overlaid just before it, keeping two valid sibling
+     buttons without making the caret look stranded between the caption and
+     the button. */
   .rail-cap{position:relative;display:flex;align-items:center;min-height:22px}
   .rail-cap .group-caption{flex:1;min-width:0}
-  .rail-add{
+  .rail-add, .rail-section-cog{
     position:absolute;right:24px;top:50%;z-index:1;
     width:22px;height:22px;border-radius:var(--radius-sm);flex:none;
     display:inline-flex;align-items:center;justify-content:center;
@@ -282,44 +284,19 @@
     transform:translateY(-50%);
     transition:background var(--dur-fast) var(--ease-standard), color var(--dur-fast) var(--ease-standard), opacity var(--dur-fast) var(--ease-standard);
   }
-  .rail-add:hover{background:var(--surface-overlay);color:var(--text)}
-  .rail-cap:hover .rail-add, .rail-add:focus-visible{opacity:1;pointer-events:auto}
-
-  /*
-   * A rail section: one collapsible header over a text and a voice sub-list.
-   *
-   * The header has to read as a level above the "TEKSTOWE"/"GŁOSOWE" captions
-   * nested inside it, which at 248px cannot be done with indentation. So it is
-   * separated instead — a hairline above, a folder mark, and the name in the
-   * body colour rather than the caption's faint one.
-   */
-  /* The hairline belongs to the caption, so it moves with it when a drag
-     shifts the caption alone. */
-  .rail-section{margin-top:14px}
-  .rail-section-cap{margin-bottom:2px;padding-top:12px;border-top:1px solid var(--line-subtle);min-height:35px}
-  .rail-section-cap .group-caption{
-    display:flex;align-items:center;gap:7px;flex:1;min-width:0;
-    color:var(--text-muted);font-weight:600;letter-spacing:0;text-transform:none;
-  }
-  .rail-section-cap .group-caption:hover{color:var(--text)}
-  .rail-section-mark{flex:none;display:inline-flex;color:var(--text-faint)}
-  .rail-section-cap .group-caption:hover .rail-section-mark{color:var(--text-muted)}
+  :is(.rail-add, .rail-section-cog):hover{background:var(--surface-overlay);color:var(--text)}
+  .rail-cap:hover :is(.rail-add, .rail-section-cog),
+  :is(.rail-add, .rail-section-cog):focus-visible{opacity:1;pointer-events:auto}
+  /* A section's name is someone's own words, up to 60 characters, where the
+     built-in captions are one short word. It ends in an ellipsis 4px short of
+     the caret, and where the section has a cog it stops before the cog's box
+     even while the cog is hidden, so the name does not reflow under the
+     pointer: 22px of box, the 6px between it and the caret, and the same 4px. */
   .rail-section-name{
-    min-width:0;flex:1;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;
+    min-width:0;margin-right:4px;
+    overflow:hidden;white-space:nowrap;text-overflow:ellipsis;
   }
-  /* Sits in flow rather than absolutely over the caret like `.rail-add`: the
-     caption owns the remaining width and truncates against this button. */
-  .rail-section-cog{
-    flex:none;width:22px;height:22px;border-radius:var(--radius-sm);
-    display:inline-flex;align-items:center;justify-content:center;
-    color:var(--text-faint);opacity:0;pointer-events:none;
-    transition:background var(--dur-fast) var(--ease-standard),
-               color var(--dur-fast) var(--ease-standard),
-               opacity var(--dur-fast) var(--ease-standard);
-  }
-  .rail-section-cog:hover{background:var(--surface-overlay);color:var(--text)}
-  .rail-section-cap:hover .rail-section-cog,
-  .rail-section-cog:focus-visible{opacity:1;pointer-events:auto}
+  .rail-cap:has(> .rail-section-cog) .rail-section-name{margin-right:32px}
   /* A section holds one flat list: its channels carry "#" and the speaker glyph
      already, so repeating the TEKSTOWE/GŁOSOWE captions inside every section
      would label what the icons have said and push the rail into two heading
@@ -398,15 +375,11 @@
     background:var(--danger-soft);color:var(--danger-text);font-size:var(--text-12);line-height:1.35;
   }
   @media (pointer:coarse){
-    /* The thread disclosure and section settings sit inside the navigation
-       drawer, but they are still independent controls. Their desktop glyphs
-       stay compact while the hit areas fill the 44px rail rhythm. */
+    /* The thread disclosure sits inside the navigation drawer, but it is
+       still an independent control. Its desktop glyph stays compact while the
+       hit area fills the 44px rail rhythm. */
     .ch-threads-toggle{width:44px;height:44px}
     .channel-thread{min-height:44px}
-    .rail-section-cog{
-      width:44px;height:44px;margin-right:-8px;
-      opacity:1;pointer-events:auto;
-    }
     .voice-occupants li.is-draggable{height:44px}
   }
   @media (prefers-reduced-motion: reduce){
