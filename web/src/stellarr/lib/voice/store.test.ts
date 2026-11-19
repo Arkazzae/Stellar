@@ -9,7 +9,6 @@ function peer(overrides: Partial<VoicePeer> = {}): VoicePeer {
     displayName: "Ada",
     muted: false,
     speaking: false,
-    level: 0,
     playbackVolume: 100,
     gated: false,
     suppressed: false,
@@ -79,18 +78,6 @@ describe("VoiceStateStore", () => {
     store.set({ peers: [] });
 
     expect(listener).toHaveBeenCalledTimes(2);
-  });
-
-  it("ignores level jitter finer than the meter shows", () => {
-    const store = new VoiceStateStore();
-    store.set({ peers: [peer({ level: 0.5 })] });
-    const listener = subscribed(store);
-
-    store.set({ peers: [peer({ level: 0.52 })] });
-    expect(listener).not.toHaveBeenCalled();
-
-    store.set({ peers: [peer({ level: 0.8 })] });
-    expect(listener).toHaveBeenCalledTimes(1);
   });
 
   it("keeps the RTP counters beside the snapshot, where moving them renders nothing", () => {

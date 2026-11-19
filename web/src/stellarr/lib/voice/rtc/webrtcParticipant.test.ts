@@ -55,7 +55,6 @@ describe("createParticipant", () => {
       displayName: "Ola",
       muted: false,
       speaking: false,
-      level: 0,
       playbackVolume: 40,
       gated: true,
       suppressed: false,
