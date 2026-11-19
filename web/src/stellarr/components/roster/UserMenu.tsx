@@ -1,4 +1,4 @@
-import { useId } from "react";
+import { useId, useSyncExternalStore } from "react";
 
 import {
   banPerson,
@@ -55,6 +55,12 @@ export interface UserMenuActions {
   participantSuppressionOf?: (userId: string) => boolean | undefined;
   onParticipantSuppressionChange?: (userId: string, suppressed: boolean) => void;
   /**
+   * Tells the open menu when the call changed, so the three getters above are
+   * read again and the strip follows its own slider and switches. Without it
+   * they are read whenever the menu renders.
+   */
+  watchParticipants?: (listener: () => void) => () => void;
+  /**
    * Moderation. Kick and ban end somebody's membership; the narrower
    * kick-from-channel only disconnects the seat they hold in a voice channel,
    * so it needs `canKickFromChannel` to say they hold one.
@@ -68,6 +74,8 @@ export interface UserMenuActions {
   /** Adds "Kopiuj identyfikator", as the preference in "Zaawansowane" promises. */
   developerMode?: boolean;
 }
+
+const UNWATCHED = () => () => undefined;
 
 export interface UserMenuProps extends UserMenuActions {
   at: { x: number; y: number };
@@ -189,6 +197,7 @@ export function UserMenu({
   onParticipantGateChange,
   participantSuppressionOf,
   onParticipantSuppressionChange,
+  watchParticipants = UNWATCHED,
   canKick = false,
   canBan = false,
   onKick,
@@ -200,6 +209,15 @@ export function UserMenu({
   const confirm = useConfirm();
   const prompt = usePrompt();
   const { t } = useLanguage();
+  const volume = useSyncExternalStore(watchParticipants, () =>
+    self ? undefined : participantVolumeOf?.(userId),
+  );
+  const gate = useSyncExternalStore(watchParticipants, () =>
+    self ? undefined : participantGateOf?.(userId),
+  );
+  const suppression = useSyncExternalStore(watchParticipants, () =>
+    self ? undefined : participantSuppressionOf?.(userId),
+  );
   const relation: ProfileRelation = self ? "self" : (relationOf?.(userId) ?? "none");
 
   const afterConfirming = (request: ConfirmRequest, act: () => void) => () => {
@@ -326,9 +344,6 @@ export function UserMenu({
     });
   }
 
-  const volume = self ? undefined : participantVolumeOf?.(userId);
-  const gate = self ? undefined : participantGateOf?.(userId);
-  const suppression = self ? undefined : participantSuppressionOf?.(userId);
   const audio =
     volume === undefined || onParticipantVolumeChange === undefined ? undefined : (
       <ParticipantAudio

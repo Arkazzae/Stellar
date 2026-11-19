@@ -1,9 +1,10 @@
-import { render, screen, within } from "@testing-library/react";
+import { act, render, screen, within } from "@testing-library/react";
 import userEvent, { type UserEvent } from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import { ConfirmProvider } from "@/components/primitives/ConfirmDialog";
-import type { PersonVM } from "@/components/view-models";
+import type { PersonVM, VoiceSeatVM } from "@/components/view-models";
+import { VoiceSeatContext } from "@/components/voice/useVoiceSeat";
 import { resetStubs, setStubs, stubs } from "@/test/hookStubs";
 
 import { RailContainer } from "./RailContainer";
@@ -22,11 +23,15 @@ const TEXT_CHANNELS = [
   { id: "c-dev", name: "dev" },
 ];
 
-function renderRail() {
+function renderRail(seats: ReadonlyMap<string, VoiceSeatVM> = new Map()) {
   return render(
-    <ConfirmProvider>
-      <RailContainer />
-    </ConfirmProvider>,
+    <VoiceSeatContext.Provider
+      value={{ get: (userId) => seats.get(userId) ?? null, subscribe: () => () => undefined }}
+    >
+      <ConfirmProvider>
+        <RailContainer />
+      </ConfirmProvider>
+    </VoiceSeatContext.Provider>,
   );
 }
 
@@ -73,15 +78,51 @@ describe("RailContainer", () => {
     expect(within(rowOf("ogólny")).queryByLabelText("Powiadomienia wyciszone")).toBeNull();
   });
 
-  it("shows who is speaking in the call it is told about", () => {
-    stubs.voice.applySpeaking = vi.fn((people: PersonVM[]) =>
-      people.map((person) => ({ ...person, speaking: true })),
-    );
-    renderRail();
+  it("shows who is speaking in the call, whose word on the microphone outranks the server's", () => {
+    setStubs({
+      directory: {
+        voiceChannels: [{ id: "c-salon", name: "Salon", occupants: [{ ...MAJA, muted: true }] }],
+      },
+    });
+    renderRail(new Map([[MAJA.id, { speaking: true, muted: false }]]));
 
     // Her name is also on the account row, which is never a speaker.
-    const rows = screen.getAllByText("Maja").map((name) => name.closest(".speaking"));
-    expect(rows.filter((row) => row !== null)).toHaveLength(1);
+    const rows = screen
+      .getAllByText("Maja")
+      .map((name) => name.closest(".voice-occupant"))
+      .filter((row) => row !== null);
+    expect(rows).toHaveLength(1);
+    expect(rows[0]).toHaveClass("speaking");
+    expect(rows[0]).not.toHaveClass("muted");
+  });
+
+  it("keeps an open person menu's strip in step with the call", async () => {
+    let volume = 100;
+    const listeners = new Set<() => void>();
+    const ola: PersonVM = { id: "u-ola", displayName: "Ola", initials: "OL", presence: "online" };
+    setStubs({
+      directory: { voiceChannels: [{ id: "c-salon", name: "Salon", occupants: [MAJA, ola] }] },
+      voiceLive: {
+        participantVolumeOf: () => volume,
+        subscribe: (listener) => {
+          listeners.add(listener);
+          return () => listeners.delete(listener);
+        },
+      },
+    });
+    const user = userEvent.setup();
+    renderRail();
+
+    await user.pointer({ keys: "[MouseRight]", target: screen.getByText("Ola") });
+    const slider = await screen.findByRole("slider");
+    expect(slider).toHaveValue("100");
+
+    volume = 150;
+    act(() => {
+      for (const listener of listeners) listener();
+    });
+
+    expect(slider).toHaveValue("150");
   });
 
   it("closes the open thread before it selects a text channel", async () => {
