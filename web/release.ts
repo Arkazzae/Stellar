@@ -1,6 +1,6 @@
 import { createHash } from "node:crypto";
 import { readdirSync, readFileSync, writeFileSync } from "node:fs";
-import { join, relative, sep } from "node:path";
+import { join, relative, resolve, sep } from "node:path";
 
 import type { Plugin, Rollup } from "vite";
 
@@ -150,7 +150,7 @@ export function stellarrRelease(options: { publicDir: string }): Plugin {
     name: "stellarr-release",
     apply: "build",
     configResolved(config) {
-      outDir = join(config.root, config.build.outDir);
+      outDir = resolve(config.root, config.build.outDir);
     },
     generateBundle(_options, bundle) {
       chunks = chunkLinks(bundle);
