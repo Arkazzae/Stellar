@@ -5,6 +5,7 @@ import {
   useEffect,
   useMemo,
   useRef,
+  useState,
   useSyncExternalStore,
   type ReactNode,
 } from "react";
@@ -13,7 +14,7 @@ import type { ChannelMove } from "@/components/view-models";
 import type { NewServer, Server, VoiceOccupant } from "@/ports";
 
 import {
-  deriveDirectoryView,
+  createDirectoryViewDeriver,
   deriveTextChannels,
   sameOccupancy,
   spliceGroupOrder,
@@ -107,6 +108,10 @@ export function DirectoryProvider({ children }: { children: ReactNode }) {
     [snapshot.channels],
   );
 
+  // Hands back every person, seat and channel that says the same as before as
+  // the object it was, so a row keyed on one renders only when it changed.
+  const [deriveView] = useState(createDirectoryViewDeriver);
+
   const value = useMemo<DirectoryValue>(() => {
     const moveChannel = ({ channelId, sectionId, order }: ChannelMove) => {
       const from = snapshot.channels.find((channel) => channel.id === channelId)?.sectionId;
@@ -116,7 +121,7 @@ export function DirectoryProvider({ children }: { children: ReactNode }) {
       );
     };
     return {
-      ...deriveDirectoryView(snapshot, textChannels),
+      ...deriveView(snapshot, textChannels),
       moveChannel,
       moveChannelToSection: (channelId, sectionId) => {
         const kind = snapshot.channels.find((channel) => channel.id === channelId)?.kind;
@@ -139,7 +144,7 @@ export function DirectoryProvider({ children }: { children: ReactNode }) {
       joinInvite: directory.joinInvite,
       selectServer: directory.selectServer,
     };
-  }, [snapshot, textChannels, directory]);
+  }, [snapshot, textChannels, directory, deriveView]);
 
   return <DirectoryContext.Provider value={value}>{children}</DirectoryContext.Provider>;
 }
