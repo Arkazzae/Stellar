@@ -41,7 +41,7 @@ Setting `STELLARR_LANGUAGE=pl` (or `en`) configures the instance default across 
 5. **Language detection (`web/src/stellarr/lib/chatTranslation/detectLanguage.ts`)**: Runs on the main thread with zero extra downloads using character-trigram profiles (`web/scripts/derive-language-profiles.mjs`), function-word counts, and character/diacritic checks. Messages already in the target language are skipped; ambiguous short strings translate from the opposite language.
 6. **Translation cache**: Results are cached in memory (up to 1,000 entries) and IndexedDB (`stellarr-chat-translations`, up to 5,000 entries, LRU-evicted), with request deduplication and viewport prioritization.
 
-**Asset integrity and cache policy:** `artifacts/manifest.json` tracks the exact origin, size, SHA-256, and SPDX license for every prebuilt browser file (`artifacts/NOTICES` ships beside it at `/usr/share/doc/stellarr/artifacts/`). `artifacts/assemble.mjs` verifies every file before builds and replaces copies atomically. Because worklets, WASM, and models keep stable URLs across releases, Nginx serves them with `Cache-Control: no-cache` so browsers always revalidate matching versions together.
+**Asset integrity and cache policy:** `artifacts/manifest.json` tracks the exact origin, size, SHA-256, and SPDX license for every binary the browser loads, committed or built from source by a recipe (`artifacts/NOTICES` ships beside it at `/usr/share/doc/stellarr/artifacts/`). `artifacts/assemble.mjs` verifies every file before builds and replaces copies atomically. Because worklets, WASM, and models keep stable URLs across releases, Nginx serves them with `Cache-Control: no-cache` so browsers always revalidate matching versions together.
 
 ## Adding a new language
 
@@ -58,7 +58,7 @@ Setting `STELLARR_LANGUAGE=pl` (or `en`) configures the instance default across 
 
 ## Verification
 
-Install dependencies once from the repository root with `npm ci` (`web/` and `packages/` share the root workspace lockfile):
+Install dependencies once from the repository root with `npm ci` (`web/` and `packages/` share the root workspace lockfile), and build the browser binaries that [`artifacts/recipes/`](../artifacts/recipes/README.md) makes from source with `docker buildx bake recipes`:
 
 ```bash
 # Web client and Cockpit
