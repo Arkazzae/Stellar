@@ -21,6 +21,7 @@ const INITIAL_STATE: SoundboardState = Object.freeze({
   sounds: [],
   settings: Object.freeze({ everyoneCanPlay: true, rateLimited: true }),
   canManage: false,
+  canPlay: false,
   supported: true,
   loading: false,
   error: null,
@@ -42,6 +43,8 @@ export function createSoundboardAdapter(
   let arrivalsAudible = true;
   let loading: Promise<void> | null = null;
   let reloadRequested = false;
+  /** Orders still on their way to the server; a reload waits for them. */
+  let ordersPending = 0;
   let disposed = false;
 
   const notify = (): void => {
@@ -137,7 +140,9 @@ export function createSoundboardAdapter(
 
     realtime.on("SoundboardChanged", () => {
       reloadRequested = true;
-      void load();
+      // Each saved order announces itself. Fetched while a later one is still
+      // on its way, the board would show the older order for a moment.
+      if (ordersPending === 0) void load();
     }),
   ];
 
@@ -230,6 +235,30 @@ export function createSoundboardAdapter(
         sounds: state.sounds.filter((sound) => sound.id !== soundId),
         error: null,
       });
+    },
+
+    async reorderSounds(soundIds) {
+      const before = state.sounds;
+      const byId = new Map(before.map((sound) => [sound.id, sound]));
+      const ordered = soundIds.flatMap((id) => byId.get(id) ?? []);
+      if (ordered.length !== before.length || new Set(soundIds).size !== soundIds.length) {
+        throw new Error("A new order has to name every sound of the board once.");
+      }
+      patchState({ sounds: ordered, error: null });
+      ordersPending += 1;
+      try {
+        await api.reorderSoundboardSounds(soundIds);
+      } catch (cause) {
+        // Only the order this call put up is taken back. Once something else
+        // has replaced it, such as a later move still on its way, the
+        // server's own order is fetched instead of guessing at it here.
+        if (state.sounds === ordered) patchState({ sounds: before });
+        else reloadRequested = true;
+        throw cause;
+      } finally {
+        ordersPending -= 1;
+        if (ordersPending === 0 && reloadRequested) void load();
+      }
     },
 
     async updateSettings(patch) {
