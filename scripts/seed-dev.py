@@ -27,7 +27,7 @@ from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
-DEFAULT_DB_PATH = "/data/stellarr-dev.db"
+DEFAULT_DB_PATH = "/data/stellarr/stellarr-dev.db"
 DEFAULT_SEED_PASSWORD = "dev-seed-2026"
 DEFAULT_RNG_SEED = 20261115
 PBKDF2_ITERATIONS = 210_000
