@@ -80,20 +80,62 @@ Local chat translation
 ----------------------
 
 Files:
-  codecs/bergamot/bergamot-translator-worker.js
-  codecs/bergamot/bergamot-translator-worker.wasm
+  codecs/bergamot/bergamot-translator.wasm
+  codecs/bergamot/bergamot-translator.js
 
-Upstream: browsermt/bergamot-translator 0.4.5
-  https://github.com/browsermt/bergamot-translator
-  The glue JavaScript is the v0.4.5 release asset, built from commit 05a8778.
-  The WASM is the file in the 0.4.5 npm package
-  (@browsermt/bergamot-translator); it is a different build from the release
-  asset.
-License: MPL-2.0 for the translator, with MIT, Apache-2.0, BSD-3-Clause and
-BSD-3-Clause WITH PCRE2-exception parts from its dependencies (Marian,
-SentencePiece, PCRE2, pybind11 and protobuf).
-Source: the release tag and the npm package above contain the corresponding
-source and build files.
+Built here by artifacts/recipes/bergamot/ from mozilla/translations at commit
+1de4a085d3a7afb625c51a60aabb5ad298e4059f, v0.6.0 of the Bergamot engine, with
+Emscripten 3.1.8. The WASM is byte for byte the bergamot-translator 3.0 that
+Firefox downloads from Remote Settings. It holds the Bergamot translator
+(inference/src) and Mozilla's fork of Marian (inference/marian-fork), the
+parts of their dependencies the WebAssembly build compiles, and the parts of
+Emscripten's C and C++ libraries the link takes. The glue is Emscripten's
+JavaScript runtime with the bindings the build generates, mozilla/translations'
+import-gemm-module.js and its loadBergamot() wrapper.
+  https://github.com/mozilla/translations
+  https://github.com/browsermt/sentencepiece (ae41b7740d7006596bb9257e83340b2620db9d00)
+  https://github.com/kpu/intgemm (f7401513da71758dacce52fed1c7855549abee59)
+  https://github.com/browsermt/onnxjs (924924b08e9596b41aeebada4a172f026be95f5a)
+  https://github.com/abhi-agg/eigen-git-mirror (fff37f4ca0397af9ed7e04f3bd6b893a1ea2b08e)
+  https://github.com/emscripten-core/emscripten (3.1.8)
+
+MPL-2.0: the Bergamot translator, its WebAssembly bindings and the glue's
+own parts, whose files name no copyright holder; Eigen, whose matrix
+multiplication onnxjs compiles in.
+MIT:
+  Marian: Copyright (c) 2016 Marcin Junczys-Dowmunt, the University of
+    Edinburgh, Adam Mickiewicz University
+  intgemm: Copyright (c) 2017--2019 University of Edinburgh, Nikolay
+    Bogoychev, Mateusz Chudyk, Kenneth Heafield, and Microsoft Corporation
+  onnxjs: Copyright (c) Microsoft Corporation
+  Marian's ONNX protobuf wrapper: Copyright (c) Facebook Inc. and Microsoft
+    Corporation
+  yaml-cpp: Copyright (c) 2008-2015 Jesse Beder
+  spdlog: Copyright (c) 2016 Gabi Melman
+  phf: Copyright (c) 2014-2015 William Ahern
+  cnpy: Copyright (c) Carl Rogers, 2011
+  esaxx, in SentencePiece: Copyright (c) 2010 Daisuke Okanohara
+  musl: Copyright 2005-2020 Rich Felker, et al.
+Apache-2.0:
+  SentencePiece: Copyright 2016 Google Inc.
+  Abseil's string_view, in SentencePiece: Copyright 2017 The Abseil Authors
+BSD-3-Clause:
+  protobuf-lite, in SentencePiece: Copyright 2008 Google Inc.
+  darts-clone, in SentencePiece: Copyright (c) 2008-2011, Susumu Yata
+  CLI11 1.6: Copyright (c) 2017-2018 University of Cincinnati, developed by
+    Henry Schreiner under NSF AWARD 1414736
+  umHalf: Copyright (c) 2006-2008, Chris "Krishty" Maiwald, Alexander
+    "Aramis" Gessler
+BSD-2-Clause:
+  pathie-cpp: Copyright (c) 2015, 2017 Marvin Gülker
+  fmt, in spdlog: Copyright (c) 2012 - 2015, Victor Zverovich
+Zlib: sse_mathfun: Copyright (C) 2007 Julien Pommier
+Apache-2.0 WITH LLVM-exception: libc++, libc++abi and compiler-rt, from the
+LLVM Project, as Emscripten 3.1.8 builds them
+MIT OR NCSA: Emscripten's runtime, system code and embind, Copyright (c)
+2010-2014 Emscripten authors; the MIT text below applies
+CC0-1.0: dlmalloc, written by Doug Lea and released to the public domain, as
+explained at http://creativecommons.org/publicdomain/zero/1.0/
 
 Files:
   bergamot-models/plen/model.plen.intgemm.alphas.bin
@@ -156,6 +198,66 @@ CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
 ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
 POSSIBILITY OF SUCH DAMAGE.
 
+BSD 2-Clause License
+
+Redistribution and use in source and binary forms, with or without
+modification, are permitted provided that the following conditions are met:
+
+1. Redistributions of source code must retain the above copyright notice,
+   this list of conditions and the following disclaimer.
+2. Redistributions in binary form must reproduce the above copyright notice,
+   this list of conditions and the following disclaimer in the documentation
+   and/or other materials provided with the distribution.
+
+THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS"
+AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
+IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE
+ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE
+LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR
+CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF
+SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS
+INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN
+CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
+ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
+POSSIBILITY OF SUCH DAMAGE.
+
+zlib License
+
+This software is provided 'as-is', without any express or implied
+warranty. In no event will the authors be held liable for any damages
+arising from the use of this software.
+
+Permission is granted to anyone to use this software for any purpose,
+including commercial applications, and to alter it and redistribute it
+freely, subject to the following restrictions:
+
+1. The origin of this software must not be misrepresented; you must not
+   claim that you wrote the original software. If you use this software
+   in a product, an acknowledgment in the product documentation would be
+   appreciated but is not required.
+2. Altered source versions must be plainly marked as such, and must not be
+   misrepresented as being the original software.
+3. This notice may not be removed or altered from any source distribution.
+
+LLVM Exceptions to the Apache 2.0 License
+
+libc++, libc++abi and compiler-rt are under the Apache License 2.0, whose
+text follows below, with these exceptions:
+
+As an exception, if, as a result of your compiling your source code, portions
+of this Software are embedded into an Object form of such source code, you
+may redistribute such embedded portions in such Object form without complying
+with the conditions of Sections 4(a), 4(b) and 4(d) of the License.
+
+In addition, if you combine or link compiled forms of this Software with
+software that is licensed under the GPLv2 ("Combined Software") and if a
+court of competent jurisdiction determines that the patent provision (Section
+3), the indemnity provision (Section 9) or other Section of the License
+conflicts with the conditions of the GPLv2, you may retroactively and
+prospectively choose to deem waived or otherwise exclude such Section(s) of
+the License, but only in their entirety and only with respect to the Combined
+Software.
+
 SunPro notice
 
 musl's atan, sin and cos carry the first form, the kernels they call
@@ -217,7 +319,9 @@ SOFTWARE.
 Apache License, Version 2.0
 
 The full Apache License 2.0 text follows. It applies to the rnnoise-wasm
-build and to SentencePiece as bundled in the Bergamot WASM.
+build, to SentencePiece and the part of Abseil it bundles in the Bergamot
+WASM, and, with the LLVM exceptions above, to libc++, libc++abi and
+compiler-rt there.
 
                                  Apache License
                            Version 2.0, January 2004
@@ -398,7 +502,8 @@ build and to SentencePiece as bundled in the Bergamot WASM.
 
 Mozilla Public License, Version 2.0
 
-The full Mozilla Public License 2.0 text follows. It applies to the Bergamot translator and to the plen and enpl models.
+The full Mozilla Public License 2.0 text follows. It applies to the Bergamot
+translator and its glue, to Eigen, and to the plen and enpl models.
 
 Mozilla Public License Version 2.0
 ==================================

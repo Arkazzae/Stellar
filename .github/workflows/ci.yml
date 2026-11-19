@@ -421,14 +421,16 @@ jobs:
 
           # The browser's binaries are served from the image, committed and
           # built by a recipe alike.
-          for path in /audio/rnnoise-worklet.js /codecs/bergamot/bergamot-translator-worker.wasm \
+          for path in /audio/rnnoise-worklet.js /codecs/bergamot/bergamot-translator.js \
                       /bergamot-models/plen/vocab.plen.spm; do
             get "$path" 200
           done
-          get /audio/speex.wasm 200
-          speex=$(jq -r '.artifacts[] | select(.path == "audio/speex.wasm") | .sha256' artifacts/manifest.json)
-          [[ $(sha256sum < "$RUNNER_TEMP/body" | cut -d' ' -f1) == "$speex" ]] \
-            || fail "/audio/speex.wasm is not the binary the manifest records."
+          for path in audio/speex.wasm codecs/bergamot/bergamot-translator.wasm; do
+            get "/$path" 200
+            recorded=$(jq -r --arg path "$path" '.artifacts[] | select(.path == $path) | .sha256' artifacts/manifest.json)
+            [[ $(sha256sum < "$RUNNER_TEMP/body" | cut -d' ' -f1) == "$recorded" ]] \
+              || fail "/$path is not the binary the manifest records."
+          done
           # The worklets the build writes from the app's source to a fixed
           # address (web/worklets.ts); under another name one would be missing
           # here.
