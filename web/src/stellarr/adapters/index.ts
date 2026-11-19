@@ -104,6 +104,53 @@ function followHub(realtime: RealtimeClient, store: DirectoryStore): () => void 
   };
 }
 
+/**
+ * Brings the directory back in step whenever the hub comes back. The hub does
+ * not replay what it sent while the socket was down, so a seat, a presence or
+ * a channel that changed during an outage would stay wrong until a reload;
+ * the bootstrap says how things stand now. The first connection is left
+ * alone, since the bootstrap that hydrated the runtime is current then.
+ */
+function resyncAfterReconnects(
+  realtime: RealtimeClient,
+  store: DirectoryStore,
+  bootstrap: () => Promise<Bootstrap>,
+): () => void {
+  let status = realtime.getStatus();
+  let connectedBefore = status === "connected";
+  let running = false;
+  let again = false;
+
+  const resync = async (): Promise<void> => {
+    if (running) {
+      again = true;
+      return;
+    }
+    running = true;
+    try {
+      do {
+        again = false;
+        const mark = store.mark();
+        try {
+          store.resync(await bootstrap(), mark);
+        } catch {
+          // The hub's own events carry on, and the next reconnect tries again.
+        }
+      } while (again);
+    } finally {
+      running = false;
+    }
+  };
+
+  return realtime.subscribeStatus(() => {
+    const next = realtime.getStatus();
+    const reconnected = next === "connected" && status !== "connected" && connectedBefore;
+    if (next === "connected") connectedBefore = true;
+    status = next;
+    if (reconnected) void resync();
+  });
+}
+
 /** The browser's socket, fetched with the signed-in code and not before it is needed. */
 const loadRealtime = () => loadSignedInCode().then((code) => code.createSignalRClient());
 
@@ -153,6 +200,7 @@ export function createRuntime(options: RuntimeOptions = {}): Runtime {
   );
 
   const stopFollowingHub = followHub(realtime, store);
+  const stopResyncing = resyncAfterReconnects(realtime, store, () => api.bootstrap());
   // A profile edit reaches the directory at once, without waiting for the
   // hub's echo, so your own row never lags behind your account card.
   const stopMirroringAccount = account.onChanged(() => {
@@ -281,6 +329,7 @@ export function createRuntime(options: RuntimeOptions = {}): Runtime {
     dispose() {
       stopMirroringAccount();
       stopFollowingHub();
+      stopResyncing();
       encryption.dispose();
       friends.dispose?.();
       soundboard.dispose();
