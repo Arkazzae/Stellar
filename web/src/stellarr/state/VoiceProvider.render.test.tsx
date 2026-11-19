@@ -59,7 +59,6 @@ function peer(userId: string, streamId: string): VoicePeer {
     displayName: userId,
     muted: false,
     speaking: false,
-    level: 0,
     playbackVolume: 100,
     gated: false,
     suppressed: false,

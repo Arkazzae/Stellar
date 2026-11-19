@@ -32,8 +32,6 @@ export interface Participant {
   displayName: string;
   muted: boolean;
   speaking: boolean;
-  /** Smoothed input level, 0..1. */
-  level: number;
   /** Local receiver-side strip, 0..200 percent. */
   playbackVolume: number;
   /** Local receiver-side gate on this person's strip. */
@@ -66,7 +64,6 @@ export function createParticipant(init: ParticipantInit): Participant {
     displayName: user.displayName,
     muted: user.muted,
     speaking: false,
-    level: 0,
     playbackVolume: preference.volume,
     gated: preference.gated,
     suppressed: preference.suppressed,

@@ -246,7 +246,6 @@ export class RemoteAudio {
     voice.processed = false;
     voice.streamId = null;
     person.speaking = false;
-    person.level = 0;
   }
 
   private ended(person: Participant, streamId: string): void {

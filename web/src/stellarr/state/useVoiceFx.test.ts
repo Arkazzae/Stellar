@@ -14,7 +14,6 @@ function peer(userId: string): VoicePeer {
     displayName: userId,
     muted: false,
     speaking: false,
-    level: 0,
     playbackVolume: 100,
     gated: false,
     suppressed: false,
@@ -117,7 +116,7 @@ describe("useVoiceFx", () => {
   it("ignores speaking changes that leave membership alone", () => {
     const view = mount({ state: call({ peers: ids("ada") }) });
 
-    view.rerender({ state: call({ peers: [{ ...peer("ada"), speaking: true, level: 0.8 }] }) });
+    view.rerender({ state: call({ peers: [{ ...peer("ada"), speaking: true }] }) });
 
     expect(played()).toEqual([]);
   });
