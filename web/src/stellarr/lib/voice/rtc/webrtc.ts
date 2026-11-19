@@ -185,6 +185,12 @@ export class WebRtcVoiceClient implements VoiceClient {
   /** Orders user intentions even while the hub is still acknowledging a leave. */
   private intent = 0;
   private leaving: Promise<void> | null = null;
+  /**
+   * The hub may still seat this connection in a room this client has left
+   * for another: a switch keeps the old seat until `JoinVoice` moves it.
+   * Whatever ends the switch before that gives the seat up.
+   */
+  private seatHeld = false;
   private selfDisplayName: string;
 
   constructor(private readonly options: WebRtcVoiceClientOptions) {
@@ -358,9 +364,14 @@ export class WebRtcVoiceClient implements VoiceClient {
     // contexts now: doing it later in `ontrack` makes Brave/Chromium leave them
     // suspended even though RTP continues to arrive normally.
     this.preparePlayback();
-    // Teardown is synchronous locally, but the next join must wait for its
-    // hub invocation. A later click (including hangup) cancels this intention.
-    const leaving = this.channelId ? this.leave() : this.leaving;
+    // Teardown is synchronous locally. A switch keeps the seat, and the hub's
+    // JoinVoice moves it from one room to the other in one step, so nobody
+    // sees this person leave one before they arrive in the other. Any other
+    // join waits for a leave the hub is still acknowledging. A later click
+    // (including hangup) cancels this intention.
+    const switching = this.channelId !== null;
+    if (switching) this.seatHeld = this.teardown();
+    const leaving = switching ? null : this.leaving;
     const intent = ++this.intent;
     if (leaving) await leaving;
     if (this.disposed || intent !== this.intent) return;
@@ -445,8 +456,18 @@ export class WebRtcVoiceClient implements VoiceClient {
   }
 
   async leave(): Promise<void> {
+    if (!this.teardown()) return;
+    this.giveUpSeat();
+    await this.leaving;
+  }
+
+  /**
+   * Ends the call on this side, at once: everything local goes, and the
+   * snapshot returns to idle. True when the hub may still hold a seat for it.
+   */
+  private teardown(): boolean {
     this.intent += 1;
-    const wasJoined = this.channelId !== null;
+    const seated = this.channelId !== null || this.seatHeld;
     this.channelId = null;
     this.session += 1;
 
@@ -471,16 +492,19 @@ export class WebRtcVoiceClient implements VoiceClient {
     this.store.reset();
     // A download outlives the call it started in.
     this.store.set({ suppressorDownload: this.downloads.current });
-    if (!wasJoined) return;
+    return seated;
+  }
+
+  /** Tells the hub to free this connection's seat; the next join waits for it. */
+  private giveUpSeat(): void {
+    this.seatHeld = false;
     const leaving = this.options.realtime.leaveVoice().catch(() => {
       // Leaving locally always succeeds, even when the hub is gone.
     });
     this.leaving = leaving;
-    try {
-      await leaving;
-    } finally {
+    void leaving.then(() => {
       if (this.leaving === leaving) this.leaving = null;
-    }
+    });
   }
 
   /**
@@ -1101,10 +1125,14 @@ export class WebRtcVoiceClient implements VoiceClient {
     this.lifecycle.stop();
     this.options.ice.endSession();
     this.endEncryption();
+    // A switch that failed before its seat moved gives up the one it kept.
+    if (this.seatHeld) this.giveUpSeat();
     this.store.set({ connection: "failed", error, encrypted: false });
   }
 
   private markConnected(): void {
+    // The hub seats this connection where this client is now.
+    this.seatHeld = false;
     this.setSignaling("connected");
     this.store.set({ connection: "connected" });
     this.health.syncTransport();

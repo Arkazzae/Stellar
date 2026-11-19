@@ -53,6 +53,40 @@ function row(name: string): HTMLElement {
 }
 
 describe("Rail voice occupants", () => {
+  it("greets you when you join, and not when you change rooms", () => {
+    const me = person({ id: "me", displayName: "Maja" });
+    const rooms = (lounge: PersonVM[], studio: PersonVM[]): VoiceChannelVM[] => [
+      { id: "v-1", name: "Ogólny", occupants: lounge },
+      { id: "v-2", name: "Studio", occupants: studio },
+    ];
+    const props: RailProps = {
+      serverName: "Orbit",
+      textChannels: [],
+      voiceChannels: rooms([], []),
+      activeChannelId: null,
+      selfId: "me",
+      onSelectTextChannel: vi.fn(),
+      onJoinVoiceChannel: vi.fn(),
+      onEditServer: vi.fn(),
+      onInvite: vi.fn(),
+      onMoveChannel: vi.fn(),
+    };
+    const draw = (voiceChannels: VoiceChannelVM[]) => (
+      <ConfirmProvider>
+        <Rail {...props} voiceChannels={voiceChannels} />
+      </ConfirmProvider>
+    );
+    const { rerender } = render(draw(rooms([], [])));
+
+    rerender(draw(rooms([me], [])));
+    expect(row("Maja")).toHaveClass("arriving");
+
+    // The hub sends the room left before the room reached.
+    rerender(draw(rooms([], [])));
+    rerender(draw(rooms([], [me])));
+    expect(row("Maja")).not.toHaveClass("arriving");
+  });
+
   it("says out loud who is muted, yourself included", () => {
     setup([
       person({ id: "me", displayName: "Maja", muted: true }),

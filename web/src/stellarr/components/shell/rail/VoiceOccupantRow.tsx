@@ -1,4 +1,4 @@
-import { memo, useMemo, type MouseEventHandler } from "react";
+import { memo, useMemo, useState, type MouseEventHandler } from "react";
 
 import { Icon } from "@stellarr/icons";
 import { Avatar } from "@/components/primitives/Avatar";
@@ -20,6 +20,12 @@ export interface VoiceOccupantRowProps {
   drag?: DragHandleProps;
   /** Builds the row's right-click handler; the same function for every row. */
   menuFor?: (person: PersonVM) => MouseEventHandler<HTMLElement>;
+  /**
+   * Whether this person is sitting down rather than moving here from another
+   * channel; asked once, when the row mounts. Without it every row is an
+   * arrival.
+   */
+  arrives?: (personId: string) => boolean;
 }
 
 /**
@@ -38,8 +44,11 @@ export const VoiceOccupantRow = memo(function VoiceOccupantRow({
   moving,
   drag,
   menuFor,
+  arrives,
 }: VoiceOccupantRowProps) {
   const { t } = useLanguage();
+  // Your own row greets you when you join, not each time you change rooms.
+  const [arriving] = useState(() => self && (arrives?.(person.id) ?? true));
   const onContextMenu = useMemo(() => menuFor?.(person), [menuFor, person]);
   const seat = useVoiceSeat(person.id);
   const speaking = seat?.speaking ?? person.speaking === true;
@@ -48,6 +57,7 @@ export const VoiceOccupantRow = memo(function VoiceOccupantRow({
   const className = [
     "voice-occupant",
     self && "me",
+    arriving && "arriving",
     speaking && "speaking",
     muted && "muted",
     enabled && "is-draggable",
