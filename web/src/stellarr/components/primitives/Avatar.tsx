@@ -1,4 +1,4 @@
-import type { CSSProperties } from "react";
+import { useState, type CSSProperties } from "react";
 
 import type { PersonVM } from "@/components/view-models";
 import { defaultIdentityArt, identityVars } from "@/design/identity";
@@ -28,9 +28,11 @@ export interface AvatarProps {
   /** Precomputed by the view model; derived from the name only as a fallback. */
   initials?: string;
   /**
-   * An uploaded picture. Without one, the person's id picks a built-in
-   * identity graphic. The initials stay underneath either way, so a slow or
-   * broken image still leaves something to read.
+   * An uploaded picture. Without one, the person's id picks one of the
+   * built-in mascot faces, drawn on the person's colour. An upload is laid over
+   * the initials, so a slow or broken one still leaves something to read; the
+   * mascot is transparent, so the initials are hidden behind it and come back
+   * only if it fails to load.
    */
   avatarUrl?: string;
   size?: AvatarSize;
@@ -86,12 +88,14 @@ export function Avatar({
   title,
 }: AvatarProps) {
   const { t } = useLanguage();
+  // The address that failed, not a flag, so a face reused for someone else
+  // tries their mascot instead of keeping the last one's failure.
+  const [failedArt, setFailedArt] = useState<string>();
   const hasUpload = avatarUrl !== undefined && avatarUrl !== "";
-  const pictureUrl = hasUpload
-    ? avatarUrl
-    : system
-      ? undefined
-      : defaultIdentityArt(id).avatarUrl;
+  const artUrl =
+    hasUpload || system ? undefined : defaultIdentityArt(id).avatarUrl;
+  const pictureUrl = hasUpload ? avatarUrl : artUrl;
+  const showsArt = artUrl !== undefined && artUrl !== failedArt;
   const style: CSSProperties = system
     ? ({ "--person-bg": "var(--info-line)" } as CSSProperties)
     : identityVars(id, offline ?? presence === "offline");
@@ -108,11 +112,12 @@ export function Avatar({
     .join(" ");
 
   /* The picture is laid over the initials instead of replacing them: one that
-     fails to load reveals the initials rather than a blank disc. `alt=""`
-     because the name is always beside the face. */
+     fails to load reveals the initials rather than a blank disc. The mascot
+     would show them through, so they wait behind it. `alt=""` because the
+     name is always beside the face. */
   const face = (
     <>
-      {initials ?? toInitials(displayName)}
+      <span hidden={showsArt}>{initials ?? toInitials(displayName)}</span>
       {pictureUrl === undefined ? null : (
         // A plain image: uploads come from the instance itself, with no
         // optimiser in front of them. Not draggable:
@@ -125,6 +130,9 @@ export function Avatar({
           alt=""
           loading="lazy"
           draggable={false}
+          onError={
+            artUrl === undefined ? undefined : () => setFailedArt(artUrl)
+          }
         />
       )}
       {presence === undefined ? null : <PresenceDot presence={presence} />}
