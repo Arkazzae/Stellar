@@ -26,6 +26,7 @@ import uuid
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
+from typing import Tuple, Union
 
 DEFAULT_DB_PATH = "/data/stellarr/stellarr-dev.db"
 DEFAULT_SEED_PASSWORD = "dev-seed-2026"
@@ -33,7 +34,9 @@ DEFAULT_RNG_SEED = 20261115
 PBKDF2_ITERATIONS = 210_000
 SEED_MEDIA_DIR = Path(__file__).resolve().parent / "seed-media"
 
-ScriptLine = tuple[str, str] | tuple[str, str, str]
+# A runtime alias, so it cannot use the `X | Y` form: that needs Python 3.10,
+# and macOS still ships 3.9 as python3.
+ScriptLine = Union[Tuple[str, str], Tuple[str, str, str]]
 
 
 @dataclass(frozen=True)
