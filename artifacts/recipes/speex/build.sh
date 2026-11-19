@@ -22,10 +22,30 @@ out=$2
 recipe=$(cd "$(dirname "$0")" && pwd)
 objects=$(mktemp -d)
 
+# The WebAssembly features the build may use, named one by one on top of the
+# MVP, so that a newer clang, whose defaults grow, cannot raise what a
+# browser must support without this list changing. They are the ones
+# clang 22's default CPU enables, plus extended-const, which wasi-libc is
+# built with (its objects are built for clang's lime1 CPU). The binary's code
+# uses two of them: the saturating float-to-int conversions
+# (nontrapping-fptoint) and memory.fill and memory.copy (bulk-memory-opt);
+# it has no call_indirect, no sign-extension instruction and no extended
+# constant expression. That code runs from Chrome 75, Firefox 79 and Safari
+# 15; the whole list, extended-const being the newest, from Chrome 114,
+# Firefox 112 and Safari 17. No SIMD and no threads.
+#
+# The link takes the same list as --features, and wasm-ld refuses it when an
+# object, ours or one of wasi-libc's, was built with a feature outside it
+# ("Target feature ... is not allowed"); the module can use nothing its
+# objects were not built with.
+features="bulk-memory bulk-memory-opt call-indirect-overlong extended-const multivalue mutable-globals nontrapping-fptoint reference-types sign-ext"
+cpu="-mcpu=mvp"
+for feature in $features; do cpu="$cpu -m$feature"; done
+
 compile() {
   # Relative names and the prefix maps keep the build's directories out of
-  # anything the compiler records.
-  /opt/wasi-sdk/bin/clang --target=wasm32-wasip1 -O2 \
+  # anything the compiler records. $cpu is a list of flags, split on purpose.
+  /opt/wasi-sdk/bin/clang --target=wasm32-wasip1 -O2 $cpu \
     -DFLOATING_POINT -DUSE_SMALLFT -DVAR_ARRAYS -DEXPORT= -DOS_SUPPORT_CUSTOM \
     -I"$recipe/include" -I"$source/include" \
     -ffile-prefix-map="$source"=speexdsp -ffile-prefix-map="$recipe"=recipe \
@@ -39,7 +59,8 @@ compile "$source/libspeexdsp/smallft.c"
 compile "$recipe/no_echo.c"
 
 mkdir -p "$out"
-/opt/wasi-sdk/bin/clang --target=wasm32-wasip1 -O2 -nostartfiles \
+/opt/wasi-sdk/bin/clang --target=wasm32-wasip1 -O2 $cpu -nostartfiles \
+  -Xlinker --features="$(printf '%s' "$features" | tr ' ' ',')" \
   -Wl,--no-entry -Wl,--strip-all \
   -Wl,--export=malloc -Wl,--export=free \
   -Wl,--export=speex_preprocess_state_init \
