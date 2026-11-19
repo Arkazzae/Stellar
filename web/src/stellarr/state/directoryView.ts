@@ -57,6 +57,7 @@ export interface DirectoryView {
 }
 
 const NO_OCCUPANTS: VoiceOccupant[] = [];
+const NO_PEOPLE: PersonVM[] = [];
 
 /**
  * Whether two occupancy maps say the same thing.
@@ -126,6 +127,158 @@ export function deriveTextChannels(channels: readonly Channel[]): TextChannelVM[
     }));
 }
 
+/** `next` itself, or `previous` when both hold the very same items in the same order. */
+function sameItems<T>(previous: readonly T[] | undefined, next: T[]): T[] {
+  if (previous === undefined || previous.length !== next.length) return next;
+  return next.every((item, index) => item === previous[index]) ? (previous as T[]) : next;
+}
+
+function sameOccupantVM(a: PersonVM, b: PersonVM): boolean {
+  return (
+    a.id === b.id &&
+    a.displayName === b.displayName &&
+    a.muted === b.muted &&
+    a.avatarUrl === b.avatarUrl
+  );
+}
+
+function sameVoiceChannel(a: VoiceChannelVM, b: VoiceChannelVM): boolean {
+  return (
+    a.id === b.id &&
+    a.name === b.name &&
+    a.sectionId === b.sectionId &&
+    a.userLimit === b.userLimit &&
+    a.occupants === b.occupants
+  );
+}
+
+export type DirectoryViewDeriver = (
+  snapshot: DirectorySnapshot,
+  textChannels?: TextChannelVM[],
+) => DirectoryView;
+
+/**
+ * Derives the view, handing back every part that says the same as last time
+ * as the very object it was: a person, an occupant, a voice channel and the
+ * lists of them. A hub frame always brings fresh occupant objects, so seats
+ * are compared by what they say; members are replaced one at a time, so a
+ * person is kept for as long as their `User` is. Whatever a row is keyed on
+ * stays put through a presence change or someone else's seat moving.
+ */
+export function createDirectoryViewDeriver(): DirectoryViewDeriver {
+  const people = new WeakMap<User, PersonVM>();
+  let last: DirectoryView | null = null;
+  let lastSections: { from: readonly Section[]; view: SectionVM[] } | null = null;
+  /** Each channel's occupants as last shown, by channel id. */
+  let lastOccupants = new Map<string, PersonVM[]>();
+
+  const personOf = (user: User): PersonVM => {
+    let person = people.get(user);
+    if (person === undefined) {
+      person = toPerson(user);
+      people.set(user, person);
+    }
+    return person;
+  };
+
+  return (snapshot, textChannels = deriveTextChannels(snapshot.channels)) => {
+    const { server, channels, members, permissions, occupancy } = snapshot;
+    const previous = last;
+    const membersById = new Map(members.map((member) => [member.id, member]));
+
+    const occupants = new Map<string, PersonVM[]>();
+    const peopleOn = (channelId: string): PersonVM[] => {
+      const before = lastOccupants.get(channelId);
+      const shown = (occupancy.get(channelId) ?? NO_OCCUPANTS).map((occupant, index) => {
+        const person = occupantToPerson(occupant, membersById);
+        const kept = before?.[index];
+        return kept !== undefined && sameOccupantVM(kept, person) ? kept : person;
+      });
+      return sameItems(before, shown);
+    };
+
+    const previousChannels = new Map(
+      (previous?.voiceChannels ?? []).map((channel) => [channel.id, channel]),
+    );
+    const voiceChannels = sameItems(
+      previous?.voiceChannels,
+      channels
+        .filter((channel) => channel.kind === "voice")
+        .map((channel) => {
+          const seated = peopleOn(channel.id);
+          occupants.set(channel.id, seated);
+          const next: VoiceChannelVM = {
+            id: channel.id,
+            name: channel.name,
+            occupants: seated,
+            ...(channel.sectionId === undefined ? {} : { sectionId: channel.sectionId }),
+            // The server reads 0 as no limit.
+            ...(channel.userLimit === undefined || channel.userLimit === 0
+              ? {}
+              : { userLimit: channel.userLimit }),
+          };
+          const kept = previousChannels.get(channel.id);
+          return kept !== undefined && sameVoiceChannel(kept, next) ? kept : next;
+        }),
+    );
+    lastOccupants = occupants;
+
+    const sameVoice = previous !== null && previous.voiceChannels === voiceChannels;
+    let inVoice: PersonVM[];
+    let occupantsOf: (channelId: string) => PersonVM[];
+    if (sameVoice) {
+      ({ inVoice, occupantsOf } = previous);
+    } else {
+      const seen = new Map<string, PersonVM>();
+      for (const channel of voiceChannels) {
+        for (const person of channel.occupants) {
+          if (!seen.has(person.id)) seen.set(person.id, person);
+        }
+      }
+      inVoice = sameItems(previous?.inVoice, [...seen.values()]);
+      occupantsOf = (channelId) => occupants.get(channelId) ?? NO_PEOPLE;
+    }
+
+    if (lastSections?.from !== snapshot.sections) {
+      lastSections = {
+        from: snapshot.sections,
+        view: sameItems(
+          lastSections?.view,
+          snapshot.sections.map((section) => ({ id: section.id, name: section.name })),
+        ),
+      };
+    }
+
+    const view: DirectoryView = {
+      server,
+      servers: snapshot.servers,
+      serverMark: serverMark(server.name),
+      channels,
+      textChannels,
+      voiceChannels,
+      sections: lastSections.view,
+      members,
+      permissions,
+      people: sameItems(previous?.people, members.map(personOf)),
+      occupantsOf,
+      inVoice,
+      canAccessServerSettings: permissions.some(
+        (permission) => permission !== "manageMessages" && permission !== "moderateMembers",
+      ),
+      canManageServer: permissions.includes("manageServer"),
+      canManageChannels: permissions.includes("manageChannels"),
+      canManageMessages: permissions.includes("manageMessages"),
+      canModerateMembers: permissions.includes("moderateMembers"),
+      canManageBans: permissions.includes("manageBans"),
+      firstTextChannelId: textChannels[0]?.id ?? null,
+      channelName: (channelId) =>
+        channels.find((channel) => channel.id === channelId)?.name ?? "",
+    };
+    last = view;
+    return view;
+  };
+}
+
 /**
  * `textChannels` lets a caller pass the list it already derived from this
  * snapshot's `channels`, so that list keeps its identity while only occupancy
@@ -133,60 +286,9 @@ export function deriveTextChannels(channels: readonly Channel[]): TextChannelVM[
  */
 export function deriveDirectoryView(
   snapshot: DirectorySnapshot,
-  textChannels: TextChannelVM[] = deriveTextChannels(snapshot.channels),
+  textChannels?: TextChannelVM[],
 ): DirectoryView {
-  const { server, channels, members, permissions, occupancy } = snapshot;
-  const membersById = new Map(members.map((member) => [member.id, member]));
-  const peopleOn = (channelId: string): PersonVM[] =>
-    (occupancy.get(channelId) ?? NO_OCCUPANTS).map((occupant) =>
-      occupantToPerson(occupant, membersById),
-    );
-
-  const voiceChannels: VoiceChannelVM[] = channels
-    .filter((channel) => channel.kind === "voice")
-    .map((channel) => ({
-      id: channel.id,
-      name: channel.name,
-      occupants: peopleOn(channel.id),
-      ...(channel.sectionId === undefined ? {} : { sectionId: channel.sectionId }),
-      // The server reads 0 as no limit.
-      ...(channel.userLimit === undefined || channel.userLimit === 0
-        ? {}
-        : { userLimit: channel.userLimit }),
-    }));
-
-  const inVoice = new Map<string, PersonVM>();
-  for (const channel of voiceChannels) {
-    for (const person of channel.occupants) {
-      if (!inVoice.has(person.id)) inVoice.set(person.id, person);
-    }
-  }
-
-  return {
-    server,
-    servers: snapshot.servers,
-    serverMark: serverMark(server.name),
-    channels,
-    textChannels,
-    voiceChannels,
-    sections: snapshot.sections.map((section) => ({ id: section.id, name: section.name })),
-    members,
-    permissions,
-    people: members.map(toPerson),
-    occupantsOf: peopleOn,
-    inVoice: [...inVoice.values()],
-    canAccessServerSettings: permissions.some(
-      (permission) => permission !== "manageMessages" && permission !== "moderateMembers",
-    ),
-    canManageServer: permissions.includes("manageServer"),
-    canManageChannels: permissions.includes("manageChannels"),
-    canManageMessages: permissions.includes("manageMessages"),
-    canModerateMembers: permissions.includes("moderateMembers"),
-    canManageBans: permissions.includes("manageBans"),
-    firstTextChannelId: textChannels[0]?.id ?? null,
-    channelName: (channelId) =>
-      channels.find((channel) => channel.id === channelId)?.name ?? "",
-  };
+  return createDirectoryViewDeriver()(snapshot, textChannels);
 }
 
 /**
