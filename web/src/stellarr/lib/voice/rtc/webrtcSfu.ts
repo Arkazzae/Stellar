@@ -232,7 +232,9 @@ export class Sfu implements CallTopology {
       const existing = this.people.get(participant.userId);
       if (existing) {
         existing.displayName = participant.displayName;
-        existing.muted = participant.muted;
+        // The hub says what a seat was given, which on a rejoin is unmuted;
+        // once the person has said otherwise themselves, their word stands.
+        if (!existing.stateKnown) existing.muted = participant.muted;
         continue;
       }
       this.people.set(
