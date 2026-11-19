@@ -3,17 +3,20 @@
  *
  * Three engines, each a WASM binary driven by an AudioWorklet processor on the
  * render thread, so none of them competes with React for the main thread.
- * Speex is ours: artifacts/recipes/speex/ builds its binary from SpeexDSP's
- * source, and its processor, `speex/processor.ts`, is built into
- * /audio/speex-worklet.js like the detector's. RNNoise's and GTCRN's
- * processors and binaries are still prebuilt files from web-noise-suppressor
- * and the projects it builds on. All are served from /audio/ (see
- * artifacts/manifest.json); this module is the main-thread side that loads
- * and starts them. Everything is loaded lazily: the binaries weigh 60-200 KB
- * and most sessions ask for exactly one.
+ * Speex and RNNoise are ours: artifacts/recipes/speex/ and
+ * artifacts/recipes/rnnoise/ build their binaries from the libraries' source,
+ * and their processors, `speex/processor.ts` and `rnnoise/processor.ts`, are
+ * built into /audio/speex-worklet.js and /audio/rnnoise-worklet.js like the
+ * detector's. GTCRN's processor and binary are still prebuilt files from
+ * web-noise-suppressor and the projects it builds on. All are served from
+ * /audio/ (see artifacts/manifest.json); this module is the main-thread side
+ * that loads and starts them. Everything is loaded lazily: the binaries weigh
+ * 61 KB (Speex), 3.6 MB (RNNoise, which holds its network's weights) and
+ * 197 KB (GTCRN), and most sessions ask for exactly one.
  *
- * - `rnnoise`: Xiph's RNNoise. Cheap and good on steady background noise, weak
- *   on impulsive sounds such as keys or chewing.
+ * - `rnnoise`: Xiph's RNNoise with its newest model. Takes steady noise, keys
+ *   and chewing out of the voice; it also takes out a whisper, which has no
+ *   pitch for it to hear.
  * - `gtcrn`: a larger network with a far better record on non-stationary noise,
  *   at a higher CPU cost. The build served here takes 768-sample frames at
  *   48 kHz, resamples them 3:1 and runs the model at 16 kHz, so it passes
@@ -29,12 +32,13 @@
  */
 
 import type { WorkletSuppressor } from "../audioProfiles";
+import { RNNOISE_WORKLET_URL } from "./rnnoise/address";
+import { RNNOISE_PROCESSOR_NAME, RNNOISE_READY, type RnnoiseOptions } from "./rnnoise/messages";
 import { SPEEX_WORKLET_URL } from "./speex/address";
 import { SPEEX_PROCESSOR_NAME } from "./speex/messages";
 
-export const RNNOISE_WORKLET_URL = "/audio/rnnoise-worklet.js";
+export { RNNOISE_WORKLET_URL };
 export const RNNOISE_WASM_URL = "/audio/rnnoise.wasm";
-export const RNNOISE_SIMD_WASM_URL = "/audio/rnnoise_simd.wasm";
 export const GTCRN_WORKLET_URL = "/audio/gtcrn-worklet.js";
 export const GTCRN_WASM_URL = "/audio/gtcrn.wasm";
 export { SPEEX_WORKLET_URL };
@@ -47,12 +51,12 @@ export const WORKLET_URL: Record<WorkletSuppressor, string> = {
 };
 
 /**
- * The name each worklet module registers its processor under. The RNNoise and
- * GTCRN worklets are served byte for byte as they were published, so their
- * names are theirs to choose; Speex's is ours.
+ * The name each worklet module registers its processor under. The GTCRN
+ * worklet is served byte for byte as it was published, so its name is its
+ * own to choose; Speex's and RNNoise's are ours.
  */
 export const PROCESSOR_NAME: Record<WorkletSuppressor, string> = {
-  rnnoise: "@sapphi-red/web-noise-suppressor/rnnoise",
+  rnnoise: RNNOISE_PROCESSOR_NAME,
   gtcrn: "@sapphi-red/web-noise-suppressor/gtcrn",
   speex: SPEEX_PROCESSOR_NAME,
 };
@@ -69,11 +73,12 @@ export interface NoiseSuppressorHandle {
 }
 
 /**
- * What the processors read from `processorOptions`, and all they read. The
- * binary is copied into the render thread with the options and instantiated
- * there. The published RNNoise and GTCRN processors give each of the
+ * What the GTCRN and Speex processors read from `processorOptions`, and all
+ * they read. The binary is copied into the render thread with the options and
+ * compiled there. The published GTCRN processor gives each of the
  * `maxChannels` channels its own suppressor state, and a mono microphone needs
- * one; Speex's processor is mono and reads only the binary.
+ * one; Speex's processor is mono and reads only the binary. RNNoise's takes
+ * its binary compiled (`RnnoiseOptions`); see `startRnnoise`.
  */
 interface ProcessorOptions {
   maxChannels: number;
@@ -85,46 +90,25 @@ interface ProcessorOptions {
  * WASM state. Disconnecting alone frees nothing: a processor without input
  * still reports itself alive and keeps its heap.
  *
- * Speex hears it: its processor frees the preprocessor's state, returns false
- * from then on and outputs silence. The RNNoise and GTCRN worklets as
- * published (0.4.1) listen for it with addEventListener and never start their
- * port, which leaves its messages queued: in Chromium they were seen not to
- * hear it. Going by their code, their state then lasts as long as the
- * AudioContext. The capture graph closes its context on every recapture; the
- * remote mixer keeps one, with GTCRN in it, for the whole call. It is sent to
- * every engine regardless.
+ * Speex and RNNoise hear it: their processors free the library's state,
+ * return false from then on and output silence. The GTCRN worklet as
+ * published (0.4.1) listens for it with addEventListener and never starts its
+ * port, which leaves its messages queued: in Chromium it was seen not to hear
+ * it. Going by its code, its state then lasts as long as the AudioContext.
+ * The capture graph closes its context on every recapture; the remote mixer
+ * keeps one, with GTCRN in it, for the whole call. It is sent to every engine
+ * regardless.
  */
 const DESTROY = "destroy";
 
 /**
- * The smallest module that only an engine with WebAssembly SIMD accepts: one
- * function that splats an i32 into a vector and asks whether any lane is set.
- * Both instructions have the numbers the finished SIMD proposal gave them,
- * which is the SIMD rnnoise_simd.wasm was built for.
+ * One binary per engine. RNNoise's is built with WebAssembly SIMD, which
+ * every browser that can load any of these binaries has (see
+ * artifacts/recipes/rnnoise/build.sh), so there is no build without it to
+ * fall back to.
  */
-const SIMD_PROBE = new Uint8Array([
-  0x00, 0x61, 0x73, 0x6d, // "\0asm"
-  0x01, 0x00, 0x00, 0x00, // version 1
-  0x01, 0x05, 0x01, 0x60, 0x00, 0x01, 0x7f, // type section: () -> i32
-  0x03, 0x02, 0x01, 0x00, // function section: one function of that type
-  0x0a, 0x0a, 0x01, 0x08, 0x00, // code section: one body of 8 bytes, no locals
-  0x41, 0x00, // i32.const 0
-  0xfd, 0x0f, // i8x16.splat
-  0xfd, 0x53, // v128.any_true
-  0x0b, // end
-]);
-
-function supportsSimd(): boolean {
-  try {
-    return WebAssembly.validate(SIMD_PROBE);
-  } catch {
-    return false;
-  }
-}
-
 const WASM_URL: Record<WorkletSuppressor, () => string> = {
-  // The SIMD build is the same network, a good deal cheaper per frame.
-  rnnoise: () => (supportsSimd() ? RNNOISE_SIMD_WASM_URL : RNNOISE_WASM_URL),
+  rnnoise: () => RNNOISE_WASM_URL,
   gtcrn: () => GTCRN_WASM_URL,
   speex: () => SPEEX_WASM_URL,
 };
@@ -171,11 +155,56 @@ async function fetchBinary(
   return binary.buffer;
 }
 
-function createNode(
+/**
+ * RNNoise's node, handed back only once its processor has a denoiser.
+ *
+ * Its binary is several megabytes, the model's weights, and is compiled here
+ * and handed over as a module, so that the processor only instantiates it.
+ * Measured in Chrome (`npm run bench:voice-suppressor`, which prints it):
+ * compiling takes about 1.5 ms, and the processor's constructor then holds
+ * the render thread for about 1 ms (instantiating 0.5 to 1 ms, making the
+ * state 0.1 to 0.2 ms), under half of a 2.67 ms render quantum, and no render
+ * call came later than it did before the node existed. Compiling inside the
+ * constructor would cost the render thread that 1.5 ms more; this way it also
+ * costs it nothing when a module is handed to a second node.
+ *
+ * Waiting for the processor's word is what lets a failure fall back to the
+ * browser's suppressor: a binary that does not compile rejects here, and a
+ * processor that cannot instantiate it, short of memory say, fires
+ * "processorerror" instead of saying it is ready. Chrome constructs the
+ * processor whether or not the context is running. Until it is ready
+ * there is no node to wire, so `attachSuppressor` has not resolved; once it
+ * has, the node outputs silence for its first 1408 samples (29 ms), the delay
+ * of its framing and of the library, and then the cleaned audio.
+ */
+async function startRnnoise(context: AudioContext, wasmBinary: ArrayBuffer): Promise<AudioWorkletNode> {
+  const module = await WebAssembly.compile(wasmBinary);
+  const processorOptions: RnnoiseOptions = { module };
+  const node = new AudioWorkletNode(context, PROCESSOR_NAME.rnnoise, { processorOptions });
+  try {
+    await new Promise<void>((resolve, reject) => {
+      node.port.onmessage = (event: MessageEvent<unknown>) => {
+        if (event.data === RNNOISE_READY) resolve();
+      };
+      node.onprocessorerror = () => reject(new Error("the RNNoise processor did not start"));
+    });
+  } catch (error) {
+    // The node exists but nobody holds it: free whatever its processor made.
+    node.port.postMessage(DESTROY);
+    throw error;
+  } finally {
+    node.port.onmessage = null;
+    node.onprocessorerror = null;
+  }
+  return node;
+}
+
+async function createNode(
   kind: WorkletSuppressor,
   context: AudioContext,
   wasmBinary: ArrayBuffer,
-): AudioWorkletNode {
+): Promise<AudioWorkletNode> {
+  if (kind === "rnnoise") return startRnnoise(context, wasmBinary);
   const processorOptions: ProcessorOptions = { maxChannels: 1, wasmBinary };
   return new AudioWorkletNode(context, PROCESSOR_NAME[kind], { processorOptions });
 }
@@ -314,7 +343,7 @@ export async function attachSuppressor(
     await registerWorklet(kind, context);
     const wasmBinary = await loadBinary(kind);
 
-    const created = createNode(kind, context, wasmBinary);
+    const created = await createNode(kind, context, wasmBinary);
     node = created;
     source.connect(created);
 

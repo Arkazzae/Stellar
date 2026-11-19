@@ -36,13 +36,13 @@ function sha256(bytes: Buffer): string {
   return createHash("sha256").update(bytes).digest("hex");
 }
 
-// The RNNoise and GTCRN worklets come from artifacts/, the code that starts
-// them is ours in noiseSuppression.ts. Replacing a worklet with another build
+// The GTCRN worklet comes from artifacts/, the code that starts it is ours in
+// noiseSuppression.ts. Replacing a worklet with another build
 // or version must not leave the two speaking past each other: a node
 // constructed under a name nothing registered throws, and options the
-// processor does not read leave it without a binary. Speex's worklet is built
-// from our source and takes its name and options from the same modules
-// noiseSuppression.ts does.
+// processor does not read leave it without a binary. Speex's and RNNoise's
+// worklets are built from our source and take their names and options from the
+// same modules noiseSuppression.ts does.
 describe("the prebuilt noise-suppression worklets", () => {
   const engines = Object.entries(WORKLET_URL).flatMap(([kind, url]) => {
     const source = manifest.find((entry) => `/${entry.path}` === url)?.source.file;
@@ -91,7 +91,7 @@ describe("the artifact manifest", () => {
         copied: true,
       });
     }
-    expect(baked).toEqual(recipes);
+    expect([...baked].sort()).toEqual([...recipes].sort());
   });
 
   it("records the size and hash of every committed source file", () => {

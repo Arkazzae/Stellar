@@ -737,6 +737,29 @@ export function buildFixture(fixture: Fixture): Float32Array {
   return samples;
 }
 
+// ---- clean talkers, for measures that need the speech without the room ----
+
+/**
+ * Two talkers alone, at -26 dBFS, with digital silence between phrases: the
+ * synthetic counterpart of a recording for the suppressor comparison, which
+ * mixes them with the rooms below and measures what a suppressor leaves of
+ * the speech against these. Not fixtures of any record.
+ */
+export const TALKERS: ReadonlyArray<{ name: string; build(): Float32Array }> = [
+  {
+    name: "synthetic-low",
+    build: () =>
+      speech(1701, LOW_VOICE, [{ gap: 300, words: 4 }, { gap: 700, words: 3 }, { gap: 1200, words: 4 }, { gap: 500, words: 2 }], 9.6, -26)
+        .samples,
+  },
+  {
+    name: "synthetic-high",
+    build: () =>
+      speech(1801, HIGH_VOICE, [{ gap: 300, words: 3 }, { gap: 900, words: 4 }, { gap: 600, words: 3 }, { gap: 1500, words: 3 }], 9.6, -26)
+        .samples,
+  },
+];
+
 // ---- material for mixing into recordings ----
 
 /** The same rooms the fixtures use, offered to the recordings harness for its mixtures. */
