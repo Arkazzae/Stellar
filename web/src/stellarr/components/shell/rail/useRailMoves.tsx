@@ -1,4 +1,4 @@
-import { useId, useSyncExternalStore, type RefCallback } from "react";
+import { useCallback, useId, useSyncExternalStore, type RefCallback } from "react";
 import { createPortal } from "react-dom";
 
 import { Avatar } from "@/components/primitives/Avatar";
@@ -38,6 +38,17 @@ const SECTIONS = "sections";
 
 /** One seated person's carry key: the same person can only sit in one channel at a time. */
 const occupantKey = (channelId: string, personId: string) => `${channelId}:${personId}`;
+
+/**
+ * Who can be carried: you, wherever you sit, and, for staff, everyone else
+ * who is not already on the way to another channel.
+ */
+export function carries(
+  personId: string,
+  { selfId, canMoveOthers, movingUserId }: { selfId: string; canMoveOthers: boolean; movingUserId: string | null },
+): boolean {
+  return personId === selfId || (canMoveOthers && personId !== movingUserId);
+}
 
 export interface RailMovesOptions {
   /** The rail's own id, which the collapsible bodies' ids start with. */
@@ -192,13 +203,11 @@ export function useRailMoves({
   const said = (channel: MessageKey, section: MessageKey) => (id: string, place: SortPlace) =>
     t(place.list === SECTIONS ? section : channel, placeWords(id, place));
 
-  // Who can be carried now: you, wherever you sit, and for staff everyone
-  // else not already on the way.
+  const canMoveOthers = onDropPerson !== undefined;
   const carriable = new Map<string, VoiceDragData>();
   for (const channel of voiceChannels) {
     for (const person of channel.occupants) {
-      const you = person.id === selfId;
-      if (!you && (onDropPerson === undefined || person.id === movingUserId)) continue;
+      if (!carries(person.id, { selfId, canMoveOthers, movingUserId })) continue;
       carriable.set(occupantKey(channel.id, person.id), {
         type: "voice-occupant",
         person,
@@ -277,12 +286,28 @@ export function useRailMoves({
     },
   });
 
-  const channelHandle = { roleDescription: t("shell.reorderHandle"), instructionsId: channelInstructions };
-  const personHandle = { roleDescription: t("shell.dragHandle"), instructionsId: personInstructions };
-  const sectionHandle = {
-    roleDescription: t("shell.sectionHandle"),
-    instructionsId: sectionInstructions,
-  };
+  // The handles are the same functions, giving the same props, for as long as
+  // the words they are announced with stay, so the rows that take them can
+  // be memoised.
+  const reorderRole = t("shell.reorderHandle");
+  const personRole = t("shell.dragHandle");
+  const sectionRole = t("shell.sectionHandle");
+  const channelHandle = useCallback(
+    (id: string) => handle(id, { roleDescription: reorderRole, instructionsId: channelInstructions }),
+    [handle, reorderRole, channelInstructions],
+  );
+  const sectionHandle = useCallback(
+    (id: string) => handle(id, { roleDescription: sectionRole, instructionsId: sectionInstructions }),
+    [handle, sectionRole, sectionInstructions],
+  );
+  const carryFor = useCallback(
+    (channelId: string, personId: string): DragHandleProps =>
+      carry(occupantKey(channelId, personId), {
+        roleDescription: personRole,
+        instructionsId: personInstructions,
+      }),
+    [carry, personRole, personInstructions],
+  );
 
   return {
     container,
@@ -290,21 +315,21 @@ export function useRailMoves({
     refsFor: (kind: "text" | "voice", sectionId: string | null): RailSortRefs => ({
       list: list(listId(kind, sectionId)),
       item,
-      ...(canSortChannels ? { handle: (id: string) => handle(id, channelHandle) } : {}),
+      ...(canSortChannels ? { handle: channelHandle } : {}),
     }),
     /** What the sections take from the drags: their list, each one, and its caption as the handle. */
     sectionRefs: {
       list: list(SECTIONS),
       item,
-      ...(onMoveSection === undefined
-        ? {}
-        : { handle: (id: string) => handle(id, sectionHandle) }),
+      ...(onMoveSection === undefined ? {} : { handle: sectionHandle }),
     },
-    /** The handle that carries a seated person, for whoever can be carried. */
-    carry: (channelId: string, person: PersonVM): DragHandleProps | undefined => {
-      const key = occupantKey(channelId, person.id);
-      return carriable.has(key) ? carry(key, personHandle) : undefined;
-    },
+    /** Whether staff may carry people other than themselves. */
+    canMoveOthers,
+    /**
+     * The handle that carries a seated person. Whoever cannot be carried, by
+     * `carries`, is given none.
+     */
+    carry: carryFor,
     layer: (
       <DragLayer
         announcer={announcer}

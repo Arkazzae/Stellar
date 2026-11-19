@@ -1,4 +1,4 @@
-import type { KeyboardEvent, MouseEvent } from "react";
+import { memo, type KeyboardEvent, type MouseEvent } from "react";
 
 import { Icon } from "@stellarr/icons";
 import type { DragHandleProps } from "@/lib/drag/useRailDrag";
@@ -46,7 +46,7 @@ const MAX_UNREAD_SHOWN = 99;
  * do not have to resolve nested targets. When sorting is on, only the main
  * button is the drag handle.
  */
-export function ChannelButton({
+export const ChannelButton = memo(function ChannelButton({
   kind,
   name,
   active,
@@ -149,4 +149,4 @@ export function ChannelButton({
       )}
     </div>
   );
-}
+});

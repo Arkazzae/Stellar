@@ -1,4 +1,4 @@
-import { useSyncExternalStore } from "react";
+import { memo, useSyncExternalStore } from "react";
 
 import { AccountRow } from "@/components/account/AccountRow";
 import { VoiceDock } from "@/components/voice/VoiceDock";
@@ -29,7 +29,7 @@ const UNKNOWN_SELF: PersonVM = {
  * the app: leaving a call has to stay reachable from a conversation, and the
  * two rails would drift apart the first time one of them was edited alone.
  */
-export function RailVoiceDock() {
+export const RailVoiceDock = memo(function RailVoiceDock() {
   const ui = useUi();
   // The dock's own slice of the call: a ring that flips in it renders nothing here.
   const voice = useVoiceCall();
@@ -69,9 +69,9 @@ export function RailVoiceDock() {
       onReturnToChannel={ui.returnToChannel}
     />
   );
-}
+});
 
-export function RailAccount() {
+export const RailAccount = memo(function RailAccount() {
   const { user, presence, setPresence, logout } = useSession();
   const ui = useUi();
   const { emoji: customEmoji } = useEmoji();
@@ -108,4 +108,4 @@ export function RailAccount() {
       }}
     />
   );
-}
+});

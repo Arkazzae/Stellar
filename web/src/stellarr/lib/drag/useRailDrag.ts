@@ -10,6 +10,7 @@ import { flushSync } from "react-dom";
 
 import {
   createRailDrag,
+  type RailDrag,
   type DragKind,
   type DropConfig,
   type SortConfig,
@@ -61,6 +62,7 @@ export interface DragHandleProps {
  */
 export function useRailDrag({ lists, onMove, messages, focusClosed, drops }: RailDragOptions) {
   const [drag] = useState(createRailDrag);
+  const [handles] = useState(() => createHandles(drag));
 
   useLayoutEffect(() => {
     drag.configure({
@@ -77,18 +79,6 @@ export function useRailDrag({ lists, onMove, messages, focusClosed, drops }: Rai
 
   useEffect(() => () => drag.dispose(), [drag]);
 
-  const handleOf =
-    (kind: DragKind) =>
-    (id: string, { roleDescription, instructionsId }: HandleDescription): DragHandleProps => ({
-      ref: drag.handleRef(id),
-      onPointerDown: (event) => drag.pressPointer(kind, id, event),
-      onKeyDown: (event) => drag.keyDown(kind, id, event),
-      onKeyUp: drag.keyUp,
-      onBlur: () => drag.blur(id),
-      "aria-describedby": instructionsId,
-      "aria-roledescription": roleDescription,
-    });
-
   return {
     announcer: drag.announcer,
     carrying: drag.carrying,
@@ -96,7 +86,41 @@ export function useRailDrag({ lists, onMove, messages, focusClosed, drops }: Rai
     list: drag.list,
     item: drag.item,
     copy: drag.copy,
-    handle: handleOf("sort"),
-    carry: handleOf("drop"),
+    handle: handles.sort,
+    carry: handles.carry,
   };
+}
+
+/**
+ * The props of each handle, made once per kind and id and handed back the
+ * same while its description is, so a memoised row that spreads them does not
+ * render because the rail did.
+ */
+function createHandles(drag: RailDrag) {
+  const made = new Map<string, { description: HandleDescription; props: DragHandleProps }>();
+  const of =
+    (kind: DragKind) =>
+    (id: string, description: HandleDescription): DragHandleProps => {
+      const key = `${kind}:${id}`;
+      const known = made.get(key);
+      if (
+        known !== undefined &&
+        known.description.roleDescription === description.roleDescription &&
+        known.description.instructionsId === description.instructionsId
+      ) {
+        return known.props;
+      }
+      const props: DragHandleProps = {
+        ref: drag.handleRef(id),
+        onPointerDown: (event) => drag.pressPointer(kind, id, event),
+        onKeyDown: (event) => drag.keyDown(kind, id, event),
+        onKeyUp: drag.keyUp,
+        onBlur: () => drag.blur(id),
+        "aria-describedby": description.instructionsId,
+        "aria-roledescription": description.roleDescription,
+      };
+      made.set(key, { description, props });
+      return props;
+    };
+  return { sort: of("sort"), carry: of("drop") };
 }
