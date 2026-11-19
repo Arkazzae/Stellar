@@ -1,4 +1,4 @@
-import { render } from "@testing-library/react";
+import { fireEvent, render, screen } from "@testing-library/react";
 import { describe, expect, it } from "vitest";
 
 import { defaultIdentityArt } from "@/design/identity";
@@ -6,19 +6,30 @@ import { defaultIdentityArt } from "@/design/identity";
 import { Avatar } from "./Avatar";
 
 describe("Avatar", () => {
-  it("uses stable built-in artwork when a person has no upload", () => {
-    const { container } = render(
+  it("hides the initials behind the built-in mascot until it fails to load", () => {
+    const { container, rerender } = render(
       <Avatar id="person-42" displayName="Patrycja Nowak" />,
     );
+    const picture = container.querySelector("img")!;
 
-    expect(container.querySelector("img")).toHaveAttribute(
+    expect(picture).toHaveAttribute(
       "src",
       defaultIdentityArt("person-42").avatarUrl,
     );
-    expect(container.textContent).toContain("PN");
+    expect(screen.getByText("PN")).not.toBeVisible();
+
+    fireEvent.error(picture);
+    expect(screen.getByText("PN")).toBeVisible();
+
+    // The same face handed to someone else tries their mascot afresh.
+    expect(defaultIdentityArt("person-7").avatarUrl).not.toBe(
+      defaultIdentityArt("person-42").avatarUrl,
+    );
+    rerender(<Avatar id="person-7" displayName="Patrycja Nowak" />);
+    expect(screen.getByText("PN")).not.toBeVisible();
   });
 
-  it("prefers an uploaded avatar", () => {
+  it("prefers an uploaded avatar and keeps the initials under it", () => {
     const { container } = render(
       <Avatar
         id="person-42"
@@ -31,6 +42,7 @@ describe("Avatar", () => {
       "src",
       "/assets/uploaded-avatar.webp",
     );
+    expect(screen.getByText("PN")).toBeVisible();
   });
 
   it("keeps system notices as glyphs", () => {

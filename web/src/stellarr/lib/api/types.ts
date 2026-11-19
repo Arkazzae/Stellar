@@ -50,10 +50,10 @@ export function isPresence(value: unknown): value is Presence {
 
 /**
  * Profile fields are all optional: a server that predates profiles still
- * returns a valid `User`, and the UI falls back to a built-in avatar and
- * banner picked by id, with initials under the avatar as its load-error
- * fallback. Image URLs always point at our own host (`/avatars/…`,
- * `/banners/…`), never at a third party.
+ * returns a valid `User`, and the UI falls back to a built-in mascot avatar
+ * and scene banner picked by id (`/identity/…`), with initials as the
+ * avatar's load-error fallback. Uploaded images always point at our own host
+ * (`/assets/…`), never at a third party.
  */
 export interface User {
   id: UserId;

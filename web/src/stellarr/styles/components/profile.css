@@ -71,6 +71,15 @@
   }
 
   /*
+   * A built-in scene, here and in the account pane's preview. It is cut to
+   * this strip with its two mascots right of centre, so a strip narrower than
+   * the cut, such as the preview on a phone, gives up its left side.
+   */
+  .banner-art {
+    object-position: right center;
+  }
+
+  /*
    * The one move the relationship is waiting on, over the banner: round, small
    * and out of the way of the message field, which is the thing this card is
    * opened for nine times in ten.

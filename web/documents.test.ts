@@ -113,7 +113,7 @@ describe("the addresses each document answers", () => {
       "/bergamot-models/plen/missing",
       "/fonts/missing",
       "/sounds/missing",
-      "/identity/defaults/missing",
+      "/identity/avatars/missing.webp",
       `/${BUILD_DIRECTORY}/missing`,
       "/missing.js",
       "/cockpit/missing.css",

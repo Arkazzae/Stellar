@@ -311,14 +311,19 @@ export function MiniProfile({
       autoFocus={autoFocus}
     >
       <div className="mp-top">
-        {/* The banner shares the hue of their avatar and of their name in the
-            transcript, so the card is theirs before the name is read. */}
+        {/* Under the picture, the hue of their avatar and of their name in the
+            transcript, which is what shows while it loads or if it fails. */}
         <div
           className="mp-banner"
           aria-hidden="true"
           style={{ "--mp-hue": hueFor(person.id) } as CSSProperties}
         >
-          <img src={bannerUrl} alt="" loading="lazy" />
+          <img
+            src={bannerUrl}
+            alt=""
+            loading="lazy"
+            className={profile.bannerUrl ? undefined : "banner-art"}
+          />
         </div>
         <div className="mp-tools">
           <RelationTools
