@@ -1,6 +1,6 @@
 import { useMemo, useSyncExternalStore } from "react";
 
-import { ServerSettings } from "@/components/settings/server/ServerSettings";
+import { ServerSettings, type SettingsPaneKey } from "@/components/settings/server/ServerSettings";
 import { routeAudioOutput } from "@/lib/voice/playback/playback";
 import {
   useDirectory,
@@ -16,6 +16,7 @@ import type { ServerAdmin } from "./useServerAdmin";
 
 interface ServerSettingsDialogProps extends ServerAdmin {
   open: boolean;
+  initialPane?: SettingsPaneKey;
 }
 
 /** Waits for a mutation, then reloads the admin lists behind it. */
@@ -31,7 +32,7 @@ async function refreshAfter(mutation: Promise<unknown>, refresh: () => Promise<v
 }
 
 /** The server settings dialog, wired to the admin port. */
-export function ServerSettingsDialog({ open, data, reload }: ServerSettingsDialogProps) {
+export function ServerSettingsDialog({ open, initialPane, data, reload }: ServerSettingsDialogProps) {
   const { admin, directory: directoryPort, soundboard, voiceSettings } = usePorts();
   const directory = useDirectory();
   const ui = useUi();
@@ -72,6 +73,7 @@ export function ServerSettingsDialog({ open, data, reload }: ServerSettingsDialo
   return (
     <ServerSettings
       open={open}
+      initialPane={initialPane}
       onClose={ui.closeModal}
       name={server.name}
       overview={{
