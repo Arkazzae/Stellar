@@ -2,6 +2,7 @@ import { Icon } from "@stellarr/icons";
 import { Avatar } from "@/components/primitives/Avatar";
 import { useContextMenu } from "@/components/primitives/ContextMenu";
 import type { PersonVM } from "@/components/view-models";
+import { useVoiceSeat } from "@/components/voice/useVoiceSeat";
 import type { Translator } from "@/i18n";
 import { useLanguage } from "@/state/LanguageProvider";
 
@@ -31,6 +32,8 @@ export interface PersonRowProps {
 /**
  * One person in a list.
  *
+ * Someone in this client's call is drawn from their seat, which the row
+ * follows on its own; the list around it does not render when they speak.
  * The row itself opens their profile. Where there are actions, a separate
  * trailing button opens the same menu as a right-click, so touch users do not
  * have to discover a desktop gesture.
@@ -40,11 +43,13 @@ export function PersonRow({ person, inCall = false, onOpenProfile, menu }: Perso
   // of it hangs off the row or the button rather than off the pointer.
   const contextMenu = useContextMenu();
   const { t } = useLanguage();
+  const seat = useVoiceSeat(person.id);
+  const speaking = inCall && (seat?.speaking ?? person.speaking === true);
 
   const classes = [
     "person",
     menu !== undefined && "has-menu",
-    inCall && person.speaking && "speaking",
+    speaking && "speaking",
     person.presence === "offline" && "offline",
   ]
     .filter(Boolean)
@@ -60,11 +65,11 @@ export function PersonRow({ person, inCall = false, onOpenProfile, menu }: Perso
         initials={person.initials}
         avatarUrl={person.avatarUrl}
         presence={inCall ? undefined : person.presence}
-        speaking={inCall && person.speaking}
+        speaking={speaking}
       />
       <span className="who">
         <b>{person.displayName}</b>
-        <span className="sr-only">{personState(person, inCall, t)}</span>
+        <span className="sr-only">{personState({ ...person, speaking }, inCall, t)}</span>
       </span>
     </>
   );

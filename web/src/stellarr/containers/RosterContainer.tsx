@@ -8,7 +8,6 @@ import {
   useProfile,
   useSession,
   useUi,
-  useVoice,
 } from "@/state/hooks";
 
 import { relationTo } from "./relationTo";
@@ -16,7 +15,6 @@ import { useMemberMenu } from "./useMemberMenu";
 
 export function RosterContainer() {
   const { people, inVoice } = useDirectory();
-  const { applySpeaking } = useVoice();
   const ui = useUi();
   const profile = useProfile();
   const friends = useFriends();
@@ -30,15 +28,17 @@ export function RosterContainer() {
   // Presence is the only grouping. Voice state decorates a row with its
   // speaking ring but does not pull the person into a category of their own,
   // which would reshuffle the list whenever someone joins or leaves a call.
+  // Someone seated anywhere is listed as their seat shows them; the ring is
+  // the row's own to follow, so the list does not render while people talk.
   const { online, offline, voiceUserIds } = useMemo(() => {
-    const speakers = new Map(applySpeaking(inVoice).map((person) => [person.id, person]));
-    const presented = people.map((person) => speakers.get(person.id) ?? person);
+    const seated = new Map(inVoice.map((person) => [person.id, person]));
+    const presented = people.map((person) => seated.get(person.id) ?? person);
     return {
       online: presented.filter((person) => person.presence !== "offline"),
       offline: presented.filter((person) => person.presence === "offline"),
-      voiceUserIds: new Set(speakers.keys()),
+      voiceUserIds: new Set(seated.keys()),
     };
-  }, [people, inVoice, applySpeaking]);
+  }, [people, inVoice]);
 
   const menu: RosterMenu = {
     ...memberMenu,

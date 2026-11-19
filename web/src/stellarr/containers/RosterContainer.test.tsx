@@ -4,6 +4,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { ConfirmProvider } from "@/components/primitives/ConfirmDialog";
 import type { PersonVM } from "@/components/view-models";
+import { VoiceSeatContext } from "@/components/voice/useVoiceSeat";
 import { resetStubs, setStubs, stubs } from "@/test/hookStubs";
 
 import { RosterContainer } from "./RosterContainer";
@@ -63,10 +64,15 @@ describe("RosterContainer", () => {
 
   it("rings the speaker in a call without moving them out of their group", () => {
     setStubs({ directory: { inVoice: [OLA] } });
-    stubs.voice.applySpeaking = vi.fn((people: PersonVM[]) =>
-      people.map((entry) => ({ ...entry, speaking: true })),
+    // Everyone's seat says they speak; only someone seated in a call is ringed.
+    const speaking = { speaking: true, muted: false };
+    render(
+      <VoiceSeatContext.Provider value={{ get: () => speaking, subscribe: () => () => undefined }}>
+        <ConfirmProvider>
+          <RosterContainer />
+        </ConfirmProvider>
+      </VoiceSeatContext.Provider>,
     );
-    renderRoster();
 
     const online = groupOf("W sieci");
     expect(within(online).getByText("Ola").closest(".speaking")).not.toBeNull();
