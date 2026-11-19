@@ -20,6 +20,7 @@ import hashlib
 import json
 import os
 import random
+import re
 import sqlite3
 import string
 import sys
@@ -225,7 +226,7 @@ CONVERSATIONS: dict[str, list[ScriptLine]] = {
         ("ola", "Works great with `STELLARR_DEV_POLLING=true` — it polls every 300ms, so edits in `packages/stellarr-ui/src` show up without a restart."),
         ("maya", "Remember `npm run build` writes both apps as static files to `web/dist/` for nginx, while `npm run dev` proxies `/api`, `/assets`, `/health`, and `/hubs` to the API."),
         ("piotr", "Added `npm run bench:transcript` so we can measure row render regressions objectively.", "scroll-demo"),
-        ("zuzanna", "Also verified that delayed emoji picker autofocus no longer steals focus when switching channels rapidly."),
+        ("zuzanna", "@maya also verified that delayed emoji picker autofocus no longer steals focus when switching channels rapidly."),
         ("hanna", "Check out the new empty-state illustrations and focus ring offsets — zero layout shift on keyboard tabbing.", "theme-swatches"),
         ("filip", "Did the `marked` removal cut bundle size much?"),
         ("piotr", "Yeah! Our custom parser in `packages/` is tiny, deterministic, and shares exact rules with backend mention parsing."),
@@ -283,7 +284,7 @@ CONVERSATIONS: dict[str, list[ScriptLine]] = {
     "random-chat": [
         ("liam", "Dialed in an Ethiopian washed Guji today: 18g in -> 40g out in 27s at 93°C. Jasmine and bergamot bomb."),
         ("maya", "Which grinder? Switched to SSP MP burrs last month and clarity jumped immediately."),
-        ("liam", "DF64 Gen 2 with stock DLC burrs — honestly hard to beat for the price."),
+        ("liam", "@maya DF64 Gen 2 with stock DLC burrs — honestly hard to beat for the price."),
         ("kasia", "Unpopular opinion: rainy November afternoons are peak coding weather if you have a good lamp and lo-fi beats.", "icon-motion"),
         ("jonas", "100%. Warm desk lamp + rain outside + mechanical keyboard = zero distractions."),
         ("tomek", "Ktoś oglądał wczorajsze kwalifikacje F1? Ostatnie okrążenie było szalone."),
@@ -528,6 +529,32 @@ def pair_key(a: str, b: str) -> str:
 
 def placeholders(count: int) -> str:
     return ",".join("?" * count)
+
+
+FENCED_BLOCK = re.compile(r"```.*?(?:```|\Z)", re.S)
+CODE_SPAN = re.compile(r"(`+)(.+?)(?<!`)\1(?!`)", re.S)
+WEB_ADDRESS = re.compile(r"https?://\S+")
+ESCAPED_CHARACTER = re.compile(r"\\[!-/:-@\[-`{-~]")
+MENTION = re.compile(r"(?<![\w.-])@([\w.-]+)")
+
+
+def mentioned_usernames(content: str) -> set[str]:
+    """The upper-cased names a message mentions, by the API's rules in short.
+
+    Like MessageMentions: nothing inside fenced code, code spans, web
+    addresses or escapes counts, a name is the whole run of letters, digits,
+    ``_``, ``.`` and ``-`` after an ``@`` that no such character precedes, and
+    it is 2 to 32 characters long.
+    """
+    text = FENCED_BLOCK.sub(" ", content)
+    text = CODE_SPAN.sub(" ", text)
+    text = WEB_ADDRESS.sub(" ", text)
+    text = ESCAPED_CHARACTER.sub(" ", text)
+    return {
+        match.group(1).upper()
+        for match in MENTION.finditer(text)
+        if 2 <= len(match.group(1)) <= 32
+    }
 
 
 def avatar_color(hue: int) -> str:
@@ -1367,8 +1394,16 @@ def seed_database(
             latest_msg_at: dict[str, datetime] = {}
             mention_targets: list[tuple[str, str, str, str, datetime]] = []
 
-            viewer_id_for_mentions = ctx.viewer_id or ctx.owner_id
             viewer_uname_for_mentions = ctx.viewer_username or ctx.owner_username
+            # Everybody a message on the main server can mention: its members.
+            member_ids_by_name = {
+                row[0]: row[1]
+                for row in cur.execute(
+                    """SELECT u.NormalizedUsername, u.Id FROM ServerMembers m
+                       JOIN Users u ON u.Id = m.UserId WHERE m.ServerId = ?""",
+                    (main_server_id,),
+                ).fetchall()
+            }
 
             media_cache: dict[str, bytes] = {}
             poster_cache: dict[str, bytes] = {}
@@ -1490,15 +1525,13 @@ def seed_database(
                 if prev is None or created_at > prev:
                     latest_msg_at[cid] = created_at
                 if track_mentions:
-                    lowered = content.lower()
-                    if (
-                        ctx.viewer_username
-                        and f"@{ctx.viewer_username.lower()}" in lowered
-                        and author_uname != ctx.viewer_username
-                    ):
-                        mention_targets.append((viewer_id_for_mentions, cid, user_display[author_uname], content, created_at))
-                    if f"@{ctx.owner_username.lower()}" in lowered and author_uname != ctx.owner_username:
-                        mention_targets.append((ctx.owner_id, cid, user_display[author_uname], content, created_at))
+                    # The inbox entries the API adds for a message: one for
+                    # each member it names, never for its author.
+                    author_id = user_ids[author_uname]
+                    for name in sorted(mentioned_usernames(content)):
+                        target_id = member_ids_by_name.get(name)
+                        if target_id is not None and target_id != author_id:
+                            mention_targets.append((target_id, cid, user_display[author_uname], content, created_at))
                 return mid
 
             def add_reactions(mid: str, created_at: datetime, count: int) -> None:
@@ -1554,7 +1587,6 @@ def seed_database(
                         edited_at=edited,
                         pinned_at=pinned,
                         reply_to_id=reply_id,
-                        track_mentions=(cname != "general"),
                         attachment=attachment_key,
                     )
                     recent_ids.append(mid)
@@ -1607,6 +1639,8 @@ def seed_database(
                         (cid, uid, fmt_dt(now - timedelta(hours=rng.randint(0, 8)))),
                     )
 
+            # The inbox is ordered by insertion, so entries go in by time.
+            mention_targets.sort(key=lambda target: target[4])
             for idx, (target_uid, cid, author_disp, content, created_at) in enumerate(mention_targets):
                 preview = " ".join(content.split())
                 if len(preview) > 220:
