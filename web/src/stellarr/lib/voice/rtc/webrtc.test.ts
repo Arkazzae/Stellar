@@ -24,6 +24,7 @@ import { SpeechDetector } from "../capture/vad";
 import type { CallKeyEvent, CallKeys } from "../e2ee/callCrypto";
 import { GTCRN_WASM_URL, resetSuppressorCacheForTests } from "../capture/noiseSuppression";
 import { DOWNLOAD_SHOWN_AFTER_MS } from "../capture/suppressorDownload";
+import { RING_HOLD_MS } from "./speakingHold";
 import { WebRtcVoiceClient, type WebRtcVoiceClientOptions } from "./webrtc";
 import artifactSizes from "virtual:artifact-sizes";
 
@@ -2282,6 +2283,65 @@ describe("remote voice", () => {
 
     await vi.waitFor(() => expect(play).toHaveBeenCalled());
     expect(sinksPlaying(voice)).toEqual([audible]);
+  });
+});
+
+describe("the speaking ring", () => {
+  const talk = (client: WebRtcVoiceClient, userId: string) => {
+    hear(client, userId, { speaking: true, level: 0.6 });
+    hear(client, userId, { speaking: false, level: 0.1 });
+  };
+
+  it("holds a voice through a gap inside a word and lets it go after a real pause", async () => {
+    const client = build();
+    await joined(client);
+    announce("u-b");
+    vi.useFakeTimers();
+    const listener = vi.fn();
+    client.subscribe(listener);
+
+    talk(client, "u-b");
+    vi.advanceTimersByTime(RING_HOLD_MS - 50);
+    hear(client, "u-b", { speaking: true, level: 0.6 });
+    hear(client, "u-b", { speaking: false, level: 0.1 });
+    vi.advanceTimersByTime(RING_HOLD_MS - 1);
+    // On once, and never off through the gap.
+    expect(peerOf(client, "u-b")?.speaking).toBe(true);
+    expect(listener).toHaveBeenCalledTimes(1);
+
+    vi.advanceTimersByTime(1);
+    expect(peerOf(client, "u-b")?.speaking).toBe(false);
+    expect(listener).toHaveBeenCalledTimes(2);
+  });
+
+  it("ends the ring at once for a mute, a voice that is gone and the end of the call", async () => {
+    const client = build();
+    const voice = await hearB(await answered(client));
+    vi.useFakeTimers();
+
+    talk(client, "u-a");
+    client.setMuted(true);
+    expect(peerOf(client, "u-a")?.speaking).toBe(false);
+
+    talk(client, "u-b");
+    state("u-b", { muted: true });
+    expect(peerOf(client, "u-b")?.speaking).toBe(false);
+    state("u-b", { muted: false });
+    expect(peerOf(client, "u-b")?.speaking).toBe(false);
+
+    talk(client, "u-b");
+    (voice.onended as unknown as () => void)();
+    expect(peerOf(client, "u-b")?.speaking).toBe(false);
+
+    client.setMuted(false);
+    talk(client, "u-a");
+    expect(peerOf(client, "u-a")?.speaking).toBe(true);
+    await client.leave();
+    const listener = vi.fn();
+    client.subscribe(listener);
+    vi.advanceTimersByTime(RING_HOLD_MS);
+    expect(listener).not.toHaveBeenCalled();
+    expect(client.getSnapshot().peers).toEqual([]);
   });
 });
 

@@ -31,6 +31,7 @@ import type {
 } from "../types";
 import { SpeechDetector, type SpeechReading } from "../capture/vad";
 import { SuppressorDownloads } from "../capture/suppressorDownload";
+import { SpeakingHold } from "./speakingHold";
 import {
   callKeysError,
   callUnsupportedError,
@@ -130,6 +131,12 @@ export class WebRtcVoiceClient implements VoiceClient {
   private readonly people = new Map<UserId, Participant>();
   private readonly unsubscribes: Array<() => void> = [];
   private readonly speech: SpeechDetector;
+  /**
+   * Who is still shown speaking although the detector just closed, so a gap
+   * inside a word does not blink the ring. Every view of speech reads what is
+   * published here: the rail, the roster, the tiles and the call face agree.
+   */
+  private readonly ring = new SpeakingHold(() => this.publishPeers());
   private readonly lifecycle: LifecycleWatcher;
   private readonly bitrate: AdaptiveBitrateController;
   private readonly preferences: ParticipantPreferencesStore;
@@ -206,6 +213,7 @@ export class WebRtcVoiceClient implements VoiceClient {
       speech: this.speech,
       settings: () => this.settings,
       forgetOutputDevice: () => options.updateSettings?.({ outputDeviceId: null }),
+      silenced: (userId) => this.ring.clear(userId),
       changed: () => this.publishPeers(),
     });
     this.personMedia = {
@@ -446,6 +454,8 @@ export class WebRtcVoiceClient implements VoiceClient {
     this.topology.dropAll();
     this.endEncryption();
     this.privateCall = false;
+    // Nothing is held past the call, and no timer outlives it.
+    this.ring.reset();
 
     this.health.stop();
     this.lifecycle.stop();
@@ -523,7 +533,11 @@ export class WebRtcVoiceClient implements VoiceClient {
   setMuted(muted: boolean): void {
     if (this.store.getSnapshot().muted === muted) return;
     this.microphone.setMuted(muted);
-    if (muted) this.selfSpeaking = false;
+    // A mute ends the ring at once; nothing is held for it.
+    if (muted) {
+      this.selfSpeaking = false;
+      this.ring.clear(this.options.selfUserId);
+    }
     this.store.set({ muted });
     this.publishPeers();
     void this.broadcastState();
@@ -728,6 +742,7 @@ export class WebRtcVoiceClient implements VoiceClient {
   private releaseMicrophone(): void {
     this.microphone.release();
     this.selfSpeaking = false;
+    this.ring.clear(this.options.selfUserId);
   }
 
   // -------------------------------------------------------------- signaling
@@ -832,7 +847,7 @@ export class WebRtcVoiceClient implements VoiceClient {
         connectedPeerCount: 0,
       },
       error: null,
-      peers: [this.selfPeer(this.selfSpeaking)],
+      peers: [this.selfPeer(this.selfShown())],
     });
 
     try {
@@ -1120,19 +1135,28 @@ export class WebRtcVoiceClient implements VoiceClient {
   /**
    * What the detector decided about one voice. Only speech is published:
    * nothing draws a voice's level, and the detector posts one many times a
-   * second, silence included.
+   * second, silence included. A voice that goes quiet is held a moment
+   * before that is published, and one that speaks again meanwhile was never
+   * shown to stop.
    */
   private hear(id: UserId, reading: SpeechReading): void {
-    if (id === this.options.selfUserId) {
-      const speaking = reading.speaking && !this.store.getSnapshot().muted;
-      if (speaking === this.selfSpeaking) return;
-      this.selfSpeaking = speaking;
-    } else {
-      const person = this.people.get(id);
-      if (!person || person.speaking === reading.speaking) return;
-      person.speaking = reading.speaking;
+    const self = id === this.options.selfUserId;
+    const person = self ? undefined : this.people.get(id);
+    if (!self && person === undefined) return;
+    const speaking = self ? reading.speaking && !this.store.getSnapshot().muted : reading.speaking;
+    if (speaking === (person === undefined ? this.selfSpeaking : person.speaking)) return;
+    if (person === undefined) this.selfSpeaking = speaking;
+    else person.speaking = speaking;
+    if (!speaking) {
+      this.ring.hold(id);
+      return;
     }
-    this.publishPeers();
+    if (!this.ring.clear(id)) this.publishPeers();
+  }
+
+  /** Whether this side is shown speaking: by the detector, or held a moment after it. */
+  private selfShown(): boolean {
+    return this.selfSpeaking || this.ring.holds(this.options.selfUserId);
   }
 
   private publishPeers(): void {
@@ -1143,14 +1167,16 @@ export class WebRtcVoiceClient implements VoiceClient {
       this.crypto !== null || people.some((person) => person.encrypted) ? this.topology.undecryptable() : null;
     this.store.set({
       peers: [
-        this.selfPeer(this.selfSpeaking),
+        this.selfPeer(this.selfShown()),
         ...people.map((person) => {
           const undecryptable = sealed?.get(person.userId);
+          // A mute ends the ring at once and leaves nothing held for after it.
+          if (person.muted) this.ring.clear(person.userId);
           return {
             userId: person.userId,
             displayName: person.displayName,
             muted: person.muted,
-            speaking: person.speaking && !person.muted,
+            speaking: !person.muted && (person.speaking || this.ring.holds(person.userId)),
             playbackVolume: person.playbackVolume,
             gated: person.gated,
             suppressed: person.suppressed,
