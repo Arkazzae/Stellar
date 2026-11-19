@@ -14,6 +14,7 @@
     "test:translation-runtime": "node scripts/verify-bergamot-runtime.mjs",
     "bench:transcript": "node scripts/benchmark-transcript.mjs",
     "bench:voice-playback": "node scripts/benchmark-voice-playback.mjs",
+    "bench:voice-suppressor": "node scripts/benchmark-voice-suppressor.mjs",
     "bench:rail-drag": "node scripts/benchmark-rail-drag.mjs",
     "voice:record": "node bench/voice/record.mjs",
     "fonts:sync": "node scripts/sync-theme-fonts.mjs",

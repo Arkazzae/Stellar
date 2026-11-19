@@ -635,6 +635,16 @@ export const FIXTURES: readonly Fixture[] = [
     },
   },
   {
+    name: "fan",
+    purpose:
+      "A fan (-40 dBFS) running from the first sample and nothing else: steady noise alone, which a noise suppressor should learn and turn down. The detector's capture record does not use it.",
+    seconds: 4.48,
+    build() {
+      const samples = Math.round(this.seconds * SAMPLE_RATE);
+      return sum(fan(1601, samples, -40), roomTone(1602, samples, -72));
+    },
+  },
+  {
     name: "silence",
     purpose:
       "Digital silence, then microphone self-noise at -85 dBFS: zeros must teach the floor nothing, the meter must rest at zero, and the gain where there is nothing to measure is written as '-'.",

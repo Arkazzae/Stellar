@@ -9,12 +9,16 @@ is rewritten, so that the rewrite can be held to the same sound:
   (`capture/captureGraph.ts`, `capture/gateNode.ts`, `capture/vad.ts`);
 - **playback**: each remote participant's strip of Web Audio nodes
   (`playback/remoteMixer.ts`, `playback/remoteStrip.ts`,
-  `playback/playbackProfile.ts`), for every playback profile.
+  `playback/playbackProfile.ts`), for every playback profile;
+- **suppressor**: the noise suppressors whose binaries are built here,
+  Speex so far (`capture/speex/`, built into `/audio/speex-worklet.js`, with
+  the binary from `artifacts/recipes/speex/`).
 
 How the microphone is opened and what the browser does to it
 (`micAcquire.ts`, `browserProcessing.ts`, `micPipeline.ts`, the microphone
 constraints) is left out on purpose: it is not being preserved. So are the
-noise suppressors and the fixed input gain.
+fixed input gain and the suppressors still served as prebuilt files, RNNoise
+and GTCRN.
 
 ## Checks
 
@@ -22,6 +26,7 @@ noise suppressors and the fixed input gain.
 | --- | --- | --- |
 | Capture record | `npm run test:web` (three files in `src/stellarr/lib/voice/characterization/`) | about 1.2 s and 3.7 s of CPU, the three files side by side, on a 10-core arm64 Mac |
 | Playback record | `npm run bench:voice-playback -w stellarr-web -- --check` | about 5 s, 2 s of it rendering |
+| Suppressor record | `npm run test:web` (`src/stellarr/lib/voice/characterization/suppressorRecord.test.ts`) | about 2 s |
 
 Recordings in `recordings/` add their own time: the five synthetic voices
 described below, 97 s of audio, add about 3.4 s to `test:web`.
@@ -47,7 +52,8 @@ the record's format, to compare with the record line by line.
 npm run voice:record -w stellarr-web
 ```
 
-This rewrites `records/capture/*.txt` through Vitest and
+This rewrites `records/capture/*.txt` and `records/suppressor/*.txt` through
+Vitest and
 `records/playback.txt` from five separate Chrome runs. **It is legitimate only
 in a commit whose message names the audible change it intends**, such as
 "the gate releases 20 ms later" or "the studio profile loses 1 dB at 3 kHz".
@@ -89,6 +95,7 @@ number of render quanta and of 10 ms analysis frames.
 | `mains-hum` | 3.84 s | 50 Hz mains hum with a strong 100 Hz after 800 ms of quiet: pitched, but its energy alternates between 10 ms frames. |
 | `fan-speech` | 5.12 s | A fan switching on during a phrase and staying, a second phrase over it: the unvoiced limit, the stationary rule at the top of the dial, speech 14 dB over a fan. |
 | `speech-over-fan` | 4.48 s | A voice only 8 dB over a fan running from the first sample: onsets sit on the on-threshold, so the decisions depend on it everywhere on the dial, the remote meter's default included. |
+| `fan` | 4.48 s | The fan alone from the first sample: steady noise and nothing else, for the suppressors. The capture record does not use it. |
 
 The playback record uses its own signals, generated in the page: a 31-tone
 multitone (third octaves from 20 Hz to 20 kHz), 1 kHz tones at fixed levels
@@ -203,6 +210,69 @@ studio compressor's release by 10 ms moved no block by more than 0.2 dB but
 moved that area by 40 dB·ms. The smallest change the check was tried against,
 moving the presence bell from 3100 to 3200 Hz, moves the natural profile's
 response by 0.06 dB and the studio profile's by 0.19 dB.
+
+## The suppressor record
+
+`suppressor/record.ts` drives the binary the browser is served,
+`web/public/audio/speex.wasm` (assembled from the recipe's output, see
+`artifacts/recipes/README.md`), through the worklet's own wrapper,
+`capture/speex/preprocessor.ts`, one render quantum at a time, as the
+processor does: `speech`, `speech-over-fan`, `fan-speech`, `fan`, `keyboard`,
+`buzz`, `silence` and `clipping`. `records/suppressor/speex.txt` holds, for
+each, a digest of the int16 samples the binary is given and of those it gives
+back, and the gain per 10 ms and the peak in the capture record's notation;
+its header holds the frame, the latency measured on the probe, and every
+setting of the preprocessor as a new state reports it.
+
+WebAssembly's arithmetic is the same on every machine, so the output is held
+exactly: any change in what the binary puts out fails, however small, and the
+gains and the peak say where and by how much. A new toolchain, a new SpeexDSP
+commit or an edit to the wrapper that is meant to sound the same must pass
+without re-recording. An input digest that moved means the fixture changed,
+and is reported as that.
+
+Speex runs as it always has here, odd parts included: 128-sample frames (2.7
+ms at 48 kHz, where SpeexDSP's time constants assume 20 ms), denoise on and
+every other setting at the library's default (the record's header lists
+them), and samples moved to int16 as `x * 32767` stored into an `Int16Array`,
+which truncates and wraps past full scale rather than clamping, and back as
+`/ 32767`. The `clipping` fixture is where the wrapping shows.
+
+## Comparing a suppressor with an earlier build
+
+```sh
+npm run bench:voice-suppressor -w stellarr-web -- --engine speex --before <git revision>
+npm run bench:voice-suppressor -w stellarr-web -- --engine rnnoise \
+  --before-worklet old/rnnoise-worklet.js --before-wasm old/rnnoise_simd.wasm
+```
+
+`suppressor/run.mjs` renders fixtures through one engine twice in Chrome's
+`OfflineAudioContext`: as the app starts it now (`attachSuppressor`, the
+worklet and the binary from `/audio/`), and as an earlier worklet and binary
+started it, taken from a git revision's `artifacts/files/` through its
+manifest or from two paths. It aligns the two by the latency each shows on the
+probe and prints, per fixture, how many samples differ, the largest
+difference, the RMS of the difference in dBFS and in dB against the earlier
+output, and the first sample each side sounded on, which shows when an
+earlier worklet that compiles its binary asynchronously had not loaded yet.
+`--fixtures` picks any of the fixtures above, `--require-identical` fails on
+any difference, and `--out` keeps the result as JSON.
+
+It also checks two things of the current engine: that the "destroy" the app
+sends when it lets a suppressor go silences the node, and that a 404 for the
+binary makes `attachSuppressor` resolve to null. The earlier side shows
+whether it heard "destroy" too. RNNoise and GTCRN, still the published
+worklets, fail the first check today: they never hear it.
+
+Run against the same revision, the two of them come out identical, with
+latencies of 992 samples (RNNoise) and 635 (GTCRN) against Speex's 128,
+and the `fan` fixture, at -40 dBFS, leaves RNNoise at -72 dBFS, GTCRN at
+-67 and Speex at -49: the starting point their recipes are measured from.
+
+The current side needs the recipes built and the binaries assembled, as `npm
+test` needs them. Run against the revision before Speex was built here, Speex
+came out identical on every fixture, sample for sample: the same output in
+Chrome 158 and in Node.
 
 ## What the checks were tried against
 
@@ -332,7 +402,13 @@ A rewrite changes these files of the harness, not the records:
   (`buildCaptureGraph`, `SpeechDetector.add`, `buildGateNode`) and
   `REMOTE_GATE_SENSITIVITY`;
 - `playback/render.ts`: `RemoteVoiceMixer` with `attachElement` and
-  `setGate`, and the two context methods it is given.
+  `setGate`, and the two context methods it is given;
+- `suppressor/record.ts`: `SpeexPreprocessor` and `instantiateSpeex` from
+  `capture/speex/preprocessor.ts`, and the binary's `speex_preprocess_ctl`
+  for the settings in the header;
+- `suppressor/main.ts`: `attachSuppressor` and
+  `resetSuppressorCacheForTests` from `capture/noiseSuppression.ts`, and the
+  options the published worklets read (`maxChannels`, `wasmBinary`).
 
 Nothing reads a field of a processor or a node. The detector's frame-level
 reasoning (the noise floor it has learned, the SNR, the voicing of a frame,
