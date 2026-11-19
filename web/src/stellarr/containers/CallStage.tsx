@@ -55,6 +55,7 @@ export function CallStage({ fullscreenTarget }: CallStageProps) {
         onParticipantGateChange={voice.setParticipantGate}
         participantSuppressions={voice.participantSuppressions}
         onParticipantSuppressionChange={voice.setParticipantSuppression}
+        soundPlays={ports.soundboard.live}
         onOpenProfile={profile.toggle}
         share={voice.share}
         localShare={voice.localShare}
