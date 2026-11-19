@@ -177,22 +177,41 @@ async function fetchBinary(
  * has, the node outputs silence for its first 1408 samples (29 ms), the delay
  * of its framing and of the library, and then the cleaned audio.
  */
+/**
+ * How long to wait for RNNoise's processor to say it is ready. Constructing
+ * it took about 1 ms in Chrome, so the answer comes within a few render
+ * quanta of the context running; 3 s leaves room for a slow machine and a
+ * busy render thread, and a context that is not running at all does not
+ * hold a capture up for ever.
+ */
+const READY_TIMEOUT_MS = 3000;
+
 async function startRnnoise(context: AudioContext, wasmBinary: ArrayBuffer): Promise<AudioWorkletNode> {
   const module = await WebAssembly.compile(wasmBinary);
   const processorOptions: RnnoiseOptions = { module };
   const node = new AudioWorkletNode(context, PROCESSOR_NAME.rnnoise, { processorOptions });
+  let timer: ReturnType<typeof setTimeout> | undefined;
   try {
     await new Promise<void>((resolve, reject) => {
       node.port.onmessage = (event: MessageEvent<unknown>) => {
         if (event.data === RNNOISE_READY) resolve();
       };
       node.onprocessorerror = () => reject(new Error("the RNNoise processor did not start"));
+      // A suspended context or a stalled render thread never constructs the
+      // processor, and nothing else would ever settle this.
+      timer = setTimeout(() => reject(new Error("the RNNoise processor did not say it was ready")), READY_TIMEOUT_MS);
     });
   } catch (error) {
     // The node exists but nobody holds it: free whatever its processor made.
-    node.port.postMessage(DESTROY);
+    try {
+      node.port.postMessage(DESTROY);
+      node.disconnect();
+    } catch {
+      // Already gone.
+    }
     throw error;
   } finally {
+    clearTimeout(timer);
     node.port.onmessage = null;
     node.onprocessorerror = null;
   }
