@@ -14,6 +14,8 @@ export interface RemoteAudioEnv {
   settings(): VoiceSettings;
   /** The chosen output device failed and the system route took over. */
   forgetOutputDevice(): void;
+  /** This person's voice is gone: their ring ends now, with nothing held. */
+  silenced(userId: UserId): void;
   /** What a person publishes to the UI has changed. */
   changed(): void;
 }
@@ -110,6 +112,7 @@ export class RemoteAudio {
   /** Free a dropped person's sinks and strips. */
   release(person: Participant): void {
     this.env.speech.remove(person.userId);
+    this.env.silenced(person.userId);
     this.mixer.remove(person.userId);
     this.screenMixer.remove(person.userId);
     for (const sinks of voicesOf(person)) discard(sinks);
@@ -246,6 +249,7 @@ export class RemoteAudio {
     voice.processed = false;
     voice.streamId = null;
     person.speaking = false;
+    this.env.silenced(person.userId);
   }
 
   private ended(person: Participant, streamId: string): void {

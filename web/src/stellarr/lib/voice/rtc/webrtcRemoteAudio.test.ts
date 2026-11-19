@@ -26,6 +26,7 @@ let peers: Map<string, Participant>;
 let speech: { add: ReturnType<typeof vi.fn>; remove: ReturnType<typeof vi.fn> };
 let changed: Mock<() => void>;
 let forgetOutputDevice: Mock<() => void>;
+let silenced: Mock<(userId: string) => void>;
 let audio: RemoteAudio;
 
 function addPeer(userId = "u-z"): Participant {
@@ -56,11 +57,13 @@ beforeEach(() => {
   speech = { add: vi.fn(async () => true), remove: vi.fn() };
   changed = vi.fn<() => void>();
   forgetOutputDevice = vi.fn<() => void>();
+  silenced = vi.fn<(userId: string) => void>();
   audio = new RemoteAudio({
     people: peers,
     speech: speech as unknown as SpeechDetector,
     settings: () => settings,
     forgetOutputDevice,
+    silenced,
     changed,
   });
 });
@@ -286,7 +289,9 @@ describe("RemoteAudio stream lifecycle", () => {
     expect(peer.voice).toMatchObject({ processed: false, streamId: null });
     expect(peer.voice.audio.srcObject).toBeNull();
     expect(peer.voice.decoder.srcObject).toBeNull();
+    // The track is gone, so its ring ends now and is not held.
     expect(peer.speaking).toBe(false);
+    expect(silenced).toHaveBeenCalledWith("u-z");
     expect(speech.remove).toHaveBeenCalledWith("u-z");
     expect(mixer.remove).toHaveBeenCalledWith("u-z");
     expect(changed).toHaveBeenCalled();
