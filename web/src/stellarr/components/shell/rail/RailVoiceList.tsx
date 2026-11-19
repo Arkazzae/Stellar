@@ -26,6 +26,8 @@ export interface RailVoiceListProps {
   canMoveOthers?: boolean;
   /** The handle that carries a seated person to another channel. */
   carry?: (channelId: string, personId: string) => DragHandleProps;
+  /** Tells someone sitting down from someone moving here. */
+  arrives?: (personId: string) => boolean;
 }
 
 interface VoiceChannelNodeProps {
@@ -42,6 +44,7 @@ interface VoiceChannelNodeProps {
   drag?: DragHandleProps;
   canMoveOthers: boolean;
   carry?: (channelId: string, personId: string) => DragHandleProps;
+  arrives?: (personId: string) => boolean;
 }
 
 /**
@@ -62,6 +65,7 @@ const VoiceChannelNode = memo(function VoiceChannelNode({
   drag,
   canMoveOthers,
   carry,
+  arrives,
 }: VoiceChannelNodeProps) {
   const { t } = useLanguage();
   const { id, name, sectionId } = channel;
@@ -102,6 +106,7 @@ const VoiceChannelNode = memo(function VoiceChannelNode({
                 : undefined
             }
             menuFor={personMenuFor}
+            arrives={arrives}
           />
         ))}
       </ul>
@@ -129,6 +134,7 @@ export function RailVoiceList({
   sort: { list, item, handle },
   canMoveOthers = false,
   carry,
+  arrives,
 }: RailVoiceListProps) {
   return (
     <div className="rail-list" ref={list}>
@@ -149,6 +155,7 @@ export function RailVoiceList({
           drag={handle?.(channel.id)}
           canMoveOthers={canMoveOthers}
           carry={carry}
+          arrives={arrives}
         />
       ))}
     </div>

@@ -3801,32 +3801,57 @@ describe("overlapping voice intentions", () => {
     expect(latestConnection().close).not.toHaveBeenCalled();
   });
 
-  it("cancels a queued switch when the user hangs up before the leave ack", async () => {
+  it("moves the seat to another room without giving it up on the way", async () => {
     const client = build();
-    await joined(client);
-    const ack = deferred<void>();
-    realtime.leaveVoice.mockReturnValueOnce(ack.promise);
-    const switching = client.join(TARGET_CHANNEL);
-    await client.leave();
-    ack.resolve();
-    await switching;
-    expect(client.getSnapshot()).toMatchObject({ channelId: null, connection: "idle" });
-    expect(getUserMedia).toHaveBeenCalledTimes(1);
-    expect(realtime.joinVoice).toHaveBeenCalledTimes(1);
+    const original = await joined(client);
+    realtime.calls = [];
+
+    await client.join(TARGET_CHANNEL);
+
+    // The hub's JoinVoice moves the seat in one step: nobody sees a gap.
+    expect(realtime.leaveVoice).not.toHaveBeenCalled();
+    expect(realtime.calls).toEqual([`JoinVoice ${TARGET_CHANNEL}`, `OpenMediaSession ${TARGET_CHANNEL}`]);
+    expect(original.close).toHaveBeenCalled();
+    expect(latestConnection()).not.toBe(original);
+    expect(client.getSnapshot()).toMatchObject({ channelId: TARGET_CHANNEL, connection: "connected" });
   });
 
-  it("lets only the latest of several queued channel selections join", async () => {
+  it("gives up the seat it kept when a switch fails before the seat moved", async () => {
     const client = build();
     await joined(client);
-    const ack = deferred<void>();
-    realtime.leaveVoice.mockReturnValueOnce(ack.promise);
+    realtime.joinVoice.mockRejectedValueOnce(new Error("room full"));
+
+    await client.join(TARGET_CHANNEL);
+
+    expect(client.getSnapshot()).toMatchObject({ channelId: TARGET_CHANNEL, connection: "failed" });
+    expect(realtime.leaveVoice).toHaveBeenCalledTimes(1);
+  });
+
+  it("cancels a switch when the user hangs up before the seat moved, and frees the seat", async () => {
+    const client = build();
+    await joined(client);
+    const opening = deferred<FakeMediaStream>();
+    const next = fakeTrack();
+    getUserMedia.mockReturnValueOnce(opening.promise);
+    const switching = client.join(TARGET_CHANNEL);
+    await client.leave();
+    opening.resolve(new FakeMediaStream([next], "mic-a2"));
+    await switching;
+    expect(client.getSnapshot()).toMatchObject({ channelId: null, connection: "idle" });
+    expect(next.stop).toHaveBeenCalled();
+    expect(realtime.joinVoice).toHaveBeenCalledTimes(1);
+    expect(realtime.leaveVoice).toHaveBeenCalledTimes(1);
+  });
+
+  it("lets only the latest of several channel selections join", async () => {
+    const client = build();
+    await joined(client);
     const first = client.join(TARGET_CHANNEL);
     const latest = client.join("third-room");
-    ack.resolve();
     await Promise.all([first, latest]);
-    expect(client.getSnapshot().channelId).toBe("third-room");
+    expect(client.getSnapshot()).toMatchObject({ channelId: "third-room", connection: "connected" });
     expect(realtime.joinVoice).not.toHaveBeenCalledWith(TARGET_CHANNEL);
-    expect(getUserMedia).toHaveBeenCalledTimes(2);
+    expect(realtime.leaveVoice).not.toHaveBeenCalled();
   });
 
   it("updates the local name without reopening capture or transport", async () => {
