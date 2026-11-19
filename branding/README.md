@@ -13,8 +13,8 @@ Logo, mascot, UI icons, color palette, typography, and usage rules for Stellarr.
 | `logo/tile.png` | `tile.svg` rendered at 512 px, for places that do not take SVG, such as the Unraid template icon |
 | `mascot/` | Astronaut mascot in `mark.svg`, `small.svg`, `mono.svg`, and `tile.svg` variants |
 | `mascot/expressions/` | Eight state expressions: `speaking`, `idle`, `listening`, `happy`, `muted`, `away`, `connecting`, `failed` |
-| [`avatars/crew-v1/`](avatars/crew-v1/) | Eight colorful ImageGen avatars: the astronaut and seven companion characters; original PNGs, prompts, and a ZIP package |
-| [`avatars/crew-v2/`](avatars/crew-v2/) | Twenty companion avatars generated directly from the original flat mascot SVGs, with transparent backgrounds; PNGs, references, prompts, and ZIP |
+| [`avatars/`](avatars/) | Twenty mascot faces, `NN-name.png` (1254 px square, transparent background); the default avatars of accounts without an uploaded picture |
+| [`backgrounds/`](backgrounds/) | Fourteen scenes with two mascots each, `NN-scene.png` (1672 × 941); the default profile banners |
 | [`icons/`](icons/) | 160 standalone UI icons, including formatting and noise-suppression modes; 24 × 24 SVGs with a 1.5 px `currentColor` stroke |
 | `guidelines/stellarr-brand-guidelines.pdf` | Brand guidelines PDF (v1.0 draft) |
 | `guidelines/index.html` | HTML source of the brand guidelines (uses `guidelines/fonts/` for Outfit and JetBrains Mono) |
