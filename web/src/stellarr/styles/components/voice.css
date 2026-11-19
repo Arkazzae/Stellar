@@ -191,6 +191,9 @@
     overflow:hidden;white-space:nowrap;
   }
   .tile .t-name > span{min-width:0;max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  /* What the person is playing on the board, right after the name and never
+     cut with it. */
+  .tile .t-name > .t-sound{flex:none;max-width:none;overflow:visible;font-size:14px;line-height:1}
   .tile .t-mic{position:absolute;right:10px;top:10px;color:var(--text-faint);opacity:0;transition:opacity var(--dur-base) var(--ease-standard)}
   .tile.muted .t-mic{opacity:1;color:var(--danger-text)}
   /* A camera held back for the viewer's link: the face, and why there is no picture. */
