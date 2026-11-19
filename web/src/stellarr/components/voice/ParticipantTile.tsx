@@ -86,6 +86,7 @@ export function ParticipantTile({
   const classes = [
     "tile",
     className,
+    stream && "has-video",
     hasMenu && "has-actions",
     person.speaking && "speaking",
     person.muted && "muted",
@@ -139,6 +140,12 @@ export function ParticipantTile({
           size="xl"
         />
       )}
+      <span className="t-name">
+        <span>{label ?? person.displayName}</span>
+      </span>
+      <span className="t-mic" aria-hidden="true">
+        <Icon name="micSlash" size={14} />
+      </span>
       {sealed !== null ? (
         <span className="t-held t-sealed" role="status">
           {t(sealed, { name: person.displayName })}
@@ -148,12 +155,6 @@ export function ParticipantTile({
           {t("voice.pictureHeldBack")}
         </span>
       ) : null}
-      <span className="t-name">
-        <span>{label ?? person.displayName}</span>
-      </span>
-      <span className="t-mic" aria-hidden="true">
-        <Icon name="micSlash" size={14} />
-      </span>
       {hasMenu ? (
         <button
           type="button"
