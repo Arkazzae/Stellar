@@ -43,6 +43,28 @@ RUN --network=none sh /src/recipe/build.sh /src/speexdsp /out
 FROM --platform=$RECIPE_PLATFORM scratch AS recipe-speex
 COPY --from=recipe-speex-build /out/ /
 
+# The Bergamot translation engine, Mozilla's Marian for the web, with its
+# Emscripten glue (artifacts/recipes/bergamot/). Pinned to linux/amd64, not
+# RECIPE_PLATFORM: emsdk's Emscripten 3.1.8 for amd64 is clang 15.0.0 from
+# llvm-project 80ec0ebf with wasm-opt version_106-10-g22d24fda9, for arm64
+# llvm-project 3b983359 with version_106-26-ge6a62de43, and the two give
+# different WASM from the same sources. The amd64 one gives Mozilla's bytes.
+# The toolchain and the sources are not ADDed here: toolchain.sh and
+# sources.sh name each download and commit and check them, the first a
+# Debian snapshot and two archives by sha256, the second the commits of
+# mozilla/translations and the four submodules the build compiles, which keep
+# their .git because the build reads their revision.
+FROM --platform=linux/amd64 debian:bookworm-slim@sha256:734a72b3d6142a71993b4bc580ca01d8ca687f77a2c422d96a961d3376b179bc AS recipe-bergamot-build
+COPY artifacts/recipes/bergamot/toolchain.sh /src/recipe/
+RUN sh /src/recipe/toolchain.sh
+COPY artifacts/recipes/bergamot/sources.sh /src/recipe/
+RUN sh /src/recipe/sources.sh
+COPY artifacts/recipes/bergamot/build.sh /src/recipe/
+RUN --network=none sh /src/recipe/build.sh /out
+
+FROM --platform=linux/amd64 scratch AS recipe-bergamot
+COPY --from=recipe-bergamot-build /out/ /
+
 # web/ holds both apps, the web client and Cockpit (web/src/cockpit/). It is a
 # workspace of one npm project with the shared packages/: the root
 # package-lock.json covers all of them. The stage copies every workspace
@@ -64,6 +86,7 @@ COPY packages/ packages/
 # committed ones, and those the recipes build, each into its out/ folder.
 COPY artifacts/ artifacts/
 COPY --from=recipe-speex / artifacts/recipes/speex/out/
+COPY --from=recipe-bergamot / artifacts/recipes/bergamot/out/
 COPY web/ web/
 WORKDIR /src/web
 # The build writes both apps to dist/. nginx sends the .gz file beside the

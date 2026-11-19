@@ -10,7 +10,7 @@
 
 # Each recipe that artifacts/manifest.json names, by the name of its folder.
 variable "RECIPES" {
-  default = ["speex"]
+  default = ["speex", "bergamot"]
 }
 
 # "gha" in CI: each recipe then reads and writes a GitHub Actions cache of

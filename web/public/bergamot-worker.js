@@ -1,7 +1,7 @@
 /**
- * Bergamot translation Web Worker.
- * Loads bergamot-translator WASM, downloads language models on demand from
- * the copy the instance serves, caches them in IndexedDB.
+ * Translation worker: runs the Bergamot engine, Mozilla's build of the Marian
+ * translator for the web, on the models this instance serves, and keeps the
+ * model files in IndexedDB so a pair is downloaded once.
  *
  * Protocol:
  *   Main → Worker: { type: "translate", id, text, from, to }
@@ -9,10 +9,13 @@
  *   Worker → Main: { type: "error", id, message }
  */
 
-const MODEL_REGISTRY_URL = "/bergamot-models";
+const ENGINE_GLUE = "/codecs/bergamot/bergamot-translator.js";
+const ENGINE_WASM = "/codecs/bergamot/bergamot-translator.wasm";
+const MODELS = "/bergamot-models";
 
-const BERGAMOT_WASM_BASE = "/codecs/bergamot";
-
+// Marian's decoding options, as Firefox passes them. The model file carries
+// its own architecture; these only shape the search. The precision is the one
+// for `*.intgemm.alphas.bin` models, the only kind the registry lists.
 const MODEL_CONFIG = `beam-size: 1
 normalize: 1.0
 word-penalty: 0
@@ -28,7 +31,13 @@ gemm-precision: int8shiftAlphaAll
 alignment: soft
 `;
 
-// ── IndexedDB helpers ──
+// The alignment, in bytes, the engine needs for each file in its memory.
+const ALIGNMENT = { model: 256, lex: 64, vocab: 64 };
+
+// ── IndexedDB ──
+//
+// src/stellarr/lib/chatTranslation/modelStatus.ts reads the same database, so
+// the name, the store and the `<pair>/<file name>` keys must stay as they are.
 
 const DB_NAME = "bergamot-models";
 const DB_STORE = "files";
@@ -45,208 +54,194 @@ function openDB() {
 
 async function idbGet(key) {
   const db = await openDB();
-  return new Promise((resolve, reject) => {
-    const tx = db.transaction(DB_STORE, "readonly");
-    const req = tx.objectStore(DB_STORE).get(key);
-    req.onsuccess = () => resolve(req.result);
-    req.onerror = () => reject(req.error);
-  });
+  try {
+    return await new Promise((resolve, reject) => {
+      const req = db.transaction(DB_STORE, "readonly").objectStore(DB_STORE).get(key);
+      req.onsuccess = () => resolve(req.result);
+      req.onerror = () => reject(req.error);
+    });
+  } finally {
+    db.close();
+  }
 }
 
 async function idbSet(key, value) {
   const db = await openDB();
-  return new Promise((resolve, reject) => {
-    const tx = db.transaction(DB_STORE, "readwrite");
-    tx.objectStore(DB_STORE).put(value, key);
-    tx.oncomplete = () => resolve();
-    tx.onerror = () => reject(tx.error);
-  });
+  try {
+    await new Promise((resolve, reject) => {
+      const tx = db.transaction(DB_STORE, "readwrite");
+      tx.objectStore(DB_STORE).put(value, key);
+      tx.oncomplete = () => resolve();
+      tx.onerror = () => reject(tx.error);
+      tx.onabort = () => reject(tx.error);
+    });
+  } finally {
+    db.close();
+  }
 }
 
 // ── Model registry ──
 
-let registryCache = null;
+let registryRequest = null;
 
-async function fetchRegistry() {
-  if (registryCache) return registryCache;
-  const resp = await fetch(`${MODEL_REGISTRY_URL}/registry.json`);
-  if (!resp.ok) throw new Error(`Failed to fetch model registry: ${resp.status}`);
-  registryCache = await resp.json();
-  return registryCache;
+/** registry.json: `{ <pair>: { model, lex, vocab } }`, each `{ name, size, sha256 }`. */
+function loadRegistry() {
+  registryRequest ??= fetch(`${MODELS}/registry.json`)
+    .then((response) => {
+      if (!response.ok) throw new Error(`Failed to fetch model registry: ${response.status}`);
+      return response.json();
+    })
+    .catch((error) => {
+      // A failed request must not be remembered, or no later message could succeed.
+      registryRequest = null;
+      throw error;
+    });
+  return registryRequest;
 }
 
-/**
- * Look up model files for a language pair from the registry.
- * Returns { model, lex, vocab } file names, or null if pair not found.
- */
-async function getModelFiles(langPair) {
-  const registry = await fetchRegistry();
-  // Registry keys are like "enfr", "deen", etc.
-  const entry = registry[langPair];
-  if (!entry) return null;
-  return {
-    model: entry.model?.name,
-    lex: entry.lex?.name,
-    vocab: entry.vocab?.name,
-  };
-}
+async function modelFile(pair, file) {
+  const key = `${pair}/${file.name}`;
+  const stored = await idbGet(key);
+  if (stored !== undefined) return stored;
 
-// ── Bergamot WASM loading ──
-
-let moduleReady = null;
-
-function loadBergamotModule() {
-  if (moduleReady) return moduleReady;
-  moduleReady = new Promise((resolve, reject) => {
-    self.Module = {
-      locateFile(path) {
-        return `${BERGAMOT_WASM_BASE}/${path}`;
-      },
-      onRuntimeInitialized() {
-        resolve(self.Module);
-      },
-    };
-    try {
-      importScripts(`${BERGAMOT_WASM_BASE}/bergamot-translator-worker.js`);
-    } catch (e) {
-      moduleReady = null;
-      reject(new Error(`Failed to load Bergamot WASM: ${e.message}`));
-    }
-  });
-  return moduleReady;
-}
-
-// ── Model management ──
-
-async function fetchModelFile(langPair, fileName) {
-  const cacheKey = `${langPair}/${fileName}`;
-  const cached = await idbGet(cacheKey);
-  if (cached) return cached;
-
-  const localUrl = `${MODEL_REGISTRY_URL}/${langPair}/${fileName}`;
-  const response = await fetch(localUrl);
-  if (!response.ok) throw new Error(`Failed to download model ${langPair}/${fileName}`);
+  const response = await fetch(`${MODELS}/${pair}/${file.name}`);
+  if (!response.ok) throw new Error(`Failed to download model ${pair}/${file.name}`);
   const buffer = await response.arrayBuffer();
-  await idbSet(cacheKey, buffer);
+  await idbSet(key, buffer);
   return buffer;
 }
 
-function loadAlignedMemory(buffer, alignment) {
-  const bytes = new Int8Array(buffer);
-  const memory = new self.Module.AlignedMemory(bytes.byteLength, alignment);
-  memory.getByteArrayView().set(bytes);
+// ── Engine ──
+
+let engineRequest = null;
+
+/**
+ * The glue defines `loadBergamot(Module)`, which compiles the WASM into the
+ * object it is given and adds the engine's classes to it.
+ */
+function loadEngine() {
+  engineRequest ??= new Promise((resolve, reject) => {
+    importScripts(ENGINE_GLUE);
+    const engine = {
+      // The glue looks for its WASM beside the URL of the worker, not beside
+      // its own.
+      locateFile: () => ENGINE_WASM,
+      // Firefox starts with 40 MiB: growing from a small start uses less memory
+      // than overshooting it, and the default 16 MiB only means more growing.
+      INITIAL_MEMORY: 41_943_040,
+      print: (line) => console.debug("[bergamot]", line),
+      printErr: (line) => console.warn("[bergamot]", line),
+      onAbort: (reason) => reject(new Error(`The translation engine stopped: ${reason}`)),
+      onRuntimeInitialized: () => resolve(engine),
+    };
+    loadBergamot(engine);
+  }).catch((error) => {
+    engineRequest = null;
+    throw error;
+  });
+  return engineRequest;
+}
+
+function alignedCopy(engine, buffer, alignment) {
+  const memory = new engine.AlignedMemory(buffer.byteLength, alignment);
+  memory.getByteArrayView().set(new Uint8Array(buffer));
   return memory;
 }
 
-const loadedModels = new Map();
+const models = new Map();
+let service = null;
 
-async function getModel(langPair) {
-  if (loadedModels.has(langPair)) return loadedModels.get(langPair);
+/** Forgets the engine and what lives in its memory, so the next message starts over. */
+function discardEngine() {
+  engineRequest = null;
+  models.clear();
+  service = null;
+}
 
-  const files = await getModelFiles(langPair);
-  if (!files || !files.model || !files.lex || !files.vocab) {
-    throw new Error(`No model available for language pair: ${langPair}`);
-  }
-
-  const [modelBuf, lexBuf, vocabBuf] = await Promise.all([
-    fetchModelFile(langPair, files.model),
-    fetchModelFile(langPair, files.lex),
-    fetchModelFile(langPair, files.vocab),
+async function createModel(engine, pair, from, to) {
+  const registry = await loadRegistry();
+  const files = registry[pair];
+  const [model, lex, vocab] = await Promise.all([
+    modelFile(pair, files.model),
+    modelFile(pair, files.lex),
+    modelFile(pair, files.vocab),
   ]);
 
-  const modelMem = loadAlignedMemory(modelBuf, 256);
-  const shortlistMem = loadAlignedMemory(lexBuf, 64);
-  const vocabMem = loadAlignedMemory(vocabBuf, 64);
-  const vocabList = new self.Module.AlignedMemoryList();
-  vocabList.push_back(vocabMem);
+  const modelMemory = alignedCopy(engine, model, ALIGNMENT.model);
+  const lexMemory = alignedCopy(engine, lex, ALIGNMENT.lex);
+  const vocabMemory = alignedCopy(engine, vocab, ALIGNMENT.vocab);
+  // One vocabulary serves both sides; the engine shares it.
+  const vocabs = new engine.AlignedMemoryList();
+  vocabs.push_back(vocabMemory);
+  try {
+    // The languages name the Intl.Segmenter that splits the source text into
+    // sentences.
+    return new engine.TranslationModel(from, to, MODEL_CONFIG, modelMemory, lexMemory, vocabs, null);
+  } finally {
+    // The model has moved the bytes out of these; only their handles are left.
+    for (const handle of [modelMemory, lexMemory, vocabMemory, vocabs]) handle.delete();
+  }
+}
 
-  const model = new self.Module.TranslationModel(
-    MODEL_CONFIG, modelMem, shortlistMem, vocabList, null
-  );
-  loadedModels.set(langPair, model);
+function getModel(engine, from, to) {
+  const pair = `${from}${to}`;
+  let model = models.get(pair);
+  if (model === undefined) {
+    model = createModel(engine, pair, from, to);
+    models.set(pair, model);
+    model.catch(() => models.delete(pair));
+  }
   return model;
 }
 
-// ── Translation ──
-
-let service = null;
-
-function getService() {
-  if (!service) {
-    service = new self.Module.BlockingService({ cacheSize: 20000 });
+function translateWith(engine, chain, text) {
+  // The client keeps finished translations, so the engine's own cache would
+  // only hold a second copy; Firefox turns it off too.
+  service ??= new engine.BlockingService({ cacheSize: 0 });
+  const input = new engine.VectorString();
+  const options = new engine.VectorResponseOptions();
+  let output = null;
+  try {
+    input.push_back(text);
+    options.push_back({ qualityScores: false, alignment: false, html: false });
+    output =
+      chain.length === 1
+        ? service.translate(chain[0], input, options)
+        : service.translateViaPivoting(chain[0], chain[1], input, options);
+    const response = output.get(0);
+    try {
+      return response.getTranslatedText();
+    } finally {
+      response.delete();
+    }
+  } finally {
+    input.delete();
+    options.delete();
+    output?.delete();
   }
-  return service;
-}
-
-function translateDirect(model, text) {
-  const svc = getService();
-  const input = new self.Module.VectorString();
-  const options = new self.Module.VectorResponseOptions();
-
-  input.push_back(text);
-  options.push_back({ qualityScores: false, alignment: false, html: false });
-
-  const output = svc.translate(model, input, options);
-  const result = output.get(0).getTranslatedText();
-
-  input.delete();
-  options.delete();
-  output.delete();
-
-  return result;
-}
-
-function translateViaPivot(firstModel, secondModel, text) {
-  const svc = getService();
-  const input = new self.Module.VectorString();
-  const options = new self.Module.VectorResponseOptions();
-
-  input.push_back(text);
-  options.push_back({ qualityScores: false, alignment: false, html: false });
-
-  const output = svc.translateViaPivoting(firstModel, secondModel, input, options);
-  const result = output.get(0).getTranslatedText();
-
-  input.delete();
-  options.delete();
-  output.delete();
-
-  return result;
 }
 
 async function handleTranslate(from, to, text) {
-  await loadBergamotModule();
+  if (text.trim() === "") return text;
 
-  const directPair = `${from}${to}`;
-  const registry = await fetchRegistry();
+  const registry = await loadRegistry();
 
-  // Direct model exists
-  if (registry[directPair]) {
-    const model = await getModel(directPair);
-    return translateDirect(model, text);
+  let languages;
+  if (registry[`${from}${to}`]) languages = [[from, to]];
+  else if (registry[`${from}en`] && registry[`en${to}`]) languages = [[from, "en"], ["en", to]];
+  else throw new Error(`No translation model available for ${from} → ${to}`);
+
+  const engine = await loadEngine();
+  try {
+    const chain = await Promise.all(languages.map(([source, target]) => getModel(engine, source, target)));
+    return translateWith(engine, chain, text);
+  } catch (error) {
+    // An abort inside the WASM, running out of memory among them, leaves the
+    // engine unusable, and keeping it would fail every later message the same
+    // way.
+    if (error instanceof WebAssembly.RuntimeError) discardEngine();
+    throw error;
   }
-
-  // Pivot through English
-  const srcToEn = `${from}en`;
-  const enToTgt = `en${to}`;
-
-  if (to === "en" && registry[srcToEn]) {
-    const model = await getModel(srcToEn);
-    return translateDirect(model, text);
-  }
-
-  if (from === "en" && registry[enToTgt]) {
-    const model = await getModel(enToTgt);
-    return translateDirect(model, text);
-  }
-
-  if (registry[srcToEn] && registry[enToTgt]) {
-    const m1 = await getModel(srcToEn);
-    const m2 = await getModel(enToTgt);
-    return translateViaPivot(m1, m2, text);
-  }
-
-  throw new Error(`No translation model available for ${from} → ${to}`);
 }
 
 // ── Message handler ──
