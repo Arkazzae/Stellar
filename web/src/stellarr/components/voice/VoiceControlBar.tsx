@@ -2,7 +2,7 @@ import { useState, useSyncExternalStore } from "react";
 
 import { Icon } from "@stellarr/icons";
 import type { PopoverTriggerProps } from "@/components/primitives/Popover";
-import type { Sound, VoiceSettings } from "@/ports";
+import type { Sound, SoundboardLive, VoiceSettings } from "@/ports";
 import { useLanguage } from "@/state/LanguageProvider";
 
 import { QualityMenu } from "./QualityMenu";
@@ -12,6 +12,7 @@ import {
   screenQualityMenu,
 } from "./qualityMenus";
 import { SoundboardPopover } from "./SoundboardPopover";
+import { IDLE_SOUNDBOARD } from "./soundboardLive";
 import { VoiceMobileMenu } from "./VoiceMobileMenu";
 
 type Drawer = "mic" | "camera" | "screen";
@@ -46,7 +47,12 @@ export interface VoiceControlBarProps {
 
   /** What the soundboard offers; see `onPlaySound`. */
   sounds?: Sound[];
+  /** False where this person may not play the board: its pads are locked and it says why. */
   soundboardSupported?: boolean;
+  /** What plays in the room and the cooldown, read by the soundboard panel alone. */
+  soundboardLive?: SoundboardLive;
+  /** For people who manage the server: its settings, on the soundboard. */
+  onManageSounds?: () => void;
 
   /** Device settings, applied to the call already in progress. */
   settings: VoiceSettings;
@@ -94,7 +100,9 @@ export function VoiceControlBar({
   sharing,
   cinema,
   sounds = [],
-  soundboardSupported,
+  soundboardSupported = true,
+  soundboardLive = IDLE_SOUNDBOARD,
+  onManageSounds,
   settings,
   onChangeSettings,
   cameraSupported = false,
@@ -248,12 +256,14 @@ export function VoiceControlBar({
             <div className="vc-ctl vc-wide-only">
               <SoundboardPopover
                 sounds={sounds}
+                live={soundboardLive}
+                canPlay={soundboardSupported}
                 open={boardOpen}
                 onOpenChange={setBoardOpen}
                 onPlaySound={onPlaySound}
+                onManage={onManageSounds}
                 volume={settings.soundboardVolume}
                 onVolumeChange={changeSoundboardVolume}
-                supported={soundboardSupported}
                 renderTrigger={(triggerProps) => (
                   <button
                     type="button"
@@ -279,6 +289,8 @@ export function VoiceControlBar({
             fullscreen={fullscreen}
             sounds={sounds}
             soundboardSupported={soundboardSupported}
+            soundboardLive={soundboardLive}
+            onManageSounds={onManageSounds}
             soundboardVolume={settings.soundboardVolume}
             onSoundboardVolumeChange={changeSoundboardVolume}
             onToggleShare={onToggleShare}
