@@ -87,10 +87,12 @@ function digestInt16(values: Int16Array): string {
   return hash.toString(16).padStart(8, "0");
 }
 
-/** The samples the wrapper hands the binary: times 32767, stored as int16. */
+/** The samples the wrapper hands the binary: times 32767, clamped, stored as int16. */
 function binaryInput(input: Float32Array): Int16Array {
   const values = new Int16Array(input.length);
-  for (let i = 0; i < input.length; i += 1) values[i] = (input[i] as number) * 32767;
+  for (let i = 0; i < input.length; i += 1) {
+    values[i] = Math.max(-32768, Math.min(32767, (input[i] as number) * 32767));
+  }
   return values;
 }
 

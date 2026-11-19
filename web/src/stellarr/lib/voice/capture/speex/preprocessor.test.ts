@@ -63,6 +63,27 @@ describe("SpeexPreprocessor on speex.wasm", () => {
     expect(rmsDb(output, ...tone) - rmsDb(input, ...tone)).toBeGreaterThan(-3);
   });
 
+  it("keeps the peaks of a tone past full scale on their own side of zero", () => {
+    // 440 Hz with peaks at 1.4: a sample past full scale stored as it was
+    // wrapped to the other sign, and Speex cleaned the inverted peak.
+    const input = new Float32Array(RATE);
+    for (let i = 0; i < input.length; i += 1) input[i] = 1.4 * Math.sin((2 * Math.PI * 440 * i) / RATE);
+    const output = run(new SpeexPreprocessor(instantiateSpeex(binary), FRAME, RATE), input);
+
+    // The output follows the input one frame later.
+    let peaks = 0;
+    let flipped = 0;
+    for (let i = RATE / 2; i < input.length - FRAME; i += 1) {
+      const sample = input[i] as number;
+      if (Math.abs(sample) <= 1.05) continue;
+      peaks += 1;
+      if (Math.sign(output[i + FRAME] as number) !== Math.sign(sample)) flipped += 1;
+    }
+    // Every one of the 11 025 flipped while the store wrapped.
+    expect(peaks).toBeGreaterThan(1000);
+    expect(flipped).toBe(0);
+  });
+
   it("gives a destroyed state's memory back", () => {
     const speex = instantiateSpeex(binary);
     const frame = new Float32Array(FRAME);

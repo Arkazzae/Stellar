@@ -31,6 +31,7 @@ import { build } from "vite";
 
 import { workerBuild } from "../../../worklets.ts";
 import { launch } from "../../cdp.mjs";
+import { encodeWav } from "../wav.ts";
 
 const here = import.meta.dirname;
 const webRoot = resolve(here, "..", "..", "..");
@@ -58,6 +59,7 @@ function usage() {
     "  --before-wasm <path>      the earlier binary, instead of a revision's",
     `  --fixtures <a,b,...>      fixtures of web/bench/voice/fixtures.ts (default ${DEFAULT_FIXTURES.join(",")})`,
     "  --require-identical       fail unless every fixture comes out sample for sample the same",
+    "  --write-outputs <dir>     write each fixture's input and both outputs there as 32-bit float WAV",
     "  --out <path>              also write the result as JSON",
     "  --timeout <s>             timeout of the whole run in Chrome, in seconds (default 600)",
     "  --headed                  show the browser (debugging only)",
@@ -72,6 +74,7 @@ function parseArgs(argv) {
     beforeWasm: null,
     fixtures: DEFAULT_FIXTURES,
     requireIdentical: false,
+    writeOutputs: null,
     out: null,
     timeout: 600,
     headed: false,
@@ -104,6 +107,9 @@ function parseArgs(argv) {
         break;
       case "--require-identical":
         options.requireIdentical = true;
+        break;
+      case "--write-outputs":
+        options.writeOutputs = resolve(process.cwd(), takeValue() ?? "");
         break;
       case "--out":
         options.out = resolve(process.cwd(), takeValue() ?? "");
@@ -167,17 +173,39 @@ async function buildPage(outDir) {
   });
 }
 
+/** The whole body of a request, as bytes. */
+function readBody(request) {
+  return new Promise((done, fail) => {
+    const chunks = [];
+    request.on("data", (chunk) => chunks.push(chunk));
+    request.on("end", () => done(Buffer.concat(chunks)));
+    request.on("error", fail);
+  });
+}
+
 /**
  * The page and its worklets, web/public/audio/ for the files the app takes
- * from artifacts/, the earlier files at /before/, and /__missing, through
- * which the page makes one path answer 404.
+ * from artifacts/, the earlier files at /before/, /__missing, through which
+ * the page makes one path answer 404, and /__output/, where it hands over
+ * samples to be written as WAV files into `outputs`.
  */
-function serve(distRoot, earlier) {
+function serve(distRoot, earlier, outputs) {
   let missing = null;
   const state = { lastBinary: null };
   const server = createServer(async (request, response) => {
     try {
       const { pathname } = new URL(request.url ?? "/", "http://127.0.0.1");
+      if (pathname.startsWith("/__output/") && request.method === "POST" && outputs !== null) {
+        const name = decodeURIComponent(pathname.slice("/__output/".length));
+        if (!/^[a-z0-9.-]+$/.test(name)) throw new Error("not an output name");
+        const bytes = await readBody(request);
+        // A copy, since a Buffer may start anywhere in its ArrayBuffer.
+        const samples = new Float32Array(new Uint8Array(bytes).buffer);
+        await mkdir(outputs, { recursive: true });
+        await writeFile(join(outputs, `${name}.wav`), encodeWav(samples, 48_000, "float32"));
+        response.writeHead(204).end();
+        return;
+      }
       if (pathname === "/__missing") {
         missing = request.method === "POST" ? await new Promise((done) => {
           let body = "";
@@ -248,7 +276,7 @@ async function main() {
   const distRoot = mkdtempSync(join(tmpdir(), "stellarr-voice-suppressor-"));
   console.log("Building the comparison page...");
   await buildPage(distRoot);
-  const { server, state, url } = await serve(distRoot, earlier);
+  const { server, state, url } = await serve(distRoot, earlier, options.writeOutputs);
   const problems = [];
   let result = null;
   let browser = null;
@@ -260,7 +288,7 @@ async function main() {
     const chrome = await page.eval("navigator.userAgent");
     const work = (async () => ({
       comparison: await page.eval(
-        `window.__suppressor.compare(${JSON.stringify(options.engine)}, ${JSON.stringify(options.fixtures)})`,
+        `window.__suppressor.compare(${JSON.stringify(options.engine)}, ${JSON.stringify(options.fixtures)}, ${options.writeOutputs !== null})`,
       ),
       destroyed: await page.eval(`window.__suppressor.destroyed(${JSON.stringify(options.engine)})`),
       // The binary the app fetched for this engine, which may be a SIMD build.

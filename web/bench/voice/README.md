@@ -235,8 +235,11 @@ Speex runs as it always has here, odd parts included: 128-sample frames (2.7
 ms at 48 kHz, where SpeexDSP's time constants assume 20 ms), denoise on and
 every other setting at the library's default (the record's header lists
 them), and samples moved to int16 as `x * 32767` stored into an `Int16Array`,
-which truncates and wraps past full scale rather than clamping, and back as
-`/ 32767`. The `clipping` fixture is where the wrapping shows.
+which truncates towards zero, and back as `/ 32767`. One thing was changed on
+purpose: a sample past full scale is clamped to the int16 range before it is
+stored, where the engine it replaced let the store wrap it to the other sign.
+Only the `clipping` fixture reaches past full scale, and only its run moved
+when the record was rewritten for the clamp.
 
 ## Comparing a suppressor with an earlier build
 
@@ -256,7 +259,9 @@ difference, the RMS of the difference in dBFS and in dB against the earlier
 output, and the first sample each side sounded on, which shows when an
 earlier worklet that compiles its binary asynchronously had not loaded yet.
 `--fixtures` picks any of the fixtures above, `--require-identical` fails on
-any difference, and `--out` keeps the result as JSON.
+any difference, `--write-outputs <dir>` writes each fixture's input and both
+outputs there as 32-bit float WAV files to listen to, and `--out` keeps the
+result as JSON.
 
 It also checks two things of the current engine: that the "destroy" the app
 sends when it lets a suppressor go silences the node, and that a 404 for the
@@ -271,8 +276,12 @@ and the `fan` fixture, at -40 dBFS, leaves RNNoise at -72 dBFS, GTCRN at
 
 The current side needs the recipes built and the binaries assembled, as `npm
 test` needs them. Run against the revision before Speex was built here, Speex
-came out identical on every fixture, sample for sample: the same output in
-Chrome 158 and in Node.
+comes out identical, sample for sample, on every fixture within full scale:
+the same output in Chrome 158 and in Node. On `clipping` the clamp changes
+133 905 of 215 040 samples: the largest difference is 2.0, a peak that the
+old engine turned over, and the difference is -13.6 dBFS RMS, 1.9 dB below
+the old output. The state of the preprocessor carries the change past the
+samples themselves, which is why most of the fixture differs a little.
 
 ## What the checks were tried against
 
