@@ -21,6 +21,7 @@ import json
 import os
 import random
 import sqlite3
+import string
 import sys
 import uuid
 from dataclasses import dataclass
@@ -484,8 +485,15 @@ def new_guid() -> str:
 
 
 def fmt_dt(dt: datetime) -> str:
+    """A UTC time as the API stores one: ``yyyy-MM-dd HH:mm:ss.FFFFFFF``.
+
+    The fraction loses its trailing zeros, and its dot when nothing is left.
+    The API compares these values as text (history cursors, read markers), so
+    a seeded time must be spelled exactly as one the API wrote.
+    """
     utc = dt.astimezone(timezone.utc)
-    return utc.strftime("%Y-%m-%d %H:%M:%S.") + f"{utc.microsecond:06d}0"
+    fraction = f"{utc.microsecond:06d}".rstrip("0")
+    return utc.strftime("%Y-%m-%d %H:%M:%S") + (f".{fraction}" if fraction else "")
 
 
 def parse_dt(raw: str) -> datetime:
@@ -520,6 +528,21 @@ def pair_key(a: str, b: str) -> str:
 
 def placeholders(count: int) -> str:
     return ",".join("?" * count)
+
+
+def avatar_color(hue: int) -> str:
+    """The colour registration gives a new account, which built-in avatars are drawn on."""
+    return f"oklch(0.58 0.14 {hue % 360})"
+
+
+def welcome_notice(display_name: str) -> str:
+    """The system notice the API posts when somebody joins a server.
+
+    It is message markup, so the name has every ASCII punctuation character
+    escaped, as ServerWelcome does, and cannot open a span or a mention.
+    """
+    escaped = "".join(f"\\{ch}" if ch in string.punctuation else ch for ch in display_name)
+    return f"**{escaped}** has joined the server. Say hello!"
 
 
 def infer_data_root(db_path: Path) -> Path:
@@ -584,6 +607,8 @@ def ensure_schema_present(cur: sqlite3.Cursor) -> None:
         "ChannelReads", "Friendships", "FriendRequests", "DirectConversations",
         "DirectMessages", "DirectMessageAttachments", "DirectConversationReads",
         "UserNotifications", "ServerInvites", "ServerAuditEntries",
+        # Filled by the API's triggers on every message the seed inserts.
+        "MessageChanges", "MessageIndexEntries", "MessageSearch", "ChannelPostTimes",
     }
     rows = cur.execute("SELECT name FROM sqlite_master WHERE type = 'table';").fetchall()
     existing = {row[0] for row in rows}
@@ -594,6 +619,14 @@ def ensure_schema_present(cur: sqlite3.Cursor) -> None:
             + ", ".join(missing)
             + "). Start the API service once so EF Core creates the schema before seeding."
         )
+    try:
+        cur.execute("CREATE VIRTUAL TABLE temp.seed_fts5_probe USING fts5(x);")
+        cur.execute("DROP TABLE temp.seed_fts5_probe;")
+    except sqlite3.OperationalError as exc:
+        raise RuntimeError(
+            f"This Python's SQLite {sqlite3.sqlite_version} has no FTS5, which the message search "
+            "triggers need. Use another interpreter (SEED_PYTHON) or seed through Docker."
+        ) from exc
 
 
 def bootstrap_empty_server(
@@ -620,10 +653,13 @@ def bootstrap_empty_server(
         cur.execute(
             """INSERT INTO Users (
                 Id, Username, NormalizedUsername, DisplayName, PasswordHash,
-                Email, NormalizedEmail, IsDisabled, SessionVersion, SecurityRecoveryRequired,
+                Email, NormalizedEmail, ProviderVerifiedEmail, IsDisabled, SessionVersion, SecurityRecoveryRequired,
                 AvatarColor, CreatedAt, AvatarUrl, BannerUrl, CustomStatus, Bio, Pronouns
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, 0, 0, 0, 'oklch(0.62 0.14 250)', ?, NULL, NULL, 'Maintaining Stellarr Dev', NULL, NULL)""",
-            (owner_id, uname, uname.upper(), uname.capitalize(), pw_hash, email, email.upper(), fmt_dt(created)),
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, NULL, 0, 0, 0, ?, ?, NULL, NULL, 'Maintaining Stellarr Dev', NULL, NULL)""",
+            (
+                owner_id, uname, uname.upper(), uname.capitalize(), pw_hash, email, email.upper(),
+                avatar_color(uuid.UUID(owner_id).int % 360), fmt_dt(created),
+            ),
         )
 
     server_id = new_guid()
@@ -670,6 +706,13 @@ def bootstrap_empty_server(
             SlowModeSeconds, HideAfterInactivityHours, AudioProfile, UserLimit, SectionId
         ) VALUES (?, ?, 'voice', 1, 1, '', 0, 0, 'premium', 0, NULL)""",
         (voice_id, server_id),
+    )
+    # A founded server greets its owner in its first text channel.
+    owner_display = cur.execute("SELECT DisplayName FROM Users WHERE Id = ?", (owner_id,)).fetchone()[0]
+    cur.execute(
+        """INSERT INTO Messages (Id, ChannelId, AuthorId, IsSystem, Content, CreatedAt, EditedAt, PinnedAt, ReplyToMessageId)
+           VALUES (?, ?, ?, 1, ?, ?, NULL, NULL, NULL)""",
+        (new_guid(), general_id, owner_id, welcome_notice(owner_display), fmt_dt(created)),
     )
 
 
@@ -1225,15 +1268,17 @@ def seed_database(
                     email = f"{uname}.seed@example.test"
                 existing_emails.add(email.upper())
 
+                # AvatarUrl and BannerUrl stay NULL: clients draw built-in art
+                # from the user id on AvatarColor, as for a new registration.
                 cur.execute(
                     """INSERT INTO Users (
                         Id, Username, NormalizedUsername, DisplayName, PasswordHash,
-                        Email, NormalizedEmail, IsDisabled, SessionVersion, SecurityRecoveryRequired,
+                        Email, NormalizedEmail, ProviderVerifiedEmail, IsDisabled, SessionVersion, SecurityRecoveryRequired,
                         AvatarColor, CreatedAt, AvatarUrl, BannerUrl, CustomStatus, Bio, Pronouns
-                    ) VALUES (?, ?, ?, ?, ?, ?, ?, 0, 0, 0, ?, ?, NULL, NULL, ?, ?, ?)""",
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, NULL, 0, 0, 0, ?, ?, NULL, NULL, ?, ?, ?)""",
                     (
                         uid, uname, uname.upper(), dname, pw_hash,
-                        email, email.upper(), f"oklch(0.58 0.14 {hue})", fmt_dt(joined_at),
+                        email, email.upper(), avatar_color(hue), fmt_dt(joined_at),
                         status, bio, pronouns,
                     ),
                 )
@@ -1312,7 +1357,7 @@ def seed_database(
                         new_guid(),
                         ctx.general_channel_id,
                         user_ids[uname],
-                        f"<b>{user_display[uname]}</b> has joined the server. Say hello!",
+                        welcome_notice(user_display[uname]),
                         fmt_dt(user_join_dates[uname]),
                     ),
                 )
@@ -1374,12 +1419,17 @@ def seed_database(
                     poster_size = len(poster)
                     write_object(files_root, poster_key, poster)
 
+                # No preview: a browser sends one only when it saves enough
+                # over the original, which these small files never do, and
+                # never for an animated GIF. Plain files, so IsEncrypted is 0.
                 cur.execute(
                     """INSERT INTO ImageAttachments (
                         Id, UploadedById, ObjectKey, FileName, ContentType, SizeBytes,
                         Width, Height, DurationSeconds, IsVoiceMessage,
-                        PosterObjectKey, PosterContentType, PosterSizeBytes, CreatedAt
-                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?, ?, ?)""",
+                        PosterObjectKey, PosterContentType, PosterSizeBytes,
+                        PreviewObjectKey, PreviewContentType, PreviewSizeBytes, Placeholder,
+                        IsEncrypted, CreatedAt
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?, ?, NULL, NULL, NULL, NULL, 0, ?)""",
                     (
                         attachment_id,
                         user_ids[author_uname],
