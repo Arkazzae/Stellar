@@ -1709,8 +1709,15 @@ def seed_database(
                 used_dm_pairs.add((a, b))
 
                 conv_id = new_guid()
+                # Encryption is off, as for every conversation the API opens:
+                # turning it on takes account keys both people make in their
+                # browsers, which a seed cannot. Plain messages and plain
+                # attachments are what an unencrypted conversation holds.
                 cur.execute(
-                    "INSERT INTO DirectConversations (Id, UserAId, UserBId, CreatedAt) VALUES (?, ?, ?, ?)",
+                    """INSERT INTO DirectConversations (
+                        Id, UserAId, UserBId, CreatedAt, EncryptionState,
+                        EncryptionRequestedById, EncryptionRequestedAt, EncryptionEnabledAt, CurrentEpochId
+                    ) VALUES (?, ?, ?, ?, 'Off', NULL, NULL, NULL, NULL)""",
                     (conv_id, a, b, fmt_dt(now - timedelta(days=5))),
                 )
                 base_t = now - timedelta(hours=8)
@@ -1726,8 +1733,10 @@ def seed_database(
                     last_dm_t = t
                     mid = new_guid()
                     cur.execute(
-                        """INSERT INTO DirectMessages (Id, ConversationId, AuthorId, Content, CreatedAt)
-                           VALUES (?, ?, ?, ?, ?)""",
+                        """INSERT INTO DirectMessages (
+                            Id, ConversationId, AuthorId, Content, CreatedAt,
+                            EncryptedEpochId, EncryptedIv, EncryptedCiphertext, SystemKind
+                        ) VALUES (?, ?, ?, ?, ?, NULL, NULL, NULL, NULL)""",
                         (mid, conv_id, user_ids[author_u], txt, fmt_dt(t)),
                     )
                     if attachment_key is not None:
