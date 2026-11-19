@@ -63,4 +63,9 @@ export {
   type Space,
   type UiValue,
 } from "./UiProvider";
-export { useVoiceContext as useVoice, type VoiceValue } from "./VoiceProvider";
+export {
+  useVoiceContext as useVoice,
+  useVoiceLiveContext as useVoiceLive,
+  type VoiceLive,
+  type VoiceValue,
+} from "./VoiceProvider";
