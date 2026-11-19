@@ -10,9 +10,9 @@ import {
 } from "./noiseSuppression";
 
 /**
- * How long a download runs before it is shown. Speex's binary is about 56 KB
- * and is usually here before this; a ring that appeared and vanished within a
- * blink would only say that something had happened.
+ * How long a download runs before it is shown. Speex's binary is about 32 KB
+ * on the wire and is usually here before this; a ring that appeared and
+ * vanished within a blink would only say that something had happened.
  */
 export const DOWNLOAD_SHOWN_AFTER_MS = 400;
 
