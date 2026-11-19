@@ -267,6 +267,31 @@ function translateWith(engine, chain, text) {
   }
 }
 
+// ── A reply said twice ──
+//
+// The models say a short reply twice when it is one capitalised word and one
+// full stop or exclamation mark: "Dzięki!" comes back as "Thanks! Thanks!",
+// "No." as "Nie. Nie.". Firefox, with the same engine and options, does the
+// same. When the text is one sentence, split as the engine splits it, and the
+// translation is one sentence twice over, the second is dropped. A text that
+// repeats itself is two sentences and keeps its repeat.
+
+function sentences(text, language) {
+  const segmenter = new Intl.Segmenter(language, { granularity: "sentence" });
+  return Array.from(segmenter.segment(text), ({ segment }) => segment);
+}
+
+function withoutRepeat(text, translation, from, to) {
+  if (sentences(text, from).length !== 1) return translation;
+  const parts = sentences(translation, to);
+  if (parts.length !== 2) return translation;
+  const [first, second] = parts;
+  const sentence = second.trim();
+  if (sentence === "" || first.trim() !== sentence) return translation;
+  // Whatever whitespace the translation starts and ends with stays.
+  return first.slice(0, first.indexOf(sentence) + sentence.length) + second.slice(second.trimEnd().length);
+}
+
 async function handleTranslate(from, to, text) {
   if (text.trim() === "") return text;
 
@@ -281,7 +306,7 @@ async function handleTranslate(from, to, text) {
   const engine = await loadEngine();
   try {
     const chain = await Promise.all(languages.map(([source, target]) => getModel(engine, source, target)));
-    return translateWith(engine, chain, text);
+    return withoutRepeat(text, translateWith(engine, chain, text), from, to);
   } catch (error) {
     // An abort inside the WASM, running out of memory among them, leaves the
     // engine unusable, and keeping it would fail every later message the same

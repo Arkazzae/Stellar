@@ -175,4 +175,30 @@ describe("the translation worker", () => {
     expect(await startWorker(standInEngine())("Nie wiem")).toMatchObject({ type: "error" });
     expect(await storedKeys()).not.toContain(files.lex.sha256);
   });
+
+  // What the models gave for these texts in Chrome: [text, from, to, model, reply].
+  const replies: [string, string, string, string, string][] = [
+    ["Cześć!", "pl", "en", "Hi! Hi!", "Hi!"],
+    ["Dzień dobry.", "pl", "en", "Good morning. Good morning.", "Good morning."],
+    ["Dzięki!", "pl", "en", "Thanks! Thanks!", "Thanks!"],
+    ["Super!", "pl", "en", "Great! Great!", "Great!"],
+    ["No.", "en", "pl", "Nie. Nie.", "Nie."],
+    // A text that repeats itself, and translations that only look repeated.
+    ["Dzięki! Dzięki!", "pl", "en", "Thanks! Thanks!", "Thanks! Thanks!"],
+    ["Dzięki! Do jutra.", "pl", "en", "Thanks! Thanks! Until tomorrow.", "Thanks! Thanks! Until tomorrow."],
+    ["Nie.", "pl", "en", "No, no. No.", "No, no. No."],
+    ["i don't know", "en", "pl", "Nie wiem, nie wiem.", "Nie wiem, nie wiem."],
+    ["ok", "pl", "en", "OK ok", "OK ok"],
+  ];
+
+  it("says once a one-sentence reply the model said twice, and leaves every other repeat", async () => {
+    const translate = startWorker(
+      standInEngine(Object.fromEntries(replies.map(([text, , , translated]) => [text, translated]))),
+    );
+
+    const answers = [];
+    for (const [text, from, to] of replies) answers.push((await translate(text, from, to)).translation);
+
+    expect(answers).toEqual(replies.map(([, , , , reply]) => reply));
+  });
 });
