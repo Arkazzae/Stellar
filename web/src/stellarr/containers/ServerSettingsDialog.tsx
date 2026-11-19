@@ -1,7 +1,7 @@
 import { useMemo, useSyncExternalStore } from "react";
 
 import { ServerSettings } from "@/components/settings/server/ServerSettings";
-import { applyAudioOutput } from "@/lib/voice/playback/playback";
+import { routeAudioOutput } from "@/lib/voice/playback/playback";
 import {
   useDirectory,
   useEmoji,
@@ -39,7 +39,7 @@ export function ServerSettingsDialog({ open, data, reload }: ServerSettingsDialo
   const { t } = useLanguage();
   const { emoji, refresh: refreshEmoji } = useEmoji();
   // The listener's own playback preferences, for the soundboard preview: the
-  // speaker calls are routed to, and the two levels a clip is mixed through.
+  // speaker calls are routed to, and the level a clip is mixed at.
   const playback = useSyncExternalStore(
     voiceSettings.subscribe,
     voiceSettings.getSnapshot,
@@ -148,15 +148,12 @@ export function ServerSettingsDialog({ open, data, reload }: ServerSettingsDialo
         onCreate: (input) => soundboard.create(input),
         onUpdate: (soundId, patch) => soundboard.update(soundId, patch),
         onDelete: (soundId) => soundboard.delete(soundId),
-        // The preview plays through the same speaker and the same two levels a
-        // triggered clip does, so auditioning one is what hearing it will be.
+        onReorder: (soundIds) => soundboard.reorderSounds(soundIds),
+        // The preview plays on the same speaker and at the same level a
+        // played clip does, so auditioning one is what hearing it will be.
         playback: {
-          outputVolume: playback.outputVolume,
           soundboardVolume: playback.soundboardVolume,
-          route: (element) => applyAudioOutput(element, playback),
-        },
-        onSoundboardVolumeChange: (soundboardVolume) => {
-          voiceSettings.update({ soundboardVolume });
+          route: (element) => routeAudioOutput(element, playback.outputDeviceId),
         },
       }}
       audit={{ supported: supported.audit, entries: data.audit }}
