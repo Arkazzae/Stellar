@@ -4,7 +4,6 @@ import {
   GTCRN_WASM_URL,
   GTCRN_WORKLET_URL,
   PROCESSOR_NAME,
-  RNNOISE_SIMD_WASM_URL,
   RNNOISE_WASM_URL,
   RNNOISE_WORKLET_URL,
   SPEEX_WASM_URL,
@@ -18,9 +17,16 @@ class FakeWorkletNode {
   static created: FakeWorkletNode[] = [];
   static failWith: Error | null = null;
 
+  /** What RNNoise's processor does after construction: say it is ready, fail, or say nothing. */
+  static rnnoise: "ready" | "error" | "silent" = "ready";
+
   connect = vi.fn();
   disconnect = vi.fn();
-  port = { postMessage: vi.fn() };
+  port: { postMessage: ReturnType<typeof vi.fn>; onmessage: ((event: { data: unknown }) => void) | null } = {
+    postMessage: vi.fn(),
+    onmessage: null,
+  };
+  onprocessorerror: (() => void) | null = null;
 
   constructor(
     readonly context: AudioContext,
@@ -29,9 +35,14 @@ class FakeWorkletNode {
   ) {
     if (FakeWorkletNode.failWith) throw FakeWorkletNode.failWith;
     FakeWorkletNode.created.push(this);
+    if (name === PROCESSOR_NAME.rnnoise && FakeWorkletNode.rnnoise !== "silent") {
+      const ready = FakeWorkletNode.rnnoise === "ready";
+      queueMicrotask(() => (ready ? this.port.onmessage?.({ data: "ready" }) : this.onprocessorerror?.()));
+    }
   }
 }
 
+const compiled = {} as WebAssembly.Module;
 const binaries = new Map<string, ArrayBuffer>();
 const fetchBinary = vi.fn(async (url: string) => {
   const body = new ArrayBuffer(8);
@@ -55,6 +66,8 @@ const lastNode = () => FakeWorkletNode.created.at(-1) as FakeWorkletNode;
 beforeEach(() => {
   vi.stubGlobal("AudioWorkletNode", FakeWorkletNode);
   vi.stubGlobal("fetch", fetchBinary);
+  // The fake binary is eight bytes of nothing; RNNoise's is compiled before the node exists.
+  vi.spyOn(WebAssembly, "compile").mockImplementation(async () => compiled);
 });
 
 afterEach(() => {
@@ -63,6 +76,7 @@ afterEach(() => {
   vi.restoreAllMocks();
   FakeWorkletNode.created = [];
   FakeWorkletNode.failWith = null;
+  FakeWorkletNode.rnnoise = "ready";
   binaries.clear();
   fetchBinary.mockClear();
 });
@@ -88,7 +102,6 @@ describe("suppressor graph lifecycle", () => {
   });
 
   it.each([
-    ["rnnoise", RNNOISE_WORKLET_URL, RNNOISE_SIMD_WASM_URL],
     ["gtcrn", GTCRN_WORKLET_URL, GTCRN_WASM_URL],
     ["speex", SPEEX_WORKLET_URL, SPEEX_WASM_URL],
   ] as const)(
@@ -124,35 +137,39 @@ describe("suppressor graph lifecycle", () => {
   });
 });
 
-describe("choosing the RNNoise build", () => {
-  it("takes the SIMD build where this engine validates the probe", async () => {
-    // Node runs WebAssembly SIMD, so this also proves the probe is a valid module.
+describe("starting RNNoise", () => {
+  it("hands the processor the binary compiled, one channel's worth of nothing else", async () => {
     const { context, source } = graph();
 
-    await attachSuppressor("rnnoise", context, source);
+    const handle = await attachSuppressor("rnnoise", context, source);
 
-    expect(fetchBinary).toHaveBeenCalledWith(RNNOISE_SIMD_WASM_URL);
+    expect(handle?.kind).toBe("rnnoise");
+    expect(context.audioWorklet.addModule).toHaveBeenCalledWith(RNNOISE_WORKLET_URL);
+    expect(fetchBinary).toHaveBeenCalledWith(RNNOISE_WASM_URL);
+    expect(WebAssembly.compile).toHaveBeenCalledWith(binaries.get(RNNOISE_WASM_URL));
+    expect(lastNode().name).toBe(PROCESSOR_NAME.rnnoise);
+    expect(lastNode().options).toEqual({ processorOptions: { module: compiled } });
+    expect(source.connect).toHaveBeenCalledWith(lastNode());
   });
 
-  it("takes the plain build where SIMD is refused", async () => {
-    vi.spyOn(WebAssembly, "validate").mockReturnValue(false);
+  it("returns null, wiring nothing, when the binary does not compile", async () => {
+    vi.spyOn(WebAssembly, "compile").mockRejectedValue(new WebAssembly.CompileError("not a module"));
     const { context, source } = graph();
 
-    await attachSuppressor("rnnoise", context, source);
+    await expect(attachSuppressor("rnnoise", context, source)).resolves.toBeNull();
 
-    expect(fetchBinary).toHaveBeenCalledWith(RNNOISE_WASM_URL);
-    expect(fetchBinary).not.toHaveBeenCalledWith(RNNOISE_SIMD_WASM_URL);
+    expect(FakeWorkletNode.created).toHaveLength(0);
+    expect(source.connect).not.toHaveBeenCalled();
   });
 
-  it("takes the plain build where validation itself throws", async () => {
-    vi.spyOn(WebAssembly, "validate").mockImplementation(() => {
-      throw new Error("no WebAssembly here");
-    });
+  it("returns null, and frees the node, when the processor fails to start", async () => {
+    FakeWorkletNode.rnnoise = "error";
     const { context, source } = graph();
 
-    await attachSuppressor("rnnoise", context, source);
+    await expect(attachSuppressor("rnnoise", context, source)).resolves.toBeNull();
 
-    expect(fetchBinary).toHaveBeenCalledWith(RNNOISE_WASM_URL);
+    expect(source.connect).not.toHaveBeenCalled();
+    expect(lastNode().port.postMessage).toHaveBeenCalledWith("destroy");
   });
 });
 
