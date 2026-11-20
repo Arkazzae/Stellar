@@ -20,7 +20,7 @@
   .ui-overlay {
     position: fixed;
     inset: 0;
-    z-index: 50;
+    z-index: var(--ui-menu-z-index, 50);
     background-color: var(--ui-scrim);
   }
 
@@ -42,7 +42,7 @@
     position: fixed;
     top: 50%;
     left: 50%;
-    z-index: 50;
+    z-index: var(--ui-menu-z-index, 50);
     display: grid;
     width: calc(100% - 32 * var(--ui-unit));
     max-width: calc(448 * var(--ui-unit));
@@ -92,7 +92,7 @@
   .ui-sheet {
     position: fixed;
     inset-block: 0;
-    z-index: 50;
+    z-index: var(--ui-menu-z-index, 50);
     display: flex;
     height: 100%;
     width: 75%;
@@ -180,7 +180,7 @@
     position: fixed;
     top: var(--_y);
     left: var(--_x);
-    z-index: 50;
+    z-index: var(--ui-menu-z-index, 50);
     max-height: var(--_menu-available-height);
     min-width: calc(128 * var(--ui-unit));
     overflow-y: auto;
@@ -355,7 +355,7 @@
     position: fixed;
     top: var(--_y);
     left: var(--_x);
-    z-index: 50;
+    z-index: var(--ui-menu-z-index, 50);
     width: fit-content;
     max-width: calc(256 * var(--ui-unit));
     border-radius: var(--ui-radius-md);

@@ -200,6 +200,7 @@ A card's label turns `--ui-text` under the pointer whatever `--ui-segmented-item
 | `--ui-dropdown-list-bg` | `--ui-surface` | The fill of the list |
 | `--ui-dropdown-list-border` | `none` | The border of the list, as a whole `border` value such as `1px solid var(--ui-line)` |
 | `--ui-dropdown-list-z-index` | `98` | Where the list stacks: above the web client's settings dialog and media viewer, below its confirmation dialog. The package's other overlays are at 50 |
+| `--ui-menu-z-index` | `50` | Where a dropdown menu stacks. The web client lifts it above its settings dialog and confirmation cards, which menus open from |
 
 A field refused with `invalid` takes `--ui-danger-text` as its border, as an `Input` does, in every state.
 
