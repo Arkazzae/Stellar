@@ -60,6 +60,10 @@ public static class SectionEndpoints
             Position = (lastPosition ?? -1) + 1,
         };
         db.Sections.Add(section);
+        await ServerAudit.StageAsync(db, serverId, http.User.RequireUserId(), new AuditEvent(
+            "section.create",
+            messages.Get(MessageKey.AuditSectionCreated, ("name", section.Name)),
+            "section", section.Id, section.Name), cancellationToken);
         await db.SaveChangesAsync(cancellationToken);
         return Results.Created($"/api/admin/sections/{section.Id}", section.ToDto());
     }
@@ -92,7 +96,17 @@ public static class SectionEndpoints
             return InvalidName(messages);
         }
 
+        var before = section.Name;
         section.Name = name ?? section.Name;
+        if (before != section.Name)
+        {
+            await ServerAudit.StageAsync(db, serverId, http.User.RequireUserId(), new AuditEvent(
+                "section.update",
+                messages.Get(MessageKey.AuditSectionRenamed, ("name", section.Name)),
+                "section", section.Id, section.Name,
+                [new AuditChange("name", before, section.Name)]), cancellationToken);
+        }
+
         await db.SaveChangesAsync(cancellationToken);
         return Results.Ok(section.ToDto());
     }
@@ -124,9 +138,16 @@ public static class SectionEndpoints
         }
 
         var positions = order.ToDictionary(x => x.id, x => x.position);
+        var reordered = sections.Any(x => x.Position != positions[x.Id]);
         foreach (var section in sections)
         {
             section.Position = positions[section.Id];
+        }
+
+        if (reordered)
+        {
+            await ServerAudit.StageAsync(db, serverId, http.User.RequireUserId(), new AuditEvent(
+                "section.reorder", messages.Get(MessageKey.AuditSectionsReordered)), cancellationToken);
         }
 
         await db.SaveChangesAsync(cancellationToken);
@@ -141,6 +162,7 @@ public static class SectionEndpoints
         Guid sectionId,
         HttpContext http,
         AppDbContext db,
+        Messages messages,
         CancellationToken cancellationToken)
     {
         var serverId = http.RequireActiveServerId();
@@ -163,7 +185,17 @@ public static class SectionEndpoints
         var deleted = await db.Sections
             .Where(x => x.Id == section.Id && !db.Channels.Any(channel => channel.SectionId == x.Id))
             .ExecuteDeleteAsync(cancellationToken);
-        return deleted == 0 ? Results.Conflict() : Results.NoContent();
+        if (deleted == 0)
+        {
+            return Results.Conflict();
+        }
+
+        await ServerAudit.StageAsync(db, serverId, http.User.RequireUserId(), new AuditEvent(
+            "section.delete",
+            messages.Get(MessageKey.AuditSectionDeleted, ("name", section.Name)),
+            "section", section.Id, section.Name), cancellationToken);
+        await db.SaveChangesAsync(cancellationToken);
+        return Results.NoContent();
     }
 
     private static bool IsValidName(string name) => name.Length is >= 1 and <= MaxNameLength;

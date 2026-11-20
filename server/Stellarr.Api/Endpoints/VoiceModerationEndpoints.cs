@@ -1,7 +1,9 @@
 using Microsoft.AspNetCore.SignalR;
+using Microsoft.EntityFrameworkCore;
 using Stellarr.Api.Auth;
 using Stellarr.Api.Contracts;
 using Stellarr.Api.Data;
+using Stellarr.Api.Localization;
 using Stellarr.Api.Realtime;
 
 namespace Stellarr.Api.Endpoints;
@@ -29,6 +31,7 @@ public static class VoiceModerationEndpoints
         AppDbContext db,
         PresenceTracker presence,
         IHubContext<AppHub> hub,
+        Messages messages,
         CancellationToken cancellationToken)
     {
         var serverId = http.RequireActiveServerId();
@@ -42,6 +45,17 @@ public static class VoiceModerationEndpoints
 
         var seated = presence.VoiceConnectionIds(userId, channelId);
         presence.RemoveUserFromVoiceChannels(userId, new HashSet<Guid> { channelId });
+        if (seated.Count > 0)
+        {
+            var channelName = await db.Channels.Where(x => x.Id == channelId).Select(x => x.Name).SingleAsync(cancellationToken);
+            await ServerAudit.StageAsync(db, serverId, lookup.Actor.UserId, new AuditEvent(
+                "voice.disconnect",
+                messages.Get(MessageKey.AuditVoiceDisconnected, ("name", lookup.Target.User.DisplayName), ("channel", channelName)),
+                "member", userId, lookup.Target.User.DisplayName,
+                [new AuditChange("channel", From: channelName)]), cancellationToken);
+            await db.SaveChangesAsync(cancellationToken);
+        }
+
         await transaction.CommitAsync(cancellationToken);
         if (seated.Count > 0)
         {
@@ -62,6 +76,7 @@ public static class VoiceModerationEndpoints
         AppDbContext db,
         PresenceTracker presence,
         IHubContext<AppHub> hub,
+        Messages messages,
         CancellationToken cancellationToken)
     {
         var serverId = http.RequireActiveServerId();
@@ -88,6 +103,15 @@ public static class VoiceModerationEndpoints
             return Results.Conflict();
         }
 
+        var names = await db.Channels.Where(x => x.Id == channelId || x.Id == targetChannelId)
+            .ToDictionaryAsync(x => x.Id, x => x.Name, cancellationToken);
+        await ServerAudit.StageAsync(db, serverId, lookup.Actor.UserId, new AuditEvent(
+            "voice.move",
+            messages.Get(MessageKey.AuditVoiceMoved,
+                ("name", lookup.Target.User.DisplayName), ("from", names[channelId]), ("to", names[targetChannelId])),
+            "member", userId, lookup.Target.User.DisplayName,
+            [new AuditChange("channel", names[channelId], names[targetChannelId])]), cancellationToken);
+        await db.SaveChangesAsync(cancellationToken);
         await transaction.CommitAsync(cancellationToken);
         await hub.Clients.Clients(move.ConnectionIds).SendAsync(
             "VoiceChannelMoved",

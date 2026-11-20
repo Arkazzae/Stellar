@@ -35,8 +35,9 @@ public static class PermissionOverrideEndpoints
             SetAsync(targetType, targetId, roleId, request, http, db, messages, cancellationToken))
             .AddEndpointFilter<InstanceServerFreshSecondStepFilter>();
         overrides.MapDelete("/{roleId:guid}", (
-            Guid targetId, Guid roleId, HttpContext http, AppDbContext db, CancellationToken cancellationToken) =>
-            ClearAsync(targetType, targetId, roleId, http, db, cancellationToken))
+            Guid targetId, Guid roleId, HttpContext http, AppDbContext db, Messages messages,
+            CancellationToken cancellationToken) =>
+            ClearAsync(targetType, targetId, roleId, http, db, messages, cancellationToken))
             .AddEndpointFilter<InstanceServerFreshSecondStepFilter>();
     }
 
@@ -98,13 +99,17 @@ public static class PermissionOverrideEndpoints
 
         var current = await db.PermissionOverrides.FirstOrDefaultAsync(
             x => x.TargetType == targetType && x.TargetId == targetId && x.RoleId == roleId, cancellationToken);
+        await StageAsync(db, messages, http, serverId, targetType, targetId, roleId,
+            current?.AllowMask ?? ServerPrivileges.None, current?.DenyMask ?? ServerPrivileges.None, allow, deny,
+            cancellationToken);
         if (allow == ServerPrivileges.None && deny == ServerPrivileges.None)
         {
             if (current is not null)
             {
                 db.PermissionOverrides.Remove(current);
-                await db.SaveChangesAsync(cancellationToken);
             }
+
+            await db.SaveChangesAsync(cancellationToken);
 
             await transaction.CommitAsync(cancellationToken);
             return Results.Ok(new PermissionOverrideDto(roleId.ToString(), [], []));
@@ -136,6 +141,7 @@ public static class PermissionOverrideEndpoints
         Guid roleId,
         HttpContext http,
         AppDbContext db,
+        Messages messages,
         CancellationToken cancellationToken)
     {
         await using var transaction = await db.Database.BeginTransactionAsync(cancellationToken);
@@ -156,9 +162,16 @@ public static class PermissionOverrideEndpoints
             return Results.Forbid();
         }
 
-        await db.PermissionOverrides
-            .Where(x => x.TargetType == targetType && x.TargetId == targetId && x.RoleId == roleId)
-            .ExecuteDeleteAsync(cancellationToken);
+        var cleared = await db.PermissionOverrides.AsNoTracking().FirstOrDefaultAsync(
+            x => x.TargetType == targetType && x.TargetId == targetId && x.RoleId == roleId, cancellationToken);
+        if (cleared is not null)
+        {
+            await db.PermissionOverrides.Where(x => x.Id == cleared.Id).ExecuteDeleteAsync(cancellationToken);
+            await StageAsync(db, messages, http, serverId, targetType, targetId, roleId,
+                cleared.AllowMask, cleared.DenyMask, ServerPrivileges.None, ServerPrivileges.None, cancellationToken);
+            await db.SaveChangesAsync(cancellationToken);
+        }
+
         await transaction.CommitAsync(cancellationToken);
         return Results.NoContent();
     }
@@ -188,6 +201,50 @@ public static class PermissionOverrideEndpoints
             db, http.User.RequireUserId(), serverId, ServerPrivileges.ManageRoles, cancellationToken)
             ? null
             : Results.Forbid();
+    }
+
+    /// <summary>A line for the audit log: which role, where, and what it was allowed and denied.</summary>
+    private static async Task StageAsync(
+        AppDbContext db,
+        Messages messages,
+        HttpContext http,
+        Guid serverId,
+        PermissionTargetType targetType,
+        Guid targetId,
+        Guid roleId,
+        ServerPrivileges allowBefore,
+        ServerPrivileges denyBefore,
+        ServerPrivileges allow,
+        ServerPrivileges deny,
+        CancellationToken cancellationToken)
+    {
+        if (allowBefore == allow && denyBefore == deny)
+        {
+            return;
+        }
+
+        var role = await db.ServerRoles.AsNoTracking().SingleAsync(x => x.Id == roleId, cancellationToken);
+        var isChannel = targetType == PermissionTargetType.Channel;
+        var name = isChannel
+            ? await db.Channels.Where(x => x.Id == targetId).Select(x => x.Name).SingleAsync(cancellationToken)
+            : await db.Sections.Where(x => x.Id == targetId).Select(x => x.Name).SingleAsync(cancellationToken);
+        AuditChange? Mask(string field, ServerPrivileges before, ServerPrivileges after)
+        {
+            var added = ServerAccess.ToNames(after & ~before);
+            var removed = ServerAccess.ToNames(before & ~after);
+            return added.Count + removed.Count == 0 ? null : new AuditChange(field, Added: added, Removed: removed);
+        }
+
+        await ServerAudit.StageAsync(db, serverId, http.User.RequireUserId(), new AuditEvent(
+            isChannel ? "channel.permissions" : "section.permissions",
+            messages.Get(
+                isChannel ? MessageKey.AuditChannelPermissions : MessageKey.AuditSectionPermissions,
+                ("role", role.Name), ("name", name)),
+            isChannel ? "channel" : "section", targetId, name,
+            ServerAudit.Only(
+                new AuditChange("role", To: role.Name, ToColor: role.Color),
+                Mask("allow", allowBefore, allow),
+                Mask("deny", denyBefore, deny))), cancellationToken);
     }
 
     private static PermissionScope Scope(PermissionTargetType type, Guid serverId, Guid targetId) =>

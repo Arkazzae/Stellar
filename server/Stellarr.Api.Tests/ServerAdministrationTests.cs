@@ -23,6 +23,7 @@ public sealed class ServerAdministrationTests : IClassFixture<StellarrWebApplica
     private static readonly Guid JoId = Guid.Parse("30000000-0000-0000-0000-000000000005");
 
     private static readonly TimeSpan Patience = TimeSpan.FromSeconds(10);
+    private static readonly string[] AuditorWithBans = ["viewAuditLog", "manageBans"];
 
     private readonly StellarrWebApplicationFactory _factory;
 
@@ -51,7 +52,7 @@ public sealed class ServerAdministrationTests : IClassFixture<StellarrWebApplica
         Assert.Single(members, x => x.OwnerSlot == 1);
         Assert.Contains(
             await db.ServerAuditEntries.Where(x => x.ServerId == server.Id).Select(x => x.Summary).ToArrayAsync(),
-            summary => summary == "Maja przekazał(a) własność serwera");
+            summary => summary == "Maja przekazał(a) serwer osobie Ada");
 
         Assert.Equal(HttpStatusCode.Forbidden, (await maja.DeleteAsync("/api/admin/server")).StatusCode);
     }
@@ -289,6 +290,71 @@ public sealed class ServerAdministrationTests : IClassFixture<StellarrWebApplica
 
         // Reading the log does not let its reader manage the server.
         Assert.Equal(HttpStatusCode.Forbidden, (await jo.GetAsync("/api/admin/invites")).StatusCode);
+    }
+
+    [Fact]
+    public async Task TheAuditLogSaysWhoDidWhatToWhomAndWhatChanged()
+    {
+        var server = await SeedServerAsync();
+        using var maja = await SignInAsync("maja", "Aurora!2026", server);
+        var roles = await maja.GetFromJsonAsync<JsonElement[]>("/api/admin/roles");
+        var auditor = roles!.Single(x => x.GetProperty("name").GetString() == "Audyt").GetProperty("id").GetString();
+
+        var updated = await maja.PatchAsJsonAsync($"/api/admin/roles/{auditor}", new
+        {
+            color = "#3399ff",
+            permissions = AuditorWithBans,
+        });
+        Assert.Equal(HttpStatusCode.OK, updated.StatusCode);
+        var banned = await maja.PostAsJsonAsync($"/api/admin/members/{AdaId}/ban", new { reason = "Spam" });
+        Assert.Equal(HttpStatusCode.Created, banned.StatusCode);
+
+        var entries = await maja.GetFromJsonAsync<JsonElement[]>("/api/admin/audit");
+        var ban = entries!.Single(x => x.GetProperty("action").GetString() == "member.ban");
+        Assert.Equal(MajaId.ToString(), ban.GetProperty("actor").GetProperty("id").GetString());
+        Assert.Equal(AdaId.ToString(), ban.GetProperty("target").GetProperty("id").GetString());
+        Assert.Equal("member", ban.GetProperty("target").GetProperty("type").GetString());
+        var reason = Assert.Single(ban.GetProperty("changes").EnumerateArray());
+        Assert.Equal("reason", reason.GetProperty("field").GetString());
+        Assert.Equal("Spam", reason.GetProperty("to").GetString());
+
+        var role = entries!.Single(x => x.GetProperty("action").GetString() == "role.update");
+        Assert.Equal("Audyt", role.GetProperty("target").GetProperty("name").GetString());
+        var changes = role.GetProperty("changes").EnumerateArray().ToDictionary(x => x.GetProperty("field").GetString()!);
+        Assert.Equal("#62ad78", changes["color"].GetProperty("from").GetString());
+        Assert.Equal("#3399ff", changes["color"].GetProperty("to").GetString());
+        Assert.Equal(["manageBans"], changes["permissions"].GetProperty("added").EnumerateArray().Select(x => x.GetString()));
+        Assert.Empty(changes["permissions"].GetProperty("removed").EnumerateArray());
+    }
+
+    [Fact]
+    public async Task TheAuditLogComesInPagesFromTheNewestBack()
+    {
+        var server = await SeedServerAsync();
+        using var maja = await SignInAsync("maja", "Aurora!2026", server);
+        var start = new DateTime(2026, 1, 1, 12, 0, 0, DateTimeKind.Utc);
+        await using (var scope = _factory.Services.CreateAsyncScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+            db.ServerAuditEntries.AddRange(Enumerable.Range(0, 60).Select(i => new ServerAuditEntry
+            {
+                Id = Guid.NewGuid(), ServerId = server.Id, ActorId = MajaId,
+                Summary = $"Maja zrobiła {i}", CreatedAt = start.AddMinutes(i),
+            }));
+            await db.SaveChangesAsync();
+        }
+
+        var first = await maja.GetFromJsonAsync<JsonElement[]>("/api/admin/audit");
+        Assert.Equal(50, first!.Length);
+        Assert.Equal("Maja zrobiła 59", first[0].GetProperty("summary").GetString());
+        // An entry from before the structured fields has only its sentence.
+        Assert.Equal(JsonValueKind.Null, first[0].GetProperty("action").ValueKind);
+
+        var oldest = first[^1].GetProperty("at").GetDateTime();
+        var rest = await maja.GetFromJsonAsync<JsonElement[]>(
+            $"/api/admin/audit?before={Uri.EscapeDataString(oldest.ToUniversalTime().ToString("O"))}");
+        Assert.Equal(10, rest!.Length);
+        Assert.Equal("Maja zrobiła 9", rest[0].GetProperty("summary").GetString());
     }
 
     [Fact]

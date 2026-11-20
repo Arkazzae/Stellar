@@ -1,5 +1,6 @@
 using System.Text.Json;
 using Stellarr.Api.Domain;
+using Stellarr.Api.Endpoints;
 
 namespace Stellarr.Api.Contracts;
 
@@ -109,7 +110,21 @@ public sealed record InvitePreviewChannelDto(string Id, string Name);
 
 public sealed record InvitePreviewInviterDto(string DisplayName, string AvatarColor, string? AvatarUrl);
 
-public sealed record AuditEntryDto(string Id, string Summary, DateTime At);
+/// <summary>
+/// One line of a server's audit log. <c>Summary</c> is the sentence in the
+/// server's language, which is all an entry from before the structured
+/// fields has; the rest lets a client say it in its reader's language.
+/// </summary>
+public sealed record AuditEntryDto(
+    string Id,
+    string Summary,
+    DateTime At,
+    UserDto? Actor = null,
+    string? Action = null,
+    AuditTargetDto? Target = null,
+    IReadOnlyList<AuditChange>? Changes = null);
+
+public sealed record AuditTargetDto(string Type, string? Id, string? Name);
 
 public sealed record NotificationSettingsDto(
     bool AllMessages,
@@ -193,7 +208,11 @@ public static class ServerContractMappings
     public static AuditEntryDto ToDto(this ServerAuditEntry entry) => new(
         entry.Id.ToString(),
         entry.Summary,
-        entry.CreatedAt);
+        entry.CreatedAt,
+        entry.Actor?.ToDto(),
+        entry.Action,
+        entry.TargetType is null ? null : new AuditTargetDto(entry.TargetType, entry.TargetId?.ToString(), entry.TargetName),
+        entry.ChangesJson is null ? null : ServerAudit.ReadChanges(entry.ChangesJson));
 
     public static NotificationSettingsDto ToDto(this ServerAdminSettings settings) => new(
         settings.AllMessages,

@@ -21,7 +21,7 @@ public static class ServerAdministrationEndpoints
     private const int InviteCodeBytes = 8;
     private const int InviteMaxUses = 25;
     private const int InviteLifetimeDays = 7;
-    private const int AuditPageSize = 250;
+    private const int AuditPageSize = 50;
 
     /// <summary>The caller, and the server the request is about.</summary>
     private readonly record struct Actor(Guid ServerId, Guid UserId);
@@ -106,13 +106,13 @@ public static class ServerAdministrationEndpoints
             CreatedAt = now,
         };
         db.ServerInvites.Add(invite);
-        await StageAuditAsync(
-            db,
-            actor,
+        await ServerAudit.StageAsync(db, actor.ServerId, actor.UserId, new AuditEvent(
+            "invite.create",
             channel is null
                 ? messages.Get(MessageKey.AuditInviteCreated)
                 : messages.Get(MessageKey.AuditInviteCreatedForChannel, ("channel", channel.Name)),
-            cancellationToken);
+            "invite", invite.Id, invite.Code,
+            channel is null ? null : [new AuditChange("channel", To: channel.Name)]), cancellationToken);
         await db.SaveChangesAsync(cancellationToken);
 
         await db.Entry(invite).Reference(x => x.CreatedBy).LoadAsync(cancellationToken);
@@ -145,7 +145,8 @@ public static class ServerAdministrationEndpoints
             .ToListAsync(cancellationToken);
         db.UserNotifications.RemoveRange(sent);
         db.ServerInvites.Remove(invite);
-        await StageAuditAsync(db, actor, messages.Get(MessageKey.AuditInviteRevoked), cancellationToken);
+        await ServerAudit.StageAsync(db, actor.ServerId, actor.UserId, new AuditEvent(
+            "invite.revoke", messages.Get(MessageKey.AuditInviteRevoked), "invite", invite.Id, invite.Code), cancellationToken);
         await db.SaveChangesAsync(cancellationToken);
 
         foreach (var recipientId in sent.Select(x => x.UserId).Distinct())
@@ -232,6 +233,7 @@ public static class ServerAdministrationEndpoints
     }
 
     private static async Task<IResult> ListAuditAsync(
+        DateTime? before,
         HttpContext http,
         AppDbContext db,
         CancellationToken cancellationToken)
@@ -241,8 +243,18 @@ public static class ServerAdministrationEndpoints
             return Results.Forbid();
         }
 
-        var entries = await db.ServerAuditEntries.AsNoTracking()
-            .Where(x => x.ServerId == actor.ServerId)
+        // A page of the newest entries, or of those older than `before`: the
+        // time of the last entry the reader already has.
+        var query = db.ServerAuditEntries.AsNoTracking()
+            .Include(x => x.Actor)
+            .Where(x => x.ServerId == actor.ServerId);
+        if (before is { } cursor)
+        {
+            var utc = cursor.Kind == DateTimeKind.Unspecified ? DateTime.SpecifyKind(cursor, DateTimeKind.Utc) : cursor.ToUniversalTime();
+            query = query.Where(x => x.CreatedAt < utc);
+        }
+
+        var entries = await query
             .OrderByDescending(x => x.CreatedAt)
             .Take(AuditPageSize)
             .ToListAsync(cancellationToken);
@@ -314,7 +326,7 @@ public static class ServerAdministrationEndpoints
             return Results.Forbid();
         }
 
-        var successor = await db.ServerMembers.FirstOrDefaultAsync(
+        var successor = await db.ServerMembers.Include(x => x.User).FirstOrDefaultAsync(
             x => x.ServerId == actor.ServerId && x.UserId == request.UserId, cancellationToken);
         if (successor is null || successor.UserId == actor.UserId)
         {
@@ -322,7 +334,10 @@ public static class ServerAdministrationEndpoints
         }
 
         await ServerOwnership.HandOverAsync(db, actor.ServerId, owner, successor, cancellationToken);
-        await StageAuditAsync(db, actor, messages.Get(MessageKey.AuditOwnershipTransferred), cancellationToken);
+        await ServerAudit.StageAsync(db, actor.ServerId, actor.UserId, new AuditEvent(
+            "server.transfer",
+            messages.Get(MessageKey.AuditOwnershipTransferredTo, ("name", successor.User.DisplayName)),
+            "member", successor.UserId, successor.User.DisplayName), cancellationToken);
         await db.SaveChangesAsync(cancellationToken);
         await transaction.CommitAsync(cancellationToken);
         return Results.NoContent();
@@ -393,24 +408,6 @@ public static class ServerAdministrationEndpoints
         }
 
         return settings;
-    }
-
-    /// <summary>Stages a line of the audit log; the caller saves it with the change it records.</summary>
-    private static async Task StageAuditAsync(
-        AppDbContext db,
-        Actor actor,
-        string action,
-        CancellationToken cancellationToken)
-    {
-        var name = await DisplayNameAsync(db, actor.UserId, cancellationToken);
-        db.ServerAuditEntries.Add(new ServerAuditEntry
-        {
-            Id = Guid.NewGuid(),
-            ServerId = actor.ServerId,
-            ActorId = actor.UserId,
-            Summary = $"{name} {action}",
-            CreatedAt = DateTime.UtcNow,
-        });
     }
 
     private static Task<string> DisplayNameAsync(AppDbContext db, Guid userId, CancellationToken cancellationToken) =>

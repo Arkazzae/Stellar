@@ -19,7 +19,6 @@ namespace Stellarr.Api.Endpoints;
 /// </summary>
 public static partial class EmojiEndpoints
 {
-    private const int MaxEmojiPerServer = 100;
     private const long MaxEmojiBytes = 512 * 1024;
 
     public static IEndpointRouteBuilder MapEmojiEndpoints(this IEndpointRouteBuilder endpoints)
@@ -86,16 +85,8 @@ public static partial class EmojiEndpoints
             return Results.Conflict();
         }
 
-        if (await db.ServerEmoji.CountAsync(x => x.ServerId == serverId, cancellationToken) >= MaxEmojiPerServer)
-        {
-            return Results.Problem(
-                statusCode: StatusCodes.Status409Conflict,
-                title: messages.Get(MessageKey.EmojiLimitReached),
-                detail: messages.Get(MessageKey.EmojiLimitDetail, ("max", MaxEmojiPerServer)));
-        }
-
-        // A file whose bytes do not match its type is reported after the checks
-        // on the shortcode and the limit, as it always was.
+        // A file whose bytes do not match its type is reported after the check
+        // on the shortcode, as it always was.
         if (!inspection.Accepted)
         {
             return Refusal(inspection, messages);
@@ -127,6 +118,10 @@ public static partial class EmojiEndpoints
         {
             await mediaStorage.StoreAsync(key, file, cancellationToken);
             db.ServerEmoji.Add(emoji);
+            await ServerAudit.StageAsync(db, serverId, userId, new AuditEvent(
+                "emoji.create",
+                messages.Get(MessageKey.AuditEmojiAdded, ("name", code)),
+                "emoji", emoji.Id, code), cancellationToken);
             // Another upload may have taken the shortcode since the check above.
             saved = await db.TrySaveChangesAsync(cancellationToken);
         }
@@ -153,6 +148,7 @@ public static partial class EmojiEndpoints
         AppDbContext db,
         MediaStorage mediaStorage,
         IHubContext<AppHub> hub,
+        Messages messages,
         CancellationToken cancellationToken)
     {
         var serverId = http.RequireActiveServerId();
@@ -171,6 +167,10 @@ public static partial class EmojiEndpoints
 
         await mediaStorage.QueueDeletionAsync([emoji.ObjectKey], DateTime.UtcNow, cancellationToken);
         db.ServerEmoji.Remove(emoji);
+        await ServerAudit.StageAsync(db, serverId, http.User.RequireUserId(), new AuditEvent(
+            "emoji.delete",
+            messages.Get(MessageKey.AuditEmojiDeleted, ("name", emoji.Shortcode)),
+            "emoji", emoji.Id, emoji.Shortcode), cancellationToken);
         await db.SaveChangesAsync(cancellationToken);
         await NotifyChangedAsync(hub, serverId, cancellationToken);
         return Results.NoContent();
