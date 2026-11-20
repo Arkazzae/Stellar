@@ -44,3 +44,5 @@ npx wrangler pages deploy dist --project-name stellarr --branch main
 The build reads the logo, astronaut, icons and fonts from `branding/`, so it needs the whole repository checked out, not only `website/`. A `--branch` other than `main` gives a preview address instead of production. Wrangler is not a dependency of the project; `npx` fetches it when the command runs.
 
 `public/_headers` lets browsers keep the hashed files in `dist/assets/` for a year. Every other file, `index.html` included, is revalidated on each visit, so a new build shows up at once.
+
+The build also copies the repository's `install.sh` to `dist/install.sh`, so the site serves the installer at `https://stellarr.online/install.sh`, as plain text that a browser shows instead of downloading; a change to the script reaches the site with the next deploy.
