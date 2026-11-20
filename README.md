@@ -41,13 +41,10 @@ Running a server for a handful of friends shouldn't mean maintaining a cluster o
 Make sure you have [Docker](https://docs.docker.com/get-docker/) installed, then run:
 
 ```bash
-mkdir stellarr && cd stellarr
-curl -fsSLO https://raw.githubusercontent.com/Arkazzae/Stellarr/main/docker-compose.yml
-curl -fsSL https://raw.githubusercontent.com/Arkazzae/Stellarr/main/.env.example -o .env
-docker compose up -d
+curl -fsSL https://stellarr.online/install.sh | bash
 ```
 
-Open **`https://localhost:8443`** in your browser, accept the self-signed certificate warning, and create the owner account with the setup code from the container's log (`docker compose logs stellarr | grep "Setup code"`). To open the operator panel later, visit **`https://localhost:8443/cockpit`**.
+The installer asks where people will open Stellarr, keeps its files in `~/stellarr`, starts the container, and prints the address and the setup code. Open the address in your browser, accept the self-signed certificate warning, and create the owner account with that code. To open the operator panel later, visit **`https://localhost:8443/cockpit`**. To set it up by hand with Docker Compose instead, follow the [Quick start](docs/install/quick-start.md).
 
 ### Inviting friends over the internet
 
