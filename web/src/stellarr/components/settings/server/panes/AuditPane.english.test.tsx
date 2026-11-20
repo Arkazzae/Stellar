@@ -21,20 +21,30 @@ describe("AuditPane in English", () => {
 
   afterEach(() => vi.useRealTimers());
 
-  it("words the last two days and writes older dates the English way", () => {
+  it("names the days and says each line in English, whatever the server's language", () => {
+    const maja = { id: "u-maja", username: "maja", displayName: "Maja", presence: "online" as const };
     render(
       <AuditPane
         supported
         entries={[
-          { id: "a", summary: "Maja created #general", at: new Date(2026, 7, 6, 18, 40).toISOString() },
-          { id: "b", summary: "Jan banned Ola", at: new Date(2026, 7, 5, 22, 15).toISOString() },
+          {
+            id: "a",
+            summary: "Maja utworzył(a) kanał #ogolny",
+            at: new Date(2026, 7, 6, 18, 40).toISOString(),
+            actor: maja,
+            action: "channel.create",
+            target: { type: "channel", name: "ogolny" },
+          },
+          { id: "b", summary: "Jan zbanował(a) Olę", at: new Date(2026, 7, 5, 22, 15).toISOString() },
           { id: "c", summary: "Jan renamed the server", at: new Date(2026, 7, 1, 9).toISOString() },
         ]}
       />,
     );
 
-    expect(screen.getByText("today 18:40")).toBeVisible();
-    expect(screen.getByText("yesterday 22:15")).toBeVisible();
-    expect(screen.getByText("1/08/2026")).toBeVisible();
+    expect(screen.getByRole("region", { name: "Today" })).toBeVisible();
+    expect(screen.getByRole("region", { name: "Yesterday" })).toBeVisible();
+    expect(screen.getByRole("region", { name: "1/08/2026" })).toBeVisible();
+    expect(screen.getByText((_, node) => node?.tagName === "B" && node.textContent === "Maja created the channel #ogolny")).toBeVisible();
+    expect(screen.getByText("Jan zbanował(a) Olę")).toBeVisible();
   });
 });

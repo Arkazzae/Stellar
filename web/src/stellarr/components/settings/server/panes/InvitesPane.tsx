@@ -18,6 +18,12 @@ function expiry(expiresAt: string | null, now: number, t: Translator, locale: In
   return t("settings.expires", { time: relative.format(left.value, left.unit) });
 }
 
+/** The part of the link people tell apart: `invite/abc123`, without the host. */
+function shortLink(url: string): string {
+  const at = url.indexOf("/invite/");
+  return at === -1 ? url : url.slice(at + 1);
+}
+
 export interface InvitesPaneProps {
   supported: boolean;
   invites: readonly Invite[];
@@ -46,22 +52,10 @@ export function InvitesPane({ supported, invites, onCreate, onRevoke }: InvitesP
     <>
       {supported ? null : <p className="set-note">{t("settings.unsupported")}</p>}
       <SettingsSection
-        title={t("server.invites")}
+        title={t("srv.invites.title")}
         count={invites.length}
         countLabel={t("settings.invitesCount", { count: invites.length })}
-        action={
-          <Button
-            type="button"
-            variant="primary"
-            size="sm"
-            className="asset-add"
-            disabled={!supported || change.pending}
-            onClick={() => void change.run(onCreate)}
-          >
-            <Icon name="plus" size={15} />
-            {t("settings.newInvite")}
-          </Button>
-        }
+        bodyClassName="sec-list ss-list"
       >
         {change.failed ? (
           <p className="set-note sound-error" role="alert">
@@ -69,45 +63,61 @@ export function InvitesPane({ supported, invites, onCreate, onRevoke }: InvitesP
           </p>
         ) : null}
         {invites.length === 0 ? (
-          <div className="asset-empty">
-            <Icon name="link" size={24} />
-            <b>{t("settings.noInvites")}</b>
-            <span>{t("settings.noInvitesDetail")}</span>
-          </div>
+          <p className="acc-security-item acc-security-empty">{t("srv.invites.empty")}</p>
         ) : (
-          <div className="set-list">
-            {invites.map((invite) => (
-              <div className="set-item" key={invite.id}>
-                <span className="set-item-txt mono">
-                  <b>{invite.url}</b>
-                  <span>
-                    {`${invite.createdByName} · ${t("settings.inviteUsage", {
-                      used: invite.uses,
-                      max: invite.maxUses ?? "∞",
-                    })} · ${expiry(invite.expiresAt, now, t, locale)}`}
-                  </span>
-                </span>
-                <button
-                  type="button"
-                  className="set-item-act"
-                  aria-label={t("settings.copyInvite", { url: invite.url })}
-                  onClick={() => void copyInvite(invite)}
-                >
-                  {copiedInviteId === invite.id ? t("invite.copied") : t("common.copy")}
-                </button>
-                <button
-                  type="button"
-                  className="set-item-act danger"
-                  disabled={!supported || change.pending}
-                  aria-label={t("settings.revokeInvite", { url: invite.url })}
-                  onClick={() => void change.run(() => onRevoke(invite.id))}
-                >
-                  {t("settings.revoke")}
-                </button>
-              </div>
-            ))}
-          </div>
+          invites.map((invite) => (
+            <div className="sec-row ss-invite" key={invite.id}>
+              <span className="sec-copy">
+                <b className="ss-mono" title={invite.url}>
+                  {shortLink(invite.url)}
+                </b>
+                <small>
+                  {t("srv.invites.meta", {
+                    name: invite.createdByName,
+                    uses:
+                      invite.maxUses === null
+                        ? t("srv.invites.usesUnlimited", { used: invite.uses })
+                        : t("srv.invites.uses", { used: invite.uses, max: invite.maxUses }),
+                    expiry: expiry(invite.expiresAt, now, t, locale),
+                  })}
+                </small>
+              </span>
+              <Button
+                type="button"
+                variant="secondary"
+                size="sm"
+                aria-label={t("settings.copyInvite", { url: invite.url })}
+                onClick={() => void copyInvite(invite)}
+              >
+                <Icon name={copiedInviteId === invite.id ? "tick" : "copy"} size={14} />
+                {copiedInviteId === invite.id ? t("invite.copied") : t("srv.invites.copy")}
+              </Button>
+              <Button
+                type="button"
+                variant="danger"
+                size="sm"
+                disabled={!supported || change.pending}
+                aria-label={t("settings.revokeInvite", { url: invite.url })}
+                onClick={() => void change.run(() => onRevoke(invite.id))}
+              >
+                {t("settings.revoke")}
+              </Button>
+            </div>
+          ))
         )}
+        <div className="sec-row ss-foot">
+          <span className="ss-foot-note">{t("srv.invites.note")}</span>
+          <Button
+            type="button"
+            variant="secondary"
+            size="sm"
+            disabled={!supported || change.pending}
+            onClick={() => void change.run(onCreate)}
+          >
+            <Icon name="plus" size={15} />
+            {t("settings.newInvite")}
+          </Button>
+        </div>
       </SettingsSection>
     </>
   );

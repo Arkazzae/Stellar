@@ -27,6 +27,11 @@ export interface ConfirmField {
    * until something is typed.
    */
   optional?: boolean;
+  /**
+   * The exact words that answer it, such as the name of what is about to be
+   * deleted. The deed's button stays disabled until they are typed.
+   */
+  match?: string;
 }
 
 export interface ConfirmDialogProps {
@@ -84,7 +89,9 @@ export function ConfirmDialog({
   }
 
   const answer = value.trim();
-  const incomplete = field !== undefined && field.optional !== true && answer === "";
+  const incomplete =
+    field !== undefined &&
+    (field.match !== undefined ? answer !== field.match : field.optional !== true && answer === "");
 
   return (
     <Modal open={open} onClose={onCancel} labelledBy={titleId} className="cf-wrap" exitMs={200}>

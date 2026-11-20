@@ -483,7 +483,8 @@ export interface AdminApiClient {
   createInvite(signal?: AbortSignal): Promise<ApiInvite>;
   revokeInvite(inviteId: string, signal?: AbortSignal): Promise<void>;
   sendInvite(inviteId: string, userId: string, signal?: AbortSignal): Promise<void>;
-  listAuditEntries(signal?: AbortSignal): Promise<ApiAuditEntry[]>;
+  /** A page of the newest entries, or of those older than `before` (ISO 8601). */
+  listAuditEntries(before?: string, signal?: AbortSignal): Promise<ApiAuditEntry[]>;
   getNotificationSettings(signal?: AbortSignal): Promise<ApiNotificationSettings>;
   setNotificationSettings(
     patch: Partial<ApiNotificationSettings>,
@@ -516,10 +517,27 @@ export interface ApiInvite {
   expiresAt: string | null;
 }
 
+/** One field an audited action changed; see `AuditChange` on the server. */
+export interface ApiAuditChange {
+  field: string;
+  from?: string;
+  to?: string;
+  added?: string[];
+  removed?: string[];
+  fromColor?: string;
+  toColor?: string;
+}
+
 export interface ApiAuditEntry {
   id: string;
+  /** The line in the server's language, which is all an older entry has. */
   summary: string;
   at: string;
+  actor?: User;
+  /** What was done, such as `role.update`. */
+  action?: string;
+  target?: { type: string; id?: string; name?: string };
+  changes?: ApiAuditChange[];
 }
 
 export interface ApiNotificationSettings {
