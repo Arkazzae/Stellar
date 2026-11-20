@@ -318,10 +318,10 @@ jobs:
     steps:
       - uses: actions/checkout@v7
       - name: Check the scripts with ShellCheck
-        run: docker run --rm -v "$PWD":/mnt:ro -w /mnt koalaman/shellcheck:v0.11.0 install.sh infra/tests/install.test.sh
+        run: docker run --rm -v "$PWD":/mnt:ro -w /mnt koalaman/shellcheck:v0.11.0@sha256:61862eba1fcf09a484ebcc6feea46f1782532571a34ed51fedf90dd25f925a8d install.sh infra/tests/install.test.sh
       - run: bash infra/tests/install.test.sh
       - name: Run the tests under bash 3.2 with BusyBox
-        run: docker run --rm -v "$PWD":/w:ro -w /w bash:3.2.57 bash infra/tests/install.test.sh
+        run: docker run --rm -v "$PWD":/w:ro -w /w bash:3.2.57@sha256:2556c2da19c32c1614d318645c73a7bf64d38be21cf69e98e3ca51f053983719 bash infra/tests/install.test.sh
 
   # Builds the image without pushing it, when the Dockerfile, the container
   # configuration or a dependency list changes. On main it also refreshes the
