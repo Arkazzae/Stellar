@@ -1,6 +1,7 @@
 import { useMemo, useSyncExternalStore } from "react";
 
 import { ServerSettings, type SettingsPaneKey } from "@/components/settings/server/ServerSettings";
+import type { Translator } from "@/i18n";
 import { routeAudioOutput } from "@/lib/voice/playback/playback";
 import {
   useDirectory,
@@ -24,6 +25,18 @@ interface ServerSettingsDialogProps extends ServerAdmin {
 async function reloadAfter(mutation: Promise<unknown>, reload: () => void) {
   await mutation;
   reload();
+}
+
+/**
+ * A change that needs a fresh second step. When the person declines to
+ * confirm it, nothing was changed, and the pane has to hear that as a failure
+ * rather than claim it saved.
+ */
+async function confirmedThenReload<T>(change: () => Promise<T>, t: Translator, reload: () => void) {
+  const done = await withFreshSecondStep(change, t);
+  if (done === undefined) throw new Error("The change waits for a fresh second step.");
+  reload();
+  return done;
 }
 
 /** Waits for a mutation, then for the emoji set it changed. */
@@ -112,7 +125,10 @@ export function ServerSettingsDialog({ open, initialPane, data, reload }: Server
                     ...(roleById.get(member.roleId) === undefined ? {} : { role: roleById.get(member.roleId)!.name }),
                   })),
                 onTransfer: async (userId: string) => {
-                  await reloadAfter(withFreshSecondStep(() => admin.transferOwnership(userId), t), reload);
+                  await confirmedThenReload(async () => {
+                    await admin.transferOwnership(userId);
+                    return true;
+                  }, t, reload);
                 },
               },
             }
@@ -139,8 +155,9 @@ export function ServerSettingsDialog({ open, initialPane, data, reload }: Server
           reload();
           return role;
         },
-        onUpdate: (roleId, patch) =>
-          reloadAfter(withFreshSecondStep(() => admin.updateRole(roleId, patch), t), reload),
+        onUpdate: async (roleId, patch) => {
+          await confirmedThenReload(() => admin.updateRole(roleId, patch), t, reload);
+        },
         onDelete: (roleId) => reloadAfter(admin.deleteRole(roleId), reload),
       }}
       members={{

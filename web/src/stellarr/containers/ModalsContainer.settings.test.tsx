@@ -6,6 +6,7 @@ import { createServerAdminAdapter } from "@/adapters/admin";
 import { ConfirmProvider } from "@/components/primitives/ConfirmDialog";
 import { translateMessage, type MessageKey } from "@/i18n";
 import type { AdminApiClient } from "@/lib/api/client";
+import { FRESH_SECOND_STEP_REQUIRED } from "@/containers/freshSecondStep";
 import { ApiError } from "@/lib/api/errors";
 import type { AdminMember, Invite, Role } from "@/ports";
 import { fakeAdminPort } from "@/test/adminPort";
@@ -150,6 +151,26 @@ describe("ModalsContainer: server settings", () => {
     expect(await screen.findByRole("alert")).toHaveTextContent(t("settings.roleActionFailed"));
     expect(listRoles).toHaveBeenCalledTimes(1);
     expect(screen.getByRole("textbox", { name: /^Nazwa/ })).toHaveValue("Member 2");
+  });
+
+  it("keeps a role draft unsaved when its fresh second step is declined", async () => {
+    const user = userEvent.setup();
+    vi.spyOn(window, "confirm").mockReturnValue(false);
+    harness.ports.admin = fakeAdminPort({
+      listRoles: vi.fn(async () => [MEMBER_ROLE]),
+      updateRole: vi.fn(async () => {
+        throw new ApiError("forbidden", "fresh", 403, { code: FRESH_SECOND_STEP_REQUIRED });
+      }),
+    });
+    await openSettings("srv.nav.roles");
+
+    await user.click(await screen.findByRole("button", { name: t("srv.roles.edit", { name: "Member" }) }));
+    await user.type(screen.getByRole("textbox", { name: /^Nazwa/ }), " 2");
+    await user.click(screen.getByRole("button", { name: t("common.saveChanges") }));
+
+    expect(await screen.findByRole("alert")).toHaveTextContent(t("settings.roleActionFailed"));
+    expect(screen.getByRole("region", { name: t("settings.unsaved.region") })).not.toHaveTextContent(t("common.saved"));
+    expect(screen.getByRole("button", { name: t("common.saveChanges") })).toBeVisible();
   });
 
   it("frees the pane as soon as the mutation lands, not when the lists are back", async () => {
