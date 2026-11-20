@@ -38,6 +38,24 @@ public sealed class MailDeliveryTests
         Assert.Equal("Temat", body.RootElement.GetProperty("subject").GetString());
         Assert.Equal("<p>Treść</p>", body.RootElement.GetProperty("html").GetString());
         Assert.Equal("Treść", body.RootElement.GetProperty("text").GetString());
+        Assert.False(body.RootElement.TryGetProperty("attachments", out _));
+    }
+
+    [Fact]
+    public async Task InlineImagesGoToResendAsAttachmentsWithTheirContentId()
+    {
+        var provider = new StubProvider(HttpStatusCode.OK, """{"id":"email-42"}""");
+        var delivery = CreateDelivery(provider);
+        var image = new InlineImage("tile@stellarr", "tile.png", "image/png", [1, 2, 3]);
+
+        await delivery.SendAsync(Message with { Images = [image] }, "re_test", CancellationToken.None);
+
+        using var body = JsonDocument.Parse(Assert.Single(provider.Requests).Body);
+        var attachment = Assert.Single(body.RootElement.GetProperty("attachments").EnumerateArray());
+        Assert.Equal("AQID", attachment.GetProperty("content").GetString());
+        Assert.Equal("tile.png", attachment.GetProperty("filename").GetString());
+        Assert.Equal("image/png", attachment.GetProperty("content_type").GetString());
+        Assert.Equal("tile@stellarr", attachment.GetProperty("content_id").GetString());
     }
 
     [Fact]

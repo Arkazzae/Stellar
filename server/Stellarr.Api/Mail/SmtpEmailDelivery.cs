@@ -31,7 +31,16 @@ public sealed class SmtpEmailDelivery
         mime.To.Add(MailboxAddress.Parse(message.To));
         mime.Subject = message.Subject;
         mime.MessageId = $"{message.IdempotencyKey}@stellarr";
-        mime.Body = new BodyBuilder { HtmlBody = message.Html, TextBody = message.Text }.ToMessageBody();
+        var body = new BodyBuilder { HtmlBody = message.Html, TextBody = message.Text };
+        foreach (var image in message.InlineImages)
+        {
+            // Linked resources go into a multipart/related next to the HTML,
+            // which shows each through cid: and its Content-Id.
+            var part = body.LinkedResources.Add(image.FileName, image.Content, ContentType.Parse(image.ContentType));
+            part.ContentId = image.ContentId;
+        }
+
+        mime.Body = body.ToMessageBody();
 
         using var deadline = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
         deadline.CancelAfter(_timeout);

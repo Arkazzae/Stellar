@@ -16,16 +16,32 @@ public sealed class ResendEmailDelivery(HttpClient http)
             throw new InvalidOperationException("The Resend API key is not configured.");
         }
 
+        var fields = new Dictionary<string, object>
+        {
+            ["from"] = message.From,
+            ["to"] = new[] { message.To },
+            ["subject"] = message.Subject,
+            ["html"] = message.Html,
+            ["text"] = message.Text,
+        };
+        if (message.InlineImages.Count > 0)
+        {
+            // Resend embeds an attachment that has a content_id, and the HTML
+            // shows it through cid: and that id.
+            fields["attachments"] = message.InlineImages
+                .Select(image => new
+                {
+                    content = Convert.ToBase64String(image.Content),
+                    filename = image.FileName,
+                    content_type = image.ContentType,
+                    content_id = image.ContentId,
+                })
+                .ToArray();
+        }
+
         using var request = new HttpRequestMessage(HttpMethod.Post, "emails")
         {
-            Content = JsonContent.Create(new
-            {
-                from = message.From,
-                to = new[] { message.To },
-                subject = message.Subject,
-                html = message.Html,
-                text = message.Text,
-            }),
+            Content = JsonContent.Create(fields),
         };
         request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", apiKey);
         // A retry of the same message must not be delivered twice.
