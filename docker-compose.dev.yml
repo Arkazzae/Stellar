@@ -7,6 +7,8 @@
 #   api     :5000  dotnet watch, reached by the browser through the web proxy
 #   media   :49100/udp  cargo run under watchexec, Stellarr Media; its control
 #                       API is published on 127.0.0.1:5200
+#   mailpit :8025  catches every message the API sends; nothing leaves the
+#                  machine. Its SMTP port 1025 is also published on loopback
 #   coturn  :3478  only behind the "turn" profile
 #
 #   docker compose -f docker-compose.dev.yml up
@@ -177,6 +179,21 @@ services:
       # container, apart from a cargo build on the host.
       - media_target:/app/target
       - cargo_registry:/usr/local/cargo/registry
+
+  # A local inbox for the mail the API sends: password resets, address
+  # changes, sign-in codes, security alerts and activity notifications. The
+  # SMTP server is a setting in the database, so point the instance at it once,
+  # in Cockpit or with the CLI inside the api container:
+  #
+  #   mail.enabled=true  mail.from-address=stellarr@dev.test
+  #   mail.smtp.host=mailpit  mail.smtp.port=1025  mail.smtp.security=none
+  #
+  # Mailpit accepts any login, or none, and keeps the messages until it stops.
+  mailpit:
+    image: axllent/mailpit:v1.34.0
+    ports:
+      - "127.0.0.1:${STELLARR_DEV_MAILPIT_PORT:-8025}:8025"
+      - "127.0.0.1:${STELLARR_DEV_MAILPIT_SMTP_PORT:-1025}:1025"
 
   coturn:
     profiles: ["turn"]
