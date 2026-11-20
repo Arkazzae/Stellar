@@ -77,8 +77,9 @@ jobs:
           check media '^(media/|\.github/workflows/ci\.yml$)'
           check init '^(init/|\.github/workflows/ci\.yml$)'
           # website/ is the project site, its own npm project outside the root
-          # workspaces. It reads the logo, mascot, icons and fonts from branding/.
-          check website '^(website/|branding/(logo|mascot|icons/linear|guidelines/fonts)/|\.github/workflows/ci\.yml$)'
+          # workspaces. It reads the logo, mascot, icons and fonts from branding/,
+          # and serves install.sh.
+          check website '^(website/|branding/(logo|mascot|icons/linear|guidelines/fonts)/|install\.sh$|\.github/workflows/ci\.yml$)'
           # The installer downloads docker-compose.yml and .env.example and
           # writes .env from them, and its tests read both.
           check installer '^(install\.sh$|infra/tests/install|docker-compose\.yml$|\.env\.example$|\.github/workflows/ci\.yml$)'
@@ -302,6 +303,8 @@ jobs:
           cache-dependency-path: website/package-lock.json
       - run: npm ci
       - run: npm run build
+      # The site serves the repository's installer as it is.
+      - run: cmp dist/install.sh ../install.sh
 
   # The one-command installer, install.sh. Its tests run it against stub
   # commands and need neither Docker nor the network themselves; the images
