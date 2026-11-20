@@ -34,6 +34,25 @@ public sealed class SmtpDeliveryTests
     }
 
     [Fact]
+    public async Task InlineImagesTravelNextToTheHtmlWithTheirContentId()
+    {
+        await using var server = new FakeSmtpServer();
+        var delivery = new SmtpEmailDelivery(TimeSpan.FromSeconds(10));
+        var image = new InlineImage("tile@stellarr", "tile.png", "image/png", [1, 2, 3]);
+
+        await delivery.SendAsync(
+            Message with { Html = """<img src="cid:tile@stellarr">""", Images = [image] },
+            Connection(server.Port),
+            CancellationToken.None);
+
+        await server.Finished;
+        Assert.Contains("multipart/related", server.Data, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("Content-Id: <tile@stellarr>", server.Data, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("image/png", server.Data, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("AQID", server.Data, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public async Task ARefusedRecipientIsReportedWithTheServersReply()
     {
         await using var server = new FakeSmtpServer(recipientReply: "550 5.1.1 No such mailbox");
