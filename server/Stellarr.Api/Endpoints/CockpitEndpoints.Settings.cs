@@ -192,7 +192,13 @@ public static partial class CockpitEndpoints
         try
         {
             var messageId = await delivery.SendAsync(
-                AccountEmail.DeliveryTest(from, recipient, server.Name, messages),
+                AccountEmail.DeliveryTest(
+                    from,
+                    recipient,
+                    server.Name,
+                    PublicUrlOf(configuration),
+                    transport,
+                    messages),
                 transport,
                 cancellationToken);
             return Results.Ok(new { id = messageId, provider = MailTransports.NameOf(transport.Provider) });
