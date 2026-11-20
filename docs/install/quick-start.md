@@ -10,23 +10,25 @@ This guide starts a local Stellarr instance on a single machine, creates the own
 
 ## One-click install
 
-The repository includes `install.sh`, which checks the host, prepares `.env`, starts the container, and prints the setup page and setup code. From a checkout:
+One command checks the machine, writes the installation's files, starts the container and prints the address and the setup code:
 
 ```bash
-git clone https://github.com/Arkazzae/Stellarr.git
-cd Stellarr
-./install.sh
+curl -fsSL https://stellarr.online/install.sh | bash
 ```
 
-Or run it without a checkout:
+In a terminal it asks up to three things: the domain or IP address people will open, the IPv4 address voice calls use when that is a domain, and the interface language, English or Polish. On Linux it offers to install Docker Engine when Docker is missing. With `--yes`, or without a terminal, it asks nothing and takes its options and defaults instead:
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/Arkazzae/Stellarr/main/install.sh | bash
+curl -fsSL https://stellarr.online/install.sh | bash -s -- --yes --domain chat.example.com --public-ip auto
 ```
 
-The installer asks for the public hostname, public IP, and ports, offers to install Docker when it is missing, and preserves an existing `.env` on later runs. Use `--yes` for unattended installs, `--dir` to choose the install directory, `--build` to build the image from the checkout, and `--help` for all options.
+It installs into `~/stellarr`, unless `--dir` names another directory, the current directory already holds Stellarr's `docker-compose.yml`, or Docker already runs Stellarr from another directory. When a port it needs is in use, it offers the next free one in a terminal and otherwise stops before it changes anything; it also stops when an installation it did not make is in the way.
 
-The rest of this guide describes the same steps manually.
+Running it again updates Stellarr to the latest release. It replaces `docker-compose.yml` with the release's own, keeping the previous one beside it, sets `STELLARR_VERSION` in `.env`, and leaves the rest of `.env` as it is; local changes belong in `.env` or in `docker-compose.override.yml`. In a checkout, `./install.sh` uses the checkout's files, and `./install.sh --build` builds the image from it. `--help` lists every option.
+
+Until the first release is published there is no image to pull, and the installer says so; build the image from a checkout instead, as in [Build from source](#build-from-source).
+
+The rest of this guide describes the same steps by hand.
 
 ## 1. Download Compose and environment files
 
