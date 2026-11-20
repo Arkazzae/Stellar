@@ -36,6 +36,8 @@ set +o posix
 # line; plain mode, for logs and provisioning tools, has none of them.
 ui_init() {
   local esc=$'\033' locale
+  # STELLARR_INSTALLER_UI forces one mode, for the tests and for screen
+  # captures, where the output is not a terminal.
   case "${STELLARR_INSTALLER_UI:-}" in
     terminal) UI_TERMINAL=1 ;;
     plain) UI_TERMINAL=0 ;;
@@ -75,7 +77,7 @@ ui_init() {
     G_OK='ok' G_WARN='!' G_FAIL='x' G_PROMPT='>' G_BULLET='-'
     UI_FRAMES=("-" "\\" "|" "/")
   fi
-  UI_OPEN='' UI_FRAME=0 UI_WAIT_NEXT=0 UI_CURSOR_HIDDEN=0
+  UI_OPEN='' UI_ANSWERED=0 UI_FRAME=0 UI_WAIT_NEXT=0 UI_CURSOR_HIDDEN=0
 }
 
 ui_banner() {
@@ -110,12 +112,15 @@ ui_warn() { ui_result 2 "$YELLOW" "$G_WARN" '[warn]' "$@"; }
 ui_fail() { ui_result 2 "$RED" "$G_FAIL" '[error]' "$@"; }
 
 # One result line: the glyph and the text, and any further arguments as lines
-# under the text. Plain mode puts the tag first and keeps it to one line.
+# under the text. Plain mode puts the tag first and keeps it to one line. In a
+# terminal a line right after an answer is set off from it by an empty line,
+# as the next question would be.
 ui_result() {
-  local fd=$1 colour=$2 glyph=$3 tag=$4 text=$5 more
+  local fd=$1 colour=$2 glyph=$3 tag=$4 text=$5 more after_answer=$UI_ANSWERED
   shift 5
   ui_settle
   if [ "$UI_TERMINAL" -eq 1 ]; then
+    [ "$after_answer" -eq 0 ] || printf '\n' >&"$fd"
     printf '   %s%s%s %s\n' "$colour" "$glyph" "$R" "$text" >&"$fd"
     for more in "$@"; do printf '     %s\n' "$more" >&"$fd"; done
   else
@@ -229,7 +234,7 @@ ui_prompt() {
   # A terminal shows what was typed itself; answers from a file are shown
   # here, so the screen and a log read the same.
   [ -t 3 ] || printf '%s\n' "$line" >&"$UI_ASK_FD"
-  UI_OPEN=''
+  UI_OPEN='' UI_ANSWERED=1
   line=${line//$'\r'/}
   line="${line#"${line%%[![:space:]]*}"}"
   UI_ANSWER="${line%"${line##*[![:space:]]}"}"
@@ -282,7 +287,7 @@ ui_settle() {
     wait) printf '\r%s' "$UI_CLEAR" ;;
     prompt) printf '\n' >&"$UI_ASK_FD" ;;
   esac
-  UI_OPEN=''
+  UI_OPEN='' UI_ANSWERED=0
   if [ "$UI_CURSOR_HIDDEN" -eq 1 ]; then
     printf '\033[?25h'
     UI_CURSOR_HIDDEN=0
@@ -400,6 +405,8 @@ settings_init() {
   REF_OPTION=${STELLARR_REF:-} REF_FROM=STELLARR_REF
   DIR_OPTION=${STELLARR_INSTALL_DIR:-}
   START_TIMEOUT=${STELLARR_START_TIMEOUT:-300}
+  # Where the answers are read. STELLARR_INSTALLER_TTY names another file
+  # or FIFO, from which the tests feed them.
   TTY=${STELLARR_INSTALLER_TTY:-/dev/tty}
   # The interface language's default follows the person's locale, read before
   # the installer sets its own.
@@ -917,6 +924,7 @@ pick_downloader() {
 download() {
   local url=$1 target=$2 part="$WORK/download.part" try
   DOWNLOAD_ERROR=''
+  pick_downloader
   rm -f "$part"
   if [ "$DOWNLOADER" = curl ]; then
     if ! curl --proto '=https' --tlsv1.2 -fsSL --connect-timeout 15 --max-time 120 \
@@ -932,6 +940,8 @@ download() {
       if wget_get "$url" "$part"; then break; fi
       if [ "$try" -eq 3 ]; then
         DOWNLOAD_ERROR=$(tail -n 1 "$WORK/download.err" 2>/dev/null) || DOWNLOAD_ERROR=''
+        # GNU wget starts its error with the date and time.
+        DOWNLOAD_ERROR=${DOWNLOAD_ERROR#[0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9] [0-9][0-9]:[0-9][0-9]:[0-9][0-9] }
         return 1
       fi
       sleep 2
@@ -940,9 +950,12 @@ download() {
   mv -f "$part" "$target"
 }
 
+# GNU wget says nothing of an HTTP error with -q, and with -nv only errors
+# and one line per file, so a 404 can be told from a network failure.
+# BusyBox's prints its errors even with -q, and knows no -nv.
 wget_get() {
   if [ "$WGET_GNU" -eq 1 ]; then
-    wget -q -T 20 -t 1 -O "$2" "$1" 2>"$WORK/download.err"
+    wget -nv -T 20 -t 1 -O "$2" "$1" 2>"$WORK/download.err"
   else
     wget -q -T 20 -O "$2" "$1" 2>"$WORK/download.err"
   fi
@@ -1210,6 +1223,9 @@ choose_release() {
   if [ "$DIR_IS_CHECKOUT" -eq 0 ] && [ -z "$SCRIPT_CHECKOUT" ] && [ -z "$REF_OPTION" ] && ! is_exact_version "$TARGET_TAG"; then
     required=1
   fi
+  # Without a checkout the files are downloaded, so a missing curl and wget
+  # stops the installer here, with the other checks.
+  if [ "$DIR_IS_CHECKOUT" -eq 0 ] && [ -z "$SCRIPT_CHECKOUT" ]; then pick_downloader; fi
   # For latest it only names the version on screen.
   wanted=$required
   if [ "$TARGET_TAG" = latest ] && [ "$BUILD" -eq 0 ]; then wanted=1; fi

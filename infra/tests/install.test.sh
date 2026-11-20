@@ -133,9 +133,17 @@ case $name in
     case $1 in -lnt) listening tcp ;; -lnu) listening udp ;; esac
     ;;
   curl | wget)
-    url='' target='' format=''
+    # GNU wget (with wget-gnu set) and BusyBox's answer --version and report
+    # an HTTP error as each really does.
+    if [[ $name == wget && $* == --version ]]; then
+      [[ -e $state/wget-gnu ]] || { echo "wget: unrecognized option '--version'" >&2; exit 1; }
+      echo "GNU Wget 1.21.4 built on linux-gnu."
+      exit 0
+    fi
+    url='' target='' format='' quiet=0
     while [[ $# -gt 0 ]]; do
       case $1 in
+        -q) quiet=1 ;;
         -o | -O) target=$2; shift ;;
         -w) format=$2; shift ;;
         --proto | --connect-timeout | --max-time | --retry | --retry-delay | -T | -t) shift ;;
@@ -145,6 +153,18 @@ case $name in
     done
     [[ $target != - ]] || target=''
     serve() { if [[ -n $target ]]; then cat "$1" >"$target"; else cat "$1"; fi; }
+    not_found() {
+      if [[ $name == curl ]]; then
+        echo "curl: (22) The requested URL returned error: 404" >&2
+        exit 22
+      elif [[ -e $state/wget-gnu ]]; then
+        # With -q GNU wget prints nothing at all; these are its -nv lines.
+        [[ $quiet -eq 1 ]] || printf '%s:\n2026-11-20 22:52:45 ERROR 404: Not Found.\n' "$url" >&2
+        exit 8
+      fi
+      echo "wget: server returned error: HTTP/1.1 404 Not Found" >&2
+      exit 1
+    }
     latest=$(read_file latest-url https://github.com/Arkazzae/Stellarr/releases)
     case $url in
       https://github.com/Arkazzae/Stellarr/releases/latest)
@@ -155,12 +175,12 @@ case $name in
         [[ ! -e $state/github-down ]] || { echo "wget: bad address 'api.github.com'" >&2; exit 4; }
         case $latest in
           */releases/tag/*) printf '{\n  "url": "x",\n  "tag_name": "%s",\n  "name": "x"\n}\n' "${latest##*/}" >"$target" ;;
-          *) echo "wget: server returned error: HTTP/1.1 404 Not Found" >&2; exit 8 ;;
+          *) not_found ;;
         esac
         ;;
       https://raw.githubusercontent.com/Arkazzae/Stellarr/*)
         file="$state/raw/${url#https://raw.githubusercontent.com/Arkazzae/Stellarr/}"
-        [[ -f $file ]] || { echo "curl: (22) The requested URL returned error: 404" >&2; exit 22; }
+        [[ -f $file ]] || not_found
         serve "$file"
         ;;
       https://get.docker.com)
@@ -438,6 +458,16 @@ case_fresh_install() {
   expect_shown "Setup code: K7QM-2XWP-9HDA"
   # .env.example's own lines for the installer's settings stay comments.
   [[ $(assignments STELLARR_DOMAIN "$env_file") -eq 1 ]] || fail ".env sets STELLARR_DOMAIN more than once."
+
+  # With the release named, nothing is looked up, and the files still come
+  # through curl.
+  new_case exact-version
+  run --yes --version 1.4.0
+  expect_success
+  expect_called "curl --proto =https --tlsv1.2 -fsSL"
+  expect_not_called "releases/latest"
+  expect_not_called wget
+  expect_line "$home/stellarr/.env" "STELLARR_VERSION=1.4.0"
 }
 
 case_piped_without_terminal() {
@@ -515,6 +545,33 @@ case_wget_only() {
   run --yes
   expect_failure
   expect_shown "no published release yet"
+
+  # GNU wget says nothing of a 404 unless it runs with -nv.
+  new_case wget-gnu
+  rm "$bin/curl"
+  flag wget-gnu
+  run --yes
+  expect_success
+  expect_called "wget -nv -T 20 -t 1 -O"
+  expect_line "$home/stellarr/.env" "STELLARR_VERSION=1.4.0"
+
+  new_case wget-gnu-no-release
+  rm "$bin/curl"
+  flag wget-gnu
+  no_release
+  run --yes
+  expect_failure
+  expect_shown "no published release yet"
+  expect_not_shown "GitHub did not answer"
+
+  new_case wget-gnu-missing-file
+  rm "$bin/curl"
+  flag wget-gnu
+  run --yes --version 1.4.0 --ref no-such-branch
+  expect_failure
+  expect_shown "Could not download docker-compose.yml for no-such-branch"
+  expect_shown "ERROR 404: Not Found."
+  expect_not_shown "2026-11-20 22:52:45"
 }
 
 case_docker_missing() {
@@ -904,6 +961,17 @@ case_ports() {
   expect_line "$home/stellarr/.env" "STELLARR_HTTPS_PORT=8445"
   [[ $(assignments STELLARR_HTTPS_PORT "$home/stellarr/.env") -eq 1 ]] || fail "the port is set twice in .env."
   expect_shown "Ports are free: 8445, 8888"
+
+  # In a terminal the warning after an answer is set off by an empty line.
+  new_case port-asked-terminal
+  echo 8888 >"$state/busy-tcp"
+  answer '' '' ''
+  run STELLARR_INSTALLER_UI=terminal LANG=C.UTF-8 TERM=xterm-256color
+  expect_success
+  [[ -z $(sed -n 1p "$case_dir/err") ]] || fail "no empty line before the port warning."
+  sed -n 2p "$case_dir/err" | grep -qF "Port 8888 (HTTP) is in use on this machine" ||
+    fail "the port warning does not follow the empty line."
+  expect_line "$home/stellarr/.env" "STELLARR_HTTP_PORT=8889"
 
   new_case port-lsof
   rm "$bin/ss"
