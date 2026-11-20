@@ -7,7 +7,6 @@ import { SettingsSection } from "@/components/settings/SettingsSection";
 import type { CustomEmoji } from "@/ports";
 import { useLanguage } from "@/state/hooks";
 
-const MAX_EMOJI = 100;
 const MAX_BYTES = 512 * 1024;
 const IMAGE_TYPES = ["image/png", "image/jpeg", "image/gif", "image/webp"];
 const SHORTCODE = /^[a-z0-9_]{2,32}$/;
@@ -199,8 +198,6 @@ export function EmojiPane({ supported, emoji, onUpload, onDelete }: EmojiPanePro
     }
   };
 
-  const atLimit = emoji.length >= MAX_EMOJI;
-
   return (
     <>
       {supported ? null : <p className="set-note">{t("settings.emojiUnsupported")}</p>}
@@ -212,38 +209,11 @@ export function EmojiPane({ supported, emoji, onUpload, onDelete }: EmojiPanePro
 
       <SettingsSection
         title={t("server.emoji")}
-        count={`${emoji.length}/${MAX_EMOJI}`}
-        countLabel={t("settings.emojiCount", { count: emoji.length, max: MAX_EMOJI })}
-        action={
-          <>
-            <Button
-              type="button"
-              variant="primary"
-              size="sm"
-              className="asset-add"
-              disabled={!supported || uploading || deletingId !== null || atLimit}
-              title={atLimit ? t("settings.emojiLimitTitle") : undefined}
-              onClick={() => picker.current?.click()}
-            >
-              <Icon name="plus" size={15} />
-              {t("settings.addEmoji")}
-            </Button>
-            <input
-              ref={picker}
-              type="file"
-              accept={IMAGE_TYPES.join(",")}
-              hidden
-              onChange={choose}
-            />
-          </>
-        }
+        count={emoji.length}
+        bodyClassName="sec-list ss-list"
       >
         {emoji.length === 0 ? (
-          <div className="asset-empty">
-            <Icon name="smiley" size={24} />
-            <b>{t("settings.noEmoji")}</b>
-            <span>{t("settings.noEmojiDetail")}</span>
-          </div>
+          <p className="acc-security-item acc-security-empty">{t("srv.emoji.empty")}</p>
         ) : (
           <div className="emo-grid emoji-grid" role="list">
             {emoji.map((item) => {
@@ -275,11 +245,20 @@ export function EmojiPane({ supported, emoji, onUpload, onDelete }: EmojiPanePro
             })}
           </div>
         )}
-        {atLimit ? (
-          <p className="fld-note emoji-limit-note">
-            {t("settings.emojiLimit", { count: MAX_EMOJI })}
-          </p>
-        ) : null}
+        <div className="sec-row ss-foot">
+          <span className="ss-foot-note">{t("srv.emoji.note")}</span>
+          <Button
+            type="button"
+            variant="secondary"
+            size="sm"
+            disabled={!supported || uploading || deletingId !== null}
+            onClick={() => picker.current?.click()}
+          >
+            <Icon name="upload" size={15} />
+            {t("srv.emoji.upload")}
+          </Button>
+          <input ref={picker} type="file" accept={IMAGE_TYPES.join(",")} hidden onChange={choose} />
+        </div>
       </SettingsSection>
 
       {draft === null ? null : (

@@ -68,6 +68,10 @@
   --ui-ease: var(--ease-standard);
   --ui-dur-fast: var(--dur-fast);
   --ui-dur-base: var(--dur-base);
+  /* Menus and dropdown lists open from inside settings sheets (z 95) and
+     confirm cards (z 100), so they stack above both. */
+  --ui-menu-z-index: 110;
+  --ui-dropdown-list-z-index: 110;
 }
 
 /* Touch targets, where the pointer cannot be precise: a button is at least a

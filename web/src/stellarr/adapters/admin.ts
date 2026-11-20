@@ -112,7 +112,7 @@ export function createServerAdminAdapter(
     ban: (userId, reason) => api.banMember(userId, reason),
     unban: (userId) => api.unbanMember(userId),
 
-    listAuditEntries: () => api.listAuditEntries(),
+    listAuditEntries: (before) => api.listAuditEntries(before),
     listEmoji: () => api.listEmoji(),
     uploadEmoji: (shortcode, file) => api.uploadEmoji(shortcode, file),
     deleteEmoji: (emojiId) => api.deleteEmoji(emojiId),

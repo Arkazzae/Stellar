@@ -1,6 +1,7 @@
 import type { OpusProfileId } from "@/lib/voice/settings";
 
 import type {
+  ApiAuditChange,
   ApiAuditEntry,
   ApiCustomEmoji,
   ApiInvite,
@@ -181,13 +182,53 @@ export function parseInvitePreview(value: unknown, path: string): InvitePreview 
   };
 }
 
+function parseAuditChange(value: unknown): ApiAuditChange | null {
+  if (!isRecord(value)) return null;
+  const field = optionalString(value, "field");
+  if (field === undefined) return null;
+  const change: ApiAuditChange = { field };
+  for (const key of ["from", "to", "fromColor", "toColor"] as const) {
+    const text = optionalString(value, key);
+    if (text !== undefined) change[key] = text;
+  }
+  for (const key of ["added", "removed"] as const) {
+    if (Array.isArray(value[key])) change[key] = stringArray(value[key]);
+  }
+  return change;
+}
+
+/**
+ * One line of the audit log. Everything but the sentence is optional: a
+ * line from before the server structured them has the sentence alone, and a
+ * part the client cannot read is left out rather than losing the line.
+ */
 export function parseAuditEntry(value: unknown, path: string): ApiAuditEntry {
   const record = expectRecord(value, path);
-  return {
+  const entry: ApiAuditEntry = {
     id: expectString(record, "id", path),
     summary: expectString(record, "summary", path),
     at: expectString(record, "at", path),
   };
+  if (isRecord(record["actor"])) entry.actor = parseUser(record["actor"], `${path}.actor`);
+  const action = optionalString(record, "action");
+  if (action !== undefined) entry.action = action;
+  const target = record["target"];
+  if (isRecord(target)) {
+    const type = optionalString(target, "type");
+    if (type !== undefined) {
+      entry.target = { type };
+      const id = optionalString(target, "id");
+      const name = optionalString(target, "name");
+      if (id !== undefined) entry.target.id = id;
+      if (name !== undefined) entry.target.name = name;
+    }
+  }
+  if (Array.isArray(record["changes"])) {
+    entry.changes = record["changes"]
+      .map(parseAuditChange)
+      .filter((change): change is ApiAuditChange => change !== null);
+  }
+  return entry;
 }
 
 export function parseCustomEmoji(value: unknown, path: string): ApiCustomEmoji {

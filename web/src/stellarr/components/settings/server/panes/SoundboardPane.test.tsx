@@ -50,17 +50,12 @@ afterEach(() => {
 });
 
 describe("SoundboardPane", () => {
-  it("uses the shared server-asset empty state", () => {
-    const { container } = renderWithConfirm(
-      <SoundboardPane {...props({ sounds: [] })} />,
-    );
+  it("says there are no sounds yet in one sentence, with no cap on how many", () => {
+    renderWithConfirm(<SoundboardPane {...props({ sounds: [] })} />);
 
-    expect(screen.getByText("Nie ma jeszcze żadnych dźwięków")).toBeVisible();
-    expect(container.querySelector(".asset-empty")).toHaveTextContent(
-      "Dodaj krótki klip, aby pojawił się na kanałach głosowych.",
-    );
-    expect(screen.getByLabelText("0 z 48 dźwięków, maksymalnie 15 sekund każdy"))
-      .toHaveTextContent("0/48");
+    expect(screen.getByText(/Nie ma jeszcze dźwięków/)).toBeVisible();
+    expect(screen.getByRole("region", { name: "Dźwięki" }).querySelector(".asset-count")).toHaveTextContent(/^0$/);
+    expect(screen.getByRole("region", { name: "Odtwarzanie" })).toBeVisible();
   });
 
   it("presents sounds as a management list with timing and named actions", () => {

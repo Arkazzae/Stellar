@@ -1,61 +1,63 @@
 import { useId, useState } from "react";
 
-import type { IconName } from "@stellarr/icons";
+import { Icon, type IconName } from "@stellarr/icons";
+import { usePrompt } from "@/components/primitives/ConfirmDialog";
 import { Modal } from "@/components/primitives/Modal";
 import { SettingsShell } from "@/components/settings/SettingsShell";
 import { SettingsGuardProvider, useSettingsGuardHost } from "@/components/settings/settingsGuard";
 import { AuditPane, type AuditPaneProps } from "@/components/settings/server/panes/AuditPane";
 import { BansPane, type BansPaneProps } from "@/components/settings/server/panes/BansPane";
 import { ChannelsPane, type ChannelsPaneProps } from "@/components/settings/server/panes/ChannelsPane";
-import { DangerPane, type DangerPaneProps } from "@/components/settings/server/panes/DangerPane";
 import { EmojiPane, type EmojiPaneProps } from "@/components/settings/server/panes/EmojiPane";
 import { InvitesPane, type InvitesPaneProps } from "@/components/settings/server/panes/InvitesPane";
 import { MembersPane, type MembersPaneProps } from "@/components/settings/server/panes/MembersPane";
 import { OverviewPane, type OverviewPaneProps } from "@/components/settings/server/panes/OverviewPane";
 import { RolesPane, type RolesPaneProps } from "@/components/settings/server/panes/RolesPane";
+import { ServerMark } from "@/components/settings/server/panes/ServerMark";
 import { SoundboardPane, type SoundboardPaneProps } from "@/components/settings/server/panes/SoundboardPane";
+import { useAsyncAction } from "@/hooks/useAsyncAction";
 import type { MessageKey } from "@/i18n";
 import { useLanguage } from "@/state/hooks";
 
-/** The mockup's `data-pane` keys, kept verbatim so the DOM stays comparable. */
+/** The panes' `data-pane` keys, kept from the first version so links into a pane still land. */
 export type SettingsPaneKey =
   | "prz"
   | "kan"
-  | "role"
-  | "ludzie"
-  | "zapr"
   | "emoji"
   | "board"
-  | "audyt"
+  | "ludzie"
+  | "role"
+  | "zapr"
   | "bany"
-  | "danger";
+  | "audyt";
 
 interface NavItem {
   label: MessageKey;
   icon: IconName;
   /** The sentence under the title in the bar. */
   detail: MessageKey;
-  danger?: true;
 }
 
 /** One table feeds both the navigation and the bar's title, so they cannot disagree. */
 const ITEMS: Record<SettingsPaneKey, NavItem> = {
-  prz: { label: "server.overview", icon: "server", detail: "server.overviewDetail" },
-  kan: { label: "server.channels", icon: "hash2", detail: "server.channelsDetail" },
-  role: { label: "server.roles", icon: "shield", detail: "server.rolesDetail" },
-  ludzie: { label: "server.members", icon: "users", detail: "server.membersDetail" },
-  zapr: { label: "server.invites", icon: "link", detail: "server.invitesDetail" },
-  emoji: { label: "server.emoji", icon: "smiley", detail: "server.emojiDetail" },
-  board: { label: "server.soundboard", icon: "board", detail: "server.soundboardDetail" },
-  audyt: { label: "server.audit", icon: "clipboard", detail: "server.auditDetail" },
-  bany: { label: "server.bans", icon: "ban", detail: "server.bansDetail" },
-  danger: { label: "server.danger", icon: "trash", detail: "server.dangerDetail", danger: true },
+  prz: { label: "srv.nav.overview", icon: "server", detail: "srv.detail.overview" },
+  kan: { label: "srv.nav.channels", icon: "hash2", detail: "srv.detail.channels" },
+  emoji: { label: "srv.nav.emoji", icon: "smiley", detail: "srv.detail.emoji" },
+  board: { label: "srv.nav.soundboard", icon: "board", detail: "srv.detail.soundboard" },
+  ludzie: { label: "srv.nav.members", icon: "users", detail: "srv.detail.members" },
+  role: { label: "srv.nav.roles", icon: "shield", detail: "srv.detail.roles" },
+  zapr: { label: "srv.nav.invites", icon: "link", detail: "srv.detail.invites" },
+  bany: { label: "srv.nav.bans", icon: "ban", detail: "srv.detail.bans" },
+  audyt: { label: "srv.nav.audit", icon: "clipboard", detail: "srv.detail.audit" },
 };
 
+/**
+ * Two groups, as user settings have: what the server is, then who is on it
+ * and what they may do.
+ */
 const GROUPS: readonly { caption: MessageKey; panes: readonly SettingsPaneKey[] }[] = [
-  { caption: "server.general", panes: ["prz"] },
-  { caption: "server.management", panes: ["kan", "role", "ludzie", "zapr", "emoji", "board"] },
-  { caption: "server.moderation", panes: ["audyt", "bany", "danger"] },
+  { caption: "srv.group.server", panes: ["prz", "kan", "emoji", "board"] },
+  { caption: "srv.group.people", panes: ["ludzie", "role", "zapr", "bany", "audyt"] },
 ];
 
 export interface ServerSettingsProps {
@@ -65,6 +67,9 @@ export interface ServerSettingsProps {
   onClose: () => void;
   /** Server name, in the sidebar brand and as the dialog's accessible name. */
   name: string;
+  /** Two-letter mark, shown when the server has no icon. */
+  mark: string;
+  iconUrl?: string;
   overview: OverviewPaneProps;
   channels: ChannelsPaneProps;
   roles: RolesPaneProps;
@@ -74,14 +79,18 @@ export interface ServerSettingsProps {
   soundboard: SoundboardPaneProps;
   audit: AuditPaneProps;
   bans: BansPaneProps;
-  danger: DangerPaneProps;
+  /**
+   * Deletes the server; given to the owner only. It sits alone at the bottom
+   * of the navigation, the way Log out does in user settings.
+   */
+  onDeleteServer?: () => Promise<void>;
 }
 
 /** The full-screen `.sv-wrap` settings dialog. */
 export function ServerSettings({ open, onClose, ...content }: ServerSettingsProps) {
   const titleId = useId();
   // Escape and a press outside close through the same guard as the cross, so
-  // an unsaved overview is never thrown away by any of them.
+  // an unsaved draft is never thrown away by any of them.
   const guard = useSettingsGuardHost();
 
   // The modal mounts its children only while it is open, so the layout below
@@ -107,6 +116,8 @@ function SettingsLayout({
   initialPane = "prz",
   onClose,
   name,
+  mark,
+  iconUrl,
   overview,
   channels,
   roles,
@@ -116,14 +127,16 @@ function SettingsLayout({
   soundboard,
   audit,
   bans,
-  danger,
+  onDeleteServer,
 }: LayoutProps) {
   const { t } = useLanguage();
+  const prompt = usePrompt();
+  const deletion = useAsyncAction();
   const [active, setActive] = useState<SettingsPaneKey>(initialPane);
   const current = ITEMS[active];
 
   /**
-   * Only the visible pane is mounted, so ten live data lists do not sit behind
+   * Only the visible pane is mounted, so nine live data lists do not sit behind
    * `display: none`.
    */
   const pane = () => {
@@ -132,39 +145,47 @@ function SettingsLayout({
         return <OverviewPane {...overview} />;
       case "kan":
         return <ChannelsPane {...channels} />;
-      case "role":
-        return <RolesPane {...roles} />;
-      case "ludzie":
-        return <MembersPane {...members} />;
-      case "zapr":
-        return <InvitesPane {...invites} />;
       case "emoji":
         return <EmojiPane {...emoji} />;
       case "board":
         return <SoundboardPane {...soundboard} />;
-      case "audyt":
-        return <AuditPane {...audit} />;
+      case "ludzie":
+        return <MembersPane {...members} />;
+      case "role":
+        return <RolesPane {...roles} />;
+      case "zapr":
+        return <InvitesPane {...invites} />;
       case "bany":
         return <BansPane {...bans} />;
-      case "danger":
-        return <DangerPane {...danger} />;
+      case "audyt":
+        return <AuditPane {...audit} />;
     }
   };
 
   const groups = GROUPS.map((group) => ({
     caption: t(group.caption),
-    items: group.panes.map((key) => ({
-      key,
-      label: t(ITEMS[key].label),
-      icon: ITEMS[key].icon,
-      danger: ITEMS[key].danger,
-    })),
+    items: group.panes.map((key) => ({ key, label: t(ITEMS[key].label), icon: ITEMS[key].icon })),
   }));
+
+  // The name has to be typed: deleting cannot be undone, and the server's
+  // name is the one thing nobody types by accident.
+  const askToDelete = async () => {
+    if (onDeleteServer === undefined) return;
+    const answer = await prompt({
+      title: t("srv.delete.title", { name }),
+      description: t("srv.delete.detail"),
+      confirmLabel: t("srv.delete.button"),
+      danger: true,
+      icon: "trash",
+      field: { label: t("srv.delete.field", { name }), match: name, maxLength: 80 },
+    });
+    if (answer === name) await deletion.run(onDeleteServer);
+  };
 
   return (
     <SettingsShell
       titleId={titleId}
-      brand={{ name, detail: t("server.settings") }}
+      brand={{ name, detail: t("server.settings"), mark: <ServerMark mark={mark} iconUrl={iconUrl} /> }}
       title={t(current.label)}
       detail={t(current.detail)}
       closeLabel={t("server.close")}
@@ -173,7 +194,28 @@ function SettingsLayout({
       groups={groups}
       active={active}
       onSelect={setActive}
+      footer={
+        onDeleteServer === undefined ? undefined : (
+          <button
+            type="button"
+            className="sv-item danger"
+            title={t("srv.delete.button")}
+            disabled={deletion.pending}
+            onClick={() => void askToDelete()}
+          >
+            <span className="sv-ico" aria-hidden="true">
+              <Icon name="trash" size={18} />
+            </span>
+            {t("srv.delete.button")}
+          </button>
+        )
+      }
     >
+      {deletion.failed ? (
+        <p className="set-note sound-error" role="alert">
+          {t("srv.delete.failed")}
+        </p>
+      ) : null}
       {pane()}
     </SettingsShell>
   );

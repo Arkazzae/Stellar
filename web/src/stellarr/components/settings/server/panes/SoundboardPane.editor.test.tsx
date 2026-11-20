@@ -252,13 +252,6 @@ describe("SoundboardPane editing", () => {
     expect(await screen.findByRole("textbox", { name: "Nazwa dźwięku" })).toHaveValue("Klaśnięcie");
   });
 
-  it("stops offering uploads at the limit of forty-eight sounds", () => {
-    const sounds = Array.from({ length: 48 }, (_, index) => ({ ...SOUND, id: `s-${index}` }));
-    renderWithConfirm(<SoundboardPane {...props({ sounds })} />);
-
-    expect(screen.getByRole("button", { name: "Dodaj dźwięk" })).toBeDisabled();
-  });
-
   it("shows the error the store reports", () => {
     renderWithConfirm(<SoundboardPane {...props({ error: "Offline" })} />);
 

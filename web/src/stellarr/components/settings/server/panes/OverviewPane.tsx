@@ -1,11 +1,14 @@
 import { useEffect, useId, useRef, useState } from "react";
 
-import { Button } from "@stellarr/ui";
+import { Button, Dropdown } from "@stellarr/ui";
 import { Icon } from "@stellarr/icons";
+import { Avatar } from "@/components/primitives/Avatar";
+import { Modal } from "@/components/primitives/Modal";
 import { Switch } from "@/components/primitives/Switch";
 import { countedNoun, formatShortDate } from "@/components/settings/paneFormat";
 import { SettingsSaveBar } from "@/components/settings/SettingsSaveBar";
 import { SettingsSection } from "@/components/settings/SettingsSection";
+import { ServerMark } from "@/components/settings/server/panes/ServerMark";
 import { useAsyncAction } from "@/hooks/useAsyncAction";
 import type { Translator } from "@/i18n";
 import type { ServerPatch } from "@/ports";
@@ -15,11 +18,19 @@ const ICON_TYPES = ["image/jpeg", "image/png", "image/gif", "image/webp"];
 const MAX_ICON_BYTES = 4 * 1024 * 1024;
 const SAVED_FLASH_MS = 1500;
 
+/** Someone the server can be handed to. */
+export interface TransferCandidate {
+  id: string;
+  name: string;
+  /** Their role, said beside the name in the picker. */
+  role?: string;
+}
+
 export interface OverviewPaneProps {
   supported: boolean;
   iconSupported: boolean;
   name: string;
-  /** Two-letter mark, drawn beside the name at the top of this pane. */
+  /** Two-letter mark, drawn when the server has no icon. */
   mark: string;
   iconUrl?: string;
   /** ISO 8601. Absent only in legacy development fixtures. */
@@ -31,17 +42,23 @@ export interface OverviewPaneProps {
   onSave: (patch: ServerPatch) => Promise<void>;
   onPickIcon: (file: File) => Promise<void>;
   onRemoveIcon: () => Promise<void>;
+  /** Who owns the server, under Ownership. */
+  owner?: { id: string; displayName: string; avatarUrl?: string };
+  /** Whether the reader is the owner, which words the row as theirs. */
+  viewerIsOwner?: boolean;
+  /** Given to the owner only: hands the server to one of the candidates. */
+  transfer?: {
+    candidates: readonly TransferCandidate[];
+    onTransfer: (userId: string) => Promise<void>;
+  };
 }
 
 interface Profile {
   name: string;
   description: string;
-  isPublic: boolean;
 }
 
-function sameProfile(a: Profile, b: Profile): boolean {
-  return a.name === b.name && a.description === b.description && a.isPublic === b.isPublic;
-}
+const sameProfile = (a: Profile, b: Profile) => a.name === b.name && a.description === b.description;
 
 /**
  * Picking and removing the server icon.
@@ -91,6 +108,12 @@ function useServerIcon(
   return { busy: action.pending, error, preview, pick, remove };
 }
 
+/**
+ * What the server is, laid out as the user's profile is: the card others see
+ * at the top, then the fields that make it. Name and description are a draft
+ * with the save bar; visibility is a switch and saves on its own, as every
+ * switch in settings does.
+ */
 export function OverviewPane({
   supported,
   iconSupported,
@@ -105,11 +128,16 @@ export function OverviewPane({
   onSave,
   onPickIcon,
   onRemoveIcon,
+  owner,
+  viewerIsOwner = false,
+  transfer,
 }: OverviewPaneProps) {
   const { locale, t } = useLanguage();
   const icon = useServerIcon(t, onPickIcon, onRemoveIcon);
   const saveAction = useAsyncAction();
+  const visibility = useAsyncAction();
   const [saved, setSaved] = useState(false);
+  const [transferOpen, setTransferOpen] = useState(false);
   const savedTimer = useRef<number | undefined>(undefined);
   const iconInput = useRef<HTMLInputElement>(null);
   const nameId = useId();
@@ -119,7 +147,7 @@ export function OverviewPane({
   // when the saved profile changes underneath, which is what a rejected save
   // looks like from here. Comparing during render, rather than in an effect,
   // paints the re-seeded fields in one pass.
-  const profile: Profile = { name, description, isPublic };
+  const profile: Profile = { name, description };
   const [draft, setDraft] = useState(profile);
   const [seed, setSeed] = useState(profile);
   if (!sameProfile(seed, profile)) {
@@ -131,11 +159,7 @@ export function OverviewPane({
 
   const save = async () => {
     const stored = await saveAction.run(() =>
-      onSave({
-        name: draft.name.trim(),
-        description: draft.description.trim(),
-        isPublic: draft.isPublic,
-      }),
+      onSave({ name: draft.name.trim(), description: draft.description.trim() }),
     );
     if (!stored) return;
     setSaved(true);
@@ -143,101 +167,63 @@ export function OverviewPane({
     savedTimer.current = window.setTimeout(() => setSaved(false), SAVED_FLASH_MS);
   };
 
-  // Disabled until something changed: a button that is always live cannot tell
-  // the reader whether they have unsaved work.
-  const dirty =
-    draft.name.trim() !== name.trim() ||
-    draft.description.trim() !== description.trim() ||
-    draft.isPublic !== isPublic;
-
+  const dirty = draft.name.trim() !== name.trim() || draft.description.trim() !== description.trim();
   const shownIcon = icon.preview ?? iconUrl;
   const iconLocked = !iconSupported || icon.busy;
   const openPicker = () => iconInput.current?.click();
+  const previewName = draft.name.trim() || name;
+  const previewDescription = draft.description.trim();
 
   return (
     <>
       {supported ? null : <p className="set-note">{t("settings.serverUnsupported")}</p>}
 
-      <SettingsSection
-        title={t("settings.serverProfile")}
-        className="overview-section"
-      >
-        <header className="ov-id">
+      <section className="ss-card" aria-label={t("srv.preview")}>
+        <div className="ss-card-top">
           <button
             type="button"
-            className="ov-id-ico"
+            className="pf-shot ss-mark ss-mark-lg"
             disabled={iconLocked}
-            aria-label={
-              iconUrl === undefined ? t("settings.serverIconAdd") : t("settings.serverIconChange")
-            }
+            aria-label={iconUrl === undefined ? t("settings.serverIconAdd") : t("settings.serverIconChange")}
             onClick={openPicker}
           >
-            {shownIcon ? <img src={shownIcon} alt="" width={44} height={44} /> : mark}
-            <span className="ov-icon-veil" aria-hidden="true">
-              <Icon name="camera" size={15} />
+            {shownIcon === undefined ? mark : <img src={shownIcon} alt="" />}
+            <span className="pf-veil" aria-hidden="true">
+              <Icon name="camera" size={20} />
             </span>
           </button>
-          <input
-            ref={iconInput}
-            type="file"
-            accept="image/png,image/jpeg,image/gif,image/webp"
-            hidden
-            onChange={(event) => {
-              void icon.pick(event.target.files?.[0]);
-              event.target.value = "";
-            }}
-          />
-          <span className="ov-id-txt">
-            <b>{name}</b>
-            <span>
-              {t("settings.createdInfo", {
-                date: createdAt === undefined ? "—" : formatShortDate(createdAt, locale),
-                members: countedNoun(t, locale, "settings.member", memberCount),
-                channels: countedNoun(t, locale, "settings.channel", channelCount),
-              })}
+          <span className="ss-card-txt">
+            <b>{previewName}</b>
+            <span className={previewDescription === "" ? "empty" : undefined}>
+              {previewDescription === "" ? t("srv.noDescription") : previewDescription}
             </span>
           </span>
-          <span className="ov-icon-actions">
-            <Button
-              type="button"
-              variant="secondary"
-              size="sm"
-              disabled={iconLocked}
-              onClick={openPicker}
-            >
-              <Icon name="image" size={14} />
-              {icon.busy
-                ? t("common.saving")
-                : iconUrl === undefined
-                  ? t("settings.serverIconAddShort")
-                  : t("settings.serverIconChangeShort")}
-            </Button>
-            {iconUrl === undefined ? null : (
-              <Button
-                type="button"
-                variant="secondary"
-                size="sm"
-                className="danger"
-                disabled={iconLocked}
-                onClick={() => void icon.remove()}
-              >
-                {t("settings.serverIconRemove")}
-              </Button>
-            )}
-          </span>
-        </header>
+        </div>
+        <div className="ss-card-meta">
+          <span>{countedNoun(t, locale, "settings.member", memberCount)}</span>
+          <span>{countedNoun(t, locale, "settings.channel", channelCount)}</span>
+          <span className={isPublic ? "on" : undefined}>{isPublic ? t("srv.public") : t("srv.inviteOnly")}</span>
+          {createdAt === undefined ? null : (
+            <span>{t("srv.since", { date: formatShortDate(createdAt, locale) })}</span>
+          )}
+        </div>
+      </section>
+      <input
+        ref={iconInput}
+        type="file"
+        accept="image/png,image/jpeg,image/gif,image/webp"
+        hidden
+        onChange={(event) => {
+          void icon.pick(event.target.files?.[0]);
+          event.target.value = "";
+        }}
+      />
 
-        <p className="ov-icon-note">{t("settings.iconNote")}</p>
-        {icon.error === null ? null : (
-          <p className="set-note sound-error" role="alert">
-            {icon.error}
-          </p>
-        )}
-
+      <SettingsSection title={t("srv.profile")}>
         <div className="frm">
           <div className="frm-row">
             <label className="frm-lab" htmlFor={nameId}>
-              {t("channel.name")}
+              {t("srv.name")}
               <span>{t("settings.serverNameDetail")}</span>
             </label>
             <div className="frm-ctl">
@@ -252,28 +238,41 @@ export function OverviewPane({
               />
             </div>
           </div>
-
           <div className="frm-row">
-            {/* The label is the on state, not a category: "Visibility" would not
-                say which way the switch has to be turned. */}
             <span className="frm-lab">
-              {t("settings.publicServer")}
-              <span>{t("settings.publicServerDetail")}</span>
+              {t("srv.icon")}
+              <span>{t("srv.iconDetail")}</span>
             </span>
-            <div className="frm-ctl frm-switch">
-              <Switch
-                checked={draft.isPublic}
-                onChange={(checked) => setDraft({ ...draft, isPublic: checked })}
-                label={t("settings.publicServer")}
-                disabled={!supported}
-              />
+            <div className="frm-ctl">
+              <div className="ss-icon-ctl">
+                <ServerMark mark={mark} iconUrl={shownIcon} />
+                <Button type="button" variant="secondary" size="sm" disabled={iconLocked} onClick={openPicker}>
+                  <Icon name="image" size={14} />
+                  {icon.busy ? t("common.saving") : t("srv.iconUpload")}
+                </Button>
+                {iconUrl === undefined ? null : (
+                  <Button
+                    type="button"
+                    variant="danger"
+                    size="sm"
+                    disabled={iconLocked}
+                    onClick={() => void icon.remove()}
+                  >
+                    {t("srv.iconRemove")}
+                  </Button>
+                )}
+              </div>
+              {icon.error === null ? null : (
+                <p className="set-note sound-error" role="alert">
+                  {icon.error}
+                </p>
+              )}
             </div>
           </div>
-
           <div className="frm-row">
             <label className="frm-lab" htmlFor={descriptionId}>
               {t("settings.description")}
-              <span>{t("settings.serverDescriptionDetail")}</span>
+              <span>{t("srv.descriptionDetail")}</span>
             </label>
             <div className="frm-ctl">
               <textarea
@@ -285,25 +284,165 @@ export function OverviewPane({
                 disabled={!supported}
                 onChange={(event) => setDraft({ ...draft, description: event.target.value })}
               />
+              <span className="ss-count">{`${draft.description.length}/280`}</span>
             </div>
           </div>
         </div>
-
         {saveAction.failed ? (
-          <p className="set-note sound-error ov-save-error" role="alert">
+          <p className="set-note sound-error" role="alert">
             {t("settings.serverSaveFailed")}
           </p>
         ) : null}
       </SettingsSection>
 
+      <SettingsSection title={t("srv.visibility")}>
+        <div className="frm">
+          {/* The label is the on state, not a category: "Visibility" would not
+              say which way the switch has to be turned. */}
+          <div className="frm-row">
+            <span className="frm-lab">
+              {t("settings.publicServer")}
+              <span>{t("srv.publicDetail")}</span>
+            </span>
+            <div className="frm-ctl frm-switch">
+              <Switch
+                checked={isPublic}
+                onChange={(checked) => void visibility.run(() => onSave({ isPublic: checked }))}
+                label={t("settings.publicServer")}
+                disabled={!supported || visibility.pending}
+              />
+            </div>
+          </div>
+        </div>
+        {visibility.failed ? (
+          <p className="set-note sound-error" role="alert">
+            {t("srv.visibilityFailed")}
+          </p>
+        ) : null}
+      </SettingsSection>
+
+      {owner === undefined ? null : (
+        <SettingsSection title={t("srv.ownership")} bodyClassName="sec-list">
+          <div className="sec-row">
+            <Avatar id={owner.id} displayName={owner.displayName} avatarUrl={owner.avatarUrl} size="sm" />
+            <span className="sec-copy">
+              <b>{viewerIsOwner ? t("srv.ownerYou") : t("srv.ownerIs", { name: owner.displayName })}</b>
+              <small>{t("srv.ownerDetail")}</small>
+            </span>
+            {transfer === undefined ? null : (
+              <Button
+                type="button"
+                variant="secondary"
+                size="sm"
+                disabled={transfer.candidates.length === 0}
+                onClick={() => setTransferOpen(true)}
+              >
+                {t("srv.transfer.button")}
+              </Button>
+            )}
+          </div>
+        </SettingsSection>
+      )}
+
+      {transfer === undefined ? null : (
+        <TransferDialog
+          open={transferOpen}
+          candidates={transfer.candidates}
+          onTransfer={transfer.onTransfer}
+          onClose={() => setTransferOpen(false)}
+        />
+      )}
+
       <SettingsSaveBar
         dirty={dirty}
         saving={saveAction.pending}
         saved={saved}
-        saveDisabled={!supported}
+        saveDisabled={!supported || draft.name.trim() === ""}
         onSave={() => void save()}
         onReset={() => setDraft(profile)}
       />
     </>
+  );
+}
+
+/** Picking the next owner, in the app's confirm card. */
+function TransferDialog({
+  open,
+  candidates,
+  onTransfer,
+  onClose,
+}: {
+  open: boolean;
+  candidates: readonly TransferCandidate[];
+  onTransfer: (userId: string) => Promise<void>;
+  onClose: () => void;
+}) {
+  const { t } = useLanguage();
+  const titleId = useId();
+  const labelId = useId();
+  const action = useAsyncAction();
+  const [picked, setPicked] = useState("");
+
+  // A reopened card starts with nobody picked.
+  const [wasOpen, setWasOpen] = useState(open);
+  if (wasOpen !== open) {
+    setWasOpen(open);
+    if (open) setPicked("");
+  }
+
+  return (
+    <Modal open={open} onClose={onClose} labelledBy={titleId} className="cf-wrap" exitMs={200}>
+      <form
+        className="cf-card"
+        noValidate
+        onSubmit={(event) => {
+          event.preventDefault();
+          if (picked === "") return;
+          void action.run(() => onTransfer(picked)).then((done) => {
+            if (done) onClose();
+          });
+        }}
+      >
+        <div className="cf-head">
+          <span className="cf-ico" aria-hidden="true">
+            <Icon name="crown" size={18} />
+          </span>
+          <div className="cf-copy">
+            <h2 id={titleId}>{t("srv.transfer.title")}</h2>
+            <p>{t("srv.transfer.detail")}</p>
+            <div className="cf-field">
+              <span className="fld-lab" id={labelId}>
+                {t("srv.transfer.pick")}
+              </span>
+              <Dropdown
+                options={candidates.map((candidate) => ({
+                  value: candidate.id,
+                  label: candidate.name,
+                  ...(candidate.role === undefined ? {} : { detail: candidate.role }),
+                }))}
+                value={picked}
+                onChange={setPicked}
+                label={t("srv.transfer.pick")}
+                placeholder={t("srv.transfer.placeholder")}
+                disabled={action.pending}
+              />
+            </div>
+            {action.failed ? (
+              <p className="set-note sound-error" role="alert">
+                {t("srv.transfer.failed")}
+              </p>
+            ) : null}
+          </div>
+        </div>
+        <div className="cf-foot">
+          <Button type="button" variant="secondary" onClick={onClose}>
+            {t("common.cancel")}
+          </Button>
+          <Button type="submit" variant="primary" disabled={picked === "" || action.pending}>
+            {t("srv.transfer.confirm")}
+          </Button>
+        </div>
+      </form>
+    </Modal>
   );
 }

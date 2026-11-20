@@ -10,6 +10,7 @@ import type {
   ServerMember,
   ServerPermission,
   ServerRole,
+  User,
   UserId,
 } from "@/lib/api/types";
 
@@ -117,7 +118,8 @@ export interface ServerAdminPort {
   /** Removes them and keeps them out. `reason` is shown in the bans list. */
   ban(userId: UserId, reason?: string): Promise<void>;
   unban(userId: UserId): Promise<void>;
-  listAuditEntries(): Promise<AuditEntry[]>;
+  /** A page of the newest entries, or of those older than `before` (ISO 8601). */
+  listAuditEntries(before?: string): Promise<AuditEntry[]>;
   listEmoji(): Promise<CustomEmoji[]>;
   uploadEmoji(shortcode: string, file: File): Promise<CustomEmoji>;
   deleteEmoji(emojiId: string): Promise<void>;
@@ -218,10 +220,28 @@ export interface Invite {
 
 export type Ban = ServerBan;
 
+/** One field an audited action changed. Values are names as they were, or fixed tokens. */
+export interface AuditChange {
+  field: string;
+  from?: string;
+  to?: string;
+  /** Permission names, for the fields that hold permissions. */
+  added?: string[];
+  removed?: string[];
+  fromColor?: string;
+  toColor?: string;
+}
+
 export interface AuditEntry {
   id: string;
+  /** The line in the server's language, which is all an older entry has. */
   summary: string;
   at: string;
+  actor?: User;
+  /** What was done, such as `role.update` or `member.ban`. */
+  action?: string;
+  target?: { type: string; id?: string; name?: string };
+  changes?: AuditChange[];
 }
 
 export interface CustomEmoji {

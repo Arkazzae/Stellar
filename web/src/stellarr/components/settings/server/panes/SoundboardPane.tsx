@@ -21,7 +21,6 @@ import { useLanguage } from "@/state/hooks";
 
 export type { SoundPreviewPlayback };
 
-const MAX_SOUNDS = 48;
 
 /** The key the editor's own clip is auditioned under; sounds use their ids. */
 const DRAFT_PREVIEW = "draft";
@@ -245,7 +244,6 @@ export function SoundboardPane({
   const applyEdit = (changes: SoundEdit) =>
     setDraft((current) => (current === null ? current : { ...current, ...changes }));
 
-  const atLimit = sounds.length >= MAX_SOUNDS;
   const shownError = localError ?? error;
 
   return (
@@ -272,44 +270,15 @@ export function SoundboardPane({
       ) : (
         <>
           <SettingsSection
-            title={t("settings.soundboard")}
-            count={`${sounds.length}/${MAX_SOUNDS}`}
-            countLabel={t("settings.soundCount", { count: sounds.length, max: MAX_SOUNDS })}
-            countTitle={t("settings.soundCountTitle")}
+            title={t("srv.sounds.title")}
+            count={sounds.length}
             className="sound-library"
-            action={
-              <>
-                <Button
-                  ref={add}
-                  type="button"
-                  variant="primary"
-                  size="sm"
-                  className="asset-add"
-                  disabled={!supported || busy || loading || atLimit}
-                  title={atLimit ? t("settings.soundLimitTitle") : undefined}
-                  onClick={() => picker.current?.click()}
-                >
-                  <Icon name="plus" size={15} />
-                  {t("settings.addSound")}
-                </Button>
-                <input
-                  ref={picker}
-                  type="file"
-                  accept="audio/*,.mp3,.ogg,.wav,.webm,.m4a,.aac"
-                  hidden
-                  onChange={onFileChosen}
-                />
-              </>
-            }
+            bodyClassName="sec-list ss-list"
           >
             {loading && sounds.length === 0 ? (
-              <p className="int-empty">{t("common.loading")}</p>
+              <p className="acc-security-item acc-security-empty">{t("common.loading")}</p>
             ) : sounds.length === 0 ? (
-              <div className="asset-empty">
-                <Icon name="wave" size={24} />
-                <b>{t("settings.noSounds")}</b>
-                <span>{t("settings.noSoundsDetail")}</span>
-              </div>
+              <p className="acc-security-item acc-security-empty">{t("srv.sounds.empty")}</p>
             ) : (
               <SoundList
                 sounds={sounds}
@@ -327,40 +296,61 @@ export function SoundboardPane({
                 onReorder={reorder}
               />
             )}
+            <div className="sec-row ss-foot">
+              <span className="ss-foot-note">{t("srv.sounds.note")}</span>
+              <Button
+                ref={add}
+                type="button"
+                variant="secondary"
+                size="sm"
+                disabled={!supported || busy || loading}
+                onClick={() => picker.current?.click()}
+              >
+                <Icon name="plus" size={15} />
+                {t("settings.addSound")}
+              </Button>
+              <input
+                ref={picker}
+                type="file"
+                accept="audio/*,.mp3,.ogg,.wav,.webm,.m4a,.aac"
+                hidden
+                onChange={onFileChosen}
+              />
+            </div>
           </SettingsSection>
 
-          <section className="sound-group" aria-labelledby="sound-rules-title">
-            <header className="int-cap sound-cap">
-              <b id="sound-rules-title">{t("settings.soundRules")}</b>
-              <span>{t("settings.soundRulesDetail")}</span>
-            </header>
-            <div className="sound-rules">
-              <div className="sound-rule-row">
-                <span className="set-lab">
-                  <b>{t("settings.everyoneCanPlay")}</b>
+          <SettingsSection title={t("srv.sounds.playback")}>
+            <div className="frm">
+              <div className="frm-row">
+                <span className="frm-lab">
+                  {t("settings.everyoneCanPlay")}
                   <span>{t("settings.everyoneCanPlayDetail")}</span>
                 </span>
-                <Switch
-                  checked={everyoneCanPlay}
-                  onChange={onEveryoneCanPlayChange}
-                  label={t("settings.everyoneCanPlay")}
-                  disabled={!supported}
-                />
+                <div className="frm-ctl frm-switch">
+                  <Switch
+                    checked={everyoneCanPlay}
+                    onChange={onEveryoneCanPlayChange}
+                    label={t("settings.everyoneCanPlay")}
+                    disabled={!supported}
+                  />
+                </div>
               </div>
-              <div className="sound-rule-row">
-                <span className="set-lab">
-                  <b>{t("settings.soundRateLimit")}</b>
-                  <span>{t("settings.soundRateLimitDetail")}</span>
+              <div className="frm-row">
+                <span className="frm-lab">
+                  {t("srv.sounds.rateLimit")}
+                  <span>{t("srv.sounds.rateLimitDetail")}</span>
                 </span>
-                <Switch
-                  checked={rateLimited}
-                  onChange={onRateLimitedChange}
-                  label={t("settings.soundRateLimit")}
-                  disabled={!supported}
-                />
+                <div className="frm-ctl frm-switch">
+                  <Switch
+                    checked={rateLimited}
+                    onChange={onRateLimitedChange}
+                    label={t("srv.sounds.rateLimit")}
+                    disabled={!supported}
+                  />
+                </div>
               </div>
             </div>
-          </section>
+          </SettingsSection>
         </>
       )}
     </>
