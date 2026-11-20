@@ -24,6 +24,7 @@ public static class DatabaseSchema
         // first even though the outbox only stores its id.
         PushSubscriptionSchema.CreateAsync,
         NotificationDeliverySchema.CreateAsync,
+        ServerAuditSchema.CreateAsync,
     ];
 
     public static async Task PrepareAsync(AppDbContext db, CancellationToken cancellationToken)

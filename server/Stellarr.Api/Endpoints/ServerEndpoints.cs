@@ -54,9 +54,31 @@ public static class ServerEndpoints
             return Invalid("description", messages.Get(MessageKey.ServerDescriptionLength));
         }
 
+        var before = (server.Name, server.Description, server.IsPublic);
         server.Name = name ?? server.Name;
         server.Description = description ?? server.Description;
         server.IsPublic = request.IsPublic ?? server.IsPublic;
+        var actorId = http.User.RequireUserId();
+        var profile = ServerAudit.Only(
+            ServerAudit.Changed("name", before.Name, server.Name),
+            ServerAudit.Changed("description", before.Description ?? "", server.Description ?? ""));
+        if (profile.Count > 0)
+        {
+            await ServerAudit.StageAsync(db, server.Id, actorId, new AuditEvent(
+                "server.update", messages.Get(MessageKey.AuditServerUpdated), "server", server.Id, server.Name, profile),
+                cancellationToken);
+        }
+
+        // Visibility is a switch of its own in the settings, so it is a line of its own.
+        if (before.IsPublic != server.IsPublic)
+        {
+            await ServerAudit.StageAsync(db, server.Id, actorId, new AuditEvent(
+                "server.visibility",
+                messages.Get(server.IsPublic ? MessageKey.AuditServerMadePublic : MessageKey.AuditServerMadeInviteOnly),
+                "server", server.Id, server.Name,
+                [new AuditChange("visibility", Visibility(before.IsPublic), Visibility(server.IsPublic))]), cancellationToken);
+        }
+
         await db.SaveChangesAsync(cancellationToken);
 
         var dto = server.ToDto();
@@ -109,6 +131,8 @@ public static class ServerEndpoints
         var previousUrl = server.IconUrl;
         var url = $"/assets/{id}";
         server.IconUrl = url;
+        await ServerAudit.StageAsync(db, server.Id, http.User.RequireUserId(), new AuditEvent(
+            "server.icon", messages.Get(MessageKey.AuditServerIconChanged), "server", server.Id, server.Name), cancellationToken);
 
         try
         {
@@ -129,6 +153,7 @@ public static class ServerEndpoints
         AppDbContext db,
         MediaStorage mediaStorage,
         IHubContext<AppHub> hub,
+        Messages messages,
         CancellationToken cancellationToken)
     {
         if (await FindManagedAsync(http, db, cancellationToken) is not { } server)
@@ -138,11 +163,20 @@ public static class ServerEndpoints
 
         var previousUrl = server.IconUrl;
         server.IconUrl = null;
+        if (previousUrl is not null)
+        {
+            await ServerAudit.StageAsync(db, server.Id, http.User.RequireUserId(), new AuditEvent(
+                "server.icon.remove", messages.Get(MessageKey.AuditServerIconRemoved), "server", server.Id, server.Name),
+                cancellationToken);
+        }
+
         await db.SaveChangesAsync(cancellationToken);
 
         await FinishIconChangeAsync(server, previousUrl, mediaStorage, hub, cancellationToken);
         return Results.Ok(new ServerIconDto(null));
     }
+
+    private static string Visibility(bool isPublic) => isPublic ? "public" : "invite-only";
 
     /// <summary>The active server, when the caller may manage it.</summary>
     private static async Task<StellarrServer?> FindManagedAsync(

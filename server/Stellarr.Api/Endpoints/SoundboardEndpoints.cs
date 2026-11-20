@@ -18,7 +18,6 @@ namespace Stellarr.Api.Endpoints;
 /// </summary>
 public static class SoundboardEndpoints
 {
-    private const int MaxSounds = 48;
     private const double MinClipSeconds = 0.15;
     private const double MaxClipSeconds = 15;
 
@@ -80,11 +79,6 @@ public static class SoundboardEndpoints
             return Results.Forbid();
         }
 
-        if (await db.SoundboardSounds.CountAsync(x => x.ServerId == serverId, cancellationToken) >= MaxSounds)
-        {
-            return Results.Conflict();
-        }
-
         var userId = http.User.RequireUserId();
         var attachment = await db.ImageAttachments.FirstOrDefaultAsync(
             x => x.Id == request.AttachmentId && x.UploadedById == userId, cancellationToken);
@@ -126,6 +120,10 @@ public static class SoundboardEndpoints
             Attachment = attachment,
         };
         db.SoundboardSounds.Add(sound);
+        await ServerAudit.StageAsync(db, serverId, userId, new AuditEvent(
+            "sound.create",
+            messages.Get(MessageKey.AuditSoundAdded, ("name", sound.Name)),
+            "sound", sound.Id, sound.Name), cancellationToken);
         // Two requests may pick the same attachment between the check and here.
         if (!await db.TrySaveChangesAsync(cancellationToken))
         {
@@ -172,10 +170,25 @@ public static class SoundboardEndpoints
             return InvalidSound(messages);
         }
 
+        var before = (sound.Name, sound.Glyph, sound.TrimStartSeconds, sound.TrimEndSeconds);
         sound.Name = name;
         sound.Glyph = glyph;
         sound.TrimStartSeconds = Math.Round(start, 3);
         sound.TrimEndSeconds = Math.Round(end, 3);
+        var changes = ServerAudit.Only(
+            ServerAudit.Changed("name", before.Name, sound.Name),
+            ServerAudit.Changed("glyph", before.Glyph, sound.Glyph),
+            before.TrimStartSeconds == sound.TrimStartSeconds && before.TrimEndSeconds == sound.TrimEndSeconds
+                ? null
+                : new AuditChange("trim", Seconds(before.TrimStartSeconds, before.TrimEndSeconds), Seconds(sound.TrimStartSeconds, sound.TrimEndSeconds)));
+        if (changes.Count > 0)
+        {
+            await ServerAudit.StageAsync(db, serverId, http.User.RequireUserId(), new AuditEvent(
+                "sound.update",
+                messages.Get(MessageKey.AuditSoundUpdated, ("name", sound.Name)),
+                "sound", sound.Id, sound.Name, changes), cancellationToken);
+        }
+
         await db.SaveChangesAsync(cancellationToken);
         await NotifyChangedAsync(hub, serverId, cancellationToken);
         return Results.Ok(sound.ToDto());
@@ -187,6 +200,7 @@ public static class SoundboardEndpoints
         AppDbContext db,
         MediaStorage mediaStorage,
         IHubContext<AppHub> hub,
+        Messages messages,
         CancellationToken cancellationToken)
     {
         var serverId = http.RequireActiveServerId();
@@ -208,6 +222,10 @@ public static class SoundboardEndpoints
         await using (var transaction = await db.Database.BeginTransactionAsync(cancellationToken))
         {
             db.SoundboardSounds.Remove(sound);
+            await ServerAudit.StageAsync(db, serverId, http.User.RequireUserId(), new AuditEvent(
+                "sound.delete",
+                messages.Get(MessageKey.AuditSoundDeleted, ("name", sound.Name)),
+                "sound", sound.Id, sound.Name), cancellationToken);
             await db.SaveChangesAsync(cancellationToken);
             await db.UserPreferences.Where(x => x.JoinSoundId == soundId)
                 .ExecuteUpdateAsync(setters => setters.SetProperty(x => x.JoinSoundId, (Guid?)null), cancellationToken);
@@ -261,6 +279,7 @@ public static class SoundboardEndpoints
         HttpContext http,
         AppDbContext db,
         IHubContext<AppHub> hub,
+        Messages messages,
         CancellationToken cancellationToken)
     {
         var serverId = http.RequireActiveServerId();
@@ -270,12 +289,27 @@ public static class SoundboardEndpoints
         }
 
         var server = await db.Servers.SingleAsync(x => x.Id == serverId, cancellationToken);
+        var before = (server.SoundboardEveryoneCanPlay, server.SoundboardRateLimited);
         server.SoundboardEveryoneCanPlay = request.EveryoneCanPlay ?? server.SoundboardEveryoneCanPlay;
         server.SoundboardRateLimited = request.RateLimited ?? server.SoundboardRateLimited;
+        var changes = ServerAudit.Only(
+            ServerAudit.Changed("everyoneCanPlay", OnOff(before.SoundboardEveryoneCanPlay), OnOff(server.SoundboardEveryoneCanPlay)),
+            ServerAudit.Changed("rateLimited", OnOff(before.SoundboardRateLimited), OnOff(server.SoundboardRateLimited)));
+        if (changes.Count > 0)
+        {
+            await ServerAudit.StageAsync(db, serverId, http.User.RequireUserId(), new AuditEvent(
+                "soundboard.settings", messages.Get(MessageKey.AuditSoundboardSettings), Changes: changes), cancellationToken);
+        }
+
         await db.SaveChangesAsync(cancellationToken);
         await NotifyChangedAsync(hub, serverId, cancellationToken);
         return Results.Ok(Settings(server));
     }
+
+    private static string OnOff(bool value) => value ? "on" : "off";
+
+    private static string Seconds(double start, double end) =>
+        string.Create(System.Globalization.CultureInfo.InvariantCulture, $"{start:0.##}–{end:0.##}");
 
     private static Task<bool> CanManageAsync(
         HttpContext http,

@@ -93,6 +93,11 @@ public static class ModerationEndpoints
         db.Attach(lookup.Target.User);
         db.ServerBans.Add(ban);
         db.ServerMembers.Remove(lookup.Target);
+        await ServerAudit.StageAsync(db, serverId, lookup.Actor.UserId, new AuditEvent(
+            "member.ban",
+            messages.Get(MessageKey.AuditMemberBanned, ("name", lookup.Target.User.DisplayName)),
+            "member", userId, lookup.Target.User.DisplayName,
+            reason.Length == 0 ? null : [new AuditChange("reason", To: reason)]), cancellationToken);
         if (!await TrySaveRemovalAsync(db, cancellationToken))
         {
             return Results.Conflict();
@@ -107,6 +112,7 @@ public static class ModerationEndpoints
         Guid userId,
         HttpContext http,
         AppDbContext db,
+        Messages messages,
         CancellationToken cancellationToken)
     {
         var serverId = http.RequireActiveServerId();
@@ -124,6 +130,11 @@ public static class ModerationEndpoints
         }
 
         db.ServerBans.Remove(ban);
+        var name = await db.Users.Where(x => x.Id == userId).Select(x => x.DisplayName).SingleAsync(cancellationToken);
+        await ServerAudit.StageAsync(db, serverId, http.User.RequireUserId(), new AuditEvent(
+            "member.unban",
+            messages.Get(MessageKey.AuditMemberUnbanned, ("name", name)),
+            "member", userId, name), cancellationToken);
         await db.SaveChangesAsync(cancellationToken);
         return Results.NoContent();
     }
@@ -134,6 +145,7 @@ public static class ModerationEndpoints
         AppDbContext db,
         PresenceTracker presence,
         IHubContext<AppHub> hub,
+        Messages messages,
         CancellationToken cancellationToken)
     {
         var serverId = http.RequireActiveServerId();
@@ -146,6 +158,10 @@ public static class ModerationEndpoints
         }
 
         db.ServerMembers.Remove(lookup.Target);
+        await ServerAudit.StageAsync(db, serverId, lookup.Actor.UserId, new AuditEvent(
+            "member.kick",
+            messages.Get(MessageKey.AuditMemberKicked, ("name", lookup.Target.User.DisplayName)),
+            "member", userId, lookup.Target.User.DisplayName), cancellationToken);
         if (!await TrySaveRemovalAsync(db, cancellationToken))
         {
             return Results.Conflict();

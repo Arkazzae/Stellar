@@ -107,6 +107,15 @@ public static class RoleEndpoints
             Position = (lastPosition ?? -1) + 1,
         };
         db.ServerRoles.Add(role);
+        await ServerAudit.StageAsync(db, serverId, http.User.RequireUserId(), new AuditEvent(
+            "role.create",
+            messages.Get(MessageKey.AuditRoleCreated, ("name", role.Name)),
+            "role", role.Id, role.Name,
+            ServerAudit.Only(
+                new AuditChange("color", To: role.Color, ToColor: role.Color),
+                role.Permissions == ServerPrivileges.None
+                    ? null
+                    : new AuditChange("permissions", Added: ServerAccess.ToNames(role.Permissions)))), cancellationToken);
         if (!await db.TrySaveChangesAsync(cancellationToken))
         {
             return Results.Conflict();
@@ -165,9 +174,24 @@ public static class RoleEndpoints
             return Results.Forbid();
         }
 
+        var before = (role.Name, role.Color, role.Permissions);
         role.Name = draft.Name;
         role.Color = draft.Color;
         role.Permissions = draft.Permissions;
+        var granted = ServerAccess.ToNames(role.Permissions & ~before.Permissions);
+        var revoked = ServerAccess.ToNames(before.Permissions & ~role.Permissions);
+        var changes = ServerAudit.Only(
+            ServerAudit.Changed("name", before.Name, role.Name),
+            before.Color == role.Color ? null : new AuditChange("color", before.Color, role.Color, FromColor: before.Color, ToColor: role.Color),
+            granted.Count + revoked.Count == 0 ? null : new AuditChange("permissions", Added: granted, Removed: revoked));
+        if (changes.Count > 0)
+        {
+            await ServerAudit.StageAsync(db, serverId, http.User.RequireUserId(), new AuditEvent(
+                "role.update",
+                messages.Get(MessageKey.AuditRoleUpdated, ("name", role.Name)),
+                "role", role.Id, role.Name, changes), cancellationToken);
+        }
+
         if (!await db.TrySaveChangesAsync(cancellationToken))
         {
             return Results.Conflict();
@@ -185,6 +209,7 @@ public static class RoleEndpoints
         HttpContext http,
         AppDbContext db,
         IHubContext<AppHub> hub,
+        Messages messages,
         CancellationToken cancellationToken)
     {
         await using var transaction = await db.Database.BeginTransactionAsync(cancellationToken);
@@ -220,6 +245,13 @@ public static class RoleEndpoints
         await db.ServerMembers.Where(x => x.RoleId == role.Id)
             .ExecuteUpdateAsync(x => x.SetProperty(member => member.RoleId, fallback.Id), cancellationToken);
         await db.ServerRoles.Where(x => x.Id == role.Id).ExecuteDeleteAsync(cancellationToken);
+        await ServerAudit.StageAsync(db, serverId, http.User.RequireUserId(), new AuditEvent(
+            "role.delete",
+            messages.Get(MessageKey.AuditRoleDeleted, ("name", role.Name)),
+            "role", role.Id, role.Name,
+            holders.Count == 0 ? null : [new AuditChange("holders", To: holders.Count.ToString(System.Globalization.CultureInfo.InvariantCulture))]),
+            cancellationToken);
+        await db.SaveChangesAsync(cancellationToken);
         await transaction.CommitAsync(cancellationToken);
 
         await NotifyAsync(hub, serverId, holders, fallback.Permissions, cancellationToken);
@@ -232,6 +264,7 @@ public static class RoleEndpoints
         HttpContext http,
         AppDbContext db,
         IHubContext<AppHub> hub,
+        Messages messages,
         CancellationToken cancellationToken)
     {
         await using var transaction = await db.Database.BeginTransactionAsync(cancellationToken);
@@ -243,7 +276,7 @@ public static class RoleEndpoints
             return Results.Forbid();
         }
 
-        var member = await db.ServerMembers.Include(x => x.Role).FirstOrDefaultAsync(
+        var member = await db.ServerMembers.Include(x => x.Role).Include(x => x.User).FirstOrDefaultAsync(
             x => x.ServerId == serverId && x.UserId == userId, cancellationToken);
         var role = await db.ServerRoles.AsNoTracking().FirstOrDefaultAsync(
             x => x.ServerId == serverId && x.Id == request.RoleId, cancellationToken);
@@ -262,6 +295,16 @@ public static class RoleEndpoints
         if (!await ServerAuthorization.CanAssignRoleAsync(db, actorId, member, role, cancellationToken))
         {
             return Results.Forbid();
+        }
+
+        if (member.RoleId != role.Id)
+        {
+            await ServerAudit.StageAsync(db, serverId, actorId, new AuditEvent(
+                "member.role",
+                messages.Get(MessageKey.AuditRoleChanged, ("name", member.User.DisplayName), ("role", role.Name)),
+                "member", member.UserId, member.User.DisplayName,
+                [new AuditChange("role", member.Role.Name, role.Name, FromColor: member.Role.Color, ToColor: role.Color)]),
+                cancellationToken);
         }
 
         member.RoleId = role.Id;
