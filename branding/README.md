@@ -9,6 +9,8 @@ Logo, mascot, UI icons, color palette, typography, and usage rules for Stellarr.
 | `logo/mark.svg` | Primary mark (48 px and above): light speech bubble with three indigo voice-meter bars, for dark backgrounds |
 | `logo/small.svg` | Small-size mark (16–47 px): wider bars and fuller silhouette |
 | `logo/mono.svg` | Monochrome mark (`currentColor` fill with cut-out bars) |
+| `logo/lockup.svg` | Horizontal lockup for dark backgrounds: `mark.svg` and the name in Outfit SemiBold, converted to outlines, spaced and sized as in the guidelines; for a mark 48 px tall and above |
+| `logo/lockup-small.svg` | The same lockup with `small.svg`, for a mark 16–47 px tall, such as the header of the instance's mail |
 | `logo/tile.svg` | Application icon: primary mark centered on a rounded 512 px `#09090b` tile |
 | `logo/tile.png` | `tile.svg` rendered at 512 px, for places that do not take SVG, such as the Unraid template icon |
 | `mascot/` | Astronaut mascot in `mark.svg`, `small.svg`, `mono.svg`, and `tile.svg` variants |
