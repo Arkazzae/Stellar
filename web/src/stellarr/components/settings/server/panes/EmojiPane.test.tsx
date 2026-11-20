@@ -33,14 +33,14 @@ describe("EmojiPane", () => {
     expect(screen.queryByRole("textbox", { name: "Nazwa emoji" })).toBeNull();
   });
 
-  it("shows the app-standard empty state and capacity", () => {
+  it("says there are none yet in one sentence, with no cap on how many", () => {
     renderWithConfirm(
       <EmojiPane supported emoji={[]} onUpload={vi.fn()} onDelete={vi.fn()} />,
     );
 
-    expect(screen.getByText("Jeszcze nie ma własnych emoji")).toBeInTheDocument();
-    expect(screen.getByLabelText("0 z 100 emoji")).toHaveTextContent("0/100");
-    expect(screen.getByRole("button", { name: "Dodaj emoji" })).toBeEnabled();
+    expect(screen.getByText(/Nie ma jeszcze własnych emoji/)).toBeInTheDocument();
+    expect(screen.getByRole("region", { name: "Emoji" }).querySelector(".asset-count")).toHaveTextContent(/^0$/);
+    expect(screen.getByRole("button", { name: "Wgraj emoji" })).toBeEnabled();
   });
 
   it("removes an uploaded emoji after confirmation", async () => {

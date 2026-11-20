@@ -67,7 +67,12 @@ export function serverCalls(): ServerCalls {
 
     deleteServer: (signal) => deleteResource("/api/admin/server", signal),
 
-    listAuditEntries: (signal) => getJson("/api/admin/audit", parseAuditEntries, signal),
+    listAuditEntries: (before, signal) =>
+      getJson(
+        before === undefined ? "/api/admin/audit" : `/api/admin/audit?before=${encodeURIComponent(before)}`,
+        parseAuditEntries,
+        signal,
+      ),
 
     getNotificationSettings: (signal) =>
       getJson("/api/admin/notifications", parseNotificationSettings, signal),

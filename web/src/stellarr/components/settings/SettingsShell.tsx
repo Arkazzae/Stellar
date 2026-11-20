@@ -26,6 +26,8 @@ export interface SettingsShellProps<K extends string> {
     detail: string;
     /** A fuller accessible name for the dialog than the visible one. */
     label?: string;
+    /** A picture of the owner before the name, the way user settings show the avatar. */
+    mark?: ReactNode;
   };
   /** The bar above the content: the current pane's name and the sentence under it. */
   title: string;
@@ -39,6 +41,11 @@ export interface SettingsShellProps<K extends string> {
   active: K;
   onSelect: (key: K) => void;
   className?: string;
+  /**
+   * What sits alone below a rule at the bottom of the side panel, as Log out
+   * does in user settings: one action that opens no pane.
+   */
+  footer?: ReactNode;
   /** The current pane. */
   children: ReactNode;
 }
@@ -64,6 +71,7 @@ export function SettingsShell<K extends string>({
   active,
   onSelect,
   className,
+  footer,
   children,
 }: SettingsShellProps<K>) {
   const panesRef = useRef<HTMLDivElement>(null);
@@ -107,7 +115,8 @@ export function SettingsShell<K extends string>({
         <DialogClose label={closeLabel} onClose={() => leave(onClose)} disabled={!closable} />
       </div>
       <aside className="sv-nav">
-        <div className="sv-brand">
+        <div className={brand.mark === undefined ? "sv-brand" : "sv-brand us-brand"}>
+          {brand.mark}
           <span className="sv-brand-txt">
             <b id={titleId} aria-label={brand.label}>
               {brand.name}
@@ -143,6 +152,7 @@ export function SettingsShell<K extends string>({
             </Fragment>
           ))}
         </nav>
+        {footer === undefined ? null : <div className="us-out">{footer}</div>}
       </aside>
       <div className="sv-main">
         <div className="sv-panes" ref={panesRef}>

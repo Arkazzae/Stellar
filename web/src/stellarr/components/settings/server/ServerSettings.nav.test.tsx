@@ -11,6 +11,7 @@ function props(overrides: Partial<ServerSettingsProps> = {}): ServerSettingsProp
     open: true,
     onClose: vi.fn(),
     name: "Orbit",
+    mark: "OR",
     overview: {
       supported: true,
       iconSupported: true,
@@ -33,8 +34,8 @@ function props(overrides: Partial<ServerSettingsProps> = {}): ServerSettingsProp
       sections: [],
       onAddSection: vi.fn(),
       onEditSection: vi.fn(),
-      onMoveSectionUp: vi.fn().mockResolvedValue(undefined),
-      onMoveSectionDown: vi.fn().mockResolvedValue(undefined),
+      onMoveChannel: vi.fn().mockResolvedValue(undefined),
+      onMoveSection: vi.fn().mockResolvedValue(undefined),
     },
     roles: {
       supported: true,
@@ -71,12 +72,6 @@ function props(overrides: Partial<ServerSettingsProps> = {}): ServerSettingsProp
     },
     audit: { supported: true, entries: [] },
     bans: { supported: true, bans: [], onUnban: vi.fn().mockResolvedValue(undefined) },
-    danger: {
-      supported: true,
-      serverName: "Orbit",
-      onTransfer: vi.fn().mockResolvedValue(undefined),
-      onDelete: vi.fn().mockResolvedValue(undefined),
-    },
     ...overrides,
   };
 }
@@ -91,39 +86,36 @@ function dialog(p: ServerSettingsProps) {
 
 /** What each pane shows once it is the one on screen, besides the bar. */
 const PANES = [
-  { item: "Przegląd", detail: "Nazwa, opis i widoczność serwera", marker: () => screen.getByRole("region", { name: "Profil serwera" }) },
-  { item: "Kanały serwera", detail: "Kolejność i typy kanałów na serwerze", marker: () => screen.getByRole("region", { name: "Sekcje" }) },
-  { item: "Role", detail: "Kto co może na tym serwerze", marker: () => screen.getByRole("region", { name: "Role" }) },
-  { item: "Osoby na serwerze", detail: "Członkowie serwera i ich role", marker: () => screen.getByRole("region", { name: "Osoby na serwerze" }) },
-  { item: "Zaproszenia", detail: "Aktywne linki i ich limity", marker: () => screen.getByRole("region", { name: "Zaproszenia" }) },
-  { item: "Emoji", detail: "Emoji dostępne dla wszystkich na serwerze", marker: () => screen.getByText("Jeszcze nie ma własnych emoji") },
-  { item: "Soundboard", detail: "Dźwięki dostępne na kanałach głosowych", marker: () => screen.getByText("Nie ma jeszcze żadnych dźwięków") },
-  { item: "Dziennik zdarzeń", detail: "Kto co zmienił na serwerze", marker: () => screen.getByText("Ostatnie 30 dni") },
-  { item: "Bany", detail: "Osoby, które nie mogą wrócić na serwer", marker: () => screen.getByText("Lista banów (0)") },
-  { item: "Strefa zagrożenia", detail: "Operacje, których nie da się cofnąć", marker: () => screen.getByRole("region", { name: "Strefa zagrożenia" }) },
+  { item: "Przegląd", detail: "Jak serwer wygląda w Odkrywaniu i w zaproszeniach", marker: "Profil" },
+  { item: "Kanały", detail: "Sekcje i ich kanały", marker: "Kanały i sekcje" },
+  { item: "Emoji", detail: "Własne emoji dla wszystkich na serwerze", marker: "Emoji" },
+  { item: "Soundboard", detail: "Klipy do puszczania na kanałach głosowych", marker: "Dźwięki" },
+  { item: "Członkowie", detail: "Kto jest na serwerze i z jaką rolą", marker: "Członkowie" },
+  { item: "Role", detail: "Na co pozwala każda rola", marker: "Role" },
+  { item: "Zaproszenia", detail: "Linki, przez które można dołączyć", marker: "Linki z zaproszeniem" },
+  { item: "Bany", detail: "Osoby, które nie mogą wrócić", marker: "Zbanowani" },
+  { item: "Dziennik zdarzeń", detail: "Kto co zmienił na serwerze, od najnowszych", marker: "Dziennik zdarzeń" },
 ];
 
 afterEach(() => vi.restoreAllMocks());
 
 describe("ServerSettings navigation", () => {
-  it("lists three captioned groups in order", () => {
+  it("lists two captioned groups in order, as user settings do", () => {
     render(dialog(props()));
 
     const nav = screen.getByRole("navigation", { name: "Sekcje ustawień" });
     expect(Array.from(nav.children, (child) => child.textContent)).toEqual([
-      "Ogólne",
+      "Serwer",
       "Przegląd",
-      "Zarządzanie",
-      "Kanały serwera",
-      "Role",
-      "Osoby na serwerze",
-      "Zaproszenia",
+      "Kanały",
       "Emoji",
       "Soundboard",
-      "Moderacja",
-      "Dziennik zdarzeń",
+      "Ludzie",
+      "Członkowie",
+      "Role",
+      "Zaproszenia",
       "Bany",
-      "Strefa zagrożenia",
+      "Dziennik zdarzeń",
     ]);
   });
 
@@ -136,6 +128,16 @@ describe("ServerSettings navigation", () => {
     expect(screen.getByRole("button", { name: "Przegląd" })).toHaveAttribute("aria-current", "page");
   });
 
+  it("shows the server's mark beside its name, its icon when it has one", () => {
+    const { rerender } = render(dialog(props()));
+    const brand = document.querySelector(".sv-brand")!;
+    expect(brand.querySelector(".ss-mark")).toHaveTextContent("OR");
+
+    rerender(dialog(props({ iconUrl: "/assets/icon" })));
+
+    expect(document.querySelector(".sv-brand .ss-mark img")).toHaveAttribute("src", "/assets/icon");
+  });
+
   it.each(PANES)("shows the $item pane with its title and detail line", async ({ item, detail, marker }) => {
     const user = userEvent.setup();
     render(dialog(props()));
@@ -144,40 +146,25 @@ describe("ServerSettings navigation", () => {
 
     expect(screen.getByRole("heading", { level: 2, name: item })).toBeVisible();
     expect(screen.getByText(detail)).toBeVisible();
-    expect(marker()).toBeVisible();
+    expect(screen.getByRole("region", { name: marker })).toBeVisible();
     expect(screen.getByRole("button", { name: item })).toHaveAttribute("aria-current", "page");
     expect(screen.getAllByRole("button", { current: "page" })).toHaveLength(1);
+  });
+
+  it("opens on the pane it is asked for", () => {
+    render(dialog(props({ initialPane: "bany" })));
+
+    expect(screen.getByRole("heading", { level: 2, name: "Bany" })).toBeVisible();
   });
 
   it("mounts only the chosen pane", async () => {
     const user = userEvent.setup();
     render(dialog(props()));
-    expect(screen.getByRole("region", { name: "Profil serwera" })).toBeVisible();
+    expect(screen.getByRole("region", { name: "Profil" })).toBeVisible();
 
     await user.click(screen.getByRole("button", { name: "Bany" }));
 
-    expect(screen.queryByRole("region", { name: "Profil serwera" })).toBeNull();
-  });
-
-  it("marks only the danger item as dangerous", () => {
-    render(dialog(props()));
-
-    const nav = screen.getByRole("navigation", { name: "Sekcje ustawień" });
-    const marked = within(nav)
-      .getAllByRole("button")
-      .filter((button) => button.classList.contains("danger"));
-    expect(marked.map((button) => button.textContent)).toEqual(["Strefa zagrożenia"]);
-  });
-
-  it("hands each pane the props it was given", async () => {
-    const user = userEvent.setup();
-    const p = props();
-    render(dialog(p));
-
-    await user.click(screen.getByRole("button", { name: "Strefa zagrożenia" }));
-    await user.click(screen.getByRole("button", { name: "Usuń Orbit" }));
-
-    expect(p.danger.onDelete).toHaveBeenCalledOnce();
+    expect(screen.queryByRole("region", { name: "Profil" })).toBeNull();
   });
 
   it("starts the next pane at the top of the scroll area", async () => {
@@ -200,6 +187,50 @@ describe("ServerSettings navigation", () => {
     await user.click(target);
 
     await waitFor(() => expect(reveal.mock.contexts.at(-1)).toBe(target));
+  });
+});
+
+describe("deleting the server", () => {
+  it("is offered alone at the bottom of the navigation, to the owner only", () => {
+    const { rerender } = render(dialog(props()));
+    expect(screen.queryByRole("button", { name: "Usuń serwer" })).toBeNull();
+
+    rerender(dialog(props({ onDeleteServer: vi.fn().mockResolvedValue(undefined) })));
+
+    const nav = screen.getByRole("navigation", { name: "Sekcje ustawień" });
+    const button = screen.getByRole("button", { name: "Usuń serwer" });
+    expect(within(nav).queryByRole("button", { name: "Usuń serwer" })).toBeNull();
+    expect(button.closest(".us-out")).not.toBeNull();
+  });
+
+  it("deletes only once the server's exact name is typed", async () => {
+    const user = userEvent.setup();
+    const onDeleteServer = vi.fn().mockResolvedValue(undefined);
+    render(dialog(props({ onDeleteServer })));
+
+    await user.click(screen.getByRole("button", { name: "Usuń serwer" }));
+    const question = screen.getByRole("dialog", { name: "Usunąć Orbit?" });
+    const field = within(question).getByRole("textbox", { name: "WPISZ Orbit, ABY POTWIERDZIĆ" });
+    const confirm = within(question).getByRole("button", { name: "Usuń serwer" });
+
+    await user.type(field, "Orb");
+    expect(confirm).toBeDisabled();
+    await user.type(field, "it");
+    expect(confirm).toBeEnabled();
+    await user.click(confirm);
+
+    await waitFor(() => expect(onDeleteServer).toHaveBeenCalledOnce());
+  });
+
+  it("does nothing when the question is cancelled", async () => {
+    const user = userEvent.setup();
+    const onDeleteServer = vi.fn().mockResolvedValue(undefined);
+    render(dialog(props({ onDeleteServer })));
+
+    await user.click(screen.getByRole("button", { name: "Usuń serwer" }));
+    await user.click(within(screen.getByRole("dialog", { name: "Usunąć Orbit?" })).getByRole("button", { name: "Anuluj" }));
+
+    expect(onDeleteServer).not.toHaveBeenCalled();
   });
 });
 

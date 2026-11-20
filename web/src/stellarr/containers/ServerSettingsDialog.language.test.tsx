@@ -35,6 +35,7 @@ vi.mock("@/state/hooks", async (importOriginal) => ({
     serverMark: "H",
   }),
   useEmoji: () => ({ emoji: [], refresh: async () => {} }),
+  useSession: () => ({ user: null }),
   useUi: () => ({ closeModal: () => {} }),
   useVoice: () => ({
     sounds: [],
@@ -48,7 +49,10 @@ vi.mock("@/state/hooks", async (importOriginal) => ({
   }),
 }));
 
-const ADMIN = { data: {}, reload: () => {} } as unknown as ServerAdmin;
+const ADMIN = {
+  data: { roles: [], members: [], invites: [], bans: [], audit: [] },
+  reload: () => {},
+} as unknown as ServerAdmin;
 
 function shownIn(locale: "pl" | "en", error: MessageKey | null): string | null {
   harness.soundboardError = error;

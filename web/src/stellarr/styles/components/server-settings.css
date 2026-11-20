@@ -1,0 +1,201 @@
+@layer components {
+  /* ---------- SERVER SETTINGS: the panes in the user settings' look ---------- */
+
+  /* The server's mark: its icon, or two letters on the accent. */
+  .ss-mark{
+    position:relative;flex:none;display:inline-flex;align-items:center;justify-content:center;
+    width:44px;height:44px;border-radius:14px;overflow:hidden;
+    background:var(--accent);color:var(--on-accent);font-size:var(--text-15);font-weight:700;
+  }
+  .ss-mark img{width:100%;height:100%;object-fit:cover}
+  .sv-brand .ss-mark{width:36px;height:36px;border-radius:11px;font-size:var(--text-13)}
+  .ss-mark-lg{width:72px;height:72px;border-radius:22px;font-size:var(--text-24)}
+  button.ss-mark{cursor:pointer}
+  button.ss-mark:disabled{cursor:default}
+  .ss-mark .pf-veil{border-radius:inherit}
+
+  /* Overview: the card the server is seen as. */
+  .ss-card{
+    display:flex;flex-direction:column;gap:16px;margin-bottom:24px;padding:20px;
+    background:var(--set-group);border:1px solid var(--line-subtle);border-radius:var(--radius-lg);
+  }
+  .ss-card-top{display:flex;align-items:center;gap:16px;min-width:0}
+  .ss-card-txt{display:flex;flex-direction:column;gap:4px;min-width:0}
+  .ss-card-txt b{font-size:var(--text-20);font-weight:650;line-height:1.25;overflow-wrap:anywhere}
+  .ss-card-txt span{font-size:var(--text-14);color:var(--text-muted);overflow-wrap:anywhere}
+  .ss-card-txt span.empty{color:var(--text-faint)}
+  .ss-card-meta{display:flex;flex-wrap:wrap;gap:6px}
+  .ss-card-meta span{
+    padding:3px 10px;border-radius:999px;background:var(--surface-overlay);
+    color:var(--text-muted);font-size:var(--text-12);font-weight:550;
+  }
+  .ss-card-meta span.on{color:var(--accent-text);background:var(--accent-soft)}
+  .ss-icon-ctl{display:flex;flex-wrap:wrap;align-items:center;gap:12px}
+  .ss-count{display:block;margin-top:6px;text-align:right;font-size:var(--text-12);color:var(--text-faint);font-variant-numeric:tabular-nums}
+
+  /* Lists: settings rows that span the card, with a footer of actions. */
+  .ss-list > .sec-row,.ss-group > .sec-row{width:100%}
+  .ss-foot{flex-wrap:wrap;justify-content:flex-end}
+  .ss-foot-note{flex:1 1 240px;min-width:0;font-size:var(--text-13);color:var(--text-faint);line-height:1.45}
+  .acc-security-empty + .ss-foot{border-top:1px solid var(--line-subtle)}
+  .ss-tag{
+    flex:none;padding:1px 8px;border-radius:999px;background:var(--surface-overlay);
+    color:var(--text-faint);font-size:var(--text-11);font-weight:650;
+  }
+  .ss-mono,.sec-copy b.ss-mono{font-family:var(--font-mono);font-size:var(--text-13);letter-spacing:-.01em}
+
+  /* Channels: sections with their channels, dragged by a handle. */
+  .ss-cap{padding:14px 0 0;font-size:var(--text-12);font-weight:600;color:var(--text-faint)}
+  .ss-sec .sec-copy b{font-size:var(--text-15)}
+  .ss-group:not(.ss-loose) .ss-ch{padding-left:24px}
+  .ss-glyph{flex:none;display:inline-flex;color:var(--text-faint)}
+  .ss-kind{min-height:1px}
+  .ss-kind-empty{padding:10px 0 12px;font-size:var(--text-13);color:var(--text-faint)}
+  .ss-grip{
+    flex:none;display:inline-flex;align-items:center;justify-content:center;
+    width:24px;height:32px;margin:0 -6px;border-radius:6px;
+    color:var(--text-faint);cursor:grab;touch-action:none;
+    transition:background var(--dur-fast) var(--ease-standard),color var(--dur-fast) var(--ease-standard);
+  }
+  .ss-grip:hover{color:var(--text);background:var(--surface-hover)}
+  .ss-grip:focus-visible{outline:2px solid var(--accent);outline-offset:0}
+  /* The rail's drag (lib/drag) moves rows by transform and marks them; the
+     pane column is its scroller. */
+  .sv-panes[data-dragging]{cursor:grabbing}
+  .sv-panes[data-dragging] .ss-chan-list *{pointer-events:none}
+  .sv-panes[data-dragging="sort"] .ss-chan-list :is(.ss-kind > *, .ss-sections > *):not([data-drag="carried"]):not(:has([data-drag="carried"])){
+    transform:translateY(0);
+  }
+  .ss-chan-list [data-drag="shifted"],
+  .ss-chan-list [data-drag="carried"][data-via="keyboard"],
+  .ss-chan-list [data-settling]{transition:transform var(--dur-base) var(--ease-standard)}
+  .ss-chan-list [data-drag="carried"]{
+    position:relative;z-index:2;border-radius:6px;background:var(--set-group);
+    box-shadow:0 0 0 8px var(--set-group),var(--elev-pop);
+  }
+  .ss-chan-list .ss-cap + .ss-kind > .sec-row:first-child{border-top:0}
+  .ss-chan-list .sec-row{border-top:1px solid var(--line-subtle)}
+  .ss-chan-list > .ss-group:first-child > .ss-cap{padding-top:14px}
+  .ss-kind:empty{min-height:4px}
+
+  /* Roles: a shield in the role's colour marks it; names keep the text colour. */
+  .ss-role-ico{flex:none;display:inline-flex;color:var(--rc)}
+  .ss-roles-head{
+    display:flex;align-items:center;gap:14px;padding:14px 0 8px;border-bottom:1px solid var(--line-subtle);
+    font-size:var(--text-12);font-weight:600;color:var(--text-faint);
+  }
+  .ss-roles-head > :first-child{flex:1 1 auto}
+  .ss-col-count{width:64px}
+  .ss-col-edit{width:32px}
+  .ss-role-row{
+    width:calc(100% + 20px) !important;margin:0 -10px;padding:10px;gap:14px;min-height:56px;
+    border-radius:var(--radius-md);text-align:left;color:inherit;cursor:pointer;
+    transition:background var(--dur-fast) var(--ease-standard);
+  }
+  .ss-role-row:hover{background:var(--set-hover)}
+  .ss-role-row:focus-visible{outline:2px solid var(--accent);outline-offset:-2px}
+  .ss-role-name{
+    flex:1 1 auto;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;
+    font-size:var(--text-14);font-weight:550;color:var(--text);
+  }
+  .ss-role-count{
+    flex:none;width:64px;display:inline-flex;align-items:center;gap:6px;
+    color:var(--text-muted);font-size:var(--text-13);font-variant-numeric:tabular-nums;
+  }
+  .ss-role-count svg{color:var(--text-faint)}
+  .ss-role-count b{font-weight:550}
+  .ss-role-edit{
+    flex:none;display:inline-flex;align-items:center;justify-content:center;width:32px;height:32px;
+    border-radius:50%;color:var(--text-faint);
+    transition:background var(--dur-fast) var(--ease-standard),color var(--dur-fast) var(--ease-standard);
+  }
+  .ss-role-row:hover .ss-role-edit,.ss-role-row:focus-visible .ss-role-edit{background:var(--surface-overlay);color:var(--text)}
+  .ss-back{
+    display:inline-flex;align-items:center;gap:6px;margin:0 0 14px -6px;padding:6px 10px 6px 6px;
+    border-radius:8px;color:var(--text-muted);font-size:var(--text-13);font-weight:550;
+    transition:background var(--dur-fast) var(--ease-standard),color var(--dur-fast) var(--ease-standard);
+  }
+  .ss-back:hover{background:var(--surface-hover);color:var(--text)}
+  .ss-subcap{padding:18px 0 2px;font-size:var(--text-12);font-weight:600;color:var(--text-faint)}
+  .ss-subcap:first-child{padding-top:2px}
+  .ss-people{display:flex;align-items:center;gap:10px;min-height:40px;flex-wrap:wrap}
+  .ss-stack{display:flex}
+  .ss-stack .av{box-shadow:0 0 0 2px var(--set-group)}
+  .ss-stack .av + .av{margin-left:-8px}
+  .ss-people-txt{font-size:var(--text-13);color:var(--text-muted);min-width:0}
+  .ss-lock{margin:0 0 16px}
+
+  /* A role as a pill: in member rows, in the log's changes. */
+  .ss-role-pill{
+    flex:none;display:inline-flex;align-items:center;gap:6px;height:28px;max-width:200px;
+    padding:0 9px 0 8px;border-radius:999px;border:1px solid var(--line-subtle);background:var(--surface-overlay);
+    color:var(--text);font-size:var(--text-13);font-weight:550;white-space:nowrap;
+  }
+  button.ss-role-pill{cursor:pointer;transition:background var(--dur-fast) var(--ease-standard),border-color var(--dur-fast) var(--ease-standard)}
+  button.ss-role-pill:hover,.ss-role-pill[aria-expanded="true"]{background:var(--surface-hover);border-color:var(--line)}
+  button.ss-role-pill:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+  button.ss-role-pill:disabled{cursor:default;opacity:.6}
+  .ss-pill-label{overflow:hidden;text-overflow:ellipsis}
+  .ss-pill-caret{display:inline-flex;color:var(--text-faint)}
+  .ui-menu .ss-role-ico{margin-right:2px}
+  .ss-menu-tick{display:inline-flex;width:16px;color:var(--accent-text)}
+
+  /* Members */
+  .ss-search{position:relative;padding:16px 0 6px}
+  .ss-search > span{position:absolute;left:13px;top:50%;translate:0 calc(-50% + 5px);display:inline-flex;color:var(--text-faint);pointer-events:none}
+  .ss-search .set-input{padding-left:38px}
+  .ss-member .sec-copy small{white-space:nowrap}
+  .ss-more-gap{flex:none;width:32px}
+  .ss-none{padding:18px 0;margin:0;font-size:var(--text-13);color:var(--text-faint)}
+
+  /* Audit log */
+  .ss-log-filters{display:flex;flex-wrap:wrap;gap:10px;margin:0 0 22px}
+  .ss-log-filters .ui-dropdown{width:auto;min-width:190px;max-width:260px}
+  .ss-log-item:not([hidden]) ~ .ss-log-item:not([hidden]){border-top:1px solid var(--line-subtle)}
+  .ss-log{width:calc(100% + 20px) !important;margin:0 -10px;padding:12px 10px;gap:12px;align-items:flex-start;text-align:left;color:inherit;border-radius:var(--radius-md)}
+  button.ss-log{cursor:pointer;transition:background var(--dur-fast) var(--ease-standard)}
+  button.ss-log:hover{background:var(--set-hover)}
+  button.ss-log:focus-visible{outline:2px solid var(--accent);outline-offset:-2px}
+  .ss-log .av{margin-top:1px}
+  .ss-log .sec-copy b.ss-log-line{font-size:var(--text-14);font-weight:400;color:var(--text-muted);line-height:1.45}
+  .ss-log .sec-copy b.ss-log-line.plain{color:var(--text)}
+  .ss-log-line strong{color:var(--text);font-weight:600}
+  .ss-log-chev{flex:none;display:inline-flex;margin-top:7px;color:var(--text-faint);transition:transform var(--dur-fast) var(--ease-standard)}
+  .ss-log[aria-expanded="true"] .ss-log-chev{transform:rotate(180deg)}
+  .ss-log-detail{
+    display:grid;grid-template-columns:max-content minmax(0,1fr);gap:10px 20px;align-items:center;
+    margin:0 0 14px 44px;padding:12px 14px;border-radius:var(--radius-md);
+    background:var(--surface-canvas);border:1px solid var(--line-subtle);font-size:var(--text-13);
+  }
+  .ss-log-detail dt{color:var(--text-faint);font-weight:550}
+  .ss-log-detail dd{margin:0;min-width:0;display:flex;flex-wrap:wrap;align-items:center;gap:6px 8px;color:var(--text);overflow-wrap:anywhere}
+  .ss-was{display:inline-flex;align-items:center;gap:6px;color:var(--text-muted)}
+  .ss-to{display:inline-flex;align-items:center;gap:6px}
+  .ss-arrow{color:var(--text-faint)}
+  .ss-sw{flex:none;width:12px;height:12px;border-radius:50%;background:var(--sw)}
+  .ss-chip{padding:2px 9px;border-radius:999px;background:var(--surface-overlay);font-weight:550}
+  .ss-plus{color:var(--accent-text)}
+  .ss-minus{color:var(--danger-text)}
+  .ss-log-end{display:flex;flex-wrap:wrap;justify-content:center;align-items:center;gap:12px;margin:2px 0 8px;font-size:var(--text-13);color:var(--text-faint)}
+
+  @media (max-width:767px){
+    .ss-member{flex-wrap:wrap}
+    .ss-member .sec-copy{flex-basis:calc(100% - 60px)}
+    .ss-member .ss-role-pill{margin-left:48px}
+    .ss-member .ss-tag + .ss-role-pill{margin-left:0}
+    .ss-member .ss-tag{margin-left:48px}
+    .ss-invite{flex-wrap:wrap}
+    .ss-invite .sec-copy{flex-basis:100%}
+    .ss-card-top{align-items:flex-start}
+    .ss-log-filters .ui-dropdown{flex:1 1 140px;min-width:0;max-width:none}
+    .ss-log-detail{margin-left:0;grid-template-columns:minmax(0,1fr);gap:4px}
+    .ss-log-detail dd + dt{margin-top:8px}
+  }
+  @media (prefers-reduced-motion:reduce){
+    .ss-chan-list [data-drag],.ss-chan-list [data-settling]{transition:none}
+  }
+  @media (pointer:coarse){
+    .ss-grip{width:44px;height:44px;margin:0 -10px}
+    .ss-role-edit{width:44px;height:44px}
+  }
+}

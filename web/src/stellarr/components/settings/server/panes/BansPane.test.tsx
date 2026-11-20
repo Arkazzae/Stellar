@@ -24,12 +24,18 @@ const BANS: Ban[] = [
 ];
 
 describe("BansPane", () => {
-  it("lists who was banned, by whom, why and when", () => {
+  it("lists who was banned, by whom, when and why", () => {
     render(<BansPane supported bans={BANS} onUnban={vi.fn()} />);
 
-    expect(screen.getByText("Lista banów (2)")).toBeVisible();
-    expect(screen.getByText("zbanował·a Jan · spam · 6.03.2026")).toBeVisible();
-    expect(screen.getByText("zbanował·a Maja · reklamy · 1.04.2026")).toBeVisible();
+    expect(screen.getByRole("region", { name: "Zbanowani" })).toBeVisible();
+    expect(screen.getByText("Zbanował(a) Jan, 6.03.2026 · spam")).toBeVisible();
+    expect(screen.getByText("Zbanował(a) Maja, 1.04.2026 · reklamy")).toBeVisible();
+  });
+
+  it("says nobody is banned, and where to ban someone", () => {
+    render(<BansPane supported bans={[]} onUnban={vi.fn()} />);
+
+    expect(screen.getByText(/Nikt nie jest zbanowany/)).toBeVisible();
   });
 
   it("lifts the ban of the chosen person", async () => {

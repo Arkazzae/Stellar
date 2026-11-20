@@ -1,5 +1,7 @@
+import { Button } from "@stellarr/ui";
 import { Avatar } from "@/components/primitives/Avatar";
 import { formatShortDate } from "@/components/settings/paneFormat";
+import { SettingsSection } from "@/components/settings/SettingsSection";
 import { useAsyncAction } from "@/hooks/useAsyncAction";
 import type { Ban } from "@/ports";
 import { useLanguage } from "@/state/hooks";
@@ -17,54 +19,43 @@ export function BansPane({ supported, bans, onUnban }: BansPaneProps) {
   return (
     <>
       {supported ? null : <p className="set-note">{t("settings.bansUnsupported")}</p>}
-      <section className="sc">
-        <header className="sc-h">
-          {t("settings.bansList", { count: bans.length })}
-        </header>
-        <div className="sc-b">
-          {unban.failed ? (
-            <p className="set-note sound-error" role="alert">
-              {t("settings.unbanFailed")}
-            </p>
-          ) : null}
-          <div className="set-list">
-            {bans.map((ban) => (
-              <div className="set-item" key={ban.userId}>
-                {/* Banned accounts are drained of hue, like anyone offline. */}
-                <Avatar id={ban.userId} displayName={ban.displayName} size="md" offline />
-                <span className="set-item-txt">
-                  <b>{ban.displayName}</b>
-                  <span>
-                    {t("settings.bannedBy", {
-                      name: ban.bannedByName,
-                      reason: ban.reason,
-                      date: formatShortDate(ban.bannedAt, locale),
-                    })}
-                  </span>
-                </span>
-                {/* This card is not a `SettingsSection`, so the action stays
-                    hidden until the row is hovered; focus has to reveal it for
-                    keyboard users. */}
-                <button
-                  type="button"
-                  className="set-item-act"
-                  disabled={!supported || unban.pending}
-                  aria-label={t("settings.unban", { name: ban.displayName })}
-                  onFocus={(event) => {
-                    event.currentTarget.style.opacity = "1";
-                  }}
-                  onBlur={(event) => {
-                    event.currentTarget.style.opacity = "";
-                  }}
-                  onClick={() => void unban.run(() => onUnban(ban.userId))}
-                >
-                  {t("settings.unban", { name: ban.displayName })}
-                </button>
-              </div>
-            ))}
-          </div>
-        </div>
-      </section>
+      <SettingsSection title={t("srv.bans.title")} count={bans.length} bodyClassName="sec-list ss-list">
+        {unban.failed ? (
+          <p className="set-note sound-error" role="alert">
+            {t("settings.unbanFailed")}
+          </p>
+        ) : null}
+        {bans.length === 0 ? (
+          <p className="acc-security-item acc-security-empty">{t("srv.bans.empty")}</p>
+        ) : (
+          bans.map((ban) => (
+            <div className="sec-row" key={ban.userId}>
+              {/* Banned accounts are drained of hue, like anyone offline. */}
+              <Avatar id={ban.userId} displayName={ban.displayName} size="sm" offline />
+              <span className="sec-copy">
+                <b>{ban.displayName}</b>
+                <small>
+                  {t("srv.bans.meta", {
+                    name: ban.bannedByName,
+                    date: formatShortDate(ban.bannedAt, locale),
+                    reason: ban.reason,
+                  })}
+                </small>
+              </span>
+              <Button
+                type="button"
+                variant="secondary"
+                size="sm"
+                disabled={!supported || unban.pending}
+                aria-label={t("srv.bans.unbanNamed", { name: ban.displayName })}
+                onClick={() => void unban.run(() => onUnban(ban.userId))}
+              >
+                {t("srv.bans.unban")}
+              </Button>
+            </div>
+          ))
+        )}
+      </SettingsSection>
     </>
   );
 }

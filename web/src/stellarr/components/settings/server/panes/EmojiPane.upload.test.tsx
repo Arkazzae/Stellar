@@ -95,18 +95,6 @@ describe("EmojiPane uploads", () => {
 });
 
 describe("EmojiPane catalogue", () => {
-  it("stops offering uploads once the server holds the maximum", () => {
-    const emoji = Array.from({ length: 100 }, (_, index) => ({
-      id: `e-${index}`,
-      shortcode: `emoji_${index}`,
-      glyph: `/api/emoji/e-${index}/image`,
-    }));
-    renderWithConfirm(<EmojiPane {...props({ emoji })} />);
-
-    expect(screen.getByRole("button", { name: "Dodaj emoji" })).toBeDisabled();
-    expect(screen.getByText(/Limit 100 emoji został wykorzystany/)).toBeInTheDocument();
-  });
-
   it("is read-only without permission to manage", () => {
     renderWithConfirm(
       <EmojiPane
@@ -119,7 +107,7 @@ describe("EmojiPane catalogue", () => {
 
     expect(screen.getByText(":mushris:")).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: /Usuń emoji/ })).toBeNull();
-    expect(screen.getByRole("button", { name: "Dodaj emoji" })).toBeDisabled();
+    expect(screen.getByRole("button", { name: "Wgraj emoji" })).toBeDisabled();
   });
 
   it("reports a failed removal without hiding the emoji", async () => {
