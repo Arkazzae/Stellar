@@ -32,6 +32,7 @@ jobs:
       media: ${{ steps.filter.outputs.media }}
       init: ${{ steps.filter.outputs.init }}
       website: ${{ steps.filter.outputs.website }}
+      installer: ${{ steps.filter.outputs.installer }}
       image: ${{ steps.filter.outputs.image }}
     steps:
       - uses: actions/checkout@v7
@@ -78,6 +79,9 @@ jobs:
           # website/ is the project site, its own npm project outside the root
           # workspaces. It reads the logo, mascot, icons and fonts from branding/.
           check website '^(website/|branding/(logo|mascot|icons/linear|guidelines/fonts)/|\.github/workflows/ci\.yml$)'
+          # The installer downloads docker-compose.yml and .env.example and
+          # writes .env from them, and its tests read both.
+          check installer '^(install\.sh$|infra/tests/install|docker-compose\.yml$|\.env\.example$|\.github/workflows/ci\.yml$)'
           # vite.config.ts, documents.ts and worklets.ts lay out the build that
           # nginx serves. The image job drills the process manager in the
           # image, so its sources count, not only its manifest. It takes the
@@ -298,6 +302,23 @@ jobs:
           cache-dependency-path: website/package-lock.json
       - run: npm ci
       - run: npm run build
+
+  # The one-command installer, install.sh. Its tests run it against stub
+  # commands and need neither Docker nor the network themselves; the images
+  # below only hold the tools. They run on the runner's bash with GNU tools,
+  # and in bash 3.2, the one macOS ships, with BusyBox's.
+  installer:
+    needs: changes
+    if: needs.changes.outputs.installer == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v7
+      - name: Check the scripts with ShellCheck
+        run: docker run --rm -v "$PWD":/mnt:ro -w /mnt koalaman/shellcheck:v0.11.0 install.sh infra/tests/install.test.sh
+      - run: bash infra/tests/install.test.sh
+      - name: Run the tests under bash 3.2 with BusyBox
+        run: docker run --rm -v "$PWD":/w:ro -w /w bash:3.2.57 bash infra/tests/install.test.sh
 
   # Builds the image without pushing it, when the Dockerfile, the container
   # configuration or a dependency list changes. On main it also refreshes the
