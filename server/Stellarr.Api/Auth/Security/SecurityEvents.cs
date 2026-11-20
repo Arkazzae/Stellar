@@ -112,8 +112,6 @@ public static class SecurityEvents
         return verified ? recipient : null;
     }
 
-    public static string Describe(string kind, string detail) => detail.Length == 0 ? kind : $"{kind}: {detail}";
-
     private static string Truncate(string value, int maximum) =>
         value.Length <= maximum ? value : value[..maximum];
 }
@@ -180,6 +178,7 @@ public sealed class SecurityNotificationDispatcher(
             return 0;
         }
 
+        var zone = FindTimeZone(settings.TimeZone);
         var sent = 0;
         foreach (var item in pending)
         {
@@ -193,9 +192,9 @@ public sealed class SecurityNotificationDispatcher(
                         item.EmailAddress,
                         item.User.DisplayName,
                         mailing.InstanceName,
-                        SecurityEvents.Describe(item.SecurityEvent.Kind, item.SecurityEvent.Detail),
-                        item.SecurityEvent.CreatedAt,
-                        item.SecurityEventId,
+                        mailing.PublicUrl,
+                        item.SecurityEvent,
+                        zone,
                         messages),
                     mailing.Transport,
                     cancellationToken);
@@ -213,6 +212,19 @@ public sealed class SecurityNotificationDispatcher(
 
         await db.SaveChangesAsync(cancellationToken);
         return sent;
+    }
+
+    /// <summary>The instance's zone, or UTC when this host does not know its name.</summary>
+    private static TimeZoneInfo FindTimeZone(string id)
+    {
+        try
+        {
+            return string.IsNullOrWhiteSpace(id) ? TimeZoneInfo.Utc : TimeZoneInfo.FindSystemTimeZoneById(id.Trim());
+        }
+        catch (Exception exception) when (exception is TimeZoneNotFoundException or InvalidTimeZoneException)
+        {
+            return TimeZoneInfo.Utc;
+        }
     }
 }
 

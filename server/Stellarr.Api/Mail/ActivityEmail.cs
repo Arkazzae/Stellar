@@ -1,5 +1,3 @@
-using System.Net;
-using Stellarr.Api.Domain;
 using Stellarr.Api.Localization;
 
 namespace Stellarr.Api.Mail;
@@ -9,6 +7,8 @@ namespace Stellarr.Api.Mail;
 /// no message body, sender name, server name or channel name leaves the
 /// instance, and the only link is the public entry point. The app has no
 /// stable channel or conversation permalink, so a deep link would be a guess.
+/// For the same reason the header shows the wordmark without the instance's
+/// name, which is the name of its first server.
 /// </summary>
 public static class ActivityEmail
 {
@@ -24,7 +24,9 @@ public static class ActivityEmail
             publicUrl,
             deliveryId,
             messages.Get(MessageKey.NotificationMentionSubject),
+            messages.Get(MessageKey.NotificationMentionPushTitle),
             messages.Get(MessageKey.NotificationMentionBody),
+            MailImages.Mention,
             messages);
 
     public static EmailMessage DirectMessage(
@@ -39,7 +41,9 @@ public static class ActivityEmail
             publicUrl,
             deliveryId,
             messages.Get(MessageKey.NotificationDirectMessageSubject),
+            messages.Get(MessageKey.NotificationDirectMessagePushTitle),
             messages.Get(MessageKey.NotificationDirectMessageBody),
+            MailImages.DirectMessage,
             messages);
 
     private static EmailMessage Build(
@@ -48,32 +52,29 @@ public static class ActivityEmail
         string publicUrl,
         Guid deliveryId,
         string subject,
+        string heading,
         string body,
+        InlineImage sticker,
         Messages messages)
     {
         var url = $"{publicUrl.TrimEnd('/')}/";
-        var safeUrl = WebUtility.HtmlEncode(url);
-        var safeBody = WebUtility.HtmlEncode(body);
-        var text = string.Join("\n", body, "", url);
-        var html = $$"""
-            <!doctype html>
-            <html lang="{{messages.Language}}"><body style="margin:0;background:#171717;color:#f5f5f5;font-family:system-ui,-apple-system,Segoe UI,sans-serif">
-              <div style="max-width:560px;margin:0 auto;padding:40px 24px">
-                <p style="margin:0 0 24px;color:#d6a554;font-weight:700">Stellarr</p>
-                <p style="margin:0 0 28px;color:#d4d4d4;line-height:1.6">{{safeBody}}</p>
-                <p style="margin:0"><a href="{{safeUrl}}" style="display:inline-block;padding:12px 18px;background:#d6a554;color:#17130d;text-decoration:none;font-weight:700;border-radius:4px">{{messages.Get(MessageKey.NotificationOpenButton)}}</a></p>
-              </div>
-            </body></html>
-            """;
+        var footer = messages.Get(MessageKey.NotificationEmailFooter);
+        var text = string.Join("\n", body, "", url, "", "-- ", footer);
 
-        return new EmailMessage(
-            from,
-            to,
-            subject,
-            html,
-            text,
-            // Stable for the row, so a second attempt is the same message to
-            // the provider even though SMTP itself promises no exactly-once.
-            $"activity-notification/{deliveryId:N}");
+        return new MailLayout(messages.Language)
+            .Preheader(body)
+            .Illustration(sticker)
+            .Heading(heading)
+            .Paragraph(body)
+            .Button(url, messages.Get(MessageKey.NotificationOpenButton))
+            .Footer(footer)
+            .ToMessage(
+                from,
+                to,
+                subject,
+                text,
+                // Stable for the row, so a second attempt is the same message to
+                // the provider even though SMTP itself promises no exactly-once.
+                $"activity-notification/{deliveryId:N}");
     }
 }
