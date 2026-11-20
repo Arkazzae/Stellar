@@ -54,12 +54,9 @@
               <svg class="mascot" viewBox="0 0 64 64" role="img" aria-label="The Stellarr astronaut, happy"><rect x="2" y="19" width="5" height="18" rx="2.5" fill="#6f65d1"/><rect x="57" y="19" width="5" height="18" rx="2.5" fill="#6f65d1"/><path d="M44 10L48.5 3.5" fill="none" stroke="#f3f4f6" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"/><circle cx="49.5" cy="3.6" r="2.6" fill="#6f65d1"/><path fill="#f3f4f6" d="M26 8H38C53 8 58 13 58 28C58 43 53 48 38 48H33C31.4 48 29.9 48.5 28.6 49.4L18.64 56.27C17.46 57.08 16.5 56.58 16.5 55.15V49.6C16.5 47.8 15.5 46.8 13.71 45.95C8.11 43.28 6 37.75 6 28C6 13 11 8 26 8Z"/><path fill="#09090b" d="M25 15H39A12 12 0 0 1 51 27V28A12 12 0 0 1 39 40H25A12 12 0 0 1 13 28V27A12 12 0 0 1 25 15Z"/><path d="M18.5 22C19.8 19.6 22.2 18.4 25 18.3" fill="none" stroke="#f3f4f6" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/><path d="M20.5 27C20.5 22.6 28.5 22.6 28.5 27" fill="none" stroke="#f3f4f6" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/><path d="M35.5 27C35.5 22.6 43.5 22.6 43.5 27" fill="none" stroke="#f3f4f6" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/><path d="M27.5 32C29 36 35 36 36.5 32" fill="none" stroke="#6f65d1" stroke-width="2.8" stroke-linecap="round" stroke-linejoin="round"/></svg>
               <h2 class="t-title">Start your server</h2>
             </div>
-            <p class="t-body foot-intro">You need Docker with the Compose plugin. These commands download two files and start the container.</p>
+            <p class="t-body foot-intro">You need Docker with the Compose plugin. This command checks the machine, writes the files and starts the container.</p>
             <div class="cmd">
-              <code><span>$ </span>mkdir stellarr && cd stellarr</code>
-              <code><span>$ </span>curl -fsSLO https://raw.githubusercontent.com/Arkazzae/Stellarr/main/docker-compose.yml</code>
-              <code><span>$ </span>curl -fsSL https://raw.githubusercontent.com/Arkazzae/Stellarr/main/.env.example -o .env</code>
-              <code><span>$ </span>docker compose up -d</code>
+              <code><span>$ </span>curl -fsSL https://stellarr.online/install.sh | bash</code>
               <button class="cmd-copy" type="button" aria-label="Copy the commands"><svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M8.5 5.75C8.75 3.5 10.1 2.5 13 2.5H17C20.3 2.5 21.5 3.7 21.5 7V11C21.5 14.1 20.4 15.3 18.25 15.5"/><path d="M7 8.5L11 8.5C14.15 8.5 15.5 9.85 15.5 13L15.5 17C15.5 20.15 14.15 21.5 11 21.5L7 21.5C3.85 21.5 2.5 20.15 2.5 17L2.5 13C2.5 9.85 3.85 8.5 7 8.5Z"/></svg></button>
             </div>
             <div class="next">
@@ -68,7 +65,7 @@
                   <p><b>Open <code>https://localhost:8443</code></b><span>Accept the warning about the container's self-signed certificate.</span></p>
                 </li>
                 <li>
-                  <p><b>Create the owner account</b><span>Enter the code from <code>docker compose logs stellarr | grep "Setup code"</code>. Cockpit, the operator panel, is at <code>/cockpit</code>.</span></p>
+                  <p><b>Create the owner account</b><span>Enter the setup code the installer prints. Cockpit, the operator panel, is at <code>/cockpit</code>.</span></p>
                 </li>
                 <li>
                   <p><b>Invite friends over the internet</b><span>Set <code>PUBLIC_IP</code> and <code>STELLARR_DOMAIN</code> in <code>.env</code>, forward these ports and add a trusted HTTPS certificate.</span></p>
