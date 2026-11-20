@@ -140,26 +140,17 @@ public static partial class CockpitEndpoints
     }
 
     /// <summary>Stages a line of the audit log; the caller saves it with the change it records.</summary>
-    internal static async Task StageAuditAsync(
+    /// <remarks>
+    /// Operator panel actions land in the instance server's log as plain
+    /// sentences: they are the operator's, in the operator's language.
+    /// </remarks>
+    internal static Task StageAuditAsync(
         AppDbContext db,
         Guid serverId,
         Guid actorId,
         string action,
-        CancellationToken cancellationToken)
-    {
-        var actor = await db.Users.AsNoTracking()
-            .Where(x => x.Id == actorId)
-            .Select(x => x.DisplayName)
-            .SingleAsync(cancellationToken);
-        db.ServerAuditEntries.Add(new ServerAuditEntry
-        {
-            Id = Guid.NewGuid(),
-            ServerId = serverId,
-            ActorId = actorId,
-            Summary = $"{actor} {action}",
-            CreatedAt = DateTime.UtcNow,
-        });
-    }
+        CancellationToken cancellationToken) =>
+        ServerAudit.StageAsync(db, serverId, actorId, new AuditEvent("operator", action), cancellationToken);
 }
 
 internal sealed record DesktopClientDescriptor(

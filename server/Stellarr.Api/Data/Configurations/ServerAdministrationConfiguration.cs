@@ -43,6 +43,10 @@ internal sealed class ServerAuditEntryConfiguration : IEntityTypeConfiguration<S
         entity.HasKey(x => x.Id);
         entity.HasIndex(x => new { x.ServerId, x.CreatedAt });
         entity.Property(x => x.Summary).HasMaxLength(500);
+        entity.Property(x => x.Action).HasMaxLength(64);
+        entity.Property(x => x.TargetType).HasMaxLength(32);
+        entity.Property(x => x.TargetName).HasMaxLength(200);
+        entity.Property(x => x.ChangesJson).HasMaxLength(8000);
         entity.HasOne<StellarrServer>().WithMany().HasForeignKey(x => x.ServerId)
             .OnDelete(DeleteBehavior.Cascade);
         entity.HasOne(x => x.Actor).WithMany().HasForeignKey(x => x.ActorId)
