@@ -13,6 +13,7 @@ import { resetStubs, setStubs, stubs } from "@/test/hookStubs";
 import { message } from "@/test/messages";
 import { renderLog } from "@/test/renderLog";
 import { fakeUi, fakeVoice } from "@/test/roomFakes";
+import { fakeTranscriptLayout } from "@/test/transcriptLayout";
 
 import { ChatProvider } from "./ChatProvider";
 
@@ -120,6 +121,8 @@ beforeEach(() => {
 /** The server's rail beside the room, under one chat, as the shell lays them out. */
 async function mountServerView() {
   h.chat.listMessages.mockResolvedValue(page([message("m1", 1), message("m2", 2)]));
+  // Measured, so the transcript keeps its place at the end as in a browser.
+  fakeTranscriptLayout();
   const log = renderLog();
   const view = render(
     <Profiler id="server-view" onRender={log.commit}>

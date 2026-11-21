@@ -217,6 +217,11 @@ export function useTranscriptScroll({ rows, tail, followOwnSend, covered = false
       state.pinned ||
       distanceFromEnd(scroller.scrollTop, scroller.scrollHeight, scroller.clientHeight) <=
         AT_BOTTOM_PX;
+    // Asked after every commit that changed the rows and on every resize. The
+    // same answer is not set again: right after a render React cannot tell it
+    // is the same, and renders the transcript once more, in a commit of its
+    // own, only to find nothing changed.
+    if (bottom === state.atBottom) return;
     state.atBottom = bottom;
     setAtBottom(bottom);
   }, []);
