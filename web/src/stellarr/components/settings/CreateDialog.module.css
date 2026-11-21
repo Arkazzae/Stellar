@@ -1,0 +1,96 @@
+/*
+ * The small create dialogs on the question card's surface: the card's padding
+ * holds the header, the body and the answers, the header keeps its cross in
+ * the card's corner, and the answers are the card's filled buttons at equal
+ * widths. The rest of `.am-card` (the scrim, the phone sheet) is shared with
+ * the other short dialogs in `settings.css`.
+ */
+.card {
+  padding: 24px;
+}
+
+.card :global(.am-head) {
+  padding: 0 40px 0 0;
+}
+
+.card :global(.am-head .dlg-x) {
+  top: -6px;
+  right: -8px;
+  width: 32px;
+  height: 32px;
+}
+
+.card :global(.ch-body) {
+  padding: 0;
+  margin-top: 16px;
+}
+
+.card :global(.ch-notes) {
+  padding: 0;
+  margin-top: 14px;
+}
+
+.card :global(.ch-foot) {
+  display: flex;
+  gap: 10px;
+  margin-top: 24px;
+  padding: 0;
+  --ui-button-radius: 8px;
+  --ui-button-secondary-bg: color-mix(in oklab, var(--text) 8%, transparent);
+  --ui-button-secondary-border: transparent;
+  --ui-button-secondary-text: var(--text);
+  --ui-button-secondary-hover-bg: color-mix(in oklab, var(--text) 13%, transparent);
+  --ui-button-secondary-hover-border: transparent;
+  --ui-button-font-weight: 550;
+  --ui-button-font-size: var(--text-14);
+  --ui-button-padding-x: 16px;
+  --ui-button-gap: 7px;
+}
+
+.card :global(.ch-foot) > button {
+  flex: 1 1 0;
+  min-width: 0;
+  height: 40px;
+}
+
+.card :global(.ch-foot) > button:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+
+/* A deed that cannot be done yet is drawn neutral, as on the question card. */
+.card :global(.ch-foot) > :global(.ui-button)[data-variant="primary"]:disabled {
+  opacity: 1;
+  border-color: transparent;
+  background-color: var(--ui-button-secondary-bg);
+  color: var(--text-faint);
+}
+
+.card :global(.ch-foot .ui-spinner) {
+  width: 14px;
+  height: 14px;
+}
+
+@media (max-width: 767px) {
+  /* The full-screen sheet keeps the card's arrangement with a phone's
+     margins, a cross a finger can hit and finger-tall answers. */
+  .card {
+    padding: 18px 16px max(16px, env(safe-area-inset-bottom));
+  }
+
+  .card :global(.am-head) {
+    padding-right: 44px;
+  }
+
+  .card :global(.am-head .dlg-x) {
+    top: -10px;
+    right: -10px;
+    width: 44px;
+    height: 44px;
+  }
+
+  .card :global(.ch-foot) > button {
+    height: auto;
+    min-height: 44px;
+  }
+}

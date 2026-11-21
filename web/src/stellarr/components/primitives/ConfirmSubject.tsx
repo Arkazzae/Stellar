@@ -1,10 +1,12 @@
 import type { ReactNode } from "react";
 
 import { Icon, type IconName } from "@stellarr/icons";
+import { cx } from "@stellarr/ui";
 import { RoleMark } from "@/components/settings/server/panes/RoleMark";
 import { ServerMark } from "@/components/settings/server/panes/ServerMark";
 
 import { Avatar } from "./Avatar";
+import styles from "./ConfirmDialog.module.css";
 
 type ChannelKind = "text" | "voice";
 
@@ -44,9 +46,9 @@ export type ConfirmSubject =
 
 function Row({ lead, name, children }: { lead?: ReactNode; name: string; children?: ReactNode }) {
   return (
-    <div className="cf-subject">
-      {lead === undefined ? null : <span className="cf-subject-lead">{lead}</span>}
-      <span className="cf-subject-txt">
+    <div className={styles.subject}>
+      {lead === undefined ? null : <span className={styles.lead}>{lead}</span>}
+      <span className={styles.text}>
         <b>{name}</b>
         {children}
       </span>
@@ -55,12 +57,12 @@ function Row({ lead, name, children }: { lead?: ReactNode; name: string; childre
 }
 
 function Detail({ text }: { text: string | undefined }) {
-  return text === undefined || text === "" ? null : <span className="cf-subject-detail">{text}</span>;
+  return text === undefined || text === "" ? null : <span className={styles.detail}>{text}</span>;
 }
 
 function Tile({ children }: { children: ReactNode }) {
   return (
-    <span className="cf-subject-tile" aria-hidden="true">
+    <span className={styles.tile} aria-hidden="true">
       {children}
     </span>
   );
@@ -105,21 +107,21 @@ export function ConfirmSubjectRow({ subject }: { subject: ConfirmSubject }) {
           }
           name={subject.authorName}
         >
-          <span className="cf-subject-quote">{subject.text}</span>
+          <span className={styles.quote}>{subject.text}</span>
         </Row>
       );
     case "section":
       // No leading slot: a section is a caption in the rail, not a picture.
       return (
-        <div className="cf-subject cf-subject-section">
-          <span className="cf-subject-txt">
+        <div className={cx(styles.subject, styles.section)}>
+          <span className={styles.text}>
             <span className="group-caption">{subject.name}</span>
             {subject.channels.length === 0 ? (
               <Detail text={subject.emptyDetail} />
             ) : (
               subject.channels.map((channel) => (
-                <span className="cf-subject-channel" key={channel.id}>
-                  <span className="cf-subject-glyph" aria-hidden="true">
+                <span className={styles.channel} key={channel.id}>
+                  <span className={styles.glyph} aria-hidden="true">
                     {channelGlyph(channel.channelKind)}
                   </span>
                   {channel.name}

@@ -26,21 +26,7 @@ type SubjectOf<K extends ConfirmSubject["kind"]> = Extract<ConfirmSubject, { kin
 
 /* ------------------------------------------------------------- subjects -- */
 
-/** Someone, by their face, their name and their handle when it is known. */
-export function personSubject(person: {
-  id: string;
-  displayName: string;
-  avatarUrl?: string;
-  username?: string;
-}): SubjectOf<"person"> {
-  return {
-    kind: "person",
-    id: person.id,
-    name: person.displayName,
-    ...(person.avatarUrl === undefined ? {} : { avatarUrl: person.avatarUrl }),
-    ...(person.username === undefined || person.username === "" ? {} : { handle: person.username }),
-  };
-}
+export { personSubject } from "./personSubject";
 
 /** A channel, with what it is and where it sits: "Text channel in Information". */
 export function channelSubject(
