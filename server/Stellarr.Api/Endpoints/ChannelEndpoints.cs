@@ -18,9 +18,6 @@ public static class ChannelEndpoints
     private const int MaxHideAfterInactivityHours = 365 * 24;
     private const int MaxUserLimit = 99;
 
-    private static readonly string[] AudioProfiles =
-        ["economy", "balanced", "clarity", "premium", "studio"];
-
     public static IEndpointRouteBuilder MapChannelEndpoints(this IEndpointRouteBuilder endpoints)
     {
         var channels = endpoints.MapGroup("/api/admin/channels")
@@ -145,26 +142,24 @@ public static class ChannelEndpoints
         }
 
         var textOnly = request.Topic is not null || request.SlowModeSeconds is not null;
-        var voiceOnly = request.AudioProfile is not null || request.UserLimit is not null;
+        var voiceOnly = request.UserLimit is not null;
         if (channel.Kind == ChannelKind.Text ? voiceOnly : textOnly)
         {
             return Invalid("channel", messages.Get(MessageKey.ChannelSettingWrongKind));
         }
 
         var before = (channel.Name, channel.Topic, channel.SlowModeSeconds, channel.HideAfterInactivityHours,
-            channel.AudioProfile, channel.UserLimit);
+            channel.UserLimit);
         channel.Name = name ?? channel.Name;
         channel.Topic = request.Topic?.Trim() ?? channel.Topic;
         channel.SlowModeSeconds = request.SlowModeSeconds ?? channel.SlowModeSeconds;
         channel.HideAfterInactivityHours = request.HideAfterInactivityHours ?? channel.HideAfterInactivityHours;
-        channel.AudioProfile = request.AudioProfile ?? channel.AudioProfile;
         channel.UserLimit = request.UserLimit ?? channel.UserLimit;
         var changes = ServerAudit.Only(
             ServerAudit.Changed("name", before.Name, channel.Name),
             ServerAudit.Changed("topic", before.Topic ?? "", channel.Topic ?? ""),
             ServerAudit.Changed("slowMode", Number(before.SlowModeSeconds), Number(channel.SlowModeSeconds)),
             ServerAudit.Changed("hideAfter", Number(before.HideAfterInactivityHours), Number(channel.HideAfterInactivityHours)),
-            ServerAudit.Changed("audioProfile", before.AudioProfile, channel.AudioProfile),
             ServerAudit.Changed("userLimit", Number(before.UserLimit), Number(channel.UserLimit)));
         if (changes.Count > 0)
         {
@@ -327,8 +322,7 @@ public static class ChannelEndpoints
         request.Topic?.Trim().Length is null or <= MaxTopicLength &&
         request.SlowModeSeconds is null or >= 0 and <= MaxSlowModeSeconds &&
         request.HideAfterInactivityHours is null or >= 0 and <= MaxHideAfterInactivityHours &&
-        request.UserLimit is null or >= 0 and <= MaxUserLimit &&
-        (request.AudioProfile is null || AudioProfiles.Contains(request.AudioProfile, StringComparer.Ordinal));
+        request.UserLimit is null or >= 0 and <= MaxUserLimit;
 
     private static IResult Invalid(string field, string message) =>
         Results.ValidationProblem(new Dictionary<string, string[]> { [field] = [message] });

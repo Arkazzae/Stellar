@@ -21,18 +21,15 @@ public sealed class ChannelSettingsFlowTests : IClassFixture<StellarrWebApplicat
 
         var forbidden = await moderator.PatchAsJsonAsync(
             $"/api/admin/channels/{VoiceChannelId}",
-            new { audioProfile = "studio" });
+            new { userLimit = 10 });
         Assert.Equal(HttpStatusCode.Forbidden, forbidden.StatusCode);
 
         var updated = await owner.PatchAsJsonAsync(
             $"/api/admin/channels/{VoiceChannelId}",
-            new { audioProfile = "studio", userLimit = 10 });
+            new { userLimit = 10 });
         Assert.Equal(HttpStatusCode.OK, updated.StatusCode);
         using (var payload = JsonDocument.Parse(await updated.Content.ReadAsStringAsync()))
         {
-            Assert.Equal(
-                "studio",
-                payload.RootElement.GetProperty("audioProfile").GetString());
             Assert.Equal(10, payload.RootElement.GetProperty("userLimit").GetInt32());
             Assert.False(payload.RootElement.TryGetProperty("screenShareQuality", out _));
         }
@@ -42,7 +39,6 @@ public sealed class ChannelSettingsFlowTests : IClassFixture<StellarrWebApplicat
         var channel = bootstrap.RootElement.GetProperty("channels")
             .EnumerateArray()
             .Single(x => x.GetProperty("id").GetString() == VoiceChannelId);
-        Assert.Equal("studio", channel.GetProperty("audioProfile").GetString());
         Assert.Equal(10, channel.GetProperty("userLimit").GetInt32());
         Assert.False(channel.TryGetProperty("screenShareQuality", out _));
     }
