@@ -13,6 +13,7 @@
 /* A head across the top, then the field beside the actions, all inside the
    one box. The padding is the bottom row's; the head reaches the edges. */
 .box {
+  container: code-box / inline-size;
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto auto auto;
   grid-template-areas:
@@ -71,6 +72,14 @@
   border: 1px solid var(--line);
   border-radius: 4px;
   background: var(--surface-raised);
+}
+
+/* A narrow box, such as a thread's beside the room, keeps the picker and the
+   way out and lets the hint go. */
+@container code-box (max-width: 540px) {
+  .keys {
+    display: none;
+  }
 }
 
 .counter {
