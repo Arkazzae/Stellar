@@ -48,22 +48,8 @@ internal static class ConfigCommands
         string key,
         CancellationToken cancellationToken)
     {
-        await using var database = await runtime.OpenDatabaseAsync(mutation: false, cancellationToken);
-        var state = await LoadAsync(runtime, database.Context, cancellationToken);
-        if (SettingsCatalog.FindWritable(key) is { } writable)
-        {
-            var value = writable.ReadConfigured(state.Settings, state.Server, state.Secrets);
-            var effective = writable.ReadEffective(state.Settings, state.Server, state.Secrets);
-            var source = SourceOf(writable, state.Persisted, state.Settings, runtime.Configuration);
-            var item = Describe(
-                writable.Key, value, effective, source,
-                editable: true, restartRequired: false, null, null);
-            return new CliResult(
-                "config.get",
-                item,
-                [$"{writable.Key} = {SettingsCatalog.Display(value)}  [{source}; editable{Suffix(value, effective)}]"]);
-        }
-
+        // A startup setting comes from the environment alone, so it reads the
+        // same before the owner account exists, or without a database at all.
         if (SettingsCatalog.FindStartup(key) is { } startup)
         {
             var value = startup.Read(new StartupContext(runtime.Configuration, runtime.Environment));
@@ -78,6 +64,22 @@ internal static class ConfigCommands
                     $"{startup.Key} = {SettingsCatalog.Display(value.Value)}  [{value.Source}; read-only, restart required]",
                     startup.Guidance,
                 ]);
+        }
+
+        await using var database = await runtime.OpenDatabaseAsync(mutation: false, cancellationToken);
+        var state = await LoadAsync(runtime, database.Context, cancellationToken);
+        if (SettingsCatalog.FindWritable(key) is { } writable)
+        {
+            var value = writable.ReadConfigured(state.Settings, state.Server, state.Secrets);
+            var effective = writable.ReadEffective(state.Settings, state.Server, state.Secrets);
+            var source = SourceOf(writable, state.Persisted, state.Settings, runtime.Configuration);
+            var item = Describe(
+                writable.Key, value, effective, source,
+                editable: true, restartRequired: false, null, null);
+            return new CliResult(
+                "config.get",
+                item,
+                [$"{writable.Key} = {SettingsCatalog.Display(value)}  [{source}; editable{Suffix(value, effective)}]"]);
         }
 
         throw UnknownSetting(key);

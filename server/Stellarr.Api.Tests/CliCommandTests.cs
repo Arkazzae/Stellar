@@ -327,6 +327,32 @@ public sealed class CliCommandTests
     }
 
     [Fact]
+    public async Task AStartupSettingReadsTheSameWithoutADatabase()
+    {
+        // As in a container whose owner account does not exist yet.
+        using var fixture = CliFixture.CreateUnstarted();
+        var environment = new Dictionary<string, string?> { ["Operations__PublicUrl"] = "https://chat.example.com" };
+
+        var publicUrl = await fixture.RunWithEnvironmentAsync(environment, "--json", "config", "get", "public-url");
+
+        Assert.Equal(0, publicUrl.ExitCode);
+        using (var json = JsonDocument.Parse(publicUrl.Output))
+        {
+            var item = json.RootElement.GetProperty("data");
+            Assert.Equal("https://chat.example.com", item.GetProperty("value").GetString());
+            Assert.Equal("environment", item.GetProperty("source").GetString());
+        }
+
+        Assert.False(Directory.Exists(Path.Combine(fixture.Root, "db")));
+        var timeZone = await fixture.RunWithEnvironmentAsync(environment, "--json", "config", "get", "time-zone");
+        Assert.Equal(3, timeZone.ExitCode);
+        using (var json = JsonDocument.Parse(timeZone.Output))
+        {
+            Assert.Equal("database_not_found", json.RootElement.GetProperty("error").GetProperty("code").GetString());
+        }
+    }
+
+    [Fact]
     public async Task StartupSettingsReadTheImageDefaultsAndTheOperatorsVariables()
     {
         using var fixture = await CliFixture.StartAsync();
