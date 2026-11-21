@@ -301,6 +301,10 @@
     width:256px;transform:translateX(-50%);
   }
   .vc-ctl > .dock-pop.board{width:288px}
+  .vc-ctl > .dock-pop.mic-menu{width:300px}
+  /* Two groups and their hints: on a short window, or with finger-sized rows,
+     the menu scrolls inside itself rather than past the top. */
+  .dock-pop.mic-menu{max-height:calc(100dvh - 200px);overflow-y:auto;overscroll-behavior:contain;scrollbar-width:thin}
 
   /* ---------- Quality menus: the account panel's rows ---------- */
   .qm-head{display:flex;flex-direction:column;gap:1px;padding:8px 8px 4px}
@@ -332,6 +336,9 @@
     color:var(--accent-text);
   }
   .qm-note{margin:0 8px 4px;font-size:var(--text-12);line-height:1.4;color:var(--text-faint)}
+  .qm-hint{margin:4px 8px 6px}
+  /* Eleven choices in one menu: rows of 34px, or the finger-sized minimum. */
+  .mic-menu .qm-option{padding-block:0}
   /* The way out to the settings: an ordinary row. */
   .qm-more{
     width:100%;min-height:34px;display:flex;align-items:center;gap:9px;
@@ -360,7 +367,13 @@
   .vc-caret:hover{background:var(--surface-overlay);color:var(--text)}
   .vc-caret[aria-expanded="true"]{background:var(--surface-overlay);color:var(--accent-text)}
   .vc-caret svg{transition:transform var(--dur-base) var(--ease-standard)}
-  .vc-caret[aria-expanded="true"] svg{transform:rotate(180deg)}
+  .vc-caret[aria-expanded="true"] svg:not(.caret-ring){transform:rotate(180deg)}
+  /* The microphone's arrow, in the bar and in the dock, while the chosen
+     suppressor downloads: the ring round its edge, the arrow stepped back
+     inside it. */
+  .mic-caret{position:relative}
+  .mic-caret .caret-ring{position:absolute;inset:0;margin:auto}
+  .mic-caret[aria-busy="true"] .caret-icon{scale:.6}
   .vc-hang{
     height:48px;padding:0 26px;border-radius:16px;flex:none;
     background:var(--hang);color:var(--on-hang);

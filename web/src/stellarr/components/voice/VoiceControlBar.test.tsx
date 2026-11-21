@@ -97,12 +97,11 @@ describe("VoiceControlBar quality drawers", () => {
     await user.click(
       screen.getByRole("button", { name: "Jakość i ustawienia mikrofonu" }),
     );
-    expect(screen.getByText("Premium · 128 kb/s")).toBeVisible();
-    expect(
-      screen.getByRole("radiogroup", { name: "Jakość dźwięku" }),
-    ).toBeVisible();
+    expect(screen.getByText("Premium, redukcja przeglądarki")).toBeVisible();
     await user.click(screen.getByRole("radio", { name: /Wyrazisty/ }));
     expect(onChangeSettings).toHaveBeenCalledWith({ opusProfile: "clarity" });
+    await user.click(screen.getByRole("radio", { name: "RNNoise" }));
+    expect(onChangeSettings).toHaveBeenCalledWith({ noiseSuppression: "rnnoise" });
 
     await user.click(
       screen.getByRole("button", { name: "Jakość i ustawienia kamery" }),

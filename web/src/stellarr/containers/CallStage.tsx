@@ -76,6 +76,7 @@ export function CallStage({ fullscreenTarget }: CallStageProps) {
         onManageSounds={voice.soundboard.canManage ? () => ui.openModal("soundboard") : undefined}
         settings={settings}
         onChangeSettings={(patch) => ports.voiceSettings.update(patch)}
+        suppressorDownload={voice.suppressorDownload}
         cameraSupported={voice.cameraSupported}
         fullscreenTarget={fullscreenTarget}
         onToggleMute={voice.toggleMute}

@@ -110,6 +110,7 @@ export function DmCallContainer({ fullscreenTarget }: DmCallContainerProps) {
           cinema={ui.cinema}
           settings={settings}
           onChangeSettings={(patch) => ports.voiceSettings.update(patch)}
+          suppressorDownload={voice.suppressorDownload}
           cameraSupported={voice.cameraSupported}
           fullscreenTarget={fullscreenTarget}
           onToggleMute={voice.toggleMute}

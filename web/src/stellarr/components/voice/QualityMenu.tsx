@@ -2,6 +2,7 @@ import { Fragment, useId, type ReactNode } from "react";
 
 import { Icon } from "@stellarr/icons";
 import { Popover, type PopoverTriggerProps } from "@/components/primitives/Popover";
+import { ProgressRing } from "@/components/primitives/ProgressRing";
 
 /**
  * One choice. It carries its own handler instead of a value handed back to the
@@ -14,6 +15,11 @@ export interface QualityOption {
   detail?: string;
   selected: boolean;
   disabled?: boolean;
+  /**
+   * Its files on their way, as whole percent or null while the total is
+   * unknown: the row ends in a ring in place of the tick.
+   */
+  download?: { percent: number | null };
   onSelect: () => void;
 }
 
@@ -21,6 +27,8 @@ export interface QualityOption {
 export interface QualityGroup {
   caption: string;
   options: readonly QualityOption[];
+  /** One faint line under the choices, about the one that is chosen. */
+  hint?: string;
 }
 
 export interface QualityMenuProps {
@@ -35,6 +43,13 @@ export interface QualityMenuProps {
   note?: string;
   /** The way out to the full settings dialog. */
   footer?: { label: string; onSelect: () => void };
+  /** Extra class on the panel, such as `mic-menu`. */
+  className?: string;
+}
+
+function optionDetail(option: QualityOption): string | undefined {
+  const percent = option.download?.percent;
+  return percent === undefined || percent === null ? option.detail : `${percent}%`;
 }
 
 /**
@@ -53,11 +68,17 @@ export function QualityMenu({
   groups = [],
   note,
   footer,
+  className,
 }: QualityMenuProps) {
   const radioName = useId();
 
   return (
-    <Popover open={open} onOpenChange={onOpenChange} className="vc-menu" renderTrigger={renderTrigger}>
+    <Popover
+      open={open}
+      onOpenChange={onOpenChange}
+      className={className ? `vc-menu ${className}` : "vc-menu"}
+      renderTrigger={renderTrigger}
+    >
       <div className="qm-head">
         <b>{title}</b>
         <span>{summary}</span>
@@ -68,32 +89,39 @@ export function QualityMenu({
           {index === 0 ? null : <hr className="qm-sep" />}
           <div className="qm-group" role="radiogroup" aria-label={group.caption}>
             <div className="qm-caption">{group.caption}</div>
-            {group.options.map((option) => (
-              <label
-                key={option.id}
-                className={["qm-option", option.selected && "on", option.disabled && "disabled"]
-                  .filter(Boolean)
-                  .join(" ")}
-              >
-                <input
-                  className="qm-radio"
-                  type="radio"
-                  name={`${radioName}-${index}`}
-                  checked={option.selected}
-                  disabled={option.disabled}
-                  onChange={option.onSelect}
-                />
-                <span className="qm-label">{option.label}</span>
-                {option.detail === undefined ? null : (
-                  <span className="qm-detail">{option.detail}</span>
-                )}
-                {/* Every row keeps the slot, so the details line up. */}
-                <span className="qm-marker" aria-hidden="true">
-                  {option.selected ? <Icon name="tick" size={14} /> : null}
-                </span>
-              </label>
-            ))}
+            {group.options.map((option) => {
+              const detail = optionDetail(option);
+              return (
+                <label
+                  key={option.id}
+                  className={["qm-option", option.selected && "on", option.disabled && "disabled"]
+                    .filter(Boolean)
+                    .join(" ")}
+                >
+                  <input
+                    className="qm-radio"
+                    type="radio"
+                    name={`${radioName}-${index}`}
+                    checked={option.selected}
+                    disabled={option.disabled}
+                    aria-busy={option.download ? true : undefined}
+                    onChange={option.onSelect}
+                  />
+                  <span className="qm-label">{option.label}</span>
+                  {detail === undefined ? null : <span className="qm-detail">{detail}</span>}
+                  {/* Every row keeps the slot, so the details line up. */}
+                  <span className="qm-marker" aria-hidden="true">
+                    {option.download ? (
+                      <ProgressRing percent={option.download.percent} size={14} />
+                    ) : option.selected ? (
+                      <Icon name="check" size={14} />
+                    ) : null}
+                  </span>
+                </label>
+              );
+            })}
           </div>
+          {group.hint === undefined ? null : <p className="qm-note qm-hint">{group.hint}</p>}
         </Fragment>
       ))}
       {footer === undefined ? null : (
