@@ -13,6 +13,5 @@ internal sealed class ChannelConfiguration : IEntityTypeConfiguration<Channel>
         entity.HasIndex(x => x.SectionId);
         entity.Property(x => x.Name).HasMaxLength(80);
         entity.Property(x => x.Topic).HasMaxLength(1024).HasDefaultValue("");
-        entity.Property(x => x.AudioProfile).HasMaxLength(16).HasDefaultValue("premium");
     }
 }

@@ -190,10 +190,8 @@ public sealed class ChannelAdministrationTests : IClassFixture<StellarrWebApplic
     [InlineData("text", "slowModeSeconds", 21601)]
     [InlineData("text", "slowModeSeconds", -1)]
     [InlineData("text", "hideAfterInactivityHours", 8761)]
-    [InlineData("text", "audioProfile", "studio")]
     [InlineData("text", "userLimit", 5)]
     [InlineData("voice", "userLimit", 100)]
-    [InlineData("voice", "audioProfile", "ultra")]
     [InlineData("voice", "topic", "a topic")]
     [InlineData("voice", "slowModeSeconds", 10)]
     public async Task ASettingOutOfRangeOrForTheOtherKindOfChannelIsRefused(string kind, string setting, object value)

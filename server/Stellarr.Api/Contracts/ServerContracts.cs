@@ -37,7 +37,6 @@ public sealed record ChannelDto(
     string Topic,
     int SlowModeSeconds,
     int HideAfterInactivityHours,
-    string AudioProfile,
     int UserLimit,
     string? SectionId);
 
@@ -161,7 +160,6 @@ public static class ServerContractMappings
         channel.Topic,
         channel.SlowModeSeconds,
         channel.HideAfterInactivityHours,
-        channel.AudioProfile,
         channel.UserLimit,
         channel.SectionId?.ToString());
 
