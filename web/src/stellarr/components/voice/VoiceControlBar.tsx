@@ -2,15 +2,12 @@ import { useState, useSyncExternalStore } from "react";
 
 import { Icon } from "@stellarr/icons";
 import type { PopoverTriggerProps } from "@/components/primitives/Popover";
-import type { Sound, SoundboardLive, VoiceSettings } from "@/ports";
+import type { Sound, SoundboardLive, SuppressorDownload, VoiceSettings } from "@/ports";
 import { useLanguage } from "@/state/LanguageProvider";
 
+import { MicMenu } from "./MicMenu";
 import { QualityMenu } from "./QualityMenu";
-import {
-  cameraQualityMenu,
-  micQualityMenu,
-  screenQualityMenu,
-} from "./qualityMenus";
+import { cameraQualityMenu, screenQualityMenu } from "./qualityMenus";
 import { SoundboardPopover } from "./SoundboardPopover";
 import { IDLE_SOUNDBOARD } from "./soundboardLive";
 import { VoiceMobileMenu } from "./VoiceMobileMenu";
@@ -57,6 +54,8 @@ export interface VoiceControlBarProps {
   /** Device settings, applied to the call already in progress. */
   settings: VoiceSettings;
   onChangeSettings: (patch: Partial<VoiceSettings>) => void;
+  /** The chosen suppressor's files on their way: a ring on the microphone's arrow and in its menu. */
+  suppressorDownload?: SuppressorDownload | null;
   /** False disables the camera when the browser has no media-device support. */
   cameraSupported?: boolean;
 
@@ -105,6 +104,7 @@ export function VoiceControlBar({
   onManageSounds,
   settings,
   onChangeSettings,
+  suppressorDownload = null,
   cameraSupported = false,
   fullscreenTarget,
   onToggleMute,
@@ -152,7 +152,6 @@ export function VoiceControlBar({
   const changeSoundboardVolume = (soundboardVolume: number) =>
     onChangeSettings({ soundboardVolume });
 
-  const mic = micQualityMenu(settings, t, onChangeSettings);
   const camera = cameraQualityMenu(settings, cameraSupported, t, onChangeSettings);
   const screen = screenQualityMenu(settings, t, onChangeSettings);
 
@@ -181,15 +180,13 @@ export function VoiceControlBar({
             >
               <Icon name={muted ? "micSlash" : "mic"} size={19} />
             </button>
-            <QualityMenu
+            <MicMenu
               {...drawerState("mic")}
-              title={t("voiceBar.micDrawerTitle")}
-              summary={mic.summary}
-              groups={mic.groups}
-              footer={{ label: t("voiceBar.moreSoundSettings"), onSelect: onSelectMicrophone }}
-              renderTrigger={(trigger) => (
-                <CaretButton label={t("voiceBar.micQualityMenu")} {...trigger} />
-              )}
+              settings={settings}
+              download={suppressorDownload}
+              onChangeSettings={onChangeSettings}
+              onMoreSettings={onSelectMicrophone}
+              caretClassName="vc-caret"
             />
           </div>
           <button

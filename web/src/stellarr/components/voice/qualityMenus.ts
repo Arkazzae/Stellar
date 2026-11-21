@@ -1,21 +1,13 @@
 import type { MessageKey, Translator } from "@/i18n";
-import {
-  CAMERA_PROFILES,
-  OPUS_PROFILE_LABEL,
-  SCREEN_SHARE_PROFILES,
-  opusCeilingKbps,
-} from "@/ports";
-import type {
-  CameraQualityId,
-  OpusProfileId,
-  OpusQualityId,
-  ScreenShareQualityId,
-  VoiceSettings,
-} from "@/ports";
+import { CAMERA_PROFILES, SCREEN_SHARE_PROFILES } from "@/ports";
+import type { CameraQualityId, ScreenShareQualityId, VoiceSettings } from "@/ports";
 
 import type { QualityGroup } from "./QualityMenu";
 
-/** What one of the control bar's arrow drawers shows. */
+/**
+ * What the camera's and the screen's arrow drawers show. The microphone's has
+ * a menu of its own, `MicMenu`, which the dock opens too.
+ */
 interface QualityMenuContent {
   summary: string;
   groups: QualityGroup[];
@@ -23,31 +15,7 @@ interface QualityMenuContent {
 
 type ChangeSettings = (patch: Partial<VoiceSettings>) => void;
 
-// Every list below runs from the lightest profile to the heaviest. The voice
-// puts the automatic choice ahead of them, as the settings do.
-const OPUS_ORDER: readonly OpusQualityId[] = [
-  "auto",
-  "economy",
-  "balanced",
-  "clarity",
-  "premium",
-  "studio",
-];
-const OPUS_BITRATE: Record<OpusProfileId, string> = {
-  economy: "≈32 kb/s",
-  balanced: "≈64 kb/s",
-  clarity: "≈96 kb/s",
-  premium: "128 kb/s",
-  studio: "256 kb/s",
-};
-
-/** A fixed profile's bitrate, or how high the automatic choice may go. */
-function opusDetail(t: Translator, id: OpusQualityId): string {
-  return id === "auto"
-    ? t("voice.profile.autoDetail", { kbps: opusCeilingKbps(id) })
-    : OPUS_BITRATE[id];
-}
-
+// Every list below runs from the lightest profile to the heaviest.
 const CAMERA_ORDER: readonly CameraQualityId[] = ["economy", "balanced", "sharp"];
 const CAMERA_LABEL: Record<CameraQualityId, MessageKey> = {
   economy: "voice.cameraQuality.economy",
@@ -88,29 +56,6 @@ function choiceGroup<Id extends string>(
 
 function videoDetail(t: Translator, height: number, framerate: number): string {
   return t("voiceBar.videoDetail", { resolution: `${height}p`, framerate });
-}
-
-export function micQualityMenu(
-  settings: VoiceSettings,
-  t: Translator,
-  change: ChangeSettings,
-): QualityMenuContent {
-  const active = settings.opusProfile;
-  return {
-    summary: t("voiceBar.micSummary", {
-      quality: t(OPUS_PROFILE_LABEL[active]),
-      bitrate: opusDetail(t, active),
-    }),
-    groups: [
-      choiceGroup(
-        t("voiceBar.audioQuality"),
-        OPUS_ORDER,
-        active,
-        (id) => ({ label: t(OPUS_PROFILE_LABEL[id]), detail: opusDetail(t, id) }),
-        (opusProfile) => change({ opusProfile }),
-      ),
-    ],
-  };
 }
 
 /** Without camera support there is nothing to choose, so the drawer only explains. */
