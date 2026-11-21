@@ -166,10 +166,11 @@ expect_export STELLARR_MEDIA_LOG info
 expect_export ASPNETCORE_URLS http://127.0.0.1:5000
 expect_export ASPNETCORE_ENVIRONMENT Production
 expect_absent STELLARR_MEDIA_ADVERTISE Operations__PublicUrl Desktop__CanonicalOrigin ASPNETCORE_HTTP_PORTS
-# The only raw keys are the two values that have no STELLARR_* name.
-raw=$(grep -oE '^[A-Za-z]+__[A-Za-z_.]+' "$out/env" | sort | tr '\n' ' ')
-[[ $raw == 'ConnectionStrings__Database Rtc__MediaControlUrl ' ]] || fail "raw keys exported: $raw"
-expect_absent PUBLIC_HOST PUBLIC_IP PUBLIC_HTTPS_PORT TURN_SHARED_SECRET DataRoot
+# Besides what the shell itself sets, everything it exports is a STELLARR_* or
+# ASP.NET Core name, or one of the two values that have no STELLARR_* name.
+others=$(sed 's/=.*//' "$out/env" | grep -vxE 'STELLARR_[A-Z0-9_]+|ASPNETCORE_[A-Z_]+|PATH|HOME|PWD|OLDPWD|SHLVL|_' |
+  sort | tr '\n' ' ')
+[[ $others == 'ConnectionStrings__Database Rtc__MediaControlUrl ' ]] || fail "it exports: $others"
 for file in /etc/turnserver.conf /etc/nginx/nginx.conf; do
   ! grep -q '__[A-Z_]*__' "$file" || fail "$file keeps a placeholder: $(grep -o '__[A-Z_]*__' "$file" | head -n 1)"
 done
@@ -280,18 +281,19 @@ expect_export STELLARR_MEDIA_PUBLIC_IP ''
 expect_absent STELLARR_MEDIA_ADVERTISE Operations__PublicUrl
 expect_redirect ''
 
-# The names these settings had before are not read.
-run old-names "${image_env[@]}" PUBLIC_IP=203.0.113.9 PUBLIC_HTTPS_PORT=9443 TURN_SHARED_SECRET=old \
-  PUBLIC_HOST=old.example Rtc__TurnTcpEnabled=true Rtc__MediaPort=49999 Stellarr__Language=pl
+# The entrypoint goes by the STELLARR_* names alone. A raw key for the same
+# setting changes nothing it renders, and the API takes the exported name over
+# that key.
+run raw-keys "${image_env[@]}" Rtc__TurnTcpEnabled=true Rtc__MediaPort=49999 Rtc__PublicHost=raw.example \
+  Stellarr__Language=pl
 expect_started
-expect_export STELLARR_MEDIA_PUBLIC_IP ''
-expect_export STELLARR_TURN_SHARED_SECRET "$(secret_file turn-shared-secret)"
 expect_export STELLARR_MEDIA_PORT 49000
+expect_export STELLARR_MEDIA_PUBLIC_PORT 49000
 expect_export STELLARR_TURN_TCP_ENABLED false
 expect_export STELLARR_LANGUAGE en
 expect_line /etc/turnserver.conf 'realm=localhost'
 expect_line /etc/turnserver.conf 'no-tcp'
-expect_redirect ''
+expect_line /run/stellarr/stellarr-instance.js 'window.stellarrInstanceLanguage="en";'
 
 # The values it refuses, before any service starts.
 run bad-public-ip "${image_env[@]}" STELLARR_PUBLIC_IP=203.0.113.300
