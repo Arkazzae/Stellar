@@ -30,7 +30,7 @@ STELLARR_CLOUDFLARE_R2_SECRET_KEY=YOUR_R2_SECRET_ACCESS_KEY
 STELLARR_CLOUDFLARE_R2_PREFIX=stellarr
 ```
 
-Use your bucket's R2 S3 endpoint (including any jurisdiction hostname), never an `r2.dev` public URL. Direct .NET deployments use the `Cloudflare__R2__*` prefix.
+Use your bucket's R2 S3 endpoint (including any jurisdiction hostname), never an `r2.dev` public URL.
 
 ## Option B: Backup Relay Worker
 

@@ -63,12 +63,12 @@ STELLARR_PUSH_PUBLIC_KEY=YOUR_PUBLIC_KEY
 STELLARR_PUSH_PRIVATE_KEY=YOUR_PRIVATE_KEY
 ```
 
-| Compose `.env` | ASP.NET config | Description |
-| --- | --- | --- |
-| `STELLARR_PUSH_ENABLED` | `Push:Enabled` | Turns Web Push on when valid keys and subject are present. |
-| `STELLARR_PUSH_SUBJECT` | `Push:Subject` | `mailto:` address or `https://` URL identifying the operator. |
-| `STELLARR_PUSH_PUBLIC_KEY` | `Push:PublicKey` | Base64url uncompressed P-256 public key (65 bytes decoded). |
-| `STELLARR_PUSH_PRIVATE_KEY` | `Push:PrivateKey` | Base64url P-256 private key (32 bytes decoded). Keep secret. |
+| Variable | Description |
+| --- | --- |
+| `STELLARR_PUSH_ENABLED` | Turns Web Push on when valid keys and subject are present. |
+| `STELLARR_PUSH_SUBJECT` | `mailto:` address or `https://` URL identifying the operator. |
+| `STELLARR_PUSH_PUBLIC_KEY` | Base64url uncompressed P-256 public key (65 bytes decoded). |
+| `STELLARR_PUSH_PRIVATE_KEY` | Base64url P-256 private key (32 bytes decoded). Keep secret. |
 
 If keys are missing, malformed, or mismatched, the container still boots normally and reports Web Push as unavailable in **Settings → Notifications**.
 

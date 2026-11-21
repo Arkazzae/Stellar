@@ -6,7 +6,7 @@ Stellarr runs as a single Docker container. To test it locally on one machine, f
 
 | Resource | Requirement |
 | --- | --- |
-| Software | Docker Engine with the Compose plugin (`docker compose`) |
+| Software | Docker Engine with the Compose plugin (`docker compose`), 2.24.0 or newer |
 | Architecture | `linux/amd64` or `linux/arm64` |
 | Memory limit | 4 GiB default cap (`STELLARR_CONTAINER_MEMORY_LIMIT`); uses ~120–150 MiB at idle/light load |
 | CPU limit | 4 CPUs default cap (`STELLARR_CONTAINER_CPUS`) |
@@ -35,12 +35,12 @@ Internal services (SQLite, ASP.NET Core, and the media control API) listen only 
 
 Every call goes through Stellarr Media inside the container. A browser on the Docker host reaches it without extra configuration. Voice for any other device, including another device on your LAN, requires:
 
-1. `PUBLIC_IP` set to the IPv4 address browsers reach the host at, or `auto` to resolve the `A` record of `STELLARR_DOMAIN` at startup.
+1. `STELLARR_PUBLIC_IP` set to the IPv4 address browsers reach the host at, or `auto` to resolve the `A` record of `STELLARR_DOMAIN` at startup.
 2. UDP `49000` (or `STELLARR_MEDIA_PORT`) forwarded to the Docker host on the **same external port**, because the media server advertises that port to browsers.
 3. `3478/udp`, `49160-49200/udp`, and the HTTPS port (or a [reverse proxy](reverse-proxy-and-tls.md#run-behind-a-reverse-proxy) in front) forwarded to the Docker host.
 
 > [!WARNING]
-> Without `PUBLIC_IP`, `stellarr-media` advertises only the container's internal IPv4 address. Any browser outside the Docker host can connect only through TURN (`coturn`), and will fail to connect if TURN is also unreachable. See [Stellarr Media](../stellarr-media.md) and [RTC and ports](../rtc-and-ports.md#nat-and-firewall-configuration).
+> Without `STELLARR_PUBLIC_IP`, `stellarr-media` advertises only the container's internal IPv4 address. Any browser outside the Docker host can connect only through TURN (`coturn`), and will fail to connect if TURN is also unreachable. See [Stellarr Media](../stellarr-media.md) and [RTC and ports](../rtc-and-ports.md#nat-and-firewall-configuration).
 
 ## Domain and TLS
 
@@ -57,4 +57,4 @@ Stellarr does not contact external servers by default:
 
 - **Voice and translation run without outbound access.** The web client, noise-suppression worklets, Bergamot translator WASM, and Polish/English translation models are bundled inside the image and served from `/bergamot-models/` into browser IndexedDB. Only inbound UDP call ports are needed for voice.
 - **Optional server-side integrations.** Outbound requests from the container happen only when configured for SMTP or Resend mail, OIDC single sign-on, Web Push delivery, Cloudflare R2 backups, or link previews.
-- **GIPHY (browser-side).** When a `GIPHY_API_KEY` is configured and GIFs are enabled, the container calls GIPHY only when Cockpit validates the key; users' browsers call GIPHY directly when searching or viewing GIFs unless they disable GIPHY in their privacy settings.
+- **GIPHY (browser-side).** When a `STELLARR_GIPHY_API_KEY` is configured and GIFs are enabled, the container calls GIPHY only when Cockpit validates the key; users' browsers call GIPHY directly when searching or viewing GIFs unless they disable GIPHY in their privacy settings.
