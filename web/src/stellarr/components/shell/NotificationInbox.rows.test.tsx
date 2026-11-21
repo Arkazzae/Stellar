@@ -130,6 +130,48 @@ describe("notification rows", () => {
     expect(screen.getByText("Zaproszenie na serwer Nebula")).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "Dołącz do serwera" })).toBeNull();
   });
+
+  it("activates the row action when clicking the notification body or title", async () => {
+    const user = userEvent.setup();
+    const onJoinInvite = vi.fn(async () => undefined);
+    const props = inbox({ items: [CHANNEL_ROW, INVITE_ROW], unreadCount: 2, onJoinInvite });
+
+    await user.click(screen.getByText("Production is up to date."));
+    expect(props.onOpenChannel).toHaveBeenCalledWith("channel-1");
+    expect(props.onMarkRead).toHaveBeenCalledWith("n-1");
+
+    await user.click(screen.getByText("Zaproszenie na serwer Nebula"));
+    expect(onJoinInvite).toHaveBeenCalledWith("join-me");
+  });
+
+  it("shows the unread count as a channel-style counter badge capped at 99+", () => {
+    const { unmount } = render(
+      <NotificationInbox
+        items={[CHANNEL_ROW]}
+        unreadCount={2}
+        loading={false}
+        loadingMore={false}
+        hasOlder={false}
+        error={null}
+        anchor={document.body}
+        onClose={vi.fn()}
+        onReload={vi.fn()}
+        onLoadOlder={vi.fn()}
+        onMarkRead={vi.fn()}
+        onMarkAllRead={vi.fn()}
+        onDelete={vi.fn()}
+        channelName={() => "general"}
+        onOpenChannel={vi.fn()}
+      />,
+    );
+    const badge = screen.getByLabelText("Nieprzeczytane: 2");
+    expect(badge).toHaveTextContent("2");
+    expect(badge).toHaveClass("ch-unread");
+    unmount();
+
+    inbox({ unreadCount: 150 });
+    expect(screen.getByLabelText("Nieprzeczytane: 150")).toHaveTextContent("99+");
+  });
 });
 
 describe("accepting an invitation", () => {
