@@ -298,6 +298,15 @@
     cursor: pointer;
   }
 
+  /* A group's heading: smaller and fainter than a row, and never highlighted. */
+  .ui-dropdown-caption {
+    padding: calc(8 * var(--ui-unit)) calc(9 * var(--ui-unit)) calc(4 * var(--ui-unit));
+    font-size: calc(12 * var(--ui-unit));
+    font-weight: 600;
+    color: var(--ui-text-faint);
+    cursor: default;
+  }
+
   /* One highlight, driven by the cursor the keyboard and the pointer share. */
   .ui-dropdown-option[data-on] {
     background: var(--ui-hover);
