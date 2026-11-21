@@ -212,7 +212,6 @@ case $name in
         echo 28.3.2
         ;;
       compose)
-        while [[ ${1:-} == -f ]]; do shift 2; done
         action=$1
         shift
         case $action in
@@ -451,8 +450,8 @@ case_fresh_install() {
   expect_line "$env_file" "STELLARR_LANGUAGE=pl"
   [[ $(head -n 1 "$env_file") == "$marker" ]] || fail "the marker is not the first line of .env."
   private_file "$env_file" || fail ".env is not readable and writable by its owner alone."
-  expect_called "docker compose -f docker-compose.yml pull --quiet @$home/stellarr"
-  expect_called "docker compose -f docker-compose.yml up -d --no-build @$home/stellarr"
+  expect_called "docker compose pull --quiet @$home/stellarr"
+  expect_called "docker compose up -d --no-build @$home/stellarr"
   expect_not_called "sudo"
   expect_shown "Open: https://chat.example.com:8443/setup"
   expect_shown "Setup code: K7QM-2XWP-9HDA"
@@ -518,7 +517,7 @@ case_no_release() {
   expect_shown "Stellarr has no published release yet, so there is no image to pull."
   expect_shown "./install.sh --build"
   expect_missing "$home/stellarr"
-  expect_not_called "docker compose -f"
+  expect_not_called "docker compose config"
 }
 
 case_github_unreachable() {
@@ -609,7 +608,7 @@ case_docker_through_sudo() {
   flag sudo-works
   run --yes
   expect_success
-  expect_called "sudo -n docker compose -f docker-compose.yml up -d --no-build"
+  expect_called "sudo -n docker compose up -d --no-build"
   expect_shown "sudo docker compose logs -f"
 
   # On macOS Docker Desktop runs as the person: sudo is never tried, and
@@ -657,7 +656,7 @@ case_compose_v1() {
   echo 2.29.7 >"$state/standalone-compose-version"
   run --yes
   expect_success
-  expect_called "docker-compose -f docker-compose.yml up -d --no-build"
+  expect_called "docker-compose up -d --no-build"
 }
 
 case_found_by_label() {
@@ -688,7 +687,7 @@ case_conflicting_dir() {
   expect_shown "Stellarr is installed in $dir, not in $case_dir/other"
   expect_shown "--dir $dir"
   expect_missing "$case_dir/other"
-  expect_not_called "compose -f"
+  expect_not_called "compose config"
 
   # A stopped container belongs to its directory as much.
   new_case conflicting-dir-stopped
@@ -700,9 +699,25 @@ case_conflicting_dir() {
   expect_missing "$case_dir/other"
 }
 
-# Another project's docker-compose.yml is never replaced, and a local
-# override reaches Compose as it would without the installer.
+# Another project's docker-compose.yml is never replaced, a Compose file that
+# Compose would read in its place stops the run before anything is written,
+# and a local override is left for Compose to find, as it would without the
+# installer.
 case_compose_files() {
+  local file
+  for file in compose.yaml compose.yml docker-compose.yaml; do
+    new_case "compose-file-$file"
+    mkdir -p "$case_dir/inst"
+    printf 'name: other\nservices:\n  web:\n    image: nginx\n' >"$case_dir/inst/$file"
+    run --yes --dir "$case_dir/inst"
+    expect_failure
+    expect_shown "holds $file, which Docker Compose reads before docker-compose.yml"
+    expect_shown "Choose another directory with --dir."
+    expect_missing "$case_dir/inst/docker-compose.yml"
+    expect_missing "$case_dir/inst/.env"
+    expect_not_called "compose config"
+  done
+
   new_case compose-other-project
   local dir="$case_dir/inst"
   mkdir -p "$dir"
@@ -721,7 +736,8 @@ case_compose_files() {
   echo 'services: {}' >"$dir/compose.override.yaml"
   run --yes
   expect_success
-  expect_called "compose -f docker-compose.yml -f compose.override.yaml up -d --no-build"
+  expect_called "docker compose up -d --no-build @$dir"
+  expect_not_called " -f "
 }
 
 # A container whose directory is gone is taken over only when asked to.
@@ -760,7 +776,7 @@ case_not_compose() {
   expect_failure
   expect_shown "Docker Compose did not start it"
   expect_missing "$home/stellarr"
-  expect_not_called "compose -f"
+  expect_not_called "compose config"
 }
 
 case_update() {
@@ -859,6 +875,48 @@ case_env_without_marker() {
   expect_line "$dir/.env" "STELLARR_DOMAIN=localhost"
   backups=("$dir"/.env.bak-*)
   cmp -s "$case_dir/env-before" "${backups[0]}" || fail "the replaced .env has no backup."
+
+  # An empty .env is adopted: the marker goes first and the release under it.
+  new_case env-empty
+  dir="$case_dir/inst"
+  mkdir -p "$dir"
+  : >"$dir/.env"
+  run --yes --dir "$dir"
+  expect_success
+  [[ $(head -n 1 "$dir/.env") == "$marker" ]] || fail "the marker is not the first line of .env."
+  [[ $(assignments STELLARR_VERSION "$dir/.env") -eq 1 ]] || fail ".env does not set STELLARR_VERSION once."
+  expect_line "$dir/.env" "STELLARR_VERSION=1.4.0"
+}
+
+# A Compose variable in a .env the installer wrote stops the run as well,
+# naming it, and --force still writes a new .env beside a backup.
+case_env_marked_compose_variable() {
+  new_case env-marked-compose
+  local dir="$case_dir/srv/stellarr" before backups
+  installed "$dir" 1.4.0
+  container "$dir" 1.4.0
+  echo COMPOSE_PROJECT_NAME=foo >>"$dir/.env"
+  before=$(snapshot "$dir")
+  run --yes
+  expect_failure
+  expect_shown "$dir/.env sets COMPOSE_PROJECT_NAME"
+  expect_shown "Remove it from .env"
+  expect_not_shown "development stack"
+  expect_not_called "compose config"
+  [[ $(snapshot "$dir") == "$before" ]] || fail "a file in the installation changed."
+
+  new_case env-marked-compose-forced
+  dir="$case_dir/srv/stellarr"
+  installed "$dir" 1.4.0
+  container "$dir" 1.4.0
+  printf 'COMPOSE_PROJECT_NAME=foo\nCOMPOSE_FILE=other.yml\n' >>"$dir/.env"
+  cp "$dir/.env" "$case_dir/env-before"
+  run --yes --force
+  expect_success
+  expect_line "$dir/.env" "$marker"
+  [[ $(assignments COMPOSE_PROJECT_NAME "$dir/.env") -eq 0 ]] || fail "the new .env still sets COMPOSE_PROJECT_NAME."
+  backups=("$dir"/.env.bak-*)
+  cmp -s "$case_dir/env-before" "${backups[0]}" || fail "the replaced .env has no backup."
 }
 
 case_env_values() {
@@ -899,7 +957,7 @@ case_env_odd_values() {
   run --yes
   expect_failure
   expect_shown 'STELLARR_HTTPS_PORT in'
-  expect_not_called "compose -f"
+  expect_not_called "compose config"
 }
 
 case_ports() {
@@ -1062,7 +1120,7 @@ case_checkout() {
   script="$checkout/install.sh"
   run --yes --build
   expect_success
-  expect_called "compose -f docker-compose.yml build @$checkout"
+  expect_called "compose build @$checkout"
   expect_called "up -d --no-build @$checkout"
   expect_line "$checkout/.env" "STELLARR_VERSION=latest"
   cmp -s "$repo_root/docker-compose.yml" "$checkout/docker-compose.yml" || fail "the checkout's docker-compose.yml changed."
@@ -1218,6 +1276,7 @@ case_compose_environment
 case_not_compose
 case_update
 case_env_without_marker
+case_env_marked_compose_variable
 case_env_values
 case_env_odd_values
 case_ports
