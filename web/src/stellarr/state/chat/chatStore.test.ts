@@ -142,6 +142,14 @@ describe("realtime", () => {
     const state = run([{ type: "embeds", channelId: "ch-general", messageId: "a", embeds }], seeded);
     expect(state.messages["ch-general"]?.[0]?.embeds).toEqual(embeds);
   });
+
+  it("returns the same state for cards the message already has", () => {
+    const carded = run([{ type: "embeds", channelId: "ch-general", messageId: "a", embeds: [embed("e1")] }], seeded);
+    expect(run([{ type: "embeds", channelId: "ch-general", messageId: "a", embeds: [] }], seeded)).toBe(seeded);
+    expect(
+      run([{ type: "embeds", channelId: "ch-general", messageId: "a", embeds: [embed("e1")] }], carded),
+    ).toBe(carded);
+  });
 });
 
 describe("catching up", () => {

@@ -155,8 +155,10 @@ export function updateLoaded(
   const at = bucket.findIndex((message) => message.id === messageId);
   const existing = bucket[at];
   if (existing === undefined) return bucket;
+  const changed = change(existing);
+  if (changed === existing) return bucket;
   const next = [...bucket];
-  next[at] = change(existing);
+  next[at] = changed;
   return next;
 }
 
