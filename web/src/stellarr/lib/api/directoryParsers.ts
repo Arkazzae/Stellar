@@ -1,5 +1,3 @@
-import type { OpusProfileId } from "@/lib/voice/settings";
-
 import type {
   ApiAuditChange,
   ApiAuditEntry,
@@ -54,19 +52,8 @@ export function parseServer(value: unknown, path = "server"): Server {
   };
 }
 
-const AUDIO_PROFILES: readonly OpusProfileId[] = [
-  "economy",
-  "balanced",
-  "clarity",
-  "premium",
-  "studio",
-];
-
 export function parseChannel(value: unknown, path: string): Channel {
   const record = expectRecord(value, path);
-  const audioProfile = AUDIO_PROFILES.find(
-    (profile) => profile === optionalString(record, "audioProfile"),
-  );
   return {
     id: expectString(record, "id", path),
     name: expectString(record, "name", path),
@@ -77,7 +64,6 @@ export function parseChannel(value: unknown, path: string): Channel {
       "hideAfterInactivityHours",
       optionalNumber(record, "hideAfterInactivityHours"),
     ),
-    ...definedField("audioProfile", audioProfile),
     ...definedField("position", optionalNumber(record, "position")),
     ...definedField("userLimit", optionalNumber(record, "userLimit")),
     ...definedField("sectionId", optionalString(record, "sectionId")),
