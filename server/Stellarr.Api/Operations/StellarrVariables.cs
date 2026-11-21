@@ -13,8 +13,8 @@ namespace Stellarr.Api.Operations;
 /// <param name="Name">The variable, <c>STELLARR_</c> and the setting's name.</param>
 /// <param name="Key">
 /// The configuration key it sets in the API and the CLI. Null for a name only
-/// the container's entrypoint reads, which the CLI repeats to report the value,
-/// and for the CLI's own.
+/// the container's entrypoint reads, which the CLI names or reports, and for
+/// the CLI's own.
 /// </param>
 public sealed record StellarrVariable(string Name, string? Key);
 
@@ -29,7 +29,8 @@ public sealed record StellarrVariable(string Name, string? Key);
 /// <remarks>
 /// One row per line, as <c>infra/tests/setting-names.test.sh</c> reads them.
 /// Defaults are not here: they live in the option classes and the
-/// <c>appsettings*.json</c> files, and the entrypoint's own in the entrypoint.
+/// <c>appsettings*.json</c> files, and the entrypoint's own in
+/// <c>infra/settings.sh</c>.
 /// </remarks>
 public static class StellarrVariables
 {

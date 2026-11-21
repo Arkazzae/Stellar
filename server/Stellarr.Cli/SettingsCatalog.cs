@@ -128,10 +128,12 @@ internal static class SettingsCatalog
 
     internal static readonly IReadOnlyList<StartupSetting> Startup =
     [
+        // The image's wrapper derives the address by the entrypoint's rules
+        // and passes it under this key; without a domain there is none.
         new("public-url",
             $"{StellarrVariables.PublicUrl.Name} / {StellarrVariables.Domain.Name} / {StellarrVariables.PublicPort.Name}",
             $"Set {StellarrVariables.PublicUrl.Name}, or {StellarrVariables.Domain.Name} and {StellarrVariables.PublicPort.Name}, in .env; then recreate the container.",
-            ContainerSettings.PublicUrl),
+            context => ContainerSettings.ConfigValue(context, "Operations:PublicUrl", "")),
         new("tls.domain", StellarrVariables.Domain.Name,
             $"Set {StellarrVariables.Domain.Name} in .env; the entrypoint also derives TLS and TURN from it. Recreate the container.",
             ContainerSettings.PublicHost),
