@@ -60,6 +60,25 @@ vi.mock("@/lib/audio/systemFx", () => ({ playSystemFx: vi.fn() }));
 
 const ADA = { id: "u-ada", displayName: "Ada" };
 
+/** The parts of the server view that draw nothing a message brings. */
+const BYSTANDERS = [
+  "RailVoiceDock",
+  "RailAccount",
+  "RoomContainer",
+  "RoomHeader",
+  "RoomComposer",
+  "Composer",
+  "ChannelPanel",
+  "CallStage",
+  "VoiceControlBar",
+  "ThreadPanel",
+  "RoomTyping",
+];
+
+/** Which of `names` rendered in `commits`, once for each time. */
+const among = (commits: string[][], names: string[]) =>
+  commits.flat().filter((name) => names.includes(name));
+
 /** Ada's message written just now, so it counts as unread where it is not read. */
 const newMessage = (id: string, channelId: string) =>
   message(id, 0, { author: ADA, channelId, createdAt: new Date().toISOString() });
@@ -133,22 +152,27 @@ describe("what a chat event renders", () => {
     expect(log.take().flat()).toEqual([]);
   });
 
-  it("leaves the rail out of a message in the open channel", async () => {
+  it("renders a message in the open channel in its transcript and nowhere else", async () => {
     const log = await mountServerView();
 
     act(() => h.emit.message(message("m3", 3, { author: ADA })));
 
-    expect(log.take().flat()).not.toContain("RailContainer");
+    const commits = log.take();
+    expect(commits).toHaveLength(1);
+    expect(commits.flat()).toContain("MessageRow");
+    expect(among(commits, [...BYSTANDERS, "RailContainer"])).toEqual([]);
+    expect(screen.getByText("content of m3")).toBeInTheDocument();
   });
 
-  it("renders a message in another channel on that channel's row and on no other", async () => {
+  it("renders a message in another channel on that channel's row alone", async () => {
     const log = await mountServerView();
 
     act(() => h.emit.message(newMessage("r1", "ch-random")));
 
     const commits = log.take();
     expect(commits).toHaveLength(1);
-    expect(commits.flat().filter((name) => name === "ChannelButton")).toHaveLength(1);
+    expect(among(commits, ["ChannelButton"])).toEqual(["ChannelButton"]);
+    expect(among(commits, [...BYSTANDERS, "Transcript"])).toEqual([]);
     expect(screen.getByLabelText("Nieprzeczytane: 1")).toBeInTheDocument();
   });
 

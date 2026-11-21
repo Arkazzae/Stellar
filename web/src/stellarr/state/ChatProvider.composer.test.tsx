@@ -422,7 +422,7 @@ describe("threads", () => {
     act(() => result.current.runAction("m1", "thread"));
     expect(result.current.thread?.rootId).toBe("m1");
     expect(result.current.thread?.initialExpanded).toBe(false);
-    const threadIds = result.current.thread?.sections.flatMap((section) =>
+    const threadIds = result.current.threadSections.flatMap((section) =>
       section.groups.flatMap((group) => group.bodies.map((body) => body.id)));
     expect(threadIds).toEqual(["m1", "r1"]);
 

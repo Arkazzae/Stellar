@@ -37,6 +37,7 @@ export function fakeChat(overrides: Partial<ChatValue> = {}): ChatValue {
     channelId: "ch-general",
     sections: [],
     thread: null,
+    threadSections: [],
     loading: false,
     loadingOlder: false,
     hasOlder: false,

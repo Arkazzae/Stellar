@@ -19,7 +19,8 @@ const mocks = vi.hoisted(() => ({
 }));
 
 vi.mock("@/state/hooks", () => ({
-  useChat: () => mocks.chat,
+  useChatRoom: () => mocks.chat,
+  useChatTranscript: () => mocks.chat,
   useUi: () => mocks.ui,
   useDirectory: () => mocks.directory,
   useLanguage: () => mocks.language,

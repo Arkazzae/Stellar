@@ -27,7 +27,7 @@ const sendGif = vi.fn();
 const voiceSettings = {};
 
 vi.mock("@/state/hooks", () => ({
-  useChat: () => ({
+  useChatRoom: () => ({
     channelId: "c1",
     chips: [],
     replyingTo: null,
