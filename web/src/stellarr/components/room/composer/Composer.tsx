@@ -491,6 +491,7 @@ export function Composer({
                 // keyboard was working.
                 requestAnimationFrame(() => field.current?.focus());
               }}
+              onPicked={() => field.current?.focus()}
               helpId={codeHelpId}
               counterId={codeCounterId}
               locale={locale}

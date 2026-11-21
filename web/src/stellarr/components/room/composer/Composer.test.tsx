@@ -403,7 +403,10 @@ describe("Composer code messages", () => {
 
     await user.click(screen.getByRole("combobox", { name: "Język kodu wiadomości" }));
     await user.click(screen.getByRole("option", { name: "Python" }));
-    await user.type(field, "print('hej')");
+    // Back in the code: the next keys are code, not a jump to another language.
+    await nextFrame();
+    expect(field).toHaveFocus();
+    await user.keyboard("print('hej')");
     await user.click(screen.getByRole("button", { name: "Wyślij" }));
 
     expect(onSubmit).toHaveBeenCalledWith("```python\nprint('hej')\n```");

@@ -35,6 +35,8 @@ export interface ComposerCodeHeadProps {
   /** Characters the code may still grow by; below zero it is over the limit. */
   room: number;
   onDisable(): void;
+  /** A language was picked in the open list; the code is where the next keys belong. */
+  onPicked(): void;
   /** Ids the field points `aria-describedby` at. */
   helpId: string;
   counterId: string;
@@ -52,6 +54,7 @@ export function ComposerCodeHead({
   guess,
   room,
   onDisable,
+  onPicked,
   helpId,
   counterId,
   locale,
@@ -67,7 +70,29 @@ export function ComposerCodeHead({
         : t(`composer.codeOver.${pluralForm(locale, -room)}`, { count: count(-room) });
 
   return (
-    <div className={css.head}>
+    // A choice made in the open list (the list is portalled, but its events
+    // still pass through here) hands focus back to the code. Left on the
+    // picker, the next letters typed would jump to another language.
+    <div
+      className={css.head}
+      onClickCapture={(event) => {
+        if (
+          event.target instanceof Element &&
+          event.target.closest('[role="option"]:not([aria-disabled="true"])') !== null
+        ) {
+          requestAnimationFrame(onPicked);
+        }
+      }}
+      onKeyDownCapture={(event) => {
+        if (
+          (event.key === "Enter" || event.key === " ") &&
+          event.target instanceof Element &&
+          event.target.getAttribute("aria-expanded") === "true"
+        ) {
+          requestAnimationFrame(onPicked);
+        }
+      }}
+    >
       <CodeLanguagePicker
         value={language}
         onChange={onLanguageChange}
