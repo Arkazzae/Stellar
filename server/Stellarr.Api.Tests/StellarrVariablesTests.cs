@@ -64,7 +64,6 @@ public sealed class StellarrVariablesTests
         ("STELLARR_DESKTOP_MINIMUM_VERSION", "Desktop:MinimumVersion"),
         ("STELLARR_DESKTOP_RECOMMENDED_VERSION", "Desktop:RecommendedVersion"),
         ("STELLARR_GIPHY_API_KEY", "Giphy:ApiKey"),
-        ("STELLARR_EF_COMMAND_LOG_LEVEL", "Logging:LogLevel:Microsoft.EntityFrameworkCore.Database.Command"),
         ("STELLARR_DATA_ROOT", "DataRoot"),
     ];
 

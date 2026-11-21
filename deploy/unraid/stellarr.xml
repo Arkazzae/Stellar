@@ -76,6 +76,4 @@ On first start the container creates a self-signed certificate, so the browser s
   <Config Name="Upload quota in total (bytes)" Target="STELLARR_UPLOAD_TOTAL_BYTES" Default="" Mode="" Description="21474836480 (20 GiB) when empty." Type="Variable" Display="advanced" Required="false" Mask="false"></Config>
   <Config Name="Minimum free space (bytes)" Target="STELLARR_MIN_FREE_BYTES" Default="" Mode="" Description="Uploads are refused when the data folder has less free space than this; 1073741824 (1 GiB) when empty." Type="Variable" Display="advanced" Required="false" Mask="false"></Config>
   <Config Name="Concurrent uploads" Target="STELLARR_MAX_CONCURRENT_UPLOADS" Default="" Mode="" Description="4 when empty." Type="Variable" Display="advanced" Required="false" Mask="false"></Config>
-
-  <Config Name="Database command log level" Target="STELLARR_EF_COMMAND_LOG_LEVEL" Default="" Mode="" Description="Warning when empty; Information logs every SQL statement." Type="Variable" Display="advanced" Required="false" Mask="false"></Config>
 </Container>
