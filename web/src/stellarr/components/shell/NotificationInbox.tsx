@@ -41,6 +41,8 @@ interface NotificationRowProps {
   onJoinInvite?: (inviteCode: string) => void;
 }
 
+const MAX_UNREAD_SHOWN = 99;
+
 function NotificationRow({
   notification,
   channelName,
@@ -58,6 +60,20 @@ function NotificationRow({
   // A row opens a channel only when the reader can see it by name.
   const channelId = target?.type === "channel" ? target.channelId : null;
   const channel = channelId === null ? null : channelName(channelId);
+  const canOpenChannel = channelId !== null && channel !== null;
+  const canJoinInvite = invite !== null && onJoinInvite !== undefined;
+  const isJoiningThis = invite !== null && joiningInvite === invite.inviteCode;
+
+  const activateRow = canOpenChannel
+    ? () => {
+        if (unread) onMarkRead(notification.id);
+        onOpenChannel(channelId);
+      }
+    : canJoinInvite
+      ? () => {
+          if (joiningInvite === null) onJoinInvite(invite.inviteCode);
+        }
+      : undefined;
 
   // Invitations and mentions are worded here, so that they follow the
   // reader's language; every other row arrives already written.
@@ -73,10 +89,29 @@ function NotificationRow({
     title = t("notifications.mentionTitle", { author: source.moduleName });
   }
 
+  const className = [
+    "notification-item",
+    unread && "unread",
+    activateRow !== undefined && "actionable",
+  ]
+    .filter(Boolean)
+    .join(" ");
+
   return (
     <li
-      className={unread ? "notification-item unread" : "notification-item"}
+      className={className}
       data-tone={notification.tone}
+      onClick={(event) => {
+        if (activateRow === undefined) return;
+        const targetElement = event.target;
+        if (
+          targetElement instanceof Element &&
+          targetElement.closest("button, a") !== null
+        ) {
+          return;
+        }
+        activateRow();
+      }}
     >
       {/* No marker column. Unread is carried by the text and by the tick being
           there to press; a dot in a gutter on every row would be one more
@@ -101,7 +136,7 @@ function NotificationRow({
               {formatAgo(notification.createdAt, new Date(), locale)}
             </time>
           </span>
-          {channelId === null || channel === null ? null : (
+          {!canOpenChannel ? null : (
             <button
               type="button"
               className="notification-open"
@@ -109,23 +144,20 @@ function NotificationRow({
               // say what pressing it does.
               aria-label={t("notifications.openChannel", { channel })}
               title={t("notifications.openChannel", { channel })}
-              onClick={() => {
-                if (unread) onMarkRead(notification.id);
-                onOpenChannel(channelId);
-              }}
+              onClick={activateRow}
             >
               <Icon name="hash" size={12} />
               <span>{channel}</span>
             </button>
           )}
-          {invite === null || onJoinInvite === undefined ? null : (
+          {!canJoinInvite ? null : (
             <button
               type="button"
               className="notification-open primary"
               disabled={joiningInvite !== null}
-              onClick={() => onJoinInvite(invite.inviteCode)}
+              onClick={activateRow}
             >
-              {joiningInvite === invite.inviteCode
+              {isJoiningThis
                 ? t("notifications.inviteJoining")
                 : t("notifications.inviteJoin")}
             </button>
@@ -206,11 +238,17 @@ export function NotificationInbox({
       <div className="notification-inbox-header">
         <div className="notification-inbox-heading">
           <h3>{t("notifications.title")}</h3>
-          <p aria-live="polite">
-            {unreadCount === 0
-              ? t("notifications.allRead")
-              : t("notifications.unreadCount", { count: unreadCount })}
-          </p>
+          {unreadCount === 0 ? (
+            <p aria-live="polite">{t("notifications.allRead")}</p>
+          ) : (
+            <span
+              className="ch-unread notification-unread-count"
+              aria-live="polite"
+              aria-label={t("notifications.unreadCount", { count: unreadCount })}
+            >
+              {unreadCount > MAX_UNREAD_SHOWN ? `${MAX_UNREAD_SHOWN}+` : unreadCount}
+            </span>
+          )}
         </div>
         <div className="notification-inbox-head-actions">
           {unreadCount > 0 ? (
