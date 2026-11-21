@@ -1,42 +1,63 @@
-# Stellarr scripts
+# Stellarr development scripts
 
-Development utilities for the local Stellarr stack.
+Development utilities for seeding and inspecting the local Stellarr stack.
 
 ## `seed-dev.sh` / `seed-dev.py`
 
-Populates the development SQLite database with sample accounts, channels, messages, and media while preserving any existing owner, personal accounts, and user-created messages.
+Populates a development SQLite database with multi-day sample activity—accounts, roles, sections, text and voice channels, messages, attachments, friendships, direct messages, invites, audit entries, and presence—while preserving any pre-existing owner account, personal test accounts, and messages authored by non-seeded users.
 
-### Seeded data
+### What gets seeded
 
-- **Accounts and roles**: 28 member accounts across four custom roles (`Admin`, `Moderator`, `Core Maintainer`, `Voice Host`), plus `Owner` and `Member`. Default password for all seeded accounts: `dev-seed-2026` (override with `--password`; examples: `maya`, `theo`, `ola`, `priya`).
-- **Sections and channels**: 14 channels (10 text, 4 voice alongside `#general` and `#voice`, totaling 16) under four sections:
+- **Accounts and roles**: Member accounts (`USERS_SPEC` in `seed-dev.py`) assigned across four custom roles (`Admin`, `Moderator`, `Core Maintainer`, `Voice Host`) in addition to `Owner` and `Member`. All seeded accounts share the default password `dev-seed-2026` (override with `--password`; example usernames: `maya`, `theo`, `priya`, `jonas`, `kenji`, `ola`).
+- **Sections and channels**: Text and voice channels alongside the default `#general` and `#voice` channels, organized under four sections:
   - `Information`: `#announcements`, `#qa-markdown`
   - `Engineering`: `#backend-dotnet`, `#frontend-vite`, `#rust-media-sfu`, `#homelab-infra`, `eng-standup` (voice)
   - `Community`: `#polski`, `#lfg-coop`, `#llm-local`, `#random-chat`, `co-op-lounge` (voice)
-  - `History & Chill`: `#qa-long-history` (long multi-day history for scroll/pagination testing), `chill-room` (voice)
-- **Messages and social state**: Sample messages with replies, edits, pins, reactions, code blocks, mentions, FTS5 search entries, unread markers, friendships, pending friend requests, direct messages, invites, audit entries, and two extra servers (`Homelab & Infra`, `Friday Co-op`).
-- **Presence fixture**: Writes `seed-presence.json` on the data volume so development startup shows a mixed `online` / `idle` / `dnd` roster. Signing in as a seeded account replaces its fallback status with a live session.
-- **Sample media**: Screenshots, GIFs, and silent MP4 clips from `scripts/seed-media/`. Skip with `--no-media` and `--no-presence`.
+  - `History & Chill`: `#qa-long-history` (multi-day message history for scroll and pagination testing), `chill-room` (voice)
+- **Messages and social graph**: Multi-day messages with replies, edits, pins, reactions, code blocks, `@mentions`, FTS5 search index rows, unread markers, friendships, pending friend requests, direct message threads, invites, audit log entries, and two secondary servers (`Homelab & Infra`, `Friday Co-op`) for server-rail switching.
+- **Presence fixture**: Writes `seed-presence.json` into the API `DataRoot` so the development roster displays a mix of `online`, `idle`, and `dnd` statuses at startup. Signing in as a seeded account overrides its fixture status with a live session.
+- **Sample media attachments**: Copies screenshots, animated GIFs, video posters, and silent MP4 clips from `scripts/seed-media/` into the data volume (`--no-media` and `--no-presence` skip these writes).
 
 ### Usage
 
-Make sure the dev stack has initialized the database once (`docker compose -f docker-compose.dev.yml up -d`), then run from the repository root:
+By default, `./scripts/seed-dev.sh` inspects the `api` container of the `stellarr-dev` Compose project (`docker-compose.dev.yml` or overlays such as `docker-compose.dev.fresh.yml`) to discover its mounted data volume, `STELLARR_DATA_ROOT`, SQLite database path, and published port automatically. If the `api` container is running, `seed-dev.sh` stops it before writing to SQLite, runs `seed-dev.py`, restarts the container, and waits for `/health/ready`.
 
 ```bash
-# Seed the docker-compose.dev.yml SQLite volume (pauses/restarts api automatically)
+# Seed the active dev stack volume (discovers volume/path from the api container)
 ./scripts/seed-dev.sh
 
-# Replace previously seeded data without touching personal accounts
+# Replace all previously seeded records while keeping personal accounts and messages
 ./scripts/seed-dev.sh --reset
 
-# Seed a standalone local SQLite file directly via host python3
+# Preview the resolved container, volume, database path, and port without writing
+./scripts/seed-dev.sh --dry-run
+
+# Seed a standalone local SQLite file directly using host python3 (3.9+)
 ./scripts/seed-dev.sh --db ./path/to/stellarr-dev.db --reset
 
-# Bootstrap an empty schema-only DB with a starter 'admin' server first
+# Bootstrap an empty schema-only database with a starter 'admin' owner and server first
 ./scripts/seed-dev.sh --reset --bootstrap-owner
 
-# Skip media files or presence fixture
+# Skip media files or the seed-presence.json fixture
 ./scripts/seed-dev.sh --no-media --no-presence
 ```
 
-Run `./scripts/seed-dev.sh --help` or `python3 scripts/seed-dev.py --help` for all flags, including `--data-root`.
+### Options
+
+| Option | Description |
+| --- | --- |
+| `--reset` | Remove and recreate all seeded records (including actions performed while signed in as a seeded account) while preserving non-seeded accounts and their messages |
+| `--db PATH` | Seed a local SQLite file directly with host `python3` (compatible with Python 3.9+); ensure no API process has the file open |
+| `--container NAME` | Target a specific `api` container name |
+| `--project NAME` | Compose project name used to locate the `api` container (default `stellarr-dev`) |
+| `--volume NAME` | Override the Docker volume mounted at the container's `DataRoot` |
+| `--compose-file PATH` | Compose file(s) used to resolve the volume when no `api` container exists yet |
+| `--password PASS` | Password for all seeded accounts (default `dev-seed-2026`) |
+| `--seed INT` | Deterministic RNG seed (default `20261115`) |
+| `--bootstrap-owner` | Create a starter owner account and `Stellarr` server if the database has 0 servers |
+| `--owner-username USER` | Username for `--bootstrap-owner` (default `admin`) |
+| `--data-root PATH` | Override the API `DataRoot` directory where `files/` and `seed-presence.json` are written |
+| `--no-media` | Skip copying sample images, GIFs, and MP4 clips |
+| `--no-presence` | Skip writing `seed-presence.json` |
+| `--no-restart` | Leave the `api` container stopped after seeding |
+| `--dry-run` | Print the resolved target container, volume, database path, and readiness URL and exit |

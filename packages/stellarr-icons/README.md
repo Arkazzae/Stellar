@@ -1,72 +1,50 @@
-# @stellarr/icons
+# `@stellarr/icons`
 
-Stellarr's icon family, shared by the web client (`web/`), Cockpit
-(`web/src/cockpit/`) and the components of
-[`@stellarr/ui`](../stellarr-ui/README.md). The same source builds the SVG
-files in [`branding/icons/`](../../branding/icons/). The package is private
-and exports `Icon`, `IconVariantProvider` and `DEFAULT_ICON_VARIANT`, the
-generated table as `ICON_GLYPHS`, `ICON_VARIANTS` and `iconPaths`, and the
-types `IconName`, `IconVariant`, `IconProps`, `IconGlyph` and `IconPath`.
+Stellarr's vector icon package, shared by the web client (`web/`), Cockpit (`web/src/cockpit/`), and [`@stellarr/ui`](../stellarr-ui/README.md). The same glyph definitions generate the standalone SVG files in [`branding/icons/`](../../branding/icons/).
 
-It is consumed as TypeScript source: `exports` points at `src/index.ts` and
-there is no build step for an app. Vite and Vitest compile it as part of the
-importing package. It depends on nothing but React.
+The package is private and consumed directly as TypeScript source (`exports` points to `src/index.ts`; Vite and Vitest compile it as part of the importing application). React is its only runtime dependency.
 
-One local SVG family in two variants drawn from the same geometry:
+## Exports
 
-- **broken**, the default: every main contour opened by one gap;
-- **linear**: the same contours, closed and continuous.
+- Components and context: `Icon`, `IconVariantProvider`, `DEFAULT_ICON_VARIANT`
+- Generated glyph tables: `ICON_GLYPHS`, `ICON_VARIANTS`, `iconPaths`
+- Types: `IconName`, `IconVariant`, `IconProps`, `IconGlyph`, `IconPath`
 
-The family follows the soft geometry of Iconsax Linear / Broken as a style
-reference. Every glyph is drawn here from Stellarr's own geometry; nothing is
-traced from or imported out of another icon set.
+Every icon is drawn from a single geometric source in two variants:
 
-`Icon` renders it everywhere in the web and desktop clients and in Cockpit;
-import it from `@stellarr/icons`. A `variant` prop picks the variant for one
-icon and `IconVariantProvider` for everything inside it.
+- **`broken`** (default): each primary contour is opened by a single `3.1 px` gap.
+- **`linear`**: closed, continuous contours.
 
-## Files
+Pass `variant="linear"` or `variant="broken"` on an individual `<Icon>` or wrap a subtree in `<IconVariantProvider variant="...">`.
 
-- [`src/source/glyphs.ts`](src/source/glyphs.ts) draws every glyph. A plain
-  path string is the same in both variants; `brk(d, [x, y])` opens the
-  contour at that point in the broken variant.
-- [`src/source/geometry.ts`](src/source/geometry.ts) holds the shapes
-  (`rect`, `circle`, `arc`, `poly`), the transforms and the gaps, so corners,
-  circles and gaps keep one measure across the family.
-- [`src/paths.ts`](src/paths.ts) is generated: the static table the apps
-  import. Do not edit it by hand.
+## Source files and code generation
 
-After changing the source, build the table and the SVGs in
-[`branding/icons/`](../../branding/icons/) from the repository root:
+- [`src/source/glyphs.ts`](src/source/glyphs.ts): Declarative glyph definitions. Plain SVG path strings render identically in both variants; `brk(d, [x, y])` introduces a contour gap at `[x, y]` in the `broken` variant.
+- [`src/source/geometry.ts`](src/source/geometry.ts): Shared geometric primitives (`rect`, `circle`, `arc`, `poly`), transforms, and contour knockouts/gaps.
+- [`src/paths.ts`](src/paths.ts): Generated static path table imported at runtime. Do not edit by hand.
+
+After modifying [`src/source/glyphs.ts`](src/source/glyphs.ts) or [`src/source/geometry.ts`](src/source/geometry.ts), regenerate [`src/paths.ts`](src/paths.ts) and [`branding/icons/`](../../branding/icons/) from the repository root:
 
 ```sh
-npm run icons:build -w @stellarr/icons              # write
-npm run icons:build -w @stellarr/icons -- --check   # verify, as CI does
-npm run icons:build -w @stellarr/icons -- --audit   # also list strokes that crowd each other
+npm run icons:build -w @stellarr/icons              # regenerate src/paths.ts and branding/icons/
+npm run icons:build -w @stellarr/icons -- --check   # verify generated files match source (run in CI)
+npm run icons:build -w @stellarr/icons -- --audit   # check for stroke crowding and clearance violations
 ```
 
-## Drawing rules
+## Drawing specifications
 
-- A 24 × 24 canvas, a 1.5 stroke, round caps and round joins, `currentColor`.
-- The live area is 2–22. Containers sit on 2.5–21.5 with soft corners (reach 6
-  at full size, less on smaller shapes); a full ring reaches 2–22, because a
-  circle looks smaller than a square of the same width.
-- Separate strokes either join or keep 2.5 between centre lines, about 1 px of
-  air at 24 px. `--audit` checks it.
-- Broken: one gap of `GAP` (3.1) per main contour, on its longest straight run,
-  upper right where the shape allows. Dots, short lines and small rings stay
-  whole, so glyphs made only of lines look the same in both variants.
-- A slash knocks out every part of the contour within 2.5 of it, in both
-  variants (`knockLine`, `knockNear`).
-- Reuse contours for related states and give each state a distinct meaning.
-- Add missing shapes to this family instead of PNG masks or Unicode glyphs.
-- Keep the accessible label on the control; `Icon` itself is decorative.
+- **Canvas and stroke**: `24 × 24` `viewBox`, `1.5 px` stroke width, round caps, round joins, `currentColor`.
+- **Live area**: `2..22`. Rectangular containers sit at `2.5..21.5` with soft corner radii (up to `6` at full size); full circles extend to `2..22` for optical balance.
+- **Stroke clearance**: Separate strokes either join or maintain at least `2.5` units between centerlines (~`1 px` clear space at `24 px`), enforced by `--audit`.
+- **Broken variant gaps**: One gap of length `GAP` (`3.1`) per primary contour on its longest straight segment (preferring the upper-right quadrant where geometry permits). Dots, short ticks, and small rings remain closed in both variants.
+- **Diagonal slash knockouts**: Mute/disable slashes knock out underlying contours within `2.5` units in both variants (`knockLine`, `knockNear`).
+- **Accessibility**: `<Icon>` renders `aria-hidden="true"` by default; place accessible labels on the enclosing interactive control.
 
-Brand marks, avatars, emoji content and waveform data are separate assets.
+Brand logos, mascot artwork, default avatars, and audio waveforms live under [`branding/`](../../branding/README.md).
 
-## Checks
+## Verification
 
-Run these from the repository root, after `npm ci`:
+From the repository root:
 
 ```bash
 npm run typecheck:icons

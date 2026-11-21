@@ -1,33 +1,33 @@
 # Platform templates
 
-Each folder here packages the production container for a non-Compose platform. Platforms that install from Compose use [`docker-compose.yml`](../docker-compose.yml) directly rather than a copy of it.
+Each subdirectory packages the production Stellarr container for a non-Compose host platform. Platforms that support Docker Compose directly use the root [`docker-compose.yml`](../docker-compose.yml).
 
 | Platform | Template | Guide |
 | --- | --- | --- |
 | Unraid | [`unraid/stellarr.xml`](unraid/stellarr.xml) | [`docs/install/unraid.md`](../docs/install/unraid.md) |
 
-## Rules every template keeps
+## Template requirements
 
-`docker-compose.yml` is the reference for what a template publishes and limits; the image holds every default. Every template must start the container with:
+[`docker-compose.yml`](../docker-compose.yml) is the single source of truth for published ports and container resource limits, while the container image provides all runtime defaults. Every platform template must adhere to these rules:
 
-1. **Same image.** `ghcr.io/arkazzae/stellarr:latest` by default, allowing a version tag (such as `1.2`) to stay on one release line.
-2. **Same data path.** One persistent folder or volume mounted at `/data/stellarr`.
-3. **Same ports and default host ports.** Every port `docker-compose.yml` publishes, with matching protocol and default host port. Keep the TURN relay range (`49160-49200/udp`) mapped 1:1.
-4. **Port variables matching host mappings.** The container cannot inspect host port mappings, so templates expose `STELLARR_HTTPS_PORT`, `STELLARR_MEDIA_PORT`, `STELLARR_TURN_PORT` and `STELLARR_TURNS_PORT` with the default host ports and instruct operators to keep them equal to the host ports (see [Running without Docker Compose](../docs/install/configuration.md#running-without-docker-compose)).
-5. **The names of `.env`.** Every variable has its `STELLARR_*` name from [Configuration](../docs/install/configuration.md); a raw .NET key only for a setting that has no such name.
-6. **No frozen defaults.** Leave every setting but the host ports empty, so the image's defaults apply and updates keep following new releases.
-7. **Same limits.** Apply the memory (`4g`), CPU (`4`), PID (`512`), and `no-new-privileges` limits of `docker-compose.yml` where supported.
-8. **Same stop grace period.** Pass `--stop-timeout=75` where extra Docker flags are supported so `stellarr-init` has time to stop services cleanly.
-9. **Secrets masked.** Hide password and API key inputs using the platform's secret masking.
+1. **Image reference**: Default to `ghcr.io/arkazzae/stellarr:latest` while allowing operators to pin a release line tag (such as `1.2`).
+2. **Data mount**: Mount a single persistent host directory or volume at `/data/stellarr`.
+3. **Port mappings**: Publish every port defined in `docker-compose.yml` with matching protocol and default host port. Keep the UDP TURN relay range (`49160-49200/udp`) mapped 1:1.
+4. **Advertised port variables**: Because a container cannot inspect host port mappings, expose `STELLARR_HTTPS_PORT`, `STELLARR_MEDIA_PORT`, `STELLARR_TURN_PORT`, and `STELLARR_TURNS_PORT` initialized to the default host ports and instruct operators to keep them equal to the published host ports (see [Running without Docker Compose](../docs/install/configuration.md#running-without-docker-compose)).
+5. **Variable names**: Use the canonical `STELLARR_*` names from [Configuration](../docs/install/configuration.md). Only use raw `.NET` configuration keys when no `STELLARR_*` alias exists.
+6. **Unset optional defaults**: Leave all non-port variables empty so the container image's built-in defaults apply across upgrades.
+7. **Resource and security limits**: Apply the memory (`4g`), CPU (`4`), PID (`512`), and `no-new-privileges` settings from `docker-compose.yml` wherever the platform supports them.
+8. **Stop timeout**: Pass `--stop-timeout=75` so `stellarr-init` has time to complete its 60-second ordered service shutdown before Docker sends `SIGKILL`.
+9. **Secret masking**: Mark password, token, and API key fields as masked/secret inputs in the platform UI.
 
-When a port, a limit or the image in `docker-compose.yml` changes, update every template here to match.
+Whenever a port, limit, or image reference changes in `docker-compose.yml`, update all templates in this directory to match.
 
-## Adding a platform
+## Adding a platform template
 
-1. Place the template in `deploy/<platform>/`, following the rules above.
-2. Start the container from the template with a scratch volume and verify it reaches `healthy`, `http://localhost:8888/` redirects to HTTPS, and `docker exec <container> stellarr doctor` passes.
-3. Add a platform guide at `docs/install/<platform>.md` covering only platform-specific steps, and link it from [`docs/README.md`](../docs/README.md) and the table above.
+1. Add the template under `deploy/<platform>/` following the requirements above.
+2. Start a container from the template against an empty data directory and verify that it reaches `healthy`, `http://localhost:8888/` redirects to HTTPS, and `docker exec <container> stellarr doctor` passes.
+3. Add a platform installation guide at `docs/install/<platform>.md` covering platform-specific steps, and link it from [`docs/README.md`](../docs/README.md) and the table above.
 
-## Other folders
+## Additional deployment utilities
 
-- [`cloudflare/backup-relay/`](cloudflare/backup-relay/README.md): optional Cloudflare Worker for offsite backups (see [Cloudflare R2 offsite backups](../docs/admin/cloudflare-r2.md) and [Automatic backups](../docs/admin/backups.md)).
+- [`cloudflare/backup-relay/`](cloudflare/backup-relay/README.md): Optional Cloudflare Worker that writes offsite backups to an R2 bucket via a Worker binding (see [Cloudflare R2 offsite backups](../docs/admin/cloudflare-r2.md) and [Automatic backups](../docs/admin/backups.md)).

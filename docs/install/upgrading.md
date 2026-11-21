@@ -1,13 +1,13 @@
 # Upgrading
 
-Upgrading replaces the container image while preserving the `stellarr_stellarr_data` volume.
+Upgrading replaces the container image while preserving the `stellarr_stellarr_data` volume (`/data/stellarr`).
 
 > [!CAUTION]
-> Never run `docker compose down -v` on a production instance. The `-v` flag deletes the data volume, including all messages, uploads, accounts, and secrets.
+> Never run `docker compose down -v` on an active instance. The `-v` flag deletes the data volume, destroying all accounts, messages, uploads, encryption keys, and secrets.
 
 ## 1. Back up the data volume
 
-Always take a full volume backup while the container is stopped so SQLite (`stellarr.db`) and its WAL files are consistent.
+Always take a full volume backup while the container is stopped so SQLite (`db/stellarr.db`) and its WAL files are quiescent.
 
 1. Record the currently running image version:
 
@@ -23,16 +23,28 @@ Always take a full volume backup while the container is stopped so SQLite (`stel
      tar czf /backup/stellarr-data-$(date +%F).tar.gz -C /data .
    ```
 
-The archive contains the SQLite database, uploaded objects, session keys, shared secrets, and TLS private key. Store it securely off-host alongside a copy of your `.env` file.
+The archive contains the SQLite database, uploaded files, data-protection keys, shared internal secrets, client releases, and TLS private key. Store it off-host alongside a copy of your `.env` file.
 
 > [!TIP]
-> You can also create full `.zip` backups from **Cockpit → Backups** while the instance is running (or automate them; see [Automatic backups](../admin/backups.md)). Download copies off-host. To restore a Cockpit archive later, use `stellarr backup restore` and restart the container.
+> You can also create full `.zip` backups from **Cockpit → Backups** while the instance is running (or automate them; see [Automatic backups](../admin/backups.md)). Download copies off-host. To restore a Cockpit `.zip` archive later, run `stellarr backup restore` and restart the container.
 
 ## 2. Pull and start the new version
 
 Release notes are published at <https://github.com/Arkazzae/Stellarr/releases>.
 
-1. Update `STELLARR_VERSION` in `.env` (or keep `latest` to follow stable releases):
+### With the installer (`install.sh`)
+
+If you installed Stellarr with `install.sh`, re-run it to update `docker-compose.yml` and `STELLARR_VERSION` in `.env` (preserving your other `.env` settings) and recreate the container:
+
+```bash
+curl -fsSL https://stellarr.online/install.sh | bash
+```
+
+To pin a specific release tag during an installer update, pass `--version 1.2.3` (or `--yes --version 1.2.3` for unattended execution). Pass `--force` only if you want the installer to back up `.env` and regenerate it from defaults and passed flags.
+
+### With Docker Compose manually
+
+1. Update `STELLARR_VERSION` in `.env` (or leave it unset / `latest` to follow the latest stable release):
 
    ```dotenv
    STELLARR_VERSION=1.2.3
@@ -45,7 +57,7 @@ Release notes are published at <https://github.com/Arkazzae/Stellarr/releases>.
    docker compose up -d
    ```
 
-   If `STELLARR_VERSION` names a tag that does not exist in GHCR, `docker compose` attempts a local build and fails if no `Dockerfile` is present.
+   *(If `STELLARR_VERSION` names a tag that does not exist in GHCR, `docker compose` attempts a local build and fails if no `Dockerfile` is present in the directory.)*
 
 3. Verify the upgrade:
 
@@ -55,18 +67,18 @@ Release notes are published at <https://github.com/Arkazzae/Stellarr/releases>.
    docker inspect --format '{{ index .Config.Labels "org.opencontainers.image.version" }}' stellarr
    ```
 
-   Confirm `docker compose ps` reports `healthy` (every internal service passes readiness checks) and `curl` returns `200`. If startup fails, inspect `docker compose exec stellarr stellarr-init status` and `docker compose logs`.
+   Confirm `docker compose ps` reports `healthy` and `curl` returns `200`. Open browser tabs detect the new `/release.json` identifier and reload into the updated web client shell automatically. If startup fails, inspect `docker compose exec stellarr stellarr-init status` and `docker compose logs`.
 
 ## Database schema
 
-On a new volume, the API initializes SQLite in WAL mode from the data model. On subsequent starts and upgrades, startup applies idempotent schema preparation steps (such as auxiliary tables, full-text indexes, and triggers) while keeping existing servers, roles, memberships, messages, and settings intact.
+On a new volume, the API initializes SQLite in WAL mode from the Entity Framework data model. On subsequent starts and upgrades, `DatabaseSchema.PrepareAsync` applies idempotent schema preparation steps (auxiliary tables, columns, FTS5 full-text search indexes, and triggers) while keeping existing servers, roles, memberships, messages, and settings intact.
 
 > [!WARNING]
-> Do not downgrade by starting an older image directly against an upgraded volume. Roll back by restoring the pre-upgrade volume backup instead.
+> Do not downgrade by starting an older container image directly against an upgraded volume. The operator CLI and API refuse databases whose schema does not match the running binary. Roll back by restoring the pre-upgrade volume backup instead.
 
 ## Rollback
 
-Rolling back restores the entire data volume to the pre-upgrade snapshot; any messages, uploads, or accounts created after the backup are lost.
+Rolling back restores the entire data volume to the pre-upgrade snapshot; any messages, uploads, or accounts created after the backup was taken are lost.
 
 1. Stop the stack and restore the archive:
 
@@ -82,4 +94,4 @@ Rolling back restores the entire data volume to the pre-upgrade snapshot; any me
    docker compose up -d
    ```
 
-Existing user sessions remain valid because the data-protection keys are restored with the archive.
+Existing user sessions remain valid because the data-protection keys (`keys/`) are restored with the archive.
