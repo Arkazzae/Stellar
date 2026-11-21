@@ -19,7 +19,7 @@ Cockpit creates two kinds of backups:
 ## Schedule and configuration
 
 - **Cockpit**: Changes under **Backups → Backup settings** apply within one minute without a restart. Updating the policy requires a fresh second factor if MFA is enabled on the owner account. Use **Restore deployment defaults** to fall back to `.env`.
-- **Environment defaults**: Set defaults in `.env` and run `docker compose up -d`. Direct API deployments opt in with `Backups__Enabled=true`.
+- **Environment defaults**: Set defaults in `.env` and run `docker compose up -d`. The container turns automatic backups on unless `STELLARR_BACKUP_ENABLED=false`; the API started with `dotnet run` outside the container leaves them off.
 
 ```dotenv
 STELLARR_BACKUP_ENABLED=true

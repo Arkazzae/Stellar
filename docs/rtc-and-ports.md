@@ -15,7 +15,7 @@ This page covers host and container ports, NAT/TURN forwarding, relay sizing, an
 
 - `STELLARR_HTTPS_PORT` is included in HTTP-to-HTTPS redirects (omitted when `443`). Requests from an upstream proxy carrying `X-Forwarded-Proto: https` are not redirected.
 - `STELLARR_TURN_PORT`, `STELLARR_TURNS_PORT`, and `STELLARR_MEDIA_PORT` control both published host ports and the ports advertised to browsers. Forward the **same** external UDP port to `STELLARR_MEDIA_PORT` on your router.
-- In `docker-compose.yml`, `STELLARR_TURN_TCP_ENABLED` defaults to `false` (disabled transports are turned off in `/etc/turnserver.conf` via `no-tcp`, `no-tls`, `no-dtls` and omitted from `/api/bootstrap`).
+- `STELLARR_TURN_TCP_ENABLED` defaults to `false` (disabled transports are turned off in `/etc/turnserver.conf` via `no-tcp`, `no-tls`, `no-dtls` and omitted from `/api/bootstrap`).
 
 > [!NOTE]
 > `STELLARR_TURNS_ENABLED` defaults to `false` because browsers reject self-signed certificates on `turns:` URLs. Enable it only after mounting a CA-signed certificate in `/data/stellarr/tls/`.
@@ -51,16 +51,16 @@ Recommended `.env` settings behind NAT:
 
 ```dotenv
 STELLARR_DOMAIN=chat.example.com
-PUBLIC_IP=auto          # or a static public IPv4 address
+STELLARR_PUBLIC_IP=auto    # or a static public IPv4 address
 STELLARR_MEDIA_PORT=49000
 ```
 
-- `PUBLIC_IP` sets `external-ip` in `coturn` and the public host candidate in `stellarr-media` (`auto` resolves `STELLARR_DOMAIN`'s `A` record at startup and fails if none is returned).
-- `stellarr-media` advertises `PUBLIC_IP:STELLARR_MEDIA_PORT` followed by the container's local IPv4 address (for internal `coturn` relaying).
+- `STELLARR_PUBLIC_IP` sets `external-ip` in `coturn` and the public host candidate in `stellarr-media` (`auto` resolves `STELLARR_DOMAIN`'s `A` record at startup and fails if none is returned).
+- `stellarr-media` advertises `STELLARR_PUBLIC_IP:STELLARR_MEDIA_PORT` followed by the container's local IPv4 address (for internal `coturn` relaying).
 - The API issues short-lived (1-hour) HMAC-derived TURN credentials to signed-in users; the shared secret never leaves the container.
 
 > [!WARNING]
-> If `PUBLIC_IP` is unset, `stellarr-media` advertises only the container's internal IPv4 address. External browsers can then connect only through TURN (`coturn`), and the container logs a warning on startup.
+> If `STELLARR_PUBLIC_IP` is unset, `stellarr-media` advertises only the container's internal IPv4 address. External browsers can then connect only through TURN (`coturn`), and the container logs a warning on startup.
 
 For details on what outbound traffic Stellarr needs, see [Outbound network](./install/requirements.md#outbound-network).
 
@@ -71,7 +71,7 @@ When voice fails to connect, check in order:
 1. The client is served over `https://` (or `http://localhost`).
 2. Microphone permissions are granted in the browser.
 3. `GET /api/bootstrap` returns `rtc.mediaServer` with the expected host and port.
-4. `PUBLIC_IP` matches the host's reachable IPv4 address (no empty-`PUBLIC_IP` warning in logs).
+4. `STELLARR_PUBLIC_IP` matches the host's reachable IPv4 address (no empty-`STELLARR_PUBLIC_IP` warning in logs).
 5. `49000/udp` (`STELLARR_MEDIA_PORT`) is forwarded to the host on the same external UDP port.
 6. `3478/udp` (`STELLARR_TURN_PORT`) is reachable from the client network.
 7. `49160-49200/udp` (`STELLARR_TURN_RELAY_RANGE`) is open in host and router firewalls.

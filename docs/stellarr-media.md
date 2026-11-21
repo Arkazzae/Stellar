@@ -47,7 +47,7 @@ flowchart LR
     Turn <-->|"Local UDP"| Media
 ```
 
-Because all media goes through the container, any browser outside the Docker host needs the media server's public candidate: set `PUBLIC_IP` and forward UDP `STELLARR_MEDIA_PORT` (default `49000`) to the host on the same external port. Without `PUBLIC_IP`, the media server advertises only the container's internal address, which off-host browsers can reach only through TURN (`coturn`). See [Requirements](install/requirements.md#behind-nat).
+Because all media goes through the container, any browser outside the Docker host needs the media server's public candidate: set `STELLARR_PUBLIC_IP` and forward UDP `STELLARR_MEDIA_PORT` (default `49000`) to the host on the same external port. Without `STELLARR_PUBLIC_IP`, the media server advertises only the container's internal address, which off-host browsers can reach only through TURN (`coturn`). See [Requirements](install/requirements.md#behind-nat).
 
 `GET /api/bootstrap` returns:
 

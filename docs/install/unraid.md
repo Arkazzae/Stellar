@@ -1,6 +1,6 @@
 # Unraid
 
-Stellarr ships an Unraid template at [`deploy/unraid/stellarr.xml`](../../deploy/unraid/stellarr.xml) with the same image, defaults, and resource limits as [`docker-compose.yml`](../../docker-compose.yml). See [Configuration](configuration.md#running-without-docker-compose) for container variable mapping and [Requirements](requirements.md) for host resources and NAT forwarding.
+Stellarr ships an Unraid template at [`deploy/unraid/stellarr.xml`](../../deploy/unraid/stellarr.xml) with the same image, ports and resource limits as [`docker-compose.yml`](../../docker-compose.yml). Its variables have the names of [Configuration](configuration.md), and one left empty takes the image's default. See [Running without Docker Compose](configuration.md#running-without-docker-compose) for the host ports and [Requirements](requirements.md) for host resources and NAT forwarding.
 
 ## 1. Add the template
 
@@ -15,20 +15,20 @@ Open **Docker → Add Container**, select **Stellarr** under **Template**, and r
 
 ## 2. Configure required settings
 
-1. **Domain and Public IP**: Fill in **Domain** (`STELLARR_DOMAIN`) and **Public IP** (`PUBLIC_IP`) so browsers outside the Unraid host can connect and join voice calls.
+1. **Domain and Public IP**: Fill in **Domain** (`STELLARR_DOMAIN`) and **Public IP** (`STELLARR_PUBLIC_IP`) so browsers outside the Unraid host can connect and join voice calls.
 2. **Ports**: Unraid uses ports `80` and `443` for its own web UI, so the template defaults avoid them (`8443` HTTPS, `8888` HTTP). Whenever you change a host port mapping, update its matching variable to the same number:
 
    | Port mapping | Matching variable |
    | --- | --- |
-   | **HTTPS port** (`8443`) | **HTTPS host port** (`PUBLIC_HTTPS_PORT`) |
-   | **Voice media port** (`49000`) | **Voice media host port** (`Rtc__MediaPort`) |
-   | **TURN port** (`3478`, advanced) | **TURN host port** (`Rtc__TurnPort`) |
-   | **TURNS port** (`5349`, advanced) | **TURNS host port** (`Rtc__TurnsPort`) |
+   | **HTTPS port** (`8443`) | **HTTPS host port** (`STELLARR_HTTPS_PORT`) |
+   | **Voice media port** (`49000`) | **Voice media host port** (`STELLARR_MEDIA_PORT`) |
+   | **TURN port** (`3478`, advanced) | **TURN host port** (`STELLARR_TURN_PORT`) |
+   | **TURNS port** (`5349`, advanced) | **TURNS host port** (`STELLARR_TURNS_PORT`) |
 
    Keep **TURN relay ports** mapped 1:1 (`49160-49200` on both host and container).
 
 3. **Router forwarding**: For calls from outside your LAN, forward UDP `49000`, `3478`, and `49160-49200` to your Unraid server on the same external ports, plus either the HTTPS port or a [reverse proxy](reverse-proxy-and-tls.md).
-4. **Language and time zone**: Set **Interface language** (`STELLARR_LANGUAGE`) and **Server language** (`Stellarr__Language`) to the same value (`en` or `pl`). Unraid passes its own `TZ` to the container as the initial time zone.
+4. **Language and time zone**: Set **Language** (`STELLARR_LANGUAGE`) to `en` or `pl`; it is the language of the web client and of the server alike. Unraid passes its own `TZ` to the container as the initial time zone.
 
 ## 3. First start
 
