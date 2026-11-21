@@ -17,7 +17,6 @@ const textChannel: ChannelSettingsVM = {
   topic: "Rozmowy zespolu",
   slowModeSeconds: 0,
   hideAfterInactivityHours: 0,
-  audioProfile: "balanced",
   userLimit: 0,
 };
 

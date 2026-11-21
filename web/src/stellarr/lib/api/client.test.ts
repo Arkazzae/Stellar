@@ -496,16 +496,7 @@ describe("http api client", () => {
   });
 
   it("parses the bootstrap payload the server actually sends", async () => {
-    fetchMock.mockResolvedValue(
-      jsonResponse({
-        ...BOOTSTRAP,
-        channels: BOOTSTRAP.channels.map((channel) =>
-          channel.id === "c-2"
-            ? { ...channel, audioProfile: "studio" }
-            : channel,
-        ),
-      }),
-    );
+    fetchMock.mockResolvedValue(jsonResponse(BOOTSTRAP));
 
     const data = await api.bootstrap();
 
@@ -519,33 +510,30 @@ describe("http api client", () => {
       "general",
       "Salon",
     ]);
-    expect(data.channels.find((channel) => channel.id === "c-2")?.audioProfile).toBe(
-      "studio",
-    );
     expect(data.messages[0]?.content).toBe("cześć");
     expect(data.voice).toEqual({ "c-2": [] });
     expect(data.channelReads).toEqual({ "c-1": "2026-08-10T18:55:00Z" });
   });
 
-  it("updates a voice channel's audio profile", async () => {
+  it("updates a voice channel's user limit", async () => {
     fetchMock.mockResolvedValue(
       jsonResponse({
         id: "c-2",
         name: "Salon",
         kind: "voice",
         position: 2,
-        audioProfile: "studio",
+        userLimit: 8,
       }),
     );
 
     await expect(
-      api.updateChannel("c-2", { audioProfile: "studio" }),
-    ).resolves.toMatchObject({ id: "c-2", audioProfile: "studio" });
+      api.updateChannel("c-2", { userLimit: 8 }),
+    ).resolves.toMatchObject({ id: "c-2", userLimit: 8 });
 
     const [url, init] = fetchMock.mock.calls[0] ?? [];
     expect(url).toBe("/api/admin/channels/c-2");
     expect(init?.method).toBe("PATCH");
-    expect(init?.body).toBe(JSON.stringify({ audioProfile: "studio" }));
+    expect(init?.body).toBe(JSON.stringify({ userLimit: 8 }));
   });
 
   it("keeps the server-issued TURN credentials intact", async () => {

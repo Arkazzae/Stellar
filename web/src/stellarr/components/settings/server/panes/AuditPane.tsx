@@ -89,7 +89,6 @@ const FIELD_LABEL: Record<string, MessageKey> = {
   topic: "srv.audit.f.topic",
   slowMode: "srv.audit.f.slowMode",
   hideAfter: "srv.audit.f.hideAfter",
-  audioProfile: "srv.audit.f.audioProfile",
   userLimit: "srv.audit.f.userLimit",
   kind: "srv.audit.f.kind",
   channel: "srv.audit.f.channel",

@@ -15,7 +15,6 @@ import type {
 } from "@/lib/api/types";
 
 import type { Unsubscribe } from "./chat";
-import type { OpusProfileId } from "./voice";
 
 export type { NewServer, Section };
 
@@ -189,8 +188,6 @@ export interface ChannelPatch {
   slowModeSeconds?: number;
   /** Hours of silence before the channel drops out of the rail; 0 is never. */
   hideAfterInactivityHours?: number;
-  /** Voice only. The codec profile everyone in the channel is encoded with. */
-  audioProfile?: OpusProfileId;
   /** Voice only. How many people may be in the call at once; 0 is no limit. */
   userLimit?: number;
 }

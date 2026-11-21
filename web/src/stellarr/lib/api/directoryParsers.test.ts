@@ -83,7 +83,6 @@ describe("parseChannel", () => {
           kind: "voice",
           position: 2,
           userLimit: 8,
-          audioProfile: "studio",
           sectionId: "sec-1",
           topic: "Rozmowy",
           slowModeSeconds: 5,
@@ -97,18 +96,11 @@ describe("parseChannel", () => {
       kind: "voice",
       position: 2,
       userLimit: 8,
-      audioProfile: "studio",
       sectionId: "sec-1",
       topic: "Rozmowy",
       slowModeSeconds: 5,
       hideAfterInactivityHours: 24,
     });
-  });
-
-  it("drops an audio profile it does not know", () => {
-    const channel = parseChannel({ id: "c-2", name: "Salon", kind: "voice", audioProfile: "lossless" }, "/p");
-
-    expect("audioProfile" in channel).toBe(false);
   });
 
   it("requires an id and a name", () => {

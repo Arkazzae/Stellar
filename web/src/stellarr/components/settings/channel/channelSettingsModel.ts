@@ -1,7 +1,7 @@
 import type { IconName } from "@stellarr/icons";
 import type { SettingsShellGroup, SettingsShellItem } from "@/components/settings/SettingsShell";
 import type { Translator } from "@/i18n";
-import type { ChannelKind, OpusProfileId } from "@/ports";
+import type { ChannelKind } from "@/ports";
 
 /** The editable fields of one channel, as the dialog's form sees them. */
 export interface ChannelSettingsVM {
@@ -11,8 +11,6 @@ export interface ChannelSettingsVM {
   topic: string;
   slowModeSeconds: number;
   hideAfterInactivityHours: number;
-  /** Voice only; the codec profile shared by the call. */
-  audioProfile: OpusProfileId;
   userLimit: number;
   /** The section the channel sits in, shown beside its name; none when unsectioned. */
   sectionName?: string;

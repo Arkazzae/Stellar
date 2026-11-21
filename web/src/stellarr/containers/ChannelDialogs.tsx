@@ -4,17 +4,10 @@ import { ChannelCreate } from "@/components/settings/channel/ChannelCreate";
 import { railGroups } from "@/components/settings/channel/channelSettingsModel";
 import { ChannelSettings, type ChannelSettingsVM } from "@/components/settings/channel/ChannelSettings";
 import { ApiError, describeError } from "@/lib/api/errors";
-import type { OpusProfileId, Role } from "@/ports";
+import type { Role } from "@/ports";
 import { useAccount, useDirectory, useLanguage, usePorts, useUi } from "@/state/hooks";
 
 import { usePermissionOverrides } from "./usePermissionOverrides";
-
-/**
- * What a voice channel is worth until the server can say otherwise: the value
- * the voice pipeline defaults to, so the dialog opens on what the call is
- * actually running at rather than on a guess.
- */
-const DEFAULT_CHANNEL_AUDIO: OpusProfileId = "premium";
 
 /** The cog on a rail row: one channel's settings, permissions and deletion. */
 export function ChannelSettingsDialog({ roles }: { roles: readonly Role[] }) {
@@ -41,7 +34,6 @@ export function ChannelSettingsDialog({ roles }: { roles: readonly Role[] }) {
       topic: found.topic ?? "",
       slowModeSeconds: found.slowModeSeconds ?? 0,
       hideAfterInactivityHours: found.hideAfterInactivityHours ?? 0,
-      audioProfile: found.audioProfile ?? DEFAULT_CHANNEL_AUDIO,
       userLimit: found.userLimit ?? 0,
       sectionName: directory.sections.find((section) => section.id === found.sectionId)?.name,
       rail: railGroups(directory.channels, directory.sections),
