@@ -268,52 +268,54 @@ export function ServerCreateModal({
               {t("shell.createServerNameTitle")}
             </h2>
             <p className="nsv-lead">{t("auth.setup.serverDescription")}</p>
-            <div className="nsv-field">
-              <label className="nsv-label" htmlFor={nameId}>
-                {t("shell.serverName")}
-              </label>
-              <input
-                ref={nameInput}
-                id={nameId}
-                className="nsv-input"
-                type="text"
-                value={draft.name}
-                maxLength={80}
-                placeholder={t("shell.serverNamePlaceholder")}
-                disabled={busy}
-                required
-                autoComplete="off"
-                aria-invalid={refused || undefined}
-                aria-describedby={nameNoteId}
-                onChange={(event) => {
-                  change("name", event.target.value);
-                  setError(null);
-                }}
-              />
-              {error === null ? (
-                <p id={nameNoteId} className="nsv-hint">
-                  {t("shell.serverNameDetail")}
-                </p>
-              ) : (
-                <p id={nameNoteId} className="nsv-hint bad" role="alert">
-                  {error}
-                </p>
-              )}
-            </div>
-            <div className="nsv-field">
-              <label className="nsv-label" htmlFor={descriptionId}>
-                {t("shell.serverDescription")}
-                <span className="nsv-optional">{t("shell.createServerOptional")}</span>
-              </label>
-              <textarea
-                id={descriptionId}
-                className="nsv-input"
-                value={draft.description}
-                maxLength={280}
-                placeholder={t("shell.serverDescriptionPlaceholder")}
-                disabled={busy}
-                onChange={(event) => change("description", event.target.value)}
-              />
+            <div className="nsv-fields">
+              <div className="nsv-field">
+                <label className="nsv-label" htmlFor={nameId}>
+                  {t("shell.serverName")}
+                </label>
+                <input
+                  ref={nameInput}
+                  id={nameId}
+                  className="nsv-input"
+                  type="text"
+                  value={draft.name}
+                  maxLength={80}
+                  placeholder={t("shell.serverNamePlaceholder")}
+                  disabled={busy}
+                  required
+                  autoComplete="off"
+                  aria-invalid={refused || undefined}
+                  aria-describedby={nameNoteId}
+                  onChange={(event) => {
+                    change("name", event.target.value);
+                    setError(null);
+                  }}
+                />
+                {error === null ? (
+                  <p id={nameNoteId} className="nsv-hint">
+                    {t("shell.serverNameDetail")}
+                  </p>
+                ) : (
+                  <p id={nameNoteId} className="nsv-hint bad" role="alert">
+                    {error}
+                  </p>
+                )}
+              </div>
+              <div className="nsv-field">
+                <label className="nsv-label" htmlFor={descriptionId}>
+                  {t("shell.serverDescription")}
+                  <span className="nsv-optional">{t("shell.createServerOptional")}</span>
+                </label>
+                <textarea
+                  id={descriptionId}
+                  className="nsv-input"
+                  value={draft.description}
+                  maxLength={280}
+                  placeholder={t("shell.serverDescriptionPlaceholder")}
+                  disabled={busy}
+                  onChange={(event) => change("description", event.target.value)}
+                />
+              </div>
             </div>
           </>
         );
@@ -324,81 +326,83 @@ export function ServerCreateModal({
               {t("shell.createServerChannelsTitle")}
             </h2>
             <p className="nsv-lead">{t("shell.starterChannelsNote")}</p>
-            <div className="nsv-field">
-              <label className="nsv-label" htmlFor={textChannelId}>
-                {t("shell.starterTextChannel")}
-              </label>
-              <div className="nsv-chrow">
-                <span className="nsv-glyph" aria-hidden="true">
-                  #
-                </span>
-                <input
-                  ref={textInput}
-                  id={textChannelId}
-                  className="nsv-input"
-                  type="text"
-                  value={draft.textChannel}
-                  maxLength={60}
-                  placeholder={t("shell.starterTextChannelName")}
-                  disabled={busy}
-                  required
-                  autoComplete="off"
-                  aria-describedby={textNoteId}
-                  onChange={(event) => change("textChannel", event.target.value)}
-                />
-              </div>
-              <p id={textNoteId} className="nsv-hint">
-                {textSlug.length === 0
-                  ? t("channel.lowercaseAndHyphens")
-                  : t("channel.willCreate", { name: `#${textSlug}` })}
-              </p>
-            </div>
-            <div className="nsv-switch">
-              <span className="nsv-switch-txt" aria-hidden="true">
-                <b>{t("shell.starterVoiceChannel")}</b>
-                <span>{t("shell.starterVoiceChannelDetail")}</span>
-              </span>
-              <Switch
-                checked={draft.withVoice}
-                onChange={(checked) => change("withVoice", checked)}
-                label={t("shell.starterVoiceChannel")}
-                disabled={busy}
-              />
-            </div>
-            {draft.withVoice ? (
+            <div className="nsv-fields">
               <div className="nsv-field">
+                <label className="nsv-label" htmlFor={textChannelId}>
+                  {t("shell.starterTextChannel")}
+                </label>
                 <div className="nsv-chrow">
                   <span className="nsv-glyph" aria-hidden="true">
-                    <Icon name="speaker" size={18} />
+                    #
                   </span>
                   <input
+                    ref={textInput}
+                    id={textChannelId}
                     className="nsv-input"
                     type="text"
-                    value={draft.voiceChannel}
+                    value={draft.textChannel}
                     maxLength={60}
-                    placeholder={t("shell.starterVoiceChannelName")}
+                    placeholder={t("shell.starterTextChannelName")}
                     disabled={busy}
                     required
                     autoComplete="off"
-                    aria-label={t("shell.createServerVoiceChannelName")}
-                    aria-invalid={channelsClash || undefined}
-                    aria-describedby={voiceNoteId}
-                    onChange={(event) => change("voiceChannel", event.target.value)}
+                    aria-describedby={textNoteId}
+                    onChange={(event) => change("textChannel", event.target.value)}
                   />
                 </div>
-                {channelsClash ? (
-                  <p id={voiceNoteId} className="nsv-hint bad" role="alert">
-                    {t("shell.starterChannelsClash")}
-                  </p>
-                ) : (
-                  <p id={voiceNoteId} className="nsv-hint">
-                    {voiceSlug.length === 0
-                      ? t("channel.lowercaseAndHyphens")
-                      : t("channel.willCreate", { name: voiceSlug })}
-                  </p>
-                )}
+                <p id={textNoteId} className="nsv-hint">
+                  {textSlug.length === 0
+                    ? t("channel.lowercaseAndHyphens")
+                    : t("channel.willCreate", { name: `#${textSlug}` })}
+                </p>
               </div>
-            ) : null}
+              <div className="nsv-switch">
+                <span className="nsv-switch-txt" aria-hidden="true">
+                  <b>{t("shell.starterVoiceChannel")}</b>
+                  <span>{t("shell.starterVoiceChannelDetail")}</span>
+                </span>
+                <Switch
+                  checked={draft.withVoice}
+                  onChange={(checked) => change("withVoice", checked)}
+                  label={t("shell.starterVoiceChannel")}
+                  disabled={busy}
+                />
+              </div>
+              {draft.withVoice ? (
+                <div className="nsv-field">
+                  <div className="nsv-chrow">
+                    <span className="nsv-glyph" aria-hidden="true">
+                      <Icon name="speaker" size={18} />
+                    </span>
+                    <input
+                      className="nsv-input"
+                      type="text"
+                      value={draft.voiceChannel}
+                      maxLength={60}
+                      placeholder={t("shell.starterVoiceChannelName")}
+                      disabled={busy}
+                      required
+                      autoComplete="off"
+                      aria-label={t("shell.createServerVoiceChannelName")}
+                      aria-invalid={channelsClash || undefined}
+                      aria-describedby={voiceNoteId}
+                      onChange={(event) => change("voiceChannel", event.target.value)}
+                    />
+                  </div>
+                  {channelsClash ? (
+                    <p id={voiceNoteId} className="nsv-hint bad" role="alert">
+                      {t("shell.starterChannelsClash")}
+                    </p>
+                  ) : (
+                    <p id={voiceNoteId} className="nsv-hint">
+                      {voiceSlug.length === 0
+                        ? t("channel.lowercaseAndHyphens")
+                        : t("channel.willCreate", { name: voiceSlug })}
+                    </p>
+                  )}
+                </div>
+              ) : null}
+            </div>
           </>
         );
       case 3: {
