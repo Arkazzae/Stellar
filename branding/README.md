@@ -1,25 +1,28 @@
 # Stellarr branding
 
-Logo, mascot, UI icons, color palette, typography, and usage rules for Stellarr. Use the logo and mascot SVG assets as provided without redrawing or recoloring them; UI icons inherit the interface color.
+Logo, mascot, UI icons, default avatars and banners, color palette, typography, and brand usage rules for Stellarr. Use the logo and mascot SVG/PNG assets as provided without redrawing or recoloring them; standalone UI icons inherit `currentColor`.
 
 ## Assets
 
 | Path | Description |
 | --- | --- |
-| `logo/mark.svg` | Primary mark (48 px and above): light speech bubble with three indigo voice-meter bars, for dark backgrounds |
-| `logo/small.svg` | Small-size mark (16–47 px): wider bars and fuller silhouette |
+| `logo/mark.svg` | Primary mark (`48 px` and above): light speech bubble with three indigo voice-meter bars, for dark backgrounds |
+| `logo/small.svg` | Small-size mark (`16–47 px`): wider bars and fuller silhouette |
 | `logo/mono.svg` | Monochrome mark (`currentColor` fill with cut-out bars) |
-| `logo/lockup.svg` | Horizontal lockup for dark backgrounds: `mark.svg` and the name in Outfit SemiBold, converted to outlines, spaced and sized as in the guidelines; for a mark 48 px tall and above |
-| `logo/lockup-small.svg` | The same lockup with `small.svg`, for a mark 16–47 px tall, such as the header of the instance's mail |
-| `logo/tile.svg` | Application icon: primary mark centered on a rounded 512 px `#09090b` tile |
-| `logo/tile.png` | `tile.svg` rendered at 512 px, for places that do not take SVG, such as the Unraid template icon |
+| `logo/lockup.svg` | Horizontal lockup for dark backgrounds (`48 px` mark height and above): `mark.svg` paired with the outlined Outfit SemiBold wordmark |
+| `logo/lockup-small.svg` | Compact horizontal lockup (`16–47 px` mark height) using `small.svg`, used in email headers |
+| `logo/tile.svg` | Application icon: primary mark centered on a rounded `512 × 512` `#09090b` tile |
+| `logo/tile.png` | Rasterized `512 × 512` PNG of `tile.svg` for platforms that require PNG icons (such as Unraid) |
 | `mascot/` | Astronaut mascot in `mark.svg`, `small.svg`, `mono.svg`, and `tile.svg` variants |
-| `mascot/expressions/` | Eight state expressions: `speaking`, `idle`, `listening`, `happy`, `muted`, `away`, `connecting`, `failed` |
-| [`avatars/`](avatars/) | Twenty mascot faces, `NN-name.png` (1254 px square, transparent background); the default avatars of accounts without an uploaded picture |
-| [`backgrounds/`](backgrounds/) | Fourteen scenes with two mascots each, `NN-scene.png` (1672 × 941); the default profile banners |
-| [`icons/`](icons/) | 160 standalone UI icons, including formatting and noise-suppression modes; 24 × 24 SVGs with a 1.5 px `currentColor` stroke |
+| `mascot/expressions/` | Eight state expressions (`speaking`, `idle`, `listening`, `happy`, `muted`, `away`, `connecting`, `failed`) |
+| `mascot/stickers/` | Astronaut stickers (`NN-<name>.png`), exported to `web/public/mascot/stickers/` as WebP by `web/scripts/export-mascot.mjs` |
+| `mascot/illustrations/` | Wide scene illustrations (`NN-<name>.png`), exported to `web/public/mascot/illustrations/` as WebP by `web/scripts/export-mascot.mjs` |
+| [`avatars/`](avatars/) | Default account avatar portraits (`NN-<name>.png`, `1254 × 1254` PNG with transparent background), exported to `web/public/identity/avatars/` as `256 × 256` WebP by `web/scripts/export-identity-art.mjs` |
+| [`backgrounds/`](backgrounds/) | Default profile banner scenes (`NN-<scene>.png`, `1672 × 941` PNG), exported to `web/public/identity/backgrounds/` as `960 × 540` WebP by `web/scripts/export-identity-art.mjs` |
+| [`icons/`](icons/) | Standalone UI icons in `broken/` and `linear/` variants (`24 × 24` SVG, `1.5 px` `currentColor` stroke), generated from [`packages/stellarr-icons/`](../packages/stellarr-icons/README.md) |
+| [`film/`](film/README.md) | Reproducible pipeline that captures and renders the animated `stellarr.webp` showcase in the root README |
 | `guidelines/stellarr-brand-guidelines.pdf` | Brand guidelines PDF (v1.0 draft) |
-| `guidelines/index.html` | HTML source of the brand guidelines (uses `guidelines/fonts/` for Outfit and JetBrains Mono) |
+| `guidelines/index.html` | HTML source of the brand guidelines (loads Outfit and JetBrains Mono from `guidelines/fonts/`) |
 
 ## Logo usage
 
@@ -31,7 +34,7 @@ Logo, mascot, UI icons, color palette, typography, and usage rules for Stellarr.
 
 ## Mascot usage
 
-The astronaut mascot is used in empty states, onboarding screens, recoverable error views, and stickers. Every expression must be accompanied by a text label:
+The astronaut mascot appears in empty states, onboarding screens, recoverable error views, and the built-in sticker picker. When an expression SVG communicates application state, always pair it with a visible text label:
 
 | File | State |
 | --- | --- |

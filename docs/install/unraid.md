@@ -1,10 +1,10 @@
 # Unraid
 
-Stellarr ships an Unraid template at [`deploy/unraid/stellarr.xml`](../../deploy/unraid/stellarr.xml) with the same image, ports and resource limits as [`docker-compose.yml`](../../docker-compose.yml). Its variables have the names of [Configuration](configuration.md), and one left empty takes the image's default. See [Running without Docker Compose](configuration.md#running-without-docker-compose) for the host ports and [Requirements](requirements.md) for host resources and NAT forwarding.
+Stellarr provides an Unraid template at [`deploy/unraid/stellarr.xml`](../../deploy/unraid/stellarr.xml) with the same image, published ports, and resource limits as [`docker-compose.yml`](../../docker-compose.yml). Template variables use the `STELLARR_*` names listed in [Configuration](configuration.md), and any blank field falls back to the container image's built-in default. See [Running without Docker Compose](configuration.md#running-without-docker-compose) for host port variable rules and [Requirements](requirements.md) for host resources and NAT forwarding.
 
-## 1. Add the template
+## 1. Install the user template
 
-Stellarr is not in Community Applications. Download the user template from the Unraid terminal:
+Stellarr is not published in Community Applications. Download the user template from the Unraid web terminal or SSH session:
 
 ```bash
 wget -O /boot/config/plugins/dockerMan/templates-user/my-Stellarr.xml \
@@ -15,8 +15,8 @@ Open **Docker → Add Container**, select **Stellarr** under **Template**, and r
 
 ## 2. Configure required settings
 
-1. **Domain and Public IP**: Fill in **Domain** (`STELLARR_DOMAIN`) and **Public IP** (`STELLARR_PUBLIC_IP`) so browsers outside the Unraid host can connect and join voice calls.
-2. **Ports**: Unraid uses ports `80` and `443` for its own web UI, so the template defaults avoid them (`8443` HTTPS, `8888` HTTP). Whenever you change a host port mapping, update its matching variable to the same number:
+1. **Domain and Public IP**: Set **Domain** (`STELLARR_DOMAIN`) and **Public IP** (`STELLARR_PUBLIC_IP`) so browsers outside the Unraid host can connect and join voice calls (use your Unraid LAN IPv4 for LAN-only calls, or your public IPv4 / `auto` for internet access).
+2. **Ports**: Unraid uses ports `80` and `443` for its own web UI, so the template defaults to `8443` (HTTPS) and `8888` (HTTP). Whenever you change a host port mapping in Unraid, update its matching environment variable to the same port number:
 
    | Port mapping | Matching variable |
    | --- | --- |
@@ -27,20 +27,20 @@ Open **Docker → Add Container**, select **Stellarr** under **Template**, and r
 
    Keep **TURN relay ports** mapped 1:1 (`49160-49200` on both host and container).
 
-3. **Router forwarding**: For calls from outside your LAN, forward UDP `49000`, `3478`, and `49160-49200` to your Unraid server on the same external ports, plus either the HTTPS port or a [reverse proxy](reverse-proxy-and-tls.md).
-4. **Language and time zone**: Set **Language** (`STELLARR_LANGUAGE`) to `en` or `pl`; it is the language of the web client and of the server alike. Unraid passes its own `TZ` to the container as the initial time zone.
+3. **Router port forwarding**: For calls from outside your LAN, forward UDP `49000`, `3478`, and `49160-49200` on your router to the Unraid server on the same external ports, plus either the HTTPS port or an external [reverse proxy](reverse-proxy-and-tls.md).
+4. **Language and time zone**: Set **Language** (`STELLARR_LANGUAGE`) to `en` or `pl` to configure both the default web client locale and the server language. Unraid passes its host time zone to the container automatically.
 
 ## 3. First start
 
-Start the container and click **WebUI** from its menu on the Docker tab. Accept the self-signed certificate warning, then create the owner account as described in the [Quick start](quick-start.md#4-create-the-owner-account). The setup code it asks for is in the container's log, which **Logs** in the same menu opens: use the last line that starts with `Setup code:`.
+Start the container and click **WebUI** from its menu on the Docker tab. Accept the self-signed certificate warning, then complete the three-step `/setup` wizard as described in the [Quick start](quick-start.md#4-create-the-owner-account-and-first-server). Retrieve the required setup code by clicking **Logs** in the container's menu on the Docker tab and copying the latest `Setup code:` line.
 
-For a browser-trusted certificate or reverse proxy setup, see [Reverse proxy and TLS](reverse-proxy-and-tls.md).
+For a browser-trusted TLS certificate or reverse proxy configuration, see [Reverse proxy and TLS](reverse-proxy-and-tls.md).
 
 ## Stopping, backups, and CLI
 
-- **Stop timeout**: The template's **Extra Parameters** include `--stop-timeout=75` so services stop cleanly. Keep that flag if you edit Extra Parameters.
-- **Data path**: `/mnt/user/appdata/stellarr` by default. Keep `appdata` on a cache/pool drive and back up the whole folder while the container is stopped (see [Upgrading](upgrading.md)).
-- **CLI and service checks**: Because the Unraid container is named `Stellarr`, run [`stellarr`](../admin/cli.md) and [`stellarr-init`](../architecture.md#container-services-stellarr-init) against `Stellarr`:
+- **Stop timeout**: The template's **Extra Parameters** include `--stop-timeout=75` so `stellarr-init` can complete its 60-second ordered service shutdown before Docker sends `SIGKILL`. Preserve that flag if you edit Extra Parameters.
+- **Data path**: `/mnt/user/appdata/stellarr` by default. Keep `appdata` on an SSD cache/pool drive and back up the entire directory while the container is stopped (see [Upgrading](upgrading.md)).
+- **CLI and service checks**: Because the Unraid container is named `Stellarr` (capital `S`), run [`stellarr`](../admin/cli.md) and [`stellarr-init`](../architecture.md#container-services-stellarr-init) against `Stellarr`:
 
   ```bash
   docker exec -it Stellarr stellarr doctor
@@ -49,4 +49,4 @@ For a browser-trusted certificate or reverse proxy setup, see [Reverse proxy and
 
 ## Updating
 
-The template tracks `ghcr.io/arkazzae/stellarr:latest`. Clicking **Apply update** on the Docker tab pulls the newest image while keeping your template settings and `/mnt/user/appdata/stellarr` data. To stay on a specific release line, set **Repository** to a tag such as `ghcr.io/arkazzae/stellarr:1.2`. Review [Upgrading](upgrading.md) before major upgrades.
+The template tracks `ghcr.io/arkazzae/stellarr:latest`. Clicking **Apply update** on the Unraid Docker tab pulls the newest image while preserving your template settings and `/mnt/user/appdata/stellarr` volume. To pin a specific release line, set **Repository** to a version tag such as `ghcr.io/arkazzae/stellarr:1.2`. Review [Upgrading](upgrading.md) before major upgrades.

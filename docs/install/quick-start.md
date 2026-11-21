@@ -1,34 +1,36 @@
 # Quick start
 
-This guide starts a local Stellarr instance on a single machine, creates the owner account, invites a second user, and tests voice chat between two browser profiles.
+Start a local Stellarr instance on a single machine, create the owner account and initial server, invite a second user, and verify a two-user voice call.
 
 ## Prerequisites
 
-- Docker Engine with the Compose plugin 2.24.0 or newer (`docker compose version`). See [Requirements](requirements.md).
+- Docker Engine with the Compose plugin `2.24.0` or newer (`docker compose version`). See [Requirements](requirements.md).
 - Free host ports `8443`, `8888`, `3478`, `5349`, `49000`, and `49160-49200`. If a port is in use, override the corresponding variable in `.env` (see [Requirements](requirements.md#ports)).
 - A second browser profile or private window to test a two-user call.
 
-## One-click install
+## One-line installer
 
-One command checks the machine, writes the installation's files, starts the container and prints the address and the setup code:
+Run the installer script to verify host prerequisites, write `docker-compose.yml` and `.env`, start the container, and print the instance URL and setup code:
 
 ```bash
 curl -fsSL https://stellarr.online/install.sh | bash
 ```
 
-In a terminal it asks up to three things: the domain or IP address people will open, the IPv4 address voice calls use when that is a domain, and the interface language, English or Polish. On Linux it offers to install Docker Engine when Docker is missing. With `--yes`, or without a terminal, it asks nothing and takes its options and defaults instead:
+- **Interactive mode**: Prompts for up to three settings: the domain or IPv4 address users will open (`--domain` / `STELLARR_DOMAIN`, default `localhost`), the external IPv4 address for voice calls when a domain is entered (`--public-ip` / `STELLARR_PUBLIC_IP`, an IPv4 address or `auto`), and the interface language (`--language` / `STELLARR_LANGUAGE`, `en` or `pl`, defaulting to the shell locale). On Linux, if Docker is missing, the installer offers to install Docker Engine via `https://get.docker.com` (or pass `--install-docker`). If a required port is occupied, it offers the next free port.
+- **Non-interactive mode**: Pass `-y` / `--yes` (or run without a TTY) to skip prompts and apply CLI flags (`--domain`, `--public-ip`, `--language`, `--https-port`, `--public-port`, `--http-port`, `--media-port`, `--turn-port`, `--turns-port`, `--version`, `--ref`, `--no-start`, `--skip-port-check`, `--force`) or their `STELLARR_*` environment variables (`STELLARR_START_TIMEOUT` defaults to `300` s):
 
-```bash
-curl -fsSL https://stellarr.online/install.sh | bash -s -- --yes --domain chat.example.com --public-ip auto
-```
+  ```bash
+  curl -fsSL https://stellarr.online/install.sh | bash -s -- --yes --domain chat.example.com --public-ip auto
+  ```
 
-It installs into `~/stellarr`, unless `--dir` names another directory, the current directory already holds Stellarr's `docker-compose.yml`, or Docker already runs Stellarr from another directory. When a port it needs is in use, it offers the next free one in a terminal and otherwise stops before it changes anything; it also stops when an installation it did not make is in the way.
+- **Install directory (`--dir PATH` or `STELLARR_INSTALL_DIR`)**: When omitted, resolves in order to: (1) the git checkout containing `./install.sh`, (2) the working directory of an existing Stellarr Compose container, (3) the current directory if it already holds Stellarr's `docker-compose.yml`, or (4) `~/stellarr`.
+- **Updating**: Re-running the installer updates an existing installation to the latest pinned release tag (or `--version TAG`), backs up the previous `docker-compose.yml`, updates `STELLARR_VERSION` in `.env`, and preserves all other `.env` settings. Local Compose customizations belong in `docker-compose.override.yml`.
+- **From a git checkout**: Run `./install.sh` to use the checkout's files, or `./install.sh --build` to build the container image locally. Run `./install.sh --help` for the full option list.
 
-Running it again updates Stellarr to the latest release. It replaces `docker-compose.yml` with the release's own, keeping the previous one beside it, sets `STELLARR_VERSION` in `.env`, and leaves the rest of `.env` as it is; local changes belong in `.env` or in `docker-compose.override.yml`. In a checkout, `./install.sh` uses the checkout's files, and `./install.sh --build` builds the image from it. `--help` lists every option.
+> [!NOTE]
+> If no container image has been published to GHCR for the requested release yet, build from a local checkout instead (`./install.sh --build` or see [Build from source](#build-from-source)).
 
-Until the first release is published there is no image to pull, and the installer says so; build the image from a checkout instead, as in [Build from source](#build-from-source).
-
-The rest of this guide describes the same steps by hand.
+The steps below walk through performing the same setup manually with Docker Compose.
 
 ## 1. Download Compose and environment files
 
@@ -38,7 +40,7 @@ curl -fsSLO https://raw.githubusercontent.com/Arkazzae/Stellarr/main/docker-comp
 curl -fsSL https://raw.githubusercontent.com/Arkazzae/Stellarr/main/.env.example -o .env
 ```
 
-Every line of that `.env` is commented out, so the image's defaults apply, and they suit local testing on `localhost`.
+All entries in `.env.example` are commented out so the container's built-in defaults apply out of the box for local testing on `localhost`.
 
 ## 2. Start the container
 
@@ -46,13 +48,13 @@ Every line of that `.env` is commented out, so the image's defaults apply, and t
 docker compose up -d
 ```
 
-Docker pulls `ghcr.io/arkazzae/stellarr`, creates the `stellarr_stellarr_data` volume, and starts the `stellarr` container. Verify that it is healthy:
+Docker pulls `ghcr.io/arkazzae/stellarr`, creates the `stellarr_stellarr_data` volume, and starts the `stellarr` container. Check that the container reaches `healthy`:
 
 ```bash
 docker compose ps
 ```
 
-The container reports `healthy` once Nginx, the API and database, `stellarr-media`, and `coturn` all pass their readiness checks. If startup fails, inspect service state and logs:
+The container reports `healthy` once `stellarr-media`, the ASP.NET Core API and SQLite database, `coturn`, and Nginx all pass their readiness checks. If startup fails, inspect service state and logs:
 
 ```bash
 docker compose exec stellarr stellarr-init status
@@ -64,56 +66,56 @@ docker compose logs
 Open `https://localhost:8443` in your browser.
 
 > [!NOTE]
-> On first start, the container generates a 365-day self-signed TLS certificate for `localhost`. Accept the browser's certificate warning to continue. For remote deployments, configure a trusted certificate as described in [Reverse proxy and TLS](reverse-proxy-and-tls.md).
+> On first start, the container generates a 365-day self-signed TLS certificate for `localhost`. Accept the browser's certificate warning to proceed. For remote deployments, configure a trusted certificate as described in [Reverse proxy and TLS](reverse-proxy-and-tls.md).
 
-## 4. Create the owner account
+## 4. Create the owner account and first server
 
-Until the instance has an account, the web client opens its setup page, `https://localhost:8443/setup`. Creating the owner account there takes a setup code that the container writes to its log, so nobody who reaches the address before you can take the instance over. Find it with:
+While the instance has no accounts, every web client route redirects to `https://localhost:8443/setup`. Completing setup requires a one-time setup code printed to the container logs so that an unauthenticated visitor cannot claim a fresh instance before the operator:
 
 ```bash
 docker compose logs stellarr | grep "Setup code"
 ```
 
-`docker logs stellarr` shows the same log. The line reads:
+The log entry looks like:
 
 ```text
 Setup code: K7QM-2XWP-9HDA. Open /setup at the address of this instance to create the owner account.
 ```
 
-With `STELLARR_DOMAIN` or `STELLARR_PUBLIC_URL` set, it gives the full address instead, such as `https://chat.example.com/setup`. Every start of the container draws a new code, so after a restart use the last line. Case, spaces and dashes do not matter when you type it.
+*(When `STELLARR_DOMAIN` or `STELLARR_PUBLIC_URL` is configured, the log prints the full URL such as `https://chat.example.com/setup`. A fresh code is generated on each container restart until the owner account is created; case, spaces, and hyphens are ignored.)*
 
-1. Enter the setup code and the owner account: a display name, username (3–32 characters: letters, digits, `.`, `-`, `_`), email, and password (at least 8 characters). Select **Next: first server**.
-2. Continue to the server step. Choose a server name, an optional description, and the first text channel. Keep the voice channel enabled if you want to test voice next; you can rename or remove it later.
-3. Select **Create account and server**.
+Complete the three-step `/setup` wizard:
 
-The first account becomes the instance owner and is created together with its server, in the last step, so a page closed halfway leaves nothing behind. After that the setup code stops working. Subsequent accounts require an invite link and skip server setup.
+1. **Step 1 — Owner account**: Enter the setup code, display name, username (`3–32` characters: letters, digits, `.`, `-`, `_`), email address, and password (at least `8` characters). Click **Next: first server**.
+2. **Step 2 — First server**: Enter a server name (`1–80` characters), an optional description, and the first text channel name (default `general`). Leave the voice channel toggle enabled (default `lounge`) to test voice calls, then click **Create account and server**.
+3. **Step 3 — Invite friends**: The wizard creates the owner account and initial server atomically in one transaction (invalidating the setup code), generates an invite link, and displays a **Copy link** button. Copy the invite link, then click **Open server**.
 
 ## 5. Invite a second user
 
-The last setup step shows an invite link with **Copy**. To make another one later:
+If you need to generate another invite link later from inside the app:
 
-1. In the channel list header, click **Invite to server** next to the server name.
-2. Click **New invite link** to generate an invite URL:
+1. In the channel rail header, click **Invite to server** next to the server name.
+2. Click **New invite link** to create an invite URL:
 
    ```text
    https://localhost/invite/22b115a390a20370
    ```
 
-3. If you are testing on `localhost:8443` without `STELLARR_DOMAIN` or `STELLARR_PUBLIC_URL` set, add `:8443` before opening the link (for example, `https://localhost:8443/invite/22b115a390a20370`).
+3. When testing locally on `localhost:8443` without `STELLARR_DOMAIN` or `STELLARR_PUBLIC_URL` set, include `:8443` in the URL (`https://localhost:8443/invite/22b115a390a20370`).
 
 > [!WARNING]
-> When `STELLARR_DOMAIN` and `STELLARR_PUBLIC_URL` are unset, invite URLs fall back to the request `Host` header without non-443 ports. Once `STELLARR_DOMAIN` (with `STELLARR_PUBLIC_PORT`) or `STELLARR_PUBLIC_URL` is configured, invite links include the public origin automatically.
+> When `STELLARR_DOMAIN` and `STELLARR_PUBLIC_URL` are both unset, invite links fall back to the request `Host` header without non-443 ports. Configuring `STELLARR_DOMAIN` (with `STELLARR_PUBLIC_PORT`) or `STELLARR_PUBLIC_URL` ensures generated invite links always include the full public origin.
 
 ## 6. Join and test voice
 
-1. Open the invite link in a second browser profile or private window, accept the certificate warning, select **Create an account and join**, and register a second account.
-2. In both browser windows, join the voice channel you configured during setup and grant microphone access.
-3. Verify two-way audio and check the connection indicator (`Connected`) in the bottom-left status bar.
+1. Open the invite link in a second browser profile or private window, accept the certificate warning, click **Create an account and join**, and register a second user.
+2. In both browser windows, click the voice channel in the channel rail and allow microphone access.
+3. Confirm two-way audio and verify that the connection status in the bottom-left call dock shows `Connected`.
 
 > [!IMPORTANT]
-> Local testing on one machine works without extra network setup because both browsers run on the Docker host. For calls from any other device (including another machine on your LAN), set `STELLARR_PUBLIC_IP` in `.env` and forward UDP port `49000` (`STELLARR_MEDIA_PORT`) on your router. See [Requirements](requirements.md#behind-nat).
+> Local testing on a single machine works without additional network configuration because both browsers run on the Docker host. For voice and video calls from any other device (including another machine on your LAN), set `STELLARR_PUBLIC_IP` in `.env` and forward UDP port `49000` (`STELLARR_MEDIA_PORT`) on your router. See [Requirements](requirements.md#behind-nat).
 
-If voice stays on connecting or fails across networks, follow the checklist in [RTC and ports](../rtc-and-ports.md#diagnostics).
+If voice stays on `Connecting` or fails across networks, run through the checklist in [RTC and ports](../rtc-and-ports.md#diagnostics).
 
 ## Stop or remove
 
@@ -122,21 +124,21 @@ docker compose stop      # stop the container
 docker compose down      # remove container and network, preserve data volume
 ```
 
-Both commands stop services gracefully (Compose allows up to `stop_grace_period: 75s`, though shutdown normally finishes in a couple of seconds). See [Running without Docker Compose](configuration.md#running-without-docker-compose) if using plain `docker run`.
+Both commands stop internal services in reverse dependency order (`stop_grace_period: 75s`, typically finishing in a few seconds). See [Running without Docker Compose](configuration.md#running-without-docker-compose) if using `docker run`.
 
 > [!CAUTION]
-> `docker compose down -v` permanently deletes the `stellarr_stellarr_data` volume, including all accounts, messages, uploads, and secrets.
+> `docker compose down -v` permanently deletes the `stellarr_stellarr_data` volume, destroying all accounts, messages, uploads, encryption keys, and secrets.
 
 ## Next steps
 
-- **Operator panel**: Sign in with the owner account and open `https://localhost:8443/cockpit`.
-- [Requirements](requirements.md): `STELLARR_PUBLIC_IP` and router port forwarding for voice from external devices.
-- [Reverse proxy and TLS](reverse-proxy-and-tls.md): trusted certificates and reverse proxy setup.
-- [Configuration](configuration.md): environment variable reference.
+- **Operator panel**: Sign in with the owner account and visit `https://localhost:8443/cockpit`.
+- [Requirements](requirements.md): `STELLARR_PUBLIC_IP` and router port forwarding for external devices.
+- [Reverse proxy and TLS](reverse-proxy-and-tls.md): browser-trusted TLS certificates and reverse proxy configuration.
+- [Configuration](configuration.md): full environment variable reference.
 
 ## Build from source
 
-To build the container image from a local checkout instead of pulling from GHCR:
+To build the production container image directly from a local git checkout:
 
 ```bash
 git clone https://github.com/Arkazzae/Stellarr.git
@@ -144,4 +146,4 @@ cd Stellarr
 docker compose up -d --build
 ```
 
-The multi-stage `Dockerfile` builds the web client, Cockpit, .NET API, Rust media server, and `stellarr-init` inside Docker. No local toolchains are required on the host.
+The multi-stage `Dockerfile` compiles the webAssembly artifact recipes, web client, Cockpit, ASP.NET Core API, operator CLI, `stellarr-media`, and `stellarr-init` inside Docker. No host toolchains beyond Docker and BuildKit are required.

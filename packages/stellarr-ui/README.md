@@ -1,250 +1,226 @@
-# @stellarr/ui
+# `@stellarr/ui`
 
-Components and helpers shared by the web client (`web/`) and Cockpit (`web/src/cockpit/`). The package is private and holds:
+Shared UI component library and overlay primitives used by the Stellarr web client (`web/`) and Cockpit (`web/src/cockpit/`). The package is private and exposes three entry points:
 
-- `@stellarr/ui`: the components below and the `cx` class-name helper.
-- `@stellarr/ui/styles.css`: the components' stylesheet.
-- `@stellarr/ui/behavior`: the helpers the components are built from, for an overlay an app draws itself. See [Behaviour](#behaviour).
+- `@stellarr/ui`: React UI components and the `cx` class-name helper.
+- `@stellarr/ui/styles.css`: CSS layer stylesheet (`@layer components.ui`).
+- `@stellarr/ui/behavior`: Low-level overlay, layer stack, scroll lock, focus trap, and positioning primitives (see [Behavior primitives](#behavior-primitives)).
 
-It is consumed as TypeScript source: `exports` points at `src/index.ts` and there is no build step. Vite and Vitest compile it as part of the importing app.
-
-Inside the package, import with relative paths. The `@/` aliases belong to the apps and do not resolve here. The package depends on nothing but React and `@stellarr/icons`, which draws the close button of a dialog and the glyphs of a `Dropdown`: no Radix, no clsx, no tailwind-merge.
-
-The icon set is a package of its own, [`@stellarr/icons`](../stellarr-icons/README.md), which the apps import directly.
+The package is consumed directly as TypeScript source (`exports` points to `src/index.ts`; Vite and Vitest compile it as part of the importing application). Inside the package, modules use relative imports (`@/` path aliases belong to the consuming apps). Its only dependencies are React and [`@stellarr/icons`](../stellarr-icons/README.md).
 
 ## Components
 
-| Export | What it is |
+| Export | Description |
 | --- | --- |
-| `Button` | `variant`: `primary` (accent fill, the default), `secondary` (outlined), `quiet` (no border), `danger` (outlined in the danger colour), `danger-solid` (filled). `size`: `default`, `sm`, `icon`, `icon-sm`. A `secondary` button with `aria-pressed` is a toggle. |
-| `Badge` | `variant`: `secondary`, `outline`, `success`, `warning`, `destructive`. |
-| `Card`, `CardHeader`, `CardTitle`, `CardDescription`, `CardContent` | A surface a step off the page. |
-| `Alert`, `AlertTitle`, `AlertDescription` | A message that stays where it applies; `variant="destructive"` for a failure. |
-| `Input`, `Label` | A text field and its visible name. `aria-invalid` draws the field as refused. |
-| `Switch` | An on/off setting, `role="switch"`. Controlled with `checked` and `onCheckedChange`. |
-| `Segmented` | A row of mutually exclusive choices, as a radio group: one tab stop, arrows, Home and End. Controlled with `options`, `value` and `onChange`. `variant`: `cards` (a grid of bordered cards, the default) or `pill` (one compact row in a rounded track, for short words). An option has a `label`, and optionally a `detail` second line, a `leading` mark, a `title` tooltip and a `tone`. |
-| `Tabs`, `TabsList`, `TabsTrigger`, `TabsContent` | One tab stop for the row, arrows to move and pick. Only the picked panel is mounted. `unstyled` leaves the look to the caller. |
-| `Table`, `TableHeader`, `TableBody`, `TableRow`, `TableHead`, `TableCell` | A table whose header sticks to the area that scrolls it. |
-| `Dialog` + `DialogContent`, `DialogHeader`, `DialogTitle`, `DialogDescription`, `DialogFooter`, `DialogClose`, `DialogTrigger` | A centred modal. |
-| `Sheet` + `SheetContent` (`side`: `right`, `left`), `SheetHeader`, `SheetTitle`, `SheetDescription`, `SheetClose`, `SheetTrigger` | A modal along an edge. |
-| `Dropdown` | A single choice from a list, as a combobox with a listbox popup: one tab stop, arrows, Home and End, and typing to jump, as a `<select>` has. Controlled with `options`, `value` and `onChange`; named by `label`, or by `id` when a visible `<label for>` does it. `variant`: `field` (fills a form row, the default) or `quiet` (a bare control for a bar that is already boxed). An option has a `label`, and optionally a `detail` second line, an `icon` (an `IconName` from `@stellarr/icons`), a `lang` for a label in another language than the page's, and `disabled`. `placeholder` shows when the value names nothing in the list, and the field is empty without one. `name` submits the value with the form, `invalid` draws the field as refused, and `aria-describedby` points it at a hint. |
-| `DropdownMenu` + `DropdownMenuTrigger`, `DropdownMenuContent`, `DropdownMenuItem`, `DropdownMenuLabel`, `DropdownMenuSeparator` | A list of actions under a button. |
-| `Tooltip` + `TooltipTrigger`, `TooltipContent` | A note for the pointer (after `delayDuration`, 300 ms) and the keyboard (at once). |
-| `Spinner` | Work in progress, the icon set's open ring turning. |
+| `Button` | Action and toggle button. `variant`: `primary` (accent fill, default), `secondary` (outlined), `quiet` (borderless), `danger` (danger outline), `danger-solid` (danger fill). `size`: `default`, `sm`, `icon`, `icon-sm`. Passing `aria-pressed` to a `secondary` button styles it as a stateful toggle. |
+| `Badge` | Status and metadata pill. `variant`: `secondary`, `outline`, `success`, `warning`, `destructive`. |
+| `Card`, `CardHeader`, `CardTitle`, `CardDescription`, `CardContent` | Elevated container surface with structured header and body slots. |
+| `Alert`, `AlertTitle`, `AlertDescription` | Inline status callout (`variant="destructive"` for errors). |
+| `Input`, `Label` | Text input control and form label. Setting `aria-invalid` applies error border styling. |
+| `Switch` | Accessible boolean toggle (`role="switch"`), controlled via `checked` and `onCheckedChange`. |
+| `Segmented` | Mutually exclusive radio group with roving tabindex (single tab stop, Arrow keys, Home/End). Controlled via `options`, `value`, and `onChange`. `variant`: `cards` (bordered card grid, default) or `pill` (compact segmented track). Each option supports `label`, `detail`, `leading`, `title`, and `tone`. |
+| `Tabs`, `TabsList`, `TabsTrigger`, `TabsContent` | Accessible tab bar with roving tabindex and arrow-key activation. Only the active panel is mounted. Pass `unstyled` for custom tab chrome. |
+| `Table`, `TableHeader`, `TableBody`, `TableRow`, `TableHead`, `TableCell` | Data table with sticky header support inside scrollable containers. |
+| `Dialog` + `DialogContent`, `DialogHeader`, `DialogTitle`, `DialogDescription`, `DialogFooter`, `DialogClose`, `DialogTrigger` | Centered modal dialog with focus trapping, backdrop scrim, and scroll lock. |
+| `Sheet` + `SheetContent` (`side`: `right`, `left`), `SheetHeader`, `SheetTitle`, `SheetDescription`, `SheetClose`, `SheetTrigger` | Edge-anchored modal drawer. |
+| `Dropdown` | Single-select combobox with listbox popup (single tab stop, Arrow keys, Home/End, and typeahead search). Controlled via `options`, `value`, and `onChange`; labeled via `label` or `id` (`<label for>`). `variant`: `field` (full-width form control, default) or `quiet` (compact inline control). Options support `label`, `detail`, `icon` (`IconName` from `@stellarr/icons`), `lang`, and `disabled`. Supports `placeholder`, `name` (hidden form input), `invalid`, and `aria-describedby`. |
+| `DropdownMenu` + `DropdownMenuTrigger`, `DropdownMenuContent`, `DropdownMenuItem`, `DropdownMenuLabel`, `DropdownMenuSeparator` | Action menu anchored to a trigger button. |
+| `Tooltip` + `TooltipTrigger`, `TooltipContent` | Floating label shown on pointer hover (after `delayDuration`, default `300 ms`) and immediately on keyboard focus. |
+| `Spinner` | Animated loading indicator. |
 
-What they share:
+Shared conventions across all components:
 
-- Every part takes `className`, and a utility class there always wins over the package's own rule (see below).
-- `asChild` on `Button` and on the triggers, `DialogClose` and `DropdownMenuItem` draws the one child element, such as an `<a>`, with the part's look and behaviour.
-- No text is built in. `DialogContent` and `SheetContent` take a required `closeLabel` for the close button; everything else is named by the caller.
-- Dialogs, sheets and menus are modal: the page behind is hidden from assistive tech and does not scroll, Tab stays inside, Escape closes the topmost one only, and focus goes back to what opened it. A menu item that opens a dialog hands it the focus and gets it back.
-- Menus, tooltips and a dropdown's list place themselves beside the trigger, flip to the other side when only that one has room, and stay inside the window. The stylesheet takes the position from the private custom properties `--_x` and `--_y`, not from an inline `left` and `top`, so an app that draws a menu differently on a phone can override `left` and `top` through `className` under a media query.
+- **Utility class override**: Every component accepts `className`. Because package styles live in `@layer components.ui`, Tailwind utility classes in `className` always take precedence regardless of selector specificity.
+- **Polymorphic rendering (`asChild`)**: `Button`, overlay triggers, `DialogClose`, and `DropdownMenuItem` support `asChild` via `Slot` to merge behavior and styling onto a single child element (such as `<a href>` or `<Link>`).
+- **Locale-agnostic markup**: No user-visible strings are hardcoded. `DialogContent` and `SheetContent` require an explicit `closeLabel` prop for the close button's accessible name.
+- **Coordinated modal stack**: Dialogs, sheets, and menus hide background content from assistive technology, lock background scrolling, trap `Tab`, close only the topmost active layer on `Escape`, and restore focus to the trigger on close.
+- **Viewport-aware floating placement**: Menus, tooltips, and dropdown lists position themselves relative to their trigger, flip across axes when constrained by viewport edges, and clamp within the window. Coordinates are exposed as private `--_x` and `--_y` custom properties rather than inline `left`/`top` styles so responsive media queries can override positioning.
 
-## Styles
+## Styles and CSS architecture
 
-The stylesheet is plain CSS in the `components.ui` layer, which is nested in Tailwind's `components` layer. Import it right after Tailwind:
+Import `@stellarr/ui/styles.css` immediately after Tailwind CSS:
 
 ```css
 @import "tailwindcss";
 @import "@stellarr/ui/styles.css";
 ```
 
-A layer outranks specificity, so a rule here loses to a utility in `className` whatever its specificity: `<Card className="gap-0 py-0">` simply overrides the card's gap and padding. It also loses to any rule the app writes in its own `components` layer, which is where an app puts the layout of a part without raising specificity. Classes are prefixed `ui-`; variants are `data-variant`, `data-size`, `data-side` and `data-state` attributes.
+Because `components.ui` is nested inside Tailwind's `components` layer, any utility class passed via `className` (for example, `<Card className="gap-0 py-0">`) or any rule declared in the app's own `@layer components` overrides the default component rules without fighting specificity. Component classes use the `ui-` prefix, and states/variants use `data-variant`, `data-size`, `data-side`, and `data-state` attributes.
 
-Apps never write selectors against `ui-*` classes. They pass `className` for layout and change a look through tokens. A region is re-skinned by setting component tokens on an ancestor:
+Consuming applications never write CSS selectors targeting `.ui-*` classes directly. Layout adjustments are passed via `className`, and visual customization is done through CSS custom properties (`--ui-*` tokens) scoped to a container or `data-*` attribute:
 
 ```css
 .confirm-footer {
   --ui-button-secondary-bg: var(--surface-overlay);
 }
-```
 
-A different look for the same meaning is a token. A different meaning is a variant.
-
-The `data-*` attributes a component publishes are part of its public surface, `data-tone` on a `Segmented` option included. An app may use them under a class of its own to set tokens, which is the same thing as setting them on an ancestor and not a selector against a `ui-*` class:
-
-```css
 .permission-pill [data-tone="deny"] {
   --ui-segmented-item-on-bg: var(--danger-soft);
 }
 ```
 
-### Tokens
+### Design tokens
 
-All look comes from custom properties, in two tiers. The stylesheet declares none of them.
+Visual styling is driven by two tiers of CSS custom properties. `@stellarr/ui/styles.css` consumes these variables without defining global values.
 
-**System tokens** are required. The app defines every one of them, usually as `var()` of its own palette, so they follow its light and dark schemes. They have no default here. Cockpit's mapping is in [`web/src/cockpit/index.css`](../../web/src/cockpit/index.css) and the web client's in [`web/src/stellarr/styles/ui-tokens.css`](../../web/src/stellarr/styles/ui-tokens.css).
+#### 1. System tokens (required)
+
+Consuming applications must define every system token (see [`web/src/cockpit/index.css`](../../web/src/cockpit/index.css) for Cockpit and [`web/src/stellarr/styles/ui-tokens.css`](../../web/src/stellarr/styles/ui-tokens.css) for the web client):
 
 | Token | Used for |
 | --- | --- |
-| `--ui-unit` | One design pixel. Every size of every part is a multiple of it; 1 px borders and the 2 px to 4 px of a focus ring stay in px |
-| `--ui-page` | The page: sheets and tooltip text |
-| `--ui-surface` | Cards, dialogs, an active tab, a table's sticky header |
-| `--ui-surface-muted` | A neutral alert, and the track of a `pill` |
-| `--ui-popover` | Menus, and a `pill` segment that is hovered or checked |
-| `--ui-hover` | Hovered `quiet` button, the highlighted menu item, the secondary badge, the switch's track when off |
-| `--ui-text`, `--ui-text-muted`, `--ui-text-faint` | Text, secondary text such as descriptions, table headings, placeholders and the label of a card, and faint text such as the switch's knob when off, the label of an idle `quiet` button, the second line of a card and the label of an idle `pill` segment |
-| `--ui-line` | Borders and separators |
-| `--ui-line-subtle` | The border of a card that is neither hovered nor checked, and of a `pill`'s track |
-| `--ui-line-field` | A text field's border |
-| `--ui-line-strong` | The border of a hovered `secondary` button and of a hovered card |
-| `--ui-ring`, `--ui-ring-offset` | Focus rings, and the gap inside the close button's ring |
-| `--ui-accent`, `--ui-accent-hover`, `--ui-on-accent` | The `primary` button, the switch when on, the border and tint of a checked card, and text selection |
-| `--ui-danger`, `--ui-on-danger` | The `danger-solid` button, and the border of a `danger` one |
-| `--ui-danger-text`, `--ui-danger-soft` | The `danger` button, destructive menu items, badges and alerts, refused fields |
-| `--ui-success-text`, `--ui-success-soft`, `--ui-warning-text`, `--ui-warning-soft` | Badges |
-| `--ui-scrim` | Behind a dialog or a sheet |
-| `--ui-elevation-low`, `--ui-elevation-menu`, `--ui-elevation-modal` | Shadows of tooltips, of menus, and of dialogs and sheets |
-| `--ui-radius-xs`, `--ui-radius-sm`, `--ui-radius-md`, `--ui-radius-lg`, `--ui-radius-xl` | Corners: the close button, menu items and the icon sizes of `Button`, fields and menus, alerts, cards and dialogs |
-| `--ui-ease` | The easing of transitions |
-| `--ui-dur-fast`, `--ui-dur-base` | The duration of colour changes, and of the switch's knob moving |
+| `--ui-unit` | Base sizing unit (`1px` in the web client; `calc(1rem / 16)` in Cockpit for fluid root scaling). All component dimensions multiply `--ui-unit`, while hairlines (`1px`) and focus ring widths (`2px`–`4px`) stay in physical `px` |
+| `--ui-page` | Base page background (sheets and tooltip text contrast) |
+| `--ui-surface` | Cards, dialogs, active tab trigger, and sticky table headers |
+| `--ui-surface-muted` | Neutral alerts and `Segmented` `pill` track background |
+| `--ui-popover` | Dropdown menus and hovered/active `pill` segments |
+| `--ui-hover` | Hovered `quiet` buttons, highlighted menu items, `secondary` badges, and unchecked `Switch` track |
+| `--ui-text`, `--ui-text-muted`, `--ui-text-faint` | Primary text, secondary text (descriptions, table headers, placeholders, idle card labels), and faint text (unchecked switch thumb, idle `quiet` button, card detail line, idle `pill` label) |
+| `--ui-line` | Default borders and dividers |
+| `--ui-line-subtle` | Idle `Segmented` cards and `pill` track border |
+| `--ui-line-field` | Text input border |
+| `--ui-line-strong` | Hovered `secondary` button and hovered `Segmented` card border |
+| `--ui-ring`, `--ui-ring-offset` | Focus ring color and inner offset background |
+| `--ui-accent`, `--ui-accent-hover`, `--ui-on-accent` | `primary` button fill/hover, checked `Switch` track, checked `Segmented` card border/tint, and text selection |
+| `--ui-danger`, `--ui-on-danger` | `danger-solid` button fill/foreground and `danger` button border |
+| `--ui-danger-text`, `--ui-danger-soft` | `danger` button label, destructive menu items/badges/alerts, and invalid input borders |
+| `--ui-success-text`, `--ui-success-soft`, `--ui-warning-text`, `--ui-warning-soft` | Semantic `success` and `warning` badges |
+| `--ui-scrim` | Modal backdrop overlay behind dialogs and sheets |
+| `--ui-elevation-low`, `--ui-elevation-menu`, `--ui-elevation-modal` | Box shadows for tooltips, menus/listboxes, and modal dialogs/sheets |
+| `--ui-radius-xs`, `--ui-radius-sm`, `--ui-radius-md`, `--ui-radius-lg`, `--ui-radius-xl` | Corner radii across close buttons, menu items, icon buttons, inputs, menus, alerts, cards, and dialogs |
+| `--ui-ease` | Transition timing function |
+| `--ui-dur-fast`, `--ui-dur-base` | Transition durations for color/opacity changes and `Switch` thumb movement |
 
-`--ui-unit` is a length. The web client sets `1px`. Cockpit sets `calc(1rem / 16)`, because it scales its root font size with the window on purpose, and every part scales with it. The one length the package keeps in `rem` is the breakpoint of a media query, which cannot read a custom property.
+#### 2. Component tokens (optional overrides)
 
-**Component tokens** are optional. A part reads them as `--ui-<component>-<part>-<property>`, with `sm` for the small size, `on` for a checked switch or segment, and `hover` and `pressed` for those states of a button. Each is read with a fallback, which is the web client's look, so an app sets a token only where its own look differs. Cockpit is the one app that deviates, and sets what it needs in `web/src/cockpit/index.css`.
-
-The tables show each fallback. A fallback that names another token follows it, so an app that sets the first changes the second too.
+Component tokens follow `--ui-<component>-<part>-<property>` and fall back to the web client's default styling when unset. Cockpit overrides select component tokens in [`web/src/cockpit/index.css`](../../web/src/cockpit/index.css).
 
 `Switch`:
 
 | Token | Fallback | Used for |
 | --- | --- | --- |
-| `--ui-switch-w`, `--ui-switch-h` | `44` and `26` units | The track |
-| `--ui-switch-bg` | `--ui-hover` | The track when off |
-| `--ui-switch-border` | `--ui-line` | The track's border when off |
-| `--ui-switch-on-bg` | `--ui-accent` | The track when on |
-| `--ui-switch-on-border` | `--ui-accent` | The track's border when on |
-| `--ui-switch-thumb-size` | `20` units | The knob's diameter |
-| `--ui-switch-thumb-bg` | `--ui-text-faint` | The knob when off |
-| `--ui-switch-thumb-on-bg` | `--ui-on-accent` | The knob when on |
-| `--ui-switch-thumb-align` | `flex-start` | `align-items` of the track: where the knob sits across it. `center` centres it |
-| `--ui-switch-thumb-y` | `2` units | The knob's distance from the top of the track's padding box. `0px` when the knob is centred |
-| `--ui-switch-thumb-shadow` | `none` | The knob's shadow |
-| `--ui-switch-thumb-x` | `2` units | The knob's distance from the inside of the track's left edge when off |
-| `--ui-switch-thumb-on-x` | `20` units | The same distance when on |
-| `--ui-switch-disabled-opacity` | `1` | A disabled switch |
-| `--ui-switch-hit-inset` | `0` | How far the press area reaches past the track, as an `inset` value. An app on a touch screen sets a negative block value |
+| `--ui-switch-w`, `--ui-switch-h` | `44` and `26` units | Track width and height |
+| `--ui-switch-bg` | `--ui-hover` | Track background when unchecked |
+| `--ui-switch-border` | `--ui-line` | Track border when unchecked |
+| `--ui-switch-on-bg` | `--ui-accent` | Track background when checked |
+| `--ui-switch-on-border` | `--ui-accent` | Track border when checked |
+| `--ui-switch-thumb-size` | `20` units | Thumb diameter |
+| `--ui-switch-thumb-bg` | `--ui-text-faint` | Thumb color when unchecked |
+| `--ui-switch-thumb-on-bg` | `--ui-on-accent` | Thumb color when checked |
+| `--ui-switch-thumb-align` | `flex-start` | Track `align-items` (`center` centers the thumb vertically) |
+| `--ui-switch-thumb-y` | `2` units | Thumb top offset (`0px` when centered) |
+| `--ui-switch-thumb-shadow` | `none` | Thumb box shadow |
+| `--ui-switch-thumb-x` | `2` units | Thumb horizontal offset when unchecked |
+| `--ui-switch-thumb-on-x` | `20` units | Thumb horizontal offset when checked |
+| `--ui-switch-disabled-opacity` | `1` | Opacity when disabled |
+| `--ui-switch-hit-inset` | `0` | Touch target expansion (`inset` on the hit pseudo-element) |
 
 `Button`:
 
 | Token | Fallback | Used for |
 | --- | --- | --- |
-| `--ui-button-min-height` | `auto` | The least height, which a touch screen raises |
-| `--ui-button-radius` | a pill | The corner of a button with a label; the icon sizes keep `--ui-button-icon-only-radius` |
-| `--ui-button-gap` | `normal` | The space between an icon and the label |
-| `--ui-button-sm-gap` | `--ui-button-gap` | The same in the `sm` size |
-| `--ui-button-icon-size` | `auto` | The width and height of an icon, which `auto` leaves at the size of its own attributes |
-| `--ui-button-white-space` | `inherit` | Whether a label may wrap |
-| `--ui-button-font-size` | `13` units | The label |
-| `--ui-button-line-height` | `inherit` | The label's line |
-| `--ui-button-font-weight` | `600` | The label |
-| `--ui-button-padding-x` | `18` units | The space at both ends of the label |
-| `--ui-button-sm-font-size`, `--ui-button-sm-line-height` | The tokens above | The label of the `sm` size |
-| `--ui-button-sm-padding-x` | `14` units | The space at both ends of an `sm` label |
-| `--ui-button-icon-only-radius` | `--ui-radius-sm` | The corners of the `icon` and `icon-sm` sizes. A pill is `calc(infinity * 1px)` |
-| `--ui-button-icon-only-min-width` | `auto` | The least width of the `icon` and `icon-sm` sizes, which a touch screen raises along with `--ui-button-min-height` |
-| `--ui-button-disabled-opacity` | `1`, and `0.4` for `secondary` | A disabled button |
-| `--ui-button-primary-bg` | `--ui-accent` | The fill of `primary`, while it is not hovered |
-| `--ui-button-secondary-border` | `--ui-line` | The outline |
-| `--ui-button-secondary-bg` | `transparent` | The fill |
-| `--ui-button-secondary-text` | `--ui-text-muted` | The label |
-| `--ui-button-secondary-hover-border` | `--ui-line-strong` | The outline while hovered |
-| `--ui-button-secondary-hover-bg` | `--ui-button-secondary-bg` | The fill while hovered |
-| `--ui-button-secondary-hover-text` | `--ui-text` | The label while hovered |
-| `--ui-button-secondary-pressed-border`, `--ui-button-secondary-pressed-bg` | The hovered values | A toggle that is on |
-| `--ui-button-secondary-pressed-text` | `--ui-text` | A toggle that is on |
-| `--ui-button-secondary-unpressed-text` | `--ui-button-secondary-text` | A toggle that is off |
-| `--ui-button-quiet-text` | `--ui-text-faint` | The label of `quiet`, while it is not hovered. `currentColor` takes it from the surroundings |
-| `--ui-button-quiet-hover-bg` | `--ui-hover` | The fill of `quiet` while hovered |
-| `--ui-button-quiet-hover-text` | `--ui-text` | The label of `quiet` while hovered |
-| `--ui-button-danger-solid-border-width` | `1px` | The width of the transparent border of `danger-solid`, which keeps its base size level with an outlined sibling. `0px` for a button that sizes to its content |
-| `--ui-button-danger-solid-hover-bg` | `--ui-danger` mixed 86% with white | The fill while hovered |
-| `--ui-button-danger-solid-focus-shadow` | `--ui-focus-shadow` | The focus ring of the `danger-solid` variant |
+| `--ui-button-min-height` | `auto` | Minimum button height (increased on coarse pointers) |
+| `--ui-button-radius` | pill (`calc(infinity * 1px)`) | Corner radius for labeled buttons |
+| `--ui-button-gap` | `normal` | Gap between icon and label |
+| `--ui-button-sm-gap` | `--ui-button-gap` | Gap between icon and label in `sm` size |
+| `--ui-button-icon-size` | `auto` | Explicit icon width/height override |
+| `--ui-button-white-space` | `inherit` | Label wrapping (`white-space`) |
+| `--ui-button-font-size` | `13` units | Label font size |
+| `--ui-button-line-height` | `inherit` | Label line height |
+| `--ui-button-font-weight` | `600` | Label font weight |
+| `--ui-button-padding-x` | `18` units | Horizontal padding for default size |
+| `--ui-button-sm-font-size`, `--ui-button-sm-line-height` | Inherits default size tokens | Label font size and line height for `sm` size |
+| `--ui-button-sm-padding-x` | `14` units | Horizontal padding for `sm` size |
+| `--ui-button-icon-only-radius` | `--ui-radius-sm` | Corner radius for `icon` and `icon-sm` sizes |
+| `--ui-button-icon-only-min-width` | `auto` | Minimum width for `icon` and `icon-sm` sizes |
+| `--ui-button-disabled-opacity` | `1` (`0.4` for `secondary`) | Opacity when disabled |
+| `--ui-button-primary-bg` | `--ui-accent` | Idle background fill for `primary` variant |
+| `--ui-button-secondary-border` | `--ui-line` | Idle border color for `secondary` variant |
+| `--ui-button-secondary-bg` | `transparent` | Idle background fill for `secondary` variant |
+| `--ui-button-secondary-text` | `--ui-text-muted` | Idle text color for `secondary` variant |
+| `--ui-button-secondary-hover-border` | `--ui-line-strong` | Hover border color for `secondary` variant |
+| `--ui-button-secondary-hover-bg` | `--ui-button-secondary-bg` | Hover background fill for `secondary` variant |
+| `--ui-button-secondary-hover-text` | `--ui-text` | Hover text color for `secondary` variant |
+| `--ui-button-secondary-pressed-border`, `--ui-button-secondary-pressed-bg` | Inherits hover values | Border and background for active toggle (`aria-pressed="true"`) |
+| `--ui-button-secondary-pressed-text` | `--ui-text` | Text color for active toggle (`aria-pressed="true"`) |
+| `--ui-button-secondary-unpressed-text` | `--ui-button-secondary-text` | Text color for inactive toggle (`aria-pressed="false"`) |
+| `--ui-button-quiet-text` | `--ui-text-faint` | Idle text color for `quiet` variant |
+| `--ui-button-quiet-hover-bg` | `--ui-hover` | Hover background fill for `quiet` variant |
+| `--ui-button-quiet-hover-text` | `--ui-text` | Hover text color for `quiet` variant |
+| `--ui-button-danger-solid-border-width` | `1px` | Transparent border width on `danger-solid` to match outlined sibling height |
+| `--ui-button-danger-solid-hover-bg` | `color-mix(in oklab, var(--ui-danger) 86%, white)` | Hover background fill for `danger-solid` variant |
+| `--ui-button-danger-solid-focus-shadow` | `--ui-focus-shadow` | Focus ring shadow for `danger-solid` variant |
 
-A button changes under the pointer only where the pointer can hover, and never while disabled.
-
-`Segmented`. Each variant draws its own look completely; these tokens only place it:
+`Segmented`:
 
 | Token | Fallback | Used for |
 | --- | --- | --- |
-| `--ui-segmented-columns` | `1fr 1fr` | `grid-template-columns` of the group |
-| `--ui-segmented-gap` | `10` units | The space between cards. A `pill` has none |
-| `--ui-segmented-item-gap` | `4` units | The space between a card's label, leading mark and second line |
-| `--ui-segmented-item-padding` | `13` and `15` units | The space inside a card |
-| `--ui-segmented-pill-item-gap` | none | The space between a `pill` segment's leading mark and its label |
-| `--ui-segmented-pill-item-height` | `26` units | The height of a `pill` segment, which a touch screen raises |
-| `--ui-segmented-pill-item-padding` | `0` and `4` units | The space inside a `pill` segment |
-| `--ui-segmented-item-font-size` | `14` units | A card's label |
-| `--ui-segmented-item-text` | `--ui-text-muted` | The label of a card that is neither hovered nor checked. A `pill` segment draws its own and has no token |
-| `--ui-segmented-item-on-bg` | `--ui-accent` mixed 12% with transparent for `cards`, `--ui-popover` for `pill` | The fill of the checked segment |
-| `--ui-segmented-item-on-text` | `--ui-text` | The label of the checked segment |
-| `--ui-segmented-detail-text` | `--ui-text-faint` | A segment's second line. An app whose second line is a sentence to read, not a figure to glance at, raises its contrast |
+| `--ui-segmented-columns` | `1fr 1fr` | Grid column template for `cards` variant |
+| `--ui-segmented-gap` | `10` units | Grid gap between cards (`0` in `pill` variant) |
+| `--ui-segmented-item-gap` | `4` units | Gap between card label, leading icon, and detail line |
+| `--ui-segmented-item-padding` | `13` and `15` units | Vertical and horizontal card padding |
+| `--ui-segmented-pill-item-gap` | none | Gap between leading mark and label in `pill` variant |
+| `--ui-segmented-pill-item-height` | `26` units | Segment height in `pill` variant |
+| `--ui-segmented-pill-item-padding` | `0` and `4` units | Segment padding in `pill` variant |
+| `--ui-segmented-item-font-size` | `14` units | Card label font size |
+| `--ui-segmented-item-text` | `--ui-text-muted` | Idle card label color |
+| `--ui-segmented-item-on-bg` | `12%` `--ui-accent` (`cards`) or `--ui-popover` (`pill`) | Checked segment background fill |
+| `--ui-segmented-item-on-text` | `--ui-text` | Checked segment label color |
+| `--ui-segmented-detail-text` | `--ui-text-faint` | Secondary `detail` line color |
 
-A card's label turns `--ui-text` under the pointer whatever `--ui-segmented-item-text` is, and the checked card takes `--ui-segmented-item-on-text` after it. A segment answers the pointer even while it is disabled, and whether or not the pointer can hover, except in a `pill`, where only a segment that can be pressed lights up. The checked segment keeps its look under the pointer. A segment's second line is 12 units. An app that colours the checked segment by meaning sets the two `on` tokens under a selector on `data-tone`, as in the note on `data-*` attributes above.
-
-`Dropdown`. A `quiet` field draws its own look completely; of these only the least height, the widest width and the corner radius reach it. The list is drawn in `<body>`, outside whatever region sets a token, so the tokens only it reads (`--ui-dropdown-tick-text`, the two `--ui-dropdown-option-*` and the three `--ui-dropdown-list-*`) take effect from `:root` or `body` and from nowhere below, and `--ui-dropdown-font-size` reaches its options from there alone:
+`Dropdown` (note: because the popup listbox portals into `document.body`, popup-specific tokens—`--ui-dropdown-tick-text`, `--ui-dropdown-option-*`, `--ui-dropdown-list-*`, and `--ui-dropdown-font-size` on options—must be set on `:root` or `body`):
 
 | Token | Fallback | Used for |
 | --- | --- | --- |
-| `--ui-dropdown-min-height` | `42` units, and `28` for `quiet` | The least height of the field, which a touch screen raises |
-| `--ui-dropdown-max-width` | `320` units, and `200` for `quiet` | The widest the field gets. `100%` lets it fill its column |
-| `--ui-dropdown-padding` | `9`, `10`, `9` and `14` units | The space inside the field |
-| `--ui-dropdown-radius` | `--ui-radius-md` | The corners of the field |
-| `--ui-dropdown-bg` | `--ui-surface-muted` | The fill of the field |
-| `--ui-dropdown-border` | `--ui-line-subtle` | The border of the field while it is neither hovered nor open |
-| `--ui-dropdown-hover-border` | `--ui-line` | The border of the field while it is hovered |
-| `--ui-dropdown-font-size` | `14` units | The chosen value in the field and the label of each option |
-| `--ui-dropdown-tick-text` | `--ui-accent` | The tick on the chosen option. The web client sets its accent as text, which is mixed differently from the accent as a fill |
-| `--ui-dropdown-option-min-height` | `auto` | The least height of an option, which a touch screen raises |
-| `--ui-dropdown-option-padding-y` | `8` units | The space above and below an option's text |
-| `--ui-dropdown-list-bg` | `--ui-surface` | The fill of the list |
-| `--ui-dropdown-list-border` | `none` | The border of the list, as a whole `border` value such as `1px solid var(--ui-line)` |
-| `--ui-dropdown-list-z-index` | `98` | Where the list stacks: above the web client's settings dialog and media viewer, below its confirmation dialog. The package's other overlays are at 50 |
-| `--ui-menu-z-index` | `50` | Where a dropdown menu stacks. The web client lifts it above its settings dialog and confirmation cards, which menus open from |
+| `--ui-dropdown-min-height` | `42` units (`28` for `quiet`) | Minimum trigger field height |
+| `--ui-dropdown-max-width` | `320` units (`200` for `quiet`) | Maximum trigger field width (`100%` fills container) |
+| `--ui-dropdown-padding` | `9`, `10`, `9`, `14` units | Trigger field padding |
+| `--ui-dropdown-radius` | `--ui-radius-md` | Trigger field corner radius |
+| `--ui-dropdown-bg` | `--ui-surface-muted` | Trigger field background fill |
+| `--ui-dropdown-border` | `--ui-line-subtle` | Idle trigger field border |
+| `--ui-dropdown-hover-border` | `--ui-line` | Hovered trigger field border |
+| `--ui-dropdown-font-size` | `14` units | Trigger value and option label font size |
+| `--ui-dropdown-tick-text` | `--ui-accent` | Selected option checkmark color |
+| `--ui-dropdown-option-min-height` | `auto` | Minimum option row height |
+| `--ui-dropdown-option-padding-y` | `8` units | Vertical option row padding |
+| `--ui-dropdown-list-bg` | `--ui-surface` | Popup listbox background fill |
+| `--ui-dropdown-list-border` | `none` | Popup listbox border shorthand (e.g. `1px solid var(--ui-line)`) |
+| `--ui-dropdown-list-z-index` | `98` | Popup listbox `z-index` |
+| `--ui-menu-z-index` | `50` | `DropdownMenu` popup `z-index` |
 
-A field refused with `invalid` takes `--ui-danger-text` as its border, as an `Input` does, in every state.
-
-The button, the switch, the segments and the dropdown field draw focus from three more tokens:
+Focus styling tokens shared across `Button`, `Switch`, `Segmented`, and `Dropdown`:
 
 | Token | Fallback | Used for |
 | --- | --- | --- |
-| `--ui-focus-outline` | `2px solid var(--ui-ring)` | The outline. `none` turns it off |
-| `--ui-focus-border` | The border colour the state already has | The border colour of a focused part |
-| `--ui-focus-shadow` | `none` | A ring drawn as a shadow around the part |
+| `--ui-focus-outline` | `2px solid var(--ui-ring)` | Focus outline (`none` when using box-shadow rings) |
+| `--ui-focus-border` | Current state border color | Focused control border color |
+| `--ui-focus-shadow` | `none` | Focus ring `box-shadow` |
 
-An outline is the web client's focus. Cockpit's is a ring: the border takes the ring colour and a soft shadow surrounds it.
+`npm run tokens:check -w @stellarr/ui` validates that both apps define every required system token, neither app defines an unknown `--ui-*` property, and every `--ui-*` variable read in `packages/stellarr-ui/src/**/*.css` is documented in the tables above.
 
-A custom property fails silently, so `npm run tokens:check -w @stellarr/ui` guards both tiers. It fails when an app lacks a system token, when an app defines a `--ui-*` token the package never reads (a typo of a component token would otherwise leave the default look in place without a sign), and when a token the package reads is missing from the tables above.
+## Behavior primitives
 
-## Behaviour
+Custom overlays rendered by an application (such as custom modals, popovers, or context menus) can use `@stellarr/ui/behavior` to participate in the shared layer stack so `Escape`, outside pointer presses, background `inert`/`aria-hidden` state, and scroll locking coordinate across nested layers.
 
-`@stellarr/ui/behavior` exports the helpers the components are built from. An overlay an app draws itself (a modal, a popover, a context menu) uses them to share one layer stack with the package's: one Escape closes one layer, a press outside reaches one layer, and the page behind is hidden and locked once, however many layers are open.
-
-| Export | What it does |
+| Export | Description |
 | --- | --- |
-| `useLayer(active, layer)` | Puts a layer on the stack while `active`. `layer` has `node` (its element) and optionally `owns`, `onEscape`, `onTab` and `onPointerDownOutside`. The `Layer` type |
-| `hideOthers(keep)` | Hides every other child of `<body>` from assistive tech, counted per element, and returns the undo. The overlay has to be rendered into `<body>` |
-| `lockScroll(areas)` | Stops the page from scrolling except inside `areas()`, and returns the undo. Locks nest |
-| `allowScroll(areas)` | Lets the elements `areas()` returns scroll while a `lockScroll` is on, without taking a lock itself, and returns the undo. For a layer drawn outside the element that locked the page, such as the list a `Dropdown` opens from a `Dialog` |
-| `lockPointer()` | Makes the page ignore the pointer, so a press beside a menu only closes it, and returns the undo. Locks nest |
-| `usePresence(open)` | Keeps an element mounted while its exit animation runs. Returns `present` and a `ref` |
-| `focusFirst(container)` | Focuses the first tab stop that is not a link, or the container |
-| `trapTab(event, container, options)` | Wraps a Tab press at both ends of the container, and brings a Tab from outside back to its first stop unless `options.reclaim` is `false` |
-| `FOCUSABLE` | The selector for a tab stop |
-| `place(anchor, size, view, options)` | Where a floating element goes beside its anchor: the asked side, flipped when only the other has room, kept inside the window. `options` is a `PlaceOptions` of `side`, `align` and `offset`; `Side` and `Align` are its types. Returns a `Placement` |
-| `measure(element)` | The element's laid-out size, unaffected by a transform |
-| `snap(value)` | Rounds a length to a device pixel |
-| `useControllableState(options)` | A value the parent may own or leave to the component |
-| `Slot` | Renders its one child with its own props merged in, for `asChild` |
-| `composeRefs(...refs)`, `useComposedRefs(...refs)` | Points several refs at one node; the hook keeps the callback stable between renders |
+| `useLayer(active, layer)` | Registers an active overlay on the global layer stack. `layer` provides `node()` and optional `owns(target)`, `onEscape()`, `onTab(event)`, and `onPointerDownOutside(target)` callbacks (`Layer` type). |
+| `hideOthers(keep)` | Marks all sibling children of `document.body` outside `keep` as hidden from assistive technology (reference-counted per element) and returns a cleanup function. |
+| `lockScroll(areas)` | Prevents document scrolling everywhere except inside elements returned by `areas()`, and returns a nestable cleanup function. |
+| `allowScroll(areas)` | Whitelists additional scrollable elements (such as a portaled `Dropdown` listbox opened inside a `Dialog`) while a `lockScroll` is active. |
+| `lockPointer()` | Disables pointer events on the underlying page while a menu is open and returns a nestable cleanup function. |
+| `usePresence(open)` | Keeps an element mounted until its CSS exit animation or transition finishes. Returns `{ present, ref }`. |
+| `focusFirst(container)` | Moves focus to the first non-link tabbable element inside `container` (falling back to `container` itself). |
+| `trapTab(event, container, options)` | Wraps `Tab` / `Shift+Tab` at the boundaries of `container` and reclaims focus from outside unless `options.reclaim` is `false`. |
+| `FOCUSABLE` | CSS selector matching keyboard-focusable elements. |
+| `place(anchor, size, view, options)` | Computes viewport-clamped floating coordinates with automatic axis flipping (`PlaceOptions`, `Side`, `Align`, `Placement`). |
+| `measure(element)` | Returns the layout dimensions of `element` independent of CSS transforms. |
+| `snap(value)` | Rounds a CSS pixel length to the nearest physical device pixel. |
+| `useControllableState(options)` | Manages state that can be either controlled by props or uncontrolled internally. |
+| `Slot` | Merges props onto a single child element for `asChild` composition. |
+| `composeRefs(...refs)`, `useComposedRefs(...refs)` | Combines multiple React refs into a single ref callback. |
 
-Escape and Tab go to the topmost layer that has a handler for them. They are heard in the bubble phase, so a control inside a layer that handles Escape itself (an inline editor that cancels, a search field that clears) keeps the key by calling `preventDefault()`, and the layer stays open. Preventing the default is the signal, not stopping the event: the stack listens on `document`, and in an app whose React root is the document itself, React's handlers run on that same node, where a stopped event still reaches the stack. When a layer takes an Escape, the stack stops the event, so a `window` handler does not also act on it. An `onEscape` that returns `false` passes: the next layer down that has `onEscape` is asked, and when every layer passes the key goes on to the page. A side panel that stays open under a dialog passes whenever a dialog is in front of it, even if the panel joined the stack later.
-
-A press goes to the topmost layer that has `onPointerDownOutside`, and to that layer alone. A layer above it with no such handler, such as a tooltip, is skipped. A press is outside when it lands beyond `node()`. A layer whose element is not the whole answer gives `owns(target)` instead, and it decides alone: a dialog whose wrapper is also its backdrop, or a panel whose trigger toggles it. A layer that hears no presses returns `null` from `node`.
-
-`trapTab` suits a modal layer, where the focus never leaves. For a panel beside which the page still works, pass `{ reclaim: false }`: a Tab pressed while the focus is outside the panel is left to the browser, and the panel still wraps at its ends.
-
-A popover joins the stack with `useLayer`, and the layers below it stay quiet while it is open:
+Example custom popover participating in the layer stack:
 
 ```tsx
 import { useRef, type ReactNode } from "react";
@@ -264,16 +240,12 @@ export function Popover({ open, onClose, children }: { open: boolean; onClose: (
 }
 ```
 
-Opened from a `Dialog`, this popover closes alone on Escape and on a press outside, and the dialog stays open. A modal that also hides the page and keeps it from scrolling calls `hideOthers` and `lockScroll` in an effect, and returns their undo functions from it.
+## Verification
 
-## Checks
-
-Run these from the repository root, after `npm ci`:
+From the repository root:
 
 ```bash
 npm run typecheck:ui
 npm run test:ui
 npm run tokens:check -w @stellarr/ui
 ```
-
-The icon set has checks of its own, listed in [its README](../stellarr-icons/README.md#checks).

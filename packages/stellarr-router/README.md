@@ -1,17 +1,12 @@
-# @stellarr/router
+# `@stellarr/router`
 
-The router of the web client (`web/src/stellarr/`) and Cockpit
-(`web/src/cockpit/`): a table of addresses, links, hooks that read the address,
-and a history in memory for tests. The package is private.
+Client-side router shared by the Stellarr web client (`web/src/stellarr/`) and Cockpit (`web/src/cockpit/`). Provides declarative route matching, `<Link>` navigation, location hooks, scroll and focus restoration, and an in-memory history driver for tests.
 
-It is consumed as TypeScript source: `exports` points at `src/index.ts` and
-there is no build step. Vite and Vitest compile it as part of the importing
-app. It depends on nothing but React.
+The package is private and consumed directly as TypeScript source (`exports` points to `src/index.ts`; Vite and Vitest compile it as part of the importing application). React is its only runtime dependency.
 
-## Use
+## Usage
 
-Each app has one table, in its `routes.tsx`, and renders the page for the
-address with `Outlet` inside `Router`:
+Each application defines a route table in `routes.tsx` and renders `<Outlet />` inside `<Router>`:
 
 ```tsx
 import { defineRoutes, Outlet, Router } from "@stellarr/router";
@@ -33,21 +28,21 @@ createRoot(element).render(
 );
 ```
 
-| Export | What it is |
+| Export | Description |
 | --- | --- |
-| `defineRoutes({ routes, notFound })` | The table. A `path` starts with `/`, has no trailing slash, and may name `:param` segments, each matching one segment. The first route that matches answers; any other address gets `notFound`. It throws on a path it would never match and on two routes for the same addresses. |
-| `Router` | Follows the address. `routes` is the table, `history` the browser's unless a test gives one. |
-| `Outlet` | The page for the address, in a `Suspense` with an optional `fallback`. |
-| `Link` | An `<a href>` that opens an address of the app without a page load. |
-| `useRouter()` | `push(href)` and `replace(href)`. |
-| `usePathname()` | The current path. |
-| `useSearchParams()` | The query, to read. |
-| `useParams()` | The matched route's parameters. |
-| `canonicalPath(path)` | The path in the form the router uses. |
+| `defineRoutes({ routes, notFound })` | Validates and compiles a route table. Route patterns must start with `/`, omit trailing slashes, and may include `:param` single-segment parameters. Routes match in declaration order and fall back to `notFound`. Throws at startup on duplicate or unreachable patterns. |
+| `Router` | Top-level provider that tracks location state (`routes` table and optional custom `history` instance). |
+| `Outlet` | Renders the matched route's `page` component wrapped in `<Suspense fallback={...}>`. |
+| `Link` | Renders an `<a href>` element that performs client-side navigation for in-app routes. |
+| `useRouter()` | Returns `{ push(href), replace(href) }` for programmatic navigation. |
+| `usePathname()` | Returns the canonical current pathname. |
+| `useSearchParams()` | Returns a read-only `URLSearchParams` instance for the current query string. |
+| `useParams()` | Returns decoded route parameters (`Record<string, string \| null>`) for the active route. |
+| `canonicalPath(path)` | Collapses consecutive slashes and strips trailing slashes (except `/`). |
 
-`@stellarr/router/testing` exports `createMemoryHistory(href)`, a history that
-starts at `href` and lists every navigation in `navigations`, with `back()` and
-`forward()`. A test renders the page under it and reads where it went:
+### Testing with `@stellarr/router/testing`
+
+`@stellarr/router/testing` exports `createMemoryHistory(initialHref)`, which records every navigation in `history.navigations` and supports `back()` and `forward()`:
 
 ```tsx
 const history = createMemoryHistory("/invite/abc123");
@@ -59,52 +54,16 @@ render(
 expect(history.navigations).toEqual([{ kind: "replace", href: "/register" }]);
 ```
 
-## Behaviour
+## Routing behavior
 
-- **What a link takes over.** `Link` renders a real `<a href>` and takes over a
-  plain primary click on an address its app's table claims. A modified click,
-  another mouse button, `target` other than `_self`, `download`, a link that
-  changes only the fragment, another site, and an address no route claims are
-  the browser's. The not-found page claims nothing, so the web client's link to
-  `/cockpit` and Cockpit's link to `/` load the other app's document. The
-  caller's `onClick` runs first, and a prevented default stops the link; that
-  is how it works as the child of `<Button asChild>` from `@stellarr/ui`.
-  Without a `Router` above it, it is a plain link.
-- **Navigations.** `push` adds a history entry and `replace` rewrites the
-  current one. An address the table does not claim, or another origin, is
-  loaded as a new document, replacing the entry for `replace`. Navigating to
-  the address already shown changes nothing. Back and Forward render the
-  entry's page again.
-- **Slashes.** Paths are canonical with every run of slashes merged into one,
-  as nginx merges them before it picks the document, and without a trailing
-  slash, except the root. The address the page was loaded at is rewritten in
-  place (`/cockpit/` and `//cockpit` become `/cockpit`), and links and
-  navigations are resolved to the canonical path. An address that starts with
-  two slashes is never written back as it is, which the browser would read as
-  another host and refuse.
-- **Parameters.** `useParams` gives each value decoded. A value whose escapes
-  are malformed is `null`, and the route still matches, so a page can say the
-  address is unreadable. Fixed segments are compared decoded too.
-- **The query.** `useSearchParams` reads the current one. A change of query
-  renders the same page again, keeping its state; a change of path mounts the
-  new page afresh.
-- **Code loaded on demand.** A page made with `lazy` shows the `Outlet`'s
-  `fallback` when the document is opened on it. A navigation renders in a
-  transition, so later the old page stays on screen until the new one is
-  ready.
-- **Scroll.** With the browser's history, a change of path scrolls the window
-  to the top, and Back and Forward return it to where that entry was left. The
-  router takes scroll restoration over from the browser, which would restore a
-  position before the page it belongs to is drawn again. A change of query or
-  fragment alone leaves the window where it is.
-- **Focus.** After a push, Back or Forward to another path, when the element
-  that had the focus went down with the old page, the new page's first `<h1>`
-  takes it (made focusable with `tabindex="-1"`, without scrolling), so reading
-  starts at the new page. Focus on an element that outlived the change, such as
-  a link in a sidebar, stays there, and a `replace` (a redirect) never moves it.
-
-A memory history leaves scroll and focus alone, and records a page load in
-`navigations` instead of following it.
+- **Link interception**: `<Link>` renders a standard `<a href>` and intercepts only unmodified primary-button clicks (`button === 0`, no modifier keys, `target` unset or `_self`, no `download` attribute, non-hash-only change) whose target URL is same-origin and matches a declared route in the current app's route table. Unclaimed paths (including `notFound`) fall through to full browser navigation—so a link from the web client to `/cockpit` or from Cockpit to `/` loads the other application's HTML document. Custom `onClick` handlers run first and cancel navigation if they call `event.preventDefault()` (enabling composition with `<Button asChild>` from `@stellarr/ui`).
+- **Programmatic navigation**: `push(href)` appends a history entry; `replace(href)` replaces the active entry. Navigating to a URL outside the app's route table or origin triggers a full document load (`location.assign` or `location.replace`). Navigating to the exact current URL is a no-op.
+- **Path canonicalization**: Consecutive slashes are collapsed and trailing slashes are stripped (except `/`), matching Nginx's normalization. Initial non-canonical URLs (`/cockpit/`, `//cockpit`) are normalized in place via `history.replaceState` on mount, and protocol-relative strings starting with `//` are never passed raw to the History API.
+- **Parameter decoding**: `useParams()` URL-decodes each `:param` segment. If a segment contains malformed percent-encoding, the route still matches and the parameter value is `null` so the page component can render an invalid-link state. Static segments are also compared in decoded form.
+- **Query string updates**: Changing only the query string re-renders the current page component in place while preserving component state; changing the pathname mounts the new route fresh.
+- **Code splitting and transitions**: Lazy route components show `<Outlet fallback={...} />` on initial load and use React transitions on subsequent navigations so the current view stays visible until the incoming chunk resolves.
+- **Scroll restoration**: With browser history, pathname pushes scroll the window to `(0, 0)`, while `popstate` (Back/Forward) restores the saved scroll offset after the destination route renders. Query-only or hash-only updates preserve the current scroll position.
+- **Accessible focus management**: After a `push` or `popstate` navigation to a new pathname, if the previously focused element unmounted with the old page, focus moves to the new page's first `<h1>` (temporarily given `tabindex="-1"` with `preventScroll: true`). Focus on persistent shell elements (such as sidebar navigation links) is preserved, and `replace` redirects never steal focus.
 
 ## Verification
 

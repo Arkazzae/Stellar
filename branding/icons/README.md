@@ -1,6 +1,6 @@
 # Stellarr UI icons
 
-Exported SVG files for Stellarr's 160 UI icons in two variants:
+Exported SVG files for Stellarr's UI icon family in two variants:
 
 - [`broken/`](broken/): default variant, each main contour opened by one gap
 - [`linear/`](linear/): closed continuous contours

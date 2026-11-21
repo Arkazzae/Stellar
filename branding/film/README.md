@@ -1,72 +1,62 @@
 # README film
 
-The one-minute film at the top of the [main README](../../README.md): `stellarr.webp` (800 px, 15 fps, loops).
+Reproducible capture-and-render pipeline for `stellarr.webp` (`800 px` wide, `15 fps`, looping animated WebP), shown at the top of the [root README](../../README.md).
 
-Every frame is drawn from code. The app screens are frozen snapshots of the real web client and Cockpit, captured from a throwaway local instance filled with fictional people (Maya, Theo, Priya, Jonas, Kenji and Ola, all `@example.com`). The film mounts each snapshot in a shadow root and moves a camera over it. The snapshots run no app code and keep no timers, so every frame is a function of time alone.
+Every frame is rendered deterministically from code. Application screens are static DOM/CSS snapshots of the real web client and Cockpit captured from a disposable local instance seeded with sample users (`Maya`, `Theo`, `Priya`, `Jonas`, `Kenji`, and `Ola`, all `@example.com`). During rendering, each snapshot is mounted inside a shadow root and panned by a scripted camera. Because snapshots run no application scripts or timers, every frame is a pure function of timestamp `t`.
 
-The astronaut and the mark come from `branding/` and turn into each other. They share one speech bubble, and the astronaut's eyes and mouth become the mark's three bars. The astronaut also presents every caption, with an expression from `branding/mascot/expressions`. Only the captions, the terminal, and the editor on Jonas's shared screen are drawn for the film itself; that code is an invented example.
+The logo mark and astronaut mascot come from `branding/` and morph into one another by sharing a single speech-bubble contour while the mascot's eyes and mouth transition into the three voice-meter bars. Captions are paired with mascot expressions from `branding/mascot/expressions/`. Only the caption overlays, terminal animation, and sample editor window on Jonas's shared screen are drawn specifically for the film.
 
-## Everything goes through `film.sh`
+## Commands (`film.sh`)
 
 ```bash
 cd branding/film
-./film.sh capture   # the real screens again: throwaway instance, demo data, capture, instance removed
-./film.sh stills    # stills around every cut, in one image: out/stills.png
-./film.sh render    # out/film.mp4 (1920 x 1080, 60 fps) and stellarr.webp, then the checks
-./film.sh all       # capture, then render
-./film.sh down      # remove the throwaway instance after an interrupted capture (purge: also its caches)
-./film.sh clean     # empty out/, keeping the rendered film
+./film.sh capture   # boot disposable instance, seed demo data, capture DOM snapshots, remove instance
+./film.sh stills    # render diagnostic contact sheet around every scene cut: out/stills.png
+./film.sh render    # render out/film.mp4 (1920x1080, 60 fps) and stellarr.webp, then run checks
+./film.sh all       # run capture followed by render
+./film.sh down      # tear down the disposable instance after an interrupted capture ('down purge' also removes cache volumes)
+./film.sh clean     # empty out/, keeping committed stellarr.webp and ui/
 ```
 
-Requirements: Docker with Compose, Node 22+, ffmpeg, Python 3 with Pillow, and Chromium or Chrome (`CHROME=/path` picks another). The first capture installs packages and builds the API, about 10 minutes; later ones take about 5. A render takes about 5 minutes on 20 threads, and the WebP about 20 seconds.
+Requirements: Docker with Compose, Node.js 22+, `ffmpeg`, Python 3 with Pillow, and Chromium or Chrome (override path with `CHROME=/path/to/chrome`). The initial capture takes ~10 minutes (building the API and installing packages); subsequent captures take ~5 minutes. Rendering takes ~5 minutes on 20 CPU threads plus ~20 seconds to encode `stellarr.webp`.
 
-## When something changes
+## Updating the film after product changes
 
-| What changed | What to do |
+| What changed | Required steps |
 | --- | --- |
-| The interface: layout, styles, copy in the app | `./film.sh capture`, then `./film.sh stills` and look at `out/stills.png` (see below), then `./film.sh render` |
-| A caption, the order of scenes, the pace | `CAPS` and the scene times in `index.html`, then `stills` and `render` |
-| The demo conversation or the people | `capture/seed.mjs`; the messages the chat reveals one by one are listed in `ARRIVE`, `CHIPS` and `TYPE` in `index.html`; then `capture` and `render` |
-| A new screen to show | a step in `capture/capture.mjs`, its name in `KEEP` in `capture/pack.mjs`, a `<script src="ui/<name>.js">` and a scene in `index.html` |
-| Colours, logo or mascot | the `:root` tokens, `MARK` and `PET` in `index.html`, copied from `branding/logo/mark.svg` and `branding/mascot/expressions/` |
-| Only `index.html` | `./film.sh render` |
+| App layout, styles, or UI copy | `./film.sh capture`, then `./film.sh stills` (inspect `out/stills.png`), then `./film.sh render` |
+| Scene captions, ordering, or timing | Edit `CAPS` and scene timestamps in `index.html`, then run `./film.sh stills` and `./film.sh render` |
+| Seeded demo conversation or users | Edit `capture/seed.mjs` and update `ARRIVE`, `CHIPS`, and `TYPE` in `index.html`, then run `./film.sh capture` and `./film.sh render` |
+| New application screen | Add a capture step in `capture/capture.mjs`, list it in `KEEP` in `capture/pack.mjs`, load `<script src="ui/<name>.js">`, and add the scene in `index.html` |
+| Theme colors, logo, or mascot | Update `:root` tokens, `MARK`, and `PET` in `index.html` from `branding/logo/mark.svg` and `branding/mascot/expressions/` |
+| `index.html` camera/timing only | `./film.sh render` |
 
-Commit `stellarr.webp`, `ui/` and whatever you edited. `out/` is ignored by git.
+Commit `stellarr.webp`, `ui/`, and any modified source files. `out/` is gitignored.
 
-### After a capture, look at the stills
+### Verifying framing and element selectors after a capture
 
-The film finds most of what it points at in the snapshots themselves. Those positions follow the interface, whatever the layout:
+Target positions for pointer interactions—such as clicking **Translate**, selecting the `lounge` channel, highlighting the six theme swatches, measuring the shared screen bounds, and measuring Ola's translated message offset—are queried dynamically from the captured DOM.
 
-- the taps on Translate and on the lounge channel;
-- the six palette tiles;
-- the box of the shared screen;
-- how far Ola's message moves when translation is on.
+Camera framing coordinates (`CHAT_CAM`, `VOICE_CAM`, `SHARE_CAM`, `PAL_CAM`, and `COCKPIT_CAM` in `index.html`), however, are specified in `1920 × 1080` snapshot pixels. Always inspect `out/stills.png` after `./film.sh stills` to confirm panels remain properly framed.
 
-The camera framings do not follow the layout. `CHAT_CAM`, `VOICE_CAM`, `SHARE_CAM`, `PAL_CAM` and `COCKPIT_CAM` in `index.html` are in snapshot pixels (1920 x 1080), so a moved panel shows up as a badly framed still. Scenes also find elements by their text:
+Both `index.html` and `capture/capture.mjs` locate several elements by visible text (`"Wchodzę"`, `"lounge"`, `"Jonas"`, theme names, `"Requests"`, `"Watch"`, `"User settings"`, `"Appearance"`, `"Share screen"`). If UI copy changes, update the matching selectors in `capture/capture.mjs` and `index.html`.
 
-- "Wchodzę" and "lounge";
-- "Jonas" on a tile;
-- the palette names;
-- the "Requests" card.
+## Directory layout
 
-If that copy is renamed, the render stops with an error, except for the "Requests" counter, which just stops counting up. `capture/capture.mjs` also clicks through the app by visible text and labels ("lounge", "Watch", "User settings", "Appearance", "Share screen"); a click that finds nothing prints `click on … found nothing`, and the screen after it comes out wrong.
-
-## How it is made
-
-| Path | Contents |
+| Path | Description |
 | --- | --- |
-| `film.sh` | Every step, above |
-| `index.html` | The composition: scenes, captions, timing, the mark and the astronaut. Opened in Chromium, it plays live: space pauses, the arrow keys jump 1 s, `?t=12.5` shows a still. |
-| `mount.js` | Mounts a snapshot in a shadow root and restores its scroll positions |
-| `ui/` | Generated by `capture`; not edited by hand. One file per screen, `shared.js` (the stylesheets and fonts every screen shares), `palettes.js` (the six palettes read back from the app), `static/` (fonts with their OFL licence, avatars) |
-| `capture/` | `seed.mjs` (the demo world), `capture.mjs` (which screens, which clicks), `snap.mjs` (freezes a page into markup and flattened CSS), `pack.mjs` (one shared stylesheet, unused files out), `cdp.mjs` and `api.mjs` (Chromium and the API without npm packages), `compose.film.yml` and `film.env` (the throwaway instance: its own ports and relaxed sign-up limits) |
-| `tools/` | `render.mjs`, `export.sh`, `check_film.py` from the motion-design skill, and `webp.py` |
-| `stellarr.webp` | The README version |
+| `film.sh` | Entry script for `capture`, `stills`, `render`, `all`, `down`, and `clean` |
+| `index.html` | Scene composition, captions, camera keyframes, logo mark, and mascot. Can be opened directly in Chromium for live preview (`Space` pauses, arrow keys seek by 1 s, `?t=12.5` jumps to a timestamp) |
+| `mount.js` | Mounts a captured screen snapshot inside a shadow root and restores scroll positions |
+| `ui/` | Generated by `./film.sh capture` (do not edit by hand): per-screen snapshot modules, `shared.js` (deduplicated stylesheets and font rules), `palettes.js` (theme tokens extracted from the app), and `static/` (OFL fonts and avatars) |
+| `capture/` | `seed.mjs` (demo users and messages), `capture.mjs` (navigation steps and screen captures), `snap.mjs` (serializes live DOM and flattened CSS), `pack.mjs` (extracts shared CSS and prunes unused assets), `cdp.mjs` and `api.mjs` (zero-dependency CDP and HTTP clients), `compose.film.yml` and `film.env` (isolated disposable stack) |
+| `tools/` | `render.mjs` (parallel frame renderer), `export.sh` (MP4/WebP encoder wrapper), `check_film.py` (Automated quality verification), and `webp.py` (full-frame animated WebP encoder) |
+| `stellarr.webp` | Final looping animated WebP displayed in the root `README.md` |
 
-## Rules that keep it working
+## Invariants
 
-- **Name the throwaway project.** `docker-compose.dev.yml` declares `name: stellarr-dev`, so any Compose command for the film needs `-p stellarr-film`; `film.sh` always passes it. Without it, `down -v` deletes the development database.
-- **Seed only the empty throwaway instance.** The first account registered becomes the instance owner.
-- **Export the WebP with `tools/webp.py`.** It encodes every frame whole. ffmpeg's `libwebp_anim` updates only the changed parts of each frame, and on the app's dark, nearly flat surfaces those lossy patches leave visible rectangles.
-- **Keep every frame a function of time.** No CSS animations, transitions, timers or `Math.random()`: frames are rendered in parallel and must come out the same. `snap.mjs` strips the app's own animations.
-- **Keep every caption true.** Each line is backed by the product: the docs, the interface, `docker-compose.yml`.
+- **Isolate the Compose project name (`-p stellarr-film`)**: `docker-compose.dev.yml` sets `name: stellarr-dev`. Every Compose invocation for the film must pass `-p stellarr-film` (handled automatically by `film.sh`) so `down -v` never removes the development database volume.
+- **Seed only a fresh disposable instance**: The first registered user automatically becomes the instance owner.
+- **Encode animated WebP with `tools/webp.py`**: `tools/webp.py` encodes complete frames rather than delta sub-rectangles (`libwebp_anim`'s delta patches leave visible compression seams on flat dark surfaces).
+- **Keep frame rendering deterministic**: Do not use CSS animations, transitions, timers, or `Math.random()`. Frames render concurrently across worker tabs and must depend solely on `t`.
+- **Keep all claims factual**: Every caption in the film reflects real product behavior and configuration.

@@ -1,38 +1,46 @@
-# Stellarr website
+# Stellarr project website
 
-The project site: one page in three sections, with a WebGL scene of the Stellarr mark behind it. Scrolling, the arrow keys and the rail on the right move one camera along a single path through the sections. It is plain JavaScript on [Vite](https://vite.dev) and [three.js](https://threejs.org), with no framework, and it is its own npm project: it is not part of the root workspaces and is not built into the container image.
+Source for the public Stellarr website (`https://stellarr.online`): a three-section single-page site backed by an interactive WebGL 2 scene of the Stellarr mark. Scroll position, arrow keys, and the right-hand section rail drive the camera along a continuous 3D path.
 
-## Run it
+Built with vanilla JavaScript, [Vite](https://vite.dev), and [three.js](https://threejs.org). `website/` is a standalone npm project outside the root monorepo workspaces and is not included in the Stellarr container image.
+
+## Local development
 
 ```bash
 cd website
 npm ci
-npm run dev       # a dev server with reload
-npm run build     # the site in dist/
-npm run preview   # serves dist/
+npm run dev       # start Vite dev server with hot reload
+npm run build     # build static site into dist/
+npm run preview   # preview dist/ locally
 ```
 
-The scene needs WebGL 2. Without it the page shows a notice and the sections still scroll.
+The 3D background scene requires WebGL 2. When WebGL 2 is unavailable, the page displays a fallback notice while keeping all content sections scrollable.
 
-## Where to change things
+## Project structure
 
-| To change | Edit |
+| Area | Path |
 | --- | --- |
-| Page text, links, the install commands | `index.html` |
-| The sections, their length and the camera path | `src/config.js` |
-| Colors, type and layout | `src/styles.css` |
-| The scene: mark, sand, lighting, camera | `src/gl/` |
-| Scrolling, the rail, text reveals, the wordmark | `src/ui/` |
+| Page copy, links, and install commands | `index.html` |
+| Section definitions, scroll lengths, and camera keyframes (`SECTIONS`, `CAMERA`) | `src/config.js` |
+| Colors, typography, and layout rules | `src/styles.css` |
+| Three.js scene (3D mark geometry, particle sand, lighting, camera rig) | `src/gl/` |
+| Scroll controller, section rail, text reveal animations, wordmark | `src/ui/` |
+| Application entry point wiring UI and WebGL | `src/main.js` |
 
-`src/main.js` wires them together. A section is a `<section class="page">` in `index.html` and one entry in `SECTIONS`; `CAMERA` holds the camera poses, keyed by scroll position.
+## Shared branding assets
 
-## Branding
+The build reads brand assets directly from [`../branding/`](../branding/README.md) rather than duplicating files:
 
-The logo, the astronaut, the icons and the fonts are read from [`branding/`](../branding), not copied. The 3D mark is built from `branding/logo/mark.svg`, the fonts are loaded from `branding/guidelines/fonts/`, and the header logo, the astronaut and the icons in `index.html` are inlined from `branding/logo/small.svg`, `branding/mascot/expressions/happy.svg` and `branding/icons/linear/`. Redrawing the logo reaches the scene on the next build; the inlined SVGs in `index.html` have to be updated by hand to match.
+- The 3D extruded mark is constructed from `branding/logo/mark.svg` at build time.
+- Web fonts are loaded from `branding/guidelines/fonts/`.
+- The header mark, astronaut mascot, and linear UI icons in `index.html` are inlined from `branding/logo/small.svg`, `branding/mascot/expressions/happy.svg`, and `branding/icons/linear/`.
+- The Vite build copies the root [`../install.sh`](../install.sh) script into `dist/install.sh` so `https://stellarr.online/install.sh` always serves the current installer as `text/plain`.
 
-## Deploy
+Because the build reads files from `../branding/` and `../install.sh`, always build from a full repository checkout.
 
-The site is a Cloudflare Pages project named `stellarr`, with `main` as its production branch. Pages builds nothing itself; the site is built from a checkout of the repository and uploaded:
+## Deploying to Cloudflare Pages
+
+The site deploys to the `stellarr` Cloudflare Pages project (`main` is the production branch):
 
 ```bash
 cd website
@@ -41,8 +49,6 @@ npm run build
 npx wrangler pages deploy dist --project-name stellarr --branch main
 ```
 
-The build reads the logo, astronaut, icons and fonts from `branding/`, so it needs the whole repository checked out, not only `website/`. A `--branch` other than `main` gives a preview address instead of production. Wrangler is not a dependency of the project; `npx` fetches it when the command runs.
+Passing a `--branch` other than `main` publishes a preview deployment URL.
 
-`public/_headers` lets browsers keep the hashed files in `dist/assets/` for a year. Every other file, `index.html` included, is revalidated on each visit, so a new build shows up at once.
-
-The build also copies the repository's `install.sh` to `dist/install.sh`, so the site serves the installer at `https://stellarr.online/install.sh`, as plain text that a browser shows instead of downloading; a change to the script reaches the site with the next deploy.
+`public/_headers` configures immutable 1-year caching for content-hashed bundles under `/assets/*` and immediate revalidation for `index.html` and `install.sh` so new deployments take effect immediately.
