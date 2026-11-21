@@ -1,13 +1,15 @@
 # Production stack: one container runs Nginx, the API, coturn and the Stellarr
-# Media server. Nginx also serves the web client and Cockpit.
+# Media server, and Nginx serves the web client and Cockpit.
 #
 #   docker compose up -d           pulls the published image
 #   docker compose up -d --build   builds the image from this checkout
 #
-# The project, service, container and volume names are fixed. Docker derives
-# the name of the data volume from the project and the volume key
-# (stellarr_stellarr_data), so changing any of them would start an existing
-# installation on an empty database.
+# Settings go in .env, which the container reads as it is; the image holds
+# every default. See docs/install/configuration.md.
+#
+# The project, service, container and volume names are fixed. Docker names
+# the data volume after the project and the volume key (stellarr_stellarr_data),
+# so a change to any of them starts the installation on an empty database.
 
 name: stellarr
 
@@ -19,89 +21,23 @@ services:
       dockerfile: Dockerfile
     container_name: stellarr
     restart: unless-stopped
-    # On docker compose stop, the container's process manager stops the
-    # services one at a time, nginx first and the media server last, and kills
-    # whatever is left after 60 s; the API alone may take 35 s to finish. The
-    # default of 10 s would kill them all in the middle of that.
+    # The process manager stops the services one at a time and the API alone
+    # may take 35 s; Docker's default of 10 s would kill them part-way.
     stop_grace_period: 75s
     mem_limit: ${STELLARR_CONTAINER_MEMORY_LIMIT:-4g}
     cpus: ${STELLARR_CONTAINER_CPUS:-4}
     pids_limit: ${STELLARR_CONTAINER_PIDS_LIMIT:-512}
     security_opt:
       - no-new-privileges:true
+    env_file:
+      - path: .env
+        required: false
     environment:
-      # The domain people reach the instance at, and the HTTPS port their
-      # browsers use: the published STELLARR_HTTPS_PORT, or 443 behind a proxy.
-      # The entrypoint builds the public address in mail links and the desktop
-      # handshake from them; STELLARR_PUBLIC_URL, when set, overrides it.
-      STELLARR_DOMAIN: ${STELLARR_DOMAIN:-}
-      STELLARR_PUBLIC_PORT: ${STELLARR_PUBLIC_PORT:-${STELLARR_HTTPS_PORT:-8443}}
-      STELLARR_PUBLIC_URL: ${STELLARR_PUBLIC_URL:-}
-      PUBLIC_IP: ${PUBLIC_IP:-}
-      PUBLIC_HTTPS_PORT: ${STELLARR_HTTPS_PORT:-8443}
-      # The reverse proxies in front of the container, as the container sees
-      # them. The API takes each person's address from the X-Forwarded-For a
-      # listed proxy sends; with none listed, everyone behind a proxy has its
-      # address.
-      Operations__TrustedProxies: ${STELLARR_TRUSTED_PROXIES:-}
-      Rtc__TurnPort: ${STELLARR_TURN_PORT:-3478}
-      Rtc__TurnsPort: ${STELLARR_TURNS_PORT:-5349}
-      Rtc__TurnTcpEnabled: ${STELLARR_TURN_TCP_ENABLED:-false}
-      Rtc__TurnsEnabled: ${STELLARR_TURNS_ENABLED:-false}
-      # The host port of 49000/udp below; the media server advertises it.
-      Rtc__MediaPort: ${STELLARR_MEDIA_PORT:-49000}
-      Logging__LogLevel__Microsoft.EntityFrameworkCore.Database.Command: ${STELLARR_EF_COMMAND_LOG_LEVEL:-Warning}
-      ASPNETCORE_ENVIRONMENT: Production
-      GIPHY_API_KEY: ${GIPHY_API_KEY:-}
-      Operations__TimeZone: ${STELLARR_TIME_ZONE:-UTC}
-      Desktop__MinimumVersion: ${STELLARR_DESKTOP_MINIMUM_VERSION:-0.1.0}
-      Desktop__RecommendedVersion: ${STELLARR_DESKTOP_RECOMMENDED_VERSION:-0.1.3}
-      Stellarr__InstanceId: ${STELLARR_INSTANCE_ID:-}
-      Stellarr__InstanceName: ${STELLARR_INSTANCE_NAME:-Stellarr}
-      # One setting for the instance language: the entrypoint writes
-      # STELLARR_LANGUAGE for the web client at every start and the API reads
-      # Stellarr:Language.
-      STELLARR_LANGUAGE: ${STELLARR_LANGUAGE:-en}
-      Stellarr__Language: ${STELLARR_LANGUAGE:-en}
-      Mail__Enabled: ${STELLARR_MAIL_ENABLED:-true}
-      # The mail secrets. SMTP's server, port and login are set in Cockpit; Resend
-      # replaces SMTP when it is turned on under Integrations.
-      Mail__SmtpPassword: ${STELLARR_SMTP_PASSWORD:-}
-      Mail__ResendApiKey: ${STELLARR_RESEND_API_KEY:-}
-      Mail__FromAddress: ${STELLARR_MAIL_FROM:-}
-      Mail__FromName: ${STELLARR_MAIL_FROM_NAME:-Stellarr}
-      # Web Push is optional; without a valid pair the API reports push as
-      # unavailable instead of failing to start. See docs/admin/notifications.md#web-push.
-      Push__Enabled: ${STELLARR_PUSH_ENABLED:-false}
-      Push__Subject: ${STELLARR_PUSH_SUBJECT:-}
-      Push__PublicKey: ${STELLARR_PUSH_PUBLIC_KEY:-}
-      Push__PrivateKey: ${STELLARR_PUSH_PRIVATE_KEY:-}
-      Oidc__Enabled: ${STELLARR_OIDC_ENABLED:-false}
-      Oidc__Authority: ${STELLARR_OIDC_ISSUER:-}
-      Oidc__ClientId: ${STELLARR_OIDC_CLIENT_ID:-}
-      Oidc__ClientSecret: ${STELLARR_OIDC_CLIENT_SECRET:-}
-      Oidc__ClientSecretFile: ${STELLARR_OIDC_CLIENT_SECRET_FILE:-}
-      Oidc__DisplayName: ${STELLARR_OIDC_DISPLAY_NAME:-Main account}
-      Oidc__CallbackPath: /api/auth/oidc/callback
-      Oidc__TrustProviderMfa: ${STELLARR_OIDC_TRUST_PROVIDER_MFA:-false}
-      Oidc__ProviderMfaAmr: ${STELLARR_OIDC_PROVIDER_MFA_AMR:-mfa}
-      Backups__Enabled: ${STELLARR_BACKUP_ENABLED:-true}
-      Backups__IntervalHours: ${STELLARR_BACKUP_INTERVAL_HOURS:-24}
-      Backups__RetryMinutes: ${STELLARR_BACKUP_RETRY_MINUTES:-15}
-      Backups__InitialDelayMinutes: ${STELLARR_BACKUP_INITIAL_DELAY_MINUTES:-5}
-      Cloudflare__R2__Enabled: ${STELLARR_CLOUDFLARE_R2_ENABLED:-false}
-      Cloudflare__R2__Mode: ${STELLARR_CLOUDFLARE_R2_MODE:-s3}
-      Cloudflare__R2__Endpoint: ${STELLARR_CLOUDFLARE_R2_ENDPOINT:-}
-      Cloudflare__R2__Region: ${STELLARR_CLOUDFLARE_R2_REGION:-auto}
-      Cloudflare__R2__Bucket: ${STELLARR_CLOUDFLARE_R2_BUCKET:-}
-      Cloudflare__R2__AccessKey: ${STELLARR_CLOUDFLARE_R2_ACCESS_KEY:-}
-      Cloudflare__R2__SecretKey: ${STELLARR_CLOUDFLARE_R2_SECRET_KEY:-}
-      Cloudflare__R2__WorkerToken: ${STELLARR_CLOUDFLARE_R2_WORKER_TOKEN:-}
-      Cloudflare__R2__Prefix: ${STELLARR_CLOUDFLARE_R2_PREFIX:-stellarr}
-      Uploads__MaxStoredBytesPerUser: ${STELLARR_UPLOAD_USER_BYTES:-2147483648}
-      Uploads__MaxStoredBytes: ${STELLARR_UPLOAD_TOTAL_BYTES:-21474836480}
-      Uploads__MinimumFreeDataRootBytes: ${STELLARR_MIN_FREE_BYTES:-1073741824}
-      Uploads__MaxConcurrentUploads: ${STELLARR_MAX_CONCURRENT_UPLOADS:-4}
+      # The host side of the ports below, which the container cannot see.
+      STELLARR_HTTPS_PORT: ${STELLARR_HTTPS_PORT:-8443}
+      STELLARR_MEDIA_PORT: ${STELLARR_MEDIA_PORT:-49000}
+      STELLARR_TURN_PORT: ${STELLARR_TURN_PORT:-3478}
+      STELLARR_TURNS_PORT: ${STELLARR_TURNS_PORT:-5349}
     ports:
       - "${STELLARR_HTTP_PORT:-8888}:80"
       - "${STELLARR_HTTPS_PORT:-8443}:443"
@@ -109,9 +45,8 @@ services:
       - "${STELLARR_TURN_PORT:-3478}:3478/udp"
       - "${STELLARR_TURNS_PORT:-5349}:5349/tcp"
       - "${STELLARR_TURNS_PORT:-5349}:5349/udp"
-      # Stellarr Media: every call goes through this port. Browsers are told
-      # PUBLIC_IP with this port, so the router must forward the same external
-      # port to it.
+      # Every call goes through this port, and browsers are told
+      # STELLARR_PUBLIC_IP with it: the router forwards the same external port.
       - "${STELLARR_MEDIA_PORT:-49000}:49000/udp"
       - "${STELLARR_TURN_RELAY_RANGE:-49160-49200}:49160-49200/udp"
     volumes:
