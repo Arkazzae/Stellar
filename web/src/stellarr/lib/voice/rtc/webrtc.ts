@@ -201,6 +201,7 @@ export class WebRtcVoiceClient implements VoiceClient {
     this.bitrate = new AdaptiveBitrateController({
       ceiling: profile.maxBitrate,
       floor: profile.minBitrate,
+      ...(profile.tiers === undefined ? {} : { tiers: profile.tiers }),
     });
     // In-memory unless the composition root hands over a persisted store.
     this.preferences = options.participantPreferences ?? new ParticipantPreferencesStore(null);
@@ -659,7 +660,7 @@ export class WebRtcVoiceClient implements VoiceClient {
 
     if (previous.opusProfile !== next.opusProfile) {
       const profile = profileFor(next);
-      this.bitrate.setCeiling(profile.maxBitrate, profile.minBitrate);
+      this.bitrate.setCeiling(profile.maxBitrate, profile.minBitrate, profile.tiers);
       await this.topology.applyMicEncoding();
       // The fmtp ceiling lives in the SDP, so the profile change needs a pass.
       await this.topology.renegotiate();

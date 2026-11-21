@@ -29,11 +29,20 @@ export interface BitrateDecision {
   changed: boolean;
 }
 
+/**
+ * A target for each measured tier, in bits a second, for a profile that steps
+ * between fixed rates rather than scaling its own ceiling. A link not yet
+ * measured gets the ceiling, as with the fractions.
+ */
+export type BitrateTiers = Readonly<Record<Exclude<NetworkQuality, "unknown">, number>>;
+
 export interface AdaptiveBitrateOptions {
   /** The profile's ceiling. The controller never exceeds it. */
   ceiling: number;
   /** The profile's floor. The controller never goes below it. */
   floor: number;
+  /** The profile's own targets per tier, in place of fractions of the ceiling. */
+  tiers?: BitrateTiers;
   /** Weight of each new sample in the smoothed value. */
   smoothing?: number;
   /** Consecutive worse-tier samples before the ceiling drops. */
@@ -44,7 +53,7 @@ export interface AdaptiveBitrateOptions {
   minRelativeChange?: number;
 }
 
-/** Fraction of the profile ceiling allowed at each quality tier. */
+/** Fraction of the profile ceiling allowed at each quality tier, unless the profile has tiers. */
 const TIER_FACTOR: Record<NetworkQuality, number> = {
   unknown: 1,
   good: 1,
@@ -75,6 +84,7 @@ export function classify(sample: NetworkSample): Exclude<NetworkQuality, "unknow
 export class AdaptiveBitrateController {
   private ceiling: number;
   private floor: number;
+  private tiers: BitrateTiers | null;
   private readonly smoothing: number;
   private readonly downgradeAfter: number;
   private readonly upgradeAfter: number;
@@ -90,6 +100,7 @@ export class AdaptiveBitrateController {
   constructor(options: AdaptiveBitrateOptions) {
     this.ceiling = Math.max(1, options.ceiling);
     this.floor = Math.min(options.floor, this.ceiling);
+    this.tiers = options.tiers ?? null;
     this.smoothing = options.smoothing ?? 0.3;
     this.downgradeAfter = options.downgradeAfter ?? 2;
     this.upgradeAfter = options.upgradeAfter ?? 5;
@@ -122,11 +133,13 @@ export class AdaptiveBitrateController {
    * them for the rest of the session: keeping the previous profile's floor would
    * hold clarity at economy's floor, or pin economy above its own ceiling so a
    * poor link could not back off. An omitted floor is kept, but never above the
-   * new ceiling.
+   * new ceiling. The tiers belong to the profile too: a profile that names none
+   * goes back to fractions of its ceiling.
    */
-  setCeiling(ceiling: number, floor?: number): void {
+  setCeiling(ceiling: number, floor?: number, tiers?: BitrateTiers): void {
     this.ceiling = Math.max(1, ceiling);
     this.floor = Math.min(floor ?? this.floor, this.ceiling);
+    this.tiers = tiers ?? null;
     this.current = this.targetFor(this.quality);
   }
 
@@ -186,7 +199,11 @@ export class AdaptiveBitrateController {
   }
 
   private targetFor(quality: NetworkQuality): number {
-    return clamp(Math.round(this.ceiling * TIER_FACTOR[quality]), this.floor, this.ceiling);
+    const target =
+      this.tiers === null || quality === "unknown"
+        ? this.ceiling * TIER_FACTOR[quality]
+        : this.tiers[quality];
+    return clamp(Math.round(target), this.floor, this.ceiling);
   }
 }
 
