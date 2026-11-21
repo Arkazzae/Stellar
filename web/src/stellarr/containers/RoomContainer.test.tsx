@@ -34,6 +34,7 @@ type ThreadPanelStubProps = TranscriptProps & {
 
 const mocks = vi.hoisted(() => {
   const deviceSettings = {};
+  const nobody: string[] = [];
   return {
     directory: null as unknown as DirectoryValue,
     chat: null as unknown as ChatValue,
@@ -45,6 +46,7 @@ const mocks = vi.hoisted(() => {
     ports: {
       voiceSettings: { subscribe: () => () => {}, getSnapshot: () => deviceSettings },
       chat: { listIndexed: async () => ({ messages: [], nextCursor: null }) },
+      typing: { onTypingChanged: () => () => {}, typingIn: () => nobody },
     },
     seen: {
       transcript: null as TranscriptProps | null,

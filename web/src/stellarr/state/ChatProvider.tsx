@@ -95,7 +95,6 @@ export interface ChatValue {
   loadingOlder: boolean;
   /** False once the beginning of this channel has been reached. */
   hasOlder: boolean;
-  typingNames: string[];
   chips: ComposerChip[];
   /**
    * The open channel's pinned messages, newest pin first.
@@ -151,7 +150,6 @@ export interface ChatValue {
 
 const ChatContext = createContext<ChatValue | null>(null);
 
-const NO_NAMES: string[] = [];
 const NO_PINS: PinnedMessageVM[] = [];
 
 export function ChatProvider({ children }: { children: ReactNode }) {
@@ -224,7 +222,7 @@ export function ChatProvider({ children }: { children: ReactNode }) {
     [forgetReply, forgetEdit, forgetThread],
   );
 
-  const { typing, reactionEpoch } = useChatFeed({
+  const { reactionEpoch } = useChatFeed({
     ports,
     dispatch,
     locale,
@@ -384,7 +382,6 @@ export function ChatProvider({ children }: { children: ReactNode }) {
         channelId !== null && data.loaded[channelId] !== true && data.restored[channelId] !== true,
       loadingOlder: channelId !== null && data.loadingOlder[channelId] === true,
       hasOlder: channelId !== null && typeof data.nextCursor[channelId] === "string",
-      typingNames: (channelId === null ? undefined : typing[channelId]) ?? NO_NAMES,
       chips: queue.chips,
       pinned: channelId === null ? NO_PINS : pinned,
       pinnedLoading: channelId !== null && data.pinsLoaded[channelId] !== true,
@@ -419,7 +416,6 @@ export function ChatProvider({ children }: { children: ReactNode }) {
       panel,
       reads,
       firstUnreadGroupId,
-      typing,
       queue,
       ports,
       pinned,
