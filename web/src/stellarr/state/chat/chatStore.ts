@@ -229,9 +229,14 @@ export function chatReducer(state: ChatData, action: ChatAction): ChatData {
     }
     case "embeds": {
       const { channelId, messageId, embeds } = action;
+      // The server reports after every send and edit, and mostly that there
+      // is nothing to unfurl: cards it already has leave the message as it is.
       return patch(state, {
         messages: edit(state.messages, channelId, (bucket) =>
-          updateLoaded(bucket, messageId, (message) => ({ ...message, embeds }))),
+          updateLoaded(bucket, messageId, (message) =>
+            JSON.stringify(message.embeds) === JSON.stringify(embeds)
+              ? message
+              : { ...message, embeds })),
       });
     }
     case "first-page": {
