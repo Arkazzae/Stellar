@@ -1,16 +1,19 @@
 import { useEffect, useId, useMemo, useState } from "react";
 
-import { Button } from "@stellarr/ui";
 import { Icon } from "@stellarr/icons";
 import { useLanguage } from "@/state/hooks";
 
+import { CodeLine, splitCodeLines } from "@/components/room/code/codeLines";
 import {
-  CODE_LANGUAGES,
-  codeLanguageLabel,
+  AUTO_LANGUAGE,
+  CodeLanguagePicker,
+  codeLanguageName,
+} from "@/components/room/code/CodeLanguagePicker";
+import { pluralForm } from "@/lib/format/format";
+import {
   resolveCodeLanguage,
   tokenizeCode,
   type CodeLanguageId,
-  type CodeToken,
 } from "@/lib/messages/codeLanguages";
 import type { CodePart } from "@/lib/messages/parts";
 
@@ -25,23 +28,9 @@ const COLLAPSED_LINES = 16;
 const COPY_FEEDBACK_MS = 1600;
 
 type CopyState = "idle" | "copied" | "error";
-type Run = Pick<CodeToken, "kind" | "text">;
-
-/** Cuts the highlighted runs at line breaks, each piece keeping its own class. */
-function splitLines(tokens: readonly CodeToken[]): Run[][] {
-  const lines: Run[][] = [[]];
-  for (const token of tokens) {
-    const pieces = token.text.split("\n");
-    pieces.forEach((text, index) => {
-      if (index > 0) lines.push([]);
-      if (text.length > 0) lines.at(-1)?.push({ kind: token.kind, text });
-    });
-  }
-  return lines;
-}
 
 export function CodeAttachment({ part, onCopy }: CodeAttachmentProps) {
-  const { t } = useLanguage();
+  const { t, locale } = useLanguage();
   const contentId = useId();
   const source = part.source ?? part.tokens.map((token) => token.text).join("");
   const initialLanguage = part.language ?? resolveCodeLanguage(part.lang, source);
@@ -51,7 +40,6 @@ export function CodeAttachment({ part, onCopy }: CodeAttachmentProps) {
 
   const lineCount = source.length === 0 ? 0 : source.split("\n").length;
   const collapsible = lineCount > COLLAPSED_LINES;
-  const languageName = language === "plaintext" ? t("code.plaintext") : codeLanguageLabel(language);
 
   // The tokens that arrived with the part are only valid for the language they
   // were made in; any other choice is highlighted here.
@@ -62,7 +50,7 @@ export function CodeAttachment({ part, onCopy }: CodeAttachmentProps) {
         : tokenizeCode(source, language),
     [initialLanguage, language, part.tokens, source],
   );
-  const lines = useMemo(() => splitLines(tokens), [tokens]);
+  const lines = useMemo(() => splitCodeLines(tokens), [tokens]);
 
   useEffect(() => {
     if (copyState === "idle") return;
@@ -90,73 +78,63 @@ export function CodeAttachment({ part, onCopy }: CodeAttachmentProps) {
   return (
     <div className="att att-window att-code">
       <div className="code-head">
-        <div className="code-meta">
-          <label>
-            <span className="sr-only">{t("attachment.highlightLanguage")}</span>
-            <select
-              value={language}
-              aria-label={t("attachment.highlightLanguage")}
-              title={t("attachment.changeHighlightLanguage")}
-              onChange={(event) => setLanguage(event.target.value as CodeLanguageId)}
-            >
-              {CODE_LANGUAGES.map((entry) => (
-                <option key={entry.id} value={entry.id}>
-                  {entry.id === "plaintext" ? t("code.plaintext") : entry.label}
-                </option>
-              ))}
-            </select>
-          </label>
-        </div>
-        <div className="code-actions">
-          {collapsible ? (
-            <>
-              <span>{t("attachment.codeLines", { count: lineCount })}</span>
-              <button
-                type="button"
-                aria-expanded={expanded}
-                aria-controls={contentId}
-                onClick={() => setExpanded((current) => !current)}
-              >
-                {expanded ? t("attachment.collapse") : t("attachment.expand")}
-              </button>
-            </>
+        {/* Recolours the block for this reader only; the message keeps the
+            language it was sent with. */}
+        <CodeLanguagePicker
+          value={language}
+          onChange={(next) => {
+            if (next !== AUTO_LANGUAGE) setLanguage(next);
+          }}
+          label={t("attachment.highlightLanguage")}
+          className="code-lang"
+          t={t}
+        />
+        <span className="code-count">
+          {t(`attachment.codeLines.${pluralForm(locale, lineCount)}`, { count: lineCount })}
+        </span>
+        {/* The button stays the same element through its feedback, so a
+            keyboard press does not lose its place. */}
+        <button
+          type="button"
+          className="code-copy"
+          data-state={copyState}
+          aria-label={copyLabel}
+          title={copyLabel}
+          onClick={() => void copy()}
+        >
+          <Icon name={copyState === "copied" ? "tick" : "copy"} size={16} />
+          {copyState === "copied" ? (
+            <span aria-hidden="true">{t("attachment.codeCopiedShort")}</span>
           ) : null}
-          <Button
-            type="button"
-            variant="quiet"
-            size="icon-sm"
-            className={copyState === "error" ? "code-copy copy-error" : "code-copy"}
-            aria-label={copyLabel}
-            title={copyLabel}
-            onClick={() => void copy()}
-          >
-            <Icon name={copyState === "copied" ? "tick" : "copy"} size={15} />
-          </Button>
-        </div>
+        </button>
       </div>
       <pre
         id={contentId}
         className={collapsible ? (expanded ? "expanded" : "compact") : undefined}
-        aria-label={t("attachment.codeLabel", { language: languageName })}
+        aria-label={t("attachment.codeLabel", { language: codeLanguageName(language, t) })}
         // Scrollable, so a keyboard user must be able to focus it.
         tabIndex={0}
       >
         <code data-language={language}>
-          {lines.map((line, lineIndex) => (
-            <span className="code-line" key={lineIndex}>
-              {line.map((run, runIndex) =>
-                run.kind === "text" ? (
-                  run.text
-                ) : (
-                  <span key={runIndex} className={run.kind}>
-                    {run.text}
-                  </span>
-                ),
-              )}
-            </span>
+          {lines.map((runs, index) => (
+            <CodeLine key={index} runs={runs} className="code-line" />
           ))}
         </code>
       </pre>
+      {collapsible ? (
+        // Where the code breaks off, not up in the head, so the way on is
+        // where the reader stopped.
+        <button
+          type="button"
+          className="code-more"
+          aria-expanded={expanded}
+          aria-controls={contentId}
+          onClick={() => setExpanded((current) => !current)}
+        >
+          {expanded ? t("attachment.showLessCode") : t("attachment.showWholeCode")}
+          <Icon name={expanded ? "caretUp" : "caret"} size={14} />
+        </button>
+      ) : null}
     </div>
   );
 }
