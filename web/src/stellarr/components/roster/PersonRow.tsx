@@ -85,6 +85,7 @@ export function PersonRow({ person, inCall = false, onOpenProfile, menu }: Perso
           at={contextMenu.at}
           userId={person.id}
           displayName={person.displayName}
+          avatarUrl={person.avatarUrl}
           anchor={contextMenu.anchor}
           onClose={contextMenu.close}
         />

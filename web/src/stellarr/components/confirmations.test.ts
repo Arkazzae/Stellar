@@ -4,61 +4,70 @@ import { translateMessage, type Translator } from "@/i18n";
 
 import {
   banPerson,
-  blockPerson,
-  deleteChannel,
-  deleteMessageConfirmation,
-  kickFromChannelPerson,
-  kickPerson,
-  removeFriend,
+  channelSubject,
+  messageSubject,
+  personSubject,
+  sectionSubject,
+  serverSubject,
 } from "./confirmations";
 
 const pl: Translator = (key, values) => translateMessage("pl", key, values);
 const en: Translator = (key, values) => translateMessage("en", key, values);
 
-describe("confirmation requests", () => {
-  it("asks about a message without naming anyone", () => {
-    expect(deleteMessageConfirmation(pl)).toEqual({
-      title: "Usunąć tę wiadomość?",
-      description: "Tego nie da się cofnąć.",
-      confirmLabel: "Usuń",
-      danger: true,
-      icon: "trash",
+describe("confirmation subjects", () => {
+  it("says what a channel is and where it sits", () => {
+    expect(channelSubject(pl, { kind: "text", name: "announcements", sectionName: "Information" })).toEqual({
+      kind: "channel",
+      channelKind: "text",
+      name: "announcements",
+      detail: "Kanał tekstowy w sekcji Information",
     });
+    expect(channelSubject(pl, { kind: "voice", name: "voice" }).detail).toBe("Kanał głosowy");
+    expect(channelSubject(en, { kind: "voice", name: "voice", sectionName: "Games" }).detail).toBe(
+      "Voice channel in Games",
+    );
   });
 
-  it.each([
-    ["removeFriend", removeFriend, "Usunąć Jo ze znajomych?", "Usuń", "userAdd"],
-    ["blockPerson", blockPerson, "Zablokować Jo?", "Zablokuj", "ban"],
-    ["kickPerson", kickPerson, "Wyrzucić Jo?", "Wyrzuć", "signout"],
-    ["kickFromChannelPerson", kickFromChannelPerson, "Rozłączyć Jo z kanału?", "Rozłącz", "signout"],
-    ["deleteChannel", deleteChannel, "Usunąć kanał Jo?", "Usuń", "trash"],
-  ] as const)("%s names the person and the deed", (_name, build, title, confirmLabel, icon) => {
-    const request = build(pl, "Jo");
-
-    expect(request.title).toBe(title);
-    expect(request.confirmLabel).toBe(confirmLabel);
-    expect(request.icon).toBe(icon);
-    expect(request.danger).toBe(true);
-    expect(request.description).toBeTruthy();
-    expect(request.field).toBeUndefined();
+  it("counts a server's people and channels with the plural each number takes, when they are known", () => {
+    expect(serverSubject(pl, "pl", { name: "Stellarr Dev", mark: "SD", memberCount: 29, channelCount: 17 }).detail).toBe(
+      "29 osób · 17 kanałów",
+    );
+    expect(serverSubject(pl, "pl", { name: "Mały", mark: "MA", memberCount: 2, channelCount: 1 }).detail).toBe(
+      "2 osoby · 1 kanał",
+    );
+    expect(serverSubject(pl, "pl", { name: "Mały", mark: "MA" })).not.toHaveProperty("detail");
   });
 
-  it("asks for a ban reason without requiring one", () => {
-    const request = banPerson(pl, "Jo");
-
-    expect(request.title).toBe("Zbanować Jo?");
-    expect(request.confirmLabel).toBe("Zbanuj");
-    expect(request.danger).toBe(true);
-    expect(request.field).toEqual({
-      label: "POWÓD",
-      placeholder: "Bez podanego powodu",
-      maxLength: 200,
-      optional: true,
+  it("gives a person's handle only when there is one", () => {
+    expect(personSubject({ id: "u1", displayName: "Ania Mazur", username: "ania" })).toEqual({
+      kind: "person",
+      id: "u1",
+      name: "Ania Mazur",
+      handle: "ania",
     });
+    expect(personSubject({ id: "u1", displayName: "Ania Mazur" })).not.toHaveProperty("handle");
   });
 
-  it("follows the language of the translator it is given", () => {
-    expect(blockPerson(en, "Jo").title).toBe("Block Jo?");
-    expect(banPerson(en, "Jo").field.label).toBe("REASON");
+  it("says so for a message with no words", () => {
+    const subject = messageSubject(pl, { authorId: "u1", authorName: "Kenji", text: "  " });
+    expect(subject).toMatchObject({ kind: "message", text: "Wiadomość bez tekstu" });
+  });
+
+  it("calls a section empty only when its channels are known", () => {
+    expect(sectionSubject(pl, { name: "Information", channels: [] })).toMatchObject({
+      channels: [],
+      emptyDetail: "Bez kanałów",
+    });
+    expect(sectionSubject(pl, { name: "Information", channels: null })).not.toHaveProperty("emptyDetail");
+  });
+});
+
+describe("the ban question", () => {
+  it("asks for a reason in sentence case without requiring one", () => {
+    const request = banPerson(pl, personSubject({ id: "u1", displayName: "Jo" }));
+
+    expect(request.title).toBe("Zbanować tę osobę?");
+    expect(request.field).toMatchObject({ label: "Powód", optional: true });
+    expect(banPerson(en, personSubject({ id: "u1", displayName: "Jo" })).field.label).toBe("Reason");
   });
 });

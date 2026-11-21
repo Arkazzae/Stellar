@@ -403,37 +403,33 @@ function TransferDialog({
           });
         }}
       >
-        <div className="cf-head">
-          <span className="cf-ico" aria-hidden="true">
-            <Icon name="crown" size={18} />
-          </span>
-          <div className="cf-copy">
-            <h2 id={titleId}>{t("srv.transfer.title")}</h2>
-            <p>{t("srv.transfer.detail")}</p>
-            <div className="cf-field">
-              <span className="fld-lab" id={labelId}>
-                {t("srv.transfer.pick")}
-              </span>
-              <Dropdown
-                options={candidates.map((candidate) => ({
-                  value: candidate.id,
-                  label: candidate.name,
-                  ...(candidate.role === undefined ? {} : { detail: candidate.role }),
-                }))}
-                value={picked}
-                onChange={setPicked}
-                label={t("srv.transfer.pick")}
-                placeholder={t("srv.transfer.placeholder")}
-                disabled={action.pending}
-              />
-            </div>
-            {action.failed ? (
-              <p className="set-note sound-error" role="alert">
-                {t("srv.transfer.failed")}
-              </p>
-            ) : null}
+        <div className="cf-body">
+          <h2 id={titleId}>{t("srv.transfer.title")}</h2>
+          <p className="cf-sub">{t("srv.transfer.detail")}</p>
+          <div className="cf-field">
+            <span className="cf-lab" id={labelId}>
+              {t("srv.transfer.pick")}
+            </span>
+            <Dropdown
+              options={candidates.map((candidate) => ({
+                value: candidate.id,
+                label: candidate.name,
+                ...(candidate.role === undefined ? {} : { detail: candidate.role }),
+              }))}
+              value={picked}
+              onChange={setPicked}
+              label={t("srv.transfer.pick")}
+              placeholder={t("srv.transfer.placeholder")}
+              disabled={action.pending}
+            />
           </div>
         </div>
+        {action.failed ? (
+          <p className="cf-err" role="alert">
+            <Icon name="warning" size={16} />
+            <span>{t("srv.transfer.failed")}</span>
+          </p>
+        ) : null}
         <div className="cf-foot">
           <Button type="button" variant="secondary" onClick={onClose}>
             {t("common.cancel")}

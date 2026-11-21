@@ -1,4 +1,4 @@
-import { fireEvent, screen } from "@testing-library/react";
+import { fireEvent, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
@@ -164,6 +164,8 @@ describe("MessageGroup context menu rules", () => {
     expect(onAction).not.toHaveBeenCalled();
     await answerConfirm(user, "Anuluj");
     expect(onAction).not.toHaveBeenCalled();
+    // The card quotes the message, so it has to be gone before the next press.
+    await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
 
     fireEvent.contextMenu(screen.getByText("druga"));
     await user.click(screen.getByRole("menuitem", { name: "Usuń wiadomość" }));

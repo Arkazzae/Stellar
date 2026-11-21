@@ -144,7 +144,7 @@ export interface ChatValue {
   notifyTyping: () => void;
   loadOlder: () => void;
   react: (messageId: string, emoji: string) => void;
-  runAction: (messageId: string, action: MessageAction) => void;
+  runAction: (messageId: string, action: MessageAction) => Promise<void> | void;
   /** Adds an indexed result to the transcript window so it can be revealed. */
   revealMessage: (message: Message) => void;
 }

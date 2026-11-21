@@ -2,6 +2,7 @@ import { documentLocale, translateForDocument } from "@/i18n/defaultLocale";
 import { useMemo, useState, type MouseEvent } from "react";
 
 import { Icon } from "@stellarr/icons";
+import { messageSubject } from "@/components/confirmations";
 import { Avatar } from "@/components/primitives/Avatar";
 import { useConfirm } from "@/components/primitives/ConfirmDialog";
 import { ContextMenu, useContextMenu } from "@/components/primitives/ContextMenu";
@@ -17,7 +18,7 @@ import type {
 
 import { Attachment } from "../attachments/Attachment";
 import type { MessageTranslationOptions } from "../attachments/TranslatedTextAttachment";
-import type { PointedAt } from "@/lib/messages/messageExport";
+import { plainText, type PointedAt } from "@/lib/messages/messageExport";
 import { MessageEditor } from "./MessageEditor";
 import { messageMenuEntries } from "./messageMenu";
 import { MessageToolbar, type MessageAction } from "./MessageToolbar";
@@ -83,7 +84,8 @@ export interface MessageGroupProps extends MessageGroupVM {
   /** Jumps to the answered message; absent leaves the line inert. */
   onOpenReply?: (messageId: string) => void;
   onReact?(messageId: string, emoji: string): void;
-  onAction?(messageId: string, action: MessageAction): void;
+  /** A deletion's promise keeps the question card open until it settles. */
+  onAction?(messageId: string, action: MessageAction): Promise<void> | void;
   attachments?: AttachmentCallbacks;
   translation?: MessageTranslationOptions;
   /**
@@ -220,6 +222,10 @@ export function MessageGroup({
     setMenuTarget(null);
   };
 
+  // The message as the question card shows it; called only when it asks.
+  const describe = (parts: readonly MessagePart[]) => () =>
+    messageSubject(t, { authorId, authorName, authorAvatarUrl, text: plainText(parts) });
+
   return (
     <div
       className={highlight ? "msg-group jumped" : "msg-group"}
@@ -239,6 +245,7 @@ export function MessageGroup({
             canModerate,
             developerMode,
             onAction: onAction && ((action) => onAction(menuBody.id, action)),
+            describe: describe(menuBody.parts),
             ...(attachments?.resolveOriginal === undefined ? {} : { resolveOriginal: attachments.resolveOriginal }),
             confirm,
             t,
@@ -304,6 +311,7 @@ export function MessageGroup({
               <MessageToolbar
                 onReact={onReact && ((emoji) => onReact(body.id, emoji))}
                 onAction={onAction && ((action) => onAction(body.id, action))}
+                describe={describe(body.parts)}
                 customEmoji={customEmoji}
                 // A server notice belongs to nobody and is edited by nobody;
                 // moderating one would delete the record of what the server did.

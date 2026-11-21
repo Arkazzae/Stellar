@@ -5,6 +5,7 @@ import {
   blockPerson,
   kickFromChannelPerson,
   kickPerson,
+  personSubject,
   removeFriend,
 } from "@/components/confirmations";
 import { Icon } from "@stellarr/icons";
@@ -67,10 +68,16 @@ export interface UserMenuActions {
    */
   canKick?: boolean;
   canBan?: boolean;
-  onKick?: (userId: string) => void;
+  /**
+   * The three moderation deeds. A promise keeps the question card open until
+   * it settles, and a rejection is said on the card.
+   */
+  onKick?: (userId: string) => Promise<void> | void;
   canKickFromChannel?: (userId: string) => boolean;
-  onKickFromChannel?: (userId: string) => void;
-  onBan?: (userId: string, reason: string) => void;
+  onKickFromChannel?: (userId: string) => Promise<void> | void;
+  onBan?: (userId: string, reason: string) => Promise<void> | void;
+  /** Their username, for the person row on the question card; omitted when unknown. */
+  usernameOf?: (userId: string) => string | undefined;
   /** Adds "Kopiuj identyfikator", as the preference in "Zaawansowane" promises. */
   developerMode?: boolean;
 }
@@ -81,6 +88,8 @@ export interface UserMenuProps extends UserMenuActions {
   at: { x: number; y: number };
   userId: string;
   displayName: string;
+  /** Their picture, for the face on a question the menu asks. */
+  avatarUrl?: string;
   /** True for your own row: there is no messaging, blocking or kicking yourself. */
   self?: boolean;
   /** What the menu was raised from, for the profile card to hang off. */
@@ -181,6 +190,7 @@ export function UserMenu({
   at,
   userId,
   displayName,
+  avatarUrl,
   self = false,
   anchor,
   onClose,
@@ -204,6 +214,7 @@ export function UserMenu({
   canKickFromChannel,
   onKickFromChannel,
   onBan,
+  usernameOf,
   developerMode = false,
 }: UserMenuProps) {
   const confirm = useConfirm();
@@ -220,10 +231,18 @@ export function UserMenu({
   );
   const relation: ProfileRelation = self ? "self" : (relationOf?.(userId) ?? "none");
 
-  const afterConfirming = (request: ConfirmRequest, act: () => void) => () => {
-    void confirm(request).then((confirmed) => {
+  // The person row is built when a question is asked, not for every render.
+  const person = () =>
+    personSubject({ id: userId, displayName, avatarUrl, username: usernameOf?.(userId) });
+  const afterConfirming = (ask: () => ConfirmRequest, act: () => void) => () => {
+    void confirm(ask()).then((confirmed) => {
       if (confirmed) act();
     });
+  };
+  // A deed that answers with a promise runs on the card, which stays open
+  // until it settles and says so when it fails.
+  const runConfirmed = (ask: () => ConfirmRequest, deed: () => Promise<void> | void) => () => {
+    void confirm({ ...ask(), run: async () => deed() });
   };
 
   const identity: MenuItem[] = [];
@@ -261,9 +280,7 @@ export function UserMenu({
       id: "unfriend",
       label: t("common.removeFriend"),
       icon: "userAdd",
-      onSelect: afterConfirming(removeFriend(t, displayName), () =>
-        onRemoveFriend(userId),
-      ),
+      onSelect: afterConfirming(() => removeFriend(t, person()), () => onRemoveFriend(userId)),
     };
   } else if (relation === "none" && onAddFriend !== undefined) {
     friendship = {
@@ -281,7 +298,7 @@ export function UserMenu({
           label: t("common.block"),
           icon: "ban",
           danger: true,
-          onSelect: afterConfirming(blockPerson(t, displayName), () => onBlock(userId)),
+          onSelect: afterConfirming(() => blockPerson(t, person()), () => onBlock(userId)),
         }
       : null;
 
@@ -294,8 +311,9 @@ export function UserMenu({
         label: t("common.kickFromChannel"),
         icon: "signout",
         danger: true,
-        onSelect: afterConfirming(kickFromChannelPerson(t, displayName), () =>
-          onKickFromChannel(userId),
+        onSelect: runConfirmed(
+          () => kickFromChannelPerson(t, person()),
+          () => onKickFromChannel(userId),
         ),
       });
     }
@@ -305,7 +323,7 @@ export function UserMenu({
         label: t("common.kickFromServer"),
         icon: "signout",
         danger: true,
-        onSelect: afterConfirming(kickPerson(t, displayName), () => onKick(userId)),
+        onSelect: runConfirmed(() => kickPerson(t, person()), () => onKick(userId)),
       });
     }
     if (canBan && onBan !== undefined) {
@@ -318,9 +336,7 @@ export function UserMenu({
         // dismissed. An empty string is a ban with no reason given, which is a
         // different thing from not banning.
         onSelect: () => {
-          void prompt(banPerson(t, displayName)).then((reason) => {
-            if (reason !== null) onBan(userId, reason);
-          });
+          void prompt({ ...banPerson(t, person()), run: async (reason) => onBan(userId, reason) });
         },
       };
     }

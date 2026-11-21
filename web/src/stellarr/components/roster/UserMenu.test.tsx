@@ -95,7 +95,7 @@ describe("UserMenu", () => {
 
     await user.click(screen.getByRole("menuitem", { name: "Wyrzuć z serwera" }));
     // Asked in the app's own dialog, which outlives the menu that raised it.
-    expect(screen.getByRole("dialog")).toHaveTextContent("Wyrzucić Jo?");
+    expect(screen.getByRole("dialog")).toHaveTextContent("Wyrzucić tę osobę?");
     await answerConfirm(user, "Anuluj");
     expect(onKick).not.toHaveBeenCalled();
   });
@@ -132,7 +132,7 @@ describe("UserMenu", () => {
     setup({ canBan: true, onBan });
 
     await user.click(screen.getByRole("menuitem", { name: "Zbanuj" }));
-    await user.type(screen.getByRole("textbox", { name: "POWÓD" }), "  spam  ");
+    await user.type(screen.getByRole("textbox", { name: /^Powód/ }), "  spam  ");
     await answerConfirm(user, "Zbanuj");
 
     expect(onBan).toHaveBeenCalledWith("u-2", "spam");
@@ -156,7 +156,7 @@ describe("UserMenu", () => {
     setup({ canBan: true, onBan });
 
     await user.click(screen.getByRole("menuitem", { name: "Zbanuj" }));
-    await user.type(screen.getByRole("textbox", { name: "POWÓD" }), "spam");
+    await user.type(screen.getByRole("textbox", { name: /^Powód/ }), "spam");
     await answerConfirm(user, "Anuluj");
 
     expect(onBan).not.toHaveBeenCalled();
@@ -169,7 +169,7 @@ describe("UserMenu", () => {
 
     await user.click(screen.getByRole("menuitem", { name: "Usuń ze znajomych" }));
     expect(screen.getByRole("dialog")).toHaveTextContent(
-      "Usunąć Jo ze znajomych?",
+      "Usunąć tę osobę ze znajomych?",
     );
     await answerConfirm(user, "Anuluj");
     expect(onRemoveFriend).not.toHaveBeenCalled();

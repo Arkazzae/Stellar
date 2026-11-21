@@ -410,9 +410,10 @@ describe("Rail channel menu", () => {
     await user.click(screen.getByRole("menuitem", { name: "Usuń kanał" }));
 
     expect(onDelete).not.toHaveBeenCalled();
-    expect(screen.getByText("Usunąć kanał ogólny?")).toBeInTheDocument();
+    const question = screen.getByRole("dialog", { name: "Usunąć ten kanał?" });
+    expect(question).toHaveTextContent("ogólny");
 
-    await user.click(screen.getByRole("button", { name: "Usuń" }));
+    await user.click(within(question).getByRole("button", { name: "Usuń kanał" }));
     expect(onDelete).toHaveBeenCalledWith("t-1");
   });
 

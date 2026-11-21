@@ -53,7 +53,7 @@ export function useMessageActions({
   );
 
   const runAction = useCallback(
-    (messageId: string, action: MessageAction) => {
+    (messageId: string, action: MessageAction): Promise<void> | void => {
       switch (action) {
         case "reply":
           startReply(messageId);
@@ -90,14 +90,16 @@ export function useMessageActions({
         case "delete": {
           // Removed from this transcript straight away and put back if the
           // server refuses: the person who pressed it is watching the
-          // message, not a spinner.
+          // message. The refusal is passed on, so the question card that
+          // asked stays open and says it.
           const target = messages.find((message) => message.id === messageId);
           if (target === undefined) return;
           dispatch({ type: "dropped", channelId: target.channelId, messageId });
           forgetReply(messageId);
           forgetEdit(messageId);
-          void actions.remove(messageId).catch(() => {
+          return actions.remove(messageId).catch((cause: unknown) => {
             dispatch({ type: "shown", message: target });
+            throw cause;
           });
         }
       }

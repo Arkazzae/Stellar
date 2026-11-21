@@ -3,10 +3,11 @@ import userEvent from "@testing-library/user-event";
 import { describe, expect, it, vi } from "vitest";
 
 import type { Role } from "@/ports";
+import { renderWithConfirm } from "@/test/confirm";
 
 import { SectionSettings, type SectionSettingsProps } from "./SectionSettings";
 
-const SECTION = { id: "sec-1", name: "Gry" };
+const SECTION = { id: "sec-1", name: "Gry", channels: [] };
 
 const MODERATOR: Role = {
   id: "mod",
@@ -29,8 +30,7 @@ function props(overrides: Partial<SectionSettingsProps> = {}): SectionSettingsPr
     permissionOverrides: [],
     onSave: vi.fn(() => Promise.resolve()),
     onSavePermissionOverride: vi.fn(() => Promise.resolve()),
-    onDelete: vi.fn(() => Promise.resolve()),
-    deleteBlocked: false,
+    onDelete: vi.fn(async () => "deleted" as const),
     onOpenRoles: vi.fn(),
     ...overrides,
   };
@@ -125,63 +125,10 @@ describe("SectionSettings", () => {
       const { rerender } = render(<SectionSettings {...props()} />);
       await user.type(nameField(), "!");
 
-      rerender(<SectionSettings {...props({ section: { id: "sec-1", name: "Gry!" } })} />);
+      rerender(<SectionSettings {...props({ section: { ...SECTION, name: "Gry!" } })} />);
 
       expect(nameField()).toHaveValue("Gry!");
       expect(saveButton()).toBeDisabled();
-    });
-  });
-
-  describe("deleting", () => {
-    it("asks for confirmation before deleting and can back out", async () => {
-      const user = userEvent.setup();
-      const onDelete = vi.fn(() => Promise.resolve());
-      render(<SectionSettings {...props({ onDelete })} />);
-      await goTo(user, "Usuń sekcję");
-
-      expect(screen.getByText(/Sekcja znika, a jej kanały wracają/)).toBeInTheDocument();
-      await user.click(deleteButton());
-      expect(onDelete).not.toHaveBeenCalled();
-
-      await user.click(screen.getByRole("button", { name: "Anuluj" }));
-      expect(deleteButton()).toBeInTheDocument();
-      expect(onDelete).not.toHaveBeenCalled();
-    });
-
-    it("deletes once the named confirmation is pressed", async () => {
-      const user = userEvent.setup();
-      const onDelete = vi.fn(() => Promise.resolve());
-      render(<SectionSettings {...props({ onDelete })} />);
-      await goTo(user, "Usuń sekcję");
-
-      await user.click(deleteButton());
-      await user.click(screen.getByRole("button", { name: "Usuń Gry" }));
-
-      expect(onDelete).toHaveBeenCalledOnce();
-      expect(screen.queryByRole("button", { name: "Usuń Gry" })).toBeNull();
-    });
-
-    it("brings the confirmation back when the delete fails", async () => {
-      const user = userEvent.setup();
-      const onDelete = vi.fn().mockRejectedValue(new Error("boom"));
-      render(<SectionSettings {...props({ onDelete })} />);
-      await goTo(user, "Usuń sekcję");
-
-      await user.click(deleteButton());
-      await user.click(screen.getByRole("button", { name: "Usuń Gry" }));
-
-      expect(await screen.findByRole("alert")).toHaveTextContent("Nie udało się usunąć sekcji.");
-      expect(screen.getByRole("button", { name: "Usuń Gry" })).toBeEnabled();
-    });
-
-    it("explains a refusal because the section still has channels", async () => {
-      const user = userEvent.setup();
-      render(<SectionSettings {...props({ deleteBlocked: true })} />);
-      await goTo(user, "Usuń sekcję");
-
-      expect(screen.getByRole("alert")).toHaveTextContent(
-        "Ta sekcja ma jeszcze przypisane kanały",
-      );
     });
   });
 
@@ -231,7 +178,7 @@ describe("SectionSettings", () => {
 
   it("is read-only and says why without permission to manage channels", async () => {
     const user = userEvent.setup();
-    render(<SectionSettings {...props({ supported: false })} />);
+    renderWithConfirm(<SectionSettings {...props({ supported: false })} />);
 
     expect(screen.getByText(/Nie masz uprawnienia do zarządzania kanałami/)).toBeInTheDocument();
     expect(nameField()).toBeDisabled();

@@ -29,6 +29,29 @@ export interface ChannelSettingsNavGroup extends SettingsShellGroup<ChannelSetti
   items: readonly ChannelSettingsNavItem[];
 }
 
+/** A channel as a slice of the rail draws it. */
+export interface RailChannel {
+  id: string;
+  name: string;
+  kind: ChannelKind;
+  sectionId?: string;
+}
+
+/**
+ * The channels under one section in the order the rail lists them: its text
+ * channels, then its voice ones, each in rail order.
+ */
+export function sectionChannels(
+  channels: readonly RailChannel[],
+  sectionId: string,
+): { id: string; name: string; kind: ChannelKind }[] {
+  const of = (kind: ChannelKind) =>
+    channels
+      .filter((channel) => channel.sectionId === sectionId && channel.kind === kind)
+      .map(({ id, name }) => ({ id, name, kind }));
+  return [...of("text"), ...of("voice")];
+}
+
 /** The mark of a channel kind, used wherever a channel is drawn. */
 export const channelIcon = (kind: ChannelKind): IconName => (kind === "voice" ? "speaker" : "hash");
 

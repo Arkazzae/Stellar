@@ -1,4 +1,4 @@
-import { deleteChannel } from "@/components/confirmations";
+import { channelSubject, deleteChannel } from "@/components/confirmations";
 import { useConfirm } from "@/components/primitives/ConfirmDialog";
 import {
   ContextMenu,
@@ -29,8 +29,11 @@ export interface ChannelMenuActions {
     channelId: string,
     kind: "text" | "voice",
   ) => boolean;
-  /** Managers only, and asked about first. */
-  onDelete?: (channelId: string) => void;
+  /**
+   * Managers only, and asked about first. The question card waits for the
+   * promise and says so on the card when it rejects.
+   */
+  onDelete?: (channelId: string) => Promise<void>;
   /** Adds "Kopiuj identyfikator", as the preference in "Zaawansowane" promises. */
   developerMode?: boolean;
   /** Every section this server has, offered as "Move to…" targets. */
@@ -51,6 +54,8 @@ export interface ChannelMenuProps extends ChannelMenuActions {
   unread?: number;
   /** The section this channel already sits under, if any. */
   currentSectionId?: string;
+  /** That section's name, for the channel row on the question card. */
+  sectionName?: string;
   onClose: () => void;
 }
 
@@ -72,6 +77,7 @@ export function ChannelMenu({
   name,
   unread = 0,
   currentSectionId,
+  sectionName,
   onMarkRead,
   isMuted,
   onSetMuted,
@@ -159,11 +165,10 @@ export function ChannelMenu({
       icon: "trash",
       danger: true,
       // A channel takes its messages with it, so this is the one item here
-      // that stops and asks — the same dialog the rest of the app asks with.
+      // that stops and asks — the same card its settings ask with.
       onSelect: () => {
-        void confirm(deleteChannel(t, name)).then((confirmed) => {
-          if (confirmed) onDelete(channelId);
-        });
+        const subject = channelSubject(t, { kind, name, sectionName });
+        void confirm({ ...deleteChannel(t, subject), run: () => onDelete(channelId) });
       },
     });
   }

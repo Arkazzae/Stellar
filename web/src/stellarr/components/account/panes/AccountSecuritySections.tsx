@@ -114,11 +114,16 @@ export function TwoStepSection({
 
   const removeMethod = async (method: MfaMethod) => {
     const confirmed = await confirm({
-      title: t("security.method.removeTitle", { name: methodName(method) }),
+      title: t("security.method.removeTitle"),
       description: t("security.method.removeDetail"),
+      subject: {
+        kind: "item",
+        name: methodName(method),
+        detail: t("security.method.added", { added: date(method.createdAt) }),
+        mark: { icon: WAYS.find((way) => way.mode === method.type)?.icon ?? "key" },
+      },
       confirmLabel: t("security.method.remove"),
       danger: true,
-      icon: "trash",
     });
     if (confirmed) onRemoveMethod(method);
   };
@@ -304,11 +309,16 @@ export function IdentitiesSection({
 
   const unlinkIdentity = async (identity: LinkedIdentity) => {
     const confirmed = await confirm({
-      title: t("security.identities.unlinkTitle", { name: identity.name }),
+      title: t("security.identities.unlinkTitle"),
       description: t("security.identities.unlinkDetail"),
+      subject: {
+        kind: "item",
+        name: identity.name,
+        detail: t("security.identities.linked", { date: formatShortDate(identity.createdAt, locale) }),
+        mark: { icon: "link" },
+      },
       confirmLabel: t("security.identities.unlink"),
       danger: true,
-      icon: "link",
     });
     if (confirmed) onUnlinkIdentity(identity);
   };

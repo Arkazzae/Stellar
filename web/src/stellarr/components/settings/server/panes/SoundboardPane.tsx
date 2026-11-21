@@ -202,11 +202,17 @@ export function SoundboardPane({
 
   const remove = async (sound: Sound) => {
     const confirmed = await confirm({
-      title: t("settings.deleteSoundTitle", { name: sound.name }),
+      title: t("settings.deleteSoundTitle"),
       description: t("settings.deleteSoundDescription"),
+      subject: {
+        kind: "item",
+        name: sound.name,
+        // The length the list shows beside it.
+        detail: seconds(Math.max(0, sound.trimEndSeconds - sound.trimStartSeconds)),
+        mark: { glyph: sound.glyph },
+      },
       confirmLabel: t("common.remove"),
       danger: true,
-      icon: "trash",
     });
     if (!confirmed) return;
     if (preview.playing === sound.id) preview.stop();

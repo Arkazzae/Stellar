@@ -231,7 +231,10 @@ export function ServerSettingsDialog({ open, initialPane, data, reload }: Server
                 await admin.deleteServer();
                 return true;
               }, t);
-              if (deleted === true) window.location.reload();
+              // Nothing was deleted: the question card has to hear a failure,
+              // not close as if the server were gone.
+              if (deleted !== true) throw new Error("The server was not deleted.");
+              window.location.reload();
             },
           }
         : {})}
