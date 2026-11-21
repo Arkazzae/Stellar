@@ -17,7 +17,7 @@ fingerprint() {
 }
 
 prepare() {
-  if ! STELLARR_DATA_ROOT="$1" PUBLIC_HOST=localhost bash "$maintenance" prepare > "$scratch/prepare.log" 2>&1; then
+  if ! STELLARR_DATA_ROOT="$1" STELLARR_DOMAIN=localhost bash "$maintenance" prepare > "$scratch/prepare.log" 2>&1; then
     cat "$scratch/prepare.log" >&2
     fail "TLS preparation failed."
   fi

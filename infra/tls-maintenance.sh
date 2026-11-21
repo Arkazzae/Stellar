@@ -12,14 +12,15 @@ set -Eeuo pipefail
 
 mode="${1:-prepare}"
 data_root="${STELLARR_DATA_ROOT:-/data/stellarr}"
-public_host="${PUBLIC_HOST:-localhost}"
+# The name people reach the instance at, as the entrypoint exports it.
+public_host="${STELLARR_DOMAIN:-localhost}"
 tls_root="$data_root/tls"
 fullchain="$tls_root/fullchain.pem"
 private_key="$tls_root/privkey.pem"
 # Present while the pair on disk is one this script generated.
 generated_marker="$tls_root/.stellarr-self-signed"
-renew_before_seconds="${TLS_RENEW_BEFORE_SECONDS:-2592000}"
-check_interval_seconds="${TLS_RENEW_CHECK_SECONDS:-43200}"
+renew_before_seconds="${STELLARR_TLS_RENEW_BEFORE_SECONDS:-2592000}"
+check_interval_seconds="${STELLARR_TLS_RENEW_CHECK_SECONDS:-43200}"
 foreign_warning_seconds=604800
 
 mkdir -p "$tls_root"
