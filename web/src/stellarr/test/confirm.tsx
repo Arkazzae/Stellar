@@ -14,6 +14,14 @@ export function renderWithConfirm(ui: ReactElement): RenderResult {
   return render(<ConfirmProvider>{ui}</ConfirmProvider>);
 }
 
+/**
+ * The same provider as a wrapper, so a `rerender` with the bare element keeps
+ * it: for a dialog that is rendered again with new props.
+ */
+export function renderInConfirm(ui: ReactElement): RenderResult {
+  return render(ui, { wrapper: ConfirmProvider });
+}
+
 /** Answers the dialog by pressing one of its two buttons. */
 export async function answerConfirm(user: UserEvent, label: string): Promise<void> {
   const dialog = await screen.findByRole("dialog");

@@ -1,8 +1,8 @@
-import { render, screen, within } from "@testing-library/react";
+import { screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { describe, expect, it, vi } from "vitest";
 
-import { renderWithConfirm } from "@/test/confirm";
+import { renderInConfirm } from "@/test/confirm";
 
 import {
   ChannelSettings,
@@ -58,13 +58,11 @@ const goTo = (user: User, pane: string) =>
     ),
   );
 
-const inDeletePane = () => within(screen.getByRole("region", { name: "Strefa zagrożenia" }));
-
 describe("ChannelSettings editing", () => {
   it("saves the topic and slow mode of a text channel", async () => {
     const user = userEvent.setup();
     const p = props();
-    render(<ChannelSettings {...p} />);
+    renderInConfirm(<ChannelSettings {...p} />);
 
     const topic = screen.getByRole("textbox", { name: /Temat/ });
     await user.clear(topic);
@@ -85,7 +83,7 @@ describe("ChannelSettings editing", () => {
   });
 
   it("offers neither topic nor slow mode on a voice channel", () => {
-    render(<ChannelSettings {...props({ channel: voiceChannel })} />);
+    renderInConfirm(<ChannelSettings {...props({ channel: voiceChannel })} />);
 
     expect(screen.queryByRole("textbox", { name: /Temat/ })).toBeNull();
     expect(screen.queryByRole("combobox", { name: /Tryb powolny/ })).toBeNull();
@@ -95,7 +93,7 @@ describe("ChannelSettings editing", () => {
   it("shows the failure and lets the member try saving again", async () => {
     const user = userEvent.setup();
     const onSave = vi.fn().mockRejectedValueOnce(new Error("offline")).mockResolvedValue(undefined);
-    render(<ChannelSettings {...props({ onSave })} />);
+    renderInConfirm(<ChannelSettings {...props({ onSave })} />);
 
     await user.type(screen.getByRole("textbox", { name: /Nazwa/ }), "2");
     await user.click(screen.getByRole("button", { name: "Zapisz zmiany" }));
@@ -113,7 +111,7 @@ describe("ChannelSettings editing", () => {
 
   it("keeps the form read-only and says why without permission to manage channels", async () => {
     const user = userEvent.setup();
-    render(<ChannelSettings {...props({ supported: false })} />);
+    renderInConfirm(<ChannelSettings {...props({ supported: false })} />);
 
     expect(screen.getByText(/Nie masz uprawnienia do zarządzania kanałami/)).toBeVisible();
     expect(screen.getByRole("textbox", { name: /Nazwa/ })).toBeDisabled();
@@ -126,7 +124,7 @@ describe("ChannelSettings editing", () => {
 
   it("starts from the next channel instead of the one it was showing", async () => {
     const user = userEvent.setup();
-    const rendered = render(<ChannelSettings {...props()} />);
+    const rendered = renderInConfirm(<ChannelSettings {...props()} />);
 
     await user.type(screen.getByRole("textbox", { name: /Nazwa/ }), "-draft");
 
@@ -140,7 +138,7 @@ describe("ChannelSettings editing", () => {
   it("holds the overview while it has unsaved changes, until they are reset", async () => {
     const user = userEvent.setup();
     const onClose = vi.fn();
-    render(<ChannelSettings {...props({ onClose })} />);
+    renderInConfirm(<ChannelSettings {...props({ onClose })} />);
 
     await user.type(screen.getByRole("textbox", { name: /Nazwa/ }), "-draft");
     await goTo(user, "Uprawnienia");
@@ -170,7 +168,7 @@ describe("ChannelSettings pane that is not available", () => {
     );
 
   it("stays on the fallback pane when management is granted while open", () => {
-    const rendered = render(
+    const rendered = renderInConfirm(
       <ChannelSettings {...props({ channel: null, canManageChannel: false })} />,
     );
     expect(navItem("Powiadomienia")).toHaveAttribute("aria-current", "page");
@@ -184,7 +182,7 @@ describe("ChannelSettings pane that is not available", () => {
 
 describe("ChannelSettings for members who cannot manage the channel", () => {
   it("still shows a voice channel's overview and access panes", () => {
-    render(
+    renderInConfirm(
       <ChannelSettings {...props({ channel: voiceChannel, canManageChannel: false })} />,
     );
 
@@ -198,15 +196,16 @@ describe("ChannelSettings deletion", () => {
   it("deletes only once the question card is answered, and backs out on cancel", async () => {
     const user = userEvent.setup();
     const p = props();
-    renderWithConfirm(<ChannelSettings {...p} />);
+    renderInConfirm(<ChannelSettings {...p} />);
+    // Deletion is the row alone at the foot of the navigation, on every pane.
     const ask = async () => {
-      await goTo(user, "Strefa zagrożenia");
-      await user.click(inDeletePane().getByRole("button", { name: "Usuń kanał" }));
+      await user.click(screen.getByRole("button", { name: "Usuń kanał" }));
       return screen.getByRole("dialog", { name: "Usunąć ten kanał?" });
     };
 
     await user.click(within(await ask()).getByRole("button", { name: "Anuluj" }));
     expect(p.onDelete).not.toHaveBeenCalled();
+    await waitFor(() => expect(screen.queryByRole("dialog", { name: "Usunąć ten kanał?" })).toBeNull());
 
     await user.click(within(await ask()).getByRole("button", { name: "Usuń kanał" }));
     expect(p.onDelete).toHaveBeenCalledOnce();

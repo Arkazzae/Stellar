@@ -2,7 +2,7 @@ import { useId, useState } from "react";
 
 import { Modal } from "@/components/primitives/Modal";
 import {
-  DangerPane,
+  ChannelDeleteAction,
   NotificationsPane,
   PermissionsPane,
 } from "@/components/settings/channel/ChannelActionPanes";
@@ -11,6 +11,7 @@ import {
   channelLabel,
   initialPane,
   navigationFor,
+  offersDeletion,
   type ChannelSettingsPaneKey,
   type ChannelSettingsVM,
 } from "@/components/settings/channel/channelSettingsModel";
@@ -115,10 +116,6 @@ export function ChannelSettings({
             onOpenRoles={onOpenRoles}
           />
         );
-      case "danger":
-        return channel === null ? null : (
-          <DangerPane key={channel.id} channel={channel} supported={supported} onDelete={onDelete} />
-        );
     }
   };
 
@@ -150,6 +147,11 @@ export function ChannelSettings({
           active={resolvedActive}
           onSelect={setActive}
           className="ch-settings"
+          footer={
+            channel !== null && offersDeletion(channel.kind, canManageChannel) ? (
+              <ChannelDeleteAction channel={channel} supported={supported} onDelete={onDelete} />
+            ) : undefined
+          }
         >
           {readOnly ? <p className="set-note">{t("channel.settingsUnsupported")}</p> : null}
           {pane()}

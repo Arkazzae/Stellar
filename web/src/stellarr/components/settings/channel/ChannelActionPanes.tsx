@@ -8,6 +8,7 @@ import {
   type PermissionOverridePatch,
 } from "@/components/settings/channel/PermissionOverrideEditor";
 import { SettingsSection } from "@/components/settings/SettingsSection";
+import { SettingsFooterAction } from "@/components/settings/SettingsShell";
 import type { ChannelSettingsVM } from "@/components/settings/channel/channelSettingsModel";
 import type { PermissionOverride, Role } from "@/ports";
 import { useLanguage } from "@/state/hooks";
@@ -88,38 +89,30 @@ export function PermissionsPane({
   );
 }
 
-export interface DangerPaneProps {
+export interface ChannelDeleteActionProps {
   channel: ChannelSettingsVM;
   supported: boolean;
   onDelete: () => Promise<void>;
 }
 
 /**
- * The server's danger zone, for one channel. Deleting asks on the question
- * card the rail's menu asks with, and the card runs the deletion.
+ * Deleting the channel, alone at the foot of the navigation as deleting a
+ * server is. It asks on the question card the rail's menu asks with, and the
+ * card runs the deletion.
  */
-export function DangerPane({ channel, supported, onDelete }: DangerPaneProps) {
+export function ChannelDeleteAction({ channel, supported, onDelete }: ChannelDeleteActionProps) {
   const { t } = useLanguage();
   const confirm = useConfirm();
 
-  const askToDelete = () => {
-    const subject = channelSubject(t, channel);
-    void confirm({ ...deleteChannel(t, subject), run: onDelete });
-  };
-
   return (
-    <SettingsSection title={t("server.danger")} className="danger-section">
-      <div className="set-row danger">
-        <span className="set-lab">
-          <b>{t("channel.delete")}</b>
-          <span>{t("channel.deleteWarning")}</span>
-        </span>
-        <span className="set-ctl">
-          <Button type="button" variant="danger" disabled={!supported} onClick={askToDelete}>
-            {t("channel.delete")}
-          </Button>
-        </span>
-      </div>
-    </SettingsSection>
+    <SettingsFooterAction
+      icon="trash"
+      label={t("channel.delete")}
+      disabled={!supported}
+      onClick={() => {
+        const subject = channelSubject(t, channel);
+        void confirm({ ...deleteChannel(t, subject), run: onDelete });
+      }}
+    />
   );
 }

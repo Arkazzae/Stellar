@@ -1,6 +1,6 @@
 import { useMemo } from "react";
 
-import { sectionChannels } from "@/components/settings/channel/channelSettingsModel";
+import { railGroups, sectionChannels } from "@/components/settings/channel/channelSettingsModel";
 import { SectionCreate } from "@/components/settings/channel/SectionCreate";
 import {
   SectionSettings,
@@ -30,6 +30,7 @@ export function SectionSettingsDialog({ roles }: { roles: readonly Role[] }) {
       id: found.id,
       name: found.name,
       channels: sectionChannels(directory.channels, found.id),
+      rail: railGroups(directory.channels, directory.sections),
     };
   }, [directory.sections, directory.channels, ui.sectionSettingsId]);
 

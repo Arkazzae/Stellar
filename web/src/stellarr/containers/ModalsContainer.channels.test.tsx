@@ -32,7 +32,7 @@ describe("ModalsContainer: channel settings", () => {
 
     await user.clear(nameField());
     await user.type(nameField(), "lobby");
-    await user.click(screen.getByRole("button", { name: t("channel.settingsSave") }));
+    await user.click(screen.getByRole("button", { name: t("common.saveChanges") }));
 
     expect(harness.ports.admin.updateChannel).toHaveBeenCalledExactlyOnceWith(TEXT_CHANNEL.id, {
       name: "lobby",
@@ -47,7 +47,7 @@ describe("ModalsContainer: channel settings", () => {
     openChannelSettings(VOICE_CHANNEL.id);
 
     await user.type(nameField(), "!");
-    await user.click(screen.getByRole("button", { name: t("channel.settingsSave") }));
+    await user.click(screen.getByRole("button", { name: t("common.saveChanges") }));
 
     expect(harness.ports.admin.updateChannel).toHaveBeenCalledExactlyOnceWith(VOICE_CHANNEL.id, {
       name: "Salon!",
@@ -70,9 +70,7 @@ describe("ModalsContainer: channel settings", () => {
 
   /** Deletes from the dialog through the question card, and hands the card back. */
   async function deleteFromSettings(user: ReturnType<typeof userEvent.setup>) {
-    await user.click(screen.getByRole("button", { name: t("server.danger") }));
-    const pane = screen.getByRole("region", { name: t("server.danger") });
-    await user.click(within(pane).getByRole("button", { name: t("channel.delete") }));
+    await user.click(screen.getByRole("button", { name: t("channel.delete") }));
     const question = screen.getByRole("dialog", { name: t("confirm.deleteChannelTitle") });
     await user.click(within(question).getByRole("button", { name: t("channel.delete") }));
     return question;

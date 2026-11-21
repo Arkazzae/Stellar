@@ -1,6 +1,8 @@
-import { render, screen } from "@testing-library/react";
+import { screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { describe, expect, it, vi } from "vitest";
+
+import { renderInConfirm } from "@/test/confirm";
 
 import {
   ChannelSettings,
@@ -63,7 +65,7 @@ describe("ChannelSettings", () => {
       canManageChannel: false,
       permissionsSupported: false,
     });
-    const rendered = render(<ChannelSettings {...closed} />);
+    const rendered = renderInConfirm(<ChannelSettings {...closed} />);
 
     rendered.rerender(
       <ChannelSettings
@@ -79,7 +81,7 @@ describe("ChannelSettings", () => {
   it("uses the server settings' shell, groups and words", async () => {
     const user = userEvent.setup();
     const p = props();
-    const { container } = render(<ChannelSettings {...p} />);
+    const { container } = renderInConfirm(<ChannelSettings {...p} />);
 
     expect(
       screen.getByRole("dialog", { name: "Ustawienia kanału: #ogolny" }),
@@ -88,7 +90,7 @@ describe("ChannelSettings", () => {
     expect(screen.getByText("Ogólne")).toBeVisible();
     expect(screen.getByText("Zarządzanie")).toBeVisible();
 
-    for (const name of ["Przegląd", "Powiadomienia", "Uprawnienia", "Strefa zagrożenia"]) {
+    for (const name of ["Przegląd", "Powiadomienia", "Uprawnienia", "Usuń kanał"]) {
       expect(screen.getByRole("button", { name }).querySelector("svg")).not.toBeNull();
     }
 
@@ -102,7 +104,7 @@ describe("ChannelSettings", () => {
 
   it("keeps a save only on the pane that has something to save", async () => {
     const user = userEvent.setup();
-    render(<ChannelSettings {...props()} />);
+    renderInConfirm(<ChannelSettings {...props()} />);
 
     // The overview offers a save once something on it changed, and only then.
     expect(screen.queryByRole("button", { name: "Zapisz zmiany" })).toBeNull();
@@ -119,7 +121,7 @@ describe("ChannelSettings", () => {
   it("changes this user's text-channel notification mute immediately", async () => {
     const user = userEvent.setup();
     const onNotificationMutedChange = vi.fn();
-    render(
+    renderInConfirm(
       <ChannelSettings
         {...props({ onNotificationMutedChange })}
       />,
@@ -137,7 +139,7 @@ describe("ChannelSettings", () => {
   });
 
   it("opens a regular member on the editable notification pane", () => {
-    render(
+    renderInConfirm(
       <ChannelSettings
         {...props({
           supported: false,
@@ -158,7 +160,7 @@ describe("ChannelSettings", () => {
   });
 
   it("keeps a voice channel's person limit on its overview", () => {
-    render(<ChannelSettings {...props({ channel: voiceChannel })} />);
+    renderInConfirm(<ChannelSettings {...props({ channel: voiceChannel })} />);
 
     expect(screen.queryByRole("button", { name: "Głos i wideo" })).toBeNull();
     expect(screen.queryByRole("button", { name: "Powiadomienia" })).toBeNull();
@@ -168,7 +170,7 @@ describe("ChannelSettings", () => {
   it("saves a voice-channel patch from the profile card", async () => {
     const user = userEvent.setup();
     const p = props({ channel: voiceChannel });
-    render(<ChannelSettings {...p} />);
+    renderInConfirm(<ChannelSettings {...p} />);
 
     await user.selectOptions(screen.getByRole("combobox", { name: /Limit osób/ }), "10");
 
@@ -186,7 +188,7 @@ describe("ChannelSettings", () => {
   it("saves a trimmed text-channel patch from the profile card", async () => {
     const user = userEvent.setup();
     const p = props();
-    render(<ChannelSettings {...p} />);
+    renderInConfirm(<ChannelSettings {...p} />);
 
     expect(screen.queryByRole("button", { name: "Zapisz zmiany" })).toBeNull();
 

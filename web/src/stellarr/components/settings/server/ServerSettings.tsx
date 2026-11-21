@@ -1,9 +1,9 @@
 import { useId, useState } from "react";
 
-import { Icon, type IconName } from "@stellarr/icons";
+import type { IconName } from "@stellarr/icons";
 import { usePrompt } from "@/components/primitives/ConfirmDialog";
 import { Modal } from "@/components/primitives/Modal";
-import { SettingsShell } from "@/components/settings/SettingsShell";
+import { SettingsFooterAction, SettingsShell } from "@/components/settings/SettingsShell";
 import { SettingsGuardProvider, useSettingsGuardHost } from "@/components/settings/settingsGuard";
 import { AuditPane, type AuditPaneProps } from "@/components/settings/server/panes/AuditPane";
 import { BansPane, type BansPaneProps } from "@/components/settings/server/panes/BansPane";
@@ -194,17 +194,7 @@ function SettingsLayout({
       onSelect={setActive}
       footer={
         onDeleteServer === undefined ? undefined : (
-          <button
-            type="button"
-            className="sv-item danger"
-            title={t("srv.delete.button")}
-            onClick={askToDelete}
-          >
-            <span className="sv-ico" aria-hidden="true">
-              <Icon name="trash" size={18} />
-            </span>
-            {t("srv.delete.button")}
-          </button>
+          <SettingsFooterAction icon="trash" label={t("srv.delete.button")} onClick={askToDelete} />
         )
       }
     >
