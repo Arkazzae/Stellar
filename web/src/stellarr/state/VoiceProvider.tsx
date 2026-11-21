@@ -27,6 +27,7 @@ import { useLanguage } from "./LanguageProvider";
 import { usePorts } from "./PortsProvider";
 import { useSessionContext } from "./SessionProvider";
 import { useCallMediaSession } from "./useCallMediaSession";
+import { useSettled } from "./useSettled";
 import { useVoiceFx } from "./useVoiceFx";
 import { useVoiceSettingsSync } from "./useVoiceSettingsSync";
 import { VoiceHolder } from "./voiceHolder";
@@ -132,17 +133,6 @@ export type VoiceCallValue = Pick<
 const VoiceContext = createContext<VoiceValue | null>(null);
 const VoiceLiveContext = createContext<VoiceLive | null>(null);
 const VoiceCallContext = createContext<VoiceCallValue | null>(null);
-
-/**
- * The previous value for as long as `same` says nothing changed, so whatever
- * is built on it keeps its identity too.
- */
-function useSettled<T>(value: T, same: (a: T, b: T) => boolean): T {
-  const [settled, setSettled] = useState(value);
-  if (settled === value || same(settled, value)) return settled;
-  setSettled(value);
-  return value;
-}
 
 type PresentedRoom = VoiceRoomPresentation & { id: string };
 

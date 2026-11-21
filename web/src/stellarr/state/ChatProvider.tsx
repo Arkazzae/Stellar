@@ -148,7 +148,26 @@ export interface ChatValue {
   revealMessage: (message: Message) => void;
 }
 
+/**
+ * What the channel rail draws and does: the badges, the thread lists and the
+ * thread on screen. It changes with those alone, so a message in the open
+ * channel, which counts on no badge, leaves the rail as it is.
+ */
+export type ChatRailValue = Pick<
+  ChatValue,
+  | "threadsByChannel"
+  | "openingThreadId"
+  | "openThread"
+  | "closeThread"
+  | "unreadByChannel"
+  | "markChannelRead"
+> & {
+  /** The root of the thread beside the transcript, or null. */
+  activeThreadId: string | null;
+};
+
 const ChatContext = createContext<ChatValue | null>(null);
+const ChatRailContext = createContext<ChatRailValue | null>(null);
 
 const NO_PINS: PinnedMessageVM[] = [];
 
@@ -366,17 +385,35 @@ export function ChatProvider({ children }: { children: ReactNode }) {
     [],
   );
 
+  const { openingThreadId, openThread, closeThread } = panel;
+  const { unreadByChannel, markChannelRead } = reads;
+  const rail = useMemo<ChatRailValue>(
+    () => ({
+      threadsByChannel: data.threads,
+      openingThreadId,
+      openThread,
+      closeThread,
+      unreadByChannel,
+      markChannelRead,
+      activeThreadId: threadRootId,
+    }),
+    [
+      data.threads,
+      openingThreadId,
+      openThread,
+      closeThread,
+      unreadByChannel,
+      markChannelRead,
+      threadRootId,
+    ],
+  );
+
   const value = useMemo<ChatValue>(
     () => ({
+      ...rail,
       channelId,
       sections,
       thread,
-      threadsByChannel: data.threads,
-      openingThreadId: panel.openingThreadId,
-      openThread: panel.openThread,
-      closeThread: panel.closeThread,
-      unreadByChannel: reads.unreadByChannel,
-      markChannelRead: reads.markChannelRead,
       firstUnreadGroupId,
       loading:
         channelId !== null && data.loaded[channelId] !== true && data.restored[channelId] !== true,
@@ -409,12 +446,12 @@ export function ChatProvider({ children }: { children: ReactNode }) {
       revealMessage,
     }),
     [
+      rail,
       channelId,
       sections,
       thread,
       data,
       panel,
-      reads,
       firstUnreadGroupId,
       queue,
       ports,
@@ -427,13 +464,24 @@ export function ChatProvider({ children }: { children: ReactNode }) {
     ],
   );
 
-  return <ChatContext.Provider value={value}>{children}</ChatContext.Provider>;
+  return (
+    <ChatRailContext.Provider value={rail}>
+      <ChatContext.Provider value={value}>{children}</ChatContext.Provider>
+    </ChatRailContext.Provider>
+  );
 }
 
-export function useChatContext(): ChatValue {
-  const value = useContext(ChatContext);
+function provided<T>(value: T | null): T {
   if (value === null) {
     throw new Error("useChat must be used inside <ChatProvider>");
   }
   return value;
+}
+
+export function useChatContext(): ChatValue {
+  return provided(useContext(ChatContext));
+}
+
+export function useChatRailContext(): ChatRailValue {
+  return provided(useContext(ChatRailContext));
 }
