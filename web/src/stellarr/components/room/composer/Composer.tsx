@@ -1,4 +1,11 @@
-import { useEffect, useId, useRef, useState, type KeyboardEvent } from "react";
+import {
+  useEffect,
+  useId,
+  useRef,
+  useState,
+  type CSSProperties,
+  type KeyboardEvent,
+} from "react";
 
 import { Icon } from "@stellarr/icons";
 import { type InterfaceLocale, type Translator } from "@/i18n";
@@ -6,7 +13,8 @@ import { documentLocale, translateForDocument } from "@/i18n/defaultLocale";
 import type { CustomEmoji, OpenVoiceMessageCapture } from "@/ports";
 
 import { ComposerChips, type ComposerChip } from "./ComposerChips";
-import { ComposerCodeBar, ComposerReplyBar } from "./ComposerBars";
+import { ComposerReplyBar } from "./ComposerBars";
+import { ComposerCodeHead, ComposerCodeLayers, composerCodeStyles as codeCss } from "./ComposerCode";
 import { ComposerFormatPanel } from "./ComposerFormatPanel";
 import { insertMention, type MentionCandidate } from "@/lib/messages/composerMentions";
 import { insertEmojiAt, toggleMarker } from "@/lib/messages/composerText";
@@ -19,10 +27,19 @@ import { useComposerDraft } from "./useComposerDraft";
 import { useComposerPopovers } from "./useComposerPopovers";
 import { useMentionSuggestions } from "./useMentionSuggestions";
 import { VoiceRecorder } from "./VoiceRecorder";
+import { indentCode, type RangeEdit } from "./codeEditing";
 
 export type { MentionCandidate };
 
+function countLines(text: string): number {
+  let lines = 1;
+  for (let at = text.indexOf("\n"); at !== -1; at = text.indexOf("\n", at + 1)) lines += 1;
+  return lines;
+}
+
 const MAX_ATTACHMENTS = 10;
+/** How tall the code editor grows before it scrolls: about twelve lines at desktop size. */
+const CODE_FIELD_MAX_HEIGHT = 250;
 
 /**
  * What the plus accepts: everything the composer can queue. The narrower lists
@@ -114,6 +131,15 @@ export function Composer({
   const filePicker = useRef<HTMLInputElement | null>(null);
   const mobileActionsId = useId();
   const mentionListId = useId();
+  const codeHelpId = useId();
+  const codeCounterId = useId();
+  /**
+   * Set by Escape in code mode, where Tab indents: the next Tab then leaves
+   * the field as it would anywhere else, so the keyboard is never trapped.
+   */
+  const releaseTab = useRef(false);
+  /** An input method is composing a word in the field. */
+  const [composing, setComposing] = useState(false);
   /**
    * Where the caret is, for the picker.
    *
@@ -150,6 +176,9 @@ export function Composer({
     setCodeMode,
     codeLanguage,
     setCodeLanguage,
+    codeGuess,
+    codeHighlight,
+    codeRoom,
     hasPayload,
     attachmentsBlocked,
     canSend,
@@ -161,7 +190,12 @@ export function Composer({
     locale,
     t,
   });
-  useAutosizedField(field, text, recordingScope);
+  useAutosizedField(
+    field,
+    text,
+    recordingScope,
+    codeMode ? CODE_FIELD_MAX_HEIGHT : undefined,
+  );
 
   const mentions = useMentionSuggestions({
     text,
@@ -244,7 +278,80 @@ export function Composer({
     selectLater(edit.selectionStart, edit.selectionEnd);
   };
 
+  const switchCodeMode = (enabled: boolean) => {
+    setCodeMode(enabled);
+    // Neither panel has anything to offer a code block.
+    setFormatOpen(false);
+    if (enabled) setEmojiOpen(false);
+    setMobileActionsOpen(false);
+    releaseTab.current = false;
+  };
+
+  /**
+   * Replaces a range of the draft as if it were typed, so the browser's undo
+   * takes it back in one step. Where the browser cannot (a test's document),
+   * the draft is set directly.
+   */
+  const applyCodeEdit = (element: HTMLTextAreaElement, edit: RangeEdit) => {
+    element.setSelectionRange(edit.from, edit.to);
+    const typed =
+      typeof document.execCommand === "function" &&
+      (edit.insert.length > 0
+        ? document.execCommand("insertText", false, edit.insert)
+        : document.execCommand("delete"));
+    if (typed) {
+      element.setSelectionRange(edit.selectionStart, edit.selectionEnd);
+      return;
+    }
+    setText(`${element.value.slice(0, edit.from)}${edit.insert}${element.value.slice(edit.to)}`);
+    onTyping?.();
+    selectLater(edit.selectionStart, edit.selectionEnd);
+  };
+
+  /**
+   * Code mode keeps Enter for new lines (Shift+Enter too) and sends on
+   * Ctrl+Enter or Cmd+Enter. Tab and Shift+Tab indent and outdent; after
+   * Escape, Tab leaves the field instead.
+   */
+  const onCodeKeyDown = (event: KeyboardEvent<HTMLTextAreaElement>) => {
+    // An input method's own keys pick and confirm a word: none of them may
+    // send, indent or arm the way out. Safari reports the confirming key only
+    // by its key code.
+    if (event.nativeEvent.isComposing || event.nativeEvent.keyCode === 229) return;
+    const { key } = event;
+    if (key === "Escape") {
+      releaseTab.current = true;
+      return;
+    }
+    if (key === "Tab" && !event.ctrlKey && !event.metaKey && !event.altKey) {
+      if (releaseTab.current) {
+        releaseTab.current = false;
+        return;
+      }
+      event.preventDefault();
+      const element = event.currentTarget;
+      const edit = indentCode(
+        element.value,
+        element.selectionStart,
+        element.selectionEnd,
+        event.shiftKey,
+      );
+      if (edit !== null) applyCodeEdit(element, edit);
+      return;
+    }
+    // Holding Shift on the way to Shift+Tab keeps the way out armed.
+    if (!["Shift", "Control", "Alt", "Meta"].includes(key)) releaseTab.current = false;
+    if (key === "Enter" && (event.metaKey || event.ctrlKey) && !event.altKey) {
+      event.preventDefault();
+      event.currentTarget.form?.requestSubmit();
+    }
+  };
+
   const onKeyDown = (event: KeyboardEvent<HTMLTextAreaElement>) => {
+    if (codeMode) {
+      onCodeKeyDown(event);
+      return;
+    }
     if (mentions.open) {
       if (event.key === "ArrowDown" || event.key === "ArrowUp") {
         event.preventDefault();
@@ -314,14 +421,6 @@ export function Composer({
         onRetry={onRetryChip}
         onReorder={onReorderChips}
       />
-      {codeMode ? (
-        <ComposerCodeBar
-          language={codeLanguage}
-          onLanguageChange={setCodeLanguage}
-          onDisable={() => setCodeMode(false)}
-          t={t}
-        />
-      ) : null}
       <input
         ref={filePicker}
         type="file"
@@ -345,7 +444,7 @@ export function Composer({
           />
         </div>
       ) : (
-        <div className="composer-box">
+        <div className={codeMode ? `composer-box ${codeCss.box}` : "composer-box"}>
           {mentions.open ? (
             <MentionList
               id={mentionListId}
@@ -355,54 +454,101 @@ export function Composer({
               onChoose={chooseMention}
             />
           ) : null}
-          {/* The left slot shapes the text being written; attaching lives with
-              the other additions on the right, behind the plus. */}
-          <button
-            ref={formatTrigger}
-            type="button"
-            className="comp-lead"
-            aria-label={t("composer.format")}
-            aria-haspopup="true"
-            aria-expanded={formatOpen}
-            title={t("composer.format")}
-            onClick={() => setFormatOpen((open) => !open)}
-          >
-            <Icon name="textFormat" size={18} />
-          </button>
-          <textarea
-            ref={field}
-            rows={1}
-            maxLength={MESSAGE_MAX_LENGTH}
-            value={text}
-            placeholder={prompt}
-            aria-label={prompt}
-            role={hasMentionCandidates ? "combobox" : undefined}
-            aria-autocomplete={hasMentionCandidates ? "list" : undefined}
-            aria-expanded={hasMentionCandidates ? mentions.open : undefined}
-            aria-controls={mentions.open ? mentionListId : undefined}
-            aria-activedescendant={
-              mentions.open && selectedMention !== undefined
-                ? mentionOptionId(mentionListId, selectedMention)
+          {codeMode ? (
+            // Code mode turns the box itself into an editor, with its head
+            // inside it; formatting has nothing to mark up in a code block.
+            <ComposerCodeHead
+              language={codeLanguage}
+              onLanguageChange={setCodeLanguage}
+              guess={codeGuess}
+              room={codeRoom ?? MESSAGE_MAX_LENGTH}
+              onDisable={() => {
+                switchCodeMode(false);
+                // The head and its button are gone; the field is where the
+                // keyboard was working.
+                requestAnimationFrame(() => field.current?.focus());
+              }}
+              helpId={codeHelpId}
+              counterId={codeCounterId}
+              locale={locale}
+              t={t}
+            />
+          ) : (
+            // The left slot shapes the text being written; attaching lives
+            // with the other additions on the right, behind the plus.
+            <button
+              ref={formatTrigger}
+              type="button"
+              className="comp-lead"
+              aria-label={t("composer.format")}
+              aria-haspopup="true"
+              aria-expanded={formatOpen}
+              title={t("composer.format")}
+              onClick={() => setFormatOpen((open) => !open)}
+            >
+              <Icon name="textFormat" size={18} />
+            </button>
+          )}
+          {/* One wrapper in both modes, so the textarea stays the same element,
+              with its focus and undo history, when code mode is switched. Out
+              of code mode it draws no box of its own. */}
+          <div
+            className={codeMode ? codeCss.field : codeCss.plainField}
+            data-composing={codeMode && composing ? "" : undefined}
+            style={
+              codeMode
+                ? ({ "--digits": String(countLines(text)).length } as CSSProperties)
                 : undefined
             }
-            onChange={(event) => {
-              setText(event.target.value);
-              trackCaret(event.target.selectionStart);
-              clearSendError();
-              onTyping?.();
-            }}
-            onSelect={(event) => trackCaret(event.currentTarget.selectionStart)}
-            onPaste={(event) => {
-              if (!attachmentsSupported || onAttach === undefined) return;
-              const files = Array.from(event.clipboardData.files);
-              if (files.length === 0) return;
-              // Screenshots and copied files belong to the attachment queue. Do
-              // not also paste the browser's fallback filename into the draft.
-              event.preventDefault();
-              onAttach(files);
-            }}
-            onKeyDown={onKeyDown}
-          />
+          >
+            {codeMode ? (
+              <ComposerCodeLayers field={field} text={text} language={codeHighlight} />
+            ) : null}
+            <textarea
+              ref={field}
+              rows={1}
+              maxLength={MESSAGE_MAX_LENGTH}
+              value={text}
+              placeholder={codeMode ? t("composer.codePlaceholder") : prompt}
+              aria-label={prompt}
+              aria-describedby={codeMode ? `${codeHelpId} ${codeCounterId}` : undefined}
+              wrap={codeMode ? "off" : undefined}
+              spellCheck={codeMode ? false : undefined}
+              autoCapitalize={codeMode ? "off" : undefined}
+              autoCorrect={codeMode ? "off" : undefined}
+              role={hasMentionCandidates ? "combobox" : undefined}
+              aria-autocomplete={hasMentionCandidates ? "list" : undefined}
+              aria-expanded={hasMentionCandidates ? mentions.open : undefined}
+              aria-controls={mentions.open ? mentionListId : undefined}
+              aria-activedescendant={
+                mentions.open && selectedMention !== undefined
+                  ? mentionOptionId(mentionListId, selectedMention)
+                  : undefined
+              }
+              onChange={(event) => {
+                setText(event.target.value);
+                trackCaret(event.target.selectionStart);
+                clearSendError();
+                onTyping?.();
+              }}
+              onSelect={(event) => trackCaret(event.currentTarget.selectionStart)}
+              onPaste={(event) => {
+                if (!attachmentsSupported || onAttach === undefined) return;
+                const files = Array.from(event.clipboardData.files);
+                if (files.length === 0) return;
+                // Screenshots and copied files belong to the attachment queue. Do
+                // not also paste the browser's fallback filename into the draft.
+                event.preventDefault();
+                onAttach(files);
+              }}
+              onKeyDown={onKeyDown}
+              onCompositionStart={() => setComposing(true)}
+              onCompositionEnd={() => setComposing(false)}
+              onBlur={() => {
+                releaseTab.current = false;
+              }}
+            />
+          </div>
           <button
             ref={mobileActionsTrigger}
             type="button"
@@ -427,10 +573,7 @@ export function Composer({
               aria-label={t("composer.sendAsCode")}
               aria-pressed={codeMode}
               title={t("composer.sendAsCode")}
-              onClick={() => {
-                setCodeMode((enabled) => !enabled);
-                setMobileActionsOpen(false);
-              }}
+              onClick={() => switchCodeMode(!codeMode)}
             >
               <Icon name="code" size={18} />
             </button>
@@ -456,26 +599,29 @@ export function Composer({
             {onGif === undefined ? null : (
               <GifBrowser onSelect={onGif} />
             )}
-            <button
-              ref={emojiTrigger}
-              type="button"
-              className="attach"
-              aria-label={t("emoji.open")}
-              aria-haspopup="dialog"
-              aria-expanded={emojiOpen}
-              onPointerDown={(event) => setEmojiAutoFocus(event.pointerType === "mouse")}
-              onClick={(event) => {
-                // A click from a keyboard or assistive technology has no
-                // pointer event before it and carries detail 0.
-                if (event.detail === 0) setEmojiAutoFocus(true);
-                // Read before the click moves focus off the field.
-                caret.current = field.current?.selectionStart ?? null;
-                setEmojiOpen(!emojiOpen);
-                if (!emojiOpen) setMobileActionsOpen(false);
-              }}
-            >
-              <Icon name="smiley" size={18} />
-            </button>
+            {/* Not in code mode, as drawn: an emoji is not code. */}
+            {codeMode ? null : (
+              <button
+                ref={emojiTrigger}
+                type="button"
+                className="attach"
+                aria-label={t("emoji.open")}
+                aria-haspopup="dialog"
+                aria-expanded={emojiOpen}
+                onPointerDown={(event) => setEmojiAutoFocus(event.pointerType === "mouse")}
+                onClick={(event) => {
+                  // A click from a keyboard or assistive technology has no
+                  // pointer event before it and carries detail 0.
+                  if (event.detail === 0) setEmojiAutoFocus(true);
+                  // Read before the click moves focus off the field.
+                  caret.current = field.current?.selectionStart ?? null;
+                  setEmojiOpen(!emojiOpen);
+                  if (!emojiOpen) setMobileActionsOpen(false);
+                }}
+              >
+                <Icon name="smiley" size={18} />
+              </button>
+            )}
             <button
               type="button"
               className="attach comp-x"
