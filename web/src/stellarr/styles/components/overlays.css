@@ -421,6 +421,8 @@
       margin:-4px -4px 0;padding:4px;
     }
     .cf-err,.cf-foot{flex:none}
+    /* The create dialogs are full-screen sheets here, with finger-tall answers. */
+    .q-card .ch-foot > button{height:auto;min-height:44px}
   }
 
   @media (max-width: 560px){

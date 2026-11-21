@@ -6,12 +6,14 @@ import { SectionCreate } from "./SectionCreate";
 
 const nameField = () => screen.getByRole("textbox", { name: /Nazwa sekcji/ });
 const submitButton = () => screen.getByRole("button", { name: "Dodaj sekcję" });
+// The rail around the new caption; nothing here depends on what it holds.
+const slice = { serverName: "Orbit", sections: [], channels: [] };
 
 describe("SectionCreate", () => {
   it("cannot be submitted until the name has something other than spaces", async () => {
     const user = userEvent.setup();
     const onCreate = vi.fn(() => Promise.resolve());
-    render(<SectionCreate open onClose={vi.fn()} onCreate={onCreate} />);
+    render(<SectionCreate {...slice} open onClose={vi.fn()} onCreate={onCreate} />);
 
     expect(submitButton()).toBeDisabled();
     await user.type(nameField(), "   ");
@@ -27,7 +29,7 @@ describe("SectionCreate", () => {
     const user = userEvent.setup();
     const onCreate = vi.fn(() => Promise.resolve());
     const onClose = vi.fn();
-    render(<SectionCreate open onClose={onClose} onCreate={onCreate} />);
+    render(<SectionCreate {...slice} open onClose={onClose} onCreate={onCreate} />);
 
     await user.type(nameField(), "  Ogłoszenia  ");
     await user.click(submitButton());
@@ -45,7 +47,7 @@ describe("SectionCreate", () => {
       }),
     );
     const onClose = vi.fn();
-    render(<SectionCreate open onClose={onClose} onCreate={onCreate} />);
+    render(<SectionCreate {...slice} open onClose={onClose} onCreate={onCreate} />);
 
     await user.type(nameField(), "Gry");
     await user.keyboard("{Enter}");
@@ -65,7 +67,7 @@ describe("SectionCreate", () => {
     const user = userEvent.setup();
     const onCreate = vi.fn().mockRejectedValue(new Error("Sekcja o tej nazwie już istnieje."));
     const onClose = vi.fn();
-    render(<SectionCreate open onClose={onClose} onCreate={onCreate} />);
+    render(<SectionCreate {...slice} open onClose={onClose} onCreate={onCreate} />);
 
     await user.type(nameField(), "Gry");
     await user.click(submitButton());
@@ -82,7 +84,7 @@ describe("SectionCreate", () => {
   it("falls back to a generic message when the failure carries none", async () => {
     const user = userEvent.setup();
     const onCreate = vi.fn().mockRejectedValue("boom");
-    render(<SectionCreate open onClose={vi.fn()} onCreate={onCreate} />);
+    render(<SectionCreate {...slice} open onClose={vi.fn()} onCreate={onCreate} />);
 
     await user.type(nameField(), "Gry");
     await user.click(submitButton());
@@ -94,7 +96,7 @@ describe("SectionCreate", () => {
     const user = userEvent.setup();
     const onClose = vi.fn();
     const { rerender } = render(
-      <SectionCreate open onClose={onClose} onCreate={vi.fn(() => Promise.resolve())} />,
+      <SectionCreate {...slice} open onClose={onClose} onCreate={vi.fn(() => Promise.resolve())} />,
     );
 
     await user.type(nameField(), "Gry");
@@ -102,10 +104,10 @@ describe("SectionCreate", () => {
     expect(onClose).toHaveBeenCalledOnce();
 
     rerender(
-      <SectionCreate open={false} onClose={onClose} onCreate={vi.fn(() => Promise.resolve())} />,
+      <SectionCreate {...slice} open={false} onClose={onClose} onCreate={vi.fn(() => Promise.resolve())} />,
     );
     rerender(
-      <SectionCreate open onClose={onClose} onCreate={vi.fn(() => Promise.resolve())} />,
+      <SectionCreate {...slice} open onClose={onClose} onCreate={vi.fn(() => Promise.resolve())} />,
     );
     expect(nameField()).toHaveValue("");
   });
