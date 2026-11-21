@@ -1,4 +1,4 @@
-import { render, screen, waitFor } from "@testing-library/react";
+import { cleanup, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -88,6 +88,21 @@ describe("ModalsContainer: creating a server", () => {
     expect(sessionStorage.getItem(CREATED_SERVER_STORAGE_KEY)).toBeNull();
   });
 
+  it("shows the same link again when the page is loaded again, without making another", async () => {
+    harness.directory.createServer.mockResolvedValue({ id: "srv-new", name: "Garage" });
+    const createInvite = vi.mocked(harness.ports.admin.createInvite).mockResolvedValue(INVITE);
+
+    (await submit()).unmount();
+    remountOn({ id: "srv-new", name: "Garage" });
+    await screen.findByText(INVITE.url);
+    cleanup();
+
+    remountOn({ id: "srv-new", name: "Garage" });
+
+    expect(screen.getByRole("status", { name: t("auth.invite.linkLabel") })).toHaveTextContent(INVITE.url);
+    expect(createInvite).toHaveBeenCalledOnce();
+  });
+
   it("says so when the link could not be made", async () => {
     harness.directory.createServer.mockResolvedValue({ id: "srv-new", name: "Garage" });
     vi.mocked(harness.ports.admin.createInvite).mockRejectedValue(new ApiError("forbidden", "no", 403));
@@ -100,7 +115,7 @@ describe("ModalsContainer: creating a server", () => {
   });
 
   it("does not bring the invite back on a server the switch did not land on", () => {
-    sessionStorage.setItem(CREATED_SERVER_STORAGE_KEY, "srv-elsewhere");
+    sessionStorage.setItem(CREATED_SERVER_STORAGE_KEY, JSON.stringify({ id: "srv-elsewhere" }));
 
     render(<ModalsContainer />);
 
