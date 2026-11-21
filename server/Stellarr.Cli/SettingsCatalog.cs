@@ -4,6 +4,7 @@ using Stellarr.Api.Contracts;
 using Stellarr.Api.Domain;
 using Stellarr.Api.Integrations;
 using Stellarr.Api.Mail;
+using Stellarr.Api.Operations;
 using Stellarr.Api.Secrets;
 
 namespace Stellarr.Cli;
@@ -127,62 +128,43 @@ internal static class SettingsCatalog
 
     internal static readonly IReadOnlyList<StartupSetting> Startup =
     [
-        new("public-url", "STELLARR_PUBLIC_URL / STELLARR_DOMAIN / STELLARR_PUBLIC_PORT",
-            "Set STELLARR_PUBLIC_URL, or STELLARR_DOMAIN and STELLARR_PUBLIC_PORT, in .env/Compose; then recreate the container.",
+        new("public-url",
+            $"{StellarrVariables.PublicUrl.Name} / {StellarrVariables.Domain.Name} / {StellarrVariables.PublicPort.Name}",
+            $"Set {StellarrVariables.PublicUrl.Name}, or {StellarrVariables.Domain.Name} and {StellarrVariables.PublicPort.Name}, in .env; then recreate the container.",
             ContainerSettings.PublicUrl),
-        new("tls.domain", "STELLARR_DOMAIN",
-            "Set STELLARR_DOMAIN in .env/Compose; the entrypoint also derives TLS and TURN from it. Recreate the container.",
+        new("tls.domain", StellarrVariables.Domain.Name,
+            $"Set {StellarrVariables.Domain.Name} in .env; the entrypoint also derives TLS and TURN from it. Recreate the container.",
             ContainerSettings.PublicHost),
-        new("https-port", "PUBLIC_HTTPS_PORT (from STELLARR_HTTPS_PORT)",
-            "Set STELLARR_HTTPS_PORT in .env/Compose; Compose passes it as PUBLIC_HTTPS_PORT. Recreate the container.",
+        new("https-port", StellarrVariables.HttpsPort.Name,
+            $"Set {StellarrVariables.HttpsPort.Name} in .env to the host port that HTTPS is published on, then recreate the container.",
             ContainerSettings.HttpsPort),
-        new("oidc.enabled", "STELLARR_OIDC_ENABLED / Oidc__Enabled",
-            "Set STELLARR_OIDC_ENABLED in .env/Compose and recreate the container.",
-            context => ContainerSettings.ConfigValue(
-                context, "Oidc:Enabled", "false", "Oidc__Enabled", "STELLARR_OIDC_ENABLED")),
-        new("oidc.authority", "STELLARR_OIDC_ISSUER / Oidc__Authority",
-            "Set STELLARR_OIDC_ISSUER in .env/Compose and recreate the container.",
-            context => ContainerSettings.ConfigValue(
-                context, "Oidc:Authority", "", "Oidc__Authority", "STELLARR_OIDC_ISSUER")),
-        new("oidc.client-id", "STELLARR_OIDC_CLIENT_ID / Oidc__ClientId",
-            "Set STELLARR_OIDC_CLIENT_ID in .env/Compose and recreate the container.",
-            context => ContainerSettings.ConfigValue(
-                context, "Oidc:ClientId", "", "Oidc__ClientId", "STELLARR_OIDC_CLIENT_ID")),
-        new("oidc.trust-provider-mfa", "STELLARR_OIDC_TRUST_PROVIDER_MFA / Oidc__TrustProviderMfa",
-            "Set STELLARR_OIDC_TRUST_PROVIDER_MFA in .env/Compose and recreate the container. Off unless the provider reports a real second factor in amr.",
-            context => ContainerSettings.ConfigValue(
-                context, "Oidc:TrustProviderMfa", "false", "Oidc__TrustProviderMfa", "STELLARR_OIDC_TRUST_PROVIDER_MFA")),
-        new("oidc.provider-mfa-amr", "STELLARR_OIDC_PROVIDER_MFA_AMR / Oidc__ProviderMfaAmr",
-            "Set STELLARR_OIDC_PROVIDER_MFA_AMR in .env/Compose and recreate the container.",
-            context => ContainerSettings.ConfigValue(
-                context, "Oidc:ProviderMfaAmr", "mfa", "Oidc__ProviderMfaAmr", "STELLARR_OIDC_PROVIDER_MFA_AMR")),
+        FromVariable("oidc.enabled", StellarrVariables.OidcEnabled, "false"),
+        FromVariable("oidc.authority", StellarrVariables.OidcIssuer, ""),
+        FromVariable("oidc.client-id", StellarrVariables.OidcClientId, ""),
+        FromVariable("oidc.trust-provider-mfa", StellarrVariables.OidcTrustProviderMfa, "false",
+            " Off unless the provider reports a real second factor in amr."),
+        FromVariable("oidc.provider-mfa-amr", StellarrVariables.OidcProviderMfaAmr, "mfa"),
         new("oidc.providers", "Oidc__Providers__<id>__*",
-            "Add or remove Oidc__Providers__<id>__Authority, __ClientId, __ClientSecret(File), __DisplayName and the optional __TrustProviderMfa and __ProviderMfaAmr in Compose, then recreate the container.",
+            "Add or remove Oidc__Providers__<id>__Authority, __ClientId, __ClientSecret(File), __DisplayName and the optional __TrustProviderMfa and __ProviderMfaAmr in .env, then recreate the container.",
             ContainerSettings.OidcProviders),
         new("oidc.callback-path", "Oidc__CallbackPath",
-            "Set Oidc__CallbackPath in Compose and recreate the container. The normal value is /api/auth/oidc/callback.",
-            context => ContainerSettings.ConfigValue(
-                context, "Oidc:CallbackPath", "/api/auth/oidc/callback", "Oidc__CallbackPath")),
-        new("rtc.public-host", "STELLARR_DOMAIN",
-            "Set STELLARR_DOMAIN in .env/Compose and recreate the container.",
+            "Set Oidc__CallbackPath in .env and recreate the container. The normal value is /api/auth/oidc/callback.",
+            context => ContainerSettings.ConfigValue(context, "Oidc:CallbackPath", "/api/auth/oidc/callback")),
+        new("rtc.public-host", StellarrVariables.Domain.Name,
+            $"Set {StellarrVariables.Domain.Name} in .env and recreate the container.",
             ContainerSettings.PublicHost),
-        new("rtc.turn-port", "STELLARR_TURN_PORT / Rtc__TurnPort",
-            "Set STELLARR_TURN_PORT in .env/Compose and recreate the container.",
-            context => ContainerSettings.EnvironmentOrConfig(context, "Rtc__TurnPort", "Rtc:TurnPort", "3478")),
-        new("rtc.turns-port", "STELLARR_TURNS_PORT / Rtc__TurnsPort",
-            "Set STELLARR_TURNS_PORT in .env/Compose and recreate the container.",
-            context => ContainerSettings.EnvironmentOrConfig(context, "Rtc__TurnsPort", "Rtc:TurnsPort", "5349")),
-        new("rtc.turns-enabled", "STELLARR_TURNS_ENABLED / Rtc__TurnsEnabled",
-            "Set STELLARR_TURNS_ENABLED in .env/Compose and recreate the container.",
-            context => ContainerSettings.EnvironmentOrConfig(context, "Rtc__TurnsEnabled", "Rtc:TurnsEnabled", "true")),
-        new("rtc.turn-tcp-enabled", "STELLARR_TURN_TCP_ENABLED / Rtc__TurnTcpEnabled",
-            "Set STELLARR_TURN_TCP_ENABLED in .env/Compose and recreate the container.",
-            context => ContainerSettings.EnvironmentOrConfig(
-                context, "Rtc__TurnTcpEnabled", "Rtc:TurnTcpEnabled", "true")),
-        new("rtc.media-port", "STELLARR_MEDIA_PORT / Rtc__MediaPort",
-            "Set STELLARR_MEDIA_PORT in .env/Compose and recreate the container.",
-            context => ContainerSettings.EnvironmentOrConfig(context, "Rtc__MediaPort", "Rtc:MediaPort", "49000")),
+        FromVariable("rtc.turn-port", StellarrVariables.TurnPort, "3478"),
+        FromVariable("rtc.turns-port", StellarrVariables.TurnsPort, "5349"),
+        FromVariable("rtc.turns-enabled", StellarrVariables.TurnsEnabled, "false"),
+        FromVariable("rtc.turn-tcp-enabled", StellarrVariables.TurnTcpEnabled, "false"),
+        FromVariable("rtc.media-port", StellarrVariables.MediaPort, "49000"),
     ];
+
+    /// <summary>A startup setting that is one <c>STELLARR_*</c> variable, read from configuration.</summary>
+    private static StartupSetting FromVariable(string key, StellarrVariable variable, string fallback, string note = "") =>
+        new(key, variable.Name,
+            $"Set {variable.Name} in .env and recreate the container.{note}",
+            context => ContainerSettings.ConfigValue(context, variable.Key!, fallback));
 
     private static WriteSetting Scalar(
         string key,

@@ -14,7 +14,7 @@ public sealed class CockpitSecretsTests
     {
         ["Mail:ResendApiKey"] = "",
         ["Mail:SmtpPassword"] = "",
-        ["GIPHY_API_KEY"] = "",
+        ["Giphy:ApiKey"] = "",
     };
 
     [Fact]
@@ -48,7 +48,7 @@ public sealed class CockpitSecretsTests
     {
         using var factory = new StellarrWebApplicationFactory(
             loadTestData: true,
-            new Dictionary<string, string?> { ["GIPHY_API_KEY"] = " env-giphy " });
+            new Dictionary<string, string?> { ["Giphy:ApiKey"] = " env-giphy " });
         using var owner = await OwnerAsync(factory);
         Assert.Equal("environment", (await SecretAsync(owner, SecretNames.GiphyApiKey)).GetProperty("source").GetString());
         Assert.Equal("env-giphy", await GiphyKeyAsync(owner));

@@ -9,7 +9,7 @@ namespace Stellarr.Api.Operations;
 
 /// <summary>
 /// The reverse proxies the operator runs in front of the container, listed in
-/// <c>Operations:TrustedProxies</c> (<c>STELLARR_TRUSTED_PROXIES</c>): those
+/// <c>Operations:TrustedProxies</c> (<see cref="StellarrVariables.TrustedProxies"/>): those
 /// whose word the API takes for the address of the person behind a request.
 /// </summary>
 /// <remarks>
@@ -39,7 +39,7 @@ namespace Stellarr.Api.Operations;
 public sealed class TrustedProxies
 {
     public const string SettingName = "Operations:TrustedProxies";
-    public const string VariableName = "STELLARR_TRUSTED_PROXIES";
+    public static string VariableName => StellarrVariables.TrustedProxies.Name;
 
     // Commas and any whitespace separate entries, so a list written one entry
     // per line or with spaces after the commas reads the same.

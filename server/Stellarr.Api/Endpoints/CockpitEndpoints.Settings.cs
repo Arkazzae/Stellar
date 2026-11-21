@@ -181,9 +181,9 @@ public static partial class CockpitEndpoints
             return Results.Problem(
                 statusCode: StatusCodes.Status409Conflict,
                 title: messages.Get(MessageKey.CockpitMailNotReadyTitle),
-                detail: messages.Get(transport.Provider == MailProvider.Resend
-                    ? MessageKey.CockpitMailNotReadyDetail
-                    : MessageKey.CockpitMailNotReadySmtpDetail));
+                detail: transport.Provider == MailProvider.Resend
+                    ? messages.Get(MessageKey.CockpitMailNotReadyDetail, ("variable", StellarrVariables.ResendApiKey.Name))
+                    : messages.Get(MessageKey.CockpitMailNotReadySmtpDetail));
         }
 
         var from = string.IsNullOrWhiteSpace(options.FromName)
@@ -240,9 +240,9 @@ public static partial class CockpitEndpoints
     }
 
     /// <summary>
-    /// The address people reach the instance at. It comes from the environment
-    /// (STELLARR_DOMAIN, through the container's entrypoint) and nothing in
-    /// Cockpit overrides it.
+    /// The address people reach the instance at. The container's entrypoint
+    /// builds it from <see cref="StellarrVariables.Domain"/> and the variables
+    /// beside it, and nothing in Cockpit overrides it.
     /// </summary>
     internal static string PublicUrlOf(IConfiguration configuration) =>
         (configuration["Operations:PublicUrl"] ?? "").Trim().TrimEnd('/');

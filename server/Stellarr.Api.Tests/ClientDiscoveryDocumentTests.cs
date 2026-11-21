@@ -22,7 +22,7 @@ public sealed class ClientDiscoveryDocumentTests
         Assert.Equal("http://localhost", document.GetProperty("canonicalOrigin").GetString());
         Assert.Equal(JsonValueKind.Null, document.GetProperty("buildSha").ValueKind);
         Assert.Equal("0.1.0", document.GetProperty("desktop").GetProperty("minimumVersion").GetString());
-        Assert.Equal("0.1.0", document.GetProperty("desktop").GetProperty("recommendedVersion").GetString());
+        Assert.Equal("0.1.3", document.GetProperty("desktop").GetProperty("recommendedVersion").GetString());
         Assert.False(string.IsNullOrWhiteSpace(document.GetProperty("serverVersion").GetString()));
     }
 

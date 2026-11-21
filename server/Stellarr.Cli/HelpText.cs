@@ -1,4 +1,5 @@
 using System.Reflection;
+using Stellarr.Api.Operations;
 
 namespace Stellarr.Cli;
 
@@ -47,7 +48,7 @@ internal static class HelpText
 
         Global options:
           --data-root <path>   Data root holding db/stellarr.db and keys/.
-                               Default: STELLARR_DATA_ROOT, DataRoot, or /data/stellarr.
+                               Default: {StellarrVariables.DataRoot.Name}, DataRoot, or /data/stellarr.
           --json               Emit one parseable JSON document. Errors use stable codes.
           --yes, -y            Confirm a mutation without prompting. Required when stdin is closed.
           --help, -h           Show help. Does not open the database.
@@ -104,8 +105,8 @@ internal static class HelpText
               mfa.email-code-minutes, mfa.email-cooldown-seconds, mfa.email-attempts,
               mfa.email-sends-per-hour, mfa.cli-recovery-minutes
 
-            Startup keys are read-only; change them in .env/Compose and recreate the
-            container. `config list` names them with their environment variables.
+            Startup keys are read-only; change them in .env and recreate the container
+            (docker compose up -d). `config list` names their environment variables.
             """,
         "secrets" => """
             Usage:
