@@ -104,7 +104,6 @@ public static class StellarrVariables
 
     // Other settings.
     public static readonly StellarrVariable GiphyApiKey = new("STELLARR_GIPHY_API_KEY", "Giphy:ApiKey");
-    public static readonly StellarrVariable EfCommandLogLevel = new("STELLARR_EF_COMMAND_LOG_LEVEL", "Logging:LogLevel:Microsoft.EntityFrameworkCore.Database.Command");
 
     // The image's own data path, which the entrypoint, the TLS script and the
     // CLI share, and the address the CLI checks the API at.
