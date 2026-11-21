@@ -95,6 +95,7 @@ export function ServerDirectoryDialogs() {
         open={ui.modal === "server-create"}
         onClose={ui.closeModal}
         onCreate={createServer}
+        servers={directory.servers}
       />
       <ServerDiscoverModal
         open={ui.modal === "server-discover"}
