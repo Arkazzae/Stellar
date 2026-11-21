@@ -1,9 +1,11 @@
 import { useId, type CSSProperties } from "react";
 
 import {
+  AUTO_CEILING_PROFILE,
   OPUS_PROFILE_HINT,
   OPUS_PROFILE_KBPS,
   OPUS_PROFILE_LABEL,
+  opusCeilingKbps,
   type OpusProfileId,
   type VoiceSettings,
 } from "@/ports";
@@ -40,8 +42,11 @@ const OPUS_ORDER: readonly OpusProfileId[] = [
 export function VoiceAudioQualityRow({ settings, onChange }: QualityRowProps) {
   const { t } = useLanguage();
   const id = useId();
-  const profile = settings.opusProfile;
-  const name = t(OPUS_PROFILE_LABEL[profile]);
+  const quality = settings.opusProfile;
+  // The automatic choice sits on the stop it starts from.
+  const profile = quality === "auto" ? AUTO_CEILING_PROFILE : quality;
+  const name = t(OPUS_PROFILE_LABEL[quality]);
+  const kbps = opusCeilingKbps(quality);
 
   return (
     <FormRow label={t("voice.audioQuality")} detail={t("voice.audioQualityNote")} htmlFor={id}>
@@ -52,7 +57,7 @@ export function VoiceAudioQualityRow({ settings, onChange }: QualityRowProps) {
         step={1}
         value={OPUS_ORDER.indexOf(profile)}
         display={name}
-        valueText={`${name}, ${OPUS_PROFILE_KBPS[profile]} kb/s`}
+        valueText={`${name}, ${kbps} kb/s`}
         onChange={(index) => onChange({ opusProfile: OPUS_ORDER[index] ?? profile })}
       />
       <span
@@ -66,7 +71,7 @@ export function VoiceAudioQualityRow({ settings, onChange }: QualityRowProps) {
           </i>
         ))}
       </span>
-      <p className="ladder-note">{t(OPUS_PROFILE_HINT[profile])}</p>
+      <p className="ladder-note">{t(OPUS_PROFILE_HINT[quality], { kbps })}</p>
     </FormRow>
   );
 }
