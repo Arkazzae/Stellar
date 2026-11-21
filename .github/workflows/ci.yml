@@ -478,6 +478,18 @@ jobs:
             docker logs stellarr 2>&1 | tail -n 80
             exit 1
           fi
+      # docker exec starts the CLI without the entrypoint's exports; its
+      # wrapper derives the public address by the same rules. The API's
+      # canonical origin is that address as the entrypoint exported it.
+      - name: Check that the CLI and the API agree on the public address
+        run: |
+          cli=$(docker exec stellarr stellarr --json config get public-url | jq -r '.data.value')
+          api=$(curl -ksSf https://localhost:8443/.well-known/stellarr/client | jq -r '.canonicalOrigin')
+          echo "The CLI's public-url is '$cli'; the API's canonical origin is '$api'."
+          if [[ -z $cli || $cli != "$api" ]]; then
+            echo "::error::The CLI and the API name different public addresses."
+            exit 1
+          fi
       # The binaries are served from the image, not proxied to a model host,
       # and the notices that describe them ship in the same image. nginx serves
       # the apps' files itself, so the image has no Node.js.
