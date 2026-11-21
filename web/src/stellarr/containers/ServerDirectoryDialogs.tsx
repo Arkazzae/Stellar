@@ -14,23 +14,34 @@ import { useDirectory, useLanguage, usePorts, useSession, useUi } from "@/state/
 export const CREATED_SERVER_STORAGE_KEY = "stellarr.created-server";
 
 /**
- * The server this tab has just created. Switching to it reloads the session,
- * which mounts the app again from nothing, dialogs included; the id carries
- * the create dialog over that, so it comes back on the new server with its
- * invite screen. It lives in `sessionStorage`, beside the active server, and
- * is forgotten when the invite screen is closed.
+ * The server this tab has just created, and its invite link once made.
+ * Switching to the server reloads the session, which mounts the app again
+ * from nothing, dialogs included; this carries the create dialog over that,
+ * so it comes back on the new server with its invite screen. The link is kept
+ * too, so loading the page again shows the same one instead of making
+ * another. It lives in `sessionStorage`, beside the active server, and is
+ * forgotten when the invite screen is closed.
  */
-function rememberCreatedServer(serverId: string): void {
+interface CreatedServerMemory {
+  id: string;
+  inviteUrl?: string;
+}
+
+function rememberCreatedServer(memory: CreatedServerMemory): void {
   try {
-    window.sessionStorage.setItem(CREATED_SERVER_STORAGE_KEY, serverId);
+    window.sessionStorage.setItem(CREATED_SERVER_STORAGE_KEY, JSON.stringify(memory));
   } catch {
     // Without storage the server is still made and opened, without the invite screen.
   }
 }
 
-function createdServer(): string | null {
+function createdServer(): CreatedServerMemory | null {
   try {
-    return window.sessionStorage.getItem(CREATED_SERVER_STORAGE_KEY);
+    const memory: unknown = JSON.parse(window.sessionStorage.getItem(CREATED_SERVER_STORAGE_KEY) ?? "null");
+    if (typeof memory !== "object" || memory === null) return null;
+    const { id, inviteUrl } = memory as Record<string, unknown>;
+    if (typeof id !== "string") return null;
+    return typeof inviteUrl === "string" ? { id, inviteUrl } : { id };
   } catch {
     return null;
   }
@@ -65,10 +76,11 @@ export function ServerDirectoryDialogs() {
 
   // Only the server the session came back on counts: a remembered id it did
   // not land on is from a switch that went elsewhere.
-  const [createdId, setCreatedId] = useState(() => {
-    const remembered = createdServer();
-    return remembered === directory.server.id ? remembered : null;
+  const [remembered] = useState(() => {
+    const memory = createdServer();
+    return memory !== null && memory.id === directory.server.id ? memory : null;
   });
+  const [createdId, setCreatedId] = useState(remembered?.id ?? null);
   useEffect(() => {
     if (createdId === null) forgetCreatedServer();
   }, [createdId]);
@@ -84,13 +96,19 @@ export function ServerDirectoryDialogs() {
 
   // One link per new server, asked for once the app runs on it, so the
   // request is addressed to the new server and not the one left behind.
-  const [invite, setInvite] = useState<CreatedServerInvite>({ state: "making" });
-  const invited = useRef<string | null>(null);
+  const [invite, setInvite] = useState<CreatedServerInvite>(() =>
+    remembered?.inviteUrl === undefined ? { state: "making" } : { state: "ready", url: remembered.inviteUrl },
+  );
+  const invited = useRef<string | null>(remembered?.inviteUrl === undefined ? null : remembered.id);
   useEffect(() => {
     if (createdKey === null || invited.current === createdKey) return;
     invited.current = createdKey;
     admin.createInvite().then(
-      (made) => setInvite({ state: "ready", url: made.url }),
+      (made) => {
+        // Unless the screen was closed meanwhile, which forgot the server.
+        if (createdServer()?.id === createdKey) rememberCreatedServer({ id: createdKey, inviteUrl: made.url });
+        setInvite({ state: "ready", url: made.url });
+      },
       () => setInvite({ state: "failed" }),
     );
   }, [admin, createdKey]);
@@ -114,7 +132,7 @@ export function ServerDirectoryDialogs() {
       } catch (cause) {
         throw new Error(describeError(cause, t("shell.serverCreateFailed"), t));
       }
-      rememberCreatedServer(serverId);
+      rememberCreatedServer({ id: serverId });
       setCreatedId(serverId);
       activateServer(serverId);
     },
