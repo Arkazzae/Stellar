@@ -38,10 +38,10 @@ function Prompter({
       type="button"
       onClick={() => {
         void prompt({
-          title: "Zbanować Jo?",
+          title: "Zbanować tę osobę?",
           confirmLabel: "Zbanuj",
           danger: true,
-          field: { label: "POWÓD", placeholder: "Bez podanego powodu", optional },
+          field: { label: "Powód", placeholder: "Bez podanego powodu", optional },
         }).then(onAnswer);
       }}
     >
@@ -126,7 +126,7 @@ describe("ConfirmProvider", () => {
 
     await user.click(screen.getByRole("button", { name: "Zapytaj o powód" }));
     // A question that wants words starts in the field, not on a button.
-    const field = screen.getByRole("textbox", { name: "POWÓD" });
+    const field = screen.getByRole("textbox", { name: /^Powód/ });
     expect(field).toHaveFocus();
 
     // Enter belongs to the field it was typed in.
@@ -142,11 +142,11 @@ describe("ConfirmProvider", () => {
     const { onAnswer, user } = setupPrompt();
 
     await user.click(screen.getByRole("button", { name: "Zapytaj o powód" }));
-    await user.type(screen.getByRole("textbox", { name: "POWÓD" }), "spam");
+    await user.type(screen.getByRole("textbox", { name: /^Powód/ }), "spam");
     await user.click(screen.getByRole("button", { name: "Anuluj" }));
 
     await user.click(screen.getByRole("button", { name: "Zapytaj o powód" }));
-    expect(screen.getByRole("textbox", { name: "POWÓD" })).toHaveValue("");
+    expect(screen.getByRole("textbox", { name: /^Powód/ })).toHaveValue("");
 
     await user.click(screen.getByRole("button", { name: "Zbanuj" }));
     // Empty is a valid answer to an optional field; null is not what it means.
@@ -159,7 +159,7 @@ describe("ConfirmProvider", () => {
     await user.click(screen.getByRole("button", { name: "Zapytaj o powód" }));
     expect(screen.getByRole("button", { name: "Zbanuj" })).toBeDisabled();
 
-    await user.type(screen.getByRole("textbox", { name: "POWÓD" }), "spam");
+    await user.type(screen.getByRole("textbox", { name: /^Powód/ }), "spam");
     expect(screen.getByRole("button", { name: "Zbanuj" })).toBeEnabled();
   });
 });

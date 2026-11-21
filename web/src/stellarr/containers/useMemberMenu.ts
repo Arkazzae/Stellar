@@ -21,7 +21,7 @@ import {
  * snapshot of the call.
  */
 export function useMemberMenu(): UserMenuActions {
-  const { voiceChannels, canModerateMembers, canManageBans } = useDirectory();
+  const { voiceChannels, members, canModerateMembers, canManageBans } = useDirectory();
   const { admin } = usePorts();
   const voice = useVoiceLive();
   const profile = useProfile();
@@ -49,14 +49,16 @@ export function useMemberMenu(): UserMenuActions {
       ? {}
       : {
           canKickFromChannel: (userId: string) => seatOf(userId) !== undefined,
-          onKickFromChannel: (userId: string) => {
+          onKickFromChannel: async (userId: string) => {
             const seat = seatOf(userId);
-            if (seat !== undefined) void admin.kickFromChannel?.(seat.id, userId);
+            if (seat !== undefined) await admin.kickFromChannel?.(seat.id, userId);
           },
         }),
-    onKick: (userId) => void admin.kick(userId),
-    onBan: (userId, reason) =>
-      void admin.ban(userId, reason.length === 0 ? undefined : reason),
+    // Each deed hands its promise back, so the question card waits for the
+    // server and says so when it refuses.
+    onKick: (userId) => admin.kick(userId),
+    onBan: (userId, reason) => admin.ban(userId, reason.length === 0 ? undefined : reason),
+    usernameOf: (userId) => members.find((member) => member.id === userId)?.username,
     developerMode: preferences.developerMode,
   };
 }

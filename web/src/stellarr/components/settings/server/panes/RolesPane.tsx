@@ -8,6 +8,7 @@ import { Switch } from "@/components/primitives/Switch";
 import { countedNoun } from "@/components/settings/paneFormat";
 import { SettingsSaveBar } from "@/components/settings/SettingsSaveBar";
 import { SettingsSection } from "@/components/settings/SettingsSection";
+import { RoleMark } from "@/components/settings/server/panes/RoleMark";
 import { useSettingsGuard } from "@/components/settings/settingsGuard";
 import { ACCENT_SWATCHES } from "@/design/themes";
 import { useAsyncAction } from "@/hooks/useAsyncAction";
@@ -47,15 +48,6 @@ const PERMISSION_GROUPS: readonly { caption: MessageKey; permissions: readonly S
   { caption: "srv.roles.groupPeople", permissions: ["manageRoles", "manageMembers"] },
   { caption: "srv.roles.groupModeration", permissions: ["manageMessages", "moderateMembers", "manageBans", "viewAuditLog"] },
 ];
-
-/** A role's mark: a shield in its colour, the owner's a crown. */
-export function RoleMark({ role, size }: { role: Pick<Role, "color" | "isOwner">; size: number }) {
-  return (
-    <span className="ss-role-ico" style={{ "--rc": role.color } as CSSProperties} aria-hidden="true">
-      <Icon name={role.isOwner ? "crown" : "shield"} size={size} />
-    </span>
-  );
-}
 
 export interface RolesPaneProps {
   supported: boolean;
@@ -255,14 +247,14 @@ function RoleEditor({ role, supported, holders, onUpdate, onDelete, onBack }: Ro
 
   const remove = async () => {
     const yes = await confirm({
-      title: t("srv.roles.deleteTitle", { name: role.name }),
+      title: t("srv.roles.deleteTitle"),
       description:
         holders.length === 0
           ? t("srv.roles.deleteNobody")
           : t("srv.roles.deleteFallback", { people: countedNoun(t, locale, "settings.member", holders.length) }),
+      subject: { kind: "role", name: role.name, color: role.color, isOwner: role.isOwner },
       confirmLabel: t("settings.deleteRole"),
       danger: true,
-      icon: "trash",
     });
     if (yes && (await removal.run(() => onDelete(role.id)))) onBack();
   };

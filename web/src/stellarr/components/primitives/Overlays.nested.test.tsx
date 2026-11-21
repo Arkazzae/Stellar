@@ -134,11 +134,11 @@ describe("a confirm dialog over a settings dialog", () => {
       </ConfirmProvider>,
     );
     await user.click(screen.getByRole("button", { name: "Usuń emoji :mushris:" }));
-    await screen.findByRole("dialog", { name: /mushris/ });
+    await screen.findByRole("dialog", { name: "Usunąć to emoji?" });
 
     await user.keyboard("{Escape}");
 
-    await waitFor(() => expect(screen.queryByRole("dialog", { name: /mushris/ })).toBeNull());
+    await waitFor(() => expect(screen.queryByRole("dialog", { name: "Usunąć to emoji?" })).toBeNull());
     expect(onDelete).not.toHaveBeenCalled();
     expect(onClose).not.toHaveBeenCalled();
     expect(settings()).not.toBeNull();

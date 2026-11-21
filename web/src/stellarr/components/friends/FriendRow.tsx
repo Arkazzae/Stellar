@@ -1,6 +1,6 @@
 import { useState } from "react";
 
-import { blockPerson, removeFriend } from "@/components/confirmations";
+import { blockPerson, personSubject, removeFriend } from "@/components/confirmations";
 import { Icon } from "@stellarr/icons";
 import { AnchoredCard } from "@/components/primitives/AnchoredCard";
 import { useConfirm, type ConfirmRequest } from "@/components/primitives/ConfirmDialog";
@@ -133,14 +133,14 @@ export function FriendRow({
           <button
             type="button"
             className="fr-menu-item"
-            onClick={() => confirmThen(removeFriend(t, person.displayName), onRemove)}
+            onClick={() => confirmThen(removeFriend(t, personSubject({ ...person, username })), onRemove)}
           >
             {t("common.removeFriend")}
           </button>
           <button
             type="button"
             className="fr-menu-item danger"
-            onClick={() => confirmThen(blockPerson(t, person.displayName), onBlock)}
+            onClick={() => confirmThen(blockPerson(t, personSubject({ ...person, username })), onBlock)}
           >
             {t("common.block")}
           </button>

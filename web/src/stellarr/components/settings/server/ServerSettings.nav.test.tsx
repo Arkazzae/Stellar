@@ -209,8 +209,8 @@ describe("deleting the server", () => {
     render(dialog(props({ onDeleteServer })));
 
     await user.click(screen.getByRole("button", { name: "Usuń serwer" }));
-    const question = screen.getByRole("dialog", { name: "Usunąć Orbit?" });
-    const field = within(question).getByRole("textbox", { name: "WPISZ Orbit, ABY POTWIERDZIĆ" });
+    const question = screen.getByRole("dialog", { name: "Usunąć ten serwer?" });
+    const field = within(question).getByRole("textbox", { name: "Wpisz nazwę serwera, aby potwierdzić" });
     const confirm = within(question).getByRole("button", { name: "Usuń serwer" });
 
     await user.type(field, "Orb");
@@ -228,7 +228,7 @@ describe("deleting the server", () => {
     render(dialog(props({ onDeleteServer })));
 
     await user.click(screen.getByRole("button", { name: "Usuń serwer" }));
-    await user.click(within(screen.getByRole("dialog", { name: "Usunąć Orbit?" })).getByRole("button", { name: "Anuluj" }));
+    await user.click(within(screen.getByRole("dialog", { name: "Usunąć ten serwer?" })).getByRole("button", { name: "Anuluj" }));
 
     expect(onDeleteServer).not.toHaveBeenCalled();
   });

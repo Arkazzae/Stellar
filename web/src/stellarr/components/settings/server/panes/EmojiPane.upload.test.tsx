@@ -1,4 +1,4 @@
-import { screen } from "@testing-library/react";
+import { screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -126,6 +126,7 @@ describe("EmojiPane catalogue", () => {
     await answerConfirm(user, "Usuń");
 
     expect(await screen.findByRole("alert")).toHaveTextContent("Nie udało się usunąć emoji.");
+    await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
     expect(screen.getByText(":mushris:")).toBeInTheDocument();
   });
 });

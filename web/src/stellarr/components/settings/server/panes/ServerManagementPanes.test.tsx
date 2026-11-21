@@ -184,7 +184,7 @@ describe("RolesPane", () => {
 
     await user.click(screen.getByRole("button", { name: "Edytuj rolę Ekipa" }));
     await user.click(screen.getByRole("button", { name: "Usuń rolę" }));
-    const question = screen.getByRole("dialog", { name: "Usunąć rolę Ekipa?" });
+    const question = screen.getByRole("dialog", { name: "Usunąć tę rolę?" });
     expect(question).toHaveTextContent("Osoby z tą rolą (2 osoby) dostaną rolę domyślną.");
     await user.click(within(question).getByRole("button", { name: "Usuń rolę" }));
 
@@ -285,7 +285,7 @@ describe("MembersPane", () => {
 
     await user.click(screen.getByRole("button", { name: "Więcej dla Jan" }));
     await user.click(screen.getByRole("menuitem", { name: "Wyrzuć z serwera" }));
-    await user.click(within(screen.getByRole("dialog", { name: "Wyrzucić Jan?" })).getByRole("button", { name: "Wyrzuć" }));
+    await user.click(within(screen.getByRole("dialog", { name: "Wyrzucić tę osobę?" })).getByRole("button", { name: "Wyrzuć" }));
 
     await waitFor(() => expect(props.onKick).toHaveBeenCalledWith("u-2"));
   });
@@ -296,8 +296,8 @@ describe("MembersPane", () => {
 
     await user.click(screen.getByRole("button", { name: "Więcej dla Ola" }));
     await user.click(screen.getByRole("menuitem", { name: "Zbanuj" }));
-    const question = screen.getByRole("dialog", { name: "Zbanować Ola?" });
-    await user.type(within(question).getByRole("textbox", { name: "POWÓD" }), "Spam");
+    const question = screen.getByRole("dialog", { name: "Zbanować tę osobę?" });
+    await user.type(within(question).getByRole("textbox", { name: /^Powód/ }), "Spam");
     await user.click(within(question).getByRole("button", { name: "Zbanuj" }));
 
     await waitFor(() => expect(props.onBan).toHaveBeenCalledWith("u-3", "Spam"));

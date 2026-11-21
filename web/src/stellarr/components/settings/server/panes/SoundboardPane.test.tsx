@@ -76,7 +76,7 @@ describe("SoundboardPane", () => {
 
     const remove = screen.getByRole("button", { name: "Usuń dźwięk Bęben" });
     await user.click(remove);
-    expect(screen.getByRole("dialog")).toHaveTextContent("Usunąć dźwięk „Bęben”?");
+    expect(screen.getByRole("dialog", { name: "Usunąć ten dźwięk?" })).toHaveTextContent("Bęben");
     await answerConfirm(user, "Anuluj");
     expect(onDelete).not.toHaveBeenCalled();
 

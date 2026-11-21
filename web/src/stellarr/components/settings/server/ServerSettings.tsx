@@ -15,7 +15,7 @@ import { OverviewPane, type OverviewPaneProps } from "@/components/settings/serv
 import { RolesPane, type RolesPaneProps } from "@/components/settings/server/panes/RolesPane";
 import { ServerMark } from "@/components/settings/server/panes/ServerMark";
 import { SoundboardPane, type SoundboardPaneProps } from "@/components/settings/server/panes/SoundboardPane";
-import { useAsyncAction } from "@/hooks/useAsyncAction";
+import { deleteServer, serverSubject } from "@/components/confirmations";
 import type { MessageKey } from "@/i18n";
 import { useLanguage } from "@/state/hooks";
 
@@ -129,9 +129,8 @@ function SettingsLayout({
   bans,
   onDeleteServer,
 }: LayoutProps) {
-  const { t } = useLanguage();
+  const { locale, t } = useLanguage();
   const prompt = usePrompt();
-  const deletion = useAsyncAction();
   const [active, setActive] = useState<SettingsPaneKey>(initialPane);
   const current = ITEMS[active];
 
@@ -167,19 +166,18 @@ function SettingsLayout({
     items: group.panes.map((key) => ({ key, label: t(ITEMS[key].label), icon: ITEMS[key].icon })),
   }));
 
-  // The name has to be typed: deleting cannot be undone, and the server's
-  // name is the one thing nobody types by accident.
-  const askToDelete = async () => {
+  // The card runs the deletion itself, so a refusal is said there and not on
+  // the pane behind it.
+  const askToDelete = () => {
     if (onDeleteServer === undefined) return;
-    const answer = await prompt({
-      title: t("srv.delete.title", { name }),
-      description: t("srv.delete.detail"),
-      confirmLabel: t("srv.delete.button"),
-      danger: true,
-      icon: "trash",
-      field: { label: t("srv.delete.field", { name }), match: name, maxLength: 80 },
+    const subject = serverSubject(t, locale, {
+      name,
+      mark,
+      ...(iconUrl === undefined ? {} : { iconUrl }),
+      memberCount: overview.memberCount,
+      channelCount: overview.channelCount,
     });
-    if (answer === name) await deletion.run(onDeleteServer);
+    void prompt({ ...deleteServer(t, subject, name), run: () => onDeleteServer() });
   };
 
   return (
@@ -200,8 +198,7 @@ function SettingsLayout({
             type="button"
             className="sv-item danger"
             title={t("srv.delete.button")}
-            disabled={deletion.pending}
-            onClick={() => void askToDelete()}
+            onClick={askToDelete}
           >
             <span className="sv-ico" aria-hidden="true">
               <Icon name="trash" size={18} />
@@ -211,11 +208,6 @@ function SettingsLayout({
         )
       }
     >
-      {deletion.failed ? (
-        <p className="set-note sound-error" role="alert">
-          {t("srv.delete.failed")}
-        </p>
-      ) : null}
       {pane()}
     </SettingsShell>
   );

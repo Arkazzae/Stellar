@@ -1,5 +1,6 @@
-import { useMemo, useState } from "react";
+import { useMemo } from "react";
 
+import { sectionChannels } from "@/components/settings/channel/channelSettingsModel";
 import { SectionCreate } from "@/components/settings/channel/SectionCreate";
 import {
   SectionSettings,
@@ -20,19 +21,17 @@ export function SectionSettingsDialog({ roles }: { roles: readonly Role[] }) {
   const sectionId = ui.modal === "section" ? ui.sectionSettingsId : null;
   const { overrides, save } = usePermissionOverrides("section", sectionId);
 
-  // Cleared while rendering so another section, or reopening this one, never
-  // starts with the last attempt's banner.
-  const [deleteBlocked, setDeleteBlocked] = useState(false);
-  const [seed, setSeed] = useState(sectionId);
-  if (seed !== sectionId) {
-    setSeed(sectionId);
-    setDeleteBlocked(false);
-  }
-
+  // The channels come along so the dialog knows, before anyone presses
+  // delete, that a section holding channels cannot be deleted.
   const section = useMemo<SectionSettingsVM | null>(() => {
     const found = directory.sections.find((item) => item.id === ui.sectionSettingsId);
-    return found === undefined ? null : { id: found.id, name: found.name };
-  }, [directory.sections, ui.sectionSettingsId]);
+    if (found === undefined) return null;
+    return {
+      id: found.id,
+      name: found.name,
+      channels: sectionChannels(directory.channels, found.id),
+    };
+  }, [directory.sections, directory.channels, ui.sectionSettingsId]);
 
   return (
     <SectionSettings
@@ -48,21 +47,18 @@ export function SectionSettingsDialog({ roles }: { roles: readonly Role[] }) {
       }}
       onSavePermissionOverride={save}
       onDelete={async () => {
-        if (sectionId === null) return;
-        setDeleteBlocked(false);
+        if (sectionId === null) return "deleted";
         try {
           await admin.deleteSection(sectionId);
-          ui.closeModal();
         } catch (cause) {
-          // The server refuses while channels still sit under the section.
-          if (cause instanceof ApiError && cause.status === 409) {
-            setDeleteBlocked(true);
-            return;
-          }
+          // The server refuses while channels still sit under the section,
+          // which the directory had not heard of yet.
+          if (cause instanceof ApiError && cause.status === 409) return "blocked";
           throw cause;
         }
+        ui.closeModal();
+        return "deleted";
       }}
-      deleteBlocked={deleteBlocked}
       onOpenRoles={() => ui.openModal("settings")}
     />
   );

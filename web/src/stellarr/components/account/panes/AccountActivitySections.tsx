@@ -63,9 +63,9 @@ export function AccountActivitySections({
     const confirmed = await confirm({
       title: t("security.sessions.signOutOthersTitle"),
       description: t("security.sessions.signOutOthersDetail"),
+      // Nothing is lost: a device signed out signs in again. The deed is the
+      // accent, not the danger red.
       confirmLabel: t("security.sessions.signOutOthers"),
-      danger: true,
-      icon: "signout",
     });
     if (confirmed) onRevokeOtherSessions();
   };

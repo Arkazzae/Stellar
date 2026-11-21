@@ -236,12 +236,12 @@ describe("FriendsView rows", () => {
 
     await user.click(screen.getByRole("button", { name: "Więcej działań: Kasia" }));
     await user.click(screen.getByRole("button", { name: "Zablokuj" }));
-    expect(screen.getByRole("heading", { name: "Zablokować Kasia?" })).toBeTruthy();
+    expect(screen.getByRole("heading", { name: "Zablokować tę osobę?" })).toBeTruthy();
     await user.click(screen.getByRole("button", { name: "Anuluj" }));
 
     expect(spies.onBlock).not.toHaveBeenCalled();
     await waitFor(() =>
-      expect(screen.queryByRole("heading", { name: "Zablokować Kasia?" })).toBeNull(),
+      expect(screen.queryByRole("heading", { name: "Zablokować tę osobę?" })).toBeNull(),
     );
   });
 

@@ -2,7 +2,7 @@ import { useRef, useState } from "react";
 
 import { deleteMessageConfirmation } from "@/components/confirmations";
 import { Icon, type IconName } from "@stellarr/icons";
-import { useConfirm } from "@/components/primitives/ConfirmDialog";
+import { useConfirm, type ConfirmSubject } from "@/components/primitives/ConfirmDialog";
 import { type MessageKey, type Translator } from "@/i18n";
 import { translateForDocument } from "@/i18n/defaultLocale";
 import type { CustomEmoji } from "@/ports";
@@ -75,7 +75,10 @@ const ACTIONS: readonly ActionSpec[] = [
 
 export interface MessageToolbarProps {
   onReact?(emoji: string): void;
-  onAction?(action: MessageAction): void;
+  /** A deletion's promise keeps the question card open until it settles. */
+  onAction?(action: MessageAction): Promise<void> | void;
+  /** The message as the question card shows it, built when the question is asked. */
+  describe?(): ConfirmSubject;
   /** The server's own emoji, offered first in the picker. */
   customEmoji?: readonly CustomEmoji[];
   /** This message is yours: yours to edit, and yours to delete. */
@@ -95,6 +98,7 @@ interface OpenPicker {
 export function MessageToolbar({
   onReact,
   onAction,
+  describe,
   customEmoji = [],
   own = false,
   canModerate = false,
@@ -122,11 +126,12 @@ export function MessageToolbar({
   const run = ({ action }: ActionSpec) => {
     if (onAction === undefined) return;
     if (action !== "delete") {
-      onAction(action);
+      void onAction(action);
       return;
     }
-    void confirm(deleteMessageConfirmation(t)).then((confirmed) => {
-      if (confirmed) onAction(action);
+    void confirm({
+      ...deleteMessageConfirmation(t, describe?.()),
+      run: async () => onAction(action),
     });
   };
 

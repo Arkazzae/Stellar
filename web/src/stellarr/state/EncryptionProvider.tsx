@@ -8,6 +8,7 @@ import {
   type ReactNode,
 } from "react";
 
+import { personSubject } from "@/components/confirmations";
 import { useConfirm } from "@/components/primitives/ConfirmDialog";
 import type { DmConversation, EncryptionStatus, EncryptionSwitchAction } from "@/ports";
 
@@ -103,8 +104,9 @@ export function EncryptionProvider({ children }: { children: ReactNode }) {
       void confirm({
         title: t("e2ee.disable.title"),
         description: t("e2ee.disable.detail"),
+        // The conversation is the thing, and the person is how it is known.
+        subject: personSubject(conversation.peer),
         confirmLabel: t("e2ee.disable.confirm"),
-        icon: "unlock",
       }).then((confirmed) => {
         if (confirmed) runSwitch(conversation.id, "disable");
       });

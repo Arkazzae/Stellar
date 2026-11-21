@@ -105,7 +105,7 @@ describe("FriendsView", () => {
 
     await user.click(screen.getByRole("button", { name: "Usuń ze znajomych" }));
     expect(trigger).toHaveAttribute("aria-expanded", "false");
-    expect(screen.getByRole("heading", { name: "Usunąć Kasia ze znajomych?" })).toBeTruthy();
+    expect(screen.getByRole("heading", { name: "Usunąć tę osobę ze znajomych?" })).toBeTruthy();
 
     await user.click(screen.getByRole("button", { name: "Usuń" }));
     expect(props.onRemove).toHaveBeenCalledWith("u1");

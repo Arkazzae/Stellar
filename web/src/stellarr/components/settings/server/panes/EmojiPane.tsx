@@ -178,13 +178,12 @@ export function EmojiPane({ supported, emoji, onUpload, onDelete }: EmojiPanePro
   };
 
   const remove = async (item: CustomEmoji) => {
-    const name = withColons(item.shortcode);
     const confirmed = await confirm({
-      title: t("settings.emojiDeleteTitle", { name }),
+      title: t("settings.emojiDeleteTitle"),
       description: t("settings.emojiDeleteDescription"),
+      subject: { kind: "item", name: withColons(item.shortcode), mark: { image: item.glyph } },
       confirmLabel: t("common.remove"),
       danger: true,
-      icon: "trash",
     });
     if (!confirmed) return;
     setDeletingId(item.id);

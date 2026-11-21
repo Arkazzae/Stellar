@@ -10,10 +10,10 @@ import {
 import { Icon } from "@stellarr/icons";
 import { Avatar } from "@/components/primitives/Avatar";
 import { useConfirm, usePrompt } from "@/components/primitives/ConfirmDialog";
-import { banPerson, kickPerson } from "@/components/confirmations";
+import { banPerson, kickPerson, personSubject } from "@/components/confirmations";
 import { countedNoun, formatShortDate } from "@/components/settings/paneFormat";
 import { SettingsSection } from "@/components/settings/SettingsSection";
-import { RoleMark } from "@/components/settings/server/panes/RolesPane";
+import { RoleMark } from "@/components/settings/server/panes/RoleMark";
 import { useAsyncAction } from "@/hooks/useAsyncAction";
 import type { AdminMember, Role } from "@/ports";
 import { useLanguage } from "@/state/hooks";
@@ -51,7 +51,6 @@ export function MembersPane({
   const confirm = useConfirm();
   const prompt = usePrompt();
   const assign = useAsyncAction();
-  const moderate = useAsyncAction();
   const [query, setQuery] = useState("");
   const roleById = new Map(roles.map((role) => [role.id, role]));
   const needle = query.trim().toLocaleLowerCase();
@@ -59,14 +58,17 @@ export function MembersPane({
     ? members
     : members.filter((member) => member.user.displayName.toLocaleLowerCase().includes(needle));
 
-  const kick = async (member: AdminMember) => {
+  // The card runs the deed and says when it failed, so the pane stays quiet.
+  const kick = (member: AdminMember) => {
     if (onKick === undefined) return;
-    if (await confirm(kickPerson(t, member.user.displayName))) await moderate.run(() => onKick(member.user.id));
+    void confirm({ ...kickPerson(t, personSubject(member.user)), run: () => onKick(member.user.id) });
   };
-  const ban = async (member: AdminMember) => {
+  const ban = (member: AdminMember) => {
     if (onBan === undefined) return;
-    const reason = await prompt(banPerson(t, member.user.displayName));
-    if (reason !== null) await moderate.run(() => onBan(member.user.id, reason === "" ? undefined : reason));
+    void prompt({
+      ...banPerson(t, personSubject(member.user)),
+      run: (reason) => onBan(member.user.id, reason === "" ? undefined : reason),
+    });
   };
 
   return (
@@ -78,7 +80,7 @@ export function MembersPane({
         countLabel={countedNoun(t, locale, "settings.member", members.length)}
         bodyClassName="sec-list ss-list"
       >
-        {assign.failed || moderate.failed ? (
+        {assign.failed ? (
           <p className="set-note sound-error" role="alert">
             {t("settings.memberActionFailed")}
           </p>
@@ -172,7 +174,6 @@ export function MembersPane({
                           type="button"
                           variant="quiet"
                           size="icon-sm"
-                          disabled={moderate.pending}
                           aria-label={t("srv.members.more", { name: member.user.displayName })}
                         >
                           <Icon name="dots" size={16} />
@@ -180,13 +181,13 @@ export function MembersPane({
                       </DropdownMenuTrigger>
                       <DropdownMenuContent align="end">
                         {onKick === undefined ? null : (
-                          <DropdownMenuItem variant="destructive" onSelect={() => void kick(member)}>
+                          <DropdownMenuItem variant="destructive" onSelect={() => kick(member)}>
                             <Icon name="signout" size={16} />
                             {t("common.kickFromServer")}
                           </DropdownMenuItem>
                         )}
                         {onBan === undefined ? null : (
-                          <DropdownMenuItem variant="destructive" onSelect={() => void ban(member)}>
+                          <DropdownMenuItem variant="destructive" onSelect={() => ban(member)}>
                             <Icon name="ban" size={16} />
                             {t("common.ban")}
                           </DropdownMenuItem>

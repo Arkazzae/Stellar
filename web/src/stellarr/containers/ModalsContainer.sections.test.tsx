@@ -5,6 +5,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { translateMessage, type MessageKey } from "@/i18n";
 import { ApiError } from "@/lib/api/errors";
 import { fakeAdminPort } from "@/test/adminPort";
+import { renderWithConfirm } from "@/test/confirm";
 import { harness, resetHarness } from "@/test/modalsHarness";
 
 import { ModalsContainer } from "./ModalsContainer";
@@ -22,17 +23,23 @@ beforeEach(() => {
 function openSectionSettings() {
   harness.ui.modal = "section";
   harness.ui.sectionSettingsId = "s-a";
-  return render(<ModalsContainer />);
+  return renderWithConfirm(<ModalsContainer />);
 }
 
-async function askToDelete() {
+/** Presses delete in the dialog; the question card it raises is returned unanswered. */
+async function pressDelete() {
   const user = userEvent.setup();
   await user.click(screen.getByRole("button", { name: t("section.delete") }));
   const pane = document.querySelector<HTMLElement>('[data-pane="danger"]')!;
   await user.click(within(pane).getByRole("button", { name: t("section.delete") }));
-  await user.click(
-    within(pane).getByRole("button", { name: t("settings.deleteNamedServer", { name: "Alpha" }) }),
-  );
+  return user;
+}
+
+async function askToDelete() {
+  const user = await pressDelete();
+  const question = screen.getByRole("dialog", { name: t("confirm.deleteSectionTitle") });
+  await user.click(within(question).getByRole("button", { name: t("section.delete") }));
+  return question;
 }
 
 describe("ModalsContainer: section settings", () => {
@@ -57,7 +64,19 @@ describe("ModalsContainer: section settings", () => {
     expect(harness.ports.admin.deleteSection).toHaveBeenCalledExactlyOnceWith("s-a");
   });
 
-  it("explains that channels still sit under a section the server refuses to delete", async () => {
+  it("says to move the channels first, without asking the server, when the directory has some under it", async () => {
+    harness.directory.channels = [{ ...harness.directory.channels[0]!, sectionId: "s-a" }];
+    openSectionSettings();
+
+    await pressDelete();
+
+    const blocked = screen.getByRole("dialog", { name: t("confirm.sectionBlockedTitle") });
+    expect(blocked).toHaveTextContent(harness.directory.channels[0]!.name);
+    expect(within(blocked).queryByRole("button", { name: t("section.delete") })).toBeNull();
+    expect(harness.ports.admin.deleteSection).not.toHaveBeenCalled();
+  });
+
+  it("leads the server's refusal over channels to the same card", async () => {
     harness.ports.admin = fakeAdminPort({
       deleteSection: vi.fn(async () => {
         throw new ApiError("invalid", "has channels", 409);
@@ -67,11 +86,11 @@ describe("ModalsContainer: section settings", () => {
 
     await askToDelete();
 
-    expect(await screen.findByText(t("section.deleteBlocked"))).toBeVisible();
+    expect(await screen.findByRole("dialog", { name: t("confirm.sectionBlockedTitle") })).toBeVisible();
     expect(harness.ui.closeModal).not.toHaveBeenCalled();
   });
 
-  it("does not call a refusal from another cause a blocked section", async () => {
+  it("keeps the card open and says so when the deletion fails for another cause", async () => {
     harness.ports.admin = fakeAdminPort({
       deleteSection: vi.fn(async () => {
         throw new ApiError("server", "boom", 500);
@@ -79,29 +98,10 @@ describe("ModalsContainer: section settings", () => {
     });
     openSectionSettings();
 
-    await askToDelete();
+    const question = await askToDelete();
 
-    expect(await screen.findByText(t("section.deleteFailed"))).toBeVisible();
-    expect(screen.queryByText(t("section.deleteBlocked"))).not.toBeInTheDocument();
-  });
-
-  it("forgets that deletion was blocked once the dialog closes", async () => {
-    harness.ports.admin = fakeAdminPort({
-      deleteSection: vi.fn(async () => {
-        throw new ApiError("invalid", "has channels", 409);
-      }),
-    });
-    const { rerender } = openSectionSettings();
-    await askToDelete();
-    await screen.findByText(t("section.deleteBlocked"));
-
-    harness.ui.modal = null;
-    rerender(<ModalsContainer />);
-    harness.ui.modal = "section";
-    rerender(<ModalsContainer />);
-    await userEvent.setup().click(screen.getByRole("button", { name: t("section.delete") }));
-
-    expect(screen.queryByText(t("section.deleteBlocked"))).not.toBeInTheDocument();
+    expect(await within(question).findByRole("alert")).toHaveTextContent(t("section.deleteFailed"));
+    expect(screen.queryByRole("dialog", { name: t("confirm.sectionBlockedTitle") })).toBeNull();
   });
 });
 

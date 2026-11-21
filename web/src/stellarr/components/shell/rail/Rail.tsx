@@ -357,6 +357,7 @@ export function Rail({
         name={menu.channel.name}
         unread={menu.channel.unread}
         currentSectionId={menu.channel.sectionId}
+        sectionName={sections.find((section) => section.id === menu.channel.sectionId)?.name}
         onClose={ctx.close}
       />
     );
@@ -371,6 +372,7 @@ export function Rail({
         at={ctx.at}
         userId={menu.person.id}
         displayName={menu.person.displayName}
+        avatarUrl={menu.person.avatarUrl}
         self={menu.person.id === selfId}
         anchor={ctx.anchor}
         onClose={ctx.close}
