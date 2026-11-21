@@ -556,12 +556,20 @@
     outline:2px solid var(--accent-quiet);outline-offset:2px;
   }
   .att-code pre{
-    padding:12px;font-family:var(--font-mono);font-size:var(--text-13);line-height:1.55;
+    --code-pad-y:12px;
+    padding:var(--code-pad-y) 12px;font-family:var(--font-mono);font-size:var(--text-13);line-height:1.55;
     overflow:auto;color:var(--text-muted);tab-size:2;
     white-space:pre;overflow-wrap:normal;
     scrollbar-gutter:stable;
   }
-  .att-code pre.compact{max-height:24.8em}
+  /* Sixteen whole lines (COLLAPSED_LINES in CodeAttachment) under the top
+     padding, and nothing of the seventeenth. A scroller shows its overflow
+     through its own padding, so the space under the last line is a margin
+     outside it rather than padding inside it. */
+  .att-code pre.compact{
+    max-height:calc(16 * 1.55em + var(--code-pad-y));
+    padding-bottom:0;margin-bottom:var(--code-pad-y);
+  }
   .att-code pre.expanded{max-height:min(70vh,52em)}
   .att-code pre:focus-visible{outline:2px solid var(--accent-quiet);outline-offset:-2px}
   /* The way on from a collapsed listing sits where it breaks off, across the
@@ -597,7 +605,7 @@
   .att-code .fn{color:var(--syntax-function)}
 
   @media (max-width:520px){
-    .att-code pre{padding:10px;font-size:var(--text-12)}
+    .att-code pre{--code-pad-y:10px;padding:10px;font-size:var(--text-12)}
   }
 
   /* These controls sit inside prose and compact attachment chrome on desktop,
