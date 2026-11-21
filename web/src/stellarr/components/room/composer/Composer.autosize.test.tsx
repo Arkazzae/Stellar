@@ -69,7 +69,7 @@ describe("Composer field height", () => {
 
     // The thread is expanded: the same text now needs a different height.
     scrollHeight.mockReturnValue(72);
-    ObserverStub.resize(field.parentElement as HTMLElement, 640);
+    ObserverStub.resize(field.closest("form") as HTMLElement, 640);
 
     expect(field.style.height).toBe("72px");
   });

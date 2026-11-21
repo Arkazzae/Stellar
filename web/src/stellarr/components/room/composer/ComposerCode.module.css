@@ -1,0 +1,319 @@
+/*
+ * The composer in code mode: the head inside the box, and the field that
+ * becomes an editor (`ComposerCode`, and the classes `Composer` puts on its
+ * box and field while code mode is on).
+ *
+ * A module beside the composer rather than a file of the app's stylesheet:
+ * the composer is part of the signed-in app, so these styles arrive with it
+ * and stay off the first page's budget.
+ */
+
+/* ------------------------------------------------------------------ box -- */
+
+/* A head across the top, then the field beside the actions, all inside the
+   one box. The padding is the bottom row's; the head reaches the edges. */
+.box {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto auto auto;
+  grid-template-areas:
+    "head head head head"
+    "field more actions send";
+  align-items: end;
+  gap: 0;
+  padding: 0 10px 10px 0;
+  border-color: var(--line);
+}
+
+.box > :global(.comp-mobile-more) {
+  grid-area: more;
+}
+
+.box > :global(.comp-actions) {
+  grid-area: actions;
+}
+
+.box > :global(.send) {
+  grid-area: send;
+}
+
+/* ----------------------------------------------------------------- head -- */
+
+.head {
+  grid-area: head;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 40px;
+  margin-right: -10px;
+  padding: 0 8px 0 10px;
+  border-bottom: 1px solid var(--line-subtle);
+}
+
+.picker {
+  color: var(--text);
+}
+
+.spacer {
+  flex: 1;
+}
+
+.keys {
+  font-size: var(--text-12);
+  color: var(--text-faint);
+  white-space: nowrap;
+}
+
+.keys kbd {
+  font: inherit;
+  font-size: var(--text-11);
+  color: var(--text-muted);
+  padding: 1px 5px;
+  border: 1px solid var(--line);
+  border-radius: 4px;
+  background: var(--surface-raised);
+}
+
+.counter {
+  font-size: var(--text-12);
+  color: var(--warn-text);
+  white-space: nowrap;
+}
+
+.counter[data-over] {
+  color: var(--danger-text);
+}
+
+.close {
+  flex: none;
+  width: 30px;
+  height: 30px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: var(--radius-sm);
+  color: var(--text-faint);
+  transition:
+    background var(--dur-fast) var(--ease-standard),
+    color var(--dur-fast) var(--ease-standard);
+}
+
+.close:hover {
+  background: var(--surface-overlay);
+  color: var(--text);
+}
+
+/* ---------------------------------------------------------------- field -- */
+
+/* Out of code mode the field's wrapper draws no box, and the textarea sits in
+   the box's row as it always has. */
+.plainField {
+  display: contents;
+}
+
+/*
+ * Three layers share one set of metrics: the line numbers, the highlighted
+ * copy, and on top the textarea whose text is transparent and whose caret and
+ * selection are not. Everything that sizes a glyph or a line is set here once
+ * and inherited, so the three cannot drift apart. The line height is a length
+ * rather than a ratio, so a fallback font in one layer cannot change it.
+ */
+.field {
+  --code-size: 13px;
+  --code-line: calc(var(--code-size) * 1.6);
+  --gutter: max(4ch, calc(var(--digits, 1) * 1ch + 1.4ch));
+  grid-area: field;
+  position: relative;
+  min-width: 0;
+  margin: 10px 8px 0 12px;
+  font-family: var(--font-mono);
+  font-size: var(--code-size);
+  line-height: var(--code-line);
+  font-variant-ligatures: none;
+  font-kerning: none;
+  letter-spacing: 0;
+  tab-size: 2;
+}
+
+.field textarea {
+  position: relative;
+  z-index: 1;
+  display: block;
+  width: calc(100% - var(--gutter));
+  max-height: none;
+  margin: 0 0 0 var(--gutter);
+  padding: 0;
+  align-self: auto;
+  font: inherit;
+  letter-spacing: inherit;
+  tab-size: inherit;
+  white-space: pre;
+  overflow-wrap: normal;
+  overflow: auto;
+  background: none;
+  color: transparent;
+  -webkit-text-fill-color: transparent;
+  caret-color: var(--text);
+}
+
+.field textarea::placeholder {
+  font-family: var(--font-sans);
+  font-size: var(--text-14);
+  color: var(--text-faint);
+  -webkit-text-fill-color: var(--text-faint);
+  opacity: 1;
+}
+
+.field textarea::selection {
+  background: color-mix(in oklab, var(--accent) 34%, transparent);
+  -webkit-text-fill-color: transparent;
+}
+
+.gutter {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 0;
+  width: var(--gutter);
+  padding-right: 1.4ch;
+  overflow: hidden;
+  text-align: right;
+  white-space: pre;
+  color: var(--text-faint);
+  opacity: 0.65;
+  pointer-events: none;
+  -webkit-user-select: none;
+  user-select: none;
+}
+
+.layer {
+  position: absolute;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  left: var(--gutter);
+  margin: 0;
+  padding: 0;
+  overflow: hidden;
+  font: inherit;
+  white-space: pre;
+  tab-size: inherit;
+  color: var(--text-muted);
+  pointer-events: none;
+}
+
+.layer > code {
+  display: block;
+  min-width: 100%;
+  width: max-content;
+  font: inherit;
+}
+
+.line {
+  display: block;
+  min-height: var(--code-line);
+}
+
+.layer :global(.kw),
+.layer :global(.tag) {
+  color: var(--syntax-keyword);
+}
+
+.layer :global(.str) {
+  color: var(--syntax-string);
+}
+
+.layer :global(.cm) {
+  color: var(--syntax-comment);
+  font-style: italic;
+}
+
+.layer :global(.num) {
+  color: var(--syntax-number);
+}
+
+.layer :global(.type),
+.layer :global(.attr) {
+  color: var(--syntax-type);
+}
+
+.layer :global(.fn) {
+  color: var(--syntax-function);
+}
+
+/* While an input method composes a word, the textarea shows its own text
+   with the underline the method draws, and the copy under it steps aside. */
+.field[data-composing] textarea {
+  color: var(--text-muted);
+  -webkit-text-fill-color: var(--text-muted);
+}
+
+.field[data-composing] .layer {
+  visibility: hidden;
+}
+
+/* ---------------------------------------------------------------- touch -- */
+
+/* Safari zooms into a focused field set below 16px, so a phone writes code at
+   16px like any other text. */
+@media (max-width: 767px) {
+  .field {
+    --code-size: 16px;
+  }
+}
+
+/* On a phone, or under a finger: no key hint, finger-sized targets, and the
+   actions in a row of their own under the field, the send button at its end. */
+@media (max-width: 767px), (pointer: coarse) {
+  .box {
+    grid-template-columns: auto minmax(0, 1fr) auto;
+    grid-template-areas:
+      "head head head"
+      "field field field"
+      "actions . send";
+    padding: 0 8px 8px 0;
+  }
+
+  .head {
+    min-height: 48px;
+    margin-right: -8px;
+    padding: 0 4px 0 6px;
+  }
+
+  .keys {
+    display: none;
+  }
+
+  .close {
+    width: 44px;
+    height: 44px;
+  }
+
+  .field {
+    margin: 10px 4px 6px 12px;
+  }
+
+  .box > :global(.comp-mobile-more) {
+    display: none;
+  }
+
+  .box > :global(.comp-actions) {
+    position: static;
+    display: flex;
+    gap: 6px;
+    padding: 0 0 0 8px;
+    border-radius: 0;
+    background: none;
+    box-shadow: none;
+    animation: none;
+  }
+
+  .box > :global(.comp-actions) :global(.attach) {
+    width: 44px;
+  }
+
+  /* In the row, the code button says the mode is on as it does on a desktop. */
+  .box > :global(.comp-actions) :global(.comp-code-trigger[aria-pressed="true"]) {
+    background: var(--accent-soft);
+    color: var(--accent-text);
+  }
+}
