@@ -738,24 +738,17 @@ run_sudo() {
   fi
 }
 
-# Compose, with the project's files named: a compose.yaml left in the
-# directory would otherwise be read instead. Named files turn off Compose's
-# own search for an override, so the first override it would have found is
-# named too.
+# Compose in the installation's directory, run as the commands the summary
+# prints run it: Compose finds docker-compose.yml and its override itself.
+# choose_directory refuses a directory with another Compose file that it
+# would read first, and decide_env a .env that names other files.
 compose() {
-  local files=(-f docker-compose.yml) override
-  for override in compose.override.yml compose.override.yaml docker-compose.override.yml docker-compose.override.yaml; do
-    if [ -f "$override" ]; then
-      files+=(-f "$override")
-      break
-    fi
-  done
   if [ "$COMPOSE_PLUGIN" -eq 1 ]; then
-    dk compose "${files[@]}" "$@"
+    dk compose "$@"
   elif [ "$DOCKER_SUDO" -eq 1 ]; then
-    run_sudo docker-compose "${files[@]}" "$@"
+    run_sudo docker-compose "$@"
   else
-    docker-compose "${files[@]}" "$@"
+    docker-compose "$@"
   fi
 }
 
@@ -1073,7 +1066,7 @@ absolute_path() {
 # script is in, the directory of the installation Docker runs, the current
 # directory when it holds Stellarr's docker-compose.yml, and ~/stellarr.
 choose_directory() {
-  local chosen running_dir=''
+  local chosen running_dir='' file
   if [ -n "$DIR_OPTION" ]; then
     absolute_path "$DIR_OPTION"
     chosen=$ABSOLUTE
@@ -1137,6 +1130,15 @@ choose_directory() {
     die "$INSTALL_DIR holds a docker-compose.yml that is not Stellarr's" \
       "Choose another directory with --dir."
   fi
+  # Compose reads any of these in place of docker-compose.yml, so "docker
+  # compose up -d" in the directory, as the summary prints it, would run
+  # another project.
+  for file in compose.yaml compose.yml docker-compose.yaml; do
+    if [ -f "$INSTALL_DIR/$file" ]; then
+      die "$INSTALL_DIR holds $file, which Docker Compose reads before docker-compose.yml" \
+        "Choose another directory with --dir."
+    fi
+  done
   if is_checkout "$INSTALL_DIR"; then DIR_IS_CHECKOUT=1; fi
   if [ "$BUILD" -eq 1 ] && [ "$DIR_IS_CHECKOUT" -eq 0 ]; then
     die "--build builds the image from a checkout, and $INSTALL_DIR is not one" \
@@ -1332,21 +1334,48 @@ decide_env() {
     ENV_ACTION=replace
     return 0
   fi
-  [ "$ENV_STATE" = foreign ] || return 0
-  # These change which project and files Compose uses, which would start the
+  # Compose reads these from .env over the project's own settings, so they
+  # change which project and files it uses, which would start the
   # installation on another, empty volume or with services it does not have.
+  # That holds for a .env the installer wrote as much as for any other.
   if [ -n "$EXIST_COMPOSE_PROJECT_NAME$EXIST_COMPOSE_FILE$EXIST_COMPOSE_PROFILES" ]; then
+    if [ "$ENV_STATE" = marked ]; then
+      compose_keys_set
+      die "$INSTALL_DIR/.env sets $COMPOSE_KEYS_SET" \
+        "Compose would take $COMPOSE_KEYS_IT over the project's own settings, which could" \
+        "start the installation on another, empty volume. Remove $COMPOSE_KEYS_IT from .env" \
+        "and run the installer again, or add --force to keep .env as a backup" \
+        "and write a new one."
+    fi
     die "$INSTALL_DIR/.env sets COMPOSE_PROJECT_NAME, COMPOSE_FILE or COMPOSE_PROFILES" \
       "It looks like a development stack's .env, which the installer must not run" \
       "the production stack with. Choose another directory with --dir, or add" \
       "--force to keep it as a backup and write a new one."
   fi
+  [ "$ENV_STATE" = foreign ] || return 0
   if [ "$INTERACTIVE" -eq 1 ] && ! ui_confirm y "Keep the settings in the existing .env?" \
     "The installer did not write $INSTALL_DIR/.env. Keeping it marks it as the" \
     "installer's, which then changes only what it is given. Otherwise it is kept" \
     "as a backup and a new one is written."; then
     ENV_ACTION=replace
   fi
+}
+
+# Sets COMPOSE_KEYS_SET to the Compose variables .env sets, as a phrase such
+# as "COMPOSE_FILE" or "COMPOSE_PROJECT_NAME and COMPOSE_FILE", and
+# COMPOSE_KEYS_IT to the word that stands for them.
+compose_keys_set() {
+  local key value names=()
+  for key in COMPOSE_PROJECT_NAME COMPOSE_FILE COMPOSE_PROFILES; do
+    value="EXIST_$key"
+    [ -z "${!value}" ] || names+=("$key")
+  done
+  COMPOSE_KEYS_IT=them
+  case "${#names[@]}" in
+    1) COMPOSE_KEYS_SET=${names[0]} COMPOSE_KEYS_IT=it ;;
+    2) COMPOSE_KEYS_SET="${names[0]} and ${names[1]}" ;;
+    *) COMPOSE_KEYS_SET="${names[0]}, ${names[1]} and ${names[2]}" ;;
+  esac
 }
 
 # The settings this run uses: a given value, else the one in .env, else the
