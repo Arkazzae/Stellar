@@ -180,7 +180,6 @@ Another value stops the API at start. Records saved earlier keep the language th
 | Variable | Type | Default | Description |
 | --- | --- | --- | --- |
 | `STELLARR_GIPHY_API_KEY` | string | empty | The public GIPHY web key for GIF search, sent to signed-in browsers (unless a person turns GIPHY off in their privacy settings). **Cockpit → Integrations** can set and check it too, and its value wins without a restart. |
-| `STELLARR_EF_COMMAND_LOG_LEVEL` | .NET log level | `Warning` | The log level of `Microsoft.EntityFrameworkCore.Database.Command`; `Information` logs every SQL query. |
 
 ## Logs
 
@@ -191,11 +190,12 @@ The API writes its log to the container's output (`docker compose logs`) and to 
 - operational events: start, media server resets, backups and maintenance
 - the [setup code](quick-start.md#4-create-the-owner-account) of the owner account, at each start while the instance has no account, as a warning so that it shows even at the `Warning` level
 
-ASP.NET Core's request diagnostics (`Microsoft.AspNetCore`), Entity Framework's SQL and outgoing HTTP calls log from `Warning` up. Any category takes a raw key in `.env`:
+ASP.NET Core's request diagnostics (`Microsoft.AspNetCore`), Entity Framework's SQL and outgoing HTTP calls log from `Warning` up. Any category takes a raw key in `.env`; the last line below logs every SQL statement the API runs:
 
 ```bash
 Logging__LogLevel__Microsoft.AspNetCore=Information
 Logging__LogLevel__Stellarr.Api.Requests=Warning
+Logging__LogLevel__Microsoft.EntityFrameworkCore.Database.Command=Information
 ```
 
 ## Container resource limits
