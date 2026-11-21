@@ -2,7 +2,8 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 
 import type { ChatPort, Message } from "@/ports";
 
-import { advanceReadMark, unreadCounts } from "./readMarks";
+import { useSettled } from "../useSettled";
+import { advanceReadMark, sameCounts, unreadCounts } from "./readMarks";
 
 interface ReadMarksOptions {
   chat: ChatPort;
@@ -62,9 +63,14 @@ export function useReadMarks({ chat, channelId, messages, selfId, sessionEnded }
     };
   }, [channelId, markChannelRead, sessionEnded]);
 
-  const unreadByChannel = useMemo(
-    () => unreadCounts(messages, marks, openedAt, channelId, selfId),
-    [messages, marks, openedAt, channelId, selfId],
+  // Counted again for every message anywhere, and kept while no count moved:
+  // a message in the open channel, which counts nowhere, leaves the rail alone.
+  const unreadByChannel = useSettled(
+    useMemo(
+      () => unreadCounts(messages, marks, openedAt, channelId, selfId),
+      [messages, marks, openedAt, channelId, selfId],
+    ),
+    sameCounts,
   );
 
   // The open channel's mark: the line stays put until the channel is left.

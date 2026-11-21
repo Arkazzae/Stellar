@@ -37,3 +37,15 @@ export function unreadCounts(
   }
   return counts;
 }
+
+/** Whether two sets of counts give every channel the same number. */
+export function sameCounts(
+  a: Readonly<Record<string, number>>,
+  b: Readonly<Record<string, number>>,
+): boolean {
+  const channels = Object.keys(a);
+  return (
+    channels.length === Object.keys(b).length &&
+    channels.every((channelId) => a[channelId] === b[channelId])
+  );
+}

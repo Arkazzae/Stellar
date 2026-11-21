@@ -66,6 +66,7 @@ function defaults(): HookStubs {
     }),
     chat: stub<ChatValue>({
       thread: null,
+      activeThreadId: null,
       threadsByChannel: {},
       openingThreadId: null,
       openThread: vi.fn(),
@@ -258,6 +259,8 @@ export function setStubs(patch: {
 export const hooksModule = {
   useAccount: () => stubs.account,
   useChat: () => stubs.chat,
+  // The rail's slice is a part of the chat's value.
+  useChatRail: () => stubs.chat,
   useDirectory: () => stubs.directory,
   useEmoji: () => stubs.emoji,
   useEncryption: () => stubs.encryption,
