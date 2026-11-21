@@ -10,12 +10,20 @@
 /* The name and a caret, no box. What the name looks like is the head's to say. */
 .trigger {
   flex: none;
+  max-width: none;
 }
 
 /* "Automatic TypeScript": the guess is a reminder beside the choice, not part of it. */
 .trigger :global(.ui-dropdown-detail) {
-  font-size: inherit;
+  font-size: 13px;
   font-weight: 400;
+}
+
+/* A language's name is short; it is never cut, and the head makes room. */
+.trigger :global(.ui-dropdown-value),
+.trigger :global(.ui-dropdown-label),
+.trigger :global(.ui-dropdown-detail) {
+  overflow: visible;
 }
 
 /* Wide enough for "Automatic" and its guess on one row, never wider than the window. */
