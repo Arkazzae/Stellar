@@ -113,7 +113,7 @@ public static class ClientDiscoveryEndpoints
         return Results.Ok(new DiscoveryDocument(
             Product: "stellarr",
             InstanceId: identity.InstanceId,
-            InstanceName: server?.Name ?? Setting(configuration, "Stellarr:InstanceName") ?? FallbackInstanceName,
+            InstanceName: server?.Name ?? FallbackInstanceName,
             CanonicalOrigin: CanonicalOrigin(http, configuration),
             ServerVersion: ServerVersion(),
             BuildSha: Setting(configuration, "Build:Sha"),

@@ -171,7 +171,6 @@ Another value stops the API at start. Records saved earlier keep the language th
 | Variable | Type | Default | Description |
 | --- | --- | --- | --- |
 | `STELLARR_INSTANCE_ID` | UUID | generated | The instance's UUID in `/.well-known/stellarr/client`. Without it, one is generated and kept in `/data/stellarr/instance-id`. |
-| `STELLARR_INSTANCE_NAME` | string | `Stellarr` | The name reported until the first server exists; after that, the server's name, which Cockpit edits. |
 | `STELLARR_TIME_ZONE` | IANA time zone | the container's, `UTC` | **Seed** of the instance's time zone in Cockpit, such as `Europe/Warsaw`. |
 | `STELLARR_DESKTOP_MINIMUM_VERSION` | semver | `0.1.0` | The oldest desktop client the client gate lets in. |
 | `STELLARR_DESKTOP_RECOMMENDED_VERSION` | semver | `0.1.3` | The desktop client `/.well-known/stellarr/client` recommends. |
@@ -231,7 +230,7 @@ A few settings exist only as raw .NET configuration keys, written `Section__Key`
 
 ## Development stack (`docker-compose.dev.yml`)
 
-`docker-compose.dev.yml` runs each service from a bind mount with live reload. It reads no `env_file`. Its own variables below come from the shell or `.env`; of the instance's settings it forwards only `STELLARR_LANGUAGE`, `STELLARR_TIME_ZONE`, `STELLARR_INSTANCE_ID`, the two desktop versions, `STELLARR_GIPHY_API_KEY`, the mail sender and secrets and the Web Push settings, and sets the rest itself (instance name `Stellarr Dev`, mail on for Mailpit).
+`docker-compose.dev.yml` runs each service from a bind mount with live reload. It reads no `env_file`. Its own variables below come from the shell or `.env`; of the instance's settings it forwards only `STELLARR_LANGUAGE`, `STELLARR_TIME_ZONE`, `STELLARR_INSTANCE_ID`, the two desktop versions, `STELLARR_GIPHY_API_KEY`, the mail sender and secrets and the Web Push settings, and sets the rest itself (mail on for Mailpit).
 
 | Variable | Default | Description |
 | --- | --- | --- |
