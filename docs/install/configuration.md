@@ -2,7 +2,11 @@
 
 Every setting is an environment variable named `STELLARR_*`, and it has that one name everywhere: in `.env`, in `docker run -e`, in a platform template such as [Unraid](unraid.md), and on this page. The image holds every default, so an installation sets only what it changes.
 
-With Docker Compose, the settings go in `.env` beside `docker-compose.yml`. Compose hands that file to the container as it is; [`.env.example`](../../.env.example) lists every setting, commented out, with its default, and the installer appends it to the `.env` it writes. A variable that is empty or only whitespace counts as not set. A change takes effect when the container is created again:
+With Docker Compose, the settings go in `.env` beside `docker-compose.yml`. Compose hands that file to the container as it is; [`.env.example`](../../.env.example) lists every setting, commented out, with its default, and the installer appends it to the `.env` it writes. A variable that is empty or only whitespace counts as not set.
+
+The container reads its settings from the file `.env` alone. A variable exported in the shell, or a file given with `docker compose --env-file`, does not reach it. They change only what `docker-compose.yml` itself fills in: the image tag, the published ports (which Compose also tells the container) and the resource limits.
+
+A change takes effect when the container is created again:
 
 ```bash
 docker compose up -d
