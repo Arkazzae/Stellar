@@ -111,10 +111,10 @@ services:
       # Mailpit below catches the mail.
       STELLARR_MAIL_ENABLED: "true"
       STELLARR_MEDIA_PORT: ${STELLARR_DEV_MEDIA_PORT:-49100}
-      STELLARR_MEDIA_CONTROL_SECRET: stellarr-media-development-secret
       # What the entrypoint derives in production, which has no STELLARR_* name.
       ConnectionStrings__Database: Data Source=/data/stellarr/stellarr-dev.db;Pooling=True
       Rtc__MediaControlUrl: http://media:5200
+      Rtc__MediaControlSecret: stellarr-media-development-secret
       Operations__PublicUrl: http://localhost:${STELLARR_DEV_WEB_PORT:-3000}
       Desktop__CanonicalOrigin: http://127.0.0.1:${STELLARR_DEV_API_PORT:-5000}
       # Taken from the shell or .env when set there, and otherwise left unset.
