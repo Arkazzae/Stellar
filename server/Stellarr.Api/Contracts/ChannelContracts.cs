@@ -11,7 +11,6 @@ public sealed record UpdateChannelRequest(
     string? Topic,
     int? SlowModeSeconds,
     int? HideAfterInactivityHours,
-    string? AudioProfile,
     int? UserLimit);
 
 /// <summary>

@@ -5,14 +5,16 @@ namespace Stellarr.Api.Data;
 
 /// <summary>
 /// Creates the SQLite schema of the instance: every table, column and index
-/// comes from the model, and the steps add what the model cannot express.
+/// comes from the model, and the steps add what the model cannot express and
+/// remove what it no longer has.
 /// </summary>
 public static class DatabaseSchema
 {
     /// <summary>
-    /// The triggers and the virtual table on top of the model. Each step is
-    /// idempotent and runs on every start, so a database whose first start was
-    /// cut short between the model and these still gets them.
+    /// The triggers and the virtual table on top of the model, and the drop of
+    /// columns an older database still has. Each step is idempotent and runs on
+    /// every start, so a database whose first start was cut short between the
+    /// model and these still gets them.
     /// </summary>
     private static readonly Func<AppDbContext, CancellationToken, Task>[] Steps =
     [
@@ -25,6 +27,7 @@ public static class DatabaseSchema
         PushSubscriptionSchema.CreateAsync,
         NotificationDeliverySchema.CreateAsync,
         ServerAuditSchema.CreateAsync,
+        ChannelAudioProfileSchema.DropAsync,
     ];
 
     public static async Task PrepareAsync(AppDbContext db, CancellationToken cancellationToken)

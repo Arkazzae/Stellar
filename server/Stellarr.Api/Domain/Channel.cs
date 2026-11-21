@@ -16,7 +16,6 @@ public sealed class Channel
     public string Topic { get; set; } = "";
     public int SlowModeSeconds { get; set; }
     public int HideAfterInactivityHours { get; set; }
-    public string AudioProfile { get; set; } = "premium";
     public int UserLimit { get; set; }
 
     /// <summary>The collapsible rail group this channel sits under, or null when it has none.</summary>

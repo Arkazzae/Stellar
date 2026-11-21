@@ -416,7 +416,6 @@ AUDIT_SPEC: list[tuple[str, str]] = [
 ]
 
 REACTIONS_POOL = ["👍", "🔥", "❤️", "🎉", "🚀", "👀", "😂", "💯", "🍿", "🧠", "🛠️", "⚡"]
-AUDIO_PROFILES = ["clarity", "premium", "studio", "balanced"]
 UNREAD_CHANNEL_NAMES = {"backend-dotnet", "frontend-vite", "polski", "lfg-coop", "qa-long-history"}
 
 # Presence normally lives only in the API process and follows live hub
@@ -711,15 +710,15 @@ def bootstrap_empty_server(
     cur.execute(
         """INSERT INTO Channels (
             Id, ServerId, Name, Kind, Position, Topic,
-            SlowModeSeconds, HideAfterInactivityHours, AudioProfile, UserLimit, SectionId
-        ) VALUES (?, ?, 'general', 0, 0, '', 0, 0, 'premium', 0, NULL)""",
+            SlowModeSeconds, HideAfterInactivityHours, UserLimit, SectionId
+        ) VALUES (?, ?, 'general', 0, 0, '', 0, 0, 0, NULL)""",
         (general_id, server_id),
     )
     cur.execute(
         """INSERT INTO Channels (
             Id, ServerId, Name, Kind, Position, Topic,
-            SlowModeSeconds, HideAfterInactivityHours, AudioProfile, UserLimit, SectionId
-        ) VALUES (?, ?, 'voice', 1, 1, '', 0, 0, 'premium', 0, NULL)""",
+            SlowModeSeconds, HideAfterInactivityHours, UserLimit, SectionId
+        ) VALUES (?, ?, 'voice', 1, 1, '', 0, 0, 0, NULL)""",
         (voice_id, server_id),
     )
     # A founded server greets its owner in its first text channel.
@@ -1047,8 +1046,8 @@ def discover_context(cur: sqlite3.Cursor, main_server_id: str, main_created_at_r
         cur.execute(
             """INSERT INTO Channels (
                 Id, ServerId, Name, Kind, Position, Topic,
-                SlowModeSeconds, HideAfterInactivityHours, AudioProfile, UserLimit, SectionId
-            ) VALUES (?, ?, 'general', 0, ?, '', 0, 0, 'premium', 0, NULL)""",
+                SlowModeSeconds, HideAfterInactivityHours, UserLimit, SectionId
+            ) VALUES (?, ?, 'general', 0, ?, '', 0, 0, 0, NULL)""",
             (general_id, main_server_id, next_pos),
         )
     else:
@@ -1286,14 +1285,13 @@ def seed_database(
                 for cname, ckind_str, ctopic in ch_list:
                     ckind = 0 if ckind_str == "text" else 1
                     cid = new_guid()
-                    profile = rng.choice(AUDIO_PROFILES) if ckind == 1 else "premium"
                     ulimit = 12 if cname == "co-op-lounge" else (0 if ckind == 0 else 16)
                     cur.execute(
                         """INSERT INTO Channels (
                             Id, ServerId, Name, Kind, Position, Topic,
-                            SlowModeSeconds, HideAfterInactivityHours, AudioProfile, UserLimit, SectionId
-                        ) VALUES (?, ?, ?, ?, ?, ?, 0, 0, ?, ?, ?)""",
-                        (cid, main_server_id, cname, ckind, chan_pos, ctopic, profile, ulimit, sec_id),
+                            SlowModeSeconds, HideAfterInactivityHours, UserLimit, SectionId
+                        ) VALUES (?, ?, ?, ?, ?, ?, 0, 0, ?, ?)""",
+                        (cid, main_server_id, cname, ckind, chan_pos, ctopic, ulimit, sec_id),
                     )
                     chan_pos += 1
                     channel_ids[cname] = cid
@@ -1808,8 +1806,8 @@ def seed_database(
                         cur.execute(
                             """INSERT INTO Channels (
                                 Id, ServerId, Name, Kind, Position, Topic,
-                                SlowModeSeconds, HideAfterInactivityHours, AudioProfile, UserLimit, SectionId
-                            ) VALUES (?, ?, ?, ?, ?, ?, 0, 0, 'premium', 0, ?)""",
+                                SlowModeSeconds, HideAfterInactivityHours, UserLimit, SectionId
+                            ) VALUES (?, ?, ?, ?, ?, ?, 0, 0, 0, ?)""",
                             (cid, sid, cname, ckind, cpos, f"{sname} — #{cname}", extra_sec_id),
                         )
                         cpos += 1
