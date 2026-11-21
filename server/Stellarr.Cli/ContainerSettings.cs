@@ -70,8 +70,7 @@ internal static class ContainerSettings
             return new StartupValue(fallback, "default");
         }
 
-        var variable = StellarrVariables.All.FirstOrDefault(
-            x => string.Equals(x.Key, key, StringComparison.OrdinalIgnoreCase));
+        var variable = StellarrVariables.ForKey(key);
         var fromEnvironment =
             (variable is not null && StellarrVariables.ValueIn(context.Environment, variable) is not null) ||
             (context.Environment.TryGetValue(key.Replace(":", "__", StringComparison.Ordinal), out var raw) &&
