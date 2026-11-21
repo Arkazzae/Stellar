@@ -40,7 +40,6 @@ export function fakeChat(overrides: Partial<ChatValue> = {}): ChatValue {
     loading: false,
     loadingOlder: false,
     hasOlder: false,
-    typingNames: [],
     chips: [],
     pinned: [],
     pinnedLoading: false,

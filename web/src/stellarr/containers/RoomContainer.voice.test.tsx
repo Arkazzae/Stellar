@@ -30,6 +30,7 @@ const mocks = vi.hoisted(() => ({
   joinFromPopoutLink: vi.fn(),
   profile: { toggle: vi.fn() },
   ports: {
+    typing: { onTypingChanged: () => () => {}, typingIn: () => NOBODY },
     voiceSettings: { subscribe: () => () => {}, getSnapshot: () => ({}), update: vi.fn() },
     soundboard: {
       live: {
@@ -81,6 +82,8 @@ vi.mock("@/components/room/panels/ChannelPanel", () => ({
 
 const MAJA = { id: "u-maja", displayName: "Maja", initials: "MA", presence: "online" as const };
 const ADA = { id: "u-ada", displayName: "Ada", initials: "AD", presence: "online" as const };
+// Read only once the room renders, after this module has run.
+const NOBODY: string[] = [];
 
 function inCall(overrides: Partial<VoiceValue> = {}) {
   mocks.ui = fakeUi({ roomView: "voice", activeTextChannelId: "ch-general" });

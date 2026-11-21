@@ -1,4 +1,4 @@
-import { act, render, waitFor } from "@testing-library/react";
+import { act, render, screen, waitFor } from "@testing-library/react";
 import { Profiler } from "react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -127,5 +127,17 @@ describe("what a chat event renders", () => {
     act(() => h.emit.embeds({ messageId: "m3", channelId: "ch-general", embeds: [] }));
 
     expect(log.take().flat()).toEqual([]);
+  });
+
+  it("renders a typing notice on the typing line alone, and one elsewhere nowhere", async () => {
+    const log = await mountServerView();
+
+    act(() => h.emit.typing("ch-general", ["Ada"]));
+    expect(log.take()).toEqual([["RoomTyping", "Typing"]]);
+    expect(screen.getByText("Ada pisze…")).toBeInTheDocument();
+
+    act(() => h.emit.typing("ch-random", ["Bob"]));
+    act(() => h.emit.typing("ch-general", []));
+    expect(log.take()).toEqual([["RoomTyping", "Typing"]]);
   });
 });

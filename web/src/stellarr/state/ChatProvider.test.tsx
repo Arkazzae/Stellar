@@ -289,16 +289,6 @@ describe("what the server pushes", () => {
     expect(result.current.thread).toBeNull();
   });
 
-  it("shows who is typing in the open channel", async () => {
-    twoChannels();
-    const { result } = await mountLoaded();
-    act(() => {
-      h.emit.typing("ch-general", ["Ada"]);
-      h.emit.typing("ch-random", ["Bob"]);
-    });
-    expect(result.current.typingNames).toEqual(["Ada"]);
-  });
-
   it("rebuilds the transcript with a message's reactions and toggles them", async () => {
     h.chat.listMessages.mockResolvedValueOnce(page([message("m1", 1)]));
     const { result } = await mountLoaded();

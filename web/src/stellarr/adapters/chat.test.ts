@@ -77,4 +77,31 @@ describe("typing adapter", () => {
     expect(changed).toHaveBeenLastCalledWith("channel-1", []);
     typing.dispose?.();
   });
+
+  it("keeps who is typing in each channel, the same list while the names are", () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-01-01T12:00:00Z"));
+    const realtime = new FakeRealtimeClient();
+    const typing = createTypingAdapter(realtime);
+    const notice = (channelId: string, userId: string, displayName: string) =>
+      realtime.push("TypingChanged", {
+        channelId,
+        userId,
+        displayName,
+        expiresAt: "2026-01-01T12:00:06Z",
+      });
+
+    expect(typing.typingIn("channel-1")).toEqual([]);
+    notice("channel-1", "u-ada", "Ada");
+    notice("channel-2", "u-bob", "Bob");
+    const ada = typing.typingIn("channel-1");
+    expect(ada).toEqual(["Ada"]);
+    expect(typing.typingIn("channel-2")).toEqual(["Bob"]);
+
+    notice("channel-1", "u-ada", "Ada");
+    expect(typing.typingIn("channel-1")).toBe(ada);
+    notice("channel-1", "u-cy", "Cy");
+    expect(typing.typingIn("channel-1")).toEqual(["Ada", "Cy"]);
+    typing.dispose?.();
+  });
 });

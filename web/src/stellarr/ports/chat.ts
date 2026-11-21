@@ -169,5 +169,7 @@ export interface TypingPort {
   onTypingChanged(
     handler: (channelId: ChannelId, displayNames: string[]) => void,
   ): Unsubscribe;
+  /** Who is typing in a channel now: the same array until somebody starts or stops. */
+  typingIn(channelId: ChannelId): string[];
   dispose?(): void;
 }
