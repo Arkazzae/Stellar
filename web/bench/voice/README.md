@@ -137,44 +137,6 @@ In addition to offline rendering, `suppressor/run.mjs` verifies three real-time 
 2. Sending the `"destroy"` port message when tearing down a suppressor immediately silences the worklet node.
 3. A `404` response for the WASM binary causes `attachSuppressor` to resolve to `null`.
 
-## Sensitivity validation matrix
-
-Each single-parameter perturbation below was tested against the unmodified golden records to verify test sensitivity:
-
-| Perturbation | Capture record failures | Playback check failures |
-| --- | --- | --- |
-| Dial hangover `25+20t → 28+20t` frames | 10 fixtures | gated strip, cross-check |
-| Gate release `90 → 100 ms` | 12 fixtures | gated strip, cross-check |
-| Gate attack `6 → 10 ms` | 13 fixtures | gated strip, cross-check |
-| Gate lookahead `80 → 70 ms` | latency index + 14 fixtures | gated strip, cross-check |
-| Dial on-threshold `14-11t → 14.5-11t dB` | 5 fixtures | passes |
-| Dial absolute floor `-45-23t → -46-23t dBFS` | 6 fixtures | app sample, cross-check |
-| Remote default on-threshold `7.5 → 8 dB` | `speech-over-fan` | passes |
-| Remote default off-threshold `3.5 → 3 dB` | 3 fixtures | passes |
-| Remote default hangover `45 → 50` frames | 8 fixtures | passes |
-| Remote default absolute floor `-68 → -70 dBFS` | `talker-quiet` | passes |
-| Onset voicing threshold `0.6 → 0.62` | 8 fixtures | app sample, cross-check |
-| Unvoiced limit `60 → 70` frames | `fan-speech`, `speech-over-fan`, `speech-crunching` | app sample |
-| Stationary noise timeout `90 → 120` frames | `buzz` | passes |
-| Click hold-close window `8 → 12` quiet frames | 9 fixtures | gated strip, cross-check |
-| Leveler target `-20 → -19 dBFS` | 10 fixtures | app sample, cross-check |
-| Leveler rise rate `6 → 6.5 dB/s` | 14 fixtures | app sample, cross-check |
-| Leveler fall rate `40 → 30 dB/s` | 7 fixtures | app sample, cross-check |
-| Leveler max boost `18 → 17 dB` | 5 fixtures | app sample |
-| Leveler peak ceiling `0.95 → 0.98` | 8 fixtures | cross-check |
-| Swap order: leveler before gate | 13 fixtures | app sample, cross-check |
-| Meter post interval `10 → 12` frames | 15 fixtures | app sample, cross-check |
-| Studio high-pass `76 → 80 Hz` | passes | response `1.02 dB`, envelope `0.90 dB`, area `19.7 dB·ms` |
-| Compressor ratio `1+5a → 1+5.5a` | passes | response `0.21 dB`, curve `0.20 dB`, area `12.8 dB·ms`, overshoot |
-| Compressor attack `12-9a → 15-9a ms` | passes | envelope `3.40 dB`, area `10.9 dB·ms`, overshoot `0.37 dB`, response, gains |
-| Compressor release `140+160a → 150+160a ms` | passes | area `40.6 dB·ms` |
-| Presence bell `3100 → 3200 Hz` | passes | response `0.48 dB`, curve, area `17.7 dB·ms` |
-| Limiter threshold `-1 → -1.5 dB` | passes | response, curve, area `27.3 dB·ms`, settling `6 ms`, overshoot |
-| Limiter attack `2 → 3 ms` | passes | envelope `1.20 dB`, response `0.17 dB` |
-| Limiter release `80 → 90 ms` | passes | area `15.0 dB·ms`, response `0.11 dB` |
-| Swap order: limiter before boost | passes | fails all playback metrics by large margins |
-| Playback gain `1.25 → 1.3` | passes | response `0.35 dB`, curve `0.34 dB`, area `22.7 dB·ms`, gains |
-
 ## Local voice recordings (`recordings/`)
 
 Place 48 kHz WAV files in `web/bench/voice/recordings/` (gitignored so personal voice recordings are never committed). Convert recordings with:

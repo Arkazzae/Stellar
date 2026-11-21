@@ -17,30 +17,18 @@ Uploads enforce per-user and instance storage quotas plus a free-space floor on 
 
 ## Ports
 
-`docker-compose.yml` publishes the following host ports. By default, `3478/tcp` and `5349` (TURN over TCP and TURN over TLS/DTLS) are disabled in `coturn` unless explicitly enabled in `.env`.
+By default, `docker-compose.yml` publishes TCP `8443` (HTTPS: web client, API, SignalR WebSocket, and `/cockpit`), TCP `8888` (HTTP redirect to HTTPS), UDP `49000` (`stellarr-media` SFU for all voice and video calls), UDP `3478` (`coturn` STUN/TURN), and UDP `49160-49200` (TURN media relay range, mapped 1:1), plus optional TURN TCP/TLS listeners (`3478/tcp`, `5349/tcp`, `5349/udp`) when enabled in `.env`.
 
-| Default port | Protocol | Purpose | Required for | Variable |
-| --- | --- | --- | --- | --- |
-| `8443` | TCP | HTTPS: web client, API, SignalR WebSocket, and Cockpit (`/cockpit`) | Always | `STELLARR_HTTPS_PORT` |
-| `8888` | TCP | HTTP redirect to HTTPS | HTTP redirect only | `STELLARR_HTTP_PORT` |
-| `49000` | UDP | Stellarr Media (`stellarr-media`), carries all voice and video calls | Voice & video | `STELLARR_MEDIA_PORT` |
-| `3478` | UDP | STUN and TURN (UDP) | Voice & video | `STELLARR_TURN_PORT` |
-| `49160-49200` | UDP | TURN media relay range (41 ports, mapped 1:1) | Voice & video | `STELLARR_TURN_RELAY_RANGE` |
-| `3478` | TCP | TURN over TCP (when `STELLARR_TURN_TCP_ENABLED=true`) | Optional | `STELLARR_TURN_PORT` |
-| `5349` | TCP, UDP | TURN over TLS/DTLS (when `STELLARR_TURNS_ENABLED=true`; requires a CA-signed TLS certificate) | Optional | `STELLARR_TURNS_PORT` |
-
-Internal services (SQLite, ASP.NET Core on `127.0.0.1:5000`, and the `stellarr-media` control API on `127.0.0.1:5200`) listen only on container loopback. See [RTC and ports](../rtc-and-ports.md) for relay sizing and troubleshooting.
+See [RTC and ports](../rtc-and-ports.md#published-host-ports) for the full port table, corresponding `STELLARR_*` variables, internal loopback ports, and relay port sizing.
 
 ## Behind NAT
 
-All voice and video media routes through `stellarr-media` inside the container. A browser running on the Docker host itself connects over local loopback without extra configuration. Calls from any other device—including other machines on your LAN—require:
+A browser on the Docker host itself connects over local loopback without extra configuration. Calls from any other device—including other machines on your LAN—require:
 
-1. `STELLARR_PUBLIC_IP` set to the IPv4 address browsers use to reach the Docker host (your LAN IPv4 for LAN-only use, your public IPv4 for internet access, or `auto` to resolve the `A` record of `STELLARR_DOMAIN` at container startup).
-2. UDP `49000` (`STELLARR_MEDIA_PORT`) forwarded on your router to the Docker host on the **same external UDP port**, because `stellarr-media` advertises that port in its SDP ICE candidates.
-3. UDP `3478`, UDP `49160-49200`, and the HTTPS port (or an external [reverse proxy](reverse-proxy-and-tls.md#run-behind-a-reverse-proxy)) forwarded to the Docker host.
+1. `STELLARR_PUBLIC_IP` set to the IPv4 address browsers use to reach the Docker host (LAN IPv4 for LAN-only use, public IPv4 for internet access, or `auto` to resolve the `A` record of `STELLARR_DOMAIN` at container startup).
+2. UDP `49000` (`STELLARR_MEDIA_PORT`, on the **same external UDP port**), UDP `3478`, UDP `49160-49200`, and the HTTPS port (or an external [reverse proxy](reverse-proxy-and-tls.md#run-behind-a-reverse-proxy)) forwarded to the Docker host.
 
-> [!WARNING]
-> When `STELLARR_PUBLIC_IP` is unset, `stellarr-media` advertises only the container's internal bridge IPv4 address. Browsers outside the Docker host can then connect only via TURN (`coturn`), and calls will fail completely if TURN is also unreachable. See [Stellarr Media](../stellarr-media.md) and [RTC and ports](../rtc-and-ports.md#nat-and-firewall-configuration).
+See [RTC and ports — NAT and firewall configuration](../rtc-and-ports.md#nat-and-firewall-configuration) for candidate advertisement rules and call diagnostics.
 
 ## Domain and TLS
 
