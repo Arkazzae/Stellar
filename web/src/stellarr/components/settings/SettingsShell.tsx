@@ -69,7 +69,7 @@ export function SettingsFooterAction({
   onClick: () => void;
 }) {
   return (
-    <button type="button" className="sv-item danger" title={label} disabled={disabled} onClick={onClick}>
+    <button type="button" className="sv-item danger destroy" title={label} disabled={disabled} onClick={onClick}>
       <span className="sv-ico" aria-hidden="true">
         <Icon name={icon} size={18} />
       </span>

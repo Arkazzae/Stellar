@@ -5,6 +5,8 @@ import { Modal } from "@/components/primitives/Modal";
 import { DialogHeader } from "@/components/settings/DialogHeader";
 import { useLanguage } from "@/state/hooks";
 
+import styles from "./CreateDialog.module.css";
+
 export interface CreateDialogProps {
   open: boolean;
   onClose: () => void;
@@ -33,7 +35,7 @@ export interface CreateDialogProps {
  * The frame of the small "create one thing" dialogs opened from the rail:
  * a title, a close button, the fields, and cancel and submit buttons.
  *
- * It is the question card (`.q-card`) with a header: the same surface,
+ * It is the question card with a header: the same surface,
  * padding and answers, so a dialog that makes something and one that asks
  * about something read as one family.
  */
@@ -67,7 +69,7 @@ export function CreateDialog({
       exitMs={200}
     >
       <form
-        className="am-card q-card"
+        className={`am-card ${styles.card}`}
         onSubmit={(event) => {
           event.preventDefault();
           onSubmit();
