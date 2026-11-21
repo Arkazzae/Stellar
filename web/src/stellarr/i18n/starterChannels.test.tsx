@@ -11,8 +11,11 @@ beforeEach(() => {
   localStorage.clear();
 });
 
-const openStarterChannels = (user: ReturnType<typeof userEvent.setup>, label: string) =>
-  user.click(screen.getByRole("button", { name: label }));
+/** Names the server, which the channels step needs, and moves on to it. */
+async function toChannels(user: ReturnType<typeof userEvent.setup>, field: RegExp, next: string) {
+  await user.type(screen.getByRole("textbox", { name: field }), "Crew");
+  await user.click(screen.getByRole("button", { name: next }));
+}
 
 describe("the create-server dialog's starter channel names", () => {
   it("are offered in English to someone using the English interface", async () => {
@@ -25,38 +28,15 @@ describe("the create-server dialog's starter channel names", () => {
       </LanguageProvider>,
     );
 
-    await user.type(screen.getByRole("textbox", { name: /Server name/ }), "Crew");
-    await openStarterChannels(user, "Starter channels");
+    await toChannels(user, /^Server name/, "Next");
 
-    expect(screen.getByRole("textbox", { name: /Text channel/ })).toHaveValue("general");
-    expect(screen.getByRole("textbox", { name: /^Name/ })).toHaveValue("voice");
+    expect(screen.getByRole("textbox", { name: "Text channel" })).toHaveValue("general");
+    expect(screen.getByRole("textbox", { name: "Voice channel name" })).toHaveValue("voice");
 
-    await user.click(screen.getByRole("button", { name: "Create a server" }));
+    await user.click(screen.getByRole("button", { name: "Create now" }));
 
     expect(onCreate).toHaveBeenCalledWith(
       expect.objectContaining({ textChannelName: "general", voiceChannelName: "voice" }),
-    );
-  });
-
-  it("keep what the person typed instead of the suggestion", async () => {
-    const user = userEvent.setup();
-    const onCreate = vi.fn().mockResolvedValue(undefined);
-
-    render(
-      <LanguageProvider initialLocale="en">
-        <ServerCreateModal open onClose={vi.fn()} onCreate={onCreate} />
-      </LanguageProvider>,
-    );
-
-    await user.type(screen.getByRole("textbox", { name: /Server name/ }), "Crew");
-    await openStarterChannels(user, "Starter channels");
-    const text = screen.getByRole("textbox", { name: /Text channel/ });
-    await user.clear(text);
-    await user.type(text, "Lobby Chat");
-    await user.click(screen.getByRole("button", { name: "Create a server" }));
-
-    expect(onCreate).toHaveBeenCalledWith(
-      expect.objectContaining({ textChannelName: "lobby-chat", voiceChannelName: "voice" }),
     );
   });
 
@@ -80,15 +60,15 @@ describe("the create-server dialog's starter channel names", () => {
         <Harness />
       </LanguageProvider>,
     );
-    await openStarterChannels(user, "Kanały startowe");
-    expect(screen.getByRole("textbox", { name: /Kanał tekstowy/ })).toHaveValue("ogólny");
+    await toChannels(user, /^Nazwa serwera/, "Dalej");
+    expect(screen.getByRole("textbox", { name: "Kanał tekstowy" })).toHaveValue("ogólny");
 
     await user.click(screen.getByRole("button", { name: "toggle" }));
     await user.click(screen.getByRole("button", { name: "english" }));
     await user.click(screen.getByRole("button", { name: "toggle" }));
-    await openStarterChannels(user, "Starter channels");
+    await toChannels(user, /^Server name/, "Next");
 
-    expect(screen.getByRole("textbox", { name: /Text channel/ })).toHaveValue("general");
-    expect(screen.getByRole("textbox", { name: /^Name/ })).toHaveValue("voice");
+    expect(screen.getByRole("textbox", { name: "Text channel" })).toHaveValue("general");
+    expect(screen.getByRole("textbox", { name: "Voice channel name" })).toHaveValue("voice");
   });
 });

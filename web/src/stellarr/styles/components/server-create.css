@@ -1,0 +1,263 @@
+@layer components {
+  /*
+   * CREATING A SERVER (`ServerCreateModal`)
+   *
+   * Two columns on one sheet: the form on the sheet's own surface, and a
+   * narrower preview on the deeper surface the settings sheets give their
+   * navigation. The form is three short steps under the first run's step
+   * line, with the buttons at the foot of the form column; the preview shows
+   * the new server where it will live. After creation the same dialog holds
+   * the invite link.
+   *
+   * The wrapper fades rather than flipping `display`, so the name field can
+   * take the focus the moment the dialog mounts.
+   */
+  .nsv-wrap{
+    position:fixed;inset:0;z-index:95;display:flex;align-items:center;justify-content:center;
+    padding:24px;background:var(--scrim-strong);
+    backdrop-filter:blur(12px) saturate(0.9);-webkit-backdrop-filter:blur(12px) saturate(0.9);
+    opacity:0;pointer-events:none;
+    transition:opacity var(--dur-slow) var(--ease-standard);
+  }
+  .nsv-wrap.open{opacity:1;pointer-events:auto}
+  .nsv{
+    --nsv-side:color-mix(in oklab, var(--surface-canvas) 55%, var(--surface-raised));
+    --ui-button-radius:8px;
+    --ui-button-font-size:var(--text-14);
+    --ui-button-font-weight:550;
+    --ui-button-padding-x:16px;
+    --ui-button-gap:7px;
+    --ui-button-secondary-bg:color-mix(in oklab, var(--text) 8%, transparent);
+    --ui-button-secondary-border:transparent;
+    --ui-button-secondary-text:var(--text);
+    --ui-button-secondary-hover-bg:color-mix(in oklab, var(--text) 13%, transparent);
+    --ui-button-secondary-hover-border:transparent;
+    --ui-button-quiet-text:var(--text-muted);
+    --ui-button-quiet-hover-bg:color-mix(in oklab, var(--text) 8%, transparent);
+    --ui-button-disabled-opacity:0.45;
+    display:grid;grid-template-columns:minmax(0,1fr) 380px;
+    width:min(900px, 100%);
+    height:min(620px, calc(100vh - 48px));height:min(620px, calc(100dvh - 48px));
+    background:var(--surface-raised);border:1px solid var(--line);
+    border-radius:18px;overflow:hidden;
+    box-shadow:var(--elev-modal);
+    transform:translateY(10px) scale(0.98);
+    transition:transform var(--dur-slow) var(--ease-standard);
+  }
+  .nsv-wrap.open .nsv{transform:none}
+
+  /* ---------- the form column ---------- */
+  .nsv-form{display:flex;flex-direction:column;min-width:0;min-height:0;padding:26px 32px 24px}
+  .nsv-top{display:flex;align-items:center;justify-content:space-between;gap:12px;flex:none}
+  .nsv-top .dlg-x{margin:-8px -14px 0 0}
+  /* The step scrolls on its own when the window is short; the inline padding
+     keeps the fields' focus rings inside the clip. */
+  .nsv-body{
+    flex:1;min-height:0;overflow-y:auto;overscroll-behavior:contain;
+    margin:0 -4px;padding:0 4px 4px;
+    animation:viewIn var(--dur-base) var(--ease-standard);
+    scrollbar-width:thin;scrollbar-color:var(--line) transparent;
+  }
+  .nsv-title{
+    margin-top:22px;font-size:var(--text-24);font-weight:650;
+    letter-spacing:-0.01em;line-height:1.2;overflow-wrap:anywhere;
+  }
+  .nsv-lead{margin-top:6px;max-width:440px;font-size:var(--text-14);line-height:1.5;color:var(--text-muted)}
+  .nsv-lead + .nsv-field{margin-top:22px}
+
+  .nsv-field{display:flex;flex-direction:column;gap:7px;margin-top:16px;min-width:0}
+  .nsv-label{display:flex;align-items:baseline;gap:6px;font-size:var(--text-13);font-weight:550;color:var(--text)}
+  .nsv-optional{font-weight:400;color:var(--text-faint)}
+  .nsv-input{
+    display:block;width:100%;min-width:0;min-height:42px;padding:10px 14px;
+    background:var(--surface-field);border:1px solid var(--line-subtle);border-radius:10px;
+    font-size:var(--text-14);color:var(--text);outline:none;
+    transition:border-color var(--dur-fast) var(--ease-standard), box-shadow var(--dur-fast) var(--ease-standard);
+  }
+  .nsv-input::placeholder{color:var(--text-faint)}
+  textarea.nsv-input{min-height:76px;resize:none;line-height:1.5}
+  .nsv-input:focus{border-color:var(--accent);box-shadow:0 0 0 3px var(--accent-soft)}
+  .nsv-input[aria-invalid="true"]{border-color:var(--danger-line);box-shadow:0 0 0 3px var(--danger-soft)}
+  .nsv-input:disabled{opacity:0.6}
+  .nsv-hint{font-size:var(--text-13);line-height:1.45;color:var(--text-faint)}
+  .nsv-hint.bad{color:var(--danger-text)}
+
+  /* A channel's field leads with the rail's glyph for its kind. */
+  .nsv-chrow{display:flex;align-items:center;gap:10px}
+  .nsv-chrow .nsv-input{flex:1}
+  .nsv-glyph{
+    width:42px;height:42px;border-radius:10px;flex:none;
+    display:inline-flex;align-items:center;justify-content:center;
+    background:var(--surface-overlay);color:var(--text-muted);font-size:var(--text-16);
+  }
+
+  .nsv-switch{display:flex;align-items:center;gap:14px;margin-top:16px}
+  .nsv-switch-txt{flex:1;min-width:0;display:flex;flex-direction:column;gap:2px}
+  .nsv-switch-txt b{font-size:var(--text-14);font-weight:550}
+  .nsv-switch-txt span{font-size:var(--text-13);line-height:1.4;color:var(--text-faint)}
+
+  /* Who can join: two cards, one ringed. */
+  .nsv-pick{display:flex;flex-direction:column;gap:8px;margin-top:16px}
+  .nsv-opt{
+    display:flex;align-items:flex-start;gap:12px;width:100%;padding:12px 14px;
+    border:1px solid var(--line-subtle);border-radius:10px;background:var(--surface-field);
+    text-align:left;cursor:pointer;
+    transition:border-color var(--dur-fast) var(--ease-standard), background var(--dur-fast) var(--ease-standard);
+  }
+  .nsv-opt:hover:not(:disabled){border-color:var(--line-strong)}
+  .nsv-opt.on{border-color:var(--accent);background:var(--accent-soft)}
+  .nsv-opt:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+  .nsv-opt:disabled{cursor:default;opacity:0.6}
+  .nsv-dot{
+    width:18px;height:18px;margin-top:1px;border-radius:50%;flex:none;
+    display:inline-flex;align-items:center;justify-content:center;
+    border:1.5px solid var(--line-strong);
+  }
+  .nsv-opt.on .nsv-dot{border-color:var(--accent)}
+  .nsv-opt.on .nsv-dot::after{content:"";width:8px;height:8px;border-radius:50%;background:var(--accent)}
+  .nsv-opt-txt{display:flex;flex-direction:column;gap:2px;min-width:0}
+  .nsv-opt-txt b{font-size:var(--text-14);font-weight:550;color:var(--text)}
+  .nsv-opt-txt span{font-size:var(--text-13);line-height:1.4;color:var(--text-faint)}
+
+  .nsv-notify{margin-top:20px}
+  /* The app's segmented control, drawn as a track of two equal halves. */
+  .nsv-seg.ui-segmented[data-variant="pill"]{
+    gap:3px;padding:3px;border-radius:10px;
+    background:var(--surface-field);border-color:var(--line-subtle);
+  }
+  .nsv-seg.ui-segmented[data-variant="pill"] .ui-segmented-item{
+    height:34px;border-radius:7px;font-size:var(--text-14);font-weight:500;color:var(--text-muted);
+  }
+  .nsv-seg.ui-segmented[data-variant="pill"] .ui-segmented-item[data-state="checked"]{
+    background:var(--surface-overlay);color:var(--text);
+  }
+
+  /* After creation: the mascot, the link and the way to copy it. */
+  .nsv-done{display:flex;flex-direction:column;align-items:center;text-align:center;padding-top:24px}
+  .nsv-done .nsv-title{margin-top:14px}
+  .nsv-done .nsv-lead{margin-inline:auto}
+  .nsv-link{display:flex;align-items:center;gap:8px;width:100%;margin-top:22px}
+  .nsv-url{
+    flex:1;display:flex;align-items:center;
+    font-family:var(--font-mono);font-size:var(--text-13);color:var(--text-muted);text-align:left;
+    white-space:nowrap;overflow:hidden;text-overflow:ellipsis;
+  }
+  .nsv-link .ui-button{flex:none;height:42px}
+  .nsv-done-note{margin-top:10px}
+
+  /* The answers. A primary that cannot be pressed yet is drawn neutral, not
+     as a dimmed accent that still reads as live; one that is working keeps
+     its colour. */
+  .nsv-foot{flex:none;display:flex;align-items:center;gap:10px;padding-top:20px}
+  .nsv-gap{flex:1}
+  .nsv-foot .ui-button{flex:none;height:40px}
+  .nsv-foot .ui-button[data-variant="primary"]:disabled:not([aria-busy="true"]){
+    opacity:1;background-color:var(--ui-button-secondary-bg);color:var(--text-faint);
+  }
+  .nsv-foot .ui-button[aria-busy="true"]{opacity:0.75;cursor:progress}
+
+  /* ---------- the preview column ---------- */
+  .nsv-side{
+    display:flex;flex-direction:column;gap:12px;min-width:0;min-height:0;overflow:hidden;
+    padding:26px 24px;background:var(--nsv-side);border-left:1px solid var(--line-subtle);
+  }
+  .nsv-side-cap{font-size:var(--text-12);font-weight:600;color:var(--text-faint)}
+
+  /* A slice of the app: the server rail, then the channel rail of the new
+     server with the rail's captions and rows. */
+  .nsv-mini{
+    display:flex;flex:none;overflow:hidden;
+    border:1px solid var(--line-subtle);border-radius:14px;background:var(--surface-raised);
+  }
+  .nsv-mini-rail{
+    width:62px;flex:none;display:flex;flex-direction:column;align-items:center;gap:8px;
+    padding:12px 0;background:var(--surface-canvas);
+  }
+  [data-scheme="light"] .nsv-mini-rail{background:var(--surface-overlay)}
+  .nsv-mini-tile{
+    position:relative;width:40px;height:40px;border-radius:13px;flex:none;overflow:visible;
+    display:inline-flex;align-items:center;justify-content:center;
+    background:var(--surface-base);color:var(--text-muted);
+    font-size:var(--text-13);font-weight:700;
+  }
+  .nsv-mini-tile img{width:100%;height:100%;border-radius:inherit;object-fit:cover}
+  .nsv-mini-tile.new{background:var(--accent);color:var(--on-accent)}
+  .nsv-mini-tile.new::before{
+    content:"";position:absolute;left:-11px;top:8px;width:4px;height:24px;
+    border-radius:0 3px 3px 0;background:var(--text);
+  }
+  .nsv-mini-ch{flex:1;min-width:0;padding:4px 0 12px}
+  .nsv-mini-name{
+    margin-bottom:4px;padding:12px 14px 10px;border-bottom:1px solid var(--line-subtle);
+    font-size:var(--text-14);font-weight:650;
+    white-space:nowrap;overflow:hidden;text-overflow:ellipsis;
+  }
+  .nsv-mini-name.empty{color:var(--text-faint)}
+  /* The rail's group caption. */
+  .nsv-mini-cap{
+    display:flex;align-items:center;height:30px;padding:10px 12px 0 14px;
+    font-size:var(--text-11);font-weight:600;letter-spacing:0.08em;text-transform:uppercase;
+    color:var(--text-faint);
+  }
+  .nsv-mini-row{
+    display:flex;align-items:center;gap:10px;height:30px;margin:0 6px;padding:0 8px;
+    border-radius:8px;font-size:13.5px;color:var(--text-muted);
+    transition:background var(--dur-base) var(--ease-standard), color var(--dur-base) var(--ease-standard);
+  }
+  .nsv-mini-row.on{background:var(--accent-soft);color:var(--text)}
+  .nsv-mini-glyph{width:16px;flex:none;display:inline-flex;justify-content:center;color:var(--text-faint);font-size:var(--text-15)}
+  .nsv-mini-row.on .nsv-mini-glyph{color:var(--accent-text)}
+  .nsv-mini-label{min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+
+  /* The card a link to the server opens. */
+  .nsv-card{
+    display:flex;flex-direction:column;gap:12px;flex:none;padding:20px;
+    border:1px solid var(--line-subtle);border-radius:14px;background:var(--surface-base);
+  }
+  .nsv-card-kicker{font-size:var(--text-12);font-weight:600;color:var(--text-faint)}
+  .nsv-card-id{display:flex;align-items:center;gap:12px;min-width:0}
+  .nsv-card-name{display:flex;flex-direction:column;gap:2px;min-width:0}
+  .nsv-card-name b{
+    font-size:17px;font-weight:650;line-height:1.2;color:var(--text);
+    white-space:nowrap;overflow:hidden;text-overflow:ellipsis;
+  }
+  .nsv-card-name span{font-size:var(--text-13);color:var(--text-faint)}
+  .nsv-card-about{font-size:var(--text-13);line-height:1.5;color:var(--text-muted);overflow-wrap:anywhere}
+  .nsv-card-about.empty{color:var(--text-faint)}
+  /* Drawn as the button the page has; it does nothing here. */
+  .nsv-card-join{
+    display:flex;align-items:center;justify-content:center;height:38px;border-radius:8px;
+    background:var(--accent);color:var(--on-accent);font-size:var(--text-14);font-weight:550;
+  }
+
+  /* Phone: one column on the whole screen, as the settings sheets are, and
+     the answers stacked full width with the harmless one nearest the thumb,
+     as the confirmation sheet orders them. */
+  @media (max-width:767px){
+    .nsv-wrap{
+      padding:env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left);
+      align-items:stretch;justify-content:stretch;
+    }
+    .nsv{
+      grid-template-columns:minmax(0,1fr);
+      width:100%;height:100%;border:none;border-radius:0;
+    }
+    .nsv-side{display:none}
+    .nsv-form{padding:12px 16px max(16px, env(safe-area-inset-bottom))}
+    .nsv-top .dlg-x{margin:0 -8px 0 0}
+    .nsv-title{margin-top:16px;font-size:var(--text-20)}
+    .nsv-input{min-height:44px;font-size:var(--text-16)}
+    .nsv-glyph{width:44px;height:44px}
+    .nsv-seg.ui-segmented[data-variant="pill"] .ui-segmented-item{height:40px}
+    .nsv-link{flex-direction:column;align-items:stretch}
+    .nsv-link .ui-button{height:44px}
+    .nsv-foot{flex-direction:column-reverse;align-items:stretch;gap:8px;padding-top:16px}
+    .nsv-gap{display:none}
+    .nsv-foot .ui-button{width:100%;height:auto;min-height:44px}
+  }
+
+  @media (prefers-reduced-motion:reduce){
+    .nsv-wrap,.nsv,.nsv-input,.nsv-opt,.nsv-mini-row{transition:none}
+    .nsv-body{animation:none}
+  }
+}

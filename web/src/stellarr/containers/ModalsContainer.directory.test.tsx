@@ -30,7 +30,7 @@ describe("ModalsContainer: creating a server", () => {
     harness.ui.modal = "server-create";
     render(<ModalsContainer />);
     await user.type(screen.getByRole("textbox", { name: new RegExp(`^${t("shell.serverName")}`) }), "Garage");
-    await user.click(screen.getByRole("button", { name: t("shell.createServer") }));
+    await user.click(screen.getByRole("button", { name: t("shell.createServerNow") }));
   }
 
   it("creates the server with its starter channels and switches to it", async () => {
