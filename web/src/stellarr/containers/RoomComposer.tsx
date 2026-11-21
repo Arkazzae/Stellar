@@ -6,7 +6,7 @@ import type { Translator } from "@/i18n";
 import { captureMicrophone, MicCaptureError } from "@/lib/voice/capture/micPipeline";
 import { VoiceMessageCaptureError } from "@/ports";
 import {
-  useChat,
+  useChatRoom,
   useDirectory,
   useEmoji,
   useLanguage,
@@ -25,7 +25,7 @@ interface RoomComposerProps {
  * nor offers to cancel one.
  */
 export function RoomComposer({ channelName, threadRootId }: RoomComposerProps) {
-  const chat = useChat();
+  const chat = useChatRoom();
   // The operator can turn GIFs off in Cockpit, and each person for themselves
   // in their settings; either way the composer offers no GIF button.
   const gifsOffered = useGifsEnabled();

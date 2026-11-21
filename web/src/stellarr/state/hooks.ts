@@ -15,7 +15,11 @@ export {
 export {
   useChatContext as useChat,
   useChatRailContext as useChatRail,
+  useChatRoomContext as useChatRoom,
+  useChatTranscriptContext as useChatTranscript,
   type ChatRailValue,
+  type ChatRoomValue,
+  type ChatTranscriptValue,
   type ChatValue,
 } from "./ChatProvider";
 export {

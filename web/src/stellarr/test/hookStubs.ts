@@ -259,8 +259,10 @@ export function setStubs(patch: {
 export const hooksModule = {
   useAccount: () => stubs.account,
   useChat: () => stubs.chat,
-  // The rail's slice is a part of the chat's value.
+  // Each slice of the chat is a part of its whole value.
   useChatRail: () => stubs.chat,
+  useChatRoom: () => stubs.chat,
+  useChatTranscript: () => stubs.chat,
   useDirectory: () => stubs.directory,
   useEmoji: () => stubs.emoji,
   useEncryption: () => stubs.encryption,

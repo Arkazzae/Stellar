@@ -135,11 +135,13 @@ export function useThreadPanel({
     [messages, locale],
   );
 
-  const threadReply = useMemo(() => {
-    if (rootId === null) return null;
-    const root = messages.find((message) => message.id === rootId);
-    return root === undefined ? null : messageReference(root, locale);
-  }, [messages, locale, rootId]);
+  // Made from the root itself, so a message elsewhere in the channel leaves
+  // the reply target, and with it the composer's send, as they were.
+  const root = rootId === null ? undefined : messages.find((message) => message.id === rootId);
+  const threadReply = useMemo(
+    () => (root === undefined ? null : messageReference(root, locale)),
+    [root, locale],
+  );
 
   const cancelReply = useCallback(() => setReplyingTo(null), []);
 

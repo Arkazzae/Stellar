@@ -13,6 +13,7 @@ import type { PinnedMessageVM } from "@/components/room/panels/channelPanelModel
 import type { ComposerChip } from "@/components/room/composer/ComposerChips";
 import type { MessageAction } from "@/components/room/transcript/MessageToolbar";
 import type { TranscriptSectionVM } from "@/components/room/transcript/Transcript";
+import { useStableHandler } from "@/hooks/useStableHandler";
 import { buildThreadTranscript, buildTranscript } from "@/lib/format/format";
 import { findFirstUnreadGroup } from "@/lib/messages/unread";
 import type {
@@ -28,7 +29,6 @@ import {
   memberFaces,
   mentionTargets,
   pinnedRows,
-  presentTranscript,
   type PresentationContext,
 } from "./chat/present";
 import type { PendingIds, RestoredWindows, SyncCursors } from "./chat/shared";
@@ -55,13 +55,15 @@ import { useUiContext } from "./UiProvider";
 export interface ChatValue {
   channelId: string | null;
   sections: TranscriptSectionVM[];
+  /** The thread beside the transcript, or null; its messages are `threadSections`. */
   thread: {
     rootId: string;
-    sections: TranscriptSectionVM[];
     /** The room applies this once for each new open revision. */
     initialExpanded: boolean;
     openRevision: number;
   } | null;
+  /** The open thread's messages, empty while no thread is open. */
+  threadSections: TranscriptSectionVM[];
   /** Complete per-channel catalogues used by the dropdowns in the left rail. */
   threadsByChannel: Readonly<Record<string, ThreadSummary[]>>;
   /** The rail row waiting for its complete conversation read, or null. */
@@ -148,28 +150,48 @@ export interface ChatValue {
   revealMessage: (message: Message) => void;
 }
 
-/**
- * What the channel rail draws and does: the badges, the thread lists and the
- * thread on screen. It changes with those alone, so a message in the open
- * channel, which counts on no badge, leaves the rail as it is.
+/*
+ * The chat reaches three audiences, each through a value of its own that
+ * changes only with what that audience draws: a message in the open channel
+ * changes the transcript's, one elsewhere the rail's badges, and a reply bar
+ * or a queued file the room's.
  */
-export type ChatRailValue = Pick<
-  ChatValue,
+
+type RailKey =
   | "threadsByChannel"
   | "openingThreadId"
   | "openThread"
   | "closeThread"
   | "unreadByChannel"
-  | "markChannelRead"
-> & {
+  | "markChannelRead";
+
+type TranscriptKey =
+  | "sections"
+  | "threadSections"
+  | "firstUnreadGroupId"
+  | "loading"
+  | "loadingOlder"
+  | "hasOlder"
+  | "loadOlder";
+
+/** What the channel rail draws and does: the badges, the thread lists and the thread on screen. */
+export type ChatRailValue = Pick<ChatValue, RailKey> & {
   /** The root of the thread beside the transcript, or null. */
   activeThreadId: string | null;
 };
 
-const ChatContext = createContext<ChatValue | null>(null);
+/** The messages of the open channel and of the open thread, with their paging. */
+export type ChatTranscriptValue = Pick<ChatValue, TranscriptKey>;
+
+/** Everything the room draws around its transcripts, and every action on a message. */
+export type ChatRoomValue = Omit<ChatValue, Exclude<RailKey, "closeThread"> | TranscriptKey>;
+
 const ChatRailContext = createContext<ChatRailValue | null>(null);
+const ChatRoomContext = createContext<ChatRoomValue | null>(null);
+const ChatTranscriptContext = createContext<ChatTranscriptValue | null>(null);
 
 const NO_PINS: PinnedMessageVM[] = [];
+const NO_SECTIONS: TranscriptSectionVM[] = [];
 
 export function ChatProvider({ children }: { children: ReactNode }) {
   const ports = usePorts();
@@ -343,14 +365,20 @@ export function ChatProvider({ children }: { children: ReactNode }) {
         ? null
         : {
             rootId: threadRootId,
-            sections: presentTranscript(
-              buildThreadTranscript(messages, threadRootId, new Date(), locale),
-              view,
-            ),
             initialExpanded: threadInitialExpanded,
             openRevision: threadOpenRevision,
           },
-    [messages, locale, view, threadRootId, threadInitialExpanded, threadOpenRevision],
+    [threadRootId, threadInitialExpanded, threadOpenRevision],
+  );
+  // A presenter of its own, as the channel has: a message outside the thread
+  // hands its sections back as they were, and a reply reuses the rows above it.
+  const presentThread = useMemo(() => createTranscriptPresenter(), []);
+  const threadSections = useMemo(
+    () =>
+      threadRootId === null
+        ? NO_SECTIONS
+        : presentThread(buildThreadTranscript(messages, threadRootId, new Date(), locale), view),
+    [messages, locale, view, threadRootId, presentThread],
   );
 
   const firstUnreadGroupId = useMemo(
@@ -385,6 +413,15 @@ export function ChatProvider({ children }: { children: ReactNode }) {
     [],
   );
 
+  // Each of these finds its message among the loaded ones, so each is made
+  // anew with every arrival; the room holds one function for its life.
+  const saveEdit = useStableHandler(edit.saveEdit);
+  const startReply = useStableHandler(panel.startReply);
+  const runAction = useStableHandler(actions.runAction);
+  const notifyTyping = useCallback(() => {
+    if (channelId !== null) ports.typing.notifyTyping(channelId);
+  }, [ports, channelId]);
+
   const { openingThreadId, openThread, closeThread } = panel;
   const { unreadByChannel, markChannelRead } = reads;
   const rail = useMemo<ChatRailValue>(
@@ -408,26 +445,21 @@ export function ChatProvider({ children }: { children: ReactNode }) {
     ],
   );
 
-  const value = useMemo<ChatValue>(
+  const pinnedLoading = channelId !== null && data.pinsLoaded[channelId] !== true;
+  const room = useMemo<ChatRoomValue>(
     () => ({
-      ...rail,
       channelId,
-      sections,
       thread,
-      firstUnreadGroupId,
-      loading:
-        channelId !== null && data.loaded[channelId] !== true && data.restored[channelId] !== true,
-      loadingOlder: channelId !== null && data.loadingOlder[channelId] === true,
-      hasOlder: channelId !== null && typeof data.nextCursor[channelId] === "string",
+      closeThread,
       chips: queue.chips,
       pinned: channelId === null ? NO_PINS : pinned,
-      pinnedLoading: channelId !== null && data.pinsLoaded[channelId] !== true,
+      pinnedLoading,
       pinError: actions.pinError,
       replyingTo: panel.replyingTo,
       editing: edit.editing,
-      saveEdit: edit.saveEdit,
+      saveEdit,
       cancelEdit: edit.cancelEdit,
-      startReply: panel.startReply,
+      startReply,
       cancelReply: panel.cancelReply,
       ownSendToken: composer.ownSendToken,
       send: composer.send,
@@ -437,36 +469,49 @@ export function ChatProvider({ children }: { children: ReactNode }) {
       retryChip: queue.retryChip,
       removeChip: queue.removeChip,
       reorderChips: queue.reorderChips,
-      notifyTyping: () => {
-        if (channelId !== null) ports.typing.notifyTyping(channelId);
-      },
-      loadOlder,
+      notifyTyping,
       react: actions.react,
-      runAction: actions.runAction,
+      runAction,
       revealMessage,
     }),
     [
-      rail,
       channelId,
-      sections,
       thread,
-      data,
-      panel,
-      firstUnreadGroupId,
+      closeThread,
       queue,
-      ports,
       pinned,
-      actions,
-      edit,
+      pinnedLoading,
+      actions.pinError,
+      actions.react,
+      panel.replyingTo,
+      panel.cancelReply,
+      edit.editing,
+      edit.cancelEdit,
+      saveEdit,
+      startReply,
       composer,
-      loadOlder,
+      notifyTyping,
+      runAction,
       revealMessage,
     ],
   );
 
+  const loading =
+    channelId !== null && data.loaded[channelId] !== true && data.restored[channelId] !== true;
+  const loadingOlder = channelId !== null && data.loadingOlder[channelId] === true;
+  const hasOlder = channelId !== null && typeof data.nextCursor[channelId] === "string";
+  const transcript = useMemo<ChatTranscriptValue>(
+    () => ({ sections, threadSections, firstUnreadGroupId, loading, loadingOlder, hasOlder, loadOlder }),
+    [sections, threadSections, firstUnreadGroupId, loading, loadingOlder, hasOlder, loadOlder],
+  );
+
   return (
     <ChatRailContext.Provider value={rail}>
-      <ChatContext.Provider value={value}>{children}</ChatContext.Provider>
+      <ChatRoomContext.Provider value={room}>
+        <ChatTranscriptContext.Provider value={transcript}>
+          {children}
+        </ChatTranscriptContext.Provider>
+      </ChatRoomContext.Provider>
     </ChatRailContext.Provider>
   );
 }
@@ -478,10 +523,22 @@ function provided<T>(value: T | null): T {
   return value;
 }
 
-export function useChatContext(): ChatValue {
-  return provided(useContext(ChatContext));
-}
-
 export function useChatRailContext(): ChatRailValue {
   return provided(useContext(ChatRailContext));
+}
+
+export function useChatRoomContext(): ChatRoomValue {
+  return provided(useContext(ChatRoomContext));
+}
+
+export function useChatTranscriptContext(): ChatTranscriptValue {
+  return provided(useContext(ChatTranscriptContext));
+}
+
+/** The whole chat, for a reader that needs all of it: it renders with any change to any part. */
+export function useChatContext(): ChatValue {
+  const rail = useChatRailContext();
+  const room = useChatRoomContext();
+  const transcript = useChatTranscriptContext();
+  return useMemo(() => ({ ...rail, ...room, ...transcript }), [rail, room, transcript]);
 }
