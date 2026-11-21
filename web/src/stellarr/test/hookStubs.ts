@@ -1,5 +1,6 @@
 import { vi } from "vitest";
 
+import { IDLE_SOUNDBOARD } from "@/components/voice/soundboardLive";
 import type { Ports } from "@/ports";
 import type {
   AccountValue,
@@ -149,6 +150,9 @@ function defaults(): HookStubs {
         subscribe: () => () => {},
         update: vi.fn(),
       },
+      soundboard: {
+        live: IDLE_SOUNDBOARD,
+      },
       encryption: {
         listDevices: vi.fn(async () => []),
         safetyCode: vi.fn(async () => null),
@@ -198,6 +202,15 @@ function defaults(): HookStubs {
       call: null,
       channelId: null,
       sounds: [],
+      soundboard: {
+        sounds: [],
+        settings: { everyoneCanPlay: true, rateLimited: true },
+        canManage: false,
+        canPlay: true,
+        supported: true,
+        loading: false,
+        error: null,
+      },
       soundboardEnabled: false,
       cameraSupported: false,
       applySpeaking: vi.fn((people: unknown[]) => people),

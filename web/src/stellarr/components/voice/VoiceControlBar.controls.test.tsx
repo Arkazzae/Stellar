@@ -284,6 +284,7 @@ describe("VoiceControlBar compact menu", () => {
     expect(onPlaySound).toHaveBeenCalledWith("drum");
     expect(compactMenu()).not.toHaveAttribute("hidden");
 
+    await user.click(view.getByRole("button", { name: "Głośność soundboardu" }));
     fireEvent.change(view.getByRole("slider", { name: "Głośność soundboardu" }), {
       target: { value: "30" },
     });

@@ -31,6 +31,13 @@ const mocks = vi.hoisted(() => ({
   profile: { toggle: vi.fn() },
   ports: {
     voiceSettings: { subscribe: () => () => {}, getSnapshot: () => ({}), update: vi.fn() },
+    soundboard: {
+      live: {
+        subscribe: () => () => undefined,
+        playing: () => [],
+        cooldownSeconds: () => 0,
+      },
+    },
     chat: { listIndexed: async () => ({ messages: [], nextCursor: null }) },
   },
 }));

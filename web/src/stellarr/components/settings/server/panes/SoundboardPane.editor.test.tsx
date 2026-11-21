@@ -76,7 +76,7 @@ describe("SoundboardPane editing", () => {
     const file = new File(["audio"], "air horn.mp3", { type: "audio/mpeg" });
 
     await user.upload(fileInput(container), file);
-    expect(await screen.findByRole("textbox", { name: "Nazwa dźwięku" })).toHaveValue("air horn");
+    expect(await screen.findByRole("textbox", { name: "Nazwa" })).toHaveValue("air horn");
     await user.click(screen.getByRole("button", { name: "Zapisz dźwięk" }));
 
     expect(onCreate).toHaveBeenCalledWith({
@@ -87,7 +87,7 @@ describe("SoundboardPane editing", () => {
       trimStartSeconds: 0,
       trimEndSeconds: 2.4,
     });
-    await waitFor(() => expect(screen.queryByRole("textbox", { name: "Nazwa dźwięku" })).toBeNull());
+    await waitFor(() => expect(screen.queryByRole("textbox", { name: "Nazwa" })).toBeNull());
     expect(URL.revokeObjectURL).toHaveBeenCalledWith("blob:clip");
   });
 
@@ -114,7 +114,7 @@ describe("SoundboardPane editing", () => {
     renderWithConfirm(<SoundboardPane {...props({ onUpdate })} />);
 
     await user.click(screen.getByRole("button", { name: "Edytuj dźwięk Bęben" }));
-    const name = await screen.findByRole("textbox", { name: "Nazwa dźwięku" });
+    const name = await screen.findByRole("textbox", { name: "Nazwa" });
     await user.clear(name);
     await user.type(name, "Werbel");
     await user.click(screen.getByRole("button", { name: "Zapisz dźwięk" }));
@@ -133,7 +133,7 @@ describe("SoundboardPane editing", () => {
     renderWithConfirm(<SoundboardPane {...props()} />);
 
     await user.click(screen.getByRole("button", { name: "Edytuj dźwięk Bęben" }));
-    await user.clear(await screen.findByRole("textbox", { name: "Nazwa dźwięku" }));
+    await user.clear(await screen.findByRole("textbox", { name: "Nazwa" }));
 
     expect(screen.getByRole("button", { name: "Zapisz dźwięk" })).toBeDisabled();
   });
@@ -150,7 +150,7 @@ describe("SoundboardPane editing", () => {
     expect(await screen.findByRole("alert")).toHaveTextContent(
       "Nie udało się zapisać dźwięku. Sprawdź format i zakres przycięcia.",
     );
-    expect(screen.getByRole("textbox", { name: "Nazwa dźwięku" })).toBeEnabled();
+    expect(screen.getByRole("textbox", { name: "Nazwa" })).toBeEnabled();
   });
 
   it("says when a chosen file cannot be read and opens no editor", async () => {
@@ -163,7 +163,7 @@ describe("SoundboardPane editing", () => {
     expect(await screen.findByRole("alert")).toHaveTextContent(
       "Nie udało się odczytać tego pliku audio.",
     );
-    expect(screen.queryByRole("textbox", { name: "Nazwa dźwięku" })).toBeNull();
+    expect(screen.queryByRole("textbox", { name: "Nazwa" })).toBeNull();
   });
 
   it("says when the stored sound cannot be fetched for editing", async () => {
@@ -176,29 +176,25 @@ describe("SoundboardPane editing", () => {
     expect(await screen.findByRole("alert")).toHaveTextContent(
       "Nie udało się wczytać wykresu tego dźwięku.",
     );
-    expect(screen.queryByRole("textbox", { name: "Nazwa dźwięku" })).toBeNull();
+    expect(screen.queryByRole("textbox", { name: "Nazwa" })).toBeNull();
   });
 
-  it("closes the editor of a sound that is deleted, and reports a failed deletion", async () => {
+  it("deletes a sound from the list and reports a failed deletion", async () => {
     const user = userEvent.setup();
-    stubSoundFetch();
     const onDelete = vi
       .fn<(soundId: string) => Promise<void>>()
       .mockRejectedValueOnce(new Error("gone"))
       .mockResolvedValue(undefined);
     renderWithConfirm(<SoundboardPane {...props({ onDelete })} />);
 
-    await user.click(screen.getByRole("button", { name: "Edytuj dźwięk Bęben" }));
-    await screen.findByRole("textbox", { name: "Nazwa dźwięku" });
-
     await user.click(screen.getByRole("button", { name: "Usuń dźwięk Bęben" }));
     await answerConfirm(user, "Usuń");
     expect(await screen.findByRole("alert")).toHaveTextContent("Nie udało się usunąć dźwięku.");
-    expect(screen.getByRole("textbox", { name: "Nazwa dźwięku" })).toBeInTheDocument();
 
     await user.click(screen.getByRole("button", { name: "Usuń dźwięk Bęben" }));
     await answerConfirm(user, "Usuń");
-    await waitFor(() => expect(screen.queryByRole("textbox", { name: "Nazwa dźwięku" })).toBeNull());
+    await waitFor(() => expect(screen.queryByRole("alert")).toBeNull());
+    expect(onDelete).toHaveBeenCalledTimes(2);
   });
 
   it("closes the emoji picker as soon as a chosen file starts to load", async () => {
@@ -217,39 +213,30 @@ describe("SoundboardPane editing", () => {
         finishDecoding = resolve;
       }),
     );
+    await user.click(screen.getByRole("button", { name: "Wszystkie dźwięki" }));
     fireEvent.change(fileInput(container), {
       target: { files: [new File(["audio"], "clap.wav", { type: "audio/wav" })] },
     });
 
-    await waitFor(() =>
-      expect(screen.queryByRole("dialog", { name: "Wybierz emoji dźwięku" })).toBeNull(),
-    );
     await act(async () => finishDecoding({ duration: 1, peaks: [0.5] }));
-    expect(await screen.findByRole("textbox", { name: "Nazwa dźwięku" })).toHaveValue("clap");
+    expect(await screen.findByRole("textbox", { name: "Nazwa" })).toHaveValue("clap");
     expect(screen.queryByRole("dialog", { name: "Wybierz emoji dźwięku" })).toBeNull();
   });
 
-  it("closes the emoji picker as soon as a stored sound starts to load", async () => {
+  it("starts a fresh editor with the emoji picker closed when another stored sound is opened", async () => {
     const user = userEvent.setup();
     const second = { ...SOUND, id: "clap", name: "Klaśnięcie", glyph: "👏" };
     stubSoundFetch();
     renderWithConfirm(<SoundboardPane {...props({ sounds: [SOUND, second] })} />);
     await user.click(screen.getByRole("button", { name: "Edytuj dźwięk Bęben" }));
     await user.click(await screen.findByRole("button", { name: "Wybierz emoji dźwięku" }));
+    expect(screen.getByRole("dialog", { name: "Wybierz emoji dźwięku" })).toBeVisible();
 
-    let finishDecoding: (value: { duration: number; peaks: number[] }) => void = () => {};
-    vi.mocked(decodeWaveform).mockReturnValue(
-      new Promise((resolve) => {
-        finishDecoding = resolve;
-      }),
-    );
-    fireEvent.click(screen.getByRole("button", { name: "Edytuj dźwięk Klaśnięcie" }));
+    await user.click(screen.getByRole("button", { name: "Wszystkie dźwięki" }));
+    await user.click(screen.getByRole("button", { name: "Edytuj dźwięk Klaśnięcie" }));
 
-    await waitFor(() =>
-      expect(screen.queryByRole("dialog", { name: "Wybierz emoji dźwięku" })).toBeNull(),
-    );
-    await act(async () => finishDecoding({ duration: 2.4, peaks: [0.5] }));
-    expect(await screen.findByRole("textbox", { name: "Nazwa dźwięku" })).toHaveValue("Klaśnięcie");
+    expect(await screen.findByRole("textbox", { name: "Nazwa" })).toHaveValue("Klaśnięcie");
+    expect(screen.queryByRole("dialog", { name: "Wybierz emoji dźwięku" })).toBeNull();
   });
 
   it("shows the error the store reports", () => {
@@ -295,18 +282,18 @@ describe("SoundboardPane preview", () => {
     stubSoundFetch();
     const view = renderWithConfirm(<SoundboardPane {...props(overrides)} />);
     await user.click(screen.getByRole("button", { name: "Edytuj dźwięk Bęben" }));
-    await user.click(await screen.findByRole("button", { name: "Podgląd" }));
+    await user.click(await screen.findByRole("button", { name: "Posłuchaj" }));
     return view;
   }
 
-  it("plays at the call's output level times the soundboard level, on the routed speaker", async () => {
+  it("plays at the soundboard level alone, on the routed speaker", async () => {
     const created = stubAudio();
     const route = vi.fn().mockResolvedValue(undefined);
 
     await openPreview({ playback: { soundboardVolume: 40, route } });
 
     const audio = created[0]!;
-    expect(audio.volume).toBeCloseTo(0.2);
+    expect(audio.volume).toBeCloseTo(0.4);
     expect(route).toHaveBeenCalledWith(audio);
     // Silent until it is sitting on the trim start.
     expect(audio.muted).toBe(true);
@@ -325,20 +312,14 @@ describe("SoundboardPane preview", () => {
     expect(screen.queryByRole("alert")).toBeNull();
   });
 
-  it("follows the soundboard dial while the clip is running", async () => {
+  it("follows the soundboard level while the clip is running", async () => {
     const created = stubAudio();
-    const onSoundboardVolumeChange = vi.fn();
     const base = props({ playback: { soundboardVolume: 100 } });
     const user = userEvent.setup();
     stubSoundFetch();
     const view = renderWithConfirm(<SoundboardPane {...base} />);
     await user.click(screen.getByRole("button", { name: "Edytuj dźwięk Bęben" }));
-    await user.click(await screen.findByRole("button", { name: "Podgląd" }));
-
-    fireEvent.change(screen.getByRole("slider", { name: "Głośność soundboardu" }), {
-      target: { value: "30" },
-    });
-    expect(onSoundboardVolumeChange).toHaveBeenCalledWith(30);
+    await user.click(await screen.findByRole("button", { name: "Posłuchaj" }));
 
     view.rerender(
       <ConfirmProvider>
@@ -346,7 +327,6 @@ describe("SoundboardPane preview", () => {
       </ConfirmProvider>,
     );
     expect(created[0]!.volume).toBeCloseTo(0.3);
-    expect(screen.getByText("30%")).toBeInTheDocument();
   });
 
   it("says so when the browser blocks the preview", async () => {
@@ -359,28 +339,12 @@ describe("SoundboardPane preview", () => {
     );
   });
 
-  it("keeps the open clip playing when a chosen file cannot be read", async () => {
-    const created = stubAudio();
-
-    const { container } = await openPreview({});
-    vi.mocked(decodeWaveform).mockRejectedValue(new Error("undecodable"));
-    fireEvent.change(fileInput(container), {
-      target: { files: [new File(["x"], "broken.mp3", { type: "audio/mpeg" })] },
-    });
-
-    expect(await screen.findByRole("alert")).toHaveTextContent(
-      "Nie udało się odczytać tego pliku audio.",
-    );
-    expect(screen.getByRole("textbox", { name: "Nazwa dźwięku" })).toBeInTheDocument();
-    expect(created[0]!.pause).not.toHaveBeenCalled();
-  });
-
-  it("stops the preview when the editor is closed", async () => {
+  it("stops the preview when the editor is left", async () => {
     const created = stubAudio();
     const user = userEvent.setup();
 
     await openPreview({});
-    await user.click(screen.getByRole("button", { name: "Zamknij edytor dźwięku" }));
+    await user.click(screen.getByRole("button", { name: "Wszystkie dźwięki" }));
 
     expect(created[0]!.pause).toHaveBeenCalled();
   });

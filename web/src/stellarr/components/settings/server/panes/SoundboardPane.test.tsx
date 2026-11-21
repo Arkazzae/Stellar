@@ -61,10 +61,11 @@ describe("SoundboardPane", () => {
   it("presents sounds as a management list with timing and named actions", () => {
     renderWithConfirm(<SoundboardPane {...props()} />);
 
-    expect(screen.getByRole("region", { name: "Dźwięki serwera" })).toHaveTextContent(
-      "1/48",
+    expect(screen.getByRole("region", { name: "Dźwięki" }).querySelector(".asset-count")).toHaveTextContent(
+      /^1$/,
     );
-    expect(screen.getByText("1,6 s · źródło 2,4 s")).toBeVisible();
+    expect(screen.getByText("1,6 s")).toBeVisible();
+    expect(screen.getByRole("button", { name: "Posłuchaj: Bęben" })).toBeVisible();
     expect(screen.getByRole("button", { name: "Edytuj dźwięk Bęben" })).toBeVisible();
     expect(screen.getByRole("button", { name: "Usuń dźwięk Bęben" })).toBeVisible();
   });
@@ -183,7 +184,7 @@ describe("SoundboardPane", () => {
     const user = userEvent.setup();
     renderWithConfirm(<SoundboardPane {...props()} />);
     await user.click(screen.getByRole("button", { name: "Edytuj dźwięk Bęben" }));
-    await user.click(await screen.findByRole("button", { name: "Podgląd" }));
+    await user.click(await screen.findByRole("button", { name: "Posłuchaj" }));
     const audio = created[0]!;
 
     act(() => audio.onloadedmetadata?.());

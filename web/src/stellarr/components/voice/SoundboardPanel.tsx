@@ -27,7 +27,7 @@ export interface SoundboardPanelProps {
   lead?: ReactNode;
 }
 
-/** "Następny za 3 s" while your own cooldown runs. It alone re-renders each second. */
+/** "Next in 3s" while your own cooldown runs. It alone re-renders each second. */
 function Countdown({ live }: { live: SoundboardLive }) {
   const { t } = useLanguage();
   const seconds = useSyncExternalStore(live.subscribe, live.cooldownSeconds, live.cooldownSeconds);
