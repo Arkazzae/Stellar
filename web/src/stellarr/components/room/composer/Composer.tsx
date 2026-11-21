@@ -31,6 +31,26 @@ import { indentCode, type RangeEdit } from "./codeEditing";
 
 export type { MentionCandidate };
 
+/** What Tab would stop at inside the composer. */
+const FOCUSABLE =
+  'button:not(:disabled), input:not(:disabled):not([type="hidden"]), textarea:not(:disabled), [tabindex]:not([tabindex="-1"])';
+
+/**
+ * Moves focus to the control before or after `field` in the composer, as Tab
+ * and Shift+Tab would. Controls that are not drawn, such as the phone's
+ * disclosure on a desktop, are passed over where the browser can tell.
+ */
+function focusBeside(field: HTMLTextAreaElement, direction: 1 | -1) {
+  const form = field.form;
+  if (form === null) return;
+  const controls = Array.from(form.querySelectorAll<HTMLElement>(FOCUSABLE)).filter(
+    (control) =>
+      control === field ||
+      (!control.hidden && (control.checkVisibility?.() ?? true)),
+  );
+  controls[controls.indexOf(field) + direction]?.focus();
+}
+
 function countLines(text: string): number {
   let lines = 1;
   for (let at = text.indexOf("\n"); at !== -1; at = text.indexOf("\n", at + 1)) lines += 1;
@@ -134,8 +154,9 @@ export function Composer({
   const codeHelpId = useId();
   const codeCounterId = useId();
   /**
-   * Set by Escape in code mode, where Tab indents: the next Tab then leaves
-   * the field as it would anywhere else, so the keyboard is never trapped.
+   * Set by Escape in code mode, where Tab indents: the next Tab or Shift+Tab
+   * then moves to the control after or before the field instead, so the
+   * keyboard is never trapped in it.
    */
   const releaseTab = useRef(false);
   /** An input method is composing a word in the field. */
@@ -324,12 +345,14 @@ export function Composer({
       return;
     }
     if (key === "Tab" && !event.ctrlKey && !event.metaKey && !event.altKey) {
-      if (releaseTab.current) {
-        releaseTab.current = false;
-        return;
-      }
       event.preventDefault();
       const element = event.currentTarget;
+      if (releaseTab.current) {
+        releaseTab.current = false;
+        // The shell keeps Tab from walking the page, so the move is made here.
+        focusBeside(element, event.shiftKey ? -1 : 1);
+        return;
+      }
       const edit = indentCode(
         element.value,
         element.selectionStart,
