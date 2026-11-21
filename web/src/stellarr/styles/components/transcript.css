@@ -5,10 +5,18 @@
    * from `.view`, and exists so the catch-up button has something to be
    * positioned against — the scroller itself cannot hold it, because anything
    * inside it scrolls away with the messages.
+   *
+   * Contained for layout and size. Its box comes from the pane around it in
+   * the room, the thread panel and the chat beside a call, never from the
+   * messages, so the browser can lay the transcript out on its own: without
+   * it each keystroke in the composer laid out the room, and the room walked
+   * every loaded message. Paint is left alone, because the catch-up button's
+   * shadow falls past the bottom edge.
    */
   .transcript-area{
     flex:1;min-height:0;min-width:0;position:relative;
     display:flex;flex-direction:column;
+    contain:layout size;
   }
   /*
    * The scroller. A column, so that a transcript too short to scroll can sit
