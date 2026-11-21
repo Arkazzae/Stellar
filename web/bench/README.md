@@ -66,20 +66,9 @@ The fixture generates deterministic multi-day histories (~630 messages/day, mixe
 12. Query the browser accessibility tree for that offscreen row.
 13. Verify total DOM row, group, and message entry counts.
 
-### Representative results (10,000 messages, macOS arm64, headless Chrome 144 at `1280×900`)
+### Architectural invariants verified by the benchmark
 
-| Metric (10,000 messages) | Before optimization | After optimization |
-| --- | ---: | ---: |
-| Cold mount (producer + render) | 3,347 ms | 3,050 ms |
-| Append 200 (producer / React commit / total) | 234 / 497 / 883 ms | 13 / 52 / 149 ms |
-| Prepend 200 (producer / React commit / total) | 229 / 434 / 940 ms | 17 / 45 / 168 ms |
-| Scroll frame interval (p50 / p95) | 54.2 / 91.4 ms | 29.4 / 48.6 ms |
-| Scroll frames > 50 ms | 52 of 80 | 3 of 80 |
-| DOM rows / groups / entries | 10,448 / 10,430 / 10,430 | 10,448 / 10,430 / 10,430 |
-
-Key architectural decisions validated by this benchmark:
-
-- **CSS layout and style containment**: `.transcript-inner > [data-row-id]` applies `contain: layout style` (omitting `paint` so the floating message toolbar can overhang its row). Hover, reaction, or edit mutations inside one row no longer invalidate layout across all 10,000 siblings.
+- **CSS layout and style containment**: `.transcript-inner > [data-row-id]` applies `contain: layout style` (omitting `paint` so the floating message toolbar can overhang its row). Hover, reaction, or edit mutations inside one row do not invalidate layout across sibling rows.
 - **Structural memoization**: `Transcript` renders a memoized `MessageRow` while `createTranscriptPresenter` reuses unchanged group and body references across appends and prepends, even when parent action callbacks change identity on every render.
 - **Full DOM retention without virtualization or `content-visibility: auto`**: Keeping all loaded rows in the DOM preserves native find-in-page, full accessibility tree inspection, and exact scroll anchoring.
 

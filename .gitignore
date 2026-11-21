@@ -82,6 +82,7 @@ coverage.cobertura.xml
 # Documentation site (docs/): VitePress build output and cache.
 /docs/.vitepress/dist/
 /docs/.vitepress/cache/
+/web/bench/results/
 
 # Copies that artifacts/assemble.mjs makes of artifacts/files/ and of the
 # recipes' outputs at the paths artifacts/manifest.json serves them under. The
