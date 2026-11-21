@@ -86,6 +86,9 @@
   .sv-item.danger:hover{background:var(--danger-soft)}
   /* A deletion this member may see but not do stays in place, unavailable. */
   .sv-item:disabled{opacity:0.45;cursor:default;pointer-events:none}
+  /* Deleting what the settings belong to is red at the foot, where Log out
+     stays quiet until it is pointed at. */
+  .us-out .sv-item.danger.destroy,.us-out .sv-item.danger.destroy .sv-ico{color:var(--danger-text)}
   .sv-main{grid-column:2;grid-row:2;position:relative;min-width:0;min-height:0;overflow:hidden;display:flex;flex-direction:column}
   /*
    * The head of the pane, outside the scroller.
@@ -1092,18 +1095,6 @@
   .ch-body .frm-row{grid-template-columns:minmax(0,1fr);gap:8px;padding:0;border-bottom:none}
   .ch-body .frm-lab{padding-top:0}
   .ch-body .set-note{margin-top:10px}
-  /*
-   * The small create dialogs (`CreateDialog`) on the question card's surface:
-   * the card's padding holds the header, the body and the answers, the header
-   * keeps its cross in the card's corner, and the answers are the card's.
-   */
-  .q-card{padding:24px}
-  .q-card .am-head{padding:0 40px 0 0}
-  .q-card .am-head .dlg-x{top:-6px;right:-8px;width:32px;height:32px}
-  .q-card .ch-body{padding:0;margin-top:16px}
-  .q-card .ch-body:last-child{padding-bottom:0}
-  .q-card .ch-notes{padding:0;margin-top:14px}
-  .q-card .ch-foot{padding:0}
   /* Tworzenie i wyszukiwanie serwerów korzysta z tej samej krótkiej karty co
      tworzenie kanału. Tylko lista publicznych serwerów potrzebuje własnego
      układu; formularze, przyciski i stany pól pozostają wspólne z Settings. */
@@ -1447,11 +1438,6 @@
     .inv-url{font-size:var(--text-16)}
     .inv-nolink{flex-direction:column;align-items:stretch}
     .ch-place{max-height:none}
-    /* The full-screen sheet keeps the card's arrangement with a phone's
-       margins, and a cross a finger can hit. */
-    .q-card{padding:18px 16px max(16px, env(safe-area-inset-bottom))}
-    .q-card .am-head{padding-right:44px}
-    .q-card .am-head .dlg-x{top:-10px;right:-10px;width:44px;height:44px}
     .ch-place-move{width:44px;height:44px}
     .ch-place-glyph{width:36px;height:36px}
     .ch-place-row.new{height:48px}

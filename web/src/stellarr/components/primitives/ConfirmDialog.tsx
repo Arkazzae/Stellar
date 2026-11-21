@@ -1,74 +1,37 @@
-import {
-  createContext,
-  useCallback,
-  useContext,
-  useEffect,
-  useId,
-  useMemo,
-  useRef,
-  useState,
-  type ReactNode,
-} from "react";
+import { useCallback, useEffect, useId, useMemo, useRef, useState, type ReactNode } from "react";
 
-import { Button, Spinner } from "@stellarr/ui";
+import { Button, Spinner, cx } from "@stellarr/ui";
 import { Icon } from "@stellarr/icons";
 import { useLanguage } from "@/state/LanguageProvider";
 
-import { ConfirmSubjectRow, type ConfirmSubject } from "./ConfirmSubject";
+import {
+  ConfirmContext,
+  type Confirm,
+  type ConfirmQuestion,
+  type ConfirmRequest,
+  type ConfirmValue,
+} from "./confirmContext";
+import styles from "./ConfirmDialog.module.css";
+import { ConfirmSubjectRow } from "./ConfirmSubject";
 import { focusWithin } from "./focus";
 import { Modal } from "./Modal";
 
 export type { ConfirmSubject } from "./ConfirmSubject";
+export {
+  useConfirm,
+  usePrompt,
+  type Confirm,
+  type ConfirmField,
+  type ConfirmQuestion,
+  type ConfirmRequest,
+  type Prompt,
+  type PromptRequest,
+} from "./confirmContext";
 
-/** One line of text the deed needs before it can be done. */
-export interface ConfirmField {
-  /** The field's own name, shown above it in sentence case. */
-  label: string;
-  placeholder?: string;
-  maxLength?: number;
-  /**
-   * Empty is a valid answer, and the label says so. Without this the deed's
-   * button stays disabled until something is typed.
-   */
-  optional?: boolean;
-  /**
-   * The exact words that answer it, such as the name of what is about to be
-   * deleted. The deed's button stays disabled until they are typed, letter
-   * case included, and a tick at the end of the field says they are.
-   */
-  match?: string;
-  /** A sentence under the field: where the answer will be seen. */
-  hint?: string;
-}
-
-export interface ConfirmDialogProps {
+export interface ConfirmDialogProps extends ConfirmQuestion {
   open: boolean;
-  /** The question itself: short, and it ends in a question mark. */
-  title: string;
-  /** What the question does not say, usually the consequence. */
-  description?: string;
-  /**
-   * The one thing the question is about, drawn as a row under the sentence.
-   * The title never names it, because a name inflected into a Polish sentence
-   * comes out wrong.
-   */
-  subject?: ConfirmSubject;
-  /** Names the deed ("Delete", "Block"), never "OK". */
-  confirmLabel?: string;
-  cancelLabel?: string;
-  /** The deed destroys something: the button is red. */
-  danger?: boolean;
-  /** Turns the question into one that also collects an answer in words. */
-  field?: ConfirmField;
-  /**
-   * Nothing can be done yet, so the card has one answer, which closes it.
-   * Its label is `cancelLabel`, "Zamknij" unless given.
-   */
-  notice?: boolean;
   /** The deed is running: the card cannot be dismissed and the deed button says so. */
   busy?: boolean;
-  /** What the deed's button says while it runs ("Usuwanie…"). */
-  busyLabel?: string;
   /** Why the last attempt failed, above the answers. */
   error?: string | null;
   /**
@@ -144,11 +107,11 @@ export function ConfirmDialog({
   return (
     // While the deed runs, Escape and the backdrop do nothing: the answer has
     // been given, and closing would hide whether it worked.
-    <Modal open={open} onClose={busy ? () => undefined : onCancel} labelledBy={titleId} className="cf-wrap" exitMs={200}>
+    <Modal open={open} onClose={busy ? () => undefined : onCancel} labelledBy={titleId} className={cx(styles.wrap)} exitMs={200}>
       {/* A form, so that Enter in the field answers the question. */}
       <form
         ref={formRef}
-        className="cf-card"
+        className={styles.card}
         noValidate
         aria-busy={busy || undefined}
         onSubmit={(event) => {
@@ -156,17 +119,17 @@ export function ConfirmDialog({
           if (!notice && !incomplete && !busy) onConfirm(answer);
         }}
       >
-        <div className="cf-body">
+        <div className={styles.body}>
           <h2 id={titleId}>{title}</h2>
-          {description === undefined ? null : <p className="cf-sub">{description}</p>}
+          {description === undefined ? null : <p className={styles.sub}>{description}</p>}
           {subject === undefined ? null : <ConfirmSubjectRow subject={subject} />}
           {field === undefined ? null : (
-            <div className="cf-field">
-              <label className="cf-lab" htmlFor={fieldId}>
+            <div className={styles.field}>
+              <label className={styles.label} htmlFor={fieldId}>
                 {field.label}
                 {field.optional === true ? <i>{t("confirm.optional")}</i> : null}
               </label>
-              <span className={matched ? "cf-in matched" : "cf-in"}>
+              <span className={cx(styles.input, matched && styles.matched)}>
                 <input
                   id={fieldId}
                   className="set-input"
@@ -181,26 +144,21 @@ export function ConfirmDialog({
                   onChange={(event) => setValue(event.target.value)}
                 />
                 {matched ? (
-                  <span className="cf-ok" aria-hidden="true">
+                  <span className={styles.ok} aria-hidden="true">
                     <Icon name="tick" size={16} />
                   </span>
                 ) : null}
               </span>
               {field.hint === undefined ? null : (
-                <span className="cf-hint" id={hintId}>
+                <span className={styles.hint} id={hintId}>
                   {field.hint}
                 </span>
               )}
             </div>
           )}
         </div>
-        {error === null ? null : (
-          <p className="cf-err" role="alert">
-            <Icon name="warning" size={16} />
-            <span>{error}</span>
-          </p>
-        )}
-        <div className="cf-foot">
+        {error === null ? null : <ConfirmError text={error} />}
+        <div className={styles.foot}>
           <Button type="button" variant="secondary" disabled={busy} onClick={onCancel}>
             {cancelLabel ?? (notice ? t("common.close") : t("common.cancel"))}
           </Button>
@@ -212,7 +170,7 @@ export function ConfirmDialog({
               variant={danger ? "danger-solid" : "primary"}
               disabled={incomplete}
               aria-busy={busy || undefined}
-              className={busy ? "busy" : undefined}
+              className={busy ? styles.busy : undefined}
             >
               {busy ? (
                 <>
@@ -230,42 +188,15 @@ export function ConfirmDialog({
   );
 }
 
-/** Everything the dialog renders, and the deed it may run; answering is the provider's half. */
-export type ConfirmRequest = Omit<
-  ConfirmDialogProps,
-  "open" | "onConfirm" | "onCancel" | "busy" | "error"
-> & {
-  /**
-   * The deed itself, given the typed answer. With it the card stays open while
-   * the deed runs and closes only once it has succeeded; a rejection keeps the
-   * card open with `failure` above the answers, and the answers work again.
-   * Without it the card closes on the answer and the caller acts.
-   */
-  run?: (answer: string) => Promise<unknown>;
-  /** The error line when `run` rejects; a generic one unless given. */
-  failure?: string;
-};
-
-/** A question with a line to fill in: the field is the point. */
-export interface PromptRequest extends ConfirmRequest {
-  field: ConfirmField;
+/** Why a deed failed, above the answers; also used by cards built on this one. */
+export function ConfirmError({ text }: { text: string }) {
+  return (
+    <p className={styles.error} role="alert">
+      <Icon name="warning" size={16} />
+      <span>{text}</span>
+    </p>
+  );
 }
-
-/**
- * Resolves true only if the reader pressed the confirming button, and, for a
- * request with a `run`, only after the deed succeeded.
- */
-export type Confirm = (request: ConfirmRequest) => Promise<boolean>;
-
-/** Resolves the typed answer, trimmed, or null if the question was dismissed. */
-export type Prompt = (request: PromptRequest) => Promise<string | null>;
-
-interface ConfirmValue {
-  confirm: Confirm;
-  prompt: Prompt;
-}
-
-const ConfirmContext = createContext<ConfirmValue | null>(null);
 
 /** One question as it was asked: the number tells a newer one apart. */
 interface Asked {
@@ -385,20 +316,4 @@ export function ConfirmProvider({ children }: { children: ReactNode }) {
       )}
     </ConfirmContext.Provider>
   );
-}
-
-function useConfirmContext(): ConfirmValue {
-  const value = useContext(ConfirmContext);
-  if (value === null) {
-    throw new Error("useConfirm must be used inside <ConfirmProvider>");
-  }
-  return value;
-}
-
-export function useConfirm(): Confirm {
-  return useConfirmContext().confirm;
-}
-
-export function usePrompt(): Prompt {
-  return useConfirmContext().prompt;
 }

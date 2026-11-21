@@ -8,8 +8,8 @@ import {
   type ReactNode,
 } from "react";
 
-import { personSubject } from "@/components/confirmations";
-import { useConfirm } from "@/components/primitives/ConfirmDialog";
+import { personSubject } from "@/components/personSubject";
+import { useConfirm } from "@/components/primitives/confirmContext";
 import type { DmConversation, EncryptionStatus, EncryptionSwitchAction } from "@/ports";
 
 import { useLanguage } from "./LanguageProvider";

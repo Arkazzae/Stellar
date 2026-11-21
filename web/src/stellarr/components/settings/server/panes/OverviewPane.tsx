@@ -1,9 +1,12 @@
 import { useEffect, useId, useRef, useState } from "react";
 
-import { Button, Dropdown } from "@stellarr/ui";
+import { Button, Dropdown, cx } from "@stellarr/ui";
 import { Icon } from "@stellarr/icons";
 import { ServerTile } from "@/components/auth/Faces";
 import { Avatar } from "@/components/primitives/Avatar";
+import { ConfirmError } from "@/components/primitives/ConfirmDialog";
+// The transfer is asked on the question card, so it wears the card's parts.
+import card from "@/components/primitives/ConfirmDialog.module.css";
 import { Modal } from "@/components/primitives/Modal";
 import { Switch } from "@/components/primitives/Switch";
 import { countedNoun, formatShortDate } from "@/components/settings/paneFormat";
@@ -396,9 +399,9 @@ function TransferDialog({
   }
 
   return (
-    <Modal open={open} onClose={onClose} labelledBy={titleId} className="cf-wrap" exitMs={200}>
+    <Modal open={open} onClose={onClose} labelledBy={titleId} className={cx(card.wrap)} exitMs={200}>
       <form
-        className="cf-card"
+        className={card.card}
         noValidate
         onSubmit={(event) => {
           event.preventDefault();
@@ -408,11 +411,11 @@ function TransferDialog({
           });
         }}
       >
-        <div className="cf-body">
+        <div className={card.body}>
           <h2 id={titleId}>{t("srv.transfer.title")}</h2>
-          <p className="cf-sub">{t("srv.transfer.detail")}</p>
-          <div className="cf-field">
-            <span className="cf-lab" id={labelId}>
+          <p className={card.sub}>{t("srv.transfer.detail")}</p>
+          <div className={card.field}>
+            <span className={card.label} id={labelId}>
               {t("srv.transfer.pick")}
             </span>
             <Dropdown
@@ -429,13 +432,8 @@ function TransferDialog({
             />
           </div>
         </div>
-        {action.failed ? (
-          <p className="cf-err" role="alert">
-            <Icon name="warning" size={16} />
-            <span>{t("srv.transfer.failed")}</span>
-          </p>
-        ) : null}
-        <div className="cf-foot">
+        {action.failed ? <ConfirmError text={t("srv.transfer.failed")} /> : null}
+        <div className={card.foot}>
           <Button type="button" variant="secondary" onClick={onClose}>
             {t("common.cancel")}
           </Button>
