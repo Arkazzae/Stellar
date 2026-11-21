@@ -3,6 +3,7 @@ using Microsoft.AspNetCore.DataProtection;
 using Microsoft.EntityFrameworkCore;
 using Stellarr.Api.Data;
 using Stellarr.Api.Domain;
+using Stellarr.Api.Operations;
 
 namespace Stellarr.Api.Secrets;
 
@@ -26,11 +27,17 @@ public sealed record SecretValue(string Value, SecretSource Source)
 }
 
 /// <summary>
-/// A secret Cockpit can hold. <c>Setting</c> is the configuration key it falls
-/// back to and <c>Variable</c> the name an operator sets in <c>.env</c>.
+/// A secret Cockpit can hold, and the environment variable it falls back to.
 /// Passwords keep their spaces; keys are trimmed.
 /// </summary>
-public sealed record SecretDefinition(string Name, string Setting, string Variable, bool Trim);
+public sealed record SecretDefinition(string Name, StellarrVariable Environment, bool Trim)
+{
+    /// <summary>The configuration key the environment's value arrives under.</summary>
+    public string Setting => Environment.Key!;
+
+    /// <summary>The name an operator sets in <c>.env</c>.</summary>
+    public string Variable => Environment.Name;
+}
 
 public static class SecretNames
 {
@@ -46,12 +53,12 @@ public static class SecretNames
 
     public static readonly IReadOnlyList<SecretDefinition> All =
     [
-        new(ResendApiKey, "Mail:ResendApiKey", "STELLARR_RESEND_API_KEY", Trim: true),
-        new(SmtpPassword, "Mail:SmtpPassword", "STELLARR_SMTP_PASSWORD", Trim: false),
-        new(GiphyApiKey, "GIPHY_API_KEY", "GIPHY_API_KEY", Trim: true),
-        new(CloudflareR2AccessKey, "Cloudflare:R2:AccessKey", "STELLARR_CLOUDFLARE_R2_ACCESS_KEY", Trim: true),
-        new(CloudflareR2SecretKey, "Cloudflare:R2:SecretKey", "STELLARR_CLOUDFLARE_R2_SECRET_KEY", Trim: true),
-        new(CloudflareR2WorkerToken, "Cloudflare:R2:WorkerToken", "STELLARR_CLOUDFLARE_R2_WORKER_TOKEN", Trim: true),
+        new(ResendApiKey, StellarrVariables.ResendApiKey, Trim: true),
+        new(SmtpPassword, StellarrVariables.SmtpPassword, Trim: false),
+        new(GiphyApiKey, StellarrVariables.GiphyApiKey, Trim: true),
+        new(CloudflareR2AccessKey, StellarrVariables.CloudflareR2AccessKey, Trim: true),
+        new(CloudflareR2SecretKey, StellarrVariables.CloudflareR2SecretKey, Trim: true),
+        new(CloudflareR2WorkerToken, StellarrVariables.CloudflareR2WorkerToken, Trim: true),
     ];
 
     public static SecretDefinition? Find(string name) => All.FirstOrDefault(x => x.Name == name);

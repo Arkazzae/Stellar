@@ -271,7 +271,7 @@ public sealed class CockpitSettingsTests
 
         var before = await JsonAsync(await owner.GetAsync("/api/cockpit/desktop-release"));
         Assert.Equal("0.1.0", before.GetProperty("minimumVersion").GetString());
-        Assert.Equal("0.1.0", before.GetProperty("recommendedVersion").GetString());
+        Assert.Equal("0.1.3", before.GetProperty("recommendedVersion").GetString());
         Assert.Equal(JsonValueKind.Null, before.GetProperty("published").ValueKind);
         Assert.Equal(JsonValueKind.Null, before.GetProperty("androidPublished").ValueKind);
 

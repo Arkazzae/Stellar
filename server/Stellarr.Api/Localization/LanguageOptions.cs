@@ -4,7 +4,7 @@ namespace Stellarr.Api.Localization;
 
 /// <summary>
 /// The language of the instance, set by <c>Stellarr:Language</c> (the
-/// environment variable <c>Stellarr__Language</c>). Everything the server says
+/// environment variable <see cref="Operations.StellarrVariables.Language"/>). Everything the server says
 /// to people is in this one language; it is not chosen per user or per request.
 /// </summary>
 public sealed class LanguageOptions

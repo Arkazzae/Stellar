@@ -531,7 +531,7 @@ public sealed class BootstrapFlowTests
     {
         using var factory = new StellarrWebApplicationFactory(
             loadTestData: true,
-            configuration: new Dictionary<string, string?> { ["GIPHY_API_KEY"] = "  public-browser-key " });
+            configuration: new Dictionary<string, string?> { ["Giphy:ApiKey"] = "  public-browser-key " });
         using var client = await SignInAsync(factory, "maja", "Aurora!2026");
 
         var configured = await client.GetFromJsonAsync<JsonElement>("/api/config/giphy");

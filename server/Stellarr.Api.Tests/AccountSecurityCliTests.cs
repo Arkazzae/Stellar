@@ -675,7 +675,8 @@ public sealed class AccountSecurityCliTests
             error,
             interactive: true,
             secretPrompt: null,
-            CancellationToken.None);
+            CancellationToken.None,
+            CliFixture.Exec(null));
         return new CliRun(exit, output.ToString(), error.ToString());
     }
 

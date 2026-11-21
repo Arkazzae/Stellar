@@ -1,6 +1,7 @@
 using Microsoft.EntityFrameworkCore;
 using Stellarr.Api.Data;
 using Stellarr.Api.Domain;
+using Stellarr.Api.Operations;
 
 namespace Stellarr.Cli;
 
@@ -78,10 +79,8 @@ internal static class LocalApi
         CliRuntime runtime,
         CancellationToken cancellationToken)
     {
-        var configured = ContainerSettings.EnvironmentValue(runtime.Environment, "STELLARR_API_URL");
-        var url = string.IsNullOrWhiteSpace(configured)
-            ? "http://127.0.0.1:5000"
-            : configured.Trim().TrimEnd('/');
+        var configured = StellarrVariables.ValueIn(runtime.Environment, StellarrVariables.ApiUrl);
+        var url = configured is null ? "http://127.0.0.1:5000" : configured.Trim().TrimEnd('/');
         try
         {
             using var client = new HttpClient { Timeout = ProbeTimeout };

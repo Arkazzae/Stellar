@@ -3,7 +3,7 @@ import type { CockpitSecret, CockpitSecretName } from "../lib/api";
 const VARIABLES: Record<CockpitSecretName, string> = {
   "mail.resend-api-key": "STELLARR_RESEND_API_KEY",
   "mail.smtp-password": "STELLARR_SMTP_PASSWORD",
-  "giphy.api-key": "GIPHY_API_KEY",
+  "giphy.api-key": "STELLARR_GIPHY_API_KEY",
   "cloudflare.r2.access-key": "STELLARR_CLOUDFLARE_R2_ACCESS_KEY",
   "cloudflare.r2.secret-key": "STELLARR_CLOUDFLARE_R2_SECRET_KEY",
   "cloudflare.r2.worker-token": "STELLARR_CLOUDFLARE_R2_WORKER_TOKEN",

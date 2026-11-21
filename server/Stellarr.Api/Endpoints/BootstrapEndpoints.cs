@@ -183,7 +183,7 @@ public static class BootstrapEndpoints
         var host = configuration["Rtc:PublicHost"] ?? "localhost";
         var turnPort = configuration.GetValue("Rtc:TurnPort", 3478);
         var turnsPort = configuration.GetValue("Rtc:TurnsPort", 5349);
-        var turnsEnabled = configuration.GetValue("Rtc:TurnsEnabled", true);
+        var turnsEnabled = configuration.GetValue("Rtc:TurnsEnabled", false);
         if (turnPort is < 1 or > 65535)
         {
             throw new InvalidOperationException("Rtc:TurnPort must be between 1 and 65535.");
@@ -195,7 +195,7 @@ public static class BootstrapEndpoints
         }
 
         var turnUrls = new List<string> { $"turn:{host}:{turnPort}?transport=udp" };
-        if (configuration.GetValue("Rtc:TurnTcpEnabled", true))
+        if (configuration.GetValue("Rtc:TurnTcpEnabled", false))
         {
             turnUrls.Add($"turn:{host}:{turnPort}?transport=tcp");
         }
