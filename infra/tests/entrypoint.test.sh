@@ -1,0 +1,329 @@
+#!/usr/bin/env bash
+# Runs the container entrypoint against stubs of stellarr-init, the TLS script
+# and the operator CLI, and checks what it exports to the services and the
+# configuration it renders, for the defaults, for each setting it reads and
+# for the values it refuses. It writes to /etc, /run, /data and /usr/local/bin,
+# so it runs only as root in a throwaway container of the image's base:
+#
+#   docker run --rm -v "$PWD":/w:ro -w /w ubuntu:24.04 bash infra/tests/entrypoint.test.sh
+set -Eeuo pipefail
+
+repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
+entrypoint="$repo_root/infra/entrypoint.sh"
+
+if [[ ! -f /.dockerenv || $EUID -ne 0 ]]; then
+  echo "Run this inside a throwaway container as root; see the comment at the top." >&2
+  exit 2
+fi
+
+out=/tmp/entrypoint-test
+stubs=/tmp/entrypoint-stubs
+case_name=''
+status=0
+
+fail() {
+  local file
+  echo "FAIL: $case_name: $*" >&2
+  for file in stdout stderr env calls; do
+    if [[ -s $out/$file ]]; then
+      echo "--- $file" >&2
+      cat "$out/$file" >&2
+    fi
+  done
+  exit 1
+}
+
+# The image's files, and stubs for what the entrypoint hands over to. Each stub
+# records its call; stellarr-init records the environment it was given.
+mkdir -p /etc/nginx /usr/local/bin "$stubs"
+cp "$repo_root/infra/turnserver.conf.template" /etc/turnserver.conf.template
+cp "$repo_root/infra/nginx.conf" /etc/nginx/nginx.conf.template
+cat >/usr/local/bin/stellarr-init <<EOF
+#!/bin/bash
+echo "stellarr-init \$*" >>$out/calls
+env | sort >$out/env
+EOF
+cat >/usr/local/bin/stellarr-tls-maintenance <<EOF
+#!/bin/bash
+echo "stellarr-tls-maintenance \$* domain=\${STELLARR_DOMAIN-unset} data=\${STELLARR_DATA_ROOT-unset}" >>$out/calls
+EOF
+cat >/usr/local/bin/stellarr <<EOF
+#!/bin/bash
+echo "stellarr \$*" >>$out/calls
+exit "\$(cat $out/cli-exit 2>/dev/null || echo 0)"
+EOF
+# openssl is not in the base image; the entrypoint only asks it for random hex.
+cat >"$stubs/openssl" <<'EOF'
+#!/bin/bash
+[[ $1 == rand && $2 == -hex ]] || exit 1
+od -An -tx1 -N"$3" /dev/urandom | tr -d ' \n'
+echo
+EOF
+# One name resolves; anything else does not.
+cat >"$stubs/getent" <<'EOF'
+#!/bin/bash
+if [[ $1 == ahostsv4 && $2 == chat.example.com ]]; then
+  printf '198.51.100.4    STREAM chat.example.com\n198.51.100.4    DGRAM\n'
+else
+  exit 2
+fi
+EOF
+chmod +x /usr/local/bin/stellarr-init /usr/local/bin/stellarr-tls-maintenance /usr/local/bin/stellarr \
+  "$stubs/openssl" "$stubs/getent"
+
+# Runs the entrypoint on an empty volume with only the given variables, as the
+# image's ENV and docker run -e would set them. A function named by the
+# STAGE variable runs first, to lay down what a case needs.
+run() {
+  case_name=$1
+  shift
+  rm -rf /data/stellarr /data/elsewhere /run/stellarr /run/nginx /etc/turnserver.conf /etc/nginx/nginx.conf "$out"
+  mkdir -p "$out"
+  [[ -z ${STAGE:-} ]] || "$STAGE"
+  status=0
+  env -i PATH="$stubs:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin" HOME=/root \
+    ASPNETCORE_HTTP_PORTS=8080 "$@" bash "$entrypoint" >"$out/stdout" 2>"$out/stderr" || status=$?
+}
+
+image_env=(STELLARR_DATA_ROOT=/data/stellarr)
+
+expect_started() {
+  [[ $status -eq 0 ]] || fail "the entrypoint exited with $status"
+  grep -qx 'stellarr-init run' "$out/calls" || fail "stellarr-init was not started"
+}
+
+expect_failure() {
+  [[ $status -ne 0 ]] || fail "the entrypoint accepted the settings"
+  grep -qF -- "$1" "$out/stderr" || fail "no message: $1"
+  ! grep -q '^stellarr-init' "$out/calls" 2>/dev/null || fail "stellarr-init was started"
+}
+
+# The value stellarr-init was given for $1; fails when it was not exported.
+exported() {
+  local line
+  line=$(grep -m1 "^$1=" "$out/env") || fail "$1 is not exported"
+  printf '%s' "${line#*=}"
+}
+
+expect_export() {
+  local value
+  value=$(exported "$1")
+  [[ $value == "$2" ]] || fail "$1 is '$value', not '$2'"
+}
+
+expect_absent() {
+  local name
+  for name in "$@"; do
+    ! grep -q "^$name=" "$out/env" || fail "$name is exported"
+  done
+}
+
+expect_line() {
+  grep -qxF -- "$2" "$1" || fail "$1 lacks the line: $2"
+}
+
+expect_no_line() {
+  ! grep -qxF -- "$2" "$1" || fail "$1 has the line: $2"
+}
+
+expect_call() {
+  grep -qxF -- "$1" "$out/calls" || fail "no call: $1"
+}
+
+# The HTTP redirect nginx was rendered with: $1 is the port, or nothing for 443.
+expect_redirect() {
+  # shellcheck disable=SC2016 # nginx's variables, not the shell's
+  local line='return 308 https://$host'"${1:+:$1}"'$request_uri;'
+  grep -qF -- "$line" /etc/nginx/nginx.conf || fail "the redirect is not: $line"
+}
+
+secret_file() {
+  local value
+  value=$(cat "/data/stellarr/secrets/$1") || fail "no secret file $1"
+  [[ $value =~ ^[0-9a-f]{64}$ ]] || fail "secret $1 is not 64 hex digits: $value"
+  printf '%s' "$value"
+}
+
+# The defaults: what the image does with no setting at all.
+run defaults "${image_env[@]}"
+expect_started
+expect_export STELLARR_DATA_ROOT /data/stellarr
+expect_export STELLARR_DOMAIN ''
+expect_export STELLARR_LANGUAGE en
+expect_export STELLARR_MEDIA_PORT 49000
+expect_export STELLARR_TURN_TCP_ENABLED false
+expect_export STELLARR_TURNS_ENABLED false
+turn_secret=$(secret_file turn-shared-secret)
+expect_export STELLARR_TURN_SHARED_SECRET "$turn_secret"
+expect_export STELLARR_MEDIA_CONTROL_SECRET "$(secret_file media-control-secret)"
+expect_export ConnectionStrings__Database 'Data Source=/data/stellarr/db/stellarr.db;Pooling=True'
+expect_export Rtc__MediaControlUrl http://127.0.0.1:5200
+expect_export STELLARR_MEDIA_BIND 0.0.0.0:49000
+expect_export STELLARR_MEDIA_PUBLIC_IP ''
+expect_export STELLARR_MEDIA_PUBLIC_PORT 49000
+expect_export STELLARR_MEDIA_CONTROL_BIND 127.0.0.1:5200
+expect_export STELLARR_MEDIA_LOG info
+expect_export ASPNETCORE_URLS http://127.0.0.1:5000
+expect_export ASPNETCORE_ENVIRONMENT Production
+expect_absent STELLARR_MEDIA_ADVERTISE Operations__PublicUrl Desktop__CanonicalOrigin ASPNETCORE_HTTP_PORTS
+# The only raw keys are the two values that have no STELLARR_* name.
+raw=$(grep -oE '^[A-Za-z]+__[A-Za-z_.]+' "$out/env" | sort | tr '\n' ' ')
+[[ $raw == 'ConnectionStrings__Database Rtc__MediaControlUrl ' ]] || fail "raw keys exported: $raw"
+expect_absent PUBLIC_HOST PUBLIC_IP PUBLIC_HTTPS_PORT TURN_SHARED_SECRET DataRoot
+for file in /etc/turnserver.conf /etc/nginx/nginx.conf; do
+  ! grep -q '__[A-Z_]*__' "$file" || fail "$file keeps a placeholder: $(grep -o '__[A-Z_]*__' "$file" | head -n 1)"
+done
+expect_line /etc/turnserver.conf 'realm=localhost'
+expect_line /etc/turnserver.conf "static-auth-secret=$turn_secret"
+expect_line /etc/turnserver.conf 'no-tcp'
+expect_line /etc/turnserver.conf 'no-tls'
+expect_line /etc/turnserver.conf 'no-dtls'
+expect_line /etc/turnserver.conf '# external-ip is not set; set STELLARR_PUBLIC_IP when the host is behind NAT'
+expect_redirect ''
+expect_line /run/stellarr/stellarr-instance.js 'window.stellarrInstanceLanguage="en";'
+expect_call 'stellarr-tls-maintenance prepare domain= data=/data/stellarr'
+grep -qF 'STELLARR_DOMAIN is not set' "$out/stderr" || fail "no word about the missing domain"
+grep -qF 'STELLARR_PUBLIC_IP is empty' "$out/stderr" || fail "no word about the missing public IP"
+! grep -q '^stellarr ' "$out/calls" || fail "the CLI ran without a staged backup"
+
+# Without the image's ENV the data root is the same.
+run data-root-default
+expect_started
+expect_export STELLARR_DATA_ROOT /data/stellarr
+
+run data-root "${image_env[@]}" STELLARR_DATA_ROOT=/data/elsewhere
+expect_started
+expect_export STELLARR_DATA_ROOT /data/elsewhere
+expect_export ConnectionStrings__Database 'Data Source=/data/elsewhere/db/stellarr.db;Pooling=True'
+[[ -s /data/elsewhere/secrets/turn-shared-secret ]] || fail "the secrets are not under the data root"
+
+# As docker-compose.yml starts it: the host ports it publishes, and a domain.
+run compose "${image_env[@]}" STELLARR_DOMAIN=chat.example.com STELLARR_HTTPS_PORT=8443 \
+  STELLARR_MEDIA_PORT=49000 STELLARR_TURN_PORT=3478 STELLARR_TURNS_PORT=5349
+expect_started
+expect_export STELLARR_DOMAIN chat.example.com
+expect_export Operations__PublicUrl https://chat.example.com:8443
+expect_export Desktop__CanonicalOrigin https://chat.example.com:8443
+expect_export STELLARR_TURN_PORT 3478
+expect_export STELLARR_TURNS_PORT 5349
+expect_line /etc/turnserver.conf 'realm=chat.example.com'
+expect_redirect 8443
+expect_call 'stellarr-tls-maintenance prepare domain=chat.example.com data=/data/stellarr'
+
+# STELLARR_PUBLIC_IP, which coturn and the media server advertise.
+run public-ip "${image_env[@]}" STELLARR_PUBLIC_IP=203.0.113.7
+expect_started
+expect_export STELLARR_MEDIA_PUBLIC_IP 203.0.113.7
+expect_line /etc/turnserver.conf 'external-ip=203.0.113.7'
+! grep -qF 'STELLARR_PUBLIC_IP is empty' "$out/stderr" || fail "warned about a public IP that is set"
+
+run public-ip-auto "${image_env[@]}" STELLARR_PUBLIC_IP=auto STELLARR_DOMAIN=chat.example.com
+expect_started
+expect_export STELLARR_MEDIA_PUBLIC_IP 198.51.100.4
+expect_line /etc/turnserver.conf 'external-ip=198.51.100.4'
+
+# STELLARR_HTTPS_PORT, the host port of 443, and STELLARR_PUBLIC_PORT, the one
+# browsers use behind a proxy.
+run https-port "${image_env[@]}" STELLARR_DOMAIN=chat.example.com STELLARR_HTTPS_PORT=09443
+expect_started
+expect_export Operations__PublicUrl https://chat.example.com:9443
+expect_redirect 9443
+
+run public-port "${image_env[@]}" STELLARR_DOMAIN=chat.example.com STELLARR_HTTPS_PORT=9443 STELLARR_PUBLIC_PORT=443
+expect_started
+expect_export Operations__PublicUrl https://chat.example.com
+expect_redirect 9443
+
+run public-url "${image_env[@]}" STELLARR_PUBLIC_URL=https://proxy.example/
+expect_started
+expect_export Operations__PublicUrl https://proxy.example
+expect_export STELLARR_DOMAIN ''
+expect_line /etc/turnserver.conf 'realm=localhost'
+
+# The secrets an operator chooses, which win over the generated files.
+run secrets "${image_env[@]}" STELLARR_TURN_SHARED_SECRET=operator-turn STELLARR_MEDIA_CONTROL_SECRET=operator-media
+expect_started
+expect_export STELLARR_TURN_SHARED_SECRET operator-turn
+expect_export STELLARR_MEDIA_CONTROL_SECRET operator-media
+expect_line /etc/turnserver.conf 'static-auth-secret=operator-turn'
+[[ ! -e /data/stellarr/secrets/turn-shared-secret && ! -e /data/stellarr/secrets/media-control-secret ]] ||
+  fail "a secret file was written although the secret is set"
+
+# The other settings it shares with the API or hands to the media server.
+run transports-and-language "${image_env[@]}" STELLARR_TURN_TCP_ENABLED=true STELLARR_TURNS_ENABLED=true \
+  STELLARR_LANGUAGE=pl STELLARR_MEDIA_PORT=49010 STELLARR_MEDIA_ADVERTISE=127.0.0.1:49100 STELLARR_MEDIA_LOG=debug
+expect_started
+expect_export STELLARR_TURN_TCP_ENABLED true
+expect_export STELLARR_TURNS_ENABLED true
+expect_export STELLARR_LANGUAGE pl
+expect_export STELLARR_MEDIA_PORT 49010
+expect_export STELLARR_MEDIA_PUBLIC_PORT 49010
+expect_export STELLARR_MEDIA_ADVERTISE 127.0.0.1:49100
+expect_export STELLARR_MEDIA_LOG debug
+expect_no_line /etc/turnserver.conf 'no-tcp'
+expect_no_line /etc/turnserver.conf 'no-tls'
+expect_no_line /etc/turnserver.conf 'no-dtls'
+expect_line /run/stellarr/stellarr-instance.js 'window.stellarrInstanceLanguage="pl";'
+! grep -qF 'STELLARR_PUBLIC_IP is empty' "$out/stderr" || fail "warned although the candidates are given"
+
+# A blank value counts as not set, as it does in the API.
+run blank "${image_env[@]}" STELLARR_DOMAIN=' ' STELLARR_LANGUAGE='  ' STELLARR_MEDIA_PORT=' ' \
+  STELLARR_HTTPS_PORT=' ' STELLARR_TURN_TCP_ENABLED=' ' STELLARR_PUBLIC_IP=' ' STELLARR_MEDIA_ADVERTISE=' ' \
+  STELLARR_TURN_SHARED_SECRET=' '
+expect_started
+expect_export STELLARR_DOMAIN ''
+expect_export STELLARR_LANGUAGE en
+expect_export STELLARR_MEDIA_PORT 49000
+expect_export STELLARR_TURN_TCP_ENABLED false
+expect_export STELLARR_TURN_SHARED_SECRET "$(secret_file turn-shared-secret)"
+expect_export STELLARR_MEDIA_PUBLIC_IP ''
+expect_absent STELLARR_MEDIA_ADVERTISE Operations__PublicUrl
+expect_redirect ''
+
+# The names these settings had before are not read.
+run old-names "${image_env[@]}" PUBLIC_IP=203.0.113.9 PUBLIC_HTTPS_PORT=9443 TURN_SHARED_SECRET=old \
+  PUBLIC_HOST=old.example Rtc__TurnTcpEnabled=true Rtc__MediaPort=49999 Stellarr__Language=pl
+expect_started
+expect_export STELLARR_MEDIA_PUBLIC_IP ''
+expect_export STELLARR_TURN_SHARED_SECRET "$(secret_file turn-shared-secret)"
+expect_export STELLARR_MEDIA_PORT 49000
+expect_export STELLARR_TURN_TCP_ENABLED false
+expect_export STELLARR_LANGUAGE en
+expect_line /etc/turnserver.conf 'realm=localhost'
+expect_line /etc/turnserver.conf 'no-tcp'
+expect_redirect ''
+
+# The values it refuses, before any service starts.
+run bad-public-ip "${image_env[@]}" STELLARR_PUBLIC_IP=203.0.113.300
+expect_failure "STELLARR_PUBLIC_IP must be an IPv4 address or the value 'auto'."
+run unresolved-public-ip "${image_env[@]}" STELLARR_PUBLIC_IP=auto STELLARR_DOMAIN=nowhere.example
+expect_failure "STELLARR_PUBLIC_IP=auto could not resolve a public IPv4 address for STELLARR_DOMAIN=nowhere.example."
+run bad-https-port "${image_env[@]}" STELLARR_HTTPS_PORT=0
+expect_failure "STELLARR_HTTPS_PORT must be an integer between 1 and 65535."
+run bad-public-port "${image_env[@]}" STELLARR_PUBLIC_PORT=70000
+expect_failure "STELLARR_PUBLIC_PORT must be an integer between 1 and 65535."
+run bad-media-port "${image_env[@]}" STELLARR_MEDIA_PORT=udp
+expect_failure "STELLARR_MEDIA_PORT must be an integer between 1 and 65535."
+run bad-turn-tcp "${image_env[@]}" STELLARR_TURN_TCP_ENABLED=yes
+expect_failure "STELLARR_TURN_TCP_ENABLED must be 'true' or 'false'."
+run bad-turns "${image_env[@]}" STELLARR_TURNS_ENABLED=1
+expect_failure "STELLARR_TURNS_ENABLED must be 'true' or 'false'."
+
+# A staged backup is restored by the CLI before anything else; a refused one
+# leaves the data as it was, and a failed one stops the start.
+staged() { mkdir -p /data/stellarr/restore && : >/data/stellarr/restore/staged.zip; }
+refused() { staged && echo 4 >"$out/cli-exit"; }
+failed() { staged && echo 1 >"$out/cli-exit"; }
+broken() { mkdir -p /data/stellarr/restore && : >/data/stellarr/restore/broken; }
+STAGE=staged run restore "${image_env[@]}"
+expect_started
+expect_call 'stellarr --data-root /data/stellarr backup apply --yes'
+STAGE=refused run restore-refused "${image_env[@]}"
+expect_started
+grep -qF 'The staged backup was not restored' "$out/stderr" || fail "no word about the refused backup"
+STAGE=failed run restore-failed "${image_env[@]}"
+expect_failure "Restoring the staged backup failed"
+STAGE=broken run restore-broken "${image_env[@]}"
+expect_failure "A restore failed part-way"
+
+echo 'PASS: the entrypoint exports and renders what its settings say, and refuses the values it cannot use.'
