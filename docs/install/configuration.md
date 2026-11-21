@@ -96,7 +96,7 @@ Sign-in through an OpenID Connect provider, beside local passwords. The callback
 | `STELLARR_OIDC_CLIENT_ID` | string | empty | The client ID. |
 | `STELLARR_OIDC_CLIENT_SECRET` | string | empty | The client secret; wins over `STELLARR_OIDC_CLIENT_SECRET_FILE`. |
 | `STELLARR_OIDC_CLIENT_SECRET_FILE` | container path | empty | A mounted file that holds the client secret. |
-| `STELLARR_OIDC_DISPLAY_NAME` | string | `Main account` | The label of the sign-in button. |
+| `STELLARR_OIDC_DISPLAY_NAME` | string | `Main account`, or `Konto główne` on a Polish instance | The label of the sign-in button. |
 | `STELLARR_OIDC_TRUST_PROVIDER_MFA` | `true` \| `false` | `false` | Counts a sign-in the provider confirmed with a matching `amr` as Stellarr's second step. |
 | `STELLARR_OIDC_PROVIDER_MFA_AMR` | comma-separated list | `mfa` | The `amr` values that count when `STELLARR_OIDC_TRUST_PROVIDER_MFA` is `true`. |
 
