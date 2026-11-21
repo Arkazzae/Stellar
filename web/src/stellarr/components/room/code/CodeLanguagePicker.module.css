@@ -1,0 +1,70 @@
+/*
+ * The code language picker (`CodeLanguagePicker`): a quiet field in a code
+ * block's head or the composer's, and the list it opens.
+ *
+ * A module beside the picker rather than a file of the app's stylesheet: the
+ * picker is part of the signed-in app, so its styles arrive with it and stay
+ * off the first page's budget.
+ */
+
+/* The name and a caret, no box. What the name looks like is the head's to say. */
+.trigger {
+  flex: none;
+}
+
+/* "Automatic TypeScript": the guess is a reminder beside the choice, not part of it. */
+.trigger :global(.ui-dropdown-detail) {
+  font-size: inherit;
+  font-weight: 400;
+}
+
+/* Wide enough for "Automatic" and its guess on one row, never wider than the window. */
+.list {
+  width: max(var(--_dropdown-width, 0px), 240px);
+  max-width: calc(100vw - 24px);
+  padding: 4px;
+}
+
+/* One line a row: the name, then whatever it says at the row's end, then the
+   tick of the chosen one. */
+.list :global(.ui-dropdown-option) {
+  align-items: center;
+  gap: 10px;
+  min-height: max(34px, var(--ui-dropdown-option-min-height, 0px));
+  padding-block: 0;
+  padding-inline: 10px;
+}
+
+.list :global(.ui-dropdown-tick) {
+  order: 1;
+}
+
+.list :global(.ui-dropdown-option-text) {
+  flex: 1;
+  flex-direction: row;
+  align-items: baseline;
+  gap: 10px;
+}
+
+.list :global(.ui-dropdown-option-label) {
+  flex: 1;
+  font-size: 13px;
+}
+
+.list :global(.ui-dropdown-option-detail) {
+  font-size: 12px;
+}
+
+.list :global(.ui-dropdown-option[aria-selected="true"]) {
+  color: var(--accent-text);
+}
+
+.list :global(.ui-dropdown-caption) {
+  padding: 8px 10px 4px;
+}
+
+@media (max-width: 767px) {
+  .list :global(.ui-dropdown-option-label) {
+    font-size: 15px;
+  }
+}
