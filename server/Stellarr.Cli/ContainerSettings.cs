@@ -1,5 +1,6 @@
 using System.Globalization;
 using Microsoft.Extensions.Configuration;
+using Stellarr.Api.Operations;
 
 namespace Stellarr.Cli;
 
@@ -12,21 +13,16 @@ internal sealed record StartupValue(string Value, string Source);
 
 /// <summary>
 /// Resolves the values the container entrypoint would export before the API
-/// starts. <c>docker exec</c> inherits the Compose environment but not those
-/// exports, so the CLI repeats the entrypoint's public-address, media and storage
-/// rules from the raw variables instead of showing the API defaults.
+/// starts. <c>docker exec</c> inherits the container's environment but not
+/// those exports, so the CLI repeats the entrypoint's public-address rules from
+/// the operator's variables instead of showing the API defaults.
 /// </summary>
 internal static class ContainerSettings
 {
-    internal static string? EnvironmentValue(
-        IReadOnlyDictionary<string, string?> environment,
-        string name) =>
-        environment.TryGetValue(name, out var value) && !string.IsNullOrEmpty(value) ? value : null;
-
     internal static StartupValue PublicUrl(StartupContext context)
     {
-        var explicitUrl = EnvironmentValue(context.Environment, "STELLARR_PUBLIC_URL");
-        var domain = EnvironmentValue(context.Environment, "STELLARR_DOMAIN");
+        var explicitUrl = StellarrVariables.ValueIn(context.Environment, StellarrVariables.PublicUrl);
+        var domain = StellarrVariables.ValueIn(context.Environment, StellarrVariables.Domain);
         if (domain is null && explicitUrl is null)
         {
             var configured = context.Configuration["Operations:PublicUrl"];
@@ -40,46 +36,47 @@ internal static class ContainerSettings
             return new StartupValue(explicitUrl.TrimEnd('/'), "environment");
         }
 
-        var httpsPort = EnvironmentValue(context.Environment, "PUBLIC_HTTPS_PORT") ?? "443";
-        var publicPort = EnvironmentValue(context.Environment, "STELLARR_PUBLIC_PORT") ?? httpsPort;
+        var publicPort = StellarrVariables.ValueIn(context.Environment, StellarrVariables.PublicPort)
+            ?? HttpsPort(context).Value;
         return new StartupValue(PublicUrlFor(domain!, publicPort), "environment");
     }
 
     internal static StartupValue PublicHost(StartupContext context)
     {
-        var domain = EnvironmentValue(context.Environment, "STELLARR_DOMAIN");
+        var domain = StellarrVariables.ValueIn(context.Environment, StellarrVariables.Domain);
         return domain is null
             ? new StartupValue("localhost", "entrypoint")
             : new StartupValue(domain, "environment");
     }
 
+    /// <summary>The host port HTTPS is published on, which the entrypoint takes as 443 unless told.</summary>
     internal static StartupValue HttpsPort(StartupContext context)
     {
-        // The entrypoint reads PUBLIC_HTTPS_PORT. STELLARR_HTTPS_PORT is only
-        // the host-side Compose substitution that normally produces it.
-        var value = EnvironmentValue(context.Environment, "PUBLIC_HTTPS_PORT");
+        var value = StellarrVariables.ValueIn(context.Environment, StellarrVariables.HttpsPort);
         return value is null
             ? new StartupValue("443", "default")
             : new StartupValue(value, "environment");
     }
 
-    internal static StartupValue ConfigValue(
-        StartupContext context,
-        string key,
-        string fallback,
-        params string[] environmentNames)
+    /// <summary>
+    /// The configured value of <paramref name="key"/>, from the environment
+    /// when its <c>STELLARR_*</c> variable or its raw <c>Section__Key</c> is set.
+    /// </summary>
+    internal static StartupValue ConfigValue(StartupContext context, string key, string fallback)
     {
         var value = context.Configuration[key];
-        if (value is not null)
+        if (value is null)
         {
-            return new StartupValue(
-                value,
-                environmentNames.Any(name => EnvironmentValue(context.Environment, name) is not null)
-                    ? "environment"
-                    : "configuration");
+            return new StartupValue(fallback, "default");
         }
 
-        return new StartupValue(fallback, "default");
+        var variable = StellarrVariables.All.FirstOrDefault(
+            x => string.Equals(x.Key, key, StringComparison.OrdinalIgnoreCase));
+        var fromEnvironment =
+            (variable is not null && StellarrVariables.ValueIn(context.Environment, variable) is not null) ||
+            (context.Environment.TryGetValue(key.Replace(":", "__", StringComparison.Ordinal), out var raw) &&
+                !string.IsNullOrEmpty(raw));
+        return new StartupValue(value, fromEnvironment ? "environment" : "configuration");
     }
 
     /// <summary>
@@ -102,26 +99,6 @@ internal static class ContainerSettings
         var fromEnvironment = context.Environment.Keys.Any(
             name => name.StartsWith("Oidc__Providers__", StringComparison.OrdinalIgnoreCase));
         return new StartupValue(string.Join(", ", providers), fromEnvironment ? "environment" : "configuration");
-    }
-
-    internal static StartupValue EnvironmentOrConfig(
-        StartupContext context,
-        string environmentName,
-        string configKey,
-        string fallback)
-    {
-        var value = EnvironmentValue(context.Environment, environmentName) ??
-            context.Configuration[configKey];
-        if (value is null)
-        {
-            return new StartupValue(fallback, "default");
-        }
-
-        return new StartupValue(
-            value,
-            EnvironmentValue(context.Environment, environmentName) is not null
-                ? "environment"
-                : "configuration");
     }
 
     private static string PublicUrlFor(string host, string publicPort)

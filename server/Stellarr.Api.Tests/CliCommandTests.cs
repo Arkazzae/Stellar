@@ -5,9 +5,11 @@ using System.Xml.Linq;
 using Microsoft.AspNetCore.DataProtection;
 using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Stellarr.Api.Data;
 using Stellarr.Api.Domain;
+using Stellarr.Api.Operations;
 
 namespace Stellarr.Api.Tests;
 
@@ -304,23 +306,100 @@ public sealed class CliCommandTests
             Assert.Equal("default", item.GetProperty("source").GetString());
         }
 
-        var hostOnlyPort = new Dictionary<string, string?> { ["STELLARR_HTTPS_PORT"] = "8443" };
+        // Compose hands the container the host port it publishes HTTPS on.
+        var publishedPort = new Dictionary<string, string?>
+        {
+            ["STELLARR_DOMAIN"] = "chat.example.com",
+            ["STELLARR_HTTPS_PORT"] = "8443",
+        };
         using (var json = JsonDocument.Parse(
-            (await fixture.RunWithEnvironmentAsync(hostOnlyPort, "--json", "config", "get", "https-port")).Output))
+            (await fixture.RunWithEnvironmentAsync(publishedPort, "--json", "config", "get", "https-port")).Output))
+        {
+            var item = json.RootElement.GetProperty("data");
+            Assert.Equal("8443", item.GetProperty("value").GetString());
+            Assert.Equal("environment", item.GetProperty("source").GetString());
+        }
+
+        using (var json = JsonDocument.Parse(
+            (await fixture.RunWithEnvironmentAsync(publishedPort, "--json", "config", "get", "public-url")).Output))
+        {
+            Assert.Equal("https://chat.example.com:8443",
+                json.RootElement.GetProperty("data").GetProperty("value").GetString());
+        }
+
+        // A blank variable is not set, as the entrypoint reads it.
+        var blankPort = new Dictionary<string, string?> { ["STELLARR_HTTPS_PORT"] = "  " };
+        using (var json = JsonDocument.Parse(
+            (await fixture.RunWithEnvironmentAsync(blankPort, "--json", "config", "get", "https-port")).Output))
         {
             var item = json.RootElement.GetProperty("data");
             Assert.Equal("443", item.GetProperty("value").GetString());
             Assert.Equal("default", item.GetProperty("source").GetString());
         }
+    }
 
-        var containerPort = new Dictionary<string, string?> { ["PUBLIC_HTTPS_PORT"] = "9443" };
-        using (var json = JsonDocument.Parse(
-            (await fixture.RunWithEnvironmentAsync(containerPort, "--json", "config", "get", "https-port")).Output))
+    [Fact]
+    public async Task StartupSettingsReadTheImageDefaultsAndTheOperatorsVariables()
+    {
+        using var fixture = await CliFixture.StartAsync();
+        fixture.Stop();
+        var none = new Dictionary<string, string?>();
+
+        async Task<(string? Value, string? Source)> GetAsync(IReadOnlyDictionary<string, string?> environment, string key)
         {
+            using var json = JsonDocument.Parse(
+                (await fixture.RunWithEnvironmentAsync(environment, "--json", "config", "get", key)).Output);
             var item = json.RootElement.GetProperty("data");
-            Assert.Equal("9443", item.GetProperty("value").GetString());
-            Assert.Equal("environment", item.GetProperty("source").GetString());
+            var value = item.GetProperty("value");
+            return (value.ValueKind == JsonValueKind.String ? value.GetString() : value.GetRawText(),
+                item.GetProperty("source").GetString());
         }
+
+        Assert.Equal(("false", "default"), await GetAsync(none, "rtc.turn-tcp-enabled"));
+        Assert.Equal(("false", "default"), await GetAsync(none, "rtc.turns-enabled"));
+        Assert.Equal(("49000", "default"), await GetAsync(none, "rtc.media-port"));
+        Assert.Equal(("localhost", "entrypoint"), await GetAsync(none, "rtc.public-host"));
+
+        var operatorSet = new Dictionary<string, string?>
+        {
+            ["STELLARR_TURN_TCP_ENABLED"] = "true",
+            ["STELLARR_MEDIA_PORT"] = "49010",
+            ["Rtc__TurnsPort"] = "5350",
+        };
+        Assert.Equal(("true", "environment"), await GetAsync(operatorSet, "rtc.turn-tcp-enabled"));
+        Assert.Equal(("49010", "environment"), await GetAsync(operatorSet, "rtc.media-port"));
+        // A raw key still counts as the environment's.
+        Assert.Equal(("5350", "environment"), await GetAsync(operatorSet, "rtc.turns-port"));
+    }
+
+    [Fact]
+    public void WithNoEnvironmentNamedTheCliTakesTheProductionSeeds()
+    {
+        // docker exec does not see the entrypoint's ASPNETCORE_ENVIRONMENT, and
+        // the container runs in Production.
+        static IConfiguration Configuration(Dictionary<string, string?> environment) =>
+            Stellarr.Cli.CliRuntime.Create(
+                Stellarr.Cli.CliInvocation.Parse(["status"]),
+                TextReader.Null,
+                TextWriter.Null,
+                TextWriter.Null,
+                interactive: false,
+                secretPrompt: null,
+                environment).Configuration;
+
+        var container = Configuration(new());
+        Assert.Equal("true", container["Mail:Enabled"], ignoreCase: true);
+        Assert.Equal("true", container["Backups:Enabled"], ignoreCase: true);
+        Assert.Equal("Main account", container["Oidc:DisplayName"]);
+        Assert.Equal("0.1.3", container["Desktop:RecommendedVersion"]);
+
+        var development = Configuration(new() { ["ASPNETCORE_ENVIRONMENT"] = "Development" });
+        Assert.Equal("false", development["Mail:Enabled"], ignoreCase: true);
+        Assert.Null(development["Backups:Enabled"]);
+
+        // The operator's variable wins over the production file.
+        var mailOff = Configuration(new() { ["STELLARR_MAIL_ENABLED"] = "false" });
+        Assert.Equal("false", mailOff["Mail:Enabled"], ignoreCase: true);
     }
 
     [Fact]
@@ -358,7 +437,7 @@ public sealed class CliCommandTests
             Assert.Equal("database", item.GetProperty("source").GetString());
         }
 
-        var withKey = new Dictionary<string, string?> { ["GIPHY_API_KEY"] = "env-giphy" };
+        var withKey = new Dictionary<string, string?> { ["STELLARR_GIPHY_API_KEY"] = "env-giphy" };
         using (var json = JsonDocument.Parse(
             (await fixture.RunWithEnvironmentAsync(withKey, "--json", "config", "get", "giphy.enabled")).Output))
         {
@@ -781,6 +860,21 @@ internal sealed class CliFixture : IDisposable
 
     internal void Stop() => _factory?.Dispose();
 
+    /// <summary>
+    /// The environment of one CLI run: <paramref name="environment"/>, or this
+    /// process's. The CLI reads appsettings.&lt;environment&gt;.json as the API
+    /// does; the hosts of these tests run in Testing, and so does the CLI beside
+    /// them unless a test names another environment. With none named it would
+    /// take the container's Production.
+    /// </summary>
+    internal static Dictionary<string, string?> Exec(IReadOnlyDictionary<string, string?>? environment)
+    {
+        var exec = new Dictionary<string, string?>(
+            environment ?? StellarrVariables.ProcessEnvironment(), StringComparer.Ordinal);
+        exec.TryAdd("ASPNETCORE_ENVIRONMENT", "Testing");
+        return exec;
+    }
+
     internal AppDbContext OpenDb() => new(
         new DbContextOptionsBuilder<AppDbContext>()
             .UseSqlite(DatabaseConnection.From(
@@ -824,7 +918,7 @@ internal sealed class CliFixture : IDisposable
             interactive,
             secretPrompt: null,
             CancellationToken.None,
-            environment);
+            Exec(environment));
         return new CliRun(exit, output.ToString(), error.ToString());
     }
 

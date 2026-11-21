@@ -368,7 +368,7 @@ export interface CockpitSettings {
   smtpPort: number;
   smtpSecurity: CockpitSmtpSecurity;
   smtpUsername: string;
-  /** Whether Mail__SmtpPassword is set; the password itself never leaves the server. */
+  /** Whether the SMTP password is set (STELLARR_SMTP_PASSWORD); the password itself never leaves the server. */
   smtpPasswordConfigured: boolean;
   /** Whether the chosen transport has what it needs to send. */
   mailReady: boolean;

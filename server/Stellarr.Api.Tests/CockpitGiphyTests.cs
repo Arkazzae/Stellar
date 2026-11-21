@@ -169,7 +169,7 @@ public sealed class CockpitGiphyTests
 
     private static StellarrWebApplicationFactory Factory(string environmentKey, StubGiphy? giphy = null) => new(
         loadTestData: true,
-        new Dictionary<string, string?> { ["GIPHY_API_KEY"] = environmentKey },
+        new Dictionary<string, string?> { ["Giphy:ApiKey"] = environmentKey },
         configureServices: giphy is null
             ? null
             : services => services.AddHttpClient<GiphyClient>().ConfigurePrimaryHttpMessageHandler(() => giphy));

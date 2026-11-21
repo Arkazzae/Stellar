@@ -1,5 +1,6 @@
 using Stellarr.Api.Integrations;
 using Stellarr.Api.Localization;
+using Stellarr.Api.Operations;
 using Stellarr.Api.Secrets;
 
 namespace Stellarr.Api.Endpoints;
@@ -19,7 +20,7 @@ public static partial class CockpitEndpoints
         {
             return Results.Problem(
                 statusCode: StatusCodes.Status409Conflict,
-                title: messages.Get(MessageKey.CockpitGiphyKeyMissing));
+                title: messages.Get(MessageKey.CockpitGiphyKeyMissing, ("variable", StellarrVariables.GiphyApiKey.Name)));
         }
 
         var (result, detail) = await giphy.CheckAsync(key.Value, cancellationToken);

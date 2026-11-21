@@ -12,8 +12,8 @@
     <InternalsVisibleTo Include="Stellarr.Api.Tests" />
   </ItemGroup>
   <ItemGroup>
-    <!-- The CLI reads the same installation defaults as the API, from the same file. -->
-    <Content Include="../Stellarr.Api/appsettings.json" Link="appsettings.json"
+    <!-- The CLI reads the same installation defaults as the API, from the same files. -->
+    <Content Include="../Stellarr.Api/appsettings*.json" Link="%(Filename)%(Extension)"
              CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
   </ItemGroup>
 </Project>

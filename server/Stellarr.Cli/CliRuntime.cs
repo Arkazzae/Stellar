@@ -1,4 +1,3 @@
-using System.Collections;
 using System.Xml.Linq;
 using Microsoft.AspNetCore.DataProtection;
 using Microsoft.AspNetCore.DataProtection.KeyManagement;
@@ -11,6 +10,7 @@ using Microsoft.Extensions.Logging;
 using Stellarr.Api.Data;
 using Stellarr.Api.Domain;
 using Stellarr.Api.Localization;
+using Stellarr.Api.Operations;
 
 namespace Stellarr.Cli;
 
@@ -84,10 +84,14 @@ internal sealed class CliRuntime
         Func<string?>? secretPrompt,
         IReadOnlyDictionary<string, string?>? environment = null)
     {
-        var environmentValues = environment ?? CurrentEnvironment();
+        var environmentValues = environment ?? StellarrVariables.ProcessEnvironment();
+        // The files the API reads in the same environment. docker exec does not
+        // see the entrypoint's ASPNETCORE_ENVIRONMENT, and the container runs in
+        // Production, which is also what the API assumes when none is set.
         var configurationBuilder = new ConfigurationBuilder()
             .SetBasePath(AppContext.BaseDirectory)
-            .AddJsonFile("appsettings.json", optional: true, reloadOnChange: false);
+            .AddJsonFile("appsettings.json", optional: true, reloadOnChange: false)
+            .AddJsonFile($"appsettings.{HostEnvironment(environmentValues)}.json", optional: true, reloadOnChange: false);
         if (environment is null)
         {
             configurationBuilder.AddEnvironmentVariables();
@@ -107,10 +111,11 @@ internal sealed class CliRuntime
             configurationBuilder.AddInMemoryCollection(values);
         }
 
+        configurationBuilder.AddStellarrVariables(environmentValues);
         var configuration = configurationBuilder.Build();
         return new CliRuntime(
             invocation,
-            ResolveDataRoot(invocation.DataRoot, configuration, environmentValues),
+            ResolveDataRoot(invocation.DataRoot, configuration),
             configuration,
             environmentValues,
             input,
@@ -128,7 +133,7 @@ internal sealed class CliRuntime
         {
             throw new CliException(
                 "database_not_found",
-                $"No Stellarr database exists at {DatabasePath}. Check --data-root or STELLARR_DATA_ROOT; the CLI never creates one.",
+                $"No Stellarr database exists at {DatabasePath}. Check --data-root or {StellarrVariables.DataRoot.Name}; the CLI never creates one.",
                 CliExit.NotFound,
                 new { dataRoot = DataRoot, database = DatabasePath });
         }
@@ -242,36 +247,26 @@ internal sealed class CliRuntime
         return value.EndsWith('\n') || value.EndsWith('\r') ? value[..^1] : value;
     }
 
-    private static string ResolveDataRoot(
-        string? explicitRoot,
-        IConfiguration configuration,
-        IReadOnlyDictionary<string, string?> environment)
+    /// <summary>The ASP.NET Core environment name, Production when none is set.</summary>
+    private static string HostEnvironment(IReadOnlyDictionary<string, string?> environment)
     {
-        var selected = explicitRoot;
-        if (string.IsNullOrWhiteSpace(selected))
+        foreach (var name in new[] { "ASPNETCORE_ENVIRONMENT", "DOTNET_ENVIRONMENT" })
         {
-            selected = ContainerSettings.EnvironmentValue(environment, "STELLARR_DATA_ROOT");
+            if (environment.TryGetValue(name, out var value) && !string.IsNullOrWhiteSpace(value))
+            {
+                return value.Trim();
+            }
         }
 
-        if (string.IsNullOrWhiteSpace(selected))
-        {
-            selected = configuration["DataRoot"];
-        }
-
-        selected = string.IsNullOrWhiteSpace(selected) ? DefaultContainerDataRoot : selected.Trim();
-        return Path.GetFullPath(selected);
+        return "Production";
     }
 
-    private static Dictionary<string, string?> CurrentEnvironment()
+    /// <summary>--data-root, then the configured DataRoot (<see cref="StellarrVariables.DataRoot"/> among it), then the container's path.</summary>
+    private static string ResolveDataRoot(string? explicitRoot, IConfiguration configuration)
     {
-        var values = new Dictionary<string, string?>(StringComparer.Ordinal);
-        foreach (DictionaryEntry entry in System.Environment.GetEnvironmentVariables())
-        {
-            values[Convert.ToString(entry.Key, System.Globalization.CultureInfo.InvariantCulture) ?? ""] =
-                Convert.ToString(entry.Value, System.Globalization.CultureInfo.InvariantCulture);
-        }
-
-        return values;
+        var selected = string.IsNullOrWhiteSpace(explicitRoot) ? configuration["DataRoot"] : explicitRoot;
+        selected = string.IsNullOrWhiteSpace(selected) ? DefaultContainerDataRoot : selected.Trim();
+        return Path.GetFullPath(selected);
     }
 }
 

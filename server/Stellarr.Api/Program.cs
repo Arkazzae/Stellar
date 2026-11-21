@@ -24,6 +24,7 @@ using Stellarr.Api.Secrets;
 using Stellarr.Api.Storage;
 
 var builder = WebApplication.CreateBuilder(args);
+builder.Configuration.AddStellarrVariables(StellarrVariables.ProcessEnvironment());
 
 // Without a secret of its own the relay would accept credentials that anyone
 // can compute from the published development secret.
@@ -31,7 +32,8 @@ if (!builder.Environment.IsDevelopment() &&
     !builder.Environment.IsEnvironment("Testing") &&
     string.IsNullOrWhiteSpace(builder.Configuration["Rtc:TurnSharedSecret"]))
 {
-    throw new InvalidOperationException("Rtc:TurnSharedSecret is required outside development.");
+    throw new InvalidOperationException(
+        $"Rtc:TurnSharedSecret ({StellarrVariables.TurnSharedSecret.Name}) is required outside development.");
 }
 
 var dataRoot = builder.Configuration["DataRoot"] ?? "data";
