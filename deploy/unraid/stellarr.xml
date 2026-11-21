@@ -69,7 +69,7 @@ On first start the container creates a self-signed certificate, so the browser s
   <Config Name="OIDC issuer" Target="STELLARR_OIDC_ISSUER" Default="" Mode="" Description="For example https://auth.example.com" Type="Variable" Display="advanced" Required="false" Mask="false"></Config>
   <Config Name="OIDC client ID" Target="STELLARR_OIDC_CLIENT_ID" Default="" Mode="" Description="" Type="Variable" Display="advanced" Required="false" Mask="false"></Config>
   <Config Name="OIDC client secret" Target="STELLARR_OIDC_CLIENT_SECRET" Default="" Mode="" Description="" Type="Variable" Display="advanced" Required="false" Mask="true"></Config>
-  <Config Name="OIDC button label" Target="STELLARR_OIDC_DISPLAY_NAME" Default="" Mode="" Description="The label of the sign-in button; Main account when empty." Type="Variable" Display="advanced" Required="false" Mask="false"></Config>
+  <Config Name="OIDC button label" Target="STELLARR_OIDC_DISPLAY_NAME" Default="" Mode="" Description="The label of the sign-in button; when empty, Main account, or Konto główne on a Polish instance." Type="Variable" Display="advanced" Required="false" Mask="false"></Config>
   <Config Name="Trust the provider's second step" Target="STELLARR_OIDC_TRUST_PROVIDER_MFA" Default="" Mode="" Description="true or false; false when empty. When true, a sign-in the provider confirmed with a second step counts as Stellarr's own." Type="Variable" Display="advanced" Required="false" Mask="false"></Config>
   <Config Name="Provider second-step amr values" Target="STELLARR_OIDC_PROVIDER_MFA_AMR" Default="" Mode="" Description="The amr values that count as a second step when the setting above is true; mfa when empty." Type="Variable" Display="advanced" Required="false" Mask="false"></Config>
 

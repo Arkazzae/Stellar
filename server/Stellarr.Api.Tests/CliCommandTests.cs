@@ -390,7 +390,8 @@ public sealed class CliCommandTests
         var container = Configuration(new());
         Assert.Equal("true", container["Mail:Enabled"], ignoreCase: true);
         Assert.Equal("true", container["Backups:Enabled"], ignoreCase: true);
-        Assert.Equal("Main account", container["Oidc:DisplayName"]);
+        // The sign-in label is the instance language's, from the messages.
+        Assert.Null(container["Oidc:DisplayName"]);
         Assert.Equal("0.1.3", container["Desktop:RecommendedVersion"]);
 
         var development = Configuration(new() { ["ASPNETCORE_ENVIRONMENT"] = "Development" });
