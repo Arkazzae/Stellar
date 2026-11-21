@@ -433,13 +433,18 @@ describe("Composer code messages", () => {
     expect(field).toHaveValue("if (a) {\nre  turn 1;\n}");
   });
 
-  it("lets Tab leave the field after Escape", async () => {
+  it("lets Tab and Shift+Tab leave the field after Escape", async () => {
     const { user, field } = await codeComposer();
     await user.type(field, "x");
 
     await user.keyboard("{Escape}{Tab}");
-
     expect(field).not.toHaveFocus();
+    expect(field.form).toContainElement(document.activeElement as HTMLElement);
+    expect(field).toHaveValue("x");
+
+    field.focus();
+    await user.keyboard("{Escape}{Shift>}{Tab}{/Shift}");
+    expect(screen.getByRole("button", { name: "Wyłącz tryb kodu" })).toHaveFocus();
     expect(field).toHaveValue("x");
   });
 
