@@ -428,4 +428,35 @@ describe("Dropdown", () => {
 
     expect(field).toHaveClass("ui-dropdown", "wide");
   });
+
+  it("gives the open list the caller's list class", async () => {
+    const user = userEvent.setup();
+    const { field } = setup({ listClassName: "languages" });
+
+    await user.click(field);
+
+    expect(screen.getByRole("listbox")).toHaveClass("ui-dropdown-list", "languages");
+  });
+
+  describe("with a caption above a group", () => {
+    const GROUPED: DropdownOption<string>[] = [
+      { value: "auto", label: "Automatic" },
+      { value: "ts", label: "TypeScript", caption: "Languages" },
+      { value: "py", label: "Python" },
+    ];
+
+    it("draws the caption without making it something to choose", async () => {
+      const user = userEvent.setup();
+      const { onChange, field } = setup({ options: GROUPED, value: "auto" });
+
+      field.focus();
+      await user.keyboard("{ArrowDown}");
+      expect(screen.getByText("Languages")).toBeInTheDocument();
+      expect(screen.getAllByRole("option")).toHaveLength(3);
+
+      // One step from the first row lands on the row under the caption.
+      await user.keyboard("{ArrowDown}{Enter}");
+      expect(onChange).toHaveBeenCalledWith("ts");
+    });
+  });
 });

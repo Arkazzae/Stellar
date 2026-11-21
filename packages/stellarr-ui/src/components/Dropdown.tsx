@@ -1,4 +1,5 @@
 import {
+  Fragment,
   useCallback,
   useEffect,
   useId,
@@ -42,6 +43,12 @@ export interface DropdownOption<T extends string> {
    */
   lang?: string;
   disabled?: boolean;
+  /**
+   * A heading drawn above this option, which starts a group in the list. It is
+   * not an option: the arrows, typing and the pointer pass over it. A screen
+   * reader hears the list's own label and the options, so it is hidden there.
+   */
+  caption?: string;
 }
 
 export interface DropdownProps<T extends string> {
@@ -76,6 +83,11 @@ export interface DropdownProps<T extends string> {
    */
   variant?: "field" | "quiet";
   className?: string;
+  /**
+   * A class for the open list. The list is drawn in `<body>`, so neither
+   * `className` nor a rule scoped to the field's surroundings reaches it.
+   */
+  listClassName?: string;
 }
 
 interface Placement {
@@ -151,6 +163,7 @@ export function Dropdown<T extends string>({
   placeholder,
   variant = "field",
   className,
+  listClassName,
 }: DropdownProps<T>) {
   const [open, setOpen] = useState(false);
   const [cursor, setCursor] = useState(0);
@@ -391,7 +404,7 @@ export function Dropdown<T extends string>({
             <div
               ref={listRef}
               id={listId}
-              className="ui-dropdown-list"
+              className={cx("ui-dropdown-list", listClassName)}
               role="listbox"
               aria-label={label}
               // Nothing in the list takes focus, so a press on it (a disabled
@@ -399,38 +412,44 @@ export function Dropdown<T extends string>({
               onMouseDown={(event) => event.preventDefault()}
             >
               {options.map((option, index) => (
-                <div
-                  key={option.value}
-                  id={optionId(index)}
-                  role="option"
-                  className="ui-dropdown-option"
-                  lang={option.lang}
-                  aria-selected={option.value === value}
-                  aria-disabled={option.disabled === true ? true : undefined}
-                  data-on={index === cursor ? "" : undefined}
-                  // `mousemove`, not `mouseenter`: the list can open under a
-                  // still pointer, and the cursor should stay where the
-                  // keyboard put it until the hand actually moves.
-                  onMouseMove={() => {
-                    if (option.disabled !== true) setCursor(index);
-                  }}
-                  onClick={() => commit(index)}
-                >
-                  <span className="ui-dropdown-tick" aria-hidden="true">
-                    {option.value === value ? <Icon name="tick" size={14} /> : null}
-                  </span>
-                  {option.icon === undefined ? null : (
-                    <span className="ui-dropdown-icon" aria-hidden="true">
-                      <Icon name={option.icon} size={15} />
-                    </span>
+                <Fragment key={option.value}>
+                  {option.caption === undefined ? null : (
+                    <div className="ui-dropdown-caption" aria-hidden="true">
+                      {option.caption}
+                    </div>
                   )}
-                  <span className="ui-dropdown-option-text">
-                    <b className="ui-dropdown-option-label">{option.label}</b>
-                    {option.detail === undefined ? null : (
-                      <span className="ui-dropdown-option-detail">{option.detail}</span>
+                  <div
+                    id={optionId(index)}
+                    role="option"
+                    className="ui-dropdown-option"
+                    lang={option.lang}
+                    aria-selected={option.value === value}
+                    aria-disabled={option.disabled === true ? true : undefined}
+                    data-on={index === cursor ? "" : undefined}
+                    // `mousemove`, not `mouseenter`: the list can open under a
+                    // still pointer, and the cursor should stay where the
+                    // keyboard put it until the hand actually moves.
+                    onMouseMove={() => {
+                      if (option.disabled !== true) setCursor(index);
+                    }}
+                    onClick={() => commit(index)}
+                  >
+                    <span className="ui-dropdown-tick" aria-hidden="true">
+                      {option.value === value ? <Icon name="tick" size={14} /> : null}
+                    </span>
+                    {option.icon === undefined ? null : (
+                      <span className="ui-dropdown-icon" aria-hidden="true">
+                        <Icon name={option.icon} size={15} />
+                      </span>
                     )}
-                  </span>
-                </div>
+                    <span className="ui-dropdown-option-text">
+                      <b className="ui-dropdown-option-label">{option.label}</b>
+                      {option.detail === undefined ? null : (
+                        <span className="ui-dropdown-option-detail">{option.detail}</span>
+                      )}
+                    </span>
+                  </div>
+                </Fragment>
               ))}
             </div>,
             document.body,
