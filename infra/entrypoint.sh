@@ -8,47 +8,20 @@
 # with the API is exported again under the same name with the value resolved
 # here, so the API uses what coturn, nginx and the media server use. The API
 # reads those names through its own table (server/Stellarr.Api/Operations/
-# StellarrVariables.cs); the operator CLI, which docker exec starts without
-# these exports, repeats the rules in server/Stellarr.Cli/ContainerSettings.cs.
+# StellarrVariables.cs). How each setting is read, defaulted and refused, and
+# the public address that follows from them, is in settings.sh, which the
+# operator CLI's wrapper sources too: docker exec starts the CLI without the
+# exports below.
 set -Eeuo pipefail
 # Without this a failing `openssl rand` inside $(...) would yield an empty secret.
 shopt -s inherit_errexit
 
+# shellcheck source-path=SCRIPTDIR source=settings.sh
+source /usr/local/lib/stellarr/settings.sh
+
 fail() {
   echo "$*" >&2
   exit 1
-}
-
-# Prints $1, or $2 when $1 is empty or only whitespace: a blank setting counts
-# as not set, as it does in the API.
-or_default() {
-  if [[ -z "${1//[[:space:]]/}" ]]; then
-    printf '%s' "${2:-}"
-  else
-    printf '%s' "$1"
-  fi
-}
-
-is_ipv4_address() {
-  local octets octet
-  [[ "$1" =~ ^[0-9]{1,3}(\.[0-9]{1,3}){3}$ ]] || return 1
-  IFS=. read -r -a octets <<< "$1"
-  for octet in "${octets[@]}"; do
-    (( 10#$octet <= 255 )) || return 1
-  done
-}
-
-require_boolean() {
-  case "$2" in
-    true|false) ;;
-    *) fail "$1 must be 'true' or 'false'." ;;
-  esac
-}
-
-require_port() {
-  if [[ ! "$2" =~ ^[0-9]{1,5}$ ]] || (( 10#$2 < 1 || 10#$2 > 65535 )); then
-    fail "$1 must be an integer between 1 and 65535."
-  fi
 }
 
 # Prints the secret stored under secrets/<name>, creating it on first use. The
@@ -64,7 +37,7 @@ read_or_create_secret() {
 }
 
 # Prints the external IPv4 address coturn and the media server should
-# advertise, or nothing.
+# advertise, or nothing. read_settings has checked the setting's form.
 resolve_public_ip() {
   local resolved
   case "$public_ip_setting" in
@@ -76,28 +49,8 @@ resolve_public_ip() {
       echo "Resolved STELLARR_DOMAIN=$public_host to the external IPv4 $resolved for TURN and the media server." >&2
       echo "$resolved"
       ;;
-    *)
-      is_ipv4_address "$public_ip_setting" ||
-        fail "STELLARR_PUBLIC_IP must be an IPv4 address or the value 'auto'."
-      echo "$public_ip_setting"
-      ;;
+    *) echo "$public_ip_setting" ;;
   esac
-}
-
-# Prints the instance's public URL: the third argument as given when it is set,
-# otherwise https:// with the host and, unless it is 443, the port.
-public_url_for() {
-  local host="$1" port="$2" explicit="$3"
-  if [[ -n "$explicit" ]]; then
-    printf '%s' "${explicit%/}"
-    return
-  fi
-  [[ "$host" == *:* ]] && host="[$host]"
-  if (( 10#$port == 443 )); then
-    printf 'https://%s' "$host"
-  else
-    printf 'https://%s:%s' "$host" "$((10#$port))"
-  fi
 }
 
 # Writes the instance's default language from STELLARR_LANGUAGE to the file
@@ -119,35 +72,9 @@ write_instance_language() {
   printf 'window.stellarrInstanceLanguage=%s;\n' "$value" > "$file"
 }
 
-# The settings, each with the image's default. The host ports default to the
-# container's own: Compose publishes HTTPS on another port and says so.
-data_root="$(or_default "${STELLARR_DATA_ROOT:-}" /data/stellarr)"
-# The name people reach the instance at. Without it, TLS and TURN use localhost
-# and the instance has no public address.
-domain="$(or_default "${STELLARR_DOMAIN:-}")"
-public_host="${domain:-localhost}"
-public_url_setting="$(or_default "${STELLARR_PUBLIC_URL:-}")"
-public_ip_setting="$(or_default "${STELLARR_PUBLIC_IP:-}")"
-https_port="$(or_default "${STELLARR_HTTPS_PORT:-}" 443)"
-media_port="$(or_default "${STELLARR_MEDIA_PORT:-}" 49000)"
-turn_tcp_enabled="$(or_default "${STELLARR_TURN_TCP_ENABLED:-}" false)"
-turns_enabled="$(or_default "${STELLARR_TURNS_ENABLED:-}" false)"
-language="$(or_default "${STELLARR_LANGUAGE:-}" en)"
-media_advertise="$(or_default "${STELLARR_MEDIA_ADVERTISE:-}")"
-media_log="$(or_default "${STELLARR_MEDIA_LOG:-}" info)"
-
-require_port STELLARR_HTTPS_PORT "$https_port"
-https_port=$((10#$https_port))
-# The HTTPS port browsers use: the published one, or 443 behind a proxy.
-public_port="$(or_default "${STELLARR_PUBLIC_PORT:-}" "$https_port")"
-require_port STELLARR_PUBLIC_PORT "$public_port"
-# A browser can only reach the port it is told, so the media server advertises
-# the host port of 49000/udp and the API names it in the bootstrap.
-require_port STELLARR_MEDIA_PORT "$media_port"
-media_port=$((10#$media_port))
-require_boolean STELLARR_TURN_TCP_ENABLED "$turn_tcp_enabled"
-require_boolean STELLARR_TURNS_ENABLED "$turns_enabled"
-
+# The settings, each with the image's default. A value that cannot be used
+# stops the container here, before anything is written.
+read_settings || exit 1
 public_ip="$(resolve_public_ip)"
 
 # A backup staged with `stellarr backup restore` replaces the instance's data
@@ -190,12 +117,10 @@ export Rtc__MediaControlUrl="http://127.0.0.1:5200"
 export Rtc__MediaControlSecret="$media_control_secret"
 export Rtc__TurnSharedSecret="$turn_secret"
 
-# The address in mail links and the desktop client's canonical origin: the
-# domain on the HTTPS port browsers use. STELLARR_PUBLIC_URL, when set,
-# overrides it. Without a domain or a URL there is no public address: reset
-# links stay off and desktop clients keep the address they connected to.
-if [[ -n "$domain" || -n "$public_url_setting" ]]; then
-  public_url="$(public_url_for "$public_host" "$public_port" "$public_url_setting")"
+# The address in mail links and the desktop client's canonical origin, as
+# read_settings derived it. Without one, reset links stay off and desktop
+# clients keep the address they connected to.
+if [[ -n "$public_url" ]]; then
   export Operations__PublicUrl="$public_url"
   export Desktop__CanonicalOrigin="$public_url"
   echo "The public address of this instance is $public_url." >&2

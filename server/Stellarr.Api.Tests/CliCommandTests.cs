@@ -248,44 +248,39 @@ public sealed class CliCommandTests
     }
 
     [Fact]
-    public async Task StartupSettingsMatchTheEntrypointWithoutItsExports()
+    public async Task StartupSettingsReadThePublicAddressTheWrapperDerives()
     {
         using var fixture = await CliFixture.StartAsync();
         fixture.Stop();
 
-        var domainOnly = new Dictionary<string, string?> { ["STELLARR_DOMAIN"] = "chat.example.com" };
+        // The image's wrapper derives the address by the entrypoint's rules
+        // (infra/tests/entrypoint.test.sh covers them) and hands it over under
+        // the API's key, beside the operator's own variables.
+        var wrapped = new Dictionary<string, string?>
+        {
+            ["STELLARR_DOMAIN"] = "chat.example.com",
+            ["STELLARR_HTTPS_PORT"] = "8443",
+            ["Operations__PublicUrl"] = "https://chat.example.com:8443",
+        };
         var publicUrl = await fixture.RunWithEnvironmentAsync(
-            domainOnly, "--json", "config", "get", "public-url");
+            wrapped, "--json", "config", "get", "public-url");
         Assert.Equal(0, publicUrl.ExitCode);
         using (var json = JsonDocument.Parse(publicUrl.Output))
         {
             var item = json.RootElement.GetProperty("data");
-            Assert.Equal("https://chat.example.com", item.GetProperty("value").GetString());
+            Assert.Equal("https://chat.example.com:8443", item.GetProperty("value").GetString());
             Assert.Equal("environment", item.GetProperty("source").GetString());
         }
 
-        var withPort = new Dictionary<string, string?>
-        {
-            ["STELLARR_DOMAIN"] = "chat.example.com",
-            ["STELLARR_PUBLIC_PORT"] = "9443",
-        };
+        // The CLI derives nothing itself: outside the wrapper a domain alone
+        // gives it no public address.
+        var domainOnly = new Dictionary<string, string?> { ["STELLARR_DOMAIN"] = "chat.example.com" };
         using (var json = JsonDocument.Parse(
-            (await fixture.RunWithEnvironmentAsync(withPort, "--json", "config", "get", "public-url")).Output))
+            (await fixture.RunWithEnvironmentAsync(domainOnly, "--json", "config", "get", "public-url")).Output))
         {
-            Assert.Equal("https://chat.example.com:9443",
-                json.RootElement.GetProperty("data").GetProperty("value").GetString());
-        }
-
-        var explicitUrl = new Dictionary<string, string?>
-        {
-            ["STELLARR_DOMAIN"] = "chat.example.com",
-            ["STELLARR_PUBLIC_URL"] = "https://proxy.example/",
-        };
-        using (var json = JsonDocument.Parse(
-            (await fixture.RunWithEnvironmentAsync(explicitUrl, "--json", "config", "get", "public-url")).Output))
-        {
-            Assert.Equal("https://proxy.example",
-                json.RootElement.GetProperty("data").GetProperty("value").GetString());
+            var item = json.RootElement.GetProperty("data");
+            Assert.Equal("", item.GetProperty("value").GetString());
+            Assert.Equal("default", item.GetProperty("source").GetString());
         }
 
         using (var json = JsonDocument.Parse(
@@ -318,13 +313,6 @@ public sealed class CliCommandTests
             var item = json.RootElement.GetProperty("data");
             Assert.Equal("8443", item.GetProperty("value").GetString());
             Assert.Equal("environment", item.GetProperty("source").GetString());
-        }
-
-        using (var json = JsonDocument.Parse(
-            (await fixture.RunWithEnvironmentAsync(publishedPort, "--json", "config", "get", "public-url")).Output))
-        {
-            Assert.Equal("https://chat.example.com:8443",
-                json.RootElement.GetProperty("data").GetProperty("value").GetString());
         }
 
         // A blank variable is not set, as the entrypoint reads it.

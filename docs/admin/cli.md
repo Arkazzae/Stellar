@@ -88,6 +88,8 @@ Booleans accept `true`/`false`, `1`/`0`, `yes`/`no`, or `on`/`off`. For nullable
 
 **Read-only startup keys:** Settings driven by `.env` or container environment variables (`public-url`, `tls.domain`, `https-port`, `oidc.*`, `rtc.*`) appear in `config list` as read-only. Attempting `config set` on them fails with `read_only_setting` and prints the environment variable to change instead.
 
+`docker exec` starts the CLI without what the container's entrypoint derived, so the image's `stellarr` command derives `public-url` from `STELLARR_DOMAIN`, `STELLARR_PUBLIC_PORT` and `STELLARR_PUBLIC_URL` by the entrypoint's own rules before the CLI starts. A setting the entrypoint refuses does not stop the CLI: the command prints the entrypoint's message, and `public-url` stays empty.
+
 ### Secrets
 
 ```bash

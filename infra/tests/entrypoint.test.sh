@@ -2,14 +2,18 @@
 # Runs the container entrypoint against stubs of stellarr-init, the TLS script
 # and the operator CLI, and checks what it exports to the services and the
 # configuration it renders, for the defaults, for each setting it reads and
-# for the values it refuses. It writes to /etc, /run, /data and /usr/local/bin,
-# so it runs only as root in a throwaway container of the image's base:
+# for the values it refuses. Then runs the operator CLI's wrapper against a
+# stub of dotnet, and checks that it hands the CLI the public address the
+# entrypoint derives, and nothing else. It writes to /etc, /run, /data, /usr/bin
+# and /usr/local, so it runs only as root in a throwaway container of the
+# image's base:
 #
 #   docker run --rm -v "$PWD":/w:ro -w /w ubuntu:24.04 bash infra/tests/entrypoint.test.sh
 set -Eeuo pipefail
 
 repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 entrypoint="$repo_root/infra/entrypoint.sh"
+wrapper="$repo_root/infra/stellarr-cli.sh"
 
 if [[ ! -f /.dockerenv || $EUID -ne 0 ]]; then
   echo "Run this inside a throwaway container as root; see the comment at the top." >&2
@@ -33,15 +37,23 @@ fail() {
   exit 1
 }
 
-# The image's files, and stubs for what the entrypoint hands over to. Each stub
-# records its call; stellarr-init records the environment it was given.
-mkdir -p /etc/nginx /usr/local/bin "$stubs"
+# The image's files, and stubs for what the entrypoint and the wrapper hand
+# over to. Each stub records its call; stellarr-init and dotnet record the
+# environment they were given.
+mkdir -p /etc/nginx /usr/local/bin /usr/local/lib/stellarr "$stubs"
+cp "$repo_root/infra/settings.sh" /usr/local/lib/stellarr/settings.sh
 cp "$repo_root/infra/turnserver.conf.template" /etc/turnserver.conf.template
 cp "$repo_root/infra/nginx.conf" /etc/nginx/nginx.conf.template
 cat >/usr/local/bin/stellarr-init <<EOF
 #!/bin/bash
 echo "stellarr-init \$*" >>$out/calls
 env | sort >$out/env
+EOF
+cat >/usr/bin/dotnet <<EOF
+#!/bin/bash
+echo "dotnet \$*" >>$out/calls
+env | sort >$out/env
+exit "\$(cat $stubs/dotnet-exit 2>/dev/null || echo 0)"
 EOF
 cat >/usr/local/bin/stellarr-tls-maintenance <<EOF
 #!/bin/bash
@@ -69,7 +81,7 @@ else
 fi
 EOF
 chmod +x /usr/local/bin/stellarr-init /usr/local/bin/stellarr-tls-maintenance /usr/local/bin/stellarr \
-  "$stubs/openssl" "$stubs/getent"
+  /usr/bin/dotnet "$stubs/openssl" "$stubs/getent"
 
 # Runs the entrypoint on an empty volume with only the given variables, as the
 # image's ENV and docker run -e would set them. A function named by the
@@ -85,11 +97,42 @@ run() {
     ASPNETCORE_HTTP_PORTS=8080 "$@" bash "$entrypoint" >"$out/stdout" 2>"$out/stderr" || status=$?
 }
 
+# Runs the operator CLI's wrapper with only the given variables, as docker exec
+# starts it with the container's configured environment, for one config get.
+run_cli() {
+  case_name=$1
+  shift
+  rm -rf "$out"
+  mkdir -p "$out"
+  status=0
+  env -i PATH="$stubs:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin" HOME=/root \
+    "$@" bash "$wrapper" --json config get public-url >"$out/stdout" 2>"$out/stderr" || status=$?
+}
+
 image_env=(STELLARR_DATA_ROOT=/data/stellarr)
 
 expect_started() {
   [[ $status -eq 0 ]] || fail "the entrypoint exited with $status"
   grep -qx 'stellarr-init run' "$out/calls" || fail "stellarr-init was not started"
+}
+
+expect_cli_started() {
+  [[ $status -eq 0 ]] || fail "the wrapper exited with $status"
+  expect_call 'dotnet /opt/stellarr/api/Stellarr.Cli.dll --json config get public-url'
+}
+
+# The public address in the environment last recorded, as the two keys that
+# carry it, each "unset" when it is not there.
+public_address() {
+  local name line values=()
+  for name in Operations__PublicUrl Desktop__CanonicalOrigin; do
+    if line=$(grep -m1 "^$name=" "$out/env"); then
+      values+=("${line#*=}")
+    else
+      values+=(unset)
+    fi
+  done
+  printf '%s %s' "${values[@]}"
 }
 
 expect_failure() {
@@ -303,21 +346,36 @@ expect_line /etc/turnserver.conf 'realm=localhost'
 expect_line /etc/turnserver.conf 'no-tcp'
 expect_line /run/stellarr/stellarr-instance.js 'window.stellarrInstanceLanguage="en";'
 
-# The values it refuses, before any service starts.
-run bad-public-ip "${image_env[@]}" STELLARR_PUBLIC_IP=203.0.113.300
-expect_failure "STELLARR_PUBLIC_IP must be an IPv4 address or the value 'auto'."
+# The values it refuses, before any service starts, each with its one message.
+# The wrapper prints the same message and runs the CLI all the same, without
+# the public address: the CLI is how an instance that does not start is
+# repaired.
+expect_refused() {
+  local name=$1 message=$2
+  shift 2
+  run "$name" "${image_env[@]}" STELLARR_DOMAIN=chat.example.com "$@"
+  expect_failure "$message"
+  [[ $(<"$out/stderr") == "$message" ]] || fail "the entrypoint said more than: $message"
+  run_cli "$name (wrapper)" "${image_env[@]}" STELLARR_DOMAIN=chat.example.com "$@"
+  expect_cli_started
+  [[ $(<"$out/stderr") == "$message" ]] || fail "the wrapper did not say only: $message"
+  expect_absent Operations__PublicUrl Desktop__CanonicalOrigin
+}
+expect_refused bad-public-ip "STELLARR_PUBLIC_IP must be an IPv4 address or the value 'auto'." \
+  STELLARR_PUBLIC_IP=203.0.113.300
+expect_refused bad-https-port "STELLARR_HTTPS_PORT must be an integer between 1 and 65535." STELLARR_HTTPS_PORT=0
+expect_refused bad-public-port "STELLARR_PUBLIC_PORT must be an integer between 1 and 65535." \
+  STELLARR_PUBLIC_PORT=70000
+expect_refused bad-media-port "STELLARR_MEDIA_PORT must be an integer between 1 and 65535." STELLARR_MEDIA_PORT=udp
+expect_refused bad-turn-tcp "STELLARR_TURN_TCP_ENABLED must be 'true' or 'false'." STELLARR_TURN_TCP_ENABLED=yes
+expect_refused bad-turns "STELLARR_TURNS_ENABLED must be 'true' or 'false'." STELLARR_TURNS_ENABLED=1
+# Only the entrypoint looks the domain up, so the wrapper still hands the CLI
+# the address.
 run unresolved-public-ip "${image_env[@]}" STELLARR_PUBLIC_IP=auto STELLARR_DOMAIN=nowhere.example
 expect_failure "STELLARR_PUBLIC_IP=auto could not resolve a public IPv4 address for STELLARR_DOMAIN=nowhere.example."
-run bad-https-port "${image_env[@]}" STELLARR_HTTPS_PORT=0
-expect_failure "STELLARR_HTTPS_PORT must be an integer between 1 and 65535."
-run bad-public-port "${image_env[@]}" STELLARR_PUBLIC_PORT=70000
-expect_failure "STELLARR_PUBLIC_PORT must be an integer between 1 and 65535."
-run bad-media-port "${image_env[@]}" STELLARR_MEDIA_PORT=udp
-expect_failure "STELLARR_MEDIA_PORT must be an integer between 1 and 65535."
-run bad-turn-tcp "${image_env[@]}" STELLARR_TURN_TCP_ENABLED=yes
-expect_failure "STELLARR_TURN_TCP_ENABLED must be 'true' or 'false'."
-run bad-turns "${image_env[@]}" STELLARR_TURNS_ENABLED=1
-expect_failure "STELLARR_TURNS_ENABLED must be 'true' or 'false'."
+run_cli unresolved-public-ip-wrapper "${image_env[@]}" STELLARR_PUBLIC_IP=auto STELLARR_DOMAIN=nowhere.example
+expect_cli_started
+expect_export Operations__PublicUrl https://nowhere.example
 
 # A staged backup is restored by the CLI before anything else; a refused one
 # leaves the data as it was, and a failed one stops the start.
@@ -336,4 +394,74 @@ expect_failure "Restoring the staged backup failed"
 STAGE=broken run restore-broken "${image_env[@]}"
 expect_failure "A restore failed part-way"
 
-echo 'PASS: the entrypoint exports and renders what its settings say, and refuses the values it cannot use.'
+# The operator CLI's wrapper. On the same variables it gives the CLI the
+# public address the entrypoint gives the API, and so it does on the
+# environment the entrypoint exported, as when the entrypoint runs it to
+# restore a backup. It sets the address in $address.
+agree() {
+  local name=$1 entrypoint_gave
+  local -a exported_env
+  shift
+  run "$name" "${image_env[@]}" "$@"
+  expect_started
+  entrypoint_gave=$(public_address)
+  mapfile -t exported_env <"$out/env"
+  run_cli "$name (wrapper)" "${image_env[@]}" "$@"
+  expect_cli_started
+  [[ ! -s $out/stderr ]] || fail "the wrapper printed something"
+  [[ $(public_address) == "$entrypoint_gave" ]] ||
+    fail "the wrapper gave '$(public_address)', the entrypoint '$entrypoint_gave'"
+  run_cli "$name (wrapper after the entrypoint)" "${exported_env[@]}"
+  expect_cli_started
+  [[ $(public_address) == "$entrypoint_gave" ]] ||
+    fail "the wrapper gave '$(public_address)', the entrypoint '$entrypoint_gave'"
+  address=$entrypoint_gave
+}
+
+expect_address() {
+  [[ $address == "$1 $1" ]] || fail "the public address is '$address', not '$1'"
+}
+
+agree domain-and-port STELLARR_DOMAIN=chat.example.com STELLARR_HTTPS_PORT=8443
+expect_address https://chat.example.com:8443
+agree public-port-443 STELLARR_DOMAIN=chat.example.com STELLARR_HTTPS_PORT=9443 STELLARR_PUBLIC_PORT=443
+expect_address https://chat.example.com
+agree public-port STELLARR_DOMAIN=chat.example.com STELLARR_PUBLIC_PORT=09443
+expect_address https://chat.example.com:9443
+agree explicit-url STELLARR_DOMAIN=chat.example.com STELLARR_PUBLIC_URL=https://proxy.example/
+expect_address https://proxy.example
+agree ipv6-host STELLARR_DOMAIN=2001:db8::5 STELLARR_HTTPS_PORT=8443
+expect_address 'https://[2001:db8::5]:8443'
+agree no-domain
+expect_address unset
+agree blank-domain STELLARR_DOMAIN=' ' STELLARR_PUBLIC_URL=' '
+expect_address unset
+
+# The wrapper adds the address and nothing else. A default exported under an
+# operator's name would make the CLI report it as set in the environment, and
+# a value it was given reaches the CLI as it was written.
+given=(STELLARR_DATA_ROOT=/data/stellarr STELLARR_DOMAIN=chat.example.com STELLARR_PUBLIC_PORT=09443)
+run_cli nothing-else "${given[@]}"
+expect_cli_started
+expect_export STELLARR_PUBLIC_PORT 09443
+expect_absent STELLARR_HTTPS_PORT STELLARR_LANGUAGE STELLARR_MEDIA_PORT STELLARR_TURN_TCP_ENABLED
+added=$(sed 's/=.*//' "$out/env" | grep -vxE 'PATH|HOME|PWD|OLDPWD|SHLVL|_' |
+  { grep -vxF "$(printf '%s\n' "${given[@]%%=*}")" || true; } | sort | tr '\n' ' ')
+[[ $added == 'Desktop__CanonicalOrigin Operations__PublicUrl ' ]] || fail "the wrapper adds: $added"
+
+# The CLI's exit status is the wrapper's; the entrypoint tells a refused
+# restore by it.
+echo 4 >"$stubs/dotnet-exit"
+run_cli exit-status "${image_env[@]}"
+rm "$stubs/dotnet-exit"
+[[ $status -eq 4 ]] || fail "the wrapper exited with $status, not the CLI's 4"
+
+# Without the shared rules the CLI still runs, without the address.
+mv /usr/local/lib/stellarr/settings.sh /usr/local/lib/stellarr/settings.sh.away
+run_cli without-settings "${image_env[@]}" STELLARR_DOMAIN=chat.example.com
+mv /usr/local/lib/stellarr/settings.sh.away /usr/local/lib/stellarr/settings.sh
+expect_cli_started
+expect_absent Operations__PublicUrl Desktop__CanonicalOrigin
+
+echo 'PASS: the entrypoint exports and renders what its settings say, and refuses the values it cannot use;' \
+  'the wrapper hands the CLI the same public address.'

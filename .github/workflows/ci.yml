@@ -83,8 +83,9 @@ jobs:
           # The installer downloads docker-compose.yml and .env.example and
           # writes .env from them, and its tests read both. The same job
           # checks that the settings in those two files are the ones the
-          # image reads and the configuration page lists.
-          check installer '^(install\.sh$|infra/tests/(install|setting-names)|infra/(entrypoint|tls-maintenance)\.sh$|server/Stellarr\.Api/Operations/StellarrVariables\.cs$|docs/install/configuration\.md$|docker-compose\.yml$|\.env\.example$|\.github/workflows/ci\.yml$)'
+          # image reads and the configuration page lists, and runs ShellCheck
+          # on the scripts that read them.
+          check installer '^(install\.sh$|infra/tests/(install|setting-names|entrypoint)|infra/(entrypoint|settings|stellarr-cli|tls-maintenance)\.sh$|server/Stellarr\.Api/Operations/StellarrVariables\.cs$|docs/install/configuration\.md$|docker-compose\.yml$|\.env\.example$|\.github/workflows/ci\.yml$)'
           # vite.config.ts, documents.ts and worklets.ts lay out the build that
           # nginx serves. The image job drills the process manager in the
           # image, so its sources count, not only its manifest. It takes the
@@ -320,7 +321,7 @@ jobs:
     steps:
       - uses: actions/checkout@v7
       - name: Check the scripts with ShellCheck
-        run: docker run --rm -v "$PWD":/mnt:ro -w /mnt koalaman/shellcheck:v0.11.0@sha256:61862eba1fcf09a484ebcc6feea46f1782532571a34ed51fedf90dd25f925a8d install.sh infra/tests/install.test.sh infra/tests/setting-names.test.sh
+        run: docker run --rm -v "$PWD":/mnt:ro -w /mnt koalaman/shellcheck:v0.11.0@sha256:61862eba1fcf09a484ebcc6feea46f1782532571a34ed51fedf90dd25f925a8d install.sh infra/tests/install.test.sh infra/tests/setting-names.test.sh infra/settings.sh infra/entrypoint.sh infra/stellarr-cli.sh infra/tests/entrypoint.test.sh
       - name: Check that every place names the same settings
         run: bash infra/tests/setting-names.test.sh
       - run: bash infra/tests/install.test.sh
@@ -341,7 +342,8 @@ jobs:
         run: bash infra/tests/tls-maintenance.test.sh
       # The entrypoint writes to /etc and /run, so its test runs as root in a
       # throwaway container of the image's base, with the services stubbed.
-      - name: Check the entrypoint
+      # The same test runs the CLI's wrapper against a stub of dotnet.
+      - name: Check the entrypoint and the CLI's wrapper
         run: docker run --rm -v "$PWD":/w:ro -w /w ubuntu:24.04@sha256:9c7f200c07e3d4a03e7249d2c16bf66a51120fb876aa2242cf31451412543289 bash infra/tests/entrypoint.test.sh
       - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
