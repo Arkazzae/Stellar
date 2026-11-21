@@ -63,12 +63,22 @@ describe("parseVoiceSettings", () => {
     expect(parseVoiceSettings(VALID)).toEqual(VALID);
   });
 
-  it("accepts the Premium profile and uses it for a fresh install", () => {
-    expect(DEFAULT_SETTINGS.opusProfile).toBe("premium");
+  it("starts a fresh install on the automatic quality and the browser's suppressor", () => {
+    expect(DEFAULT_SETTINGS.opusProfile).toBe("auto");
     expect(DEFAULT_SETTINGS.noiseSuppression).toBe("browser");
-    expect(parseVoiceSettings({ ...VALID, opusProfile: "premium" }).opusProfile).toBe(
-      "premium",
-    );
+    expect(parseVoiceSettings({ ...VALID, opusProfile: "auto" }).opusProfile).toBe("auto");
+  });
+
+  it("gives settings saved without a quality the automatic one", () => {
+    const { opusProfile: _dropped, ...withoutQuality } = VALID;
+
+    expect(parseVoiceSettings(withoutQuality).opusProfile).toBe("auto");
+  });
+
+  it("keeps every stored explicit profile", () => {
+    for (const opusProfile of ["economy", "balanced", "clarity", "premium", "studio"] as const) {
+      expect(parseVoiceSettings({ ...VALID, opusProfile }).opusProfile).toBe(opusProfile);
+    }
   });
 
   it("accepts the Studio Opus ceiling and playback processing profiles", () => {

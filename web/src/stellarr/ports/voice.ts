@@ -28,6 +28,7 @@ export type { SuppressorDownload, VoiceReceivePreferences } from "@/lib/voice/ty
  * its own label or the pane cannot render it.
  */
 export {
+  AUTO_CEILING_PROFILE,
   INPUT_GAIN_MAX_DB,
   INPUT_GAIN_MIN_DB,
   INPUT_GAIN_STEP_DB,
@@ -36,6 +37,7 @@ export {
   OPUS_PROFILE_HINT,
   OPUS_PROFILE_KBPS,
   OPUS_PROFILE_LABEL,
+  opusCeilingKbps,
   PLAYBACK_EQ_MAX_DB,
   PLAYBACK_EQ_MIN_DB,
   PLAYBACK_EQ_STEP_DB,
@@ -44,6 +46,7 @@ export {
 export type {
   NoiseSuppressionMode,
   OpusProfileId,
+  OpusQualityId,
   PlaybackProfileId,
   PlaybackTuning,
 } from "@/lib/voice/settings";

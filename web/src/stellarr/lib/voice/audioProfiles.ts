@@ -1,5 +1,6 @@
-import { OPUS_PROFILE_KBPS } from "./opusRates";
-import type { NoiseSuppressionMode, OpusProfileId, VoiceSettings } from "./settings";
+import { AUTO_CEILING_PROFILE, OPUS_PROFILE_KBPS } from "./opusRates";
+import type { BitrateTiers } from "./rtc/bitrate";
+import type { NoiseSuppressionMode, OpusQualityId, VoiceSettings } from "./settings";
 
 /**
  * Opus is configured, never replaced.
@@ -19,7 +20,7 @@ import type { NoiseSuppressionMode, OpusProfileId, VoiceSettings } from "./setti
  * - `minptime=10` with `a=ptime:20`: 20 ms packets, the Opus default and the
  *   best latency/overhead trade for speech.
  */
-export type AudioProfileId = OpusProfileId | "music";
+export type AudioProfileId = OpusQualityId | "music";
 
 export interface AudioProfile {
   id: AudioProfileId;
@@ -31,10 +32,15 @@ export interface AudioProfile {
   dtx: boolean;
   ptime: number;
   contentHint: "speech" | "music";
+  /**
+   * What the adaptive controller aims for on each measured tier. Without it
+   * the controller takes fractions of `maxBitrate`.
+   */
+  tiers?: BitrateTiers;
 }
 
 function speechProfile(
-  id: OpusProfileId,
+  id: OpusQualityId,
   maxBitrate: number,
   minBitrate: number,
   dtx = false,
@@ -42,8 +48,26 @@ function speechProfile(
   return { id, maxBitrate, minBitrate, stereo: false, dtx, ptime: 20, contentHint: "speech" };
 }
 
+/** The lowest any speech profile goes: the economy profile's floor. */
+const ECONOMY_FLOOR = 16_000;
+
+const AUTO_CEILING = OPUS_PROFILE_KBPS[AUTO_CEILING_PROFILE] * 1000;
+
 export const AUDIO_PROFILES: Record<AudioProfileId, AudioProfile> = {
-  economy: speechProfile("economy", OPUS_PROFILE_KBPS.economy * 1000, 16_000, true),
+  // One range across the profiles, from the ceiling of `AUTO_CEILING_PROFILE`
+  // down to economy's floor. Rather than fractions of its own ceiling, it steps
+  // down through the profiles: their ceiling on a good link, balanced's on a
+  // fair one and economy's on a poor one. DTX stays off, as in the other
+  // quality profiles.
+  auto: {
+    ...speechProfile("auto", AUTO_CEILING, ECONOMY_FLOOR),
+    tiers: {
+      good: AUTO_CEILING,
+      fair: OPUS_PROFILE_KBPS.balanced * 1000,
+      poor: OPUS_PROFILE_KBPS.economy * 1000,
+    },
+  },
+  economy: speechProfile("economy", OPUS_PROFILE_KBPS.economy * 1000, ECONOMY_FLOOR, true),
   balanced: speechProfile("balanced", OPUS_PROFILE_KBPS.balanced * 1000, 24_000),
   clarity: speechProfile("clarity", OPUS_PROFILE_KBPS.clarity * 1000, 32_000),
   premium: speechProfile("premium", OPUS_PROFILE_KBPS.premium * 1000, 64_000),

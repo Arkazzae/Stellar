@@ -14,3 +14,10 @@ export const OPUS_PROFILE_KBPS: Record<OpusProfileId, number> = {
   premium: 128,
   studio: 256,
 };
+
+/**
+ * The profile whose ceiling the automatic quality starts from. The encoder's
+ * bound, the "up to" in the menu and the hint all read this one value, so
+ * raising it to Studio is a change of this line alone.
+ */
+export const AUTO_CEILING_PROFILE: OpusProfileId = "premium";

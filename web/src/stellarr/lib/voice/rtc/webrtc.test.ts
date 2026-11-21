@@ -2909,7 +2909,7 @@ describe("audio tuning", () => {
     expect(ordered.map((codec) => codec.mimeType)).toEqual(["audio/opus", "audio/PCMU"]);
   });
 
-  it("caps the default Premium sender at 128 kb/s", async () => {
+  it("caps the default automatic sender at its 128 kb/s ceiling", async () => {
     const client = build();
 
     const pc = await joined(client);

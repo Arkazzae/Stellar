@@ -1,6 +1,7 @@
 import type { MessageKey } from "@/i18n";
 import { ChangeNotifier } from "@/lib/realtime/emitter";
 import { usesWorkletSuppression } from "./audioProfiles";
+import { AUTO_CEILING_PROFILE, OPUS_PROFILE_KBPS } from "./opusRates";
 import {
   CAMERA_PROFILES,
   DEFAULT_CAMERA_QUALITY,
@@ -13,7 +14,7 @@ import {
 } from "./video/screenShare";
 
 /** The encoder is built from these, and the settings name them under each stop. */
-export { OPUS_PROFILE_KBPS } from "./opusRates";
+export { AUTO_CEILING_PROFILE, OPUS_PROFILE_KBPS };
 
 /**
  * Bump when the shape changes incompatibly. A stored object from another
@@ -36,6 +37,19 @@ export function storageKeyForUser(userId: string): string {
 
 const OPUS_PROFILE_IDS = ["economy", "balanced", "clarity", "premium", "studio"] as const;
 export type OpusProfileId = (typeof OPUS_PROFILE_IDS)[number];
+
+/**
+ * What the person chooses for their voice: one of the fixed profiles, or
+ * `auto`, which starts at the ceiling of `AUTO_CEILING_PROFILE` and lets the
+ * adaptive controller take it as low as the economy profile's floor.
+ */
+const OPUS_QUALITY_IDS = ["auto", ...OPUS_PROFILE_IDS] as const;
+export type OpusQualityId = (typeof OPUS_QUALITY_IDS)[number];
+
+/** The most a choice lets the encoder send, in kb/s; `auto` is bounded by its ceiling profile. */
+export function opusCeilingKbps(quality: OpusQualityId): number {
+  return OPUS_PROFILE_KBPS[quality === "auto" ? AUTO_CEILING_PROFILE : quality];
+}
 
 /**
  * `rnnoise`, `gtcrn` and `speex` each run locally as a WASM binary in an
@@ -107,7 +121,7 @@ export interface VoiceSettings {
   /** `null` means the browser's default camera. */
   videoDeviceId: string | null;
   cameraQuality: CameraQualityId;
-  opusProfile: OpusProfileId;
+  opusProfile: OpusQualityId;
   screenShareQuality: ScreenShareQualityId;
   noiseSuppression: NoiseSuppressionMode;
   echoCancellation: boolean;
@@ -140,7 +154,9 @@ export const DEFAULT_SETTINGS: VoiceSettings = Object.freeze({
   playbackTuning: PLAYBACK_TUNING_PRESETS.studio,
   videoDeviceId: null,
   cameraQuality: DEFAULT_CAMERA_QUALITY,
-  opusProfile: "premium",
+  // The encoder follows the link from the ceiling down. A stored explicit
+  // profile still wins.
+  opusProfile: "auto",
   screenShareQuality: DEFAULT_SCREEN_SHARE_QUALITY,
   // The browser's own suppressor is always there and has nothing to download.
   // The three engines are opt-in, and their files are fetched only once one
@@ -154,8 +170,12 @@ export const DEFAULT_SETTINGS: VoiceSettings = Object.freeze({
   inputGate: true,
 });
 
-/** Catalog keys for what each choice is called and what it means. */
-export const OPUS_PROFILE_LABEL: Record<OpusProfileId, MessageKey> = {
+/**
+ * Catalog keys for what each choice is called and what it means. The hints
+ * take `{kbps}`, the choice's ceiling from `opusCeilingKbps`.
+ */
+export const OPUS_PROFILE_LABEL: Record<OpusQualityId, MessageKey> = {
+  auto: "voice.profile.auto",
   economy: "voice.profile.economy",
   balanced: "voice.profile.balanced",
   clarity: "voice.profile.clarity",
@@ -163,7 +183,8 @@ export const OPUS_PROFILE_LABEL: Record<OpusProfileId, MessageKey> = {
   studio: "voice.profile.studio",
 };
 
-export const OPUS_PROFILE_HINT: Record<OpusProfileId, MessageKey> = {
+export const OPUS_PROFILE_HINT: Record<OpusQualityId, MessageKey> = {
+  auto: "voice.profile.autoHint",
   economy: "voice.profile.economyHint",
   balanced: "voice.profile.balancedHint",
   clarity: "voice.profile.clarityHint",
@@ -294,7 +315,7 @@ export function parseVoiceSettings(value: unknown): VoiceSettings {
       value["cameraQuality"],
       DEFAULT_SETTINGS.cameraQuality,
     ),
-    opusProfile: oneOf(OPUS_PROFILE_IDS, value["opusProfile"], DEFAULT_SETTINGS.opusProfile),
+    opusProfile: oneOf(OPUS_QUALITY_IDS, value["opusProfile"], DEFAULT_SETTINGS.opusProfile),
     screenShareQuality: oneOf(
       SCREEN_QUALITY_IDS,
       value["screenShareQuality"],

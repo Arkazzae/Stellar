@@ -1,8 +1,14 @@
 import type { MessageKey, Translator } from "@/i18n";
-import { CAMERA_PROFILES, SCREEN_SHARE_PROFILES } from "@/ports";
+import {
+  CAMERA_PROFILES,
+  OPUS_PROFILE_LABEL,
+  SCREEN_SHARE_PROFILES,
+  opusCeilingKbps,
+} from "@/ports";
 import type {
   CameraQualityId,
   OpusProfileId,
+  OpusQualityId,
   ScreenShareQualityId,
   VoiceSettings,
 } from "@/ports";
@@ -17,21 +23,30 @@ interface QualityMenuContent {
 
 type ChangeSettings = (patch: Partial<VoiceSettings>) => void;
 
-// Every list below runs from the lightest profile to the heaviest.
-const OPUS_ORDER: readonly OpusProfileId[] = [
+// Every list below runs from the lightest profile to the heaviest. The voice
+// puts the automatic choice ahead of them, as the settings do.
+const OPUS_ORDER: readonly OpusQualityId[] = [
+  "auto",
   "economy",
   "balanced",
   "clarity",
   "premium",
   "studio",
 ];
-const OPUS: Record<OpusProfileId, { label: MessageKey; bitrate: string }> = {
-  economy: { label: "voice.profile.economy", bitrate: "≈32 kb/s" },
-  balanced: { label: "voice.profile.balanced", bitrate: "≈64 kb/s" },
-  clarity: { label: "voice.profile.clarity", bitrate: "≈96 kb/s" },
-  premium: { label: "voice.profile.premium", bitrate: "128 kb/s" },
-  studio: { label: "voice.profile.studio", bitrate: "256 kb/s" },
+const OPUS_BITRATE: Record<OpusProfileId, string> = {
+  economy: "≈32 kb/s",
+  balanced: "≈64 kb/s",
+  clarity: "≈96 kb/s",
+  premium: "128 kb/s",
+  studio: "256 kb/s",
 };
+
+/** A fixed profile's bitrate, or how high the automatic choice may go. */
+function opusDetail(t: Translator, id: OpusQualityId): string {
+  return id === "auto"
+    ? t("voice.profile.autoDetail", { kbps: opusCeilingKbps(id) })
+    : OPUS_BITRATE[id];
+}
 
 const CAMERA_ORDER: readonly CameraQualityId[] = ["economy", "balanced", "sharp"];
 const CAMERA_LABEL: Record<CameraQualityId, MessageKey> = {
@@ -80,18 +95,18 @@ export function micQualityMenu(
   t: Translator,
   change: ChangeSettings,
 ): QualityMenuContent {
-  const active = OPUS[settings.opusProfile];
+  const active = settings.opusProfile;
   return {
     summary: t("voiceBar.micSummary", {
-      quality: t(active.label),
-      bitrate: active.bitrate,
+      quality: t(OPUS_PROFILE_LABEL[active]),
+      bitrate: opusDetail(t, active),
     }),
     groups: [
       choiceGroup(
         t("voiceBar.audioQuality"),
         OPUS_ORDER,
-        settings.opusProfile,
-        (id) => ({ label: t(OPUS[id].label), detail: OPUS[id].bitrate }),
+        active,
+        (id) => ({ label: t(OPUS_PROFILE_LABEL[id]), detail: opusDetail(t, id) }),
         (opusProfile) => change({ opusProfile }),
       ),
     ],
