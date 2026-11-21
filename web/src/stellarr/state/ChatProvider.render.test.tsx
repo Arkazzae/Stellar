@@ -60,6 +60,10 @@ vi.mock("@/lib/audio/systemFx", () => ({ playSystemFx: vi.fn() }));
 
 const ADA = { id: "u-ada", displayName: "Ada" };
 
+/** Ada's message written just now, so it counts as unread where it is not read. */
+const newMessage = (id: string, channelId: string) =>
+  message(id, 0, { author: ADA, channelId, createdAt: new Date().toISOString() });
+
 let h: ReturnType<typeof createChatHarness>;
 
 beforeEach(() => {
@@ -127,6 +131,25 @@ describe("what a chat event renders", () => {
     act(() => h.emit.embeds({ messageId: "m3", channelId: "ch-general", embeds: [] }));
 
     expect(log.take().flat()).toEqual([]);
+  });
+
+  it("leaves the rail out of a message in the open channel", async () => {
+    const log = await mountServerView();
+
+    act(() => h.emit.message(message("m3", 3, { author: ADA })));
+
+    expect(log.take().flat()).not.toContain("RailContainer");
+  });
+
+  it("renders a message in another channel on that channel's row and on no other", async () => {
+    const log = await mountServerView();
+
+    act(() => h.emit.message(newMessage("r1", "ch-random")));
+
+    const commits = log.take();
+    expect(commits).toHaveLength(1);
+    expect(commits.flat().filter((name) => name === "ChannelButton")).toHaveLength(1);
+    expect(screen.getByLabelText("Nieprzeczytane: 1")).toBeInTheDocument();
   });
 
   it("renders a typing notice on the typing line alone, and one elsewhere nowhere", async () => {

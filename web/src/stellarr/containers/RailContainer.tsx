@@ -6,7 +6,7 @@ import type { ChannelThreadVM, TextChannelVM } from "@/components/view-models";
 import { useMediaQuery } from "@/hooks/useMediaQuery";
 import {
   useAccount,
-  useChat,
+  useChatRail,
   useDirectory,
   usePorts,
   useSession,
@@ -57,14 +57,14 @@ export const RailContainer = memo(function RailContainer() {
   const { preferences, setPreferences } = useAccount();
   const memberMenu = useMemberMenu();
   const {
-    thread,
+    activeThreadId,
     threadsByChannel,
     openingThreadId,
     openThread,
     closeThread,
     unreadByChannel,
     markChannelRead,
-  } = useChat();
+  } = useChatRail();
 
   // Below 768 the rail is a drawer; shut, it is off screen and must be inert.
   const railIsDrawer = useMediaQuery("(max-width: 767px)", false);
@@ -130,7 +130,7 @@ export const RailContainer = memo(function RailContainer() {
       serverName={server.name}
       textChannels={texts}
       threadsByChannel={threadRows}
-      activeThreadId={thread?.rootId ?? null}
+      activeThreadId={activeThreadId}
       openingThreadId={openingThreadId}
       onOpenThread={({ channelId, id }) => {
         const summary = threadsByChannel[channelId]?.find(
