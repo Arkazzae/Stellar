@@ -15,6 +15,8 @@ import type { InterfaceLocale, Translator } from "@/i18n";
 import { initials, toChannelSlug } from "@/lib/format/format";
 import { useLanguage } from "@/state/hooks";
 
+import styles from "./ServerCreateModal.module.css";
+
 export interface ServerCreateInput {
   name: string;
   description: string;
@@ -84,6 +86,14 @@ function blankDraft(t: Translator): Draft {
     mentionsOnly: true,
     voiceJoinSound: true,
   };
+}
+
+/** The module's classes for the names given, skipping the ones switched off. */
+function css(...names: (string | false)[]): string {
+  return names
+    .map((name) => (name === false ? undefined : styles[name]))
+    .filter(Boolean)
+    .join(" ");
 }
 
 /** The rail's own tiles that the preview shows above the new one. */
@@ -227,20 +237,20 @@ export function ServerCreateModal({
   const renderStep = () => {
     if (created !== null) {
       return (
-        <div className="nsv-done">
+        <div className={css("done")}>
           <Sticker name="05-invite-friends" size="main" align="center" />
-          <h2 id={titleId} className="nsv-title">
+          <h2 id={titleId} className={css("title")}>
             {t("auth.setup.inviteTitle")}
           </h2>
-          <p className="nsv-lead">{t("auth.setup.inviteDescription", { server: created.name })}</p>
+          <p className={css("lead")}>{t("auth.setup.inviteDescription", { server: created.name })}</p>
           {invite.state === "failed" ? (
-            <p className="nsv-hint bad nsv-done-note" role="alert">
+            <p className={css("hint", "bad", "doneNote")} role="alert">
               {t("auth.setup.inviteFailed")}
             </p>
           ) : (
             <>
-              <div className="nsv-link">
-                <output className="nsv-input nsv-url" aria-label={t("auth.invite.linkLabel")}>
+              <div className={css("link")}>
+                <output className={css("input", "url")} aria-label={t("auth.invite.linkLabel")}>
                   {invite.state === "ready" ? invite.url : t("auth.setup.inviteMaking")}
                 </output>
                 <Button
@@ -253,7 +263,7 @@ export function ServerCreateModal({
                   {copied ? t("auth.setup.copied") : t("auth.setup.copy")}
                 </Button>
               </div>
-              <p className="nsv-hint nsv-done-note">{t("auth.setup.inviteHint")}</p>
+              <p className={css("hint", "doneNote")}>{t("auth.setup.inviteHint")}</p>
             </>
           )}
         </div>
@@ -264,19 +274,19 @@ export function ServerCreateModal({
       case 1:
         return (
           <>
-            <h2 id={titleId} className="nsv-title">
+            <h2 id={titleId} className={css("title")}>
               {t("shell.createServerNameTitle")}
             </h2>
-            <p className="nsv-lead">{t("auth.setup.serverDescription")}</p>
-            <div className="nsv-fields">
-              <div className="nsv-field">
-                <label className="nsv-label" htmlFor={nameId}>
+            <p className={css("lead")}>{t("auth.setup.serverDescription")}</p>
+            <div className={css("fields")}>
+              <div className={css("field")}>
+                <label className={css("label")} htmlFor={nameId}>
                   {t("shell.serverName")}
                 </label>
                 <input
                   ref={nameInput}
                   id={nameId}
-                  className="nsv-input"
+                  className={css("input")}
                   type="text"
                   value={draft.name}
                   maxLength={80}
@@ -292,23 +302,23 @@ export function ServerCreateModal({
                   }}
                 />
                 {error === null ? (
-                  <p id={nameNoteId} className="nsv-hint">
+                  <p id={nameNoteId} className={css("hint")}>
                     {t("shell.serverNameDetail")}
                   </p>
                 ) : (
-                  <p id={nameNoteId} className="nsv-hint bad" role="alert">
+                  <p id={nameNoteId} className={css("hint", "bad")} role="alert">
                     {error}
                   </p>
                 )}
               </div>
-              <div className="nsv-field">
-                <label className="nsv-label" htmlFor={descriptionId}>
+              <div className={css("field")}>
+                <label className={css("label")} htmlFor={descriptionId}>
                   {t("shell.serverDescription")}
-                  <span className="nsv-optional">{t("shell.createServerOptional")}</span>
+                  <span className={css("optional")}>{t("shell.createServerOptional")}</span>
                 </label>
                 <textarea
                   id={descriptionId}
-                  className="nsv-input"
+                  className={css("input")}
                   value={draft.description}
                   maxLength={280}
                   placeholder={t("shell.serverDescriptionPlaceholder")}
@@ -322,23 +332,23 @@ export function ServerCreateModal({
       case 2:
         return (
           <>
-            <h2 id={titleId} className="nsv-title">
+            <h2 id={titleId} className={css("title")}>
               {t("shell.createServerChannelsTitle")}
             </h2>
-            <p className="nsv-lead">{t("shell.starterChannelsNote")}</p>
-            <div className="nsv-fields">
-              <div className="nsv-field">
-                <label className="nsv-label" htmlFor={textChannelId}>
+            <p className={css("lead")}>{t("shell.starterChannelsNote")}</p>
+            <div className={css("fields")}>
+              <div className={css("field")}>
+                <label className={css("label")} htmlFor={textChannelId}>
                   {t("shell.starterTextChannel")}
                 </label>
-                <div className="nsv-chrow">
-                  <span className="nsv-glyph" aria-hidden="true">
+                <div className={css("channelRow")}>
+                  <span className={css("glyph")} aria-hidden="true">
                     #
                   </span>
                   <input
                     ref={textInput}
                     id={textChannelId}
-                    className="nsv-input"
+                    className={css("input")}
                     type="text"
                     value={draft.textChannel}
                     maxLength={60}
@@ -350,14 +360,14 @@ export function ServerCreateModal({
                     onChange={(event) => change("textChannel", event.target.value)}
                   />
                 </div>
-                <p id={textNoteId} className="nsv-hint">
+                <p id={textNoteId} className={css("hint")}>
                   {textSlug.length === 0
                     ? t("channel.lowercaseAndHyphens")
                     : t("channel.willCreate", { name: `#${textSlug}` })}
                 </p>
               </div>
-              <div className="nsv-switch">
-                <span className="nsv-switch-txt" aria-hidden="true">
+              <div className={css("switchRow")}>
+                <span className={css("switchText")} aria-hidden="true">
                   <b>{t("shell.starterVoiceChannel")}</b>
                   <span>{t("shell.starterVoiceChannelDetail")}</span>
                 </span>
@@ -369,13 +379,13 @@ export function ServerCreateModal({
                 />
               </div>
               {draft.withVoice ? (
-                <div className="nsv-field">
-                  <div className="nsv-chrow">
-                    <span className="nsv-glyph" aria-hidden="true">
+                <div className={css("field")}>
+                  <div className={css("channelRow")}>
+                    <span className={css("glyph")} aria-hidden="true">
                       <Icon name="speaker" size={18} />
                     </span>
                     <input
-                      className="nsv-input"
+                      className={css("input")}
                       type="text"
                       value={draft.voiceChannel}
                       maxLength={60}
@@ -390,11 +400,11 @@ export function ServerCreateModal({
                     />
                   </div>
                   {channelsClash ? (
-                    <p id={voiceNoteId} className="nsv-hint bad" role="alert">
+                    <p id={voiceNoteId} className={css("hint", "bad")} role="alert">
                       {t("shell.starterChannelsClash")}
                     </p>
                   ) : (
-                    <p id={voiceNoteId} className="nsv-hint">
+                    <p id={voiceNoteId} className={css("hint")}>
                       {voiceSlug.length === 0
                         ? t("channel.lowercaseAndHyphens")
                         : t("channel.willCreate", { name: voiceSlug })}
@@ -420,13 +430,13 @@ export function ServerCreateModal({
         ];
         return (
           <>
-            <h2 id={titleId} className="nsv-title">
+            <h2 id={titleId} className={css("title")}>
               {t("shell.createServerAccessTitle")}
             </h2>
-            <p className="nsv-lead">{t("shell.createServerAccessLead")}</p>
+            <p className={css("lead")}>{t("shell.createServerAccessLead")}</p>
             <div
               ref={accessGroup}
-              className="nsv-pick"
+              className={css("pick")}
               role="radiogroup"
               aria-label={t("shell.createServerStepAccess")}
             >
@@ -438,7 +448,7 @@ export function ServerCreateModal({
                     ref={access.ref(index)}
                     type="button"
                     role="radio"
-                    className={on ? "nsv-opt on" : "nsv-opt"}
+                    className={css("option", on && "on")}
                     aria-checked={on}
                     aria-labelledby={`${accessIds}-${index}`}
                     aria-describedby={`${accessIds}-${index}-detail`}
@@ -447,8 +457,8 @@ export function ServerCreateModal({
                     onKeyDown={(event) => access.onKeyDown(event, index)}
                     onClick={() => change("isPublic", option.isPublic)}
                   >
-                    <span className="nsv-dot" aria-hidden="true" />
-                    <span className="nsv-opt-txt">
+                    <span className={css("dot")} aria-hidden="true" />
+                    <span className={css("optionText")}>
                       <b id={`${accessIds}-${index}`}>{option.label}</b>
                       <span id={`${accessIds}-${index}-detail`}>{option.detail}</span>
                     </span>
@@ -456,13 +466,13 @@ export function ServerCreateModal({
                 );
               })}
             </div>
-            <div className="nsv-field nsv-notify">
-              <span className="nsv-label" aria-hidden="true">
+            <div className={css("field", "notify")}>
+              <span className={css("label")} aria-hidden="true">
                 {t("server.notifications")}
               </span>
               <Segmented
                 variant="pill"
-                className="nsv-seg"
+                className={css("segmented")}
                 label={t("server.notifications")}
                 value={draft.mentionsOnly ? "mentions" : "all"}
                 disabled={busy}
@@ -472,10 +482,10 @@ export function ServerCreateModal({
                   { value: "all", label: t("shell.notifyAll") },
                 ]}
               />
-              <p className="nsv-hint">{t("shell.defaultNotificationsDetail")}</p>
+              <p className={css("hint")}>{t("shell.defaultNotificationsDetail")}</p>
             </div>
-            <div className="nsv-switch">
-              <span className="nsv-switch-txt" aria-hidden="true">
+            <div className={css("switchRow")}>
+              <span className={css("switchText")} aria-hidden="true">
                 <b>{t("shell.voiceJoinSound")}</b>
                 <span>{t("shell.voiceJoinSoundDetail")}</span>
               </span>
@@ -496,7 +506,7 @@ export function ServerCreateModal({
     if (done) {
       return (
         <>
-          <span className="nsv-gap" />
+          <span className={css("gap")} />
           <Button type="submit" variant="primary">
             {t("common.done")}
           </Button>
@@ -520,7 +530,7 @@ export function ServerCreateModal({
             {t("shell.createServerBack")}
           </Button>
         )}
-        <span className="nsv-gap" />
+        <span className={css("gap")} />
         {step === 3 ? (
           <Button
             type="submit"
@@ -551,10 +561,10 @@ export function ServerCreateModal({
   };
 
   return (
-    <Modal open={open} onClose={close} labelledBy={titleId} className="nsv-wrap">
-      <form className="nsv" onSubmit={submit} noValidate>
-        <div className="nsv-form">
-          <div className="nsv-top">
+    <Modal open={open} onClose={close} labelledBy={titleId} className={css("wrap")}>
+      <form className={css("sheet")} onSubmit={submit} noValidate>
+        <div className={css("form")}>
+          <div className={css("top")}>
             {done ? (
               <StepIndicator lit={3} label={t("common.done")} name={t("auth.setup.stepInvite")} />
             ) : (
@@ -566,10 +576,10 @@ export function ServerCreateModal({
             )}
             <DialogClose label={t("common.close")} onClose={close} disabled={busy} />
           </div>
-          <div className="nsv-body" key={done ? "done" : step}>
+          <div className={css("body")} key={done ? "done" : step}>
             {renderStep()}
           </div>
-          <footer className="nsv-foot">{renderFooter()}</footer>
+          <footer className={css("foot")}>{renderFooter()}</footer>
         </div>
         <Preview
           t={t}
@@ -622,44 +632,44 @@ function Preview({
   const mark = name === "" ? null : initials(name);
 
   if (step === 1 || step === 2) {
-    const row = step === 2 ? "nsv-mini-row on" : "nsv-mini-row";
+    const row = css("miniRow", step === 2 && "on");
     return (
-      <aside className="nsv-side" aria-label={t("shell.createServerPreview")}>
-        <p className="nsv-side-cap" aria-hidden="true">
+      <aside className={css("side")} aria-label={t("shell.createServerPreview")}>
+        <p className={css("sideCaption")} aria-hidden="true">
           {t("shell.createServerPreview")}
         </p>
-        <div className="nsv-mini" aria-hidden="true">
-          <div className="nsv-mini-rail">
+        <div className={css("mini")} aria-hidden="true">
+          <div className={css("miniRail")}>
             {servers.slice(-PREVIEW_TILES).map((server) => (
-              <span key={server.id} className="nsv-mini-tile">
+              <span key={server.id} className={css("miniTile")}>
                 {server.iconUrl === undefined ? initials(server.name) : <img src={server.iconUrl} alt="" />}
               </span>
             ))}
-            <span className="nsv-mini-tile new">{mark ?? <Icon name="server" size={18} />}</span>
+            <span className={css("miniTile", "newTile")}>{mark ?? <Icon name="server" size={18} />}</span>
           </div>
-          <div className="nsv-mini-ch">
-            <div className={name === "" ? "nsv-mini-name empty" : "nsv-mini-name"}>
+          <div className={css("miniChannels")}>
+            <div className={css("miniName", name === "" && "empty")}>
               {name === "" ? t("auth.setup.emptyName") : name}
             </div>
-            <div className="nsv-mini-cap">{t("shell.textChannels")}</div>
+            <div className={css("miniCaption")}>{t("shell.textChannels")}</div>
             <div className={row}>
-              <span className="nsv-mini-glyph">#</span>
-              <span className="nsv-mini-label">{textChannel || t("auth.setup.channelPlaceholder")}</span>
+              <span className={css("miniGlyph")}>#</span>
+              <span className={css("miniLabel")}>{textChannel || t("auth.setup.channelPlaceholder")}</span>
             </div>
             {voiceChannel === null ? null : (
               <>
-                <div className="nsv-mini-cap">{t("shell.voiceChannels")}</div>
+                <div className={css("miniCaption")}>{t("shell.voiceChannels")}</div>
                 <div className={row}>
-                  <span className="nsv-mini-glyph">
+                  <span className={css("miniGlyph")}>
                     <Icon name="speaker" size={14} />
                   </span>
-                  <span className="nsv-mini-label">{voiceChannel || t("auth.setup.channelPlaceholder")}</span>
+                  <span className={css("miniLabel")}>{voiceChannel || t("auth.setup.channelPlaceholder")}</span>
                 </div>
               </>
             )}
           </div>
         </div>
-        <p className="nsv-hint">
+        <p className={css("hint")}>
           {step === 1 ? t("shell.createServerPreviewTile") : t("shell.createServerPreviewChannels")}
         </p>
       </aside>
@@ -669,27 +679,27 @@ function Preview({
   // Once made, the server is shown as the link being handed out leads to it.
   const listed = isPublic && step === 3;
   return (
-    <aside className="nsv-side" aria-label={t("shell.createServerPreview")}>
-      <p className="nsv-side-cap" aria-hidden="true">
+    <aside className={css("side")} aria-label={t("shell.createServerPreview")}>
+      <p className={css("sideCaption")} aria-hidden="true">
         {t("shell.createServerPreview")}
       </p>
-      <div className="nsv-card" aria-hidden="true">
-        <span className="nsv-card-kicker">
+      <div className={css("card")} aria-hidden="true">
+        <span className={css("cardKicker")}>
           {listed ? t("shell.createServerPreviewDiscover") : t("shell.createServerPreviewInvite")}
         </span>
-        <div className="nsv-card-id">
+        <div className={css("cardId")}>
           <ServerTile mark={mark} />
-          <span className="nsv-card-name">
+          <span className={css("cardName")}>
             <b>{name === "" ? t("auth.setup.emptyName") : name}</b>
             <span>{countedNoun(t, locale, "settings.member", 1)}</span>
           </span>
         </div>
-        <p className={description === "" ? "nsv-card-about empty" : "nsv-card-about"}>
+        <p className={css("cardAbout", description === "" && "empty")}>
           {description === "" ? t("shell.publicServerNoDescription") : description}
         </p>
-        <span className="nsv-card-join">{t("shell.joinServer")}</span>
+        <span className={css("cardJoin")}>{t("shell.joinServer")}</span>
       </div>
-      <p className="nsv-hint">
+      <p className={css("hint")}>
         {listed ? t("shell.createServerPreviewDiscoverNote") : t("shell.createServerPreviewInviteNote")}
       </p>
     </aside>
