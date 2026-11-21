@@ -93,9 +93,14 @@ describe("WaveformTrimmer limits", () => {
   it("reads the trim points out as times", () => {
     renderTrimmer({ duration: 120, start: 61.5, end: 63 });
 
-    expect(screen.getByText("1:01.50")).toBeInTheDocument();
-    expect(screen.getByText("1:03.00")).toBeInTheDocument();
-    expect(screen.getByText("1.50 s")).toBeInTheDocument();
+    expect(screen.getByRole("slider", { name: "Początek dźwięku" })).toHaveAttribute(
+      "aria-valuetext",
+      "1:01.50",
+    );
+    expect(screen.getByRole("slider", { name: "Koniec dźwięku" })).toHaveAttribute(
+      "aria-valuetext",
+      "1:03.00",
+    );
     expect(screen.getByRole("slider", { name: "Zaznaczony fragment" })).toHaveAttribute(
       "aria-valuetext",
       "1:01.50–1:03.00",

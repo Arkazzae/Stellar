@@ -176,11 +176,12 @@ describe("soundboard playback requests", () => {
     expect(adapter.cooldownRemaining()).toBe(5_000);
 
     const listener = vi.fn();
-    adapter.subscribe(listener);
+    adapter.live.subscribe(listener);
     vi.advanceTimersByTime(5_000);
     // The subscribers are told when the wait is over, so a button can unlock.
     expect(listener).toHaveBeenCalled();
     expect(adapter.cooldownRemaining()).toBe(0);
+    expect(adapter.live.cooldownSeconds()).toBe(0);
 
     await adapter.play("airhorn", "channel-1");
     expect(realtime.playSoundboard).toHaveBeenCalledTimes(2);

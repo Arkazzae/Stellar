@@ -39,7 +39,7 @@ describe("library calls", () => {
       run: () => calls.getSoundboard(),
       method: "GET",
       url: "/api/soundboard",
-      answer: { sounds: [SOUND], settings: SETTINGS, canManage: true },
+      answer: { sounds: [SOUND], settings: SETTINGS, canManage: true, canPlay: true },
     },
     {
       name: "createSoundboardSound",

@@ -290,13 +290,19 @@ describe("soundboard", () => {
   it("reads the whole snapshot", () => {
     expect(
       parseSoundboardSnapshot(
-        { sounds: [SOUND], settings: { everyoneCanPlay: true, rateLimited: true }, canManage: true },
+        {
+          sounds: [SOUND],
+          settings: { everyoneCanPlay: true, rateLimited: true },
+          canManage: true,
+          canPlay: true,
+        },
         "/p",
       ),
     ).toStrictEqual({
       sounds: [SOUND],
       settings: { everyoneCanPlay: true, rateLimited: true },
       canManage: true,
+      canPlay: true,
     });
     expectMalformed(() => parseSoundboardSnapshot({ settings: {} }, "/p"));
     expectMalformed(() => parseSoundboardSnapshot({ sounds: [], canManage: false }, "/p"));
