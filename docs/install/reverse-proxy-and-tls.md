@@ -184,4 +184,4 @@ An HTTP reverse proxy only handles HTTP and WebSocket traffic. WebRTC STUN, TURN
 | `5349` | TCP, UDP | TURN over TLS/DTLS (`STELLARR_TURNS_ENABLED=true`) |
 
 > [!IMPORTANT]
-> Publish these UDP/TURN ports on the Docker host and forward them on your router. `STELLARR_DOMAIN` and `PUBLIC_IP` must resolve to the host reachable on these ports, not an HTTP-only CDN or tunnel. See [Requirements](requirements.md) and [RTC and ports](../rtc-and-ports.md).
+> Publish these UDP/TURN ports on the Docker host and forward them on your router. `STELLARR_DOMAIN` and `STELLARR_PUBLIC_IP` must resolve to the host reachable on these ports, not an HTTP-only CDN or tunnel. See [Requirements](requirements.md) and [RTC and ports](../rtc-and-ports.md).

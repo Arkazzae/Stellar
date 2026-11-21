@@ -1,250 +1,262 @@
 # Configuration
 
-`docker-compose.yml` configures the container through environment variables read from `.env` (copy `.env.example` to `.env` to start). Apply changes with `docker compose up -d`.
+Every setting is an environment variable named `STELLARR_*`, and it has that one name everywhere: in `.env`, in `docker run -e`, in a platform template such as [Unraid](unraid.md), and on this page. The image holds every default, so an installation sets only what it changes.
+
+With Docker Compose, the settings go in `.env` beside `docker-compose.yml`. Compose hands that file to the container as it is; [`.env.example`](../../.env.example) lists every setting, commented out, with its default, and the installer appends it to the `.env` it writes. A variable that is empty or only whitespace counts as not set. A change takes effect when the container is created again:
+
+```bash
+docker compose up -d
+```
 
 > [!TIP]
-> Variables marked **seed** initialize database settings that the owner can change later in Cockpit (`/cockpit`) or via the [operator CLI](../admin/cli.md). Once saved in Cockpit or the CLI, the database value takes precedence over `.env`.
+> Variables marked **seed** give the first value of a database setting that the owner then changes in Cockpit (`/cockpit`) or with the [operator CLI](../admin/cli.md). Once saved there, the database value wins over `.env`.
+
+## Release
+
+| Variable | Type | Default | Description |
+| --- | --- | --- | --- |
+| `STELLARR_VERSION` | image tag | `latest` | Tag of `ghcr.io/arkazzae/stellarr` that Compose runs. Pin a release such as `1.2` or `1.2.3` for a real installation. |
 
 ## Address and TLS
 
 | Variable | Type | Default | Description |
 | --- | --- | --- | --- |
-| `STELLARR_DOMAIN` | hostname or IP | empty | Public hostname or IP used for the origin, TURN realm, and self-signed certificate SAN. Falls back to `localhost` when unset. |
-| `STELLARR_PUBLIC_PORT` | port | `STELLARR_HTTPS_PORT` | External HTTPS port browsers connect to (`443` behind a [reverse proxy](reverse-proxy-and-tls.md#run-behind-a-reverse-proxy)). Omitted from URLs when `443`. |
-| `PUBLIC_IP` | IPv4 or `auto` | empty | Public IPv4 advertised by `coturn` and `stellarr-media`. Required for voice from outside the Docker host; `auto` resolves `STELLARR_DOMAIN`'s `A` record on startup. |
-| `STELLARR_HTTPS_PORT` | port (`1–65535`) | `8443` | Host port mapped to container `443/tcp`. |
-| `STELLARR_HTTP_PORT` | port or `ip:port` | `8888` | Host port mapped to container `80/tcp` (HTTP-to-HTTPS redirect only). Prefix with `127.0.0.1:` when using a local reverse proxy. |
-| `STELLARR_PUBLIC_URL` | origin URL | empty | Explicit `http` or `https` origin (no credentials, query, or fragment), overriding `STELLARR_DOMAIN` + `STELLARR_PUBLIC_PORT`. |
-| `STELLARR_TRUSTED_PROXIES` | IP / CIDR list | empty | Comma- or space-separated IPv4/IPv6 addresses or CIDRs of trusted [reverse proxies](reverse-proxy-and-tls.md#client-addresses). |
-| `STELLARR_VERSION` | image tag | `latest` | Image tag for `ghcr.io/arkazzae/stellarr` (pin `1.2` or `1.2.3` for production). |
+| `STELLARR_DOMAIN` | hostname or IP | empty | The name or address people open the instance at. It names the self-signed certificate and the TURN realm and builds the public address; without it they use `localhost`. |
+| `STELLARR_PUBLIC_IP` | IPv4 or `auto` | empty | The IPv4 address `coturn` and `stellarr-media` advertise. Needed for voice from any device but the Docker host; `auto` resolves the `A` record of `STELLARR_DOMAIN` at start. |
+| `STELLARR_HTTPS_PORT` | port | `8443` with Compose, `443` without | The host port of container port `443/tcp`. Compose publishes it and tells the container, which uses it for the HTTP redirect and the public address. |
+| `STELLARR_HTTP_PORT` | port or `ip:port` | `8888` | The host port of `80/tcp`, which only redirects to HTTPS. Prefix it with `127.0.0.1:` for a reverse proxy on the same host. Compose alone reads it. |
+| `STELLARR_PUBLIC_PORT` | port | `STELLARR_HTTPS_PORT` | The HTTPS port browsers use: `443` behind a [reverse proxy](reverse-proxy-and-tls.md#run-behind-a-reverse-proxy). Left out of addresses when it is `443`. |
+| `STELLARR_PUBLIC_URL` | origin URL | empty | The public address as a whole (`http` or `https`, no credentials, query or fragment), in place of the one built from `STELLARR_DOMAIN` and `STELLARR_PUBLIC_PORT`. |
+| `STELLARR_TRUSTED_PROXIES` | IP / CIDR list | empty | IPv4 and IPv6 addresses or networks of the [reverse proxies](reverse-proxy-and-tls.md#client-addresses) in front of the container, separated by commas or spaces. |
 
-Notes:
-
-- **Self-signed vs. custom certificates**: When `/data/stellarr/tls/fullchain.pem` or `privkey.pem` is missing, the container generates a self-signed certificate and renews it if `STELLARR_DOMAIN` changes or <30 days remain. Custom CA-signed certificates are never overwritten; see [Reverse proxy and TLS](reverse-proxy-and-tls.md).
-- **Public origin behavior**: `STELLARR_PUBLIC_URL` (or the URL built from `STELLARR_DOMAIN` + `STELLARR_PUBLIC_PORT`) is used for password-reset and email-change links, invite links, `/.well-known/stellarr/client`, and passkey Relying Party validation. When both `STELLARR_DOMAIN` and `STELLARR_PUBLIC_URL` are unset, password-reset emails remain disabled.
-- **Trusted proxies**: Listing a proxy tells the API to read real client IPs from `X-Forwarded-For` for rate limits, sessions, security events, and trusted devices. Invalid entries (hostnames, non-zero host bits such as `10.0.0.1/24`, or `0.0.0.0/0`) abort API startup.
+- **Certificates**: When `/data/stellarr/tls/fullchain.pem` or `privkey.pem` is missing, the container generates a self-signed certificate and renews it when `STELLARR_DOMAIN` changes or fewer than 30 days remain. A CA-signed certificate is never overwritten; see [Reverse proxy and TLS](reverse-proxy-and-tls.md).
+- **Public address**: The public address is used for password-reset and email-change links, invite links, `/.well-known/stellarr/client` and passkey validation. Without `STELLARR_DOMAIN` and `STELLARR_PUBLIC_URL` the instance has none, and password-reset mail stays off.
+- **Trusted proxies**: A listed proxy's `X-Forwarded-For` gives the client's own address to the rate limits, sessions, security events and trusted devices. An entry the API cannot use (a hostname, a network with host bits set such as `10.0.0.1/24`, or `0.0.0.0/0`) stops the API at start.
 
 ## Voice and RTC
 
 | Variable | Type | Default | Description |
 | --- | --- | --- | --- |
-| `STELLARR_MEDIA_PORT` | port (`1–65535`) | `49000` | Host UDP port for [Stellarr Media](../stellarr-media.md); carries every call and must match the external router port. |
-| `STELLARR_TURN_PORT` | port (`1–65535`) | `3478` | Published host port and advertised port for STUN/TURN (`udp` and `tcp`). |
-| `STELLARR_TURNS_PORT` | port (`1–65535`) | `5349` | Published host port and advertised port for TURN over TLS/DTLS. |
-| `STELLARR_TURN_TCP_ENABLED` | `true` \| `false` | `false` | Enables the TURN/TCP listener in `coturn` and advertises `?transport=tcp` ICE URLs. |
-| `STELLARR_TURNS_ENABLED` | `true` \| `false` | `false` | Enables TURN over TLS/DTLS (`turns:`). Requires a browser-trusted TLS certificate. |
-| `STELLARR_TURN_RELAY_RANGE` | port range | `49160-49200` | Host UDP ports mapped 1:1 to container `49160-49200/udp` for TURN media relays. |
+| `STELLARR_MEDIA_PORT` | port | `49000` | The host UDP port of [Stellarr Media](../stellarr-media.md), which carries every call. The router forwards the same external port. |
+| `STELLARR_TURN_PORT` | port | `3478` | The host port of STUN and TURN, UDP and TCP, which browsers are told. |
+| `STELLARR_TURNS_PORT` | port | `5349` | The host port of TURN over TLS and DTLS. |
+| `STELLARR_TURN_RELAY_RANGE` | port range | `49160-49200` | The host UDP ports of TURN's relays. Compose maps them 1:1 to the same container range, so the range keeps its length. |
+| `STELLARR_TURN_TCP_ENABLED` | `true` \| `false` | `false` | TURN over TCP: the `coturn` listener and the `?transport=tcp` addresses. |
+| `STELLARR_TURNS_ENABLED` | `true` \| `false` | `false` | TURN over TLS and DTLS (`turns:`). Browsers accept it only with a certificate they trust. |
 
-See [RTC and ports](../rtc-and-ports.md) for relay sizing and firewall rules.
+A transport that is off is closed in `coturn`, not only left out of `/api/bootstrap`. See [RTC and ports](../rtc-and-ports.md) for relay sizing and firewall rules.
 
 ## Uploads and quotas
 
-Byte limits accept `0` (or negative values) to disable the quota check.
+The byte limits take `0`, or a negative value, to turn the check off.
 
 | Variable | Type | Default | Description |
 | --- | --- | --- | --- |
-| `STELLARR_UPLOAD_USER_BYTES` | bytes | `2147483648` (2 GiB) | Per-account storage quota. |
-| `STELLARR_UPLOAD_TOTAL_BYTES` | bytes | `21474836480` (20 GiB) | Instance-wide storage quota. |
-| `STELLARR_MIN_FREE_BYTES` | bytes | `1073741824` (1 GiB) | Minimum free disk space required on `/data/stellarr` to accept an upload (`0` disables). |
-| `STELLARR_MAX_CONCURRENT_UPLOADS` | integer (`1–32`) | `4` | Maximum concurrent uploads across the instance. |
+| `STELLARR_UPLOAD_USER_BYTES` | bytes | `2147483648` (2 GiB) | Storage each account may use. |
+| `STELLARR_UPLOAD_TOTAL_BYTES` | bytes | `21474836480` (20 GiB) | Storage the instance may use. |
+| `STELLARR_MIN_FREE_BYTES` | bytes | `1073741824` (1 GiB) | Free space an upload must leave on `/data/stellarr`. |
+| `STELLARR_MAX_CONCURRENT_UPLOADS` | integer (`1–32`) | `4` | Uploads the instance takes at once. |
 
-Per-file limits by media type: images `10 MiB`, audio `25 MiB`, documents/other `25 MiB`, video `100 MiB`. Nginx enforces a `128 MiB` maximum request body size.
+Each file also has a limit by type: images `10 MiB`, audio `25 MiB`, documents and other files `25 MiB`, video `100 MiB`. Nginx refuses a request body over `128 MiB`.
 
 ## Mail
 
-Password-reset, invitation, security alert, and activity notification emails use SMTP by default. Configure the SMTP host, port, encryption (`STARTTLS`, `TLS`, or `none`), and username in Cockpit under **Settings**, or enable Resend under **Integrations**.
+Password-reset, invitation, security-alert and activity mail goes through SMTP. Its host, port, encryption (`STARTTLS`, `TLS` or `none`) and username are set in Cockpit under **Settings**; Resend replaces SMTP when it is turned on under **Integrations**.
 
 > [!NOTE]
-> Secrets saved in Cockpit (`SMTP password`, `Resend API key`) are encrypted with the instance's data-protection keys, override `.env`, and are never returned to the browser. Clearing a secret in Cockpit falls back to the environment variable.
+> A secret saved in Cockpit (the SMTP password, the Resend API key) is encrypted with the instance's data-protection keys, wins over `.env` and never goes back to a browser. Clearing it in Cockpit brings the variable's value back.
 
 | Variable | Type | Default | Description |
 | --- | --- | --- | --- |
-| `STELLARR_MAIL_ENABLED` | `true` \| `false` | `true` | **Seed** for the mailing toggle in Cockpit settings. |
-| `STELLARR_SMTP_PASSWORD` | string | empty | SMTP password fallback when none is stored in Cockpit. |
-| `STELLARR_RESEND_API_KEY` | string | empty | Resend API key fallback when none is stored in Cockpit. |
-| `STELLARR_MAIL_FROM` | email | empty | **Seed** for the sender address (`onboarding@resend.dev` works only via Resend testing). |
-| `STELLARR_MAIL_FROM_NAME` | string | `Stellarr` | Sender display name. |
+| `STELLARR_MAIL_ENABLED` | `true` \| `false` | `true` | **Seed** of Cockpit's mail switch. |
+| `STELLARR_MAIL_FROM` | email | empty | **Seed** of the sender address. `onboarding@resend.dev` works only through Resend. |
+| `STELLARR_MAIL_FROM_NAME` | string | `Stellarr` | The sender's display name. |
+| `STELLARR_SMTP_PASSWORD` | string | empty | The SMTP password, when none is saved in Cockpit. |
+| `STELLARR_RESEND_API_KEY` | string | empty | The Resend API key, when none is saved in Cockpit. |
 
 ## Web Push
 
-Optional browser push notifications for mentions and direct messages. See [Activity notifications](../admin/notifications.md#web-push) for generating a persistent VAPID key pair.
+Browser notifications for mentions and direct messages, off until a persistent VAPID key pair is set. [Activity notifications](../admin/notifications.md#web-push) describes how to make one; a new pair makes every browser subscribe again.
 
 | Variable | Type | Default | Description |
 | --- | --- | --- | --- |
-| `STELLARR_PUSH_ENABLED` | `true` \| `false` | `false` | Enables Web Push when a valid VAPID key pair and subject are configured. |
-| `STELLARR_PUSH_SUBJECT` | `mailto:` or `https://` URI | empty | Operator contact URI presented to push services (for example, `mailto:admin@example.com`). |
-| `STELLARR_PUSH_PUBLIC_KEY` | base64url string | empty | Uncompressed P-256 VAPID public key (65 bytes decoded). |
-| `STELLARR_PUSH_PRIVATE_KEY` | base64url string | empty | P-256 VAPID private key (32 bytes decoded). Treat as a secret. |
+| `STELLARR_PUSH_ENABLED` | `true` \| `false` | `false` | Turns Web Push on, once the key pair and the subject are valid. |
+| `STELLARR_PUSH_SUBJECT` | `mailto:` or `https://` URI | empty | The operator's contact for push services, such as `mailto:admin@chat.example.com`. |
+| `STELLARR_PUSH_PUBLIC_KEY` | base64url | empty | The uncompressed P-256 VAPID public key (65 bytes decoded). |
+| `STELLARR_PUSH_PRIVATE_KEY` | base64url | empty | The P-256 VAPID private key (32 bytes decoded). A secret. |
 
 ## Single sign-on (OIDC)
 
-OpenID Connect sign-in is optional; local username/password sign-in remains available. The callback URL is `<public-url>/api/auth/oidc/callback`.
+Sign-in through an OpenID Connect provider, beside local passwords. The callback address is `<public-url>/api/auth/oidc/callback`.
 
 | Variable | Type | Default | Description |
 | --- | --- | --- | --- |
-| `STELLARR_OIDC_ENABLED` | `true` \| `false` | `false` | Enables the primary OIDC provider (requires issuer, client ID, and client secret). |
-| `STELLARR_OIDC_ISSUER` | HTTPS URL | empty | OIDC provider issuer URL. |
-| `STELLARR_OIDC_CLIENT_ID` | string | empty | OIDC client ID. |
-| `STELLARR_OIDC_CLIENT_SECRET` | string | empty | OIDC client secret (takes precedence over `STELLARR_OIDC_CLIENT_SECRET_FILE`). |
-| `STELLARR_OIDC_CLIENT_SECRET_FILE` | container path | empty | Path to a mounted file containing the OIDC client secret. |
-| `STELLARR_OIDC_DISPLAY_NAME` | string | `Main account` | Sign-in button label on the login screen. |
-| `STELLARR_OIDC_TRUST_PROVIDER_MFA` | `true` \| `false` | `false` | Counts a provider login confirmed with a matching `amr` claim as Stellarr's second step. |
-| `STELLARR_OIDC_PROVIDER_MFA_AMR` | comma-separated list | `mfa` | `amr` claim values treated as provider MFA when `STELLARR_OIDC_TRUST_PROVIDER_MFA=true`. |
+| `STELLARR_OIDC_ENABLED` | `true` \| `false` | `false` | Turns the provider on; it needs the issuer, the client ID and a client secret. |
+| `STELLARR_OIDC_ISSUER` | HTTPS URL | empty | The provider's issuer. |
+| `STELLARR_OIDC_CLIENT_ID` | string | empty | The client ID. |
+| `STELLARR_OIDC_CLIENT_SECRET` | string | empty | The client secret; wins over `STELLARR_OIDC_CLIENT_SECRET_FILE`. |
+| `STELLARR_OIDC_CLIENT_SECRET_FILE` | container path | empty | A mounted file that holds the client secret. |
+| `STELLARR_OIDC_DISPLAY_NAME` | string | `Main account` | The label of the sign-in button. |
+| `STELLARR_OIDC_TRUST_PROVIDER_MFA` | `true` \| `false` | `false` | Counts a sign-in the provider confirmed with a matching `amr` as Stellarr's second step. |
+| `STELLARR_OIDC_PROVIDER_MFA_AMR` | comma-separated list | `mfa` | The `amr` values that count when `STELLARR_OIDC_TRUST_PROVIDER_MFA` is `true`. |
 
 ### Additional OIDC providers
 
-You can configure extra OIDC providers in `docker-compose.override.yml` under `environment`, keyed by a provider ID of `1–32` lowercase letters, digits, or hyphens (excluding `default`, `login`, `callback`, `link`, `reauthenticate`, and `pending`). Each provider gets its own login button and callback URL `<public-url>/api/auth/oidc/<id>/callback`:
+Further providers have no `STELLARR_*` names; each takes the raw keys below, in `.env` like any other setting. A provider is keyed by an ID of `1–32` lowercase letters, digits or hyphens, other than `default`, `login`, `callback`, `link`, `reauthenticate` and `pending`, and gets its own sign-in button and the callback address `<public-url>/api/auth/oidc/<id>/callback`:
 
-```yaml
-services:
-  stellarr:
-    environment:
-      Oidc__Providers__work__DisplayName: Work account
-      Oidc__Providers__work__Authority: https://id.example.com/realms/work
-      Oidc__Providers__work__ClientId: stellarr
-      Oidc__Providers__work__ClientSecretFile: /run/secrets/oidc-work
-      # Optional, off by default:
-      Oidc__Providers__work__TrustProviderMfa: "true"
-      Oidc__Providers__work__ProviderMfaAmr: mfa,hwk
+```bash
+Oidc__Providers__work__DisplayName=Work account
+Oidc__Providers__work__Authority=https://id.example.com/realms/work
+Oidc__Providers__work__ClientId=stellarr
+Oidc__Providers__work__ClientSecretFile=/run/secrets/oidc-work
+# Optional, off by default:
+Oidc__Providers__work__TrustProviderMfa=true
+Oidc__Providers__work__ProviderMfaAmr=mfa,hwk
 ```
 
-- A provider is enabled only when its issuer is HTTPS and both client ID and secret are configured; an invalid provider ID stops the API at startup.
-- Users link their accounts to a provider from **Settings → Login and security → Sign-in providers** (see [Account security](../admin/account-security.md#linking-an-identity-provider)). Identities are matched strictly by `(issuer, subject)`, never by email address.
-- Someone the provider confirms whose identity is linked to no account can link it by signing in with their password on the page that follows, or, with an invite, create an account through the provider when the owner allows it in **Cockpit → Integrations → Sign-in providers** (off by default). See [Signing in with an identity no account is linked to](../admin/account-security.md#signing-in-with-an-identity-no-account-is-linked-to).
-- Stellarr asks for the `openid profile email` scopes and reads `name`, `preferred_username`, `email`, and `email_verified` from the ID token or the userinfo endpoint to fill in a new account; only an address the provider marks as verified counts as verified.
-- An account without a password confirms sensitive changes by signing in at its provider again, so the provider must return `auth_time` and should honour `prompt=login` and `max_age`: the 5 minutes for the change count from `auth_time`.
+- A provider is on only when its issuer is HTTPS and its client ID and secret are set; an ID that breaks the rule above stops the API at start.
+- People link their accounts to a provider under **Settings → Login and security → Sign-in providers** (see [Account security](../admin/account-security.md#linking-an-identity-provider)). An identity matches by `(issuer, subject)` alone, never by email address.
+- Someone the provider confirms whose identity is linked to no account can link it by signing in with their password on the page that follows, or, with an invite, create an account through the provider when the owner allows it under **Cockpit → Integrations → Sign-in providers** (off by default). See [Signing in with an identity no account is linked to](../admin/account-security.md#signing-in-with-an-identity-no-account-is-linked-to).
+- Stellarr asks for the `openid profile email` scopes and reads `name`, `preferred_username`, `email` and `email_verified` from the ID token or the userinfo endpoint to fill in a new account; only an address the provider marks as verified counts as verified.
+- An account without a password confirms a sensitive change by signing in at its provider again, so the provider must return `auth_time` and should honour `prompt=login` and `max_age`: the 5 minutes for the change count from `auth_time`.
 
 ### Trusting provider MFA
 
-By default, an OIDC sign-in still prompts for Stellarr's own second step if MFA is active on the account or instance policy. Enabling `TrustProviderMfa` allows the provider's own MFA check to satisfy Stellarr's second step (including Cockpit):
+By default an OIDC sign-in still asks for Stellarr's own second step when the account or the instance's policy has one. With `TrustProviderMfa`, the provider's own check counts as that step, in Cockpit too:
 
-- The provider's ID token must contain one of the configured `amr` values and an `auth_time` within the last 5 minutes (Stellarr sends `max_age=300` when re-authenticating).
-- If `auth_time` is missing or stale, Stellarr falls back to its own second-step prompt. Enable this only for providers that enforce a real second factor and report it accurately in `amr`.
+- The ID token must hold one of the listed `amr` values and an `auth_time` within the last 5 minutes (Stellarr sends `max_age=300` when it asks again).
+- Without a recent `auth_time`, Stellarr asks for its own second step. Turn this on only for a provider that requires a real second factor and reports it in `amr`.
 
 ## Automatic backups and Cloudflare R2
 
-Production Docker Compose enables daily automatic full backups by default. Schedule settings can be overridden at runtime in **Cockpit → Backups → Backup settings**; see [Automatic backups](../admin/backups.md) and [Cloudflare R2 offsite backups](../admin/cloudflare-r2.md).
+A production instance makes a full backup every day by default. **Cockpit → Backups → Backup settings** changes the schedule while it runs; see [Automatic backups](../admin/backups.md) and [Cloudflare R2 offsite backups](../admin/cloudflare-r2.md).
 
 ### Backup schedule
 
 | Variable | Type | Default | Description |
 | --- | --- | --- | --- |
-| `STELLARR_BACKUP_ENABLED` | `true` \| `false` | `true` | **Seed** enabling automatic full backups. |
-| `STELLARR_BACKUP_INTERVAL_HOURS` | integer | `24` | Hours between completed backup cycles. |
-| `STELLARR_BACKUP_RETRY_MINUTES` | integer | `15` | Delay before retrying a failed offsite upload. |
-| `STELLARR_BACKUP_INITIAL_DELAY_MINUTES` | integer | `5` | Delay after container startup before the first scheduled backup runs. |
+| `STELLARR_BACKUP_ENABLED` | `true` \| `false` | `true` | **Seed** of automatic full backups. |
+| `STELLARR_BACKUP_INTERVAL_HOURS` | integer | `24` | Hours between finished backup runs. |
+| `STELLARR_BACKUP_RETRY_MINUTES` | integer | `15` | Minutes before a failed offsite upload is tried again. |
+| `STELLARR_BACKUP_INITIAL_DELAY_MINUTES` | integer | `5` | Minutes after the start before the first scheduled backup. |
 
 ### Cloudflare R2 integration
 
 | Variable | Type | Default | Description |
 | --- | --- | --- | --- |
-| `STELLARR_CLOUDFLARE_R2_ENABLED` | `true` \| `false` | `false` | Enables uploading completed backups to Cloudflare R2. |
-| `STELLARR_CLOUDFLARE_R2_MODE` | `s3` \| `worker` | `s3` | Upload mode: direct S3 API (`s3`) or Backup Relay Worker (`worker`). |
-| `STELLARR_CLOUDFLARE_R2_ENDPOINT` | HTTPS URL | empty | R2 S3 endpoint (`https://<ACCOUNT_ID>.r2.cloudflarestorage.com`) or Worker URL. |
-| `STELLARR_CLOUDFLARE_R2_REGION` | string | `auto` | R2 region (`s3` mode). |
-| `STELLARR_CLOUDFLARE_R2_BUCKET` | string | empty | Private R2 bucket name (`s3` mode). |
-| `STELLARR_CLOUDFLARE_R2_ACCESS_KEY` | string | empty | R2 S3 access key ID (`s3` mode). |
-| `STELLARR_CLOUDFLARE_R2_SECRET_KEY` | string | empty | R2 S3 secret access key (`s3` mode). |
-| `STELLARR_CLOUDFLARE_R2_WORKER_TOKEN` | string | empty | Bearer token for the Backup Relay Worker (`worker` mode). |
-| `STELLARR_CLOUDFLARE_R2_PREFIX` | string | `stellarr` | Object key prefix inside the bucket. |
+| `STELLARR_CLOUDFLARE_R2_ENABLED` | `true` \| `false` | `false` | Uploads finished backups to Cloudflare R2. |
+| `STELLARR_CLOUDFLARE_R2_MODE` | `s3` \| `worker` | `s3` | Directly through the S3 API (`s3`), or through the Backup Relay Worker (`worker`). |
+| `STELLARR_CLOUDFLARE_R2_ENDPOINT` | HTTPS URL | empty | The bucket's S3 endpoint (`https://<ACCOUNT_ID>.r2.cloudflarestorage.com`), or the Worker's address. |
+| `STELLARR_CLOUDFLARE_R2_REGION` | string | `auto` | The region, in `s3` mode. |
+| `STELLARR_CLOUDFLARE_R2_BUCKET` | string | empty | The private bucket, in `s3` mode. |
+| `STELLARR_CLOUDFLARE_R2_ACCESS_KEY` | string | empty | The S3 access key ID, in `s3` mode. |
+| `STELLARR_CLOUDFLARE_R2_SECRET_KEY` | string | empty | The S3 secret access key, in `s3` mode. |
+| `STELLARR_CLOUDFLARE_R2_WORKER_TOKEN` | string | empty | The Worker's bearer token, in `worker` mode. |
+| `STELLARR_CLOUDFLARE_R2_PREFIX` | string | `stellarr` | The prefix of the objects in the bucket. |
 
 ## Language
 
 | Variable | Type | Default | Description |
 | --- | --- | --- | --- |
-| `STELLARR_LANGUAGE` | `en` \| `pl` | `en` | Default web client locale (for users without a saved browser preference) and API language for error messages, system messages, default server/role/channel names, audit entries, and emails. |
+| `STELLARR_LANGUAGE` | `en` \| `pl` | `en` | The web client's language for anyone who has not chosen one, and the language of error and system messages, a new server's default names, audit entries and mail. |
 
-Unknown values abort API startup. Existing database records keep the language in which they were created. Browsers cache `/stellarr-instance.js` for up to one hour, so a changed default may take up to an hour to reach existing tabs. See [Localization](../localization.md).
+Another value stops the API at start. Records saved earlier keep the language they were written in. Browsers keep `/stellarr-instance.js` for up to an hour, so a changed default may take that long to reach open tabs. See [Localization](../localization.md).
 
 ## Instance identity and desktop handshake
 
 | Variable | Type | Default | Description |
 | --- | --- | --- | --- |
-| `STELLARR_INSTANCE_ID` | UUID | generated | Persistent instance UUID reported at `/.well-known/stellarr/client` (auto-generated in `/data/stellarr/instance-id` when unset). |
-| `STELLARR_INSTANCE_NAME` | string | `Stellarr` | Instance name reported before the primary server exists (afterward, uses the primary server's name; editable in Cockpit). |
-| `STELLARR_TIME_ZONE` | IANA time zone | `UTC` | **Seed** for the instance time zone in Cockpit settings (for example, `Europe/Warsaw`). |
-| `STELLARR_DESKTOP_MINIMUM_VERSION` | semver | `0.1.0` | Minimum allowed desktop client version; older clients are rejected by the client gate. |
-| `STELLARR_DESKTOP_RECOMMENDED_VERSION` | semver | `0.1.3` | Recommended desktop client version advertised in `/.well-known/stellarr/client`. |
+| `STELLARR_INSTANCE_ID` | UUID | generated | The instance's UUID in `/.well-known/stellarr/client`. Without it, one is generated and kept in `/data/stellarr/instance-id`. |
+| `STELLARR_INSTANCE_NAME` | string | `Stellarr` | The name reported until the first server exists; after that, the server's name, which Cockpit edits. |
+| `STELLARR_TIME_ZONE` | IANA time zone | the container's, `UTC` | **Seed** of the instance's time zone in Cockpit, such as `Europe/Warsaw`. |
+| `STELLARR_DESKTOP_MINIMUM_VERSION` | semver | `0.1.0` | The oldest desktop client the client gate lets in. |
+| `STELLARR_DESKTOP_RECOMMENDED_VERSION` | semver | `0.1.3` | The desktop client `/.well-known/stellarr/client` recommends. |
 
 ## Other settings
 
 | Variable | Type | Default | Description |
 | --- | --- | --- | --- |
-| `GIPHY_API_KEY` | string | empty | GIPHY key for GIF search. Sent to signed-in browsers (unless disabled in user privacy settings); can also be set and tested in **Cockpit → Integrations**, which takes precedence without a restart. |
-| `STELLARR_EF_COMMAND_LOG_LEVEL` | .NET log level | `Warning` | Log level for `Microsoft.EntityFrameworkCore.Database.Command` (`Information` logs SQL queries). |
+| `STELLARR_GIPHY_API_KEY` | string | empty | The public GIPHY web key for GIF search, sent to signed-in browsers (unless a person turns GIPHY off in their privacy settings). **Cockpit → Integrations** can set and check it too, and its value wins without a restart. |
+| `STELLARR_EF_COMMAND_LOG_LEVEL` | .NET log level | `Warning` | The log level of `Microsoft.EntityFrameworkCore.Database.Command`; `Information` logs every SQL query. |
 
 ## Logs
 
-The API writes logs to container stdout/stderr (`docker compose logs`) and to Cockpit's **Logs** view (which retains the latest 10,000 lines in memory). By default it logs:
+The API writes its log to the container's output (`docker compose logs`) and to Cockpit's **Logs** page, which keeps the latest 10,000 lines in memory. By default it logs:
 
-- Warnings and errors from all components
-- One summary line per API request (`POST /api/channels/…/messages 201 in 12 ms` under `Stellarr.Api.Requests`), excluding routine container health checks
-- Operational lifecycle events (startup, media server resets, backups, maintenance)
-- The [setup code](quick-start.md#4-create-the-owner-account) for the owner account, at each start while the instance has no account, as a warning so that it shows even with the log set to `Warning`
+- warnings and errors from every component
+- one line per API request (`POST /api/channels/…/messages 201 in 12 ms`, under `Stellarr.Api.Requests`), without the container's routine health checks
+- operational events: start, media server resets, backups and maintenance
+- the [setup code](quick-start.md#4-create-the-owner-account) of the owner account, at each start while the instance has no account, as a warning so that it shows even at the `Warning` level
 
-Framework HTTP diagnostics (`Microsoft.AspNetCore`), Entity Framework SQL (`Microsoft.EntityFrameworkCore.Database.Command`), and outgoing HTTP client calls default to `Warning` and above. Override any category in `docker-compose.override.yml`:
+ASP.NET Core's request diagnostics (`Microsoft.AspNetCore`), Entity Framework's SQL and outgoing HTTP calls log from `Warning` up. Any category takes a raw key in `.env`:
 
-```yaml
-services:
-  stellarr:
-    environment:
-      Logging__LogLevel__Microsoft.AspNetCore: Information
-      Logging__LogLevel__Stellarr.Api.Requests: Warning
+```bash
+Logging__LogLevel__Microsoft.AspNetCore=Information
+Logging__LogLevel__Stellarr.Api.Requests=Warning
 ```
 
 ## Container resource limits
 
+Compose reads these; with `docker run`, the matching flags are `--memory`, `--cpus` and `--pids-limit`.
+
 | Variable | Type | Default | Description |
 | --- | --- | --- | --- |
-| `STELLARR_CONTAINER_MEMORY_LIMIT` | size | `4g` | Container memory limit (`mem_limit`). |
-| `STELLARR_CONTAINER_CPUS` | number | `4` | Container CPU quota (`cpus`). |
-| `STELLARR_CONTAINER_PIDS_LIMIT` | integer | `512` | Container process limit (`pids_limit`). |
+| `STELLARR_CONTAINER_MEMORY_LIMIT` | size | `4g` | The container's memory limit (`mem_limit`). |
+| `STELLARR_CONTAINER_CPUS` | number | `4` | The container's CPU quota (`cpus`). |
+| `STELLARR_CONTAINER_PIDS_LIMIT` | integer | `512` | The container's process limit (`pids_limit`). |
 
-## Advanced container environment variables
+## Advanced
 
-The container entrypoint and TLS maintenance scripts also read the variables below. Set them in `docker-compose.override.yml` when needed.
-
-| Variable | Default | Description |
-| --- | --- | --- |
-| `STELLARR_DATA_ROOT` | `/data/stellarr` | Root directory for persistent state inside the container. |
-| `TLS_RENEW_BEFORE_SECONDS` | `2592000` (30 days) | Renew managed self-signed certificates when remaining validity falls below this threshold or when `STELLARR_DOMAIN` changes. |
-| `TLS_RENEW_CHECK_SECONDS` | `43200` (12 hours) | Interval between self-signed certificate renewal checks. |
-| `STELLARR_MEDIA_ADVERTISE` | empty | Comma-separated `ip:port` list overriding the derived `stellarr-media` ICE host candidates. |
-| `STELLARR_MEDIA_LOG` | `info` | `tracing` filter for `stellarr-media` (for example, `info,stellarr_media=debug`). |
-| `STELLARR_MEDIA_CONTROL_SECRET` | `/data/stellarr/secrets/media-control-secret` | Overrides the shared bearer secret between the API and `stellarr-media`. |
-| `TURN_SHARED_SECRET` | `/data/stellarr/secrets/turn-shared-secret` | Overrides the shared HMAC secret between the API and `coturn`. |
+| Variable | Type | Default | Description |
+| --- | --- | --- | --- |
+| `STELLARR_TLS_RENEW_BEFORE_SECONDS` | seconds | `2592000` (30 days) | Renews the managed self-signed certificate when less validity remains, or when `STELLARR_DOMAIN` changes. |
+| `STELLARR_TLS_RENEW_CHECK_SECONDS` | seconds | `43200` (12 hours) | How often the managed certificate is checked. |
+| `STELLARR_MEDIA_ADVERTISE` | `ip:port` list | empty | `stellarr-media`'s host candidates, separated by commas, in place of the ones derived from `STELLARR_PUBLIC_IP` and the container's address. |
+| `STELLARR_MEDIA_LOG` | `tracing` filter | `info` | `stellarr-media`'s log filter, such as `info,stellarr_media=debug`. |
+| `STELLARR_MEDIA_CONTROL_SECRET` | string | generated | The bearer secret the API and `stellarr-media` share. Without it, one is generated in `/data/stellarr/secrets/media-control-secret`. |
+| `STELLARR_TURN_SHARED_SECRET` | string | generated | The HMAC secret the API and `coturn` share. Without it, one is generated in `/data/stellarr/secrets/turn-shared-secret`. |
 
 > [!IMPORTANT]
-> On first start, generated secrets are written to `/data/stellarr/secrets/`. Always include them when backing up `/data/stellarr`.
+> The generated secrets are written to `/data/stellarr/secrets/` on the first start. Keep them in every backup of `/data/stellarr`.
+
+The image keeps its data under `/data/stellarr`, the path the volume is mounted at. It is not a setting: the entrypoint, the TLS script and the CLI all read it from the image.
+
+### Settings without a `STELLARR_*` name
+
+A few settings exist only as raw .NET configuration keys, written `Section__Key`: the [additional OIDC providers](#additional-oidc-providers) (`Oidc__Providers__<id>__*`), [log levels](#logs) (`Logging__LogLevel__*`), the rate limits (`RateLimiting__*`) and link previews (`Stellarr__Embeds__*`). They go in `.env` like the others. A setting that has a `STELLARR_*` name takes only that name: its variable wins over the raw key.
 
 ## Development stack (`docker-compose.dev.yml`)
 
-`docker-compose.dev.yml` runs each service from bind mounts with live reload (`STELLARR_TIME_ZONE` defaults to `Europe/Warsaw` and `STELLARR_INSTANCE_NAME` to `Stellarr Dev`).
+`docker-compose.dev.yml` runs each service from a bind mount with live reload. It reads no `env_file`. Its own variables below come from the shell or `.env`; of the instance's settings it forwards only `STELLARR_LANGUAGE`, `STELLARR_TIME_ZONE`, `STELLARR_INSTANCE_ID`, the two desktop versions, `STELLARR_GIPHY_API_KEY`, the mail sender and secrets and the Web Push settings, and sets the rest itself (instance name `Stellarr Dev`, mail on for Mailpit).
 
 | Variable | Default | Description |
 | --- | --- | --- |
-| `STELLARR_DEV_WEB_PORT` | `3000` | Host port for Vite's dev server serving both the web client and Cockpit (`/cockpit`). |
-| `STELLARR_DEV_API_PORT` | `5000` | Host port for the ASP.NET Core API (`dotnet watch`). |
-| `STELLARR_DEV_MEDIA_PORT` | `49100` | Host UDP port for `stellarr-media` (advertised on `127.0.0.1`). |
-| `STELLARR_DEV_MEDIA_CONTROL_PORT` | `5200` | Host loopback TCP port (`127.0.0.1:5200`) for the `stellarr-media` control API. |
-| `STELLARR_DEV_ALLOWED_HOSTS` | empty | Comma-separated extra hostnames allowed by Vite's dev server (`localhost` and IPs are always allowed). |
-| `STELLARR_API_ORIGIN` | `http://127.0.0.1:5000` | Upstream API origin proxied by Vite for `/api`, `/assets`, `/health`, `/hubs`, and `/.well-known/stellarr/client` (`http://api:5000` in Compose). |
-| `STELLARR_DEV_POLLING` | `true` | Enables filesystem polling in Vite when file-watch events do not cross bind mounts. |
+| `STELLARR_DEV_WEB_PORT` | `3000` | Host port of Vite's dev server, which serves the web client and Cockpit (`/cockpit`). |
+| `STELLARR_DEV_API_PORT` | `5000` | Host port of the API under `dotnet watch`. |
+| `STELLARR_DEV_MEDIA_PORT` | `49100` | Host UDP port of `stellarr-media`, advertised on `127.0.0.1`. |
+| `STELLARR_DEV_MEDIA_CONTROL_PORT` | `5200` | Host port of the `stellarr-media` control API, on `127.0.0.1`. |
+| `STELLARR_DEV_MAILPIT_PORT` | `8025` | Host port of Mailpit's inbox, on `127.0.0.1`. |
+| `STELLARR_DEV_MAILPIT_SMTP_PORT` | `1025` | Host port of Mailpit's SMTP server, on `127.0.0.1`. |
+| `STELLARR_DEV_ALLOWED_HOSTS` | empty | Further host names Vite's dev server answers, comma-separated; `localhost` and IP addresses always work. |
+| `STELLARR_DEV_POLLING` | `true` | Whether Vite polls for changes, where file events do not cross a bind mount. |
+
+`npm run dev` in `web/` outside Docker reads the variables in [`web/.env.example`](../../web/.env.example), among them `STELLARR_API_ORIGIN`, the API it proxies to.
 
 ## Running without Docker Compose
 
-`docker-compose.yml` maps friendly `STELLARR_*` variables from `.env` to the container's internal environment names. When running plain `docker run` or a custom platform template (such as [Unraid](unraid.md)):
+`docker run` and platform templates such as [Unraid](unraid.md) use the same names as `.env`, and the image's defaults apply to everything they leave out. Beside the settings:
 
-- **Persistent volume**: Mount a volume or host directory at `/data/stellarr`.
-- **Stop timeout**: Pass `--stop-timeout=75` so `stellarr-init` has time to shut down services gracefully (Docker's 10-second default cuts shutdown short).
-- **Language**: Set **both** `STELLARR_LANGUAGE` (web client) and `Stellarr__Language` (API) to `en` or `pl`.
-- **Port mappings and advertised variables**: A container cannot inspect host port mappings, so set these container variables to match your published host ports:
+- **Volume**: mount a volume or a host folder at `/data/stellarr`.
+- **Stop timeout**: pass `--stop-timeout=75`, so that `stellarr-init` has time to stop the services; Docker's 10 seconds cut the shutdown short.
+- **Host ports**: a container cannot see its port mappings. When a host port differs from the container's, set its variable to the host port: `STELLARR_HTTPS_PORT` for `443/tcp` (the image assumes `443`), `STELLARR_MEDIA_PORT` for `49000/udp`, `STELLARR_TURN_PORT` for `3478` and `STELLARR_TURNS_PORT` for `5349`. The HTTP redirect on `80/tcp` needs no variable, and the TURN relay range `49160-49200/udp` maps 1:1.
 
-| Purpose | Container port | Default host port | Container variable | Compose `.env` variable |
-| --- | --- | --- | --- | --- |
-| HTTPS | `443/tcp` | `8443` | `PUBLIC_HTTPS_PORT` | `STELLARR_HTTPS_PORT` |
-| Voice media | `49000/udp` | `49000` | `Rtc__MediaPort` | `STELLARR_MEDIA_PORT` |
-| TURN | `3478/udp`, `3478/tcp` | `3478` | `Rtc__TurnPort` | `STELLARR_TURN_PORT` |
-| TURNS | `5349/tcp`, `5349/udp` | `5349` | `Rtc__TurnsPort` | `STELLARR_TURNS_PORT` |
-
-The HTTP redirect (`80/tcp`, default host `8888`) needs no container variable, and the TURN relay range (`49160-49200/udp`) must map 1:1 with the same port numbers on host and container. For all other optional variables, inspect [`docker-compose.yml`](../../docker-compose.yml) to see the underlying container key name.
+```bash
+docker run -d --name stellarr --restart unless-stopped --stop-timeout=75 \
+  --memory=4g --cpus=4 --pids-limit=512 --security-opt=no-new-privileges:true \
+  -e STELLARR_DOMAIN=chat.example.com -e STELLARR_PUBLIC_IP=auto \
+  -e STELLARR_HTTPS_PORT=8443 \
+  -p 8888:80 -p 8443:443 -p 3478:3478/tcp -p 3478:3478/udp \
+  -p 5349:5349/tcp -p 5349:5349/udp -p 49000:49000/udp -p 49160-49200:49160-49200/udp \
+  -v stellarr_data:/data/stellarr \
+  ghcr.io/arkazzae/stellarr:latest
+```

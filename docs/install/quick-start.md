@@ -4,7 +4,7 @@ This guide starts a local Stellarr instance on a single machine, creates the own
 
 ## Prerequisites
 
-- Docker Engine with the Compose plugin (`docker compose version`). See [Requirements](requirements.md).
+- Docker Engine with the Compose plugin 2.24.0 or newer (`docker compose version`). See [Requirements](requirements.md).
 - Free host ports `8443`, `8888`, `3478`, `5349`, `49000`, and `49160-49200`. If a port is in use, override the corresponding variable in `.env` (see [Requirements](requirements.md#ports)).
 - A second browser profile or private window to test a two-user call.
 
@@ -38,7 +38,7 @@ curl -fsSLO https://raw.githubusercontent.com/Arkazzae/Stellarr/main/docker-comp
 curl -fsSL https://raw.githubusercontent.com/Arkazzae/Stellarr/main/.env.example -o .env
 ```
 
-All variables in `.env` have defaults suitable for local testing on `localhost`.
+Every line of that `.env` is commented out, so the image's defaults apply, and they suit local testing on `localhost`.
 
 ## 2. Start the container
 
@@ -111,7 +111,7 @@ The last setup step shows an invite link with **Copy**. To make another one late
 3. Verify two-way audio and check the connection indicator (`Connected`) in the bottom-left status bar.
 
 > [!IMPORTANT]
-> Local testing on one machine works without extra network setup because both browsers run on the Docker host. For calls from any other device (including another machine on your LAN), set `PUBLIC_IP` in `.env` and forward UDP port `49000` (`STELLARR_MEDIA_PORT`) on your router. See [Requirements](requirements.md#behind-nat).
+> Local testing on one machine works without extra network setup because both browsers run on the Docker host. For calls from any other device (including another machine on your LAN), set `STELLARR_PUBLIC_IP` in `.env` and forward UDP port `49000` (`STELLARR_MEDIA_PORT`) on your router. See [Requirements](requirements.md#behind-nat).
 
 If voice stays on connecting or fails across networks, follow the checklist in [RTC and ports](../rtc-and-ports.md#diagnostics).
 
@@ -130,7 +130,7 @@ Both commands stop services gracefully (Compose allows up to `stop_grace_period:
 ## Next steps
 
 - **Operator panel**: Sign in with the owner account and open `https://localhost:8443/cockpit`.
-- [Requirements](requirements.md): `PUBLIC_IP` and router port forwarding for voice from external devices.
+- [Requirements](requirements.md): `STELLARR_PUBLIC_IP` and router port forwarding for voice from external devices.
 - [Reverse proxy and TLS](reverse-proxy-and-tls.md): trusted certificates and reverse proxy setup.
 - [Configuration](configuration.md): environment variable reference.
 

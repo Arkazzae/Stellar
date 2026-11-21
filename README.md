@@ -50,7 +50,7 @@ The installer asks where people will open Stellarr, keeps its files in `~/stella
 
 Local testing works out of the box on your own computer. Before inviting friends from other devices:
 
-1. Set `PUBLIC_IP` and `STELLARR_DOMAIN` in `.env`.
+1. Set `STELLARR_PUBLIC_IP` and `STELLARR_DOMAIN` in `.env`.
 2. Forward the voice UDP ports on your router — see [Requirements](docs/install/requirements.md#behind-nat).
 3. Configure a trusted HTTPS certificate so browsers allow microphone and screen sharing — see [Reverse proxy and TLS](docs/install/reverse-proxy-and-tls.md).
 

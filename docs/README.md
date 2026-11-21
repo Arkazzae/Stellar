@@ -3,7 +3,7 @@
 Stellarr is a self-hosted text, voice, and video chat for small groups, packaged as a single Docker container.
 
 > [!TIP]
-> To try Stellarr locally in a few minutes, start with the [Quick start](install/quick-start.md). Before exposing an instance to friends over the internet, review [Requirements](install/requirements.md#behind-nat) for `PUBLIC_IP` and UDP port forwarding.
+> To try Stellarr locally in a few minutes, start with the [Quick start](install/quick-start.md). Before exposing an instance to friends over the internet, review [Requirements](install/requirements.md#behind-nat) for `STELLARR_PUBLIC_IP` and UDP port forwarding.
 
 ## Self-hosting
 
