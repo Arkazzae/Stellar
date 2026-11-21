@@ -84,6 +84,8 @@
   .sv-item.danger{color:var(--danger-text)}
   .sv-item.danger .sv-ico{color:var(--danger-text)}
   .sv-item.danger:hover{background:var(--danger-soft)}
+  /* A deletion this member may see but not do stays in place, unavailable. */
+  .sv-item:disabled{opacity:0.45;cursor:default;pointer-events:none}
   .sv-main{grid-column:2;grid-row:2;position:relative;min-width:0;min-height:0;overflow:hidden;display:flex;flex-direction:column}
   /*
    * The head of the pane, outside the scroller.
@@ -1090,7 +1092,6 @@
   .ch-body .frm-row{grid-template-columns:minmax(0,1fr);gap:8px;padding:0;border-bottom:none}
   .ch-body .frm-lab{padding-top:0}
   .ch-body .set-note{margin-top:10px}
-  .ch-confirm{display:flex;align-items:center;gap:8px}
   /*
    * The small create dialogs (`CreateDialog`) on the question card's surface:
    * the card's padding holds the header, the body and the answers, the header
@@ -1124,9 +1125,6 @@
   }
   .ch-settings-form > .frm{border-top:0}
   .ch-settings{--ui-button-gap:7px}
-  .ch-settings .danger-section > .sc-b{
-    border-color:color-mix(in oklab, var(--danger-line) 60%, var(--line-subtle));
-  }
   .ch-settings-foot{
     flex:none;display:flex;align-items:center;justify-content:flex-end;gap:10px;
     padding:14px var(--set-pad) 16px;border-top:1px solid var(--line-subtle);
@@ -1172,7 +1170,6 @@
     color:var(--text);font-size:var(--text-11);font-weight:600;
   }
   .ch-place-cap.new .ch-place-input::placeholder{font-weight:600;color:var(--text-faint)}
-  .ch-place-row.dim{opacity:0.55}
   .ch-place-row.empty{color:var(--text-faint)}
   .ch-place-move{
     width:24px;height:24px;border-radius:var(--radius-sm);flex:none;
@@ -1213,14 +1210,46 @@
   .ch-place-hint{font-size:var(--text-13);color:var(--text-faint);line-height:1.45}
   .ch-place-error{margin-top:2px;font-size:var(--text-13);color:var(--danger-text);line-height:1.45}
 
-  /* ---------- PROFIL KANAŁU ---------- */
-  /* The server overview's identity row, with the channel's mark for an icon. */
-  .ch-id-ico{
-    width:44px;height:44px;border-radius:14px;flex:none;
-    display:inline-flex;align-items:center;justify-content:center;
-    background:var(--accent);color:var(--on-accent);
+  /* ---------- PODGLĄD KANAŁU I SEKCJI ---------- */
+  /*
+   * The thing being edited where it lives, at the top of its overview, as the
+   * profile card is at the top of the user's: a slice of the rail beside the
+   * room's header for a channel, a slice beside what it holds for a section.
+   * The slice uses the new-channel dialog's rail rows; the header copies the
+   * room header's measures.
+   */
+  .pv{
+    display:flex;margin-bottom:24px;overflow:hidden;
+    border:1px solid var(--line-subtle);border-radius:var(--radius-lg);background:var(--set-group);
   }
-  .ch-id .ov-id-txt b{overflow-wrap:anywhere}
+  .pv-rail{
+    width:236px;flex:none;padding:12px 8px;
+    background:var(--surface-sidebar);border-right:1px solid var(--line-subtle);
+  }
+  .pv-rail.wide{width:300px}
+  .pv-rail > .ch-place-cap:not(:first-child){margin-top:12px}
+  .ch-place-row.on{background:var(--surface-base);color:var(--text)}
+  .ch-place-cap.dim,.ch-place-row.dim{opacity:0.55}
+  .ch-place-cap.on .ch-place-caption{color:var(--text)}
+  .pv-room{flex:1;min-width:0;display:flex;flex-direction:column;background:var(--surface-room)}
+  .pv-head{
+    display:flex;align-items:center;gap:12px;height:52px;min-width:0;padding:0 20px;
+    border-bottom:1px solid var(--line);
+  }
+  .pv-glyph{display:inline-flex;flex:none;color:var(--text-faint)}
+  .pv-head b{font-size:var(--text-16);font-weight:550;white-space:nowrap}
+  .pv-topic{
+    flex:1;min-width:0;padding-left:12px;border-left:1px solid var(--line-subtle);
+    font-size:var(--text-13);color:var(--text-faint);
+    white-space:nowrap;overflow:hidden;text-overflow:ellipsis;
+  }
+  .pv-lines{display:flex;flex-direction:column;gap:12px;padding:18px 20px;opacity:0.5}
+  .pv-lines i{display:block;height:9px;border-radius:5px;background:var(--line)}
+  .pv-side{
+    flex:1;min-width:0;display:flex;flex-direction:column;justify-content:center;gap:6px;padding:0 28px;
+  }
+  .pv-side b{font-size:var(--text-15);font-weight:600}
+  .pv-side span{font-size:var(--text-13);line-height:1.45;color:var(--text-faint)}
   /* A form that is the whole card: no rules against the card's own edges. */
   .ch-frm-flush{border-top:0}
   .ch-frm-flush > .frm-row:first-child{padding-top:0}
@@ -1316,6 +1345,10 @@
     }
     .sv-h{padding-right:0;font-size:var(--text-20)}
     .ov-id{align-items:flex-start;flex-wrap:wrap}
+    /* A preview stacks: the slice of the rail, then the room or what it holds. */
+    .pv{flex-direction:column}
+    .pv-rail,.pv-rail.wide{width:auto;border-right:0;border-bottom:1px solid var(--line-subtle)}
+    .pv-side{padding:16px}
     .ov-icon-actions{width:calc(100% - 58px);margin-left:58px}
     .ov-icon-note{margin-left:58px}
     .sc{margin-bottom:24px}

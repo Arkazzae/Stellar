@@ -15,15 +15,24 @@
   .ss-mark .pf-veil{border-radius:inherit}
 
   /* Overview: the card the server is seen as. */
-  .ss-card{
-    display:flex;flex-direction:column;gap:16px;margin-bottom:24px;padding:20px;
-    background:var(--set-group);border:1px solid var(--line-subtle);border-radius:var(--radius-lg);
+  /* Overview: the invite card the server is met as, beside what it says. */
+  .ss-meet{display:flex;align-items:center;gap:28px;margin-bottom:24px}
+  .ss-meet-card{
+    width:380px;flex:none;display:flex;flex-direction:column;gap:12px;padding:20px;
+    background:var(--surface-base);border:1px solid var(--line-subtle);border-radius:var(--radius-lg);
   }
-  .ss-card-top{display:flex;align-items:center;gap:16px;min-width:0}
-  .ss-card-txt{display:flex;flex-direction:column;gap:4px;min-width:0}
-  .ss-card-txt b{font-size:var(--text-20);font-weight:650;line-height:1.25;overflow-wrap:anywhere}
-  .ss-card-txt span{font-size:var(--text-14);color:var(--text-muted);overflow-wrap:anywhere}
-  .ss-card-txt span.empty{color:var(--text-faint)}
+  .ss-meet-k{font-size:var(--text-12);font-weight:600;color:var(--text-faint)}
+  .ss-meet-id{display:flex;align-items:center;gap:12px;min-width:0}
+  .ss-meet-id > span{display:flex;flex-direction:column;gap:2px;min-width:0}
+  .ss-meet-id b{font-size:var(--text-18);font-weight:650;line-height:1.2;overflow-wrap:anywhere}
+  .ss-meet-id span span{font-size:var(--text-13);color:var(--text-faint)}
+  .ss-meet-card p{font-size:var(--text-13);line-height:1.5;color:var(--text-muted);overflow-wrap:anywhere}
+  .ss-meet-card p.empty{color:var(--text-faint)}
+  .ss-meet-card .ui-button{height:38px;cursor:default}
+  .ss-meet-txt{flex:1;min-width:0;display:flex;flex-direction:column;gap:6px}
+  .ss-meet-txt > b{font-size:var(--text-15);font-weight:600}
+  .ss-meet-txt > span{font-size:var(--text-13);line-height:1.45;color:var(--text-faint)}
+  .ss-meet-txt .ss-card-meta{margin-top:8px}
   .ss-card-meta{display:flex;flex-wrap:wrap;gap:6px}
   .ss-card-meta span{
     padding:3px 10px;border-radius:999px;background:var(--surface-overlay);
@@ -186,7 +195,8 @@
     .ss-member .ss-tag{margin-left:48px}
     .ss-invite{flex-wrap:wrap}
     .ss-invite .sec-copy{flex-basis:100%}
-    .ss-card-top{align-items:flex-start}
+    .ss-meet{flex-direction:column;align-items:stretch;gap:16px}
+    .ss-meet-card{width:auto}
     .ss-log-filters .ui-dropdown{flex:1 1 140px;min-width:0;max-width:none}
     .ss-log-detail{margin-left:0;grid-template-columns:minmax(0,1fr);gap:4px}
     .ss-log-detail dd + dt{margin-top:8px}

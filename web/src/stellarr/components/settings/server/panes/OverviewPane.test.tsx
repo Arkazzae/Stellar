@@ -36,7 +36,8 @@ describe("OverviewPane", () => {
     const card = screen.getByRole("region", { name: "Jak serwer wygląda w Odkrywaniu i w zaproszeniach" });
     expect(within(card).getByText("Stellarr")).toBeVisible();
     expect(within(card).getByText("Prywatna przestrzeń.")).toBeVisible();
-    expect(within(card).getByText("4 osoby")).toBeVisible();
+    // On the invite card and among the facts beside it.
+    expect(within(card).getAllByText("4 osoby")).toHaveLength(2);
     expect(within(card).getByText("3 kanały")).toBeVisible();
     expect(within(card).getByText("Tylko z zaproszeniem")).toBeVisible();
   });
@@ -73,7 +74,7 @@ describe("OverviewPane", () => {
     const p = props({ iconUrl: "/assets/server-icon" });
     const { container } = render(<OverviewPane {...p} />);
 
-    expect(container.querySelector(".ss-card .ss-mark img")).toHaveAttribute("src", "/assets/server-icon");
+    expect(container.querySelector(".ss-meet-card img")).toHaveAttribute("src", "/assets/server-icon");
     await user.click(screen.getByRole("button", { name: "Usuń" }));
 
     expect(p.onRemoveIcon).toHaveBeenCalledOnce();
@@ -95,7 +96,6 @@ describe("OverviewPane", () => {
   it("keeps icon actions disabled without manage-server support", () => {
     render(<OverviewPane {...props({ iconSupported: false })} />);
 
-    expect(screen.getByRole("button", { name: "Dodaj ikonę serwera" })).toBeDisabled();
     expect(screen.getByRole("button", { name: "Wgraj obraz" })).toBeDisabled();
   });
 

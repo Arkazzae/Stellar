@@ -2,6 +2,7 @@ import { useEffect, useId, useRef, useState } from "react";
 
 import { Button, Dropdown } from "@stellarr/ui";
 import { Icon } from "@stellarr/icons";
+import { ServerTile } from "@/components/auth/Faces";
 import { Avatar } from "@/components/primitives/Avatar";
 import { Modal } from "@/components/primitives/Modal";
 import { Switch } from "@/components/primitives/Switch";
@@ -12,6 +13,7 @@ import { ServerMark } from "@/components/settings/server/panes/ServerMark";
 import { useAsyncAction } from "@/hooks/useAsyncAction";
 import type { Translator } from "@/i18n";
 import type { ServerPatch } from "@/ports";
+import { initials } from "@/lib/format/format";
 import { useLanguage } from "@/state/hooks";
 
 const ICON_TYPES = ["image/jpeg", "image/png", "image/gif", "image/webp"];
@@ -178,34 +180,37 @@ export function OverviewPane({
     <>
       {supported ? null : <p className="set-note">{t("settings.serverUnsupported")}</p>}
 
-      <section className="ss-card" aria-label={t("srv.preview")}>
-        <div className="ss-card-top">
-          <button
-            type="button"
-            className="pf-shot ss-mark ss-mark-lg"
-            disabled={iconLocked}
-            aria-label={iconUrl === undefined ? t("settings.serverIconAdd") : t("settings.serverIconChange")}
-            onClick={openPicker}
-          >
-            {shownIcon === undefined ? mark : <img src={shownIcon} alt="" />}
-            <span className="pf-veil" aria-hidden="true">
-              <Icon name="camera" size={20} />
+      {/* The server as a person with its link meets it, following the draft
+          before it is saved: the invite page's tile, the name, the size and
+          the description, and a join that does nothing here. */}
+      <section className="ss-meet" aria-label={t("srv.preview")}>
+        <div className="ss-meet-card" aria-hidden="true">
+          <span className="ss-meet-k">{t("srv.invitePreview.label")}</span>
+          <div className="ss-meet-id">
+            <ServerTile mark={initials(previewName)} iconUrl={shownIcon ?? null} />
+            <span>
+              <b>{previewName}</b>
+              <span>{countedNoun(t, locale, "settings.member", memberCount)}</span>
             </span>
-          </button>
-          <span className="ss-card-txt">
-            <b>{previewName}</b>
-            <span className={previewDescription === "" ? "empty" : undefined}>
-              {previewDescription === "" ? t("srv.noDescription") : previewDescription}
-            </span>
-          </span>
+          </div>
+          <p className={previewDescription === "" ? "empty" : undefined}>
+            {previewDescription === "" ? t("srv.noDescription") : previewDescription}
+          </p>
+          <Button type="button" variant="primary" tabIndex={-1}>
+            {t("shell.joinServer")}
+          </Button>
         </div>
-        <div className="ss-card-meta">
-          <span>{countedNoun(t, locale, "settings.member", memberCount)}</span>
-          <span>{countedNoun(t, locale, "settings.channel", channelCount)}</span>
-          <span className={isPublic ? "on" : undefined}>{isPublic ? t("srv.public") : t("srv.inviteOnly")}</span>
-          {createdAt === undefined ? null : (
-            <span>{t("srv.since", { date: formatShortDate(createdAt, locale) })}</span>
-          )}
+        <div className="ss-meet-txt">
+          <b>{t("srv.invitePreview.title")}</b>
+          <span>{t("srv.invitePreview.detail")}</span>
+          <div className="ss-card-meta">
+            <span>{countedNoun(t, locale, "settings.member", memberCount)}</span>
+            <span>{countedNoun(t, locale, "settings.channel", channelCount)}</span>
+            <span className={isPublic ? "on" : undefined}>{isPublic ? t("srv.public") : t("srv.inviteOnly")}</span>
+            {createdAt === undefined ? null : (
+              <span>{t("srv.since", { date: formatShortDate(createdAt, locale) })}</span>
+            )}
+          </div>
         </div>
       </section>
       <input
