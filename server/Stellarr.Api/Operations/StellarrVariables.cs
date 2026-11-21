@@ -120,11 +120,9 @@ public static class StellarrVariables
         .Select(field => (StellarrVariable)field.GetValue(null)!)
         .ToArray();
 
-    /// <summary>The row that sets <paramref name="key"/>.</summary>
-    /// <exception cref="InvalidOperationException">No variable sets that key.</exception>
-    public static StellarrVariable ForKey(string key) =>
-        All.FirstOrDefault(variable => string.Equals(variable.Key, key, StringComparison.OrdinalIgnoreCase))
-        ?? throw new InvalidOperationException($"No STELLARR_* variable sets {key}.");
+    /// <summary>The row that sets <paramref name="key"/>, or null for a key that only has its raw form.</summary>
+    public static StellarrVariable? ForKey(string key) =>
+        All.FirstOrDefault(variable => string.Equals(variable.Key, key, StringComparison.OrdinalIgnoreCase));
 
     /// <summary>The value of <paramref name="variable"/> in <paramref name="environment"/>, or null when it is unset or blank.</summary>
     public static string? ValueIn(IReadOnlyDictionary<string, string?> environment, StellarrVariable variable)
