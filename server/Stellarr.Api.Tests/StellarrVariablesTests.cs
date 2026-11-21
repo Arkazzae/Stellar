@@ -60,7 +60,6 @@ public sealed class StellarrVariablesTests
         ("STELLARR_CLOUDFLARE_R2_PREFIX", "Cloudflare:R2:Prefix"),
         ("STELLARR_LANGUAGE", "Stellarr:Language"),
         ("STELLARR_INSTANCE_ID", "Stellarr:InstanceId"),
-        ("STELLARR_INSTANCE_NAME", "Stellarr:InstanceName"),
         ("STELLARR_TIME_ZONE", "Operations:TimeZone"),
         ("STELLARR_DESKTOP_MINIMUM_VERSION", "Desktop:MinimumVersion"),
         ("STELLARR_DESKTOP_RECOMMENDED_VERSION", "Desktop:RecommendedVersion"),

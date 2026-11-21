@@ -108,7 +108,6 @@ services:
       DOTNET_WATCH_SUPPRESS_BROWSER_REFRESH: "1"
       # The stack's own settings, under the names production uses.
       STELLARR_DATA_ROOT: /data/stellarr
-      STELLARR_INSTANCE_NAME: Stellarr Dev
       # Mailpit below catches the mail.
       STELLARR_MAIL_ENABLED: "true"
       STELLARR_MEDIA_PORT: ${STELLARR_DEV_MEDIA_PORT:-49100}
