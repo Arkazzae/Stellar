@@ -67,6 +67,7 @@ export function SectionSettingsDialog({ roles }: { roles: readonly Role[] }) {
 /** "Add section" in the rail. */
 export function SectionCreateDialog() {
   const { admin } = usePorts();
+  const directory = useDirectory();
   const ui = useUi();
   const { t } = useLanguage();
 
@@ -74,6 +75,9 @@ export function SectionCreateDialog() {
     <SectionCreate
       open={ui.modal === "section-new"}
       onClose={ui.closeModal}
+      serverName={directory.server.name}
+      sections={directory.sections}
+      channels={directory.channels}
       onCreate={async (input) => {
         try {
           await admin.createSection(input);

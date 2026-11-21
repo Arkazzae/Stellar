@@ -254,17 +254,10 @@ export function ChannelCreate({
       <div className="ch-place" role="group" aria-label={t("channel.placement")}>
         <div className="ch-place-server">{serverName}</div>
         {groups.map((group) => (
-          <div
-            key={group.key}
-            className={group.kind === null ? "ch-place-group section" : "ch-place-group"}
-          >
+          <div key={group.key} className="ch-place-group">
+            {/* Every group, a section too, is captioned as the rail captions it. */}
             <div className="ch-place-cap">
-              {group.kind === null ? (
-                <span className="ch-place-folder" aria-hidden="true">
-                  <Icon name="folder" size={12} />
-                </span>
-              ) : null}
-              <span className="ch-place-caption">{group.caption}</span>
+              <span className="ch-place-caption group-caption">{group.caption}</span>
               {group.key === here ? null : (
                 <button
                   type="button"
