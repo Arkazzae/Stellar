@@ -12,7 +12,7 @@ docker compose exec stellarr stellarr sessions list --user arkazz
 ```
 
 > [!NOTE]
-> `help`, `--help`, and `version` do not touch the database. Every other command opens the existing SQLite database and never creates or migrates it; databases missing expected schema are refused with `schema_incompatible`.
+> `help`, `--help`, `version`, and `config get` of a read-only startup key do not touch the database. Every other command opens the existing SQLite database and never creates or migrates it; databases missing expected schema are refused with `schema_incompatible`.
 
 ## Command overview
 
