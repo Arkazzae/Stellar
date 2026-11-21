@@ -349,7 +349,7 @@ Behaviour:
   -h, --help           Show this help
 
 Each setting can come from the environment too: STELLARR_INSTALL_DIR,
-STELLARR_DOMAIN, PUBLIC_IP, STELLARR_LANGUAGE, STELLARR_HTTPS_PORT,
+STELLARR_DOMAIN, STELLARR_PUBLIC_IP, STELLARR_LANGUAGE, STELLARR_HTTPS_PORT,
 STELLARR_PUBLIC_PORT, STELLARR_HTTP_PORT, STELLARR_MEDIA_PORT,
 STELLARR_TURN_PORT, STELLARR_TURNS_PORT, STELLARR_VERSION, STELLARR_REF.
 STELLARR_START_TIMEOUT is how long to wait for the start (default 300 s).
@@ -382,7 +382,7 @@ settings_init() {
   local key
   # The settings the installer writes to .env. Each is read from the
   # environment variable of the same name first, as Compose itself would.
-  MANAGED_KEYS='STELLARR_DOMAIN PUBLIC_IP STELLARR_LANGUAGE STELLARR_HTTPS_PORT STELLARR_PUBLIC_PORT STELLARR_HTTP_PORT STELLARR_MEDIA_PORT STELLARR_TURN_PORT STELLARR_TURNS_PORT'
+  MANAGED_KEYS='STELLARR_DOMAIN STELLARR_PUBLIC_IP STELLARR_LANGUAGE STELLARR_HTTPS_PORT STELLARR_PUBLIC_PORT STELLARR_HTTP_PORT STELLARR_MEDIA_PORT STELLARR_TURN_PORT STELLARR_TURNS_PORT'
   REPO_SLUG=Arkazzae/Stellarr
   REPO_URL="https://github.com/$REPO_SLUG"
   RAW_URL="https://raw.githubusercontent.com/$REPO_SLUG"
@@ -420,7 +420,7 @@ settings_init() {
 option_key() {
   case "$1" in
     --domain) OPTION_KEY=STELLARR_DOMAIN ;;
-    --public-ip) OPTION_KEY=PUBLIC_IP ;;
+    --public-ip) OPTION_KEY=STELLARR_PUBLIC_IP ;;
     --language) OPTION_KEY=STELLARR_LANGUAGE ;;
     --https-port) OPTION_KEY=STELLARR_HTTPS_PORT ;;
     --public-port) OPTION_KEY=STELLARR_PUBLIC_PORT ;;
@@ -436,7 +436,7 @@ option_key() {
 key_option() {
   case "$1" in
     STELLARR_DOMAIN) KEY_OPTION=--domain ;;
-    PUBLIC_IP) KEY_OPTION=--public-ip ;;
+    STELLARR_PUBLIC_IP) KEY_OPTION=--public-ip ;;
     STELLARR_LANGUAGE) KEY_OPTION=--language ;;
     STELLARR_HTTPS_PORT) KEY_OPTION=--https-port ;;
     STELLARR_PUBLIC_PORT) KEY_OPTION=--public-port ;;
@@ -597,7 +597,7 @@ validate_options() {
         is_address "$ADDRESS" || usage_error "${!from} \"${!value}\" is not a domain or an IPv4 address"
         printf -v "VALUE_$key" '%s' "$ADDRESS"
         ;;
-      PUBLIC_IP)
+      STELLARR_PUBLIC_IP)
         case "${!value}" in '' | auto) ;; *)
           is_ipv4 "${!value}" || usage_error "${!from} \"${!value}\" is not an IPv4 address or auto"
           ;;
@@ -878,7 +878,7 @@ docker_server_version() {
 }
 
 compose_find() {
-  local version='' major
+  local version='' major minor
   if version=$(dk compose version --short 2>/dev/null) && [ -n "$version" ]; then
     COMPOSE_PLUGIN=1
   elif have docker-compose && version=$(docker-compose version --short 2>/dev/null) && [ -n "$version" ]; then
@@ -888,13 +888,15 @@ compose_find() {
       "installer again: https://docs.docker.com/compose/install/linux/"
   fi
   version=${version#v}
-  major=${version%%.*}
+  major=${version%%.*} minor=0
+  case "$version" in *.*) minor=${version#*.} minor=${minor%%[!0-9]*} ;; esac
   case "$major" in '' | *[!0-9]*) die "Could not read the version of Docker Compose: $version" ;; esac
-  # Compose 1 cannot read the top-level name or the nested defaults in
-  # Stellarr's docker-compose.yml.
-  if [ "$major" -lt 2 ]; then
+  # Stellarr's docker-compose.yml hands .env to the container through env_file
+  # with required: false, which Compose reads from 2.24.0 on.
+  if [ "$major" -lt 2 ] || { [ "$major" -eq 2 ] && [ "${minor:-0}" -lt 24 ]; }; then
     die "Docker Compose $version is too old for Stellarr's docker-compose.yml" \
-      "Install Compose 2 or newer, the docker-compose-plugin package, and run the" \
+      "It passes .env to the container with env_file's required: false, which needs" \
+      "Compose 2.24.0 or newer. Install the docker-compose-plugin package and run the" \
       "installer again: https://docs.docker.com/compose/install/linux/"
   fi
   COMPOSE_VERSION=$version
@@ -1412,9 +1414,9 @@ settle_settings() {
   done
   # The entrypoint resolves auto from the domain, so it needs a domain. A
   # value .env had before is the person's own and stays as it is.
-  if [ "$SET_PUBLIC_IP" = auto ] && { ! is_hostname "$SET_STELLARR_DOMAIN" || is_local_address "$SET_STELLARR_DOMAIN"; } &&
-    { [ "$GIVEN_PUBLIC_IP" -eq 1 ] || [ "$GIVEN_STELLARR_DOMAIN" -eq 1 ]; }; then
-    usage_error "PUBLIC_IP=auto needs a domain to resolve, and $SET_STELLARR_DOMAIN is none"
+  if [ "$SET_STELLARR_PUBLIC_IP" = auto ] && { ! is_hostname "$SET_STELLARR_DOMAIN" || is_local_address "$SET_STELLARR_DOMAIN"; } &&
+    { [ "$GIVEN_STELLARR_PUBLIC_IP" -eq 1 ] || [ "$GIVEN_STELLARR_DOMAIN" -eq 1 ]; }; then
+    usage_error "STELLARR_PUBLIC_IP=auto needs a domain to resolve, and $SET_STELLARR_DOMAIN is none"
   fi
   check_port_overlap
 }
@@ -1472,11 +1474,11 @@ EOF
     fi
   fi
 
-  if [ "$GIVEN_PUBLIC_IP" -eq 0 ]; then
+  if [ "$GIVEN_STELLARR_PUBLIC_IP" -eq 0 ]; then
     if is_local_address "$SET_STELLARR_DOMAIN"; then
-      SET_PUBLIC_IP=''
+      SET_STELLARR_PUBLIC_IP=''
     elif is_ipv4 "$SET_STELLARR_DOMAIN"; then
-      SET_PUBLIC_IP=$SET_STELLARR_DOMAIN
+      SET_STELLARR_PUBLIC_IP=$SET_STELLARR_DOMAIN
     elif [ "$INTERACTIVE" -eq 1 ]; then
       ui_question "Which IPv4 address should voice calls use?" \
         "Other devices send their audio here. \"auto\" reads the DNS record of" \
@@ -1484,20 +1486,20 @@ EOF
       while :; do
         ui_prompt auto
         case "${UI_ANSWER:-auto}" in
-          auto) SET_PUBLIC_IP=auto ;;
-          none | -) SET_PUBLIC_IP='' ;;
+          auto) SET_STELLARR_PUBLIC_IP=auto ;;
+          none | -) SET_STELLARR_PUBLIC_IP='' ;;
           *)
             if ! is_ipv4 "$UI_ANSWER"; then
               ui_retry "\"$UI_ANSWER\" is not an IPv4 address"
               continue
             fi
-            SET_PUBLIC_IP=$UI_ANSWER
+            SET_STELLARR_PUBLIC_IP=$UI_ANSWER
             ;;
         esac
         break
       done
     else
-      SET_PUBLIC_IP=''
+      SET_STELLARR_PUBLIC_IP=''
     fi
   fi
 
@@ -1754,7 +1756,7 @@ env_write_new() {
   temp=$(mktemp .env.XXXXXX)
   {
     printf '%s\n' "$ENV_MARKER"
-    for key in STELLARR_DOMAIN PUBLIC_IP STELLARR_LANGUAGE; do
+    for key in STELLARR_DOMAIN STELLARR_PUBLIC_IP STELLARR_LANGUAGE; do
       value="SET_$key"
       printf '%s=%s\n' "$key" "${!value}"
     done
@@ -2201,8 +2203,8 @@ show_notes() {
   if is_local_address "$SET_STELLARR_DOMAIN"; then
     ui_bullet "$SET_STELLARR_DOMAIN opens on this machine only. For other devices, run the" \
       "installer again with --domain and this machine's domain or IP address."
-  elif [ -z "$SET_PUBLIC_IP" ]; then
-    ui_bullet "PUBLIC_IP is empty, so voice works on this machine only. Set it with" \
+  elif [ -z "$SET_STELLARR_PUBLIC_IP" ]; then
+    ui_bullet "STELLARR_PUBLIC_IP is empty, so voice works on this machine only. Set it with" \
       "--public-ip or in .env, and forward $voice" "to this machine."
   else
     ui_bullet "For voice from other networks, forward $voice" "to this machine."

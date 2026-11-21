@@ -330,10 +330,10 @@ installed() {
   mkdir -p "$1"
   cp "$fixtures/compose-$2" "$1/docker-compose.yml"
   cp "$fixtures/env.example" "$1/.env.example"
-  printf '%s\n' "$marker" "STELLARR_DOMAIN=chat.example.com" "PUBLIC_IP=auto" "STELLARR_LANGUAGE=en" \
+  printf '%s\n' "$marker" "STELLARR_DOMAIN=chat.example.com" "STELLARR_PUBLIC_IP=auto" "STELLARR_LANGUAGE=en" \
     "STELLARR_VERSION=$2" "STELLARR_HTTPS_PORT=8443" "STELLARR_HTTP_PORT=8888" \
     "STELLARR_MEDIA_PORT=49000" "STELLARR_TURN_PORT=3478" "STELLARR_TURNS_PORT=5349" "" \
-    "# Kept by hand." "GIPHY_API_KEY=abc123" >"$1/.env"
+    "# Kept by hand." "STELLARR_GIPHY_API_KEY=abc123" >"$1/.env"
   chmod 600 "$1/.env"
 }
 
@@ -446,7 +446,7 @@ case_fresh_install() {
   expect_line "$env_file" "$marker"
   expect_line "$env_file" "STELLARR_VERSION=1.4.0"
   expect_line "$env_file" "STELLARR_DOMAIN=chat.example.com"
-  expect_line "$env_file" "PUBLIC_IP=auto"
+  expect_line "$env_file" "STELLARR_PUBLIC_IP=auto"
   expect_line "$env_file" "STELLARR_LANGUAGE=pl"
   [[ $(head -n 1 "$env_file") == "$marker" ]] || fail "the marker is not the first line of .env."
   private_file "$env_file" || fail ".env is not readable and writable by its owner alone."
@@ -483,7 +483,7 @@ case_piped_without_terminal() {
   expect_not_called sudo
   expect_not_shown "Where will people open Stellarr?"
   expect_line "$home/stellarr/.env" "STELLARR_DOMAIN=localhost"
-  expect_line "$home/stellarr/.env" "PUBLIC_IP="
+  expect_line "$home/stellarr/.env" "STELLARR_PUBLIC_IP="
   expect_line "$home/stellarr/.env" "STELLARR_LANGUAGE=en"
   expect_shown "Open: https://localhost:8443/setup"
   # Without --yes nothing is asked either, and no default is taken for one.
@@ -502,7 +502,7 @@ case_interactive_answers() {
   run SSH_CONNECTION="198.51.100.20 50122 203.0.113.7 22"
   expect_success
   expect_line "$home/stellarr/.env" "STELLARR_DOMAIN=chat.example.com"
-  expect_line "$home/stellarr/.env" "PUBLIC_IP=auto"
+  expect_line "$home/stellarr/.env" "STELLARR_PUBLIC_IP=auto"
   expect_line "$home/stellarr/.env" "STELLARR_LANGUAGE=pl"
   [[ $(count "Where will people open Stellarr?" "$case_dir/out") -eq 1 ]] || fail "the address question was not asked once."
   [[ $(count "> [203.0.113.7]" "$case_dir/out") -eq 2 ]] || fail "the address was not asked again after a bad answer."
@@ -657,6 +657,21 @@ case_compose_v1() {
   run --yes
   expect_success
   expect_called "docker-compose up -d --no-build"
+
+  # docker-compose.yml needs env_file's required: false, from Compose 2.24.0.
+  new_case compose-below-floor
+  echo v2.23.3 >"$state/compose-version"
+  run --yes
+  expect_failure
+  expect_shown "Docker Compose 2.23.3 is too old"
+  expect_shown "env_file's required: false"
+  expect_missing "$home/stellarr"
+
+  new_case compose-at-floor
+  echo 2.24.0 >"$state/compose-version"
+  run --yes
+  expect_success
+  expect_called "docker compose up -d --no-build"
 }
 
 case_found_by_label() {
@@ -844,7 +859,7 @@ case_env_without_marker() {
   new_case env-adopted
   local dir="$case_dir/inst" backups
   mkdir -p "$dir"
-  printf 'STELLARR_DOMAIN=chat.example.com\nSTELLARR_VERSION=1.4.0\nGIPHY_API_KEY=abc\n' >"$dir/.env"
+  printf 'STELLARR_DOMAIN=chat.example.com\nSTELLARR_VERSION=1.4.0\nSTELLARR_GIPHY_API_KEY=abc\n' >"$dir/.env"
   cp "$dir/.env" "$case_dir/env-before"
   run --yes --dir "$dir"
   expect_success
@@ -940,8 +955,8 @@ case_env_odd_values() {
   local dir="$case_dir/srv/stellarr"
   installed "$dir" 1.4.0
   container "$dir" 1.4.0
-  printf '%s\r\n' "$marker" "STELLARR_DOMAIN=\`touch backtick\`.example.com" "PUBLIC_IP=\$(touch substituted)" \
-    'GIPHY_API_KEY="a b ; touch semicolon"' 'STELLARR_VERSION=1.4.0' >"$dir/.env"
+  printf '%s\r\n' "$marker" "STELLARR_DOMAIN=\`touch backtick\`.example.com" "STELLARR_PUBLIC_IP=\$(touch substituted)" \
+    'STELLARR_GIPHY_API_KEY="a b ; touch semicolon"' 'STELLARR_VERSION=1.4.0' >"$dir/.env"
   printf 'STELLARR_LANGUAGE=en' >>"$dir/.env"
   cp "$dir/.env" "$case_dir/env-before"
   run --yes
