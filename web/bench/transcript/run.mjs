@@ -15,6 +15,7 @@ import react from "@vitejs/plugin-react";
 import tailwindcss from "@tailwindcss/postcss";
 import { build } from "vite";
 
+import { stellarrArtifactSizes } from "../../artifactSizes.ts";
 import { launch } from "../cdp.mjs";
 
 const here = import.meta.dirname;
@@ -141,7 +142,10 @@ async function buildFixture() {
     root: fixtureRoot,
     base: "/",
     publicDir: false,
-    plugins: [react()],
+    // The page imports parts of the app, and the app's voice code reads the
+    // sizes of the prebuilt files from the manifest. `virtual:artifact-sizes`
+    // is the app's own plugin: without it the build cannot resolve the import.
+    plugins: [react(), stellarrArtifactSizes()],
     resolve: {
       alias: { "@": resolve(webRoot, "src/stellarr") },
     },
