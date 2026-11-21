@@ -1,6 +1,6 @@
 import { useId, type ReactNode } from "react";
 
-import { Button } from "@stellarr/ui";
+import { Button, Spinner } from "@stellarr/ui";
 import { Modal } from "@/components/primitives/Modal";
 import { DialogHeader } from "@/components/settings/DialogHeader";
 import { useLanguage } from "@/state/hooks";
@@ -32,6 +32,10 @@ export interface CreateDialogProps {
 /**
  * The frame of the small "create one thing" dialogs opened from the rail:
  * a title, a close button, the fields, and cancel and submit buttons.
+ *
+ * It is the question card (`.q-card`) with a header: the same surface,
+ * padding and answers, so a dialog that makes something and one that asks
+ * about something read as one family.
  */
 export function CreateDialog({
   open,
@@ -63,7 +67,7 @@ export function CreateDialog({
       exitMs={200}
     >
       <form
-        className="am-card"
+        className="am-card q-card"
         onSubmit={(event) => {
           event.preventDefault();
           onSubmit();
@@ -91,7 +95,14 @@ export function CreateDialog({
             disabled={busy || !canSubmit}
             aria-busy={busy || undefined}
           >
-            {busy ? busyLabel : submitLabel}
+            {busy ? (
+              <>
+                <Spinner />
+                {busyLabel}
+              </>
+            ) : (
+              submitLabel
+            )}
           </Button>
         </footer>
       </form>
