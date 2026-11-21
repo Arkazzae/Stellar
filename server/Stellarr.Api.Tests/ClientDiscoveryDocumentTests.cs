@@ -27,20 +27,14 @@ public sealed class ClientDiscoveryDocumentTests
     }
 
     [Fact]
-    public async Task InstanceWithoutAnyServerFallsBackToItsConfiguredNameOrTheProductName()
+    public async Task InstanceWithoutAnyServerIsCalledByTheProductName()
     {
-        using var unnamed = new StellarrWebApplicationFactory(loadTestData: false);
-        using var named = new StellarrWebApplicationFactory(
-            loadTestData: false,
-            configuration: new Dictionary<string, string?> { ["Stellarr:InstanceName"] = "  Orbita  " });
+        using var factory = new StellarrWebApplicationFactory(loadTestData: false);
+        using var client = factory.CreateClient();
 
-        using var unnamedClient = unnamed.CreateClient();
-        using var namedClient = named.CreateClient();
-        var first = await unnamedClient.GetFromJsonAsync<JsonElement>(DiscoveryPath);
-        var second = await namedClient.GetFromJsonAsync<JsonElement>(DiscoveryPath);
+        var document = await client.GetFromJsonAsync<JsonElement>(DiscoveryPath);
 
-        Assert.Equal("Stellarr", first.GetProperty("instanceName").GetString());
-        Assert.Equal("Orbita", second.GetProperty("instanceName").GetString());
+        Assert.Equal("Stellarr", document.GetProperty("instanceName").GetString());
     }
 
     [Fact]

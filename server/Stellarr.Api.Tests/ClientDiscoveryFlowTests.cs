@@ -13,7 +13,6 @@ public sealed class ClientDiscoveryFlowTests
             configuration: new Dictionary<string, string?>
             {
                 ["Stellarr:InstanceId"] = "11111111-2222-4333-8444-555555555555",
-                ["Stellarr:InstanceName"] = "Orbita",
                 ["Desktop:CanonicalOrigin"] = "https://chat.example.test/",
                 ["Desktop:MinimumVersion"] = "0.1.0",
                 ["Desktop:RecommendedVersion"] = "0.2.0",
@@ -28,7 +27,7 @@ public sealed class ClientDiscoveryFlowTests
         Assert.Equal(
             "11111111-2222-4333-8444-555555555555",
             handshake.GetProperty("instanceId").GetString());
-        Assert.Equal("Orbita", handshake.GetProperty("instanceName").GetString());
+        Assert.Equal("Stellarr", handshake.GetProperty("instanceName").GetString());
         Assert.Equal("https://chat.example.test", handshake.GetProperty("canonicalOrigin").GetString());
         Assert.Equal("abc1234", handshake.GetProperty("buildSha").GetString());
         Assert.Equal(1, handshake.GetProperty("apiProtocol").GetInt32());

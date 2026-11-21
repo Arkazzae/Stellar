@@ -8,7 +8,6 @@ services:
   api:
     environment:
       STELLARR_LANGUAGE: en
-      STELLARR_INSTANCE_NAME: Stellarr
       STELLARR_MAIL_ENABLED: "false"
       RateLimiting__AuthWrite__PermitLimit: "1000"
       RateLimiting__Login__PermitLimit: "1000"

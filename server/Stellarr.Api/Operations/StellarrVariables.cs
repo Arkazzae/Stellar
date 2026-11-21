@@ -98,7 +98,6 @@ public static class StellarrVariables
 
     // Instance identity and desktop handshake.
     public static readonly StellarrVariable InstanceId = new("STELLARR_INSTANCE_ID", "Stellarr:InstanceId");
-    public static readonly StellarrVariable InstanceName = new("STELLARR_INSTANCE_NAME", "Stellarr:InstanceName");
     public static readonly StellarrVariable TimeZone = new("STELLARR_TIME_ZONE", "Operations:TimeZone");
     public static readonly StellarrVariable DesktopMinimumVersion = new("STELLARR_DESKTOP_MINIMUM_VERSION", "Desktop:MinimumVersion");
     public static readonly StellarrVariable DesktopRecommendedVersion = new("STELLARR_DESKTOP_RECOMMENDED_VERSION", "Desktop:RecommendedVersion");
