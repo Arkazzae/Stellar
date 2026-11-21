@@ -52,7 +52,11 @@ internal sealed class CliRuntime
 
     internal IConfiguration Configuration { get; }
 
-    /// <summary>The raw environment of this exec, before entrypoint exports.</summary>
+    /// <summary>
+    /// The environment of this exec: the container's configured one, without
+    /// the entrypoint's exports, and in the image with the public address the
+    /// wrapper derived.
+    /// </summary>
     internal IReadOnlyDictionary<string, string?> Environment { get; }
 
     internal TextReader Input { get; }

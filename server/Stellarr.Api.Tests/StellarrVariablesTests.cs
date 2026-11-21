@@ -79,7 +79,7 @@ public sealed class StellarrVariablesTests
         }
     }
 
-    /// <summary>The names the entrypoint reads and the CLI repeats, and the CLI's own: none sets a key.</summary>
+    /// <summary>The names only the entrypoint reads, and the CLI's own: none sets a key.</summary>
     private static readonly string[] Keyless =
         ["STELLARR_PUBLIC_PORT", "STELLARR_PUBLIC_URL", "STELLARR_HTTPS_PORT", "STELLARR_API_URL"];
 

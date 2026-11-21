@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 # Fails when the STELLARR_* settings an operator can set are not the same set
-# everywhere: what the image reads (the API's table, and what the entrypoint
-# and the TLS script read), what docker-compose.yml interpolates, the
-# commented-out lines of .env.example and the tables of
+# everywhere: what the image reads (the API's table, and what the entrypoint,
+# its shared settings script and the TLS script read), what docker-compose.yml
+# interpolates, the commented-out lines of .env.example and the tables of
 # docs/install/configuration.md. Needs bash, grep, sed, sort and comm.
 set -Eeuo pipefail
 
@@ -26,7 +26,7 @@ only() { grep -oE 'STELLARR_[A-Z0-9_]+' | sort -u; }
 table=$(grep -oE 'new\("STELLARR_[A-Z0-9_]+"' server/Stellarr.Api/Operations/StellarrVariables.cs | only)
 # A read is ${NAME...}; the names the entrypoint only exports to the media
 # server never appear so.
-scripts=$(grep -ohE '\$\{STELLARR_[A-Z0-9_]+' infra/entrypoint.sh infra/tls-maintenance.sh | only)
+scripts=$(grep -ohE '\$\{STELLARR_[A-Z0-9_]+' infra/entrypoint.sh infra/settings.sh infra/tls-maintenance.sh | only)
 compose=$(grep -oE '\$\{STELLARR_[A-Z0-9_]+' docker-compose.yml | only)
 example_lines=$(grep -oE '^# STELLARR_[A-Z0-9_]+=' .env.example | sed 's/^# //; s/=$//')
 example=$(only <<<"$example_lines")

@@ -1,4 +1,3 @@
-using System.Globalization;
 using Microsoft.Extensions.Configuration;
 using Stellarr.Api.Operations;
 
@@ -12,35 +11,15 @@ internal sealed record StartupContext(
 internal sealed record StartupValue(string Value, string Source);
 
 /// <summary>
-/// Resolves the values the container entrypoint would export before the API
-/// starts. <c>docker exec</c> inherits the container's environment but not
-/// those exports, so the CLI repeats the entrypoint's public-address rules from
-/// the operator's variables instead of showing the API defaults.
+/// Reads the startup settings as the CLI reports them. <c>docker exec</c>
+/// starts the CLI with the container's configured environment, not with what
+/// the entrypoint exported. The image's wrapper (<c>infra/stellarr-cli.sh</c>)
+/// adds the public address, derived by the entrypoint's own rules, under its
+/// configuration key; the rest is the operator's variables, or the image's
+/// default when one is not set.
 /// </summary>
 internal static class ContainerSettings
 {
-    internal static StartupValue PublicUrl(StartupContext context)
-    {
-        var explicitUrl = StellarrVariables.ValueIn(context.Environment, StellarrVariables.PublicUrl);
-        var domain = StellarrVariables.ValueIn(context.Environment, StellarrVariables.Domain);
-        if (domain is null && explicitUrl is null)
-        {
-            var configured = context.Configuration["Operations:PublicUrl"];
-            return string.IsNullOrEmpty(configured)
-                ? new StartupValue("", "unavailable")
-                : new StartupValue(configured.TrimEnd('/'), "configuration");
-        }
-
-        if (explicitUrl is not null)
-        {
-            return new StartupValue(explicitUrl.TrimEnd('/'), "environment");
-        }
-
-        var publicPort = StellarrVariables.ValueIn(context.Environment, StellarrVariables.PublicPort)
-            ?? HttpsPort(context).Value;
-        return new StartupValue(PublicUrlFor(domain!, publicPort), "environment");
-    }
-
     internal static StartupValue PublicHost(StartupContext context)
     {
         var domain = StellarrVariables.ValueIn(context.Environment, StellarrVariables.Domain);
@@ -98,17 +77,5 @@ internal static class ContainerSettings
         var fromEnvironment = context.Environment.Keys.Any(
             name => name.StartsWith("Oidc__Providers__", StringComparison.OrdinalIgnoreCase));
         return new StartupValue(string.Join(", ", providers), fromEnvironment ? "environment" : "configuration");
-    }
-
-    private static string PublicUrlFor(string host, string publicPort)
-    {
-        // The shell wraps any host containing a colon, matching the entrypoint.
-        var displayHost = host.Contains(':', StringComparison.Ordinal) ? $"[{host}]" : host;
-        var port = int.TryParse(publicPort, NumberStyles.Integer, CultureInfo.InvariantCulture, out var parsed)
-            ? parsed
-            : 443;
-        return port == 443
-            ? $"https://{displayHost}"
-            : $"https://{displayHost}:{port.ToString(CultureInfo.InvariantCulture)}";
     }
 }
