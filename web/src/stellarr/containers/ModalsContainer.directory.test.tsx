@@ -7,6 +7,7 @@ import { ApiError } from "@/lib/api/errors";
 import { harness, resetHarness } from "@/test/modalsHarness";
 
 import { ModalsContainer } from "./ModalsContainer";
+import { CREATED_SERVER_STORAGE_KEY } from "./ServerDirectoryDialogs";
 
 vi.mock("@/state/hooks", async () => (await import("@/test/modalsHarness")).hooksModule());
 
@@ -15,7 +16,10 @@ const t = (key: MessageKey, values?: Record<string, string | number>) =>
 
 const PUBLIC = { id: "srv-open", name: "Open House", description: "Come in" };
 
-beforeEach(resetHarness);
+beforeEach(() => {
+  resetHarness();
+  sessionStorage.clear();
+});
 afterEach(() => vi.restoreAllMocks());
 
 function expectServerActivated(serverId: string) {
@@ -25,18 +29,36 @@ function expectServerActivated(serverId: string) {
 }
 
 describe("ModalsContainer: creating a server", () => {
+  const INVITE = {
+    id: "inv-1",
+    url: "https://chat.example/invite/K7fQ2m",
+    createdByName: "Ania",
+    uses: 0,
+    maxUses: null,
+    expiresAt: null,
+  };
+
   async function submit() {
     const user = userEvent.setup();
     harness.ui.modal = "server-create";
-    render(<ModalsContainer />);
+    const view = render(<ModalsContainer />);
     await user.type(screen.getByRole("textbox", { name: new RegExp(`^${t("shell.serverName")}`) }), "Garage");
     await user.click(screen.getByRole("button", { name: t("shell.createServerNow") }));
+    return view;
   }
 
-  it("creates the server with its starter channels and switches to it", async () => {
-    harness.directory.createServer.mockResolvedValue({ id: "srv-new", name: "Garage" });
+  /** Switching servers reloads the session, and the app mounts again on the new one. */
+  function remountOn(server: { id: string; name: string }) {
+    harness.directory.server = server;
+    harness.ui.modal = null;
+    render(<ModalsContainer />);
+  }
 
-    await submit();
+  it("creates the server, switches to it, and makes its invite link once the app runs on it", async () => {
+    harness.directory.createServer.mockResolvedValue({ id: "srv-new", name: "Garage" });
+    const createInvite = vi.mocked(harness.ports.admin.createInvite).mockResolvedValue(INVITE);
+
+    const first = await submit();
 
     await waitFor(() => expectServerActivated("srv-new"));
     expect(harness.directory.createServer).toHaveBeenCalledExactlyOnceWith({
@@ -48,6 +70,43 @@ describe("ModalsContainer: creating a server", () => {
       mentionsOnly: true,
       voiceJoinSound: true,
     });
+    // Asked before the switch, the link would be made on the server left behind.
+    expect(createInvite).not.toHaveBeenCalled();
+
+    first.unmount();
+    remountOn({ id: "srv-new", name: "Garage" });
+
+    expect(await screen.findByRole("status", { name: t("auth.invite.linkLabel") })).toHaveTextContent(INVITE.url);
+    expect(createInvite).toHaveBeenCalledOnce();
+    expect(harness.directory.selectServer.mock.invocationCallOrder[0]).toBeLessThan(
+      createInvite.mock.invocationCallOrder[0]!,
+    );
+
+    await userEvent.setup().click(screen.getByRole("button", { name: t("common.done") }));
+    expect(harness.ui.closeModal).toHaveBeenCalledOnce();
+    expect(screen.queryByRole("dialog")).toBeNull();
+    expect(sessionStorage.getItem(CREATED_SERVER_STORAGE_KEY)).toBeNull();
+  });
+
+  it("says so when the link could not be made", async () => {
+    harness.directory.createServer.mockResolvedValue({ id: "srv-new", name: "Garage" });
+    vi.mocked(harness.ports.admin.createInvite).mockRejectedValue(new ApiError("forbidden", "no", 403));
+
+    (await submit()).unmount();
+    remountOn({ id: "srv-new", name: "Garage" });
+
+    // Read whole: the sentence keeps a one-letter word on the next one with a no-break space.
+    expect((await screen.findByRole("alert")).textContent).toBe(t("auth.setup.inviteFailed"));
+  });
+
+  it("does not bring the invite back on a server the switch did not land on", () => {
+    sessionStorage.setItem(CREATED_SERVER_STORAGE_KEY, "srv-elsewhere");
+
+    render(<ModalsContainer />);
+
+    expect(screen.queryByRole("dialog")).toBeNull();
+    expect(harness.ports.admin.createInvite).not.toHaveBeenCalled();
+    expect(sessionStorage.getItem(CREATED_SERVER_STORAGE_KEY)).toBeNull();
   });
 
   it("stays on the current server and words the failure when creation is refused", async () => {
