@@ -175,7 +175,7 @@ public sealed class StellarrVariablesTests
     public void ARowIsFoundByItsKey()
     {
         Assert.Same(StellarrVariables.GiphyApiKey, StellarrVariables.ForKey("Giphy:ApiKey"));
-        Assert.Throws<InvalidOperationException>(() => StellarrVariables.ForKey("Oidc:CallbackPath"));
+        Assert.Null(StellarrVariables.ForKey("Oidc:CallbackPath"));
     }
 
     /// <summary>
