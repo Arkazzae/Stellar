@@ -62,8 +62,8 @@ Options:
                            account and a 'Stellarr' server before seeding
   --owner-username USER    Owner username for --bootstrap-owner (default: admin)
   --data-root PATH         The API's DataRoot, where files/ and the presence
-                           fixture live (default: the container's DataRoot, or
-                           the folder of --db)
+                           fixture live (default: the container's
+                           STELLARR_DATA_ROOT, or the folder of --db)
   --no-media               Skip screenshots, GIFs and silent clips
   --no-presence            Skip the online/idle/dnd fixture for seeded accounts
   --no-restart             Do not start the api container again after seeding
@@ -175,7 +175,7 @@ if [[ -n "$API_CID" ]]; then
   API_NAME="$(docker inspect -f '{{.Name}}' "$API_CID" | sed 's#^/##')"
   API_RUNNING="$(docker inspect -f '{{.State.Running}}' "$API_CID")"
 
-  configured_root="$(container_env DataRoot)"
+  configured_root="$(container_env STELLARR_DATA_ROOT)"
   [[ -n "$configured_root" ]] && DATA_ROOT="${configured_root%/}"
 
   connection="$(container_env ConnectionStrings__Database)"

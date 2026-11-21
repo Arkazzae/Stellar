@@ -1,47 +1,51 @@
 # Development stack: each process runs from a bind mount of the working tree
-# and reloads on change, so editing code never needs an image build. The
-# production docker-compose.yml is the opposite: one container, everything
-# baked in.
+# and reloads on change, so editing code never needs an image build.
 #
-#   web     :3000  Vite's dev server, the chat client and Cockpit under /cockpit
-#   api     :5000  dotnet watch, reached by the browser through the web proxy
-#   media   :49100/udp  cargo run under watchexec, Stellarr Media; its control
-#                       API is published on 127.0.0.1:5200
-#   mailpit :8025  catches every message the API sends; nothing leaves the
-#                  machine. Its SMTP port 1025 is also published on loopback
-#   coturn  :3478  only behind the "turn" profile
+#   web     :3000       Vite's dev server: the web client, and Cockpit under /cockpit
+#   api     :5000       dotnet watch, which the browser reaches through the web proxy
+#   media   :49100/udp  Stellarr Media under cargo run and watchexec; its control
+#                       API on 127.0.0.1:5200
+#   mailpit :8025       catches every message the API sends; its SMTP port 1025
+#                       is on loopback too
+#   coturn  :3478       only with the "turn" profile
 #
 #   docker compose -f docker-compose.dev.yml up
 #   docker compose -f docker-compose.dev.yml --profile turn up
 #
+# The host ports come from STELLARR_DEV_WEB_PORT, STELLARR_DEV_API_PORT,
+# STELLARR_DEV_MEDIA_PORT, STELLARR_DEV_MEDIA_CONTROL_PORT,
+# STELLARR_DEV_MAILPIT_PORT and STELLARR_DEV_MAILPIT_SMTP_PORT, in the shell or
+# in .env. STELLARR_DEV_POLLING=false turns the web server's polling off, and
+# STELLARR_DEV_ALLOWED_HOSTS lists further host names it answers. Of the
+# instance's settings, only those named without a value below are taken from
+# there, and the stack sets the rest itself. There is no env_file: a checkout
+# may hold the .env of a production stack, which must not reach this one whole.
+#
 # The first start installs the npm packages, restores the NuGet packages and
-# compiles the media server's crates into named volumes, so it is slow. Later
-# starts reuse them. The web service checks the browser's binaries before it
-# starts, and those that artifacts/recipes/ builds from source have to be built
-# on the host first, once: `docker buildx bake recipes`.
+# compiles the media server's crates into named volumes, so it is slow. The web
+# service checks the browser's binaries before it starts; those that
+# artifacts/recipes/ builds from source are built on the host first, once:
+# `docker buildx bake recipes`.
 #
-# Voice between two tabs on one machine needs no TURN server. Start the turn
-# profile to test a connection that has to cross a NAT. It uses the host
-# network, so it listens on the host's own ports 3478 and 49160-49200.
+# Voice between two tabs on one machine needs no TURN server; the turn profile
+# is for a connection that has to cross a NAT. It uses the host network, so it
+# listens on the host's own ports 3478 and 49160-49200.
 #
-# Every call goes through the media server, as in production. Its one
-# candidate is 127.0.0.1 with the published port, because Docker forwards that
-# port into the container on every host, while the container's own address is
-# reachable from the host only on Linux. So only a browser on this machine
-# reaches it: not one on another device, and not one forced through the turn
-# profile's coturn, which refuses loopback peers. The port is not production's
-# 49000, so this stack starts next to a running production container.
+# Every call goes through the media server, as in production. Its one candidate
+# is 127.0.0.1 with the published port, because Docker forwards that port into
+# the container on every host, while the container's own address is reachable
+# from the host only on Linux. So only a browser on this machine reaches it: not
+# one on another device, and not one forced through the turn profile's coturn,
+# which refuses loopback peers. The port is not production's 49000, so this
+# stack starts next to a running production container.
 
 name: stellarr-dev
 
 services:
-  # web is an npm workspace of the repository root, which has the one
-  # package-lock.json. The service mounts the whole repository at /app,
-  # installs from the root and runs the dev server from web/, which holds both
-  # the web client and Cockpit (web/src/cockpit/), so one dev server serves and
-  # hot-reloads both apps. The workspace links the shared packages/stellarr-ui,
-  # packages/stellarr-icons and packages/stellarr-router it depends on. It may
-  # rewrite the lockfile.
+  # An npm workspace of the repository root, which has the one
+  # package-lock.json: the whole repository is mounted at /app, packages are
+  # installed from the root and the dev server runs from web/, which holds the
+  # web client and Cockpit (web/src/cockpit/), so one server hot-reloads both.
   web:
     image: node:24-bookworm-slim
     working_dir: /app/web
@@ -52,15 +56,13 @@ services:
       sh -c "(cd /app && npm install -w stellarr-web --no-audit --no-fund) &&
              npm run dev -- --host 0.0.0.0 --port 3000"
     environment:
-      # The dev server proxies /api, /assets, /health, /hubs and
-      # /.well-known/stellarr/client to the API. In production Nginx does that.
+      # Where the dev server proxies /api, /assets, /health, /hubs and
+      # /.well-known/stellarr/client, as Nginx does in production.
       STELLARR_API_ORIGIN: http://api:5000
-      # The dev server answers only the hosts it knows. localhost and IP
-      # addresses always work; list further names for an IDE or remote preview.
-      STELLARR_DEV_ALLOWED_HOSTS: ${STELLARR_DEV_ALLOWED_HOSTS:-}
-      # Answered at /stellarr-instance.js, as the container's entrypoint
-      # writes it in production.
-      STELLARR_LANGUAGE: ${STELLARR_LANGUAGE:-en}
+      STELLARR_DEV_ALLOWED_HOSTS:
+      # Answered at /stellarr-instance.js, which the entrypoint writes in
+      # production.
+      STELLARR_LANGUAGE:
       # File events do not cross a bind mount on every host (Docker Desktop on
       # macOS and Windows), so the dev server polls for changes.
       STELLARR_DEV_POLLING: ${STELLARR_DEV_POLLING:-true}
@@ -68,11 +70,10 @@ services:
       - "${STELLARR_DEV_WEB_PORT:-3000}:3000"
     volumes:
       - .:/app
-      # Named volumes keep these directories inside Docker. Without them the
-      # bind mount shows the host's copies, built for another OS. Packages that
-      # npm cannot hoist to the root land in the workspace's own node_modules,
-      # which also holds the dev server's cache, so that one needs a volume as
-      # well.
+      # Named volumes keep these directories inside Docker; through the bind
+      # mount they would be the host's, built for another OS. Packages npm
+      # cannot hoist land in the workspace's own node_modules, which also holds
+      # the dev server's cache.
       - web_root_node_modules:/app/node_modules
       - web_node_modules:/app/web/node_modules
     depends_on:
@@ -86,10 +87,9 @@ services:
     image: stellarr-api-dev:local
     working_dir: /src/server/Stellarr.Api
     # Hot reload is off: when applying an edit in place fails, it can stop the
-    # whole watcher, while a plain rebuild and restart always recovers.
-    # TreatWarningsAsErrors is on for the whole repository, which suits CI but
-    # would stop the watcher on an unused variable in the middle of an edit,
-    # so warnings are muted and no longer fail the build here.
+    # whole watcher, while a plain rebuild and restart always recovers. Warnings
+    # are muted here because TreatWarningsAsErrors would stop the watcher on an
+    # unused variable in the middle of an edit.
     command: >
       dotnet watch --no-hot-reload run
         --no-launch-profile
@@ -98,48 +98,49 @@ services:
     environment:
       ASPNETCORE_ENVIRONMENT: Development
       ASPNETCORE_URLS: http://0.0.0.0:5000
-      GIPHY_API_KEY: ${GIPHY_API_KEY:-}
-      # Same reason as STELLARR_DEV_POLLING above: inotify events from the
-      # host do not reach the container.
+      # Same reason as STELLARR_DEV_POLLING: inotify events from the host do not
+      # reach the container.
       DOTNET_USE_POLLING_FILE_WATCHER: "1"
-      # The browser reaches the API only through the web service's proxy, so
-      # there is no page of the API's own to refresh. The one HTML response the API
-      # sends is the desktop browser-login confirmation. Its CSP is
-      # `default-src 'none'`, which blocks the script that dotnet watch would
-      # inject into HTML responses.
+      # The browser reaches the API only through the web proxy, so there is no
+      # page of the API's own to refresh, and the one HTML page it sends, the
+      # desktop browser-login confirmation, has a CSP of `default-src 'none'`
+      # that blocks the script dotnet watch would inject.
       DOTNET_WATCH_SUPPRESS_BROWSER_REFRESH: "1"
+      # The stack's own settings, under the names production uses.
+      STELLARR_DATA_ROOT: /data/stellarr
+      STELLARR_INSTANCE_NAME: Stellarr Dev
+      # Mailpit below catches the mail.
+      STELLARR_MAIL_ENABLED: "true"
+      STELLARR_MEDIA_PORT: ${STELLARR_DEV_MEDIA_PORT:-49100}
+      STELLARR_MEDIA_CONTROL_SECRET: stellarr-media-development-secret
+      # What the entrypoint derives in production, which has no STELLARR_* name.
       ConnectionStrings__Database: Data Source=/data/stellarr/stellarr-dev.db;Pooling=True
-      DataRoot: /data/stellarr
       Rtc__MediaControlUrl: http://media:5200
-      Rtc__MediaControlSecret: stellarr-media-development-secret
-      Rtc__MediaPort: ${STELLARR_DEV_MEDIA_PORT:-49100}
       Operations__PublicUrl: http://localhost:${STELLARR_DEV_WEB_PORT:-3000}
-      Operations__TimeZone: ${STELLARR_TIME_ZONE:-Europe/Warsaw}
       Desktop__CanonicalOrigin: http://127.0.0.1:${STELLARR_DEV_API_PORT:-5000}
-      Desktop__MinimumVersion: ${STELLARR_DESKTOP_MINIMUM_VERSION:-0.1.0}
-      Desktop__RecommendedVersion: ${STELLARR_DESKTOP_RECOMMENDED_VERSION:-0.1.3}
-      Stellarr__InstanceId: ${STELLARR_INSTANCE_ID:-}
-      Stellarr__InstanceName: ${STELLARR_INSTANCE_NAME:-Stellarr Dev}
-      Stellarr__Language: ${STELLARR_LANGUAGE:-en}
-      Mail__Enabled: ${STELLARR_MAIL_ENABLED:-true}
-      # The mail secrets. SMTP's server, port and login are set in Cockpit; Resend
-      # replaces SMTP when it is turned on under Integrations.
-      Mail__SmtpPassword: ${STELLARR_SMTP_PASSWORD:-}
-      Mail__ResendApiKey: ${STELLARR_RESEND_API_KEY:-}
-      Mail__FromAddress: ${STELLARR_MAIL_FROM:-}
-      Mail__FromName: ${STELLARR_MAIL_FROM_NAME:-Stellarr}
-      Push__Enabled: ${STELLARR_PUSH_ENABLED:-false}
-      Push__Subject: ${STELLARR_PUSH_SUBJECT:-}
-      Push__PublicKey: ${STELLARR_PUSH_PUBLIC_KEY:-}
-      Push__PrivateKey: ${STELLARR_PUSH_PRIVATE_KEY:-}
+      # Taken from the shell or .env when set there, and otherwise left unset.
+      STELLARR_LANGUAGE:
+      STELLARR_TIME_ZONE:
+      STELLARR_INSTANCE_ID:
+      STELLARR_DESKTOP_MINIMUM_VERSION:
+      STELLARR_DESKTOP_RECOMMENDED_VERSION:
+      STELLARR_GIPHY_API_KEY:
+      STELLARR_MAIL_FROM:
+      STELLARR_MAIL_FROM_NAME:
+      STELLARR_SMTP_PASSWORD:
+      STELLARR_RESEND_API_KEY:
+      STELLARR_PUSH_ENABLED:
+      STELLARR_PUSH_SUBJECT:
+      STELLARR_PUSH_PUBLIC_KEY:
+      STELLARR_PUSH_PRIVATE_KEY:
     ports:
-      # Published so the API can be called with curl; the browser uses :3000.
+      # For curl; the browser uses the web service.
       - "${STELLARR_DEV_API_PORT:-5000}:5000"
     volumes:
       - ./:/src
-      # Build output and the package cache stay in the container. Sharing obj/
-      # with a host that also builds leads to restore errors that point at the
-      # wrong machine's paths.
+      # Build output and the package cache stay in the container. An obj/
+      # shared with a host that also builds leads to restore errors that point
+      # at the wrong machine's paths.
       - api_obj:/src/server/Stellarr.Api/obj
       - api_bin:/src/server/Stellarr.Api/bin
       - nuget:/root/.nuget/packages
@@ -155,10 +156,10 @@ services:
       target: media-dev
     image: stellarr-media-dev:local
     working_dir: /app
-    # cargo run instead of a --locked build, for the same reason as npm install
-    # above: Cargo.lock lives on the host, and adding a dependency should not
-    # mean anything more than saving Cargo.toml. watchexec polls, like the web
-    # service above, and restarts the server after every change.
+    # cargo run instead of a --locked build, for the same reason as npm install:
+    # Cargo.lock lives on the host, and adding a dependency should mean no more
+    # than saving Cargo.toml. watchexec polls and restarts the server after
+    # every change.
     command: >
       watchexec --restart --poll=1s --watch src --watch Cargo.toml
         -- cargo run
@@ -175,8 +176,8 @@ services:
       - "127.0.0.1:${STELLARR_DEV_MEDIA_CONTROL_PORT:-5200}:5200"
     volumes:
       - ./media:/app
-      # Same reason as api_obj: build output and the crate cache stay in the
-      # container, apart from a cargo build on the host.
+      # Build output and the crate cache stay in the container, apart from a
+      # cargo build on the host.
       - media_target:/app/target
       - cargo_registry:/usr/local/cargo/registry
 
