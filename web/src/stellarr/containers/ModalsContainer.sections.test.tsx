@@ -26,12 +26,10 @@ function openSectionSettings() {
   return renderWithConfirm(<ModalsContainer />);
 }
 
-/** Presses delete in the dialog; the question card it raises is returned unanswered. */
+/** Presses delete at the foot of the dialog's navigation; the card it raises is left unanswered. */
 async function pressDelete() {
   const user = userEvent.setup();
   await user.click(screen.getByRole("button", { name: t("section.delete") }));
-  const pane = document.querySelector<HTMLElement>('[data-pane="danger"]')!;
-  await user.click(within(pane).getByRole("button", { name: t("section.delete") }));
   return user;
 }
 
@@ -50,7 +48,7 @@ describe("ModalsContainer: section settings", () => {
     const name = screen.getByRole("textbox", { name: new RegExp(`^${t("section.name")}`) });
     await user.clear(name);
     await user.type(name, "Beta");
-    await user.click(screen.getByRole("button", { name: t("channel.settingsSave") }));
+    await user.click(screen.getByRole("button", { name: t("common.saveChanges") }));
 
     expect(harness.ports.admin.updateSection).toHaveBeenCalledExactlyOnceWith("s-a", { name: "Beta" });
   });

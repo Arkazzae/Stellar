@@ -1,6 +1,7 @@
 import { useMemo } from "react";
 
 import { ChannelCreate } from "@/components/settings/channel/ChannelCreate";
+import { railGroups } from "@/components/settings/channel/channelSettingsModel";
 import { ChannelSettings, type ChannelSettingsVM } from "@/components/settings/channel/ChannelSettings";
 import { ApiError, describeError } from "@/lib/api/errors";
 import type { OpusProfileId, Role } from "@/ports";
@@ -43,6 +44,7 @@ export function ChannelSettingsDialog({ roles }: { roles: readonly Role[] }) {
       audioProfile: found.audioProfile ?? DEFAULT_CHANNEL_AUDIO,
       userLimit: found.userLimit ?? 0,
       sectionName: directory.sections.find((section) => section.id === found.sectionId)?.name,
+      rail: railGroups(directory.channels, directory.sections),
     };
   }, [directory.channels, directory.sections, channelId]);
 

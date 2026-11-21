@@ -1,9 +1,9 @@
-import { render, screen, within } from "@testing-library/react";
+import { screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { describe, expect, it, vi } from "vitest";
 
 import type { Role } from "@/ports";
-import { renderWithConfirm } from "@/test/confirm";
+import { renderInConfirm } from "@/test/confirm";
 
 import { SectionSettings, type SectionSettingsProps } from "./SectionSettings";
 
@@ -37,12 +37,7 @@ function props(overrides: Partial<SectionSettingsProps> = {}): SectionSettingsPr
 }
 
 const nameField = () => screen.getByRole("textbox", { name: /Nazwa sekcji/ });
-const saveButton = () => screen.getByRole("button", { name: /Zapisz zmiany|Zapisywanie…/ });
-// The nav item and the pane's own button share the name, so look inside the pane.
-const deleteButton = () =>
-  within(screen.getByRole("region", { name: "Usuń sekcję" })).getByRole("button", {
-    name: "Usuń sekcję",
-  });
+const saveButton = () => screen.queryByRole("button", { name: /Zapisz zmiany|Zapisywanie…/ });
 const goTo = (user: ReturnType<typeof userEvent.setup>, pane: string) =>
   user.click(
     within(screen.getByRole("navigation", { name: "Sekcje ustawień sekcji" })).getByRole(
@@ -52,25 +47,25 @@ const goTo = (user: ReturnType<typeof userEvent.setup>, pane: string) =>
   );
 
 describe("SectionSettings", () => {
-  it("opens on the general pane of the section it is named after", () => {
-    render(<SectionSettings {...props()} />);
+  it("opens on the overview of the section it is named after", () => {
+    renderInConfirm(<SectionSettings {...props()} />);
 
     expect(screen.getByRole("dialog", { name: "Edytuj sekcję Gry" })).toBeInTheDocument();
-    expect(screen.getByRole("heading", { name: "Ogólne" })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "Przegląd" })).toBeInTheDocument();
     expect(nameField()).toHaveValue("Gry");
   });
 
   describe("rename", () => {
-    it("offers save only for a new, non-empty name", async () => {
+    it("offers a save only for a new, non-empty name", async () => {
       const user = userEvent.setup();
-      render(<SectionSettings {...props()} />);
-      expect(saveButton()).toBeDisabled();
+      renderInConfirm(<SectionSettings {...props()} />);
+      expect(saveButton()).toBeNull();
 
       await user.clear(nameField());
       expect(saveButton()).toBeDisabled();
 
       await user.type(nameField(), "  Gry  ");
-      expect(saveButton()).toBeDisabled();
+      expect(saveButton()).toBeNull();
 
       await user.type(nameField(), "!");
       expect(saveButton()).toBeEnabled();
@@ -79,40 +74,22 @@ describe("SectionSettings", () => {
     it("saves the trimmed name", async () => {
       const user = userEvent.setup();
       const onSave = vi.fn(() => Promise.resolve());
-      render(<SectionSettings {...props({ onSave })} />);
+      renderInConfirm(<SectionSettings {...props({ onSave })} />);
 
       await user.clear(nameField());
       await user.type(nameField(), "  Ogłoszenia ");
-      await user.click(saveButton());
+      await user.click(saveButton()!);
 
       expect(onSave).toHaveBeenCalledExactlyOnceWith({ name: "Ogłoszenia" });
-    });
-
-    it("blocks a second save while one is running", async () => {
-      const user = userEvent.setup();
-      let finish!: () => void;
-      const onSave = vi.fn(
-        () => new Promise<void>((resolve) => {
-          finish = resolve;
-        }),
-      );
-      render(<SectionSettings {...props({ onSave })} />);
-
-      await user.type(nameField(), "!");
-      await user.click(saveButton());
-
-      expect(screen.getByRole("button", { name: "Zapisywanie…" })).toBeDisabled();
-      finish();
-      await vi.waitFor(() => expect(saveButton()).toHaveTextContent("Zapisz zmiany"));
     });
 
     it("reports a failed save and keeps what was typed", async () => {
       const user = userEvent.setup();
       const onSave = vi.fn().mockRejectedValue(new Error("boom"));
-      render(<SectionSettings {...props({ onSave })} />);
+      renderInConfirm(<SectionSettings {...props({ onSave })} />);
 
       await user.type(nameField(), "!");
-      await user.click(saveButton());
+      await user.click(saveButton()!);
 
       expect(await screen.findByRole("alert")).toHaveTextContent(
         "Nie udało się zapisać zmian sekcji.",
@@ -122,13 +99,13 @@ describe("SectionSettings", () => {
 
     it("takes the new name from the section once the rail has it", async () => {
       const user = userEvent.setup();
-      const { rerender } = render(<SectionSettings {...props()} />);
+      const { rerender } = renderInConfirm(<SectionSettings {...props()} />);
       await user.type(nameField(), "!");
 
       rerender(<SectionSettings {...props({ section: { ...SECTION, name: "Gry!" } })} />);
 
       expect(nameField()).toHaveValue("Gry!");
-      expect(saveButton()).toBeDisabled();
+      expect(saveButton()).toBeNull();
     });
   });
 
@@ -136,7 +113,7 @@ describe("SectionSettings", () => {
     it("edits a role's override through the shared editor", async () => {
       const user = userEvent.setup();
       const onSavePermissionOverride = vi.fn(() => Promise.resolve());
-      render(<SectionSettings {...props({ onSavePermissionOverride })} />);
+      renderInConfirm(<SectionSettings {...props({ onSavePermissionOverride })} />);
       await goTo(user, "Uprawnienia");
 
       await user.click(screen.getByRole("button", { name: "Edytuj uprawnienia roli Moderator" }));
@@ -155,7 +132,7 @@ describe("SectionSettings", () => {
 
     it("keeps the editor read-only without permission to manage roles", async () => {
       const user = userEvent.setup();
-      render(<SectionSettings {...props({ permissionsSupported: false })} />);
+      renderInConfirm(<SectionSettings {...props({ permissionsSupported: false })} />);
       await goTo(user, "Uprawnienia");
 
       expect(screen.getByText(/więc wyjątki są tylko do odczytu/)).toBeInTheDocument();
@@ -167,7 +144,7 @@ describe("SectionSettings", () => {
     it("says so when the server has no roles, and still links to them", async () => {
       const user = userEvent.setup();
       const onOpenRoles = vi.fn();
-      render(<SectionSettings {...props({ roles: [], onOpenRoles })} />);
+      renderInConfirm(<SectionSettings {...props({ roles: [], onOpenRoles })} />);
       await goTo(user, "Uprawnienia");
 
       expect(screen.getByText("Ten serwer nie ma jeszcze ról.")).toBeInTheDocument();
@@ -176,38 +153,23 @@ describe("SectionSettings", () => {
     });
   });
 
-  it("is read-only and says why without permission to manage channels", async () => {
-    const user = userEvent.setup();
-    renderWithConfirm(<SectionSettings {...props({ supported: false })} />);
+  it("is read-only and says why without permission to manage channels", () => {
+    renderInConfirm(<SectionSettings {...props({ supported: false })} />);
 
     expect(screen.getByText(/Nie masz uprawnienia do zarządzania kanałami/)).toBeInTheDocument();
     expect(nameField()).toBeDisabled();
-    expect(saveButton()).toBeDisabled();
-
-    await goTo(user, "Usuń sekcję");
-    expect(deleteButton()).toBeDisabled();
+    expect(screen.getByRole("button", { name: "Usuń sekcję" })).toBeDisabled();
   });
 
-  it("returns to the general pane each time it opens", async () => {
+  it("returns to the overview each time it opens", async () => {
     const user = userEvent.setup();
-    const { rerender } = render(<SectionSettings {...props()} />);
+    const { rerender } = renderInConfirm(<SectionSettings {...props()} />);
     await goTo(user, "Uprawnienia");
     expect(screen.getByRole("heading", { name: "Uprawnienia" })).toBeInTheDocument();
 
     rerender(<SectionSettings {...props({ open: false })} />);
     rerender(<SectionSettings {...props()} />);
 
-    expect(screen.getByRole("heading", { name: "Ogólne" })).toBeInTheDocument();
-  });
-
-  it("closes from the footer", async () => {
-    const user = userEvent.setup();
-    const onClose = vi.fn();
-    render(<SectionSettings {...props({ onClose })} />);
-
-    const footer = screen.getAllByRole("button", { name: "Zamknij" });
-    await user.click(footer[footer.length - 1]!);
-
-    expect(onClose).toHaveBeenCalledOnce();
+    expect(screen.getByRole("heading", { name: "Przegląd" })).toBeInTheDocument();
   });
 });

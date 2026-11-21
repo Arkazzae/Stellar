@@ -53,6 +53,32 @@ export interface SettingsShellProps<K extends string> {
 const classes = (...names: (string | false | undefined)[]) => names.filter(Boolean).join(" ");
 
 /**
+ * The one action at the foot of the side panel, such as deleting what the
+ * settings belong to: a navigation row in the danger colour that opens no
+ * pane. Deleting a server, a channel and a section all live here.
+ */
+export function SettingsFooterAction({
+  icon,
+  label,
+  disabled = false,
+  onClick,
+}: {
+  icon: IconName;
+  label: string;
+  disabled?: boolean;
+  onClick: () => void;
+}) {
+  return (
+    <button type="button" className="sv-item danger" title={label} disabled={disabled} onClick={onClick}>
+      <span className="sv-ico" aria-hidden="true">
+        <Icon name={icon} size={18} />
+      </span>
+      {label}
+    </button>
+  );
+}
+
+/**
  * The layout every settings dialog shares: a side panel with the owner's name
  * and the captioned items, a fixed bar naming the current pane with the way
  * out, and one scrolling column for the pane. The caller wraps it in a `Modal`

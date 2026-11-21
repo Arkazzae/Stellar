@@ -5,11 +5,12 @@ import { SettingsSaveBar } from "@/components/settings/SettingsSaveBar";
 import { SettingsSection } from "@/components/settings/SettingsSection";
 import {
   channelIcon,
-  channelLabel,
+  railNeighbours,
   type ChannelSettingsVM,
+  type RailGroup,
 } from "@/components/settings/channel/channelSettingsModel";
 import { useAsyncAction } from "@/hooks/useAsyncAction";
-import type { MessageKey } from "@/i18n";
+import type { MessageKey, Translator } from "@/i18n";
 import type { ChannelKind, ChannelPatch } from "@/ports";
 import { useLanguage } from "@/state/hooks";
 
@@ -39,30 +40,117 @@ const HIDE_AFTER: readonly { hours: number; label: MessageKey }[] = [
 /** How many people the call takes. 0 means no limit. */
 const USER_LIMITS: readonly number[] = [0, 2, 4, 6, 8, 10, 16, 25, 50];
 
-export interface ChannelIdentityProps {
+/** How many of a group's channels the preview draws around the one it shows. */
+const NEIGHBOURS = 2;
+
+/** A rail caption: a section's name, or the kind of the channels outside sections. */
+export function groupCaption(t: Translator, group: Pick<RailGroup, "section" | "kind">): string {
+  if (group.section !== undefined) return group.section.name;
+  return t(group.kind === "voice" ? "shell.voiceChannels" : "shell.textChannels");
+}
+
+/** One channel row of a preview's rail slice. */
+export function PreviewRow({
+  kind,
+  name,
+  state,
+}: {
   kind: ChannelKind;
-  /** The name as the rail writes it. */
   name: string;
-  /** The line under the name: the kind and where the channel sits. */
-  meta: string;
+  /** "on" is the selected row, "dim" a neighbour drawn only for context. */
+  state?: "on" | "dim";
+}) {
+  return (
+    <div className={state === undefined ? "ch-place-row" : `ch-place-row ${state}`}>
+      <span className="ch-place-mark">{kind === "voice" ? <Icon name="speaker" size={14} /> : "#"}</span>
+      <span className="ch-place-name">{name}</span>
+    </div>
+  );
 }
 
 /**
- * The channel as the rail will show it, at the top of the profile card. It is
- * the server overview's identity row, with the kind's mark in place of the
- * server icon.
+ * A caption of a preview's rail slice, with the rail's own letters: "on" for
+ * the one being edited, "dim" for a neighbour drawn only for context.
  */
-export function ChannelIdentity({ kind, name, meta }: ChannelIdentityProps) {
+export function PreviewCaption({ text, state }: { text: string; state?: "on" | "dim" }) {
   return (
-    <header className="ov-id ch-id">
-      <span className="ch-id-ico" aria-hidden="true">
-        <Icon name={channelIcon(kind)} size={20} />
-      </span>
-      <span className="ov-id-txt">
-        <b>{name}</b>
-        <span>{meta}</span>
-      </span>
-    </header>
+    <div className={state === undefined ? "ch-place-cap" : `ch-place-cap ${state}`}>
+      <span className="ch-place-caption group-caption">{text}</span>
+    </div>
+  );
+}
+
+export interface ChannelPreviewProps {
+  channel: ChannelSettingsVM;
+  /** The name and topic being typed, which the preview shows before they are saved. */
+  name: string;
+  topic: string;
+}
+
+/**
+ * The channel where it lives, while it is being edited: its row selected in
+ * a slice of the rail among its neighbours, and the room's header with the
+ * name and the topic the way the real header separates them. A voice channel
+ * has the speaker for a mark and no topic.
+ *
+ * It is a picture of what the form below says, so it is hidden from
+ * assistive tech, which reads the form itself.
+ */
+export function ChannelPreview({ channel, name, topic }: ChannelPreviewProps) {
+  const { t } = useLanguage();
+  const voice = channel.kind === "voice";
+  const rail = channel.rail ?? [];
+  const index = rail.findIndex((group) => group.channels.some((item) => item.id === channel.id));
+  const group = rail[index];
+  const { after } = railNeighbours(rail, index);
+
+  // The channel and up to two neighbours on either side of it, in rail order.
+  const rows = group?.channels ?? [{ id: channel.id, name: channel.name, kind: channel.kind }];
+  const at = Math.max(
+    rows.findIndex((item) => item.id === channel.id),
+    0,
+  );
+  const shown = rows.slice(Math.max(at - NEIGHBOURS, 0), at + NEIGHBOURS + 1);
+  const caption =
+    group === undefined
+      ? (channel.sectionName ?? t(voice ? "shell.voiceChannels" : "shell.textChannels"))
+      : groupCaption(t, group);
+  const shownName = name.trim() || channel.name;
+  const shownTopic = topic.trim();
+
+  return (
+    <div className="pv" aria-hidden="true">
+      <div className="pv-rail">
+        <PreviewCaption text={caption} />
+        {shown.map((item) =>
+          item.id === channel.id ? (
+            <PreviewRow key={item.id} kind={channel.kind} name={shownName} state="on" />
+          ) : (
+            <PreviewRow key={item.id} kind={item.kind} name={item.name} />
+          ),
+        )}
+        {after === undefined || after.channels[0] === undefined ? null : (
+          <>
+            <PreviewCaption text={groupCaption(t, after)} state="dim" />
+            <PreviewRow kind={after.channels[0].kind} name={after.channels[0].name} state="dim" />
+          </>
+        )}
+      </div>
+      <div className="pv-room">
+        <div className="pv-head">
+          <span className="pv-glyph">
+            <Icon name={channelIcon(channel.kind)} size={18} />
+          </span>
+          <b>{shownName}</b>
+          {voice || shownTopic === "" ? null : <span className="pv-topic">{shownTopic}</span>}
+        </div>
+        <div className="pv-lines">
+          <i style={{ width: "62%" }} />
+          <i style={{ width: "84%" }} />
+          <i style={{ width: "48%" }} />
+        </div>
+      </div>
+    </div>
   );
 }
 
@@ -266,19 +354,10 @@ export function ChannelOverviewPane({ channel, supported, onSave }: ChannelOverv
     savedTimer.current = window.setTimeout(() => setSaved(false), SAVED_FLASH_MS);
   };
 
-  const kindLabel = voice ? t("channel.voice") : t("channel.text");
-
   return (
-    <SettingsSection
-      title={t("channel.profile")}
-      className="overview-section"
-    >
-      <ChannelIdentity
-        kind={channel.kind}
-        name={channelLabel(channel.kind, channel.name)}
-        meta={`${kindLabel} · ${channel.sectionName ?? t("channel.unsectioned")}`}
-      />
-
+    <>
+    <ChannelPreview channel={channel} name={draft.name} topic={draft.topic} />
+    <SettingsSection title={t("channel.channel")} className="overview-section">
       <div className="frm">
         <div className="frm-row">
           <label className="frm-lab" htmlFor={nameId}>
@@ -321,5 +400,6 @@ export function ChannelOverviewPane({ channel, supported, onSave }: ChannelOverv
         onReset={() => setDraft(current)}
       />
     </SettingsSection>
+    </>
   );
 }

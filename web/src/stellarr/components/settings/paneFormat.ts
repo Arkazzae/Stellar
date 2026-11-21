@@ -17,7 +17,7 @@ export function formatShortDate(iso: string, locale: InterfaceLocale): string {
 }
 
 /** The catalogs that hold a `.one`, `.few` and `.many` form of a counted noun. */
-type CountedNoun = "settings.member" | "settings.channel" | "settings.permission";
+type CountedNoun = "settings.member" | "settings.channel" | "settings.permission" | "section.channelCount";
 
 /** "1 person", "3 people": the catalog form that the locale's plural rules pick for the count. */
 export function countedNoun(
