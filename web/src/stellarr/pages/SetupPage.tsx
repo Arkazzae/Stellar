@@ -14,7 +14,7 @@ import { AuthField, FormError } from "@/components/auth/AuthField";
 import { AuthFrame } from "@/components/auth/AuthFrame";
 import { Chip, ServerTile } from "@/components/auth/Faces";
 import { ServerUnreachable } from "@/components/auth/Outcomes";
-import { StrengthBars } from "@/components/auth/StrengthMeter";
+import { StepIndicator } from "@/components/primitives/StepIndicator";
 import { Switch } from "@/components/primitives/Switch";
 import { registrationIssue, type RegistrationField } from "@/containers/registrationErrors";
 import type { Translator } from "@/i18n";
@@ -57,14 +57,7 @@ function serverProblem(server: ServerDraft, t: Translator): FormIssue<ServerFiel
 
 function Steps({ t, step }: { t: Translator; step: 1 | 2 | 3 }) {
   const names = [t("auth.setup.stepOwner"), t("auth.setup.stepServer"), t("auth.setup.stepInvite")];
-  return (
-    <p className={controls.steps}>
-      <StrengthBars lit={step} />
-      <span>
-        <strong>{t("auth.setup.step", { step, steps: 3 })}</strong> · {names[step - 1]}
-      </span>
-    </p>
-  );
+  return <StepIndicator lit={step} label={t("auth.setup.step", { step, steps: 3 })} name={names[step - 1] ?? ""} />;
 }
 
 type InviteLink = { state: "loading" } | { state: "ready"; url: string } | { state: "failed" };
