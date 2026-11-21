@@ -131,6 +131,8 @@ export function createChatAdapter(
 /** How long a typing notice stays valid, and the minimum gap between two we send. */
 const TYPING_WINDOW_MS = 3000;
 
+const NOBODY: string[] = [];
+
 interface TypingUser {
   displayName: string;
   expire: ReturnType<typeof setTimeout>;
@@ -141,11 +143,18 @@ export function createTypingAdapter(realtime: RealtimeClient): TypingPort {
   const listeners = new Set<(channelId: ChannelId, displayNames: string[]) => void>();
   const lastSent = new Map<ChannelId, number>();
   const typing = new Map<ChannelId, Map<UserId, TypingUser>>();
+  const shown = new Map<ChannelId, string[]>();
 
   const announce = (channelId: ChannelId): void => {
-    const displayNames = [...(typing.get(channelId)?.values() ?? [])].map(
+    const names = [...(typing.get(channelId)?.values() ?? [])].map(
       ({ displayName }) => displayName,
     );
+    // A typist repeats the notice every few seconds; the list stays the same
+    // array while the names do, so whoever draws it has nothing to redraw.
+    const before = shown.get(channelId);
+    const displayNames =
+      before !== undefined && before.join("\n") === names.join("\n") ? before : names;
+    shown.set(channelId, displayNames);
     for (const listener of listeners) listener(channelId, displayNames);
   };
 
@@ -180,12 +189,15 @@ export function createTypingAdapter(realtime: RealtimeClient): TypingPort {
       return () => listeners.delete(handler);
     },
 
+    typingIn: (channelId) => shown.get(channelId) ?? NOBODY,
+
     dispose() {
       stopListening();
       for (const inChannel of typing.values()) {
         for (const { expire } of inChannel.values()) clearTimeout(expire);
       }
       typing.clear();
+      shown.clear();
       listeners.clear();
     },
   };

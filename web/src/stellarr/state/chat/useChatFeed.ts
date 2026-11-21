@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useReducer, useState } from "react";
+import { useCallback, useEffect, useReducer } from "react";
 
 import type { InterfaceLocale } from "@/i18n";
 import { playSystemFx } from "@/lib/audio/systemFx";
@@ -22,9 +22,10 @@ interface ChatFeedOptions {
 
 /**
  * Subscribes the store to everything the server pushes while the app is open.
+ * Who is typing is not among it: the typing line reads that from the port.
  *
- * @returns who is typing in each channel, and a counter that changes whenever
- * a reaction does, since the transcript reads reactions from the port.
+ * @returns a counter that changes whenever a reaction does, since the
+ * transcript reads reactions from the port.
  */
 export function useChatFeed({
   ports,
@@ -35,11 +36,7 @@ export function useChatFeed({
   selfUsername,
   openChannelId,
   preferences,
-}: ChatFeedOptions): {
-  typing: Readonly<Record<string, string[]>>;
-  reactionEpoch: number;
-} {
-  const [typing, setTyping] = useState<Record<string, string[]>>({});
+}: ChatFeedOptions): { reactionEpoch: number } {
   const [reactionEpoch, bumpReactions] = useReducer((n: number) => n + 1, 0);
 
   const receive = useCallback(
@@ -101,17 +98,9 @@ export function useChatFeed({
   );
 
   useEffect(
-    () =>
-      ports.typing.onTypingChanged((channelId, displayNames) => {
-        setTyping((current) => ({ ...current, [channelId]: displayNames }));
-      }),
-    [ports],
-  );
-
-  useEffect(
     () => ports.messageActions.onReactionsChanged(() => bumpReactions()),
     [ports],
   );
 
-  return { typing, reactionEpoch };
+  return { reactionEpoch };
 }

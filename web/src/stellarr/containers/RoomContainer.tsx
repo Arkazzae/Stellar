@@ -1,4 +1,4 @@
-import { useCallback, useRef } from "react";
+import { useCallback, useRef, useSyncExternalStore } from "react";
 
 import { DropOverlay } from "@/components/room/DropOverlay";
 import { MediaViewer } from "@/components/room/attachments/MediaViewer";
@@ -12,6 +12,7 @@ import {
   useDirectory,
   useEmoji,
   useLanguage,
+  usePorts,
   useProfile,
   useUi,
   useVoice,
@@ -25,6 +26,19 @@ import { RoomComposer } from "./RoomComposer";
 import { useAttachmentViewer } from "./useAttachmentViewer";
 import { useChatTranslation } from "./useChatTranslation";
 import { useThreadLayout } from "./useThreadLayout";
+
+const NOBODY: string[] = [];
+
+/**
+ * Who is typing in the open channel, read where it is drawn. The port keeps
+ * the list, so a notice, in this channel or in any other, renders this line
+ * and nothing else.
+ */
+function RoomTyping({ channelId }: { channelId: string | null }) {
+  const { typing } = usePorts();
+  const read = () => (channelId === null ? NOBODY : typing.typingIn(channelId));
+  return <Typing names={useSyncExternalStore(typing.onTypingChanged, read, read)} />;
+}
 
 /**
  * The main column of the server view: the open channel's transcript and
@@ -152,7 +166,7 @@ export function RoomContainer() {
             loadingOlder={chat.loadingOlder}
             onJumpReady={takeJump}
           />
-          <Typing names={chat.typingNames} />
+          <RoomTyping channelId={chat.channelId} />
           {threadPanelOpen ? null : composer}
         </div>
 

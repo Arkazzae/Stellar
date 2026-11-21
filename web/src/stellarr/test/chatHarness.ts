@@ -21,6 +21,8 @@ import type {
 import { SELF } from "./fakes";
 import { message } from "./messages";
 
+const NOBODY: string[] = [];
+
 /** A set of listeners the test can call, standing in for one realtime event. */
 class Topic<Args extends unknown[]> {
   private readonly handlers = new Set<(...args: Args) => void>();
@@ -151,9 +153,11 @@ export function createChatHarness() {
     },
   };
 
+  const typingNow = new Map<string, string[]>();
   const typing = {
     notifyTyping: vi.fn(),
     onTypingChanged: topics.typing.subscribe,
+    typingIn: (channelId: string) => typingNow.get(channelId) ?? NOBODY,
   };
 
   const connection = {
@@ -208,8 +212,10 @@ export function createChatHarness() {
       embeds: (update: MessageEmbedsUpdate) => topics.embeds.emit(update),
       readChanged: (channelId: string, lastReadAt: string) =>
         topics.read.emit(channelId, lastReadAt),
-      typing: (channelId: string, names: string[]) =>
-        topics.typing.emit(channelId, names),
+      typing: (channelId: string, names: string[]) => {
+        typingNow.set(channelId, names);
+        topics.typing.emit(channelId, names);
+      },
       reactions: (messageId: string, next: Reaction[]) => {
         reactions.set(messageId, next);
         topics.reactions.emit(messageId, next);
