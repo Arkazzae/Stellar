@@ -1,0 +1,56 @@
+/*
+ * The mark's three bars, which the password meter lights by strength and a
+ * flow of three steps lights by progress, and the line that names the step.
+ */
+
+.bars {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  gap: 3px;
+  height: 16px;
+}
+
+.bars i {
+  display: block;
+  width: 5px;
+  border-radius: 3px;
+  background: var(--line);
+  transition: background var(--dur-slow) var(--ease-standard);
+}
+
+.bars i:nth-child(1) {
+  height: 9px;
+}
+
+.bars i:nth-child(2) {
+  height: 16px;
+}
+
+.bars i:nth-child(3) {
+  height: 12px;
+}
+
+.bars i[data-on] {
+  background: var(--accent);
+}
+
+.steps {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin: 0;
+  color: var(--text-faint);
+  font-size: var(--text-13);
+}
+
+.steps strong {
+  color: var(--text-muted);
+  font-weight: 500;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .bars i {
+    transition: none;
+  }
+}
