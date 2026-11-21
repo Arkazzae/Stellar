@@ -1,14 +1,19 @@
-import { useCallback, useRef, useSyncExternalStore } from "react";
+import { memo, useCallback, useRef, useSyncExternalStore, type ComponentProps } from "react";
 
 import { DropOverlay } from "@/components/room/DropOverlay";
 import { MediaViewer } from "@/components/room/attachments/MediaViewer";
 import { ThreadPanel } from "@/components/room/panels/ThreadPanel";
-import { Transcript } from "@/components/room/transcript/Transcript";
+import {
+  Transcript,
+  type TranscriptProps,
+  type TranscriptSectionVM,
+} from "@/components/room/transcript/Transcript";
 import { Typing } from "@/components/room/transcript/Typing";
 import { RoomHeader } from "@/components/room/RoomHeader";
 import {
   useAccount,
-  useChat,
+  useChatRoom,
+  useChatTranscript,
   useDirectory,
   useEmoji,
   useLanguage,
@@ -28,6 +33,7 @@ import { useChatTranslation } from "./useChatTranslation";
 import { useThreadLayout } from "./useThreadLayout";
 
 const NOBODY: string[] = [];
+const NO_SECTIONS: TranscriptSectionVM[] = [];
 
 /**
  * Who is typing in the open channel, read where it is drawn. The port keeps
@@ -38,6 +44,42 @@ function RoomTyping({ channelId }: { channelId: string | null }) {
   const { typing } = usePorts();
   const read = () => (channelId === null ? NOBODY : typing.typingIn(channelId));
   return <Typing names={useSyncExternalStore(typing.onTypingChanged, read, read)} />;
+}
+
+/**
+ * The open channel's messages. The transcripts are the parts of the room that
+ * read the chat's messages, so a message arriving renders them and not the
+ * room around them.
+ */
+function ChannelTranscript(
+  props: Omit<
+    TranscriptProps,
+    "sections" | "loading" | "firstUnreadGroupId" | "onLoadOlder" | "hasOlder" | "loadingOlder"
+  >,
+) {
+  const chat = useChatTranscript();
+  return (
+    <Transcript
+      {...props}
+      sections={chat.sections}
+      loading={chat.loading}
+      firstUnreadGroupId={chat.firstUnreadGroupId}
+      onLoadOlder={chat.loadOlder}
+      hasOlder={chat.hasOlder}
+      loadingOlder={chat.loadingOlder}
+    />
+  );
+}
+
+const SettledThreadPanel = memo(ThreadPanel);
+
+/**
+ * The open thread's messages, in its panel. A message elsewhere in the channel
+ * leaves the thread's sections as they were, and the panel with them.
+ */
+function OpenThreadPanel(props: Omit<ComponentProps<typeof ThreadPanel>, "sections">) {
+  const { threadSections } = useChatTranscript();
+  return <SettledThreadPanel {...props} sections={threadSections} />;
 }
 
 /**
@@ -52,7 +94,7 @@ export function RoomContainer() {
   const { channels, textChannels, channelName, canManageMessages } = useDirectory();
   const ui = useUi();
   const voice = useVoice();
-  const chat = useChat();
+  const chat = useChatRoom();
   const { emoji: customEmoji } = useEmoji();
   const { t } = useLanguage();
   const { preferences } = useAccount();
@@ -121,6 +163,15 @@ export function RoomContainer() {
     onAction: chat.runAction,
     onOpenAuthor: profile.toggle,
   };
+  const threadPanel = {
+    ...messageProps,
+    open: threadPanelOpen,
+    expanded: threadExpanded,
+    onExpandedChange: threadLayout.setExpanded,
+    onClose: chat.closeThread,
+    label: t("room.thread"),
+    composer: threadPanelOpen ? composer : null,
+  };
 
   return (
     <main
@@ -154,16 +205,10 @@ export function RoomContainer() {
 
       <div className="room-body">
         <div className={inVoice ? "view" : "view active"}>
-          <Transcript
+          <ChannelTranscript
             {...messageProps}
             key={chat.channelId ?? "no-channel"}
-            sections={chat.sections}
             label={t("room.messagesOn", { channel: textName })}
-            loading={chat.loading}
-            firstUnreadGroupId={chat.firstUnreadGroupId}
-            onLoadOlder={chat.loadOlder}
-            hasOlder={chat.hasOlder}
-            loadingOlder={chat.loadingOlder}
             onJumpReady={takeJump}
             covered={inVoice}
           />
@@ -176,20 +221,14 @@ export function RoomContainer() {
         </div>
       </div>
 
-      <ThreadPanel
-        {...messageProps}
-        // The closed panel stays in the shell for its drawer geometry. A fresh
-        // transcript for each thread lets its first alignment to the bottom run
-        // against that thread's rows, not the empty list the closed panel held.
-        key={threadRootId ?? "closed-thread"}
-        open={threadPanelOpen}
-        expanded={threadExpanded}
-        onExpandedChange={threadLayout.setExpanded}
-        onClose={chat.closeThread}
-        sections={chat.thread?.sections ?? []}
-        label={t("room.thread")}
-        composer={threadPanelOpen ? composer : null}
-      />
+      {/* The closed panel stays in the shell for its drawer geometry. A fresh
+          transcript for each thread lets its first alignment to the bottom run
+          against that thread's rows, not the empty list the closed panel held. */}
+      {chat.thread === null ? (
+        <ThreadPanel {...threadPanel} key="closed-thread" sections={NO_SECTIONS} />
+      ) : (
+        <OpenThreadPanel {...threadPanel} key={chat.thread.rootId} />
+      )}
 
       <ChannelPanelContainer
         open={channelPanelOpen}

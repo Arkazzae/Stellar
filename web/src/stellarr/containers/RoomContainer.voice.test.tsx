@@ -47,7 +47,8 @@ vi.mock("@/state/hooks", () => ({
   useDirectory: () => mocks.directory,
   useSession: () => ({ user: { id: "u-maja" } }),
   useUi: () => mocks.ui,
-  useChat: () => mocks.chat,
+  useChatRoom: () => mocks.chat,
+  useChatTranscript: () => mocks.chat,
   useVoice: () => mocks.voice,
   useEmoji: () => ({ emoji: [] }),
   useLanguage: () => mocks.language,
@@ -174,7 +175,7 @@ describe("RoomContainer in a call", () => {
       channelPanelTab: "pinned",
     });
     mocks.chat = fakeChat({
-      thread: { rootId: "m-1", sections: [], initialExpanded: false, openRevision: 1 },
+      thread: { rootId: "m-1", initialExpanded: false, openRevision: 1 },
     });
 
     const { container } = render(<RoomContainer />);

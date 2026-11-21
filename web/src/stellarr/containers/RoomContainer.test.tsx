@@ -62,7 +62,8 @@ vi.mock("@/state/hooks", () => ({
   useDirectory: () => mocks.directory,
   useSession: () => ({ user: { id: "u-maja" } }),
   useUi: () => mocks.ui,
-  useChat: () => mocks.chat,
+  useChatRoom: () => mocks.chat,
+  useChatTranscript: () => mocks.chat,
   useVoice: () => mocks.voice,
   useEmoji: () => ({ emoji: [] }),
   useLanguage: () => mocks.language,
@@ -263,7 +264,6 @@ describe("RoomContainer translation", () => {
 describe("RoomContainer thread", () => {
   const thread = {
     rootId: "m-1",
-    sections: [],
     initialExpanded: true,
     openRevision: 1,
   };

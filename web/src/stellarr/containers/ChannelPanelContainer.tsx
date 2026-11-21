@@ -1,4 +1,4 @@
-import { useCallback, useMemo, useState } from "react";
+import { memo, useCallback, useMemo, useState } from "react";
 
 import { ChannelPanel } from "@/components/room/panels/ChannelPanel";
 import {
@@ -9,9 +9,20 @@ import {
 } from "@/components/room/panels/channelPanelModel";
 import type { AttachmentCallbacks } from "@/lib/messages/parts";
 import type { Message } from "@/ports";
-import { useChat, useDirectory, useUi } from "@/state/hooks";
+import { useChatRoom, useChatTranscript, useDirectory, useUi } from "@/state/hooks";
+import { useSettled } from "@/state/useSettled";
 
 import { useIndexedPages } from "./useIndexedPages";
+
+/**
+ * The panel itself, rendered only when what it is handed changes. The
+ * container reads the loaded transcript, which changes with every message,
+ * and most messages bring no picture and no link.
+ */
+const SettledChannelPanel = memo(ChannelPanel);
+
+const sameItems = <Item,>(a: readonly Item[], b: readonly Item[]) =>
+  JSON.stringify(a) === JSON.stringify(b);
 
 const MIN_QUERY_LENGTH = 2;
 const SEARCH_PAGE = 50;
@@ -61,7 +72,8 @@ export function ChannelPanelContainer({
   callbacks,
   onJump,
 }: ChannelPanelContainerProps) {
-  const chat = useChat();
+  const chat = useChatRoom();
+  const { sections } = useChatTranscript();
   const ui = useUi();
   const { canManageMessages } = useDirectory();
   const [searchQuery, setSearchQuery] = useState("");
@@ -83,21 +95,22 @@ export function ChannelPanelContainer({
 
   // Walked out of the loaded transcript, which is long: rebuild it only when
   // the transcript changes, not on every keystroke in the composer.
-  const loaded = useMemo(() => collectPanelItems(chat.sections), [chat.sections]);
+  const loaded = useMemo(() => collectPanelItems(sections), [sections]);
   const indexed = useMemo(
     () => collectIndexedPanelItems(materials.messages),
     [materials.messages],
   );
-  const media = useMemo(
-    () => mergeMedia(indexed.media, loaded.media),
-    [indexed.media, loaded.media],
+  const media = useSettled(
+    useMemo(() => mergeMedia(indexed.media, loaded.media), [indexed.media, loaded.media]),
+    sameItems,
   );
-  const links = useMemo(
-    () => mergeLinks(indexed.links, loaded.links),
-    [indexed.links, loaded.links],
+  const links = useSettled(
+    useMemo(() => mergeLinks(indexed.links, loaded.links), [indexed.links, loaded.links]),
+    sameItems,
   );
 
-  const { revealMessage } = chat;
+  const { revealMessage, runAction } = chat;
+  const unpin = useCallback((messageId: string) => runAction(messageId, "pin"), [runAction]);
   const { closeDrawers } = ui;
   const openSearchResult = useCallback(
     (message: Message) => {
@@ -115,7 +128,7 @@ export function ChannelPanelContainer({
   );
 
   return (
-    <ChannelPanel
+    <SettledChannelPanel
       open={open}
       tab={ui.channelPanelTab}
       onTabChange={ui.showChannelPanelTab}
@@ -144,7 +157,7 @@ export function ChannelPanelContainer({
       onOpenPin={onJump}
       // Only for those who may moderate: the toolbar and the context menu
       // follow the same rule, and the server enforces it for all three.
-      onUnpin={canManageMessages ? (id) => chat.runAction(id, "pin") : undefined}
+      onUnpin={canManageMessages ? unpin : undefined}
       callbacks={callbacks}
     />
   );
