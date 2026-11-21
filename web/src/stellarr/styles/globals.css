@@ -55,9 +55,6 @@
 @import "./components/account.css";
 /* After `account.css`: the server panes are made of its rows (`sec-*`). */
 @import "./components/server-settings.css";
-/* After `settings.css`: its phone rules size the dialogs' shared close button,
-   which the create-server dialog keeps. */
-@import "./components/server-create.css";
 /* After `composer.css` and `transcript.css`: the picker hangs off controls both
    of them position, and the jumbo rule raises a `.msg-body` size set there. */
 @import "./components/emoji.css";
