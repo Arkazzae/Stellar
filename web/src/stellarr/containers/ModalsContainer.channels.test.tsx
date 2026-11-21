@@ -5,6 +5,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { translateMessage, type MessageKey } from "@/i18n";
 import { ApiError } from "@/lib/api/errors";
 import { fakeAdminPort } from "@/test/adminPort";
+import { renderWithConfirm } from "@/test/confirm";
 import { TEXT_CHANNEL, VOICE_CHANNEL, harness, resetHarness } from "@/test/modalsHarness";
 
 import { ModalsContainer } from "./ModalsContainer";
@@ -19,7 +20,7 @@ const nameField = () => screen.getByRole("textbox", { name: new RegExp(`^${t("ch
 function openChannelSettings(channelId: string) {
   harness.ui.modal = "channel";
   harness.ui.channelSettingsId = channelId;
-  render(<ModalsContainer />);
+  renderWithConfirm(<ModalsContainer />);
 }
 
 beforeEach(resetHarness);
@@ -67,22 +68,27 @@ describe("ModalsContainer: channel settings", () => {
     );
   });
 
+  /** Deletes from the dialog through the question card, and hands the card back. */
+  async function deleteFromSettings(user: ReturnType<typeof userEvent.setup>) {
+    await user.click(screen.getByRole("button", { name: t("server.danger") }));
+    const pane = screen.getByRole("region", { name: t("server.danger") });
+    await user.click(within(pane).getByRole("button", { name: t("channel.delete") }));
+    const question = screen.getByRole("dialog", { name: t("confirm.deleteChannelTitle") });
+    await user.click(within(question).getByRole("button", { name: t("channel.delete") }));
+    return question;
+  }
+
   it("deletes the channel after a confirmation and closes the dialog", async () => {
     const user = userEvent.setup();
     openChannelSettings(TEXT_CHANNEL.id);
 
-    await user.click(screen.getByRole("button", { name: t("server.danger") }));
-    const pane = screen.getByRole("region", { name: t("server.danger") });
-    await user.click(within(pane).getByRole("button", { name: t("channel.delete") }));
-    await user.click(
-      within(pane).getByRole("button", { name: t("settings.deleteNamedServer", { name: "#general" }) }),
-    );
+    await deleteFromSettings(user);
 
     await waitFor(() => expect(harness.ui.closeModal).toHaveBeenCalledOnce());
     expect(harness.ports.admin.deleteChannel).toHaveBeenCalledExactlyOnceWith(TEXT_CHANNEL.id);
   });
 
-  it("stays open and says so when the channel cannot be deleted", async () => {
+  it("keeps the card open and says so when the channel cannot be deleted", async () => {
     const user = userEvent.setup();
     harness.ports.admin = fakeAdminPort({
       deleteChannel: vi.fn(async () => {
@@ -91,14 +97,9 @@ describe("ModalsContainer: channel settings", () => {
     });
     openChannelSettings(TEXT_CHANNEL.id);
 
-    await user.click(screen.getByRole("button", { name: t("server.danger") }));
-    const pane = screen.getByRole("region", { name: t("server.danger") });
-    await user.click(within(pane).getByRole("button", { name: t("channel.delete") }));
-    await user.click(
-      within(pane).getByRole("button", { name: t("settings.deleteNamedServer", { name: "#general" }) }),
-    );
+    const question = await deleteFromSettings(user);
 
-    expect(await screen.findByRole("alert")).toHaveTextContent(t("channel.deleteFailed"));
+    expect(await within(question).findByRole("alert")).toHaveTextContent(t("channel.deleteFailed"));
     expect(harness.ui.closeModal).not.toHaveBeenCalled();
   });
 

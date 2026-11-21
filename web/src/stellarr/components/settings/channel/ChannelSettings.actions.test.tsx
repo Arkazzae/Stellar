@@ -2,6 +2,8 @@ import { render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { describe, expect, it, vi } from "vitest";
 
+import { renderWithConfirm } from "@/test/confirm";
+
 import {
   ChannelSettings,
   type ChannelSettingsProps,
@@ -193,52 +195,20 @@ describe("ChannelSettings for members who cannot manage the channel", () => {
 });
 
 describe("ChannelSettings deletion", () => {
-  it("asks for confirmation naming the channel before deleting", async () => {
+  it("deletes only once the question card is answered, and backs out on cancel", async () => {
     const user = userEvent.setup();
     const p = props();
-    render(<ChannelSettings {...p} />);
+    renderWithConfirm(<ChannelSettings {...p} />);
+    const ask = async () => {
+      await goTo(user, "Strefa zagrożenia");
+      await user.click(inDeletePane().getByRole("button", { name: "Usuń kanał" }));
+      return screen.getByRole("dialog", { name: "Usunąć ten kanał?" });
+    };
 
-    await goTo(user, "Strefa zagrożenia");
-    await user.click(inDeletePane().getByRole("button", { name: "Usuń kanał" }));
+    await user.click(within(await ask()).getByRole("button", { name: "Anuluj" }));
     expect(p.onDelete).not.toHaveBeenCalled();
 
-    await user.click(inDeletePane().getByRole("button", { name: "Usuń #ogolny" }));
+    await user.click(within(await ask()).getByRole("button", { name: "Usuń kanał" }));
     expect(p.onDelete).toHaveBeenCalledOnce();
-  });
-
-  it("names a voice channel without a hash", async () => {
-    const user = userEvent.setup();
-    render(<ChannelSettings {...props({ channel: voiceChannel })} />);
-
-    await goTo(user, "Strefa zagrożenia");
-    await user.click(inDeletePane().getByRole("button", { name: "Usuń kanał" }));
-
-    expect(inDeletePane().getByRole("button", { name: "Usuń Salon" })).toBeVisible();
-  });
-
-  it("backs out of a confirmation without deleting", async () => {
-    const user = userEvent.setup();
-    const p = props();
-    render(<ChannelSettings {...p} />);
-
-    await goTo(user, "Strefa zagrożenia");
-    await user.click(inDeletePane().getByRole("button", { name: "Usuń kanał" }));
-    await user.click(inDeletePane().getByRole("button", { name: "Anuluj" }));
-
-    expect(inDeletePane().getByRole("button", { name: "Usuń kanał" })).toBeVisible();
-    expect(p.onDelete).not.toHaveBeenCalled();
-  });
-
-  it("reports a failed delete and keeps the confirmation open", async () => {
-    const user = userEvent.setup();
-    const onDelete = vi.fn().mockRejectedValue(new Error("forbidden"));
-    render(<ChannelSettings {...props({ onDelete })} />);
-
-    await goTo(user, "Strefa zagrożenia");
-    await user.click(inDeletePane().getByRole("button", { name: "Usuń kanał" }));
-    await user.click(inDeletePane().getByRole("button", { name: "Usuń #ogolny" }));
-
-    expect(await screen.findByRole("alert")).toHaveTextContent("Nie udało się usunąć kanału.");
-    expect(inDeletePane().getByRole("button", { name: "Usuń #ogolny" })).toBeVisible();
   });
 });

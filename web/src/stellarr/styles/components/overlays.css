@@ -258,14 +258,16 @@
   }
 
 
+
   /* ---------- OKNO POTWIERDZENIA ---------- */
   /*
    * Above every other layer on purpose: it is raised *from* the menus, the
    * toolbars and the settings dialogs (z-index 90–96), and a question hidden
    * behind the thing that asked it is a locked interface.
    *
-   * Small, centred and unmoving. It holds one sentence and two buttons, so it
-   * is sized to the sentence rather than to the viewport, and it never scrolls.
+   * Small, centred and unmoving. It holds the question, its consequence, the
+   * one thing it is about and two answers, so it is sized to the sentence
+   * rather than to the viewport, and it never scrolls.
    */
   .cf-wrap{
     position:fixed;inset:0;z-index:100;display:flex;align-items:center;justify-content:center;
@@ -276,7 +278,8 @@
     transition:opacity var(--dur-base) var(--ease-standard);
   }
   .cf-wrap.open{opacity:1;pointer-events:auto}
-  /* The short dialogs' card (`.am-card`): one surface, its edge the only line. */
+  /* One surface, its edge the only line. The small create dialogs
+     (`.am-card.q-card`) are the same card with a header and a body. */
   .cf-card{
     width:min(440px, 100%);
     background:var(--surface-base);border:1px solid var(--line-subtle);
@@ -286,32 +289,111 @@
     transition:transform var(--dur-slow) var(--ease-standard), opacity var(--dur-base) var(--ease-standard);
   }
   .cf-wrap.open .cf-card{transform:none;opacity:1}
-  .cf-head{display:flex;align-items:flex-start;gap:13px}
-  .cf-ico{
-    flex:none;width:36px;height:36px;border-radius:50%;
-    display:inline-flex;align-items:center;justify-content:center;
-    background:var(--accent-soft);color:var(--accent-text);
+  .cf-card[aria-busy="true"]{cursor:progress}
+  .cf-body{min-width:0}
+  /* The question, then what it costs: no icon beside it, the sentence is the head. */
+  .cf-body h2{font-size:var(--text-20);font-weight:700;line-height:1.25;letter-spacing:-0.005em;overflow-wrap:anywhere}
+  .cf-sub{font-size:var(--text-14);line-height:1.5;color:var(--text-muted);margin-top:6px;overflow-wrap:anywhere}
+
+  /* The thing the question is about, drawn as the app draws it elsewhere. */
+  .cf-subject{
+    display:flex;align-items:center;gap:12px;min-width:0;margin-top:16px;
+    padding:10px 12px;border-radius:10px;
+    background:var(--surface-field);border:1px solid var(--line-subtle);
   }
-  .cf-ico.danger{background:var(--danger-soft);color:var(--danger-text)}
-  .cf-copy{min-width:0;flex:1}
-  .cf-copy h2{font-size:var(--text-20);font-weight:700;line-height:1.25;overflow-wrap:anywhere}
-  .cf-copy p{font-size:var(--text-14);line-height:1.5;color:var(--text-muted);margin-top:6px;overflow-wrap:anywhere}
-  .cf-field{margin-top:15px}
-  .cf-field .fld-lab{margin-bottom:7px}
-  /* The answers share the row at equal widths, like the short dialogs'
-     `.ch-foot`; the harmless one is a filled neutral, never an outline. The
-     short dialogs' footers (`.ch-foot`, `.dlg-foot`) answer the same way, so
-     the three share the neutral look. */
-  .cf-foot{display:flex;gap:12px;margin-top:24px}
-  .cf-foot,.ch-foot,.dlg-foot{
+  .cf-subject-lead{flex:none;width:36px;height:36px;display:inline-flex;align-items:center;justify-content:center}
+  /* The app's own face and mark at the slot's size, as the call stage sizes a
+     face in its own scope. */
+  .cf-subject-lead .av{--av-size:36px;--av-face:13px}
+  .cf-subject-lead .ss-mark{width:36px;height:36px;border-radius:11px;font-size:var(--text-13)}
+  .cf-subject-tile{
+    width:36px;height:36px;border-radius:10px;flex:none;
+    display:inline-flex;align-items:center;justify-content:center;
+    background:var(--surface-overlay);color:var(--text-muted);
+    font-size:var(--text-16);font-weight:500;line-height:1;
+  }
+  .cf-subject-tile img{width:26px;height:26px;object-fit:contain}
+  .cf-subject-txt{flex:1;min-width:0;display:flex;flex-direction:column;gap:2px}
+  .cf-subject-txt b{
+    font-size:var(--text-14);font-weight:600;line-height:1.25;
+    white-space:nowrap;overflow:hidden;text-overflow:ellipsis;
+  }
+  .cf-subject-detail{
+    font-size:var(--text-13);color:var(--text-faint);line-height:1.35;
+    white-space:nowrap;overflow:hidden;text-overflow:ellipsis;
+  }
+  .cf-subject-quote{
+    font-size:var(--text-13);color:var(--text-muted);line-height:1.4;overflow-wrap:anywhere;
+    display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;
+  }
+  /* A section is a caption in the rail and its channels under it. The caption
+     is the rail's own `.group-caption`, without the rail's spacing. */
+  .cf-subject-section .group-caption{display:block;margin:0 0 2px;padding:0}
+  .cf-subject-channel{
+    display:flex;align-items:center;gap:6px;min-width:0;
+    font-size:var(--text-14);font-weight:500;line-height:1.35;color:var(--text-muted);
+    white-space:nowrap;overflow:hidden;text-overflow:ellipsis;
+  }
+  .cf-subject-glyph{flex:none;width:14px;display:inline-flex;justify-content:center;color:var(--text-faint)}
+
+  /* A field's name in sentence case and the text's own colour; an optional one
+     says so, quietly, after it. */
+  .cf-field{margin-top:16px;display:flex;flex-direction:column;gap:7px}
+  .cf-lab{display:flex;align-items:baseline;gap:6px;font-size:var(--text-13);font-weight:550;color:var(--text)}
+  .cf-lab i{font-style:normal;font-weight:400;color:var(--text-faint)}
+  .cf-in{position:relative;display:block}
+  .cf-in.matched .set-input{padding-right:40px}
+  /* The typed name matches: a tick at the end of the field, before the button
+     turns red. */
+  .cf-ok{
+    position:absolute;right:13px;top:50%;transform:translateY(-50%);
+    display:inline-flex;color:var(--live);pointer-events:none;
+  }
+  .cf-hint{font-size:var(--text-13);color:var(--text-faint);line-height:1.45}
+
+  .cf-err{
+    display:flex;align-items:flex-start;gap:8px;margin-top:16px;
+    font-size:var(--text-13);line-height:1.45;color:var(--danger-text);
+  }
+  .cf-err svg{flex:none;margin-top:1px}
+
+  /* The other short dialogs' footers (`.ch-foot`, `.dlg-foot`) answer with a
+     filled neutral, never an outline. */
+  .ch-foot,.dlg-foot{
     --ui-button-secondary-border:transparent;
     --ui-button-secondary-bg:var(--surface-overlay);
     --ui-button-secondary-text:var(--text);
     --ui-button-secondary-hover-border:transparent;
     --ui-button-secondary-hover-bg:color-mix(in oklab, var(--surface-overlay) 86%, var(--text));
   }
-  .cf-foot > button{flex:1 1 0;min-width:0;height:42px;font-size:var(--text-14)}
-  .cf-foot button:disabled{opacity:0.45;cursor:default}
+  /*
+   * The question card's answers: the settings sheet's filled buttons, sharing
+   * the row at equal widths, so the harmless one is never the small one.
+   */
+  .cf-foot,.q-card .ch-foot{
+    display:flex;gap:10px;margin-top:24px;
+    --ui-button-radius:8px;
+    --ui-button-secondary-bg:color-mix(in oklab, var(--text) 8%, transparent);
+    --ui-button-secondary-border:transparent;
+    --ui-button-secondary-text:var(--text);
+    --ui-button-secondary-hover-bg:color-mix(in oklab, var(--text) 13%, transparent);
+    --ui-button-secondary-hover-border:transparent;
+    --ui-button-font-weight:550;
+    --ui-button-font-size:var(--text-14);
+    --ui-button-padding-x:16px;
+    --ui-button-gap:7px;
+  }
+  .cf-foot > button,.q-card .ch-foot > button{flex:1 1 0;min-width:0;height:40px}
+  .cf-foot > button:disabled,.q-card .ch-foot > button:disabled{opacity:0.45;cursor:default}
+  /* A deed that cannot be done yet is not drawn in its colour: a dimmed red
+     reads as a live red. It turns red, or accent, once it can be pressed. */
+  .cf-foot > .ui-button:is([data-variant="danger-solid"],[data-variant="primary"]):disabled,
+  .q-card .ch-foot > .ui-button:is([data-variant="danger-solid"],[data-variant="primary"]):disabled{
+    opacity:1;border-color:transparent;
+    background-color:var(--ui-button-secondary-bg);color:var(--text-faint);
+  }
+  .cf-foot > .busy{opacity:0.75;cursor:progress}
+  .cf-foot .ui-spinner,.q-card .ch-foot .ui-spinner{width:14px;height:14px}
 
   @media (max-width:767px){
     /* A phone confirmation belongs at the thumb edge. The padded viewport is
@@ -328,22 +410,24 @@
     .cf-card{
       display:flex;flex-direction:column;
       width:min(520px,100%);max-height:100%;overflow:hidden;
-      padding:20px 18px 16px;
+      padding:20px 18px 16px;border-radius:18px;
     }
     /* Keep the decisions reachable while a long consequence or an opened
        software keyboard leaves only a short band for the question itself. */
-    .cf-head{
+    /* The band scrolls, which clips on both axes: the room around it keeps a
+       focused field's ring inside the clip. */
+    .cf-body{
       min-height:0;overflow-y:auto;overscroll-behavior:contain;
-      padding-bottom:2px;
+      margin:-4px -4px 0;padding:4px;
     }
-    .cf-foot{flex:none}
+    .cf-err,.cf-foot{flex:none}
   }
 
   @media (max-width: 560px){
     /* Full-width answers, stacked. Reversed, so the one nearest the thumb is
        the harmless one — the same order an action sheet uses. */
     .cf-foot{flex-direction:column-reverse;gap:8px}
-    .cf-foot > button{flex:none;width:100%;height:auto;min-height:44px}
+    .cf-foot > button{flex:none;width:100%;height:46px}
   }
 
   @media (prefers-reduced-motion:reduce){

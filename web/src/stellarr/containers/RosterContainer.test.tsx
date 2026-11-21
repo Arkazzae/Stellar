@@ -229,7 +229,7 @@ describe("RosterContainer", () => {
 
         const menu = await openMenuOf(user, "Ola");
         await user.click(within(menu).getByRole("menuitem", { name: "Zbanuj" }));
-        await user.type(await screen.findByLabelText("POWÓD"), "spam");
+        await user.type(await screen.findByRole("textbox", { name: /^Powód/ }), "spam");
         await user.click(screen.getByRole("button", { name: "Zbanuj" }));
 
         expect(stubs.ports.admin.ban).toHaveBeenCalledWith("u-ola", "spam");

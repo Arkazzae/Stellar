@@ -1,18 +1,14 @@
-import { useState } from "react";
-
 import { Button } from "@stellarr/ui";
 import { Icon } from "@stellarr/icons";
+import { channelSubject, deleteChannel } from "@/components/confirmations";
+import { useConfirm } from "@/components/primitives/ConfirmDialog";
 import { Switch } from "@/components/primitives/Switch";
 import {
   PermissionOverrideEditor,
   type PermissionOverridePatch,
 } from "@/components/settings/channel/PermissionOverrideEditor";
 import { SettingsSection } from "@/components/settings/SettingsSection";
-import {
-  channelLabel,
-  type ChannelSettingsVM,
-} from "@/components/settings/channel/channelSettingsModel";
-import { useAsyncAction } from "@/hooks/useAsyncAction";
+import type { ChannelSettingsVM } from "@/components/settings/channel/channelSettingsModel";
 import type { PermissionOverride, Role } from "@/ports";
 import { useLanguage } from "@/state/hooks";
 
@@ -99,59 +95,29 @@ export interface DangerPaneProps {
 }
 
 /**
- * The server's danger zone, for one channel. Deleting takes a second press on
- * a button that names the channel, so the first press can never be the one
- * that loses its history.
+ * The server's danger zone, for one channel. Deleting asks on the question
+ * card the rail's menu asks with, and the card runs the deletion.
  */
 export function DangerPane({ channel, supported, onDelete }: DangerPaneProps) {
   const { t } = useLanguage();
-  const action = useAsyncAction();
-  const [confirming, setConfirming] = useState(false);
+  const confirm = useConfirm();
+
+  const askToDelete = () => {
+    const subject = channelSubject(t, channel);
+    void confirm({ ...deleteChannel(t, subject), run: onDelete });
+  };
 
   return (
     <SettingsSection title={t("server.danger")} className="danger-section">
-      {action.failed ? (
-        <p className="set-note sound-error" role="alert">
-          {t("channel.deleteFailed")}
-        </p>
-      ) : null}
       <div className="set-row danger">
         <span className="set-lab">
           <b>{t("channel.delete")}</b>
           <span>{t("channel.deleteWarning")}</span>
         </span>
         <span className="set-ctl">
-          {confirming ? (
-            <>
-              <Button
-                type="button"
-                variant="secondary"
-                disabled={action.pending}
-                onClick={() => setConfirming(false)}
-              >
-                {t("common.cancel")}
-              </Button>
-              <Button
-                type="button"
-                variant="danger"
-                disabled={!supported || action.pending}
-                onClick={() => void action.run(onDelete)}
-              >
-                {t("settings.deleteNamedServer", {
-                  name: channelLabel(channel.kind, channel.name),
-                })}
-              </Button>
-            </>
-          ) : (
-            <Button
-              type="button"
-              variant="danger"
-              disabled={!supported}
-              onClick={() => setConfirming(true)}
-            >
-              {t("channel.delete")}
-            </Button>
-          )}
+          <Button type="button" variant="danger" disabled={!supported} onClick={askToDelete}>
+            {t("channel.delete")}
+          </Button>
         </span>
       </div>
     </SettingsSection>

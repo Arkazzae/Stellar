@@ -2,6 +2,8 @@ import { Fragment, useId, useState } from "react";
 
 import { Button } from "@stellarr/ui";
 import { Icon, type IconName } from "@stellarr/icons";
+import { deleteSection, sectionNotEmpty, sectionSubject } from "@/components/confirmations";
+import { useConfirm } from "@/components/primitives/ConfirmDialog";
 import { DialogClose } from "@/components/primitives/DialogClose";
 import { Modal } from "@/components/primitives/Modal";
 import {
@@ -10,7 +12,7 @@ import {
 } from "@/components/settings/channel/PermissionOverrideEditor";
 import { SettingsSection } from "@/components/settings/SettingsSection";
 import type { Translator } from "@/i18n";
-import type { PermissionOverride, Role } from "@/ports";
+import type { ChannelKind, PermissionOverride, Role } from "@/ports";
 import { useLanguage } from "@/state/hooks";
 
 type PaneKey = "general" | "permissions" | "danger";
@@ -18,6 +20,8 @@ type PaneKey = "general" | "permissions" | "danger";
 export interface SectionSettingsVM {
   id: string;
   name: string;
+  /** What sits under it, in rail order: only an empty section can be deleted. */
+  channels: readonly { id: string; name: string; kind: ChannelKind }[];
 }
 
 export interface SectionSettingsProps {
@@ -33,9 +37,12 @@ export interface SectionSettingsProps {
   permissionOverrides: readonly PermissionOverride[];
   onSave: (patch: { name: string }) => Promise<void>;
   onSavePermissionOverride: (roleId: string, patch: PermissionOverridePatch) => Promise<void>;
-  onDelete: () => Promise<void>;
-  /** True when the server refused deletion because the section still has channels. */
-  deleteBlocked: boolean;
+  /**
+   * Deletes the section. "blocked" when the server refused because channels
+   * still sit under it, which the dialog then says the same way it says it
+   * when it knows so beforehand.
+   */
+  onDelete: () => Promise<"deleted" | "blocked">;
   onOpenRoles: () => void;
 }
 
@@ -92,6 +99,47 @@ function navigationFor(t: Translator): readonly NavGroup[] {
   ];
 }
 
+/**
+ * Deleting a section. One that holds channels cannot be deleted, so the card
+ * says so before anything is sent; the server's refusal leads to the same card.
+ */
+function SectionDeleteButton({
+  section,
+  supported,
+  onDelete,
+}: {
+  section: SectionSettingsVM | null;
+  supported: boolean;
+  onDelete: () => Promise<"deleted" | "blocked">;
+}) {
+  const { t } = useLanguage();
+  const confirm = useConfirm();
+
+  const askToDelete = () => {
+    if (section === null) return;
+    const subject = sectionSubject(t, section);
+    if (section.channels.length > 0) {
+      void confirm(sectionNotEmpty(t, subject));
+      return;
+    }
+    void confirm({
+      ...deleteSection(t, subject),
+      run: async () => {
+        if ((await onDelete()) !== "blocked") return;
+        // The directory had not heard of the channels, so the card names none.
+        void confirm(sectionNotEmpty(t, sectionSubject(t, { name: section.name, channels: null })));
+      },
+    });
+  };
+
+  return (
+    <Button type="button" variant="danger" size="sm" disabled={!supported} onClick={askToDelete}>
+      <Icon name="trash" size={15} />
+      {t("section.delete")}
+    </Button>
+  );
+}
+
 export function SectionSettings({
   open,
   onClose,
@@ -103,7 +151,6 @@ export function SectionSettings({
   onSave,
   onSavePermissionOverride,
   onDelete,
-  deleteBlocked,
   onOpenRoles,
 }: SectionSettingsProps) {
   const { t } = useLanguage();
@@ -111,7 +158,6 @@ export function SectionSettings({
   const nameFieldId = useId();
   const [name, setName] = useState(section?.name ?? "");
   const [active, setActive] = useState<PaneKey>("general");
-  const [confirmingDelete, setConfirmingDelete] = useState(false);
   const [busy, setBusy] = useState(false);
   const [actionError, setActionError] = useState<string | null>(null);
 
@@ -122,7 +168,6 @@ export function SectionSettings({
     setPrevious({ section, open });
     setName(section?.name ?? "");
     setActive("general");
-    setConfirmingDelete(false);
     setBusy(false);
     setActionError(null);
   }
@@ -146,19 +191,6 @@ export function SectionSettings({
     }
   };
 
-  const confirmDelete = async () => {
-    setConfirmingDelete(false);
-    setBusy(true);
-    setActionError(null);
-    try {
-      await onDelete();
-    } catch {
-      setActionError(t("section.deleteFailed"));
-      setConfirmingDelete(true);
-    } finally {
-      setBusy(false);
-    }
-  };
 
   const renderPane = () => {
     switch (active) {
@@ -210,47 +242,7 @@ export function SectionSettings({
         return (
           <SettingsSection title={t("section.delete")} className="danger-section">
             <p className="fld-note">{t("section.deleteWarning")}</p>
-            {deleteBlocked ? (
-              <p className="set-note sound-error" role="alert">
-                {t("section.deleteBlocked")}
-              </p>
-            ) : null}
-            {confirmingDelete ? (
-              <div className="ch-confirm">
-                <Button
-                  type="button"
-                  variant="danger"
-                  size="sm"
-                  disabled={!supported || busy}
-                  onClick={() => void confirmDelete()}
-                >
-                  <Icon name="trash" size={15} />
-                  {section === null
-                    ? t("section.delete")
-                    : t("settings.deleteNamedServer", { name: section.name })}
-                </Button>
-                <Button
-                  type="button"
-                  variant="secondary"
-                  size="sm"
-                  onClick={() => setConfirmingDelete(false)}
-                >
-                  <Icon name="x" size={14} />
-                  {t("common.cancel")}
-                </Button>
-              </div>
-            ) : (
-              <Button
-                type="button"
-                variant="danger"
-                size="sm"
-                disabled={!supported}
-                onClick={() => setConfirmingDelete(true)}
-              >
-                <Icon name="trash" size={15} />
-                {t("section.delete")}
-              </Button>
-            )}
+            <SectionDeleteButton section={section} supported={supported} onDelete={onDelete} />
           </SettingsSection>
         );
     }

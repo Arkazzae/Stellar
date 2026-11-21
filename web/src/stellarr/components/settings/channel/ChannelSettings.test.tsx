@@ -110,7 +110,7 @@ describe("ChannelSettings", () => {
     expect(screen.getByRole("button", { name: "Zapisz zmiany" })).toBeEnabled();
     await user.click(screen.getByRole("button", { name: "Przywróć" }));
 
-    for (const pane of ["Powiadomienia", "Uprawnienia", "Strefa zagrożenia"]) {
+    for (const pane of ["Powiadomienia", "Uprawnienia"]) {
       await user.click(screen.getByRole("button", { name: pane }));
       expect(screen.queryByRole("button", { name: "Zapisz zmiany" })).toBeNull();
     }

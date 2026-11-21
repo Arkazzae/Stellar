@@ -83,11 +83,11 @@ export function EncryptionPane({
 
   const remove = async (device: EncryptionDeviceVM) => {
     const confirmed = await confirm({
-      title: t("e2ee.settings.removeTitle", { name: device.label }),
+      title: t("e2ee.settings.removeTitle"),
       description: t("e2ee.settings.removeDetail"),
+      subject: { kind: "item", name: device.label, detail: device.detail, mark: { icon: "key" } },
       confirmLabel: t("e2ee.settings.remove"),
       danger: true,
-      icon: "key",
     });
     if (confirmed) onRemoveDevice(device);
   };

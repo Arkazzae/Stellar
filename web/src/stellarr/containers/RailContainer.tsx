@@ -120,9 +120,7 @@ export const RailContainer = memo(function RailContainer() {
       : {}),
     ...(canManageChannels && admin.supported.channels
       ? {
-          onDelete: (channelId: string) => {
-            void admin.deleteChannel(channelId);
-          },
+          onDelete: (channelId: string) => admin.deleteChannel(channelId),
         }
       : {}),
   };

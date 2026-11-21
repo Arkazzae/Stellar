@@ -330,11 +330,18 @@ describe("editing and deleting", () => {
     h.messageActions.remove.mockReturnValueOnce(refusal.promise);
     const { result } = await mountLoaded();
 
-    act(() => result.current.runAction("m1", "delete"));
+    let deletion: Promise<void> | void = undefined;
+    act(() => {
+      deletion = result.current.runAction("m1", "delete");
+    });
     expect(ids(result.current)).toEqual(["m2"]);
     expect(h.messageActions.remove).toHaveBeenCalledWith("m1");
 
-    await act(async () => refusal.reject(new Error("forbidden")));
+    // The refusal reaches whoever asked, so the question card can say it.
+    await act(async () => {
+      refusal.reject(new Error("forbidden"));
+      await expect(deletion).rejects.toThrow("forbidden");
+    });
     await waitFor(() => expect(ids(result.current)).toEqual(["m1", "m2"]));
   });
 

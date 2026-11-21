@@ -36,7 +36,7 @@ export interface TranscriptProps {
   loading?: boolean;
   translation?: MessageTranslationOptions;
   onReact?(messageId: string, emoji: string): void;
-  onAction?(messageId: string, action: MessageAction): void;
+  onAction?(messageId: string, action: MessageAction): Promise<void> | void;
   attachments?: AttachmentCallbacks;
   /** The server's own emoji, for the reaction picker on every block. */
   customEmoji?: readonly CustomEmoji[];
@@ -120,7 +120,7 @@ interface MessageRowProps {
   onEditSave?(messageId: string, text: string): Promise<void> | void;
   onEditCancel?(): void;
   onReact?(messageId: string, emoji: string): void;
-  onAction?(messageId: string, action: MessageAction): void;
+  onAction?(messageId: string, action: MessageAction): Promise<void> | void;
   onOpenAuthor?: OpenProfile;
 }
 
@@ -273,7 +273,7 @@ function ReadyTranscript({
     latest.current.onReact?.(messageId, emoji);
   }, []);
   const forwardAction = useCallback((messageId: string, action: MessageAction) => {
-    latest.current.onAction?.(messageId, action);
+    return latest.current.onAction?.(messageId, action);
   }, []);
   const forwardSave = useCallback((messageId: string, text: string) => {
     return latest.current.onEditSave?.(messageId, text);

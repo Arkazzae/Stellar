@@ -1,7 +1,7 @@
 import { deleteMessageConfirmation } from "@/components/confirmations";
 import type { IconName } from "@stellarr/icons";
 import type { MenuEntry } from "@/components/primitives/ContextMenu";
-import type { Confirm } from "@/components/primitives/ConfirmDialog";
+import type { Confirm, ConfirmSubject } from "@/components/primitives/ConfirmDialog";
 import type { MessageKey, Translator } from "@/i18n";
 
 import { absoluteUrl, canCopyImages, copyImage } from "../attachments/mediaActions";
@@ -28,8 +28,13 @@ export interface MessageMenuInput {
   developerMode: boolean;
   /** Fetches an encrypted original that was left unread until it is saved or copied. */
   resolveOriginal?(src: string): Promise<string | null>;
-  /** Absent leaves the menu with only what needs no handler: copying and saving. */
-  onAction?(action: MessageAction): void;
+  /**
+   * Absent leaves the menu with only what needs no handler: copying and saving.
+   * A deletion's promise keeps the question card open until it settles.
+   */
+  onAction?(action: MessageAction): Promise<void> | void;
+  /** The message as the question card shows it, built when the question is asked. */
+  describe?(): ConfirmSubject;
   confirm: Confirm;
   t: Translator;
 }
@@ -157,8 +162,9 @@ export function messageMenuEntries(input: MessageMenuInput): MenuEntry[] {
       // The menu closes on select, so the question cannot belong to it —
       // `confirm` raises the app's dialog from the root and answers here.
       onSelect: () => {
-        void confirm(deleteMessageConfirmation(t)).then((confirmed) => {
-          if (confirmed) onAction("delete");
+        void confirm({
+          ...deleteMessageConfirmation(t, input.describe?.()),
+          run: async () => onAction("delete"),
         });
       },
     });

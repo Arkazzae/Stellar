@@ -1,7 +1,7 @@
 import type { ReactNode } from "react";
 
 import { Icon, type IconName } from "@stellarr/icons";
-import { blockPerson, removeFriend } from "@/components/confirmations";
+import { blockPerson, personSubject, removeFriend } from "@/components/confirmations";
 import { Avatar } from "@/components/primitives/Avatar";
 import { useConfirm, type ConfirmRequest } from "@/components/primitives/ConfirmDialog";
 import { IconButton } from "@/components/primitives/IconButton";
@@ -165,7 +165,7 @@ export function DmProfilePanel({
               <ProfileAction
                 icon="userMinus"
                 label={t("common.removeFriend")}
-                onClick={() => confirmThen(removeFriend(t, name), onRemoveFriend)}
+                onClick={() => confirmThen(removeFriend(t, personSubject({ ...person, username })), onRemoveFriend)}
               />
             ) : null}
             {relation === "blocked" ? (
@@ -175,7 +175,7 @@ export function DmProfilePanel({
                 icon="ban"
                 label={t("common.block")}
                 danger
-                onClick={() => confirmThen(blockPerson(t, name), onBlock)}
+                onClick={() => confirmThen(blockPerson(t, personSubject({ ...person, username })), onBlock)}
               />
             )}
           </div>
