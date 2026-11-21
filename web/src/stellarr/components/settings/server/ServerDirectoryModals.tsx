@@ -1,5 +1,6 @@
 export {
   ServerCreateModal,
+  type CreatedServerInvite,
   type ServerCreateInput,
   type ServerCreateModalProps,
 } from "./ServerCreateModal";
