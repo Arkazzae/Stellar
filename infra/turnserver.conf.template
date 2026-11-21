@@ -3,7 +3,8 @@
 listening-port=3478
 tls-listening-port=5349
 # Each of these lines is a comment, or no-tcp / no-tls / no-dtls when the
-# matching transport is switched off (Rtc__TurnTcpEnabled, Rtc__TurnsEnabled).
+# matching transport is switched off (STELLARR_TURN_TCP_ENABLED,
+# STELLARR_TURNS_ENABLED).
 __TURN_TCP_LINE__
 __TURN_TLS_LINE__
 __TURN_DTLS_LINE__
@@ -15,9 +16,9 @@ fingerprint
 
 # The API hands out time-limited credentials derived from this shared secret.
 use-auth-secret
-static-auth-secret=__TURN_SHARED_SECRET__
-realm=__PUBLIC_HOST__
-# external-ip=<PUBLIC_IP>, or a comment while PUBLIC_IP is empty.
+static-auth-secret=__STATIC_AUTH_SECRET__
+realm=__REALM__
+# external-ip=<STELLARR_PUBLIC_IP>, or a comment while it is empty.
 __EXTERNAL_IP_LINE__
 
 cert=/data/stellarr/tls/fullchain.pem

@@ -335,6 +335,10 @@ jobs:
       - uses: actions/checkout@v7
       - name: Check TLS certificate renewal
         run: bash infra/tests/tls-maintenance.test.sh
+      # The entrypoint writes to /etc and /run, so its test runs as root in a
+      # throwaway container of the image's base, with the services stubbed.
+      - name: Check the entrypoint
+        run: docker run --rm -v "$PWD":/w:ro -w /w ubuntu:24.04@sha256:9c7f200c07e3d4a03e7249d2c16bf66a51120fb876aa2242cf31451412543289 bash infra/tests/entrypoint.test.sh
       - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
           name: recipe-outputs
