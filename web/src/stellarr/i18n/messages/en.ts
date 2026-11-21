@@ -2299,7 +2299,6 @@ export const en = {
   "srv.audit.f.topic": "Topic",
   "srv.audit.f.slowMode": "Slow mode, seconds",
   "srv.audit.f.hideAfter": "Hide after inactivity, hours",
-  "srv.audit.f.audioProfile": "Audio profile",
   "srv.audit.f.userLimit": "User limit",
   "srv.audit.f.kind": "Kind",
   "srv.audit.f.channel": "Channel",

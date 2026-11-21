@@ -28,10 +28,10 @@ describe("channel calls", () => {
     },
     {
       name: "updateChannel",
-      run: () => calls.updateChannel("a/b", { audioProfile: "studio" }),
+      run: () => calls.updateChannel("a/b", { userLimit: 8 }),
       method: "PATCH",
       url: "/api/admin/channels/a%2Fb",
-      body: { audioProfile: "studio" },
+      body: { userLimit: 8 },
       answer: CHANNEL,
     },
     { name: "deleteChannel", run: () => calls.deleteChannel("c-1"), method: "DELETE", url: "/api/admin/channels/c-1" },

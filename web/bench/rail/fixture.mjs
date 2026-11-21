@@ -53,7 +53,6 @@ export function buildServer({
       topic: "",
       slowModeSeconds: 0,
       hideAfterInactivityHours: 0,
-      audioProfile: "balanced",
       userLimit: 0,
       sectionId: section ?? null,
     });

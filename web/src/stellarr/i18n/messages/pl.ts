@@ -2297,7 +2297,6 @@ export const pl = {
   "srv.audit.f.topic": "Temat",
   "srv.audit.f.slowMode": "Tryb powolny, sekundy",
   "srv.audit.f.hideAfter": "Ukryj po bezczynności, godziny",
-  "srv.audit.f.audioProfile": "Profil dźwięku",
   "srv.audit.f.userLimit": "Limit osób",
   "srv.audit.f.kind": "Rodzaj",
   "srv.audit.f.channel": "Kanał",

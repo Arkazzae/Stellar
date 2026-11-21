@@ -1,7 +1,6 @@
 /** Wire types shared by the HTTP client, the realtime hub and the UI ports. */
 
 import type { MessageKey } from "@/i18n";
-import type { OpusProfileId } from "@/lib/voice/settings";
 
 export type UserId = string;
 export type ChannelId = string;
@@ -205,7 +204,6 @@ export interface Channel {
   topic?: string;
   slowModeSeconds?: number;
   hideAfterInactivityHours?: number;
-  audioProfile?: OpusProfileId;
   userLimit?: number;
   /** Server-defined order within the rail. */
   position?: number;
@@ -252,7 +250,6 @@ export interface ChannelUpdateInput {
   topic?: string;
   slowModeSeconds?: number;
   hideAfterInactivityHours?: number;
-  audioProfile?: OpusProfileId;
   userLimit?: number;
 }
 
