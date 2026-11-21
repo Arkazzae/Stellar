@@ -23,7 +23,9 @@ compose() {
   local repo=${STELLARR_REPO:-$(git -C "$FILM" rev-parse --show-toplevel)}
   docker compose -f "$repo/docker-compose.dev.yml" -f "$FILM/capture/compose.film.yml" -p "$PROJECT" --env-file "$FILM/capture/film.env" "$@"
 }
-WEB=http://127.0.0.1:3100 API=http://127.0.0.1:5100 COCKPIT=http://127.0.0.1:3101
+# Cockpit is served by the web dev server, under /cockpit.
+WEB=http://127.0.0.1:3100 API=http://127.0.0.1:5100
+COCKPIT=$WEB/cockpit
 
 # the seconds around each cut and key moment, for `stills`
 CUTS=0.3,1.9,3.8,5.9,6.2,9,12.5,19.55,20.8,22,24.97,28,30.6,30.85,33,34.95,36.4,37.6,41.3,44.8,48,51.5,53.9,54.8,57,59.4
@@ -36,7 +38,7 @@ down() {
 
 up() {
   down
-  compose up -d --no-deps api web cockpit
+  compose up -d --no-deps api web
   echo "waiting for the instance (the first start installs packages and builds the API, a few minutes)"
   for _ in $(seq 1 300); do
     a=$(curl -s -o /dev/null -w '%{http_code}' "$API/api/bootstrap" || true)
