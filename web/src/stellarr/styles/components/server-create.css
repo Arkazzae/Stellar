@@ -58,12 +58,14 @@
     animation:viewIn var(--dur-base) var(--ease-standard);
     scrollbar-width:thin;scrollbar-color:var(--line) transparent;
   }
+  /* The title sits right under the step line and the sentence right under
+     the title, as in the approved drawing: their line heights are the gap. */
   .nsv-title{
-    margin-top:22px;font-size:var(--text-24);font-weight:650;
+    font-size:var(--text-24);font-weight:650;
     letter-spacing:-0.01em;line-height:1.2;overflow-wrap:anywhere;
   }
-  .nsv-lead{margin-top:6px;max-width:440px;font-size:var(--text-14);line-height:1.5;color:var(--text-muted)}
-  .nsv-lead + .nsv-field{margin-top:22px}
+  .nsv-lead{max-width:440px;font-size:var(--text-14);line-height:1.5;color:var(--text-muted)}
+  .nsv-fields{display:flex;flex-direction:column;gap:2px;margin-top:6px}
 
   .nsv-field{display:flex;flex-direction:column;gap:7px;margin-top:16px;min-width:0}
   .nsv-label{display:flex;align-items:baseline;gap:6px;font-size:var(--text-13);font-weight:550;color:var(--text)}
@@ -122,6 +124,9 @@
   .nsv-notify{margin-top:20px}
   /* The app's segmented control, drawn as a track of two equal halves. */
   .nsv-seg.ui-segmented[data-variant="pill"]{
+    /* Two short words: they stay side by side on a phone too, where the
+       settings stack every segmented control. */
+    --ui-segmented-columns:1fr 1fr;
     gap:3px;padding:3px;border-radius:10px;
     background:var(--surface-field);border-color:var(--line-subtle);
   }
@@ -133,12 +138,13 @@
   }
 
   /* After creation: the mascot, the link and the way to copy it. */
-  .nsv-done{display:flex;flex-direction:column;align-items:center;text-align:center;padding-top:24px}
+  .nsv-done{display:flex;flex-direction:column;align-items:center;text-align:center;padding-top:28px}
   .nsv-done .nsv-title{margin-top:14px}
   .nsv-done .nsv-lead{margin-inline:auto}
   .nsv-link{display:flex;align-items:center;gap:8px;width:100%;margin-top:22px}
+  /* A block, not a flex box, so a long link ends in an ellipsis. */
   .nsv-url{
-    flex:1;display:flex;align-items:center;
+    flex:1;line-height:20px;
     font-family:var(--font-mono);font-size:var(--text-13);color:var(--text-muted);text-align:left;
     white-space:nowrap;overflow:hidden;text-overflow:ellipsis;
   }
@@ -245,10 +251,12 @@
     .nsv-side{display:none}
     .nsv-form{padding:12px 16px max(16px, env(safe-area-inset-bottom))}
     .nsv-top .dlg-x{margin:0 -8px 0 0}
-    .nsv-title{margin-top:16px;font-size:var(--text-20)}
+    .nsv-title{margin-top:12px;font-size:var(--text-20)}
     .nsv-input{min-height:44px;font-size:var(--text-16)}
+    /* Not a field anyone types in, so it keeps the small mono size. */
+    .nsv-url{padding-block:11px;font-size:var(--text-13)}
     .nsv-glyph{width:44px;height:44px}
-    .nsv-seg.ui-segmented[data-variant="pill"] .ui-segmented-item{height:40px}
+    .nsv-seg.ui-segmented[data-variant="pill"] .ui-segmented-item{height:44px}
     .nsv-link{flex-direction:column;align-items:stretch}
     .nsv-link .ui-button{height:44px}
     .nsv-foot{flex-direction:column-reverse;align-items:stretch;gap:8px;padding-top:16px}
