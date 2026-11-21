@@ -50,8 +50,12 @@
     flex: 1;
     min-width: 0;
     display: flex;
-    align-items: baseline;
+    align-items: center;
     gap: 7px;
+  }
+
+  .notification-inbox-heading .notification-unread-count {
+    margin-left: 0;
   }
 
   .notification-inbox-head-actions {
@@ -151,6 +155,15 @@
     column-gap: 10px;
     padding: 11px 12px 12px 15px;
     border-bottom: 1px solid var(--line-subtle);
+    transition: background var(--dur-fast) var(--ease-standard);
+  }
+
+  .notification-item.actionable {
+    cursor: pointer;
+  }
+
+  .notification-item.unread {
+    background: var(--accent-soft);
   }
 
   .notification-item:last-child {
@@ -162,6 +175,10 @@
      row itself can make up for. */
   .notification-item:hover {
     background: var(--surface-overlay);
+  }
+
+  .notification-item.unread:hover {
+    background: color-mix(in srgb, var(--accent) 22%, var(--surface-overlay));
   }
 
   /* Read rows recede through the type, not through opacity: a blanket alpha
@@ -182,7 +199,7 @@
     overflow-wrap: anywhere;
     color: var(--text-muted);
     font-size: var(--text-13);
-    font-weight: 550;
+    font-weight: 500;
     line-height: 1.35;
   }
 
@@ -191,7 +208,16 @@
      tick that only unread rows offer are what replaced the marker column. */
   .notification-item.unread .notification-title strong {
     color: var(--text);
-    font-weight: 640;
+    font-weight: 700;
+  }
+
+  .notification-item.unread .notification-body {
+    color: var(--text);
+    font-weight: 500;
+  }
+
+  .notification-item.unread .notification-meta {
+    color: var(--text-muted);
   }
 
   .notification-body {
