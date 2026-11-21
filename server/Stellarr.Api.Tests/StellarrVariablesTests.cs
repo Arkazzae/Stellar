@@ -22,8 +22,6 @@ public sealed class StellarrVariablesTests
         ("STELLARR_TURNS_PORT", "Rtc:TurnsPort"),
         ("STELLARR_TURN_TCP_ENABLED", "Rtc:TurnTcpEnabled"),
         ("STELLARR_TURNS_ENABLED", "Rtc:TurnsEnabled"),
-        ("STELLARR_TURN_SHARED_SECRET", "Rtc:TurnSharedSecret"),
-        ("STELLARR_MEDIA_CONTROL_SECRET", "Rtc:MediaControlSecret"),
         ("STELLARR_UPLOAD_USER_BYTES", "Uploads:MaxStoredBytesPerUser"),
         ("STELLARR_UPLOAD_TOTAL_BYTES", "Uploads:MaxStoredBytes"),
         ("STELLARR_MIN_FREE_BYTES", "Uploads:MinimumFreeDataRootBytes"),

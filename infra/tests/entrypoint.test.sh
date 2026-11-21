@@ -154,8 +154,10 @@ expect_export STELLARR_MEDIA_PORT 49000
 expect_export STELLARR_TURN_TCP_ENABLED false
 expect_export STELLARR_TURNS_ENABLED false
 turn_secret=$(secret_file turn-shared-secret)
-expect_export STELLARR_TURN_SHARED_SECRET "$turn_secret"
-expect_export STELLARR_MEDIA_CONTROL_SECRET "$(secret_file media-control-secret)"
+media_secret=$(secret_file media-control-secret)
+expect_export Rtc__TurnSharedSecret "$turn_secret"
+expect_export Rtc__MediaControlSecret "$media_secret"
+expect_export STELLARR_MEDIA_CONTROL_SECRET "$media_secret"
 expect_export ConnectionStrings__Database 'Data Source=/data/stellarr/db/stellarr.db;Pooling=True'
 expect_export Rtc__MediaControlUrl http://127.0.0.1:5200
 expect_export STELLARR_MEDIA_BIND 0.0.0.0:49000
@@ -167,10 +169,11 @@ expect_export ASPNETCORE_URLS http://127.0.0.1:5000
 expect_export ASPNETCORE_ENVIRONMENT Production
 expect_absent STELLARR_MEDIA_ADVERTISE Operations__PublicUrl Desktop__CanonicalOrigin ASPNETCORE_HTTP_PORTS
 # Besides what the shell itself sets, everything it exports is a STELLARR_* or
-# ASP.NET Core name, or one of the two values that have no STELLARR_* name.
+# ASP.NET Core name, or one of the values that have no STELLARR_* name.
 others=$(sed 's/=.*//' "$out/env" | grep -vxE 'STELLARR_[A-Z0-9_]+|ASPNETCORE_[A-Z_]+|PATH|HOME|PWD|OLDPWD|SHLVL|_' |
   sort | tr '\n' ' ')
-[[ $others == 'ConnectionStrings__Database Rtc__MediaControlUrl ' ]] || fail "it exports: $others"
+[[ $others == 'ConnectionStrings__Database Rtc__MediaControlSecret Rtc__MediaControlUrl Rtc__TurnSharedSecret ' ]] ||
+  fail "it exports: $others"
 for file in /etc/turnserver.conf /etc/nginx/nginx.conf; do
   ! grep -q '__[A-Z_]*__' "$file" || fail "$file keeps a placeholder: $(grep -o '__[A-Z_]*__' "$file" | head -n 1)"
 done
@@ -241,14 +244,21 @@ expect_export Operations__PublicUrl https://proxy.example
 expect_export STELLARR_DOMAIN ''
 expect_line /etc/turnserver.conf 'realm=localhost'
 
-# The secrets an operator chooses, which win over the generated files.
-run secrets "${image_env[@]}" STELLARR_TURN_SHARED_SECRET=operator-turn STELLARR_MEDIA_CONTROL_SECRET=operator-media
+# The secrets are the ones in the data volume, read back on a later start,
+# whatever arrives in the environment under the names the services read.
+kept_secrets() {
+  mkdir -p /data/stellarr/secrets
+  echo kept-turn >/data/stellarr/secrets/turn-shared-secret
+  echo kept-media >/data/stellarr/secrets/media-control-secret
+}
+STAGE=kept_secrets run secrets "${image_env[@]}" STELLARR_MEDIA_CONTROL_SECRET=operator-media \
+  Rtc__TurnSharedSecret=operator-turn Rtc__MediaControlSecret=operator-media
 expect_started
-expect_export STELLARR_TURN_SHARED_SECRET operator-turn
-expect_export STELLARR_MEDIA_CONTROL_SECRET operator-media
-expect_line /etc/turnserver.conf 'static-auth-secret=operator-turn'
-[[ ! -e /data/stellarr/secrets/turn-shared-secret && ! -e /data/stellarr/secrets/media-control-secret ]] ||
-  fail "a secret file was written although the secret is set"
+expect_export Rtc__TurnSharedSecret kept-turn
+expect_export Rtc__MediaControlSecret kept-media
+expect_export STELLARR_MEDIA_CONTROL_SECRET kept-media
+expect_line /etc/turnserver.conf 'static-auth-secret=kept-turn'
+! grep -q 'operator-' "$out/env" /etc/turnserver.conf || fail "a secret from the environment was kept"
 
 # The other settings it shares with the API or hands to the media server.
 run transports-and-language "${image_env[@]}" STELLARR_TURN_TCP_ENABLED=true STELLARR_TURNS_ENABLED=true \
@@ -269,14 +279,12 @@ expect_line /run/stellarr/stellarr-instance.js 'window.stellarrInstanceLanguage=
 
 # A blank value counts as not set, as it does in the API.
 run blank "${image_env[@]}" STELLARR_DOMAIN=' ' STELLARR_LANGUAGE='  ' STELLARR_MEDIA_PORT=' ' \
-  STELLARR_HTTPS_PORT=' ' STELLARR_TURN_TCP_ENABLED=' ' STELLARR_PUBLIC_IP=' ' STELLARR_MEDIA_ADVERTISE=' ' \
-  STELLARR_TURN_SHARED_SECRET=' '
+  STELLARR_HTTPS_PORT=' ' STELLARR_TURN_TCP_ENABLED=' ' STELLARR_PUBLIC_IP=' ' STELLARR_MEDIA_ADVERTISE=' '
 expect_started
 expect_export STELLARR_DOMAIN ''
 expect_export STELLARR_LANGUAGE en
 expect_export STELLARR_MEDIA_PORT 49000
 expect_export STELLARR_TURN_TCP_ENABLED false
-expect_export STELLARR_TURN_SHARED_SECRET "$(secret_file turn-shared-secret)"
 expect_export STELLARR_MEDIA_PUBLIC_IP ''
 expect_absent STELLARR_MEDIA_ADVERTISE Operations__PublicUrl
 expect_redirect ''

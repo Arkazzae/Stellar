@@ -216,11 +216,9 @@ Compose reads these; with `docker run`, the matching flags are `--memory`, `--cp
 | `STELLARR_TLS_RENEW_CHECK_SECONDS` | seconds | `43200` (12 hours) | How often the managed certificate is checked. |
 | `STELLARR_MEDIA_ADVERTISE` | `ip:port` list | empty | `stellarr-media`'s host candidates, separated by commas, in place of the ones derived from `STELLARR_PUBLIC_IP` and the container's address. |
 | `STELLARR_MEDIA_LOG` | `tracing` filter | `info` | `stellarr-media`'s log filter, such as `info,stellarr_media=debug`. |
-| `STELLARR_MEDIA_CONTROL_SECRET` | string | generated | The bearer secret the API and `stellarr-media` share. Without it, one is generated in `/data/stellarr/secrets/media-control-secret`. |
-| `STELLARR_TURN_SHARED_SECRET` | string | generated | The HMAC secret the API and `coturn` share. Without it, one is generated in `/data/stellarr/secrets/turn-shared-secret`. |
 
 > [!IMPORTANT]
-> The generated secrets are written to `/data/stellarr/secrets/` on the first start. Keep them in every backup of `/data/stellarr`.
+> The secrets the API shares with `coturn` and `stellarr-media` are not settings: the container generates them in `/data/stellarr/secrets/` on the first start and reads them from there. Keep them in every backup of `/data/stellarr`.
 
 The image keeps its data under `/data/stellarr`, the path the volume is mounted at. It is not a setting: the entrypoint, the TLS script and the CLI all read it from the image.
 

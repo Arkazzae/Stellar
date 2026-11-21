@@ -46,8 +46,6 @@ public static class StellarrVariables
     public static readonly StellarrVariable TurnsPort = new("STELLARR_TURNS_PORT", "Rtc:TurnsPort");
     public static readonly StellarrVariable TurnTcpEnabled = new("STELLARR_TURN_TCP_ENABLED", "Rtc:TurnTcpEnabled");
     public static readonly StellarrVariable TurnsEnabled = new("STELLARR_TURNS_ENABLED", "Rtc:TurnsEnabled");
-    public static readonly StellarrVariable TurnSharedSecret = new("STELLARR_TURN_SHARED_SECRET", "Rtc:TurnSharedSecret");
-    public static readonly StellarrVariable MediaControlSecret = new("STELLARR_MEDIA_CONTROL_SECRET", "Rtc:MediaControlSecret");
 
     // Uploads.
     public static readonly StellarrVariable UploadUserBytes = new("STELLARR_UPLOAD_USER_BYTES", "Uploads:MaxStoredBytesPerUser");

@@ -171,10 +171,11 @@ fi
 
 mkdir -p "$data_root"/{db,files,keys,logs,secrets,tls} /run/nginx
 
-turn_secret="$(or_default "${STELLARR_TURN_SHARED_SECRET:-}")"
-[[ -n "$turn_secret" ]] || turn_secret="$(read_or_create_secret turn-shared-secret)"
-media_control_secret="$(or_default "${STELLARR_MEDIA_CONTROL_SECRET:-}")"
-[[ -n "$media_control_secret" ]] || media_control_secret="$(read_or_create_secret media-control-secret)"
+# The secrets the API shares with coturn and the media server are the ones in
+# the data volume, never a setting: the exports below replace any value the
+# environment brings under the names the services read.
+turn_secret="$(read_or_create_secret turn-shared-secret)"
+media_control_secret="$(read_or_create_secret media-control-secret)"
 
 # What the API, the TLS script and the media server read, as resolved above.
 export STELLARR_DATA_ROOT="$data_root"
@@ -183,11 +184,11 @@ export STELLARR_LANGUAGE="$language"
 export STELLARR_MEDIA_PORT="$media_port"
 export STELLARR_TURN_TCP_ENABLED="$turn_tcp_enabled"
 export STELLARR_TURNS_ENABLED="$turns_enabled"
-export STELLARR_TURN_SHARED_SECRET="$turn_secret"
-export STELLARR_MEDIA_CONTROL_SECRET="$media_control_secret"
 # Values with no STELLARR_* name, which only the entrypoint derives.
 export ConnectionStrings__Database="Data Source=$data_root/db/stellarr.db;Pooling=True"
 export Rtc__MediaControlUrl="http://127.0.0.1:5200"
+export Rtc__MediaControlSecret="$media_control_secret"
+export Rtc__TurnSharedSecret="$turn_secret"
 
 # The address in mail links and the desktop client's canonical origin: the
 # domain on the HTTPS port browsers use. STELLARR_PUBLIC_URL, when set,
@@ -210,6 +211,7 @@ export STELLARR_MEDIA_BIND="0.0.0.0:49000"
 export STELLARR_MEDIA_PUBLIC_IP="$public_ip"
 export STELLARR_MEDIA_PUBLIC_PORT="$media_port"
 export STELLARR_MEDIA_CONTROL_BIND="127.0.0.1:5200"
+export STELLARR_MEDIA_CONTROL_SECRET="$media_control_secret"
 export STELLARR_MEDIA_LOG="$media_log"
 if [[ -n "$media_advertise" ]]; then
   export STELLARR_MEDIA_ADVERTISE="$media_advertise"

@@ -33,7 +33,7 @@ if (!builder.Environment.IsDevelopment() &&
     string.IsNullOrWhiteSpace(builder.Configuration["Rtc:TurnSharedSecret"]))
 {
     throw new InvalidOperationException(
-        $"Rtc:TurnSharedSecret ({StellarrVariables.TurnSharedSecret.Name}) is required outside development.");
+        "Rtc:TurnSharedSecret is required outside development. In the container the entrypoint sets it from the secret it keeps in the data volume.");
 }
 
 var dataRoot = builder.Configuration["DataRoot"] ?? "data";
