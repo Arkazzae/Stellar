@@ -77,7 +77,7 @@ describe("Attachment", () => {
     ["embed", embed, () => screen.getByRole("link", { name: "A page (example.org)" })],
     ["video-embed", videoEmbed, () => screen.getByRole("button", { name: /A clip/ })],
     ["giphy", giphy, () => screen.getByRole("status")],
-    ["code", code, () => screen.getByRole("combobox", { name: "Język podświetlania" })],
+    ["code", code, () => screen.getByRole("combobox", { name: "Podświetl jako" })],
   ] as const)("renders a %s part with its own renderer", (_kind, part, find) => {
     render(<Attachment part={part} />);
     expect(find()).toBeTruthy();

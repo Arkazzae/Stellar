@@ -534,34 +534,25 @@
   .att-code{
     position:relative;
   }
+  /* Language, line count, then copy at the far end. The picker is the
+     shared quiet field; only its size here is set. */
   .att-code .code-head{
-    display:flex;align-items:center;justify-content:space-between;gap:10px;
-    padding:6px 12px;background:var(--surface-raised);
-    border-bottom:1px solid var(--line-subtle);
-    font-size:var(--text-11);color:var(--text-faint);font-family:var(--font-mono);
+    display:flex;align-items:center;gap:6px;min-height:38px;padding:0 6px;
+    background:var(--surface-raised);border-bottom:1px solid var(--line-subtle);
     -webkit-user-select:none;user-select:none;
   }
-  .att-code .code-meta,.att-code .code-actions{
-    min-width:0;display:flex;align-items:center;gap:8px;
-  }
-  .att-code .code-actions{flex:none}
-  .att-code select{
-    max-width:16ch;padding:2px 22px 2px 6px;
-    color:var(--text-muted);background:var(--surface-overlay);
-    border:1px solid var(--line-subtle);border-radius:var(--radius-sm);
-    font:inherit;cursor:pointer;
-  }
-  .att-code select:hover,.att-code select:focus-visible{
-    color:var(--text);border-color:var(--line-strong);
-  }
-  .att-code .code-actions button{
-    padding:2px 4px;border-radius:var(--radius-sm);
+  .att-code .code-lang .ui-dropdown-label{font-size:12.5px}
+  .att-code .code-count{font-size:var(--text-12);color:var(--text-faint);white-space:nowrap}
+  .att-code .code-copy{
+    margin-left:auto;display:inline-flex;align-items:center;justify-content:center;gap:6px;
+    min-width:30px;height:30px;padding:0 7px;border-radius:var(--radius-sm);
+    color:var(--text-faint);font-size:var(--text-12);font-weight:550;
     transition:color var(--dur-fast) var(--ease-standard),background var(--dur-fast) var(--ease-standard);
   }
-  .att-code .code-actions .code-copy{width:28px;height:28px;padding:0}
-  .att-code .code-actions button:hover{color:var(--text);background:var(--surface-overlay)}
-  .att-code .code-actions .copy-error{color:var(--danger-text)}
-  .att-code button:focus-visible,.att-code select:focus-visible{
+  .att-code .code-copy:hover{color:var(--text);background:var(--surface-overlay)}
+  .att-code .code-copy[data-state="copied"]{color:var(--live)}
+  .att-code .code-copy[data-state="error"]{color:var(--danger-text)}
+  .att-code button:focus-visible{
     outline:2px solid var(--accent-quiet);outline-offset:2px;
   }
   .att-code pre{
@@ -573,6 +564,16 @@
   .att-code pre.compact{max-height:24.8em}
   .att-code pre.expanded{max-height:min(70vh,52em)}
   .att-code pre:focus-visible{outline:2px solid var(--accent-quiet);outline-offset:-2px}
+  /* The way on from a collapsed listing sits where it breaks off, across the
+     whole block. A plain edge, no fade over the last lines. */
+  .att-code .code-more{
+    display:flex;align-items:center;justify-content:center;gap:6px;width:100%;height:40px;
+    border-top:1px solid var(--line-subtle);background:var(--surface-raised);
+    color:var(--text-muted);font-size:var(--text-13);font-weight:550;
+    transition:color var(--dur-fast) var(--ease-standard),background var(--dur-fast) var(--ease-standard);
+  }
+  .att-code .code-more:hover{color:var(--text);background:var(--surface-overlay)}
+  .att-code .code-more:focus-visible{outline-offset:-2px}
   /* The transcript's inline-code pill must not leak into the block's `<code>`. */
   .msg-body .att-code pre code{
     display:block;min-width:max-content;padding:0;border:0;border-radius:0;
@@ -596,15 +597,6 @@
   .att-code .fn{color:var(--syntax-function)}
 
   @media (max-width:520px){
-    /* Language and actions share the narrow message column. The metadata
-       yields first, while the secondary line count disappears so the two
-       actual controls never get squeezed below a finger target. */
-    .att-code .code-head{align-items:center;padding:4px 6px}
-    .att-code .code-meta{flex:1;min-width:0}
-    .att-code .code-meta label{display:block;min-width:0}
-    .att-code select{width:100%;max-width:16ch}
-    .att-code .code-actions{gap:2px}
-    .att-code .code-actions > span{display:none}
     .att-code pre{padding:10px;font-size:var(--text-12)}
   }
 
@@ -622,8 +614,8 @@
       min-width:44px;min-height:44px;
     }
     .msg-long-toggle{display:inline-flex;align-items:center}
-    .att-code select{min-height:44px}
-    .att-code .code-actions button{min-width:44px;min-height:44px}
+    .att-code .code-copy{min-width:44px;min-height:44px}
+    .att-code .code-more{min-height:44px}
   }
 
   /* ---------- TYPING ---------- */
