@@ -359,20 +359,114 @@ describe("Composer voice messages", () => {
 });
 
 describe("Composer code messages", () => {
-  it("sends an explicitly selected language as a fenced code block", async () => {
+  /** Where the field puts its selection back after an edit it could not type. */
+  const nextFrame = () => act(() => new Promise<void>((resolve) => requestAnimationFrame(() => resolve())));
+
+  /** Renders a composer already in code mode and hands back its field. */
+  async function codeComposer(onSubmit = vi.fn()) {
     const user = userEvent.setup();
-    const onSubmit = vi.fn();
     render(<Composer {...baseProps} chips={[]} onSubmit={onSubmit} />);
+    await user.click(screen.getByRole("button", { name: "Wyślij jako kod" }));
+    return { user, onSubmit, field: screen.getByRole("textbox") as HTMLTextAreaElement };
+  }
+
+  it("breaks the line on Enter and sends on Ctrl+Enter or Cmd+Enter", async () => {
+    const { user, onSubmit, field } = await codeComposer();
+
+    await user.type(field, "const a = 1{Enter}const b = 2{Shift>}{Enter}{/Shift}a + b");
+    expect(onSubmit).not.toHaveBeenCalled();
+    expect(field).toHaveValue("const a = 1\nconst b = 2\na + b");
+
+    await user.keyboard("{Control>}{Enter}{/Control}");
+    expect(onSubmit).toHaveBeenCalledTimes(1);
 
     await user.click(screen.getByRole("button", { name: "Wyślij jako kod" }));
-    await user.selectOptions(
-      screen.getByRole("combobox", { name: "Język kodu wiadomości" }),
-      "python",
-    );
-    await user.type(screen.getByRole("textbox"), "print('hej')");
+    await user.type(field, "x");
+    await user.keyboard("{Meta>}{Enter}{/Meta}");
+    expect(onSubmit).toHaveBeenCalledTimes(2);
+  });
+
+  it("writes the guessed language into the fence when it is left automatic", async () => {
+    const { user, onSubmit, field } = await codeComposer();
+    const picker = screen.getByRole("combobox", { name: "Język kodu wiadomości" });
+    expect(picker).toHaveTextContent("Automatycznie");
+
+    await user.type(field, "const room = createRoom();{Enter}room.join();");
+    expect(picker).toHaveTextContent("AutomatycznieJavaScript");
+    await user.click(screen.getByRole("button", { name: "Wyślij" }));
+
+    expect(onSubmit).toHaveBeenCalledWith("```javascript\nconst room = createRoom();\nroom.join();\n```");
+  });
+
+  it("sends a language picked from the list", async () => {
+    const { user, onSubmit, field } = await codeComposer();
+
+    await user.click(screen.getByRole("combobox", { name: "Język kodu wiadomości" }));
+    await user.click(screen.getByRole("option", { name: "Python" }));
+    await user.type(field, "print('hej')");
     await user.click(screen.getByRole("button", { name: "Wyślij" }));
 
     expect(onSubmit).toHaveBeenCalledWith("```python\nprint('hej')\n```");
+  });
+
+  it("indents the selected lines on Tab and outdents them on Shift+Tab", async () => {
+    const { user, field } = await codeComposer();
+    fireEvent.change(field, { target: { value: "if (a) {\nreturn 1;\n}" } });
+
+    field.focus();
+    field.setSelectionRange(0, field.value.length);
+    await user.keyboard("{Tab}");
+    await nextFrame();
+    expect(field).toHaveValue("  if (a) {\n  return 1;\n  }");
+    expect(field).toHaveFocus();
+    // The selection still covers the lines it moved.
+    expect([field.selectionStart, field.selectionEnd]).toEqual([0, field.value.length]);
+
+    await user.keyboard("{Shift>}{Tab}{/Shift}");
+    await nextFrame();
+    expect(field).toHaveValue("if (a) {\nreturn 1;\n}");
+
+    // A caret alone: Shift+Tab finds nothing to take, Tab types two spaces.
+    field.setSelectionRange(11, 11);
+    await user.keyboard("{Shift>}{Tab}{/Shift}{Tab}");
+    await nextFrame();
+    expect(field).toHaveValue("if (a) {\nre  turn 1;\n}");
+  });
+
+  it("lets Tab leave the field after Escape", async () => {
+    const { user, field } = await codeComposer();
+    await user.type(field, "x");
+
+    await user.keyboard("{Escape}{Tab}");
+
+    expect(field).not.toHaveFocus();
+    expect(field).toHaveValue("x");
+  });
+
+  it("neither sends nor indents while an input method is composing", async () => {
+    const { onSubmit, field } = await codeComposer();
+    fireEvent.change(field, { target: { value: "かな" } });
+
+    fireEvent.keyDown(field, { key: "Enter", ctrlKey: true, isComposing: true });
+    fireEvent.keyDown(field, { key: "Tab", isComposing: true });
+
+    expect(onSubmit).not.toHaveBeenCalled();
+    expect(field).toHaveValue("かな");
+  });
+
+  it("counts the characters left once the code nears the limit", async () => {
+    const { field } = await codeComposer();
+
+    fireEvent.change(field, { target: { value: "x".repeat(17_000) } });
+    expect(screen.queryByText(/Zostało/)).toBeNull();
+
+    // The fence counts against the limit too: 20,000 less 17,990 and the
+    // seventeen characters of a plain-text fence.
+    fireEvent.change(field, { target: { value: "x".repeat(17_990) } });
+    expect(screen.getByText(/^Zostały 1\s?993 znaki$/)).toBeInTheDocument();
+
+    fireEvent.change(field, { target: { value: "x".repeat(19_995) } });
+    expect(screen.getByText("12 znaków za dużo")).toBeInTheDocument();
   });
 
   it("keeps a multiline paste as text until code mode is chosen explicitly", async () => {

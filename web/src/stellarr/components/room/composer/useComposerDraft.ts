@@ -1,9 +1,13 @@
-import { useState, type FormEvent } from "react";
+import { useDeferredValue, useMemo, useState, type FormEvent } from "react";
 
 import type { InterfaceLocale, Translator } from "@/i18n";
 import { triggerHaptic } from "@/lib/platform/haptics";
 
-import type { CodeLanguageId } from "@/lib/messages/codeLanguages";
+import {
+  AUTO_LANGUAGE,
+  type CodeLanguageChoice,
+} from "@/components/room/code/CodeLanguagePicker";
+import { resolveCodeLanguage, type CodeLanguageId } from "@/lib/messages/codeLanguages";
 import type { ComposerChip } from "./ComposerChips";
 import { fencedCode } from "@/lib/messages/composerText";
 import { MESSAGE_MAX_LENGTH } from "@/lib/messages/messageLimits";
@@ -18,6 +22,11 @@ interface Options {
   t: Translator;
 }
 
+/** What the code looks like, as a reader would guess it from a fence with no language. */
+function guessLanguage(source: string): CodeLanguageId {
+  return resolveCodeLanguage("", source);
+}
+
 /**
  * The text being written and what it takes to send it: the code-message mode,
  * whether a send is in flight, and why the last one failed.
@@ -27,7 +36,25 @@ export function useComposerDraft({ chips, onSubmit, onSent, locale, t }: Options
   const [sending, setSending] = useState(false);
   const [sendError, setSendError] = useState<string | null>(null);
   const [codeMode, setCodeMode] = useState(false);
-  const [codeLanguage, setCodeLanguage] = useState<CodeLanguageId>("plaintext");
+  const [codeLanguage, setCodeLanguage] = useState<CodeLanguageChoice>(AUTO_LANGUAGE);
+
+  // The guess reads the whole draft (it tries it as JSON, among others), so it
+  // may trail the typing by a frame; the fence takes a fresh one on sending.
+  const guessed = useDeferredValue(codeMode && codeLanguage === AUTO_LANGUAGE ? text : "");
+  const codeGuess = useMemo(
+    () => (guessed.trim().length === 0 ? null : guessLanguage(guessed)),
+    [guessed],
+  );
+  /** The language the draft is highlighted in now and would be sent as. */
+  const codeHighlight: CodeLanguageId =
+    codeLanguage === AUTO_LANGUAGE ? (codeGuess ?? "plaintext") : codeLanguage;
+  /**
+   * How many characters the code may still grow by once it is fenced, which
+   * is what the message limit counts. Null outside code mode.
+   */
+  const codeRoom = codeMode
+    ? MESSAGE_MAX_LENGTH - fencedCode(codeHighlight, text.trim()).length
+    : null;
 
   const hasPayload = text.trim().length > 0 || chips.length > 0;
   const attachmentsBlocked = chips.some((chip) => chip.status !== "ready");
@@ -44,7 +71,11 @@ export function useComposerDraft({ chips, onSubmit, onSent, locale, t }: Options
     try {
       const draft = text;
       const authored = draft.trim();
-      const body = codeMode ? fencedCode(codeLanguage, authored) : authored;
+      // An automatic choice is written into the fence, so every reader sees
+      // the colours the author saw instead of guessing again.
+      const language =
+        codeLanguage === AUTO_LANGUAGE ? guessLanguage(authored) : codeLanguage;
+      const body = codeMode ? fencedCode(language, authored) : authored;
       if (body.length > MESSAGE_MAX_LENGTH) {
         setSendError(
           t("composer.codeTooLong", {
@@ -80,6 +111,9 @@ export function useComposerDraft({ chips, onSubmit, onSent, locale, t }: Options
     setCodeMode,
     codeLanguage,
     setCodeLanguage,
+    codeGuess,
+    codeHighlight,
+    codeRoom,
     hasPayload,
     attachmentsBlocked,
     canSend,
