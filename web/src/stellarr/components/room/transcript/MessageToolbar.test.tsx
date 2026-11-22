@@ -1,14 +1,33 @@
 import { fireEvent, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { answerConfirm, renderWithConfirm } from "@/test/confirm";
 
-import { MessageToolbar } from "./MessageToolbar";
+import { MessageEntry, type MessageEntryProps } from "./MessageEntry";
+
+const desktopWidth = window.innerWidth;
+
+afterEach(() => {
+  window.innerWidth = desktopWidth;
+});
+
+/** One message with its actions, as a block draws it. */
+function renderMessage(actions: MessageEntryProps["actions"] = {}) {
+  return renderWithConfirm(
+    <MessageEntry actions={actions}>
+      <p>wiadomość</p>
+    </MessageEntry>,
+  );
+}
+
+/** The toolbar is there while the pointer is on its message. */
+const pointAtMessage = () => fireEvent.mouseOver(screen.getByText("wiadomość"));
 
 describe("MessageToolbar", () => {
   it("offers no edit and no bin on somebody else's message", () => {
-    renderWithConfirm(<MessageToolbar onReact={vi.fn()} onAction={vi.fn()} />);
+    renderMessage({ onReact: vi.fn(), onAction: vi.fn() });
+    pointAtMessage();
 
     expect(screen.getByRole("button", { name: "Odpowiedz" })).toBeInTheDocument();
     // Absent rather than disabled: you are never going to be allowed to.
@@ -17,14 +36,16 @@ describe("MessageToolbar", () => {
   });
 
   it("gives the author both", () => {
-    renderWithConfirm(<MessageToolbar own onReact={vi.fn()} onAction={vi.fn()} />);
+    renderMessage({ own: true, onReact: vi.fn(), onAction: vi.fn() });
+    pointAtMessage();
 
     expect(screen.getByRole("button", { name: "Edytuj" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Usuń" })).toBeInTheDocument();
   });
 
   it("gives a moderator the bin but never the pencil", () => {
-    renderWithConfirm(<MessageToolbar canModerate onReact={vi.fn()} onAction={vi.fn()} />);
+    renderMessage({ canModerate: true, onReact: vi.fn(), onAction: vi.fn() });
+    pointAtMessage();
 
     expect(screen.getByRole("button", { name: "Usuń" })).toBeInTheDocument();
     // Moderating is removing a message, not rewriting it under its author's
@@ -33,24 +54,23 @@ describe("MessageToolbar", () => {
   });
 
   it("offers the pin to a moderator and to nobody else", () => {
-    const { unmount } = renderWithConfirm(
-      <MessageToolbar own onReact={vi.fn()} onAction={vi.fn()} />,
-    );
+    const { unmount } = renderMessage({ own: true, onReact: vi.fn(), onAction: vi.fn() });
+    pointAtMessage();
     // Your own message is not yours to pin: a pin puts it above the channel
     // for everybody, which is moderation rather than a bookmark.
     expect(screen.queryByRole("button", { name: "Przypnij" })).toBeNull();
     unmount();
 
-    renderWithConfirm(<MessageToolbar canModerate onReact={vi.fn()} onAction={vi.fn()} />);
+    renderMessage({ canModerate: true, onReact: vi.fn(), onAction: vi.fn() });
+    pointAtMessage();
     expect(screen.getByRole("button", { name: "Przypnij" })).toBeInTheDocument();
   });
 
   it("turns the same button into the one that unpins", async () => {
     const user = userEvent.setup();
     const onAction = vi.fn();
-    renderWithConfirm(
-      <MessageToolbar canModerate pinned onReact={vi.fn()} onAction={onAction} />,
-    );
+    renderMessage({ canModerate: true, pinned: true, onReact: vi.fn(), onAction });
+    await user.hover(screen.getByText("wiadomość"));
 
     expect(screen.queryByRole("button", { name: "Przypnij" })).toBeNull();
     const unpin = screen.getByRole("button", { name: "Odepnij" });
@@ -65,7 +85,8 @@ describe("MessageToolbar", () => {
   it("deletes nothing until the question is answered", async () => {
     const user = userEvent.setup();
     const onAction = vi.fn();
-    renderWithConfirm(<MessageToolbar own onReact={vi.fn()} onAction={onAction} />);
+    renderMessage({ own: true, onReact: vi.fn(), onAction });
+    await user.hover(screen.getByText("wiadomość"));
 
     // Scoped to the toolbar: the dialog's own button is called "Usuń" too, and
     // it is still on its way out while the second press happens.
@@ -79,6 +100,7 @@ describe("MessageToolbar", () => {
     await answerConfirm(user, "Anuluj");
     expect(onAction).not.toHaveBeenCalled();
 
+    await user.hover(screen.getByText("wiadomość"));
     await user.click(bin());
     await answerConfirm(user, "Usuń");
     expect(onAction).toHaveBeenCalledWith("delete");
@@ -87,7 +109,8 @@ describe("MessageToolbar", () => {
   it("asks nothing before the reversible actions", async () => {
     const user = userEvent.setup();
     const onAction = vi.fn();
-    renderWithConfirm(<MessageToolbar own onReact={vi.fn()} onAction={onAction} />);
+    renderMessage({ own: true, onReact: vi.fn(), onAction });
+    await user.hover(screen.getByText("wiadomość"));
 
     await user.click(screen.getByRole("button", { name: "Odpowiedz" }));
 
@@ -95,10 +118,11 @@ describe("MessageToolbar", () => {
     expect(screen.queryByRole("dialog")).toBeNull();
   });
 
-  it("opens the labelled mobile action sheet and runs an action", async () => {
+  it("opens the labelled action sheet on a phone and runs an action", async () => {
+    window.innerWidth = 390;
     const user = userEvent.setup();
     const onAction = vi.fn();
-    renderWithConfirm(<MessageToolbar own onReact={vi.fn()} onAction={onAction} />);
+    renderMessage({ own: true, onReact: vi.fn(), onAction });
 
     await user.click(screen.getByRole("button", { name: "Akcje wiadomości" }));
     const sheet = screen.getByRole("dialog", { name: "Akcje wiadomości" });
@@ -111,9 +135,10 @@ describe("MessageToolbar", () => {
     expect(screen.queryByRole("dialog", { name: "Akcje wiadomości" })).toBeNull();
   });
 
-  it("opens the reaction picker from the mobile action sheet", async () => {
+  it("opens the reaction picker from the phone's action sheet", async () => {
+    window.innerWidth = 390;
     const user = userEvent.setup();
-    renderWithConfirm(<MessageToolbar onReact={vi.fn()} onAction={vi.fn()} />);
+    renderMessage({ onReact: vi.fn(), onAction: vi.fn() });
 
     await user.click(screen.getByRole("button", { name: "Akcje wiadomości" }));
     const sheet = screen.getByRole("dialog", { name: "Akcje wiadomości" });
@@ -128,7 +153,8 @@ describe("MessageToolbar", () => {
   it("reacts with anything through the picker", async () => {
     const user = userEvent.setup();
     const onReact = vi.fn();
-    renderWithConfirm(<MessageToolbar onReact={onReact} onAction={vi.fn()} />);
+    renderMessage({ onReact, onAction: vi.fn() });
+    await user.hover(screen.getByText("wiadomość"));
 
     expect(screen.queryByRole("button", { name: /^Zareaguj / })).toBeNull();
     await user.click(screen.getByRole("button", { name: "Wybierz reakcję" }));
@@ -141,7 +167,8 @@ describe("MessageToolbar", () => {
   });
 
   it("opens touch reactions without raising search and dismisses the clear layer", () => {
-    renderWithConfirm(<MessageToolbar onReact={vi.fn()} onAction={vi.fn()} />);
+    renderMessage({ onReact: vi.fn(), onAction: vi.fn() });
+    pointAtMessage();
 
     const trigger = screen.getByRole("button", { name: "Wybierz reakcję" });
     fireEvent.pointerDown(trigger, { pointerType: "touch" });

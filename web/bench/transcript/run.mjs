@@ -298,6 +298,20 @@ async function paced(count, send) {
 }
 
 /**
+ * Toolbars left on messages nothing is using, once a fade still running on a
+ * slow page has had up to three seconds to end.
+ */
+async function idleToolbarsSettled(page) {
+  const started = performance.now();
+  let idle = await page.eval("window.__bench.idleToolbars()");
+  while (idle.count > 0 && performance.now() - started < 3000) {
+    await sleep(100);
+    idle = await page.eval("window.__bench.idleToolbars()");
+  }
+  return { ...idle, waitedMs: Math.round(performance.now() - started) };
+}
+
+/**
  * A pointer moving down, up and down again through the visible messages, in
  * 10 px steps along one column: every message it crosses is hovered and left.
  */
@@ -318,7 +332,8 @@ async function pointerSweep(page, rate) {
     await move(page, PARK.x, PARK.y);
     return { moves: steps * passes, visibleGroups: path.visibleGroups, missingToolbars: missing.count };
   });
-  return result;
+  const idle = await idleToolbarsSettled(page);
+  return { ...result, idleToolbarsAfter: idle.count };
 }
 
 /**
@@ -339,11 +354,13 @@ async function wheelScroll(page, rate) {
   const end = await page.eval("window.__bench.snapshot()");
   // The rows moved under a resting pointer: the one it now rests on shows its toolbar.
   const missing = await page.eval("window.__bench.missingToolbars()");
+  const idle = await idleToolbarsSettled(page);
   await move(page, PARK.x, PARK.y);
   return {
     ...result,
     scrolled: Math.round(end.scrollTop - start.scrollTop),
     missingToolbars: missing.count,
+    idleToolbarsAfter: idle.count,
   };
 }
 
@@ -511,6 +528,8 @@ async function runSize(browser, pageUrl, size, progress) {
         groups: mount.groups,
       }),
     );
+    // Nothing is under the pointer or focused yet, so no message has a toolbar.
+    checks.push(check("mount.no-toolbars", mount.document.toolbars === 0, mount.document));
 
     mark("append");
     const append = await page.eval("window.__bench.append(200)");
@@ -583,12 +602,18 @@ async function runSize(browser, pageUrl, size, progress) {
     const sweep = { x1: await pointerSweep(page, 1), x6: await pointerSweep(page, 6) };
     mark("wheel");
     const wheel = { x1: await wheelScroll(page, 1), x6: await wheelScroll(page, 6) };
-    // The message the pointer stopped on shows its toolbar.
+    // The message the pointer stopped on shows its toolbar, and every message
+    // it crossed has let its toolbar go again.
     for (const [name, runs] of [["sweep", sweep], ["wheel", wheel]]) {
       for (const [rate, item] of Object.entries(runs)) {
         checks.push(
           check(`${name}.${rate}.pointed-message-has-toolbar`, item.missingToolbars === 0, {
             missingToolbars: item.missingToolbars,
+          }),
+        );
+        checks.push(
+          check(`${name}.${rate}.no-idle-toolbars`, item.idleToolbarsAfter === 0, {
+            idleToolbarsAfter: item.idleToolbarsAfter,
           }),
         );
       }
@@ -655,6 +680,10 @@ async function runSize(browser, pageUrl, size, progress) {
         picked,
       ),
     );
+    // With the picker gone, its message keeps a toolbar only if the pointer
+    // or focus is on it.
+    const afterPick = await idleToolbarsSettled(page);
+    checks.push(check("picker.lets-go-after-pick", afterPick.count === 0, afterPick));
     await travel(page, pickerAt.option, PARK);
     await sleep(SETTLE_MS);
 
@@ -721,6 +750,8 @@ async function runSize(browser, pageUrl, size, progress) {
     const keyboard = { pair: pairStops, back: backToFirst, span: forward, spanBack: backward };
     await page.eval("document.activeElement?.blur()");
     await sleep(SETTLE_MS);
+    const afterKeyboard = await idleToolbarsSettled(page);
+    checks.push(check("keyboard.lets-go-after-blur", afterKeyboard.count === 0, afterKeyboard));
 
     mark("resize and jumps");
     await page.eval("window.__bench.capture(0)");
