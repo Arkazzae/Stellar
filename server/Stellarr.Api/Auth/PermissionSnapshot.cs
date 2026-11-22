@@ -18,9 +18,8 @@ public sealed record PermissionSubject(ServerMember Member, ServerRole? BaseRole
     public bool IsOwner => Member.Role.IsOwner;
 
     /// <summary>The member's server-wide permissions, before any override.</summary>
-    public ServerPrivileges Permissions => IsOwner
-        ? ServerPrivileges.All
-        : PermissionEvaluator.Unite(BaseRole?.Permissions ?? ServerPrivileges.None, HeldRoles.Select(x => x.Permissions));
+    public ServerPrivileges Permissions => PermissionEvaluator.ServerWide(
+        IsOwner, BaseRole?.Permissions ?? ServerPrivileges.None, HeldRoles.Select(x => x.Permissions));
 }
 
 /// <summary>The sections and channels whose overrides a <see cref="PermissionSnapshot"/> reads.</summary>
