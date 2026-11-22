@@ -17,10 +17,11 @@ public enum PermissionTargetType
 }
 
 /// <summary>
-/// A per-role allow and deny narrowing of <see cref="ServerRole.Permissions"/>
-/// for one channel or one section. The most specific level wins: a channel's
-/// override beats that of its section, which beats the role's base permissions.
-/// Within the level that decides, deny wins over allow.
+/// A per-role allow and deny for one channel or one section, on top of what
+/// the member's roles grant. A channel's overrides apply after those of its
+/// section. Within one level the base role's override comes first, then the
+/// overrides of the roles a member holds, where an allow of one role beats a
+/// deny of another, then the member's own; see <c>PermissionEvaluator</c>.
 /// </summary>
 public sealed class PermissionOverride
 {
@@ -32,6 +33,25 @@ public sealed class PermissionOverride
     public Guid TargetId { get; set; }
 
     public Guid RoleId { get; set; }
+    public ServerPrivileges AllowMask { get; set; }
+    public ServerPrivileges DenyMask { get; set; }
+}
+
+/// <summary>
+/// A per-member allow and deny for one channel or one section, applied after
+/// the overrides of the member's roles at the same level. It belongs to the
+/// membership and goes with it, like the roles the member holds.
+/// </summary>
+public sealed class MemberPermissionOverride
+{
+    public Guid Id { get; set; }
+    public Guid ServerId { get; set; }
+    public PermissionTargetType TargetType { get; set; }
+
+    /// <summary>The channel or section id, as <see cref="TargetType"/> says; not a foreign key.</summary>
+    public Guid TargetId { get; set; }
+
+    public Guid UserId { get; set; }
     public ServerPrivileges AllowMask { get; set; }
     public ServerPrivileges DenyMask { get; set; }
 }

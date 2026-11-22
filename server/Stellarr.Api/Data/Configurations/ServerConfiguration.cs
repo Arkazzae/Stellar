@@ -45,6 +45,22 @@ internal sealed class ServerMemberConfiguration : IEntityTypeConfiguration<Serve
     }
 }
 
+/// <remarks>
+/// <c>MemberPermissionsSchema</c> creates the same table in a database that
+/// predates it; a change here belongs there too.
+/// </remarks>
+internal sealed class ServerMemberRoleConfiguration : IEntityTypeConfiguration<ServerMemberRole>
+{
+    public void Configure(EntityTypeBuilder<ServerMemberRole> entity)
+    {
+        entity.HasKey(x => new { x.ServerId, x.UserId, x.RoleId });
+        entity.HasOne<ServerMember>().WithMany().HasForeignKey(x => new { x.ServerId, x.UserId })
+            .OnDelete(DeleteBehavior.Cascade);
+        entity.HasOne<ServerRole>().WithMany().HasForeignKey(x => x.RoleId)
+            .OnDelete(DeleteBehavior.Cascade);
+    }
+}
+
 internal sealed class ServerAdminSettingsConfiguration : IEntityTypeConfiguration<ServerAdminSettings>
 {
     public void Configure(EntityTypeBuilder<ServerAdminSettings> entity)

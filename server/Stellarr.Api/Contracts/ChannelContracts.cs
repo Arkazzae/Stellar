@@ -43,6 +43,12 @@ public sealed record PermissionOverrideDto(
     IReadOnlyList<string> Allow,
     IReadOnlyList<string> Deny);
 
+/// <summary>What one member is allowed and denied on top of what their roles give them there, in wire names.</summary>
+public sealed record MemberPermissionOverrideDto(
+    string UserId,
+    IReadOnlyList<string> Allow,
+    IReadOnlyList<string> Deny);
+
 /// <summary>Both lists empty clears the override.</summary>
 public sealed record SetPermissionOverrideRequest(IReadOnlyList<string>? Allow, IReadOnlyList<string>? Deny);
 
@@ -50,6 +56,11 @@ public static class PermissionOverrideContractMappings
 {
     public static PermissionOverrideDto ToDto(this PermissionOverride permissionOverride) => new(
         permissionOverride.RoleId.ToString(),
+        ServerAccess.ToNames(permissionOverride.AllowMask),
+        ServerAccess.ToNames(permissionOverride.DenyMask));
+
+    public static MemberPermissionOverrideDto ToDto(this MemberPermissionOverride permissionOverride) => new(
+        permissionOverride.UserId.ToString(),
         ServerAccess.ToNames(permissionOverride.AllowMask),
         ServerAccess.ToNames(permissionOverride.DenyMask));
 }
