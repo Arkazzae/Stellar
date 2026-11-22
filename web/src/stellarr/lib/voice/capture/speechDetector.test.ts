@@ -71,6 +71,9 @@ class FakeContext {
   resume = vi.fn(async () => {
     this.state = "running";
   });
+  suspend = vi.fn(async () => {
+    this.state = "suspended";
+  });
   close = vi.fn(async () => {
     this.state = "closed";
   });
@@ -424,6 +427,32 @@ describe("SpeechDetector lifecycle", () => {
     expect(FakeContext.instances).toHaveLength(1);
     expect(context().state).toBe("running");
     expect(context().resume).toHaveBeenCalled();
+  });
+
+  it("rests by suspending, so a voice mid-sentence is still shown when it wakes", async () => {
+    await detector.add("peer", stream());
+    const node = worklet();
+    node.emit({ speaking: true, level: 0.5 });
+
+    detector.setResting(true);
+    expect(context().state).toBe("suspended");
+    // Nothing a lifecycle pass or a gesture does wakes it meanwhile.
+    expect(await detector.resume()).toBe(false);
+    detector.prepare();
+    expect(context().state).toBe("suspended");
+
+    detector.setResting(false);
+    expect(context().state).toBe("running");
+    // The same detector, never told to start over: it carries on from where it
+    // was, as does the last reading it published.
+    expect(FakeWorkletNode.instances).toEqual([node]);
+    expect(node.port.postMessage).not.toHaveBeenCalled();
+    node.emit({ speaking: true, level: 0.5 });
+    node.emit({ speaking: false, level: 0 });
+    expect(readings).toEqual([
+      ["peer", { speaking: true, level: 0.5 }],
+      ["peer", { speaking: false, level: 0 }],
+    ]);
   });
 
   it("releases everything on dispose and refuses further work", async () => {

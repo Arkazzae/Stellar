@@ -86,6 +86,8 @@ export class SpeechDetector {
   private frameHandle: number | null = null;
   private sensitivity: number;
   private disposed = false;
+  /** Told to rest: the context stays suspended until it is told otherwise. */
+  private resting = false;
 
   constructor(
     private readonly onChange: SpeechListener,
@@ -119,9 +121,28 @@ export class SpeechDetector {
   /** Create the audio context while the call-join click still carries user activation. */
   prepare(): void {
     const context = this.ensureContext();
-    if (context?.state === "suspended") {
+    if (context?.state === "suspended" && !this.resting) {
       void context.resume().catch(() => undefined);
     }
+  }
+
+  /**
+   * Stop analysing while nobody can see what it draws, and start again.
+   *
+   * Resting suspends the context rather than taking anything down: every
+   * detector keeps the noise floor it learned and its place in a sentence,
+   * and so does the main thread's last reading of it. The two pick up from
+   * the same point, so on return whoever went quiet meanwhile is released by
+   * the ordinary hangover, and whoever started speaking is heard at once.
+   * Nothing audible passes through this context.
+   */
+  setResting(resting: boolean): void {
+    if (this.resting === resting) return;
+    this.resting = resting;
+    const context = this.context;
+    if (!context || context.state === "closed") return;
+    if (resting) void context.suspend().catch(() => undefined);
+    else void context.resume().catch(() => undefined);
   }
 
   /**
@@ -133,7 +154,7 @@ export class SpeechDetector {
    */
   async resume(): Promise<boolean> {
     const context = this.context;
-    if (!context || context.state === "closed") return false;
+    if (!context || context.state === "closed" || this.resting) return false;
     if (context.state !== "running") {
       try {
         await context.resume();
@@ -229,7 +250,9 @@ export class SpeechDetector {
       context = new Context();
     }
     this.context = context;
-    if (context.state === "suspended") {
+    if (this.resting) {
+      void context.suspend().catch(() => undefined);
+    } else if (context.state === "suspended") {
       void context.resume().catch(() => undefined);
     }
     return context;

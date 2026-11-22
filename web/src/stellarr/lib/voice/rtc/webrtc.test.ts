@@ -2301,6 +2301,28 @@ describe("remote voice", () => {
   });
 });
 
+describe("out of sight", () => {
+  it("rests the speaking detector while the page is hidden, and carries the rings across", async () => {
+    const rest = vi.spyOn(SpeechDetector.prototype, "setResting");
+    const client = build();
+    await joined(client);
+    announce("u-b");
+    hear(client, "u-b", { speaking: true, level: 0.6 });
+
+    const visibility = vi.spyOn(document, "visibilityState", "get").mockReturnValue("hidden");
+    document.dispatchEvent(new Event("visibilitychange"));
+    expect(rest).toHaveBeenLastCalledWith(true);
+
+    visibility.mockReturnValue("visible");
+    document.dispatchEvent(new Event("visibilitychange"));
+    expect(rest).toHaveBeenLastCalledWith(false);
+    // Someone mid-sentence was never shown to stop: the detector will not say
+    // they started again, so nothing may forget that they had.
+    expect(peerOf(client, "u-b")?.speaking).toBe(true);
+    expect(client.getSnapshot().connection).toBe("connected");
+  });
+});
+
 describe("the speaking ring", () => {
   const talk = (client: WebRtcVoiceClient, userId: string) => {
     hear(client, userId, { speaking: true, level: 0.6 });
