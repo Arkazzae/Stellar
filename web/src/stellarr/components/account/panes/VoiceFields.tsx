@@ -89,6 +89,8 @@ export interface RangeFieldProps {
   label?: string;
   /** What a screen reader says for the value, when the number alone says little. */
   valueText?: string;
+  /** Shown but not adjustable, as while something else decides the value. */
+  disabled?: boolean;
   onChange: (value: number) => void;
   /** The adjustment is over: the pointer lifted, a key was released or focus left. */
   onRelease?: () => void;
@@ -103,6 +105,7 @@ export function RangeField({
   display,
   label,
   valueText,
+  disabled,
   onChange,
   onRelease,
 }: RangeFieldProps) {
@@ -121,6 +124,7 @@ export function RangeField({
         max={max}
         step={step}
         value={value}
+        disabled={disabled}
         onChange={(event) => onChange(Number(event.target.value))}
         onPointerUp={onRelease}
         onKeyUp={onRelease}
