@@ -989,6 +989,18 @@
     min-width: 104px;
   }
 
+  /* The automatic choice over the slider, its switch where the reading is. */
+  .vq-auto {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    margin-bottom: 12px;
+    font-size: var(--text-13);
+    color: var(--text-muted);
+    cursor: pointer;
+  }
+
   .vc-ticks {
     position: relative;
     display: block;
