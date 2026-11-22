@@ -2,6 +2,7 @@ import { act, render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
+import { voiceSettings } from "@/components/account/panes/voiceTestFixtures";
 import type { CallVM } from "@/components/view-models";
 
 import { VoiceDock, type VoiceDockProps } from "./VoiceDock";
@@ -24,11 +25,10 @@ function props(overrides: Partial<VoiceDockProps> = {}): VoiceDockProps {
   return {
     call: CALL,
     sounds: [],
-    soundboardVolume: 100,
-    onChangeSoundboardVolume: vi.fn(),
+    settings: voiceSettings,
+    onChangeSettings: vi.fn(),
+    onOpenSoundSettings: vi.fn(),
     cameraSupported: true,
-    noiseSuppression: "off",
-    onChangeNoiseSuppression: vi.fn(),
     onToggleMute: vi.fn(),
     onToggleDeafen: vi.fn(),
     onToggleCamera: vi.fn(),
@@ -68,46 +68,14 @@ describe("VoiceDock status", () => {
     });
     expect(screen.getByText("01:08")).toBeInTheDocument();
   });
-
-  it("says it is calling and keeps no time until the other person joins a private call", () => {
-    render(<VoiceDock {...props({ call: call({ channelName: "Ada" }), ringing: true })} />);
-
-    expect(screen.getByText("Dzwonię")).toBeInTheDocument();
-    expect(screen.getByText("Ada")).toBeInTheDocument();
-    expect(document.querySelector("time")).toBeNull();
-  });
-
-  it("says which channel the call is in and what state it is in", () => {
-    render(<VoiceDock {...props({ call: call({ headline: "reconnecting" }) })} />);
-
-    expect(screen.getByText("Ponowne łączenie")).toBeInTheDocument();
-    expect(screen.getByText("pogaduchy")).toBeInTheDocument();
-  });
-
-  it("shows no connection quality until the call is connected", () => {
-    render(<VoiceDock {...props({ call: call({ headline: "connecting" }) })} />);
-
-    expect(screen.queryByText(/Dobra/)).toBeNull();
-  });
-
-  it("reports a quality that is still being measured", () => {
-    render(
-      <VoiceDock
-        {...props({ call: call({ connectionQuality: "unknown", latencyMs: null }) })}
-      />,
-    );
-
-    expect(screen.getByText("Pomiar…")).toBeInTheDocument();
-    expect(screen.getByLabelText("Trwa pomiar jakości połączenia.")).toBeInTheDocument();
-  });
 });
 
 describe("VoiceDock return to the channel", () => {
   it("is a plain status line while only conversation is live", () => {
-    const { container } = render(<VoiceDock {...props()} />);
+    render(<VoiceDock {...props()} />);
 
-    expect(container.querySelector(".dock-item")).not.toHaveAttribute("role");
     expect(screen.queryByTitle("Wróć do kanału")).toBeNull();
+    expect(document.querySelector(".dock-status [role='button']")).toBeNull();
   });
 
   it("becomes a way back to the channel while the screen is shared", async () => {

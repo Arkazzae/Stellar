@@ -41,24 +41,26 @@ export const RailVoiceDock = memo(function RailVoiceDock() {
     voiceSettings.getSnapshot,
   );
 
+  // The call's own view is on screen, with its bar: a channel's stage, or the
+  // conversation whose call this is.
+  const callViewOpen = (ui.space === "server" && ui.roomView === "voice") || ui.inConversationCall;
+
   return (
     <VoiceDock
       call={voice.call}
       ringing={ringing}
+      collapsed={callViewOpen}
       sounds={voice.sounds}
       soundboardSupported={voice.soundboardEnabled && voice.soundboard.canPlay}
       soundboardLive={soundboard.live}
       onManageSounds={voice.soundboard.canManage ? () => ui.openModal("soundboard") : undefined}
-      soundboardVolume={settings.soundboardVolume}
-      onChangeSoundboardVolume={(soundboardVolume) =>
-        voiceSettings.update({ soundboardVolume })
-      }
+      settings={settings}
+      onChangeSettings={(patch) => voiceSettings.update(patch)}
+      suppressorDownload={voice.suppressorDownload}
+      // Device pickers and the rest of the sound live in the voice settings,
+      // as from the bar's arrow.
+      onOpenSoundSettings={() => ui.openModal("voice")}
       cameraSupported={voice.cameraSupported}
-      noiseSuppression={settings.noiseSuppression}
-      noiseDownload={voice.suppressorDownload}
-      onChangeNoiseSuppression={(noiseSuppression) =>
-        voiceSettings.update({ noiseSuppression })
-      }
       onToggleMute={voice.toggleMute}
       onToggleDeafen={voice.toggleDeafen}
       onToggleCamera={voice.toggleCamera}

@@ -48,7 +48,7 @@ function stub<T>(members: object): T {
 }
 
 /** One object for the whole run: `useSyncExternalStore` needs a stable snapshot. */
-const VOICE_SETTINGS = { soundboardVolume: 50, noiseSuppression: "off" };
+const VOICE_SETTINGS = { soundboardVolume: 50, noiseSuppression: "off", opusProfile: "auto" };
 
 function defaults(): HookStubs {
   return {
@@ -169,6 +169,7 @@ function defaults(): HookStubs {
     }),
     ui: stub<UiValue>({
       space: "server",
+      roomView: "text",
       activeChannelId: null,
       activeDmId: null,
       railOpen: false,
