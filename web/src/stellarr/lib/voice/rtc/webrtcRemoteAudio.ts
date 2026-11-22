@@ -40,8 +40,11 @@ const ROLES: readonly AudioRole[] = ["microphone", "screen"];
  */
 export class RemoteAudio {
   private readonly mixer: RemoteVoiceMixer;
-  /** Unity gain and no voice processing: shared sound is content, not speech. */
-  private readonly screenMixer = new RemoteVoiceMixer("off", undefined, 1);
+  /**
+   * Unity gain and no voice processing: shared sound is content, not speech.
+   * It rests while no share is played through it, which is most of a call.
+   */
+  private readonly screenMixer = new RemoteVoiceMixer("off", undefined, 1, { restWhenEmpty: true });
   private host: HTMLElement | null = null;
   private deafened = false;
   /** The one share whose sound is played; a share nobody chose to watch stays silent. */

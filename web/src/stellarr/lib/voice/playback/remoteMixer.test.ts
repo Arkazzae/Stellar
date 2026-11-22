@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import {
+  MIXER_REST_AFTER_MS,
   PLAYBACK_PROFILES,
   REMOTE_GATE_SENSITIVITY,
   REMOTE_SUPPRESSOR,
@@ -87,6 +88,9 @@ class FakeAudioContext {
   createMediaStreamDestination = vi.fn(() => this.output);
   resume = vi.fn(async () => {
     this.state = "running";
+  });
+  suspend = vi.fn(async () => {
+    this.state = "suspended";
   });
   close = vi.fn(async () => {
     this.state = "closed";
@@ -238,6 +242,44 @@ describe("receiver-side voice mixer", () => {
     ).toBe(true);
     expect(FakeAudioContext.latest?.gains[1]?.gain.value).toBe(1.25);
     mixer.dispose();
+  });
+
+  it("rests an empty shared-media mixer and runs it exactly while a strip plays", async () => {
+    vi.useFakeTimers();
+    try {
+      FakeAudioContext.initialState = "suspended";
+      vi.stubGlobal("AudioContext", FakeAudioContext);
+      const mixer = new RemoteVoiceMixer("off", undefined, 1, { restWhenEmpty: true });
+
+      // Started inside the join gesture all the same, so a share played later
+      // can wake it without one.
+      mixer.prepare();
+      const context = FakeAudioContext.latest!;
+      await vi.advanceTimersByTimeAsync(MIXER_REST_AFTER_MS);
+      expect(context.resume).toHaveBeenCalledOnce();
+      expect(context.state).toBe("suspended");
+      // Later gestures of the call leave the empty mixer resting.
+      mixer.prepare();
+      await expect(mixer.resume()).resolves.toBe(false);
+      expect(context.state).toBe("suspended");
+
+      const element = document.createElement("audio");
+      expect(mixer.attach("ada", { id: "screen" } as MediaStream, element, 100)).toBe(true);
+      await vi.advanceTimersByTimeAsync(0);
+      expect(context.state).toBe("running");
+      // A stream replaced on the strip leaves it empty for no time at all.
+      expect(mixer.attach("ada", { id: "screen-2" } as MediaStream, element, 100)).toBe(true);
+      await vi.advanceTimersByTimeAsync(MIXER_REST_AFTER_MS);
+      expect(context.state).toBe("running");
+      expect(context.suspend).toHaveBeenCalledOnce();
+
+      mixer.remove("ada");
+      await vi.advanceTimersByTimeAsync(MIXER_REST_AFTER_MS);
+      expect(context.state).toBe("suspended");
+      mixer.dispose();
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it("runs a local playback sample through the same receiver strip", () => {

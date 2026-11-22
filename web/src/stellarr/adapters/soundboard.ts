@@ -271,16 +271,7 @@ export function createSoundboardAdapter(
 
     async preview(sound) {
       audio.prepare();
-      await audio.schedule(
-        {
-          playbackId: `preview:${sound.id}`,
-          channelId: "",
-          triggeredByUserId: "",
-          startsAtUnixMs: Date.now(),
-          sound,
-        },
-        0,
-      );
+      await audio.audition(sound);
     },
 
     async create(input) {
