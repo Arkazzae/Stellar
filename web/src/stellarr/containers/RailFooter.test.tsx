@@ -40,17 +40,35 @@ describe("RailVoiceDock", () => {
     expect(stubs.ui.leaveCall).toHaveBeenCalledTimes(1);
   });
 
-  it("stores the next noise suppression mode in the voice settings", async () => {
+  it("stores a choice from the microphone menu in the voice settings", async () => {
     const user = userEvent.setup();
     render(<RailVoiceDock />);
 
-    await user.click(
-      screen.getByRole("button", { name: "Tłumienie: wyłączone. Następne: RNNoise." }),
-    );
+    await user.click(screen.getByRole("button", { name: "Jakość i ustawienia mikrofonu" }));
+    await user.click(screen.getByRole("radio", { name: "Speex" }));
 
     expect(stubs.ports.voiceSettings.update).toHaveBeenCalledWith({
-      noiseSuppression: "rnnoise",
+      noiseSuppression: "speex",
     });
+  });
+
+  it("folds down to its status line while the call's view is on screen", () => {
+    const controls = () => screen.queryByRole("button", { name: "Mikrofon" });
+    const views: [Parameters<typeof setStubs>[0]["ui"], boolean][] = [
+      [{ space: "server", roomView: "text", inConversationCall: false }, false],
+      [{ space: "server", roomView: "voice", inConversationCall: false }, true],
+      // In a conversation the channel's stage is not on screen, whatever the
+      // server side last showed.
+      [{ space: "dm", roomView: "voice", inConversationCall: false }, false],
+      [{ space: "dm", roomView: "text", inConversationCall: true }, true],
+    ];
+    for (const [ui, folded] of views) {
+      setStubs({ ui });
+      const { unmount } = render(<RailVoiceDock />);
+      expect(controls() === null).toBe(folded);
+      expect(screen.getByRole("button", { name: "Rozłącz" })).toBeInTheDocument();
+      unmount();
+    }
   });
 });
 

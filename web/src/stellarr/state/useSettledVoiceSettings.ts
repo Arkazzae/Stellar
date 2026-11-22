@@ -4,11 +4,10 @@ import type { VoiceSettings } from "@/ports";
 
 /**
  * How long a noise suppression mode has to stay chosen before the audio
- * follows it. The call's noise button steps through all five modes, so
- * reaching Speex passes RNNoise and GTCRN on the way, and arrow keys do the
- * same in the settings; each mode passed would otherwise reopen the
- * microphone and start a download of its own, RNNoise's several megabytes
- * among them.
+ * follows it. Arrow keys step through the modes in the settings and in the
+ * microphone menu, so reaching Speex passes RNNoise and GTCRN on the way; each
+ * mode passed would otherwise reopen the microphone and start a download of
+ * its own, RNNoise's several megabytes among them.
  */
 export const NOISE_SETTLE_MS = 700;
 
