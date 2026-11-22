@@ -308,8 +308,8 @@ public static class RoleEndpoints
         }
 
         IReadOnlyList<ServerRole> wanted = role.Id == baseRole.Id ? [] : [role];
-        // As before members held several roles, the role named and the one
-        // the member ranks by are checked even when they do not change.
+        // As when every member held one role, the role named and the one the
+        // member ranks by are checked even when they stay.
         var checkedRoles = Diff(current, wanted).Append(member.Role).Append(role).DistinctBy(x => x.Id).ToArray();
         if (!await ServerAuthorization.CanChangeRolesAsync(db, actorId, member, checkedRoles, cancellationToken))
         {
