@@ -27,6 +27,35 @@ describe("VoiceAudioQualityRow", () => {
     expect(ticks).toEqual(["32", "64", "96", "128", "256"]);
   });
 
+  it("leaves the slider to the automatic quality while it is on, and keeps its stop when it goes off", () => {
+    const onChange = vi.fn();
+    render(
+      <VoiceAudioQualityRow settings={{ ...voiceSettings, opusProfile: "auto" }} onChange={onChange} />,
+    );
+
+    const automatic = screen.getByRole("switch", { name: "Automatycznie" });
+    expect(automatic).toBeChecked();
+    expect(slider()).toBeDisabled();
+    expect(slider()).toHaveValue("3");
+    expect(slider()).toHaveAttribute("aria-valuetext", "Automatycznie, do 128 kb/s");
+    expect(screen.getByText("Dobiera się do łącza, od 128 kb/s w dół.")).toBeInTheDocument();
+
+    fireEvent.click(automatic);
+    expect(onChange).toHaveBeenCalledWith({ opusProfile: "premium" });
+  });
+
+  it("turns the automatic quality back on from a fixed profile", () => {
+    const onChange = vi.fn();
+    render(<VoiceAudioQualityRow settings={voiceSettings} onChange={onChange} />);
+
+    const automatic = screen.getByRole("switch", { name: "Automatycznie" });
+    expect(automatic).not.toBeChecked();
+    expect(slider()).toBeEnabled();
+    fireEvent.click(automatic);
+
+    expect(onChange).toHaveBeenCalledWith({ opusProfile: "auto" });
+  });
+
   it("changes the profile the encoder uses", () => {
     const onChange = vi.fn();
     render(<VoiceAudioQualityRow settings={voiceSettings} onChange={onChange} />);
