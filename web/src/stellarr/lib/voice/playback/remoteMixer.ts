@@ -60,7 +60,20 @@ export interface StripProcessing {
 export interface RemoteVoiceMixerDeps {
   /** Inserts a suppressor worklet; injectable so tests need no WASM. */
   attach?: typeof attachSuppressor;
+  /**
+   * Suspend the context while no strip is mounted. For a mixer that is empty
+   * most of a call, like the one for shared screens: a running context
+   * renders silence 375 times a second and holds an output stream open.
+   */
+  restWhenEmpty?: boolean;
 }
+
+/**
+ * How long an emptied mixer keeps running. A stream replaced on the same
+ * strip leaves it empty only for a moment, and its last blocks are still on
+ * their way to the speaker.
+ */
+export const MIXER_REST_AFTER_MS = 1000;
 
 type AudioContextCtor = typeof AudioContext;
 
@@ -90,6 +103,10 @@ export class RemoteVoiceMixer {
   private profile: PlaybackProfileId;
   private tuning: PlaybackTuning;
   private readonly attachSuppressorNode: typeof attachSuppressor;
+  private readonly restWhenEmpty: boolean;
+  /** The context has run once, so it can be woken again without a gesture. */
+  private unlocked = false;
+  private restTimer: ReturnType<typeof setTimeout> | null = null;
 
   constructor(
     profile: PlaybackProfileId,
@@ -103,6 +120,7 @@ export class RemoteVoiceMixer {
         PLAYBACK_TUNING_PRESETS[profile === "custom" ? "studio" : profile]),
     };
     this.attachSuppressorNode = deps.attach ?? attachSuppressor;
+    this.restWhenEmpty = deps.restWhenEmpty ?? false;
   }
 
   /**
@@ -111,10 +129,26 @@ export class RemoteVoiceMixer {
    * Remote tracks arrive well after the click that joined a call. Chromium and
    * Brave are allowed to create an AudioContext then but may leave it suspended,
    * which produces a perfectly healthy RTP connection with silent playback.
+   *
+   * A mixer that rests while empty is started once all the same, so that a
+   * strip mounted later wakes it without a gesture; after that an empty one
+   * is left resting, or every key press of the call would wake it.
    */
   prepare(): void {
     const context = this.ensureContext();
-    if (context?.state === "suspended") void context.resume().catch(() => undefined);
+    if (!context) return;
+    if (!this.restWhenEmpty) {
+      if (context.state === "suspended") void context.resume().catch(() => undefined);
+      return;
+    }
+    if (this.unlocked && (this.strips.size === 0 || context.state !== "suspended")) return;
+    void context.resume().then(
+      () => {
+        if ((context.state as AudioContextState) === "running") this.unlocked = true;
+        this.restIfEmpty();
+      },
+      () => undefined,
+    );
   }
 
   /**
@@ -236,6 +270,8 @@ export class RemoteVoiceMixer {
     if (!context) return false;
     if (context.state === "running") return true;
     if (context.state === "closed") return false;
+    // Resting, not stuck: the next strip wakes it.
+    if (this.restWhenEmpty && this.strips.size === 0) return false;
     try {
       await context.resume();
     } catch {
@@ -250,9 +286,11 @@ export class RemoteVoiceMixer {
     if (!strip) return;
     this.strips.delete(participantId);
     strip.release();
+    this.restIfEmpty();
   }
 
   dispose(): void {
+    this.stopRestTimer();
     for (const strip of this.strips.values()) strip.release();
     this.strips.clear();
     const context = this.context;
@@ -284,8 +322,26 @@ export class RemoteVoiceMixer {
     }
 
     this.strips.set(participantId, strip);
+    this.stopRestTimer();
     if (context.state === "suspended") void context.resume().catch(() => undefined);
     return true;
+  }
+
+  /** Suspends an empty mixer a moment from now, unless a strip comes first. */
+  private restIfEmpty(): void {
+    if (!this.restWhenEmpty || this.strips.size > 0) return;
+    this.stopRestTimer();
+    this.restTimer = setTimeout(() => {
+      this.restTimer = null;
+      const context = this.context;
+      if (!context || context.state === "closed" || this.strips.size > 0) return;
+      void context.suspend().catch(() => undefined);
+    }, MIXER_REST_AFTER_MS);
+  }
+
+  private stopRestTimer(): void {
+    if (this.restTimer !== null) clearTimeout(this.restTimer);
+    this.restTimer = null;
   }
 
   private ensureContext(): AudioContext | null {
