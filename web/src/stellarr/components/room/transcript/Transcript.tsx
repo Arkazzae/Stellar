@@ -22,6 +22,8 @@ import { useTranscriptScroll } from "./useTranscriptScroll";
 
 export type { TranscriptSectionVM } from "./transcriptRows";
 
+const NO_SECTIONS: TranscriptSectionVM[] = [];
+
 export interface TranscriptProps {
   sections: TranscriptSectionVM[];
   /** Region name, e.g. "Messages in #general". */
@@ -93,6 +95,11 @@ export interface TranscriptProps {
    * to scroll to yet.
    */
   onJumpReady?(jumpTo: (messageId: string) => void): void;
+  /**
+   * Something else is shown over the transcript, as the call's stage is over
+   * the channel's. It has no box then, and is not measured to find that out.
+   */
+  covered?: boolean;
 }
 
 /**
@@ -228,11 +235,17 @@ function ReadyTranscript({
   hasOlder = false,
   loadingOlder = false,
   onJumpReady,
+  covered,
 }: Omit<TranscriptProps, "loading">) {
   const t = translation?.t ?? translateForDocument;
+  // An empty list is one list, however it is handed over. The closed thread
+  // panel is given a fresh one with every render of the room, during a call
+  // with every ring that lights, and each would run the scroll keeping again
+  // and lay the page out for it.
+  const listed = sections.length === 0 ? NO_SECTIONS : sections;
   const rows = useMemo(
-    () => toRows(sections, firstUnreadGroupId),
-    [sections, firstUnreadGroupId],
+    () => toRows(listed, firstUnreadGroupId),
+    [listed, firstUnreadGroupId],
   );
   const tail = useMemo(() => messageTail(rows), [rows]);
 
@@ -240,6 +253,7 @@ function ReadyTranscript({
     rows,
     tail,
     followOwnSend,
+    covered,
   });
   const loadOlder = useOlderHistory({
     scroller: scrollerRef,

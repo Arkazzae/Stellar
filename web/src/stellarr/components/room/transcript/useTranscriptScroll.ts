@@ -66,12 +66,19 @@ interface Keeper {
 }
 
 /**
+ * Scrollers whose room has said they are covered, by the call's stage. Asking
+ * one for its height after a commit would lay the page out only to learn that
+ * it has none, and behind a call commits come with every ring that lights.
+ */
+const coveredScrollers = new WeakSet<HTMLElement>();
+
+/**
  * Behind a call the channel's transcript stays mounted with no box. Everything
  * measures zero then, and taking those numbers as the reader's place would
  * lose the place it has to come back to.
  */
 function shown(scroller: HTMLElement): boolean {
-  return scroller.clientHeight > 0;
+  return !coveredScrollers.has(scroller) && scroller.clientHeight > 0;
 }
 
 function rowElement(keeper: Keeper, content: HTMLElement, id: string): Element | null {
@@ -174,6 +181,8 @@ interface Options {
   tail: MessageTail;
   /** Changes when the reader sends something of their own. */
   followOwnSend: number | undefined;
+  /** The room shows something else over the transcript, which has no box then. */
+  covered?: boolean;
 }
 
 /**
@@ -182,7 +191,7 @@ interface Options {
  * end, at the end for anything they send themselves, and on the row they are
  * reading when anything above it changes.
  */
-export function useTranscriptScroll({ rows, tail, followOwnSend }: Options) {
+export function useTranscriptScroll({ rows, tail, followOwnSend, covered = false }: Options) {
   const scrollerRef = useRef<HTMLDivElement>(null);
   const contentRef = useRef<HTMLDivElement>(null);
   const keeper = useRef<Keeper>({
@@ -211,6 +220,16 @@ export function useTranscriptScroll({ rows, tail, followOwnSend }: Options) {
     state.atBottom = bottom;
     setAtBottom(bottom);
   }, []);
+
+  // Ahead of the effects that measure, so they know in the same commit.
+  useLayoutEffect(() => {
+    const scroller = scrollerRef.current;
+    if (scroller === null || !covered) return;
+    coveredScrollers.add(scroller);
+    return () => {
+      coveredScrollers.delete(scroller);
+    };
+  }, [covered]);
 
   useLayoutEffect(() => {
     const scroller = scrollerRef.current;
