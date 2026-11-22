@@ -3,7 +3,7 @@ import { useSyncExternalStore } from "react";
 import { DmCallView } from "@/components/friends/DmCallView";
 import type { CallVM, PersonVM } from "@/components/view-models";
 import { VoiceControlBar } from "@/components/voice/VoiceControlBar";
-import { CALL_HEADLINE } from "@/components/voice/VoiceDock";
+import { CALL_STATUS } from "@/components/voice/VoiceDock";
 import type { MessageKey } from "@/i18n";
 import {
   useFriends,
@@ -70,7 +70,11 @@ export function DmCallContainer({ fullscreenTarget }: DmCallContainerProps) {
 
   const { call } = voice;
   const statusKey: MessageKey | null =
-    call === null ? "shell.voiceConnecting" : NOT_UP.has(call.headline) ? CALL_HEADLINE[call.headline] : null;
+    call === null
+      ? "shell.voiceConnecting"
+      : call.headline !== "connected" && NOT_UP.has(call.headline)
+        ? CALL_STATUS[call.headline].words
+        : null;
   const openDeviceSettings = () => ui.openModal("voice");
 
   return (

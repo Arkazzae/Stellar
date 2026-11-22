@@ -391,65 +391,6 @@
     .ch-threads-toggle,.channel-threads,.channel-thread{transition:none}
     .rail-scroll [data-drag],.rail-scroll [data-settling]{transition:none}
   }
-  /* ---------- „coś trwa na kanale" ---------- */
-  .dock-item{
-    display:flex;align-items:center;gap:9px;width:100%;text-align:left;
-    padding:6px 4px 6px 8px;border-radius:var(--radius-md);
-    transition:background var(--dur-fast) var(--ease-standard);
-  }
-  .dock-item.act:hover{background:var(--surface-raised)}
-  .dock-item.clickable{cursor:pointer}
-  .dock-item.clickable:hover{background:var(--surface-raised)}
-  .di-ico{width:32px;height:32px;flex:none;display:inline-flex;align-items:center;justify-content:center;color:var(--live)}
-  .di-txt{min-width:0;flex:1;display:flex;flex-direction:column;line-height:1.3}
-  .di-txt b{font-size:var(--text-13);font-weight:600;color:var(--text);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-  .di-txt b:has(.voice-connection-quality){display:flex;align-items:baseline;gap:6px}
-  .di-txt b > span:first-child{min-width:0;overflow:hidden;text-overflow:ellipsis}
-  .di-txt b.ok{color:var(--live)}
-  /* A qualifier, set below the thing it qualifies. It read heavier than
-     "Połączono" itself — the headline was the status and the diagnostics were
-     what caught the eye. Only a quality worth acting on takes a colour. */
-  .voice-connection-quality{
-    flex:none;font-size:var(--text-11);font-weight:500;font-variant-numeric:tabular-nums;
-    color:var(--text-faint)
-  }
-  .voice-connection-quality.good{color:var(--text-faint)}
-  .voice-connection-quality.fair{color:var(--warning-text,var(--text-muted))}
-  .voice-connection-quality.poor{color:var(--danger-text)}
-  .di-txt span{font-size:var(--text-11);color:var(--text-faint);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-  /* Where you are, in one line: the Activity, then the call, then how long.
-     The Activity leads because it is the part that changes and the part the
-     rest of the interface cannot show you once you leave the stage. */
-  .di-where{display:flex;align-items:baseline;gap:4px}
-  .di-where i{flex:none;font-style:normal;color:var(--text-faint);opacity:.65}
-  .di-where time{flex:none;font-variant-numeric:tabular-nums}
-  .di-channel{min-width:0;overflow:hidden;text-overflow:ellipsis}
-  .di-btn{
-    width:28px;height:28px;border-radius:50%;flex:none;color:var(--text-faint);
-    display:inline-flex;align-items:center;justify-content:center;
-    transition:background var(--dur-fast) var(--ease-standard), color var(--dur-fast) var(--ease-standard);
-  }
-  .di-btn:hover{background:var(--surface-raised);color:var(--text)}
-  .di-btn.noise.rnnoise{color:var(--accent-text)}
-  .di-btn.noise.browser{color:var(--info-text)}
-  .di-btn.noise.off{color:var(--text-faint)}
-  /* The chosen engine downloading: the ring runs round the button's own edge
-     and the mark steps back inside it, so neither touches the other and the
-     button keeps its size. */
-  .di-btn.noise{position:relative}
-  .di-btn.noise .progress-ring{position:absolute;inset:0}
-  .di-btn.noise .noise-icon{transition:transform var(--dur-base) var(--ease-standard)}
-  .di-btn.noise.downloading .noise-icon{transform:scale(0.78)}
-  @media (prefers-reduced-motion: reduce){
-    .di-btn.noise .noise-icon{transition:none}
-  }
-  .di-btn.danger:hover{background:var(--danger-soft);color:var(--danger-text)}
-  .dock-item.act:hover .di-btn.ghost{color:var(--text)}
-  .dock-sep{display:none}
-  .live-dot{
-    width:6px;height:6px;border-radius:50%;background:var(--live);flex:none;
-    box-shadow:0 0 0 3px var(--live-glow);
-  }
   .meter{display:inline-flex;gap:2px;align-items:flex-end;height:10px;margin-left:auto}
   .meter i{width:3px;background:var(--line-strong);border-radius:1px;height:3px;transition:height 120ms var(--ease-standard), background 120ms var(--ease-standard)}
   .speaking .meter i{background:var(--accent)}
@@ -461,7 +402,74 @@
   @keyframes lvl3{0%,100%{height:5px}60%{height:10px}}
 
   /* ---------- VOICE DOCK ---------- */
-  .voice-dock{border-top:1px solid var(--line-subtle);padding:10px 12px;flex:none;position:relative}
+  /* One block: a status line, then the call's controls in the bar's groups.
+     With the call's own view on screen it keeps the status line alone. */
+  .voice-dock{
+    border-top:1px solid var(--line-subtle);padding:10px 10px 10px 12px;flex:none;position:relative;
+    display:flex;flex-direction:column;gap:10px;
+    animation:viewIn var(--dur-slow) var(--ease-standard);
+  }
+  .voice-dock.hidden{display:none}
+  /* The link's quality as the logo's three bars; words only when something is
+     wrong, in place of the time. */
+  .dock-status{display:flex;align-items:center;gap:8px;min-width:0}
+  .qbars{--qoff:var(--line);display:inline-flex;align-items:center;gap:2.5px;width:18px;height:16px;flex:none}
+  [data-scheme="light"] .qbars{--qoff:color-mix(in oklab,var(--line-strong) 45%,transparent)}
+  .qbars i{display:block;width:4px;border-radius:2px;background:var(--qoff)}
+  .qbars i:nth-child(1){height:9px}
+  .qbars i:nth-child(2){height:16px}
+  .qbars i:nth-child(3){height:12px}
+  .qbars.q3 i{background:var(--live)}
+  .qbars.q2 i:nth-child(-n+2){background:var(--warn-text)}
+  .qbars.q1 i:nth-child(1){background:var(--danger-text)}
+  .qbars.busy i{background:var(--text-faint);opacity:.55}
+  .qbars.busy i:nth-child(2){opacity:1}
+  .qbars.screen i{background:var(--accent-text)}
+  .ds-name{
+    flex:1;min-width:0;font-size:13.5px;font-weight:600;color:var(--text);
+    white-space:nowrap;overflow:hidden;text-overflow:ellipsis;
+  }
+  .ds-time{margin-left:auto;flex:none;font-size:var(--text-12);color:var(--text-faint);font-variant-numeric:tabular-nums;white-space:nowrap}
+  .ds-time.busy{color:var(--text-muted)}
+  .ds-time.warn{color:var(--warn-text)}
+  .ds-time.bad{color:var(--danger-text)}
+  .ds-time.acc{color:var(--accent-text);font-weight:550}
+  /* Your screen is out: the whole status leads back to the channel. */
+  .ds-link{
+    flex:1;min-width:0;display:flex;align-items:center;gap:8px;cursor:pointer;
+    margin:-5px 0 -5px -6px;padding:5px 6px;border-radius:10px;background:var(--surface-hover);
+    transition:background var(--dur-fast) var(--ease-standard);
+  }
+  .ds-link:hover{background:var(--surface-overlay)}
+  .ds-arrow{flex:none;color:var(--accent-text)}
+  .dock-hang{
+    width:32px;height:32px;flex:none;border-radius:10px;
+    display:inline-flex;align-items:center;justify-content:center;
+    background:var(--danger-soft);color:var(--danger-text);
+    transition:background var(--dur-fast) var(--ease-standard);
+  }
+  .dock-hang:hover{background:color-mix(in srgb, var(--danger-soft), var(--danger-text) 14%)}
+  /* The call bar's groups as joined pills: what you say and hear, what you show. */
+  .dock-ctrl{display:flex;align-items:center;justify-content:space-between;gap:8px}
+  .dock-grp{
+    display:inline-flex;align-items:center;height:34px;padding:0 2px;
+    border-radius:12px;background:var(--surface-pop);border:1px solid var(--line);
+  }
+  .dock-btn{
+    flex:none;width:34px;height:30px;border-radius:9px;
+    display:inline-flex;align-items:center;justify-content:center;color:var(--text-muted);
+    transition:background var(--dur-fast) var(--ease-standard), color var(--dur-fast) var(--ease-standard);
+  }
+  .dock-btn:hover,
+  .dock-btn[aria-expanded="true"]{background:var(--surface-overlay);color:var(--text)}
+  .dock-btn.muted{background:var(--danger-soft);color:var(--danger-text)}
+  .dock-btn.on{background:var(--accent);color:var(--on-accent)}
+  .dock-caret{width:16px;margin-left:-4px;color:var(--text-faint)}
+  .dock-caret .caret-icon{transition:transform var(--dur-base) var(--ease-standard)}
+  .dock-caret[aria-expanded="true"] .caret-icon{transform:rotate(180deg)}
+  @media (prefers-reduced-motion:reduce){
+    .dock-caret .caret-icon{transition:none}
+  }
   .dock-pop{
     position:absolute;left:12px;right:12px;bottom:calc(100% - 6px);z-index:40;
     background:var(--surface-raised);border:1px solid var(--line);
@@ -487,20 +495,10 @@
   }
   /* In the dock: the rail's width, over the dock's top edge, as the account
      panel sits over its row. The bar places its own (`voice.css`). */
-  .voice-dock .dock-pop.board{left:0;right:0;bottom:calc(100% - 6px)}
+  .voice-dock .dock-pop:is(.board,.mic-menu){left:0;right:0;bottom:calc(100% - 6px)}
   @media (prefers-reduced-motion:reduce){
     .dock-pop.board,.dock-pop.vc-menu{animation:none}
   }
-  .dp-row{
-    width:100%;display:flex;align-items:center;gap:9px;
-    padding:8px;border-radius:var(--radius-md);font-size:var(--text-13);color:var(--text-muted);text-align:left;
-    transition:background var(--dur-fast) var(--ease-standard), color var(--dur-fast) var(--ease-standard);
-  }
-  .dp-row:hover{background:var(--surface-overlay);color:var(--text)}
-  .dp-row.on{color:var(--accent-text)}
-  .dp-ico{display:inline-flex;flex:none}
-  .dp-state{margin-left:auto;font-size:var(--text-11);color:var(--text-faint)}
-  .dp-row.on .dp-state{color:var(--accent-text)}
   /* ---------- The soundboard panel: in the dock, in the bar, in the phone's menu ---------- */
   .sb-panel{display:flex;flex-direction:column}
   .sb-head{display:flex;align-items:center;gap:8px;min-height:36px;padding:2px 2px 2px 8px}
@@ -574,39 +572,6 @@
   .sb-row svg{flex:none;color:var(--text-faint)}
   .sb-row:hover{background:var(--surface-overlay);color:var(--text)}
   .sb-head-btn:focus-visible,.sb-row:focus-visible{outline:2px solid var(--accent);outline-offset:-2px}
-  .voice-dock.hidden{display:none}
-  .dock-card{
-    background:none;border:none;padding:0;
-    display:flex;flex-direction:column;gap:8px;
-    animation:viewIn var(--dur-slow) var(--ease-standard);
-  }
-  .dock-head{display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:2px}
-  .dock-name{
-    display:flex;align-items:center;gap:7px;
-    font-size:var(--text-13);color:var(--text-muted);line-height:1.2;min-width:0;
-    white-space:nowrap;overflow:hidden;text-overflow:ellipsis;
-  }
-  .dock-name b{font-weight:600;color:var(--text)}
-  /* rząd ikon w sidebarze w tej samej czarnej pigułce co pasek w głównym widoku */
-  .dock-row{
-    display:flex;align-items:center;justify-content:space-between;gap:4px;
-    background:var(--surface-pop);
-    border:1px solid var(--line);
-    border-radius:16px;padding:4px 6px;
-  }
-  .dpill{
-    flex:none;width:34px;height:34px;border-radius:12px;
-    border:1px solid transparent;background:none;
-    font-size:var(--text-12);font-weight:550;color:var(--text-muted);
-    display:inline-flex;align-items:center;justify-content:center;gap:6px;
-    transition:background var(--dur-fast) var(--ease-standard), border-color var(--dur-fast) var(--ease-standard), color var(--dur-fast) var(--ease-standard);
-  }
-  /* An open panel's trigger looks pressed, as in the call's bar. */
-  .dpill:hover,
-  .dpill[aria-expanded="true"]{background:var(--surface-overlay);color:var(--text)}
-  .dpill.icon{padding:0}
-  .dpill.muted{color:var(--danger-text);background:var(--danger-soft)}
-  .dpill.on{background:var(--accent);border-color:var(--accent);color:var(--on-accent)}
 
   /* ---------- ACCOUNT ROW ---------- */
   /* `position` for the panel that slides out of it — `.acc-pop` in
@@ -621,19 +586,19 @@
   .account .who span{font-size:var(--text-12);color:var(--text-faint);line-height:1.3}
 
   @media (pointer:coarse){
-    /* The dock remains reachable from the mobile navigation drawer. Give its
-       inline controls full finger targets, then reflow the five call toggles
-       into a centred 3 + 2 grid instead of squeezing them into one row. */
-    .di-btn{width:44px;height:44px}
-    .dock-row{
-      display:grid;grid-template-columns:repeat(6,minmax(0,1fr));gap:4px;
+    /* The dock lives in the mobile navigation drawer too. Finger-sized
+       targets do not fit both groups on one line, so each group takes a line
+       of its own and its buttons share it. */
+    .dock-hang{width:44px;height:44px}
+    .dock-ctrl{flex-wrap:wrap}
+    .dock-grp{flex:1 1 100%;height:auto;padding:2px}
+    .dock-btn{flex:1;width:auto;height:44px}
+    .dock-caret{flex:none;width:44px;margin-left:0}
+    /* Two lines of controls and the account row take about 260px below the
+       menu, so it scrolls inside what is left above them. */
+    .voice-dock .dock-pop.mic-menu{
+      max-height:calc(100dvh - 280px - env(safe-area-inset-top) - env(safe-area-inset-bottom));
     }
-    .dock-row .dpill{grid-column:span 2;width:100%;height:44px}
-    .dock-row > .dpill:nth-of-type(4){grid-column:2 / span 2}
-    .dock-row > .dpill:nth-of-type(5){grid-column:4 / span 2}
-    /* A private call has no soundboard: the fourth sits alone, centred. */
-    .dock-row > .dpill:nth-of-type(4):last-child{grid-column:3 / span 2}
-    .dp-row{min-height:44px}
     .sb-grid{--sb-pad:44px}
     .sb-head-btn{width:44px;height:44px}
     .sb-search{height:44px}
