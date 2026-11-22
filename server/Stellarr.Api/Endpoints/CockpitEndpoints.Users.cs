@@ -30,8 +30,7 @@ public static partial class CockpitEndpoints
             .Where(x => x.ServerId == serverId)
             .OrderBy(x => x.Position)
             .ToArrayAsync(cancellationToken);
-        var memberCounts = members.GroupBy(x => x.RoleId)
-            .ToDictionary(group => group.Key, group => group.Count());
+        var held = await HeldRoles.LoadAsync(db, serverId, cancellationToken);
 
         return Results.Ok(new CockpitUsersDto(
             members.Select(member => new CockpitUserDto(
@@ -48,7 +47,7 @@ public static partial class CockpitEndpoints
                 member.User.IsDisabled,
                 member.JoinedAt,
                 member.User.CreatedAt)).ToArray(),
-            roles.Select(role => role.ToCockpitDto(memberCounts.GetValueOrDefault(role.Id))).ToArray(),
+            roles.Select(role => role.ToCockpitDto(held.CountHolders(role.Id))).ToArray(),
             SessionRegistryAvailable: true));
     }
 
@@ -98,6 +97,7 @@ public static partial class CockpitEndpoints
             });
         }
 
+        var baseRole = await ServerAccess.FindMemberRoleAsync(db, server.Id, cancellationToken);
         var now = DateTime.UtcNow;
         var id = Guid.NewGuid();
         db.Users.Add(new User
@@ -112,13 +112,13 @@ public static partial class CockpitEndpoints
             AvatarColor = $"oklch(0.58 0.14 {(uint)id.GetHashCode() % 360})",
             CreatedAt = now,
         });
-        db.ServerMembers.Add(new ServerMember
+        MemberRoles.Admit(db, new ServerMember
         {
             ServerId = server.Id,
             UserId = id,
             RoleId = role.Id,
             JoinedAt = now,
-        });
+        }, isBaseRole: role.Id == baseRole?.Id);
         await StageAuditAsync(
             db,
             server.Id,
@@ -164,7 +164,16 @@ public static partial class CockpitEndpoints
             return Results.Conflict();
         }
 
-        member.RoleId = role.Id;
+        if (await ServerAccess.FindMemberRoleAsync(db, server.Id, cancellationToken) is not { } baseRole)
+        {
+            return Results.Problem(
+                statusCode: StatusCodes.Status503ServiceUnavailable,
+                title: messages.Get(MessageKey.ServerHasNoMemberRole));
+        }
+
+        // As in the role editor of a client that knows one role per member:
+        // exactly this role, or the base role alone.
+        await MemberRoles.SetAsync(db, member, role.Id == baseRole.Id ? [] : [role], baseRole, cancellationToken);
         await StageAuditAsync(
             db,
             server.Id,
@@ -172,7 +181,7 @@ public static partial class CockpitEndpoints
             messages.Get(MessageKey.AuditRoleChanged, ("name", member.User.DisplayName), ("role", role.Name)),
             cancellationToken);
         await db.SaveChangesAsync(cancellationToken);
-        await RoleEndpoints.NotifyAsync(hub, server.Id, [userId], role.Permissions, cancellationToken);
+        await RoleEndpoints.NotifyAsync(hub, db, server.Id, [userId], cancellationToken);
         return Results.NoContent();
     }
 
@@ -336,12 +345,9 @@ public static partial class CockpitEndpoints
             return Results.Conflict();
         }
 
-        var holders = await db.ServerMembers.AsNoTracking()
-            .Where(x => x.RoleId == role.Id)
-            .Select(x => x.UserId)
-            .ToArrayAsync(cancellationToken);
-        await RoleEndpoints.NotifyAsync(hub, server.Id, holders, role.Permissions, cancellationToken);
-        return Results.Ok(role.ToCockpitDto(holders.Length));
+        var held = await HeldRoles.LoadAsync(db, server.Id, cancellationToken);
+        await RoleEndpoints.NotifyAsync(hub, db, server.Id, held.Holders(role.Id), cancellationToken);
+        return Results.Ok(role.ToCockpitDto(held.CountHolders(role.Id)));
     }
 
     private static bool IsValidNewAccount(string username, string displayName, string? email, string? password) =>

@@ -12,11 +12,17 @@ public sealed class StellarrServer
     public bool SoundboardRateLimited { get; set; } = true;
 }
 
-/// <summary>Membership of one user on one server, with its single effective role.</summary>
+/// <summary>
+/// Membership of one user on one server. The roles the member holds are rows
+/// of <see cref="ServerMemberRole"/>; <see cref="RoleId"/> is the highest of
+/// them, which ranks the member, or the base role when they hold none.
+/// </summary>
 public sealed class ServerMember
 {
     public Guid ServerId { get; set; }
     public Guid UserId { get; set; }
+
+    /// <summary>The member's top role: the highest role they hold, or the base role.</summary>
     public Guid RoleId { get; set; }
 
     /// <summary>
@@ -28,6 +34,18 @@ public sealed class ServerMember
     public DateTime JoinedAt { get; set; }
     public User User { get; set; } = null!;
     public ServerRole Role { get; set; } = null!;
+}
+
+/// <summary>
+/// One role a member holds. The base role, which every member holds, has no
+/// row; the owner role has one, for the owner only. The rows go with the
+/// membership, so somebody who leaves and comes back holds nothing.
+/// </summary>
+public sealed class ServerMemberRole
+{
+    public Guid ServerId { get; set; }
+    public Guid UserId { get; set; }
+    public Guid RoleId { get; set; }
 }
 
 public sealed class ServerAdminSettings

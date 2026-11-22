@@ -30,3 +30,20 @@ internal sealed class PermissionOverrideConfiguration : IEntityTypeConfiguration
             .OnDelete(DeleteBehavior.Cascade);
     }
 }
+
+/// <remarks>
+/// <c>MemberPermissionsSchema</c> creates the same table in a database that
+/// predates it; a change here belongs there too.
+/// </remarks>
+internal sealed class MemberPermissionOverrideConfiguration : IEntityTypeConfiguration<MemberPermissionOverride>
+{
+    public void Configure(EntityTypeBuilder<MemberPermissionOverride> entity)
+    {
+        entity.HasKey(x => x.Id);
+        entity.HasIndex(x => new { x.TargetType, x.TargetId, x.UserId }).IsUnique();
+        entity.Property(x => x.AllowMask).HasConversion<long>();
+        entity.Property(x => x.DenyMask).HasConversion<long>();
+        entity.HasOne<ServerMember>().WithMany().HasForeignKey(x => new { x.ServerId, x.UserId })
+            .OnDelete(DeleteBehavior.Cascade);
+    }
+}

@@ -35,6 +35,7 @@ public sealed class AppDbContext(DbContextOptions<AppDbContext> options) : DbCon
     public DbSet<SoundboardSound> SoundboardSounds => Set<SoundboardSound>();
     public DbSet<ServerRole> ServerRoles => Set<ServerRole>();
     public DbSet<ServerMember> ServerMembers => Set<ServerMember>();
+    public DbSet<ServerMemberRole> ServerMemberRoles => Set<ServerMemberRole>();
     public DbSet<ServerBan> ServerBans => Set<ServerBan>();
     public DbSet<ServerInvite> ServerInvites => Set<ServerInvite>();
     public DbSet<ServerAuditEntry> ServerAuditEntries => Set<ServerAuditEntry>();
@@ -45,6 +46,7 @@ public sealed class AppDbContext(DbContextOptions<AppDbContext> options) : DbCon
     public DbSet<ChannelPostTime> ChannelPostTimes => Set<ChannelPostTime>();
     public DbSet<Section> Sections => Set<Section>();
     public DbSet<PermissionOverride> PermissionOverrides => Set<PermissionOverride>();
+    public DbSet<MemberPermissionOverride> MemberPermissionOverrides => Set<MemberPermissionOverride>();
     public DbSet<ServerEmoji> ServerEmoji => Set<ServerEmoji>();
     public DbSet<Message> Messages => Set<Message>();
     public DbSet<MessageChange> MessageChanges => Set<MessageChange>();

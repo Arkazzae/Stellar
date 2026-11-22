@@ -10,8 +10,9 @@ using Stellarr.Api.Realtime;
 namespace Stellarr.Api.Endpoints;
 
 /// <summary>
-/// The roles of a server and who holds them. Nobody can hand out, or take
-/// away, a power they do not have themselves.
+/// The roles of a server and who holds them. A member holds any number of
+/// roles besides the base role, which everybody holds. Nobody can hand out,
+/// or take away, a power they do not have themselves.
 /// </summary>
 public static class RoleEndpoints
 {
@@ -32,6 +33,7 @@ public static class RoleEndpoints
         admin.MapDelete("/roles/{roleId:guid}", DeleteRoleAsync).AddEndpointFilter<InstanceServerFreshSecondStepFilter>();
         admin.MapGet("/members", ListMembersAsync);
         admin.MapPatch("/members/{userId:guid}/role", AssignRoleAsync).AddEndpointFilter<InstanceServerFreshSecondStepFilter>();
+        admin.MapPut("/members/{userId:guid}/roles", SetRolesAsync).AddEndpointFilter<InstanceServerFreshSecondStepFilter>();
         return endpoints;
     }
 
@@ -41,9 +43,9 @@ public static class RoleEndpoints
         var roles = await db.ServerRoles.AsNoTracking()
             .Where(x => x.ServerId == serverId)
             .OrderBy(x => x.Position)
-            .Select(x => new { Role = x, Members = db.ServerMembers.Count(member => member.RoleId == x.Id) })
             .ToListAsync(cancellationToken);
-        return Results.Ok(roles.Select(x => x.Role.ToDto(x.Members)));
+        var held = await HeldRoles.LoadAsync(db, serverId, cancellationToken);
+        return Results.Ok(roles.Select(x => x.ToDto(held.CountHolders(x.Id))));
     }
 
     private static async Task<IResult> ListMembersAsync(
@@ -59,10 +61,12 @@ public static class RoleEndpoints
             .Where(x => x.ServerId == serverId)
             .OrderBy(x => x.User.DisplayName)
             .ToListAsync(cancellationToken);
+        var held = await HeldRoles.LoadAsync(db, serverId, cancellationToken);
         return Results.Ok(members.Select(x => new ServerMemberDto(
             x.User.ToDto(presence.PublicPresenceOf(x.UserId, viewerId)),
             x.RoleId.ToString(),
-            x.JoinedAt)));
+            x.JoinedAt,
+            held.Of(x.UserId).Select(role => role.Id.ToString()).ToArray())));
     }
 
     private static async Task<IResult> CreateRoleAsync(
@@ -198,10 +202,9 @@ public static class RoleEndpoints
         }
 
         await transaction.CommitAsync(cancellationToken);
-        var holders = db.ServerMembers.Where(x => x.RoleId == role.Id);
-        await NotifyAsync(hub, serverId, await holders.Select(x => x.UserId).ToListAsync(cancellationToken),
-            role.Permissions, cancellationToken);
-        return Results.Ok(role.ToDto(await holders.CountAsync(cancellationToken)));
+        var holders = await HeldRoles.LoadAsync(db, serverId, cancellationToken);
+        await NotifyAsync(hub, db, serverId, holders.Holders(role.Id), cancellationToken);
+        return Results.Ok(role.ToDto(holders.CountHolders(role.Id)));
     }
 
     private static async Task<IResult> DeleteRoleAsync(
@@ -232,7 +235,8 @@ public static class RoleEndpoints
             return Results.Conflict();
         }
 
-        // Its members fall back to the plain member role rather than to nothing.
+        // Its holders keep the other roles they hold, and the plain member
+        // role, rather than nothing.
         var fallback = await db.ServerRoles.AsNoTracking().SingleAsync(
             x => x.ServerId == serverId && x.IsSystem && !x.IsOwner, cancellationToken);
         if (!await ServerAuthorization.CanDeleteRoleAsync(db, http.User.RequireUserId(), role, fallback, cancellationToken))
@@ -240,10 +244,10 @@ public static class RoleEndpoints
             return Results.Forbid();
         }
 
-        var holders = await db.ServerMembers.Where(x => x.RoleId == role.Id)
-            .Select(x => x.UserId).ToListAsync(cancellationToken);
-        await db.ServerMembers.Where(x => x.RoleId == role.Id)
-            .ExecuteUpdateAsync(x => x.SetProperty(member => member.RoleId, fallback.Id), cancellationToken);
+        var holders = (await HeldRoles.LoadAsync(db, serverId, cancellationToken)).Holders(role.Id);
+        // The top role is moved off the role first: a member may not point at
+        // a role that is gone. The rows of those holding it go with the role.
+        await MemberRoles.RankAgainAsync(db, serverId, leaving: role.Id, cancellationToken);
         await db.ServerRoles.Where(x => x.Id == role.Id).ExecuteDeleteAsync(cancellationToken);
         await ServerAudit.StageAsync(db, serverId, http.User.RequireUserId(), new AuditEvent(
             "role.delete",
@@ -254,10 +258,15 @@ public static class RoleEndpoints
         await db.SaveChangesAsync(cancellationToken);
         await transaction.CommitAsync(cancellationToken);
 
-        await NotifyAsync(hub, serverId, holders, fallback.Permissions, cancellationToken);
+        await NotifyAsync(hub, db, serverId, holders, cancellationToken);
         return Results.NoContent();
     }
 
+    /// <summary>
+    /// Gives the member exactly one role, or none besides the base role when
+    /// the base role is named: what the role editor of a client that knows one
+    /// role per member asks for.
+    /// </summary>
     private static async Task<IResult> AssignRoleAsync(
         Guid userId,
         AssignRoleRequest request,
@@ -292,27 +301,133 @@ public static class RoleEndpoints
             return Results.Conflict();
         }
 
-        if (!await ServerAuthorization.CanAssignRoleAsync(db, actorId, member, role, cancellationToken))
+        var (current, baseRole) = await HeldRoles.OfMemberAsync(db, member, cancellationToken);
+        if (baseRole is null)
+        {
+            return NoMemberRole(messages);
+        }
+
+        IReadOnlyList<ServerRole> wanted = role.Id == baseRole.Id ? [] : [role];
+        // As before members held several roles, the role named and the one
+        // the member ranks by are checked even when they do not change.
+        var checkedRoles = Diff(current, wanted).Append(member.Role).Append(role).DistinctBy(x => x.Id).ToArray();
+        if (!await ServerAuthorization.CanChangeRolesAsync(db, actorId, member, checkedRoles, cancellationToken))
         {
             return Results.Forbid();
         }
 
-        if (member.RoleId != role.Id)
+        var removedBesidesTop = current.Where(x => x.Id != member.RoleId && x.Id != role.Id).ToArray();
+        if (member.RoleId != role.Id || removedBesidesTop.Length > 0)
         {
             await ServerAudit.StageAsync(db, serverId, actorId, new AuditEvent(
                 "member.role",
                 messages.Get(MessageKey.AuditRoleChanged, ("name", member.User.DisplayName), ("role", role.Name)),
                 "member", member.UserId, member.User.DisplayName,
-                [new AuditChange("role", member.Role.Name, role.Name, FromColor: member.Role.Color, ToColor: role.Color)]),
+                ServerAudit.Only(
+                    member.RoleId == role.Id
+                        ? null
+                        : new AuditChange("role", member.Role.Name, role.Name, FromColor: member.Role.Color, ToColor: role.Color),
+                    removedBesidesTop.Length == 0
+                        ? null
+                        : new AuditChange("roles", Removed: removedBesidesTop.Select(x => x.Name).ToArray()))),
                 cancellationToken);
         }
 
-        member.RoleId = role.Id;
+        await MemberRoles.SetAsync(db, member, wanted, baseRole, cancellationToken);
         await db.SaveChangesAsync(cancellationToken);
         await transaction.CommitAsync(cancellationToken);
-        await NotifyAsync(hub, serverId, [userId], role.Permissions, cancellationToken);
+        await NotifyAsync(hub, db, serverId, [userId], cancellationToken);
         return Results.NoContent();
     }
+
+    /// <summary>
+    /// Sets every role the member holds besides the base role, which nobody
+    /// needs to name. Each role given or taken away is checked as if it were
+    /// the only one.
+    /// </summary>
+    private static async Task<IResult> SetRolesAsync(
+        Guid userId,
+        SetMemberRolesRequest request,
+        HttpContext http,
+        AppDbContext db,
+        IHubContext<AppHub> hub,
+        Messages messages,
+        CancellationToken cancellationToken)
+    {
+        await using var transaction = await db.Database.BeginTransactionAsync(cancellationToken);
+        var serverId = http.RequireActiveServerId();
+        var actorId = http.User.RequireUserId();
+        var held = await ServerAccess.GetAsync(db, actorId, serverId, cancellationToken);
+        if (!held.HasFlag(ServerPrivileges.ManageMembers) || actorId == userId)
+        {
+            return Results.Forbid();
+        }
+
+        var member = await db.ServerMembers.Include(x => x.Role).Include(x => x.User).FirstOrDefaultAsync(
+            x => x.ServerId == serverId && x.UserId == userId, cancellationToken);
+        var ids = (request.RoleIds ?? []).Distinct().ToArray();
+        var roles = await db.ServerRoles.AsNoTracking()
+            .Where(x => x.ServerId == serverId && ids.Contains(x.Id))
+            .ToListAsync(cancellationToken);
+        if (member is null || roles.Count != ids.Length)
+        {
+            return Results.NotFound();
+        }
+
+        if (member.Role.IsOwner || roles.Any(x => x.IsOwner))
+        {
+            return Results.Conflict();
+        }
+
+        var (current, baseRole) = await HeldRoles.OfMemberAsync(db, member, cancellationToken);
+        if (baseRole is null)
+        {
+            return NoMemberRole(messages);
+        }
+
+        var wanted = roles.Where(x => x.Id != baseRole.Id).ToArray();
+        var changed = Diff(current, wanted);
+        if (!await ServerAuthorization.CanChangeRolesAsync(db, actorId, member, changed, cancellationToken))
+        {
+            return Results.Forbid();
+        }
+
+        if (changed.Length == 0)
+        {
+            return Results.NoContent();
+        }
+
+        var top = HeldRoles.Top(wanted, baseRole);
+        await ServerAudit.StageAsync(db, serverId, actorId, new AuditEvent(
+            "member.role",
+            messages.Get(MessageKey.AuditRolesChanged, ("name", member.User.DisplayName)),
+            "member", member.UserId, member.User.DisplayName,
+            ServerAudit.Only(
+                top.Id == member.RoleId
+                    ? null
+                    : new AuditChange("role", member.Role.Name, top.Name, FromColor: member.Role.Color, ToColor: top.Color),
+                new AuditChange(
+                    "roles",
+                    Added: HeldRoles.Ranked(wanted.Where(x => current.All(held => held.Id != x.Id))).Select(x => x.Name).ToArray(),
+                    Removed: HeldRoles.Ranked(current.Where(x => wanted.All(kept => kept.Id != x.Id))).Select(x => x.Name).ToArray()))),
+            cancellationToken);
+        await MemberRoles.SetAsync(db, member, wanted, baseRole, cancellationToken);
+        await db.SaveChangesAsync(cancellationToken);
+        await transaction.CommitAsync(cancellationToken);
+        await NotifyAsync(hub, db, serverId, [userId], cancellationToken);
+        return Results.NoContent();
+    }
+
+    /// <summary>The roles in one list and not the other, either way.</summary>
+    private static ServerRole[] Diff(IReadOnlyList<ServerRole> before, IReadOnlyList<ServerRole> after) =>
+        before.Where(x => after.All(kept => kept.Id != x.Id))
+            .Concat(after.Where(x => before.All(held => held.Id != x.Id)))
+            .ToArray();
+
+    private static IResult NoMemberRole(Messages messages) =>
+        Results.Problem(
+            statusCode: StatusCodes.Status503ServiceUnavailable,
+            title: messages.Get(MessageKey.ServerHasNoMemberRole));
 
     internal static RoleDraft? Validate(string? name, string? color, IEnumerable<string>? permissionNames)
     {
@@ -331,19 +446,30 @@ public static class RoleEndpoints
             ["role"] = [messages.Get(MessageKey.RoleInvalid)],
         });
 
+    /// <summary>
+    /// Tells each member their own server-wide permissions, which every role
+    /// they hold makes up: the same change reaches different people with
+    /// different answers. Sent after the change is committed.
+    /// </summary>
     internal static async Task NotifyAsync(
         IHubContext<AppHub> hub,
+        AppDbContext db,
         Guid serverId,
         IEnumerable<Guid> userIds,
-        ServerPrivileges permissions,
         CancellationToken cancellationToken)
     {
-        var groups = userIds.Distinct().Select(AppHub.UserGroup).ToArray();
-        if (groups.Length > 0)
+        var recipients = userIds.Distinct().ToArray();
+        if (recipients.Length == 0)
         {
-            await hub.Clients.Groups(groups).SendAsync(
+            return;
+        }
+
+        var held = await HeldRoles.LoadAsync(db, serverId, cancellationToken);
+        foreach (var userId in recipients.Where(held.ByMember.ContainsKey))
+        {
+            await hub.Clients.Group(AppHub.UserGroup(userId)).SendAsync(
                 "PermissionsChanged",
-                new PermissionsChangedDto(serverId.ToString(), ServerAccess.ToNames(permissions)),
+                new PermissionsChangedDto(serverId.ToString(), ServerAccess.ToNames(held.PermissionsOf(userId))),
                 cancellationToken);
         }
     }

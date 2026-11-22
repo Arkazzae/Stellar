@@ -248,14 +248,14 @@ public static class ServerDirectoryEndpoints
         var now = DateTime.UtcNow;
         var (server, ownerRole) = AddServer(db, starter, messages, now);
         var ownerId = http.User.RequireUserId();
-        db.ServerMembers.Add(new ServerMember
+        MemberRoles.Admit(db, new ServerMember
         {
             ServerId = server.Id,
             UserId = ownerId,
             RoleId = ownerRole.Id,
             OwnerSlot = 1,
             JoinedAt = now,
-        });
+        }, isBaseRole: false);
         var owner = await db.Users.SingleAsync(x => x.Id == ownerId, cancellationToken);
         var welcome = await ServerWelcome.CreateAsync(db, server.Id, owner, now, messages, cancellationToken);
         await db.SaveChangesAsync(cancellationToken);
@@ -349,13 +349,13 @@ public static class ServerDirectoryEndpoints
         }
 
         var joinedAt = DateTime.UtcNow;
-        db.ServerMembers.Add(new ServerMember
+        MemberRoles.Admit(db, new ServerMember
         {
             ServerId = server.Id,
             UserId = userId,
             RoleId = role.Id,
             JoinedAt = joinedAt,
-        });
+        }, isBaseRole: true);
         var user = await db.Users.SingleAsync(x => x.Id == userId, cancellationToken);
         var welcome = await ServerWelcome.CreateAsync(db, server.Id, user, joinedAt, messages, cancellationToken);
         return new Admission(Refusal: null, Added: true, welcome);

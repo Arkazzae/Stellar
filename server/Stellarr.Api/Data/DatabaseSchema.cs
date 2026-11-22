@@ -28,6 +28,7 @@ public static class DatabaseSchema
         NotificationDeliverySchema.CreateAsync,
         ServerAuditSchema.CreateAsync,
         ChannelAudioProfileSchema.DropAsync,
+        MemberPermissionsSchema.CreateAsync,
     ];
 
     public static async Task PrepareAsync(AppDbContext db, CancellationToken cancellationToken)
