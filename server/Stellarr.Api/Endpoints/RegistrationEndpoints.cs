@@ -189,14 +189,16 @@ public static partial class RegistrationEndpoints
             // A new account is told nothing by mail about its first link.
             IdentityLinking.Stage(db, context, id, provider!, pending.Issuer, pending.Subject, alertRecipient: null);
         }
-        db.ServerMembers.Add(new ServerMember
+        // The first account owns the new instance server; anybody else joins
+        // it with the base role.
+        MemberRoles.Admit(db, new ServerMember
         {
             ServerId = server.Id,
             UserId = id,
             RoleId = role.Id,
             OwnerSlot = role.IsOwner ? 1 : null,
             JoinedAt = now,
-        });
+        }, isBaseRole: !role.IsOwner);
         var welcome = await ServerWelcome.CreateAsync(db, server.Id, user, now, messages, cancellationToken);
         if (invite is not null)
         {

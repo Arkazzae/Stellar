@@ -12,11 +12,14 @@ namespace Stellarr.Api.Endpoints;
 internal static class ServerOwnership
 {
     /// <summary>
-    /// Moves the owner slot from <paramref name="owner"/> to <paramref name="successor"/>,
-    /// who must both be tracked members of <paramref name="serverId"/>. The old
-    /// owner becomes a plain member. Run it in a transaction: the slot is freed
-    /// and saved before it is handed on, and that moment must not be seen. The
-    /// successor's change is staged; the caller saves it with its audit line.
+    /// Moves the owner slot and the owner role from <paramref name="owner"/> to
+    /// <paramref name="successor"/>, who must both be tracked members of
+    /// <paramref name="serverId"/>. The old owner keeps any other role they
+    /// hold, and ranks by the highest of them, or else becomes a plain member;
+    /// the successor keeps theirs too. Run it in a transaction: the slot is
+    /// freed and saved before it is handed on, and that moment must not be
+    /// seen. The successor's change is staged; the caller saves it with its
+    /// audit line.
     /// </summary>
     internal static async Task HandOverAsync(
         AppDbContext db,
@@ -29,13 +32,20 @@ internal static class ServerOwnership
             ?? throw new InvalidOperationException("The server has no role for plain members.");
 
         // The owner slot is unique, so it is freed before it is handed on.
-        var ownerRoleId = owner.RoleId;
-        owner.RoleId = memberRole.Id;
+        var ownerRole = await db.ServerRoles.AsNoTracking()
+            .SingleAsync(x => x.Id == owner.RoleId, cancellationToken);
+        var (kept, _) = await HeldRoles.OfMemberAsync(db, owner, cancellationToken);
+        await MemberRoles.SetAsync(db, owner, kept.Where(x => x.Id != ownerRole.Id), memberRole, cancellationToken);
         owner.OwnerSlot = null;
         await db.SaveChangesAsync(cancellationToken);
 
-        successor.RoleId = ownerRoleId;
+        var (held, _) = await HeldRoles.OfMemberAsync(db, successor, cancellationToken);
+        await MemberRoles.SetAsync(db, successor, held.Append(ownerRole), memberRole, cancellationToken);
         successor.OwnerSlot = 1;
+        // Nobody sets an override on the owner, who skips them; one left on the
+        // successor would wake up again after a later hand-over.
+        await db.MemberPermissionOverrides.Where(x => x.ServerId == serverId && x.UserId == successor.UserId)
+            .ExecuteDeleteAsync(cancellationToken);
     }
 
     /// <summary>

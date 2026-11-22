@@ -96,11 +96,12 @@ public static class MfaPolicy
             return false;
         }
 
-        return await db.ServerMembers.AsNoTracking()
-            .Where(x => x.ServerId == instanceServerId && x.UserId == userId)
-            .Select(x => x.Role.IsOwner ||
-                (x.Role.Permissions & ServerPrivileges.ManageServer) == ServerPrivileges.ManageServer)
-            .SingleOrDefaultAsync(cancellationToken);
+        // Every role the member holds counts: ManageServer through a role
+        // below their top one still makes them an administrator.
+        var member = await db.ServerMembers.AsNoTracking().Include(x => x.Role)
+            .SingleOrDefaultAsync(x => x.ServerId == instanceServerId && x.UserId == userId, cancellationToken);
+        return member is not null &&
+            (await HeldRoles.PermissionsAsync(db, member, cancellationToken)).HasFlag(ServerPrivileges.ManageServer);
     }
 
     /// <summary>Whether a new sign-in must complete MFA or enrollment before a full session.</summary>

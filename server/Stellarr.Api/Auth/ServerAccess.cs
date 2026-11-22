@@ -72,7 +72,11 @@ public static class ServerAccess
         CancellationToken cancellationToken = default) =>
         ServerAuthorization.AllowsAsync(db, userId, PermissionScope.Section(serverId, sectionId), privilege, cancellationToken);
 
-    /// <summary>The role people get when they join: the system role below the owner's that ranks last.</summary>
+    /// <summary>
+    /// The base role, which every member holds without a row and which people
+    /// join with: the system role below the owner's that ranks last.
+    /// <c>MemberPermissionsSchema</c> picks it with the same rule in SQL.
+    /// </summary>
     public static async Task<ServerRole?> FindMemberRoleAsync(
         AppDbContext db,
         Guid serverId,
@@ -80,6 +84,7 @@ public static class ServerAccess
         await db.ServerRoles.AsNoTracking()
             .Where(x => x.ServerId == serverId && x.IsSystem && !x.IsOwner)
             .OrderByDescending(x => x.Position)
+            .ThenBy(x => x.Id)
             .FirstOrDefaultAsync(cancellationToken);
 
     /// <summary>The server the request is about; only available behind <see cref="ServerMembershipFilter"/>.</summary>
