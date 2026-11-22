@@ -1,69 +1,85 @@
-<h1 align="center">Stellarr</h1>
+# Stellarr
 
-<p align="center">
-  <strong>Talk on your own server.</strong><br>
-  Self-hosted text, voice, video, and screen sharing for small groups — packaged in one Docker container.
-</p>
+**Talk on your own server.** A self-hosted Discord alternative built for you and your friends.
 
-<p align="center">
-  <a href="#try-it-locally">Try it locally</a> ·
-  <a href="#inviting-friends-over-the-internet">Going online</a> ·
-  <a href="https://arkazzae.github.io/Stellarr/">Documentation</a> ·
-  <a href="docs/install/unraid.md">Unraid guide</a>
-</p>
+Private by design. (Over)Engineered for performance  ·  [Try it](#try-it) · [Inviting friends](#inviting-friends) · [Docs](https://arkazzae.github.io/Stellarr/)
 
-<p align="center">
-  <img src="branding/film/stellarr.webp" width="820" alt="A one-minute tour of Stellarr: the astronaut mascot turns into the logo, friends plan a game night in a text channel, a Polish message is translated in the browser, four people talk in a voice channel while sharing a screen, the interface switches through its six palettes, the owner checks the instance in Cockpit, and one docker compose command starts the container.">
-</p>
+![A tour of Stellarr: friends planning game night in a text channel, translating a message right in the browser, hanging out in voice with screen sharing, switching themes, checking Cockpit, and starting the container.](branding/film/stellarr.webp)
 
-<p align="center">
-  <sub>Experimental · In active development</sub>
-</p>
+> [!WARNING]
+> Stellarr is an early preview and may still have breaking changes before v1.0. Optional 1:1 end-to-end encryption is experimental and has not been independently audited yet.
 
----
+Hop into voice, stream your game in 4K 60 fps without paying for Nitro, spam the soundboard, and keep all of your group's chats on your own hardware.
 
-## Why Stellarr
+### Built for game night
 
-Stellarr gives your group a private server for text chat, voice channels, and game streaming—without ads, subscriptions, or third-party cloud dependencies.
+- Stream games and screens up to 4K 60 fps with system audio, webcams, and built-in local noise suppression.
+- Hang out with text channels, DMs, threads, replies, polls, reactions, voice messages, custom emojis, stickers, server soundboards, and six built-in themes.
+- Translate messages across languages right inside the browser, offline and without character limits (starting with English and Polish).
 
-- **Familiar text chat** — Text channels, direct messages, threads, replies, reactions, polls, voice messages, custom emojis, stickers, and server soundboards.
-- **End-to-end encrypted direct messages and calls** — Optional per-conversation end-to-end encryption for 1:1 messages, attachments, and private voice or video calls using X25519, AES-256-GCM, a 6-digit PIN key backup, and 60-digit safety codes.
-- **In-browser translation** — Translate Polish and English chat messages locally in your browser via Bergamot WebAssembly without sending text to external APIs.
-- **Voice, video, and screen sharing** — Low-latency WebRTC voice channels, camera streams, and screen sharing up to 4K 60 fps with system audio and local WASM noise suppression (RNNoise, GTCRN, Speex).
-- **Six themes and bilingual UI** — Switch between *Midnight*, *Slate*, *Evergreen*, *Harbor*, *Amethyst*, and *Ink*, with full English (`en`) and Polish (`pl`) localization.
-- **Built-in operator panel (`/cockpit`)** — Manage accounts, multi-factor authentication policies, OIDC single sign-on, live logs, and automatic daily backups (with optional Cloudflare R2 offsite uploads).
+### Private by design
 
-## One container, one folder
+- Your server stays on your machine with no cloud accounts, ads, or subscriptions. Noise suppression and message translation run locally in your browser, and link previews are fetched by your server so friends' browsers never ping external sites (you can turn previews off too).
+- Flip on optional 1:1 end-to-end encryption for private DMs, file uploads, and voice or video calls, with PIN-protected key backup and safety codes.
+- Lock down accounts with passkeys, TOTP, email codes, or your own OIDC provider, and schedule automatic daily backups to disk or Cloudflare R2.
 
-Stellarr packages the web client, the `/cockpit` operator panel, the ASP.NET Core API, the Rust WebRTC media server (`stellarr-media`), `coturn` STUN/TURN, and SQLite into **one Docker container** backed by **one volume** (`/data/stellarr`). You do not need external Postgres, Redis, or media servers, and backing up or migrating an instance means copying a single directory.
+### Easy to host, (over)engineered inside
 
-## Try it locally
+Easy setup is a core focus of Stellarr. Instead of wiring up Postgres, Redis, LiveKit, and five separate containers just to hang out with your friends, everything runs inside a single `amd64` / `arm64` Docker container (~120–150 MiB RAM at idle) backed by one folder (`/data/stellarr`), with a guided `/setup` flow and a built-in `/cockpit` panel for accounts, live logs, backups, and settings.
 
-Install [Docker](https://docs.docker.com/get-docker/) (with Docker Compose 2.24+), then run:
+Under the hood, Stellarr pairs a custom Rust media server built specifically for this app with ASP.NET Core, SQLite, built-in STUN/TURN, and a static web frontend. Backing up or moving your server is just copying one directory. See [Architecture](docs/architecture.md) if you want the full breakdown.
+
+### Coming next
+
+- Dedicated desktop and mobile clients alongside the web app.
+- An Activities SDK for running shared mini-apps and games right inside your server.
+- More languages for offline in-browser translation beyond English and Polish.
+
+## Try it
+
+Install [Docker](https://docs.docker.com/get-docker/) (with Compose `2.24+`), then run:
 
 ```bash
 curl -fsSL https://stellarr.online/install.sh | bash
 ```
 
-The installer checks host prerequisites, writes `docker-compose.yml` and `.env` to `~/stellarr`, starts the container, and prints the local URL along with the initial setup code. Open the address in your browser, accept the self-signed TLS warning, and complete the three-step `/setup` wizard to create the owner account and first server. Once signed in, open **`https://localhost:8443/cockpit`** for the operator panel. For a manual Docker Compose setup, see the [Quick start](docs/install/quick-start.md).
+Or start it manually with Docker Compose
 
-### Inviting friends over the internet
+Grab [`docker-compose.yml`](docker-compose.yml) and [`.env.example`](.env.example) (or read [`install.sh`](install.sh) first):
 
-Local testing works immediately on the host machine. Before inviting connections from other devices:
+```bash
+mkdir stellarr && cd stellarr
+curl -fsSLO https://raw.githubusercontent.com/Arkazzae/Stellarr/main/docker-compose.yml
+curl -fsSL https://raw.githubusercontent.com/Arkazzae/Stellarr/main/.env.example -o .env
+docker compose up -d
+```
 
-1. Set `STELLARR_DOMAIN` and `STELLARR_PUBLIC_IP` in `.env`.
-2. Forward the required UDP voice ports on your router — see [Requirements](docs/install/requirements.md#behind-nat).
-3. Configure a trusted HTTPS certificate so browsers allow microphone, camera, and screen capture — see [Reverse proxy and TLS](docs/install/reverse-proxy-and-tls.md).
+Want to build from source instead? Clone the repo and run `docker compose up -d --build`.
 
-Running on **Unraid**? Follow the [Unraid setup guide](docs/install/unraid.md).
+
+
+1. Grab the one-time setup code printed by the installer (or run `docker compose logs stellarr | grep "Setup code"`).
+2. Open `https://localhost:8443`, accept the local self-signed certificate, and run through `/setup` to create your owner account and first server.
+3. Visit `https://localhost:8443/cockpit` anytime to manage accounts, security, logs, and backups.
+
+## Inviting friends
+
+Local testing works right away on your machine. Before inviting friends over the internet:
+
+1. Set `STELLARR_DOMAIN` and `STELLARR_PUBLIC_IP` (or `auto`) in `.env` and restart with `docker compose up -d`.
+2. Forward UDP ports `49000`, `3478`, and `49160-49200` on your router so voice and video can connect ([Requirements](docs/install/requirements.md#behind-nat)).
+3. Add a browser-trusted HTTPS certificate or put Stellarr behind your reverse proxy so browsers allow mic, camera, and screen capture ([Reverse proxy & TLS](docs/install/reverse-proxy-and-tls.md)).
+
+> [!TIP]
+> Running Unraid? There is a ready-to-use container template and walkthrough in the [Unraid guide](docs/install/unraid.md).
 
 ## Documentation
 
-Browse the documentation at [**arkazzae.github.io/Stellarr**](https://arkazzae.github.io/Stellarr/) or directly in [`docs/`](docs/README.md):
+Read the full docs at [arkazzae.github.io/Stellarr](https://arkazzae.github.io/Stellarr/) or browse [`docs/`](docs/README.md):
 
-- **Self-hosting**: [Quick start](docs/install/quick-start.md) · [Requirements](docs/install/requirements.md) · [Configuration](docs/install/configuration.md) · [Reverse proxy & TLS](docs/install/reverse-proxy-and-tls.md) · [Unraid](docs/install/unraid.md) · [Upgrading](docs/install/upgrading.md)
-- **Administration**: [Operator CLI](docs/admin/cli.md) · [Account security](docs/admin/account-security.md) · [Automatic backups](docs/admin/backups.md) · [Cloudflare R2](docs/admin/cloudflare-r2.md) · [Activity notifications](docs/admin/notifications.md)
-- **Internals & reference**: [Architecture](docs/architecture.md) · [RTC & ports](docs/rtc-and-ports.md) · [Voice & RTC protocol](docs/rtc-protocol.md) · [Stellarr Media SFU](docs/stellarr-media.md) · [Localization](docs/localization.md)
+- **Self-hosting:** [Quick start](docs/install/quick-start.md) · [Requirements](docs/install/requirements.md) · [Configuration](docs/install/configuration.md) · [Reverse proxy & TLS](docs/install/reverse-proxy-and-tls.md) · [Unraid](docs/install/unraid.md) · [Upgrading](docs/install/upgrading.md)
+- **Administration:** [Operator CLI](docs/admin/cli.md) · [Account security](docs/admin/account-security.md) · [Automatic backups](docs/admin/backups.md) · [Cloudflare R2](docs/admin/cloudflare-r2.md) · [Notifications](docs/admin/notifications.md)
+- **Under the hood:** [Architecture](docs/architecture.md) · [RTC & ports](docs/rtc-and-ports.md) · [Voice & RTC protocol](docs/rtc-protocol.md) · [Stellarr Media SFU](docs/stellarr-media.md) · [Localization](docs/localization.md)
 
 ## License
 
