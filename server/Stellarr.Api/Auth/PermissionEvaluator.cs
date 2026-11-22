@@ -73,8 +73,15 @@ public static class PermissionEvaluator
         return held;
     }
 
-    /// <summary>The server-wide permissions of a member who is not the owner.</summary>
-    public static ServerPrivileges Unite(ServerPrivileges basePermissions, IEnumerable<ServerPrivileges> heldPermissions) =>
+    /// <summary>
+    /// What the member may do server-wide, before any override: the same
+    /// evaluation with no levels, for the callers that need nothing more.
+    /// </summary>
+    public static ServerPrivileges ServerWide(
+        bool isOwner, ServerPrivileges basePermissions, IEnumerable<ServerPrivileges> heldPermissions) =>
+        Evaluate(new PermissionInput(isOwner, basePermissions, heldPermissions.ToArray(), []));
+
+    private static ServerPrivileges Unite(ServerPrivileges basePermissions, IEnumerable<ServerPrivileges> heldPermissions) =>
         heldPermissions.Aggregate(basePermissions, (all, one) => all | one);
 
     /// <summary>One level applied to what the member holds from the levels outside it.</summary>
