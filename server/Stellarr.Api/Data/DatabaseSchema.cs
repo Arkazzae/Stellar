@@ -29,6 +29,7 @@ public static class DatabaseSchema
         ServerAuditSchema.CreateAsync,
         ChannelAudioProfileSchema.DropAsync,
         MemberPermissionsSchema.CreateAsync,
+        RoleRankSchema.RepairAsync,
     ];
 
     public static async Task PrepareAsync(AppDbContext db, CancellationToken cancellationToken)
