@@ -27,6 +27,7 @@ public sealed class MultipleRolesFlowTests
     private static readonly string[] ManageBans = ["manageBans"];
     private static readonly string[] Nothing = [];
     private static readonly string[] ViewAuditLog = ["viewAuditLog"];
+    private static readonly string[] ModerateMembers = ["moderateMembers"];
 
     [Fact]
     public async Task PermissionsUniteEveryHeldRoleWhileTheTopRoleRanks()
@@ -126,6 +127,39 @@ public sealed class MultipleRolesFlowTests
         Assert.Equal(HttpStatusCode.Forbidden, (await state.Actor.DeleteAsync($"/api/admin/members/{JoId}")).StatusCode);
         Assert.Equal(HttpStatusCode.Forbidden,
             (await Scenario.SetMemberOverrideAsync(state.Actor, JoId, ManageMessages, Nothing)).StatusCode);
+    }
+
+    [Fact]
+    public async Task EditingRolesCountsEveryHeldRoleButRanksByTheTopOne()
+    {
+        using var state = await Scenario.CreateAsync();
+
+        Assert.Equal(HttpStatusCode.Created, (await state.Actor.PostAsJsonAsync("/api/admin/roles",
+            new { name = "Moderators", color = "#123456", permissions = ModerateMembers })).StatusCode);
+        Assert.Equal(HttpStatusCode.Forbidden, (await state.Actor.PostAsJsonAsync("/api/admin/roles",
+            new { name = "Banners", color = "#123456", permissions = ManageBans })).StatusCode);
+
+        Assert.Equal(HttpStatusCode.Forbidden,
+            (await state.Actor.PatchAsJsonAsync($"/api/admin/roles/{state.Peer}", new { name = "Renamed" })).StatusCode);
+        Assert.Equal(HttpStatusCode.Forbidden,
+            (await state.Actor.PatchAsJsonAsync($"/api/admin/roles/{state.Higher}", new { name = "Renamed" })).StatusCode);
+        Assert.Equal(HttpStatusCode.OK,
+            (await state.Actor.PatchAsJsonAsync($"/api/admin/roles/{state.Lower}", new { permissions = ModerateMembers })).StatusCode);
+    }
+
+    [Fact]
+    public async Task ARoleOverrideCannotHandOnAPowerTheActorHoldsOnlyInThatChannel()
+    {
+        using var state = await Scenario.CreateAsync();
+        await state.RoleOverrideAsync(state.Helper, ManageBans, Nothing);
+        var url = $"{Scenario.OverridesUrl}/{state.Lower}";
+
+        Assert.Equal(HttpStatusCode.Forbidden,
+            (await state.Actor.PutAsJsonAsync(url, new { allow = ManageBans, deny = Nothing })).StatusCode);
+        Assert.Equal(HttpStatusCode.Forbidden,
+            (await state.Actor.PutAsJsonAsync($"{Scenario.OverridesUrl}/{state.Peer}", new { allow = ModerateMembers, deny = Nothing })).StatusCode);
+        Assert.Equal(HttpStatusCode.OK,
+            (await state.Actor.PutAsJsonAsync(url, new { allow = ModerateMembers, deny = Nothing })).StatusCode);
     }
 
     [Fact]
