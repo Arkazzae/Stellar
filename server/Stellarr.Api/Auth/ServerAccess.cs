@@ -5,8 +5,9 @@ using Stellarr.Api.Domain;
 namespace Stellarr.Api.Auth;
 
 /// <summary>
-/// What a member may do on a server: the privileges of the member's role,
-/// narrowed or widened by the overrides set on a section or a channel.
+/// What a member may do on a server: the privileges of the base role and of
+/// every role they hold, narrowed or widened by the overrides set on a
+/// section or a channel. <see cref="PermissionEvaluator"/> decides.
 /// </summary>
 public static class ServerAccess
 {
@@ -51,7 +52,7 @@ public static class ServerAccess
         return true;
     }
 
-    /// <summary>The role's server-wide rights, through the shared authorization policy.</summary>
+    /// <summary>The member's server-wide rights, through the shared authorization policy.</summary>
     public static async Task<ServerPrivileges> GetAsync(
         AppDbContext db, Guid userId, Guid serverId, CancellationToken cancellationToken = default) =>
         await ServerAuthorization.EffectiveAsync(db, userId, PermissionScope.Server(serverId), cancellationToken)
