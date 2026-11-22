@@ -660,8 +660,13 @@
   @keyframes blink{0%,60%,100%{opacity:0.25}30%{opacity:1}}
 
   /* ---------- TOOLBAR WIADOMOŚCI (hover) ---------- */
+  /* The corner a message's toolbar hangs in while it is used. It has no size
+     and keeps its layout to itself, so hanging the toolbar or taking it down
+     moves nothing around it; the toolbar and the control beside it sit where
+     the toolbar always sat on the entry. */
+  .msg-actions{position:absolute;top:-17px;right:0;z-index:5;width:0;height:0;contain:size layout style}
   .msg-toolbar{
-    position:absolute;top:-17px;right:0;z-index:5;
+    position:absolute;top:0;right:0;
     display:flex;align-items:center;gap:2px;
     background:var(--surface-pop);
     border:1px solid var(--line);
@@ -671,8 +676,16 @@
     opacity:0;pointer-events:none;transform:translateY(4px);
     transition:opacity var(--dur-fast) var(--ease-standard), transform var(--dur-fast) var(--ease-standard);
   }
-  .msg-entry:hover > .msg-toolbar, .msg-entry:focus-within > .msg-toolbar{
+  .msg-entry:hover > .msg-actions > .msg-toolbar, .msg-entry:focus-within > .msg-actions > .msg-toolbar{
     opacity:1;pointer-events:auto;transform:none;
+  }
+  /* The toolbar enters the document when the pointer or focus does, already
+     shown, so its fade in starts from here. A browser without
+     `@starting-style` shows it at once. */
+  @starting-style{
+    .msg-entry:hover > .msg-actions > .msg-toolbar, .msg-entry:focus-within > .msg-actions > .msg-toolbar{
+      opacity:0;transform:translateY(4px);
+    }
   }
   .tb{
     width:28px;height:28px;border-radius:50%;
@@ -688,7 +701,15 @@
      which is what it does. */
   .tb.on{background:var(--accent-soft);color:var(--accent-text)}
   .tb-sep{width:1px;height:16px;background:var(--line);margin:0 3px}
-  .msg-mobile-more{display:none}
+  /* The phone's disclosure. Here nobody sees it: focus that reaches it moves
+     on to the toolbar, which then takes its place. It covers the band a
+     hidden toolbar's buttons cover, 4px below where they show, so focus
+     arriving on it scrolls the transcript as far as it did on them. */
+  .msg-mobile-more{position:absolute;top:9px;right:0;pointer-events:none}
+  .msg-mobile-more > svg{display:none}
+  /* Weaker than the phone's rule for the disclosure, which keeps it shown
+     beside a toolbar that a tap hung and the phone hides. */
+  :where(.msg-toolbar) + .msg-mobile-more{display:none}
 
   /* The phone action sheet is portalled to the document so the transcript's
      scroller cannot clip it. Its scrim is deliberately quiet: this is a

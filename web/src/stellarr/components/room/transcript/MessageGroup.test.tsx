@@ -153,6 +153,7 @@ describe("MessageGroup inline editing", () => {
     const second = screen.getByText("druga").closest(".msg-entry");
 
     expect(second).not.toBeNull();
+    await user.hover(screen.getByText("druga"));
     await user.click(within(second as HTMLElement).getByRole("button", { name: "Edytuj" }));
 
     expect(onAction).toHaveBeenCalledExactlyOnceWith("m-2", "edit");
@@ -165,6 +166,7 @@ describe("MessageGroup inline editing", () => {
     const second = screen.getByText("druga").closest(".msg-entry");
 
     expect(second).not.toBeNull();
+    await user.hover(screen.getByText("druga"));
     await user.click(within(second as HTMLElement).getByRole("button", { name: "Usuń" }));
     await answerConfirm(user, "Usuń");
 
@@ -193,8 +195,10 @@ describe("MessageGroup inline editing", () => {
 
     expect(first).not.toBeNull();
     expect(second).not.toBeNull();
+    await user.hover(screen.getByText("pierwsza"));
     expect(within(first as HTMLElement).getByRole("button", { name: "Przypnij" }))
       .toBeInTheDocument();
+    await user.hover(screen.getByText("druga"));
     await user.click(
       within(second as HTMLElement).getByRole("button", { name: "Odepnij" }),
     );

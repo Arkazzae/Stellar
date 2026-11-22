@@ -75,6 +75,7 @@ The toolbar checks fail when the toolbar is not where the pointer stopped, leave
 ### Architectural invariants verified by the benchmark
 
 - **CSS layout and style containment**: `.transcript-inner > [data-row-id]` applies `contain: layout style` (omitting `paint` so the floating message toolbar can overhang its row). Hover, reaction, or edit mutations inside one row do not invalidate layout across sibling rows.
+- **Message toolbars on demand**: a message's hover toolbar is in the document only while the pointer or focus is on the message, its picker or sheet is open, or it fades out; the rest of the time one control stands for it in the tab order and the accessibility tree. The mount, sweep, wheel, picker, and keyboard checks fail on a toolbar left on a message nothing uses.
 - **Structural memoization**: `Transcript` renders a memoized `MessageRow` while `createTranscriptPresenter` reuses unchanged group and body references across appends and prepends, even when parent action callbacks change identity on every render.
 - **Full DOM retention without virtualization or `content-visibility: auto`**: Keeping all loaded rows in the DOM preserves native find-in-page, full accessibility tree inspection, and exact scroll anchoring.
 
