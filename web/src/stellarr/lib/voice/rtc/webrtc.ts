@@ -209,6 +209,10 @@ export class WebRtcVoiceClient implements VoiceClient {
     this.speech = new SpeechDetector((id, reading) => this.hear(id, reading), {
       sensitivity: this.settings.vadSensitivity,
     });
+    if (typeof document !== "undefined") {
+      document.addEventListener("visibilitychange", this.restSpeechOutOfSight);
+      this.restSpeechOutOfSight();
+    }
     this.lifecycle = new LifecycleWatcher({
       onResume: () => {
         void this.recoverAfterResume();
@@ -544,6 +548,9 @@ export class WebRtcVoiceClient implements VoiceClient {
     this.disposed = true;
     this.downloads.dispose();
     void this.leave();
+    if (typeof document !== "undefined") {
+      document.removeEventListener("visibilitychange", this.restSpeechOutOfSight);
+    }
     this.speech.dispose();
     this.remoteAudio.dispose();
     this.lifecycle.stop();
@@ -1182,6 +1189,16 @@ export class WebRtcVoiceClient implements VoiceClient {
     }
     if (!this.ring.clear(id)) this.publishPeers();
   }
+
+  /**
+   * The detector exists to draw the speaking rings: nothing heard and nothing
+   * sent depends on it. While the page is out of sight, as it is behind a
+   * game, its context rests, and every start and end of speech stops waking
+   * the main thread to render rings nobody can see.
+   */
+  private readonly restSpeechOutOfSight = (): void => {
+    this.speech.setResting(document.visibilityState === "hidden");
+  };
 
   /** Whether this side is shown speaking: by the detector, or held a moment after it. */
   private selfShown(): boolean {
