@@ -20,8 +20,9 @@ import { Attachment } from "../attachments/Attachment";
 import type { MessageTranslationOptions } from "../attachments/TranslatedTextAttachment";
 import { plainText, type PointedAt } from "@/lib/messages/messageExport";
 import { MessageEditor } from "./MessageEditor";
+import { MessageEntry } from "./MessageEntry";
 import { messageMenuEntries } from "./messageMenu";
-import { MessageToolbar, type MessageAction } from "./MessageToolbar";
+import type { MessageAction } from "./MessageToolbar";
 import { isJumbo, type AttachmentCallbacks, type MessagePart } from "@/lib/messages/parts";
 import { Reactions } from "./Reactions";
 
@@ -296,8 +297,7 @@ export function MessageGroup({
           // deserves. A notice is never one, whatever it contains.
           const bodyClass = !system && isJumbo(body.parts) ? "msg-body jumbo" : "msg-body";
           return (
-            <div
-              className="msg-entry"
+            <MessageEntry
               key={body.id}
               onContextMenu={
                 system
@@ -307,19 +307,19 @@ export function MessageGroup({
                       menu.onContextMenu(event);
                     }
               }
-            >
-              <MessageToolbar
-                onReact={onReact && ((emoji) => onReact(body.id, emoji))}
-                onAction={onAction && ((action) => onAction(body.id, action))}
-                describe={describe(body.parts)}
-                customEmoji={customEmoji}
+              actions={{
+                onReact: onReact && ((emoji) => onReact(body.id, emoji)),
+                onAction: onAction && ((action) => onAction(body.id, action)),
+                describe: describe(body.parts),
+                customEmoji,
                 // A server notice belongs to nobody and is edited by nobody;
                 // moderating one would delete the record of what the server did.
-                own={own && !system}
-                canModerate={canModerate && !system}
-                pinned={body.pinned}
-                t={t}
-              />
+                own: own && !system,
+                canModerate: canModerate && !system,
+                pinned: body.pinned,
+                t,
+              }}
+            >
               {body.pinned === true ? (
                 <span className="msg-pinned">
                   <Icon name="pin" size={12} />
@@ -352,7 +352,7 @@ export function MessageGroup({
                   customEmoji={customEmoji}
                 />
               )}
-            </div>
+            </MessageEntry>
           );
         })}
       </div>

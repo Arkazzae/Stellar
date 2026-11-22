@@ -148,41 +148,38 @@
     }
 
     .msg-toolbar {
-      top: 0;
-      right: 0;
-      padding: 0;
-      gap: 0;
-      border: 0;
-      background: transparent;
-      box-shadow: none;
-      opacity: 1;
-      pointer-events: auto;
-      transform: none;
-    }
-
-    .msg-toolbar > .tb:not(.msg-mobile-more),
-    .msg-toolbar > .tb-sep {
       display: none;
     }
 
-    .msg-toolbar .msg-mobile-more {
-      position: relative;
+    .msg-actions {
+      top: 0;
+    }
+
+    .msg-actions > .msg-mobile-more {
+      position: absolute;
+      top: 0;
+      right: 0;
       display: inline-flex;
       width: 32px;
       height: 32px;
       color: var(--text-faint);
+      pointer-events: auto;
     }
 
-    .msg-toolbar .msg-mobile-more::after {
+    .msg-actions > .msg-mobile-more > svg {
+      display: block;
+    }
+
+    .msg-actions > .msg-mobile-more::after {
       content: "";
       position: absolute;
       inset: -6px;
       border-radius: 50%;
     }
 
-    .msg-toolbar .msg-mobile-more:hover,
-    .msg-toolbar .msg-mobile-more:active,
-    .msg-toolbar .msg-mobile-more[aria-expanded="true"] {
+    .msg-actions > .msg-mobile-more:hover,
+    .msg-actions > .msg-mobile-more:active,
+    .msg-actions > .msg-mobile-more[aria-expanded="true"] {
       background: var(--surface-overlay);
       color: var(--text);
     }
