@@ -99,8 +99,6 @@ public static class RoleEndpoints
             return Results.Forbid();
         }
 
-        var lastPosition = await db.ServerRoles.Where(x => x.ServerId == serverId)
-            .MaxAsync(x => (int?)x.Position, cancellationToken);
         var role = new ServerRole
         {
             Id = Guid.NewGuid(),
@@ -108,7 +106,7 @@ public static class RoleEndpoints
             Name = draft.Name,
             Color = draft.Color,
             Permissions = draft.Permissions,
-            Position = (lastPosition ?? -1) + 1,
+            Position = await RoleRanks.PlaceNewAsync(db, serverId, cancellationToken),
         };
         db.ServerRoles.Add(role);
         await ServerAudit.StageAsync(db, serverId, http.User.RequireUserId(), new AuditEvent(

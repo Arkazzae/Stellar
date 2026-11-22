@@ -268,8 +268,6 @@ public static partial class CockpitEndpoints
             return Results.Conflict();
         }
 
-        var lastPosition = await db.ServerRoles.Where(x => x.ServerId == server.Id)
-            .MaxAsync(x => (int?)x.Position, cancellationToken);
         var role = new ServerRole
         {
             Id = Guid.NewGuid(),
@@ -277,7 +275,7 @@ public static partial class CockpitEndpoints
             Name = draft.Name,
             Color = draft.Color,
             Permissions = draft.Permissions,
-            Position = (lastPosition ?? -1) + 1,
+            Position = await RoleRanks.PlaceNewAsync(db, server.Id, cancellationToken),
         };
         db.ServerRoles.Add(role);
         await StageAuditAsync(
