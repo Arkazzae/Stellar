@@ -42,29 +42,35 @@ npm run bench:transcript -w stellarr-web -- \
 | `--out <path>` | Output JSON path (default `web/bench/results/transcript.json`). |
 | `--label <name>` | Label recorded in the JSON output. |
 | `--check` / `--no-check` | Enable (default) or disable invariant assertions. |
-| `--baseline <path>` | Compare mount, append, and prepend timings against a previous JSON result. |
+| `--baseline <path>` | Compare mount, append, and prepend timings against a previous JSON result, require the same keyboard stops and toolbar placement, and print the pointer sweep and wheel figures beside it. |
 | `--max-slowdown 2` | Maximum allowed slowdown multiplier relative to `--baseline` (default `2`). |
-| `--timeout 240` | Per-size scenario timeout in seconds. |
+| `--timeout 600` | Per-size scenario timeout in seconds. The sweep and wheel at 6× throttling take most of a 10,000-message run. |
 | `--headed` | Run Chrome in headed mode for visual debugging. |
 | `--keep-dist` | Keep the temporary Vite build under `web/.bench-dist`. |
 
 ### What is measured and verified
 
-The fixture generates deterministic multi-day histories (~630 messages/day, mixed lengths, inline formatting, links, replies, reactions, pins, and data-URI images every 19 messages with intrinsic dimensions `1200×800`, `900×1600`, `640×640`, and `1600×600`) and runs a 13-step sequence at each history size:
+The fixture generates deterministic multi-day histories (~630 messages/day, mixed lengths, inline formatting, links, replies, reactions, pins, and data-URI images every 19 messages with intrinsic dimensions `1200×800`, `900×1600`, `640×640`, and `1600×600`) and runs a 17-step sequence at each history size:
 
-1. Cold mount of `1,000` or `10,000` messages scrolled to the bottom row.
+1. Cold mount of `1,000` or `10,000` messages scrolled to the bottom row, counting every node in the document and how many belong to message toolbars.
 2. Append `200` messages while anchored at the bottom.
 3. Prepend `200` older messages while reading in the middle of the history.
 4. Expand a text row and a media row above the viewport.
 5. Scroll through `80` animation frames (`180 px` per frame), recording frame intervals and Long Tasks.
-6. Hover a visible message, verify hit-testing on the floating action toolbar, and trigger its reply callback.
-7. Resize the viewport to `620×1020`, verify scroll anchor stability, and jump to `20%` and `90%` of the history.
-8. Restore `1280×900` and jump to `12%`, `50%`, `88%`, and a reply target.
-9. Scroll up `700 px` and expand an above-viewport row again.
-10. Open the inline message editor, place the caret at offset `4`, append `30` new messages, and verify editor focus and selection survival.
-11. Run native `window.find` for a phrase in an offscreen row at `70%` of the history.
-12. Query the browser accessibility tree for that offscreen row.
-13. Verify total DOM row, group, and message entry counts.
+6. Tap a message with touch emulation at the desktop width, which leaves it hovered as touch browsers do, and tap its reply action.
+7. Sweep a real pointer down, up, and down the visible messages (`10 px` a frame), then wheel `40` notches of `120 px` with the pointer resting over the list, each unthrottled and at 6× CPU throttling. Each reports main-thread time, style and layout counts and times (`Performance.getMetrics`), and frames over `33 ms`; the window closes `700 ms` after the last event, so work left for the end of a fade is counted.
+8. Hover a visible message, verify hit-testing on the floating action toolbar and where it hangs, move the pointer from the message up onto its reply action, and press it.
+9. Open that message's reaction picker, rest the pointer on the picker, and pick; then tap a message again with the mouse resting elsewhere. That tap is recorded, not checked: Chrome gives the hover back to a resting mouse after the next layout, whatever causes it.
+10. Tab from one message's first action to the next message's first and Shift+Tab back, then Tab `40` stops from a message at `62%` of the history and Shift+Tab `40` back.
+11. Resize the viewport to `620×1020`, verify scroll anchor stability, jump to `20%` and `90%` of the history, and tap a message and then its disclosure at that phone width.
+12. Restore `1280×900` and jump to `12%`, `50%`, `88%`, and a reply target.
+13. Scroll up `700 px` and expand an above-viewport row again.
+14. Open the inline message editor, place the caret at offset `4`, append `30` new messages, and verify editor focus and selection survival.
+15. Run native `window.find` for a phrase in an offscreen row at `70%` of the history.
+16. Query the browser accessibility tree for that offscreen row, and count the messages that name a way to their actions.
+17. Verify total DOM row, group, and message entry counts.
+
+The toolbar checks fail when the toolbar is not where the pointer stopped, leaves while the pointer moves onto it or while its picker is open, or sends an action or reaction to another message. The keyboard checks fail when Tab after a message's last action misses the next message's first, when Shift+Tab does not retrace every stop, or when a stop shows no focus ring. The phone check fails when a tap hides the disclosure or the disclosure does not open and close the sheet.
 
 ### Architectural invariants verified by the benchmark
 

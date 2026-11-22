@@ -49,6 +49,7 @@ let produce: ((messages: readonly Message[]) => TranscriptSectionVM[]) | null = 
 const noop = () => {};
 const attachments = { onOpenImage: noop, onDownloadFile: noop, onPlayVideo: noop, onOpenEmbed: noop, onCopyCode: noop };
 let lastAction: { messageId: string; action: string; at: number } | null = null;
+let lastReact: { messageId: string; emoji: string } | null = null;
 let lastEdit: { messageId: string; text: string; at: number } | null = null;
 let lastCancel = false;
 
@@ -196,7 +197,9 @@ function Bench({ initial }: { initial: View }) {
           label="Benchmark transcript"
           editing={view.editing}
           attachments={attachments}
-          onReact={noop}
+          onReact={(messageId, emoji) => {
+            lastReact = { messageId, emoji };
+          }}
           // The provider rebuilds these two whenever the message list changes
           // because they read the loaded messages. Keeping them new here is
           // deliberate: the benchmark must prove the transcript absorbs their
@@ -241,8 +244,29 @@ async function mount(count: number): Promise<Record<string, unknown>> {
     totalMs: now() - producerStart,
     layout,
     ...snapshot(),
+    document: documentCounts(),
     style: styleInfo(),
     errors: [],
+  };
+}
+
+/**
+ * Every node in the document, and how much of it is message toolbars: a
+ * toolbar is mostly inline icons, so it can be most of a message's DOM.
+ */
+function documentCounts(): Record<string, number> {
+  let nodes = 0;
+  const walker = document.createTreeWalker(document, NodeFilter.SHOW_ALL);
+  while (walker.nextNode() !== null) nodes += 1;
+  const toolbars = [...document.querySelectorAll(".msg-toolbar")];
+  return {
+    nodes,
+    elements: document.getElementsByTagName("*").length,
+    toolbars: toolbars.length,
+    toolbarElements: toolbars.reduce(
+      (sum, toolbar) => sum + 1 + toolbar.getElementsByTagName("*").length,
+      0,
+    ),
   };
 }
 
@@ -491,6 +515,7 @@ function toolbarCheck(): Record<string, unknown> {
   const toolbar = toolbarEntry.querySelector<HTMLElement>(".msg-toolbar");
   if (toolbar === null) throw new Error("the entry has no toolbar");
   const box = toolbar.getBoundingClientRect();
+  const entryBox = toolbarEntry.getBoundingClientRect();
   const hit = document.elementFromPoint(box.left + box.width / 2, box.top + box.height / 2);
   const style = getComputedStyle(toolbar);
   return {
@@ -498,18 +523,259 @@ function toolbarCheck(): Record<string, unknown> {
     pointerEvents: style.pointerEvents,
     hitToolbar: hit !== null && toolbar.contains(hit),
     hit: hit?.className ?? null,
+    // Where it hangs on its message, which the style sheet puts 17 px above
+    // the entry's top right corner.
+    place: {
+      top: Math.round((box.top - entryBox.top) * 10) / 10,
+      right: Math.round((entryBox.right - box.right) * 10) / 10,
+      width: Math.round(box.width * 10) / 10,
+      height: Math.round(box.height * 10) / 10,
+    },
   };
 }
 
-/** Press a labelled button in the toolbar last made visible by `toolbarTarget`. */
-function pressToolbarAction(label: string): Record<string, unknown> {
+/**
+ * The centre of a labelled button in the toolbar last made visible by
+ * `toolbarTarget`, for a real pointer to travel to and press.
+ */
+function toolbarButtonPoint(label: string): Record<string, unknown> {
   if (toolbarEntry === null) throw new Error("no toolbar target was set");
   const button = toolbarEntry.querySelector<HTMLButtonElement>(
     `.msg-toolbar button[aria-label="${label}"]`,
   );
   if (button === null) throw new Error(`no toolbar action ${label}`);
-  button.click();
-  return { label, pressed: true };
+  const box = button.getBoundingClientRect();
+  return { label, x: box.left + box.width / 2, y: box.top + box.height / 2 };
+}
+
+/** What the pointer and focus leave of the toolbar on the entry `toolbarTarget` chose. */
+function toolbarState(): Record<string, unknown> {
+  if (toolbarEntry === null) throw new Error("no toolbar target was set");
+  const toolbar = toolbarEntry.querySelector<HTMLElement>(".msg-toolbar");
+  return {
+    row: toolbarEntry.closest<HTMLElement>("[data-row-id]")?.dataset.rowId ?? null,
+    hovered: toolbarEntry.matches(":hover"),
+    focusWithin: toolbarEntry.matches(":focus-within"),
+    toolbar: toolbar !== null,
+    opacity: toolbar === null ? null : getComputedStyle(toolbar).opacity,
+    picker: document.querySelector(".emo-pop-react") !== null,
+    toolbars: document.querySelectorAll(".msg-toolbar").length,
+    idle: idleToolbars(),
+    lastReact,
+  };
+}
+
+/** The centre of the open reaction picker and of its first emoji. */
+function pickerPoints(): Record<string, unknown> {
+  const panel = document.querySelector<HTMLElement>(".emo-pop-react .emo-pick");
+  const option = document.querySelector<HTMLElement>('.emo-pop-react [role="option"]');
+  if (panel === null || option === null) throw new Error("the reaction picker is not open");
+  const centre = (element: HTMLElement) => {
+    const box = element.getBoundingClientRect();
+    return { x: box.left + box.width / 2, y: box.top + box.height / 2 };
+  };
+  return { panel: centre(panel), option: centre(option), emoji: option.getAttribute("aria-label") };
+}
+
+/**
+ * Toolbars in the document whose message nothing is using: not under the
+ * pointer, not holding focus, and not the owner of an open picker or sheet.
+ */
+function idleToolbars(): { count: number; rows: string[] } {
+  const rows: string[] = [];
+  for (const toolbar of document.querySelectorAll<HTMLElement>(".msg-toolbar")) {
+    const entry = toolbar.closest<HTMLElement>(".msg-entry");
+    if (entry === null) continue;
+    if (entry.matches(":hover") || entry.matches(":focus-within")) continue;
+    if (entry.querySelector('[aria-expanded="true"]') !== null) continue;
+    rows.push(entry.closest<HTMLElement>("[data-row-id]")?.dataset.rowId ?? "?");
+  }
+  return { count: rows.length, rows: rows.slice(0, 5) };
+}
+
+/** Messages under the pointer or holding focus that have no toolbar to show. */
+function missingToolbars(): { count: number; rows: string[] } {
+  const rows: string[] = [];
+  for (const entry of document.querySelectorAll<HTMLElement>(".msg-entry")) {
+    if (!entry.matches(":hover") && !entry.matches(":focus-within")) continue;
+    if (entry.querySelector(".msg-toolbar") !== null) continue;
+    rows.push(entry.closest<HTMLElement>("[data-row-id]")?.dataset.rowId ?? "?");
+  }
+  return { count: rows.length, rows: rows.slice(0, 5) };
+}
+
+/**
+ * The phone's disclosure on a visible message, after a finger has tapped the
+ * message: whether it is still shown and where it is, and whether the sheet
+ * is open.
+ */
+function phoneActions(rowId: string): Record<string, unknown> {
+  const entry = scrollElement().querySelector<HTMLElement>(`[data-row-id="${rowId}"] .msg-entry`);
+  const more = entry?.querySelector<HTMLElement>(".msg-mobile-more") ?? null;
+  if (entry === null || more === null) throw new Error(`no disclosure on ${rowId}`);
+  const box = more.getBoundingClientRect();
+  const hit = document.elementFromPoint(box.left + box.width / 2, box.top + box.height / 2);
+  return {
+    row: rowId,
+    shown: getComputedStyle(more).display !== "none" && box.width > 0 && box.height > 0,
+    hitDisclosure: hit !== null && more.contains(hit),
+    x: box.left + box.width / 2,
+    y: box.top + box.height / 2,
+    sheet: document.querySelector(".msg-action-sheet") !== null,
+    focusOnDisclosure: document.activeElement === more,
+  };
+}
+
+/** A vertical line through the visible messages for a pointer sweep. */
+function sweepPath(): Record<string, unknown> {
+  const box = scrollElement().getBoundingClientRect();
+  const visible = groupRows().filter((row) => {
+    const rect = rectOf(row);
+    return rect.bottom > 0 && rect.top < box.height;
+  }).length;
+  return {
+    x: Math.round(box.left + box.width * 0.45),
+    top: Math.round(box.top + 12),
+    bottom: Math.round(box.bottom - 12),
+    visibleGroups: visible,
+  };
+}
+
+/** Puts the reader at a fraction of the history and names a point over the list for a wheel. */
+async function wheelStart(fraction: number): Promise<Record<string, unknown>> {
+  await scrollTo(fraction);
+  const box = scrollElement().getBoundingClientRect();
+  return {
+    x: Math.round(box.left + box.width * 0.45),
+    y: Math.round(box.top + box.height * 0.5),
+    scrollTop: scrollElement().scrollTop,
+  };
+}
+
+let frameSample: { intervals: number[]; running: boolean } | null = null;
+
+/** Starts recording the interval between animation frames. */
+function startFrames(): void {
+  const sample = { intervals: [] as number[], running: true };
+  frameSample = sample;
+  let previous = now();
+  const tick = () => {
+    if (!sample.running) return;
+    const at = now();
+    sample.intervals.push(at - previous);
+    previous = at;
+    requestAnimationFrame(tick);
+  };
+  requestAnimationFrame(tick);
+}
+
+function stopFrames(): Record<string, number> {
+  const sample = frameSample;
+  frameSample = null;
+  if (sample === null) return { frames: 0 };
+  sample.running = false;
+  // The first interval is the wait for the first frame, not a frame.
+  const intervals = sample.intervals.slice(1);
+  const sorted = [...intervals].sort((a, b) => a - b);
+  const at = (fraction: number) =>
+    sorted[Math.min(sorted.length - 1, Math.floor(sorted.length * fraction))] ?? 0;
+  return {
+    frames: intervals.length,
+    p50Ms: at(0.5),
+    p95Ms: at(0.95),
+    maxMs: sorted.at(-1) ?? 0,
+    over33ms: intervals.filter((value) => value > 33).length,
+  };
+}
+
+const FOCUSABLE = "a[href], button, input, textarea, select, [tabindex]";
+
+/** Controls of a row that are not its messages' actions. */
+function bodyFocusables(row: HTMLElement): HTMLElement[] {
+  return [...row.querySelectorAll<HTMLElement>(FOCUSABLE)].filter(
+    (element) =>
+      element.closest(".msg-toolbar") === null &&
+      !element.classList.contains("msg-mobile-more") &&
+      element.tabIndex >= 0,
+  );
+}
+
+/**
+ * Where focus is, as a reader of the tab sequence would name it, whether it
+ * shows its ring, and how far the transcript is scrolled with it there.
+ */
+function describeFocus(): Record<string, unknown> {
+  const element = document.activeElement as HTMLElement | null;
+  const top = Math.round(scrollElement().scrollTop);
+  if (element === null || element === document.body) return { row: null, label: "body", action: false, ring: false, top };
+  return {
+    row: element.closest<HTMLElement>("[data-row-id]")?.dataset.rowId ?? null,
+    label:
+      element.getAttribute("aria-label") ??
+      ((element.textContent ?? "").trim().slice(0, 40) || element.tagName),
+    action: element.closest(".msg-toolbar") !== null,
+    ring: element.matches(":focus-visible"),
+    top,
+  };
+}
+
+/**
+ * Focuses the first action of a message, the way Tab arriving from above
+ * would. With every toolbar mounted that is its first button; when one
+ * control stands for a message's actions, it is that control.
+ */
+function focusFirstAction(row: HTMLElement): void {
+  const entry = row.querySelector<HTMLElement>(".msg-entry");
+  if (entry === null) throw new Error("the row has no message");
+  const target =
+    entry.querySelector<HTMLElement>(".msg-toolbar button") ??
+    entry.querySelector<HTMLElement>(".msg-mobile-more");
+  if (target === null) throw new Error("the message has no way to its actions");
+  target.focus();
+}
+
+/**
+ * Two neighbouring messages with nothing focusable but their actions, so the
+ * Tab after the first one's last action can only be the second one's first,
+ * and focus on the first one's first action.
+ */
+async function keyboardPair(fraction: number): Promise<Record<string, unknown>> {
+  const rows = rowElements();
+  for (let index = Math.floor(rows.length * fraction); index < rows.length - 1; index += 1) {
+    const first = rows[index];
+    const second = rows[index + 1];
+    if (first === undefined || second === undefined) continue;
+    const plain = (row: HTMLElement) =>
+      row.querySelectorAll(".msg-entry").length === 1 && bodyFocusables(row).length === 0;
+    if (!plain(first) || !plain(second)) continue;
+    scrollElement().scrollTop = Math.max(0, scrollElement().scrollTop + rectOf(first).top - 300);
+    await waitForLayout();
+    focusFirstAction(first);
+    await frames(1);
+    return { first: first.dataset.rowId, second: second.dataset.rowId, focus: describeFocus() };
+  }
+  throw new Error("no two plain messages in a row");
+}
+
+/** Focus on the first action of the first message at or after a fraction of the history. */
+async function keyboardSpan(fraction: number): Promise<Record<string, unknown>> {
+  const rows = groupRows();
+  const row = rows[Math.min(rows.length - 1, Math.floor(rows.length * fraction))];
+  if (row === undefined) throw new Error("no message row");
+  scrollElement().scrollTop = Math.max(0, scrollElement().scrollTop + rectOf(row).top - 200);
+  await waitForLayout();
+  focusFirstAction(row);
+  await frames(1);
+  return { row: row.dataset.rowId, focus: describeFocus() };
+}
+
+/** The middle of a message, for a pointer or a finger. */
+function entryPoint(rowId: string): Record<string, unknown> {
+  const entry = scrollElement().querySelector<HTMLElement>(`[data-row-id="${rowId}"] .msg-entry`);
+  if (entry === null) throw new Error(`no message ${rowId}`);
+  toolbarEntry = entry;
+  const box = entry.getBoundingClientRect();
+  return { x: box.left + box.width / 2, y: box.top + box.height / 2, row: rowId };
 }
 
 function styleInfo(): Record<string, unknown> {
@@ -625,7 +891,21 @@ window.__bench = {
   scrollTo,
   toolbarTarget,
   toolbarCheck,
-  pressToolbarAction,
+  toolbarButtonPoint,
+  toolbarState,
+  pickerPoints,
+  idleToolbars,
+  missingToolbars,
+  phoneActions,
+  documentCounts,
+  sweepPath,
+  wheelStart,
+  startFrames,
+  stopFrames,
+  describeFocus,
+  keyboardPair,
+  keyboardSpan,
+  entryPoint,
   beginEdit,
   checkEdit,
   findMarker,
@@ -638,7 +918,7 @@ window.__bench = {
   waitForLayout,
   expected: () => expectedRows(currentSections),
   markerRowId: () => `m-${marker.index}`,
-  callbackInfo: () => ({ lastAction, lastEdit, lastCancel }),
+  callbackInfo: () => ({ lastAction, lastEdit, lastCancel, lastReact }),
   messageCount: () => messages.length,
   visibleGroup: () => visibleGroup().dataset.rowId ?? null,
   rowIds: () => rowElements().map((row) => row.dataset.rowId ?? ""),
