@@ -77,13 +77,9 @@ public static class HeldRoles
         ServerMember member,
         CancellationToken cancellationToken)
     {
-        if (member.Role.IsOwner)
-        {
-            return ServerPrivileges.All;
-        }
-
         var (held, baseRole) = await OfMemberAsync(db, member, cancellationToken);
-        return PermissionEvaluator.Unite(baseRole?.Permissions ?? ServerPrivileges.None, held.Select(x => x.Permissions));
+        return PermissionEvaluator.ServerWide(
+            member.Role.IsOwner, baseRole?.Permissions ?? ServerPrivileges.None, held.Select(x => x.Permissions));
     }
 
     /// <summary>The roles one member holds besides the base role, highest first, and the base role.</summary>
@@ -137,8 +133,7 @@ public sealed record HeldRoleTable(ServerRole? BaseRole, IReadOnlyDictionary<Gui
     public ServerPrivileges PermissionsOf(Guid userId)
     {
         var held = Of(userId);
-        return held.Any(x => x.IsOwner)
-            ? ServerPrivileges.All
-            : PermissionEvaluator.Unite(BaseRole?.Permissions ?? ServerPrivileges.None, held.Select(x => x.Permissions));
+        return PermissionEvaluator.ServerWide(
+            held.Any(x => x.IsOwner), BaseRole?.Permissions ?? ServerPrivileges.None, held.Select(x => x.Permissions));
     }
 }

@@ -90,6 +90,6 @@ public static partial class ServerAuthorization
     /// differently in the two sections, less those its channel override
     /// decides either way.
     /// </summary>
-    private static ServerPrivileges Changed(OverrideMasks source, OverrideMasks destination, OverrideMasks channel) =>
+    internal static ServerPrivileges Changed(OverrideMasks source, OverrideMasks destination, OverrideMasks channel) =>
         ((source.Granted ^ destination.Granted) | (source.Deny ^ destination.Deny)) & ~channel.Touched;
 }

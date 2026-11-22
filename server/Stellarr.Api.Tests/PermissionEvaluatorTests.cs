@@ -88,7 +88,49 @@ public sealed class PermissionEvaluatorTests
         var input = Member(Audit, [Messages], Level(roles: [Deny(Messages)]));
 
         Assert.Equal(Audit | Messages, PermissionEvaluator.Evaluate(input with { Levels = [] }));
-        Assert.Equal(Audit | Messages, PermissionEvaluator.Unite(Audit, [Messages]));
+        Assert.Equal(Audit | Messages, PermissionEvaluator.ServerWide(false, Audit, [Messages]));
+        Assert.Equal(ServerPrivileges.All, PermissionEvaluator.ServerWide(true, None, []));
+    }
+
+    /// <summary>
+    /// The channel move check asks each role and member alone whether its
+    /// overrides could change a bit, instead of evaluating everybody. Every
+    /// combination of one bit, for the base role, two held roles and the
+    /// member, at both sections and the channel, proves that it never misses
+    /// a change the evaluation sees.
+    /// </summary>
+    [Fact]
+    public void TheChannelMoveCheckSeesEveryChangeTheEvaluationSees()
+    {
+        OverrideMasks[] states = [default, Allow(Messages), Deny(Messages)];
+        const int Owners = 4; // the base role, two held roles, the member
+        var slots = new OverrideMasks[Owners, 3];
+        var cases = (int)Math.Pow(3, Owners * 3);
+        for (var code = 0; code < cases; code++)
+        {
+            var rest = code;
+            for (var owner = 0; owner < Owners; owner++)
+            {
+                for (var place = 0; place < 3; place++)
+                {
+                    slots[owner, place] = states[rest % 3];
+                    rest /= 3;
+                }
+            }
+
+            OverrideLevel At(int place) => new(slots[0, place], [slots[1, place], slots[2, place]], slots[3, place]);
+            var noticed = Enumerable.Range(0, Owners).Any(owner =>
+                ServerAuthorization.Changed(slots[owner, 0], slots[owner, 1], slots[owner, 2]) != None);
+            foreach (var united in new[] { None, Messages })
+            {
+                var before = PermissionEvaluator.Evaluate(Member(united, [None, None], At(0), At(2)));
+                var after = PermissionEvaluator.Evaluate(Member(united, [None, None], At(1), At(2)));
+                if (before != after && !noticed)
+                {
+                    Assert.Fail($"A move changed case {code} unnoticed.");
+                }
+            }
+        }
     }
 
     private static PermissionInput Member(ServerPrivileges basePermissions, ServerPrivileges[] held, params OverrideLevel[] levels) =>
