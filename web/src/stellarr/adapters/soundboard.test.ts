@@ -10,6 +10,7 @@ import type { RealtimeClient, RealtimeEventMap } from "@/lib/realtime/types";
 import { DEFAULT_SETTINGS, type VoiceSettings } from "@/lib/voice/settings";
 
 import { createSoundboardAdapter } from "./soundboard";
+import { REST_AFTER_MS } from "./soundboardAudio";
 
 class FakeNode {
   connect = vi.fn();
@@ -28,13 +29,24 @@ class FakeBufferSource extends FakeNode {
 
 class FakeAudioContext {
   static instances: FakeAudioContext[] = [];
+  /** How long the clock moves on while a suspended context wakes. */
+  static wakeMs = 0;
 
   state: AudioContextState = "running";
   currentTime = 5;
   destination = new FakeNode();
   sources: FakeBufferSource[] = [];
   setSinkId = vi.fn(async () => undefined);
-  resume = vi.fn(async () => undefined);
+  resume = vi.fn(async () => {
+    if (this.state === "suspended" && FakeAudioContext.wakeMs > 0) {
+      await Promise.resolve();
+      vi.setSystemTime(Date.now() + FakeAudioContext.wakeMs);
+    }
+    this.state = "running";
+  });
+  suspend = vi.fn(async () => {
+    this.state = "suspended";
+  });
   close = vi.fn(async () => {
     this.state = "closed";
   });
@@ -129,6 +141,7 @@ function build(
 
 beforeEach(() => {
   FakeAudioContext.instances = [];
+  FakeAudioContext.wakeMs = 0;
   vi.stubGlobal("AudioContext", FakeAudioContext);
   vi.stubGlobal(
     "fetch",
@@ -294,22 +307,70 @@ describe("soundboard audio adapter", () => {
     adapter.dispose();
   });
 
-  it("previews the chosen arrival window locally", async () => {
-    const realtime = new FakeRealtime();
-    const adapter = build(
-      { getSoundboard: vi.fn(async () => snapshot()) },
-      realtime,
-    );
+  it("keeps its context suspended until a clip plays, and running while one does", async () => {
+    vi.useFakeTimers();
+    try {
+      const realtime = new FakeRealtime();
+      const adapter = build({ getSoundboard: vi.fn(async () => snapshot()) }, realtime);
+      // The join click starts the context, which is what lets a clip that
+      // arrives later play without a gesture of its own; then it rests.
+      adapter.preparePlayback();
+      const context = FakeAudioContext.instances[0]!;
+      await vi.advanceTimersByTimeAsync(REST_AFTER_MS);
+      expect(context.resume).toHaveBeenCalled();
+      expect(context.state).toBe("suspended");
 
-    await adapter.preview({ ...SOUND, trimStartSeconds: 0.5, trimEndSeconds: 1.5 });
+      realtime.emit("SoundboardPlayed", {
+        playbackId: "play-2",
+        channelId: "channel-1",
+        triggeredByUserId: "user-1",
+        startsAtUnixMs: Date.now() + 750,
+        sound: SOUND,
+      });
+      await vi.advanceTimersByTimeAsync(0);
+      expect(context.state).toBe("running");
+      // Woken before the start was worked out: the whole clip, on time.
+      const [when, offset] = context.sources[0]?.start.mock.calls[0] ?? [];
+      expect(Number(when)).toBeCloseTo(5.75, 2);
+      expect(offset).toBe(0);
 
-    const context = FakeAudioContext.instances[0]!;
-    await vi.waitFor(() => expect(context.sources).toHaveLength(1));
-    const [, offset, remaining] = context.sources[0]?.start.mock.calls[0] ?? [];
-    expect(Number(offset)).toBeCloseTo(0.5, 2);
-    expect(Number(remaining)).toBeCloseTo(1, 2);
-    // Nothing was announced: an audition is not somebody walking in.
-    expect(realtime.playSoundboard).not.toHaveBeenCalled();
-    adapter.dispose();
+      await vi.advanceTimersByTimeAsync(2750 + REST_AFTER_MS);
+      expect(context.state).toBe("running");
+      context.sources[0]?.onended?.();
+      await vi.advanceTimersByTimeAsync(REST_AFTER_MS);
+      expect(context.state).toBe("suspended");
+      adapter.dispose();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("previews the chosen arrival window locally, from its first sample", async () => {
+    vi.useFakeTimers({ toFake: ["Date", "setTimeout", "clearTimeout"] });
+    try {
+      const realtime = new FakeRealtime();
+      const adapter = build(
+        { getSoundboard: vi.fn(async () => snapshot()) },
+        realtime,
+      );
+      adapter.preparePlayback();
+      await vi.advanceTimersByTimeAsync(REST_AFTER_MS);
+      const context = FakeAudioContext.instances[0]!;
+      expect(context.state).toBe("suspended");
+      // Waking the resting context takes a while; none of it is cut from the clip.
+      FakeAudioContext.wakeMs = 80;
+
+      await adapter.preview({ ...SOUND, trimStartSeconds: 0.5, trimEndSeconds: 1.5 });
+
+      expect(context.sources).toHaveLength(1);
+      const [, offset, remaining] = context.sources[0]?.start.mock.calls[0] ?? [];
+      expect(Number(offset)).toBeCloseTo(0.5, 2);
+      expect(Number(remaining)).toBeCloseTo(1, 2);
+      // Nothing was announced: an audition is not somebody walking in.
+      expect(realtime.playSoundboard).not.toHaveBeenCalled();
+      adapter.dispose();
+    } finally {
+      vi.useRealTimers();
+    }
   });
 });
