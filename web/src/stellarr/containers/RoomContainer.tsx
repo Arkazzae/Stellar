@@ -151,6 +151,7 @@ export function RoomContainer() {
             hasOlder={chat.hasOlder}
             loadingOlder={chat.loadingOlder}
             onJumpReady={takeJump}
+            covered={inVoice}
           />
           <Typing names={chat.typingNames} />
           {threadPanelOpen ? null : composer}
