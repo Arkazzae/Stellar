@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { flushSync } from "react-dom";
 
 /**
  * Whole seconds since `since`.
@@ -8,6 +9,10 @@ import { useEffect, useState } from "react";
  * the next whole second of the call rather than a second after the last one,
  * so two clocks of the same call (the dock's and the call view's) turn over
  * together instead of a fraction of a second apart.
+ *
+ * Out of sight it does not tick at all: a call sat in behind a game would
+ * otherwise render every second for nobody. The page coming back reads the
+ * clock at once, committed before the first frame it shows.
  */
 function useElapsedSeconds(since: number): number {
   const [seconds, setSeconds] = useState(0);
@@ -15,12 +20,22 @@ function useElapsedSeconds(since: number): number {
   useEffect(() => {
     let timer = 0;
     const tick = () => {
+      window.clearTimeout(timer);
       const elapsed = Math.max(0, Date.now() - since);
       setSeconds(Math.floor(elapsed / 1000));
+      if (document.visibilityState === "hidden") return;
       timer = window.setTimeout(tick, 1000 - (elapsed % 1000));
     };
+    const onVisibilityChange = () => {
+      if (document.visibilityState === "hidden") window.clearTimeout(timer);
+      else flushSync(tick);
+    };
     tick();
-    return () => window.clearTimeout(timer);
+    document.addEventListener("visibilitychange", onVisibilityChange);
+    return () => {
+      window.clearTimeout(timer);
+      document.removeEventListener("visibilitychange", onVisibilityChange);
+    };
   }, [since]);
 
   return seconds;
