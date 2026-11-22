@@ -161,7 +161,17 @@ export async function launch({ width = 1280, height = 900, headless = true, flag
     for (const listener of listeners) listener(message);
   };
 
+  // A command still waiting when Chrome goes away would otherwise wait for
+  // ever, and with it the run that was meant to fail on a timeout.
+  socket.onclose = () => {
+    for (const { reject } of pending.values()) reject(new Error("The DevTools socket closed."));
+    pending.clear();
+  };
+
   const send = (method, params = {}, sessionId) => {
+    if (socket.readyState !== WebSocket.OPEN) {
+      return Promise.reject(new Error(`The DevTools socket is closed; ${method} was not sent.`));
+    }
     const id = ++sequence;
     socket.send(JSON.stringify({ id, method, params, ...(sessionId ? { sessionId } : {}) }));
     return new Promise((resolve, reject) => {
@@ -277,6 +287,9 @@ export async function launch({ width = 1280, height = 900, headless = true, flag
         // The browser may already be gone.
       }
       await sleep(300);
+      // Closed from this side too: a socket Chrome never closed kept the run
+      // from exiting after it had written its result.
+      socket.close();
       try {
         proc.kill("SIGKILL");
       } catch {
