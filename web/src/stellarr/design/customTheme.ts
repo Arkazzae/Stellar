@@ -1,5 +1,12 @@
 import { deriveFaint, deriveNeutral } from "./colour";
-import { COLOUR_ROLES, type CustomTheme, type PaletteColors } from "./themes";
+import {
+  COLOUR_ROLES,
+  getPalette,
+  type ColourGroup,
+  type CustomTheme,
+  type PaletteColors,
+  type PaletteId,
+} from "./themes";
 
 /** What a person or a file decides about a custom palette; the rest is derived. */
 export type CustomThemeFields = Omit<CustomTheme, "accessibleFaint" | "neutral">;
@@ -20,6 +27,38 @@ export function makeCustomTheme(fields: CustomThemeFields): CustomTheme {
     ),
     neutral: deriveNeutral(colors.backgrounds.primary, colors.backgrounds.darkest),
   };
+}
+
+/** What a person or a file decided about a custom palette, without what was derived. */
+export function fieldsOf({ name, author, source, basedOn, colors }: CustomTheme): CustomThemeFields {
+  return {
+    name,
+    ...(author === undefined ? {} : { author }),
+    ...(source === undefined ? {} : { source }),
+    ...(basedOn === undefined ? {} : { basedOn }),
+    colors,
+  };
+}
+
+/** The palette with one role changed, its derived values worked out again. */
+export function withColour(
+  custom: CustomTheme,
+  group: ColourGroup,
+  role: string,
+  value: string,
+): CustomTheme {
+  const colors = copyColours(custom.colors);
+  (colors[group] as Record<string, string>)[role] = value;
+  return makeCustomTheme({ ...fieldsOf(custom), colors });
+}
+
+/**
+ * A preset made into the person's own palette, ready for its first change,
+ * under a name of its own so it is not taken for the preset beside it.
+ */
+export function forkPreset(id: PaletteId, name: string = getPalette(id).label): CustomTheme {
+  const preset = getPalette(id);
+  return makeCustomTheme({ name, basedOn: preset.id, colors: copyColours(preset.colors) });
 }
 
 /** A deep copy of a palette's colours, to edit without touching the original. */
