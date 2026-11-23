@@ -31,6 +31,7 @@ const permissionKeys = [
   "addReactions",
   "connect",
   "createInvite",
+  "viewChannel",
 ];
 
 interface RoleFormProps {

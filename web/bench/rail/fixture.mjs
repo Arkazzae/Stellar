@@ -19,6 +19,7 @@ const PERMISSIONS = [
   "addReactions",
   "connect",
   "createInvite",
+  "viewChannel",
 ];
 
 const hex = (value, width = 12) => value.toString(16).padStart(width, "0");
