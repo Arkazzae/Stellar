@@ -4,17 +4,20 @@ import "@/styles/themes/font-pack.css";
 
 import { useLayoutEffect } from "react";
 
-import { useTheme } from "@/state/hooks";
+import { WallpaperLayer } from "@/components/shell/WallpaperLayer";
+import { useAccount, useTheme } from "@/state/hooks";
 
 /**
  * What of the theme belongs to the signed-in app alone: the face it is set
- * in. The sign-in pages stay in Outfit, the brand's face, even after they
- * have fetched the app ahead of signing in, because the attribute that picks
- * another face is written only here, as the app mounts; a layout effect, so
- * the app's first frame already has it.
+ * in and the wallpaper behind it. The sign-in pages stay in Outfit and
+ * opaque, even after they have fetched the app ahead of signing in, because
+ * the attributes that pick another face and let a wallpaper through are
+ * written only here, as the app mounts; in layout effects, so the app's
+ * first frame already has them.
  */
 export function AppAppearance() {
   const { theme } = useTheme();
+  const { account } = useAccount();
 
   useLayoutEffect(() => {
     const root = document.documentElement;
@@ -24,5 +27,5 @@ export function AppAppearance() {
     };
   }, [theme.font]);
 
-  return null;
+  return <WallpaperLayer settings={theme.wallpaper} url={account.wallpaperUrl} known={account.id !== ""} />;
 }

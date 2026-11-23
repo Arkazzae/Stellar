@@ -29,6 +29,11 @@ export class ApiError extends Error {
    * instance's language, which may not be the reader's.
    */
   readonly fields?: Readonly<Record<string, string>>;
+  /**
+   * The server's own sentence for a refused upload (too large, no room left),
+   * in the instance's language.
+   */
+  readonly detail?: string;
 
   constructor(
     kind: ApiErrorKind,
@@ -38,6 +43,7 @@ export class ApiError extends Error {
       code?: string;
       details?: Readonly<Record<string, unknown>>;
       fields?: Readonly<Record<string, string>>;
+      detail?: string;
     },
   ) {
     super(message);
@@ -47,6 +53,7 @@ export class ApiError extends Error {
     if (problem?.code !== undefined) this.code = problem.code;
     if (problem?.details !== undefined) this.details = problem.details;
     if (problem?.fields !== undefined) this.fields = problem.fields;
+    if (problem?.detail !== undefined) this.detail = problem.detail;
   }
 }
 

@@ -68,7 +68,7 @@
   .share-band.show{display:block;animation:viewIn var(--dur-slow) var(--ease-standard)}
   .share-band:not(.watching) img{filter:brightness(0.45) saturate(0.8)}
   .share-band > video,.share-band > img,.share-placeholder{
-    width:100%;height:100%;display:block;background:var(--surface-canvas);
+    width:100%;height:100%;display:block;background:var(--surface-canvas-solid);
   }
   .share-band > video,.share-band > img{object-fit:contain}
   .share-placeholder{
@@ -175,7 +175,7 @@
   }
   .tile > video{
     position:absolute;inset:0;width:100%;height:100%;object-fit:cover;
-    border-radius:inherit;background:var(--surface-canvas);
+    border-radius:inherit;background:var(--surface-canvas-solid);
   }
   /* An edge in the accent and nothing blurred round it: no gradients. */
   .tile.speaking{border-color:var(--accent);box-shadow:0 0 0 1px var(--accent)}

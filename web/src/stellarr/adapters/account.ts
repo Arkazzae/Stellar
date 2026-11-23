@@ -101,6 +101,7 @@ export function createAccountAdapter(api: ApiClient): AccountAdapter {
       // a picture from the response to `uploadImage`.
       if (patch.avatarUrl === null) adopt(await api.removeAccountImage("avatar"));
       if (patch.bannerUrl === null) adopt(await api.removeAccountImage("banner"));
+      if (patch.wallpaperUrl === null) adopt(await api.removeAccountImage("wallpaper"));
     },
 
     async setPreferences(patch) {
@@ -117,7 +118,7 @@ export function createAccountAdapter(api: ApiClient): AccountAdapter {
     async uploadImage(kind, file) {
       const details = await api.uploadAccountImage(kind, file);
       adopt(details);
-      return (kind === "avatar" ? details.avatarUrl : details.bannerUrl) ?? "";
+      return details[`${kind}Url`] ?? "";
     },
 
     listJoinSounds: (signal) => api.getJoinSoundLibrary(signal),

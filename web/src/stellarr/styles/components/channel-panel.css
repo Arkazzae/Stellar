@@ -10,7 +10,7 @@
     overflow: hidden;
     border-left: 1px solid var(--line);
     transition: width 180ms ease, border-width 180ms ease;
-    background: var(--surface-raised);
+    background: var(--surface-sidebar);
   }
   .thread-panel.open { width: 100%; border-left-width: 1px; }
   .room.channel-panel-open .thread-panel:not(.open) { width: 0; border-left-width: 0; }
@@ -64,7 +64,7 @@
     min-width: 0;
     overflow: hidden;
     border-left: 1px solid var(--line);
-    background: var(--surface-raised);
+    background: var(--surface-sidebar);
   }
 
   .channel-panel.open {

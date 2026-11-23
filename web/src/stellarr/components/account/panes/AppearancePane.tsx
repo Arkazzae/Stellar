@@ -25,12 +25,16 @@ import {
   type SchemePreference,
   type SizePreference,
   type ThemePreference,
+  type WallpaperSettings,
 } from "@/design/themes";
+import { WallpaperPicture } from "@/components/shell/WallpaperLayer";
 import { useLanguage } from "@/state/hooks";
 
 import styles from "./AppearancePane.module.css";
 import { PaletteBoard, customThemeName } from "./PaletteBoard";
 import { ThemeFileRow } from "./ThemeFileRow";
+import { WallpaperSection } from "./WallpaperSection";
+import type { WallpaperAccess } from "./wallpaperUpload";
 
 /**
  * Reduced motion. It is an account preference with its own owner rather than
@@ -50,6 +54,8 @@ export interface AppearancePaneProps {
   /** Every axis back to `DEFAULT_THEME`, in one write. */
   onReset: () => void;
   motion?: MotionPreferenceProps;
+  /** The account's wallpaper; without it the pane offers none. */
+  wallpaper?: WallpaperAccess;
 }
 
 const SCHEME_ICONS: Record<SchemePreference, IconName> = {
@@ -120,11 +126,22 @@ function SwatchGroup({
  * and a room whose messages are the transcript's own markup. Every choice in
  * the pane shows here the moment it is made, text size and density included,
  * because the room is laid out by the rules that lay out the real one.
+ *
+ * A wallpaper is drawn behind it too; the surfaces over it are already
+ * see-through, since they read the same tokens the app's do.
  */
-function Stage() {
+function Stage({ wallpaper }: { wallpaper: { settings: WallpaperSettings; url: string | undefined } | null }) {
   const { t } = useLanguage();
+  const shown = wallpaper !== null && wallpaper.url !== undefined;
   return (
-    <figure className="ap-stage" aria-hidden="true">
+    <figure className={shown ? `ap-stage ${styles.stageWithWallpaper}` : "ap-stage"} aria-hidden="true">
+      {shown ? (
+        <WallpaperPicture
+          settings={wallpaper.settings}
+          url={wallpaper.url}
+          className={`wallpaper ${styles.stageWallpaper}`}
+        />
+      ) : null}
       <div className="ap-stage-rail">
         <i className="on">ST</i>
         <i>DS</i>
@@ -237,6 +254,7 @@ export function AppearancePane({
   onChange,
   onReset,
   motion,
+  wallpaper,
 }: AppearancePaneProps) {
   const { t } = useLanguage();
 
@@ -289,7 +307,7 @@ export function AppearancePane({
   // The custom palette is kept through a reset, so it does not count here.
   const isDefault =
     (Object.keys(DEFAULT_THEME) as (keyof ThemePreference)[]).every(
-      (axis) => axis === "custom" || theme[axis] === DEFAULT_THEME[axis],
+      (axis) => axis === "custom" || axis === "wallpaper" || theme[axis] === DEFAULT_THEME[axis],
     ) && motion?.reducedMotion !== true;
 
   // "Restore defaults" means everything this pane shows, motion included.
@@ -330,7 +348,7 @@ export function AppearancePane({
 
   return (
     <>
-      <Stage />
+      <Stage wallpaper={theme.wallpaper === null ? null : { settings: theme.wallpaper, url: wallpaper?.url }} />
 
       <section className="sc" aria-label={t("theme.theme")}>
         <header className="sc-h">{t("theme.theme")}</header>
@@ -439,12 +457,14 @@ export function AppearancePane({
               </div>
             </div>
 
-            <ThemeFileRow theme={theme} onChange={onChange} />
+            <ThemeFileRow theme={theme} onChange={onChange} {...(wallpaper === undefined ? {} : { wallpaper })} />
           </div>
 
           <PaletteBoard theme={theme} onChange={onChange} />
         </div>
       </section>
+
+      {wallpaper === undefined ? null : <WallpaperSection theme={theme} onChange={onChange} wallpaper={wallpaper} />}
 
       <section className="sc" aria-label={t("theme.readability")}>
         <header className="sc-h">{t("theme.readability")}</header>
