@@ -49,9 +49,14 @@ internal static class ServerOwnership
     }
 
     /// <summary>
-    /// Deletes the server; its channels, messages, roles and memberships go with
-    /// it by cascade, and the maintenance worker later removes the stored files
-    /// nothing refers to any more.
+    /// Deletes the server in one statement. Its roles, memberships, invites,
+    /// emoji, soundboard clips, notifications and the like go with it by
+    /// cascade; its channels, and everything written in them, by the triggers
+    /// of <c>ServerContentSchema</c>, since a channel has no foreign key to its
+    /// server. The emoji images are queued for deletion then. The uploads its
+    /// messages, icon and clips used are left without a reference, and the
+    /// maintenance worker removes them with their files once the orphan
+    /// retention has passed.
     /// </summary>
     /// <returns>Whether there was such a server.</returns>
     internal static async Task<bool> DeleteAsync(

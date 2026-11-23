@@ -23,6 +23,7 @@ public static class DatabaseSchema
         ChannelPostTimeSchema.CreateAsync,
         MessageJournalSchema.CreateAsync,
         MessageIndexSchema.CreateAsync,
+        ServerContentSchema.CreateAsync,
         // The push table is referenced by the activity outbox, so it comes
         // first even though the outbox only stores its id.
         PushSubscriptionSchema.CreateAsync,

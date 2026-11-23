@@ -146,7 +146,6 @@ public static partial class EmojiEndpoints
         Guid emojiId,
         HttpContext http,
         AppDbContext db,
-        MediaStorage mediaStorage,
         IHubContext<AppHub> hub,
         Messages messages,
         CancellationToken cancellationToken)
@@ -165,7 +164,7 @@ public static partial class EmojiEndpoints
             return Results.NotFound();
         }
 
-        await mediaStorage.QueueDeletionAsync([emoji.ObjectKey], DateTime.UtcNow, cancellationToken);
+        // The row's trigger queues the image for deletion, in this save.
         db.ServerEmoji.Remove(emoji);
         await ServerAudit.StageAsync(db, serverId, http.User.RequireUserId(), new AuditEvent(
             "emoji.delete",
