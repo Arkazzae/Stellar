@@ -33,6 +33,8 @@ public static class DatabaseSchema
         MemberPermissionsSchema.CreateAsync,
         RoleRankSchema.RepairAsync,
         DiscordImportSchema.CreateAsync,
+        // After every trigger: it deletes through them.
+        OrphanContentSchema.RemoveAsync,
     ];
 
     public static async Task PrepareAsync(AppDbContext db, CancellationToken cancellationToken)
