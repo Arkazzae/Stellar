@@ -37,6 +37,7 @@ public static class ServerAccess
         (ServerPrivileges.AddReactions, "addReactions"),
         (ServerPrivileges.Connect, "connect"),
         (ServerPrivileges.CreateInvite, "createInvite"),
+        (ServerPrivileges.ViewChannel, "viewChannel"),
     ];
 
     /// <summary>

@@ -116,10 +116,10 @@ USERS_SPEC: list[tuple[str, str, str, str, str, int]] = [
 # The permission masks of the two system roles, as the API writes them for a
 # new server (ServerPrivileges in server/Stellarr.Api/Domain/ServerRole.cs):
 # the owner role stores every permission, ServerPrivileges.All, and the base
-# role ServerRole.BaseRoleDefaults, which lets everybody send messages, attach
-# files, add reactions and join voice.
-OWNER_PERMISSIONS = (1 << 14) - 1
-MEMBER_PERMISSIONS = (1 << 9) | (1 << 10) | (1 << 11) | (1 << 12)
+# role ServerRole.BaseRoleDefaults, which lets everybody see the channels, send
+# messages, attach files, add reactions and join voice.
+OWNER_PERMISSIONS = (1 << 15) - 1
+MEMBER_PERMISSIONS = (1 << 9) | (1 << 10) | (1 << 11) | (1 << 12) | (1 << 14)
 
 ROLES_SPEC: list[tuple[str, str, int, int]] = [
     ("Admin", "oklch(0.68 0.18 35)", 254, 1),
