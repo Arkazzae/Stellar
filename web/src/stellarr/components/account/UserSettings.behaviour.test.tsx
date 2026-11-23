@@ -92,6 +92,7 @@ function props(overrides: Partial<UserSettingsProps> = {}): UserSettingsProps {
         palette: "midnight",
         accent: "#756cf7",
         custom: null,
+        font: "outfit",
         scheme: "system",
         contrast: "normal",
         size: "md",

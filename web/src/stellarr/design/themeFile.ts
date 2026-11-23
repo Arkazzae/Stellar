@@ -1,22 +1,25 @@
 import { makeCustomTheme } from "./customTheme";
 import {
   CUSTOM_PALETTE,
+  FONTS,
+  getPalette,
   normaliseColours,
   normaliseCustomTheme,
   normaliseHex,
   resolvePalette,
   type CustomTheme,
+  type FontId,
   type PaletteColors,
   type PaletteId,
   type ThemePreference,
-  getPalette,
 } from "./themes";
 
 /**
  * Stellarr's own theme file, `<name>.stellarr-theme.json`:
  *
  *   { "stellarrTheme": 1, "name": …, "author"?: …, "source"?: …,
- *     "colors": { backgrounds, text, borders, semantic }, "accent": … }
+ *     "colors": { backgrounds, text, borders, semantic }, "accent": …,
+ *     "font"?: … }
  *
  * `stellarrTheme` only says the file is ours. A file carries what a theme
  * looks like and nothing personal: size, density, contrast and reduced motion
@@ -36,6 +39,8 @@ export interface ThemeFile {
   source?: string;
   colors: Omit<PaletteColors, "accent">;
   accent: string;
+  /** One of `FONTS`; a face this build does not have is left out on reading. */
+  font?: FontId;
 }
 
 /** The palette and accent in use, as a file. A preset is written under its own name. */
@@ -49,6 +54,7 @@ export function themeFileOf(theme: ThemePreference): ThemeFile {
     ...(custom?.source === undefined ? {} : { source: custom.source }),
     colors: { backgrounds, text, borders, semantic },
     accent: theme.accent,
+    font: theme.font,
   };
 }
 
@@ -103,5 +109,10 @@ export function readThemeFile(text: string): ThemeFileRead {
     }),
   );
   if (custom === null) return { ok: false, problem: "colours" };
-  return { ok: true, custom, patch: { palette: CUSTOM_PALETTE, custom, accent, scheme: "dark" } };
+  const font = FONTS.find((face) => face === field(parsed, "font"));
+  return {
+    ok: true,
+    custom,
+    patch: { palette: CUSTOM_PALETTE, custom, accent, scheme: "dark", ...(font === undefined ? {} : { font }) },
+  };
 }

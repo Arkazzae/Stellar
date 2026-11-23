@@ -3,7 +3,8 @@ Fonts bundled with Stellarr
 
 Every face is self-hosted so a LAN-only instance renders correctly with no
 outbound request. The pack contains the two faces of the interface: Outfit
-for text and JetBrains Mono for code.
+for text and JetBrains Mono for code. The faces a person may choose instead
+are in /typefaces/, with their own copy of this notice.
 
 Copyright 2021 The Outfit Project Authors (https://github.com/Outfitio/Outfit-Fonts).
 Copyright 2020 The JetBrains Mono Project Authors (https://github.com/JetBrains/JetBrainsMono).
