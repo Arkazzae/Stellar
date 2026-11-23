@@ -216,7 +216,9 @@ public sealed class MediaStorage(AppDbContext db, IObjectStorage storage, ILogge
         await db.MessageAttachments.AsNoTracking().AnyAsync(x => x.AttachmentId == attachmentId, cancellationToken) ||
         await db.MessageEmbeds.AsNoTracking().AnyAsync(x => x.ThumbnailAttachmentId == attachmentId, cancellationToken) ||
         await db.SoundboardSounds.AsNoTracking().AnyAsync(x => x.AttachmentId == attachmentId, cancellationToken) ||
-        await db.Users.AsNoTracking().AnyAsync(x => x.AvatarUrl == assetUrl || x.BannerUrl == assetUrl, cancellationToken) ||
+        await db.Users.AsNoTracking().AnyAsync(
+            x => x.AvatarUrl == assetUrl || x.BannerUrl == assetUrl || x.WallpaperUrl == assetUrl,
+            cancellationToken) ||
         await db.Servers.AsNoTracking().AnyAsync(x => x.IconUrl == assetUrl, cancellationToken);
 
     private static bool TryGetAttachmentId(string? assetUrl, out Guid attachmentId)

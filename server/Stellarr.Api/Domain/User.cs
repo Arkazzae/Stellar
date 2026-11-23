@@ -54,6 +54,15 @@ public sealed class User
     /// <summary>Same rules as <see cref="AvatarUrl"/>.</summary>
     public string? BannerUrl { get; set; }
 
+    /// <summary>
+    /// The picture the person set behind their own app, by the same rules as
+    /// <see cref="AvatarUrl"/>. Unlike the avatar and the banner it is private:
+    /// only its owner reads the file (by the uploader rule of
+    /// <c>AttachmentAccess</c>), and the address goes into their own account
+    /// and into nothing anybody else receives.
+    /// </summary>
+    public string? WallpaperUrl { get; set; }
+
     /// <summary>A short, public line about what the person is doing right now.</summary>
     public string? CustomStatus { get; set; }
 

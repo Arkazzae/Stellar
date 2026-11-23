@@ -21,6 +21,7 @@ internal sealed class UserConfiguration : IEntityTypeConfiguration<User>
         entity.Property(x => x.AvatarColor).HasMaxLength(48);
         entity.Property(x => x.AvatarUrl).HasMaxLength(256);
         entity.Property(x => x.BannerUrl).HasMaxLength(256);
+        entity.Property(x => x.WallpaperUrl).HasMaxLength(256);
         // The UI caps the status at 128 characters and the bio at 2000. The
         // columns leave room, so a longer value written before those caps
         // fails validation instead of being truncated.
