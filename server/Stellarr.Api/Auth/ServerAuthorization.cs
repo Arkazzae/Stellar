@@ -90,7 +90,7 @@ public static partial class ServerAuthorization
         AppDbContext db, Guid actorId, PermissionScope scope, Guid roleId,
         ServerPrivileges allow, ServerPrivileges deny, CancellationToken cancellationToken)
     {
-        if (scope.Kind == PermissionScope.ScopeKind.Server || !Valid(allow | deny) || (allow & deny) != 0) return false;
+        if (scope.Kind == PermissionScope.ScopeKind.Server || !Overridable(allow, deny)) return false;
         if (await PlaceAsync(db, scope, cancellationToken) is not { } place) return false;
         var snapshot = await PermissionSnapshot.LoadAsync(db, scope.ServerId, [actorId], place.Targets, cancellationToken);
         var actor = snapshot.Subject(actorId);
@@ -120,8 +120,7 @@ public static partial class ServerAuthorization
         AppDbContext db, Guid actorId, PermissionScope scope, Guid targetId,
         ServerPrivileges allow, ServerPrivileges deny, CancellationToken cancellationToken)
     {
-        if (scope.Kind == PermissionScope.ScopeKind.Server || !Valid(allow | deny) || (allow & deny) != 0 ||
-            actorId == targetId) return false;
+        if (scope.Kind == PermissionScope.ScopeKind.Server || !Overridable(allow, deny) || actorId == targetId) return false;
         if (await PlaceAsync(db, scope, cancellationToken) is not { } place) return false;
         var snapshot = await PermissionSnapshot.LoadAsync(db, scope.ServerId, [actorId, targetId], place.Targets, cancellationToken);
         var actor = snapshot.Subject(actorId);
@@ -201,6 +200,13 @@ public static partial class ServerAuthorization
         (actor.IsOwner || actor.Position < target.Position);
 
     private static bool Valid(ServerPrivileges permissions) => (permissions & ~ServerPrivileges.All) == 0;
+
+    /// <summary>
+    /// What an override may say: known bits, none both allowed and denied, and
+    /// never Administrator, which is server-wide only.
+    /// </summary>
+    private static bool Overridable(ServerPrivileges allow, ServerPrivileges deny) =>
+        Valid(allow | deny) && (allow & deny) == 0 && ((allow | deny) & ServerPrivileges.Administrator) == 0;
     private static bool Contains(ServerPrivileges held, ServerPrivileges required) =>
         Valid(required) && (held & required) == required;
 

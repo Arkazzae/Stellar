@@ -113,6 +113,14 @@ USERS_SPEC: list[tuple[str, str, str, str, str, int]] = [
     ("ania", "Ania Mazur", "she/her", "Czytam zaległości", "Data viz, React 19 & keyboard shortcuts.", 355),
 ]
 
+# The permission masks of the two system roles, as the API writes them for a
+# new server (ServerPrivileges in server/Stellarr.Api/Domain/ServerRole.cs):
+# the owner role stores every permission, ServerPrivileges.All, and the base
+# role ServerRole.BaseRoleDefaults, which lets everybody send messages, attach
+# files, add reactions and join voice.
+OWNER_PERMISSIONS = (1 << 14) - 1
+MEMBER_PERMISSIONS = (1 << 9) | (1 << 10) | (1 << 11) | (1 << 12)
+
 ROLES_SPEC: list[tuple[str, str, int, int]] = [
     ("Admin", "oklch(0.68 0.18 35)", 254, 1),
     ("Moderator", "oklch(0.70 0.15 160)", 240, 2),
@@ -694,13 +702,13 @@ def bootstrap_empty_server(
     )
     cur.execute(
         """INSERT INTO ServerRoles (Id, ServerId, Name, Color, Permissions, Position, IsSystem, IsOwner)
-           VALUES (?, ?, 'Owner', 'oklch(0.72 0.16 15)', 255, 0, 1, 1)""",
-        (owner_role_id, server_id),
+           VALUES (?, ?, 'Owner', 'oklch(0.72 0.16 15)', ?, 0, 1, 1)""",
+        (owner_role_id, server_id, OWNER_PERMISSIONS),
     )
     cur.execute(
         """INSERT INTO ServerRoles (Id, ServerId, Name, Color, Permissions, Position, IsSystem, IsOwner)
-           VALUES (?, ?, 'Member', 'oklch(0.70 0.02 277)', 0, 1, 1, 0)""",
-        (member_role_id, server_id),
+           VALUES (?, ?, 'Member', 'oklch(0.70 0.02 277)', ?, 1, 1, 0)""",
+        (member_role_id, server_id, MEMBER_PERMISSIONS),
     )
     cur.execute(
         """INSERT INTO ServerMembers (ServerId, UserId, RoleId, OwnerSlot, JoinedAt)
@@ -1760,13 +1768,13 @@ def seed_database(
                 own_rid, mem_rid = new_guid(), new_guid()
                 cur.execute(
                     """INSERT INTO ServerRoles (Id, ServerId, Name, Color, Permissions, Position, IsSystem, IsOwner)
-                       VALUES (?, ?, 'Owner', 'oklch(0.72 0.16 15)', 255, 0, 1, 1)""",
-                    (own_rid, sid),
+                       VALUES (?, ?, 'Owner', 'oklch(0.72 0.16 15)', ?, 0, 1, 1)""",
+                    (own_rid, sid, OWNER_PERMISSIONS),
                 )
                 cur.execute(
                     """INSERT INTO ServerRoles (Id, ServerId, Name, Color, Permissions, Position, IsSystem, IsOwner)
-                       VALUES (?, ?, 'Member', 'oklch(0.70 0.02 277)', 0, 1, 1, 0)""",
-                    (mem_rid, sid),
+                       VALUES (?, ?, 'Member', 'oklch(0.70 0.02 277)', ?, 1, 1, 0)""",
+                    (mem_rid, sid, MEMBER_PERMISSIONS),
                 )
 
                 resolved_members: list[str] = []

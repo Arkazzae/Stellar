@@ -1,4 +1,5 @@
 using Microsoft.EntityFrameworkCore;
+using Stellarr.Api.Data.OneTime;
 using Stellarr.Api.Data.Schema;
 
 namespace Stellarr.Api.Data;
@@ -44,5 +45,8 @@ public static class DatabaseSchema
         {
             await step(db, cancellationToken);
         }
+
+        // Last: a one-time step reads the data as the steps above leave it.
+        await OneTimeSteps.RunAsync(db, cancellationToken);
     }
 }

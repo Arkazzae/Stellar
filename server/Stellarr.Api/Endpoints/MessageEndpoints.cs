@@ -101,6 +101,20 @@ public static class MessageEndpoints
             return replay;
         }
 
+        // The one place posting is admitted, after the replay because that
+        // posts nothing. It is decided in the channel, so its overrides count.
+        var held = await ServerAuthorization.EffectiveAsync(
+            db, userId, PermissionScope.Channel(serverId, channelId), cancellationToken) ?? ServerPrivileges.None;
+        if (!held.HasFlag(ServerPrivileges.SendMessages))
+        {
+            return ServerAccess.Refusal(messages, MessageKey.SendMessagesDenied, ServerPrivileges.SendMessages);
+        }
+
+        if (submission.AttachmentIds.Length > 0 && !held.HasFlag(ServerPrivileges.AttachFiles))
+        {
+            return ServerAccess.Refusal(messages, MessageKey.AttachFilesDenied, ServerPrivileges.AttachFiles);
+        }
+
         Message? replyTo = null;
         if (submission.ReplyToMessageId is { } replyToId)
         {
@@ -124,8 +138,7 @@ public static class MessageEndpoints
             return Invalid("attachmentIds", messages.Get(MessageKey.AttachmentsNotFound));
         }
 
-        var enforceSlowMode = channel.SlowModeSeconds > 0 &&
-            !await ServerAccess.HasAsync(db, userId, serverId, channelId, ServerPrivileges.ManageChannels, cancellationToken);
+        var enforceSlowMode = channel.SlowModeSeconds > 0 && !held.HasFlag(ServerPrivileges.ManageChannels);
         Message message;
         ChannelReadDto read;
         IReadOnlyList<UserNotification> mentions;

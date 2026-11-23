@@ -3,6 +3,7 @@ using Microsoft.EntityFrameworkCore;
 using Stellarr.Api.Auth;
 using Stellarr.Api.Contracts;
 using Stellarr.Api.Data;
+using Stellarr.Api.Domain;
 using Stellarr.Api.Localization;
 using Stellarr.Api.Realtime;
 
@@ -79,6 +80,14 @@ public static class MessageReactionEndpoints
         }
 
         var userId = http.User.RequireUserId();
+        // Adding is admitted here, in the message's channel; taking one's own
+        // reaction back needs no permission, so losing one leaves no trace stuck.
+        if (added && !await ServerAccess.HasAsync(
+                db, userId, serverId, channelId.Value, ServerPrivileges.AddReactions, cancellationToken))
+        {
+            return ServerAccess.Refusal(messages, MessageKey.AddReactionsDenied, ServerPrivileges.AddReactions);
+        }
+
         if (added)
         {
             // The key is the whole reaction, so asking twice, or twice at once,

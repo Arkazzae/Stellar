@@ -1,6 +1,7 @@
 using Microsoft.EntityFrameworkCore;
 using Stellarr.Api.Data;
 using Stellarr.Api.Domain;
+using Stellarr.Api.Localization;
 
 namespace Stellarr.Api.Auth;
 
@@ -16,6 +17,10 @@ public static class ServerAccess
 
     internal const string ContextItemKey = "Stellarr.ActiveServerId";
 
+    /// <summary>
+    /// In the order lists are written in. The newer names come after the
+    /// older ones, so a list a client already knows keeps its order.
+    /// </summary>
     private static readonly (ServerPrivileges Privilege, string Name)[] Names =
     [
         (ServerPrivileges.ManageServer, "manageServer"),
@@ -26,7 +31,23 @@ public static class ServerAccess
         (ServerPrivileges.ModerateMembers, "moderateMembers"),
         (ServerPrivileges.ManageBans, "manageBans"),
         (ServerPrivileges.ViewAuditLog, "viewAuditLog"),
+        (ServerPrivileges.Administrator, "administrator"),
+        (ServerPrivileges.SendMessages, "sendMessages"),
+        (ServerPrivileges.AttachFiles, "attachFiles"),
+        (ServerPrivileges.AddReactions, "addReactions"),
+        (ServerPrivileges.Connect, "connect"),
+        (ServerPrivileges.CreateInvite, "createInvite"),
     ];
+
+    /// <summary>
+    /// The 403 for a member whom one permission stops, in their language, with
+    /// the permission's wire name so a client can tell which one it was.
+    /// </summary>
+    public static IResult Refusal(Messages messages, MessageKey reason, ServerPrivileges missing) =>
+        Results.Problem(
+            statusCode: StatusCodes.Status403Forbidden,
+            title: messages.Get(reason),
+            extensions: new Dictionary<string, object?> { ["permission"] = Array.Find(Names, x => x.Privilege == missing).Name });
 
     /// <summary>The wire names of the privileges set in <paramref name="privileges"/>.</summary>
     public static IReadOnlyList<string> ToNames(ServerPrivileges privileges) =>

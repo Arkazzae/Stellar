@@ -389,7 +389,9 @@ public sealed class MultipleRolesFlowTests
         await using var connection = await ListenAsync(state.Factory, "jo", "Corona!2026");
 
         Assert.Equal(HttpStatusCode.NoContent, (await Scenario.SetRolesAsync(state.Owner, JoId, state.Gift, state.Banner)).StatusCode);
-        Assert.Equal(["manageMessages", "manageBans"], Permissions(await connection.NextAsync()));
+        Assert.Equal(
+            ["manageMessages", "manageBans", "sendMessages", "attachFiles", "addReactions", "connect"],
+            Permissions(await connection.NextAsync()));
 
         // A change to the base role reaches members who hold other roles too.
         Assert.Equal(HttpStatusCode.OK, (await state.Owner.PatchAsJsonAsync(

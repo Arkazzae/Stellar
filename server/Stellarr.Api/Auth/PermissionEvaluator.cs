@@ -47,7 +47,8 @@ public sealed record PermissionInput(
 
 /// <summary>
 /// What a member may do, worked out the way Discord does it. The owner may do
-/// everything. Anybody else starts from the base role's permissions united
+/// everything, and so may anybody whose roles grant Administrator, wherever
+/// they are. Anybody else starts from the base role's permissions united
 /// with those of every role they hold; each level then removes the base
 /// role's denies and adds its allows, then removes what any held role denies
 /// and adds what any held role allows, so that an allow of one role beats a
@@ -65,6 +66,13 @@ public static class PermissionEvaluator
         }
 
         var held = Unite(input.BasePermissions, input.HeldPermissions);
+        // Administrator comes from the roles alone and passes every override,
+        // as on Discord; what rank allows is decided elsewhere and still holds.
+        if (held.HasFlag(ServerPrivileges.Administrator))
+        {
+            return ServerPrivileges.All;
+        }
+
         foreach (var level in input.Levels)
         {
             held = Apply(held, level);
@@ -96,10 +104,17 @@ public static class PermissionEvaluator
             allowed |= role.Granted;
         }
 
-        held = (held & ~denied) | allowed;
+        held = (held & ~(denied & Overridable)) | (allowed & Overridable);
         return Apply(held, level.Member);
     }
 
+    /// <summary>
+    /// What an override can change: everything but Administrator, which the
+    /// API refuses to store in one. A row written by hand that has it is read
+    /// as if it had not.
+    /// </summary>
+    private const ServerPrivileges Overridable = ServerPrivileges.All & ~ServerPrivileges.Administrator;
+
     private static ServerPrivileges Apply(ServerPrivileges held, OverrideMasks masks) =>
-        (held & ~masks.Deny) | masks.Granted;
+        (held & ~(masks.Deny & Overridable)) | (masks.Granted & Overridable);
 }
