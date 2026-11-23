@@ -29,6 +29,7 @@ public static class RoleEndpoints
         admin.MapGet("/roles", ListRolesAsync);
         // On the instance server, as in Cockpit, granting powers needs a fresh second step.
         admin.MapPost("/roles", CreateRoleAsync).AddEndpointFilter<InstanceServerFreshSecondStepFilter>();
+        admin.MapPut("/roles/order", ReorderRolesAsync).AddEndpointFilter<InstanceServerFreshSecondStepFilter>();
         admin.MapPatch("/roles/{roleId:guid}", UpdateRoleAsync).AddEndpointFilter<InstanceServerFreshSecondStepFilter>();
         admin.MapDelete("/roles/{roleId:guid}", DeleteRoleAsync).AddEndpointFilter<InstanceServerFreshSecondStepFilter>();
         admin.MapGet("/members", ListMembersAsync);
@@ -203,6 +204,85 @@ public static class RoleEndpoints
         var holders = await HeldRoles.LoadAsync(db, serverId, cancellationToken);
         await NotifyAsync(hub, db, serverId, holders.Holders(role.Id), cancellationToken);
         return Results.Ok(role.ToDto(holders.CountHolders(role.Id)));
+    }
+
+    /// <summary>
+    /// Sets the order of the roles between the owner role and the base role,
+    /// which is their rank. Roles that keep their place keep their position,
+    /// so ties the actor may not break stay ties; the roles that move are
+    /// numbered after them, and the base role stays last. Who ranks a member
+    /// can change with the order, so every top role is worked out again.
+    /// </summary>
+    private static async Task<IResult> ReorderRolesAsync(
+        ReorderRolesRequest request,
+        HttpContext http,
+        AppDbContext db,
+        Messages messages,
+        CancellationToken cancellationToken)
+    {
+        await using var transaction = await db.Database.BeginTransactionAsync(cancellationToken);
+        var serverId = http.RequireActiveServerId();
+        var actorId = http.User.RequireUserId();
+        if (!(await ServerAccess.GetAsync(db, actorId, serverId, cancellationToken)).HasFlag(ServerPrivileges.ManageRoles))
+        {
+            return Results.Forbid();
+        }
+
+        var baseRoleId = (await ServerAccess.FindMemberRoleAsync(db, serverId, cancellationToken))?.Id;
+        if (baseRoleId is null)
+        {
+            return NoMemberRole(messages);
+        }
+
+        var roles = await db.ServerRoles.Where(x => x.ServerId == serverId).ToListAsync(cancellationToken);
+        var ranked = HeldRoles.Ranked(roles.Where(x => !x.IsOwner && x.Id != baseRoleId)).ToArray();
+        var wanted = request.RoleIds ?? [];
+        if (wanted.Count != ranked.Length || wanted.Distinct().Count() != wanted.Count ||
+            !wanted.ToHashSet().SetEquals(ranked.Select(x => x.Id)))
+        {
+            return Results.ValidationProblem(new Dictionary<string, string[]>
+            {
+                ["roleIds"] = [messages.Get(MessageKey.RoleOrderIncomplete)],
+            });
+        }
+
+        if (!await ServerAuthorization.CanReorderRolesAsync(db, actorId, serverId, ranked, wanted, cancellationToken))
+        {
+            return Results.Forbid();
+        }
+
+        var kept = 0;
+        while (kept < ranked.Length && ranked[kept].Id == wanted[kept])
+        {
+            kept++;
+        }
+
+        if (kept == ranked.Length)
+        {
+            return Results.NoContent();
+        }
+
+        var byId = ranked.ToDictionary(x => x.Id);
+        var owner = roles.Where(x => x.IsOwner).Select(x => (int?)x.Position).Min();
+        var position = ranked.Take(kept).Select(x => (int?)x.Position).Append(owner).Max() ?? -1;
+        foreach (var id in wanted.Skip(kept))
+        {
+            byId[id].Position = ++position;
+        }
+
+        var baseRole = roles.Single(x => x.Id == baseRoleId);
+        if (baseRole.Position <= position)
+        {
+            baseRole.Position = position + 1;
+        }
+
+        await db.SaveChangesAsync(cancellationToken);
+        await MemberRoles.RankAgainAsync(db, serverId, leaving: null, cancellationToken);
+        await ServerAudit.StageAsync(db, serverId, actorId, new AuditEvent(
+            "role.reorder", messages.Get(MessageKey.AuditRolesReordered)), cancellationToken);
+        await db.SaveChangesAsync(cancellationToken);
+        await transaction.CommitAsync(cancellationToken);
+        return Results.NoContent();
     }
 
     private static async Task<IResult> DeleteRoleAsync(

@@ -59,6 +59,29 @@ public static partial class ServerAuthorization
     }
 
     /// <summary>
+    /// Reordering the roles between the owner role and the base role, from
+    /// <paramref name="ranked"/>, their order now, highest first, to
+    /// <paramref name="wanted"/>, the same roles in a new order. The actor
+    /// needs ManageRoles and moves only roles their top role outranks: every
+    /// role it does not, their own and their peers' included, has to keep its
+    /// place, and those all rank above the ones it does, so nothing can be put
+    /// at or above the actor's top role.
+    /// </summary>
+    public static async Task<bool> CanReorderRolesAsync(
+        AppDbContext db, Guid actorId, Guid serverId, IReadOnlyList<ServerRole> ranked, IReadOnlyList<Guid> wanted,
+        CancellationToken cancellationToken)
+    {
+        var actor = await SubjectAsync(db, actorId, serverId, cancellationToken);
+        if (actor is null || !Contains(actor.Permissions, ServerPrivileges.ManageRoles) || ranked.Count != wanted.Count) return false;
+        for (var index = 0; index < ranked.Count; index++)
+        {
+            if (!Outranks(actor.TopRole, ranked[index]) && wanted[index] != ranked[index].Id) return false;
+        }
+
+        return true;
+    }
+
+    /// <summary>
     /// Giving roles to a member and taking them away are decided alike, for
     /// every role in <paramref name="changed"/>: the actor needs ManageMembers,
     /// must outrank the member and each role, must not be the member, and must

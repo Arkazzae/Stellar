@@ -14,6 +14,12 @@ public sealed record AssignRoleRequest(Guid RoleId);
 /// <summary>Every role the member is to hold besides the base role; an empty list leaves only the base role.</summary>
 public sealed record SetMemberRolesRequest(IReadOnlyList<Guid>? RoleIds);
 
+/// <summary>
+/// Every role between the owner role and the base role, highest first, each
+/// once. The owner role stays first and the base role last, so neither is named.
+/// </summary>
+public sealed record ReorderRolesRequest(IReadOnlyList<Guid>? RoleIds);
+
 /// <summary>A role of the server; <c>MemberCount</c> counts who holds it, and for the base role every member.</summary>
 public sealed record ServerRoleDto(
     string Id,
