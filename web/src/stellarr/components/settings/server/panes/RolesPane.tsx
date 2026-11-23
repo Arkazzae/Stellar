@@ -10,7 +10,7 @@ import { SettingsSaveBar } from "@/components/settings/SettingsSaveBar";
 import { SettingsSection } from "@/components/settings/SettingsSection";
 import { RoleMark } from "@/components/settings/server/panes/RoleMark";
 import { useSettingsGuard } from "@/components/settings/settingsGuard";
-import { ACCENT_SWATCHES } from "@/design/themes";
+import { ACCENT_SWATCHES } from "@/design/accentSwatches";
 import { useAsyncAction } from "@/hooks/useAsyncAction";
 import type { MessageKey } from "@/i18n";
 import { SERVER_PERMISSION_VALUES } from "@/ports";
