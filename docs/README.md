@@ -41,4 +41,4 @@ Stellarr is a self-hosted text, voice, and video chat platform for small groups,
 - [Development scripts](../scripts/README.md): seeding the development SQLite database with sample users, channels, messages, media, and presence.
 - [Platform templates](../deploy/README.md): packaging rules for non-Compose templates and the [Cloudflare backup relay Worker](../deploy/cloudflare/backup-relay/README.md).
 - [Branding](../branding/README.md): logo, mascot, [UI icon SVGs](../branding/icons/README.md), [README tour film](../branding/film/README.md), color tokens, typography, and trademark policy.
-- [Project website](../website/README.md): building and deploying the `stellarr.online` WebGL landing page and installer endpoint.
+- [Project website](../website/README.md): building and deploying the `stellarr.online` landing page and installer endpoint.
