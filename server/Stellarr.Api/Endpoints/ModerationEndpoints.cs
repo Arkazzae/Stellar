@@ -198,9 +198,9 @@ public static class ModerationEndpoints
     }
 
     /// <summary>
-    /// Cuts a removed member off from everything live: their voice seats, the
-    /// server's and its text channels' groups. They hear about it through
-    /// their own user group, which outlives the membership.
+    /// Cuts a removed member off from everything live: their voice seats and
+    /// the server's groups. They hear about it through their own user group,
+    /// which outlives the membership.
     /// </summary>
     private static async Task PublishRemovalAsync(
         Guid serverId,
@@ -222,11 +222,9 @@ public static class ModerationEndpoints
         await hub.Clients.Group(AppHub.UserGroup(userId)).SendAsync(
             "ServerAccessRevoked", new { serverId = serverId.ToString(), kind });
 
-        // Only text channels have groups of their own; voice rooms are addressed by connection.
-        var groups = channels.Where(x => x.Kind == ChannelKind.Text)
-            .Select(x => AppHub.ChannelGroup(x.Id))
-            .Prepend(AppHub.ServerGroup(serverId))
-            .ToList();
+        // What reaches only some members is worked out when it is sent and
+        // leaves them out from now on anyway; these are the server's groups.
+        string[] groups = [AppHub.ServerGroup(serverId), AppHub.FollowerGroup(serverId, userId)];
         foreach (var connectionId in presence.ConnectionIds(userId))
         {
             foreach (var group in groups)

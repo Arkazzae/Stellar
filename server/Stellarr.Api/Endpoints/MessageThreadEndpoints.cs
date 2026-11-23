@@ -2,6 +2,7 @@ using Microsoft.EntityFrameworkCore;
 using Stellarr.Api.Auth;
 using Stellarr.Api.Contracts;
 using Stellarr.Api.Data;
+using Stellarr.Api.Domain;
 using Stellarr.Api.Localization;
 using Stellarr.Api.Messaging;
 
@@ -32,8 +33,10 @@ public static class MessageThreadEndpoints
         Messages messages,
         CancellationToken cancellationToken)
     {
-        if (!await db.Channels.TextChannelOnServer(channelId, http.RequireActiveServerId())
-                .AnyAsync(cancellationToken))
+        // A channel the caller does not view is answered as one that does not exist.
+        if (await ChannelVisibility.FindAsync(
+                db, http.User.RequireUserId(), http.RequireActiveServerId(), channelId, ChannelKind.Text,
+                cancellationToken) is null)
         {
             return Results.NotFound();
         }
@@ -79,8 +82,10 @@ public static class MessageThreadEndpoints
         Messages messages,
         CancellationToken cancellationToken)
     {
-        if (!await db.Channels.TextChannelOnServer(channelId, http.RequireActiveServerId())
-                .AnyAsync(cancellationToken))
+        // A channel the caller does not view is answered as one that does not exist.
+        if (await ChannelVisibility.FindAsync(
+                db, http.User.RequireUserId(), http.RequireActiveServerId(), channelId, ChannelKind.Text,
+                cancellationToken) is null)
         {
             return Results.NotFound();
         }

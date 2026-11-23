@@ -266,7 +266,7 @@ public static partial class RegistrationEndpoints
             setup.Forget();
         }
 
-        await ServerWelcome.PublishAsync(hub, server.Id, welcome, messages, CancellationToken.None);
+        await ServerWelcome.PublishAsync(hub, db, server.Id, welcome, messages, CancellationToken.None);
         if (start.Session is not null)
         {
             // A registration with a password offers no choice and the account

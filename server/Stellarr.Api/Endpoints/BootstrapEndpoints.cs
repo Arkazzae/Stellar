@@ -83,6 +83,15 @@ public static class BootstrapEndpoints
             .ToListAsync(cancellationToken);
         var permissions = await ServerAccess.GetAsync(db, userId, serverId, cancellationToken);
 
+        // Only what the caller sees, and from it everything else below: the
+        // read markers, the first page and the voice rooms. On a server where
+        // nobody is denied view that is everything, with nothing evaluated.
+        if (await ChannelVisibility.OfMemberAsync(db, userId, serverId, cancellationToken) is { } view)
+        {
+            channels = channels.Where(x => view.ChannelIds.Contains(x.Id)).ToList();
+            sections = sections.Where(x => view.SectionIds.Contains(x.Id)).ToList();
+        }
+
         var textChannels = channels.Where(x => x.Kind == ChannelKind.Text).ToList();
         var reads = await LoadReadMarkersAsync(db, userId, textChannels, cancellationToken);
         var recent = textChannels.Count == 0
@@ -123,9 +132,10 @@ public static class BootstrapEndpoints
     }
 
     /// <summary>
-    /// The caller's read marker of every text channel. A channel the caller has
-    /// never opened is marked read as of now, so that a new member does not
-    /// start out with the whole history unread.
+    /// The caller's read marker of every text channel they see. A channel the
+    /// caller has never opened is marked read as of now, so that a new member
+    /// does not start out with the whole history unread, and nor does a member
+    /// a channel has just been shown to.
     /// </summary>
     private static async Task<Dictionary<string, DateTime>> LoadReadMarkersAsync(
         AppDbContext db,

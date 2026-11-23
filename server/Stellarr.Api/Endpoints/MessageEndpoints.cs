@@ -93,6 +93,17 @@ public static class MessageEndpoints
             return Results.NotFound();
         }
 
+        // What the sender holds in the channel, read once for every decision
+        // below. Without view it is nothing, and the channel is answered as
+        // one that does not exist, before anything else, a retry included: a
+        // retry would answer with the message as it is stored.
+        var held = await ServerAuthorization.EffectiveAsync(
+            db, userId, PermissionScope.Channel(serverId, channelId), cancellationToken) ?? ServerPrivileges.None;
+        if (!held.HasFlag(ServerPrivileges.ViewChannel))
+        {
+            return Results.NotFound();
+        }
+
         // A retry of a send that went through must not wait behind slow mode
         // or be refused for the attachments it already used, so it is
         // recognised first.
@@ -103,8 +114,6 @@ public static class MessageEndpoints
 
         // The one place posting is admitted, after the replay because that
         // posts nothing. It is decided in the channel, so its overrides count.
-        var held = await ServerAuthorization.EffectiveAsync(
-            db, userId, PermissionScope.Channel(serverId, channelId), cancellationToken) ?? ServerPrivileges.None;
         if (!held.HasFlag(ServerPrivileges.SendMessages))
         {
             return ServerAccess.Refusal(messages, MessageKey.SendMessagesDenied, ServerPrivileges.SendMessages);
@@ -196,8 +205,8 @@ public static class MessageEndpoints
         var response = message.ToDto(messages, userId);
         // The message is stored by now, so a client that hangs up must not
         // keep the others from hearing about it.
-        await hub.Clients.Group(AppHub.ServerGroup(serverId))
-            .SendAsync("MessageCreated", response, CancellationToken.None);
+        await ChannelAudience.SendAsync(
+            hub.Clients, db, serverId, channelId, "MessageCreated", response, CancellationToken.None);
         await hub.Clients.Group(AppHub.UserGroup(userId))
             .SendAsync("ChannelReadChanged", read, CancellationToken.None);
         await MessageMentions.FanOutAsync(hub, mentions, CancellationToken.None);
@@ -291,7 +300,8 @@ public static class MessageEndpoints
     /// Rewrites a message. Only its author may: removing what somebody said
     /// is one act, putting new words under their name is another. Anyone else,
     /// moderators included, and any server notice, is answered with 404, so
-    /// that probing cannot tell which ids exist.
+    /// that probing cannot tell which ids exist. So is an author who no longer
+    /// views the channel the message is in.
     /// </summary>
     private static async Task<IResult> EditAsync(
         Guid messageId,
@@ -317,7 +327,8 @@ public static class MessageEndpoints
             .WithMessageDetails()
             .AsSplitQuery()
             .FirstOrDefaultAsync(cancellationToken);
-        if (message is null || message.IsSystem || message.AuthorId != userId)
+        if (message is null || message.IsSystem || message.AuthorId != userId ||
+            !await ChannelVisibility.ViewsAsync(db, userId, message.ChannelId, cancellationToken))
         {
             return Results.NotFound();
         }
@@ -332,10 +343,11 @@ public static class MessageEndpoints
             await db.SaveChangesAsync(cancellationToken);
         }
 
-        // The event is shared by everyone, so it cannot say which reactions
-        // are the viewer's own; clients keep that from history.
-        await hub.Clients.Group(AppHub.ServerGroup(serverId))
-            .SendAsync("MessageUpdated", message.ToDto(messages), CancellationToken.None);
+        // The event is shared by everyone who sees the channel, so it cannot
+        // say which reactions are the viewer's own; clients keep that from
+        // history.
+        await ChannelAudience.SendAsync(
+            hub.Clients, db, serverId, message.ChannelId, "MessageUpdated", message.ToDto(messages), CancellationToken.None);
 
         // The new text may have gained links, or lost the ones it had cards for.
         if (changed)
@@ -348,7 +360,8 @@ public static class MessageEndpoints
 
     /// <summary>
     /// Removes a message. Its author may, and so may whoever can manage
-    /// messages in that channel; everyone else is answered with 404.
+    /// messages in that channel; everyone else is answered with 404, and so is
+    /// anybody who does not view the channel, its author included.
     /// </summary>
     private static async Task<IResult> DeleteAsync(
         Guid messageId,
@@ -366,9 +379,13 @@ public static class MessageEndpoints
             return Results.NotFound();
         }
 
-        if (message.AuthorId != userId &&
-            !await ServerAccess.HasAsync(
-                db, userId, serverId, message.ChannelId, ServerPrivileges.ManageMessages, cancellationToken))
+        // Its author needs to see the channel; anybody else to manage messages
+        // there, which nobody holds where they do not see.
+        var allowed = message.AuthorId == userId
+            ? await ChannelVisibility.ViewsAsync(db, userId, message.ChannelId, cancellationToken)
+            : await ServerAccess.HasAsync(
+                db, userId, serverId, message.ChannelId, ServerPrivileges.ManageMessages, cancellationToken);
+        if (!allowed)
         {
             return Results.NotFound();
         }
@@ -380,11 +397,9 @@ public static class MessageEndpoints
         db.Messages.Remove(message);
         await db.SaveChangesAsync(cancellationToken);
 
-        await hub.Clients.Group(AppHub.ServerGroup(serverId))
-            .SendAsync(
-                "MessageDeleted",
-                new MessageDeletedDto(messageId.ToString(), message.ChannelId.ToString()),
-                CancellationToken.None);
+        await ChannelAudience.SendAsync(
+            hub.Clients, db, serverId, message.ChannelId,
+            "MessageDeleted", new MessageDeletedDto(messageId.ToString(), message.ChannelId.ToString()), CancellationToken.None);
         return Results.NoContent();
     }
 

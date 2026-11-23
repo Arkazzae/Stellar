@@ -280,13 +280,9 @@ public sealed class NotificationDeliveryDispatcher(
             return false;
         }
 
-        var serverId = await db.Channels.AsNoTracking()
-            .Where(x => x.Id == message.ChannelId)
-            .Select(x => (Guid?)x.ServerId)
-            .SingleOrDefaultAsync(cancellationToken);
-        if (serverId is null ||
-            !await ServerAccess.HasAsync(
-                db, item.RecipientId, serverId.Value, message.ChannelId, ServerPrivileges.None, cancellationToken))
+        // The recipient must still see the channel: one they lost since the
+        // message was sent tells them nothing of it either.
+        if (!await ChannelVisibility.ViewsAsync(db, item.RecipientId, message.ChannelId, cancellationToken))
         {
             return false;
         }

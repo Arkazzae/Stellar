@@ -65,8 +65,14 @@ public static class ServerAdministrationEndpoints
                 (x.MaxUses == null || x.Uses < x.MaxUses))
             .OrderByDescending(x => x.CreatedAt)
             .ToListAsync(cancellationToken);
+        // An invite to a channel the caller does not see is listed without
+        // the channel: the invite is theirs to revoke, the channel not theirs
+        // to know about.
+        var view = await ChannelVisibility.OfMemberAsync(db, actor.UserId, actor.ServerId, cancellationToken);
         var origin = InviteOrigin(http);
-        return Results.Ok(invites.Select(x => x.ToDto(origin)));
+        return Results.Ok(invites.Select(x => view is not null && x.ChannelId is { } channelId && !view.ChannelIds.Contains(channelId)
+            ? x.ToDto(origin) with { ChannelId = null, ChannelName = null }
+            : x.ToDto(origin)));
     }
 
     /// <summary>
@@ -86,8 +92,10 @@ public static class ServerAdministrationEndpoints
         Channel? channel = null;
         if (request?.ChannelId is { } channelId)
         {
-            channel = await db.Channels.FirstOrDefaultAsync(
-                x => x.Id == channelId && x.ServerId == actor.ServerId, cancellationToken);
+            // A channel the caller does not see is as unknown as one that is not there.
+            channel = await ChannelVisibility.FindAsync(db, actor.UserId, actor.ServerId, channelId, null, cancellationToken) is null
+                ? null
+                : await db.Channels.SingleAsync(x => x.Id == channelId, cancellationToken);
             if (channel is null)
             {
                 return Invalid("channelId", messages.Get(MessageKey.ChannelUnknown));
@@ -281,8 +289,16 @@ public static class ServerAdministrationEndpoints
             return Results.Forbid();
         }
 
-        return Results.Ok((await SettingsAsync(db, actor.ServerId, cancellationToken)).ToDto());
+        // The muted channels the caller does not see stay muted, unnamed.
+        var settings = (await SettingsAsync(db, actor.ServerId, cancellationToken)).ToDto();
+        var view = await ChannelVisibility.OfMemberAsync(db, actor.UserId, actor.ServerId, cancellationToken);
+        return Results.Ok(view is null
+            ? settings
+            : settings with { MutedChannelIds = settings.MutedChannelIds.Where(x => Seen(view, x)).ToArray() });
     }
+
+    private static bool Seen(MemberView view, string channelId) =>
+        Guid.TryParse(channelId, out var id) && view.ChannelIds.Contains(id);
 
     private static async Task<IResult> UpdateNotificationsAsync(
         UpdateNotificationSettingsRequest request,
@@ -296,14 +312,25 @@ public static class ServerAdministrationEndpoints
             return Results.Forbid();
         }
 
+        // The caller names the channels they see; one they do not is as
+        // unknown as one that is not there, and those they do not see keep
+        // what they were, since the caller could not have named them.
         var muted = request.MutedChannelIds?.Distinct().ToArray();
-        if (muted is not null && await db.Channels.CountAsync(
-                x => x.ServerId == actor.ServerId && muted.Contains(x.Id), cancellationToken) != muted.Length)
+        var view = await ChannelVisibility.OfMemberAsync(db, actor.UserId, actor.ServerId, cancellationToken);
+        if (muted is not null && (await db.Channels.CountAsync(
+                x => x.ServerId == actor.ServerId && muted.Contains(x.Id), cancellationToken) != muted.Length ||
+                (view is not null && muted.Any(x => !view.ChannelIds.Contains(x)))))
         {
             return Invalid("mutedChannelIds", messages.Get(MessageKey.ChannelUnknown));
         }
 
         var settings = await SettingsAsync(db, actor.ServerId, cancellationToken);
+        if (muted is not null && view is not null)
+        {
+            muted = [.. muted, .. settings.ToDto().MutedChannelIds
+                .Select(x => Guid.TryParse(x, out var id) ? id : Guid.Empty)
+                .Where(x => x != Guid.Empty && !view.ChannelIds.Contains(x))];
+        }
         settings.AllMessages = request.AllMessages ?? settings.AllMessages;
         settings.MentionsOnly = request.MentionsOnly ?? settings.MentionsOnly;
         settings.VoiceJoinSound = request.VoiceJoinSound ?? settings.VoiceJoinSound;
@@ -314,19 +341,28 @@ public static class ServerAdministrationEndpoints
         }
 
         await db.SaveChangesAsync(cancellationToken);
-        return Results.Ok(settings.ToDto());
+        var saved = settings.ToDto();
+        return Results.Ok(view is null
+            ? saved
+            : saved with { MutedChannelIds = saved.MutedChannelIds.Where(x => Seen(view, x)).ToArray() });
     }
 
+    /// <remarks>
+    /// The owner sees every channel and the former owner may not, so whoever
+    /// sees something else afterwards is told, as after any change of roles.
+    /// </remarks>
     private static async Task<IResult> TransferAsync(
         TransferServerRequest request,
         HttpContext http,
         AppDbContext db,
+        IHubContext<AppHub> hub,
         ServerMutationGate gate,
         Messages messages,
         CancellationToken cancellationToken)
     {
         var actor = new Actor(http.RequireActiveServerId(), http.User.RequireUserId());
         await using var turn = await gate.EnterAsync(cancellationToken);
+        var viewChange = await ViewChange.BeginAsync(db, actor.ServerId, cancellationToken);
         await using var transaction = await db.Database.BeginTransactionAsync(cancellationToken);
 
         var owner = await db.ServerMembers.Include(x => x.Role).FirstOrDefaultAsync(
@@ -350,6 +386,7 @@ public static class ServerAdministrationEndpoints
             "member", successor.UserId, successor.User.DisplayName), cancellationToken);
         await db.SaveChangesAsync(cancellationToken);
         await transaction.CommitAsync(cancellationToken);
+        await viewChange.PublishAsync(hub.Clients, db);
         return Results.NoContent();
     }
 

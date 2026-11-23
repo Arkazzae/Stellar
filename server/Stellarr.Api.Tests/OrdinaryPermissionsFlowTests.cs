@@ -128,7 +128,9 @@ public sealed class OrdinaryPermissionsFlowTests
             reacted.EnsureSuccessStatusCode();
         }
 
-        await state.BaseRoleAsync(_ => ServerPrivileges.None);
+        // Everything an ordinary member does is gone; seeing the channel stays,
+        // since without it the channel and all in it do not exist for him.
+        await state.BaseRoleAsync(_ => ServerPrivileges.ViewChannel);
 
         using var edited = await state.Jo.PatchAsJsonAsync($"/api/messages/{messageId}", new { content = "poprawione" });
         Assert.Equal(HttpStatusCode.OK, edited.StatusCode);

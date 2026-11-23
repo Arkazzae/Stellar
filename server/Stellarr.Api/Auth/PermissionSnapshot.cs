@@ -67,6 +67,9 @@ public sealed class PermissionSnapshot
         _targets = targets;
     }
 
+    /// <summary>The comment the query that loads every member of a server carries.</summary>
+    internal const string EveryMemberTag = "Permission snapshot of every member";
+
     public Guid ServerId { get; }
 
     /// <summary>Every role of the server, highest first.</summary>
@@ -100,6 +103,12 @@ public sealed class PermissionSnapshot
         {
             members = members.Where(x => userIds.Contains(x.UserId));
             rows = rows.Where(x => userIds.Contains(x.UserId));
+        }
+        else
+        {
+            // Every member is evaluated only where somebody is denied view, or
+            // for a whole-server question; the tag lets that be seen in a trace.
+            members = members.TagWith(EveryMemberTag);
         }
 
         var loaded = await members.ToListAsync(cancellationToken);

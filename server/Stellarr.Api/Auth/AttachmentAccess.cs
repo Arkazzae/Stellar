@@ -14,13 +14,53 @@ public static class AttachmentAccess
     /// or anybody who is meant to see it where it is used. Every rule is part
     /// of one query, so a read costs one round trip however many there are.
     /// </summary>
-    public static Task<bool> CanReadAsync(
+    /// <remarks>
+    /// A message's attachment, or the picture of one of its cards, is for
+    /// whoever sees its channel. Where nobody is denied view, that is every
+    /// member, and the query decides it. Only when the query says no, and the
+    /// attachment is in a channel where somebody is denied view, is the
+    /// evaluator asked about those channels: one of them seen is enough, since
+    /// a file can be posted in several.
+    /// </remarks>
+    public static async Task<bool> CanReadAsync(
         AppDbContext db,
         Guid userId,
         Guid attachmentId,
         CancellationToken cancellationToken = default)
     {
+        if (await CanReadByAnyRuleAsync(db, userId, attachmentId, cancellationToken))
+        {
+            return true;
+        }
+
+        var closed = await db.Channels.AsNoTracking()
+            .Where(channel =>
+                db.ServerMembers.Any(member => member.ServerId == channel.ServerId && member.UserId == userId) &&
+                db.Messages.Any(message =>
+                    message.ChannelId == channel.Id &&
+                    (db.MessageAttachments.Any(link => link.MessageId == message.Id && link.AttachmentId == attachmentId) ||
+                     db.MessageEmbeds.Any(embed => embed.MessageId == message.Id && embed.ThumbnailAttachmentId == attachmentId))))
+            .Select(channel => channel.Id)
+            .ToListAsync(cancellationToken);
+        foreach (var channelId in closed)
+        {
+            if (await ChannelVisibility.ViewsAsync(db, userId, channelId, cancellationToken))
+            {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    private static Task<bool> CanReadByAnyRuleAsync(
+        AppDbContext db,
+        Guid userId,
+        Guid attachmentId,
+        CancellationToken cancellationToken)
+    {
         var assetUrl = $"/assets/{attachmentId}";
+        var open = ChannelVisibility.OpenChannels(db);
         return db.ImageAttachments.AsNoTracking().AnyAsync(
             attachment =>
                 attachment.Id == attachmentId &&
@@ -35,12 +75,13 @@ public static class AttachmentAccess
                      (server.IsPublic ||
                       db.ServerMembers.Any(member => member.ServerId == server.Id && member.UserId == userId))) ||
 
-                 // Message attachments and link thumbnails belong to the channel's server.
+                 // Message attachments and link thumbnails belong to whoever
+                 // sees the channel: every member, where nobody is denied view.
                  db.MessageAttachments.Any(link =>
                      link.AttachmentId == attachmentId &&
                      db.Messages.Any(message =>
                          message.Id == link.MessageId &&
-                         db.Channels.Any(channel =>
+                         open.Any(channel =>
                              channel.Id == message.ChannelId &&
                              db.ServerMembers.Any(member =>
                                  member.ServerId == channel.ServerId && member.UserId == userId)))) ||
@@ -48,7 +89,7 @@ public static class AttachmentAccess
                      embed.ThumbnailAttachmentId == attachmentId &&
                      db.Messages.Any(message =>
                          message.Id == embed.MessageId &&
-                         db.Channels.Any(channel =>
+                         open.Any(channel =>
                              channel.Id == message.ChannelId &&
                              db.ServerMembers.Any(member =>
                                  member.ServerId == channel.ServerId && member.UserId == userId)))) ||

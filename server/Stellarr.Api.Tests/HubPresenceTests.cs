@@ -176,24 +176,30 @@ public sealed partial class HubPresenceTests(StellarrWebApplicationFactory facto
         await Assert.ThrowsAsync<HubException>(() => connection.InvokeAsync("SendTyping", "not-a-guid"));
     }
 
+    /// <summary>
+    /// Joining a channel only confirms it is there for the account: its
+    /// events reach whoever sees it when they are sent, joined or not, so that
+    /// nobody keeps receiving a channel they lost the view of.
+    /// </summary>
     [Fact]
-    public async Task JoiningATextChannelSubscribesTheConnectionToIt()
+    public async Task JoiningATextChannelTheAccountSeesIsAcceptedAndItsEventsReachEveryViewer()
     {
         await using var joined = await BuildAsync("ada");
         await using var bystander = await BuildAsync("ilya");
-        var seenByJoined = Listen(joined, "Probe");
-        var seenByBystander = Listen(bystander, "Probe");
+        var seenByJoined = Listen(joined, "MessageCreated");
+        var seenByBystander = Listen(bystander, "MessageCreated");
         await StartAsync(joined, "ada");
         await StartAsync(bystander, "ilya");
 
         await joined.InvokeAsync("JoinChannel", TestData.ProjectsChannelId.ToString());
-        await factory.Services.GetRequiredService<IHubContext<AppHub>>()
-            .Clients.Group(AppHub.ChannelGroup(TestData.ProjectsChannelId))
-            .SendAsync("Probe", "hello");
+        using var poster = factory.CreateClient(new WebApplicationFactoryClientOptions { HandleCookies = true });
+        (await poster.PostAsJsonAsync("/api/auth/login", new { username = "jo", password = Accounts["jo"].Password }))
+            .EnsureSuccessStatusCode();
+        (await poster.PostAsJsonAsync($"/api/channels/{TestData.ProjectsChannelId}/messages", new { content = "dla wszystkich" }))
+            .EnsureSuccessStatusCode();
 
-        await seenByJoined.Next();
-        await bystander.InvokeAsync<long>("GetRtcClock");
-        Assert.Equal(0, seenByBystander.Pending);
+        Assert.Equal("dla wszystkich", (await seenByJoined.Next()).GetProperty("content").GetString());
+        Assert.Equal("dla wszystkich", (await seenByBystander.Next()).GetProperty("content").GetString());
     }
 
     [Fact]

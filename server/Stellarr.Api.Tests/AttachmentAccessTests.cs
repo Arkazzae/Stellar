@@ -217,7 +217,8 @@ public sealed class AttachmentAccessTests(StellarrWebApplicationFactory factory)
             ServerId = server.Id,
             Name = "Członek",
             Color = "#777777",
-            Permissions = ServerPrivileges.None,
+            // Members see the channel, as every member of a new server does.
+            Permissions = ServerPrivileges.ViewChannel,
             IsSystem = true,
         };
         var channel = new Channel { Id = Guid.NewGuid(), ServerId = server.Id, Name = "ogólny", Kind = ChannelKind.Text };
