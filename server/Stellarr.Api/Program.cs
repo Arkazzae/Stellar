@@ -13,6 +13,7 @@ using Stellarr.Api.Embeds;
 using Stellarr.Api.Endpoints;
 using Stellarr.Api.Integrations;
 using Stellarr.Api.Integrations.Cloudflare;
+using Stellarr.Api.Integrations.Discord;
 using Stellarr.Api.Localization;
 using Stellarr.Api.Logging;
 using Stellarr.Api.Mail;
@@ -180,6 +181,19 @@ builder.Services.AddHttpClient<GiphyClient>(http =>
     http.DefaultRequestHeaders.UserAgent.ParseAdd("Stellarr/2.0");
     http.DefaultRequestHeaders.Accept.ParseAdd("application/json");
 }).RemoveAllLoggers();
+// The Discord import's reader. The bot token travels in a header: this client
+// logs nothing, so the token cannot reach the log Cockpit shows, and it follows
+// no redirect, so an answer cannot send the token to another host. It builds
+// every address itself, on discord.com.
+builder.Services.AddHttpClient<DiscordClient>(http => http.Timeout = TimeSpan.FromSeconds(30))
+    .ConfigurePrimaryHttpMessageHandler(() => new SocketsHttpHandler
+    {
+        AllowAutoRedirect = false,
+        UseCookies = false,
+        AutomaticDecompression = System.Net.DecompressionMethods.All,
+        PooledConnectionLifetime = TimeSpan.FromMinutes(5),
+    })
+    .RemoveAllLoggers();
 builder.Services.AddHttpClient<ResendEmailDelivery>(http =>
 {
     http.BaseAddress = new Uri("https://api.resend.com/");
