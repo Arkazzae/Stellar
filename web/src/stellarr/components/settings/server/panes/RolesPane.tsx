@@ -35,6 +35,7 @@ export const PERMISSION_LABEL: Record<ServerPermission, MessageKey> = {
   addReactions: "settings.permission.addReactions",
   connect: "settings.permission.connect",
   createInvite: "settings.permission.createInvite",
+  viewChannel: "settings.permission.viewChannel",
 };
 
 const PERMISSION_DETAIL: Record<ServerPermission, MessageKey> = {
@@ -52,11 +53,12 @@ const PERMISSION_DETAIL: Record<ServerPermission, MessageKey> = {
   addReactions: "srv.perm.addReactions",
   connect: "srv.perm.connect",
   createInvite: "srv.perm.createInvite",
+  viewChannel: "srv.perm.viewChannel",
 };
 
 /** The permissions in the groups a reader looks for them in. */
 const PERMISSION_GROUPS: readonly { caption: MessageKey; permissions: readonly ServerPermission[] }[] = [
-  { caption: "srv.roles.groupServer", permissions: ["manageServer", "manageChannels"] },
+  { caption: "srv.roles.groupServer", permissions: ["manageServer", "manageChannels", "viewChannel"] },
   { caption: "srv.roles.groupPeople", permissions: ["manageRoles", "manageMembers", "createInvite"] },
   { caption: "srv.roles.groupModeration", permissions: ["manageMessages", "moderateMembers", "manageBans", "viewAuditLog"] },
   { caption: "srv.roles.groupText", permissions: ["sendMessages", "attachFiles", "addReactions"] },

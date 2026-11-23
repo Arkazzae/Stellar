@@ -73,7 +73,7 @@ describe("PermissionOverrideEditor", () => {
     await openRole(user, "Gość");
 
     // Every permission but Administrator, which no override may carry.
-    expect(screen.getAllByRole("radio", { name: "Dziedzicz", checked: true })).toHaveLength(13);
+    expect(screen.getAllByRole("radio", { name: "Dziedzicz", checked: true })).toHaveLength(14);
     expect(screen.getByRole("button", { name: "Zapisz" })).toBeDisabled();
   });
 
@@ -115,6 +115,20 @@ describe("PermissionOverrideEditor", () => {
       allow: ["addReactions", "createInvite"],
       deny: ["sendMessages", "attachFiles", "connect"],
     });
+  });
+
+  it("offers viewing channels first, since denying it makes a channel private", async () => {
+    const { user, onSave } = renderEditor();
+    await openRole(user, "Gość");
+
+    const rows = screen.getAllByRole("radiogroup").map((row) => row.getAttribute("aria-label"));
+    expect(rows[0]).toBe("Wyświetlanie kanałów");
+    expect(rows.filter((name) => name === "Wyświetlanie kanałów")).toHaveLength(1);
+
+    await user.click(grant("Wyświetlanie kanałów", "Odmów"));
+    await user.click(screen.getByRole("button", { name: "Zapisz" }));
+
+    expect(onSave).toHaveBeenCalledExactlyOnceWith("guest", { allow: [], deny: ["viewChannel"] });
   });
 
   it("lets deny win when a permission ends up on both sides", async () => {

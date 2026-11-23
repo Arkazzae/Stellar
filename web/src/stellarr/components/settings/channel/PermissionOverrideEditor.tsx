@@ -23,10 +23,20 @@ const PERMISSION_LABEL: Record<ServerPermission, MessageKey> = {
   addReactions: "settings.permission.addReactions",
   connect: "settings.permission.connect",
   createInvite: "settings.permission.createInvite",
+  viewChannel: "settings.permission.viewChannel",
 };
 
-/** Administrator is server-wide only: the server refuses it in an override, so no row offers it. */
-const OVERRIDABLE = SERVER_PERMISSION_VALUES.filter((permission) => permission !== "administrator");
+/**
+ * Administrator is server-wide only: the server refuses it in an override, so
+ * no row offers it. Viewing comes first, since denying it is what makes a
+ * channel private.
+ */
+const OVERRIDABLE: readonly ServerPermission[] = [
+  "viewChannel",
+  ...SERVER_PERMISSION_VALUES.filter(
+    (permission) => permission !== "administrator" && permission !== "viewChannel",
+  ),
+];
 
 /** What one role's override changes, as the server stores it. */
 export interface PermissionOverridePatch {

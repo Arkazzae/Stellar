@@ -197,6 +197,32 @@ describe("RolesPane", () => {
     );
   });
 
+  it("lists viewing channels in the Server group, after its other rows, and keeps it on save", async () => {
+    const user = userEvent.setup();
+    const everyday = ["viewChannel", "sendMessages", "attachFiles", "addReactions", "connect"] as const;
+    const props = pane({ roles: [OWNER, role(), { ...MEMBER, permissions: [...everyday] }] });
+
+    await user.click(screen.getByRole("button", { name: "Edytuj rolę Członek" }));
+    const server = screen.getByRole("group", { name: "Serwer" });
+    expect(within(server).getAllByRole("switch").map((item) => item.getAttribute("aria-label"))).toEqual([
+      "Zarządzanie serwerem",
+      "Zarządzanie kanałami",
+      "Wyświetlanie kanałów",
+    ]);
+    expect(within(server).getByRole("switch", { name: "Wyświetlanie kanałów" })).toBeChecked();
+
+    await user.click(screen.getByRole("switch", { name: "Załączanie plików" }));
+    await user.click(screen.getByRole("button", { name: "Zapisz zmiany" }));
+
+    await waitFor(() =>
+      expect(props.onUpdate).toHaveBeenCalledWith("role-member", {
+        name: "Członek",
+        color: "#8b7cf6",
+        permissions: ["viewChannel", "sendMessages", "addReactions", "connect"],
+      }),
+    );
+  });
+
   it("puts the draft back on reset, and goes back to the list", async () => {
     const user = userEvent.setup();
     pane();

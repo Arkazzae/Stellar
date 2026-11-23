@@ -174,6 +174,7 @@ export const SERVER_PERMISSION_VALUES = [
   "addReactions",
   "connect",
   "createInvite",
+  "viewChannel",
 ] as const;
 export type ServerPermission = (typeof SERVER_PERMISSION_VALUES)[number];
 

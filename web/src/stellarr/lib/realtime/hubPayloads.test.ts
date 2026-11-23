@@ -62,7 +62,15 @@ describe("hub payload decoders", () => {
   });
 
   it("keeps the permissions every member uses and the administrator's", () => {
-    const named = ["administrator", "sendMessages", "attachFiles", "addReactions", "connect", "createInvite"];
+    const named = [
+      "administrator",
+      "sendMessages",
+      "attachFiles",
+      "addReactions",
+      "connect",
+      "createInvite",
+      "viewChannel",
+    ];
     expect(HUB_DECODERS.PermissionsChanged({ serverId: "s1", permissions: named })).toEqual({
       serverId: "s1",
       permissions: named,
