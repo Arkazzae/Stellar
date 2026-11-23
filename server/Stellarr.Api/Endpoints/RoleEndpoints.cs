@@ -145,7 +145,6 @@ public static class RoleEndpoints
             return Results.Forbid();
         }
 
-        var viewChange = await ViewChange.BeginAsync(db, serverId, cancellationToken);
         var role = await db.ServerRoles.FirstOrDefaultAsync(
             x => x.Id == roleId && x.ServerId == serverId, cancellationToken);
         if (role is null)
@@ -178,6 +177,8 @@ public static class RoleEndpoints
             return Results.Forbid();
         }
 
+        // Read once the change may go on, before anything is written.
+        var viewChange = await ViewChange.BeginAsync(db, serverId, cancellationToken);
         var before = (role.Name, role.Color, role.Permissions);
         role.Name = draft.Name;
         role.Color = draft.Color;

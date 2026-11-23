@@ -184,8 +184,9 @@ public static class ChannelEndpoints
     /// <remarks>
     /// The order names every channel the caller sees, and no other: one they
     /// do not see keeps its place among the rest, as it would have to for a
-    /// caller who could not name it. A move of a channel, or into a section,
-    /// the caller does not see is answered as one of nothing that exists.
+    /// caller who could not name it. Moving a channel the caller does not see,
+    /// or into a section they do not, is answered as moving something that
+    /// does not exist.
     /// </remarks>
     private static async Task<IResult> ReorderAsync(
         ReorderChannelsRequest request,
@@ -282,16 +283,12 @@ public static class ChannelEndpoints
         await transaction.CommitAsync(cancellationToken);
 
         // Committed: the people told must not depend on the caller staying.
-        if (viewChange is not null)
-        {
-            await viewChange.PublishAsync(hub.Clients, db);
-        }
-
+        // What everybody sees is read once more, now, and both events follow it.
+        var visibility = viewChange is not null
+            ? await viewChange.PublishAsync(hub.Clients, db)
+            : await ServerVisibility.LoadAsync(db, serverId, CancellationToken.None);
         await ServerLayoutEvents.ChannelLayoutAsync(
-            hub.Clients,
-            await ServerVisibility.LoadAsync(db, serverId, CancellationToken.None),
-            channels.OrderBy(x => x.Position).ToArray(),
-            CancellationToken.None);
+            hub.Clients, visibility, channels.OrderBy(x => x.Position).ToArray(), CancellationToken.None);
         return Results.NoContent();
     }
 
