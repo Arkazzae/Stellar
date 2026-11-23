@@ -8,6 +8,7 @@ import { Switch } from "@/components/primitives/Switch";
 import { useRovingRadio } from "@/components/primitives/useRovingRadio";
 import { ACCENT_SWATCHES } from "@/design/accentSwatches";
 import {
+  CUSTOM_PALETTE,
   DEFAULT_THEME,
   DENSITIES,
   PALETTES,
@@ -15,12 +16,17 @@ import {
   paletteCssVariables,
   resolvePalette,
   type DensityPreference,
+  type PaletteChoice,
+  type ResolvedPalette,
   type ResolvedScheme,
   type SchemePreference,
   type SizePreference,
   type ThemePreference,
 } from "@/design/themes";
 import { useLanguage } from "@/state/hooks";
+
+import styles from "./AppearancePane.module.css";
+import { PaletteBoard, customThemeName } from "./PaletteBoard";
 
 /**
  * Reduced motion. It is an account preference with its own owner rather than
@@ -250,6 +256,27 @@ export function AppearancePane({
     if (motion?.reducedMotion) motion.onChange(false);
   };
 
+  // The person's own palette sits among the presets once there is one, and
+  // paints its tile from its own variables the way they do.
+  const tiles: readonly { id: PaletteChoice; label: string; title: string; palette: ResolvedPalette }[] = [
+    ...PALETTES.map((palette) => ({
+      id: palette.id,
+      label: palette.label,
+      title: t(`theme.palette.${palette.id}`),
+      palette,
+    })),
+    ...(theme.custom === null
+      ? []
+      : [
+          {
+            id: CUSTOM_PALETTE as PaletteChoice,
+            label: customThemeName(theme.custom, t("theme.custom.untitled")),
+            title: theme.custom.author ?? t("theme.custom.untitled"),
+            palette: theme.custom,
+          },
+        ]),
+  ];
+
   const pickAccent = (value: string) => {
     if (value === THEME_ACCENT) {
       onChange({ accent: preset.colors.accent });
@@ -266,26 +293,30 @@ export function AppearancePane({
       <section className="sc" aria-label={t("theme.theme")}>
         <header className="sc-h">{t("theme.theme")}</header>
         <div className="sc-b ap-theme">
-          <div className="ap-themes" role="radiogroup" aria-label={t("theme.theme")}>
-            {PALETTES.map((palette) => {
-              const selected = palette.id === theme.palette;
+          <div
+            className={theme.custom === null ? "ap-themes" : `ap-themes ${styles.withOwn}`}
+            role="radiogroup"
+            aria-label={t("theme.theme")}
+          >
+            {tiles.map((tile) => {
+              const selected = tile.id === theme.palette;
               return (
                 <button
-                  key={palette.id}
+                  key={tile.id}
                   type="button"
                   role="radio"
                   aria-checked={selected}
-                  title={t(`theme.palette.${palette.id}`)}
+                  title={tile.title}
                   className={selected ? "ap-tile on" : "ap-tile"}
                   // The tile is a working instance of the theme it offers:
                   // these attributes are the contract `applyThemeAttributes`
                   // themes the document by, so everything inside resolves to
                   // its own tokens.
-                  data-theme={palette.id}
+                  data-theme={tile.id}
                   data-scheme={resolvedScheme}
                   data-contrast={theme.contrast}
-                  style={paletteCssVariables(palette) as CSSProperties}
-                  onClick={() => onChange({ palette: palette.id, accent: palette.colors.accent })}
+                  style={paletteCssVariables(tile.palette) as CSSProperties}
+                  onClick={() => onChange({ palette: tile.id, accent: tile.palette.colors.accent })}
                 >
                   <span className="ap-sw" aria-hidden="true">
                     <i />
@@ -293,7 +324,7 @@ export function AppearancePane({
                     <i />
                     <b />
                   </span>
-                  <span className="ap-name">{palette.label}</span>
+                  <span className="ap-name">{tile.label}</span>
                   {selected ? (
                     <span className="ap-tick" aria-hidden="true">
                       <Icon name="tick" size={12} />
@@ -366,6 +397,8 @@ export function AppearancePane({
               </div>
             </div>
           </div>
+
+          <PaletteBoard theme={theme} onChange={onChange} />
         </div>
       </section>
 

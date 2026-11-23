@@ -1,7 +1,8 @@
-import { render, screen, within } from "@testing-library/react";
+import { screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { describe, expect, it, vi } from "vitest";
 
+import { renderInConfirm as render } from "@/test/confirm";
 import { DEFAULT_THEME } from "@/design/themes";
 
 import { AppearancePane, type AppearancePaneProps } from "./AppearancePane";
