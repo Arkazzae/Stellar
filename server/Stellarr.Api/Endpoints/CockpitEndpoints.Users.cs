@@ -172,7 +172,9 @@ public static partial class CockpitEndpoints
         }
 
         // As in the role editor of a client that knows one role per member:
-        // exactly this role, or the base role alone.
+        // exactly this role, or the base role alone. Whoever it shows a channel
+        // to or hides one from is told, as after the server's own role editor.
+        var viewChange = await ViewChange.BeginAsync(db, server.Id, cancellationToken);
         await MemberRoles.SetAsync(db, member, role.Id == baseRole.Id ? [] : [role], baseRole, cancellationToken);
         await StageAuditAsync(
             db,
@@ -181,6 +183,7 @@ public static partial class CockpitEndpoints
             messages.Get(MessageKey.AuditRoleChanged, ("name", member.User.DisplayName), ("role", role.Name)),
             cancellationToken);
         await db.SaveChangesAsync(cancellationToken);
+        await viewChange.PublishAsync(hub.Clients, db);
         await RoleEndpoints.NotifyAsync(hub, db, server.Id, [userId], cancellationToken);
         return Results.NoContent();
     }
@@ -329,6 +332,7 @@ public static partial class CockpitEndpoints
             return Results.Conflict();
         }
 
+        var viewChange = await ViewChange.BeginAsync(db, server.Id, cancellationToken);
         role.Name = draft.Name;
         role.Color = draft.Color;
         role.Permissions = draft.Permissions;
@@ -343,6 +347,7 @@ public static partial class CockpitEndpoints
             return Results.Conflict();
         }
 
+        await viewChange.PublishAsync(hub.Clients, db);
         var held = await HeldRoles.LoadAsync(db, server.Id, cancellationToken);
         await RoleEndpoints.NotifyAsync(hub, db, server.Id, held.Holders(role.Id), cancellationToken);
         return Results.Ok(role.ToCockpitDto(held.CountHolders(role.Id)));
