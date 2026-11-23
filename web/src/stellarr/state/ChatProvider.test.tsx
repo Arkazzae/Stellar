@@ -524,4 +524,39 @@ describe("while the directory changes around the text channels", () => {
     expect(h.chat.focusChannel).toHaveBeenCalledWith("ch-news");
     expect(h.chat.listPinned).toHaveBeenCalledWith("ch-news");
   });
+
+  it("catches a channel that comes back up from where it stopped, with what was said while it was hidden", async () => {
+    twoChannels();
+    h.chat.listMessages.mockImplementation(async (channelId: string) =>
+      page(channelId === "ch-random" ? [message("r1", 1, { channelId: "ch-random" })] : [], null, `${channelId}-c1`),
+    );
+    const { result, rerender } = await mountLoaded();
+    h.ui.activeTextChannelId = "ch-random";
+    rerender();
+    await waitFor(() => expect(ids(result.current)).toEqual(["r1"]));
+    act(() => h.setConnection("connected"));
+    await waitFor(() => expect(h.chat.syncMessages).toHaveBeenCalledWith("ch-random", "ch-random-c1"));
+
+    // Hidden from this member, then shown again; meanwhile somebody spoke.
+    h.ui.activeTextChannelId = "ch-general";
+    h.directory.textChannels = [{ id: "ch-general", name: "general" }];
+    rerender();
+    await act(async () => {});
+    const before = h.chat.syncMessages.mock.calls.length;
+    h.chat.syncMessages.mockImplementation(async (channelId: string, after: string) =>
+      channelId === "ch-random"
+        ? journal(
+            [{ cursor: "c2", kind: "upsert", messageId: "r2", message: message("r2", 2, { channelId: "ch-random" }) }],
+            "c2",
+          )
+        : journal([], after));
+    twoChannels();
+    rerender();
+
+    await waitFor(() =>
+      expect(h.chat.syncMessages.mock.calls.slice(before)).toContainEqual(["ch-random", "ch-random-c1"]));
+    h.ui.activeTextChannelId = "ch-random";
+    rerender();
+    await waitFor(() => expect(ids(result.current)).toEqual(["r1", "r2"]));
+  });
 });

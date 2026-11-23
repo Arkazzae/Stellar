@@ -436,7 +436,7 @@ function useDialogs(closeDrawers: () => void): DialogsValue {
 const UiContext = createContext<UiValue | null>(null);
 
 export function UiProvider({ children }: { children: ReactNode }) {
-  const { firstTextChannelId } = useDirectoryContext();
+  const { firstTextChannelId, textChannels } = useDirectoryContext();
   const voice = useVoiceContext();
   /*
    * The voice value changes with every speaking-level snapshot. Actions that
@@ -476,7 +476,20 @@ export function UiProvider({ children }: { children: ReactNode }) {
   if (cinemaRoom !== null && cinemaRoom !== voiceChannelId) setCinemaRoom(null);
   const cinema = cinemaRoom !== null && cinemaRoom === voiceChannelId;
 
-  const activeTextChannelId = selectedTextId ?? firstTextChannelId;
+  /*
+   * A picked channel that leaves the list, because it was deleted or because
+   * this member no longer sees it, is let go during render, as cinema lets go
+   * of a call that ended: the room falls back to the first channel, as it
+   * does before anything is picked, rather than going on showing a channel
+   * that is not there. It is not picked again if it comes back.
+   */
+  if (selectedTextId !== null && !textChannels.some((channel) => channel.id === selectedTextId)) {
+    setSelectedTextId(null);
+  }
+  const activeTextChannelId =
+    selectedTextId !== null && textChannels.some((channel) => channel.id === selectedTextId)
+      ? selectedTextId
+      : firstTextChannelId;
 
   const setCinema = useCallback(
     (on: boolean) => setCinemaRoom(on ? voiceRef.current.channelId : null),

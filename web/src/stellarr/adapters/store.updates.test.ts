@@ -308,3 +308,60 @@ describe("DirectoryStore resync", () => {
     expect(store.getSnapshot().members).toHaveLength(2);
   });
 });
+
+describe("DirectoryStore access", () => {
+  const seat = (user: User) => ({ userId: user.id, displayName: user.displayName, muted: false });
+  const secret = channel("ch-secret", "secret", { position: 2 });
+  const vault = { ...channel("ch-vault", "vault", { position: 3 }), kind: "voice" as const };
+
+  it("takes the channels, sections and rooms a member now sees, over a layout the hub sent meanwhile", () => {
+    const store = storeWith({
+      channels: [...BOOTSTRAP.channels, secret, vault],
+      sections: [{ id: "sec-staff", name: "Kadra", position: 0 }],
+      voice: { [VOICE_CHANNEL.id]: [], [vault.id]: [seat(JO)] },
+    });
+    const before = store.getSnapshot();
+    const mark = store.mark();
+    // The layout of the move came after the signal and before the answer.
+    store.setChannelLayout([...BOOTSTRAP.channels, secret, vault].map(({ id }) => ({ id, sectionId: null })));
+
+    store.applyAccess({ ...BOOTSTRAP, voice: { [VOICE_CHANNEL.id]: [] } }, mark);
+
+    const after = store.getSnapshot();
+    expect(ids(after.channels)).toEqual(ids(BOOTSTRAP.channels));
+    expect(after.sections).toEqual([]);
+    expect(Object.keys(after.occupancy)).toEqual([VOICE_CHANNEL.id]);
+    // What says the same stays the very object it was.
+    expect(after.channels[0]).toBe(before.channels[0]);
+    expect(after.occupancy[VOICE_CHANNEL.id]).toBe(before.occupancy[VOICE_CHANNEL.id]);
+  });
+
+  it("brings in a channel and its room, and keeps a room list the hub sent after the mark", () => {
+    const store = storeWith({ voice: { [VOICE_CHANNEL.id]: [] } });
+    const mark = store.mark();
+    const seats = [seat(SELF)];
+    store.setOccupants(VOICE_CHANNEL.id, seats);
+
+    store.applyAccess(
+      { ...BOOTSTRAP, channels: [...BOOTSTRAP.channels, secret, vault], voice: { [VOICE_CHANNEL.id]: [], [vault.id]: [seat(JO)] } },
+      mark,
+    );
+
+    const after = store.getSnapshot();
+    expect(ids(after.channels)).toEqual([...ids(BOOTSTRAP.channels), secret.id, vault.id]);
+    expect(after.occupancy[vault.id]).toEqual([seat(JO)]);
+    expect(after.occupancy[VOICE_CHANNEL.id]).toBe(seats);
+  });
+
+  it("publishes nothing when nothing changed, or for another server", () => {
+    const store = storeWith();
+    const listener = vi.fn();
+    store.subscribe(listener);
+
+    store.applyAccess({ ...BOOTSTRAP, channels: [...BOOTSTRAP.channels] }, store.mark());
+    store.applyAccess({ ...BOOTSTRAP, server: { id: "srv-other", name: "Other" }, channels: [] }, store.mark());
+
+    expect(listener).not.toHaveBeenCalled();
+    expect(ids(store.getSnapshot().channels)).toEqual(ids(BOOTSTRAP.channels));
+  });
+});

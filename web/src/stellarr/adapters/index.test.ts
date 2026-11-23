@@ -218,6 +218,54 @@ describe("runtime after a hub reconnect", () => {
   });
 });
 
+describe("runtime when what the member sees changes", () => {
+  const SECRET: Channel = { id: "ch-secret", name: "secret", kind: "text", position: 2 };
+  const pending = <T,>() => {
+    let resolve!: (value: T) => void;
+    const promise = new Promise<T>((done) => (resolve = done));
+    return { promise, resolve };
+  };
+
+  it("reads its channels and their read markers again, on the open server only", async () => {
+    const client = fullApi({
+      bootstrap: vi.fn(async () =>
+        bootstrap({ channels: [TEXT_CHANNEL, VOICE_CHANNEL, SECRET], channelReads: { [SECRET.id]: "2026-01-02T00:00:00.000Z" } })),
+    });
+    const { runtime, realtime } = await hydrated({}, client);
+
+    realtime.push("ChannelAccessChanged", { serverId: OTHER_SERVER.id });
+    expect(client.bootstrap).not.toHaveBeenCalled();
+
+    realtime.push("ChannelAccessChanged", { serverId: SERVER.id });
+    await vi.waitFor(() =>
+      expect(runtime.ports.directory.listChannels().map((channel) => channel.id)).toContain(SECRET.id));
+    expect(runtime.ports.chat.getReadState()[SECRET.id]).toBe("2026-01-02T00:00:00.000Z");
+  });
+
+  it("lets the answer win over a layout that came while it was on its way, and asks again for a signal in between", async () => {
+    const answers = [pending<Bootstrap>(), pending<Bootstrap>()];
+    let asked = 0;
+    const client = fullApi({ bootstrap: vi.fn(() => answers[asked++]!.promise) });
+    const { runtime, realtime } = await hydrated({ channels: [TEXT_CHANNEL, VOICE_CHANNEL, SECRET] }, client);
+
+    realtime.push("ChannelAccessChanged", { serverId: SERVER.id });
+    // The move that hid it: its layout, still naming the channel to this side,
+    // and a second signal, both before the first answer.
+    realtime.push("ChannelLayoutChanged", {
+      serverId: SERVER.id,
+      channels: [SECRET, TEXT_CHANNEL, VOICE_CHANNEL].map(({ id }) => ({ id, sectionId: null })),
+    });
+    realtime.push("ChannelAccessChanged", { serverId: SERVER.id });
+    answers[0]!.resolve(bootstrap({ channels: [TEXT_CHANNEL, VOICE_CHANNEL] }));
+
+    await vi.waitFor(() => expect(client.bootstrap).toHaveBeenCalledTimes(2));
+    expect(runtime.ports.directory.listChannels().map((channel) => channel.id)).not.toContain(SECRET.id);
+    answers[1]!.resolve(bootstrap({ channels: [TEXT_CHANNEL, VOICE_CHANNEL, SECRET] }));
+    await vi.waitFor(() =>
+      expect(runtime.ports.directory.listChannels().map((channel) => channel.id)).toContain(SECRET.id));
+  });
+});
+
 describe("runtime disposal", () => {
   it("empties the directory and stops the socket", async () => {
     const { runtime, realtime } = await hydrated({

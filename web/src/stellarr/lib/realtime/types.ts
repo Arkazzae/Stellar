@@ -134,8 +134,16 @@ export interface SectionOrderChangedEvent {
 
 export interface ChannelLayoutChangedEvent {
   serverId: string;
-  /** Every channel of the server in order, each with its section. */
+  /**
+   * Every channel of the server in order, each with its section; on a server
+   * where somebody is denied a channel, only those this member sees.
+   */
   channels: ChannelPlacement[];
+}
+
+/** What this member sees on the server changed; nothing else is said. */
+export interface ChannelAccessChangedEvent {
+  serverId: string;
 }
 
 export interface PermissionsChangedEvent {
@@ -161,6 +169,12 @@ export interface RealtimeEventMap {
   ChannelLayoutChanged: ChannelLayoutChangedEvent;
   /** Someone reordered the sections. */
   SectionOrderChanged: SectionOrderChangedEvent;
+  /**
+   * A channel or a section was shown to this member or hidden from them. A
+   * layout cannot add a channel nor take one away, so the client reads its
+   * channels again.
+   */
+  ChannelAccessChanged: ChannelAccessChangedEvent;
   PresenceChanged: PresenceChangedEvent;
   /** Public profile fields changed for one server member. */
   UserUpdated: User;
