@@ -321,7 +321,7 @@
 
   .att-window{
     width:min(560px,100%);max-width:min(560px,100%);overflow:hidden;
-    background:var(--surface-canvas);border:1px solid var(--line-subtle);
+    background:var(--surface-canvas-solid);border:1px solid var(--line-subtle);
     border-radius:var(--radius-md);
   }
 
@@ -504,7 +504,7 @@
     transition:border-color var(--dur-fast) var(--ease-standard);
   }
   .att-vembed:hover{border-color:var(--line-strong)}
-  .att-vembed .ve-stage{position:relative;display:block;aspect-ratio:16/9;cursor:pointer;background:var(--surface-canvas)}
+  .att-vembed .ve-stage{position:relative;display:block;aspect-ratio:16/9;cursor:pointer;background:var(--surface-canvas-solid)}
   .att-vembed.playing .ve-stage{cursor:default}
   .att-vembed .ve-stage img{
     width:100%;height:100%;object-fit:cover;display:block;

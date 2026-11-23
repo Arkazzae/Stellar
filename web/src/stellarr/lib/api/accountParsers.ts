@@ -134,6 +134,7 @@ export function parseAccount(value: unknown, path = "/api/me"): AccountDetails {
     ...definedField("email", optionalString(record, "email")),
     ...definedField("avatarUrl", optionalString(record, "avatarUrl")),
     ...definedField("bannerUrl", optionalString(record, "bannerUrl")),
+    ...definedField("wallpaperUrl", optionalString(record, "wallpaperUrl")),
   };
 }
 

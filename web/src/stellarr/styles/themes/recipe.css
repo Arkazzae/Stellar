@@ -54,7 +54,10 @@
 [data-scheme="dark"] {
   color-scheme: dark;
 
-  --surface-canvas: var(--palette-background-darkest);
+  /* The canvas's colour for what floats and must never let a wallpaper
+     through; `--surface-canvas` itself is a structural surface (wallpaper.css). */
+  --surface-canvas-solid: var(--palette-background-darkest);
+  --surface-canvas: var(--surface-canvas-solid);
   --surface-dark: var(--palette-background-dark);
   --surface-base: var(--palette-background-primary);
   --surface-raised: var(--palette-background-secondary);
@@ -146,7 +149,8 @@
 [data-scheme="light"] {
   color-scheme: light;
 
-  --surface-canvas: oklch(0.975 calc(0.004 * var(--c-neutral)) var(--h-neutral));
+  --surface-canvas-solid: oklch(0.975 calc(0.004 * var(--c-neutral)) var(--h-neutral));
+  --surface-canvas: var(--surface-canvas-solid);
   --surface-base: oklch(0.995 calc(0.002 * var(--c-neutral)) var(--h-neutral));
   --surface-raised: oklch(0.965 calc(0.005 * var(--c-neutral)) var(--h-neutral));
   --surface-room: var(--surface-base);

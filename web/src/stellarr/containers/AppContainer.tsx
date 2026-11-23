@@ -93,7 +93,8 @@ function Shell() {
 
   return (
     <>
-      {/* The face, and what else of the theme only the signed-in app shows. */}
+      {/* The face and the wallpaper: what of the theme only the signed-in app
+          shows. The wallpaper sits on a fixed layer behind the shell. */}
       <AppAppearance />
       <AppShell
         serverRail={<ServerRailContainer />}

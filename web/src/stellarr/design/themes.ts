@@ -364,7 +364,31 @@ export interface ThemePreference {
   font: FontId;
   size: SizePreference;
   density: DensityPreference;
+  /**
+   * How the account's wallpaper is shown, or null for none. The picture
+   * itself is on the account (`wallpaperUrl`), far too large for a settings
+   * section; this carries only what is cheap to sync.
+   */
+  wallpaper: WallpaperSettings | null;
 }
+
+export interface WallpaperSettings {
+  /** How far the scheme's background covers the picture, in percent. */
+  shade: number;
+  /** How much the picture is blurred, in pixels. */
+  blur: number;
+  /** The picture in at most 32 bytes, base64 (`lib/media/placeholder.ts`), for before it arrives. */
+  placeholder?: string;
+}
+
+/**
+ * The shading a new wallpaper starts at. Together with the structural
+ * surfaces' opacity in `wallpaper.css` it keeps small text at AA over a white
+ * pixel in the dark scheme and a black one in the light scheme, for every
+ * preset (`wallpaper.test.ts`).
+ */
+export const WALLPAPER_SHADE_DEFAULT = 80;
+export const WALLPAPER_BLUR_MAX = 24;
 
 export const DEFAULT_THEME: ThemePreference = {
   palette: "midnight",
@@ -375,6 +399,7 @@ export const DEFAULT_THEME: ThemePreference = {
   font: "outfit",
   size: "md",
   density: "cozy",
+  wallpaper: null,
 };
 
 /** One key holding one JSON object, so a partial write can never split the axes. */
@@ -535,6 +560,23 @@ export function normaliseCustomTheme(value: unknown): CustomTheme | null {
   };
 }
 
+/** A whole number from `min` to `max`, or `fallback` for anything else. */
+function wholeNumber(value: unknown, max: number, fallback: number): number {
+  return typeof value === "number" && Number.isFinite(value) ? Math.round(Math.min(max, Math.max(0, value))) : fallback;
+}
+
+/** Any object says a wallpaper is set; its fields fall back one by one. */
+export function normaliseWallpaper(value: unknown): WallpaperSettings | null {
+  if (typeof value !== "object" || value === null) return null;
+  const placeholder = field(value, "placeholder");
+  return {
+    shade: wholeNumber(field(value, "shade"), 100, WALLPAPER_SHADE_DEFAULT),
+    blur: wholeNumber(field(value, "blur"), WALLPAPER_BLUR_MAX, 0),
+    // Base64 of at most 32 bytes.
+    ...(typeof placeholder === "string" && /^[\w+/=-]{4,44}$/.test(placeholder) ? { placeholder } : {}),
+  };
+}
+
 /**
  * Narrows anything read back from storage, the account or a file to a
  * usable preference. Each axis falls back on its own instead of the whole
@@ -559,6 +601,7 @@ export function normaliseTheme(input: unknown): ThemePreference {
     font: oneOf(FONTS, raw.font, DEFAULT_THEME.font),
     size: oneOf(SIZE_IDS, raw.size, DEFAULT_THEME.size),
     density: oneOf(DENSITY_IDS, raw.density, DEFAULT_THEME.density),
+    wallpaper: normaliseWallpaper(raw.wallpaper),
   };
 }
 

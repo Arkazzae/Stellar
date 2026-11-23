@@ -1,6 +1,6 @@
 import { expectArray } from "../expect";
 import { ApiError, statusToKind } from "../errors";
-import { fail, JSON_HEADERS, problemCode, problemFields, readJson, request } from "../transport";
+import { fail, JSON_HEADERS, problemCode, problemDetail, problemFields, readJson, request } from "../transport";
 
 /**
  * The few shapes every HTTP call of the client comes down to, so the request
@@ -76,6 +76,10 @@ async function refuse(response: Response, path: string): Promise<never> {
   if (fields !== null) {
     throw new ApiError(statusToKind(400), `${path} responded 400`, 400, { fields });
   }
+  // A file too large, or no room left for it: the server's sentence says
+  // which limit, in the instance's words.
+  const detail = status === 413 || status === 507 ? await problemDetail(response) : null;
+  if (detail !== null) throw new ApiError(statusToKind(status), `${path} responded ${status}`, status, { detail });
   fail(response, path);
 }
 
