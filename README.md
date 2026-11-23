@@ -34,6 +34,7 @@ Under the hood, Stellarr pairs a custom Rust media server built specifically for
 - Dedicated desktop and mobile clients alongside the web app.
 - An Activities SDK for running shared mini-apps and games right inside your server.
 - More languages for offline in-browser translation beyond English and Polish.
+- Import your discord server structure with resources!
 
 ## Try it
 
