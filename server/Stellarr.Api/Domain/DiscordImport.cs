@@ -208,6 +208,12 @@ public enum DiscordSkipReason
 
     /// <summary>Longer, once rewritten, than a Stellarr message may be.</summary>
     TooLong = 9,
+
+    /// <summary>
+    /// The id the message would get is held by a message the import did not
+    /// write: a client may choose the id of what it sends.
+    /// </summary>
+    IdTaken = 10,
 }
 
 /// <summary>One Discord message the import has seen, and what became of it.</summary>

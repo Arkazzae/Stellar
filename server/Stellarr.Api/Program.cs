@@ -197,6 +197,9 @@ builder.Services.AddHttpClient<DiscordClient>(http =>
     AutomaticDecompression = System.Net.DecompressionMethods.All,
     PooledConnectionLifetime = TimeSpan.FromMinutes(5),
 }).RemoveAllLoggers();
+// The import's writer: one per scope, since it writes through the scope's
+// context and paces its own transactions.
+builder.Services.AddScoped<DiscordImportWriter>();
 builder.Services.AddHttpClient<ResendEmailDelivery>(http =>
 {
     http.BaseAddress = new Uri("https://api.resend.com/");
