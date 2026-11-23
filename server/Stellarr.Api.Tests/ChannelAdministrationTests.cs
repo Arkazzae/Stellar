@@ -26,7 +26,7 @@ public sealed class ChannelAdministrationTests : IClassFixture<StellarrWebApplic
     private static readonly Guid MemberRoleId = Guid.Parse("60000000-0000-0000-0000-000000000003");
 
     private static readonly string[] ManageMessages = ["manageMessages"];
-    private static readonly string[] BaseRoleDefaults = ["sendMessages", "attachFiles", "addReactions", "connect"];
+    private static readonly string[] BaseRoleDefaults = ["sendMessages", "attachFiles", "addReactions", "connect", "viewChannel"];
     private static readonly string[] ManageMembersAndMessages = ["manageMembers", "manageMessages"];
     private static readonly string[] None = [];
     private static readonly string[] MemberNames = ["Ada", "Ilya", "Jo", "Maja", "Nils"];

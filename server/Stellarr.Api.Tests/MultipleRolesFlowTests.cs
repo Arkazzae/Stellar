@@ -390,7 +390,7 @@ public sealed class MultipleRolesFlowTests
 
         Assert.Equal(HttpStatusCode.NoContent, (await Scenario.SetRolesAsync(state.Owner, JoId, state.Gift, state.Banner)).StatusCode);
         Assert.Equal(
-            ["manageMessages", "manageBans", "sendMessages", "attachFiles", "addReactions", "connect"],
+            ["manageMessages", "manageBans", "sendMessages", "attachFiles", "addReactions", "connect", "viewChannel"],
             Permissions(await connection.NextAsync()));
 
         // A change to the base role reaches members who hold other roles too.

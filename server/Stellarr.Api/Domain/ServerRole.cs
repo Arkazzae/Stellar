@@ -36,21 +36,29 @@ public enum ServerPrivileges : long
     /// <summary>Creating an invite to the server or to a channel.</summary>
     CreateInvite = 1 << 13,
 
+    /// <summary>
+    /// Seeing a channel at all. Somebody who does not hold it in a channel
+    /// holds nothing there, and the channel does not exist for them.
+    /// </summary>
+    ViewChannel = 1 << 14,
+
     All = ManageServer | ManageChannels | ManageRoles | ManageMembers |
         ManageMessages | ModerateMembers | ManageBans | ViewAuditLog |
-        Administrator | SendMessages | AttachFiles | AddReactions | Connect | CreateInvite,
+        Administrator | SendMessages | AttachFiles | AddReactions | Connect | CreateInvite |
+        ViewChannel,
 }
 
 public sealed class ServerRole
 {
     /// <summary>
-    /// What the base role of a new server lets everybody do: talk, share,
-    /// react and join voice. A server made before these permissions existed
-    /// was given the same once, see <c>OrdinaryPermissionDefaults</c>, and
+    /// What the base role of a new server lets everybody do: see the
+    /// channels, talk, share, react and join voice. A server made before these
+    /// permissions existed was given the same once, see
+    /// <c>OrdinaryPermissionDefaults</c> and <c>ViewChannelDefaults</c>, and
     /// <c>scripts/seed-dev.py</c> writes the same number.
     /// </summary>
     public const ServerPrivileges BaseRoleDefaults =
-        ServerPrivileges.SendMessages | ServerPrivileges.AttachFiles |
+        ServerPrivileges.ViewChannel | ServerPrivileges.SendMessages | ServerPrivileges.AttachFiles |
         ServerPrivileges.AddReactions | ServerPrivileges.Connect;
 
     public Guid Id { get; set; }

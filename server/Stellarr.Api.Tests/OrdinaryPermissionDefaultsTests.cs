@@ -17,7 +17,9 @@ namespace Stellarr.Api.Tests;
 public sealed class OrdinaryPermissionDefaultsTests
 {
     private const ServerPrivileges OldEverything = (ServerPrivileges)255;
-    private static readonly string[] ConnectOnly = ["connect"];
+    // The base role keeps viewChannel, which came later, so what posting
+    // needs is all that is taken away.
+    private static readonly string[] ConnectOnly = ["connect", "viewChannel"];
 
     [Fact]
     public async Task ADatabaseFromBeforeGetsTheDefaultsOnItsFirstStart()
@@ -59,7 +61,7 @@ public sealed class OrdinaryPermissionDefaultsTests
         var permissions = await PermissionsAsync(db, server);
         Assert.Equal(ServerPrivileges.Connect, permissions["Member"]);
         Assert.Equal(ServerPrivileges.ManageServer, permissions["Admins"]);
-        Assert.Equal(["ordinary-permissions"], await StepsAsync(connection));
+        Assert.Equal(["ordinary-permissions", "view-channel"], await StepsAsync(connection));
     }
 
     [Fact]

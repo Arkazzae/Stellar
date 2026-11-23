@@ -24,6 +24,7 @@ internal static class OneTimeSteps
     private static readonly (string Name, Func<AppDbContext, CancellationToken, Task> Apply)[] Steps =
     [
         ("ordinary-permissions", OrdinaryPermissionDefaults.ApplyAsync),
+        ("view-channel", ViewChannelDefaults.ApplyAsync),
     ];
 
     /// <summary>Runs, each in a transaction of its own, the steps this database has not run yet.</summary>
