@@ -2214,7 +2214,7 @@ export const pl = {
   "srv.perm.sendMessages": "Pisanie wiadomości i odpowiedzi na kanałach tekstowych.",
   "srv.perm.attachFiles": "Wysyłanie plików, obrazów i wiadomości głosowych.",
   "srv.perm.addReactions": "Dodawanie reakcji emoji pod wiadomościami.",
-  "srv.perm.connect": "Wchodzenie na kanały głosowe i udział w rozmowie.",
+  "srv.perm.connect": "Zajęcie miejsca na kanale głosowym i rozmowa z obecnymi.",
   "srv.perm.createInvite": "Tworzenie linków zaproszenia na serwer albo do kanału.",
   "srv.members.search": "Szukaj po nazwie",
   "srv.members.none": "Nikt tu nie pasuje do tej nazwy.",
