@@ -13,8 +13,12 @@ internal static class UserCommands
         await using var database = await runtime.OpenDatabaseAsync(mutation: false, cancellationToken);
         var db = database.Context;
         var server = await CommandSupport.RequireInstanceServerAsync(db, cancellationToken);
-        var total = await db.Users.AsNoTracking().CountAsync(cancellationToken);
+        // The accounts that only stand in for the authors of imported messages
+        // are nobody's account: they are counted apart and not listed.
+        var total = await db.Users.AsNoTracking().CountAsync(x => x.Origin == null, cancellationToken);
+        var placeholders = await db.Users.AsNoTracking().CountAsync(x => x.Origin != null, cancellationToken);
         var users = await db.Users.AsNoTracking()
+            .Where(x => x.Origin == null)
             .OrderBy(x => x.DisplayName).ThenBy(x => x.Username)
             .Take(MaxListedUsers)
             .ToArrayAsync(cancellationToken);
@@ -38,9 +42,14 @@ internal static class UserCommands
             lines.Add($"Showing the first {users.Length} of {total} accounts.");
         }
 
+        if (placeholders > 0)
+        {
+            lines.Add($"{placeholders} placeholder account(s) of imported messages are not listed; `users show` finds one by its username.");
+        }
+
         return new CliResult(
             "users.list",
-            new { total, shown = users.Length, users = items },
+            new { total, shown = users.Length, placeholders, users = items },
             lines);
     }
 
@@ -67,6 +76,7 @@ internal static class UserCommands
             $"Display name: {item.DisplayName}",
             $"Email: {item.Email ?? "(none)"}",
             $"Disabled: {(item.Disabled ? "yes" : "no")}",
+            $"Origin: {item.Origin ?? "(a person)"}",
             $"Created: {item.CreatedAt:O}",
             $"Role: {item.RoleName ?? "(not a member of the instance server)"}",
             $"Joined instance server: {(item.JoinedAt is { } joined ? joined.ToString("O") : "(not a member)")}",
@@ -84,7 +94,8 @@ internal static class UserCommands
         user.CreatedAt,
         member?.Role.Name,
         member?.JoinedAt,
-        0);
+        0,
+        user.Origin);
 }
 
 internal sealed record UserItem(
@@ -96,4 +107,5 @@ internal sealed record UserItem(
     DateTime CreatedAt,
     string? RoleName,
     DateTime? JoinedAt,
-    int ActiveSessions);
+    int ActiveSessions,
+    string? Origin);

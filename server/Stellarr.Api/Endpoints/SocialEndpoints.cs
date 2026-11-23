@@ -180,7 +180,7 @@ public static class SocialEndpoints
         }
 
         var normalizedUsername = username.ToUpperInvariant();
-        var target = await db.Users.AsNoTracking()
+        var target = await db.Users.AsNoTracking().People()
             .Include(x => x.Preferences)
             .SingleOrDefaultAsync(x => x.NormalizedUsername == normalizedUsername, cancellationToken);
         if (target is null || target.Preferences?.AllowFriendRequests == false)
@@ -322,7 +322,7 @@ public static class SocialEndpoints
         CancellationToken cancellationToken)
     {
         var selfId = principal.RequireUserId();
-        if (selfId == userId || !await db.Users.AnyAsync(x => x.Id == userId, cancellationToken))
+        if (selfId == userId || !await db.Users.People().AnyAsync(x => x.Id == userId, cancellationToken))
         {
             return Results.NotFound();
         }

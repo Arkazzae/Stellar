@@ -186,7 +186,7 @@ public static class ServerAdministrationEndpoints
         if (invite is null ||
             invite.ExpiresAt <= now ||
             invite.MaxUses <= invite.Uses ||
-            !await db.Users.AsNoTracking().AnyAsync(x => x.Id == userId, cancellationToken))
+            !await db.Users.AsNoTracking().People().AnyAsync(x => x.Id == userId, cancellationToken))
         {
             return Results.NotFound();
         }

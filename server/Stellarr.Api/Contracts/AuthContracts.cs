@@ -32,7 +32,11 @@ public sealed record UserDto(
     string? BannerUrl = null,
     string? CustomStatus = null,
     string? Bio = null,
-    string? Pronouns = null);
+    string? Pronouns = null,
+    // Null for a person; "discord" for an account that only stands in for
+    // the author of messages imported from Discord, which nobody can write
+    // to or befriend. A client that predates it ignores it.
+    string? Origin = null);
 
 public sealed record TypingChangedDto(
     string ChannelId,
@@ -52,5 +56,6 @@ public static class AuthContractMappings
         user.BannerUrl,
         user.CustomStatus,
         user.Bio,
-        user.Pronouns);
+        user.Pronouns,
+        user.Origin);
 }
