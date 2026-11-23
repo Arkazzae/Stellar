@@ -1,8 +1,10 @@
+using Microsoft.AspNetCore.SignalR;
 using Microsoft.EntityFrameworkCore;
 using Stellarr.Api.Auth;
 using Stellarr.Api.Contracts;
 using Stellarr.Api.Data;
 using Stellarr.Api.Localization;
+using Stellarr.Api.Realtime;
 
 namespace Stellarr.Api.Endpoints;
 
@@ -78,6 +80,7 @@ public static partial class CockpitEndpoints
         TransferCockpitServerRequest request,
         HttpContext http,
         AppDbContext db,
+        IHubContext<AppHub> hub,
         ServerMutationGate gate,
         Messages messages,
         CancellationToken cancellationToken)
@@ -112,6 +115,8 @@ public static partial class CockpitEndpoints
             });
         }
 
+        // The owner sees every channel and the former owner may not.
+        var viewChange = await ViewChange.BeginAsync(db, serverId, cancellationToken);
         await ServerOwnership.HandOverAsync(db, serverId, owner, successor, cancellationToken);
         var operatorId = http.User.RequireUserId();
         await StageAuditAsync(db, serverId, operatorId, messages.Get(MessageKey.AuditOwnershipTransferred), cancellationToken);
@@ -126,6 +131,7 @@ public static partial class CockpitEndpoints
             cancellationToken);
         await db.SaveChangesAsync(cancellationToken);
         await transaction.CommitAsync(cancellationToken);
+        await viewChange.PublishAsync(hub.Clients, db);
         return Results.NoContent();
     }
 
