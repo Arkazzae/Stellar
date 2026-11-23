@@ -81,6 +81,7 @@ public enum MessageKey
     PermissionAllowedAndDenied,
     PermissionServerWideOnly,
     RoleInvalid,
+    RoleOrderIncomplete,
     CreateInviteDenied,
 
     // Operator panel
@@ -270,6 +271,7 @@ public enum MessageKey
     AuditAccountEnabled,
     AuditRoleCreated,
     AuditRoleUpdated,
+    AuditRolesReordered,
     AuditSessionRevoked,
     AuditProviderSignUpAllowed,
     AuditProviderSignUpStopped,

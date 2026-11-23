@@ -80,6 +80,7 @@ public sealed partial class Messages
         MessageKey.PermissionAllowedAndDenied => "To samo uprawnienie nie może być jednocześnie dozwolone i zabronione.",
         MessageKey.PermissionServerWideOnly => "Uprawnienie administratora obowiązuje na całym serwerze i nie da się go ustawić dla kanału ani sekcji.",
         MessageKey.RoleInvalid => "Nazwa, kolor lub lista uprawnień roli jest nieprawidłowa.",
+        MessageKey.RoleOrderIncomplete => "Lista musi zawierać dokładnie raz każdą rolę między rolą właściciela a rolą domyślną.",
         MessageKey.CreateInviteDenied => "Nie możesz tu tworzyć zaproszeń.",
 
         // Operator panel
@@ -269,6 +270,7 @@ public sealed partial class Messages
         MessageKey.AuditAccountEnabled => "włączył(a) konto {name}",
         MessageKey.AuditRoleCreated => "utworzył(a) rolę {name}",
         MessageKey.AuditRoleUpdated => "zaktualizował(a) rolę {name}",
+        MessageKey.AuditRolesReordered => "zmienił(a) kolejność ról",
         MessageKey.AuditProviderSignUpAllowed => "pozwolił(a) dostawcy {provider} zakładać konta osobom z zaproszeniem",
         MessageKey.AuditProviderSignUpStopped => "wyłączył(a) zakładanie kont przez dostawcę {provider}",
         MessageKey.AuditOwnershipTransferredTo => "przekazał(a) serwer osobie {name}",
