@@ -37,13 +37,13 @@ public static class PermissionOverrideEndpoints
         overrides.MapPut("/{roleId:guid}", (
             Guid targetId, Guid roleId, SetPermissionOverrideRequest request,
             HttpContext http, AppDbContext db, IHubContext<AppHub> hub, Messages messages, CancellationToken cancellationToken) =>
-            TellingWhoSeesOtherwiseAsync(http, db, hub,
+            TellingWhoSeesOtherwiseAsync(targetType, targetId, http, db, hub,
                 () => SetAsync(targetType, targetId, roleId, request, http, db, messages, cancellationToken), cancellationToken))
             .AddEndpointFilter<InstanceServerFreshSecondStepFilter>();
         overrides.MapDelete("/{roleId:guid}", (
             Guid targetId, Guid roleId, HttpContext http, AppDbContext db, IHubContext<AppHub> hub, Messages messages,
             CancellationToken cancellationToken) =>
-            TellingWhoSeesOtherwiseAsync(http, db, hub,
+            TellingWhoSeesOtherwiseAsync(targetType, targetId, http, db, hub,
                 () => ClearAsync(targetType, targetId, roleId, http, db, messages, cancellationToken), cancellationToken))
             .AddEndpointFilter<InstanceServerFreshSecondStepFilter>();
         overrides.MapGet("/members", (
@@ -52,28 +52,37 @@ public static class PermissionOverrideEndpoints
         overrides.MapPut("/members/{userId:guid}", (
             Guid targetId, Guid userId, SetPermissionOverrideRequest request,
             HttpContext http, AppDbContext db, IHubContext<AppHub> hub, Messages messages, CancellationToken cancellationToken) =>
-            TellingWhoSeesOtherwiseAsync(http, db, hub,
+            TellingWhoSeesOtherwiseAsync(targetType, targetId, http, db, hub,
                 () => SetMemberAsync(targetType, targetId, userId, request, http, db, messages, cancellationToken), cancellationToken))
             .AddEndpointFilter<InstanceServerFreshSecondStepFilter>();
         overrides.MapDelete("/members/{userId:guid}", (
             Guid targetId, Guid userId, HttpContext http, AppDbContext db, IHubContext<AppHub> hub, Messages messages,
             CancellationToken cancellationToken) =>
-            TellingWhoSeesOtherwiseAsync(http, db, hub,
+            TellingWhoSeesOtherwiseAsync(targetType, targetId, http, db, hub,
                 () => ClearMemberAsync(targetType, targetId, userId, http, db, messages, cancellationToken), cancellationToken))
             .AddEndpointFilter<InstanceServerFreshSecondStepFilter>();
     }
 
     /// <summary>
     /// Makes one change of an override, and tells everybody it shows a
-    /// channel or section to, or hides one from, once it is committed.
+    /// channel or section to, or hides one from, once it is committed. The
+    /// refusals of <see cref="RefuseAsync"/> come first, so a request that may
+    /// not go on reads nothing of who sees what.
     /// </summary>
     private static async Task<IResult> TellingWhoSeesOtherwiseAsync(
+        PermissionTargetType targetType,
+        Guid targetId,
         HttpContext http,
         AppDbContext db,
         IHubContext<AppHub> hub,
         Func<Task<IResult>> change,
         CancellationToken cancellationToken)
     {
+        if (await RefuseAsync(targetType, targetId, http, db, cancellationToken) is { } refusal)
+        {
+            return refusal;
+        }
+
         var viewChange = await ViewChange.BeginAsync(db, http.RequireActiveServerId(), cancellationToken);
         var result = await change();
         if (result is IStatusCodeHttpResult { StatusCode: >= 200 and < 300 })
@@ -112,11 +121,8 @@ public static class PermissionOverrideEndpoints
         Messages messages,
         CancellationToken cancellationToken)
     {
+        // Refused, where it has to be, by TellingWhoSeesOtherwiseAsync.
         await using var transaction = await db.Database.BeginTransactionAsync(cancellationToken);
-        if (await RefuseAsync(targetType, targetId, http, db, cancellationToken) is { } refusal)
-        {
-            return refusal;
-        }
 
         var serverId = http.RequireActiveServerId();
         if (!await db.ServerRoles.AnyAsync(x => x.Id == roleId && x.ServerId == serverId, cancellationToken))
@@ -192,11 +198,8 @@ public static class PermissionOverrideEndpoints
         Messages messages,
         CancellationToken cancellationToken)
     {
+        // Refused, where it has to be, by TellingWhoSeesOtherwiseAsync.
         await using var transaction = await db.Database.BeginTransactionAsync(cancellationToken);
-        if (await RefuseAsync(targetType, targetId, http, db, cancellationToken) is { } refusal)
-        {
-            return refusal;
-        }
 
         var serverId = http.RequireActiveServerId();
         if (!await db.ServerRoles.AnyAsync(x => x.Id == roleId && x.ServerId == serverId, cancellationToken))
@@ -253,11 +256,8 @@ public static class PermissionOverrideEndpoints
         Messages messages,
         CancellationToken cancellationToken)
     {
+        // Refused, where it has to be, by TellingWhoSeesOtherwiseAsync.
         await using var transaction = await db.Database.BeginTransactionAsync(cancellationToken);
-        if (await RefuseAsync(targetType, targetId, http, db, cancellationToken) is { } refusal)
-        {
-            return refusal;
-        }
 
         var serverId = http.RequireActiveServerId();
         var member = await MemberAsync(db, serverId, userId, cancellationToken);
@@ -339,11 +339,8 @@ public static class PermissionOverrideEndpoints
         Messages messages,
         CancellationToken cancellationToken)
     {
+        // Refused, where it has to be, by TellingWhoSeesOtherwiseAsync.
         await using var transaction = await db.Database.BeginTransactionAsync(cancellationToken);
-        if (await RefuseAsync(targetType, targetId, http, db, cancellationToken) is { } refusal)
-        {
-            return refusal;
-        }
 
         var serverId = http.RequireActiveServerId();
         var member = await MemberAsync(db, serverId, userId, cancellationToken);
