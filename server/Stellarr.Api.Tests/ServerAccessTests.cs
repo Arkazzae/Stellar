@@ -12,7 +12,7 @@ public sealed class ServerAccessTests(StellarrWebApplicationFactory factory)
     [
         "manageServer", "manageChannels", "manageRoles", "manageMembers",
         "manageMessages", "moderateMembers", "manageBans", "viewAuditLog",
-        "administrator", "sendMessages", "attachFiles", "addReactions", "connect", "createInvite",
+        "administrator", "sendMessages", "attachFiles", "addReactions", "connect", "createInvite", "viewChannel",
     ];
 
     private static readonly Guid MajaId = Guid.Parse("30000000-0000-0000-0000-000000000001");
