@@ -62,6 +62,9 @@ public sealed partial class Messages
         MessageKey.SlowModeWait => "Następną wiadomość możesz wysłać za {seconds} s.",
         MessageKey.VoiceMessageAlone => "Wiadomość głosowa musi być wysłana samodzielnie, bez tekstu i innych załączników.",
         MessageKey.MessageEditContentInvalid => "Wiadomość musi zawierać tekst i mieć najwyżej {max} znaków.",
+        MessageKey.SendMessagesDenied => "Nie możesz wysyłać wiadomości na tym kanale.",
+        MessageKey.AttachFilesDenied => "Nie możesz dołączać plików na tym kanale.",
+        MessageKey.AddReactionsDenied => "Nie możesz dodawać reakcji na tym kanale.",
 
         // Message history and search
         MessageKey.PageLimitRange => "Limit musi mieścić się w zakresie 1–{max}.",
@@ -75,7 +78,9 @@ public sealed partial class Messages
         // Roles and permissions
         MessageKey.PermissionUnknown => "Co najmniej jedno uprawnienie jest nieznane.",
         MessageKey.PermissionAllowedAndDenied => "To samo uprawnienie nie może być jednocześnie dozwolone i zabronione.",
+        MessageKey.PermissionServerWideOnly => "Uprawnienie administratora obowiązuje na całym serwerze i nie da się go ustawić dla kanału ani sekcji.",
         MessageKey.RoleInvalid => "Nazwa, kolor lub lista uprawnień roli jest nieprawidłowa.",
+        MessageKey.CreateInviteDenied => "Nie możesz tu tworzyć zaproszeń.",
 
         // Operator panel
         MessageKey.CockpitUserInvalid => "Sprawdź login, nazwę, e-mail i hasło (minimum 8 znaków).",

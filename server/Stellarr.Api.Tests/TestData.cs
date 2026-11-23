@@ -74,7 +74,7 @@ internal static class TestData
                 ServerId = ServerId,
                 Name = "Członek",
                 Color = "#777777",
-                Permissions = ServerPrivileges.None,
+                Permissions = ServerRole.BaseRoleDefaults,
                 Position = 2,
                 IsSystem = true,
             });

@@ -67,9 +67,13 @@ public sealed class MemberPermissionsSchemaTests
         await DatabaseSchema.PrepareAsync(db, CancellationToken.None);
         db.ChangeTracker.Clear();
 
+        // Such a backup is also from before the ordinary permissions, so its
+        // base role gets what lets everybody keep posting, once.
         Assert.Equal(ServerPrivileges.All, await ServerAccess.GetAsync(db, seeded.Owner, seeded.Server));
-        Assert.Equal(ServerPrivileges.ManageMessages, await ServerAccess.GetAsync(db, seeded.Moderator, seeded.Server));
-        Assert.Equal(ServerPrivileges.None, await ServerAccess.GetAsync(db, seeded.Plain, seeded.Server));
+        Assert.Equal(
+            ServerPrivileges.ManageMessages | ServerRole.BaseRoleDefaults,
+            await ServerAccess.GetAsync(db, seeded.Moderator, seeded.Server));
+        Assert.Equal(ServerRole.BaseRoleDefaults, await ServerAccess.GetAsync(db, seeded.Plain, seeded.Server));
     }
 
     private static async Task<SqliteConnection> OpenAsync()

@@ -126,7 +126,7 @@ public static class ServerDirectoryEndpoints
             ServerId = server.Id,
             Name = messages.Get(MessageKey.MemberRoleName),
             Color = "oklch(0.70 0.02 277)",
-            Permissions = ServerPrivileges.None,
+            Permissions = ServerRole.BaseRoleDefaults,
             Position = 1,
             IsSystem = true,
         };

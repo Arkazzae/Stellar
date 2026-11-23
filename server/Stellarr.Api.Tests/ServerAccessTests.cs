@@ -12,6 +12,7 @@ public sealed class ServerAccessTests(StellarrWebApplicationFactory factory)
     [
         "manageServer", "manageChannels", "manageRoles", "manageMembers",
         "manageMessages", "moderateMembers", "manageBans", "viewAuditLog",
+        "administrator", "sendMessages", "attachFiles", "addReactions", "connect", "createInvite",
     ];
 
     private static readonly Guid MajaId = Guid.Parse("30000000-0000-0000-0000-000000000001");
@@ -25,10 +26,12 @@ public sealed class ServerAccessTests(StellarrWebApplicationFactory factory)
         var stranger = (await DataModelSupport.AddUsersAsync(db, 1))[0];
 
         Assert.Equal(ServerPrivileges.All, await ServerAccess.GetAsync(db, MajaId, TestData.ServerId));
+        // Every member holds the base role as well, and with it what it lets everybody do.
         Assert.Equal(
-            ServerPrivileges.ManageMessages | ServerPrivileges.ModerateMembers | ServerPrivileges.ManageBans,
+            ServerPrivileges.ManageMessages | ServerPrivileges.ModerateMembers | ServerPrivileges.ManageBans |
+                ServerRole.BaseRoleDefaults,
             await ServerAccess.GetAsync(db, AdaId, TestData.ServerId));
-        Assert.Equal(ServerPrivileges.None, await ServerAccess.GetAsync(db, IlyaId, TestData.ServerId));
+        Assert.Equal(ServerRole.BaseRoleDefaults, await ServerAccess.GetAsync(db, IlyaId, TestData.ServerId));
         Assert.Equal(ServerPrivileges.None, await ServerAccess.GetAsync(db, stranger.Id, TestData.ServerId));
 
         Assert.True(await ServerAccess.HasAsync(db, AdaId, TestData.ServerId, ServerPrivileges.ManageBans));
@@ -231,7 +234,7 @@ public sealed class ServerAccessTests(StellarrWebApplicationFactory factory)
     }
 
     [Theory]
-    [InlineData("administrator")]
+    [InlineData("superuser")]
     [InlineData("ManageServer")]
     [InlineData("")]
     public void UnknownPrivilegeNameIsRefusedWithNothingGranted(string name)

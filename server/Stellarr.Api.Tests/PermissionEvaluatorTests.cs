@@ -15,6 +15,7 @@ public sealed class PermissionEvaluatorTests
     private const ServerPrivileges Bans = ServerPrivileges.ManageBans;
     private const ServerPrivileges Channels = ServerPrivileges.ManageChannels;
     private const ServerPrivileges Audit = ServerPrivileges.ViewAuditLog;
+    private const ServerPrivileges Admin = ServerPrivileges.Administrator;
 
     private static readonly Dictionary<string, (PermissionInput Input, ServerPrivileges Expected)> Cases = new()
     {
@@ -27,6 +28,20 @@ public sealed class PermissionEvaluatorTests
         ["owner holds everything"] = (
             Owner(Level(baseMasks: Deny(ServerPrivileges.All), roles: [Deny(ServerPrivileges.All)], member: Deny(ServerPrivileges.All))),
             ServerPrivileges.All),
+
+        // Administrator, from any role, holds everything and passes every
+        // override; an override can neither grant it nor take it away.
+        ["administrator passes every override"] = (
+            Member(None, [Admin], Level(baseMasks: Deny(ServerPrivileges.All), roles: [Deny(ServerPrivileges.All)],
+                member: Deny(ServerPrivileges.All))),
+            ServerPrivileges.All),
+        ["administrator through the base role"] = (Member(Admin, [], Level(member: Deny(Messages))), ServerPrivileges.All),
+        ["no override grants administrator"] = (
+            Member(None, [None], Level(baseMasks: Allow(Admin | Bans), roles: [Allow(Admin)], member: Allow(Admin)),
+                Level(baseMasks: Allow(Admin))),
+            Bans),
+        ["a deny of administrator in an override is ignored too"] = (
+            Member(Messages, [None], Level(baseMasks: Deny(Admin), roles: [Deny(Admin)], member: Deny(Admin))), Messages),
 
         // One level, one source at a time.
         ["base override denies"] = (Member(Messages | Bans, [], Level(baseMasks: Deny(Messages))), Bans),
@@ -90,6 +105,7 @@ public sealed class PermissionEvaluatorTests
         Assert.Equal(Audit | Messages, PermissionEvaluator.Evaluate(input with { Levels = [] }));
         Assert.Equal(Audit | Messages, PermissionEvaluator.ServerWide(false, Audit, [Messages]));
         Assert.Equal(ServerPrivileges.All, PermissionEvaluator.ServerWide(true, None, []));
+        Assert.Equal(ServerPrivileges.All, PermissionEvaluator.ServerWide(false, None, [Admin]));
     }
 
     /// <summary>

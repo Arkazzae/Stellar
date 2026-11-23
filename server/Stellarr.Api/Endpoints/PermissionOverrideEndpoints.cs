@@ -13,6 +13,7 @@ namespace Stellarr.Api.Endpoints;
 /// ManageRoles and not by ManageChannels: it edits what people may do, as the
 /// roles editor does. Member overrides have routes of their own beside the
 /// role ones, so a list of role overrides stays a list of role overrides.
+/// Administrator is server-wide only and never part of an override.
 /// </summary>
 public static class PermissionOverrideEndpoints
 {
@@ -104,6 +105,11 @@ public static class PermissionOverrideEndpoints
         if ((allow & deny) != ServerPrivileges.None)
         {
             return Invalid(messages.Get(MessageKey.PermissionAllowedAndDenied));
+        }
+
+        if (((allow | deny) & ServerPrivileges.Administrator) != ServerPrivileges.None)
+        {
+            return Invalid(messages.Get(MessageKey.PermissionServerWideOnly));
         }
 
         if (!await ServerAuthorization.CanChangeOverrideAsync(
@@ -241,6 +247,11 @@ public static class PermissionOverrideEndpoints
         if ((allow & deny) != ServerPrivileges.None)
         {
             return Invalid(messages.Get(MessageKey.PermissionAllowedAndDenied));
+        }
+
+        if (((allow | deny) & ServerPrivileges.Administrator) != ServerPrivileges.None)
+        {
+            return Invalid(messages.Get(MessageKey.PermissionServerWideOnly));
         }
 
         // The owner may do everything everywhere; an override would say otherwise.

@@ -18,8 +18,17 @@ namespace Stellarr.Api.Realtime;
 /// </summary>
 public sealed partial class AppHub
 {
-    private static readonly VoiceRoomAccess NoVoiceAccess = new(Allowed: false, UserLimit: 0);
+    private static readonly VoiceRoomAccess NoVoiceAccess = new(Allowed: false, UserLimit: 0, ServerId: null);
 
+    /// <summary>
+    /// Takes a seat in a voice room. The seat is what admits a connection to
+    /// the room's media: <see cref="OpenMediaSession"/> asks the media server
+    /// for a session only on behalf of a seat, and the media server takes
+    /// commands from this API alone. So Connect is decided here, in the
+    /// channel, where its overrides count. A connection that already sits in
+    /// the room keeps its seat without it, because a moderator may have moved
+    /// it there and the client confirms a move with this call.
+    /// </summary>
     public async Task JoinVoice(string channelId)
     {
         var roomId = ParseGuid(channelId, nameof(channelId));
@@ -30,7 +39,14 @@ public sealed partial class AppHub
             throw new HubException("Unknown voice room.");
         }
 
-        var join = presence.JoinVoice(Context.ConnectionId, userId, roomId, access.UserLimit);
+        var mayTakeSeat = access.ServerId is not { } serverId ||
+            await ServerAccess.HasAsync(db, userId, serverId, roomId, ServerPrivileges.Connect);
+        var join = presence.JoinVoice(Context.ConnectionId, userId, roomId, access.UserLimit, mayTakeSeat);
+        if (!join.Admitted)
+        {
+            throw new HubException("Not allowed to join this voice room.");
+        }
+
         if (!join.Accepted)
         {
             throw new HubException("Voice room is full.");
@@ -279,17 +295,17 @@ public sealed partial class AppHub
             .Where(x => x.Id == roomId &&
                 x.Kind == ChannelKind.Voice &&
                 db.ServerMembers.Any(member => member.ServerId == x.ServerId && member.UserId == userId))
-            .Select(x => new { x.UserLimit })
+            .Select(x => new { x.UserLimit, x.ServerId })
             .SingleOrDefaultAsync();
         if (channel is not null)
         {
-            return new VoiceRoomAccess(Allowed: true, channel.UserLimit);
+            return new VoiceRoomAccess(Allowed: true, channel.UserLimit, channel.ServerId);
         }
 
         var conversation = await db.DirectConversations.AsNoTracking()
             .FirstOrDefaultAsync(x => x.Id == roomId && (x.UserAId == userId || x.UserBId == userId));
         return conversation is not null && await DirectCallAllowedAsync(conversation, userId)
-            ? new VoiceRoomAccess(Allowed: true, UserLimit: 0)
+            ? new VoiceRoomAccess(Allowed: true, UserLimit: 0, ServerId: null)
             : NoVoiceAccess;
     }
 
@@ -328,5 +344,6 @@ public sealed partial class AppHub
         return await db.Friendships.AsNoTracking().AnyAsync(x => x.UserAId == first && x.UserBId == second);
     }
 
-    private readonly record struct VoiceRoomAccess(bool Allowed, int UserLimit);
+    /// <summary>Whether the caller may use the room at all; <see cref="ServerId"/> is null for a direct call.</summary>
+    private readonly record struct VoiceRoomAccess(bool Allowed, int UserLimit, Guid? ServerId);
 }

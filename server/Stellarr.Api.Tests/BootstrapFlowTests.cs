@@ -89,7 +89,8 @@ public sealed class BootstrapFlowTests
             snapshot.GetProperty("members").EnumerateArray().Select(x => x.GetProperty("displayName").GetString()));
         Assert.Equal(
             ["manageServer", "manageChannels", "manageRoles", "manageMembers",
-                "manageMessages", "moderateMembers", "manageBans", "viewAuditLog"],
+                "manageMessages", "moderateMembers", "manageBans", "viewAuditLog",
+                "administrator", "sendMessages", "attachFiles", "addReactions", "connect", "createInvite"],
             snapshot.GetProperty("permissions").EnumerateArray().Select(x => x.GetString()));
 
         var message = Assert.Single(snapshot.GetProperty("messages").EnumerateArray());
@@ -114,10 +115,13 @@ public sealed class BootstrapFlowTests
         var moderatorSnapshot = await moderator.GetFromJsonAsync<JsonElement>("/api/bootstrap");
         var memberSnapshot = await member.GetFromJsonAsync<JsonElement>("/api/bootstrap");
 
+        // Both hold the base role, which lets everybody talk, share, react and join voice.
         Assert.Equal(
-            ["manageMessages", "moderateMembers", "manageBans"],
+            ["manageMessages", "moderateMembers", "manageBans", "sendMessages", "attachFiles", "addReactions", "connect"],
             moderatorSnapshot.GetProperty("permissions").EnumerateArray().Select(x => x.GetString()));
-        Assert.Equal(0, memberSnapshot.GetProperty("permissions").GetArrayLength());
+        Assert.Equal(
+            ["sendMessages", "attachFiles", "addReactions", "connect"],
+            memberSnapshot.GetProperty("permissions").EnumerateArray().Select(x => x.GetString()));
     }
 
     [Fact]
