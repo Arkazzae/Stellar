@@ -34,7 +34,7 @@
     position:absolute;z-index:1;right:4px;top:50%;transform:translateY(-50%);
     width:32px;height:32px;border-radius:var(--radius-sm);
     display:inline-flex;align-items:center;justify-content:center;
-    background:var(--surface-sidebar);color:var(--text-faint);
+    background:var(--surface-raised);color:var(--text-faint);
     opacity:0;pointer-events:none;
     transition:opacity var(--dur-fast) var(--ease-standard),
                background var(--dur-fast) var(--ease-standard),

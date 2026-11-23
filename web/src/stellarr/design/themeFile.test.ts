@@ -38,6 +38,32 @@ describe("theme file", () => {
     expect(normaliseTheme({ ...DEFAULT_THEME, ...read.patch }).custom).toEqual(shared);
   });
 
+  it("carries a wallpaper as bytes with its shading, never as an address to use", async () => {
+    const bytes = new Uint8Array([0x52, 0x49, 0x46, 0x46, 1, 2, 3, 250]);
+    const image = `data:image/webp;base64,${btoa(String.fromCharCode(...bytes))}`;
+    const theme = { ...DEFAULT_THEME, wallpaper: { shade: 65, blur: 4, placeholder: "AAAA" } };
+    const file = themeFileOf(theme, image);
+    expect(file.wallpaper).toEqual({ image, shade: 65, blur: 4 });
+
+    const read = readThemeFile(themeFileText(file));
+    if (!read.ok || read.wallpaper === undefined) throw new Error("the wallpaper did not come back");
+    expect(read.patch).not.toHaveProperty("wallpaper");
+    expect({ shade: read.wallpaper.shade, blur: read.wallpaper.blur }).toEqual({ shade: 65, blur: 4 });
+    expect(read.wallpaper.image.type).toBe("image/webp");
+    expect(new Uint8Array(await read.wallpaper.image.arrayBuffer())).toEqual(bytes);
+  });
+
+  it.each([
+    ["a vector picture", "data:image/svg+xml;base64,PHN2Zy8+"],
+    ["an address", "https://example.com/wallpaper.jpg"],
+    ["markup after the picture", "data:image/png;base64,AAAA\");background:url(x"],
+  ])("leaves out a wallpaper that is %s and keeps the rest", (_label, image) => {
+    const file = { ...themeFileOf(DEFAULT_THEME), wallpaper: { image, shade: 50, blur: 0 } };
+    const read = readThemeFile(JSON.stringify(file));
+    expect(read.ok).toBe(true);
+    expect(read).not.toHaveProperty("wallpaper");
+  });
+
   it("leaves out a face this build does not have", () => {
     const file = { ...themeFileOf(DEFAULT_THEME), font: "comic-sans" };
     const read = readThemeFile(JSON.stringify(file));

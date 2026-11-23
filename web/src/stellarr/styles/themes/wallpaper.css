@@ -1,0 +1,89 @@
+/*
+ * ============================================================================
+ * WALLPAPER — a picture behind the whole signed-in app
+ * ============================================================================
+ *
+ * One fixed layer behind the shell holds the picture, blurred on the layer
+ * itself, and the scheme's background over it at the chosen shading
+ * (`WallpaperLayer.tsx`). Nothing else changes per component: while
+ * `data-wallpaper` is on <html>, the structural surfaces' tokens let it
+ * through.
+ *
+ *   structural, see-through   --surface-canvas   the canvas and the server rail
+ *                             --surface-sidebar  the channel rail, the roster,
+ *                                                the channel and thread panels
+ *                             --surface-room     the room with its header and
+ *                                                composer band, direct messages,
+ *                                                the call stage
+ *
+ * Everything that floats keeps its own opaque tokens: menus, popovers,
+ * tooltips, modals and sheets, the settings window, the emoji picker, toasts
+ * and the sticky headers content scrolls under (--surface-raised, -base,
+ * -pop, --set-group). Where one of the three structural tokens also painted
+ * something that floats, that use moved to its opaque twin:
+ * --surface-canvas-solid (recipe.css), --surface-raised for the sidebar's
+ * colour and --surface-base for the room's, which carry the same values.
+ *
+ * Loads with the signed-in app, and the attribute is written only by its
+ * layer as it mounts, so the sign-in pages, which fetch these rules ahead of
+ * signing in, are never see-through.
+ *
+ * The opacities are part of the readability rule `wallpaper.test.ts` checks
+ * with WALLPAPER_SHADE_DEFAULT: change them together.
+ * ============================================================================
+ */
+
+:root[data-wallpaper] {
+  --surface-canvas: transparent;
+  --surface-sidebar: color-mix(in srgb, var(--surface-raised) 60%, transparent);
+  --surface-room: color-mix(in srgb, var(--surface-base) 60%, transparent);
+}
+
+@layer components {
+  .wallpaper {
+    position: fixed;
+    inset: 0;
+    z-index: -1;
+    overflow: hidden;
+    pointer-events: none;
+  }
+
+  .wallpaper > img {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+  }
+
+  /* Thirty-two pixels across, so it is only ever a wash of the picture's colours. */
+  .wallpaper > .wallpaper-placeholder {
+    filter: blur(32px);
+    transform: scale(1.15);
+  }
+
+  .wallpaper > .wallpaper-picture {
+    opacity: 0;
+    transition: opacity var(--dur-slow) var(--ease-standard);
+  }
+
+  .wallpaper > .wallpaper-picture.on {
+    opacity: 1;
+  }
+
+  .wallpaper > .wallpaper-shade {
+    position: absolute;
+    inset: 0;
+    background: var(--surface-canvas-solid);
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .wallpaper > .wallpaper-picture {
+      transition: none;
+    }
+  }
+
+  [data-reduced-motion="true"] .wallpaper > .wallpaper-picture {
+    transition: none;
+  }
+}

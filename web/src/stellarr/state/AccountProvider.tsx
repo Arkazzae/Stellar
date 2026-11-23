@@ -71,11 +71,11 @@ export function AccountProvider({ children }: { children: ReactNode }) {
       requestEmailChange: (email, password) => port.requestEmailChange(email, password),
       async setImage(kind, file) {
         const url = await port.uploadImage(kind, file);
-        await port.update(kind === "avatar" ? { avatarUrl: url } : { bannerUrl: url });
+        await port.update({ [`${kind}Url`]: url });
       },
       // `null` is the removal, which is why the patch cannot simply omit the key.
       removeImage: (kind) =>
-        port.update(kind === "avatar" ? { avatarUrl: null } : { bannerUrl: null }),
+        port.update({ [`${kind}Url`]: null }),
     }),
     [account, preferences, port],
   );

@@ -100,10 +100,11 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
     },
     [store],
   );
-  // The person's own palette is not an axis but something they made: going
-  // back to the defaults selects Midnight and keeps it to come back to.
+  // The person's own palette and their wallpaper are not axes but things they
+  // made: going back to the defaults selects Midnight and keeps both.
   const reset = useCallback(() => {
-    store.write({ ...DEFAULT_THEME, custom: store.read().custom });
+    const { custom, wallpaper } = store.read();
+    store.write({ ...DEFAULT_THEME, custom, wallpaper });
   }, [store]);
 
   const value = useMemo<ThemeContextValue>(

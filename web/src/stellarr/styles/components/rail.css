@@ -256,7 +256,7 @@
   .rail-scroll [data-drag="carried"]{
     position:relative;z-index:2;
     /* Threads and people carried under the row stay readable over what they cross. */
-    background:var(--surface-sidebar);border-radius:var(--radius-sm);
+    background:var(--surface-raised);border-radius:var(--radius-sm);
   }
   .rail-scroll [data-drag="carried"] > .channel{
     background:var(--surface-overlay);box-shadow:0 4px 14px oklch(0 0 0 / 0.45);

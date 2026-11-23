@@ -27,6 +27,8 @@ export interface Account {
   /** Absent means no upload: the card shows the built-in art chosen by id. */
   avatarUrl?: string;
   bannerUrl?: string;
+  /** The picture behind this person's own app. Private: nobody else receives it. */
+  wallpaperUrl?: string;
   /** Short public activity line, separate from the longer bio. */
   customStatus: string;
   /** Editable fields are strings, "" when unset, never absent. */
@@ -43,6 +45,7 @@ export interface AccountPatch {
   /** `null` removes the picture; `undefined` leaves it alone. */
   avatarUrl?: string | null;
   bannerUrl?: string | null;
+  wallpaperUrl?: string | null;
 }
 
 /** What "change password" can answer; each maps to one sentence in the UI. */
@@ -63,8 +66,8 @@ export type EmailChangeResult =
   | "taken"
   | "mail-unavailable";
 
-/** Which picture an upload is for; the two have different size limits. */
-export type ImageKind = "avatar" | "banner";
+/** Which picture an upload is for; each has its own size limit. */
+export type ImageKind = "avatar" | "banner" | "wallpaper";
 
 /**
  * Preferences that belong to a person rather than to a server or a device.

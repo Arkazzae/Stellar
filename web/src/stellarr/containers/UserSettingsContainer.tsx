@@ -3,6 +3,7 @@ import { useEffect, useRef, useSyncExternalStore } from "react";
 import { UserSettings } from "@/components/account/UserSettings";
 import { useBrowserNotifications } from "@/hooks/useBrowserNotifications";
 import { useGifsEnabled, useGiphyEnabled } from "@/hooks/useGifsEnabled";
+import { ApiError } from "@/lib/api/errors";
 import { playSystemFx } from "@/lib/audio/systemFx";
 import { giphyChoice } from "@/lib/giphy/giphyChoice";
 import { androidNotificationsSupported } from "@/lib/notifications/android";
@@ -245,6 +246,22 @@ export function UserSettingsContainer() {
           motion: {
             reducedMotion: account.preferences.reducedMotion,
             onChange: (reducedMotion) => persistPreferences({ reducedMotion }),
+          },
+          wallpaper: {
+            ...(account.account.wallpaperUrl === undefined ? {} : { url: account.account.wallpaperUrl }),
+            upload: (file) =>
+              account.setImage("wallpaper", file).then(
+                () => ({ ok: true }),
+                // The server says which limit a refusal hit, in its own words.
+                (error: unknown) => ({ ok: false, ...(error instanceof ApiError && error.detail !== undefined ? { message: error.detail } : {}) }),
+              ),
+            remove: () => account.removeImage("wallpaper"),
+            // Our own asset: the session's cookie reads it, as the image does.
+            read: async () => {
+              const response = await fetch(account.account.wallpaperUrl ?? "", { credentials: "same-origin" });
+              if (!response.ok) throw new Error(`The wallpaper answered ${response.status}.`);
+              return response.blob();
+            },
           },
         }}
         voice={{

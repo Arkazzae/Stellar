@@ -34,6 +34,10 @@ const PALETTE_CSS_VARIABLES = Object.fromEntries(PALETTES.map((palette) => [pale
  *
  * A custom palette is checked the way `normaliseCustomTheme` checks it: every
  * role a hex colour, its stored derived values in range, or none of it used.
+ *
+ * The face and the wallpaper are not written here: they belong to the
+ * signed-in app, which writes them as it mounts (`AppAppearance`), so the
+ * sign-in pages that fetch it ahead stay in Outfit and opaque.
  */
 export const THEME_SCRIPT = `(function(){
 var DEFAULT=${JSON.stringify(DEFAULT_THEME)},VARIABLES=${JSON.stringify(PALETTE_CSS_VARIABLES)};

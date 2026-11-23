@@ -91,7 +91,7 @@ describe("THEME_SCRIPT", () => {
   it.each(PALETTES.map(({ id }) => id))(
     "writes what the provider writes for the %s palette",
     (palette) => {
-      const stored = { ...DEFAULT_THEME, palette, accent: "#123456", font: "lexend" };
+      const stored = { ...DEFAULT_THEME, palette, accent: "#123456", font: "lexend", wallpaper: { shade: 60, blur: 4 } };
       localStorage.setItem(THEME_STORAGE_KEY, JSON.stringify(stored));
 
       runScript();
@@ -142,6 +142,7 @@ describe("THEME_SCRIPT", () => {
       size: "xl",
       density: "tight",
       font: "comic-sans",
+      wallpaper: [],
       hasOwnProperty: "constructor",
     };
     localStorage.setItem(THEME_STORAGE_KEY, JSON.stringify(stored));

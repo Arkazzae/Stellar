@@ -82,13 +82,13 @@ function withinBudget<T>(work: Promise<T | undefined>): Promise<T | undefined> {
 }
 
 /** Where a preview is drawn and encoded: an offscreen canvas where there is one. */
-interface Surface {
+export interface Surface {
   encode(type: string, quality: number): Promise<Blob | null>;
   /** The drawn pixels, not premultiplied. */
   read(): Pixels;
 }
 
-function surfaceFor(bitmap: ImageBitmap, width: number, height: number): Surface | null {
+export function surfaceFor(bitmap: ImageBitmap, width: number, height: number): Surface | null {
   if (typeof OffscreenCanvas === "function") {
     const canvas = new OffscreenCanvas(width, height);
     const context = canvas.getContext("2d");
@@ -127,7 +127,7 @@ function draw(
  * The picture described in a few bytes, from the first frame of an animation
  * too. Undefined when nothing could be drawn: the upload goes on without it.
  */
-function makePlaceholder(bitmap: ImageBitmap): string | undefined {
+export function makePlaceholder(bitmap: ImageBitmap): string | undefined {
   try {
     if (bitmap.width <= 0 || bitmap.height <= 0) return undefined;
     const scale = Math.min(1, PLACEHOLDER_MAX_EDGE / Math.max(bitmap.width, bitmap.height));

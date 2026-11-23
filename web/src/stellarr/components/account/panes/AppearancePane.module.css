@@ -9,6 +9,32 @@
   grid-template-columns: repeat(7, minmax(0, 1fr));
 }
 
+/*
+ * The miniature over the wallpaper: the picture fills the stage behind its
+ * parts, and the room, which the real app paints with the stage's own
+ * background, gets the room's see-through surface itself.
+ */
+.stageWithWallpaper {
+  position: relative;
+  isolation: isolate;
+  background: transparent;
+}
+
+.stageWithWallpaper > :not(.stageWallpaper) {
+  position: relative;
+  z-index: 1;
+}
+
+.stageWithWallpaper > :global(.ap-stage-room) {
+  background: var(--surface-room);
+}
+
+.stageWallpaper {
+  position: absolute;
+  z-index: 0;
+  border-radius: inherit;
+}
+
 /* Two or more buttons at a row's end. */
 .actions {
   flex-wrap: wrap;

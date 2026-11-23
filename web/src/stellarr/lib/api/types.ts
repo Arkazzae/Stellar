@@ -78,6 +78,8 @@ export interface AccountDetails {
   createdAt: string;
   avatarUrl?: string;
   bannerUrl?: string;
+  /** The picture behind the person's own app; only they ever receive it. */
+  wallpaperUrl?: string;
   customStatus: string;
   bio: string;
   pronouns: string;
@@ -123,7 +125,7 @@ export interface AccountUpdateInput {
   pronouns?: string;
 }
 
-export type AccountImageKind = "avatar" | "banner";
+export type AccountImageKind = "avatar" | "banner" | "wallpaper";
 
 export type PasswordChangeAnswer =
   | "changed"
