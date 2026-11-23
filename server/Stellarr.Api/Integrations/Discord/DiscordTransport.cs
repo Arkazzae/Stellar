@@ -29,7 +29,7 @@ internal sealed partial class DiscordTransport(
     internal static readonly Uri ApiBase = new("https://discord.com/api/v10/");
 
     /// <summary>The form Discord requires, without which it may refuse the request.</summary>
-    internal const string UserAgent = "DiscordBot (https://github.com/arkazz/stellarr, 2.0)";
+    internal const string UserAgent = "DiscordBot (https://github.com/Arkazzae/Stellarr, 2.0)";
 
     /// <summary>More than any error body Discord sends; a longer one is cut, not read whole.</summary>
     private const int MaxErrorBytes = 64 * 1024;
