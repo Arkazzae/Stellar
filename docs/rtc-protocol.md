@@ -112,6 +112,13 @@ Defined in `web/src/stellarr/lib/rtc/protocol.ts` and implemented by `AppHub` (`
 
 Clients ignore any `VoiceParticipantChanged` snapshot whose `sequence` is older than the highest sequence already applied for that room, and re-synchronize directory occupancy whenever the SignalR connection reconnects.
 
+### Voice seats and `connect`
+
+The seat is what admits a connection to a room's media: `OpenMediaSession` creates a session on `stellarr-media` only for the caller's seat in that room, and `stellarr-media` takes commands from the API alone. So `connect` is decided where seats are given, in `JoinVoice`, evaluated at the channel so overrides apply, and inside `PresenceTracker`'s lock, so a seat cannot be taken between the decision and the join. A caller without it is refused with `HubException("Not allowed to join this voice room.")`, keeps whatever seat it had elsewhere, and cannot open media in the room either, since it has no seat there. Direct calls are not server channels and do not need it.
+
+- **Moderator moves**: `PATCH /api/admin/channels/{id}/members/{userId}` moves the seat, which is the moderator's act and needs `moderateMembers` in both rooms, not the member's `connect`. The client confirms a move with `JoinVoice` for the room it was moved to; a connection already seated in that room keeps its seat without `connect`, and opens media there.
+- **Losing `connect`**: a member who is seated when they lose it keeps the seat, and with it media sessions for that seat, until they leave or their hub connection drops; joining again needs it. The same holds for a member moved into a room they could not join: a hub reconnect ends the seat, and the rejoin is refused.
+
 ### Soundboard synchronization
 
 Soundboard clips are synchronized across participants over SignalR and decoded locally in each listener's Web Audio `AudioContext` rather than mixed into microphone audio:

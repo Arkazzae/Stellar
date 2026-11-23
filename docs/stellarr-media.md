@@ -67,7 +67,7 @@ Because all call media enters the container, any browser outside the Docker host
 
 ### `OpenMediaSession(channelId) → { sessionId }`
 
-- Requires the caller to hold an active voice seat in `channelId` (via `JoinVoice`).
+- Requires the caller to hold an active voice seat in `channelId` (via `JoinVoice`, which needs `connect` in a server voice channel, or a moderator's move; see [Voice seats and `connect`](./rtc-protocol.md#voice-seats-and-connect)).
 - If the connection already has an open media session, the previous session is detached and closed asynchronously in the background. Because `stellarr-media` enforces at most one session per `userId`, out-of-order close requests cannot clobber the newly created session.
 - Returns an opaque `sessionId` required on all subsequent `SendMediaSignal` calls. Clients ignore any `MediaSignal` or `MediaSessionClosed` event carrying a different `sessionId` or `channelId`.
 - Error responses:
