@@ -147,6 +147,42 @@ export class DirectoryStore {
     if (parts.some((part) => next[part] !== current[part])) this.#publish(next);
   }
 
+  /**
+   * Shows what a bootstrap fetched after `ChannelAccessChanged` says this
+   * member sees now. Its channels and sections win over anything the hub sent
+   * meanwhile: a layout cannot add a channel nor take one away, and the
+   * bootstrap was read after the change that showed or hid one. A voice room
+   * goes with its channel, and comes with one; a room that stays keeps a list
+   * the hub sent after `mark`, which is newer. So do the permissions.
+   *
+   * Whatever says the same as before stays the very object it was. A
+   * bootstrap for another server changes nothing.
+   */
+  applyAccess(bootstrap: Bootstrap, mark: number): void {
+    const current = this.#snapshot;
+    if (current.server === null || current.server.id !== bootstrap.server.id) return;
+    const stale = (part: Part) => (this.#touched.get(part) ?? 0) <= mark;
+
+    const voice = bootstrap.voice ?? {};
+    const occupancy: Record<ChannelId, VoiceOccupant[]> = {};
+    for (const [channelId, next] of Object.entries(voice)) {
+      const now = current.occupancy[channelId];
+      occupancy[channelId] =
+        now !== undefined && (!stale(`room:${channelId}`) || sameOccupants(now, next)) ? now : next;
+    }
+
+    this.#touch("channels", "sections");
+    const next: DirectorySnapshot = {
+      ...current,
+      channels: keptList(current.channels, [...bootstrap.channels].sort(byPosition)),
+      sections: keptList(current.sections, [...bootstrap.sections].sort(byOrder)),
+      permissions: stale("permissions") ? keptList(current.permissions, bootstrap.permissions) : current.permissions,
+      occupancy: sameRooms(current.occupancy, occupancy) ? current.occupancy : occupancy,
+    };
+    const parts = Object.keys(next) as (keyof DirectorySnapshot)[];
+    if (parts.some((part) => next[part] !== current[part])) this.#publish(next);
+  }
+
   /** A presence the directory already shows publishes nothing. */
   setPresence(userId: UserId, presence: Presence): void {
     this.#touch(`member:${userId}`);
@@ -338,6 +374,15 @@ function keptList<T extends string | { id: string }>(previous: T[], next: readon
   return items.length === previous.length && items.every((item, index) => item === previous[index])
     ? previous
     : items;
+}
+
+/** The same rooms, each with the very list it had. */
+function sameRooms(
+  a: Readonly<Record<ChannelId, VoiceOccupant[]>>,
+  b: Readonly<Record<ChannelId, VoiceOccupant[]>>,
+): boolean {
+  const rooms = Object.keys(a);
+  return rooms.length === Object.keys(b).length && rooms.every((room) => a[room] === b[room]);
 }
 
 function sameOccupants(a: readonly VoiceOccupant[], b: readonly VoiceOccupant[]): boolean {

@@ -151,6 +151,52 @@ function resyncAfterReconnects(
   });
 }
 
+/**
+ * Reads the channels again whenever the hub says that what this member sees on
+ * the open server changed. The bootstrap is the one answer that names every
+ * channel, section and voice room they see, with the read marker of each; the
+ * hub only says that something changed. Changes that come while one read is
+ * under way are read once more after it.
+ */
+function followAccess(
+  realtime: RealtimeClient,
+  store: DirectoryStore,
+  reads: ChannelReadStore,
+  bootstrap: () => Promise<Bootstrap>,
+): () => void {
+  let running = false;
+  let again = false;
+
+  const reread = async (): Promise<void> => {
+    if (running) {
+      again = true;
+      return;
+    }
+    running = true;
+    try {
+      do {
+        again = false;
+        const mark = store.mark();
+        try {
+          const fresh = await bootstrap();
+          store.applyAccess(fresh, mark);
+          for (const [channelId, lastReadAt] of Object.entries(fresh.channelReads ?? {})) {
+            reads.apply({ channelId, lastReadAt });
+          }
+        } catch {
+          // What the hub sends next carries on; a reconnect reads everything again.
+        }
+      } while (again);
+    } finally {
+      running = false;
+    }
+  };
+
+  return realtime.on("ChannelAccessChanged", ({ serverId }) => {
+    if (store.getSnapshot().server?.id === serverId) void reread();
+  });
+}
+
 /** The browser's socket, fetched with the signed-in code and not before it is needed. */
 const loadRealtime = () => loadSignedInCode().then((code) => code.createSignalRClient());
 
@@ -201,6 +247,7 @@ export function createRuntime(options: RuntimeOptions = {}): Runtime {
 
   const stopFollowingHub = followHub(realtime, store);
   const stopResyncing = resyncAfterReconnects(realtime, store, () => api.bootstrap());
+  const stopFollowingAccess = followAccess(realtime, store, readStore, () => api.bootstrap());
   // A profile edit reaches the directory at once, without waiting for the
   // hub's echo, so your own row never lags behind your account card.
   const stopMirroringAccount = account.onChanged(() => {
@@ -330,6 +377,7 @@ export function createRuntime(options: RuntimeOptions = {}): Runtime {
       stopMirroringAccount();
       stopFollowingHub();
       stopResyncing();
+      stopFollowingAccess();
       encryption.dispose();
       friends.dispose?.();
       soundboard.dispose();
