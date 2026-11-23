@@ -164,6 +164,39 @@ describe("RolesPane", () => {
     );
   });
 
+  it("groups the permissions every member uses and saves them with the rest", async () => {
+    const user = userEvent.setup();
+    const everyday = ["sendMessages", "attachFiles", "addReactions", "connect"] as const;
+    const props = pane({ roles: [OWNER, role(), { ...MEMBER, permissions: [...everyday] }] });
+
+    await user.click(screen.getByRole("button", { name: "Edytuj rolę Członek" }));
+    const text = screen.getByRole("group", { name: "Kanały tekstowe" });
+    expect(within(text).getAllByRole("switch").map((item) => item.getAttribute("aria-label"))).toEqual([
+      "Wysyłanie wiadomości",
+      "Załączanie plików",
+      "Dodawanie reakcji",
+    ]);
+    expect(within(screen.getByRole("group", { name: "Kanały głosowe" })).getByRole("switch")).toBeChecked();
+    expect(
+      within(screen.getByRole("group", { name: "Ludzie" })).getByRole("switch", { name: "Tworzenie zaproszeń" }),
+    ).not.toBeChecked();
+    expect(
+      within(screen.getByRole("group", { name: "Zaawansowane" })).getByRole("switch", { name: "Administrator" }),
+    ).not.toBeChecked();
+
+    await user.click(screen.getByRole("switch", { name: "Załączanie plików" }));
+    await user.click(screen.getByRole("switch", { name: "Tworzenie zaproszeń" }));
+    await user.click(screen.getByRole("button", { name: "Zapisz zmiany" }));
+
+    await waitFor(() =>
+      expect(props.onUpdate).toHaveBeenCalledWith("role-member", {
+        name: "Członek",
+        color: "#8b7cf6",
+        permissions: ["sendMessages", "addReactions", "connect", "createInvite"],
+      }),
+    );
+  });
+
   it("puts the draft back on reset, and goes back to the list", async () => {
     const user = userEvent.setup();
     pane();

@@ -142,6 +142,15 @@ describe("permissions", () => {
     });
   });
 
+  it("keeps the permissions every member uses and the administrator's", () => {
+    const everyday = ["sendMessages", "attachFiles", "addReactions", "connect", "createInvite"];
+    expect(parsePermissionOverride({ roleId: "r-1", allow: everyday, deny: [] }, "/p").allow).toStrictEqual(everyday);
+    expect(
+      parseRole({ id: "r-1", name: "Admin", color: "#000", permissions: ["administrator", ...everyday] }, "/p")
+        .permissions,
+    ).toStrictEqual(["administrator", ...everyday]);
+  });
+
   it("reads missing lists as empty, and requires the role", () => {
     expect(parsePermissionOverride({ roleId: "r-1" }, "/p")).toStrictEqual({
       roleId: "r-1",

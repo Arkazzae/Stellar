@@ -72,7 +72,8 @@ describe("PermissionOverrideEditor", () => {
     const { user } = renderEditor();
     await openRole(user, "Gość");
 
-    expect(screen.getAllByRole("radio", { name: "Dziedzicz", checked: true })).toHaveLength(8);
+    // Every permission but Administrator, which no override may carry.
+    expect(screen.getAllByRole("radio", { name: "Dziedzicz", checked: true })).toHaveLength(13);
     expect(screen.getByRole("button", { name: "Zapisz" })).toBeDisabled();
   });
 
@@ -88,6 +89,31 @@ describe("PermissionOverrideEditor", () => {
     expect(onSave).toHaveBeenCalledExactlyOnceWith("mod", {
       allow: ["manageMessages", "manageServer"],
       deny: ["manageChannels"],
+    });
+  });
+
+  it("offers no row for Administrator, which is server-wide only", async () => {
+    const { user } = renderEditor();
+    await openRole(user, "Gość");
+
+    expect(screen.queryByRole("radiogroup", { name: "Administrator" })).toBeNull();
+    expect(screen.getByRole("radiogroup", { name: "Wysyłanie wiadomości" })).toBeInTheDocument();
+  });
+
+  it("saves the permissions every member uses like any other", async () => {
+    const { user, onSave } = renderEditor();
+    await openRole(user, "Gość");
+
+    await user.click(grant("Wysyłanie wiadomości", "Odmów"));
+    await user.click(grant("Załączanie plików", "Odmów"));
+    await user.click(grant("Dodawanie reakcji", "Zezwól"));
+    await user.click(grant("Dołączanie do kanałów głosowych", "Odmów"));
+    await user.click(grant("Tworzenie zaproszeń", "Zezwól"));
+    await user.click(screen.getByRole("button", { name: "Zapisz" }));
+
+    expect(onSave).toHaveBeenCalledExactlyOnceWith("guest", {
+      allow: ["addReactions", "createInvite"],
+      deny: ["sendMessages", "attachFiles", "connect"],
     });
   });
 

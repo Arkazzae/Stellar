@@ -29,6 +29,12 @@ export const PERMISSION_LABEL: Record<ServerPermission, MessageKey> = {
   moderateMembers: "settings.permission.moderateMembers",
   manageBans: "settings.permission.manageBans",
   viewAuditLog: "settings.permission.viewAuditLog",
+  administrator: "settings.permission.administrator",
+  sendMessages: "settings.permission.sendMessages",
+  attachFiles: "settings.permission.attachFiles",
+  addReactions: "settings.permission.addReactions",
+  connect: "settings.permission.connect",
+  createInvite: "settings.permission.createInvite",
 };
 
 const PERMISSION_DETAIL: Record<ServerPermission, MessageKey> = {
@@ -40,13 +46,22 @@ const PERMISSION_DETAIL: Record<ServerPermission, MessageKey> = {
   moderateMembers: "srv.perm.moderateMembers",
   manageBans: "srv.perm.manageBans",
   viewAuditLog: "srv.perm.viewAuditLog",
+  administrator: "srv.perm.administrator",
+  sendMessages: "srv.perm.sendMessages",
+  attachFiles: "srv.perm.attachFiles",
+  addReactions: "srv.perm.addReactions",
+  connect: "srv.perm.connect",
+  createInvite: "srv.perm.createInvite",
 };
 
 /** The permissions in the groups a reader looks for them in. */
 const PERMISSION_GROUPS: readonly { caption: MessageKey; permissions: readonly ServerPermission[] }[] = [
   { caption: "srv.roles.groupServer", permissions: ["manageServer", "manageChannels"] },
-  { caption: "srv.roles.groupPeople", permissions: ["manageRoles", "manageMembers"] },
+  { caption: "srv.roles.groupPeople", permissions: ["manageRoles", "manageMembers", "createInvite"] },
   { caption: "srv.roles.groupModeration", permissions: ["manageMessages", "moderateMembers", "manageBans", "viewAuditLog"] },
+  { caption: "srv.roles.groupText", permissions: ["sendMessages", "attachFiles", "addReactions"] },
+  { caption: "srv.roles.groupVoice", permissions: ["connect"] },
+  { caption: "srv.roles.groupAdvanced", permissions: ["administrator"] },
 ];
 
 export interface RolesPaneProps {

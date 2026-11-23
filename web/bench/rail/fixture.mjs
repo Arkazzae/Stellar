@@ -14,6 +14,11 @@ const PERMISSIONS = [
   "manageMessages",
   "moderateMembers",
   "manageBans",
+  "sendMessages",
+  "attachFiles",
+  "addReactions",
+  "connect",
+  "createInvite",
 ];
 
 const hex = (value, width = 12) => value.toString(16).padStart(width, "0");

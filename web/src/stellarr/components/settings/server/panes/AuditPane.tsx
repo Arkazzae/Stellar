@@ -57,6 +57,7 @@ function sentenceKey(entry: AuditEntry): MessageKey | null {
     case "role.create": return "srv.audit.a.role.create";
     case "role.update": return "srv.audit.a.role.update";
     case "role.delete": return "srv.audit.a.role.delete";
+    case "role.reorder": return "srv.audit.a.role.reorder";
     case "member.role": return "srv.audit.a.member.role";
     case "member.kick": return "srv.audit.a.member.kick";
     case "member.ban": return "srv.audit.a.member.ban";

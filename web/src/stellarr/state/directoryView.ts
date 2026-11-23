@@ -60,6 +60,20 @@ const NO_OCCUPANTS: VoiceOccupant[] = [];
 const NO_PEOPLE: PersonVM[] = [];
 
 /**
+ * The permissions a server-settings pane is for. Moderating messages and
+ * members happens in the room, and what every member may do, such as sending
+ * messages or joining voice, opens nothing; an administrator holds these too.
+ */
+const SETTINGS_PERMISSIONS: ReadonlySet<ServerPermission> = new Set<ServerPermission>([
+  "manageServer",
+  "manageChannels",
+  "manageRoles",
+  "manageMembers",
+  "manageBans",
+  "viewAuditLog",
+]);
+
+/**
  * Whether two occupancy maps say the same thing.
  *
  * `PresencePort.occupantsOf` returns a fresh `[]` for an empty channel, so an
@@ -262,9 +276,7 @@ export function createDirectoryViewDeriver(): DirectoryViewDeriver {
       people: sameItems(previous?.people, members.map(personOf)),
       occupantsOf,
       inVoice,
-      canAccessServerSettings: permissions.some(
-        (permission) => permission !== "manageMessages" && permission !== "moderateMembers",
-      ),
+      canAccessServerSettings: permissions.some((permission) => SETTINGS_PERMISSIONS.has(permission)),
       canManageServer: permissions.includes("manageServer"),
       canManageChannels: permissions.includes("manageChannels"),
       canManageMessages: permissions.includes("manageMessages"),

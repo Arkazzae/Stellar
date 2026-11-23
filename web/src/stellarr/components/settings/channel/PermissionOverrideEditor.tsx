@@ -17,7 +17,16 @@ const PERMISSION_LABEL: Record<ServerPermission, MessageKey> = {
   moderateMembers: "settings.permission.moderateMembers",
   manageBans: "settings.permission.manageBans",
   viewAuditLog: "settings.permission.viewAuditLog",
+  administrator: "settings.permission.administrator",
+  sendMessages: "settings.permission.sendMessages",
+  attachFiles: "settings.permission.attachFiles",
+  addReactions: "settings.permission.addReactions",
+  connect: "settings.permission.connect",
+  createInvite: "settings.permission.createInvite",
 };
+
+/** Administrator is server-wide only: the server refuses it in an override, so no row offers it. */
+const OVERRIDABLE = SERVER_PERMISSION_VALUES.filter((permission) => permission !== "administrator");
 
 /** What one role's override changes, as the server stores it. */
 export interface PermissionOverridePatch {
@@ -189,7 +198,7 @@ export function PermissionOverrideEditor({
             <span>{t("settings.permission.legend")}</span>
           </div>
           <div className="perm-rows">
-            {SERVER_PERMISSION_VALUES.map((permission) => {
+            {OVERRIDABLE.map((permission) => {
               const label = t(PERMISSION_LABEL[permission]);
               return (
                 <div className="perm-row" key={permission}>
