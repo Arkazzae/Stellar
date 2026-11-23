@@ -9,7 +9,7 @@ namespace Stellarr.Api.Embeds;
 
 /// <summary>
 /// Drains <see cref="EmbedInbox"/>: builds the embeds of each message and tells
-/// the server's members when they are ready.
+/// the members who see its channel when they are ready.
 /// </summary>
 /// <remarks>
 /// One message at a time, on purpose. Unfurling is outbound traffic to hosts
@@ -53,7 +53,8 @@ public sealed class EmbedWorker(
         var embeds = await scope.ServiceProvider.GetRequiredService<EmbedBuilder>()
             .BuildAsync(request.MessageId, cancellationToken);
 
-        var serverId = await scope.ServiceProvider.GetRequiredService<AppDbContext>().Channels.AsNoTracking()
+        var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+        var serverId = await db.Channels.AsNoTracking()
             .Where(x => x.Id == request.ChannelId)
             .Select(x => (Guid?)x.ServerId)
             .SingleOrDefaultAsync(cancellationToken);
@@ -68,7 +69,7 @@ public sealed class EmbedWorker(
             request.MessageId.ToString(),
             request.ChannelId.ToString(),
             [.. embeds.Select(x => x.ToDto())]);
-        await hub.Clients.Group(AppHub.ServerGroup(serverId.Value))
-            .SendAsync("MessageEmbedsUpdated", update, cancellationToken);
+        await ChannelAudience.SendAsync(
+            hub.Clients, db, serverId.Value, request.ChannelId, "MessageEmbedsUpdated", update, cancellationToken);
     }
 }

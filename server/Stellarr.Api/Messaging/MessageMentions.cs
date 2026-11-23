@@ -1,6 +1,7 @@
 using System.Text;
 using Microsoft.AspNetCore.SignalR;
 using Microsoft.EntityFrameworkCore;
+using Stellarr.Api.Auth;
 using Stellarr.Api.Contracts;
 using Stellarr.Api.Data;
 using Stellarr.Api.Domain;
@@ -26,9 +27,11 @@ internal static class MessageMentions
     private const string Fence = "```";
 
     /// <summary>
-    /// Adds an inbox entry for each member of the server the message names,
-    /// except its author, to the context. The caller saves them with the
-    /// message and announces them afterwards.
+    /// Adds an inbox entry for each member of the server the message names
+    /// who sees its channel, except its author, to the context. The caller
+    /// saves them with the message and announces them afterwards. Nobody is
+    /// told of a message in a channel they do not see, so nobody named there
+    /// who does not see it gets an entry, an e-mail or a push.
     /// </summary>
     internal static async Task<IReadOnlyList<UserNotification>> AddNotificationsAsync(
         AppDbContext db,
@@ -49,6 +52,8 @@ internal static class MessageMentions
             .Select(member => member.UserId)
             .Distinct()
             .ToArrayAsync(cancellationToken);
+        var viewers = await ChannelVisibility.WhoViewAsync(db, serverId, message.ChannelId, recipients, cancellationToken);
+        recipients = recipients.Where(viewers.Contains).ToArray();
         if (recipients.Length == 0)
         {
             return [];

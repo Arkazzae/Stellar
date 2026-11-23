@@ -9,6 +9,13 @@ public static class ClaimsPrincipalExtensions
             ? userId
             : throw new InvalidOperationException("Authenticated principal has no valid user id.");
 
+    /// <summary>The signed-in account, or null for a caller who is not signed in.</summary>
+    public static Guid? FindUserId(this ClaimsPrincipal principal) =>
+        principal.Identity?.IsAuthenticated == true &&
+        Guid.TryParse(principal.FindFirstValue(ClaimTypes.NameIdentifier), out var userId)
+            ? userId
+            : null;
+
     /// <summary>The sign-in the cookie belongs to, or null when the claim is missing.</summary>
     public static Guid? FindSessionId(this ClaimsPrincipal principal) =>
         Guid.TryParse(principal.FindFirstValue(SessionAuthentication.SessionIdClaim), out var sessionId)

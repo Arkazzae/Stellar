@@ -145,6 +145,7 @@ public static class RoleEndpoints
             return Results.Forbid();
         }
 
+        var viewChange = await ViewChange.BeginAsync(db, serverId, cancellationToken);
         var role = await db.ServerRoles.FirstOrDefaultAsync(
             x => x.Id == roleId && x.ServerId == serverId, cancellationToken);
         if (role is null)
@@ -203,6 +204,7 @@ public static class RoleEndpoints
         await transaction.CommitAsync(cancellationToken);
         var holders = await HeldRoles.LoadAsync(db, serverId, cancellationToken);
         await NotifyAsync(hub, db, serverId, holders.Holders(role.Id), cancellationToken);
+        await viewChange.PublishAsync(hub.Clients, db);
         return Results.Ok(role.ToDto(holders.CountHolders(role.Id)));
     }
 
@@ -322,6 +324,7 @@ public static class RoleEndpoints
             return Results.Forbid();
         }
 
+        var viewChange = await ViewChange.BeginAsync(db, serverId, cancellationToken);
         var holders = (await HeldRoles.LoadAsync(db, serverId, cancellationToken)).Holders(role.Id);
         // The top role is moved off the role first: a member may not point at
         // a role that is gone. The rows of those holding it go with the role.
@@ -337,6 +340,7 @@ public static class RoleEndpoints
         await transaction.CommitAsync(cancellationToken);
 
         await NotifyAsync(hub, db, serverId, holders, cancellationToken);
+        await viewChange.PublishAsync(hub.Clients, db);
         return Results.NoContent();
     }
 
@@ -411,10 +415,12 @@ public static class RoleEndpoints
                 cancellationToken);
         }
 
+        var viewChange = await ViewChange.BeginAsync(db, serverId, cancellationToken);
         await MemberRoles.SetAsync(db, member, wanted, baseRole, cancellationToken);
         await db.SaveChangesAsync(cancellationToken);
         await transaction.CommitAsync(cancellationToken);
         await NotifyAsync(hub, db, serverId, [userId], cancellationToken);
+        await viewChange.PublishAsync(hub.Clients, db);
         return Results.NoContent();
     }
 
@@ -489,10 +495,12 @@ public static class RoleEndpoints
                     Added: HeldRoles.Ranked(wanted.Where(x => current.All(held => held.Id != x.Id))).Select(x => x.Name).ToArray(),
                     Removed: HeldRoles.Ranked(current.Where(x => wanted.All(kept => kept.Id != x.Id))).Select(x => x.Name).ToArray()))),
             cancellationToken);
+        var viewChange = await ViewChange.BeginAsync(db, serverId, cancellationToken);
         await MemberRoles.SetAsync(db, member, wanted, baseRole, cancellationToken);
         await db.SaveChangesAsync(cancellationToken);
         await transaction.CommitAsync(cancellationToken);
         await NotifyAsync(hub, db, serverId, [userId], cancellationToken);
+        await viewChange.PublishAsync(hub.Clients, db);
         return Results.NoContent();
     }
 
@@ -527,7 +535,9 @@ public static class RoleEndpoints
     /// <summary>
     /// Tells each member their own server-wide permissions, which every role
     /// they hold makes up: the same change reaches different people with
-    /// different answers. Sent after the change is committed.
+    /// different answers. Sent after the change is committed. Whoever the
+    /// change showed a channel to or hid one from is told that apart, by
+    /// <see cref="ViewChange"/>.
     /// </summary>
     internal static async Task NotifyAsync(
         IHubContext<AppHub> hub,

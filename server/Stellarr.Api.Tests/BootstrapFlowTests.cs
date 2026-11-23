@@ -217,7 +217,8 @@ public sealed class BootstrapFlowTests
             Assert.Equal(
                 ["Maja"],
                 snapshot.GetProperty("members").EnumerateArray().Select(x => x.GetProperty("displayName").GetString()));
-            Assert.Equal(["manageMessages"], snapshot.GetProperty("permissions").EnumerateArray().Select(x => x.GetString()));
+            Assert.Equal(
+                ["manageMessages", "viewChannel"], snapshot.GetProperty("permissions").EnumerateArray().Select(x => x.GetString()));
             Assert.Equal(["Orbit", "Drugi"], snapshot.GetProperty("servers").EnumerateArray().Select(x => x.GetProperty("name").GetString()));
             Assert.Equal(
                 [other.ChannelId.ToString()],
@@ -649,7 +650,7 @@ public sealed class BootstrapFlowTests
             ServerId = server.Id,
             Name = "Gość",
             Color = "#777777",
-            Permissions = ServerPrivileges.ManageMessages,
+            Permissions = ServerPrivileges.ManageMessages | ServerPrivileges.ViewChannel,
             Position = 0,
             IsSystem = true,
         };

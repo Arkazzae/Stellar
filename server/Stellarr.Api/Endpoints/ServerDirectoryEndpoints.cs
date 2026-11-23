@@ -88,7 +88,31 @@ public static class ServerDirectoryEndpoints
         }
 
         await db.Entry(invite).Reference(x => x.CreatedBy).LoadAsync(cancellationToken);
-        return Results.Ok(invite.ToPreview(server, withImages: http.User.Identity?.IsAuthenticated == true));
+        var preview = invite.ToPreview(server, withImages: http.User.Identity?.IsAuthenticated == true);
+        return Results.Ok(await NamesChannelAsync(db, invite, http.User.FindUserId(), cancellationToken)
+            ? preview
+            : preview with { Channel = null });
+    }
+
+    /// <summary>
+    /// Whether an invite may name the channel it points to to whoever holds
+    /// it. A member is told it when they see it. Anybody else is told it when
+    /// they would see it on joining, holding the base role alone, so that an
+    /// invite to a channel the newcomer cannot see lands them in the server
+    /// without naming the channel, before joining as after.
+    /// </summary>
+    private static async Task<bool> NamesChannelAsync(
+        AppDbContext db, ServerInvite invite, Guid? userId, CancellationToken cancellationToken)
+    {
+        if (invite.ChannelId is not { } channelId)
+        {
+            return false;
+        }
+
+        return userId is { } id && await db.ServerMembers.AsNoTracking()
+                .AnyAsync(x => x.ServerId == invite.ServerId && x.UserId == id, cancellationToken)
+            ? await ChannelVisibility.ViewsAsync(db, id, channelId, cancellationToken)
+            : await ChannelVisibility.NewcomerViewsAsync(db, channelId, cancellationToken);
     }
 
     /// <summary>
@@ -260,7 +284,7 @@ public static class ServerDirectoryEndpoints
         var welcome = await ServerWelcome.CreateAsync(db, server.Id, owner, now, messages, cancellationToken);
         await db.SaveChangesAsync(cancellationToken);
 
-        await ServerWelcome.PublishAsync(hub, server.Id, welcome, messages, CancellationToken.None);
+        await ServerWelcome.PublishAsync(hub, db, server.Id, welcome, messages, CancellationToken.None);
         return Results.Created($"/api/servers/{server.Id}", server.ToDto());
     }
 
@@ -317,7 +341,10 @@ public static class ServerDirectoryEndpoints
         }
 
         await FinishJoinAsync(db, hub, server, userId, admission, invite, messages, cancellationToken);
-        return Results.Ok(server.ToJoinResponse(invite));
+        var joined = server.ToJoinResponse(invite);
+        return Results.Ok(await NamesChannelAsync(db, invite, userId, cancellationToken)
+            ? joined
+            : joined with { ChannelId = null, ChannelName = null });
     }
 
     /// <summary>Stages the membership and the welcome notice; the caller saves them.</summary>
@@ -394,7 +421,7 @@ public static class ServerDirectoryEndpoints
             return;
         }
 
-        await ServerWelcome.PublishAsync(hub, server.Id, admission.Welcome, messages, CancellationToken.None);
+        await ServerWelcome.PublishAsync(hub, db, server.Id, admission.Welcome, messages, CancellationToken.None);
         if (invitations.Count > 0)
         {
             await NotificationEndpoints.InvitationsChangedAsync(hub, userId, server.Id, CancellationToken.None);

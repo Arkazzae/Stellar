@@ -3,6 +3,7 @@ using Microsoft.EntityFrameworkCore;
 using Stellarr.Api.Auth;
 using Stellarr.Api.Contracts;
 using Stellarr.Api.Data;
+using Stellarr.Api.Domain;
 using Stellarr.Api.Messaging;
 using Stellarr.Api.Realtime;
 
@@ -27,13 +28,14 @@ public static class ChannelReadEndpoints
         IHubContext<AppHub> hub,
         CancellationToken cancellationToken)
     {
-        if (!await db.Channels.TextChannelOnServer(channelId, http.RequireActiveServerId())
-                .AnyAsync(cancellationToken))
+        var userId = http.User.RequireUserId();
+        // A channel the caller does not view is answered as one that does not exist.
+        if (await ChannelVisibility.FindAsync(
+                db, userId, http.RequireActiveServerId(), channelId, ChannelKind.Text, cancellationToken) is null)
         {
             return Results.NotFound();
         }
 
-        var userId = http.User.RequireUserId();
         var read = await AdvanceAsync(db, channelId, userId, DateTime.UtcNow, cancellationToken);
         await hub.Clients.Group(AppHub.UserGroup(userId))
             .SendAsync("ChannelReadChanged", read, cancellationToken);

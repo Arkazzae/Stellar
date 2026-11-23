@@ -11,8 +11,15 @@ namespace Stellarr.Api.Realtime;
 /// <summary>
 /// The one realtime connection of a signed-in client. Everything the server
 /// pushes reaches clients through the groups named here: one per account, one
-/// per server and one per text channel a client opened.
+/// per server, and one per account on the server a connection follows.
 /// </summary>
+/// <remarks>
+/// No group stands for who may see something. A group's members are decided
+/// when a connection joins it and would go stale when roles or overrides
+/// change, so whoever may see an event is worked out when it is sent, and the
+/// event goes to the server's group when that is everybody, else to the
+/// groups of the people it is for (<see cref="ChannelAudience"/>).
+/// </remarks>
 [Authorize]
 public sealed partial class AppHub(
     AppDbContext db,
@@ -28,7 +35,13 @@ public sealed partial class AppHub(
 
     public static string ServerGroup(Guid serverId) => $"server:{serverId:N}";
 
-    public static string ChannelGroup(Guid channelId) => $"channel:{channelId:N}";
+    /// <summary>
+    /// The connections of one account that follow one server: what an event
+    /// meant for some of a server's members goes to. Unlike the account's own
+    /// group, it leaves out the account's tabs on other servers, which would
+    /// take a message for a channel they do not know as something to sound.
+    /// </summary>
+    public static string FollowerGroup(Guid serverId, Guid userId) => $"server:{serverId:N}:user:{userId:N}";
 
     public static string UserGroup(Guid userId) => $"user:{userId:N}";
 
@@ -57,6 +70,7 @@ public sealed partial class AppHub(
         if (activeServerId != Guid.Empty)
         {
             await Groups.AddToGroupAsync(Context.ConnectionId, ServerGroup(activeServerId));
+            await Groups.AddToGroupAsync(Context.ConnectionId, FollowerGroup(activeServerId, userId));
         }
 
         var showPresence = await db.UserPreferences.AsNoTracking()
@@ -117,23 +131,32 @@ public sealed partial class AppHub(
         await Clients.Caller.SendAsync("PresenceChanged", PresenceUpdate(userId, value));
     }
 
-    /// <summary>Starts delivering the events of one text channel to this connection.</summary>
+    /// <summary>
+    /// Confirms that the account may follow one text channel, which it may
+    /// when it sees it. Nothing is joined: the channel's events reach whoever
+    /// sees it when they are sent (<see cref="ChannelAudience"/>), so a group
+    /// joined here would only go stale when somebody lost view.
+    /// </summary>
     public async Task JoinChannel(string channelId)
     {
         var id = ParseGuid(channelId, nameof(channelId));
-        if (await TextChannelServerIdAsync(id, Context.User!.RequireUserId()) is null)
+        if (await VisibleTextChannelAsync(id, Context.User!.RequireUserId()) is null)
         {
             throw new HubException("Unknown channel.");
         }
-
-        await Groups.AddToGroupAsync(Context.ConnectionId, ChannelGroup(id));
     }
 
-    /// <summary>Tells the other members of the server that this account is typing in a text channel.</summary>
+    /// <summary>
+    /// Tells the others who see a text channel that this account is typing
+    /// in it. Typing needs what sending does: seeing the channel, which
+    /// somebody who does not is answered as for no channel at all, and
+    /// SendMessages there.
+    /// </summary>
     public async Task SendTyping(string channelId)
     {
-        // One broadcast reaches the server's whole group and costs two lookups,
-        // so the cadence is decided here rather than trusted to every client.
+        // One broadcast reaches the channel's whole audience and costs a few
+        // lookups, so the cadence is decided here rather than trusted to every
+        // client.
         if (!throttle.TryAcquire(Context.ConnectionId, HubThrottleGate.Policy.Typing))
         {
             throw new HubException("Typing is too fast.");
@@ -141,21 +164,40 @@ public sealed partial class AppHub(
 
         var id = ParseGuid(channelId, nameof(channelId));
         var userId = Context.User!.RequireUserId();
-        if (await TextChannelServerIdAsync(id, userId) is not { } serverId)
+        var serverId = await db.Channels.AsNoTracking()
+            .Where(x => x.Id == id && x.Kind == ChannelKind.Text)
+            .Select(x => (Guid?)x.ServerId)
+            .SingleOrDefaultAsync();
+        var held = serverId is { } server
+            ? await ServerAuthorization.EffectiveAsync(db, userId, PermissionScope.Channel(server, id)) ?? ServerPrivileges.None
+            : ServerPrivileges.None;
+        if (serverId is null || !held.HasFlag(ServerPrivileges.ViewChannel))
         {
             throw new HubException("Unknown channel.");
+        }
+
+        if (!held.HasFlag(ServerPrivileges.SendMessages))
+        {
+            throw new HubException("Not allowed to send messages here.");
         }
 
         var displayName = await db.Users.Where(user => user.Id == userId)
             .Select(user => user.DisplayName)
             .SingleAsync();
-        await Clients.OthersInGroup(ServerGroup(serverId)).SendAsync(
-            "TypingChanged",
-            new TypingChangedDto(
-                id.ToString(),
-                userId.ToString(),
-                displayName,
-                DateTime.UtcNow + TypingLifetime));
+        var typing = new TypingChangedDto(id.ToString(), userId.ToString(), displayName, DateTime.UtcNow + TypingLifetime);
+        var viewers = await ChannelVisibility.ViewersAsync(db, serverId.Value, id, Context.ConnectionAborted);
+        if (viewers is null)
+        {
+            await Clients.OthersInGroup(ServerGroup(serverId.Value)).SendAsync("TypingChanged", typing);
+            return;
+        }
+
+        // Everybody else who sees it, and this account's other tabs, as the
+        // server's group without this connection would have reached.
+        await Clients.Groups(viewers.Where(x => x != userId).Select(x => FollowerGroup(serverId.Value, x)).ToArray())
+            .SendAsync("TypingChanged", typing);
+        await Clients.GroupExcept(FollowerGroup(serverId.Value, userId), [Context.ConnectionId])
+            .SendAsync("TypingChanged", typing);
     }
 
     /// <summary>The server's UTC clock in Unix milliseconds, which clients use to correct for their own skew.</summary>
@@ -172,12 +214,8 @@ public sealed partial class AppHub(
             .Select(x => x.ServerId)
             .ToArrayAsync();
 
-    /// <summary>The server of a text channel the account can see, or null when there is no such channel for it.</summary>
-    private async Task<Guid?> TextChannelServerIdAsync(Guid channelId, Guid userId) =>
-        await db.Channels.AsNoTracking()
-            .Where(x => x.Id == channelId &&
-                x.Kind == ChannelKind.Text &&
-                db.ServerMembers.Any(member => member.ServerId == x.ServerId && member.UserId == userId))
-            .Select(x => (Guid?)x.ServerId)
-            .SingleOrDefaultAsync();
+    /// <summary>A text channel the account sees, or null when there is no such channel for it.</summary>
+    private Task<ChannelPlace?> VisibleTextChannelAsync(Guid channelId, Guid userId) =>
+        ChannelVisibility.FindAsync(
+            db, userId, db.Channels.Where(x => x.Id == channelId && x.Kind == ChannelKind.Text), Context.ConnectionAborted);
 }

@@ -41,8 +41,10 @@ public static class MessageHistoryEndpoints
             return Invalid("limit", messages.Get(MessageKey.PageLimitRange, ("max", MaxPageSize)));
         }
 
-        if (!await db.Channels.TextChannelOnServer(channelId, http.RequireActiveServerId())
-                .AnyAsync(cancellationToken))
+        // A channel the caller does not view is answered as one that does not exist.
+        if (await ChannelVisibility.FindAsync(
+                db, http.User.RequireUserId(), http.RequireActiveServerId(), channelId, ChannelKind.Text,
+                cancellationToken) is null)
         {
             return Results.NotFound();
         }
@@ -111,8 +113,10 @@ public static class MessageHistoryEndpoints
             return Invalid("cursor", messages.Get(MessageKey.SyncCursorInvalid));
         }
 
-        if (!await db.Channels.TextChannelOnServer(channelId, http.RequireActiveServerId())
-                .AnyAsync(cancellationToken))
+        // A channel the caller does not view is answered as one that does not exist.
+        if (await ChannelVisibility.FindAsync(
+                db, http.User.RequireUserId(), http.RequireActiveServerId(), channelId, ChannelKind.Text,
+                cancellationToken) is null)
         {
             return Results.NotFound();
         }

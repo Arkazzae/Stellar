@@ -1,6 +1,7 @@
 using System.Text;
 using Microsoft.AspNetCore.SignalR;
 using Microsoft.EntityFrameworkCore;
+using Stellarr.Api.Auth;
 using Stellarr.Api.Contracts;
 using Stellarr.Api.Data;
 using Stellarr.Api.Domain;
@@ -13,10 +14,15 @@ namespace Stellarr.Api.Endpoints;
 internal static class ServerWelcome
 {
     /// <summary>
-    /// Stages the notice in the server's first text channel; the caller saves
-    /// it together with the membership. A server without a text channel gets
-    /// no notice, which is valid for a voice-only server.
+    /// Stages the notice in the first text channel the newcomer will see; the
+    /// caller saves it together with the membership. A server without such a
+    /// channel gets no notice, which is valid for a voice-only server.
     /// </summary>
+    /// <remarks>
+    /// The membership is not saved yet, so who sees what is asked of the base
+    /// role alone, as a membership starts; the owner of a new server sees
+    /// every channel, and its first one is open anyway.
+    /// </remarks>
     internal static async Task<Message?> CreateAsync(
         AppDbContext db,
         Guid serverId,
@@ -48,16 +54,18 @@ internal static class ServerWelcome
         return message;
     }
 
-    /// <summary>Tells the members who are online, once the notice has been saved.</summary>
+    /// <summary>Tells the members who are online and see the channel, once the notice has been saved.</summary>
     internal static Task PublishAsync(
         IHubContext<AppHub> hub,
+        AppDbContext db,
         Guid serverId,
         Message? message,
         Messages messages,
         CancellationToken cancellationToken) =>
         message is null
             ? Task.CompletedTask
-            : hub.Clients.Group(AppHub.ServerGroup(serverId)).SendAsync("MessageCreated", message.ToDto(messages), cancellationToken);
+            : ChannelAudience.SendAsync(
+                hub.Clients, db, serverId, message.ChannelId, "MessageCreated", message.ToDto(messages), cancellationToken);
 
     /// <summary>
     /// The name with every ASCII punctuation character after a backslash, the
@@ -101,10 +109,23 @@ internal static class ServerWelcome
             return staged.Id;
         }
 
-        return await db.Channels.AsNoTracking()
+        var channels = await db.Channels.AsNoTracking()
             .Where(x => x.ServerId == serverId && x.Kind == ChannelKind.Text)
             .OrderBy(x => x.Position)
-            .Select(x => (Guid?)x.Id)
-            .FirstOrDefaultAsync(cancellationToken);
+            .Select(x => new { x.Id, x.SectionId })
+            .ToListAsync(cancellationToken);
+        if (channels.Count == 0 || await ChannelVisibility.ServerOpenAsync(db, serverId, cancellationToken))
+        {
+            return channels.FirstOrDefault()?.Id;
+        }
+
+        var snapshot = await PermissionSnapshot.LoadAsync(
+            db, serverId, [],
+            new PermissionTargets(
+                channels.Select(x => x.SectionId).OfType<Guid>().Distinct().ToArray(), channels.Select(x => x.Id).ToArray()),
+            cancellationToken);
+        return channels
+            .FirstOrDefault(x => snapshot.EvaluateNewcomer(x.SectionId, x.Id).HasFlag(ServerPrivileges.ViewChannel))
+            ?.Id;
     }
 }
