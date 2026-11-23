@@ -25,6 +25,12 @@ const permissionKeys = [
   "moderateMembers",
   "manageBans",
   "viewAuditLog",
+  "administrator",
+  "sendMessages",
+  "attachFiles",
+  "addReactions",
+  "connect",
+  "createInvite",
 ];
 
 interface RoleFormProps {

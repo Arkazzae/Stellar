@@ -168,6 +168,12 @@ export const SERVER_PERMISSION_VALUES = [
   "moderateMembers",
   "manageBans",
   "viewAuditLog",
+  "administrator",
+  "sendMessages",
+  "attachFiles",
+  "addReactions",
+  "connect",
+  "createInvite",
 ] as const;
 export type ServerPermission = (typeof SERVER_PERMISSION_VALUES)[number];
 

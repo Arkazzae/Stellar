@@ -61,6 +61,14 @@ describe("hub payload decoders", () => {
     expect(HUB_DECODERS.PermissionsChanged({ serverId: "s1", permissions: "all" })).toBeNull();
   });
 
+  it("keeps the permissions every member uses and the administrator's", () => {
+    const named = ["administrator", "sendMessages", "attachFiles", "addReactions", "connect", "createInvite"];
+    expect(HUB_DECODERS.PermissionsChanged({ serverId: "s1", permissions: named })).toEqual({
+      serverId: "s1",
+      permissions: named,
+    });
+  });
+
   it("reads a channel layout or a section order whole, or not at all", () => {
     expect(
       HUB_DECODERS.ChannelLayoutChanged({
