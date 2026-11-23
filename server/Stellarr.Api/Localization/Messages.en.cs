@@ -82,6 +82,7 @@ public sealed partial class Messages
         MessageKey.PermissionAllowedAndDenied => "The same permission cannot be both allowed and denied.",
         MessageKey.PermissionServerWideOnly => "Administrator applies to the whole server and cannot be set for a channel or a section.",
         MessageKey.RoleInvalid => "The name, color or list of permissions of the role is invalid.",
+        MessageKey.RoleOrderIncomplete => "The list must contain every role between the owner's role and the base role exactly once.",
         MessageKey.CreateInviteDenied => "You may not create invites here.",
 
         // Operator panel
@@ -271,6 +272,7 @@ public sealed partial class Messages
         MessageKey.AuditAccountEnabled => "enabled the account {name}",
         MessageKey.AuditRoleCreated => "created the role {name}",
         MessageKey.AuditRoleUpdated => "updated the role {name}",
+        MessageKey.AuditRolesReordered => "reordered the roles",
         MessageKey.AuditProviderSignUpAllowed => "let {provider} create accounts for people with an invite",
         MessageKey.AuditProviderSignUpStopped => "stopped {provider} from creating accounts",
         MessageKey.AuditOwnershipTransferredTo => "handed the server over to {name}",
