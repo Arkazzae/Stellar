@@ -28,6 +28,7 @@ public sealed class DiscordPlaceholderTests(StellarrWebApplicationFactory factor
     {
         ["maja"] = (Guid.Parse("30000000-0000-0000-0000-000000000001"), "Aurora!2026"),
         ["ada"] = (Guid.Parse("30000000-0000-0000-0000-000000000002"), "Quasar!2026"),
+        ["ilya"] = (Guid.Parse("30000000-0000-0000-0000-000000000003"), "Meteor!2026"),
         ["nils"] = (Guid.Parse("30000000-0000-0000-0000-000000000004"), "Zenith!2026"),
     };
 
@@ -98,34 +99,69 @@ public sealed class DiscordPlaceholderTests(StellarrWebApplicationFactory factor
                 (await anonymous.PostAsJsonAsync("/api/auth/login", new { username, password = Password })).StatusCode);
         }
 
-        // Nobody can take the shape of such a name, by signing up or in Cockpit.
-        Assert.Equal(
-            HttpStatusCode.BadRequest,
-            (await anonymous.PostAsJsonAsync("/api/auth/register", new
+        // Nobody can take the shape of such a name, by signing up or in Cockpit;
+        // the same requests with an ordinary name get past the name.
+        async Task<JsonElement> RegisterAsync(string username)
+        {
+            using var response = await anonymous.PostAsJsonAsync("/api/auth/register", new
             {
-                username = "discord:42",
+                username,
                 displayName = "Taker",
-                email = "taker@example.com",
+                email = $"{username.Replace(':', '-')}@example.com",
                 password = "Taker!2026-long-enough",
-            })).StatusCode);
-        Assert.Equal(
-            HttpStatusCode.BadRequest,
-            await Send(maja, HttpMethod.Post, "/api/cockpit/users", "/api/cockpit/users", new
+            });
+            Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+            return await response.Content.ReadFromJsonAsync<JsonElement>();
+        }
+
+        Assert.True((await RegisterAsync("discord:42")).GetProperty("errors").TryGetProperty("username", out _));
+        var ordinary = await RegisterAsync("taker42");
+        Assert.False(ordinary.TryGetProperty("errors", out var errors) && errors.TryGetProperty("username", out _));
+        foreach (var (username, expected) in new[] { ("discord:43", HttpStatusCode.BadRequest), ("taker43", HttpStatusCode.Created) })
+        {
+            Assert.Equal(expected, await Send(maja, HttpMethod.Post, "/api/cockpit/users", "/api/cockpit/users", new
             {
-                username = "discord:43",
+                username,
                 displayName = "Taker",
                 password = "Taker!2026-long-enough",
                 roleId = await InstanceMemberRoleAsync(),
             }));
+        }
 
-        // Direct messages, friends and blocks: as an account that does not exist.
+        // Password recovery finds nobody, even by an address the placeholder holds;
+        // a person's address is sent a link.
+        var sentBefore = factory.EmailDelivery.Messages.Count;
+        Assert.Equal(HttpStatusCode.Accepted,
+            (await anonymous.PostAsJsonAsync("/api/auth/password/forgot", new { email = "ghost@example.com" })).StatusCode);
+        Assert.Equal(sentBefore, factory.EmailDelivery.Messages.Count);
+        Assert.Equal(HttpStatusCode.Accepted,
+            (await anonymous.PostAsJsonAsync("/api/auth/password/forgot", new { email = "nils@example.com" })).StatusCode);
+        Assert.Equal(sentBefore + 1, factory.EmailDelivery.Messages.Count);
+        await using (var scope = factory.OpenScope(out var db))
+        {
+            Assert.False(await db.PasswordResetTokens.AnyAsync(x => x.UserId == placeholder));
+        }
+
+        // Direct messages, friends and blocks: as an account that does not
+        // exist, while ilya, a person who shares no server with nils here, is
+        // reached by each.
+        var ilya = Accounts["ilya"].Id;
         Assert.Equal(
             HttpStatusCode.NotFound,
             (await nils.PostAsJsonAsync("/api/social/conversations", new { userId = placeholder })).StatusCode);
-        var request = await nils.PostAsJsonAsync("/api/social/requests", new { username = $"discord:{DiscordAuthor}" });
-        Assert.Equal("unknown-user", (await request.Content.ReadFromJsonAsync<JsonElement>()).GetProperty("result").GetString());
+        Assert.Equal(
+            HttpStatusCode.OK,
+            (await nils.PostAsJsonAsync("/api/social/conversations", new { userId = ilya })).StatusCode);
+        foreach (var (username, expected) in new[] { ($"discord:{DiscordAuthor}", "unknown-user"), ("ilya", "sent") })
+        {
+            var request = await nils.PostAsJsonAsync("/api/social/requests", new { username });
+            Assert.Equal(expected, (await request.Content.ReadFromJsonAsync<JsonElement>()).GetProperty("result").GetString());
+        }
+
         Assert.Equal(HttpStatusCode.NotFound, await Send(nils, HttpMethod.Post, "/api/social/blocks/{userId:guid}", $"/api/social/blocks/{id}"));
+        Assert.Equal(HttpStatusCode.NoContent, await Send(nils, HttpMethod.Post, "/api/social/blocks/{userId:guid}", $"/api/social/blocks/{ilya}"));
         Assert.Equal(HttpStatusCode.NotFound, await Send(nils, HttpMethod.Delete, "/api/social/blocks/{userId:guid}", $"/api/social/blocks/{id}"));
+        Assert.Equal(HttpStatusCode.NoContent, await Send(nils, HttpMethod.Delete, "/api/social/blocks/{userId:guid}", $"/api/social/blocks/{ilya}"));
         Assert.Equal(HttpStatusCode.NotFound, await Send(nils, HttpMethod.Delete, "/api/social/friends/{userId:guid}", $"/api/social/friends/{id}"));
         var social = await nils.GetFromJsonAsync<JsonElement>("/api/social");
         Assert.DoesNotContain(id, social.GetRawText(), StringComparison.Ordinal);
@@ -140,6 +176,8 @@ public sealed class DiscordPlaceholderTests(StellarrWebApplicationFactory factor
         var inviteId = (await invite.Content.ReadFromJsonAsync<JsonElement>()).GetProperty("id").GetString();
         Assert.Equal(HttpStatusCode.NotFound,
             await Send(ada, HttpMethod.Post, "/api/admin/invites/{inviteId:guid}/members/{userId:guid}", $"/api/admin/invites/{inviteId}/members/{id}"));
+        Assert.Equal(HttpStatusCode.NoContent,
+            await Send(ada, HttpMethod.Post, "/api/admin/invites/{inviteId:guid}/members/{userId:guid}", $"/api/admin/invites/{inviteId}/members/{ilya}"));
         var baseRole = await ServerMemberRoleAsync(serverId);
         Assert.Equal(HttpStatusCode.NotFound,
             await Send(ada, HttpMethod.Patch, "/api/admin/members/{userId:guid}/role", $"/api/admin/members/{id}/role", new { roleId = baseRole }));
@@ -274,9 +312,9 @@ public sealed class DiscordPlaceholderTests(StellarrWebApplicationFactory factor
     private const string DiscordAuthor = "1";
 
     /// <summary>
-    /// Imports a channel with a thread, a reply and a pin into a server of
-    /// ada's, of which nils is a member, and gives the placeholder a password
-    /// so that refusing it proves more than a missing hash.
+    /// Imports a channel with a reply into a server of ada's, of which nils is
+    /// a member, and gives the placeholder a password and an address, so that
+    /// refusing it proves more than a missing hash or a missing address.
     /// </summary>
     private async Task<(Guid Server, Guid Placeholder, Guid Text, Guid Voice, Guid Section)> ImportAsync()
     {
@@ -316,7 +354,14 @@ public sealed class DiscordPlaceholderTests(StellarrWebApplicationFactory factor
         var placeholder = await db.DiscordImportAccounts.Where(x => x.DiscordId == DiscordAuthor).Select(x => x.UserId).SingleAsync();
         var passwords = scope.ServiceProvider.GetRequiredService<PasswordService>();
         await db.Users.Where(x => x.Id == placeholder)
-            .ExecuteUpdateAsync(setters => setters.SetProperty(x => x.PasswordHash, passwords.Hash(Password)));
+            .ExecuteUpdateAsync(setters => setters
+                .SetProperty(x => x.PasswordHash, passwords.Hash(Password))
+                .SetProperty(x => x.Email, "ghost@example.com")
+                .SetProperty(x => x.NormalizedEmail, "GHOST@EXAMPLE.COM"));
+        await db.Users.Where(x => x.Id == Accounts["nils"].Id)
+            .ExecuteUpdateAsync(setters => setters
+                .SetProperty(x => x.Email, "nils@example.com")
+                .SetProperty(x => x.NormalizedEmail, "NILS@EXAMPLE.COM"));
         var role = await ServerAccess.FindMemberRoleAsync(db, serverId, CancellationToken.None);
         MemberRoles.Admit(db, new ServerMember
         {
