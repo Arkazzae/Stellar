@@ -311,10 +311,21 @@ describe("DirectoryProvider permission flags", () => {
     },
   );
 
-  it("opens the settings for any other permission, such as managing roles", async () => {
-    await mount(flags, { permissions: ["manageRoles"] });
+  it.each(["manageRoles", "manageMembers", "viewAuditLog"] as const)(
+    "opens the settings for %s, which has a pane of its own",
+    async (permission) => {
+      await mount(flags, { permissions: [permission] });
 
-    expect(result()).toEqual({ ...none, settings: true });
+      expect(result()).toEqual({ ...none, settings: true });
+    },
+  );
+
+  it("does not open the settings for what every member may do", async () => {
+    await mount(flags, {
+      permissions: ["sendMessages", "attachFiles", "addReactions", "connect", "createInvite"],
+    });
+
+    expect(result()).toEqual(none);
   });
 });
 
