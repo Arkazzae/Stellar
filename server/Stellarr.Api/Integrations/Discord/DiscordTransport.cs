@@ -14,9 +14,9 @@ namespace Stellarr.Api.Integrations.Discord;
 /// </summary>
 /// <remarks>
 /// One transport serves one token (or none, for templates), because Discord
-/// counts limits per bot. Requests are sequential: an import reads one page
-/// after another, and Discord's limits are per bot anyway, so a parallel
-/// reader would only queue up behind the same buckets.
+/// counts limits per bot. Requests are meant to be sequential: an import reads
+/// one page after another, and Discord's limits are per bot anyway, so a
+/// parallel reader would only queue up behind the same buckets.
 /// </remarks>
 internal sealed partial class DiscordTransport(
     HttpClient http,
@@ -36,7 +36,7 @@ internal sealed partial class DiscordTransport(
 
     private readonly DiscordRateLimits _limits = new();
 
-    public async Task<T> GetAsync<T>(DiscordRoute route, Func<int?, bool>? missingIntent, CancellationToken cancellationToken)
+    public async Task<T> GetAsync<T>(DiscordRoute route, CancellationToken cancellationToken)
     {
         var rateLimited = 0;
         var serverErrors = 0;
@@ -65,7 +65,9 @@ internal sealed partial class DiscordTransport(
             HttpResponseMessage response;
             try
             {
-                response = await http.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, cancellationToken);
+                // The whole answer is read before this returns, so the client's
+                // timeout covers the body too and a page that stalls halfway fails.
+                response = await http.SendAsync(request, cancellationToken);
             }
             catch (HttpRequestException exception)
             {
@@ -117,7 +119,7 @@ internal sealed partial class DiscordTransport(
                     return await ReadAsync<T>(route, response, cancellationToken);
                 }
 
-                throw Refused(route, status, await ReadErrorAsync(response, cancellationToken), missingIntent);
+                throw Refused(route, status, await ReadErrorAsync(response, cancellationToken));
             }
         }
     }
@@ -147,12 +149,11 @@ internal sealed partial class DiscordTransport(
         }
     }
 
-    private DiscordApiException Refused(DiscordRoute route, int status, WireError? error, Func<int?, bool>? missingIntent)
+    private DiscordApiException Refused(DiscordRoute route, int status, WireError? error)
     {
         var kind = status switch
         {
             401 => DiscordFailureKind.InvalidToken,
-            403 when missingIntent?.Invoke(error?.Code) == true => DiscordFailureKind.MissingIntent,
             403 => DiscordFailureKind.MissingAccess,
             404 => DiscordFailureKind.UnknownResource,
             _ => DiscordFailureKind.UnexpectedResponse,

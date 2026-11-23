@@ -30,9 +30,6 @@ public sealed class DiscordBotReader
     private const long GatewayMessageContent = 1 << 18;
     private const long GatewayMessageContentLimited = 1 << 19;
 
-    /// <summary>Discord's code for a read the bot has no access to, which is also its answer to a missing intent.</summary>
-    private const int MissingAccessCode = 50001;
-
     private const int ServerPage = 200;
     private const int MemberPage = 1000;
     private const int MessagePage = 100;
@@ -146,9 +143,9 @@ public sealed class DiscordBotReader
 
     /// <summary>
     /// Every member, a thousand to a page in order of id. It needs the Server
-    /// Members intent: without it Discord refuses with the same code as for a
-    /// server the bot cannot see, so that refusal here reads as
-    /// <see cref="DiscordFailureKind.MissingIntent"/>.
+    /// Members intent. The documentation names no error for a read without
+    /// it, so when Discord refuses the list the app's flags are read once: with
+    /// the intent off, the refusal is <see cref="DiscordFailureKind.MissingIntent"/>.
     /// </summary>
     public async IAsyncEnumerable<MemberSnapshot> ReadMembersAsync(
         string serverId, [EnumeratorCancellation] CancellationToken cancellationToken = default)
@@ -157,13 +154,18 @@ public sealed class DiscordBotReader
         string? after = null;
         while (true)
         {
-            var page = await _transport.GetAsync<List<WireMember?>>(
-                new DiscordRoute(
+            List<WireMember?> page;
+            try
+            {
+                page = await GetAsync<List<WireMember?>>(
                     $"guilds/{id}/members?limit={MemberPage}" + (after is null ? "" : $"&after={after}"),
-                    "guilds/{guild}/members",
-                    id),
-                missingIntent: code => code == MissingAccessCode,
-                cancellationToken);
+                    "guilds/{guild}/members", id, cancellationToken);
+            }
+            catch (DiscordApiException refused) when (refused.Kind == DiscordFailureKind.MissingAccess)
+            {
+                throw await ExplainAsync(refused, cancellationToken);
+            }
+
             string? highest = null;
             foreach (var wire in page)
             {
@@ -181,6 +183,30 @@ public sealed class DiscordBotReader
 
             after = highest;
         }
+    }
+
+    /// <summary>Turns a refused member list into a missing intent when the app's flags say the intent is off.</summary>
+    private async Task<DiscordApiException> ExplainAsync(DiscordApiException refused, CancellationToken cancellationToken)
+    {
+        DiscordApplication application;
+        try
+        {
+            application = await GetCurrentApplicationAsync(cancellationToken);
+        }
+        catch (DiscordApiException)
+        {
+            return refused;
+        }
+
+        return application.ServerMembersIntent
+            ? refused
+            : new DiscordApiException(
+                DiscordFailureKind.MissingIntent,
+                $"Discord refused {refused.Route}, and the bot's app has the Server Members intent off",
+                refused.Route,
+                refused.StatusCode,
+                refused.DiscordCode,
+                innerException: refused);
     }
 
     /// <summary>The server's active threads, public and private, that the bot may see.</summary>
@@ -356,9 +382,10 @@ public sealed class DiscordBotReader
     /// channel's archived threads without the permission) is listed in
     /// <see cref="ServerSnapshot.Gaps"/> and the rest is still read. Anything
     /// else that fails, a bad token or Discord out of reach, fails the read.
-    /// It costs seven requests, one more per thousand members, and for each
-    /// text channel one request per page of archived threads, public and, under
-    /// an ordinary text channel, private.
+    /// It costs seven requests, one more per thousand members (and one to read
+    /// the app's flags if the list is refused), and for each text channel one
+    /// request per page of archived threads, public and, under an ordinary text
+    /// channel, private.
     /// </remarks>
     public async Task<ServerSnapshot> ReadServerAsync(string serverId, CancellationToken cancellationToken)
     {
@@ -435,7 +462,7 @@ public sealed class DiscordBotReader
     }
 
     private Task<T> GetAsync<T>(string path, string shape, string major, CancellationToken cancellationToken) =>
-        _transport.GetAsync<T>(new DiscordRoute(path, shape, major), missingIntent: null, cancellationToken);
+        _transport.GetAsync<T>(new DiscordRoute(path, shape, major), cancellationToken);
 
     /// <summary>
     /// Whether to ask for another page: the last one was full, and its cursor

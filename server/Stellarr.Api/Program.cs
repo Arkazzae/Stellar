@@ -184,16 +184,19 @@ builder.Services.AddHttpClient<GiphyClient>(http =>
 // The Discord import's reader. The bot token travels in a header: this client
 // logs nothing, so the token cannot reach the log Cockpit shows, and it follows
 // no redirect, so an answer cannot send the token to another host. It builds
-// every address itself, on discord.com.
-builder.Services.AddHttpClient<DiscordClient>(http => http.Timeout = TimeSpan.FromSeconds(30))
-    .ConfigurePrimaryHttpMessageHandler(() => new SocketsHttpHandler
-    {
-        AllowAutoRedirect = false,
-        UseCookies = false,
-        AutomaticDecompression = System.Net.DecompressionMethods.All,
-        PooledConnectionLifetime = TimeSpan.FromMinutes(5),
-    })
-    .RemoveAllLoggers();
+// every address itself, on discord.com. Each answer is read whole within the
+// timeout; the largest, a page of a hundred messages, is a few megabytes.
+builder.Services.AddHttpClient<DiscordClient>(http =>
+{
+    http.Timeout = TimeSpan.FromSeconds(30);
+    http.MaxResponseContentBufferSize = 32 * 1024 * 1024;
+}).ConfigurePrimaryHttpMessageHandler(() => new SocketsHttpHandler
+{
+    AllowAutoRedirect = false,
+    UseCookies = false,
+    AutomaticDecompression = System.Net.DecompressionMethods.All,
+    PooledConnectionLifetime = TimeSpan.FromMinutes(5),
+}).RemoveAllLoggers();
 builder.Services.AddHttpClient<ResendEmailDelivery>(http =>
 {
     http.BaseAddress = new Uri("https://api.resend.com/");

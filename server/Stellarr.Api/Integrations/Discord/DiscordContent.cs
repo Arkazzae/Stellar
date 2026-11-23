@@ -84,7 +84,8 @@ public interface IDiscordReferenceResolver
 /// server's emoji. The finished text is then read by
 /// <see cref="MessageMentions.ExtractNormalizedUsernames"/>, the reader that
 /// sends notifications; if it finds a name the resolver did not give, the
-/// message is written again with every mention as text.
+/// message is written again with every mention as text, and as a last resort
+/// with a zero-width space after every at sign.
 /// </para>
 /// </remarks>
 public static partial class DiscordContent
@@ -113,9 +114,10 @@ public static partial class DiscordContent
             .Select(piece => piece.Text[1..].ToUpperInvariant())
             .ToHashSet(StringComparer.Ordinal);
 
+        var text = "";
         foreach (var mode in (ReadOnlySpan<Mode>)[Mode.Mentions, Mode.NoMentions, Mode.EveryAtEscaped])
         {
-            var text = Write(pieces, mode);
+            text = Write(pieces, mode);
             var found = MessageMentions.ExtractNormalizedUsernames(text);
             if (found.IsSubsetOf(intended) && (mode == Mode.Mentions || found.Count == 0))
             {
@@ -123,8 +125,14 @@ public static partial class DiscordContent
             }
         }
 
-        // Every at sign outside code is escaped by now; this is not reached.
-        throw new InvalidOperationException("The rewritten message still mentions somebody.");
+        // The escapes rest on reading the text as Stellarr does. Should the two
+        // readings ever differ, no at sign is left before a name character at
+        // all, code included: the zero-width space is not one, and shows as
+        // nothing.
+        text = text.Replace("@", "@\u200B", StringComparison.Ordinal);
+        return MessageMentions.ExtractNormalizedUsernames(text).Count == 0
+            ? text
+            : throw new InvalidOperationException("The rewritten message still mentions somebody.");
     }
 
     /* ---------------------------------------------------------------- reading */
@@ -477,7 +485,9 @@ public static partial class DiscordContent
     /// Where a bare address that starts at <paramref name="index"/> ends, or
     /// <paramref name="index"/> itself when none does. As in Stellarr, only a
     /// lower-case scheme starts one, and it runs to the next character that is
-    /// never raw in an address.
+    /// never raw in an address. It also ends at a <c>]</c>, where the web
+    /// client ends it: what follows a bracket is read as text there, so it is
+    /// escaped as text here.
     /// </summary>
     private static int BareAddressEnd(string text, int index, int end)
     {
@@ -491,13 +501,23 @@ public static partial class DiscordContent
         }
 
         var cursor = index + scheme;
-        while (cursor < end && !char.IsWhiteSpace(text[cursor]) && text[cursor] is not ('<' or '>' or '"' or '\'' or '`'))
+        while (cursor < end && IsAddressCharacter(text[cursor]) && text[cursor] != ']')
         {
             cursor++;
         }
 
         return cursor > index + scheme ? cursor : index;
     }
+
+    /// <summary>The characters a bare address may hold, exactly as <see cref="MessageMentions"/> reads them.</summary>
+    private static bool IsAddressCharacter(char value) =>
+        !IsJsWhitespace(value) && value is not ('<' or '>' or '"' or '\'' or '`');
+
+    /// <summary>The characters JavaScript's <c>\s</c> matches, which end an address in both of Stellarr's readers.</summary>
+    private static bool IsJsWhitespace(char value) =>
+        value is '\t' or '\n' or '\v' or '\f' or '\r' or ' '
+            or '\u00a0' or '\u1680' or (>= '\u2000' and <= '\u200a')
+            or '\u2028' or '\u2029' or '\u202f' or '\u205f' or '\u3000' or '\ufeff';
 
     /// <summary>
     /// The fenced blocks, as <see cref="MessageMentions"/> finds them: ```

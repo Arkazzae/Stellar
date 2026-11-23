@@ -298,6 +298,19 @@ public sealed class DiscordClientTests
         Assert.Equal(DiscordFailureKind.Unreachable, timeout.Kind);
     }
 
+    [Fact]
+    public async Task AnAnswerThatStallsHalfwayTimesOut()
+    {
+        var api = new DiscordFakeApi(_ => new HttpResponseMessage(HttpStatusCode.OK) { Content = new StalledContent() });
+        var client = new DiscordClient(
+            new HttpClient(api) { Timeout = TimeSpan.FromMilliseconds(200) }, new DiscordTestClock(), new DiscordCapturingLogger());
+
+        var failure = await Assert.ThrowsAsync<DiscordApiException>(
+            () => client.ForBot(new DiscordBotToken(Token)).GetCurrentUserAsync(CancellationToken.None).WaitAsync(TimeSpan.FromSeconds(10)));
+
+        Assert.Equal(DiscordFailureKind.Unreachable, failure.Kind);
+    }
+
     [Theory]
     [InlineData("""{"id": [1, 2], "username": {"a": 1}}""", "application/json", false)]
     [InlineData("not json", "application/json", true)]
@@ -357,6 +370,26 @@ public sealed class DiscordClientTests
             () => Bot(api).GetCurrentUserAsync(CancellationToken.None));
 
         Assert.DoesNotContain(Token, failure.ToString(), StringComparison.Ordinal);
+    }
+
+    /// <summary>A body that sends its first bytes and then nothing, until it is given up on.</summary>
+    private sealed class StalledContent : HttpContent
+    {
+        protected override Task SerializeToStreamAsync(Stream stream, System.Net.TransportContext? context) =>
+            SerializeToStreamAsync(stream, context, CancellationToken.None);
+
+        protected override async Task SerializeToStreamAsync(
+            Stream stream, System.Net.TransportContext? context, CancellationToken cancellationToken)
+        {
+            await stream.WriteAsync("""{"id":"""u8.ToArray(), cancellationToken);
+            await Task.Delay(Timeout.Infinite, cancellationToken);
+        }
+
+        protected override bool TryComputeLength(out long length)
+        {
+            length = 0;
+            return false;
+        }
     }
 
     internal static DiscordClient Client(DiscordFakeApi api, DiscordTestClock? clock = null, DiscordRequestPolicy? policy = null) =>
