@@ -2216,7 +2216,7 @@ export const en = {
   "srv.perm.sendMessages": "Post messages and replies in text channels.",
   "srv.perm.attachFiles": "Send files, images and voice messages.",
   "srv.perm.addReactions": "React to messages with emoji.",
-  "srv.perm.connect": "Join voice channels and take part in calls.",
+  "srv.perm.connect": "Take a seat in a voice channel and talk with whoever is there.",
   "srv.perm.createInvite": "Create invite links to the server or a channel.",
   "srv.members.search": "Search by name",
   "srv.members.none": "Nobody here matches that name.",
