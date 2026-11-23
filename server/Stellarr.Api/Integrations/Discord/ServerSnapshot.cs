@@ -184,10 +184,13 @@ public sealed record ThreadSnapshot
     public required string Name { get; init; }
 
     /// <summary>
-    /// The message the thread grew from, which has the thread's own id. It is
-    /// in the parent channel for a thread under a text or announcement
-    /// channel, the first message of the thread for a forum or media post,
-    /// and possibly deleted since. A private thread has none.
+    /// The message the thread grew from, which has the thread's own id, or
+    /// null for a private thread, which grows from none. Under a text or
+    /// announcement channel it is in the parent channel, and may have been
+    /// deleted since. For a forum or media post it is taken to be the post's
+    /// opening message, inside the thread: Discord documents the shared id for
+    /// threads started from a message, not for posts, so check before relying
+    /// on it.
     /// </summary>
     public string? StarterMessageId { get; init; }
 

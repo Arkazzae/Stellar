@@ -15,10 +15,12 @@ namespace Stellarr.Api.Integrations.Discord;
 /// every route at once. Times are kept as moments of the given clock, from
 /// <c>X-RateLimit-Reset-After</c>, a duration, rather than the epoch in
 /// <c>X-RateLimit-Reset</c>, which would trust this machine's clock to agree
-/// with Discord's.
+/// with Discord's. The reader is meant to be used one request at a time, but
+/// a lock keeps the record whole should two tasks share it.
 /// </remarks>
 internal sealed class DiscordRateLimits
 {
+    private readonly Lock _gate = new();
     private readonly Dictionary<string, string> _bucketOfRoute = new(StringComparer.Ordinal);
     private readonly Dictionary<string, DateTimeOffset> _exhaustedUntil = new(StringComparer.Ordinal);
     private DateTimeOffset _globalUntil = DateTimeOffset.MinValue;
@@ -26,34 +28,42 @@ internal sealed class DiscordRateLimits
     /// <summary>How long to wait before sending a request on <paramref name="route"/>.</summary>
     public TimeSpan DelayBefore(DiscordRoute route, DateTimeOffset now)
     {
-        var until = _globalUntil;
-        if (_exhaustedUntil.TryGetValue(Key(route), out var bucketUntil) && bucketUntil > until)
+        lock (_gate)
         {
-            until = bucketUntil;
-        }
+            var until = _globalUntil;
+            if (_exhaustedUntil.TryGetValue(Key(route), out var bucketUntil) && bucketUntil > until)
+            {
+                until = bucketUntil;
+            }
 
-        return until > now ? until - now : TimeSpan.Zero;
+            return until > now ? until - now : TimeSpan.Zero;
+        }
     }
 
     /// <summary>Reads the headers of any answer: which bucket the route is in, and whether it has run out.</summary>
     public void Observe(DiscordRoute route, HttpResponseHeaders headers, DateTimeOffset now)
     {
-        if (Header(headers, "X-RateLimit-Bucket") is { Length: > 0 } bucket)
+        var bucket = Header(headers, "X-RateLimit-Bucket");
+        var remainingText = Header(headers, "X-RateLimit-Remaining");
+        var reset = ResetAfter(headers, now);
+        lock (_gate)
         {
-            _bucketOfRoute[route.Shape] = bucket;
-        }
-
-        var key = Key(route);
-        if (Header(headers, "X-RateLimit-Remaining") is { } remainingText &&
-            int.TryParse(remainingText, NumberStyles.Integer, CultureInfo.InvariantCulture, out var remaining))
-        {
-            if (remaining > 0)
+            if (bucket is { Length: > 0 })
             {
-                _exhaustedUntil.Remove(key);
+                _bucketOfRoute[route.Shape] = bucket;
             }
-            else if (ResetAfter(headers, now) is { } reset)
+
+            var key = Key(route);
+            if (int.TryParse(remainingText, NumberStyles.Integer, CultureInfo.InvariantCulture, out var remaining))
             {
-                _exhaustedUntil[key] = now + reset;
+                if (remaining > 0)
+                {
+                    _exhaustedUntil.Remove(key);
+                }
+                else if (reset is { } after)
+                {
+                    _exhaustedUntil[key] = now + after;
+                }
             }
         }
     }
@@ -62,17 +72,17 @@ internal sealed class DiscordRateLimits
     public void Limited(DiscordRoute route, TimeSpan retryAfter, bool global, DateTimeOffset now)
     {
         var until = now + retryAfter;
-        if (global)
+        lock (_gate)
         {
-            if (until > _globalUntil)
+            if (!global)
+            {
+                _exhaustedUntil[Key(route)] = until;
+            }
+            else if (until > _globalUntil)
             {
                 _globalUntil = until;
             }
-
-            return;
         }
-
-        _exhaustedUntil[Key(route)] = until;
     }
 
     /// <summary>The wait a 429 asks for: its body, then <c>Retry-After</c>, then the bucket's reset.</summary>
