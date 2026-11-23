@@ -22,7 +22,7 @@ const OWN = {
 
 describe("theme file", () => {
   it("brings back the palette, accent and words it was saved with, and nothing personal", () => {
-    const saved = { ...DEFAULT_THEME, palette: "custom" as const, custom: OWN, accent: "#ff3366", size: "lg" as const, contrast: "high" as const };
+    const saved = { ...DEFAULT_THEME, palette: "custom" as const, custom: OWN, accent: "#ff3366", size: "lg" as const, contrast: "high" as const, font: "figtree" as const };
     const text = themeFileText(themeFileOf(saved));
     expect(JSON.parse(text)).not.toHaveProperty("size");
     expect(JSON.parse(text)).not.toHaveProperty("contrast");
@@ -34,8 +34,14 @@ describe("theme file", () => {
     // theme, and the one accent a file carries is the palette's own colour too.
     const { basedOn: _basedOn, ...rest } = OWN;
     const shared = { ...rest, colors: { ...rest.colors, accent: "#ff3366" } };
-    expect(read.patch).toEqual({ palette: "custom", custom: shared, accent: "#ff3366", scheme: "dark" });
+    expect(read.patch).toEqual({ palette: "custom", custom: shared, accent: "#ff3366", scheme: "dark", font: "figtree" });
     expect(normaliseTheme({ ...DEFAULT_THEME, ...read.patch }).custom).toEqual(shared);
+  });
+
+  it("leaves out a face this build does not have", () => {
+    const file = { ...themeFileOf(DEFAULT_THEME), font: "comic-sans" };
+    const read = readThemeFile(JSON.stringify(file));
+    expect(read.ok && read.patch).not.toHaveProperty("font");
   });
 
   it("writes a preset under its own name", () => {
