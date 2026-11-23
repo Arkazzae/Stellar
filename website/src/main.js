@@ -30,10 +30,14 @@ function initAnnouncement() {
 function initDrawer() {
   const drawer = document.getElementById('drawer');
   const opener = document.querySelector('.nav .menu-button');
+  // While the drawer covers the page, everything behind it is inert, so Tab
+  // stays inside the drawer and screen readers skip the page.
+  const background = [...document.body.children].filter((el) => el !== drawer && el.tagName !== 'SCRIPT');
   const setOpen = (open) => {
     drawer.classList.toggle('is-open', open);
     drawer.setAttribute('aria-hidden', String(!open));
     opener.setAttribute('aria-expanded', String(open));
+    for (const el of background) el.inert = open;
     document.body.style.overflow = open ? 'hidden' : '';
     if (open) drawer.querySelector('[data-close]').focus();
     else opener.focus({ preventScroll: true });
@@ -265,15 +269,34 @@ function initCallPanel() {
   const spec = root.querySelector('.share__spec');
   const hint = root.querySelector('.panel__hint');
 
+  // Each group is one Tab stop on its checked option. The arrow keys, Home and
+  // End move the selection, as in a native radio group.
+  const keys = { ArrowDown: 1, ArrowRight: 1, ArrowUp: -1, ArrowLeft: -1 };
   root.querySelectorAll('[role="radiogroup"]').forEach((group) => {
     const options = [...group.querySelectorAll('[role="radio"]')];
-    options.forEach((option) =>
-      option.addEventListener('click', () => {
-        options.forEach((other) => other.setAttribute('aria-checked', String(other === option)));
-        if (option.dataset.spec) spec.textContent = option.dataset.spec;
-        if (option.dataset.hint) hint.textContent = option.dataset.hint;
-      }),
-    );
+    const select = (option) => {
+      for (const other of options) {
+        const checked = other === option;
+        other.setAttribute('aria-checked', String(checked));
+        other.tabIndex = checked ? 0 : -1;
+      }
+      if (option.dataset.spec) spec.textContent = option.dataset.spec;
+      if (option.dataset.hint) hint.textContent = option.dataset.hint;
+    };
+    options.forEach((option, index) => {
+      option.tabIndex = option.getAttribute('aria-checked') === 'true' ? 0 : -1;
+      option.addEventListener('click', () => select(option));
+      option.addEventListener('keydown', (event) => {
+        let next;
+        if (event.key in keys) next = options[(index + keys[event.key] + options.length) % options.length];
+        else if (event.key === 'Home') next = options[0];
+        else if (event.key === 'End') next = options[options.length - 1];
+        else return;
+        event.preventDefault();
+        select(next);
+        next.focus();
+      });
+    });
   });
 
   const tabs = [...root.querySelectorAll('[role="tab"]')];
