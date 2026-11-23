@@ -45,6 +45,9 @@ public sealed class ServerContentDeletionTests
 
         AssertNoneLeft(await CountAsync(factory, doomed.Channels));
         Assert.Equal(keptBefore, await CountAsync(factory, kept.Channels));
+        // The voice channel the server was made with, which the seed wrote nothing in.
+        await using var scope = factory.OpenScope(out var db);
+        Assert.False(await db.Channels.AnyAsync(x => x.ServerId == serverId));
     }
 
     [Fact]
