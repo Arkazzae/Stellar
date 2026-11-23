@@ -152,7 +152,8 @@ public sealed class PrivateChannelEventTests
     }
 
     public static TheoryData<string> Changes() =>
-        new("role given", "role taken", "role permissions", "base role permissions", "role deleted", "channel moved", "role override");
+        new("role given", "role taken", "role permissions", "base role permissions", "role deleted", "channel moved", "role override",
+            "role given in Cockpit", "role permissions in Cockpit");
 
     [Theory]
     [MemberData(nameof(Changes))]
@@ -169,7 +170,7 @@ public sealed class PrivateChannelEventTests
             (await state.Owner.PutAsJsonAsync(roles, new { roleIds = new[] { gift } })).EnsureSuccessStatusCode();
             await jo.NextAsync("ChannelAccessChanged");
         }
-        else if (change == "role permissions")
+        else if (change is "role permissions" or "role permissions in Cockpit")
         {
             // A role that grants nothing changes nothing Jo sees, so he hears nothing of it.
             empty = await RoleAsync(state, "Pusta", allowedAt: null);
@@ -182,6 +183,11 @@ public sealed class PrivateChannelEventTests
             "role taken" => await state.Owner.PutAsJsonAsync(roles, new { roleIds = Array.Empty<Guid>() }),
             "role permissions" => await state.Owner.PatchAsJsonAsync(
                 $"/api/admin/roles/{empty}", new { permissions = AdministratorOnly }),
+            // The operator's panel changes who sees what as the server's own editor does.
+            "role given in Cockpit" => await state.Owner.PatchAsJsonAsync(
+                $"/api/cockpit/users/{PrivateChannelScenario.JoId}/role", new { roleId = gift }),
+            "role permissions in Cockpit" => await state.Owner.PatchAsJsonAsync(
+                $"/api/cockpit/roles/{empty}", new { permissions = AdministratorOnly }),
             // The base role keeps everything but view: Jo, who holds the
             // gift, sees only where it allows.
             "base role permissions" => await state.Owner.PatchAsJsonAsync(
