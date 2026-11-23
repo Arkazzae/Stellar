@@ -175,6 +175,7 @@ public enum MessageKey
     ProfileImageTypeMismatch,
     AvatarMaximum,
     BannerMaximum,
+    WallpaperMaximum,
     EmojiShortcodeInvalid,
     EmojiTooLarge,
     EmojiMaximum,

@@ -176,6 +176,7 @@ public sealed partial class Messages
         MessageKey.ProfileImageTypeMismatch => "Invalid image format",
         MessageKey.AvatarMaximum => "An avatar can be at most 4 MB.",
         MessageKey.BannerMaximum => "A banner can be at most 8 MB.",
+        MessageKey.WallpaperMaximum => "A wallpaper can be at most 8 MB.",
         MessageKey.EmojiShortcodeInvalid => "The name must be 2–32 characters: lowercase letters, digits or underscores.",
         MessageKey.EmojiTooLarge => "The emoji is too large",
         MessageKey.EmojiMaximum => "The maximum size of an emoji file is 512 KB.",

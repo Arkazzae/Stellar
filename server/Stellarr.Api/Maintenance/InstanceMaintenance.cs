@@ -127,9 +127,9 @@ public sealed class InstanceMaintenance(
         // Exclude address-based references before the batch limit. Otherwise
         // old avatars can fill every batch and indefinitely hide real orphans.
         var profileUrls = await db.Users.AsNoTracking()
-            .Select(x => new { x.AvatarUrl, x.BannerUrl }).ToListAsync(cancellationToken);
+            .Select(x => new { x.AvatarUrl, x.BannerUrl, x.WallpaperUrl }).ToListAsync(cancellationToken);
         var iconUrls = await db.Servers.AsNoTracking().Select(x => x.IconUrl).ToListAsync(cancellationToken);
-        var protectedIds = profileUrls.SelectMany(x => new[] { x.AvatarUrl, x.BannerUrl }).Concat(iconUrls)
+        var protectedIds = profileUrls.SelectMany(x => new[] { x.AvatarUrl, x.BannerUrl, x.WallpaperUrl }).Concat(iconUrls)
             .Where(url => url is not null && url.StartsWith("/assets/", StringComparison.Ordinal))
             .Select(url => Guid.TryParse(url!["/assets/".Length..], out var id) ? id : Guid.Empty)
             .Where(id => id != Guid.Empty).Distinct().ToArray();

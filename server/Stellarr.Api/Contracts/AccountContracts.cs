@@ -74,6 +74,8 @@ public sealed record AccountDto(
     DateTime CreatedAt,
     string? AvatarUrl,
     string? BannerUrl,
+    // Only ever in the person's own account: nobody else learns it.
+    string? WallpaperUrl,
     string CustomStatus,
     string Bio,
     string Pronouns,
@@ -126,6 +128,7 @@ public static class AccountContractMappings
         user.CreatedAt,
         user.AvatarUrl,
         user.BannerUrl,
+        user.WallpaperUrl,
         user.CustomStatus ?? "",
         user.Bio ?? "",
         user.Pronouns ?? "",

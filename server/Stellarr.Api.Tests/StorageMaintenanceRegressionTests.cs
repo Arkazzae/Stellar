@@ -53,6 +53,7 @@ public sealed class StorageMaintenanceRegressionTests
     [Theory]
     [InlineData("avatar")]
     [InlineData("banner")]
+    [InlineData("wallpaper")]
     [InlineData("icon")]
     public async Task ProtectedProfileImagesDoNotStarveTheOrphanBatch(string kind)
     {
@@ -73,6 +74,7 @@ public sealed class StorageMaintenanceRegressionTests
             var url = $"/assets/{avatarId}";
             if (kind == "avatar") user.AvatarUrl = url;
             else if (kind == "banner") user.BannerUrl = url;
+            else if (kind == "wallpaper") user.WallpaperUrl = url;
             else server.IconUrl = url;
             db.ImageAttachments.AddRange(
                 Attachment(avatarId, userId, "proof/avatar.bin", now.AddDays(-100)),

@@ -67,6 +67,8 @@ public static class AttachmentAccess
                 (attachment.UploadedById == userId ||
 
                  // An avatar or banner is shown to everybody who can see the person.
+                 // A wallpaper is not, on purpose: the uploader rule above is the
+                 // only one that lets anybody read it.
                  db.Users.Any(user => user.AvatarUrl == assetUrl || user.BannerUrl == assetUrl) ||
 
                  // A public server shows its icon in the directory.

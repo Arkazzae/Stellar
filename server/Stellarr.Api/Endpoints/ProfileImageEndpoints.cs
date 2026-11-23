@@ -11,30 +11,52 @@ using Stellarr.Api.Storage;
 
 namespace Stellarr.Api.Endpoints;
 
-/// <summary>Sets and removes the avatar and the banner of the signed-in account.</summary>
+/// <summary>
+/// Sets and removes the pictures of the signed-in account: the avatar and the
+/// banner of their profile, and the wallpaper behind their own app.
+/// </summary>
 public static class ProfileImageEndpoints
 {
-    /// <summary>One of the two pictures a profile has, and the limits that come with it.</summary>
+    /// <summary>One of the account's pictures, and the limits that come with it.</summary>
+    /// <param name="Public">
+    /// Shown to others with the profile, so a change is announced to everybody
+    /// who sees the person. The wallpaper is not: nobody else ever learns it changed.
+    /// </param>
     private sealed record ImageKind(
         string Name,
         long MaxBytes,
         MessageKey TooLargeDetail,
         Func<User, string?> Read,
-        Action<User, string?> Write);
+        Action<User, string?> Write,
+        bool Public);
 
     private static readonly ImageKind Avatar = new(
         "avatar",
         4 * 1024 * 1024,
         MessageKey.AvatarMaximum,
         user => user.AvatarUrl,
-        (user, url) => user.AvatarUrl = url);
+        (user, url) => user.AvatarUrl = url,
+        Public: true);
 
     private static readonly ImageKind Banner = new(
         "banner",
         8 * 1024 * 1024,
         MessageKey.BannerMaximum,
         user => user.BannerUrl,
-        (user, url) => user.BannerUrl = url);
+        (user, url) => user.BannerUrl = url,
+        Public: true);
+
+    /// <summary>
+    /// The client fits it to 2560 pixels on its longest side and re-encodes it
+    /// before upload, which comes well under this; the cap is the banner's.
+    /// </summary>
+    private static readonly ImageKind Wallpaper = new(
+        "wallpaper",
+        8 * 1024 * 1024,
+        MessageKey.WallpaperMaximum,
+        user => user.WallpaperUrl,
+        (user, url) => user.WallpaperUrl = url,
+        Public: false);
 
     public static IEndpointRouteBuilder MapProfileImageEndpoints(this IEndpointRouteBuilder endpoints)
     {
@@ -104,7 +126,10 @@ public static class ProfileImageEndpoints
         }
 
         await mediaStorage.QueueAttachmentIfUnreferencedAsync(previousUrl, user.Id, DateTime.UtcNow, cancellationToken);
-        await AccountEndpoints.BroadcastUserUpdatedAsync(hub, presence, user, cancellationToken);
+        if (image.Public)
+        {
+            await AccountEndpoints.BroadcastUserUpdatedAsync(hub, presence, user, cancellationToken);
+        }
         return Results.Created(url, user.ToAccountDto());
     }
 
@@ -128,7 +153,10 @@ public static class ProfileImageEndpoints
 
         await db.SaveChangesAsync(cancellationToken);
         await mediaStorage.QueueAttachmentIfUnreferencedAsync(previousUrl, user.Id, DateTime.UtcNow, cancellationToken);
-        await AccountEndpoints.BroadcastUserUpdatedAsync(hub, presence, user, cancellationToken);
+        if (image.Public)
+        {
+            await AccountEndpoints.BroadcastUserUpdatedAsync(hub, presence, user, cancellationToken);
+        }
         return Results.Ok(user.ToAccountDto());
     }
 
@@ -136,6 +164,7 @@ public static class ProfileImageEndpoints
     {
         "avatar" => Avatar,
         "banner" => Banner,
+        "wallpaper" => Wallpaper,
         _ => null,
     };
 
