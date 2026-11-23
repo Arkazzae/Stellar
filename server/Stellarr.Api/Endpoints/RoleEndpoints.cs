@@ -202,9 +202,11 @@ public static class RoleEndpoints
         }
 
         await transaction.CommitAsync(cancellationToken);
+        // First, on its own: a caller who hangs up must not keep anybody from
+        // learning that they see something else now.
+        await viewChange.PublishAsync(hub.Clients, db);
         var holders = await HeldRoles.LoadAsync(db, serverId, cancellationToken);
         await NotifyAsync(hub, db, serverId, holders.Holders(role.Id), cancellationToken);
-        await viewChange.PublishAsync(hub.Clients, db);
         return Results.Ok(role.ToDto(holders.CountHolders(role.Id)));
     }
 
@@ -339,8 +341,8 @@ public static class RoleEndpoints
         await db.SaveChangesAsync(cancellationToken);
         await transaction.CommitAsync(cancellationToken);
 
-        await NotifyAsync(hub, db, serverId, holders, cancellationToken);
         await viewChange.PublishAsync(hub.Clients, db);
+        await NotifyAsync(hub, db, serverId, holders, cancellationToken);
         return Results.NoContent();
     }
 
@@ -419,8 +421,8 @@ public static class RoleEndpoints
         await MemberRoles.SetAsync(db, member, wanted, baseRole, cancellationToken);
         await db.SaveChangesAsync(cancellationToken);
         await transaction.CommitAsync(cancellationToken);
-        await NotifyAsync(hub, db, serverId, [userId], cancellationToken);
         await viewChange.PublishAsync(hub.Clients, db);
+        await NotifyAsync(hub, db, serverId, [userId], cancellationToken);
         return Results.NoContent();
     }
 
@@ -499,8 +501,8 @@ public static class RoleEndpoints
         await MemberRoles.SetAsync(db, member, wanted, baseRole, cancellationToken);
         await db.SaveChangesAsync(cancellationToken);
         await transaction.CommitAsync(cancellationToken);
-        await NotifyAsync(hub, db, serverId, [userId], cancellationToken);
         await viewChange.PublishAsync(hub.Clients, db);
+        await NotifyAsync(hub, db, serverId, [userId], cancellationToken);
         return Results.NoContent();
     }
 
