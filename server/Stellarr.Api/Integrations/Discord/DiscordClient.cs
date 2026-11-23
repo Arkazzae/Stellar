@@ -76,7 +76,6 @@ public sealed class DiscordClient(HttpClient http, TimeProvider time, ILogger<Di
         var transport = new DiscordTransport(http, time, logger, Policy, token: null);
         var template = await transport.GetAsync<WireTemplate>(
             new DiscordRoute($"guilds/templates/{Uri.EscapeDataString(code.Value)}", "guilds/templates/{code}", ""),
-            missingIntent: null,
             cancellationToken);
         return DiscordSnapshotMapper.FromTemplate(template);
     }

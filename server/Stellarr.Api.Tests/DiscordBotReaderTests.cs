@@ -64,17 +64,28 @@ public sealed class DiscordBotReaderTests
     }
 
     [Theory]
-    [InlineData(50001, DiscordFailureKind.MissingIntent)]
-    [InlineData(50013, DiscordFailureKind.MissingAccess)]
-    public async Task MembersWithoutTheIntentSayWhichIntent(int code, DiscordFailureKind expected)
+    // The app's flags decide, not the code: the docs name no code for a missing intent.
+    [InlineData(50001, "0", DiscordFailureKind.MissingIntent)]
+    [InlineData(50013, "0", DiscordFailureKind.MissingIntent)]
+    [InlineData(50001, "32768", DiscordFailureKind.MissingAccess)]
+    [InlineData(50001, "16384", DiscordFailureKind.MissingAccess)]
+    [InlineData(50001, null, DiscordFailureKind.MissingAccess)]
+    public async Task ARefusedMemberListIsAMissingIntentOnlyWhenTheAppSaysSo(int code, string? flags, DiscordFailureKind expected)
     {
-        var api = new DiscordFakeApi(DiscordFakeApi.Error(HttpStatusCode.Forbidden, code, "Missing Access"));
+        var api = new DiscordFakeApi(request => request.Uri.AbsolutePath switch
+        {
+            "/api/v10/applications/@me" when flags is not null => DiscordFakeApi.Json($$"""{"id":"1","name":"Importer","flags":{{flags}}}"""),
+            "/api/v10/applications/@me" => DiscordFakeApi.Error(HttpStatusCode.Forbidden, 50001, "Missing Access"),
+            _ => DiscordFakeApi.Error(HttpStatusCode.Forbidden, code, "Missing Access"),
+        });
 
         var failure = await Assert.ThrowsAsync<DiscordApiException>(
             () => Collect(DiscordClientTests.Bot(api).ReadMembersAsync(Guild)));
 
         Assert.Equal(expected, failure.Kind);
         Assert.Equal(code, failure.DiscordCode);
+        Assert.Equal($"GET guilds/{Guild}/members", failure.Route);
+        Assert.Equal(["/api/v10/guilds/" + Guild + "/members", "/api/v10/applications/@me"], api.Requests.Select(request => request.Uri.AbsolutePath));
     }
 
     [Fact]
@@ -255,6 +266,7 @@ public sealed class DiscordBotReaderTests
         {
             $"guilds/{Guild}" => DiscordFakeApi.Json($$"""{ "id": "{{Guild}}", "name": "Krew" }"""),
             $"guilds/{Guild}/members" => DiscordFakeApi.Error(HttpStatusCode.Forbidden, 50001, "Missing Access"),
+            "applications/@me" => DiscordFakeApi.Json("""{ "id": "1", "name": "Importer", "flags": 0 }"""),
             $"guilds/{Guild}/threads/active" => DiscordFakeApi.Json("""{ "threads": [] }"""),
             _ => DiscordFakeApi.Json("[]"),
         });

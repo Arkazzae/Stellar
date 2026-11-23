@@ -92,8 +92,9 @@ public sealed class DiscordContentTests
     {
         string[] fragments =
         [
-            "<@1>", "<@2>", "<@99>", "<@&10>", "<#20>", "<:party:30>", "<t:0>", "@ada", "@everyone",
-            "_", "__", "*", ".", "-", "a", "1", " ", "`", "\\", "\n", "```\n", "https://x.test/", ":",
+            "<@1>", "<@2>", "<@99>", "<@6>", "<@7>", "<@8>", "<@9>", "<@&10>", "<#20>", "<:party:30>", "<t:0>",
+            "@ada", "@everyone", "_", "__", "*", ".", "-", "a", "1", " ", "`", "\\", "\n", "```\n", "]", ":",
+            "https://x.test/", "\uFEFF", "\u0085", "\u200B",
         ];
 
         foreach (var first in fragments)
@@ -106,6 +107,21 @@ public sealed class DiscordContentTests
         }
     }
 
+    [Theory]
+    // Stellarr ends an address at a byte-order mark; what follows is text again.
+    [InlineData("https://x.test/\uFEFF@ada", "https://x.test/\uFEFF\\@ada")]
+    [InlineData("https://x.test/\u0085@ada", "https://x.test/\u0085@ada")]
+    // The web client ends an address at a closing bracket.
+    [InlineData("https://x.test/]@ada", "https://x.test/]\\@ada")]
+    [InlineData("https://mastodon.test/@ada", "https://mastodon.test/@ada")]
+    public void AnAddressEndsWhereStellarrEndsIt(string discord, string expected)
+    {
+        var rewritten = DiscordContent.Rewrite(discord, Known);
+
+        Assert.Equal(expected, rewritten);
+        Assert.Empty(MessageMentions.ExtractNormalizedUsernames(rewritten));
+    }
+
     private sealed class Resolver : IDiscordReferenceResolver
     {
         public MentionText? User(string userId) => userId switch
@@ -115,6 +131,10 @@ public sealed class DiscordContentTests
             "3" => MentionText.Label("Bea (left)"),
             "4" => MentionText.Account("bad name!"),
             "5" => MentionText.Label("**Bob**"),
+            "6" => MentionText.Label(""),
+            "7" => MentionText.Label("`x"),
+            "8" => MentionText.Label("a\n```\nb"),
+            "9" => MentionText.Label("@ada"),
             _ => null,
         };
 
