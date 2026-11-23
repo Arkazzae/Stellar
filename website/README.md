@@ -44,6 +44,19 @@ The images in `src/images/` are WebP exports of branding files at the size the p
 | `avatars/*.webp` | `branding/avatars/`, resized to 96 × 96 |
 | `mascot/*.webp` | `branding/mascot/illustrations/`, trimmed to the drawing and resized to 520 px wide |
 
+## Deploying
+
+`stellarr.online` is the Cloudflare Pages project `stellarr`. After a push to `main` that changes the site, `branding/logo`, `branding/film`, the fonts or `install.sh`, the `website-deploy` job in [`ci.yml`](../.github/workflows/ci.yml) builds `dist/` and publishes it with `wrangler pages deploy`, using the `CLOUDFLARE_API_TOKEN` and `CLOUDFLARE_ACCOUNT_ID` repository secrets. Pull requests never deploy.
+
+To publish by hand from a full checkout:
+
+```bash
+cd website
+npm ci
+npm run build
+npx wrangler pages deploy dist --project-name stellarr --branch main
+```
+
 The Vite build copies the root [`../install.sh`](../install.sh) script into `dist/install.sh` so `https://stellarr.online/install.sh` always serves the current installer as `text/plain`.
 
 Because the build reads files from `../branding/` and `../install.sh`, always build from a full repository checkout.

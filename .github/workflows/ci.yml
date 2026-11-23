@@ -309,6 +309,36 @@ jobs:
       # The site serves the repository's installer as it is.
       - run: cmp dist/install.sh ../install.sh
 
+  # Publishes the site to the Cloudflare Pages project behind stellarr.online
+  # after a push to main that changed it, so the page and /install.sh always
+  # match main. A pull request never deploys. One deployment at a time, and a
+  # deployment that has started is never cancelled by a newer push.
+  website-deploy:
+    needs: website
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    defaults:
+      run:
+        working-directory: website
+    concurrency:
+      group: website-deploy
+      cancel-in-progress: false
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 26
+          cache: npm
+          cache-dependency-path: website/package-lock.json
+      - run: npm ci
+      - run: npm run build
+      - run: cmp dist/install.sh ../install.sh
+      - run: npx --yes wrangler@4.164.0 pages deploy dist --project-name stellarr --branch main --commit-hash ${{ github.sha }}
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+
   # The one-command installer, install.sh. Its tests run it against stub
   # commands and need neither Docker nor the network themselves; the images
   # below only hold the tools. They run on the runner's bash with GNU tools,
