@@ -64,6 +64,9 @@ public sealed partial class Messages
         MessageKey.SlowModeWait => "You can send the next message in {seconds} s.",
         MessageKey.VoiceMessageAlone => "A voice message must be sent on its own, without text or other attachments.",
         MessageKey.MessageEditContentInvalid => "A message must contain text and be at most {max} characters long.",
+        MessageKey.SendMessagesDenied => "You may not send messages in this channel.",
+        MessageKey.AttachFilesDenied => "You may not attach files in this channel.",
+        MessageKey.AddReactionsDenied => "You may not add reactions in this channel.",
 
         // Message history and search
         MessageKey.PageLimitRange => "The limit must be between 1 and {max}.",
@@ -77,7 +80,9 @@ public sealed partial class Messages
         // Roles and permissions
         MessageKey.PermissionUnknown => "At least one permission is unknown.",
         MessageKey.PermissionAllowedAndDenied => "The same permission cannot be both allowed and denied.",
+        MessageKey.PermissionServerWideOnly => "Administrator applies to the whole server and cannot be set for a channel or a section.",
         MessageKey.RoleInvalid => "The name, color or list of permissions of the role is invalid.",
+        MessageKey.CreateInviteDenied => "You may not create invites here.",
 
         // Operator panel
         MessageKey.CockpitUserInvalid => "Check the username, display name, e-mail and password (at least 8 characters).",

@@ -12,10 +12,15 @@ public sealed record VoiceParticipantSnapshot(
 
 public sealed record VoiceDisplacement(string ConnectionId, Guid ChannelId);
 
+/// <summary>
+/// How a join went. <see cref="Admitted"/> is false for a newcomer the room
+/// may not take, <see cref="Accepted"/> for one a full room turns away.
+/// </summary>
 public sealed record VoiceJoinResult(
     Guid? PreviousChannelId,
     IReadOnlyList<VoiceDisplacement> Displaced,
-    bool Accepted = true);
+    bool Accepted = true,
+    bool Admitted = true);
 
 public sealed record VoiceMoveResult(IReadOnlyList<string> ConnectionIds, bool Moved);
 
@@ -229,14 +234,25 @@ public sealed class PresenceTracker(IMediaSessionCloser? mediaSessionCloser = nu
     /// Seats this connection in a voice room, displacing the account's other
     /// connections wherever they sat. A room at its <paramref name="userLimit"/>
     /// (0 means unlimited) refuses newcomers, but not an account already in it.
+    /// Without <paramref name="mayTakeSeat"/> only a connection that already
+    /// sits in the room, as one a moderator moved there does, keeps its seat;
+    /// the decision and the seat are taken under one lock, so a seat lost in
+    /// between cannot be taken again without it.
     /// </summary>
-    public VoiceJoinResult JoinVoice(string connectionId, Guid userId, Guid channelId, int userLimit = 0)
+    public VoiceJoinResult JoinVoice(
+        string connectionId, Guid userId, Guid channelId, int userLimit = 0, bool mayTakeSeat = true)
     {
         lock (_gate)
         {
             if (!_userByConnection.TryGetValue(connectionId, out var owner) || owner != userId)
             {
                 throw new InvalidOperationException("Only a connected user can join voice.");
+            }
+
+            _seatByConnection.TryGetValue(connectionId, out var current);
+            if (!mayTakeSeat && current?.ChannelId != channelId)
+            {
+                return new VoiceJoinResult(null, [], Accepted: false, Admitted: false);
             }
 
             var occupants = _seatByConnection.Values
@@ -260,7 +276,6 @@ public sealed class PresenceTracker(IMediaSessionCloser? mediaSessionCloser = nu
 
             // Joining the room the connection already sits in keeps the seat
             // as it is, its mute state and its media session included.
-            _seatByConnection.TryGetValue(connectionId, out var current);
             if (current is null || current.ChannelId != channelId)
             {
                 SetSeatLocked(connectionId, new Seat(userId, channelId, Muted: false));

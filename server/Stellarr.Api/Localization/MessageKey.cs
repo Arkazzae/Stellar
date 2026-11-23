@@ -63,6 +63,9 @@ public enum MessageKey
     SlowModeWait,
     VoiceMessageAlone,
     MessageEditContentInvalid,
+    SendMessagesDenied,
+    AttachFilesDenied,
+    AddReactionsDenied,
 
     // Message history and search
     PageLimitRange,
@@ -76,7 +79,9 @@ public enum MessageKey
     // Roles and permissions
     PermissionUnknown,
     PermissionAllowedAndDenied,
+    PermissionServerWideOnly,
     RoleInvalid,
+    CreateInviteDenied,
 
     // Operator panel
     CockpitUserInvalid,

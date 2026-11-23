@@ -26,6 +26,7 @@ public sealed class ChannelAdministrationTests : IClassFixture<StellarrWebApplic
     private static readonly Guid MemberRoleId = Guid.Parse("60000000-0000-0000-0000-000000000003");
 
     private static readonly string[] ManageMessages = ["manageMessages"];
+    private static readonly string[] BaseRoleDefaults = ["sendMessages", "attachFiles", "addReactions", "connect"];
     private static readonly string[] ManageMembersAndMessages = ["manageMembers", "manageMessages"];
     private static readonly string[] None = [];
     private static readonly string[] MemberNames = ["Ada", "Ilya", "Jo", "Maja", "Nils"];
@@ -346,10 +347,10 @@ public sealed class ChannelAdministrationTests : IClassFixture<StellarrWebApplic
         Assert.Equal(HttpStatusCode.NoContent, (await AssignAsync(owner, JoId, duty)).StatusCode);
         var granted = await listener.NextAsync();
         Assert.Equal(TestData.ServerId.ToString(), granted.GetProperty("serverId").GetString());
-        Assert.Equal(ManageMessages, granted.GetProperty("permissions").EnumerateArray().Select(x => x.GetString()));
+        Assert.Equal([.. ManageMessages, .. BaseRoleDefaults], granted.GetProperty("permissions").EnumerateArray().Select(x => x.GetString()));
 
         Assert.Equal(HttpStatusCode.NoContent, (await owner.DeleteAsync($"/api/admin/roles/{duty}")).StatusCode);
-        Assert.Empty((await listener.NextAsync()).GetProperty("permissions").EnumerateArray());
+        Assert.Equal(BaseRoleDefaults, (await listener.NextAsync()).GetProperty("permissions").EnumerateArray().Select(x => x.GetString()));
 
         var members = JsonDocument.Parse(await owner.GetStringAsync("/api/admin/members")).RootElement;
         Assert.Equal(

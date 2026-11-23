@@ -69,6 +69,12 @@ public static class ServerAdministrationEndpoints
         return Results.Ok(invites.Select(x => x.ToDto(origin)));
     }
 
+    /// <summary>
+    /// Creating an invite is its own permission, decided where the invite
+    /// leads: in the channel for an invite to a channel, so its overrides
+    /// count, and server-wide otherwise. Listing and revoking invites stay
+    /// with ManageServer.
+    /// </summary>
     private static async Task<IResult> CreateInviteAsync(
         CreateInviteRequest? request,
         HttpContext http,
@@ -76,11 +82,7 @@ public static class ServerAdministrationEndpoints
         Messages messages,
         CancellationToken cancellationToken)
     {
-        if (await AuthorizeAsync(http, db, ServerPrivileges.ManageServer, cancellationToken) is not { } actor)
-        {
-            return Results.Forbid();
-        }
-
+        var actor = new Actor(http.RequireActiveServerId(), http.User.RequireUserId());
         Channel? channel = null;
         if (request?.ChannelId is { } channelId)
         {
@@ -90,6 +92,14 @@ public static class ServerAdministrationEndpoints
             {
                 return Invalid("channelId", messages.Get(MessageKey.ChannelUnknown));
             }
+        }
+
+        var allowed = channel is null
+            ? await ServerAccess.HasAsync(db, actor.UserId, actor.ServerId, ServerPrivileges.CreateInvite, cancellationToken)
+            : await ServerAccess.HasAsync(db, actor.UserId, actor.ServerId, channel.Id, ServerPrivileges.CreateInvite, cancellationToken);
+        if (!allowed)
+        {
+            return ServerAccess.Refusal(messages, MessageKey.CreateInviteDenied, ServerPrivileges.CreateInvite);
         }
 
         var now = DateTime.UtcNow;
