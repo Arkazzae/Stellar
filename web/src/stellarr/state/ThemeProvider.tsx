@@ -26,7 +26,7 @@ interface ThemeContextValue {
   resolved: ResolvedScheme;
   /** One writer for every axis, so a new axis cannot be forgotten here. */
   update: (patch: Partial<ThemePreference>) => void;
-  /** Back to `DEFAULT_THEME`: all axes at once, one storage write. */
+  /** Back to `DEFAULT_THEME`: all axes at once, one storage write; the custom palette stays. */
   reset: () => void;
 }
 
@@ -92,14 +92,18 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
     applyThemeAttributes(document.documentElement, theme, resolved);
   }, [theme, resolved]);
 
+  // Through the same gate as storage, the account and files, so a write
+  // from the pane is held to what a read would accept.
   const update = useCallback(
     (patch: Partial<ThemePreference>) => {
-      store.write({ ...store.read(), ...patch });
+      store.write(normaliseTheme({ ...store.read(), ...patch }));
     },
     [store],
   );
+  // The person's own palette is not an axis but something they made: going
+  // back to the defaults selects Midnight and keeps it to come back to.
   const reset = useCallback(() => {
-    store.write(DEFAULT_THEME);
+    store.write({ ...DEFAULT_THEME, custom: store.read().custom });
   }, [store]);
 
   const value = useMemo<ThemeContextValue>(

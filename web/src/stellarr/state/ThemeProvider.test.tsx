@@ -2,8 +2,11 @@ import { act, render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-import { DEFAULT_THEME, THEME_STORAGE_KEY } from "@/design/themes";
+import { makeCustomTheme } from "@/design/customTheme";
+import { DEFAULT_THEME, THEME_STORAGE_KEY, getPalette } from "@/design/themes";
 import { ThemeProvider, useTheme } from "@/state/ThemeProvider";
+
+const OWN = makeCustomTheme({ name: "Nocny", colors: getPalette("harbor").colors });
 
 const DARK_QUERY = "(prefers-color-scheme: dark)";
 
@@ -43,6 +46,14 @@ function Probe() {
       </button>
       <button onClick={() => update({ density: "compact" })}>compact</button>
       <button onClick={() => update({ scheme: "system" })}>follow system</button>
+      <button onClick={() => update({ palette: "custom", custom: OWN })}>own</button>
+      <button
+        onClick={() =>
+          update({ custom: { ...OWN, colors: { ...OWN.colors, accent: "url(https://example.com/x)" } } })
+        }
+      >
+        tampered
+      </button>
       <button onClick={reset}>reset</button>
     </>
   );
@@ -157,6 +168,22 @@ describe("ThemeProvider", () => {
 
     expect(setItem).toHaveBeenCalledTimes(1);
     expect(storedTheme()).toEqual(DEFAULT_THEME);
+    expect(root.dataset.theme).toBe("midnight");
+  });
+
+  it("holds a write to the gate a read passes and keeps the custom palette through a reset", async () => {
+    const user = userEvent.setup();
+    renderProvider();
+    await user.click(screen.getByRole("button", { name: "own" }));
+    expect(root.dataset.theme).toBe("custom");
+
+    await user.click(screen.getByRole("button", { name: "tampered" }));
+    expect(storedTheme()).toMatchObject({ palette: "midnight", custom: null });
+    expect(root.getAttribute("style")).not.toContain("url(");
+
+    await user.click(screen.getByRole("button", { name: "own" }));
+    await user.click(screen.getByRole("button", { name: "reset" }));
+    expect(storedTheme()).toEqual({ ...DEFAULT_THEME, custom: OWN });
     expect(root.dataset.theme).toBe("midnight");
   });
 

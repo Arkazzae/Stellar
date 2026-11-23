@@ -6,14 +6,14 @@ import { Avatar } from "@/components/primitives/Avatar";
 import { Segmented, type SegmentedOption } from "@/components/primitives/Segmented";
 import { Switch } from "@/components/primitives/Switch";
 import { useRovingRadio } from "@/components/primitives/useRovingRadio";
+import { ACCENT_SWATCHES } from "@/design/accentSwatches";
 import {
-  ACCENT_SWATCHES,
   DEFAULT_THEME,
   DENSITIES,
   PALETTES,
   SIZES,
-  getPalette,
   paletteCssVariables,
+  resolvePalette,
   type DensityPreference,
   type ResolvedScheme,
   type SchemePreference,
@@ -192,7 +192,7 @@ export function AppearancePane({
 }: AppearancePaneProps) {
   const { t } = useLanguage();
 
-  const preset = getPalette(theme.palette);
+  const preset = resolvePalette(theme);
   const accent = theme.accent.toLowerCase();
   const presetAccent = preset.colors.accent.toLowerCase();
   // The theme's own colour leads the row, and a curated colour the preset
@@ -238,9 +238,10 @@ export function AppearancePane({
     title: t(`theme.density.${id}Detail`),
   }));
 
+  // The custom palette is kept through a reset, so it does not count here.
   const isDefault =
     (Object.keys(DEFAULT_THEME) as (keyof ThemePreference)[]).every(
-      (axis) => theme[axis] === DEFAULT_THEME[axis],
+      (axis) => axis === "custom" || theme[axis] === DEFAULT_THEME[axis],
     ) && motion?.reducedMotion !== true;
 
   // "Restore defaults" means everything this pane shows, motion included.

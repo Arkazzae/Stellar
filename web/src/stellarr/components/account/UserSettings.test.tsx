@@ -187,6 +187,7 @@ function setup(overrides: Partial<UserSettingsProps> = {}) {
       theme: {
         palette: "midnight",
         accent: "#756cf7",
+        custom: null,
         scheme: "system",
         contrast: "normal",
         size: "md",
