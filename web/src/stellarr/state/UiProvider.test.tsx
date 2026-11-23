@@ -5,6 +5,7 @@ import { UiProvider, useUiContext } from "./UiProvider";
 
 const harness = vi.hoisted(() => ({
   firstTextChannelId: "ch-general" as string | null,
+  textChannels: [{ id: "ch-general" }, { id: "ch-random" }] as { id: string }[],
   voice: {
     channelId: null as string | null,
     join: vi.fn(),
@@ -13,7 +14,10 @@ const harness = vi.hoisted(() => ({
 }));
 
 vi.mock("./DirectoryProvider", () => ({
-  useDirectoryContext: () => ({ firstTextChannelId: harness.firstTextChannelId }),
+  useDirectoryContext: () => ({
+    firstTextChannelId: harness.firstTextChannelId,
+    textChannels: harness.textChannels,
+  }),
 }));
 
 vi.mock("./VoiceProvider", () => ({
@@ -32,6 +36,7 @@ function mountUi(width = DESKTOP) {
 
 beforeEach(() => {
   harness.firstTextChannelId = "ch-general";
+  harness.textChannels = [{ id: "ch-general" }, { id: "ch-random" }];
   harness.voice = { channelId: null, join: vi.fn(), leave: vi.fn(async () => {}) };
 });
 
@@ -108,6 +113,30 @@ describe("UiProvider navigation", () => {
       cinema: false,
       activeTextChannelId: "ch-random",
     });
+  });
+
+  it("falls back to the first channel when the picked one leaves the list, and stays there", () => {
+    const { result, rerender } = mountUi();
+    act(() => result.current.selectTextChannel("ch-random"));
+
+    // Deleted, or no longer seen: it is gone from the list either way.
+    harness.textChannels = [{ id: "ch-general" }];
+    rerender();
+    expect(result.current.activeTextChannelId).toBe("ch-general");
+
+    harness.textChannels = [{ id: "ch-general" }, { id: "ch-random" }];
+    rerender();
+    expect(result.current.activeTextChannelId).toBe("ch-general");
+  });
+
+  it("follows the first channel when nothing was picked and the first one leaves", () => {
+    const { result, rerender } = mountUi();
+
+    harness.textChannels = [{ id: "ch-random" }];
+    harness.firstTextChannelId = "ch-random";
+    rerender();
+
+    expect(result.current.activeTextChannelId).toBe("ch-random");
   });
 
   it("returnToChannel goes back to the stage from a conversation", () => {

@@ -252,6 +252,7 @@ export const HUB_DECODERS: { [E in RealtimeEventName]: HubDecoder<E> } = {
   ServerUpdated: parsed(parseServer),
   ChannelLayoutChanged: decodeChannelLayout,
   SectionOrderChanged: decodeSectionOrder,
+  ChannelAccessChanged: strings("serverId"),
   PresenceChanged: decodePresence,
   UserUpdated: parsed((payload) => parseUser(payload, "UserUpdated")),
   SocialChanged: () => ({}),

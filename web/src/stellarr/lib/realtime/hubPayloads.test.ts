@@ -77,6 +77,12 @@ describe("hub payload decoders", () => {
     });
   });
 
+  it("reads that what a member sees changed, which names the server alone", () => {
+    expect(HUB_DECODERS.ChannelAccessChanged({ serverId: "s1" })).toEqual({ serverId: "s1" });
+    expect(HUB_DECODERS.ChannelAccessChanged({ serverId: 1 })).toBeNull();
+    expect(HUB_DECODERS.ChannelAccessChanged(null)).toBeNull();
+  });
+
   it("reads a channel layout or a section order whole, or not at all", () => {
     expect(
       HUB_DECODERS.ChannelLayoutChanged({
