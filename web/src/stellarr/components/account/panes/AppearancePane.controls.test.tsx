@@ -18,7 +18,7 @@ function props(overrides: Partial<AppearancePaneProps> = {}): AppearancePaneProp
 }
 
 describe("AppearancePane controls", () => {
-  it("reports brightness, contrast and text size as separate patches", async () => {
+  it("reports brightness, contrast, face and text size as separate patches", async () => {
     const user = userEvent.setup();
     const p = props();
     render(<AppearancePane {...p} />);
@@ -28,6 +28,12 @@ describe("AppearancePane controls", () => {
 
     await user.click(screen.getByRole("switch", { name: "Wysoki kontrast" }));
     expect(p.onChange).toHaveBeenLastCalledWith({ contrast: "high" });
+
+    const face = screen.getByRole("combobox", { name: /Krój pisma/ });
+    expect(face).toHaveValue("outfit");
+    expect(within(face).getAllByRole("option")).toHaveLength(28);
+    await user.selectOptions(face, "Figtree");
+    expect(p.onChange).toHaveBeenLastCalledWith({ font: "figtree" });
 
     await user.click(within(screen.getByRole("radiogroup", { name: "Rozmiar tekstu" })).getByRole("radio", { name: /Większy/ }));
     expect(p.onChange).toHaveBeenLastCalledWith({ size: "lg" });

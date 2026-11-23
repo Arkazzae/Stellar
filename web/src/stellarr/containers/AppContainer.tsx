@@ -13,6 +13,7 @@ import { ProfileProvider } from "@/state/ProfileProvider";
 import { UiProvider } from "@/state/UiProvider";
 import { VoiceProvider } from "@/state/VoiceProvider";
 
+import { AppAppearance } from "./AppAppearance";
 import { ClientSettingsSync } from "./ClientSettingsSync";
 import { DmCallChatContainer } from "./DmCallChatContainer";
 import { DmProfileContainer } from "./DmProfileContainer";
@@ -92,6 +93,8 @@ function Shell() {
 
   return (
     <>
+      {/* The face, and what else of the theme only the signed-in app shows. */}
+      <AppAppearance />
       <AppShell
         serverRail={<ServerRailContainer />}
         // One column, two contents. Both rails are unmounted when the other is

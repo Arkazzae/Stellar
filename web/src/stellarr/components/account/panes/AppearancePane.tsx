@@ -1,4 +1,4 @@
-import type { CSSProperties } from "react";
+import { useId, type CSSProperties } from "react";
 
 import { Button } from "@stellarr/ui";
 import { Icon, type IconName } from "@stellarr/icons";
@@ -7,15 +7,18 @@ import { Segmented, type SegmentedOption } from "@/components/primitives/Segment
 import { Switch } from "@/components/primitives/Switch";
 import { useRovingRadio } from "@/components/primitives/useRovingRadio";
 import { ACCENT_SWATCHES } from "@/design/accentSwatches";
+import { FONT_LABELS } from "@/design/fontLabels";
 import {
   CUSTOM_PALETTE,
   DEFAULT_THEME,
   DENSITIES,
+  FONTS,
   PALETTES,
   SIZES,
   paletteCssVariables,
   resolvePalette,
   type DensityPreference,
+  type FontId,
   type PaletteChoice,
   type ResolvedPalette,
   type ResolvedScheme,
@@ -182,9 +185,47 @@ function Stage() {
   );
 }
 
+const FONT_KINDS = ["sans", "rounded", "mono"] as const;
+
 /**
- * What colour the app is, and how its conversation is set. The face itself is
- * the brand's and is not a choice.
+ * The face, as a list of names rather than a sheet of specimens: a name set
+ * in its own face would download every face just by opening the pane. The
+ * miniature above shows the chosen one, since it is set by the same rule as
+ * the app.
+ */
+function FontRow({ font, onChange }: { font: FontId; onChange: (font: FontId) => void }) {
+  const { t } = useLanguage();
+  const id = useId();
+  return (
+    <div className="frm-row ap-row">
+      <label className="frm-lab" htmlFor={id}>
+        {t("theme.font")}
+        <span>{t("theme.fontDetail")}</span>
+      </label>
+      <div className="frm-ctl ap-end">
+        <select
+          id={id}
+          className="set-select"
+          value={font}
+          onChange={(event) => onChange(event.currentTarget.value as FontId)}
+        >
+          {FONT_KINDS.map((kind) => (
+            <optgroup key={kind} label={t(`theme.fontKind.${kind}`)}>
+              {FONTS.filter((face) => FONT_LABELS[face].kind === kind).map((face) => (
+                <option key={face} value={face}>
+                  {FONT_LABELS[face].label}
+                </option>
+              ))}
+            </optgroup>
+          ))}
+        </select>
+      </div>
+    </div>
+  );
+}
+
+/**
+ * What colour the app is, and what face and size its conversation is set in.
  *
  * The pane opens on the app in miniature, then the choices, one line each.
  * Nothing here names a colour: a preset tile carries its own CSS variables and
@@ -409,6 +450,8 @@ export function AppearancePane({
         <header className="sc-h">{t("theme.readability")}</header>
         <div className="sc-b">
           <div className="frm">
+            <FontRow font={theme.font} onChange={(font) => onChange({ font })} />
+
             <div className="frm-row ap-row">
               <span className="frm-lab">
                 {t("theme.textSize")}
