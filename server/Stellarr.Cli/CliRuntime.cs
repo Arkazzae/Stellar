@@ -334,7 +334,7 @@ internal sealed class CliDatabase(AppDbContext context) : IAsyncDisposable
         var tables = await ReadTablesAsync(context, cancellationToken);
         var required = new (string Table, string[] Columns)[]
         {
-            ("Users", ["Id", "Username", "NormalizedUsername", "DisplayName", "PasswordHash", "IsDisabled", "SessionVersion", "SecurityRecoveryRequired", "AvatarColor", "CreatedAt"]),
+            ("Users", ["Id", "Username", "NormalizedUsername", "DisplayName", "PasswordHash", "IsDisabled", "SessionVersion", "SecurityRecoveryRequired", "AvatarColor", "CreatedAt", "Origin"]),
             ("Servers", ["Id", "Name", "CreatedAt"]),
             ("ServerRoles", ["Id", "ServerId", "Name", "IsOwner"]),
             ("ServerMembers", ["ServerId", "UserId", "RoleId", "JoinedAt"]),

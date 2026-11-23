@@ -27,6 +27,8 @@ internal sealed class UserConfiguration : IEntityTypeConfiguration<User>
         entity.Property(x => x.CustomStatus).HasMaxLength(256);
         entity.Property(x => x.Bio).HasMaxLength(4000);
         entity.Property(x => x.Pronouns).HasMaxLength(32);
+        entity.Property(x => x.Origin).HasMaxLength(AccountOrigin.MaxLength);
+        entity.Ignore(x => x.IsPlaceholder);
         entity.HasOne(x => x.Preferences)
             .WithOne(x => x.User)
             .HasForeignKey<UserPreferenceSettings>(x => x.UserId)

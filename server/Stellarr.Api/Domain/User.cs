@@ -63,7 +63,31 @@ public sealed class User
     /// <summary>As typed ("ona/jej", "he/him"): printed, never parsed.</summary>
     public string? Pronouns { get; set; }
 
+    /// <summary>
+    /// Null for a person. Otherwise the account stands in for somebody whose
+    /// messages an import brought from elsewhere, and this names where:
+    /// <see cref="AccountOrigin.Discord"/>. Such an account has no password and
+    /// no address, is disabled, belongs to no server, and nobody can find it,
+    /// write to it or sign in as it. It is a column rather than a table of its
+    /// own so that every place that maps an account, message authors included,
+    /// can say so without another query.
+    /// </summary>
+    public string? Origin { get; set; }
+
+    /// <summary>Whether this account only stands in for the author of imported messages.</summary>
+    public bool IsPlaceholder => Origin is not null;
+
     public UserPreferenceSettings? Preferences { get; set; }
+}
+
+/// <summary>The values of <see cref="User.Origin"/>, as the API names them too.</summary>
+public static class AccountOrigin
+{
+    /// <summary>The author of messages imported from a Discord server: <c>discord:{id}</c>.</summary>
+    public const string Discord = "discord";
+
+    /// <summary>The longest origin the column holds.</summary>
+    public const int MaxLength = 16;
 }
 
 /// <summary>Account preferences that follow a person between devices.</summary>
