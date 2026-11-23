@@ -1,9 +1,11 @@
+using Microsoft.AspNetCore.SignalR;
 using Microsoft.EntityFrameworkCore;
 using Stellarr.Api.Auth;
 using Stellarr.Api.Contracts;
 using Stellarr.Api.Data;
 using Stellarr.Api.Domain;
 using Stellarr.Api.Localization;
+using Stellarr.Api.Realtime;
 
 namespace Stellarr.Api.Endpoints;
 
@@ -34,27 +36,52 @@ public static class PermissionOverrideEndpoints
             ListAsync(targetType, targetId, http, db, cancellationToken));
         overrides.MapPut("/{roleId:guid}", (
             Guid targetId, Guid roleId, SetPermissionOverrideRequest request,
-            HttpContext http, AppDbContext db, Messages messages, CancellationToken cancellationToken) =>
-            SetAsync(targetType, targetId, roleId, request, http, db, messages, cancellationToken))
+            HttpContext http, AppDbContext db, IHubContext<AppHub> hub, Messages messages, CancellationToken cancellationToken) =>
+            TellingWhoSeesOtherwiseAsync(http, db, hub,
+                () => SetAsync(targetType, targetId, roleId, request, http, db, messages, cancellationToken), cancellationToken))
             .AddEndpointFilter<InstanceServerFreshSecondStepFilter>();
         overrides.MapDelete("/{roleId:guid}", (
-            Guid targetId, Guid roleId, HttpContext http, AppDbContext db, Messages messages,
+            Guid targetId, Guid roleId, HttpContext http, AppDbContext db, IHubContext<AppHub> hub, Messages messages,
             CancellationToken cancellationToken) =>
-            ClearAsync(targetType, targetId, roleId, http, db, messages, cancellationToken))
+            TellingWhoSeesOtherwiseAsync(http, db, hub,
+                () => ClearAsync(targetType, targetId, roleId, http, db, messages, cancellationToken), cancellationToken))
             .AddEndpointFilter<InstanceServerFreshSecondStepFilter>();
         overrides.MapGet("/members", (
             Guid targetId, HttpContext http, AppDbContext db, CancellationToken cancellationToken) =>
             ListMembersAsync(targetType, targetId, http, db, cancellationToken));
         overrides.MapPut("/members/{userId:guid}", (
             Guid targetId, Guid userId, SetPermissionOverrideRequest request,
-            HttpContext http, AppDbContext db, Messages messages, CancellationToken cancellationToken) =>
-            SetMemberAsync(targetType, targetId, userId, request, http, db, messages, cancellationToken))
+            HttpContext http, AppDbContext db, IHubContext<AppHub> hub, Messages messages, CancellationToken cancellationToken) =>
+            TellingWhoSeesOtherwiseAsync(http, db, hub,
+                () => SetMemberAsync(targetType, targetId, userId, request, http, db, messages, cancellationToken), cancellationToken))
             .AddEndpointFilter<InstanceServerFreshSecondStepFilter>();
         overrides.MapDelete("/members/{userId:guid}", (
-            Guid targetId, Guid userId, HttpContext http, AppDbContext db, Messages messages,
+            Guid targetId, Guid userId, HttpContext http, AppDbContext db, IHubContext<AppHub> hub, Messages messages,
             CancellationToken cancellationToken) =>
-            ClearMemberAsync(targetType, targetId, userId, http, db, messages, cancellationToken))
+            TellingWhoSeesOtherwiseAsync(http, db, hub,
+                () => ClearMemberAsync(targetType, targetId, userId, http, db, messages, cancellationToken), cancellationToken))
             .AddEndpointFilter<InstanceServerFreshSecondStepFilter>();
+    }
+
+    /// <summary>
+    /// Makes one change of an override, and tells everybody it shows a
+    /// channel or section to, or hides one from, once it is committed.
+    /// </summary>
+    private static async Task<IResult> TellingWhoSeesOtherwiseAsync(
+        HttpContext http,
+        AppDbContext db,
+        IHubContext<AppHub> hub,
+        Func<Task<IResult>> change,
+        CancellationToken cancellationToken)
+    {
+        var viewChange = await ViewChange.BeginAsync(db, http.RequireActiveServerId(), cancellationToken);
+        var result = await change();
+        if (result is IStatusCodeHttpResult { StatusCode: >= 200 and < 300 })
+        {
+            await viewChange.PublishAsync(hub.Clients, db);
+        }
+
+        return result;
     }
 
     private static async Task<IResult> ListAsync(
@@ -359,8 +386,9 @@ public static class PermissionOverrideEndpoints
 
     /// <summary>
     /// The answer for a request that may not go on: 404 for a channel or section
-    /// that is not on the server, which is looked for first, then 403 for a
-    /// caller who may not manage roles. Null when it may.
+    /// that is not on the server, or that the caller does not see, which is
+    /// looked for first, then 403 for a caller who may not manage roles. Null
+    /// when it may.
     /// </summary>
     private static async Task<IResult?> RefuseAsync(
         PermissionTargetType targetType,
@@ -370,16 +398,16 @@ public static class PermissionOverrideEndpoints
         CancellationToken cancellationToken)
     {
         var serverId = http.RequireActiveServerId();
+        var userId = http.User.RequireUserId();
         var exists = targetType == PermissionTargetType.Channel
-            ? await db.Channels.AnyAsync(x => x.Id == targetId && x.ServerId == serverId, cancellationToken)
-            : await db.Sections.AnyAsync(x => x.Id == targetId && x.ServerId == serverId, cancellationToken);
+            ? await ChannelVisibility.FindAsync(db, userId, serverId, targetId, null, cancellationToken) is not null
+            : await ChannelVisibility.SectionListedAsync(db, userId, serverId, targetId, cancellationToken);
         if (!exists)
         {
             return Results.NotFound();
         }
 
-        return await ServerAccess.HasAsync(
-            db, http.User.RequireUserId(), serverId, ServerPrivileges.ManageRoles, cancellationToken)
+        return await ServerAccess.HasAsync(db, userId, serverId, ServerPrivileges.ManageRoles, cancellationToken)
             ? null
             : Results.Forbid();
     }

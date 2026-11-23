@@ -43,8 +43,10 @@ public static class MessagePinEndpoints
         Messages messages,
         CancellationToken cancellationToken)
     {
-        if (!await db.Channels.TextChannelOnServer(channelId, http.RequireActiveServerId())
-                .AnyAsync(cancellationToken))
+        // A channel the caller does not view is answered as one that does not exist.
+        if (await ChannelVisibility.FindAsync(
+                db, http.User.RequireUserId(), http.RequireActiveServerId(), channelId, ChannelKind.Text,
+                cancellationToken) is null)
         {
             return Results.NotFound();
         }
@@ -109,10 +111,17 @@ public static class MessagePinEndpoints
 
         // 403 rather than the 404 that deleting uses: everybody who can read
         // the channel already sees this message, so there is nothing to
-        // conceal, only a reason to give, and it is the true one.
+        // conceal, only a reason to give, and it is the true one. Somebody
+        // who cannot read it is answered as if it did not exist.
         var userId = http.User.RequireUserId();
-        if (!await ServerAccess.HasAsync(
-                db, userId, serverId, message.ChannelId, ServerPrivileges.ManageMessages, cancellationToken))
+        var held = await ServerAuthorization.EffectiveAsync(
+            db, userId, PermissionScope.Channel(serverId, message.ChannelId), cancellationToken) ?? ServerPrivileges.None;
+        if (!held.HasFlag(ServerPrivileges.ViewChannel))
+        {
+            return Results.NotFound();
+        }
+
+        if (!held.HasFlag(ServerPrivileges.ManageMessages))
         {
             return Results.Forbid();
         }
@@ -135,10 +144,10 @@ public static class MessagePinEndpoints
             await db.SaveChangesAsync(cancellationToken);
         }
 
-        // The event is shared by everyone, so it cannot say which reactions
-        // are the viewer's own.
-        await hub.Clients.Group(AppHub.ServerGroup(serverId))
-            .SendAsync("MessageUpdated", message.ToDto(messages), CancellationToken.None);
+        // The event is shared by everyone who sees the channel, so it cannot
+        // say which reactions are the viewer's own.
+        await ChannelAudience.SendAsync(
+            hub.Clients, db, serverId, message.ChannelId, "MessageUpdated", message.ToDto(messages), CancellationToken.None);
         return Results.Ok(message.ToDto(messages, userId));
     }
 }

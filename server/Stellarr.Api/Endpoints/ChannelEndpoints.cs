@@ -55,14 +55,16 @@ public static class ChannelEndpoints
             return Results.Conflict();
         }
 
-        if (request.SectionId is { } sectionId && !await db.Sections.AnyAsync(
-                x => x.Id == sectionId && x.ServerId == serverId, cancellationToken))
+        // A section that is not listed for the caller is answered as one that
+        // does not exist.
+        var userId = http.User.RequireUserId();
+        if (request.SectionId is { } sectionId &&
+            !await ChannelVisibility.SectionListedAsync(db, userId, serverId, sectionId, cancellationToken))
         {
             return Results.NotFound();
         }
 
         // Inside a section, that section's override decides who may add to it.
-        var userId = http.User.RequireUserId();
         var allowed = request.SectionId is { } targetSection
             ? await ServerAccess.HasForSectionAsync(
                 db, userId, serverId, targetSection, ServerPrivileges.ManageChannels, cancellationToken)
@@ -111,13 +113,15 @@ public static class ChannelEndpoints
         CancellationToken cancellationToken)
     {
         var serverId = http.RequireActiveServerId();
-        var channel = await db.Channels.FirstOrDefaultAsync(
-            x => x.Id == channelId && x.ServerId == serverId, cancellationToken);
-        if (channel is null)
+        // Managing a channel starts with seeing it: one the caller does not
+        // see is answered as one that does not exist.
+        if (await ChannelVisibility.FindAsync(
+                db, http.User.RequireUserId(), serverId, channelId, null, cancellationToken) is null)
         {
             return Results.NotFound();
         }
 
+        var channel = await db.Channels.SingleAsync(x => x.Id == channelId, cancellationToken);
         if (!await ServerAccess.HasAsync(
                 db, http.User.RequireUserId(), serverId, channel.Id, ServerPrivileges.ManageChannels, cancellationToken))
         {
@@ -177,6 +181,12 @@ public static class ChannelEndpoints
     /// them: one transaction and one broadcast, so nobody sees a channel moved
     /// to another group but not yet placed in it.
     /// </summary>
+    /// <remarks>
+    /// The order names every channel the caller sees, and no other: one they
+    /// do not see keeps its place among the rest, as it would have to for a
+    /// caller who could not name it. A move of a channel, or into a section,
+    /// the caller does not see is answered as one of nothing that exists.
+    /// </remarks>
     private static async Task<IResult> ReorderAsync(
         ReorderChannelsRequest request,
         HttpContext http,
@@ -194,21 +204,28 @@ public static class ChannelEndpoints
         }
 
         var channels = await db.Channels.Where(x => x.ServerId == serverId).ToListAsync(cancellationToken);
+        var view = await ChannelVisibility.OfMemberAsync(db, userId, serverId, cancellationToken);
+        var seen = view is null ? channels : channels.Where(x => view.ChannelIds.Contains(x.Id)).ToList();
         var movedSection = false;
         var order = request.ChannelIds.Select((id, position) => (id, position)).ToList();
         if (order.Select(x => x.id).Distinct().Count() != order.Count ||
-            !order.Select(x => x.id).ToHashSet().SetEquals(channels.Select(x => x.Id)))
+            !order.Select(x => x.id).ToHashSet().SetEquals(seen.Select(x => x.Id)))
         {
             return Invalid("channelIds", messages.Get(MessageKey.ChannelOrderIncomplete));
         }
 
+        // Read before anything changes, to tell afterwards whom a move showed
+        // a channel to or hid one from.
+        var viewChange = request.Move is null ? null : await ViewChange.BeginAsync(db, serverId, cancellationToken);
         if (request.Move is { } move)
         {
-            // The order names every channel of the server, so a moved channel
-            // missing from it belongs to another server.
-            var moved = channels.FirstOrDefault(x => x.Id == move.ChannelId);
-            if (moved is null || (move.SectionId is { } sectionId && !await db.Sections.AnyAsync(
-                    x => x.Id == sectionId && x.ServerId == serverId, cancellationToken)))
+            // The order names every channel the caller sees, so a moved
+            // channel missing from it is one they do not, or another server's.
+            var moved = seen.FirstOrDefault(x => x.Id == move.ChannelId);
+            if (moved is null || (move.SectionId is { } sectionId &&
+                    (view is null
+                        ? !await db.Sections.AnyAsync(x => x.Id == sectionId && x.ServerId == serverId, cancellationToken)
+                        : !view.SectionIds.Contains(sectionId))))
             {
                 return Results.NotFound();
             }
@@ -245,7 +262,10 @@ public static class ChannelEndpoints
             moved.SectionId = move.SectionId;
         }
 
-        var positions = order.ToDictionary(x => x.id, x => x.position);
+        var positions = Merged(channels.OrderBy(x => x.Position).ThenBy(x => x.Id).Select(x => x.Id).ToArray(),
+                order.Select(x => x.id).ToArray())
+            .Select((id, position) => (id, position))
+            .ToDictionary(x => x.id, x => x.position);
         var reordered = channels.Any(x => x.Position != positions[x.Id]);
         foreach (var channel in channels)
         {
@@ -261,13 +281,31 @@ public static class ChannelEndpoints
         await db.SaveChangesAsync(cancellationToken);
         await transaction.CommitAsync(cancellationToken);
 
-        var layout = new ChannelLayoutDto(
-            serverId.ToString(),
-            channels.OrderBy(x => x.Position)
-                .Select(x => new ChannelPlacementDto(x.Id.ToString(), x.SectionId?.ToString()))
-                .ToArray());
-        await hub.Clients.Group(AppHub.ServerGroup(serverId)).SendAsync("ChannelLayoutChanged", layout, cancellationToken);
+        // Committed: the people told must not depend on the caller staying.
+        if (viewChange is not null)
+        {
+            await viewChange.PublishAsync(hub.Clients, db);
+        }
+
+        await ServerLayoutEvents.ChannelLayoutAsync(
+            hub.Clients,
+            await ServerVisibility.LoadAsync(db, serverId, CancellationToken.None),
+            channels.OrderBy(x => x.Position).ToArray(),
+            CancellationToken.None);
         return Results.NoContent();
+    }
+
+    /// <summary>
+    /// The new order of every channel, from <paramref name="current"/>, all of
+    /// them in their order now, and <paramref name="wanted"/>, those the caller
+    /// sees in the order they want: each place one of theirs held gets the
+    /// next of theirs, and every other channel stays where it is.
+    /// </summary>
+    internal static IReadOnlyList<Guid> Merged(IReadOnlyList<Guid> current, IReadOnlyList<Guid> wanted)
+    {
+        var theirs = wanted.ToHashSet();
+        var next = 0;
+        return current.Select(id => theirs.Contains(id) ? wanted[next++] : id).ToArray();
     }
 
     private static async Task<IResult> DeleteAsync(
@@ -278,8 +316,8 @@ public static class ChannelEndpoints
         CancellationToken cancellationToken)
     {
         var serverId = http.RequireActiveServerId();
-        var channel = await db.Channels.AsNoTracking().FirstOrDefaultAsync(
-            x => x.Id == channelId && x.ServerId == serverId, cancellationToken);
+        var channel = await ChannelVisibility.FindAsync(
+            db, http.User.RequireUserId(), serverId, channelId, null, cancellationToken);
         if (channel is null)
         {
             return Results.NotFound();

@@ -24,10 +24,12 @@ public sealed partial class AppHub
     /// Takes a seat in a voice room. The seat is what admits a connection to
     /// the room's media: <see cref="OpenMediaSession"/> asks the media server
     /// for a session only on behalf of a seat, and the media server takes
-    /// commands from this API alone. So Connect is decided here, in the
-    /// channel, where its overrides count. A connection that already sits in
-    /// the room keeps its seat without it, because a moderator may have moved
-    /// it there and the client confirms a move with this call.
+    /// commands from this API alone. So ViewChannel and Connect are decided
+    /// here, in the channel, where their overrides count. A connection that
+    /// already sits in the room keeps its seat without them, because a
+    /// moderator may have moved it there and the client confirms a move with
+    /// this call. Anybody else who does not see the room is answered as for
+    /// a room that does not exist.
     /// </summary>
     public async Task JoinVoice(string channelId)
     {
@@ -39,12 +41,16 @@ public sealed partial class AppHub
             throw new HubException("Unknown voice room.");
         }
 
-        var mayTakeSeat = access.ServerId is not { } serverId ||
-            await ServerAccess.HasAsync(db, userId, serverId, roomId, ServerPrivileges.Connect);
-        var join = presence.JoinVoice(Context.ConnectionId, userId, roomId, access.UserLimit, mayTakeSeat);
+        var held = access.ServerId is { } serverId
+            ? await ServerAuthorization.EffectiveAsync(db, userId, PermissionScope.Channel(serverId, roomId)) ?? ServerPrivileges.None
+            : ServerPrivileges.All;
+        var join = presence.JoinVoice(
+            Context.ConnectionId, userId, roomId, access.UserLimit, mayTakeSeat: held.HasFlag(ServerPrivileges.Connect));
         if (!join.Admitted)
         {
-            throw new HubException("Not allowed to join this voice room.");
+            throw new HubException(held.HasFlag(ServerPrivileges.ViewChannel)
+                ? "Not allowed to join this voice room."
+                : "Unknown voice room.");
         }
 
         if (!join.Accepted)
@@ -162,9 +168,10 @@ public sealed partial class AppHub
     /// and the moderation endpoints, which also change who sits where, share it.
     /// </summary>
     /// <remarks>
-    /// A server's voice channel is public to the whole server, which is how
-    /// people see who is talking before they join. A direct call is as private
-    /// as its transcript and only reaches its two owners.
+    /// A server's voice channel shows who is talking to everybody who sees
+    /// it, which is how people know before they join, and to whoever sits in
+    /// it, who may have been moved there without seeing it. A direct call is
+    /// as private as its transcript and only reaches its two owners.
     /// </remarks>
     internal static async Task BroadcastVoiceSnapshotAsync(
         IHubClients<IClientProxy> clients,
@@ -212,7 +219,8 @@ public sealed partial class AppHub
             .SingleOrDefaultAsync(cancellationToken);
         if (serverId is { } server)
         {
-            await clients.Group(ServerGroup(server)).SendAsync("VoiceParticipantChanged", occupancy, cancellationToken);
+            var audience = await ChannelAudience.OfAsync(clients, db, server, roomId, userIds, cancellationToken);
+            await audience.SendAsync("VoiceParticipantChanged", occupancy, cancellationToken);
         }
     }
 

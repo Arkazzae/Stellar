@@ -77,13 +77,15 @@ public static class SectionEndpoints
         CancellationToken cancellationToken)
     {
         var serverId = http.RequireActiveServerId();
-        var section = await db.Sections.FirstOrDefaultAsync(
-            x => x.Id == sectionId && x.ServerId == serverId, cancellationToken);
-        if (section is null)
+        // A section that is not listed for the caller is answered as one that
+        // does not exist.
+        if (!await ChannelVisibility.SectionListedAsync(
+                db, http.User.RequireUserId(), serverId, sectionId, cancellationToken))
         {
             return Results.NotFound();
         }
 
+        var section = await db.Sections.SingleAsync(x => x.Id == sectionId, cancellationToken);
         if (!await ServerAccess.HasForSectionAsync(
                 db, http.User.RequireUserId(), serverId, section.Id, ServerPrivileges.ManageChannels, cancellationToken))
         {
@@ -111,6 +113,11 @@ public static class SectionEndpoints
         return Results.Ok(section.ToDto());
     }
 
+    /// <summary>
+    /// Sets the order of the sections. As with channels, the order names
+    /// every section listed for the caller and no other, and the rest keep
+    /// their places among them.
+    /// </summary>
     private static async Task<IResult> ReorderAsync(
         ReorderSectionsRequest request,
         HttpContext http,
@@ -127,9 +134,11 @@ public static class SectionEndpoints
         }
 
         var sections = await db.Sections.Where(x => x.ServerId == serverId).ToListAsync(cancellationToken);
+        var view = await ChannelVisibility.OfMemberAsync(db, http.User.RequireUserId(), serverId, cancellationToken);
+        var listed = view is null ? sections : sections.Where(x => view.SectionIds.Contains(x.Id)).ToList();
         var order = request.SectionIds.Select((id, position) => (id, position)).ToList();
         if (order.Select(x => x.id).Distinct().Count() != order.Count ||
-            !order.Select(x => x.id).ToHashSet().SetEquals(sections.Select(x => x.Id)))
+            !order.Select(x => x.id).ToHashSet().SetEquals(listed.Select(x => x.Id)))
         {
             return Results.ValidationProblem(new Dictionary<string, string[]>
             {
@@ -137,7 +146,11 @@ public static class SectionEndpoints
             });
         }
 
-        var positions = order.ToDictionary(x => x.id, x => x.position);
+        var positions = ChannelEndpoints.Merged(
+                sections.OrderBy(x => x.Position).ThenBy(x => x.Id).Select(x => x.Id).ToArray(),
+                order.Select(x => x.id).ToArray())
+            .Select((id, position) => (id, position))
+            .ToDictionary(x => x.id, x => x.position);
         var reordered = sections.Any(x => x.Position != positions[x.Id]);
         foreach (var section in sections)
         {
@@ -151,10 +164,11 @@ public static class SectionEndpoints
         }
 
         await db.SaveChangesAsync(cancellationToken);
-        await hub.Clients.Group(AppHub.ServerGroup(serverId)).SendAsync(
-            "SectionOrderChanged",
-            new SectionOrderDto(serverId.ToString(), order.Select(x => x.id.ToString()).ToArray()),
-            cancellationToken);
+        await ServerLayoutEvents.SectionOrderAsync(
+            hub.Clients,
+            await ServerVisibility.LoadAsync(db, serverId, CancellationToken.None),
+            sections.OrderBy(x => x.Position).Select(x => x.Id).ToArray(),
+            CancellationToken.None);
         return Results.NoContent();
     }
 
@@ -166,12 +180,13 @@ public static class SectionEndpoints
         CancellationToken cancellationToken)
     {
         var serverId = http.RequireActiveServerId();
-        var section = await db.Sections.AsNoTracking().FirstOrDefaultAsync(
-            x => x.Id == sectionId && x.ServerId == serverId, cancellationToken);
-        if (section is null)
+        if (!await ChannelVisibility.SectionListedAsync(
+                db, http.User.RequireUserId(), serverId, sectionId, cancellationToken))
         {
             return Results.NotFound();
         }
+
+        var section = await db.Sections.AsNoTracking().SingleAsync(x => x.Id == sectionId, cancellationToken);
 
         if (!await ServerAccess.HasForSectionAsync(
                 db, http.User.RequireUserId(), serverId, section.Id, ServerPrivileges.ManageChannels, cancellationToken))

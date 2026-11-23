@@ -23,7 +23,10 @@ public sealed record ReorderChannelsRequest(IReadOnlyList<Guid> ChannelIds, Chan
 /// <summary>A null <c>SectionId</c> takes the channel out of its section.</summary>
 public sealed record ChannelSectionMove(Guid ChannelId, Guid? SectionId);
 
-/// <summary>Hub payload: the server's channels in order, each with its section.</summary>
+/// <summary>
+/// Hub payload: the server's channels in order, each with its section; on a
+/// server where somebody is denied view, only those the recipient sees.
+/// </summary>
 public sealed record ChannelLayoutDto(string ServerId, IReadOnlyList<ChannelPlacementDto> Channels);
 
 public sealed record ChannelPlacementDto(string Id, string? SectionId);
@@ -34,8 +37,17 @@ public sealed record UpdateSectionRequest(string? Name);
 
 public sealed record ReorderSectionsRequest(IReadOnlyList<Guid> SectionIds);
 
-/// <summary>Hub payload: the server's sections in their new order.</summary>
+/// <summary>
+/// Hub payload: the server's sections in their new order; on a server where
+/// somebody is denied view, only those listed for the recipient.
+/// </summary>
 public sealed record SectionOrderDto(string ServerId, IReadOnlyList<string> SectionIds);
+
+/// <summary>
+/// Hub payload: the channels or sections the recipient sees on the server
+/// have changed, and their client should read them again.
+/// </summary>
+public sealed record ChannelAccessChangedDto(string ServerId);
 
 /// <summary>What one role is allowed and denied on top of its own permissions, in wire names.</summary>
 public sealed record PermissionOverrideDto(

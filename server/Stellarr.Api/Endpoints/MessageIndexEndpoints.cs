@@ -49,8 +49,10 @@ public static class MessageIndexEndpoints
             return Invalid("query", messages.Get(MessageKey.SearchQueryLength, ("min", MinQueryLength), ("max", MaxQueryLength)));
         }
 
-        if (!await db.Channels.TextChannelOnServer(channelId, http.RequireActiveServerId())
-                .AnyAsync(cancellationToken))
+        // A channel the caller does not view is answered as one that does not exist.
+        if (await ChannelVisibility.FindAsync(
+                db, http.User.RequireUserId(), http.RequireActiveServerId(), channelId, ChannelKind.Text,
+                cancellationToken) is null)
         {
             return Results.NotFound();
         }
@@ -102,8 +104,10 @@ public static class MessageIndexEndpoints
             return Invalid("query", messages.Get(MessageKey.SearchQueryLength, ("min", MinQueryLength), ("max", MaxQueryLength)));
         }
 
-        if (!await db.Channels.TextChannelOnServer(channelId, http.RequireActiveServerId())
-                .AnyAsync(cancellationToken))
+        // A channel the caller does not view is answered as one that does not exist.
+        if (await ChannelVisibility.FindAsync(
+                db, http.User.RequireUserId(), http.RequireActiveServerId(), channelId, ChannelKind.Text,
+                cancellationToken) is null)
         {
             return Results.NotFound();
         }

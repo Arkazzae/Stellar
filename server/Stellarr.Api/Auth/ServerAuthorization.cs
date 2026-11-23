@@ -167,10 +167,15 @@ public static partial class ServerAuthorization
         AppDbContext db, Guid actorId, Guid serverId, Guid targetId, CancellationToken cancellationToken) =>
         ModerateAsync(db, actorId, targetId, PermissionScope.Server(serverId), ServerPrivileges.ManageBans, cancellationToken);
 
+    /// <remarks>
+    /// A voice channel the actor does not see is not found, before anything
+    /// is asked of what they may do: they hold nothing there anyway, and a
+    /// refusal would say the room exists.
+    /// </remarks>
     public static async Task<MemberAuthorization> KickVoiceMemberAsync(
         AppDbContext db, Guid actorId, Guid serverId, Guid channelId, Guid targetId, CancellationToken cancellationToken)
     {
-        if (!await VoiceChannelAsync(db, serverId, channelId, cancellationToken))
+        if (!await VoiceChannelAsync(db, actorId, serverId, channelId, cancellationToken))
             return new(null, null, AuthorizationFailure.NotFound);
         return await ModerateAsync(db, actorId, targetId, PermissionScope.Channel(serverId, channelId),
             ServerPrivileges.ModerateMembers, cancellationToken);
@@ -180,7 +185,7 @@ public static partial class ServerAuthorization
         AppDbContext db, Guid actorId, Guid serverId, Guid sourceChannelId, Guid targetChannelId,
         Guid targetId, CancellationToken cancellationToken)
     {
-        if (!await VoiceChannelAsync(db, serverId, targetChannelId, cancellationToken))
+        if (!await VoiceChannelAsync(db, actorId, serverId, targetChannelId, cancellationToken))
             return new(null, null, AuthorizationFailure.NotFound);
         var source = await KickVoiceMemberAsync(db, actorId, serverId, sourceChannelId, targetId, cancellationToken);
         if (!source.Allowed) return source;
@@ -209,9 +214,10 @@ public static partial class ServerAuthorization
         (await PermissionSnapshot.LoadAsync(db, serverId, [userId], PermissionTargets.None, cancellationToken))
             .Subject(userId);
 
-    private static Task<bool> VoiceChannelAsync(AppDbContext db, Guid serverId, Guid channelId, CancellationToken cancellationToken) =>
-        db.Channels.AsNoTracking().AnyAsync(x => x.ServerId == serverId && x.Id == channelId && x.Kind == ChannelKind.Voice,
-            cancellationToken);
+    /// <summary>Whether the channel is a voice channel of the server that the actor sees.</summary>
+    private static async Task<bool> VoiceChannelAsync(
+        AppDbContext db, Guid actorId, Guid serverId, Guid channelId, CancellationToken cancellationToken) =>
+        await ChannelVisibility.FindAsync(db, actorId, serverId, channelId, ChannelKind.Voice, cancellationToken) is not null;
 
     /// <summary>
     /// Rank is the top role. The owner role outranks every other and is

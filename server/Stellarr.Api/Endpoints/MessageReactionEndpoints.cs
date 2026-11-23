@@ -79,11 +79,23 @@ public static class MessageReactionEndpoints
             return Results.NotFound();
         }
 
-        var userId = http.User.RequireUserId();
         // Adding is admitted here, in the message's channel; taking one's own
-        // reaction back needs no permission, so losing one leaves no trace stuck.
-        if (added && !await ServerAccess.HasAsync(
-                db, userId, serverId, channelId.Value, ServerPrivileges.AddReactions, cancellationToken))
+        // reaction back needs no permission, so losing one leaves no trace
+        // stuck. Either needs the channel to be seen: one not seen is answered
+        // as if it did not exist, since the answer says how many reacted.
+        var userId = http.User.RequireUserId();
+        var held = added
+            ? await ServerAuthorization.EffectiveAsync(
+                db, userId, PermissionScope.Channel(serverId, channelId.Value), cancellationToken) ?? ServerPrivileges.None
+            : await ChannelVisibility.ViewsAsync(db, userId, channelId.Value, cancellationToken)
+                ? ServerPrivileges.ViewChannel
+                : ServerPrivileges.None;
+        if (!held.HasFlag(ServerPrivileges.ViewChannel))
+        {
+            return Results.NotFound();
+        }
+
+        if (added && !held.HasFlag(ServerPrivileges.AddReactions))
         {
             return ServerAccess.Refusal(messages, MessageKey.AddReactionsDenied, ServerPrivileges.AddReactions);
         }
@@ -117,8 +129,8 @@ public static class MessageReactionEndpoints
             count,
             userId.ToString(),
             added);
-        await hub.Clients.Group(AppHub.ServerGroup(serverId))
-            .SendAsync("MessageReactionChanged", changed, CancellationToken.None);
+        await ChannelAudience.SendAsync(
+            hub.Clients, db, serverId, channelId.Value, "MessageReactionChanged", changed, CancellationToken.None);
         return Results.Ok(changed);
     }
 }

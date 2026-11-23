@@ -1,3 +1,4 @@
+using System.Linq.Expressions;
 using Microsoft.EntityFrameworkCore;
 using Stellarr.Api.Data;
 using Stellarr.Api.Domain;
@@ -10,7 +11,12 @@ namespace Stellarr.Api.Auth;
 /// role or a member, at the channel or at its section, denies it. Everybody on
 /// the server then sees the channel, and nothing has to be evaluated.
 /// </param>
-public sealed record ChannelPlace(Guid Id, Guid ServerId, Guid? SectionId, ChannelKind Kind, string Name, bool Open);
+/// <param name="Member">
+/// Whether the person the place was looked up for is an enabled member of its
+/// server; true when it was looked up for nobody in particular.
+/// </param>
+public sealed record ChannelPlace(
+    Guid Id, Guid ServerId, Guid? SectionId, ChannelKind Kind, string Name, int SlowModeSeconds, bool Open, bool Member);
 
 /// <summary>
 /// Who sees which channel. A channel somebody does not view does not exist for
@@ -28,33 +34,50 @@ public sealed record ChannelPlace(Guid Id, Guid ServerId, Guid? SectionId, Chann
 public static class ChannelVisibility
 {
     /// <summary>
-    /// The channels of <paramref name="channels"/> with whether each is open,
-    /// in one query. An override at a section another channel is in does not
-    /// count against this one.
+    /// Whether nobody is denied view at a channel, as one condition every
+    /// query that needs it shares. An override at a section another channel
+    /// is in does not count against this one.
     /// </summary>
-    public static IQueryable<ChannelPlace> Places(AppDbContext db, IQueryable<Channel> channels) =>
-        channels.Select(channel => new ChannelPlace(
+    private static Expression<Func<Channel, bool>> IsOpen(AppDbContext db) => channel =>
+        // The base role, picked as ServerAccess.FindMemberRoleAsync picks it.
+        db.ServerRoles
+            .Where(role => role.ServerId == channel.ServerId && role.IsSystem && !role.IsOwner)
+            .OrderByDescending(role => role.Position).ThenBy(role => role.Id)
+            .Select(role => (role.Permissions & ServerPrivileges.ViewChannel) != ServerPrivileges.None)
+            .FirstOrDefault() &&
+        !db.PermissionOverrides.Any(row =>
+            row.ServerId == channel.ServerId &&
+            (row.DenyMask & ServerPrivileges.ViewChannel) != ServerPrivileges.None &&
+            ((row.TargetType == PermissionTargetType.Channel && row.TargetId == channel.Id) ||
+             (row.TargetType == PermissionTargetType.Section && row.TargetId == channel.SectionId))) &&
+        !db.MemberPermissionOverrides.Any(row =>
+            row.ServerId == channel.ServerId &&
+            (row.DenyMask & ServerPrivileges.ViewChannel) != ServerPrivileges.None &&
+            ((row.TargetType == PermissionTargetType.Channel && row.TargetId == channel.Id) ||
+             (row.TargetType == PermissionTargetType.Section && row.TargetId == channel.SectionId)));
+
+    /// <summary>The channels nobody is denied view at, to be used inside a larger query.</summary>
+    public static IQueryable<Channel> OpenChannels(AppDbContext db) => db.Channels.Where(IsOpen(db));
+
+    /// <summary>
+    /// The channels of <paramref name="channels"/> with whether each is open,
+    /// and whether <paramref name="viewer"/> is an enabled member of its
+    /// server, in one query.
+    /// </summary>
+    public static IQueryable<ChannelPlace> Places(AppDbContext db, IQueryable<Channel> channels, Guid? viewer = null)
+    {
+        var open = OpenChannels(db);
+        return channels.Select(channel => new ChannelPlace(
             channel.Id,
             channel.ServerId,
             channel.SectionId,
             channel.Kind,
             channel.Name,
-            // The base role, picked as ServerAccess.FindMemberRoleAsync picks it.
-            db.ServerRoles
-                .Where(role => role.ServerId == channel.ServerId && role.IsSystem && !role.IsOwner)
-                .OrderByDescending(role => role.Position).ThenBy(role => role.Id)
-                .Select(role => (role.Permissions & ServerPrivileges.ViewChannel) != ServerPrivileges.None)
-                .FirstOrDefault() &&
-            !db.PermissionOverrides.Any(row =>
-                row.ServerId == channel.ServerId &&
-                (row.DenyMask & ServerPrivileges.ViewChannel) != ServerPrivileges.None &&
-                ((row.TargetType == PermissionTargetType.Channel && row.TargetId == channel.Id) ||
-                 (row.TargetType == PermissionTargetType.Section && row.TargetId == channel.SectionId))) &&
-            !db.MemberPermissionOverrides.Any(row =>
-                row.ServerId == channel.ServerId &&
-                (row.DenyMask & ServerPrivileges.ViewChannel) != ServerPrivileges.None &&
-                ((row.TargetType == PermissionTargetType.Channel && row.TargetId == channel.Id) ||
-                 (row.TargetType == PermissionTargetType.Section && row.TargetId == channel.SectionId)))));
+            channel.SlowModeSeconds,
+            open.Any(x => x.Id == channel.Id),
+            viewer == null || db.ServerMembers.Any(member =>
+                member.ServerId == channel.ServerId && member.UserId == viewer && !member.User.IsDisabled)));
+    }
 
     /// <summary>
     /// Whether nobody is denied view anywhere on the server: the base role
@@ -96,28 +119,42 @@ public static class ChannelVisibility
     /// member, sees it, and null when there is no such channel for them:
     /// unknown, of another server, of another kind, or not viewed.
     /// </summary>
-    public static async Task<ChannelPlace?> FindAsync(
+    public static Task<ChannelPlace?> FindAsync(
         AppDbContext db,
         Guid userId,
         Guid serverId,
         Guid channelId,
         ChannelKind? kind,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken) =>
+        FindAsync(
+            db,
+            userId,
+            db.Channels.Where(x => x.Id == channelId && x.ServerId == serverId && (kind == null || x.Kind == kind)),
+            cancellationToken);
+
+    /// <summary>The one channel of <paramref name="channels"/> when the member sees it, else null.</summary>
+    public static async Task<ChannelPlace?> FindAsync(
+        AppDbContext db, Guid userId, IQueryable<Channel> channels, CancellationToken cancellationToken)
     {
-        var place = await Places(db, db.Channels.AsNoTracking()
-                .Where(x => x.Id == channelId && x.ServerId == serverId && (kind == null || x.Kind == kind)))
-            .SingleOrDefaultAsync(cancellationToken);
+        var place = await Places(db, channels.AsNoTracking(), userId).SingleOrDefaultAsync(cancellationToken);
         return place is not null && await ViewsAsync(db, userId, place, cancellationToken) ? place : null;
     }
 
-    /// <summary>Whether the member sees the channel; for an open one, whether they are an enabled member.</summary>
-    public static async Task<bool> ViewsAsync(
+    /// <summary>
+    /// Whether the member, for whom <paramref name="place"/> was looked up,
+    /// sees the channel. An open one needs nothing more than the membership.
+    /// </summary>
+    private static async Task<bool> ViewsAsync(
         AppDbContext db, Guid userId, ChannelPlace place, CancellationToken cancellationToken)
     {
+        if (!place.Member)
+        {
+            return false;
+        }
+
         if (place.Open)
         {
-            return await db.ServerMembers.AsNoTracking().AnyAsync(
-                x => x.ServerId == place.ServerId && x.UserId == userId && !x.User.IsDisabled, cancellationToken);
+            return true;
         }
 
         var snapshot = await PermissionSnapshot.LoadAsync(
@@ -128,9 +165,53 @@ public static class ChannelVisibility
     /// <summary>Whether the member sees the channel, which need not be on any server they are on.</summary>
     public static async Task<bool> ViewsAsync(
         AppDbContext db, Guid userId, Guid channelId, CancellationToken cancellationToken) =>
-        await Places(db, db.Channels.AsNoTracking().Where(x => x.Id == channelId))
-            .SingleOrDefaultAsync(cancellationToken) is { } place &&
-        await ViewsAsync(db, userId, place, cancellationToken);
+        await FindAsync(db, userId, db.Channels.Where(x => x.Id == channelId), cancellationToken) is not null;
+
+    /// <summary>
+    /// Whether somebody who has just joined, holding the base role alone, would
+    /// see the channel: what an invite to it may name to whoever is not a
+    /// member yet.
+    /// </summary>
+    public static async Task<bool> NewcomerViewsAsync(AppDbContext db, Guid channelId, CancellationToken cancellationToken)
+    {
+        var place = await Places(db, db.Channels.AsNoTracking().Where(x => x.Id == channelId)).SingleOrDefaultAsync(cancellationToken);
+        if (place is null || place.Open)
+        {
+            return place is not null;
+        }
+
+        var snapshot = await PermissionSnapshot.LoadAsync(
+            db, place.ServerId, [], PermissionTargets.At(place.SectionId, place.Id), cancellationToken);
+        return snapshot.EvaluateNewcomer(place.SectionId, place.Id).HasFlag(ServerPrivileges.ViewChannel);
+    }
+
+    /// <summary>
+    /// Whether the section is listed for the member, by the rule of
+    /// <see cref="ServerLayout.ViewOf"/>: false for one that is not on the
+    /// server, which is how a section they do not see is answered.
+    /// </summary>
+    public static async Task<bool> SectionListedAsync(
+        AppDbContext db, Guid userId, Guid serverId, Guid sectionId, CancellationToken cancellationToken)
+    {
+        if (!await db.Sections.AsNoTracking().AnyAsync(x => x.Id == sectionId && x.ServerId == serverId, cancellationToken))
+        {
+            return false;
+        }
+
+        if (await ServerOpenAsync(db, serverId, cancellationToken))
+        {
+            return await db.ServerMembers.AsNoTracking().AnyAsync(
+                x => x.ServerId == serverId && x.UserId == userId && !x.User.IsDisabled, cancellationToken);
+        }
+
+        var channels = await db.Channels.AsNoTracking()
+            .Where(x => x.ServerId == serverId && x.SectionId == sectionId)
+            .Select(x => x.Id)
+            .ToListAsync(cancellationToken);
+        var layout = new ServerLayout(channels.Select(id => (id, (Guid?)sectionId)).ToArray(), [sectionId]);
+        var snapshot = await PermissionSnapshot.LoadAsync(db, serverId, [userId], layout.Targets, cancellationToken);
+        return snapshot.Subject(userId) is { } subject && layout.ViewOf(snapshot, subject).SectionIds.Contains(sectionId);
+    }
 
     /// <summary>
     /// Who sees the channel: null when it is open, which is everybody on the
@@ -158,6 +239,32 @@ public static class ChannelVisibility
             .Where(subject => snapshot.Views(subject, place.SectionId, place.Id))
             .Select(subject => subject.UserId)
             .ToHashSet();
+    }
+
+    /// <summary>
+    /// Those of <paramref name="userIds"/>, members of the server, who see the
+    /// channel. Only they are evaluated, and an open channel needs nothing.
+    /// </summary>
+    public static async Task<IReadOnlyCollection<Guid>> WhoViewAsync(
+        AppDbContext db, Guid serverId, Guid channelId, IReadOnlyCollection<Guid> userIds, CancellationToken cancellationToken)
+    {
+        if (userIds.Count == 0)
+        {
+            return userIds;
+        }
+
+        var place = await Places(db, db.Channels.AsNoTracking().Where(x => x.Id == channelId && x.ServerId == serverId))
+            .SingleOrDefaultAsync(cancellationToken);
+        if (place is null || place.Open)
+        {
+            return place is null ? [] : userIds;
+        }
+
+        var snapshot = await PermissionSnapshot.LoadAsync(
+            db, serverId, userIds, PermissionTargets.At(place.SectionId, place.Id), cancellationToken);
+        return userIds
+            .Where(id => snapshot.Subject(id) is { } subject && snapshot.Views(subject, place.SectionId, place.Id))
+            .ToArray();
     }
 
     /// <summary>
