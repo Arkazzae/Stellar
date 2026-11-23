@@ -119,12 +119,16 @@ internal sealed class ViewChange
     internal static async Task<ViewChange> BeginAsync(AppDbContext db, Guid serverId, CancellationToken cancellationToken) =>
         new(await ServerVisibility.LoadAsync(db, serverId, cancellationToken));
 
-    /// <summary>Tells whoever sees something else now; call it after the change is committed.</summary>
-    internal async Task PublishAsync(IHubClients<IClientProxy> clients, AppDbContext db)
+    /// <summary>
+    /// Tells whoever sees something else now; call it after the change is
+    /// committed. Returns what everybody sees now, for an event that follows.
+    /// </summary>
+    internal async Task<ServerVisibility> PublishAsync(IHubClients<IClientProxy> clients, AppDbContext db)
     {
         // Committed: the people told must not depend on the caller staying.
         var after = await ServerVisibility.LoadAsync(db, _before.ServerId, CancellationToken.None);
         var changed = await ServerVisibility.ChangedAsync(db, _before, after, CancellationToken.None);
         await ServerLayoutEvents.AccessChangedAsync(clients, _before.ServerId, changed, CancellationToken.None);
+        return after;
     }
 }
