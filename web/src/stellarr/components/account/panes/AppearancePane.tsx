@@ -27,6 +27,7 @@ import { useLanguage } from "@/state/hooks";
 
 import styles from "./AppearancePane.module.css";
 import { PaletteBoard, customThemeName } from "./PaletteBoard";
+import { ThemeFileRow } from "./ThemeFileRow";
 
 /**
  * Reduced motion. It is an account preference with its own owner rather than
@@ -396,6 +397,8 @@ export function AppearancePane({
                 />
               </div>
             </div>
+
+            <ThemeFileRow theme={theme} onChange={onChange} />
           </div>
 
           <PaletteBoard theme={theme} onChange={onChange} />
