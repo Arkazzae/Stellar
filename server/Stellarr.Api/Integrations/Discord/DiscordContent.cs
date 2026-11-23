@@ -135,6 +135,20 @@ public static partial class DiscordContent
             : throw new InvalidOperationException("The rewritten message still mentions somebody.");
     }
 
+    /// <summary>
+    /// Text the import makes up, such as a thread's name, written so that
+    /// Stellarr shows it as it is: no formatting, no link, no shortcode and
+    /// nobody mentioned.
+    /// </summary>
+    public static string Escape(string text)
+    {
+        ArgumentNullException.ThrowIfNull(text);
+        var escaped = Write([new Piece(PieceKind.Label, text)], Mode.EveryAtEscaped);
+        return MessageMentions.ExtractNormalizedUsernames(escaped).Count == 0
+            ? escaped
+            : escaped.Replace("@", "@​", StringComparison.Ordinal);
+    }
+
     /* ---------------------------------------------------------------- reading */
 
     private enum PieceKind
