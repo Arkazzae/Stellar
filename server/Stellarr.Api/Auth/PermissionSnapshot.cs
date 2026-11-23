@@ -166,8 +166,39 @@ public sealed class PermissionSnapshot
             subject.IsOwner,
             subject.BaseRole?.Permissions ?? ServerPrivileges.None,
             subject.HeldRoles.Select(x => x.Permissions).ToArray(),
-            levels));
+            levels,
+            AtChannel: channelId is not null));
     }
+
+    /// <summary>Whether the member sees the channel, which in a section names both.</summary>
+    public bool Views(PermissionSubject subject, Guid? sectionId, Guid channelId) =>
+        Evaluate(subject, sectionId, channelId).HasFlag(ServerPrivileges.ViewChannel);
+
+    /// <summary>
+    /// What somebody who has just joined would hold in the channel or section
+    /// named: the base role alone, with no role or override of their own, as
+    /// a membership starts. An invite and the welcome notice ask it before the
+    /// membership exists.
+    /// </summary>
+    public ServerPrivileges EvaluateNewcomer(Guid? sectionId, Guid? channelId)
+    {
+        var levels = new List<OverrideLevel>(2);
+        if (sectionId is { } section)
+        {
+            levels.Add(NewcomerLevel(PermissionTargetType.Section, section));
+        }
+
+        if (channelId is { } channel)
+        {
+            levels.Add(NewcomerLevel(PermissionTargetType.Channel, channel));
+        }
+
+        return PermissionEvaluator.Evaluate(new PermissionInput(
+            false, BaseRole?.Permissions ?? ServerPrivileges.None, [], levels, AtChannel: channelId is not null));
+    }
+
+    private OverrideLevel NewcomerLevel(PermissionTargetType type, Guid targetId) =>
+        new(BaseRole is { } baseRole ? RoleOverride(type, targetId, baseRole.Id) : default, [], default);
 
     /// <summary>The overrides that concern the member at one section or channel.</summary>
     public OverrideLevel Level(PermissionSubject subject, PermissionTargetType type, Guid targetId) => new(
