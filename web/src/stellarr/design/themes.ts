@@ -14,6 +14,12 @@
  * accent to the colour designed for it, but never changes type size or
  * density. The app itself is always set in Outfit, the brand's face.
  *
+ * Beside the presets there is one custom palette, the person's own (`custom`),
+ * kept while a preset is selected so they can go back to it. Its colours are
+ * `#rrggbb` or `#rrggbbaa` and nothing else: they become custom properties
+ * that components paint with, and a value such as `url(…)` would make every
+ * browser that applies a shared theme fetch an address.
+ *
  * The palette data lives here so the runtime, the pre-hydration script, the
  * previews and the tests share one set of values. `recipe.css` maps this
  * vocabulary onto the semantic tokens components use.
@@ -82,9 +88,9 @@ export const PALETTES = [
       },
       text: { normal: "#f3f4f6", muted: "#b9bec9", faint: "#747b89" },
       borders: {
-        subtle: "rgba(255, 255, 255, 0.06)",
+        subtle: "#ffffff0f",
         default: "#292e39",
-        strong: "rgba(255, 255, 255, 0.2)",
+        strong: "#ffffff33",
       },
       semantic: {
         success: "#3dd68c",
@@ -112,9 +118,9 @@ export const PALETTES = [
       },
       text: { normal: "#f2f3f5", muted: "#b5bac1", faint: "#80848e" },
       borders: {
-        subtle: "rgba(255, 255, 255, 0.06)",
+        subtle: "#ffffff0f",
         default: "#3f4147",
-        strong: "rgba(255, 255, 255, 0.2)",
+        strong: "#ffffff33",
       },
       semantic: {
         success: "#23a559",
@@ -142,9 +148,9 @@ export const PALETTES = [
       },
       text: { normal: "#e8e8e8", muted: "#a7a7a7", faint: "#6a6a6a" },
       borders: {
-        subtle: "rgba(255, 255, 255, 0.06)",
+        subtle: "#ffffff0f",
         default: "#282828",
-        strong: "rgba(255, 255, 255, 0.18)",
+        strong: "#ffffff2e",
       },
       semantic: {
         success: "#1db954",
@@ -172,9 +178,9 @@ export const PALETTES = [
       },
       text: { normal: "#f1f1f1", muted: "#c7d5e0", faint: "#7d8b96" },
       borders: {
-        subtle: "rgba(199, 213, 224, 0.08)",
+        subtle: "#c7d5e014",
         default: "#2a475e",
-        strong: "rgba(102, 192, 244, 0.38)",
+        strong: "#66c0f461",
       },
       semantic: {
         success: "#75b022",
@@ -202,9 +208,9 @@ export const PALETTES = [
       },
       text: { normal: "#efeff1", muted: "#adadb8", faint: "#7a7a85" },
       borders: {
-        subtle: "rgba(255, 255, 255, 0.06)",
+        subtle: "#ffffff0f",
         default: "#35353b",
-        strong: "rgba(255, 255, 255, 0.2)",
+        strong: "#ffffff33",
       },
       semantic: {
         success: "#00f593",
@@ -232,7 +238,7 @@ export const PALETTES = [
       },
       text: { normal: "#f0f6fc", muted: "#b1bac4", faint: "#7d8590" },
       borders: {
-        subtle: "rgba(240, 246, 252, 0.08)",
+        subtle: "#f0f6fc14",
         default: "#30363d",
         strong: "#484f58",
       },
@@ -250,25 +256,69 @@ export const PALETTES = [
 type Palette = (typeof PALETTES)[number];
 export type PaletteId = Palette["id"];
 
-/** Only message text and the composer move; the chrome keeps its own scale. */
-/**
- * Accents offered beside the theme's own. The presets' colours first, then
- * hues none of them has, so a swatch row reads as one wheel. Any other colour
- * is still a click away through the picker; these only spare the trip.
- */
-export const ACCENT_SWATCHES = [
-  { id: "indigo", hex: STELLARR_ACCENT },
-  { id: "violet", hex: "#9146ff" },
-  { id: "pink", hex: "#e93d82" },
-  { id: "red", hex: "#e5484d" },
-  { id: "orange", hex: "#f76b15" },
-  { id: "green", hex: "#1db954" },
-  { id: "teal", hex: "#12a594" },
-  { id: "blue", hex: "#1a9fff" },
-  { id: "sky", hex: "#58a6ff" },
-] as const;
+/** The `palette` value that selects the person's own palette. */
+export const CUSTOM_PALETTE = "custom";
+export type PaletteChoice = PaletteId | typeof CUSTOM_PALETTE;
 
-export type AccentSwatchId = (typeof ACCENT_SWATCHES)[number]["id"];
+/** The colour roles of each group of `PaletteColors`, in the order a board shows them. */
+export const COLOUR_ROLES = {
+  backgrounds: ["darkest", "dark", "primary", "secondary", "tertiary", "hover", "active", "floating"],
+  text: ["normal", "muted", "faint"],
+  borders: ["subtle", "default", "strong"],
+  semantic: ["success", "warning", "danger", "info"],
+} as const;
+
+export type ColourGroup = keyof typeof COLOUR_ROLES;
+
+/** The custom property a role is written to: `--palette-background-primary`. */
+const VARIABLE_PREFIX: Record<ColourGroup, `--palette-${string}`> = {
+  backgrounds: "--palette-background-",
+  text: "--palette-text-",
+  borders: "--palette-border-",
+  semantic: "--palette-",
+};
+
+/** Every role of a palette but the accent, with the custom property it is written to. */
+export const PALETTE_ROLE_VARIABLES = (Object.keys(COLOUR_ROLES) as ColourGroup[]).flatMap((group) =>
+  COLOUR_ROLES[group].map((role) => [group, role, `${VARIABLE_PREFIX[group]}${role}`] as const),
+);
+
+export const CUSTOM_NAME_MAX = 64;
+export const CUSTOM_SOURCE_MAX = 512;
+
+/** What paints a palette: its colours and the values derived from them. */
+export interface ResolvedPalette {
+  colors: PaletteColors;
+  /** The faint colour small copy is set in, AA on every background. */
+  accessibleFaint: string;
+  /** The light ramp's tint; a preset's comes from `palettes.css` instead. */
+  neutral?: LightTint;
+}
+
+/** `--h-neutral` and `--c-neutral`: the hue and the strength of the light ramp's tint. */
+export interface LightTint {
+  hue: number;
+  chroma: number;
+}
+
+/**
+ * The person's own palette: a preset they changed, a file, or a converted
+ * theme. Its derived values are worked out once, when its colours are set
+ * (`customTheme.ts`), and kept with them, so the first page and the
+ * pre-paint script apply them without the arithmetic.
+ */
+export interface CustomTheme extends ResolvedPalette {
+  name: string;
+  author?: string;
+  /** Where it came from, an http(s) address. */
+  source?: string;
+  /** The preset it was forked from, which discarding it goes back to. */
+  basedOn?: PaletteId;
+  neutral: LightTint;
+}
+
+/** The largest `--c-neutral` a custom palette may ask for; the presets stay under 4. */
+export const LIGHT_TINT_MAX = 20;
 
 export const SIZES = [{ id: "sm" }, { id: "md" }, { id: "lg" }] as const;
 
@@ -287,8 +337,10 @@ export const CONTRASTS = ["normal", "high"] as const;
 export type ContrastPreference = (typeof CONTRASTS)[number];
 
 export interface ThemePreference {
-  palette: PaletteId;
+  palette: PaletteChoice;
   accent: string;
+  /** The person's own palette, kept while a preset is selected. */
+  custom: CustomTheme | null;
   scheme: SchemePreference;
   contrast: ContrastPreference;
   size: SizePreference;
@@ -298,6 +350,7 @@ export interface ThemePreference {
 export const DEFAULT_THEME: ThemePreference = {
   palette: "midnight",
   accent: PALETTES[0].colors.accent,
+  custom: null,
   scheme: "dark",
   contrast: "normal",
   size: "md",
@@ -313,9 +366,18 @@ const DENSITY_IDS: readonly DensityPreference[] = DENSITIES.map(({ id }) => id);
 
 export type ThemeCssVariables = Record<`--${string}`, string>;
 
+/** An accent: opaque `#rrggbb`, lower case. */
 export function normaliseHex(value: unknown): string | null {
   if (typeof value !== "string" || !/^#[\da-f]{6}$/i.test(value)) return null;
   return value.toLowerCase();
+}
+
+/** `#rrggbb` or `#rrggbbaa`, nothing else: no names, no functions, no `url(`. */
+const HEX_COLOUR = /^#[\da-f]{6}(?:[\da-f]{2})?$/i;
+
+/** A colour of a custom palette: `#rrggbb` or `#rrggbbaa`, lower case. */
+export function normaliseColour(value: unknown): string | null {
+  return typeof value === "string" && HEX_COLOUR.test(value) ? value.toLowerCase() : null;
 }
 
 export function getPalette(id: PaletteId): Palette {
@@ -340,39 +402,30 @@ export function readableTextOn(hex: string): "#000000" | "#ffffff" {
   return contrastWithBlack >= contrastWithWhite ? "#000000" : "#ffffff";
 }
 
-export function paletteCssVariables(
-  palette: Palette,
-  accent: string = palette.colors.accent,
-): ThemeCssVariables {
-  const { backgrounds, text, borders, semantic } = palette.colors;
-  return {
-    "--palette-accent": accent,
-    "--palette-on-accent": readableTextOn(accent),
-    "--palette-background-darkest": backgrounds.darkest,
-    "--palette-background-dark": backgrounds.dark,
-    "--palette-background-primary": backgrounds.primary,
-    "--palette-background-secondary": backgrounds.secondary,
-    "--palette-background-tertiary": backgrounds.tertiary,
-    "--palette-background-hover": backgrounds.hover,
-    "--palette-background-active": backgrounds.active,
-    "--palette-background-floating": backgrounds.floating,
-    "--palette-text-normal": text.normal,
-    "--palette-text-muted": text.muted,
-    "--palette-text-faint": text.faint,
-    "--palette-text-faint-accessible": palette.accessibleFaint,
-    "--palette-border-subtle": borders.subtle,
-    "--palette-border-default": borders.default,
-    "--palette-border-strong": borders.strong,
-    "--palette-success": semantic.success,
-    "--palette-warning": semantic.warning,
-    "--palette-danger": semantic.danger,
-    "--palette-info": semantic.info,
-  };
+/** The palette a theme paints with: a preset, or the person's own. */
+export function resolvePalette(theme: Pick<ThemePreference, "palette" | "custom">): ResolvedPalette {
+  if (theme.palette !== CUSTOM_PALETTE) return getPalette(theme.palette);
+  return theme.custom ?? PALETTES[0];
 }
 
-export const PALETTE_CSS_VARIABLES = Object.fromEntries(
-  PALETTES.map((palette) => [palette.id, paletteCssVariables(palette)]),
-) as Readonly<Record<PaletteId, ThemeCssVariables>>;
+export function paletteCssVariables(
+  palette: ResolvedPalette,
+  accent: string = palette.colors.accent,
+): ThemeCssVariables {
+  const variables: ThemeCssVariables = {
+    "--palette-accent": accent,
+    "--palette-on-accent": readableTextOn(accent),
+    "--palette-text-faint-accessible": palette.accessibleFaint,
+  };
+  for (const [group, role, name] of PALETTE_ROLE_VARIABLES) {
+    variables[name] = (palette.colors[group] as Record<string, string>)[role] ?? "";
+  }
+  if (palette.neutral !== undefined) {
+    variables["--h-neutral"] = String(palette.neutral.hue);
+    variables["--c-neutral"] = String(palette.neutral.chroma);
+  }
+  return variables;
+}
 
 function oneOf<T extends string>(
   allowed: readonly T[],
@@ -382,19 +435,105 @@ function oneOf<T extends string>(
   return allowed.find((candidate) => candidate === value) ?? fallback;
 }
 
+const field = (value: unknown, key: string): unknown =>
+  typeof value === "object" && value !== null ? (value as Record<string, unknown>)[key] : undefined;
+
 /**
- * Narrows anything read back from storage to a usable preference. Each axis
- * falls back on its own instead of the whole object being discarded, so a bad
- * or missing value costs only its own axis.
+ * Words a person or a file supplied, as one line: control and direction
+ * characters removed, trimmed, and cut at `max` characters.
+ */
+export function normaliseText(value: unknown, max: number): string {
+  if (typeof value !== "string") return "";
+  const line = value
+    .slice(0, max * 4)
+    .replace(/[\p{Cc}\p{Bidi_Control}]/gu, "")
+    .trim();
+  return Array.from(line).slice(0, max).join("").trim();
+}
+
+function normaliseSource(value: unknown): string | undefined {
+  if (typeof value !== "string" || value.length > CUSTOM_SOURCE_MAX) return undefined;
+  try {
+    const url = new URL(value);
+    return url.protocol === "https:" || url.protocol === "http:" ? url.href : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+/**
+ * Every role of a palette, or null when one is missing or is not a hex
+ * colour. All or nothing: half a palette painted over the rest of another
+ * is not the palette anyone made.
+ */
+export function normaliseColours(value: unknown): PaletteColors | null {
+  const accent = normaliseHex(field(value, "accent"));
+  if (accent === null) return null;
+  const colours: Record<string, unknown> = { accent };
+  for (const group of Object.keys(COLOUR_ROLES) as ColourGroup[]) {
+    const source = field(value, group);
+    const roles: Record<string, string> = {};
+    for (const role of COLOUR_ROLES[group]) {
+      const colour = normaliseColour(field(source, role));
+      if (colour === null) return null;
+      roles[role] = colour;
+    }
+    colours[group] = roles;
+  }
+  return colours as unknown as PaletteColors;
+}
+
+/** A whole number of degrees, or a tint strength, as the light ramp takes it. */
+function tintNumber(value: unknown, max: number): number | null {
+  return typeof value === "number" && Number.isFinite(value) && value >= 0 && value <= max ? value : null;
+}
+
+/**
+ * The person's own palette as storage, the account or a file gives it back,
+ * or null when its colours or derived values do not hold. Only known fields
+ * are read and a new object is built, so nothing else the input carries
+ * comes along.
+ */
+export function normaliseCustomTheme(value: unknown): CustomTheme | null {
+  const colors = normaliseColours(field(value, "colors"));
+  const accessibleFaint = normaliseHex(field(value, "accessibleFaint"));
+  const neutral = field(value, "neutral");
+  const hue = tintNumber(field(neutral, "hue"), 359);
+  const chroma = tintNumber(field(neutral, "chroma"), LIGHT_TINT_MAX);
+  if (colors === null || accessibleFaint === null || hue === null || chroma === null) return null;
+  const author = normaliseText(field(value, "author"), CUSTOM_NAME_MAX);
+  const source = normaliseSource(field(value, "source"));
+  const basedOn = PALETTE_IDS.find((id) => id === field(value, "basedOn"));
+  return {
+    name: normaliseText(field(value, "name"), CUSTOM_NAME_MAX),
+    ...(author === "" ? {} : { author }),
+    ...(source === undefined ? {} : { source }),
+    ...(basedOn === undefined ? {} : { basedOn }),
+    colors,
+    accessibleFaint,
+    neutral: { hue, chroma },
+  };
+}
+
+/**
+ * Narrows anything read back from storage, the account or a file to a
+ * usable preference. Each axis falls back on its own instead of the whole
+ * object being discarded, so a bad or missing value costs only its own axis.
+ * The provider passes every write through here too.
  */
 export function normaliseTheme(input: unknown): ThemePreference {
   if (typeof input !== "object" || input === null) return DEFAULT_THEME;
   const raw = input as Partial<Record<keyof ThemePreference, unknown>>;
 
-  const palette = oneOf(PALETTE_IDS, raw.palette, DEFAULT_THEME.palette);
+  const custom = normaliseCustomTheme(raw.custom);
+  const palette: PaletteChoice =
+    raw.palette === CUSTOM_PALETTE && custom !== null
+      ? CUSTOM_PALETTE
+      : oneOf(PALETTE_IDS, raw.palette, PALETTES[0].id);
   return {
     palette,
-    accent: normaliseHex(raw.accent) ?? getPalette(palette).colors.accent,
+    accent: normaliseHex(raw.accent) ?? resolvePalette({ palette, custom }).colors.accent,
+    custom,
     scheme: oneOf(SCHEMES, raw.scheme, DEFAULT_THEME.scheme),
     contrast: oneOf(CONTRASTS, raw.contrast, DEFAULT_THEME.contrast),
     size: oneOf(SIZE_IDS, raw.size, DEFAULT_THEME.size),
@@ -413,6 +552,10 @@ export function resolveScheme(
 /**
  * Writes every axis onto an element. The provider calls it at runtime; the
  * pre-hydration script produces the same result on `<html>` before first paint.
+ *
+ * A custom palette writes its light-ramp tint inline, since `palettes.css`
+ * keys the presets' by `data-theme`; going back to a preset removes it again,
+ * or the inline value would outrank the preset's.
  */
 export function applyThemeAttributes(
   element: HTMLElement,
@@ -426,8 +569,10 @@ export function applyThemeAttributes(
   dataset.size = theme.size;
   dataset.density = theme.density;
 
-  const palette = getPalette(theme.palette);
+  const palette = resolvePalette(theme);
   const accent = normaliseHex(theme.accent) ?? palette.colors.accent;
+  style.removeProperty("--h-neutral");
+  style.removeProperty("--c-neutral");
   for (const [name, value] of Object.entries(
     paletteCssVariables(palette, accent),
   )) {
