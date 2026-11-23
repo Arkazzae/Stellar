@@ -39,11 +39,16 @@ public sealed record OverrideLevel(OverrideMasks Base, IReadOnlyList<OverrideMas
 /// channel's, a channel outside any section only its own, a section its own,
 /// and the server none.
 /// </summary>
+/// <param name="AtChannel">
+/// Whether the place is a channel, where somebody without
+/// <see cref="ServerPrivileges.ViewChannel"/> holds nothing at all.
+/// </param>
 public sealed record PermissionInput(
     bool IsOwner,
     ServerPrivileges BasePermissions,
     IReadOnlyList<ServerPrivileges> HeldPermissions,
-    IReadOnlyList<OverrideLevel> Levels);
+    IReadOnlyList<OverrideLevel> Levels,
+    bool AtChannel);
 
 /// <summary>
 /// What a member may do, worked out the way Discord does it. The owner may do
@@ -52,9 +57,11 @@ public sealed record PermissionInput(
 /// with those of every role they hold; each level then removes the base
 /// role's denies and adds its allows, then removes what any held role denies
 /// and adds what any held role allows, so that an allow of one role beats a
-/// deny of another, and finally applies the member's own override. Nothing
-/// here reads the database: callers load the inputs, and every decision of
-/// the policy comes through here.
+/// deny of another, and finally applies the member's own override. In a
+/// channel, whoever ends up without ViewChannel holds nothing: the channel
+/// does not exist for them, so neither does anything it would let them do.
+/// Nothing here reads the database: callers load the inputs, and every
+/// decision of the policy comes through here.
 /// </summary>
 public static class PermissionEvaluator
 {
@@ -78,7 +85,10 @@ public static class PermissionEvaluator
             held = Apply(held, level);
         }
 
-        return held;
+        // The one place the rule lives. A section is not held to it: who may
+        // manage a section is asked there, whether or not they see a channel
+        // in it, and its overrides reach its channels through the levels.
+        return input.AtChannel && !held.HasFlag(ServerPrivileges.ViewChannel) ? ServerPrivileges.None : held;
     }
 
     /// <summary>
@@ -87,7 +97,7 @@ public static class PermissionEvaluator
     /// </summary>
     public static ServerPrivileges ServerWide(
         bool isOwner, ServerPrivileges basePermissions, IEnumerable<ServerPrivileges> heldPermissions) =>
-        Evaluate(new PermissionInput(isOwner, basePermissions, heldPermissions.ToArray(), []));
+        Evaluate(new PermissionInput(isOwner, basePermissions, heldPermissions.ToArray(), [], AtChannel: false));
 
     private static ServerPrivileges Unite(ServerPrivileges basePermissions, IEnumerable<ServerPrivileges> heldPermissions) =>
         heldPermissions.Aggregate(basePermissions, (all, one) => all | one);
