@@ -31,6 +31,7 @@ public static class DatabaseSchema
         ChannelAudioProfileSchema.DropAsync,
         MemberPermissionsSchema.CreateAsync,
         RoleRankSchema.RepairAsync,
+        DiscordImportSchema.CreateAsync,
     ];
 
     public static async Task PrepareAsync(AppDbContext db, CancellationToken cancellationToken)

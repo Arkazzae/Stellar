@@ -77,7 +77,7 @@ public static class DirectMessageEndpoints
         CancellationToken cancellationToken)
     {
         var selfId = principal.RequireUserId();
-        if (selfId == request.UserId || !await db.Users.AnyAsync(x => x.Id == request.UserId, cancellationToken))
+        if (selfId == request.UserId || !await db.Users.People().AnyAsync(x => x.Id == request.UserId, cancellationToken))
         {
             return Results.NotFound();
         }

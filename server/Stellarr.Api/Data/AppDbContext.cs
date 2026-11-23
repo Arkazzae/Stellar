@@ -71,6 +71,11 @@ public sealed class AppDbContext(DbContextOptions<AppDbContext> options) : DbCon
     public DbSet<EncryptionDevice> EncryptionDevices => Set<EncryptionDevice>();
     public DbSet<EncryptionEpoch> EncryptionEpochs => Set<EncryptionEpoch>();
     public DbSet<EncryptionEnvelope> EncryptionEnvelopes => Set<EncryptionEnvelope>();
+    public DbSet<DiscordImport> DiscordImports => Set<DiscordImport>();
+    public DbSet<DiscordImportAccount> DiscordImportAccounts => Set<DiscordImportAccount>();
+    public DbSet<DiscordImportSection> DiscordImportSections => Set<DiscordImportSection>();
+    public DbSet<DiscordImportChannel> DiscordImportChannels => Set<DiscordImportChannel>();
+    public DbSet<DiscordImportMessage> DiscordImportMessages => Set<DiscordImportMessage>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder) =>
         modelBuilder.ApplyConfigurationsFromAssembly(typeof(AppDbContext).Assembly);
