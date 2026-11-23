@@ -322,7 +322,7 @@ describe("DirectoryProvider permission flags", () => {
 
   it("does not open the settings for what every member may do", async () => {
     await mount(flags, {
-      permissions: ["sendMessages", "attachFiles", "addReactions", "connect", "createInvite"],
+      permissions: ["viewChannel", "sendMessages", "attachFiles", "addReactions", "connect", "createInvite"],
     });
 
     expect(result()).toEqual(none);

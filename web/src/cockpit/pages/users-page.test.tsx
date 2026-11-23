@@ -48,6 +48,7 @@ const allPermissions = [
   "addReactions",
   "connect",
   "createInvite",
+  "viewChannel",
 ];
 
 function role(overrides: Partial<CockpitRole> & Pick<CockpitRole, "id" | "name">): CockpitRole {
@@ -696,7 +697,7 @@ describe("UsersPage roles", () => {
   it("lists each role with its members, permission count and kind", async () => {
     await openRoles();
 
-    expect(within(rowOf("Właściciel")).getByText("14 uprawnień")).toBeTruthy();
+    expect(within(rowOf("Właściciel")).getByText("15 uprawnień")).toBeTruthy();
     expect(within(rowOf("Właściciel")).getByText("Systemowa")).toBeTruthy();
     expect(within(rowOf("Moderator")).getByText("2 uprawnień")).toBeTruthy();
     expect(within(rowOf("Moderator")).getByText("Własna")).toBeTruthy();
@@ -764,13 +765,16 @@ describe("UsersPage roles", () => {
 
   it("keeps what every member may do when the base role is saved", async () => {
     const everyday = ["sendMessages", "attachFiles", "addReactions", "connect"];
-    await renderLoaded({ roles: roles.map((item) => (item === member ? { ...member, permissions: everyday } : item)) });
+    await renderLoaded({
+      roles: roles.map((item) => (item === member ? { ...member, permissions: [...everyday, "viewChannel"] } : item)),
+    });
     await userEvent.click(screen.getByRole("tab", { name: "Role" }));
     api.updateRole.mockResolvedValue(member);
 
     await userEvent.click(within(rowOf("Członek")).getByRole("button", { name: "Edytuj" }));
     const sheet = await screen.findByRole("dialog");
     expect((within(sheet).getByRole("checkbox", { name: "connect" }) as HTMLInputElement).checked).toBe(true);
+    expect((within(sheet).getByRole("checkbox", { name: "viewChannel" }) as HTMLInputElement).checked).toBe(true);
     await userEvent.click(within(sheet).getByRole("checkbox", { name: "createInvite" }));
     await userEvent.click(within(sheet).getByRole("button", { name: "Zapisz rolę" }));
 
@@ -778,7 +782,7 @@ describe("UsersPage roles", () => {
     expect(api.updateRole).toHaveBeenCalledExactlyOnceWith("role-member", {
       name: "Członek",
       color: "#64748b",
-      permissions: [...everyday, "createInvite"],
+      permissions: [...everyday, "createInvite", "viewChannel"],
     });
   });
 
