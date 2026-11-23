@@ -64,3 +64,7 @@
    with a stylesheet of its own. */
 @source "../../";
 @source not "../../cockpit";
+/* The BetterDiscord converter reads other apps' stylesheets and names
+   at-rules such as `@container` in its text, which Tailwind would take for
+   class names; it renders nothing. */
+@source not "../lib/betterDiscord";

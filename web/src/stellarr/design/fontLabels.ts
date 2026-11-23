@@ -34,3 +34,14 @@ export const FONT_LABELS: Record<FontId, { label: string; kind: "sans" | "rounde
   "source-code-pro": { label: "Source Code Pro", kind: "mono" },
   "ibm-plex-mono": { label: "IBM Plex Mono", kind: "mono" },
 };
+
+/** A family name as a theme writes it ("figtree", "Geist Sans"), matched to one of ours. */
+export function matchFont(family: string): FontId | null {
+  const wanted = family.trim().replace(/\s+/g, " ").toLowerCase();
+  if (wanted === "") return null;
+  const entries = Object.entries(FONT_LABELS) as [FontId, { label: string }][];
+  const found = entries.find(
+    ([id, { label }]) => id === wanted || label.toLowerCase() === wanted || id.replace(/-/g, " ") === wanted,
+  );
+  return found?.[0] ?? null;
+}
