@@ -39,9 +39,9 @@ public sealed record MentionText
 /// is made or not. <see cref="User"/> may answer
 /// <see cref="MentionText.Account"/> only with the Stellarr account the import
 /// made for that Discord user, or one its owner linked to that Discord user on
-/// purpose. Anybody else — a user the import left out, or an account that
-/// only happens to share the name — gets a <see cref="MentionText.Label"/>, or
-/// null. Any other answer would notify a real person about a message they were
+/// purpose. Anybody else, such as a user the import left out or an account
+/// that only happens to share the name, gets a <see cref="MentionText.Label"/>
+/// or null. Any other answer would notify a real person about a message they were
 /// never part of. Roles, channels and unknown ids are always written as text.
 /// </remarks>
 public interface IDiscordReferenceResolver
