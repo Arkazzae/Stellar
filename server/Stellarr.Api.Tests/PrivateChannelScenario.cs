@@ -84,10 +84,12 @@ internal sealed class PrivateChannelScenario : IAsyncDisposable
 
     /// <summary>The scenario, made private; with <paramref name="hide"/> false, everything is open still.</summary>
     internal static async Task<PrivateChannelScenario> CreateAsync(
-        bool hide = true, Action<IServiceCollection>? configureServices = null)
+        bool hide = true,
+        Action<IServiceCollection>? configureServices = null,
+        IReadOnlyDictionary<string, string?>? configuration = null)
     {
         var scenario = new PrivateChannelScenario(new StellarrWebApplicationFactory(
-            loadTestData: true, configureServices: configureServices));
+            loadTestData: true, configuration: configuration, configureServices: configureServices));
         await scenario.SeedAsync(hide);
         scenario.Owner = await scenario.SignedInAsync("maja");
         scenario.Ada = await scenario.SignedInAsync("ada");
