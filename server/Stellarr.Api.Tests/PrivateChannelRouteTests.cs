@@ -201,6 +201,88 @@ public sealed partial class PrivateChannelRouteTests
         Assert.True(gone.Length == 0, "Probed but not mapped: " + string.Join(", ", gone));
     }
 
+    /// <summary>
+    /// Routes that name a channel or a section somewhere a route value does
+    /// not show, or answer with channels, each with the test that holds it to
+    /// the rule.
+    /// </summary>
+    private static readonly Dictionary<string, string> Covered = new(StringComparer.Ordinal)
+    {
+        ["GET /api/bootstrap"] = nameof(PrivateChannelFlowTests.TheBootstrapCarriesOnlyWhatTheCallerSees),
+        ["GET /api/admin/invites"] = nameof(PrivateChannelFlowTests.AnInviteToAChannelTheNewcomerWouldNotSeeLandsThemWithoutNamingIt),
+        ["GET /api/invites/{code}"] = nameof(PrivateChannelFlowTests.AnInviteToAChannelTheNewcomerWouldNotSeeLandsThemWithoutNamingIt),
+        ["POST /api/invites/{code}/join"] = nameof(PrivateChannelFlowTests.AnInviteToAChannelTheNewcomerWouldNotSeeLandsThemWithoutNamingIt),
+        ["PUT /api/admin/channels/order"] = nameof(PrivateChannelFlowTests.AReorderNamesWhatTheCallerSeesAndLeavesTheRestWhereItWas),
+        ["PUT /api/admin/sections/order"] = nameof(PrivateChannelFlowTests.ASectionReorderLeavesTheSectionsTheCallerCannotSeeWhereTheyWere),
+        ["GET /api/admin/notifications"] = nameof(PrivateChannelFlowTests.TheMutedChannelsAManagerCannotSeeStayMutedUnnamed),
+        ["POST /api/servers/{serverId:guid}/join"] = nameof(PrivateChannelFlowTests.TheWelcomeGoesToTheFirstChannelTheNewcomerWillSee),
+        ["POST /api/auth/register"] = nameof(PrivateChannelFlowTests.TheWelcomeGoesToTheFirstChannelTheNewcomerWillSee),
+    };
+
+    /// <summary>
+    /// Routes that are about something else than what is in a server's
+    /// channels, and why: a whole path when the entry names a method, else
+    /// every path that starts with it.
+    /// </summary>
+    private static readonly Dictionary<string, string> Unrelated = new(StringComparer.Ordinal)
+    {
+        ["/api/cockpit"] = "the operator's panel, which sees everything",
+        ["/api/auth"] = "signing in and recovering an account",
+        ["/api/me"] = "the account itself; its muted channels are its own list of ids",
+        ["/api/social"] = "friends and direct conversations",
+        ["/api/client"] = "client releases and discovery",
+        ["/api/desktop"] = "desktop releases and sign-in",
+        ["/.well-known"] = "client discovery",
+        ["/health"] = "the instance's health",
+        ["/api/config"] = "runtime settings of the web client",
+        ["/api/uploads"] = "an upload is bound to no channel until it is posted, which the post decides",
+        ["/api/emoji"] = "the server's emoji",
+        ["/api/soundboard"] = "the server's soundboard",
+        ["/api/admin/soundboard"] = "the server's soundboard",
+        ["/api/admin/server"] = "the server's own settings",
+        ["/api/admin/roles"] = "roles; who they show channels to is told by ChannelAccessChanged",
+        ["/api/admin/members"] = "members and their roles; likewise",
+        ["/api/admin/bans"] = "bans",
+        ["POST /api/admin/sections"] = "creating a section, which is new and empty",
+        ["/api/notifications"] = "the inbox keeps what was written; nothing is written for a non-viewer",
+        ["/api/servers"] = "the servers an account is on or may join",
+        ["/hubs/app"] = "the hub, whose methods are walked below",
+        ["GET /api/admin/audit"] = "the audit log names private channels to whoever may read it, as documented",
+        ["DELETE /api/admin/invites/{inviteId:guid}"] = "revoking an invite, which names no channel",
+        ["POST /api/admin/invites/{inviteId:guid}/members/{userId:guid}"] = "sending an invite, whose notice names no channel",
+        ["/api/android"] = "client releases",
+        ["/api/session"] = "the session itself",
+    };
+
+    [Fact]
+    public void EveryRouteIsProbedCoveredOrAboutSomethingElse()
+    {
+        using var factory = new StellarrWebApplicationFactory();
+        var routes = factory.Services.GetRequiredService<EndpointDataSource>().Endpoints
+            .OfType<RouteEndpoint>()
+            .SelectMany(endpoint => (endpoint.Metadata.GetMetadata<IHttpMethodMetadata>()?.HttpMethods ?? ["ANY"])
+                .Select(method => (Key: $"{method} {endpoint.RoutePattern.RawText?.TrimEnd('/')}", Path: endpoint.RoutePattern.RawText ?? "")))
+            .ToArray();
+        var decided = Routes.Keys.Concat(BodyRoutes.Keys).Concat(Covered.Keys).ToHashSet(StringComparer.Ordinal);
+
+        bool Unrelates(string entry, (string Key, string Path) route) => entry.Contains(' ', StringComparison.Ordinal)
+            ? entry == route.Key
+            : route.Path.StartsWith(entry, StringComparison.Ordinal);
+        var undecided = routes
+            .Where(route => !decided.Contains(route.Key) && !Unrelated.Keys.Any(entry => Unrelates(entry, route)))
+            .Select(route => route.Key)
+            .Distinct()
+            .Order(StringComparer.Ordinal)
+            .ToArray();
+        var unmapped = decided
+            .Concat(Unrelated.Keys.Where(x => x.Contains(' ', StringComparison.Ordinal)))
+            .Except(routes.Select(x => x.Key))
+            .Order(StringComparer.Ordinal)
+            .ToArray();
+        Assert.True(undecided.Length == 0, "No decision for: " + string.Join(", ", undecided));
+        Assert.True(unmapped.Length == 0, "Decided but not mapped: " + string.Join(", ", unmapped));
+    }
+
     [Theory]
     [InlineData("jo")]
     [InlineData("nils")]
