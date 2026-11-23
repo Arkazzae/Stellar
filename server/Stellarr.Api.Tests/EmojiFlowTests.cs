@@ -2,6 +2,7 @@ using System.Net;
 using System.Net.Http.Headers;
 using System.Net.Http.Json;
 using System.Text.Json;
+using Microsoft.EntityFrameworkCore;
 
 namespace Stellarr.Api.Tests;
 
@@ -46,11 +47,22 @@ public sealed class EmojiFlowTests : IClassFixture<StellarrWebApplicationFactory
             (await UploadAsync(owner, "mushris", TinyPng)).StatusCode);
         Assert.Equal(HttpStatusCode.Forbidden,
             (await member.DeleteAsync($"/api/emoji/{id}")).StatusCode);
+        string objectKey;
+        await using (var scope = _factory.OpenScope(out var db))
+        {
+            objectKey = await db.ServerEmoji.Where(x => x.Id == Guid.Parse(id!)).Select(x => x.ObjectKey).SingleAsync();
+        }
+
         Assert.Equal(HttpStatusCode.NoContent,
             (await owner.DeleteAsync($"/api/emoji/{id}")).StatusCode);
         Assert.Empty((await member.GetFromJsonAsync<JsonElement[]>("/api/emoji"))!);
         Assert.Equal(HttpStatusCode.NotFound,
             (await member.GetAsync(glyph)).StatusCode);
+        // The image is no upload the maintenance sweep would find.
+        await using (var scope = _factory.OpenScope(out var db))
+        {
+            Assert.True(await db.ObjectDeletions.AnyAsync(x => x.ObjectKey == objectKey));
+        }
     }
 
     [Fact]
