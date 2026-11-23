@@ -259,6 +259,120 @@ public sealed class DiscordImportWriterTests(StellarrWebApplicationFactory facto
     }
 
     [Fact]
+    public async Task AThreadCompletedBeforeItsChannelWaitsForTheWholeHistory()
+    {
+        var guild = new DiscordFakeGuild().Channel("100", "general");
+        guild.Message("1000", "100", "35", "the question", minute: 1);
+        guild.Message("1001", "100", "36", "the starter, which answers it", minute: 2, replyTo: "1000");
+        guild.Thread("1001", "100", "side talk");
+        guild.Message("1003", "1001", "35", "in the thread", minute: 3);
+        var serverId = await NewServerAsync("ada");
+        var bot = guild.Bot();
+        var snapshot = await bot.ReadServerAsync(DiscordFakeGuild.Id, CancellationToken.None);
+        await using var scope = factory.OpenScope(out var db);
+        var writer = new DiscordImportWriter(db, new DiscordTestClock());
+        var import = await writer.StartAsync(serverId, Accounts["ada"].Id, snapshot, CancellationToken.None);
+        await writer.WriteStructureAsync(import, snapshot, CancellationToken.None);
+        var history = await ToListAsync(bot.ReadMessagesAsync("100"));
+
+        // The newest page holds the starter but not what the starter answers.
+        await writer.WriteMessagesAsync(import, snapshot, "100", history.Take(1).ToList(), null, CancellationToken.None);
+        await writer.WriteMessagesAsync(
+            import, snapshot, "1001", await ToListAsync(bot.ReadMessagesAsync("1001")), null, CancellationToken.None);
+        var early = await writer.CompleteChannelAsync(import, "1001", CancellationToken.None);
+        await writer.WriteMessagesAsync(import, snapshot, "100", history.Skip(1).ToList(), null, CancellationToken.None);
+        var late = await writer.CompleteChannelAsync(import, "100", CancellationToken.None);
+
+        Assert.True(early.Waiting);
+        Assert.Equal(1, late.ThreadsLinked);
+        var root = DiscordImportNames.MessageId(serverId, "1000");
+        foreach (var id in new[] { "1001", "1003" })
+        {
+            Assert.Equal(root, (await db.Messages.AsNoTracking()
+                .SingleAsync(x => x.Id == DiscordImportNames.MessageId(serverId, id))).ReplyToMessageId);
+        }
+    }
+
+    [Fact]
+    public async Task AnIdAlreadyTakenOrATextTooLongIsLeftOutAndCounted()
+    {
+        var guild = new DiscordFakeGuild().Channel("100", "general");
+        guild.Message("1001", "100", "38", "somebody sent a message under my id first", minute: 1);
+        guild.Message("1002", "100", "38", new string('x', MessageLimits.MaxContentLength + 1), minute: 2);
+        guild.Message("1003", "100", "38", "fine", minute: 3);
+        var serverId = await NewServerAsync("ada");
+        using var ada = await SignInAsync("ada");
+        Guid general;
+        await using (var scope = factory.OpenScope(out var db))
+        {
+            general = await db.Channels.Where(x => x.ServerId == serverId && x.Name == "general").Select(x => x.Id).SingleAsync();
+        }
+
+        // A client chooses the id of what it sends.
+        var squatted = await ada.SendAsync(new HttpRequestMessage(HttpMethod.Post, $"/api/channels/{general}/messages")
+        {
+            Content = JsonContent.Create(new { content = "mine", clientMessageId = DiscordImportNames.MessageId(serverId, "1001") }),
+            Headers = { { ServerAccess.HeaderName, serverId.ToString() } },
+        });
+        squatted.EnsureSuccessStatusCode();
+
+        var run = await RunAsync(serverId, guild);
+
+        Assert.Equal(1, run.Written);
+        Assert.Equal(
+            new Dictionary<DiscordSkipReason, int> { [DiscordSkipReason.IdTaken] = 1, [DiscordSkipReason.TooLong] = 1 },
+            run.Skipped);
+        await using (var scope = factory.OpenScope(out var db))
+        {
+            Assert.Equal("mine", (await db.Messages.SingleAsync(x => x.Id == DiscordImportNames.MessageId(serverId, "1001"))).Content);
+        }
+    }
+
+    [Fact]
+    public async Task ADeletedChannelStaysDeletedAndTheRecordOutlivesItsServer()
+    {
+        var guild = new DiscordFakeGuild().Category("900", "Talk", 0).Channel("100", "general", parent: "900").Channel("101", "other");
+        guild.Message("1001", "100", "39", "kept", minute: 1);
+        guild.Message("1101", "101", "39", "in the channel that goes", minute: 2);
+        var serverId = await NewServerAsync("ada");
+        var first = await RunAsync(serverId, guild);
+        using var ada = await SignInAsync("ada");
+        var other = await ChannelIdAsync(serverId, "101");
+        Assert.Equal(HttpStatusCode.NoContent, (await ada.SendAsync(new HttpRequestMessage(HttpMethod.Delete, $"/api/admin/channels/{other}")
+        {
+            Headers = { { ServerAccess.HeaderName, serverId.ToString() } },
+        })).StatusCode);
+        guild.Message("1102", "101", "39", "said on Discord after the channel went here", minute: 3);
+
+        var again = await RunAsync(serverId, guild);
+
+        Assert.Equal((0, 0), (again.Structure.ChannelsMade, again.Written));
+        Assert.Equal(new Dictionary<DiscordSkipReason, int> { [DiscordSkipReason.ChannelRemoved] = 1 }, again.Skipped);
+        await using (var scope = factory.OpenScope(out var db))
+        {
+            Assert.Null((await db.DiscordImportChannels.SingleAsync(x => x.ServerId == serverId && x.DiscordId == "101")).ChannelId);
+        }
+
+        Assert.Equal(HttpStatusCode.NoContent, (await ada.SendAsync(new HttpRequestMessage(HttpMethod.Delete, "/api/admin/server")
+        {
+            Headers = { { ServerAccess.HeaderName, serverId.ToString() } },
+        })).StatusCode);
+        await using (var scope = factory.OpenScope(out var db))
+        {
+            Assert.Equal(
+                [(Guid?)null, null],
+                await db.DiscordImports.Where(x => x.Id == first.Import.Id || x.Id == again.Import.Id).Select(x => x.ServerId).ToListAsync());
+            Assert.False(await db.DiscordImportChannels.AnyAsync(x => x.ServerId == serverId));
+            Assert.False(await db.DiscordImportSections.AnyAsync(x => x.ServerId == serverId));
+            Assert.False(await db.DiscordImportMessages.AnyAsync(x => x.ServerId == serverId));
+            // Accounts are not removed with a server: the placeholder and what made it stay for an undo.
+            var account = await db.DiscordImportAccounts.SingleAsync(x => x.DiscordId == "39");
+            Assert.Equal(first.Import.Id, account.ImportId);
+            Assert.True(await db.Users.AnyAsync(x => x.Id == account.UserId && x.Origin == AccountOrigin.Discord));
+        }
+    }
+
+    [Fact]
     public async Task WhatHasNoShapeIsLeftOutAndCountedOnce()
     {
         var guild = new DiscordFakeGuild()

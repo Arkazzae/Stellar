@@ -27,9 +27,10 @@ public sealed partial class DiscordImportWriter
     /// message (to its root, if it is a reply itself). One with no such
     /// message (a forum post, a private thread, a thread whose message was
     /// deleted) takes its first message as the root, which gets the thread's
-    /// name as a bold first line. Whether the message is there is only known
-    /// for good once the parent channel is complete, so a thread completed
-    /// before it waits, and completing the parent links it.
+    /// name as a bold first line. Whether the message is there, and what it
+    /// answers, is only known for good once the parent channel is complete, so
+    /// such a thread completed before it waits, and completing the parent
+    /// links it, and links again the ones it linked before.
     /// </para>
     /// <para>
     /// It can be called again, as the attachment stage will once it has
@@ -64,9 +65,13 @@ public sealed partial class DiscordImportWriter
         }
 
         await LinkRepliesAsync(serverId, record, result, cancellationToken);
+        // The threads that waited for this channel, and those that grew from
+        // one of its messages, whose root a new completion may have moved.
+        var forum = record.DiscordType is DiscordChannelType.Forum or DiscordChannelType.Media;
         var threads = await db.DiscordImportChannels.AsNoTracking()
             .Where(x => x.ServerId == serverId && x.ParentDiscordId == record.DiscordId &&
-                x.Kind == DiscordImportChannelKind.Thread && x.CompletedAt != null && x.LinkedAt == null)
+                x.Kind == DiscordImportChannelKind.Thread && x.CompletedAt != null &&
+                (x.LinkedAt == null || (!forum && x.StarterMessageId != null)))
             .ToListAsync(cancellationToken);
         foreach (var thread in threads.OrderBy(x => x.DiscordId, DiscordImportNames.Snowflakes))
         {
@@ -196,22 +201,24 @@ public sealed partial class DiscordImportWriter
         var forum = thread.DiscordType is DiscordChannelType.Forum or DiscordChannelType.Media;
 
         // A thread under a text channel grew from one of its messages, when
-        // that message is there. In a forum, the post's own first message
+        // that message is there; what it answers is only certain once the
+        // whole channel is read. In a forum, the post's own first message
         // opens it, inside the thread.
         Guid? root = null;
         if (!forum && parent is not null && thread.StarterMessageId is { } starterId)
         {
+            if (parent.CompletedAt is null)
+            {
+                result.Waiting = true;
+                return;
+            }
+
             var nodes = new Dictionary<string, Node>(StringComparer.Ordinal);
             await LoadChainsAsync(serverId, parent.DiscordId, nodes, [starterId], cancellationToken);
             var starter = nodes[starterId];
             if (starter.MessageId is { } written)
             {
                 root = RootOf(starter, nodes) ?? written;
-            }
-            else if (parent.CompletedAt is null)
-            {
-                result.Waiting = true;
-                return;
             }
         }
 
