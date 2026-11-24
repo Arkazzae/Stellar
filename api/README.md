@@ -60,6 +60,7 @@ client_settings/ a group: the sections of settings a client keeps on the account
 emoji/           a group: a server's custom emoji, their upload and image
 own_profile/     a group: the own profile, preferences and join sound
 soundboard/      a group: a server's sounds, their order and switches
+account_security/ a group: the security page, sessions, the password and the address, from a session
 health/          a group: /health/live and /health/ready
 releases/        a group: the discovery document and the desktop and Android builds
 second_step/     a group: the second half of a sign-in, a passkey alone, an operator's recovery credential, a forgotten password
