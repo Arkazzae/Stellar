@@ -14,6 +14,7 @@ name = "stellarr-api"
 path = "src/main.rs"
 
 [dependencies]
+stellarr-discord = { path = "../discord" }
 stellarr-embeds = { path = "../embeds" }
 stellarr-mail = { path = "../mail" }
 stellarr-mentions = { path = "../mentions" }

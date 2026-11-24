@@ -16,6 +16,7 @@ pub mod admission;
 pub mod auth;
 pub mod background;
 pub mod database;
+pub mod discord_import;
 pub mod encoding;
 pub mod events;
 pub mod http;
