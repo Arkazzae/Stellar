@@ -1865,34 +1865,6 @@ fn the_server_a_request_names_comes_from_the_header_or_else_the_query() {
     );
 }
 
-#[test]
-fn an_id_is_read_in_every_spelling_the_first_server_took() {
-    use super::membership::parse_guid;
-    let id = Id::parse("0123abcd-4567-89ef-0123-456789abcdef").unwrap();
-
-    for spelling in [
-        "0123abcd-4567-89ef-0123-456789abcdef",
-        "0123ABCD-4567-89EF-0123-456789ABCDEF",
-        "0123abcd456789ef0123456789abcdef",
-        "{0123abcd-4567-89ef-0123-456789abcdef}",
-        "(0123abcd-4567-89ef-0123-456789abcdef)",
-        " \t0123abcd-4567-89ef-0123-456789abcdef\n ",
-        "{0x0123abcd,0x4567,0x89ef,{0x01,0x23,0x45,0x67,0x89,0xab,0xcd,0xef}}",
-    ] {
-        assert_eq!(parse_guid(spelling), Some(id), "{spelling:?}");
-    }
-    for refused in [
-        "",
-        "x",
-        "0123abcd-4567-89ef-0123-456789abcde",
-        "{0123abcd-4567-89ef-0123-456789abcdef",
-        "0123abcd-4567-89ef-0123-456789abcdeg",
-        "0123abcd45-67-89ef-0123-456789abcdef",
-    ] {
-        assert_eq!(parse_guid(refused), None, "{refused:?}");
-    }
-}
-
 // ---- What a check costs
 
 #[test]

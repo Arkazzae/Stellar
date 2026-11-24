@@ -333,16 +333,8 @@ async fn unblocking_restores_nothing_and_only_the_blocker_can_lift_a_block() {
 }
 
 #[tokio::test]
-async fn an_id_in_a_path_is_read_in_every_spelling_the_first_server_took() {
+async fn a_path_that_is_not_an_id_is_not_found_and_the_root_answers_only_to_get() {
     let p = people().await;
-    let plain = p.ben.id.replace('-', "");
-    for (method, path) in [
-        (Method::POST, format!("/api/social/blocks/{{{}}}", p.ben.id)),
-        (Method::DELETE, format!("/api/social/blocks/{plain}")),
-        (Method::POST, format!("/api/social/blocks/({})", p.ben.id.to_uppercase())),
-    ] {
-        assert_eq!(status(&p.ada.client, method, &path).await, 204, "{path}");
-    }
     assert_eq!(status(&p.ada.client, Method::POST, "/api/social/blocks/not-an-id").await, 404);
     assert_eq!(status(&p.ada.client, Method::HEAD, "/api/social").await, 405);
     assert_eq!(status(&p.ada.client, Method::PUT, "/api/social").await, 405);

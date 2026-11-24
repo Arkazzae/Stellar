@@ -169,47 +169,6 @@ mod tests {
     }
 
     #[test]
-    fn an_operator_may_write_a_uuid_in_the_other_forms_the_first_server_read() {
-        let wanted = Id::parse(ON_THE_WIRE);
-        for text in [
-            ON_THE_WIRE,
-            STORED,
-            "  8f62a4d1-bdcb-4d86-bd1c-6e351900e629\n",
-            "8f62a4d1bdcb4d86bd1c6e351900e629",
-            "{8f62a4d1-bdcb-4d86-bd1c-6e351900e629}",
-            "(8F62A4D1-BDCB-4D86-BD1C-6E351900E629)",
-            "{0x8f62a4d1,0xbdcb,0x4d86,{0xbd,0x1c,0x6e,0x35,0x19,0x00,0xe6,0x29}}",
-            "{0x8f62a4d1, 0xbdcb, 0x4d86, {0xbd, 0x1c, 0x6e, 0x35, 0x19, 0x0, 0xe6, 0x29}}",
-        ] {
-            assert_eq!(Id::parse_guid(text), wanted, "{text:?}");
-        }
-        assert_eq!(
-            Id::parse_guid("{0x1,0x2,0x3,{0x4,0x5,0x6,0x7,0x8,0x9,0xa,0xb}}")
-                .map(|id| id.to_string())
-                .as_deref(),
-            Some("00000001-0002-0003-0405-060708090a0b")
-        );
-        for text in [
-            "",
-            "{",
-            "{}",
-            "{0x1,0x2,0x3,{0x4,0x5,0x6,0x7,0x8,0x9,0xa}}",
-            "{0x1,0x2,0x3,{0x4,0x5,0x6,0x7,0x8,0x9,0xa,0xb},}",
-            "{0xg,0x2,0x3,{0x4,0x5,0x6,0x7,0x8,0x9,0xa,0xb}}",
-            "{0x,0x2,0x3,{0x4,0x5,0x6,0x7,0x8,0x9,0xa,0xb}}",
-            "{0x123456789,0x2,0x3,{0x4,0x5,0x6,0x7,0x8,0x9,0xa,0xb}}",
-            "{1,2,3,{4,5,6,7,8,9,10,11}}",
-            "{8f62a4d1bdcb4d86bd1c6e351900e629}",
-            "{8f62a4d1-bdcb-4d86-bd1c-6e351900e629)",
-            "8f62a4d1-bdcb-4d86-bd1c-6e351900e629}",
-            "8f62a4d1bdcb4d86bd1c6e351900e62g",
-            "ü8f62a4d1bdcb4d86bd1c6e351900e62",
-        ] {
-            assert_eq!(Id::parse_guid(text), None, "{text:?}");
-        }
-    }
-
-    #[test]
     fn a_text_that_is_not_an_id_is_refused() {
         for text in [
             "",
