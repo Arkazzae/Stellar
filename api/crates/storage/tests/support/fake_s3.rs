@@ -89,6 +89,13 @@ pub struct State {
     next_id: u64,
 }
 
+impl State {
+    /// The ids of multipart uploads that are neither completed nor aborted.
+    pub fn open_upload_ids(&self) -> Vec<String> {
+        self.uploads.keys().cloned().collect()
+    }
+}
+
 pub struct FakeS3 {
     pub endpoint: String,
     pub state: Arc<Mutex<State>>,
@@ -448,7 +455,12 @@ fn handle(state: &mut State, request: &Incoming) -> Outgoing {
         if *count == 0 {
             state.settings.faults.remove(at);
         }
-        return Outgoing::error(status, "InternalError", "injected");
+        let code = if status >= 500 {
+            "InternalError"
+        } else {
+            "InvalidRequest"
+        };
+        return Outgoing::error(status, code, "injected");
     }
     if let Err(response) = verify(request) {
         return response;
@@ -507,7 +519,13 @@ fn list(state: &State, bucket: &str, query: &str) -> Outgoing {
     } else {
         page
     };
-    let after = query_value(query, "continuation-token");
+    // The token is opaque, as a store's is: not a key, and not encoded the way keys are.
+    let after = query_value(query, "continuation-token").and_then(|t| {
+        let bytes: Option<Vec<u8>> = (0..t.len() / 2)
+            .map(|i| u8::from_str_radix(t.get(i * 2..i * 2 + 2)?, 16).ok())
+            .collect();
+        String::from_utf8(bytes?).ok()
+    });
     let url = query_value(query, "encoding-type").as_deref() == Some("url");
     let encode = |key: &str| {
         if url {
@@ -541,7 +559,7 @@ fn list(state: &State, bucket: &str, query: &str) -> Outgoing {
     let token = if truncated {
         format!(
             "<NextContinuationToken>{}</NextContinuationToken>",
-            encode_component(last.as_deref().unwrap_or_default())
+            stellarr_s3::internals::hex(last.as_deref().unwrap_or_default().as_bytes())
         )
     } else {
         String::new()
