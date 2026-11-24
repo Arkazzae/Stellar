@@ -279,6 +279,9 @@ async function ask() {
   // alerts are sent by a worker on its own clock: they are collected and
   // printed once, sorted, after it has had time to look more than once.
   const alerts = [];
+  const tokens = new Map();
+  const confirmFor = (label, address, again = false) =>
+    post(label, anonymous, "/api/auth/email/confirm", { token: tokens.get(address) ?? "missing" });
   const mailNow = async (label, expect = 0, wait = 8000) => {
     out(`## mail: ${label}`);
     const until = Date.now() + wait;
@@ -292,7 +295,10 @@ async function ask() {
       }
       await sleep(500);
     }
-    for (const message of confirmations) out(scrub(message));
+    for (const message of confirmations) {
+      out(scrub(message));
+      tokens.set(message.match(/^TO ([^ ]+)/)[1], message.match(/token=([A-Za-z0-9_-]+)/)?.[1]);
+    }
     await clearMail();
   };
   const alertsAtTheEnd = async () => {
@@ -385,6 +391,10 @@ async function ask() {
   await mailNow("the confirmation of the first address", 1);
   await post("solo: address, a second one while the first waits", solo, "/api/me/email", { email: "solo-newer@example.test", password: PASSWORD });
   await mailNow("the confirmation of the second address", 1);
+  await confirmFor("solo: confirm the first address, which the second replaced", "solo-new@example.test");
+  await confirmFor("solo: confirm the second address", "solo-newer@example.test");
+  await confirmFor("solo: confirm it again", "solo-newer@example.test");
+  await get("solo: the events after the address changed", solo, `${secure}/events`);
   await post("solo: confirm, nonsense", anonymous, "/api/auth/email/confirm", { token: "nonsense" });
   await post("solo: confirm, too long", anonymous, "/api/auth/email/confirm", { token: "x".repeat(257) });
   await post("solo: confirm, blank", anonymous, "/api/auth/email/confirm", { token: "   " });
@@ -412,6 +422,10 @@ async function ask() {
   await post("old: address, wrong password", old, "/api/me/email", { email: "old-new@example.test", password: "nope-nope-nope" });
   await post("old: address, right password", old, "/api/me/email", { email: "old-new@example.test", password: PASSWORD });
   await mailNow("old", 1);
+  await del("old: end the other tab, which did not ask", old, `${secure}/sessions/${await sessionIdOf(tab("old", "b"))}`);
+  await confirmFor("old: confirm the address of the session that is still there", "old-new@example.test");
+  await post("old: address, from the tab that is left", old, "/api/me/email", { email: "old-newer@example.test", password: PASSWORD });
+  await mailNow("old, again", 1);
   await post("old: first password, has one", old, `${secure}/password`, { newPassword: "A-long-new-password" });
 
   // ----- a second step; one browser passed it lately, the other did not
@@ -453,12 +467,19 @@ async function ask() {
   await post("armed fresh: address, wrong password", armedFresh, "/api/me/email", { email: "armed-new@example.test", password: "nope-nope-nope" });
   await post("armed fresh: address, right password", armedFresh, "/api/me/email", { email: "armed-new@example.test", password: PASSWORD });
   await mailNow("armed", 1);
+  await get("armed fresh: the page before the address changes", armedFresh, secure);
+  await confirmFor("armed: confirm the address", "armed-new@example.test");
+  await get("armed fresh: the page after the address changed", armedFresh, secure);
+  await get("armed fresh: the events after the address changed", armedFresh, `${secure}/events`);
+  await post("armed fresh: address, again", armedFresh, "/api/me/email", { email: "armed-newer@example.test", password: PASSWORD });
+  await mailNow("armed, a second address", 1);
   await del("armed fresh: forget a remembered browser", armedFresh, `${secure}/trusted/${deviceId}`);
   await del("armed fresh: forget it again", armedFresh, `${secure}/trusted/${deviceId}`);
   await get("armed fresh: the page, one device left", armedFresh, secure);
   await post("armed fresh: change the password, wrong", armedFresh, "/api/me/password", { currentPassword: "nope-nope-nope", newPassword: "A-long-new-password" });
   await post("armed fresh: change the password", armedFresh, "/api/me/password", { currentPassword: PASSWORD, newPassword: "A-long-new-password" }, { ends: true });
   await get("armed fresh: the page afterwards", armedFresh, secure);
+  await confirmFor("armed: confirm the address after the password changed", "armed-newer@example.test");
   await get("armed: the stale browser is out", armedStale, "/api/session");
 
   // ----- taking methods away
@@ -533,6 +554,10 @@ async function ask() {
   await post("mailer: address, right password", mailer, "/api/me/email", { email: "mailer-new@example.test", password: PASSWORD });
   await mailNow("mailer", 1);
   await get("mailer: the page", mailer, secure);
+  await confirmFor("mailer: confirm the address", "mailer-new@example.test");
+  await get("mailer: the page afterwards", mailer, secure);
+  await get("mailer: the events afterwards", mailer, `${secure}/events`);
+  await get("mailer: the other tab", tab("mailer", "b"), "/api/session");
 
   await alertsAtTheEnd();
   writeFileSync(args.out, lines.join("\n") + "\n");

@@ -8,13 +8,13 @@ use axum::response::{IntoResponse, Response};
 use serde::{Deserialize, Serialize};
 use stellarr_messages::MessageKey;
 
-use super::{context, fresh_proof_needed, guid, no_store, providers, trusted_device_of};
+use super::{context, fresh_proof_needed, no_store, providers, trusted_device_of};
 use crate::auth::ceremony::{self, Changed, FromSession, Removed, Started};
 use crate::auth::{Caller, ways_in};
 use crate::http::{ApiError, ApiResult, Json, Origin, Path, Problem, json_response, with_cookie, with_session_cookie};
 use crate::servers::Object;
 use crate::state::AppState;
-use crate::values::Id;
+use crate::values::{Guid, Id};
 
 /// What a change of the second step may ask for besides the session's own
 /// proof: the account's current password.
@@ -79,14 +79,9 @@ pub async fn remove(
     State(state): State<AppState>,
     caller: Caller,
     origin: Origin,
-    Path(method): Path<String>,
+    Path(Guid(method)): Path<Guid>,
     request: Result<Option<Json<Object<Proof>>>, ApiError>,
 ) -> Response {
-    // An id that is not one names no route, so nothing of the page's applies.
-    let method = match guid(&method) {
-        Ok(method) => method,
-        Err(refusal) => return refusal.into_response(),
-    };
     let request = match required(request) {
         Ok(request) => request,
         Err(refusal) => return *refusal,
@@ -151,12 +146,8 @@ pub async fn forget_trusted_device(
     State(state): State<AppState>,
     caller: Caller,
     origin: Origin,
-    Path(device): Path<String>,
+    Path(Guid(device)): Path<Guid>,
 ) -> Response {
-    let device = match guid(&device) {
-        Ok(device) => device,
-        Err(refusal) => return refusal.into_response(),
-    };
     no_store(forget(&state, caller, &origin, device).await)
 }
 

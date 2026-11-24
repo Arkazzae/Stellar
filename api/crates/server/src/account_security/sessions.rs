@@ -8,12 +8,12 @@ use axum::response::{IntoResponse, Response};
 use rusqlite::params;
 use serde::Serialize;
 
-use super::{guid, no_store};
+use super::no_store;
 use crate::auth::{Caller, events, session};
 use crate::database::DbError;
 use crate::http::{ApiError, ApiResult, Origin, Path, json_response};
 use crate::state::AppState;
-use crate::values::{Id, Timestamp};
+use crate::values::{Guid, Id, Timestamp};
 
 /// The most sessions the list shows.
 const LISTED: i64 = 100;
@@ -70,12 +70,8 @@ pub async fn revoke(
     State(state): State<AppState>,
     caller: Caller,
     origin: Origin,
-    Path(target): Path<String>,
+    Path(Guid(target)): Path<Guid>,
 ) -> Response {
-    let target = match guid(&target) {
-        Ok(target) => target,
-        Err(refusal) => return refusal.into_response(),
-    };
     no_store(revoking(&state, caller, &origin, target).await)
 }
 

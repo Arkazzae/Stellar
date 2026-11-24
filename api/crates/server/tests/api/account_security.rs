@@ -1254,6 +1254,214 @@ async fn a_mail_that_cannot_be_sent_leaves_the_request_written() {
 }
 
 // ---------------------------------------------------------------------------
+// Confirming the address from the link in the mail.
+
+const CONFIRM: &str = "/api/auth/email/confirm";
+
+/// An instance that sends mail to a sink, with the founder signed in.
+async fn with_mail() -> (Server, Person, Connection, Sink) {
+    let server = Server::start_with(&[("Operations__PublicUrl", "https://chat.test")]).await;
+    let owner = server.found("owner").await;
+    let db = server.database();
+    let sink = Sink::start().await;
+    send_mail_to(&db, sink.port, false);
+    (server, owner, db, sink)
+}
+
+/// Asks for the address to change and reads the token out of the mail that
+/// arrives for it.
+async fn ask_for(client: &Client, sink: &Sink, email: &str) -> String {
+    ask_for_with(client, sink, email, PASSWORD).await
+}
+
+async fn confirm(client: &Client, token: &str) -> String {
+    let response = send(client, Method::POST, CONFIRM, Some(&json!({ "token": token }))).await;
+    assert_eq!(response.header("content-type"), Some("application/json; charset=utf-8"));
+    result(&response)
+}
+
+fn email_of(db: &Connection, user: Id) -> (String, String, Option<String>) {
+    db.query_row(
+        "SELECT \"Email\", \"NormalizedEmail\", \"ProviderVerifiedEmail\" FROM \"Users\" WHERE \"Id\" = ?1",
+        [user],
+        |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
+    )
+    .unwrap()
+}
+
+#[tokio::test]
+async fn the_address_changes_from_the_link_and_the_old_one_is_told() {
+    let (server, owner, db, sink) = with_mail().await;
+    let user = user_of(&owner);
+    let other_tab = server.sign_in(&owner).await;
+    // A confirmed mail method at the old address, one waiting for its first code, one elsewhere that is already the new one.
+    let old = add_method(&db, user, "email", Some("OWNER@EXAMPLE.TEST"), 2);
+    let waiting = add_method(&db, user, "email", Some("WAITING@EXAMPLE.TEST"), 1);
+    db.execute("UPDATE \"MfaMethods\" SET \"ConfirmedAt\" = NULL WHERE \"Id\" = ?1", [waiting]).unwrap();
+    let kept = add_method(&db, user, "email", Some("OWNER-NEW@EXAMPLE.TEST"), 0);
+    let totp = add_method(&db, user, "totp", None, 1);
+    db.execute(
+        "INSERT INTO \"PasswordResetTokens\" (\"Id\", \"UserId\", \"TokenHash\", \"CreatedAt\", \"ExpiresAt\") VALUES (?1, ?2, 'h', ?3, ?3)",
+        params![Id::random(), user, Timestamp::now()],
+    )
+    .unwrap();
+    add_codes(&db, user, 3);
+    add_device(&db, user);
+    set_session(&db, session_of(&owner.client).await, 10, Some(10));
+    let token = ask_for(&owner.client, &sink, "Owner-New@Example.Test").await;
+    let version: i64 = db.query_row("SELECT \"SessionVersion\" FROM \"Users\" WHERE \"Id\" = ?1", [user], |row| row.get(0)).unwrap();
+    let before = events_of(&db, user).len();
+    let notified = count(&db, "SELECT COUNT(*) FROM \"SecurityNotifications\" WHERE \"UserId\" = ?1", user);
+
+    // Nobody needs to be signed in to open the link.
+    let first = confirm(&server.anonymous(), &token).await;
+    let again = confirm(&server.anonymous(), &token).await;
+
+    assert_eq!(first, "changed");
+    assert_eq!(again, "invalid", "a link works once");
+    let (email, normalized, vouched) = email_of(&db, user);
+    assert_eq!((email.as_str(), normalized.as_str(), vouched), ("Owner-New@Example.Test", "OWNER-NEW@EXAMPLE.TEST", None));
+    let events = new_events(&db, user, before);
+    assert_eq!(
+        events,
+        [
+            ("method-removed".to_string(), "email changed".to_string()),
+            ("method-removed".to_string(), "email changed".to_string()),
+            ("email-changed".to_string(), "address changed".to_string()),
+        ]
+    );
+    let revoked: Vec<bool> = [old, waiting, kept, totp]
+        .iter()
+        .map(|id| db.query_row("SELECT \"RevokedAt\" IS NOT NULL FROM \"MfaMethods\" WHERE \"Id\" = ?1", [id], |row| row.get(0)).unwrap())
+        .collect();
+    assert_eq!(revoked, [true, true, false, false]);
+    assert_eq!(count(&db, "SELECT COUNT(*) FROM \"PasswordResetTokens\" WHERE \"UserId\" = ?1 AND \"UsedAt\" IS NULL", user), 0);
+    assert_eq!(count(&db, "SELECT COUNT(*) FROM \"EmailChangeRequests\" WHERE \"UserId\" = ?1 AND \"UsedAt\" IS NULL", user), 0);
+    // Only the address changes: no new version, sessions, devices or codes touched.
+    let after: i64 = db.query_row("SELECT \"SessionVersion\" FROM \"Users\" WHERE \"Id\" = ?1", [user], |row| row.get(0)).unwrap();
+    assert_eq!(after, version);
+    assert_eq!(other_tab.get("/api/session").await.json::<Value>()["user"]["username"], "owner");
+    assert_eq!(count(&db, "SELECT COUNT(*) FROM \"TrustedDevices\" WHERE \"UserId\" = ?1 AND \"RevokedAt\" IS NULL", user), 1);
+    assert_eq!(count(&db, "SELECT COUNT(*) FROM \"RecoveryCodes\" WHERE \"UserId\" = ?1 AND \"UsedAt\" IS NULL", user), 3);
+    // The page no longer lists the methods of the old address.
+    let methods = page(&owner.client).await["methods"].as_array().unwrap().iter().map(|m| m["id"].as_str().unwrap().to_string()).collect::<Vec<_>>();
+    assert_eq!(methods.len(), 2);
+    assert!(methods.contains(&kept.to_string()) && methods.contains(&totp.to_string()));
+    // The address that was replaced was verified by its mail method, so it is told, and the method removals tell nobody.
+    let told: Vec<(String, String)> = db
+        .prepare("SELECT e.\"Kind\", n.\"EmailAddress\" FROM \"SecurityNotifications\" n JOIN \"SecurityEvents\" e ON e.\"Id\" = n.\"SecurityEventId\" WHERE n.\"UserId\" = ?1 AND e.\"Kind\" IN ('email-changed', 'method-removed')")
+        .unwrap()
+        .query_map([user], |row| Ok((row.get(0)?, row.get(1)?)))
+        .unwrap()
+        .collect::<Result<_, _>>()
+        .unwrap();
+    assert_eq!(told, [("email-changed".to_string(), "owner@example.test".to_string())]);
+    assert_eq!(count(&db, "SELECT COUNT(*) FROM \"SecurityNotifications\" WHERE \"UserId\" = ?1", user), notified + 1);
+}
+
+#[tokio::test]
+async fn a_token_that_is_nothing_or_too_long_is_invalid() {
+    let (server, _owner, _db, _sink) = with_mail().await;
+    let anonymous = server.anonymous();
+    for token in [json!(""), json!("   "), json!("x".repeat(257)), json!("nonsense"), Value::Null] {
+        let response = send(&anonymous, Method::POST, CONFIRM, Some(&json!({ "token": token }))).await;
+        assert_eq!(result(&response), "invalid", "{token}");
+    }
+    let missing = send(&anonymous, Method::POST, CONFIRM, Some(&json!({}))).await;
+    assert_eq!(result(&missing), "invalid");
+    let array = send(&anonymous, Method::POST, CONFIRM, Some(&json!(["x"]))).await;
+    assert_eq!(array.status, 400);
+}
+
+#[tokio::test]
+async fn a_link_that_ran_out_or_was_replaced_or_lost_its_session_or_account_state_is_invalid() {
+    let (server, owner, db, sink) = with_mail().await;
+    let user = user_of(&owner);
+    let anonymous = server.anonymous();
+
+    // Ran out.
+    let token = ask_for(&owner.client, &sink, "a@example.test").await;
+    db.execute("UPDATE \"EmailChangeRequests\" SET \"ExpiresAt\" = ?1", [ago(1)]).unwrap();
+    assert_eq!(confirm(&anonymous, &token).await, "invalid");
+
+    // A second change replaces the one that waits.
+    let first = ask_for(&owner.client, &sink, "b@example.test").await;
+    let second = ask_for(&owner.client, &sink, "c@example.test").await;
+    assert_eq!(confirm(&anonymous, &first).await, "invalid");
+    assert_eq!(confirm(&anonymous, &second).await, "changed");
+    assert_eq!(email_of(&db, user).0, "c@example.test");
+
+    // The session that asked for it ends: the change dies with it.
+    let tab = server.sign_in(&owner).await;
+    let token = ask_for(&tab, &sink, "d@example.test").await;
+    let tab_session = session_of(&tab).await;
+    assert_eq!(send(&owner.client, Method::DELETE, &format!("{SECURE}/sessions/{tab_session}"), None).await.status, 204);
+    assert_eq!(confirm(&anonymous, &token).await, "invalid");
+
+    // A password change moves the account on.
+    let token = ask_for(&owner.client, &sink, "e@example.test").await;
+    let changed = send(&owner.client, Method::POST, "/api/me/password", Some(&json!({ "currentPassword": PASSWORD, "newPassword": NEW_PASSWORD }))).await;
+    assert_eq!(changed.status, 200);
+    assert_eq!(confirm(&anonymous, &token).await, "invalid");
+
+    // So does taking a second step away.
+    let totp = add_method(&db, user, "totp", None, 1);
+    set_session(&db, session_of(&owner.client).await, 10, Some(10));
+    let token = ask_for_with(&owner.client, &sink, "f@example.test", NEW_PASSWORD).await;
+    let removed = send(&owner.client, Method::POST, &format!("{SECURE}/mfa/{totp}/remove"), Some(&json!({}))).await;
+    assert_eq!(removed.status, 204);
+    assert_eq!(confirm(&anonymous, &token).await, "invalid");
+
+    // A disabled account, and one that waits for recovery.
+    let token = ask_for_with(&owner.client, &sink, "g@example.test", NEW_PASSWORD).await;
+    db.execute("UPDATE \"Users\" SET \"SecurityRecoveryRequired\" = 1 WHERE \"Id\" = ?1", [user]).unwrap();
+    assert_eq!(confirm(&anonymous, &token).await, "invalid");
+    db.execute("UPDATE \"Users\" SET \"SecurityRecoveryRequired\" = 0, \"IsDisabled\" = 1 WHERE \"Id\" = ?1", [user]).unwrap();
+    assert_eq!(confirm(&anonymous, &token).await, "invalid");
+    assert_eq!(email_of(&db, user).0, "c@example.test", "nothing of those changed it");
+}
+
+async fn ask_for_with(client: &Client, sink: &Sink, email: &str, password: &str) -> String {
+    let before = sink.mails().len();
+    let response = change_address(client, email, Some(password)).await;
+    assert_eq!(result(&response), "sent");
+    until("the mail", || sink.mails().len() > before).await;
+    let mail = sink.mails().pop().unwrap().replace("=\n", "").replace("=3D", "=");
+    let at = mail.find("confirm-email?token=").expect("a link") + "confirm-email?token=".len();
+    mail[at..].chars().take_while(|c| c.is_ascii_alphanumeric() || *c == '-' || *c == '_').collect()
+}
+
+#[tokio::test]
+async fn an_address_taken_while_the_link_waited_is_not_stolen() {
+    let (server, owner, db, sink) = with_mail().await;
+    let user = user_of(&owner);
+    let maya = server.register("maya").await;
+    let token = ask_for(&owner.client, &sink, "wanted@example.test").await;
+    // Somebody else gets it first, in another case.
+    db.execute("UPDATE \"Users\" SET \"Email\" = 'Wanted@Example.Test', \"NormalizedEmail\" = 'WANTED@EXAMPLE.TEST' WHERE \"Id\" = ?1", [user_of(&maya)]).unwrap();
+    let before = events_of(&db, user).len();
+
+    assert_eq!(confirm(&server.anonymous(), &token).await, "taken");
+
+    assert_eq!(email_of(&db, user).0, "owner@example.test");
+    assert_eq!(new_events(&db, user, before), []);
+    assert_eq!(count(&db, "SELECT COUNT(*) FROM \"EmailChangeRequests\" WHERE \"UserId\" = ?1 AND \"UsedAt\" IS NULL", user), 1, "the request is left as it was");
+}
+
+#[tokio::test]
+async fn the_link_changes_the_address_of_whoever_asked_whoever_opens_it() {
+    let (server, owner, db, sink) = with_mail().await;
+    let maya = server.register("maya").await;
+    let token = ask_for(&owner.client, &sink, "owner-new@example.test").await;
+
+    // Opened in the browser of somebody else, who is signed in.
+    assert_eq!(confirm(&maya.client, &token).await, "changed");
+
+    assert_eq!(email_of(&db, user_of(&owner)).0, "owner-new@example.test");
+    assert_eq!(email_of(&db, user_of(&maya)).0, "maya@example.test");
+}
+
+// ---------------------------------------------------------------------------
 // The limits.
 
 #[tokio::test]
@@ -1449,7 +1657,7 @@ mod hand_over {
             return Err(ApiError::internal("the challenge was not accepted"));
         };
         let code = totp::code_at(&secret, Timestamp::now()).expect("a code");
-        let confirmation = TotpConfirmation { method: Some(method), name: None, code: &code };
+        let confirmation = TotpConfirmation { method: Some(&method.to_string()), name: None, code: &code };
         match ceremony::confirm_totp(&state, &ask, confirmation, false, |_, _| Ok::<(), DbError>(())).await? {
             Enrolled::Done { completed, .. } => Ok(with_cookies(
                 json_response(
@@ -1468,7 +1676,7 @@ mod hand_over {
         let ask = Ask { context: &CONTEXT, preauth: preauth.as_ref(), challenge_id: &request.challenge_id };
         let later = Timestamp::now().plus(std::time::Duration::from_secs(30));
         let code = totp::code_at(request.secret.as_deref().unwrap_or(""), later).expect("a code");
-        match ceremony::answer(&state, &ask, Answer::Code { method: request.method, code: &code }, false, |_, _| Ok::<(), DbError>(())).await? {
+        match ceremony::answer(&state, &ask, Answer::Code { method: request.method.map(|id| id.to_string()).as_deref(), code: &code }, false, |_, _| Ok::<(), DbError>(())).await? {
             Answered::SignedIn { completed, .. } => Ok(with_cookies(
                 json_response(StatusCode::OK, &json!({ "session": completed.session })),
                 &completed.cookies,
