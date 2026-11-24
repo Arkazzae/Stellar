@@ -7,7 +7,7 @@
 use axum::extract::{Request, State};
 use axum::http::StatusCode;
 use axum::response::Response;
-use rusqlite::{Connection, OptionalExtension, params};
+use rusqlite::{OptionalExtension, params};
 use serde::{Deserialize, Serialize};
 use stellarr_messages::MessageKey;
 
