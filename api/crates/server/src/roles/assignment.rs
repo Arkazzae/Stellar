@@ -226,7 +226,7 @@ pub(super) async fn assign(
             Ok(Announcement::after(tx, server, &before, &[user])?)
         })
         .await?;
-    announcement.publish(&state, server);
+    announcement.publish(&state, server).await;
     Ok(no_content())
 }
 
@@ -347,7 +347,7 @@ pub(super) async fn set(
         })
         .await?;
     if let Some(announcement) = announcement {
-        announcement.publish(&state, server);
+        announcement.publish(&state, server).await;
     }
     Ok(no_content())
 }

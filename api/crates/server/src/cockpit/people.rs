@@ -300,7 +300,7 @@ pub(super) async fn set_role(
             Ok(Announcement::after(tx, server, &view, &[user])?)
         })
         .await?;
-    done.publish(&state, server);
+    done.publish(&state, server).await;
     Ok(no_content())
 }
 
@@ -538,7 +538,7 @@ pub(super) async fn update_role(
             Ok((dto, announcement))
         })
         .await?;
-    announcement.publish(&state, server);
+    announcement.publish(&state, server).await;
     Ok(json_response(StatusCode::OK, &dto))
 }
 

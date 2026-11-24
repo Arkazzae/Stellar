@@ -124,6 +124,8 @@ pub async fn transfer(
         .await?;
     let changed = outcome?;
     access_changed::publish(state.events(), server, changed);
+    // The former owner may no longer hold what lets them sit where they do.
+    crate::voice::enforce(&state, server).await;
     Ok(StatusCode::NO_CONTENT)
 }
 
@@ -144,7 +146,7 @@ pub async fn delete(
         .database()
         .write({
             let state = state.clone();
-            move |tx| -> Result<Result<(), ApiError>, DbError> {
+            move |tx| -> Result<Result<Vec<Id>, ApiError>, DbError> {
                 let owns: bool = tx
                     .query_row(
                         "SELECT r.\"IsOwner\" FROM \"ServerMembers\" m JOIN \"ServerRoles\" r ON r.\"Id\" = m.\"RoleId\"
@@ -164,14 +166,21 @@ pub async fn delete(
                         .map_err(|e| DbError::Task(e.to_string()))?;
                     return Ok(Err(Problem::new(StatusCode::CONFLICT).title(title).into()));
                 }
+                // The voice rooms the server has, read before they go with it.
+                let rooms = crate::voice::voice_channels_of(tx, server)?;
                 if ownership::delete_server(tx, server)? {
-                    Ok(Ok(()))
+                    Ok(Ok(rooms))
                 } else {
                     Ok(Err(ApiError::not_found()))
                 }
             }
         })
         .await?;
-    outcome?;
+    let rooms = outcome?;
+    // Whoever sat in one of its voice rooms is taken out of it.
+    crate::voice::unseat(&state, server, Some(rooms))
+        .await
+        .announce(&state)
+        .await;
     Ok(StatusCode::NO_CONTENT)
 }

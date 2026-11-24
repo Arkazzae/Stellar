@@ -247,6 +247,8 @@ pub(super) async fn transfer(
         })
         .await?;
     access_changed::publish(state.events(), served, changed);
+    // The former owner may no longer hold what lets them sit where they do.
+    crate::voice::enforce(&state, served).await;
     Ok(no_content())
 }
 
@@ -263,9 +265,9 @@ pub(super) async fn delete(
     }
     let _turn = state.mutation_gate().enter().await;
     let messages = *state.messages();
-    state
+    let rooms = state
         .database()
-        .write(move |tx| -> Result<(), ApiError> {
+        .write(move |tx| -> Result<Vec<Id>, ApiError> {
             let name: Option<String> = tx
                 .query_row(
                     "SELECT \"Name\" FROM \"Servers\" WHERE \"Id\" = ?1",
@@ -276,6 +278,8 @@ pub(super) async fn delete(
             let Some(name) = name else {
                 return Err(ApiError::not_found());
             };
+            // The voice rooms the server has, read before they go with it.
+            let rooms = crate::voice::voice_channels_of(tx, served)?;
             if !ownership::delete_server(tx, served)? {
                 return Err(ApiError::not_found());
             }
@@ -285,8 +289,13 @@ pub(super) async fn delete(
                 caller.user,
                 messages.get(MessageKey::CockpitAuditServerDeleted, &[("name", &name)])?,
             )?;
-            Ok(())
+            Ok(rooms)
         })
         .await?;
+    // Whoever sat in one of its voice rooms is taken out of it.
+    crate::voice::unseat(&state, served, Some(rooms))
+        .await
+        .announce(&state)
+        .await;
     Ok(no_content())
 }

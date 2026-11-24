@@ -415,7 +415,7 @@ async fn set<const SECTION: bool>(
             ))
         })
         .await?;
-    announcement.publish(&state, server);
+    announcement.publish(&state, server).await;
     Ok(json_response(StatusCode::OK, &dto))
 }
 
@@ -478,7 +478,7 @@ async fn clear<const SECTION: bool>(
             Ok(Announcement::views_after(tx, server, &before)?)
         })
         .await?;
-    announcement.publish(&state, server);
+    announcement.publish(&state, server).await;
     Ok(no_content())
 }
 
@@ -557,7 +557,7 @@ async fn set_member<const SECTION: bool>(
             ))
         })
         .await?;
-    announcement.publish(&state, server);
+    announcement.publish(&state, server).await;
     Ok(json_response(StatusCode::OK, &dto))
 }
 
@@ -607,7 +607,7 @@ async fn clear_member<const SECTION: bool>(
             Ok(Announcement::views_after(tx, server, &before)?)
         })
         .await?;
-    announcement.publish(&state, server);
+    announcement.publish(&state, server).await;
     Ok(no_content())
 }
 
