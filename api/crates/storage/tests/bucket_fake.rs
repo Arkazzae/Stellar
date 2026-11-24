@@ -610,3 +610,62 @@ async fn the_provider_in_the_settings_picks_the_store() {
     };
     assert!(stellarr_storage::open(&incomplete, data.path(), Client::new()).is_err());
 }
+
+#[tokio::test]
+async fn a_read_the_store_fails_is_tried_again_and_a_refusal_is_the_error_every_store_raises() {
+    let (fake, store) = prepared().await;
+    put(&store, "reads/one.bin", b"0123456789").await.unwrap();
+
+    fake.fail_next("GET", 500, 2);
+    let object = store.get("reads/one.bin", None).await.unwrap();
+    assert_eq!(read(object).await, b"0123456789");
+    assert_eq!(
+        fake.requests()
+            .iter()
+            .filter(|r| r.method == "GET" && r.status == 500)
+            .count(),
+        2
+    );
+
+    fake.fail_next("GET", 500, 10);
+    let error = store.get("reads/one.bin", None).await.unwrap_err();
+    assert!(
+        matches!(
+            error,
+            Error::Store {
+                kind: StoreFault::Unreachable,
+                ..
+            }
+        ),
+        "{error}"
+    );
+    fake.state.lock().unwrap().settings.faults.clear();
+
+    // A range past the end, and a key that is not there, are not failures to repeat.
+    fake.clear_log();
+    assert!(matches!(
+        store
+            .get("reads/one.bin", Some(ByteRange { from: 9, to: None }))
+            .await
+            .map(|_| ()),
+        Ok(())
+    ));
+    assert!(matches!(
+        store
+            .get("reads/one.bin", Some(ByteRange { from: 10, to: None }))
+            .await,
+        Err(Error::RangeNotSatisfiable(_))
+    ));
+    assert!(matches!(
+        store.get("reads/two.bin", None).await,
+        Err(Error::NotFound(_))
+    ));
+    assert_eq!(fake.requests().len(), 3, "one request each, none repeated");
+}
+
+#[test]
+fn the_secret_key_does_not_reach_debug_output() {
+    let shown = format!("{:?}", options("http://x.test"));
+    assert!(!shown.contains(SECRET_KEY), "{shown}");
+    assert!(shown.contains("<hidden>"));
+}

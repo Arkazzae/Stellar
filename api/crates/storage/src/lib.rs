@@ -141,7 +141,10 @@ impl Listing {
 }
 
 /// What every object store promises. Dropping a returned future cancels the
-/// call; a cancelled write leaves no object and no staged file behind.
+/// call. A write cancelled on its way leaves no object and nothing staged; one
+/// cancelled in its last step (the link into place, or the request that
+/// completes a multipart upload) may still land, so a caller that gives up
+/// on a write deletes its key.
 pub trait ObjectStorage: Send + Sync {
     /// Gets the store ready at start-up, creating what it needs; fails while
     /// it cannot be used.
