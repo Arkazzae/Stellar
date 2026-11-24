@@ -46,6 +46,18 @@ pub fn add_method(connection: &Connection, user: Id, kind: &str, address: Option
     id
 }
 
+/// A second step that is waiting for its first code.
+pub fn add_pending_method(connection: &Connection, user: Id, kind: &str) -> Id {
+    let id = add_method(connection, user, kind, None);
+    connection
+        .execute(
+            "UPDATE \"MfaMethods\" SET \"ConfirmedAt\" = NULL WHERE \"Id\" = ?1",
+            [id],
+        )
+        .expect("a method is made pending");
+    id
+}
+
 /// The first server of the instance, so that the settings have a row to hang on.
 pub fn add_instance_server(connection: &Connection) -> Id {
     let id = Id::random();

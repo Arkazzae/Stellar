@@ -5,10 +5,12 @@
 pub mod cookies;
 #[cfg(test)]
 mod differential;
+pub mod email_codes;
 pub mod events;
 #[cfg(test)]
 mod fixtures;
 pub mod flow;
+pub mod mfa_methods;
 pub mod password;
 pub mod policy;
 pub mod recovery_codes;
