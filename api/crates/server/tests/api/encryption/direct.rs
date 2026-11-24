@@ -74,6 +74,36 @@ async fn encryption_is_on_only_once_the_other_person_confirms_with_a_key_of_thei
 }
 
 #[tokio::test]
+async fn a_conversation_or_a_device_is_named_in_any_spelling_a_guid_has() {
+    let crowd = Crowd::ready().await;
+    let conversation = crowd.conversation(&crowd.maja, &crowd.ada);
+    let maja = &crowd.maja.client;
+    let id = Id::parse(&conversation).unwrap().to_string();
+
+    for spelled in [
+        id.to_uppercase(),
+        id.replace('-', ""),
+        format!("{{{id}}}"),
+        format!("({id})"),
+        format!("%7B{id}%7D"),
+    ] {
+        let keys = maja.get(&path(&spelled, "keys")).await;
+        assert_eq!(keys.status, 200, "{spelled}");
+        assert_eq!(keys.json::<Value>()["conversationId"], id.as_str());
+    }
+    assert_eq!(action(maja, &id.replace('-', ""), "request").await.status, 200);
+    for bad in [&id[1..], &format!("{id}0"), "x"] {
+        assert_eq!(maja.get(&path(bad, "keys")).await.status, 404, "{bad}");
+    }
+    let device = read(maja, ACCOUNT).await["device"]["id"].as_str().unwrap().to_string();
+    let other = crowd.server.sign_in(&crowd.maja).await;
+    assert_eq!(register_device_with(&other, &bytes(32, 3), "Other").await.status, 201);
+    let spelled = read(&other, ACCOUNT).await["device"]["id"].as_str().unwrap().replace('-', "");
+    assert_eq!(delete(maja, &format!("{ACCOUNT}/devices/{spelled}")).await.status, 204);
+    assert_eq!(refusal(&delete(maja, &format!("{ACCOUNT}/devices/{}", device.to_uppercase())).await), (409, Some("current-device".into())));
+}
+
+#[tokio::test]
 async fn only_the_requester_cancels_either_person_switches_off_and_on_again_takes_both_again() {
     let crowd = Crowd::new().await;
     let (maja, ada) = (&crowd.maja.client, &crowd.ada.client);
@@ -220,6 +250,16 @@ async fn an_epoch_follows_the_current_one_and_reaches_exactly_every_key_of_both_
     let keys = crowd.keys(maja, &conversation).await;
     let every = crowd.recipients(maja, &conversation).await;
     assert_eq!(every.len(), 4);
+    // Whoever asks is told them in the one order: by person, then kind, then id.
+    let order: Vec<(String, String, String)> = keys["recipients"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|key| (key["userId"].as_str().unwrap().to_string(), key["kind"].as_str().unwrap().to_string(), key["keyId"].as_str().unwrap().to_string()))
+        .collect();
+    let mut sorted = order.clone();
+    sorted.sort();
+    assert_eq!(order, sorted);
     let ada_device = keys["peer"]["devices"][0]["keyId"].as_str().unwrap().to_string();
     let stranger = Id::random().to_string();
 
@@ -414,11 +454,20 @@ async fn the_epochs_are_read_a_page_at_a_time_after_a_sequence_number() {
     let next = post_epoch(maja, &conversation, &epoch_body(&Id::random().to_string(), Some(&current), &every)).await;
     assert_eq!(next.json::<Value>()["sequence"], 202);
 
-    for (query, wanted) in [("", 200), ("?after=", 200), ("?after=202", 0), ("?after=-5", 200), ("?after=%2B3", 199), ("?other=1", 200)] {
+    for (query, wanted) in [
+        ("", 200),
+        ("?after=202", 0),
+        ("?after=-5", 200),
+        ("?after=%2B3", 199),
+        ("?after=+3", 199),
+        ("?after=%203%20", 199),
+        ("?AFTER=3", 199),
+        ("?other=1", 200),
+    ] {
         let found = read(maja, &format!("{}{query}", path(&conversation, "epochs"))).await;
         assert_eq!(found["epochs"].as_array().unwrap().len(), wanted, "{query}");
     }
-    for query in ["?after=x", "?after=1.5", "?after=1&after=2", "?after=99999999999"] {
+    for query in ["?after=", "?after", "?after=%20", "?after=x", "?after=1.5", "?after=1&after=2", "?after=99999999999"] {
         let response = maja.get(&format!("{}{query}", path(&conversation, "epochs"))).await;
         assert_eq!((response.status.as_u16(), response.body.is_empty()), (400, true), "{query}");
     }
