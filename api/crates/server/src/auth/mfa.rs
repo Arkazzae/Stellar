@@ -1444,6 +1444,65 @@ mod tests {
     }
 
     #[test]
+    fn an_enrolment_code_is_sent_for_an_enrolling_challenge_only() {
+        let (_folder, mut connection) = open();
+        let user = add_user(&connection, Some(ADDRESS));
+        let signing_in = add_challenge(&connection, user, PURPOSE_MFA);
+        let now = Timestamp::now();
+        let tx = connection.transaction().unwrap();
+
+        assert!(
+            start_email_enrollment(&tx, &sealer(), &signing_in, &SecurityPolicy::default(), now)
+                .unwrap()
+                .is_none()
+        );
+    }
+
+    #[test]
+    fn a_step_the_account_already_has_is_not_added_and_the_code_that_proved_it_is_kept() {
+        let (_folder, mut connection) = open();
+        let user = add_user(&connection, Some(ADDRESS));
+        add_method(&connection, user, EMAIL, Some("MAYA@EXAMPLE.TEST"));
+        let challenge = add_challenge(&connection, user, PURPOSE_ENROLLMENT);
+        let now = Timestamp::now();
+        let tx = connection.transaction().unwrap();
+        let Reservation::Reserved(mail) = email_codes::reserve(
+            &tx,
+            &sealer(),
+            &Scope {
+                user,
+                challenge: challenge.id,
+                purpose: email_codes::ENROLLMENT,
+                method: None,
+                address: ADDRESS,
+            },
+            &SecurityPolicy::default(),
+            now,
+        )
+        .unwrap() else {
+            panic!("a code was expected");
+        };
+        email_codes::mark_delivered(&tx, mail.id, now).unwrap();
+        let EmailEnrollment::Checked(checked, normalized) =
+            check_email_enrollment(&tx, &sealer(), &context(None), &challenge, &mail.code, now)
+                .unwrap()
+        else {
+            panic!("the code was right");
+        };
+
+        assert!(!finish_email_enrollment(&tx, user, &checked, &normalized, "Again", now).unwrap());
+
+        let consumed: bool = tx
+            .query_row(
+                "SELECT \"ConsumedAt\" IS NOT NULL FROM \"EmailOtpCodes\" WHERE \"Id\" = ?1",
+                [mail.id],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert!(!consumed);
+    }
+
+    #[test]
     fn nothing_is_mailed_for_an_account_without_an_address() {
         let (_folder, mut connection) = open();
         let user = add_user(&connection, None);

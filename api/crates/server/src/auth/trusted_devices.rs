@@ -337,6 +337,39 @@ mod tests {
     }
 
     #[test]
+    fn a_cookie_that_is_blank_or_too_long_is_not_looked_up_even_if_a_row_has_its_digest() {
+        let (_folder, mut connection) = open();
+        let user = add_user(&connection, None);
+        let now = Timestamp::now();
+        let issued = issued(&mut connection, user, now);
+        for (token, why) in [(" ".to_string(), "blank"), ("a".repeat(513), "too long")] {
+            connection
+                .execute(
+                    "UPDATE \"TrustedDevices\" SET \"TokenHash\" = ?2 WHERE \"Id\" = ?1",
+                    params![issued.id, tokens::hash(&token)],
+                )
+                .unwrap();
+            assert!(
+                find(&connection, user, Some(&token), now)
+                    .unwrap()
+                    .is_none(),
+                "{why}"
+            );
+        }
+        connection
+            .execute(
+                "UPDATE \"TrustedDevices\" SET \"TokenHash\" = ?2 WHERE \"Id\" = ?1",
+                params![issued.id, tokens::hash(&"a".repeat(512))],
+            )
+            .unwrap();
+        assert!(
+            find(&connection, user, Some(&"a".repeat(512)), now)
+                .unwrap()
+                .is_some()
+        );
+    }
+
+    #[test]
     fn a_device_is_spent_on_a_sign_in_only_while_it_is_still_the_one_that_was_found() {
         let (_folder, mut connection) = open();
         let user = add_user(&connection, None);

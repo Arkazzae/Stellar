@@ -139,8 +139,6 @@ pub fn recover(
 struct Redeeming {
     id: Id,
     user: Id,
-    used: bool,
-    ran_out: bool,
     credential_version: i64,
     disabled: bool,
     waiting: bool,
@@ -151,10 +149,12 @@ struct Redeeming {
 const CREDENTIAL_LENGTH: std::ops::RangeInclusive<usize> = 16..=512;
 
 /// Exchanges the credential an operator handed over, once, for the right to set
-/// up a new second step: the account it is for. It must be unused, not run out,
-/// of an account that is not disabled and is waiting for recovery, and of the
-/// security version the account is at: a later change of the account makes
-/// it void. Anything else is nothing, said the same way.
+/// up a new second step: the account it is for. It must be of an account that
+/// is not disabled and is waiting for recovery, and of the security version the
+/// account is at: a later change of the account makes it void. It must also be
+/// unused and not run out, which the claim that spends it decides in the same
+/// statement, so that two requests cannot both have it. Anything else is
+/// nothing, said the same way.
 pub fn redeem(tx: &Transaction, credential: &str, now: Timestamp) -> Result<Option<Id>, DbError> {
     let credential = credential.trim();
     if !CREDENTIAL_LENGTH.contains(&credential.chars().count()) {
@@ -164,20 +164,17 @@ pub fn redeem(tx: &Transaction, credential: &str, now: Timestamp) -> Result<Opti
     // prefix of.
     let row = tx
         .query_row(
-            "SELECT c.\"Id\", c.\"UserId\", c.\"UsedAt\" IS NOT NULL, c.\"ExpiresAt\" <= ?2, c.\"SecurityVersion\",
-                    u.\"IsDisabled\", u.\"SecurityRecoveryRequired\", u.\"SessionVersion\"
+            "SELECT c.\"Id\", c.\"UserId\", c.\"SecurityVersion\", u.\"IsDisabled\", u.\"SecurityRecoveryRequired\", u.\"SessionVersion\"
              FROM \"CliRecoveryCredentials\" c JOIN \"Users\" u ON u.\"Id\" = c.\"UserId\" WHERE c.\"TokenHash\" = ?1",
-            params![tokens::hash(credential), now],
+            params![tokens::hash(credential)],
             |row| {
                 Ok(Redeeming {
                     id: row.get(0)?,
                     user: row.get(1)?,
-                    used: row.get(2)?,
-                    ran_out: row.get(3)?,
-                    credential_version: row.get(4)?,
-                    disabled: row.get(5)?,
-                    waiting: row.get(6)?,
-                    account_version: row.get(7)?,
+                    credential_version: row.get(2)?,
+                    disabled: row.get(3)?,
+                    waiting: row.get(4)?,
+                    account_version: row.get(5)?,
                 })
             },
         )
@@ -185,12 +182,7 @@ pub fn redeem(tx: &Transaction, credential: &str, now: Timestamp) -> Result<Opti
     let Some(found) = row else {
         return Ok(None);
     };
-    if found.used
-        || found.ran_out
-        || found.disabled
-        || !found.waiting
-        || found.credential_version != found.account_version
-    {
+    if found.disabled || !found.waiting || found.credential_version != found.account_version {
         return Ok(None);
     }
     let (id, user) = (found.id, found.user);
