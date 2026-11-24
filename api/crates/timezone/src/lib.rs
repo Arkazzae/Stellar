@@ -9,6 +9,8 @@
 //!
 //! A name is untrusted input, so only the plain names of the database are
 //! looked up: nothing that could leave the zone directory is ever opened.
+//! Names are matched without regard to case, as the platform's own lookup
+//! does, and the zone is called by the casing of the file.
 
 mod civil;
 mod posix;
@@ -25,6 +27,8 @@ use tzif::Tzif;
 const MAX_NAME: usize = 128;
 /// The largest zone file in the database is about 4 KiB.
 const MAX_FILE: u64 = 1 << 20;
+/// The most entries of a zone directory that are looked through.
+const MAX_ENTRIES: usize = 4096;
 const DEFAULT_DIRECTORY: &str = "/usr/share/zoneinfo";
 
 /// Why a zone could not be had.
@@ -101,14 +105,30 @@ impl TimeZone {
         TimeZone::find_in(&zone_directory(), id)
     }
 
-    /// The zone of that name in the database at `directory`.
+    /// The zone of that name in the database at `directory`. The case of the
+    /// name does not matter; the zone's id is the name as the database
+    /// spells it. `UTC` in any case is [`TimeZone::utc`].
     pub fn find_in(directory: &Path, id: &str) -> Result<TimeZone, Error> {
-        if id == "UTC" {
+        if id.eq_ignore_ascii_case("UTC") {
             return Ok(TimeZone::utc());
         }
         if !is_plain_name(id) {
             return Err(Error::NotFound);
         }
+        let spelled = spell_as_database(directory, id).ok_or(Error::NotFound)?;
+        TimeZone::read_named(directory, &spelled)
+    }
+
+    /// Like [`TimeZone::find_in`], but the name must be spelled exactly as
+    /// the database spells it.
+    fn find_exact_in(directory: &Path, id: &str) -> Result<TimeZone, Error> {
+        if !is_plain_name(id) || spell_as_database(directory, id).as_deref() != Some(id) {
+            return Err(Error::NotFound);
+        }
+        TimeZone::read_named(directory, id)
+    }
+
+    fn read_named(directory: &Path, id: &str) -> Result<TimeZone, Error> {
         let bytes = read_zone_file(&directory.join(id))?;
         TimeZone::from_bytes(id, &bytes)
     }
@@ -123,9 +143,9 @@ impl TimeZone {
     }
 
     /// The zone of the machine: the `TZ` variable when it names a zone of the
-    /// database (an empty one means UTC), otherwise the file `/etc/localtime`
-    /// is or points to, otherwise UTC. The name is the one the link spells,
-    /// or `Local` for a copy.
+    /// database exactly (an empty one means UTC; a path to a zone file is
+    /// read), otherwise the file `/etc/localtime` is or points to, otherwise
+    /// UTC. The name is the one the link spells, or `Local` for a copy.
     pub fn local() -> TimeZone {
         TimeZone::local_with(
             std::env::var("TZ").ok().as_deref(),
@@ -141,24 +161,17 @@ impl TimeZone {
                 return TimeZone::utc();
             }
             let name = variable.strip_prefix(':').unwrap_or(variable);
-            if let Ok(zone) = TimeZone::find_in(directory, name) {
+            // The variable is the operator's own, so a path in it is trusted.
+            let found = if name.starts_with('/') {
+                zone_of_file(Path::new(name))
+            } else {
+                TimeZone::find_exact_in(directory, name).ok()
+            };
+            if let Some(zone) = found {
                 return zone;
             }
         }
-        if let Ok(bytes) = read_zone_file(localtime) {
-            let id = fs::read_link(localtime)
-                .ok()
-                .and_then(|target| {
-                    let text = target.to_string_lossy().into_owned();
-                    text.split_once("zoneinfo/")
-                        .map(|(_, name)| name.to_owned())
-                })
-                .unwrap_or_else(|| "Local".into());
-            if let Ok(zone) = TimeZone::from_bytes(&id, &bytes) {
-                return zone;
-            }
-        }
-        TimeZone::utc()
+        zone_of_file(localtime).unwrap_or_else(TimeZone::utc)
     }
 
     /// The name the zone was found by.
@@ -203,6 +216,48 @@ impl TimeZone {
             offset,
         }
     }
+}
+
+/// The zone in a file, named by the part of the path (or of the link it is)
+/// after `zoneinfo/`, or `Local` when there is none.
+fn zone_of_file(path: &Path) -> Option<TimeZone> {
+    let bytes = read_zone_file(path).ok()?;
+    let id = fs::read_link(path)
+        .ok()
+        .and_then(|target| name_after_zoneinfo(&target.to_string_lossy()))
+        .or_else(|| name_after_zoneinfo(&path.to_string_lossy()))
+        .unwrap_or_else(|| "Local".into());
+    TimeZone::from_bytes(&id, &bytes).ok()
+}
+
+fn name_after_zoneinfo(path: &str) -> Option<String> {
+    let (_, name) = path.split_once("zoneinfo/")?;
+    let name = name.trim_start_matches('/');
+    (!name.is_empty()).then(|| name.to_owned())
+}
+
+/// The name as the database spells it: each segment is looked for among the
+/// entries of its directory, ignoring ASCII case. Only the names the
+/// directory lists are joined, so what comes out is a path inside it.
+fn spell_as_database(directory: &Path, id: &str) -> Option<String> {
+    let mut path = directory.to_path_buf();
+    let mut spelled = Vec::new();
+    for segment in id.split('/') {
+        let names: Vec<String> = fs::read_dir(&path)
+            .ok()?
+            .take(MAX_ENTRIES)
+            .filter_map(Result::ok)
+            .map(|e| e.file_name().to_string_lossy().into_owned())
+            .collect();
+        let entry = names
+            .iter()
+            .find(|name| *name == segment)
+            .or_else(|| names.iter().find(|name| name.eq_ignore_ascii_case(segment)))?
+            .clone();
+        path.push(&entry);
+        spelled.push(entry);
+    }
+    Some(spelled.join("/"))
 }
 
 fn zone_directory() -> PathBuf {
@@ -296,6 +351,26 @@ mod tests {
     }
 
     #[test]
+    fn the_case_of_a_name_does_not_matter_and_the_database_spells_the_id() {
+        let dir = directory("case");
+        fs::write(dir.join("Europe/Warsaw"), warsaw()).unwrap();
+
+        for name in ["europe/warsaw", "EUROPE/WARSAW", "Europe/warsaw"] {
+            let zone = TimeZone::find_in(&dir, name).unwrap();
+            assert_eq!(zone.id(), "Europe/Warsaw", "{name}");
+            assert_eq!(zone.at(1_795_179_900).seconds, 3600);
+        }
+        for name in ["utc", "Utc", "UTC", "uTc"] {
+            assert_eq!(TimeZone::find_in(&dir, name).unwrap(), TimeZone::utc());
+        }
+        assert_eq!(
+            TimeZone::find_in(&dir, "europe/nowhere"),
+            Err(Error::NotFound)
+        );
+        let _ = fs::remove_dir_all(dir);
+    }
+
+    #[test]
     fn a_name_that_could_leave_the_directory_is_not_looked_up() {
         let dir = directory("hostile");
         fs::write(dir.join("Europe/Warsaw"), warsaw()).unwrap();
@@ -320,6 +395,8 @@ mod tests {
             "Europe",
             "~root",
             "Europe/Wąrsaw",
+            "EUROPE/../../stellarr-timezone-outside",
+            "..\\x",
         ];
         for name in hostile {
             assert_eq!(
@@ -395,6 +472,16 @@ mod tests {
         // The directory here is not named zoneinfo, so a link has no name to
         // take and the zone is called Local, as for a copy of a file.
         assert_eq!(TimeZone::local_with(None, &dir, &link).id(), "Local");
+        // The variable names a zone exactly, and may be a path to a file.
+        assert_eq!(
+            TimeZone::local_with(Some("europe/warsaw"), &dir, &nothing),
+            TimeZone::utc()
+        );
+        let by_path = dir.join("usr/share/zoneinfo/Europe/Warsaw");
+        fs::create_dir_all(by_path.parent().unwrap()).unwrap();
+        fs::write(&by_path, warsaw()).unwrap();
+        let from_path = TimeZone::local_with(Some(by_path.to_str().unwrap()), &dir, &nothing);
+        assert_eq!(from_path.id(), "Europe/Warsaw");
         assert_eq!(TimeZone::local_with(None, &dir, &copy).id(), "Local");
         assert_eq!(
             TimeZone::local_with(Some("No/Such"), &dir, &copy).id(),
