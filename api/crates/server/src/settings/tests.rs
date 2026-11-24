@@ -81,17 +81,24 @@ fn an_empty_production_environment_gets_the_documented_defaults() {
 }
 
 #[test]
-fn the_turn_secret_is_required_outside_development_and_testing() {
-    let refused = Settings::load(&env(&[("STELLARR_ENVIRONMENT", "Production")])).unwrap_err();
+fn an_enabled_relay_requires_its_own_secret_in_production() {
+    let enabled = [
+        ("STELLARR_ENVIRONMENT", "Production"),
+        ("STELLARR_TURN_ENABLED", "true"),
+    ];
+    let refused = Settings::load(&env(&enabled)).unwrap_err();
     assert_eq!(
         refused.to_string(),
         "Rtc:TurnSharedSecret is required outside development. In the container the entrypoint \
          sets it from the secret it keeps in the data volume."
     );
     // Not setting the environment at all is production too.
-    assert!(Settings::load(&[]).is_err());
+    assert!(Settings::load(&[]).is_ok());
     // A blank secret is no secret.
-    assert!(production(&[("Rtc__TurnSharedSecret", "  ")]).is_err());
+    let mut blank = env(&enabled);
+    blank.push(("Rtc__TurnSharedSecret".into(), "  ".into()));
+    assert!(Settings::load(&blank).is_err());
+    assert!(production(&[("STELLARR_TURN_ENABLED", "true")]).is_ok());
 
     let development = Settings::load(&env(&[("STELLARR_ENVIRONMENT", "Development")])).unwrap();
     assert_eq!(

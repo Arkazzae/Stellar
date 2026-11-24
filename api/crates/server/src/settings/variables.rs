@@ -35,6 +35,7 @@ pub const VARIABLES: &[Variable] = &[
     ),
     // Voice.
     row("STELLARR_MEDIA_PORT", Some("Rtc:MediaPort")),
+    row("STELLARR_TURN_ENABLED", Some("Rtc:TurnEnabled")),
     row("STELLARR_TURN_PORT", Some("Rtc:TurnPort")),
     row("STELLARR_TURNS_PORT", Some("Rtc:TurnsPort")),
     row("STELLARR_TURN_TCP_ENABLED", Some("Rtc:TurnTcpEnabled")),
@@ -166,6 +167,7 @@ mod tests {
         ("STELLARR_DOMAIN", "Rtc:PublicHost"),
         ("STELLARR_TRUSTED_PROXIES", "Operations:TrustedProxies"),
         ("STELLARR_MEDIA_PORT", "Rtc:MediaPort"),
+        ("STELLARR_TURN_ENABLED", "Rtc:TurnEnabled"),
         ("STELLARR_TURN_PORT", "Rtc:TurnPort"),
         ("STELLARR_TURNS_PORT", "Rtc:TurnsPort"),
         ("STELLARR_TURN_TCP_ENABLED", "Rtc:TurnTcpEnabled"),

@@ -136,7 +136,9 @@ prepare_certificate() {
 # logs both. coturn has no reload that takes a new certificate, so it restarts.
 reload_tls_consumers() {
   /usr/local/bin/stellarr-init reload nginx || echo "Could not reload nginx after TLS renewal." >&2
-  /usr/local/bin/stellarr-init restart turn || echo "Could not restart TURN after TLS renewal." >&2
+  if [[ "${STELLARR_TURN_ENABLED:-false}" == "true" ]]; then
+    /usr/local/bin/stellarr-init restart turn || echo "Could not restart TURN after TLS renewal." >&2
+  fi
 }
 
 fingerprint() {

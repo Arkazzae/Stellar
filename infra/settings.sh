@@ -80,6 +80,7 @@ read_settings() {
   public_ip_setting="$(or_default "${STELLARR_PUBLIC_IP:-}")"
   https_port="$(or_default "${STELLARR_HTTPS_PORT:-}" 443)"
   media_port="$(or_default "${STELLARR_MEDIA_PORT:-}" 49000)"
+  turn_enabled="$(or_default "${STELLARR_TURN_ENABLED:-}" false)"
   turn_tcp_enabled="$(or_default "${STELLARR_TURN_TCP_ENABLED:-}" false)"
   turns_enabled="$(or_default "${STELLARR_TURNS_ENABLED:-}" false)"
   language="$(or_default "${STELLARR_LANGUAGE:-}" en)"
@@ -92,10 +93,11 @@ read_settings() {
   public_port="$(or_default "${STELLARR_PUBLIC_PORT:-}" "$https_port")"
   require_port STELLARR_PUBLIC_PORT "$public_port" || return 1
   # A browser can only reach the port it is told, so the media server
-  # advertises the host port of 49000/udp and the API names it in the
+  # advertises the host port of 49000 and the API names it in the
   # bootstrap.
   require_port STELLARR_MEDIA_PORT "$media_port" || return 1
   media_port=$((10#$media_port))
+  require_boolean STELLARR_TURN_ENABLED "$turn_enabled" || return 1
   require_boolean STELLARR_TURN_TCP_ENABLED "$turn_tcp_enabled" || return 1
   require_boolean STELLARR_TURNS_ENABLED "$turns_enabled" || return 1
   # auto is resolved by the entrypoint, which looks the domain up.

@@ -4,14 +4,14 @@
 #   web     :3000       Vite's dev server: the web client, and Cockpit under /cockpit
 #   api     :5000       the Rust API under cargo run and watchexec, which the browser
 #                       reaches through the web proxy
-#   media   :49100/udp  Stellarr Media under cargo run and watchexec; its control
+#   media   :49100 UDP/TCP  Stellarr Media under cargo run and watchexec; its control
 #                       API on 127.0.0.1:5200
 #   mailpit :8025       catches every message the API sends; its SMTP port 1025
 #                       is on loopback too
 #   coturn  :3478       only with the "turn" profile
 #
 #   docker compose -f docker-compose.dev.yml up
-#   docker compose -f docker-compose.dev.yml --profile turn up
+#   STELLARR_TURN_ENABLED=true docker compose -f docker-compose.dev.yml --profile turn up
 #
 # The host ports come from STELLARR_DEV_WEB_PORT, STELLARR_DEV_API_PORT,
 # STELLARR_DEV_MEDIA_PORT, STELLARR_DEV_MEDIA_CONTROL_PORT,
@@ -32,8 +32,8 @@
 # is for a connection that has to cross a NAT. It uses the host network, so it
 # listens on the host's own ports 3478 and 49160-49200.
 #
-# Every call goes through the media server, as in production. Its one candidate
-# is 127.0.0.1 with the published port, because Docker forwards that port into
+# Every call goes through the media server, as in production. It advertises
+# 127.0.0.1 with the published port, because Docker forwards that port into
 # the container on every host, while the container's own address is reachable
 # from the host only on Linux. So only a browser on this machine reaches it: not
 # one on another device, and not one forced through the turn profile's coturn,
@@ -94,6 +94,7 @@ services:
       watchexec --restart --poll=1s --watch crates --watch Cargo.toml
         -- cargo run -p stellarr-api
     environment:
+      STELLARR_TURN_ENABLED: ${STELLARR_TURN_ENABLED:-false}
       STELLARR_ENVIRONMENT: Development
       # Off loopback, because the browser's requests reach it from the web
       # service across the compose network, and curl through the port below.
@@ -160,6 +161,7 @@ services:
       STELLARR_MEDIA_ADVERTISE: 127.0.0.1:${STELLARR_DEV_MEDIA_PORT:-49100}
     ports:
       - "${STELLARR_DEV_MEDIA_PORT:-49100}:49000/udp"
+      - "${STELLARR_DEV_MEDIA_PORT:-49100}:49000/tcp"
       # For curl. Loopback only, because the secret above is in this file.
       - "127.0.0.1:${STELLARR_DEV_MEDIA_CONTROL_PORT:-5200}:5200"
     volumes:

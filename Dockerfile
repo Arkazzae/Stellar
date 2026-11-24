@@ -1,6 +1,6 @@
 # syntax=docker/dockerfile:1.8
 
-# One image runs the whole instance: nginx, the API, coturn and the Stellarr
+# One image runs the whole instance: nginx, the API, optional coturn and the Stellarr
 # Media server, supervised by Stellarr Init (init/), which runs as PID 1. nginx
 # also serves the web client and the operator panel, Cockpit, under /cockpit,
 # both built as static files. It builds for linux/amd64 and linux/arm64.
@@ -284,18 +284,18 @@ COPY --from=media-build /out/stellarr-media /opt/stellarr/media/stellarr-media
 COPY artifacts/NOTICES artifacts/manifest.json /usr/share/doc/stellarr/artifacts/
 
 ENV STELLARR_DATA_ROOT=/data/stellarr
-# 49000/udp is the single UDP port of Stellarr Media and carries every call.
+# 49000 carries media over UDP and TCP on the same public port.
 # The media server's control API (5200/tcp) listens on loopback and is not
 # exposed.
-EXPOSE 80 443 3478/tcp 3478/udp 5349/tcp 5349/udp 49000/udp 49160-49200/udp
+EXPOSE 443/tcp 49000/udp 49000/tcp
 VOLUME ["/data/stellarr"]
 
 # Healthy means every critical service is ready, as stellarr-init reports it.
 # The manager asks each one again every ten seconds and counts it as failing
 # after three misses in a row, about 45 seconds: the API with its database on
 # /health/ready, nginx for a page it serves, the media server's control API on
-# /v1/health, and coturn for a STUN binding answer. A service that exits, or
-# cannot start, fails at once. The manager already waits out a slow answer, so
+# /v1/health, and optional coturn for a STUN binding answer. A service that
+# exits or cannot start fails at once. The manager already waits out a slow answer, so
 # Docker needs fewer misses of its own than when it asked the services itself.
 # The client answers within three seconds, or exits 1 when the manager does
 # not.

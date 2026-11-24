@@ -291,11 +291,16 @@ pub struct RtcSettings {
 }
 
 impl RtcSettings {
-    fn load(config: &Config, environment: &Environment) -> Result<RtcSettings, SettingError> {
+    fn load(
+        config: &Config,
+        environment: &Environment,
+        turn_enabled: bool,
+    ) -> Result<RtcSettings, SettingError> {
         let turn_shared_secret = config.text("Rtc:TurnSharedSecret").map(str::to_string);
         // Without a secret of its own the relay would accept credentials that
         // anyone can compute from the published development secret.
-        if turn_shared_secret.is_none()
+        if turn_enabled
+            && turn_shared_secret.is_none()
             && !environment.is_development()
             && !environment.is_testing()
         {
@@ -724,7 +729,8 @@ impl Settings {
                 refused.0
             ))
         })?;
-        let rtc = RtcSettings::load(config, &environment)?;
+        let relay = relay::RelaySettings::load(config)?;
+        let rtc = RtcSettings::load(config, &environment, relay.arrangement.enabled)?;
         let event_log = environment
             .is_testing()
             .then(|| config.text("Testing:EventLog").map(PathBuf::from))
@@ -749,7 +755,7 @@ impl Settings {
             data_root,
             language,
             rtc,
-            relay: relay::RelaySettings::load(config)?,
+            relay,
             operations: OperationsSettings::load(config)?,
             mail: MailSettings::load(config)?,
             push: PushSettings::load(config),

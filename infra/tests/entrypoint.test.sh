@@ -197,14 +197,16 @@ expect_export STELLARR_LANGUAGE en
 expect_export STELLARR_MEDIA_PORT 49000
 expect_export STELLARR_TURN_TCP_ENABLED false
 expect_export STELLARR_TURNS_ENABLED false
-turn_secret=$(secret_file turn-shared-secret)
+expect_export STELLARR_TURN_ENABLED false
+[[ ! -e /data/stellarr/secrets/turn-shared-secret ]] || fail "created a TURN secret with TURN disabled"
+[[ ! -e /etc/turnserver.conf ]] || fail "rendered a TURN config with TURN disabled"
 media_secret=$(secret_file media-control-secret)
-expect_export Rtc__TurnSharedSecret "$turn_secret"
+expect_absent Rtc__TurnSharedSecret
 expect_export Rtc__MediaControlSecret "$media_secret"
 expect_export STELLARR_MEDIA_CONTROL_SECRET "$media_secret"
 expect_export Rtc__MediaControlUrl http://127.0.0.1:5200
 expect_export STELLARR_MEDIA_BIND 0.0.0.0:49000
-expect_export STELLARR_MEDIA_PUBLIC_IP ''
+expect_export STELLARR_MEDIA_PUBLIC_IP 127.0.0.1
 expect_export STELLARR_MEDIA_PUBLIC_PORT 49000
 expect_export STELLARR_MEDIA_CONTROL_BIND 127.0.0.1:5200
 expect_export STELLARR_MEDIA_LOG info
@@ -215,22 +217,13 @@ expect_absent STELLARR_MEDIA_ADVERTISE Operations__PublicUrl Desktop__CanonicalO
 # name, or one of the values that have no STELLARR_* name.
 others=$(sed 's/=.*//' "$out/env" | grep -vxE 'STELLARR_[A-Z0-9_]+|PATH|HOME|PWD|OLDPWD|SHLVL|_' |
   sort | tr '\n' ' ')
-[[ $others == 'Rtc__MediaControlSecret Rtc__MediaControlUrl Rtc__TurnSharedSecret ' ]] ||
+[[ $others == 'Rtc__MediaControlSecret Rtc__MediaControlUrl ' ]] ||
   fail "it exports: $others"
-for file in /etc/turnserver.conf /etc/nginx/nginx.conf; do
-  ! grep -q '__[A-Z_]*__' "$file" || fail "$file keeps a placeholder: $(grep -o '__[A-Z_]*__' "$file" | head -n 1)"
-done
-expect_line /etc/turnserver.conf 'realm=localhost'
-expect_line /etc/turnserver.conf "static-auth-secret=$turn_secret"
-expect_line /etc/turnserver.conf 'no-tcp'
-expect_line /etc/turnserver.conf 'no-tls'
-expect_line /etc/turnserver.conf 'no-dtls'
-expect_line /etc/turnserver.conf '# external-ip is not set; set STELLARR_PUBLIC_IP when the host is behind NAT'
+! grep -q '__[A-Z_]*__' /etc/nginx/nginx.conf || fail "nginx config keeps a placeholder"
 expect_redirect ''
 expect_line /run/stellarr/stellarr-instance.js 'window.stellarrInstanceLanguage="en";'
 expect_call 'stellarr-tls-maintenance prepare domain= data=/data/stellarr'
 grep -qF 'STELLARR_DOMAIN is not set' "$out/stderr" || fail "no word about the missing domain"
-grep -qF 'STELLARR_PUBLIC_IP is empty' "$out/stderr" || fail "no word about the missing public IP"
 ! grep -q '^stellarr ' "$out/calls" || fail "the CLI ran without a staged backup"
 
 # Without the image's ENV the data root is the same.
@@ -241,10 +234,24 @@ expect_export STELLARR_DATA_ROOT /data/stellarr
 run data-root "${image_env[@]}" STELLARR_DATA_ROOT=/data/elsewhere
 expect_started
 expect_export STELLARR_DATA_ROOT /data/elsewhere
-[[ -s /data/elsewhere/secrets/turn-shared-secret ]] || fail "the secrets are not under the data root"
+[[ -s /data/elsewhere/secrets/media-control-secret ]] || fail "the secrets are not under the data root"
 
-# As docker-compose.yml starts it: the host ports it publishes, and a domain.
-run compose "${image_env[@]}" STELLARR_DOMAIN=chat.example.com STELLARR_HTTPS_PORT=8443 \
+# The optional profile still provisions coturn and reuses the persisted secret.
+run turn "${image_env[@]}" STELLARR_TURN_ENABLED=true
+expect_started
+expect_export STELLARR_TURN_ENABLED true
+turn_secret=$(secret_file turn-shared-secret)
+expect_export Rtc__TurnSharedSecret "$turn_secret"
+expect_line /etc/turnserver.conf 'realm=localhost'
+expect_line /etc/turnserver.conf "static-auth-secret=$turn_secret"
+expect_line /etc/turnserver.conf 'no-tcp'
+expect_line /etc/turnserver.conf 'no-tls'
+expect_line /etc/turnserver.conf 'no-dtls'
+expect_line /etc/turnserver.conf '# external-ip is not set; set STELLARR_PUBLIC_IP when the host is behind NAT'
+
+# Exercise settings shared by the entrypoint and the optional relay.
+
+run compose "${image_env[@]}" STELLARR_TURN_ENABLED=true STELLARR_DOMAIN=chat.example.com STELLARR_HTTPS_PORT=8443 \
   STELLARR_MEDIA_PORT=49000 STELLARR_TURN_PORT=3478 STELLARR_TURNS_PORT=5349
 expect_started
 expect_export STELLARR_DOMAIN chat.example.com
@@ -257,13 +264,13 @@ expect_redirect 8443
 expect_call 'stellarr-tls-maintenance prepare domain=chat.example.com data=/data/stellarr'
 
 # STELLARR_PUBLIC_IP, which coturn and the media server advertise.
-run public-ip "${image_env[@]}" STELLARR_PUBLIC_IP=203.0.113.7
+run public-ip "${image_env[@]}" STELLARR_TURN_ENABLED=true STELLARR_PUBLIC_IP=203.0.113.7
 expect_started
 expect_export STELLARR_MEDIA_PUBLIC_IP 203.0.113.7
 expect_line /etc/turnserver.conf 'external-ip=203.0.113.7'
 ! grep -qF 'STELLARR_PUBLIC_IP is empty' "$out/stderr" || fail "warned about a public IP that is set"
 
-run public-ip-auto "${image_env[@]}" STELLARR_PUBLIC_IP=auto STELLARR_DOMAIN=chat.example.com
+run public-ip-auto "${image_env[@]}" STELLARR_TURN_ENABLED=true STELLARR_PUBLIC_IP=auto STELLARR_DOMAIN=chat.example.com
 expect_started
 expect_export STELLARR_MEDIA_PUBLIC_IP 198.51.100.4
 expect_line /etc/turnserver.conf 'external-ip=198.51.100.4'
@@ -280,7 +287,7 @@ expect_started
 expect_export Operations__PublicUrl https://chat.example.com
 expect_redirect 9443
 
-run public-url "${image_env[@]}" STELLARR_PUBLIC_URL=https://proxy.example/
+run public-url "${image_env[@]}" STELLARR_TURN_ENABLED=true STELLARR_PUBLIC_URL=https://proxy.example/
 expect_started
 expect_export Operations__PublicUrl https://proxy.example
 expect_export STELLARR_DOMAIN ''
@@ -293,7 +300,7 @@ kept_secrets() {
   echo kept-turn >/data/stellarr/secrets/turn-shared-secret
   echo kept-media >/data/stellarr/secrets/media-control-secret
 }
-STAGE=kept_secrets run secrets "${image_env[@]}" STELLARR_MEDIA_CONTROL_SECRET=operator-media \
+STAGE=kept_secrets run secrets "${image_env[@]}" STELLARR_TURN_ENABLED=true STELLARR_MEDIA_CONTROL_SECRET=operator-media \
   Rtc__TurnSharedSecret=operator-turn Rtc__MediaControlSecret=operator-media
 expect_started
 expect_export Rtc__TurnSharedSecret kept-turn
@@ -303,7 +310,7 @@ expect_line /etc/turnserver.conf 'static-auth-secret=kept-turn'
 ! grep -q 'operator-' "$out/env" /etc/turnserver.conf || fail "a secret from the environment was kept"
 
 # The other settings it shares with the API or hands to the media server.
-run transports-and-language "${image_env[@]}" STELLARR_TURN_TCP_ENABLED=true STELLARR_TURNS_ENABLED=true \
+run transports-and-language "${image_env[@]}" STELLARR_TURN_ENABLED=true STELLARR_TURN_TCP_ENABLED=true STELLARR_TURNS_ENABLED=true \
   STELLARR_LANGUAGE=pl STELLARR_MEDIA_PORT=49010 STELLARR_MEDIA_ADVERTISE=127.0.0.1:49100 STELLARR_MEDIA_LOG=debug
 expect_started
 expect_export STELLARR_TURN_TCP_ENABLED true
@@ -327,14 +334,14 @@ expect_export STELLARR_DOMAIN ''
 expect_export STELLARR_LANGUAGE en
 expect_export STELLARR_MEDIA_PORT 49000
 expect_export STELLARR_TURN_TCP_ENABLED false
-expect_export STELLARR_MEDIA_PUBLIC_IP ''
+expect_export STELLARR_MEDIA_PUBLIC_IP 127.0.0.1
 expect_absent STELLARR_MEDIA_ADVERTISE Operations__PublicUrl
 expect_redirect ''
 
 # The entrypoint goes by the STELLARR_* names alone. A raw key for the same
 # setting changes nothing it renders, and the API takes the exported name over
 # that key.
-run raw-keys "${image_env[@]}" Rtc__TurnTcpEnabled=true Rtc__MediaPort=49999 Rtc__PublicHost=raw.example \
+run raw-keys "${image_env[@]}" STELLARR_TURN_ENABLED=true Rtc__TurnTcpEnabled=true Rtc__MediaPort=49999 Rtc__PublicHost=raw.example \
   Stellarr__Language=pl
 expect_started
 expect_export STELLARR_MEDIA_PORT 49000

@@ -46,7 +46,7 @@ resolve_public_ip() {
       resolved="$(getent ahostsv4 "$public_host" 2>/dev/null | awk '$2 == "STREAM" { print $1; exit }')" || true
       is_ipv4_address "$resolved" ||
         fail "STELLARR_PUBLIC_IP=auto could not resolve a public IPv4 address for STELLARR_DOMAIN=$public_host."
-      echo "Resolved STELLARR_DOMAIN=$public_host to the external IPv4 $resolved for TURN and the media server." >&2
+      echo "Resolved STELLARR_DOMAIN=$public_host to the external IPv4 $resolved for media." >&2
       echo "$resolved"
       ;;
     *) echo "$public_ip_setting" ;;
@@ -76,6 +76,16 @@ write_instance_language() {
 # stops the container here, before anything is written.
 read_settings || exit 1
 public_ip="$(resolve_public_ip)"
+# A numeric domain can be used as the host candidate without DNS. Local
+# installs need the published loopback address instead of the Docker IP.
+media_public_ip="$public_ip"
+if [[ -z "$media_public_ip" ]]; then
+  if is_ipv4_address "$public_host"; then
+    media_public_ip="$public_host"
+  elif [[ "$public_host" == localhost ]]; then
+    media_public_ip=127.0.0.1
+  fi
+fi
 
 # A backup staged with `stellarr backup restore` replaces the instance's data
 # here, before any service starts and before the secrets below are read, so
@@ -101,7 +111,7 @@ mkdir -p "$data_root"/{db,files,keys,logs,secrets,tls} /run/nginx
 # The secrets the API shares with coturn and the media server are the ones in
 # the data volume, never a setting: the exports below replace any value the
 # environment brings under the names the services read.
-turn_secret="$(read_or_create_secret turn-shared-secret)"
+
 media_control_secret="$(read_or_create_secret media-control-secret)"
 
 # What the API, the TLS script and the media server read, as resolved above.
@@ -109,12 +119,18 @@ export STELLARR_DATA_ROOT="$data_root"
 export STELLARR_DOMAIN="$domain"
 export STELLARR_LANGUAGE="$language"
 export STELLARR_MEDIA_PORT="$media_port"
+export STELLARR_TURN_ENABLED="$turn_enabled"
 export STELLARR_TURN_TCP_ENABLED="$turn_tcp_enabled"
 export STELLARR_TURNS_ENABLED="$turns_enabled"
 # Values with no STELLARR_* name, which only the entrypoint derives.
 export Rtc__MediaControlUrl="http://127.0.0.1:5200"
 export Rtc__MediaControlSecret="$media_control_secret"
-export Rtc__TurnSharedSecret="$turn_secret"
+if [[ "$turn_enabled" == "true" ]]; then
+  turn_secret="$(read_or_create_secret turn-shared-secret)"
+  export Rtc__TurnSharedSecret="$turn_secret"
+else
+  unset Rtc__TurnSharedSecret
+fi
 
 # The address in mail links and the desktop client's canonical origin, as
 # read_settings derived it. Without one, reset links stay off and desktop
@@ -128,11 +144,11 @@ else
 fi
 
 # Stellarr Media carries every call. Its candidates are the public address,
-# when one is known, and the container's own address, which is where coturn
-# relays a browser that needs TURN. STELLARR_MEDIA_ADVERTISE, when set,
-# replaces both and is passed through.
+# when one is known, and the container's own address. Optional coturn reaches
+# the media server at its container address. STELLARR_MEDIA_ADVERTISE, when
+# set, replaces these addresses and is passed through.
 export STELLARR_MEDIA_BIND="0.0.0.0:49000"
-export STELLARR_MEDIA_PUBLIC_IP="$public_ip"
+export STELLARR_MEDIA_PUBLIC_IP="$media_public_ip"
 export STELLARR_MEDIA_PUBLIC_PORT="$media_port"
 export STELLARR_MEDIA_CONTROL_BIND="127.0.0.1:5200"
 export STELLARR_MEDIA_CONTROL_SECRET="$media_control_secret"
@@ -143,9 +159,9 @@ else
   unset STELLARR_MEDIA_ADVERTISE
 fi
 
-if [[ -z "$public_ip" && -z "$media_advertise" ]]; then
+if [[ -z "$media_public_ip" && -z "$media_advertise" ]]; then
   echo "STELLARR_PUBLIC_IP is empty, so the media server advertises only this container's own address." \
-    "Voice from a browser outside this host reaches it only through TURN, and gets no connection when TURN is blocked too." \
+    "Browsers outside the container network need a reachable media candidate." \
     "Set STELLARR_PUBLIC_IP to the IPv4 address browsers reach this host at, or to 'auto'." >&2
 fi
 
@@ -159,28 +175,30 @@ export STELLARR_ENVIRONMENT="Production"
 
 /usr/local/bin/stellarr-tls-maintenance prepare
 
-# A disabled transport is closed in coturn, not merely left unadvertised.
-turn_tcp_line="# TURN/TCP client listener enabled"
-turn_tls_line="# TURN/TLS client listener enabled"
-turn_dtls_line="# TURN/DTLS client listener enabled"
-external_ip_line="# external-ip is not set; set STELLARR_PUBLIC_IP when the host is behind NAT"
-[[ "$turn_tcp_enabled" == "true" ]] || turn_tcp_line="no-tcp"
-if [[ "$turns_enabled" != "true" ]]; then
-  turn_tls_line="no-tls"
-  turn_dtls_line="no-dtls"
-fi
-if [[ -n "$public_ip" ]]; then
-  external_ip_line="external-ip=$public_ip"
-fi
+# Render TURN configuration only when the service is enabled.
+if [[ "$turn_enabled" == "true" ]]; then
+  turn_tcp_line="# TURN/TCP client listener enabled"
+  turn_tls_line="# TURN/TLS client listener enabled"
+  turn_dtls_line="# TURN/DTLS client listener enabled"
+  external_ip_line="# external-ip is not set; set STELLARR_PUBLIC_IP when the host is behind NAT"
+  [[ "$turn_tcp_enabled" == "true" ]] || turn_tcp_line="no-tcp"
+  if [[ "$turns_enabled" != "true" ]]; then
+    turn_tls_line="no-tls"
+    turn_dtls_line="no-dtls"
+  fi
+  if [[ -n "$public_ip" ]]; then
+    external_ip_line="external-ip=$public_ip"
+  fi
 
-sed \
-  -e "s|__REALM__|$public_host|g" \
-  -e "s|__STATIC_AUTH_SECRET__|$turn_secret|g" \
-  -e "s|__EXTERNAL_IP_LINE__|$external_ip_line|g" \
-  -e "s|__TURN_TCP_LINE__|$turn_tcp_line|g" \
-  -e "s|__TURN_TLS_LINE__|$turn_tls_line|g" \
-  -e "s|__TURN_DTLS_LINE__|$turn_dtls_line|g" \
-  /etc/turnserver.conf.template > /etc/turnserver.conf
+  sed \
+    -e "s|__REALM__|$public_host|g" \
+    -e "s|__STATIC_AUTH_SECRET__|$turn_secret|g" \
+    -e "s|__EXTERNAL_IP_LINE__|$external_ip_line|g" \
+    -e "s|__TURN_TCP_LINE__|$turn_tcp_line|g" \
+    -e "s|__TURN_TLS_LINE__|$turn_tls_line|g" \
+    -e "s|__TURN_DTLS_LINE__|$turn_dtls_line|g" \
+    /etc/turnserver.conf.template > /etc/turnserver.conf
+fi
 
 write_instance_language /run/stellarr/stellarr-instance.js
 
