@@ -14,6 +14,7 @@
 //   /__behave?mode=close-body                        send 201 and hang up in the body
 //   /__behave?mode=big&bytes=5000000                 201 with a body of that size
 //   /__behave?mode=redirect&to=https://...           307
+//   &pass=<name> on /__behave                        stamps every request that arrives afterwards
 //   /__reset                                         forget the log
 //
 // subscriptions.json: { "<path>": { "d": "<private key, base64url>", "x": ..., "y": ..., "auth": "<base64url>" } }
@@ -112,7 +113,7 @@ const server = https.createServer({ cert: fs.readFileSync(certFile), key: fs.rea
       headers: Object.fromEntries(Object.entries(headers).filter(([name]) => name !== 'authorization' && name !== 'crypto-key')),
       rawHeaderNames: request.rawHeaders.filter((_, index) => index % 2 === 0),
       bodyLength: body.length, vapid: verifyVapid(headers), message: decrypt(url.pathname, headers, body),
-      behaviour: behaviour.mode,
+      behaviour: behaviour.mode, pass: behaviour.pass ?? null, at: Date.now(),
     };
     log.push(entry);
     switch (behaviour.mode) {
