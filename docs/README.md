@@ -9,7 +9,7 @@ Stellarr is a self-hosted text, voice, and video chat platform for small groups,
 
 - [Quick start](install/quick-start.md): install with `install.sh` or Docker Compose, complete the `/setup` wizard, invite a second user, and test voice.
 - [Requirements](install/requirements.md): host resources, published ports, NAT forwarding, TLS requirements, and outbound network behavior.
-- [Configuration](install/configuration.md): environment variables (`STELLARR_*`), raw `.NET` configuration keys, development stack settings, and `docker run` flags.
+- [Configuration](install/configuration.md): environment variables (`STELLARR_*`), raw `Section__Key` settings, development stack settings, and `docker run` flags.
 - [Reverse proxy and TLS](install/reverse-proxy-and-tls.md): mounting custom TLS certificates, external reverse proxy setup, `STELLARR_TRUSTED_PROXIES`, and direct WebRTC UDP ports.
 - [Unraid](install/unraid.md): install, configure port mappings, and update using the Unraid container template.
 - [Upgrading](install/upgrading.md): stopping and archiving the data volume, pulling new releases, schema updates, and rollbacks.
