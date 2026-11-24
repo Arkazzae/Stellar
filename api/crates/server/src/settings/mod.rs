@@ -297,6 +297,90 @@ impl OperationsSettings {
     }
 }
 
+/// How the instance writes to people by mail: whether it may and who it writes
+/// as. What the operator saved in the database (the switch, the sender
+/// address, the SMTP server) wins; these are what an instance starts with.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct MailSettings {
+    pub enabled: bool,
+    /// The sender address used when the operator saved none.
+    pub from_address: String,
+    /// The name shown beside the sender address; empty for the bare address.
+    pub from_name: String,
+}
+
+impl MailSettings {
+    fn load(config: &Config) -> Result<MailSettings, SettingError> {
+        Ok(MailSettings {
+            enabled: config.flag("Mail:Enabled")?.unwrap_or(false),
+            from_address: config
+                .raw("Mail:FromAddress")
+                .unwrap_or("")
+                .trim()
+                .to_string(),
+            from_name: config.raw("Mail:FromName").unwrap_or("").trim().to_string(),
+        })
+    }
+}
+
+/// What the environment holds for each secret an operator can also store in
+/// the panel, by the key it is read under. Whatever the panel stores wins; this
+/// is the fallback. A value is never printed.
+#[derive(Clone, PartialEq, Eq)]
+pub struct EnvironmentSecrets(Vec<(&'static str, String)>);
+
+impl EnvironmentSecrets {
+    /// The keys, one for each secret the panel can hold.
+    pub const KEYS: [&'static str; 6] = [
+        "Mail:ResendApiKey",
+        "Mail:SmtpPassword",
+        "Giphy:ApiKey",
+        "Cloudflare:R2:AccessKey",
+        "Cloudflare:R2:SecretKey",
+        "Cloudflare:R2:WorkerToken",
+    ];
+
+    fn load(config: &Config) -> EnvironmentSecrets {
+        EnvironmentSecrets(
+            Self::KEYS
+                .iter()
+                .map(|key| (*key, config.raw(key).unwrap_or("").to_string()))
+                .collect(),
+        )
+    }
+
+    /// The value as the environment gave it, spaces included; empty when it
+    /// is not set.
+    pub fn get(&self, key: &str) -> &str {
+        self.0
+            .iter()
+            .find(|(name, _)| name.eq_ignore_ascii_case(key))
+            .map_or("", |(_, value)| value.as_str())
+    }
+
+    /// For tests: the environment with these values.
+    pub fn with(values: &[(&'static str, &str)]) -> EnvironmentSecrets {
+        EnvironmentSecrets(
+            Self::KEYS
+                .iter()
+                .map(|key| {
+                    let value = values
+                        .iter()
+                        .find(|(name, _)| name == key)
+                        .map_or("", |(_, value)| *value);
+                    (*key, value.to_string())
+                })
+                .collect(),
+        )
+    }
+}
+
+impl fmt::Debug for EnvironmentSecrets {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str("EnvironmentSecrets(..)")
+    }
+}
+
 /// Which clients the instance serves (the client gate).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ClientSettings {
@@ -448,6 +532,8 @@ pub struct Settings {
     pub language: Language,
     pub rtc: RtcSettings,
     pub operations: OperationsSettings,
+    pub mail: MailSettings,
+    pub secrets: EnvironmentSecrets,
     pub clients: ClientSettings,
     pub desktop: DesktopSettings,
     pub rate_limits: RateLimitSettings,
@@ -514,6 +600,8 @@ impl Settings {
             language,
             rtc,
             operations: OperationsSettings::load(config)?,
+            mail: MailSettings::load(config)?,
+            secrets: EnvironmentSecrets::load(config),
             clients: ClientSettings::load(config)?,
             desktop: DesktopSettings {
                 minimum_version: config.text("Desktop:MinimumVersion").map(str::to_string),
