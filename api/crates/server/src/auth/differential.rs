@@ -66,7 +66,7 @@ fn answer(line: &str) -> String {
         },
         "code" => match totp::code_at(&argument(1).unwrap(), moment(2).unwrap()) {
             Some(code) => code,
-            None => "exception ArgumentException".to_string(),
+            None => "error".to_string(),
         },
         "uri" => totp::otpauth_uri(
             &argument(1).unwrap(),
@@ -126,6 +126,18 @@ fn answer(line: &str) -> String {
             webauthn::creation_options(&relying_party, &user, &descriptors(fields[3]), challenge)
                 .unwrap()
                 .json
+        }
+        "soft_authdata" => {
+            // The attested data a software authenticator writes for a key of
+            // the algorithm, and the key as it put it there.
+            let algorithm = webauthn::Algorithm::OFFERED[fields[1].parse::<usize>().unwrap()];
+            let key = passkeys::authenticator::key(algorithm);
+            let spec = passkeys::authenticator::RegistrationSpec::new(&[0; 32]);
+            format!(
+                "{} {}",
+                hex_upper(&spec.auth_data(key)),
+                hex_upper(&key.cose)
+            )
         }
         "trim" => {
             let mut out = String::new();
