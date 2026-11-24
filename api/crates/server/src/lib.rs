@@ -145,6 +145,9 @@ pub struct Services {
     /// How long a stopping server waits for requests and workers; the
     /// built-in grace when `None`.
     pub shutdown_grace: Option<Duration>,
+    /// The recent log lines the operator panel shows; [`run`] gives it the
+    /// buffer the process's logging fills.
+    pub log: Option<Arc<logging::LogBuffer>>,
 }
 
 /// [`serve`] with the services of the process given.
@@ -202,6 +205,9 @@ pub async fn serve_with(
     let addresses = settings.listen.0.clone();
     let sealer = Sealer::load_or_create(&keys).map_err(|e| StartError(e.to_string()))?;
     let state = AppState::new(settings, database, events, presence, sealer);
+    if let Some(log) = services.log {
+        state.cockpit().plug_in_log(log);
+    }
     object_store::prepare(state.storage(), state.settings())
         .await
         .map_err(StartError)?;
@@ -324,8 +330,9 @@ async fn issue_setup_code(state: &AppState) -> Result<(), StartError> {
 }
 
 /// Runs the real API, with every group of endpoints, until SIGTERM or SIGINT.
-pub async fn run(settings: Settings) -> Result<(), StartError> {
+pub async fn run(settings: Settings, log: Arc<logging::LogBuffer>) -> Result<(), StartError> {
     let services = Services {
+        log: Some(log),
         realtime: Some(Realtime::new()),
         workers: background::chosen(&settings, workers()),
         ..Services::default()
