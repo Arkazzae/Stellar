@@ -979,3 +979,25 @@ async fn without_a_secret_no_credentials_are_sent() {
 
     assert!(rig.media.requests().iter().all(|r| r.authorization.is_none()));
 }
+
+#[tokio::test]
+async fn signing_out_closes_its_hub_and_its_media_but_leaves_another_account_active() {
+    let rig = Rig::start().await;
+    let (maja, ada) = (rig.person("maja").await, rig.person("ada").await);
+    let (mut leaving, mut staying) = (rig.connect(&maja).await, rig.connect(&ada).await);
+    leaving.join(rig.salon).await;
+    staying.join(rig.salon).await;
+    let leaving_session = leaving.open_media(rig.salon).await;
+    let staying_session = staying.open_media(rig.salon).await;
+    until(|| rig.media.sessions().contains(&leaving_session) && rig.media.sessions().contains(&staying_session)).await;
+
+    let signed_out = maja.client.post_json("/api/auth/logout", &json!({})).await;
+    assert_eq!(signed_out.status, 204, "{}", signed_out.text());
+
+    let (_, _) = leaving.hub.until_close().await;
+    until(|| !rig.media.sessions().contains(&leaving_session)).await;
+    rig.media.delete_of(&leaving_session).await;
+    assert!(staying.ok("GetRtcClock", json!([])).await.as_i64().unwrap() > 0);
+    assert!(rig.media.sessions().contains(&staying_session));
+    rig.occupants_become(rig.salon, &[&ada.id]).await;
+}
