@@ -150,6 +150,16 @@ impl HubClient {
         }
     }
 
+    /// The next record exactly as it went over the wire.
+    pub async fn raw_record(&mut self) -> String {
+        loop {
+            let text = self.next_text().await;
+            if !text.starts_with("{\"type\":6") {
+                return text;
+            }
+        }
+    }
+
     /// The next record the server sent that is not a ping.
     pub async fn record(&mut self) -> Value {
         loop {

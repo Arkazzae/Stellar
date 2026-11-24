@@ -303,6 +303,53 @@ mod tests {
     }
 
     #[test]
+    fn a_fanout_hands_each_event_to_every_publisher_in_order() {
+        let first = std::sync::Arc::new(RecordingEvents::default());
+        let second = std::sync::Arc::new(RecordingEvents::default());
+        let both = Fanout(vec![first.clone(), second.clone()]);
+
+        both.publish(Event::new(Audience::Everyone, "One", &payload()));
+        both.session_ended(Id::random(), Id::random());
+
+        for recorder in [first, second] {
+            let names: Vec<String> = recorder.published().into_iter().map(|e| e.name).collect();
+            assert_eq!(names, ["One", SESSION_ENDED]);
+        }
+    }
+
+    #[test]
+    fn every_audience_is_written_to_the_file_by_name() {
+        let folder = TempDir::new();
+        let file = EventFile::new(folder.path().join("events.jsonl"));
+        let (server, maya) = (Id::random(), Id::random());
+
+        file.publish(Event::new(Audience::Everyone, "A", &payload()));
+        file.publish(Event::new(
+            Audience::Followers {
+                server,
+                users: vec![maya],
+            },
+            "B",
+            &payload(),
+        ));
+
+        let text = std::fs::read_to_string(folder.path().join("events.jsonl")).unwrap();
+        let lines: Vec<serde_json::Value> = text
+            .lines()
+            .map(|line| serde_json::from_str(line).unwrap())
+            .collect();
+        assert_eq!(lines[0]["audience"], "everyone");
+        assert_eq!(
+            lines[1]["audience"]["followers"]["server"],
+            server.to_string()
+        );
+        assert_eq!(
+            lines[1]["audience"]["followers"]["users"][0],
+            maya.to_string()
+        );
+    }
+
+    #[test]
     fn the_file_gets_one_line_of_json_for_each_event() {
         let folder = TempDir::new();
         let file = EventFile::new(folder.path().join("events.jsonl"));
