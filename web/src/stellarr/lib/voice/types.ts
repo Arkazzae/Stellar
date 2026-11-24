@@ -55,6 +55,7 @@ export type VoiceErrorKind =
   | "transport"
   | "session-replaced"
   | "channel-kicked"
+  | "channel-access-revoked"
   | "camera"
   | "screen-share"
   /** An encrypted conversation's call that cannot be made encrypted, so it is not made. */

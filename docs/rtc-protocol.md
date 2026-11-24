@@ -101,7 +101,7 @@ Defined in `web/src/stellarr/lib/rtc/protocol.ts` and implemented by the hub met
 | Method | `OpenMediaSession` | Allocate an SFU media session on `stellarr-media` for the caller's seat |
 | Method | `SendMediaSignal` | Send an SDP offer/answer, ICE candidate, or receive subscription list to `stellarr-media` |
 | Event | `VoiceParticipantChanged` | Room occupancy snapshot: `{ channelId, sequence, participants }` |
-| Event | `VoiceChannelKicked` | Caller was removed from voice by a moderator or by `voice::enforce` after losing access |
+| Event | `VoiceChannelKicked` | `channelId` identifies the room. Access enforcement adds `reason: "access-revoked"`. A moderator disconnect omits `reason`. |
 | Event | `VoiceSignal` | Relayed `VoiceSignal` envelope |
 | Event | `VoiceSessionReplaced` | Account joined voice from a newer browser tab or device |
 | Event | `DirectCallDeclined` | Remote participant declined or ended the direct call |

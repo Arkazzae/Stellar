@@ -65,6 +65,14 @@ function strings<K extends string>(...keys: K[]) {
   };
 }
 
+const decodeVoiceChannelKicked: HubDecoder<"VoiceChannelKicked"> = (payload) => {
+  if (!isRecord(payload)) return null;
+  const { channelId, reason } = payload;
+  if (typeof channelId !== "string") return null;
+  if (reason === undefined) return { channelId };
+  return reason === "access-revoked" ? { channelId, reason } : null;
+};
+
 /** A sequence is a positive safe integer; anything else is a protocol violation. */
 const isSequence = (value: unknown): value is number =>
   typeof value === "number" && Number.isSafeInteger(value) && value >= 1;
@@ -267,7 +275,7 @@ export const HUB_DECODERS: { [E in RealtimeEventName]: HubDecoder<E> } = {
   NotificationInboxChanged: decodeInboxChanged,
   [RTC_HUB.events.participants]: decodeVoiceParticipants,
   [RTC_HUB.events.sessionReplaced]: strings("channelId"),
-  VoiceChannelKicked: strings("channelId"),
+  VoiceChannelKicked: decodeVoiceChannelKicked,
   VoiceChannelMoved: strings("fromChannelId", "toChannelId"),
   [RTC_HUB.events.directCallDeclined]: strings("channelId", "byUserId"),
   [RTC_HUB.events.signal]: parseVoiceSignal,

@@ -35,6 +35,7 @@ import { SpeakingHold } from "./speakingHold";
 import {
   callKeysError,
   callUnsupportedError,
+  channelAccessRevokedError,
   channelKickedError,
   iceConfigError,
   joinFailedError,
@@ -798,7 +799,11 @@ export class WebRtcVoiceClient implements VoiceClient {
         if (event.channelId === this.channelId) void this.endWithError(sessionReplacedError);
       }),
       realtime.on("VoiceChannelKicked", (event) => {
-        if (event.channelId === this.channelId) void this.endWithError(channelKickedError);
+        if (event.channelId !== this.channelId) return;
+        const error = event.reason === "access-revoked"
+          ? channelAccessRevokedError(this.t)
+          : channelKickedError;
+        void this.endWithError(error);
       }),
       realtime.on("VoiceChannelMoved", (event) => {
         if (event.fromChannelId === this.channelId) void this.followMove(event.toChannelId);
