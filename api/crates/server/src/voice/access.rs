@@ -7,9 +7,9 @@
 //! made such a change calls [`enforce`] once it is committed (or the two steps
 //! of it, [`unseat`] and [`Unseated::announce`], where the people must be told
 //! later than the seats are freed), and the people who sit where they may no
-//! longer view or connect are taken out, as a moderator's voice kick takes them:
-//! the seat and the media session are gone, the room is told who is left, and
-//! the person is told with `VoiceChannelKicked`.
+//! longer view or connect are taken out: the seat and the media session are
+//! gone, the room is told who is left, and the person receives
+//! `VoiceChannelKicked` with the reason `access-revoked`.
 //!
 //! What a person may do is asked of the permissions, once, here: what they hold
 //! at the channel they sit in ([`held_at`]). There is no second copy of the
@@ -49,6 +49,7 @@ pub fn voice_channels_of(db: &Connection, server: Id) -> rusqlite::Result<Vec<Id
 #[serde(rename_all = "camelCase")]
 struct ChannelKicked {
     channel_id: Id,
+    reason: &'static str,
 }
 
 /// The seats that were taken, and who is to be told.
@@ -71,7 +72,10 @@ impl Unseated {
                 state,
                 connections.iter().cloned(),
                 "VoiceChannelKicked",
-                &ChannelKicked { channel_id: *room },
+                &ChannelKicked {
+                    channel_id: *room,
+                    reason: "access-revoked",
+                },
             );
             if !rooms.contains(room) {
                 rooms.push(*room);

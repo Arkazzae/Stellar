@@ -1,6 +1,6 @@
 //! A person who sits in a voice room and loses the right to is taken out of it
 //! at once: the seat and the media session are gone, the room is told who is
-//! left, and the person is told with `VoiceChannelKicked`. Every way of losing
+//! left, and the person is told why. Every way of losing
 //! the right has a test of its own, and so has a change that leaves it.
 //!
 //! The person sits in the instance's voice channel through a role of their own
@@ -62,7 +62,7 @@ impl Scene {
     /// still there.
     async fn assert_unseated(&mut self, room_remains: bool) {
         let room = self.rig.salon;
-        assert_eq!(self.peer.next("VoiceChannelKicked").await, json!({"channelId": room}));
+        assert_eq!(self.peer.next("VoiceChannelKicked").await, json!({"channelId": room, "reason": "access-revoked"}));
         self.rig.media.delete_of(&self.session).await;
         until(|| !self.rig.media.sessions().contains(&self.session)).await;
         self.peer
@@ -322,7 +322,7 @@ async fn crew() -> Crew {
 
 impl Crew {
     async fn assert_unseated(&mut self) {
-        assert_eq!(self.peer.next("VoiceChannelKicked").await, json!({"channelId": self.channel}));
+        assert_eq!(self.peer.next("VoiceChannelKicked").await, json!({"channelId": self.channel, "reason": "access-revoked"}));
         self.rig.media.delete_of(&self.session).await;
         until(|| !self.rig.media.sessions().contains(&self.session)).await;
         self.peer.refused("SendVoiceSignal", json!([signal(self.channel, "state", "{}", None)]), "Invalid voice signal.").await;
