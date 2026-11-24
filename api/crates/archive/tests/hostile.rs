@@ -236,6 +236,8 @@ fn duplicate_and_missing_entries_are_reported_to_the_caller() {
 fn names_come_back_exactly_as_stored() {
     let names = [
         "objects/../../escape",
+        "objects/x",
+        "objects/x/y",
         "objects/.incoming/half-written",
         "keys/nested/key.xml",
         "instance/etc/passwd",
