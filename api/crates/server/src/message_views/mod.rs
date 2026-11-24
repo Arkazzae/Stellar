@@ -138,3 +138,37 @@ mod differential {
         std::fs::write(out, written).unwrap();
     }
 }
+
+/// Both readers of a message, over the same thousands of messages and several
+/// viewers: what one writes, the other must write to the byte. Temporary.
+#[cfg(test)]
+mod same_json {
+    use super::wire;
+    use crate::messages::dto;
+    use crate::values::Id;
+    use rusqlite::Connection;
+    use stellarr_messages::{Language, Messages};
+
+    #[test]
+    #[ignore = "needs a database file in MV_DB"]
+    fn the_two_readers_write_the_same_bytes() {
+        let Ok(path) = std::env::var("MV_DB") else { return };
+        let db = Connection::open(path).unwrap();
+        let messages = Messages::new(Language::English);
+        let words = wire::Words { attachment: messages.get(stellarr_messages::MessageKey::AttachmentPreview, &[]).unwrap() };
+        let ids: Vec<Id> = db.prepare("SELECT \"Id\" FROM \"Messages\" ORDER BY \"CreatedAt\", \"Id\"").unwrap().query_map([], |r| r.get(0)).unwrap().map(Result::unwrap).collect();
+        let users: Vec<Id> = db.prepare("SELECT \"Id\" FROM \"Users\"").unwrap().query_map([], |r| r.get(0)).unwrap().map(Result::unwrap).collect();
+        let mut viewers: Vec<Option<Id>> = vec![None];
+        viewers.extend(users.into_iter().map(Some));
+        let mut compared = 0;
+        for viewer in viewers {
+            for chunk in ids.chunks(97) {
+                let old = serde_json::to_string(&wire::load(&db, chunk, viewer, &words).unwrap()).unwrap();
+                let new = serde_json::to_string(&dto::load(&db, &messages, chunk, viewer).unwrap()).unwrap();
+                if old != new { let at = old.bytes().zip(new.bytes()).position(|(a, b)| a != b).unwrap_or(0); panic!("viewer {viewer:?} at {at}: {} || {}", String::from_utf8_lossy(&old.as_bytes()[at.saturating_sub(150)..(at + 150).min(old.len())]), String::from_utf8_lossy(&new.as_bytes()[at.saturating_sub(150)..(at + 150).min(new.len())])); }
+                compared += chunk.len();
+            }
+        }
+        eprintln!("compared {compared} message renderings");
+    }
+}

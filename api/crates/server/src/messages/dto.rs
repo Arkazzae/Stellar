@@ -310,7 +310,7 @@ pub fn load(
             "SELECT \"MessageId\", \"Id\", \"Url\", \"Kind\", \"Provider\", \"ProviderId\", \"StartSeconds\", \"Domain\",
                     \"Title\", \"Description\", \"ThumbnailAttachmentId\", \"Position\"
              FROM \"MessageEmbeds\" WHERE \"MessageId\" IN (SELECT value FROM json_each(?1))
-             ORDER BY \"MessageId\", \"Position\", \"Id\"",
+             ORDER BY \"MessageId\", \"Position\", rowid",
         )?;
         for row in statement.query_map([&wanted], |row| {
             let thumbnail: Option<Id> = row.get(10)?;
