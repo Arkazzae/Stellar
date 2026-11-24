@@ -6,5 +6,6 @@ mod oracle;
 mod pipeline;
 mod realtime;
 mod registration;
+mod releases;
 mod sign_in;
 mod workers;
