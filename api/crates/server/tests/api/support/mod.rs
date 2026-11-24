@@ -21,5 +21,6 @@ mod server;
 
 pub use client::{Client, Request, Response};
 pub use log::LogCapture;
+#[allow(unused_imports)]
 pub use people::{PASSWORD, Person};
 pub use server::{Server, TempDir};
