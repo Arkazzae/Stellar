@@ -1586,6 +1586,114 @@ async fn a_password_checked_against_a_hash_that_has_since_changed_counts_for_not
     ));
 }
 
+/// What the given password comes to, in a transaction of its own.
+async fn given(world: &World, caller: Caller, candidate: Option<&str>) -> PasswordProof {
+    let checked = check_given_password(&world.state, caller.user, candidate)
+        .await
+        .unwrap();
+    judge(world, caller, &checked)
+}
+
+fn judge(world: &World, caller: Caller, checked: &GivenPassword) -> PasswordProof {
+    let mut connection = world.db();
+    let tx = connection.transaction().unwrap();
+    judge_given_password(&tx, caller, checked, Timestamp::now()).unwrap()
+}
+
+#[tokio::test]
+async fn a_given_password_is_the_proof_whatever_second_step_the_account_has() {
+    let world = World::new();
+    let user = world.user(None);
+    with_password(&world, user, "correct horse 42");
+    world.with_app(user).await;
+    // A session that never passed the second step: the route's own guard is
+    // what asks for that, the password is judged on its own.
+    let old = add_session(
+        &world.db(),
+        user,
+        Timestamp::now().minus(Duration::from_secs(3600)),
+        None,
+    );
+    let old = Caller { user, session: old };
+
+    assert_eq!(
+        given(&world, old, Some("correct horse 42")).await,
+        PasswordProof::Given
+    );
+    assert_eq!(
+        given(&world, old, Some("another one")).await,
+        PasswordProof::WrongPassword
+    );
+    assert_eq!(
+        given(&world, old, Some("")).await,
+        PasswordProof::WrongPassword
+    );
+    assert_eq!(given(&world, old, None).await, PasswordProof::WrongPassword);
+}
+
+#[tokio::test]
+async fn a_password_given_before_it_was_changed_counts_for_nothing() {
+    let world = World::new();
+    let user = world.user(None);
+    with_password(&world, user, "correct horse 42");
+    let session = caller(&world, user, None);
+    let checked = check_given_password(&world.state, user, Some("correct horse 42"))
+        .await
+        .unwrap();
+    assert_eq!(judge(&world, session, &checked), PasswordProof::Given);
+
+    with_password(&world, user, "a newer password 77");
+
+    assert_eq!(
+        judge(&world, session, &checked),
+        PasswordProof::WrongPassword
+    );
+}
+
+#[tokio::test]
+async fn an_account_without_a_password_is_asked_for_a_sign_in_from_the_last_minutes() {
+    let world = World::new();
+    let user = world.user(None);
+    world
+        .db()
+        .execute(
+            "UPDATE \"Users\" SET \"PasswordHash\" = NULL WHERE \"Id\" = ?1",
+            [user],
+        )
+        .unwrap();
+    let recent = caller(&world, user, None);
+    let old = Caller {
+        user,
+        session: add_session(
+            &world.db(),
+            user,
+            Timestamp::now().minus(Duration::from_secs(3600)),
+            None,
+        ),
+    };
+
+    // Giving a password changes nothing for an account that has none.
+    assert_eq!(
+        given(&world, recent, Some("whatever")).await,
+        PasswordProof::Given
+    );
+    assert_eq!(
+        given(&world, old, Some("whatever")).await,
+        PasswordProof::FreshProofNeeded
+    );
+    assert_eq!(
+        given(&world, old, None).await,
+        PasswordProof::FreshProofNeeded
+    );
+
+    // With a second step it is the step, as for any other change of security.
+    world.with_app(user).await;
+    assert_eq!(
+        given(&world, recent, None).await,
+        PasswordProof::FreshProofNeeded
+    );
+}
+
 #[tokio::test]
 async fn an_enrolment_from_a_session_accepts_the_password_of_the_account_without_a_second_step() {
     let world = World::new();
