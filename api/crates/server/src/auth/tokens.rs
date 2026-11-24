@@ -27,6 +27,28 @@ pub fn random_below(limit: u32) -> u32 {
     }
 }
 
+/// A number of `digits` digits (at most nine), zeros first, as a person types
+/// a code from a mail.
+pub fn random_digits(digits: u32) -> String {
+    debug_assert!((1..=9).contains(&digits));
+    format!(
+        "{:0width$}",
+        random_below(10u32.pow(digits)),
+        width = digits as usize
+    )
+}
+
+/// The letters and digits a code is written in: no 0, 1, I or O, which are
+/// easy to confuse when it is typed from paper.
+const CODE_ALPHABET: &[u8; 32] = b"ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
+
+/// `length` characters of [`CODE_ALPHABET`].
+pub fn random_text(length: usize) -> String {
+    (0..length)
+        .map(|_| char::from(CODE_ALPHABET[random_below(CODE_ALPHABET.len() as u32) as usize]))
+        .collect()
+}
+
 /// The SHA-256 of the text in capital hexadecimal: how a secret is stored.
 pub fn hash(value: &str) -> String {
     hex_upper(digest(&SHA256, value.as_bytes()).as_ref())
@@ -65,6 +87,35 @@ mod tests {
         assert!(!matches(&secret, "short"));
         assert_eq!(secret.len(), 43);
         assert_ne!(secret, random(32));
+    }
+
+    #[test]
+    fn digits_come_with_their_leading_zeros_and_every_digit_turns_up() {
+        let mut seen = [false; 10];
+        for _ in 0..400 {
+            let code = random_digits(6);
+            assert_eq!(code.len(), 6);
+            assert!(code.bytes().all(|b| b.is_ascii_digit()), "{code}");
+            for b in code.bytes() {
+                seen[usize::from(b - b'0')] = true;
+            }
+        }
+        assert!(seen.iter().all(|seen| *seen));
+        assert_eq!(random_digits(1).len(), 1);
+        assert_eq!(random_digits(9).len(), 9);
+    }
+
+    #[test]
+    fn text_codes_use_only_the_unambiguous_alphabet() {
+        let mut seen = std::collections::HashSet::new();
+        for _ in 0..200 {
+            let text = random_text(28);
+            assert_eq!(text.len(), 28);
+            seen.extend(text.bytes());
+        }
+        assert!(seen.iter().all(|b| CODE_ALPHABET.contains(b)));
+        assert_eq!(seen.len(), 32, "every character is drawn in time");
+        assert_eq!(random_text(0), "");
     }
 
     #[test]
