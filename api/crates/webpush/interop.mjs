@@ -58,7 +58,7 @@ assert.equal(header("TTL"), "300");
 assert.equal(header("Content-Encoding"), "aes128gcm");
 assert.equal(header("Content-Type"), "application/octet-stream");
 const body = unb64(request.body);
-assert.equal(header("Content-Length"), String(body.length));
+assert.equal(header("Content-Length"), undefined, "the HTTP client sets the length");
 
 // RFC 8188 header: salt(16) | record size(4) | key id length(1) | key id.
 const salt = body.subarray(0, 16);

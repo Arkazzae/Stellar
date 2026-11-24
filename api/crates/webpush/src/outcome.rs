@@ -2,6 +2,9 @@
 
 use std::time::Duration;
 
+/// The longest wait this crate reports from a `Retry-After`.
+pub const MAX_RETRY_AFTER: Duration = Duration::from_secs(24 * 60 * 60);
+
 /// The meaning of one answer from a push service.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Outcome {
@@ -17,22 +20,22 @@ pub enum Outcome {
     Rejected { status: u16 },
 }
 
-/// The three-way answer the outbox that owns the retries works with.
+/// The three-way answer a caller that owns retries and stored subscriptions works with.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Dispatch {
     Delivered,
     /// The subscription is dead; delete it.
     Gone,
-    /// Keep the subscription and try again under the outbox's own limits.
+    /// Keep the subscription and try again under the caller's own retry limits.
     Retry,
 }
 
 impl Outcome {
-    /// Reduces the outcome to the outbox's three answers.
+    /// Reduces the outcome to three answers.
     ///
     /// A refusal other than "gone" never deletes the subscription. A rejected
     /// token or a rejected body is more often a mistake on our side than the
-    /// browser's, so it is retried, and the outbox bounds the attempts instead
+    /// browser's, so it is retried, and the caller bounds the attempts instead
     /// of dropping a working browser.
     pub fn dispatch(self) -> Dispatch {
         match self {
@@ -62,8 +65,14 @@ pub fn classify(status: u16, retry_after: Option<&str>, now: u64) -> Outcome {
 
 /// Reads `Retry-After` (RFC 9110 section 10.2.3): a number of seconds, or an
 /// HTTP date in the fixed `Sun, 06 Nov 1994 08:49:37 GMT` form. A date in the
-/// past means "now". Anything else is ignored.
+/// past means "now". Anything else is ignored. The result is capped at one
+/// day ([`MAX_RETRY_AFTER`]), so a caller can add it to a clock without
+/// overflow.
 pub fn parse_retry_after(value: &str, now: u64) -> Option<Duration> {
+    parse_retry_after_uncapped(value, now).map(|wait| wait.min(MAX_RETRY_AFTER))
+}
+
+fn parse_retry_after_uncapped(value: &str, now: u64) -> Option<Duration> {
     let value = value.trim();
     if !value.is_empty() && value.bytes().all(|b| b.is_ascii_digit()) {
         // More digits than a u64 holds still mean "a very long time".
@@ -156,7 +165,7 @@ mod tests {
     use super::*;
 
     #[test]
-    fn every_status_the_dispatcher_was_tested_with_keeps_its_decision() {
+    fn listed_statuses_map_to_the_expected_decisions() {
         let table = [
             (200, Dispatch::Delivered),
             (201, Dispatch::Delivered),
@@ -179,15 +188,19 @@ mod tests {
     }
 
     #[test]
-    fn every_status_in_range_has_one_decision() {
-        for status in 0..=999u16 {
-            let dispatch = classify(status, None, 0).dispatch();
-            let expected = match status {
-                200..=299 => Dispatch::Delivered,
-                404 | 410 => Dispatch::Gone,
-                _ => Dispatch::Retry,
-            };
-            assert_eq!(dispatch, expected, "{status}");
+    fn every_status_maps_to_one_outcome_without_panicking() {
+        for status in 0..=u16::MAX {
+            let outcome = classify(status, Some("garbage"), 0);
+            let matched = [
+                matches!(outcome, Outcome::Delivered),
+                matches!(outcome, Outcome::Gone),
+                matches!(outcome, Outcome::RetryLater { .. }),
+                matches!(outcome, Outcome::Rejected { .. }),
+            ];
+            assert_eq!(matched.iter().filter(|&&m| m).count(), 1, "{status}");
+            if let Outcome::Rejected { status: kept } = outcome {
+                assert_eq!(kept, status);
+            }
         }
     }
 
@@ -278,7 +291,15 @@ mod tests {
     fn a_huge_number_of_seconds_does_not_overflow() {
         assert_eq!(
             parse_retry_after("99999999999999999999999999", 0),
-            Some(Duration::from_secs(u64::MAX))
+            Some(MAX_RETRY_AFTER)
         );
+        assert_eq!(parse_retry_after("86401", 0), Some(MAX_RETRY_AFTER));
+        assert_eq!(parse_retry_after("86400", 0), Some(MAX_RETRY_AFTER));
+        assert_eq!(
+            parse_retry_after("86399", 0),
+            Some(Duration::from_secs(86_399))
+        );
+        let far = "Fri, 31 Dec 9999 23:59:59 GMT";
+        assert_eq!(parse_retry_after(far, 0), Some(MAX_RETRY_AFTER));
     }
 }

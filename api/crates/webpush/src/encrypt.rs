@@ -1,9 +1,10 @@
 //! Encryption of a push message for one receiver: RFC 8291 over the
 //! `aes128gcm` content coding of RFC 8188.
 //!
-//! The message is one record of 4096 bytes, the size every push service
-//! accepts and the size browsers expect. It carries the padding delimiter and
-//! no more padding than that.
+//! The whole body, header and record, stays within 4096 bytes: RFC 8291
+//! section 4 says a push service is not required to accept more, which leaves
+//! 3993 bytes of plaintext. The message is one record that carries the padding
+//! delimiter and no more padding than that.
 
 use aws_lc_rs::aead::{AES_128_GCM, Aad, LessSafeKey, NONCE_LEN, Nonce, UnboundKey};
 use aws_lc_rs::agreement::{self, ECDH_P256, UnparsedPublicKey};
@@ -12,14 +13,16 @@ use aws_lc_rs::rand;
 
 use crate::p256::{POINT_LEN, is_valid_point};
 
-/// The record size written into the header, and the most a message may use.
+/// The record size written into the header.
 pub const RECORD_SIZE: u32 = 4096;
+/// The most body a push service is required to accept (RFC 8291 section 4).
+pub const MAX_BODY: usize = 4096;
 /// Header: salt (16), record size (4), key id length (1), key id (65).
 pub const HEADER_LEN: usize = 16 + 4 + 1 + POINT_LEN;
 /// Authentication tag of AES-GCM.
 const TAG_LEN: usize = 16;
-/// The most plaintext one record holds: the record minus tag and delimiter.
-pub const MAX_PLAINTEXT: usize = RECORD_SIZE as usize - TAG_LEN - 1;
+/// The most plaintext that keeps the body within [`MAX_BODY`]: 3993 bytes.
+pub const MAX_PLAINTEXT: usize = MAX_BODY - HEADER_LEN - TAG_LEN - 1;
 /// Appended to the last (here: only) record to mark its end.
 const LAST_RECORD_DELIMITER: u8 = 0x02;
 
@@ -230,7 +233,8 @@ mod tests {
         let keys = subscription_keys();
         let biggest = vec![b'x'; MAX_PLAINTEXT];
         let body = encrypt(&biggest, &keys.p256dh, &keys.auth).unwrap();
-        assert_eq!(body.len(), HEADER_LEN + RECORD_SIZE as usize);
+        assert_eq!(MAX_PLAINTEXT, 3993);
+        assert_eq!(body.len(), MAX_BODY);
         let too_big = vec![b'x'; MAX_PLAINTEXT + 1];
         assert_eq!(
             encrypt(&too_big, &keys.p256dh, &keys.auth),

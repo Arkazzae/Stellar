@@ -195,7 +195,7 @@ fn normalize_host(text: &str) -> Option<String> {
         let address = parse_legacy_ipv4(bare)?;
         return is_public_v4(address).then(|| address.to_string());
     }
-    Some(host)
+    Some(bare.to_owned())
 }
 
 /// Parses the classic `inet_aton` spellings: one to four parts, each decimal,
@@ -405,6 +405,22 @@ mod tests {
     }
 
     #[test]
+    fn a_trailing_dot_is_dropped_from_endpoint_and_audience() {
+        let keys = subscription_keys();
+        let checked = ValidatedSubscription::validate(
+            Some("https://a.test./x"),
+            Some(&keys.p256dh_text),
+            Some(&keys.auth_text),
+        )
+        .unwrap();
+        assert_eq!(checked.endpoint(), "https://a.test/x");
+        assert_eq!(checked.audience(), "https://a.test");
+        assert_eq!(endpoint("https://LOCALHOST./x"), None);
+        assert_eq!(endpoint("https://box.local./x"), None);
+        assert_eq!(endpoint("https://a.test../x"), None);
+    }
+
+    #[test]
     fn audience_ignores_path_and_query() {
         let keys = subscription_keys();
         let make = |url| {
@@ -478,19 +494,33 @@ mod tests {
         assert!(check(&keys.p256dh_text, &"A".repeat(100)).is_none());
     }
 
+    // A receiver key from RFC 8291 whose text holds both '-' and '_'.
+    const KEY_WITH_URL_SAFE_CHARS: &str =
+        "BCVxsr7N_eNgVRqvHtD0zTZsEc6-VV-JvLexhqUzORcxaOzi6-AYWXvTBHm4bjyPjs7Vd8pZGH6SRpkNtoIAiw4";
+    const AUTH_OF_THE_SAME: &str = "BTBZMqHH6r4Tts7J_aSIgg";
+
+    fn with_key(p256dh: &str) -> Option<ValidatedSubscription> {
+        ValidatedSubscription::validate(
+            Some("https://push.example.test/x"),
+            Some(p256dh),
+            Some(AUTH_OF_THE_SAME),
+        )
+    }
+
     #[test]
-    fn padded_and_standard_alphabet_keys_are_refused() {
-        let keys = subscription_keys();
-        let standard = keys.p256dh_text.replace('-', "+").replace('_', "/");
-        if standard != keys.p256dh_text {
-            assert!(
-                ValidatedSubscription::validate(
-                    Some("https://push.example.test/x"),
-                    Some(&standard),
-                    Some(&keys.auth_text)
-                )
-                .is_none()
-            );
-        }
+    fn a_key_in_the_standard_base64_alphabet_is_refused() {
+        assert!(KEY_WITH_URL_SAFE_CHARS.contains('-') && KEY_WITH_URL_SAFE_CHARS.contains('_'));
+        assert!(with_key(KEY_WITH_URL_SAFE_CHARS).is_some());
+        let standard = KEY_WITH_URL_SAFE_CHARS.replace('-', "+").replace('_', "/");
+        assert!(with_key(&standard).is_none());
+    }
+
+    #[test]
+    fn a_key_with_exact_padding_is_accepted_and_stored_without_it() {
+        // 65 bytes encode to 87 characters; one '=' completes the last group.
+        let padded = format!("{KEY_WITH_URL_SAFE_CHARS}=");
+        let checked = with_key(&padded).expect("padding is accepted");
+        assert_eq!(checked.p256dh_text(), KEY_WITH_URL_SAFE_CHARS);
+        assert!(with_key(&format!("{KEY_WITH_URL_SAFE_CHARS}==")).is_none());
     }
 }

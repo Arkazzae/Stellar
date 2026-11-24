@@ -78,17 +78,31 @@ impl Default for SendOptions {
 }
 
 /// A request for the application to send.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Clone, PartialEq, Eq)]
 pub struct PushRequest {
     /// Always `POST`.
     pub method: &'static str,
     /// The subscription's endpoint, as normalized.
     pub url: String,
-    /// Header names and values. `Content-Length` is included for clients that
-    /// do not set it themselves.
+    /// Header names and values. There is no `Content-Length`: the HTTP client
+    /// that sends the request sets it from the body, and two are an error for
+    /// some servers.
     pub headers: Vec<(String, String)>,
     /// The encrypted message.
     pub body: Vec<u8>,
+}
+
+impl std::fmt::Debug for PushRequest {
+    // The Authorization value is a bearer token for the push service and the
+    // body is the message; neither belongs in a log.
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let names: Vec<&str> = self.headers.iter().map(|(name, _)| name.as_str()).collect();
+        f.debug_struct("PushRequest")
+            .field("method", &self.method)
+            .field("url", &self.url)
+            .field("header_names", &names)
+            .finish_non_exhaustive()
+    }
 }
 
 impl PushRequest {
@@ -115,7 +129,7 @@ pub enum BuildError {
 }
 
 impl BuildError {
-    /// What the outbox should do about it.
+    /// What the caller that owns retries should do about it.
     ///
     /// A message that is too large is a problem of this notification, not of
     /// the browser, so the subscription stays. Unusable keys mean the
@@ -178,7 +192,6 @@ pub fn build_request(
             "Content-Type".to_owned(),
             "application/octet-stream".to_owned(),
         ),
-        ("Content-Length".to_owned(), body.len().to_string()),
     ];
     if let Some(urgency) = options.urgency {
         headers.push(("Urgency".to_owned(), urgency.as_str().to_owned()));
@@ -239,7 +252,7 @@ mod tests {
     }
 
     #[test]
-    fn the_request_carries_what_the_old_sender_carried() {
+    fn the_request_has_the_method_url_and_headers_a_push_service_needs() {
         let (vapid, subscription) = setup();
         let request = build_request(
             &vapid,
@@ -258,10 +271,7 @@ mod tests {
             request.header("Content-Type"),
             Some("application/octet-stream")
         );
-        assert_eq!(
-            request.header("Content-Length"),
-            Some(request.body.len().to_string().as_str())
-        );
+        assert!(request.header("Content-Length").is_none());
         assert!(request.header("Urgency").is_none());
         assert!(request.header("Topic").is_none());
         assert!(request.body.len() > 32);
@@ -389,10 +399,20 @@ mod tests {
     }
 
     #[test]
-    fn debug_of_a_request_does_not_leak_the_private_key() {
+    fn debug_of_a_request_hides_the_token_the_key_and_the_body() {
         let (vapid, subscription) = setup();
         let request =
             build_request(&vapid, &subscription, b"{}", &SendOptions::default(), 1).unwrap();
-        assert!(!format!("{request:?}").contains(&vapid.private_key()));
+        let shown = format!("{request:?}");
+        let authorization = request.header("Authorization").unwrap();
+        let token = authorization.split(['=', ',']).nth(1).unwrap();
+        assert!(token.starts_with("eyJ"));
+        assert!(!shown.contains(token));
+        assert!(!shown.contains(authorization));
+        assert!(!shown.contains(&vapid.private_key()));
+        assert!(!shown.contains(&base64url::encode(&request.body)));
+        assert!(shown.contains("https://push.example.test/send/subscription"));
+        assert!(shown.contains("Authorization"));
+        assert!(shown.contains("TTL"));
     }
 }
