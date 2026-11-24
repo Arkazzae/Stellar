@@ -230,10 +230,18 @@ impl Change {
             || self.cli_recovery_minutes.is_some()
     }
 
-    /// A change of the server that sends every account mail, which a stolen
-    /// session could point elsewhere.
-    fn changes_mail_transport(&self, row: &Row) -> bool {
-        self.smtp_host.as_deref().is_some_and(|host| host.trim() != row.smtp_host)
+    /// A change of anything about mail: the server that sends every account
+    /// mail (which a stolen session could point elsewhere), the sender, whether
+    /// mail is sent at all and which kinds of it are. The first server asked
+    /// for the step for the transport alone; this server asks for all of it,
+    /// on purpose.
+    fn changes_mail(&self, row: &Row) -> bool {
+        self.mailing_enabled != row.mailing_enabled
+            || self.mail_from_address.as_deref().unwrap_or("").trim() != row.mail_from_address
+            || self.invite_mail_enabled != row.invite_mail_enabled
+            || self.recovery_mail_enabled != row.recovery_mail_enabled
+            || self.alert_mail_enabled != row.alert_mail_enabled
+            || self.smtp_host.as_deref().is_some_and(|host| host.trim() != row.smtp_host)
             || self.smtp_port.is_some_and(|port| i64::from(port) != row.smtp_port)
             || self.smtp_security.as_deref().is_some_and(|security| {
                 !security.trim().eq_ignore_ascii_case(&row.smtp_security)
@@ -306,7 +314,7 @@ pub(super) async fn update(State(state): State<AppState>, request: Request) -> A
             let Loaded { mut settings, stored } = load(tx, &writing, server)?;
             // Who may skip a second step, and where the mail with codes and
             // reset links goes, need a fresh one; the rest of the page does not.
-            if (change.changes_account_security() || change.changes_mail_transport(&settings))
+            if (change.changes_account_security() || change.changes_mail(&settings))
                 && !fresh::has_fresh_second_step(tx, caller.user, Some(caller.session), Timestamp::now())?
             {
                 return Err(fresh::refusal(&messages)?.into());

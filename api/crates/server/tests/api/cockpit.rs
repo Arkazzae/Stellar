@@ -661,11 +661,13 @@ async fn the_settings_ask_for_the_second_step_only_for_security_and_the_mail_tra
     assert_eq!(put(json!({})).await.status, 200);
     // Saying what is already so about the transport asks for nothing; changing it does.
     assert_eq!(put(json!({"smtpHost": "", "smtpPort": 587, "smtpSecurity": "STARTTLS", "smtpUsername": " "})).await.status, 200);
-    for extra in [json!({"smtpHost": "mail.example.test"}), json!({"smtpPort": 25}), json!({"smtpSecurity": "tls"}), json!({"smtpUsername": "u"}), json!({"resendEnabled": false}), json!({"mfaRequirement": "optional"}), json!({"trustedDeviceDays": 14}), json!({"cliRecoveryMinutes": 10})] {
+    for extra in [json!({"smtpHost": "mail.example.test"}), json!({"smtpPort": 25}), json!({"smtpSecurity": "tls"}), json!({"smtpUsername": "u"}), json!({"resendEnabled": false}), json!({"mfaRequirement": "optional"}), json!({"trustedDeviceDays": 14}), json!({"cliRecoveryMinutes": 10}), json!({"mailFromAddress": "ops@example.test"}), json!({"mailingEnabled": true, "mailFromAddress": "ops@example.test"}), json!({"inviteMailEnabled": false}), json!({"recoveryMailEnabled": false}), json!({"alertMailEnabled": true})] {
         let asked = put(extra.clone()).await;
         assert_eq!(asked.status, 403, "{extra}");
         assert_eq!(asked.json::<Value>()["code"], "fresh-mfa-required", "{extra}");
     }
+    // Nothing of what was refused was saved.
+    assert_eq!(scene.rows("SELECT \"MailFromAddress\", \"MailingEnabled\", \"InviteMailEnabled\", \"AlertMailEnabled\" FROM \"OperationsSettings\"")[0], ["", "0", "1", "0"]);
     // A request that is wrong is told so before it is asked for the step.
     let wrong = put(json!({"trustedDeviceDays": 0})).await;
     assert_eq!(wrong.status, 400);
@@ -687,4 +689,21 @@ async fn nobody_is_given_the_owners_role_by_a_role_change() {
     assert_eq!(refused.status, 404);
     let after = scene.rows(&format!("SELECT \"RoleId\" FROM \"ServerMembers\" WHERE \"UserId\" = '{}' COLLATE NOCASE", scene.member.id));
     assert_eq!(before, after);
+}
+
+#[tokio::test]
+async fn a_fresh_session_may_change_the_mail_settings_and_they_are_saved() {
+    let scene = Scene::new().await;
+    let body = json!({
+        "instanceName": "Orbit", "timeZone": "UTC", "mailingEnabled": true, "mailFromAddress": " ops@example.test ",
+        "inviteMailEnabled": false, "recoveryMailEnabled": true, "alertMailEnabled": true,
+        "backupRetentionDays": 14, "logRetentionDays": 30, "orphanObjectRetentionDays": 1, "automaticCleanupEnabled": true
+    });
+    let saved = scene.owner.client.send(Request::new(Method::PUT, "/api/cockpit/settings").json(&body)).await;
+    assert_eq!(saved.status, 200, "{}", saved.text());
+    assert_eq!(scene.rows("SELECT \"MailFromAddress\", \"MailingEnabled\", \"InviteMailEnabled\", \"AlertMailEnabled\" FROM \"OperationsSettings\"")[0], ["ops@example.test", "1", "0", "1"]);
+    // With a second step that is stale, saying the same again is not a change.
+    stale(&scene);
+    let again = scene.owner.client.send(Request::new(Method::PUT, "/api/cockpit/settings").json(&body)).await;
+    assert_eq!(again.status, 200, "{}", again.text());
 }

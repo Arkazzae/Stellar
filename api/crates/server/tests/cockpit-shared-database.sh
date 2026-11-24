@@ -25,7 +25,7 @@
 # run.
 #
 #   STELLARR_API=path/to/stellarr-api ORACLE_SCRIPT=path/to/oracle \
-#     [ORACLE=cockpit ORACLE_PORT=5233 MAIL_PORTS=5291,5292,5293,5294 KEEP=1] \
+#     [ORACLE=cockpit ORACLE_PORT=5233 MAIL_PORTS=5291,5292,5293,5294 KEEP=1 PROVIDERS=1] \
 #     cockpit-shared-database.sh
 set -euo pipefail
 
@@ -58,6 +58,18 @@ trap 'exit 143' TERM
 settings=$work/oracle.env
 printf '%s\n' RateLimiting__AuthWrite__PermitLimit=5000 RateLimiting__Login__PermitLimit=5000 \
   RateLimiting__InvitePreview__PermitLimit=5000 RateLimiting__SecurityWrite__PermitLimit=5000 > "$settings"
+# PROVIDERS=1: both servers have identity providers set up (the original one and two named ones). The
+# panel only reads their settings, so nothing listens at the authorities.
+providers=()
+if [ "${PROVIDERS:-0}" = 1 ]; then
+  providers=(Oidc__Enabled=true Oidc__Authority=https://idp.example.test/default Oidc__ClientId=panel-tests
+    Oidc__ClientSecret=test-client-secret "Oidc__DisplayName=Main IdP"
+    Oidc__Providers__example__Authority=https://id.example.test Oidc__Providers__example__ClientId=panel-tests
+    Oidc__Providers__example__ClientSecret=test-client-secret "Oidc__Providers__example__DisplayName=Example IdP"
+    Oidc__Providers__google__Authority=https://accounts.example.test Oidc__Providers__google__ClientId=panel-tests
+    Oidc__Providers__google__ClientSecret=test-client-secret)
+  printf '%s\n' "${providers[@]}" >> "$settings"
+fi
 ready() { for _ in $(seq 1 90); do [ "$(curl -s -o /dev/null -w '%{http_code}' "$1/health/ready")" = 200 ] && return; sleep 1; done; echo "$1 is not ready" >&2; exit 1; }
 
 # The first server's file goes in and out with the container stopped; the
@@ -89,7 +101,7 @@ start_rust() {
     Rtc__TurnSharedSecret=oracle-turn-secret-oracle-turn-secret-0123 \
     RateLimiting__AuthWrite__PermitLimit=5000 RateLimiting__Login__PermitLimit=5000 \
     RateLimiting__InvitePreview__PermitLimit=5000 RateLimiting__SecurityWrite__PermitLimit=5000 \
-    "Operations__PublicUrl=$public" "Desktop__CanonicalOrigin=$public" \
+    "Operations__PublicUrl=$public" "Desktop__CanonicalOrigin=$public" ${providers[@]+"${providers[@]}"} \
     "$binary" > "$work/rust.log" 2>&1 &
   pid=$!
   for _ in $(seq 1 100); do grep -q 'Now listening on' "$work/rust.log" && break; sleep 0.2; done
