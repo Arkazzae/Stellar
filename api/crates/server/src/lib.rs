@@ -133,7 +133,7 @@ pub async fn serve(
         .map_err(|e| fail("cannot read the listening address", &e))?;
     listening(&bound);
     for address in &bound {
-        info!(target: "Microsoft.Hosting.Lifetime", "Now listening on: http://{address}");
+        info!(target: "Stellarr.Api.Host", "Now listening on: http://{address}");
     }
 
     let (stop, stopped) = tokio::sync::watch::channel(false);
@@ -155,7 +155,7 @@ pub async fn serve(
     let mut result = Ok(());
     tokio::select! {
         () = shutdown => {
-            info!(target: "Microsoft.Hosting.Lifetime", "Application is shutting down...");
+            info!(target: "Stellarr.Api.Host", "Application is shutting down...");
         }
         Some(finished) = servers.join_next() => {
             // A server that ends by itself has failed.

@@ -77,8 +77,8 @@ impl Environment {
     }
 }
 
-/// The addresses to listen on, from `ASPNETCORE_URLS` as the container's
-/// entrypoint sets it, such as `http://127.0.0.1:5000`. TLS ends at nginx, so
+/// The addresses to listen on, from `ASPNETCORE_URLS`, the name the
+/// container's entrypoint sets it under, such as `http://127.0.0.1:5000`. TLS ends at nginx, so
 /// only `http` is accepted.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Listen(pub Vec<SocketAddr>);
@@ -468,11 +468,9 @@ impl Settings {
                 .map(|(_, value)| value.trim())
                 .filter(|value| !value.is_empty())
         };
-        let environment = Environment::new(
-            lookup("ASPNETCORE_ENVIRONMENT")
-                .or_else(|| lookup("DOTNET_ENVIRONMENT"))
-                .unwrap_or("Production"),
-        );
+        // The container's entrypoint sets both of these names.
+        let environment =
+            Environment::new(lookup("ASPNETCORE_ENVIRONMENT").unwrap_or("Production"));
         let config = Config::layered(environment.name(), variables);
         Settings::from_config(&config, environment, lookup("ASPNETCORE_URLS"))
     }

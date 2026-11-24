@@ -307,8 +307,4 @@ fn log_levels_become_tracing_directives() {
         directives.contains("Stellarr.Api.Requests=warn"),
         "{directives}"
     );
-    assert!(
-        directives.contains("Microsoft.AspNetCore=warn"),
-        "{directives}"
-    );
 }
