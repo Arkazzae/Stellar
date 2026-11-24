@@ -1,6 +1,5 @@
 //! Signing in with a password, and signing out.
 
-use std::time::Duration;
 
 use axum::extract::State;
 use axum::http::StatusCode;
