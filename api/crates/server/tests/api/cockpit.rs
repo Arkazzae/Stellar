@@ -709,3 +709,26 @@ async fn a_fresh_session_may_change_the_mail_settings_and_they_are_saved() {
     let again = scene.owner.client.send(Request::new(Method::PUT, "/api/cockpit/settings").json(&body)).await;
     assert_eq!(again.status, 200, "{}", again.text());
 }
+
+#[tokio::test]
+async fn neither_an_invite_code_nor_the_setup_code_is_kept_in_a_log() {
+    let scene = Scene::new().await;
+    let setup = scene.server.setup_code().await;
+    // The operator reads the setup code in the process's output, and only there.
+    assert!(scene.server.log().iter().any(|line| line.contains(&setup)));
+    let anonymous = scene.server.client();
+    let code = "SecretInviteCode0123";
+    anonymous.get(&format!("/api/invites/{code}")).await;
+    anonymous.send(Request::new(Method::POST, &format!("/api/invites/{code}/join"))).await;
+
+    let log = scene.server.log().join("\n");
+    assert!(!log.contains(code), "the process output has the code");
+    assert!(log.contains("GET /api/invites/*** "), "{log}");
+    assert!(log.contains("POST /api/invites/***/join "), "{log}");
+    for path in ["/api/cockpit/logs?limit=500", "/api/cockpit/logs/export"] {
+        let kept = scene.owner.client.get(path).await.text();
+        assert!(!kept.contains(code), "{path}");
+        assert!(!kept.contains(&setup), "{path}");
+        assert!(kept.contains("/api/invites/***"), "{path}");
+    }
+}

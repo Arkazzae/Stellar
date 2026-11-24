@@ -322,9 +322,9 @@ async fn issue_setup_code(state: &AppState) -> Result<(), StartError> {
     let code = state.setup_code().issue();
     let public_url = &state.settings().operations.public_url;
     if public_url.is_empty() {
-        tracing::warn!(target: "Stellarr.Api.Logging.StartupLog", "Setup code: {code}. Open /setup at the address of this instance to create the owner account.");
+        tracing::warn!(target: logging::OPERATOR_ONLY_TARGET, "Setup code: {code}. Open /setup at the address of this instance to create the owner account.");
     } else {
-        tracing::warn!(target: "Stellarr.Api.Logging.StartupLog", "Setup code: {code}. Open {public_url}/setup to create the owner account.");
+        tracing::warn!(target: logging::OPERATOR_ONLY_TARGET, "Setup code: {code}. Open {public_url}/setup to create the owner account.");
     }
     Ok(())
 }

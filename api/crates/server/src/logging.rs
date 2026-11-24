@@ -61,6 +61,11 @@ pub const LOG_CAPACITY: usize = 10_000;
 /// size is bounded by its line count only if each line is.
 const MAX_MESSAGE_BYTES: usize = 2048;
 
+/// The target of the line that tells the operator the setup code. It goes to
+/// the process's output, where the operator reads it, and never into the
+/// panel's buffer, which people with a session read.
+pub const OPERATOR_ONLY_TARGET: &str = "Stellarr.Api.Logging.StartupLog";
+
 /// What a line says for its trace when no request wrote it.
 pub const BACKGROUND_TRACE: &str = "background";
 
@@ -208,6 +213,9 @@ struct BufferLayer {
 impl<S: Subscriber> Layer<S> for BufferLayer {
     fn on_event(&self, event: &tracing::Event<'_>, _: tracing_subscriber::layer::Context<'_, S>) {
         let metadata = event.metadata();
+        if metadata.target() == OPERATOR_ONLY_TARGET {
+            return;
+        }
         let level = match *metadata.level() {
             tracing::Level::ERROR => LineLevel::Error,
             tracing::Level::WARN => LineLevel::Warn,
@@ -435,6 +443,18 @@ mod tests {
         assert_eq!(kept[2].1, "error");
         assert_eq!(kept.len(), 3);
         assert!(lines.iter().all(|line| line.trace_id == BACKGROUND_TRACE));
+    }
+
+    #[test]
+    fn the_setup_code_is_not_kept_for_the_panel() {
+        let buffer = buffered(|| {
+            tracing::warn!(target: OPERATOR_ONLY_TARGET, "Setup code: ABCD-1234. Open /setup.");
+            tracing::warn!(target: "Stellarr.Api.Other", "kept");
+        });
+
+        let lines = buffer.all();
+        assert_eq!(lines.len(), 1);
+        assert_eq!(lines[0].message, "kept");
     }
 
     #[tokio::test]
