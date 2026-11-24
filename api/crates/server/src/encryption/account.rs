@@ -15,7 +15,7 @@ use super::problems::{self, Refusal};
 use super::store::{self, Conversation};
 use super::wire::{
     AccountDto, BackupParametersDto, DevicesDto, Members, Octets, Register, Replace, Reset, ResetDto, SetUp,
-    Unlock, UnlockedDto,
+    Unlock, UnlockedDto, path_id,
 };
 use crate::auth::ceremony::{PasswordProof, check_given_password, judge_given_password};
 use crate::auth::{Caller, events};
@@ -572,8 +572,9 @@ pub async fn revoke_device(
     State(state): State<AppState>,
     caller: Caller,
     origin: Origin,
-    Path(device_id): Path<Id>,
+    Path(device_id): Path<String>,
 ) -> ApiResult<Response> {
+    let device_id = path_id(&device_id)?;
     let outcome = state
         .database()
         .write(move |tx| -> Result<Revoked, DbError> {
