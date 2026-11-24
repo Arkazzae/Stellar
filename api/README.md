@@ -142,6 +142,13 @@ to the route added just before them:
 - `.rate_limit(RateLimitPolicy::AuthWrite)` for a route that counts against one
   of the named limits.
 
+- `.fresh_second_step()` for a route that could hand an account or the instance
+  to somebody else: it needs a session like `.authorized()`, and when the
+  account has a second step, one the session passed in the last five minutes.
+  A session that did not is answered 403 with the code `fresh-mfa-required`,
+  before the body is read. A handler that asks only sometimes calls
+  `auth::fresh` itself.
+
 Only the methods a group names are served. `HEAD` is not answered for a `GET`
 route; it is a 405.
 

@@ -8,7 +8,7 @@
 //! }
 //! ```
 //!
-//! `.json_body()`, `.authorized()` and `.rate_limit(..)` apply to the route added just before
+//! `.json_body()`, `.authorized()`, `.fresh_second_step()` and `.rate_limit(..)` apply to the route added just before
 //! them. They are data the pipeline reads, not layers of the route: the limit
 //! has to count a request before the client gate looks at it, which a layer
 //! around the handler could not do.
@@ -45,6 +45,10 @@ pub struct Rules {
     /// The route needs a signed-in person: a request without a valid session
     /// is answered 401 with no body.
     pub authorize: bool,
+    /// The route needs a session that passed a second step lately, when the
+    /// account has one (see `auth::fresh`): a session that did not is answered
+    /// 403 with a problem the clients answer by asking for the step.
+    pub fresh_second_step: bool,
 }
 
 /// The routes of one group, with the rules of each.
@@ -145,6 +149,16 @@ impl Endpoints {
     /// Marks the route added last as one that needs a signed-in person.
     pub fn authorized(mut self) -> Endpoints {
         self.rules_of_last().authorize = true;
+        self
+    }
+
+    /// Marks the route added last as one that needs a signed-in person who
+    /// passed a second step in the last few minutes, if their account has one.
+    /// It needs a session, as `.authorized()` does.
+    pub fn fresh_second_step(mut self) -> Endpoints {
+        let rules = self.rules_of_last();
+        rules.authorize = true;
+        rules.fresh_second_step = true;
         self
     }
 
