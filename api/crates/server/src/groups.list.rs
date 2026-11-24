@@ -10,5 +10,6 @@ groups! {
     health,
     messages,
     releases,
+    servers,
     uploads,
 }
