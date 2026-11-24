@@ -12,7 +12,7 @@ use stellarr_messages::MessageKey;
 use stellarr_outbound::header::{ACCEPT, USER_AGENT};
 use stellarr_outbound::{AddressPolicy, Client, HeaderValue, Request as Outgoing};
 
-use super::settings::Row;
+use super::settings;
 use super::{invalid, bind};
 use crate::database::DbError;
 use crate::http::{ApiError, ApiResult, Problem, json_response};
@@ -65,7 +65,7 @@ pub(super) async fn test_mail(State(state): State<AppState>, request: Request) -
     let (row, secrets, name) = state
         .database()
         .read(move |db| -> Result<_, DbError> {
-            let row = Row::load(db, &reading, server)?;
+            let row = settings::load(db, &reading, server)?.settings;
             let secrets = secrets::read(db, &reading.settings().secrets, reading.sealer())?;
             let name: String = db.query_row(
                 "SELECT \"Name\" FROM \"Servers\" WHERE \"Id\" = ?1",
@@ -75,10 +75,10 @@ pub(super) async fn test_mail(State(state): State<AppState>, request: Request) -
             Ok((row, secrets, name))
         })
         .await?;
-    let transport = row.transport(&secrets);
-    let settings = state.settings();
+    let transport = settings::transport(&row, &secrets);
+    let environment = state.settings();
     let from_address = match row.mail_from_address.trim() {
-        "" => settings.mail.from_address.trim().to_string(),
+        "" => environment.mail.from_address.trim().to_string(),
         saved => saved.to_string(),
     };
     if !row.mailing_enabled || from_address.is_empty() || !transport.ready {
@@ -93,10 +93,10 @@ pub(super) async fn test_mail(State(state): State<AppState>, request: Request) -
             .detail(detail)
             .into());
     }
-    let from = if settings.mail.from_name.trim().is_empty() {
+    let from = if environment.mail.from_name.trim().is_empty() {
         from_address
     } else {
-        format!("{} <{from_address}>", settings.mail.from_name.trim())
+        format!("{} <{from_address}>", environment.mail.from_name.trim())
     };
     let mut id = [0u8; 16];
     aws_lc_rs::rand::fill(&mut id).map_err(|_| ApiError::internal("no random numbers"))?;
@@ -107,7 +107,7 @@ pub(super) async fn test_mail(State(state): State<AppState>, request: Request) -
         &from,
         &recipient,
         &name,
-        &settings.operations.public_url,
+        &environment.operations.public_url,
         &transport,
         u128::from_be_bytes(id),
         &messages,
