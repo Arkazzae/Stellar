@@ -404,3 +404,29 @@ fn the_instance_id_and_the_build_are_read_when_given() {
     let refused = production(&[("STELLARR_INSTANCE_ID", "not-a-uuid")]).unwrap_err();
     assert_eq!(refused.to_string(), "Stellarr:InstanceId must be a UUID.");
 }
+
+#[test]
+fn the_waits_for_the_media_server_are_fixed_outside_the_testing_environment() {
+    let waits = [
+        ("Testing__MediaCommandTimeoutMs", "300"),
+        ("Testing__MediaEventWaitMs", "250"),
+        ("Testing__MediaRetryPauseMs", "40"),
+    ];
+
+    let production = production(&waits).unwrap().rtc.media.timing;
+    assert_eq!(production.command, Duration::from_secs(5));
+    assert_eq!(production.connect, Duration::from_secs(2));
+    assert_eq!(production.event_wait_ms, 25_000);
+    assert_eq!(production.retry_pause, Duration::from_secs(2));
+
+    let mut variables = vec![("ASPNETCORE_ENVIRONMENT", "Testing")];
+    variables.extend(waits);
+    let testing = Settings::load(&env(&variables)).unwrap().rtc.media.timing;
+    assert_eq!(testing.command, Duration::from_millis(300));
+    assert_eq!(testing.event_wait_ms, 250);
+    assert_eq!(testing.retry_pause, Duration::from_millis(40));
+    assert_eq!(testing.connect, Duration::from_secs(2));
+
+    variables.push(("Testing__MediaEventWaitMs", "soon"));
+    assert!(Settings::load(&env(&variables)).is_err());
+}

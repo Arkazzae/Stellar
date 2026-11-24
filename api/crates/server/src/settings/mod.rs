@@ -209,10 +209,62 @@ pub struct MediaServerSettings {
     /// The bearer secret of the control API; empty when it runs without one.
     pub control_secret: String,
     pub media_port: u16,
+    pub timing: MediaTiming,
+}
+
+/// How long the API waits for the media server. Commands run on the path of a
+/// hub call or of a seat change, so they get a short limit; the event poll
+/// waits by design and gets the media server's own wait plus a margin.
+///
+/// Operators do not set these. The Testing environment alone reads
+/// `Testing:MediaCommandTimeoutMs`, `Testing:MediaEventWaitMs` and
+/// `Testing:MediaRetryPauseMs`, so that a test sees a change of state at once.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct MediaTiming {
+    /// How long connecting to the control API may take.
+    pub connect: Duration,
+    /// The limit of one command, reading its answer included.
+    pub command: Duration,
+    /// The `waitMs` of the event poll; the media server caps it at 30000.
+    pub event_wait_ms: u64,
+    /// The pause before the next attempt after the media server failed to
+    /// answer.
+    pub retry_pause: Duration,
+}
+
+impl MediaTiming {
+    fn load(config: &Config, environment: &Environment) -> Result<MediaTiming, SettingError> {
+        let mut timing = MediaTiming {
+            connect: Duration::from_secs(2),
+            command: Duration::from_secs(5),
+            event_wait_ms: 25_000,
+            retry_pause: Duration::from_secs(2),
+        };
+        if environment.is_testing() {
+            let milliseconds = |key: &str| -> Result<Option<u64>, SettingError> {
+                Ok(config
+                    .number(key)?
+                    .map(|value| u64::try_from(value.max(1)).unwrap_or(1)))
+            };
+            if let Some(value) = milliseconds("Testing:MediaCommandTimeoutMs")? {
+                timing.command = Duration::from_millis(value);
+            }
+            if let Some(value) = milliseconds("Testing:MediaEventWaitMs")? {
+                timing.event_wait_ms = value;
+            }
+            if let Some(value) = milliseconds("Testing:MediaRetryPauseMs")? {
+                timing.retry_pause = Duration::from_millis(value);
+            }
+        }
+        Ok(timing)
+    }
 }
 
 impl MediaServerSettings {
-    fn load(config: &Config) -> Result<MediaServerSettings, SettingError> {
+    fn load(
+        config: &Config,
+        environment: &Environment,
+    ) -> Result<MediaServerSettings, SettingError> {
         let url = config
             .text("Rtc:MediaControlUrl")
             .unwrap_or("http://127.0.0.1:5200");
@@ -239,6 +291,7 @@ impl MediaServerSettings {
                 .unwrap_or("")
                 .to_string(),
             media_port,
+            timing: MediaTiming::load(config, environment)?,
         })
     }
 }
@@ -272,7 +325,7 @@ impl RtcSettings {
                 .unwrap_or("localhost")
                 .to_string(),
             turn_shared_secret,
-            media: MediaServerSettings::load(config)?,
+            media: MediaServerSettings::load(config, environment)?,
         })
     }
 }
