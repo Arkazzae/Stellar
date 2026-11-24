@@ -14,6 +14,7 @@ use stellarr_outbound::{AddressPolicy, Client, HeaderValue, Request as Outgoing}
 
 use super::settings;
 use super::invalid;
+use crate::encoding::percent_encode;
 use crate::database::DbError;
 use crate::http::{ApiError, ApiResult, Problem, json_response};
 use crate::mail::Outcome;
@@ -134,20 +135,6 @@ pub(super) async fn test_mail(State(state): State<AppState>, request: Request) -
     }
 }
 
-/// `Uri.EscapeDataString`: every byte of the UTF-8 text but the unreserved
-/// characters of RFC 3986 as `%XX`.
-fn escape(text: &str) -> String {
-    let mut escaped = String::with_capacity(text.len());
-    for byte in text.bytes() {
-        if byte.is_ascii_alphanumeric() || matches!(byte, b'-' | b'.' | b'_' | b'~') {
-            escaped.push(char::from(byte));
-        } else {
-            escaped.push_str(&format!("%{byte:02X}"));
-        }
-    }
-    escaped
-}
-
 /// What the GIF service said to a key.
 #[derive(Debug, PartialEq, Eq)]
 enum Check {
@@ -167,7 +154,7 @@ async fn check_giphy(state: &AppState, key: &str) -> Check {
     } else {
         AddressPolicy::PublicOnly
     };
-    let url = format!("{base}v1/gifs/trending?api_key={}&limit=1&rating=g", escape(key));
+    let url = format!("{base}v1/gifs/trending?api_key={}&limit=1&rating=g", percent_encode(key));
     let request = match Outgoing::get(&url) {
         Ok(request) => request
             .header(USER_AGENT, HeaderValue::from_static("Stellarr/2.0"))
@@ -231,7 +218,7 @@ mod tests {
 
     #[test]
     fn a_key_is_escaped_as_a_component_of_a_query() {
-        assert_eq!(escape("aZ09-._~"), "aZ09-._~");
-        assert_eq!(escape("a b&c=d/é"), "a%20b%26c%3Dd%2F%C3%A9");
+        assert_eq!(percent_encode("aZ09-._~"), "aZ09-._~");
+        assert_eq!(percent_encode("a b&c=d/é"), "a%20b%26c%3Dd%2F%C3%A9");
     }
 }

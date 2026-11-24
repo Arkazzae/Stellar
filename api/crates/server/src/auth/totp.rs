@@ -10,6 +10,7 @@ use aws_lc_rs::hmac::{self, HMAC_SHA1_FOR_LEGACY_USE_ONLY};
 use aws_lc_rs::rand;
 
 use super::tokens::fixed_time_equals;
+use crate::encoding::percent_encode;
 use crate::values::Timestamp;
 
 /// A secret of 160 bits, the size RFC 4226 recommends for HMAC-SHA1.
@@ -33,11 +34,11 @@ pub fn new_secret() -> String {
 /// `otpauth://totp/{issuer}:{account}?secret=..&issuer=..&algorithm=SHA1&digits=6&period=30`,
 /// every text part escaped as a URL component.
 pub fn otpauth_uri(issuer: &str, account_name: &str, secret: &str) -> String {
-    let label = escape(&format!("{issuer}:{account_name}"));
+    let label = percent_encode(&format!("{issuer}:{account_name}"));
     format!(
         "otpauth://totp/{label}?secret={}&issuer={}&algorithm=SHA1&digits={DIGITS}&period={STEP_SECONDS}",
-        escape(secret),
-        escape(issuer),
+        percent_encode(secret),
+        percent_encode(issuer),
     )
 }
 
@@ -164,20 +165,6 @@ pub(crate) fn base32_decode(text: &str) -> Option<Vec<u8>> {
         }
     }
     Some(bytes)
-}
-
-/// Percent-encodes everything but the unreserved characters of RFC 3986, as a
-/// URL component is written.
-fn escape(text: &str) -> String {
-    let mut out = String::with_capacity(text.len());
-    for byte in text.bytes() {
-        if byte.is_ascii_alphanumeric() || matches!(byte, b'-' | b'.' | b'_' | b'~') {
-            out.push(char::from(byte));
-        } else {
-            out.push_str(&format!("%{byte:02X}"));
-        }
-    }
-    out
 }
 
 #[cfg(test)]
@@ -389,6 +376,6 @@ mod tests {
             otpauth_uri("St ellarr", "ma&ya@é/ü", "A=B"),
             "otpauth://totp/St%20ellarr%3Ama%26ya%40%C3%A9%2F%C3%BC?secret=A%3DB&issuer=St%20ellarr&algorithm=SHA1&digits=6&period=30"
         );
-        assert_eq!(escape("-._~ azAZ09"), "-._~%20azAZ09");
+        assert_eq!(percent_encode("-._~ azAZ09"), "-._~%20azAZ09");
     }
 }

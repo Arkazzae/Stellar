@@ -262,7 +262,7 @@ enum Refused {
 fn new_code() -> String {
     let mut bytes = [0u8; INVITE_CODE_BYTES];
     rand::fill(&mut bytes).expect("the system random number generator failed");
-    bytes.iter().map(|byte| format!("{byte:02x}")).collect()
+    crate::encoding::hex_lower(&bytes)
 }
 
 /// Takes an invite back. People who were sent it lose it from their inbox with

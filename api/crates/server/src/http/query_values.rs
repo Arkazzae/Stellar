@@ -25,6 +25,7 @@ use stellarr_messages::{MessageKey, Messages};
 
 use super::error::ApiError;
 use super::problem::Problem;
+use crate::encoding::hex_digit;
 use crate::state::AppState;
 
 pub struct QueryValues {
@@ -131,18 +132,12 @@ fn form_decode(text: &str) -> String {
     unescape(&text.replace('+', " "))
 }
 
-fn hex(byte: u8) -> Option<u8> {
-    char::from(byte)
-        .to_digit(16)
-        .and_then(|digit| u8::try_from(digit).ok())
-}
-
 /// The byte `%XX` stands for at `at`, if there is one.
 fn escaped(bytes: &[u8], at: usize) -> Option<u8> {
     if bytes.get(at) != Some(&b'%') {
         return None;
     }
-    Some(hex(*bytes.get(at + 1)?)? << 4 | hex(*bytes.get(at + 2)?)?)
+    Some(hex_digit(*bytes.get(at + 1)?)? << 4 | hex_digit(*bytes.get(at + 2)?)?)
 }
 
 /// How many continuation bytes a sequence that starts with `lead` needs, and
