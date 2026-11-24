@@ -6,4 +6,9 @@ groups! {
     message_views,
     releases,
     servers,
+    assets,
+    health,
+    messages,
+    releases,
+    uploads,
 }
