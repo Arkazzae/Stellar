@@ -12,8 +12,8 @@ Each subdirectory packages the production Stellarr container for a non-Compose h
 
 1. **Image reference**: Default to `ghcr.io/arkazzae/stellarr:latest` while allowing operators to pin a release line tag (such as `1.2`).
 2. **Data mount**: Mount a single persistent host directory or volume at `/data/stellarr`.
-3. **Port mappings**: Publish every port defined in `docker-compose.yml` with matching protocol and default host port. Keep the UDP TURN relay range (`49160-49200/udp`) mapped 1:1.
-4. **Advertised port variables**: Because a container cannot inspect host port mappings, expose `STELLARR_HTTPS_PORT`, `STELLARR_MEDIA_PORT`, `STELLARR_TURN_PORT`, and `STELLARR_TURNS_PORT` initialized to the default host ports and instruct operators to keep them equal to the published host ports (see [Running without Docker Compose](../docs/install/configuration.md#running-without-docker-compose)).
+3. **Port mappings**: Publish HTTPS and both UDP and TCP media mappings. Use the Compose defaults where the host leaves them available. Bind any HTTP reverse-proxy upstream to loopback. Publish TURN ports only for an opt-in relay, keeping its UDP relay range mapped 1:1.
+4. **Advertised port variables**: Because a container cannot inspect host port mappings, expose `STELLARR_HTTPS_PORT` and `STELLARR_MEDIA_PORT`, plus the two TURN port variables when the template offers TURN, initialized to the chosen host ports and instruct operators to keep them equal to the published host ports (see [Running without Docker Compose](../docs/install/configuration.md#running-without-docker-compose)).
 5. **Variable names**: Use the canonical `STELLARR_*` names from [Configuration](../docs/install/configuration.md). Only use raw `Section__Key` environment variables when no `STELLARR_*` name exists.
 6. **Unset optional defaults**: Leave all non-port variables empty so the container image's built-in defaults apply across upgrades.
 7. **Resource and security limits**: Apply the memory (`4g`), CPU (`4`), PID (`512`), and `no-new-privileges` settings from `docker-compose.yml` wherever the platform supports them.
@@ -25,7 +25,7 @@ Whenever a port, limit, or image reference changes in `docker-compose.yml`, upda
 ## Adding a platform template
 
 1. Add the template under `deploy/<platform>/` following the requirements above.
-2. Start a container from the template against an empty data directory and verify that it reaches `healthy`, `http://localhost:8888/` redirects to HTTPS, and `docker exec <container> stellarr doctor` passes.
+2. Start a container from the template against an empty data directory and verify that it reaches `healthy`, the template’s HTTPS address serves the setup screen, and `docker exec <container> stellarr doctor` passes.
 3. Add a platform installation guide at `docs/install/<platform>.md` covering platform-specific steps, and link it from [`docs/README.md`](../docs/README.md) and the table above.
 
 ## Additional deployment utilities

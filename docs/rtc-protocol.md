@@ -22,7 +22,7 @@ flowchart TD
 
     subgraph Server["Stellarr Container"]
         Hub["Hub (stellarr.v1 WebSocket, /hubs/app)"]
-        SFU["Stellarr Media SFU (:49000/udp)"]
+        SFU["Stellarr Media SFU (:49000 UDP/TCP)"]
         Hub <-->|"Loopback Control API (127.0.0.1:5200)"| SFU
     end
 
@@ -54,8 +54,8 @@ UI components interact exclusively with `VoiceClient` and immutable `VoiceState`
 }
 ```
 
-- `iceServers` is populated per request with a STUN URL, a 1-hour HMAC-authenticated TURN URL, and (when `STELLARR_TURNS_ENABLED=true`) a `turns:` URL.
-- `mediaServer` is `udp://<Rtc:PublicHost>:<Rtc:MediaPort>`.
+- `iceServers` is empty by default. If the optional TURN relay is enabled, bootstrap supplies STUN and a short-lived authenticated TURN URL. Enabling TURN over TLS also supplies a `turns:` URL.
+- `mediaServer` keeps the diagnostic format `udp://<Rtc:PublicHost>:<Rtc:MediaPort>`. The peer connection takes its UDP and passive TCP host candidates from the SFU’s SDP.
 - The client verifies `protocolVersion === 1` before opening media devices and aborts with an `unsupported` error otherwise.
 
 ## Signaling
@@ -187,7 +187,7 @@ flowchart LR
         Detector --> Opus["Opus Encoder (20 ms, in-band FEC)"]
     end
 
-    SFU["Stellarr Media SFU (:49000/udp)"]
+    SFU["Stellarr Media SFU (:49000 UDP/TCP)"]
 
     subgraph Receive["Receive Chain (Browser)"]
         Vol["Per-user Volume (0-200%)"] --> Strip["RemoteStrip (Profile EQ, Compressor, Limiter & Optional Gate)"]
@@ -209,7 +209,7 @@ flowchart LR
    - The **automatic leveler** targets `-20 dBFS` (`+6 dB/s` max rise, `-40 dB/s` fall, `+18 dB` max boost, `-6 dB` max cut, `0.95` peak guard) and updates gain only on voiced speech frames so background noise is never boosted.
 4. **Source separation**: Microphone audio and screen-share system audio use separate media tracks, separate Opus profiles (`audioProfiles.ts`), and separate playback pipelines. Muting affects only the microphone.
 5. **Receive chain (`playback/remoteMixer.ts`, `playback/remoteStrip.ts`, `playback/playbackProfile.ts`)**: Remote microphones pass through per-user volume (`0–200%`), an optional receiver noise gate, and a Web Audio processing strip (`Off`, `Natural`, `Studio`, `Broadcast`, or `Custom` 4-band EQ `±12 dB` at `160 Hz`, `360 Hz`, `3.1 kHz`, and `8 kHz` with dynamics compression and brickwall limiting). Screen-share audio bypasses voice EQ.
-6. **Per-account persistence, dock controls, and keybinds**: Audio, device, and per-participant volume/gate settings are persisted per account ID in `localStorage`. The call dock (`VoiceDock.tsx`) condenses connection status into a single status line with a unified microphone quality and noise-reduction menu (`MicMenu.tsx`), and users can bind custom shortcuts for `toggleMute`, `toggleDeafen`, `toggleCamera`, and `disconnect` (`KeybindsPane.tsx`). Hiding or backgrounding a browser tab pauses speaking-ring and call-clock animations without tearing down media connections, and long calls refresh TURN credentials before expiry (`iceSession.ts`).
+6. **Per-account persistence, dock controls, and keybinds**: Audio, device, and per-participant volume/gate settings are persisted per account ID in `localStorage`. The call dock (`VoiceDock.tsx`) condenses connection status into a single status line with a unified microphone quality and noise-reduction menu (`MicMenu.tsx`), and users can bind custom shortcuts for `toggleMute`, `toggleDeafen`, `toggleCamera`, and `disconnect` (`KeybindsPane.tsx`). Hiding or backgrounding a browser tab pauses speaking-ring and call-clock animations without tearing down media connections, and long calls refresh TURN credentials before expiry when a relay is configured (`iceSession.ts`).
 
 The entire capture, suppressor, and playback DSP pipeline is held to sample- and envelope-level regression records in [`web/bench/voice/README.md`](../web/bench/voice/README.md).
 
