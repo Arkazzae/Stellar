@@ -7,6 +7,9 @@
 //! more: a second step passed in the last five minutes
 //! ([`FreshInstanceOwner`]).
 //!
+//! In short: for a route without a JSON body the gate comes first; for one
+//! with a body the body is bound first and the gate second (see below).
+//!
 //! A route of the panel is declared with `.authorized()` (never
 //! `.fresh_second_step()`, which would answer a caller who is not even the
 //! owner that a second step is missing), and its handler asks for the gate as
