@@ -234,6 +234,8 @@ export interface RealtimeClient {
   start(): Promise<void>;
   stop(): Promise<void>;
   getStatus(): RealtimeStatus;
+  /** True after the peer explicitly ends this session. */
+  hasSessionEnded?(): boolean;
   subscribeStatus(listener: () => void): () => void;
   on<E extends RealtimeEventName>(
     event: E,
