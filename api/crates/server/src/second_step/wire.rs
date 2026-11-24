@@ -103,6 +103,10 @@ fn read<Inner: for<'de> Deserialize<'de>>(
     let Some(raw) = raw else {
         return Ok(None);
     };
+    // A list would bind to a struct by position.
+    if !crate::http::is_object_or_null(raw.get().as_bytes()) {
+        return Err(Malformed);
+    }
     serde_json::from_str::<Option<Envelope<Inner>>>(raw.get()).map_err(|_| Malformed)
 }
 

@@ -27,13 +27,18 @@ use crate::state::AppState;
 use crate::values::Id;
 
 /// The room somebody is sent to, as a request names it. A member that is
-/// missing or `null` reads as no room at all, which the moderator does not
-/// see; one that is there must be an id. Only an object is a request, and
+/// missing reads as no room at all, which the moderator does not see; one that
+/// is there must be an id, `null` included. Only an object is a request, and
 /// members nobody asked for are ignored.
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub(super) struct MoveRequest {
-    target_channel_id: Option<Id>,
+    #[serde(default = "nobody")]
+    target_channel_id: Id,
+}
+
+fn nobody() -> Id {
+    Id::from_bytes([0; 16])
 }
 
 #[derive(Serialize)]
@@ -186,7 +191,7 @@ pub(super) async fn move_between_voice_channels(
     let messages = *state.messages();
     let held = realtime.clone();
     let actor = caller.user;
-    let destination = request.target_channel_id.unwrap_or(Id::from_bytes([0; 16]));
+    let destination = request.target_channel_id;
     let outcome = state
         .database()
         .write(move |tx| -> Result<Move, Failure> {

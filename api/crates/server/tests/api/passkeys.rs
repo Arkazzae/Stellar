@@ -145,7 +145,7 @@ async fn a_passkey_is_set_up_when_the_instance_asks_and_then_answers_a_second_st
 }
 
 #[tokio::test]
-async fn what_is_not_a_passkey_answer_is_a_bad_request_or_a_refusal_as_the_first_server_says() {
+async fn what_is_not_a_passkey_answer_is_a_bad_request_and_one_without_content_a_wrong_answer() {
     let instance = Instance::with(&["maya"], &[]).await;
     instance.require();
     let (_, passkey, _) = enrolled(&instance, "maya", 4, false).await;
@@ -154,18 +154,22 @@ async fn what_is_not_a_passkey_answer_is_a_bad_request_or_a_refusal_as_the_first
     let id = challenge["challengeId"].as_str().unwrap();
 
     for response in [json!(5), json!("x"), json!([]), json!({"rawId": 5}), json!({"rawId": "!!"}), json!({"type": "nonsense"}),
-                     json!({"rawId": "AAAA", "type": "public-key", "response": {}}),
                      json!({"rawId": "AAAA", "type": "public-key", "response": {"authenticatorData": "AAAA", "clientDataJSON": "AAAA", "signature": "!!"}})] {
         let bad = client.post_json("/api/auth/mfa/passkey/verify", &json!({"challengeId": id, "response": response})).await;
         assert_eq!(bad.status, 400, "{response}");
         assert!(bad.body.is_empty());
     }
     // An answer with nothing in it is a wrong answer, which counts.
-    for response in [json!(null), json!({}), json!({"id": "AAAA", "rawId": null, "type": "public-key"})] {
+    for response in [
+        json!(null),
+        json!({}),
+        json!({"id": "AAAA", "rawId": null, "type": "public-key"}),
+        json!({"rawId": "AAAA", "type": "public-key", "response": {}}),
+    ] {
         let nothing = client.post_json("/api/auth/mfa/passkey/verify", &json!({"challengeId": id, "response": response})).await;
         assert_eq!(nothing.status, 401, "{response}");
     }
-    assert_eq!(instance.events("maya").iter().filter(|e| e.starts_with("mfa-failed passkey")).count(), 3);
+    assert_eq!(instance.events("maya").iter().filter(|e| e.starts_with("mfa-failed passkey")).count(), 4);
 }
 
 #[tokio::test]
