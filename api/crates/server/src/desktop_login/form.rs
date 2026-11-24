@@ -12,6 +12,7 @@
 use axum::body::Body;
 use axum::http::{HeaderMap, header};
 
+use crate::encoding::hex_digit;
 use crate::http::multipart::{FormError, Kind, Multipart};
 use crate::http::{ApiError, read_all};
 
@@ -109,8 +110,8 @@ fn decode(raw: &[u8]) -> String {
     while at < raw.len() {
         match raw[at] {
             b'+' => bytes.push(b' '),
-            b'%' if at + 2 < raw.len() && hex(raw[at + 1]).is_some() && hex(raw[at + 2]).is_some() => {
-                bytes.push(hex(raw[at + 1]).unwrap_or(0) * 16 + hex(raw[at + 2]).unwrap_or(0));
+            b'%' if at + 2 < raw.len() && hex_digit(raw[at + 1]).is_some() && hex_digit(raw[at + 2]).is_some() => {
+                bytes.push(hex_digit(raw[at + 1]).unwrap_or(0) * 16 + hex_digit(raw[at + 2]).unwrap_or(0));
                 at += 2;
             }
             b => bytes.push(b),
@@ -118,15 +119,6 @@ fn decode(raw: &[u8]) -> String {
         at += 1;
     }
     String::from_utf8_lossy(&bytes).into_owned()
-}
-
-fn hex(byte: u8) -> Option<u8> {
-    match byte {
-        b'0'..=b'9' => Some(byte - b'0'),
-        b'a'..=b'f' => Some(byte - b'a' + 10),
-        b'A'..=b'F' => Some(byte - b'A' + 10),
-        _ => None,
-    }
 }
 
 async fn token_of_multipart(headers: &HeaderMap, body: Body) -> Result<String, ApiError> {

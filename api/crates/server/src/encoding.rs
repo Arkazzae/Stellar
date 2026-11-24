@@ -1,7 +1,8 @@
 //! The two spellings of bytes as text that the server writes: Base64 with
 //! padding, as stored password hashes have it, and Base64 for URLs without
 //! padding, as tokens and sealed values have it; and capital hexadecimal, as
-//! stored hashes of tokens have it.
+//! stored hashes of tokens have it, and lower-case hexadecimal as ids in logs
+//! and invite codes have it.
 
 use serde::Deserialize;
 
@@ -86,6 +87,35 @@ pub fn from_base64_url(text: &str) -> Option<Vec<u8>> {
 
 pub fn hex_upper(bytes: &[u8]) -> String {
     bytes.iter().map(|byte| format!("{byte:02X}")).collect()
+}
+
+pub fn hex_lower(bytes: &[u8]) -> String {
+    bytes.iter().map(|byte| format!("{byte:02x}")).collect()
+}
+
+/// The value of one hexadecimal digit in either case.
+pub fn hex_digit(byte: u8) -> Option<u8> {
+    match byte {
+        b'0'..=b'9' => Some(byte - b'0'),
+        b'a'..=b'f' => Some(byte - b'a' + 10),
+        b'A'..=b'F' => Some(byte - b'A' + 10),
+        _ => None,
+    }
+}
+
+/// Writes text as one URL component: every byte of its UTF-8 but the
+/// unreserved characters of RFC 3986 (`-._~`, letters, digits) as `%` and two
+/// capital hexadecimal digits.
+pub fn percent_encode(text: &str) -> String {
+    let mut out = String::with_capacity(text.len());
+    for byte in text.bytes() {
+        if byte.is_ascii_alphanumeric() || matches!(byte, b'-' | b'.' | b'_' | b'~') {
+            out.push(char::from(byte));
+        } else {
+            out.push_str(&format!("%{byte:02X}"));
+        }
+    }
+    out
 }
 
 /// Bytes in a JSON body: standard Base64 with padding, exactly as

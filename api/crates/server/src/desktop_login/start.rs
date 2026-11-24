@@ -14,6 +14,7 @@ use rusqlite::params;
 use serde::Serialize;
 
 use super::no_store;
+use crate::encoding::percent_encode;
 use crate::auth::tokens;
 use crate::database::DbError;
 use crate::http::{ApiResult, json_response};
@@ -73,7 +74,7 @@ pub async fn start(State(state): State<AppState>) -> ApiResult<Response> {
 
     // The browser signs in with the provider first and lands on the approval.
     let approval = format!("/api/auth/desktop/browser/verify/{id}");
-    let returned = escape_component(&approval);
+    let returned = percent_encode(&approval);
     let verification_url = if login_paths.len() == 1 {
         format!("{first}?returnUrl={returned}")
     } else {
@@ -90,20 +91,6 @@ pub async fn start(State(state): State<AppState>) -> ApiResult<Response> {
     )))
 }
 
-/// Text written into a query as one value: everything but letters, digits and
-/// `-._~` as a percent sign and the byte in capital hexadecimal.
-fn escape_component(text: &str) -> String {
-    let mut out = String::with_capacity(text.len() * 3);
-    for byte in text.bytes() {
-        if byte.is_ascii_alphanumeric() || matches!(byte, b'-' | b'.' | b'_' | b'~') {
-            out.push(char::from(byte));
-        } else {
-            out.push_str(&format!("%{byte:02X}"));
-        }
-    }
-    out
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -111,9 +98,9 @@ mod tests {
     #[test]
     fn a_path_is_escaped_to_one_query_value() {
         assert_eq!(
-            escape_component("/api/auth/desktop/browser/verify/0f8bcc00-f25f-4084-9a08-62e11f1fab22"),
+            percent_encode("/api/auth/desktop/browser/verify/0f8bcc00-f25f-4084-9a08-62e11f1fab22"),
             "%2Fapi%2Fauth%2Fdesktop%2Fbrowser%2Fverify%2F0f8bcc00-f25f-4084-9a08-62e11f1fab22"
         );
-        assert_eq!(escape_component("a b&c=d~é"), "a%20b%26c%3Dd~%C3%A9");
+        assert_eq!(percent_encode("a b&c=d~é"), "a%20b%26c%3Dd~%C3%A9");
     }
 }

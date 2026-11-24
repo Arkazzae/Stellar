@@ -5,6 +5,7 @@
 //! rows the first server wrote do; the JSON the clients see has it in
 //! lower case. Either spelling is read back.
 
+use crate::encoding::hex_digit;
 use std::fmt;
 
 use aws_lc_rs::rand;
@@ -54,8 +55,8 @@ impl Id {
                 position += 1;
                 continue;
             }
-            let high = hex_value(bytes[position])?;
-            let low = hex_value(bytes[position + 1])?;
+            let high = hex_digit(bytes[position])?;
+            let low = hex_digit(bytes[position + 1])?;
             out[index] = high << 4 | low;
             index += 1;
             position += 2;
@@ -83,15 +84,6 @@ impl Id {
             text.push(char::from(digits[usize::from(byte & 0x0f)]));
         }
         text
-    }
-}
-
-fn hex_value(byte: u8) -> Option<u8> {
-    match byte {
-        b'0'..=b'9' => Some(byte - b'0'),
-        b'a'..=b'f' => Some(byte - b'a' + 10),
-        b'A'..=b'F' => Some(byte - b'A' + 10),
-        _ => None,
     }
 }
 
