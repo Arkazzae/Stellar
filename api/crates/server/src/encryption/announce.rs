@@ -6,13 +6,12 @@
 //! of a conversation it goes first to the one stored first.
 
 use rusqlite::{Transaction, params};
-use serde::Serialize;
 
 use super::store::Conversation;
 use super::wire::{EncryptionChangedDto, EpochCreatedDto, EpochDto, KeysChangedDto, Nothing};
 use crate::database::DbError;
 use crate::events::{Audience, Event};
-use crate::instance::users::{User, UserDto};
+use crate::social::conversations::DirectMessage;
 use crate::state::AppState;
 use crate::values::{Id, Timestamp};
 
@@ -24,35 +23,9 @@ pub const DISABLED: &str = "encryption_disabled";
 pub const DEVICE_ADDED: &str = "device_added";
 pub const KEYS_RESET: &str = "keys_reset";
 
-/// A line of a conversation's timeline, as the clients read a message.
-#[derive(Serialize)]
-#[serde(rename_all = "camelCase")]
-pub struct LineDto {
-    id: Id,
-    channel_id: Id,
-    author: UserDto,
-    content: &'static str,
-    created_at: Timestamp,
-    attachments: [(); 0],
-    embeds: [(); 0],
-    edited_at: Option<Timestamp>,
-    pinned_at: Option<Timestamp>,
-    reply_to: Option<()>,
-    reactions: Option<[(); 0]>,
-    encrypted: Option<()>,
-    system: SystemDto,
-}
-
-#[derive(Serialize)]
-#[serde(rename_all = "camelCase")]
-struct SystemDto {
-    kind: &'static str,
-    actor_id: Id,
-}
-
-/// A line that was written, with what the clients are told of it.
+/// A line that was written, as the clients read a message.
 pub struct Line {
-    dto: LineDto,
+    dto: DirectMessage,
 }
 
 /// Adds a line to the conversation's timeline, made by `actor`.
@@ -63,35 +36,15 @@ pub fn add_line(
     kind: &'static str,
     now: Timestamp,
 ) -> Result<Line, DbError> {
-    let author = User::find(tx, actor)?.ok_or_else(|| {
-        DbError::Task("the account that makes a line of the timeline is not there".to_string())
-    })?;
     let id = Id::random();
     tx.execute(
         "INSERT INTO \"DirectMessages\" (\"Id\", \"ConversationId\", \"AuthorId\", \"Content\", \"CreatedAt\", \"SystemKind\")
          VALUES (?1, ?2, ?3, '', ?4, ?5)",
         params![id, conversation, actor, now, kind],
     )?;
-    Ok(Line {
-        dto: LineDto {
-            id,
-            channel_id: conversation,
-            author: author.dto("online"),
-            content: "",
-            created_at: now,
-            attachments: [],
-            embeds: [],
-            edited_at: None,
-            pinned_at: None,
-            reply_to: None,
-            reactions: None,
-            encrypted: None,
-            system: SystemDto {
-                kind,
-                actor_id: actor,
-            },
-        },
-    })
+    let (dto, _) = crate::social::conversations::message(tx, id)?
+        .ok_or_else(|| DbError::Task("the line just written is not there".to_string()))?;
+    Ok(Line { dto })
 }
 
 fn both(conversation: &Conversation) -> Audience {
