@@ -4,6 +4,8 @@
 
 pub mod cookies;
 pub mod events;
+#[cfg(test)]
+mod fixtures;
 pub mod flow;
 pub mod password;
 pub mod policy;
