@@ -11,15 +11,10 @@ pub const BASE: &[(&str, &str)] = &[
         "ConnectionStrings:Database",
         "Data Source=data/stellarr.db;Pooling=True",
     ),
-    // What the API logs: warnings and errors from everything, and the
-    // information of its own code, one line per request among it.
+    // What the API logs: information from everything it logs, one line per
+    // request among it. A category, which is a log target, can be set from the
+    // environment, for example `Logging__LogLevel__Stellarr.Api.Requests=Warning`.
     ("Logging:LogLevel:Default", "Information"),
-    ("Logging:LogLevel:Microsoft.AspNetCore", "Warning"),
-    (
-        "Logging:LogLevel:Microsoft.EntityFrameworkCore.Database.Command",
-        "Warning",
-    ),
-    ("Logging:LogLevel:System.Net.Http.HttpClient", "Warning"),
     ("Uploads:MaxImageBytes", "10485760"),
     ("Uploads:MaxAudioBytes", "26214400"),
     ("Uploads:MaxVideoBytes", "104857600"),
