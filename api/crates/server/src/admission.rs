@@ -207,7 +207,7 @@ async fn has_disk_headroom(
 
 /// How long `df` may take. The turnstile is held while it runs, so a `df` that
 /// hangs would stall every upload.
-const DF_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(2);
+pub(crate) const DF_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(2);
 
 /// The space available on the volume that holds `path`, as `df` reports it.
 /// The standard library cannot say, and this code may not call into the
@@ -253,7 +253,7 @@ async fn free_bytes(path: &Path) -> Option<i64> {
 }
 
 /// The Available column, in kilobytes, of the last line of `df -P`, in bytes.
-fn parse_df(text: &str) -> Option<i64> {
+pub(crate) fn parse_df(text: &str) -> Option<i64> {
     let line = text.lines().rev().find(|line| !line.trim().is_empty())?;
     let columns: Vec<&str> = line.split_whitespace().collect();
     // Filesystem, 1024-blocks, Used, Available, Capacity, Mounted on. A device

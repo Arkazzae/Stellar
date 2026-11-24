@@ -12,43 +12,39 @@ pub fn free_bytes(path: &Path) -> Option<u64> {
     while !probe.exists() {
         probe = probe.parent()?.to_path_buf();
     }
-    let output = Command::new("df")
+    let mut child = Command::new("df")
         .arg("-Pk")
         .arg(&probe)
         .stdin(Stdio::null())
+        .stdout(Stdio::piped())
         .stderr(Stdio::null())
-        .output()
+        .spawn()
         .ok()?;
-    if !output.status.success() {
+    // As long as the upload gate waits for `df`, and no longer: a `df` that
+    // hangs on a dead mount must not hang a backup.
+    let deadline = std::time::Instant::now() + crate::admission::DF_TIMEOUT;
+    let status = loop {
+        match child.try_wait().ok()? {
+            Some(status) => break status,
+            None if std::time::Instant::now() >= deadline => {
+                let _ = child.kill();
+                let _ = child.wait();
+                return None;
+            }
+            None => std::thread::sleep(std::time::Duration::from_millis(10)),
+        }
+    };
+    if !status.success() {
         return None;
     }
-    parse_df(&String::from_utf8_lossy(&output.stdout))
-}
-
-/// The Available column, in kilobytes, of the last line of `df -P`, in bytes.
-fn parse_df(text: &str) -> Option<u64> {
-    let line = text.lines().rev().find(|line| !line.trim().is_empty())?;
-    let columns: Vec<&str> = line.split_whitespace().collect();
-    // A device or a mount point may hold spaces, so the Available column is
-    // the one before the percentage.
-    let at = columns.iter().rposition(|column| column.ends_with('%'))?;
-    columns
-        .get(at.checked_sub(1)?)?
-        .parse::<u64>()
-        .ok()?
-        .checked_mul(1024)
+    let mut text = String::new();
+    std::io::Read::read_to_string(&mut child.stdout.take()?, &mut text).ok()?;
+    u64::try_from(crate::admission::parse_df(&text)?).ok()
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    #[test]
-    fn reads_the_available_column() {
-        let text = "Filesystem 1024-blocks Used Available Capacity Mounted on\n/dev/disk3s1 489620264 13000000 6000000 69% /System/Volumes/Data\n";
-        assert_eq!(parse_df(text), Some(6_000_000 * 1024));
-        assert_eq!(parse_df("nothing"), None);
-    }
 
     #[test]
     fn a_folder_that_does_not_exist_yet_is_asked_about_through_its_parent() {
