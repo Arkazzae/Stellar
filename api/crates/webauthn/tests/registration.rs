@@ -92,6 +92,15 @@ fn the_challenge_is_checked() {
     );
     refused(&raw, Error::ChallengeMismatch);
 
+    // An empty challenge on both sides is not a match.
+    let mut empty = spec();
+    empty.client.challenge = vec![];
+    let response = empty.build(key(Algorithm::Es256));
+    assert_eq!(
+        verify_registration(&relying_party(), &[], &response).err(),
+        Some(Error::ChallengeMismatch)
+    );
+
     // And an empty expectation is refused whatever the answer says.
     let response = spec().build(key(Algorithm::Es256));
     assert_eq!(
@@ -338,6 +347,16 @@ fn a_key_that_disagrees_with_its_algorithm_is_refused() {
     for (cose, label) in [
         (cose_ec(-7, 2, &good.0, &good.1), "wrong curve"),
         (cose_ec(-7, 1, &good.0[1..], &good.1), "short x"),
+        // The same point cut in another place: aws-lc would read it as valid.
+        (
+            cose_ec(
+                -7,
+                1,
+                &good.0[..31],
+                &[good.0[31..].to_vec(), good.1.clone()].concat(),
+            ),
+            "coordinates shifted",
+        ),
         (
             cose_ec(-7, 1, &good.0, &[good.1.clone(), vec![0]].concat()),
             "long y",
