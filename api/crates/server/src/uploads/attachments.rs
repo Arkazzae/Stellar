@@ -6,6 +6,7 @@ use serde::{Serialize, Serializer};
 use tracing::warn;
 
 use crate::database::DbError;
+use crate::messages::dto::{AttachmentDto, Seconds};
 use crate::state::AppState;
 use crate::values::{Id, Timestamp};
 
@@ -74,10 +75,10 @@ impl Attachment {
             name: self.file_name.clone(),
             content_type: self.content_type.clone(),
             size: self.size,
-            width: self.width,
-            height: self.height,
+            width: self.width.map(i64::from),
+            height: self.height.map(i64::from),
             url: format!("/assets/{id}"),
-            duration_seconds: self.duration_seconds,
+            duration_seconds: self.duration_seconds.map(Seconds),
             poster_url: self.poster.as_ref().map(|_| format!("/assets/{id}/poster")),
             is_voice_message: self.is_voice_message,
             preview_url: self.preview.as_ref().map(|_| format!("/assets/{id}/preview")),
@@ -86,34 +87,9 @@ impl Attachment {
     }
 }
 
-/// What the client is told of an attachment.
-#[derive(Serialize)]
-#[serde(rename_all = "camelCase")]
-pub struct AttachmentDto {
-    id: Id,
-    name: String,
-    content_type: String,
-    size: i64,
-    width: Option<i32>,
-    height: Option<i32>,
-    url: String,
-    #[serde(serialize_with = "number")]
-    duration_seconds: Option<f64>,
-    poster_url: Option<String>,
-    is_voice_message: bool,
-    preview_url: Option<String>,
-    placeholder: Option<String>,
-}
-
-/// A duration the way the first server wrote it: `42`, not `42.0`.
+/// Writes the same JSON representation as an attachment duration.
 pub(crate) fn number<S: Serializer>(value: &Option<f64>, serializer: S) -> Result<S::Ok, S::Error> {
-    match value {
-        Some(value) if value.fract() == 0.0 && value.abs() < 1e15 => {
-            serializer.serialize_i64(*value as i64)
-        }
-        Some(value) => serializer.serialize_f64(*value),
-        None => serializer.serialize_none(),
-    }
+    value.map(Seconds).serialize(serializer)
 }
 
 /// `2026/11`, the month an upload is filed under.

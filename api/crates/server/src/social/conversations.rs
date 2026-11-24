@@ -6,6 +6,7 @@
 use rusqlite::{Connection, OptionalExtension, Row, params};
 use serde::Serialize;
 
+use crate::messages::dto::{AttachmentDto, Seconds};
 use crate::encoding;
 use crate::instance::users::{User, UserDto};
 use crate::values::{Id, Timestamp};
@@ -85,23 +86,6 @@ pub struct Encryption {
 
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
-pub struct Attachment {
-    id: String,
-    name: String,
-    content_type: String,
-    size: i64,
-    width: Option<i64>,
-    height: Option<i64>,
-    url: String,
-    duration_seconds: Option<f64>,
-    poster_url: Option<String>,
-    is_voice_message: bool,
-    preview_url: Option<String>,
-    placeholder: Option<String>,
-}
-
-#[derive(Serialize)]
-#[serde(rename_all = "camelCase")]
 pub struct EncryptedPayload {
     epoch_id: String,
     iv: String,
@@ -124,7 +108,7 @@ pub struct DirectMessage {
     author: UserDto,
     content: String,
     created_at: String,
-    attachments: Vec<Attachment>,
+    attachments: Vec<AttachmentDto>,
     embeds: Vec<()>,
     edited_at: Option<String>,
     pinned_at: Option<String>,
@@ -205,15 +189,15 @@ pub fn message(
     let attachments = statement
         .query_map([id], |row| {
             let attachment: Id = row.get(0)?;
-            Ok(Attachment {
-                id: attachment.to_string(),
+            Ok(AttachmentDto {
+                id: attachment,
                 name: row.get(1)?,
                 content_type: row.get(2)?,
                 size: row.get(3)?,
                 width: row.get(4)?,
                 height: row.get(5)?,
                 url: format!("/assets/{attachment}"),
-                duration_seconds: row.get(6)?,
+                duration_seconds: row.get::<_, Option<f64>>(6)?.map(Seconds),
                 poster_url: row
                     .get::<_, bool>(7)?
                     .then(|| format!("/assets/{attachment}/poster")),
