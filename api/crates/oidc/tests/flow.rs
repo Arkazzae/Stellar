@@ -960,3 +960,46 @@ fn an_empty_error_parameter_is_no_error() {
         Err(C::MissingCode)
     );
 }
+
+#[test]
+fn a_refusal_after_the_state_opened_names_what_the_round_trip_was_for() {
+    use stellarr_oidc::flow::accept_detailed;
+    let provider = provider("default", false);
+    let started = begin(&provider, Purpose::Link(actor()), Some("/x"), false);
+    let state = started
+        .redirect_to
+        .split("state=")
+        .nth(1)
+        .and_then(|rest| rest.split('&').next())
+        .unwrap()
+        .to_string();
+    let callback = Callback {
+        state: Some(state),
+        ..Callback::default()
+    };
+    let guard = ReplayGuard::new();
+    // No code: the state opened for the browser that holds the binding.
+    let (error, flow) = accept_detailed(
+        &key(),
+        &guard,
+        "default",
+        &started.browser_binding,
+        &callback,
+        NOW,
+    )
+    .unwrap_err();
+    assert_eq!(error, C::MissingCode);
+    assert!(matches!(flow.unwrap().purpose, Purpose::Link(_)));
+    // Another browser learns nothing, not even what the round trip was for.
+    let (error, flow) = accept_detailed(
+        &key(),
+        &ReplayGuard::new(),
+        "default",
+        "another-binding",
+        &callback,
+        NOW,
+    )
+    .unwrap_err();
+    assert_eq!(error, C::UnreadableState);
+    assert!(flow.is_none());
+}
