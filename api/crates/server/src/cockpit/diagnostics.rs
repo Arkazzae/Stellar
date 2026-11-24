@@ -39,8 +39,10 @@ struct Runtime {
     thread_count: i64,
     realtime_connections: usize,
     voice_rooms: usize,
+    #[serde(serialize_with = "super::plain_number")]
     database_latency_ms: f64,
     services: Vec<Service>,
+    #[serde(serialize_with = "super::plain_number")]
     cpu_percent: f64,
     sample_seconds: u64,
     history: Vec<Sample>,
@@ -378,7 +380,7 @@ pub(super) async fn export(
         header::CONTENT_TYPE,
         HeaderValue::from_static("text/tab-separated-values; charset=utf-8"),
     );
-    if let Ok(value) = HeaderValue::from_str(&format!("attachment; filename={name}")) {
+    if let Ok(value) = HeaderValue::from_str(&format!("attachment; filename={name}; filename*=UTF-8''{name}")) {
         headers.insert(header::CONTENT_DISPOSITION, value);
     }
     Ok(response)

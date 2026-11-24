@@ -33,12 +33,14 @@ pub struct Sample {
     pub working_set_bytes: i64,
     pub gc_heap_bytes: i64,
     pub threads: i64,
+    #[serde(serialize_with = "super::plain_number")]
     pub cpu_percent: f64,
     pub realtime_connections: i64,
     pub requests: i64,
     pub client_errors: i64,
     pub server_errors: i64,
     pub database_up: bool,
+    #[serde(serialize_with = "super::plain_number")]
     pub database_latency_ms: f64,
     pub storage_up: Option<bool>,
 }
