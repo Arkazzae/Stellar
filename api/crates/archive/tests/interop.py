@@ -74,6 +74,11 @@ def make(directory):
         for i in range(70000):
             zf.writestr("many/%05d" % i, b"" if i % 3 else b"x")
 
+    # Exactly as many as a 16-bit count holds: Python writes no ZIP64 record.
+    with zipfile.ZipFile(os.path.join(directory, "py-65535.zip"), "w", zipfile.ZIP_STORED) as zf:
+        for i in range(65535):
+            zf.writestr("n/%05d" % i, b"")
+
     for label, method in (("bzip2", zipfile.ZIP_BZIP2), ("lzma", zipfile.ZIP_LZMA)):
         with zipfile.ZipFile(os.path.join(directory, "py-%s.zip" % label), "w", method) as zf:
             zf.writestr("a.txt", b"hello " * 100)

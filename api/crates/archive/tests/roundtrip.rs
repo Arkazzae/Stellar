@@ -94,10 +94,11 @@ fn modes_folders_and_times_are_kept() {
     assert_eq!(entries[0].modified_unix(), 1_709_210_096);
     assert!(entries[1].is_directory());
     assert!(entries[2].is_symlink());
-    assert!(entries[3].unix_mode().is_none());
+    assert_eq!(entries[3].unix_mode(), Some(0o100_644));
     assert_eq!(entries[3].modified_unix(), 1_709_210_097);
     assert_eq!(entries[4].modified_unix(), 315_532_800);
     assert!(entries[5].is_directory());
+    assert_eq!(entries[5].unix_mode(), Some(0o040_755));
 }
 
 #[test]
@@ -245,4 +246,27 @@ fn opening_an_entry_that_is_not_there_is_an_error() {
     let bytes = write_sample(false);
     let mut zip = ZipArchive::new(Cursor::new(&bytes[..])).unwrap();
     assert!(matches!(zip.open(99).err(), Some(Error::Invalid(_))));
+}
+
+#[test]
+fn the_overhead_bound_holds() {
+    for name_len in [1usize, 20, 300] {
+        for force in [false, true] {
+            let name = "n".repeat(name_len);
+            let mut zip = ZipWriter::new(Vec::new()).force_zip64(force);
+            zip.add_bytes(
+                &name,
+                EntryOptions::stored().modified(1_700_000_000),
+                b"data",
+            )
+            .unwrap();
+            let size = zip.finish().unwrap().len() as u64;
+            assert!(
+                size <= 4
+                    + stellarr_archive::entry_overhead(name_len)
+                    + stellarr_archive::ARCHIVE_OVERHEAD,
+                "{name_len} {size}"
+            );
+        }
+    }
 }

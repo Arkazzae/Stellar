@@ -37,7 +37,6 @@ const VERSION_PLAIN: u16 = 20;
 /// Made by Unix, specification 6.3: what lets the external attributes carry a
 /// file mode.
 const MADE_BY_UNIX: u16 = (3 << 8) | 63;
-const MADE_BY_DOS: u16 = 63;
 
 /// How an entry's bytes are kept.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -80,13 +79,25 @@ impl EntryOptions {
     }
 
     /// The Unix file mode, permissions and file type bits, kept for tools
-    /// that restore it.
+    /// that restore it. Without one an entry is given 0644, or 0755 for a
+    /// folder; secrets should say 0600 here.
     #[must_use]
     pub fn unix_mode(mut self, mode: u32) -> Self {
         self.unix_mode = Some(mode);
         self
     }
 }
+
+/// The most an entry adds to the archive beyond its data, for a name of
+/// `name_len` bytes: local header, data descriptor and central record. For a
+/// caller that checks the disk has room before it starts.
+pub const fn entry_overhead(name_len: usize) -> u64 {
+    166 + 2 * name_len as u64
+}
+
+/// The most the end of the archive takes: the ZIP64 records and the end
+/// record.
+pub const ARCHIVE_OVERHEAD: u64 = 98;
 
 /// What an entry came to, as written in its descriptor.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -359,20 +370,16 @@ impl<W: Write> ZipWriter<W> {
             Compression::Deflated(_) => 8,
         };
         let is_directory = open.name.ends_with(b"/");
-        let external = match open.unix_mode {
-            Some(mode) => (mode << 16) | (u32::from(is_directory) * 0x10),
-            None => u32::from(is_directory) * 0x10,
-        };
+        // Every entry says it was made on Unix, with a mode: tools that read
+        // names in the DOS code page do so for entries made elsewhere. An
+        // entry given no mode gets the usual one for a file or a folder.
+        let mode = open
+            .unix_mode
+            .unwrap_or(if is_directory { 0o040_755 } else { 0o100_644 });
+        let external = (mode << 16) | (u32::from(is_directory) * 0x10);
         let record = &mut self.central;
         record.extend_from_slice(&CENTRAL_SIGNATURE.to_le_bytes());
-        record.extend_from_slice(
-            &(if open.unix_mode.is_some() {
-                MADE_BY_UNIX
-            } else {
-                MADE_BY_DOS
-            })
-            .to_le_bytes(),
-        );
+        record.extend_from_slice(&MADE_BY_UNIX.to_le_bytes());
         let version = if extra.starts_with(&ZIP64_FIELD.to_le_bytes()) {
             VERSION_ZIP64
         } else {

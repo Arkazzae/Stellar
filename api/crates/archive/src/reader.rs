@@ -510,20 +510,14 @@ fn locate_directory<R: Read + Seek>(
     let entries_total = u64::from(le16(&tail, end_at + 10));
     let directory_size = u64::from(le32(&tail, end_at + 12));
     let directory_offset = u64::from(le32(&tail, end_at + 16));
-    if disk != 0 && disk != 0xffff || directory_disk != 0 && directory_disk != 0xffff {
-        return Err(Error::Unsupported("an archive in several parts".into()));
-    }
 
-    let uses_zip64 = entries_total == MAX16
-        || entries_here == MAX16
-        || directory_size == MAX32
-        || directory_offset == MAX32
-        || disk == 0xffff
-        || directory_disk == 0xffff;
-    let (offset, size, count, records_end) = if uses_zip64 {
+    // The record is the one in use when its locator is there, whatever the
+    // plain record's fields say: a count of 65,535 is a count when nothing
+    // points to a ZIP64 record, and only then.
+    let (offset, size, count, records_end) = if has_zip64_locator(reader, end_offset)? {
         read_zip64_end(reader, end_offset)?
     } else {
-        if entries_here != entries_total {
+        if disk != 0 || directory_disk != 0 || entries_here != entries_total {
             return Err(Error::Unsupported("an archive in several parts".into()));
         }
         (directory_offset, directory_size, entries_total, end_offset)
@@ -553,6 +547,18 @@ fn locate_directory<R: Read + Seek>(
         ));
     }
     Ok((offset, size, count))
+}
+
+fn has_zip64_locator<R: Read + Seek>(reader: &mut R, end_offset: u64) -> Result<bool, Error> {
+    if end_offset < LOCATOR_LEN {
+        return Ok(false);
+    }
+    reader.seek(SeekFrom::Start(end_offset - LOCATOR_LEN))?;
+    let mut signature = [0u8; 4];
+    reader
+        .read_exact(&mut signature)
+        .map_err(|e| short(e, "the ZIP64 locator"))?;
+    Ok(u32::from_le_bytes(signature) == ZIP64_LOCATOR_SIGNATURE)
 }
 
 /// Reads the ZIP64 end record, the locator of which sits just before the

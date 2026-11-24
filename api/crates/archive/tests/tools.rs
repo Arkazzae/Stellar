@@ -225,6 +225,12 @@ fn what_zipfile_and_the_zip_command_write_this_reader_reads() {
     assert_eq!(many.entries().len(), 70_000);
     many.verify_all().unwrap();
 
+    // Exactly 65,535: the count field is full, and no ZIP64 record follows.
+    let mut full =
+        ZipArchive::new(fs::File::open(scratch.0.join("py-65535.zip")).unwrap()).unwrap();
+    assert_eq!(full.entries().len(), 65_535);
+    full.verify_all().unwrap();
+
     // Things this reader refuses, and says so cleanly.
     for label in ["py-bzip2", "py-lzma"] {
         let result =
@@ -254,10 +260,8 @@ fn an_archive_survives_a_round_trip_through_unzip_extraction() {
         return;
     }
     let scratch = Scratch::new("extract");
-    // Info-ZIP's unzip 6 does not read the UTF-8 flag, so names outside ASCII
-    // are left to the tools that do (Python's zipfile above).
     let mut zip = ZipWriter::new(Vec::new());
-    for (name, data, deflated) in sample_entries().into_iter().filter(|e| e.0.is_ascii()) {
+    for (name, data, deflated) in sample_entries() {
         let options = if deflated {
             EntryOptions::deflated(Level::Default)
         } else {
@@ -274,7 +278,7 @@ fn an_archive_survives_a_round_trip_through_unzip_extraction() {
         .arg(&archive)
         .arg("-d")
         .arg(&out));
-    for (name, data, _) in sample_entries().into_iter().filter(|e| e.0.is_ascii()) {
+    for (name, data, _) in sample_entries() {
         assert_eq!(fs::read(out.join(&name)).unwrap(), data, "{name}");
     }
     let mut zip = ZipArchive::new(Cursor::new(&bytes[..])).unwrap();

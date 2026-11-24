@@ -22,4 +22,6 @@ mod writer;
 pub use error::Error;
 pub use reader::{Entry, EntryReader, Limits, Method, ZipArchive};
 pub use stellarr_deflate::Level;
-pub use writer::{Compression, EntryInfo, EntryOptions, EntryWriter, ZipWriter};
+pub use writer::{
+    ARCHIVE_OVERHEAD, Compression, EntryInfo, EntryOptions, EntryWriter, ZipWriter, entry_overhead,
+};
