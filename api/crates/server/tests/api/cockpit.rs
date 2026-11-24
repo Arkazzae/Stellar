@@ -357,6 +357,7 @@ async fn recovering_an_account_ends_what_it_had_and_hands_over_one_credential() 
     assert_eq!(done.status, 200, "{}", done.text());
     let answer = done.json::<Value>();
     assert!(answer["credential"].as_str().unwrap().len() >= 16);
+    assert_eq!(done.header("cache-control"), Some("no-store"));
     assert_eq!(answer["sessionsRevoked"], 1);
     assert_eq!(scene.member.client.get("/api/me").await.status, 401);
     let security = scene.owner.client.get(&format!("/api/cockpit/users/{}/security", scene.member.id)).await.json::<Value>();
@@ -509,6 +510,7 @@ async fn the_log_view_filters_pages_and_exports_without_a_secret_in_it() {
     let export = scene.owner.client.get("/api/cockpit/logs/export").await;
     assert_eq!(export.status, 200);
     assert_eq!(export.header("content-type"), Some("text/tab-separated-values; charset=utf-8"));
+    assert_eq!(export.header("cache-control"), Some("no-store"));
     let disposition = export.header("content-disposition").unwrap();
     assert!(disposition.starts_with("attachment; filename=stellarr-logs-") && disposition.contains(".tsv; filename*=UTF-8''"), "{disposition}");
     let text = export.text();

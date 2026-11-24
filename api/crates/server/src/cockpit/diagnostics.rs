@@ -401,6 +401,8 @@ pub(super) async fn export(
     if let Ok(value) = HeaderValue::from_str(&format!("attachment; filename={name}; filename*=UTF-8''{name}")) {
         headers.insert(header::CONTENT_DISPOSITION, value);
     }
+    // What the process logged is for the operator's eyes and no cache's.
+    headers.insert(header::CACHE_CONTROL, HeaderValue::from_static("no-store"));
     Ok(response)
 }
 
