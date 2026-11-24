@@ -301,6 +301,8 @@ WRONG = [
     ["security", "unlink"], ["security", "unlink", "x"], ["security", "unlink", "x", "y", "z"], ["security", "unlink", "x", "not-a-guid", "--yes"],
     ["backup"], ["backup", "nope"], ["backup", "verify"], ["backup", "verify", "a", "b"], ["backup", "verify", "nothing.zip"], ["backup", "restore"],
     ["backup", "cancel", "x"], ["backup", "cancel"], ["backup", "apply", "x"], ["backup", "apply", "--yes"],
+    ["--json", "--json", "status"], ["--data-root", "/nowhere", "status"], ["--user", "a", "--user", "b", "sessions", "list"],
+    ["--reason", "one", "--reason", "two", "security", "recover", "x"], ["--yes", "--yes", "sessions", "revoke", "x"],
     ["--data-root"], ["--data-root", "--json"], ["--data-root", "", "version"], ["--data-root", "   ", "version"], ["--data-root=", "version"],
     ["--data-root=--virtual", "version"], ["--user"], ["--reason", ""], ["--"], ["--", "status"], ["-"], ["-x"], ["--json", "--nope"],
 ]
@@ -443,6 +445,8 @@ for key in ["public-url", "tls.domain", "https-port", "oidc.enabled", "oidc.prov
 for key in ["mail.smtp-password", "mail.resend-api-key", "giphy.api-key", "cloudflare.r2.access-key"]:
     one_of_each(f"config set a secret {key}", ["config", "set", key, "x", "--yes"], mutating=True)
 one_of_each("config set unknown", ["config", "set", "nope", "x", "--yes"], mutating=True)
+one_of_each("config set with -y", ["config", "set", "time-zone", "Europe/Warsaw", "-y"], mutating=True)
+one_of_each("config set with --yes before the command", ["--yes", "config", "set", "time-zone", "Europe/Warsaw"], mutating=True)
 one_of_each("config set without --yes, no terminal", ["config", "set", "time-zone", "Europe/Warsaw"], mutating=True)
 one_of_each("config set with mail on and no sender", ["config", "set", "mail.enabled", "true", "--yes"], mutating=True,
             env={"ASPNETCORE_ENVIRONMENT": "Testing"})

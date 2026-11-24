@@ -30,10 +30,13 @@ trap 'exit 130' INT TERM
 check() { # description, expected, actual
   if [ "$2" = "$3" ]; then echo "ok        $1"; else echo "FAILED    $1: expected '$2', got '$3'"; failures=$((failures + 1)); fi
 }
-cli() { STELLARR_API_URL=$base "$tool" --data-root "$root" "$@"; }
+# As an operator runs it in the container, in production, where mail is on and
+# needs a sender: this instance sends none.
+instance_name() { curl -s -b "$work/owner" "$base/api/servers" "${headers[@]}" | python3 -c 'import sys,json;print(json.load(sys.stdin)[0]["name"])'; }
+cli() { STELLARR_MAIL_ENABLED=false STELLARR_API_URL=$base "$tool" --data-root "$root" "$@"; }
 
 mkdir -p "$root/db"
-env -i PATH="$PATH" ASPNETCORE_ENVIRONMENT=Testing ASPNETCORE_URLS=$base STELLARR_DATA_ROOT="$root" \
+env -i PATH="$PATH" ASPNETCORE_ENVIRONMENT=Testing Testing__Workers=realtime-sessions ASPNETCORE_URLS=$base STELLARR_DATA_ROOT="$root" \
   "ConnectionStrings__Database=Data Source=$root/db/stellarr.db;Pooling=True" \
   "$server" >"$work/server.log" 2>&1 &
 pid=$!
@@ -49,17 +52,21 @@ post "$work/maya" /api/auth/register "{\"username\":\"maya\",\"displayName\":\"M
 cookie=$(awk '$6 ~ /session/ {printf "%s=%s", $6, $7}' "$work/maya")
 
 echo "== a setting the tool changes is the one the server reads, at once"
-check "the instance name the server reports before" "Stellarr" "$(curl -s -b "$work/owner" "$base/api/bootstrap" "${headers[@]}" | python3 -c 'import sys,json;print(json.load(sys.stdin)["server"]["name"])')"
+check "the instance name the server reports before" "Stellarr" "$(instance_name)"
 cli config set instance.name "Orbit CLI" --yes >/dev/null
-check "the instance name the server reports after" "Orbit CLI" "$(curl -s -b "$work/owner" "$base/api/bootstrap" "${headers[@]}" | python3 -c 'import sys,json;print(json.load(sys.stdin)["server"]["name"])')"
+check "the instance name the server reports after" "Orbit CLI" "$(instance_name)"
 cli config set mfa.requirement everyone --yes >/dev/null
 status=$(post "$work/maya2" /api/auth/login "{\"username\":\"maya\",\"password\":\"$password\"}" | python3 -c 'import sys,json;print(json.load(sys.stdin).get("status"))')
 check "with the second step required for everyone, a sign-in asks for one to be set up" "mfa_enrollment_required" "$status"
 cli config set mfa.requirement optional --yes >/dev/null
-check "and with it optional again, it signs in" "None" "$(post "$work/maya3" /api/auth/login "{\"username\":\"maya\",\"password\":\"$password\"}" | python3 -c 'import sys,json;print(json.load(sys.stdin).get("status"))')"
+again=$(post "$work/maya3" /api/auth/login "{\"username\":\"maya\",\"password\":\"$password\"}")
+check "and with it optional again, it signs in" "maya" "$(printf '%s' "$again" | python3 -c 'import sys,json;print(json.load(sys.stdin).get("username"))' 2>/dev/null || echo "$again")"
 
 echo "== a session the tool revokes is closed on the hub within a second or two"
-session=$(cli --json sessions list --user maya | python3 -c 'import sys,json;d=json.load(sys.stdin)["data"]["sessions"];print([s["id"] for s in d if s["device"]][0])')
+# A sign-in of its own, which is the one seen last.
+post "$work/maya4" /api/auth/login "{\"username\":\"maya\",\"password\":\"$password\"}" >/dev/null
+cookie=$(awk '$6 ~ /session/ {printf "%s=%s", $6, $7}' "$work/maya4")
+session=$(cli --json sessions list --user maya | python3 -c 'import sys,json;print(json.load(sys.stdin)["data"]["sessions"][0]["id"])')
 node "$here/running-server.mjs" --base "$base" --cookie "$cookie" >"$work/hub.log" 2>&1 &
 hub=$!
 for _ in $(seq 1 50); do grep -q '^open' "$work/hub.log" && break; sleep 0.1; done
