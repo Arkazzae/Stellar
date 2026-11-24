@@ -114,8 +114,10 @@ and nothing else; axum's own extractors of the same names refuse with a
 sentence of plain text. A path segment that is not an id is a 404 with no body
 (the route does not exist), a query that does not fit is a 400 with no body,
 and a body that is not the right JSON is a 400 with no body. `Json<T>` reads the
-whole body into memory, up to the 128 MiB ceiling; a route that takes an upload
-streams it instead, through `http::read_all`'s limit, once it is written.
+whole body into memory, up to the ceiling of its route: 1 MiB, unless the route says
+`.json_body_up_to(bytes)`, and never over the 128 MiB of the whole server; a route
+that takes an upload streams it instead, through `http::read_all`'s limit, once it
+is written.
 
 **JSON** is decided in `http/json.rs`: camelCase names (`#[serde(rename_all =
 "camelCase")]`), `null` for a missing value (never `skip_serializing_if`), `Id`
@@ -123,7 +125,7 @@ and `Timestamp` from `values`, an enum written as the clients expect it for
 that enum, members in the order the struct declares them. Never answer with
 `json!` or a `Value`: its objects sort their keys. A request body is read with
 the `Json<T>` extractor; a body that is not the right JSON is a 400 with no
-body. Read a body no other way, so that the 128 MiB ceiling holds.
+body. Read a body no other way, so that the ceilings hold.
 
 **Messages** are in `stellarr-messages`. A text for a person is a `MessageKey`
 with a text in both languages, which the compiler insists on:
@@ -198,10 +200,23 @@ gets `state.sealer().derive_key("oidc")`, 32 bytes.
 The session cookie holds a sealed ticket (the account, its session version, the
 session row), and the row in `UserSessions` decides: revoked, expired, a bumped
 session version, a disabled account or a missing second step end it on the next
-request, and ending the row ends the session everywhere. `auth::session`
-checks it, writes the last-seen time back at most every five minutes, and
-renews a cookie that is past half its life. A request whose cookie is not good
-is simply not signed in, and the cookie is taken away.
+request. `auth::session` checks it, writes the last-seen time back at most every
+five minutes, and moves the session's end out to a full lifetime when it is
+near, never past its absolute end. The cookie's own expiry moves out, by its
+original length, when the cookie is past half its life. A cookie that cannot be
+opened (not ours, altered, run out) is ignored: nobody is signed in and the
+database is not asked. A cookie whose session no longer allows it is not signed
+in and is taken away.
+
+What ends a session in the database ends it for the next request that carries
+its cookie, but not for a connection that is already open: the hub keeps those.
+The hub's side has to close the connections of a session when it is told
+`SessionEnded` (a sign-out here), and must also look at the database itself, as
+the first server's watcher did every second, to close the connections of
+sessions that were revoked, expired, reached their absolute end, belong to a
+disabled account or no longer meet the second-step policy, whoever changed
+them, another process included. `auth::session::authenticate` has the checks to
+reuse.
 
 - `.authorized()` on a route (after `.get(..)` and the like): a request without
   a valid session is answered 401 with no body before the handler.
@@ -294,5 +309,9 @@ with the limit set, as `pipeline.rs` does.
   carry `Connection: close`.
 - Settings are read once at start; the first server read a few again on each
   request.
+- A route that reads JSON reads 1 MiB unless it asks for more (`.json_body_up_to`);
+  the first server read up to 128 MiB everywhere, which let anybody make it hold
+  that much on a route that needs no session. The 128 MiB ceiling of the whole
+  server stays.
 - A malformed JSON body is a 400 in every environment; in development the first
   server answered 500.
