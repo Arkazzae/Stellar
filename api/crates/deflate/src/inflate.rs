@@ -161,6 +161,13 @@ pub struct Inflate<R> {
     io_failed: Option<io::ErrorKind>,
     /// No block of the current stream has been started.
     fresh: bool,
+    /// Push mode: the input may say "not yet" (`WouldBlock`) and a step that
+    /// ran out of input is undone and retried when more arrives.
+    resumable: bool,
+    /// Where the step in progress started, so that a retry finds its input.
+    snap_pos: usize,
+    /// The last decoding pass stopped for want of input.
+    starved: bool,
 }
 
 impl<R: Read> Inflate<R> {
@@ -184,7 +191,20 @@ impl<R: Read> Inflate<R> {
             failed: None,
             io_failed: None,
             fresh: true,
+            resumable: false,
+            snap_pos: 0,
+            starved: false,
         }
+    }
+
+    /// Push mode, for an input that can say it has nothing yet by failing
+    /// with `WouldBlock` and nothing more by returning 0. A read that runs
+    /// out of input then fails with `WouldBlock` too, and nothing is lost:
+    /// the step that was cut short is undone and done again when the input
+    /// has grown.
+    pub(crate) fn resumable(mut self) -> Self {
+        self.resumable = true;
+        self
     }
 
     /// Refuses a stream that would decode to more than `limit` bytes, in
@@ -211,6 +231,10 @@ impl<R: Read> Inflate<R> {
         &self.src
     }
 
+    pub(crate) fn src_mut(&mut self) -> &mut R {
+        &mut self.src
+    }
+
     pub fn into_inner(self) -> R {
         self.src
     }
@@ -223,6 +247,7 @@ impl<R: Read> Inflate<R> {
         if !self.is_finished() && !self.fresh {
             return Err(io::Error::other("the compressed stream is in progress"));
         }
+        self.snap_pos = self.in_pos;
         match self.take_raw(out) {
             Ok(n) => Ok(n),
             Err(Fail::Io(error)) => Err(error),
@@ -245,11 +270,41 @@ impl<R: Read> Inflate<R> {
     }
 
     fn fill_input(&mut self) -> io::Result<bool> {
+        if self.resumable {
+            return self.fill_input_kept();
+        }
         loop {
             match self.src.read(&mut self.input) {
                 Ok(n) => {
                     self.in_pos = 0;
                     self.in_len = n;
+                    return Ok(n > 0);
+                }
+                Err(error) if error.kind() == io::ErrorKind::Interrupted => {}
+                Err(error) if error.kind() == io::ErrorKind::UnexpectedEof => return Ok(false),
+                Err(error) => return Err(error),
+            }
+        }
+    }
+
+    /// Reads more input after what the step in progress has already used,
+    /// which stays where it is: a step that runs dry is undone and needs it
+    /// again. Fails with `WouldBlock` when there is nothing yet.
+    fn fill_input_kept(&mut self) -> io::Result<bool> {
+        let keep = self.snap_pos.min(self.in_pos);
+        if keep > 0 {
+            self.input.copy_within(keep..self.in_len, 0);
+            self.in_len -= keep;
+            self.in_pos -= keep;
+        }
+        self.snap_pos = 0;
+        loop {
+            if self.in_len == self.input.len() {
+                return Err(io::Error::other("one step needs more input than is held"));
+            }
+            match self.src.read(&mut self.input[self.in_len..]) {
+                Ok(n) => {
+                    self.in_len += n;
                     return Ok(n > 0);
                 }
                 Err(error) if error.kind() == io::ErrorKind::Interrupted => {}
@@ -486,54 +541,82 @@ impl<R: Read> Inflate<R> {
             self.filled = keep;
             self.taken = keep;
         }
+        self.starved = false;
         let start = self.filled;
         let end = CAP - MAX_MATCH;
         loop {
             if self.filled > end {
                 return Ok(());
             }
-            match self.state {
-                State::Done => return Ok(()),
-                State::BlockHeader => {
-                    if self.filled > start && self.in_pos == self.in_len && self.bit_count < 32 {
-                        return Ok(());
-                    }
-                    self.read_block_header()?;
+            // A step reads all it needs before it changes anything but the
+            // bit buffer, so these three are all that a retry needs back.
+            let (bits, bit_count, in_pos) = (self.bits, self.bit_count, self.in_pos);
+            if self.resumable {
+                self.snap_pos = in_pos;
+            }
+            match self.step(start) {
+                Ok(true) => return Ok(()),
+                Ok(false) => {}
+                Err(Fail::Io(error))
+                    if self.resumable && error.kind() == io::ErrorKind::WouldBlock =>
+                {
+                    self.bits = bits;
+                    self.bit_count = bit_count;
+                    // The retained input starts at the step's first byte.
+                    self.in_pos = self.snap_pos;
+                    self.starved = true;
+                    return Ok(());
                 }
-                State::Stored(0) => self.finish_block(),
-                State::Stored(remaining) => {
-                    if self.filled > start && self.in_pos == self.in_len && self.bit_count < 8 {
-                        return Ok(());
-                    }
-                    let allowed = self.limit - self.produced;
-                    if allowed == 0 {
-                        return Err(Error::OutputLimit.into());
-                    }
-                    let n = (remaining as usize)
-                        .min(CAP - self.filled)
-                        .min(allowed.min(CAP as u64) as usize);
-                    let mut chunk = std::mem::take(&mut self.window);
-                    let got = self.take_raw(&mut chunk[self.filled..self.filled + n]);
-                    self.window = chunk;
-                    let got = got?;
-                    if got == 0 {
-                        return Err(Error::Truncated.into());
-                    }
-                    self.filled += got;
-                    self.produced += got as u64;
-                    self.state = State::Stored(remaining - got as u32);
-                }
-                State::Codes => {
-                    if self.filled > start && self.in_pos == self.in_len && self.bit_count < 48 {
-                        return Ok(());
-                    }
-                    if self.bit_count < 48 {
-                        self.refill()?;
-                    }
-                    self.decode_symbol_run()?;
-                }
+                Err(error) => return Err(error),
             }
         }
+    }
+
+    /// One block header, one run of stored bytes or one symbol. True when
+    /// decoding should stop for now.
+    fn step(&mut self, start: usize) -> Result<bool, Fail> {
+        match self.state {
+            State::Done => return Ok(true),
+            State::BlockHeader => {
+                if self.filled > start && self.in_pos == self.in_len && self.bit_count < 32 {
+                    return Ok(true);
+                }
+                self.read_block_header()?;
+            }
+            State::Stored(0) => self.finish_block(),
+            State::Stored(remaining) => {
+                if self.filled > start && self.in_pos == self.in_len && self.bit_count < 8 {
+                    return Ok(true);
+                }
+                let allowed = self.limit - self.produced;
+                if allowed == 0 {
+                    return Err(Error::OutputLimit.into());
+                }
+                let n = (remaining as usize)
+                    .min(CAP - self.filled)
+                    .min(allowed.min(CAP as u64) as usize);
+                let mut chunk = std::mem::take(&mut self.window);
+                let got = self.take_raw(&mut chunk[self.filled..self.filled + n]);
+                self.window = chunk;
+                let got = got?;
+                if got == 0 {
+                    return Err(Error::Truncated.into());
+                }
+                self.filled += got;
+                self.produced += got as u64;
+                self.state = State::Stored(remaining - got as u32);
+            }
+            State::Codes => {
+                if self.filled > start && self.in_pos == self.in_len && self.bit_count < 48 {
+                    return Ok(true);
+                }
+                if self.bit_count < 48 {
+                    self.refill()?;
+                }
+                self.decode_symbol_run()?;
+            }
+        }
+        Ok(false)
     }
 
     /// One literal, one match, or the end of the block.
@@ -633,6 +716,8 @@ impl<R: Read> Read for Inflate<R> {
                 if self.taken == self.filled {
                     return Err(error);
                 }
+            } else if self.starved && self.taken == self.filled {
+                return Err(io::ErrorKind::WouldBlock.into());
             }
         }
     }
