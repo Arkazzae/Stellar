@@ -15,8 +15,8 @@
 mod account;
 mod announce;
 mod direct;
-mod problems;
-mod store;
+pub mod problems;
+pub mod store;
 mod wire;
 
 use crate::http::{Endpoints, RateLimitPolicy};
