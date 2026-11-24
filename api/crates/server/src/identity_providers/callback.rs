@@ -29,7 +29,7 @@ use super::pending::{self, Pending};
 use super::single_sign_on::{Failed, Metadata, unix_now};
 use crate::auth::flow::{self as sign_in, Context, Options, Start};
 use crate::auth::policy::SecurityPolicy;
-use crate::auth::{events, security_cookies, session};
+use crate::auth::{ceremony, events, security_cookies, session};
 use crate::database::DbError;
 use crate::http::{ApiError, ApiResult, Origin, Path, with_cookie, with_session_cookie};
 use crate::instance::users::User;
@@ -399,58 +399,17 @@ async fn reauthenticate(
     else {
         return Ok(false);
     };
-    let (actor, issuer, subject) = (actor.clone(), issuer.to_string(), subject.to_string());
-    state
-        .database()
-        .write(move |tx| -> Result<bool, DbError> {
-            let Some(user) = asking_account(tx, &actor, Timestamp::now())? else {
-                return Ok(false);
-            };
-            let owns: bool = tx.query_row(
-                "SELECT EXISTS (SELECT 1 FROM \"ExternalIdentities\" WHERE \"UserId\" = ?1 AND \"Issuer\" = ?2 AND \"Subject\" = ?3)",
-                params![user.id, issuer, subject],
-                |row| row.get(0),
-            )?;
-            let Some(session) = crate::values::parse_guid(&actor.session_id) else {
-                return Ok(false);
-            };
-            Ok(owns && mark_reauthenticated(tx, user.id, session, user.session_version, signed_in)?)
-        })
-        .await
-        .map_err(|error| Failed(error.to_string()))
-}
-
-/// Records on the session that its person proved who they are at `at`, never
-/// earlier than what it already counts. False when it is not one of the
-/// account's, is revoked, or is of another version of the account.
-///
-/// This is the one place that writes it; `auth` is to offer the call and this
-/// then becomes one line.
-fn mark_reauthenticated(
-    tx: &rusqlite::Transaction,
-    user: Id,
-    session: Id,
-    security_version: i64,
-    at: Timestamp,
-) -> Result<bool, DbError> {
-    let counted: Option<Timestamp> = tx
-        .query_row(
-            "SELECT COALESCE(\"AuthenticatedAt\", \"CreatedAt\") FROM \"UserSessions\"
-             WHERE \"Id\" = ?1 AND \"UserId\" = ?2 AND \"RevokedAt\" IS NULL AND \"SecurityVersion\" = ?3",
-            params![session, user, security_version],
-            |row| row.get(0),
-        )
-        .optional()?;
-    let Some(counted) = counted else {
+    // The account's session must still be the one that asked, which the
+    // ceremony reads for itself.
+    let (Some(user), Some(session)) = (
+        crate::values::parse_guid(&actor.user_id),
+        crate::values::parse_guid(&actor.session_id),
+    ) else {
         return Ok(false);
     };
-    if counted < at {
-        tx.execute(
-            "UPDATE \"UserSessions\" SET \"AuthenticatedAt\" = ?2 WHERE \"Id\" = ?1",
-            params![session, at],
-        )?;
-    }
-    Ok(true)
+    ceremony::reauthenticated_by_provider(state, user, session, issuer, subject, signed_in)
+        .await
+        .map_err(|error| Failed(error.to_string()))
 }
 
 // ---- signing in ----
