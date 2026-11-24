@@ -299,8 +299,9 @@ def forgive_leading_zero(first, this):
     count = 0
     for index, entry in enumerate(first):
         if entry["error"] and "bad decrypt" in entry["error"]:
+            held = [json.dumps(x["json"], sort_keys=True) for x in first]
             for other in spare:
-                if other["path"] == entry["path"] and other["json"] is not None and not any(x is other for x in first):
+                if other["path"] == entry["path"] and other["json"] is not None and json.dumps(other["json"], sort_keys=True) not in held:
                     first[index] = other
                     spare.remove(other)
                     count += 1
