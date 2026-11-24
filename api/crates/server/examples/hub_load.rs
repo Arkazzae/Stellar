@@ -16,10 +16,14 @@ use stellarr_api::state::AppState;
 use stellarr_api::{Services, serve_with};
 
 async fn publish(State(state): State<AppState>) -> String {
-    state
-        .events()
-        .publish(Event::new(Audience::Everyone, "Probe", &serde_json::json!({"at": "now"})));
-    let connections = state.realtime().map_or(0, |hub| hub.hub().connection_count());
+    state.events().publish(Event::new(
+        Audience::Everyone,
+        "Probe",
+        &serde_json::json!({"at": "now"}),
+    ));
+    let connections = state
+        .realtime()
+        .map_or(0, |hub| hub.hub().connection_count());
     connections.to_string()
 }
 
@@ -35,7 +39,10 @@ async fn main() {
     let data = arguments.next().expect("a data folder");
     let variables = vec![
         ("ASPNETCORE_ENVIRONMENT".to_string(), "Testing".to_string()),
-        ("ASPNETCORE_URLS".to_string(), format!("http://127.0.0.1:{port}")),
+        (
+            "ASPNETCORE_URLS".to_string(),
+            format!("http://127.0.0.1:{port}"),
+        ),
         ("STELLARR_DATA_ROOT".to_string(), data.clone()),
         (
             "ConnectionStrings__Database".to_string(),
