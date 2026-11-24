@@ -25,7 +25,7 @@ use crate::permissions::authorization::{self, MemberAuthorization};
 use crate::permissions::membership::ActiveServer;
 use crate::realtime::Realtime;
 use crate::state::AppState;
-use crate::values::Id;
+use crate::values::{Guid, Id};
 
 /// The room somebody is sent to, as a request names it. A member that is
 /// missing reads as no room at all, which the moderator does not see.
@@ -132,7 +132,7 @@ pub(super) async fn kick_from_voice(
     State(state): State<AppState>,
     caller: Caller,
     ActiveServer(server): ActiveServer,
-    Path((channel, target)): Path<(Id, Id)>,
+    Path((Guid(channel), Guid(target))): Path<(Guid, Guid)>,
 ) -> ApiResult<Response> {
     let realtime = realtime(&state)?;
     let messages = *state.messages();
@@ -207,7 +207,7 @@ pub(super) async fn move_between_voice_channels(
     State(state): State<AppState>,
     caller: Caller,
     ActiveServer(server): ActiveServer,
-    Path((channel, target)): Path<(Id, Id)>,
+    Path((Guid(channel), Guid(target))): Path<(Guid, Guid)>,
     Json(request): Json<MoveRequest>,
 ) -> ApiResult<Response> {
     let realtime = realtime(&state)?;

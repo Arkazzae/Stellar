@@ -89,11 +89,8 @@ pub async fn block(
     if !done {
         return Err(ApiError::not_found());
     }
-    // OPEN POINT: the first server also ends a direct voice call between the
-    // two here (`EndDirectCallAsync`): it empties the private room, tells the
-    // seated connections `DirectCallDeclined` {channelId, byUserId} and sends
-    // the room's voice snapshot. Voice rooms are not ported yet, so the call
-    // is left running; this is the one place to add that.
+    // The call between the two ends, and the people in it are told.
+    crate::voice::end_direct_call(&state, a, b, me).await;
     announce(&state, &[me, other]);
     Ok(StatusCode::NO_CONTENT.into_response())
 }

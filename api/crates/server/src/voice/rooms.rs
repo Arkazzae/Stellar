@@ -61,14 +61,7 @@ pub fn access(
         });
     }
 
-    let conversation: Option<(Id, Id)> = db
-        .query_row(
-            "SELECT \"UserAId\", \"UserBId\" FROM \"DirectConversations\"
-             WHERE \"Id\" = ?1 AND (\"UserAId\" = ?2 OR \"UserBId\" = ?2) LIMIT 1",
-            params![room, user],
-            |row| Ok((row.get(0)?, row.get(1)?)),
-        )
-        .optional()?;
+    let conversation = conversation_of(db, room, user)?;
     match conversation {
         Some((a, b)) if direct_call_allowed(db, presence, room, user, if a == user { b } else { a })? => {
             Ok(Access {
@@ -97,13 +90,7 @@ fn direct_call_allowed(
     user: Id,
     peer: Id,
 ) -> rusqlite::Result<bool> {
-    let blocked: bool = db.query_row(
-        "SELECT EXISTS (SELECT 1 FROM \"UserBlocks\"
-            WHERE (\"BlockerId\" = ?1 AND \"BlockedId\" = ?2) OR (\"BlockerId\" = ?2 AND \"BlockedId\" = ?1))",
-        params![user, peer],
-        |row| row.get(0),
-    )?;
-    if blocked {
+    if crate::social::is_blocked(db, user, peer)? {
         return Ok(false);
     }
 
@@ -127,13 +114,7 @@ fn direct_call_allowed(
     if takes_messages.unwrap_or(true) {
         return Ok(true);
     }
-
-    let (first, second) = if user < peer { (user, peer) } else { (peer, user) };
-    db.query_row(
-        "SELECT EXISTS (SELECT 1 FROM \"Friendships\" WHERE \"UserAId\" = ?1 AND \"UserBId\" = ?2)",
-        params![first, second],
-        |row| row.get(0),
-    )
+    crate::social::are_friends(db, user, peer)
 }
 
 /// The two people of a direct conversation, when `user` is one of them.
@@ -302,4 +283,48 @@ pub async fn restore_direct_calls(state: &AppState, user: Id) -> Result<(), DbEr
         broadcast_snapshot(state, room).await?;
     }
     Ok(())
+}
+
+/// Ends the direct call between two people, as a block does: the private room
+/// is emptied, the connections that sat in it are told who ended it, and the
+/// room says it is empty. Nothing happens when they have no conversation.
+/// Call it once the change that ended the call is committed.
+pub async fn end_direct_call(state: &AppState, first: Id, second: Id, by: Id) {
+    let Some(realtime) = state.realtime() else {
+        return;
+    };
+    let (a, b) = crate::social::pair(first, second);
+    let room: Result<Option<Id>, DbError> = state
+        .database()
+        .read(move |db| -> Result<Option<Id>, DbError> {
+            Ok(db
+                .query_row(
+                    "SELECT \"Id\" FROM \"DirectConversations\" WHERE \"UserAId\" = ?1 AND \"UserBId\" = ?2",
+                    params![a, b],
+                    |row| row.get(0),
+                )
+                .optional()?)
+        })
+        .await;
+    let room = match room {
+        Ok(Some(room)) => room,
+        Ok(None) => return,
+        Err(error) => {
+            tracing::warn!(%error, "a direct call was not ended when its people were separated");
+            return;
+        }
+    };
+    let seated = realtime.presence().end_voice_room(room);
+    super::hub::send_to_connections(
+        state,
+        seated,
+        "DirectCallDeclined",
+        &super::hub::DirectCallDeclined {
+            channel_id: room,
+            by_user_id: by,
+        },
+    );
+    if let Err(error) = broadcast_snapshot(state, room).await {
+        tracing::warn!(%error, "a room was not told that its call ended");
+    }
 }
