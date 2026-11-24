@@ -10,6 +10,7 @@
 //! the connection of the closure it runs in (`read` or `write`) and never
 //! opens one.
 
+pub mod access_changed;
 pub mod audit;
 pub mod authorization;
 pub mod evaluator;
