@@ -145,7 +145,8 @@ struct Redeeming {
     account_version: i64,
 }
 
-/// The shortest and the longest credential that is looked up at all.
+/// The shortest and the longest credential that is looked up at all, in UTF-16
+/// units as the first server counted them.
 const CREDENTIAL_LENGTH: std::ops::RangeInclusive<usize> = 16..=512;
 
 /// Exchanges the credential an operator handed over, once, for the right to set
@@ -161,7 +162,7 @@ pub(super) fn redeem(
     now: Timestamp,
 ) -> Result<Option<Id>, DbError> {
     let credential = credential.trim();
-    if !CREDENTIAL_LENGTH.contains(&credential.chars().count()) {
+    if !CREDENTIAL_LENGTH.contains(&credential.encode_utf16().count()) {
         return Ok(None);
     }
     // Found by the digest of a 256-bit secret, which nobody can choose a
