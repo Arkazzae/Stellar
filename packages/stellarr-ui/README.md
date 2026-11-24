@@ -168,7 +168,7 @@ Component tokens follow `--ui-<component>-<part>-<property>` and fall back to th
 | `--ui-segmented-item-on-text` | `--ui-text` | Checked segment label color |
 | `--ui-segmented-detail-text` | `--ui-text-faint` | Secondary `detail` line color |
 
-`Dropdown` (note: because the popup listbox portals into `document.body`, popup-specific tokens—`--ui-dropdown-tick-text`, `--ui-dropdown-option-*`, `--ui-dropdown-list-*`, and `--ui-dropdown-font-size` on options—must be set on `:root` or `body`):
+`Dropdown` (note: because the popup listbox portals into `document.body`, popup-specific tokens such as `--ui-dropdown-tick-text`, `--ui-dropdown-option-*`, `--ui-dropdown-list-*`, and `--ui-dropdown-font-size` on options must be set on `:root` or `body`):
 
 | Token | Fallback | Used for |
 | --- | --- | --- |
