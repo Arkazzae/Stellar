@@ -3,12 +3,23 @@
 //! object's key here in the same transaction, so that neither a request that
 //! is cut short nor a store that cannot be reached leaves an object behind.
 
+use rusqlite::{Connection, params};
 use tracing::warn;
 
 use super::Stopping;
 use super::TARGET;
 use crate::database::DbError;
 use crate::state::AppState;
+use crate::values::Timestamp;
+
+/// Queues an object once, keeping the timestamp of its first enqueue.
+pub(crate) fn enqueue(db: &Connection, key: &str, queued_at: Timestamp) -> rusqlite::Result<()> {
+    db.execute(
+        "INSERT OR IGNORE INTO \"ObjectDeletions\" (\"ObjectKey\", \"QueuedAt\") VALUES (?1, ?2)",
+        params![key, queued_at],
+    )?;
+    Ok(())
+}
 
 /// Deletes the oldest queued objects, up to `batch`. One that cannot be
 /// deleted stays queued, to be asked again by the next run.
