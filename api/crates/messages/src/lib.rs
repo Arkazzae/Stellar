@@ -225,7 +225,7 @@ mod tests {
     }
 
     #[test]
-    fn the_catalogue_has_every_key_of_the_original() {
+    fn the_catalogue_holds_every_key_the_server_uses() {
         assert_eq!(MessageKey::ALL.len(), 369);
     }
 
