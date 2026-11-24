@@ -3,7 +3,8 @@
 //
 //   node desktop-login-oracle.mjs seed   --base URL --setup CODE --state state.json
 //   node desktop-login-oracle.mjs ask    --base URL --state state.json --out transcript.txt --ids ids.json
-//   node desktop-login-oracle.mjs after  --base URL --state state.json --ids ids.json --out transcript.txt
+//   node desktop-login-oracle.mjs after  --base URL --ids ids.json --out transcript.txt
+//   node desktop-login-oracle.mjs poll   --base URL --out transcript.txt
 //
 // `seed` founds the first server and makes the accounts the questions need.
 // `ask` signs people in, starts requests and walks every state a request, a
@@ -12,9 +13,6 @@
 // where the script that runs both servers reads it. `after` asks again once
 // those changes are made. Ids, moments and secrets that differ by nature are
 // replaced in the transcript. Needs Node 26.
-//
-// The exchange is not asked: this server does not serve it yet. `--exchange`
-// asks it, for the first server alone.
 //
 // See desktop-login-shared-database.sh, which runs both.
 
@@ -228,6 +226,51 @@ async function ask() {
   t.add("start, from the web client", await nobody.post("/api/auth/desktop/browser/start"));
   t.add("start, from no client", await fetch(`${base}/api/auth/desktop/browser/start`, { method: "POST" }).then(async (r) => ({ status: r.status, headers: r.headers, text: await r.text(), setCookie: [] })));
 
+  // The application's half: polling, exchanging, and what the session is good for.
+  const exchange = (body, options = {}) => application.send("POST", "/api/auth/desktop/browser/exchange", { body, ...options });
+  const second = await start(application, t, "start, for the exchange");
+  const me = async (label, cookies) => {
+    const agent = new Agent(desktopClient);
+    for (const line of cookies) { const [pair] = line.split(";"); const at = pair.indexOf("="); agent.cookies.set(pair.slice(0, at), pair.slice(at + 1)); }
+    t.add(`${label}: /api/me`, await agent.get("/api/me"));
+    t.add(`${label}: /api/session`, await agent.get("/api/session"));
+    const negotiated = await agent.send("POST", "/hubs/app/negotiate?negotiateVersion=1");
+    negotiated.text = negotiated.status === 200 ? "<negotiation>" : negotiated.text;
+    t.add(`${label}: hub negotiate`, negotiated);
+  };
+  t.add("exchange, before approval", await exchange({ requestId: second.requestId, secret: second.secret }));
+  t.add("exchange, wrong secret", await exchange({ requestId: second.requestId, secret: "x".repeat(43) }));
+  t.add("exchange, secret too short", await exchange({ requestId: second.requestId, secret: "abc" }));
+  t.add("exchange, secret too long", await exchange({ requestId: second.requestId, secret: "x".repeat(513) }));
+  t.add("exchange, an id that is no id", await exchange({ requestId: "not-a-guid", secret: "x".repeat(43) }));
+  t.add("exchange, an id nobody started", await exchange({ requestId: "11111111-2222-4333-8444-555555555555", secret: "x".repeat(43) }));
+  t.add("exchange, id in braces and capitals", await exchange({ requestId: `{${second.requestId.toUpperCase()}}`, secret: second.secret }));
+  t.add("exchange, no members", await exchange({}));
+  t.add("exchange, nulls", await exchange({ requestId: null, secret: null }));
+  t.add("exchange, numbers", await exchange({ requestId: 1, secret: 2 }));
+  t.add("exchange, an array", await exchange([1]));
+  t.add("exchange, not JSON", await application.send("POST", "/api/auth/desktop/browser/exchange", { raw: "{", type: "application/json" }));
+  t.add("exchange, no content type", await application.send("POST", "/api/auth/desktop/browser/exchange", { raw: "{}" }));
+  t.add("exchange, form type", await application.send("POST", "/api/auth/desktop/browser/exchange", { raw: "a=b", type: "application/x-www-form-urlencoded" }));
+  t.add("exchange, GET", await application.get("/api/auth/desktop/browser/exchange"));
+  const pageFor = await maja1.get(verify(second.requestId));
+  t.add("exchange, bound but not approved", await exchange({ requestId: second.requestId, secret: second.secret }));
+  await maja1.send("POST", verify(second.requestId), { form: `token=${tokenOf(pageFor.text)}` });
+  t.add("exchange, wrong secret after approval", await exchange({ requestId: second.requestId, secret: "x".repeat(43) }));
+  const both = await Promise.all([exchange({ requestId: second.requestId, secret: second.secret }), exchange({ requestId: second.requestId, secret: second.secret })]);
+  const won = both.filter((r) => r.status === 200);
+  t.note(`two exchanges at once: ${both.map((r) => r.status).sort().join(" and ")}`);
+  t.add("exchange, the one that won", won[0] ?? both[0]);
+  await me("the session of the exchange", (won[0] ?? both[0]).setCookie);
+  t.add("exchange, again after it", await exchange({ requestId: second.requestId, secret: second.secret }));
+  t.add("page, after the exchange", await maja1.get(verify(second.requestId)));
+  t.add("post, after the exchange", await maja1.send("POST", verify(second.requestId), { form: `token=${tokenOf(pageFor.text)}` }));
+  const wide = await start(application, new Transcript("/dev/null"), "");
+  const wideToken = tokenOf((await maja1.get(verify(wide.requestId))).text);
+  await maja1.send("POST", verify(wide.requestId), { form: `token=${wideToken}` });
+  t.add("exchange, a secret padded with spaces", await exchange({ requestId: wide.requestId, secret: ` ${wide.secret} ` }));
+  t.add("exchange, an unknown member besides", await exchange({ requestId: wide.requestId, secret: wide.secret, extra: 1 }));
+
   // Each way the form's token is accepted, spelled differently.
   const spellings = {
     "a field name in capitals": (token) => `TOKEN=${token}`,
@@ -252,7 +295,7 @@ async function ask() {
   // Requests whose state the database is changed for: the script that runs
   // both servers does it between this and `after`. Each is opened by a
   // browser of its own, so that the change touches nothing else.
-  const people = { ada2: "ada", zed: "zed", neo: "neo", kim1: "kim", kim2: "kim" };
+  const people = { ada2: "ada", zed: "zed", neo: "neo", kim1: "kim", kim2: "kim", kim3: "kim" };
   const browsers = { maja1 };
   for (const [name, account] of Object.entries(people)) {
     browsers[name] = new Agent();
@@ -266,11 +309,12 @@ async function ask() {
     if (approve) await browsers[who].send("POST", verify(handle.requestId), { form: `token=${ids.requests[name].token}` });
   };
   ids.requests = {};
-  await watched("ranOut", "maja1", false);
+  await watched("ranOut", "maja1", true);
   await watched("used", "maja1", true);
-  await watched("endedSession", "ada2", false);
-  await watched("disabledAccount", "zed", false);
-  await watched("passwordChanged", "neo", false);
+  await watched("endedSession", "ada2", true);
+  await watched("disabledAccount", "zed", true);
+  await watched("passwordChanged", "neo", true);
+  await watched("needsSecondStep", "kim3", true);
   await watched("staleSecondStep", "kim1", false);
   await watched("freshSecondStep", "kim2", false);
   ids.cookies = Object.fromEntries(Object.entries(browsers).map(([name, agent]) => [name, Object.fromEntries(agent.cookies)]));
@@ -281,6 +325,7 @@ async function ask() {
 async function after() {
   const ids = JSON.parse(readFileSync(args.ids, "utf8"));
   const t = new Transcript(args.out);
+  const application = new Agent(desktopClient);
   const browser = (name) => {
     const found = new Agent();
     for (const [k, v] of Object.entries(ids.cookies[name])) found.cookies.set(k, v);
@@ -292,6 +337,7 @@ async function after() {
     endedSession: "a session that ended",
     disabledAccount: "an account that was disabled",
     passwordChanged: "a password that was changed",
+    needsSecondStep: "a second step required that the approval did not pass",
     staleSecondStep: "a second step passed ten minutes ago",
     freshSecondStep: "a second step passed a moment ago",
   };
@@ -303,11 +349,30 @@ async function after() {
     // not leaves the person with the token they had.
     const token = tokenOf(page.text) ?? request.token;
     t.add(`${label}: the post`, await who.send("POST", verify(request.id), { form: `token=${token}` }));
+    const exchanged = t.add(`${label}: the exchange`, await application.send("POST", "/api/auth/desktop/browser/exchange", { body: { requestId: request.id, secret: request.secret } }));
+    if (exchanged.status === 200) {
+      const fresh = new Agent(desktopClient);
+      for (const line of exchanged.setCookie) { const [pair] = line.split(";"); const at = pair.indexOf("="); fresh.cookies.set(pair.slice(0, at), pair.slice(at + 1)); }
+      t.add(`${label}: /api/me with it`, await fresh.get("/api/me"));
+    }
   }
+  t.write();
+}
+
+/** The application polling past the limit on polls, with an id that is none. */
+async function poll() {
+  const t = new Transcript(args.out);
+  const application = new Agent(desktopClient);
+  for (let i = 0; i < 6; i++) {
+    t.add(`poll ${i + 1}`, await application.send("POST", "/api/auth/desktop/browser/exchange", { body: { requestId: "11111111-2222-4333-8444-555555555555", secret: "x".repeat(43) } }));
+  }
+  // The limit of polls is not the limit on passwords: signing in still works.
+  t.add("a password sign-in after the polls", await new Agent().post("/api/auth/login", { username: "maja", password: PASSWORD }));
   t.write();
 }
 
 if (mode === "seed") await seed();
 else if (mode === "ask") await ask();
 else if (mode === "after") await after();
+else if (mode === "poll") await poll();
 else throw new Error("seed, ask or after");

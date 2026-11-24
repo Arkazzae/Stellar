@@ -58,7 +58,23 @@ def dump(path):
             'SELECT "UserId", "Kind", "Detail", "Device", "IpAddress" FROM "SecurityEvents" WHERE "Kind" = \'desktop-approved\''
         )
     )
-    return requests, events
+    # What the exchange made: the sessions it gave, and the sign-in it recorded.
+    made = []
+    for row in db.execute(
+        'SELECT "UserId", "PrimarySource", "AuthenticatedAt", "MfaCompletedAt", "MfaEvidence", "SecurityVersion", "ShortLived", "RevokedAt", "CreatedAt", "ExpiresAt", "AbsoluteExpiresAt", "Device" '
+        'FROM "UserSessions" ORDER BY "CreatedAt", "Id"'
+    ):
+        uid, source, authed, mfa_at, mfa_ev, version, short, revoked, created, expires, absolute, device = row
+        if not device.startswith("node"):
+            continue
+        made.append((users.get(uid), source, present(authed), present(mfa_at), mfa_ev, version, short, present(revoked), f"{_minutes(created, expires) // 1440} days", expires == absolute))
+    logins = sorted(
+        (users.get(uid, "?"), detail, device)
+        for uid, detail, device in db.execute(
+            'SELECT "UserId", "Detail", "Device" FROM "SecurityEvents" WHERE "Kind" = \'login-succeeded\' AND "Detail" = \'desktop\''
+        )
+    )
+    return requests, events, made, logins
 
 
 def _minutes(created, expires):
@@ -70,7 +86,7 @@ def _minutes(created, expires):
     return round((seconds(expires) - seconds(created)) / 60)
 
 
-(a_requests, a_events), (b_requests, b_events) = dump(first), dump(second)
+(a_requests, a_events, a_made, a_logins), (b_requests, b_events, b_made, b_logins) = dump(first), dump(second)
 print(f"requests: {len(a_requests)} and {len(b_requests)}; approval events: {len(a_events)} and {len(b_events)}")
 differs = False
 for index in range(max(len(a_requests), len(b_requests))):
@@ -87,6 +103,12 @@ if a_events != b_events:
     print("approval events differ:")
     print(f"  first: {a_events}")
     print(f"  this:  {b_events}")
+if sorted(a_made, key=repr) != sorted(b_made, key=repr) or a_logins != b_logins:
+    differs = True
+    print("sessions or sign-in events differ:")
+    print(f"  first: {sorted(a_made, key=repr)} {a_logins}")
+    print(f"  this:  {sorted(b_made, key=repr)} {b_logins}")
+print(f"sessions of node: {len(a_made)} and {len(b_made)}; desktop sign-ins: {len(a_logins)} and {len(b_logins)}")
 if not differs:
     print("the rows are the same")
 sys.exit(1 if differs else 0)
