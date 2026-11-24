@@ -35,7 +35,7 @@ struct Started {
 }
 
 pub async fn start(State(state): State<AppState>) -> ApiResult<Response> {
-    // Only an instance that has a provider to send the person to offers this;
+    // The one place this group asks which providers are set up. Only an instance that has a provider to send the person to offers this;
     // a secret kept in a file is read now, which is disk work.
     let provider_state = state.clone();
     let login_paths = tokio::task::spawn_blocking(move || {

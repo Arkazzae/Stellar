@@ -897,6 +897,7 @@ here.
   read as a value too long to be anything. A client that sends nothing for six
   seconds is cut off with a 408; the first server's rule was a speed under 240
   bytes a second after five.
+- The form that approves a desktop sign-in is read up to 1 MiB; over that is the same 500 the first server answered to a form over its limits, which for it were about 30 MB.
 - A poster and a preview are sent with `X-Content-Type-Options: nosniff`, which
   the first server left off them.
 - The free space of the data volume is asked of `df` (two seconds at most); the
