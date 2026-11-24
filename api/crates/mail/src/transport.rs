@@ -206,6 +206,75 @@ mod tests {
     }
 
     #[test]
+    fn smtp_is_the_main_transport() {
+        let with_host = MailSettings {
+            smtp_host: " smtp.example.net ".into(),
+            smtp_port: 465,
+            smtp_security: "tls".into(),
+            smtp_username: "mailer".into(),
+            resend_enabled: None,
+        };
+
+        let transport = MailTransport::resolve(Some(&with_host), "re_x", "secret");
+
+        assert_eq!(
+            (transport.provider, transport.ready),
+            (Provider::Smtp, true)
+        );
+        assert_eq!(
+            transport.smtp,
+            Some(Connection {
+                host: "smtp.example.net".into(),
+                port: 465,
+                security: Security::Tls,
+                username: "mailer".into(),
+                password: "secret".into(),
+            })
+        );
+        assert!(!MailTransport::resolve(Some(&MailSettings::default()), "", "").ready);
+        let host_only = MailSettings {
+            smtp_host: "h".into(),
+            ..MailSettings::default()
+        };
+        let connection = MailTransport::resolve(Some(&host_only), "", "")
+            .smtp
+            .unwrap();
+        assert_eq!(connection.security, Security::StartTls);
+    }
+
+    #[test]
+    fn resend_replaces_smtp_when_chosen_or_when_it_is_all_there_is() {
+        for (resend, key, host, provider, ready) in [
+            (None, "re_x", "", Provider::Resend, true),
+            (None, "re_x", "smtp.example.net", Provider::Smtp, true),
+            (None, "", "", Provider::Smtp, false),
+            (Some(false), "re_x", "", Provider::Smtp, false),
+            (Some(true), "", "smtp.example.net", Provider::Resend, false),
+            (
+                Some(true),
+                "re_x",
+                "smtp.example.net",
+                Provider::Resend,
+                true,
+            ),
+        ] {
+            let settings = MailSettings {
+                resend_enabled: resend,
+                smtp_host: host.into(),
+                ..MailSettings::default()
+            };
+
+            let transport = MailTransport::resolve(Some(&settings), key, "");
+
+            assert_eq!(
+                (transport.provider, transport.ready),
+                (provider, ready),
+                "{resend:?} {key:?} {host:?}"
+            );
+        }
+    }
+
+    #[test]
     fn printing_a_transport_leaves_the_secrets_out() {
         let smtp = MailTransport::resolve(
             Some(&settings("mail.chat.test", Some(false))),

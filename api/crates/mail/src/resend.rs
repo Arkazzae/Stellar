@@ -80,7 +80,8 @@ impl ResendRequest {
             text: &message.text,
             attachments,
         };
-        let json = serde_json::to_string(&body).map_err(|_| ResendError::NoApiKey)?;
+        let json =
+            serde_json::to_string(&body).map_err(|e| ResendError::Unwritable(e.to_string()))?;
         // The message id is `<key>@host`; the key is what makes it one message.
         let key = message
             .message_id
@@ -103,6 +104,8 @@ pub enum ResendError {
     NoMessageId,
     /// There is no API key to send with.
     NoApiKey,
+    /// The request body could not be written as JSON.
+    Unwritable(String),
 }
 
 impl fmt::Display for ResendError {
@@ -113,6 +116,9 @@ impl fmt::Display for ResendError {
             }
             ResendError::NoMessageId => f.write_str("Resend did not return a message id."),
             ResendError::NoApiKey => f.write_str("The Resend API key is not configured."),
+            ResendError::Unwritable(why) => {
+                write!(f, "The Resend request could not be written: {why}")
+            }
         }
     }
 }
