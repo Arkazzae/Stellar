@@ -88,7 +88,7 @@ pub fn check_integrity(path: &Path) -> String {
     })();
     let verdict = match checked {
         Ok(verdict) => verdict,
-        Err(error) => error.to_string(),
+        Err(error) => sqlite_message(&error),
     };
     for suffix in ["-wal", "-shm"] {
         let mut name = path.as_os_str().to_owned();
@@ -100,3 +100,18 @@ pub fn check_integrity(path: &Path) -> String {
 
 /// Whether the bytes begin as every SQLite database does.
 pub const SQLITE_HEADER: &[u8; 16] = b"SQLite format 3\0";
+
+/// A failure of SQLite in the words the first server used for it,
+/// `SQLite Error 26: 'file is not a database'.`
+fn sqlite_message(error: &rusqlite::Error) -> String {
+    match error {
+        rusqlite::Error::SqliteFailure(failure, message) => format!(
+            "SQLite Error {}: '{}'.",
+            failure.extended_code & 0xff,
+            message
+                .clone()
+                .unwrap_or_else(|| failure.to_string())
+        ),
+        other => other.to_string(),
+    }
+}

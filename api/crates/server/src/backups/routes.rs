@@ -21,7 +21,6 @@ use crate::http::{ApiError, ApiResult, Endpoints, Json, Path, Problem, json_resp
 use crate::panel::operations::{self, MAX_RETENTION_DAYS};
 use crate::panel::{self, FreshInstanceOwner};
 use crate::permissions::membership::InstanceOwner;
-use crate::servers::Object;
 use crate::settings::{self, BackupSettings};
 use crate::state::AppState;
 use crate::values::{Id, Timestamp};
@@ -33,16 +32,22 @@ pub fn routes() -> Endpoints {
         .get("/api/cockpit/backups/settings", read_schedule)
         .authorized()
         .put("/api/cockpit/backups/settings", replace_schedule)
+        .json_body()
         .authorized()
         .delete("/api/cockpit/backups/settings", reset_schedule)
         .authorized()
         .get("/api/cockpit/integrations/cloudflare/r2", read_destination)
         .authorized()
-        .put("/api/cockpit/integrations/cloudflare/r2", replace_destination)
+        .put(
+            "/api/cockpit/integrations/cloudflare/r2",
+            replace_destination,
+        )
+        .json_body()
         .authorized()
         .delete("/api/cockpit/integrations/cloudflare/r2", reset_destination)
         .authorized()
         .post("/api/cockpit/backups", create)
+        .json_body()
         .authorized()
         .post("/api/cockpit/backups/{backup_id}/verify", verify)
         .authorized()
@@ -168,45 +173,40 @@ async fn list(
 // ---------------------------------------------------------------------------
 // Making one.
 
-/// What to back up. A request without a body asks for the database alone, as a
-/// plain SQLite file.
-#[derive(serde::Deserialize, Default)]
-#[serde(default)]
-struct CreateRequest {
-    database: bool,
-    objects: bool,
-    keys: bool,
-    instance: bool,
-}
-
 /// Without a body: the database alone, copied at once into a plain SQLite
 /// file. With one naming the files or the keys: an archive written in the
 /// background, answered with 202 and followed through the backup list.
 async fn create(
     State(state): State<AppState>,
-    caller: Caller,
-    InstanceOwner(server): InstanceOwner,
-    request: Option<Json<Object<CreateRequest>>>,
+    request: axum::extract::Request,
 ) -> ApiResult<Response> {
-    let wanted = match request {
-        None => Parts::DATABASE,
-        Some(Json(Object(request))) => {
+    let panel::Bound {
+        caller,
+        server,
+        body: wanted,
+    } = panel::bind_then_gate(&state, request, false, |body| match body {
+        None => Ok(Parts::DATABASE),
+        Some(Value::Object(members)) => {
             let mut wanted = Parts::NONE;
-            for (asked, part) in [
-                (request.database, Parts::DATABASE),
-                (request.objects, Parts::OBJECTS),
-                (request.keys, Parts::KEYS),
-                (request.instance, Parts::INSTANCE),
+            for (name, part) in [
+                ("database", Parts::DATABASE),
+                ("objects", Parts::OBJECTS),
+                ("keys", Parts::KEYS),
+                ("instance", Parts::INSTANCE),
             ] {
-                if asked {
+                if flag(member(&members, name))? {
                     wanted = wanted.with(part);
                 }
             }
-            wanted
+            Ok(wanted)
         }
-    };
+        Some(_) => Err(ApiError::bad_request()),
+    })
+    .await?;
     if wanted.is_none() {
-        let message = state.messages().get(MessageKey::CockpitBackupNoParts, &[])?;
+        let message = state
+            .messages()
+            .get(MessageKey::CockpitBackupNoParts, &[])?;
         return Err(Problem::validation(vec![("parts".into(), vec![message])]).into());
     }
 
@@ -221,7 +221,9 @@ async fn create(
                 Ok(response)
             }
             None => {
-                let title = state.messages().get(MessageKey::CockpitBackupRunning, &[])?;
+                let title = state
+                    .messages()
+                    .get(MessageKey::CockpitBackupRunning, &[])?;
                 Err(Problem::new(StatusCode::CONFLICT).title(title).into())
             }
         };
@@ -376,6 +378,16 @@ async fn download(
 // ---------------------------------------------------------------------------
 // The schedule.
 
+/// A member of a JSON object by name, without regard to letter case, the last
+/// of several winning, as the first server read request bodies.
+fn member<'a>(members: &'a serde_json::Map<String, Value>, name: &str) -> Option<&'a Value> {
+    members
+        .iter()
+        .rev()
+        .find(|(have, _)| have.eq_ignore_ascii_case(name))
+        .map(|(_, value)| value)
+}
+
 /// A whole number the way the first server read one from JSON: a number, or
 /// text holding one, that fits 32 bits.
 fn whole_number(value: Option<&Value>) -> Result<i64, ApiError> {
@@ -384,7 +396,13 @@ fn whole_number(value: Option<&Value>) -> Result<i64, ApiError> {
     };
     let number = match value {
         Value::Number(number) => number.as_i64(),
-        Value::String(text) => text.trim().parse::<i64>().ok(),
+        // Text holding a number counts, with nothing around it.
+        Value::String(text) => {
+            let digits = text.strip_prefix(['-', '+']).unwrap_or(text);
+            (!digits.is_empty() && digits.bytes().all(|byte| byte.is_ascii_digit()))
+                .then(|| text.parse::<i64>().ok())
+                .flatten()
+        }
         _ => None,
     };
     number
@@ -411,12 +429,12 @@ fn read_schedule_request(body: Value) -> Result<ScheduleRequest, ApiError> {
     };
     Ok(ScheduleRequest {
         schedule: Schedule {
-            enabled: flag(members.get("enabled"))?,
-            interval_hours: whole_number(members.get("intervalHours"))?,
-            retry_minutes: whole_number(members.get("retryMinutes"))?,
-            initial_delay_minutes: whole_number(members.get("initialDelayMinutes"))?,
+            enabled: flag(member(&members, "enabled"))?,
+            interval_hours: whole_number(member(&members, "intervalHours"))?,
+            retry_minutes: whole_number(member(&members, "retryMinutes"))?,
+            initial_delay_minutes: whole_number(member(&members, "initialDelayMinutes"))?,
         },
-        retention_days: whole_number(members.get("retentionDays"))?,
+        retention_days: whole_number(member(&members, "retentionDays"))?,
     })
 }
 
@@ -455,22 +473,40 @@ async fn read_schedule(
 fn range_message(member: &str, (low, high): (i64, i64)) -> (String, Vec<String>) {
     (
         member.to_string(),
-        vec![format!("The field {member} must be between {low} and {high}.")],
+        vec![format!(
+            "The field {member} must be between {low} and {high}."
+        )],
     )
 }
 
 async fn replace_schedule(
     State(state): State<AppState>,
-    caller: Caller,
-    FreshInstanceOwner(server): FreshInstanceOwner,
-    body: Json<Value>,
+    request: axum::extract::Request,
 ) -> ApiResult<Json<PolicyDto>> {
-    let request = read_schedule_request(body.0)?;
+    let panel::Bound {
+        caller,
+        server,
+        body,
+    } = panel::bind_then_gate(&state, request, true, |body| {
+        body.map(read_schedule_request).transpose()
+    })
+    .await?;
+    // Nothing to bind is a bad request, but only once the gate has let the
+    // caller by.
+    let request = body.ok_or_else(ApiError::bad_request)?;
     let schedule = request.schedule;
     let mut problems = Vec::new();
     for (member, value, range) in [
-        ("IntervalHours", schedule.interval_hours, BackupSettings::INTERVAL_HOURS),
-        ("RetryMinutes", schedule.retry_minutes, BackupSettings::RETRY_MINUTES),
+        (
+            "IntervalHours",
+            schedule.interval_hours,
+            BackupSettings::INTERVAL_HOURS,
+        ),
+        (
+            "RetryMinutes",
+            schedule.retry_minutes,
+            BackupSettings::RETRY_MINUTES,
+        ),
         (
             "InitialDelayMinutes",
             schedule.initial_delay_minutes,
@@ -501,7 +537,12 @@ async fn replace_schedule(
         .try_write(move |transaction| {
             let created = server_created_at(transaction, server)?;
             operations::ensure(transaction, &settings, server, created)?;
-            operations::set_backup_retention(transaction, server, retention_days, Timestamp::now())?;
+            operations::set_backup_retention(
+                transaction,
+                server,
+                retention_days,
+                Timestamp::now(),
+            )?;
             policy::save_schedule(transaction, &sealer, &schedule)?;
             panel::record(transaction, server, caller.user, sentence)?;
             Ok(operations::of_server(transaction, server)?)
@@ -565,8 +606,11 @@ async fn current_destination(state: &AppState) -> Result<DestinationDto, ApiErro
 
 /// A string member of the request: none when it is missing or null, which the
 /// route answers like one that is too long; anything but text is a bad request.
-fn text_member(members: &serde_json::Map<String, Value>, name: &str) -> Result<Option<String>, ApiError> {
-    match members.get(name) {
+fn text_member(
+    members: &serde_json::Map<String, Value>,
+    name: &str,
+) -> Result<Option<String>, ApiError> {
+    match member(members, name) {
         None | Some(Value::Null) => Ok(None),
         Some(Value::String(text)) => Ok(Some(text.clone())),
         Some(_) => Err(ApiError::bad_request()),
@@ -575,19 +619,27 @@ fn text_member(members: &serde_json::Map<String, Value>, name: &str) -> Result<O
 
 async fn replace_destination(
     State(state): State<AppState>,
-    caller: Caller,
-    FreshInstanceOwner(server): FreshInstanceOwner,
-    body: Json<Value>,
+    request: axum::extract::Request,
 ) -> ApiResult<Json<DestinationDto>> {
-    let Value::Object(members) = body.0 else {
-        return Err(ApiError::bad_request());
-    };
-    let enabled = flag(members.get("enabled"))?;
-    let mode = text_member(&members, "mode")?;
-    let endpoint = text_member(&members, "endpoint")?;
-    let region = text_member(&members, "region")?;
-    let bucket = text_member(&members, "bucket")?;
-    let prefix = text_member(&members, "prefix")?;
+    let panel::Bound {
+        caller,
+        server,
+        body,
+    } = panel::bind_then_gate(&state, request, true, |body| match body {
+        None => Ok(None),
+        Some(Value::Object(members)) => Ok(Some((
+            flag(member(&members, "enabled"))?,
+            text_member(&members, "mode")?,
+            text_member(&members, "endpoint")?,
+            text_member(&members, "region")?,
+            text_member(&members, "bucket")?,
+            text_member(&members, "prefix")?,
+        ))),
+        Some(_) => Err(ApiError::bad_request()),
+    })
+    .await?;
+    let (enabled, mode, endpoint, region, bucket, prefix) =
+        body.ok_or_else(ApiError::bad_request)?;
     let units = |text: &str| text.encode_utf16().count();
     let fields_invalid = match (&mode, &endpoint, &region, &bucket, &prefix) {
         (Some(mode), Some(endpoint), Some(region), Some(bucket), Some(prefix)) => {
