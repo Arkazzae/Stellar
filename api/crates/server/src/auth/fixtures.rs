@@ -47,6 +47,32 @@ pub fn add_method(connection: &Connection, user: Id, kind: &str, address: Option
     id
 }
 
+/// A session of the account; `mfa_completed_at` is when it passed a real
+/// second step, if it did.
+pub fn add_session(
+    connection: &Connection,
+    user: Id,
+    authenticated_at: Timestamp,
+    mfa_completed_at: Option<Timestamp>,
+) -> Id {
+    let id = Id::random();
+    connection
+        .execute(
+            "INSERT INTO \"UserSessions\" (\"Id\", \"UserId\", \"Device\", \"IpAddress\", \"CreatedAt\", \"LastSeenAt\", \"ExpiresAt\",
+                 \"AbsoluteExpiresAt\", \"PrimarySource\", \"AuthenticatedAt\", \"MfaCompletedAt\", \"MfaEvidence\", \"SecurityVersion\", \"ShortLived\")
+             VALUES (?1, ?2, 'Device', '127.0.0.1', ?3, ?3, ?4, ?4, 'password', ?3, ?5, NULL, 1, 0)",
+            params![
+                id,
+                user,
+                authenticated_at,
+                authenticated_at.plus(std::time::Duration::from_secs(86_400)),
+                mfa_completed_at
+            ],
+        )
+        .expect("a session is added");
+    id
+}
+
 /// A second step that is waiting for its first code.
 pub fn add_pending_method(connection: &Connection, user: Id, kind: &str) -> Id {
     let id = add_method(connection, user, kind, None);

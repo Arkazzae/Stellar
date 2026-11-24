@@ -10,6 +10,7 @@ pub mod events;
 #[cfg(test)]
 mod fixtures;
 pub mod flow;
+pub mod fresh;
 pub mod mfa;
 pub mod mfa_methods;
 pub mod passkeys;
