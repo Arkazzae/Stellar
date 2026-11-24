@@ -5,7 +5,7 @@
 use aws_lc_rs::constant_time::verify_slices_are_equal;
 use aws_lc_rs::digest::{SHA256, digest};
 use axum::extract::State;
-use axum::http::{HeaderValue, StatusCode, header};
+use axum::http::{HeaderMap, HeaderValue, StatusCode, header};
 use axum::response::{IntoResponse, Response};
 use serde::Serialize;
 use stellarr_messages::MessageKey;
@@ -18,7 +18,7 @@ use super::wire::{
     Unlock, UnlockedDto, path_id,
 };
 use crate::auth::ceremony::{PasswordProof, check_given_password, judge_given_password};
-use crate::auth::{Caller, events};
+use crate::auth::{Caller, events, fresh};
 use crate::database::DbError;
 use crate::http::{ApiError, ApiResult, Json, Origin, Path, json_response};
 use crate::state::AppState;
@@ -59,6 +59,44 @@ fn checked_backup(
     backup.and_then(super::wire::BackupRequest::checked).ok_or_else(|| {
         problems::invalid(state, "backup", MessageKey::EncryptionBackupInvalid, &[])
     })
+}
+
+/// Whether a request declares no body at all: a length of nothing, or neither
+/// a length nor chunks.
+fn says_nothing(headers: &HeaderMap) -> bool {
+    match headers.get(header::CONTENT_LENGTH) {
+        Some(length) => length == "0",
+        None => !headers.contains_key(header::TRANSFER_ENCODING),
+    }
+}
+
+/// Reads the body of a route that needs a second step passed lately, and asks
+/// for it, in the order the first server did: a body that cannot be read, or
+/// whose values are of the wrong type or encoding, is a 400 first; then the
+/// second step; and only then a body that says nothing (empty or `null`), which
+/// is a 400 too, and whatever the values mean.
+async fn guarded<T>(
+    state: &AppState,
+    caller: Caller,
+    headers: &HeaderMap,
+    body: Result<Json<Option<Members>>, ApiError>,
+    read: impl Fn(&Members) -> Result<T, super::wire::Malformed>,
+) -> Result<T, ApiError> {
+    let members = match body {
+        Ok(Json(members)) => members,
+        // An empty body has nothing in it to be unreadable.
+        Err(_) if says_nothing(headers) => None,
+        Err(refusal) => return Err(refusal),
+    };
+    let request = members.as_ref().map(read).transpose()?;
+    let fresh = state
+        .database()
+        .read(move |db| fresh::has_fresh_second_step(db, caller.user, Some(caller.session), Timestamp::now()))
+        .await?;
+    if !fresh {
+        return Err(problems::fresh_proof_needed(state));
+    }
+    request.ok_or_else(ApiError::bad_request)
 }
 
 pub async fn read(State(state): State<AppState>, caller: Caller) -> ApiResult<Response> {
@@ -264,9 +302,10 @@ enum Replaced {
 pub async fn replace_backup(
     State(state): State<AppState>,
     caller: Caller,
-    Json(body): Json<Members>,
+    headers: HeaderMap,
+    body: Result<Json<Option<Members>>, ApiError>,
 ) -> ApiResult<Response> {
-    let request = Replace::read(&body)?;
+    let request = guarded(&state, caller, &headers, body, Replace::read).await?;
     let backup = checked_backup(&state, request.backup)?;
     let given =
         check_given_password(&state, caller.user, request.current_password.as_deref()).await?;
@@ -359,9 +398,10 @@ enum Resetting {
 pub async fn reset(
     State(state): State<AppState>,
     caller: Caller,
-    Json(body): Json<Members>,
+    headers: HeaderMap,
+    body: Result<Json<Option<Members>>, ApiError>,
 ) -> ApiResult<Response> {
-    let request = Reset::read(&body)?;
+    let request = guarded(&state, caller, &headers, body, Reset::read).await?;
     refuse_unfit_key(&state, request.algorithm.as_deref(), request.public_key.as_deref())?;
     let backup = checked_backup(&state, request.backup)?;
     let given =

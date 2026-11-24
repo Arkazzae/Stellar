@@ -210,6 +210,46 @@ async fn a_new_pin_needs_the_password_a_fresh_second_step_and_a_browser_that_hol
 }
 
 #[tokio::test]
+async fn a_session_that_is_not_fresh_is_told_so_after_its_body_is_read_and_before_it_is_checked() {
+    let crowd = Crowd::new().await;
+    let maja = &crowd.maja.client;
+    let account = set_up(maja).await;
+    register_device(maja).await;
+    add_second_step(&crowd.server, &crowd.maja.id);
+    passed_second_step(&crowd.server, &crowd.maja.id, 15);
+    let raw = async |method: Method, path: &str, body: &str| {
+        let response = maja
+            .send(crate::support::Request::new(method, path).body("application/json", body))
+            .await;
+        refusal(&response)
+    };
+    let key = text(&bytes(32, 12));
+    let good = json!({ "currentPassword": PASSWORD, "algorithm": "x25519", "publicKey": key, "backup": backup(&bytes(32, 13)) }).to_string();
+    let fresh = Some("fresh-mfa-required".to_string());
+
+    // As the first server answered each of these, for a stale session.
+    for (what, body, wanted) in [
+        ("not JSON", "{".to_string(), (400, None)),
+        ("a key in a wrong encoding", good.replace(&key, "***"), (400, None)),
+        ("an integer that is not one", good.replace("600000", "\"x\""), (400, None)),
+        ("null", "null".to_string(), (403, fresh.clone())),
+        ("empty", String::new(), (403, fresh.clone())),
+        ("an unknown algorithm", good.replace("x25519", "rsa"), (403, fresh.clone())),
+        ("a wrong password", good.replace(PASSWORD, "no"), (403, fresh.clone())),
+        ("a good body", good.clone(), (403, fresh.clone())),
+    ] {
+        assert_eq!(raw(Method::POST, RESET, &body).await, wanted, "reset: {what}");
+    }
+    let pin = json!({ "currentPassword": PASSWORD, "accountKeyId": account.key_id, "backup": backup(&bytes(32, 13)) }).to_string();
+    assert_eq!(raw(Method::PUT, BACKUP, "{").await, (400, None));
+    assert_eq!(raw(Method::PUT, BACKUP, &pin).await, (403, fresh));
+    // Fresh, a body that says nothing is a 400 of its own.
+    passed_second_step(&crowd.server, &crowd.maja.id, 0);
+    assert_eq!(raw(Method::POST, RESET, "null").await, (400, None));
+    assert_eq!(raw(Method::POST, RESET, "").await, (400, None));
+}
+
+#[tokio::test]
 async fn a_new_pin_or_reset_with_no_password_given_is_the_wrong_password_not_a_fresh_proof() {
     let crowd = Crowd::new().await;
     let maja = &crowd.maja.client;
