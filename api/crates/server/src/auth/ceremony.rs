@@ -1201,12 +1201,18 @@ pub(super) async fn check_password(
     if !decisive {
         return Ok(PasswordCheck::none());
     }
-    let checked = hash.clone();
-    let proves = tokio::task::spawn_blocking(move || {
-        super::password::verify(&candidate, checked.as_deref())
-    })
-    .await
-    .map_err(|error| DbError::Task(error.to_string()))?;
+    hashed_against(candidate, hash).await
+}
+
+/// The one place a password is hashed for a check: off the writer and the
+/// async threads, against the hash read a moment ago, which the transaction
+/// that relies on the answer compares with the stored one again.
+async fn hashed_against(candidate: String, hash: Option<String>) -> Result<PasswordCheck, DbError> {
+    let stored = hash.clone();
+    let proves =
+        tokio::task::spawn_blocking(move || super::password::verify(&candidate, stored.as_deref()))
+            .await
+            .map_err(|error| DbError::Task(error.to_string()))?;
     Ok(PasswordCheck { hash, proves })
 }
 
@@ -1262,7 +1268,9 @@ pub enum PasswordProof {
 
 /// Checks the candidate against the account's password now, so that no
 /// transaction waits for the hash. Nothing is hashed for an account that has
-/// no password, or when no candidate was given.
+/// no password, or when no candidate was given. A wrong password costs nothing
+/// else, as on the first server's routes that ask for one: no attempt, no
+/// event, no point against the account's budget.
 pub async fn check_given_password(
     state: &AppState,
     user: Id,
@@ -1275,14 +1283,10 @@ pub async fn check_given_password(
         .database()
         .read(move |connection| stored_hash(connection, user))
         .await?;
-    let Some(stored) = hash.clone() else {
+    if hash.is_none() {
         return Ok(GivenPassword(PasswordCheck::none()));
-    };
-    let proves =
-        tokio::task::spawn_blocking(move || super::password::verify(&candidate, Some(&stored)))
-            .await
-            .map_err(|error| DbError::Task(error.to_string()))?;
-    Ok(GivenPassword(PasswordCheck { hash, proves }))
+    }
+    Ok(GivenPassword(hashed_against(candidate, hash).await?))
 }
 
 /// What the password given earlier is worth in this transaction: it counts
