@@ -120,12 +120,24 @@ fi
 echo "== hostile archives given to both checks"
 py hostile "$work/hostile" > /dev/null
 printf '%-28s %-12s %-12s\n' case ours first
+unknown=0
 for f in "$work"/hostile/*.zip; do
   case_name=$(basename "$f" .zip)
   if "$example" check "$f" >/dev/null 2>"$work/ours.err"; then ours=ACCEPTS; else ours=refuses; fi
   if witness check "$f" "$work/hw" >/dev/null 2>"$work/first.err"; then first=ACCEPTS; else first=refuses; fi
-  mark=; [ "$ours" = "$first" ] || mark="  <-- differs"
+  mark=
+  if [ "$ours" != "$first" ]; then
+    # What this server refuses on purpose and the first server accepted: a
+    # link or a device or a folder in the archive, and a database that is no
+    # instance's (no accounts, no servers) or keys named and not held.
+    case "$case_name" in
+      symlink-entry|device-entry|valid-minimal) mark="  (by decision: stricter than the first server)" ;;
+      *) mark="  <-- differs"; unknown=$((unknown + 1)) ;;
+    esac
+  fi
   printf '%-28s %-12s %-12s%s\n' "$case_name" "$ours" "$first" "$mark"
   if [ -n "$mark" ] || [ -n "${VERBOSE:-}" ]; then echo "    ours: $(head -c 220 "$work/ours.err")"; echo "    first: $(head -c 220 "$work/first.err")"; fi
 done
+echo "$unknown unknown differences in the hostile corpus"
+[ "$unknown" -eq 0 ] || status=1
 exit $status
