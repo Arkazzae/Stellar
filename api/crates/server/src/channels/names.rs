@@ -22,7 +22,7 @@ pub fn trim(text: &str) -> &str {
     text.trim()
 }
 
-use stellarr_unicode::utf16::length;
+pub(super) use stellarr_unicode::utf16::length;
 
 /// A channel's name as stored: trimmed and in lower case, letter by letter.
 pub fn normalize_channel(name: Option<&str>) -> String {

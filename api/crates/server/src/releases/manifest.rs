@@ -124,7 +124,7 @@ impl RawHeader {
         };
         (self.schema_version == SUPPORTED_SCHEMA_VERSION
             && version::parse_stable(&version).is_some()
-            && stellarr_unicode::utf16::length(notes) <= MAX_NOTES_LENGTH)
+            && stellarr_unicode::utf16::length(&notes) <= MAX_NOTES_LENGTH)
             .then(|| Header {
                 version: version.trim().to_string(),
                 published_at,

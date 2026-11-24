@@ -14,7 +14,6 @@ use serde::{Deserialize, Serialize};
 use stellarr_oidc::form::encode_component;
 use stellarr_oidc::ticket::{self, TicketKind};
 
-use super::names::shown_name;
 use super::pages::no_store;
 use super::single_sign_on::unix_now;
 use super::start::actor_of;
