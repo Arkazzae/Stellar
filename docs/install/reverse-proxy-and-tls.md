@@ -4,14 +4,14 @@ By default, the container terminates TLS itself using an auto-generated 365-day 
 
 ## Mount a custom TLS certificate
 
-Both Nginx and `coturn` read the TLS certificate chain and private key from `/data/stellarr/tls/`:
+Nginx and, when TURN over TLS is enabled, `coturn` read the certificate chain and private key from `/data/stellarr/tls/`:
 
 | Container path | Contents |
 | --- | --- |
 | `/data/stellarr/tls/fullchain.pem` | PEM leaf certificate followed by intermediate CA certificates |
 | `/data/stellarr/tls/privkey.pem` | PEM private key |
 
-CA-signed certificates are never overwritten by the container. On startup (`stellarr-tls-maintenance prepare`) and every 12 hours (`STELLARR_TLS_RENEW_CHECK_SECONDS`), the container verifies whether the certificate on disk is self-signed (matching `subject == issuer` and a valid self-signature via `openssl verify -check_ss_sig`, tracked by `/data/stellarr/tls/.stellarr-self-signed`). Self-signed RSA-3072 certificates (`DNS:<host>` or `IP:<host>` SAN) are regenerated automatically when expiring within 30 days (`STELLARR_TLS_RENEW_BEFORE_SECONDS`) or when `STELLARR_DOMAIN` changes, triggering `stellarr-init reload nginx` and `stellarr-init restart turn`. If an operator replaces a previously generated self-signed pair with a CA-signed pair, `.stellarr-self-signed` is removed automatically.
+CA-signed certificates are never overwritten by the container. On startup (`stellarr-tls-maintenance prepare`) and every 12 hours (`STELLARR_TLS_RENEW_CHECK_SECONDS`), the container verifies whether the certificate on disk is self-signed (matching `subject == issuer` and a valid self-signature via `openssl verify -check_ss_sig`, tracked by `/data/stellarr/tls/.stellarr-self-signed`). Self-signed RSA-3072 certificates (`DNS:<host>` or `IP:<host>` SAN) are regenerated automatically when expiring within 30 days (`STELLARR_TLS_RENEW_BEFORE_SECONDS`) or when `STELLARR_DOMAIN` changes, triggering `stellarr-init reload nginx` and, when TURN over TLS is active, `stellarr-init restart turn`. If an operator replaces a previously generated self-signed pair with a CA-signed pair, `.stellarr-self-signed` is removed automatically.
 
 1. Place `fullchain.pem` and `privkey.pem` in a directory next to `docker-compose.yml` (for example, `./certs/`).
 2. Create `docker-compose.override.yml` in the same directory:
@@ -32,7 +32,7 @@ CA-signed certificates are never overwritten by the container. On startup (`stel
 4. Verify the served certificate chain:
 
    ```bash
-   echo | openssl s_client -connect chat.example.com:8443 -servername chat.example.com 2>/dev/null | grep -E 'issuer=|Verify return code'
+   echo | openssl s_client -connect chat.example.com:443 -servername chat.example.com 2>/dev/null | grep -E 'issuer=|Verify return code'
    ```
 
    Confirm that `issuer=` shows your CA and the output ends with `Verify return code: 0 (ok)`.
@@ -44,21 +44,21 @@ If a mounted CA-signed certificate is unreadable or does not match `privkey.pem`
 
 ### Reloading after certificate renewal
 
-After updating `fullchain.pem` and `privkey.pem` on the host, reload Nginx and restart `coturn` via `stellarr-init`:
+After updating the certificate files, reload Nginx. If TURN over TLS is enabled, restart `turn` as well.
 
 ```bash
 docker compose exec stellarr stellarr-init reload nginx
 docker compose exec stellarr stellarr-init restart turn
 ```
 
-Run `docker compose exec stellarr stellarr-init status` to confirm both services report `ready`. See [Container services](../architecture.md#container-services-stellarr-init).
+Run `docker compose exec stellarr stellarr-init status` to confirm the enabled services report `ready`. See [Container services](../architecture.md#container-services-stellarr-init).
 
 > [!NOTE]
 > `coturn` does not reload TLS certificates on `SIGHUP`, so restarting `turn` drops active TURN relay allocations and causes relayed voice participants to briefly reconnect.
 
 ### TURN over TLS (`turns:`)
 
-Setting `STELLARR_TURNS_ENABLED=true` enables TURN over TLS/DTLS on `STELLARR_TURNS_PORT` (`5349` by default) using `/data/stellarr/tls/fullchain.pem` and `privkey.pem`. Browsers reject self-signed certificates on `turns:` connections, so enable `STELLARR_TURNS_ENABLED` only when mounting a CA-signed certificate directly into the container.
+With optional TURN enabled, setting `STELLARR_TURNS_ENABLED=true` enables TURN over TLS/DTLS on `STELLARR_TURNS_PORT` (`5349` by default) using `/data/stellarr/tls/fullchain.pem` and `privkey.pem`. Browsers reject self-signed certificates on `turns:` connections, so enable `STELLARR_TURNS_ENABLED` only when mounting a CA-signed certificate directly into the container.
 
 ## Run behind a reverse proxy
 
@@ -67,10 +67,11 @@ When an external reverse proxy terminates TLS on port `443` and forwards HTTP to
 ```dotenv
 STELLARR_DOMAIN=chat.example.com
 STELLARR_PUBLIC_PORT=443
+STELLARR_HTTPS_PORT=8443
 STELLARR_HTTP_PORT=127.0.0.1:8888
 ```
 
-Binding `STELLARR_HTTP_PORT` to `127.0.0.1` prevents external clients from bypassing the reverse proxy on port `8888`.
+The proxy owns public port `443`. Move the container’s HTTPS mapping to `8443` to avoid a bind conflict and keep it outside the router forwarding rules. The loopback HTTP binding keeps port `8888` private.
 
 ### Proxy requirements
 
@@ -188,7 +189,7 @@ networks:
 
 ## What bypasses the HTTP reverse proxy
 
-An HTTP reverse proxy forwards only HTTP and WebSocket traffic. WebRTC STUN, TURN, and SFU media packets (`UDP 49000`, `UDP 3478`, `UDP 49160-49200`, plus optional TCP `3478` and TCP/UDP `5349`) bypass the HTTP proxy and must reach the Docker host directly.
+An HTTP reverse proxy forwards HTTP and WebSocket traffic. The SFU’s public media address must be reachable on `49000/udp` and `49000/tcp` directly. ICE-TCP on that port is raw WebRTC traffic. Forward relay ports separately if TURN is enabled.
 
 > [!IMPORTANT]
-> Publish the WebRTC UDP and TURN ports on the Docker host and forward them on your router. `STELLARR_DOMAIN` and `STELLARR_PUBLIC_IP` must resolve to the host reachable on those ports, not an HTTP-only CDN proxy or tunnel. See the port tables in [Requirements](requirements.md#ports) and [RTC and ports](../rtc-and-ports.md#published-host-ports).
+> Publish both media transports on the Docker host and forward them on your router. `STELLARR_PUBLIC_IP` must point to the host reachable on the media port, even when `STELLARR_DOMAIN` points to an HTTP-only CDN or tunnel. See the port tables in [Requirements](requirements.md#ports) and [RTC and ports](../rtc-and-ports.md#published-host-ports).

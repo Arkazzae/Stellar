@@ -5,7 +5,7 @@ Start a local Stellarr instance on a single machine, create the owner account an
 ## Prerequisites
 
 - Docker Engine with the Compose plugin `2.24.0` or newer (`docker compose version`). See [Requirements](requirements.md).
-- Free host ports `8443`, `8888`, `3478`, `5349`, `49000`, and `49160-49200`. If a port is in use, override the corresponding variable in `.env` (see [Requirements](requirements.md#ports)).
+- Free host ports `443/tcp`, `49000/udp` and `49000/tcp`, and loopback `8888/tcp`. Override occupied ports in `.env`. [Requirements](requirements.md#ports)
 - A second browser profile or private window to test a two-user call.
 
 ## One-line installer
@@ -17,7 +17,7 @@ curl -fsSL https://stellarr.online/install.sh | bash
 ```
 
 - **Interactive mode**: Prompts for up to three settings: the domain or IPv4 address users will open (`--domain` / `STELLARR_DOMAIN`, default `localhost`), the external IPv4 address for voice calls when a domain is entered (`--public-ip` / `STELLARR_PUBLIC_IP`, an IPv4 address or `auto`), and the interface language (`--language` / `STELLARR_LANGUAGE`, `en` or `pl`, defaulting to the shell locale). On Linux, if Docker is missing, the installer offers to install Docker Engine via `https://get.docker.com` (or pass `--install-docker`). If a required port is occupied, it offers the next free port.
-- **Non-interactive mode**: Pass `-y` / `--yes` (or run without a TTY) to skip prompts and apply CLI flags (`--domain`, `--public-ip`, `--language`, `--https-port`, `--public-port`, `--http-port`, `--media-port`, `--turn-port`, `--turns-port`, `--version`, `--ref`, `--no-start`, `--skip-port-check`, `--force`) or their `STELLARR_*` environment variables (`STELLARR_START_TIMEOUT` defaults to `300` s):
+- **Non-interactive mode**: Pass `-y` / `--yes` (or run without a TTY) to skip prompts and apply CLI flags (`--domain`, `--public-ip`, `--language`, `--https-port`, `--public-port`, `--http-port`, `--media-port`, `--enable-turn`, `--turn-port`, `--turns-port`, `--version`, `--ref`, `--no-start`, `--skip-port-check`, `--force`) or their `STELLARR_*` environment variables (`STELLARR_START_TIMEOUT` defaults to `300` s):
 
   ```bash
   curl -fsSL https://stellarr.online/install.sh | bash -s -- --yes --domain chat.example.com --public-ip auto
@@ -54,7 +54,7 @@ Docker pulls `ghcr.io/arkazzae/stellarr`, creates the `stellarr_stellarr_data` v
 docker compose ps
 ```
 
-The container reports `healthy` once `stellarr-media`, the API and its SQLite database, `coturn`, and Nginx all pass their readiness checks. If startup fails, inspect service state and logs:
+The container reports `healthy` once `stellarr-media`, the API and its SQLite database, and Nginx pass their readiness checks. Installations with TURN enabled also check `coturn`. If startup fails, inspect service state and logs:
 
 ```bash
 docker compose exec stellarr stellarr-init status
@@ -63,14 +63,14 @@ docker compose logs
 
 ## 3. Open the web client
 
-Open `https://localhost:8443` in your browser.
+Open the HTTPS address printed by the installer. The default local address is `https://localhost`.
 
 > [!NOTE]
 > On first start, the container generates a 365-day self-signed TLS certificate for `localhost`. Accept the browser's certificate warning to proceed. For remote deployments, configure a trusted certificate as described in [Reverse proxy and TLS](reverse-proxy-and-tls.md).
 
 ## 4. Create the owner account and first server
 
-While the instance has no accounts, every web client route redirects to `https://localhost:8443/setup`. Completing setup requires a one-time setup code printed to the container logs so that an unauthenticated visitor cannot claim a fresh instance before the operator:
+While the instance has no accounts, every web client route redirects to `https://localhost/setup`. Completing setup requires a one-time setup code printed to the container logs so that an unauthenticated visitor cannot claim a fresh instance before the operator:
 
 ```bash
 docker compose logs stellarr | grep "Setup code"
@@ -101,7 +101,7 @@ If you need to generate another invite link later from inside the app:
    https://localhost/invite/22b115a390a20370
    ```
 
-3. When testing locally on `localhost:8443` without `STELLARR_DOMAIN` or `STELLARR_PUBLIC_URL` set, include `:8443` in the URL (`https://localhost:8443/invite/22b115a390a20370`).
+3. If you changed the HTTPS port, use that port in the invite URL.
 
 > [!WARNING]
 > When `STELLARR_DOMAIN` and `STELLARR_PUBLIC_URL` are both unset, invite links fall back to the request `Host` header without non-443 ports. Configuring `STELLARR_DOMAIN` (with `STELLARR_PUBLIC_PORT`) or `STELLARR_PUBLIC_URL` ensures generated invite links always include the full public origin.
@@ -113,7 +113,7 @@ If you need to generate another invite link later from inside the app:
 3. Confirm two-way audio and verify that the connection status in the bottom-left call dock shows `Connected`.
 
 > [!IMPORTANT]
-> Local testing on a single machine works without additional network configuration because both browsers run on the Docker host. For voice and video calls from any other device (including another machine on your LAN), set `STELLARR_PUBLIC_IP` in `.env` and forward UDP port `49000` (`STELLARR_MEDIA_PORT`) on your router. See [Requirements](requirements.md#behind-nat).
+> Local testing on a single machine works without additional network configuration because both browsers run on the Docker host. For voice and video calls from any other device (including another machine on your LAN), set `STELLARR_PUBLIC_IP` in `.env`. For calls across the internet, forward `49000/udp` and `49000/tcp` (`STELLARR_MEDIA_PORT`) on your router. See [Requirements](requirements.md#behind-nat).
 
 If voice stays on `Connecting` or fails across networks, run through the checklist in [RTC and ports](../rtc-and-ports.md#diagnostics).
 
@@ -131,7 +131,7 @@ Both commands stop internal services in reverse dependency order (`stop_grace_pe
 
 ## Next steps
 
-- **Operator panel**: Sign in with the owner account and visit `https://localhost:8443/cockpit`.
+- **Operator panel**: Sign in with the owner account and visit `https://localhost/cockpit`.
 - [Requirements](requirements.md): `STELLARR_PUBLIC_IP` and router port forwarding for external devices.
 - [Reverse proxy and TLS](reverse-proxy-and-tls.md): browser-trusted TLS certificates and reverse proxy configuration.
 - [Configuration](configuration.md): full environment variable reference.

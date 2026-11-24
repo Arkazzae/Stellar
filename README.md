@@ -28,7 +28,7 @@ Hop into voice, stream your game in 4K 60 fps without paying for Nitro, spam the
 
 Easy setup is a core focus of Stellarr. Instead of wiring up Postgres, Redis, LiveKit, and five separate containers just to hang out with your friends, everything runs inside a single `amd64` / `arm64` Docker container (~120–150 MiB RAM at idle) backed by one folder (`/data/stellarr`), with a guided `/setup` flow and a built-in `/cockpit` panel for accounts, live logs, backups, and settings.
 
-Under the hood, the entire backend is written in Rust: a custom WebRTC media server built specifically for Stellarr, the chat API and WebSocket hub, and the container's own init supervisor, paired with SQLite, built-in STUN/TURN, and a static web frontend. Backing up or moving your server is just copying one directory. See [Architecture](docs/architecture.md) if you want the full breakdown.
+Under the hood, the entire backend is written in Rust: a custom WebRTC media server built specifically for Stellarr, the chat API and WebSocket hub, and the container's own init supervisor, paired with SQLite, optional STUN/TURN, and a static web frontend. Backing up or moving your server is just copying one directory. See [Architecture](docs/architecture.md) if you want the full breakdown.
 
 ### Coming next
 
@@ -57,15 +57,15 @@ docker compose up -d
 Want to build from source instead? Clone the repo and run `docker compose up -d --build`.
 
 1. Grab the one-time setup code printed by the installer (or run `docker compose logs stellarr | grep "Setup code"`).
-2. Open `https://localhost:8443`, accept the local self-signed certificate, and run through `/setup` to create your owner account and first server.
-3. Visit `https://localhost:8443/cockpit` anytime to manage accounts, security, logs, and backups.
+2. Open `https://localhost`, accept the local self-signed certificate, and run through `/setup` to create your owner account and first server.
+3. Visit `https://localhost/cockpit` anytime to manage accounts, security, logs, and backups.
 
 ## Inviting friends
 
 Local testing works right away on your machine. Before inviting friends over the internet:
 
 1. Set `STELLARR_DOMAIN` and `STELLARR_PUBLIC_IP` (or `auto`) in `.env` and restart with `docker compose up -d`.
-2. Forward UDP ports `49000`, `3478`, and `49160-49200` on your router so voice and video can connect ([Requirements](docs/install/requirements.md#behind-nat)).
+2. Forward HTTPS on `443/tcp` and media on `49000/udp` and `49000/tcp`, or the ports configured for your instance. Voice and video use direct UDP when available and can fall back to ICE-TCP. Enable and forward TURN separately if you need a relay. [Requirements](docs/install/requirements.md#behind-nat)
 3. Add a browser-trusted HTTPS certificate or put Stellarr behind Caddy or Nginx so browsers allow mic, camera, and screen capture ([Reverse proxy and TLS](docs/install/reverse-proxy-and-tls.md)).
 
 > [!TIP]

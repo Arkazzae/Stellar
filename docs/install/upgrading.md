@@ -65,11 +65,19 @@ To pin a specific release tag during an installer update, pass `--version 1.2.3`
 
    ```bash
    docker compose ps
-   curl -sk -o /dev/null -w '%{http_code}\n' https://localhost:8443/login
+   curl -sk -o /dev/null -w '%{http_code}\n' https://localhost/login
    docker inspect --format '{{ index .Config.Labels "org.opencontainers.image.version" }}' stellarr
    ```
 
-   Confirm `docker compose ps` reports `healthy` and `curl` returns `200`. Open browser tabs detect the new `/release.json` identifier and reload into the updated web client shell automatically. If startup fails, inspect `docker compose exec stellarr stellarr-init status` and `docker compose logs`.
+   Replace the example URL with your configured HTTPS origin if it differs. Confirm `docker compose ps` reports `healthy` and `curl` returns `200`. Open browser tabs detect the new `/release.json` identifier and reload into the updated web client shell automatically. If startup fails, inspect `docker compose exec stellarr stellarr-init status` and `docker compose logs`.
+
+## Port changes
+
+Fresh installations publish HTTPS on `443/tcp` and media on `49000/udp` and `49000/tcp`. If you previously used a different HTTPS port, keep it in `STELLARR_HTTPS_PORT` before updating a manual Compose deployment. Use the HTTPS address reported by the installer or your configured public origin.
+
+Replace your base Compose file when upgrading manually so Docker publishes both media transports. Add TCP forwarding on the same external media port as UDP. The bundled HTTP upstream defaults to loopback on port `8888`, which a local [reverse proxy](reverse-proxy-and-tls.md#run-behind-a-reverse-proxy) can use. The installer preserves an explicitly configured HTTP binding. To restrict a previously public port `8888` to loopback, rerun the installer with `--http-port 127.0.0.1:8888`.
+
+The installer preserves the TURN profile of an existing installation. Rerun it with `--disable-turn` to switch an existing installation to direct media only. A manual Compose deployment that needs the relay must include [the optional TURN override](../rtc-and-ports.md#optional-turn-relay). Keep its existing relay ports mapped 1:1.
 
 ## Database schema
 

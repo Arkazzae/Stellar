@@ -28,8 +28,8 @@ docker compose up -d
 | --- | --- | --- | --- |
 | `STELLARR_DOMAIN` | hostname or IP | empty | Hostname or IP address users open in their browser. Sets the self-signed TLS Subject Alternative Name, TURN realm, and public URL host; defaults to `localhost` when unset. |
 | `STELLARR_PUBLIC_IP` | IPv4 or `auto` | empty | External IPv4 address advertised by `coturn` and `stellarr-media`. Required for voice calls from any device outside the Docker host; `auto` resolves the `A` record of `STELLARR_DOMAIN` at container startup. |
-| `STELLARR_HTTPS_PORT` | port | `8443` (Compose), `443` (image) | Host TCP port mapped to container port `443/tcp`. Used for HTTP-to-HTTPS redirects and for constructing the default public URL. |
-| `STELLARR_HTTP_PORT` | port or `ip:port` | `8888` | Host TCP port mapped to container port `80/tcp` (HTTP redirect / reverse-proxy upstream). Prefix with `127.0.0.1:` when running behind a local reverse proxy. Read by Compose only. |
+| `STELLARR_HTTPS_PORT` | port | `443` | Host TCP port mapped to container port `443/tcp`. Used for HTTP-to-HTTPS redirects and for constructing the default public URL. |
+| `STELLARR_HTTP_PORT` | port or `ip:port` | `127.0.0.1:8888` | Host TCP binding for the local HTTP reverse-proxy upstream on container port `80/tcp`. Read by Compose only. |
 | `STELLARR_PUBLIC_PORT` | port | `STELLARR_HTTPS_PORT` | External HTTPS port browsers connect to (`443` when behind a [reverse proxy](reverse-proxy-and-tls.md#run-behind-a-reverse-proxy)). Omitted from generated URLs when set to `443`. |
 | `STELLARR_PUBLIC_URL` | origin URL | empty | Explicit public origin (`http://` or `https://`, without credentials, query, or fragment), overriding the URL derived from `STELLARR_DOMAIN` and `STELLARR_PUBLIC_PORT`. |
 | `STELLARR_TRUSTED_PROXIES` | IP / CIDR list | empty | Comma- or space-separated IPv4/IPv6 addresses or CIDR networks of upstream [reverse proxies](reverse-proxy-and-tls.md#client-addresses). |
@@ -42,14 +42,15 @@ docker compose up -d
 
 | Variable | Type | Default | Description |
 | --- | --- | --- | --- |
-| `STELLARR_MEDIA_PORT` | port | `49000` | Host UDP port for [Stellarr Media](../stellarr-media.md), carrying all voice and video calls. Forward the same external UDP port on your router. |
+| `STELLARR_MEDIA_PORT` | port | `49000` | Host UDP and TCP port for Stellarr Media. Forward the same external port for both transports. [Stellarr Media](../stellarr-media.md) |
+| `STELLARR_TURN_ENABLED` | `true` \| `false` | `false` | Enables the optional TURN relay. Add `docker-compose.turn.yml` alongside the base Compose file to publish its ports. |
 | `STELLARR_TURN_PORT` | port | `3478` | Host UDP/TCP port for STUN and TURN advertised to browsers. |
 | `STELLARR_TURNS_PORT` | port | `5349` | Host TCP/UDP port for TURN over TLS and DTLS. |
 | `STELLARR_TURN_RELAY_RANGE` | port range | `49160-49200` | Host UDP port range for TURN media relays, mapped 1:1 to the same container port range. |
 | `STELLARR_TURN_TCP_ENABLED` | `true` \| `false` | `false` | Enables the `coturn` TCP listener and advertises `?transport=tcp` TURN URLs. |
 | `STELLARR_TURNS_ENABLED` | `true` \| `false` | `false` | Enables TURN over TLS and DTLS (`turns:`). Requires a CA-signed certificate trusted by browsers. |
 
-Disabled TURN transports are turned off in `/etc/turnserver.conf` (`no-tcp`, `no-tls`, `no-dtls`) as well as omitted from `/api/bootstrap`. See [RTC and ports](../rtc-and-ports.md) for relay sizing and firewall rules.
+Without TURN the API returns an empty `rtc.iceServers` list and browsers use the SFU candidates in SDP. Disabled TURN transports are turned off in `/etc/turnserver.conf` (`no-tcp`, `no-tls`, `no-dtls`) as well as omitted from `/api/bootstrap`. See [RTC and ports](../rtc-and-ports.md) for relay sizing and firewall rules.
 
 ## Uploads and quotas
 
@@ -254,7 +255,7 @@ Advanced internal subsystems that rarely need tuning can be configured in `.env`
 | --- | --- | --- |
 | `STELLARR_DEV_WEB_PORT` | `3000` | Host TCP port for Vite's dev server (serving both the web client at `/` and Cockpit at `/cockpit`). |
 | `STELLARR_DEV_API_PORT` | `5000` | Host TCP port for the API under `cargo run`. |
-| `STELLARR_DEV_MEDIA_PORT` | `49100` | Host UDP port for `stellarr-media` (advertised on `127.0.0.1`). |
+| `STELLARR_DEV_MEDIA_PORT` | `49100` | Host UDP and TCP port for `stellarr-media` (advertised on `127.0.0.1`). |
 | `STELLARR_DEV_MEDIA_CONTROL_PORT` | `5200` | Host TCP port for the `stellarr-media` control API on `127.0.0.1`. |
 | `STELLARR_DEV_MAILPIT_PORT` | `8025` | Host TCP port for the Mailpit web UI on `127.0.0.1`. |
 | `STELLARR_DEV_MAILPIT_SMTP_PORT` | `1025` | Host TCP port for Mailpit's SMTP listener on `127.0.0.1`. |
@@ -275,15 +276,13 @@ Plain `docker run` and platform templates such as [Unraid](unraid.md) use the ex
 
 - **Volume**: Mount a persistent volume or host directory at `/data/stellarr`.
 - **Stop timeout**: Pass `--stop-timeout=75` so `stellarr-init` can complete its 60-second ordered shutdown before Docker sends `SIGKILL` (Docker's 10 s default is shorter than the API's 35 s stop deadline).
-- **Host port variables**: Because a container cannot inspect host port mappings on its own, set the corresponding variable whenever a published host port differs from the container port: `STELLARR_HTTPS_PORT` (container `443/tcp`), `STELLARR_MEDIA_PORT` (container `49000/udp`), `STELLARR_TURN_PORT` (container `3478`), and `STELLARR_TURNS_PORT` (container `5349`). Keep the TURN relay range `49160-49200/udp` mapped 1:1.
+- **Host port variables**: Because a container cannot inspect host port mappings on its own, set the corresponding variable whenever a published host port differs from the container port: `STELLARR_HTTPS_PORT` (container `443/tcp`), `STELLARR_MEDIA_PORT` (container `49000/udp` and `49000/tcp`), and, when enabling TURN, `STELLARR_TURN_PORT` (container `3478`) and `STELLARR_TURNS_PORT` (container `5349`). Keep the optional TURN relay range `49160-49200/udp` mapped 1:1.
 
 ```bash
 docker run -d --name stellarr --restart unless-stopped --stop-timeout=75 \
   --memory=4g --cpus=4 --pids-limit=512 --security-opt=no-new-privileges:true \
   -e STELLARR_DOMAIN=chat.example.com -e STELLARR_PUBLIC_IP=auto \
-  -e STELLARR_HTTPS_PORT=8443 \
-  -p 8888:80 -p 8443:443 -p 3478:3478/tcp -p 3478:3478/udp \
-  -p 5349:5349/tcp -p 5349:5349/udp -p 49000:49000/udp -p 49160-49200:49160-49200/udp \
+  -p 443:443/tcp -p 49000:49000/udp -p 49000:49000/tcp \
   -v stellarr_data:/data/stellarr \
   ghcr.io/arkazzae/stellarr:latest
 ```

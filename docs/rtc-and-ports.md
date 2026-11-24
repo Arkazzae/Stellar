@@ -1,88 +1,74 @@
 # RTC and ports
 
-Published host ports, internal container ports, NAT and TURN forwarding rules, relay port sizing, and call diagnostics. See [Voice and RTC protocol](./rtc-protocol.md) for signaling and audio/video profiles, and [Stellarr Media](./stellarr-media.md) for the Rust SFU media server.
+Stellarr uses one HTTPS port for the web client and signaling, and one media port for the SFU. Browsers prefer direct WebRTC over UDP and can select direct ICE-TCP on the same port when UDP is unavailable. See [Voice and RTC protocol](./rtc-protocol.md) and [Stellarr Media](./stellarr-media.md).
 
 ## Published host ports
 
-| Default port | Protocol | Process | Purpose |
-| --- | --- | --- | --- |
-| `8888` | TCP | Nginx | HTTP redirect to HTTPS (`STELLARR_HTTP_PORT`) |
-| `8443` | TCP | Nginx | HTTPS: web client, API, hub WebSocket, and Cockpit (`STELLARR_HTTPS_PORT`) |
-| `3478` | UDP, TCP | `coturn` | STUN and TURN (`STELLARR_TURN_PORT`) |
-| `5349` | UDP, TCP | `coturn` | TURN over TLS/DTLS (`STELLARR_TURNS_PORT`) |
-| `49000` | UDP | `stellarr-media` | SFU media server port (`STELLARR_MEDIA_PORT`); carries all voice and video calls |
-| `49160-49200` | UDP | `coturn` | TURN media relay port range (`STELLARR_TURN_RELAY_RANGE`, 41 ports) |
+| Default binding | Protocol | Purpose |
+| --- | --- | --- |
+| `443` | TCP | HTTPS for the web client, API, WebSocket hub, and Cockpit (`STELLARR_HTTPS_PORT`) |
+| `49000` | UDP and TCP | Direct WebRTC to Stellarr Media (`STELLARR_MEDIA_PORT`) |
+| `127.0.0.1:8888` | TCP | HTTP upstream for a local reverse proxy (`STELLARR_HTTP_PORT`) |
 
-- `STELLARR_HTTPS_PORT` is included in HTTP-to-HTTPS `308` redirects (omitted when set to `443`). Requests arriving from an external reverse proxy with `X-Forwarded-Proto: https` are not redirected.
-- `STELLARR_TURN_PORT`, `STELLARR_TURNS_PORT`, and `STELLARR_MEDIA_PORT` set both the host port published by Docker Compose and the port advertised to browser clients. Forward the **same** external UDP port to `STELLARR_MEDIA_PORT` on your router.
-- `STELLARR_TURN_TCP_ENABLED` defaults to `false`. Disabled transports are closed in `/etc/turnserver.conf` via `no-tcp`, `no-tls`, and `no-dtls` and omitted from `/api/bootstrap`.
+The advertised media port is the host-side `STELLARR_MEDIA_PORT`. Map both protocols to the same external port. Port `443` is omitted from generated HTTPS URLs when it is the public HTTPS port.
 
-> [!NOTE]
-> `STELLARR_TURNS_ENABLED` defaults to `false` because browsers reject self-signed certificates on `turns:` URLs. Enable it only after mounting a CA-signed TLS certificate in `/data/stellarr/tls/`.
+### Optional TURN relay
 
-### Relay port sizing
+Enable TURN if some callers can reach neither direct media transport. A fresh installation starts without a relay. With the installer, pass `--enable-turn`. For a manual Compose deployment, download `docker-compose.turn.yml` alongside `docker-compose.yml` and use both files for startup and upgrades:
 
-The default TURN relay range (`49160-49200/udp`) provides 41 UDP ports. Because Stellarr uses an SFU architecture (`stellarr-media`), each browser opens a single bundled `RTCPeerConnection` (`max-bundle`) to the server, requiring at most 1 TURN relay allocation per relayed participant (~5 ports for a 5-person call), which `coturn` forwards internally to the container's local `stellarr-media` UDP socket.
+```bash
+docker compose -f docker-compose.yml -f docker-compose.turn.yml up -d
+```
 
-To expand the relay range for larger deployments, update `min-port`/`max-port` in `infra/turnserver.conf.template`, `STELLARR_TURN_RELAY_RANGE` / `ports` in `docker-compose.yml`, `EXPOSE` in `Dockerfile`, and your host and router firewall rules.
+The override enables `STELLARR_TURN_ENABLED` and publishes the relay ports. Forward the ports for the enabled transports to the Docker host.
+
+| Default port | Enabled transport | Variable |
+| --- | --- | --- |
+| `3478/udp` | STUN and UDP TURN | `STELLARR_TURN_PORT` |
+| `3478/tcp` | TURN over TCP when `STELLARR_TURN_TCP_ENABLED=true` | `STELLARR_TURN_PORT` |
+| `5349/tcp` and `5349/udp` | TURN over TLS and DTLS when `STELLARR_TURNS_ENABLED=true` | `STELLARR_TURNS_PORT` |
+| `49160-49200/udp` | TURN media relay range, mapped 1:1 | `STELLARR_TURN_RELAY_RANGE` |
+
+TURN over TLS requires a CA-signed certificate trusted by browsers. Disabled transports are closed in `/etc/turnserver.conf` and omitted from `/api/bootstrap`. See [Reverse proxy and TLS](./install/reverse-proxy-and-tls.md#turn-over-tls-turns).
+
+The default relay range provides 41 UDP ports. A browser uses one bundled peer connection to the SFU, so a five-person call in which everyone relays needs about five allocations. To expand the range, update `min-port` and `max-port` in `infra/turnserver.conf.template` and keep the Compose mapping and host/router firewall rules in agreement. The Compose environment variables only change the port mapping.
 
 ## Container-internal ports
 
 | Port | Service |
 | --- | --- |
-| `5000/tcp` | Stellarr API and hub (`127.0.0.1:5000`) |
-| `5200/tcp` | `stellarr-media` HTTP control API (`127.0.0.1:5200`, authenticated with `/data/stellarr/secrets/media-control-secret`) |
+| `5000/tcp` | Stellarr API and hub on loopback |
+| `5200/tcp` | Stellarr Media HTTP control API on loopback, authenticated with `/data/stellarr/secrets/media-control-secret` |
 
-Nginx routes HTTP and WebSocket requests to the API or serves static bundles from `/opt/stellarr/web`; see [Nginx routing and cache policy](./architecture.md#nginx-routing-and-cache-policy).
+Nginx routes HTTP and WebSocket requests to the API or serves bundles from `/opt/stellarr/web`. See [Nginx routing and cache policy](./architecture.md#nginx-routing-and-cache-policy).
 
 ## NAT and firewall configuration
 
-HTTP reverse proxies carry only HTTP and WebSocket traffic. WebRTC STUN, TURN, and SFU RTP/SRTP packets bypass HTTP proxies and must reach the Docker host directly.
-
-Forward these ports on your router to the Docker host:
-
-- TCP `80`/`443` (or your external `STELLARR_HTTP_PORT` / `STELLARR_HTTPS_PORT`)
-- UDP `3478` (plus TCP `3478` if `STELLARR_TURN_TCP_ENABLED=true`)
-- UDP/TCP `5349` (if `STELLARR_TURNS_ENABLED=true`)
-- UDP `49160-49200`
-- UDP `49000` (or `STELLARR_MEDIA_PORT`) on the **same external UDP port**
+Forward public HTTPS (`443/tcp` by default or your reverse proxy’s HTTPS port) and the SFU media port (`49000/udp` and `49000/tcp` by default). The HTTP reverse proxy carries signaling. ICE, DTLS and media packets connect directly to the advertised media address, including when ICE selects TCP.
 
 Recommended `.env` settings behind NAT:
 
 ```dotenv
 STELLARR_DOMAIN=chat.example.com
-STELLARR_PUBLIC_IP=auto    # or a static external IPv4 address
+STELLARR_PUBLIC_IP=auto
 STELLARR_MEDIA_PORT=49000
 ```
 
-- `STELLARR_PUBLIC_IP` sets `external-ip` in `coturn` and `STELLARR_MEDIA_PUBLIC_IP` in `stellarr-media` (`auto` resolves the IPv4 `A` record of `STELLARR_DOMAIN` at startup and aborts startup if resolution fails).
-- `stellarr-media` advertises `STELLARR_PUBLIC_IP:STELLARR_MEDIA_PORT` first in its SDP host candidates, followed by the container's local IPv4 address (which `coturn` uses when relaying over loopback/bridge).
-- The API issues short-lived (1-hour) HMAC-SHA1 TURN credentials derived from `/data/stellarr/secrets/turn-shared-secret` to authenticated users; the shared secret never leaves the container.
-
-> [!WARNING]
-> If `STELLARR_PUBLIC_IP` is unset, `stellarr-media` advertises only the container's internal IPv4 address. External browsers can then connect only through TURN (`coturn`), and the container logs a warning on startup.
-
-For outbound network requirements, see [Outbound network](./install/requirements.md#outbound-network).
+Set `STELLARR_PUBLIC_IP` to the IPv4 address callers can reach. With `auto`, the container resolves the hostname’s IPv4 address at startup. The SFU advertises that IP and port in SDP for both UDP and passive TCP. When TURN is enabled, the same public IP configures its external address. Without a reachable SFU candidate, remote browsers need a working TURN relay and a reachable path to the SFU.
 
 ## Diagnostics
 
-When voice fails to connect, verify in order:
+1. Open the web client over HTTPS and grant microphone access.
+2. Check that `GET /api/bootstrap` returns the expected SFU host and port in `rtc.mediaServer`. The browser takes its actual candidates from SDP. With TURN disabled, `rtc.iceServers` is empty.
+3. Check `STELLARR_PUBLIC_IP` and verify that the router forwards the same external media port on UDP and TCP.
+4. Check that `docker compose exec stellarr stellarr-init status` shows `media` as ready. If using TURN, verify `turn` and its enabled relay ports as well.
+5. In browser WebRTC diagnostics, inspect the selected ICE candidate pair and its candidate `protocol`. Verify that media packet counters advance in both directions.
+6. Query active SFU sessions and their `ingress` and `egress` packet counters:
 
-1. The web client is loaded over `https://` (or `http://localhost`).
-2. Microphone permissions are granted in the browser.
-3. `GET /api/bootstrap` returns `rtc.mediaServer` with the expected hostname and port.
-4. `STELLARR_PUBLIC_IP` matches the host's reachable IPv4 address (no empty-`STELLARR_PUBLIC_IP` warning in `docker compose logs`).
-5. UDP `49000` (`STELLARR_MEDIA_PORT`) is forwarded on the router to the Docker host on the same external UDP port.
-6. UDP `3478` (`STELLARR_TURN_PORT`) is reachable from the client network.
-7. UDP `49160-49200` (`STELLARR_TURN_RELAY_RANGE`) is open in host and router firewalls.
-8. `docker compose exec stellarr stellarr-init status` shows both `media` and `turn` as `ready`.
-9. Browser DevTools shows `MediaSignal` events arriving over `/hubs/app`.
-10. `stellarr-media` lists active sessions as `connected` with advancing `ingress` and `egress` packet counters (queried via bash `/dev/tcp` since the runtime image omits `curl`):
-
-    ```bash
-    docker compose exec stellarr bash -c '
-      exec 3<>/dev/tcp/127.0.0.1/5200
-      printf "GET /v1/stats HTTP/1.0\r\nAuthorization: Bearer %s\r\n\r\n" \
-        "$(cat /data/stellarr/secrets/media-control-secret)" >&3
-      cat <&3'
-    ```
+   ```bash
+   docker compose exec stellarr bash -c '
+     exec 3<>/dev/tcp/127.0.0.1/5200
+     printf "GET /v1/stats HTTP/1.0\r\nAuthorization: Bearer %s\r\n\r\n" \
+       "$(cat /data/stellarr/secrets/media-control-secret)" >&3
+     cat <&3'
+   ```

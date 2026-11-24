@@ -17,7 +17,7 @@ Uploads enforce per-user and instance storage quotas plus a free-space floor on 
 
 ## Ports
 
-By default, `docker-compose.yml` publishes TCP `8443` (HTTPS: web client, API, `/hubs/app` WebSocket, and `/cockpit`), TCP `8888` (HTTP redirect to HTTPS), UDP `49000` (`stellarr-media` SFU for all voice and video calls), UDP `3478` (`coturn` STUN/TURN), and UDP `49160-49200` (TURN media relay range, mapped 1:1), plus optional TURN TCP/TLS listeners (`3478/tcp`, `5349/tcp`, `5349/udp`) when enabled in `.env`.
+By default, `docker-compose.yml` publishes `443/tcp` for HTTPS and WebSocket traffic, and `49000/udp` and `49000/tcp` for the Stellarr Media SFU. The HTTP upstream for a local reverse proxy binds to `127.0.0.1:8888`. TURN ports are published only when you use the optional TURN Compose override.
 
 See [RTC and ports](../rtc-and-ports.md#published-host-ports) for the full port table, corresponding `STELLARR_*` variables, internal loopback ports, and relay port sizing.
 
@@ -26,7 +26,7 @@ See [RTC and ports](../rtc-and-ports.md#published-host-ports) for the full port 
 A browser on the Docker host itself connects over local loopback without extra configuration. Calls from any other device, including other machines on your LAN, require:
 
 1. `STELLARR_PUBLIC_IP` set to the IPv4 address browsers use to reach the Docker host (LAN IPv4 for LAN-only use, public IPv4 for internet access, or `auto` to resolve the `A` record of `STELLARR_DOMAIN` at container startup).
-2. UDP `49000` (`STELLARR_MEDIA_PORT`, on the **same external UDP port**), UDP `3478`, UDP `49160-49200`, and the HTTPS port (or an external [reverse proxy](reverse-proxy-and-tls.md#run-behind-a-reverse-proxy)) forwarded to the Docker host.
+2. Forward both UDP and TCP `49000` (`STELLARR_MEDIA_PORT`) to the Docker host on the **same external port**. Forward HTTPS too, unless it is handled by an external reverse proxy. Enable and forward extra relay ports only if you need TURN. [Reverse proxy and TLS](reverse-proxy-and-tls.md#run-behind-a-reverse-proxy)
 
 See [RTC and ports: NAT and firewall configuration](../rtc-and-ports.md#nat-and-firewall-configuration) for candidate advertisement rules and call diagnostics.
 
