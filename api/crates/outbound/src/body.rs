@@ -262,9 +262,9 @@ impl ResponseBody {
 /// What went wrong in the framing, without text from the other end.
 pub(crate) fn describe(error: &hyper::Error) -> String {
     if error.is_incomplete_message() {
-        "the connection closed before the body was complete".into()
+        "the connection closed before the message was complete".into()
     } else if error.is_parse() || error.is_parse_status() {
-        "the body is not framed as HTTP/1.1 says".into()
+        "the message does not follow HTTP/1.1".into()
     } else if error.is_timeout() {
         "timed out".into()
     } else {
