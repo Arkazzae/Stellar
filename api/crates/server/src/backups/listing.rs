@@ -194,6 +194,9 @@ mod tests {
         for bad in [
             "../backup-x.zip",
             "backup-x.zip/../../y",
+            "backup-a/../../x.zip",
+            "backup-a\0.zip",
+            "backup-a/b.db",
             "backup-x.txt",
             "other-x.zip",
             ".backup-x.zip.partial",
