@@ -1,5 +1,4 @@
-//! `POST /api/uploads`, `POST /api/uploads/images` and
-//! `POST /api/uploads/encrypted`: a file for a message, with the picture that
+//! `POST /api/uploads/images` and `POST /api/uploads/encrypted`: a file for a message, with the picture that
 //! stands in for it before it plays or loads, or the opaque bytes of a file a
 //! browser encrypted for an encrypted conversation.
 

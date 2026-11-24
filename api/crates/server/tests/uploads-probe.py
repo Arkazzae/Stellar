@@ -191,7 +191,7 @@ def file_part(content=PNG, name="a.png", ctype="image/png", field="file"):
 
 
 def corpus(base, boss, maja, outsider):
-    def up(label, parts, cookie=boss, path="/api/uploads", **k):
+    def up(label, parts, cookie=boss, path="/api/uploads/images", **k):
         answer = post(base, path, parts, cookie, **k)
         describe(label, answer)
         try:
@@ -210,7 +210,6 @@ def corpus(base, boss, maja, outsider):
     up("no file", [part("x", "1")])
     up("file as text", [part("file", PNG)])
     up("two files", [file_part(PNG, "first.png"), file_part(PDF, "second.pdf", "application/pdf")])
-    up("legacy path", [file_part()], path="/api/uploads/images")
     # Names.
     for name in ["release notes.exe", "my:file*name?.png", "../../etc/passwd.png", "////", "   ...   .png", "zażółć gęślą.png",
                  "a" * 400 + ".png", "x\x00y.png", "C:\\dir\\a b.png", ".png", "a.b.c.png", "日本語.png", "emoji😀.png"]:
@@ -276,7 +275,7 @@ def corpus(base, boss, maja, outsider):
     up("filename empty", [file_part(PNG, "")])
     up("big ignored field", [part("zzz", "a" * (3 * 1024 * 1024)), file_part()])
     # Unauthorized.
-    describe("anonymous", post(base, "/api/uploads", [file_part()], None))
+    describe("anonymous", post(base, "/api/uploads/images", [file_part()], None))
     describe("anonymous encrypted", post(base, "/api/uploads/encrypted", [file_part()], None))
     # Who may download what.
     mine = up("download source png", [file_part(PNG, "tiny.png")])
@@ -345,7 +344,7 @@ def hostile(base, boss):
     def raw(label, body, ctype="multipart/form-data; boundary=XXB", headers=None):
         h = {"Content-Type": ctype}
         h.update(headers or {})
-        describe(label, send(base, "POST", "/api/uploads", body, h, boss), 500)
+        describe(label, send(base, "POST", "/api/uploads/images", body, h, boss), 500)
 
     raw("lying boundary", form, "multipart/form-data; boundary=OTHER")
     raw("boundary is a prefix", form, "multipart/form-data; boundary=XX")
@@ -356,9 +355,9 @@ def hostile(base, boss):
     raw("three files", multipart([file_part(PNG, "1.png"), file_part(PNG, "2.png"), file_part(PNG, "3.png")]))
     raw("three values", multipart([file_part(), part("durationSeconds", "1"), part("durationSeconds", "2"), part("durationSeconds", "3")]))
     chunks = b"".join(b"%x\r\n" % len(form[i:i + 7]) + form[i:i + 7] + b"\r\n" for i in range(0, len(form), 7)) + b"0\r\n\r\n"
-    describe("chunked body", send(base, "POST", "/api/uploads", chunks, {"Content-Type": "multipart/form-data; boundary=XXB", "Transfer-Encoding": "chunked"}, boss), 200)
-    describe("declared too large", send(base, "POST", "/api/uploads", None, {"Content-Type": "multipart/form-data; boundary=XXB", "Content-Length": str(128 * 1024 * 1024 + 1)}, boss, timeout=10), 200)
-    describe("truncated", send(base, "POST", "/api/uploads", form[:60], {"Content-Type": "multipart/form-data; boundary=XXB", "Content-Length": str(len(form))}, boss, timeout=10), 200)
+    describe("chunked body", send(base, "POST", "/api/uploads/images", chunks, {"Content-Type": "multipart/form-data; boundary=XXB", "Transfer-Encoding": "chunked"}, boss), 200)
+    describe("declared too large", send(base, "POST", "/api/uploads/images", None, {"Content-Type": "multipart/form-data; boundary=XXB", "Content-Length": str(128 * 1024 * 1024 + 1)}, boss, timeout=10), 200)
+    describe("truncated", send(base, "POST", "/api/uploads/images", form[:60], {"Content-Type": "multipart/form-data; boundary=XXB", "Content-Length": str(len(form))}, boss, timeout=10), 200)
     # The header lines of a part, to the byte.
     for pad in (16293, 16294, 16295):
         raw(f"header pad {pad}", multipart([part("file", PNG, "a.png", "image/png", ["X-P: " + "a" * pad])]))

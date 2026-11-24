@@ -31,7 +31,7 @@ fn count(server: &Server, sql: &str) -> i64 {
 async fn wave(person: &Person) -> String {
     let response = person
         .client
-        .send(Form::new().file("file", "s.wav", "audio/wav", WAVE).text("durationSeconds", "20").post("/api/uploads"))
+        .send(Form::new().file("file", "s.wav", "audio/wav", WAVE).text("durationSeconds", "20").post("/api/uploads/images"))
         .await;
     response.json::<Value>()["id"].as_str().unwrap().to_string()
 }

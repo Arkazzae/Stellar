@@ -49,7 +49,7 @@ async fn an_upload_lands_in_the_bucket_and_not_on_the_volume() {
             Form::new()
                 .file("file", "clip.mp4", "video/mp4", MP4)
                 .file("poster", "p.jpg", "image/jpeg", JPEG)
-                .post("/api/uploads"),
+                .post("/api/uploads/images"),
         )
         .await;
 
@@ -75,7 +75,7 @@ async fn a_download_is_streamed_from_the_bucket_with_its_ranges() {
     let id = id_of(
         &maja
             .client
-            .send(Form::new().file("file", "big.pdf", "application/pdf", &big).post("/api/uploads"))
+            .send(Form::new().file("file", "big.pdf", "application/pdf", &big).post("/api/uploads/images"))
             .await,
     );
     let path = format!("/assets/{id}");
@@ -107,7 +107,7 @@ async fn an_object_that_is_not_in_the_bucket_is_not_found() {
     let fake = FakeS3::start().await;
     let server = with_bucket(&fake, &[]).await;
     let maja = server.found("maja").await;
-    let id = id_of(&maja.client.send(image("a.png").post("/api/uploads")).await);
+    let id = id_of(&maja.client.send(image("a.png").post("/api/uploads/images")).await);
     fake.fail_next("GET", 404, 1);
 
     assert_eq!(maja.client.get(&format!("/assets/{id}")).await.status, 404);
@@ -120,7 +120,7 @@ async fn a_bucket_that_refuses_the_write_fails_the_upload_and_leaves_no_row() {
     let maja = server.found("maja").await;
     fake.fail_next("PUT", 403, 20);
 
-    let response = maja.client.send(image("a.png").post("/api/uploads")).await;
+    let response = maja.client.send(image("a.png").post("/api/uploads/images")).await;
 
     assert_eq!(response.status, 500);
     assert!(response.json::<Value>()["title"].is_string());
