@@ -143,30 +143,8 @@ fn link(
         return Ok(FAILED);
     };
 
-    let mut statement = tx.prepare(
-        "SELECT \"UserId\", \"Issuer\", \"Subject\" FROM \"ExternalIdentities\"
-         WHERE (\"Issuer\" = ?1 AND \"Subject\" = ?2) OR (\"UserId\" = ?3 AND \"Issuer\" = ?1)",
-    )?;
-    let existing: Vec<(Id, String, String)> = statement
-        .query_map(params![issuer, subject, user], |row| {
-            Ok((row.get(0)?, row.get(1)?, row.get(2)?))
-        })?
-        .collect::<rusqlite::Result<_>>()?;
-    drop(statement);
-    if existing
-        .iter()
-        .any(|(owner, have_issuer, have_subject)| {
-            *have_issuer == issuer && *have_subject == subject && *owner == user
-        })
-    {
-        return Ok(LINKED);
-    }
-    if !existing.is_empty() {
-        return Ok(if existing.iter().any(|(owner, _, _)| *owner != user) {
-            TAKEN
-        } else {
-            OTHER
-        });
+    if let Some(outcome) = crate::identity_providers::existing_link(tx, user, &issuer, &subject)? {
+        return Ok(outcome.word());
     }
     let inserted = tx.execute(
         "INSERT INTO \"ExternalIdentities\" (\"Id\", \"UserId\", \"Issuer\", \"Subject\", \"ProviderId\", \"CreatedAt\")
