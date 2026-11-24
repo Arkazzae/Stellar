@@ -15,7 +15,8 @@
 #
 # Prints the difference between the two transcripts and between the rows they
 # left, which is empty when the servers agree on everything observed. The
-# files are left in $WORK (default a new folder under the temporary directory).
+# files are in $WORK (default a new folder under the temporary directory) while
+# it runs and are removed when it ends; KEEP=1 keeps them.
 set -euo pipefail
 
 name=${ORACLE:-social}
@@ -29,7 +30,11 @@ password='Corona!2026-long'
 headers=(-H 'X-Stellarr-Client: web' -H 'X-Stellarr-Client-Version: 2.0.0' -H 'Content-Type: application/json')
 pid=
 
-cleanup() { [ -n "$pid" ] && kill "$pid" 2>/dev/null || true; }
+cleanup() {
+  [ -n "$pid" ] && kill "$pid" 2>/dev/null || true
+  [ -n "${node_pid:-}" ] && kill "$node_pid" 2>/dev/null || true
+  [ -n "${KEEP:-}" ] || rm -rf "$work"
+}
 trap cleanup EXIT
 
 code() { curl -s -o /dev/null -w '%{http_code}' "$@"; }
@@ -120,7 +125,10 @@ rows() { # a database file
 
 for target in oracle rust; do
   address=${!target}
-  node "$here/social-oracle.mjs" --base "$address" --password "$password" --out "$work/$target.txt"
+  node "$here/social-oracle.mjs" --base "$address" --password "$password" --out "$work/$target.txt" &
+  node_pid=$!
+  wait "$node_pid"
+  node_pid=
 done
 docker stop -t 10 "$container" >/dev/null
 docker cp "$container:/tmp/data/stellarr.db" "$work/oracle.db"
@@ -128,6 +136,5 @@ docker start "$container" >/dev/null
 kill "$pid"; wait "$pid" 2>/dev/null || true; pid=
 rows "$work/oracle.db" > "$work/oracle-rows.txt"
 rows "$work/rust/stellarr.db" > "$work/rust-rows.txt"
-echo "transcripts and rows are in $work"
 diff "$work/oracle.txt" "$work/rust.txt" && echo "the two servers agree on everything observed"
 diff "$work/oracle-rows.txt" "$work/rust-rows.txt" && echo "the two servers left the same rows"
