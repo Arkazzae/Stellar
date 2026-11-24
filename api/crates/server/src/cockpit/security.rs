@@ -27,16 +27,6 @@ use crate::values::{Id, Timestamp};
 /// How many security events the account's page shows.
 const HISTORY_SHOWN: usize = 10;
 
-/// An account that is a member of the instance server, the only ones the
-/// panel manages.
-fn member_exists(db: &Connection, server: Id, user: Id) -> rusqlite::Result<bool> {
-    db.query_row(
-        "SELECT EXISTS (SELECT 1 FROM \"ServerMembers\" WHERE \"ServerId\" = ?1 AND \"UserId\" = ?2)",
-        params![server, user],
-        |row| row.get(0),
-    )
-}
-
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
 struct Method {
@@ -88,7 +78,7 @@ pub(super) async fn read(
     let answer = state
         .database()
         .read(move |db| -> Result<Option<SecurityDto>, DbError> {
-            if !member_exists(db, server, user)? {
+            if !crate::permissions::membership::is_member(db, server, user)? {
                 return Ok(None);
             }
             let (recovery_required, has_password): (bool, bool) = db.query_row(
@@ -206,7 +196,7 @@ pub(super) async fn recover(
     let done = state
         .database()
         .write(move |tx| -> Result<Option<recovery::Recovered>, ApiError> {
-            if !member_exists(tx, server, user)? {
+            if !crate::permissions::membership::is_member(tx, server, user)? {
                 return Err(ApiError::not_found());
             }
             let policy = SecurityPolicy::load(tx)?;
@@ -269,7 +259,7 @@ pub(super) async fn unlink(
     state
         .database()
         .write(move |tx| -> Result<(), ApiError> {
-            if !member_exists(tx, server, user)? {
+            if !crate::permissions::membership::is_member(tx, server, user)? {
                 return Err(ApiError::not_found());
             }
             let found: Option<String> = tx

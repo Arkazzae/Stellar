@@ -238,3 +238,12 @@ impl FromRequestParts<AppState> for InstanceOwner {
         }
     }
 }
+
+/// Whether an account is a member of the named server.
+pub(crate) fn is_member(db: &Connection, server: Id, user: Id) -> rusqlite::Result<bool> {
+    db.query_row(
+        "SELECT EXISTS (SELECT 1 FROM \"ServerMembers\" WHERE \"ServerId\" = ?1 AND \"UserId\" = ?2)",
+        params![server, user],
+        |row| row.get(0),
+    )
+}
