@@ -6,6 +6,7 @@ mod client_settings;
 mod database;
 mod emoji;
 mod direct;
+mod desktop_login;
 mod health;
 mod inbox;
 mod mail;
