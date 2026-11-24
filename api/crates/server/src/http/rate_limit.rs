@@ -59,13 +59,59 @@ pub struct Lease {
 
 pub struct RateLimiter {
     limits: RateLimitSettings,
-    windows: Mutex<HashMap<(RateLimitPolicy, String), Window>>,
+    windows: Mutex<Windows<(RateLimitPolicy, String)>>,
     uploads: Uploads,
 }
 
 struct Window {
     started: Instant,
     used: u32,
+}
+
+/// Where the counts of a limit are kept, one window to each address or
+/// account. A window that is over owes nothing, so expired ones are swept
+/// every so many requests, and the table never holds more than
+/// [`MOST_WINDOWS`]: when it is full of live ones the oldest go first.
+struct Windows<K> {
+    table: HashMap<K, Window>,
+    since_sweep: u32,
+}
+
+impl<K> Default for Windows<K> {
+    fn default() -> Windows<K> {
+        Windows {
+            table: HashMap::new(),
+            since_sweep: 0,
+        }
+    }
+}
+
+const SWEEP_EVERY: u32 = 1024;
+const MOST_WINDOWS: usize = 16 * 1024;
+
+impl<K: Hash + Eq> Windows<K> {
+    fn get(&mut self, key: K, now: Instant, length_of: impl Fn(&K) -> Duration) -> &mut Window {
+        self.since_sweep += 1;
+        if self.since_sweep >= SWEEP_EVERY {
+            self.since_sweep = 0;
+            self.table.retain(|key, window| {
+                now.saturating_duration_since(window.started) < length_of(key)
+            });
+        }
+        if self.table.len() >= MOST_WINDOWS && !self.table.contains_key(&key) {
+            // Full of windows that are still running: make room by dropping
+            // the oldest eighth, whose counts would soon have started again.
+            let mut started: Vec<Instant> =
+                self.table.values().map(|window| window.started).collect();
+            started.sort_unstable();
+            let cut = started[MOST_WINDOWS / 8];
+            self.table.retain(|_, window| window.started > cut);
+        }
+        self.table.entry(key).or_insert(Window {
+            started: now,
+            used: 0,
+        })
+    }
 }
 
 struct Uploads {
@@ -80,7 +126,7 @@ impl RateLimiter {
         let concurrent = limits.concurrent_uploads as usize;
         RateLimiter {
             limits: limits.clone(),
-            windows: Mutex::new(HashMap::new()),
+            windows: Mutex::new(Windows::default()),
             uploads: Uploads {
                 running: Arc::new(Semaphore::new(concurrent)),
                 waiting: AtomicUsize::new(0),
@@ -118,18 +164,9 @@ impl RateLimiter {
             .windows
             .lock()
             .unwrap_or_else(|poisoned| poisoned.into_inner());
-        if windows.len() > 4096 {
-            // Addresses that have not been seen for a whole window owe nothing.
-            windows.retain(|(policy, _), window| {
-                now.duration_since(window.started) < window_length(*policy)
-            });
-        }
-        let window = windows
-            .entry((policy, address.to_string()))
-            .or_insert(Window {
-                started: now,
-                used: 0,
-            });
+        let window = windows.get((policy, address.to_string()), now, |(policy, _)| {
+            window_length(*policy)
+        });
         take(window, limit, length, now).then_some(Lease { _permit: None })
     }
 
@@ -189,7 +226,7 @@ fn take(window: &mut Window, limit: u32, length: Duration, now: Instant) -> bool
 pub struct AttemptLimiter {
     limit: u32,
     length: Duration,
-    windows: Mutex<HashMap<Id, Window>>,
+    windows: Mutex<Windows<Id>>,
 }
 
 impl AttemptLimiter {
@@ -197,7 +234,7 @@ impl AttemptLimiter {
         AttemptLimiter {
             limit,
             length,
-            windows: Mutex::new(HashMap::new()),
+            windows: Mutex::new(Windows::default()),
         }
     }
 
@@ -217,13 +254,8 @@ impl AttemptLimiter {
             .windows
             .lock()
             .unwrap_or_else(|poisoned| poisoned.into_inner());
-        if windows.len() > 4096 {
-            windows.retain(|_, window| now.duration_since(window.started) < self.length);
-        }
-        let window = windows.entry(account).or_insert(Window {
-            started: now,
-            used: 0,
-        });
+        let length = self.length;
+        let window = windows.get(account, now, |_| length);
         take(window, self.limit, self.length, now)
     }
 }
@@ -302,6 +334,32 @@ mod tests {
                 .await
                 .is_some()
         );
+    }
+
+    #[tokio::test]
+    async fn the_table_of_windows_is_swept_and_bounded() {
+        let limiter = RateLimiter::new(&limits());
+        let start = Instant::now();
+        for index in 0..(MOST_WINDOWS as u32 * 2) {
+            limiter
+                .acquire_at(
+                    RateLimitPolicy::Login,
+                    &format!("10.{}.{}.{}", index >> 16, index >> 8 & 255, index & 255),
+                    start,
+                )
+                .await;
+        }
+        let held = limiter.windows.lock().unwrap().table.len();
+        assert!(held <= MOST_WINDOWS, "{held}");
+
+        // Once they are all over, a sweep leaves only the one that is asked for.
+        let later = start + Duration::from_secs(61);
+        for _ in 0..SWEEP_EVERY {
+            limiter
+                .acquire_at(RateLimitPolicy::Login, "same", later)
+                .await;
+        }
+        assert_eq!(limiter.windows.lock().unwrap().table.len(), 1);
     }
 
     #[tokio::test]

@@ -23,6 +23,7 @@ use std::fs::{self, OpenOptions};
 use std::io::{Read, Write};
 use std::os::unix::fs::{OpenOptionsExt, PermissionsExt};
 use std::path::{Path, PathBuf};
+use std::time::Duration;
 
 use aws_lc_rs::aead::{AES_256_GCM, Aad, LessSafeKey, NONCE_LEN, Nonce, UnboundKey};
 use aws_lc_rs::hkdf::{HKDF_SHA256, Salt};
@@ -95,6 +96,12 @@ impl Sealer {
     /// none. The file is created for its owner alone; a file that group or
     /// others can read is made private again.
     pub fn load_or_create(keys_folder: &Path) -> Result<Sealer, KeyError> {
+        Sealer::load_or_create_with(keys_folder, true)
+    }
+
+    /// [`Sealer::load_or_create`], with `use_link` false to take the way a
+    /// volume that cannot make hard links needs, which a test forces.
+    fn load_or_create_with(keys_folder: &Path, use_link: bool) -> Result<Sealer, KeyError> {
         let path = keys_folder.join(KEY_FILE);
         let fail = |what: &str, error: &dyn fmt::Display| {
             KeyError(format!("{what} {}: {error}", path.display()))
@@ -115,7 +122,20 @@ impl Sealer {
                 .mode(0o600)
                 .open(&draft)
                 .and_then(|mut file| file.write_all(&key).and_then(|()| file.sync_all()));
-            let linked = written.and_then(|()| fs::hard_link(&draft, &path));
+            let linked = written.and_then(|()| {
+                if !use_link {
+                    return place_under_lock(&draft, &path);
+                }
+                match fs::hard_link(&draft, &path) {
+                    // A volume that cannot link files can still be locked.
+                    Err(error)
+                        if error.kind() != std::io::ErrorKind::AlreadyExists && !path.exists() =>
+                    {
+                        place_under_lock(&draft, &path)
+                    }
+                    other => other,
+                }
+            });
             let _ = fs::remove_file(&draft);
             match linked {
                 Ok(()) => {}
@@ -225,6 +245,51 @@ impl Sealer {
         let key = self.derive_key(purpose);
         LessSafeKey::new(UnboundKey::new(&AES_256_GCM, &key).expect("a 32-byte key"))
     }
+}
+
+/// Puts the finished draft in place on a volume that makes no hard links: the
+/// starter that makes a lock file by exclusive creation is the only one that
+/// renames its draft to the name, which appears whole in one step, and the
+/// others wait for it. A lock left behind by a process that died is broken
+/// after half a minute.
+fn place_under_lock(draft: &Path, path: &Path) -> std::io::Result<()> {
+    let lock = path.with_extension("key.lock");
+    for _ in 0..400 {
+        if path.exists() {
+            return Ok(());
+        }
+        match OpenOptions::new()
+            .write(true)
+            .create_new(true)
+            .mode(0o600)
+            .open(&lock)
+        {
+            Ok(_) => {
+                let placed = if path.exists() {
+                    Ok(())
+                } else {
+                    fs::rename(draft, path)
+                };
+                let _ = fs::remove_file(&lock);
+                return placed;
+            }
+            Err(error) if error.kind() == std::io::ErrorKind::AlreadyExists => {
+                let stale = fs::metadata(&lock)
+                    .and_then(|meta| meta.modified())
+                    .is_ok_and(|at| at.elapsed().is_ok_and(|age| age > Duration::from_secs(30)));
+                if stale {
+                    let _ = fs::remove_file(&lock);
+                } else {
+                    std::thread::sleep(Duration::from_millis(25));
+                }
+            }
+            Err(error) => return Err(error),
+        }
+    }
+    Err(std::io::Error::new(
+        std::io::ErrorKind::TimedOut,
+        "the key was never put in place",
+    ))
 }
 
 /// The version and the caller's data, the two things the tag covers besides
@@ -445,6 +510,53 @@ mod tests {
         assert_eq!(mode, 0o600);
         assert_eq!(first.derive_key("x"), second.derive_key("x"));
         assert_eq!(fs::metadata(keys.join(KEY_FILE)).unwrap().len(), 32);
+    }
+
+    #[test]
+    fn on_a_volume_without_hard_links_starters_still_end_up_with_one_whole_key() {
+        let folder = TempDir::new();
+        let keys = folder.path().join("keys");
+        let starters: Vec<_> = (0..8)
+            .map(|_| {
+                let keys = keys.clone();
+                std::thread::spawn(move || {
+                    Sealer::load_or_create_with(&keys, false)
+                        .unwrap()
+                        .derive_key("x")
+                })
+            })
+            .collect();
+
+        let derived: Vec<[u8; 32]> = starters
+            .into_iter()
+            .map(|starter| starter.join().unwrap())
+            .collect();
+
+        assert!(derived.iter().all(|key| *key == derived[0]));
+        assert_eq!(fs::metadata(keys.join(KEY_FILE)).unwrap().len(), 32);
+        let left: Vec<_> = fs::read_dir(&keys)
+            .unwrap()
+            .map(|e| e.unwrap().file_name().into_string().unwrap())
+            .collect();
+        assert_eq!(left, [KEY_FILE.to_string()]);
+    }
+
+    #[test]
+    fn a_lock_left_by_a_dead_starter_is_broken_after_half_a_minute() {
+        let folder = TempDir::new();
+        let keys = folder.path().join("keys");
+        fs::create_dir_all(&keys).unwrap();
+        let lock = fs::File::create(keys.join("master.key.lock")).unwrap();
+        lock.set_modified(std::time::SystemTime::now() - Duration::from_secs(60))
+            .unwrap();
+
+        let sealer = Sealer::load_or_create_with(&keys, false).unwrap();
+
+        assert_eq!(
+            sealer.derive_key("x"),
+            Sealer::load_or_create(&keys).unwrap().derive_key("x")
+        );
+        assert!(!keys.join("master.key.lock").exists());
     }
 
     #[test]
