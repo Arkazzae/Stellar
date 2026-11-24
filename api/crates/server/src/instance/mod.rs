@@ -7,6 +7,7 @@ pub mod addresses;
 pub mod admission;
 pub mod invites;
 pub mod names;
+pub mod operations;
 pub mod servers;
 pub mod starter;
 pub mod users;
