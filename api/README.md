@@ -395,6 +395,29 @@ for what the value is (`"session-cookie"`, `"totp-secret"`), once, in the module
 that seals it. A part that seals on its own, such as the single sign-on library,
 gets `state.sealer().derive_key("oidc")`, 32 bytes.
 
+The second step keeps two kinds of secret sealed, each for one purpose: an
+authenticator app's seed (`totp-secret`, bound to the account and the method)
+and a code mailed to a person (`email-code`, bound to the account and what the
+code is for). A row of either kind that the first server wrote was protected
+with that server's own keys and does not open here: the app's codes are all
+wrong, and the mailed code uses up its guesses. The person signs in with
+another step or a recovery code and sets that one up again. Everything else
+the second step stores (recovery codes, remembered devices, passkeys) is a
+digest or plain, and works on both servers.
+
+## The second step
+
+`auth::mfa::verify` answers a challenge that waits for a second step, and
+`auth::passkeys` does the same for a passkey; both run inside the transaction
+that completes the sign-in. A wrong proof is an ordinary outcome, not an error,
+because it must be committed (it spends an attempt of the challenge, writes an
+event and counts against the account's budget of failures). A proof that was
+right spends a code or a step, so a route that then refuses the sign-in for
+another reason returns an error from the closure and the transaction rolls
+back. Mail is never sent inside a transaction: `auth::email_codes::reserve`
+writes the code and the route commits, sends, and then marks the code
+delivered or failed.
+
 ## Sessions and who is calling
 
 The session cookie holds a sealed ticket (the account, its session version, the
