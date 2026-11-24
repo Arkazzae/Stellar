@@ -15,7 +15,7 @@
 //! - a request is at most 128 MiB, and one that declares more is refused
 //!   before a byte of it is read;
 //! - a body that arrives slower than 240 bytes a second, once it has had five
-//!   seconds to get going, is cut off, as is one that sends nothing for 30
+//!   seconds to get going, is cut off, as is one that sends nothing for six
 //!   seconds.
 //!
 //! What a request shows that the format forbids is a refusal ([`FormError`]):
@@ -47,7 +47,7 @@ pub const MAX_PARTS: usize = 1024;
 /// measured over.
 const GRACE: Duration = Duration::from_secs(5);
 /// How long the client may send nothing at all.
-const STALL: Duration = Duration::from_secs(30);
+const STALL: Duration = Duration::from_secs(6);
 /// The speed under which a body is cut off.
 const MINIMUM_BYTES_PER_SECOND: u64 = 240;
 

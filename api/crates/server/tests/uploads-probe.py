@@ -16,6 +16,7 @@ Both servers must have the rate limit of uploads lifted and no minimum of free
 disk space (Uploads__MinimumFreeDataRootBytes=0).
 """
 import json
+import os
 import re
 import socket
 import sys
@@ -331,6 +332,50 @@ def corpus(base, boss, maja, outsider):
     describe("icon remove again", send(base, "DELETE", "/api/admin/server/icon", None, None, boss))
 
 
+def hostile(base, boss):
+    """Bodies that lie, end early, never end, or are one byte over a limit."""
+    form = multipart([file_part()])
+
+    def raw(label, body, ctype="multipart/form-data; boundary=XXB", headers=None):
+        h = {"Content-Type": ctype}
+        h.update(headers or {})
+        describe(label, send(base, "POST", "/api/uploads", body, h, boss), 500)
+
+    raw("lying boundary", form, "multipart/form-data; boundary=OTHER")
+    raw("boundary is a prefix", form, "multipart/form-data; boundary=XX")
+    raw("never ends", multipart([file_part()], end=False))
+    raw("never ends in a part", b"--XXB\r\nContent-Disposition: form-data; name=\"file\"; filename=\"a\"\r\nContent-Type: image/png\r\n\r\n" + PNG)
+    raw("only a boundary", b"--XXB")
+    raw("nothing but junk", b"x" * 5000)
+    raw("three files", multipart([file_part(PNG, "1.png"), file_part(PNG, "2.png"), file_part(PNG, "3.png")]))
+    raw("three values", multipart([file_part(), part("durationSeconds", "1"), part("durationSeconds", "2"), part("durationSeconds", "3")]))
+    chunks = b"".join(b"%x\r\n" % len(form[i:i + 7]) + form[i:i + 7] + b"\r\n" for i in range(0, len(form), 7)) + b"0\r\n\r\n"
+    describe("chunked body", send(base, "POST", "/api/uploads", chunks, {"Content-Type": "multipart/form-data; boundary=XXB", "Transfer-Encoding": "chunked"}, boss), 200)
+    describe("declared too large", send(base, "POST", "/api/uploads", None, {"Content-Type": "multipart/form-data; boundary=XXB", "Content-Length": str(128 * 1024 * 1024 + 1)}, boss, timeout=10), 200)
+    describe("truncated", send(base, "POST", "/api/uploads", form[:60], {"Content-Type": "multipart/form-data; boundary=XXB", "Content-Length": str(len(form))}, boss, timeout=10), 200)
+    # The header lines of a part, to the byte.
+    for pad in (16293, 16294, 16295):
+        raw(f"header pad {pad}", multipart([part("file", PNG, "a.png", "image/png", ["X-P: " + "a" * pad])]))
+    raw("header line 20000", multipart([part("file", PNG, "a.png", "image/png", ["X-P: " + "a" * 20000])]))
+    raw("header line without end", b"--XXB\r\nX-P: " + b"a" * 40000)
+    raw("many empty headers", multipart([part("file", PNG, "a.png", "image/png", ["X-E:"] * 30)]))
+    raw("sixteen headers by other names", multipart([part("file", PNG, "a.png", "image/png", [f"X-{i}: v" for i in range(14)])]))
+    raw("name with NUL", multipart([part("fi\0le", PNG, "a.png", "image/png")]))
+    raw("file name dots", multipart([part("file", PNG, "..", "image/png")]))
+    raw("file name dot dot slash only", multipart([part("file", PNG, "../", "image/png")]))
+    raw("file name NUL only", multipart([part("file", PNG, "\0", "image/png")]))
+    raw("file name very long", multipart([part("file", PNG, "é" * 20000 + ".png", "image/png")]))
+    raw("same field a hundred times", multipart([file_part()] + [part("width", "1")] * 100))
+    raw("boundary in a header", multipart([part("file", PNG, "a.png", "image/png", ["X-B: --XXB"])]))
+    raw("file contains the delimiter", multipart([file_part(PNG + b"\r\n--XXBnot the end", "a.png")]))
+    if os.environ.get("UPLOADS_PROBE_HEAVY"):
+        video = MP4 + b"v" * (100 * 1024 * 1024 - len(MP4))
+        raw("video at limit", multipart([part("file", video, "v.mp4", "video/mp4")]))
+        raw("video over limit", multipart([part("file", video + b"v", "v.mp4", "video/mp4")]))
+        raw("whole body at the ceiling", multipart([part("file", video, "v.mp4", "video/mp4"), part("zzz", "a" * (28 * 1024 * 1024 - 400))]))
+        raw("whole body over the ceiling", multipart([part("file", video, "v.mp4", "video/mp4"), part("zzz", "a" * (29 * 1024 * 1024))]))
+
+
 def file_part_with(headers):
     extra = [f"X-H{i}: 1" for i in range(headers - 2)]
     return part("file", PNG, "a.png", "image/png", extra)
@@ -363,6 +408,7 @@ def main():
     # A person who is on no server at all: owns nothing here.
     outsider = None
     corpus(base, boss, maja, outsider)
+    hostile(base, boss)
 
 
 if __name__ == "__main__":
