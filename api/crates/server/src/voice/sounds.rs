@@ -10,8 +10,6 @@ use stellarr_hub::HubError;
 
 use super::hub::{internal, parse_id, send_to, visible};
 use crate::database::DbError;
-use crate::permissions::authorization::server_wide;
-use crate::permissions::privileges::{MANAGE_MESSAGES, MANAGE_SERVER, MODERATE_MEMBERS};
 use crate::permissions::visibility::ChannelKind;
 use crate::realtime::method::{Context, arguments};
 use crate::values::{Id, Timestamp};
@@ -23,19 +21,10 @@ const PLAYBACK_LEAD_MS: i64 = 750;
 
 const SOUNDBOARD_COOLDOWN: Duration = Duration::from_secs(5);
 
-/// The most of a clip that a room ever hears as somebody's arrival. A greeting
-/// may be recognisable but must not hold the floor, so the audible window
-/// starts where the soundboard clip starts and stops here whatever the clip
-/// does.
-pub const JOIN_SOUND_MAX_SECONDS: f64 = 5.0;
-
 /// How soon after an announcement the same person's next one is silent. It
 /// stops a rejoin loop from turning into a soundboard nobody can mute; the join
 /// itself is never delayed or refused.
 pub const JOIN_SOUND_COOLDOWN: Duration = Duration::from_secs(30);
-
-/// Who may play a server's sounds when it keeps its soundboard to staff.
-const STAFF: i64 = MANAGE_SERVER | MANAGE_MESSAGES | MODERATE_MEMBERS;
 
 /// A number of seconds written as the first server wrote it: a whole number
 /// without a point.
@@ -74,7 +63,7 @@ impl SoundDto {
     /// somebody auditions in settings is exactly what a channel hears.
     pub fn for_arrival(mut self) -> SoundDto {
         let start = self.trim_start_seconds.0;
-        self.trim_end_seconds = Seconds(self.trim_end_seconds.0.min(start + JOIN_SOUND_MAX_SECONDS));
+        self.trim_end_seconds = Seconds(crate::own_profile::join_sound::window_end(start, self.trim_end_seconds.0));
         self
     }
 }
@@ -182,7 +171,7 @@ pub(super) async fn play_soundboard(cx: Context, arguments: Vec<Value>) -> Resul
             let (Some((everyone_can_play, rate_limited)), Some(found)) = (rules, found) else {
                 return Ok((Some(server), false, Err(Refusal::UnknownSound)));
             };
-            if !everyone_can_play && server_wide(db, user, server)? & STAFF == 0 {
+            if !crate::soundboard::can_play(db, user, server, everyone_can_play)? {
                 return Ok((Some(server), rate_limited, Err(Refusal::Restricted)));
             }
             Ok((Some(server), rate_limited, Ok(found)))
@@ -214,7 +203,7 @@ pub(super) async fn play_soundboard(cx: Context, arguments: Vec<Value>) -> Resul
 /// Plays the joiner's own clip to the room they just walked into. It rides the
 /// soundboard's envelope, so the joiner hears it too and the setting is
 /// something one can check rather than take on trust. The clip is cut to
-/// [`JOIN_SOUND_MAX_SECONDS`] here and not in the browser, because how long an
+/// [`crate::own_profile::join_sound::MAX_SECONDS`] here and not in the browser, because how long an
 /// arrival may last is a rule of the room and not a preference of whoever
 /// listens.
 pub(super) async fn announce_join_sound(cx: &Context, room: Id, user: Id) -> Result<(), DbError> {
