@@ -14,6 +14,7 @@
 mod config;
 mod defaults;
 mod objects;
+mod oidc;
 mod origin;
 mod storage;
 mod trusted_proxies;
@@ -29,6 +30,7 @@ use stellarr_messages::{Language, Messages};
 use crate::values::Id;
 
 pub use config::Config;
+pub use oidc::{OidcSettings, Provider as OidcProvider};
 pub use storage::{Provider, StorageSettings, UploadSettings};
 pub use trusted_proxies::{Network, TrustedProxies, normalize};
 pub use variables::{VARIABLES, Variable};
@@ -592,6 +594,8 @@ pub struct Settings {
     pub secrets: EnvironmentSecrets,
     pub clients: ClientSettings,
     pub desktop: DesktopSettings,
+    /// The identity providers people may sign in through.
+    pub oidc: OidcSettings,
     pub discovery: DiscoverySettings,
     pub rate_limits: RateLimitSettings,
     pub storage: StorageSettings,
@@ -665,6 +669,7 @@ impl Settings {
             secrets: EnvironmentSecrets::load(config),
             clients: ClientSettings::load(config)?,
             desktop: DesktopSettings::load(config)?,
+            oidc: OidcSettings::load(config)?,
             discovery: DiscoverySettings::load(config)?,
             rate_limits: RateLimitSettings::load(config, &environment)?,
             storage: StorageSettings::load(config)?,
