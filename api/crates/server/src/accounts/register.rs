@@ -9,12 +9,14 @@ use axum::response::{IntoResponse, Response};
 use rusqlite::{Connection, Transaction, params};
 use serde::Deserialize;
 use stellarr_messages::{MessageKey, Messages};
+use stellarr_oidc::options::Provider;
 
 use crate::auth::flow::{self, Context, Options, Start};
 use crate::auth::policy::{ADMINS, EVERYONE, SecurityPolicy};
 use crate::auth::{cookies, password, session};
 use crate::database::DbError;
 use crate::http::{ApiError, ApiResult, Json, Origin, Problem, json_response, with_cookie, with_session_cookie};
+use crate::identity_providers::{self as providers, Pending, Requester};
 use crate::instance::access::{self, MANAGE_SERVER};
 use crate::instance::starter::{self, ServerRequest};
 use crate::instance::users::User;
@@ -104,6 +106,60 @@ fn invite_problem(message: String) -> ApiError {
     Problem::validation(vec![("inviteCode".into(), vec![message])]).into()
 }
 
+/// The identity a provider confirmed for this browser, which the account is
+/// made from instead of a password.
+#[derive(Clone)]
+struct External {
+    pending: Pending,
+    provider: Provider,
+    held: providers::Held,
+}
+
+fn identity_taken(connection: &Connection, pending: &Pending) -> rusqlite::Result<bool> {
+    connection.query_row(
+        "SELECT EXISTS (SELECT 1 FROM \"ExternalIdentities\" WHERE \"Issuer\" = ?1 AND \"Subject\" = ?2)",
+        params![pending.issuer, pending.subject],
+        |row| row.get(0),
+    )
+}
+
+/// The identity got linked to an account meanwhile. It is the person's own, so
+/// saying so tells them nothing about anybody else.
+fn identity_linked_problem(state: &AppState, provider: &Provider) -> Result<ApiError, ApiError> {
+    let name = providers::shown_name(provider, state.messages())?;
+    let title = state.messages().get(MessageKey::ProviderIdentityAlreadyLinked, &[("provider", &name)])?;
+    Ok(Problem::new(StatusCode::CONFLICT).title(title).into())
+}
+
+/// The identity this browser waits with, when it is still there, still of a
+/// provider that is set up, and that provider may create accounts.
+async fn resolve_external(state: &AppState, origin: &Origin) -> Result<External, ApiError> {
+    let held = providers::held_pending(&origin.headers, origin.https);
+    let looked = held.clone();
+    let found = state
+        .database()
+        .read(move |connection| -> Result<_, DbError> {
+            let Some(pending) = providers::find_pending(connection, looked.as_ref())? else {
+                return Ok(None);
+            };
+            let allowed = providers::sign_up_allowed(connection, &pending.provider_id)?;
+            Ok(Some((pending, allowed)))
+        })
+        .await?;
+    let messages = state.messages();
+    let provider = found.as_ref().and_then(|(pending, _)| state.settings().oidc.find(&pending.provider_id));
+    let (Some((pending, allowed)), Some(provider), Some(held)) = (found.as_ref(), provider, held) else {
+        return Err(Problem::new(StatusCode::BAD_REQUEST).title(messages.get(MessageKey::ProviderSignUpExpired, &[])?).into());
+    };
+    if !allowed {
+        let name = providers::shown_name(provider, messages)?;
+        return Err(Problem::new(StatusCode::FORBIDDEN)
+            .title(messages.get(MessageKey::ProviderSignUpClosed, &[("provider", &name)])?)
+            .into());
+    }
+    Ok(External { pending: pending.clone(), provider: provider.clone(), held })
+}
+
 /// Where the new account goes, as far as the checks can tell before anything
 /// is written.
 enum Plan {
@@ -121,18 +177,28 @@ fn check(
     request: &RegisterRequest,
     username: &str,
     email: &str,
+    external: Option<&External>,
 ) -> Result<Plan, ApiError> {
     let messages = state.messages();
     // Empty means no account at all. An instance with accounts but no server,
     // which only an edit of the database could leave, is not empty: it takes
     // an invite like any other, and nobody can found it again.
     let founding: bool = connection.query_row("SELECT NOT EXISTS (SELECT 1 FROM \"Users\")", [], |row| row.get(0))?;
+    if founding && external.is_some() {
+        // The owner's account is made with a password and the setup code.
+        return Err(Problem::new(StatusCode::CONFLICT).title(messages.get(MessageKey::ProviderSignUpNotForSetup, &[])?).into());
+    }
     if founding && !state.setup_code().matches(request.setup_code.as_deref()) {
         return Err(Problem::validation(vec![("setupCode".into(), vec![messages.get(MessageKey::SetupCodeInvalid, &[])?])]).into());
     }
     let taken = find_taken(connection, &crate::instance::names::to_upper(username), &crate::instance::names::to_upper(email), messages)?;
     if !taken.is_empty() {
         return Err(Problem::validation(taken).into());
+    }
+    if let Some(external) = external
+        && identity_taken(connection, &external.pending)?
+    {
+        return Err(identity_linked_problem(state, &external.provider)?);
     }
     if founding {
         let configuration = request.initial_server.clone().unwrap_or_else(|| ServerRequest {
@@ -224,7 +290,7 @@ fn write(
     tx.execute(
         "INSERT INTO \"Users\" (\"Id\", \"Username\", \"NormalizedUsername\", \"DisplayName\", \"PasswordHash\", \"Email\", \"NormalizedEmail\",
              \"ProviderVerifiedEmail\", \"IsDisabled\", \"SessionVersion\", \"SecurityRecoveryRequired\", \"AvatarColor\", \"CreatedAt\")
-         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, NULL, 0, 0, 0, ?8, ?9)",
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?10, 0, 0, 0, ?8, ?9)",
         params![
             id,
             input.username,
@@ -234,10 +300,16 @@ fn write(
             input.email,
             crate::instance::names::to_upper(&input.email),
             format!("oklch(0.58 0.14 {})", avatar_hue(id)),
-            now
+            now,
+            vouched_email(input)
         ],
     )?;
     let user = User::find(tx, id)?.ok_or_else(|| DbError::Task("the account just written is not there".into()))?;
+    if let Some(external) = &input.external {
+        // A new account is told nothing by mail about its first link.
+        let requester = Requester { ip_address: context.ip_address.to_string(), user_agent: context.user_agent.to_string() };
+        providers::stage(tx, &requester, id, &external.provider, &external.pending.issuer, &external.pending.subject, false)?;
+    }
     // The first account owns the new instance server; anybody else joins it
     // with the base role.
     let (server, role_is_owner, role_permissions, founded, invited_to) = match plan {
@@ -262,9 +334,32 @@ fn write(
         ADMINS => Some(role_is_owner || role_permissions & MANAGE_SERVER != 0),
         _ => None,
     };
-    let start = flow::start(tx, context, messages, &user, "registration", &policy, Options { required_override, ..Options::default() })?;
+    // An account made through a provider signs in as a sign-in through it
+    // would: the provider's second step counts when the instance trusts it and
+    // it is still recent now.
+    let options = match &input.external {
+        None => Options { required_override, ..Options::default() },
+        Some(external) => Options {
+            required_override,
+            short_lived: external.pending.short_lived,
+            second_step_at_provider: external.provider.passed_second_step(
+                &external.pending.amr.split(',').filter(|value| !value.is_empty()).collect::<Vec<_>>(),
+                external.pending.auth_time.as_deref(),
+                now.unix_seconds(),
+            ),
+            ..Options::default()
+        },
+    };
+    let source = if input.external.is_some() { "oidc" } else { "registration" };
+    let start = flow::start(tx, context, messages, &user, source, &policy, options)?;
     if let Start::Session(session) = &start {
         session.insert(tx)?;
+    }
+    if let Some(external) = &input.external {
+        // Used up: the identity is the account's now.
+        if providers::take_pending(tx, Some(&external.held), Some(external.pending.id))?.is_none() {
+            return Err(WriteError::PendingGone);
+        }
     }
     Ok(Registered { user, start, welcome, founded })
 }
@@ -274,6 +369,8 @@ enum WriteError {
     Db(DbError),
     /// What the checks found is no longer so.
     Stale,
+    /// The identity a provider confirmed was used or ran out meanwhile.
+    PendingGone,
 }
 
 impl From<DbError> for WriteError {
@@ -293,6 +390,17 @@ struct NewAccount {
     display_name: String,
     email: String,
     password_hash: Option<String>,
+    external: Option<External>,
+}
+
+/// The address counts as verified only when it is the one the provider said
+/// it verified, not merely one it knows.
+fn vouched_email(input: &NewAccount) -> Option<String> {
+    let external = input.external.as_ref()?;
+    let vouched = external.pending.email.as_deref().filter(|_| external.pending.email_verified)?;
+    vouched
+        .eq_ignore_ascii_case(&input.email)
+        .then(|| crate::instance::names::to_upper(&input.email))
 }
 
 pub async fn register(State(state): State<AppState>, origin: Origin, Json(request): Json<RegisterRequest>) -> ApiResult<Response> {
@@ -301,12 +409,7 @@ pub async fn register(State(state): State<AppState>, origin: Origin, Json(reques
     if !errors.is_empty() {
         return Err(Problem::validation(errors).into());
     }
-    if request.external {
-        // An identity a provider confirmed for this browser is read from a
-        // cookie that only a sign-in through a provider sets, and this server
-        // has none yet: there is nothing waiting.
-        return Err(Problem::new(StatusCode::BAD_REQUEST).title(messages.get(MessageKey::ProviderSignUpExpired, &[])?).into());
-    }
+    let external = if request.external { Some(resolve_external(&state, &origin).await?) } else { None };
     let username = request.username.as_deref().unwrap_or("").trim().to_string();
     let email = request.email.as_deref().unwrap_or("").trim().to_string();
 
@@ -323,22 +426,24 @@ pub async fn register(State(state): State<AppState>, origin: Origin, Json(reques
         let plan = {
             let (state, request, username, email) = (state.clone(), request.clone(), username.clone(), email.clone());
             let database = state.database().clone();
-            database.read(move |connection| check(connection, &state, &request, &username, &email)).await?
+            database.read({ let external = external.clone(); move |connection| check(connection, &state, &request, &username, &email, external.as_ref()) }).await?
         };
         let hash = match &password_hash {
-            Some(hash) => hash.clone(),
+            _ if external.is_some() => None,
+            Some(hash) => Some(hash.clone()),
             None => {
                 let password = request.password.clone().unwrap_or_default();
                 let made = tokio::task::spawn_blocking(move || password::hash(&password)).await.map_err(ApiError::internal)?;
                 password_hash = Some(made.clone());
-                made
+                Some(made)
             }
         };
         let input = NewAccount {
             username: username.clone(),
             display_name: request.display_name.as_deref().unwrap_or("").trim().to_string(),
             email: email.clone(),
-            password_hash: Some(hash),
+            password_hash: hash,
+            external: external.clone(),
         };
         let trusted_device_cookie = cookies::read(&origin.headers, trusted_device_name(origin.https));
         let (context_state, context_origin) = (state.clone(), origin.clone());
@@ -359,19 +464,35 @@ pub async fn register(State(state): State<AppState>, origin: Origin, Json(reques
         match outcome {
             Ok(registered) => break registered,
             // What the checks found has changed since: look again.
+            Err(WriteError::PendingGone) => {
+                return Err(Problem::new(StatusCode::BAD_REQUEST).title(messages.get(MessageKey::ProviderSignUpExpired, &[])?).into());
+            }
             Err(WriteError::Stale) if attempts < 3 => attempts += 1,
             Err(WriteError::Stale) => return Err(ApiError::internal("the instance kept changing under a registration")),
             // Somebody else wrote the same name or address after our check:
             // answer as the check would have, not with a server error.
             Err(WriteError::Db(error)) if error.is_unique_violation() => {
-                let taken = state
+                let (taken, identity) = state
                     .database()
                     .read({
-                        let (state, username, email) = (state.clone(), username.clone(), email.clone());
-                        move |connection| find_taken(connection, &crate::instance::names::to_upper(&username), &crate::instance::names::to_upper(&email), state.messages())
+                        let (state, username, email, external) = (state.clone(), username.clone(), email.clone(), external.clone());
+                        move |connection| -> Result<_, ApiError> {
+                            let taken = find_taken(connection, &crate::instance::names::to_upper(&username), &crate::instance::names::to_upper(&email), state.messages())?;
+                            let identity = match &external {
+                                Some(external) => identity_taken(connection, &external.pending)?,
+                                None => false,
+                            };
+                            Ok((taken, identity))
+                        }
                     })
                     .await?;
-                return Err(if taken.is_empty() { error.into() } else { Problem::validation(taken).into() });
+                if !taken.is_empty() {
+                    return Err(Problem::validation(taken).into());
+                }
+                if let Some(external) = external.as_ref().filter(|_| identity) {
+                    return Err(identity_linked_problem(&state, &external.provider)?);
+                }
+                return Err(error.into());
             }
             Err(WriteError::Db(error)) => return Err(error.into()),
         }
@@ -397,14 +518,27 @@ pub async fn register(State(state): State<AppState>, origin: Origin, Json(reques
             Err(error) => tracing::warn!("the welcome of a new account could not be announced: {error}"),
         }
     }
-    created(&state, &origin, registered)
+    let short_lived = external.as_ref().is_some_and(|external| external.pending.short_lived);
+    created(&state, &origin, registered, external.is_some(), short_lived)
+}
+
+/// Takes the cookie of the identity a registration used up away.
+fn forget_identity(response: Response, origin: &Origin, through_provider: bool) -> Response {
+    if through_provider {
+        with_cookie(response, &providers::clear_pending_cookie(origin.https))
+    } else {
+        response
+    }
 }
 
 pub fn trusted_device_name(https: bool) -> &'static str {
     if https { "__Host-stellarr-trust" } else { "stellarr-dev-trust" }
 }
 
-fn created(state: &AppState, origin: &Origin, registered: Registered) -> ApiResult<Response> {
+/// What the browser is told of a new account. One made through a provider
+/// keeps the choice made before leaving for it, and takes the cookie of the
+/// identity it used up away.
+fn created(state: &AppState, origin: &Origin, registered: Registered, through_provider: bool, short_lived: bool) -> ApiResult<Response> {
     let location = HeaderValue::from_static("/api/me");
     match registered.start {
         Start::Session(new) => {
@@ -417,16 +551,17 @@ fn created(state: &AppState, origin: &Origin, registered: Registered) -> ApiResu
                 registered.user.id,
                 registered.user.session_version,
                 new.id,
-                false,
+                short_lived,
             );
             let mut response = json_response(StatusCode::CREATED, &registered.user.dto("online"));
             response.headers_mut().insert(header::LOCATION, location);
-            Ok(with_session_cookie(response, &cookie))
+            let response = with_session_cookie(response, &cookie);
+            Ok(forget_identity(response, origin, through_provider))
         }
         Start::Challenge { body, cookie } => {
             let mut response = json_response(StatusCode::CREATED, &body);
             response.headers_mut().insert(header::LOCATION, location);
-            Ok(with_cookie(response, &cookie))
+            Ok(forget_identity(with_cookie(response, &cookie), origin, through_provider))
         }
         // A new account is never in need of recovery.
         Start::RecoveryRequired => Ok(StatusCode::CONFLICT.into_response()),
@@ -450,7 +585,7 @@ mod tests {
         let state = AppState::new(settings, database.clone(), Arc::new(Unconnected), Arc::new(Unconnected), Sealer::from_key([1; 32]));
         let messages = state.messages();
         let starter = starter::prepare(&starter::ServerRequest { name: Some("Crew".into()), ..Default::default() }, messages).ok().unwrap();
-        let input = || NewAccount { username: "maya".into(), display_name: "Maya".into(), email: "maya@example.test".into(), password_hash: None };
+        let input = || NewAccount { username: "maya".into(), display_name: "Maya".into(), email: "maya@example.test".into(), password_hash: None, external: None };
         // Somebody else has founded the instance since the check.
         let other = Id::random();
         database
