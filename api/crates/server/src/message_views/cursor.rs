@@ -120,7 +120,7 @@ fn unpadded(text: &str) -> Option<&str> {
     let padding = text.len() - body.len();
     match padding {
         0 => Some(body),
-        1 | 2 if (body.len() + padding) % 4 == 0 => Some(body),
+        1 | 2 if (body.len() + padding).is_multiple_of(4) => Some(body),
         _ => None,
     }
 }
