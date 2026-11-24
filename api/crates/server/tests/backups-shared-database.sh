@@ -31,6 +31,7 @@ oracle=http://127.0.0.1:$port
 pid=
 ACCESS=AKIAORACLEACCESS1234
 SECRET=ORACLESECRETVALUE9876xyz
+TOKEN=ORACLERELAYTOKEN5555qwerty
 cleanup() {
   [ -n "$pid" ] && kill "$pid" 2>/dev/null || true
   "$oracle_script" stop "$name" >/dev/null 2>&1 || true
@@ -104,19 +105,19 @@ docker stop -t 20 "$container" >/dev/null
 docker cp "$container:/tmp/data/stellarr.db" "$work/seeded.db"
 
 mkdir -p "$work/rust"
+rust_env=(Backups__InitialDelayMinutes=1440 "Cloudflare__R2__AccessKey=$ACCESS" "Cloudflare__R2__SecretKey=$SECRET")
 start_rust() {
   stop_rust
-  : > "$work/rust/log.txt"
+  listening_before=$(grep -c 'Now listening on' "$work/rust/log.txt" || true)
   env ASPNETCORE_ENVIRONMENT=Production Rtc__TurnSharedSecret=x STELLARR_DATA_ROOT="$work/rust" \
     "ConnectionStrings__Database=Data Source=$work/rust/stellarr.db" ASPNETCORE_URLS=http://127.0.0.1:0 \
     RateLimiting__AuthWrite__PermitLimit=500 RateLimiting__Login__PermitLimit=500 RateLimiting__InvitePreview__PermitLimit=500 \
-    Backups__InitialDelayMinutes=1440 Maintenance__Enabled=false \
-    "Cloudflare__R2__AccessKey=$ACCESS" "Cloudflare__R2__SecretKey=$SECRET" \
+    Maintenance__Enabled=false "${rust_env[@]}" \
     "Operations__PublicUrl=http://127.0.0.1:$port" DataRoot="$work/rust" \
     "$binary" >> "$work/rust/log.txt" 2>&1 &
   pid=$!
-  for _ in $(seq 1 50); do grep -q 'Now listening on' "$work/rust/log.txt" && break; sleep 0.2; done
-  rust=http://127.0.0.1:$(sed -n 's/.*listening on: http:\/\/127.0.0.1:\([0-9]*\).*/\1/p' "$work/rust/log.txt")
+  for _ in $(seq 1 100); do [ "$(grep -c 'Now listening on' "$work/rust/log.txt")" -gt "$listening_before" ] && break; sleep 0.2; done
+  rust=http://127.0.0.1:$(sed -n 's/.*listening on: http:\/\/127.0.0.1:\([0-9]*\).*/\1/p' "$work/rust/log.txt" | tail -1)
   ready "$rust"
 }
 stop_rust() { if [ -n "$pid" ]; then kill "$pid" 2>/dev/null || true; wait "$pid" 2>/dev/null || true; pid=; fi; }
@@ -144,9 +145,38 @@ edit_for() {
   esac
 }
 
+# What the environment of each server holds in the phases about the offsite
+# destination's credentials: none of them, one of the two S3 keys, only the
+# relay's token, and all three with a destination that cannot be reached (an
+# automatic backup then fails to copy, and the logs are searched).
+r2_settings() {
+  case "$1" in
+    r2-none) echo "" ;;
+    r2-access) echo "Cloudflare__R2__AccessKey=$ACCESS" ;;
+    r2-secret) echo "Cloudflare__R2__SecretKey=$SECRET" ;;
+    r2-token) echo "Cloudflare__R2__WorkerToken=$TOKEN" ;;
+    r2-all) printf '%s\n' "Cloudflare__R2__AccessKey=$ACCESS" "Cloudflare__R2__SecretKey=$SECRET" "Cloudflare__R2__WorkerToken=$TOKEN" \
+      "Backups__Enabled=true" "Backups__InitialDelayMinutes=1" "Backups__RetryMinutes=1" "Cloudflare__R2__Enabled=true" \
+      "Cloudflare__R2__Endpoint=https://127.0.0.1:5273" "Cloudflare__R2__Bucket=bk" ;;
+  esac
+}
+
 failed=0
-for phase in plain stale fresh cockpit-open cockpit-passed disabled; do
+for phase in ${PHASES:-plain stale fresh cockpit-open cockpit-passed disabled r2-none r2-access r2-secret r2-token r2-all}; do
   echo "== $phase"
+  : > "$work/rust/log.txt"
+  case "$phase" in
+    r2-*)
+      extra=$(r2_settings "$phase")
+      rust_env=(); while IFS= read -r line; do [ -n "$line" ] && rust_env+=("$line"); done <<< "$extra"
+      [ "$phase" = r2-all ] || rust_env+=(Backups__InitialDelayMinutes=1440)
+      { printf '%s\n' RateLimiting__AuthWrite__PermitLimit=500 RateLimiting__Login__PermitLimit=500 RateLimiting__InvitePreview__PermitLimit=500 Maintenance__Enabled=false
+        [ "$phase" = r2-all ] || echo Backups__InitialDelayMinutes=1440
+        [ -z "$extra" ] || echo "$extra"; } > "$work/oracle-$phase.env"
+      "$oracle_script" stop "$name" >/dev/null 2>&1 || true; docker rm -f "$container" >/dev/null 2>&1 || true
+      ORACLE_ENV_FILE="$work/oracle-$phase.env" "$oracle_script" start "$name" "$port" Production > "$work/start-$phase.log"
+      docker stop -t 20 "$container" >/dev/null ;;
+  esac
   put_oracle "$work/seeded.db"; put_rust "$work/seeded.db"; start_rust
   node "$here/backups-oracle.mjs" login --base "$oracle" --state "$work/state.json" --out "$work/jar-first.json"
   node "$here/backups-oracle.mjs" login --base "$rust" --state "$work/state.json" --out "$work/jar-this.json"
@@ -159,14 +189,16 @@ for phase in plain stale fresh cockpit-open cockpit-passed disabled; do
   docker cp "$work/p-oracle.db" "$container:/tmp/data/stellarr.db"; start_oracle
   docker exec "$container" sh -c 'rm -rf /tmp/data/backups/*; true'; docker cp "$work/fixtures/." "$container:/tmp/data/backups/"
   cp "$work/p-rust.db" "$work/rust/stellarr.db"; start_rust
-  node "$here/backups-oracle.mjs" ask --phase "$phase" --secrets "$SECRET" --base "$oracle" --state "$work/state.json" --cookies "$work/jar-first.json" --out "$work/$phase-first.txt"
-  node "$here/backups-oracle.mjs" ask --phase "$phase" --secrets "$SECRET" --base "$rust" --state "$work/state.json" --cookies "$work/jar-this.json" --out "$work/$phase-this.txt"
+  node "$here/backups-oracle.mjs" ask --phase "$phase" --secrets "$ACCESS,$SECRET,$TOKEN" --base "$oracle" --state "$work/state.json" --cookies "$work/jar-first.json" --out "$work/$phase-first.txt"
+  node "$here/backups-oracle.mjs" ask --phase "$phase" --secrets "$ACCESS,$SECRET,$TOKEN" --base "$rust" --state "$work/state.json" --cookies "$work/jar-this.json" --out "$work/$phase-this.txt"
   if python3 "$here/backups-diff.py" "$work/$phase-first.txt" "$work/$phase-this.txt" > "$work/$phase.diff"; then echo "the transcripts are the same"; else failed=1; cut -c1-${DIFF_WIDTH:-600} "$work/$phase.diff" | head -c ${DIFF_BYTES:-40000}; fi
+  docker logs "$container" > "$work/first-$phase.log" 2>&1 || true
   # Secrets must be in no answer and no log line.
-  for value in "$ACCESS" "$SECRET"; do
+  for value in "$ACCESS" "$SECRET" "$TOKEN"; do
     grep -qF "$value" "$work/rust/log.txt" && { echo "SECRET IN OUR LOG"; failed=1; }
     docker logs "$container" 2>&1 | grep -qF "$value" && { echo "SECRET IN THE FIRST SERVER'S LOG"; failed=1; }
     grep -qF "$value" "$work/$phase-this.txt" && { echo "SECRET IN OUR ANSWERS"; failed=1; }
+    grep -qF "$value" "$work/$phase-first.txt" && { echo "SECRET IN THE FIRST SERVER'S ANSWERS"; failed=1; }
   done
   if [ "$phase" = plain ]; then
     stop_rust; stop_oracle
