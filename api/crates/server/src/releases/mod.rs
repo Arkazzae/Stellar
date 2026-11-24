@@ -35,6 +35,7 @@ pub use catalogue::{
     find_update,
 };
 pub use manifest::Failure;
+pub use version::parse_stable;
 
 use crate::http::{
     ApiError, ApiResult, ClientInfo, Endpoints, Json, Path, Problem, Query, json_response,
