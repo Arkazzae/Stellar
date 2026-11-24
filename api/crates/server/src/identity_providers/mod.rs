@@ -18,8 +18,9 @@
 //! (`/api/auth/oidc/{id}/login`), the callback each provider is given, and the
 //! two routes of `/api/me/security/identities` that start a link and take an
 //! identity away. Starting a fresh sign-in at a provider as proof for a
-//! sensitive change (`reauthenticate`) waits for the call that records it on
-//! the session, which `auth` does not have yet.
+//! sensitive change (`reauthenticate`) is the same round trip with another
+//! ticket; what it ends in is recorded on the session by
+//! `callback::mark_reauthenticated`, the one place that writes it.
 
 mod callback;
 mod identities;
@@ -60,6 +61,10 @@ pub fn routes() -> Endpoints {
         .rate_limit(RateLimitPolicy::Login)
         .get("/api/auth/oidc/{id}/link", start::link_named)
         .rate_limit(RateLimitPolicy::Login)
+        .get("/api/auth/oidc/reauthenticate", start::reauthenticate_default)
+        .rate_limit(RateLimitPolicy::Login)
+        .get("/api/auth/oidc/{id}/reauthenticate", start::reauthenticate_named)
+        .rate_limit(RateLimitPolicy::Login)
         .get("/api/auth/oidc/callback", callback::callback_default)
         .post("/api/auth/oidc/callback", callback::callback_default)
         .put("/api/auth/oidc/callback", callback::callback_default)
@@ -72,6 +77,9 @@ pub fn routes() -> Endpoints {
         .delete("/api/auth/oidc/{id}/callback", callback::callback_named)
         .post("/api/me/security/identities/{provider_id}/link", identities::start_link)
         .json_body()
+        .authorized()
+        .rate_limit(RateLimitPolicy::SecurityWrite)
+        .post("/api/me/security/identities/{provider_id}/reauthenticate", identities::start_reauthentication)
         .authorized()
         .rate_limit(RateLimitPolicy::SecurityWrite)
         .post("/api/me/security/identities/{identity_id}/remove", identities::remove)

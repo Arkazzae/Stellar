@@ -54,7 +54,9 @@ impl Failed {
 #[derive(Clone)]
 pub struct Metadata {
     pub discovery: Arc<Discovery>,
-    pub keys: Arc<KeySet>,
+    /// None when the provider's key set could not be read; sign-in does not
+    /// need it until an answer comes back.
+    pub keys: Option<Arc<KeySet>>,
     fetched: Instant,
 }
 
@@ -109,39 +111,65 @@ impl SingleSignOn {
         Ok(fresh)
     }
 
-    /// The same, read again because a token named a key `seen` does not have:
-    /// once in five minutes, and not at all when somebody else just read it.
-    /// `None` when there is nothing newer to try.
-    pub async fn metadata_again(
-        &self,
-        provider: &Provider,
-        seen: &Metadata,
-    ) -> Result<Option<Metadata>, Failed> {
+    /// A token named a key the copy does not have. The provider may have
+    /// rotated its keys, so what it publishes is read again, for the sign-ins
+    /// after this one: this one has failed already, as the first server's did.
+    /// At most once in five minutes, so that tokens cannot make this server
+    /// read it over and over.
+    pub async fn ask_for_refresh(&self, provider: &Provider) {
         let slot = self.slot(provider);
         let mut slot = slot.lock().await;
-        if let Some(current) = &slot.current
-            && current.fetched > seen.fetched
-        {
-            return Ok(Some(current.clone()));
-        }
         if slot.forced.is_some_and(|at| at.elapsed() < FORCE_EVERY) {
-            return Ok(None);
+            return;
         }
         slot.forced = Some(Instant::now());
-        let fresh = self.fetch(provider).await?;
-        slot.current = Some(fresh.clone());
-        Ok(Some(fresh))
+        match self.fetch(provider).await {
+            Ok(fresh) => slot.current = Some(fresh),
+            Err(failed) => tracing::warn!("\"{}\" cannot be read again: {}", provider.id, failed.0),
+        }
+    }
+
+    /// The keys of a provider whose metadata was read without them, read now.
+    pub async fn keys_of(
+        &self,
+        provider: &Provider,
+        metadata: &Metadata,
+    ) -> Result<Arc<KeySet>, Failed> {
+        if let Some(keys) = &metadata.keys {
+            return Ok(keys.clone());
+        }
+        let slot = self.slot(provider);
+        let mut slot = slot.lock().await;
+        let keys = Arc::new(self.keys(&metadata.discovery).await?);
+        if let Some(current) = slot.current.as_mut() {
+            current.keys = Some(keys.clone());
+        }
+        Ok(keys)
+    }
+
+    async fn keys(&self, discovery: &Discovery) -> Result<KeySet, Failed> {
+        let body = self.document(&discovery.jwks_uri).await?;
+        jwks::parse(&body).map_err(Failed::of)
     }
 
     async fn fetch(&self, provider: &Provider) -> Result<Metadata, Failed> {
         let url = discovery::discovery_url(provider.authority());
         let body = self.document(&url).await?;
         let found = discovery::parse(&body).map_err(Failed::of)?;
-        let keys_body = self.document(&found.jwks_uri).await?;
-        let keys = jwks::parse(&keys_body).map_err(Failed::of)?;
+        // A provider that cannot be asked for its keys stops the sign-in, as
+        // it did on the first server. One that publishes none lets it start
+        // and fails every answer, which asks again.
+        let keys = match self.document(&found.jwks_uri).await {
+            Err(failed) => return Err(failed),
+            Ok(body) => match jwks::parse(&body) {
+                Ok(keys) => Some(Arc::new(keys)),
+                Err(jwks::JwksError::NoUsableKeys) => None,
+                Err(error) => return Err(Failed::of(error)),
+            },
+        };
         Ok(Metadata {
             discovery: Arc::new(found),
-            keys: Arc::new(keys),
+            keys,
             fetched: Instant::now(),
         })
     }

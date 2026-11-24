@@ -14,7 +14,10 @@ use crate::values::Timestamp;
 /// A redirect to `location`. An address a header cannot carry (it is on this
 /// origin and has characters beyond ASCII) is sent as the root instead.
 pub fn redirect(location: &str) -> Response {
-    let value = HeaderValue::from_str(location).unwrap_or_else(|_| HeaderValue::from_static("/"));
+    let value = Some(location)
+        .filter(|location| location.is_ascii())
+        .and_then(|location| HeaderValue::from_str(location).ok())
+        .unwrap_or_else(|| HeaderValue::from_static("/"));
     let mut response = Response::new(axum::body::Body::empty());
     *response.status_mut() = StatusCode::FOUND;
     response.headers_mut().insert(header::LOCATION, value);

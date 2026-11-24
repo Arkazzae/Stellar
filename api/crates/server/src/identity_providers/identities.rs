@@ -113,6 +113,50 @@ async fn linking(
     Ok(json_response(StatusCode::OK, &Started { url }))
 }
 
+/// The address that sends the account to a provider it is linked to, to sign
+/// in there again. It needs no proof: the round trip is the proof, and only
+/// for this session.
+pub async fn start_reauthentication(
+    State(state): State<AppState>,
+    caller: Caller,
+    Path(provider_id): Path<String>,
+) -> Response {
+    no_store(reauthentication(&state, caller, &provider_id).await.unwrap_or_else(IntoResponse::into_response))
+}
+
+async fn reauthentication(state: &AppState, caller: Caller, provider_id: &str) -> ApiResult<Response> {
+    let providers = owned(state);
+    let found = state
+        .database()
+        .read(move |connection| -> Result<Option<(i64, Vec<String>)>, DbError> {
+            let Some(user) = User::find(connection, caller.user)? else {
+                return Ok(None);
+            };
+            let linked = ways_in::linked_providers(connection, &providers.view(), user.id, None)?;
+            Ok(Some((user.session_version, linked)))
+        })
+        .await?;
+    let provider = state.settings().oidc.find(provider_id);
+    let (Some((version, linked)), Some(provider)) = (found, provider) else {
+        return Err(ApiError::not_found());
+    };
+    if !linked.contains(&provider.id) {
+        return Err(ApiError::not_found());
+    }
+    let actor = actor_of(caller.user, caller.session, version)
+        .ok_or_else(|| ApiError::internal("a security version beyond what a ticket holds"))?;
+    let ticket = ticket::issue(
+        state.single_sign_on().key(),
+        TicketKind::Reauthenticate,
+        actor,
+        &provider.id,
+        unix_now(),
+    )
+    .ok_or_else(|| ApiError::internal("a ticket could not be made"))?;
+    let url = format!("{}?ticket={}", provider.reauthenticate_path(), encode_component(&ticket));
+    Ok(json_response(StatusCode::OK, &Started { url }))
+}
+
 /// Takes an identity away, unless it is the last way the account signs in.
 pub async fn remove(
     State(state): State<AppState>,

@@ -170,7 +170,10 @@ async fn login(
     provider: Option<Provider>,
 ) -> ApiResult<Response> {
     // A value that is not a flag is refused before anything else.
-    let keep_signed_in = flag(&query, "keepSignedIn")?;
+    let keep_signed_in = match flag(&query, "keepSignedIn") {
+        Ok(flag) => flag,
+        Err(refusal) => return Ok(no_store(refusal.into_response())),
+    };
     let Some(provider) = provider else {
         return Ok(no_store(ApiError::not_found().into_response()));
     };
@@ -212,6 +215,33 @@ pub async fn link_named(
 ) -> ApiResult<Response> {
     let found = state.0.settings().oidc.find(&id).cloned();
     ticketed(state.0, client.0, headers, caller.0, query, found, TicketKind::Link).await
+}
+
+/// Sends a signed-in account to a provider it is linked to, to sign in there
+/// again as the proof a sensitive change asks for. The ticket is bound like a
+/// link's; the answer acts on this session and comes back to `returnUrl` on
+/// this origin, through the page that says how it went.
+pub async fn reauthenticate_default(
+    state: State<AppState>,
+    client: Extension<ClientInfo>,
+    headers: HeaderMap,
+    caller: MaybeCaller,
+    query: QueryValues,
+) -> ApiResult<Response> {
+    let first = state.0.settings().oidc.providers.first().cloned();
+    ticketed(state.0, client.0, headers, caller.0, query, first, TicketKind::Reauthenticate).await
+}
+
+pub async fn reauthenticate_named(
+    state: State<AppState>,
+    client: Extension<ClientInfo>,
+    headers: HeaderMap,
+    caller: MaybeCaller,
+    Path(id): Path<String>,
+    query: QueryValues,
+) -> ApiResult<Response> {
+    let found = state.0.settings().oidc.find(&id).cloned();
+    ticketed(state.0, client.0, headers, caller.0, query, found, TicketKind::Reauthenticate).await
 }
 
 async fn ticketed(
