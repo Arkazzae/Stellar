@@ -746,6 +746,10 @@ pub struct Settings {
     /// `Testing:Workers` (comma-separated; none when it is not set). `None`
     /// outside the Testing environment, where every worker runs.
     pub testing_workers: Option<Vec<String>>,
+    /// Tests only: where the GIF service is, in place of its own address
+    /// (`Testing:GiphyUrl`, a URL ending in a slash). Honoured in the Testing
+    /// environment alone, and the one place a test can stand in for it.
+    pub testing_giphy_url: Option<String>,
 }
 
 impl Settings {
@@ -794,6 +798,10 @@ impl Settings {
                 .filter(|name| !name.is_empty())
                 .collect()
         });
+        let testing_giphy_url = environment
+            .is_testing()
+            .then(|| config.text("Testing:GiphyUrl").map(str::to_string))
+            .flatten();
         Ok(Settings {
             listen: Listen::parse(urls.unwrap_or(Listen::DEFAULT))?,
             data_root: PathBuf::from(config.text("DataRoot").unwrap_or("data")),
@@ -819,6 +827,7 @@ impl Settings {
             embeds: objects::load_embeds(config)?,
             event_log,
             testing_workers,
+            testing_giphy_url,
             environment,
         })
     }
