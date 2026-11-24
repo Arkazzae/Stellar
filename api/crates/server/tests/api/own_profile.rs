@@ -108,7 +108,7 @@ async fn every_field_of_the_profile_is_counted_after_trimming_in_utf16_units() {
     }
     let empty = patch(&maja, "/api/me", json!({ "displayName": " \u{a0}\u{3000} " })).await;
     assert_eq!(empty.json::<Value>()["errors"]["displayName"][0], "Display name must be 1 to 64 characters long.");
-    // Every refusal at once, in the order the first server listed them.
+    // A request with multiple invalid fields reports all errors in field order.
     let all = patch(&maja, "/api/me", json!({ "pronouns": "p".repeat(33), "customStatus": "s".repeat(129), "bio": "b".repeat(2001), "displayName": "" })).await;
     let errors = all.text();
     let at = |name: &str| errors.find(&format!("\"{name}\":")).unwrap();
@@ -161,7 +161,7 @@ async fn an_account_that_never_saved_a_preference_has_the_defaults_and_changes_o
     assert_eq!(changed.json::<Value>(), expected);
     assert_eq!(me(&maja).await["preferences"], expected);
     assert_eq!(count(&server, "SELECT COUNT(*) FROM \"UserPreferences\""), 1);
-    // The members come in the order of the first server's answer.
+    // Check the field order of the JSON response.
     let text = changed.text();
     assert!(text.starts_with("{\"desktopNotifications\":true,\"emailNotifications\":true,\"pushNotifications\":false,\"mentionsOnly\":false,"), "{text}");
     assert!(text.ends_with("\"vadSensitivity\":60,\"joinSoundId\":null,\"mentionPopups\":true,\"callRingtone\":true}"), "{text}");

@@ -314,12 +314,10 @@ async fn pin_attempts_are_limited_per_account_and_per_address() {
     assert_eq!(read(&crowd.maja.client, BACKUP).await["remainingAttempts"], 8);
 }
 
-/// What the first server did with these eight requests under a limit of three
-/// (the address limit counts every request, before anything is read; the
-/// account limit counts the ones whose body could be read, whatever they
-/// say, and none that the address limit refused).
+/// The address limit counts all requests. The account limit counts those
+/// with readable bodies that got past the address limit.
 #[tokio::test]
-async fn which_refusals_cost_an_attempt_is_what_the_first_server_counted() {
+async fn address_and_account_limits_charge_attempts_at_different_stages() {
     let server = Server::start_with(&[
         ("STELLARR_ENVIRONMENT", "Development"),
         ("RateLimiting__PinUnlock__PermitLimit", "3"),

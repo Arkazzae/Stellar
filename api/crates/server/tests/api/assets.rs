@@ -304,7 +304,7 @@ async fn a_poster_and_a_preview_are_served_whole_with_their_type_and_size_only()
     assert_eq!(&poster.body[..], JPEG);
     assert_eq!(poster.header("content-type"), Some("image/jpeg"));
     assert_eq!(poster.header("content-length"), Some(JPEG.len().to_string().as_str()));
-    // The first server sent no `nosniff` with these; this one does.
+    // Poster responses disable content sniffing.
     assert_eq!(poster.header("x-content-type-options"), Some("nosniff"));
     for absent in ["accept-ranges", "content-disposition"] {
         assert_eq!(poster.header(absent), None, "{absent}");

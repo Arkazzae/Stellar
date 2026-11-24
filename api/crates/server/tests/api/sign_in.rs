@@ -625,9 +625,8 @@ async fn an_instance_that_asks_for_no_identification_lets_a_script_sign_in() {
 }
 
 #[tokio::test]
-async fn an_account_written_by_one_server_signs_in_on_the_other_because_the_stored_form_is_the_same() {
-    // The hash a first-server database holds for this password, made by the
-    // same parameters: written elsewhere, it verifies here.
+async fn a_persisted_pbkdf2_password_hash_can_be_used_to_sign_in() {
+    // A stored PBKDF2-SHA256 hash with 210,000 iterations and a known salt.
     let server = Server::start().await;
     server.found("owner").await;
     server

@@ -113,7 +113,7 @@ async fn the_automatic_backup_makes_one_verified_archive_and_a_restart_makes_no_
     );
     let state: Value = serde_json::from_slice(&std::fs::read(&checkpoint).unwrap()).unwrap();
     let object = state.as_object().unwrap();
-    // A Value sorts its members; the names are the first server's, PascalCase.
+    // Parsing as Value sorts the members. Stored setting names use PascalCase.
     let mut names: Vec<&str> = object.keys().map(String::as_str).collect();
     names.sort();
     assert_eq!(

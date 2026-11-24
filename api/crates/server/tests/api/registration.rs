@@ -524,10 +524,8 @@ async fn try_name(server: &Server, number: usize, name: &str) -> String {
     keys.join(",")
 }
 
-/// What the first server answered, one after another on one instance, when two
-/// spellings of a letter were registered in turn: the second is `username` when
-/// the two collide, because both are capitalized to the same name. The names
-/// are those of its probe; the results are its own.
+/// Registers each name pair in one instance. A collision makes the second
+/// registration return `username` because both share an uppercase key.
 async fn collisions(pairs: &[(&str, &str, &str, &str)]) {
     let server = Server::start().await;
     server.found("owner").await;
@@ -539,7 +537,7 @@ async fn collisions(pairs: &[(&str, &str, &str, &str)]) {
 }
 
 #[tokio::test]
-async fn letters_collide_as_they_do_on_the_first_server() {
+async fn username_collisions_follow_the_pinned_uppercase_mapping() {
     collisions(&[
         ("İ", "i", "created", "created"),
         ("ß", "ẞ", "created", "created"),
@@ -560,7 +558,7 @@ async fn letters_collide_as_they_do_on_the_first_server() {
 
 #[tokio::test]
 async fn the_dotless_i_is_not_capitalized_and_so_collides_with_nothing() {
-    // `bıll` is an account of its own on the first server, and `bill` is another.
+    // `bıll` and `bill` have distinct uppercase keys.
     collisions(&[("ı", "I", "created", "created")]).await;
 }
 

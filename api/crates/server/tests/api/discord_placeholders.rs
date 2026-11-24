@@ -3,11 +3,8 @@
 //! that is not there, and only the routes that show what it wrote show it,
 //! marked as what it is.
 //!
-//! The parts of the first server's walk that name routes this build does not
-//! have yet (the instance's control panel, channel-level member routes and
-//! permission overrides, password recovery) are left to the groups that bring
-//! them; the walk at the end fails when a route naming a person appears that
-//! is not walked here.
+//! The route inventory test catches new routes that name a person without
+//! coverage for placeholder accounts.
 
 use std::collections::BTreeSet;
 use std::path::Path;
@@ -246,10 +243,8 @@ async fn a_placeholder_is_absent_or_refused_everywhere_a_person_is_found_or_acte
         walked.insert(route);
         assert_eq!(send(&w.ada.client, method.clone(), &path, body).await, 404, "{method} {path}");
     }
-    // The other ways in and out, where the first server has no rule of its own:
-    // it treats the stand-in as a disabled account that has no password, no
-    // passkey, no recovery code and no address, and so does this one. The
-    // answers are the ones a name nobody has gets.
+    // Recovery and sign-in treat placeholders like unknown users. They
+    // have no password, passkey, recovery code or address.
     for name in ["discord:1", "discord:nobody-has-this"] {
         let recovery = anonymous
             .post_json(

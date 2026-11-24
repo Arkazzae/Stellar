@@ -275,7 +275,7 @@ async fn a_subscription_that_is_not_valid_is_a_validation_problem() {
 }
 
 #[tokio::test]
-async fn a_body_that_is_missing_or_of_the_wrong_shape_is_refused_as_the_first_server_did() {
+async fn requests_with_missing_or_invalid_bodies_are_rejected() {
     let server = start_with_push(&vapid()).await;
     let owner = server.found("owner").await;
     let validation = |response: &crate::support::Response| {

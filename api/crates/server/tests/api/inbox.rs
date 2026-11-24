@@ -1,5 +1,5 @@
 //! A person's inbox through the real binary: paging, reading, dismissing, what
-//! an entry looks like for each kind the first server knows, and what each
+//! an entry looks like for each notification kind, and what each
 //! change announces. What writes entries (invitations, mentions) is arranged
 //! in the database here.
 
@@ -150,7 +150,7 @@ async fn an_empty_inbox_has_nothing_in_it() {
 }
 
 #[tokio::test]
-async fn an_entry_has_its_members_in_the_order_the_first_server_wrote_them() {
+async fn an_inbox_entry_preserves_json_field_order() {
     let i = inbox().await;
     i.put(Row { server: i.home, user: &i.ada, title: "Hello", at: "2026-03-01 10:00:00.5", channel: Some(i.channel), invite: None, source: "sdk" });
     let response = i.ada.client.get("/api/notifications").await;
