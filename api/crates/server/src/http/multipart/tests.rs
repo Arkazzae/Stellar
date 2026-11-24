@@ -270,9 +270,10 @@ async fn a_request_that_is_no_form_is_refused_as_such() {
             "{content_type}"
         );
     }
+    // A request that names no type at all is a bad request, not another kind.
     assert_eq!(
         Multipart::open(&HeaderMap::new(), Body::empty(), 10).err(),
-        Some(FormError::NotAForm)
+        Some(FormError::Malformed)
     );
     assert_eq!(
         Multipart::open(

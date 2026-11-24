@@ -308,7 +308,10 @@ impl Multipart {
         let content_type = headers
             .get(header::CONTENT_TYPE)
             .and_then(|value| value.to_str().ok())
-            .ok_or(FormError::NotAForm)?;
+            // The first server answers a request that names no type with a bad
+            // request, where one that names another type is told it is the
+            // wrong kind.
+            .ok_or(FormError::Malformed)?;
         let boundary = boundary_of(content_type)?;
         if declared.is_some_and(|length| length > ceiling as u64) {
             return Err(FormError::TooLarge);
