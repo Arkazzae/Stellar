@@ -51,6 +51,18 @@ impl World {
         connection
     }
 
+    /// A desktop handoff approved and not used, and one nobody approved.
+    fn handoffs(&self, user: Id) {
+        let now = Timestamp::now();
+        self.db()
+            .execute(
+                "INSERT INTO \"DesktopBrowserLogins\" (\"Id\", \"SecretHash\", \"UserId\", \"SecurityVersion\", \"CreatedAt\", \"ExpiresAt\", \"ApprovedAt\", \"RedeemedAt\")
+                 VALUES (?1, 'h', ?3, 1, ?4, ?4, ?4, NULL), (?2, 'h', ?3, 1, ?4, ?4, NULL, NULL)",
+                params![Id::random(), Id::random(), user, now],
+            )
+            .unwrap();
+    }
+
     fn count(&self, sql: &str) -> i64 {
         self.db().query_row(sql, [], |row| row.get(0)).unwrap()
     }
@@ -1331,15 +1343,30 @@ async fn a_change_of_password_ends_other_sessions_and_remembered_devices() {
             .unwrap();
     }
 
+    world.handoffs(user);
+
     let version = world
         .state
         .database()
-        .write(move |tx| recovery::credentials_changed(tx, user, mine.session, Timestamp::now()))
+        .write(move |tx| {
+            recovery::credentials_changed(tx, user, Some(mine.session), Timestamp::now())
+        })
         .await
         .map_err(|e: DbError| e)
         .unwrap();
 
     assert_eq!(version, 2);
+    // The handoff that was approved is spent; the one nobody approved is left.
+    assert_eq!(
+        world.count(
+            "SELECT COUNT(*) FROM \"DesktopBrowserLogins\" WHERE \"RedeemedAt\" IS NOT NULL"
+        ),
+        1
+    );
+    assert_eq!(
+        world.count("SELECT COUNT(*) FROM \"DesktopBrowserLogins\" WHERE \"RedeemedAt\" IS NULL"),
+        1
+    );
     let revoked: bool = world
         .db()
         .query_row(
@@ -1354,4 +1381,56 @@ async fn a_change_of_password_ends_other_sessions_and_remembered_devices() {
         0
     );
     assert_eq!(world.count("SELECT COUNT(*) FROM \"UserSessions\" WHERE \"RevokedAt\" IS NULL AND \"SecurityVersion\" = 2"), 1);
+}
+
+#[tokio::test]
+async fn a_reset_by_mail_has_no_session_to_keep_and_ends_them_all() {
+    let world = World::new();
+    let user = world.user(None);
+    caller(&world, user, None);
+    caller(&world, user, None);
+    {
+        let state = world.state.clone();
+        world
+            .state
+            .database()
+            .write(move |tx| {
+                trusted_devices::issue(
+                    tx,
+                    &CONTEXT,
+                    state.messages(),
+                    user,
+                    &Default::default(),
+                    Timestamp::now(),
+                )
+                .map(|_| ())
+            })
+            .await
+            .unwrap();
+    }
+    world.handoffs(user);
+
+    let version = world
+        .state
+        .database()
+        .write(move |tx| recovery::credentials_changed(tx, user, None, Timestamp::now()))
+        .await
+        .map_err(|e: DbError| e)
+        .unwrap();
+
+    assert_eq!(version, 2);
+    assert_eq!(
+        world.count("SELECT COUNT(*) FROM \"UserSessions\" WHERE \"RevokedAt\" IS NULL"),
+        0
+    );
+    assert_eq!(
+        world.count("SELECT COUNT(*) FROM \"TrustedDevices\" WHERE \"RevokedAt\" IS NULL"),
+        0
+    );
+    assert_eq!(
+        world.count(
+            "SELECT COUNT(*) FROM \"DesktopBrowserLogins\" WHERE \"RedeemedAt\" IS NOT NULL"
+        ),
+        1
+    );
 }

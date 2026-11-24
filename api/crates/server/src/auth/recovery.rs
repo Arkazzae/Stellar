@@ -218,12 +218,13 @@ pub(super) fn finish_enrollment(
 }
 
 /// Moves the account to a new security version, which ends every session but
-/// `keep_session` (kept, at the new version) and forgets every remembered
-/// device. The new version. What a removal of a second step does.
+/// `keep_session` (kept, at the new version; none keeps nothing) and forgets
+/// every remembered device. The new version. What a removal of a second step
+/// does.
 pub(super) fn end_other_sessions(
     tx: &Transaction,
     user: Id,
-    keep_session: Id,
+    keep_session: Option<Id>,
     now: Timestamp,
 ) -> Result<i64, DbError> {
     tx.execute(
@@ -236,7 +237,7 @@ pub(super) fn end_other_sessions(
         |row| row.get(0),
     )?;
     tx.execute(
-        "UPDATE \"UserSessions\" SET \"RevokedAt\" = ?3 WHERE \"UserId\" = ?1 AND \"Id\" <> ?2 AND \"RevokedAt\" IS NULL",
+        "UPDATE \"UserSessions\" SET \"RevokedAt\" = ?3 WHERE \"UserId\" = ?1 AND (?2 IS NULL OR \"Id\" <> ?2) AND \"RevokedAt\" IS NULL",
         params![user, keep_session, now],
     )?;
     super::trusted_devices::revoke_all(tx, user, now)?;
@@ -249,12 +250,13 @@ pub(super) fn end_other_sessions(
 
 /// What a change of the account's password does, which the route that changes
 /// it must call in the same transaction: what [`end_other_sessions`] does, and
-/// every desktop handoff that was approved but not used ends too. The new
-/// version.
+/// every desktop handoff that was approved but not used ends too. A change
+/// made from a session keeps that session; a reset by mail has none to keep
+/// and ends them all. The new version.
 pub fn credentials_changed(
     tx: &Transaction,
     user: Id,
-    keep_session: Id,
+    keep_session: Option<Id>,
     now: Timestamp,
 ) -> Result<i64, DbError> {
     let version = end_other_sessions(tx, user, keep_session, now)?;
