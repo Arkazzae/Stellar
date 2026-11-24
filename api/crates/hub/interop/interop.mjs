@@ -1,7 +1,6 @@
 #!/usr/bin/env node
 // Drives the real @microsoft/signalr client, and a raw WebSocket, against the
-// Rust hub (through a small test server) or against the reference server it replaces,
-// and checks that both answer the same way.
+// Rust hub (through a small test server), and checks what each answers.
 //
 // Run by hand. It needs Node 22 or later and the repository's node_modules
 // (the client library and its `ws` package); set STELLARR_NODE_MODULES when
@@ -13,12 +12,6 @@
 //   node crates/hub/interop/interop.mjs --spawn <target dir>/debug/examples/interop_server
 //
 // or start `interop_server 5300` yourself and pass --url http://127.0.0.1:5300.
-//
-// Against the reference server, started with `oracle start hub 5192` and an account
-// that has signed in (the session cookie goes in --cookie):
-//
-//   node crates/hub/interop/interop.mjs --oracle --url http://127.0.0.1:5192 \
-//        --cookie stellarr-dev-session=VALUE
 //
 // Two clients are driven: the @microsoft/signalr library, and the web
 // client's own hub connection, which opens the WebSocket straight on the hub
@@ -61,7 +54,6 @@ const { HubConnectionBuilder, HubConnectionState, LogLevel } = signalr;
 const args = process.argv.slice(2);
 const flag = (name) => args.includes(name);
 const value = (name) => (args.includes(name) ? args[args.indexOf(name) + 1] : undefined);
-const oracle = flag("--oracle");
 const verbose = flag("--verbose");
 const kinds = (value("--clients") ?? "library,web").split(",");
 const webClientPath = value("--web-client") ?? process.env.STELLARR_WEB_HUB_CLIENT;
@@ -249,7 +241,7 @@ const call = (id, target, ...a) => JSON.stringify({ type: 1, invocationId: id, t
 // --------------------------------------------------------------- scenarios
 
 const scenarios = [];
-const scenario = (name, run, { ours = true, theirs = true, slow = false } = {}) => scenarios.push({ name, run, ours, theirs, slow });
+const scenario = (name, run, { slow = false } = {}) => scenarios.push({ name, run, slow });
 
 scenario("negotiate: version 1 answer", async () => {
   const response = await fetch(`${hubUrl}/negotiate?negotiateVersion=1`, { method: "POST", headers });
@@ -334,7 +326,7 @@ scenario("events sent by the server to a group", async () => {
   assert(sent.sent >= 1, "the group had a member");
   await until("the event", () => a.events.some(([n, t]) => n === "Said" && t === "hello-group"));
   await a.connection.stop();
-}, { theirs: false });
+});
 
 scenario("idle for 70 seconds with only the keep-alive between us", async () => {
   const { connection, log } = client();
@@ -391,7 +383,7 @@ scenario("a close started by the server is followed by the client's reconnect", 
   assert(connection.connectionId !== first, "a new connection");
   assert(Number.isFinite(await connection.invoke("GetRtcClock")), "the new connection works");
   await connection.stop();
-}, { theirs: false });
+});
 
 scenario("a close with an error is reported to the client, which reconnects", async () => {
   const { connection, log } = client();
@@ -400,7 +392,7 @@ scenario("a close with an error is reported to the client, which reconnects", as
   await until("the reconnect", () => log.some(([n]) => n === "reconnected"));
   assert(String(log[0][1]).includes("test close"), `the error reached the client: ${log[0][1]}`);
   await connection.stop();
-}, { theirs: false });
+});
 
 scenario("an abort by the server is final: the client does not come back", async () => {
   const { connection, log } = client();
@@ -410,7 +402,7 @@ scenario("an abort by the server is final: the client does not come back", async
   await sleep(600);
   equal(log.map(([n]) => n), ["closed"], "closed once, no reconnect");
   equal(await (await fetch(`${baseUrl}/control/count`, { method: "POST" })).text(), "0", "the server has no connections left");
-}, { theirs: false });
+});
 
 scenario("an abrupt drop of the connection is followed by a reconnect", async () => {
   const { connection, log } = client();
@@ -432,11 +424,11 @@ scenario("stopping the client leaves nothing behind on the server", async () => 
   equal(Number(await control("count")), before + 1, "one more connection");
   await connection.stop();
   await until("the connection to be forgotten", async () => Number(await control("count")) === before);
-}, { theirs: false });
+});
 
 // A record at a time, what the hub answers to things the client library
 // never sends but other clients might. The expected answers are what the
-// reference server was recorded giving.
+// hub is meant to give.
 const GENERAL = `{"error":"An unexpected error occurred during connection handshake."}`;
 const CLOSED = `{"type":7,"error":"Connection closed with an error.","allowReconnect":true}`;
 const completion = (id, error) => `{"type":3,"invocationId":"${id}","error":${JSON.stringify(error)}}`;
@@ -517,7 +509,6 @@ scenario("raw: a handshake that never comes is cancelled after 15 seconds", asyn
 let failed = 0;
 let ran = 0;
 for (const s of scenarios) {
-  if ((oracle && !s.theirs) || (!oracle && !s.ours)) continue;
   if (only && !only.some((o) => s.name.includes(o))) continue;
   if (s.slow && flag("--skip-idle")) continue;
   const usesClient = s.run.toString().includes("client(");
@@ -535,6 +526,6 @@ for (const s of scenarios) {
     }
   }
 }
-console.log(`\n${ran - failed} of ${ran} scenarios passed against ${oracle ? "the reference server" : "the Rust hub"}.`);
+console.log(`\n${ran - failed} of ${ran} scenarios passed against the Rust hub.`);
 child?.kill();
 process.exit(failed ? 1 : 0);
