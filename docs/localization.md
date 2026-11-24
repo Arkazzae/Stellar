@@ -1,6 +1,6 @@
 # Localization
 
-Stellarr supports English (`en`, default) and Polish (`pl`) across the web client, Stellarr Cockpit, and the ASP.NET Core API, plus offline in-browser chat message translation powered by Mozilla's Bergamot WebAssembly engine.
+Stellarr supports English (`en`, default) and Polish (`pl`) across the web client, Stellarr Cockpit, and the Rust API, plus offline in-browser chat message translation powered by Mozilla's Bergamot WebAssembly engine.
 
 ## Locale resolution and `STELLARR_LANGUAGE`
 
@@ -16,7 +16,7 @@ Setting `STELLARR_LANGUAGE=pl` (or `en`) in `.env` configures the instance defau
    2. Instance default from `/stellarr-instance.js` (cached for 1 hour by Nginx and served immediately with background revalidation by the Service Worker, plus a `localStorage` hint `stellarr_instance_language_hint` for early preloading)
    3. `en`
 2. **Cockpit (`web/src/cockpit/`)**: Uses the locale chosen in its own **Settings** page (`localStorage` key `stellarr.cockpit.locale`), defaulting to `en`. It is independent of the web client's locale and does not load `/stellarr-instance.js`.
-3. **API (`server/Stellarr.Api/`)**: Reads `Stellarr:Language` (`STELLARR_LANGUAGE`) at startup (`LanguageOptions`) for API problem details, validation errors, system messages, default server/role/channel names, audit log sentences, and outgoing emails.
+3. **API (`api/crates/server/`)**: Reads `Stellarr:Language` (`STELLARR_LANGUAGE`) at startup for API problem details, validation errors, system messages, default server/role/channel names, audit log sentences, and outgoing emails.
 
 > [!NOTE]
 > Changing `STELLARR_LANGUAGE` affects API responses, emails, and newly created database records going forward. Records already stored in SQLite retain the language they were written in.
@@ -25,7 +25,7 @@ Setting `STELLARR_LANGUAGE=pl` (or `en`) in `.env` configures the instance defau
 
 - **Web client (`web/src/stellarr/i18n/`)**: [`messages/pl.ts`](../web/src/stellarr/i18n/messages/pl.ts) defines `MessageKey`, and [`messages/en.ts`](../web/src/stellarr/i18n/messages/en.ts) enforces key parity via `satisfies Record<keyof typeof pl, string>` at compile time. `t(key, values)` interpolates `{name}` placeholders as plain text. Each catalog compiles into a separate Rollup chunk (`web/documents.ts` fails the build if a catalog leaks into the main entry chunk or if the two catalogs share a chunk).
 - **Cockpit (`web/src/cockpit/i18n/`)**: `en.ts` and `pl.ts` enforce matching key sets and `{name}` interpolation.
-- **Backend API (`server/Stellarr.Api/Localization/`)**: `MessageKey.cs` enumerates server message keys; `Messages.en.cs` and `Messages.pl.cs` implement exhaustive switch expressions over `MessageKey`.
+- **Backend API (`api/crates/messages/`)**: `key.rs` enumerates server message keys; `english.rs` and `polish.rs` implement exhaustive `match` expressions over `MessageKey`, so a key without a text in both languages does not compile.
 
 ## Client-side chat translation
 
@@ -72,8 +72,8 @@ npm run test:translation-runtime -w stellarr-web
 # Cockpit tests alone
 npx -w stellarr-web vitest run --project cockpit
 
-# Server localization tests
-dotnet test server/Stellarr.Api.Tests --filter LocalizationTests
+# Server localization tests (run from api/)
+cargo test -p stellarr-messages
 ```
 
 `npm run test:translation-runtime -w stellarr-web` stages assets from `artifacts/manifest.json` and runs headless Chromium (`/usr/bin/chromium` or `STELLARR_CHROMIUM`) offline against `bergamot-worker.js` and the 2.x models, verifying `pl → en` and `en → pl` translation, `Intl.Segmenter` sentence splitting, duplicate short-reply collapsing, content-addressed IndexedDB caching across browser restarts, and pruning of stale model keys.

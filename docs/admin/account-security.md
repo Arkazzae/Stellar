@@ -152,6 +152,6 @@ Operator recovery performs the following steps atomically:
 > [!NOTE]
 > The **instance owner's** own account can only be recovered via the CLI (`stellarr security recover`), because recovery revokes all active sessions including the current Cockpit session.
 
-## Backups and data-protection keys
+## Backups and the master key
 
-TOTP seeds and Cockpit secrets are encrypted using ASP.NET Core data-protection keys stored in `/data/stellarr/keys/`. Always take full backups (via Cockpit or volume archives in [Upgrading](../install/upgrading.md)) so `keys/` remains paired with `db/stellarr.db`. Restoring a database without its matching `keys/` directory renders encrypted TOTP seeds unreadable and requires recovery codes or operator recovery.
+TOTP seeds and Cockpit secrets are sealed with the instance's master key, stored in `/data/stellarr/keys/` (`master.key`). Always take full backups (via Cockpit or volume archives in [Upgrading](../install/upgrading.md)) so `keys/` remains paired with `db/stellarr.db`. Restoring a database without its matching `keys/` directory renders encrypted TOTP seeds unreadable and requires recovery codes or operator recovery.

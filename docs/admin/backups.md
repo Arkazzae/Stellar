@@ -10,8 +10,8 @@ Cockpit supports two backup formats:
 - **Full backup**: A `.zip` archive containing `manifest.json` and four sections:
   1. Online SQLite snapshot (`stellarr.db`)
   2. Uploaded objects (`objects/`)
-  3. Data-protection keys (`keys/`)
-  4. Instance files (`instance/`: `secrets/`, `tls/`, `releases/`, `instance-id`)
+  3. Keys, including the master key that seals secrets (`keys/`)
+  4. Instance files (`instance/`: `secrets/`, `tls/`, `releases/`)
 
 > [!IMPORTANT]
 > Automatic scheduled backups always produce **full backups** and fail if any referenced upload is missing on disk. Because `.env` is never stored inside backup archives, maintain a separate copy of `.env` in your recovery store.
@@ -19,7 +19,7 @@ Cockpit supports two backup formats:
 ## Schedule and configuration
 
 - **Cockpit**: Changes saved under **Backups → Backup settings** take effect within one minute without a container restart. Modifying the backup policy requires a fresh second factor when MFA is enabled on the owner account. Click **Restore deployment defaults** to revert to `.env` values.
-- **Environment defaults**: Set seed defaults in `.env` and apply with `docker compose up -d`. Production containers enable automatic backups unless `STELLARR_BACKUP_ENABLED=false`; running the API directly with `dotnet run` outside the container leaves automatic backups off by default.
+- **Environment defaults**: Set seed defaults in `.env` and apply with `docker compose up -d`. Production containers enable automatic backups unless `STELLARR_BACKUP_ENABLED=false`; running the API binary directly, outside the container, leaves automatic backups off by default.
 
 ```dotenv
 STELLARR_BACKUP_ENABLED=true
@@ -52,7 +52,7 @@ The [operator CLI](cli.md) verifies and stages **full backups** for automated re
    docker compose exec stellarr stellarr backup restore backup-20261114-030000-<id>.zip --yes
    ```
 
-3. Restart the container. Before starting any service or reading shared secrets, `stellarr-entrypoint` runs `stellarr backup apply --yes`, which swaps `db/`, `files/`, `keys/`, `secrets/`, `tls/`, `releases/`, and `instance-id` into place and moves the previous directories into `/data/stellarr/restore/previous-<timestamp>/`:
+3. Restart the container. Before starting any service or reading shared secrets, `stellarr-entrypoint` runs `stellarr backup apply --yes`, which swaps `db/`, `files/`, `keys/`, `secrets/`, `tls/`, and `releases/` into place and moves the previous directories into `/data/stellarr/restore/previous-<timestamp>/`:
 
    ```bash
    docker compose restart stellarr
