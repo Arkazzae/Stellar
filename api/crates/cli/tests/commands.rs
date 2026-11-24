@@ -341,6 +341,7 @@ fn startup_settings_read_the_image_defaults_and_the_operators_variables() {
     let instance = Instance::started();
 
     for (key, value) in [
+        ("rtc.turn-enabled", "false"),
         ("rtc.turn-tcp-enabled", "false"),
         ("rtc.turns-enabled", "false"),
         ("rtc.media-port", "49000"),
@@ -356,10 +357,15 @@ fn startup_settings_read_the_image_defaults_and_the_operators_variables() {
         ("localhost".into(), "entrypoint".into())
     );
     let operator = [
+        ("STELLARR_TURN_ENABLED", "true"),
         ("STELLARR_TURN_TCP_ENABLED", "true"),
         ("STELLARR_MEDIA_PORT", "49010"),
         ("Rtc__TurnsPort", "5350"),
     ];
+    assert_eq!(
+        value_and_source(&instance, &operator, "rtc.turn-enabled"),
+        ("true".into(), "environment".into())
+    );
     assert_eq!(
         value_and_source(&instance, &operator, "rtc.turn-tcp-enabled"),
         ("true".into(), "environment".into())
