@@ -14,8 +14,6 @@ mod profile;
 
 use crate::http::{Endpoints, RateLimitPolicy};
 
-pub use announce::{invitation_arrived, invitations_changed};
-
 /// A body that must be a JSON object. A list is no object, though serde would
 /// read one into a struct whose members all have defaults.
 pub struct Object<T>(pub T);

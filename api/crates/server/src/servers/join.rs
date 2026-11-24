@@ -76,8 +76,6 @@ pub fn joined(entry: Entry, state: &AppState) -> Result<Done, ApiError> {
 pub async fn publish(state: &AppState, user: Id, server: Id, done: Done) {
     announce::welcomed(state, done.welcome).await;
     if done.cleared > 0 {
-        state
-            .events()
-            .publish(announce::invitations_changed(user, server));
+        crate::inbox::announce_invitations_changed(state.events(), user, server);
     }
 }
