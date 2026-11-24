@@ -100,7 +100,6 @@ impl Error {
     pub fn is_retryable(&self) -> bool {
         matches!(self.kind, ErrorKind::Throttled | ErrorKind::Unavailable)
     }
-
 }
 
 impl fmt::Display for Error {

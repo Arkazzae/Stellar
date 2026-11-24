@@ -333,7 +333,6 @@ fn check_database(runtime: &Runtime) -> Check {
     }
 }
 
-
 #[cfg(test)]
 mod tests {
     use super::*;
