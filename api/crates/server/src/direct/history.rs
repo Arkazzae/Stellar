@@ -10,7 +10,7 @@ use stellarr_messages::{MessageKey, Messages};
 use super::peer_in;
 use crate::auth::Caller;
 use crate::http::{ApiError, ApiResult, Path, QueryValues, json_response};
-use crate::messages::cursor::{HistoryCursor, Reading};
+use crate::messages::cursor::HistoryCursor;
 use crate::messages::field_problem;
 use crate::social::conversations::{self, DirectMessage};
 use crate::social::is_blocked;
@@ -72,8 +72,7 @@ fn read_page(
             before: None,
         },
         Some(text) => match HistoryCursor::decode(&text) {
-            Reading::Cursor(cursor) if cursor.scope == conversation => cursor,
-            Reading::Fault => return Err(ApiError::internal("a history cursor could not be read")),
+            Some(cursor) if cursor.scope == conversation => cursor,
             _ => {
                 return Err(field_problem("cursor", messages, MessageKey::DirectHistoryCursorInvalid, &[]));
             }
