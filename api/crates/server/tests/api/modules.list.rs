@@ -3,6 +3,7 @@ mod database;
 mod health;
 mod mail;
 mod messages;
+mod message_views;
 mod oracle;
 mod permissions;
 mod pipeline;
