@@ -1313,7 +1313,11 @@ mod previews {
         assert_eq!(pictures.len(), 1);
         assert_eq!(thumbnail, format!("/assets/{}", pictures[0].0));
         assert!(pictures[0].1.starts_with("embeds/") && pictures[0].1.ends_with(".png"), "{}", pictures[0].1);
-        assert_eq!(std::fs::read(w.server.folder().join("files").join(&pictures[0].1)).unwrap(), PNG);
+        // The route that serves it is the uploads group's: the picture comes back whole.
+        let served = w.owner.client.get(thumbnail).await;
+        assert_eq!(served.status, 200);
+        assert_eq!(&served.body[..], PNG);
+        assert_eq!(served.header("content-type"), Some("image/png"));
         // The card is in the history, and a client that was offline finds it in the journal.
         let history: Value = w.owner.client.get(&format!("/api/channels/{}/messages", w.general)).await.json();
         assert_eq!(history["messages"].as_array().unwrap().last().unwrap()["embeds"][0]["id"], card["id"]);
@@ -1323,6 +1327,33 @@ mod previews {
         assert_eq!(changes[1]["message"]["embeds"].as_array().unwrap().len(), 1);
         // The audience is the channel's.
         assert_eq!(announced[0]["audience"], json!({ "server": w.instance.to_lowercase() }));
+    }
+
+    #[tokio::test]
+    async fn the_picture_of_a_card_is_served_to_whoever_sees_the_channel_and_to_nobody_else() {
+        let w = with_previews().await;
+        let sam = w.server.register("sam").await;
+        let site = site(vec![("/story", "text/html", page("Story", "/image.png")), ("/image.png", "image/png", PNG.to_vec())]).await;
+        let message = w.post(&w.owner, &w.general, json!({ "content": format!("Read http://{}/story", site.address) })).await.json::<Value>();
+        let announced = updates(&w, message["id"].as_str().unwrap(), 1).await;
+        let thumbnail = announced[0]["payload"]["embeds"][0]["thumbnailUrl"].as_str().unwrap().to_string();
+        // The worker's own row: the all-zero uploader, a key under `embeds/`.
+        let (_, key) = &stored_pictures(&w)[0];
+        assert!(key.starts_with("embeds/"));
+
+        assert_eq!(w.owner.client.get(&thumbnail).await.status, 200);
+        assert_eq!(&sam.client.get(&thumbnail).await.body[..], PNG);
+
+        // Somebody who may not see the channel is told there is nothing there.
+        let db = w.db();
+        let base: String = db.query_row("SELECT \"Id\" FROM \"ServerRoles\" WHERE \"IsSystem\" = 1 AND \"IsOwner\" = 0 LIMIT 1", [], |row| row.get(0)).unwrap();
+        db.execute(
+            "INSERT INTO \"PermissionOverrides\" (\"Id\", \"ServerId\", \"TargetType\", \"TargetId\", \"RoleId\", \"AllowMask\", \"DenyMask\") VALUES (?1, ?2, 0, ?3, ?4, 0, 16384)",
+            rusqlite::params![stellarr_api::values::Id::random().to_db_text(), w.instance, w.general.to_uppercase(), base],
+        )
+        .unwrap();
+        assert_eq!(sam.client.get(&thumbnail).await.status, 404);
+        assert_eq!(w.owner.client.get(&thumbnail).await.status, 200);
     }
 
     #[tokio::test]
