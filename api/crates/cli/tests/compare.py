@@ -39,6 +39,19 @@ BASE_ENV = {
     "TZ": "UTC",
 }
 
+def keyed_copy():
+    """BASE with the master key this server makes on its first start, so that a
+    `secrets set` finds a key there, as it does on any instance that has run."""
+    root = tempfile.mkdtemp(prefix="cli-keyed-")
+    shutil.copytree(BASE, root, dirs_exist_ok=True)
+    key = os.path.join(root, "keys", "master.key")
+    with open(key, "wb") as handle:
+        handle.write(os.urandom(32))
+    os.chmod(key, 0o600)
+    return root
+
+
+KEYED = keyed_copy()
 results = {"same": 0, "known": 0, "different": 0}
 differences = []
 
@@ -137,6 +150,7 @@ def normalise(text, root, volatile):
 
 # What differs on purpose, by the label of the case, and why.
 KNOWN = [
+    ("secrets set, no master key", "this server's first start makes a master key, and the tool, which makes one only after the question and the value, says that it will and that it did; the first tool kept a data-protection key ring"),
     ("secrets set, no keys folder", "the folder is called the keys directory here, not the data-protection key directory"),
     ("backup verify of a file that is not an archive", "reading an archive is the backups library's, which is not on this branch yet"),
 ]
@@ -524,22 +538,24 @@ case("security unlink, with a verified address", ["--json", "security", "unlink"
 
 # Secrets (what each tool seals is its own: the rows are compared by name).
 for value, label in [("super-secret\n", "a line"), (" spaced \n", "spaces"), ("a\r\n", "crlf"), ("", "nothing"), ("   \n", "blanks"), ("x" * 4096, "4096"), ("x" * 4097, "4097"), ("a\n\n", "two lines"), ("é😀\n", "unicode")]:
-    one_of_each(f"secrets set via stdin: {label}", ["secrets", "set", "mail.smtp-password", "--stdin", "--yes"], stdin=value, mutating=True, volatile=True)
+    one_of_each(f"secrets set via stdin: {label}", ["secrets", "set", "mail.smtp-password", "--stdin", "--yes"], stdin=value, mutating=True, volatile=True, source=KEYED)
 for name in ["mail.resend-api-key", "giphy.api-key", "cloudflare.r2.access-key", "cloudflare.r2.secret-key", "cloudflare.r2.worker-token"]:
-    one_of_each(f"secrets set {name}", ["secrets", "set", name, "--stdin", "--yes"], stdin="value\n", mutating=True, volatile=True)
-one_of_each("secrets set --stdin without --yes", ["secrets", "set", "mail.smtp-password", "--stdin"], stdin="v\n", mutating=True)
-one_of_each("secrets set, no terminal, no --stdin", ["secrets", "set", "mail.smtp-password", "--yes"], mutating=True)
+    one_of_each(f"secrets set {name}", ["secrets", "set", name, "--stdin", "--yes"], stdin="value\n", mutating=True, volatile=True, source=KEYED)
+one_of_each("secrets set --stdin without --yes", ["secrets", "set", "mail.smtp-password", "--stdin"], stdin="v\n", mutating=True, source=KEYED)
+one_of_each("secrets set, no terminal, no --stdin", ["secrets", "set", "mail.smtp-password", "--yes"], mutating=True, source=KEYED)
+one_of_each("secrets set, no master key", ["secrets", "set", "mail.smtp-password", "--stdin", "--yes"], stdin="v\n", mutating=True, volatile=True)
 one_of_each("secrets set, no keys folder", ["secrets", "set", "mail.smtp-password", "--stdin", "--yes"], stdin="v\n", mutating=True, setup=lambda root: shutil.rmtree(os.path.join(root, "keys")))
 one_of_each("secrets clear with no override", ["secrets", "clear", "mail.smtp-password", "--yes"], mutating=True)
 one_of_each("secrets clear with no override, from the environment", ["secrets", "clear", "giphy.api-key", "--yes"], mutating=True, env={"STELLARR_GIPHY_API_KEY": "k"})
-case("secrets set asked, hidden prompt", ["secrets", "set", "mail.smtp-password"], mutating=True, tty=["y\n", "hidden-value\n"])
-case("secrets set asked, no", ["secrets", "set", "mail.smtp-password"], mutating=True, tty=["n\n"])
+case("secrets set asked, hidden prompt", ["secrets", "set", "mail.smtp-password"], mutating=True, tty=["y\n", "hidden-value\n"], source=KEYED)
+case("secrets set asked, no", ["secrets", "set", "mail.smtp-password"], mutating=True, tty=["n\n"], source=KEYED)
 
 # Backups: the arguments and what is said before the library is asked.
 one_of_each("backup cancel with nothing staged", ["backup", "cancel", "--yes"], mutating=True)
 one_of_each("backup apply with nothing staged", ["backup", "apply", "--yes"], mutating=True)
 one_of_each("backup verify of a file that is not an archive", ["backup", "verify", os.path.join(BASE, "db", "stellarr.db")])
 
+shutil.rmtree(KEYED, ignore_errors=True)
 print()
 print(f"{results['same']} same, {results['known']} differ by decision, {results['different']} differ")
 for text in differences:
