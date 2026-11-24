@@ -71,7 +71,8 @@ def run(*command, **kwargs):
 
 
 def now_text(delta=0):
-    return time.strftime("%Y-%m-%d %H:%M:%S", time.gmtime(time.time() + delta))
+    moment = time.time() + delta
+    return time.strftime("%Y-%m-%d %H:%M:%S", time.gmtime(moment)) + ".%06d" % int((moment % 1) * 1000000)
 
 
 def totp_now(secret, steps=0):
@@ -929,15 +930,15 @@ def recover(server, rec):
 def link(server, rec):
     """A password sign-in that asked to link the identity a provider confirmed: no provider is
     configured on either server, so the link comes out as failed and the identity is used up."""
-    browser, secret, method, codes, _ = enrol_totp(rec, server, "other", remember=True)
+    browser, secret, method, codes, _ = enrol_totp(rec, server, "shared", remember=True)
     ask(rec, "sign out", browser, "POST", "/api/auth/logout")
-    user = user_id(server, "other")
+    user = user_id(server, "shared")
     cases = {}
     for name in ("taken", "no cookie", "replaced", "device"):
         mine = Browser(server.base)
         if name == "device":
             mine.jar.update({key: value for key, value in browser.jar.items() if "trust" in key})
-        cases[name] = (mine, login(rec, "a sign-in that asks to link (%s)" % name, mine, "other").json()["challengeId"])
+        cases[name] = (mine, login(rec, "a sign-in that asks to link (%s)" % name, mine, "shared").json()["challengeId"])
     pending = {name: (new_id(), "S" + name.replace(" ", "x") * 12) for name in cases}
     statements = []
     for name, (identity, secret_text) in pending.items():
@@ -964,7 +965,7 @@ def link(server, rec):
     rows = sql_one(server, 'SELECT "SecretHash" IS NOT NULL, "Subject" FROM "PendingExternalIdentities" ORDER BY "Subject"')
     rec.note("identities still waiting: %s" % [row[1] for row in rows])
     rec.note("identities linked: %s" % sql_one(server, 'SELECT COUNT(*) FROM "ExternalIdentities"')[0][0])
-    leave(rec, server, ["other"])
+    leave(rec, server, ["shared"])
 
 
 def limits(server, rec):
