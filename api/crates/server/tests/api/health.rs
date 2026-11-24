@@ -19,7 +19,9 @@ async fn a_probe_leaves_no_log_lines_while_other_requests_keep_theirs() {
     let mut lines = Vec::new();
     for _ in 0..100 {
         lines = server.log();
-        if lines.iter().any(|line| line.contains(&other)) {
+        // A path no route took is logged with what it does not know as a
+        // word of the server's routes replaced by a mark.
+        if lines.iter().any(|line| line.contains("GET /api/*** 404 in ")) {
             break;
         }
         tokio::time::sleep(Duration::from_millis(50)).await;
@@ -28,9 +30,10 @@ async fn a_probe_leaves_no_log_lines_while_other_requests_keep_theirs() {
     assert!(
         lines
             .iter()
-            .any(|line| line.contains(&format!("GET {other} 404 in "))),
+            .any(|line| line.contains("GET /api/*** 404 in ")),
         "{lines:#?}"
     );
+    assert!(!lines.iter().any(|line| line.contains(&other)), "{lines:#?}");
     assert!(
         !lines.iter().any(|line| line.contains("/health/")),
         "{lines:#?}"
@@ -97,7 +100,7 @@ async fn the_log_names_where_the_server_listens_and_each_request_once() {
     let mut lines = Vec::new();
     for _ in 0..100 {
         lines = server.log();
-        if lines.iter().any(|line| line.contains(&marker)) {
+        if lines.iter().any(|line| line.contains("GET /api/*** 404 in ")) {
             break;
         }
         tokio::time::sleep(Duration::from_millis(50)).await;
@@ -109,14 +112,18 @@ async fn the_log_names_where_the_server_listens_and_each_request_once() {
             .any(|line| line.contains("Now listening on: http://127.0.0.1:"))
     );
     assert_eq!(
-        lines.iter().filter(|line| line.contains(&marker)).count(),
+        lines
+            .iter()
+            .filter(|line| line.contains("GET /api/*** 404 in "))
+            .count(),
         1
     );
+    assert!(!lines.iter().any(|line| line.contains(&marker)));
     // The line says it is the request log's, so that its level can be set alone.
     assert!(
         lines
             .iter()
-            .any(|line| line.contains("Stellarr.Api.Requests") && line.contains(&marker))
+            .any(|line| line.contains("Stellarr.Api.Requests") && line.contains("GET /api/*** 404 in "))
     );
 }
 

@@ -747,7 +747,7 @@ async fn every_request_is_logged_once_with_the_status_the_client_got() {
 
     let lines = log.lines();
     for expected in [
-        "GET /nothing/here 404 in ",
+        "GET /***/*** 404 in ",
         "POST /api/test/fails 405 in ",
         "GET /api/test/fails 500 in ",
     ] {
