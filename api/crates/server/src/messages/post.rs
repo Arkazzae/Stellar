@@ -184,11 +184,7 @@ pub fn post(
     // Whoever sent a message has read everything before it, and nobody is told
     // about a message that was not stored.
     let read = advance_read(db, channel, author, now)?;
-    let author_name: String = db.query_row(
-        "SELECT \"DisplayName\" FROM \"Users\" WHERE \"Id\" = ?1",
-        [author],
-        |row| row.get(0),
-    )?;
+    let author_name: String = crate::instance::users::User::display_name(db, author)?;
     let mentioned = mentions::notify(
         db,
         &Mentioning {

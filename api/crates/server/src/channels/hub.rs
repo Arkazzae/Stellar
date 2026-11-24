@@ -119,11 +119,7 @@ async fn send_typing(cx: Context, arguments: Vec<Value>) -> Result<Value, HubErr
             if !held.has(SEND_MESSAGES) {
                 return Ok(Err("Not allowed to send messages here."));
             }
-            let display_name: String = db.query_row(
-                "SELECT \"DisplayName\" FROM \"Users\" WHERE \"Id\" = ?1",
-                [user],
-                |row| row.get(0),
-            )?;
+            let display_name: String = crate::instance::users::User::display_name(db, user)?;
             let viewers = visibility::viewers(db, server, channel)?.map(|seeing| {
                 let mut users: Vec<Id> = seeing.into_iter().collect();
                 users.sort();
