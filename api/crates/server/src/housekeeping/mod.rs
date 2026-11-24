@@ -26,13 +26,47 @@ use std::time::Duration;
 
 use tracing::{info, warn};
 
-use crate::background::Worker;
+use crate::background::{Stop, Worker};
 use crate::panel::operations::{self, Retention};
 use crate::state::AppState;
 use crate::values::Timestamp;
 
 /// Whether the server is stopping, asked between the pieces of a run.
 pub type Stopping<'a> = &'a (dyn Fn() -> bool + Sync);
+
+/// How long a run steps aside between two transactions. A request that waits
+/// for the write lock asks again after a growing pause, so transactions that
+/// follow one another with no gap can keep it out for a second or more even
+/// when each is short; a few milliseconds is enough for it to get in.
+const PAUSE: Duration = Duration::from_millis(5);
+
+/// A transaction of a run: `Database::write`, with the time the call took
+/// noted when the tests ask how long a run holds the writer.
+pub(crate) async fn write<T, E, F>(state: &AppState, work: F) -> Result<T, E>
+where
+    F: FnOnce(&rusqlite::Transaction) -> Result<T, E> + Send + 'static,
+    T: Send + 'static,
+    E: From<crate::database::DbError> + From<rusqlite::Error> + Send + 'static,
+{
+    #[cfg(test)]
+    let began = std::time::Instant::now();
+    let outcome = state.database().write(work).await;
+    #[cfg(test)]
+    LONGEST_WRITE_MICROS.fetch_max(
+        u64::try_from(began.elapsed().as_micros()).unwrap_or(u64::MAX),
+        std::sync::atomic::Ordering::Relaxed,
+    );
+    outcome
+}
+
+/// The longest any call of [`write`] took, in microseconds.
+#[cfg(test)]
+pub(crate) static LONGEST_WRITE_MICROS: std::sync::atomic::AtomicU64 =
+    std::sync::atomic::AtomicU64::new(0);
+
+pub(crate) async fn step_aside() {
+    tokio::time::sleep(PAUSE).await;
+}
 
 const TARGET: &str = "Stellarr.Api.Maintenance";
 
@@ -120,6 +154,36 @@ pub(crate) fn cutoff_days(now: Timestamp, days: i64) -> Timestamp {
     ))
 }
 
+/// The wait before the first run and the time between runs: the settings,
+/// the first not below nothing and the second not below an hour.
+pub(crate) fn intervals(settings: &crate::settings::MaintenanceSettings) -> (Duration, Duration) {
+    let first =
+        Duration::from_secs(u64::try_from(settings.initial_delay_minutes.max(0)).unwrap_or(0) * 60);
+    let every =
+        Duration::from_secs(u64::try_from(settings.interval_hours.max(1)).unwrap_or(1) * 3600);
+    (first, every)
+}
+
+/// Calls `pass` after `first` and then every `every`, until the server stops. A
+/// pass that fails is logged and the schedule goes on.
+pub(crate) async fn on_schedule<F, Fut>(first: Duration, every: Duration, stop: &Stop, mut pass: F)
+where
+    F: FnMut() -> Fut,
+    Fut: std::future::Future<Output = Result<(), String>>,
+{
+    if !stop.sleep(first).await {
+        return;
+    }
+    loop {
+        if let Err(error) = pass().await {
+            warn!(target: TARGET, "Maintenance run failed: {error}");
+        }
+        if !stop.sleep(every).await {
+            return;
+        }
+    }
+}
+
 /// Every hour, after a first wait at the start. A pass that fails is logged
 /// and the next one tries again.
 pub fn workers() -> Vec<Worker> {
@@ -128,33 +192,28 @@ pub fn workers() -> Vec<Worker> {
         if !settings.enabled {
             return;
         }
-        let first = Duration::from_secs(
-            u64::try_from(settings.initial_delay_minutes.max(0)).unwrap_or(0) * 60,
-        );
-        let every =
-            Duration::from_secs(u64::try_from(settings.interval_hours.max(1)).unwrap_or(1) * 3600);
-        if !stop.sleep(first).await {
-            return;
-        }
-        loop {
-            match run(&state, Timestamp::now(), &|| stop.is_stopping()).await {
+        let (first, every) = intervals(&settings);
+        let ending = stop.clone();
+        on_schedule(first, every, &stop, || async {
+            match run(&state, Timestamp::now(), &|| ending.is_stopping()).await {
                 // With cleanup switched off every count is zero, and saying
                 // that each hour would only suggest that something had been
                 // removed.
-                Ok(summary) if summary.enabled => info!(
-                    target: TARGET,
-                    "Maintenance removed {} orphan attachments, {} backup files and {} log files; {} object deletions remain queued.",
-                    summary.orphan_attachments,
-                    summary.backup_files,
-                    summary.log_files,
-                    summary.pending_object_deletions
-                ),
-                Ok(_) => {}
-                Err(error) => warn!(target: TARGET, "Maintenance run failed: {error}"),
+                Ok(summary) if summary.enabled => {
+                    info!(
+                        target: TARGET,
+                        "Maintenance removed {} orphan attachments, {} backup files and {} log files; {} object deletions remain queued.",
+                        summary.orphan_attachments,
+                        summary.backup_files,
+                        summary.log_files,
+                        summary.pending_object_deletions
+                    );
+                    Ok(())
+                }
+                Ok(_) => Ok(()),
+                Err(error) => Err(error.to_string()),
             }
-            if !stop.sleep(every).await {
-                return;
-            }
-        }
+        })
+        .await;
     })]
 }

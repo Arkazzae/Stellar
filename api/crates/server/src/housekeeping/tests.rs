@@ -477,10 +477,16 @@ async fn an_upload_that_something_refers_to_is_kept_whatever_its_age() {
 
 #[tokio::test]
 async fn pictures_in_use_do_not_fill_the_batch_and_hide_the_orphans() {
+    for kind in ["AvatarUrl", "BannerUrl", "WallpaperUrl", "IconUrl"] {
+        pictures_of_one_kind_do_not_fill_the_batch(kind).await;
+    }
+}
+
+async fn pictures_of_one_kind_do_not_fill_the_batch(kind: &str) {
     let place = Place::new(&[("Maintenance__BatchSize", "3")]);
     let connection = place.raw();
     let mut old = Vec::new();
-    // Ten old avatars that are in use, then the orphans that came later.
+    // Ten old pictures that are in use, then the orphans that came later.
     for at in 0..10 {
         let id = Id::random();
         add_attachment(
@@ -489,11 +495,15 @@ async fn pictures_in_use_do_not_fill_the_batch_and_hide_the_orphans() {
             ago(200 * DAY - at),
             &format!("images/avatar-{at}"),
         );
-        let user = add_user(&connection);
+        let (table, owner) = if kind == "IconUrl" {
+            ("Servers", add_server(&connection))
+        } else {
+            ("Users", add_user(&connection))
+        };
         connection
             .execute(
-                "UPDATE \"Users\" SET \"AvatarUrl\" = ?1 WHERE \"Id\" = ?2",
-                params![format!("/assets/{id}"), user],
+                &format!("UPDATE \"{table}\" SET \"{kind}\" = ?1 WHERE \"Id\" = ?2"),
+                params![format!("/assets/{id}"), owner],
             )
             .unwrap();
         old.push(id);
@@ -507,12 +517,12 @@ async fn pictures_in_use_do_not_fill_the_batch_and_hide_the_orphans() {
         );
     }
 
-    // Three orphans go in a run, the oldest first, and the avatars stay.
-    assert_eq!(place.run().await.orphan_attachments, 3);
-    assert_eq!(attachments(&connection).len(), 12);
-    assert_eq!(place.run().await.orphan_attachments, 2);
-    assert_eq!(place.run().await.orphan_attachments, 0);
-    assert_eq!(attachments(&connection).len(), 10);
+    // Three orphans go in a run, the oldest first, and the pictures stay.
+    assert_eq!(place.run().await.orphan_attachments, 3, "{kind}");
+    assert_eq!(attachments(&connection).len(), 12, "{kind}");
+    assert_eq!(place.run().await.orphan_attachments, 2, "{kind}");
+    assert_eq!(place.run().await.orphan_attachments, 0, "{kind}");
+    assert_eq!(attachments(&connection).len(), 10, "{kind}");
 }
 
 #[tokio::test]
@@ -720,17 +730,25 @@ async fn backups_and_logs_are_pruned_by_the_days_of_their_own_retention() {
 }
 
 /// How long a run holds the one writer, on a database with hundreds of
-/// thousands of rows to remove. A task writes one small row at a time through
-/// the same handle while the run goes, and the longest wait it saw is the
-/// longest the run kept it out.
+/// thousands of rows to remove.
+///
+/// The first measure is the run alone: the longest any one transaction of it
+/// took, as seen from outside the call, which is how long it kept anybody else
+/// from writing. The second runs the same work while a task writes one small
+/// row at a time through the same handle, and reports the longest it had to
+/// wait. The second number includes what the machine was doing besides.
 ///
 ///   cargo test -p stellarr-api --lib housekeeping::tests::cost -- --ignored --nocapture
-///
-/// `STELLARR_COST_ONE_STATEMENT=1` also times the same removals as single
-/// statements on a copy of the data.
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
-#[ignore = "fills a database of about a hundred megabytes"]
+#[ignore = "fills a database of about a hundred megabytes and takes minutes"]
 async fn cost_of_a_run_on_a_database_with_hundreds_of_thousands_of_rows() {
+    let alone = cost_run(false).await;
+    println!("COST alone: {alone}");
+    let beside = cost_run(true).await;
+    println!("COST beside a writer: {beside}");
+}
+
+async fn cost_run(with_writer: bool) -> String {
     let place = Place::new(&[]);
     let connection = place.raw();
     let old = ago(40 * DAY);
@@ -793,10 +811,10 @@ async fn cost_of_a_run_on_a_database_with_hundreds_of_thousands_of_rows() {
             &format!("INSERT INTO \"{table}\" ({columns}) SELECT {uid}, {values} FROM n"),
         ));
     }
-    fill(&numbers(20_000, "INSERT INTO \"ImageAttachments\" (\"Id\", \"UploadedById\", \"ObjectKey\", \"FileName\", \"ContentType\", \"SizeBytes\", \"PosterObjectKey\", \"IsEncrypted\", \"CreatedAt\")
+    fill(&numbers(2_000, "INSERT INTO \"ImageAttachments\" (\"Id\", \"UploadedById\", \"ObjectKey\", \"FileName\", \"ContentType\", \"SizeBytes\", \"PosterObjectKey\", \"IsEncrypted\", \"CreatedAt\")
          SELECT printf('10000000-0000-4000-8000-%012d', i), 'u', 'images/' || i, 'f', 'image/png', 1, 'images/' || i || '.p', 0, ?1 FROM n"));
     fill(&numbers(
-        50_000,
+        5_000,
         "INSERT INTO \"ObjectDeletions\" (\"ObjectKey\", \"QueuedAt\") SELECT 'queued/' || i, ?1 FROM n",
     ));
     connection
@@ -806,12 +824,10 @@ async fn cost_of_a_run_on_a_database_with_hundreds_of_thousands_of_rows() {
 
     let state = place.state.clone();
     let stop = Arc::new(AtomicBool::new(false));
-    let writer = {
+    let writer = with_writer.then(|| {
         let (state, stop) = (state.clone(), stop.clone());
         tokio::spawn(async move {
-            let mut longest = Duration::ZERO;
-            let mut writes = 0u32;
-            let origin = std::time::Instant::now();
+            let mut waits = Vec::new();
             while !stop.load(Ordering::Relaxed) {
                 let began = std::time::Instant::now();
                 state
@@ -822,86 +838,149 @@ async fn cost_of_a_run_on_a_database_with_hundreds_of_thousands_of_rows() {
                     })
                     .await
                     .unwrap();
-                longest = longest.max(began.elapsed());
-                if began.elapsed() > Duration::from_millis(250) {
-                    println!(
-                        "COST slow write at {:?}: {:?}",
-                        origin.elapsed(),
-                        began.elapsed()
-                    );
-                }
-                writes += 1;
+                waits.push(began.elapsed());
                 tokio::time::sleep(Duration::from_millis(1)).await;
             }
-            (longest, writes)
+            waits.sort();
+            waits
         })
-    };
+    });
+    super::LONGEST_WRITE_MICROS.store(0, Ordering::Relaxed);
     let began = std::time::Instant::now();
     let mut runs = 0;
-    let mut phases = [Duration::ZERO; 4];
     loop {
-        let timed = |at: usize, since: std::time::Instant, phases: &mut [Duration; 4]| {
-            phases[at] += since.elapsed();
-        };
-        if runs < 3 || runs % 40 == 0 {
-            println!("COST run {runs} begins at {:?}", began.elapsed());
-        }
-        let t = std::time::Instant::now();
         super::journal::compact(&state, now(), 30, NEVER)
             .await
             .unwrap();
-        timed(0, t, &mut phases);
-        let t = std::time::Instant::now();
         let removed = super::orphans::sweep(&state, super::cutoff(now(), 1), 1000, NEVER)
             .await
             .unwrap();
-        timed(1, t, &mut phases);
-        let t = std::time::Instant::now();
         super::queue::drain(&state, 1000, NEVER).await;
-        timed(2, t, &mut phases);
-        let t = std::time::Instant::now();
         super::expired::delete(&state, Timestamp::now(), NEVER)
             .await
             .unwrap();
-        timed(3, t, &mut phases);
         runs += 1;
-        if (removed == 0 && super::queue::pending(&state).await.unwrap() == 0) || runs > 200 {
+        if (removed == 0 && super::queue::pending(&state).await.unwrap() == 0) || runs > 20 {
             break;
         }
     }
-    println!("COST phases journal/orphans/queue/expired = {phases:?}");
     let total = began.elapsed();
+    let longest = Duration::from_micros(super::LONGEST_WRITE_MICROS.load(Ordering::Relaxed));
     stop.store(true, Ordering::Relaxed);
-    let (longest, writes) = writer.await.unwrap();
-    println!(
-        "COST runs={runs} total={total:?} longest_wait_of_a_small_write={longest:?} small_writes={writes} chunk={}",
-        super::journal::CHUNK
-    );
+    let probe = match writer {
+        Some(writer) => {
+            let waits = writer.await.unwrap();
+            format!(
+                "; {} small writes beside it waited at most {:?} (median {:?}, 99th percentile {:?})",
+                waits.len(),
+                waits.last().copied().unwrap_or_default(),
+                waits[waits.len() / 2],
+                waits[waits.len() * 99 / 100],
+            )
+        }
+        None => String::new(),
+    };
     assert_eq!(place.count("MessageChanges") as usize, 150_000 + 50);
     assert_eq!(place.count("ObjectDeletions"), 0);
+    format!(
+        "{runs} runs in {total:?}; the longest transaction of the run took {longest:?} (chunk of {} rows){probe}",
+        super::journal::CHUNK
+    )
+}
 
-    if std::env::var("STELLARR_COST_ONE_STATEMENT").is_ok() {
-        // The same removals as single statements, on fresh rows.
-        let place = Place::new(&[]);
-        let connection = place.raw();
-        connection
-            .execute(
-                "WITH RECURSIVE n(i) AS (SELECT 1 UNION ALL SELECT i + 1 FROM n WHERE i < 300000)
-                 INSERT INTO \"MessageChanges\" (\"ChannelId\", \"MessageId\", \"Kind\", \"CreatedAt\")
-                 SELECT 'c' || (i % 100), 'm' || i, 0, CASE WHEN i % 2 = 0 THEN ?1 ELSE ?2 END FROM n",
-                params![old, young],
+#[tokio::test]
+async fn an_object_that_could_not_be_removed_after_a_failed_upload_waits_for_the_store() {
+    let place = Place::new(&[]);
+    let connection = place.raw();
+    place
+        .store
+        .put("images/half", &mut std::io::Cursor::new(b"x".to_vec()))
+        .await
+        .unwrap();
+    place.store.failing.store(true, Ordering::Relaxed);
+
+    // The upload's own rollback cannot reach the store, so it queues the key.
+    crate::uploads::roll_back(&place.state, vec!["images/half".to_string()]).await;
+    assert_eq!(queued(&connection), ["images/half"]);
+    assert_eq!(place.run().await.pending_object_deletions, 1);
+
+    place.store.failing.store(false, Ordering::Relaxed);
+    assert_eq!(place.run().await.pending_object_deletions, 0);
+    assert!(place.store.get("images/half", None).await.is_err());
+}
+
+#[test]
+fn a_setting_below_its_minimum_is_raised_to_it() {
+    let settings = |first, every| crate::settings::MaintenanceSettings {
+        enabled: true,
+        initial_delay_minutes: first,
+        interval_hours: every,
+        batch_size: 1000,
+        message_change_retention_days: 30,
+    };
+    assert_eq!(
+        intervals(&settings(-5, 0)),
+        (Duration::ZERO, Duration::from_secs(3600))
+    );
+    assert_eq!(
+        intervals(&settings(5, 3)),
+        (Duration::from_secs(300), Duration::from_secs(3 * 3600))
+    );
+}
+
+#[tokio::test(start_paused = true)]
+async fn a_run_comes_after_the_first_wait_and_then_at_every_interval_and_a_failed_one_keeps_the_schedule()
+ {
+    let place = Place::new(&[]);
+    let runs = Arc::new(std::sync::atomic::AtomicUsize::new(0));
+    let counter = runs.clone();
+    let worker = crate::background::Worker::new("test-schedule", move |_state, stop| {
+        let counter = counter.clone();
+        async move {
+            on_schedule(
+                Duration::from_secs(300),
+                Duration::from_secs(3600),
+                &stop,
+                || {
+                    let counter = counter.clone();
+                    async move {
+                        // The second pass fails; the third is still due.
+                        match counter.fetch_add(1, Ordering::SeqCst) {
+                            1 => Err("the database was busy".to_string()),
+                            _ => Ok(()),
+                        }
+                    }
+                },
             )
-            .unwrap();
-        let began = std::time::Instant::now();
-        connection
-            .execute(
-                "DELETE FROM \"MessageChanges\" WHERE \"CreatedAt\" < ?1",
-                [ago(30 * DAY)],
-            )
-            .unwrap();
-        println!(
-            "COST one statement over 150000 journal rows held the writer for {:?}",
-            began.elapsed()
-        );
-    }
+            .await;
+        }
+    });
+    let running = crate::background::start(vec![worker], &place.state);
+    let settle = || async {
+        for _ in 0..10 {
+            tokio::task::yield_now().await;
+        }
+    };
+    settle().await;
+    assert_eq!(runs.load(Ordering::SeqCst), 0, "nothing runs at start");
+    tokio::time::advance(Duration::from_secs(299)).await;
+    settle().await;
+    assert_eq!(runs.load(Ordering::SeqCst), 0);
+    tokio::time::advance(Duration::from_secs(2)).await;
+    settle().await;
+    assert_eq!(runs.load(Ordering::SeqCst), 1);
+    tokio::time::advance(Duration::from_secs(3599)).await;
+    settle().await;
+    assert_eq!(runs.load(Ordering::SeqCst), 1);
+    tokio::time::advance(Duration::from_secs(2)).await;
+    settle().await;
+    assert_eq!(runs.load(Ordering::SeqCst), 2);
+    tokio::time::advance(Duration::from_secs(3600)).await;
+    settle().await;
+    assert_eq!(runs.load(Ordering::SeqCst), 3);
+    // Stopping ends the wait at once.
+    running.stop(Duration::from_secs(5)).await;
+    tokio::time::advance(Duration::from_secs(7200)).await;
+    settle().await;
+    assert_eq!(runs.load(Ordering::SeqCst), 3);
 }

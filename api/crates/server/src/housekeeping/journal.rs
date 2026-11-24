@@ -46,9 +46,7 @@ pub async fn compact(
     if channels.is_empty() {
         return Ok(());
     }
-    state
-        .database()
-        .write(move |tx| -> Result<(), DbError> {
+    super::write(state, move |tx| -> Result<(), DbError> {
             for channel in channels {
                 tx.execute(
                     "INSERT INTO \"MessageChanges\" (\"ChannelId\", \"MessageId\", \"Kind\", \"CreatedAt\") VALUES (?1, ?2, ?3, ?4)",
@@ -86,32 +84,31 @@ pub async fn delete_in_chunks(
         if stop() {
             return Ok(());
         }
-        let last = state
-            .database()
-            .write(move |tx| -> Result<Option<i64>, DbError> {
-                let upper: Option<i64> = tx.query_row(
-                    &format!(
-                        "SELECT MAX(k) FROM (SELECT {key} AS k FROM \"{table}\"
+        let last = super::write(state, move |tx| -> Result<Option<i64>, DbError> {
+            let upper: Option<i64> = tx.query_row(
+                &format!(
+                    "SELECT MAX(k) FROM (SELECT {key} AS k FROM \"{table}\"
                          WHERE {key} > ?2 AND {condition} ORDER BY {key} LIMIT ?3)"
-                    ),
-                    params![bound, after, CHUNK],
-                    |row| row.get(0),
-                )?;
-                let Some(upper) = upper else {
-                    return Ok(None);
-                };
-                tx.execute(
-                    &format!(
-                        "DELETE FROM \"{table}\" WHERE {key} > ?2 AND {key} <= ?3 AND {condition}"
-                    ),
-                    params![bound, after, upper],
-                )?;
-                Ok(Some(upper))
-            })
-            .await?;
+                ),
+                params![bound, after, CHUNK],
+                |row| row.get(0),
+            )?;
+            let Some(upper) = upper else {
+                return Ok(None);
+            };
+            tx.execute(
+                &format!(
+                    "DELETE FROM \"{table}\" WHERE {key} > ?2 AND {key} <= ?3 AND {condition}"
+                ),
+                params![bound, after, upper],
+            )?;
+            Ok(Some(upper))
+        })
+        .await?;
         match last {
             Some(upper) => after = upper,
             None => return Ok(()),
         }
+        super::step_aside().await;
     }
 }

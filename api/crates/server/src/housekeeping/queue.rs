@@ -43,19 +43,18 @@ pub async fn drain(state: &AppState, batch: usize, stop: Stopping<'_>) {
             continue;
         }
         let forgotten = key.clone();
-        let removed = state
-            .database()
-            .write(move |tx| -> Result<(), DbError> {
-                tx.execute(
-                    "DELETE FROM \"ObjectDeletions\" WHERE \"ObjectKey\" = ?1",
-                    [forgotten],
-                )?;
-                Ok(())
-            })
-            .await;
+        let removed = super::write(state, move |tx| -> Result<(), DbError> {
+            tx.execute(
+                "DELETE FROM \"ObjectDeletions\" WHERE \"ObjectKey\" = ?1",
+                [forgotten],
+            )?;
+            Ok(())
+        })
+        .await;
         if let Err(error) = removed {
             warn!(target: TARGET, "A deleted object {key} is still queued: {error}");
         }
+        super::step_aside().await;
     }
 }
 
