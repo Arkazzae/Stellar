@@ -574,3 +574,27 @@ async fn a_backup_taken_while_rows_are_being_written_is_a_state_that_existed() {
         );
     }
 }
+
+#[tokio::test]
+async fn a_partial_backup_left_by_a_stop_is_removed_at_the_next_start() {
+    let folder = crate::support::TempDir::new();
+    let backups = folder.path().join("backups");
+    std::fs::create_dir_all(&backups).unwrap();
+    for name in [
+        ".backup-1.zip.partial",
+        ".snapshot-2.partial",
+        ".snapshot-2.partial-wal",
+        "backup-3.zip",
+        "backup-3.zip.verified",
+    ] {
+        std::fs::write(backups.join(name), b"x").unwrap();
+    }
+    let server = Server::start_in(folder.path(), &[]).await;
+    let mut left: Vec<String> = std::fs::read_dir(&backups)
+        .unwrap()
+        .map(|entry| entry.unwrap().file_name().to_string_lossy().into_owned())
+        .collect();
+    left.sort();
+    assert_eq!(left, ["backup-3.zip", "backup-3.zip.verified"]);
+    server.stop().await;
+}

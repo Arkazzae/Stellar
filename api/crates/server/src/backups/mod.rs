@@ -94,3 +94,9 @@ pub use routes::routes;
 
 #[cfg(test)]
 mod fixtures;
+
+#[cfg(test)]
+mod schedule_tests;
+
+#[cfg(test)]
+mod archive_tests;
