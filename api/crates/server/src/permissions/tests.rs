@@ -2039,6 +2039,7 @@ fn the_base_roles_overrides_reach_members_who_hold_other_roles_unless_one_of_the
 #[test]
 fn a_member_whose_highest_role_matches_the_actors_is_out_of_reach_whatever_else_they_hold() {
     let world = World::new();
+    world.set_position(world.base_role, 50);
     let same = world.role("same", 5, NONE);
     let lower = world.role("lower", 9, NONE);
     let actor_role = world.role("actor", 5, MODERATE_MEMBERS);
@@ -2118,4 +2119,118 @@ fn the_channel_move_check_sees_every_change_the_evaluation_sees() {
         // Neither run may pass for want of a move that changes anything.
         assert!(changes > 0);
     }
+}
+
+// ---- The audit log
+
+#[test]
+fn an_audit_line_names_the_actor_and_keeps_the_structured_fields() {
+    use super::audit::{AuditChange, AuditEvent, only, record};
+    let world = World::new();
+    let role = Id::random();
+    let event = AuditEvent {
+        action: "role.update".to_string(),
+        sentence: "changed the role Straż".to_string(),
+        target_type: Some("role".to_string()),
+        target_id: Some(role),
+        target_name: Some("Straż".to_string()),
+        changes: only([
+            AuditChange::changed("name", Some("Old"), Some("Straż")),
+            AuditChange::changed("color", Some("#fff"), Some("#fff")),
+            Some(AuditChange::added(
+                "permissions",
+                vec!["manageBans".to_string()],
+            )),
+        ]),
+    };
+
+    let id = record(&world.db, world.server, world.maja, &event).unwrap();
+
+    let row = world
+        .db
+        .query_row(
+            "SELECT \"Summary\", \"Action\", \"TargetType\", \"TargetId\", \"TargetName\", \"ChangesJson\", \"CreatedAt\", \"ActorId\" FROM \"ServerAuditEntries\" WHERE \"Id\" = ?1",
+            [id],
+            |row| {
+                Ok((
+                    row.get::<_, String>(0)?,
+                    row.get::<_, String>(1)?,
+                    row.get::<_, String>(2)?,
+                    row.get::<_, Id>(3)?,
+                    row.get::<_, String>(4)?,
+                    row.get::<_, String>(5)?,
+                    row.get::<_, crate::values::Timestamp>(6)?,
+                    row.get::<_, Id>(7)?,
+                ))
+            },
+        )
+        .unwrap();
+    assert_eq!(row.0, "maja Display changed the role Straż");
+    assert_eq!(
+        (row.1.as_str(), row.2.as_str(), row.3, row.4.as_str()),
+        ("role.update", "role", role, "Straż")
+    );
+    // Only the fields that changed, with the characters outside plain ASCII escaped as the first server wrote them.
+    assert_eq!(
+        row.5,
+        r#"[{"field":"name","from":"Old","to":"Stra\u017C"},{"field":"permissions","added":["manageBans"]}]"#
+    );
+    assert_eq!(row.7, world.maja);
+    assert_eq!(super::audit::read_changes(Some(&row.5)).len(), 2);
+}
+
+#[test]
+fn a_line_without_changes_stores_none_and_long_text_is_cut_with_an_ellipsis() {
+    use super::audit::{AuditEvent, clip, record};
+    let world = World::new();
+    let event = AuditEvent {
+        action: "server.update".to_string(),
+        sentence: "x".repeat(900),
+        target_name: Some("n".repeat(300)),
+        ..AuditEvent::default()
+    };
+
+    let id = record(&world.db, world.server, world.ada, &event).unwrap();
+
+    let (summary, name, changes): (String, String, Option<String>) = world
+        .db
+        .query_row(
+            "SELECT \"Summary\", \"TargetName\", \"ChangesJson\" FROM \"ServerAuditEntries\" WHERE \"Id\" = ?1",
+            [id],
+            |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
+        )
+        .unwrap();
+    assert_eq!(summary.encode_utf16().count(), 500);
+    assert!(summary.ends_with('\u{2026}') && summary.starts_with("ada Display xxx"));
+    assert_eq!(name.encode_utf16().count(), 200);
+    assert_eq!(changes, None);
+    // A cut that falls between the halves of an emoji leaves the replacement character.
+    assert_eq!(clip("ab😀", 3), "ab\u{2026}");
+    assert_eq!(clip("a😀b", 3), "a\u{fffd}\u{2026}");
+    assert_eq!(clip("abc", 3), "abc");
+}
+
+#[test]
+fn an_audit_line_is_written_with_the_change_it_records_or_not_at_all() {
+    use super::audit::{AuditEvent, record};
+    let mut world = World::new();
+    let event = AuditEvent {
+        action: "role.create".to_string(),
+        sentence: "made a role".to_string(),
+        ..AuditEvent::default()
+    };
+
+    let transaction = world.db.transaction().unwrap();
+    record(&transaction, world.server, world.maja, &event).unwrap();
+    drop(transaction);
+
+    let count: i64 = world
+        .db
+        .query_row("SELECT COUNT(*) FROM \"ServerAuditEntries\"", [], |row| {
+            row.get(0)
+        })
+        .unwrap();
+    assert_eq!(count, 0);
+    // An actor who is no account is a fault, which writes nothing.
+    assert!(record(&world.db, world.server, Id::random(), &event).is_err());
 }

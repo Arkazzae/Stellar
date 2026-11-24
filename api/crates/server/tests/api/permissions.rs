@@ -573,6 +573,39 @@ fn text_clipped_and_written_for_the_audit_log_is_the_first_servers_text() {
             }
         }
     }
+    // What was stored, read back: lines as the servers write them, and lines that are damaged.
+    // Not compared: a null where text is required (a null item, a null or missing `field`),
+    // which no writer makes. The first server carries it on as a null; here an item that is
+    // null makes the whole line unreadable and a field that is null or missing is empty.
+    for stored in [
+        r#"[{"field":"name","from":"a","to":"b"}]"#,
+        r#"[{"Field":"name","FROM":"a"},{"field":"x","added":["p","q"],"removed":[],"fromColor":"red","toColor":null}]"#,
+        r#"[]"#,
+        r#"null"#,
+        r#"{}"#,
+        r#"[1]"#,
+        r#"[{"field":1}]"#,
+        r#"[{"field":"a","added":"p"}]"#,
+        r#"[{"field":"a","added":["p",1]}]"#,
+        r#"[{"field":"a","extra":5}]"#,
+        r#"[{"field":"a"},"b"]"#,
+        r#"[{"field":"a","to":{"x":1}}]"#,
+        r#"[{"field":"a"#,
+        r#"nonsense"#,
+        r#"[{"field":"a","from":"\u00e9\ud83d\ude00\n\"\/"}]"#,
+        r#"[{"field":"a","from":"\ud83d"}]"#,
+        r#"[{"field":"a","from":"é\u00e9\ud83d\ude00"}]"#,
+        r#"[{"field":"a","field":"b"}]"#,
+        r#"[{"field":"a"}] trailing"#,
+    ] {
+        let ours = audit::changes_json(&audit::read_changes(Some(stored)));
+        let theirs = text_result(&lines.ask(&format!("readchanges {}", text_arg(Some(stored))))).expect("a text");
+        cases += 1;
+        if ours != theirs {
+            differences += 1;
+            eprintln!("DIFFERENT read of {stored}: ours {ours}, theirs {theirs}");
+        }
+    }
     println!("audit text: {cases} cases, {differences} differences");
     lines.finish();
     assert_eq!(differences, 0);
