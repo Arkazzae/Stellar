@@ -156,26 +156,9 @@ struct Activity {
 }
 
 /// The day number of a date, counted from 1970-01-01.
-fn days_from_civil(year: i64, month: u32, day: u32) -> i64 {
-    let year = if month <= 2 { year - 1 } else { year };
-    let era = year.div_euclid(400);
-    let of_year = year.rem_euclid(400);
-    let shifted = i64::from((month + 9) % 12);
-    let of_era = of_year * 365 + of_year / 4 - of_year / 100 + (shifted * 153 + 2) / 5 + i64::from(day) - 1;
-    era * 146_097 + of_era - 719_468
-}
-
 /// The date of a day number, as `yyyy-MM-dd`.
-fn civil_from_days(days: i64) -> String {
-    let shifted = days + 719_468;
-    let era = shifted.div_euclid(146_097);
-    let of_era = shifted.rem_euclid(146_097);
-    let of_year = (of_era - of_era / 1460 + of_era / 36_524 - of_era / 146_096) / 365;
-    let day_of_year = of_era - (365 * of_year + of_year / 4 - of_year / 100);
-    let month_index = (5 * day_of_year + 2) / 153;
-    let day = day_of_year - (153 * month_index + 2) / 5 + 1;
-    let month = if month_index < 10 { month_index + 3 } else { month_index - 9 };
-    let year = of_year + era * 400 + i64::from(month <= 2);
+fn civil_date(days: i64) -> String {
+    let (year, month, day) = crate::values::civil_from_days(days);
     format!("{year:04}-{month:02}-{day:02}")
 }
 
@@ -183,7 +166,7 @@ fn civil_from_days(days: i64) -> String {
 fn local_day(zone: &TimeZone, at: Timestamp) -> i64 {
     let seconds = at.unix_seconds();
     let local = zone.local_time(seconds);
-    days_from_civil(local.year, local.month, local.day)
+    crate::values::days_from_civil(local.year, i64::from(local.month), i64::from(local.day))
 }
 
 /// The named zone, or UTC when the name is empty or unknown to this host.
@@ -285,7 +268,7 @@ pub(super) async fn activity(
                 time_zone: zone.id().to_string(),
                 days: (0..ACTIVITY_DAYS as usize)
                     .map(|index| Day {
-                        date: civil_from_days(first + index as i64),
+                        date: civil_date(first + index as i64),
                         messages: message_counts[index],
                         new_members: joins[index],
                         active_users: per_day[index].len(),
@@ -308,8 +291,8 @@ mod tests {
     #[test]
     fn day_numbers_and_dates_are_each_others_inverse() {
         for (year, month, day, number) in [(1970, 1, 1, 0), (2000, 2, 29, 11_016), (2026, 11, 24, 20_781), (1969, 12, 31, -1)] {
-            assert_eq!(days_from_civil(year, month, day), number);
-            assert_eq!(civil_from_days(number), format!("{year:04}-{month:02}-{day:02}"));
+            assert_eq!(crate::values::days_from_civil(year, month, day), number);
+            assert_eq!(civil_date(number), format!("{year:04}-{month:02}-{day:02}"));
         }
     }
 
