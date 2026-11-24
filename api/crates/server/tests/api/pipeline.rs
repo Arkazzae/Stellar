@@ -66,9 +66,16 @@ async fn spoken(Path(what): Path<String>) -> Json<Value> {
     Json(json!({ "what": what }))
 }
 
-/// Takes its time, so that the client is gone before it commits and announces.
+/// What `slow_announce` and the test that uses it say to each other, so that
+/// nothing depends on how long anything takes: the handler tells the test it
+/// has started, and does not go on until the test says the client has gone.
+static HANDLER_STARTED: tokio::sync::Semaphore = tokio::sync::Semaphore::const_new(0);
+static CLIENT_GONE: tokio::sync::Semaphore = tokio::sync::Semaphore::const_new(0);
+
+/// Waits for the client to be gone before it commits and announces.
 async fn slow_announce(State(state): State<AppState>) -> ApiResult<StatusCode> {
-    tokio::time::sleep(std::time::Duration::from_millis(400)).await;
+    HANDLER_STARTED.add_permits(1);
+    CLIENT_GONE.acquire().await.expect("open").forget();
     announce(State(state)).await
 }
 
@@ -764,10 +771,14 @@ async fn a_handler_whose_client_went_away_still_commits_and_announces() {
     let server = server_with(&[]).await;
     assert!(server.events().is_empty());
 
+    // The handler is running, the client leaves, and only then is the handler
+    // let go on. However slow the machine is, the order is the same.
     server.client().get_and_hang_up("/api/test/slow-announce").await;
+    HANDLER_STARTED.acquire().await.expect("open").forget();
+    CLIENT_GONE.add_permits(1);
 
     let mut events = Vec::new();
-    for _ in 0..50 {
+    for _ in 0..600 {
         events = server.events();
         if !events.is_empty() {
             break;
