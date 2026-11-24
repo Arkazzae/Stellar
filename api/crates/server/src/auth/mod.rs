@@ -3,12 +3,15 @@
 //! carries them, and the flow every proof of identity ends in.
 
 pub mod cookies;
+#[cfg(test)]
+mod differential;
 pub mod events;
 #[cfg(test)]
 mod fixtures;
 pub mod flow;
 pub mod password;
 pub mod policy;
+pub mod recovery_codes;
 pub mod session;
 pub mod setup_code;
 pub mod tokens;
