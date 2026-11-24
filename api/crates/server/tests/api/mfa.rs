@@ -325,6 +325,13 @@ async fn a_mailed_code_proves_the_address_and_then_signs_the_account_in() {
     let (other, id) = waiting(&instance, "maya").await;
     let again = post(&other, "/api/auth/mfa/verify", json!({"challengeId": id, "methodId": method, "code": mailed})).await;
     assert_eq!(again.status.as_u16(), 401);
+
+    // With mail off, a method that is not there is still said so first.
+    instance.settings("\"MailingEnabled\" = 0");
+    let unknown = post(&other, "/api/auth/mfa/email/send", json!({"challengeId": id, "methodId": Id::random().to_string()})).await;
+    assert_eq!(title(&unknown), "That security method is not available for this account.");
+    let off = post(&other, "/api/auth/mfa/email/send", json!({"challengeId": id, "methodId": method})).await;
+    assert_eq!((off.status.as_u16(), title(&off).as_str()), (409, "Verify an e-mail method before using e-mail codes."));
 }
 
 #[tokio::test]
