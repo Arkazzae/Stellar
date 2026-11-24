@@ -26,7 +26,6 @@ mod settings;
 
 use std::sync::{Arc, OnceLock};
 
-use axum::http::StatusCode;
 use axum::response::Response;
 
 use crate::database::DbError;
