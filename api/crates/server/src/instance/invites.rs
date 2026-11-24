@@ -4,10 +4,22 @@ use rusqlite::{Connection, OptionalExtension, Transaction, params};
 
 use crate::values::{Id, Timestamp};
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone)]
 pub struct Invite {
     pub id: Id,
     pub server: Id,
+    /// The code as it is stored: trimmed and in lower case.
+    pub code: String,
+    /// The channel a new member lands in, none once that channel is gone.
+    pub channel: Option<Id>,
+    pub created_by: Id,
+    pub expires_at: Option<Timestamp>,
+}
+
+/// A code as it is stored and looked up: trimmed, and in lower case letter by
+/// letter.
+pub fn normalize_code(code: &str) -> String {
+    stellarr_unicode::to_lower(code.trim())
 }
 
 /// The invite behind the code while it can still be used: it has neither
@@ -18,23 +30,30 @@ pub fn find_usable(
     code: &str,
     now: Timestamp,
 ) -> rusqlite::Result<Option<Invite>> {
-    let code: String = code.trim().chars().flat_map(char::to_lowercase).collect();
+    let code = normalize_code(code);
     let found = connection
         .query_row(
-            "SELECT \"Id\", \"ServerId\", \"Uses\", \"MaxUses\", \"ExpiresAt\" FROM \"ServerInvites\" WHERE \"Code\" = ?1 LIMIT 1",
+            "SELECT \"Id\", \"ServerId\", \"Code\", \"ChannelId\", \"CreatedById\", \"ExpiresAt\", \"Uses\", \"MaxUses\"
+             FROM \"ServerInvites\" WHERE \"Code\" = ?1 LIMIT 1",
             [&code],
             |row| {
                 Ok((
-                    Invite { id: row.get(0)?, server: row.get(1)? },
-                    row.get::<_, i64>(2)?,
-                    row.get::<_, Option<i64>>(3)?,
-                    row.get::<_, Option<Timestamp>>(4)?,
+                    Invite {
+                        id: row.get(0)?,
+                        server: row.get(1)?,
+                        code: row.get(2)?,
+                        channel: row.get(3)?,
+                        created_by: row.get(4)?,
+                        expires_at: row.get(5)?,
+                    },
+                    row.get::<_, i64>(6)?,
+                    row.get::<_, Option<i64>>(7)?,
                 ))
             },
         )
         .optional()?;
-    Ok(found.and_then(|(invite, uses, max_uses, expires_at)| {
-        let expired = expires_at.is_some_and(|at| at <= now);
+    Ok(found.and_then(|(invite, uses, max_uses)| {
+        let expired = invite.expires_at.is_some_and(|at| at <= now);
         let used_up = max_uses.is_some_and(|max| max <= uses);
         (!expired && !used_up).then_some(invite)
     }))
