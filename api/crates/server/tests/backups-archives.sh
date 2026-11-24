@@ -91,7 +91,7 @@ for who in ours-restores-first witness-restores-ours; do
 done
 "$example" apply "$work/first.zip" "$work/ours-restores-first" || status=1
 witness apply "$work/ours.zip" "$work/witness-restores-ours" || status=1
-py tree "$work/data" "$work/ours-restores-first" "$work/first.zip" || status=1
+py tree "$work/data" "$work/ours-restores-first" "$work/first.zip" ours || status=1
 echo "-- the first server's own restore, for what it does with modes:"
 py tree "$work/data" "$work/witness-restores-ours" || status=1
 
