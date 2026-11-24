@@ -16,6 +16,7 @@ mod defaults;
 mod objects;
 mod oidc;
 mod origin;
+pub mod relay;
 mod storage;
 mod trusted_proxies;
 mod variables;
@@ -671,6 +672,7 @@ pub struct Settings {
     pub database: DatabaseSettings,
     pub language: Language,
     pub rtc: RtcSettings,
+    pub relay: relay::RelaySettings,
     pub operations: OperationsSettings,
     pub mail: MailSettings,
     pub secrets: EnvironmentSecrets,
@@ -746,6 +748,7 @@ impl Settings {
             database: DatabaseSettings::load(config)?,
             language,
             rtc,
+            relay: relay::RelaySettings::load(config),
             operations: OperationsSettings::load(config)?,
             mail: MailSettings::load(config)?,
             secrets: EnvironmentSecrets::load(config),
