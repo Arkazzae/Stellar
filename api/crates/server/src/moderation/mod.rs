@@ -200,7 +200,7 @@ async fn ban(
             })
         })
         .await?;
-    announce_removal(&state, server, user, "banned");
+    announce_removal(&state, server, user, "banned").await;
     let mut response = json_response(StatusCode::CREATED, &banned);
     if let Ok(location) = HeaderValue::from_str(&format!("/api/admin/bans/{user}")) {
         response.headers_mut().insert(header::LOCATION, location);
@@ -283,14 +283,18 @@ async fn kick(
             Ok(())
         })
         .await?;
-    announce_removal(&state, server, user, "kicked");
+    announce_removal(&state, server, user, "kicked").await;
     Ok(no_content())
 }
 
 /// Tells the server that the member is gone and the member that they were
 /// removed, then takes their connections out of the server's groups. They hear
 /// about it through their own user group, which outlives the membership.
-fn announce_removal(state: &AppState, server: Id, user: Id, kind: &'static str) {
+///
+/// Their voice seats go first, with the media sessions they hold, and the rooms
+/// are told last, when the person is already out of the server's groups.
+async fn announce_removal(state: &AppState, server: Id, user: Id, kind: &'static str) {
+    let rooms = crate::voice::leave_server_rooms(state, server, user).await;
     state.events().publish(Event::new(
         Audience::Server(server),
         "ServerMemberRemoved",
@@ -308,6 +312,7 @@ fn announce_removal(state: &AppState, server: Id, user: Id, kind: &'static str) 
         },
     ));
     state.events().server_left(user, server);
+    crate::voice::announce_rooms(state, &rooms).await;
 }
 
 /// A unique value that was taken is a conflict.

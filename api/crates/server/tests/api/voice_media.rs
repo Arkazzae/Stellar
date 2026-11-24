@@ -357,7 +357,7 @@ async fn a_session_the_media_server_lost_is_forgotten_and_the_browser_told_to_re
 
 #[tokio::test]
 async fn every_change_of_the_seat_closes_its_media_session_without_an_event() {
-    for change in ["leave", "disconnect", "newer tab", "another room", "voice kick", "move"] {
+    for change in ["leave", "disconnect", "newer tab", "another room", "voice kick", "move", "server kick", "ban"] {
         let rig = Rig::start().await;
         let jonas = rig.person("jonas").await;
         let mut peer = rig.connect(&jonas).await;
@@ -365,6 +365,7 @@ async fn every_change_of_the_seat_closes_its_media_session_without_an_event() {
         let session = peer.open_media(rig.salon).await;
         let room_path = format!("/api/admin/channels/{}/members/{}", rig.salon, jonas.id);
         let mut tab = None;
+        peer.drain("VoiceParticipantChanged").await;
 
         match change {
             "leave" => peer.leave().await,
@@ -391,7 +392,20 @@ async fn every_change_of_the_seat_closes_its_media_session_without_an_event() {
                 assert_eq!(moved.status, 204);
                 peer.next("VoiceChannelMoved").await;
             }
+            "server kick" => {
+                let answer = rig.call(&rig.owner, Method::DELETE, &format!("/api/admin/members/{}", jonas.id), None).await;
+                assert_eq!(answer.status, 204, "{}", answer.text());
+            }
+            "ban" => {
+                let answer = rig.call(&rig.owner, Method::POST, &format!("/api/admin/members/{}/ban", jonas.id), Some(json!({"reason": null}))).await;
+                assert_eq!(answer.status, 201, "{}", answer.text());
+            }
             _ => unreachable!(),
+        }
+        if change == "server kick" || change == "ban" {
+            // The room is told, and the person is not among those who hear it.
+            rig.occupants_become(rig.salon, &[]).await;
+            assert!(peer.drain("VoiceParticipantChanged").await.is_empty(), "{change}");
         }
 
         let closed = rig.media.delete_of(&session).await;

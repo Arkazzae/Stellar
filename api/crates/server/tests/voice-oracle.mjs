@@ -578,6 +578,19 @@ await step("the third server keeps the soundboard to staff", async () => [
   await text(fay, "PlaySoundboard", ids.v6, ids.sound3),
 ]);
 
+// ------------------------------------------------------------- removal
+sectionOf("removal");
+await step("fay and eve sit in the first room, with sessions", async () => [
+  await text(fay, "LeaveVoice"), await text(eve, "LeaveVoice"), await text(olaTwo, "LeaveVoice"),
+  await text(ola, "JoinVoice", V(1)),
+  await text(fay, "JoinVoice", V(1)), await text(eve, "JoinVoice", V(1)),
+  await text(fay, "OpenMediaSession", V(1)), await text(eve, "OpenMediaSession", V(1)),
+]);
+await step("the owner kicks fay from the server", async () => http(owner, "DELETE", `/api/admin/members/${ids.fay}`));
+await step("the owner bans eve from the server", async () => http(owner, "POST", `/api/admin/members/${ids.eve}/ban`, { reason: null }));
+await step("what fay and eve may still do", async () => [await text(fay, "SendVoiceSignal", sig(V(1))), await text(eve, "JoinVoice", V(1)), await text(fay, "JoinVoice", V(1))]);
+await step("ola leaves", () => text(ola, "LeaveVoice"));
+
 // ------------------------------------------------------------ disconnecting
 sectionOf("disconnecting");
 await step("everybody leaves", async () => {
