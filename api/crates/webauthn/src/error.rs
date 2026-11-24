@@ -35,7 +35,6 @@ pub enum Error {
     UserNotPresent,
     UserNotVerified,
     BackupStateWithoutEligibility,
-    BackupEligibilityChanged,
     AttestedDataMissing,
     AttestedDataUnexpected,
     CredentialIdLength,
@@ -82,9 +81,6 @@ impl fmt::Display for Error {
             Error::UserNotVerified => f.write_str("user verified flag is not set"),
             Error::BackupStateWithoutEligibility => {
                 f.write_str("backed up without being backup eligible")
-            }
-            Error::BackupEligibilityChanged => {
-                f.write_str("backup eligibility differs from the stored credential")
             }
             Error::AttestedDataMissing => f.write_str("attested credential data is missing"),
             Error::AttestedDataUnexpected => {

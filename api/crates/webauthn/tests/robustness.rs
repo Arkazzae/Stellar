@@ -59,7 +59,6 @@ fn changed_and_cut_assertions_never_panic() {
         public_key: &registration.public_key,
         user_handle: &USER_HANDLE,
         sign_count: 0,
-        backup_eligible: false,
     };
     let response =
         AssertionSpec::new(&registration.credential_id, &[0x3C; 32]).build(key(Algorithm::Es256));

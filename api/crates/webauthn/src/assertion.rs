@@ -43,7 +43,6 @@ pub struct StoredCredential<'a> {
     pub public_key: &'a [u8],
     pub user_handle: &'a [u8],
     pub sign_count: u32,
-    pub backup_eligible: bool,
 }
 
 /// What the ceremony was started with.
@@ -64,6 +63,10 @@ pub struct AssertionRequest<'a> {
 pub struct Assertion {
     pub sign_count: u32,
     pub backed_up: bool,
+    /// What the authenticator reported this time. A change from registration
+    /// is not refused (the flags are signed, and an authenticator may report
+    /// them differently after a migration); the application may store or log it.
+    pub backup_eligible: bool,
 }
 
 pub fn verify_assertion(
@@ -115,7 +118,6 @@ pub fn verify_assertion(
     ceremony::check_user_present(&auth)?;
     ceremony::check_user_verified(&auth)?;
     ceremony::check_backup_flags(&auth)?;
-    check_backup_eligibility_unchanged(&auth, stored)?;
 
     // Steps 19 to 21: the signature over the data and the hash.
     let key = PublicKey::from_cose(stored.public_key).map_err(|_| Error::StoredKeyInvalid)?;
@@ -127,6 +129,7 @@ pub fn verify_assertion(
     Ok(Assertion {
         sign_count: auth.sign_count,
         backed_up: auth.flags.backed_up(),
+        backup_eligible: auth.flags.backup_eligible(),
     })
 }
 
@@ -171,17 +174,6 @@ fn check_user_handle(
 fn check_no_attested_data(auth: &AuthenticatorData) -> Result<(), Error> {
     if auth.attested.is_some() {
         return Err(Error::AttestedDataUnexpected);
-    }
-    Ok(())
-}
-
-/// Whether a credential may be backed up is fixed when it is created.
-fn check_backup_eligibility_unchanged(
-    auth: &AuthenticatorData,
-    stored: &StoredCredential<'_>,
-) -> Result<(), Error> {
-    if auth.flags.backup_eligible() != stored.backup_eligible {
-        return Err(Error::BackupEligibilityChanged);
     }
     Ok(())
 }

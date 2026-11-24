@@ -17,7 +17,6 @@ struct Fixture {
     algorithm: Algorithm,
     registration: Registration,
     sign_count: u32,
-    backup_eligible: bool,
     allowed: Vec<Vec<u8>>,
     require_user_handle: bool,
     handle: Vec<u8>,
@@ -30,7 +29,6 @@ impl Fixture {
             algorithm,
             registration,
             sign_count: 0,
-            backup_eligible: false,
             allowed: vec![],
             require_user_handle: false,
             handle: USER_HANDLE.to_vec(),
@@ -55,7 +53,6 @@ impl Fixture {
             public_key: &self.registration.public_key,
             user_handle: &self.handle,
             sign_count: self.sign_count,
-            backup_eligible: self.backup_eligible,
         };
         verify_assertion(&request, &stored, response)
     }
@@ -85,7 +82,8 @@ fn every_offered_algorithm_signs_in() {
             result,
             Assertion {
                 sign_count: 1,
-                backed_up: false
+                backed_up: false,
+                backup_eligible: false
             },
             "{algorithm:?}"
         );
@@ -96,7 +94,6 @@ fn every_offered_algorithm_signs_in() {
 fn the_new_counter_and_backup_state_are_reported() {
     let mut fixture = es256();
     fixture.sign_count = 4;
-    fixture.backup_eligible = true;
     let mut spec = fixture.spec();
     spec.sign_count = 77;
     spec.flags = UP | UV | BE | BS;
@@ -104,7 +101,8 @@ fn the_new_counter_and_backup_state_are_reported() {
         fixture.accepts(&spec),
         Assertion {
             sign_count: 77,
-            backed_up: true
+            backed_up: true,
+            backup_eligible: true
         }
     );
     spec.flags = UP | UV | BE;
@@ -112,7 +110,8 @@ fn the_new_counter_and_backup_state_are_reported() {
         fixture.accepts(&spec),
         Assertion {
             sign_count: 77,
-            backed_up: false
+            backed_up: false,
+            backup_eligible: true
         }
     );
 }
@@ -264,17 +263,18 @@ fn user_presence_and_verification_are_required() {
 
 #[test]
 fn backup_flags_are_checked() {
-    let mut fixture = es256();
+    let fixture = es256();
     let mut spec = fixture.spec();
     spec.flags = UP | UV | BS;
     fixture.refuses(&spec, Error::BackupStateWithoutEligibility);
 
-    // Eligibility is fixed at registration: a change either way is refused.
-    spec.flags = UP | UV | BE;
-    fixture.refuses(&spec, Error::BackupEligibilityChanged);
-    fixture.backup_eligible = true;
+    // Eligibility reported differently from registration is not refused, and
+    // is reported back for the application to keep or log.
     spec.flags = UP | UV;
-    fixture.refuses(&spec, Error::BackupEligibilityChanged);
+    let seen = fixture.accepts(&spec);
+    assert!(!seen.backup_eligible && !seen.backed_up);
+    spec.flags = UP | UV | BE;
+    assert!(fixture.accepts(&spec).backup_eligible);
 }
 
 #[test]
