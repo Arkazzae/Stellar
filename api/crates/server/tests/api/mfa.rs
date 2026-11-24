@@ -374,3 +374,24 @@ async fn a_sign_in_that_asked_not_to_be_kept_ends_in_a_short_session() {
     let done = post(&kept, "/api/auth/mfa/verify", json!({"challengeId": id, "methodId": method, "code": code(secret, 1)})).await;
     assert!(cookies(&done)[0].contains("expires="), "{}", cookies(&done)[0]);
 }
+
+#[tokio::test]
+async fn ten_codes_an_hour_are_mailed_and_the_next_is_refused_for_an_hour() {
+    let instance = Instance::with(&["maya"], &[]).await;
+    instance.require();
+    instance.settings("\"EmailCodeCooldownSeconds\" = 0");
+    let (client, challenge) = instance.start("maya").await;
+    let id = challenge["challengeId"].as_str().unwrap();
+
+    for _ in 0..10 {
+        let sent = post(&client, "/api/auth/mfa/enroll/email/start", json!({"challengeId": id})).await;
+        assert_eq!(sent.status, 200, "{}", sent.text());
+        assert_eq!(sent.json::<Value>()["retryAfterSeconds"], 0);
+    }
+    let limited = post(&client, "/api/auth/mfa/enroll/email/start", json!({"challengeId": id})).await;
+    assert_eq!(limited.status, 429);
+    assert_eq!(limited.header("retry-after"), Some("3600"));
+    assert_eq!(limited.json::<Value>()["retryAfterSeconds"], 3600);
+    assert_eq!(title(&limited), "Too many codes have been sent. Try again later.");
+    assert_eq!(instance.smtp.until(10).await.len(), 10);
+}
