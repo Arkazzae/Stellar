@@ -5,8 +5,10 @@
 //! Starting the worker's process after the sign-in is what makes it look at
 //! the queue at once: it looks when it starts, and then every thirty seconds.
 //!
-//! `an_alert_reaches_mailpit_in_both_languages` and the others that name Mailpit
-//! need a container and are ignored; see their header.
+//! The tests at the end that name Mailpit need a container and are ignored:
+//! `docker run -d -p 127.0.0.1:1025:1025 -p 127.0.0.1:8025:8025
+//! axllent/mailpit:v1.34.0`, then
+//! `STELLARR_TEST_MAILPIT=1025,8025 cargo test -p stellarr-api --test api mail::mailpit -- --ignored`.
 
 use std::path::Path;
 use std::sync::{Arc, Mutex};
@@ -20,7 +22,7 @@ use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
 use tokio::net::TcpListener;
 use tokio::task::JoinHandle;
 
-use crate::support::{Person, Server, TempDir};
+use crate::support::{Client, PASSWORD, Person, Request, Server, TempDir};
 
 const WORKER: &str = ("Testing__Workers", "security-notifications").1;
 const PUBLIC_URL: &str = "https://chat.test";
@@ -371,5 +373,120 @@ async fn the_log_holds_no_password_no_address_and_no_text_of_the_message() {
     assert!(smtp.seen().mails[0].contains("Zebramark"));
     for secret in ["hunter2", "zebramark", "example.test", "this just happened on your account", "noreply@chat.test"] {
         assert!(!log.contains(secret), "the log holds {secret}:\n{log}");
+    }
+}
+
+// ---- a real mail server: Mailpit ----
+
+mod mailpit {
+    use std::net::SocketAddr;
+
+    use http::Method;
+    use serde_json::Value;
+
+    use super::*;
+
+    fn ports() -> (u16, SocketAddr) {
+        let value = std::env::var("STELLARR_TEST_MAILPIT")
+            .expect("STELLARR_TEST_MAILPIT is not set: the SMTP and the HTTP port, comma between");
+        let (smtp, http) = value.split_once(',').expect("smtp,http");
+        (smtp.parse().unwrap(), format!("127.0.0.1:{http}").parse().unwrap())
+    }
+
+    async fn call(api: SocketAddr, method: Method, path: &str) -> Value {
+        let answer = Client::anonymous(api).send(Request::new(method, path)).await;
+        assert!(answer.status.is_success(), "{path}: {}", answer.text());
+        serde_json::from_str(&answer.text()).unwrap_or(Value::Null)
+    }
+
+    async fn empty(api: SocketAddr) {
+        call(api, Method::DELETE, "/api/v1/messages").await;
+    }
+
+    async fn messages(api: SocketAddr) -> Vec<Value> {
+        let list = call(api, Method::GET, "/api/v1/messages").await;
+        let mut found = Vec::new();
+        for summary in list["messages"].as_array().cloned().unwrap_or_default() {
+            let id = summary["ID"].as_str().unwrap();
+            found.push(call(api, Method::GET, &format!("/api/v1/message/{id}")).await);
+        }
+        found
+    }
+
+    /// The worker is already running when the person signs in, so the alert has
+    /// to be found by one of its looks, which come every thirty seconds.
+    #[tokio::test]
+    #[ignore = "needs Mailpit; see the header of the file"]
+    async fn an_alert_reaches_mailpit_within_the_workers_interval_in_both_languages() {
+        let (smtp, api) = ports();
+        for (language, subject, activity) in [
+            ("en", "Security activity on Stellarr", "Signed in"),
+            ("pl", "Aktywność zabezpieczeń w Stellarr", "Udane logowanie"),
+        ] {
+            empty(api).await;
+            let folder = with_a_queued_alert("owner").await;
+            configure(folder.path(), &Saved { port: smtp, username: "", mailing: true, alerts: true });
+            // The queued row of the set-up is not what this test is about.
+            open(folder.path()).execute("DELETE FROM \"SecurityNotifications\"", []).unwrap();
+            let worker = start_worker(folder.path(), &[("STELLARR_LANGUAGE", language)]).await;
+            let signed_in = std::time::Instant::now();
+            assert_eq!(worker.login(&worker.client(), "owner", PASSWORD).await.status, 200);
+
+            for _ in 0..1400 {
+                if !messages(api).await.is_empty() {
+                    break;
+                }
+                tokio::time::sleep(Duration::from_millis(25)).await;
+            }
+            let waited = signed_in.elapsed();
+            assert!(worker.stop().await);
+
+            let found = messages(api).await;
+            assert_eq!(found.len(), 1, "{language}");
+            let mail = &found[0];
+            assert!(waited < Duration::from_secs(35), "{language}: {waited:?}");
+            assert_eq!(mail["Subject"], subject, "{language}");
+            assert_eq!(mail["From"]["Address"], "noreply@chat.test");
+            assert_eq!(mail["From"]["Name"], "Stellarr");
+            assert_eq!(mail["To"][0]["Address"], "owner@example.test");
+            let (text, html) = (mail["Text"].as_str().unwrap(), mail["HTML"].as_str().unwrap());
+            assert!(text.contains(activity), "{text}");
+            assert!(html.contains(&format!("lang=\"{language}\"")), "{html}");
+            assert!(html.contains(activity), "{html}");
+            println!("{language}: delivered {waited:?} after the sign-in");
+        }
+    }
+
+    #[tokio::test]
+    #[ignore = "needs Mailpit; see the header of the file"]
+    async fn with_mail_off_nothing_arrives_and_a_server_that_was_down_gets_the_alert_once() {
+        let (smtp, api) = ports();
+        empty(api).await;
+
+        // Off: nothing is sent, and the row is put off for an hour.
+        let off = with_a_queued_alert("owner").await;
+        configure(off.path(), &Saved { port: smtp, username: "", mailing: false, alerts: true });
+        let worker = start_worker(off.path(), &[]).await;
+        until("the alert is put off", || minutes_from_now_of(off.path()) >= 59).await;
+        assert!(worker.stop().await);
+        assert!(messages(api).await.is_empty());
+
+        // Down: a port nobody listens on, then the real one, as the operator
+        // would correct it, and the five minutes passed.
+        let folder = with_a_queued_alert("owner").await;
+        configure(folder.path(), &Saved { port: free_port(), username: "", mailing: true, alerts: true });
+        let first = start_worker(folder.path(), &[]).await;
+        until("the failed try", || row(folder.path()).attempts == 1).await;
+        assert!(first.stop().await);
+        assert!(messages(api).await.is_empty());
+        configure(folder.path(), &Saved { port: smtp, username: "", mailing: true, alerts: true });
+        open(folder.path())
+            .execute("UPDATE \"SecurityNotifications\" SET \"NextAttemptAt\" = ?1", [Timestamp::now().minus(Duration::from_secs(1))])
+            .unwrap();
+        let second = start_worker(folder.path(), &[]).await;
+        until("the message", || row(folder.path()).sent_at.is_some()).await;
+        assert!(second.stop().await);
+
+        assert_eq!(messages(api).await.len(), 1);
     }
 }
