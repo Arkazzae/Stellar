@@ -1636,3 +1636,47 @@ pub async fn redeem_recovery_credential(
         })
         .await
 }
+
+// ---- the account's address changes ----
+
+/// What the account's second steps and mailed codes owe to a change of its
+/// address, to be called in the transaction that changes it (which writes the
+/// address, the requests and reset links, and the `email-changed` event, after
+/// this). Every mail method of the account that is not revoked, confirmed or
+/// waiting for its first code, and is for another address than the new one, is
+/// revoked now, with a `method-removed` event ("email changed", and no mail
+/// about it) for each, in the order they were made; every code mailed and not
+/// yet spent stops working. `new_normalized_address` is the new address as it
+/// is compared (in capitals). The ids of the methods revoked.
+///
+/// A change of address does not touch the account's security version, its
+/// sessions, remembered devices or recovery codes, as on the first server.
+pub fn email_address_changed(
+    tx: &Transaction,
+    context: &Context<'_>,
+    user: Id,
+    new_normalized_address: &str,
+    now: Timestamp,
+) -> Result<Vec<Id>, DbError> {
+    let mut statement = tx.prepare(
+        "SELECT \"Id\" FROM \"MfaMethods\" WHERE \"UserId\" = ?1 AND \"Type\" = 'email' AND \"RevokedAt\" IS NULL
+           AND \"EmailAddress\" IS NOT ?2 ORDER BY \"CreatedAt\", \"Id\"",
+    )?;
+    let old: Vec<Id> = statement
+        .query_map(params![user, new_normalized_address], |row| row.get(0))?
+        .collect::<rusqlite::Result<_>>()?;
+    drop(statement);
+    for method in &old {
+        mfa_methods::revoke(tx, user, *method, now)?;
+        events::record_from(
+            tx,
+            context,
+            user,
+            events::METHOD_REMOVED,
+            "email changed",
+            None,
+        )?;
+    }
+    super::email_codes::consume_all(tx, user, now)?;
+    Ok(old)
+}
