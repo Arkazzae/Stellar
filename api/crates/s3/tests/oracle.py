@@ -302,6 +302,11 @@ def cases():
     out.append(Case("put-hashed", "http", f"put_object {hexs('test$file.text')} {len(data)} - - hashed:{hexs('Welcome to Amazon S3.')}")
                .build("PUT", "test$file.text", [], [("content-type", "application/octet-stream")], len(data), sha(data)))
 
+    out.append(Case("put-if-absent", "https", f"put_object_if_absent {hexs(key)} 1234 {hexs('image/png')} - unsigned")
+               .build("PUT", key, [], [("content-type", "image/png"), ("if-none-match", "*")], 1234, "UNSIGNED-PAYLOAD"))
+    out.append(Case("put-if-absent-hashed", "http", f"put_object_if_absent {hexs('test$file.text')} {len(data)} - - hashed:{hexs('Welcome to Amazon S3.')}")
+               .build("PUT", "test$file.text", [], [("content-type", "application/octet-stream"), ("if-none-match", "*")], len(data), sha(data)))
+
     for label, length, chunk_size in [("two-chunks", 66560, 65536), ("one-chunk", 8192, 65536), ("empty", 0, 8192),
                                        ("exact", 16384, 8192), ("small-last", 20000, 8192)]:
         c = Case(f"put-chunked-{label}", "http", f"put_object {hexs('chunk object.txt')} {length} - - chunked:{chunk_size}")
@@ -334,6 +339,10 @@ def cases():
     c = Case("multipart-complete", "https",
              f"complete {hexs(key)} {hexs(uid)} " + ",".join(f"{n}:{hexs(e)}" for n, e in parts))
     c.build("POST", key, [("uploadId", uid)], [("content-type", "application/xml")], len(xml), sha(xml), xml)
+    out.append(c)
+    c = Case("multipart-complete-if-absent", "https",
+             f"complete_if_absent {hexs(key)} {hexs(uid)} " + ",".join(f"{n}:{hexs(e)}" for n, e in parts))
+    c.build("POST", key, [("uploadId", uid)], [("content-type", "application/xml"), ("if-none-match", "*")], len(xml), sha(xml), xml)
     out.append(c)
     out.append(Case("multipart-abort", "https", f"abort {hexs(key)} {hexs(uid)}")
                .build("DELETE", key, [("uploadId", uid)], []))

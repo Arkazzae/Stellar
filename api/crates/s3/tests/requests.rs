@@ -505,3 +505,49 @@ fn every_part_but_the_last_is_the_same_size() {
     }
     assert_eq!(covered, length);
 }
+
+#[test]
+fn only_the_if_absent_calls_carry_the_condition_and_they_sign_it() {
+    let c = client("https://store.test");
+    let hash = Payload::hash_of(b"x");
+    let plain = c.put_object("k", 1, None, &[], hash, now()).unwrap();
+    let guarded = c
+        .put_object_if_absent("k", 1, None, &[], hash, now())
+        .unwrap();
+    assert_eq!(plain.header("if-none-match"), None);
+    assert_eq!(guarded.header("if-none-match"), Some("*"));
+    assert!(
+        guarded
+            .header("authorization")
+            .unwrap()
+            .contains("SignedHeaders=content-length;content-type;host;if-none-match;")
+    );
+
+    let parts = [Part {
+        number: 1,
+        etag: "\"e\"".into(),
+    }];
+    let plain = c
+        .complete_multipart_upload("k", "id", &parts, now())
+        .unwrap();
+    let guarded = c
+        .complete_multipart_upload_if_absent("k", "id", &parts, now())
+        .unwrap();
+    assert_eq!(plain.header("if-none-match"), None);
+    assert_eq!(guarded.header("if-none-match"), Some("*"));
+    assert!(
+        guarded
+            .header("authorization")
+            .unwrap()
+            .contains("if-none-match")
+    );
+    // The same refusals as the plain calls.
+    assert!(
+        c.complete_multipart_upload_if_absent("k", "", &parts, now())
+            .is_err()
+    );
+    assert!(
+        c.put_object_if_absent("", 1, None, &[], hash, now())
+            .is_err()
+    );
+}
