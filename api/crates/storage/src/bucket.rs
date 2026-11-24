@@ -20,10 +20,14 @@
 //!
 //! # Existing keys
 //!
-//! A bucket replaces what is under a key, and the interface says it does not.
-//! A `HEAD` before the `PUT` keeps the promise for the usual mistake. Two
-//! writers racing for one key can still both succeed here, where the folder
-//! store lets exactly one; keys are minted fresh, so only a bug races.
+//! Every write asks the store to create the object only if the key is free
+//! (`If-None-Match: *`, on the single request and on completing an upload),
+//! and a refusal because the key is taken is `AlreadyExists`. That is exclusive
+//! creation, with no extra request, on a store that honours the condition. A
+//! store that does not know it replaces what is under the key, and two
+//! writers racing for one key can both succeed: which stores honour it is
+//! something to find out of each, not to assume. A large upload that meets a
+//! taken key finds out when it completes, after its parts are sent.
 
 use std::sync::Arc;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
@@ -99,6 +103,9 @@ struct Inner {
 
 /// A call's answer with its body read.
 struct Answer {
+    /// How many tries the call took; more than one means a request may have
+    /// reached the store whose answer was lost.
+    tries: u32,
     status: u16,
     headers: Vec<(String, String)>,
     body: Bytes,
@@ -224,6 +231,7 @@ impl BucketStore {
                         tracing::debug!(status, attempt, "the store failed a call; trying again");
                     } else {
                         return Ok(Answer {
+                            tries: attempt,
                             status,
                             headers: header_list(
                                 collected
@@ -313,28 +321,19 @@ impl BucketStore {
             .map_err(|error| from_s3(&error, key))
     }
 
-    /// Whether an object is stored under `key`. A `HEAD` that finds nothing
-    /// cannot say whether the key or the bucket is missing, so a missing
-    /// bucket shows up at the write that follows.
-    async fn exists(&self, key: &str) -> Result<bool> {
-        let answer = self
-            .small(|now| self.inner.client.head_object(key, now))
-            .await?;
-        match s3::read_head_object(answer.status, &answer.headers) {
-            Ok(_) => Ok(true),
-            Err(error) if error.is_not_found() => Ok(false),
-            Err(error) => Err(from_s3(&error, key)),
-        }
-    }
-
     async fn get(&self, key: &str, range: Option<ByteRange>) -> Result<StoredObject> {
         key::check(key)?;
         if range.is_some_and(|r| r.to.is_some_and(|to| to < r.from)) {
             return Err(Error::RangeNotSatisfiable(key.to_owned()));
         }
+        // No object has a byte past the largest signed 64-bit offset, and
+        // stores read a range beyond it as no range at all.
+        if range.is_some_and(|r| r.from > i64::MAX as u64) {
+            return Err(Error::RangeNotSatisfiable(key.to_owned()));
+        }
         let asked = range.map(|r| s3::ByteRange {
             from: r.from,
-            to: r.to,
+            to: r.to.map(|to| to.min(i64::MAX as u64)),
         });
         let tuning = &self.inner.tuning;
         let mut attempt = 1;
@@ -425,9 +424,6 @@ impl BucketStore {
 
     async fn put(&self, key: &str, data: &mut (dyn AsyncRead + Send + Unpin)) -> Result<()> {
         key::check(key)?;
-        if self.exists(key).await? {
-            return Err(Error::AlreadyExists(key.to_owned()));
-        }
         let part_size = self.inner.tuning.part_size;
         let part = read_part(data, Vec::new(), part_size).await?;
         let mut lookahead = None;
@@ -474,17 +470,41 @@ impl BucketStore {
                 SMALL_ANSWER,
                 tuning.attempts,
                 |now| {
-                    let prepared =
-                        self.inner
-                            .client
-                            .put_object(key, length, None, &[], payload, now)?;
+                    let prepared = self.inner.client.put_object_if_absent(
+                        key,
+                        length,
+                        None,
+                        &[],
+                        payload,
+                        now,
+                    )?;
                     Ok((prepared, object_body(&bytes)))
                 },
             )
             .await?;
-        s3::read_put_object(answer.status, &answer.headers, &answer.body)
-            .map(|_| ())
-            .map_err(|error| from_s3(&error, key))
+        match s3::read_put_object(answer.status, &answer.headers, &answer.body) {
+            Ok(_) => Ok(()),
+            Err(error) if refused_as_taken(&error) => {
+                // After a try whose answer was lost, "taken" may be this very
+                // write. An object of the length that was sent is taken to be it.
+                if answer.tries > 1 && self.stored_length(key).await == Some(length) {
+                    return Ok(());
+                }
+                Err(Error::AlreadyExists(key.to_owned()))
+            }
+            Err(error) => Err(from_s3(&error, key)),
+        }
+    }
+
+    /// The length of the object under `key`, if it can be told.
+    async fn stored_length(&self, key: &str) -> Option<u64> {
+        let answer = self
+            .small(|now| self.inner.client.head_object(key, now))
+            .await
+            .ok()?;
+        s3::read_head_object(answer.status, &answer.headers)
+            .ok()
+            .map(|head| head.length)
     }
 
     async fn create_upload(&self, key: &str) -> Result<String> {
@@ -542,14 +562,20 @@ impl BucketStore {
                 let prepared = self
                     .inner
                     .client
-                    .complete_multipart_upload(key, id, &parts, now)?;
+                    .complete_multipart_upload_if_absent(key, id, &parts, now)?;
                 let body = Self::small_body(&prepared);
                 Ok((prepared, body))
             })
             .await?;
         s3::read_complete_multipart_upload(answer.status, &answer.headers, &answer.body)
             .map(|_| ())
-            .map_err(|error| from_s3(&error, key))
+            .map_err(|error| {
+                if refused_as_taken(&error) {
+                    Error::AlreadyExists(key.to_owned())
+                } else {
+                    from_s3(&error, key)
+                }
+            })
     }
 
     async fn put_part(&self, key: &str, id: &str, number: u32, bytes: Bytes) -> Result<String> {
@@ -764,6 +790,16 @@ pub(crate) fn from_outbound(error: &stellarr_outbound::Error) -> Error {
         kind
     };
     Error::store(kind, error.to_string())
+}
+
+/// Whether a store refused a conditional create because the key is taken:
+/// the precondition failed, or another write to it was running (the answer of
+/// a store that sees two conditional writes at once).
+fn refused_as_taken(error: &s3::Error) -> bool {
+    matches!(
+        error.kind,
+        s3::ErrorKind::PreconditionFailed | s3::ErrorKind::Conflict
+    )
 }
 
 /// What a refusal from the store means to a caller of the call made for `key`.

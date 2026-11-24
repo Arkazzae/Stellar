@@ -4,7 +4,7 @@
 //! the client put on the wire.
 //!
 //! It is written from the protocol's documentation, not from a real store's
-//! behaviour: what a real store does is the business of the MinIO run.
+//! behaviour: what a real store does is the business of the runs against real servers.
 
 use std::collections::{BTreeMap, HashMap, VecDeque};
 use std::sync::{Arc, Mutex};
@@ -60,6 +60,11 @@ pub struct Settings {
     /// Put blanks before the answer to CompleteMultipartUpload, as a store
     /// that keeps the connection alive during a long assembly does.
     pub complete_leading_whitespace: bool,
+    /// Apply the next PUT of an object and answer it with a failure, as a
+    /// connection that breaks after the store did the work does.
+    pub fail_after_applying: Option<usize>,
+    /// Ignore `If-None-Match: *`, as a store that does not know it does.
+    pub ignore_conditions: bool,
     /// Fail the next requests of this method with this status: (method, status, count).
     pub faults: VecDeque<(String, u16, usize)>,
 }
@@ -608,6 +613,13 @@ fn object(state: &mut State, request: &Incoming, bucket: &str, key: &str, query:
             out.headers.push(("etag".into(), etag));
             out
         }
+        "PUT"
+            if header(request, "if-none-match") == Some("*")
+                && !state.settings.ignore_conditions
+                && state.buckets[bucket].contains_key(key) =>
+        {
+            Outgoing::error(412, "PreconditionFailed", "the key is taken")
+        }
         "PUT" => {
             let content_type = header(request, "content-type")
                 .unwrap_or_default()
@@ -646,6 +658,10 @@ fn object(state: &mut State, request: &Incoming, bucket: &str, key: &str, query:
                     metadata,
                 },
             );
+            if let Some(left) = state.settings.fail_after_applying {
+                state.settings.fail_after_applying = left.checked_sub(1).filter(|n| *n > 0);
+                return Outgoing::error(503, "InternalError", "the answer is lost");
+            }
             let mut out = Outgoing::new(200);
             out.headers.push(("etag".into(), etag));
             out
@@ -736,6 +752,12 @@ fn complete(
     let Some(upload) = state.uploads.get(&id) else {
         return Outgoing::error(404, "NoSuchUpload", "no upload");
     };
+    if header(request, "if-none-match") == Some("*")
+        && !state.settings.ignore_conditions
+        && state.buckets[bucket].contains_key(key)
+    {
+        return Outgoing::error(412, "PreconditionFailed", "the key is taken");
+    }
     if upload.bucket != bucket || upload.key != key {
         return Outgoing::error(404, "NoSuchUpload", "wrong target");
     }

@@ -52,7 +52,7 @@ async fn env() -> Env {
     let state = fake.state.clone();
     Env {
         store: Arc::new(store),
-        exclusive_put: false,
+        exclusive_put: true,
         boundary: MIN_PART,
         longest_key: 1024,
         leftovers: Box::new(move || state.lock().unwrap().open_upload_ids()),
@@ -72,7 +72,7 @@ async fn requests_are_path_style_signed_and_carry_what_the_store_needs() {
     let log = fake.requests();
     assert_eq!(
         log.iter().map(|r| r.method.as_str()).collect::<Vec<_>>(),
-        ["HEAD", "PUT"]
+        ["PUT"]
     );
     for request in &log {
         // The fake verifies every signature; a 403 would be here.
@@ -88,39 +88,84 @@ async fn requests_are_path_style_signed_and_carry_what_the_store_needs() {
                 .contains("/us-east-1/s3/aws4_request")
         );
     }
-    assert_eq!(log[1].path(), "/uploads/audio/2026/11/a%20b%2Bc.webm");
+    assert_eq!(log[0].path(), "/uploads/audio/2026/11/a%20b%2Bc.webm");
     // The type is the generic one, and nothing but the signed headers.
     let (stored, content_type) = fake.stored(BUCKET, "audio/2026/11/a b+c.webm").unwrap();
     assert_eq!(stored, b"opus");
     assert_eq!(content_type, "application/octet-stream");
     assert!(
-        log[1]
+        log[0]
             .headers
             .iter()
             .all(|(n, _)| !n.starts_with("x-amz-meta"))
     );
-    assert!(log[1].header("x-amz-content-sha256").unwrap().len() == 64);
+    assert!(log[0].header("x-amz-content-sha256").unwrap().len() == 64);
     assert_eq!(
-        log[1]
+        log[0]
             .headers
             .iter()
             .filter(|(n, _)| n == "content-length")
             .count(),
         1
     );
-    assert_eq!(log[1].header("content-length"), Some("4"));
+    assert_eq!(log[0].header("content-length"), Some("4"));
 }
 
 #[tokio::test]
-async fn the_existing_key_is_found_with_a_head_before_a_byte_is_sent() {
+async fn a_taken_key_is_refused_by_the_condition_on_the_write_itself() {
     let (fake, store) = prepared().await;
     put(&store, "twice/one.bin", b"first").await.unwrap();
     fake.clear_log();
     let error = put(&store, "twice/one.bin", b"second").await.unwrap_err();
     assert!(matches!(error, Error::AlreadyExists(_)));
-    let methods: Vec<String> = fake.requests().into_iter().map(|r| r.method).collect();
-    assert_eq!(methods, ["HEAD"]);
+    let log = fake.requests();
+    assert_eq!(
+        log.iter().map(|r| r.method.as_str()).collect::<Vec<_>>(),
+        ["PUT"]
+    );
+    assert_eq!(log[0].header("if-none-match"), Some("*"));
     assert_eq!(fake.stored(BUCKET, "twice/one.bin").unwrap().0, b"first");
+}
+
+#[tokio::test]
+async fn a_big_upload_meets_a_taken_key_when_it_completes_and_is_aborted() {
+    let (fake, store) = prepared().await;
+    put(&store, "twice/big.bin", b"first").await.unwrap();
+    let error = put(&store, "twice/big.bin", &pattern(11 * 1024 * 1024, 2))
+        .await
+        .unwrap_err();
+    assert!(matches!(error, Error::AlreadyExists(_)), "{error}");
+    assert_eq!(fake.stored(BUCKET, "twice/big.bin").unwrap().0, b"first");
+    assert_eq!(fake.aborted(), 1);
+    assert_eq!(fake.open_uploads(), 0);
+    let log = fake.requests();
+    let complete = log.iter().rev().find(|r| r.method == "POST").unwrap();
+    assert_eq!(complete.header("if-none-match"), Some("*"));
+}
+
+#[tokio::test]
+async fn a_store_that_ignores_the_condition_replaces_the_object() {
+    let (fake, store) = prepared().await;
+    fake.state.lock().unwrap().settings.ignore_conditions = true;
+    put(&store, "twice/one.bin", b"first").await.unwrap();
+    put(&store, "twice/one.bin", b"second").await.unwrap();
+    assert_eq!(fake.stored(BUCKET, "twice/one.bin").unwrap().0, b"second");
+}
+
+/// A write whose answer was lost is sent again, and the store then says the key
+/// is taken, by the first try. That is not a failure of the write.
+#[tokio::test]
+async fn a_retried_write_that_finds_its_own_object_is_a_success() {
+    let (fake, store) = prepared().await;
+    // The first try reaches the store and is stored, and the answer is a failure.
+    fake.state.lock().unwrap().settings.fail_after_applying = Some(1);
+    put(&store, "retried/one.bin", b"mine").await.unwrap();
+    assert_eq!(fake.stored(BUCKET, "retried/one.bin").unwrap().0, b"mine");
+    // A different object of another length under that key is a real conflict.
+    fake.state.lock().unwrap().settings.fail_after_applying = Some(1);
+    fake.plant(BUCKET, "retried/two.bin", b"someone else's longer object");
+    let error = put(&store, "retried/two.bin", b"mine").await.unwrap_err();
+    assert!(matches!(error, Error::AlreadyExists(_)), "{error}");
 }
 
 #[tokio::test]
@@ -258,16 +303,16 @@ async fn blanks_before_the_answer_to_completing_are_no_harm() {
 #[tokio::test]
 async fn a_store_that_fails_twice_is_tried_again_and_one_that_keeps_failing_is_not_endless() {
     let (fake, store) = prepared().await;
-    fake.fail_next("HEAD", 503, 2);
+    fake.fail_next("PUT", 503, 2);
     put(&store, "retry/one.bin", b"x").await.unwrap();
 
-    fake.fail_next("HEAD", 503, 10);
+    fake.fail_next("PUT", 503, 10);
     let error = put(&store, "retry/two.bin", b"x").await.unwrap_err();
     assert!(
         matches!(
             &error,
             Error::Store {
-                kind: StoreFault::Throttled,
+                kind: StoreFault::Unreachable,
                 ..
             }
         ),
@@ -277,7 +322,7 @@ async fn a_store_that_fails_twice_is_tried_again_and_one_that_keeps_failing_is_n
     let heads = fake
         .requests()
         .iter()
-        .filter(|r| r.method == "HEAD" && r.status == 503)
+        .filter(|r| r.method == "PUT" && r.status == 503)
         .count();
     assert_eq!(
         heads,
@@ -668,4 +713,36 @@ fn the_secret_key_does_not_reach_debug_output() {
     let shown = format!("{:?}", options("http://x.test"));
     assert!(!shown.contains(SECRET_KEY), "{shown}");
     assert!(shown.contains("<hidden>"));
+}
+
+#[tokio::test]
+async fn a_range_is_sent_within_what_stores_read_and_beyond_it_is_refused_at_once() {
+    let (fake, store) = prepared().await;
+    put(&store, "ranges/ten.bin", b"0123456789").await.unwrap();
+    fake.clear_log();
+    let object = store
+        .get(
+            "ranges/ten.bin",
+            Some(ByteRange {
+                from: 7,
+                to: Some(u64::MAX),
+            }),
+        )
+        .await
+        .unwrap();
+    assert_eq!(read(object).await, b"789");
+    assert_eq!(
+        fake.requests()[0].header("range"),
+        Some("bytes=7-9223372036854775807")
+    );
+    fake.clear_log();
+    let past = ByteRange {
+        from: i64::MAX as u64 + 1,
+        to: None,
+    };
+    assert!(matches!(
+        store.get("ranges/ten.bin", Some(past)).await,
+        Err(Error::RangeNotSatisfiable(_))
+    ));
+    assert!(fake.requests().is_empty());
 }

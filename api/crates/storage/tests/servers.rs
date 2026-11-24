@@ -1,5 +1,5 @@
-//! A real S3-compatible server, named by the environment (see `minio.sh`,
-//! which starts MinIO and runs these): the contract every store keeps, the
+//! A real S3-compatible server, named by the environment (see `servers.sh`,
+//! which starts each server and runs these): the contract every store keeps, the
 //! questions about what a server does with the library's requests, and the
 //! same questions put to the fake so the two can be read side by side.
 //!
@@ -19,7 +19,7 @@ async fn env() -> Env {
     let store = store_from_env("contract").await;
     Env {
         store: Arc::new(store),
-        exclusive_put: false,
+        exclusive_put: Server::from_env().conditional,
         boundary: 5 * 1024 * 1024,
         longest_key: 1024,
         // The library has no call that lists unfinished uploads.
@@ -40,7 +40,7 @@ fn write_transcript(name: &str, text: &str) {
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-#[ignore = "needs a real store: see tests/minio.sh"]
+#[ignore = "needs a real store: see tests/servers.sh"]
 async fn what_the_real_server_does_with_the_requests_of_the_library() {
     let server = Server::from_env();
     let bucket = format!("stellarr-points-{}", std::process::id());
@@ -54,7 +54,7 @@ async fn what_the_real_server_does_with_the_requests_of_the_library() {
     probe.run_all().await;
     let text = format!("{}{}", probe.transcript, probe.summary());
     let scheme = if server.https() { "https" } else { "http" };
-    write_transcript(&format!("points-{scheme}.txt"), &text);
+    write_transcript(&format!("points-{}-{scheme}.txt", server.kind), &text);
     let bad: Vec<_> = probe.findings.iter().filter(|f| !f.as_expected).collect();
     assert!(
         bad.is_empty(),
@@ -111,7 +111,7 @@ async fn the_questions_run_against_the_fake_and_show_the_wire() {
 /// real server serves them is the business of the run itself.)
 #[test]
 fn the_test_certificates_of_the_script_make_a_trustable_root() {
-    let script = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/minio.sh");
+    let script = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/servers.sh");
     let folder = support::TempDir::new("certs");
     let made = std::process::Command::new("sh")
         .arg(&script)

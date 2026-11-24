@@ -10,8 +10,9 @@ use super::{FailingReader, pattern, put, read, read_range, sha256_hex};
 
 pub struct Env {
     pub store: Arc<dyn ObjectStorage>,
-    /// Whether two writers racing for one key leave exactly one winner. A
-    /// bucket cannot promise it.
+    /// Whether writing to a taken key is refused, and two writers racing for
+    /// one key leave exactly one winner: the folder store, and a bucket on a
+    /// server that honours the conditional create.
     pub exclusive_put: bool,
     /// The size at which uploads change shape (a bucket's part size), so the
     /// suite can try objects on both sides of it.
@@ -138,17 +139,27 @@ pub async fn deleting_removes_the_object_and_deleting_again_is_no_error(env: &En
 
 pub async fn a_key_that_already_names_an_object_is_not_overwritten(env: &Env) {
     put(&*env.store, "unique/one.bin", TEN).await.unwrap();
-    let error = put(&*env.store, "unique/one.bin", b"other")
-        .await
-        .unwrap_err();
-    assert!(
-        matches!(&error, Error::AlreadyExists(key) if key == "unique/one.bin"),
-        "{error}"
-    );
-    assert_eq!(
-        read(env.store.get("unique/one.bin", None).await.unwrap()).await,
-        TEN
-    );
+    if env.exclusive_put {
+        let error = put(&*env.store, "unique/one.bin", b"other")
+            .await
+            .unwrap_err();
+        assert!(
+            matches!(&error, Error::AlreadyExists(key) if key == "unique/one.bin"),
+            "{error}"
+        );
+        assert_eq!(
+            read(env.store.get("unique/one.bin", None).await.unwrap()).await,
+            TEN
+        );
+    } else {
+        // A server that does not know the conditional create replaces the
+        // object: the promise is not kept, and this says so.
+        put(&*env.store, "unique/one.bin", b"other").await.unwrap();
+        assert_eq!(
+            read(env.store.get("unique/one.bin", None).await.unwrap()).await,
+            b"other"
+        );
+    }
 }
 
 pub async fn the_listing_names_every_object_by_key_and_size_in_key_order(env: &Env) {
@@ -534,7 +545,7 @@ pub async fn a_download_arrives_in_pieces(env: &Env) {
 #[macro_export]
 macro_rules! contract_tests {
     (ignored $make:expr) => {
-        contract_tests!(@all [ignore = "needs a real store: see tests/minio.sh"] $make);
+        contract_tests!(@all [ignore = "needs a real store: see tests/servers.sh"] $make);
     };
     ($make:expr) => {
         contract_tests!(@all [cfg(all())] $make);

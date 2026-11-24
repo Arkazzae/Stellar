@@ -307,7 +307,7 @@ async fn the_bucket_store_streams_a_large_object_through_the_fake() {
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
-#[ignore = "needs a real store: see tests/minio.sh"]
+#[ignore = "needs a real store: see tests/servers.sh"]
 async fn the_bucket_store_streams_a_large_object_through_a_real_store() {
     let store = support::server::store_from_env("large").await;
     transfer(&store, "bucket (real store)", size()).await;

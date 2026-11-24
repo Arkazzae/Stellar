@@ -1,6 +1,10 @@
 //! A real S3-compatible server named by the environment, for the tests that
-//! are ignored unless one is running. `tests/minio.sh` starts one.
+//! are ignored unless one is running. `tests/servers.sh` starts one.
 //!
+//! * `STELLARR_TEST_S3_KIND`: what the server is, for the names of transcripts
+//! * `STELLARR_TEST_S3_CONDITIONAL`: `yes` if the server honours
+//!   `If-None-Match: *` (what the run found out of it), `no` if it replaces
+//!   the object instead
 //! * `STELLARR_TEST_S3_ENDPOINT`: `http://127.0.0.1:19000` or `https://...`
 //! * `STELLARR_TEST_S3_ACCESS_KEY`, `STELLARR_TEST_S3_SECRET_KEY`
 //! * `STELLARR_TEST_S3_CA`: for an https endpoint, the PEM file of the root
@@ -18,12 +22,15 @@ pub struct Server {
     pub access_key: String,
     pub secret_key: String,
     pub ca: Option<PathBuf>,
+    pub kind: String,
+    /// Whether the server refuses to replace an object when asked not to.
+    pub conditional: bool,
 }
 
 fn variable(name: &str) -> String {
     std::env::var(name).unwrap_or_else(|_| {
         panic!(
-            "{name} is not set: these tests need a real S3-compatible server; see tests/minio.sh"
+            "{name} is not set: these tests need a real S3-compatible server; see tests/servers.sh"
         )
     })
 }
@@ -35,6 +42,8 @@ impl Server {
             access_key: variable("STELLARR_TEST_S3_ACCESS_KEY"),
             secret_key: variable("STELLARR_TEST_S3_SECRET_KEY"),
             ca: std::env::var_os("STELLARR_TEST_S3_CA").map(PathBuf::from),
+            kind: std::env::var("STELLARR_TEST_S3_KIND").unwrap_or_else(|_| "server".into()),
+            conditional: std::env::var("STELLARR_TEST_S3_CONDITIONAL").as_deref() == Ok("yes"),
         }
     }
 

@@ -153,6 +153,12 @@ pub trait ObjectStorage: Send + Sync {
     /// Stores the rest of `data` under a key that names no object yet, and
     /// fails with [`Error::AlreadyExists`] for one that does. The object
     /// appears only once it is whole.
+    ///
+    /// Of two writers racing for one key, exactly one wins on the folder
+    /// store, and on a bucket whose server honours the conditional create
+    /// the bucket store sends (`If-None-Match: *`). A server that ignores
+    /// that header replaces the object instead, and nothing here can tell; the
+    /// operator's choice of server decides.
     fn put<'a>(
         &'a self,
         key: &'a str,
