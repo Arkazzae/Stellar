@@ -63,6 +63,9 @@ own_profile/     a group: the own profile, preferences and join sound
 soundboard/      a group: a server's sounds, their order and switches
 account_security/ a group: the security page, sessions, the password and the address, from a session
 encryption/      a group: the server's side of end-to-end encrypted direct conversations: keys, PIN backup, devices, epochs
+backups/         a group: backups of the instance, the schedule, the offsite copy, restoring; and the panel's routes for them
+housekeeping/    a worker: the hourly pruning of journals, records, uploads, the deletion queue, old backups and logs
+panel/           what every route of the administration panel stands on: its gate, its audit line, its settings row
 health/          a group: /health/live and /health/ready
 identity_providers/ a group: signing in, signing up and proving oneself again through a provider (OpenID Connect), and linking identities
 releases/        a group: the discovery document and the desktop and Android builds
@@ -815,6 +818,134 @@ person's subscriptions that never answer can delay everyone's notifications by u
 to 250 seconds a batch. That goes away with a later change to how the server's
 queues work, not with this worker. The sender only ever connects to public
 addresses; nothing a setting or a request says changes that.
+## The administration panel
+
+`panel/` is what the routes under `/api/cockpit` stand on. The gate is two
+extractors, and a route is declared `.authorized()` and nothing else:
+
+- `permissions::membership::InstanceOwner(server)`: the owner of the instance
+  server (the first one ever made) and nobody else; 403 with no body for
+  anybody who is not, and for an owner whose policy asks a second step of the
+  panel and whose session has not passed one, 403 with the code
+  `cockpit-mfa-required`.
+- `panel::FreshInstanceOwner(server)`: the same, and then a second step passed
+  in the last five minutes where the account has one (`fresh-mfa-required`).
+  Do not mark such a route `.fresh_second_step()`: the pipeline would ask the
+  second step of a caller who is not the owner before the owner check, and the
+  first server answered such a caller 403.
+- A route that reads a JSON body calls `panel::bind_then_gate` and is marked
+  `.json_body()`: the first server bound the body before any filter, so a body
+  that is not the right JSON is a 400 and another content type a 415 for
+  anybody, before the gate.
+- `panel::record(tx, server, actor, sentence)` writes the audit line of a
+  change the operator made (action `operator`, in the transaction of the
+  change), and `panel::operations` reads and writes the row of retention and
+  clean-up settings that the first change of any setting creates.
+
+Both gates are compared with the first server in `tests/api/backups.rs` and
+`tests/backups-oracle.mjs` (a member, nobody, an owner without and with a
+second step, a disabled owner, the second step passed at the bound).
+
+## Backups
+
+`backups/` keeps archives of the instance in `{data root}/backups`: a plain
+SQLite copy (`backup-<time>-<token>.db`) or a full archive (`.zip`) of the
+database, every object of the store, the keys folder and the instance files
+(`secrets/`, `tls/`, `releases/`). The archive is a file an operator keeps, so
+its layout is the first server's and is not changed: `manifest.json` last,
+entries in the order `database`, `objects` (in key order), `keys`, `instance`
+(folder by folder, each by the whole path as text), objects stored and the rest
+deflated. Archives of either server verify and restore on the other
+(`tests/backups-archives.sh`, which also asks the first server's own code, built
+from copies of its files by `tests/backups-witness/build.sh`).
+
+- The database is copied with SQLite's online backup in one step, so a backup
+  taken while people write is a state the database really had
+  (`backups/snapshot.rs`; `tests/api/backups.rs` writes throughout one).
+- One backup runs at a time (`state.backups()`); it is written under a name
+  starting with a dot and ending in `.partial` and renamed when whole. The
+  partial files a stop left are removed before the server listens.
+- The automatic backup is the worker `automatic-backups` (`backups/schedule.rs`):
+  `run_once(state, destinations, clock)` is the whole of a pass and takes the
+  clock and the destinations, so the schedule is tried at any moment; the
+  worker is a timer around it. It keeps `automatic-backup.json` (PascalCase, as
+  the first server wrote it) so that a failed offsite copy retries the archive
+  already made, after a restart too.
+- The offsite destination is `backups/offsite.rs`: a bucket of S3 API
+  (HEAD first, `sha256` metadata, multipart, nothing overwritten) or the relay
+  Worker. Its credentials are the stored secrets (`cloudflare.r2.*`); the
+  destination's other settings and the schedule are rows of `InstanceSecrets`
+  sealed for their own purposes (`backups.policy`, `cloudflare.r2.policy`). A
+  row that cannot be opened counts as not set and the environment's settings
+  stand. Nothing here puts a credential, or the text a store sent back, in an
+  answer or a log line.
+- The routes (all under `/api/cockpit`): `GET backups`, `POST backups`,
+  `POST backups/{id}/verify`, `GET backups/{id}/download` (a fresh second step),
+  `GET|PUT|DELETE backups/settings` and `GET|PUT|DELETE
+  integrations/cloudflare/r2` (the changes ask a fresh second step).
+
+### Restoring
+
+`backups::restore` is what the operator's tool calls; the tool is not ported yet.
+Its commands are these calls, which block (run them on a blocking thread):
+
+| Command | Calls |
+| --- | --- |
+| `backup verify <archive>` | `restore::check(archive, work_folder)` (the work folder is a temporary one, not the data volume) |
+| `backup restore <archive>` | `check`, ask the operator, then `restore::stage(archive, data_root)` |
+| `backup cancel` | `restore::cancel(data_root)` |
+| `backup apply` (run by the entrypoint before any service starts; refuses while the API answers) | `restore::apply(staged_archive_path(data_root), data_root, now)`; on `Ok`: delete the staged file and `write_result`; on `RestoreError::Refused`: `keep_refused`, `write_result`, exit status 4; on `RestoreError::Broken`: `mark_broken`, `write_result`, a failing exit |
+
+The entrypoint (`infra/entrypoint.sh`) is what happens at start around a staged
+restore: it fails if `restore/broken` exists, and runs `stellarr backup apply
+--yes` when `restore/staged.zip` exists, treating exit status 4 as "refused, the
+instance starts with its previous data". Nothing in `init/` knows about restores.
+`restore::clear_leftovers` is called by `stage` and `apply`.
+
+A restore checks everything before it changes anything (manifest, every entry
+name, the database, every byte), refuses an archive that is not a full backup,
+and unpacks beside the live folders and swaps them whole, keeping the previous
+ones in `restore/previous-<time>`. It is stricter than the first server in one
+way: an entry that is a link, a device or a folder is refused (the first server
+unpacked a link as a file). Files are only created, never opened over; keys,
+secrets and tls files are 0600.
+
+**What a restore cannot carry over.** Values the first server sealed with its
+own data-protection keys cannot be opened here, whatever the keys folder holds:
+
+| Table.column | What it held | What the operator or the person sets up again |
+| --- | --- | --- |
+| `InstanceSecrets.ProtectedValue` | the secrets set in the panel (`mail.resend-api-key`, `mail.smtp-password`, `giphy.api-key`, `cloudflare.r2.*`) | they count as unset and the environment's values stand: set them again in the panel |
+| `InstanceSecrets.ProtectedValue` of `backups.policy` and `cloudflare.r2.policy` | the schedule and the offsite destination saved in the panel | they count as unset and the environment's settings stand: save them again |
+| `MfaMethods.ProtectedSecret` | an authenticator app's seed | the app's codes are all wrong: sign in with another step or a recovery code and set the app up again |
+| `EmailOtpCodes.ProtectedCode` | a code mailed to a person | it uses up its guesses: ask for a new one |
+
+The session cookies are sealed with the same keys, so everybody signs in again.
+The encryption tables (`AccountKeyBackups` and the rest) are encrypted by the
+client with the person's PIN and are unaffected. The first server's own
+`docs/admin/backups.md` says `instance-id` is part of `instance/`; its code
+archives only `secrets/`, `tls/` and `releases/`, and so does this.
+
+## Housekeeping
+
+`housekeeping/` is the worker `housekeeping`, once an hour after a first wait
+(`Maintenance:*` settings). A run, in this order: compacts the message journal
+(older than `MessageChangeRetentionDays`, 7 to 365, leaving one reset entry per
+affected channel), and then, unless the operator switched automatic cleanup
+off: removes the uploads nobody refers to (older than the orphan retention,
+`BatchSize` at a time, each in a transaction that looks again whether anything
+refers to it), empties the deletion queue (`BatchSize` oldest first; an object
+the store cannot delete stays queued), prunes `backups/` and `logs/` by file
+time (backup and log retention), and deletes the records of signing in that are
+past use (a day after expiry for challenges, mailed codes, recovery credentials
+and pending identities; thirty for trusted devices and for used recovery codes
+and sent notifications). With cleanup off only the journal and the queue are
+touched. The settings are those of the row written last. A delete is made a
+thousand rows at a time in transactions of their own, so the one writer is
+never held for a whole run; `housekeeping::run(state, now, stopping)` takes the
+moment its ages are measured against. `tests/housekeeping-shared-database.sh`
+runs both servers on copies of one database with rows just inside and outside
+each retention.
 
 ## The realtime hub
 
@@ -978,7 +1109,7 @@ features there). What is on today: `axum` with `tokio`, `http1`, `matched-path` 
 `query` (no `json`, no `form`, no `multipart`, no `ws`: the hub does its own
 WebSocket); `tokio` with `rt-multi-thread`, `macros`, `net`, `sync`, `time`, `signal`,
 `fs` and `io-util`; `http-body-util` (no features); `hyper` for `Body` and `Frame`; `rusqlite` with `bundled` (which
-brings FTS5) and `trace` in tests; `serde` with `derive`; `serde_json` with
+brings FTS5) and `backup` (the online copy of a database that is written to), and `trace` in tests; `serde` with `derive`; `serde_json` with
 `raw_value`; `rustls` with `aws-lc-rs`, `std` and `tls12`; `tracing-subscriber` with
 `env-filter`; `aws-lc-rs`, `bytes`. A crate already in the workspace may be asked
 for one more feature in the manifest that needs it (a feature is not a new
@@ -1019,6 +1150,13 @@ guarantees:
 
 ## Known differences from the first server
 
+- A backup restore refuses an archive entry that is a link, a device or a folder; the
+  first server unpacked a link as a file. Backups follow no links when they read the
+  instance folders. The backup list dates a file as the first server did on Linux, by
+  the earlier of its two change times (a file copied in keeps its old date), and by
+  its birth time on other systems.
+- The housekeeping deletes in chunks of a thousand rows, where the first server deleted
+  with one statement each; the result is the same.
 - Routes are matched case-sensitively; the first server matched them without
   regard to case (see Request paths for why that stays). The client gate still
   treats its paths case-insensitively.

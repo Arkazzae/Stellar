@@ -10,17 +10,25 @@
 //! A route of the panel is declared with `.authorized()` (never
 //! `.fresh_second_step()`, which would answer a caller who is not even the
 //! owner that a second step is missing), and its handler asks for the gate as
-//! an argument, before any body:
+//! an argument:
 //!
 //! ```ignore
 //! async fn read(State(state): State<AppState>, InstanceOwner(server): InstanceOwner) -> ... {}
-//! async fn change(State(state): State<AppState>, caller: Caller, FreshInstanceOwner(server): FreshInstanceOwner, body: Json<..>) -> ... {}
+//! async fn download(State(state): State<AppState>, FreshInstanceOwner(server): FreshInstanceOwner, ...) -> ... {}
 //! ```
 //!
-//! What a caller who fails two checks is told is the order of the arguments:
-//! first that the request is from somebody, then whether they own the
-//! instance, then the second step, then the body. That is the order the first
-//! server's filters ran in.
+//! What a caller who fails two checks is told is the order of the checks, and
+//! it is the first server's: that the request is from somebody (401), whether
+//! they own the instance (403, or `cockpit-mfa-required` for the owner whose
+//! policy asks a second step of the panel), the second step passed lately
+//! (`fresh-mfa-required`), then what the route itself refuses.
+//!
+//! A route that reads a JSON body is different in one way: the first server
+//! bound the body before any of its filters ran, so a body that is not JSON
+//! (400), or a request that does not say it is JSON (415), is refused the same
+//! for anybody, before the gate. Such a route is `.json_body()` and its
+//! handler calls [`bind_then_gate`] with the request instead of taking the
+//! gate as arguments.
 
 pub mod operations;
 
