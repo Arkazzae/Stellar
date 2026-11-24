@@ -8,6 +8,7 @@ use serde::Deserialize;
 use stellarr_messages::MessageKey;
 
 use super::format::range;
+use super::numbers::{optional_real, required_real};
 use super::{SoundDto, announce_changed, created, no_content, url_of};
 use crate::auth::Caller;
 use crate::database::DbError;
@@ -38,9 +39,9 @@ pub struct CreateSound {
     attachment_id: Id,
     name: Option<String>,
     glyph: Option<String>,
-    #[serde(default)]
+    #[serde(default, deserialize_with = "required_real")]
     trim_start_seconds: f64,
-    #[serde(default)]
+    #[serde(default, deserialize_with = "required_real")]
     trim_end_seconds: f64,
 }
 
@@ -49,7 +50,9 @@ pub struct CreateSound {
 pub struct UpdateSound {
     name: Option<String>,
     glyph: Option<String>,
+    #[serde(default, deserialize_with = "optional_real")]
     trim_start_seconds: Option<f64>,
+    #[serde(default, deserialize_with = "optional_real")]
     trim_end_seconds: Option<f64>,
 }
 
