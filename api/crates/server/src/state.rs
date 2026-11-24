@@ -12,6 +12,7 @@ use stellarr_messages::Messages;
 use crate::database::{Database, MutationGate};
 use crate::events::EventPublisher;
 use crate::http::{AttemptLimiter, Metrics};
+use crate::seal::Sealer;
 use crate::settings::Settings;
 
 #[derive(Clone)]
@@ -27,6 +28,7 @@ struct Inner {
     metrics: Metrics,
     mutation_gate: MutationGate,
     pin_attempts: AttemptLimiter,
+    sealer: Sealer,
 }
 
 impl AppState {
@@ -34,6 +36,7 @@ impl AppState {
         settings: Settings,
         database: Database,
         events: Arc<dyn EventPublisher>,
+        sealer: Sealer,
     ) -> AppState {
         AppState {
             inner: Arc::new(Inner {
@@ -42,6 +45,7 @@ impl AppState {
                 settings,
                 database,
                 events,
+                sealer,
                 metrics: Metrics::default(),
                 mutation_gate: MutationGate::default(),
             }),
@@ -78,5 +82,10 @@ impl AppState {
     /// The tries of the encryption PIN each account has.
     pub fn pin_attempts(&self) -> &AttemptLimiter {
         &self.inner.pin_attempts
+    }
+
+    /// Seals values for clients and the database; see [`crate::seal`].
+    pub fn sealer(&self) -> &Sealer {
+        &self.inner.sealer
     }
 }

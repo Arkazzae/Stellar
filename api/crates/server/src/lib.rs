@@ -11,9 +11,11 @@
 //! `api/README.md` says how to add a group of endpoints and how to test it.
 
 pub mod database;
+pub mod encoding;
 pub mod events;
 pub mod http;
 pub mod logging;
+pub mod seal;
 pub mod settings;
 pub mod state;
 pub mod values;
@@ -33,6 +35,7 @@ use tracing::{error, info};
 use crate::database::Database;
 use crate::events::{EventFile, EventPublisher, Unconnected};
 use crate::http::Endpoints;
+use crate::seal::Sealer;
 use crate::settings::Settings;
 use crate::state::AppState;
 
@@ -111,7 +114,8 @@ pub async fn serve(
         None => Arc::new(Unconnected),
     };
     let addresses = settings.listen.0.clone();
-    let state = AppState::new(settings, database, events);
+    let sealer = Sealer::load_or_create(&keys).map_err(|e| StartError(e.to_string()))?;
+    let state = AppState::new(settings, database, events, sealer);
 
     let (router, rules) = groups
         .into_iter()
