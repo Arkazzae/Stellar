@@ -62,10 +62,38 @@ struct IceServer {
 }
 
 /// How a client takes part in voice. Every room goes through the media server;
-/// the relay stays in the ICE servers for browsers on networks that block UDP.
+/// ICE servers are supplied only when the public TURN service is enabled.
 pub fn rtc(settings: &Settings, user: Id, now: Timestamp) -> Rtc {
     let relay: Relay = settings.relay.arrangement;
     let host = settings.rtc.public_host.as_str();
+    let ice_servers = if relay.enabled {
+        relay_servers(settings, relay, host, user, now)
+    } else {
+        Vec::new()
+    };
+    Rtc {
+        protocol_version: PROTOCOL_VERSION,
+        capabilities: Capabilities {
+            audio_codecs: ["opus"],
+            video_codecs: ["vp9", "vp8", "h264"],
+            audio_processing: ["browser", "rnnoise", "gtcrn", "speex", "gate"],
+            camera: true,
+            screen_share: true,
+            screen_audio: true,
+        },
+        ice_servers,
+        signaling_hub: "/hubs/app",
+        media_server: turn::public_endpoint(&settings.rtc, host),
+    }
+}
+
+fn relay_servers(
+    settings: &Settings,
+    relay: Relay,
+    host: &str,
+    user: Id,
+    now: Timestamp,
+) -> Vec<IceServer> {
     let turn = turn::credentials(&settings.rtc, user, now);
     let port = relay.turn_port;
     let mut turn_urls = vec![format!("turn:{host}:{port}?transport=udp")];
@@ -91,18 +119,5 @@ pub fn rtc(settings: &Settings, user: Id, now: Timestamp) -> Rtc {
             credential: Some(turn.credential),
         });
     }
-    Rtc {
-        protocol_version: PROTOCOL_VERSION,
-        capabilities: Capabilities {
-            audio_codecs: ["opus"],
-            video_codecs: ["vp9", "vp8", "h264"],
-            audio_processing: ["browser", "rnnoise", "gtcrn", "speex", "gate"],
-            camera: true,
-            screen_share: true,
-            screen_audio: true,
-        },
-        ice_servers,
-        signaling_hub: "/hubs/app",
-        media_server: turn::public_endpoint(&settings.rtc, host),
-    }
+    ice_servers
 }

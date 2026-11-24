@@ -85,7 +85,7 @@ jobs:
           # checks that the settings in those two files are the ones the
           # image reads and the configuration page lists, and runs ShellCheck
           # on the scripts that read them.
-          check installer '^(install\.sh$|infra/tests/(install|setting-names|entrypoint|smoke)|infra/(entrypoint|settings|stellarr-cli|tls-maintenance)\.sh$|api/crates/server/src/settings/variables\.rs$|docs/install/configuration\.md$|docker-compose\.yml$|\.env\.example$|\.github/workflows/ci\.yml$)'
+          check installer '^(install\.sh$|infra/tests/(install|setting-names|entrypoint|smoke)|infra/(entrypoint|settings|stellarr-cli|tls-maintenance)\.sh$|api/crates/server/src/settings/variables\.rs$|docs/install/configuration\.md$|docker-compose(\.turn)?\.yml$|\.env\.example$|\.github/workflows/ci\.yml$)'
           # vite.config.ts, documents.ts and worklets.ts lay out the build that
           # nginx serves. The image job drills the process manager in the
           # image, so its sources count, not only its manifest. It takes the
@@ -356,6 +356,17 @@ jobs:
       - uses: actions/checkout@v7
       - name: Check the scripts with ShellCheck
         run: docker run --rm -v "$PWD":/mnt:ro -w /mnt koalaman/shellcheck:v0.11.0@sha256:61862eba1fcf09a484ebcc6feea46f1782532571a34ed51fedf90dd25f925a8d install.sh infra/tests/install.test.sh infra/tests/setting-names.test.sh infra/tests/smoke.test.sh infra/settings.sh infra/entrypoint.sh infra/stellarr-cli.sh infra/tests/entrypoint.test.sh
+      - name: Check production port mappings
+        run: |
+          docker compose config --format json | jq -e '
+            .services.stellarr | .environment.STELLARR_TURN_ENABLED == "false" and
+            ([.ports[] | select(.host_ip != "127.0.0.1") | "\(.published)/\(.protocol)"] | sort)
+              == ["443/tcp", "49000/tcp", "49000/udp"] and
+            any(.ports[]; .published == "8888" and .target == 80 and .host_ip == "127.0.0.1")'
+          docker compose -f docker-compose.yml -f docker-compose.turn.yml config --format json | jq -e '
+            .services.stellarr | .environment.STELLARR_TURN_ENABLED == "true" and
+            ([.ports[] | "\(.published)/\(.protocol)"]) as $ports |
+            ["3478/tcp", "3478/udp", "5349/tcp", "5349/udp", "49160/udp", "49200/udp"] - $ports == []'
       - name: Check that every place names the same settings
         run: bash infra/tests/setting-names.test.sh
       - run: bash infra/tests/install.test.sh
@@ -411,14 +422,14 @@ jobs:
           cache-to: type=gha,mode=max
       # A build can succeed while a process inside cannot start, so run the
       # image and wait until its health check passes: stellarr-init reports
-      # nginx, the API with its database, the media server and coturn ready.
+      # nginx, the API with its database, and the media server ready.
       # Only the interval is shorter than the image's, so that the drills
       # below see the container's health change within seconds; the check and
       # its retries are the image's own.
       - name: Start the image
         run: |
           docker run -d --name stellarr -e STELLARR_DOMAIN=localhost -e STELLARR_LANGUAGE=pl \
-            --health-interval 5s -p 8443:443 stellarr:ci
+            -e STELLARR_HTTPS_PORT=8443 --health-interval 5s -p 127.0.0.1:8443:443 stellarr:ci
           for _ in $(seq 1 60); do
             status=$(docker inspect -f '{{.State.Health.Status}}' stellarr)
             [[ $status == healthy || $status == unhealthy ]] && break
@@ -580,24 +591,26 @@ jobs:
       # that the others keep running, and that it comes back.
       - name: Drill the process manager
         run: |
+          service_container=stellarr
+          trap 'docker rm -f stellarr-turn-drill >/dev/null 2>&1 || true' EXIT
           fail() {
             echo "::error::$*"
-            docker exec stellarr stellarr-init status || true
-            docker logs stellarr 2>&1 | grep 'stellarr-init:' | tail -n 40
+            docker exec "$service_container" stellarr-init status || true
+            docker logs "$service_container" 2>&1 | grep 'stellarr-init:' | tail -n 40
             exit 1
           }
           field() {
-            docker exec stellarr stellarr-init status --json \
+            docker exec "$service_container" stellarr-init status --json \
               | jq -r --arg name "$1" --arg key "$2" '.services[] | select(.name == $name) | .[$key]'
           }
           is() { [[ $(field "$1" state) == "$2" ]]; }
-          unhealthy() { ! docker exec stellarr stellarr-init health >/dev/null 2>&1; }
+          unhealthy() { ! docker exec "$service_container" stellarr-init health >/dev/null 2>&1; }
           # Docker's status, where healthy also means that its last check
           # passed: a streak of failed checks outlasts a brief failure while
           # the status still reads healthy.
           container() {
             local health
-            health=$(docker inspect -f '{{.State.Health.Status}} {{.State.Health.FailingStreak}}' stellarr)
+            health=$(docker inspect -f '{{.State.Health.Status}} {{.State.Health.FailingStreak}}' "$service_container")
             if [[ $1 == healthy ]]; then [[ $health == "healthy 0" ]]; else [[ $health == "$1 "* ]]; fi
           }
           # Tries the command after it once a second for up to $1 seconds.
@@ -606,17 +619,19 @@ jobs:
             for _ in $(seq "$seconds"); do "$@" && return 0; sleep 1; done
             "$@"
           }
-          signal() { docker exec stellarr bash -c "kill -$1 $2"; }
+          signal() { docker exec "$service_container" bash -c "kill -$1 $2"; }
 
-          [[ $(docker exec stellarr cat /proc/1/comm) == stellarr-init ]] || fail "PID 1 is not stellarr-init."
-          docker exec stellarr stellarr-init health || fail "health fails in a healthy container."
+          [[ $(docker exec "$service_container" cat /proc/1/comm) == stellarr-init ]] || fail "PID 1 is not stellarr-init."
+          docker exec "$service_container" stellarr-init health || fail "health fails in a healthy container."
+
+          [[ -z $(field turn state) ]] || fail "coturn is running in the default image profile."
 
           # Killed outright: started again at once, under a new PID.
           pid=$(field media pid)
           signal KILL "$pid"
           within 30 is media ready || fail "media did not come back after SIGKILL."
           [[ $(field media pid) != "$pid" && $(field media restarts) == 1 ]] || fail "media was not restarted."
-          docker exec stellarr stellarr-init health || fail "health fails after media came back."
+          docker exec "$service_container" stellarr-init health || fail "health fails after media came back."
 
           # Alive but silent: health fails after three missed checks, and the
           # same process is ready again once it answers. It is not restarted.
@@ -628,19 +643,25 @@ jobs:
           signal CONT "$pid"
           within 30 is api ready || fail "the API was not ready again."
           [[ $(field api pid) == "$pid" ]] || fail "the API was restarted for failing its check."
-          # The next drill counts Docker's failed checks from zero.
           within 30 container healthy || fail "the container's checks did not pass after the API."
+
+          docker run -d --name stellarr-turn-drill -e STELLARR_TURN_ENABLED=true \
+            -p 127.0.0.1::443/tcp --health-interval=5s stellarr:ci
+          service_container=stellarr-turn-drill
+          turn_https=$(docker port "$service_container" 443/tcp)
+          within 90 container healthy || fail "the optional TURN profile did not become healthy."
+          is turn ready || fail "the optional TURN service is missing."
 
           # Unable to start: the container turns unhealthy while the others
           # keep serving, and healthy again once it can start.
-          docker exec stellarr chmod -x /usr/bin/turnserver
-          docker exec stellarr stellarr-init restart turn
+          docker exec "$service_container" chmod -x /usr/bin/turnserver
+          docker exec "$service_container" stellarr-init restart turn
           started=$(date +%s)
           within 60 container unhealthy || fail "the container stayed healthy without coturn."
           echo "The container was unhealthy $(( $(date +%s) - started )) s after coturn stopped."
           for name in media api nginx; do is "$name" ready || fail "$name stopped when coturn could not start."; done
-          curl -ksSf -o /dev/null https://localhost:8443/health || fail "the API stopped answering without coturn."
-          docker exec stellarr chmod +x /usr/bin/turnserver
+          curl -ksSf -o /dev/null "https://$turn_https/health" || fail "the API stopped answering without coturn."
+          docker exec "$service_container" chmod +x /usr/bin/turnserver
           within 60 is turn ready || fail "coturn did not start once it could."
           within 30 container healthy || fail "the container did not become healthy again."
       # The last step: docker stop sends SIGTERM, and the manager stops the

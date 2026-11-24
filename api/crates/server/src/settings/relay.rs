@@ -13,6 +13,7 @@ pub struct RelaySettings {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Relay {
+    pub enabled: bool,
     pub turn_port: u16,
     pub turns_port: u16,
     pub turns_enabled: bool,
@@ -43,6 +44,7 @@ fn arrange(config: &Config) -> Result<Relay, SettingError> {
     }
     let tcp_enabled = flag(config, "Rtc:TurnTcpEnabled")?;
     Ok(Relay {
+        enabled: flag(config, "Rtc:TurnEnabled")?,
         turn_port: u16::try_from(turn_port)
             .map_err(|_| SettingError::new("Rtc:TurnPort must be between 1 and 65535."))?,
         // Only used when the TLS port is on, and then checked above.

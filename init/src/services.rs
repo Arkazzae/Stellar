@@ -27,9 +27,13 @@ const fn loopback(port: u16) -> SocketAddr {
 /// Each check is asked again every ten seconds once the service is ready, so
 /// together they cover what the container's health check asked before this
 /// manager: the API with its database, nginx serving, the media server's
-/// control API, and a STUN answer from coturn.
+/// control API, and a STUN answer when coturn is enabled.
 pub fn container() -> Vec<Service> {
-    vec![
+    container_with_turn(std::env::var("STELLARR_TURN_ENABLED").as_deref() == Ok("true"))
+}
+
+fn container_with_turn(turn_enabled: bool) -> Vec<Service> {
+    let mut services = vec![
         // Carries every call. It parses packets from the Internet and needs
         // no file and no privilege, so it does not run as root. Its control
         // API answers /v1/health without the bearer secret, from the task
@@ -89,7 +93,11 @@ pub fn container() -> Vec<Service> {
         )
         .ready(Readiness::Running(Duration::from_secs(1)))
         .stop(Signal::Term, Duration::from_secs(5)),
-    ]
+    ];
+    if !turn_enabled {
+        services.retain(|service| service.name != "turn");
+    }
+    services
 }
 
 #[cfg(test)]
@@ -99,7 +107,7 @@ mod tests {
 
     #[test]
     fn the_container_table_is_valid() {
-        let table = Table::new(container()).expect("the table is valid");
+        let table = Table::new(container_with_turn(true)).expect("the table is valid");
         let names: Vec<&str> = table
             .order()
             .iter()
@@ -109,8 +117,20 @@ mod tests {
     }
 
     #[test]
+    fn direct_mode_does_not_run_or_check_coturn() {
+        let table = Table::new(container_with_turn(false)).unwrap();
+        assert!(table.index_of("turn").is_none());
+        for name in ["media", "api", "nginx", "tls-maintenance"] {
+            assert!(table.index_of(name).is_some(), "{name}");
+        }
+    }
+
+    #[test]
     fn the_shutdown_covers_every_stop_deadline() {
-        let sum: Duration = container().iter().map(|s| s.stop_timeout).sum();
+        let sum: Duration = container_with_turn(true)
+            .iter()
+            .map(|s| s.stop_timeout)
+            .sum();
         assert!(sum <= SHUTDOWN_TIMEOUT, "{sum:?} > {SHUTDOWN_TIMEOUT:?}");
     }
 
@@ -118,7 +138,7 @@ mod tests {
     fn the_names_scripts_and_docs_use_are_kept() {
         // tls-maintenance.sh reloads "nginx" and restarts "turn" by name,
         // and the operator docs name every service.
-        let table = Table::new(container()).unwrap();
+        let table = Table::new(container_with_turn(true)).unwrap();
         for name in ["media", "api", "turn", "nginx", "tls-maintenance"] {
             assert!(table.index_of(name).is_some(), "{name}");
         }

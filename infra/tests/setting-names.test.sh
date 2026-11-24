@@ -32,7 +32,7 @@ table=$(sed '/^#\[cfg(test)\]/,$d' api/crates/server/src/settings/variables.rs |
 # A read is ${NAME...}; the names the entrypoint only exports to the media
 # server never appear so.
 scripts=$(grep -ohE '\$\{STELLARR_[A-Z0-9_]+' infra/entrypoint.sh infra/settings.sh infra/tls-maintenance.sh | only)
-compose=$(grep -oE '\$\{STELLARR_[A-Z0-9_]+' docker-compose.yml | only)
+compose=$(grep -ohE '\$\{STELLARR_[A-Z0-9_]+' docker-compose.yml docker-compose.turn.yml | only)
 example_lines=$(grep -oE '^# STELLARR_[A-Z0-9_]+=' .env.example | sed 's/^# //; s/=$//')
 example=$(only <<<"$example_lines")
 # A table row starts with the name in backticks. The development stack's

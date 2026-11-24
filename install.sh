@@ -322,11 +322,13 @@ Settings, kept in .env (a terminal asks for the first three):
   --public-ip IP       IPv4 address voice calls use, or "auto" to resolve
                        --domain (default: none, voice on this machine only)
   --language LANG      Interface language, en or pl (default en)
-  --https-port PORT    HTTPS port on this machine (default 8443)
+  --https-port PORT    HTTPS port on this machine (default 443)
   --public-port PORT   HTTPS port in links, 443 behind a proxy (default: the
                        HTTPS port)
-  --http-port PORT     Port that redirects to HTTPS (default 8888)
-  --media-port PORT    UDP port of voice and video (default 49000)
+  --http-port BIND     HTTP bind (default 127.0.0.1:8888)
+  --media-port PORT    UDP and TCP port of voice and video (default 49000)
+  --enable-turn        Publish optional TURN and its relay ports
+  --disable-turn       Disable TURN, including on upgrades
   --turn-port PORT     STUN and TURN port, UDP and TCP (default 3478)
   --turns-port PORT    TURN over TLS port, UDP and TCP (default 5349)
 
@@ -351,7 +353,7 @@ Behaviour:
 Each setting can come from the environment too: STELLARR_INSTALL_DIR,
 STELLARR_DOMAIN, STELLARR_PUBLIC_IP, STELLARR_LANGUAGE, STELLARR_HTTPS_PORT,
 STELLARR_PUBLIC_PORT, STELLARR_HTTP_PORT, STELLARR_MEDIA_PORT,
-STELLARR_TURN_PORT, STELLARR_TURNS_PORT, STELLARR_VERSION, STELLARR_REF.
+STELLARR_TURN_ENABLED, STELLARR_TURN_PORT, STELLARR_TURNS_PORT, STELLARR_VERSION, STELLARR_REF.
 STELLARR_START_TIMEOUT is how long to wait for the start (default 300 s).
 
 Running the installer again updates Stellarr to the latest release. It owns
@@ -382,7 +384,7 @@ settings_init() {
   local key
   # The settings the installer writes to .env. Each is read from the
   # environment variable of the same name first, as Compose itself would.
-  MANAGED_KEYS='STELLARR_DOMAIN STELLARR_PUBLIC_IP STELLARR_LANGUAGE STELLARR_HTTPS_PORT STELLARR_PUBLIC_PORT STELLARR_HTTP_PORT STELLARR_MEDIA_PORT STELLARR_TURN_PORT STELLARR_TURNS_PORT'
+  MANAGED_KEYS='STELLARR_TURN_ENABLED STELLARR_DOMAIN STELLARR_PUBLIC_IP STELLARR_LANGUAGE STELLARR_HTTPS_PORT STELLARR_PUBLIC_PORT STELLARR_HTTP_PORT STELLARR_MEDIA_PORT STELLARR_TURN_PORT STELLARR_TURNS_PORT'
   REPO_SLUG=Arkazzae/Stellarr
   REPO_URL="https://github.com/$REPO_SLUG"
   RAW_URL="https://raw.githubusercontent.com/$REPO_SLUG"
@@ -475,6 +477,15 @@ parse_args() {
             printf -v "FROM_$OPTION_KEY" '%s' "$option"
             ;;
         esac
+        ;;
+      --enable-turn | --disable-turn)
+        [ "$inline" -eq 0 ] || usage_error "$option takes no value; see --help"
+        value=false
+        [ "$option" != --enable-turn ] || value=true
+        OPTION_KEY=STELLARR_TURN_ENABLED
+        printf -v "GIVEN_$OPTION_KEY" '%s' 1
+        printf -v "FROM_$OPTION_KEY" '%s' "$option"
+        printf -v "VALUE_$OPTION_KEY" '%s' "$value"
         ;;
       -y | --yes | --build | --no-start | --install-docker | --force | --skip-port-check | --no-color | -h | --help)
         [ "$inline" -eq 0 ] || usage_error "$option takes no value; see --help"
@@ -605,6 +616,12 @@ validate_options() {
         ;;
       STELLARR_LANGUAGE)
         case "${!value}" in en | pl) ;; *) usage_error "${!from} \"${!value}\" is not en or pl" ;; esac
+        ;;
+      STELLARR_TURN_ENABLED)
+        case "${!value}" in true | false) ;; *) usage_error "${!from} needs true or false" ;; esac
+        ;;
+      STELLARR_HTTP_PORT)
+        is_http_binding "${!value}" || usage_error "${!from} needs a port or an IP address and port"
         ;;
       *)
         is_port "${!value}" || usage_error "${!from} \"${!value}\" is not a port from 1 to 65535"
@@ -1323,6 +1340,31 @@ release_unavailable() {
     "or name the release with --version."
 }
 
+# Only the Compose file lists this installer can write are safe to reuse.
+managed_turn_files() {
+  case "$1" in
+    docker-compose.yml:docker-compose.turn.yml | \
+      docker-compose.yml:docker-compose.turn.yml:compose.override.yaml | \
+      docker-compose.yml:docker-compose.turn.yml:compose.override.yml | \
+      docker-compose.yml:docker-compose.turn.yml:docker-compose.override.yml | \
+      docker-compose.yml:docker-compose.turn.yml:docker-compose.override.yaml) return 0 ;;
+    *) return 1 ;;
+  esac
+}
+
+settle_compose_files() {
+  SET_COMPOSE_FILE=''
+  if [ "$TWO_PORT_LAYOUT" -eq 1 ] && [ "$TURN_PUBLISHED" -eq 1 ]; then
+    SET_COMPOSE_FILE=docker-compose.yml:docker-compose.turn.yml
+    local override
+    for override in compose.override.yaml compose.override.yml docker-compose.override.yml docker-compose.override.yaml; do
+      [ -f "$INSTALL_DIR/$override" ] || continue
+      SET_COMPOSE_FILE="$SET_COMPOSE_FILE:$override"
+      break
+    done
+  fi
+}
+
 # What happens to .env, decided before anything is written: write a new one,
 # keep one the installer wrote, adopt one written by hand, or replace it.
 decide_env() {
@@ -1339,8 +1381,9 @@ decide_env() {
   # Compose reads these from .env over the project's own settings, so they
   # change which project and files it uses, which would start the
   # installation on another, empty volume or with services it does not have.
-  # That holds for a .env the installer wrote as much as for any other.
-  if [ -n "$EXIST_COMPOSE_PROJECT_NAME$EXIST_COMPOSE_FILE$EXIST_COMPOSE_PROFILES" ]; then
+  # The known TURN stack and default override are the only approved file list.
+  if [ -n "$EXIST_COMPOSE_PROJECT_NAME$EXIST_COMPOSE_PROFILES" ] ||
+    { [ -n "$EXIST_COMPOSE_FILE" ] && ! managed_turn_files "$EXIST_COMPOSE_FILE"; }; then
     if [ "$ENV_STATE" = marked ]; then
       compose_keys_set
       die "$INSTALL_DIR/.env sets $COMPOSE_KEYS_SET" \
@@ -1380,10 +1423,18 @@ compose_keys_set() {
   esac
 }
 
+is_http_binding() {
+  local binding=$1 host
+  is_port "${binding##*:}" || return 1
+  [ "${binding##*:}" != "$binding" ] || return 0
+  host=${binding%:*}
+  is_ipv4 "$host" || [[ "$host" =~ ^\[[0-9a-fA-F:.]+\]$ ]]
+}
+
 # The settings this run uses: a given value, else the one in .env, else the
 # answer to a question, else the default.
 settle_settings() {
-  local key given value has exist
+  local key given value has exist default_port
   for key in $MANAGED_KEYS; do
     given="GIVEN_$key" value="VALUE_$key" has="HAS_$key" exist="EXIST_$key"
     if [ "${!given}" -eq 1 ]; then
@@ -1400,7 +1451,42 @@ settle_settings() {
   fi
   : "${SET_STELLARR_DOMAIN:=localhost}"
   : "${SET_STELLARR_LANGUAGE:=en}"
-  : "${SET_STELLARR_HTTPS_PORT:=8443}" "${SET_STELLARR_HTTP_PORT:=8888}" "${SET_STELLARR_MEDIA_PORT:=49000}"
+  TURN_PUBLISHED=1
+  if [ "$TWO_PORT_LAYOUT" -eq 1 ]; then
+    local legacy_install=0
+    if [ "$ENV_ACTION" != replace ] && grep -q ':3478/udp' "$INSTALL_DIR/docker-compose.yml" 2>/dev/null; then
+      legacy_install=1
+      # A standalone Compose install may have used the previous implicit ports.
+      for key in STELLARR_HTTPS_PORT STELLARR_HTTP_PORT; do
+        value="SET_$key"
+        [ -z "${!value}" ] || continue
+        default_port=8443
+        [ "$key" != STELLARR_HTTP_PORT ] || default_port=8888
+        printf -v "$value" '%s' "$default_port"
+        printf -v "GIVEN_$key" '%s' 1
+      done
+    fi
+    : "${SET_STELLARR_HTTPS_PORT:=443}" "${SET_STELLARR_HTTP_PORT:=127.0.0.1:8888}"
+    if [ -z "$SET_STELLARR_TURN_ENABLED" ] && {
+      [ "$legacy_install" -eq 1 ] || [ "$GIVEN_STELLARR_TURN_PORT" -eq 1 ] || [ "$GIVEN_STELLARR_TURNS_PORT" -eq 1 ]
+    }; then
+      SET_STELLARR_TURN_ENABLED=true
+      GIVEN_STELLARR_TURN_ENABLED=1
+    fi
+    : "${SET_STELLARR_TURN_ENABLED:=false}"
+    case "$SET_STELLARR_TURN_ENABLED" in
+      true) ;;
+      false) TURN_PUBLISHED=0 ;;
+      *) die "STELLARR_TURN_ENABLED in $INSTALL_DIR/.env needs true or false" ;;
+    esac
+  else
+    : "${SET_STELLARR_HTTPS_PORT:=8443}" "${SET_STELLARR_HTTP_PORT:=8888}"
+    [ "$GIVEN_STELLARR_TURN_ENABLED" -eq 0 ] ||
+      usage_error "This release always publishes TURN; choose a newer release to use --enable-turn or --disable-turn"
+  fi
+  : "${SET_STELLARR_MEDIA_PORT:=49000}"
+  PORT_KEYS='STELLARR_HTTPS_PORT STELLARR_HTTP_PORT STELLARR_MEDIA_PORT'
+  if [ "$TURN_PUBLISHED" -eq 1 ]; then PORT_KEYS="$PORT_KEYS STELLARR_TURN_PORT STELLARR_TURNS_PORT"; fi
   : "${SET_STELLARR_TURN_PORT:=3478}" "${SET_STELLARR_TURNS_PORT:=5349}"
   RELAY_RANGE=${EXIST_STELLARR_TURN_RELAY_RANGE:-49160-49200}
   [ "$ENV_ACTION" = keep ] || [ "$ENV_ACTION" = adopt ] || RELAY_RANGE=49160-49200
@@ -1409,6 +1495,7 @@ settle_settings() {
     value="SET_$key"
     [ -n "${!value}" ] || continue
     key_option "$key"
+    if [ "$key" = STELLARR_HTTP_PORT ] && is_http_binding "${!value}"; then continue; fi
     is_port "${!value}" || die "$key in $INSTALL_DIR/.env is not a port: \"${!value}\"" \
       "Correct it there, or set it with $KEY_OPTION."
   done
@@ -1423,20 +1510,21 @@ settle_settings() {
 
 # Two settings on one port would only fail later, inside Docker.
 check_port_overlap() {
-  local tcp=" $SET_STELLARR_HTTPS_PORT " udp=' ' key port value first last
-  for key in STELLARR_HTTP_PORT STELLARR_TURN_PORT STELLARR_TURNS_PORT; do
-    value="SET_$key" port=${!value}
-    case "$tcp" in *" $port "*) port_overlap "$port" ;; esac
-    tcp="$tcp$port "
-  done
-  for key in STELLARR_TURN_PORT STELLARR_TURNS_PORT STELLARR_MEDIA_PORT; do
-    value="SET_$key" port=${!value}
-    case "$udp" in *" $port "*) port_overlap "$port" ;; esac
-    udp="$udp$port "
-    if relay_bounds; then
-      first=$RELAY_FIRST last=$RELAY_LAST
-      [ "$port" -lt "$first" ] || [ "$port" -gt "$last" ] || port_overlap "$port"
-    fi
+  local tcp=' ' udp=' ' key port value
+  for key in $PORT_KEYS; do
+    value="SET_$key" port=${!value} port=${port##*:}
+    port_role "$key"
+    case "$ROLE_PROTOS" in *tcp*)
+      case "$tcp" in *" $port "*) port_overlap "$port" ;; esac
+      tcp="$tcp$port "
+      ;;
+    esac
+    case "$ROLE_PROTOS" in *udp*)
+      case "$udp" in *" $port "*) port_overlap "$port" ;; esac
+      udp="$udp$port "
+      if relay_bounds && [ "$port" -ge "$RELAY_FIRST" ] && [ "$port" -le "$RELAY_LAST" ]; then port_overlap "$port"; fi
+      ;;
+    esac
   done
 }
 
@@ -1445,6 +1533,7 @@ port_overlap() {
 }
 
 relay_bounds() {
+  [ "$TURN_PUBLISHED" -eq 1 ] || return 1
   RELAY_FIRST=${RELAY_RANGE%-*} RELAY_LAST=${RELAY_RANGE#*-}
   is_port "$RELAY_FIRST" && is_port "$RELAY_LAST" && [ "$RELAY_FIRST" -le "$RELAY_LAST" ]
 }
@@ -1498,6 +1587,8 @@ EOF
         esac
         break
       done
+    elif [ "$TWO_PORT_LAYOUT" -eq 1 ]; then
+      SET_STELLARR_PUBLIC_IP=auto
     else
       SET_STELLARR_PUBLIC_IP=''
     fi
@@ -1564,27 +1655,50 @@ prepare_directory() {
   place_compose_files
 }
 
+fetch_compose_files() {
+  local compose_file="$WORK/docker-compose.yml"
+  if [ "$DIR_IS_CHECKOUT" -eq 1 ]; then
+    compose_file="$INSTALL_DIR/docker-compose.yml"
+  elif [ -n "$SCRIPT_CHECKOUT" ]; then
+    cp "$SCRIPT_CHECKOUT/docker-compose.yml" "$WORK/docker-compose.yml"
+    [ ! -f "$SCRIPT_CHECKOUT/.env.example" ] || cp "$SCRIPT_CHECKOUT/.env.example" "$WORK/env.example"
+    COMPOSE_LABEL="from $SCRIPT_CHECKOUT"
+  else
+    COMPOSE_LABEL="for $FILES_REF"
+    case "$FILES_REF" in v*) if is_exact_version "${FILES_REF#v}"; then COMPOSE_LABEL="for ${FILES_REF#v}"; fi ;; esac
+    download "$RAW_URL/$FILES_REF/docker-compose.yml" "$WORK/docker-compose.yml" ||
+      die "Could not download docker-compose.yml $COMPOSE_LABEL" "$RAW_URL/$FILES_REF/docker-compose.yml" "$DOWNLOAD_ERROR"
+    is_stellarr_compose "$WORK/docker-compose.yml" ||
+      die "The docker-compose.yml downloaded $COMPOSE_LABEL is not Stellarr's" "$RAW_URL/$FILES_REF/docker-compose.yml"
+    download "$RAW_URL/$FILES_REF/.env.example" "$WORK/env.example" ||
+      die "Could not download .env.example $COMPOSE_LABEL" "$RAW_URL/$FILES_REF/.env.example" "$DOWNLOAD_ERROR"
+  fi
+
+  TWO_PORT_LAYOUT=0
+  if grep -q 'STELLARR_TURN_ENABLED' "$compose_file"; then TWO_PORT_LAYOUT=1; fi
+}
+
+fetch_turn_overlay() {
+  [ "$TWO_PORT_LAYOUT" -eq 1 ] && [ "$TURN_PUBLISHED" -eq 1 ] || return 0
+  if [ "$DIR_IS_CHECKOUT" -eq 1 ]; then
+    [ -f "$INSTALL_DIR/docker-compose.turn.yml" ] || die "The checkout is missing docker-compose.turn.yml"
+  elif [ -n "$SCRIPT_CHECKOUT" ]; then
+    cp "$SCRIPT_CHECKOUT/docker-compose.turn.yml" "$WORK/docker-compose.turn.yml"
+  else
+    download "$RAW_URL/$FILES_REF/docker-compose.turn.yml" "$WORK/docker-compose.turn.yml" ||
+      die "Could not download docker-compose.turn.yml $COMPOSE_LABEL" "$DOWNLOAD_ERROR"
+  fi
+}
+
 place_compose_files() {
-  local label
+  local label=${COMPOSE_LABEL:-}
   if [ "$DIR_IS_CHECKOUT" -eq 1 ]; then
     ui_ok "Using docker-compose.yml from the checkout"
     return 0
   fi
-  if [ -n "$SCRIPT_CHECKOUT" ]; then
-    cp "$SCRIPT_CHECKOUT/docker-compose.yml" "$WORK/docker-compose.yml"
-    [ ! -f "$SCRIPT_CHECKOUT/.env.example" ] || cp "$SCRIPT_CHECKOUT/.env.example" "$WORK/env.example"
-    label="from $SCRIPT_CHECKOUT"
-  else
-    label="for $FILES_REF"
-    case "$FILES_REF" in v*) if is_exact_version "${FILES_REF#v}"; then label="for ${FILES_REF#v}"; fi ;; esac
-    download "$RAW_URL/$FILES_REF/docker-compose.yml" "$WORK/docker-compose.yml" ||
-      die "Could not download docker-compose.yml $label" "$RAW_URL/$FILES_REF/docker-compose.yml" "$DOWNLOAD_ERROR"
-    is_stellarr_compose "$WORK/docker-compose.yml" ||
-      die "The docker-compose.yml downloaded $label is not Stellarr's" "$RAW_URL/$FILES_REF/docker-compose.yml"
-    download "$RAW_URL/$FILES_REF/.env.example" "$WORK/env.example" ||
-      die "Could not download .env.example $label" "$RAW_URL/$FILES_REF/.env.example" "$DOWNLOAD_ERROR"
+  if [ -f "$WORK/docker-compose.turn.yml" ]; then
+    install_file "$WORK/docker-compose.turn.yml" docker-compose.turn.yml backup
   fi
-
   install_file "$WORK/docker-compose.yml" docker-compose.yml backup
   case "$FILE_RESULT" in
     same) ui_ok "docker-compose.yml $label is in place" ;;
@@ -1667,6 +1781,10 @@ env_changes() {
     [ "${!has}" -eq 0 ] || [ "${!exist}" != "${!set}" ] || continue
     ENV_CHANGES+=("$key=${!set}")
   done
+  if [ "$SET_COMPOSE_FILE" != "$EXIST_COMPOSE_FILE" ] ||
+    { [ -z "$SET_COMPOSE_FILE" ] && [ "$HAS_COMPOSE_FILE" -eq 1 ]; }; then
+    ENV_CHANGES+=("COMPOSE_FILE=$SET_COMPOSE_FILE")
+  fi
   if [ "$HAS_STELLARR_VERSION" -eq 0 ] || [ "$EXIST_STELLARR_VERSION" != "$TARGET_TAG" ]; then
     ENV_CHANGES+=("STELLARR_VERSION=$TARGET_TAG")
   fi
@@ -1728,9 +1846,11 @@ env_rewrite() {
         sub(/^[ \t]*(export[ \t]+)?/, "", name)
         sub(/[ \t]+$/, "", name)
         last[name] = r
+        if (name == "COMPOSE_FILE" && name in want && want[name] == "") remove[r] = 1
       }
       for (i = 1; i <= n; i++) if (k[i] in last) at[last[k[i]]] = k[i]
       for (r = 1; r <= NR; r++) {
+        if (r in remove) continue
         if (r in at) {
           cr = (line[r] ~ /\r$/) ? "\r" : ""
           print at[r] "=" want[at[r]] cr
@@ -1761,7 +1881,8 @@ env_write_new() {
       printf '%s=%s\n' "$key" "${!value}"
     done
     printf 'STELLARR_VERSION=%s\n' "$TARGET_TAG"
-    for key in STELLARR_HTTPS_PORT STELLARR_PUBLIC_PORT STELLARR_HTTP_PORT STELLARR_MEDIA_PORT STELLARR_TURN_PORT STELLARR_TURNS_PORT; do
+    if [ -n "$SET_COMPOSE_FILE" ]; then printf 'COMPOSE_FILE=%s\n' "$SET_COMPOSE_FILE"; fi
+    for key in STELLARR_HTTPS_PORT STELLARR_PUBLIC_PORT STELLARR_HTTP_PORT STELLARR_MEDIA_PORT STELLARR_TURN_ENABLED STELLARR_TURN_PORT STELLARR_TURNS_PORT; do
       value="SET_$key"
       [ -z "${!value}" ] || printf '%s=%s\n' "$key" "${!value}"
     done
@@ -1795,9 +1916,10 @@ env_write_new() {
 # alone, as a later "docker compose up" from another shell would; what it was
 # given in the environment is in .env by now.
 clear_compose_environment() {
-  local name names ignored=''
+  local name names ignored='' files=(docker-compose.yml)
+  if [ "$TWO_PORT_LAYOUT" -eq 1 ] && [ "$TURN_PUBLISHED" -eq 1 ]; then files+=(docker-compose.turn.yml); fi
   unset COMPOSE_PROJECT_NAME COMPOSE_FILE COMPOSE_PROFILES COMPOSE_ENV_FILES COMPOSE_PATH_SEPARATOR
-  names=$(grep -oE '\$\{[A-Za-z_][A-Za-z0-9_]*' docker-compose.yml | sed 's/^..//' | sort -u) || names=''
+  names=$(grep -ohE '\$\{[A-Za-z_][A-Za-z0-9_]*' "${files[@]}" | sed 's/^..//' | sort -u) || names=''
   for name in $names; do
     [ -n "${!name+set}" ] || continue
     case " $MANAGED_KEYS STELLARR_VERSION " in
@@ -1870,12 +1992,18 @@ port_role() {
     STELLARR_HTTP_PORT) ROLE_NAME=HTTP ROLE_PROTOS=tcp ;;
     STELLARR_TURN_PORT) ROLE_NAME=TURN ROLE_PROTOS='tcp udp' ;;
     STELLARR_TURNS_PORT) ROLE_NAME='TURN over TLS' ROLE_PROTOS='tcp udp' ;;
-    STELLARR_MEDIA_PORT) ROLE_NAME='voice media' ROLE_PROTOS=udp ;;
+    STELLARR_MEDIA_PORT)
+      ROLE_NAME='voice media' ROLE_PROTOS=udp
+      if [ "$TWO_PORT_LAYOUT" -eq 1 ]; then ROLE_PROTOS='tcp udp'; fi
+      ;;
   esac
 }
 
 port_list_text() {
-  PORTS_TEXT="$SET_STELLARR_HTTPS_PORT, $SET_STELLARR_HTTP_PORT, $SET_STELLARR_TURN_PORT, $SET_STELLARR_TURNS_PORT, $SET_STELLARR_MEDIA_PORT, $RELAY_RANGE"
+  PORTS_TEXT="$SET_STELLARR_HTTPS_PORT, $SET_STELLARR_HTTP_PORT, $SET_STELLARR_MEDIA_PORT"
+  if [ "$TURN_PUBLISHED" -eq 1 ]; then
+    PORTS_TEXT="$PORTS_TEXT, $SET_STELLARR_TURN_PORT, $SET_STELLARR_TURNS_PORT, $RELAY_RANGE"
+  fi
 }
 
 # The ports Docker will publish must be free, unless Stellarr's own
@@ -1884,7 +2012,7 @@ port_list_text() {
 # the next free one; otherwise the installer stops and says what moves it.
 # The result is shown with the files, by show_ports.
 check_ports() {
-  local key value given port busy='' relay_busy=0 lines=() suggestion
+  local key value given port binding busy='' relay_busy=0 lines=() suggestion
   PORTS_RESULT=free
   if [ "$SKIP_PORT_CHECK" -eq 1 ]; then
     PORTS_RESULT=skipped
@@ -1899,10 +2027,11 @@ check_ports() {
     return 0
   fi
 
-  for key in STELLARR_HTTPS_PORT STELLARR_HTTP_PORT STELLARR_TURN_PORT STELLARR_TURNS_PORT STELLARR_MEDIA_PORT; do
+  for key in $PORT_KEYS; do
     value="SET_$key"
     port_role "$key"
-    if port_busy "${!value}" "$ROLE_PROTOS"; then busy="$busy $key"; fi
+    binding=${!value}
+    if port_busy "${binding##*:}" "$ROLE_PROTOS"; then busy="$busy $key"; fi
   done
   if relay_bounds; then
     port=$RELAY_FIRST
@@ -1936,6 +2065,8 @@ check_ports() {
         fi
       done
       # A port chosen here is the person's own choice, written to .env.
+      binding=${!value}
+      case "$binding" in *:*) port="${binding%:*}:$port" ;; esac
       printf -v "SET_$key" '%s' "$port"
       printf -v "GIVEN_$key" '%s' 1
     done
@@ -1983,13 +2114,14 @@ busy_includes_given() {
 # Whether the port setting $1 can take port $2: free on this machine for its
 # protocols, and not one of Stellarr's other ports.
 port_is_available() {
-  local key=$1 port=$2 other value
+  local key=$1 port=$2 other value binding
   port_role "$key"
   if port_busy "$port" "$ROLE_PROTOS"; then return 1; fi
-  for other in STELLARR_HTTPS_PORT STELLARR_HTTP_PORT STELLARR_TURN_PORT STELLARR_TURNS_PORT STELLARR_MEDIA_PORT; do
+  for other in $PORT_KEYS; do
     [ "$other" != "$key" ] || continue
     value="SET_$other"
-    [ "${!value}" != "$port" ] || return 1
+    binding=${!value}
+    [ "${binding##*:}" != "$port" ] || return 1
   done
   if relay_bounds && [ "$port" -ge "$RELAY_FIRST" ] && [ "$port" -le "$RELAY_LAST" ]; then return 1; fi
   return 0
@@ -1997,7 +2129,7 @@ port_is_available() {
 
 next_free_port() {
   local value="SET_$1" port
-  port=${!value}
+  port=${!value} port=${port##*:}
   FREE_PORT=''
   while [ "$port" -lt 65535 ]; do
     port=$((port + 1))
@@ -2247,9 +2379,12 @@ main() {
   choose_directory
   choose_release
   decide_env
+  fetch_compose_files
   settle_settings
+  settle_compose_files
   confirm_update
   check_ports
+  fetch_turn_overlay
 
   prepare_directory
   write_env

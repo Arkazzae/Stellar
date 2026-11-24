@@ -1,0 +1,13 @@
+# Optional public TURN. Include it alongside the base Compose file.
+services:
+  stellarr:
+    environment:
+      STELLARR_TURN_ENABLED: "true"
+      STELLARR_TURN_PORT: ${STELLARR_TURN_PORT:-3478}
+      STELLARR_TURNS_PORT: ${STELLARR_TURNS_PORT:-5349}
+    ports:
+      - "${STELLARR_TURN_PORT:-3478}:3478/tcp"
+      - "${STELLARR_TURN_PORT:-3478}:3478/udp"
+      - "${STELLARR_TURNS_PORT:-5349}:5349/tcp"
+      - "${STELLARR_TURNS_PORT:-5349}:5349/udp"
+      - "${STELLARR_TURN_RELAY_RANGE:-49160-49200}:49160-49200/udp"

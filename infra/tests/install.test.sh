@@ -273,8 +273,14 @@ chmod +x "$stub"
 # differs from 1.4.0's by one comment.
 fixtures="$scratch/fixtures"
 mkdir -p "$fixtures"
-cp "$repo_root/docker-compose.yml" "$fixtures/compose-1.4.0"
-{ cat "$repo_root/docker-compose.yml"; echo "# 1.5.0"; } >"$fixtures/compose-1.5.0"
+# shellcheck disable=SC2016 # Compose interpolates the placeholders in the template.
+sed -e '/STELLARR_TURN_ENABLED/d' -e '/49000\/tcp/d' \
+  -e 's/127.0.0.1:8888/8888/g' -e 's/STELLARR_HTTPS_PORT:-443/STELLARR_HTTPS_PORT:-8443/g' \
+  -e '/49000\/udp/a\
+      - "${STELLARR_TURN_PORT:-3478}:3478/udp"\
+      - "${STELLARR_TURN_RELAY_RANGE:-49160-49200}:${STELLARR_TURN_RELAY_RANGE:-49160-49200}/udp"
+' "$repo_root/docker-compose.yml" >"$fixtures/compose-1.4.0"
+{ cat "$fixtures/compose-1.4.0"; echo "# 1.5.0"; } >"$fixtures/compose-1.5.0"
 cp "$repo_root/.env.example" "$fixtures/env.example"
 # Without a checkout beside it, the script downloads its files.
 mkdir -p "$scratch/download"
@@ -1151,6 +1157,71 @@ case_unexpected_failure() {
   expect_shown "https://github.com/Arkazzae/Stellarr/issues"
 }
 
+modern_release() {
+  cp "$repo_root/docker-compose.yml" "$fixtures/compose-1.6.0"
+  release 1.6.0
+  cp "$repo_root/docker-compose.turn.yml" "$state/raw/v1.6.0/docker-compose.turn.yml"
+}
+
+case_direct_and_turn() {
+  new_case direct-defaults
+  modern_release
+  echo 3478 >"$state/busy-udp"
+  run --yes --no-start --domain chat.example.com
+  expect_success
+  expect_line "$home/stellarr/.env" "STELLARR_HTTPS_PORT=443"
+  expect_line "$home/stellarr/.env" "STELLARR_HTTP_PORT=127.0.0.1:8888"
+  expect_line "$home/stellarr/.env" "STELLARR_PUBLIC_IP=auto"
+  expect_line "$home/stellarr/.env" "STELLARR_TURN_ENABLED=false"
+  expect_missing "$home/stellarr/docker-compose.turn.yml"
+
+  new_case direct-media-tcp
+  modern_release
+  echo 49000 >"$state/busy-tcp"
+  run --yes --no-start
+  expect_failure
+  expect_shown "49000 (voice media): move it with --media-port"
+
+  new_case turn-opt-in
+  modern_release
+  run --yes --no-start --enable-turn --http-port 127.0.0.1:8888
+  expect_success
+  expect_line "$home/stellarr/.env" "STELLARR_TURN_ENABLED=true"
+  expect_line "$home/stellarr/.env" "STELLARR_HTTP_PORT=127.0.0.1:8888"
+  expect_line "$home/stellarr/.env" "COMPOSE_FILE=docker-compose.yml:docker-compose.turn.yml"
+  cmp -s "$repo_root/docker-compose.turn.yml" "$home/stellarr/docker-compose.turn.yml" ||
+    fail "the TURN overlay was not downloaded."
+  expect_shown "docker compose up -d"
+
+  new_case turn-upgrade
+  modern_release
+  local dir="$home/stellarr"
+  installed "$dir" 1.4.0
+  printf 'services: {}\n' >"$dir/docker-compose.override.yml"
+  run --yes --no-start
+  expect_success
+  expect_line "$dir/.env" "COMPOSE_FILE=docker-compose.yml:docker-compose.turn.yml:docker-compose.override.yml"
+  expect_line "$dir/.env" "STELLARR_TURN_ENABLED=true"
+  expect_line "$dir/.env" "STELLARR_HTTPS_PORT=8443"
+  expect_line "$dir/.env" "STELLARR_HTTP_PORT=8888"
+  expect_shown "docker compose up -d"
+  run --yes --no-start --disable-turn
+  expect_success
+  ! grep -q '^COMPOSE_FILE=' "$dir/.env" || fail "TURN Compose selector was not removed."
+  expect_line "$dir/.env" "STELLARR_TURN_ENABLED=false"
+  expect_line "$dir/docker-compose.override.yml" "services: {}"
+
+  new_case turn-upgrade-opt-out
+  modern_release
+  dir="$home/stellarr"
+  installed "$dir" 1.4.0
+  run --yes --no-start --disable-turn
+  expect_success
+  expect_line "$dir/.env" "STELLARR_TURN_ENABLED=false"
+  expect_line "$dir/.env" "STELLARR_HTTPS_PORT=8443"
+  expect_missing "$dir/docker-compose.turn.yml"
+}
+
 case_checkout() {
   new_case checkout
   local checkout="$case_dir/Stellarr"
@@ -1326,6 +1397,7 @@ case_invalid_options
 case_no_start
 case_never_healthy
 case_checkout
+case_direct_and_turn
 case_unexpected_failure
 case_terminal_mode
 cases=("$scratch"/cases/*)

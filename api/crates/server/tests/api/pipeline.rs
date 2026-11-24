@@ -492,8 +492,8 @@ async fn a_trusted_proxy_that_is_not_an_address_stops_the_start_and_is_named() {
 }
 
 #[tokio::test]
-async fn the_turn_secret_is_required_outside_development() {
-    let said = Server::refused_to_start(&[("STELLARR_ENVIRONMENT", "Production")]).await;
+async fn the_turn_secret_is_required_when_turn_is_enabled_in_production() {
+    let said = Server::refused_to_start(&[("STELLARR_ENVIRONMENT", "Production"), ("STELLARR_TURN_ENABLED", "true")]).await;
 
     assert!(
         said.contains("Rtc:TurnSharedSecret is required outside development"),
