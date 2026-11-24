@@ -30,6 +30,7 @@ fn defaults(status: StatusCode) -> Option<(&'static str, &'static str)> {
         406 => ("15.5.7", "Not Acceptable"),
         408 => ("15.5.9", "Request Timeout"),
         409 => ("15.5.10", "Conflict"),
+        410 => ("15.5.11", "Gone"),
         413 => ("15.5.14", "Content Too Large"),
         415 => ("15.5.16", "Unsupported Media Type"),
         500 => ("15.6.1", "An error occurred while processing your request."),
@@ -268,6 +269,15 @@ mod tests {
         .unwrap();
         assert!(
             json.contains("section-15.6.4\",\"title\":\"Database unavailable\",\"status\":503"),
+            "{json}"
+        );
+    }
+
+    #[test]
+    fn a_gone_problem_has_the_type_the_first_server_gave_it() {
+        let json = text(Problem::new(StatusCode::GONE).title("Too many wrong PINs."));
+        assert!(
+            json.starts_with("{\"type\":\"https://tools.ietf.org/html/rfc9110#section-15.5.11\",\"title\":\"Too many wrong PINs.\",\"status\":410"),
             "{json}"
         );
     }
