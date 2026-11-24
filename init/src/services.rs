@@ -84,9 +84,8 @@ fn container_with_turn(turn_enabled: bool) -> Vec<Service> {
         .reload(Signal::Hup)
         .critical(),
         // Renews a self-signed certificate twice a day at most and then
-        // reloads nginx and restarts turn. The instance works without it
-        // for weeks, so it is not critical, and it needs neither of the
-        // two to be ready: a renewal must not wait for a broken turn.
+        // reloads nginx and restarts the optional TURN service. Renewal can
+        // run before nginx or TURN is ready, so it can replace a bad certificate.
         Service::new(
             "tls-maintenance",
             &["/usr/local/bin/stellarr-tls-maintenance", "watch"],

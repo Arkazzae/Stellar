@@ -17,7 +17,7 @@ curl -fsSL https://stellarr.online/install.sh | bash
 ```
 
 - **Interactive mode**: Prompts for up to three settings: the domain or IPv4 address users will open (`--domain` / `STELLARR_DOMAIN`, default `localhost`), the external IPv4 address for voice calls when a domain is entered (`--public-ip` / `STELLARR_PUBLIC_IP`, an IPv4 address or `auto`), and the interface language (`--language` / `STELLARR_LANGUAGE`, `en` or `pl`, defaulting to the shell locale). On Linux, if Docker is missing, the installer offers to install Docker Engine via `https://get.docker.com` (or pass `--install-docker`). If a required port is occupied, it offers the next free port.
-- **Non-interactive mode**: Pass `-y` / `--yes` (or run without a TTY) to skip prompts and apply CLI flags (`--domain`, `--public-ip`, `--language`, `--https-port`, `--public-port`, `--http-port`, `--media-port`, `--enable-turn`, `--turn-port`, `--turns-port`, `--version`, `--ref`, `--no-start`, `--skip-port-check`, `--force`) or their `STELLARR_*` environment variables (`STELLARR_START_TIMEOUT` defaults to `300` s):
+- **Non-interactive mode**: Pass `-y` / `--yes` (or run without a TTY) to skip prompts and apply CLI flags (`--domain`, `--public-ip`, `--language`, `--https-port`, `--public-port`, `--http-port`, `--media-port`, `--enable-turn`, `--disable-turn`, `--turn-port`, `--turns-port`, `--version`, `--ref`, `--no-start`, `--skip-port-check`, `--force`) or their `STELLARR_*` environment variables (`STELLARR_START_TIMEOUT` defaults to `300` s):
 
   ```bash
   curl -fsSL https://stellarr.online/install.sh | bash -s -- --yes --domain chat.example.com --public-ip auto
@@ -113,7 +113,7 @@ If you need to generate another invite link later from inside the app:
 3. Confirm two-way audio and verify that the connection status in the bottom-left call dock shows `Connected`.
 
 > [!IMPORTANT]
-> Local testing on a single machine works without additional network configuration because both browsers run on the Docker host. For voice and video calls from any other device (including another machine on your LAN), set `STELLARR_PUBLIC_IP` in `.env`. For calls across the internet, forward `49000/udp` and `49000/tcp` (`STELLARR_MEDIA_PORT`) on your router. See [Requirements](requirements.md#behind-nat).
+> With the default `localhost` configuration, Stellarr advertises the published media port on `127.0.0.1` for browsers on the Docker host. For calls from other devices, advertise an IPv4 address those devices can reach. For calls across the internet, forward the configured media port on UDP and TCP (default `49000`). See [Requirements](requirements.md#behind-nat).
 
 If voice stays on `Connecting` or fails across networks, run through the checklist in [RTC and ports](../rtc-and-ports.md#diagnostics).
 
@@ -132,7 +132,7 @@ Both commands stop internal services in reverse dependency order (`stop_grace_pe
 ## Next steps
 
 - **Operator panel**: Sign in with the owner account and visit `https://localhost/cockpit`.
-- [Requirements](requirements.md): `STELLARR_PUBLIC_IP` and router port forwarding for external devices.
+- [Requirements](requirements.md): Media addresses and firewall rules for LAN and internet access.
 - [Reverse proxy and TLS](reverse-proxy-and-tls.md): browser-trusted TLS certificates and reverse proxy configuration.
 - [Configuration](configuration.md): full environment variable reference.
 

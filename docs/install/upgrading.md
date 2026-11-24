@@ -52,7 +52,7 @@ To pin a specific release tag during an installer update, pass `--version 1.2.3`
    STELLARR_VERSION=1.2.3
    ```
 
-2. Pull the image and recreate the container:
+2. Update the Compose files as described in [Port changes](#port-changes), then pull the image and recreate the container. If you use TURN, pass both Compose files to each command:
 
    ```bash
    docker compose pull

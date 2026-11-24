@@ -15,7 +15,7 @@ Open **Docker → Add Container**, select **Stellarr** under **Template**, and r
 
 ## 2. Configure required settings
 
-1. **Domain and Public IP**: Set **Domain** (`STELLARR_DOMAIN`) and **Public IP** (`STELLARR_PUBLIC_IP`) so browsers outside the Unraid host can connect and join voice calls (use your Unraid LAN IPv4 for LAN-only calls, or your public IPv4 / `auto` for internet access).
+1. **Domain and Public IP**: Set **Domain** (`STELLARR_DOMAIN`) to the address users open. If it is already the IPv4 address that browsers can reach for media, direct calls can use it. Otherwise set **Public IP** (`STELLARR_PUBLIC_IP`) to the Unraid LAN IPv4 for LAN-only calls, or a reachable public IPv4 / `auto` for internet access.
 2. **Ports**: Unraid uses ports `80` and `443` for its own web UI, so the template defaults to `8443/tcp` for HTTPS. Whenever you change a host port mapping in Unraid, update its matching environment variable to the same port number:
 
    | Port mapping | Matching variable |

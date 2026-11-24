@@ -28,9 +28,10 @@
 # artifacts/recipes/ builds from source are built on the host first, once:
 # `docker buildx bake recipes`.
 #
-# Voice between two tabs on one machine needs no TURN server; the turn profile
-# is for a connection that has to cross a NAT. It uses the host network, so it
-# listens on the host's own ports 3478 and 49160-49200.
+# Local browser tabs connect directly to the SFU. The optional turn profile
+# runs coturn on the host network, advertised on UDP port 3478 and allocating
+# UDP relay ports 49160–49200. End-to-end relay tests need a media candidate
+# that coturn can reach and that is outside the loopback range.
 #
 # Every call goes through the media server, as in production. It advertises
 # 127.0.0.1 with the published port, because Docker forwards that port into

@@ -24,7 +24,7 @@ Pass `--socket PATH` to use a control socket path other than `/run/stellarr/init
 
 ## Supervised services
 
-The service table is compiled into `src/services.rs`:
+The service table is compiled into `src/services.rs`. The `turn` service runs and contributes to container health only when `STELLARR_TURN_ENABLED=true`.
 
 | Service | User | Dependencies | Readiness / liveness probe | Stop signal & timeout | Reload signal | Critical |
 | --- | --- | --- | --- | --- | --- | --- |

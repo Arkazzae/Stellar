@@ -133,7 +133,7 @@ prepare_certificate() {
 }
 
 # Through the process manager, which signals nginx only once it is ready and
-# logs both. coturn has no reload that takes a new certificate, so it restarts.
+# logs both. If enabled, coturn restarts to pick up the new certificate.
 reload_tls_consumers() {
   /usr/local/bin/stellarr-init reload nginx || echo "Could not reload nginx after TLS renewal." >&2
   if [[ "${STELLARR_TURN_ENABLED:-false}" == "true" ]]; then

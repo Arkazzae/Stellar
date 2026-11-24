@@ -20,7 +20,7 @@ Enable TURN if some callers can reach neither direct media transport. A fresh in
 docker compose -f docker-compose.yml -f docker-compose.turn.yml up -d
 ```
 
-The override enables `STELLARR_TURN_ENABLED` and publishes the relay ports. Forward the ports for the enabled transports to the Docker host.
+The override enables `STELLARR_TURN_ENABLED` and publishes all the port mappings below. Forward only the ports for transports you enable, plus the relay range.
 
 | Default port | Enabled transport | Variable |
 | --- | --- | --- |
@@ -31,7 +31,7 @@ The override enables `STELLARR_TURN_ENABLED` and publishes the relay ports. Forw
 
 TURN over TLS requires a CA-signed certificate trusted by browsers. Disabled transports are closed in `/etc/turnserver.conf` and omitted from `/api/bootstrap`. See [Reverse proxy and TLS](./install/reverse-proxy-and-tls.md#turn-over-tls-turns).
 
-The default relay range provides 41 UDP ports. A browser uses one bundled peer connection to the SFU, so a five-person call in which everyone relays needs about five allocations. To expand the range, update `min-port` and `max-port` in `infra/turnserver.conf.template` and keep the Compose mapping and host/router firewall rules in agreement. The Compose environment variables only change the port mapping.
+The default relay range provides 41 UDP ports. A browser uses one bundled peer connection to the SFU, so a five-person call in which everyone relays needs about five allocations. To change the range, set `STELLARR_TURN_RELAY_RANGE` in `.env` and recreate the container with the TURN override. Compose publishes the same UDP range that coturn allocates. Update the host and router firewall rules to match.
 
 ## Container-internal ports
 
@@ -54,13 +54,13 @@ STELLARR_PUBLIC_IP=auto
 STELLARR_MEDIA_PORT=49000
 ```
 
-Set `STELLARR_PUBLIC_IP` to the IPv4 address callers can reach. With `auto`, the container resolves the hostname’s IPv4 address at startup. The SFU advertises that IP and port in SDP for both UDP and passive TCP. When TURN is enabled, the same public IP configures its external address. Without a reachable SFU candidate, remote browsers need a working TURN relay and a reachable path to the SFU.
+Set `STELLARR_PUBLIC_IP` to the IPv4 address callers can reach. With `auto`, the container resolves the hostname’s IPv4 address at startup. A numeric IPv4 `STELLARR_DOMAIN` supplies the direct SFU address when `STELLARR_PUBLIC_IP` is unset. `STELLARR_MEDIA_ADVERTISE` replaces the automatically derived candidates. The SFU advertises that IP and port in SDP for both UDP and passive TCP. When TURN is enabled, the same public IP configures its external address. Without a reachable SFU candidate, remote browsers need a working TURN relay and a reachable path to the SFU.
 
 ## Diagnostics
 
 1. Open the web client over HTTPS and grant microphone access.
 2. Check that `GET /api/bootstrap` returns the expected SFU host and port in `rtc.mediaServer`. The browser takes its actual candidates from SDP. With TURN disabled, `rtc.iceServers` is empty.
-3. Check `STELLARR_PUBLIC_IP` and verify that the router forwards the same external media port on UDP and TCP.
+3. Check that browsers can reach the advertised SFU address and that the host firewall permits both media transports. For internet access behind NAT, verify that the router forwards the same external media port on UDP and TCP.
 4. Check that `docker compose exec stellarr stellarr-init status` shows `media` as ready. If using TURN, verify `turn` and its enabled relay ports as well.
 5. In browser WebRTC diagnostics, inspect the selected ICE candidate pair and its candidate `protocol`. Verify that media packet counters advance in both directions.
 6. Query active SFU sessions and their `ingress` and `egress` packet counters:
