@@ -127,6 +127,15 @@ impl Endpoints {
         self
     }
 
+    /// Serves everything under `path` (and `path` itself) with a router that
+    /// does its own routing, such as the hub's. The pipeline wraps it like any
+    /// route; the router decides who may enter, as it has no rules here.
+    pub fn service(mut self, path: &str, router: Router) -> Endpoints {
+        self.router = self.router.nest_service(path, router);
+        self.last = None;
+        self
+    }
+
     /// Counts the requests of the route added last against `policy`.
     pub fn rate_limit(mut self, policy: RateLimitPolicy) -> Endpoints {
         self.rules_of_last().rate_limit = Some(policy);
