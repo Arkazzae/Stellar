@@ -4,6 +4,8 @@
 
 pub mod contract;
 pub mod fake_s3;
+pub mod points;
+pub mod server;
 
 use std::path::{Path, PathBuf};
 use std::pin::Pin;

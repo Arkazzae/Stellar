@@ -533,8 +533,14 @@ pub async fn a_download_arrives_in_pieces(env: &Env) {
 
 #[macro_export]
 macro_rules! contract_tests {
+    (ignored $make:expr) => {
+        contract_tests!(@all [ignore = "needs a real store: see tests/minio.sh"] $make);
+    };
     ($make:expr) => {
-        contract_tests!(@each $make;
+        contract_tests!(@all [cfg(all())] $make);
+    };
+    (@all [$attr:meta] $make:expr) => {
+        contract_tests!(@each [$attr] $make;
             whole_object_reads_back_as_stored,
             a_range_reads_only_its_bytes_and_says_which,
             a_range_that_starts_at_or_past_the_end_is_refused,
@@ -558,8 +564,9 @@ macro_rules! contract_tests {
             a_download_arrives_in_pieces
         );
     };
-    (@each $make:expr; $($name:ident),*) => {
+    (@each [$attr:meta] $make:expr; $($name:ident),*) => {
         $(
+            #[$attr]
             #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
             async fn $name() {
                 let env = $make;
