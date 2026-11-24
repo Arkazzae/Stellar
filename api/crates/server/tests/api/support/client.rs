@@ -94,6 +94,16 @@ impl Request {
         self
     }
 
+    /// A body of bytes of the given type, such as a form with a file in it.
+    pub fn bytes(mut self, content_type: &str, body: Vec<u8>) -> Request {
+        self.headers
+            .push(("Content-Type".to_string(), content_type.to_string()));
+        self.body = Full::new(Bytes::from(body))
+            .map_err(|never| match never {})
+            .boxed();
+        self
+    }
+
     pub fn body(mut self, content_type: &str, body: &str) -> Request {
         self.headers
             .push(("Content-Type".to_string(), content_type.to_string()));
