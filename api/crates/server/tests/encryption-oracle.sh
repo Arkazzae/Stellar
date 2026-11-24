@@ -25,7 +25,8 @@
 # problem of what it held; this one refuses it with a 413), and a `null` among
 # the envelopes of an epoch (a 500 of the first server's code, a 400 here).
 # Who wins a race is not compared, only what was answered. The files are left in
-# $WORK.
+# $WORK (or, when it is not given, a folder that is removed when the script
+# ends, whatever the way; KEEP=1 keeps it).
 #
 #   ORACLE=encryption ORACLE_PORT=5218 STELLARR_API=path/to/stellarr-api encryption-oracle.sh
 set -euo pipefail
@@ -36,12 +37,16 @@ binary=${STELLARR_API:?the path of the stellarr-api binary}
 here=$(cd "$(dirname "$0")" && pwd)
 container=stellarr-port-oracle-$name
 oracle=http://127.0.0.1:$port
+kept=${WORK:+1}
 work=${WORK:-$(mktemp -d)}
 password='Corona!2026-long'
 headers=(-H 'X-Stellarr-Client: web' -H 'X-Stellarr-Client-Version: 2.0.0' -H 'Content-Type: application/json')
 pid=
 
-cleanup() { [ -n "$pid" ] && kill "$pid" 2>/dev/null || true; }
+cleanup() {
+  [ -n "$pid" ] && kill "$pid" 2>/dev/null || true
+  [ -n "${KEEP:-}" ] || [ -n "$kept" ] || rm -rf "$work"
+}
 trap cleanup EXIT
 
 code() { curl -s -o /dev/null -w '%{http_code}' "$@"; }
