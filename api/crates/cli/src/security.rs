@@ -26,7 +26,7 @@ use crate::support::{User, require_instance_server, resolve_user, user_not_found
 const MAX_EVENTS: usize = 100;
 
 fn optional_moment(at: Option<Timestamp>) -> Json {
-    at.map_or(Json::Null, |at| moment(at))
+    at.map_or(Json::Null, moment)
 }
 
 fn load_policy(runtime: &Runtime, connection: &rusqlite::Connection) -> CliOutcome<SecurityPolicy> {
@@ -313,7 +313,7 @@ fn show_as(runtime: &mut Runtime, id_or_username: &str, command: &'static str) -
             },
             method
                 .last_used_at
-                .map_or("(never)".to_string(), |at| round_trip(at)),
+                .map_or("(never)".to_string(), round_trip),
             method
                 .email
                 .as_ref()

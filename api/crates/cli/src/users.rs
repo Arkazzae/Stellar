@@ -30,10 +30,7 @@ impl Item {
             ("disabled", self.user.disabled.into()),
             ("createdAt", moment(self.user.created_at)),
             ("roleName", Json::optional_text(self.role_name.clone())),
-            (
-                "joinedAt",
-                self.joined_at.map_or(Json::Null, |at| moment(at)),
-            ),
+            ("joinedAt", self.joined_at.map_or(Json::Null, moment)),
             ("activeSessions", self.active_sessions.into()),
             ("origin", Json::optional_text(self.user.origin.clone())),
         ])
@@ -170,7 +167,7 @@ pub fn show(runtime: &mut Runtime, id_or_username: &str) -> CliOutcome {
         format!(
             "Joined instance server: {}",
             item.joined_at
-                .map_or("(not a member)".to_string(), |at| round_trip(at))
+                .map_or("(not a member)".to_string(), round_trip)
         ),
         format!("Active sessions: {}", item.active_sessions),
     ];
