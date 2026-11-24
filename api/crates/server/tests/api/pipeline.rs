@@ -49,6 +49,12 @@ fn routes() -> Endpoints {
         .get("/api/test/private", private)
         .authorized()
         .get("/api/test/echo/{what}", spoken)
+        .get("/api/test/pairs", pairs)
+}
+
+/// Every name and value of a query, in the order they came.
+async fn pairs(Query(pairs): Query<Vec<(String, String)>>) -> Json<Value> {
+    Json(json!({ "pairs": pairs }))
 }
 
 async fn private() -> StatusCode {
@@ -1089,4 +1095,26 @@ async fn paths_are_read_as_the_first_server_reads_them() {
         }
     }
     assert!(different.is_empty(), "{different:?}");
+}
+
+#[tokio::test]
+async fn what_path_and_query_accept() {
+    let server = server_with(&[]).await;
+    let client = server.client();
+
+    // A name given twice is an error for a struct field, and is kept, in
+    // order, by a list of pairs; a name nobody asked for is ignored.
+    assert_eq!(client.get("/api/test/search?limit=1&limit=2").await.status, 400);
+    assert_eq!(client.get("/api/test/search?limit=1&other=2").await.json::<Value>(), json!({ "limit": 1 }));
+    assert_eq!(
+        client.get("/api/test/pairs?a=1&b=&a=2&c").await.json::<Value>(),
+        json!({ "pairs": [["a", "1"], ["b", ""], ["a", "2"], ["c", ""]] })
+    );
+    assert_eq!(
+        client.get("/api/test/pairs?a=x%20y+z%2Bw").await.json::<Value>(),
+        json!({ "pairs": [["a", "x y z+w"]] })
+    );
+    // A segment is never empty.
+    assert_eq!(raw_get(server.address(), b"/api/test/echo//", &[]).await.status, 404);
+    assert_eq!(raw_get(server.address(), b"/api/test/echo/a//", &[]).await.status, 404);
 }
