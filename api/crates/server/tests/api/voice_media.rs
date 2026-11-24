@@ -411,22 +411,29 @@ async fn every_change_of_the_seat_closes_its_media_session_without_an_event() {
 
 #[tokio::test]
 async fn ending_a_direct_call_closes_the_media_sessions_of_both_people() {
-    let rig = Rig::start().await;
-    let (maja, ada) = (rig.person("maja").await, rig.person("ada").await);
-    let room = rig.conversation(&maja, &ada);
-    let (mut first, mut second) = (rig.connect(&maja).await, rig.connect(&ada).await);
-    first.join(room).await;
-    second.join(room).await;
-    let first_session = first.open_media(room).await;
-    let second_session = second.open_media(room).await;
+    for ending in ["decline", "block"] {
+        let rig = Rig::start().await;
+        let (maja, ada) = (rig.person("maja").await, rig.person("ada").await);
+        let room = rig.conversation(&maja, &ada);
+        let (mut first, mut second) = (rig.connect(&maja).await, rig.connect(&ada).await);
+        first.join(room).await;
+        second.join(room).await;
+        let first_session = first.open_media(room).await;
+        let second_session = second.open_media(room).await;
 
-    second.ok("DeclineDirectCall", json!([room])).await;
+        if ending == "decline" {
+            second.ok("DeclineDirectCall", json!([room])).await;
+        } else {
+            let blocked = rig.call(&ada, Method::POST, &format!("/api/social/blocks/{}", maja.id), None).await;
+            assert_eq!(blocked.status, 204, "{}", blocked.text());
+        }
 
-    rig.media.delete_of(&first_session).await;
-    rig.media.delete_of(&second_session).await;
-    for peer in [&mut first, &mut second] {
-        peer.next("DirectCallDeclined").await;
-        assert!(peer.drain("MediaSessionClosed").await.is_empty());
+        rig.media.delete_of(&first_session).await;
+        rig.media.delete_of(&second_session).await;
+        for peer in [&mut first, &mut second] {
+            peer.next("DirectCallDeclined").await;
+            assert!(peer.drain("MediaSessionClosed").await.is_empty(), "{ending}");
+        }
     }
 }
 

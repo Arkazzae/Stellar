@@ -192,9 +192,9 @@ async fn leave_voice(cx: Context, arguments: Vec<Value>) -> Result<Value, HubErr
 
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
-struct DirectCallDeclined {
-    channel_id: Id,
-    by_user_id: Id,
+pub(super) struct DirectCallDeclined {
+    pub(super) channel_id: Id,
+    pub(super) by_user_id: Id,
 }
 
 /// Ends a direct call for both people, whether or not it was ever answered.

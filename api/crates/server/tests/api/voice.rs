@@ -192,11 +192,16 @@ impl Rig {
 
     /// A direct conversation between two people.
     pub fn conversation(&self, first: &Person, second: &Person) -> Id {
+        // Stored with the lower id first, as conversations are made.
+        let (low, high) = {
+            let (a, b) = (Id::parse(&first.id).unwrap(), Id::parse(&second.id).unwrap());
+            if a < b { (a, b) } else { (b, a) }
+        };
         let id = Id::random();
         self.db()
             .execute(
                 "INSERT INTO \"DirectConversations\" (\"Id\", \"UserAId\", \"UserBId\", \"CreatedAt\", \"EncryptionState\") VALUES (?1, ?2, ?3, ?4, 'Off')",
-                params![id, Id::parse(&first.id).unwrap(), Id::parse(&second.id).unwrap(), Timestamp::now()],
+                params![id, low, high, Timestamp::now()],
             )
             .unwrap();
         id
@@ -1043,4 +1048,55 @@ async fn a_device_that_connects_during_a_call_is_told_who_is_in_it() {
     };
     assert_eq!(restored["channelId"], room.to_string().as_str());
     assert_eq!(occupants_of(&restored), std::slice::from_ref(&maja.id));
+}
+
+#[tokio::test]
+async fn blocking_ends_a_live_direct_call_and_tells_both_people() {
+    let rig = Rig::start().await;
+    let (maja, ada, jonas) = (rig.person("maja").await, rig.person("ada").await, rig.person("jonas").await);
+    let room = rig.conversation(&maja, &ada);
+    let (mut blocker, mut blocked, mut outside) =
+        (rig.connect(&maja).await, rig.connect(&ada).await, rig.connect(&jonas).await);
+    blocker.join(room).await;
+    blocked.join(room).await;
+    rig.occupants_become(room, &[&maja.id, &ada.id]).await;
+
+    let answer = rig.call(&maja, Method::POST, &format!("/api/social/blocks/{}", ada.id), None).await;
+    assert_eq!(answer.status, 204, "{}", answer.text());
+
+    for peer in [&mut blocker, &mut blocked] {
+        assert_eq!(peer.next("DirectCallDeclined").await, json!({"channelId": room, "byUserId": maja.id}));
+    }
+    let emptied = blocked
+        .next_where("VoiceParticipantChanged", |s| in_room(room)(s) && occupants_of(s).is_empty())
+        .await;
+    assert!(occupants_of(&emptied).is_empty());
+    rig.occupants_become(room, &[]).await;
+    assert!(outside.drain("DirectCallDeclined").await.is_empty());
+    // Blocking again, with nobody in the room, tells the room it is empty and nobody that it was declined.
+    rig.call(&maja, Method::POST, &format!("/api/social/blocks/{}", ada.id), None).await;
+    assert!(blocked.drain("DirectCallDeclined").await.is_empty());
+}
+
+#[tokio::test]
+async fn the_binary_starts_with_every_group_registered_and_voice_routes_are_among_them() {
+    // The router refuses to start when two groups name a path parameter
+    // differently at one position, so a binary that starts and answers on a
+    // voice route has all the groups' routes in one router.
+    let server = Server::start().await;
+    let owner = server.found("owner").await;
+    let id = Id::random();
+    let answer = owner
+        .client
+        .send(Request::new(Method::DELETE, &format!("/api/admin/channels/{id}/members/{id}")))
+        .await;
+    assert_ne!(answer.status, 405, "the route exists");
+    // Ids in a path are read as the first server reads them.
+    let braced = owner
+        .client
+        .send(Request::new(Method::DELETE, &format!("/api/admin/channels/%7B{id}%7D/members/{}", id.to_string().replace('-', ""))))
+        .await;
+    assert_eq!(braced.status, answer.status);
+    let bad = owner.client.send(Request::new(Method::DELETE, "/api/admin/channels/x/members/y")).await;
+    assert_eq!(bad.status, 404);
 }

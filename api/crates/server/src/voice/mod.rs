@@ -36,6 +36,7 @@ pub mod turn;
 use crate::background::Worker;
 use crate::settings::Settings;
 
+pub use self::rooms::end_direct_call;
 use self::control::Control;
 use self::gate::PlaybackGate;
 use self::plane::Plane;
