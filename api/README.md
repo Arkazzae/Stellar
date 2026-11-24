@@ -1137,14 +1137,9 @@ here.
 ## Limits of voice that the first server has too
 
 These are not fixed here, and are written down so that nobody takes them for
-guarantees:
+guarantees. (A seat that outlives the right to sit there is no longer one of
+them: see below.)
 
-- A seat, and the media session it holds, outlive the right to sit there when a
-  permission is taken away, when the channel is made private, or when it is
-  deleted, until the person leaves or their connection ends. Joining again needs
-  the right; a seat already held does not. Being removed from the server, or the
-  account being disabled, does free it (see `voice::leave_server_rooms` and the
-  watcher of sessions). The owner will decide about the rest separately.
 - Sessions to close wait in a queue of 4,096. Past that the oldest is dropped
   and nothing reconciles the media server afterwards, so a dropped session lives
   until the media server is reset. The queue is worked from the front, so one
@@ -1154,6 +1149,29 @@ guarantees:
 - A malformed event from the media server (not an object, or without a type or
   a session) makes the whole answer unreadable: the pump asks again from the same
   place and stalls on it, as long as the media server keeps it in its log.
+
+## Who sits in a voice room
+
+A seat is given where the person may view and connect, and it is taken back when
+they may not. A change of access calls `voice::enforce(state, server)` once it is
+committed (`voice::unseat` and `Unseated::announce` where the seats must go
+first and the room be told last, as for a removal), which asks
+`permissions::authorization::held_at` what each seated person holds at the channel
+they sit in and takes out whoever may no longer view and connect: the seat and
+the media session are gone, the room gets `VoiceParticipantChanged`, and the
+person gets `VoiceChannelKicked`, as from a moderator's voice kick. The paths that
+call it: a role's edit, deletion, giving and taking, and the overrides of a role
+or a member on a channel or a section (`roles::Announcement::publish`), the
+panel's edit and giving of a role, a channel moved to another section
+(`channels::order`), a channel deleted (`channels::channel::delete`), a kick and
+a ban (`moderation::announce_removal`), a server handed over or deleted, by its
+owner or from the panel. A section can only be deleted when it holds no channel,
+so nobody sits in one that goes. A closed connection frees its seat by itself, so a
+disabled account or an ended session needs nothing more. A moderator's move is
+no loss of access, but a person moved into a room they could not have joined is
+taken out of it by the next change of access on the server, since the rules
+count from then on. This is a deliberate difference from the first server, where
+a seat stayed until the person left.
 
 ## Known differences from the first server
 
