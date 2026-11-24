@@ -38,7 +38,7 @@ use crate::values::{Id, Timestamp};
 pub const ISSUER: &str = "Stellarr";
 
 /// What was sent to answer a challenge.
-#[derive(Debug, Clone, Copy)]
+#[derive(Clone, Copy)]
 pub enum Request<'a> {
     /// "This browser is remembered": the cookie the request carries (see
     /// `Context`) stands in for a code.
@@ -46,6 +46,19 @@ pub enum Request<'a> {
     /// A code, trimmed and not empty. For the method named; without one it is
     /// a recovery code.
     Code { method: Option<Id>, code: &'a str },
+}
+
+/// Which kind of answer it is, never the code in it.
+impl std::fmt::Debug for Request<'_> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Request::TrustedDevice => f.write_str("Request::TrustedDevice"),
+            Request::Code { method, .. } => f
+                .debug_struct("Request::Code")
+                .field("method", method)
+                .finish_non_exhaustive(),
+        }
+    }
 }
 
 /// A second step that was proved.
@@ -449,13 +462,23 @@ pub enum TotpEnrollment {
 }
 
 /// The first code of an authenticator app, and what the person called it.
-#[derive(Debug, Clone, Copy)]
+#[derive(Clone, Copy)]
 pub struct FirstCode<'a> {
     pub method: Id,
     /// The name asked for, already checked with [`method_name`]; none keeps
     /// the one the method was started with.
     pub name: Option<&'a str>,
     pub code: &'a str,
+}
+
+/// The method and the name, never the code.
+impl std::fmt::Debug for FirstCode<'_> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("FirstCode")
+            .field("method", &self.method)
+            .field("name", &self.name)
+            .finish_non_exhaustive()
+    }
 }
 
 /// Confirms an authenticator app with the first code it shows.
@@ -1175,6 +1198,44 @@ mod tests {
                 now
             ),
             Outcome::TooManyFailures
+        );
+    }
+
+    #[test]
+    fn what_is_printed_of_a_request_holds_no_code() {
+        let method = Some(Id::random());
+        for printed in [
+            format!(
+                "{:?}",
+                Request::Code {
+                    method,
+                    code: "482913"
+                }
+            ),
+            format!(
+                "{:?}",
+                Request::Code {
+                    method: None,
+                    code: "ABCD-EFGH"
+                }
+            ),
+            format!(
+                "{:?}",
+                FirstCode {
+                    method: Id::random(),
+                    name: Some("Phone"),
+                    code: "482913"
+                }
+            ),
+        ] {
+            assert!(
+                !printed.contains("482913") && !printed.contains("ABCD"),
+                "{printed}"
+            );
+        }
+        assert_eq!(
+            format!("{:?}", Request::TrustedDevice),
+            "Request::TrustedDevice"
         );
     }
 

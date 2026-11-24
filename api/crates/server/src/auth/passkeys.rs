@@ -35,7 +35,7 @@ use crate::values::{Id, Timestamp};
 /// A software authenticator, which the library's own tests are written with.
 #[cfg(test)]
 #[path = "../../../webauthn/tests/support/mod.rs"]
-mod authenticator;
+pub(super) mod authenticator;
 
 /// How long the options of a sign-in without a password stay good: a prompt
 /// left open longer starts again.
@@ -43,8 +43,8 @@ pub const SIGN_IN_LIFETIME: std::time::Duration = std::time::Duration::from_secs
 
 /// The handle a passkey carries for the account, the same for every passkey of
 /// it: the account's id, which says nothing about the person. The first server
-/// wrote it as .NET lays a GUID out in memory, with the first three groups
-/// byte-swapped, and so does this.
+/// wrote it with the first three groups of the id's bytes in reverse order,
+/// and so does this.
 pub fn user_handle(user: Id) -> [u8; 16] {
     let bytes = user.as_bytes();
     let mut handle = [0u8; 16];
@@ -689,7 +689,7 @@ mod tests {
 
     #[test]
     fn the_handle_is_the_accounts_id_laid_out_as_the_first_server_laid_it() {
-        // What the first server's own code gives for this id (Guid.ToByteArray).
+        // What the first server's own code gives for this id.
         let id = Id::parse("049083c7-a28f-4b91-b21b-2a0920dc1686").unwrap();
 
         assert_eq!(
