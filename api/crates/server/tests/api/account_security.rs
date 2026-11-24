@@ -9,9 +9,6 @@
 //! from the page's request for a challenge to the method that is then on the
 //! page, runs the server in this process with a route of its own that calls
 //! the second step's ceremony.
-//!
-//! The first server's answers to the same requests are compared by
-//! `acctsec-shared-database.sh`, which runs both on copies of one file.
 
 use std::time::Duration;
 
@@ -865,7 +862,7 @@ async fn the_first_password_of_an_account_without_one_is_set_and_its_sessions_st
 }
 
 #[tokio::test]
-async fn the_first_password_is_refused_for_every_reason_the_first_server_has() {
+async fn setting_a_first_password_checks_body_authentication_and_fresh_proof() {
     let (_server, owner, db) = owner().await;
     let user = user_of(&owner);
     remove_password(&db, user);
@@ -922,7 +919,7 @@ async fn the_first_password_needs_a_fresh_proof_of_an_account_that_has_none_to_g
 }
 
 #[tokio::test]
-async fn changing_the_password_answers_in_outcomes_in_the_first_server_s_order() {
+async fn changing_a_password_checks_the_new_password_before_the_current_one() {
     let (_server, owner, db) = owner().await;
     let user = user_of(&owner);
     let ask = |current: Value, new: Value| {
@@ -1051,7 +1048,7 @@ async fn an_address_that_is_not_one_is_refused_before_anything_else_is_looked_at
 }
 
 #[tokio::test]
-async fn an_address_change_is_refused_in_the_order_the_first_server_refuses_it() {
+async fn an_email_change_checks_fresh_proof_before_password_and_address() {
     for state in &STATES {
         let (server, owner, _db, _user) = in_state(state).await;
         server.register("maya").await;
@@ -1091,7 +1088,7 @@ async fn an_account_without_a_password_answers_for_the_address_with_its_fresh_pr
 }
 
 #[tokio::test]
-async fn addresses_are_compared_as_the_first_server_compares_them() {
+async fn addresses_are_trimmed_and_compared_by_simple_uppercase_mapping() {
     let (server, owner, db) = owner().await;
     let maya = server.register("maya").await;
     db.execute("UPDATE \"Users\" SET \"Email\" = 'Maya.Ünï@Example.Test', \"NormalizedEmail\" = 'MAYA.ÜNÏ@EXAMPLE.TEST' WHERE \"Id\" = ?1", [user_of(&maya)]).unwrap();
@@ -1465,7 +1462,7 @@ async fn the_link_changes_the_address_of_whoever_asked_whoever_opens_it() {
 // The limits.
 
 #[tokio::test]
-async fn each_route_counts_against_the_limit_the_first_server_gives_it() {
+async fn security_routes_use_their_assigned_rate_limit_policies() {
     const PRODUCTION: [(&str, &str); 2] = [("STELLARR_ENVIRONMENT", "Production"), ("Rtc__TurnSharedSecret", "a-secret")];
     // One request is what a policy allows; the next request of any route that
     // carries the policy is refused before anybody is looked at.

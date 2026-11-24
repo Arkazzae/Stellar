@@ -70,7 +70,7 @@ async fn an_account_sets_up_one_key_with_a_valid_backup() {
 }
 
 #[tokio::test]
-async fn the_answer_to_a_set_up_is_the_first_servers_in_every_member() {
+async fn setup_returns_the_key_and_backup_fields() {
     let crowd = Crowd::new().await;
 
     let response = post(&crowd.maja.client, &format!("{ACCOUNT}/account-key"), &set_up_body(&bytes(32, 5))).await;
@@ -266,7 +266,7 @@ async fn a_session_that_is_not_fresh_is_told_so_after_its_body_is_read_and_befor
     let good = json!({ "currentPassword": PASSWORD, "algorithm": "x25519", "publicKey": key, "backup": backup(&bytes(32, 13)) }).to_string();
     let fresh = Some("fresh-mfa-required".to_string());
 
-    // As the first server answered each of these, for a stale session.
+    // Expected responses when the session needs fresh proof.
     for (what, body, wanted) in [
         ("not JSON", "{".to_string(), (400, None)),
         ("a key in a wrong encoding", good.replace(&key, "***"), (400, None)),

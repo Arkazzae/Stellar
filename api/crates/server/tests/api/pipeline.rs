@@ -795,9 +795,8 @@ async fn a_handler_whose_client_went_away_still_commits_and_announces() {
 // The path every step sees
 // ---------------------------------------------------------------------------
 
-/// Spellings of `/health/live` and what the first server answered to each,
-/// asked of it one by one (`paths_are_read_as_the_first_server_reads_them`
-/// asks again). A target is sent byte for byte.
+/// Raw spellings of `/health/live` and their expected statuses. Requests
+/// send these targets byte for byte.
 const SPELLINGS: &[(&[u8], u16)] = &[
     (b"/health/live", 200),
     // One slash at the end is dropped; two are not.
@@ -871,7 +870,7 @@ const SPELLINGS: &[(&[u8], u16)] = &[
 ];
 
 #[tokio::test]
-async fn a_path_is_read_before_routing_as_the_first_server_reads_it() {
+async fn raw_request_paths_are_normalised_before_routing() {
     let server = server_with(&[]).await;
 
     for (target, expected) in SPELLINGS {
@@ -901,7 +900,7 @@ async fn a_request_line_over_8192_bytes_is_a_414_and_one_that_fits_is_not() {
 }
 
 #[tokio::test]
-async fn what_a_segment_holds_is_what_the_first_server_would_have_read_from_it() {
+async fn path_extractors_receive_the_expected_decoded_segments() {
     let server = server_with(&[]).await;
     let said = |target: &'static str| {
         let address = server.address();
@@ -944,8 +943,7 @@ async fn what_a_segment_holds_is_what_the_first_server_would_have_read_from_it()
     assert_eq!(missing.status, 404);
 }
 
-/// The one the first server let through: its gate decides on the path as
-/// written, and its router on the path without the slash.
+/// The gate and router both check the normalised path.
 const THE_GATE: &[&str] = &[
     "/api/auth/login",
     "/api/auth/login/",

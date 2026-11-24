@@ -416,7 +416,7 @@ async fn a_change_names_what_it_changes_and_the_rest_stays() {
         .map(Result::unwrap)
         .collect();
     // Nothing is written for a change that changes nothing, and a trim is
-    // worded to two places the way the first server did (1.005 rounds up).
+    // formatted with two decimal places (1.005 rounds up).
     assert_eq!(
         rows,
         [
