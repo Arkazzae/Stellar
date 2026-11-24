@@ -11,6 +11,7 @@ groups! {
     emoji,
     direct,
     encryption,
+    bootstrap,
     health,
     identity_providers,
     messages,
