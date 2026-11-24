@@ -4,18 +4,17 @@
 use axum::extract::State;
 use axum::http::StatusCode;
 use rusqlite::{OptionalExtension, params};
-use serde::{Deserialize, Serialize};
+use serde::Deserialize;
 use stellarr_messages::MessageKey;
 
 use crate::auth::{Caller, fresh};
 use crate::database::DbError;
-use crate::events::{Audience, Event};
 use crate::http::{ApiError, ApiResult, Json, Problem};
 use crate::permissions::audit::{self, AuditEvent};
 use crate::permissions::membership::{self, ActiveServer};
 use crate::permissions::ownership;
 use crate::permissions::roles::Member;
-use crate::permissions::visibility::ServerVisibility;
+use crate::permissions::access_changed::{self, ViewChange};
 use crate::servers::Object;
 use crate::state::AppState;
 use crate::values::{Id, Timestamp};
@@ -54,13 +53,6 @@ fn nobody() -> Id {
     Id::from_bytes([0; 16])
 }
 
-/// Tells the people whose view of the server changed that what they see has.
-#[derive(Serialize)]
-#[serde(rename_all = "camelCase")]
-struct AccessChanged {
-    server_id: Id,
-}
-
 /// The owner sees every channel and the former owner may not, so whoever sees
 /// something else afterwards is told, as after any change of roles.
 ///
@@ -89,7 +81,7 @@ pub async fn transfer(
         .write({
             let state = state.clone();
             move |tx| -> Result<Result<Vec<Id>, ApiError>, DbError> {
-                let before = ServerVisibility::load(tx, server)?;
+                let view = ViewChange::begin(tx, server)?;
                 let Some(owner) = Member::load(tx, server, caller.user)?.filter(Member::is_owner)
                 else {
                     return Ok(Err(ApiError::forbidden()));
@@ -126,22 +118,12 @@ pub async fn transfer(
                         changes: Vec::new(),
                     },
                 )?;
-                let after = ServerVisibility::load(tx, server)?;
-                Ok(Ok(ServerVisibility::changed(tx, &before, &after)?))
+                Ok(Ok(view.finish(tx)?))
             }
         })
         .await?;
     let changed = outcome?;
-    if !changed.is_empty() {
-        state.events().publish(Event::new(
-            Audience::Followers {
-                server,
-                users: changed,
-            },
-            "ChannelAccessChanged",
-            &AccessChanged { server_id: server },
-        ));
-    }
+    access_changed::publish(state.events(), server, changed);
     Ok(StatusCode::NO_CONTENT)
 }
 
