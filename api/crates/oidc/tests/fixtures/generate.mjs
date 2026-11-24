@@ -173,6 +173,12 @@ const tokens = {
   iat_text: good({ ...base, iat: "now" }),
   exp_null: good({ ...base, exp: null }),
   auth_time_bool: good({ ...base, auth_time: true }),
+  auth_time_digits: good({ ...base, auth_time: String(NOW - 30) }),
+  auth_time_null: good({ ...base, auth_time: null }),
+  auth_time_negative: good({ ...base, auth_time: -5 }),
+  auth_time_fraction: good({ ...base, auth_time: NOW - 30.5 }),
+  auth_time_overflow: good({ ...base, auth_time: "99999999999999999999" }),
+  auth_time_signed_text: good({ ...base, auth_time: "+" + String(NOW - 30) }),
   // a payload that is signed but not an object
   payload_array: sign("RS256", rsa1, { alg: "RS256", kid: "rsa-1" }, [1]),
   payload_string: sign("RS256", rsa1, { alg: "RS256", kid: "rsa-1" }, "x"),
