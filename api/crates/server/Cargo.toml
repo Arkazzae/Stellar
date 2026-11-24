@@ -14,11 +14,14 @@ name = "stellarr-api"
 path = "src/main.rs"
 
 [dependencies]
+stellarr-embeds = { path = "../embeds" }
 stellarr-mail = { path = "../mail" }
+stellarr-mentions = { path = "../mentions" }
 stellarr-hub = { path = "../hub" }
 stellarr-messages = { path = "../messages" }
 stellarr-outbound = { path = "../outbound" }
 stellarr-smtp = { path = "../smtp" }
+stellarr-storage = { path = "../storage" }
 stellarr-timezone = { path = "../timezone" }
 stellarr-unicode = { path = "../unicode" }
 stellarr-webauthn = { path = "../webauthn" }

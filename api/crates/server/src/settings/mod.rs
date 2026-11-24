@@ -13,6 +13,7 @@
 
 mod config;
 mod defaults;
+mod objects;
 mod origin;
 mod trusted_proxies;
 mod variables;
@@ -27,6 +28,7 @@ use stellarr_messages::{Language, Messages};
 use crate::values::Id;
 
 pub use config::Config;
+pub use objects::{Provider, StorageSettings};
 pub use trusted_proxies::{Network, TrustedProxies, normalize};
 pub use variables::{VARIABLES, Variable};
 
@@ -592,6 +594,10 @@ pub struct Settings {
     pub discovery: DiscoverySettings,
     pub rate_limits: RateLimitSettings,
     pub log: LogSettings,
+    /// Where uploaded files are kept.
+    pub storage: StorageSettings,
+    /// How link previews are fetched.
+    pub embeds: stellarr_embeds::EmbedSettings,
     /// Tests only: a file the process appends every published event to, one
     /// JSON object per line. Honoured in the Testing environment alone.
     pub event_log: Option<PathBuf>,
@@ -661,6 +667,8 @@ impl Settings {
             discovery: DiscoverySettings::load(config)?,
             rate_limits: RateLimitSettings::load(config, &environment)?,
             log: LogSettings::load(config),
+            storage: StorageSettings::load(config)?,
+            embeds: objects::load_embeds(config)?,
             event_log,
             testing_workers,
             environment,
