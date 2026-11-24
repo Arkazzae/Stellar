@@ -202,7 +202,7 @@ impl DatabaseSettings {
 /// Where the API finds Stellarr Media, the media server every voice room goes
 /// through: the address and secret of its control API, and the public UDP
 /// port browsers send media to.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Clone, PartialEq, Eq)]
 pub struct MediaServerSettings {
     /// Absolute, with a trailing slash so that relative routes append to it.
     pub control_url: String,
@@ -296,9 +296,38 @@ impl MediaServerSettings {
     }
 }
 
+/// What a secret is called in a printout: whether there is one, never what it is.
+fn secret_state(secret: &str) -> &'static str {
+    if secret.is_empty() { "(none)" } else { "(set)" }
+}
+
+impl fmt::Debug for MediaServerSettings {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("MediaServerSettings")
+            .field("control_url", &self.control_url)
+            .field("control_secret", &secret_state(&self.control_secret))
+            .field("media_port", &self.media_port)
+            .field("timing", &self.timing)
+            .finish()
+    }
+}
+
+impl fmt::Debug for RtcSettings {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("RtcSettings")
+            .field("public_host", &self.public_host)
+            .field(
+                "turn_shared_secret",
+                &secret_state(self.turn_shared_secret.as_deref().unwrap_or("")),
+            )
+            .field("media", &self.media)
+            .finish()
+    }
+}
+
 /// Voice: the host browsers are told to reach, the secret that signs TURN
 /// credentials, and the media server.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Clone, PartialEq, Eq)]
 pub struct RtcSettings {
     pub public_host: String,
     pub turn_shared_secret: Option<String>,
