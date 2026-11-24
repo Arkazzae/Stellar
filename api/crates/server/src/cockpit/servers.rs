@@ -9,7 +9,7 @@ use rusqlite::OptionalExtension;
 use serde::{Deserialize, Serialize};
 use stellarr_messages::MessageKey;
 
-use super::{Plain, invalid, no_content, nobody, bind};
+use super::{invalid, no_content, nobody, bind};
 use crate::database::DbError;
 use crate::http::{ApiError, ApiResult, Path, Problem, json_response};
 use crate::panel::{self, FreshInstanceOwner};
@@ -18,7 +18,7 @@ use crate::permissions::access_changed::{self, ViewChange};
 use crate::permissions::ownership;
 use crate::permissions::roles::Member;
 use crate::state::AppState;
-use crate::values::{Guid, Id};
+use crate::values::{Guid, Id, Timestamp};
 
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -35,7 +35,7 @@ struct ServerDto {
     name: String,
     description: String,
     is_public: bool,
-    created_at: Plain,
+    created_at: Timestamp,
     is_instance: bool,
     owner: Option<Person>,
     member_count: i64,
@@ -63,7 +63,7 @@ pub(super) async fn list(
                         name: row.get(1)?,
                         description: row.get(2)?,
                         is_public: row.get(3)?,
-                        created_at: Plain(row.get(4)?),
+                        created_at: row.get(4)?,
                         is_instance: false,
                         owner: None,
                         member_count: row.get(5)?,

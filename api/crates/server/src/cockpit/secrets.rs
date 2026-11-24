@@ -7,11 +7,12 @@ use axum::response::Response;
 use serde::{Deserialize, Serialize};
 use stellarr_messages::MessageKey;
 
-use super::{Plain, invalid, bind};
+use super::{invalid, bind};
 use crate::database::DbError;
 use crate::http::{ApiError, ApiResult, Path, json_response};
 use crate::panel::{self, FreshInstanceOwner};
 use crate::permissions::membership::InstanceOwner;
+use crate::values::Timestamp;
 use crate::secrets::{self, ResolvedSecrets, SecretDefinition};
 use crate::state::AppState;
 
@@ -22,7 +23,7 @@ struct SecretDto {
     configured: bool,
     source: &'static str,
     variable: &'static str,
-    updated_at: Option<Plain>,
+    updated_at: Option<Timestamp>,
 }
 
 fn describe(definition: &SecretDefinition, resolved: &ResolvedSecrets) -> SecretDto {
@@ -32,7 +33,7 @@ fn describe(definition: &SecretDefinition, resolved: &ResolvedSecrets) -> Secret
         configured: status.configured,
         source: status.source,
         variable: status.variable,
-        updated_at: status.updated_at.map(Plain),
+        updated_at: status.updated_at,
     }
 }
 

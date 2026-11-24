@@ -147,32 +147,19 @@ impl From<String> for Json {
     }
 }
 
-/// How a moment is written, which depends on how the first server held it: a
-/// moment read from the database has no zone (`2026-11-24T10:40:02.2787074`),
-/// one the tool made itself is UTC (`...Z`).
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum Zone {
-    Unspecified,
-    Utc,
-}
-
 /// The moment as JSON: no fraction when it is whole seconds, otherwise the
-/// fraction without trailing zeros.
-pub fn moment(at: Timestamp, zone: Zone) -> Json {
-    Json::Text(match zone {
-        Zone::Unspecified => at.to_unspecified_wire_text(),
-        Zone::Utc => at.to_wire_text(),
-    })
+/// fraction without trailing zeros, always with its `Z`.
+pub fn moment(at: Timestamp) -> Json {
+    Json::Text(at.to_wire_text())
 }
 
 /// The moment in a line of text, as `{moment:O}` writes it: seven digits of
-/// fraction always.
-pub fn round_trip(at: Timestamp, zone: Zone) -> String {
+/// fraction always, and the `Z`.
+pub fn round_trip(at: Timestamp) -> String {
     let text = at.to_wire_text();
     let base = text.trim_end_matches('Z');
     let (whole, fraction) = base.split_once('.').unwrap_or((base, ""));
-    let end = if zone == Zone::Utc { "Z" } else { "" };
-    format!("{whole}.{fraction:0<7}{end}")
+    format!("{whole}.{fraction:0<7}Z")
 }
 
 #[cfg(test)]
@@ -207,22 +194,10 @@ mod tests {
         let whole = Timestamp::parse("2026-11-24 10:40:02").unwrap();
         let tenth = Timestamp::parse("2026-11-24 10:40:02.5").unwrap();
 
-        assert_eq!(
-            round_trip(at, Zone::Unspecified),
-            "2026-11-24T10:40:02.2787074"
-        );
-        assert_eq!(round_trip(whole, Zone::Utc), "2026-11-24T10:40:02.0000000Z");
-        assert_eq!(
-            round_trip(tenth, Zone::Unspecified),
-            "2026-11-24T10:40:02.5000000"
-        );
-        assert_eq!(
-            moment(whole, Zone::Unspecified),
-            Json::text("2026-11-24T10:40:02")
-        );
-        assert_eq!(
-            moment(tenth, Zone::Utc),
-            Json::text("2026-11-24T10:40:02.5Z")
-        );
+        assert_eq!(round_trip(at), "2026-11-24T10:40:02.2787074Z");
+        assert_eq!(round_trip(whole), "2026-11-24T10:40:02.0000000Z");
+        assert_eq!(round_trip(tenth), "2026-11-24T10:40:02.5000000Z");
+        assert_eq!(moment(whole), Json::text("2026-11-24T10:40:02Z"));
+        assert_eq!(moment(tenth), Json::text("2026-11-24T10:40:02.5Z"));
     }
 }

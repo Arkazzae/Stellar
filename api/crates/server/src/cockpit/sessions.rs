@@ -7,7 +7,7 @@ use rusqlite::{OptionalExtension, params};
 use serde::Serialize;
 use stellarr_messages::MessageKey;
 
-use super::{Plain, no_content};
+use super::{no_content};
 use crate::auth::Caller;
 use crate::database::DbError;
 use crate::http::{ApiError, ApiResult, Path, json_response};
@@ -61,9 +61,9 @@ struct SessionDto {
     client_runtime: Option<String>,
     install_type: Option<String>,
     ip_address: String,
-    created_at: Plain,
-    last_seen_at: Plain,
-    expires_at: Plain,
+    created_at: Timestamp,
+    last_seen_at: Timestamp,
+    expires_at: Timestamp,
     current: bool,
 }
 
@@ -97,9 +97,9 @@ pub(super) async fn list(
                         install_type: client.install_type,
                         device,
                         ip_address: row.get(4)?,
-                        created_at: Plain(row.get(5)?),
-                        last_seen_at: Plain(row.get(6)?),
-                        expires_at: Plain(row.get(7)?),
+                        created_at: row.get(5)?,
+                        last_seen_at: row.get(6)?,
+                        expires_at: row.get(7)?,
                         current: id == caller.session,
                     })
                 })?

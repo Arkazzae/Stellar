@@ -96,7 +96,7 @@ struct SettingsDto {
     cli_recovery_minutes: i64,
 }
 
-fn dto(state: &AppState, name: String, row: &Row, secrets: &ResolvedSecrets, saved_now: bool) -> SettingsDto {
+fn dto(state: &AppState, name: String, row: &Row, secrets: &ResolvedSecrets) -> SettingsDto {
     let transport = transport(row, secrets);
     SettingsDto {
         instance_name: name,
@@ -113,13 +113,7 @@ fn dto(state: &AppState, name: String, row: &Row, secrets: &ResolvedSecrets, sav
         log_retention_days: row.log_retention_days,
         orphan_object_retention_days: row.orphan_object_retention_days,
         automatic_cleanup_enabled: row.automatic_cleanup_enabled,
-        // A moment the server has just made says it is UTC; one read back from
-        // the database does not.
-        updated_at: if saved_now {
-            row.updated_at.to_wire_text()
-        } else {
-            row.updated_at.to_unspecified_wire_text()
-        },
+        updated_at: row.updated_at.to_wire_text(),
         resend_enabled: transport.provider == Provider::Resend,
         smtp_host: row.smtp_host.clone(),
         smtp_port: row.smtp_port,
@@ -162,7 +156,7 @@ pub(super) async fn read(
         .read(move |db| -> Result<SettingsDto, DbError> {
             let row = load(db, &reading, server)?.settings;
             let secrets = secrets::read(db, &reading.settings().secrets, reading.sealer())?;
-            Ok(dto(&reading, instance_name(db, server)?, &row, &secrets, false))
+            Ok(dto(&reading, instance_name(db, server)?, &row, &secrets))
         })
         .await?;
     Ok(json_response(StatusCode::OK, &answer))
@@ -323,7 +317,7 @@ pub(super) async fn update(State(state): State<AppState>, request: Request) -> A
             operations::save(tx, &settings, stored, &name)?;
             panel::record(tx, server, caller.user, panel::settings_updated(&writing)?)?;
             let secrets = secrets::read(tx, &writing.settings().secrets, writing.sealer())?;
-            Ok(dto(&writing, name, &settings, &secrets, true))
+            Ok(dto(&writing, name, &settings, &secrets))
         })
         .await?;
     Ok(json_response(StatusCode::OK, &answer))

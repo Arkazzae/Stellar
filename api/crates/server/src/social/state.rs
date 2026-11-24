@@ -129,7 +129,7 @@ fn read_state(
         .filter_map(|(_, a, b, since)| {
             Some(Friend {
                 user: person(other(*a, *b, me))?,
-                since: since.to_unspecified_wire_text(),
+                since: since.to_wire_text(),
             })
         })
         .collect();
@@ -140,7 +140,7 @@ fn read_state(
                 id: id.to_string(),
                 user: person(other(*sender, *receiver, me))?,
                 direction: if *receiver == me { "incoming" } else { "outgoing" },
-                sent_at: sent.to_unspecified_wire_text(),
+                sent_at: sent.to_wire_text(),
             })
         })
         .collect();
@@ -162,7 +162,7 @@ fn read_state(
                 peer,
                 last_message: last.map(|(message, _)| message),
                 unread: conversations::unread(connection, me, conversation)?,
-                updated_at: updated.to_unspecified_wire_text(),
+                updated_at: updated.to_wire_text(),
                 encryption: conversation.encryption(),
             },
         ));

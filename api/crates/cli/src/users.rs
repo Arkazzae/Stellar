@@ -5,7 +5,7 @@ use rusqlite::OptionalExtension;
 use stellarr_api::values::{Id, Timestamp};
 
 use crate::errors::{CliOutcome, CliResult};
-use crate::json::{Json, Zone, moment, round_trip};
+use crate::json::{Json, moment, round_trip};
 use crate::runtime::Runtime;
 use crate::support::{
     USER_COLUMNS, User, require_instance_server, resolve_user, user_from_row, yes_no,
@@ -28,12 +28,11 @@ impl Item {
             ("displayName", Json::text(&self.user.display_name)),
             ("email", Json::optional_text(self.user.email.clone())),
             ("disabled", self.user.disabled.into()),
-            ("createdAt", moment(self.user.created_at, Zone::Unspecified)),
+            ("createdAt", moment(self.user.created_at)),
             ("roleName", Json::optional_text(self.role_name.clone())),
             (
                 "joinedAt",
-                self.joined_at
-                    .map_or(Json::Null, |at| moment(at, Zone::Unspecified)),
+                self.joined_at.map_or(Json::Null, |at| moment(at)),
             ),
             ("activeSessions", self.active_sessions.into()),
             ("origin", Json::optional_text(self.user.origin.clone())),
@@ -161,10 +160,7 @@ pub fn show(runtime: &mut Runtime, id_or_username: &str) -> CliOutcome {
             "Origin: {}",
             item.user.origin.as_deref().unwrap_or("(a person)")
         ),
-        format!(
-            "Created: {}",
-            round_trip(item.user.created_at, Zone::Unspecified)
-        ),
+        format!("Created: {}", round_trip(item.user.created_at)),
         format!(
             "Role: {}",
             item.role_name
@@ -174,10 +170,7 @@ pub fn show(runtime: &mut Runtime, id_or_username: &str) -> CliOutcome {
         format!(
             "Joined instance server: {}",
             item.joined_at
-                .map_or("(not a member)".to_string(), |at| round_trip(
-                    at,
-                    Zone::Unspecified
-                ))
+                .map_or("(not a member)".to_string(), |at| round_trip(at))
         ),
         format!("Active sessions: {}", item.active_sessions),
     ];

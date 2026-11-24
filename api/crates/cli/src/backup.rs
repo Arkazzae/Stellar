@@ -14,7 +14,7 @@ use std::path::{Path, PathBuf};
 use stellarr_api::values::Timestamp;
 
 use crate::errors::{CliError, CliOutcome, CliResult, exit};
-use crate::json::{Json, Zone, moment};
+use crate::json::{Json, moment};
 use crate::runtime::Runtime;
 use crate::status::probe_api;
 
@@ -93,7 +93,7 @@ fn universal(at: Timestamp) -> String {
 fn summary(path: &str, manifest: &Manifest) -> Json {
     Json::object([
         ("archive", Json::text(path)),
-        ("createdAt", moment(manifest.created_at, Zone::Utc)),
+        ("createdAt", moment(manifest.created_at)),
         ("instanceName", Json::text(&manifest.instance_name)),
         ("databaseBytes", manifest.database_bytes.into()),
         ("objectCount", manifest.object_count.into()),
@@ -314,7 +314,7 @@ pub fn apply(runtime: &mut Runtime) -> CliOutcome {
             let backup = summary(&staged_text, &applied.manifest);
             let outcome = Json::object([
                 ("outcome", "restored".into()),
-                ("at", moment(now, Zone::Utc)),
+                ("at", moment(now)),
                 ("backup", backup.clone()),
                 ("previousData", Json::text(&applied.previous_data_directory)),
             ]);
@@ -345,7 +345,7 @@ pub fn apply(runtime: &mut Runtime) -> CliOutcome {
             std::fs::rename(&staged, &kept)?;
             let outcome = Json::object([
                 ("outcome", "refused".into()),
-                ("at", moment(now, Zone::Utc)),
+                ("at", moment(now)),
                 ("reason", Json::text(&reason)),
                 ("archive", Json::text(kept.display().to_string())),
             ]);
@@ -367,7 +367,7 @@ pub fn apply(runtime: &mut Runtime) -> CliOutcome {
             std::fs::rename(&staged, folder.join(format!("broken-{}.zip", stamp(now))))?;
             let outcome = Json::object([
                 ("outcome", "broken".into()),
-                ("at", moment(now, Zone::Utc)),
+                ("at", moment(now)),
                 ("reason", Json::text(&reason)),
             ]);
             let _ = runtime.restore.write_result(&data_root, &outcome);

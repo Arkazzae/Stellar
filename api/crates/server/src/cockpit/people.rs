@@ -8,7 +8,7 @@ use rusqlite::{OptionalExtension, params};
 use serde::{Deserialize, Serialize};
 use stellarr_messages::MessageKey;
 
-use super::{Plain, invalid, length, no_content, nobody, bind, taken};
+use super::{invalid, length, no_content, nobody, bind, taken};
 use crate::auth::password;
 use crate::database::DbError;
 use crate::http::{ApiError, ApiResult, Path, Problem, json_response};
@@ -40,8 +40,8 @@ struct UserDto {
     role_id: Id,
     role_name: String,
     is_disabled: bool,
-    joined_at: Plain,
-    created_at: Plain,
+    joined_at: Timestamp,
+    created_at: Timestamp,
 }
 
 #[derive(Serialize)]
@@ -83,8 +83,8 @@ pub(super) async fn list(
                         role_id: row.get(6)?,
                         role_name: row.get(7)?,
                         is_disabled: row.get(8)?,
-                        joined_at: Plain(row.get(9)?),
-                        created_at: Plain(row.get(10)?),
+                        joined_at: row.get(9)?,
+                        created_at: row.get(10)?,
                     })
                 })?
                 .collect::<rusqlite::Result<Vec<_>>>()?;

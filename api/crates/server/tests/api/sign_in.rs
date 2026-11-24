@@ -469,7 +469,7 @@ async fn me_needs_a_session_and_answers_the_account_as_only_its_owner_sees_it() 
     assert_eq!(account["preferences"]["mutedChannelIds"], json!([]));
     assert!(account["wallpaperUrl"].is_null());
     let created = account["createdAt"].as_str().unwrap();
-    assert!(!created.ends_with('Z') && created.contains('T'), "{created}");
+    assert!(created.ends_with('Z') && created.contains('T'), "{created}");
     assert!(account.get("passwordHash").is_none());
 }
 

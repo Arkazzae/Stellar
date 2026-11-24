@@ -8,7 +8,7 @@ use stellarr_api::values::{Id, Timestamp};
 use crate::database::CliDatabase;
 use crate::errors::{CliError, CliOutcome, CliResult, exit};
 use crate::invocation::trim;
-use crate::json::{Json, Zone, moment, round_trip};
+use crate::json::{Json, moment, round_trip};
 use crate::runtime::Runtime;
 use crate::support::{resolve_user, session_not_found};
 
@@ -35,9 +35,9 @@ impl Item {
             ("userDisplayName", Json::text(&self.display_name)),
             ("device", Json::text(&self.device)),
             ("ipAddress", Json::text(&self.ip_address)),
-            ("createdAt", moment(self.created_at, Zone::Unspecified)),
-            ("lastSeenAt", moment(self.last_seen_at, Zone::Unspecified)),
-            ("expiresAt", moment(self.expires_at, Zone::Unspecified)),
+            ("createdAt", moment(self.created_at)),
+            ("lastSeenAt", moment(self.last_seen_at)),
+            ("expiresAt", moment(self.expires_at)),
         ])
     }
 }
@@ -87,8 +87,8 @@ pub fn list(runtime: &mut Runtime, id_or_username: Option<&str>) -> CliOutcome {
                 item.username,
                 item.display_name,
                 item.device,
-                round_trip(item.last_seen_at, Zone::Unspecified),
-                round_trip(item.expires_at, Zone::Unspecified),
+                round_trip(item.last_seen_at),
+                round_trip(item.expires_at),
                 item.ip_address
             )
         })

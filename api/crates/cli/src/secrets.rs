@@ -11,7 +11,7 @@ use stellarr_api::values::Timestamp;
 
 use crate::database::CliDatabase;
 use crate::errors::{CliError, CliOutcome, CliResult, exit};
-use crate::json::{Json, Zone, moment, round_trip};
+use crate::json::{Json, moment, round_trip};
 use crate::runtime::{Runtime, stdin_needs_yes};
 
 /// The secrets of the environment, as the server reads them.
@@ -50,7 +50,7 @@ fn item(status: &SecretStatus, updated: bool) -> Json {
         (
             "updatedAt",
             match (updated, status.updated_at) {
-                (true, Some(at)) => moment(at, Zone::Unspecified),
+                (true, Some(at)) => moment(at),
                 _ => Json::Null,
             },
         ),
@@ -105,10 +105,9 @@ pub fn list(runtime: &mut Runtime) -> CliOutcome {
                     _ => Source::None,
                 }),
                 status.variable,
-                status.updated_at.map_or(String::new(), |at| format!(
-                    " updated {}",
-                    round_trip(at, Zone::Unspecified)
-                ))
+                status
+                    .updated_at
+                    .map_or(String::new(), |at| format!(" updated {}", round_trip(at)))
             )
         })
         .collect();

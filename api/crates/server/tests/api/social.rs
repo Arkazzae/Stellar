@@ -395,9 +395,9 @@ async fn members_of_the_state_come_in_the_order_the_first_server_wrote_them() {
     for key in ["\"username\"", "\"displayName\"", "\"avatarColor\"", "\"presence\"", "\"avatarUrl\"", "\"bannerUrl\"", "\"customStatus\"", "\"bio\"", "\"pronouns\"", "\"origin\"", "\"since\""] {
         assert!(friend.contains(key), "{key}");
     }
-    // A moment read from the database carries no zone, as the first server wrote it.
+    // A moment read from the database says it is UTC.
     let since = p.ada.client.get("/api/social").await.json::<Value>()["friends"][0]["since"].as_str().unwrap().to_string();
-    assert!(!since.ends_with('Z') && since.contains('T'), "{since}");
+    assert!(since.ends_with('Z') && since.contains('T'), "{since}");
 }
 
 fn conversation(server: &Server, a: &Person, b: &Person, created: &str) -> Id {
@@ -456,7 +456,7 @@ async fn a_conversation_is_listed_with_its_newest_message_and_what_is_unread() {
     assert_eq!(last["channelId"], first.to_string());
     assert_eq!(last["author"]["presence"], "online");
     assert_eq!(last["createdAt"], "2026-01-01T10:05:00Z");
-    assert_eq!(listed[1]["updatedAt"], "2026-01-01T10:05:00");
+    assert_eq!(listed[1]["updatedAt"], "2026-01-01T10:05:00Z");
     assert_eq!(listed[1]["encryption"], json!({ "state": "off", "requestedById": null, "requestedAt": null, "enabledAt": null, "currentEpochId": null }));
     let _ = second;
 
@@ -479,7 +479,7 @@ async fn a_conversation_without_a_message_is_as_old_as_itself_and_one_with_a_blo
     conversation(&p.server, &p.ada, &p.cy, "2026-02-03 04:05:07");
     let listed = state(&p.ada.client).await["conversations"].clone();
     assert_eq!(listed[0]["peer"]["username"], "cyd");
-    assert_eq!(listed[1]["updatedAt"], "2026-02-03T04:05:06.123");
+    assert_eq!(listed[1]["updatedAt"], "2026-02-03T04:05:06.123Z");
     assert!(listed[1]["lastMessage"].is_null());
     assert_eq!(listed[1]["unread"], 0);
 

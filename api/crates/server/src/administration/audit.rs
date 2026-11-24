@@ -27,7 +27,6 @@ pub struct Page {
 pub struct EntryDto {
     id: Id,
     summary: String,
-    /// Written without a zone, as the database holds it.
     at: String,
     actor: UserDto,
     action: Option<String>,
@@ -116,7 +115,7 @@ pub async fn list(
                 entries.push(EntryDto {
                     id,
                     summary,
-                    at: at.to_unspecified_wire_text(),
+                    at: at.to_wire_text(),
                     actor: actor.dto("offline"),
                     action,
                     target: target_type.map(|kind| TargetDto {
