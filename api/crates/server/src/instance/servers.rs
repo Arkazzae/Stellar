@@ -18,7 +18,8 @@ pub struct Server {
 
 /// The columns [`Server::from_row`] reads, in order, for a query that selects
 /// them from `"Servers"`.
-pub const COLUMNS: &str = "\"Id\", \"Name\", \"Description\", \"IsPublic\", \"IconUrl\", \"CreatedAt\"";
+pub const COLUMNS: &str =
+    "\"Id\", \"Name\", \"Description\", \"IsPublic\", \"IconUrl\", \"CreatedAt\"";
 
 impl Server {
     /// A row selected with [`COLUMNS`].
