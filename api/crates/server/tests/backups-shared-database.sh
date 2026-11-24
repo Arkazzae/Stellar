@@ -109,7 +109,7 @@ rust_env=(Backups__InitialDelayMinutes=1440 "Cloudflare__R2__AccessKey=$ACCESS" 
 start_rust() {
   stop_rust
   listening_before=$(grep -c 'Now listening on' "$work/rust/log.txt" || true)
-  env ASPNETCORE_ENVIRONMENT=Production Rtc__TurnSharedSecret=x STELLARR_DATA_ROOT="$work/rust" \
+  env TZ=UTC ASPNETCORE_ENVIRONMENT=Production Rtc__TurnSharedSecret=x STELLARR_DATA_ROOT="$work/rust" \
     "ConnectionStrings__Database=Data Source=$work/rust/stellarr.db" ASPNETCORE_URLS=http://127.0.0.1:0 \
     RateLimiting__AuthWrite__PermitLimit=500 RateLimiting__Login__PermitLimit=500 RateLimiting__InvitePreview__PermitLimit=500 \
     Maintenance__Enabled=false "${rust_env[@]}" \
