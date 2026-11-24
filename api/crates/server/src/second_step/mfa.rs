@@ -119,6 +119,12 @@ pub(super) async fn finished(
         Ok(outcome) => outcome,
         Err(error) => {
             tracing::warn!(target: "Stellarr.Api.Security", "linking an identity after a sign-in failed: {error}");
+            // The writes of the link were undone, the identity's removal with
+            // them: it is removed again, so that a copy of its cookie opens
+            // nothing.
+            if let Some(expected) = completed.pending_identity {
+                link::forget(state, &Waiting::of(&seen.origin), expected).await?;
+            }
             asked.then_some(link::FAILED)
         }
     };
