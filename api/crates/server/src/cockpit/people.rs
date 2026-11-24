@@ -8,7 +8,7 @@ use rusqlite::{OptionalExtension, params};
 use serde::{Deserialize, Serialize};
 use stellarr_messages::MessageKey;
 
-use super::{invalid, length, no_content, nobody, bind, taken};
+use super::{invalid, length, no_content, nobody, taken};
 use crate::auth::password;
 use crate::database::DbError;
 use crate::http::{ApiError, ApiResult, Path, Problem, json_response};
@@ -139,7 +139,7 @@ pub(super) async fn create(
         caller,
         server,
         body,
-    } = panel::bind_then_gate(&state, request, true, bind::<CreateUser>).await?;
+    } = panel::bind_then_gate::<CreateUser>(&state, request, true).await?;
     let Some(body) = body else {
         return Err(ApiError::bad_request());
     };
@@ -254,7 +254,7 @@ pub(super) async fn set_role(
         caller,
         server,
         body,
-    } = panel::bind_then_gate(&state, request, true, bind::<RoleChoice>).await?;
+    } = panel::bind_then_gate::<RoleChoice>(&state, request, true).await?;
     let Some(body) = body else {
         return Err(ApiError::bad_request());
     };
@@ -319,7 +319,7 @@ pub(super) async fn set_status(
         caller,
         server,
         body,
-    } = panel::bind_then_gate(&state, request, true, bind::<StatusChoice>).await?;
+    } = panel::bind_then_gate::<StatusChoice>(&state, request, true).await?;
     let Some(body) = body else {
         return Err(ApiError::bad_request());
     };
@@ -408,7 +408,7 @@ pub(super) async fn create_role(
         caller,
         server,
         body,
-    } = panel::bind_then_gate(&state, request, true, bind::<RoleRequest>).await?;
+    } = panel::bind_then_gate::<RoleRequest>(&state, request, true).await?;
     let Some(body) = body else {
         return Err(ApiError::bad_request());
     };
@@ -477,7 +477,7 @@ pub(super) async fn update_role(
         caller,
         server,
         body,
-    } = panel::bind_then_gate(&state, request, true, bind::<RoleRequest>).await?;
+    } = panel::bind_then_gate::<RoleRequest>(&state, request, true).await?;
     let Some(body) = body else {
         return Err(ApiError::bad_request());
     };

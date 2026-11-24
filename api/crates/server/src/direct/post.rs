@@ -7,7 +7,8 @@ use rusqlite::{Connection, OptionalExtension, params};
 use stellarr_messages::MessageKey;
 
 use super::encryption::{self, Payload};
-use crate::http::lenient::{Malformed, Members, Octets};
+use crate::encoding::optional_octets;
+use serde::Deserialize;
 use super::{peer_in, peer_takes_messages_from, set_read};
 use crate::auth::Caller;
 use crate::events::{Audience, Event};
@@ -43,34 +44,24 @@ struct Submission {
 }
 
 /// What the request said, read.
-struct Request {
+#[derive(Deserialize)]
+pub struct Request {
     content: Option<String>,
+    #[serde(rename = "attachmentIds")]
     attachments: Option<Vec<Id>>,
+    #[serde(rename = "clientMessageId")]
     client_id: Option<Id>,
     encrypted: Option<RequestedEncryption>,
 }
 
-struct RequestedEncryption {
+#[derive(Deserialize)]
+pub struct RequestedEncryption {
+    #[serde(rename = "epochId")]
     epoch: Option<Id>,
+    #[serde(default, deserialize_with = "optional_octets")]
     iv: Option<Vec<u8>>,
+    #[serde(default, deserialize_with = "optional_octets")]
     ciphertext: Option<Vec<u8>>,
-}
-
-fn read(body: &Members) -> Result<Request, Malformed> {
-    let encrypted = match body.get::<Members>("encrypted")? {
-        None => None,
-        Some(inner) => Some(RequestedEncryption {
-            epoch: inner.get::<Id>("epochId")?,
-            iv: inner.get::<Octets>("iv")?.map(|octets| octets.0),
-            ciphertext: inner.get::<Octets>("ciphertext")?.map(|octets| octets.0),
-        }),
-    };
-    Ok(Request {
-        content: body.get::<String>("content")?,
-        attachments: body.get::<Vec<Id>>("attachmentIds")?,
-        client_id: body.get::<Id>("clientMessageId")?,
-        encrypted,
-    })
 }
 
 enum Posted {
@@ -133,9 +124,8 @@ pub async fn create(
     State(state): State<AppState>,
     caller: Caller,
     Path(conversation): Path<Id>,
-    Json(body): Json<Members>,
+    Json(request): Json<Request>,
 ) -> ApiResult<Response> {
-    let request = read(&body)?;
     let messages = *state.messages();
     let me = caller.user;
     let posted = state

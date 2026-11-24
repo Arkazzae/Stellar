@@ -14,7 +14,7 @@ use super::announce::{self, DISABLED, ENABLED, Line, REQUEST_CANCELLED, REQUESTE
 use super::problems::{self, Refusal};
 use super::store::{self, Conversation, Epoch, State as Switch};
 use super::wire::{
-    EnvelopeRequest, EpochRequest, EpochsDto, KeysDto, Members, PersonKeysDto, RecipientKeyDto,
+    EnvelopeRequest, EpochRequest, EpochsDto, KeysDto, PersonKeysDto, RecipientKeyDto,
     is_wire_id,
 };
 use crate::auth::Caller;
@@ -433,9 +433,8 @@ pub async fn create_epoch(
     State(state): State<AppState>,
     caller: Caller,
     Path(id): Path<Id>,
-    Json(body): Json<Members>,
+    Json(request): Json<EpochRequest>,
 ) -> ApiResult<Response> {
-    let request = EpochRequest::read(&body)?;
     let user = caller.user;
     let Some(epoch_id) = request.epoch_id.as_deref().and_then(is_wire_id) else {
         return Err(invalid_epoch(&state));

@@ -122,8 +122,8 @@ async fn save(
     Ok(response)
 }
 
-/// What the first server read of a body before it parsed it: at most four
-/// times the limit in bytes, and at most that many characters.
+/// What is read of a body before it is parsed: at most four times the limit in
+/// bytes, and at most that many characters.
 const MAX_BODY_CHARACTERS: usize = MAX_LENGTH * 4;
 
 /// The body as compact JSON, when it is one object within the limit, and
@@ -145,9 +145,11 @@ async fn body_object(headers: &axum::http::HeaderMap, body: Body) -> Result<Opti
         Err(error) if error.downcast_ref::<LengthLimitError>().is_some() => return Ok(None),
         Err(_) => return Err(ApiError::bad_request()),
     };
-    let text = json::decode(&bytes);
+    let Some(text) = json::decode(&bytes) else {
+        return Ok(None);
+    };
     if text.encode_utf16().count() > MAX_BODY_CHARACTERS {
         return Ok(None);
     }
-    Ok(json::object(&text).filter(|compact| compact.encode_utf16().count() <= MAX_LENGTH))
+    Ok(json::object(text).filter(|compact| compact.encode_utf16().count() <= MAX_LENGTH))
 }

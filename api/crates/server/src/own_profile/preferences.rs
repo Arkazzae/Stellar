@@ -15,7 +15,6 @@ use crate::events::{Audience, Event};
 use crate::http::{ApiError, ApiResult, Json, Problem, json_response};
 use crate::realtime::audience::presence_reach;
 use crate::servers::Object;
-use crate::soundboard::numbers::optional_whole;
 use crate::state::AppState;
 use crate::values::Id;
 
@@ -35,7 +34,6 @@ pub struct UpdatePreferences {
     developer_mode: Option<bool>,
     reduced_motion: Option<bool>,
     muted_channel_ids: Option<Vec<Id>>,
-    #[serde(default, deserialize_with = "optional_whole")]
     vad_sensitivity: Option<i32>,
     /// A soundboard sound to announce this account's arrivals with. Empty
     /// clears the choice; absent leaves it alone.

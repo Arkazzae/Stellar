@@ -65,10 +65,9 @@ impl<T: DeserializeOwned, S: Send + Sync> FromRequest<S> for Json<T> {
             .get::<BodyCeiling>()
             .map_or(MAX_REQUEST_BODY_BYTES, |ceiling| ceiling.0);
         let bytes = read_all(&parts.headers, body, ceiling).await?;
-        // A body that starts with a byte order mark is read as the first
-        // server read it: without the mark.
-        let text = bytes.strip_prefix(b"\xEF\xBB\xBF").unwrap_or(&bytes);
-        serde_json::from_slice(text)
+        // A byte order mark is no part of JSON: a body that starts with one
+        // is malformed.
+        serde_json::from_slice(&bytes)
             .map(Json)
             .map_err(|_| ApiError::bad_request())
     }

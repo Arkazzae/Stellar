@@ -1,17 +1,15 @@
-//! What the routes read and say: the shapes of requests, read the way the
-//! first server read them, and of answers, written in the order it wrote them.
+//! What the routes read and say: the shapes of requests, and of answers,
+//! written in the order the clients are used to.
 //!
-//! Every key, nonce and ciphertext travels as standard Base64 with padding. The
-//! first server's reader ignored spaces, tabs and line breaks anywhere in the
-//! text and was strict about everything else, so this one does the same. An
-//! integer was read from a number or from a string of digits, a member named
-//! twice counted as the last one, and a value of the wrong type made the whole
-//! body unreadable (a 400 with no body) before anything was checked.
+//! Every key, nonce and ciphertext travels as standard Base64 with padding, in
+//! exactly one spelling. A request is read with the names the browser sends: a
+//! member named twice, a number in quotes or a value of the wrong type makes
+//! the whole body unreadable (a 400 with no body) before anything is checked.
 
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 
-pub use crate::http::lenient::{Malformed, Members, Octets};
-use crate::http::lenient::{number, octets};
+pub use crate::encoding::Octets;
+use crate::encoding::optional_octets;
 use crate::values::{Id, Timestamp};
 
 /// An id that is only valid in one spelling: lower case with hyphens, the form
@@ -24,24 +22,18 @@ pub fn is_wire_id(text: &str) -> Option<Id> {
 // ---- requests ----
 
 /// The PIN-protected copy of the account's private key, as the browser made it.
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct BackupRequest {
+    #[serde(default, deserialize_with = "optional_octets")]
     pub salt: Option<Vec<u8>>,
     pub iterations: Option<i32>,
+    #[serde(default, deserialize_with = "optional_octets")]
     pub verifier: Option<Vec<u8>>,
+    #[serde(default, deserialize_with = "optional_octets")]
     pub iv: Option<Vec<u8>>,
+    #[serde(default, deserialize_with = "optional_octets")]
     pub ciphertext: Option<Vec<u8>>,
-}
-
-impl BackupRequest {
-    fn read(body: &Members) -> Result<BackupRequest, Malformed> {
-        Ok(BackupRequest {
-            salt: octets(body, "salt")?,
-            iterations: number(body, "iterations")?,
-            verifier: octets(body, "verifier")?,
-            iv: octets(body, "iv")?,
-            ciphertext: octets(body, "ciphertext")?,
-        })
-    }
 }
 
 /// A backup that has every part, each of a size the protocol allows. Leaving
@@ -74,134 +66,71 @@ impl BackupRequest {
     }
 }
 
-fn backup(body: &Members) -> Result<Option<BackupRequest>, Malformed> {
-    body.get::<Members>("backup")?
-        .map(|members| BackupRequest::read(&members))
-        .transpose()
-}
-
 /// First set-up: the account's public key and the backup of its private key.
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct SetUp {
     pub algorithm: Option<String>,
+    #[serde(default, deserialize_with = "optional_octets")]
     pub public_key: Option<Vec<u8>>,
     pub backup: Option<BackupRequest>,
-}
-
-impl SetUp {
-    pub fn read(body: &Members) -> Result<SetUp, Malformed> {
-        Ok(SetUp {
-            algorithm: body.get("algorithm")?,
-            public_key: octets(body, "publicKey")?,
-            backup: backup(body)?,
-        })
-    }
 }
 
 /// A new account key and its backup, for when nobody holds the old one.
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct Reset {
     pub current_password: Option<String>,
     pub algorithm: Option<String>,
+    #[serde(default, deserialize_with = "optional_octets")]
     pub public_key: Option<Vec<u8>>,
     pub backup: Option<BackupRequest>,
 }
 
-impl Reset {
-    pub fn read(body: &Members) -> Result<Reset, Malformed> {
-        Ok(Reset {
-            current_password: body.get("currentPassword")?,
-            algorithm: body.get("algorithm")?,
-            public_key: octets(body, "publicKey")?,
-            backup: backup(body)?,
-        })
-    }
-}
-
 /// A new PIN: the same account key, encrypted again.
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct Replace {
     pub current_password: Option<String>,
     pub account_key_id: Option<String>,
     pub backup: Option<BackupRequest>,
 }
 
-impl Replace {
-    pub fn read(body: &Members) -> Result<Replace, Malformed> {
-        Ok(Replace {
-            current_password: body.get("currentPassword")?,
-            account_key_id: body.get("accountKeyId")?,
-            backup: backup(body)?,
-        })
-    }
-}
-
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct Unlock {
+    #[serde(default, deserialize_with = "optional_octets")]
     pub auth_key: Option<Vec<u8>>,
 }
 
-impl Unlock {
-    pub fn read(body: &Members) -> Result<Unlock, Malformed> {
-        Ok(Unlock {
-            auth_key: octets(body, "authKey")?,
-        })
-    }
-}
-
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct Register {
     pub algorithm: Option<String>,
+    #[serde(default, deserialize_with = "optional_octets")]
     pub public_key: Option<Vec<u8>>,
     pub label: Option<String>,
 }
 
-impl Register {
-    pub fn read(body: &Members) -> Result<Register, Malformed> {
-        Ok(Register {
-            algorithm: body.get("algorithm")?,
-            public_key: octets(body, "publicKey")?,
-            label: body.get("label")?,
-        })
-    }
-}
-
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct EnvelopeRequest {
     pub recipient_key_id: Option<String>,
+    #[serde(default, deserialize_with = "optional_octets")]
     pub ephemeral_public_key: Option<Vec<u8>>,
+    #[serde(default, deserialize_with = "optional_octets")]
     pub iv: Option<Vec<u8>>,
+    #[serde(default, deserialize_with = "optional_octets")]
     pub ciphertext: Option<Vec<u8>>,
 }
 
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct EpochRequest {
     pub epoch_id: Option<String>,
     pub previous_epoch_id: Option<Id>,
     /// `None` where the request had `null` for an envelope.
     pub envelopes: Option<Vec<Option<EnvelopeRequest>>>,
-}
-
-impl EpochRequest {
-    pub fn read(body: &Members) -> Result<EpochRequest, Malformed> {
-        let envelopes = body
-            .get::<Vec<Option<Members>>>("envelopes")?
-            .map(|list| {
-                list.iter()
-                    .map(|item| {
-                        item.as_ref()
-                            .map(|members| {
-                                Ok(EnvelopeRequest {
-                                    recipient_key_id: members.get("recipientKeyId")?,
-                                    ephemeral_public_key: octets(members, "ephemeralPublicKey")?,
-                                    iv: octets(members, "iv")?,
-                                    ciphertext: octets(members, "ciphertext")?,
-                                })
-                            })
-                            .transpose()
-                    })
-                    .collect::<Result<Vec<_>, Malformed>>()
-            })
-            .transpose()?;
-        Ok(EpochRequest {
-            epoch_id: body.get("epochId")?,
-            previous_epoch_id: body.get("previousEpochId")?,
-            envelopes,
-        })
-    }
 }
 
 // ---- answers ----
@@ -380,10 +309,6 @@ pub struct Nothing {}
 mod tests {
     use super::*;
 
-    fn members(text: &str) -> Members {
-        serde_json::from_str(text).expect("an object")
-    }
-
     #[test]
     fn an_id_is_only_good_in_the_one_spelling_browsers_use() {
         let id = Id::random();
@@ -396,12 +321,39 @@ mod tests {
 
     #[test]
     fn an_epoch_request_with_a_null_envelope_keeps_the_hole() {
-        let body = members(
+        let read: EpochRequest = serde_json::from_str(
             "{\"epochId\":\"x\",\"envelopes\":[null,{\"recipientKeyId\":\"y\",\"iv\":\"AAAA\"}]}",
-        );
-        let read = EpochRequest::read(&body).unwrap();
+        )
+        .unwrap();
         let envelopes = read.envelopes.unwrap();
         assert!(envelopes[0].is_none());
         assert_eq!(envelopes[1].as_ref().unwrap().iv.as_deref(), Some(&[0, 0, 0][..]));
+    }
+
+    #[test]
+    fn a_body_is_read_by_its_exact_names_and_plain_values() {
+        // A name in another case is a name nobody asked for.
+        let read: Register = serde_json::from_str("{\"Label\":\"x\",\"label\":\"y\"}").unwrap();
+        assert_eq!(read.label.as_deref(), Some("y"));
+        assert!(read.public_key.is_none());
+        for refused in [
+            "{\"label\":\"a\",\"label\":\"b\"}",
+            "{\"publicKey\":\"AAAA \"}",
+            "{\"publicKey\":\" AAAA\"}",
+            "{\"publicKey\":5}",
+            "[]",
+            "null",
+        ] {
+            assert!(serde_json::from_str::<Register>(refused).is_err(), "{refused}");
+        }
+        for refused in [
+            "{\"iterations\":\"600000\"}",
+            "{\"iterations\":600000.0}",
+            "{\"iterations\":\"NaN\"}",
+        ] {
+            assert!(serde_json::from_str::<BackupRequest>(refused).is_err(), "{refused}");
+        }
+        let read: BackupRequest = serde_json::from_str("{\"iterations\":600000}").unwrap();
+        assert_eq!(read.iterations, Some(600_000));
     }
 }

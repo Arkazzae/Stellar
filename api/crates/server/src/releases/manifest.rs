@@ -9,13 +9,14 @@ use std::fs::File;
 use std::io::{self, Read};
 use std::path::{Path, PathBuf};
 
-use super::json::{self, Value};
+use serde::Deserialize;
+
 use super::moment::parse_published_at;
 use super::version;
 use crate::values::Timestamp;
 
 const SUPPORTED_SCHEMA_VERSION: i32 = 1;
-/// Counted in UTF-16 units, as the first server counted them.
+/// Counted in UTF-16 units, as the clients count.
 const MAX_NOTES_LENGTH: usize = 2_000;
 /// A manifest is a few hundred bytes; one that is megabytes is not what an
 /// operator wrote, and is not read into memory.
@@ -43,9 +44,9 @@ pub fn directory(data_root: &Path, name: &str) -> PathBuf {
     std::path::absolute(&folder).unwrap_or(folder)
 }
 
-/// The manifest at `path` as JSON: None when there is none, [`Failure::Untrusted`]
-/// when there is one that is not JSON.
-pub fn read(path: &Path) -> Result<Option<Value>, Failure> {
+/// The bytes of the manifest at `path`: None when there is none,
+/// [`Failure::Untrusted`] when it is larger than any manifest is.
+pub fn read(path: &Path) -> Result<Option<Vec<u8>>, Failure> {
     let mut bytes = Vec::new();
     let opened = File::open(path).and_then(|file| {
         // A folder opens, and fails on the first read.
@@ -66,129 +67,15 @@ pub fn read(path: &Path) -> Result<Option<Value>, Failure> {
     if bytes.len() as u64 > MAX_MANIFEST_BYTES {
         return Err(Failure::Untrusted);
     }
-    match json::parse(&decode(&bytes)) {
-        Some(Value::Object(members)) => Ok(Some(Value::Object(members))),
-        _ => Err(Failure::Untrusted),
-    }
+    Ok(Some(bytes))
 }
 
-/// The text of a file as its byte order mark says, as UTF-8 when it has none;
-/// what is not valid is replaced, not refused.
-fn decode(bytes: &[u8]) -> String {
-    let utf16 = |rest: &[u8], big: bool| {
-        let units: Vec<u16> = rest
-            .as_chunks::<2>()
-            .0
-            .iter()
-            .map(|pair| {
-                if big {
-                    u16::from_be_bytes(*pair)
-                } else {
-                    u16::from_le_bytes(*pair)
-                }
-            })
-            .collect();
-        String::from_utf16_lossy(&units)
-    };
-    match bytes {
-        [0xEF, 0xBB, 0xBF, rest @ ..] => String::from_utf8_lossy(rest).into_owned(),
-        [0xFF, 0xFE, rest @ ..] => utf16(rest, false),
-        [0xFE, 0xFF, rest @ ..] => utf16(rest, true),
-        _ => String::from_utf8_lossy(bytes).into_owned(),
-    }
-}
-
-/// The members of one object, looked up the way the first server's reader did:
-/// a name matches whatever its letter case, and the last of a name written
-/// twice decides. Anything of the wrong type makes the whole manifest
-/// untrustworthy, even a member that a later one would have replaced.
-pub struct Members<'a>(&'a [(String, Value)]);
-
-impl<'a> Members<'a> {
-    fn of(value: &'a Value) -> Option<Members<'a>> {
-        match value {
-            Value::Object(members) => Some(Members(members)),
-            _ => None,
-        }
-    }
-
-    fn all(&self, name: &str) -> Vec<&'a Value> {
-        // Letters beyond ASCII do not fold: the long s is not an s here.
-        self.0
-            .iter()
-            .filter(|(key, _)| key.eq_ignore_ascii_case(name))
-            .map(|(_, value)| value)
-            .collect()
-    }
-
-    /// A text, or none when it is missing or null.
-    fn text(&self, name: &str) -> Option<Option<String>> {
-        let mut found = None;
-        for value in self.all(name) {
-            found = Some(match value {
-                Value::String(text) => Some(text.clone()),
-                Value::Null => None,
-                _ => return None,
-            });
-        }
-        Some(found.flatten())
-    }
-
-    /// A whole number: written as one, or as text holding one with an
-    /// optional sign. Missing is 0.
-    fn number(&self, name: &str, within: std::ops::RangeInclusive<i64>) -> Option<i64> {
-        let mut found = 0;
-        for value in self.all(name) {
-            let text = match value {
-                Value::Number(text) | Value::String(text) => text.as_str(),
-                _ => return None,
-            };
-            let (negative, digits) = match text.as_bytes().first() {
-                Some(b'-') => (true, &text[1..]),
-                Some(b'+') if matches!(value, Value::String(_)) => (false, &text[1..]),
-                _ => (false, text),
-            };
-            if digits.is_empty() || !digits.bytes().all(|b| b.is_ascii_digit()) {
-                return None;
-            }
-            let magnitude: i64 = digits.parse().ok()?;
-            found = Some(if negative { -magnitude } else { magnitude })
-                .filter(|n| within.contains(n))?;
-        }
-        Some(found)
-    }
-
-    fn int(&self, name: &str) -> Option<i32> {
-        self.number(name, i64::from(i32::MIN)..=i64::from(i32::MAX))
-            .and_then(|n| i32::try_from(n).ok())
-    }
-
-    fn long(&self, name: &str) -> Option<i64> {
-        self.number(name, i64::MIN..=i64::MAX)
-    }
-
-    /// A moment; None inside when it is missing, which stands for "no moment".
-    fn moment(&self, name: &str) -> Option<Option<Timestamp>> {
-        let mut found = None;
-        for value in self.all(name) {
-            match value {
-                Value::String(text) => found = Some(parse_published_at(text)?),
-                _ => return None,
-            }
-        }
-        Some(found)
-    }
-
-    /// An object, or none when it is missing or null.
-    fn object(&self, name: &str) -> Option<Option<Members<'a>>> {
-        let mut found = None;
-        for value in self.all(name) {
-            found = Some(match value {
-                Value::Null => None,
-                other => Some(Members::of(other)?),
-            });
-        }
-        Some(found.flatten())
+/// A moment that is missing, or is one the manifest can be trusted with.
+/// None when it is written in a way that is no moment at all.
+fn moment(text: Option<&str>) -> Option<Option<Timestamp>> {
+    match text {
+        None => Some(None),
+        Some(text) => parse_published_at(text).map(Some),
     }
 }
 
@@ -199,6 +86,19 @@ pub struct Header {
     pub notes: String,
 }
 
+/// The members of a manifest are read by their exact names, and a member of
+/// the wrong type, written twice, or in quotes where a number belongs, makes
+/// the whole manifest untrustworthy.
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct HeaderWire {
+    #[serde(default)]
+    schema_version: i32,
+    version: Option<String>,
+    published_at: Option<String>,
+    notes: Option<String>,
+}
+
 struct RawHeader {
     schema_version: i32,
     version: Option<String>,
@@ -207,12 +107,12 @@ struct RawHeader {
 }
 
 impl RawHeader {
-    fn read(members: &Members) -> Option<RawHeader> {
+    fn read(wire: HeaderWire) -> Option<RawHeader> {
         Some(RawHeader {
-            schema_version: members.int("schemaVersion")?,
-            version: members.text("version")?,
-            published_at: members.moment("publishedAt")?,
-            notes: members.text("notes")?,
+            schema_version: wire.schema_version,
+            version: wire.version,
+            published_at: moment(wire.published_at.as_deref())?,
+            notes: wire.notes,
         })
     }
 
@@ -240,15 +140,26 @@ pub struct Artifact {
     sha256: Option<String>,
 }
 
-impl Artifact {
-    fn read(members: &Members) -> Option<Artifact> {
-        Some(Artifact {
-            file_name: members.text("fileName")?,
-            size_bytes: members.long("sizeBytes")?,
-            sha256: members.text("sha256")?,
-        })
-    }
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct ArtifactWire {
+    file_name: Option<String>,
+    #[serde(default)]
+    size_bytes: i64,
+    sha256: Option<String>,
+}
 
+impl From<ArtifactWire> for Artifact {
+    fn from(wire: ArtifactWire) -> Artifact {
+        Artifact {
+            file_name: wire.file_name,
+            size_bytes: wire.size_bytes,
+            sha256: wire.sha256,
+        }
+    }
+}
+
+impl Artifact {
     /// The file this artifact names, which must be a plain file name inside
     /// `directory` and a file of exactly the declared size, so that a package
     /// still being copied is never served. What the manifest names is
@@ -299,19 +210,34 @@ pub struct ReleaseManifest {
     pub artifact: Artifact,
 }
 
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct ReleaseWire {
+    #[serde(flatten)]
+    header: HeaderWire,
+    artifact: Option<ReleaseArtifactWire>,
+}
+
+#[derive(Deserialize)]
+struct ReleaseArtifactWire {
+    platform: Option<String>,
+    architecture: Option<String>,
+    #[serde(flatten)]
+    file: ArtifactWire,
+}
+
 impl ReleaseManifest {
     /// None when the manifest cannot be trusted.
-    pub fn from(document: &Value) -> Option<ReleaseManifest> {
-        let members = Members::of(document)?;
-        let header = RawHeader::read(&members)?;
-        let artifact = members.object("artifact")?;
+    pub fn from(document: &[u8]) -> Option<ReleaseManifest> {
+        let wire: ReleaseWire = serde_json::from_slice(document).ok()?;
+        let header = RawHeader::read(wire.header)?;
         let header = header.check()?;
-        let artifact = artifact?;
+        let artifact = wire.artifact?;
         Some(ReleaseManifest {
             header,
-            platform: artifact.text("platform")?,
-            architecture: artifact.text("architecture")?,
-            artifact: Artifact::read(&artifact)?,
+            platform: artifact.platform,
+            architecture: artifact.architecture,
+            artifact: artifact.file.into(),
         })
     }
 }
@@ -325,6 +251,16 @@ pub struct UpdateArtifact {
     pub artifact: Artifact,
 }
 
+#[derive(Deserialize)]
+struct UpdateArtifactWire {
+    target: Option<String>,
+    architecture: Option<String>,
+    bundle: Option<String>,
+    signature: Option<String>,
+    #[serde(flatten)]
+    file: ArtifactWire,
+}
+
 /// The manifest of what an installed client may update itself to.
 pub struct UpdateManifest {
     pub header: Option<Header>,
@@ -333,43 +269,41 @@ pub struct UpdateManifest {
     pub artifacts: Vec<Option<UpdateArtifact>>,
 }
 
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct UpdateWire {
+    #[serde(flatten)]
+    header: HeaderWire,
+    channel: Option<String>,
+    #[serde(default)]
+    rollout_percent: i32,
+    artifacts: Option<Vec<Option<UpdateArtifactWire>>>,
+}
+
 impl UpdateManifest {
     /// None when the manifest is not even the right shape; a header that is
     /// not valid shows as `header: None`.
-    pub fn from(document: &Value) -> Option<UpdateManifest> {
-        let members = Members::of(document)?;
-        let header = RawHeader::read(&members)?;
-        let channel = members.text("channel")?;
-        let rollout_percent = members.int("rolloutPercent")?;
-        let mut artifacts = Vec::new();
-        for list in members.all("artifacts") {
-            artifacts.clear();
-            match list {
-                Value::Null => {}
-                Value::Array(items) => {
-                    for item in items {
-                        artifacts.push(match item {
-                            Value::Null => None,
-                            other => {
-                                let item = Members::of(other)?;
-                                Some(UpdateArtifact {
-                                    target: item.text("target")?,
-                                    architecture: item.text("architecture")?,
-                                    bundle: item.text("bundle")?,
-                                    signature: item.text("signature")?,
-                                    artifact: Artifact::read(&item)?,
-                                })
-                            }
-                        });
-                    }
-                }
-                _ => return None,
-            }
-        }
+    pub fn from(document: &[u8]) -> Option<UpdateManifest> {
+        let wire: UpdateWire = serde_json::from_slice(document).ok()?;
+        let header = RawHeader::read(wire.header)?;
+        let artifacts = wire
+            .artifacts
+            .unwrap_or_default()
+            .into_iter()
+            .map(|item| {
+                item.map(|item| UpdateArtifact {
+                    target: item.target,
+                    architecture: item.architecture,
+                    bundle: item.bundle,
+                    signature: item.signature,
+                    artifact: item.file.into(),
+                })
+            })
+            .collect();
         Some(UpdateManifest {
             header: header.check(),
-            channel,
-            rollout_percent,
+            channel: wire.channel,
+            rollout_percent: wire.rollout_percent,
             artifacts,
         })
     }
@@ -380,76 +314,59 @@ mod tests {
     use super::*;
     use crate::testing::TempDir;
 
-    fn document(text: &str) -> Value {
-        json::parse(text).unwrap()
-    }
-
     const GOOD: &str = r#"{"schemaVersion":1,"version":" 1.2.3 ","publishedAt":"2026-11-20T10:11:12Z",
         "notes":"  hello ","artifact":{"platform":"arch","architecture":"x86_64","fileName":"a.bin",
         "sizeBytes":16,"sha256":"0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"}}"#;
 
+    fn release(text: &str) -> Option<ReleaseManifest> {
+        ReleaseManifest::from(text.as_bytes())
+    }
+
     #[test]
     fn a_manifest_is_read_and_its_header_trimmed() {
-        let manifest = ReleaseManifest::from(&document(GOOD)).unwrap();
+        let manifest = release(GOOD).unwrap();
 
         assert_eq!(manifest.platform.as_deref(), Some("arch"));
         assert_eq!(manifest.artifact.size_bytes(), 16);
-        assert_eq!(
-            RawHeader::read(&Members::of(&document(GOOD)).unwrap())
-                .and_then(RawHeader::check)
-                .map(|header| (header.version, header.notes)),
-            Some(("1.2.3".to_string(), "hello".to_string()))
-        );
+        assert_eq!(manifest.header.version, "1.2.3");
+        assert_eq!(manifest.header.notes, "hello");
     }
 
     #[test]
-    fn names_match_in_any_letter_case_and_the_last_one_decides() {
-        let text = GOOD
-            .replace("schemaVersion", "SCHEMAVERSION")
-            .replace("\"version\"", "\"Version\"")
-            .replace("{\"SCHEMAVERSION\":1,", "{\"schemaVersion\":7,\"SCHEMAVERSION\":1,");
-
-        assert!(ReleaseManifest::from(&document(&text)).is_some());
-        let last_is_bad = GOOD.replace("{\"schemaVersion\":1,", "{\"schemaVersion\":1,\"schemaVersion\":7,");
-        assert!(RawHeader::read(&Members::of(&document(&last_is_bad)).unwrap())
-            .and_then(RawHeader::check)
-            .is_none());
+    fn names_match_exactly_and_a_name_written_twice_spoils_the_manifest() {
+        let upper = GOOD.replace("schemaVersion", "SCHEMAVERSION");
+        assert!(release(&upper).is_none(), "another case names nothing, and schema 0 is no schema");
+        let twice = GOOD.replace("{\"schemaVersion\":1,", "{\"schemaVersion\":1,\"schemaVersion\":1,");
+        assert!(release(&twice).is_none());
+        let artifact_twice = GOOD.replace("\"platform\":\"arch\",", "\"platform\":\"arch\",\"platform\":\"arch\",");
+        assert!(release(&artifact_twice).is_none());
+        assert!(release(GOOD).is_some());
     }
 
     #[test]
-    fn a_member_of_the_wrong_type_spoils_the_manifest_even_when_overwritten() {
-        let overwritten = GOOD.replace("{\"schemaVersion\":1,", "{\"schemaVersion\":true,\"schemaVersion\":1,");
-
-        assert!(ReleaseManifest::from(&document(&overwritten)).is_none());
+    fn a_member_of_the_wrong_type_spoils_the_manifest() {
+        let wrong = GOOD.replace("{\"schemaVersion\":1,", "{\"schemaVersion\":true,");
+        assert!(release(&wrong).is_none());
     }
 
     #[test]
-    fn numbers_may_be_written_as_text_but_not_with_a_fraction() {
+    fn numbers_are_numbers_and_not_text_and_not_fractions() {
         let number = |written: &str| {
             let text = GOOD.replace("\"schemaVersion\":1", &format!("\"schemaVersion\":{written}"));
-            ReleaseManifest::from(&document(&text)).is_some()
+            release(&text).is_some()
         };
 
         assert!(number("1"));
-        assert!(number("\"1\""));
-        assert!(number("\"+1\""));
-        assert!(number("\"01\""));
-        assert!(!number("\" 1\""));
-        assert!(!number("1.0"));
-        assert!(!number("1e0"));
-        assert!(!number("true"));
-        assert!(!number("null"));
-        assert!(!number("\"\""));
-        assert!(!number("3000000000"));
-        // The type is fine, the value is not a version of the schema.
-        assert!(number("1") && !number("2"));
+        for refused in ["\"1\"", "\"+1\"", "\" 1\"", "1.0", "1e0", "true", "null", "\"\"", "3000000000", "2"] {
+            assert!(!number(refused), "{refused}");
+        }
     }
 
     #[test]
     fn notes_are_counted_in_utf16_units() {
         let notes = |text: String| {
             let text = GOOD.replace("\"  hello \"", &format!("\"{text}\""));
-            ReleaseManifest::from(&document(&text)).is_some()
+            release(&text).is_some()
         };
 
         assert!(notes("x".repeat(2000)));
@@ -468,7 +385,7 @@ mod tests {
             ("\"notes\":\"  hello \"", "\"notes\":null"),
         ] {
             let text = GOOD.replace(from, to);
-            assert!(ReleaseManifest::from(&document(&text)).is_none(), "{to}");
+            assert!(release(&text).is_none(), "{to}");
         }
     }
 
@@ -517,32 +434,43 @@ mod tests {
     }
 
     #[test]
-    fn a_manifest_file_is_read_whatever_its_byte_order_mark() {
+    fn a_manifest_file_is_read_as_it_is_and_a_byte_order_mark_spoils_it() {
         let scratch = TempDir::new();
         let folder = scratch.path().to_path_buf();
         let at = folder.join("m.json");
-        let utf16: Vec<u8> = GOOD.encode_utf16().flat_map(u16::to_le_bytes).collect();
 
         assert!(matches!(read(&folder.join("nothing.json")), Ok(None)));
         std::fs::write(&at, GOOD).unwrap();
-        assert!(matches!(read(&at), Ok(Some(_))));
-        std::fs::write(&at, [b"\xEF\xBB\xBF".as_slice(), GOOD.as_bytes()].concat()).unwrap();
-        assert!(matches!(read(&at), Ok(Some(_))));
-        std::fs::write(&at, [b"\xFF\xFE".as_slice(), &utf16].concat()).unwrap();
-        assert!(matches!(read(&at), Ok(Some(_))));
-        std::fs::write(&at, &utf16).unwrap();
-        assert!(matches!(read(&at), Err(Failure::Untrusted)));
+        let bytes = read(&at).unwrap().unwrap();
+        assert!(ReleaseManifest::from(&bytes).is_some());
+        let marked = [b"\xEF\xBB\xBF".as_slice(), GOOD.as_bytes()].concat();
+        assert!(ReleaseManifest::from(&marked).is_none());
+        let utf16: Vec<u8> = GOOD.encode_utf16().flat_map(u16::to_le_bytes).collect();
+        assert!(ReleaseManifest::from(&[b"\xFF\xFE".as_slice(), &utf16].concat()).is_none());
         for broken in ["", "{ this is not json", "null", "[]", "5", "\"x\""] {
-            std::fs::write(&at, broken).unwrap();
-            assert!(matches!(read(&at), Err(Failure::Untrusted)), "{broken}");
+            assert!(ReleaseManifest::from(broken.as_bytes()).is_none(), "{broken}");
+            assert!(UpdateManifest::from(broken.as_bytes()).is_none(), "{broken}");
         }
-        std::fs::write(&at, " ".repeat(3 * 1024 * 1024)).unwrap();
-        assert!(matches!(read(&at), Err(Failure::Untrusted)), "blank, so not JSON");
         std::fs::write(&at, [b"{}".as_slice(), &vec![b' '; 17 * 1024 * 1024]].concat()).unwrap();
         assert!(matches!(read(&at), Err(Failure::Untrusted)));
         // A folder where the manifest should be is the disk's trouble, not a publication.
         std::fs::remove_file(&at).unwrap();
         std::fs::create_dir(&at).unwrap();
         assert!(matches!(read(&at), Err(Failure::Disk(_))));
+    }
+
+    #[test]
+    fn an_update_manifest_keeps_its_holes_and_reads_its_artifacts_by_exact_names() {
+        let text = GOOD.replace(
+            "\"artifact\":{\"platform\":\"arch\",\"architecture\":\"x86_64\",",
+            "\"channel\":\"stable\",\"rolloutPercent\":5,\"artifacts\":[null,{\"target\":\"linux\",\"architecture\":\"x86_64\",\"bundle\":\"appimage\",\"signature\":\"s\",",
+        );
+        let text = format!("{}}}]}}", text.trim_end_matches('}'));
+        let update = UpdateManifest::from(text.as_bytes()).unwrap();
+        assert_eq!(update.rollout_percent, 5);
+        assert!(update.artifacts[0].is_none());
+        assert_eq!(update.artifacts[1].as_ref().unwrap().target.as_deref(), Some("linux"));
+        assert!(UpdateManifest::from(text.replace("rolloutPercent", "RolloutPercent").as_bytes()).unwrap().rollout_percent == 0);
+        assert!(UpdateManifest::from(text.replace("\"rolloutPercent\":5", "\"rolloutPercent\":\"5\"").as_bytes()).is_none());
     }
 }

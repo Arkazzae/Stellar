@@ -36,7 +36,6 @@
 pub mod operations;
 
 use axum::extract::Request;
-use serde_json::Value;
 
 use axum::extract::FromRequestParts;
 use axum::http::request::Parts;
@@ -130,23 +129,27 @@ pub struct Bound<T> {
 /// binding: a caller who is not the owner, then one without a fresh second
 /// step (when `fresh`), then the route.
 ///
-/// `read` is given the body (none for an empty one or `null`) and refuses with
-/// a 400 what cannot be bound.
-pub async fn bind_then_gate<T>(
+/// The body is read as `T`: anything that is not a JSON object, or has a member
+/// of the wrong kind or one named twice, is a 400; an empty body or `null`
+/// binds as nothing, which the route itself answers (after the gate).
+pub async fn bind_then_gate<T: serde::de::DeserializeOwned>(
     state: &AppState,
     request: Request,
     fresh: bool,
-    read: impl FnOnce(Option<Value>) -> Result<T, ApiError>,
-) -> Result<Bound<T>, ApiError> {
+) -> Result<Bound<Option<T>>, ApiError> {
     let (mut parts, body) = request.into_parts();
     let bytes =
         crate::http::read_all(&parts.headers, body, crate::http::DEFAULT_JSON_BODY_BYTES).await?;
-    let value = if bytes.is_empty() {
+    let body = if bytes.is_empty() {
         None
     } else {
-        serde_json::from_slice::<Option<Value>>(&bytes).map_err(|_| ApiError::bad_request())?
+        // Only an object is a body; a list would bind to a struct by position.
+        let first = bytes.iter().find(|byte| !byte.is_ascii_whitespace());
+        if !matches!(first, Some(b'{' | b'n')) {
+            return Err(ApiError::bad_request());
+        }
+        serde_json::from_slice::<Option<T>>(&bytes).map_err(|_| ApiError::bad_request())?
     };
-    let body = read(value)?;
     let caller = *parts
         .extensions
         .get::<Caller>()

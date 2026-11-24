@@ -3,6 +3,8 @@
 //! padding, as tokens and sealed values have it; and capital hexadecimal, as
 //! stored hashes of tokens have it.
 
+use serde::Deserialize;
+
 const STANDARD: &[u8; 64] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
 const URL_SAFE: &[u8; 64] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_";
 
@@ -86,6 +88,33 @@ pub fn hex_upper(bytes: &[u8]) -> String {
     bytes.iter().map(|byte| format!("{byte:02X}")).collect()
 }
 
+/// Bytes in a JSON body: standard Base64 with padding, exactly as
+/// [`base64`] writes it. White space is not part of it.
+pub struct Octets(pub Vec<u8>);
+
+impl<'de> serde::Deserialize<'de> for Octets {
+    fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Octets, D::Error> {
+        let text = String::deserialize(deserializer)?;
+        from_base64(&text)
+            .map(Octets)
+            .ok_or_else(|| serde::de::Error::custom("not Base64"))
+    }
+}
+
+impl serde::Serialize for Octets {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        serializer.serialize_str(&base64(&self.0))
+    }
+}
+
+/// For `#[serde(default, deserialize_with = "optional_octets")]`: bytes that
+/// may be left out or `null`.
+pub fn optional_octets<'de, D: serde::Deserializer<'de>>(
+    deserializer: D,
+) -> Result<Option<Vec<u8>>, D::Error> {
+    Ok(Option::<Octets>::deserialize(deserializer)?.map(|octets| octets.0))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -129,5 +158,22 @@ mod tests {
     #[test]
     fn hex_is_in_capitals() {
         assert_eq!(hex_upper(&[0x00, 0xab, 0xff]), "00ABFF");
+    }
+
+    #[test]
+    fn bytes_in_a_body_are_base64_and_nothing_around_it() {
+        let key = base64(&[7u8; 32]);
+        let read = |text: &str| serde_json::from_value::<Octets>(serde_json::json!(text));
+        assert_eq!(read(&key).unwrap().0, vec![7u8; 32]);
+        for bad in [
+            format!("{} {}", &key[..10], &key[10..]),
+            format!("{}\n", key),
+            format!(" {key}"),
+            format!("{}\t{}", &key[..10], &key[10..]),
+            key.trim_end_matches('=').to_string(),
+        ] {
+            assert!(read(&bad).is_err(), "{bad:?}");
+        }
+        assert!(serde_json::from_value::<Octets>(serde_json::json!(5)).is_err());
     }
 }

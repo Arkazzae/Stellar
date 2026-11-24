@@ -1,203 +1,124 @@
 //! Reading what browsers send the hub as JSON: the object that carries a
-//! signal, and the document inside it, which the hub reads as the first
-//! server's JSON reader did.
+//! signal, and the document inside it.
 //!
-//! - A member of the object is found without regard to letter case, and the
-//!   last of two of the same name counts.
-//! - A member that is missing or `null` is nothing, for a text. A whole number
-//!   that is missing reads as 0 and one that is `null` is no number.
-//! - A member of the wrong kind makes the call fail as one whose arguments do
-//!   not fit, which tells the client nothing more.
-//! - A document is read to a depth of 64 containers, no more, and has no
-//!   comments, no trailing commas and nothing before or after it.
+//! - An argument is an object or `null`; the members are read by their exact
+//!   names, a member of the wrong kind makes the call fail as one whose
+//!   arguments do not fit, which tells the client nothing more.
+//! - A document inside a signal is read to a depth of 64 containers, no more,
+//!   and has no comments, no trailing commas, no byte order mark, no member
+//!   named twice and nothing before or after it.
 
-use std::fmt;
-
-use serde::de::{self, Deserializer, MapAccess, Visitor};
-use serde::Deserialize;
+use serde::de::DeserializeOwned;
 use serde_json::Value;
 use stellarr_hub::HubError;
 
 /// How deep a document may nest.
 const MAX_DEPTH: usize = 64;
 
-/// The members of a JSON object, in the order they were written, repeated
-/// names included.
-#[derive(Debug, Default)]
-pub struct Members(Vec<(String, Value)>);
-
-impl<'de> Deserialize<'de> for Members {
-    fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Members, D::Error> {
-        struct Reader;
-        impl<'de> Visitor<'de> for Reader {
-            type Value = Members;
-
-            fn expecting(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-                f.write_str("a JSON object")
-            }
-
-            fn visit_map<A: MapAccess<'de>>(self, mut map: A) -> Result<Members, A::Error> {
-                let mut members = Vec::new();
-                while let Some((name, value)) = map.next_entry::<String, Value>()? {
-                    members.push((name, value));
-                }
-                Ok(Members(members))
-            }
-
-            fn visit_unit<E: de::Error>(self) -> Result<Members, E> {
-                Err(E::custom("not an object"))
-            }
-        }
-        deserializer.deserialize_map(Reader)
-    }
-}
-
-impl Members {
-    /// The last member of this name, the name compared exactly.
-    pub fn exact(&self, name: &str) -> Option<&Value> {
-        self.0
-            .iter()
-            .rev()
-            .find(|(found, _)| found == name)
-            .map(|(_, value)| value)
-    }
-
-    /// How many members carry this name, compared exactly.
-    pub fn count(&self, name: &str) -> usize {
-        self.0.iter().filter(|(found, _)| found == name).count()
-    }
-
-    /// The last member whose name is this one in any letter case.
-    fn loose(&self, name: &str) -> Option<&Value> {
-        self.0
-            .iter()
-            .rev()
-            .find(|(found, _)| found.eq_ignore_ascii_case(name))
-            .map(|(_, value)| value)
-    }
-
-    /// A text member: nothing when it is missing or null.
-    pub fn text(&self, name: &str) -> Result<Option<String>, HubError> {
-        match self.loose(name) {
-            None | Some(Value::Null) => Ok(None),
-            Some(Value::String(text)) => Ok(Some(text.clone())),
-            Some(_) => Err(HubError::InvalidArguments),
-        }
-    }
-
-    /// A 32-bit whole number member: 0 when it is missing.
-    pub fn number(&self, name: &str) -> Result<i32, HubError> {
-        match self.loose(name) {
-            None => Ok(0),
-            Some(Value::Number(number)) => number
-                .as_i64()
-                .and_then(|value| i32::try_from(value).ok())
-                .ok_or(HubError::InvalidArguments),
-            Some(_) => Err(HubError::InvalidArguments),
-        }
-    }
-}
-
 /// The argument of a method that takes one object: none for `null`, and a
-/// call that does not fit for anything that is not an object.
-pub fn object(argument: Value) -> Result<Option<Members>, HubError> {
+/// call that does not fit for anything that is not an object of the right
+/// shape.
+pub fn argument<T: DeserializeOwned>(argument: Value) -> Result<Option<T>, HubError> {
     match argument {
         Value::Null => Ok(None),
-        Value::Object(_) => Members::deserialize(argument)
+        Value::Object(_) => serde_json::from_value(argument)
             .map(Some)
             .map_err(|_| HubError::InvalidArguments),
         _ => Err(HubError::InvalidArguments),
     }
 }
 
-/// The text of a signal's payload read as a JSON document: any value, which
-/// is none when the text is not one.
-pub fn parse(text: &str) -> Option<Value> {
-    let value: Value = serde_json::from_str(text).ok()?;
-    (depth(&value) <= MAX_DEPTH).then_some(value)
-}
-
-/// The text of a signal's payload read as a JSON object, keeping the repeated
-/// names.
-pub fn parse_members(text: &str) -> Option<ParsedPayload> {
-    let value = parse(text)?;
-    Some(match value {
-        Value::Object(_) => ParsedPayload::Object(serde_json::from_str(text).ok()?),
-        Value::Null => ParsedPayload::Null,
-        _ => ParsedPayload::Other,
-    })
-}
-
-/// What a payload document is.
-#[derive(Debug)]
-pub enum ParsedPayload {
-    Object(Members),
-    Null,
-    Other,
-}
-
-fn depth(value: &Value) -> usize {
-    match value {
-        Value::Array(items) => 1 + items.iter().map(depth).max().unwrap_or(0),
-        Value::Object(members) => 1 + members.values().map(depth).max().unwrap_or(0),
-        _ => 0,
+/// The text of a signal's payload read as a document of type `T`: none when it
+/// is not one, or nests too deep.
+pub fn read<T: DeserializeOwned>(text: &str) -> Option<T> {
+    if nests_deeper_than(text, MAX_DEPTH) {
+        return None;
     }
+    serde_json::from_str(text).ok()
+}
+
+/// Whether more than `limit` arrays and objects stand inside one another.
+/// Text that is not JSON may answer either way; the reader refuses it.
+fn nests_deeper_than(text: &str, limit: usize) -> bool {
+    let (mut depth, mut inside, mut escaped) = (0usize, false, false);
+    for byte in text.bytes() {
+        if inside {
+            match (escaped, byte) {
+                (true, _) => escaped = false,
+                (false, b'\\') => escaped = true,
+                (false, b'"') => inside = false,
+                _ => {}
+            }
+            continue;
+        }
+        match byte {
+            b'"' => inside = true,
+            b'[' | b'{' => {
+                depth += 1;
+                if depth > limit {
+                    return true;
+                }
+            }
+            b']' | b'}' => depth = depth.saturating_sub(1),
+            _ => {}
+        }
+    }
+    false
 }
 
 #[cfg(test)]
 mod tests {
+    use serde::Deserialize;
     use serde_json::json;
 
     use super::*;
 
-    #[test]
-    fn a_member_is_found_in_any_letter_case_and_the_last_of_a_name_counts() {
-        let members = object(json!({"Kind": "a"})).unwrap().unwrap();
-        assert_eq!(members.text("kind").unwrap(), Some("a".to_string()));
-
-        let repeated: Members = serde_json::from_str("{\"muted\":true,\"muted\":false}").unwrap();
-        assert_eq!(repeated.exact("muted"), Some(&Value::Bool(false)));
-        assert_eq!(repeated.count("muted"), 2);
-        assert_eq!(repeated.exact("Muted"), None);
+    #[derive(Deserialize)]
+    #[serde(rename_all = "camelCase")]
+    struct Signal {
+        kind: Option<String>,
+        protocol_version: Option<i32>,
     }
 
     #[test]
-    fn texts_and_numbers_are_read_as_the_first_server_read_them() {
-        let members = object(json!({"a": null, "b": 5, "c": "x", "d": 1.5, "e": "1", "f": 3000000000_i64}))
-            .unwrap()
-            .unwrap();
+    fn a_member_is_found_by_its_exact_name_and_a_repeated_one_is_refused() {
+        let signal: Signal = argument(json!({"Kind": "a", "kind": "b"})).unwrap().unwrap();
+        assert_eq!(signal.kind.as_deref(), Some("b"));
+        assert!(read::<Signal>("{\"kind\":\"a\",\"kind\":\"b\"}").is_none());
+    }
 
-        assert_eq!(members.text("a").unwrap(), None);
-        assert_eq!(members.text("missing").unwrap(), None);
-        assert_eq!(members.text("c").unwrap(), Some("x".to_string()));
-        assert_eq!(members.text("b"), Err(HubError::InvalidArguments));
-        assert_eq!(members.number("missing").unwrap(), 0);
-        assert_eq!(members.number("b").unwrap(), 5);
-        for name in ["a", "c", "d", "e", "f"] {
-            assert_eq!(members.number(name), Err(HubError::InvalidArguments), "{name}");
+    #[test]
+    fn texts_and_numbers_are_read_as_they_are_written() {
+        let signal: Signal = argument(json!({"kind": null, "protocolVersion": 5})).unwrap().unwrap();
+        assert_eq!(signal.kind, None);
+        assert_eq!(signal.protocol_version, Some(5));
+        for bad in [
+            json!({"kind": 5}),
+            json!({"protocolVersion": 1.5}),
+            json!({"protocolVersion": "1"}),
+            json!({"protocolVersion": 3000000000_i64}),
+        ] {
+            assert_eq!(argument::<Signal>(bad).err(), Some(HubError::InvalidArguments));
         }
     }
 
     #[test]
     fn only_an_object_or_nothing_is_an_argument_that_fits() {
-        assert!(object(Value::Null).unwrap().is_none());
+        assert!(argument::<Signal>(Value::Null).unwrap().is_none());
         for other in [json!("x"), json!(5), json!(true), json!([]), json!([{}])] {
-            assert_eq!(object(other).unwrap_err(), HubError::InvalidArguments);
+            assert_eq!(argument::<Signal>(other).err(), Some(HubError::InvalidArguments));
         }
     }
 
     #[test]
     fn a_document_nests_to_64_containers_and_no_deeper() {
         let nested = |depth: usize| format!("{}1{}", "[".repeat(depth), "]".repeat(depth));
-        assert!(parse(&nested(64)).is_some());
-        assert!(parse(&nested(65)).is_none());
-        assert!(parse("").is_none());
-        assert!(parse("{\"a\":1,}").is_none());
-        assert!(parse("{\"a\":1} x").is_none());
-        assert!(parse("\u{feff}{}").is_none());
-        assert!(matches!(parse_members("{}"), Some(ParsedPayload::Object(_))));
-        assert!(matches!(parse_members("null"), Some(ParsedPayload::Null)));
-        assert!(matches!(parse_members("[]"), Some(ParsedPayload::Other)));
-        assert!(parse_members("{").is_none());
+        assert!(read::<Value>(&nested(64)).is_some());
+        assert!(read::<Value>(&nested(65)).is_none());
+        assert!(read::<Value>("[\"[[[[\"]").is_some());
+        assert!(read::<Value>("").is_none());
+        assert!(read::<Value>("{\"a\":1,}").is_none());
+        assert!(read::<Value>("{\"a\":1} x").is_none());
+        assert!(read::<Value>("\u{feff}{}").is_none());
     }
 }

@@ -9,7 +9,7 @@ use rusqlite::OptionalExtension;
 use serde::{Deserialize, Serialize};
 use stellarr_messages::MessageKey;
 
-use super::{invalid, no_content, nobody, bind};
+use super::{invalid, no_content, nobody};
 use crate::database::DbError;
 use crate::http::{ApiError, ApiResult, Path, Problem, json_response};
 use crate::panel::{self, FreshInstanceOwner};
@@ -170,7 +170,7 @@ pub(super) async fn transfer(
         caller,
         server: instance,
         body,
-    } = panel::bind_then_gate(&state, request, true, bind::<Successor>).await?;
+    } = panel::bind_then_gate::<Successor>(&state, request, true).await?;
     let Some(body) = body else {
         return Err(ApiError::bad_request());
     };

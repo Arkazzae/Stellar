@@ -3,12 +3,11 @@
 //!
 //! The line has a sentence in the server's language, as it was when written,
 //! and the structured fields a client words in its reader's language. The
-//! `ChangesJson` column holds the fields as the first server wrote them
-//! (camelCase, a member that is null left out, and every character outside
-//! printable ASCII, and `"&'+<>` and the backtick, escaped as `\uXXXX`), so
-//! either server reads the other's lines.
+//! `ChangesJson` column holds the fields as JSON: camelCase, a member that is
+//! null left out, and text as it is.
 
 use rusqlite::{Connection, params};
+use serde::{Deserialize, Serialize};
 use stellarr_unicode::utf16;
 
 use crate::values::{Id, Timestamp};
@@ -19,14 +18,22 @@ const MAX_TARGET_NAME: usize = 200;
 /// One field an audited action changed. Values are what a reader's client
 /// words in its own language: names as they were at the time, and fixed
 /// tokens such as permission names or `public` and `invite-only`.
-#[derive(Debug, Clone, Default, PartialEq, Eq)]
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct AuditChange {
+    #[serde(default)]
     pub field: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub from: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub to: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub added: Option<Vec<String>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub removed: Option<Vec<String>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub from_color: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub to_color: Option<String>,
 }
 
@@ -114,158 +121,57 @@ pub fn clip(text: &str, max: usize) -> String {
     kept
 }
 
-/// The fields as the first server wrote them.
+/// The fields as the column holds them.
 pub fn changes_json(changes: &[AuditChange]) -> String {
-    let mut out = String::from("[");
-    for (index, change) in changes.iter().enumerate() {
-        if index > 0 {
-            out.push(',');
-        }
-        out.push('{');
-        let mut first = true;
-        let mut member = |name: &str, value: Value<'_>| {
-            let text = match value {
-                Value::Missing => return,
-                Value::Text(text) => string(text),
-                Value::List(items) => {
-                    let items: Vec<String> = items.iter().map(|item| string(item)).collect();
-                    format!("[{}]", items.join(","))
-                }
-            };
-            if !first {
-                out.push(',');
-            }
-            first = false;
-            out.push_str(&string(name));
-            out.push(':');
-            out.push_str(&text);
-        };
-        member("field", Value::Text(&change.field));
-        member(
-            "from",
-            change.from.as_deref().map_or(Value::Missing, Value::Text),
-        );
-        member(
-            "to",
-            change.to.as_deref().map_or(Value::Missing, Value::Text),
-        );
-        member(
-            "added",
-            change.added.as_deref().map_or(Value::Missing, Value::List),
-        );
-        member(
-            "removed",
-            change
-                .removed
-                .as_deref()
-                .map_or(Value::Missing, Value::List),
-        );
-        member(
-            "fromColor",
-            change
-                .from_color
-                .as_deref()
-                .map_or(Value::Missing, Value::Text),
-        );
-        member(
-            "toColor",
-            change
-                .to_color
-                .as_deref()
-                .map_or(Value::Missing, Value::Text),
-        );
-        out.push('}');
-    }
-    out.push(']');
-    out
-}
-
-enum Value<'a> {
-    Missing,
-    Text(&'a str),
-    List(&'a [String]),
-}
-
-/// A JSON string the way the first server's writer makes one: anything that is
-/// not printable ASCII, and the characters a page could mistake for markup,
-/// as `\uXXXX` with capital hex digits.
-pub(crate) fn string(text: &str) -> String {
-    let mut out = String::with_capacity(text.len() + 2);
-    out.push('"');
-    for unit in text.encode_utf16() {
-        match unit {
-            0x08 => out.push_str("\\b"),
-            0x09 => out.push_str("\\t"),
-            0x0a => out.push_str("\\n"),
-            0x0c => out.push_str("\\f"),
-            0x0d => out.push_str("\\r"),
-            0x5c => out.push_str("\\\\"),
-            0x20..=0x7e if !matches!(unit, 0x22 | 0x26 | 0x27 | 0x2b | 0x3c | 0x3e | 0x60) => {
-                out.push(char::from(u8::try_from(unit).unwrap_or(b'?')));
-            }
-            _ => out.push_str(&format!("\\u{unit:04X}")),
-        }
-    }
-    out.push('"');
-    out
+    // Text and lists of text always write.
+    serde_json::to_string(changes).expect("changes are written as JSON")
 }
 
 /// The changes of an entry, or none when it has none or they cannot be read.
 /// A damaged line must not make the log unreadable, so a line with anything of
-/// the wrong kind in it is read as having no changes at all. Names are matched
-/// in any letter case, as the first server read them.
+/// the wrong kind in it is read as having no changes at all.
 pub fn read_changes(json: Option<&str>) -> Vec<AuditChange> {
-    let Some(json) = json.filter(|json| !json.is_empty()) else {
-        return Vec::new();
-    };
-    let Ok(serde_json::Value::Array(items)) = serde_json::from_str::<serde_json::Value>(json)
-    else {
-        return Vec::new();
-    };
-    items
-        .iter()
-        .map(read_change)
-        .collect::<Option<Vec<_>>>()
+    json.filter(|json| !json.is_empty())
+        .and_then(|json| serde_json::from_str(json).ok())
         .unwrap_or_default()
 }
 
-fn read_change(item: &serde_json::Value) -> Option<AuditChange> {
-    use serde_json::Value;
-    let object = item.as_object()?;
-    let find = |name: &str| {
-        object
-            .iter()
-            .find(|(key, _)| key.eq_ignore_ascii_case(name))
-            .map(|(_, value)| value)
-    };
-    let text = |name: &str| -> Option<Option<String>> {
-        match find(name) {
-            None | Some(Value::Null) => Some(None),
-            Some(Value::String(text)) => Some(Some(text.clone())),
-            Some(_) => None,
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn changes_are_written_as_they_are_and_read_back() {
+        let changes = vec![
+            AuditChange {
+                field: "name".into(),
+                from: Some("Zażółć & <b>".into()),
+                to: Some("\u{1F600} 'x' + `y`".into()),
+                ..AuditChange::default()
+            },
+            AuditChange::added("roles", vec!["a".into()]),
+        ];
+        let written = changes_json(&changes);
+        assert!(written.contains("Zażółć & <b>"), "{written}");
+        assert!(written.contains("\u{1F600} 'x' + `y`"), "{written}");
+        assert!(!written.contains("\\u"), "{written}");
+        assert!(!written.contains("null"), "{written}");
+        assert_eq!(read_changes(Some(&written)), changes);
+    }
+
+    #[test]
+    fn a_damaged_line_has_no_changes_and_names_match_exactly() {
+        for damaged in [
+            "",
+            "{}",
+            "[1]",
+            "[{\"field\":5}]",
+            "[{\"field\":\"a\",\"field\":\"b\"}]",
+        ] {
+            assert!(read_changes(Some(damaged)).is_empty(), "{damaged}");
         }
-    };
-    let list = |name: &str| -> Option<Option<Vec<String>>> {
-        match find(name) {
-            None | Some(Value::Null) => Some(None),
-            Some(Value::Array(values)) => values
-                .iter()
-                .map(|value| match value {
-                    Value::String(text) => Some(text.clone()),
-                    _ => None,
-                })
-                .collect::<Option<Vec<_>>>()
-                .map(Some),
-            Some(_) => None,
-        }
-    };
-    Some(AuditChange {
-        field: text("field")?.unwrap_or_default(),
-        from: text("from")?,
-        to: text("to")?,
-        added: list("added")?,
-        removed: list("removed")?,
-        from_color: text("fromColor")?,
-        to_color: text("toColor")?,
-    })
+        let cased = read_changes(Some("[{\"Field\":\"a\",\"field\":\"b\"}]"));
+        assert_eq!(cased[0].field, "b");
+        assert!(read_changes(None).is_empty());
+    }
 }

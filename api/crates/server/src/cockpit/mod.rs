@@ -28,8 +28,6 @@ use std::sync::{Arc, OnceLock};
 
 use axum::http::StatusCode;
 use axum::response::Response;
-use serde::de::DeserializeOwned;
-use serde_json::Value;
 
 use crate::database::DbError;
 use crate::http::{ApiError, Endpoints, Problem};
@@ -60,45 +58,6 @@ impl Kept {
     pub(crate) fn plug_in_log(&self, log: Arc<LogBuffer>) {
         let _ = self.log.set(log);
     }
-}
-
-/// Binds the body of a route as a request type. Anything that is not a JSON
-/// object, or has a member of the wrong kind, is a 400; an empty body or
-/// `null` binds as nothing, which the route itself answers (after the gate).
-pub(crate) fn bind<T: DeserializeOwned>(body: Option<Value>) -> Result<Option<T>, ApiError> {
-    match body {
-        None => Ok(None),
-        Some(value) if value.is_object() => serde_json::from_value(value)
-            .map(Some)
-            .map_err(|_| ApiError::bad_request()),
-        Some(_) => Err(ApiError::bad_request()),
-    }
-}
-
-/// A whole number as the first server's reader took it: a JSON number, or a
-/// number written in quotes. Anything else is a request that cannot be bound.
-pub(crate) fn lenient<'de, D: serde::Deserializer<'de>>(deserializer: D) -> Result<i32, D::Error> {
-    use serde::Deserialize;
-    #[derive(Deserialize)]
-    #[serde(untagged)]
-    enum Number {
-        Plain(i32),
-        Quoted(String),
-    }
-    match Number::deserialize(deserializer)? {
-        Number::Plain(number) => Ok(number),
-        Number::Quoted(text) => text.trim().parse().map_err(serde::de::Error::custom),
-    }
-}
-
-/// [`lenient`] for a member that may be left out or `null`.
-pub(crate) fn lenient_option<'de, D: serde::Deserializer<'de>>(
-    deserializer: D,
-) -> Result<Option<i32>, D::Error> {
-    use serde::Deserialize;
-    #[derive(Deserialize)]
-    struct Wrapped(#[serde(deserialize_with = "lenient")] i32);
-    Ok(Option::<Wrapped>::deserialize(deserializer)?.map(|wrapped| wrapped.0))
 }
 
 /// A number written without a fraction when it has none, as the first

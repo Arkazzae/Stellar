@@ -19,7 +19,6 @@
 
 mod catalogue;
 mod discovery;
-mod json;
 mod manifest;
 mod moment;
 mod version;
