@@ -16,6 +16,7 @@ mod discord_placeholders;
 mod delivery;
 mod health;
 mod identity_providers;
+mod housekeeping;
 mod inbox;
 mod mail;
 mod message_views;
