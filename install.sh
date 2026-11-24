@@ -329,8 +329,8 @@ Settings, kept in .env (a terminal asks for the first three):
   --media-port PORT    UDP and TCP port of voice and video (default 49000)
   --enable-turn        Publish optional TURN and its relay ports
   --disable-turn       Disable TURN, including on upgrades
-  --turn-port PORT     STUN and TURN port, UDP and TCP (default 3478)
-  --turns-port PORT    TURN over TLS port, UDP and TCP (default 5349)
+  --turn-port PORT     Optional STUN and TURN host port (default 3478)
+  --turns-port PORT    Optional TURN TLS and DTLS host port (default 5349)
 
 Release:
   --version TAG        Image to run: a release such as 1.4.0, or a moving tag
@@ -1490,6 +1490,9 @@ settle_settings() {
   : "${SET_STELLARR_TURN_PORT:=3478}" "${SET_STELLARR_TURNS_PORT:=5349}"
   RELAY_RANGE=${EXIST_STELLARR_TURN_RELAY_RANGE:-49160-49200}
   [ "$ENV_ACTION" = keep ] || [ "$ENV_ACTION" = adopt ] || RELAY_RANGE=49160-49200
+  if [ "$TURN_PUBLISHED" -eq 1 ] && ! relay_bounds; then
+    die "STELLARR_TURN_RELAY_RANGE in $INSTALL_DIR/.env needs an ascending port range"
+  fi
 
   for key in STELLARR_HTTPS_PORT STELLARR_PUBLIC_PORT STELLARR_HTTP_PORT STELLARR_MEDIA_PORT STELLARR_TURN_PORT STELLARR_TURNS_PORT; do
     value="SET_$key"
@@ -1534,6 +1537,7 @@ port_overlap() {
 
 relay_bounds() {
   [ "$TURN_PUBLISHED" -eq 1 ] || return 1
+  case "$RELAY_RANGE" in *-*) ;; *) return 1 ;; esac
   RELAY_FIRST=${RELAY_RANGE%-*} RELAY_LAST=${RELAY_RANGE#*-}
   is_port "$RELAY_FIRST" && is_port "$RELAY_LAST" && [ "$RELAY_FIRST" -le "$RELAY_LAST" ]
 }
@@ -2328,18 +2332,25 @@ show_summary() {
 }
 
 show_notes() {
-  local voice="UDP $SET_STELLARR_MEDIA_PORT, $SET_STELLARR_TURN_PORT and $RELAY_RANGE"
+  local voice="$SET_STELLARR_MEDIA_PORT/UDP"
+  if [ "$TWO_PORT_LAYOUT" -eq 1 ]; then voice="$SET_STELLARR_MEDIA_PORT/UDP and TCP"; fi
   ui_section "Before you invite anyone"
+  ui_bullet "Web and API clients use HTTPS on ${SET_STELLARR_PUBLIC_PORT:-$SET_STELLARR_HTTPS_PORT}/TCP."
   ui_bullet "Browsers warn about the self-signed certificate. For a trusted one:" \
     "$DOCS_URL/install/reverse-proxy-and-tls"
   if is_local_address "$SET_STELLARR_DOMAIN"; then
     ui_bullet "$SET_STELLARR_DOMAIN opens on this machine only. For other devices, run the" \
       "installer again with --domain and this machine's domain or IP address."
-  elif [ -z "$SET_STELLARR_PUBLIC_IP" ]; then
-    ui_bullet "STELLARR_PUBLIC_IP is empty, so voice works on this machine only. Set it with" \
-      "--public-ip or in .env, and forward $voice" "to this machine."
+  elif [ -z "$SET_STELLARR_PUBLIC_IP" ] && ! is_ipv4 "$SET_STELLARR_DOMAIN"; then
+    ui_bullet "Set STELLARR_PUBLIC_IP to the address other devices use, with --public-ip or in .env." \
+      "Forward $voice to this machine for calls from other networks."
   else
     ui_bullet "For voice from other networks, forward $voice" "to this machine."
+  fi
+  if [ "$TURN_PUBLISHED" -eq 1 ] && ! is_local_address "$SET_STELLARR_DOMAIN"; then
+    ui_bullet "For TURN, also forward $SET_STELLARR_TURN_PORT/UDP and the UDP relay range $RELAY_RANGE." \
+      "If you enable TURN/TCP, forward $SET_STELLARR_TURN_PORT/TCP. For TURN over TLS or DTLS," \
+      "forward $SET_STELLARR_TURNS_PORT/TCP and UDP."
   fi
 }
 

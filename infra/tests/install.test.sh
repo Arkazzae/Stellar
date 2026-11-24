@@ -461,6 +461,11 @@ case_fresh_install() {
   expect_not_called "sudo"
   expect_shown "Open: https://chat.example.com:8443/setup"
   expect_shown "Setup code: K7QM-2XWP-9HDA"
+  expect_shown "Before you invite anyone"
+  expect_shown "Web and API clients use HTTPS on 8443/TCP."
+  expect_shown "forward 49000/UDP"
+  expect_not_shown "49000/UDP and TCP"
+  expect_shown "For TURN, also forward 3478/UDP and the UDP relay range 49160-49200."
   # .env.example's own lines for the installer's settings stay comments.
   [[ $(assignments STELLARR_DOMAIN "$env_file") -eq 1 ]] || fail ".env sets STELLARR_DOMAIN more than once."
 
@@ -1167,8 +1172,13 @@ case_direct_and_turn() {
   new_case direct-defaults
   modern_release
   echo 3478 >"$state/busy-udp"
-  run --yes --no-start --domain chat.example.com
+  run --yes --domain chat.example.com
   expect_success
+  expect_shown "Before you invite anyone"
+  expect_shown "Web and API clients use HTTPS on 443/TCP."
+  expect_shown "forward 49000/UDP and TCP"
+  expect_not_shown "For TURN, also forward"
+  expect_not_shown "49160-49200"
   expect_line "$home/stellarr/.env" "STELLARR_HTTPS_PORT=443"
   expect_line "$home/stellarr/.env" "STELLARR_HTTP_PORT=127.0.0.1:8888"
   expect_line "$home/stellarr/.env" "STELLARR_PUBLIC_IP=auto"
@@ -1184,14 +1194,20 @@ case_direct_and_turn() {
 
   new_case turn-opt-in
   modern_release
-  run --yes --no-start --enable-turn --http-port 127.0.0.1:8888
+  run --yes --domain chat.example.com --enable-turn --http-port 127.0.0.1:8888
   expect_success
+  expect_shown "Before you invite anyone"
+  expect_shown "Web and API clients use HTTPS on 443/TCP."
+  expect_shown "forward 49000/UDP and TCP"
+  expect_shown "For TURN, also forward 3478/UDP and the UDP relay range 49160-49200."
+  expect_shown "If you enable TURN/TCP, forward 3478/TCP."
+  expect_shown "For TURN over TLS or DTLS,"
   expect_line "$home/stellarr/.env" "STELLARR_TURN_ENABLED=true"
   expect_line "$home/stellarr/.env" "STELLARR_HTTP_PORT=127.0.0.1:8888"
   expect_line "$home/stellarr/.env" "COMPOSE_FILE=docker-compose.yml:docker-compose.turn.yml"
   cmp -s "$repo_root/docker-compose.turn.yml" "$home/stellarr/docker-compose.turn.yml" ||
     fail "the TURN overlay was not downloaded."
-  expect_shown "docker compose up -d"
+  expect_called "docker compose up -d --no-build @$home/stellarr"
 
   new_case turn-upgrade
   modern_release
@@ -1210,6 +1226,16 @@ case_direct_and_turn() {
   ! grep -q '^COMPOSE_FILE=' "$dir/.env" || fail "TURN Compose selector was not removed."
   expect_line "$dir/.env" "STELLARR_TURN_ENABLED=false"
   expect_line "$dir/docker-compose.override.yml" "services: {}"
+
+  new_case turn-bad-relay-range
+  modern_release
+  dir="$home/stellarr"
+  installed "$dir" 1.4.0
+  printf 'STELLARR_TURN_RELAY_RANGE=54999\n' >>"$dir/.env"
+  run --yes --no-start
+  expect_failure
+  expect_shown "STELLARR_TURN_RELAY_RANGE in $dir/.env needs an ascending port range"
+  expect_missing "$dir/docker-compose.turn.yml"
 
   new_case turn-upgrade-opt-out
   modern_release
