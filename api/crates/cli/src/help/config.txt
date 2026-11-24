@@ -1,0 +1,18 @@
+Usage:
+  stellarr config list [--json]
+  stellarr config get <key> [--json]
+  stellarr config set <key> <value> [--yes] [--json]
+  stellarr config validate [--json]
+
+Database-backed keys:
+  instance.name, time-zone, mail.enabled, mail.from-address,
+  mail.smtp.host, mail.smtp.port, mail.smtp.username, mail.smtp.security,
+  mail.resend.enabled, mail.invites.enabled, mail.recovery.enabled,
+  mail.alerts.enabled, giphy.enabled, retention.backups-days,
+  retention.logs-days, retention.orphans-days, cleanup.enabled,
+  mfa.requirement, mfa.trusted-device-days, mfa.challenge-minutes,
+  mfa.email-code-minutes, mfa.email-cooldown-seconds, mfa.email-attempts,
+  mfa.email-sends-per-hour, mfa.cli-recovery-minutes
+
+Startup keys are read-only; change them in .env and recreate the container
+(docker compose up -d). `config list` names their environment variables.

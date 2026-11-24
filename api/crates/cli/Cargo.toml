@@ -1,0 +1,30 @@
+[package]
+name = "stellarr-cli"
+version.workspace = true
+edition.workspace = true
+publish.workspace = true
+description = "The operator's command line, `stellarr`: status, settings, secrets, sessions, account recovery and backups, straight on the data folder"
+
+[lib]
+name = "stellarr_cli"
+path = "src/lib.rs"
+
+[[bin]]
+name = "stellarr"
+path = "src/main.rs"
+
+[dependencies]
+stellarr-api = { path = "../server" }
+stellarr-mail = { path = "../mail" }
+stellarr-messages = { path = "../messages" }
+stellarr-oidc = { path = "../oidc" }
+stellarr-outbound = { path = "../outbound" }
+stellarr-timezone = { path = "../timezone" }
+rusqlite = { workspace = true }
+tokio = { workspace = true, features = ["rt", "signal", "sync", "time", "net"] }
+
+[dev-dependencies]
+serde_json = { workspace = true }
+
+[lints]
+workspace = true

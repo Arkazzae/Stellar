@@ -1,0 +1,19 @@
+Usage:
+  stellarr backup verify <archive> [--json]
+  stellarr backup restore <archive> [--yes] [--json]
+  stellarr backup cancel [--yes] [--json]
+  stellarr backup apply [--yes] [--json]
+
+<archive> is a path inside the container, or the name of an archive in the
+instance's backups folder, as Cockpit lists it. Only a full backup (database,
+uploaded files, keys and instance files) is restored.
+
+`restore` checks every byte of the archive and copies it to restore/staged.zip
+on the data volume. The container's next start restores it before any service
+starts: the database, files, keys, secrets, TLS files and desktop releases are
+replaced, and the folders they replace are kept in restore/previous-<time>.
+An archive refused at start leaves the data as it was and is kept as
+restore/refused-<time>.zip; restore/last-restore.json says what happened.
+
+`apply` is what the start runs. It refuses while the API answers.
+Secrets that came from the environment are not in an archive; keep .env.

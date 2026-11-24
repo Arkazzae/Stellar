@@ -1,0 +1,3 @@
+Usage: stellarr doctor [--json]
+
+Checks the existing data volume without modifying it: database and schema, data/keys directories, free space and the local API. The API probe is short and may be unavailable when the instance is stopped.
