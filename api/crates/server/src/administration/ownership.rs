@@ -7,7 +7,7 @@ use rusqlite::{OptionalExtension, params};
 use serde::{Deserialize, Serialize};
 use stellarr_messages::MessageKey;
 
-use crate::auth::Caller;
+use crate::auth::{Caller, fresh};
 use crate::database::DbError;
 use crate::events::{Audience, Event};
 use crate::http::{ApiError, ApiResult, Json, Problem};
@@ -18,7 +18,28 @@ use crate::permissions::roles::Member;
 use crate::permissions::visibility::ServerVisibility;
 use crate::servers::Object;
 use crate::state::AppState;
-use crate::values::Id;
+use crate::values::{Id, Timestamp};
+
+/// Refuses, with the problem the clients answer by asking for the proof, a
+/// session that has not passed the account's second step lately.
+async fn require_fresh(state: &AppState, caller: Caller) -> ApiResult<()> {
+    let fresh = state
+        .database()
+        .read(move |db| -> Result<bool, DbError> {
+            Ok(fresh::has_fresh_second_step(
+                db,
+                caller.user,
+                Some(caller.session),
+                Timestamp::now(),
+            )?)
+        })
+        .await?;
+    if fresh {
+        Ok(())
+    } else {
+        Err(fresh::refusal(state.messages())?.into())
+    }
+}
 
 /// Who the server goes to. A body that names nobody names the empty id, which
 /// is nobody's.
@@ -43,9 +64,10 @@ struct AccessChanged {
 /// The owner sees every channel and the former owner may not, so whoever sees
 /// something else afterwards is told, as after any change of roles.
 ///
-/// Where the account's policy asks for a second step made in the last few
-/// minutes, this route is to be guarded by it; that guard is not part of this
-/// route yet.
+/// An account with a second step must have passed it in this session in the
+/// last few minutes. The check comes after the person is known to be a member
+/// of the server and before any other refusal, as the first server's filter
+/// did, so that a caller who fails two checks is told of the second step.
 pub async fn transfer(
     State(state): State<AppState>,
     caller: Caller,
@@ -54,6 +76,7 @@ pub async fn transfer(
 ) -> ApiResult<StatusCode> {
     // One change of who owns a server at a time: the slot is freed and then
     // given, and the database alone cannot keep two of them from interleaving.
+    require_fresh(&state, caller).await?;
     let _turn = state.mutation_gate().enter().await;
     let successor = request.user_id;
     let outcome = state
@@ -122,14 +145,14 @@ pub async fn transfer(
 /// opens the operator's panel. Without it, whoever owned the next server, or
 /// created one, would run the instance.
 ///
-/// Where the account's policy asks for a second step made in the last few
-/// minutes, this route is to be guarded by it; that guard is not part of this
-/// route yet.
+/// Guarded by a fresh second step, like a hand-over, before anything else is
+/// looked at.
 pub async fn delete(
     State(state): State<AppState>,
     caller: Caller,
     ActiveServer(server): ActiveServer,
 ) -> ApiResult<StatusCode> {
+    require_fresh(&state, caller).await?;
     let outcome = state
         .database()
         .write({
