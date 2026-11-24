@@ -29,6 +29,46 @@ use crate::permissions::roles::Role;
 use crate::values::Id;
 use stellarr_messages::{MessageKey, Messages, MissingValue};
 
+/// The server a request is about, asked for like [`ActiveServer`] but refused
+/// only when the handler asks for it. A route that reads a body takes this
+/// one, so that a body that cannot be read is answered 400 before a person who
+/// is no member is answered 403, as the first server did.
+pub struct Chosen(crate::permissions::membership::Choice);
+
+impl Chosen {
+    /// The server, or the refusal of a person who is no member of it.
+    pub fn server(&self) -> Result<Id, ApiError> {
+        use crate::permissions::membership::Choice;
+        match self.0 {
+            Choice::Active(server) => Ok(server),
+            Choice::NotMember => Err(ApiError::forbidden()),
+            Choice::Malformed => Err(ApiError::bad_request()),
+        }
+    }
+}
+
+impl axum::extract::FromRequestParts<crate::state::AppState> for Chosen {
+    type Rejection = ApiError;
+
+    async fn from_request_parts(
+        parts: &mut axum::http::request::Parts,
+        state: &crate::state::AppState,
+    ) -> Result<Chosen, ApiError> {
+        let caller = *parts
+            .extensions
+            .get::<crate::auth::Caller>()
+            .ok_or_else(ApiError::unauthorized)?;
+        let named = crate::permissions::membership::selection(&parts.headers, parts.uri.query());
+        let choice = state
+            .database()
+            .read(move |db| -> Result<_, crate::database::DbError> {
+                Ok(crate::permissions::membership::choose(db, caller.user, named.as_deref())?)
+            })
+            .await?;
+        Ok(Chosen(choice))
+    }
+}
+
 /// An id in a path, in any spelling the first server took for one: anything
 /// else is a route that does not exist.
 pub struct Guid(pub Id);
