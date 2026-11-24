@@ -12,9 +12,11 @@ pub mod flow;
 pub mod password;
 pub mod policy;
 pub mod recovery_codes;
+pub mod security_cookies;
 pub mod session;
 pub mod setup_code;
 pub mod tokens;
 pub mod totp;
+pub mod trusted_devices;
 
 pub use session::Caller;
