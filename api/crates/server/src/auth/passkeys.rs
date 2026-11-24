@@ -5,10 +5,9 @@
 //! unique across all accounts, and the signature count is replaced only if it
 //! is still the one that was read.
 //!
-//! Nothing here is sealed, so a passkey set up on the first server works here
-//! and the other way round: the credential id, the COSE public key and the
-//! handle are stored as they are, the handle in the byte order the first
-//! server used (see [`user_handle`]).
+//! Nothing here is sealed: the credential id, the COSE public key and the
+//! handle are stored as they are, the handle being the account's id (see
+//! [`user_handle`]).
 //!
 //! A passkey can answer three things: a challenge that waits for a second
 //! step, an enrolment of a new one, and a sign-in with no password at all.
@@ -42,17 +41,9 @@ pub(super) mod authenticator;
 pub const SIGN_IN_LIFETIME: std::time::Duration = std::time::Duration::from_secs(5 * 60);
 
 /// The handle a passkey carries for the account, the same for every passkey of
-/// it: the account's id, which says nothing about the person. The first server
-/// wrote it with the first three groups of the id's bytes in reverse order,
-/// and so does this.
+/// it: the account's id in its bytes, which says nothing about the person.
 pub fn user_handle(user: Id) -> [u8; 16] {
-    let bytes = user.as_bytes();
-    let mut handle = [0u8; 16];
-    handle[0..4].copy_from_slice(&[bytes[3], bytes[2], bytes[1], bytes[0]]);
-    handle[4..6].copy_from_slice(&[bytes[5], bytes[4]]);
-    handle[6..8].copy_from_slice(&[bytes[7], bytes[6]]);
-    handle[8..].copy_from_slice(&bytes[8..]);
-    handle
+    *user.as_bytes()
 }
 
 /// A stored credential of an account.
@@ -695,13 +686,12 @@ mod tests {
     }
 
     #[test]
-    fn the_handle_is_the_accounts_id_laid_out_as_the_first_server_laid_it() {
-        // What the first server's own code gives for this id.
+    fn the_handle_is_the_accounts_id_in_its_own_byte_order() {
         let id = Id::parse("049083c7-a28f-4b91-b21b-2a0920dc1686").unwrap();
 
         assert_eq!(
             crate::encoding::hex_upper(&user_handle(id)),
-            "C78390048FA2914BB21B2A0920DC1686"
+            "049083C7A28F4B91B21B2A0920DC1686"
         );
     }
 
