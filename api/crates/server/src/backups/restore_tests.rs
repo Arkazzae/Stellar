@@ -498,13 +498,9 @@ fn a_swap_that_cannot_be_undone_says_so_and_where_everything_is() {
     };
     assert!(message.contains("the volume went away"), "{message}");
     assert!(message.contains("previous-20261124-101530"), "{message}");
-    // What the tool does with it.
-    fs::create_dir_all(target.root().join("restore")).unwrap();
-    fs::write(staged_archive_path(target.root()), b"zip").unwrap();
-    let marker = mark_broken(target.root(), &message, now()).unwrap();
-    assert_eq!(marker, target.root().join("restore/broken"));
-    assert!(target.root().join("restore/broken-20261124-101530.zip").exists());
-    assert!(!staged_archive_path(target.root()).exists());
+    // What marks a volume as broken, and keeps a refused archive, is the
+    // tool's own code (`stellarr backup apply`), not this library's.
+    assert_eq!(BROKEN_MARKER_NAME, "broken");
 }
 
 #[test]
@@ -531,9 +527,6 @@ fn staging_copies_the_archive_whole_and_cancelling_takes_it_away() {
     assert!(!cancel(target.root()).unwrap());
     assert!(archive.exists(), "the archive itself is left alone");
 
-    fs::write(&staged, b"zip").unwrap();
-    let kept = keep_refused(target.root(), now()).unwrap();
-    assert_eq!(kept, target.root().join("restore/refused-20261124-101530.zip"));
     write_result(target.root(), &serde_json::json!({"outcome": "refused"})).unwrap();
     assert!(
         fs::read_to_string(target.root().join("restore/last-restore.json"))

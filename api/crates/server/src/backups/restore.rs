@@ -345,31 +345,6 @@ pub fn cancel(data_root: &Path) -> std::io::Result<bool> {
     }
 }
 
-/// Keeps a staged archive that was refused beside the others, named for when,
-/// and returns where it went. The data was left as it was.
-pub fn keep_refused(data_root: &Path, now: Timestamp) -> std::io::Result<PathBuf> {
-    keep_staged(data_root, "refused", now)
-}
-
-/// Marks the volume as one a restore left half done: the container refuses to
-/// start while the marker exists. The staged archive is kept as `broken-...`.
-pub fn mark_broken(data_root: &Path, reason: &str, now: Timestamp) -> std::io::Result<PathBuf> {
-    let folder = data_root.join(FOLDER_NAME);
-    std::fs::create_dir_all(&folder)?;
-    let marker = folder.join(BROKEN_MARKER_NAME);
-    std::fs::write(&marker, reason)?;
-    keep_staged(data_root, "broken", now)?;
-    Ok(marker)
-}
-
-fn keep_staged(data_root: &Path, kind: &str, now: Timestamp) -> std::io::Result<PathBuf> {
-    let kept = data_root
-        .join(FOLDER_NAME)
-        .join(format!("{kind}-{}.zip", stamp(now)));
-    std::fs::rename(staged_archive_path(data_root), &kept)?;
-    Ok(kept)
-}
-
 /// `yyyyMMdd-HHmmss` of a moment.
 fn stamp(now: Timestamp) -> String {
     let text = now.to_db_text();

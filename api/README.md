@@ -887,15 +887,14 @@ from copies of its files by `tests/backups-witness/build.sh`).
 
 ### Restoring
 
-`backups::restore` is what the operator's tool calls; the tool is not ported yet.
-Its commands are these calls, which block (run them on a blocking thread):
-
-| Command | Calls |
-| --- | --- |
-| `backup verify <archive>` | `restore::check(archive, work_folder)` (the work folder is a temporary one, not the data volume) |
-| `backup restore <archive>` | `check`, ask the operator, then `restore::stage(archive, data_root)` |
-| `backup cancel` | `restore::cancel(data_root)` |
-| `backup apply` (run by the entrypoint before any service starts; refuses while the API answers) | `restore::apply(staged_archive_path(data_root), data_root, now)`; on `Ok`: delete the staged file and `write_result`; on `RestoreError::Refused`: `keep_refused`, `write_result`, exit status 4; on `RestoreError::Broken`: `mark_broken`, `write_result`, a failing exit |
+`backups::restore` is what the operator's tool calls (`crates/cli/src/archives.rs`
+puts it behind the tool's `RestoreLibrary`): `check(archive, work_folder)`,
+`staged_archive_path`, `clear_leftovers`, `apply(staged, data_root, now)` and
+`write_result_text`. The tool does the rest itself: asking the operator, copying the
+archive to `restore/staged.zip`, dropping it, keeping a refused archive as
+`refused-<time>.zip`, and writing the `restore/broken` marker (exit status 4 for a
+refusal). `restore::stage`, `cancel` and `write_result` are the library's own
+versions of the first three and the tool does not call them.
 
 The entrypoint (`infra/entrypoint.sh`) is what happens at start around a staged
 restore: it fails if `restore/broken` exists, and runs `stellarr backup apply
