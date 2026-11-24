@@ -230,7 +230,7 @@ mod tests {
 
     #[test]
     fn the_catalogue_holds_every_key_the_server_uses() {
-        assert_eq!(MessageKey::ALL.len(), 366);
+        assert_eq!(MessageKey::ALL.len(), 367);
     }
 
     #[test]

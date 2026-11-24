@@ -208,14 +208,13 @@ is a 400 with no body; a body that is not the right JSON is a 400 with no body.
   `Vec<(String, String)>` that keeps every pair in order, repeated names and
   empty values (`?a=1&a=2&c` is `[a 1] [a 2] [c ""]`), for a route that reads it
   by hand. `+` and `%20` are a space.
-- `QueryValues` is the reader for a route that reads its query loosely, so that
-  clients may send it in a form `Query<T>` refuses. It
-  reads a name without regard to case, the non-empty values of a name given
-  twice joined with commas (`?limit=5&limit=` is `5`), and a number with white
-  space and a sign allowed around it and nothing out of range: `values.text("cursor")`, `values.int("limit")?`, `values.long("after")?`;
-  a value that is no number is a 400 with no body. Use it where a route takes an
-  optional text or number from the query that clients write loosely; use
-  `Query<T>` where it does not matter.
+- `QueryValues` reads the query of a route that wants an optional text, number
+  or flag by name: `values.text("cursor")?`, `values.int("limit")?`,
+  `values.long("after")?`, `values.flag("keepSignedIn")?`. A name matches as it
+  is written, a name given twice is refused, a number is ASCII digits that fit
+  its type (no sign, no spaces) and a flag is `true` or `false`. What does not
+  read is a 400 with the validation problem for that name. No route takes a
+  list. Use `Query<T>` where an empty 400 is as good.
 - `Json<T>` reads the whole body into memory, up to the ceiling of its route: 1 MiB,
   unless the route says `.json_body_up_to(bytes)`, and never over the 128 MiB of
   the whole server. A route that takes an upload streams it instead.

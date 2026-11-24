@@ -68,7 +68,7 @@ fn flag(config: &Config, key: &str) -> Result<bool, String> {
 
 /// A whole number: the ordinary integer, with white space around it allowed.
 pub(super) fn int(text: &str) -> Option<i32> {
-    crate::http::parse_int(text.trim_matches(char::is_whitespace))
+    text.trim_matches(char::is_whitespace).parse().ok()
 }
 
 fn boolean(text: &str) -> Option<bool> {

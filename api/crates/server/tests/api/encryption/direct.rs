@@ -490,19 +490,16 @@ async fn the_epochs_are_read_a_page_at_a_time_after_a_sequence_number() {
     for (query, wanted) in [
         ("", 200),
         ("?after=202", 0),
-        ("?after=-5", 200),
-        ("?after=%2B3", 199),
-        ("?after=+3", 199),
-        ("?after=%203%20", 199),
-        ("?AFTER=3", 199),
+        ("?AFTER=3", 200),
         ("?other=1", 200),
     ] {
         let found = read(maja, &format!("{}{query}", path(&conversation, "epochs"))).await;
         assert_eq!(found["epochs"].as_array().unwrap().len(), wanted, "{query}");
     }
-    for query in ["?after=", "?after", "?after=%20", "?after=x", "?after=1.5", "?after=1&after=2", "?after=99999999999"] {
+    for query in ["?after=", "?after", "?after=%20", "?after=x", "?after=1.5", "?after=1&after=2", "?after=99999999999", "?after=-5", "?after=%2B3", "?after=+3", "?after=%203%20"] {
         let response = maja.get(&format!("{}{query}", path(&conversation, "epochs"))).await;
-        assert_eq!((response.status.as_u16(), response.body.is_empty()), (400, true), "{query}");
+        assert_eq!(response.status.as_u16(), 400, "{query}");
+        assert!(response.json::<Value>()["errors"]["after"].is_array(), "{query}");
     }
 }
 

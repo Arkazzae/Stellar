@@ -1867,7 +1867,10 @@ async fn an_id_is_read_in_its_hyphenated_spelling_only() {
     let plain = method.to_string().replace('-', "");
     let braced = format!("{{{method}}}");
     let spaced = format!(" {method}");
-    for (round, text) in ["not an id", &plain, &braced, &spaced].into_iter().enumerate() {
+    for (round, text) in ["not an id", &plain, &braced, &spaced]
+        .into_iter()
+        .enumerate()
+    {
         let (second, second_preauth) = world.challenge(user, PURPOSE_MFA);
         let second_id = second.id.to_string();
         let refused = answer(

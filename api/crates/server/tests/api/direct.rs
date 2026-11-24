@@ -523,17 +523,16 @@ async fn a_cursor_keeps_its_snapshot_and_belongs_to_its_conversation() {
         let response = t.ada.client.get(&format!("/api/social/conversations/{conversation}/messages?cursor={bad}")).await;
         assert_eq!(response.status, 400, "{bad:?}");
     }
-    for limit in ["0", "101", "-1"] {
+    for limit in ["0", "101"] {
         let response = t.ada.client.get(&format!("/api/social/conversations/{conversation}/messages?limit={limit}")).await;
         assert_eq!(response.status, 400, "{limit}");
         assert_eq!(response.json::<Value>()["errors"]["limit"][0], "The limit must be between 1 and 100.");
     }
-    for limit in ["abc", "", "1e1", "2&limit=3"] {
+    for limit in ["abc", "", "1e1", "2&limit=3", "-1", "+2", "%202"] {
         let response = t.ada.client.get(&format!("/api/social/conversations/{conversation}/messages?limit={limit}")).await;
         assert_eq!(response.status, 400, "{limit}");
-        assert!(response.text().is_empty(), "{limit}");
+        assert!(response.json::<Value>()["errors"]["limit"].is_array(), "{limit}");
     }
-    assert_eq!(history(&t.ada.client, &conversation, "?LIMIT=+2").await["messages"].as_array().unwrap().len(), 2);
 }
 
 #[tokio::test]

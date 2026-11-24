@@ -1793,34 +1793,44 @@ fn the_active_server_is_the_one_named_else_the_first_joined() {
 fn the_server_a_request_names_comes_from_the_header_or_else_the_query() {
     use super::membership::{SERVER_HEADER, selection};
     use axum::http::{HeaderMap, HeaderValue};
+    use stellarr_messages::{Language, Messages};
+    let messages = Messages::new(Language::English);
+    let read = |headers: &HeaderMap, query: Option<&str>| {
+        selection(headers, query, &messages)
+            .ok()
+            .map(|name| name.unwrap_or_else(|| "<none>".into()))
+    };
     let mut headers = HeaderMap::new();
 
-    assert_eq!(selection(&headers, None), None);
+    assert_eq!(read(&headers, None).as_deref(), Some("<none>"));
     assert_eq!(
-        selection(&headers, Some("a=1&serverId=abc&serverId=def")).as_deref(),
+        read(&headers, Some("a=1&serverId=abc")).as_deref(),
         Some("abc")
     );
     assert_eq!(
-        selection(&headers, Some("SERVERID=a%2Db+c")).as_deref(),
+        read(&headers, Some("serverId=a%2Db+c")).as_deref(),
         Some("a-b c")
     );
-    assert_eq!(selection(&headers, Some("serverid")).as_deref(), Some(""));
-    assert_eq!(selection(&headers, Some("other=1")), None);
+    // The name is matched as it is written, and a name twice is refused.
     assert_eq!(
-        selection(&headers, Some("serverId=%zz%4")).as_deref(),
+        read(&headers, Some("SERVERID=abc")).as_deref(),
+        Some("<none>")
+    );
+    assert_eq!(read(&headers, Some("serverId=abc&serverId=def")), None);
+    assert_eq!(read(&headers, Some("serverId")).as_deref(), Some(""));
+    assert_eq!(read(&headers, Some("other=1")).as_deref(), Some("<none>"));
+    assert_eq!(
+        read(&headers, Some("serverId=%zz%4")).as_deref(),
         Some("%zz%4")
     );
     headers.insert(SERVER_HEADER, HeaderValue::from_static("from-header"));
     assert_eq!(
-        selection(&headers, Some("serverId=abc")).as_deref(),
+        read(&headers, Some("serverId=abc")).as_deref(),
         Some("from-header")
     );
-    // A header that is there but empty is the first server's answer too: the query is not asked.
+    // A header that is there but empty is an answer too: the query is not asked.
     headers.insert(SERVER_HEADER, HeaderValue::from_static(""));
-    assert_eq!(
-        selection(&headers, Some("serverId=abc")).as_deref(),
-        Some("")
-    );
+    assert_eq!(read(&headers, Some("serverId=abc")).as_deref(), Some(""));
 }
 
 // ---- What a check costs

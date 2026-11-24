@@ -83,6 +83,7 @@ message_keys! {
 
     // Message history and search
     PageLimitRange,
+    QueryParameterInvalid,
     HistoryCursorInvalid,
     DirectHistoryCursorInvalid,
     SyncCursorInvalid,

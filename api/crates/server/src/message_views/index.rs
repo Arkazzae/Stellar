@@ -48,16 +48,19 @@ pub struct PageQuery {
     cursor: Option<String>,
 }
 
-impl<S: Send + Sync> FromRequestParts<S> for PageQuery {
+impl FromRequestParts<AppState> for PageQuery {
     type Rejection = ApiError;
 
-    async fn from_request_parts(parts: &mut Parts, _: &S) -> Result<PageQuery, ApiError> {
-        let values = QueryValues::parse(parts.uri.query());
+    async fn from_request_parts(
+        parts: &mut Parts,
+        state: &AppState,
+    ) -> Result<PageQuery, ApiError> {
+        let values = QueryValues::parse(parts.uri.query(), state.messages());
         Ok(PageQuery {
             limit: values.int("limit")?,
-            kind: values.text("kind"),
-            query: values.text("query"),
-            cursor: values.text("cursor"),
+            kind: values.text("kind")?,
+            query: values.text("query")?,
+            cursor: values.text("cursor")?,
         })
     }
 }
@@ -65,12 +68,15 @@ impl<S: Send + Sync> FromRequestParts<S> for PageQuery {
 /// The text of a search, which is the only thing its query string holds.
 pub struct SearchQuery(Option<String>);
 
-impl<S: Send + Sync> FromRequestParts<S> for SearchQuery {
+impl FromRequestParts<AppState> for SearchQuery {
     type Rejection = ApiError;
 
-    async fn from_request_parts(parts: &mut Parts, _: &S) -> Result<SearchQuery, ApiError> {
+    async fn from_request_parts(
+        parts: &mut Parts,
+        state: &AppState,
+    ) -> Result<SearchQuery, ApiError> {
         Ok(SearchQuery(
-            QueryValues::parse(parts.uri.query()).text("query"),
+            QueryValues::parse(parts.uri.query(), state.messages()).text("query")?,
         ))
     }
 }

@@ -274,9 +274,9 @@ pub(super) async fn logs(
     let before = query.long("before")?;
     let limit = query.int("limit")?;
     let filter = Filter::from(
-        query.text("level").as_deref(),
-        query.text("source").as_deref(),
-        query.text("search").as_deref(),
+        query.text("level")?.as_deref(),
+        query.text("source")?.as_deref(),
+        query.text("search")?.as_deref(),
     );
     let limit = limit
         .unwrap_or(DEFAULT_LOG_LIMIT)
@@ -370,9 +370,9 @@ pub(super) async fn export(
     InstanceOwner(_): InstanceOwner,
 ) -> ApiResult<Response> {
     let filter = Filter::from(
-        query.text("level").as_deref(),
-        query.text("source").as_deref(),
-        query.text("search").as_deref(),
+        query.text("level")?.as_deref(),
+        query.text("source")?.as_deref(),
+        query.text("search")?.as_deref(),
     );
     let lines = state
         .cockpit()

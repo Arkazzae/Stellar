@@ -115,6 +115,7 @@ pub(crate) fn text(key: MessageKey) -> &'static str {
 
         // Message history and search
         MessageKey::PageLimitRange => "Limit musi mieścić się w zakresie 1–{max}.",
+        MessageKey::QueryParameterInvalid => "Wartość {name} w adresie jest nieprawidłowa.",
         MessageKey::HistoryCursorInvalid => "Kursor historii wiadomości jest nieprawidłowy.",
         MessageKey::DirectHistoryCursorInvalid => {
             "Kursor historii wiadomości prywatnych jest nieprawidłowy."

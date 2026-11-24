@@ -38,7 +38,7 @@ pub use manifest::Failure;
 pub use version::parse_stable;
 
 use crate::http::{
-    ApiError, ApiResult, ClientInfo, Endpoints, Json, Path, Problem, Query, json_response,
+    ApiError, ApiResult, ClientInfo, Endpoints, Json, Path, Problem, QueryValues, json_response,
 };
 use crate::state::AppState;
 use stellarr_messages::MessageKey;
@@ -216,16 +216,17 @@ async fn check_update(
     headers: HeaderMap,
     client: Option<Extension<ClientInfo>>,
     Path((target, architecture, installed)): Path<(String, String, String)>,
-    Query(asked): Query<Vec<(String, String)>>,
+    asked: QueryValues,
 ) -> ApiResult<Response> {
     // A segment of the route is never empty.
     if [&target, &architecture, &installed].iter().any(|part| part.is_empty()) {
         return Err(ApiError::not_found());
     }
-    let asked = Asked::of(&asked)?;
-    let channel = asked.text("channel").unwrap_or_else(|| "stable".to_string());
+    let channel = asked
+        .text("channel")?
+        .unwrap_or_else(|| "stable".to_string());
     let bundle = asked
-        .text("bundle")
+        .text("bundle")?
         .unwrap_or_else(|| SELF_UPDATING_BUNDLE.to_string());
     let nothing = || Ok(StatusCode::NO_CONTENT.into_response());
     let (true, Some(installed)) = (
@@ -246,7 +247,7 @@ async fn check_update(
     // that cannot say which bucket it is in must not be taken for an early
     // adopter, or an install that forgets its identity on every launch would
     // walk into each partial rollout.
-    let bucket = match asked.bucket()? {
+    let bucket = match asked.int("bucket")? {
         Some(bucket @ 0..=LAST_ROLLOUT_BUCKET) => bucket,
         _ => LAST_ROLLOUT_BUCKET,
     };
@@ -279,57 +280,6 @@ fn round_trip(moment: crate::values::Timestamp) -> String {
         Some((whole, fraction)) => format!("{whole}.{fraction:0<7}Z"),
         None => format!("{body}.0000000Z"),
     }
-}
-
-/// The query of an update check, as the first server's binder read it. Names
-/// match in any letter case. A name given more than once has its values
-/// joined by commas, leaving out the empty ones, so that `bucket=3&bucket=` is
-/// a 3 and `bucket=3&bucket=4` is not a number.
-struct Asked<'a>(&'a [(String, String)]);
-
-impl Asked<'_> {
-    fn of(pairs: &[(String, String)]) -> ApiResult<Asked<'_>> {
-        Ok(Asked(pairs))
-    }
-
-    fn text(&self, name: &str) -> Option<String> {
-        let values: Vec<&str> = self
-            .0
-            .iter()
-            .filter(|(key, _)| key.eq_ignore_ascii_case(name))
-            .map(|(_, value)| value.as_str())
-            .collect();
-        (!values.is_empty()).then(|| {
-            values
-                .into_iter()
-                .filter(|value| !value.is_empty())
-                .collect::<Vec<_>>()
-                .join(",")
-        })
-    }
-
-    /// The bucket: none when it is not asked for, a bad request when it is
-    /// asked for badly.
-    fn bucket(&self) -> ApiResult<Option<i32>> {
-        match self.text("bucket") {
-            None => Ok(None),
-            Some(text) => parse_int(&text).map(Some).ok_or_else(ApiError::bad_request),
-        }
-    }
-}
-
-/// A whole number of 32 bits: a sign, digits, and white space before the
-/// sign and after the digits, as a number is read from text. Null characters
-/// after all of it are let through, as that reader let them.
-fn parse_int(text: &str) -> Option<i32> {
-    let blank = |c: char| matches!(c, '\t' | '\n' | '\u{b}' | '\u{c}' | '\r' | ' ');
-    let text = text.trim_start_matches(blank);
-    let text = text.trim_end_matches('\0').trim_end_matches(blank);
-    let digits = text.strip_prefix(['+', '-']).unwrap_or(text);
-    if digits.is_empty() || !digits.bytes().all(|b| b.is_ascii_digit()) {
-        return None;
-    }
-    text.strip_prefix('+').unwrap_or(text).parse().ok()
 }
 
 async fn download_update(

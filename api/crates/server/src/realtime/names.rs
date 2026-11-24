@@ -1,5 +1,4 @@
-//! The groups a connection belongs to, and how a person writes an id the hub
-//! is asked about.
+//! The groups a connection belongs to.
 //!
 //! No group stands for who may see something: a group's members would go
 //! stale when roles change. There is one per account, one per server and one
@@ -31,43 +30,6 @@ pub fn user_group(user: Id) -> String {
     format!("user:{}", compact(user))
 }
 
-fn hex(byte: u8) -> Option<u8> {
-    char::from(byte)
-        .to_digit(16)
-        .and_then(|digit| u8::try_from(digit).ok())
-}
-
-/// The text after `name=` in a query string, read as a browser sent it:
-/// percent-decoded, with `+` for a space, and found without regard to the
-/// case of the name. The first one wins.
-pub fn query_value(query: &str, name: &str) -> Option<String> {
-    query.split('&').find_map(|pair| {
-        let (key, value) = pair.split_once('=').unwrap_or((pair, ""));
-        (decode(key).eq_ignore_ascii_case(name)).then(|| decode(value))
-    })
-}
-
-fn decode(text: &str) -> String {
-    let bytes = text.as_bytes();
-    let mut out = Vec::with_capacity(bytes.len());
-    let mut at = 0;
-    while at < bytes.len() {
-        match bytes[at] {
-            b'+' => out.push(b' '),
-            b'%' if at + 2 < bytes.len() => match (hex(bytes[at + 1]), hex(bytes[at + 2])) {
-                (Some(high), Some(low)) => {
-                    out.push(high << 4 | low);
-                    at += 2;
-                }
-                _ => out.push(b'%'),
-            },
-            byte => out.push(byte),
-        }
-        at += 1;
-    }
-    String::from_utf8_lossy(&out).into_owned()
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -87,32 +49,6 @@ mod tests {
         assert_eq!(
             follower_group(server, user),
             "server:3d82da448aa54bdf9ee12902df99880c:user:30000000000000000000000000000001"
-        );
-    }
-
-    #[test]
-    fn a_query_value_is_found_by_any_case_of_its_name_and_decoded() {
-        assert_eq!(
-            query_value("serverId=abc&x=1", "serverId").as_deref(),
-            Some("abc")
-        );
-        assert_eq!(
-            query_value("x=1&SERVERID=abc", "serverId").as_deref(),
-            Some("abc")
-        );
-        assert_eq!(
-            query_value("serverId=a%2Db+c", "serverId").as_deref(),
-            Some("a-b c")
-        );
-        assert_eq!(
-            query_value("serverId=first&serverId=second", "serverId").as_deref(),
-            Some("first")
-        );
-        assert_eq!(query_value("serverId", "serverId").as_deref(), Some(""));
-        assert_eq!(query_value("other=1", "serverId"), None);
-        assert_eq!(
-            query_value("serverId=%zz%4", "serverId").as_deref(),
-            Some("%zz%4")
         );
     }
 }

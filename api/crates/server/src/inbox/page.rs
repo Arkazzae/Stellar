@@ -178,8 +178,9 @@ pub async fn list(
 ) -> ApiResult<Response> {
     // The query is bound after the server is known, so a person who is no
     // member is told so whatever the query says.
-    let Ok(query) = PageQuery::read(&values) else {
-        return Ok(private(ApiError::bad_request().into_response()));
+    let query = match PageQuery::read(&values) {
+        Ok(query) => query,
+        Err(refusal) => return Ok(private(refusal.into_response())),
     };
     let size = i64::from(query.limit.unwrap_or(DEFAULT_PAGE_SIZE as i32));
     if !(1..=MAX_PAGE_SIZE).contains(&size) || query.before_sequence.is_some_and(|b| b <= 0) {
