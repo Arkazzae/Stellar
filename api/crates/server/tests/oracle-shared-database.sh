@@ -1,7 +1,9 @@
 #!/bin/bash
 # Both servers on copies of one database file.
 #
-#   1. An account registered on the first server signs in on this one.
+#   1. An account registered on the first server signs in on this one, and so do
+#      two whose names differ only by a dotless i (`bıll` and `bill`), each as
+#      itself and never as the other.
 #   2. An account founded on this server, and one registered with an invite,
 #      sign in on the first server, which also reads the instance (/api/bootstrap).
 #   3. With the second step switched on for everyone (a row of settings in the
@@ -56,9 +58,24 @@ echo "== 1. registered on the first server, signing in on this one"
 setup=$(docker logs "$container" 2>&1 | sed -n 's/.*Setup code: \([A-Z0-9-]*\)\..*/\1/p' | tail -1)
 code -X POST "$oracle/api/auth/register" "${headers[@]}" \
   -d "{\"username\":\"fromcs\",\"displayName\":\"From CS\",\"email\":\"fromcs@example.test\",\"password\":\"$password\",\"setupCode\":\"$setup\"}" >/dev/null
+# The dotless i is not capitalized by the first server, so `bıll` and `bill`
+# are two accounts there; both must stay two here.
+jar=$work/owner.jar
+curl -s -o /dev/null -c "$jar" -X POST "$oracle/api/auth/login" "${headers[@]}" -d "{\"username\":\"fromcs\",\"password\":\"$password\"}"
+invite=$(curl -s -b "$jar" -X POST "$oracle/api/admin/invites" "${headers[@]}" -d '{}' | sed -n 's/.*"url":"[^"]*\/\([^\/"]*\)".*/\1/p')
+other='Corona!2026-other'
+for pair in "bıll:$password" "bill:$other"; do
+  name=${pair%%:*}; secret=${pair#*:}
+  code -X POST "$oracle/api/auth/register" "${headers[@]}" \
+    -d "{\"username\":\"$name\",\"displayName\":\"Twin\",\"email\":\"$name@example.test\",\"password\":\"$secret\",\"inviteCode\":\"$invite\"}" >/dev/null
+done
 take_oracle_db "$work/from-oracle.db"
 start_rust "$work/from-oracle.db"
 echo "fromcs on this server: $(login "$rust" fromcs) (200 expected)"
+who() { curl -s -X POST "$rust/api/auth/login" "${headers[@]}" -d "{\"username\":\"$1\",\"password\":\"$2\"}" | sed -n 's/.*"username":"\([^"]*\)".*/\1/p'; }
+echo "bıll with its password signs in as: $(who bıll "$password") (bıll expected)"
+echo "bill with its password signs in as: $(who bill "$other") (bill expected)"
+echo "bıll with the password of bill: '$(who bıll "$other")' (nothing expected)"
 
 echo "== 2. founded and registered here, signing in on the first server"
 start_rust ""
