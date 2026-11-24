@@ -213,7 +213,9 @@ fn string(text: &str) -> String {
 }
 
 /// The changes of an entry, or none when it has none or they cannot be read.
-/// A damaged line must not make the log unreadable.
+/// A damaged line must not make the log unreadable, so a line with anything of
+/// the wrong kind in it is read as having no changes at all. Names are matched
+/// in any letter case, as the first server read them.
 pub fn read_changes(json: Option<&str>) -> Vec<AuditChange> {
     let Some(json) = json.filter(|json| !json.is_empty()) else {
         return Vec::new();
@@ -222,27 +224,50 @@ pub fn read_changes(json: Option<&str>) -> Vec<AuditChange> {
     else {
         return Vec::new();
     };
-    let text = |item: &serde_json::Value, name: &str| {
-        item.get(name).and_then(|v| v.as_str()).map(str::to_string)
-    };
-    let list = |item: &serde_json::Value, name: &str| {
-        item.get(name).and_then(|v| v.as_array()).map(|values| {
-            values
-                .iter()
-                .filter_map(|v| v.as_str().map(str::to_string))
-                .collect()
-        })
-    };
     items
         .iter()
-        .map(|item| AuditChange {
-            field: text(item, "field").unwrap_or_default(),
-            from: text(item, "from"),
-            to: text(item, "to"),
-            added: list(item, "added"),
-            removed: list(item, "removed"),
-            from_color: text(item, "fromColor"),
-            to_color: text(item, "toColor"),
-        })
-        .collect()
+        .map(read_change)
+        .collect::<Option<Vec<_>>>()
+        .unwrap_or_default()
+}
+
+fn read_change(item: &serde_json::Value) -> Option<AuditChange> {
+    use serde_json::Value;
+    let object = item.as_object()?;
+    let find = |name: &str| {
+        object
+            .iter()
+            .find(|(key, _)| key.eq_ignore_ascii_case(name))
+            .map(|(_, value)| value)
+    };
+    let text = |name: &str| -> Option<Option<String>> {
+        match find(name) {
+            None | Some(Value::Null) => Some(None),
+            Some(Value::String(text)) => Some(Some(text.clone())),
+            Some(_) => None,
+        }
+    };
+    let list = |name: &str| -> Option<Option<Vec<String>>> {
+        match find(name) {
+            None | Some(Value::Null) => Some(None),
+            Some(Value::Array(values)) => values
+                .iter()
+                .map(|value| match value {
+                    Value::String(text) => Some(text.clone()),
+                    _ => None,
+                })
+                .collect::<Option<Vec<_>>>()
+                .map(Some),
+            Some(_) => None,
+        }
+    };
+    Some(AuditChange {
+        field: text("field")?.unwrap_or_default(),
+        from: text("from")?,
+        to: text("to")?,
+        added: list("added")?,
+        removed: list("removed")?,
+        from_color: text("fromColor")?,
+        to_color: text("toColor")?,
+    })
 }

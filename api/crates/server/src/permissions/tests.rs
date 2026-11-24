@@ -2017,3 +2017,105 @@ fn a_server_with_many_places_is_read_whole_and_the_answers_stay_the_same() {
     );
     assert!(holds(&world, world.ada, channels[3], MANAGE_MESSAGES));
 }
+
+#[test]
+fn the_base_roles_overrides_reach_members_who_hold_other_roles_unless_one_of_them_allows() {
+    let world = World::new();
+    let helper = world.role("helper", 3, NONE);
+    let other = world.role("other", 4, NONE);
+    let (with_helper, with_other, with_none) = (world.user("a"), world.user("b"), world.user("c"));
+    world.member_of(with_helper, &[helper]);
+    world.member_of(with_other, &[other]);
+    world.admit(with_none, world.base_role);
+    let channel = world.channel(None);
+    world.override_of(false, channel, world.base_role, NONE, SEND_MESSAGES);
+    world.override_of(false, channel, helper, SEND_MESSAGES, NONE);
+
+    assert!(holds(&world, with_helper, channel, SEND_MESSAGES));
+    assert!(!holds(&world, with_other, channel, SEND_MESSAGES));
+    assert!(!holds(&world, with_none, channel, SEND_MESSAGES));
+}
+
+#[test]
+fn a_member_whose_highest_role_matches_the_actors_is_out_of_reach_whatever_else_they_hold() {
+    let world = World::new();
+    let same = world.role("same", 5, NONE);
+    let lower = world.role("lower", 9, NONE);
+    let actor_role = world.role("actor", 5, MODERATE_MEMBERS);
+    let (actor, target) = (world.user("actor"), world.user("target"));
+    world.admit(actor, actor_role);
+    world.member_of(target, &[same, lower]);
+
+    assert_eq!(
+        kick_member(&world.db, actor, world.server, target).unwrap(),
+        MemberAuthorization::Forbidden
+    );
+    // Only the top role ranks: holding a lower one as well changes nothing.
+    world.member_of(world.user("lowest"), &[lower]);
+    assert!(
+        kick_member(&world.db, actor, world.server, world.jo)
+            .unwrap()
+            .is_allowed()
+    );
+}
+
+/// The channel move check asks each role and member alone whether its
+/// overrides could change a bit, instead of evaluating everybody. Every
+/// combination of one bit, for the base role, two held roles and the member,
+/// at both sections and the channel, proves that it never misses a change the
+/// evaluation sees.
+#[test]
+fn the_channel_move_check_sees_every_change_the_evaluation_sees() {
+    use super::evaluator::{Input, Level, Masks, evaluate};
+    for view in [false, true] {
+        let bit = if view { VIEW_CHANNEL } else { MANAGE_MESSAGES };
+        let states = [
+            Masks::default(),
+            Masks::new(bit, NONE),
+            Masks::new(NONE, bit),
+        ];
+        // The base role, two held roles and the member, each at three places.
+        let mut changes = 0;
+        for code in 0..3_usize.pow(12) {
+            let mut rest = code;
+            let mut slots = [[Masks::default(); 3]; 4];
+            for owner in &mut slots {
+                for place in owner.iter_mut() {
+                    *place = states[rest % 3];
+                    rest /= 3;
+                }
+            }
+            let at = |place: usize| Level {
+                base: slots[0][place],
+                held: vec![slots[1][place], slots[2][place]],
+                member: slots[3][place],
+            };
+            let noticed = (0..4)
+                .any(|owner| changed(slots[owner][0], slots[owner][1], slots[owner][2]) != NONE);
+            // With view, the member holds sending too, so a whole result that
+            // changes shows whether view, and with it everything, came or went.
+            let others = if view { SEND_MESSAGES } else { NONE };
+            for united in [others, bit | others] {
+                let run = |first: usize| {
+                    evaluate(&Input {
+                        is_owner: false,
+                        base: united,
+                        held: &[NONE, NONE],
+                        levels: &[at(first), at(2)],
+                        at_channel: view,
+                    })
+                };
+                let (before, after) = (run(0), run(1));
+                assert!(
+                    before == after || noticed,
+                    "a move changed case {code} unnoticed"
+                );
+                if before != after {
+                    changes += 1;
+                }
+            }
+        }
+        // Neither run may pass for want of a move that changes anything.
+        assert!(changes > 0);
+    }
+}
