@@ -889,6 +889,13 @@ here.
   emoji), where the first server wrote `\uD83D\uDE00`; both are the same JSON.
   A `null` among the envelopes of a new epoch is a 400 where the first server's
   code failed on it (a 500).
+- What encryption does not guard, as the first server did not: someone who holds
+  a session can try the account's password through the two routes that ask for
+  it (a new PIN and a reset), at the rate the `Login` policy allows, with no cost
+  per wrong try; can use up the account's unlock tries and, after ten wrong PINs,
+  delete the backup; and a device is registered without the PIN, which the other
+  person learns from the device line and the keys-changed event. The owner may
+  decide later to tighten any of that.
 - Responses with a known length carry `Content-Length` where the first server
   sent them chunked, and a response sent before the request body was read may
   carry `Connection: close`.
