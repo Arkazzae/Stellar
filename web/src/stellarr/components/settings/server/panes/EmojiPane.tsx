@@ -2,6 +2,7 @@ import { useEffect, useRef, useState, type ChangeEvent } from "react";
 
 import { Button } from "@stellarr/ui";
 import { Icon } from "@stellarr/icons";
+import { imageSource } from "@/components/primitives/imageSource";
 import { useConfirm } from "@/components/primitives/ConfirmDialog";
 import { SettingsSection } from "@/components/settings/SettingsSection";
 import type { CustomEmoji } from "@/ports";
@@ -57,6 +58,7 @@ function UploadEditor({
 }: UploadEditorProps) {
   const { t } = useLanguage();
   const valid = SHORTCODE.test(draft.shortcode);
+  const src = imageSource(draft.previewUrl);
 
   return (
     <section className="sc emoji-editor-card" aria-busy={busy}>
@@ -66,7 +68,7 @@ function UploadEditor({
       <div className="sc-b emoji-editor-body">
         <div className="emoji-editor-fields">
           <div className="emoji-upload-preview" aria-label={t("settings.emojiPreview")}>
-            <img src={draft.previewUrl} alt="" width={56} height={56} />
+            {src === undefined ? null : <img src={src} alt="" width={56} height={56} />}
           </div>
           <label>
             <span className="fld-lab">{t("settings.emojiName").toUpperCase()}</span>

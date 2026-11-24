@@ -1,6 +1,7 @@
 import { Icon } from "@stellarr/icons";
 import type { CSSProperties, ReactNode } from "react";
 
+import { imageSource } from "@/components/primitives/imageSource";
 import { initials } from "@/lib/format/format";
 
 import styles from "./AuthControls.module.css";
@@ -21,6 +22,7 @@ export function Face({
   imageUrl?: string | null;
   small?: boolean;
 }) {
+  const src = imageSource(imageUrl);
   const classes = [styles.face, small ? styles.small : null, name.trim() === "" ? styles.empty : null];
   return (
     <span
@@ -29,7 +31,7 @@ export function Face({
       aria-hidden="true"
     >
       {name.trim() === "" ? <Icon name="user" size={small ? 12 : 18} /> : initials(name)}
-      {imageUrl === null ? null : <img src={imageUrl} alt="" />}
+      {src === undefined ? null : <img src={src} alt="" />}
     </span>
   );
 }
@@ -48,11 +50,12 @@ export function ServerTile({
   iconUrl?: string | null;
   large?: boolean;
 }) {
-  const empty = mark === null && iconUrl === null;
+  const src = imageSource(iconUrl);
+  const empty = mark === null && src === undefined;
   const classes = [styles.tile, large ? styles.large : null, empty ? styles.empty : null];
   return (
     <span className={classes.filter(Boolean).join(" ")} aria-hidden="true">
-      {iconUrl !== null ? <img src={iconUrl} alt="" /> : empty ? <Icon name="server" size={20} /> : mark}
+      {src !== undefined ? <img src={src} alt="" /> : empty ? <Icon name="server" size={20} /> : mark}
     </span>
   );
 }
