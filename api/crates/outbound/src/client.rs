@@ -56,7 +56,6 @@ const MAX_HEAD_BUFFER: usize = 256 * 1024;
 /// change how the message is framed or where it goes.
 const FORBIDDEN: &[HeaderName] = &[
     HOST,
-    CONTENT_LENGTH,
     TRANSFER_ENCODING,
     CONNECTION,
     UPGRADE,
@@ -178,11 +177,29 @@ impl Request {
         &self.url
     }
 
-    fn check_headers(&self) -> Result<()> {
-        match self.headers.keys().find(|name| FORBIDDEN.contains(name)) {
-            Some(name) => Err(Error::ForbiddenHeader(name.to_string())),
-            None => Ok(()),
+    /// Refuses the headers that are the client's to set. A `Content-Length`
+    /// is the one exception, when there is exactly one and it states the
+    /// length of the body this request carries: a caller that signs it can
+    /// hand it back. It is then taken out, since the client frames the body
+    /// itself and says the same number, so it is never sent twice.
+    fn check_headers(&mut self) -> Result<()> {
+        if let Some(name) = self.headers.keys().find(|name| FORBIDDEN.contains(name)) {
+            return Err(Error::ForbiddenHeader(name.to_string()));
         }
+        let mut lengths = self.headers.get_all(CONTENT_LENGTH).iter();
+        if let Some(value) = lengths.next() {
+            let states = value
+                .to_str()
+                .ok()
+                .map(str::trim)
+                .filter(|text| !text.is_empty() && text.bytes().all(|b| b.is_ascii_digit()))
+                .and_then(|text| text.parse::<u64>().ok());
+            if lengths.next().is_some() || states != Some(self.body.len()) {
+                return Err(Error::ForbiddenHeader(CONTENT_LENGTH.to_string()));
+            }
+            self.headers.remove(CONTENT_LENGTH);
+        }
+        Ok(())
     }
 }
 
@@ -333,7 +350,7 @@ impl Client {
     /// Sends a request and returns its answer once the head has arrived.
     /// The body is read from the [`Response`]. The request's total timeout
     /// keeps running while it is.
-    pub async fn send(&self, request: Request) -> Result<Response> {
+    pub async fn send(&self, mut request: Request) -> Result<Response> {
         request.check_headers()?;
         // A timeout too large to add is no timeout at all.
         let now = Instant::now();
