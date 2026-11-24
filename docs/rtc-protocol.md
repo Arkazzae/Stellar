@@ -1,6 +1,6 @@
 # Voice and RTC protocol
 
-All voice and video call media routes through Stellarr Media (`stellarr-media`). The web client (`VoiceClient`) exchanges signaling events with the realtime hub (`/hubs/app`, upgrading directly with the `stellarr.v1` WebSocket subprotocol via `web/src/stellarr/lib/realtime/websocket.ts`, while `stellarr-hub` retains SignalR compatibility for tabs still on an older release), which manages room sessions over the media server's loopback control API. See [Stellarr Media](./stellarr-media.md) for SFU SDP negotiation, track attribution, downlink adaptation, end-to-end encrypted call frames, and the loopback control API.
+All voice and video call media routes through Stellarr Media (`stellarr-media`). The web client (`VoiceClient`) exchanges signaling events with the realtime hub (`/hubs/app`, upgrading directly with the `stellarr.v1` WebSocket subprotocol via `web/src/stellarr/lib/realtime/websocket.ts`), which manages room sessions over the media server's loopback control API. See [Stellarr Media](./stellarr-media.md) for SFU SDP negotiation, track attribution, downlink adaptation, end-to-end encrypted call frames, and the loopback control API.
 
 ## Client and signaling layers
 
