@@ -1,0 +1,11 @@
+[package]
+name = "stellarr-deflate"
+version.workspace = true
+edition.workspace = true
+publish.workspace = true
+description = "DEFLATE, gzip and zlib in both directions, and CRC-32, with no dependencies"
+
+[dependencies]
+
+[lints]
+workspace = true
