@@ -162,11 +162,11 @@ async function step(title, action, settle = 500, quiet = false) {
     }
   }
   const { shown, polls } = await fakeRequests();
-  // Closing the sessions of a room's seats is done in the order the first server
-  // happened to keep them in, which nobody can tell.
+  // Closing the sessions of a room's seats, and opening the next one, are
+  // different tasks: the order between them is nobody's to tell.
   for (let first = 0; first < shown.length; ) {
     let last = first;
-    while (last < shown.length && shown[last].startsWith("DELETE ")) last += 1;
+    while (last < shown.length && (shown[last].startsWith("DELETE ") || shown[last].startsWith("POST /v1/sessions {"))) last += 1;
     if (last > first) shown.splice(first, last - first, ...shown.slice(first, last).sort());
     first = Math.max(last, first + 1);
   }

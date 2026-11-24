@@ -144,7 +144,7 @@ if (phase === "start-down") {
   await show("ola joins; a session is refused", { open: await text(ola, "OpenMediaSession", V1) });
   await sleep(7500);
   const { counts, polls } = await fakeSummary();
-  await show("the reset is asked for again and again", { resetsBetween3And5: counts["POST /v1/reset"] >= 3 && counts["POST /v1/reset"] <= 5, other: Object.keys(counts).filter((k) => k !== "POST /v1/reset"), polls: polls.length });
+  await show("the reset is asked for again and again", { atLeastThreeResets: counts["POST /v1/reset"] >= 3, other: Object.keys(counts).filter((k) => k !== "POST /v1/reset"), polls: polls.length });
   await admin("down", "on=0");
   await sleep(4000);
   const { counts: back } = await fakeSummary();
