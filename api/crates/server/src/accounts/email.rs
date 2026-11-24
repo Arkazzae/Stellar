@@ -9,7 +9,9 @@
 const SYMBOLS: &str = "!#$%&'*+-/=?^_`{|}~";
 
 fn is_atom_char(c: char) -> bool {
-    c.is_alphanumeric() || SYMBOLS.contains(c)
+    // Outside ASCII, letters and digits by category, as the answers of the
+    // first server to addresses in several scripts have it.
+    stellarr_unicode::is_letter_or_digit(c) || SYMBOLS.contains(c)
 }
 
 fn is_dot_atom(text: &str) -> bool {

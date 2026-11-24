@@ -42,7 +42,9 @@ pub struct RegisterRequest {
 type Errors = Vec<(String, Vec<String>)>;
 
 fn is_username_char(c: char) -> bool {
-    c.is_alphanumeric() || c == '_' || c == '.' || c == '-'
+    // Letters and numbers by general category (L and N), as the first server's
+    // rule reads them: a combining vowel sign is neither.
+    stellarr_unicode::is_letter_or_number(c) || c == '_' || c == '.' || c == '-'
 }
 
 fn validate(request: &RegisterRequest, messages: &Messages) -> Result<Errors, ApiError> {
@@ -73,21 +75,6 @@ fn validate(request: &RegisterRequest, messages: &Messages) -> Result<Errors, Ap
         errors.push(("email".into(), vec![messages.get(MessageKey::EmailInvalid, &[])?]));
     }
     Ok(errors)
-}
-
-/// Capital letters the way the stored, unique forms of names and addresses
-/// are written: letter by letter, a letter that would become several staying
-/// as it is.
-pub fn to_upper_invariant(text: &str) -> String {
-    text.chars()
-        .map(|c| {
-            let mut upper = c.to_uppercase();
-            match (upper.next(), upper.next()) {
-                (Some(one), None) => one,
-                _ => c,
-            }
-        })
-        .collect()
 }
 
 /// Which of the name and the address are already an account's, as the
@@ -143,7 +130,7 @@ fn check(
     if founding && !state.setup_code().matches(request.setup_code.as_deref()) {
         return Err(Problem::validation(vec![("setupCode".into(), vec![messages.get(MessageKey::SetupCodeInvalid, &[])?])]).into());
     }
-    let taken = find_taken(connection, &to_upper_invariant(username), &to_upper_invariant(email), messages)?;
+    let taken = find_taken(connection, &crate::instance::names::to_upper(username), &crate::instance::names::to_upper(email), messages)?;
     if !taken.is_empty() {
         return Err(Problem::validation(taken).into());
     }
@@ -241,11 +228,11 @@ fn write(
         params![
             id,
             input.username,
-            to_upper_invariant(&input.username),
+            crate::instance::names::to_upper(&input.username),
             input.display_name,
             input.password_hash,
             input.email,
-            to_upper_invariant(&input.email),
+            crate::instance::names::to_upper(&input.email),
             format!("oklch(0.58 0.14 {})", avatar_hue(id)),
             now
         ],
@@ -380,7 +367,7 @@ pub async fn register(State(state): State<AppState>, origin: Origin, Json(reques
                     .database()
                     .read({
                         let (state, username, email) = (state.clone(), username.clone(), email.clone());
-                        move |connection| find_taken(connection, &to_upper_invariant(&username), &to_upper_invariant(&email), state.messages())
+                        move |connection| find_taken(connection, &crate::instance::names::to_upper(&username), &crate::instance::names::to_upper(&email), state.messages())
                     })
                     .await?;
                 return Err(if taken.is_empty() { error.into() } else { Problem::validation(taken).into() });
@@ -501,10 +488,21 @@ mod tests {
     }
 
     #[test]
-    fn names_are_capitalized_letter_by_letter() {
-        assert_eq!(to_upper_invariant("Maya.Lin"), "MAYA.LIN");
-        assert_eq!(to_upper_invariant("zażółć"), "ZAŻÓŁĆ");
-        // One letter that would become two stays as it is.
-        assert_eq!(to_upper_invariant("straße"), "STRAßE");
+    fn names_are_stored_capitalized_by_the_simple_mapping_of_the_first_server() {
+        assert_eq!(crate::instance::names::to_upper("Maya.Lin"), "MAYA.LIN");
+        assert_eq!(crate::instance::names::to_upper("zażółć"), "ZAŻÓŁĆ");
+        // A letter that would become two stays as it is, and the dotless i is
+        // not capitalized at all.
+        assert_eq!(crate::instance::names::to_upper("straße bıll"), "STRAßE BıLL");
+    }
+
+    #[test]
+    fn a_user_name_is_letters_and_numbers_by_category() {
+        for ok in ['a', 'ż', 'ａ', '名', '2', '²', 'Ⅷ', '٣', '_', '.', '-'] {
+            assert!(is_username_char(ok), "{ok}");
+        }
+        for refused in ['ि', '्', '\u{0301}', '\u{200d}', '+', ' ', '😀'] {
+            assert!(!is_username_char(refused), "{refused}");
+        }
     }
 }
