@@ -415,6 +415,10 @@ async function story(ids) {
     await maja.request("GET", conversationPath(A, "epochs?after=2%20")),
     await maja.request("GET", conversationPath(A, "epochs?after=%20")),
     await maja.request("GET", conversationPath(A, "epochs?after")),
+    await maja.request("GET", conversationPath(A, "epochs?after=1&after=")),
+    await maja.request("GET", conversationPath(A, "epochs?after=&after=1")),
+    await maja.request("GET", conversationPath(A, "epochs?after=&after=")),
+    await maja.request("GET", conversationPath(A, "epochs?after=1&after=1")),
   ]);
   await step("epoch envelopes of the wrong size", async () => {
     keys = await keysOf(maja, A);
