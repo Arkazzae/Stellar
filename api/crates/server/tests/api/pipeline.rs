@@ -467,7 +467,7 @@ async fn the_client_is_the_address_the_proxies_vouch_for() {
 async fn a_forwarded_scheme_is_passed_on_as_the_proxy_wrote_it() {
     let server = server_with(&[]).await;
 
-    for (written, seen) in [("gopher", "gopher"), ("HTTPS", "HTTPS"), ("http, ws", "ws"), ("", "http")] {
+    for (written, seen) in [("gopher", "gopher"), ("HTTPS", "HTTPS"), ("http, ws", "ws"), ("", "http"), ("a b", "http")] {
         let answer = server
             .client()
             .send(Request::new(Method::GET, "/api/test/client").header("X-Forwarded-Proto", written))

@@ -196,7 +196,8 @@ request says about itself in the form that fits:
   is the `IpAddr` the proxies vouch for (see `http/forwarded.rs`: with none
   listed, the last entry of `X-Forwarded-For`; with some, the first one that is not a
   listed proxy). `client.scheme` is the last entry of `X-Forwarded-Proto`, trimmed, as
-  it was written (any text, `http` if there is none), and `client.is_https()` says
+  it was written (`gopher` and `HTTPS` stay so), `http` if there is none or it holds
+  anything but letters, digits, `+`, `-` and `.`, and `client.is_https()` says
   whether it is `https`, in any letter case. `client.host` is the last entry of
   `X-Forwarded-Host`, if a proxy wrote one. Nothing else is filled in: not the
   port, not the `Host` header (read it from `headers` when no proxy said
@@ -343,7 +344,8 @@ first server:
   once, without one. Two are not dropped (`/api/x//` is 404), nor one in the
   middle.
 - The query is not touched.
-- A forwarded scheme is passed on as the proxy wrote it (`client.scheme`).
+- A forwarded scheme is passed on as the proxy wrote it, if it is made of letters,
+  digits, `+`, `-` and `.` (`client.scheme`).
 
 The normalised path is written back into the request in the one encoding that
 decodes to it again, so `Path<String>` for `/echo/a%252Fb` is `a%2Fb`, and for

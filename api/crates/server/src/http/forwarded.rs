@@ -40,10 +40,13 @@ const FORWARDED_HOST: HeaderName = HeaderName::from_static("x-forwarded-host");
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ClientInfo {
     pub address: IpAddr,
-    /// What the proxy wrote in `X-Forwarded-Proto` (the last entry of it,
-    /// trimmed, in the case it was written in, whatever it is), `http` when it
-    /// wrote nothing. A scheme that is not `http` or `https` is passed on as it
-    /// came, as the first server did; only [`ClientInfo::is_https`] looks at it.
+    /// What the proxy wrote in `X-Forwarded-Proto`: the last entry of it,
+    /// trimmed, in the case it was written in. It is passed on as it came
+    /// whatever it is (`gopher`, `HTTPS`), as the first server did, provided it
+    /// is made of letters, digits, `+`, `-` and `.`; an entry with anything else
+    /// in it is not read at all (and the one before it is not looked at
+    /// instead), and neither is an empty one. `http` then. Only
+    /// [`ClientInfo::is_https`] looks at what it says.
     pub scheme: String,
     /// The host the client asked for, when a proxy said so.
     pub host: Option<String>,
@@ -78,7 +81,7 @@ pub(super) async fn middleware(
 /// Reads the headers of one request that arrived from `peer`.
 pub fn resolve(peer: IpAddr, headers: &HeaderMap, trusted: &TrustedProxies) -> ClientInfo {
     let scheme = last_value(headers, &FORWARDED_PROTO)
-        .filter(|value| !value.is_empty())
+        .filter(|value| is_scheme(value))
         .unwrap_or_else(|| "http".to_string());
     let host = last_value(headers, &FORWARDED_HOST).filter(|value| !value.is_empty());
 
@@ -118,6 +121,15 @@ pub fn resolve(peer: IpAddr, headers: &HeaderMap, trusted: &TrustedProxies) -> C
         scheme,
         host,
     }
+}
+
+/// What the first server took for a scheme: not empty, and nothing but
+/// letters, digits, `+`, `-` and `.`.
+fn is_scheme(text: &str) -> bool {
+    !text.is_empty()
+        && text
+            .bytes()
+            .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'+' | b'-' | b'.'))
 }
 
 fn last_value(headers: &HeaderMap, name: &HeaderName) -> Option<String> {
@@ -356,7 +368,15 @@ mod tests {
             ("gopher", "gopher", false),
             ("http, gopher", "gopher", false),
             ("  https  ", "https", true),
+            ("1abc", "1abc", false),
+            ("a+b.c-d", "a+b.c-d", false),
             ("", "http", false),
+            ("a b", "http", false),
+            ("ht!tp", "http", false),
+            ("x:y", "http", false),
+            ("a_b", "http", false),
+            ("a/b", "http", false),
+            ("https, a b", "http", false),
         ] {
             let info = read_with("", NGINX, CLIENT, Some(written), None);
             assert_eq!(
