@@ -47,7 +47,8 @@ pub struct Stored {
     pub auth: String,
 }
 
-/// Where a test's fake push service is. Never built by the server.
+/// Where a test's fake push service is. Never built by the server; for tests.
+#[doc(hidden)]
 pub struct Wiring {
     /// The roots the fake's certificate is trusted by; the system's when none.
     pub roots: Option<RootCertStore>,
@@ -82,7 +83,9 @@ impl Sender {
         }
     }
 
-    /// A sender whose push service is somewhere else, for a test.
+    /// A sender whose push service is somewhere else. For tests only: the
+    /// server never builds one.
+    #[doc(hidden)]
     pub fn wired(settings: &PushSettings, wiring: Wiring) -> Sender {
         let mut http = match wiring.roots {
             Some(roots) => Client::with_tls_config(tls::client_config(roots)),
@@ -198,6 +201,25 @@ fn with_port(url: &str, port: u16) -> Option<String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// The constructor the server uses is bound to public addresses and to the
+    /// port a subscription names, whatever a test's wiring may allow.
+    #[test]
+    fn the_sender_the_server_builds_may_only_reach_public_addresses_on_the_named_port() {
+        let sender = Sender::new(&PushSettings {
+            enabled: false,
+            subject: String::new(),
+            public_key: String::new(),
+            private_key: String::new(),
+        });
+
+        assert_eq!(sender.policy, AddressPolicy::PublicOnly);
+        assert_eq!(sender.port, None);
+        assert!(!sender.policy.allows("127.0.0.1".parse().unwrap()));
+        assert!(!sender.policy.allows("::1".parse().unwrap()));
+        assert!(!sender.policy.allows("10.0.0.1".parse().unwrap()));
+        assert!(sender.policy.allows("8.8.8.8".parse().unwrap()));
+    }
 
     #[test]
     fn a_port_goes_after_the_host_and_before_the_path() {
