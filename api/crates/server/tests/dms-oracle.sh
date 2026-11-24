@@ -119,6 +119,27 @@ for target in oracle rust; do
   address=${!target}
   node_run story --base "$address" --password "$password" --eve "$eve" --fay "$fay" --ids "$work/ids.json" --out "$work/$target.txt"
 done
+# Both servers have a worker that looks at the queue of notifications when it
+# starts and every thirty seconds, so what a row says depends on when the
+# looks fell during the story, and the story is longer than thirty seconds.
+# The rows are put back as they were written (nothing tried, nothing leased),
+# and each server starts again on its file for one look at the end, when every
+# message has been read: each row of ben's that is for a message he has read is
+# cancelled by the same rule on both sides (the conversation's read mark is at
+# or after the message), the one that is for a message he has not is tried and
+# kept, as push is not set up here.
+unlook() { # a database file
+  sqlite3 "$1" "update NotificationDeliveries set Status='pending', Attempts=0, LastError='', LastAttemptAt=NULL, SentAt=NULL, NextAttemptAt=CreatedAt, LeaseId=NULL, LeaseUntil=NULL;"
+}
+docker stop -t 10 "$container" >/dev/null
+docker cp "$container:/tmp/data/stellarr.db" "$work/oracle-story.db"
+unlook "$work/oracle-story.db"
+give_oracle "$work/oracle-story.db"
+stop_rust
+cp "$work/rust/stellarr.db" "$work/rust-story.db"
+unlook "$work/rust-story.db"
+start_rust Development "$work/rust-story.db"
+sleep 8
 docker stop -t 10 "$container" >/dev/null
 docker cp "$container:/tmp/data/stellarr.db" "$work/oracle-final.db"
 stop_rust
@@ -134,7 +155,8 @@ rows() { # a database file
       from DirectMessages m join threads t on t.Id=m.ConversationId order by m.CreatedAt, m.Id;
     select 'attachment', m.Content, l.AttachmentId from DirectMessageAttachments l join DirectMessages m on m.Id=l.DirectMessageId order by m.CreatedAt, l.AttachmentId;
     select 'read', t.Name, (select Name from names where Id=r.UserId), r.LastReadAt is not null from DirectConversationReads r join threads t on t.Id=r.ConversationId order by 2,3;
-    select 'delivery', d.EventKind, d.Channel, (select Name from names where Id=d.RecipientId) from NotificationDeliveries d order by d.CreatedAt, d.Id;
+    select 'delivery', d.EventKind, d.Channel, (select Name from names where Id=d.RecipientId), d.Status, d.Attempts, d.LastError from NotificationDeliveries d order by d.CreatedAt, d.Id;
+    select 'subscription', (select Name from names where Id=p.UserId), p.Endpoint from PushSubscriptions p order by 2, 3;
     select 'counts', (select count(*) from UserNotifications), (select count(*) from MessageChanges), (select count(*) from MessageIndexEntries), (select count(*) from Friendships), (select count(*) from UserBlocks), (select count(*) from DirectMessageAttachments);
   "
 }
