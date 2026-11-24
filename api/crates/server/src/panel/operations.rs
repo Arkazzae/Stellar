@@ -4,7 +4,10 @@
 //! Before the operator has saved anything there is no row, and the defaults of
 //! the installation stand in for it; the first change writes one.
 
-use rusqlite::{Connection, OptionalExtension, params};
+use rusqlite::{Connection, OptionalExtension, Transaction};
+
+use crate::instance::operations as instance;
+use crate::settings::Config;
 
 use crate::settings::Settings;
 use crate::values::{Id, Timestamp};
@@ -71,47 +74,51 @@ fn from_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<Retention> {
     })
 }
 
-/// Writes the row with the installation's defaults when the server has none,
-/// as the first change of any setting did. `created_at` is when the server
-/// was made, which is what the row's own time starts as.
-pub fn ensure(
-    transaction: &Connection,
+/// The configuration the defaults of the row come from, read as the
+/// settings were at start. The state keeps only what it parsed, so this reads
+/// the process's environment again; the operator's tool does the same.
+fn configuration(settings: &Settings) -> Config {
+    let variables: Vec<(String, String)> = std::env::vars().collect();
+    Config::layered(settings.environment.name(), &variables)
+}
+
+/// The row of `server` as the one loader of it reads it (see
+/// [`crate::instance::operations`]), or what the installation starts with.
+pub fn load(
+    transaction: &Transaction,
     settings: &Settings,
     server: Id,
-    created_at: Timestamp,
-) -> rusqlite::Result<()> {
-    transaction.execute(
-        "INSERT OR IGNORE INTO \"OperationsSettings\" (\"ServerId\", \"PublicUrl\", \"TimeZone\", \"MailingEnabled\",
-             \"MailFromAddress\", \"InviteMailEnabled\", \"RecoveryMailEnabled\", \"AlertMailEnabled\", \"BackupRetentionDays\",
-             \"LogRetentionDays\", \"OrphanObjectRetentionDays\", \"AutomaticCleanupEnabled\", \"MfaRequirement\",
-             \"TrustedDeviceDays\", \"AuthChallengeMinutes\", \"EmailCodeMinutes\", \"EmailCodeCooldownSeconds\",
-             \"EmailCodeMaxAttempts\", \"EmailCodeSendsPerHour\", \"CliRecoveryMinutes\", \"UpdatedAt\")
-         VALUES (?1, ?2, ?3, ?4, ?5, 1, 1, 0, ?6, ?7, ?8, 1, 'optional', 14, 5, 8, 45, 5, 10, 10, ?9)",
-        params![
-            server,
-            settings.operations.public_url,
-            settings.operations.time_zone.as_deref().unwrap_or("UTC"),
-            settings.mail.enabled,
-            settings.mail.from_address.trim(),
-            DEFAULT_BACKUP_RETENTION_DAYS,
-            DEFAULT_LOG_RETENTION_DAYS,
-            DEFAULT_ORPHAN_RETENTION_DAYS,
-            created_at,
-        ],
+) -> rusqlite::Result<(instance::Loaded, String)> {
+    let (name, created): (String, Timestamp) = transaction.query_row(
+        "SELECT \"Name\", \"CreatedAt\" FROM \"Servers\" WHERE \"Id\" = ?1",
+        [server],
+        |row| Ok((row.get(0)?, row.get(1)?)),
     )?;
+    let loaded = instance::load(transaction, server, created, &configuration(settings))?;
+    Ok((loaded, name))
+}
+
+/// Writes the row with the installation's defaults when the server has none,
+/// as the first change of any setting did.
+pub fn ensure(transaction: &Transaction, settings: &Settings, server: Id) -> rusqlite::Result<()> {
+    let (loaded, name) = load(transaction, settings, server)?;
+    if !loaded.stored {
+        instance::save(transaction, &loaded.settings, false, &name)?;
+    }
     Ok(())
 }
 
-/// Sets how long local backups are kept.
+/// Sets how long local backups are kept, writing the row first if there is
+/// none.
 pub fn set_backup_retention(
-    transaction: &Connection,
+    transaction: &Transaction,
+    settings: &Settings,
     server: Id,
     days: i64,
     now: Timestamp,
 ) -> rusqlite::Result<()> {
-    transaction.execute(
-        "UPDATE \"OperationsSettings\" SET \"BackupRetentionDays\" = ?2, \"UpdatedAt\" = ?3 WHERE \"ServerId\" = ?1",
-        params![server, days, now],
-    )?;
-    Ok(())
+    let (mut loaded, name) = load(transaction, settings, server)?;
+    loaded.settings.backup_retention_days = days;
+    loaded.settings.updated_at = now;
+    instance::save(transaction, &loaded.settings, loaded.stored, &name)
 }
