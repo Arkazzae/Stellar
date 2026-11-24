@@ -68,9 +68,34 @@
 //!
 //! The tests pin the number of code points added since 13, so that a table
 //! made from another version is noticed at once and changed on purpose.
+//!
+//! # Normalization
+//!
+//! [`nfc`] puts a text in canonical composition, as the first server's
+//! platform does through its ICU library. Its data, `normalization_tables.rs`,
+//! is not written by hand: `generator/` is a small program that asks that
+//! library, on the machine it runs on, for the combining class of every code
+//! point, the one-level canonical decomposition of every character and which
+//! pairs compose back (all but the composition exclusions). It has to be run
+//! in the image the server is shipped in, whose ICU is the reference, and not
+//! on a development machine, whose ICU follows another Unicode:
+//!
+//! ```sh
+//! dotnet build generator -c Release -o /tmp/generator
+//! docker run --rm -v /tmp/generator:/gen:ro --entrypoint dotnet \
+//!     stellarr-api-dev:local /gen/generator.dll > src/normalization_tables.rs
+//! ```
+//!
+//! The tables of this version came from ICU 74.2 in that image, which follows
+//! version 15.1 of Unicode.
+//!
 
+mod normalization;
+mod normalization_tables;
 mod tables;
 pub mod utf16;
+
+pub use normalization::nfc;
 
 use tables::{DIGIT, LETTER, LOWER, NUMBER, PUNCTUATION, SYMBOL, UPPER};
 
