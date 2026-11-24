@@ -1,3 +1,5 @@
+import { useEffect, useState } from "react";
+
 import { useLanguage } from "@/state/LanguageProvider";
 
 import styles from "./AppSkeleton.module.css";
@@ -185,7 +187,11 @@ function RosterSkeleton() {
 export interface AppSkeletonProps {
   /** Read once by assistive tech while the app bootstraps. */
   label?: string;
+  /** Monotonic timestamp of the successful session check. */
+  verifiedAt?: number | null;
 }
+
+const TIP_DELAY_MS = 400;
 
 /**
  * A geometry-faithful preview of the signed-in shell, so loading does not move
@@ -195,9 +201,18 @@ export interface AppSkeletonProps {
  * placeholder surfaces already say that content is on its way, and standing
  * still is easier on dim screens and slow hardware.
  */
-export function AppSkeleton({ label }: AppSkeletonProps) {
+export function AppSkeleton({ label, verifiedAt = null }: AppSkeletonProps) {
   const { t } = useLanguage();
   const accessibleLabel = label ?? t("app.loading");
+  const [tipFor, setTipFor] = useState<number | null>(null);
+  useEffect(() => {
+    if (verifiedAt == null) return;
+    const timer = window.setTimeout(
+      () => setTipFor(verifiedAt),
+      Math.max(0, TIP_DELAY_MS - (performance.now() - verifiedAt)),
+    );
+    return () => window.clearTimeout(timer);
+  }, [verifiedAt]);
 
   return (
     <div className={styles.shell} role="region" aria-busy="true" aria-label={accessibleLabel}>
@@ -205,6 +220,12 @@ export function AppSkeleton({ label }: AppSkeletonProps) {
       <RailSkeleton />
       <RoomSkeleton />
       <RosterSkeleton />
+      {verifiedAt != null && tipFor === verifiedAt ? (
+        <aside className={styles.tip}>
+          <strong>{t("app.loadingTipTitle")}</strong>
+          <p>{t("app.loadingTip")}</p>
+        </aside>
+      ) : null}
       <span className="sr-only" role="status">
         {accessibleLabel}
       </span>

@@ -1,10 +1,36 @@
-import { render, screen } from "@testing-library/react";
-import { describe, expect, it } from "vitest";
+import { act, render, screen } from "@testing-library/react";
+import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { AppSkeleton } from "./AppSkeleton";
 import styles from "./AppSkeleton.module.css";
 
 describe("AppSkeleton", () => {
+  afterEach(() => vi.useRealTimers());
+
+  it("shows a tip only when a verified session is still loading", () => {
+    vi.useFakeTimers();
+    const tip = "Czy wiesz, że…?";
+    const view = render(<AppSkeleton />);
+    act(() => vi.advanceTimersByTime(800));
+    expect(screen.queryByText(tip)).not.toBeInTheDocument();
+
+    view.rerender(<AppSkeleton verifiedAt={performance.now()} />);
+    act(() => vi.advanceTimersByTime(390));
+    expect(screen.queryByText(tip)).not.toBeInTheDocument();
+    act(() => vi.advanceTimersByTime(20));
+    expect(screen.getByText(tip)).toBeInTheDocument();
+
+    view.rerender(<AppSkeleton />);
+    expect(screen.queryByText(tip)).not.toBeInTheDocument();
+  });
+
+  it("cancels a short session's tip when the skeleton unmounts", () => {
+    vi.useFakeTimers();
+    const view = render(<AppSkeleton verifiedAt={performance.now()} />);
+    view.unmount();
+    expect(vi.getTimerCount()).toBe(0);
+  });
+
   it("announces that the application is busy", () => {
     render(<AppSkeleton />);
 

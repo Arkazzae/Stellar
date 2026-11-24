@@ -623,6 +623,8 @@ export const pl = {
   "dm.chatUnread": "Czat, nieprzeczytane: {count}",
 
   "app.loading": "Wczytywanie serwera…",
+  "app.loadingTipTitle": "Czy wiesz, że…?",
+  "app.loadingTip": "Możesz wyciszyć kanał z jego menu i nadal znajdować wzmianki w skrzynce powiadomień.",
   "app.loadFailed": "Nie udało się wczytać serwera",
   "app.accessRevoked": "Brak dostępu do serwera",
   "app.checkConnection": "Sprawdź połączenie i spróbuj ponownie za chwilę.",
