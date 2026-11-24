@@ -6,8 +6,8 @@ version: 2
 # pull request titles, which become the squash commit subjects, in the
 # repository's commit format.
 updates:
-  - package-ecosystem: nuget
-    directory: /
+  - package-ecosystem: cargo
+    directory: /api
     schedule:
       interval: weekly
       day: monday

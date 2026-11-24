@@ -27,7 +27,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 5
     outputs:
-      server: ${{ steps.filter.outputs.server }}
+      api: ${{ steps.filter.outputs.api }}
       web: ${{ steps.filter.outputs.web }}
       media: ${{ steps.filter.outputs.media }}
       init: ${{ steps.filter.outputs.init }}
@@ -64,7 +64,7 @@ jobs:
           }
           # The API tests also read the message-syntax cases kept in web/, so a
           # case added there checks the renderer and the API together.
-          check server '^(server/|web/src/stellarr/lib/messages/message-syntax\.json$|Stellarr\.slnx$|Directory\.Build\.props$|global\.json$|\.github/workflows/ci\.yml$)'
+          check api '^(api/|web/src/stellarr/lib/messages/message-syntax\.json$|\.github/workflows/ci\.yml$)'
           # web/ holds the web client and Cockpit (web/src/cockpit/). It is a
           # workspace of one npm project with the shared packages, so a change
           # to them or to the root manifest or lockfile runs the web job too.
@@ -85,32 +85,36 @@ jobs:
           # checks that the settings in those two files are the ones the
           # image reads and the configuration page lists, and runs ShellCheck
           # on the scripts that read them.
-          check installer '^(install\.sh$|infra/tests/(install|setting-names|entrypoint)|infra/(entrypoint|settings|stellarr-cli|tls-maintenance)\.sh$|server/Stellarr\.Api/Operations/StellarrVariables\.cs$|docs/install/configuration\.md$|docker-compose\.yml$|\.env\.example$|\.github/workflows/ci\.yml$)'
+          check installer '^(install\.sh$|infra/tests/(install|setting-names|entrypoint|smoke)|infra/(entrypoint|settings|stellarr-cli|tls-maintenance)\.sh$|api/crates/server/src/settings/variables\.rs$|docs/install/configuration\.md$|docker-compose\.yml$|\.env\.example$|\.github/workflows/ci\.yml$)'
           # vite.config.ts, documents.ts and worklets.ts lay out the build that
           # nginx serves. The image job drills the process manager in the
           # image, so its sources count, not only its manifest. It takes the
           # recipes' outputs from the recipes job, which builds them with the
           # bake file.
-          check image '^(Dockerfile$|docker-bake\.hcl$|\.dockerignore$|artifacts/|infra/|server/.*\.csproj$|server/.*packages\.lock\.json$|packages/|package(-lock)?\.json$|\.npmrc$|web/package\.json$|web/(vite\.config|documents|worklets)\.ts$|media/Cargo\.(toml|lock)$|init/(Cargo\.(toml|lock)$|src/)|global\.json$|Directory\.Build\.props$|\.github/workflows/ci\.yml$)'
+          check image '^(Dockerfile$|docker-bake\.hcl$|\.dockerignore$|artifacts/|infra/|api/(Cargo\.(toml|lock)$|crates/[^/]+/(Cargo\.toml$|build\.rs$|src/|assets/))|packages/|package(-lock)?\.json$|\.npmrc$|web/package\.json$|web/(vite\.config|documents|worklets)\.ts$|media/Cargo\.(toml|lock)$|init/(Cargo\.(toml|lock)$|src/)|\.github/workflows/ci\.yml$)'
 
-  server:
+  # The API and the operator's tool, one Cargo workspace. --locked fails when
+  # Cargo.lock no longer matches the manifests, as the image build would.
+  api:
     needs: changes
-    if: needs.changes.outputs.server == 'true'
+    if: needs.changes.outputs.api == 'true'
     runs-on: ubuntu-latest
-    # The API tests take 15 to 19 minutes on a hosted runner.
-    timeout-minutes: 30
+    # The tests take about five minutes; a cold build of the workspace, once
+    # for clippy and once for the tests, takes most of the rest. A cached run
+    # is far shorter.
+    timeout-minutes: 45
+    defaults:
+      run:
+        working-directory: api
     steps:
       - uses: actions/checkout@v7
-      - uses: actions/setup-dotnet@v6
+      - run: rustup toolchain install stable --profile minimal --component rustfmt,clippy && rustup default stable
+      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
         with:
-          global-json-file: global.json
-          cache: true
-          cache-dependency-path: "**/packages.lock.json"
-      # NuGet audit is on by default and the build treats warnings as errors,
-      # so a restore that finds a known vulnerable package fails here.
-      - run: dotnet restore Stellarr.slnx --locked-mode
-      - run: dotnet build Stellarr.slnx --no-restore --configuration Release
-      - run: dotnet test Stellarr.slnx --no-build --configuration Release
+          workspaces: api
+      - run: cargo fmt --all --check
+      - run: cargo clippy --workspace --all-targets --locked -- -D warnings
+      - run: cargo test --workspace --locked
 
   # The recipes of artifacts/recipes/ build some of the browser's binaries from
   # source. This is the one job of a run that builds them; the web and image
@@ -351,7 +355,7 @@ jobs:
     steps:
       - uses: actions/checkout@v7
       - name: Check the scripts with ShellCheck
-        run: docker run --rm -v "$PWD":/mnt:ro -w /mnt koalaman/shellcheck:v0.11.0@sha256:61862eba1fcf09a484ebcc6feea46f1782532571a34ed51fedf90dd25f925a8d install.sh infra/tests/install.test.sh infra/tests/setting-names.test.sh infra/settings.sh infra/entrypoint.sh infra/stellarr-cli.sh infra/tests/entrypoint.test.sh
+        run: docker run --rm -v "$PWD":/mnt:ro -w /mnt koalaman/shellcheck:v0.11.0@sha256:61862eba1fcf09a484ebcc6feea46f1782532571a34ed51fedf90dd25f925a8d install.sh infra/tests/install.test.sh infra/tests/setting-names.test.sh infra/tests/smoke.test.sh infra/settings.sh infra/entrypoint.sh infra/stellarr-cli.sh infra/tests/entrypoint.test.sh
       - name: Check that every place names the same settings
         run: bash infra/tests/setting-names.test.sh
       - run: bash infra/tests/install.test.sh
@@ -365,14 +369,16 @@ jobs:
     needs: [changes, recipes]
     if: needs.changes.outputs.image == 'true'
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    # A cold run builds the API, the media server and Stellarr Init in Rust,
+    # and the web client, before it starts the image.
+    timeout-minutes: 60
     steps:
       - uses: actions/checkout@v7
       - name: Check TLS certificate renewal
         run: bash infra/tests/tls-maintenance.test.sh
       # The entrypoint writes to /etc and /run, so its test runs as root in a
       # throwaway container of the image's base, with the services stubbed.
-      # The same test runs the CLI's wrapper against a stub of dotnet.
+      # The same test runs the CLI's wrapper against a stub of the tool.
       - name: Check the entrypoint and the CLI's wrapper
         run: docker run --rm -v "$PWD":/w:ro -w /w ubuntu:24.04@sha256:9c7f200c07e3d4a03e7249d2c16bf66a51120fb876aa2242cf31451412543289 bash infra/tests/entrypoint.test.sh
       - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
@@ -558,6 +564,12 @@ jobs:
         run: |
           docker run --rm --entrypoint stellarr stellarr:ci version
           docker run --rm --entrypoint stellarr stellarr:ci --help >/dev/null
+      # A fresh instance, used the way a person would: the owner is founded
+      # with the setup code from the log, signs in, writes, uploads, backs up
+      # and restores, and the operator's tool reads the result. It runs a
+      # container of its own, so the drills below see an untouched one.
+      - name: Smoke-test the image
+        run: STELLARR_SMOKE_IMAGE=stellarr:ci bash infra/tests/smoke.test.sh
       # The services run under stellarr-init as PID 1. Each drill takes one of
       # them down in a different way and checks what health says meanwhile,
       # that the others keep running, and that it comes back.
