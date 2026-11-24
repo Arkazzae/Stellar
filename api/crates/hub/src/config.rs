@@ -17,10 +17,14 @@ pub struct Config {
     /// healthy client send something at least this often.
     pub transport_ping_interval: Duration,
     /// How long one write to a client may take before the client is taken to
-    /// be gone.
+    /// be gone and its connection is ended. A client that reads nothing at
+    /// all ends up here, once the buffers between it and the server are full.
     pub write_timeout: Duration,
     /// How many messages may wait for one client, and how many bytes of them.
-    /// A client that falls further behind is closed, and starts over.
+    /// A client that falls further behind is closed, and starts over. These
+    /// bounds are a safety net behind `write_timeout`: they let a healthy
+    /// client take a burst of that many messages that the server produced
+    /// faster than the client could be written to.
     pub max_queued_messages: usize,
     pub max_queued_bytes: usize,
     /// How long a close may take, the client's reply included, before the
@@ -45,7 +49,7 @@ impl Default for Config {
             keep_alive_interval: Duration::from_secs(15),
             client_timeout: Some(Duration::from_secs(45)),
             transport_ping_interval: Duration::from_secs(20),
-            write_timeout: Duration::from_secs(30),
+            write_timeout: Duration::from_secs(10),
             max_queued_messages: 1024,
             max_queued_bytes: 8 * 1024 * 1024,
             close_grace: Duration::from_secs(3),

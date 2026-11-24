@@ -6,6 +6,7 @@
 //! or growing without limit.
 
 use std::collections::{HashMap, HashSet, VecDeque};
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex, MutexGuard};
 
 use bytes::Bytes;
@@ -88,6 +89,7 @@ pub(crate) struct Shared {
     id: Arc<str>,
     outbox: Outbox,
     close: watch::Sender<Option<CloseRequest>>,
+    write_failed: AtomicBool,
     max_messages: usize,
     max_bytes: usize,
 }
@@ -107,6 +109,21 @@ impl Shared {
             *current = Some(request);
             true
         });
+    }
+
+    /// A write to the client failed or took too long, so the client is gone
+    /// for practical purposes: the connection ends, and there is nobody to
+    /// say goodbye to.
+    pub(crate) fn write_failed(&self) {
+        self.write_failed.store(true, Ordering::Release);
+        self.request_close(CloseRequest {
+            error: None,
+            allow_reconnect: true,
+        });
+    }
+
+    pub(crate) fn has_write_failed(&self) -> bool {
+        self.write_failed.load(Ordering::Acquire)
     }
 
     pub(crate) fn subscribe_close(&self) -> watch::Receiver<Option<CloseRequest>> {
@@ -230,6 +247,7 @@ impl Hub {
                 wake: Notify::new(),
             },
             close,
+            write_failed: AtomicBool::new(false),
             max_messages: self.inner.max_messages,
             max_bytes: self.inner.max_bytes,
         });

@@ -102,7 +102,7 @@ pub async fn serve<A, S>(
             tracing::warn!(connection = %connection_id, ?error, "the application refused a new connection");
             shared.request_close(CloseRequest {
                 error: Some(message::CLOSED_WITH_ERROR.into()),
-                allow_reconnect: true,
+                allow_reconnect: false,
             });
             Some(Ended::ByServer(Some(format!("{error:?}"))))
         }
@@ -366,6 +366,15 @@ async fn dispatch_loop<A: Application>(
     }
 }
 
+/// Stops a task when the connection gives up on waiting for it.
+struct AbortOnDrop<T>(JoinHandle<T>);
+
+impl<T> Drop for AbortOnDrop<T> {
+    fn drop(&mut self) {
+        self.0.abort();
+    }
+}
+
 /// Runs one method in a task of its own, so that a panic in it costs the
 /// client an error and not the connection.
 async fn run_call<A: Application>(
@@ -374,13 +383,13 @@ async fn run_call<A: Application>(
     target: &str,
     arguments: Vec<Value>,
 ) -> Result<Value, String> {
-    let task = {
+    let mut task = AbortOnDrop({
         let app = app.clone();
         let call = call.clone();
         let target = target.to_owned();
         tokio::spawn(async move { app.invoke(&call, &target, arguments).await })
-    };
-    let error = match task.await {
+    });
+    let error = match (&mut task.0).await {
         Ok(Ok(value)) => return Ok(value),
         Ok(Err(error)) => error,
         Err(failure) => HubError::internal(format!("the call panicked: {failure}")),
@@ -414,6 +423,7 @@ where
             .await;
             if !matches!(wrote, Ok(Ok(()))) {
                 tracing::debug!(connection = %shared.id(), "the close could not be written");
+                shared.write_failed();
             }
             return;
         }
@@ -426,11 +436,13 @@ where
                     wire.extend_from_slice(&record);
                 }
                 if !write_text(&sender, &config, &wire).await {
+                    shared.write_failed();
                     return;
                 }
             }
             () = sleep_until(next_ping) => {
                 if !write_text(&sender, &config, &message::ping()).await {
+                    shared.write_failed();
                     return;
                 }
                 next_ping = Instant::now() + config.keep_alive_interval;
@@ -438,6 +450,7 @@ where
             _ = transport_pings.tick() => {
                 let sent = timeout(config.write_timeout, sender.send_ping(b"")).await;
                 if !matches!(sent, Ok(Ok(()))) {
+                    shared.write_failed();
                     return;
                 }
             }
