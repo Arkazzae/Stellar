@@ -15,8 +15,10 @@ copied to each server, and they are asked the same things:
   sync      the journal from position zero at several page sizes;
   refusals  the answers to limits, cursors and channels that are not there;
   writes    the same posts, edits and deletions on both, each on a copy of the
-            file, and the rows each leaves compared once ids and moments are
-            replaced.
+            file; the answers, the rows each leaves (the journal, the inbox
+            entries and the queued deliveries of mentions among them) and what
+            four connected people hear on the hub compared once ids and
+            moments are replaced.
 
 Needs docker, python3 and the first server's container from
 `oracle start <name> <port> Development`, which must be fresh. Not part of the
@@ -24,7 +26,7 @@ ordinary run.
 
   python3 messages-shared-database.py <oracle name> <oracle port> <stellarr-api binary> [stage ...]
 
-Stages: history, sync, refusals, writes, mentions (all by default). Set
+Stages: history, sync, refusals, writes (all by default; writes covers the mentions, their deliveries and the events heard). Set
 MESSAGES=4000 for the number of messages and SEED for the random shapes.
 """
 import base64
@@ -558,7 +560,7 @@ def run_scenario(base, cookies, steps, names):
 
 def main():
     name, port, binary = sys.argv[1], sys.argv[2], sys.argv[3]
-    stages = sys.argv[4:] or ["history", "sync", "refusals", "writes", "mentions"]
+    stages = sys.argv[4:] or ["history", "sync", "refusals", "writes"]
     count = int(os.environ.get("MESSAGES", "4000"))
     rng = random.Random(int(os.environ.get("SEED", "5214")))
     work = tempfile.mkdtemp(prefix="messages-shared-")
@@ -656,7 +658,7 @@ def main():
             ("bob", f"/api/channels/{uuid.uuid4()}/messages"), ("owner", "/api/channels/not-an-id/messages"),
         ]:
             print(person, path.split("?")[-1][:50], pair.same(person, "GET", path)[0])
-    if "writes" in stages or "mentions" in stages:
+    if "writes" in stages:
         oracle.stop()
         prepared = f"{work}/prepared.db"
         shutil.copy(mutated, prepared)
