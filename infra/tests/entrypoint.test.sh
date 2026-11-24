@@ -3,7 +3,7 @@
 # and the operator CLI, and checks what it exports to the services and the
 # configuration it renders, for the defaults, for each setting it reads and
 # for the values it refuses. Then runs the operator CLI's wrapper against a
-# stub of dotnet, and checks that it hands the CLI the public address the
+# stub of the tool, and checks that it hands the CLI the public address the
 # entrypoint derives, and nothing else. It writes to /etc, /run, /data, /usr/bin
 # and /usr/local, so it runs only as root in a throwaway container of the
 # image's base:
@@ -38,9 +38,9 @@ fail() {
 }
 
 # The image's files, and stubs for what the entrypoint and the wrapper hand
-# over to. Each stub records its call; stellarr-init and dotnet record the
+# over to. Each stub records its call; stellarr-init and the tool record the
 # environment they were given.
-mkdir -p /etc/nginx /usr/local/bin /usr/local/lib/stellarr "$stubs"
+mkdir -p /etc/nginx /usr/local/bin /usr/local/lib/stellarr /opt/stellarr/cli "$stubs"
 cp "$repo_root/infra/settings.sh" /usr/local/lib/stellarr/settings.sh
 cp "$repo_root/infra/turnserver.conf.template" /etc/turnserver.conf.template
 cp "$repo_root/infra/nginx.conf" /etc/nginx/nginx.conf.template
@@ -49,11 +49,11 @@ cat >/usr/local/bin/stellarr-init <<EOF
 echo "stellarr-init \$*" >>$out/calls
 env | sort >$out/env
 EOF
-cat >/usr/bin/dotnet <<EOF
+cat >/opt/stellarr/cli/stellarr <<EOF
 #!/bin/bash
-echo "dotnet \$*" >>$out/calls
+echo "cli \$*" >>$out/calls
 env | sort >$out/env
-exit "\$(cat $stubs/dotnet-exit 2>/dev/null || echo 0)"
+exit "\$(cat $stubs/cli-exit 2>/dev/null || echo 0)"
 EOF
 cat >/usr/local/bin/stellarr-tls-maintenance <<EOF
 #!/bin/bash
@@ -81,10 +81,11 @@ else
 fi
 EOF
 chmod +x /usr/local/bin/stellarr-init /usr/local/bin/stellarr-tls-maintenance /usr/local/bin/stellarr \
-  /usr/bin/dotnet "$stubs/openssl" "$stubs/getent"
+  /opt/stellarr/cli/stellarr "$stubs/openssl" "$stubs/getent"
 
 # Runs the entrypoint on an empty volume with only the given variables, as the
-# image's ENV and docker run -e would set them. A function named by the
+# image's ENV and docker run -e would set them. It is always given an
+# environment and a listen address that .env could carry, which it must replace. A function named by the
 # STAGE variable runs first, to lay down what a case needs.
 run() {
   case_name=$1
@@ -94,7 +95,7 @@ run() {
   [[ -z ${STAGE:-} ]] || "$STAGE"
   status=0
   env -i PATH="$stubs:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin" HOME=/root \
-    ASPNETCORE_HTTP_PORTS=8080 "$@" bash "$entrypoint" >"$out/stdout" 2>"$out/stderr" || status=$?
+    STELLARR_ENVIRONMENT=Development STELLARR_API_LISTEN=0.0.0.0:5000 "$@" bash "$entrypoint" >"$out/stdout" 2>"$out/stderr" || status=$?
 }
 
 # Runs the operator CLI's wrapper with only the given variables, as docker exec
@@ -118,7 +119,7 @@ expect_started() {
 
 expect_cli_started() {
   [[ $status -eq 0 ]] || fail "the wrapper exited with $status"
-  expect_call 'dotnet /opt/stellarr/api/Stellarr.Cli.dll --json config get public-url'
+  expect_call 'cli --json config get public-url'
 }
 
 # The public address in the environment last recorded, as the two keys that
@@ -201,21 +202,20 @@ media_secret=$(secret_file media-control-secret)
 expect_export Rtc__TurnSharedSecret "$turn_secret"
 expect_export Rtc__MediaControlSecret "$media_secret"
 expect_export STELLARR_MEDIA_CONTROL_SECRET "$media_secret"
-expect_export ConnectionStrings__Database 'Data Source=/data/stellarr/db/stellarr.db;Pooling=True'
 expect_export Rtc__MediaControlUrl http://127.0.0.1:5200
 expect_export STELLARR_MEDIA_BIND 0.0.0.0:49000
 expect_export STELLARR_MEDIA_PUBLIC_IP ''
 expect_export STELLARR_MEDIA_PUBLIC_PORT 49000
 expect_export STELLARR_MEDIA_CONTROL_BIND 127.0.0.1:5200
 expect_export STELLARR_MEDIA_LOG info
-expect_export ASPNETCORE_URLS http://127.0.0.1:5000
-expect_export ASPNETCORE_ENVIRONMENT Production
-expect_absent STELLARR_MEDIA_ADVERTISE Operations__PublicUrl Desktop__CanonicalOrigin ASPNETCORE_HTTP_PORTS
-# Besides what the shell itself sets, everything it exports is a STELLARR_* or
-# ASP.NET Core name, or one of the values that have no STELLARR_* name.
-others=$(sed 's/=.*//' "$out/env" | grep -vxE 'STELLARR_[A-Z0-9_]+|ASPNETCORE_[A-Z_]+|PATH|HOME|PWD|OLDPWD|SHLVL|_' |
+expect_export STELLARR_API_LISTEN 127.0.0.1:5000
+expect_export STELLARR_ENVIRONMENT Production
+expect_absent STELLARR_MEDIA_ADVERTISE Operations__PublicUrl Desktop__CanonicalOrigin
+# Besides what the shell itself sets, everything it exports is a STELLARR_*
+# name, or one of the values that have no STELLARR_* name.
+others=$(sed 's/=.*//' "$out/env" | grep -vxE 'STELLARR_[A-Z0-9_]+|PATH|HOME|PWD|OLDPWD|SHLVL|_' |
   sort | tr '\n' ' ')
-[[ $others == 'ConnectionStrings__Database Rtc__MediaControlSecret Rtc__MediaControlUrl Rtc__TurnSharedSecret ' ]] ||
+[[ $others == 'Rtc__MediaControlSecret Rtc__MediaControlUrl Rtc__TurnSharedSecret ' ]] ||
   fail "it exports: $others"
 for file in /etc/turnserver.conf /etc/nginx/nginx.conf; do
   ! grep -q '__[A-Z_]*__' "$file" || fail "$file keeps a placeholder: $(grep -o '__[A-Z_]*__' "$file" | head -n 1)"
@@ -241,7 +241,6 @@ expect_export STELLARR_DATA_ROOT /data/stellarr
 run data-root "${image_env[@]}" STELLARR_DATA_ROOT=/data/elsewhere
 expect_started
 expect_export STELLARR_DATA_ROOT /data/elsewhere
-expect_export ConnectionStrings__Database 'Data Source=/data/elsewhere/db/stellarr.db;Pooling=True'
 [[ -s /data/elsewhere/secrets/turn-shared-secret ]] || fail "the secrets are not under the data root"
 
 # As docker-compose.yml starts it: the host ports it publishes, and a domain.
@@ -451,9 +450,9 @@ added=$(sed 's/=.*//' "$out/env" | grep -vxE 'PATH|HOME|PWD|OLDPWD|SHLVL|_' |
 
 # The CLI's exit status is the wrapper's; the entrypoint tells a refused
 # restore by it.
-echo 4 >"$stubs/dotnet-exit"
+echo 4 >"$stubs/cli-exit"
 run_cli exit-status "${image_env[@]}"
-rm "$stubs/dotnet-exit"
+rm "$stubs/cli-exit"
 [[ $status -eq 4 ]] || fail "the wrapper exited with $status, not the CLI's 4"
 
 # Without the shared rules the CLI still runs, without the address.

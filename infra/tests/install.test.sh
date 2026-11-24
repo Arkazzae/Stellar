@@ -856,14 +856,14 @@ case_update() {
 }
 
 # The container reads .env as it is, so settings without a STELLARR_* name
-# live there too, as raw .NET keys. An update leaves every such line as it
-# was, where it was, and changes only the version.
+# live there too, as raw Section__Key settings. An update leaves every such line
+# as it was, where it was, and changes only the version.
 case_env_raw_keys() {
   new_case env-raw-keys
   local dir="$case_dir/srv/stellarr"
   installed "$dir" 1.4.0
   printf '%s\n' '' '# Kept by hand: settings without a STELLARR_* name.' \
-    'Logging__LogLevel__Microsoft.AspNetCore=Information' \
+    'Logging__LogLevel__Stellarr.Api.Requests=Warning' \
     'Oidc__Providers__work__DisplayName=Work account' \
     '  Oidc__Providers__work__Authority=https://id.example.com/realms/work  ' \
     'STELLARR_SMTP_PASSWORD="pa ss # word"' \
@@ -876,7 +876,7 @@ case_env_raw_keys() {
   sed 's/^STELLARR_VERSION=1.4.0$/STELLARR_VERSION=1.5.0/' "$case_dir/env-before" >"$case_dir/env-expected"
   cmp -s "$case_dir/env-expected" "$dir/.env" || fail ".env changed beyond STELLARR_VERSION."
   expect_line "$dir/.env" "STELLARR_VERSION=1.5.0"
-  expect_line "$dir/.env" "Logging__LogLevel__Microsoft.AspNetCore=Information"
+  expect_line "$dir/.env" "Logging__LogLevel__Stellarr.Api.Requests=Warning"
   expect_line "$dir/.env" "  Oidc__Providers__work__Authority=https://id.example.com/realms/work  "
   expect_called "up -d --no-build @$dir"
 }
