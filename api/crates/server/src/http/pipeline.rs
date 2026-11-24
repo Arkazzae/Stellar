@@ -15,6 +15,8 @@
 //! 8. refuse a JSON route a body of another content type;
 //! 9. authenticate: the session cookie is read and checked against the
 //!    database, and a route that needs a session refuses a request without one;
+//!    a route that needs a fresh second step refuses a session that has not
+//!    passed one lately;
 //! 10. the handler.
 //!
 //! Which route a request is for is known to every step, since routing comes
@@ -295,6 +297,13 @@ async fn route_checks(
     } else {
         None
     };
+    let refusal = match refusal {
+        None if rules.is_some_and(|rules| rules.fresh_second_step) => {
+            refusal_for_stale_second_step(&pipeline, request.extensions().get::<Caller>().copied())
+                .await
+        }
+        other => other,
+    };
     let mut response = match refusal {
         Some(refusal) => refusal,
         None => next.run(request).await,
@@ -314,6 +323,35 @@ async fn route_checks(
         put_cookies_first(&mut response, &cookies);
     }
     response
+}
+
+/// The refusal of a session that has not passed its second step lately, or
+/// nothing for one that has (and for an account that has none to pass).
+async fn refusal_for_stale_second_step(
+    pipeline: &Pipeline,
+    caller: Option<Caller>,
+) -> Option<Response> {
+    let caller = caller?;
+    let fresh = pipeline
+        .state
+        .database()
+        .read(move |connection| {
+            auth::fresh::has_fresh_second_step(
+                connection,
+                caller.user,
+                Some(caller.session),
+                Timestamp::now(),
+            )
+        })
+        .await;
+    match fresh {
+        Ok(true) => None,
+        Ok(false) => Some(match auth::fresh::refusal(pipeline.state.messages()) {
+            Ok(problem) => ApiError::from(problem).into_response(),
+            Err(missing) => ApiError::from(missing).into_response(),
+        }),
+        Err(error) => Some(ApiError::from(error).into_response()),
+    }
 }
 
 /// Puts the cookies that authentication set ahead of the ones the handler
