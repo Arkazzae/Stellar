@@ -456,26 +456,29 @@ async fn a_recorded_voice_message_is_audio_with_a_measured_duration_up_to_ten_mi
     };
 
     let good = upload(&maja, voice(Some("5"), "true")).await;
-    let at_limit = upload(&maja, voice(Some("600"), "TRUE")).await;
+    let at_limit = upload(&maja, voice(Some("600"), "true")).await;
     let no_duration = upload(&maja, voice(None, "true")).await;
     let too_long = upload(&maja, voice(Some("601"), "true")).await;
     let not_a_length = upload(&maja, voice(Some("NaN"), "true")).await;
+    let capitals = upload(&maja, voice(Some("5"), "TRUE")).await;
     let on_an_image = upload(&maja, image("a.png").text("durationSeconds", "5").text("voiceMessage", "true")).await;
     let not_a_flag = upload(&maja, voice(Some("5"), "yes")).await;
 
     assert_eq!(good.status, 201);
     assert_eq!(good.json::<Value>()["isVoiceMessage"], true);
     assert_eq!(at_limit.status, 201);
-    for refused in [&no_duration, &too_long, &not_a_length, &on_an_image] {
+    for refused in [&no_duration, &too_long, &on_an_image] {
         assert_eq!(refused.status, 400);
         assert_eq!(
             refused.json::<Value>()["errors"]["voiceMessage"][0],
             "A voice message must be an audio recording of up to 10 minutes."
         );
     }
-    // A value that is no flag at all is not a form this server can read.
-    assert_eq!(not_a_flag.status, 400);
-    assert!(not_a_flag.body.is_empty());
+    // A value that is no flag or no length is not a form this server can read.
+    for unreadable in [&not_a_flag, &capitals, &not_a_length] {
+        assert_eq!(unreadable.status, 400);
+        assert!(unreadable.body.is_empty());
+    }
 }
 
 #[tokio::test]
@@ -487,7 +490,7 @@ async fn a_duration_is_refused_for_kinds_without_one_and_when_it_is_not_a_positi
     let on_an_image = upload(&maja, image("a.png").text("durationSeconds", "5")).await;
     let on_a_pdf = upload(&maja, Form::new().file("file", "a.pdf", "application/pdf", PDF).text("durationSeconds", "5")).await;
     assert_eq!((on_an_image.status.as_u16(), on_a_pdf.status.as_u16()), (400, 400));
-    for refused in ["0", "-1", "Infinity", "1e999", "2592001"] {
+    for refused in ["0", "2592001"] {
         let response = upload(&maja, audio(refused)).await;
 
         assert_eq!(response.status, 400, "{refused}");
@@ -497,10 +500,10 @@ async fn a_duration_is_refused_for_kinds_without_one_and_when_it_is_not_a_positi
             "{refused}"
         );
     }
-    for read in ["1,2", " 3 ", "2592000", "0.0004"] {
+    for read in ["2592000", "0.0004"] {
         assert_eq!(upload(&maja, audio(read)).await.status, 201, "{read}");
     }
-    for unreadable in ["abc", "", "1 2"] {
+    for unreadable in ["abc", "", "1 2", "1,2", " 3 ", "-1", "+1", "Infinity", "1e999", "1e3", "NaN"] {
         let response = upload(&maja, audio(unreadable)).await;
         assert_eq!((response.status.as_u16(), response.body.is_empty()), (400, true), "{unreadable}");
     }
@@ -512,7 +515,7 @@ async fn dimensions_come_in_pairs_within_bounds_and_only_for_images_and_video() 
     let maja = server.found("maja").await;
     let sized = |width: &str, height: &str| image("a.png").text("width", width).text("height", height);
 
-    for refused in [sized("0", "5"), sized("5", "40000"), sized("-1", "-1"), image("a.png").text("width", "5")] {
+    for refused in [sized("0", "5"), sized("5", "40000"), image("a.png").text("width", "5")] {
         let response = upload(&maja, refused).await;
 
         assert_eq!(response.status, 400);
@@ -525,6 +528,10 @@ async fn dimensions_come_in_pairs_within_bounds_and_only_for_images_and_video() 
     assert_eq!(at_the_bound.status, 201);
     assert_eq!(at_the_bound.json::<Value>()["width"], 32768);
     assert_eq!(upload(&maja, sized("x", "1")).await.status, 400);
+    for unreadable in [sized("-1", "-1"), sized("+5", "5"), sized(" 5", "5"), sized("5.0", "5")] {
+        let response = upload(&maja, unreadable).await;
+        assert_eq!((response.status.as_u16(), response.body.is_empty()), (400, true));
+    }
 }
 
 #[tokio::test]
@@ -827,18 +834,34 @@ async fn a_form_may_have_a_thousand_and_twenty_four_parts() {
 }
 
 #[tokio::test]
-async fn a_name_that_differs_only_in_case_or_a_long_s_names_the_same_field() {
+async fn a_field_is_named_exactly_and_only_once() {
     let server = started(&[]).await;
     let maja = server.found("maja").await;
-    let form = Form::new()
-        .part(b"Content-Disposition: form-data; NAME=\"FILE\"; FILENAME=\"a.png\"\r\nContent-Type: image/png", PNG)
-        .text("DURATIONSECONDS", "1");
+    // The parameters of a part are named in any case, the form's fields are not.
+    let disposition = Form::new()
+        .part(b"Content-Disposition: form-data; NAME=\"file\"; FILENAME=\"a.png\"\r\nContent-Type: image/png", PNG)
+        .text("durationSeconds", "1");
+    let capitals = Form::new()
+        .part(b"Content-Disposition: form-data; name=\"FILE\"; filename=\"a.png\"\r\nContent-Type: image/png", PNG)
+        .text("durationSeconds", "1");
+    let other_case = image("a.png").text("DURATIONSECONDS", "1");
+    let twice = image("a.png").text("width", "5").text("width", "5").text("height", "5");
+    let two_files = image("a.png").file("file", "b.png", "image/png", PNG);
 
-    let on_an_image = upload(&maja, form).await;
+    let on_an_image = upload(&maja, disposition).await;
+    let no_file = upload(&maja, capitals).await;
+    let ignored = upload(&maja, other_case).await;
+    let repeated = upload(&maja, twice).await;
+    let both = upload(&maja, two_files).await;
 
     // The duration was read, and an image has none.
     assert_eq!(on_an_image.status, 400);
     assert!(on_an_image.json::<Value>()["errors"]["durationSeconds"].is_array());
+    assert_eq!(no_file.status, 400, "a file named FILE is no file");
+    assert_eq!(ignored.status, 201, "{}", ignored.text());
+    assert_eq!(repeated.status, 400);
+    assert!(repeated.body.is_empty());
+    assert_eq!(both.status, 400);
 }
 
 #[tokio::test]

@@ -82,27 +82,27 @@ pub struct PartHead {
 }
 
 impl PartHead {
-    /// The value of a header, whatever the case of its name; several lines of
-    /// the same name are joined with a comma.
+    /// The value of a header, whatever the case of its name; the first line
+    /// when there are several of the same name.
     pub fn header(&self, name: &str) -> Option<String> {
-        let mut found: Option<String> = None;
-        for (have, value) in &self.headers {
-            if have.eq_ignore_ascii_case(name) {
-                match &mut found {
-                    Some(joined) => {
-                        joined.push(',');
-                        joined.push_str(value);
-                    }
-                    None => found = Some(value.clone()),
-                }
-            }
-        }
-        found
+        self.headers
+            .iter()
+            .find(|(have, _)| have.eq_ignore_ascii_case(name))
+            .map(|(_, value)| value.clone())
     }
 
     /// What `Content-Disposition` makes of the part, or `Err` when there is
     /// none or it cannot be read: the form is refused as a whole.
     pub fn disposition(&self) -> Result<Disposition, FormError> {
+        // A part that says what it is twice is not one that can be read.
+        let lines = self
+            .headers
+            .iter()
+            .filter(|(have, _)| have.eq_ignore_ascii_case("content-disposition"))
+            .count();
+        if lines != 1 {
+            return Err(FormError::Malformed);
+        }
         let text = self
             .header("content-disposition")
             .ok_or(FormError::Malformed)?;
