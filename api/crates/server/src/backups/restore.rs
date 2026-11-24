@@ -128,7 +128,56 @@ pub fn check(archive_path: &Path, work_folder: &Path) -> Result<Manifest, Restor
     if verdict != "ok" {
         return Err(refused(format!("The archive failed its check: {verdict}")));
     }
+    check_what_it_names(archive_path, work_folder, &manifest)?;
     Ok(manifest)
+}
+
+/// What the first server did not ask, and a restore does: that the database is
+/// one of an instance (it has accounts and servers) and that every part the
+/// manifest names has something in the archive. An archive of some other
+/// SQLite file, or one that names keys and holds none, would replace an
+/// instance's data with nothing it can run on.
+fn check_what_it_names(
+    archive_path: &Path,
+    work_folder: &Path,
+    manifest: &Manifest,
+) -> Result<(), RestoreError> {
+    // An instance always has a key; one without objects or instance files may
+    // be a young one, so only the keys are asked for.
+    if manifest.has_part(super::parts::KEYS) && manifest.key_files == 0 {
+        return Err(refused(
+            "The manifest names the keys part, and the archive holds no key file, so it is no backup of an instance.",
+        ));
+    }
+    let file = File::open(archive_path).map_err(|error| refused(error.to_string()))?;
+    let mut zip = ZipArchive::with_limits(file, archive::limits())
+        .map_err(|error| refused(error.to_string()))?;
+    let Some(at) = zip.find(DATABASE_ENTRY.as_bytes()) else {
+        return Err(refused("The database is missing from the archive."));
+    };
+    let copy = work_folder.join(format!(".verify-{}.partial", random_token()));
+    let copied = (|| -> Result<(), stellarr_archive::Error> {
+        let mut target = OpenOptions::new().write(true).create_new(true).open(&copy)?;
+        zip.copy_to(at, &mut target)?;
+        target.flush()?;
+        Ok(())
+    })();
+    let missing = match copied {
+        Ok(()) => super::snapshot::missing_tables(&copy, &["Users", "Servers"]),
+        Err(error) => {
+            super::snapshot::remove_with_side_files(&copy);
+            return Err(refused(error.to_string()));
+        }
+    };
+    super::snapshot::remove_with_side_files(&copy);
+    if missing.is_empty() {
+        Ok(())
+    } else {
+        Err(refused(format!(
+            "The database in the archive has no {} table, so it is not an instance's database.",
+            missing.join(" or ")
+        )))
+    }
 }
 
 /// Replaces the instance's database, files, keys and instance folders under
@@ -164,6 +213,16 @@ pub fn apply_with(
         return Err(refused(format!("The archive could not be unpacked: {error}")));
     }
 
+    // Nobody stays signed in: a session that was ended after the archive was
+    // made is running again in its copy, and a session of the instance being
+    // replaced means nothing in the instance that replaces it.
+    if let Err(error) = end_sessions(&unpacked.join(DATABASE_FOLDER).join(DATABASE_FILE), now) {
+        let _ = std::fs::remove_dir_all(&unpacked);
+        return Err(refused(format!(
+            "The sessions in the archive's database could not be ended: {error}"
+        )));
+    }
+
     let previous = new_previous_directory(&restore_folder, now);
     let outcome = swap(&data_root, &unpacked, &previous, mover);
     if let Err(RestoreError::Refused(_)) = &outcome {
@@ -175,6 +234,18 @@ pub fn apply_with(
         manifest,
         previous_data_directory: previous,
     })
+}
+
+/// Ends every session in the database at `path`, in one transaction, and leaves
+/// the file as a single file again (no write-ahead log beside it).
+fn end_sessions(path: &Path, now: Timestamp) -> Result<(), String> {
+    let mut connection = rusqlite::Connection::open(path).map_err(|error| error.to_string())?;
+    let transaction = connection.transaction().map_err(|error| error.to_string())?;
+    crate::auth::session::revoke_all(&transaction, now).map_err(|error| error.to_string())?;
+    transaction.commit().map_err(|error| error.to_string())?;
+    connection
+        .close()
+        .map_err(|(_, error)| error.to_string())
 }
 
 /// Removes what a staging or a restore cut short by a stop left in the

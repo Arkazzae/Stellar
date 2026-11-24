@@ -207,3 +207,12 @@ pub fn database_bytes() -> Vec<u8> {
     drop(connection);
     fs::read(path).unwrap()
 }
+
+/// The bytes of an instance's database: the schema, with nothing in it.
+pub fn instance_database_bytes() -> Vec<u8> {
+    let instance = Instance::new();
+    let folder = TempDir::new();
+    let copy = folder.path().join("instance.db");
+    super::snapshot::copy_database(&instance.database_path(), &copy).unwrap();
+    fs::read(copy).unwrap()
+}

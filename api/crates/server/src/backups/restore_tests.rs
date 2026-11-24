@@ -564,3 +564,72 @@ fn a_restore_without_room_or_without_a_figure_for_it_is_refused() {
     fake::tell(target.root(), Some(u64::MAX / 2));
     apply(&archive, target.root(), now()).unwrap();
 }
+
+#[test]
+fn a_database_that_is_not_an_instances_and_a_part_with_nothing_in_it_are_refused_on_purpose() {
+    use crate::backups::fixtures::instance_database_bytes;
+    // The first server restored any SQLite file; this one wants accounts and
+    // servers in it, and something behind every part the manifest names.
+    refused_and_unchanged(
+        &[
+            ("database/stellarr.db", &database_bytes(), None),
+            ("keys/master.key", b"k", None),
+            ("instance/secrets/turn", b"s", None),
+        ],
+        "has no Users or Servers table",
+    );
+    let real = instance_database_bytes();
+    refused_and_unchanged(
+        &[("database/stellarr.db", &real, None), ("instance/secrets/turn", b"s", None)],
+        "names the keys part",
+    );
+    // With a key, it is accepted.
+    let archives = TempDir::new();
+    let archive = archives.path().join("whole.zip");
+    archive_of(
+        &[
+            ("database/stellarr.db", &real, None),
+            ("keys/master.key", b"k", None),
+            ("instance/secrets/turn", b"s", None),
+        ],
+        &archive,
+    );
+    assert!(check(&archive, &archives.path().join("work")).is_ok());
+}
+
+#[test]
+fn nobody_is_signed_in_after_a_restore() {
+    let source = Instance::new();
+    let user = crate::values::Id::random();
+    let connection = rusqlite::Connection::open(source.database_path()).unwrap();
+    connection.pragma_update(None, "foreign_keys", false).unwrap();
+    connection
+        .execute(
+            "INSERT INTO \"UserSessions\" (\"Id\", \"UserId\", \"Device\", \"IpAddress\", \"CreatedAt\", \"LastSeenAt\", \"ExpiresAt\",
+                 \"AbsoluteExpiresAt\", \"PrimarySource\", \"AuthenticatedAt\", \"SecurityVersion\", \"ShortLived\")
+             VALUES (?1, ?2, 'D', '127.0.0.1', ?3, ?3, '2999-01-01 00:00:00', '2999-01-01 00:00:00', 'password', ?3, 1, 0)",
+            rusqlite::params![crate::values::Id::random(), user, now()],
+        )
+        .unwrap();
+    drop(connection);
+    let archives = TempDir::new();
+    let archive = archives.path().join("backup.zip");
+    source.archive(Parts::ALL, &archive);
+    let target = Instance::new();
+
+    apply(&archive, target.root(), now()).unwrap();
+    // The database is one file again.
+    assert!(!target.root().join("db/stellarr.db-wal").exists());
+    let restored = rusqlite::Connection::open(target.database_path()).unwrap();
+    let running: i64 = restored
+        .query_row(
+            "SELECT COUNT(*) FROM \"UserSessions\" WHERE \"RevokedAt\" IS NULL",
+            [],
+            |row| row.get(0),
+        )
+        .unwrap();
+    let ended: i64 = restored
+        .query_row("SELECT COUNT(*) FROM \"UserSessions\"", [], |row| row.get(0))
+        .unwrap();
+    assert_eq!((running, ended), (0, 1));
+}
