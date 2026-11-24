@@ -399,8 +399,8 @@ impl<'a> Delimiters<'a> {
             } else {
                 2
             };
-            self.runs[o].count -= used;
-            self.runs[o].end -= used;
+            self.runs[o].count = self.runs[o].count.saturating_sub(used);
+            self.runs[o].end = self.runs[o].end.saturating_sub(used);
             let opener_end = self.runs[o].end;
             exclude(
                 excluded,
@@ -413,7 +413,7 @@ impl<'a> Delimiters<'a> {
                 self.offset + closer_start,
                 self.offset + closer_start + used,
             );
-            self.runs[c].count -= used;
+            self.runs[c].count = self.runs[c].count.saturating_sub(used);
             self.runs[c].start += used;
             self.runs[o].next = Some(c);
             self.runs[c].previous = Some(o);

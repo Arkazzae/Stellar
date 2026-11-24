@@ -2,11 +2,11 @@
 //! by the mention reader that decides whom to notify, which must find exactly
 //! the accounts the resolver chose to mention and nobody else.
 
-use std::collections::BTreeSet;
+use std::collections::{BTreeSet, HashMap};
 use std::time::{Duration, Instant};
 
 use stellarr_discord::{
-    MentionText, ReferenceResolver, escape, extract_normalized_usernames, rewrite,
+    ImportResolver, MentionText, ReferenceResolver, escape, extract_normalized_usernames, rewrite,
 };
 
 struct Known;
@@ -381,4 +381,47 @@ fn a_username_the_resolver_gives_that_is_not_one_is_a_label() {
     let long = "x".repeat(32);
     assert_eq!(rewrite("<@1>", &Odd(long.clone())), format!("@{long}"));
     assert_eq!(rewrite("<@1>", &Odd("Zażółć".into())), "@Zażółć");
+}
+
+#[test]
+fn the_import_resolver_asks_first_and_never_mentions_anybody() {
+    let map = |pairs: &[(&str, &str)]| -> HashMap<String, String> {
+        pairs
+            .iter()
+            .map(|(k, v)| ((*k).to_owned(), (*v).to_owned()))
+            .collect()
+    };
+    let text = "hi <@1> and <@2>, see <#20> and <#21>, <@&10> <:party:30>";
+
+    // The first pass knows the roles and notes what it is asked.
+    let recording = ImportResolver::recording(map(&[("10", "@Moderators")]));
+    let first = rewrite(text, &recording);
+    assert_eq!(
+        recording.asked_users().into_iter().collect::<Vec<_>>(),
+        ["1", "2"]
+    );
+    assert_eq!(
+        recording.asked_channels().into_iter().collect::<Vec<_>>(),
+        ["20", "21"]
+    );
+    assert!(
+        first.contains(r"\@unknown-user")
+            && first.contains("#deleted-channel")
+            && first.contains(r"\@Moderators")
+    );
+
+    // The second knows the people. A name that is another account's name is still a label.
+    let known = ImportResolver::new(
+        map(&[("1", "ada"), ("2", "Bea (left)")]),
+        map(&[("20", "#general")]),
+        map(&[("10", "@Moderators")]),
+    );
+    let second = rewrite(text, &known);
+    assert_eq!(
+        second,
+        r"hi \@ada and \@Bea (left), see #general and #deleted-channel, \@Moderators \:party:"
+    );
+    assert!(extract_normalized_usernames(&second).is_empty());
+    // A custom emoji keeps its name as text.
+    assert_eq!(rewrite("<:party:30>", &known), r"\:party:");
 }

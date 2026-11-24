@@ -1,6 +1,6 @@
 //! Tables of the Unicode general categories and of the invariant upper-case
 //! mapping that the message rewriting reads, taken from the character data of
-//! the runtime the first version of this code ran on (.NET 10), so that the
+//! the runtime the first version of this code ran on, so that the
 //! same text reads the same way: a name that was a name stays one, and two
 //! names that were one name stay one.
 //!
