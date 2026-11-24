@@ -78,7 +78,7 @@ pub async fn upload(
         keep_image(content_type, BANNER.max_bytes)
     };
     let slots = [Slot { name: "file", keeps: &keeps }];
-    let mut received = read(&state, request, &slots).await?;
+    let mut received = read(&state, request, &slots, &[]).await?;
     let file = received.files.remove(0).ok_or_else(ApiError::bad_request)?;
     let Some(kind) = find_kind(&name) else {
         return Err(ApiError::not_found());

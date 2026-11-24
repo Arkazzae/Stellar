@@ -870,3 +870,72 @@ async fn a_file_over_its_limit_is_never_written_to_disk() {
     assert_eq!(staged(&server), 0);
     assert!(objects(&server).is_empty());
 }
+
+/// What bounds the disk the forms being read can fill: the pipeline lets
+/// `Uploads:MaxConcurrentUploads` of them run, queues four times as many
+/// without reading them, and answers 429 to the rest.
+#[tokio::test]
+async fn only_as_many_forms_are_read_at_once_as_uploads_may_run() {
+    use tokio::io::{AsyncReadExt, AsyncWriteExt};
+
+    let server = Server::start_with(&[
+        ("ASPNETCORE_ENVIRONMENT", "Production"),
+        ("Rtc__TurnSharedSecret", "a-secret-for-the-relay-that-is-long-enough"),
+        ("Uploads__MinimumFreeDataRootBytes", "0"),
+        ("Uploads__MaxConcurrentUploads", "1"),
+    ])
+    .await;
+    let maja = server.found("maja").await;
+    let name = stellarr_api::auth::session::cookie_name(&stellarr_api::settings::Environment::new("Production"));
+    let cookie = format!("{name}={}", maja.client.cookie(name).expect("a session"));
+    let head = format!(
+        "POST /api/uploads HTTP/1.1\r\nHost: x\r\nCookie: {cookie}\r\nX-Stellarr-Client: web\r\nX-Stellarr-Client-Version: 2.0.0\r\nContent-Type: multipart/form-data; boundary=XXB\r\nContent-Length: 100000\r\nConnection: close\r\n\r\n--XXB\r\nContent-Disposition: form-data; name=\"file\"; filename=\"a.pdf\"\r\nContent-Type: application/pdf\r\n\r\n%PDF-1 and some more bytes"
+    );
+    // Seven forms that start and stall: one runs, four wait, two are turned away.
+    let mut streams = Vec::new();
+    for _ in 0..7 {
+        let mut stream = tokio::net::TcpStream::connect(server.address()).await.unwrap();
+        stream.write_all(head.as_bytes()).await.unwrap();
+        streams.push(stream);
+        tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+    }
+    let mut turned_away = 0;
+    for stream in &mut streams {
+        let mut seen = [0u8; 64];
+        if let Ok(Ok(read)) = tokio::time::timeout(std::time::Duration::from_millis(300), stream.read(&mut seen)).await
+            && String::from_utf8_lossy(&seen[..read]).starts_with("HTTP/1.1 429")
+        {
+            turned_away += 1;
+        }
+    }
+
+    assert_eq!(turned_away, 2);
+    assert!(staged(&server) <= 1, "{} files staged", staged(&server));
+}
+
+fn resident_mib(pid: u32) -> f64 {
+    let out = std::process::Command::new("ps").args(["-o", "rss=", "-p", &pid.to_string()]).output().unwrap();
+    String::from_utf8_lossy(&out.stdout).trim().parse::<f64>().unwrap_or(0.0) / 1024.0
+}
+
+/// A form of a thousand fields the route does not read, each nearly 64 KiB,
+/// is read and let go: it is not held in memory as it goes by.
+#[tokio::test]
+async fn the_fields_a_route_does_not_read_are_not_kept() {
+    let server = started(&[]).await;
+    let maja = server.found("maja").await;
+    let pid = server.pid().unwrap();
+    let before = resident_mib(pid);
+    let mut form = Form::new();
+    let value = "v".repeat(60 * 1024);
+    for n in 0..1000 {
+        form = form.text(&format!("unknown{n}"), &value);
+    }
+    let form = form.file("file", "a.png", "image/png", PNG);
+    let response = upload(&maja, form).await;
+    // Memory that was held is mostly still the process's when it is let go.
+    let peak = resident_mib(pid);
+
+    assert_eq!(response.status, 201, "{}", response.text());
+    assert!(peak < before + 40.0, "the server grew from {before} to {peak} MiB");
+}
