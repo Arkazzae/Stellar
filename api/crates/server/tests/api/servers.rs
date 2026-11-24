@@ -2039,3 +2039,93 @@ async fn a_list_is_not_an_object_for_any_route_that_reads_one() {
     }
     assert_eq!(count_of(&server, "SELECT count(*) FROM \"ServerAuditEntries\" WHERE \"ServerId\" = ?1", &id), 1);
 }
+
+// ---------------------------------------------------------------------------
+// The second step.
+
+/// Gives the person a confirmed second step, and their session the moment it
+/// passed it (none when it never did).
+fn second_step(server: &Server, person: &Person, passed_seconds_ago: Option<u64>) {
+    let connection = server.database();
+    connection
+        .execute(
+            "INSERT INTO \"MfaMethods\" (\"Id\", \"UserId\", \"Type\", \"Name\", \"CreatedAt\", \"ConfirmedAt\") VALUES (?1, ?2, 'totp', 'Phone', ?3, ?3)",
+            params![text_id(), person.id.to_uppercase(), now_text()],
+        )
+        .unwrap();
+    let passed = passed_seconds_ago.map(|seconds| Timestamp::now().minus(Duration::from_secs(seconds)).to_db_text());
+    connection
+        .execute(
+            "UPDATE \"UserSessions\" SET \"MfaCompletedAt\" = ?2 WHERE \"UserId\" = ?1",
+            params![person.id.to_uppercase(), passed],
+        )
+        .unwrap();
+}
+
+#[tokio::test]
+async fn handing_over_and_deleting_need_a_second_step_passed_lately_when_the_account_has_one() {
+    let server = Server::start().await;
+    server.found("owner").await;
+    let maya = server.register("maya").await;
+    let ada = server.register("ada").await;
+    let id = crowded(&server, &maya, &[&ada]).await;
+    second_step(&server, &maya, None);
+    let writes = || count(&server, "SELECT count(*) FROM \"ServerAuditEntries\"");
+    let before = writes();
+
+    let handover = post(&maya.client, "/api/admin/server/transfer", Some(&id), Some(&json!({ "userId": ada.id }))).await;
+    let removal = delete(&maya.client, "/api/admin/server", Some(&id)).await;
+
+    for response in [handover, removal] {
+        assert_eq!(response.status, 403);
+        assert_eq!(response.header("content-type"), Some("application/problem+json"));
+        assert_eq!(response.json::<Value>()["code"], "fresh-mfa-required");
+    }
+    assert_eq!(writes(), before);
+    assert_eq!(count_of(&server, "SELECT count(*) FROM \"Servers\" WHERE \"Id\" = ?1", &id), 1);
+    let owner_slot: String = server
+        .database()
+        .query_row("SELECT \"UserId\" FROM \"ServerMembers\" WHERE \"ServerId\" = ?1 AND \"OwnerSlot\" = 1", [id.to_uppercase()], |row| row.get(0))
+        .unwrap();
+    assert_eq!(owner_slot, maya.id.to_uppercase());
+
+    // A session that passed it a minute ago may.
+    server
+        .database()
+        .execute(
+            "UPDATE \"UserSessions\" SET \"MfaCompletedAt\" = ?2 WHERE \"UserId\" = ?1",
+            params![maya.id.to_uppercase(), Timestamp::now().minus(Duration::from_secs(60)).to_db_text()],
+        )
+        .unwrap();
+    let handover = post(&maya.client, "/api/admin/server/transfer", Some(&id), Some(&json!({ "userId": ada.id }))).await;
+    assert_eq!(handover.status, 204, "{}", handover.text());
+}
+
+#[tokio::test]
+async fn a_stale_session_is_told_of_the_second_step_before_any_other_refusal_of_these_routes() {
+    let server = Server::start().await;
+    server.found("owner").await;
+    let maya = server.register("maya").await;
+    let ada = server.register("ada").await;
+    let id = crowded(&server, &maya, &[&ada]).await;
+    second_step(&server, &ada, Some(3600));
+
+    // Not the owner, and not fresh: the second step is what is said.
+    let handover = post(&ada.client, "/api/admin/server/transfer", Some(&id), Some(&json!({ "userId": ada.id }))).await;
+    let removal = delete(&ada.client, "/api/admin/server", Some(&id)).await;
+
+    for response in [handover, removal] {
+        assert_eq!(response.status, 403);
+        assert_eq!(response.json::<Value>()["code"], "fresh-mfa-required");
+    }
+}
+
+#[tokio::test]
+async fn an_account_without_a_second_step_passes_the_guard_of_these_routes() {
+    let server = Server::start().await;
+    server.found("owner").await;
+    let maya = server.register("maya").await;
+    let id = named_server(&maya.client, "Crew").await;
+
+    assert_eq!(delete(&maya.client, "/api/admin/server", Some(&id)).await.status, 204);
+}
