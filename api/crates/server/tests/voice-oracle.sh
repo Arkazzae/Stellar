@@ -163,7 +163,7 @@ sleep 3
 for target in oracle rust; do
   if [ "$target" = oracle ]; then address=$oracle; media=http://127.0.0.1:5231; else address=$rust; media=http://127.0.0.1:5232; fi
   curl -s "$media/_fake/clear" >/dev/null
-  node "$here/voice-oracle.mjs" --base "$address" --fake "$media" --ids "$work/ids.json" --out "$work/$target.txt" --only "$only" --password "$password"
+  STEP_TIMES=1 node "$here/voice-oracle.mjs" --base "$address" --fake "$media" --ids "$work/ids.json" --out "$work/$target.txt" --only "$only" --password "$password" 2> "$work/$target.times"
 done
 
 # The rows the routes left, from both databases.

@@ -27,6 +27,7 @@ const only = args.only ? args.only.split(",") : null;
 
 const names = new Map();
 for (const [name, id] of Object.entries(ids)) if (typeof id === "string") names.set(id.toLowerCase(), name);
+const began = Date.now();
 const lines = [];
 const out = (text) => lines.push(text);
 
@@ -146,13 +147,16 @@ const polled = new Set();
 async function step(title, action, settle = 500, quiet = false) {
   if (only && !only.includes(section)) return;
   out(`## ${title}`);
+  // The moments the steps fall on, for whoever has to tell a difference of moments from another (not in the transcript).
+  if (process.env.STEP_TIMES) console.error(`${((Date.now() - began) / 1000).toFixed(1)}s ${title}`);
   try {
     const result = await action?.();
     if (result !== undefined) out(`   result: ${scrub(result)}`);
   } catch (error) {
     out(`   error: ${error.message}`);
   }
-  await sleep(settle);
+  // Closing a connection is slow on the first server: give what follows time to arrive.
+  await sleep(section === "disconnecting" ? Math.max(settle, 1500) : settle);
   for (const client of clients) {
     const taken = client.take();
     if (quiet) continue;
@@ -170,7 +174,10 @@ async function step(title, action, settle = 500, quiet = false) {
     if (last > first) shown.splice(first, last - first, ...shown.slice(first, last).sort());
     first = Math.max(last, first + 1);
   }
-  for (const request of shown) out(`   media <- ${scrub(request)}`);
+  // How many of a burst a bucket lets through depends on how long the burst took
+  // (the bucket refills as it goes), so a quiet step does not list them.
+  if (!quiet) for (const request of shown) out(`   media <- ${scrub(request)}`);
+  else if (process.env.STEP_TIMES) console.error(`   ${shown.length} requests reached the media server in: ${title}`);
   for (const place of polls) polled.add(place);
 }
 
@@ -328,8 +335,11 @@ await step("dan, who sits nowhere, signals the room", () => text(dan, "SendVoice
 
 // -------------------------------------------------------------------- media
 sectionOf("media");
-await step("ben opens media in a room he is not in", () => text(ben, "OpenMediaSession", V(2)));
-for (const value of [null, "bad", 5, ""]) await step(`ben opens media for ${JSON.stringify(value)}`, () => text(ben, "OpenMediaSession", value), 200);
+// Every call counts against the connection's bucket of opens (six, and one more
+// in ten seconds), refused or not; dan, who sits nowhere, makes the refused ones, so
+// that the sessions ben opens below do not depend on how long the steps took.
+await step("dan opens media in a room he is not in", () => text(dan, "OpenMediaSession", V(2)));
+for (const value of [null, "bad", 5, ""]) await step(`dan opens media for ${JSON.stringify(value)}`, () => text(dan, "OpenMediaSession", value), 200);
 await step("ben opens media", async () => { const r = await ben.invoke("OpenMediaSession", V(1)); return r; });
 const benSession = "session-1";
 await step("cat opens media", () => text(cat, "OpenMediaSession", V(1)));
@@ -444,11 +454,17 @@ await step("a burst of voice signals", async () => {
   for (let n = 0; n < 230; n++) done.push(ben.send("SendVoiceSignal", sig(V(1), { payload: '{"screenStreamId":null}' })));
   const results = await Promise.all(done);
   const refused = results.filter((r) => r.error).map((r) => r.error.replace(/^.*HubException: /, ""));
+  if (process.env.STEP_TIMES) console.error(`   voice signals taken: ${results.length - refused.length}`);
   return { accepted: results.length - refused.length >= 200 && results.length - refused.length <= 230, refused: [...new Set(refused)], firstRefusedAtLeast200: results.slice(0, 200).every((r) => !r.error) };
 }, 1500, true);
-await step("a burst of opens", async () => {
-  const results = await Promise.all(Array.from({ length: 9 }, () => ben.send("OpenMediaSession", V(1))));
+// A connection of its own: the bucket of opens refills a session in ten seconds,
+// so what is left in ben's depends on how long the steps before took.
+const opener = await connect("ben4", await signIn("ben"));
+await step("a burst of opens, from a connection that has opened none", async () => {
+  await text(opener, "JoinVoice", V(1));
+  const results = await Promise.all(Array.from({ length: 9 }, () => opener.send("OpenMediaSession", V(1))));
   const refused = results.filter((r) => r.error).map((r) => r.error.replace(/^.*HubException: /, ""));
+  if (process.env.STEP_TIMES) console.error(`   sessions opened: ${results.length - refused.length}`);
   return { opened: results.length - refused.length >= 6 && results.length - refused.length <= 8, refused: [...new Set(refused)] };
 }, 1500, true);
 await step("a burst of media signals", async () => {
@@ -461,17 +477,20 @@ await step("a connection of its own for the media signals", async () => {
   const session = (await throttled.invoke("OpenMediaSession", V(1)))?.result?.sessionId;
   const results = await Promise.all(Array.from({ length: 70 }, () => throttled.send("SendMediaSignal", media(V(1), session, "subscriptions", '{"mids":[]}'))));
   const refused = results.filter((r) => r.error).map((r) => r.error.replace(/^.*HubException: /, ""));
+  if (process.env.STEP_TIMES) console.error(`   media signals taken: ${results.length - refused.length}`);
   return { accepted: results.length - refused.length >= 60 && results.length - refused.length <= 70, refused: [...new Set(refused)] };
 }, 1500, true);
 
 // ------------------------------------------------------------ moderation
 sectionOf("moderation");
+let arrivalsAt = 0;
 await step("cat and ben, then fay and eve sit in rooms", async () => [
   await text(cat, "JoinVoice", V(1)),
   await text(fay, "JoinVoice", V(1)),
   await text(eve, "JoinVoice", V(1)),
   await text(olaTwo, "JoinVoice", V(1)),
 ]);
+arrivalsAt = Date.now();
 const room = (n, who) => `/api/admin/channels/${V(n)}/members/${ids[who]}`;
 const owner = people.ola;
 await step("rank: ben (mod) kicks fay (base)", async () => http(people.ben, "DELETE", room(1, "fay")));
@@ -550,6 +569,13 @@ await step("ben leaves the call (not a decline)", () => text(ben, "LeaveVoice"))
 
 // --------------------------------------------------------------- soundboard
 sectionOf("soundboard");
+// An arrival sound is announced once in thirty seconds for a person. Wait it out,
+// so that this join is the first of its pause on either server, however long the
+// steps before took (and the calls above, well inside the last pause, stay silent).
+{
+  const wait = arrivalsAt + 33_000 - Date.now();
+  if (wait > 0) await sleep(wait);
+}
 await step("ola joins the first room, with an arrival sound chosen", () => text(ola, "JoinVoice", V(1)));
 await step("cat joins it", () => text(cat, "JoinVoice", V(1)));
 await step("ola plays the sound", () => text(ola, "PlaySoundboard", V(1), ids.sound1));
