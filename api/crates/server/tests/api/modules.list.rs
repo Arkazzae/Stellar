@@ -33,3 +33,4 @@ mod uploads;
 mod workers;
 mod refusals;
 mod steps;
+mod password_reset;
