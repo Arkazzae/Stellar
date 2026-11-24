@@ -30,7 +30,7 @@ struct Page {
     methods: Vec<Method>,
     remaining_recovery_codes: i64,
     trusted_devices: Vec<Device>,
-    recent_events: Vec<Event>,
+    recent_events: Vec<SecurityEvent>,
     fresh_mfa_window_seconds: u64,
     trusted_device_days: i64,
     email_code_available: bool,
@@ -67,13 +67,45 @@ struct Device {
 
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
-struct Event {
+pub(crate) struct SecurityEvent {
     id: Id,
-    kind: String,
+    pub(crate) kind: String,
     detail: String,
-    ip_address: String,
+    pub(crate) ip_address: String,
     device: String,
-    created_at: Timestamp,
+    pub(crate) created_at: Timestamp,
+}
+
+/// An account's newest security events, the newest first: what its own page
+/// shows, and what the operator's panel shows of another person.
+pub(crate) fn recent_events(connection: &Connection, user: Id, limit: i64) -> rusqlite::Result<Vec<SecurityEvent>> {
+    events_of(connection, user, limit)
+}
+
+/// An identity linked to an account, as stored.
+pub(crate) struct Linked {
+    pub(crate) id: Id,
+    /// The provider it was linked through; none for the original one.
+    pub(crate) provider: Option<String>,
+    pub(crate) issuer: String,
+    pub(crate) created_at: Timestamp,
+}
+
+/// The identities linked to the account, oldest first.
+pub(crate) fn linked_identities(connection: &Connection, user: Id) -> rusqlite::Result<Vec<Linked>> {
+    let mut statement = connection.prepare(
+        "SELECT \"Id\", \"ProviderId\", \"Issuer\", \"CreatedAt\" FROM \"ExternalIdentities\" WHERE \"UserId\" = ?1 ORDER BY \"CreatedAt\"",
+    )?;
+    statement
+        .query_map([user], |row| {
+            Ok(Linked {
+                id: row.get(0)?,
+                provider: row.get(1)?,
+                issuer: row.get(2)?,
+                created_at: row.get(3)?,
+            })
+        })?
+        .collect()
 }
 
 #[derive(Serialize)]
@@ -108,14 +140,14 @@ async fn list_events(state: &AppState, caller: Caller) -> ApiResult<Response> {
     Ok(json_response(StatusCode::OK, &events))
 }
 
-fn events_of(connection: &Connection, user: Id, limit: i64) -> rusqlite::Result<Vec<Event>> {
+fn events_of(connection: &Connection, user: Id, limit: i64) -> rusqlite::Result<Vec<SecurityEvent>> {
     let mut statement = connection.prepare(
         "SELECT \"Id\", \"Kind\", \"Detail\", \"IpAddress\", \"Device\", \"CreatedAt\" FROM \"SecurityEvents\"
          WHERE \"UserId\" = ?1 ORDER BY \"CreatedAt\" DESC LIMIT ?2",
     )?;
     statement
         .query_map(params![user, limit], |row| {
-            Ok(Event {
+            Ok(SecurityEvent {
                 id: row.get(0)?,
                 kind: row.get(1)?,
                 detail: row.get(2)?,
@@ -225,21 +257,17 @@ fn identities(
     owned: &crate::auth::ways_in::OwnedProviders,
     configured: &[providers::Provider],
 ) -> rusqlite::Result<Vec<Identity>> {
-    let mut statement = connection.prepare(
-        "SELECT \"Id\", \"ProviderId\", \"Issuer\", \"CreatedAt\" FROM \"ExternalIdentities\" WHERE \"UserId\" = ?1 ORDER BY \"CreatedAt\"",
-    )?;
     let providers = owned.view();
-    statement
-        .query_map([user], |row| {
-            let linked_through: Option<String> = row.get(1)?;
-            let issuer: String = row.get(2)?;
-            let provider = providers.of(linked_through.as_deref()).to_string();
-            Ok(Identity {
-                id: row.get(0)?,
-                name: providers::identity_name(configured, &provider, &issuer),
+    Ok(linked_identities(connection, user)?
+        .into_iter()
+        .map(|linked| {
+            let provider = providers.of(linked.provider.as_deref()).to_string();
+            Identity {
+                id: linked.id,
+                name: providers::identity_name(configured, &provider, &linked.issuer),
                 provider_id: Some(provider),
-                created_at: row.get(3)?,
-            })
-        })?
-        .collect()
+                created_at: linked.created_at,
+            }
+        })
+        .collect())
 }
