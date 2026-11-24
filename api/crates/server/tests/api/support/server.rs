@@ -160,15 +160,14 @@ impl Server {
     }
 
     /// The library's server, run in this process with `routes` instead of the
-    /// real groups, plus the health group.
+    /// real groups, plus the health group, which the harness waits on.
     pub async fn in_process(routes: Endpoints, extra: &[(&str, &str)]) -> Server {
         let folder = TempDir::new();
         let variables = environment(folder.path(), extra);
         let settings = Settings::load(&variables).expect("usable settings");
         let (told, listening) = oneshot::channel();
         let (stop, stopped) = oneshot::channel::<()>();
-        let mut groups = stellarr_api::groups();
-        groups.push(routes);
+        let groups = vec![stellarr_api::health::routes(), routes];
         let task = tokio::spawn(async move {
             let result = stellarr_api::serve(
                 settings,

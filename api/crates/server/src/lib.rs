@@ -10,10 +10,12 @@
 //!
 //! `api/README.md` says how to add a group of endpoints and how to test it.
 
+pub mod auth;
 pub mod database;
 pub mod encoding;
 pub mod events;
 pub mod http;
+pub mod instance;
 pub mod logging;
 pub mod seal;
 pub mod settings;
@@ -45,7 +47,7 @@ use crate::state::AppState;
 /// it touches.
 macro_rules! groups {
     ($($name:ident),* $(,)?) => {
-        $(mod $name;)*
+        $(pub mod $name;)*
 
         /// The routes of every group of the API.
         pub fn groups() -> Vec<Endpoints> {
@@ -117,6 +119,8 @@ pub async fn serve(
     let sealer = Sealer::load_or_create(&keys).map_err(|e| StartError(e.to_string()))?;
     let state = AppState::new(settings, database, events, sealer);
 
+    issue_setup_code(&state).await?;
+
     let (router, rules) = groups
         .into_iter()
         .fold(Endpoints::new(), Endpoints::merge)
@@ -179,6 +183,34 @@ pub async fn serve(
         error!("requests were still running after {SHUTDOWN_GRACE:?}; they are dropped");
     }
     result
+}
+
+/// An instance without accounts is founded by whoever creates the first one.
+/// The code that registration asks for is shown here, in the log, which only
+/// the operator reads; a new one at every start until the owner exists.
+async fn issue_setup_code(state: &AppState) -> Result<(), StartError> {
+    let empty: bool = state
+        .database()
+        .read(|connection| -> Result<bool, crate::database::DbError> {
+            Ok(
+                connection.query_row("SELECT NOT EXISTS (SELECT 1 FROM \"Users\")", [], |row| {
+                    row.get(0)
+                })?,
+            )
+        })
+        .await
+        .map_err(|e| StartError(format!("the database cannot be read: {e}")))?;
+    if !empty {
+        return Ok(());
+    }
+    let code = state.setup_code().issue();
+    let public_url = &state.settings().operations.public_url;
+    if public_url.is_empty() {
+        tracing::warn!(target: "Stellarr.Api.Logging.StartupLog", "Setup code: {code}. Open /setup at the address of this instance to create the owner account.");
+    } else {
+        tracing::warn!(target: "Stellarr.Api.Logging.StartupLog", "Setup code: {code}. Open {public_url}/setup to create the owner account.");
+    }
+    Ok(())
 }
 
 /// Runs the real API, with every group of endpoints, until SIGTERM or SIGINT.

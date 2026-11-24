@@ -8,7 +8,7 @@
 //! }
 //! ```
 //!
-//! `.json_body()` and `.rate_limit(..)` apply to the route added just before
+//! `.json_body()`, `.authorized()` and `.rate_limit(..)` apply to the route added just before
 //! them. They are data the pipeline reads, not layers of the route: the limit
 //! has to count a request before the client gate looks at it, which a layer
 //! around the handler could not do.
@@ -34,6 +34,9 @@ pub struct Rules {
     /// The route reads a JSON body: a request that names another content type
     /// is answered 415 before the limit counts it.
     pub json_body: bool,
+    /// The route needs a signed-in person: a request without a valid session
+    /// is answered 401 with no body.
+    pub authorize: bool,
 }
 
 /// The routes of one group, with the rules of each.
@@ -119,6 +122,12 @@ impl Endpoints {
     /// Counts the requests of the route added last against `policy`.
     pub fn rate_limit(mut self, policy: RateLimitPolicy) -> Endpoints {
         self.rules_of_last().rate_limit = Some(policy);
+        self
+    }
+
+    /// Marks the route added last as one that needs a signed-in person.
+    pub fn authorized(mut self) -> Endpoints {
+        self.rules_of_last().authorize = true;
         self
     }
 

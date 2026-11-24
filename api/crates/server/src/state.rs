@@ -9,8 +9,9 @@ use std::sync::Arc;
 
 use stellarr_messages::Messages;
 
+use crate::auth::setup_code::SetupCode;
 use crate::database::{Database, MutationGate};
-use crate::events::EventPublisher;
+use crate::events::{EventPublisher, Presence, Unconnected};
 use crate::http::{AttemptLimiter, Metrics};
 use crate::seal::Sealer;
 use crate::settings::Settings;
@@ -29,6 +30,9 @@ struct Inner {
     mutation_gate: MutationGate,
     pin_attempts: AttemptLimiter,
     sealer: Sealer,
+    presence: Arc<dyn Presence>,
+    setup_code: SetupCode,
+    registration_gate: tokio::sync::Mutex<()>,
 }
 
 impl AppState {
@@ -46,6 +50,9 @@ impl AppState {
                 database,
                 events,
                 sealer,
+                presence: Arc::new(Unconnected),
+                setup_code: SetupCode::default(),
+                registration_gate: tokio::sync::Mutex::new(()),
                 metrics: Metrics::default(),
                 mutation_gate: MutationGate::default(),
             }),
@@ -87,5 +94,24 @@ impl AppState {
     /// Seals values for clients and the database; see [`crate::seal`].
     pub fn sealer(&self) -> &Sealer {
         &self.inner.sealer
+    }
+
+    /// Whether a person is online, as the hub sees them. Without a hub,
+    /// nobody is.
+    pub fn presence_of(&self, user: crate::values::Id) -> String {
+        self.inner.presence.presence_of(user)
+    }
+
+    /// The code the owner account is created with, while there is none.
+    pub fn setup_code(&self) -> &SetupCode {
+        &self.inner.setup_code
+    }
+
+    /// Lets one registration at a time decide whether the instance is still
+    /// empty and commit its account. Until the first account exists the
+    /// database has no row that could enforce "only one first registration",
+    /// so the process does.
+    pub fn registration_gate(&self) -> &tokio::sync::Mutex<()> {
+        &self.inner.registration_gate
     }
 }

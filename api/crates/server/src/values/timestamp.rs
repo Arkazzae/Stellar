@@ -83,6 +83,34 @@ impl Timestamp {
         self.spell('T', "Z")
     }
 
+    /// The text of a moment the first server wrote without saying it was UTC,
+    /// the way it still writes the creation time of an account: the wire
+    /// spelling without its `Z`.
+    pub fn to_unspecified_wire_text(self) -> String {
+        self.spell('T', "")
+    }
+
+    /// The moment as an HTTP date, `Thu, 24 Dec 2026 01:18:38 GMT`, which is
+    /// how a cookie names the time it expires.
+    pub fn to_http_date(self) -> String {
+        const DAYS: [&str; 7] = ["Thu", "Fri", "Sat", "Sun", "Mon", "Tue", "Wed"];
+        const MONTHS: [&str; 12] = [
+            "Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec",
+        ];
+        let seconds = self.0.div_euclid(TICKS_PER_SECOND);
+        let days = seconds.div_euclid(SECONDS_PER_DAY);
+        let of_day = seconds.rem_euclid(SECONDS_PER_DAY);
+        let (year, month, day) = civil_from_days(days);
+        format!(
+            "{}, {day:02} {} {year:04} {:02}:{:02}:{:02} GMT",
+            DAYS[days.rem_euclid(7) as usize],
+            MONTHS[(month - 1) as usize],
+            of_day / 3600,
+            of_day / 60 % 60,
+            of_day % 60
+        )
+    }
+
     /// Reads either spelling. A time zone is not accepted other than `Z`:
     /// everything in the database is UTC.
     pub fn parse(text: &str) -> Option<Timestamp> {
@@ -260,6 +288,16 @@ mod tests {
     }
 
     #[test]
+    fn a_moment_written_without_a_zone_has_a_t_and_no_z() {
+        assert_eq!(
+            Timestamp::parse("2026-11-24 01:18:38.632863")
+                .unwrap()
+                .to_unspecified_wire_text(),
+            "2026-11-24T01:18:38.632863"
+        );
+    }
+
+    #[test]
     fn the_wire_spelling_has_a_t_and_a_z() {
         assert_eq!(
             Timestamp::parse("2026-11-24 00:33:18.6419643")
@@ -374,6 +412,26 @@ mod tests {
                 .unwrap()
                 .to_db_text(),
             "2026-11-18 21:20:57.1234567"
+        );
+    }
+
+    #[test]
+    fn a_cookie_names_its_expiry_as_an_http_date() {
+        assert_eq!(
+            Timestamp::from_unix_seconds(0).unwrap().to_http_date(),
+            "Thu, 01 Jan 1970 00:00:00 GMT"
+        );
+        assert_eq!(
+            Timestamp::parse("2026-12-24 01:18:38.632863")
+                .unwrap()
+                .to_http_date(),
+            "Thu, 24 Dec 2026 01:18:38 GMT"
+        );
+        assert_eq!(
+            Timestamp::parse("2000-02-29 12:00:00")
+                .unwrap()
+                .to_http_date(),
+            "Tue, 29 Feb 2000 12:00:00 GMT"
         );
     }
 

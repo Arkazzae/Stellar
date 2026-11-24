@@ -60,6 +60,20 @@ pub trait EventPublisher: Send + Sync {
     fn publish(&self, event: Event);
 }
 
+/// What the hub knows of who is connected, which the API reads to say whether
+/// a person is `online`, `idle`, `dnd` or `offline` to themselves.
+pub trait Presence: Send + Sync {
+    /// The account's own view of its status; being disconnected wins over any
+    /// choice it made.
+    fn presence_of(&self, user: Id) -> String;
+}
+
+impl Presence for Unconnected {
+    fn presence_of(&self, _user: Id) -> String {
+        "offline".to_string()
+    }
+}
+
 /// The publisher of a process that has no hub: nobody is connected, so there
 /// is nobody to tell.
 #[derive(Debug, Default)]

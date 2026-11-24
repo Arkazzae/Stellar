@@ -50,3 +50,16 @@ impl From<rusqlite::Error> for DbError {
         DbError::Sqlite(error)
     }
 }
+
+/// So that a closure that only runs statements can return `rusqlite::Result`
+/// and need no error type of its own: the failure to get a connection or to
+/// run the work comes back in the same type as a failed statement.
+impl From<DbError> for rusqlite::Error {
+    fn from(error: DbError) -> rusqlite::Error {
+        match error {
+            DbError::Sqlite(error) => error,
+            // The variant that carries any error: it is not about a conversion.
+            DbError::Task(reason) => rusqlite::Error::ToSqlConversionFailure(reason.into()),
+        }
+    }
+}
