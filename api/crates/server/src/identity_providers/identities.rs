@@ -17,11 +17,12 @@ use stellarr_oidc::ticket::{self, TicketKind};
 
 use super::names::shown_name;
 use super::pages::no_store;
-use super::proof::Proof;
 use super::single_sign_on::unix_now;
 use super::start::actor_of;
 use crate::auth::ways_in::{self, OwnedProviders};
-use crate::auth::{Caller, events};
+use crate::auth::ceremony::{self, IdentityRemoved, LinkStart};
+use crate::auth::flow::{self, Context};
+use crate::auth::{Caller, security_cookies};
 use crate::database::DbError;
 use crate::http::{ApiError, ApiResult, Json, Origin, Path, Problem, json_response};
 use crate::instance::users::User;
@@ -83,22 +84,11 @@ async fn linking(
     let Some(provider) = state.settings().oidc.find(provider_id) else {
         return Err(ApiError::not_found());
     };
-    let proof = Proof::check(state, caller, password.as_deref()).await?;
-    let allowed = state
-        .database()
-        .read(move |connection| -> Result<Option<(bool, i64)>, DbError> {
-            let Some(user) = User::find(connection, caller.user)? else {
-                return Ok(None);
-            };
-            Ok(Some((proof.allows(connection, caller)?, user.session_version)))
-        })
-        .await?;
-    let Some((allowed, version)) = allowed else {
-        return Err(ApiError::not_found());
+    let version = match ceremony::may_start_identity_link(state, caller, password.as_deref()).await? {
+        LinkStart::Allowed { security_version } => security_version,
+        LinkStart::NotAllowed => return Err(fresh_proof_needed(state)?),
+        LinkStart::NoAccount => return Err(ApiError::not_found()),
     };
-    if !allowed {
-        return Err(fresh_proof_needed(state)?);
-    }
     let actor = actor_of(caller.user, caller.session, version)
         .ok_or_else(|| ApiError::internal("a security version beyond what a ticket holds"))?;
     let ticket = ticket::issue(
@@ -172,13 +162,6 @@ pub async fn remove(
     no_store(removal(&state, caller, &origin, identity, password).await.unwrap_or_else(IntoResponse::into_response))
 }
 
-enum Removed {
-    Done,
-    NoAccount,
-    NotAllowed,
-    NoIdentity,
-    LastWayIn,
-}
 
 async fn removal(
     state: &AppState,
@@ -187,57 +170,44 @@ async fn removal(
     identity: Id,
     password: Option<String>,
 ) -> ApiResult<Response> {
-    let proof = Proof::check(state, caller, password.as_deref()).await?;
+    let trusted = security_cookies::read_trusted_device(&origin.headers, origin.https);
+    let context = Context {
+        ip_address: &origin.address,
+        user_agent: &origin.user_agent,
+        https: origin.https,
+        trusted_device_cookie: trusted.as_deref(),
+        passkeys_available: flow::passkeys_available(&state.settings().operations.public_url),
+    };
+    // How the history names it: its provider while that is set up, else the
+    // host of its issuer.
+    let named = {
+        let state_in = state.clone();
+        state
+            .database()
+            .read(move |connection| -> Result<Option<String>, DbError> {
+                let found: Option<(String, Option<String>)> = connection
+                    .query_row(
+                        "SELECT \"Issuer\", \"ProviderId\" FROM \"ExternalIdentities\" WHERE \"Id\" = ?1 AND \"UserId\" = ?2",
+                        params![identity, caller.user],
+                        |row| Ok((row.get(0)?, row.get(1)?)),
+                    )
+                    .optional()?;
+                found
+                    .map(|(issuer, provider)| identity_name(&state_in, provider.as_deref().unwrap_or("default"), &issuer))
+                    .transpose()
+                    .map_err(|error| DbError::Task(error.to_string()))
+            })
+            .await?
+    };
+    let Some(name) = named else {
+        return Err(ApiError::not_found());
+    };
     let providers = owned(state);
-    let (state_in, origin_in) = (state.clone(), origin.clone());
-    let removed = state
-        .database()
-        .write(move |tx| -> Result<Removed, DbError> {
-            // The question and the removal are one transaction, so that two
-            // removals at once cannot each count the other's way in as left.
-            let Some(user) = User::find(tx, caller.user)? else {
-                return Ok(Removed::NoAccount);
-            };
-            if !proof.allows(tx, caller)? {
-                return Ok(Removed::NotAllowed);
-            }
-            let found: Option<(String, Option<String>)> = tx
-                .query_row(
-                    "SELECT \"Issuer\", \"ProviderId\" FROM \"ExternalIdentities\" WHERE \"Id\" = ?1 AND \"UserId\" = ?2",
-                    params![identity, user.id],
-                    |row| Ok((row.get(0)?, row.get(1)?)),
-                )
-                .optional()?;
-            let Some((issuer, provider_id)) = found else {
-                return Ok(Removed::NoIdentity);
-            };
-            if !ways_in::remain(tx, &providers.view(), user.id, Some(identity), None)? {
-                return Ok(Removed::LastWayIn);
-            }
-            tx.execute(
-                "DELETE FROM \"ExternalIdentities\" WHERE \"Id\" = ?1",
-                [identity],
-            )?;
-            let name = identity_name(&state_in, provider_id.as_deref().unwrap_or("default"), &issuer)
-                .map_err(|error| DbError::Task(error.to_string()))?;
-            let email = events::verified_email(tx, user.id)?;
-            events::record(
-                tx,
-                user.id,
-                events::IDENTITY_UNLINKED,
-                &origin_in.address,
-                &origin_in.user_agent,
-                &name,
-                email.as_deref(),
-            )?;
-            Ok(Removed::Done)
-        })
-        .await?;
-    match removed {
-        Removed::Done => Ok(StatusCode::NO_CONTENT.into_response()),
-        Removed::NoAccount | Removed::NoIdentity => Err(ApiError::not_found()),
-        Removed::NotAllowed => Err(fresh_proof_needed(state)?),
-        Removed::LastWayIn => Err(ways_in::identity_refusal(state.messages())?.into()),
+    match ceremony::remove_identity(state, caller, &context, identity, &name, &providers, password.as_deref()).await? {
+        IdentityRemoved::Done => Ok(StatusCode::NO_CONTENT.into_response()),
+        IdentityRemoved::NotFound => Err(ApiError::not_found()),
+        IdentityRemoved::NotAllowed => Err(fresh_proof_needed(state)?),
+        IdentityRemoved::LastWayIn => Err(ways_in::identity_refusal(state.messages())?.into()),
     }
 }
 

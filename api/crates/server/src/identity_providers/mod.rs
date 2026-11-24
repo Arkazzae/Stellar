@@ -20,7 +20,7 @@
 //! identity away. Starting a fresh sign-in at a provider as proof for a
 //! sensitive change (`reauthenticate`) is the same round trip with another
 //! ticket; what it ends in is recorded on the session by
-//! `callback::mark_reauthenticated`, the one place that writes it.
+//! `ceremony::reauthenticated_by_provider`.
 
 mod callback;
 mod identities;
@@ -29,7 +29,6 @@ mod names;
 mod pages;
 mod pending;
 mod plain_login;
-mod proof;
 mod single_sign_on;
 mod start;
 
