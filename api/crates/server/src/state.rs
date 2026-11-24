@@ -15,6 +15,7 @@ use crate::auth::setup_code::SetupCode;
 use crate::database::{Database, MutationGate};
 use crate::events::{EventPublisher, Presence};
 use crate::http::{AttemptLimiter, Metrics};
+use crate::identity_providers::SingleSignOn;
 use crate::link_previews::PreviewQueue;
 use crate::mail::MailDelivery;
 use crate::realtime::Realtime;
@@ -36,6 +37,7 @@ struct Inner {
     mutation_gate: MutationGate,
     pin_attempts: AttemptLimiter,
     sealer: Sealer,
+    single_sign_on: SingleSignOn,
     mail: MailDelivery,
     presence: Arc<dyn Presence>,
     setup_code: SetupCode,
@@ -65,6 +67,7 @@ impl AppState {
                 settings,
                 database,
                 events,
+                single_sign_on: SingleSignOn::new(&sealer),
                 sealer,
                 mail: MailDelivery::new(),
                 presence,
@@ -113,6 +116,12 @@ impl AppState {
     /// Seals values for clients and the database; see [`crate::seal`].
     pub fn sealer(&self) -> &Sealer {
         &self.inner.sealer
+    }
+
+    /// What signing in through a provider keeps between requests; see
+    /// [`crate::identity_providers`].
+    pub fn single_sign_on(&self) -> &SingleSignOn {
+        &self.inner.single_sign_on
     }
 
     /// Sends a built message by the transport the operator chose; see

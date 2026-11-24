@@ -9,6 +9,7 @@ mod direct;
 mod desktop_login;
 mod encryption;
 mod health;
+mod identity_providers;
 mod inbox;
 mod mail;
 mod message_views;

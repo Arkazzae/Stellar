@@ -12,6 +12,7 @@ groups! {
     direct,
     encryption,
     health,
+    identity_providers,
     messages,
     own_profile,
     message_views,

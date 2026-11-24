@@ -16,6 +16,9 @@ use super::{Config, SettingError};
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub struct OidcSettings {
     pub providers: Vec<Provider>,
+    /// What the original provider's button is called as the operator wrote it,
+    /// which the sign-in page shows while no provider can be used.
+    pub display_name: String,
 }
 
 impl OidcSettings {
@@ -55,7 +58,10 @@ impl OidcSettings {
         let providers = settings
             .configured_providers(read_secret_file)
             .map_err(|error| SettingError::new(format!("Oidc:Providers: {error}.")))?;
-        Ok(OidcSettings { providers })
+        Ok(OidcSettings {
+            providers,
+            display_name: settings.original.display_name.clone(),
+        })
     }
 
     pub fn find(&self, id: &str) -> Option<&Provider> {
