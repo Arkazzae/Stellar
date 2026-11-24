@@ -59,6 +59,14 @@ struct AttestationObject {
     auth_data: Vec<u8>,
 }
 
+/// Checks the answer to `navigator.credentials.create` against the challenge
+/// that was issued.
+///
+/// The caller must still: refuse a challenge that was used or has expired
+/// (and spend it on the first attempt); make sure the returned credential id
+/// is unique across all accounts, with a unique index and an atomic check at
+/// insert, since sign-in finds a credential by its id alone; and store the
+/// returned public key bytes unchanged.
 pub fn verify_registration(
     relying_party: &RelyingParty,
     expected_challenge: &[u8],
