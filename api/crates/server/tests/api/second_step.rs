@@ -39,11 +39,13 @@ struct Wanted {
 async fn session(State(state): State<AppState>, Query(wanted): Query<Wanted>) -> ApiResult<Response> {
     let now = Timestamp::now();
     let user = Id::random();
-    let mut session = NewSession::new(user, "Test".into(), "127.0.0.1".into(), "password", 1, false);
-    session.mfa_completed_at = wanted
+    // Written as a row, as a test of the pipeline may: the library does not let
+    // anything outside the second step's own calls say a session passed one.
+    let session = NewSession::new(user, "Test".into(), "127.0.0.1".into(), "password", 1, false);
+    let completed = wanted
         .passed
         .map(|seconds| now.minus(std::time::Duration::from_secs(seconds)));
-    session.mfa_evidence = wanted.evidence;
+    let evidence = wanted.evidence;
     let id = session.id;
     state
         .database()
@@ -61,7 +63,12 @@ async fn session(State(state): State<AppState>, Query(wanted): Query<Wanted>) ->
                     params![Id::random(), user, now],
                 )?;
             }
-            session.insert(tx)
+            session.insert(tx)?;
+            tx.execute(
+                "UPDATE \"UserSessions\" SET \"MfaCompletedAt\" = ?2, \"MfaEvidence\" = ?3 WHERE \"Id\" = ?1",
+                params![session.id, completed, evidence],
+            )?;
+            Ok(())
         })
         .await?;
     let cookie = sign_in_cookie(state.sealer(), &state.settings().environment, false, user, 1, id, false);

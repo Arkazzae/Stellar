@@ -123,7 +123,7 @@ impl Own {
 /// Looks the challenge up in the transaction, with the account, and checks it
 /// is one of the purposes the call is for.
 pub(super) fn open(
-    tx: &Transaction,
+    tx: &rusqlite::Connection,
     own: &Own,
     allows: fn(&StoredChallenge) -> bool,
     now: Timestamp,
@@ -176,7 +176,7 @@ fn text(state: &AppState, key: MessageKey) -> Result<String, DbError> {
         .map_err(|error| DbError::Task(error.to_string()))
 }
 
-fn user_of(tx: &Transaction, id: Id) -> Result<User, DbError> {
+fn user_of(tx: &rusqlite::Connection, id: Id) -> Result<User, DbError> {
     User::find(tx, id)?.ok_or_else(|| DbError::Task("the account is gone".to_string()))
 }
 
@@ -366,6 +366,63 @@ fn finish(
         pending_identity: challenge.pending_identity,
         cookies,
     })
+}
+
+// ---- looking at and leaving a challenge ----
+
+/// What looking at a pending challenge came to.
+#[must_use]
+pub enum Pending {
+    /// What the client is told about the challenge.
+    Challenge(Box<flow::Challenge>),
+    Invalid(ChallengeStatus),
+}
+
+/// What the client is told about the challenge it holds, to carry on with it
+/// after a reload.
+pub async fn pending(state: &AppState, ask: &Ask<'_>) -> Result<Pending, DbError> {
+    let own = Own::of(ask);
+    let done = state
+        .database()
+        .read(
+            move |connection| -> Result<Result<Pending, ChallengeStatus>, DbError> {
+                let now = Timestamp::now();
+                let challenge = match open(connection, &own, |_| true, now)? {
+                    Ok(challenge) => challenge,
+                    Err(status) => return Ok(Err(status)),
+                };
+                let user = user_of(connection, challenge.user)?;
+                let policy = SecurityPolicy::load(connection)?;
+                let methods = flow::confirmed_methods(connection, user.id)?;
+                let created = flow::Created::of(&challenge);
+                let body = flow::describe(
+                    connection,
+                    &own.context(),
+                    &user,
+                    &created,
+                    methods,
+                    &policy,
+                )?;
+                Ok(Ok(Pending::Challenge(Box::new(body))))
+            },
+        )
+        .await?;
+    Ok(done.unwrap_or_else(Pending::Invalid))
+}
+
+/// Gives a challenge up: it is spent, whoever holds it, if it is still open.
+/// The route takes its cookie away either way.
+pub async fn cancel(state: &AppState, ask: &Ask<'_>) -> Result<(), DbError> {
+    let own = Own::of(ask);
+    let _ = run(state, move |tx| {
+        let now = Timestamp::now();
+        if let Ok(challenge) = open(tx, &own, |_| true, now)? {
+            flow::consume(tx, challenge.id, now)?;
+        }
+        Ok(())
+    })
+    .await?;
+    Ok(())
 }
 
 // ---- answering a challenge that waits for a second step ----

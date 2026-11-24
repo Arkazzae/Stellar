@@ -24,7 +24,11 @@ pub fn normalize(code: &str) -> String {
 
 /// A new set, as the person is shown it: the old unused codes stop working at
 /// `now` and ten new ones are stored as digests.
-pub fn regenerate(tx: &Transaction, user: Id, now: Timestamp) -> Result<Vec<String>, DbError> {
+pub(super) fn regenerate(
+    tx: &Transaction,
+    user: Id,
+    now: Timestamp,
+) -> Result<Vec<String>, DbError> {
     spend_all(tx, user, now)?;
     let batch = Id::random();
     let mut codes = Vec::with_capacity(COUNT);
@@ -44,7 +48,7 @@ pub fn regenerate(tx: &Transaction, user: Id, now: Timestamp) -> Result<Vec<Stri
 }
 
 /// Retires every unused code of the account.
-pub fn spend_all(tx: &Transaction, user: Id, now: Timestamp) -> Result<usize, DbError> {
+pub(super) fn spend_all(tx: &Transaction, user: Id, now: Timestamp) -> Result<usize, DbError> {
     Ok(tx.execute(
         "UPDATE \"RecoveryCodes\" SET \"UsedAt\" = ?2 WHERE \"UserId\" = ?1 AND \"UsedAt\" IS NULL",
         params![user, now],
