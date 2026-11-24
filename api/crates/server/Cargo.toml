@@ -18,6 +18,7 @@ stellarr-discord = { path = "../discord" }
 stellarr-embeds = { path = "../embeds" }
 stellarr-mail = { path = "../mail" }
 stellarr-mentions = { path = "../mentions" }
+stellarr-webpush = { path = "../webpush" }
 stellarr-hub = { path = "../hub" }
 stellarr-messages = { path = "../messages" }
 stellarr-oidc = { path = "../oidc" }

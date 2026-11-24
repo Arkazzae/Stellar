@@ -12,6 +12,7 @@ groups! {
     direct,
     encryption,
     bootstrap,
+    delivery,
     health,
     identity_providers,
     messages,
