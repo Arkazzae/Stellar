@@ -199,7 +199,7 @@ async fn switch(state: AppState, caller: Caller, id: Id, action: Action) -> ApiR
 
     announce::line_created(&state, &conversation, &line);
     announce::encryption_changed(&state, &conversation);
-    announce::social_changed(&state, &[conversation.first, conversation.second]);
+    crate::social::announce(&state, &[conversation.first, conversation.second]);
     Ok(json_response(StatusCode::OK, &conversation.dto()))
 }
 

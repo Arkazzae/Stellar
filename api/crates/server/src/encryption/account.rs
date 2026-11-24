@@ -461,7 +461,7 @@ pub async fn reset(
             announce::account_changed(&state, caller.user);
             let mut people = vec![caller.user];
             people.extend(told);
-            announce::social_changed(&state, &people);
+            crate::social::announce(&state, &people);
             Ok(json_response(StatusCode::OK, &answer))
         }
     }
@@ -592,7 +592,7 @@ pub async fn register_device(
             if !told.is_empty() {
                 let mut people = vec![caller.user];
                 people.extend(told);
-                announce::social_changed(&state, &people);
+                crate::social::announce(&state, &people);
             }
             Ok(created("/api/me/encryption/devices", &device))
         }
