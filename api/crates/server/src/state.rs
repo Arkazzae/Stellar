@@ -48,6 +48,7 @@ struct Inner {
     previews: PreviewQueue,
     voice: Voice,
     backups: crate::backups::Jobs,
+    cockpit: crate::cockpit::Kept,
 }
 
 impl AppState {
@@ -77,6 +78,7 @@ impl AppState {
                 realtime: OnceLock::new(),
                 previews: PreviewQueue::default(),
                 backups: crate::backups::Jobs::default(),
+                cockpit: crate::cockpit::Kept::default(),
                 metrics: Metrics::default(),
                 mutation_gate: MutationGate::default(),
             }),
@@ -186,6 +188,11 @@ impl AppState {
     /// The backup being written, if there is one.
     pub fn backups(&self) -> &crate::backups::Jobs {
         &self.inner.backups
+    }
+
+    /// What the operator panel keeps for the whole process.
+    pub fn cockpit(&self) -> &crate::cockpit::Kept {
+        &self.inner.cockpit
     }
 
     /// The messages whose links wait for their cards.
