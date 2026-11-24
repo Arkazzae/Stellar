@@ -7,7 +7,7 @@ use rusqlite::{Connection, params};
 use serde::Serialize;
 use stellarr_messages::{MessageKey, Messages};
 
-use super::cursor::{HistoryCursor, Reading};
+use super::cursor::HistoryCursor;
 use super::dto::{self, MessageDto};
 use super::field_problem;
 use crate::auth::Caller;
@@ -155,8 +155,7 @@ fn read_history(
             before: None,
         },
         Some(text) => match HistoryCursor::decode(&text) {
-            Reading::Cursor(cursor) if cursor.scope == channel => cursor,
-            Reading::Fault => return Err(ApiError::internal("a history cursor could not be read")),
+            Some(cursor) if cursor.scope == channel => cursor,
             _ => {
                 return Err(field_problem(
                     "cursor",

@@ -695,7 +695,7 @@ async fn history_is_paged_newest_first_by_a_cursor_and_each_page_is_oldest_first
 }
 
 #[tokio::test]
-async fn a_cursor_is_the_first_servers_bytes() {
+async fn a_cursor_is_written_in_standard_byte_order() {
     let w = world().await;
     let channel = w.channel("history", 0);
     write_messages(&w, &channel, &w.owner, &["2026-11-01 10:00:01", "2026-11-01 10:00:02", "2026-11-01 10:00:03"]);
@@ -705,14 +705,12 @@ async fn a_cursor_is_the_first_servers_bytes() {
     let bytes = base64url_decode(first["nextCursor"].as_str().unwrap());
     assert_eq!(bytes.len(), 49);
     assert_eq!(bytes[0], 1);
-    // The channel as the first server's UUID type lays it out: three groups reversed.
+    // The channel's bytes as the id spells them.
     let id = Id::parse(&channel).unwrap();
-    let text = id.as_bytes();
-    assert_eq!(&bytes[1..5], &[text[3], text[2], text[1], text[0]]);
-    // The last message's moment, in ticks from the year 1.
+    assert_eq!(&bytes[1..17], id.as_bytes());
+    // The last message's moment, in ticks since 1970.
     let last = i64::from_be_bytes(bytes[25..33].try_into().unwrap());
-    let expected = Timestamp::parse("2026-11-01 10:00:03").unwrap().ticks() + 621_355_968_000_000_000;
-    assert_eq!(last, expected);
+    assert_eq!(last, Timestamp::parse("2026-11-01 10:00:03").unwrap().ticks());
 }
 
 fn base64url_decode(text: &str) -> Vec<u8> {
@@ -728,21 +726,13 @@ fn base64url_decode(text: &str) -> Vec<u8> {
     out
 }
 
+/// The form of a cursor that held a position, which nothing writes now.
 fn legacy_cursor(channel: &str, snapshot: &str) -> String {
-    const ALPHABET: &[u8] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_";
     let id = Id::parse(channel).unwrap();
-    let t = id.as_bytes();
-    let mut bytes = vec![t[3], t[2], t[1], t[0], t[5], t[4], t[7], t[6], t[8], t[9], t[10], t[11], t[12], t[13], t[14], t[15]];
+    let mut bytes = id.as_bytes().to_vec();
     bytes.extend((Timestamp::parse(snapshot).unwrap().ticks() + 621_355_968_000_000_000).to_be_bytes());
     bytes.extend(2i32.to_be_bytes());
-    let mut out = String::new();
-    for chunk in bytes.chunks(3) {
-        let word = chunk.iter().enumerate().fold(0u32, |word, (index, byte)| word | u32::from(*byte) << (16 - 8 * index));
-        for index in 0..chunk.len() + 1 {
-            out.push(char::from(ALPHABET[((word >> (18 - 6 * index)) & 63) as usize]));
-        }
-    }
-    out
+    stellarr_api::encoding::base64_url(&bytes)
 }
 
 #[tokio::test]
@@ -779,19 +769,24 @@ async fn deleting_a_delivered_row_never_skips_an_unread_one() {
 }
 
 #[tokio::test]
-async fn an_older_cursor_restarts_its_snapshot_and_a_cursor_of_another_channel_is_refused() {
+async fn an_older_cursor_and_a_cursor_of_another_channel_are_refused() {
     let w = world().await;
     let channel = w.channel("history", 0);
-    let all = write_messages(&w, &channel, &w.owner, &["2026-11-01 10:00:00", "2026-11-01 10:00:00", "2026-11-01 10:00:00", "2026-11-01 10:00:00", "2026-11-01 10:00:00", "2026-11-01 10:00:00"]);
+    write_messages(&w, &channel, &w.owner, &["2026-11-01 10:00:01", "2026-11-01 10:00:02", "2026-11-01 10:00:03"]);
 
-    let first: Value = page(&w, &channel, &format!("?limit=2&cursor={}", legacy_cursor(&channel, "2026-11-02 00:00:00"))).await.json();
+    let first: Value = page(&w, &channel, "?limit=1").await.json();
+    let cursor = first["nextCursor"].as_str().unwrap();
+    let again = page(&w, &channel, &format!("?limit=1&cursor={cursor}")).await;
+    assert_eq!(again.status, 200);
+    let older = page(&w, &channel, &format!("?cursor={}", legacy_cursor(&channel, "2026-11-02 00:00:00"))).await;
+    let elsewhere = page(&w, &w.general, &format!("?cursor={cursor}")).await;
+    let padded = page(&w, &channel, &format!("?cursor={cursor}%3D")).await;
+    let spaced = page(&w, &channel, &format!("?cursor=%20{cursor}")).await;
 
-    assert_eq!(ids(&first), all[4..6]);
-    let next: Value = page(&w, &channel, &format!("?limit=2&cursor={}", first["nextCursor"].as_str().unwrap())).await.json();
-    assert_eq!(ids(&next), all[2..4]);
-    let wrong = page(&w, &channel, &format!("?cursor={}", legacy_cursor(&Id::random().to_string(), "2026-11-02 00:00:00"))).await;
-    assert_eq!(wrong.status, 400);
-    assert_eq!(wrong.json::<Value>()["errors"]["cursor"][0], "The message history cursor is invalid.");
+    for wrong in [older, elsewhere, padded, spaced] {
+        assert_eq!(wrong.status, 400);
+        assert_eq!(wrong.json::<Value>()["errors"]["cursor"][0], "The message history cursor is invalid.");
+    }
 }
 
 #[tokio::test]
