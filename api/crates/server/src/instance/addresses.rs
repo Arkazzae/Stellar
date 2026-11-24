@@ -50,7 +50,7 @@ fn is_quoted_string(text: &str) -> bool {
 }
 
 pub fn is_plain_address(email: &str) -> bool {
-    if email.encode_utf16().count() > 320 {
+    if stellarr_unicode::utf16::length(email) > 320 {
         return false;
     }
     let Some((local, domain)) = email.rsplit_once('@') else {

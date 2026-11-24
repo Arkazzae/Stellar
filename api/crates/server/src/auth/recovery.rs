@@ -162,7 +162,7 @@ pub(super) fn redeem(
     now: Timestamp,
 ) -> Result<Option<Id>, DbError> {
     let credential = credential.trim();
-    if !CREDENTIAL_LENGTH.contains(&credential.encode_utf16().count()) {
+    if !CREDENTIAL_LENGTH.contains(&stellarr_unicode::utf16::length(credential)) {
         return Ok(None);
     }
     // Found by the digest of a 256-bit secret, which nobody can choose a

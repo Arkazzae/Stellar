@@ -54,7 +54,7 @@ pub async fn update(
             return Ok(Some(ApiError::forbidden()));
         }
         if let Some(name) = name
-            && !(1..=MAX_NAME_LENGTH).contains(&name.encode_utf16().count())
+            && !(1..=MAX_NAME_LENGTH).contains(&stellarr_unicode::utf16::length(name))
         {
             return Ok(Some(invalid(
                 "name",
@@ -62,7 +62,7 @@ pub async fn update(
             )));
         }
         if let Some(description) = description
-            && description.encode_utf16().count() > MAX_DESCRIPTION_LENGTH
+            && stellarr_unicode::utf16::length(description) > MAX_DESCRIPTION_LENGTH
         {
             return Ok(Some(invalid(
                 "description",

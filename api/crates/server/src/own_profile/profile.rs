@@ -31,7 +31,7 @@ pub struct UpdateAccount {
 }
 
 fn units(text: &str) -> usize {
-    text.trim().encode_utf16().count()
+    stellarr_unicode::utf16::length(text.trim())
 }
 
 /// Clearing a field stores nothing rather than an empty string.

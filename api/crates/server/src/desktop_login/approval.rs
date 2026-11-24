@@ -224,7 +224,7 @@ pub async fn approve(
             let (Some(login), Some(source)) = (login, source) else {
                 return Ok(Outcome::Gone);
             };
-            let length = token.encode_utf16().count();
+            let length = stellarr_unicode::utf16::length(&token);
             let stored = match login.token_hash.as_deref() {
                 Some(hash) if hash.len() == 64 => hash,
                 _ => return Ok(Outcome::Gone),

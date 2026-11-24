@@ -41,10 +41,7 @@ pub(crate) struct Draft {
     pub(crate) permissions: i64,
 }
 
-/// What a person's text counts as in the first server: UTF-16 units.
-fn length(text: &str) -> usize {
-    text.encode_utf16().count()
-}
+use stellarr_unicode::utf16::length;
 
 pub(crate) fn validate(name: &str, color: &str, permissions: Option<&[String]>) -> Option<Draft> {
     let name = name.trim();

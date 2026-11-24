@@ -24,6 +24,11 @@ pub fn is_surrogate(unit: u16) -> bool {
     (0xD800..0xE000).contains(&unit)
 }
 
+/// The number of UTF-16 code units in the text.
+pub fn length(text: &str) -> usize {
+    text.encode_utf16().count()
+}
+
 /// The text as UTF-16 units.
 pub fn units(text: &str) -> Vec<u16> {
     text.encode_utf16().collect()

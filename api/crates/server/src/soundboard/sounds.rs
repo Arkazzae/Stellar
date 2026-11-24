@@ -65,8 +65,8 @@ fn validate(
 ) -> Option<(String, String)> {
     let name = name.map_or("", str::trim);
     let glyph = glyph.map_or("", str::trim);
-    let fits = (1..=MAX_NAME_UNITS).contains(&name.encode_utf16().count())
-        && (1..=MAX_GLYPH_UNITS).contains(&glyph.encode_utf16().count())
+    let fits = (1..=MAX_NAME_UNITS).contains(&stellarr_unicode::utf16::length(name))
+        && (1..=MAX_GLYPH_UNITS).contains(&stellarr_unicode::utf16::length(glyph))
         && start.is_finite()
         && end.is_finite()
         && start >= 0.0

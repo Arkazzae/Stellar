@@ -131,7 +131,7 @@ async fn ban(
     let server = chosen.server()?;
     let messages = *state.messages();
     let reason = request.reason.as_deref().unwrap_or_default().trim().to_string();
-    if reason.encode_utf16().count() > MAX_REASON_LENGTH {
+    if stellarr_unicode::utf16::length(&reason) > MAX_REASON_LENGTH {
         return Err(Problem::validation(vec![(
             "reason".to_string(),
             vec![messages.get(MessageKey::BanReasonTooLong, &[("max", &MAX_REASON_LENGTH)])?],

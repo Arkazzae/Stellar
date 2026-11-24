@@ -505,7 +505,7 @@ pub async fn register_device(
 ) -> ApiResult<Response> {
     refuse_unfit_key(&state, request.algorithm.as_deref(), request.public_key.as_deref())?;
     let label = request.label.as_deref().map_or("", str::trim).to_string();
-    if !(1..=100).contains(&label.encode_utf16().count()) {
+    if !(1..=100).contains(&stellarr_unicode::utf16::length(&label)) {
         return Err(problems::invalid(
             &state,
             "label",

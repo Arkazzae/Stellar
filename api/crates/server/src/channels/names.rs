@@ -22,10 +22,7 @@ pub fn trim(text: &str) -> &str {
     text.trim()
 }
 
-/// A length as the first server counted it, in UTF-16 units.
-pub fn length(text: &str) -> usize {
-    text.encode_utf16().count()
-}
+use stellarr_unicode::utf16::length;
 
 /// A channel's name as stored: trimmed and in lower case, letter by letter.
 pub fn normalize_channel(name: Option<&str>) -> String {
