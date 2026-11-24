@@ -11,7 +11,7 @@ use http::Method;
 use rusqlite::Connection;
 use serde_json::{Value, json};
 
-use crate::support::{Request, Response, Server, TempDir};
+use crate::support::{Answer, Request, Response, Server, TempDir, raw_get};
 
 fn hex(bytes: &[u8]) -> String {
     bytes.iter().map(|byte| format!("{byte:02x}")).collect()
@@ -1274,94 +1274,6 @@ async fn a_broken_artifact_of_another_platform_does_not_take_updates_away_from_l
 
     assert_eq!(linux.status, 200);
     assert_eq!(windows.status, 503);
-}
-
-// ---------------------------------------------------------------------------
-// Requests sent as bytes, so that what a hostile client writes arrives as it
-// was written
-// ---------------------------------------------------------------------------
-
-/// An answer, read whole.
-struct Answer {
-    status: u16,
-    headers: Vec<(String, String)>,
-    body: Vec<u8>,
-}
-
-impl Answer {
-    fn header(&self, name: &str) -> Option<&str> {
-        self.headers
-            .iter()
-            .find(|(have, _)| have.eq_ignore_ascii_case(name))
-            .map(|(_, value)| value.as_str())
-    }
-}
-
-/// `GET target` with `headers`, over a connection of its own that is read to
-/// the end. `target` is sent byte for byte.
-async fn raw_get(address: std::net::SocketAddr, target: &[u8], headers: &[(&str, &str)]) -> Answer {
-    use tokio::io::{AsyncReadExt, AsyncWriteExt};
-
-    let mut request = b"GET ".to_vec();
-    request.extend_from_slice(target);
-    request.extend_from_slice(b" HTTP/1.1\r\nHost: oracle.test\r\nConnection: close\r\n");
-    for (name, value) in headers {
-        request.extend_from_slice(format!("{name}: {value}\r\n").as_bytes());
-    }
-    request.extend_from_slice(b"\r\n");
-    let mut stream = tokio::net::TcpStream::connect(address).await.expect("a connection");
-    stream.write_all(&request).await.expect("the request is sent");
-    let mut everything = Vec::new();
-    tokio::time::timeout(std::time::Duration::from_secs(60), stream.read_to_end(&mut everything))
-        .await
-        .expect("an answer within a minute")
-        .ok();
-    parse_answer(&everything)
-}
-
-fn parse_answer(bytes: &[u8]) -> Answer {
-    // A server that refuses a request it has not read to the end may close
-    // the connection before its answer is read: that is status 0.
-    let Some(split) = bytes.windows(4).position(|window| window == b"\r\n\r\n") else {
-        return Answer {
-            status: 0,
-            headers: Vec::new(),
-            body: Vec::new(),
-        };
-    };
-    let head = String::from_utf8_lossy(&bytes[..split]).into_owned();
-    let mut lines = head.split("\r\n");
-    let status = lines
-        .next()
-        .and_then(|line| line.split(' ').nth(1))
-        .and_then(|code| code.parse().ok())
-        .expect("a status");
-    let headers: Vec<(String, String)> = lines
-        .filter_map(|line| line.split_once(':'))
-        .map(|(name, value)| (name.trim().to_string(), value.trim().to_string()))
-        .collect();
-    let rest = &bytes[split + 4..];
-    let chunked = headers
-        .iter()
-        .any(|(name, value)| name.eq_ignore_ascii_case("transfer-encoding") && value.contains("chunked"));
-    let body = if chunked { unchunk(rest) } else { rest.to_vec() };
-    Answer { status, headers, body }
-}
-
-fn unchunk(mut rest: &[u8]) -> Vec<u8> {
-    let mut body = Vec::new();
-    loop {
-        let Some(line_end) = rest.windows(2).position(|pair| pair == b"\r\n") else {
-            return body;
-        };
-        let size = usize::from_str_radix(String::from_utf8_lossy(&rest[..line_end]).trim(), 16).unwrap_or(0);
-        rest = &rest[line_end + 2..];
-        if size == 0 || rest.len() < size {
-            return body;
-        }
-        body.extend_from_slice(&rest[..size]);
-        rest = rest.get(size + 2..).unwrap_or(&[]);
-    }
 }
 
 // ---------------------------------------------------------------------------
