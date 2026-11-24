@@ -16,7 +16,7 @@
 //!   seats, are in [`hub`].
 //! - What other groups ask of voice is below: [`Voice`] for the media plane's
 //!   state, [`rooms::broadcast_snapshot`] to tell a room who is in it,
-//!   [`public_endpoint`] and [`turn`] for the bootstrap.
+//!   [`turn::public_endpoint`] and [`turn::credentials`] for the bootstrap.
 
 pub mod closer;
 pub mod control;
@@ -31,6 +31,7 @@ pub mod protocol;
 pub mod pump;
 pub mod rooms;
 pub mod sounds;
+pub mod turn;
 
 use crate::background::Worker;
 use crate::settings::Settings;
