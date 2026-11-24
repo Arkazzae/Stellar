@@ -17,6 +17,9 @@ import os
 import re
 import sqlite3
 import sys
+import urllib.error
+import urllib.request
+import datetime
 
 here = os.path.dirname(os.path.abspath(__file__))
 spec = importlib.util.spec_from_file_location("probe", os.path.join(here, "permissions-probe.py"))
@@ -25,6 +28,15 @@ spec.loader.exec_module(probe)
 
 GUID = re.compile(r"[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}")
 MOMENT = re.compile(r'("(?:bannedAt)":")(\d{4}-\d\d-\d\dT\d\d:\d\d:\d\d(?:\.\d{1,7})?Z)(")')
+
+
+def fresh(match):
+    """A moment a server just made differs by nature; one that was arranged is compared as it is."""
+    moment = match.group(2)
+    stamp = datetime.datetime.strptime(moment[:19], "%Y-%m-%dT%H:%M:%S").replace(tzinfo=datetime.timezone.utc)
+    if abs((datetime.datetime.now(datetime.timezone.utc) - stamp).total_seconds()) < 3600:
+        return match.group(1) + "<moment>" + match.group(3)
+    return match.group(0)
 
 
 class World:
@@ -41,8 +53,25 @@ class World:
                 return found
             return "<made %d>" % self.made.setdefault(found, len(self.made) + 1)
 
-        text = MOMENT.sub(r"\1<moment>\3", text)
+        text = MOMENT.sub(fresh, text)
         return GUID.sub(replace, text)
+
+
+def send(base, ask, cookie, header):
+    """The request, without a content type when the step says so."""
+    if not ask.get("noContentType"):
+        return probe.call(base, ask["method"], ask["path"], ask["body"], cookie, header)
+    request = urllib.request.Request(base + ask["path"], method=ask["method"],
+                                     data=json.dumps(ask["body"]).encode() if ask["body"] is not None else None)
+    for name, value in {**probe.CLIENT, **header}.items():
+        if name != "Content-Type":
+            request.add_header(name, value)
+    request.add_header("Cookie", cookie)
+    try:
+        with urllib.request.build_opener(probe.NoRedirect).open(request) as response:
+            return response.status, response.read(), response.headers
+    except urllib.error.HTTPError as error:
+        return error.code, error.read(), error.headers
 
 
 def describe(world, status, body, headers):
@@ -54,6 +83,12 @@ def describe(world, status, body, headers):
     text = body.decode("utf-8", "replace")
     # A trace identifier differs by nature.
     text = re.sub(r'"traceId":"[^"]*"', '"traceId":"<trace>"', text)
+    try:
+        # The first server wrote every character outside ASCII as \uXXXX; the
+        # JSON is the same, so it is compared as JSON, keys in their order.
+        text = json.dumps(json.loads(text), ensure_ascii=False, separators=(",", ":"))
+    except ValueError:
+        pass
     lines.append("body: " + world.scrub(text))
     return "\n".join(lines)
 
@@ -69,7 +104,12 @@ def sign_in(base, users):
 
 
 def run(ours, theirs, work, plan_path):
+    actors = set()
+    with open(plan_path) as plan_file:
+        for line in plan_file:
+            actors.update(step["actor"] for step in json.loads(line)["steps"])
     users = [line.split()[0] for line in open(f"{work}/users.txt")]
+    users = [name for name in users if name in actors or name == users[0]]
     mine = sign_in(ours, users)
     first = sign_in(theirs, users)
     boss = users[0]
@@ -92,19 +132,24 @@ def run(ours, theirs, work, plan_path):
                 for ask in asks:
                     answers = []
                     for (base, cookies), seen in ((( ours, mine), worlds[0]), ((theirs, first), worlds[1])):
-                        status, body, headers = probe.call(base, ask["method"], ask["path"], ask["body"], cookies[ask["actor"]], header)
+                        status, body, headers = send(base, ask, cookies[ask["actor"]], header)
                         answers.append(describe(seen, status, body, headers))
                     steps += 1
                     kind = GUID.sub("{id}", ask["path"])
-                    key = (ask["method"], kind, answers[0].split("\n")[0])
+                    key = (ask.get("class", "owner"), ask["method"], kind, answers[0].split("\n")[0])
                     seen_statuses[key] = seen_statuses.get(key, 0) + 1
                     if answers[0] != answers[1]:
                         differences += 1
                         print(f"DIFFERENT world {number} step {index}: {ask['actor']} {ask['method']} {ask['path']} {json.dumps(ask['body'])}")
                         print("   ours  ", answers[0].replace("\n", "\n          "))
                         print("   theirs", answers[1].replace("\n", "\n          "))
-    for (method, kind, status), count in sorted(seen_statuses.items()):
-        print(f"   {count:5d}  {status}  {method} {kind}")
+    by_class = {}
+    for (actor_class, method, kind, status), count in seen_statuses.items():
+        if method != "GET":
+            by_class.setdefault(actor_class, {}).setdefault(status, 0)
+            by_class[actor_class][status] += count
+    for actor_class, counts in sorted(by_class.items()):
+        print(f"   {actor_class:9s} {dict(sorted(counts.items()))}")
     print(f"{steps} requests, {differences} differences")
     return 1 if differences else 0
 
