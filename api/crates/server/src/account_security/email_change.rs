@@ -14,9 +14,11 @@ use serde::{Deserialize, Serialize};
 use stellarr_messages::MessageKey;
 
 use crate::instance::addresses::is_plain_address;
-use crate::auth::{Caller, fresh, password, tokens};
+use crate::auth::ceremony::{self, PasswordProof};
+use crate::auth::{Caller, events, fresh, tokens};
+use crate::auth::flow::Context;
 use crate::database::DbError;
-use crate::http::{ApiError, ApiResult, Json, Problem, json_response};
+use crate::http::{ApiError, ApiResult, Json, Origin, Problem, json_response};
 use crate::instance::names;
 use crate::mail::setup::{self, MailSetup, Mailing};
 use crate::mail::Outcome as Delivery;
@@ -45,7 +47,6 @@ fn answer(result: &'static str) -> ApiResult<Response> {
 
 /// What the account says that a change of address is decided on.
 struct Account {
-    hash: Option<String>,
     normalized_email: Option<String>,
     display_name: String,
     session_version: i64,
@@ -54,50 +55,17 @@ struct Account {
 fn account_of(connection: &Connection, user: Id) -> rusqlite::Result<Option<Account>> {
     connection
         .query_row(
-            "SELECT \"PasswordHash\", \"NormalizedEmail\", \"DisplayName\", \"SessionVersion\" FROM \"Users\" WHERE \"Id\" = ?1",
+            "SELECT \"NormalizedEmail\", \"DisplayName\", \"SessionVersion\" FROM \"Users\" WHERE \"Id\" = ?1",
             [user],
             |row| {
                 Ok(Account {
-                    hash: row.get(0)?,
-                    normalized_email: row.get(1)?,
-                    display_name: row.get(2)?,
-                    session_version: row.get(3)?,
+                    normalized_email: row.get(0)?,
+                    display_name: row.get(1)?,
+                    session_version: row.get(2)?,
                 })
             },
         )
         .optional()
-}
-
-/// What a change that asks for the current password was given.
-enum Proof {
-    Given,
-    WrongPassword,
-    FreshProofNeeded,
-}
-
-/// The proof an address change takes: the account's password when it has one
-/// (`proves` says it was checked against `checked_against`, and counts only if
-/// that is still the stored hash), and when it has none the fresh proof the
-/// session gives. Kept apart so that the shared call of `auth` can replace it.
-fn password_or_fresh_proof(
-    tx: &rusqlite::Transaction,
-    caller: Caller,
-    stored: Option<&str>,
-    checked_against: Option<&str>,
-    proves: bool,
-    now: Timestamp,
-) -> Result<Proof, DbError> {
-    Ok(match stored {
-        Some(hash) if proves && checked_against == Some(hash) => Proof::Given,
-        Some(_) => Proof::WrongPassword,
-        None => {
-            if fresh::can_change_security(tx, caller.user, Some(caller.session), || false, now)? {
-                Proof::Given
-            } else {
-                Proof::FreshProofNeeded
-            }
-        }
-    })
 }
 
 /// What was written, so that the mail can go once it is committed.
@@ -124,22 +92,15 @@ pub async fn start(State(state): State<AppState>, caller: Caller, Json(Object(re
             Ok((fresh, account_of(connection, caller.user)?))
         })
         .await?;
-    let account = account.ok_or_else(|| ApiError::internal("the signed-in account is not there"))?;
+    if account.is_none() {
+        return Err(ApiError::internal("the signed-in account is not there"));
+    }
     if !is_fresh {
         return answer("second-step-required");
     }
     // An account made through a provider has no password to give: its fresh
     // proof stands in, and is asked for inside the transaction.
-    let proves = match (&account.hash, request.password) {
-        (Some(hash), Some(given)) => {
-            let hash = hash.clone();
-            tokio::task::spawn_blocking(move || password::verify(&given, Some(&hash)))
-                .await
-                .map_err(ApiError::internal)?
-        }
-        _ => false,
-    };
-    let checked_against = account.hash;
+    let given = ceremony::check_given_password(&state, caller.user, request.password.as_deref()).await?;
 
     let normalized = names::to_upper(&email);
     let (inner, new_email) = (state.clone(), email.clone());
@@ -153,10 +114,10 @@ pub async fn start(State(state): State<AppState>, caller: Caller, Json(Object(re
             let Some(account) = account_of(tx, caller.user)? else {
                 return Ok(Err("second-step-required"));
             };
-            match password_or_fresh_proof(tx, caller, account.hash.as_deref(), checked_against.as_deref(), proves, now)? {
-                Proof::Given => {}
-                Proof::WrongPassword => return Ok(Err("wrong-password")),
-                Proof::FreshProofNeeded => return Ok(Err("second-step-required")),
+            match ceremony::judge_given_password(tx, caller, &given, now)? {
+                PasswordProof::Given => {}
+                PasswordProof::WrongPassword => return Ok(Err("wrong-password")),
+                PasswordProof::FreshProofNeeded => return Ok(Err("second-step-required")),
             }
             if account.normalized_email.as_deref() == Some(normalized.as_str()) {
                 return Ok(Err("same"));
@@ -223,4 +184,131 @@ pub async fn start(State(state): State<AppState>, caller: Caller, Json(Object(re
         return answer("mail-unavailable");
     }
     answer("sent")
+}
+
+// ---- confirming it ----
+
+/// A request for a change of address as it was written.
+struct Waiting {
+    request: Id,
+    user: Id,
+    session: Option<Id>,
+    version: Option<i64>,
+    new_email: String,
+    normalized: String,
+    used: Option<Timestamp>,
+    expires: Timestamp,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ConfirmRequest {
+    token: Option<String>,
+}
+
+/// What a link of the mail comes to. The token alone proves the new address,
+/// so the link may be opened on another device; the change stands only while
+/// the session that asked for it does, and the account is as it was.
+pub async fn confirm(
+    State(state): State<AppState>,
+    origin: Origin,
+    Json(Object(request)): Json<Object<ConfirmRequest>>,
+) -> ApiResult<Response> {
+    let token = request.token.as_deref().unwrap_or("").trim().to_string();
+    let length = token.encode_utf16().count();
+    if length == 0 || length > 256 {
+        return answer("invalid");
+    }
+    let hash = tokens::hash(&token);
+    let result = state
+        .database()
+        .write(move |tx| -> Result<&'static str, DbError> {
+            let now = Timestamp::now();
+            let found: Option<Waiting> = tx
+                .query_row(
+                    "SELECT \"Id\", \"UserId\", \"SessionId\", \"SecurityVersion\", \"NewEmail\", \"NormalizedNewEmail\", \"UsedAt\", \"ExpiresAt\"
+                     FROM \"EmailChangeRequests\" WHERE \"TokenHash\" = ?1",
+                    [&hash],
+                    |row| {
+                        Ok(Waiting {
+                            request: row.get(0)?,
+                            user: row.get(1)?,
+                            session: row.get(2)?,
+                            version: row.get(3)?,
+                            new_email: row.get(4)?,
+                            normalized: row.get(5)?,
+                            used: row.get(6)?,
+                            expires: row.get(7)?,
+                        })
+                    },
+                )
+                .optional()?;
+            let Some(Waiting { request, user, session, version, new_email, normalized, used, expires }) = found else {
+                return Ok("invalid");
+            };
+            let (disabled, recovery, current, previous): (bool, bool, i64, Option<String>) = tx.query_row(
+                "SELECT \"IsDisabled\", \"SecurityRecoveryRequired\", \"SessionVersion\", \"NormalizedEmail\" FROM \"Users\" WHERE \"Id\" = ?1",
+                [user],
+                |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?)),
+            )?;
+            let Some(session) = session else {
+                return Ok("invalid");
+            };
+            if used.is_some() || expires <= now || disabled || recovery || version != Some(current) {
+                return Ok("invalid");
+            }
+            // Signing out or ending that one session cancels what it asked for.
+            let standing: bool = tx.query_row(
+                "SELECT EXISTS (SELECT 1 FROM \"UserSessions\" WHERE \"Id\" = ?1 AND \"UserId\" = ?2 AND \"RevokedAt\" IS NULL
+                                AND \"ExpiresAt\" > ?3 AND \"AbsoluteExpiresAt\" > ?3 AND \"SecurityVersion\" = ?4)",
+                params![session, user, now, current],
+                |row| row.get(0),
+            )?;
+            if !standing {
+                return Ok("invalid");
+            }
+            let taken: bool = tx.query_row(
+                "SELECT EXISTS (SELECT 1 FROM \"Users\" WHERE \"NormalizedEmail\" = ?1 AND \"Id\" <> ?2)",
+                params![normalized, user],
+                |row| row.get(0),
+            )?;
+            if taken {
+                return Ok("taken");
+            }
+            // The alert goes to the address being replaced, read before it is.
+            let alert = events::verified_email(tx, user)?;
+            tx.execute(
+                "UPDATE \"Users\" SET \"Email\" = ?2, \"NormalizedEmail\" = ?3, \"ProviderVerifiedEmail\" = NULL WHERE \"Id\" = ?1",
+                params![user, new_email, normalized],
+            )?;
+            tx.execute("UPDATE \"EmailChangeRequests\" SET \"UsedAt\" = ?2 WHERE \"Id\" = ?1", params![request, now])?;
+            let context = Context {
+                ip_address: &origin.address,
+                user_agent: &origin.user_agent,
+                https: origin.https,
+                trusted_device_cookie: None,
+                passkeys_available: false,
+            };
+            // Codes and reset links sent to the old address stop working with it.
+            ceremony::email_address_changed(tx, &context, user, &normalized, now)?;
+            tx.execute(
+                "UPDATE \"PasswordResetTokens\" SET \"UsedAt\" = ?2 WHERE \"UserId\" = ?1 AND \"UsedAt\" IS NULL",
+                params![user, now],
+            )?;
+            tx.execute(
+                "UPDATE \"EmailChangeRequests\" SET \"UsedAt\" = ?3 WHERE \"UserId\" = ?1 AND \"UsedAt\" IS NULL AND \"Id\" <> ?2",
+                params![user, request, now],
+            )?;
+            events::record_from(
+                tx,
+                &context,
+                user,
+                events::EMAIL_CHANGED,
+                if previous.is_none() { "address added" } else { "address changed" },
+                alert.as_deref(),
+            )?;
+            Ok("changed")
+        })
+        .await?;
+    answer(result)
 }

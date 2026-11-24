@@ -9,7 +9,8 @@
 //! /api/me/security/recovery/regenerate`, `DELETE /api/me/security/trusted/{id}`,
 //! `GET /api/me/security/sessions`, `DELETE /api/me/security/sessions/{id}`,
 //! `POST /api/me/security/sessions/revoke-others`, `POST
-//! /api/me/security/password`, `POST /api/me/password` and `POST /api/me/email`.
+//! /api/me/security/password`, `POST /api/me/password`, `POST /api/me/email` and
+//! `POST /api/auth/email/confirm`.
 //!
 //! Everything that changes the second step goes through `auth::ceremony`; this
 //! group decides only what to answer. Ending a session also tells the hub, so
@@ -31,7 +32,6 @@ use crate::auth::flow::{self, Context};
 use crate::auth::security_cookies;
 use crate::http::{ApiError, ApiResult, Endpoints, Origin, Problem, RateLimitPolicy};
 use crate::state::AppState;
-use crate::values::Id;
 
 pub fn routes() -> Endpoints {
     Endpoints::new()
@@ -74,6 +74,11 @@ pub fn routes() -> Endpoints {
         .json_body()
         .authorized()
         .rate_limit(RateLimitPolicy::AuthWrite)
+        // The link may be opened on another device: the token alone proves the
+        // new address.
+        .post("/api/auth/email/confirm", email_change::confirm)
+        .json_body()
+        .rate_limit(RateLimitPolicy::AuthWrite)
 }
 
 /// Every answer of the routes under `/api/me/security` is kept out of caches,
@@ -105,12 +110,6 @@ fn context<'a>(state: &AppState, origin: &'a Origin, trusted_device: Option<&'a 
 /// The remembered-device token of the browser, if it holds one.
 fn trusted_device_of(origin: &Origin) -> Option<String> {
     security_cookies::read_trusted_device(&origin.headers, origin.https)
-}
-
-/// An id in a path, in any spelling the first server's routes took for one:
-/// anything else is a route that does not exist.
-fn guid(text: &str) -> ApiResult<Id> {
-    crate::permissions::membership::parse_guid(text).ok_or_else(ApiError::not_found)
 }
 
 /// The refusal for a session that may not change the account's security
