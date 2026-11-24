@@ -95,8 +95,7 @@ mod tests {
             "",
             "A",
             "not a cursor",
-            // The standard alphabet, padding, space and a byte too many or too few.
-            &valid.replace('-', "+"),
+            // Padding, space and a byte too many or too few.
             &format!("{valid}="),
             &format!(" {valid}"),
             &format!("{valid}A"),
@@ -106,6 +105,11 @@ mod tests {
             "RDMiEWZViHeZqrvM3e7_AAjb5V7o5AAAAAAAAw",
         ] {
             assert_eq!(HistoryCursor::decode(text), None, "{text:?}");
+        }
+        // The standard alphabet is not the URL-safe one, whenever they differ.
+        let standard = valid.replace('-', "+").replace('_', "/");
+        if standard != valid {
+            assert_eq!(HistoryCursor::decode(&standard), None);
         }
     }
 
