@@ -324,8 +324,8 @@ async fn a_quote_is_a_line_of_at_most_160_units_and_names_an_attachment_when_the
     let on_long: Value = w.post(&w.owner, &w.general, json!({ "content": "re", "replyToMessageId": long["id"] })).await.json();
     let on_silent: Value = w.post(&w.owner, &w.general, json!({ "content": "re", "replyToMessageId": silent["id"] })).await.json();
 
-    // The cut falls inside the pair, which leaves the replacement character.
-    assert_eq!(on_long["replyTo"]["preview"], format!("{}\u{FFFD}…", "a".repeat(156)));
+    // The cut falls inside the pair, which is left out whole.
+    assert_eq!(on_long["replyTo"]["preview"], format!("{}…", "a".repeat(156)));
     assert_eq!(on_silent["replyTo"]["preview"], "Attachment");
     assert_eq!(on_silent["replyTo"]["hasAttachment"], true);
 }

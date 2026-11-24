@@ -116,8 +116,9 @@ async fn a_role_edited_to_lose_a_right_that_the_base_role_still_gives_takes_nobo
 #[tokio::test]
 async fn a_role_taken_from_the_member_takes_them_out() {
     let mut scene = scene().await;
-    let path = format!("/api/admin/members/{}/roles", scene.jonas.id);
-    scene.owner(Method::PUT, &path, Some(json!({"roleIds": []})), 204).await;
+    let path = format!("/api/admin/members/{}/role", scene.jonas.id);
+    let base = scene.rig.base_role().to_string();
+    scene.owner(Method::PATCH, &path, Some(json!({"roleId": base})), 204).await;
     scene.assert_unseated(true).await;
 }
 
