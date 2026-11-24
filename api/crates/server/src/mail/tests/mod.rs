@@ -5,4 +5,4 @@
 mod alerts;
 mod delivery;
 mod setup;
-mod support;
+pub(crate) mod support;
