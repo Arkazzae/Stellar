@@ -350,10 +350,6 @@ impl Runtime {
             )),
         }
     }
-
-    pub fn stdout_line(&mut self, line: &str) {
-        let _ = writeln!(self.io.output, "{line}");
-    }
 }
 
 /// Says that the tool made the master key, with the path and the account that

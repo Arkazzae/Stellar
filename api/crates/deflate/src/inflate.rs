@@ -217,11 +217,6 @@ impl<R: Read> Inflate<R> {
         self
     }
 
-    /// Bytes decoded so far.
-    pub fn total_out(&self) -> u64 {
-        self.produced - (self.filled - self.taken) as u64
-    }
-
     /// Whether the final block has been read and all its output taken.
     pub fn is_finished(&self) -> bool {
         matches!(self.state, State::Done) && self.taken == self.filled
