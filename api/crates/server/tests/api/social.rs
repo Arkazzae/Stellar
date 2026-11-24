@@ -269,6 +269,28 @@ async fn accounts_that_stand_in_for_somebody_or_are_disabled_cannot_be_befriende
 }
 
 #[tokio::test]
+async fn friends_and_requests_come_oldest_first_whatever_order_they_were_written_in() {
+    let p = people().await;
+    befriend(&p.ada, &p.ben).await;
+    befriend(&p.ada, &p.cy).await;
+    let dee = p.server.register("dee").await;
+    let eve = p.server.register("eve").await;
+    assert_eq!(ask(&p.ada.client, "dee").await, "sent");
+    assert_eq!(ask(&p.ada.client, "eve").await, "sent");
+    // The rows are written the other way round from the order of their moments.
+    let database = p.server.database();
+    database.execute("UPDATE \"Friendships\" SET \"CreatedAt\" = '2026-03-01 00:00:00' WHERE \"UserAId\" IN (?1, ?2) AND \"UserBId\" IN (?1, ?2)", [Id::parse(&p.ada.id).unwrap(), Id::parse(&p.ben.id).unwrap()]).unwrap();
+    database.execute("UPDATE \"Friendships\" SET \"CreatedAt\" = '2026-01-01 00:00:00' WHERE \"UserAId\" IN (?1, ?2) AND \"UserBId\" IN (?1, ?2)", [Id::parse(&p.ada.id).unwrap(), Id::parse(&p.cy.id).unwrap()]).unwrap();
+    database.execute("UPDATE \"FriendRequests\" SET \"CreatedAt\" = '2026-03-01 00:00:00' WHERE \"ReceiverId\" = ?1", [Id::parse(&dee.id).unwrap()]).unwrap();
+    database.execute("UPDATE \"FriendRequests\" SET \"CreatedAt\" = '2026-01-01 00:00:00' WHERE \"ReceiverId\" = ?1", [Id::parse(&eve.id).unwrap()]).unwrap();
+
+    let mine = state(&p.ada.client).await;
+
+    assert_eq!(names(&mine["friends"], Some("user")), ["cyd", "ben"]);
+    assert_eq!(names(&mine["requests"], Some("user")), ["eve", "dee"]);
+}
+
+#[tokio::test]
 async fn removing_a_friend_ends_the_friendship_for_both() {
     let p = people().await;
     befriend(&p.ada, &p.ben).await;

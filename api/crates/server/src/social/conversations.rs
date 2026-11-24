@@ -59,12 +59,14 @@ impl Conversation {
     }
 }
 
-/// The conversations a person is in, in the order the rows come.
+/// The conversations a person is in, the oldest first, and by id for two made
+/// at the same moment.
 pub fn of_person(connection: &Connection, me: Id) -> rusqlite::Result<Vec<Conversation>> {
     let mut statement = connection.prepare(
         "SELECT \"Id\", \"UserAId\", \"UserBId\", \"CreatedAt\", \"EncryptionState\", \"EncryptionRequestedById\",
                 \"EncryptionRequestedAt\", \"EncryptionEnabledAt\", \"CurrentEpochId\"
-         FROM \"DirectConversations\" WHERE \"UserAId\" = ?1 OR \"UserBId\" = ?1",
+         FROM \"DirectConversations\" WHERE \"UserAId\" = ?1 OR \"UserBId\" = ?1
+         ORDER BY \"CreatedAt\", \"Id\"",
     )?;
     statement
         .query_map([me], Conversation::from_row)?

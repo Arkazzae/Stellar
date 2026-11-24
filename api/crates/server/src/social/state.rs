@@ -70,24 +70,27 @@ fn read_state(
     state: &AppState,
     me: Id,
 ) -> Result<SocialState, DbError> {
-    // The three questions are asked in the shape the first server asked
-    // them, so that rows with nothing to order them come in the same order.
+    // Each list is in the order things happened, the oldest first, and by id
+    // for two that happened at the same moment.
     let friendships = pairs(
         connection,
         "SELECT \"Id\", \"UserAId\", \"UserBId\", \"CreatedAt\" FROM \"Friendships\"
-         WHERE \"UserAId\" = ?1 OR \"UserBId\" = ?1",
+         WHERE \"UserAId\" = ?1 OR \"UserBId\" = ?1
+         ORDER BY \"CreatedAt\", \"Id\"",
         me,
     )?;
     let requests = pairs(
         connection,
         "SELECT \"Id\", \"SenderId\", \"ReceiverId\", \"CreatedAt\" FROM \"FriendRequests\"
-         WHERE \"SenderId\" = ?1 OR \"ReceiverId\" = ?1",
+         WHERE \"SenderId\" = ?1 OR \"ReceiverId\" = ?1
+         ORDER BY \"CreatedAt\", \"Id\"",
         me,
     )?;
     let blocks = pairs(
         connection,
         "SELECT \"BlockerId\", \"BlockerId\", \"BlockedId\", \"CreatedAt\" FROM \"UserBlocks\"
-         WHERE \"BlockerId\" = ?1 OR \"BlockedId\" = ?1",
+         WHERE \"BlockerId\" = ?1 OR \"BlockedId\" = ?1
+         ORDER BY \"CreatedAt\", \"BlockerId\", \"BlockedId\"",
         me,
     )?;
     let blocked_by_viewer: Vec<Id> = blocks
