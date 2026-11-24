@@ -10,6 +10,7 @@ groups! {
     client_settings,
     emoji,
     direct,
+    encryption,
     health,
     messages,
     own_profile,
