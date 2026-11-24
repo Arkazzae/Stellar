@@ -34,7 +34,10 @@ password='Corona!2026-long'
 headers=(-H 'X-Stellarr-Client: web' -H 'X-Stellarr-Client-Version: 2.0.0' -H 'Content-Type: application/json')
 pid=; sink=
 
-cleanup() { [ -n "$pid" ] && kill "$pid" 2>/dev/null || true; [ -n "$sink" ] && kill "$sink" 2>/dev/null || true; rm -rf "$work"; }
+cleanup() {
+  for process in $pid $sink; do kill "$process" 2>/dev/null && wait "$process" 2>/dev/null || true; done
+  rm -rf "$work"
+}
 trap cleanup EXIT
 
 wait_ready() {
@@ -145,5 +148,6 @@ scrub() {
 for cookie in "stellarr-dev-trust=$trust" "stellarr-dev-trust=$mine" "stellarr-dev-trust=nothing"; do
   a=$(curl -si -b "$cookie" -X POST "$oracle/api/auth/login" "${headers[@]}" -d "{\"username\":\"maya\",\"password\":\"$password\"}" | scrub)
   b=$(curl -si -b "$cookie" -X POST "$rust/api/auth/login" "${headers[@]}" -d "{\"username\":\"maya\",\"password\":\"$password\"}" | scrub)
-  if [ "$a" = "$b" ]; then echo "same      sign-in with ${cookie%%=*}=${cookie#*=} (first 6: ${cookie#*=})" | cut -c1-70; else echo "DIFFERENT sign-in with $cookie"; diff <(echo "$a") <(echo "$b") || true; fi
+  label=${cookie%%=*}=${cookie#*=}; label=${label:0:36}
+  if [ "$a" = "$b" ]; then echo "same      sign-in with $label"; else echo "DIFFERENT sign-in with $label"; diff <(echo "$a") <(echo "$b") || true; fi
 done

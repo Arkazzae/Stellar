@@ -124,6 +124,14 @@ async fn a_session_that_passed_it_long_ago_or_never_is_refused_with_the_code_the
 
         assert_eq!(response.status, 403, "{query}");
         assert_eq!(response.header("content-type"), Some("application/problem+json"));
+        // As the first server answers it, member by member, in this order.
+        assert!(
+            response.text().starts_with(
+                "{\"type\":\"https://tools.ietf.org/html/rfc9110#section-15.5.4\",\"title\":\"This needs a second step from the last 5 minutes. Confirm it and try again.\",\"status\":403,\"code\":\"fresh-mfa-required\",\"traceId\":\"00-"
+            ),
+            "{}",
+            response.text()
+        );
         let body: Value = response.json();
         assert_eq!(body["code"], "fresh-mfa-required", "{query}");
         assert_eq!(body["status"], 403);
