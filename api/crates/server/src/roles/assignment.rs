@@ -51,6 +51,10 @@ struct MemberDto {
     role_ids: Vec<Id>,
 }
 
+/// A member as read: the account, the role that ranks them, when they joined
+/// and the roles they hold.
+type MemberRow = (User, Id, Timestamp, Vec<Id>);
+
 pub(super) async fn list(
     State(state): State<AppState>,
     caller: Caller,
@@ -58,7 +62,7 @@ pub(super) async fn list(
 ) -> ApiResult<Response> {
     let rows = state
         .database()
-        .read(move |db| -> Result<Vec<(User, Id, Timestamp, Vec<Id>)>, ApiError> {
+        .read(move |db| -> Result<Vec<MemberRow>, ApiError> {
             let mut statement = db.prepare(
                 "SELECT m.\"UserId\", m.\"RoleId\", m.\"JoinedAt\" FROM \"ServerMembers\" m
                  INNER JOIN \"Users\" u ON m.\"UserId\" = u.\"Id\"
