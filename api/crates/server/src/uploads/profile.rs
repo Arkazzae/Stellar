@@ -8,11 +8,11 @@ use rusqlite::params;
 use stellarr_messages::MessageKey;
 use stellarr_unicode::to_lower;
 
-use super::attachments::{Attachment, compact, retire_if_unreferenced, roll_back};
-use super::files::{created, read};
-use super::form::Slot;
-use super::inspect::{self, file_name_of, keep_image};
-use super::refusals::{Texts, no_room, refuse};
+use super::attachments::{Attachment, compact, retire_if_unreferenced};
+use crate::http::created;
+use super::inspect;
+use super::transfer::{read_image_form, reserve, store_file, stored_or_rollback};
+use super::refusals::{Texts, refuse};
 use crate::accounts::me::Account;
 use crate::auth::Caller;
 use crate::database::DbError;
@@ -72,13 +72,7 @@ pub async fn upload(
     Path(name): Path<String>,
     request: Request,
 ) -> ApiResult<Response> {
-    let keeps = |content_type: &str| {
-        // The size is that of the kind named in the path, found below; a
-        // file is kept up to the largest of the three, and checked after.
-        keep_image(content_type, BANNER.max_bytes)
-    };
-    let slots = [Slot { name: "file", keeps: &keeps }];
-    let mut received = read(&state, request, &slots, &[]).await?;
+    let mut received = read_image_form(&state, request, BANNER.max_bytes, &[]).await?;
     let file = received.files.remove(0).ok_or_else(ApiError::bad_request)?;
     let Some(kind) = find_kind(&name) else {
         return Err(ApiError::not_found());
@@ -104,15 +98,7 @@ pub async fn upload(
     if !exists {
         return Err(ApiError::internal("the signed-in account is not there"));
     }
-    let lease = match state
-        .admission()
-        .enter(state.database(), user, file.length as i64)
-        .await?
-    {
-        Ok(lease) => lease,
-        Err(why) => return Err(no_room(&state, why)?),
-    };
-
+    let lease = reserve(&state, user, file.length as i64).await?;
     let id = Id::random();
     let key = format!(
         "profiles/{}/{}/{}{}",
@@ -121,28 +107,8 @@ pub async fn upload(
         compact(id),
         spec.extension
     );
-    let mut source = file.open().await.map_err(ApiError::internal)?;
-    state
-        .storage()
-        .put(&key, &mut source)
-        .await
-        .map_err(ApiError::internal)?;
-    let attachment = Attachment {
-        id,
-        uploaded_by: user,
-        object_key: key.clone(),
-        file_name: file_name_of(&file.file_name).to_string(),
-        content_type: spec.content_type.to_string(),
-        size: file.length as i64,
-        width: None,
-        height: None,
-        duration_seconds: None,
-        is_voice_message: false,
-        poster: None,
-        preview: None,
-        placeholder: None,
-        is_encrypted: false,
-    };
+    store_file(&state, &key, &file).await?;
+    let attachment = Attachment::plain_image(id, user, key.clone(), &file, spec.content_type);
     let url = format!("/assets/{id}");
     let column = kind.column;
     let new_url = url.clone();
@@ -164,13 +130,7 @@ pub async fn upload(
             Ok((previous, account))
         })
         .await;
-    let (previous, account) = match written {
-        Ok(done) => done,
-        Err(error) => {
-            roll_back(&state, vec![key]).await;
-            return Err(error.into());
-        }
-    };
+    let (previous, account) = stored_or_rollback(&state, vec![key], written.map_err(ApiError::from)).await?;
     drop(lease);
     retire_if_unreferenced(&state, previous, Some(user)).await;
     if kind.public {

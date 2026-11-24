@@ -6,7 +6,7 @@
 //! whether the bytes are what the type says, then whether there is room.
 
 use axum::extract::{Request, State};
-use axum::http::{HeaderValue, StatusCode, header};
+use axum::http::StatusCode;
 use axum::response::Response;
 use rusqlite::params;
 use stellarr_messages::MessageKey;
@@ -15,13 +15,12 @@ use stellarr_unicode::to_lower;
 use super::{EmojiDto, announce_changed, may_manage};
 use crate::auth::Caller;
 use crate::database::DbError;
-use crate::http::{ApiError, ApiResult, Problem, json_response};
+use crate::http::{ApiError, ApiResult, Problem, created};
 use crate::permissions::audit::{self, AuditEvent};
 use crate::permissions::membership::ActiveServer;
 use crate::state::AppState;
-use crate::uploads::{
-    Failure, Slot, compact, inspect_image, keep_image, month, no_room, problem, read_form, roll_back,
-};
+use crate::uploads::transfer::{read_image_form, reserve, store_file, stored_or_rollback};
+use crate::uploads::{Failure, compact, inspect_image, month, problem};
 use crate::values::{Id, Timestamp};
 
 const MAX_EMOJI_BYTES: i64 = 512 * 1024;
@@ -68,9 +67,7 @@ pub async fn upload(
     ActiveServer(server): ActiveServer,
     request: Request,
 ) -> ApiResult<Response> {
-    let keeps = |content_type: &str| keep_image(content_type, MAX_EMOJI_BYTES);
-    let slots = [Slot { name: "file", keeps: &keeps }];
-    let mut received = read_form(&state, request, &slots, &["shortcode"]).await?;
+    let mut received = read_image_form(&state, request, MAX_EMOJI_BYTES, &["shortcode"]).await?;
     let file = received.files.remove(0);
     let typed = match received.fields.get("shortcode") {
         Some(Ok(text)) => text.to_string(),
@@ -120,22 +117,10 @@ pub async fn upload(
         return Err(refusal(&state, Failure::SignatureMismatch)?);
     };
 
-    let lease = match state
-        .admission()
-        .enter(state.database(), user, file.length as i64)
-        .await?
-    {
-        Ok(lease) => lease,
-        Err(why) => return Err(no_room(&state, why)?),
-    };
+    let lease = reserve(&state, user, file.length as i64).await?;
     let id = Id::random();
     let key = format!("emoji/{}/{}{}", month(), compact(id), spec.extension);
-    let mut source = file.open().await.map_err(ApiError::internal)?;
-    state
-        .storage()
-        .put(&key, &mut source)
-        .await
-        .map_err(ApiError::internal)?;
+    store_file(&state, &key, &file).await?;
 
     let sentence = state
         .messages()
@@ -167,25 +152,11 @@ pub async fn upload(
         })
         .await;
     drop(lease);
-    match written {
-        // Another upload took the name since the check above.
-        Ok(None) => {
-            roll_back(&state, vec![key]).await;
-            Err(ApiError::conflict())
-        }
-        Err(error) => {
-            roll_back(&state, vec![key]).await;
-            Err(error.into())
-        }
-        Ok(Some(())) => {
-            announce_changed(&state, server);
-            let mut response = json_response(StatusCode::CREATED, &EmojiDto::new(id, server, &code));
-            if let Ok(location) = HeaderValue::from_str(&format!("/api/emoji/{id}")) {
-                response.headers_mut().insert(header::LOCATION, location);
-            }
-            Ok(response)
-        }
-    }
+    // Another upload may have taken the name since the check above.
+    let written = written.map_err(ApiError::from).and_then(|row| row.ok_or_else(ApiError::conflict));
+    stored_or_rollback(&state, vec![key], written).await?;
+    announce_changed(&state, server);
+    Ok(created(format!("/api/emoji/{id}"), &EmojiDto::new(id, server, &code)))
 }
 
 #[cfg(test)]
