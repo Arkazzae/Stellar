@@ -1,8 +1,6 @@
 #!/usr/bin/env bash
-# The operator CLI, published into the API's folder: it runs on the API's own
-# assemblies, which the image build checks are the ones it was built with. The
-# publish is architecture-neutral, so the image's own .NET runtime executes it;
-# no apphost for the build machine's CPU is copied into a multi-architecture image.
+# The operator CLI, a program of its own in /opt/stellarr/cli, built in the
+# same workspace as the API.
 #
 # docker exec starts it with the container's configured environment, not with
 # what the entrypoint exported. So it reads the settings by the entrypoint's
@@ -18,4 +16,4 @@ if source /usr/local/lib/stellarr/settings.sh && read_settings && [[ -n "$public
   export Operations__PublicUrl="$public_url"
   export Desktop__CanonicalOrigin="$public_url"
 fi
-exec /usr/bin/dotnet /opt/stellarr/api/Stellarr.Cli.dll "$@"
+exec /opt/stellarr/cli/stellarr "$@"

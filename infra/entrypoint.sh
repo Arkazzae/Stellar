@@ -7,8 +7,8 @@
 # It reads only STELLARR_* variables, the names in .env. A setting it shares
 # with the API is exported again under the same name with the value resolved
 # here, so the API uses what coturn, nginx and the media server use. The API
-# reads those names through its own table (server/Stellarr.Api/Operations/
-# StellarrVariables.cs). How each setting is read, defaulted and refused, and
+# reads those names through its own table (api/crates/server/src/settings/
+# variables.rs). How each setting is read, defaulted and refused, and
 # the public address that follows from them, is in settings.sh, which the
 # operator CLI's wrapper sources too: docker exec starts the CLI without the
 # exports below.
@@ -112,7 +112,6 @@ export STELLARR_MEDIA_PORT="$media_port"
 export STELLARR_TURN_TCP_ENABLED="$turn_tcp_enabled"
 export STELLARR_TURNS_ENABLED="$turns_enabled"
 # Values with no STELLARR_* name, which only the entrypoint derives.
-export ConnectionStrings__Database="Data Source=$data_root/db/stellarr.db;Pooling=True"
 export Rtc__MediaControlUrl="http://127.0.0.1:5200"
 export Rtc__MediaControlSecret="$media_control_secret"
 export Rtc__TurnSharedSecret="$turn_secret"
@@ -150,11 +149,13 @@ if [[ -z "$public_ip" && -z "$media_advertise" ]]; then
     "Set STELLARR_PUBLIC_IP to the IPv4 address browsers reach this host at, or to 'auto'." >&2
 fi
 
-# The ASP.NET base image sets one of these, and it would conflict with
-# ASPNETCORE_URLS.
-unset ASPNETCORE_HTTP_PORTS ASPNETCORE_HTTPS_PORTS
-export ASPNETCORE_URLS="http://127.0.0.1:5000"
-export ASPNETCORE_ENVIRONMENT="${ASPNETCORE_ENVIRONMENT:-Production}"
+# Where the API listens, and the environment it runs in. Both are assigned
+# whatever .env holds: nginx forwards to the loopback address, and the API
+# trusts the last X-Forwarded-For entry only because nothing else can reach it,
+# and any environment but production would publish a development secret and
+# send the session cookie over plain HTTP.
+export STELLARR_API_LISTEN="127.0.0.1:5000"
+export STELLARR_ENVIRONMENT="Production"
 
 /usr/local/bin/stellarr-tls-maintenance prepare
 

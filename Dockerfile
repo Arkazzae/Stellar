@@ -5,11 +5,11 @@
 # also serves the web client and the operator panel, Cockpit, under /cockpit,
 # both built as static files. It builds for linux/amd64 and linux/arm64.
 #
-# Stages whose output is architecture-neutral (the web build and the portable
-# API publish) run on the build machine's own platform, so a multi-platform
-# build does not emulate them. The two Rust stages run there too and
-# cross-compile for the target, because compiling Rust under emulation would
-# not fit in the release job.
+# The web build, whose output does not depend on the architecture, runs on the
+# build machine's own platform, so a multi-platform build does not emulate it.
+# The Rust stages (the API and the operator's tool, the media server and
+# Stellarr Init) run there too and cross-compile for the target, because
+# compiling Rust under emulation would not fit in the release job.
 
 # The recipes of artifacts/recipes/ build some of the files the browser loads
 # from source. Each has a stage, or a few, that fetch its pinned inputs and
@@ -114,110 +114,6 @@ RUN npm run build \
     && find dist -type f \( -name '*.html' -o -name '*.js' -o -name '*.css' -o -name '*.json' \
          -o -name '*.svg' -o -name '*.wasm' \) -exec gzip -9 -k -n {} +
 
-FROM --platform=$BUILDPLATFORM mcr.microsoft.com/dotnet/sdk:10.0-noble AS api-build
-ARG VERSION=2.0.0
-WORKDIR /src
-COPY global.json Directory.Build.props Stellarr.slnx ./
-COPY server/Stellarr.Api/Stellarr.Api.csproj server/Stellarr.Api/packages.lock.json server/Stellarr.Api/
-COPY server/Stellarr.Cli/Stellarr.Cli.csproj server/Stellarr.Cli/packages.lock.json server/Stellarr.Cli/
-RUN dotnet restore server/Stellarr.Cli/Stellarr.Cli.csproj --locked-mode \
-    && dotnet restore server/Stellarr.Api/Stellarr.Api.csproj --locked-mode
-COPY server/Stellarr.Api/ server/Stellarr.Api/
-COPY server/Stellarr.Cli/ server/Stellarr.Cli/
-RUN dotnet publish server/Stellarr.Api/Stellarr.Api.csproj \
-    -c Release -o /out/api --no-restore -p:UseAppHost=false -p:Version=${VERSION}
-RUN dotnet publish server/Stellarr.Cli/Stellarr.Cli.csproj \
-    -c Release -o /out/cli --no-restore -p:UseAppHost=false -p:Version=${VERSION}
-# The CLI references the API project, so its publish repeats the API's: the
-# assemblies, appsettings.json, the native libraries. Only Stellarr.Cli.dll and
-# its .pdb, .deps.json and .runtimeconfig.json are its own. The image ships one
-# folder, the API's, with the CLI's own files added to it. Every file both
-# publishes hold must be byte for byte the same, or the build stops here: the
-# CLI must never run against an assembly it was not built with.
-RUN <<'EOF'
-set -eu
-cd /out/cli
-find . -type f | sort > /tmp/cli-files
-differing=0
-while IFS= read -r file; do
-  if [ -e "/out/api/$file" ] && ! cmp -s "$file" "/out/api/$file"; then
-    echo "The CLI and the API publish different copies of ${file#./}." >&2
-    differing=1
-  fi
-done < /tmp/cli-files
-if [ "$differing" -ne 0 ]; then
-  exit 1
-fi
-while IFS= read -r file; do
-  if [ ! -e "/out/api/$file" ]; then
-    echo "Adding the CLI's ${file#./} to the API's folder."
-    mkdir -p "/out/api/$(dirname "$file")"
-    cp -p "$file" "/out/api/$file"
-  fi
-done < /tmp/cli-files
-EOF
-
-# The portable publish carries native libraries for some thirty platforms in
-# runtimes/, about 95 MB, and a platform loads only its own: SQLite's
-# libe_sqlite3.so, and libsodium.so, which NSec.Cryptography loads for the
-# Ed25519 passkeys of Fido2. This stage runs once per target platform, still on
-# the build machine, and keeps what the API's and the CLI's deps files list for
-# the target's runtime identifier, its static archives aside. .NET takes native
-# libraries from that one identifier's folder and does not check that the other
-# files the deps files list are on disk. The build stops here if a listed
-# library is missing or built for another machine, or if the deps files list
-# anything under the identifiers .NET falls back to (linux, unix-<arch>, unix,
-# any), which this would delete.
-FROM api-build AS api-platform
-ARG TARGETARCH
-RUN <<'EOF'
-set -eu
-case "$TARGETARCH" in
-  amd64) rid=linux-x64 machine="3e 00" ;;
-  arm64) rid=linux-arm64 machine="b7 00" ;;
-  *) echo "The API ships for amd64 and arm64, not $TARGETARCH." >&2; exit 1 ;;
-esac
-cd /out/api
-listed=$(grep -ho '"runtimes/[^"]*"' Stellarr.Api.deps.json Stellarr.Cli.deps.json | tr -d '"' | sort -u)
-fallback=$(printf '%s\n' "$listed" | grep -E '^runtimes/(linux|unix|unix-[^/]+|any)/' || true)
-if [ -n "$fallback" ]; then
-  printf 'The deps files list files for a fallback identifier, which this stage would remove:\n%s\n' "$fallback" >&2
-  exit 1
-fi
-keep=$(printf '%s\n' "$listed" | grep "^runtimes/$rid/" | grep -v '\.a$' || true)
-if [ -z "$keep" ]; then
-  echo "The deps files list no native library for $rid." >&2
-  exit 1
-fi
-echo "Keeping the files .NET loads on $rid (pruned on $(uname -m)):"
-for file in $keep; do
-  if [ ! -f "$file" ]; then
-    echo "$file is listed for $rid but was not published." >&2
-    exit 1
-  fi
-  case "$file" in
-    *.so)
-      # ELF magic, a shared object (e_type 3) and the target's e_machine.
-      magic=$(od -An -tx1 -N4 "$file" | tr -s ' ' | sed 's/^ //')
-      header=$(od -An -tx1 -j16 -N4 "$file" | tr -s ' ' | sed 's/^ //')
-      if [ "$magic" != "7f 45 4c 46" ] || [ "$header" != "03 00 $machine" ]; then
-        echo "$file is not a shared library for $rid." >&2
-        exit 1
-      fi
-      ;;
-  esac
-  echo "  $file"
-  mkdir -p "/tmp/kept/$(dirname "$file")"
-  cp -p "$file" "/tmp/kept/$file"
-done
-rm -rf runtimes
-mv /tmp/kept/runtimes runtimes
-if [ "$(find runtimes -type f | sort)" != "$keep" ]; then
-  echo "runtimes/ does not hold exactly the files kept for $rid." >&2
-  exit 1
-fi
-EOF
-
 # The media crate with every Rust file replaced by an empty stub. It changes
 # only when the manifest, the lockfile or the set of files changes, so the
 # dependencies compiled from it stay cached across source edits. Stubbing every
@@ -283,6 +179,51 @@ COPY media/ ./
 RUN cargo build --release --locked --target "$(cat /etc/rust-target)" \
     && install -D "target/$(cat /etc/rust-target)/release/stellarr-media" /out/stellarr-media
 
+# The API's workspace with every Rust file replaced by an empty stub, like the
+# media crate's above. A change to one crate's source then leaves the
+# third-party dependencies cached.
+FROM --platform=$BUILDPLATFORM rust:1-slim-bookworm AS api-skeleton
+WORKDIR /src/api
+COPY api/ ./
+RUN <<'EOF'
+set -eu
+mkdir -p /skeleton
+cp Cargo.toml Cargo.lock /skeleton/
+if [ -d .cargo ]; then cp -R .cargo /skeleton/; fi
+find . -name Cargo.toml -type f | while read -r file; do
+  mkdir -p "/skeleton/$(dirname "$file")"
+  cp "$file" "/skeleton/$file"
+done
+find . -name '*.rs' -type f | while read -r file; do
+  mkdir -p "/skeleton/$(dirname "$file")"
+  echo 'pub fn main() {}' > "/skeleton/$file"
+done
+EOF
+
+# The API, stellarr-api, and the operator's tool, stellarr, built from one
+# workspace. The stub build compiles the dependencies; the crates of the
+# workspace are then cleaned, as the media crate is, so that the real sources
+# are built and no stub is shipped. The server reports the version it was
+# built as, which it reads from STELLARR_VERSION at compile time.
+FROM rust-cross AS api-build
+ARG VERSION=2.0.0
+ENV STELLARR_VERSION=${VERSION}
+WORKDIR /src/api
+COPY --from=api-skeleton /skeleton/ ./
+RUN <<'EOF'
+set -eu
+target="$(cat /etc/rust-target)"
+cargo build --release --locked --target "$target" -p stellarr-api -p stellarr-cli
+for manifest in crates/*/Cargo.toml; do
+  name="$(sed -n 's/^name = "\(.*\)"$/\1/p' "$manifest" | head -n 1)"
+  cargo clean --release --locked --target "$target" --package "$name"
+done
+EOF
+COPY api/ ./
+RUN cargo build --release --locked --target "$(cat /etc/rust-target)" -p stellarr-api -p stellarr-cli \
+    && install -D "target/$(cat /etc/rust-target)/release/stellarr-api" /out/api/stellarr-api \
+    && install -D "target/$(cat /etc/rust-target)/release/stellarr" /out/cli/stellarr
+
 # Stellarr Init, the process manager that runs as PID 1. It depends on libc
 # alone, which compiles in seconds, so it needs no stage of stubs. The whole
 # crate is copied, tests included: Cargo.toml names the test targets, and a
@@ -293,22 +234,32 @@ COPY init/ ./
 RUN cargo build --release --locked --target "$(cat /etc/rust-target)" --bin stellarr-init \
     && install -D "target/$(cat /etc/rust-target)/release/stellarr-init" /out/stellarr-init
 
-# Target of docker-compose.dev.yml: the SDK with the source bind-mounted.
-FROM mcr.microsoft.com/dotnet/sdk:10.0-noble AS api-dev
-WORKDIR /src/server/Stellarr.Api
-
-# Target of docker-compose.dev.yml: the Rust toolchain and a file watcher that
-# rebuilds and restarts the bind-mounted media crate. The dev stack mounts its
-# own volume over the registry, so the copy left by the install is dropped.
-FROM rust:1-slim-bookworm AS media-dev
+# The Rust toolchain and a file watcher, for the development stack's two Rust
+# services. Each is a target of docker-compose.dev.yml that rebuilds and
+# restarts its bind-mounted crate. The stack mounts its own volume over the
+# registry, so the copy left by the install is dropped.
+FROM rust:1-slim-bookworm AS rust-watch
 RUN cargo install --locked watchexec-cli@2.8.0 \
     && rm -rf "$CARGO_HOME/registry"
 WORKDIR /app
 
-FROM mcr.microsoft.com/dotnet/aspnet:10.0-noble AS final
+# Target of docker-compose.dev.yml: the media server.
+FROM rust-watch AS media-dev
+
+# Target of docker-compose.dev.yml: the API.
+FROM rust-watch AS api-dev
+
+# The same distribution as before, pinned by the digest of its multi-platform
+# index, so nginx, coturn and openssl are the same packages. What the Rust
+# programs need at run time is the C library, which the base has, the CA bundle
+# (ca-certificates) for the API's calls to other hosts, and the zone database
+# (tzdata) the server reads time zones from in /usr/share/zoneinfo. The
+# operator's tool calls df and stty, which are coreutils'.
+FROM ubuntu:24.04@sha256:9c7f200c07e3d4a03e7249d2c16bf66a51120fb876aa2242cf31451412543289 AS final
 
 RUN apt-get update \
-    && apt-get install -y --no-install-recommends ca-certificates coturn nginx openssl \
+    && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
+         ca-certificates coturn nginx openssl tzdata \
     && rm -rf /var/lib/apt/lists/*
 
 COPY infra/nginx.conf /etc/nginx/nginx.conf.template
@@ -320,9 +271,9 @@ COPY --chmod=0755 infra/entrypoint.sh /usr/local/bin/stellarr-entrypoint
 COPY --chmod=0755 infra/tls-maintenance.sh /usr/local/bin/stellarr-tls-maintenance
 COPY --chmod=0755 infra/stellarr-cli.sh /usr/local/bin/stellarr
 
-# The API, with the operator CLI's own files added and the native libraries of
-# the target platform alone.
-COPY --from=api-platform /out/api /opt/stellarr/api
+# The API and the operator's tool, one executable each.
+COPY --from=api-build /out/api/stellarr-api /opt/stellarr/api/stellarr-api
+COPY --from=api-build /out/cli/stellarr /opt/stellarr/cli/stellarr
 # The two apps, which nginx serves: the web client's document at the top,
 # Cockpit's in cockpit/, the build's own files in static/, and the folders of
 # web/public/ beside them.
