@@ -5,7 +5,7 @@ use rusqlite::{Connection, params};
 use serde_json::Value;
 use stellarr_api::values::{Id, Timestamp};
 
-use crate::support::{Person, Request, Server};
+use crate::support::{Person, Request, Server, raw_get};
 use crate::uploads::{
     Form, JPEG, MP4, PDF, WAVE, WEBP, channel_of, first_server, id_of, image, post_message, started, upload,
 };
@@ -472,4 +472,37 @@ async fn the_picture_of_a_link_card_is_for_whoever_sees_the_channel_of_its_messa
     );
 
     assert_eq!(sam.client.get(&format!("/assets/{id}")).await.status, 200);
+}
+
+/// A small asset is one chunk, the case that used to arrive empty about once in
+/// four thousand requests (see `src/http/stream.rs`). Sixteen clients ask for
+/// it at once, each on a connection of its own, on several threads.
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn a_small_asset_arrives_whole_from_sixteen_clients_at_once() {
+    let server = started(&[]).await;
+    let maja = server.found("maja").await;
+    let id = id_of(&upload(&maja, Form::new().file("file", "small.png", "image/png", BODY)).await);
+    let name = stellarr_api::auth::session::cookie_name(&stellarr_api::settings::Environment::new("Testing"));
+    let cookie = format!("{name}={}", maja.client.cookie(name).expect("a session"));
+    let target = format!("/assets/{id}");
+    let address = server.address();
+    let mut clients = Vec::new();
+    for _ in 0..16 {
+        let (cookie, target) = (cookie.clone(), target.clone());
+        clients.push(tokio::spawn(async move {
+            let mut wrong = 0;
+            for _ in 0..250 {
+                let answer = raw_get(address, target.as_bytes(), &[("Cookie", &cookie), ("X-Stellarr-Client", "web"), ("X-Stellarr-Client-Version", "2.0.0")]).await;
+                if answer.status != 200 || answer.body != BODY {
+                    wrong += 1;
+                }
+            }
+            wrong
+        }));
+    }
+    let mut wrong = 0;
+    for client in clients {
+        wrong += client.await.unwrap();
+    }
+    assert_eq!(wrong, 0, "of 4000 requests, this many did not arrive whole");
 }
