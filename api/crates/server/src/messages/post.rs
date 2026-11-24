@@ -4,15 +4,16 @@ use axum::extract::State;
 use axum::http::{HeaderValue, StatusCode, header};
 use axum::response::{IntoResponse, Response};
 use rusqlite::{Connection, OptionalExtension, params};
-use serde::{Deserialize, Serialize};
+use serde::Deserialize;
 use stellarr_messages::{MessageKey, Messages};
 
 use super::dto::{self, ChannelReadDto, MessageDto};
-use super::mentions::{self, Mentioning, Notified};
+use super::mentions::{self, Mentioning};
 use super::{MAX_CONTENT_UNITS, Stop, field_problem, outbox, trimmed, units};
 use crate::auth::Caller;
 use crate::events::{Audience, Event};
 use crate::http::{ApiError, ApiResult, Json, Path, json_response};
+use crate::inbox::{self, Entry};
 use crate::link_previews::PreviewRequest;
 use crate::permissions::authorization::{self, Held, Scope};
 use crate::permissions::membership::ActiveServer;
@@ -56,7 +57,7 @@ pub enum Posted {
 pub struct Stored {
     pub message: MessageDto,
     pub read: ChannelReadDto,
-    pub mentions: Vec<Notified>,
+    pub mentions: Vec<Entry>,
 }
 
 /// Everything a post asks of the database, in the transaction it is given:
@@ -326,15 +327,6 @@ pub fn advance_read(
     })
 }
 
-/// Tells the clients a person's inbox has a new entry.
-#[derive(Serialize)]
-#[serde(rename_all = "camelCase")]
-struct InboxChanged {
-    server_id: Id,
-    sequence: Option<i64>,
-    global: bool,
-}
-
 pub async fn create(
     State(state): State<AppState>,
     caller: Caller,
@@ -414,16 +406,8 @@ pub async fn create(
         "ChannelReadChanged",
         &stored.read,
     ));
-    for notified in &stored.mentions {
-        events.publish(Event::new(
-            Audience::Users(vec![notified.user]),
-            "NotificationInboxChanged",
-            &InboxChanged {
-                server_id: notified.server,
-                sequence: Some(notified.sequence),
-                global: false,
-            },
-        ));
+    for entry in &stored.mentions {
+        inbox::announce(events, entry);
     }
 
     // Last: unfurling talks to hosts we do not control, and no send waits for

@@ -5,6 +5,7 @@
 use rusqlite::{Connection, params};
 
 use super::dto::one_line;
+use crate::inbox::{self, Entry, NewEntry};
 use crate::values::{Id, Timestamp};
 
 /// The inbox entry of a mention is a notice of the system, under this package.
@@ -23,20 +24,11 @@ pub struct Mentioning<'a> {
     pub created_at: Timestamp,
 }
 
-/// An inbox entry that was written, which the person is told of once the
-/// message is committed.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct Notified {
-    pub user: Id,
-    pub server: Id,
-    pub sequence: i64,
-}
-
 /// Writes an inbox entry for each member of the server the message names who
 /// sees its channel, except its author. Nobody is told of a message in a
 /// channel they do not see, so nobody named there who does not see it gets an
 /// entry, an e-mail or a push. They come in the order of their ids.
-pub fn notify(db: &Connection, message: &Mentioning<'_>) -> rusqlite::Result<Vec<Notified>> {
+pub fn notify(db: &Connection, message: &Mentioning<'_>) -> rusqlite::Result<Vec<Entry>> {
     let names = stellarr_mentions::extract_normalized_usernames(message.content);
     if names.is_empty() {
         return Ok(Vec::new());
@@ -65,30 +57,26 @@ pub fn notify(db: &Connection, message: &Mentioning<'_>) -> rusqlite::Result<Vec
 
     let body = one_line(message.content, PREVIEW_LENGTH);
     let title = format!("{} mentioned you", message.author_name);
-    let mut insert = db.prepare_cached(
-        "INSERT INTO \"UserNotifications\" (\"Id\", \"ServerId\", \"UserId\", \"Source\", \"SourcePackageId\", \"SourcePackageName\",
-             \"SourceModuleId\", \"SourceModuleName\", \"Title\", \"Body\", \"Tone\", \"TargetChannelId\", \"TargetInviteCode\",
-             \"CreatedAt\", \"ReadAt\")
-         VALUES (?1, ?2, ?3, 'system', ?4, 'Stellarr', 'mention', ?5, ?6, ?7, 'info', ?8, NULL, ?9, NULL)",
-    )?;
     let mut written = Vec::with_capacity(viewers.len());
     for user in viewers {
-        insert.execute(params![
-            Id::random(),
-            message.server,
-            user,
-            PACKAGE_ID,
-            message.author_name,
-            title,
-            body,
-            message.channel,
-            message.created_at,
-        ])?;
-        written.push(Notified {
-            user,
-            server: message.server,
-            sequence: db.last_insert_rowid(),
-        });
+        written.push(inbox::add(
+            db,
+            &NewEntry {
+                server: message.server,
+                user,
+                source: "system".to_string(),
+                source_package_id: PACKAGE_ID.to_string(),
+                source_package_name: "Stellarr".to_string(),
+                source_module_id: "mention".to_string(),
+                source_module_name: message.author_name.to_string(),
+                title: title.clone(),
+                body: body.clone(),
+                tone: "info".to_string(),
+                target_channel: Some(message.channel),
+                target_invite_code: None,
+                created_at: message.created_at,
+            },
+        )?);
     }
     Ok(written)
 }
