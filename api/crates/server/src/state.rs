@@ -8,11 +8,13 @@
 use std::sync::{Arc, OnceLock};
 
 use stellarr_messages::Messages;
+use stellarr_storage::{FOLDER_NAME, FolderStore, ObjectStorage};
 
 use crate::auth::setup_code::SetupCode;
 use crate::database::{Database, MutationGate};
 use crate::events::{EventPublisher, Presence};
 use crate::http::{AttemptLimiter, Metrics};
+use crate::link_previews::PreviewQueue;
 use crate::mail::MailDelivery;
 use crate::realtime::Realtime;
 use crate::seal::Sealer;
@@ -37,6 +39,8 @@ struct Inner {
     setup_code: SetupCode,
     registration_gate: tokio::sync::Mutex<()>,
     realtime: OnceLock<Arc<Realtime>>,
+    storage: OnceLock<Arc<dyn ObjectStorage>>,
+    previews: PreviewQueue,
 }
 
 impl AppState {
@@ -60,6 +64,8 @@ impl AppState {
                 setup_code: SetupCode::default(),
                 registration_gate: tokio::sync::Mutex::new(()),
                 realtime: OnceLock::new(),
+                storage: OnceLock::new(),
+                previews: PreviewQueue::default(),
                 metrics: Metrics::default(),
                 mutation_gate: MutationGate::default(),
             }),
@@ -131,6 +137,28 @@ impl AppState {
     /// Plugs the hub in, once, when the server starts.
     pub(crate) fn plug_in_realtime(&self, realtime: Arc<Realtime>) {
         let _ = self.inner.realtime.set(realtime);
+    }
+
+    /// Where uploaded files are kept: the store the settings name, which the
+    /// server opens when it starts. A state that was never given one (a unit
+    /// test's) keeps files in the folder of the data volume.
+    pub fn storage(&self) -> &Arc<dyn ObjectStorage> {
+        self.inner.storage.get_or_init(|| {
+            Arc::new(FolderStore::new(
+                self.inner.settings.data_root.join(FOLDER_NAME),
+            ))
+        })
+    }
+
+    /// Plugs in the object store the settings name, once, when the server
+    /// starts.
+    pub(crate) fn plug_in_storage(&self, storage: Arc<dyn ObjectStorage>) {
+        let _ = self.inner.storage.set(storage);
+    }
+
+    /// The messages whose links wait for their cards.
+    pub fn previews(&self) -> &PreviewQueue {
+        &self.inner.previews
     }
 
     /// The code the owner account is created with, while there is none.
