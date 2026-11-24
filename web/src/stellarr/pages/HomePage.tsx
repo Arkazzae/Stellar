@@ -6,7 +6,7 @@ import { AppSkeleton } from "@/components/shell/AppSkeleton";
 import { useLanguage } from "@/state/LanguageProvider";
 import { useSessionContext as useSession } from "@/state/SessionProvider";
 
-import { loadApp } from "./loadApp";
+import { canPrefetchApp, loadApp } from "./loadApp";
 
 /** Why the page cannot show the app, and the way to recover. */
 function LoadFailed({ title, message, actions }: Pick<ErrorNoticeProps, "title" | "message" | "actions">) {
@@ -51,19 +51,20 @@ const AppContainer = lazy(() =>
  * reason and a way to recover, never a blank page.
  *
  * The signed-in app is the bulk of the client's code, so it loads on its own.
- * The pages that lead here fetch it while idle, and at the latest it starts
- * when this page opens, alongside the session check. The skeleton stands in
- * until both are done; the sign-in pages never wait for it.
+ * The pages that lead here can warm it up while idle. This page starts it
+ * alongside the session check on a typical connection, or after a successful
+ * check when the browser reports a constrained connection.
  */
 export default function HomePage() {
   const router = useRouter();
-  const { phase, error, reload, logout } = useSession();
+  const { phase, verifiedAt, error, reload, logout } = useSession();
   const { t } = useLanguage();
 
+  const mayWarmApp = verifiedAt != null || canPrefetchApp();
   useEffect(() => {
     // A failure shows once the app is wanted, through `AppContainer`.
-    loadApp().catch(() => undefined);
-  }, []);
+    if (mayWarmApp) void loadApp().catch(() => undefined);
+  }, [mayWarmApp]);
 
   useEffect(() => {
     if (phase === "anonymous") router.replace("/login");
@@ -71,7 +72,7 @@ export default function HomePage() {
 
   if (phase === "ready") {
     return (
-      <Suspense fallback={<AppSkeleton />}>
+      <Suspense fallback={<AppSkeleton verifiedAt={verifiedAt} />}>
         <AppContainer />
       </Suspense>
     );
@@ -93,5 +94,5 @@ export default function HomePage() {
   }
 
   // Loading, and the moment between "anonymous" and the route change.
-  return <AppSkeleton />;
+  return <AppSkeleton verifiedAt={phase === "loading" ? verifiedAt : null} />;
 }

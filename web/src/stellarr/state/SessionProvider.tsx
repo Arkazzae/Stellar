@@ -27,6 +27,8 @@ export type SessionPhase = "loading" | "ready" | "error" | "anonymous" | "revoke
 
 export interface SessionValue {
   phase: SessionPhase;
+  /** When bootstrap confirmed this session, using the local performance clock. */
+  verifiedAt: number | null;
   user: User | null;
   /** The boot failure, already translated. Null unless the phase is `error` or `revoked`. */
   error: string | null;
@@ -127,6 +129,7 @@ function withProfileOf(user: User, account: Account): User {
 
 interface Boot {
   phase: SessionPhase;
+  verifiedAt?: number;
   user: User | null;
   error: string | null;
 }
@@ -172,7 +175,7 @@ export function SessionProvider({ children }: { children: ReactNode }) {
     lastRun.reloadToken !== reloadToken
   ) {
     setLastRun({ ports, runtime, reloadToken });
-    if (boot.phase !== "loading") setBoot(LOADING);
+    if (boot !== LOADING) setBoot(LOADING);
   }
 
   useEffect(() => {
@@ -182,6 +185,8 @@ export function SessionProvider({ children }: { children: ReactNode }) {
       try {
         const payload = await ports.session.bootstrap();
         if (!active) return;
+        const verifiedAt = performance.now();
+        setBoot({ ...LOADING, verifiedAt });
         // Hydrating before the phase flips means the first `ready` render
         // already has channels and members instead of an empty rail.
         await runtime.hydrate(payload);
@@ -193,6 +198,7 @@ export function SessionProvider({ children }: { children: ReactNode }) {
         ended.current = false;
         setBoot({
           phase: "ready",
+          verifiedAt,
           user: withProfileOf(payload.user, ports.account.getAccount()),
           error: null,
         });
@@ -378,6 +384,7 @@ export function SessionProvider({ children }: { children: ReactNode }) {
   const value = useMemo<SessionValue>(
     () => ({
       phase: boot.phase,
+      verifiedAt: boot.verifiedAt ?? null,
       user: boot.user,
       error: boot.error,
       connection,

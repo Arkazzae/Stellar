@@ -1,4 +1,5 @@
 .shell {
+  position: relative;
   display: grid;
   grid-template-columns: minmax(0, 1fr);
   height: 100vh;
@@ -8,6 +9,24 @@
   padding: env(safe-area-inset-top) env(safe-area-inset-right)
     env(safe-area-inset-bottom) env(safe-area-inset-left);
   background: var(--surface-canvas);
+}
+
+.tip {
+  position: absolute;
+  inset: auto auto 12% 50%;
+  transform: translateX(-50%);
+  box-sizing: border-box;
+  width: min(340px, calc(100% - 32px));
+  padding: 16px 20px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-lg);
+  background: var(--surface-raised);
+  color: var(--text);
+}
+
+.tip p {
+  margin: 4px 0 0;
+  color: var(--text-muted);
 }
 
 .block {
