@@ -3,6 +3,8 @@
 //! of the week that has to be the right one, whatever the letter case of the
 //! names and however much white space lies between the parts.
 
+use crate::values::{days_from_civil, is_leap};
+
 const MONTHS: [&str; 12] = [
     "jan", "feb", "mar", "apr", "may", "jun", "jul", "aug", "sep", "oct", "nov", "dec",
 ];
@@ -188,7 +190,7 @@ fn moment(
 ) -> Option<i64> {
     let lengths = [
         31,
-        if leap(year) { 29 } else { 28 },
+        if is_leap(year) { 29 } else { 28 },
         31,
         30,
         31,
@@ -219,19 +221,6 @@ fn moment(
         }
     }
     Some(days * 86_400 + hour * 3600 + minute * 60 + second - offset)
-}
-
-fn leap(year: i64) -> bool {
-    year % 4 == 0 && (year % 100 != 0 || year % 400 == 0)
-}
-
-fn days_from_civil(year: i64, month: i64, day: i64) -> i64 {
-    let year = if month <= 2 { year - 1 } else { year };
-    let era = year.div_euclid(400);
-    let of_era = year - era * 400;
-    let day_of_year = (153 * (month + if month > 2 { -3 } else { 9 }) + 2) / 5 + day - 1;
-    let of_day = of_era * 365 + of_era / 4 - of_era / 100 + day_of_year;
-    era * 146_097 + of_day - 719_468
 }
 
 #[cfg(test)]
