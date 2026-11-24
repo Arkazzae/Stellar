@@ -14,6 +14,7 @@ use crate::auth::policy::SecurityPolicy;
 use crate::auth::{Caller, cookies, events, password, session};
 use crate::database::DbError;
 use crate::http::{ApiError, ApiResult, Json, Origin, Problem, json_response, with_cookie, with_session_cookie};
+use crate::identity_providers::{self as providers, Linked, Requester};
 use crate::instance::users::{User, UserDto};
 use crate::state::AppState;
 use crate::values::Timestamp;
@@ -91,10 +92,23 @@ pub async fn login(
 
     let short_lived = request.keep_signed_in == Some(false);
     let trusted_device_cookie = cookies::read(&origin.headers, trusted_device_name(origin.https));
+    // The identity to link is the one this browser waits with now; the link
+    // itself waits for the whole sign-in, second step included.
+    let held = providers::held_pending(&origin.headers, origin.https);
+    let pending_identity = if request.link_pending {
+        let looked = held.clone();
+        state
+            .database()
+            .read(move |connection| -> Result<_, DbError> { Ok(providers::find_pending(connection, looked.as_ref())?.map(|waiting| waiting.id)) })
+            .await?
+    } else {
+        None
+    };
+    let link_pending = request.link_pending;
     let (write_state, write_origin, write_user) = (state.clone(), origin.clone(), user.clone());
-    let started = state
+    let (started, linked) = state
         .database()
-        .write(move |tx| -> Result<Start, DbError> {
+        .write(move |tx| -> Result<(Start, Option<Linked>), DbError> {
             let messages = write_state.messages();
             let context = Context {
                 ip_address: &write_origin.address,
@@ -104,7 +118,8 @@ pub async fn login(
                 passkeys_available: flow::passkeys_available(&write_state.settings().operations.public_url),
             };
             let policy = SecurityPolicy::load(tx)?;
-            let start = flow::start(tx, &context, messages, &write_user, "password", &policy, Options { short_lived, ..Options::default() })?;
+            let start = flow::start(tx, &context, messages, &write_user, "password", &policy, Options { short_lived, pending_identity, ..Options::default() })?;
+            let mut linked = None;
             if let Start::Session(session) = &start {
                 session.insert(tx)?;
                 let email = events::verified_email(tx, write_user.id)?;
@@ -117,8 +132,16 @@ pub async fn login(
                     "password",
                     email.as_deref(),
                 )?;
+                if link_pending {
+                    // Once the session exists, so that a refusal never undoes
+                    // the sign-in; the waiting identity is used up either way.
+                    let requester = Requester { ip_address: write_origin.address.clone(), user_agent: write_origin.user_agent.clone() };
+                    linked = Some(providers::link_pending(tx, &requester, write_user.id, pending_identity, held.as_ref(), |id| {
+                        write_state.settings().oidc.find(id).cloned()
+                    })?);
+                }
             }
-            Ok(start)
+            Ok((start, linked))
         })
         .await?;
 
@@ -136,12 +159,10 @@ pub async fn login(
                 short_lived,
             );
             if request.link_pending {
-                // The identity to link is read from a cookie that only a
-                // sign-in through a provider sets, and nothing here sets one:
-                // there is nothing waiting, so the link fails, and whatever
-                // cookie there is for it is taken away.
-                let pending = cookies::delete(pending_identity_name(origin.https), origin.https);
-                let body = json_response(StatusCode::OK, &LinkedSignIn { user: user.dto("online"), identity_link: "failed" });
+                // Whatever came of the link, the waiting identity is used up.
+                let pending = providers::clear_pending_cookie(origin.https);
+                let word = linked.unwrap_or(Linked::Failed).word();
+                let body = json_response(StatusCode::OK, &LinkedSignIn { user: user.dto("online"), identity_link: word });
                 return Ok(with_cookie(with_session_cookie(no_store(body), &cookie), &pending));
             }
             // The cookie's own cache headers come after, and win.
@@ -149,10 +170,6 @@ pub async fn login(
         }
     };
     Ok(no_store(response))
-}
-
-fn pending_identity_name(https: bool) -> &'static str {
-    if https { "__Host-stellarr-pending-identity" } else { "stellarr-dev-pending-identity" }
 }
 
 /// The 401 of a sign-in that did not work. The failure of an account that
