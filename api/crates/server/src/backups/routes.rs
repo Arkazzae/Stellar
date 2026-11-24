@@ -237,9 +237,17 @@ async fn create(
     let folder = directory.clone();
     // Copied from the database this server is using, not from the setting it
     // was configured with, so that a backup is always of the live data.
+    // Written under a name the list and the download do not know, and
+    // renamed when whole, as a full archive is: a person must never be
+    // offered half a backup, and a stop must never leave one in the list.
+    let partial = directory.join(format!(".{id}.partial"));
     tokio::task::spawn_blocking(move || {
         std::fs::create_dir_all(&folder)?;
-        super::snapshot::copy_database(&source, &target)
+        super::snapshot::copy_database(&source, &partial)?;
+        std::fs::rename(&partial, &target).map_err(|error| {
+            super::snapshot::remove_with_side_files(&partial);
+            super::BackupFailed::from(error)
+        })
     })
     .await
     .map_err(ApiError::internal)?
