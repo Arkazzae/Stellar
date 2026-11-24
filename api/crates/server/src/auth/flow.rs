@@ -21,11 +21,14 @@ use crate::values::{Id, Timestamp};
 pub const PURPOSE_MFA: &str = "mfa";
 /// The challenge that only lets a person enrol a second step.
 pub const PURPOSE_ENROLLMENT: &str = "enrollment";
+/// The challenge of a session that is already running and is asked for a fresh
+/// second step.
+pub const PURPOSE_REVERIFY: &str = "reverify";
 /// Evidence of a second step that the identity provider asked for.
 pub const PROVIDER_EVIDENCE: &str = "provider_mfa";
 
 /// What the request the person signs in with says about it.
-#[derive(Debug, Clone)]
+#[derive(Clone)]
 pub struct Context<'a> {
     pub ip_address: &'a str,
     /// The browser's own name for itself, trimmed.
@@ -35,6 +38,17 @@ pub struct Context<'a> {
     pub trusted_device_cookie: Option<&'a str>,
     /// Whether the instance can offer passkeys.
     pub passkeys_available: bool,
+}
+
+/// Nothing but where it came from: the cookie of a remembered device is a
+/// secret.
+impl std::fmt::Debug for Context<'_> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("Context")
+            .field("ip_address", &self.ip_address)
+            .field("https", &self.https)
+            .finish_non_exhaustive()
+    }
 }
 
 impl Context<'_> {
@@ -49,7 +63,6 @@ impl Context<'_> {
     }
 }
 
-#[derive(Debug)]
 pub enum Start {
     /// The account must be recovered at the console before anybody signs in.
     RecoveryRequired,
@@ -58,6 +71,17 @@ pub enum Start {
     /// A challenge: what to tell the client, and the cookie that binds it to
     /// this browser.
     Challenge { body: Challenge, cookie: String },
+}
+
+/// Which way it went, and nothing of the cookie that binds a challenge.
+impl std::fmt::Debug for Start {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(match self {
+            Start::RecoveryRequired => "Start::RecoveryRequired",
+            Start::Session(_) => "Start::Session(..)",
+            Start::Challenge { .. } => "Start::Challenge { .. }",
+        })
+    }
 }
 
 /// Options of a start that only some ways in use.
@@ -140,7 +164,7 @@ fn preauth_cookie(https: bool, id: Id, secret: &str, expires: Timestamp) -> Stri
     )
 }
 
-struct Created {
+pub(crate) struct Created {
     id: Id,
     purpose: String,
     expires_at: Timestamp,
@@ -254,7 +278,7 @@ fn confirmed_methods(connection: &Connection, user: Id) -> Result<Vec<Method>, D
     Ok(methods)
 }
 
-fn describe(
+pub(crate) fn describe(
     connection: &Connection,
     context: &Context<'_>,
     user: &User,
@@ -262,14 +286,17 @@ fn describe(
     methods: Vec<Method>,
     policy: &SecurityPolicy,
 ) -> Result<Challenge, DbError> {
-    let status = if challenge.purpose == PURPOSE_MFA {
+    let reverify = challenge.purpose == PURPOSE_REVERIFY;
+    let status = if challenge.purpose == PURPOSE_MFA || reverify {
         "mfa_required"
     } else {
         "mfa_enrollment_required"
     };
-    // A remembered device skips the step but proves nothing now, and a link
-    // of an identity asks for the proof a link from the settings would.
-    let trusted = challenge.pending_identity.is_none()
+    // A remembered device skips the step but proves nothing now, so a fresh
+    // proof is never met by one, and a link of an identity asks for the proof
+    // a link from the settings would.
+    let trusted = !reverify
+        && challenge.pending_identity.is_none()
         && trusted_device(connection, user.id, context.trusted_device_cookie)?;
     Ok(Challenge {
         status,
@@ -791,5 +818,73 @@ mod tests {
             "stellarr-dev-preauth=short.secret".parse().unwrap(),
         );
         assert_eq!(read_preauth(&headers, false), None);
+    }
+
+    #[test]
+    fn a_fresh_proof_is_asked_as_a_second_step_and_never_offers_a_remembered_device() {
+        let (_folder, database) = new_database();
+        let (_, user_id, _) = challenge_in(&database);
+        let connection = rusqlite::Connection::open(database.path()).unwrap();
+        let user = User::find(&connection, user_id).unwrap().unwrap();
+        let now = Timestamp::now();
+        connection
+            .execute(
+                "INSERT INTO \"TrustedDevices\" VALUES ('11111111-1111-1111-1111-111111111111', ?1, ?2, 'n', 'd', 'i', ?3, ?4, NULL, NULL)",
+                params![user_id, tokens::hash("remembered"), now, now.plus(std::time::Duration::from_secs(3600))],
+            )
+            .unwrap();
+        let context = Context {
+            ip_address: "i",
+            user_agent: "",
+            https: false,
+            trusted_device_cookie: Some("remembered"),
+            passkeys_available: false,
+        };
+        let describe_as = |purpose: &str| {
+            let created = Created {
+                id: Id::random(),
+                purpose: purpose.to_string(),
+                expires_at: now,
+                pending_identity: None,
+            };
+            let body = describe(
+                &connection,
+                &context,
+                &user,
+                &created,
+                Vec::new(),
+                &SecurityPolicy::default(),
+            )
+            .unwrap();
+            let json = serde_json::to_value(&body).unwrap();
+            (
+                json["status"].as_str().unwrap().to_string(),
+                json["trustedDeviceAvailable"].as_bool().unwrap(),
+            )
+        };
+
+        assert_eq!(describe_as("mfa"), ("mfa_required".to_string(), true));
+        assert_eq!(describe_as("reverify"), ("mfa_required".to_string(), false));
+        assert_eq!(
+            describe_as("enrollment"),
+            ("mfa_enrollment_required".to_string(), true)
+        );
+    }
+
+    #[test]
+    fn what_is_printed_of_a_request_or_a_start_holds_no_secret() {
+        let context = Context {
+            ip_address: "1.2.3.4",
+            user_agent: "agent",
+            https: true,
+            trusted_device_cookie: Some("sekrit-token"),
+            passkeys_available: false,
+        };
+
+        assert!(!format!("{context:?}").contains("sekrit"));
+        assert_eq!(
+            format!("{:?}", Start::RecoveryRequired),
+            "Start::RecoveryRequired"
+        );
     }
 }

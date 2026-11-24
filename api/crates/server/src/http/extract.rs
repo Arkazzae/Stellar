@@ -73,7 +73,7 @@ impl<S: Send + Sync> FromRequestParts<S> for MaybeCaller {
 
 /// What a request says about where it came from: the address the proxies
 /// vouch for, whether it came over HTTPS, and the browser's name for itself.
-#[derive(Debug, Clone)]
+#[derive(Clone)]
 pub struct Origin {
     pub address: String,
     pub https: bool,
@@ -81,6 +81,16 @@ pub struct Origin {
     pub user_agent: String,
     /// Every header of the request, for the ones a handler reads itself.
     pub headers: axum::http::HeaderMap,
+}
+
+/// The headers carry the cookies, so only where the request came from is shown.
+impl std::fmt::Debug for Origin {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("Origin")
+            .field("address", &self.address)
+            .field("https", &self.https)
+            .finish_non_exhaustive()
+    }
 }
 
 impl<S: Send + Sync> FromRequestParts<S> for Origin {
@@ -103,5 +113,32 @@ impl<S: Send + Sync> FromRequestParts<S> for Origin {
                 .to_string(),
             headers: parts.headers.clone(),
         })
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn what_is_printed_of_an_origin_holds_neither_its_cookies_nor_its_browser() {
+        let mut headers = axum::http::HeaderMap::new();
+        headers.insert(
+            axum::http::header::COOKIE,
+            "session=sekrit".parse().unwrap(),
+        );
+        let origin = Origin {
+            address: "1.2.3.4".into(),
+            https: true,
+            user_agent: "agent".into(),
+            headers,
+        };
+
+        let shown = format!("{origin:?}");
+
+        assert!(
+            shown.contains("1.2.3.4") && !shown.contains("sekrit") && !shown.contains("agent"),
+            "{shown}"
+        );
     }
 }
