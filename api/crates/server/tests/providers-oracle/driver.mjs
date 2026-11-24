@@ -299,6 +299,7 @@ async function flows() {
 
 async function limits() {
   await new Browser().post("/api/auth/register", { username: "owner", displayName: "Owner", email: "owner@example.test", password: "Passw0rd!2026", setupCode });
+  const w = await ownerBrowser();
   log("== rate limits: 12 sign-in starts, 7 pending drops, 12 pending reads, 35 link starts");
   const run = async (what, count, f) => {
     const codes = [];
@@ -312,7 +313,6 @@ async function limits() {
   await run("pending drop", 7, () => b.send("DELETE", "/api/auth/oidc/pending"));
   const poll = new Browser();
   await run("pending read, 125 in a minute", 125, () => poll.get("/api/auth/oidc/pending"));
-  const w = await ownerBrowser();
   await run("security link, 32", 32, () => w.post("/api/me/security/identities/p1/link", {}));
   await run("security reauthenticate, 3 more", 3, () => w.post("/api/me/security/identities/p1/reauthenticate"));
 }
