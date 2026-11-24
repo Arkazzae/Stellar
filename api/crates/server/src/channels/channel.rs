@@ -193,7 +193,7 @@ pub async fn create(
         None => Err(Refuse::Conflict.into_error(&messages)?),
         Some(Answer::Refused(refusal)) => Err(refusal.into_error(&messages)?),
         Some(Answer::Done(channel)) => Ok(created(
-            &format!("/api/admin/channels/{}", channel.id),
+            format!("/api/admin/channels/{}", channel.id),
             &channel,
         )),
     }
