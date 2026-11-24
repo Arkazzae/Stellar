@@ -83,6 +83,11 @@ impl Problem {
         }
     }
 
+    /// A validation failure for a single field with an already translated message.
+    pub(crate) fn invalid_field(field: &str, message: String) -> super::ApiError {
+        Self::validation(vec![(field.to_string(), vec![message])]).into()
+    }
+
     /// A refusal of the request's fields, `errors` naming each field and what
     /// is wrong with it, in the language of the instance.
     pub fn validation(errors: Vec<(String, Vec<String>)>) -> Problem {

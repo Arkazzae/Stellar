@@ -12,7 +12,7 @@ use rusqlite::{Connection, OptionalExtension, params};
 use serde::{Deserialize, Serialize};
 
 use super::announce::Announcement;
-use super::{Chosen, invalid, no_content, taken};
+use super::{Chosen, no_content, taken};
 use crate::auth::Caller;
 use crate::http::{ApiError, ApiResult, Endpoints, Json, Path, json_response};
 use crate::permissions::audit::{self, AuditChange, AuditEvent};
@@ -122,16 +122,16 @@ fn masks(request: &OverrideRequest, messages: &Messages) -> Result<(i64, i64), A
         privileges::parse_names(names.iter().flatten().map(String::as_str))
     };
     let (Some(allow), Some(deny)) = (parse(&request.allow), parse(&request.deny)) else {
-        return Err(invalid("permissions", messages.get(MessageKey::PermissionUnknown, &[])?));
+        return Err(crate::http::Problem::invalid_field("permissions", messages.get(MessageKey::PermissionUnknown, &[])?));
     };
     if allow & deny != privileges::NONE {
-        return Err(invalid(
+        return Err(crate::http::Problem::invalid_field(
             "permissions",
             messages.get(MessageKey::PermissionAllowedAndDenied, &[])?,
         ));
     }
     if (allow | deny) & ADMINISTRATOR != privileges::NONE {
-        return Err(invalid(
+        return Err(crate::http::Problem::invalid_field(
             "permissions",
             messages.get(MessageKey::PermissionServerWideOnly, &[])?,
         ));

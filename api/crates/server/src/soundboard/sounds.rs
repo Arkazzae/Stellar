@@ -91,7 +91,7 @@ fn invalid_sound(state: &AppState) -> Result<ApiError, ApiError> {
 
 fn invalid(state: &AppState, field: &str, key: MessageKey) -> Result<ApiError, ApiError> {
     let text = state.messages().get(key, &[])?;
-    Ok(Problem::validation(vec![(field.to_string(), vec![text])]).into())
+    Ok(Problem::invalid_field(field, text))
 }
 
 /// What the transaction found, for the handler to answer.
