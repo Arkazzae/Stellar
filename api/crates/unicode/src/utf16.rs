@@ -140,6 +140,8 @@ pub fn to_upper_units(units: &[u16]) -> Vec<u16> {
 }
 
 /// Simple lower case, character by character, as [`to_upper_units`].
+/// Exercise simple lowercase mapping in tests.
+#[doc(hidden)]
 pub fn to_lower_units(units: &[u16]) -> Vec<u16> {
     map_units(units, to_lower_char)
 }

@@ -85,6 +85,7 @@ pub struct MailDelivery {
 }
 
 /// Where the provider's side is, for a test that stands in for it.
+#[doc(hidden)]
 pub struct Wiring {
     /// The roots both the HTTP client and SMTP over TLS trust; the system's
     /// when none.
@@ -119,6 +120,8 @@ impl MailDelivery {
     }
 
     /// A delivery whose provider is somewhere else, for a test.
+    /// Construct a delivery with a test provider.
+    #[doc(hidden)]
     pub fn wired(wiring: Wiring) -> MailDelivery {
         let (mut http, trust) = match wiring.roots {
             Some(roots) => {

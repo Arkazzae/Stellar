@@ -101,12 +101,6 @@ impl Error {
         matches!(self.kind, ErrorKind::Throttled | ErrorKind::Unavailable)
     }
 
-    pub fn is_not_found(&self) -> bool {
-        matches!(
-            self.kind,
-            ErrorKind::NotFound | ErrorKind::BucketNotFound | ErrorKind::UploadNotFound
-        )
-    }
 }
 
 impl fmt::Display for Error {
@@ -280,7 +274,7 @@ mod tests {
         assert!(classify_body(500, "").is_retryable());
         assert!(!classify_body(404, "").is_retryable());
         assert!(!classify_body(403, "").is_retryable());
-        assert!(classify_body(404, "").is_not_found());
+        assert_eq!(classify_body(404, "").kind, ErrorKind::NotFound);
     }
 
     #[test]

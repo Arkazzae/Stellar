@@ -54,6 +54,8 @@ impl Error {
 
     /// Whether the address policy is the reason: the host was refused, or a
     /// redirect led somewhere the policy does not allow.
+    /// Inspect address-policy failures in tests.
+    #[doc(hidden)]
     pub fn is_address_refused(&self) -> bool {
         matches!(self, Error::AddressRefused { .. })
     }

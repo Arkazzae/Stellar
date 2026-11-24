@@ -332,6 +332,8 @@ impl Client {
     /// Reads the system bundle now, so that a missing one is known at start
     /// and not at the first request. Does nothing for a client with its own
     /// configuration.
+    /// Load roots explicitly in TLS tests.
+    #[doc(hidden)]
     pub async fn load_roots(&self) -> Result<()> {
         self.tls_config().await.map(|_| ())
     }
