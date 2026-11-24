@@ -1,16 +1,17 @@
 //! Reads a channel's transcript back, page by page, and what changed in it
 //! since.
 
-use axum::extract::State;
+use axum::extract::{FromRequestParts, State};
+use axum::http::request::Parts;
 use rusqlite::{Connection, params};
-use serde::{Deserialize, Serialize};
+use serde::Serialize;
 use stellarr_messages::{MessageKey, Messages};
 
 use super::cursor::{HistoryCursor, Reading};
 use super::dto::{self, MessageDto};
 use super::field_problem;
 use crate::auth::Caller;
-use crate::http::{ApiError, ApiResult, Json, Path, Query};
+use crate::http::{ApiError, ApiResult, Json, Path, QueryValues};
 use crate::permissions::membership::ActiveServer;
 use crate::permissions::visibility::{self, ChannelKind};
 use crate::state::AppState;
@@ -25,16 +26,42 @@ const MAX_SYNC_PAGE_SIZE: i32 = 500;
 const UPSERT: i64 = 0;
 const RESET: i64 = 2;
 
-#[derive(Debug, Deserialize)]
+/// What a history request's query string says, read as the first server read
+/// it (see `http::QueryValues`).
+#[derive(Debug)]
 pub struct HistoryQuery {
     cursor: Option<String>,
     limit: Option<i32>,
 }
 
-#[derive(Debug, Deserialize)]
+impl<S: Send + Sync> FromRequestParts<S> for HistoryQuery {
+    type Rejection = ApiError;
+
+    async fn from_request_parts(parts: &mut Parts, _: &S) -> Result<HistoryQuery, ApiError> {
+        let values = QueryValues::parse(parts.uri.query());
+        Ok(HistoryQuery {
+            limit: values.int("limit")?,
+            cursor: values.text("cursor"),
+        })
+    }
+}
+
+#[derive(Debug)]
 pub struct SyncQuery {
     after: Option<i64>,
     limit: Option<i32>,
+}
+
+impl<S: Send + Sync> FromRequestParts<S> for SyncQuery {
+    type Rejection = ApiError;
+
+    async fn from_request_parts(parts: &mut Parts, _: &S) -> Result<SyncQuery, ApiError> {
+        let values = QueryValues::parse(parts.uri.query());
+        Ok(SyncQuery {
+            after: values.long("after")?,
+            limit: values.int("limit")?,
+        })
+    }
 }
 
 /// One page of a channel's history, oldest message first, so that a client can
@@ -79,7 +106,7 @@ pub async fn history(
     caller: Caller,
     ActiveServer(server): ActiveServer,
     Path(channel): Path<Id>,
-    Query(query): Query<HistoryQuery>,
+    query: HistoryQuery,
 ) -> ApiResult<Json<HistoryPage>> {
     let messages = *state.messages();
     if query
@@ -205,7 +232,7 @@ pub async fn sync(
     caller: Caller,
     ActiveServer(server): ActiveServer,
     Path(channel): Path<Id>,
-    Query(query): Query<SyncQuery>,
+    query: SyncQuery,
 ) -> ApiResult<Json<SyncPage>> {
     let messages = *state.messages();
     if query.after.is_some_and(|after| after < 0)

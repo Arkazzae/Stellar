@@ -55,7 +55,7 @@ mod differential {
 
     use super::ordinal_case::fold;
 
-    use super::binding::parse_int;
+    use crate::http::parse_int;
     use super::cursor::IndexCursor;
     use super::search::build_query;
     use super::text;
