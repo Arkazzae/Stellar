@@ -1,0 +1,9 @@
+Usage:
+  stellarr sessions list [--user <id-or-username>] [--json]
+  stellarr sessions revoke <id> [--yes] [--json]
+  stellarr sessions revoke --user <id-or-username> --all [--yes] [--json]
+
+Revocation updates the durable session records. Revoking all sessions also
+invalidates approved desktop browser handoffs not yet redeemed. The API
+closes matching WebSocket connections within one second, and the normal
+disconnect lifecycle closes their voice and media sessions.

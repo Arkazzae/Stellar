@@ -1,0 +1,71 @@
+stellarr {version} - operator CLI for a Stellarr container
+
+Usage:
+  stellarr [global options] <command> [arguments]
+
+Commands:
+  help [command]                 Show this help, or help for one command.
+  version                        Print the CLI version.
+  status                         Show database, instance and local API state.
+  doctor                         Check the data volume, schema, keys, disk and local API.
+  config list                    List effective settings, sources and editability.
+  config get <key>               Show one effective setting.
+  config set <key> <value>       Store one database-backed setting.
+  config validate                Validate the stored configuration without saving.
+  secrets list                   List secret names, state, source and update time.
+  secrets set <name> --stdin     Store an encrypted secret from stdin (or a hidden prompt).
+  secrets clear <name>           Remove the stored override and fall back to the environment.
+  users list                     List accounts (limited, no hashes or tokens).
+  users show <id-or-username>    Show one account.
+  sessions list [--user <who>]   List active sessions (limited, no cookies or tokens).
+  sessions revoke <id>           Revoke one durable session.
+  sessions revoke --user <who> --all
+                                 Revoke every session of an account and pending handoffs.
+  security show <id-or-username> Show MFA methods, trust, sessions and recent security events.
+  security methods <id-or-username>
+                                 List security-method metadata only.
+  security recover <id-or-username> --reason <text>
+                                 Revoke security and issue one enrollment-only recovery credential.
+  security unlink <id-or-username> <identity-id>
+                                 Remove one identity-provider link from an account.
+  backup verify <archive>        Check that an archive is a full backup this release can restore.
+  backup restore <archive>       Verify an archive and stage it; the next container start restores it.
+  backup cancel                  Drop the staged archive.
+  backup apply                   Restore the staged archive now. Run by the container at start.
+
+Global options:
+  --data-root <path>   Data root holding db/stellarr.db and keys/.
+                       Default: STELLARR_DATA_ROOT, DataRoot, or /data/stellarr.
+  --json               Emit one parseable JSON document. Errors use stable codes.
+  --yes, -y            Confirm a mutation without prompting. Required when stdin is closed.
+  --help, -h           Show help. Does not open the database.
+
+Mutation rules:
+  Without --yes, a change is previewed and confirmed. A closed stdin fails instead
+  of waiting. Invalid arguments, a refused confirmation or Ctrl+C change nothing.
+  Secret values are accepted only from --stdin or a hidden prompt, never as an argument.
+
+Exit statuses:
+  0  success
+  1  unexpected failure or an unhealthy status/doctor result
+  2  invalid usage, invalid value, refused confirmation or cancellation
+  3  not found (database, user, session or setting)
+  4  conflict, read-only setting, an incompatible schema or a backup that cannot be restored
+  5  unavailable (reserved for a database that cannot be opened)
+
+Safety:
+  The CLI never creates the database, runs migrations or seeds an instance, and replaces
+  it only through `backup apply`, which the container runs at start. A new
+  schema is installed by a normal API start. Mutations write an operator audit entry
+  as local-cli in the same transaction. Secret values, hashes, cookies and tokens are
+  never printed, except a newly issued MFA recovery credential, which is shown once.
+  Session revocation also closes matching WebSocket connections within one second;
+  voice and media are torn down by the normal disconnect lifecycle.
+
+Typical use:
+  docker compose exec stellarr stellarr doctor
+  docker compose exec stellarr stellarr config list
+  docker compose exec stellarr stellarr config set time-zone Europe/Warsaw --yes
+  printf '%s\n' "$SECRET" | docker compose exec -T stellarr stellarr secrets set mail.smtp-password --stdin --yes
+  docker compose stop && docker compose run --rm --entrypoint stellarr stellarr status
+  docker compose exec stellarr stellarr backup restore backup-20261114-030000-<id>.zip --yes

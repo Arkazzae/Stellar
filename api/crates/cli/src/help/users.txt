@@ -1,0 +1,5 @@
+Usage:
+  stellarr users list [--json]
+  stellarr users show <id-or-username> [--json]
+
+Lists are limited and never include password hashes, sessions or tokens.

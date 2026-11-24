@@ -1,0 +1,3 @@
+Usage: stellarr status [--json]
+
+Shows whether the database, required schema, data root and local API are available.
