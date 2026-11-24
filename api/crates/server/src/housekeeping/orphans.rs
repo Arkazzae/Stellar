@@ -39,6 +39,7 @@ pub async fn sweep(
         if retire_if_unreferenced(state, Some(format!("/assets/{id}")), None).await {
             removed += 1;
         }
+        super::step_aside().await;
     }
     Ok(removed)
 }
