@@ -8,8 +8,8 @@ use stellarr_api::values::Timestamp;
 use stellarr_messages::{Language, Messages};
 
 use crate::catalog::{
-    Kind, StartupSetting, State, Value, WRITABLE, WriteSetting, find_startup, find_writable,
-    mail_transport, normalize, startup_settings,
+    StartupSetting, State, WRITABLE, WriteSetting, find_startup, find_writable, mail_transport,
+    normalize, startup_settings,
 };
 use crate::database::CliDatabase;
 use crate::errors::{CliError, CliOutcome, CliResult, exit};
@@ -233,6 +233,11 @@ pub fn set(runtime: &mut Runtime, key: &str, raw_value: &str) -> CliOutcome {
     let mut settings = loaded.settings;
     let mut update = operations::snapshot(&server.name, &settings);
     (definition.apply)(&mut update, &value)?;
+    let problems = operations::validate(&update, &messages())
+        .map_err(|_| CliError::unexpected("MissingValue"))?;
+    if !problems.is_empty() {
+        return Err(invalid_settings(&problems));
+    }
     let name = operations::apply(&mut settings, &update, Timestamp::now());
     operations::save(&transaction, &settings, loaded.stored, &name)?;
     CliDatabase::audit(&transaction, "config.set", definition.key)?;

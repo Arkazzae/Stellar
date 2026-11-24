@@ -6,6 +6,7 @@ workspace. One crate per folder of `crates/`:
 | Crate | What it is |
 | --- | --- |
 | `archive` (`stellarr-archive`) | A zip writer and reader for backups: streaming, ZIP64, every checksum checked. |
+| `cli` (`stellarr-cli`) | The operator's command line, `stellarr`: status, settings, secrets, sessions, account recovery and backups, straight on the data folder. |
 | `deflate` (`stellarr-deflate`) | DEFLATE, gzip and zlib in both directions, and CRC-32, with no dependencies. |
 | `discord` (`stellarr-discord`) | Reads a Discord server, from a template link or with a bot token, into a snapshot in Stellarr's own terms. |
 | `embeds` (`stellarr-embeds`) | Link previews: finding the links in a message and fetching what a card for each needs. |
@@ -540,6 +541,84 @@ code delivered or spent); a failed mail still counts toward the cooldown and
 the hourly limit. Questions about the account (`fresh::can_change_security`,
 `ways_in::remain`) are asked of an account id and read the account inside the
 transaction they are given.
+
+## The operator's command line
+
+`crates/cli` builds `stellarr`, the tool an operator runs with `docker exec` (or
+against a stopped container's volume) to look at an instance and repair it
+without the web client: `status`, `doctor`, `config`, `secrets`, `users`,
+`sessions`, `security` and `backup`. `docs/admin/cli.md` is what operators were
+promised, and this tool keeps it to the letter: every command and option name,
+the text on standard output and standard error, the `--json` documents member by
+member and every exit status are the first server's tool's (`server/Stellarr.Cli`),
+which `crates/cli/tests/compare.py` checks by running both on copies of one data
+folder, in plain and `--json` form, for every command, every option and every
+wrong use, and comparing what each prints and the rows each leaves.
+
+It is a library, `stellarr_cli::run(args, io, environment, cancelled)`, with a
+`main.rs` that gives it the terminal, so that the tests give it an input and read
+what it printed. It depends on the server's library for everything that exists
+there: the settings row and its validation (`instance::operations`, the same the
+operator's panel writes through), the sealed secrets (`secrets`), the recovery of
+an account (`auth::recovery::recover`), the security events and the ways in
+(`auth::events`, `auth::ways_in`), the master key (`Sealer::open_existing`, which
+reads a key and never makes one) and the version (`version::server()`). It writes
+nothing of `auth` below its ceremonies: a session is revoked by its own `UPDATE`
+and an identity link removed by its own `DELETE`, as the first tool did.
+
+What a command may do to the data folder:
+
+- It never makes the database, the keys folder or the master key. A missing
+  database is `database_not_found` (3); a file that lacks the tables it needs is
+  `schema_incompatible` (4), and no command migrates anything. `secrets set`
+  needs the keys folder to exist (the server made it), makes `master.key` in it
+  if the server has not yet (the server's own start makes the same one), and
+  otherwise fails with `data_protection_keys_missing` (4).
+- Reading opens the database read-only and waits five seconds for a writer; a
+  write waits the same for the write lock, takes it before it looks at anything
+  it will change (`BEGIN IMMEDIATE`) and changes it and its audit row together.
+  What it cannot get in that time is `database_locked` (4) and says so; it never
+  leaves half of a change.
+- A value it prints is never a secret. A secret is read from `--stdin` or a hidden
+  prompt (`stty` switches the echo off), never from an argument, and appears in no
+  output and no log. The one thing shown once is a recovery credential.
+
+What differs from the first server's tool, because only the first server has what
+it names:
+
+- `doctor` says of `keys` what this server keeps there, a master key
+  (`keys/master.key`), and not data-protection key files; it names the key files of
+  the first server it finds, which this server cannot read.
+- A secret in the database that this instance's master key cannot open (the first
+  server sealed it, or the key was replaced) counts as not set, as it does for the
+  server, and `secrets list` names it in a warning, which the first tool had no
+  reason to do. `secrets set` writes over it; `secrets clear` removes it; the
+  commands that read secrets only to say what is effective (`config`) see it as unset.
+- A setting that the first server seeds from the host's time zone (`time-zone` on an
+  instance that never saved one) is the host's here too; it is spelled as the host's
+  zone database spells it.
+- The tool says `database` where the server says `panel`, as the first tool did.
+
+Backups: `backup verify | restore | cancel | apply` are written against
+`stellarr_cli::backup::RestoreLibrary`, whose members are the first tool's
+`BackupRestore` (`check`, `staged_archive_path`, `folder_name`, `clear_leftovers`,
+`apply`, `write_result`). Until the backups library is on this branch,
+`Runtime::create` gives `NotYetBuilt`, which refuses every archive in words that
+say so and touches nothing. When the library lands, the one change is in
+`Runtime::create`: `restore: Box::new(BackupLibrary)` with an implementation of
+the trait over `backups::archive::verify`, `read_manifest` and the restore.
+
+In the image, the launcher (`infra/stellarr-cli.sh`) keeps everything it does and
+its last line becomes `exec /opt/stellarr/cli/stellarr "$@"` (the binary built with
+`cargo build --release -p stellarr-cli`, with `STELLARR_VERSION` set as for the
+server, copied to that path). The tool needs `df` and, to hide a typed secret,
+`stty`, which the image has.
+
+```sh
+cargo test -p stellarr-cli                       # the commands, on instances made on disk
+STELLARR_BIN=... BASE=... DN_DLL=... crates/cli/tests/compare.py   # both tools, side by side
+STELLARR_API=... STELLARR_BIN=... crates/cli/tests/running-server.sh # the tool against a running server
+```
 
 ## Sessions and who is calling
 
