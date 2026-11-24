@@ -59,18 +59,37 @@ pub(super) async fn runtime(
     InstanceOwner(server): InstanceOwner,
 ) -> ApiResult<Response> {
     let reading = state.clone();
-    let connections = state
+    let (connections, voice_rooms) = state
         .database()
-        .read(move |db| -> Result<usize, DbError> {
+        .read(move |db| -> Result<(usize, usize), DbError> {
             let mut statement =
                 db.prepare("SELECT \"UserId\" FROM \"ServerMembers\" WHERE \"ServerId\" = ?1")?;
             let members = statement
                 .query_map([server], |row| row.get::<_, Id>(0))?
                 .collect::<rusqlite::Result<Vec<_>>>()?;
-            Ok(members
-                .iter()
-                .map(|id| reading.presence().connection_ids(*id).len())
-                .sum())
+            let mut statement = db.prepare(
+                "SELECT \"Id\" FROM \"Channels\" WHERE \"ServerId\" = ?1 AND \"Kind\" = ?2",
+            )?;
+            let voice: std::collections::HashSet<Id> = statement
+                .query_map(
+                    rusqlite::params![server, crate::permissions::visibility::ChannelKind::Voice],
+                    |row| row.get(0),
+                )?
+                .collect::<rusqlite::Result<_>>()?;
+            let rooms = reading.realtime().map_or(0, |hub| {
+                hub.presence()
+                    .active_voice_rooms()
+                    .iter()
+                    .filter(|room| voice.contains(room))
+                    .count()
+            });
+            Ok((
+                members
+                    .iter()
+                    .map(|id| reading.presence().connection_ids(*id).len())
+                    .sum(),
+                rooms,
+            ))
         })
         .await?;
     let (database_ready, latency) = runtime::check_database(&state).await;
@@ -151,8 +170,7 @@ pub(super) async fn runtime(
         gc_heap_bytes: process.heap_bytes,
         thread_count: process.threads,
         realtime_connections: connections,
-        // The rooms of the voice group, which is not part of this server yet.
-        voice_rooms: 0,
+        voice_rooms,
         database_latency_ms: (latency * 100.0).round() / 100.0,
         services,
         cpu_percent: history.last().map_or(0.0, |sample| sample.cpu_percent),
