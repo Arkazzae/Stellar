@@ -12,6 +12,7 @@ use super::{context, fresh_proof_needed, guid, no_store, providers, trusted_devi
 use crate::auth::ceremony::{self, Changed, FromSession, Removed, Started};
 use crate::auth::{Caller, ways_in};
 use crate::http::{ApiError, ApiResult, Json, Origin, Path, Problem, json_response, with_cookie, with_session_cookie};
+use crate::servers::Object;
 use crate::state::AppState;
 use crate::values::Id;
 
@@ -26,9 +27,9 @@ pub struct Proof {
 /// A body that has to be there. One that is JSON but not the right JSON is
 /// refused as the framework refuses it, before the page's headers are set; one
 /// that is missing, or is `null`, is refused by the route itself, with them.
-pub(super) fn required<T>(request: Result<Option<Json<T>>, ApiError>) -> Result<T, Box<Response>> {
+pub(super) fn required<T>(request: Result<Option<Json<Object<T>>>, ApiError>) -> Result<T, Box<Response>> {
     match request {
-        Ok(Some(Json(body))) => Ok(body),
+        Ok(Some(Json(Object(body)))) => Ok(body),
         Ok(None) => Err(Box::new(no_store(Err(ApiError::bad_request())))),
         Err(refusal) => Err(Box::new(refusal.into_response())),
     }
@@ -38,10 +39,10 @@ pub async fn start_enrollment(
     State(state): State<AppState>,
     caller: Caller,
     origin: Origin,
-    request: Result<Option<Json<Proof>>, ApiError>,
+    request: Result<Option<Json<Object<Proof>>>, ApiError>,
 ) -> Response {
     let password = match request {
-        Ok(request) => request.and_then(|Json(request)| request.password),
+        Ok(request) => request.and_then(|Json(Object(request))| request.password),
         Err(refusal) => return refusal.into_response(),
     };
     no_store(start(&state, caller, &origin, FromSession::Enrollment, password.as_deref()).await)
@@ -79,7 +80,7 @@ pub async fn remove(
     caller: Caller,
     origin: Origin,
     Path(method): Path<String>,
-    request: Result<Option<Json<Proof>>, ApiError>,
+    request: Result<Option<Json<Object<Proof>>>, ApiError>,
 ) -> Response {
     // An id that is not one names no route, so nothing of the page's applies.
     let method = match guid(&method) {
@@ -126,7 +127,7 @@ pub async fn regenerate_recovery_codes(
     State(state): State<AppState>,
     caller: Caller,
     origin: Origin,
-    request: Result<Option<Json<Proof>>, ApiError>,
+    request: Result<Option<Json<Object<Proof>>>, ApiError>,
 ) -> Response {
     let request = match required(request) {
         Ok(request) => request,

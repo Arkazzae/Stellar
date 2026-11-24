@@ -20,6 +20,7 @@ use crate::http::{ApiError, ApiResult, Json, Problem, json_response};
 use crate::instance::names;
 use crate::mail::setup::{self, MailSetup, Mailing};
 use crate::mail::Outcome as Delivery;
+use crate::servers::Object;
 use crate::state::AppState;
 use crate::values::{Id, Timestamp};
 
@@ -67,6 +68,38 @@ fn account_of(connection: &Connection, user: Id) -> rusqlite::Result<Option<Acco
         .optional()
 }
 
+/// What a change that asks for the current password was given.
+enum Proof {
+    Given,
+    WrongPassword,
+    FreshProofNeeded,
+}
+
+/// The proof an address change takes: the account's password when it has one
+/// (`proves` says it was checked against `checked_against`, and counts only if
+/// that is still the stored hash), and when it has none the fresh proof the
+/// session gives. Kept apart so that the shared call of `auth` can replace it.
+fn password_or_fresh_proof(
+    tx: &rusqlite::Transaction,
+    caller: Caller,
+    stored: Option<&str>,
+    checked_against: Option<&str>,
+    proves: bool,
+    now: Timestamp,
+) -> Result<Proof, DbError> {
+    Ok(match stored {
+        Some(hash) if proves && checked_against == Some(hash) => Proof::Given,
+        Some(_) => Proof::WrongPassword,
+        None => {
+            if fresh::can_change_security(tx, caller.user, Some(caller.session), || false, now)? {
+                Proof::Given
+            } else {
+                Proof::FreshProofNeeded
+            }
+        }
+    })
+}
+
 /// What was written, so that the mail can go once it is committed.
 struct Written {
     mailing: Mailing,
@@ -75,7 +108,7 @@ struct Written {
     display_name: String,
 }
 
-pub async fn start(State(state): State<AppState>, caller: Caller, Json(request): Json<StartRequest>) -> ApiResult<Response> {
+pub async fn start(State(state): State<AppState>, caller: Caller, Json(Object(request)): Json<Object<StartRequest>>) -> ApiResult<Response> {
     let email = request.email.as_deref().unwrap_or("").trim().to_string();
     if !is_plain_address(&email) {
         let text = state.messages().get(MessageKey::EmailInvalid, &[])?;
@@ -120,17 +153,10 @@ pub async fn start(State(state): State<AppState>, caller: Caller, Json(request):
             let Some(account) = account_of(tx, caller.user)? else {
                 return Ok(Err("second-step-required"));
             };
-            match &account.hash {
-                Some(hash) => {
-                    if !(proves && checked_against.as_deref() == Some(hash)) {
-                        return Ok(Err("wrong-password"));
-                    }
-                }
-                None => {
-                    if !fresh::can_change_security(tx, caller.user, Some(caller.session), || false, now)? {
-                        return Ok(Err("second-step-required"));
-                    }
-                }
+            match password_or_fresh_proof(tx, caller, account.hash.as_deref(), checked_against.as_deref(), proves, now)? {
+                Proof::Given => {}
+                Proof::WrongPassword => return Ok(Err("wrong-password")),
+                Proof::FreshProofNeeded => return Ok(Err("second-step-required")),
             }
             if account.normalized_email.as_deref() == Some(normalized.as_str()) {
                 return Ok(Err("same"));
