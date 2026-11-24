@@ -5,7 +5,6 @@ use std::time::Duration;
 use rusqlite::{Connection, OptionalExtension, params};
 use serde::{Serialize, Serializer};
 use serde_json::Value;
-use serde_json::value::RawValue;
 use stellarr_hub::HubError;
 
 use super::hub::{internal, parse_id, send_to, visible};
@@ -33,14 +32,8 @@ pub struct Seconds(pub f64);
 
 impl Serialize for Seconds {
     fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
-        let text = if self.0.is_finite() {
-            self.0.to_string()
-        } else {
-            "0".to_string()
-        };
-        RawValue::from_string(text)
-            .map_err(serde::ser::Error::custom)?
-            .serialize(serializer)
+        let value = if self.0.is_finite() { self.0 } else { 0.0 };
+        crate::uploads::json_number(&Some(value), serializer)
     }
 }
 
@@ -267,6 +260,8 @@ mod tests {
         assert!(text.contains("\"durationSeconds\":2.5,\"trimStartSeconds\":0,\"trimEndSeconds\":2.5"), "{text}");
         let whole = serde_json::to_string(&Seconds(15.0)).unwrap();
         assert_eq!(whole, "15");
+        assert_eq!(serde_json::to_string(&Seconds(-0.0)).unwrap(), "0");
+        assert_eq!(serde_json::to_string(&Seconds(f64::NAN)).unwrap(), "0");
     }
 
     #[test]

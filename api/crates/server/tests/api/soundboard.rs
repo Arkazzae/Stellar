@@ -138,6 +138,17 @@ async fn the_snapshot_lists_sounds_by_position_then_by_when_they_were_made() {
 }
 
 #[tokio::test]
+async fn a_trim_that_starts_at_minus_zero_is_written_as_zero() {
+    let Board { server: _server, owner, .. } = board().await;
+    let clip = wave(&owner, 8.25).await;
+
+    let created = put(&owner, Method::POST, SOUNDS, body(&clip, "Zero", "g", -0.0, 5.5)).await;
+
+    assert_eq!(created.status, 201, "{}", created.text());
+    assert!(created.text().contains("\"trimStartSeconds\":0,"), "{}", created.text());
+}
+
+#[tokio::test]
 async fn a_clip_whose_length_was_never_measured_is_as_long_as_its_trim_ends() {
     let Board { server, owner, .. } = board().await;
     let id = sound(&owner, "bare").await;

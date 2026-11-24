@@ -19,7 +19,6 @@ use axum::http::{HeaderValue, StatusCode, header};
 use axum::response::Response;
 use rusqlite::Connection;
 use serde::{Serialize, Serializer};
-use serde_json::value::RawValue;
 
 pub(crate) use snapshot::sounds_of;
 
@@ -90,15 +89,9 @@ pub struct SettingsDto {
     pub rate_limited: bool,
 }
 
-/// A number of seconds as the first server wrote it. A negative zero is
-/// written with its sign, which is how a trim of `-0` comes back.
+/// A number of seconds: a whole number without a point, and zero as `0` even
+/// when it was read as `-0`.
 pub(crate) fn seconds<S: Serializer>(value: &f64, serializer: S) -> Result<S::Ok, S::Error> {
-    if *value == 0.0 && value.is_sign_negative() {
-        return match RawValue::from_string("-0".to_string()) {
-            Ok(raw) => raw.serialize(serializer),
-            Err(error) => Err(serde::ser::Error::custom(error)),
-        };
-    }
     crate::uploads::json_number(&Some(*value), serializer)
 }
 
