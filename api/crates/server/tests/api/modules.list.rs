@@ -12,6 +12,7 @@ mod encryption;
 mod discord_import;
 mod discord_import_proof;
 mod discord_placeholders;
+mod delivery;
 mod health;
 mod identity_providers;
 mod inbox;
