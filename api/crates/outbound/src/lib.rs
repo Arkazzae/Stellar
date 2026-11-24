@@ -37,6 +37,11 @@ mod error;
 pub mod tls;
 mod url;
 
+/// The `http` types a caller needs to build a request and read an answer,
+/// so that it does not have to depend on the crate itself.
+pub use http::header::{self, HeaderMap, HeaderName, HeaderValue};
+pub use http::{Method, StatusCode};
+
 pub use address::{AddressPolicy, is_loopback, is_public};
 pub use body::{Body, ResponseBody};
 pub use client::{Client, Collected, Request, Response};
