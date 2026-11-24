@@ -231,8 +231,14 @@ fn read_value(tag: &str, start: usize) -> Option<(&str, usize)> {
 fn title_element(head: &str) -> Option<&str> {
     const OPEN: &str = "<title";
     const CLOSE: &str = "</title>";
+    // A character is at most four bytes and a code unit at least one, so a
+    // closing tag further than this cannot be inside the window.
+    const NEAR_BYTES: usize = (MAX_TITLE_ELEMENT + CLOSE.len()) * 4;
     let mut position = 0;
     let mut bracket: Option<usize> = None;
+    // The first closing tag at or after the text being looked at. The search
+    // for it moves only forward, so a page of openings costs one pass.
+    let mut close_at: Option<usize> = None;
     while let Some(start) = find_ignoring_case(head, OPEN, position) {
         position = start + OPEN.len();
         // Another opening inside a tag already tried looks at the same text.
@@ -241,9 +247,17 @@ fn title_element(head: &str) -> Option<&str> {
         }
         bracket = Some(position + head[position..].find('>')?);
         let text_start = bracket? + 1;
+        if close_at.is_none_or(|at| at < text_start) {
+            // No closing tag from here on means none for any later opening.
+            close_at = Some(find_ignoring_case(head, CLOSE, text_start)?);
+        }
+        let at = close_at?;
+        if at - text_start > NEAR_BYTES {
+            continue;
+        }
         let window = window_of(&head[text_start..], MAX_TITLE_ELEMENT + CLOSE.len());
-        if let Some(length) = find_ignoring_case(window, CLOSE, 0) {
-            return Some(&head[text_start..text_start + length]);
+        if at + CLOSE.len() <= text_start + window.len() {
+            return Some(&head[text_start..at]);
         }
     }
     None
