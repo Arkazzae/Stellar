@@ -12,12 +12,18 @@
 # questions with six people connected in four statuses, and the answers, then
 # the markers each left, are compared.
 #
-# Needs docker, sqlite3, curl, Node 26, and the first server's container from
-# `oracle start <name> <port> Production` started with
-# `Rtc__TurnSharedSecret=oracle-turn-secret-oracle-turn-secret-0123` (what
-# `oracle` sets), which must be fresh.
+# People also sit in voice rooms and a direct call, through the hub, with a fake
+# media server behind each server (the voice group's examples/fake_media on ports
+# 5231, for the first server, and 5232), and the answers are compared with
+# them in their seats: one muted, one in two tabs, one in a room the others
+# cannot see, and the relay's credentials for the same person and moment (both
+# servers have the same relay secret, which `oracle` sets).
 #
-#   ORACLE=bootstrap ORACLE_PORT=5230 STELLARR_API=path/to/stellarr-api bootstrap-shared-database.sh
+# Needs docker, sqlite3, curl, Node 26. It starts the first server's container
+# itself (`oracle start`, fresh) and stops it on every way out.
+#
+#   ORACLE=bootstrap ORACLE_PORT=5230 STELLARR_API=path/to/stellarr-api \
+#   FAKE_MEDIA=path/to/examples/fake_media [ORACLE_SCRIPT=path/to/oracle] bootstrap-shared-database.sh
 #
 # Prints the difference between the two, which is empty when the servers agree.
 # The work folder is removed when it ends, whatever the way; KEEP=1 keeps it.
@@ -28,6 +34,8 @@ PATH=/usr/bin:$PATH
 name=${ORACLE:-bootstrap}
 port=${ORACLE_PORT:-5230}
 binary=${STELLARR_API:?the path of the stellarr-api binary}
+fake=${FAKE_MEDIA:?the path of the fake_media example}
+oracle_script=${ORACLE_SCRIPT:-oracle}
 here=$(cd "$(dirname "$0")" && pwd)
 container=stellarr-port-oracle-$name
 oracle=http://127.0.0.1:$port
@@ -37,14 +45,24 @@ secret=oracle-turn-secret-oracle-turn-secret-0123
 headers=(-H 'X-Stellarr-Client: web' -H 'X-Stellarr-Client-Version: 2.0.0' -H 'Content-Type: application/json')
 pid=
 node_pid=
+fake_pids=()
 
 cleanup() {
   [ -n "$pid" ] && kill "$pid" 2>/dev/null || true
   [ -n "$node_pid" ] && kill "$node_pid" 2>/dev/null || true
+  for fake_pid in ${fake_pids[@]+"${fake_pids[@]}"}; do kill "$fake_pid" 2>/dev/null || true; done
+  "$oracle_script" stop "$name" >/dev/null 2>&1 || true
   [ -n "${KEEP:-}" ] || rm -rf "$work"
 }
 trap cleanup EXIT
 trap 'exit 130' INT TERM
+
+mkdir -p "$work"
+printf 'Rtc__MediaControlUrl=http://host.docker.internal:5231\nRtc__MediaControlSecret=media-test-secret\nRtc__MediaPort=5236\n' > "$work/oracle.env"
+ORACLE_ENV_FILE="$work/oracle.env" "$oracle_script" start "$name" "$port" Production
+"$fake" 0.0.0.0:5231 > "$work/fake-oracle.txt" 2>&1 & fake_pids+=($!)
+"$fake" 127.0.0.1:5232 > "$work/fake-rust.txt" 2>&1 & fake_pids+=($!)
+sleep 1
 
 code() { curl -s -o /dev/null -w '%{http_code}' "$@"; }
 wait_ready() {
@@ -56,7 +74,7 @@ start_rust() { # an environment, and a database to start on (copied) or nothing
   stop_rust
   rm -rf "$work/rust"; mkdir -p "$work/rust"
   [ -n "${2:-}" ] && cp "$2" "$work/rust/stellarr.db"
-  env ASPNETCORE_ENVIRONMENT="$1" Rtc__TurnSharedSecret=$secret STELLARR_DATA_ROOT="$work/rust" \
+  env ASPNETCORE_ENVIRONMENT="$1" Rtc__TurnSharedSecret=$secret Rtc__MediaControlUrl=http://127.0.0.1:5232 Rtc__MediaControlSecret=media-test-secret Rtc__MediaPort=5236 STELLARR_DATA_ROOT="$work/rust" \
     "ConnectionStrings__Database=Data Source=$work/rust/stellarr.db" ASPNETCORE_URLS=http://127.0.0.1:0 \
     "$binary" > "$work/rust/log.txt" 2>&1 &
   pid=$!
@@ -95,6 +113,7 @@ sec_a=22222222-AAAA-4AAA-8AAA-00000000000A
 sec_b=22222222-AAAA-4AAA-8AAA-00000000000B
 ch() { echo "33333333-AAAA-4AAA-8AAA-0000000000$1"; }
 general=$(sqlite3 "$db" "select Id from Channels where Name='general'")
+voice=$(sqlite3 "$db" "select Id from Channels where Name='voice' and ServerId='$home'")
 now='2026-11-24 02:00:00'
 sqlite3 "$db" "
 update ServerRoles set Position=9 where Id='$base';
@@ -156,6 +175,9 @@ insert into ServerRoles select 'BBBBBBBB'||substr(Id,9), '$beta', Name, Color, P
 insert into ServerMembers values('$beta','$(id omar)',(select Id from ServerRoles where ServerId='$beta' and IsOwner=1),1,'2026-01-15 00:00:00');
 insert into Channels values('66666666-BBBB-4BBB-8BBB-000000000001','$beta','town-square',0,0,'',0,0,0,NULL);
 insert into Channels values('66666666-BBBB-4BBB-8BBB-000000000002','$beta','hall',1,1,'',0,0,0,NULL);
+-- A direct conversation, for a call.
+insert into DirectConversations (Id,UserAId,UserBId,CreatedAt,EncryptionState) values('C0000000-0000-4000-8000-000000000001',
+  (select min(Id) from Users where Username in ('tess','uma')), (select max(Id) from Users where Username in ('tess','uma')), '$now', 'Off');
 insert into Messages (Id,ChannelId,AuthorId,IsSystem,Content,CreatedAt,EditedAt,PinnedAt,ReplyToMessageId)
   select printf('B4000000-0000-0000-0000-%012d', i), '66666666-BBBB-4BBB-8BBB-000000000001', '$(id omar)', 0, 'beta ' || i, datetime('2026-03-08 00:00:00', printf('+%d minutes', i)), NULL, NULL, NULL from n where i <= 5;
 "
@@ -177,7 +199,7 @@ markers() {
 }
 for target in oracle rust; do
   address=${!target}
-  node "$here/bootstrap-oracle.mjs" --base "$address" --home "$home" --beta "$beta" --secret "$secret" --password "$password" --out "$work/$target.txt" &
+  node "$here/bootstrap-oracle.mjs" --base "$address" --home "$home" --beta "$beta" --voice "$voice" --lounge "$(ch 14)" --ops "$(ch 16)" --call C0000000-0000-4000-8000-000000000001 --secret "$secret" --password "$password" --out "$work/$target.txt" &
   node_pid=$!; wait "$node_pid"; node_pid=
 done
 docker stop -t 10 "$container" >/dev/null
