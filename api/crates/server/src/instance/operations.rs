@@ -402,38 +402,7 @@ pub fn save(
 /// Whether `text` is an address that mail can be sent from: `user@host`, or
 /// that with a name before it, `Name <user@host>`.
 pub fn is_mail_address(text: &str) -> bool {
-    let text = text.trim();
-    if text.is_empty() {
-        return false;
-    }
-    if crate::instance::addresses::is_plain_address(text) {
-        return true;
-    }
-    let Some(open) = text.rfind('<') else {
-        return false;
-    };
-    let Some(address) = text[open + 1..].strip_suffix('>') else {
-        return false;
-    };
-    let name = text[..open].trim();
-    let quoted = name
-        .strip_prefix('"')
-        .and_then(|rest| rest.strip_suffix('"'))
-        .is_some_and(|inner| {
-            let mut chars = inner.chars();
-            while let Some(c) = chars.next() {
-                match c {
-                    '\\' if chars.next().is_none() => return false,
-                    '"' => return false,
-                    _ => {}
-                }
-            }
-            true
-        });
-    let words = name
-        .chars()
-        .all(|c| !matches!(c, '"' | '<' | '>' | '@' | '(' | ')') && !c.is_control());
-    (name.is_empty() || quoted || words) && crate::instance::addresses::is_plain_address(address.trim())
+    super::sender_address::is_sender_address(text)
 }
 
 /// What is wrong with an update, field by field, in the order the checks are
@@ -699,29 +668,5 @@ mod tests {
             ]
         );
         assert_eq!(problems[3].1[0], "Backup retention must be 1 to 3650 days.");
-    }
-
-    #[test]
-    fn a_sender_is_an_address_with_or_without_a_name() {
-        for good in [
-            "a@example.test",
-            "Stellarr <no-reply@example.test>",
-            "<no-reply@example.test>",
-            "\"Stellarr, Inc\" <no-reply@example.test>",
-        ] {
-            assert!(is_mail_address(good), "{good}");
-        }
-        for bad in [
-            "",
-            "   ",
-            "nope",
-            "a@",
-            "@b.test",
-            "Name <a@>",
-            "Name a@b.test>",
-            "a b@c.test",
-        ] {
-            assert!(!is_mail_address(bad), "{bad}");
-        }
     }
 }
