@@ -2837,3 +2837,189 @@ async fn a_link_is_not_started_by_a_stale_session_of_an_account_with_a_second_st
         }
     );
 }
+
+#[tokio::test]
+async fn a_providers_fresh_answer_moves_the_sign_in_forward_and_only_for_the_accounts_own_identity()
+{
+    let world = World::new();
+    let user = world.user(None);
+    let other = world.user(None);
+    let identity = link_identity(&world, user, None);
+    let (issuer, subject) = ("https://idp.example.test", identity.to_string());
+    let old = Timestamp::now().minus(Duration::from_secs(3600));
+    let session = add_session(&world.db(), user, old, None);
+    let authenticated = |session: Id| -> Timestamp {
+        world
+            .db()
+            .query_row(
+                "SELECT \"AuthenticatedAt\" FROM \"UserSessions\" WHERE \"Id\" = ?1",
+                [session],
+                |r| r.get(0),
+            )
+            .unwrap()
+    };
+    let now = Timestamp::now();
+    let three_minutes = now.minus(Duration::from_secs(180));
+
+    // Another account's session, or an identity the account does not have, or another issuer.
+    let theirs = add_session(&world.db(), other, old, None);
+    assert!(
+        !reauthenticated_by_provider(&world.state, user, theirs, issuer, &subject, three_minutes)
+            .await
+            .unwrap()
+    );
+    assert!(
+        !reauthenticated_by_provider(&world.state, other, theirs, issuer, &subject, three_minutes)
+            .await
+            .unwrap()
+    );
+    assert!(
+        !reauthenticated_by_provider(
+            &world.state,
+            user,
+            session,
+            issuer,
+            "someone-else",
+            three_minutes
+        )
+        .await
+        .unwrap()
+    );
+    assert!(
+        !reauthenticated_by_provider(
+            &world.state,
+            user,
+            session,
+            "https://another.example.test",
+            &subject,
+            three_minutes
+        )
+        .await
+        .unwrap()
+    );
+    // A sign-in at the provider that is not fresh proves nothing new.
+    assert!(
+        !reauthenticated_by_provider(
+            &world.state,
+            user,
+            session,
+            issuer,
+            &subject,
+            now.minus(Duration::from_secs(301))
+        )
+        .await
+        .unwrap()
+    );
+    assert_eq!(authenticated(session), old);
+
+    assert!(
+        reauthenticated_by_provider(&world.state, user, session, issuer, &subject, three_minutes)
+            .await
+            .unwrap()
+    );
+    // The session counts as signed in when the provider says, not when it answered.
+    assert_eq!(authenticated(session), three_minutes);
+    // Never earlier than a sign-in it already counts.
+    assert!(
+        reauthenticated_by_provider(
+            &world.state,
+            user,
+            session,
+            issuer,
+            &subject,
+            now.minus(Duration::from_secs(250))
+        )
+        .await
+        .unwrap()
+    );
+    assert_eq!(authenticated(session), three_minutes);
+    // A provider's clock a little ahead counts as now.
+    assert!(
+        reauthenticated_by_provider(
+            &world.state,
+            user,
+            session,
+            issuer,
+            &subject,
+            now.plus(Duration::from_secs(600))
+        )
+        .await
+        .unwrap()
+    );
+    assert!(authenticated(session) <= Timestamp::now() && authenticated(session) >= now);
+}
+
+#[tokio::test]
+async fn a_providers_answer_refreshes_nothing_of_a_session_or_account_that_is_not_in_good_standing()
+{
+    let world = World::new();
+    let user = world.user(None);
+    let identity = link_identity(&world, user, None);
+    let subject = identity.to_string();
+    let old = Timestamp::now().minus(Duration::from_secs(3600));
+    let session = add_session(&world.db(), user, old, None);
+    let at = Timestamp::now().minus(Duration::from_secs(10));
+    let attempt = |world: &World| {
+        let state = world.state.clone();
+        let subject = subject.clone();
+        async move {
+            reauthenticated_by_provider(
+                &state,
+                user,
+                session,
+                "https://idp.example.test",
+                &subject,
+                at,
+            )
+            .await
+            .unwrap()
+        }
+    };
+
+    for (statement, why) in [
+        (
+            "UPDATE \"UserSessions\" SET \"RevokedAt\" = '2026-11-24 00:00:00'",
+            "revoked session",
+        ),
+        (
+            "UPDATE \"UserSessions\" SET \"SecurityVersion\" = 0",
+            "another security version",
+        ),
+        (
+            "UPDATE \"Users\" SET \"IsDisabled\" = 1",
+            "disabled account",
+        ),
+        (
+            "UPDATE \"Users\" SET \"SecurityRecoveryRequired\" = 1",
+            "account waiting for recovery",
+        ),
+    ] {
+        world.db().execute(statement, []).unwrap();
+        assert!(!attempt(&world).await, "{why}");
+        world
+            .db()
+            .execute(
+                "UPDATE \"UserSessions\" SET \"RevokedAt\" = NULL, \"SecurityVersion\" = 1",
+                [],
+            )
+            .unwrap();
+        world
+            .db()
+            .execute(
+                "UPDATE \"Users\" SET \"IsDisabled\" = 0, \"SecurityRecoveryRequired\" = 0",
+                [],
+            )
+            .unwrap();
+    }
+    assert!(attempt(&world).await);
+    // It does not make a session count as having passed a second step.
+    let completed: Option<Timestamp> = world
+        .db()
+        .query_row(
+            "SELECT \"MfaCompletedAt\" FROM \"UserSessions\" WHERE \"Id\" = ?1",
+            [session],
+            |r| r.get(0),
+        )
+        .unwrap();
+    assert_eq!(completed, None);
+}
