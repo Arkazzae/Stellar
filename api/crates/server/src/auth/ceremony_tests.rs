@@ -7,6 +7,7 @@ use rusqlite::{Connection, params};
 use stellarr_webauthn::Algorithm;
 
 use super::ceremony::*;
+use super::ceremony::{PasswordCheck, check_password, may_change_security};
 use super::email_codes::{ENROLLMENT, LOGIN};
 use super::email_send::Sent;
 use super::fixtures::{add_challenge, add_method, add_session, add_user, preauth_of};
@@ -974,7 +975,7 @@ async fn proving_a_second_step_again_gives_a_new_session_and_leaves_the_old_one(
         me,
         &CONTEXT,
         FromSession::Reverification,
-        || false,
+        None,
     )
     .await
     .unwrap() else {
@@ -1029,15 +1030,9 @@ async fn proving_a_second_step_again_gives_a_new_session_and_leaves_the_old_one(
     // And a stale session is not allowed to start one for enrolment; an account without a method has nothing to prove again.
     let stale = caller(&world, user, Some(3600));
     assert!(matches!(
-        start_from_session(
-            &world.state,
-            stale,
-            &CONTEXT,
-            FromSession::Enrollment,
-            || false
-        )
-        .await
-        .unwrap(),
+        start_from_session(&world.state, stale, &CONTEXT, FromSession::Enrollment, None)
+            .await
+            .unwrap(),
         Started::NotAllowed
     ));
     let other = world.user(None);
@@ -1048,7 +1043,7 @@ async fn proving_a_second_step_again_gives_a_new_session_and_leaves_the_old_one(
             session,
             &CONTEXT,
             FromSession::Reverification,
-            || false
+            None
         )
         .await
         .unwrap(),
@@ -1094,20 +1089,18 @@ async fn taking_a_method_away_ends_the_other_sessions_and_devices_and_keeps_this
 
     let stale = caller(&world, user, Some(3600));
     assert_eq!(
-        remove_method(&world.state, stale, &CONTEXT, app, &providers, || false)
+        remove_method(&world.state, stale, &CONTEXT, app, &providers, None)
             .await
             .unwrap(),
         Removed::NotAllowed
     );
     assert_eq!(
-        remove_method(&world.state, me, &CONTEXT, Id::random(), &providers, || {
-            false
-        })
-        .await
-        .unwrap(),
+        remove_method(&world.state, me, &CONTEXT, Id::random(), &providers, None)
+            .await
+            .unwrap(),
         Removed::NotFound
     );
-    let removed = remove_method(&world.state, me, &CONTEXT, app, &providers, || false)
+    let removed = remove_method(&world.state, me, &CONTEXT, app, &providers, None)
         .await
         .unwrap();
 
@@ -1154,7 +1147,7 @@ async fn taking_a_method_away_ends_the_other_sessions_and_devices_and_keeps_this
         .execute("UPDATE \"UserSessions\" SET \"SecurityVersion\" = 2", [])
         .unwrap();
     assert!(matches!(
-        remove_method(&world.state, me, &CONTEXT, mail, &providers, || false)
+        remove_method(&world.state, me, &CONTEXT, mail, &providers, None)
             .await
             .unwrap(),
         Removed::Done { .. }
@@ -1181,7 +1174,7 @@ async fn the_last_way_in_and_the_policy_stop_a_removal() {
     };
 
     assert_eq!(
-        remove_method(&world.state, me, &CONTEXT, passkey, &providers, || false)
+        remove_method(&world.state, me, &CONTEXT, passkey, &providers, None)
             .await
             .unwrap(),
         Removed::LastWayIn
@@ -1198,7 +1191,7 @@ async fn the_last_way_in_and_the_policy_stop_a_removal() {
         params![server],
     ).unwrap();
     assert_eq!(
-        remove_method(&world.state, me, &CONTEXT, passkey, &providers, || false)
+        remove_method(&world.state, me, &CONTEXT, passkey, &providers, None)
             .await
             .unwrap(),
         Removed::RequiredByPolicy
@@ -1218,12 +1211,12 @@ async fn recovery_codes_and_remembered_devices_are_changed_only_by_a_session_tha
     let fresh = caller(&world, user, Some(30));
 
     assert_eq!(
-        regenerate_recovery_codes(&world.state, stale, &CONTEXT, || false)
+        regenerate_recovery_codes(&world.state, stale, &CONTEXT, None)
             .await
             .unwrap(),
         Changed::NotAllowed
     );
-    let Changed::Done(codes) = regenerate_recovery_codes(&world.state, fresh, &CONTEXT, || false)
+    let Changed::Done(codes) = regenerate_recovery_codes(&world.state, fresh, &CONTEXT, None)
         .await
         .unwrap()
     else {
@@ -1233,7 +1226,7 @@ async fn recovery_codes_and_remembered_devices_are_changed_only_by_a_session_tha
     let none = world.user(None);
     let session = caller(&world, none, None);
     assert_eq!(
-        regenerate_recovery_codes(&world.state, session, &CONTEXT, || true)
+        regenerate_recovery_codes(&world.state, session, &CONTEXT, Some("Passw0rd!2026"))
             .await
             .unwrap(),
         Changed::NotFound
@@ -1488,4 +1481,124 @@ async fn a_reset_by_mail_has_no_session_to_keep_and_ends_them_all() {
         ),
         1
     );
+}
+
+fn with_password(world: &World, user: Id, password: &str) {
+    world
+        .db()
+        .execute(
+            "UPDATE \"Users\" SET \"PasswordHash\" = ?2 WHERE \"Id\" = ?1",
+            params![user, super::password::hash(password)],
+        )
+        .unwrap();
+}
+
+#[tokio::test]
+async fn a_password_is_hashed_beforehand_and_only_when_it_could_decide() {
+    let world = World::new();
+    let user = world.user(None);
+    with_password(&world, user, "correct horse 42");
+    let fresh_session = caller(&world, user, None);
+    // Signed in a moment ago: the password is not needed, so it is not hashed.
+    let unneeded = check_password(&world.state, fresh_session, Some("correct horse 42"))
+        .await
+        .unwrap();
+    assert!(unneeded.hash.is_none() && !unneeded.proves);
+
+    let old = add_session(
+        &world.db(),
+        user,
+        Timestamp::now().minus(Duration::from_secs(3600)),
+        None,
+    );
+    let old = Caller { user, session: old };
+    let right = check_password(&world.state, old, Some("correct horse 42"))
+        .await
+        .unwrap();
+    assert!(right.hash.is_some() && right.proves);
+    let wrong = check_password(&world.state, old, Some("another one"))
+        .await
+        .unwrap();
+    assert!(wrong.hash.is_some() && !wrong.proves);
+    // An account with a second step is never decided by its password.
+    world.with_app(user).await;
+    let decided_by_step = check_password(&world.state, old, Some("correct horse 42"))
+        .await
+        .unwrap();
+    assert!(!decided_by_step.proves);
+}
+
+#[tokio::test]
+async fn a_password_checked_against_a_hash_that_has_since_changed_counts_for_nothing() {
+    let world = World::new();
+    let user = world.user(None);
+    with_password(&world, user, "correct horse 42");
+    let session = add_session(
+        &world.db(),
+        user,
+        Timestamp::now().minus(Duration::from_secs(3600)),
+        None,
+    );
+    let old = Caller { user, session };
+    let checked = check_password(&world.state, old, Some("correct horse 42"))
+        .await
+        .unwrap();
+    assert!(checked.proves);
+    let stands = |world: &World, checked: PasswordCheck| {
+        let mut connection = world.db();
+        let tx = connection.transaction().unwrap();
+        may_change_security(&tx, old, &checked, Timestamp::now()).unwrap()
+    };
+
+    assert!(stands(
+        &world,
+        PasswordCheck {
+            hash: checked.hash.clone(),
+            proves: true
+        }
+    ));
+    // The password was changed after it was checked.
+    with_password(&world, user, "a newer password 77");
+    assert!(!stands(
+        &world,
+        PasswordCheck {
+            hash: checked.hash,
+            proves: true
+        }
+    ));
+}
+
+#[tokio::test]
+async fn an_enrolment_from_a_session_accepts_the_password_of_the_account_without_a_second_step() {
+    let world = World::new();
+    let user = world.user(None);
+    with_password(&world, user, "correct horse 42");
+    let session = add_session(
+        &world.db(),
+        user,
+        Timestamp::now().minus(Duration::from_secs(3600)),
+        None,
+    );
+    let old = Caller { user, session };
+
+    let refused = start_from_session(
+        &world.state,
+        old,
+        &CONTEXT,
+        FromSession::Enrollment,
+        Some("not it"),
+    )
+    .await
+    .unwrap();
+    assert!(matches!(refused, Started::NotAllowed));
+    let allowed = start_from_session(
+        &world.state,
+        old,
+        &CONTEXT,
+        FromSession::Enrollment,
+        Some("correct horse 42"),
+    )
+    .await
+    .unwrap();
+    assert!(matches!(allowed, Started::Challenge { .. }));
 }
