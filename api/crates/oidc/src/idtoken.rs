@@ -15,7 +15,7 @@ use crate::discovery::Discovery;
 use crate::flow::Flow;
 use crate::jwks::KeySet;
 use crate::jws::{self, Alg};
-use crate::options::{PROVIDER_MFA_MAX_AGE, canonical_issuer, signed_in_at};
+use crate::options::{PROVIDER_MFA_MAX_AGE, canonical_issuer};
 use crate::profile::claim_values;
 
 /// How far the token's own times may be off our clock, in seconds. This is
@@ -31,7 +31,7 @@ const MAX_SUBJECT_UNITS: usize = 255;
 const AUTH_TIME_SKEW: i64 = 60;
 
 /// What the token must match: the sign-in it answers.
-#[derive(Debug, Clone)]
+#[derive(Clone)]
 pub struct Expect<'a> {
     /// The issuer the provider's discovery document names, compared exactly.
     pub issuer: &'a str,
@@ -44,6 +44,18 @@ pub struct Expect<'a> {
     pub fresh_within: Option<i64>,
     /// The access token that came with the ID token, for `at_hash`.
     pub access_token: Option<&'a str>,
+}
+
+impl fmt::Debug for Expect<'_> {
+    // The nonce and the access token are secrets of this sign-in.
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("Expect")
+            .field("issuer", &self.issuer)
+            .field("client_id", &self.client_id)
+            .field("now", &self.now)
+            .field("fresh_within", &self.fresh_within)
+            .finish_non_exhaustive()
+    }
 }
 
 impl<'a> Expect<'a> {
@@ -97,7 +109,9 @@ impl IdToken {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum IdTokenError {
     TooLarge,
-    /// Not three dot-separated base64url parts, or a header or payload that is not a JSON object.
+    /// Not three dot-separated base64url parts, a header or payload that is
+    /// not a JSON object, a key id that is not text, or a time claim (`exp`,
+    /// `nbf`, `iat`, `auth_time`) that is not a number.
     Malformed,
     /// The header names no algorithm.
     MissingAlgorithm,
@@ -114,10 +128,9 @@ pub enum IdTokenError {
     BadSignature,
     WrongIssuer,
     WrongAudience,
-    /// Several audiences and no `azp` to say which one is the client.
-    MissingAuthorizedParty,
     WrongAuthorizedParty,
     MissingExpiry,
+    MissingIssuedAt,
     Expired,
     NotYetValid,
     /// `nbf` is after `exp`.
@@ -170,27 +183,33 @@ pub fn verify(token: &str, keys: &KeySet, expect: &Expect<'_>) -> Result<IdToken
         return Err(E::CriticalHeader);
     }
 
-    // Step 3: the key. A named key must exist; an unnamed token may be
-    // checked against every key that fits the algorithm.
-    let kid = header.get("kid").and_then(Value::as_str);
+    // Step 3: the key. A key id must be text. A named key must exist; when
+    // none has the id, every key that fits the algorithm is tried, and if none
+    // verifies the key set may be stale. A token without a key id is checked
+    // against every key that fits.
+    let kid = match header.get("kid") {
+        None => None,
+        Some(Value::String(kid)) => Some(kid.as_str()),
+        Some(_) => return Err(E::Malformed),
+    };
+    let fits = |key: &&crate::jwks::Jwk| alg.fits(key) && key.alg.is_none_or(|own| own == alg);
     let named: Vec<_> = keys
         .keys()
         .iter()
-        .filter(|key| kid.is_none() || key.kid.as_deref() == kid)
+        .filter(|key| key.kid.as_deref() == kid)
         .collect();
-    if named.is_empty() {
-        return Err(if kid.is_some() {
+    let unknown_kid = kid.is_some() && named.is_empty();
+    let candidates: Vec<_> = if kid.is_some() && !unknown_kid {
+        named.into_iter().filter(fits).collect()
+    } else {
+        keys.keys().iter().filter(fits).collect()
+    };
+    if candidates.is_empty() {
+        return Err(if unknown_kid {
             E::UnknownKeyId
         } else {
             E::NoUsableKey
         });
-    }
-    let candidates: Vec<_> = named
-        .into_iter()
-        .filter(|key| alg.fits(key) && key.alg.is_none_or(|own| own == alg))
-        .collect();
-    if candidates.is_empty() {
-        return Err(E::NoUsableKey);
     }
 
     // Step 4: the signature, over the text exactly as received.
@@ -200,7 +219,11 @@ pub fn verify(token: &str, keys: &KeySet, expect: &Expect<'_>) -> Result<IdToken
         .iter()
         .any(|key| jws::verify(key, alg, signed.as_bytes(), &signature))
     {
-        return Err(E::BadSignature);
+        return Err(if unknown_kid {
+            E::UnknownKeyId
+        } else {
+            E::BadSignature
+        });
     }
 
     // From here the claims are the provider's word.
@@ -248,22 +271,21 @@ fn check_claims(
         return Err(E::WrongAudience);
     }
     match claims.get("azp") {
-        Some(Value::String(party)) if party == expect.client_id => {}
+        None | Some(Value::Null) => {}
+        Some(Value::String(party)) if party.is_empty() || party == expect.client_id => {}
         Some(_) => return Err(E::WrongAuthorizedParty),
-        None if audiences.len() > 1 => return Err(E::MissingAuthorizedParty),
-        None => {}
     }
 
-    // Step 7: the times. `exp` is required; `iat` is not read.
-    let expires = claims
-        .get("exp")
-        .and_then(numeric_date)
-        .ok_or(E::MissingExpiry)?;
+    // Step 7: the times. `exp` and `iat` are required; a time of the wrong
+    // type is a malformed token, not a late or early one.
+    let expires = time_claim(claims, "exp")?.ok_or(E::MissingExpiry)?;
+    time_claim(claims, "iat")?.ok_or(E::MissingIssuedAt)?;
+    let not_before = time_claim(claims, "nbf")?;
+    let auth_time = time_claim(claims, "auth_time")?;
     if expires < now - CLOCK_SKEW {
         return Err(E::Expired);
     }
-    if let Some(value) = claims.get("nbf") {
-        let not_before = numeric_date(value).ok_or(E::NotYetValid)?;
+    if let Some(not_before) = not_before {
         if not_before > expires {
             return Err(E::InvalidLifetime);
         }
@@ -296,8 +318,7 @@ fn check_claims(
 
     // Step 10: a fresh sign-in at the provider, when one was demanded.
     if let Some(window) = expect.fresh_within {
-        let auth_time = claims.get("auth_time").and_then(crate::profile::claim_text);
-        let fresh = signed_in_at(auth_time.as_deref())
+        let fresh = auth_time
             .is_some_and(|at| at <= now + AUTH_TIME_SKEW && at >= now - window - AUTH_TIME_SKEW);
         if !fresh {
             return Err(E::NotFreshSignIn);
@@ -323,13 +344,21 @@ fn json_object(part: &str) -> Result<Map<String, Value>, IdTokenError> {
     }
 }
 
-/// A time claim in whole seconds; fractions are cut off.
-fn numeric_date(value: &Value) -> Option<i64> {
-    let number = value.as_number()?;
-    number.as_i64().or_else(|| {
-        let float = number.as_f64()?;
-        (float.is_finite() && float.abs() < 1e15).then(|| float.floor() as i64)
-    })
+/// A time claim in whole seconds, fractions cut off. `Ok(None)` when absent;
+/// a claim that is not a number is a malformed token.
+fn time_claim(claims: &Map<String, Value>, name: &str) -> Result<Option<i64>, IdTokenError> {
+    let Some(value) = claims.get(name) else {
+        return Ok(None);
+    };
+    let number = value.as_number().ok_or(IdTokenError::Malformed)?;
+    number
+        .as_i64()
+        .or_else(|| {
+            let float = number.as_f64()?;
+            (float.is_finite() && float.abs() < 1e15).then(|| float.floor() as i64)
+        })
+        .map(Some)
+        .ok_or(IdTokenError::Malformed)
 }
 
 pub(crate) fn utf16_len(text: &str) -> usize {

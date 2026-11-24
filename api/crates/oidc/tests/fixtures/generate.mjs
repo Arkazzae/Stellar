@@ -52,6 +52,10 @@ function sign(alg, pair, header, claims) {
   return `${input}.${b64u(crypto.sign(s.hash, Buffer.from(input), opts))}`;
 }
 
+const atHashOf = (hash) => {
+  const digest = crypto.createHash(hash).update(ACCESS_TOKEN).digest();
+  return b64u(digest.subarray(0, digest.length / 2));
+};
 const atHash = b64u(crypto.createHash("sha256").update(ACCESS_TOKEN).digest().subarray(0, 16));
 const base = {
   iss: ISS,
@@ -68,6 +72,7 @@ const base = {
   at_hash: atHash,
 };
 const without = (o, ...names) => Object.fromEntries(Object.entries(o).filter(([k]) => !names.includes(k)));
+// claims may be any JSON value here
 const good = (claims, alg = "RS256", pair = rsa1, kid = "rsa-1") =>
   sign(alg, pair, { alg, typ: "JWT", kid }, claims);
 
@@ -154,6 +159,33 @@ const tokens = {
   auth_time_text: good({ ...base, auth_time: "yesterday" }),
   wrong_at_hash: good({ ...base, at_hash: b64u(Buffer.alloc(16)) }),
   no_at_hash: good(without(base, "at_hash")),
+
+  // a key id nobody has, signed by a key the provider does publish
+  unknown_kid_right_key: good(base, "RS256", rsa1, "rotated-name"),
+  // a key id that is not text
+  kid_number: sign("RS256", rsa1, { alg: "RS256", kid: 5 }, base),
+  kid_null: sign("RS256", rsa1, { alg: "RS256", kid: null }, base),
+  // an empty azp counts as none
+  empty_azp: good({ ...base, azp: "" }),
+  audience_list_empty_azp: good({ ...base, aud: ["other", AUD], azp: "" }),
+  // time claims of the wrong type
+  nbf_text: good({ ...base, nbf: "soon" }),
+  iat_text: good({ ...base, iat: "now" }),
+  exp_null: good({ ...base, exp: null }),
+  auth_time_bool: good({ ...base, auth_time: true }),
+  // a payload that is signed but not an object
+  payload_array: sign("RS256", rsa1, { alg: "RS256", kid: "rsa-1" }, [1]),
+  payload_string: sign("RS256", rsa1, { alg: "RS256", kid: "rsa-1" }, "x"),
+  // at_hash with the hash of each family, and with the wrong family's hash
+  at_rs384: good({ ...base, at_hash: atHashOf("sha384") }, "RS384"),
+  at_rs512: good({ ...base, at_hash: atHashOf("sha512") }, "RS512"),
+  at_ps512: good({ ...base, at_hash: atHashOf("sha512") }, "PS512"),
+  at_es384: good({ ...base, at_hash: atHashOf("sha384") }, "ES384", p384, "ec-384"),
+  at_es512: good({ ...base, at_hash: atHashOf("sha512") }, "ES512", p521, "ec-521"),
+  at_rs384_wrong: good({ ...base, at_hash: atHashOf("sha256") }, "RS384"),
+  at_rs512_wrong: good({ ...base, at_hash: atHashOf("sha384") }, "RS512"),
+  at_es384_wrong: good({ ...base, at_hash: atHashOf("sha512") }, "ES384", p384, "ec-384"),
+  at_es512_wrong: good({ ...base, at_hash: atHashOf("sha256") }, "ES512", p521, "ec-521"),
 };
 
 // A valid token with its payload swapped for another subject, signature kept.
