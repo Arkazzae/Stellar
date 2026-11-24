@@ -119,7 +119,7 @@ pub fn list(directory: &Path) -> Vec<Entry> {
         // A file removed since the folder was read is no longer a backup.
         .filter_map(|path| describe(&path).ok())
         .collect();
-    found.sort_by(|left, right| right.created_at.cmp(&left.created_at));
+    found.sort_by_key(|entry| std::cmp::Reverse(entry.created_at));
     found
 }
 

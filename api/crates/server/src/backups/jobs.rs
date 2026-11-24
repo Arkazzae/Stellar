@@ -59,6 +59,8 @@ struct Inner {
 pub struct Jobs {
     inner: Mutex<Inner>,
     stopping: Arc<AtomicBool>,
+    checkpoint: Mutex<super::schedule::Checkpoint>,
+    gate: tokio::sync::Mutex<()>,
 }
 
 impl Jobs {
@@ -72,6 +74,24 @@ impl Jobs {
 
     pub fn last_failure(&self) -> Option<Failure> {
         self.lock().last_failure.clone()
+    }
+
+    /// What the automatic backup remembers.
+    pub fn checkpoint(&self) -> super::schedule::Checkpoint {
+        self.checkpoint.lock().unwrap_or_else(|p| p.into_inner()).clone()
+    }
+
+    pub fn set_checkpoint(&self, checkpoint: super::schedule::Checkpoint) {
+        *self.checkpoint.lock().unwrap_or_else(|p| p.into_inner()) = checkpoint;
+    }
+
+    /// One pass of the automatic backup at a time.
+    pub fn gate(&self) -> &tokio::sync::Mutex<()> {
+        &self.gate
+    }
+
+    pub fn is_stopping(&self) -> bool {
+        self.stopping.load(Ordering::Relaxed)
     }
 
     /// Tells a running backup that the server is stopping, so that it ends

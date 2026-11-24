@@ -1,4 +1,5 @@
 workers! {
+    backups::schedule,
     link_previews,
     delivery,
     mail::security_alerts,
