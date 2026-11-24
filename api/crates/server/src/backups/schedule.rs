@@ -227,6 +227,9 @@ async fn current_schedule(state: &AppState) -> Result<Schedule, crate::database:
 /// did, which is what the failure is recorded on.
 type Failed = (BackupFailed, Checkpoint);
 
+// The failure carries the checkpoint it is recorded on, which is large; it is
+// built once per failed pass, so boxing it would only add a step.
+#[allow(clippy::result_large_err)]
 async fn attempt(
     state: &AppState,
     destinations: &[&dyn Destination],

@@ -77,12 +77,14 @@ pub fn read(path: &Path) -> Result<Option<Value>, Failure> {
 fn decode(bytes: &[u8]) -> String {
     let utf16 = |rest: &[u8], big: bool| {
         let units: Vec<u16> = rest
-            .chunks_exact(2)
+            .as_chunks::<2>()
+            .0
+            .iter()
             .map(|pair| {
                 if big {
-                    u16::from_be_bytes([pair[0], pair[1]])
+                    u16::from_be_bytes(*pair)
                 } else {
-                    u16::from_le_bytes([pair[0], pair[1]])
+                    u16::from_le_bytes(*pair)
                 }
             })
             .collect();
