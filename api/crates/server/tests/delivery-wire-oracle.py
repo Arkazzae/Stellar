@@ -205,6 +205,9 @@ def arrange():
     channel = connection.execute('SELECT "Id" FROM "Channels" WHERE "Kind" = 0 ORDER BY "Position" LIMIT 1').fetchone()[0]
     connection.commit()
     connection.close()
+    pre = os.path.join(WORK, "pre.db")
+    sqlite3.connect(database).execute("PRAGMA wal_checkpoint(TRUNCATE)").fetchall()
+    shutil.copy(database, pre)
     first_container(data, {}, worker=False)
     status, text = call(FIRST_PORT, "POST", "/api/channels/%s/messages" % channel.lower(),
                         {"clientMessageId": guid(os.urandom(16).hex()), "content": "Hej @ada @ben @cleo", "attachmentIds": []}, sessions["owner"])
@@ -223,7 +226,40 @@ def arrange():
     sqlite3.connect(database).execute("PRAGMA wal_checkpoint(TRUNCATE)").fetchall()
     shutil.copy(database, baseline)
     connection = sqlite3.connect(baseline)
-    print("owed rows:", connection.execute('SELECT "Channel", "EventKind", COUNT(*) FROM "NotificationDeliveries" GROUP BY 1, 2').fetchall())
+    print("owed rows (first server's routes):", connection.execute('SELECT "Channel", "EventKind", COUNT(*) FROM "NotificationDeliveries" GROUP BY 1, 2').fetchall())
+    connection.close()
+    return baseline, written_by_this_server(pre, channel, user_id(baseline, "ada"))
+
+
+def written_by_this_server(pre, channel, ada):
+    """The same two messages through this server's own routes, on the file as
+    it was before them."""
+    folder = os.path.join(WORK, "rust-arrange")
+    os.mkdir(folder)
+    shutil.copy(pre, os.path.join(folder, "stellarr.db"))
+    env = dict(os.environ, ASPNETCORE_ENVIRONMENT="Production", Rtc__TurnSharedSecret="x", STELLARR_DATA_ROOT=folder,
+               ASPNETCORE_URLS="http://127.0.0.1:5244", Operations__PublicUrl="http://127.0.0.1:%d" % FIRST_PORT,
+               RateLimiting__AuthWrite__PermitLimit="500", RateLimiting__Login__PermitLimit="500")
+    env["ConnectionStrings__Database"] = "Data Source=%s/stellarr.db" % folder
+    process = subprocess.Popen([os.environ["STELLARR_API"]], env=env, stdout=subprocess.DEVNULL, stderr=subprocess.STDOUT)
+    try:
+        wait_ready(5244)
+        owner = {}
+        assert call(5244, "POST", "/api/auth/login", {"username": "owner", "password": PASSWORD}, owner)[0] == 200
+        status, text = call(5244, "POST", "/api/channels/%s/messages" % channel.lower(), {"clientMessageId": guid(os.urandom(16).hex()), "content": "Hej @ada @ben @cleo", "attachmentIds": []}, owner)
+        assert status == 201, text
+        status, text = call(5244, "POST", "/api/social/conversations", {"userId": ada}, owner)
+        assert status in (200, 201), text
+        status, text = call(5244, "POST", "/api/social/conversations/%s/messages" % json.loads(text)["id"], {"clientMessageId": guid(os.urandom(16).hex()), "content": "sekret", "attachmentIds": []}, owner)
+        assert status == 201, text
+    finally:
+        process.terminate()
+        process.wait(15)
+    sqlite3.connect(os.path.join(folder, "stellarr.db")).execute("PRAGMA wal_checkpoint(TRUNCATE)").fetchall()
+    baseline = os.path.join(WORK, "baseline-rust.db")
+    shutil.copy(os.path.join(folder, "stellarr.db"), baseline)
+    connection = sqlite3.connect(baseline)
+    print("owed rows (this server's routes):", connection.execute('SELECT "Channel", "EventKind", COUNT(*) FROM "NotificationDeliveries" GROUP BY 1, 2').fetchall())
     connection.close()
     return baseline
 
@@ -334,11 +370,25 @@ SCENARIOS = {
     "close-body": dict(behave=dict(mode="close-body"), settle=14),
     "silent": dict(behave=dict(mode="silent"), settle=70),
     "polish": dict(behave=dict(mode="status", code=201), settle=14, language="pl"),
+    "rows-of-this-server": dict(behave=dict(mode="status", code=201), settle=14, rows="this"),
+    "dm-blocked": dict(behave=dict(mode="status", code=201), settle=14, sql=[lambda c: c.execute('INSERT INTO "UserBlocks" ("BlockerId","BlockedId","CreatedAt") SELECT a."Id", o."Id", \'2026-11-21 10:00:00\' FROM "Users" a, "Users" o WHERE a."Username" = \'ada\' AND o."Username" = \'owner\'')]),
+    "dm-blocked-the-other-way": dict(behave=dict(mode="status", code=201), settle=14, sql=[lambda c: c.execute('INSERT INTO "UserBlocks" ("BlockerId","BlockedId","CreatedAt") SELECT o."Id", a."Id", \'2026-11-21 10:00:00\' FROM "Users" a, "Users" o WHERE a."Username" = \'ada\' AND o."Username" = \'owner\'')]),
+    "dm-off-stranger": dict(behave=dict(mode="status", code=201), settle=14, sql=['UPDATE "UserPreferences" SET "AllowDirectMessages" = 0 WHERE "UserId" = (SELECT "Id" FROM "Users" WHERE "Username" = \'ada\')']),
+    "dm-off-friend": dict(behave=dict(mode="status", code=201), settle=14, sql=['UPDATE "UserPreferences" SET "AllowDirectMessages" = 0 WHERE "UserId" = (SELECT "Id" FROM "Users" WHERE "Username" = \'ada\')', befriend]),
+    "dm-encrypted": dict(behave=dict(mode="status", code=201), settle=14, sql=['UPDATE "DirectMessages" SET "Content" = \'\', "EncryptedEpochId" = \'7B1F4C3A-0000-4000-8000-000000000001\', "EncryptedIv" = randomblob(12), "EncryptedCiphertext" = randomblob(96)'], absent=["sekret"]),
+    "dm-read": dict(behave=dict(mode="status", code=201), settle=14, sql=['INSERT INTO "DirectConversationReads" ("ConversationId","UserId","LastReadAt") SELECT "ConversationId", (SELECT "Id" FROM "Users" WHERE "Username" = \'ada\'), \'2099-01-01 00:00:00\' FROM "DirectMessages" LIMIT 1']),
+    "dm-deleted": dict(behave=dict(mode="status", code=201), settle=14, sql=['DELETE FROM "DirectMessages"']),
     "mail-not-set-up": dict(behave=dict(mode="status", code=201), settle=14, sql=['UPDATE "OperationsSettings" SET "MailingEnabled" = 0']),
     "mail-no-sender": dict(behave=dict(mode="status", code=201), settle=14, sql=['UPDATE "OperationsSettings" SET "MailFromAddress" = \'\'']),
     "mail-server-down": dict(behave=dict(mode="status", code=201), settle=14, sql=['UPDATE "OperationsSettings" SET "MailSmtpPort" = 59999']),
     "mail-refused": dict(behave=dict(mode="status", code=201), settle=14, sql=['UPDATE "OperationsSettings" SET "MailSmtpPort" = %d' % REFUSER_PORT]),
 }
+
+
+def befriend(connection):
+    ada, owner = (connection.execute('SELECT "Id" FROM "Users" WHERE "Username" = ?', (n,)).fetchone()[0] for n in ("ada", "owner"))
+    a, b = sorted([ada, owner])
+    connection.execute('INSERT INTO "Friendships" ("Id","UserAId","UserBId","CreatedAt") VALUES (lower(hex(randomblob(16))),?,?,\'2026-11-21 10:00:00\')', (a, b))
 
 
 def prepare(baseline, name, host, scenario):
@@ -350,7 +400,7 @@ def prepare(baseline, name, host, scenario):
     connection = sqlite3.connect(database)
     connection.execute('UPDATE "OperationsSettings" SET "MailSmtpHost" = ?', (host,))
     for statement in scenario.get("sql", []):
-        connection.execute(statement)
+        statement(connection) if callable(statement) else connection.execute(statement)
     connection.commit()
     connection.close()
     return folder, database
@@ -421,7 +471,7 @@ def main():
     refusing = refuser()
     failures = 0
     try:
-        baseline = arrange()
+        baseline, rust_baseline = arrange()
         chosen = (sys.argv[1:] or list(SCENARIOS)) * int(os.environ.get("LOOPS", "1"))
         for turn, name in enumerate(chosen):
             scenario = SCENARIOS[name]
@@ -430,7 +480,7 @@ def main():
                 fake.reset()
                 clear_mailpit()
                 fake.behave(pass_="%s/%s" % (name, label), **scenario["behave"])
-                folder, database = prepare(baseline, "%s-%s-%d" % (name, label, turn), "host.docker.internal" if label == "first" else "127.0.0.1", scenario)
+                folder, database = prepare(rust_baseline if scenario.get("rows") == "this" else baseline, "%s-%s-%d" % (name, label, turn), "host.docker.internal" if label == "first" else "127.0.0.1", scenario)
                 if label == "first":
                     first_pass(folder, scenario)
                 else:
@@ -447,6 +497,11 @@ def main():
             lost = forgive_leading_zero(results["first"]["fake"], results["this"]["fake"])
             if lost:
                 print("  note: %d push(es) of the first server could not be opened by the fake (its library drops a leading zero of the shared secret); matched by path" % lost)
+            for text in scenario.get("absent", []):
+                seen_text = json.dumps([results[label]["full"] for label in results]) + json.dumps([results[label]["mail"] for label in results])
+                if text in seen_text:
+                    print("  LEAK: %r appears in what was sent" % text)
+                    failures += 1
             same = {part: results["first"][part] == results["this"][part] for part in ("fake", "rows", "mail")}
             print("== %s: requests %d/%d  fake %s  rows %s  mail %s (%d mails)" % (name, len(results["first"]["fake"]), len(results["this"]["fake"]),
                   "same" if same["fake"] else "DIFFERENT", "same" if same["rows"] else "DIFFERENT", "same" if same["mail"] else "DIFFERENT", len(results["first"]["mail"])))

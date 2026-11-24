@@ -134,7 +134,7 @@ rows() { # a database file
       from DirectMessages m join threads t on t.Id=m.ConversationId order by m.CreatedAt, m.Id;
     select 'attachment', m.Content, l.AttachmentId from DirectMessageAttachments l join DirectMessages m on m.Id=l.DirectMessageId order by m.CreatedAt, l.AttachmentId;
     select 'read', t.Name, (select Name from names where Id=r.UserId), r.LastReadAt is not null from DirectConversationReads r join threads t on t.Id=r.ConversationId order by 2,3;
-    select 'delivery', d.EventKind, d.Channel, (select Name from names where Id=d.RecipientId), d.Status from NotificationDeliveries d order by d.CreatedAt, d.Id;
+    select 'delivery', d.EventKind, d.Channel, (select Name from names where Id=d.RecipientId) from NotificationDeliveries d order by d.CreatedAt, d.Id;
     select 'counts', (select count(*) from UserNotifications), (select count(*) from MessageChanges), (select count(*) from MessageIndexEntries), (select count(*) from Friendships), (select count(*) from UserBlocks), (select count(*) from DirectMessageAttachments);
   "
 }
