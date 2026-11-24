@@ -954,12 +954,13 @@ works it out, since no group stands for who may see something:
 | `Server(id)` | every connection that follows the server |
 | `Users(ids)` | every connection of each of these people |
 | `Followers { server, users }` | the connections of these people that follow the server |
+| `Reach { servers, users }` | the connections that follow any of these servers and every connection of these people: a change of status |
 | `Everyone` | every connection |
 | `Connection(id)` | one connection |
 
-An event goes to each group of its audience in turn, so a connection that is in
-two of them hears it twice. The payload is
-sent as written. `state.events().session_ended(user, session)` closes the
+An event goes to all the groups of its audience in one send, so a connection
+that is in several of them, or a person named twice, hears it once. The payload
+is sent as written. `state.events().session_ended(user, session)` closes the
 connections of a session and is not passed on; `server_left(user, server)` takes
 a person's connections out of the server's groups. In the Testing environment
 every event is also appended to the event file (`server.events()`).

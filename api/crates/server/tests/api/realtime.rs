@@ -487,6 +487,7 @@ mod published {
         Server(Id),
         Users(Vec<Id>),
         Followers { server: Id, users: Vec<Id> },
+        Reach { servers: Vec<Id>, users: Vec<Id> },
         Everyone,
         Connection(String),
     }
@@ -504,6 +505,7 @@ mod published {
             Wanted::Server(server) => Audience::Server(server),
             Wanted::Users(users) => Audience::Users(users),
             Wanted::Followers { server, users } => Audience::Followers { server, users },
+            Wanted::Reach { servers, users } => Audience::Reach { servers, users },
             Wanted::Everyone => Audience::Everyone,
             Wanted::Connection(id) => Audience::Connection(id),
         };
@@ -725,6 +727,71 @@ mod published {
         assert_eq!(here.event("TypingChanged").await, json!({"who": "x"}));
         assert!(there.quiet_for(QUIET).await.is_empty());
         assert!(maya.quiet_for(Duration::from_millis(50)).await.is_empty());
+    }
+
+    #[tokio::test]
+    async fn a_person_named_twice_hears_an_event_once_on_each_tab() {
+        let instance = Instance::start().await;
+        let server_id = instance.server.database().query_row("SELECT \"Id\" FROM \"Servers\" LIMIT 1", [], |r| r.get::<_, String>(0)).unwrap();
+        let server = Id::parse(&server_id.to_lowercase()).unwrap();
+        let mut owner = instance.connect(&instance.owner, "").await;
+        owner.quiet_for(Duration::from_millis(300)).await;
+        let id = Id::parse(&instance.owner.id).unwrap();
+
+        instance.publish(json!({"users": [id, id]}), "DirectMessageCreated", "{\"n\":1}").await;
+        instance.publish(json!({"followers": {"server": server, "users": [id, id]}}), "TypingChanged", "{\"n\":2}").await;
+
+        let heard = owner.quiet_for(Duration::from_millis(400)).await;
+        let named: Vec<&str> = heard.iter().filter_map(|record| record["target"].as_str()).collect();
+        assert_eq!(named, ["DirectMessageCreated", "TypingChanged"], "{heard:?}");
+    }
+
+    #[tokio::test]
+    async fn a_tab_that_follows_a_server_and_belongs_to_a_person_hears_what_reaches_both_once() {
+        let instance = Instance::start().await;
+        let server_id = instance.server.database().query_row("SELECT \"Id\" FROM \"Servers\" LIMIT 1", [], |r| r.get::<_, String>(0)).unwrap();
+        let server = Id::parse(&server_id.to_lowercase()).unwrap();
+        let mut owner = instance.connect(&instance.owner, "").await;
+        let mut maya = instance.connect(&instance.maya, "").await;
+        owner.quiet_for(Duration::from_millis(300)).await;
+        maya.quiet_for(Duration::from_millis(300)).await;
+        let id = Id::parse(&instance.owner.id).unwrap();
+
+        instance.publish(json!({"reach": {"servers": [server, server], "users": [id]}}), "Probe", "1").await;
+
+        for client in [&mut owner, &mut maya] {
+            let heard = client.quiet_for(Duration::from_millis(400)).await;
+            assert_eq!(heard.len(), 1, "{heard:?}");
+            assert_eq!(heard[0]["target"], "Probe");
+        }
+    }
+
+    #[tokio::test]
+    async fn a_change_of_status_is_heard_once_by_a_tab_that_is_in_two_of_the_groups_it_goes_to() {
+        let instance = Instance::start().await;
+        let (owner_id, maya_id) = (Id::parse(&instance.owner.id).unwrap(), Id::parse(&instance.maya.id).unwrap());
+        let (a, b) = stellarr_api::social::pair(owner_id, maya_id);
+        instance
+            .server
+            .database()
+            .execute(
+                "INSERT INTO \"Friendships\" (\"Id\", \"UserAId\", \"UserBId\", \"CreatedAt\") VALUES (?1, ?2, ?3, ?4)",
+                rusqlite::params![Id::random(), a, b, stellarr_api::values::Timestamp::now()],
+            )
+            .unwrap();
+        let mut owner = instance.connect(&instance.owner, "").await;
+        owner.quiet_for(Duration::from_millis(300)).await;
+
+        // Maya shares the server with the owner and is the owner's friend: the
+        // owner's tab is in the server's group and in the owner's own.
+        let _maya = instance.connect(&instance.maya, "").await;
+
+        let heard = owner.quiet_for(Duration::from_millis(500)).await;
+        let of_maya = heard
+            .iter()
+            .filter(|record| record["target"] == "PresenceChanged" && record["arguments"][0]["userId"] == instance.maya.id.as_str())
+            .count();
+        assert_eq!(of_maya, 1, "{heard:?}");
     }
 
     #[tokio::test]

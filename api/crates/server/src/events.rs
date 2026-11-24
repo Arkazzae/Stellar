@@ -38,6 +38,10 @@ pub enum Audience {
     /// event about something only some members see goes to. Unlike `Users`
     /// it leaves out the tabs a person has open on other servers.
     Followers { server: Id, users: Vec<Id> },
+    /// Whoever follows any of these servers and every tab of any of these
+    /// people: what a change of status goes to. A connection that is in more
+    /// than one of them hears it once.
+    Reach { servers: Vec<Id>, users: Vec<Id> },
     /// Every connection there is.
     Everyone,
     /// One connection, by the identifier the hub gave it.

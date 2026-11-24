@@ -1,5 +1,6 @@
 //! What handlers say to the hub, and who hears it: each [`Audience`] is a
-//! set of groups or connections, and an event goes to each of them in turn.
+//! set of groups or connections, and an event goes to each connection in it
+//! once.
 
 use serde::Deserialize;
 use serde_json::value::RawValue;
@@ -47,17 +48,25 @@ impl EventPublisher for Realtime {
             Audience::Server(server) => {
                 hub.send_to_group(&server_group(*server), &message);
             }
-            // One group at a time, so that a connection that is in two of
-            // them hears the event twice, as it did from the first server.
+            // One send for all the groups, which gives a connection that is in
+            // several of them (or a person named twice) the event once.
             Audience::Users(users) => {
-                for user in users {
-                    hub.send_to_group(&user_group(*user), &message);
-                }
+                hub.send_to_groups(users.iter().map(|user| user_group(*user)), &message);
             }
             Audience::Followers { server, users } => {
-                for user in users {
-                    hub.send_to_group(&follower_group(*server, *user), &message);
-                }
+                hub.send_to_groups(
+                    users.iter().map(|user| follower_group(*server, *user)),
+                    &message,
+                );
+            }
+            Audience::Reach { servers, users } => {
+                hub.send_to_groups(
+                    servers
+                        .iter()
+                        .map(|server| server_group(*server))
+                        .chain(users.iter().map(|user| user_group(*user))),
+                    &message,
+                );
             }
             Audience::Everyone => {
                 hub.send_to_all(&message);
