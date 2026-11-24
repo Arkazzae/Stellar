@@ -131,11 +131,6 @@ impl SecurityPolicy {
         Duration::from_secs(self.cli_recovery_minutes.clamp(1, 60) as u64 * 60)
     }
 
-    /// Whether the operator's panel asks for a real second step at all.
-    pub fn requires_cockpit_second_step(&self) -> bool {
-        self.mfa_requirement != OPTIONAL
-    }
-
     pub fn trusted_device_days_clamped(&self) -> i64 {
         self.trusted_device_days.clamp(1, 365)
     }
@@ -269,7 +264,7 @@ mod tests {
         assert_eq!(policy.email_code_max_attempts_clamped(), 5);
         assert_eq!(policy.email_code_sends_per_hour_clamped(), 10);
         assert_eq!(policy.cli_recovery_lifetime(), Duration::from_secs(600));
-        assert!(!policy.requires_cockpit_second_step());
+        assert_eq!(policy.mfa_requirement, OPTIONAL);
     }
 
     #[test]
