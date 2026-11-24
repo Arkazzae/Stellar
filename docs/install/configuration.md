@@ -73,7 +73,7 @@ Password-reset links, email 2FA codes, email-change confirmations, security aler
 
 | Variable | Type | Default | Description |
 | --- | --- | --- | --- |
-| `STELLARR_MAIL_ENABLED` | `true` \| `false` | `true` | **Seed** for Cockpit's master mail delivery toggle (`false` when running outside the container via `dotnet run`). |
+| `STELLARR_MAIL_ENABLED` | `true` \| `false` | `true` | **Seed** for Cockpit's master mail delivery toggle (`false` when the API runs in the development environment, outside the container). |
 | `STELLARR_MAIL_FROM` | email | empty | **Seed** for the sender email address (`onboarding@resend.dev` is valid only with Resend). |
 | `STELLARR_MAIL_FROM_NAME` | string | `Stellarr` | Display name used in the `From` header of outgoing emails. |
 | `STELLARR_SMTP_PASSWORD` | string | empty | Fallback SMTP password when no password is stored in Cockpit. |
@@ -107,7 +107,7 @@ Enables OpenID Connect sign-in alongside local passwords. The default provider c
 
 ### Additional OIDC providers
 
-You can register multiple OIDC providers in `.env` using raw `.NET` configuration keys (`Oidc__Providers__<id>__*`). Each provider `<id>` must be `1–32` lowercase letters, digits, or hyphens (excluding `default`, `login`, `callback`, `link`, `reauthenticate`, and `pending`) and uses the callback URL `<public-url>/api/auth/oidc/<id>/callback`:
+You can register multiple OIDC providers in `.env` using raw configuration keys (`Oidc__Providers__<id>__*`). Each provider `<id>` must be `1–32` lowercase letters, digits, or hyphens (excluding `default`, `login`, `callback`, `link`, `reauthenticate`, and `pending`) and uses the callback URL `<public-url>/api/auth/oidc/<id>/callback`:
 
 ```dotenv
 Oidc__Providers__work__DisplayName=Work account
@@ -188,17 +188,19 @@ Any value other than `en` or `pl` aborts API startup. Existing database records 
 
 The API writes structured logs to container stdout/stderr (`docker compose logs`) and to Cockpit's in-memory **Logs** buffer (retaining the latest 10,000 entries). Default log output includes:
 
-- Warnings and errors from all components
+- Information, warnings and errors from every component
 - One summary line per API request (`POST /api/channels/…/messages 201 in 12 ms` under `Stellarr.Api.Requests`), excluding routine `/health/ready` probes
 - Operational milestones: startup, media server epoch resets, backup jobs, and hourly maintenance
 - The one-time owner [setup code](quick-start.md#4-create-the-owner-account-and-first-server) on startup while the instance has zero accounts (logged at `Warning` level so it remains visible under stricter log filters)
 
-Verbose framework categories (`Microsoft.AspNetCore`, `Microsoft.EntityFrameworkCore.Database.Command`, and `System.Net.Http.HttpClient`) default to `Warning`. Override any category in `.env` with `Logging__LogLevel__<Category>`:
+Every category logs at `Information` and above unless set otherwise. A category is the name a line is logged under, which is what Cockpit's **Logs** page shows as its source: the API's own are `Stellarr.Api.Requests` (the request lines), `Stellarr.Api.Backups`, `Stellarr.Api.Host`, `Stellarr.Api.Mail`, `Stellarr.Api.Realtime`, `Stellarr.Api.Security` and `Stellarr.Api.Secrets`; the libraries it uses log under their crate names, such as `hyper` or `rustls`, and `stellarr_api` is every other module of the API. A level is one of `Trace`, `Debug`, `Information`, `Warning`, `Error`, `Critical` or `None`. Names of ASP.NET or Entity Framework categories (`Microsoft.AspNetCore` and the like) mean nothing to this server.
+
+A category has no `STELLARR_*` name, so it is set with the raw key `Logging__LogLevel__<category>` in `.env`, and `Logging__LogLevel__Default` sets the level for the rest:
 
 ```dotenv
-Logging__LogLevel__Microsoft.AspNetCore=Information
 Logging__LogLevel__Stellarr.Api.Requests=Warning
-Logging__LogLevel__Microsoft.EntityFrameworkCore.Database.Command=Information
+Logging__LogLevel__stellarr_api=Debug
+Logging__LogLevel__hyper=Warning
 ```
 
 ## Container resource limits
@@ -223,19 +225,21 @@ Read by `docker-compose.yml` during container creation (for `docker run`, pass `
 > [!IMPORTANT]
 > Shared secrets between the API, `coturn`, and `stellarr-media` are generated automatically on first start in `/data/stellarr/secrets/` (`turn-shared-secret` and `media-control-secret`) and are not configurable via environment variables. Preserve `/data/stellarr/secrets/` in all volume backups.
 
-The container data directory is fixed at `/data/stellarr` inside the image (`STELLARR_DATA_ROOT`).
+The container data directory is fixed at `/data/stellarr` inside the image (`STELLARR_DATA_ROOT`). The database is `db/stellarr.db` in it, and has no setting of its own.
+
+Two more names belong to the image and are not settings. `STELLARR_API_LISTEN` is the address the API listens on, always `127.0.0.1:5000`, where only nginx reaches it: the API takes the client's address from the last `X-Forwarded-For` entry, which only nginx writes. `STELLARR_ENVIRONMENT` is the environment the API runs in, always `Production` in the container; the development stack sets `Development`. The entrypoint assigns both whatever `.env` holds, so a value there changes nothing.
 
 ### Settings without a `STELLARR_*` name
 
 > [!NOTE]
-> Every operator-facing `STELLARR_*` variable is kept in lockstep across `server/Stellarr.Api/Operations/StellarrVariables.cs` (or `infra/{entrypoint,settings,tls-maintenance}.sh`), `docker-compose.yml`, `.env.example`, and the tables above (`infra/tests/setting-names.test.sh`). In `.env.example`, every entry must remain commented out (`# STELLARR_...=`) and must not include raw `.NET` keys because `install.sh` appends `.env.example` directly to the `.env` file it writes.
+> Every operator-facing `STELLARR_*` variable is kept in lockstep across `api/crates/server/src/settings/variables.rs` (or `infra/{entrypoint,settings,tls-maintenance}.sh`), `docker-compose.yml`, `.env.example`, and the tables above (`infra/tests/setting-names.test.sh`). In `.env.example`, every entry must remain commented out (`# STELLARR_...=`) and must not include raw `Section__Key` settings because `install.sh` appends `.env.example` directly to the `.env` file it writes.
 
-Advanced internal subsystems that rarely need tuning can be configured in `.env` using raw `.NET` configuration keys (`Section__Key`). For any setting that has a `STELLARR_*` variable, the `STELLARR_*` variable always takes precedence over the raw key:
+Advanced internal subsystems that rarely need tuning can be configured in `.env` using raw configuration keys (`Section__Key`, where `__` stands for `:`; names are not case-sensitive). For any setting that has a `STELLARR_*` variable, the `STELLARR_*` variable always takes precedence over the raw key:
 
-| Raw `.NET` key pattern | Default | Purpose |
+| Raw key pattern | Default | Purpose |
 | --- | --- | --- |
 | `Oidc__Providers__<id>__*` | none | [Additional OIDC providers](#additional-oidc-providers) (`DisplayName`, `Authority`, `ClientId`, `ClientSecret`, `ClientSecretFile`, `TrustProviderMfa`, `ProviderMfaAmr`). |
-| `Logging__LogLevel__<Category>` | `Information` / `Warning` | Per-category [log level overrides](#logs). |
+| `Logging__LogLevel__<Category>` | `Information` | Per-category [log level overrides](#logs). |
 | `Stellarr__Embeds__Enabled` | `true` | Enables background fetching of OpenGraph link previews for channel messages (`MaxPerMessage=2`, `TimeoutSeconds=6`, `AllowPrivateNetworks=false`). Leave `AllowPrivateNetworks=false` unless you intentionally want members to unfurl intranet addresses. When `Enabled=false`, YouTube and Vimeo links still render player stubs without outbound requests. |
 | `RateLimiting__<Policy>__PermitLimit` | varies | Per-window request limit for `Login` (`10`/min), `LoginPoll` (`120`/min), `AuthWrite` (`5`/15 min), `SecurityWrite` (`30`/15 min), `InvitePreview` (`30`/min), `Uploads` (`30`/min instance-wide), and `PinUnlock` (`5`/15 min per IP and account). |
 | `Maintenance__Enabled` | `true` | Hourly housekeeping worker (`InitialDelayMinutes=5`, `IntervalHours=1`, `BatchSize=1000`, `MessageChangeRetentionDays=30`). |
@@ -244,12 +248,12 @@ Advanced internal subsystems that rarely need tuning can be configured in `.env`
 
 ## Development stack (`docker-compose.dev.yml`)
 
-`docker-compose.dev.yml` runs each service from a bind mount with live reload (`web` on Vite, `api` on `dotnet watch`, `media` on `cargo run` under `watchexec`, `mailpit` for local email capture, and optional `coturn` under `--profile turn`). It does not load `env_file: .env` whole so a production `.env` in the checkout cannot collide with development services; instead it forwards selected variables (`STELLARR_LANGUAGE`, `STELLARR_TIME_ZONE`, `STELLARR_INSTANCE_ID`, desktop versions, `STELLARR_GIPHY_API_KEY`, mail sender/secrets, and Web Push keys) from the shell or `.env`.
+`docker-compose.dev.yml` runs each service from a bind mount with live reload (`web` on Vite, `api` on `cargo run` under `watchexec`, `media` on `cargo run` under `watchexec`, `mailpit` for local email capture, and optional `coturn` under `--profile turn`). It does not load `env_file: .env` whole so a production `.env` in the checkout cannot collide with development services; instead it forwards selected variables (`STELLARR_LANGUAGE`, `STELLARR_TIME_ZONE`, `STELLARR_INSTANCE_ID`, desktop versions, `STELLARR_GIPHY_API_KEY`, mail sender/secrets, and Web Push keys) from the shell or `.env`.
 
 | Variable | Default | Description |
 | --- | --- | --- |
 | `STELLARR_DEV_WEB_PORT` | `3000` | Host TCP port for Vite's dev server (serving both the web client at `/` and Cockpit at `/cockpit`). |
-| `STELLARR_DEV_API_PORT` | `5000` | Host TCP port for the ASP.NET Core API under `dotnet watch`. |
+| `STELLARR_DEV_API_PORT` | `5000` | Host TCP port for the API under `cargo run`. |
 | `STELLARR_DEV_MEDIA_PORT` | `49100` | Host UDP port for `stellarr-media` (advertised on `127.0.0.1`). |
 | `STELLARR_DEV_MEDIA_CONTROL_PORT` | `5200` | Host TCP port for the `stellarr-media` control API on `127.0.0.1`. |
 | `STELLARR_DEV_MAILPIT_PORT` | `8025` | Host TCP port for the Mailpit web UI on `127.0.0.1`. |

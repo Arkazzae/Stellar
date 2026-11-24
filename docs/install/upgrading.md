@@ -71,7 +71,7 @@ To pin a specific release tag during an installer update, pass `--version 1.2.3`
 
 ## Database schema
 
-On a new volume, the API initializes SQLite in WAL mode from the Entity Framework data model. On subsequent starts and upgrades, `DatabaseSchema.PrepareAsync` applies idempotent schema preparation steps (auxiliary tables, columns, FTS5 full-text search indexes, and triggers) while keeping existing servers, roles, memberships, messages, and settings intact.
+On a new volume, the API creates the SQLite database in WAL mode, with its full-text search indexes and triggers, in `db/stellarr.db`. A database that already has the schema is opened as it is, with its servers, roles, memberships, messages, and settings intact.
 
 > [!WARNING]
 > Do not downgrade by starting an older container image directly against an upgraded volume. The operator CLI and API refuse databases whose schema does not match the running binary. Roll back by restoring the pre-upgrade volume backup instead.

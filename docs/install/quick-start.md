@@ -54,7 +54,7 @@ Docker pulls `ghcr.io/arkazzae/stellarr`, creates the `stellarr_stellarr_data` v
 docker compose ps
 ```
 
-The container reports `healthy` once `stellarr-media`, the ASP.NET Core API and SQLite database, `coturn`, and Nginx all pass their readiness checks. If startup fails, inspect service state and logs:
+The container reports `healthy` once `stellarr-media`, the API and its SQLite database, `coturn`, and Nginx all pass their readiness checks. If startup fails, inspect service state and logs:
 
 ```bash
 docker compose exec stellarr stellarr-init status
@@ -146,4 +146,4 @@ cd Stellarr
 docker compose up -d --build
 ```
 
-The multi-stage `Dockerfile` compiles the webAssembly artifact recipes, web client, Cockpit, ASP.NET Core API, operator CLI, `stellarr-media`, and `stellarr-init` inside Docker. No host toolchains beyond Docker and BuildKit are required.
+The multi-stage `Dockerfile` compiles the webAssembly artifact recipes, web client, Cockpit, the API, the operator CLI, `stellarr-media`, and `stellarr-init` inside Docker. No host toolchains beyond Docker and BuildKit are required.
