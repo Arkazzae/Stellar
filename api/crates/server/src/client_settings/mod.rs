@@ -148,8 +148,8 @@ async fn body_object(headers: &axum::http::HeaderMap, body: Body) -> Result<Opti
     let Some(text) = json::decode(&bytes) else {
         return Ok(None);
     };
-    if text.encode_utf16().count() > MAX_BODY_CHARACTERS {
+    if stellarr_unicode::utf16::length(text) > MAX_BODY_CHARACTERS {
         return Ok(None);
     }
-    Ok(json::object(text).filter(|compact| compact.encode_utf16().count() <= MAX_LENGTH))
+    Ok(json::object(text).filter(|compact| stellarr_unicode::utf16::length(compact) <= MAX_LENGTH))
 }

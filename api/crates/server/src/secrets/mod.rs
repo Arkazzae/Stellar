@@ -102,7 +102,7 @@ pub fn find(name: &str) -> Option<&'static SecretDefinition> {
 /// The rule the panel and the operator's command line both apply before they
 /// store a value: something other than blanks, at most [`MAX_LENGTH`] long.
 pub fn is_valid_value(value: &str) -> bool {
-    !value.trim().is_empty() && value.encode_utf16().count() <= MAX_LENGTH
+    !value.trim().is_empty() && stellarr_unicode::utf16::length(value) <= MAX_LENGTH
 }
 
 /// Where the value of a secret comes from.

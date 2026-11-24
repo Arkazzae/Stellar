@@ -121,7 +121,4 @@ pub fn trimmed(text: &str) -> &str {
     text.trim_matches(char::is_whitespace)
 }
 
-/// The length the first server counts a text by: UTF-16 units.
-pub fn units(text: &str) -> usize {
-    text.encode_utf16().count()
-}
+pub(crate) use stellarr_unicode::utf16::length as units;

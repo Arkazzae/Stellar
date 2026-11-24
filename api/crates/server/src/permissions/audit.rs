@@ -109,7 +109,7 @@ pub fn record(db: &Connection, server: Id, actor: Id, event: &AuditEvent) -> rus
 /// The text cut to `max` UTF-16 units, the last of which is an ellipsis when
 /// it was cut. A pair the cut falls inside is left out whole.
 pub fn clip(text: &str, max: usize) -> String {
-    if text.encode_utf16().count() <= max {
+    if utf16::length(text) <= max {
         return text.to_string();
     }
     let mut kept = utf16::prefix(text, max - 1).to_string();

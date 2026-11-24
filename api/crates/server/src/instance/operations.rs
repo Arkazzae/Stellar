@@ -413,7 +413,7 @@ pub fn validate(
 ) -> Result<Vec<(&'static str, Vec<String>)>, MissingValue> {
     let mut problems: Vec<(&'static str, Vec<String>)> = Vec::new();
     let mut problem = |field: &'static str, text: String| problems.push((field, vec![text]));
-    let utf16 = |text: &str| text.trim().encode_utf16().count();
+    let utf16 = |text: &str| stellarr_unicode::utf16::length(text.trim());
 
     if !(1..=80).contains(&utf16(&update.instance_name)) {
         problem(
@@ -462,7 +462,7 @@ pub fn validate(
         );
     }
     let from = update.mail_from_address.trim();
-    if from.encode_utf16().count() > MAX_MAIL_ADDRESS_LENGTH
+    if stellarr_unicode::utf16::length(from) > MAX_MAIL_ADDRESS_LENGTH
         || (update.mailing_enabled && !is_mail_address(from))
     {
         problem(
