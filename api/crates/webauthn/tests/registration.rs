@@ -431,6 +431,27 @@ fn rsa_keys_outside_the_accepted_size_are_refused() {
             vec![1, 0, 1],
             "leading zero in the modulus",
         ),
+        (
+            [vec![0x01], vec![0xff; 255]].concat(),
+            vec![1, 0, 1],
+            "modulus of 2041 bits",
+        ),
+        (vec![0x80; 256], vec![1, 0, 1], "even modulus"),
+        (
+            [vec![0x80; 255], vec![0x01]].concat(),
+            vec![1],
+            "exponent 1",
+        ),
+        (
+            [vec![0x80; 255], vec![0x01]].concat(),
+            vec![2],
+            "exponent 2",
+        ),
+        (
+            [vec![0x80; 255], vec![0x01]].concat(),
+            vec![1, 0, 0],
+            "even exponent",
+        ),
         (vec![0x80; 256], vec![], "no exponent"),
         (
             vec![0x80; 256],
@@ -702,4 +723,57 @@ fn the_cose_key_inside_the_attested_data_must_be_whole() {
     spec.cose = Some(cose[..cose.len() - 1].to_vec());
     let result = verify(&spec.build(key(Algorithm::Es256)));
     assert!(result.is_err());
+}
+
+#[test]
+fn ed25519_keys_of_small_order_are_refused() {
+    let mut identity = [0u8; 32];
+    identity[0] = 1;
+    let mut spellings = vec![[0u8; 32], identity];
+    let mut high_sign = identity;
+    high_sign[31] = 0x80;
+    spellings.push(high_sign);
+    // y = p - 1 (order 2), y = p (a spelling of 0) and y = p + 1 (of 1).
+    for low in [0xec, 0xed, 0xee] {
+        let mut point = [0xff; 32];
+        point[0] = low;
+        point[31] = 0x7f;
+        spellings.push(point);
+    }
+    for point in spellings {
+        let cose = map(&[
+            (int(1), int(1)),
+            (int(3), int(-8)),
+            (int(-1), int(6)),
+            (int(-2), bytes(&point)),
+        ]);
+        let mut spec = spec();
+        spec.cose = Some(cose);
+        let result = verify(&spec.build(key(Algorithm::EdDsa)));
+        assert_eq!(
+            result.err(),
+            Some(Error::MalformedCoseKey("point of small order")),
+            "{point:02x?}"
+        );
+    }
+}
+
+#[test]
+fn points_off_the_curve_are_refused() {
+    for (alg, crv, size) in [(-7, 1, 32), (-35, 2, 48), (-36, 3, 66)] {
+        for (x, y) in [(1u8, 1u8), (1, 0), (0, 1), (7, 9)] {
+            let mut xs = vec![0u8; size];
+            let mut ys = vec![0u8; size];
+            xs[size - 1] = x;
+            ys[size - 1] = y;
+            let mut spec = spec();
+            spec.cose = Some(cose_ec(alg, crv, &xs, &ys));
+            let result = verify(&spec.build(key(Algorithm::Es256)));
+            assert_eq!(
+                result.err(),
+                Some(Error::MalformedCoseKey("point rejected")),
+                "alg {alg} ({x}, {y})"
+            );
+        }
+    }
 }
