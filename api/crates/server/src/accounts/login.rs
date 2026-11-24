@@ -182,7 +182,9 @@ pub async fn logout(State(state): State<AppState>, origin: Origin, caller: Calle
         .database()
         .write(move |tx| -> Result<(), DbError> {
             if session::revoke(tx, session, now)? {
-                let email = events::verified_email(tx, user)?;
+                // Signing out is the person's own doing: the first server
+                // sent no alert for it, and the event is written without an
+                // address to tell.
                 events::record(
                     tx,
                     user,
@@ -190,7 +192,7 @@ pub async fn logout(State(state): State<AppState>, origin: Origin, caller: Calle
                     &origin_for_event.address,
                     &origin_for_event.user_agent,
                     "logout",
-                    email.as_deref(),
+                    None,
                 )?;
             }
             Ok(())

@@ -747,3 +747,47 @@ async fn every_refusal_of_a_sign_in_does_the_work_of_a_real_check() {
     let failures: i64 = connection.query_row("SELECT count(*) FROM \"SecurityEvents\" WHERE \"Kind\" = 'login-failed'", [], |row| row.get(0)).unwrap();
     assert_eq!(failures, 6);
 }
+
+/// An account that has proved its address to the instance, as an alert needs.
+fn verify_address(server: &Server, user: &str) {
+    let connection = server.database();
+    connection
+        .execute(
+            "UPDATE \"Users\" SET \"ProviderVerifiedEmail\" = \"NormalizedEmail\" WHERE \"Id\" = ?1",
+            [user.to_uppercase()],
+        )
+        .unwrap();
+}
+
+fn alerts(server: &Server) -> i64 {
+    server
+        .database()
+        .query_row("SELECT COUNT(*) FROM \"SecurityNotifications\"", [], |row| row.get(0))
+        .unwrap()
+}
+
+#[tokio::test]
+async fn signing_in_alerts_an_account_that_has_an_address_but_signing_out_does_not() {
+    let server = Server::start().await;
+    let owner = server.found("owner").await;
+    verify_address(&server, &owner.id);
+
+    let client = server.sign_in(&owner).await;
+    // A sign-in is something to be told about; it is queued for the address.
+    assert_eq!(alerts(&server), 1);
+
+    let response = client.post_json("/api/auth/logout", &json!({})).await;
+
+    assert_eq!(response.status, 204);
+    // The sign-out is on the account's record, and nobody is mailed about it.
+    let recorded: i64 = server
+        .database()
+        .query_row(
+            "SELECT COUNT(*) FROM \"SecurityEvents\" WHERE \"Kind\" = 'session-revoked' AND \"Detail\" = 'logout'",
+            [],
+            |row| row.get(0),
+        )
+        .unwrap();
+    assert_eq!(recorded, 1);
+    assert_eq!(alerts(&server), 1);
+}
