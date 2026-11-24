@@ -114,6 +114,7 @@ pub fn add_challenge(connection: &Connection, user: Id, purpose: &str) -> Stored
         pending_identity: None,
         attempts: 0,
         max_attempts: 5,
+        expires_at: now.plus(std::time::Duration::from_secs(300)),
     }
 }
 

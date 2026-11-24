@@ -154,7 +154,7 @@ pub fn start(
 
 /// Writes a challenge of the purpose given for the account, and says what to
 /// tell the client and which cookie binds it to this browser.
-pub(crate) fn start_challenge(
+pub(super) fn start_challenge(
     tx: &Transaction,
     context: &Context<'_>,
     user: &User,
@@ -170,7 +170,7 @@ pub(crate) fn start_challenge(
     Ok((body, cookie))
 }
 
-pub(crate) fn preauth_name(https: bool) -> &'static str {
+pub(super) fn preauth_name(https: bool) -> &'static str {
     if https {
         "__Host-stellarr-preauth"
     } else {
@@ -183,7 +183,7 @@ pub fn clear_preauth_cookie(https: bool) -> String {
     cookies::delete(preauth_name(https), https)
 }
 
-pub(crate) fn preauth_cookie(https: bool, id: Id, secret: &str, expires: Timestamp) -> String {
+pub(super) fn preauth_cookie(https: bool, id: Id, secret: &str, expires: Timestamp) -> String {
     cookies::set(
         preauth_name(https),
         &security_cookies::bound_value(id, secret),
@@ -192,14 +192,26 @@ pub(crate) fn preauth_cookie(https: bool, id: Id, secret: &str, expires: Timesta
     )
 }
 
-pub(crate) struct Created {
+pub(super) struct Created {
     id: Id,
     purpose: String,
     expires_at: Timestamp,
     pending_identity: Option<Id>,
 }
 
-pub(crate) fn create_challenge(
+impl Created {
+    /// A challenge that was made earlier, to be described again.
+    pub(super) fn of(challenge: &StoredChallenge) -> Created {
+        Created {
+            id: challenge.id,
+            purpose: challenge.purpose.clone(),
+            expires_at: challenge.expires_at,
+            pending_identity: challenge.pending_identity,
+        }
+    }
+}
+
+pub(super) fn create_challenge(
     tx: &Transaction,
     user: &User,
     primary_source: &str,
@@ -284,7 +296,7 @@ struct ChallengeAccount {
     avatar_url: Option<String>,
 }
 
-pub(crate) fn confirmed_methods(connection: &Connection, user: Id) -> Result<Vec<Method>, DbError> {
+pub(super) fn confirmed_methods(connection: &Connection, user: Id) -> Result<Vec<Method>, DbError> {
     let mut statement = connection.prepare(
         "SELECT \"Id\", \"Type\", \"Name\", \"CreatedAt\", \"LastUsedAt\", \"EmailAddress\", \"ConfirmedAt\" FROM \"MfaMethods\"
          WHERE \"UserId\" = ?1 AND \"ConfirmedAt\" IS NOT NULL AND \"RevokedAt\" IS NULL ORDER BY \"CreatedAt\"",
@@ -307,7 +319,7 @@ pub(crate) fn confirmed_methods(connection: &Connection, user: Id) -> Result<Vec
     Ok(methods)
 }
 
-pub(crate) fn describe(
+pub(super) fn describe(
     connection: &Connection,
     context: &Context<'_>,
     user: &User,
@@ -409,6 +421,7 @@ pub struct StoredChallenge {
     pub pending_identity: Option<Id>,
     pub attempts: i64,
     pub max_attempts: i64,
+    pub expires_at: Timestamp,
 }
 
 /// The challenge a browser holds, from the cookie that binds it: its id and
@@ -419,7 +432,7 @@ pub fn read_preauth(headers: &axum::http::HeaderMap, https: bool) -> Option<(Id,
 
 /// Looks a challenge up for the browser that holds `cookie`, as of `now`, and
 /// says whether it can still be used. `purpose` limits it to one kind.
-pub fn validate(
+pub(super) fn validate(
     connection: &Connection,
     cookie: Option<&(Id, String)>,
     challenge_id: &str,
@@ -452,6 +465,7 @@ pub fn validate(
                         pending_identity: row.get(7)?,
                         attempts: row.get(8)?,
                         max_attempts: row.get(9)?,
+                        expires_at: row.get(10)?,
                     },
                     row.get::<_, String>(2)?,
                     row.get::<_, i64>(5)?,
@@ -511,7 +525,7 @@ pub fn validate(
 
 /// Uses a challenge up. True for the one request that did, so that two at
 /// once cannot both complete it.
-pub fn consume(tx: &Transaction, challenge: Id, now: Timestamp) -> Result<bool, DbError> {
+pub(super) fn consume(tx: &Transaction, challenge: Id, now: Timestamp) -> Result<bool, DbError> {
     let changed = tx.execute(
         "UPDATE \"AuthChallenges\" SET \"ConsumedAt\" = ?2 WHERE \"Id\" = ?1 AND \"ConsumedAt\" IS NULL AND \"ExpiresAt\" > ?2",
         params![challenge, now],
@@ -520,7 +534,7 @@ pub fn consume(tx: &Transaction, challenge: Id, now: Timestamp) -> Result<bool, 
 }
 
 /// Spends one attempt of a challenge, and closes it at its budget.
-pub fn fail_attempt(tx: &Transaction, challenge: Id, now: Timestamp) -> Result<(), DbError> {
+pub(super) fn fail_attempt(tx: &Transaction, challenge: Id, now: Timestamp) -> Result<(), DbError> {
     tx.execute(
         "UPDATE \"AuthChallenges\" SET \"Attempts\" = \"Attempts\" + 1,
              \"ConsumedAt\" = CASE WHEN \"Attempts\" + 1 >= \"MaxAttempts\" THEN ?2 ELSE \"ConsumedAt\" END

@@ -420,7 +420,7 @@ back as `Refused` with what it cost already kept.
 
 | The person | The call | In the order |
 | --- | --- | --- |
-| signs in with a password and has a second step | `flow::start` (as before) gives the challenge | `answer(Answer::Code / TrustedDevice / Passkey)`, and `send_login_code` first for a mailed code, `passkey_options` first for a passkey |
+| signs in with a password and has a second step | `flow::start` (as before) gives the challenge; `pending` and `cancel` for the page that resumes or leaves it | `answer(Answer::Code / TrustedDevice / Passkey)`, and `send_login_code` first for a mailed code, `passkey_options` first for a passkey |
 | proves a second step again in a session | `start_from_session(.., Reverification, ..)` | then `answer`, which gives a new session and leaves the old one |
 | sets a second step up (a challenge for it from sign-in, from `start_from_session(.., Enrollment, ..)` or from a recovery credential) | `start_totp` then `confirm_totp`; `send_enrollment_code` then `confirm_email`; `start_passkey` then `confirm_passkey` | each `confirm_*` finishes the sign-in |
 | signs in with a passkey alone | `passkey_sign_in_options` then `passkey_sign_in` | a rejected answer is kept as rejected |
@@ -430,14 +430,33 @@ back as `Refused` with what it cost already kept.
 | changes the password | `recovery::credentials_changed` in the route's own transaction | |
 
 `answer` and the `confirm_*` calls take a closure for the caller's own writes
-(linking the identity a sign-in was asked to link): it runs in the same
-transaction, and an error from it undoes everything, the spent code included. A
+(linking the identity a sign-in was asked to link). It runs in a savepoint of
+the same transaction: if it fails, only its writes are undone, the right proof
+stays spent and the sign-in stands, and its error comes back beside the
+`Completed` (`hook: Result<R, DbError>`) for the route to set the cookies and
+then say what went wrong. A failed link must not tell somebody who holds the
+password that a guessed code was right. Only something that forbids the
+sign-in after all (the challenge spent by another request, the instance's
+requirement no longer met) or a failure of the database undoes the proof. A
 sign-in that is completed comes back as `Completed`, with the `Set-Cookie`
 lines to send, in order: the session's, the remembered device's if one was
 made, and the one that takes the challenge's cookie away. A route reads
 neither the account nor the session itself to decide what a proof allows: a
 remembered device never makes a session fresh and is never remembered again,
 a passkey sign-in is a second step passed.
+
+The calls that change the account's security settings from a session
+(`remove_method`, `regenerate_recovery_codes`, `start_from_session`) take the
+password as `Option<&str>`, never a closure: it is hashed before the write
+transaction, and only when the session's own freshness would not do and the
+password could decide; the transaction relies on it only if the stored hash is
+still the one it was checked against. `pending` and `cancel` show and give up
+the challenge the browser holds. What a route may reach from outside `auth` is
+what only reads, `recovery::recover` and `recovery::credentials_changed`
+(called with `None` by a reset by mail, which has no session to keep), and
+`NewSession::insert` for the first-factor sign-ins; `NewSession`'s second-step
+fields, challenge creation and the code, device and recovery-code writes are
+private to `auth`.
 
 Mail is sent by `send_login_code` and `send_enrollment_code`, in the one order
 that is right (reserve and commit, send through `mail::deliver`, then mark the

@@ -1679,3 +1679,53 @@ async fn a_challenge_asked_from_a_session_dies_with_that_session() {
         1
     );
 }
+
+#[tokio::test]
+async fn a_pending_challenge_is_described_to_its_browser_and_given_up_by_it_alone() {
+    let world = World::new();
+    let user = world.user(Some("maya@example.test"));
+    world.with_app(user).await;
+    let (challenge, preauth) = world.challenge(user, PURPOSE_MFA);
+    let id = challenge.id.to_string();
+
+    let Pending::Challenge(body) = pending(&world.state, &ask(&challenge, &preauth, &id))
+        .await
+        .unwrap()
+    else {
+        panic!("a description was expected");
+    };
+    let json = serde_json::to_value(&*body).unwrap();
+    assert_eq!(json["status"], "mfa_required");
+    assert_eq!(json["challengeId"], id);
+    assert_eq!(json["methods"].as_array().unwrap().len(), 1);
+
+    // Another browser's secret neither sees it nor gives it up.
+    let stranger = (challenge.id, "not the secret".to_string());
+    assert!(matches!(
+        pending(&world.state, &ask(&challenge, &stranger, &id))
+            .await
+            .unwrap(),
+        Pending::Invalid(_)
+    ));
+    cancel(&world.state, &ask(&challenge, &stranger, &id))
+        .await
+        .unwrap();
+    assert_eq!(
+        world.count("SELECT COUNT(*) FROM \"AuthChallenges\" WHERE \"ConsumedAt\" IS NULL"),
+        1
+    );
+
+    cancel(&world.state, &ask(&challenge, &preauth, &id))
+        .await
+        .unwrap();
+    assert_eq!(
+        world.count("SELECT COUNT(*) FROM \"AuthChallenges\" WHERE \"ConsumedAt\" IS NULL"),
+        0
+    );
+    assert!(matches!(
+        pending(&world.state, &ask(&challenge, &preauth, &id))
+            .await
+            .unwrap(),
+        Pending::Invalid(_)
+    ));
+}

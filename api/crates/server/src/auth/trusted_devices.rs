@@ -146,7 +146,7 @@ pub(super) fn use_for_sign_in(
 
 /// Takes the remembered devices of the account back, all of them. How many
 /// there were.
-pub fn revoke_all(tx: &Transaction, user: Id, now: Timestamp) -> Result<usize, DbError> {
+pub(super) fn revoke_all(tx: &Transaction, user: Id, now: Timestamp) -> Result<usize, DbError> {
     Ok(tx.execute(
         "UPDATE \"TrustedDevices\" SET \"RevokedAt\" = ?2 WHERE \"UserId\" = ?1 AND \"RevokedAt\" IS NULL",
         params![user, now],
@@ -155,7 +155,12 @@ pub fn revoke_all(tx: &Transaction, user: Id, now: Timestamp) -> Result<usize, D
 
 /// Takes one remembered device of the account back. False when the account has
 /// no such device that was not already taken back.
-pub fn revoke(tx: &Transaction, user: Id, device: Id, now: Timestamp) -> Result<bool, DbError> {
+pub(super) fn revoke(
+    tx: &Transaction,
+    user: Id,
+    device: Id,
+    now: Timestamp,
+) -> Result<bool, DbError> {
     let changed = tx.execute(
         "UPDATE \"TrustedDevices\" SET \"RevokedAt\" = ?3 WHERE \"Id\" = ?1 AND \"UserId\" = ?2 AND \"RevokedAt\" IS NULL",
         params![device, user, now],

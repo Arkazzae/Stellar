@@ -113,8 +113,9 @@ pub struct NewSession {
     pub expires_at: Timestamp,
     pub primary_source: String,
     pub authenticated_at: Timestamp,
-    pub mfa_completed_at: Option<Timestamp>,
-    pub mfa_evidence: Option<String>,
+    /// Only the second step's own calls say that a session passed one.
+    pub(super) mfa_completed_at: Option<Timestamp>,
+    pub(super) mfa_evidence: Option<String>,
     pub security_version: i64,
     pub short_lived: bool,
 }
