@@ -165,7 +165,7 @@ async fn sixteen_headers_are_read_and_seventeen_are_refused() {
 
 #[tokio::test]
 async fn the_header_lines_of_a_part_may_add_up_to_just_under_sixteen_kib() {
-    // Two lines, 8 + 16293 + 24: the first server stopped at this size by one.
+    // The two header lines total 16,325 bytes.
     let lines = |pad: usize| {
         format!(
             "X-P: {}\r\nContent-Disposition: form-data; name=\"a\"",

@@ -21,10 +21,6 @@
 //! nothing) and in number ([`MAX_AT_ONCE`] connections at a time: past that a
 //! connection is closed as it would have been). It only delays a close; it
 //! never delays an answer.
-//!
-//! The first server's front did the same: it read what a refused request had
-//! still to send, a body of any size up to its ceiling, for five to seven seconds
-//! at most, and closed at once on one that declared more than the ceiling.
 
 use std::io;
 use std::net::SocketAddr;
@@ -46,7 +42,7 @@ use tracing::warn;
 pub const MAX_BYTES: usize = super::body::MAX_REQUEST_BODY_BYTES;
 
 /// The longest a connection lingers, counted from when the server let it go:
-/// more than the first server's front gave (five to seven seconds), enough for
+/// enough for
 /// a refused 128 MiB at 13 MB/s, and a bound on how long a socket is held for
 /// a client that has been refused.
 pub const MAX_TIME: Duration = Duration::from_secs(10);

@@ -19,7 +19,7 @@ use crate::state::AppState;
 use crate::values::{Id, Timestamp};
 
 /// The shortest and the longest secret that is looked at, counted in UTF-16
-/// units as the first server counted them.
+/// code units.
 const SECRET_UNITS: std::ops::RangeInclusive<usize> = 16..=512;
 
 /// The session an exchange made.

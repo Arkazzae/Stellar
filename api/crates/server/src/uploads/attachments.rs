@@ -109,7 +109,7 @@ impl Attachment {
     }
 }
 
-/// Writes the same JSON representation as an attachment duration.
+/// Serializes whole durations as JSON integers, such as `42`.
 pub(crate) fn number<S: Serializer>(value: &Option<f64>, serializer: S) -> Result<S::Ok, S::Error> {
     value.map(Seconds).serialize(serializer)
 }

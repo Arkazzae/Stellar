@@ -1,5 +1,5 @@
-//! What a channel or a section may be called, the way the first server
-//! judged it: by UTF-16 units, with its own idea of white space, letters and
+//! Channel and section names use lengths in UTF-16 code units and explicit
+//! rules for white space, letters and
 //! digits.
 
 use stellarr_unicode::{is_letter_or_digit, to_lower};
@@ -15,9 +15,7 @@ pub const MAX_HIDE_AFTER: i64 = 365 * 24;
 /// The most people a voice channel may be limited to.
 pub const MAX_USER_LIMIT: i64 = 99;
 
-/// The text without the white space at either end. What counts as white space
-/// is the same set the first server trimmed (the Unicode `White_Space`
-/// characters), which is what `str::trim` takes off.
+/// Trims characters in the Unicode `White_Space` set from both ends.
 pub fn trim(text: &str) -> &str {
     text.trim()
 }

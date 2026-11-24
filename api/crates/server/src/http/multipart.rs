@@ -6,8 +6,7 @@
 //! the caller decides where they go. What the reader itself keeps is a few
 //! kilobytes: the unread tail of the last piece, and one part's headers.
 //!
-//! The limits are the ones the first server's form reader had, and are
-//! enforced while reading:
+//! The parser enforces these limits as it reads:
 //!
 //! - the boundary is at most 128 characters;
 //! - a part has at most 16 headers, and their lines add up to less than 16 KiB;
@@ -22,7 +21,7 @@
 //! a body that ends before the closing boundary, a header without a name, a
 //! line that ends in a bare line feed. A preamble before the first boundary and
 //! an epilogue after the last are ignored, and so is whatever follows a
-//! boundary on its line, as the first server did.
+//! boundary on its line.
 
 use std::time::Duration;
 
@@ -308,8 +307,7 @@ impl Multipart {
         let content_type = headers
             .get(header::CONTENT_TYPE)
             .and_then(|value| value.to_str().ok())
-            // The first server answers a request that names no type with a bad
-            // request, where one that names another type is told it is the
+            // A missing content type is a bad request. A different type is reported as the
             // wrong kind.
             .ok_or(FormError::Malformed)?;
         let boundary = boundary_of(content_type)?;

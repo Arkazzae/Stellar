@@ -990,8 +990,7 @@ async fn a_run_comes_after_the_first_wait_and_then_at_every_interval_and_a_faile
 
 #[tokio::test]
 async fn the_delivery_rows_are_the_dispatchers_and_a_run_never_touches_them() {
-    // The first server's housekeeping did nothing to delivery rows: its
-    // dispatcher prunes the finished ones itself after thirty days, and this
+    // The dispatcher prunes finished delivery rows after thirty days, and this
     // server's does the same. A leased row is being sent, and a run that took
     // it would take it from under the sender.
     let place = Place::new(&[]);

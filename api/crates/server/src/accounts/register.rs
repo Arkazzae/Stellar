@@ -44,8 +44,7 @@ pub struct RegisterRequest {
 type Errors = Vec<(String, Vec<String>)>;
 
 fn is_username_char(c: char) -> bool {
-    // Letters and numbers by general category (L and N), as the first server's
-    // rule reads them: a combining vowel sign is neither.
+    // Letters and numbers use Unicode general categories L and N. Combining vowel signs are excluded.
     stellarr_unicode::is_letter_or_number(c) || c == '_' || c == '.' || c == '-'
 }
 
@@ -323,7 +322,7 @@ fn write(
             (server, role_is_owner, role_permissions, false, channel)
         }
     };
-    // An invite to a channel greets the newcomer there, as the first server did.
+    // A channel invite selects that channel for the welcome message.
     let welcome = welcome::create_in(tx, server, &user, now, messages, invited_to)?;
 
     // The first owner cannot skip an instance-wide requirement by
@@ -614,7 +613,6 @@ mod tests {
 
     #[test]
     fn the_hue_is_the_hash_code_of_the_guid() {
-        // Ids and hues the first server gave accounts.
         for (id, hue) in [
             ("2bb89c37-c5f0-436a-84b7-a23c5b25ee9e", 272),
             ("049083c7-a28f-4b91-b21b-2a0920dc1686", 146),
@@ -624,7 +622,7 @@ mod tests {
     }
 
     #[test]
-    fn names_are_stored_capitalized_by_the_simple_mapping_of_the_first_server() {
+    fn names_are_stored_using_simple_uppercase_mapping() {
         assert_eq!(crate::instance::names::to_upper("Maya.Lin"), "MAYA.LIN");
         assert_eq!(crate::instance::names::to_upper("zażółć"), "ZAŻÓŁĆ");
         // A letter that would become two stays as it is, and the dotless i is

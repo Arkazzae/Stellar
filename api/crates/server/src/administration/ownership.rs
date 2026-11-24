@@ -37,8 +37,8 @@ fn nobody() -> Id {
 ///
 /// An account with a second step must have passed it in this session in the
 /// last few minutes. The check comes after the person is known to be a member
-/// of the server and before any other refusal, as the first server's filter
-/// did, so that a caller who fails two checks is told of the second step.
+/// of the server and before other checks so that the second-step refusal
+/// takes precedence.
 pub async fn transfer(
     State(state): State<AppState>,
     caller: Caller,
@@ -48,8 +48,7 @@ pub async fn transfer(
     // One change of who owns a server at a time: the slot is freed and then
     // given, and the database alone cannot keep two of them from interleaving.
     fresh::require(&state, caller, None).await?;
-    // The first server looked for the body only after this check, so a body
-    // that is not there at all is told of the second step first.
+    // Reject an absent body only after the second-step check.
     let Some(Json(Object(request))) = request else {
         return Err(ApiError::bad_request());
     };

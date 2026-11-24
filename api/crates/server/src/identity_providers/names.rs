@@ -1,4 +1,4 @@
-//! What a provider is called, which the first server did in two ways.
+//! Names used to display and identify a sign-in provider.
 
 use stellarr_messages::{MessageKey, Messages, MissingValue};
 use stellarr_oidc::options::Provider;

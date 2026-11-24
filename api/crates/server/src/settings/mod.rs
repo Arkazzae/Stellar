@@ -373,7 +373,7 @@ impl MailSettings {
 /// and key pair the instance signs its requests with. The values are kept as
 /// written; whether they make a usable identity is decided where they are
 /// used, and a pair that is not usable makes push unavailable instead of
-/// stopping the start, as the first server did. The private key is never
+/// preventing startup. The private key is never
 /// printed.
 #[derive(Clone, PartialEq, Eq)]
 pub struct PushSettings {

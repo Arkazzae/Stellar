@@ -61,7 +61,7 @@ fn says_nothing(headers: &HeaderMap) -> bool {
 }
 
 /// Reads the body of a route that needs a second step passed lately, and asks
-/// for it, in the order the first server did: a body that cannot be read, or
+/// for it. A body that cannot be read, or
 /// whose values are of the wrong type or encoding, is a 400 first; then the
 /// second step; and only then a body that says nothing (empty or `null`), which
 /// is a 400 too, and whatever the values mean.

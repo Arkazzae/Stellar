@@ -69,7 +69,7 @@ pub(crate) fn plain_number<S: serde::Serializer>(value: &f64, serializer: S) -> 
     }
 }
 
-/// The id a request leaves out, which the first server read as the empty one.
+/// The nil ID used when a request omits an ID.
 pub(crate) fn nobody() -> Id {
     Id::from_bytes([0; 16])
 }

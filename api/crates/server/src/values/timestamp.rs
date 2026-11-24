@@ -261,8 +261,7 @@ impl<'de> Deserialize<'de> for Timestamp {
 mod tests {
     use super::*;
 
-    // Values as they stand in a database the first server wrote: seven
-    // digits, five digits, six digits, the three of a trigger, and none.
+    // Timestamp fixtures with seven, five, six, three and zero fractional digits.
     const STORED: [&str; 5] = [
         "2026-11-18 21:20:56.8143104",
         "2026-11-18 21:57:04.81431",

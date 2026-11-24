@@ -1,10 +1,7 @@
-//! Which characters the first server's case-blind comparison of words takes
-//! for the same one. It is a table of its own: its answers are neither those of
-//! the standard library nor of the upper-casing used for names (a long s is not
-//! an s here, and characters added to Unicode in recent years are matched).
+//! Case-insensitive word matching has its own table. It matches some newer
+//! Unicode characters and keeps long s distinct from s.
 //! Each pair is a character and the smallest of the characters equal to it;
-//! a character that is in no pair stands for itself. The table was read out of
-//! the first server's runtime for every character of the first plane.
+//! a character that is in no pair stands for itself. The table covers the Basic Multilingual Plane.
 
 const FOLDED: &[(u16, u16)] = &[
     (0x0061, 0x0041),

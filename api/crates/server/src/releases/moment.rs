@@ -9,11 +9,11 @@ const MAX_OFFSET_SECONDS: i64 = 14 * 3600;
 /// digits of it count.
 const MAX_FRACTION_DIGITS: usize = 16;
 
-/// The `publishedAt` of a manifest, as the first server's JSON reader took it:
+/// Accepted forms for a manifest's `publishedAt`:
 /// `2026-11-20`, `2026-11-20T10:11`, `2026-11-20T10:11:12`, with a fraction of
 /// up to sixteen digits, and with `Z` or an offset of `+hh` or `+hh:mm`. A
 /// moment without a zone is UTC. The first moment of year 1 stands for "no
-/// moment", as it did for the first server, and is refused.
+/// moment" and is refused.
 pub fn parse_published_at(text: &str) -> Option<Timestamp> {
     let bytes = text.as_bytes();
     let digits = |from: usize, count: usize| -> Option<u32> {
@@ -98,9 +98,8 @@ mod tests {
         parse_published_at(text).map(Timestamp::to_wire_text)
     }
 
-    // What the first server's reader did with each of these.
     #[test]
-    fn the_spellings_the_first_server_accepted_are_accepted() {
+    fn dates_times_and_supported_offsets_are_accepted() {
         for (given, expected) in [
             ("2026-11-20", "2026-11-20T00:00:00Z"),
             ("2026-11-20T10:11", "2026-11-20T10:11:00Z"),
@@ -132,7 +131,7 @@ mod tests {
     }
 
     #[test]
-    fn the_spellings_the_first_server_refused_are_refused() {
+    fn invalid_and_unsupported_timestamps_are_rejected() {
         for given in [
             "",
             "2026-11-20T10",

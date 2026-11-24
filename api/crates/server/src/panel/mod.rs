@@ -20,14 +20,13 @@
 //! async fn download(State(state): State<AppState>, FreshInstanceOwner(server): FreshInstanceOwner, ...) -> ... {}
 //! ```
 //!
-//! What a caller who fails two checks is told is the order of the checks, and
-//! it is the first server's: that the request is from somebody (401), whether
+//! Checks run in this order: whether the caller is signed in (401), whether
 //! they own the instance (403, or `cockpit-mfa-required` for the owner whose
 //! policy asks a second step of the panel), the second step passed lately
 //! (`fresh-mfa-required`), then what the route itself refuses.
 //!
-//! A route that reads a JSON body is different in one way: the first server
-//! bound the body before any of its filters ran, so a body that is not JSON
+//! Routes with JSON bodies extract the body before applying the owner gate.
+//! A body that is not JSON
 //! (400), or a request that does not say it is JSON (415), is refused the same
 //! for anybody, before the gate. Such a route is `.json_body()` and its
 //! handler calls [`bind_then_gate`] with the request instead of taking the
@@ -121,9 +120,8 @@ pub struct Bound<T> {
 
 /// Reads the JSON body of a request and then asks the gate, in that order.
 ///
-/// The first server bound a route's body before any of its filters ran, so a
-/// body that is not JSON, or has a member of the wrong kind, was a 400 for
-/// anybody, owner or not, before it was asked who was calling. An empty body or
+/// Malformed JSON or fields of the wrong type return 400 before the owner gate.
+/// An empty body or
 /// `null` bound as nothing and went on to the gate; the route itself then
 /// said what it thought of nothing. The gate's answers come after the
 /// binding: a caller who is not the owner, then one without a fresh second

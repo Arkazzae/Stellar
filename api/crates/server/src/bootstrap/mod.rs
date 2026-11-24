@@ -6,10 +6,8 @@
 //! GIFs, with the key when it does.
 //!
 //! `GET /api/bootstrap` and `GET /api/config/giphy`. Everything is read in one
-//! snapshot ([`snapshot`]); the one thing the first server wrote while
-//! answering is written afterwards, in a short transaction of its own, and
-//! only when there is something to write: a read marker for each text channel
-//! the person sees and has never opened.
+//! snapshot ([`snapshot`]). Page markers are written afterwards in a separate
+//! short transaction, only for visible text channels the person has never opened.
 
 mod giphy;
 mod snapshot;

@@ -146,7 +146,7 @@ struct Redeeming {
 }
 
 /// The shortest and the longest credential that is looked up at all, in UTF-16
-/// units as the first server counted them.
+/// code units.
 const CREDENTIAL_LENGTH: std::ops::RangeInclusive<usize> = 16..=512;
 
 /// Exchanges the credential an operator handed over, once, for the right to set

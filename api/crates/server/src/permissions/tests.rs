@@ -842,7 +842,7 @@ fn the_members_whose_view_a_change_altered_are_found_by_reading_before_and_after
 
 /// Ada as an actor with a role of her own that ranks at 10, a lower role at
 /// 20 and a destination at 21, the base role at 30, and a member on the lower
-/// role, as the first server's own tests arranged it.
+/// role.
 struct Scenario {
     world: World,
     actor: Id,

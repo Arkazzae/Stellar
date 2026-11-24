@@ -1,5 +1,4 @@
-//! The path a request is for, as the first server's front read it, before any
-//! step of the pipeline or the router looks at it.
+//! Normalises the request path before routing.
 //!
 //! Every step that decides by path (the rate limit, the client gate, the
 //! session rule, the body ceiling, the router) must decide on the same string,
@@ -18,8 +17,7 @@
 //! 4. one slash at the end is dropped: `/api/x/` is `/api/x`. Two are not.
 //!
 //! The result is written back into the target in the one encoding that decodes
-//! to it again, so the router and `Path` read the segments as the first server
-//! had them: a literal `%2F` is written `%252F` and comes out of `Path` as
+//! to it again so the router and `Path` see the same segments. A literal `%2F` is written `%252F` and comes out of `Path` as
 //! `%2F`.
 //!
 //! The query is not touched. Letter case is not either: routes are matched
@@ -52,9 +50,8 @@ impl Refusal {
     }
 }
 
-/// The outermost step: refuses a target the first server refused before
-/// routing and rewrites the others to their normalised path. Nothing it
-/// refuses is counted or logged, as the first server's front did not.
+/// Rejects invalid request targets before routing and normalises the rest.
+/// Rejections at this stage precede request logging and metrics.
 pub async fn middleware(mut request: Request, next: Next) -> Response {
     match normalise_request(&mut request) {
         Ok(()) => next.run(request).await,

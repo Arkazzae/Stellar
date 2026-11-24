@@ -92,7 +92,7 @@ async fn a_disabled_account_and_an_unknown_one_get_nothing() {
 }
 
 #[test]
-fn the_destination_keys_are_the_ones_the_first_server_wrote() {
+fn destination_keys_are_trimmed_and_uppercase() {
     assert_eq!(outbox::destination_key("  Ada@Example.test "), "ADA@EXAMPLE.TEST");
     // The dotless i is not capitalized, and the long s is.
     assert_eq!(outbox::destination_key("ı@ſ.test"), "ı@S.TEST");

@@ -2697,7 +2697,7 @@ async fn a_linked_identity_is_taken_away_when_the_account_keeps_a_way_in() {
         world.count("SELECT COUNT(*) FROM \"SecurityNotifications\""),
         1
     );
-    // As on the first server: no session ends and no version moves.
+    // No session ends and the security version stays the same.
     assert_eq!(
         world.count("SELECT SUM(\"SessionVersion\") FROM \"Users\""),
         version_before
