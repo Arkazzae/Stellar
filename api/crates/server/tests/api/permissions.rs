@@ -270,7 +270,7 @@ mod audience {
     }
 
     fn messages(heard: &[Value]) -> Vec<&Value> {
-        heard.iter().filter(|record| record["target"] == "MessageCreated").collect()
+        heard.iter().filter(|record| record["name"] == "MessageCreated").collect()
     }
 
     #[tokio::test]
@@ -317,7 +317,7 @@ mod audience {
         let refused = denied.quiet_for(Duration::from_millis(500)).await;
         let welcome = messages(&seen);
         assert_eq!(welcome.len(), 1, "{seen:?}");
-        assert_eq!(welcome[0]["arguments"][0]["channelId"], channel.to_lowercase());
+        assert_eq!(welcome[0]["data"]["channelId"], channel.to_lowercase());
         assert!(messages(&elsewhere).is_empty(), "{elsewhere:?}");
         assert!(messages(&refused).is_empty(), "{refused:?}");
         let _ = owner;

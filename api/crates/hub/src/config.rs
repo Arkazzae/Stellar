@@ -4,11 +4,11 @@ use std::time::Duration;
 /// runs with.
 #[derive(Debug, Clone)]
 pub struct Config {
-    /// The longest record a client may send, its separator included.
-    pub max_record_size: usize,
-    /// How long a client has to send its handshake after connecting.
-    pub handshake_timeout: Duration,
-    /// How often a ping record goes out, whatever else is sent.
+    /// The longest WebSocket message a client may send.
+    pub max_message_size: usize,
+    /// How long the application's connected hook has to finish.
+    pub startup_timeout: Duration,
+    /// How long a quiet connection waits before sending a JSON heartbeat.
     pub keep_alive_interval: Duration,
     /// A connection that has sent nothing at all, not even a reply to the
     /// transport's own ping, for this long is closed. `None` never closes one.
@@ -33,10 +33,6 @@ pub struct Config {
     /// How long a call that is running when its connection ends may take to
     /// finish before it is abandoned.
     pub invocation_grace: Duration,
-    /// How long a negotiated connection waits for its transport to connect.
-    pub pending_connection_ttl: Duration,
-    /// How many negotiated connections may wait at once.
-    pub max_pending_connections: usize,
     /// How many calls from one client may wait for the one being run.
     pub invocation_queue: usize,
 }
@@ -44,8 +40,8 @@ pub struct Config {
 impl Default for Config {
     fn default() -> Self {
         Self {
-            max_record_size: 160 * 1024,
-            handshake_timeout: Duration::from_secs(15),
+            max_message_size: 160 * 1024,
+            startup_timeout: Duration::from_secs(15),
             keep_alive_interval: Duration::from_secs(15),
             client_timeout: Some(Duration::from_secs(45)),
             transport_ping_interval: Duration::from_secs(20),
@@ -54,8 +50,6 @@ impl Default for Config {
             max_queued_bytes: 8 * 1024 * 1024,
             close_grace: Duration::from_secs(3),
             invocation_grace: Duration::from_secs(30),
-            pending_connection_ttl: Duration::from_secs(15),
-            max_pending_connections: 50_000,
             invocation_queue: 32,
         }
     }

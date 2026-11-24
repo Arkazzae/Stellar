@@ -54,7 +54,7 @@ export type Unsubscribe = () => void;
  * Everything the text view is allowed to do.
  *
  * Components are written against this rather than the HTTP client or the
- * SignalR hub, so a change of transport stays under `src/stellarr/adapters/`.
+ * realtime hub, so a change of transport stays under `src/stellarr/adapters/`.
  */
 export interface ChatPort {
   /** Newest last. The opaque cursor pages backwards through one snapshot. */
@@ -62,7 +62,7 @@ export interface ChatPort {
     channelId: ChannelId,
     options?: { cursor?: string; limit?: number },
   ): Promise<MessageHistoryPage>;
-  /** Durable catch-up for mutations missed while SignalR was disconnected. */
+  /** Durable catch-up for mutations missed while the hub was disconnected. */
   syncMessages(channelId: ChannelId, after: string): Promise<MessageSyncPage>;
   /** All threads in a channel, newest activity first. */
   listThreads(channelId: ChannelId): Promise<ThreadSummary[]>;

@@ -1,5 +1,5 @@
 //! A small server built from the hub crate, for `interop/interop.mjs` to
-//! drive with the real client library. It answers to the same method names
+//! drive over the Stellarr WebSocket protocol. It answers to the same method names
 //! as the application's hub for the ones the script calls, and has a few
 //! control endpoints for the things only the server side can start.
 //!
@@ -18,7 +18,7 @@ use axum::routing::any;
 use http::StatusCode;
 use serde::Serialize;
 use serde_json::{Value, json};
-use stellarr_hub::{Application, Call, CloseRequest, Config, Hub, HubError, Outbound, router};
+use stellarr_hub::{Application, Call, Config, Hub, HubError, Outbound, router};
 
 struct App;
 
@@ -124,22 +124,16 @@ async fn control(hub: Hub, request: Request) -> Response {
             hub.close_all();
             "ok".into_response()
         }
-        // The clients are told to stay away, as for a revoked session.
         "/control/abort" => {
             for id in hub.connection_ids() {
                 hub.abort(&id);
             }
             "ok".into_response()
         }
-        "/control/close-with-error" => {
-            for id in hub.connection_ids() {
-                hub.close(
-                    &id,
-                    CloseRequest {
-                        error: Some("test close".into()),
-                        allow_reconnect: true,
-                    },
-                );
+        "/control/end-session" => {
+            let user = query(&request, "user").unwrap_or("");
+            for id in hub.group_members(&format!("user:{user}")) {
+                hub.end_session(&id);
             }
             "ok".into_response()
         }

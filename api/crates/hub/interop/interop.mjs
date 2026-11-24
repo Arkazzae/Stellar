@@ -1,531 +1,225 @@
 #!/usr/bin/env node
-// Drives the real @microsoft/signalr client, and a raw WebSocket, against the
-// Rust hub (through a small test server), and checks what each answers.
+// Drives the stellarr.v1 WebSocket protocol against the example hub using Node 26.
 //
-// Run by hand. It needs Node 22 or later and the repository's node_modules
-// (the client library and its `ws` package); set STELLARR_NODE_MODULES when
-// they are not at the top of the checkout. Nothing is installed or written.
+// Run from api/ after building the example:
 //
-// Against the Rust hub (from the api/ directory):
+//   cargo build -p stellarr-hub --example interop_server
+//   node crates/hub/interop/interop.mjs --spawn target/debug/examples/interop_server
 //
-//   acargo build -p stellarr-hub --example interop_server
-//   node crates/hub/interop/interop.mjs --spawn <target dir>/debug/examples/interop_server
-//
-// or start `interop_server 5300` yourself and pass --url http://127.0.0.1:5300.
-//
-// Two clients are driven: the @microsoft/signalr library, and the web
-// client's own hub connection, which opens the WebSocket straight on the hub
-// path without negotiating. Every scenario that uses a client runs with each.
-// The own client is a TypeScript file without imports that Node runs as it is;
-// give its path with --web-client or STELLARR_WEB_HUB_CLIENT.
-//
-// Options:
-//   --clients a,b   which clients: library, web (default both)
-//   --web-client P  the path of hubConnection.ts
-//   --only a,b      run only the scenarios whose names contain one of these
-//   --skip-idle     skip the 70-second idle scenario
-//   --verbose       print what the client library logs
-//
-// The scenarios that need the server to act by itself (a restart, an abort)
-// use control endpoints of the test server, so they run against it only.
-// Exit status is 0 when every scenario that ran passed.
+// Or pass --url http://127.0.0.1:5300 for an already running example.
+// --only a,b filters scenarios by name. --skip-idle skips the heartbeat probe.
 
+import assert from "node:assert/strict";
 import { spawn } from "node:child_process";
-import { createRequire } from "node:module";
-import { existsSync } from "node:fs";
-import { dirname, resolve } from "node:path";
-import { fileURLToPath, pathToFileURL } from "node:url";
-
-const here = dirname(fileURLToPath(import.meta.url));
-const modules = [process.env.STELLARR_NODE_MODULES, resolve(here, "../../../../node_modules"), resolve(process.cwd(), "node_modules")]
-  .filter(Boolean)
-  .find((dir) => existsSync(resolve(dir, "@microsoft/signalr")));
-if (!modules) {
-  console.error("Cannot find node_modules/@microsoft/signalr; set STELLARR_NODE_MODULES.");
-  process.exit(2);
-}
-const require = createRequire(resolve(modules, "@microsoft/signalr/package.json"));
-const signalr = require("@microsoft/signalr");
-const WebSocket = require("ws");
-const { HubConnectionBuilder, HubConnectionState, LogLevel } = signalr;
-
-// ---------------------------------------------------------------- arguments
+import { createInterface } from "node:readline";
 
 const args = process.argv.slice(2);
 const flag = (name) => args.includes(name);
 const value = (name) => (args.includes(name) ? args[args.indexOf(name) + 1] : undefined);
-const verbose = flag("--verbose");
-const kinds = (value("--clients") ?? "library,web").split(",");
-const webClientPath = value("--web-client") ?? process.env.STELLARR_WEB_HUB_CLIENT;
-let WebHub = null;
-if (kinds.includes("web")) {
-  if (!webClientPath || !existsSync(webClientPath)) {
-    console.error("The web client is not found: give --web-client PATH, or --clients library.");
-    process.exit(2);
-  }
-  WebHub = (await import(pathToFileURL(resolve(webClientPath)).href)).HubConnection;
-}
-let kind = "library";
 const only = value("--only")?.split(",");
-const RS = "\x1e";
+const cookie = value("--cookie") ?? "session=ann";
+const user = /(?:^|;\s*)session=([^;]+)/.exec(cookie)?.[1];
+const otherUser = user === "bob" ? "ann" : "bob";
+const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
 let baseUrl = value("--url");
-let child = null;
+let child;
 if (value("--spawn")) {
   child = spawn(value("--spawn"), ["0"], { stdio: ["ignore", "pipe", "inherit"] });
-  baseUrl = await new Promise((ok, fail) => {
-    child.stdout.once("data", (d) => ok(`http://127.0.0.1:${/listening on (\d+)/.exec(d.toString())[1]}`));
-    child.once("exit", () => fail(new Error("the test server exited")));
+  baseUrl = await new Promise((resolve, reject) => {
+    const lines = createInterface({ input: child.stdout });
+    lines.on("line", (line) => {
+      const port = /listening on (\d+)/.exec(line)?.[1];
+      if (port) {
+        lines.close();
+        resolve(`http://127.0.0.1:${port}`);
+      }
+    });
+    child.once("error", reject);
+    child.once("exit", () => reject(new Error("The test server exited")));
   });
 }
 if (!baseUrl) {
-  console.error("Say where the server is: --url URL or --spawn PATH. See the header of this file.");
+  console.error("Specify --url URL or --spawn PATH. See the header of this file.");
   process.exit(2);
 }
-const cookie = value("--cookie") ?? "session=ann";
-const headers = { Cookie: cookie, "X-Stellarr-Client": "web" };
 const hubUrl = `${baseUrl}/hubs/app`;
-const wsUrl = (suffix = "") => `${baseUrl.replace(/^http/, "ws")}/hubs/app${suffix}`;
+const sockets = new Set();
 
-// ------------------------------------------------------------------ helpers
-
-const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
-const until = async (what, check, ms = 8000) => {
-  const end = Date.now() + ms;
+async function until(what, check, limitMs = 8_000) {
+  const end = Date.now() + limitMs;
   while (Date.now() < end) {
-    if (await check()) return;
-    await sleep(25);
+    const result = await check();
+    if (result) return result;
+    await sleep(20);
   }
-  throw new Error(`timed out waiting for ${what}`);
-};
-const control = (path) => fetch(`${baseUrl}/control/${path}`, { method: "POST" }).then((r) => r.text());
-
-const quietLogger = { log: (level, message) => verbose && console.log(`    [signalr ${LogLevel[level]}] ${message}`) };
-
-/**
- * A client, with the events it receives collected, behind one interface:
- * start, stop, invoke, send (library only), state, connectionId (which
- * changes with each new connection), drop() to cut the socket without a
- * word, and sniff(fn) to see what is written to it.
- */
-function client({ retry = [0, 100, 100, 100, 100, 100] } = {}) {
-  const events = [];
-  const log = [];
-  let connection;
-  if (kind === "web") {
-    let generation = 1;
-    let sniffer = null;
-    const sockets = [];
-    const hub = new WebHub({
-      url: `${hubUrl}?serverId=abc`,
-      retryDelay: (n) => retry[Math.min(n, retry.length - 1)],
-      logger: { log: (level, message) => verbose && console.log(`    [web ${level}] ${message}`) },
-      socket: (url) => {
-        const ws = new WebSocket(url, { headers });
-        const send = ws.send.bind(ws);
-        ws.send = (data, ...rest) => {
-          sniffer?.(String(data));
-          return send(data, ...rest);
-        };
-        sockets.push(ws);
-        return ws;
-      },
-    });
-    hub.on("PresenceChanged", (p) => events.push(["PresenceChanged", p]));
-    hub.on("Said", (t) => events.push(["Said", t]));
-    hub.onreconnecting((e) => log.push(["reconnecting", e?.message]));
-    hub.onreconnected(() => {
-      generation++;
-      log.push(["reconnected", generation]);
-    });
-    hub.onclose((e) => log.push(["closed", e?.message]));
-    connection = {
-      start: () => hub.start(),
-      stop: () => hub.stop(),
-      invoke: (...a) => hub.invoke(...a),
-      get state() {
-        return hub.state;
-      },
-      get connectionId() {
-        return generation;
-      },
-      drop: () => sockets.at(-1).terminate(),
-      sniff: (fn) => {
-        sniffer = fn;
-        return () => (sniffer = null);
-      },
-    };
-  } else {
-    const lib = new HubConnectionBuilder()
-      .withUrl(hubUrl, { headers, withCredentials: true })
-      .withAutomaticReconnect(retry)
-      .configureLogging(quietLogger)
-      .build();
-    lib.on("PresenceChanged", (p) => events.push(["PresenceChanged", p]));
-    lib.on("Said", (t) => events.push(["Said", t]));
-    lib.onreconnecting((e) => log.push(["reconnecting", e?.message]));
-    lib.onreconnected((id) => log.push(["reconnected", id]));
-    lib.onclose((e) => log.push(["closed", e?.message]));
-    connection = {
-      start: () => lib.start(),
-      stop: () => lib.stop(),
-      invoke: (...a) => lib.invoke(...a),
-      send: (...a) => lib.send(...a),
-      get state() {
-        return lib.state;
-      },
-      get connectionId() {
-        return lib.connectionId;
-      },
-      drop: () => lib.connection.transport._webSocket.terminate(),
-      sniff: (fn) => {
-        const original = lib.connection.send.bind(lib.connection);
-        lib.connection.send = (data) => {
-          fn(String(data));
-          return original(data);
-        };
-        return () => (lib.connection.send = original);
-      },
-    };
-  }
-  return { connection, events, log };
+  throw new Error(`Timed out waiting for ${what}`);
 }
 
-const rejection = async (promise) => {
-  try {
-    await promise;
-  } catch (error) {
-    return error.message;
-  }
-  throw new Error("expected the call to fail");
-};
-
-function assert(condition, message) {
-  if (!condition) throw new Error(message);
-}
-function equal(actual, expected, what) {
-  const a = JSON.stringify(actual);
-  const b = JSON.stringify(expected);
-  if (a !== b) throw new Error(`${what}\n      got      ${a}\n      expected ${b}`);
+async function control(path) {
+  const response = await fetch(`${baseUrl}/control/${path}`, { method: "POST" });
+  assert(response.ok, `Control request ${path} returned ${response.status}`);
+  return response.text();
 }
 
-/** Talks to the hub without the client library: raw frames and records. */
-async function raw({ handshake = `{"protocol":"json","version":1}${RS}`, send = [], window = 500, direct = false } = {}) {
-  const query = direct ? "?serverId=abc" : `?id=${(await (await fetch(`${hubUrl}/negotiate?negotiateVersion=1`, { method: "POST", headers })).json()).connectionToken}`;
-  const ws = new WebSocket(wsUrl(query), { headers });
+const call = (id, method, ...args) => ({ type: "call", id, method, args });
+const send = (method, ...args) => ({ type: "send", method, args });
+const result = (id, value) => ({ type: "result", id, value });
+const event = (name, data) => ({ type: "event", name, data });
+
+async function connect(sessionCookie = cookie, query = "") {
+  const url = `${hubUrl.replace(/^http/, "ws")}${query}`;
+  const socket = new WebSocket(url, { protocols: ["stellarr.v1"], headers: { Cookie: sessionCookie } });
+  sockets.add(socket);
   const frames = [];
-  let closed = null;
-  ws.on("message", (d) => frames.push(d.toString()));
-  ws.on("close", (code) => (closed = code));
-  ws.on("error", () => {});
-  await new Promise((ok, fail) => ws.once("open", ok).once("error", fail));
-  if (handshake !== null) ws.send(handshake);
-  await sleep(150);
-  for (const item of send) {
-    ws.send(item);
-    await sleep(60);
-  }
-  await sleep(window);
-  const open = ws.readyState === 1;
-  if (open) ws.close();
-  // The records, whichever way they were packed into frames, without the
-  // server's own events, which differ by design.
-  const all = frames.join("").split(RS).filter(Boolean);
-  const pings = all.filter((r) => r === '{"type":6}').length;
-  const records = all
-    .filter((r) => !/"target":"(PresenceChanged|Hello)"/.test(r) && r !== '{"type":6}');
-  return { records, pings, closed: open ? null : closed };
-}
-const call = (id, target, ...a) => JSON.stringify({ type: 1, invocationId: id, target, arguments: a }) + RS;
+  let closeCode;
+  socket.addEventListener("close", ({ code }) => { closeCode = code; }, { once: true });
+  socket.addEventListener("message", ({ data }) => frames.push(data));
+  const client = {
+    closed: () => until("the WebSocket close", () => closeCode),
+    send: (frame) => socket.send(JSON.stringify(frame)),
+    sendRaw: (data) => socket.send(data),
+    close: () => socket.close(1000),
+    async take(limitMs) {
+      return JSON.parse(await until("a WebSocket message", () => frames.shift(), limitMs));
+    },
+  };
 
-// --------------------------------------------------------------- scenarios
-
-const scenarios = [];
-const scenario = (name, run, { slow = false } = {}) => scenarios.push({ name, run, slow });
-
-scenario("negotiate: version 1 answer", async () => {
-  const response = await fetch(`${hubUrl}/negotiate?negotiateVersion=1`, { method: "POST", headers });
-  assert(response.status === 200, `status ${response.status}`);
-  const answer = await response.json();
-  equal(answer.negotiateVersion, 1, "negotiateVersion");
-  assert(answer.connectionId.length === 22 && answer.connectionToken.length === 22, "ids are 22 characters");
-  assert(answer.connectionId !== answer.connectionToken, "id and token differ");
-  const ws = answer.availableTransports.find((t) => t.transport === "WebSockets");
-  equal(ws, { transport: "WebSockets", transferFormats: ["Text", "Binary"] }, "the WebSockets entry");
-  console.log(`      transports offered: ${answer.availableTransports.map((t) => t.transport).join(", ")}`);
-});
-
-scenario("negotiate: refusals", async () => {
-  equal((await fetch(`${hubUrl}/negotiate?negotiateVersion=1`, { method: "POST" })).status, 401, "no cookie");
-  equal((await fetch(`${hubUrl}/negotiate?negotiateVersion=1`, { headers })).status, 405, "GET");
-  const v0 = await (await fetch(`${hubUrl}/negotiate`, { method: "POST", headers })).json();
-  equal(v0.negotiateVersion, 0, "no version asks for 0");
-  assert(!("connectionToken" in v0), "version 0 has no token");
-  const bad = await (await fetch(`${hubUrl}/negotiate?negotiateVersion=x`, { method: "POST", headers })).json();
-  equal(bad, { error: "The client requested a non-integer protocol version." }, "a version that is not a number");
-  equal((await fetch(`${hubUrl}`, { headers })).status, 400, "a plain GET with no id");
-  equal((await fetch(`${hubUrl}?id=nope`, { headers })).status, 404, "an unknown id");
-});
-
-scenario("connect, call with a result, call that fails, send without a result", async () => {
-  const { connection, events } = client();
-  await connection.start();
-  equal(connection.state, HubConnectionState.Connected, "state");
-  const clock = await connection.invoke("GetRtcClock");
-  assert(Math.abs(clock - Date.now()) < 60_000, `clock ${clock}`);
-  equal(await connection.invoke("SetPresence", "online"), null, "a method without a result answers null");
-  equal(
-    await rejection(connection.invoke("SetPresence", "bogus")),
-    "An unexpected error occurred invoking 'SetPresence' on the server. HubException: Unknown presence.",
-    "a hub exception reaches the caller with its text",
-  );
-  equal(
-    await rejection(connection.invoke("NoSuchMethod")),
-    "Failed to invoke 'NoSuchMethod' due to an error on the server. HubException: Method does not exist.",
-    "an unknown method",
-  );
-  equal(
-    await rejection(connection.invoke("SetPresence")),
-    "Failed to invoke 'SetPresence' due to an error on the server.",
-    "missing arguments are not explained",
-  );
-  equal(
-    await rejection(connection.invoke("SetPresence", 5)),
-    "Failed to invoke 'SetPresence' due to an error on the server.",
-    "an argument of the wrong kind",
-  );
-  events.length = 0;
-  if (connection.send) {
-    await connection.send("SetPresence", "idle");
-    await until("the event a send caused", () => events.some(([n, p]) => n === "PresenceChanged" && p.presence === "idle"));
-    await connection.send("SetPresence", "bogus"); // fails on the server; the client is never told
-    await sleep(200);
-    equal(connection.state, HubConnectionState.Connected, "a failed send leaves the connection alone");
-  }
-  await connection.stop();
-  equal(connection.state, HubConnectionState.Disconnected, "state after stop");
-});
-
-scenario("events sent to a group reach its members", async () => {
-  const a = client();
-  const b = client();
-  await Promise.all([a.connection.start(), b.connection.start()]);
-  a.events.length = b.events.length = 0;
-  // The account's other tab hears about a change one tab makes.
-  await a.connection.invoke("SetPresence", "dnd");
-  await until("the other tab's event", () => b.events.some(([, p]) => p.presence === "dnd"));
-  await until("the caller's own event", () => a.events.some(([, p]) => p.presence === "dnd"));
-  await a.connection.invoke("SetPresence", "online");
-  await Promise.all([a.connection.stop(), b.connection.stop()]);
-});
-
-scenario("events sent by the server to a group", async () => {
-  const a = client();
-  await a.connection.start();
-  const sent = JSON.parse(await control("send?group=user:ann&text=hello-group"));
-  assert(sent.sent >= 1, "the group had a member");
-  await until("the event", () => a.events.some(([n, t]) => n === "Said" && t === "hello-group"));
-  await a.connection.stop();
-});
-
-scenario("idle for 70 seconds with only the keep-alive between us", async () => {
-  const { connection, log } = client();
-  await connection.start();
-  const id = connection.connectionId;
-  for (let waited = 0; waited < 70; waited += 10) {
-    await sleep(10_000);
-    equal(connection.state, HubConnectionState.Connected, `state after ${waited + 10} s`);
-  }
-  equal(connection.connectionId, id, "still the same connection");
-  equal(log, [], "no reconnect, no close");
-  assert(Number.isFinite(await connection.invoke("GetRtcClock")), "still answers");
-  await connection.stop();
-}, { slow: true });
-
-/** The length of the record the client library writes for a call, found by looking. */
-async function recordLength(connection, arg) {
-  let length = 0;
-  const stop = connection.sniff((data) => {
-    if (data.includes('"type":1')) length = data.length;
-  });
-  await rejection(connection.invoke("SetPresence", arg));
-  stop();
-  return length;
+  assert.deepEqual(await client.take(), { type: "ready" });
+  assert.equal(socket.protocol, "stellarr.v1");
+  assert.deepEqual(await client.take(), event("PresenceChanged", {
+    userId: /(?:^|;\s*)session=([^;]+)/.exec(sessionCookie)?.[1],
+    presence: "online",
+  }));
+  return client;
 }
 
-const LIMIT = 160 * 1024;
-scenario("a record just under the limit is served, one byte over closes the connection and the client starts over", async () => {
-  const { connection, log } = client();
-  await connection.start();
-  const base = await recordLength(connection, "");
-  const first = connection.connectionId;
-  const fits = "x".repeat(LIMIT - base);
-  equal(await recordLength(connection, fits), LIMIT, "the record is exactly at the limit");
-  equal(connection.state, HubConnectionState.Connected, "still connected after the largest allowed record");
-  // One more byte.
-  const pending = rejection(connection.invoke("SetPresence", "x".repeat(LIMIT - base + 1)));
-  const why = await pending;
-  console.log(`      the pending call failed with: ${why}`);
-  await until("the automatic reconnect", () => log.some(([n]) => n === "reconnected"));
-  equal(log.map(([n]) => n), ["reconnecting", "reconnected"], "the client reconnected once");
-  assert(log[0][1]?.includes("Connection closed with an error."), `the close carried the error: ${log[0][1]}`);
-  assert(connection.connectionId !== first, "a new connection");
-  assert(Number.isFinite(await connection.invoke("GetRtcClock")), "the new connection works");
-  await connection.stop();
-});
-
-scenario("a close started by the server is followed by the client's reconnect", async () => {
-  const { connection, log } = client();
-  await connection.start();
-  const first = connection.connectionId;
-  await control("restart");
-  await until("the reconnect", () => log.some(([n]) => n === "reconnected"));
-  assert(connection.connectionId !== first, "a new connection");
-  assert(Number.isFinite(await connection.invoke("GetRtcClock")), "the new connection works");
-  await connection.stop();
-});
-
-scenario("a close with an error is reported to the client, which reconnects", async () => {
-  const { connection, log } = client();
-  await connection.start();
-  await control("close-with-error");
-  await until("the reconnect", () => log.some(([n]) => n === "reconnected"));
-  assert(String(log[0][1]).includes("test close"), `the error reached the client: ${log[0][1]}`);
-  await connection.stop();
-});
-
-scenario("an abort by the server is final: the client does not come back", async () => {
-  const { connection, log } = client();
-  await connection.start();
-  await control("abort");
-  await until("the close", () => connection.state === HubConnectionState.Disconnected);
-  await sleep(600);
-  equal(log.map(([n]) => n), ["closed"], "closed once, no reconnect");
-  equal(await (await fetch(`${baseUrl}/control/count`, { method: "POST" })).text(), "0", "the server has no connections left");
-});
-
-scenario("an abrupt drop of the connection is followed by a reconnect", async () => {
-  const { connection, log } = client();
-  await connection.start();
-  const first = connection.connectionId;
-  connection.drop();
-  await until("the reconnect", () => log.some(([n]) => n === "reconnected"));
-  equal(log.map(([n]) => n), ["reconnecting", "reconnected"], "reconnecting, then reconnected");
-  assert(connection.connectionId !== first, "a new connection");
-  assert(Number.isFinite(await connection.invoke("GetRtcClock")), "the new connection works");
-  await connection.stop();
-});
-
-scenario("stopping the client leaves nothing behind on the server", async () => {
-  await until("the server to be quiet", async () => Number(await control("count")) === 0);
-  const before = 0;
-  const { connection } = client();
-  await connection.start();
-  equal(Number(await control("count")), before + 1, "one more connection");
-  await connection.stop();
-  await until("the connection to be forgotten", async () => Number(await control("count")) === before);
-});
-
-// A record at a time, what the hub answers to things the client library
-// never sends but other clients might. The expected answers are what the
-// hub is meant to give.
-const GENERAL = `{"error":"An unexpected error occurred during connection handshake."}`;
-const CLOSED = `{"type":7,"error":"Connection closed with an error.","allowReconnect":true}`;
-const completion = (id, error) => `{"type":3,"invocationId":"${id}","error":${JSON.stringify(error)}}`;
-const noMethod = (t) => `Failed to invoke '${t}' due to an error on the server. HubException: Method does not exist.`;
-const probes = [
-  ["handshake: messagepack", { handshake: `{"protocol":"messagepack","version":1}${RS}` }, [`{"error":"The protocol 'messagepack' is not supported."}`], 1000],
-  ["handshake: fractional version", { handshake: `{"protocol":"json","version":1.5}${RS}` }, [GENERAL], 1000],
-  ["handshake: not JSON", { handshake: `garbage${RS}` }, [GENERAL], 1000],
-  ["handshake: no protocol", { handshake: `{"version":1}${RS}` }, [GENERAL], 1000],
-  ["handshake: no version", { handshake: `{"protocol":"json"}${RS}` }, [GENERAL], 1000],
-  ["handshake: empty", { handshake: RS }, [GENERAL], 1000],
-  ["handshake: version 0 and 2 and any case are fine", { handshake: `{"protocol":"JSON","version":2}${RS}` }, ["{}"], null],
-  ["handshake and a call in one message", { handshake: `{"protocol":"json","version":1}${RS}` + call("1", "Nope") }, ["{}", completion("1", noMethod("Nope"))], null],
-  ["unknown method, in any spelling", { send: [call("1", "Nope"), call("2", "OnConnectedAsync"), call("3", "")] }, [completion("1", noMethod("Nope")), completion("2", noMethod("OnConnectedAsync")), completion("3", noMethod(""))], null],
-  ["method names ignore case", { send: [call("1", "setpresence", "online")] }, [`{"type":3,"invocationId":"1","result":null}`], null],
-  ["two calls with the same id are both answered", { send: [call("1", "SetPresence", "online") + call("1", "SetPresence", "online")] }, [`{"type":3,"invocationId":"1","result":null}`, `{"type":3,"invocationId":"1","result":null}`], null],
-  ["calls with no id or an empty id get no answer", { send: [JSON.stringify({ type: 1, target: "SetPresence", arguments: ["bogus"] }) + RS, JSON.stringify({ type: 1, invocationId: "", target: "Nope", arguments: [] }) + RS] }, [], null],
-  ["a stream invocation of a plain method", { send: [JSON.stringify({ type: 4, invocationId: "1", target: "GetRtcClock", arguments: [], streamIds: [] }) + RS] }, [completion("1", "The client attempted to invoke the non-streaming 'GetRtcClock' method with a streaming invocation.")], null],
-  ["a stream invocation of an unknown method", { send: [JSON.stringify({ type: 4, invocationId: "1", target: "Nope", arguments: [], streamIds: [] }) + RS] }, [completion("1", noMethod("Nope"))], null],
-  ["upload streams the method does not take", { send: [JSON.stringify({ type: 1, invocationId: "1", target: "SetPresence", arguments: ["online"], streamIds: ["a"] }) + RS] }, [completion("1", "An unexpected error occurred invoking 'SetPresence' on the server. HubException: Client sent 1 stream(s), Hub method expects 0.")], null],
-  ["messages that are skipped", { send: [{ type: 6 }, { type: 5, invocationId: "1" }, { type: 8, sequenceId: 1 }, { type: 9, sequenceId: 1 }, { type: 2, invocationId: "1", item: 1 }, { type: 3, invocationId: "1", result: 1 }].map((m) => JSON.stringify(m) + RS).concat([call("9", "SetPresence", "online")]) }, [`{"type":3,"invocationId":"9","result":null}`], null],
-  ["unknown fields are skipped", { send: [JSON.stringify({ type: 1, invocationId: "1", target: "SetPresence", arguments: ["online"], zzz: { a: [1] } }) + RS] }, [`{"type":3,"invocationId":"1","result":null}`], null],
-  ["the client closes", { send: [JSON.stringify({ type: 7 }) + RS] }, [`{"type":7}`], 1000],
-  ["a record that is not JSON", { send: [`{not json${RS}`] }, [CLOSED], 1000],
-  ["a record that is not an object", { send: [`[1,2]${RS}`] }, [CLOSED], 1000],
-  ["an empty record", { send: [RS] }, [CLOSED], 1000],
-  ["a record with no type", { send: [JSON.stringify({ invocationId: "1", target: "Nope", arguments: [] }) + RS] }, [CLOSED], 1000],
-  ["an invocation with no arguments", { send: [JSON.stringify({ type: 1, invocationId: "1", target: "Nope" }) + RS] }, [CLOSED], 1000],
-  ["an invocation with a null target", { send: [JSON.stringify({ type: 1, invocationId: "1", target: null, arguments: [] }) + RS] }, [CLOSED], 1000],
-  ["an invocation id that is a number", { send: [JSON.stringify({ type: 1, invocationId: 5, target: "Nope", arguments: [] }) + RS] }, [CLOSED], 1000],
-  ["an invocation id that is null", { send: [JSON.stringify({ type: 1, invocationId: null, target: "Nope", arguments: [] }) + RS] }, [CLOSED], 1000],
-  ["arguments that are an object", { send: [JSON.stringify({ type: 1, invocationId: "1", target: "SetPresence", arguments: {} }) + RS] }, [CLOSED], 1000],
-  ["a known message missing its parts", { send: [JSON.stringify({ type: 2, invocationId: "1" }) + RS] }, [CLOSED], 1000],
-  ["a completion with a result and an error", { send: [JSON.stringify({ type: 3, invocationId: "1", result: 1, error: "x" }) + RS] }, [CLOSED], 1000],
-  ["a cancel whose id is a number", { send: [JSON.stringify({ type: 5, invocationId: 1 }) + RS] }, [CLOSED], 1000],
-  ["a sequence message with no sequence", { send: [JSON.stringify({ type: 9 }) + RS] }, [CLOSED], 1000],
-  ["stream ids that are null", { send: [JSON.stringify({ type: 1, invocationId: "1", target: "GetRtcClock", arguments: [], streamIds: null }) + RS] }, [CLOSED], 1000],
-  ["headers are skipped when they are strings", { send: [JSON.stringify({ type: 1, invocationId: "1", target: "SetPresence", arguments: ["online"], headers: { a: "b" } }) + RS] }, [`{"type":3,"invocationId":"1","result":null}`], null],
-  ["an unknown message type is not an error", { send: [JSON.stringify({ type: 99 }) + RS] }, [], null],
-  ["a type that is not a number", { send: [JSON.stringify({ type: "6" }) + RS] }, [CLOSED], 1000],
-  ["a record without its separator waits", { send: [`{"type":6}`] }, [], null],
-  ["a binary message is read like text", { send: [Buffer.from(call("1", "SetPresence", "online"))] }, [`{"type":3,"invocationId":"1","result":null}`], null],
-  ["a record of 163840 bytes is served", { send: [(() => { const b = call("1", "SetPresence", "").length; return call("1", "SetPresence", "x".repeat(LIMIT - b)); })()], window: 800 }, [completion("1", "An unexpected error occurred invoking 'SetPresence' on the server. HubException: Unknown presence.")], null],
-  ["a record of 163841 bytes is refused", { send: [(() => { const b = call("1", "SetPresence", "").length; return call("1", "SetPresence", "x".repeat(LIMIT - b + 1)); })()], window: 800 }, [CLOSED], 1000],
-  ["163840 bytes with no separator still wait", { send: ["x".repeat(LIMIT)], window: 800 }, [], null],
-  ["163841 bytes with no separator are refused", { send: ["x".repeat(LIMIT + 1)], window: 800 }, [CLOSED], 1000],
-  ["a handshake over the limit", { handshake: `{"protocol":"json","version":1,"pad":"${"x".repeat(200_000)}"}${RS}`, window: 800 }, [`{"error":"Handshake was canceled."}`], 1000],
+const cases = [
+  ["ready, clock, and a group event", async () => {
+    const client = await connect(cookie, "?serverId=abc");
+    client.send(call(1, "GetRtcClock"));
+    const clock = await client.take();
+    assert.deepEqual(clock, result(1, clock.value));
+    assert.equal(typeof clock.value, "number");
+    assert(Math.abs(clock.value - Date.now()) < 60_000);
+    assert.deepEqual(JSON.parse(await control("send?text=hello-group")), { sent: 1 });
+    assert.deepEqual(await client.take(), event("Said", "hello-group"));
+  }],
+  ["call and send dispatch order and error envelopes", async () => {
+    const client = await connect();
+    client.send(call(1, "echo", "naïve"));
+    client.send(send("setpresence", "idle"));
+    client.send(call(2, "Nope"));
+    client.send(call(3, "JoinChannel"));
+    client.send(call(4, "JoinChannel", "invalid"));
+    client.send(call(Number.MAX_SAFE_INTEGER, "echo", { value: null }));
+    for (const expected of [
+      result(1, "naïve"),
+      event("PresenceChanged", { userId: user, presence: "idle" }),
+      { type: "error", id: 2, code: "unknown_method" },
+      { type: "error", id: 3, code: "invalid_arguments" },
+      { type: "error", id: 4, code: "visible", message: "Invalid channelId." },
+      result(Number.MAX_SAFE_INTEGER, { value: null }),
+    ]) {
+      assert.deepEqual(await client.take(), expected);
+    }
+  }],
+  ["presence reaches both account tabs, and a group reaches everyone", async () => {
+    const first = await connect();
+    const second = await connect();
+    const outsider = await connect(`session=${otherUser}`);
+    first.send(call(1, "SetPresence", "dnd"));
+    const presence = event("PresenceChanged", { userId: user, presence: "dnd" });
+    assert.deepEqual(await first.take(), presence);
+    assert.deepEqual(await first.take(), result(1, null));
+    assert.deepEqual(await second.take(), presence);
+    assert.deepEqual(JSON.parse(await control("send?text=all-tabs")), { sent: 3 });
+    for (const tab of [first, second, outsider]) {
+      assert.deepEqual(await tab.take(), event("Said", "all-tabs"));
+    }
+  }],
+  ["restart closes both tabs and a fresh tab receives only fresh traffic", async () => {
+    const first = await connect();
+    const second = await connect();
+    assert.equal(await control("restart"), "ok");
+    assert.deepEqual(await Promise.all([first.closed(), second.closed()]), [1012, 1012]);
+    await until("closed connections to be removed", async () => (await control("count")) === "0");
+    assert.deepEqual(JSON.parse(await control("send?text=missed")), { sent: 0 });
+    const fresh = await connect();
+    fresh.send(call(1, "echo", "fresh"));
+    assert.deepEqual(await fresh.take(), result(1, "fresh"));
+  }],
+  ["session revocation closes only the affected account tabs", async () => {
+    const first = await connect();
+    const second = await connect();
+    const outsider = await connect(`session=${otherUser}`);
+    assert.equal(await control(`end-session?user=${encodeURIComponent(user)}`), "ok");
+    assert.deepEqual(await Promise.all([first.closed(), second.closed()]), [4401, 4401]);
+    outsider.send(call(1, "echo", "still connected"));
+    assert.deepEqual(await outsider.take(), result(1, "still connected"));
+  }],
+  ["peer and server close handshakes", async () => {
+    const first = await connect();
+    first.close();
+    assert.equal(await first.closed(), 1000);
+    const second = await connect();
+    assert.equal(await control("abort"), "ok");
+    assert.equal(await second.closed(), 1000);
+  }],
+  ["malformed messages close with a protocol error", async () => {
+    for (const data of [
+      "{not JSON",
+      JSON.stringify([call(1, "echo")]),
+      JSON.stringify(call(0, "echo")),
+      JSON.stringify(call(Number.MAX_SAFE_INTEGER + 1, "echo")),
+      JSON.stringify(send("echo")) + JSON.stringify(send("echo")),
+      Buffer.from(JSON.stringify(send("echo"))),
+    ]) {
+      const client = await connect();
+      client.sendRaw(data);
+      assert.equal(await client.closed(), 1002);
+    }
+  }],
+  ["maximum message size counts all UTF-8 bytes", async () => {
+    const client = await connect();
+    const limit = 160 * 1024;
+    const emptySize = Buffer.byteLength(JSON.stringify(call(1, "SetPresence", "")));
+    const room = limit - emptySize;
+    const padding = "ż".repeat(Math.floor(room / 2)) + "x".repeat(room % 2);
+    client.send(call(1, "SetPresence", padding));
+    assert.deepEqual(await client.take(), {
+      type: "error", id: 1, code: "visible", message: "Unknown presence.",
+    });
+    client.send(call(1, "SetPresence", padding + "x"));
+    assert.equal(await client.closed(), 1009);
+  }],
+  ["a quiet client receives an idle heartbeat", async () => {
+    const client = await connect();
+    assert.deepEqual(await client.take(20_000), { type: "ping" });
+  }, { slow: true }],
 ];
-for (const [name, options, expected, closed] of probes) {
-  scenario(`raw: ${name}`, async () => {
-    const got = await raw(options);
-    // Calls that follow the handshake show the handshake's `{}` first.
-    const records = got.records[0] === "{}" && !expected.includes("{}") ? got.records.slice(1) : got.records;
-    equal(records, expected, "records");
-    equal(got.closed, closed, "close code (null when the connection stays open)");
-  });
-}
-
-scenario("raw: a WebSocket opened straight on the hub path, no negotiation, with a query string", async () => {
-  const got = await raw({ direct: true, send: [call("1", "SetPresence", "online"), call("2", "GetRtcClock")] });
-  equal(got.records.slice(0, 2), ["{}", `{"type":3,"invocationId":"1","result":null}`], "records");
-  equal(got.closed, null, "stays open");
-});
-
-scenario("raw: the server's ping beat", async () => {
-  const got = await raw({ window: 16_500 });
-  equal(got.pings, 1, "one ping record in 16.5 seconds");
-}, { slow: true });
-
-scenario("raw: a handshake that never comes is cancelled after 15 seconds", async () => {
-  const got = await raw({ handshake: null, window: 16_000 });
-  equal(got.records, [`{"error":"Handshake was canceled."}`], "records");
-  equal(got.closed, 1000, "close code");
-}, { slow: true });
-
-// --------------------------------------------------------------------- run
 
 let failed = 0;
 let ran = 0;
-for (const s of scenarios) {
-  if (only && !only.some((o) => s.name.includes(o))) continue;
-  if (s.slow && flag("--skip-idle")) continue;
-  const usesClient = s.run.toString().includes("client(");
-  for (const which of usesClient ? kinds : [null]) {
-    kind = which ?? "library";
-    const label = which ? `${s.name} [${which}]` : s.name;
+try {
+  for (const [name, run, { slow = false } = {}] of cases) {
+    if (only && !only.some((term) => name.includes(term))) continue;
+    if (slow && flag("--skip-idle")) continue;
     ran++;
-    const started = Date.now();
     try {
-      await s.run();
-      console.log(`PASS  ${label} (${((Date.now() - started) / 1000).toFixed(1)} s)`);
+      await run();
+      console.log(`PASS  ${name}`);
     } catch (error) {
       failed++;
-      console.log(`FAIL  ${label}\n      ${error.message}`);
+      console.error(`FAIL  ${name}\n      ${error.message}`);
+    } finally {
+      for (const socket of sockets) socket.close();
+      sockets.clear();
+      await until("scenario connections to be removed", async () => (await control("count")) === "0");
     }
   }
+  console.log(`\n${ran - failed} of ${ran} scenarios passed against the Rust hub.`);
+  process.exitCode = failed || ran === 0 ? 1 : 0;
+} finally {
+  child?.kill();
 }
-console.log(`\n${ran - failed} of ${ran} scenarios passed against the Rust hub.`);
-child?.kill();
-process.exit(failed ? 1 : 0);

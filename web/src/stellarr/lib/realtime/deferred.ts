@@ -11,7 +11,7 @@ interface Subscription {
 
 /**
  * A realtime client whose implementation is fetched on first use. The sign-in
- * pages build the runtime but never open the socket, so the SignalR library
+ * pages build the runtime but never open the socket, so the realtime client
  * stays out of the files they wait for and arrives with the signed-in app.
  *
  * Everything the session does before the implementation is there is kept and
@@ -70,6 +70,10 @@ export class DeferredRealtimeClient implements RealtimeClient {
 
   getStatus(): RealtimeStatus {
     return this.client?.getStatus() ?? (this.failed ? "disconnected" : "idle");
+  }
+
+  hasSessionEnded(): boolean {
+    return this.client?.hasSessionEnded?.() ?? false;
   }
 
   subscribeStatus(listener: () => void): () => void {

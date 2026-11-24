@@ -10,7 +10,7 @@ import type { ChannelReadStore } from "./readState";
 const NOTHING_TO_STOP = (): void => {};
 
 /**
- * `ChatPort` over the HTTP API and the SignalR hub.
+ * `ChatPort` over the HTTP API and the realtime hub.
  *
  * Writes go over HTTP because they need a response body and a status code;
  * changes arrive over the hub because they are pushed. Everything that returns

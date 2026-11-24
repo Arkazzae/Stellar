@@ -112,7 +112,7 @@ export interface WebRtcVoiceClientOptions {
 }
 
 /**
- * Voice over WebRTC, signalled through the SignalR hub.
+ * Voice over WebRTC, signalled through the realtime hub.
  *
  * This class is the facade the UI sees through `VoiceClient`. It keeps apart
  * the two things a call is made of. The people (`webrtcParticipant`,
@@ -855,7 +855,7 @@ export class WebRtcVoiceClient implements VoiceClient {
   /**
    * Follow an administrator move without reopening the microphone.
    *
-   * The HTTP endpoint has already moved this SignalR connection's authoritative
+   * The HTTP endpoint has already moved this realtime connection's authoritative
    * seat. Re-invoking JoinVoice confirms that state and asks the hub for the
    * target snapshot; only the connection and the people are dropped, because
    * they belong to the old room. The new seat then opens a media session of

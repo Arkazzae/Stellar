@@ -312,7 +312,7 @@ export function fakeApi(overrides: Partial<ApiClient> = {}): ApiClient {
   };
 }
 
-/** In-memory SignalR stand-in kept strictly inside the test source tree. */
+/** In-memory realtime stand-in kept strictly inside the test source tree. */
 export class FakeRealtimeClient implements RealtimeClient {
   private status: RealtimeStatus = "idle";
   private mediaSessions = 0;

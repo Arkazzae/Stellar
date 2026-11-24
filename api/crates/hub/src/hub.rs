@@ -11,63 +11,54 @@ use std::sync::{Arc, Mutex, MutexGuard};
 
 use bytes::Bytes;
 use serde::Serialize;
-use serde_json::Value;
+use serde_json::value::{RawValue, to_raw_value};
 use tokio::sync::{Notify, watch};
 
 use crate::config::Config;
-use crate::message;
+use crate::native;
 
-/// A message for clients, serialised once however many it goes to.
+/// A serialized event shared across all its recipients.
 #[derive(Debug, Clone)]
-pub struct Outbound(Bytes);
+pub struct Outbound {
+    bytes: Bytes,
+    presence_user: Option<Arc<str>>,
+}
 
 impl Outbound {
-    /// A call of `target` on the client with these arguments, which must
-    /// serialise as a JSON array (a tuple, a `Vec`, a slice).
-    pub fn new<A: Serialize + ?Sized>(
-        target: &str,
-        arguments: &A,
-    ) -> Result<Self, serde_json::Error> {
-        message::invocation(target, arguments).map(Self)
+    /// An event carrying one payload.
+    pub fn single<T: Serialize + ?Sized>(name: &str, data: &T) -> Result<Self, serde_json::Error> {
+        let data = to_raw_value(data)?;
+        Ok(Self::encode(name, &data))
     }
 
-    /// A call with the one argument most events have.
-    pub fn single<T: Serialize + ?Sized>(
-        target: &str,
-        argument: &T,
-    ) -> Result<Self, serde_json::Error> {
-        Self::new(target, &(argument,))
+    /// An event carrying a null payload.
+    pub fn bare(name: &str) -> Self {
+        Self::encode(name, RawValue::NULL)
     }
 
-    /// A call without arguments.
-    pub fn bare(target: &str) -> Self {
-        Self(message::invocation(target, &Vec::<Value>::new()).expect("an empty array serialises"))
+    fn encode(name: &str, data: &RawValue) -> Self {
+        Self {
+            bytes: native::event(name, data),
+            presence_user: native::presence_user(name, data).map(Arc::from),
+        }
     }
 
-    /// The record as it goes on the wire.
     pub fn as_bytes(&self) -> &[u8] {
-        &self.0
-    }
-
-    fn bytes(&self) -> &Bytes {
-        &self.0
+        &self.bytes
     }
 }
 
-/// Why and how the server ends a connection.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct CloseRequest {
-    /// What the client is told; `None` for a close that is not a failure.
-    pub error: Option<String>,
-    /// Whether the client library starts a new connection by itself. After
-    /// a close that does not allow it, it stays closed.
-    pub allow_reconnect: bool,
+#[derive(Clone, Copy)]
+pub(crate) struct CloseSignal {
+    pub(crate) code: u16,
+    pub(crate) error: Option<&'static str>,
 }
 
 #[derive(Default)]
 struct OutboxState {
     queue: VecDeque<Bytes>,
     bytes: usize,
+    trailing_presence_user: Option<Arc<str>>,
 }
 
 /// The messages waiting to be written to one client.
@@ -88,7 +79,7 @@ fn lock<T>(mutex: &Mutex<T>) -> MutexGuard<'_, T> {
 pub(crate) struct Shared {
     id: Arc<str>,
     outbox: Outbox,
-    close: watch::Sender<Option<CloseRequest>>,
+    close: watch::Sender<Option<CloseSignal>>,
     write_failed: AtomicBool,
     max_messages: usize,
     max_bytes: usize,
@@ -101,12 +92,12 @@ impl Shared {
 
     /// Asks for the connection to be closed. The first request wins: a
     /// connection that is already closing does not change its mind.
-    pub(crate) fn request_close(&self, request: CloseRequest) {
+    pub(crate) fn request_close(&self, code: u16, error: Option<&'static str>) {
         self.close.send_if_modified(|current| {
             if current.is_some() {
                 return false;
             }
-            *current = Some(request);
+            *current = Some(CloseSignal { code, error });
             true
         });
     }
@@ -116,79 +107,78 @@ impl Shared {
     /// say goodbye to.
     pub(crate) fn write_failed(&self) {
         self.write_failed.store(true, Ordering::Release);
-        self.request_close(CloseRequest {
-            error: None,
-            allow_reconnect: true,
-        });
+        self.request_close(native::GOING_AWAY, None);
     }
 
     pub(crate) fn has_write_failed(&self) -> bool {
         self.write_failed.load(Ordering::Acquire)
     }
 
-    pub(crate) fn subscribe_close(&self) -> watch::Receiver<Option<CloseRequest>> {
+    pub(crate) fn subscribe_close(&self) -> watch::Receiver<Option<CloseSignal>> {
         self.close.subscribe()
     }
 
-    pub(crate) fn close_request(&self) -> Option<CloseRequest> {
-        self.close.borrow().clone()
+    pub(crate) fn close_signal(&self) -> Option<CloseSignal> {
+        *self.close.borrow()
     }
 
     /// Queues a record. False when the connection is closing or has just
     /// fallen too far behind, in which case it is closed.
     pub(crate) fn push(&self, record: &Bytes) -> bool {
+        self.push_record(record, None)
+    }
+
+    fn push_outbound(&self, message: &Outbound) -> bool {
+        self.push_record(&message.bytes, message.presence_user.as_ref())
+    }
+
+    fn push_record(&self, record: &Bytes, presence_user: Option<&Arc<str>>) -> bool {
         if self.close.borrow().is_some() {
             return false;
         }
         let mut state = lock(&self.outbox.state);
-        // One message bigger than the whole allowance still goes through
-        // when nothing else waits: refusing it would close a connection that
-        // is keeping up.
-        let over = !state.queue.is_empty()
-            && (state.queue.len() >= self.max_messages
-                || state.bytes + record.len() > self.max_bytes);
+        // Only a trailing snapshot for the same subject may be replaced:
+        // moving a snapshot across other messages can change their meaning.
+        let supersedes =
+            presence_user.is_some() && presence_user == state.trailing_presence_user.as_ref();
+        let (queued_messages, queued_bytes) = if supersedes {
+            let replaced = state.queue.back().expect("presence snapshot is queued");
+            (state.queue.len() - 1, state.bytes - replaced.len())
+        } else {
+            (state.queue.len(), state.bytes)
+        };
+        // An otherwise empty queue may carry one message of any size.
+        let over = queued_messages > 0
+            && (queued_messages >= self.max_messages
+                || queued_bytes.saturating_add(record.len()) > self.max_bytes);
         if over {
             drop(state);
             tracing::warn!(connection = %self.id, "a client fell too far behind; closing its connection");
-            self.request_close(CloseRequest {
-                error: Some(
-                    "The connection was closed because it could not keep up with the server."
-                        .into(),
-                ),
-                allow_reconnect: true,
-            });
+            self.request_close(native::OVERLOADED, Some("the client could not keep up"));
             return false;
         }
-        state.bytes += record.len();
+        if supersedes {
+            state.queue.pop_back();
+        }
+        state.bytes = queued_bytes + record.len();
         state.queue.push_back(record.clone());
+        state.trailing_presence_user = presence_user.cloned();
         drop(state);
         self.outbox.wake.notify_one();
         true
     }
 
-    /// Waits for messages and takes them, as many as fit in `limit` bytes
-    /// (at least one). Safe to drop while waiting: nothing is taken until it
-    /// returns.
-    pub(crate) async fn take(&self, out: &mut Vec<Bytes>, limit: usize) {
+    /// Waits for the next message. Safe to drop while waiting.
+    pub(crate) async fn take(&self) -> Bytes {
         loop {
             {
                 let mut state = lock(&self.outbox.state);
-                let mut taken = 0;
-                while let Some(front) = state.queue.front() {
-                    if taken > 0 && taken + front.len() > limit {
-                        break;
-                    }
-                    let record = state.queue.pop_front().expect("front was just seen");
-                    taken += record.len();
+                if let Some(record) = state.queue.pop_front() {
                     state.bytes -= record.len();
-                    out.push(record);
-                }
-                if taken > 0 {
-                    // Leave the wake-up for the next call if more is waiting.
-                    if !state.queue.is_empty() {
-                        self.outbox.wake.notify_one();
+                    if state.queue.is_empty() {
+                        state.trailing_presence_user = None;
                     }
-                    return;
+                    return record;
                 }
             }
             self.outbox.wake.notified().await;
@@ -198,7 +188,7 @@ impl Shared {
 
 /// Completes once a close has been asked for. A function of its own so that
 /// the borrow `wait_for` returns is gone before anything else is awaited.
-pub(crate) async fn close_requested(closing: &mut watch::Receiver<Option<CloseRequest>>) {
+pub(crate) async fn close_requested(closing: &mut watch::Receiver<Option<CloseSignal>>) {
     let _ = closing.wait_for(Option::is_some).await;
 }
 
@@ -354,27 +344,24 @@ impl Hub {
         was_in
     }
 
-    /// Ends a connection. The client is told, and does not start over.
+    /// Ends a connection without asking the client to reconnect.
     pub fn abort(&self, connection_id: &str) -> bool {
-        self.close(
-            connection_id,
-            CloseRequest {
-                error: None,
-                allow_reconnect: false,
-            },
-        )
+        self.close(connection_id, stellarr_websocket::status::NORMAL)
     }
 
-    /// Ends a connection with a reason the client is told and, when
-    /// `allow_reconnect` is set, lets it start over at once.
-    pub fn close(&self, connection_id: &str, request: CloseRequest) -> bool {
+    /// Ends a connection whose authenticated session ended.
+    pub fn end_session(&self, connection_id: &str) -> bool {
+        self.close(connection_id, native::SESSION_ENDED)
+    }
+
+    fn close(&self, connection_id: &str, code: u16) -> bool {
         let shared = lock(&self.inner.state)
             .connections
             .get(connection_id)
             .map(|entry| entry.shared.clone());
         match shared {
             Some(shared) => {
-                shared.request_close(request);
+                shared.request_close(code, None);
                 true
             }
             None => false,
@@ -390,17 +377,14 @@ impl Hub {
             .map(|entry| entry.shared.clone())
             .collect();
         for shared in all {
-            shared.request_close(CloseRequest {
-                error: None,
-                allow_reconnect: true,
-            });
+            shared.request_close(native::RESTART, None);
         }
     }
 
     fn deliver(targets: impl IntoIterator<Item = Arc<Shared>>, message: &Outbound) -> usize {
         targets
             .into_iter()
-            .filter(|shared| shared.push(message.bytes()))
+            .filter(|shared| shared.push_outbound(message))
             .count()
     }
 
@@ -410,7 +394,7 @@ impl Hub {
             .connections
             .get(connection_id)
             .map(|entry| entry.shared.clone());
-        shared.is_some_and(|shared| shared.push(message.bytes()))
+        shared.is_some_and(|shared| shared.push_outbound(message))
     }
 
     /// Sends to each of the connections named; ones that are gone are

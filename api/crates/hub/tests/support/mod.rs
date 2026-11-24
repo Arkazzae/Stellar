@@ -3,7 +3,7 @@
 
 #![allow(dead_code)]
 
-use std::collections::VecDeque;
+use std::io::ErrorKind;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
@@ -14,8 +14,6 @@ use stellarr_websocket::frame::{OP_CLOSE, OP_PING, OP_TEXT, encode_frame};
 use tokio::io::{AsyncReadExt, AsyncWriteExt, DuplexStream};
 use tokio::task::JoinHandle;
 use tokio::time::timeout;
-
-pub const RS: char = '\u{1e}';
 
 #[derive(Default)]
 pub struct TestApp {
@@ -123,8 +121,6 @@ impl Application for TestApp {
 
 pub struct Client {
     pub io: DuplexStream,
-    pub pending: VecDeque<String>,
-    text: String,
 }
 
 /// What the server wrote: a frame's opcode and payload.
@@ -132,41 +128,35 @@ pub type Frame = (u8, Vec<u8>);
 
 impl Client {
     pub fn wrap(io: DuplexStream) -> Self {
-        Self {
-            io,
-            pending: VecDeque::new(),
-            text: String::new(),
-        }
+        Self { io }
+    }
+
+    pub async fn fragment(&mut self, fin: bool, opcode: u8, payload: &[u8]) {
+        self.io
+            .write_all(&encode_frame(fin, opcode, payload, Some([9, 8, 7, 6])))
+            .await
+            .unwrap();
     }
 
     pub async fn send_frame(&mut self, opcode: u8, payload: &[u8]) {
-        self.io
-            .write_all(&encode_frame(true, opcode, payload, Some([9, 8, 7, 6])))
-            .await
-            .unwrap();
+        self.fragment(true, opcode, payload).await;
     }
 
     pub async fn send(&mut self, text: &str) {
         self.send_frame(OP_TEXT, text.as_bytes()).await;
     }
 
-    /// Records, each ended by the separator, in one message.
-    pub async fn send_records(&mut self, records: &[Value]) {
-        let text: String = records.iter().map(|r| format!("{r}{RS}")).collect();
-        self.send(&text).await;
+    pub async fn send_json(&mut self, message: &Value) {
+        self.send(&message.to_string()).await;
     }
 
-    pub async fn handshake(&mut self) {
-        self.send(&format!("{{\"protocol\":\"json\",\"version\":1}}{RS}"))
+    pub async fn ready(&mut self) {
+        assert_eq!(self.json().await, json!({"type":"ready"}));
+    }
+
+    pub async fn invoke(&mut self, id: u64, method: &str, args: Value) {
+        self.send_json(&json!({"type":"call","id":id,"method":method,"args":args}))
             .await;
-        assert_eq!(self.record().await, "{}");
-    }
-
-    pub async fn invoke(&mut self, id: &str, target: &str, arguments: Value) {
-        self.send_records(&[
-            json!({"type": 1, "invocationId": id, "target": target, "arguments": arguments}),
-        ])
-        .await;
     }
 
     pub async fn frame(&mut self) -> Option<Frame> {
@@ -195,64 +185,43 @@ impl Client {
         Some((head[0] & 0x0f, payload))
     }
 
-    /// The next record the server sent, as text. Transport pings are
-    /// answered the way a browser would, and skipped.
-    pub async fn record(&mut self) -> String {
+    /// The next JSON message, automatically answering transport pings.
+    pub async fn json(&mut self) -> Value {
         loop {
-            if let Some(record) = self.pending.pop_front() {
-                return record;
-            }
-            let (opcode, payload) = self
-                .frame()
-                .await
-                .expect("the connection ended while a record was expected");
+            let (opcode, payload) = self.frame().await.expect("expected a JSON message");
             match opcode {
-                OP_TEXT => {
-                    self.text.push_str(std::str::from_utf8(&payload).unwrap());
-                    while let Some(end) = self.text.find(RS) {
-                        let record: String = self.text.drain(..=end).collect();
-                        self.pending
-                            .push_back(record[..record.len() - 1].to_owned());
-                    }
-                }
+                OP_TEXT => return serde_json::from_slice(&payload).unwrap(),
                 OP_PING => self.send_frame(10, &payload).await,
-                OP_CLOSE => panic!("closed by the server while a record was expected"),
+                OP_CLOSE => panic!("closed by the server while a JSON message was expected"),
                 other => panic!("unexpected opcode {other}"),
             }
         }
     }
 
-    pub async fn json(&mut self) -> Value {
-        serde_json::from_str(&self.record().await).unwrap()
-    }
-
-    /// Reads until the server's close frame, collecting the records before it.
+    /// Collects messages before the close frame and acknowledges the close.
     pub async fn until_close(&mut self) -> (Vec<Value>, Option<u16>) {
-        let mut records = Vec::new();
+        let mut messages = Vec::new();
         loop {
-            while let Some(record) = self.pending.pop_front() {
-                records.push(serde_json::from_str(&record).unwrap());
-            }
             match self.frame().await {
-                None => return (records, None),
+                None => return (messages, None),
                 Some((OP_TEXT, payload)) => {
-                    self.text.push_str(std::str::from_utf8(&payload).unwrap());
-                    while let Some(end) = self.text.find(RS) {
-                        let record: String = self.text.drain(..=end).collect();
-                        self.pending
-                            .push_back(record[..record.len() - 1].to_owned());
-                    }
+                    messages.push(serde_json::from_slice(&payload).unwrap())
                 }
                 Some((OP_CLOSE, payload)) => {
-                    while let Some(record) = self.pending.pop_front() {
-                        records.push(serde_json::from_str(&record).unwrap());
+                    // A transport-level rejection can drop the pipe immediately
+                    // after sending its close frame.
+                    let acknowledgement =
+                        encode_frame(true, OP_CLOSE, &payload, Some([9, 8, 7, 6]));
+                    if let Err(error) = self.io.write_all(&acknowledgement).await {
+                        assert_eq!(error.kind(), ErrorKind::BrokenPipe);
                     }
-                    // Answer the close as a client does, so the server can finish.
-                    self.send_frame(OP_CLOSE, &payload).await;
-                    return (records, Some(u16::from_be_bytes([payload[0], payload[1]])));
+                    let code = payload
+                        .get(..2)
+                        .map(|bytes| u16::from_be_bytes(bytes.try_into().unwrap()));
+                    return (messages, code);
                 }
                 Some((OP_PING, payload)) => self.send_frame(10, &payload).await,
-                Some(_) => {}
+                Some((opcode, _)) => panic!("unexpected opcode {opcode}"),
             }
         }
     }
@@ -279,7 +248,7 @@ pub fn start_on(app: Arc<TestApp>, hub: Hub, config: Config, user: &str, id: Str
     let (sender, receiver) = stellarr_websocket::split(
         server_io,
         stellarr_websocket::Config {
-            max_message_size: usize::MAX,
+            max_message_size: config.max_message_size,
             ..Default::default()
         },
     );
@@ -293,11 +262,7 @@ pub fn start_on(app: Arc<TestApp>, hub: Hub, config: Config, user: &str, id: Str
         receiver,
     ));
     Running {
-        client: Client {
-            io: client_io,
-            pending: VecDeque::new(),
-            text: String::new(),
-        },
+        client: Client::wrap(client_io),
         hub,
         app,
         task,

@@ -1216,7 +1216,12 @@ async fn connect(world: &World, person: &Person) -> HubClient {
 }
 
 fn error_text(completion: &Value) -> Option<&str> {
-    completion["error"].as_str()
+    if completion["type"] == "error" {
+        assert_eq!(completion["code"], "visible", "{completion}");
+        return completion["message"].as_str();
+    }
+    assert_eq!(completion["type"], "result", "{completion}");
+    None
 }
 
 #[tokio::test]
@@ -1236,25 +1241,26 @@ async fn a_channel_is_joined_by_whoever_sees_it_and_only_a_text_channel() {
     let nothing = client.invoke("JoinChannel", json!([null])).await;
     let two = client.invoke("JoinChannel", json!([general, general])).await;
 
-    assert!(seen.get("error").is_none(), "{seen}");
-    assert_eq!(seen["result"], Value::Null);
+    assert_eq!(seen["type"], "result", "{seen}");
+    assert_eq!(seen["value"], Value::Null);
     for completion in [&hidden, &call, &unknown] {
         assert_eq!(
             error_text(completion),
-            Some("An unexpected error occurred invoking 'JoinChannel' on the server. HubException: Unknown channel.")
+            Some("Unknown channel.")
         );
     }
     for completion in [&not_an_id, &nothing] {
         assert_eq!(
             error_text(completion),
-            Some("An unexpected error occurred invoking 'JoinChannel' on the server. HubException: Invalid channelId.")
+            Some("Invalid channelId.")
         );
     }
-    assert_eq!(error_text(&two), Some("Failed to invoke 'JoinChannel' due to an error on the server."));
+    assert_eq!(two["type"], "error");
+    assert_eq!(two["code"], "invalid_arguments");
 }
 
 fn typing_events(records: &[Value]) -> Vec<&Value> {
-    records.iter().filter(|record| record["target"] == "TypingChanged").collect()
+    records.iter().filter(|record| record["name"] == "TypingChanged").collect()
 }
 
 #[tokio::test]
@@ -1277,14 +1283,14 @@ async fn typing_reaches_the_others_who_see_the_channel_and_the_senders_other_tab
 
     let completion = owner_tab.invoke("SendTyping", json!([secret])).await;
 
-    assert!(completion.get("error").is_none(), "{completion}");
+    assert_eq!(completion["type"], "result", "{completion}");
     let to_maya = maya_client.quiet_for(QUIET).await;
     let to_nils = nils_client.quiet_for(QUIET).await;
     let to_other_tab = other_tab.quiet_for(QUIET).await;
     let to_sender = owner_tab.quiet_for(QUIET).await;
     let heard = typing_events(&to_maya);
     assert_eq!(heard.len(), 1, "{to_maya:?}");
-    let notice = &heard[0]["arguments"][0];
+    let notice = &heard[0]["data"];
     assert_eq!(notice["channelId"], secret.as_str());
     assert_eq!(notice["userId"], world.owner.id.as_str());
     assert_eq!(notice["displayName"], "Owner");
@@ -1302,9 +1308,7 @@ async fn typing_on_an_open_channel_reaches_the_whole_server_but_the_sender() {
     let mut owner = connect(&world, &world.owner).await;
     let mut maya_client = connect(&world, &maya).await;
 
-    let completion = maya_client.invoke("SendTyping", json!([general])).await;
-
-    assert!(completion.get("error").is_none(), "{completion}");
+    maya_client.send_text(&json!({"type": "send", "method": "SendTyping", "args": [general]}).to_string()).await;
     assert_eq!(typing_events(&owner.quiet_for(QUIET).await).len(), 1);
     assert!(typing_events(&maya_client.quiet_for(QUIET).await).is_empty());
 }
@@ -1332,18 +1336,18 @@ async fn typing_needs_the_channel_to_be_seen_and_the_right_to_send_there() {
     for completion in [&unseen, &call, &unknown] {
         assert_eq!(
             error_text(completion),
-            Some("An unexpected error occurred invoking 'SendTyping' on the server. HubException: Unknown channel.")
+            Some("Unknown channel.")
         );
     }
     assert_eq!(
         error_text(&mute),
-        Some("An unexpected error occurred invoking 'SendTyping' on the server. HubException: Not allowed to send messages here.")
+        Some("Not allowed to send messages here.")
     );
     assert_eq!(
         error_text(&not_an_id),
-        Some("An unexpected error occurred invoking 'SendTyping' on the server. HubException: Invalid channelId.")
+        Some("Invalid channelId.")
     );
-    assert!(fine.get("error").is_none());
+    assert_eq!(fine["type"], "result");
 }
 
 #[tokio::test]
@@ -1359,6 +1363,6 @@ async fn typing_is_throttled_for_each_connection() {
 
     let refused: Vec<_> = answers.iter().filter_map(error_text).collect();
     assert!(!refused.is_empty(), "a burst of typing is stopped");
-    assert!(answers[0].get("error").is_none());
-    assert!(refused.iter().all(|text| text.ends_with("HubException: Typing is too fast.")), "{refused:?}");
+    assert_eq!(answers[0]["type"], "result");
+    assert!(refused.iter().all(|text| *text == "Typing is too fast."), "{refused:?}");
 }

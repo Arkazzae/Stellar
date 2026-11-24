@@ -148,13 +148,13 @@ async fn connect(server: &Server, client: &Client) -> HubClient {
 /// The hub says goodbye to a connection within a few seconds.
 async fn closes(connection: &mut HubClient) {
     let started = std::time::Instant::now();
-    let _ = connection.until_close().await;
+    assert_eq!(connection.finish_close().await, Some(4401));
     assert!(started.elapsed() < Duration::from_secs(5), "closed after {:?}", started.elapsed());
 }
 
 /// A connection that nothing has closed answers a call.
 async fn alive(connection: &mut HubClient) {
-    assert_eq!(connection.invoke("GetRtcClock", json!([])).await["type"], 3);
+    assert_eq!(connection.invoke("GetRtcClock", json!([])).await["type"], "result");
 }
 
 fn title(response: &Response) -> String {

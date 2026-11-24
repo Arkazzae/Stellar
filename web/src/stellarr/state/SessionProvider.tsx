@@ -156,6 +156,12 @@ export function SessionProvider({ children }: { children: ReactNode }) {
     (): ConnectionStatus => "idle",
   );
 
+  const realtimeSessionEnded = useSyncExternalStore(
+    ports.connection.subscribe,
+    () => runtime.realtime.hasSessionEnded?.() ?? false,
+    () => false,
+  );
+
   // A retry, or a swapped-out runtime, puts the session back to `loading`
   // before the bootstrap below runs again. The reset is derived from the inputs
   // during render, so the spinner lands in the same commit as the retry.
@@ -252,8 +258,7 @@ export function SessionProvider({ children }: { children: ReactNode }) {
     // A failed start is not fatal: it shows through `connection`.
     void runtime.realtime.start().catch(() => undefined);
     return () => {
-      // `stop` invalidates a pending negotiation at once and queues any later
-      // `start` behind its own teardown.
+      // `stop` invalidates the old socket before a later `start` can open another.
       void runtime.realtime.stop().catch(() => undefined);
     };
   }, [runtime, signedIn]);
@@ -305,33 +310,40 @@ export function SessionProvider({ children }: { children: ReactNode }) {
     [ports, t],
   );
 
-  // A dropped hub is usually a network blip, which the client rides out. It
-  // can also be the server ending this session: signed out on another
-  // device, by an operator, or by a security change. Asking once per drop
-  // tells the two apart; a session the server no longer knows stops the
-  // reconnecting and leaves for the sign-in page, which unmounts voice.
+  // The hub can explicitly end this session. Browsers hide the status of a
+  // failed WebSocket upgrade, so an ordinary disconnect still needs the HTTP
+  // check to tell an unreachable instance from a signed-out account.
   useEffect(() => {
-    if (!signedIn || (connection !== "reconnecting" && connection !== "disconnected")) return;
+    if (!signedIn) return;
+
+    const endSession = () => {
+      ended.current = true;
+      // Signed out elsewhere: the keys of a session that ended go too.
+      void ports.encryption.forget().catch(() => undefined);
+      void clearTranslations().catch(() => undefined);
+      void wipeStoredMessages().catch(() => undefined);
+      void runtime.realtime.stop().catch(() => undefined);
+      setLoginError(t("session.unauthorized"));
+      setBoot(ANONYMOUS);
+    };
+
+    if (realtimeSessionEnded) {
+      endSession();
+      return;
+    }
+    if (connection !== "reconnecting" && connection !== "disconnected") return;
+
     let active = true;
     ports.session.check().then(
       (alive) => {
-        if (!active || alive) return;
-        ended.current = true;
-        // Signed out elsewhere: the keys of a session that ended go too.
-        void ports.encryption.forget().catch(() => undefined);
-        void clearTranslations().catch(() => undefined);
-        void wipeStoredMessages().catch(() => undefined);
-        void runtime.realtime.stop().catch(() => undefined);
-        setLoginError(t("session.unauthorized"));
-        setBoot(ANONYMOUS);
+        if (active && !alive) endSession();
       },
-      // Unreachable is not signed out; the reconnect keeps trying.
       () => undefined,
     );
     return () => {
       active = false;
     };
-  }, [connection, ports, runtime, signedIn, t]);
+  }, [connection, ports, realtimeSessionEnded, runtime, signedIn, t]);
 
   // A revoked or expired session cannot be used to remove its push row, but
   // the browser must still stop holding a subscription for it. The server's

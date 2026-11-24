@@ -109,7 +109,7 @@ function mergeMessages(
   );
 }
 
-/** Persisted friends and direct messages over HTTP, kept fresh through SignalR. */
+/** Persisted friends and direct messages over HTTP, kept fresh through the realtime hub. */
 export function createFriendsAdapter(
   api: SocialApiClient,
   realtime: RealtimeClient,
@@ -399,7 +399,7 @@ export function createFriendsAdapter(
       const reconnected = status === "connected" && lastStatus !== "connected";
       lastStatus = status;
       if (!reconnected) return;
-      // SignalR events are not replayed, so a reconnect refreshes the summaries
+      // Realtime events are not replayed, so a reconnect refreshes the summaries
       // and every thread that was opened: a message sent during the outage must
       // not leave a transcript behind for good.
       void Promise.all([

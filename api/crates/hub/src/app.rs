@@ -3,20 +3,17 @@ use std::sync::Arc;
 
 use serde_json::Value;
 
-use crate::hub::{CloseRequest, Hub, Outbound, Shared, close_requested};
+use crate::hub::{Hub, Outbound, Shared, close_requested};
 
-/// Why a call failed, and so what the client is told. The client library
-/// raises the text as an error in the caller, so what it shows matters: only
-/// a deliberate [`HubError::Visible`] text reaches it, anything else is
-/// hidden behind a general sentence.
+/// Why a call failed. Only a deliberate [`HubError::Visible`] message is
+/// sent to the client along with its error code.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum HubError {
     /// A message written for the person: the client is told the text.
     Visible(String),
-    /// No such method: the name is matched exactly.
+    /// No such method.
     UnknownMethod,
-    /// The arguments do not fit the method: too few, too many, or of the
-    /// wrong kind. The client is told the call failed, not why.
+    /// The arguments do not fit the method.
     InvalidArguments,
     /// Anything else that went wrong. The text is for the log only.
     Internal(String),
@@ -29,26 +26,6 @@ impl HubError {
 
     pub fn internal(text: impl Into<String>) -> Self {
         Self::Internal(text.into())
-    }
-
-    /// What the completion carries as its error for a call to `target`.
-    pub fn client_text(&self, target: &str) -> String {
-        match self {
-            Self::Visible(text) => {
-                format!(
-                    "An unexpected error occurred invoking '{target}' on the server. HubException: {text}"
-                )
-            }
-            Self::UnknownMethod => {
-                format!("Unknown method '{target}'.")
-            }
-            Self::InvalidArguments => {
-                format!("Failed to invoke '{target}' due to an error on the server.")
-            }
-            Self::Internal(_) => {
-                format!("An unexpected error occurred invoking '{target}' on the server.")
-            }
-        }
     }
 }
 
@@ -107,10 +84,8 @@ impl<I> Call<I> {
 
     /// Ends the caller's connection without letting it start over.
     pub fn abort(&self) {
-        self.shared.request_close(CloseRequest {
-            error: None,
-            allow_reconnect: false,
-        });
+        self.shared
+            .request_close(stellarr_websocket::status::NORMAL, None);
     }
 
     /// Completes when the connection is ending, for work that should stop
@@ -128,10 +103,10 @@ pub trait Application: Send + Sync + 'static {
     /// Who a connection belongs to; made by the function that admits it.
     type Identity: Send + Sync + 'static;
 
-    /// A client has finished its handshake. The connection already exists,
-    /// so this is where it joins groups and where the first messages for it
-    /// are sent. Nothing the client sends is read until this returns. An
-    /// error closes the connection.
+    /// A WebSocket has been upgraded. The connection already exists, so
+    /// this is where it joins groups and queues the first events. The client
+    /// receives readiness before those events and its calls are read only
+    /// after this hook succeeds. An error closes the connection.
     fn connected(
         &self,
         call: &Call<Self::Identity>,
@@ -146,9 +121,8 @@ pub trait Application: Send + Sync + 'static {
         error: Option<&str>,
     ) -> impl Future<Output = ()> + Send;
 
-    /// Whether `target` names a method. Names are compared without regard to
-    /// case. This must agree with [`invoke`](Self::invoke), which answers an
-    /// unknown method with [`HubError::UnknownMethod`].
+    /// Whether `target` names a method. Must agree with
+    /// [`invoke`](Self::invoke).
     fn has_method(&self, target: &str) -> bool;
 
     /// Runs a method. `Ok(Value::Null)` is the answer of a method with no
