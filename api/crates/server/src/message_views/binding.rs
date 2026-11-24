@@ -129,6 +129,12 @@ impl<S: Send + Sync> FromRequestParts<S> for ReactionTarget {
             return Err(ApiError::not_found());
         };
         let emoji = unescape(emoji, Slash::Kept, Nul::Refused).ok_or_else(ApiError::bad_request)?;
+        // A segment that is a dot, however it is written, is a step in the
+        // path and not a name: the first server dropped it before routing, so
+        // there was no reaction route to reach.
+        if emoji == "." || emoji == ".." {
+            return Err(ApiError::not_found());
+        }
         let message = unescape(message, Slash::Kept, Nul::Refused)
             .and_then(|text| parse_guid(&text))
             .ok_or_else(ApiError::not_found)?;
