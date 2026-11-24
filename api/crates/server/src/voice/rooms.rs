@@ -104,17 +104,8 @@ fn direct_call_allowed(
         return Ok(true);
     }
 
-    let takes_messages: Option<bool> = db
-        .query_row(
-            "SELECT \"AllowDirectMessages\" FROM \"UserPreferences\" WHERE \"UserId\" = ?1",
-            [peer],
-            |row| row.get(0),
-        )
-        .optional()?;
-    if takes_messages.unwrap_or(true) {
-        return Ok(true);
-    }
-    crate::social::are_friends(db, user, peer)
+    // Somebody who takes no direct messages still hears from their friends.
+    crate::direct::peer_takes_messages_from(db, user, peer)
 }
 
 /// The two people of a direct conversation, when `user` is one of them.
