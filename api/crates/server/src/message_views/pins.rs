@@ -5,10 +5,10 @@ use serde::Serialize;
 use stellarr_messages::MessageKey;
 
 use super::binding::Guid;
-use super::wire::{self, MessageDto, Words};
 use crate::auth::Caller;
 use crate::database::DbError;
 use crate::events::Event;
+use crate::messages::dto::{self, MessageDto};
 use crate::http::{ApiError, ApiResult, Json, Path, Problem};
 use crate::permissions::authorization::{Refusal, Scope, held_at};
 use crate::permissions::membership::ActiveServer;
@@ -27,13 +27,6 @@ pub struct PinnedMessages {
     messages: Vec<MessageDto>,
 }
 
-/// The attachment word every message needs for its quote.
-pub fn words(state: &AppState) -> ApiResult<Words> {
-    Ok(Words {
-        attachment: state.messages().get(MessageKey::AttachmentPreview, &[])?,
-    })
-}
-
 /// The channel's pinned messages, newest pin first. A read of its own rather
 /// than a flag the transcript carries: a pin is usually on a message far above
 /// the last page, and a list made of whatever the client has loaded would grow
@@ -44,7 +37,7 @@ pub async fn list(
     ActiveServer(server): ActiveServer,
     State(state): State<AppState>,
 ) -> ApiResult<Json<PinnedMessages>> {
-    let words = words(&state)?;
+    let messages = *state.messages();
     let user = caller.user;
     let found = state
         .database()
@@ -68,7 +61,7 @@ pub async fn list(
                 .collect::<rusqlite::Result<Vec<_>>>()?;
             pinned.sort_by(|a, b| b.1.cmp(&a.1).then(a.0.cmp(&b.0)));
             let ids: Vec<Id> = pinned.into_iter().map(|(id, _)| id).collect();
-            Ok(Some(wire::load(db, &ids, Some(user), &words)?))
+            Ok(Some(dto::load(db, &messages, &ids, Some(user))?))
         })
         .await?;
     found
@@ -118,7 +111,7 @@ async fn set(
     ActiveServer(server): ActiveServer,
     pinned: bool,
 ) -> ApiResult<Json<MessageDto>> {
-    let words = words(&state)?;
+    let messages = *state.messages();
     let user = caller.user;
     let outcome = state
         .database()
@@ -175,8 +168,8 @@ async fn set(
 
             // The event is shared by everyone who sees the channel, so it
             // cannot say which reactions are the viewer's own.
-            let answer = wire::load(tx, &[message], Some(user), &words)?.pop();
-            let announced = wire::load(tx, &[message], None, &words)?.pop();
+            let answer = dto::load(tx, &messages, &[message], Some(user))?.pop();
+            let announced = dto::load(tx, &messages, &[message], None)?.pop();
             match (answer, announced) {
                 (Some(answer), Some(announced)) => Ok(Outcome::Done {
                     channel,

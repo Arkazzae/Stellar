@@ -6,10 +6,9 @@ use axum::extract::State;
 use serde::Serialize;
 
 use super::binding::Guid;
-use super::pins::words;
-use super::wire::{self, MessageDto, ReferenceDto};
 use crate::auth::Caller;
 use crate::database::DbError;
+use crate::messages::dto::{self, MessageDto, MessageReferenceDto};
 use crate::http::{ApiError, ApiResult, Json, Path};
 use crate::permissions::membership::ActiveServer;
 use crate::permissions::visibility::{self, ChannelKind};
@@ -20,7 +19,7 @@ use crate::values::{Id, Timestamp};
 #[serde(rename_all = "camelCase")]
 pub struct ThreadSummary {
     channel_id: Id,
-    root: ReferenceDto,
+    root: MessageReferenceDto,
     /// The messages that answer the root directly.
     reply_count: i64,
     /// When the newest of them was sent, which orders the list.
@@ -40,7 +39,7 @@ pub async fn list(
     ActiveServer(server): ActiveServer,
     State(state): State<AppState>,
 ) -> ApiResult<Json<Vec<ThreadSummary>>> {
-    let words = words(&state)?;
+    let messages = *state.messages();
     let user = caller.user;
     let found = state
         .database()
@@ -64,9 +63,14 @@ pub async fn list(
                     ))
                 })?
                 .collect::<rusqlite::Result<Vec<_>>>()?;
+            let roots: Vec<Id> = threads.iter().map(|(root, _, _)| *root).collect();
+            let mut quotes: std::collections::HashMap<Id, MessageReferenceDto> = dto::references(db, &messages, &roots)?
+                .into_iter()
+                .map(|quote| (quote.id, quote))
+                .collect();
             let mut summaries = Vec::with_capacity(threads.len());
             for (root, reply_count, last_reply_at) in threads {
-                if let Some(root) = wire::reference_by_id(db, root, &words)? {
+                if let Some(root) = quotes.remove(&root) {
                     summaries.push(ThreadSummary {
                         channel_id: channel,
                         root,
@@ -89,7 +93,7 @@ pub async fn read(
     ActiveServer(server): ActiveServer,
     State(state): State<AppState>,
 ) -> ApiResult<Json<ThreadMessages>> {
-    let words = words(&state)?;
+    let messages = *state.messages();
     let user = caller.user;
     let found = state
         .database()
@@ -108,7 +112,7 @@ pub async fn read(
             if !ids.contains(&root) {
                 return Ok(None);
             }
-            Ok(Some(wire::load(db, &ids, Some(user), &words)?))
+            Ok(Some(dto::load(db, &messages, &ids, Some(user))?))
         })
         .await?;
     found

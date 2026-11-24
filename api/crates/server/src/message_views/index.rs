@@ -9,10 +9,9 @@ use stellarr_messages::MessageKey;
 
 use super::binding::{Guid, QueryValues, parse_int};
 use super::cursor::{IndexCursor, Kind, query_hash};
-use super::pins::words;
 use super::search::build_query;
 use super::text;
-use super::wire::{self, MessageDto};
+use crate::messages::dto::{self, MessageDto};
 use crate::auth::Caller;
 use crate::database::DbError;
 use crate::http::{ApiError, ApiResult, Json, Path, Problem};
@@ -92,7 +91,7 @@ pub async fn search(
         return Err(query_length(&state)?);
     }
 
-    let words = words(&state)?;
+    let messages = *state.messages();
     let user = caller.user;
     let found = state
         .database()
@@ -110,7 +109,7 @@ pub async fn search(
                 0,
                 SEARCH_RESULT_COUNT,
             )?;
-            Ok(Some(wire::load(db, &ids, Some(user), &words)?))
+            Ok(Some(dto::load(db, &messages, &ids, Some(user))?))
         })
         .await?;
     found.map(Json).ok_or_else(ApiError::not_found)
@@ -160,7 +159,7 @@ pub async fn page(
         return Err(query_length(&state)?);
     }
 
-    let words = words(&state)?;
+    let messages = *state.messages();
     let user = caller.user;
     let limit = asked.limit.unwrap_or(DEFAULT_PAGE_SIZE);
     let hash = query_hash(needle.as_deref());
@@ -215,7 +214,7 @@ pub async fn page(
                 None
             };
             Ok(Some(Ok(IndexPage {
-                messages: wire::load(db, &ids, Some(user), &words)?,
+                messages: dto::load(db, &messages, &ids, Some(user))?,
                 next_cursor,
             })))
         })
