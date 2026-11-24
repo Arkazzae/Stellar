@@ -2,7 +2,6 @@
 
 mod support;
 
-mod client_gate;
-mod database;
-mod health;
-mod pipeline;
+// The test modules are listed in `modules.list.rs`, one to a line, so that
+// tests added on different branches merge without a conflict.
+include!("modules.list.rs");
