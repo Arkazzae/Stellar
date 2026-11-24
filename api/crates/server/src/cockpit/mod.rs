@@ -30,7 +30,7 @@ use axum::http::StatusCode;
 use axum::response::Response;
 
 use crate::database::DbError;
-use crate::http::{ApiError, Endpoints, Problem};
+use crate::http::{ApiError, Endpoints, Problem, no_content};
 use crate::logging::LogBuffer;
 use crate::panel::FreshInstanceOwner;
 use crate::values::Id;
@@ -93,13 +93,6 @@ pub(crate) fn invalid(field: &str, text: String) -> ApiError {
 /// The text cut to its length in UTF-16 units, which is how clients count.
 pub(crate) fn length(text: &str) -> usize {
     text.encode_utf16().count()
-}
-
-/// The answer that has a status and no body.
-pub(crate) fn no_content() -> Response {
-    let mut response = Response::new(axum::body::Body::empty());
-    *response.status_mut() = StatusCode::NO_CONTENT;
-    response
 }
 
 pub fn routes() -> Endpoints {

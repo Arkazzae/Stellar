@@ -14,7 +14,7 @@ use crate::auth::Caller;
 use crate::roles::Chosen;
 use crate::database::DbError;
 use crate::events::{Audience, Event};
-use crate::http::{ApiError, ApiResult, Endpoints, Json, Path, Problem, json_response};
+use crate::http::{ApiError, ApiResult, Endpoints, Json, Path, Problem, json_response, no_content};
 use crate::permissions::audit::{self, AuditChange, AuditEvent};
 use crate::permissions::authorization::{self, MemberAuthorization};
 use crate::permissions::membership::ActiveServer;
@@ -324,10 +324,4 @@ fn taken(error: rusqlite::Error) -> ApiError {
     } else {
         ApiError::from(error)
     }
-}
-
-fn no_content() -> Response {
-    let mut response = Response::new(axum::body::Body::empty());
-    *response.status_mut() = StatusCode::NO_CONTENT;
-    response
 }

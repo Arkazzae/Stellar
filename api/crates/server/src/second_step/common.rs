@@ -2,7 +2,7 @@
 //! asking, turning an outcome of the ceremony into the answer the web client
 //! knows, and keeping an answer out of caches.
 
-use axum::http::{HeaderValue, StatusCode, header};
+use axum::http::{StatusCode, header};
 use axum::response::{IntoResponse, Response};
 use serde::Serialize;
 use stellarr_messages::MessageKey;
@@ -12,6 +12,7 @@ use crate::auth::ceremony::{Ask, Completed};
 use crate::auth::flow::{self, ChallengeStatus, Context};
 use crate::auth::security_cookies;
 use crate::database::DbError;
+pub(super) use crate::http::no_store;
 use crate::http::{
     ApiError, ApiResult, Json, Origin, Problem, json_response, with_cookie, with_session_cookie,
 };
@@ -68,15 +69,6 @@ impl Seen {
 /// spelling of an id); a body without one names no challenge.
 pub(super) fn challenge_id(sent: Option<&str>) -> &str {
     sent.unwrap_or("")
-}
-
-/// Keeps an answer out of every cache, as every route under `/api/auth/mfa`
-/// and its neighbours does.
-pub(super) fn no_store(mut response: Response) -> Response {
-    let headers = response.headers_mut();
-    headers.insert(header::CACHE_CONTROL, HeaderValue::from_static("no-store"));
-    headers.insert(header::PRAGMA, HeaderValue::from_static("no-cache"));
-    response
 }
 
 /// A JSON answer that is never stored.

@@ -9,6 +9,7 @@ use stellarr_oidc::form::encode_component;
 use stellarr_oidc::options::{Provider, safe_return_url};
 
 use crate::auth::cookies;
+pub(super) use crate::http::no_store;
 use crate::values::Timestamp;
 
 /// A redirect to `location`. An address a header cannot carry (it is on this
@@ -21,14 +22,6 @@ pub fn redirect(location: &str) -> Response {
     let mut response = Response::new(axum::body::Body::empty());
     *response.status_mut() = StatusCode::FOUND;
     response.headers_mut().insert(header::LOCATION, value);
-    response
-}
-
-/// Keeps an answer out of every cache, as every route under `/api/auth` does.
-pub fn no_store(mut response: Response) -> Response {
-    let headers = response.headers_mut();
-    headers.insert(header::CACHE_CONTROL, HeaderValue::from_static("no-store"));
-    headers.insert(header::PRAGMA, HeaderValue::from_static("no-cache"));
     response
 }
 
