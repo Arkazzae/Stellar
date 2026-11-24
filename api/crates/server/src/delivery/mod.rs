@@ -65,7 +65,9 @@ pub fn workers() -> Vec<Worker> {
 }
 
 /// The worker with a sender chosen by the caller: a test hands it one wired to
-/// a fake push service. `None` is the sender the settings describe.
+/// a fake push service. `None` is the sender the settings describe. For tests
+/// only: the server runs [`workers`].
+#[doc(hidden)]
 pub fn workers_with(sender: Option<Arc<Sender>>) -> Vec<Worker> {
     vec![Worker::new("notification-delivery", move |state, stop| {
         let sender = sender.clone();
