@@ -146,7 +146,7 @@ async function ask() {
   for (const [name, jar] of Object.entries(jars)) { who[name] = new Person(name); who[name].id = jar.id; who[name].cookies = new Map(jar.cookies); }
   const anon = new Person("anon");
   who.anon = anon;
-  const secrets = [args.secrets ?? ""].filter(Boolean);
+  const secrets = (args.secrets ?? "").split(",").filter(Boolean);
   const seen = [];
   const step = async (label, person, method, path, options) => {
     const r = await who[person].send(method, path, options);
@@ -335,6 +335,27 @@ async function ask() {
       await step(`list [${p}]`, p, "GET", B);
       await step(`download [${p}]`, p, "GET", `${B}/${GOOD}/download`);
     }
+  }
+  // The destination with the credentials missing or partly there: which of the
+  // three secrets the environment holds is the phase's own start (the script
+  // starts both servers without the others), and the answers must agree.
+  if (args.phase.startsWith("r2-")) {
+    const R = { enabled: true, mode: "s3", endpoint: "https://acct.r2.example", region: "auto", bucket: "bk", prefix: "stellarr" };
+    if (args.phase === "r2-all") {
+      // The automatic backup tries the unreachable destination the settings
+      // name, so that a failure is logged; the script greps the logs.
+      await new Promise((x) => setTimeout(x, 85000));
+      await step("list: automation after a failed copy", "owner", "GET", B);
+    }
+    await step("r2: before anything", "owner", "GET", R2);
+    await step("r2: put enabled s3", "owner", "PUT", R2, { body: R });
+    await step("r2: get after s3", "owner", "GET", R2);
+    await step("r2: put enabled worker", "owner", "PUT", R2, { body: { ...R, mode: "worker", bucket: "" } });
+    await step("r2: put disabled s3", "owner", "PUT", R2, { body: { ...R, enabled: false } });
+    await step("r2: put enabled s3, bad endpoint", "owner", "PUT", R2, { body: { ...R, endpoint: "http://acct.r2.example" } });
+    await step("r2: get", "owner", "GET", R2);
+    await step("list: automation", "owner", "GET", B);
+    await step("r2: reset", "owner", "DELETE", R2);
   }
   if (seen.length) lines.push("## SECRETS SEEN", ...seen);
   writeFileSync(args.out, lines.join("\n") + "\n");
