@@ -24,6 +24,7 @@ cleanup() {
   echo "ended with status $?"
   for p in $pids; do kill -9 "$p" 2>/dev/null; done
   docker kill "$name" >/dev/null 2>&1
+  [ -n "${ORACLE_SCRIPT:-}" ] && "$ORACLE_SCRIPT" stop "${PROBE_ORACLE:-discordwprobe}" >/dev/null 2>&1
   docker rm -f "$name" >/dev/null 2>&1
   if [ "${KEEP:-0}" = 1 ]; then echo "kept $work"; else rm -rf "$work"; fi
 }
@@ -72,6 +73,38 @@ rust_run "$work/rust.db" 0 || { cat "$work/rust.db.log" | tail -20; exit 2; }
 net_run "$work/net.db" 0 || { tail -20 "$work/net.db.log"; exit 2; }
 same "$work/rust.db" "$work/net.db" "the new writer and the first server's wrote the same"
 note "messages written: $(python3 -c "import sqlite3;print(sqlite3.connect('$work/rust.db').execute('select count(*) from DiscordImportMessages where Outcome = 0').fetchone()[0])")"
+
+# ---- what each server does with a stand-in at the routes that name a person
+if [ -n "${ORACLE_SCRIPT:-}" ]; then
+  stand_in() { python3 -c "import sqlite3,sys;print(sqlite3.connect(sys.argv[1]).execute(sys.argv[2]).fetchone()[0])" "$1" "$2"; }
+  probe() { # a database, a base address; prints the answers
+    local ghost ghost_name voice
+    ghost="$(stand_in "$1" "select lower(Id) from Users where Origin = 'discord' order by Username limit 1")"
+    ghost_name="$(stand_in "$1" "select Username from Users where Origin = 'discord' order by Username limit 1")"
+    voice="$(stand_in "$1" "select lower(Id) from Channels where Kind = 1 order by Position limit 1")"
+    python3 "$here/probe.py" "$2" ada 'Passw0rd!2026' "$ghost" "$ghost_name" x "$voice" x
+  }
+  cp "$work/rust.db" "$work/probe-rust.db"
+  probe_env="$work/probe-oracle.env"; : > "$probe_env"
+  ORACLE_ENV_FILE="$probe_env" "$ORACLE_SCRIPT" start "${PROBE_ORACLE:-discordwprobe}" "${PROBE_PORT:-5234}" Development >/dev/null
+  probe_container="stellarr-port-oracle-${PROBE_ORACLE:-discordwprobe}"
+  docker stop -t 10 "$probe_container" >/dev/null
+  docker cp "$work/net.db" "$probe_container:/tmp/data/stellarr.db"
+  docker start "$probe_container" >/dev/null
+  mkdir -p "$work/probe-data"; cp "$work/probe-rust.db" "$work/probe-data/stellarr.db"
+  env ASPNETCORE_ENVIRONMENT=Testing Rtc__TurnSharedSecret=x STELLARR_DATA_ROOT="$work/probe-data" \
+    "ConnectionStrings__Database=Data Source=$work/probe-data/stellarr.db" ASPNETCORE_URLS=http://127.0.0.1:0 \
+    "$(dirname "$binary")/../stellarr-api" > "$work/probe-rust.log" 2>&1 &
+  p=$!; pids="$pids $p"
+  for _ in $(seq 1 60); do grep -q 'listening on' "$work/probe-rust.log" && break; perl -e 'select(undef,undef,undef,0.3)'; done
+  rust_base="http://127.0.0.1:$(sed -n 's/.*listening on: http:\/\/127.0.0.1:\([0-9]*\).*/\1/p' "$work/probe-rust.log")"
+  for _ in $(seq 1 60); do [ "$(curl -s -o /dev/null -w '%{http_code}' "http://127.0.0.1:${PROBE_PORT:-5234}/health/ready")" = 200 ] && break; sleep 1; done
+  probe "$work/rust.db" "$rust_base" > "$work/probe-rust.txt" 2>&1
+  probe "$work/net.db" "http://127.0.0.1:${PROBE_PORT:-5234}" > "$work/probe-net.txt" 2>&1
+  kill "$p" 2>/dev/null; "$ORACLE_SCRIPT" stop "${PROBE_ORACLE:-discordwprobe}" >/dev/null 2>&1
+  if diff "$work/probe-net.txt" "$work/probe-rust.txt" >/dev/null; then note "same: the answers at the routes that name a person ($(wc -l < "$work/probe-rust.txt") requests)"; else bad "the answers at the routes that name a person"; diff "$work/probe-net.txt" "$work/probe-rust.txt"; fi
+  [ "${KEEP:-0}" = 1 ] && cp "$work/probe-rust.txt" "${TMPDIR:-/tmp}/probe-rust.txt"
+fi
 
 # ---- interrupted at a boundary between two calls (new) or two transactions (first), then continued
 for n in ${STOPS:-1 2 3 5 8 13 21 34 55 89}; do

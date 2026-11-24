@@ -29,8 +29,9 @@ use discord::guild::{Ch, FakeGuild, ID};
 const AUTHOR: &str = "1";
 
 /// Every route with a person's id in its path, which the walk below covers.
-const ROUTES_NAMING_A_PERSON: [&str; 9] = [
+const ROUTES_NAMING_A_PERSON: [&str; 10] = [
     "/api/admin/bans/{userId}",
+    "/api/admin/channels/{channelId}/members/{userId}",
     "/api/admin/invites/{invite_id}/members/{user_id}",
     "/api/admin/members/{userId}",
     "/api/admin/members/{userId}/ban",
@@ -221,10 +222,29 @@ async fn a_placeholder_is_absent_or_refused_everywhere_a_person_is_found_or_acte
         (Method::POST, "/api/admin/members/{userId}/ban", format!("/api/admin/members/{id}/ban"), Some(json!({ "reason": "imported" }))),
         (Method::DELETE, "/api/admin/members/{userId}", format!("/api/admin/members/{id}"), None),
         (Method::DELETE, "/api/admin/bans/{userId}", format!("/api/admin/bans/{id}"), None),
+        // Removing or moving somebody out of a voice room: nobody sits there.
+        (Method::DELETE, "/api/admin/channels/{channelId}/members/{userId}", format!("/api/admin/channels/{}/members/{id}", w.voice), None),
+        (Method::PATCH, "/api/admin/channels/{channelId}/members/{userId}", format!("/api/admin/channels/{}/members/{id}", w.voice), Some(json!({ "targetChannelId": w.voice }))),
     ] {
         walked.insert(route);
         assert_eq!(send(&w.ada.client, method.clone(), &path, body).await, 404, "{method} {path}");
     }
+    // The other ways in and out, where the first server has no rule of its own:
+    // it treats the stand-in as a disabled account that has no password, no
+    // passkey, no recovery code and no address, and so does this one. The
+    // answers are the ones a name nobody has gets.
+    for name in ["discord:1", "discord:nobody-has-this"] {
+        let recovery = anonymous
+            .post_json(
+                "/api/auth/recovery/redeem",
+                &json!({ "username": name, "code": "AAAA-BBBB-CCCC", "newPassword": "Another!2026-long" }),
+            )
+            .await;
+        assert_eq!(recovery.status, 400, "{name}: {}", recovery.text());
+        let sign_up = register_named(&anonymous, &w, name).await;
+        assert_eq!(sign_up.status, 400, "{name}");
+    }
+
     // The successor must be a member: this one is refused as an invalid choice.
     assert_eq!(
         send(&w.ada.client, Method::POST, "/api/admin/server/transfer", Some(json!({ "userId": id }))).await,
@@ -232,7 +252,7 @@ async fn a_placeholder_is_absent_or_refused_everywhere_a_person_is_found_or_acte
     );
 
     // Member lists: the placeholder is no member of anything.
-    for path in ["/api/admin/members", "/api/admin/bans", "/api/servers"] {
+    for path in ["/api/admin/members", "/api/admin/bans", "/api/servers", "/api/bootstrap"] {
         let listed = w.ada.client.get(path).await;
         assert!(listed.status.is_success(), "{path}: {}", listed.text());
         assert!(!listed.text().contains(&id), "{path}");
@@ -304,6 +324,21 @@ async fn a_placeholder_is_absent_or_refused_everywhere_a_person_is_found_or_acte
     for route in ROUTES_NAMING_A_PERSON {
         assert!(walked.contains(route), "{route} was not walked");
     }
+}
+
+async fn register_named(client: &Client, w: &World, username: &str) -> crate::support::Response {
+    client
+        .post_json(
+            "/api/auth/register",
+            &json!({
+                "username": username,
+                "displayName": "Taker",
+                "email": "taker@example.com",
+                "password": "Taker!2026-long-enough",
+                "inviteCode": w.server.invite(),
+            }),
+        )
+        .await
 }
 
 fn server_id(w: &World) -> String {
