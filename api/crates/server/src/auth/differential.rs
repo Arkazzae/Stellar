@@ -67,6 +67,10 @@ fn answer(line: &str) -> String {
         }
         "hash" => tokens::hash(&argument(1).unwrap()),
         "normalize" => hex_upper(recovery_codes::normalize(&argument(1).unwrap()).as_bytes()),
+        "guidparse" => match super::mfa::parse_method_id(&argument(1).unwrap()) {
+            Some(id) => id.to_string(),
+            None => "no".to_string(),
+        },
         "trim" => {
             let mut out = String::new();
             for unit in argument(1).unwrap().trim().encode_utf16() {
