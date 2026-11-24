@@ -99,6 +99,11 @@ export const channelKickedError: VoiceError = {
   message: "A moderator disconnected this voice session from the channel.",
 };
 
+export const channelAccessRevokedError = (t: Translator): VoiceError => ({
+  kind: "channel-access-revoked",
+  message: t("voiceError.channelAccessRevoked"),
+});
+
 export const micSwapFailedError = (t: Translator): VoiceError => ({
   kind: "mic-unavailable",
   message: t("voiceClient.micSwapFailed"),

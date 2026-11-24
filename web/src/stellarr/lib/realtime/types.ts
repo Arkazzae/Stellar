@@ -61,6 +61,8 @@ export interface VoiceSessionReplacedEvent {
 
 export interface VoiceChannelKickedEvent {
   channelId: ChannelId;
+  /** Present when access rules removed the seat. A moderator kick omits it. */
+  reason?: "access-revoked";
 }
 
 export interface VoiceChannelMovedEvent {

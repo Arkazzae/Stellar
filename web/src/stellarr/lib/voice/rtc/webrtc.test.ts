@@ -1,6 +1,8 @@
 import { afterEach, beforeEach, describe, expect, it, vi, type MockInstance } from "vitest";
 
-import { english } from "@/test/translators";
+import { HUB_DECODERS } from "@/lib/realtime/hubPayloads";
+import { voiceProblemForUi } from "@/state/voiceProblems";
+import { english, polishAsRead } from "@/test/translators";
 
 import type {
   MediaSignal,
@@ -1695,6 +1697,7 @@ describe("following the hub", () => {
     await joined(client);
 
     realtime.emit("VoiceChannelKicked", { channelId: "ch-other" });
+    realtime.emit("VoiceChannelKicked", { channelId: "ch-other", reason: "access-revoked" });
     realtime.emit("VoiceChannelMoved", { fromChannelId: "ch-other", toChannelId: "ch-third" });
     realtime.emit("VoiceSessionReplaced", { channelId: "ch-other" });
 
@@ -1714,13 +1717,35 @@ describe("following the hub", () => {
     expect(pc.close).toHaveBeenCalled();
   });
 
-  it("releases everything when a moderator kicks this seat", async () => {
+  it.each([
+    {
+      cause: "a moderator disconnects this seat",
+      payload: { channelId: CHANNEL },
+      kind: "channel-kicked",
+      title: "Rozłączono z kanału",
+      message: "Moderator rozłączył Cię z kanału głosowego.",
+    },
+    {
+      cause: "this seat loses channel access",
+      payload: { channelId: CHANNEL, reason: "access-revoked" },
+      kind: "channel-access-revoked",
+      title: "Brak dostępu do kanału głosowego",
+      message: "Nie masz już dostępu do tego kanału głosowego.",
+    },
+  ])("releases the call and explains why when $cause", async ({ payload, kind, title, message }) => {
     const client = build();
     const pc = await joined(client);
+    const event = HUB_DECODERS.VoiceChannelKicked(payload);
+    if (event === null) throw new Error("Expected a valid voice unseating event");
 
-    realtime.emit("VoiceChannelKicked", { channelId: CHANNEL });
+    realtime.emit("VoiceChannelKicked", event);
 
-    await vi.waitFor(() => expect(client.getSnapshot().error?.kind).toBe("channel-kicked"));
+    await vi.waitFor(() => expect(voiceProblemForUi(client.getSnapshot().error, polishAsRead)).toEqual({
+      kind,
+      title,
+      message,
+      recoverable: false,
+    }));
     expect(client.getSnapshot().channelId).toBeNull();
     expect(realtime.leaveVoice).toHaveBeenCalled();
     expect(micTrack.stop).toHaveBeenCalled();
