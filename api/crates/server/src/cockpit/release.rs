@@ -3,15 +3,15 @@
 use axum::extract::{Request, State};
 use axum::http::StatusCode;
 use axum::response::Response;
-use rusqlite::params;
+use rusqlite::{OptionalExtension, params};
 use serde::{Deserialize, Serialize};
 use stellarr_messages::{MessageKey, Messages};
 
-use super::settings::Row;
 use super::bind;
 use crate::database::DbError;
 use crate::http::{ApiError, ApiResult, Problem, json_response};
-use crate::panel::{self, operations};
+use crate::instance::operations;
+use crate::panel::{self};
 use crate::permissions::membership::InstanceOwner;
 use crate::releases::{self, ANDROID, DESKTOP, ReleaseDto};
 use crate::state::AppState;
@@ -75,12 +75,22 @@ pub(super) async fn read(
     InstanceOwner(server): InstanceOwner,
 ) -> ApiResult<Response> {
     let reading = state.clone();
-    let row = state
+    let (minimum, recommended) = state
         .database()
-        .read(move |db| -> Result<Row, DbError> { Ok(Row::load(db, &reading, server)?) })
+        .read(move |db| -> Result<(Option<String>, Option<String>), DbError> {
+            let _ = &reading;
+            Ok(db
+                .query_row(
+                    "SELECT \"DesktopMinimumVersion\", \"DesktopRecommendedVersion\" FROM \"OperationsSettings\" WHERE \"ServerId\" = ?1",
+                    [server],
+                    |row| Ok((row.get(0)?, row.get(1)?)),
+                )
+                .optional()?
+                .unwrap_or((None, None)))
+        })
         .await?;
     let broken = state.messages().get(MessageKey::CockpitReleaseManifestBroken, &[])?;
-    describe(&state, row.desktop_minimum, row.desktop_recommended, &broken).await
+    describe(&state, minimum, recommended, &broken).await
 }
 
 #[derive(Deserialize)]
@@ -137,12 +147,10 @@ pub(super) async fn update(State(state): State<AppState>, request: Request) -> A
     state
         .database()
         .write(move |tx| -> Result<(), ApiError> {
-            let created: Timestamp = tx.query_row(
-                "SELECT \"CreatedAt\" FROM \"Servers\" WHERE \"Id\" = ?1",
-                [server],
-                |row| row.get(0),
-            )?;
-            operations::ensure(tx, writing.settings(), server, created)?;
+            let loaded = super::settings::load(tx, &writing, server)?;
+            if !loaded.stored {
+                operations::save(tx, &loaded.settings, false, &instance_name(tx, server)?)?;
+            }
             tx.execute(
                 "UPDATE \"OperationsSettings\" SET \"DesktopMinimumVersion\" = ?2, \"DesktopRecommendedVersion\" = ?3, \"UpdatedAt\" = ?4 WHERE \"ServerId\" = ?1",
                 params![server, saved_minimum, saved_recommended, Timestamp::now()],
@@ -161,4 +169,8 @@ pub(super) async fn update(State(state): State<AppState>, request: Request) -> A
         .await?;
     let broken = messages.get(MessageKey::CockpitVersionsSavedManifestBroken, &[])?;
     describe(&state, Some(minimum), Some(recommended), &broken).await
+}
+
+fn instance_name(db: &rusqlite::Connection, server: crate::values::Id) -> rusqlite::Result<String> {
+    db.query_row("SELECT \"Name\" FROM \"Servers\" WHERE \"Id\" = ?1", [server], |row| row.get(0))
 }
