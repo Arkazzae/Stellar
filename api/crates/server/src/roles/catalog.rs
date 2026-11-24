@@ -9,7 +9,7 @@ use rusqlite::{Connection, params};
 use serde::Deserialize;
 
 use super::announce::Announcement;
-use super::{RoleDto, RoleRow, invalid, no_content, no_member_role, taken};
+use super::{Guid, RoleDto, RoleRow, invalid, no_content, no_member_role, taken};
 use crate::auth::Caller;
 use crate::http::{ApiError, ApiResult, Json, Path, json_response};
 use crate::permissions::audit::{self, AuditChange, AuditEvent};
@@ -18,7 +18,7 @@ use crate::permissions::membership::ActiveServer;
 use crate::permissions::ownership;
 use crate::permissions::privileges::{self, MANAGE_ROLES, contains};
 use crate::permissions::roles::{self, HeldRoleTable, Role};
-use crate::permissions::visibility::ServerVisibility;
+use crate::permissions::access_changed::ViewChange;
 use crate::state::AppState;
 use crate::values::Id;
 use stellarr_messages::{MessageKey, Messages};
@@ -112,6 +112,9 @@ pub(super) async fn create(
     ActiveServer(server): ActiveServer,
     Json(request): Json<RoleRequest>,
 ) -> ApiResult<Response> {
+    // Before any other refusal, as the first server's filter was, but after the
+    // person is known to be a member and the body has been read.
+    super::require_fresh(&state, caller, server).await?;
     let messages = *state.messages();
     let created = state
         .database()
@@ -188,10 +191,13 @@ pub(super) async fn create(
 pub(super) async fn update(
     State(state): State<AppState>,
     caller: Caller,
+    Path(Guid(role_id)): Path<Guid>,
     ActiveServer(server): ActiveServer,
-    Path(role_id): Path<Id>,
     Json(request): Json<RoleRequest>,
 ) -> ApiResult<Response> {
+    // Before any other refusal, as the first server's filter was, but after the
+    // person is known to be a member and the body has been read.
+    super::require_fresh(&state, caller, server).await?;
     let messages = *state.messages();
     let (dto, announcement) = state
         .database()
@@ -222,7 +228,7 @@ pub(super) async fn update(
             }
 
             // Read once the change may go on, before anything is written.
-            let before = ServerVisibility::load(tx, server)?;
+            let before = ViewChange::begin(tx, server)?;
             tx.execute(
                 "UPDATE \"ServerRoles\" SET \"Name\" = ?1, \"Color\" = ?2, \"Permissions\" = ?3 WHERE \"Id\" = ?4",
                 params![draft.name, draft.color, draft.permissions, role.role.id],
@@ -300,6 +306,9 @@ pub(super) async fn reorder(
     ActiveServer(server): ActiveServer,
     Json(request): Json<OrderRequest>,
 ) -> ApiResult<Response> {
+    // Before any other refusal, as the first server's filter was, but after the
+    // person is known to be a member and the body has been read.
+    super::require_fresh(&state, caller, server).await?;
     let messages = *state.messages();
     state
         .database()
@@ -379,9 +388,12 @@ pub(super) async fn reorder(
 pub(super) async fn delete(
     State(state): State<AppState>,
     caller: Caller,
+    Path(Guid(role_id)): Path<Guid>,
     ActiveServer(server): ActiveServer,
-    Path(role_id): Path<Id>,
 ) -> ApiResult<Response> {
+    // Before any other refusal, as the first server's filter was, but after the
+    // person is known to be a member and the body has been read.
+    super::require_fresh(&state, caller, server).await?;
     let messages = *state.messages();
     let announcement = state
         .database()
@@ -409,7 +421,7 @@ pub(super) async fn delete(
                 return Err(ApiError::forbidden());
             }
 
-            let before = ServerVisibility::load(tx, server)?;
+            let before = ViewChange::begin(tx, server)?;
             let holders = HeldRoleTable::load(tx, server)?.holders(role.role.id);
             // The top role is moved off the role first: a member may not point
             // at a role that is gone. The rows of those holding it go with it.

@@ -338,3 +338,18 @@ async fn shutdown_signal() {
     }
     let _ = interrupt.await;
 }
+
+#[cfg(test)]
+mod router_tests {
+    /// Two groups that name a parameter differently at the same place of one
+    /// path make the router refuse to start; this is that start, with every
+    /// group registered.
+    #[test]
+    fn every_group_registers_in_one_router() {
+        let mut all = crate::http::Endpoints::new();
+        for group in super::groups() {
+            all = all.merge(group);
+        }
+        let _ = all;
+    }
+}

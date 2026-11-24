@@ -12,7 +12,7 @@ use rusqlite::{Connection, OptionalExtension, params};
 use serde::{Deserialize, Serialize};
 
 use super::announce::Announcement;
-use super::{invalid, no_content, taken};
+use super::{Guid, invalid, no_content, taken};
 use crate::auth::Caller;
 use crate::http::{ApiError, ApiResult, Endpoints, Json, Path, json_response};
 use crate::permissions::audit::{self, AuditChange, AuditEvent};
@@ -20,7 +20,8 @@ use crate::permissions::authorization::{self, Scope};
 use crate::permissions::membership::ActiveServer;
 use crate::permissions::privileges::{self, ADMINISTRATOR, MANAGE_ROLES, contains};
 use crate::permissions::roles::Member;
-use crate::permissions::visibility::{self, ServerVisibility};
+use crate::permissions::access_changed::ViewChange;
+use crate::permissions::visibility;
 use crate::state::AppState;
 use crate::values::Id;
 use stellarr_messages::{MessageKey, Messages};
@@ -32,7 +33,8 @@ pub(super) fn routes() -> Endpoints {
 /// The routes of one kind of place: `SECTION` is true for sections and false
 /// for channels.
 fn target<const SECTION: bool>(collection: &str) -> Endpoints {
-    let base = format!("/api/admin/{collection}/{{targetId}}/permissions");
+    let place = if SECTION { "sectionId" } else { "channelId" };
+    let base = format!("/api/admin/{collection}/{{{place}}}/permissions");
     Endpoints::new()
         .get(&base, list::<SECTION>)
         .authorized()
@@ -273,8 +275,8 @@ fn record_member(db: &Connection, setting: &Setting<'_>, member: Id, change: Cha
 async fn list<const SECTION: bool>(
     State(state): State<AppState>,
     caller: Caller,
+    Path(Guid(target)): Path<Guid>,
     ActiveServer(server): ActiveServer,
-    Path(target): Path<Id>,
 ) -> ApiResult<Response> {
     let rows = state
         .database()
@@ -302,8 +304,8 @@ async fn list<const SECTION: bool>(
 async fn list_members<const SECTION: bool>(
     State(state): State<AppState>,
     caller: Caller,
+    Path(Guid(target)): Path<Guid>,
     ActiveServer(server): ActiveServer,
-    Path(target): Path<Id>,
 ) -> ApiResult<Response> {
     let rows = state
         .database()
@@ -331,16 +333,19 @@ async fn list_members<const SECTION: bool>(
 async fn set<const SECTION: bool>(
     State(state): State<AppState>,
     caller: Caller,
+    Path((Guid(target), Guid(role))): Path<(Guid, Guid)>,
     ActiveServer(server): ActiveServer,
-    Path((target, role)): Path<(Id, Id)>,
     Json(request): Json<OverrideRequest>,
 ) -> ApiResult<Response> {
+    // Before any other refusal, as the first server's filter was, but after the
+    // person is known to be a member and the body has been read.
+    super::require_fresh(&state, caller, server).await?;
     let messages = *state.messages();
     let (dto, announcement) = state
         .database()
         .write(move |tx| -> Result<(RoleOverrideDto, Announcement), ApiError> {
             refuse(tx, SECTION, caller, server, target)?;
-            let before = ServerVisibility::load(tx, server)?;
+            let before = ViewChange::begin(tx, server)?;
             let known = tx
                 .query_row(
                     "SELECT 1 FROM \"ServerRoles\" WHERE \"Id\" = ?1 AND \"ServerId\" = ?2",
@@ -416,15 +421,18 @@ async fn set<const SECTION: bool>(
 async fn clear<const SECTION: bool>(
     State(state): State<AppState>,
     caller: Caller,
+    Path((Guid(target), Guid(role))): Path<(Guid, Guid)>,
     ActiveServer(server): ActiveServer,
-    Path((target, role)): Path<(Id, Id)>,
 ) -> ApiResult<Response> {
+    // Before any other refusal, as the first server's filter was, but after the
+    // person is known to be a member and the body has been read.
+    super::require_fresh(&state, caller, server).await?;
     let messages = *state.messages();
     let announcement = state
         .database()
         .write(move |tx| -> Result<Announcement, ApiError> {
             refuse(tx, SECTION, caller, server, target)?;
-            let before = ServerVisibility::load(tx, server)?;
+            let before = ViewChange::begin(tx, server)?;
             let known = tx
                 .query_row(
                     "SELECT 1 FROM \"ServerRoles\" WHERE \"Id\" = ?1 AND \"ServerId\" = ?2",
@@ -476,16 +484,19 @@ async fn clear<const SECTION: bool>(
 async fn set_member<const SECTION: bool>(
     State(state): State<AppState>,
     caller: Caller,
+    Path((Guid(target), Guid(user))): Path<(Guid, Guid)>,
     ActiveServer(server): ActiveServer,
-    Path((target, user)): Path<(Id, Id)>,
     Json(request): Json<OverrideRequest>,
 ) -> ApiResult<Response> {
+    // Before any other refusal, as the first server's filter was, but after the
+    // person is known to be a member and the body has been read.
+    super::require_fresh(&state, caller, server).await?;
     let messages = *state.messages();
     let (dto, announcement) = state
         .database()
         .write(move |tx| -> Result<(MemberOverrideDto, Announcement), ApiError> {
             refuse(tx, SECTION, caller, server, target)?;
-            let before = ServerVisibility::load(tx, server)?;
+            let before = ViewChange::begin(tx, server)?;
             let Some(member) = Member::load(tx, server, user)? else {
                 return Err(ApiError::not_found());
             };
@@ -551,15 +562,18 @@ async fn set_member<const SECTION: bool>(
 async fn clear_member<const SECTION: bool>(
     State(state): State<AppState>,
     caller: Caller,
+    Path((Guid(target), Guid(user))): Path<(Guid, Guid)>,
     ActiveServer(server): ActiveServer,
-    Path((target, user)): Path<(Id, Id)>,
 ) -> ApiResult<Response> {
+    // Before any other refusal, as the first server's filter was, but after the
+    // person is known to be a member and the body has been read.
+    super::require_fresh(&state, caller, server).await?;
     let messages = *state.messages();
     let announcement = state
         .database()
         .write(move |tx| -> Result<Announcement, ApiError> {
             refuse(tx, SECTION, caller, server, target)?;
-            let before = ServerVisibility::load(tx, server)?;
+            let before = ViewChange::begin(tx, server)?;
             let Some(member) = Member::load(tx, server, user)? else {
                 return Err(ApiError::not_found());
             };

@@ -15,7 +15,7 @@ use serde::Serialize;
 use crate::events::{Audience, Event};
 use crate::permissions::privileges;
 use crate::permissions::roles::HeldRoleTable;
-use crate::permissions::visibility::ServerVisibility;
+use crate::permissions::access_changed::{self, ViewChange};
 use crate::state::AppState;
 use crate::values::Id;
 
@@ -34,11 +34,10 @@ impl Announcement {
     pub(super) fn after(
         db: &Connection,
         server: Id,
-        before: &ServerVisibility,
+        before: &ViewChange,
         recipients: &[Id],
     ) -> rusqlite::Result<Announcement> {
-        let after = ServerVisibility::load(db, server)?;
-        let changed = ServerVisibility::changed(db, before, &after)?;
+        let changed = before.finish(db)?;
         Ok(Announcement {
             changed,
             notices: notices(db, server, recipients)?,
@@ -50,7 +49,7 @@ impl Announcement {
     pub(super) fn views_after(
         db: &Connection,
         server: Id,
-        before: &ServerVisibility,
+        before: &ViewChange,
     ) -> rusqlite::Result<Announcement> {
         Announcement::after(db, server, before, &[])
     }
@@ -58,16 +57,7 @@ impl Announcement {
     /// Hands it to the hub: the people whose view changed first, then each
     /// recipient their own permissions.
     pub(super) fn publish(self, state: &AppState, server: Id) {
-        if !self.changed.is_empty() {
-            state.events().publish(Event::new(
-                Audience::Followers {
-                    server,
-                    users: self.changed,
-                },
-                "ChannelAccessChanged",
-                &ChannelAccessChanged { server_id: server },
-            ));
-        }
+        access_changed::publish(state.events(), server, self.changed);
         for (user, permissions) in self.notices {
             state.events().publish(Event::new(
                 Audience::Users(vec![user]),
@@ -96,12 +86,6 @@ fn notices(db: &Connection, server: Id, recipients: &[Id]) -> rusqlite::Result<V
         .filter(|user| seen.insert(*user) && members.contains(user))
         .map(|user| (user, table.permissions_of(user)))
         .collect())
-}
-
-#[derive(Serialize)]
-#[serde(rename_all = "camelCase")]
-struct ChannelAccessChanged {
-    server_id: Id,
 }
 
 #[derive(Serialize)]

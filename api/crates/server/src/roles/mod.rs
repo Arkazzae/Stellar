@@ -29,6 +29,19 @@ use crate::permissions::roles::Role;
 use crate::values::Id;
 use stellarr_messages::{MessageKey, Messages, MissingValue};
 
+/// An id in a path, in any spelling the first server took for one: anything
+/// else is a route that does not exist.
+pub struct Guid(pub Id);
+
+impl<'de> serde::Deserialize<'de> for Guid {
+    fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Guid, D::Error> {
+        let text = String::deserialize(deserializer)?;
+        crate::permissions::membership::parse_guid(&text)
+            .map(Guid)
+            .ok_or_else(|| serde::de::Error::custom("not an id"))
+    }
+}
+
 pub fn routes() -> Endpoints {
     Endpoints::new()
         .get("/api/admin/roles", catalog::list)
@@ -125,6 +138,33 @@ struct RoleDto {
     member_count: usize,
     is_system: bool,
     is_owner: bool,
+}
+
+/// A change of roles on the instance's own server needs a second step passed
+/// in this session lately, for an account that has one; other servers ask for
+/// nothing. Nothing is written when it is refused.
+async fn require_fresh(
+    state: &crate::state::AppState,
+    caller: crate::auth::Caller,
+    server: Id,
+) -> Result<(), ApiError> {
+    let fresh = state
+        .database()
+        .read(move |db| -> Result<bool, ApiError> {
+            Ok(crate::auth::fresh::has_fresh_second_step_for_server(
+                db,
+                caller.user,
+                Some(caller.session),
+                server,
+                crate::values::Timestamp::now(),
+            )?)
+        })
+        .await?;
+    if fresh {
+        Ok(())
+    } else {
+        Err(crate::auth::fresh::refusal(state.messages())?.into())
+    }
 }
 
 /// The answer that says the server has no role for plain members.
