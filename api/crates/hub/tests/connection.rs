@@ -509,7 +509,7 @@ async fn a_connect_hook_that_fails_closes_the_connection_and_the_disconnect_hook
     let (records, code) = r.client.until_close().await;
     assert_eq!(
         records,
-        [json!({"type": 7, "error": "Connection closed with an error.", "allowReconnect": true})]
+        [json!({"type": 7, "error": "Connection closed with an error."})]
     );
     assert_eq!(code, Some(1000));
     r.task.await.unwrap();
@@ -526,7 +526,10 @@ async fn a_connect_hook_that_panics_still_leaves_nothing_behind() {
     let mut r = start(app, quick(), "ann");
     r.client.handshake().await;
     let (records, code) = r.client.until_close().await;
-    assert_eq!(records[0]["allowReconnect"], true);
+    assert_eq!(
+        records,
+        [json!({"type": 7, "error": "Connection closed with an error."})]
+    );
     assert_eq!(code, Some(1000));
     r.task.await.unwrap();
     assert_eq!(r.hub.connection_count(), 0);
@@ -746,6 +749,55 @@ async fn a_client_that_does_not_read_is_closed_when_its_queue_is_full() {
     tokio::time::timeout(Duration::from_secs(5), task)
         .await
         .expect("the connection was given up on")
+        .unwrap();
+    assert_eq!(hub.connection_count(), 0);
+    assert!(app.lines().last().unwrap().starts_with("disconnected ann"));
+}
+
+#[tokio::test]
+async fn a_write_that_cannot_finish_ends_the_connection_before_any_queue_fills() {
+    // A tiny pipe that is never read, roomy queues, a short write timeout:
+    // the only way out is the timeout.
+    let config = Config {
+        max_queued_messages: 100_000,
+        max_queued_bytes: 1 << 30,
+        write_timeout: Duration::from_millis(200),
+        close_grace: Duration::from_millis(200),
+        keep_alive_interval: Duration::from_secs(60),
+        client_timeout: None,
+        ..Config::default()
+    };
+    let hub = Hub::new(&config);
+    let app = std::sync::Arc::new(TestApp::default());
+    let (client_io, server_io) = tokio::io::duplex(512);
+    let (sender, receiver) = stellarr_websocket::split(
+        server_io,
+        stellarr_websocket::Config {
+            max_message_size: usize::MAX,
+            ..Default::default()
+        },
+    );
+    let task = tokio::spawn(stellarr_hub::serve(
+        app.clone(),
+        hub.clone(),
+        std::sync::Arc::new(config),
+        std::sync::Arc::new("ann".to_owned()),
+        "stuck".into(),
+        sender,
+        receiver,
+    ));
+    let mut client = Client::wrap(client_io);
+    client.handshake().await;
+    let big = stellarr_hub::Outbound::single("Fill", &"x".repeat(2000)).unwrap();
+    for _ in 0..5 {
+        assert!(
+            hub.send_to_connection("stuck", &big),
+            "nowhere near a queue limit"
+        );
+    }
+    tokio::time::timeout(Duration::from_secs(5), task)
+        .await
+        .expect("the stuck write ended the connection")
         .unwrap();
     assert_eq!(hub.connection_count(), 0);
     assert!(app.lines().last().unwrap().starts_with("disconnected ann"));

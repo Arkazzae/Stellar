@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 // Drives the real @microsoft/signalr client, and a raw WebSocket, against the
-// Rust hub (through a small test server) or against the C# API it replaces,
+// Rust hub (through a small test server) or against the reference server it replaces,
 // and checks that both answer the same way.
 //
 // Run by hand. It needs Node 22 or later and the repository's node_modules
@@ -14,13 +14,21 @@
 //
 // or start `interop_server 5300` yourself and pass --url http://127.0.0.1:5300.
 //
-// Against the C# API, started with `oracle start hub 5192` and an account
+// Against the reference server, started with `oracle start hub 5192` and an account
 // that has signed in (the session cookie goes in --cookie):
 //
 //   node crates/hub/interop/interop.mjs --oracle --url http://127.0.0.1:5192 \
 //        --cookie stellarr-dev-session=VALUE
 //
+// Two clients are driven: the @microsoft/signalr library, and the web
+// client's own hub connection, which opens the WebSocket straight on the hub
+// path without negotiating. Every scenario that uses a client runs with each.
+// The own client is a TypeScript file without imports that Node runs as it is;
+// give its path with --web-client or STELLARR_WEB_HUB_CLIENT.
+//
 // Options:
+//   --clients a,b   which clients: library, web (default both)
+//   --web-client P  the path of hubConnection.ts
 //   --only a,b      run only the scenarios whose names contain one of these
 //   --skip-idle     skip the 70-second idle scenario
 //   --verbose       print what the client library logs
@@ -33,7 +41,7 @@ import { spawn } from "node:child_process";
 import { createRequire } from "node:module";
 import { existsSync } from "node:fs";
 import { dirname, resolve } from "node:path";
-import { fileURLToPath } from "node:url";
+import { fileURLToPath, pathToFileURL } from "node:url";
 
 const here = dirname(fileURLToPath(import.meta.url));
 const modules = [process.env.STELLARR_NODE_MODULES, resolve(here, "../../../../node_modules"), resolve(process.cwd(), "node_modules")]
@@ -55,6 +63,17 @@ const flag = (name) => args.includes(name);
 const value = (name) => (args.includes(name) ? args[args.indexOf(name) + 1] : undefined);
 const oracle = flag("--oracle");
 const verbose = flag("--verbose");
+const kinds = (value("--clients") ?? "library,web").split(",");
+const webClientPath = value("--web-client") ?? process.env.STELLARR_WEB_HUB_CLIENT;
+let WebHub = null;
+if (kinds.includes("web")) {
+  if (!webClientPath || !existsSync(webClientPath)) {
+    console.error("The web client is not found: give --web-client PATH, or --clients library.");
+    process.exit(2);
+  }
+  WebHub = (await import(pathToFileURL(resolve(webClientPath)).href)).HubConnection;
+}
+let kind = "library";
 const only = value("--only")?.split(",");
 const RS = "\x1e";
 
@@ -91,20 +110,92 @@ const control = (path) => fetch(`${baseUrl}/control/${path}`, { method: "POST" }
 
 const quietLogger = { log: (level, message) => verbose && console.log(`    [signalr ${LogLevel[level]}] ${message}`) };
 
-/** A real client, with the events it receives collected. */
+/**
+ * A client, with the events it receives collected, behind one interface:
+ * start, stop, invoke, send (library only), state, connectionId (which
+ * changes with each new connection), drop() to cut the socket without a
+ * word, and sniff(fn) to see what is written to it.
+ */
 function client({ retry = [0, 100, 100, 100, 100, 100] } = {}) {
-  const connection = new HubConnectionBuilder()
-    .withUrl(hubUrl, { headers, withCredentials: true })
-    .withAutomaticReconnect(retry)
-    .configureLogging(quietLogger)
-    .build();
   const events = [];
   const log = [];
-  connection.on("PresenceChanged", (p) => events.push(["PresenceChanged", p]));
-  connection.on("Said", (t) => events.push(["Said", t]));
-  connection.onreconnecting((e) => log.push(["reconnecting", e?.message]));
-  connection.onreconnected((id) => log.push(["reconnected", id]));
-  connection.onclose((e) => log.push(["closed", e?.message]));
+  let connection;
+  if (kind === "web") {
+    let generation = 1;
+    let sniffer = null;
+    const sockets = [];
+    const hub = new WebHub({
+      url: `${hubUrl}?serverId=abc`,
+      retryDelay: (n) => retry[Math.min(n, retry.length - 1)],
+      logger: { log: (level, message) => verbose && console.log(`    [web ${level}] ${message}`) },
+      socket: (url) => {
+        const ws = new WebSocket(url, { headers });
+        const send = ws.send.bind(ws);
+        ws.send = (data, ...rest) => {
+          sniffer?.(String(data));
+          return send(data, ...rest);
+        };
+        sockets.push(ws);
+        return ws;
+      },
+    });
+    hub.on("PresenceChanged", (p) => events.push(["PresenceChanged", p]));
+    hub.on("Said", (t) => events.push(["Said", t]));
+    hub.onreconnecting((e) => log.push(["reconnecting", e?.message]));
+    hub.onreconnected(() => {
+      generation++;
+      log.push(["reconnected", generation]);
+    });
+    hub.onclose((e) => log.push(["closed", e?.message]));
+    connection = {
+      start: () => hub.start(),
+      stop: () => hub.stop(),
+      invoke: (...a) => hub.invoke(...a),
+      get state() {
+        return hub.state;
+      },
+      get connectionId() {
+        return generation;
+      },
+      drop: () => sockets.at(-1).terminate(),
+      sniff: (fn) => {
+        sniffer = fn;
+        return () => (sniffer = null);
+      },
+    };
+  } else {
+    const lib = new HubConnectionBuilder()
+      .withUrl(hubUrl, { headers, withCredentials: true })
+      .withAutomaticReconnect(retry)
+      .configureLogging(quietLogger)
+      .build();
+    lib.on("PresenceChanged", (p) => events.push(["PresenceChanged", p]));
+    lib.on("Said", (t) => events.push(["Said", t]));
+    lib.onreconnecting((e) => log.push(["reconnecting", e?.message]));
+    lib.onreconnected((id) => log.push(["reconnected", id]));
+    lib.onclose((e) => log.push(["closed", e?.message]));
+    connection = {
+      start: () => lib.start(),
+      stop: () => lib.stop(),
+      invoke: (...a) => lib.invoke(...a),
+      send: (...a) => lib.send(...a),
+      get state() {
+        return lib.state;
+      },
+      get connectionId() {
+        return lib.connectionId;
+      },
+      drop: () => lib.connection.transport._webSocket.terminate(),
+      sniff: (fn) => {
+        const original = lib.connection.send.bind(lib.connection);
+        lib.connection.send = (data) => {
+          fn(String(data));
+          return original(data);
+        };
+        return () => (lib.connection.send = original);
+      },
+    };
+  }
   return { connection, events, log };
 }
 
@@ -127,9 +218,9 @@ function equal(actual, expected, what) {
 }
 
 /** Talks to the hub without the client library: raw frames and records. */
-async function raw({ handshake = `{"protocol":"json","version":1}${RS}`, send = [], window = 500, id } = {}) {
-  const negotiated = id ?? (await (await fetch(`${hubUrl}/negotiate?negotiateVersion=1`, { method: "POST", headers })).json()).connectionToken;
-  const ws = new WebSocket(wsUrl(`?id=${negotiated}`), { headers });
+async function raw({ handshake = `{"protocol":"json","version":1}${RS}`, send = [], window = 500, direct = false } = {}) {
+  const query = direct ? "?serverId=abc" : `?id=${(await (await fetch(`${hubUrl}/negotiate?negotiateVersion=1`, { method: "POST", headers })).json()).connectionToken}`;
+  const ws = new WebSocket(wsUrl(query), { headers });
   const frames = [];
   let closed = null;
   ws.on("message", (d) => frames.push(d.toString()));
@@ -212,11 +303,13 @@ scenario("connect, call with a result, call that fails, send without a result", 
     "an argument of the wrong kind",
   );
   events.length = 0;
-  await connection.send("SetPresence", "idle");
-  await until("the event a send caused", () => events.some(([n, p]) => n === "PresenceChanged" && p.presence === "idle"));
-  await connection.send("SetPresence", "bogus"); // fails on the server; the client is never told
-  await sleep(200);
-  equal(connection.state, HubConnectionState.Connected, "a failed send leaves the connection alone");
+  if (connection.send) {
+    await connection.send("SetPresence", "idle");
+    await until("the event a send caused", () => events.some(([n, p]) => n === "PresenceChanged" && p.presence === "idle"));
+    await connection.send("SetPresence", "bogus"); // fails on the server; the client is never told
+    await sleep(200);
+    equal(connection.state, HubConnectionState.Connected, "a failed send leaves the connection alone");
+  }
   await connection.stop();
   equal(connection.state, HubConnectionState.Disconnected, "state after stop");
 });
@@ -260,13 +353,11 @@ scenario("idle for 70 seconds with only the keep-alive between us", async () => 
 /** The length of the record the client library writes for a call, found by looking. */
 async function recordLength(connection, arg) {
   let length = 0;
-  const original = connection.connection.send.bind(connection.connection);
-  connection.connection.send = (data) => {
-    length = data.length;
-    return original(data);
-  };
+  const stop = connection.sniff((data) => {
+    if (data.includes('"type":1')) length = data.length;
+  });
   await rejection(connection.invoke("SetPresence", arg));
-  connection.connection.send = original;
+  stop();
   return length;
 }
 
@@ -325,7 +416,7 @@ scenario("an abrupt drop of the connection is followed by a reconnect", async ()
   const { connection, log } = client();
   await connection.start();
   const first = connection.connectionId;
-  connection.connection.transport._webSocket.terminate();
+  connection.drop();
   await until("the reconnect", () => log.some(([n]) => n === "reconnected"));
   equal(log.map(([n]) => n), ["reconnecting", "reconnected"], "reconnecting, then reconnected");
   assert(connection.connectionId !== first, "a new connection");
@@ -345,7 +436,7 @@ scenario("stopping the client leaves nothing behind on the server", async () => 
 
 // A record at a time, what the hub answers to things the client library
 // never sends but other clients might. The expected answers are what the
-// C# server was recorded giving.
+// reference server was recorded giving.
 const GENERAL = `{"error":"An unexpected error occurred during connection handshake."}`;
 const CLOSED = `{"type":7,"error":"Connection closed with an error.","allowReconnect":true}`;
 const completion = (id, error) => `{"type":3,"invocationId":"${id}","error":${JSON.stringify(error)}}`;
@@ -404,6 +495,12 @@ for (const [name, options, expected, closed] of probes) {
   });
 }
 
+scenario("raw: a WebSocket opened straight on the hub path, no negotiation, with a query string", async () => {
+  const got = await raw({ direct: true, send: [call("1", "SetPresence", "online"), call("2", "GetRtcClock")] });
+  equal(got.records.slice(0, 2), ["{}", `{"type":3,"invocationId":"1","result":null}`], "records");
+  equal(got.closed, null, "stays open");
+});
+
 scenario("raw: the server's ping beat", async () => {
   const got = await raw({ window: 16_500 });
   equal(got.pings, 1, "one ping record in 16.5 seconds");
@@ -423,16 +520,21 @@ for (const s of scenarios) {
   if ((oracle && !s.theirs) || (!oracle && !s.ours)) continue;
   if (only && !only.some((o) => s.name.includes(o))) continue;
   if (s.slow && flag("--skip-idle")) continue;
-  ran++;
-  const started = Date.now();
-  try {
-    await s.run();
-    console.log(`PASS  ${s.name} (${((Date.now() - started) / 1000).toFixed(1)} s)`);
-  } catch (error) {
-    failed++;
-    console.log(`FAIL  ${s.name}\n      ${error.message}`);
+  const usesClient = s.run.toString().includes("client(");
+  for (const which of usesClient ? kinds : [null]) {
+    kind = which ?? "library";
+    const label = which ? `${s.name} [${which}]` : s.name;
+    ran++;
+    const started = Date.now();
+    try {
+      await s.run();
+      console.log(`PASS  ${label} (${((Date.now() - started) / 1000).toFixed(1)} s)`);
+    } catch (error) {
+      failed++;
+      console.log(`FAIL  ${label}\n      ${error.message}`);
+    }
   }
 }
-console.log(`\n${ran - failed} of ${ran} scenarios passed against ${oracle ? "the C# API" : "the Rust hub"}.`);
+console.log(`\n${ran - failed} of ${ran} scenarios passed against ${oracle ? "the reference server" : "the Rust hub"}.`);
 child?.kill();
 process.exit(failed ? 1 : 0);
