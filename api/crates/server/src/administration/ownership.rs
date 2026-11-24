@@ -72,11 +72,16 @@ pub async fn transfer(
     State(state): State<AppState>,
     caller: Caller,
     ActiveServer(server): ActiveServer,
-    Json(Object(request)): Json<Object<Transfer>>,
+    request: Option<Json<Object<Transfer>>>,
 ) -> ApiResult<StatusCode> {
     // One change of who owns a server at a time: the slot is freed and then
     // given, and the database alone cannot keep two of them from interleaving.
     require_fresh(&state, caller).await?;
+    // The first server looked for the body only after this check, so a body
+    // that is not there at all is told of the second step first.
+    let Some(Json(Object(request))) = request else {
+        return Err(ApiError::bad_request());
+    };
     let _turn = state.mutation_gate().enter().await;
     let successor = request.user_id;
     let outcome = state
