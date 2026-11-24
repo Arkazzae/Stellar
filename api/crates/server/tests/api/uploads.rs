@@ -955,3 +955,108 @@ async fn where_df_cannot_be_run_the_upload_goes_through_and_the_log_says_the_res
     let said = server.log().iter().any(|line| line.contains("free space reserve is not enforced"));
     assert!(said, "{:?}", server.log());
 }
+
+/// Sends a form over a socket and hangs up: after all of it (`all`), or
+/// after the head of the file part alone.
+async fn hang_up(server: &Server, person: &Person, bytes: usize, all: bool) {
+    use tokio::io::AsyncWriteExt;
+    let name = stellarr_api::auth::session::cookie_name(&stellarr_api::settings::Environment::new("Testing"));
+    let cookie = format!("{name}={}", person.client.cookie(name).unwrap());
+    let mut file = PDF.to_vec();
+    file.resize(bytes, b'x');
+    let body = {
+        let mut body = b"--XXB\r\nContent-Disposition: form-data; name=\"file\"; filename=\"a.pdf\"\r\nContent-Type: application/pdf\r\n\r\n".to_vec();
+        body.extend_from_slice(&file);
+        body.extend_from_slice(b"\r\n--XXB--\r\n");
+        body
+    };
+    let head = format!(
+        "POST /api/uploads HTTP/1.1\r\nHost: x\r\nCookie: {cookie}\r\nX-Stellarr-Client: web\r\nX-Stellarr-Client-Version: 2.0.0\r\nContent-Type: multipart/form-data; boundary=XXB\r\nContent-Length: {}\r\n\r\n",
+        body.len()
+    );
+    let mut stream = tokio::net::TcpStream::connect(server.address()).await.unwrap();
+    stream.write_all(head.as_bytes()).await.unwrap();
+    let sent = if all { body.len() } else { body.len() / 2 };
+    stream.write_all(&body[..sent]).await.unwrap();
+    // Gone before any answer.
+    drop(stream);
+}
+
+async fn settle(server: &Server) -> (i64, Vec<String>) {
+    tokio::time::sleep(std::time::Duration::from_secs(3)).await;
+    let rows = server.database().query_row("SELECT COUNT(*) FROM \"ImageAttachments\"", [], |row| row.get(0)).unwrap();
+    (rows, objects(server))
+}
+
+#[tokio::test]
+async fn a_client_that_hangs_up_after_its_whole_form_still_gets_its_file_stored_with_its_row() {
+    let server = started(&[]).await;
+    let maja = server.found("maja").await;
+
+    hang_up(&server, &maja, 20 * 1024 * 1024, true).await;
+    let (rows, stored) = settle(&server).await;
+
+    // The handler runs to its end without its client: object and row, or neither.
+    assert_eq!((rows, stored.len()), (1, 1), "{stored:?}");
+    assert_eq!(staged(&server), 0);
+}
+
+#[tokio::test]
+async fn a_client_that_hangs_up_in_the_middle_of_its_form_leaves_nothing() {
+    let server = started(&[]).await;
+    let maja = server.found("maja").await;
+
+    hang_up(&server, &maja, 20 * 1024 * 1024, false).await;
+    let (rows, stored) = settle(&server).await;
+
+    assert_eq!((rows, stored.len()), (0, 0), "{stored:?}");
+    assert_eq!(staged(&server), 0);
+}
+
+#[tokio::test]
+async fn the_bytes_of_a_file_past_its_limit_never_reach_the_staging_folder() {
+    use tokio::io::{AsyncReadExt, AsyncWriteExt};
+
+    let server = started(&[("Uploads__MaxFileBytes", "1000")]).await;
+    let maja = server.found("maja").await;
+    let name = stellarr_api::auth::session::cookie_name(&stellarr_api::settings::Environment::new("Testing"));
+    let cookie = format!("{name}={}", maja.client.cookie(name).unwrap());
+    let opening = b"--XXB\r\nContent-Disposition: form-data; name=\"file\"; filename=\"a.pdf\"\r\nContent-Type: application/pdf\r\n\r\n";
+    let closing = b"\r\n--XXB--\r\n";
+    let chunk = vec![b'x'; 64 * 1024];
+    let total = opening.len() + 900 + 40 * chunk.len() + closing.len();
+    let head = format!(
+        "POST /api/uploads HTTP/1.1\r\nHost: x\r\nCookie: {cookie}\r\nX-Stellarr-Client: web\r\nX-Stellarr-Client-Version: 2.0.0\r\nContent-Type: multipart/form-data; boundary=XXB\r\nContent-Length: {total}\r\nConnection: close\r\n\r\n"
+    );
+    let largest = |server: &Server| {
+        std::fs::read_dir(server.folder().join("incoming"))
+            .into_iter()
+            .flatten()
+            .flatten()
+            .filter_map(|entry| entry.metadata().ok())
+            .map(|metadata| metadata.len())
+            .max()
+            .unwrap_or(0)
+    };
+    let mut stream = tokio::net::TcpStream::connect(server.address()).await.unwrap();
+    stream.write_all(head.as_bytes()).await.unwrap();
+    stream.write_all(opening).await.unwrap();
+    stream.write_all(b"%PDF-1.7").await.unwrap();
+    stream.write_all(&vec![b'x'; 892]).await.unwrap();
+    tokio::time::sleep(std::time::Duration::from_millis(300)).await;
+    let mut seen = largest(&server);
+    assert!(seen > 0, "the file under its limit is being staged");
+
+    for _ in 0..40 {
+        stream.write_all(&chunk).await.unwrap();
+        tokio::time::sleep(std::time::Duration::from_millis(30)).await;
+        seen = seen.max(largest(&server));
+    }
+    stream.write_all(closing).await.unwrap();
+    let mut answer = Vec::new();
+    let _ = stream.read_to_end(&mut answer).await;
+
+    assert!(seen <= 1000, "{seen} bytes of a file over its limit were staged");
+    assert!(String::from_utf8_lossy(&answer).starts_with("HTTP/1.1 413"), "{}", String::from_utf8_lossy(&answer[..60.min(answer.len())]));
+    assert_eq!(staged(&server), 0);
+}
