@@ -236,12 +236,14 @@ pub fn stage(archive_path: &Path, data_root: &Path) -> Result<PathBuf, RestoreEr
     let size = std::fs::metadata(archive_path)
         .map_err(|error| refused(error.to_string()))?
         .len();
-    if let Some(available) = space::free_bytes(&folder)
-        && available < size
-    {
-        return Err(refused(format!(
-            "Staging the archive needs {size} bytes on the data volume, and {available} are free. Nothing was staged."
-        )));
+    match space::free_bytes(&folder) {
+        None => return Err(refused(space::unknown("staging the archive", size))),
+        Some(available) if available < size => {
+            return Err(refused(format!(
+                "Staging the archive needs {size} bytes on the data volume, and {available} are free. Nothing was staged."
+            )));
+        }
+        Some(_) => {}
     }
     let partial = folder.join(format!("{STAGED_ARCHIVE_NAME}.{}.partial", random_token()));
     let copied = (|| -> std::io::Result<()> {
@@ -418,14 +420,13 @@ fn check_free_space(archive_path: &Path, data_root: &Path) -> Result<(), Restore
     let zip = ZipArchive::with_limits(file, archive::limits())
         .map_err(|error| refused(error.to_string()))?;
     let needed = zip.total_uncompressed_size();
-    if let Some(available) = space::free_bytes(data_root)
-        && available < needed
-    {
-        return Err(refused(format!(
+    match space::free_bytes(data_root) {
+        None => Err(refused(space::unknown("unpacking the archive", needed))),
+        Some(available) if available < needed => Err(refused(format!(
             "Unpacking the archive needs {needed} bytes on the data volume, and {available} are free."
-        )));
+        ))),
+        Some(_) => Ok(()),
     }
-    Ok(())
 }
 
 fn unpack(archive_path: &Path, unpacked: &Path) -> Result<(), stellarr_archive::Error> {

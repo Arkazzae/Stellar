@@ -349,12 +349,14 @@ fn verify_inner(path: &Path, work_folder: &Path) -> Result<String, String> {
             return Ok("The database is missing from the archive.".to_string());
         };
         let size = archive.entries()[at].uncompressed_size();
-        if let Some(free) = space::free_bytes(work_folder)
-            && size > free
-        {
-            return Err(format!(
-                "Checking the database needs {size} bytes on the volume, and {free} are free."
-            ));
+        match space::free_bytes(work_folder) {
+            None => return Err(space::unknown("checking the database", size)),
+            Some(free) if size > free => {
+                return Err(format!(
+                    "Checking the database needs {size} bytes on the volume, and {free} are free."
+                ));
+            }
+            Some(_) => {}
         }
         std::fs::create_dir_all(work_folder).map_err(|error| error.to_string())?;
         let copy = work_folder.join(format!(
