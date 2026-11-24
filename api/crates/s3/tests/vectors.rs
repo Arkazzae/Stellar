@@ -1,6 +1,6 @@
 //! The requests the crate builds, against `request_vectors.txt`, which
-//! `oracle.py` writes with its own encoder and signer. Each case names a call;
-//! the URL, every header and the body must come out as the oracle has them.
+//! `independent.py` writes with its own encoder and signer. Each case names a call;
+//! the URL, every header and the body must come out as the independent signer has them.
 
 use std::collections::BTreeMap;
 
@@ -166,7 +166,7 @@ fn wire_body(prepared: Prepared, case: &BTreeMap<&str, Vec<&str>>) -> Vec<u8> {
     match prepared.body {
         RequestBody::Empty => Vec::new(),
         RequestBody::Bytes(bytes) => bytes,
-        // The oracle does not hold the object; its length and hash are only
+        // The independent signer does not hold the object; its length and hash are only
         // recorded for bodies that are not the object's own bytes.
         RequestBody::Object { length } => {
             assert_eq!(
@@ -198,7 +198,7 @@ fn wire_body(prepared: Prepared, case: &BTreeMap<&str, Vec<&str>>) -> Vec<u8> {
 }
 
 #[test]
-fn every_request_matches_the_independent_oracle() {
+fn every_request_matches_the_independent_implementation() {
     let mut checked = 0;
     for block in VECTORS.split("\n\n") {
         let block = block.trim_matches('\n');
@@ -265,19 +265,19 @@ fn awkward_keys_are_addressed_and_signed_with_one_string() {
     }
 }
 
-/// The oracle checks its own signer against the published values and that the
+/// The independent signer checks itself against the published values and that the
 /// vector file is current. It needs only Python's standard library; a machine
 /// without Python skips it.
 #[test]
-fn the_oracle_agrees_with_the_published_values_and_the_vectors_are_current() {
-    let script = concat!(env!("CARGO_MANIFEST_DIR"), "/tests/oracle.py");
+fn the_independent_signer_agrees_with_the_published_values_and_the_vectors_are_current() {
+    let script = concat!(env!("CARGO_MANIFEST_DIR"), "/tests/independent.py");
     match std::process::Command::new("python3")
         .args(["-I", script])
         .output()
     {
         Ok(out) => assert!(
             out.status.success(),
-            "oracle.py failed:\n{}{}",
+            "independent.py failed:\n{}{}",
             String::from_utf8_lossy(&out.stdout),
             String::from_utf8_lossy(&out.stderr)
         ),

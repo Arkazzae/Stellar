@@ -1,8 +1,7 @@
 //! A person's inbox through the real binary: paging, reading, dismissing, what
 //! an entry looks like for each kind the first server knows, and what each
 //! change announces. What writes entries (invitations, mentions) is arranged
-//! in the database here. The comparison with the first server is
-//! `tests/social-oracle.sh`.
+//! in the database here.
 
 use std::time::Duration;
 

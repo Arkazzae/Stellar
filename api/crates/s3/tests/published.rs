@@ -3,7 +3,7 @@
 //! Every expected value below is copied from the S3 documentation ("Signature
 //! Calculations for the Authorization Header", single chunk and multiple
 //! chunks) or from the general test suite (as mirrored by botocore's
-//! `aws4_testsuite`), and `oracle.py` checks the same values against an
+//! `aws4_testsuite`), and `independent.py` checks the same values against an
 //! independent implementation.
 
 use stellarr_s3::internals::{Request, Scope, hex, query_strings, sign};

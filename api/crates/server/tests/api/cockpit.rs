@@ -1,9 +1,5 @@
 //! The operator panel, `/api/cockpit`, through the real binary: who passes
 //! the gate, what each route answers and what it leaves behind.
-//!
-//! What the answers are the first server's answers is proved by
-//! `tests/cockpit-shared-database.sh`, which sends the same conversations to
-//! both servers on copies of one database file; these say what they are.
 
 use http::Method;
 use rusqlite::params;

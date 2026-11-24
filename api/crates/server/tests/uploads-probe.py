@@ -4,18 +4,19 @@
   uploads-probe.py <base-url> <setup-code> [database-file]
 
 Founds the instance with `boss` (needs a fresh server), registers `maja`, then
-sends one corpus of requests, byte for byte the same to whichever server it is
-given, and prints one normalized line per request: the status, the headers a
-browser looks at, and the body with ids, times and trace identifiers replaced.
-Run it against the first server and this one and diff the two outputs.
+sends one corpus of requests, byte for byte the same every time, and prints one
+normalized line per request: the status, the headers a browser looks at, and
+the body with ids, times and trace identifiers replaced. Two runs against
+servers that should behave alike (a folder store and a bucket store, say) are
+diffed by the caller.
 
-The first server makes the invite itself; for a server that has no route for
-invites yet, name its database file and the invite is written there.
+The invite is made through the server's own route; name its database file and
+the invite is written there instead.
 
 UPLOADS_PROBE_SMALL=1 leaves out every request over a mebibyte.
 
-Both servers must have the rate limit of uploads lifted and no minimum of free
-disk space (Uploads__MinimumFreeDataRootBytes=0).
+The server must have the rate limit of uploads lifted and no minimum of free
+disk space.
 """
 import json
 import os
@@ -137,8 +138,8 @@ def scrub(text):
     return HEX32.sub("<n>", text)
 
 
-# What the two servers do differently by nature (chunking, whether a bodiless
-# answer closes the connection, the length of a JSON answer) is not shown.
+# What two runs may differ in by nature (chunking, whether a bodiless answer
+# closes the connection, the length of a JSON answer) is not shown.
 SHOWN = ["content-type", "content-length", "location", "content-disposition", "content-range", "accept-ranges",
          "x-content-type-options", "last-modified", "etag", "cache-control"]
 

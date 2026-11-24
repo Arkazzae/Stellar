@@ -1,6 +1,4 @@
-//! The bootstrap and the GIF configuration through the real binary. What is
-//! compared with the first server is `tests/bootstrap-shared-database.sh`
-//! (the answers) and `tests/bootstrap-settings.sh` (voice and GIF settings).
+//! The bootstrap and the GIF configuration through the real binary.
 
 use http::Method;
 use rusqlite::params;

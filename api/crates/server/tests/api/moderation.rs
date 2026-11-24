@@ -1,7 +1,6 @@
 //! Kicking, banning and lifting a ban, through the real binary, on the same
 //! scene as the roles. The pairs here are the nearest who may and may not for
-//! the kick and the ban; `tests/roles-shared-database.sh` sends the same to
-//! the first server.
+//! the kick and the ban.
 
 use std::time::Duration;
 

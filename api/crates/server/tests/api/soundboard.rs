@@ -1,7 +1,5 @@
 //! The soundboard of a server: the catalogue, its order, its two switches, and
-//! who may change them or play from them. The wire is compared with the first
-//! server's by `tests/custom-probe.py` and `tests/custom-events.mjs`; these
-//! tests keep the rules in place.
+//! who may change them or play from them.
 
 use http::Method;
 use rusqlite::params;
