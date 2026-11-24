@@ -8,7 +8,7 @@
 //! functions still treat a lone surrogate as what it is, a character that
 //! belongs to no class, so that no input can make them panic.
 
-use crate::unicode_tables::{DIGIT, LETTER, NUMBER, PUNCTUATION, SYMBOL};
+use crate::unicode_tables::{DIGIT, LETTER, NUMBER, PUNCTUATION, SYMBOL, UPPER};
 
 fn in_table(table: &[(u32, u32)], code: u32) -> bool {
     table
@@ -131,26 +131,26 @@ pub(crate) fn text(units: &[u16]) -> String {
     String::from_utf16_lossy(units)
 }
 
-/// Upper case by simple case mapping, character by character: a character
-/// whose upper case is more than one character stays as it is. Names are
-/// compared in this form.
+/// The simple upper case of a character, as the invariant culture of the
+/// first version of this code mapped it, or the character itself.
+fn upper_case(code: u32) -> u32 {
+    UPPER
+        .binary_search_by_key(&code, |&(from, _)| from)
+        .map_or(code, |at| UPPER[at].1)
+}
+
+/// Upper case by simple case mapping, character by character: one character
+/// stays one character. Names are compared in this form.
 pub(crate) fn simple_upper(units: &[u16]) -> Vec<u16> {
     let mut out = Vec::with_capacity(units.len());
     let mut index = 0;
     while index < units.len() {
         match scalar_at(units, index) {
             Some((code, width)) => {
-                let mapped = char::from_u32(code).and_then(|c| {
-                    let mut upper = c.to_uppercase();
-                    match (upper.next(), upper.next()) {
-                        (Some(one), None) => Some(one),
-                        _ => None,
-                    }
-                });
-                match mapped {
-                    Some(c) => {
+                match char::from_u32(upper_case(code)) {
+                    Some(mapped) => {
                         let mut buffer = [0u16; 2];
-                        out.extend_from_slice(c.encode_utf16(&mut buffer));
+                        out.extend_from_slice(mapped.encode_utf16(&mut buffer));
                     }
                     None => out.extend_from_slice(&units[index..index + width]),
                 }

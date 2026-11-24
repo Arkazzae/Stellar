@@ -99,11 +99,14 @@ pub fn parse_timestamp(text: &str) -> Option<Timestamp> {
                 if at == start {
                     return None;
                 }
-                // Seven digits are all that a tick holds; more are cut.
+                // Seven digits are all that a tick holds; the eighth rounds.
                 let mut scale = TICKS_PER_SECOND / 10;
                 for &digit in &bytes[start..at.min(start + 7)] {
                     ticks += i64::from(digit - b'0') * scale;
                     scale /= 10;
+                }
+                if bytes.get(start + 7).is_some_and(|&digit| digit >= b'5' && digit <= b'9') && at > start + 7 {
+                    ticks += 1;
                 }
             }
         }
@@ -112,6 +115,10 @@ pub fn parse_timestamp(text: &str) -> Option<Timestamp> {
         }
     }
 
+    // A space before the zone is read too.
+    while at < bytes.len() && bytes[at] == b' ' {
+        at += 1;
+    }
     let mut offset_minutes = 0;
     match bytes.get(at) {
         None => {}
