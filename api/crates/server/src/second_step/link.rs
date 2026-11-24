@@ -78,6 +78,39 @@ pub(super) fn pending(
     link(tx, completed.user, expected, waiting, &provider_name).map(Some)
 }
 
+/// Gives the identity the browser waits with up for good, where a rollback of
+/// the sign-in's own writes cannot bring it back: a link that failed with a
+/// database error rolls its delete back with it, and a copy of the cookie
+/// must not open the identity again.
+pub(super) async fn forget(
+    state: &crate::state::AppState,
+    waiting: &Waiting,
+    expected: Id,
+) -> Result<(), DbError> {
+    let waiting = waiting.clone();
+    state
+        .database()
+        .write(move |tx| forget_in(tx, &waiting, expected))
+        .await
+}
+
+fn forget_in(tx: &rusqlite::Connection, waiting: &Waiting, expected: Id) -> Result<(), DbError> {
+    let Some((id, secret)) = &waiting.cookie else {
+        return Ok(());
+    };
+    let hash: Option<String> = tx
+        .query_row(
+            "SELECT \"SecretHash\" FROM \"PendingExternalIdentities\" WHERE \"Id\" = ?1",
+            [id],
+            |row| row.get(0),
+        )
+        .optional()?;
+    if *id == expected && hash.is_some_and(|hash| tokens::matches(secret, &hash)) {
+        tx.execute("DELETE FROM \"PendingExternalIdentities\" WHERE \"Id\" = ?1", [id])?;
+    }
+    Ok(())
+}
+
 /// Takes the identity waiting for this browser, if it is the one the sign-in
 /// saw, and links it to the account if its provider is still configured.
 fn link(
@@ -317,6 +350,29 @@ mod tests {
         assert_eq!(world.link(&waiting, world.identity, None), FAILED);
         assert_eq!(world.count("PendingExternalIdentities"), 0);
         assert_eq!(world.count("ExternalIdentities"), 0);
+    }
+
+    #[test]
+    fn an_identity_whose_link_failed_with_the_database_is_gone_all_the_same() {
+        let mut world = world();
+        let waiting = world.waiting();
+        // The link fails after it took the identity: the table it writes to is gone.
+        world.connection.execute_batch("DROP TABLE \"ExternalIdentities\"").unwrap();
+        let tx = world.connection.transaction().unwrap();
+        tx.execute_batch("SAVEPOINT caller_writes").unwrap();
+        let failed = link(&tx, world.user, world.identity, &waiting, &|_| Some("Company".into()));
+        assert!(failed.is_err());
+        tx.execute_batch("ROLLBACK TO caller_writes; RELEASE caller_writes").unwrap();
+        // The rollback brought the row back...
+        let kept: i64 = tx.query_row("SELECT COUNT(*) FROM \"PendingExternalIdentities\"", [], |row| row.get(0)).unwrap();
+        assert_eq!(kept, 1);
+        // ...and giving it up afterwards, as the route does, takes it for good.
+        let other = Waiting { cookie: Some((world.identity, "not the secret".into())), ..waiting.clone() };
+        forget_in(&tx, &other, world.identity).unwrap();
+        forget_in(&tx, &waiting, Id::random()).unwrap();
+        assert_eq!(tx.query_row::<i64, _, _>("SELECT COUNT(*) FROM \"PendingExternalIdentities\"", [], |row| row.get(0)).unwrap(), 1);
+        forget_in(&tx, &waiting, world.identity).unwrap();
+        assert_eq!(tx.query_row::<i64, _, _>("SELECT COUNT(*) FROM \"PendingExternalIdentities\"", [], |row| row.get(0)).unwrap(), 0);
     }
 
     #[test]
