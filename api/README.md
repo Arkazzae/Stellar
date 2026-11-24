@@ -483,6 +483,15 @@ what only reads, `recovery::recover` and `recovery::credentials_changed`
 fields, challenge creation and the code, device and recovery-code writes are
 private to `auth`.
 
+Ids that arrive as text (the challenge id, a method id) are passed through as
+written: the ceremonies read them with `values::parse_guid`. The passkey
+calls take `Option<&RelyingParty>`; none says passkeys are not offered
+(`PasskeysUnavailable`), after the challenge (and, for adding one, the name)
+was looked at, so a route needs no look at the challenge beforehand. A
+mailed code is refused for the challenge first (`Invalid`), then the method
+(`MethodUnavailable`), then mail (`MailUnavailable`); `Delivered` carries the
+address it went to and the seconds before another may be asked for.
+
 Mail is sent by `send_login_code` and `send_enrollment_code`, in the one order
 that is right (reserve and commit, send through `mail::deliver`, then mark the
 code delivered or spent); a failed mail still counts toward the cooldown and

@@ -445,6 +445,9 @@ pub enum Answer<'a> {
         relying_party: &'a RelyingParty,
         response: Option<&'a AssertionResponse>,
     },
+    /// A passkey's answer, on an instance that cannot offer passkeys: the
+    /// challenge is looked at, and then it is said so ([`Answered::PasskeysUnavailable`]).
+    PasskeysUnavailable,
 }
 
 enum OwnedAnswer {
@@ -457,6 +460,7 @@ enum OwnedAnswer {
         relying_party: RelyingParty,
         response: Option<AssertionResponse>,
     },
+    PasskeysUnavailable,
 }
 
 /// What answering a challenge came to.
@@ -478,6 +482,9 @@ pub enum Answered<R> {
     MethodUnavailable,
     /// No code was sent (a validation problem).
     EmptyCode,
+    /// The instance cannot offer passkeys (a 409), said once the challenge
+    /// was looked at.
+    PasskeysUnavailable,
     /// The challenge cannot be answered: see [`ChallengeStatus`]; a request
     /// that ran out of attempts is a 429 and the rest a 401.
     Invalid(ChallengeStatus),
@@ -516,6 +523,7 @@ where
             relying_party: relying_party.clone(),
             response: response.cloned(),
         },
+        Answer::PasskeysUnavailable => OwnedAnswer::PasskeysUnavailable,
     };
     let done = run(state, move |tx| {
         let now = Timestamp::now();
@@ -523,6 +531,9 @@ where
             Ok(challenge) => challenge,
             Err(status) => return Ok(Answered::Invalid(status)),
         };
+        if matches!(answer, OwnedAnswer::PasskeysUnavailable) {
+            return Ok(Answered::PasskeysUnavailable);
+        }
         let context = own.context();
         let sealer = state_in.sealer();
         let outcome = match &answer {
@@ -545,6 +556,9 @@ where
                 },
                 now,
             )?,
+            OwnedAnswer::PasskeysUnavailable => {
+                unreachable!("answered before the proof is looked at")
+            }
             OwnedAnswer::Passkey {
                 relying_party,
                 response,
@@ -593,24 +607,32 @@ pub enum PasskeyOptions {
     Options(String),
     /// The account has no passkey (a 409).
     Unavailable,
+    /// The instance cannot offer passkeys (a 409), said once the challenge was
+    /// looked at.
+    PasskeysUnavailable,
     Invalid(ChallengeStatus),
 }
 
 /// The options a passkey answers a challenge's second step with.
-pub async fn passkey_options(
+///
+/// `relying_party` is the instance's, or none where it cannot offer passkeys.
+pub async fn passkey_options<'a>(
     state: &AppState,
     ask: &Ask<'_>,
-    relying_party: &RelyingParty,
+    relying_party: impl Into<Option<&'a RelyingParty>>,
 ) -> Result<PasskeyOptions, DbError> {
     let own = Own::of(ask);
-    let relying_party = relying_party.clone();
+    let relying_party = relying_party.into().cloned();
     let done = run(state, move |tx| {
         let challenge = match open(tx, &own, mfa::answers_with_a_code, Timestamp::now())? {
             Ok(challenge) => challenge,
             Err(status) => return Ok(PasskeyOptions::Invalid(status)),
         };
+        let Some(relying_party) = &relying_party else {
+            return Ok(PasskeyOptions::PasskeysUnavailable);
+        };
         Ok(
-            match passkeys::begin_second_step(tx, &relying_party, &challenge)? {
+            match passkeys::begin_second_step(tx, relying_party, &challenge)? {
                 Begin::Options(json) => PasskeyOptions::Options(json),
                 Begin::Unavailable => PasskeyOptions::Unavailable,
                 Begin::WrongChallenge => PasskeyOptions::Invalid(ChallengeStatus::Missing),
@@ -640,6 +662,9 @@ pub enum Enrolled<R> {
     Unavailable,
     /// The name is too long (a validation problem); nothing was spent.
     InvalidName,
+    /// The instance cannot offer passkeys (a 409), said once the challenge and
+    /// the name were looked at.
+    PasskeysUnavailable,
     Invalid(ChallengeStatus),
 }
 
@@ -895,27 +920,33 @@ where
 #[derive(Debug, PartialEq, Eq)]
 pub enum PasskeyStarted {
     Options(String),
+    /// The instance cannot offer passkeys (a 409), said once the challenge was
+    /// looked at.
+    PasskeysUnavailable,
     Invalid(ChallengeStatus),
 }
 
 /// The options for adding a passkey to the account of an enrolment challenge.
-pub async fn start_passkey(
+pub async fn start_passkey<'a>(
     state: &AppState,
     ask: &Ask<'_>,
-    relying_party: &RelyingParty,
+    relying_party: impl Into<Option<&'a RelyingParty>>,
 ) -> Result<PasskeyStarted, DbError> {
     let own = Own::of(ask);
-    let relying_party = relying_party.clone();
+    let relying_party = relying_party.into().cloned();
     let done = run(state, move |tx| {
         let challenge = match open(tx, &own, enrolling, Timestamp::now())? {
             Ok(challenge) => challenge,
             Err(status) => return Ok(PasskeyStarted::Invalid(status)),
         };
+        let Some(relying_party) = &relying_party else {
+            return Ok(PasskeyStarted::PasskeysUnavailable);
+        };
         let user = user_of(tx, challenge.user)?;
         Ok(
             match passkeys::begin_registration(
                 tx,
-                &relying_party,
+                relying_party,
                 &challenge,
                 &user.username,
                 &user.display_name,
@@ -931,10 +962,10 @@ pub async fn start_passkey(
 
 /// Adds a passkey with the answer to the options of an enrolment, and
 /// finishes the sign-in of the enrolment.
-pub async fn confirm_passkey<R, H>(
+pub async fn confirm_passkey<'a, R, H>(
     state: &AppState,
     ask: &Ask<'_>,
-    relying_party: &RelyingParty,
+    relying_party: impl Into<Option<&'a RelyingParty>>,
     requested_name: Option<&str>,
     response: Option<&RegistrationResponse>,
     remember: bool,
@@ -946,7 +977,7 @@ where
 {
     let own = Own::of(ask);
     let state_in = state.clone();
-    let relying_party = relying_party.clone();
+    let relying_party = relying_party.into().cloned();
     let requested = requested_name.map(str::to_string);
     let response = response.cloned();
     let done = run(state, move |tx| {
@@ -959,10 +990,15 @@ where
         let Some(name) = mfa::method_name(requested.as_deref(), &fallback) else {
             return Ok(Enrolled::InvalidName);
         };
+        // The challenge and then the name are looked at before the instance's
+        // passkeys are.
+        let Some(relying_party) = &relying_party else {
+            return Ok(Enrolled::PasskeysUnavailable);
+        };
         let context = own.context();
         let registration = match passkeys::check_registration(
             tx,
-            &relying_party,
+            relying_party,
             &context,
             &challenge,
             response.as_ref(),
