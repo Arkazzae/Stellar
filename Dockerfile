@@ -255,7 +255,7 @@ FROM rust-watch AS api-dev
 # (ca-certificates) for the API's calls to other hosts, and the zone database
 # (tzdata) the server reads time zones from in /usr/share/zoneinfo. The
 # operator's tool calls df and stty, which are coreutils'.
-FROM ubuntu:24.04@sha256:9c7f200c07e3d4a03e7249d2c16bf66a51120fb876aa2242cf31451412543289 AS final
+FROM ubuntu:26.04@sha256:d66b366dac61b575bee2aef07e9c26e8070096fbe84a3d4d3eb0da069b5d76db AS final
 
 RUN apt-get update \
     && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
