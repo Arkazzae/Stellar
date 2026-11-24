@@ -18,7 +18,7 @@ use crate::permissions::authorization::{self, Refusal, Scope};
 use crate::permissions::membership::ActiveServer;
 use crate::permissions::privileges::{CREATE_INVITE, MANAGE_SERVER};
 use crate::permissions::visibility;
-use crate::servers::{invitation_arrived, invitations_changed};
+use crate::inbox::{self, NewEntry};
 use crate::servers::Object;
 use crate::state::AppState;
 use crate::values::{Id, Timestamp};
@@ -332,7 +332,7 @@ pub async fn revoke(
         })
         .await?;
     for user in outcome? {
-        state.events().publish(invitations_changed(user, server));
+        inbox::announce_invitations_changed(state.events(), user, server);
     }
     Ok(StatusCode::NO_CONTENT)
 }
@@ -354,7 +354,7 @@ pub async fn send(
     let (invite, user) = (crate::servers::guid(&invite)?, crate::servers::guid(&user)?);
     let outcome = state
         .database()
-        .write(move |tx| -> Result<Result<Option<i64>, Response>, DbError> {
+        .write(move |tx| -> Result<Result<Option<inbox::Entry>, Response>, DbError> {
             if !authorization::allows(tx, caller.user, &Scope::server(server), MANAGE_SERVER)? {
                 return Ok(Err(ApiError::forbidden().into_response()));
             }
@@ -426,28 +426,29 @@ pub async fn send(
                 [caller.user],
                 |row| row.get(0),
             )?;
-            tx.execute(
-                "INSERT INTO \"UserNotifications\" (\"Id\", \"ServerId\", \"UserId\", \"Source\", \"SourcePackageId\", \"SourcePackageName\",
-                     \"SourceModuleId\", \"SourceModuleName\", \"Title\", \"Body\", \"Tone\", \"TargetChannelId\", \"TargetInviteCode\", \"CreatedAt\", \"ReadAt\")
-                 VALUES (?1, ?2, ?3, 'system', 'stellarr.server-invite', ?4, 'server-invite', ?5, 'Server invitation', ?6, 'info', NULL, ?7, ?8, NULL)",
-                params![
-                    Id::random(),
+            let entry = inbox::add(
+                tx,
+                &NewEntry {
                     server,
                     user,
-                    server_name,
-                    actor_name,
-                    format!("{actor_name} invited you to {server_name}."),
-                    code,
-                    now
-                ],
+                    source: "system".to_string(),
+                    source_package_id: "stellarr.server-invite".to_string(),
+                    source_package_name: server_name.clone(),
+                    source_module_id: "server-invite".to_string(),
+                    source_module_name: actor_name.clone(),
+                    title: "Server invitation".to_string(),
+                    body: format!("{actor_name} invited you to {server_name}."),
+                    tone: "info".to_string(),
+                    target_channel: None,
+                    target_invite_code: Some(code),
+                    created_at: now,
+                },
             )?;
-            Ok(Ok(Some(tx.last_insert_rowid())))
+            Ok(Ok(Some(entry)))
         })
         .await?;
     match outcome {
-        Ok(Some(sequence)) => state
-            .events()
-            .publish(invitation_arrived(user, server, sequence)),
+        Ok(Some(entry)) => inbox::announce(state.events(), &entry),
         Ok(None) => {}
         Err(response) => return Ok(response),
     }
