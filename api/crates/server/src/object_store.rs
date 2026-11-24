@@ -74,7 +74,7 @@ async fn ask_until_ready(
             Ok(()) => return Ok(()),
             Err(error) if attempt < attempts && is_worth_asking_again(&error) => {
                 warn!(
-                    target: "Stellarr.Api.Logging.StartupLog",
+                    target: crate::logging::STORE_NOT_READY_TARGET,
                     "The object store is not ready (attempt {attempt} of {attempts}): {error}"
                 );
                 tokio::time::sleep(pause).await;
