@@ -195,15 +195,18 @@ const people = {
 };
 
 const api = (page, method, path, body) =>
-  page.eval(`(async () => {
+  page.call(async (method, path, body) => {
     const headers = { Accept: "application/json", "X-Stellarr-Client": "web", "X-Stellarr-Client-Version": "2.0.0" };
     const server = sessionStorage.getItem("stellarr.active-server");
     if (server) headers["X-Stellarr-Server"] = server;
-    const init = { method: ${JSON.stringify(method)}, headers, credentials: "same-origin" };
-    ${body === undefined ? "" : `headers["Content-Type"] = "application/json"; init.body = ${JSON.stringify(JSON.stringify(body))};`}
-    const response = await fetch(${JSON.stringify(path)}, init);
+    const init = { method, headers, credentials: "same-origin" };
+    if (body !== undefined) {
+      headers["Content-Type"] = "application/json";
+      init.body = JSON.stringify(body);
+    }
+    const response = await fetch(path, init);
     return { status: response.status, body: await response.text() };
-  })()`);
+  }, method, path, body);
 
 function setupCode(container) {
   const logs = spawnSync("docker", ["logs", container], { encoding: "utf8" });
@@ -239,30 +242,44 @@ async function openApp(options, key) {
   await page.waitFor(`!!document.querySelector("nav.rail .channel")`, 60_000);
 }
 
-const click = (key, expression) =>
-  people[key].page.eval(`(() => { const el = ${expression}; if (!el) return false; el.click(); return true; })()`);
-const channelButton = (name) =>
-  `[...document.querySelectorAll("nav.rail button.channel-main")].find((b) => b.querySelector(".name")?.textContent.trim() === ${JSON.stringify(name)})`;
-const joinVoice = (key, name) => click(key, channelButton(name));
-const hangUp = (key) => click(key, `document.querySelector('button[aria-label="Disconnect"]')`);
-const toggleMute = (key) => click(key, `document.querySelector('button[aria-label="Microphone"]')`);
+const click = (key, selector) =>
+  people[key].page.call((selector) => {
+    const button = document.querySelector(selector);
+    if (!button) return false;
+    button.click();
+    return true;
+  }, selector);
+const joinVoice = (key, name) =>
+  people[key].page.call((name) => {
+    const button = [...document.querySelectorAll("nav.rail button.channel-main")]
+      .find((item) => item.querySelector(".name")?.textContent.trim() === name);
+    if (!button) return false;
+    button.click();
+    return true;
+  }, name);
+const hangUp = (key) => click(key, 'button[aria-label="Disconnect"]');
+const toggleMute = (key) => click(key, 'button[aria-label="Microphone"]');
 
 async function setPresence(key, label) {
-  await click(key, `document.querySelector("button.acc-open")`);
+  await click(key, "button.acc-open");
   await sleep(400);
-  const ok = await click(
-    key,
-    `[...document.querySelectorAll('[role="group"][aria-label="Your availability"] button')].find((b) => b.textContent.includes(${JSON.stringify(label)}))`,
-  );
+  const page = people[key].page;
+  const ok = await page.call((label) => {
+    const button = [...document.querySelectorAll('[role="group"][aria-label="Your availability"] button')]
+      .find((item) => item.textContent.includes(label));
+    if (!button) return false;
+    button.click();
+    return true;
+  }, label);
   await sleep(200);
-  await people[key].page.eval(`document.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true }))`);
+  await page.eval(`document.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true }))`);
   return ok;
 }
 
 async function markAll(label) {
   for (const key of Object.keys(people)) {
     const page = people[key].page;
-    if (page) await page.eval(`window.__probe?.mark(${JSON.stringify(label)})`).catch(() => undefined);
+    if (page) await page.call((label) => window.__probe?.mark(label), label).catch(() => undefined);
   }
   console.log(`${new Date().toISOString().slice(11, 19)} ${label}`);
 }

@@ -18,6 +18,14 @@ const CANDIDATES = [
   "/Applications/Chromium.app/Contents/MacOS/Chromium",
 ];
 
+function valueFromEvaluation(result) {
+  if (result.exceptionDetails !== undefined) {
+    const detail = result.exceptionDetails.exception?.description ?? result.exceptionDetails.text;
+    throw new Error(`page: ${detail}`);
+  }
+  return result.result.value;
+}
+
 /** The browser binary to use, or a message naming how to provide one. */
 export function findChromium() {
   for (const candidate of [
@@ -250,12 +258,25 @@ export async function launch({ width = 1280, height = 900, headless = true, flag
             returnByValue: true,
             userGesture: true,
           });
-          if (result.exceptionDetails !== undefined) {
-            const detail =
-              result.exceptionDetails.exception?.description ?? result.exceptionDetails.text;
-            throw new Error(`page: ${detail}`);
+          return valueFromEvaluation(result);
+        },
+        async call(fn, ...args) {
+          const global = await cmd("Runtime.evaluate", { expression: "globalThis" });
+          const objectId = global.result.objectId;
+          if (objectId === undefined) throw new Error("page: no global object");
+          try {
+            const result = await cmd("Runtime.callFunctionOn", {
+              objectId,
+              functionDeclaration: Function.prototype.toString.call(fn),
+              arguments: args.map((value) => ({ value })),
+              awaitPromise: true,
+              returnByValue: true,
+              userGesture: true,
+            });
+            return valueFromEvaluation(result);
+          } finally {
+            await cmd("Runtime.releaseObject", { objectId }).catch(() => undefined);
           }
-          return result.result.value;
         },
         async waitFor(expression, timeout = 30_000) {
           const deadline = Date.now() + timeout;
