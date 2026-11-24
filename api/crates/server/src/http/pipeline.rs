@@ -144,15 +144,25 @@ async fn count(State(pipeline): State<Arc<Pipeline>>, request: Request, next: Ne
     response
 }
 
+/// The path as the log may say it: a secret in it (an invite's code) is
+/// replaced by a mark.
+fn shown_path(request: &Request, path: &str) -> String {
+    request.extensions().get::<MatchedPath>().map_or_else(
+        || path.to_string(),
+        |matched| super::secret_path::masked(matched.as_str(), path),
+    )
+}
+
 async fn request_log(request: Request, next: Next) -> Response {
     let started = Instant::now();
     let method = request.method().clone();
     let path = request.uri().path().to_string();
+    let shown = shown_path(&request, &path);
     let response = next.run(request).await;
     if !logging::is_probe(&path) {
         info!(
             target: REQUEST_TARGET,
-            "{method} {path} {} in {} ms",
+            "{method} {shown} {} in {} ms",
             response.status().as_u16(),
             started.elapsed().as_millis()
         );
@@ -165,12 +175,13 @@ async fn request_log(request: Request, next: Next) -> Response {
 /// stops there.
 async fn recover(request: Request, next: Next) -> Response {
     let path = request.uri().path().to_string();
+    let shown = shown_path(&request, &path);
     let id = trace::current();
     let task = tokio::spawn(trace::scope(id, logging::serving(&path, next.run(request))));
     match task.await {
         Ok(response) => response,
         Err(failure) => {
-            tracing::error!(trace_id = %trace::current(), "a handler for {path} failed: {failure}");
+            tracing::error!(trace_id = %trace::current(), "a handler for {shown} failed: {failure}");
             internal_error_response()
         }
     }

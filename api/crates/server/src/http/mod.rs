@@ -21,6 +21,7 @@ mod problem;
 mod query_values;
 mod rate_limit;
 mod routes;
+pub mod secret_path;
 mod session_cookie;
 pub mod stream;
 pub mod trace;
