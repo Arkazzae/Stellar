@@ -35,10 +35,6 @@ pub struct IndexPage {
     next_cursor: Option<String>,
 }
 
-fn invalid(field: &str, reason: String) -> ApiError {
-    Problem::validation(vec![(field.to_string(), vec![reason])]).into()
-}
-
 /// What the page's query string says. A `limit` that is no number is refused
 /// where it is read, before anything else about the request is looked at.
 pub struct PageQuery {
@@ -123,7 +119,7 @@ fn query_length(state: &AppState) -> ApiResult<ApiError> {
         MessageKey::SearchQueryLength,
         &[("min", &MIN_QUERY_UNITS), ("max", &MAX_QUERY_UNITS)],
     )?;
-    Ok(invalid("query", reason))
+    Ok(Problem::invalid_field("query", reason))
 }
 
 /// Pages through the channel's messages, all of them, only those with
@@ -143,12 +139,12 @@ pub async fn page(
         let reason = state
             .messages()
             .get(MessageKey::PageLimitRange, &[("max", &MAX_PAGE_SIZE)])?;
-        return Err(invalid("limit", reason));
+        return Err(Problem::invalid_field("limit", reason));
     }
 
     let Some(kind) = parse_kind(asked.kind.as_deref()) else {
         let reason = state.messages().get(MessageKey::IndexKindInvalid, &[])?;
-        return Err(invalid("kind", reason));
+        return Err(Problem::invalid_field("kind", reason));
     };
 
     let needle = asked
@@ -227,7 +223,7 @@ pub async fn page(
         Some(Ok(page)) => Ok(Json(page)),
         Some(Err(())) => {
             let reason = state.messages().get(MessageKey::IndexCursorInvalid, &[])?;
-            Err(invalid("cursor", reason))
+            Err(Problem::invalid_field("cursor", reason))
         }
     }
 }

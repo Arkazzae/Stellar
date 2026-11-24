@@ -111,7 +111,7 @@ pub fn field_problem(
     values: &[(&str, Value<'_>)],
 ) -> ApiError {
     match messages.get(key, values) {
-        Ok(text) => Problem::validation(vec![(field.to_string(), vec![text])]).into(),
+        Ok(text) => Problem::invalid_field(field, text),
         Err(error) => error.into(),
     }
 }
