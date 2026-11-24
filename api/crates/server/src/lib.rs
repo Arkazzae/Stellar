@@ -22,6 +22,7 @@ pub mod instance;
 pub mod logging;
 pub mod mail;
 pub mod realtime;
+pub mod permissions;
 pub mod seal;
 pub mod secrets;
 pub mod settings;
