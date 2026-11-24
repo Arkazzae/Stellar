@@ -15,13 +15,13 @@ use super::problems::{self, Refusal};
 use super::store::{self, Conversation, Epoch, State as Switch};
 use super::wire::{
     EnvelopeRequest, EpochRequest, EpochsDto, KeysDto, Members, PersonKeysDto, RecipientKeyDto,
-    is_wire_id, path_id,
+    is_wire_id,
 };
 use crate::auth::Caller;
 use crate::database::DbError;
 use crate::http::{ApiError, ApiResult, Json, Path, Query, json_response};
 use crate::state::AppState;
-use crate::values::{Id, Timestamp};
+use crate::values::{Guid, Id, Timestamp};
 
 /// Both account keys and every device both people may have at once.
 const MAX_ENVELOPES: usize = 2 * (store::MAX_ACTIVE_DEVICES as usize + 1);
@@ -210,18 +210,18 @@ struct Refused2(Refused, Conversation);
 pub async fn request(
     State(state): State<AppState>,
     caller: Caller,
-    Path(id): Path<String>,
+    Path(Guid(id)): Path<Guid>,
 ) -> ApiResult<Response> {
-    switch(state, caller, path_id(&id)?, Action::Request).await
+    switch(state, caller, id, Action::Request).await
 }
 
 /// Takes back a request; only the person who sent it.
 pub async fn cancel(
     State(state): State<AppState>,
     caller: Caller,
-    Path(id): Path<String>,
+    Path(Guid(id)): Path<Guid>,
 ) -> ApiResult<Response> {
-    switch(state, caller, path_id(&id)?, Action::Cancel).await
+    switch(state, caller, id, Action::Cancel).await
 }
 
 /// Switches encryption on: only the person who was asked, and only with an
@@ -229,9 +229,9 @@ pub async fn cancel(
 pub async fn confirm(
     State(state): State<AppState>,
     caller: Caller,
-    Path(id): Path<String>,
+    Path(Guid(id)): Path<Guid>,
 ) -> ApiResult<Response> {
-    switch(state, caller, path_id(&id)?, Action::Confirm).await
+    switch(state, caller, id, Action::Confirm).await
 }
 
 /// Switches encryption off, or turns a pending request down: either person, at
@@ -239,9 +239,9 @@ pub async fn confirm(
 pub async fn disable(
     State(state): State<AppState>,
     caller: Caller,
-    Path(id): Path<String>,
+    Path(Guid(id)): Path<Guid>,
 ) -> ApiResult<Response> {
-    switch(state, caller, path_id(&id)?, Action::Disable).await
+    switch(state, caller, id, Action::Disable).await
 }
 
 /// The conversation when the reader is in it and neither person blocks the
@@ -265,9 +265,8 @@ fn readable(
 pub async fn keys(
     State(state): State<AppState>,
     caller: Caller,
-    Path(id): Path<String>,
+    Path(Guid(id)): Path<Guid>,
 ) -> ApiResult<Response> {
-    let id = path_id(&id)?;
     let found = state
         .database()
         .read(move |db| -> Result<Option<KeysDto>, DbError> {
@@ -372,10 +371,9 @@ fn after_of(query: &[(String, String)]) -> Result<i64, ApiError> {
 pub async fn epochs(
     State(state): State<AppState>,
     caller: Caller,
-    Path(id): Path<String>,
+    Path(Guid(id)): Path<Guid>,
     Query(query): Query<Vec<(String, String)>>,
 ) -> ApiResult<Response> {
-    let id = path_id(&id)?;
     let after = after_of(&query)?;
     let found = state
         .database()
@@ -460,10 +458,9 @@ enum Made {
 pub async fn create_epoch(
     State(state): State<AppState>,
     caller: Caller,
-    Path(id): Path<String>,
+    Path(Guid(id)): Path<Guid>,
     Json(body): Json<Members>,
 ) -> ApiResult<Response> {
-    let id = path_id(&id)?;
     let request = EpochRequest::read(&body)?;
     let user = caller.user;
     let Some(epoch_id) = request.epoch_id.as_deref().and_then(is_wire_id) else {
