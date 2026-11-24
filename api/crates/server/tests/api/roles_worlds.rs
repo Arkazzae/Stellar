@@ -432,6 +432,9 @@ fn arrange_worlds_in_a_shared_database_and_plan_requests_for_each() {
             if ghosts.iter().any(|ghost| one["actor"] == json!(ghost)) {
                 one["actor"] = json!(users[0].0);
             }
+            if one.get("odd").is_some() && !member_names.iter().any(|name| one["actor"] == json!(name)) {
+                one["actor"] = json!(users[0].0);
+            }
             let actor = one["actor"].as_str().unwrap_or_default().to_string();
             one["class"] = json!(if actor == users[0].0 {
                 "owner"
