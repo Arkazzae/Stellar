@@ -581,7 +581,7 @@ pub fn startup_settings() -> Vec<StartupSetting> {
         StartupSetting {
             key: "tls.domain",
             environment_variable: "STELLARR_DOMAIN",
-            guidance: format!("Set {domain} in .env; the entrypoint also derives TLS and TURN from it. Recreate the container."),
+            guidance: format!("Set {domain} in .env; the entrypoint also uses it for TLS and optional TURN. Recreate the container."),
             read: public_host,
         },
         StartupSetting {
@@ -612,6 +612,12 @@ pub fn startup_settings() -> Vec<StartupSetting> {
             environment_variable: "STELLARR_DOMAIN",
             guidance: format!("Set {domain} in .env and recreate the container."),
             read: public_host,
+        },
+        StartupSetting {
+            key: "rtc.turn-enabled",
+            environment_variable: "STELLARR_TURN_ENABLED",
+            guidance: "Use the installer with --enable-turn. For manual Docker Compose deployments, include docker-compose.turn.yml when recreating the container.".to_string(),
+            read: |runtime| config_value(runtime, "Rtc:TurnEnabled", "false"),
         },
         from_variable!("rtc.turn-port", "STELLARR_TURN_PORT", "Rtc:TurnPort", "3478", ""),
         from_variable!("rtc.turns-port", "STELLARR_TURNS_PORT", "Rtc:TurnsPort", "5349", ""),
