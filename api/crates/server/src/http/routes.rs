@@ -26,6 +26,11 @@ use axum::routing::{MethodFilter, on};
 use super::rate_limit::RateLimitPolicy;
 use crate::state::AppState;
 
+/// How much of a JSON body a route reads unless it asks for more: 1 MiB. A
+/// route that needs no session, such as signing in, would otherwise let anybody
+/// make the server hold 128 MiB.
+pub const DEFAULT_JSON_BODY_BYTES: usize = 1024 * 1024;
+
 /// What the pipeline does around one route.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct Rules {
@@ -34,6 +39,9 @@ pub struct Rules {
     /// The route reads a JSON body: a request that names another content type
     /// is answered 415 before the limit counts it.
     pub json_body: bool,
+    /// The most a JSON body of the route may be; none means
+    /// [`DEFAULT_JSON_BODY_BYTES`].
+    pub body_limit: Option<usize>,
     /// The route needs a signed-in person: a request without a valid session
     /// is answered 401 with no body.
     pub authorize: bool,
@@ -128,6 +136,16 @@ impl Endpoints {
     /// Marks the route added last as one that needs a signed-in person.
     pub fn authorized(mut self) -> Endpoints {
         self.rules_of_last().authorize = true;
+        self
+    }
+
+    /// Lets the JSON body of the route added last be up to `bytes`, where the
+    /// ordinary limit is [`DEFAULT_JSON_BODY_BYTES`]; never more than the
+    /// ceiling of the whole server.
+    pub fn json_body_up_to(mut self, bytes: usize) -> Endpoints {
+        let rules = self.rules_of_last();
+        rules.json_body = true;
+        rules.body_limit = Some(bytes.min(crate::http::MAX_REQUEST_BODY_BYTES));
         self
     }
 

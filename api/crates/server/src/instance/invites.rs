@@ -81,7 +81,9 @@ mod tests {
         // A connection of its own: foreign keys are off on it, so the invite
         // needs no server and no creator.
         let mut connection = rusqlite::Connection::open(database.path()).unwrap();
-        connection.pragma_update(None, "foreign_keys", false).unwrap();
+        connection
+            .pragma_update(None, "foreign_keys", false)
+            .unwrap();
         let tx = connection.transaction().unwrap();
         let mut outcomes = Vec::new();
         for (name, (id, max, expires), expected) in cases {
