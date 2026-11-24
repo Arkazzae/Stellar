@@ -35,3 +35,4 @@ mod refusals;
 mod steps;
 mod password_reset;
 mod recovery_credential;
+mod passkeys;

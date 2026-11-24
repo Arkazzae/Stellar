@@ -979,7 +979,21 @@ def timing(servers):
         print("   mails that arrived for the known address on %s: %d" % (server.name, len(mails(200, wait=20))))
 
 
+def prepare():
+    """Starts the first server as a scenario would find it and leaves it
+    running, for the comparison that is written in Rust (the passkey one,
+    which needs an authenticator): `cargo test -p stellarr-api --test api
+    passkey_oracle -- --ignored --nocapture`. Stop it with `oracle stop`."""
+    server = Oracle()
+    seed(server)
+    print("the first server is ready on %s with accounts %s" % (server.base, ", ".join(ACCOUNTS)))
+
+
 def main():
+    if sys.argv[1:] == ["prepare"]:
+        prepare()
+        shutil.rmtree(WORK, ignore_errors=True)
+        return
     names = sys.argv[1:] or list(SCENARIOS)
     first = second = None
     different = 0
