@@ -14,6 +14,7 @@
 """
 import json
 import sys
+import time
 import urllib.error
 import urllib.request
 import uuid
@@ -28,6 +29,15 @@ class NoRedirect(urllib.request.HTTPRedirectHandler):
 
 
 def call(base, method, path, body=None, cookie=None, headers=None):
+    # Production counts attempts per window: wait out the limit instead of failing.
+    while True:
+        status, reply, answer_headers = send(base, method, path, body, cookie, headers)
+        if status != 429:
+            return status, reply, answer_headers
+        time.sleep(float(answer_headers.get("Retry-After") or 5) + 1)
+
+
+def send(base, method, path, body=None, cookie=None, headers=None):
     request = urllib.request.Request(base + path, method=method, data=json.dumps(body).encode() if body is not None else None)
     for name, value in {**CLIENT, **(headers or {})}.items():
         request.add_header(name, value)
@@ -54,7 +64,7 @@ def register(base, setup, work, count):
     cookies = {}
     status, body, _ = call(base, "POST", "/api/auth/register", {
         "username": "boss", "displayName": "Boss", "email": "boss@example.test", "password": PASSWORD, "setupCode": setup})
-    if status != 200:
+    if status not in (200, 201):
         raise SystemExit(f"founding failed: {status} {body[:200]}")
     status, body, headers = call(base, "POST", "/api/auth/login", {"username": "boss", "password": PASSWORD})
     cookies["boss"] = session_cookie(headers)
