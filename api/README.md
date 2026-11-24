@@ -10,7 +10,7 @@ workspace. One crate per folder of `crates/`:
 | `deflate` (`stellarr-deflate`) | DEFLATE, gzip and zlib in both directions, and CRC-32, with no dependencies. |
 | `discord` (`stellarr-discord`) | Reads a Discord server, from a template link or with a bot token, into a snapshot in Stellarr's own terms. |
 | `embeds` (`stellarr-embeds`) | Link previews: finding the links in a message and fetching what a card for each needs. |
-| `hub` (`stellarr-hub`) | The server for the SignalR hub protocol that the web client speaks: negotiation, the JSON protocol over a WebSocket, calls, events to connections and groups, and keep-alive. |
+| `hub` (`stellarr-hub`) | The Stellarr WebSocket protocol for calls, group events and keep-alive. |
 | `mail` (`stellarr-mail`) | The mail the server writes: every kind of message, the choice of transport and the Resend request. |
 | `mentions` (`stellarr-mentions`) | Which accounts a message names with @username, read the way Stellarr's web client shows them. |
 | `messages` (`stellarr-messages`) | Everything the server says to people, in each language of the catalogue. No dependencies. |
@@ -947,11 +947,18 @@ moment its ages are measured against.
 
 `realtime/` is the hub the web client keeps open at `/hubs/app`. `run` starts it
 (`Services { realtime: Some(Realtime::new()), .. }`); `serve` alone runs the API
-with nobody connected. A connection is let in by the session cookie, through the
-same pipeline as any request, and joins the groups of its account, of the
-server it follows (`?serverId=`, else the first it belongs to) and of its
-account on that server. Presence is the account's, not the connection's: online
-with the first connection, offline after the last.
+with nobody connected. The web client upgrades directly with the `stellarr.v1`
+WebSocket subprotocol. The server checks the session cookie and browser Origin,
+then sends `ready`. Each text message contains one JSON object. Clients send
+`call` messages addressed by `id` and receive `result` or `error` with the same
+`id`. The hub pushes `event` messages with a `name` and `data` and sends `ping`
+messages during idle periods. A revoked session closes with code `4401`.
+The upgrade requires the `stellarr.v1` subprotocol. Tabs left open from a
+release that used SignalR must be refreshed after updating the server.
+
+Connections join the groups of their account, the server they follow
+(`?serverId=`, else the first they belong to) and their account on that server.
+Presence goes online with the first connection and offline after the last.
 
 Handlers tell the hub through `state.events()`, and read it through
 `state.presence()`. An `Audience` says who hears an event, and the handler

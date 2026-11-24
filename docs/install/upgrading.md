@@ -2,6 +2,8 @@
 
 Upgrading replaces the container image while preserving the `stellarr_stellarr_data` volume (`/data/stellarr`).
 
+After upgrading from a release that used SignalR, refresh any Stellarr tabs left open so they load the client for the `stellarr.v1` WebSocket protocol.
+
 > [!CAUTION]
 > Never run `docker compose down -v` on an active instance. The `-v` flag deletes the data volume, destroying all accounts, messages, uploads, encryption keys, and secrets.
 
