@@ -9,11 +9,11 @@
 //! application never sees the browser's cookie.
 //!
 //! `POST /api/auth/desktop/browser/start` and `GET` and `POST
-//! /api/auth/desktop/browser/verify/{id}` are here. The last step, `POST
-//! /api/auth/desktop/browser/exchange`, waits for a way to give the session it
-//! makes what the approving session proved: see the report on this group.
+//! /api/auth/desktop/browser/verify/{id}` are here, and the last step, `POST
+//! /api/auth/desktop/browser/exchange`, which the application polls.
 
 mod approval;
+mod exchange;
 mod form;
 mod page;
 mod same_origin;
@@ -32,6 +32,9 @@ pub fn routes() -> Endpoints {
         .authorized()
         .post("/api/auth/desktop/browser/verify/{request_id}", approval::approve)
         .authorized()
+        .post("/api/auth/desktop/browser/exchange", exchange::exchange)
+        .json_body()
+        .rate_limit(RateLimitPolicy::LoginPoll)
 }
 
 /// Every answer of this route is kept out of every cache.

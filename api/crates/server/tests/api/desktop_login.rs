@@ -810,3 +810,322 @@ async fn only_the_methods_the_routes_have_are_served() {
     assert_eq!(start_get.status, 405);
     assert_eq!(start_get.header("allow"), Some("POST"));
 }
+
+// ---------------------------------------------------------------------------
+// The application's half: exchanging an approved request for a session.
+
+const EXCHANGE: &str = "/api/auth/desktop/browser/exchange";
+
+async fn exchange(application: &Client, id: &str, secret: &str) -> Response {
+    application
+        .send(Request::new(Method::POST, EXCHANGE).json(&serde_json::json!({ "requestId": id, "secret": secret })))
+        .await
+}
+
+/// A request that the person approved, from `browser`.
+async fn approved(server: &Server, browser: &Client) -> Started {
+    let started = start(server).await;
+    let token = look(browser, &started.id).await;
+    assert_eq!(approve(browser, &started.id, &token).await.status, 200);
+    started
+}
+
+fn count(connection: &Connection, sql: &str) -> i64 {
+    connection.query_row(sql, [], |row| row.get(0)).unwrap()
+}
+
+const INVALID: &str = "The sign-in link is invalid or has expired.";
+
+#[tokio::test]
+async fn the_whole_hand_over_ends_in_a_session_that_carries_what_the_approval_proved() {
+    let (server, maja) = with_provider().await;
+    let browser = server.sign_in(&maja).await;
+    server
+        .database()
+        .execute(
+            "UPDATE \"UserSessions\" SET \"MfaCompletedAt\" = '2026-11-20 10:00:00', \"MfaEvidence\" = 'totp'
+             WHERE \"Id\" = (SELECT \"Id\" FROM \"UserSessions\" ORDER BY \"CreatedAt\" DESC LIMIT 1)",
+            [],
+        )
+        .unwrap();
+    let application = application(&server);
+    let started = start(&server).await;
+
+    let pending = exchange(&application, &started.id, &started.secret).await;
+    assert_eq!((pending.status.as_u16(), pending.text()), (202, "{\"status\":\"pending\"}".to_string()));
+    assert_eq!(pending.header("cache-control"), Some("no-store"));
+    let token = look(&browser, &started.id).await;
+    assert_eq!(exchange(&application, &started.id, &started.secret).await.status, 202);
+    approve(&browser, &started.id, &token).await;
+
+    let signed_in = exchange(&application, &started.id, &started.secret).await;
+
+    assert_eq!(signed_in.status, 200, "{}", signed_in.text());
+    let user: Value = signed_in.json();
+    assert_eq!(user["username"], "maja");
+    assert_eq!(user["id"], maja.id);
+    assert_eq!(user["presence"], "online");
+    // The cookie is kept across the application's restarts, and the answer is kept from caches.
+    let cookie = signed_in.headers.get_all("set-cookie").iter().next().unwrap().to_str().unwrap().to_string();
+    assert!(cookie.starts_with("stellarr-dev-session="), "{cookie}");
+    assert!(cookie.contains("; expires="), "{cookie}");
+    assert!(cookie.ends_with("; path=/; samesite=lax; httponly"), "{cookie}");
+    assert_eq!(signed_in.header("cache-control"), Some("no-cache,no-store"));
+    assert_eq!(signed_in.header("pragma"), Some("no-cache"));
+
+    let connection = server.database();
+    assert!(row(&connection, &started.id).redeemed_at.is_some());
+    let made: (Option<String>, Option<String>, String, bool, String, String, i64, String, String) = connection
+        .query_row(
+            "SELECT \"MfaCompletedAt\", \"MfaEvidence\", \"PrimarySource\", \"ShortLived\", \"Device\", \"IpAddress\", \"SecurityVersion\",
+                    \"CreatedAt\", \"ExpiresAt\"
+             FROM \"UserSessions\" ORDER BY \"CreatedAt\" DESC LIMIT 1",
+            [],
+            |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?, row.get(4)?, row.get(5)?, row.get(6)?, row.get(7)?, row.get(8)?)),
+        )
+        .unwrap();
+    assert_eq!(made.0.as_deref(), Some("2026-11-20 10:00:00"));
+    assert_eq!(made.1.as_deref(), Some("totp"));
+    assert_eq!(made.2, "password");
+    assert!(!made.3, "the application's session is never short-lived");
+    assert!(!made.4.is_empty() && made.5 == "127.0.0.1" && made.6 == 0);
+    let lifetime = Timestamp::parse(&made.8).unwrap().unix_seconds() - Timestamp::parse(&made.7).unwrap().unix_seconds();
+    assert_eq!(lifetime, 30 * 24 * 3600);
+    let sign_ins: Vec<String> = connection
+        .prepare("SELECT \"Detail\" FROM \"SecurityEvents\" WHERE \"Kind\" = 'login-succeeded' AND \"Detail\" = 'desktop'")
+        .unwrap()
+        .query_map([], |row| row.get(0))
+        .unwrap()
+        .map(Result::unwrap)
+        .collect();
+    assert_eq!(sign_ins.len(), 1);
+
+    // The session works where a session does: on the API, and on the hub.
+    let me = application.get("/api/me").await;
+    assert_eq!(me.status, 200);
+    assert_eq!(me.json::<Value>()["username"], "maja");
+    let session = application.cookie("stellarr-dev-session").unwrap();
+    let mut hub = crate::support::HubClient::connect(server.address(), &format!("stellarr-dev-session={session}")).await;
+    let _ = hub.quiet_for(std::time::Duration::from_millis(50)).await;
+
+    // And once is all it was good for.
+    let again = exchange(&application, &started.id, &started.secret).await;
+    assert_eq!(again.status, 400);
+}
+
+#[tokio::test]
+async fn an_exchange_that_is_not_for_a_request_with_its_secret_is_one_answer() {
+    let (server, maja) = with_provider().await;
+    let application = application(&server);
+    let started = approved(&server, &maja.client).await;
+    let long = "x".repeat(513);
+
+    for (what, id, secret) in [
+        ("a wrong secret", started.id.as_str(), "x".repeat(43)),
+        ("a secret too short", started.id.as_str(), "x".repeat(15)),
+        ("a secret too long", started.id.as_str(), long.clone()),
+        ("the secret with spaces around it", started.id.as_str(), format!(" {} ", started.secret)),
+        ("an id that is no id", "not-a-guid", started.secret.clone()),
+        ("an id nobody started", "11111111-2222-4333-8444-555555555555", started.secret.clone()),
+    ] {
+        let refused = exchange(&application, id, &secret).await;
+        assert_eq!(refused.status, 400, "{what}");
+        let body: Value = refused.json();
+        assert_eq!(body["title"], INVALID, "{what}");
+        assert_eq!(refused.header("cache-control"), Some("no-store"), "{what}");
+        assert_eq!(refused.header("content-type"), Some("application/problem+json"), "{what}");
+    }
+    // None of them cost the right holder of the secret anything.
+    assert!(row(&server.database(), &started.id).redeemed_at.is_none());
+    assert_eq!(exchange(&application, &started.id, &started.secret).await.status, 200);
+}
+
+#[tokio::test]
+async fn a_body_that_is_not_the_request_is_refused_as_the_first_server_refused_it() {
+    let server = Server::start_with(&PROVIDER).await;
+    let application = application(&server);
+
+    for body in ["{}", "{\"requestId\":null,\"secret\":null}"] {
+        let refused = application
+            .send(Request::new(Method::POST, EXCHANGE).body("application/json", body))
+            .await;
+        assert_eq!(refused.status, 400, "{body}");
+        assert_eq!(refused.json::<Value>()["title"], INVALID);
+    }
+    for body in ["{\"requestId\":1,\"secret\":2}", "[1]", "{"] {
+        let refused = application
+            .send(Request::new(Method::POST, EXCHANGE).body("application/json", body))
+            .await;
+        assert_eq!(refused.status, 400, "{body}");
+        assert!(refused.body.is_empty() && refused.header("cache-control").is_none(), "{body}");
+    }
+    let untyped = application.send(Request::new(Method::POST, EXCHANGE).untyped_body("{}")).await;
+    assert_eq!(untyped.status, 415);
+    assert_eq!(application.get(EXCHANGE).await.status, 405);
+}
+
+#[tokio::test]
+async fn two_exchanges_at_once_make_one_session() {
+    let (server, maja) = with_provider().await;
+    let started = approved(&server, &maja.client).await;
+    let (first, second) = (application(&server), application(&server));
+    let before = count(&server.database(), "SELECT COUNT(*) FROM \"UserSessions\"");
+
+    let (a, b) = tokio::join!(
+        exchange(&first, &started.id, &started.secret),
+        exchange(&second, &started.id, &started.secret)
+    );
+
+    let mut statuses = [a.status.as_u16(), b.status.as_u16()];
+    statuses.sort();
+    assert_eq!(statuses, [200, 400]);
+    assert_eq!(count(&server.database(), "SELECT COUNT(*) FROM \"UserSessions\""), before + 1);
+}
+
+#[tokio::test]
+async fn a_poll_that_finds_nothing_yet_reads_and_writes_nothing() {
+    let (server, _maja) = with_provider().await;
+    let started = start(&server).await;
+    let application = application(&server);
+    // Another connection holds the write lock for the whole of the polls: a
+    // poll that wrote would wait for it, and would not be answered.
+    let holder = server.database();
+    holder.execute_batch("BEGIN IMMEDIATE").unwrap();
+    let before = count(&holder, "SELECT total_changes()");
+
+    for _ in 0..3 {
+        let poll = tokio::time::timeout(
+            std::time::Duration::from_secs(3),
+            exchange(&application, &started.id, &started.secret),
+        )
+        .await
+        .expect("a poll writes nothing, so it does not wait for the writer");
+        assert_eq!(poll.status, 202);
+    }
+    let wrong = tokio::time::timeout(
+        std::time::Duration::from_secs(3),
+        exchange(&application, &started.id, &"x".repeat(43)),
+    )
+    .await
+    .expect("a wrong secret writes nothing either");
+    assert_eq!(wrong.status, 400);
+    holder.execute_batch("ROLLBACK").unwrap();
+    assert_eq!(before, 0);
+    assert!(row(&server.database(), &started.id).redeemed_at.is_none());
+}
+
+#[tokio::test]
+async fn polls_count_against_a_limit_of_their_own() {
+    let server = Server::start_with(&[
+        ("ASPNETCORE_ENVIRONMENT", "Production"),
+        ("Rtc__TurnSharedSecret", "a-secret"),
+        ("RateLimiting__LoginPoll__PermitLimit", "3"),
+        ("Oidc__Enabled", "true"),
+        ("Oidc__Authority", "https://identity.test"),
+        ("Oidc__ClientId", "x"),
+        ("Oidc__ClientSecret", "y"),
+    ])
+    .await;
+    let application = application(&server);
+    let mut statuses = Vec::new();
+    for _ in 0..5 {
+        statuses.push(exchange(&application, "11111111-2222-4333-8444-555555555555", &"x".repeat(43)).await.status.as_u16());
+    }
+    assert_eq!(statuses, [400, 400, 400, 429, 429]);
+    // The limit on passwords is not spent by it.
+    let login = server.client().post_json("/api/auth/login", &serde_json::json!({ "username": "x", "password": "y" })).await;
+    assert_ne!(login.status, 429);
+}
+
+#[tokio::test]
+async fn a_request_that_ran_out_after_approval_is_no_use() {
+    let (server, maja) = with_provider().await;
+    let started = approved(&server, &maja.client).await;
+    let before = count(&server.database(), "SELECT COUNT(*) FROM \"UserSessions\"");
+    server
+        .database()
+        .execute(
+            "UPDATE \"DesktopBrowserLogins\" SET \"ExpiresAt\" = '2000-01-01 00:00:00' WHERE \"Id\" = ?1",
+            [Id::parse(&started.id).unwrap()],
+        )
+        .unwrap();
+
+    let late = exchange(&application(&server), &started.id, &started.secret).await;
+
+    assert_eq!(late.status, 400);
+    assert_eq!(count(&server.database(), "SELECT COUNT(*) FROM \"UserSessions\""), before);
+}
+
+#[tokio::test]
+async fn an_approval_that_no_longer_stands_is_a_403_and_makes_no_session() {
+    let cases = [
+        ("the approving session was revoked", "UPDATE \"UserSessions\" SET \"RevokedAt\" = '2026-11-24 00:00:00' WHERE \"Id\" = (SELECT \"ApprovedSessionId\" FROM \"DesktopBrowserLogins\")"),
+        ("the approving session ran out", "UPDATE \"UserSessions\" SET \"ExpiresAt\" = '2000-01-01 00:00:00' WHERE \"Id\" = (SELECT \"ApprovedSessionId\" FROM \"DesktopBrowserLogins\")"),
+        ("the approving session reached its end", "UPDATE \"UserSessions\" SET \"AbsoluteExpiresAt\" = '2000-01-01 00:00:00' WHERE \"Id\" = (SELECT \"ApprovedSessionId\" FROM \"DesktopBrowserLogins\")"),
+        ("the approving session has no end", "UPDATE \"UserSessions\" SET \"AbsoluteExpiresAt\" = NULL WHERE \"Id\" = (SELECT \"ApprovedSessionId\" FROM \"DesktopBrowserLogins\")"),
+        ("the account's version moved on", "UPDATE \"Users\" SET \"SessionVersion\" = \"SessionVersion\" + 1"),
+        ("the account was disabled", "UPDATE \"Users\" SET \"IsDisabled\" = 1"),
+        ("the account waits for recovery", "UPDATE \"Users\" SET \"SecurityRecoveryRequired\" = 1"),
+        ("the account got a second step the approval did not pass", "INSERT INTO \"MfaMethods\" (\"Id\", \"UserId\", \"Type\", \"Name\", \"CreatedAt\", \"ConfirmedAt\") SELECT 'AAAAAAAA-0000-4000-8000-000000000001', \"Id\", 'totp', 'Phone', '2026-11-24 00:00:00', '2026-11-24 00:00:00' FROM \"Users\""),
+    ];
+    for (what, sql) in cases {
+        let (server, maja) = with_provider().await;
+        let started = approved(&server, &maja.client).await;
+        let before = count(&server.database(), "SELECT COUNT(*) FROM \"UserSessions\"");
+        server.database().execute(sql, []).unwrap();
+
+        let refused = exchange(&application(&server), &started.id, &started.secret).await;
+
+        assert_eq!(refused.status, 403, "{what}");
+        assert!(refused.body.is_empty(), "{what}");
+        assert_eq!(count(&server.database(), "SELECT COUNT(*) FROM \"UserSessions\""), before, "{what}");
+        assert!(row(&server.database(), &started.id).redeemed_at.is_none(), "{what}");
+    }
+}
+
+#[tokio::test]
+async fn a_password_changed_after_approval_ends_the_approval() {
+    let (server, maja) = with_provider().await;
+    let started = approved(&server, &maja.client).await;
+    {
+        let mut connection = server.database();
+        let tx = connection.transaction().unwrap();
+        // What a change of password does, which every route that makes one calls.
+        stellarr_api::auth::recovery::credentials_changed(&tx, Id::parse(&maja.id).unwrap(), None, Timestamp::now()).unwrap();
+        tx.commit().unwrap();
+    }
+
+    let refused = exchange(&application(&server), &started.id, &started.secret).await;
+
+    assert_eq!(refused.status, 400);
+    assert_eq!(refused.json::<Value>()["title"], INVALID);
+    assert_eq!(maja.client.get("/api/me").await.status, 401);
+}
+
+#[tokio::test]
+async fn an_account_with_a_second_step_gets_a_session_only_from_an_approval_that_passed_one() {
+    let (server, maja) = with_provider().await;
+    let browser = server.sign_in(&maja).await;
+    server
+        .database()
+        .execute(
+            "INSERT INTO \"MfaMethods\" (\"Id\", \"UserId\", \"Type\", \"Name\", \"CreatedAt\", \"ConfirmedAt\") SELECT 'AAAAAAAA-0000-4000-8000-000000000001', \"Id\", 'totp', 'Phone', '2026-11-24 00:00:00', '2026-11-24 00:00:00' FROM \"Users\"",
+            [],
+        )
+        .unwrap();
+    let without = approved(&server, &browser).await;
+    assert_eq!(exchange(&application(&server), &without.id, &without.secret).await.status, 403);
+
+    // The same browser after it passed the step (written as the step's own calls would).
+    server
+        .database()
+        .execute(
+            "UPDATE \"UserSessions\" SET \"MfaCompletedAt\" = '2026-11-24 00:00:00', \"MfaEvidence\" = 'totp'",
+            [],
+        )
+        .unwrap();
+    let with = approved(&server, &maja.client).await;
+    let app = application(&server);
+    assert_eq!(exchange(&app, &with.id, &with.secret).await.status, 200);
+    assert_eq!(app.get("/api/me").await.status, 200);
+}
