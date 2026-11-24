@@ -1,0 +1,163 @@
+//! The roles of a server and who holds them, and the overrides of what a role
+//! or a member may do in one channel or section.
+//!
+//! A member holds any number of roles besides the base role, which everybody
+//! holds. Nobody can hand out, or take away, a power they do not have
+//! themselves: every route here asks `permissions::authorization` for that and
+//! turns its answer into the refusal the clients know.
+//!
+//! `GET /api/admin/roles`, `POST /api/admin/roles`, `PUT /api/admin/roles/order`,
+//! `PATCH` and `DELETE /api/admin/roles/{roleId}`, `GET /api/admin/members`,
+//! `PATCH /api/admin/members/{userId}/role`, `PUT /api/admin/members/{userId}/roles`,
+//! and under `/api/admin/channels/{id}/permissions` and
+//! `/api/admin/sections/{id}/permissions` the overrides of roles and, below
+//! `/members`, of members.
+
+mod announce;
+mod assignment;
+mod catalog;
+mod overrides;
+
+use axum::http::StatusCode;
+use axum::response::Response;
+use rusqlite::{Connection, OptionalExtension, Row, params};
+use serde::Serialize;
+
+use crate::http::{ApiError, Endpoints, Problem};
+use crate::permissions::privileges;
+use crate::permissions::roles::Role;
+use crate::values::Id;
+use stellarr_messages::{MessageKey, Messages, MissingValue};
+
+pub fn routes() -> Endpoints {
+    Endpoints::new()
+        .get("/api/admin/roles", catalog::list)
+        .authorized()
+        .post("/api/admin/roles", catalog::create)
+        .json_body()
+        .authorized()
+        .put("/api/admin/roles/order", catalog::reorder)
+        .json_body()
+        .authorized()
+        .patch("/api/admin/roles/{roleId}", catalog::update)
+        .json_body()
+        .authorized()
+        .delete("/api/admin/roles/{roleId}", catalog::delete)
+        .authorized()
+        .get("/api/admin/members", assignment::list)
+        .authorized()
+        .patch("/api/admin/members/{userId}/role", assignment::assign)
+        .json_body()
+        .authorized()
+        .put("/api/admin/members/{userId}/roles", assignment::set)
+        .json_body()
+        .authorized()
+        .merge(overrides::routes())
+}
+
+/// A role with the two columns the rules do not read.
+#[derive(Debug, Clone)]
+struct RoleRow {
+    role: Role,
+    name: String,
+    color: String,
+}
+
+const ROLE_COLUMNS: &str =
+    "\"Id\", \"ServerId\", \"Name\", \"Color\", \"Permissions\", \"Position\", \"IsSystem\", \"IsOwner\"";
+
+impl RoleRow {
+    fn read(row: &Row<'_>) -> rusqlite::Result<RoleRow> {
+        Ok(RoleRow {
+            role: Role {
+                id: row.get(0)?,
+                server: row.get(1)?,
+                permissions: row.get(4)?,
+                position: row.get(5)?,
+                is_system: row.get(6)?,
+                is_owner: row.get(7)?,
+            },
+            name: row.get(2)?,
+            color: row.get(3)?,
+        })
+    }
+
+    /// The role of the server with this id.
+    fn find(db: &Connection, server: Id, id: Id) -> rusqlite::Result<Option<RoleRow>> {
+        db.query_row(
+            &format!("SELECT {ROLE_COLUMNS} FROM \"ServerRoles\" WHERE \"Id\" = ?1 AND \"ServerId\" = ?2"),
+            params![id, server],
+            RoleRow::read,
+        )
+        .optional()
+    }
+
+    /// Every role of the server, by position as the database gives them.
+    fn all(db: &Connection, server: Id) -> rusqlite::Result<Vec<RoleRow>> {
+        let mut statement = db.prepare(&format!(
+            "SELECT {ROLE_COLUMNS} FROM \"ServerRoles\" WHERE \"ServerId\" = ?1 ORDER BY \"Position\""
+        ))?;
+        statement.query_map([server], RoleRow::read)?.collect()
+    }
+
+    fn dto(&self, member_count: usize) -> RoleDto {
+        RoleDto {
+            id: self.role.id,
+            name: self.name.clone(),
+            color: self.color.clone(),
+            permissions: privileges::to_names(self.role.permissions),
+            member_count,
+            is_system: self.role.is_system,
+            is_owner: self.role.is_owner,
+        }
+    }
+}
+
+/// A role of the server; `member_count` counts who holds it, and for the base
+/// role every member.
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct RoleDto {
+    id: Id,
+    name: String,
+    color: String,
+    permissions: Vec<&'static str>,
+    member_count: usize,
+    is_system: bool,
+    is_owner: bool,
+}
+
+/// The answer that says the server has no role for plain members.
+fn no_member_role(messages: &Messages) -> Result<ApiError, MissingValue> {
+    Ok(Problem::new(StatusCode::SERVICE_UNAVAILABLE)
+        .title(messages.get(MessageKey::ServerHasNoMemberRole, &[])?)
+        .into())
+}
+
+/// A field that is refused, in the language of the instance.
+fn invalid(field: &str, text: String) -> ApiError {
+    Problem::validation(vec![(field.to_string(), vec![text])]).into()
+}
+
+/// An id that a request leaves out, which the first server read as the empty
+/// one.
+fn nil() -> Id {
+    Id::from_bytes([0; 16])
+}
+
+/// Whether a failed statement is a unique value that was taken.
+fn taken(error: rusqlite::Error) -> ApiError {
+    let error = crate::database::DbError::from(error);
+    if error.is_unique_violation() {
+        ApiError::conflict()
+    } else {
+        ApiError::from(error)
+    }
+}
+
+/// The whole of a response that carries nothing.
+fn no_content() -> Response {
+    let mut response = Response::new(axum::body::Body::empty());
+    *response.status_mut() = StatusCode::NO_CONTENT;
+    response
+}

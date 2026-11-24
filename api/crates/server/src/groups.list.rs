@@ -16,4 +16,7 @@ groups! {
     servers,
     soundboard,
     uploads,
+    moderation,
+    releases,
+    roles,
 }
