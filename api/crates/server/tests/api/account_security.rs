@@ -378,7 +378,8 @@ async fn sessions_are_listed_most_recently_seen_first_with_this_one_marked() {
 
 #[tokio::test]
 async fn ending_another_session_shuts_what_it_had_open_and_touches_nothing_else() {
-    let server = Server::start_with(&WATCHER).await;
+    // No watcher runs: the route tells the hub itself.
+    let server = Server::start().await;
     let owner = server.found("owner").await;
     let db = server.database();
     let user = user_of(&owner);
@@ -440,7 +441,7 @@ async fn ending_ones_own_session_somebody_elses_or_one_that_is_not_there_is_refu
 
 #[tokio::test]
 async fn ending_all_the_others_with_two_tabs_open_leaves_this_one() {
-    let server = Server::start_with(&WATCHER).await;
+    let server = Server::start().await;
     let owner = server.found("owner").await;
     let db = server.database();
     let user = user_of(&owner);
