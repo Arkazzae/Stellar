@@ -3,7 +3,7 @@
 
 #[path = "../../../storage/tests/support/fake_s3.rs"]
 #[allow(dead_code)]
-mod fake_s3;
+pub(crate) mod fake_s3;
 
 use http::Method;
 use serde_json::Value;
