@@ -1,16 +1,13 @@
-//! Canonical composition (NFC) as the first server's platform makes it: the
-//! text decomposed by the canonical mappings, its runs of combining marks put
-//! in canonical order, and composed again.
+//! Canonical composition (NFC) decomposes text, orders combining marks and
+//! composes the result again.
 //!
-//! The data is in `normalization_tables.rs`, generated from the ICU library of
-//! the first server's image (see the crate's documentation). A character the
-//! tables do not know is left as it is.
+//! `normalization_tables.rs` contains the Unicode 15.1.0 data. Characters
+//! absent from the tables stay as they are.
 
 use crate::normalization_tables::{COMBINING_CLASS, COMPOSITION, DECOMPOSITION};
 
-/// The text in canonical composition. Nothing in it is refused: what a
-/// caller must refuse (U+FFFE, which the first server's runtime takes for a
-/// broken text) it refuses itself.
+/// Returns text in canonical composition. Callers enforce input rules
+/// such as rejecting the noncharacter U+FFFE.
 pub fn nfc(text: &str) -> String {
     // Nothing below U+0300 decomposes into anything that does not compose
     // back, nor combines with what came before.

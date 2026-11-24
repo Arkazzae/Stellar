@@ -116,7 +116,7 @@ fn next_value(args: &[String], index: &mut usize, name: &str) -> Result<String, 
     Ok(next.clone())
 }
 
-/// What .NET's `string.IsNullOrWhiteSpace` and `Trim` call white space.
+/// Whether the text is empty or consists of characters in Unicode White_Space.
 pub fn is_blank(text: &str) -> bool {
     text.chars().all(char::is_whitespace)
 }
