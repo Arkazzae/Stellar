@@ -1,7 +1,6 @@
-//! JSON as the first server's tool wrote it: members in the order they were
-//! given, indented by two spaces, and every character outside printable ASCII
-//! and `"&'+<>` and the backtick written as `\uXXXX`. Scripts parse it, so the
-//! shape and the order are the contract.
+//! The tool's JSON: members in the order they were given, indented by two
+//! spaces, text as it is. Scripts parse it, so the shape and the order are the
+//! contract.
 
 use stellarr_api::values::Timestamp;
 
@@ -96,25 +95,7 @@ fn indent(out: &mut String, depth: usize) {
 }
 
 fn write_string(out: &mut String, text: &str) {
-    out.push('"');
-    for c in text.chars() {
-        match c {
-            '\\' => out.push_str("\\\\"),
-            '\u{8}' => out.push_str("\\b"),
-            '\t' => out.push_str("\\t"),
-            '\n' => out.push_str("\\n"),
-            '\u{c}' => out.push_str("\\f"),
-            '\r' => out.push_str("\\r"),
-            ' '..='~' if !matches!(c, '"' | '&' | '\'' | '+' | '<' | '>' | '`') => out.push(c),
-            _ => {
-                let mut units = [0u16; 2];
-                for unit in c.encode_utf16(&mut units) {
-                    out.push_str(&format!("\\u{unit:04X}"));
-                }
-            }
-        }
-    }
-    out.push('"');
+    out.push_str(&serde_json::Value::String(text.to_string()).to_string());
 }
 
 impl From<bool> for Json {
@@ -167,7 +148,7 @@ mod tests {
     use super::*;
 
     #[test]
-    fn a_document_is_indented_and_escaped_as_the_first_tool_wrote_it() {
+    fn a_document_is_indented_and_its_text_is_written_as_it_is() {
         let document = Json::object([
             ("ok", true.into()),
             ("text", "a \"b\" <c> & 'd' + `e` é 😀 \\ \n".into()),
@@ -184,7 +165,7 @@ mod tests {
 
         assert_eq!(
             document.pretty(),
-            "{\n  \"ok\": true,\n  \"text\": \"a \\u0022b\\u0022 \\u003Cc\\u003E \\u0026 \\u0027d\\u0027 \\u002B \\u0060e\\u0060 \\u00E9 \\uD83D\\uDE00 \\\\ \\n\",\n  \"empty\": [],\n  \"none\": null,\n  \"nested\": {\n    \"n\": 3,\n    \"list\": [\n      1,\n      \"x\"\n    ]\n  }\n}"
+            "{\n  \"ok\": true,\n  \"text\": \"a \\\"b\\\" <c> & 'd' + `e` \u{e9} \u{1F600} \\\\ \\n\",\n  \"empty\": [],\n  \"none\": null,\n  \"nested\": {\n    \"n\": 3,\n    \"list\": [\n      1,\n      \"x\"\n    ]\n  }\n}"
         );
     }
 

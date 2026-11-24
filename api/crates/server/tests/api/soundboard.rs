@@ -423,12 +423,12 @@ async fn a_change_names_what_it_changes_and_the_rest_stays() {
             (
                 "Maja updated the sound Gong II".to_string(),
                 "Gong II".to_string(),
-                "[{\"field\":\"name\",\"from\":\"Gong\",\"to\":\"Gong II\"},{\"field\":\"glyph\",\"from\":\"g\",\"to\":\"\\u2764\"}]".to_string()
+                "[{\"field\":\"name\",\"from\":\"Gong\",\"to\":\"Gong II\"},{\"field\":\"glyph\",\"from\":\"g\",\"to\":\"\u{2764}\"}]".to_string()
             ),
             (
                 "Maja updated the sound Gong II".to_string(),
                 "Gong II".to_string(),
-                "[{\"field\":\"trim\",\"from\":\"0\\u20132\",\"to\":\"1.01\\u20138.26\"}]".to_string()
+                "[{\"field\":\"trim\",\"from\":\"0\u{2013}2\",\"to\":\"1.01\u{2013}8.26\"}]".to_string()
             ),
         ]
     );
