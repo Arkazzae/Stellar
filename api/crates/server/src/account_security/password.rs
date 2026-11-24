@@ -17,21 +17,35 @@ use super::{fresh_second_step_refusal, no_store};
 use crate::auth::{Caller, events, fresh, password, recovery};
 use crate::database::DbError;
 use crate::http::{ApiError, ApiResult, Json, Origin, Problem, json_response, with_session_cookie};
+use crate::instance::users::User;
 use crate::servers::Object;
 use crate::state::AppState;
 use crate::values::Timestamp;
 
-#[derive(Debug, Deserialize)]
+#[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct SetRequest {
     new_password: Option<String>,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ChangeRequest {
     current_password: Option<String>,
     new_password: Option<String>,
+}
+
+// Written by hand so that a password is never in what is printed of them.
+impl std::fmt::Debug for SetRequest {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("SetRequest").finish_non_exhaustive()
+    }
+}
+
+impl std::fmt::Debug for ChangeRequest {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("ChangeRequest").finish_non_exhaustive()
+    }
 }
 
 #[derive(Serialize)]
@@ -156,14 +170,30 @@ async fn first(state: &AppState, caller: Caller, origin: &Origin, new: Option<St
 
 // ---- changing it ----
 
+/// What a change of password was checked for, before the write: the hash
+/// that the current password was verified against and the hash of the new one.
+pub(super) struct Prepared {
+    stored: Option<String>,
+    hash: String,
+}
+
 pub async fn change(
     State(state): State<AppState>,
     caller: Caller,
     origin: Origin,
     Json(Object(request)): Json<Object<ChangeRequest>>,
 ) -> ApiResult<Response> {
+    match prepare(&state, caller, request).await? {
+        Ok(prepared) => commit(&state, caller, &origin, prepared).await,
+        Err(outcome) => Ok(outcome),
+    }
+}
+
+/// Everything that is looked at and hashed before the transaction, in the
+/// first server's order. The answer of a refusal is in the `Err`.
+pub(super) async fn prepare(state: &AppState, caller: Caller, request: ChangeRequest) -> ApiResult<Result<Prepared, Response>> {
     if password::is_too_short(request.new_password.as_deref()) {
-        return Ok(outcome("too-short"));
+        return Ok(Err(outcome("too-short")));
     }
     if password::is_too_long(request.new_password.as_deref()) {
         let text = state.messages().get(MessageKey::NewPasswordTooLong, &[("max", &password::MAX_LENGTH)])?;
@@ -182,29 +212,40 @@ pub async fn change(
         .await?;
     let stored = stored.ok_or_else(|| ApiError::internal("the signed-in account is not there"))?;
     if !is_fresh {
-        return Ok(outcome("second-step-required"));
+        return Ok(Err(outcome("second-step-required")));
     }
     let Some(current) = request.current_password else {
-        return Ok(outcome("wrong-current"));
+        return Ok(Err(outcome("wrong-current")));
     };
     let (candidate, against) = (current.clone(), stored.clone());
     let proves = tokio::task::spawn_blocking(move || password::verify(&candidate, against.as_deref()))
         .await
         .map_err(ApiError::internal)?;
     if !proves {
-        return Ok(outcome("wrong-current"));
+        return Ok(Err(outcome("wrong-current")));
     }
     if current == new {
-        return Ok(outcome("same-as-current"));
+        return Ok(Err(outcome("same-as-current")));
     }
-    let hash = hashed(new).await?;
+    Ok(Ok(Prepared { stored, hash: hashed(new).await? }))
+}
 
+/// The write. What was checked before it counts only while it still holds:
+/// the session must still be a good one, and the stored hash the one the
+/// current password was verified against.
+pub(super) async fn commit(state: &AppState, caller: Caller, origin: &Origin, prepared: Prepared) -> ApiResult<Response> {
     let (write_state, origin) = (state.clone(), origin.clone());
+    let Prepared { stored, hash } = prepared;
     let done = state
         .database()
         .write(move |tx| -> Result<Result<String, &'static str>, DbError> {
             let now = Timestamp::now();
-            if !fresh::has_fresh_second_step(tx, caller.user, Some(caller.session), now)? {
+            // A session that ended while this request was in flight changes nothing.
+            let standing = match User::find(tx, caller.user)? {
+                Some(user) => fresh::current_session(tx, &user, caller.session, now)?.is_some(),
+                None => false,
+            };
+            if !standing || !fresh::has_fresh_second_step(tx, caller.user, Some(caller.session), now)? {
                 return Ok(Err("second-step-required"));
             }
             // Somebody changed it between the check and now: what was given is

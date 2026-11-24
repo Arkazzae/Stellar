@@ -23,6 +23,8 @@ mod page;
 mod password;
 mod providers;
 mod sessions;
+#[cfg(test)]
+mod tests;
 
 use axum::http::{HeaderValue, header};
 use axum::response::{IntoResponse, Response};

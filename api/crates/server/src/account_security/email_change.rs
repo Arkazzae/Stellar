@@ -20,6 +20,7 @@ use crate::auth::flow::Context;
 use crate::database::DbError;
 use crate::http::{ApiError, ApiResult, Json, Origin, Problem, json_response};
 use crate::instance::names;
+use crate::instance::users::User;
 use crate::mail::setup::{self, MailSetup, Mailing};
 use crate::mail::Outcome as Delivery;
 use crate::servers::Object;
@@ -29,11 +30,18 @@ use crate::values::{Id, Timestamp};
 /// How long the link in the mail to the new address works.
 const LINK_LIFETIME: Duration = Duration::from_secs(3600);
 
-#[derive(Debug, Deserialize)]
+#[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct StartRequest {
     email: Option<String>,
     password: Option<String>,
+}
+
+// Written by hand so that the password is never in what is printed.
+impl std::fmt::Debug for StartRequest {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("StartRequest").field("email", &self.email).finish_non_exhaustive()
+    }
 }
 
 #[derive(Serialize)]
@@ -69,14 +77,53 @@ fn account_of(connection: &Connection, user: Id) -> rusqlite::Result<Option<Acco
 }
 
 /// What was written, so that the mail can go once it is committed.
-struct Written {
+pub(super) struct Written {
     mailing: Mailing,
     request: Id,
     token: String,
     display_name: String,
 }
 
+/// What a change of address was checked for before the write.
+pub(super) struct Prepared {
+    email: String,
+    normalized: String,
+    given: ceremony::GivenPassword,
+}
+
 pub async fn start(State(state): State<AppState>, caller: Caller, Json(Object(request)): Json<Object<StartRequest>>) -> ApiResult<Response> {
+    let prepared = match prepare(&state, caller, request).await? {
+        Ok(prepared) => prepared,
+        Err(result) => return answer(result),
+    };
+    let email = prepared.email.clone();
+    let written = match write(&state, caller, prepared).await? {
+        Ok(written) => written,
+        Err(result) => return answer(result),
+    };
+
+    let link = format!("{}/confirm-email?token={}", written.mailing.public_url, written.token);
+    let message = stellarr_mail::email_change(
+        &written.mailing.sender,
+        &email,
+        &written.display_name,
+        &written.mailing.instance_name,
+        &link,
+        u128::from_be_bytes(*written.request.as_bytes()),
+        state.messages(),
+    );
+    let delivered = match message {
+        Ok(message) => matches!(state.mail().send(&message, &written.mailing.transport).await, Delivery::Sent { .. }),
+        Err(_) => false,
+    };
+    if !delivered {
+        tracing::error!(target: "Stellarr.Api.Mail", "Sending the address confirmation for request {} failed.", written.request);
+        return answer("mail-unavailable");
+    }
+    answer("sent")
+}
+
+pub(super) async fn prepare(state: &AppState, caller: Caller, request: StartRequest) -> ApiResult<Result<Prepared, &'static str>> {
     let email = request.email.as_deref().unwrap_or("").trim().to_string();
     if !is_plain_address(&email) {
         let text = state.messages().get(MessageKey::EmailInvalid, &[])?;
@@ -96,19 +143,29 @@ pub async fn start(State(state): State<AppState>, caller: Caller, Json(Object(re
         return Err(ApiError::internal("the signed-in account is not there"));
     }
     if !is_fresh {
-        return answer("second-step-required");
+        return Ok(Err("second-step-required"));
     }
     // An account made through a provider has no password to give: its fresh
     // proof stands in, and is asked for inside the transaction.
-    let given = ceremony::check_given_password(&state, caller.user, request.password.as_deref()).await?;
-
+    let given = ceremony::check_given_password(state, caller.user, request.password.as_deref()).await?;
     let normalized = names::to_upper(&email);
-    let (inner, new_email) = (state.clone(), email.clone());
-    let written = state
+    Ok(Ok(Prepared { email, normalized, given }))
+}
+
+/// The write. A session that ended while the request was in flight changes
+/// nothing.
+pub(super) async fn write(state: &AppState, caller: Caller, prepared: Prepared) -> ApiResult<Result<Written, &'static str>> {
+    let Prepared { email: new_email, normalized, given } = prepared;
+    let inner = state.clone();
+    Ok(state
         .database()
         .write(move |tx| -> Result<Result<Written, &'static str>, DbError> {
             let now = Timestamp::now();
-            if !fresh::has_fresh_second_step(tx, caller.user, Some(caller.session), now)? {
+            let standing = match User::find(tx, caller.user)? {
+                Some(user) => fresh::current_session(tx, &user, caller.session, now)?.is_some(),
+                None => false,
+            };
+            if !standing || !fresh::has_fresh_second_step(tx, caller.user, Some(caller.session), now)? {
                 return Ok(Err("second-step-required"));
             }
             let Some(account) = account_of(tx, caller.user)? else {
@@ -159,31 +216,7 @@ pub async fn start(State(state): State<AppState>, caller: Caller, Json(Object(re
             )?;
             Ok(Ok(Written { mailing, request, token, display_name: account.display_name }))
         })
-        .await?;
-    let written = match written {
-        Ok(written) => written,
-        Err(result) => return answer(result),
-    };
-
-    let link = format!("{}/confirm-email?token={}", written.mailing.public_url, written.token);
-    let message = stellarr_mail::email_change(
-        &written.mailing.sender,
-        &email,
-        &written.display_name,
-        &written.mailing.instance_name,
-        &link,
-        u128::from_be_bytes(*written.request.as_bytes()),
-        state.messages(),
-    );
-    let delivered = match message {
-        Ok(message) => matches!(state.mail().send(&message, &written.mailing.transport).await, Delivery::Sent { .. }),
-        Err(_) => false,
-    };
-    if !delivered {
-        tracing::error!(target: "Stellarr.Api.Mail", "Sending the address confirmation for request {} failed.", written.request);
-        return answer("mail-unavailable");
-    }
-    answer("sent")
+        .await?)
 }
 
 // ---- confirming it ----
