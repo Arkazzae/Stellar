@@ -1252,58 +1252,6 @@ fn overrides_whose_resource_was_deleted_do_not_block_editing_the_role() {
 }
 
 #[test]
-fn reordering_roles_moves_only_those_the_actor_outranks_and_nothing_climbs() {
-    let s = Scenario::new();
-    let ranked: Vec<Role> = roles::ranked(
-        ServerRoles::load(&s.world.db, s.world.server)
-            .unwrap()
-            .roles,
-    )
-    .into_iter()
-    .filter(|role| !role.is_owner && role.id != s.world.base_role)
-    .collect();
-    let ids: Vec<Id> = ranked.iter().map(|role| role.id).collect();
-    // Moderator (1) and Actor (10) come before Lower (20) and Destination (21).
-    assert_eq!(
-        ids,
-        [s.world.moderator_role, s.actor_role, s.lower, s.destination]
-    );
-
-    let reorder = |wanted: &[Id]| {
-        can_reorder_roles(&s.world.db, s.actor, s.world.server, &ranked, wanted).unwrap()
-    };
-    assert!(reorder(&ids));
-    assert!(reorder(&[
-        s.world.moderator_role,
-        s.actor_role,
-        s.destination,
-        s.lower
-    ]));
-    // Climbing above the actor's own top role, swapping with it, or moving a higher one is refused.
-    assert!(!reorder(&[
-        s.world.moderator_role,
-        s.lower,
-        s.actor_role,
-        s.destination
-    ]));
-    assert!(!reorder(&[
-        s.actor_role,
-        s.world.moderator_role,
-        s.lower,
-        s.destination
-    ]));
-    assert!(!reorder(&[
-        s.lower,
-        s.destination,
-        s.world.moderator_role,
-        s.actor_role
-    ]));
-    assert!(!reorder(&ids[..3]));
-    s.world.set_permissions(s.actor_role, NONE);
-    assert!(!reorder(&ids));
-}
-
-#[test]
 fn moderating_needs_the_permission_a_lower_target_and_not_oneself() {
     let world = World::new();
 

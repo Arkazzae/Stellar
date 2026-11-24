@@ -318,32 +318,6 @@ pub fn can_delete_role(
         && contains(held, delegated(db, fallback)?))
 }
 
-/// Reordering the roles between the owner role and the base role, from
-/// `ranked`, their order now, highest first, to `wanted`, the same roles in a
-/// new order. The actor needs ManageRoles and moves only roles their top role
-/// outranks: every role it does not, their own and their peers' included, has
-/// to keep its place, and those all rank above the ones it does, so nothing
-/// can be put at or above the actor's top role.
-pub fn can_reorder_roles(
-    db: &Connection,
-    actor: Id,
-    server: Id,
-    ranked: &[Role],
-    wanted: &[Id],
-) -> rusqlite::Result<bool> {
-    let snapshot = actor_snapshot(db, actor, server)?;
-    let Some(actor) = snapshot.subject(actor) else {
-        return Ok(false);
-    };
-    if !contains(actor.permissions(), MANAGE_ROLES) || ranked.len() != wanted.len() {
-        return Ok(false);
-    }
-    Ok(ranked
-        .iter()
-        .zip(wanted)
-        .all(|(role, want)| actor.top.outranks(role) || *want == role.id))
-}
-
 /// Giving roles to a member and taking them away are decided alike, for every
 /// role in `changed`: the actor needs ManageMembers, must outrank the member
 /// and each role, must not be the member, and must hold everything each role

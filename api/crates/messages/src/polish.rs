@@ -133,9 +133,6 @@ pub(crate) fn text(key: MessageKey) -> &'static str {
             "Uprawnienie administratora obowiązuje na całym serwerze i nie da się go ustawić dla kanału ani sekcji."
         }
         MessageKey::RoleInvalid => "Nazwa, kolor lub lista uprawnień roli jest nieprawidłowa.",
-        MessageKey::RoleOrderIncomplete => {
-            "Lista musi zawierać dokładnie raz każdą rolę między rolą właściciela a rolą domyślną."
-        }
         MessageKey::CreateInviteDenied => "Nie możesz tu tworzyć zaproszeń.",
 
         // Operator panel
@@ -427,12 +424,10 @@ pub(crate) fn text(key: MessageKey) -> &'static str {
         }
         MessageKey::AuditAccountCreated => "utworzył(a) konto {name}",
         MessageKey::AuditRoleChanged => "zmienił(a) rolę {name} na {role}",
-        MessageKey::AuditRolesChanged => "zmienił(a) role {name}",
         MessageKey::AuditAccountDisabled => "wyłączył(a) konto {name}",
         MessageKey::AuditAccountEnabled => "włączył(a) konto {name}",
         MessageKey::AuditRoleCreated => "utworzył(a) rolę {name}",
         MessageKey::AuditRoleUpdated => "zaktualizował(a) rolę {name}",
-        MessageKey::AuditRolesReordered => "zmienił(a) kolejność ról",
         MessageKey::AuditProviderSignUpAllowed => {
             "pozwolił(a) dostawcy {provider} zakładać konta osobom z zaproszeniem"
         }

@@ -137,9 +137,6 @@ pub(crate) fn text(key: MessageKey) -> &'static str {
             "Administrator applies to the whole server and cannot be set for a channel or a section."
         }
         MessageKey::RoleInvalid => "The name, color or list of permissions of the role is invalid.",
-        MessageKey::RoleOrderIncomplete => {
-            "The list must contain every role between the owner's role and the base role exactly once."
-        }
         MessageKey::CreateInviteDenied => "You may not create invites here.",
 
         // Operator panel
@@ -431,12 +428,10 @@ pub(crate) fn text(key: MessageKey) -> &'static str {
         }
         MessageKey::AuditAccountCreated => "created the account {name}",
         MessageKey::AuditRoleChanged => "changed the role of {name} to {role}",
-        MessageKey::AuditRolesChanged => "changed the roles of {name}",
         MessageKey::AuditAccountDisabled => "disabled the account {name}",
         MessageKey::AuditAccountEnabled => "enabled the account {name}",
         MessageKey::AuditRoleCreated => "created the role {name}",
         MessageKey::AuditRoleUpdated => "updated the role {name}",
-        MessageKey::AuditRolesReordered => "reordered the roles",
         MessageKey::AuditProviderSignUpAllowed => {
             "let {provider} create accounts for people with an invite"
         }

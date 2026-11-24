@@ -1,6 +1,5 @@
-//! Listing, creating, reordering, changing and deleting the roles of a server.
+//! Listing, creating, changing and deleting the roles of a server.
 
-use std::collections::HashSet;
 
 use axum::extract::State;
 use axum::http::{HeaderValue, StatusCode, header};
@@ -9,7 +8,7 @@ use rusqlite::{Connection, params};
 use serde::Deserialize;
 
 use super::announce::Announcement;
-use super::{Chosen, Guid, RoleDto, RoleRow, invalid, no_content, no_member_role, taken};
+use super::{Chosen, Guid, RoleDto, RoleRow, invalid, no_content, taken};
 use crate::auth::Caller;
 use crate::http::{ApiError, ApiResult, Json, Path, json_response};
 use crate::permissions::audit::{self, AuditChange, AuditEvent};
@@ -17,7 +16,7 @@ use crate::permissions::authorization;
 use crate::permissions::membership::ActiveServer;
 use crate::permissions::ownership;
 use crate::permissions::privileges::{self, MANAGE_ROLES, contains};
-use crate::permissions::roles::{self, HeldRoleTable, Role};
+use crate::permissions::roles::{HeldRoleTable, Role};
 use crate::permissions::access_changed::ViewChange;
 use crate::state::AppState;
 use crate::values::Id;
@@ -32,12 +31,6 @@ pub(super) struct RoleRequest {
     name: Option<String>,
     color: Option<String>,
     permissions: Option<Vec<String>>,
-}
-
-#[derive(Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub(super) struct OrderRequest {
-    role_ids: Option<Vec<Id>>,
 }
 
 /// A role as a request may make it: the name and color trimmed and within
@@ -295,97 +288,6 @@ fn names(mask: i64) -> Vec<String> {
         .into_iter()
         .map(str::to_string)
         .collect()
-}
-
-/// Sets the order of the roles between the owner role and the base role,
-/// which is their rank. Roles that keep their place keep their position, so
-/// ties the actor may not break stay ties; the roles that move are numbered
-/// after them, and the base role stays last. Who ranks a member can change
-/// with the order, so every top role is worked out again.
-pub(super) async fn reorder(
-    State(state): State<AppState>,
-    caller: Caller,
-    chosen: Chosen,
-    Json(request): Json<OrderRequest>,
-) -> ApiResult<Response> {
-    let server = chosen.server()?;
-    // Before any other refusal, as the first server's filter was, but after the
-    // person is known to be a member and the body has been read.
-    super::require_fresh(&state, caller, server).await?;
-    let messages = *state.messages();
-    state
-        .database()
-        .write(move |tx| -> Result<(), ApiError> {
-            require_manage_roles(tx, caller, server)?;
-            let Some(base) = roles::find_member_role(tx, server)? else {
-                return Err(no_member_role(&messages)?);
-            };
-            let all = RoleRow::all(tx, server)?;
-            let ranked = roles::ranked(
-                all.iter()
-                    .map(|row| row.role)
-                    .filter(|role| !role.is_owner && role.id != base.id),
-            );
-            let wanted = request.role_ids.unwrap_or_default();
-            let distinct: HashSet<Id> = wanted.iter().copied().collect();
-            let known: HashSet<Id> = ranked.iter().map(|role| role.id).collect();
-            if wanted.len() != ranked.len() || distinct.len() != wanted.len() || distinct != known {
-                return Err(invalid(
-                    "roleIds",
-                    messages.get(MessageKey::RoleOrderIncomplete, &[])?,
-                ));
-            }
-            if !authorization::can_reorder_roles(tx, caller.user, server, &ranked, &wanted)? {
-                return Err(ApiError::forbidden());
-            }
-
-            let kept = ranked
-                .iter()
-                .zip(&wanted)
-                .take_while(|(role, want)| role.id == **want)
-                .count();
-            if kept == ranked.len() {
-                return Ok(());
-            }
-            let owner = all
-                .iter()
-                .filter(|row| row.role.is_owner)
-                .map(|row| row.role.position)
-                .min();
-            let mut position = ranked[..kept]
-                .iter()
-                .map(|role| role.position)
-                .chain(owner)
-                .max()
-                .unwrap_or(-1);
-            for id in &wanted[kept..] {
-                position += 1;
-                tx.execute(
-                    "UPDATE \"ServerRoles\" SET \"Position\" = ?1 WHERE \"Id\" = ?2",
-                    params![position, id],
-                )?;
-            }
-            if base.position <= position {
-                tx.execute(
-                    "UPDATE \"ServerRoles\" SET \"Position\" = ?1 WHERE \"Id\" = ?2",
-                    params![position + 1, base.id],
-                )?;
-            }
-            ownership::rank_again(tx, server, None)?;
-            audit::record(
-                tx,
-                server,
-                caller.user,
-                &AuditEvent {
-                    action: "role.reorder".to_string(),
-                    sentence: messages.get(MessageKey::AuditRolesReordered, &[])?,
-                    ..AuditEvent::default()
-                },
-            )?;
-            Ok(())
-        })
-        .await?;
-    Ok(no_content())
 }
 
 pub(super) async fn delete(

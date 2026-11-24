@@ -129,6 +129,17 @@ impl Scene {
         (name(member.role.id), held.iter().map(|role| name(role.id)).collect())
     }
 
+    /// Makes a member hold exactly these roles besides the base role.
+    pub fn hold(&self, who: &str, names: &[&str]) {
+        let db = self.server.database();
+        let all = ServerRoles::load(&db, self.id).expect("roles");
+        let base = all.base.expect("a base role");
+        let by_id = all.by_id();
+        let held: Vec<Role> = names.iter().map(|name| by_id[&Id::parse(&self.role(name)).expect("an id")]).collect();
+        let user = Id::parse(&self.user(who)).expect("an id");
+        ownership::set_roles(&db, self.id, user, &held, &base).expect("held roles");
+    }
+
     /// Role names with positions, as the database holds them.
     pub fn positions(&self) -> Vec<(String, i64)> {
         let db = self.server.database();
@@ -263,8 +274,7 @@ async fn editing_a_role_needs_outranking_it_and_every_power_it_has_or_gets() {
 async fn deleting_a_role_moves_its_holders_to_the_next_role_they_hold() {
     let scene = Scene::new().await;
     let junior = scene.role("Junior");
-    let jun = scene.user("jun");
-    assert_eq!(scene.status("boss", Method::PUT, &format!("/api/admin/members/{jun}/roles"), Some(json!({ "roleIds": [junior, scene.role("Spare")] }))).await, 204);
+    scene.hold("jun", &["Junior", "Spare"]);
     assert_eq!(scene.held("jun").0, "Junior");
     // The nearest who may not: at the same rank as the role, or lacking a power it grants.
     assert_eq!(scene.status("sen", Method::DELETE, &format!("/api/admin/roles/{}", scene.role("Senior")), None).await, 403);
@@ -279,35 +289,15 @@ async fn deleting_a_role_moves_its_holders_to_the_next_role_they_hold() {
 }
 
 #[tokio::test]
-async fn reordering_moves_only_what_the_actor_outranks_and_ranks_everybody_again() {
+async fn the_order_and_the_whole_list_of_a_member_are_not_routes() {
     let scene = Scene::new().await;
-    let order = |names: &[&str]| Some(json!({ "roleIds": names.iter().map(|name| scene.role(name)).collect::<Vec<_>>() }));
-    let put = |who: &'static str, names: &[&str]| scene.status(who, Method::PUT, "/api/admin/roles/order", order(names));
-    // Who may: moves roles below their own.
-    assert_eq!(put("adm", &["Admin", "Senior", "Powerful", "Spare", "Junior"]).await, 204);
-    let positions = scene.positions();
-    let at = |name: &str| positions.iter().find(|(role, _)| role == name).unwrap().1;
-    assert!(at("Spare") < at("Junior"), "{positions:?}");
-    assert!(at("Junior") < 9, "the base role stays last");
-    // The nearest who may not: putting something above their own top role, or moving a peer.
-    assert_eq!(put("sen", &["Senior", "Admin", "Powerful", "Junior", "Spare"]).await, 403);
-    assert_eq!(put("sen", &["Admin", "Powerful", "Senior", "Junior", "Spare"]).await, 403);
-    assert_eq!(put("jun", &["Admin", "Senior", "Powerful", "Junior", "Spare"]).await, 403);
-    // Every role once, no more and no fewer.
-    assert_eq!(put("boss", &["Admin", "Senior", "Powerful", "Junior"]).await, 400);
-    assert_eq!(put("boss", &["Admin", "Senior", "Powerful", "Junior", "Junior"]).await, 400);
-    // An order that changes nothing writes nothing.
-    let before = scene.audit().len();
-    assert_eq!(put("boss", &["Admin", "Senior", "Powerful", "Spare", "Junior"]).await, 204);
-    assert_eq!(scene.audit().len(), before);
-    // Everybody is ranked by the new order at once.
-    let jun = scene.user("jun");
-    let spare = scene.role("Spare");
-    assert_eq!(scene.status("boss", Method::PUT, &format!("/api/admin/members/{jun}/roles"), Some(json!({ "roleIds": [scene.role("Junior"), spare] }))).await, 204);
-    assert_eq!(scene.held("jun").0, "Spare");
-    assert_eq!(put("boss", &["Admin", "Senior", "Powerful", "Junior", "Spare"]).await, 204);
-    assert_eq!(scene.held("jun").0, "Junior");
-    assert!(scene.audit().iter().any(|(action, _)| action == "role.reorder"));
+    let plain = scene.user("plain");
+
+    let order = scene.status("boss", Method::PUT, "/api/admin/roles/order", Some(json!({ "roleIds": [] }))).await;
+    let list = scene.status("boss", Method::PUT, &format!("/api/admin/members/{plain}/roles"), Some(json!({ "roleIds": [] }))).await;
+
+    // `order` is taken for the id of a role, which has no `PUT`.
+    assert_eq!((order, list), (405, 404));
 }
 
 #[tokio::test]
@@ -337,30 +327,6 @@ async fn giving_one_role_needs_outranking_the_member_and_the_role() {
     assert_eq!(scene.status("adm", Method::PATCH, &path("plain"), Some(json!({}))).await, 404);
     assert_eq!(scene.status("adm", Method::PATCH, &path("plain"), Some(json!({ "roleId": null }))).await, 400);
     assert!(scene.audit().iter().any(|(action, summary)| action == "member.role" && summary == "Adm changed the role of Plain to Junior"), "{:?}", scene.audit());
-}
-
-#[tokio::test]
-async fn setting_the_list_of_roles_checks_each_one_given_or_taken() {
-    let scene = Scene::new().await;
-    let scene = &scene;
-    let path = |who: &str| format!("/api/admin/members/{}/roles", scene.user(who));
-    let set = |actor: &'static str, to: &str, roles: &[&str]| {
-        let (path, body) = (path(to), json!({ "roleIds": roles.iter().map(|name| scene.role(name)).collect::<Vec<_>>() }));
-        async move { scene.status(actor, Method::PUT, &path, Some(body)).await }
-    };
-    assert_eq!(set("adm", "plain", &["Junior", "Spare"]).await, 204);
-    assert_eq!(scene.held("plain"), ("Junior".to_string(), vec!["Junior".to_string(), "Spare".to_string()]));
-    // Taking a role away is checked as giving it is.
-    assert_eq!(set("sen", "big", &[]).await, 403, "a member at the actor's own rank");
-    assert_eq!(set("adm", "big", &[]).await, 403, "a role with a power the actor lacks");
-    assert_eq!(set("sen", "plain", &["Junior", "Powerful"]).await, 403);
-    assert_eq!(set("sen", "sen", &[]).await, 403, "oneself");
-    assert_eq!(set("adm", "plain", &["Junior", "Spare"]).await, 204, "nothing changes");
-    assert_eq!(set("adm", "plain", &[]).await, 204);
-    assert_eq!(scene.held("plain").1, Vec::<String>::new());
-    assert_eq!(set("adm", "boss", &[]).await, 409);
-    assert_eq!(scene.status("adm", Method::PUT, &path("plain"), Some(json!({ "roleIds": [Id::random()] }))).await, 404);
-    assert_eq!(scene.status("adm", Method::PUT, &path("plain"), Some(json!({}))).await, 204);
 }
 
 #[tokio::test]
@@ -495,14 +461,11 @@ fn second_step_routes(scene: &Scene) -> Vec<(Method, String, Option<Value>)> {
     let (channel, section) = (scene.channel, scene.section);
     let junior = scene.role("Junior");
     let plain = scene.user("plain");
-    let order: Vec<String> = ["Admin", "Senior", "Powerful", "Junior", "Spare"].iter().map(|name| scene.role(name)).collect();
     let mut routes = vec![
         (Method::POST, "/api/admin/roles".to_string(), Some(json!({ "name": "Late", "color": "#fff", "permissions": [] }))),
-        (Method::PUT, "/api/admin/roles/order".to_string(), Some(json!({ "roleIds": order }))),
         (Method::PATCH, format!("/api/admin/roles/{junior}"), Some(json!({ "name": "Renamed" }))),
         (Method::DELETE, format!("/api/admin/roles/{}", scene.role("Spare")), None),
         (Method::PATCH, format!("/api/admin/members/{plain}/role"), Some(json!({ "roleId": junior }))),
-        (Method::PUT, format!("/api/admin/members/{plain}/roles"), Some(json!({ "roleIds": [junior] }))),
     ];
     for (collection, place) in [("channels", channel.to_string()), ("sections", section.to_string())] {
         let base = format!("/api/admin/{collection}/{place}/permissions");
@@ -521,7 +484,7 @@ fn writes(scene: &Scene) -> i64 {
 }
 
 #[tokio::test]
-async fn a_stale_second_step_refuses_the_fourteen_routes_and_writes_nothing() {
+async fn a_stale_second_step_refuses_the_twelve_routes_and_writes_nothing() {
     let scene = Scene::new().await;
     second_step(&scene, "adm", None);
     let before = writes(&scene);
@@ -542,7 +505,7 @@ async fn a_second_step_passed_lately_or_none_to_pass_leaves_the_routes_open() {
     let scene = Scene::new().await;
     second_step(&scene, "adm", Some(60));
     // `sen` has no second step at all.
-    for (who, route) in [("adm", 0), ("sen", 2), ("adm", 4), ("sen", 6)] {
+    for (who, route) in [("adm", 0), ("sen", 1), ("adm", 3), ("sen", 4)] {
         let (method, path, body) = second_step_routes(&scene).remove(route);
         let answer = scene.send(who, method.clone(), &path, body).await;
         assert!(answer.status.is_success(), "{who} {method} {path}: {} {}", answer.status, answer.text());
