@@ -19,3 +19,4 @@ mod timestamp;
 
 pub use id::Id;
 pub use timestamp::Timestamp;
+pub(crate) use timestamp::{civil_from_days, days_from_civil, is_leap};
