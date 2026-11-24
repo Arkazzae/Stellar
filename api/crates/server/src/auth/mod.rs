@@ -16,6 +16,7 @@ pub mod mfa_methods;
 pub mod passkeys;
 pub mod password;
 pub mod policy;
+pub mod recovery;
 pub mod recovery_codes;
 pub mod security_cookies;
 pub mod session;
@@ -23,5 +24,6 @@ pub mod setup_code;
 pub mod tokens;
 pub mod totp;
 pub mod trusted_devices;
+pub mod ways_in;
 
 pub use session::Caller;
