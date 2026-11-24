@@ -361,6 +361,28 @@ reads the session cookie of every request and checks it against the database
 knows which route the request is for (`MatchedPath`) and decides on the rules of
 that route, never on a spelling of the path.
 
+**A refusal before the body was read reaches the client.** A route that answers
+before it has read the body (a 413 on the declared length, a 401 or 403 before
+the body, a bad path, a rate limit, a form refused halfway) leaves what the
+client is still writing unread, and a server that then closes the socket makes
+the operating system send a reset that can take the answer with it: a client
+built on hyper (the desktop app is) saw a broken connection instead of the
+refusal in about a third of such requests. So every connection ends the same way
+(`http/linger.rs`, the listener the server serves on): once hyper has written
+the answer and let the connection go, the server sends its end first, then
+reads and discards what the client is still sending until the client closes or
+a bound is reached: 128 MiB (the ceiling of the whole server, so a refusal never
+costs more to read than an accepted request would), 10 seconds from the moment
+the server let go (not from the last byte, so a client that dribbles gains
+nothing), and 1024 connections at a time (past that a connection is closed as it
+would have been). The first server's front did the same for five to seven
+seconds. The rule for groups: refuse as early as you like and answer at once; do
+not read the rest of a body only to keep the client from seeing a reset, and do not
+send less than the declared length in a test to dodge one. A group that reads a
+form on purpose after it has decided to refuse (to refuse in the first server's
+order, as `uploads` does) is unaffected: the answer is written when the handler
+returns, as before.
+
 ## Request paths
 
 The first server sat behind a front that read the path of a request before any

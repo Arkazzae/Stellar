@@ -243,10 +243,10 @@ pub async fn serve_with(
     for listener in listeners {
         let service = app
             .clone()
-            .into_make_service_with_connect_info::<SocketAddr>();
+            .into_make_service_with_connect_info::<http::linger::Peer>();
         let mut stopped = stopped.clone();
         servers.spawn(async move {
-            axum::serve(listener, service)
+            axum::serve(http::linger::LingeringListener(listener), service)
                 .with_graceful_shutdown(async move {
                     let _ = stopped.wait_for(|stopping| *stopping).await;
                 })
