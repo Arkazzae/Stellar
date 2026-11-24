@@ -17,7 +17,6 @@ pub mod dto;
 mod edit;
 mod history;
 pub mod mentions;
-pub mod outbox;
 pub mod post;
 
 /// The most a message may say, in UTF-16 units: room for a pasted listing, yet

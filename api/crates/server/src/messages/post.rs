@@ -9,7 +9,7 @@ use stellarr_messages::{MessageKey, Messages};
 
 use super::dto::{self, ChannelReadDto, MessageDto};
 use super::mentions::{self, Mentioning};
-use super::{MAX_CONTENT_UNITS, Stop, field_problem, outbox, trimmed, units};
+use super::{MAX_CONTENT_UNITS, Stop, field_problem, trimmed, units};
 use crate::auth::Caller;
 use crate::events::{Audience, Event};
 use crate::http::{ApiError, ApiResult, Json, Path, json_response};
@@ -203,9 +203,7 @@ pub fn post(
     // External deliveries are rows like the inbox entries, written before the
     // commit. No provider is contacted here; the dispatcher does that after it
     // can see the stored message.
-    for notified in &mentioned {
-        outbox::enqueue_mention(db, id, notified.user, now)?;
-    }
+    crate::delivery::outbox::enqueue_mentions(db, id, mentioned.iter().map(|n| n.user), now)?;
 
     let message = dto::load(db, messages, &[id], Some(author))?
         .into_iter()

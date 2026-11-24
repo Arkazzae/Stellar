@@ -38,6 +38,7 @@ use crate::auth::events;
 use crate::database::DbError;
 use crate::mail::setup::{self, MailSetup, Mailing};
 use crate::permissions::visibility;
+use crate::social;
 use crate::state::AppState;
 use crate::values::{Id, Timestamp};
 
@@ -460,15 +461,6 @@ struct Preferences {
     muted: String,
 }
 
-fn blocked(db: &Connection, first: Id, second: Id) -> rusqlite::Result<bool> {
-    db.query_row(
-        "SELECT EXISTS (SELECT 1 FROM \"UserBlocks\" WHERE (\"BlockerId\" = ?1 AND \"BlockedId\" = ?2)
-             OR (\"BlockerId\" = ?2 AND \"BlockedId\" = ?1))",
-        params![first, second],
-        |row| row.get(0),
-    )
-}
-
 fn mention_wanted(
     db: &Connection,
     item: &Leased,
@@ -494,7 +486,7 @@ fn mention_wanted(
     if !visibility::views(db, item.recipient, channel)? {
         return Ok(false);
     }
-    if blocked(db, item.recipient, author)? || is_muted(&preferences.muted, channel) {
+    if social::is_blocked(db, item.recipient, author)? || is_muted(&preferences.muted, channel) {
         return Ok(false);
     }
     // A message the recipient has already read must not pop up later.
@@ -541,20 +533,11 @@ fn direct_message_wanted(
         return Ok(false);
     }
     let peer = if user_a == recipient { user_b } else { user_a };
-    if peer != author || blocked(db, recipient, author)? {
+    if peer != author || social::is_blocked(db, recipient, author)? {
         return Ok(false);
     }
     if !preferences.allow_direct_messages {
-        let (a, b) = if recipient < author {
-            (recipient, author)
-        } else {
-            (author, recipient)
-        };
-        let friends: bool = db.query_row(
-            "SELECT EXISTS (SELECT 1 FROM \"Friendships\" WHERE \"UserAId\" = ?1 AND \"UserBId\" = ?2)",
-            params![a, b],
-            |row| row.get(0),
-        )?;
+        let friends = social::are_friends(db, recipient, author)?;
         if !friends {
             return Ok(false);
         }
