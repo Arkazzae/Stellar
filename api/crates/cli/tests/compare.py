@@ -116,7 +116,16 @@ MOMENT = re.compile(r"\d{4}-\d\d-\d\d[T ]\d\d:\d\d:\d\d(\.\d+)?Z?")
 
 
 def normalise(text, root, volatile):
-    text = text.replace(root, "<ROOT>")
+    # Where the data root really is: a temporary folder may sit behind a link.
+    text = text.replace("/private" + root, "<ROOT>").replace(root, "<ROOT>")
+    # The room left on a disk is what it is when the command asks, and the
+    # mount point is how the volume is named (the first tool names it as the
+    # drive list does).
+    text = re.sub(r"\d+ bytes free on \S+ for", "<N> bytes free on <MOUNT> for", text)
+    # What the keys folder holds is what each server keeps there: the first
+    # one its data-protection key ring, this one a master key.
+    text = re.sub(r"\[(ok|warn)\] keys: .*", "[<STATUS>] keys: <KEYS>", text)
+    text = re.sub(r'("name": "keys",\s+"status": ")[a-z]+(",\s+"detail": ")[^"]*"', r'\1<STATUS>\2<KEYS>"', text)
     text = re.sub(r"stellarr \S+ - operator", "stellarr <V> - operator", text)
     text = re.sub(r'("version": ")[^"]+"', r'\1<V>"', text)
     text = re.sub(r"^\d+\.\d+\.\d+\S*$", "<V>", text, flags=re.M)
@@ -127,7 +136,10 @@ def normalise(text, root, volatile):
 
 
 # What differs on purpose, by the label of the case, and why.
-KNOWN = []
+KNOWN = [
+    ("secrets set, no keys folder", "the folder is called the keys directory here, not the data-protection key directory"),
+    ("backup verify of a file that is not an archive", "reading an archive is the backups library's, which is not on this branch yet"),
+]
 
 
 def known(label, first, this):
@@ -151,6 +163,7 @@ def case(label, args, setup=None, stdin="", env=None, mutating=False, volatile=F
         answers[tool] = (code, normalise(out, root, volatile), normalise(err, root, volatile))
     state = {tool: dump(roots[tool]) for tool in tools()} if mutating else None
     for root in roots.values():
+        restore_modes(root)
         shutil.rmtree(root, ignore_errors=True)
     parts = []
     for index, name in enumerate(["exit status", "stdout", "stderr"]):
@@ -171,6 +184,14 @@ def case(label, args, setup=None, stdin="", env=None, mutating=False, volatile=F
     print(f"DIFFERENT  {label}")
     for name, first, this in parts:
         differences.append(f"--- {label}: {name}\nfirst:\n{first}\nthis:\n{this}\n")
+
+
+def restore_modes(root):
+    for path in [os.path.join(root, "db"), os.path.join(root, "db", "stellarr.db")]:
+        try:
+            os.chmod(path, 0o755)
+        except OSError:
+            pass
 
 
 def sql(statement):
@@ -317,6 +338,15 @@ for name, setup in [("no database", empty_root), ("a file that is not a database
                     ["sessions", "revoke", "--user", MAYA, "--all", "--yes"]):
         one_of_each(f"{name}: {' '.join(command)}", command, setup=setup, mutating=name == "no audit table")
 
+def unreadable_root(root):
+    os.chmod(os.path.join(root, "db"), 0)
+
+
+for name, setup in [("an unreadable database", unreadable), ("an unreadable db folder", unreadable_root)]:
+    for command in (["status"], ["config", "list"], ["users", "list"], ["doctor"],
+                    ["config", "set", "time-zone", "Europe/Warsaw", "--yes"], ["sessions", "revoke", "--user", MAYA, "--all", "--yes"]):
+        one_of_each(f"{name}: {' '.join(command)}", command, setup=setup)
+
 # The database locked by another process: a writer holds it for as long as the commands run.
 import threading
 
@@ -356,6 +386,33 @@ for command in (["config", "set", "time-zone", "Europe/Warsaw", "--yes"], ["sess
         print(("same       " if same else "DIFFERENT  ") + label)
         if not same:
             differences.append(f"--- {label}\nfirst: {answers['first']}\nthis: {answers['this']}\n")
+
+def exclusively_locked(root):
+    connection = sqlite3.connect(os.path.join(root, "db", "stellarr.db"), isolation_level=None, check_same_thread=False)
+    connection.execute("PRAGMA journal_mode=DELETE")
+    connection.execute("BEGIN EXCLUSIVE")
+    HOLD.append(connection)
+
+
+for command in (["status"], ["config", "list"], ["users", "list"], ["sessions", "list"]):
+    label = f"read-locked: {' '.join(command)}"
+    if FILTER and FILTER not in label:
+        continue
+    answers = {}
+    for tool in tools():
+        root = fresh(tool)
+        exclusively_locked(root)
+        answers[tool] = run(tool, root, command)
+        for connection in HOLD:
+            connection.execute("ROLLBACK")
+            connection.close()
+        HOLD.clear()
+        shutil.rmtree(root, ignore_errors=True)
+    same = all(normalise(answers["first"][i], "", False) == normalise(answers["this"][i], "", False) for i in range(3)) if False else all(answers["first"][i] == answers["this"][i] for i in range(3))
+    results["same" if same else "different"] += 1
+    print(("same       " if same else "DIFFERENT  ") + label)
+    if not same:
+        differences.append(f"--- {label}\nfirst: {answers['first']}\nthis: {answers['this']}\n")
 
 # --------------------------------------------------------------------------------------
 # What is changed.
@@ -461,9 +518,9 @@ case("security unlink, with a verified address", ["--json", "security", "unlink"
 
 # Secrets (what each tool seals is its own: the rows are compared by name).
 for value, label in [("super-secret\n", "a line"), (" spaced \n", "spaces"), ("a\r\n", "crlf"), ("", "nothing"), ("   \n", "blanks"), ("x" * 4096, "4096"), ("x" * 4097, "4097"), ("a\n\n", "two lines"), ("é😀\n", "unicode")]:
-    one_of_each(f"secrets set via stdin: {label}", ["secrets", "set", "mail.smtp-password", "--stdin", "--yes"], stdin=value, mutating=True)
+    one_of_each(f"secrets set via stdin: {label}", ["secrets", "set", "mail.smtp-password", "--stdin", "--yes"], stdin=value, mutating=True, volatile=True)
 for name in ["mail.resend-api-key", "giphy.api-key", "cloudflare.r2.access-key", "cloudflare.r2.secret-key", "cloudflare.r2.worker-token"]:
-    one_of_each(f"secrets set {name}", ["secrets", "set", name, "--stdin", "--yes"], stdin="value\n", mutating=True)
+    one_of_each(f"secrets set {name}", ["secrets", "set", name, "--stdin", "--yes"], stdin="value\n", mutating=True, volatile=True)
 one_of_each("secrets set --stdin without --yes", ["secrets", "set", "mail.smtp-password", "--stdin"], stdin="v\n", mutating=True)
 one_of_each("secrets set, no terminal, no --stdin", ["secrets", "set", "mail.smtp-password", "--yes"], mutating=True)
 one_of_each("secrets set, no keys folder", ["secrets", "set", "mail.smtp-password", "--stdin", "--yes"], stdin="v\n", mutating=True, setup=lambda root: shutil.rmtree(os.path.join(root, "keys")))
