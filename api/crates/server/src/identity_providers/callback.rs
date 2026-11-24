@@ -332,8 +332,8 @@ fn asking_account(
     now: Timestamp,
 ) -> Result<Option<User>, DbError> {
     let (Some(user_id), Some(session_id)) = (
-        crate::values::parse_guid(&actor.user_id),
-        crate::values::parse_guid(&actor.session_id),
+        Id::parse(&actor.user_id),
+        Id::parse(&actor.session_id),
     ) else {
         return Ok(None);
     };
@@ -414,8 +414,8 @@ async fn reauthenticate(
         return Ok(false);
     }
     let (Some(user), Some(session)) = (
-        crate::values::parse_guid(&actor.user_id),
-        crate::values::parse_guid(&actor.session_id),
+        Id::parse(&actor.user_id),
+        Id::parse(&actor.session_id),
     ) else {
         return Ok(false);
     };

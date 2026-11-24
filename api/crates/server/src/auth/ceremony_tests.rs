@@ -1832,14 +1832,14 @@ async fn a_pending_challenge_is_described_to_its_browser_and_given_up_by_it_alon
 }
 
 #[tokio::test]
-async fn ids_are_read_in_every_spelling_the_first_server_read() {
+async fn an_id_is_read_in_its_hyphenated_spelling_only() {
     let world = World::new();
     let user = world.user(None);
     let (method, secret) = world.with_app(user).await;
     let (challenge, preauth) = world.challenge(user, PURPOSE_MFA);
-    // The challenge in capitals without hyphens, the method with hyphens in parentheses.
-    let spelled = challenge.id.to_string().replace('-', "").to_uppercase();
-    let method_spelled = format!("  ({})  ", method.to_string().to_uppercase());
+    // Both ids in capitals: the letter case is free.
+    let spelled = challenge.id.to_string().to_uppercase();
+    let method_spelled = method.to_string().to_uppercase();
 
     let answered = answer(
         &world.state,
@@ -1862,18 +1862,49 @@ async fn ids_are_read_in_every_spelling_the_first_server_read() {
         panic!("a sign-in was expected")
     };
     assert_eq!(completed.evidence, "totp");
-    // A text that is no id names no method: the code is taken for a recovery code.
-    let (second, second_preauth) = world.challenge(user, PURPOSE_MFA);
-    let second_id = second.id.to_string();
-    let refused = answer(
+    // A text that is no id names no method: the code is taken for a recovery
+    // code. So is the id of a method in any other spelling.
+    let plain = method.to_string().replace('-', "");
+    let braced = format!("{{{method}}}");
+    let spaced = format!(" {method}");
+    for (round, text) in ["not an id", &plain, &braced, &spaced].into_iter().enumerate() {
+        let (second, second_preauth) = world.challenge(user, PURPOSE_MFA);
+        let second_id = second.id.to_string();
+        let refused = answer(
+            &world.state,
+            &Ask {
+                context: &CONTEXT,
+                preauth: Some(&second_preauth),
+                challenge_id: &second_id,
+            },
+            Answer::Code {
+                method: Some(text),
+                code: &now_code(&secret),
+            },
+            false,
+            nothing,
+        )
+        .await
+        .unwrap();
+        assert!(matches!(refused, Answered::Refused), "{text:?}");
+        assert_eq!(
+            world.count("SELECT COUNT(*) FROM \"SecurityEvents\" WHERE \"Detail\" = 'recovery'"),
+            round as i64 + 1,
+            "{text:?}"
+        );
+    }
+    // A challenge named without its hyphens is no challenge.
+    let (third, third_preauth) = world.challenge(user, PURPOSE_MFA);
+    let third_id = third.id.to_string().replace('-', "");
+    let missing = answer(
         &world.state,
         &Ask {
             context: &CONTEXT,
-            preauth: Some(&second_preauth),
-            challenge_id: &second_id,
+            preauth: Some(&third_preauth),
+            challenge_id: &third_id,
         },
         Answer::Code {
-            method: Some("not an id"),
+            method: Some(&method.to_string()),
             code: &now_code(&secret),
         },
         false,
@@ -1881,11 +1912,7 @@ async fn ids_are_read_in_every_spelling_the_first_server_read() {
     )
     .await
     .unwrap();
-    assert!(matches!(refused, Answered::Refused));
-    assert_eq!(
-        world.count("SELECT COUNT(*) FROM \"SecurityEvents\" WHERE \"Detail\" = 'recovery'"),
-        1
-    );
+    assert!(!matches!(missing, Answered::SignedIn { .. }));
 }
 
 #[tokio::test]

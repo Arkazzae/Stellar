@@ -7,7 +7,6 @@
 //! event is worked out when it is sent.
 
 use crate::values::Id;
-use crate::values::guid::hex;
 
 /// An id as the group names write it: 32 hexadecimal digits, no hyphens.
 fn compact(id: Id) -> String {
@@ -32,7 +31,11 @@ pub fn user_group(user: Id) -> String {
     format!("user:{}", compact(user))
 }
 
-pub use crate::values::parse_guid;
+fn hex(byte: u8) -> Option<u8> {
+    char::from(byte)
+        .to_digit(16)
+        .and_then(|digit| u8::try_from(digit).ok())
+}
 
 /// The text after `name=` in a query string, read as a browser sent it:
 /// percent-decoded, with `+` for a space, and found without regard to the

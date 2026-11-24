@@ -10,12 +10,12 @@ use crate::auth::Caller;
 use crate::database::DbError;
 use crate::http::{ApiError, ApiResult, Path};
 use crate::state::AppState;
-use crate::values::{Guid, Timestamp};
+use crate::values::{Id, Timestamp};
 
 pub async fn remove_friend(
     State(state): State<AppState>,
     caller: Caller,
-    Path(Guid(other)): Path<Guid>,
+    Path(other): Path<Id>,
 ) -> ApiResult<Response> {
     let me = caller.user;
     let (a, b) = pair(me, other);
@@ -52,7 +52,7 @@ pub async fn remove_friend(
 pub async fn block(
     State(state): State<AppState>,
     caller: Caller,
-    Path(Guid(other)): Path<Guid>,
+    Path(other): Path<Id>,
 ) -> ApiResult<Response> {
     let me = caller.user;
     if me == other {
@@ -93,7 +93,7 @@ pub async fn block(
 pub async fn unblock(
     State(state): State<AppState>,
     caller: Caller,
-    Path(Guid(other)): Path<Guid>,
+    Path(other): Path<Id>,
 ) -> ApiResult<Response> {
     let me = caller.user;
     let exists: bool = state

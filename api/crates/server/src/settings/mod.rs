@@ -544,7 +544,7 @@ impl DiscoverySettings {
         let instance_id = match config.text("Stellarr:InstanceId") {
             None => None,
             Some(text) => Some(
-                Id::parse_guid(text)
+                Id::parse(text)
                     .ok_or_else(|| SettingError::new("Stellarr:InstanceId must be a UUID."))?,
             ),
         };

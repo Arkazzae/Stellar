@@ -28,7 +28,7 @@ use crate::http::{ApiError, ApiResult, Json, Origin, Path, Problem, json_respons
 use crate::instance::users::User;
 use crate::servers::Object;
 use crate::state::AppState;
-use crate::values::{Guid, Id};
+use crate::values::Id;
 
 /// What a change of an identity may ask for besides the session's own proof:
 /// the account's current password.
@@ -152,7 +152,7 @@ pub async fn remove(
     State(state): State<AppState>,
     caller: Caller,
     origin: Origin,
-    Path(Guid(identity)): Path<Guid>,
+    Path(identity): Path<Id>,
     request: Request,
 ) -> Response {
     let password = match password_of(request) {

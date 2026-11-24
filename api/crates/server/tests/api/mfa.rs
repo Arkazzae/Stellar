@@ -189,9 +189,11 @@ async fn nothing_is_answered_that_the_challenge_does_not_allow() {
         let refused = post(browser, "/api/auth/mfa/verify", json!({"challengeId": challenge, "methodId": method, "code": code(&app.secret, 0)})).await;
         assert_eq!((refused.status.as_u16(), title(&refused).as_str()), (401, NOT_VALID));
     }
-    // Written with no dashes it is the same challenge.
-    let spelled = post(&client, "/api/auth/mfa/verify", json!({"challengeId": id.replace('-', ""), "methodId": method, "code": "000000"})).await;
-    assert_eq!((spelled.status.as_u16(), title(&spelled).as_str()), (401, WRONG));
+    // Written with no dashes or in braces it is no challenge at all.
+    for spelling in [id.replace('-', ""), format!("{{{id}}}")] {
+        let spelled = post(&client, "/api/auth/mfa/verify", json!({"challengeId": spelling, "methodId": method, "code": "000000"})).await;
+        assert_eq!((spelled.status.as_u16(), title(&spelled).as_str()), (401, NOT_VALID), "{spelling}");
+    }
 
     // A sign-in's challenge is not an enrolment's, nor the other way round.
     let wrong_purpose = post(&client, "/api/auth/mfa/enroll/totp/start", json!({"challengeId": id})).await;

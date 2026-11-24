@@ -108,7 +108,7 @@ pub fn list(runtime: &mut Runtime, id_or_username: Option<&str>) -> CliOutcome {
 }
 
 pub fn revoke(runtime: &mut Runtime, id: &str) -> CliOutcome {
-    let Some(session_id) = Id::parse_guid(&trim(id)) else {
+    let Some(session_id) = Id::parse(&trim(id)) else {
         return Err(CliError::new(
             "invalid_session_id",
             format!("'{id}' is not a session id."),

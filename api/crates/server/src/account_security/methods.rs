@@ -14,7 +14,7 @@ use crate::auth::{Caller, ways_in};
 use crate::http::{ApiError, ApiResult, Json, Origin, Path, Problem, json_response, with_cookie, with_session_cookie};
 use crate::servers::Object;
 use crate::state::AppState;
-use crate::values::{Guid, Id};
+use crate::values::Id;
 
 /// What a change of the second step may ask for besides the session's own
 /// proof: the account's current password.
@@ -86,7 +86,7 @@ pub async fn remove(
     State(state): State<AppState>,
     caller: Caller,
     origin: Origin,
-    Path(Guid(method)): Path<Guid>,
+    Path(method): Path<Id>,
     request: Result<Option<Json<Object<Proof>>>, ApiError>,
 ) -> Response {
     let request = match required(request) {
@@ -153,7 +153,7 @@ pub async fn forget_trusted_device(
     State(state): State<AppState>,
     caller: Caller,
     origin: Origin,
-    Path(Guid(device)): Path<Guid>,
+    Path(device): Path<Id>,
 ) -> Response {
     no_store(forget(&state, caller, &origin, device).await)
 }

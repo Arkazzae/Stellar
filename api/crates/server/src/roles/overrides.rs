@@ -12,7 +12,7 @@ use rusqlite::{Connection, OptionalExtension, params};
 use serde::{Deserialize, Serialize};
 
 use super::announce::Announcement;
-use super::{Chosen, Guid, invalid, no_content, taken};
+use super::{Chosen, invalid, no_content, taken};
 use crate::auth::Caller;
 use crate::http::{ApiError, ApiResult, Endpoints, Json, Path, json_response};
 use crate::permissions::audit::{self, AuditChange, AuditEvent};
@@ -275,7 +275,7 @@ fn record_member(db: &Connection, setting: &Setting<'_>, member: Id, change: Cha
 async fn list<const SECTION: bool>(
     State(state): State<AppState>,
     caller: Caller,
-    Path(Guid(target)): Path<Guid>,
+    Path(target): Path<Id>,
     ActiveServer(server): ActiveServer,
 ) -> ApiResult<Response> {
     let rows = state
@@ -304,7 +304,7 @@ async fn list<const SECTION: bool>(
 async fn list_members<const SECTION: bool>(
     State(state): State<AppState>,
     caller: Caller,
-    Path(Guid(target)): Path<Guid>,
+    Path(target): Path<Id>,
     ActiveServer(server): ActiveServer,
 ) -> ApiResult<Response> {
     let rows = state
@@ -333,7 +333,7 @@ async fn list_members<const SECTION: bool>(
 async fn set<const SECTION: bool>(
     State(state): State<AppState>,
     caller: Caller,
-    Path((Guid(target), Guid(role))): Path<(Guid, Guid)>,
+    Path((target, role)): Path<(Id, Id)>,
     chosen: Chosen,
     Json(request): Json<OverrideRequest>,
 ) -> ApiResult<Response> {
@@ -422,7 +422,7 @@ async fn set<const SECTION: bool>(
 async fn clear<const SECTION: bool>(
     State(state): State<AppState>,
     caller: Caller,
-    Path((Guid(target), Guid(role))): Path<(Guid, Guid)>,
+    Path((target, role)): Path<(Id, Id)>,
     ActiveServer(server): ActiveServer,
 ) -> ApiResult<Response> {
     // Before any other refusal, as the first server's filter was, but after the
@@ -485,7 +485,7 @@ async fn clear<const SECTION: bool>(
 async fn set_member<const SECTION: bool>(
     State(state): State<AppState>,
     caller: Caller,
-    Path((Guid(target), Guid(user))): Path<(Guid, Guid)>,
+    Path((target, user)): Path<(Id, Id)>,
     chosen: Chosen,
     Json(request): Json<OverrideRequest>,
 ) -> ApiResult<Response> {
@@ -564,7 +564,7 @@ async fn set_member<const SECTION: bool>(
 async fn clear_member<const SECTION: bool>(
     State(state): State<AppState>,
     caller: Caller,
-    Path((Guid(target), Guid(user))): Path<(Guid, Guid)>,
+    Path((target, user)): Path<(Id, Id)>,
     ActiveServer(server): ActiveServer,
 ) -> ApiResult<Response> {
     // Before any other refusal, as the first server's filter was, but after the

@@ -15,7 +15,7 @@ use crate::database::DbError;
 use crate::permissions::authorization::{Scope, held_at};
 use crate::permissions::privileges::SEND_MESSAGES;
 use crate::permissions::visibility::{self, ChannelKind};
-use crate::realtime::names::{follower_group, parse_guid, server_group};
+use crate::realtime::names::{follower_group, server_group};
 use crate::realtime::throttle::Policy;
 use crate::realtime::{Context, Method, Registration, method::arguments};
 use crate::values::{Id, Timestamp};
@@ -33,7 +33,7 @@ pub fn registration() -> Registration {
 fn channel_id(argument: Value) -> Result<Id, HubError> {
     let text = arguments::text(argument)?;
     text.as_deref()
-        .and_then(parse_guid)
+        .and_then(Id::parse)
         .ok_or_else(|| HubError::visible("Invalid channelId."))
 }
 

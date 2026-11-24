@@ -394,7 +394,7 @@ fn the_instance_id_and_the_build_are_read_when_given() {
     let given = production(&[
         (
             "STELLARR_INSTANCE_ID",
-            "{11111111-2222-4333-8444-555555555555}",
+            "11111111-2222-4333-8444-555555555555",
         ),
         ("Build__Sha", " abc1234 "),
     ])
@@ -405,8 +405,14 @@ fn the_instance_id_and_the_build_are_read_when_given() {
     );
     assert_eq!(given.discovery.build_sha.as_deref(), Some("abc1234"));
 
-    let refused = production(&[("STELLARR_INSTANCE_ID", "not-a-uuid")]).unwrap_err();
-    assert_eq!(refused.to_string(), "Stellarr:InstanceId must be a UUID.");
+    for spelling in [
+        "not-a-uuid",
+        "{11111111-2222-4333-8444-555555555555}",
+        "11111111222243338444555555555555",
+    ] {
+        let refused = production(&[("STELLARR_INSTANCE_ID", spelling)]).unwrap_err();
+        assert_eq!(refused.to_string(), "Stellarr:InstanceId must be a UUID.");
+    }
 }
 
 #[test]

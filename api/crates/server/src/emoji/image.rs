@@ -13,13 +13,13 @@ use crate::database::DbError;
 use crate::http::{ApiError, ApiResult, Path};
 use crate::permissions::membership::ActiveServer;
 use crate::state::AppState;
-use crate::values::Guid;
+use crate::values::Id;
 
 pub async fn image(
     State(state): State<AppState>,
     _caller: Caller,
     ActiveServer(server): ActiveServer,
-    Path(Guid(emoji)): Path<Guid>,
+    Path(emoji): Path<Id>,
 ) -> ApiResult<Response> {
     let found: Option<(String, String, i64)> = state
         .database()

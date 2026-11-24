@@ -18,7 +18,7 @@ use crate::permissions::access_changed::{self, ViewChange};
 use crate::permissions::ownership;
 use crate::permissions::roles::Member;
 use crate::state::AppState;
-use crate::values::{Guid, Id, Timestamp};
+use crate::values::{Id, Timestamp};
 
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -108,7 +108,7 @@ struct MemberDto {
 /// The members of one server, the people its ownership can go to.
 pub(super) async fn members(
     State(state): State<AppState>,
-    Path(Guid(server)): Path<Guid>,
+    Path(server): Path<Id>,
     InstanceOwner(_): InstanceOwner,
 ) -> ApiResult<Response> {
     let answer = state
@@ -163,7 +163,7 @@ struct Successor {
 /// Hands a server to another of its members.
 pub(super) async fn transfer(
     State(state): State<AppState>,
-    Path(Guid(served)): Path<Guid>,
+    Path(served): Path<Id>,
     request: Request,
 ) -> ApiResult<Response> {
     let panel::Bound {
@@ -256,7 +256,7 @@ pub(super) async fn transfer(
 /// instance's audit log.
 pub(super) async fn delete(
     State(state): State<AppState>,
-    Path(Guid(served)): Path<Guid>,
+    Path(served): Path<Id>,
     FreshInstanceOwner(instance): FreshInstanceOwner,
     caller: crate::auth::Caller,
 ) -> ApiResult<Response> {

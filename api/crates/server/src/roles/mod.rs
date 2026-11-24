@@ -71,19 +71,6 @@ impl axum::extract::FromRequestParts<crate::state::AppState> for Chosen {
     }
 }
 
-/// An id in a path, in any spelling the first server took for one: anything
-/// else is a route that does not exist.
-pub struct Guid(pub Id);
-
-impl<'de> serde::Deserialize<'de> for Guid {
-    fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Guid, D::Error> {
-        let text = String::deserialize(deserializer)?;
-        crate::permissions::membership::parse_guid(&text)
-            .map(Guid)
-            .ok_or_else(|| serde::de::Error::custom("not an id"))
-    }
-}
-
 pub fn routes() -> Endpoints {
     Endpoints::new()
         .get("/api/admin/roles", catalog::list)

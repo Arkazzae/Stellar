@@ -5,7 +5,6 @@
 use axum::extract::State;
 use serde::Serialize;
 
-use crate::values::Guid;
 use crate::auth::Caller;
 use crate::database::DbError;
 use crate::messages::dto::{self, MessageDto, MessageReferenceDto};
@@ -34,7 +33,7 @@ pub struct ThreadMessages {
 
 /// Every thread of the channel, the most recently answered first.
 pub async fn list(
-    Path(Guid(channel)): Path<Guid>,
+    Path(channel): Path<Id>,
     caller: Caller,
     ActiveServer(server): ActiveServer,
     State(state): State<AppState>,
@@ -88,7 +87,7 @@ pub async fn list(
 /// A thread in full, read on its own so that opening one does not depend on
 /// how far back the transcript has been loaded.
 pub async fn read(
-    Path((Guid(channel), Guid(root))): Path<(Guid, Guid)>,
+    Path((channel, root)): Path<(Id, Id)>,
     caller: Caller,
     ActiveServer(server): ActiveServer,
     State(state): State<AppState>,

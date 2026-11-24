@@ -542,13 +542,25 @@ async fn a_channel_the_caller_does_not_see_is_not_there_and_one_they_may_not_man
 }
 
 #[tokio::test]
-async fn a_path_may_spell_the_id_without_hyphens() {
+async fn a_path_spells_the_id_with_hyphens_and_in_no_other_way() {
     let world = World::new().await;
-    let general = world.channel("general").replace('-', "");
+    let general = world.channel("general");
+    let plain = general.replace('-', "");
 
-    let response = patch(&world.owner, &general, json!({ "topic": "x" })).await;
-
-    assert_eq!(response.status, 200, "{}", response.text());
+    for spelling in [
+        plain.clone(),
+        format!("%7B{general}%7D"),
+        format!("%28{general}%29"),
+        format!("%20{general}"),
+        format!("{general}%20"),
+        format!("{general}%0A"),
+        format!("%7B0x{},0x{},0x{},%7B0x{}%7D%7D", &plain[..8], &plain[8..12], &plain[12..16], &plain[16..]),
+    ] {
+        let response = patch(&world.owner, &spelling, json!({ "topic": "x" })).await;
+        assert_eq!(response.status, 404, "{spelling}");
+    }
+    let upper = patch(&world.owner, &general.to_uppercase(), json!({ "topic": "x" })).await;
+    assert_eq!(upper.status, 200, "{}", upper.text());
 }
 
 // Removing a channel.

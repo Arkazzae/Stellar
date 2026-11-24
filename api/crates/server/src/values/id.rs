@@ -35,7 +35,9 @@ impl Id {
         &self.0
     }
 
-    /// Reads the 36-character form, in either letter case.
+    /// Reads the 36-character hyphenated form, in either letter case, and
+    /// nothing else: no braces, no spaces, no missing hyphens. Every id that
+    /// crosses the wire or is typed by an operator is read here.
     pub fn parse(text: &str) -> Option<Id> {
         let bytes = text.as_bytes();
         if bytes.len() != 36 {
@@ -59,14 +61,6 @@ impl Id {
             position += 2;
         }
         Some(Id(out))
-    }
-
-    /// Reads a UUID as the first server's parser did: hyphenated, or as 32
-    /// digits with no hyphens, or the hyphenated form in braces or in
-    /// parentheses, in either letter case. For text an operator typed or an
-    /// older file kept; everything that crosses the wire is [`Id::parse`].
-    pub fn parse_guid(text: &str) -> Option<Id> {
-        super::guid::parse_guid(text)
     }
 
     /// The spelling the database holds: capitals.
@@ -174,6 +168,13 @@ mod tests {
             "",
             "8f62a4d1bdcb4d86bd1c6e351900e629",
             "{8f62a4d1-bdcb-4d86-bd1c-6e351900e629}",
+            "(8f62a4d1-bdcb-4d86-bd1c-6e351900e629)",
+            " 8f62a4d1-bdcb-4d86-bd1c-6e351900e629",
+            "8f62a4d1-bdcb-4d86-bd1c-6e351900e629 ",
+            "8f62a4d1-bdcb-4d86-bd1c-6e351900e629\n",
+            "+f62a4d1-bdcb-4d86-bd1c-6e351900e629",
+            "8f62a4d1-0xcb-4d86-bd1c-6e351900e629",
+            "{0x8f62a4d1,0xbdcb,0x4d86,{0xbd,0x1c,0x6e,0x35,0x19,0x00,0xe6,0x29}}",
             "8f62a4d1-bdcb-4d86-bd1c-6e351900e62",
             "8f62a4d1-bdcb-4d86-bd1c-6e351900e62g",
             "8f62a4d1_bdcb_4d86_bd1c_6e351900e629",

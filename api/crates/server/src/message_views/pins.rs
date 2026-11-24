@@ -4,7 +4,6 @@ use axum::extract::State;
 use serde::Serialize;
 use stellarr_messages::MessageKey;
 
-use crate::values::Guid;
 use crate::auth::Caller;
 use crate::database::DbError;
 use crate::events::Event;
@@ -32,7 +31,7 @@ pub struct PinnedMessages {
 /// the last page, and a list made of whatever the client has loaded would grow
 /// as the reader scrolls.
 pub async fn list(
-    Path(Guid(channel)): Path<Guid>,
+    Path(channel): Path<Id>,
     caller: Caller,
     ActiveServer(server): ActiveServer,
     State(state): State<AppState>,
@@ -70,7 +69,7 @@ pub async fn list(
 }
 
 pub async fn pin(
-    Path(Guid(message)): Path<Guid>,
+    Path(message): Path<Id>,
     caller: Caller,
     server: ActiveServer,
     State(state): State<AppState>,
@@ -79,7 +78,7 @@ pub async fn pin(
 }
 
 pub async fn unpin(
-    Path(Guid(message)): Path<Guid>,
+    Path(message): Path<Id>,
     caller: Caller,
     server: ActiveServer,
     State(state): State<AppState>,

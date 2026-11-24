@@ -76,7 +76,7 @@ pub fn resolve_user(connection: &Connection, id_or_username: &str) -> CliOutcome
             exit::USAGE,
         ));
     }
-    let found = if let Some(id) = Id::parse_guid(&value) {
+    let found = if let Some(id) = Id::parse(&value) {
         connection
             .query_row(
                 &format!("SELECT {USER_COLUMNS} FROM \"Users\" WHERE \"Id\" = ?1"),

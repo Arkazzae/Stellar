@@ -7,7 +7,6 @@ use axum::extract::State;
 use serde::Serialize;
 use stellarr_messages::MessageKey;
 
-use crate::values::Guid;
 use super::text;
 use crate::auth::Caller;
 use crate::database::DbError;
@@ -39,7 +38,7 @@ pub struct ReactionChanged {
 }
 
 pub async fn add(
-    Path((Guid(message), emoji)): Path<(Guid, String)>,
+    Path((message, emoji)): Path<(Id, String)>,
     caller: Caller,
     server: ActiveServer,
     State(state): State<AppState>,
@@ -48,7 +47,7 @@ pub async fn add(
 }
 
 pub async fn remove(
-    Path((Guid(message), emoji)): Path<(Guid, String)>,
+    Path((message, emoji)): Path<(Id, String)>,
     caller: Caller,
     server: ActiveServer,
     State(state): State<AppState>,

@@ -8,7 +8,7 @@ use rusqlite::{Connection, params};
 use serde::Deserialize;
 
 use super::announce::Announcement;
-use super::{Chosen, Guid, RoleDto, RoleRow, invalid, no_content, taken};
+use super::{Chosen, RoleDto, RoleRow, invalid, no_content, taken};
 use crate::auth::Caller;
 use crate::http::{ApiError, ApiResult, Json, Path, json_response};
 use crate::permissions::audit::{self, AuditChange, AuditEvent};
@@ -185,7 +185,7 @@ pub(super) async fn create(
 pub(super) async fn update(
     State(state): State<AppState>,
     caller: Caller,
-    Path(Guid(role_id)): Path<Guid>,
+    Path(role_id): Path<Id>,
     chosen: Chosen,
     Json(request): Json<RoleRequest>,
 ) -> ApiResult<Response> {
@@ -293,7 +293,7 @@ fn names(mask: i64) -> Vec<String> {
 pub(super) async fn delete(
     State(state): State<AppState>,
     caller: Caller,
-    Path(Guid(role_id)): Path<Guid>,
+    Path(role_id): Path<Id>,
     ActiveServer(server): ActiveServer,
 ) -> ApiResult<Response> {
     // Before any other refusal, as the first server's filter was, but after the

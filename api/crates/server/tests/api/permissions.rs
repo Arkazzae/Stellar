@@ -145,9 +145,13 @@ mod routes {
 
         let ok = w.jozef.client.get("/api/test/active-server").await;
         assert_eq!((ok.status.as_u16(), ok.text()), (200, instance.clone()));
-        for value in [instance.clone(), instance.replace('-', ""), format!("{{{}}}", instance.to_uppercase()), format!("  {instance} ")] {
+        for value in [instance.clone(), instance.to_uppercase()] {
             let response = w.jozef.client.send(named(&value)).await;
             assert_eq!((response.status.as_u16(), response.text()), (200, instance.clone()), "{value}");
+        }
+        for value in [instance.replace('-', ""), format!("{{{}}}", instance.to_uppercase()), format!("({instance})")] {
+            let response = w.jozef.client.send(named(&value)).await;
+            assert_eq!((response.status.as_u16(), response.body.len()), (400, 0), "{value}");
         }
         let query = w.jozef.client.get(&format!("/api/test/active-server?SERVERID={instance}")).await;
         assert_eq!(query.status.as_u16(), 200);

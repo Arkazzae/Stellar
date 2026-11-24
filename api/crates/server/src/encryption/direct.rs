@@ -21,7 +21,7 @@ use crate::auth::Caller;
 use crate::database::DbError;
 use crate::http::{ApiError, ApiResult, Json, Path, QueryValues, json_response};
 use crate::state::AppState;
-use crate::values::{Guid, Id, Timestamp};
+use crate::values::{Id, Timestamp};
 
 /// Both account keys and every device both people may have at once.
 const MAX_ENVELOPES: usize = 2 * (store::MAX_ACTIVE_DEVICES as usize + 1);
@@ -210,7 +210,7 @@ struct Refused2(Refused, Conversation);
 pub async fn request(
     State(state): State<AppState>,
     caller: Caller,
-    Path(Guid(id)): Path<Guid>,
+    Path(id): Path<Id>,
 ) -> ApiResult<Response> {
     switch(state, caller, id, Action::Request).await
 }
@@ -219,7 +219,7 @@ pub async fn request(
 pub async fn cancel(
     State(state): State<AppState>,
     caller: Caller,
-    Path(Guid(id)): Path<Guid>,
+    Path(id): Path<Id>,
 ) -> ApiResult<Response> {
     switch(state, caller, id, Action::Cancel).await
 }
@@ -229,7 +229,7 @@ pub async fn cancel(
 pub async fn confirm(
     State(state): State<AppState>,
     caller: Caller,
-    Path(Guid(id)): Path<Guid>,
+    Path(id): Path<Id>,
 ) -> ApiResult<Response> {
     switch(state, caller, id, Action::Confirm).await
 }
@@ -239,7 +239,7 @@ pub async fn confirm(
 pub async fn disable(
     State(state): State<AppState>,
     caller: Caller,
-    Path(Guid(id)): Path<Guid>,
+    Path(id): Path<Id>,
 ) -> ApiResult<Response> {
     switch(state, caller, id, Action::Disable).await
 }
@@ -265,7 +265,7 @@ fn readable(
 pub async fn keys(
     State(state): State<AppState>,
     caller: Caller,
-    Path(Guid(id)): Path<Guid>,
+    Path(id): Path<Id>,
 ) -> ApiResult<Response> {
     let found = state
         .database()
@@ -345,7 +345,7 @@ pub async fn keys(
 pub async fn epochs(
     State(state): State<AppState>,
     caller: Caller,
-    Path(Guid(id)): Path<Guid>,
+    Path(id): Path<Id>,
     query: QueryValues,
 ) -> ApiResult<Response> {
     let after = i64::from(query.int("after")?.unwrap_or(0));
@@ -432,7 +432,7 @@ enum Made {
 pub async fn create_epoch(
     State(state): State<AppState>,
     caller: Caller,
-    Path(Guid(id)): Path<Guid>,
+    Path(id): Path<Id>,
     Json(body): Json<Members>,
 ) -> ApiResult<Response> {
     let request = EpochRequest::read(&body)?;

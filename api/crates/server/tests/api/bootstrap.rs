@@ -88,7 +88,7 @@ async fn a_person_in_no_server_is_forbidden_and_the_server_asked_for_must_be_the
     // The header and the query name a server, the header first; a name that
     // is no id is a bad request, a server the person is not in is forbidden.
     for (header, want) in [
-        (Some(home.clone()), 200), (Some(home.replace('-', "")), 200), (Some(format!("{{{home}}}")), 200), (Some(home.to_uppercase()), 200),
+        (Some(home.clone()), 200), (Some(home.replace('-', "")), 400), (Some(format!("{{{home}}}")), 400), (Some(home.to_uppercase()), 200),
         (Some(format!("  {home}  ")), 200),
         (Some("garbage".to_string()), 400), (Some(format!("{home},{home}")), 400),
         (Some("11111111-1111-1111-1111-111111111111".to_string()), 403),

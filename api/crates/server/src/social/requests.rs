@@ -15,7 +15,7 @@ use crate::database::DbError;
 use crate::http::{ApiError, ApiResult, Json, Path, Problem, json_response};
 use crate::instance::names::to_upper;
 use crate::state::AppState;
-use crate::values::{Guid, Id, Timestamp};
+use crate::values::{Id, Timestamp};
 
 /// The body of a request to befriend. Property names are read without regard
 /// to case, and the last of a name given twice counts, as the first server
@@ -147,7 +147,7 @@ pub async fn create(
 pub async fn accept(
     State(state): State<AppState>,
     caller: Caller,
-    Path(Guid(request)): Path<Guid>,
+    Path(request): Path<Id>,
 ) -> ApiResult<Response> {
     let me = caller.user;
     let found: Option<(Id, Id)> = state
@@ -187,7 +187,7 @@ pub async fn accept(
 pub async fn delete(
     State(state): State<AppState>,
     caller: Caller,
-    Path(Guid(request)): Path<Guid>,
+    Path(request): Path<Id>,
 ) -> ApiResult<Response> {
     let me = caller.user;
     let found: Option<(Id, Id)> = state

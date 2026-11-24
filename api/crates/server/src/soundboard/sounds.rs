@@ -19,7 +19,7 @@ use crate::permissions::membership::ActiveServer;
 use crate::permissions::privileges::MANAGE_SERVER;
 use crate::servers::Object;
 use crate::state::AppState;
-use crate::values::{Guid, Id, Timestamp};
+use crate::values::{Id, Timestamp};
 
 const MIN_CLIP_SECONDS: f64 = 0.15;
 const MAX_CLIP_SECONDS: f64 = 15.0;
@@ -233,7 +233,7 @@ pub async fn update(
     State(state): State<AppState>,
     caller: Caller,
     ActiveServer(server): ActiveServer,
-    Path(Guid(sound_id)): Path<Guid>,
+    Path(sound_id): Path<Id>,
     Json(Object(request)): Json<Object<UpdateSound>>,
 ) -> ApiResult<Response> {
     let user = caller.user;
@@ -330,7 +330,7 @@ pub async fn remove(
     State(state): State<AppState>,
     caller: Caller,
     ActiveServer(server): ActiveServer,
-    Path(Guid(sound_id)): Path<Guid>,
+    Path(sound_id): Path<Id>,
 ) -> ApiResult<Response> {
     let user = caller.user;
     let work = {

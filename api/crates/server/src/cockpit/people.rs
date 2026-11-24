@@ -21,7 +21,7 @@ use crate::permissions::ownership;
 use crate::permissions::privileges;
 use crate::permissions::roles::{self, HeldRoleTable, Role};
 use crate::state::AppState;
-use crate::values::{Guid, Id, Timestamp};
+use crate::values::{Id, Timestamp};
 
 const ROLE_COLUMNS: &str =
     "\"Id\", \"ServerId\", \"Name\", \"Color\", \"Permissions\", \"Position\", \"IsSystem\", \"IsOwner\"";
@@ -247,7 +247,7 @@ struct RoleChoice {
 
 pub(super) async fn set_role(
     State(state): State<AppState>,
-    Path(Guid(user)): Path<Guid>,
+    Path(user): Path<Id>,
     request: Request,
 ) -> ApiResult<Response> {
     let panel::Bound {
@@ -312,7 +312,7 @@ struct StatusChoice {
 
 pub(super) async fn set_status(
     State(state): State<AppState>,
-    Path(Guid(user)): Path<Guid>,
+    Path(user): Path<Id>,
     request: Request,
 ) -> ApiResult<Response> {
     let panel::Bound {
@@ -470,7 +470,7 @@ pub(super) async fn create_role(
 
 pub(super) async fn update_role(
     State(state): State<AppState>,
-    Path(Guid(role_id)): Path<Guid>,
+    Path(role_id): Path<Id>,
     request: Request,
 ) -> ApiResult<Response> {
     let panel::Bound {

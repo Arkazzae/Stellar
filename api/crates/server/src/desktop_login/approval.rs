@@ -25,7 +25,7 @@ use crate::auth::{Caller, events, tokens};
 use crate::database::DbError;
 use crate::http::{ApiResult, ClientInfo, Origin, Path, json_response};
 use crate::state::AppState;
-use crate::values::{Guid, Id, Timestamp};
+use crate::values::{Id, Timestamp};
 
 /// The shortest and the longest token the form is asked to carry, in UTF-16
 /// units, as the first server counted them.
@@ -164,7 +164,7 @@ fn taken(messages: &Messages) -> Result<Response, stellarr_messages::MissingValu
 pub async fn show(
     State(state): State<AppState>,
     caller: Caller,
-    Path(Guid(request)): Path<Guid>,
+    Path(request): Path<Id>,
 ) -> ApiResult<Response> {
     let outcome = state
         .database()
@@ -208,7 +208,7 @@ pub async fn approve(
     caller: Caller,
     origin: Origin,
     Extension(client): Extension<ClientInfo>,
-    Path(Guid(request)): Path<Guid>,
+    Path(request): Path<Id>,
     body: Body,
 ) -> ApiResult<Response> {
     if !is_same_origin(&origin.headers, &client) {

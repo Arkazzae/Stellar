@@ -27,7 +27,7 @@ use crate::permissions::authorization::{Scope, allows};
 use crate::permissions::membership::ActiveServer;
 use crate::permissions::privileges::MANAGE_SERVER;
 use crate::state::AppState;
-use crate::values::{Guid, Id};
+use crate::values::Id;
 
 pub fn routes() -> Endpoints {
     Endpoints::new()
@@ -111,7 +111,7 @@ async fn remove(
     State(state): State<AppState>,
     caller: Caller,
     ActiveServer(server): ActiveServer,
-    Path(Guid(emoji)): Path<Guid>,
+    Path(emoji): Path<Id>,
 ) -> ApiResult<Response> {
     let user = caller.user;
     let state_for_text = state.clone();
