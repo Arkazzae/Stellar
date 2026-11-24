@@ -155,7 +155,7 @@ async fn switch(state: AppState, caller: Caller, id: Id, action: Action) -> ApiR
                 return Ok(Ready::NotFound);
             };
             let peer = conversation.peer_of(user);
-            if store::blocked(db, user, peer)? {
+            if crate::social::is_blocked(db, user, peer)? {
                 return Ok(Ready::Blocked);
             }
             // A request reaches the other person like a message does:
@@ -254,7 +254,7 @@ fn readable(
     let Some(conversation) = store::conversation_of(db, id, user)? else {
         return Ok(None);
     };
-    if store::blocked(db, user, conversation.peer_of(user))? {
+    if crate::social::is_blocked(db, user, conversation.peer_of(user))? {
         return Ok(None);
     }
     Ok(Some(conversation))
@@ -498,7 +498,7 @@ pub async fn create_epoch(
             let Some(conversation) = store::conversation_of(db, id, user)? else {
                 return Ok(None);
             };
-            Ok(Some(!store::blocked(db, user, conversation.peer_of(user))?))
+            Ok(Some(!crate::social::is_blocked(db, user, conversation.peer_of(user))?))
         })
         .await?;
     match allowed {
