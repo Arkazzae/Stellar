@@ -535,14 +535,9 @@ impl Multipart {
 }
 
 /// The boundary a `Content-Type` names, when it is `multipart/form-data`.
-/// `application/x-www-form-urlencoded` is a form too, but not one that carries
-/// a file: it is read as an empty one.
 fn boundary_of(content_type: &str) -> Result<String, FormError> {
     let mut parts = content_type.split(';');
     let media_type = parts.next().unwrap_or("").trim_matches(is_blank);
-    if media_type.eq_ignore_ascii_case("application/x-www-form-urlencoded") {
-        return Err(FormError::Malformed);
-    }
     if !media_type.eq_ignore_ascii_case("multipart/form-data") {
         return Err(FormError::NotAForm);
     }
