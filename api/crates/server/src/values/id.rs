@@ -66,72 +66,7 @@ impl Id {
     /// parentheses, in either letter case. For text an operator typed or an
     /// older file kept; everything that crosses the wire is [`Id::parse`].
     pub fn parse_guid(text: &str) -> Option<Id> {
-        let text = text.trim();
-        let bytes = text.as_bytes();
-        if bytes.len() == 32 && bytes.iter().all(u8::is_ascii_hexdigit) {
-            let spelled = format!(
-                "{}-{}-{}-{}-{}",
-                &text[..8],
-                &text[8..12],
-                &text[12..16],
-                &text[16..20],
-                &text[20..]
-            );
-            return Id::parse(&spelled);
-        }
-        if let Some(fields) = text.strip_prefix("{0x").and_then(|t| t.strip_suffix("}}")) {
-            return Id::parse_fields(fields);
-        }
-        let wrapped = matches!(
-            (bytes.first(), bytes.last()),
-            (Some(b'{'), Some(b'}')) | (Some(b'('), Some(b')'))
-        );
-        Id::parse(if wrapped && bytes.len() >= 2 {
-            &text[1..text.len() - 1]
-        } else {
-            text
-        })
-    }
-
-    /// The form `{0xAAAAAAAA,0xBBBB,0xCCCC,{0xDD,0xDD,0xDD,0xDD,0xDD,0xDD,0xDD,0xDD}}`,
-    /// given here without its first `{0x` and last `}}`. Each number may have
-    /// fewer digits than its place has.
-    fn parse_fields(fields: &str) -> Option<Id> {
-        let fields: String = format!("0x{fields}")
-            .chars()
-            .filter(|c| *c != ' ')
-            .collect();
-        let (head, tail) = fields.split_once(",{")?;
-        let numbers: Vec<&str> = head.split(',').chain(tail.split(',')).collect();
-        if numbers.len() != 11 {
-            return None;
-        }
-        let mut values = Vec::new();
-        for (index, number) in numbers.iter().enumerate() {
-            let digits = number
-                .strip_prefix("0x")
-                .or_else(|| number.strip_prefix("0X"))?;
-            let most = match index {
-                0 => 8,
-                1 | 2 => 4,
-                _ => 2,
-            };
-            if digits.is_empty()
-                || digits.len() > most
-                || !digits.bytes().all(|b| b.is_ascii_hexdigit())
-            {
-                return None;
-            }
-            values.push(u32::from_str_radix(digits, 16).ok()?);
-        }
-        let mut bytes = [0u8; 16];
-        bytes[..4].copy_from_slice(&values[0].to_be_bytes());
-        bytes[4..6].copy_from_slice(&(values[1] as u16).to_be_bytes());
-        bytes[6..8].copy_from_slice(&(values[2] as u16).to_be_bytes());
-        for (at, value) in values[3..].iter().enumerate() {
-            bytes[8 + at] = *value as u8;
-        }
-        Some(Id(bytes))
+        super::guid::parse_guid(text)
     }
 
     /// The spelling the database holds: capitals.

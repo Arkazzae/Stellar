@@ -5,17 +5,17 @@ use axum::http::StatusCode;
 use axum::response::{IntoResponse, Response};
 use rusqlite::params;
 
-use super::{GuidSegment, announce, pair};
+use super::{announce, pair};
 use crate::auth::Caller;
 use crate::database::DbError;
 use crate::http::{ApiError, ApiResult, Path};
 use crate::state::AppState;
-use crate::values::Timestamp;
+use crate::values::{Guid, Timestamp};
 
 pub async fn remove_friend(
     State(state): State<AppState>,
     caller: Caller,
-    Path(GuidSegment(other)): Path<GuidSegment>,
+    Path(Guid(other)): Path<Guid>,
 ) -> ApiResult<Response> {
     let me = caller.user;
     let (a, b) = pair(me, other);
@@ -52,7 +52,7 @@ pub async fn remove_friend(
 pub async fn block(
     State(state): State<AppState>,
     caller: Caller,
-    Path(GuidSegment(other)): Path<GuidSegment>,
+    Path(Guid(other)): Path<Guid>,
 ) -> ApiResult<Response> {
     let me = caller.user;
     if me == other {
@@ -101,7 +101,7 @@ pub async fn block(
 pub async fn unblock(
     State(state): State<AppState>,
     caller: Caller,
-    Path(GuidSegment(other)): Path<GuidSegment>,
+    Path(Guid(other)): Path<Guid>,
 ) -> ApiResult<Response> {
     let me = caller.user;
     let exists: bool = state

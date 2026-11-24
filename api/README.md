@@ -183,6 +183,12 @@ is a 400 with no body; a body that is not the right JSON is a 400 with no body.
   segment holds is what the first server's front left of it (see Request paths):
   `%2F` and any escape that is not a character stay as written, and everything
   else is decoded.
+- **An id in a path is read with `values::Guid`**: `Path<Guid>` (or `Path<(Guid, Guid)>`)
+  takes every spelling the first server's `{id:guid}` took (hyphens or none, braces,
+  parentheses, `0x` lists, spaces around), where `Path<Id>` takes only the lower-case
+  hyphenated one. For an id in a query or a header call `values::parse_guid`. It is the
+  one reader (`values/guid.rs`); `Id::parse_guid`, the hub's and the permissions' readers
+  all call it. Do not write another.
 - `Query<T>` is a struct (a missing field, a value that does not parse and a name
   given twice are all 400; a name nobody asked for is ignored), or a
   `Vec<(String, String)>` that keeps every pair in order, repeated names and

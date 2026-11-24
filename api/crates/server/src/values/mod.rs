@@ -13,9 +13,11 @@
 //!
 //! Nothing outside this module and the database module spells one of these.
 
+pub(crate) mod guid;
 mod id;
 mod int_enum;
 mod timestamp;
 
+pub use guid::{Guid, parse_guid};
 pub use id::Id;
 pub use timestamp::Timestamp;
