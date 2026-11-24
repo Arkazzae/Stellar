@@ -132,7 +132,7 @@ pub fn revoke(runtime: &mut Runtime, id: &str) -> CliOutcome {
     runtime.confirm(&format!(
         "Will revoke session {session_id} of {display_name} ({username}) on '{device}'."
     ))?;
-    revoke_row(&mut database, session_id)?;
+    revoke_row(&mut database, session_id, id)?;
     let data = Json::object([
         ("sessionId", Json::text(session_id.to_string())),
         ("userId", Json::text(user_id.to_string())),
@@ -151,14 +151,18 @@ pub fn revoke(runtime: &mut Runtime, id: &str) -> CliOutcome {
     ))
 }
 
-fn revoke_row(database: &mut CliDatabase, session: Id) -> CliOutcome<()> {
+/// Ends the session, unless someone got there while the question waited: then
+/// nothing is written, no audit row either, and the session counts as not found,
+/// as it did when the command began.
+fn revoke_row(database: &mut CliDatabase, session: Id, typed: &str) -> CliOutcome<()> {
     let transaction = database
         .connection
         .transaction_with_behavior(TransactionBehavior::Immediate)?;
-    transaction.execute(
-        "UPDATE \"UserSessions\" SET \"RevokedAt\" = ?2 WHERE \"Id\" = ?1",
-        params![session, Timestamp::now()],
-    )?;
+    let changed = stellarr_api::auth::session::revoke(&transaction, session, Timestamp::now())
+        .map_err(|_| CliError::unexpected("DbError"))?;
+    if !changed {
+        return Err(session_not_found(typed));
+    }
     CliDatabase::audit(&transaction, "sessions.revoke", &session.to_string())?;
     transaction.commit()?;
     Ok(())
