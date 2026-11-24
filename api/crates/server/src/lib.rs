@@ -206,6 +206,14 @@ pub async fn serve_with(
         .await
         .map_err(StartError)?;
 
+    // A backup cut short by the last stop left a partial file; it is no
+    // backup. This is done before the server listens, so that it never meets
+    // the partial file of a backup that is being written.
+    let backups_folder = backups::listing::directory(&state.settings().data_root);
+    let _ =
+        tokio::task::spawn_blocking(move || backups::listing::remove_leftovers(&backups_folder))
+            .await;
+
     issue_setup_code(&state).await?;
 
     // The hub needs the state, which needs the hub as its publisher, so it is
