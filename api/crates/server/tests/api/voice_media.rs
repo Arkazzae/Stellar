@@ -1082,3 +1082,25 @@ async fn a_member_whose_membership_row_is_removed_under_a_seat_may_neither_signa
     peer.refused("PlaySoundboard", json!([rig.salon, sound]), "Unknown voice channel.").await;
     assert!(other.drain("VoiceSignal").await.is_empty());
 }
+
+#[tokio::test]
+async fn an_account_disabled_while_seated_loses_its_connection_its_seat_and_its_media() {
+    let rig = Rig::start().await;
+    let (jonas, maja) = (rig.person("jonas").await, rig.person("maja").await);
+    let (mut peer, mut other) = (rig.connect(&jonas).await, rig.connect(&maja).await);
+    peer.join(rig.salon).await;
+    other.join(rig.salon).await;
+    let session = peer.open_media(rig.salon).await;
+    until(|| rig.media.sessions().contains(&session)).await;
+
+    // The watcher of sessions closes the connections of a disabled account, as
+    // the first server's did; the seat goes with the connection.
+    rig.db()
+        .execute("UPDATE \"Users\" SET \"IsDisabled\" = 1 WHERE \"Id\" = ?1", [Id::parse(&jonas.id).unwrap()])
+        .unwrap();
+
+    let (_, _) = peer.hub.until_close().await;
+    rig.occupants_become(rig.salon, &[&maja.id]).await;
+    rig.media.delete_of(&session).await;
+    until(|| !rig.media.sessions().contains(&session)).await;
+}
