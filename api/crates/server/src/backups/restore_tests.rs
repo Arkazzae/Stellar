@@ -632,6 +632,20 @@ fn nobody_is_signed_in_after_a_restore() {
             rusqlite::params![crate::values::Id::random(), user, now()],
         )
         .unwrap();
+    // A remembered browser, a sign-in half-way and a reset link, all in the archive.
+    for sql in [
+        "INSERT INTO \"TrustedDevices\" (\"Id\", \"UserId\", \"TokenHash\", \"Name\", \"Device\", \"IpAddress\", \"CreatedAt\", \"ExpiresAt\")
+         VALUES (?1, ?2, 'h', 'n', 'd', 'ip', ?3, '2999-01-01 00:00:00')",
+        "INSERT INTO \"AuthChallenges\" (\"Id\", \"UserId\", \"Purpose\", \"SecretHash\", \"PrimarySource\", \"SecurityVersion\", \"ShortLived\",
+             \"Attempts\", \"MaxAttempts\", \"CreatedAt\", \"ExpiresAt\")
+         VALUES (?1, ?2, 'mfa', 'h', 'password', 1, 0, 0, 5, ?3, '2999-01-01 00:00:00')",
+        "INSERT INTO \"PasswordResetTokens\" (\"Id\", \"UserId\", \"TokenHash\", \"CreatedAt\", \"ExpiresAt\")
+         VALUES (?1, ?2, 'h', ?3, '2999-01-01 00:00:00')",
+    ] {
+        connection
+            .execute(sql, rusqlite::params![crate::values::Id::random(), user, now()])
+            .unwrap();
+    }
     drop(connection);
     let archives = TempDir::new();
     let archive = archives.path().join("backup.zip");
@@ -653,4 +667,12 @@ fn nobody_is_signed_in_after_a_restore() {
         .query_row("SELECT COUNT(*) FROM \"UserSessions\"", [], |row| row.get(0))
         .unwrap();
     assert_eq!((running, ended), (0, 1));
+    for (what, sql) in [
+        ("a remembered browser", "SELECT COUNT(*) FROM \"TrustedDevices\" WHERE \"RevokedAt\" IS NULL"),
+        ("a sign-in half-way", "SELECT COUNT(*) FROM \"AuthChallenges\""),
+        ("a reset link", "SELECT COUNT(*) FROM \"PasswordResetTokens\" WHERE \"UsedAt\" IS NULL"),
+    ] {
+        let left: i64 = restored.query_row(sql, [], |row| row.get(0)).unwrap();
+        assert_eq!(left, 0, "{what}");
+    }
 }
