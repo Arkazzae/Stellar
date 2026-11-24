@@ -16,8 +16,10 @@
 
 mod client;
 mod log;
+mod people;
 mod server;
 
-pub use client::{Request, Response};
+pub use client::{Client, Request, Response};
 pub use log::LogCapture;
+pub use people::{PASSWORD, Person};
 pub use server::{Server, TempDir};
