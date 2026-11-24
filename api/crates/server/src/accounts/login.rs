@@ -8,7 +8,7 @@ use axum::response::{IntoResponse, Response};
 use serde::{Deserialize, Serialize};
 use stellarr_messages::MessageKey;
 
-use super::register::{to_upper_invariant, trusted_device_name};
+use super::register::trusted_device_name;
 use crate::auth::flow::{self, Context, Options, Start};
 use crate::auth::policy::SecurityPolicy;
 use crate::auth::{Caller, cookies, events, password, session};
@@ -66,7 +66,7 @@ pub async fn login(
         Err(refusal) => return Err(refusal),
     };
     // Either the user name or the e-mail address, in any letter case.
-    let identifier = to_upper_invariant(request.username.as_deref().unwrap_or("").trim());
+    let identifier = crate::instance::names::to_upper(request.username.as_deref().unwrap_or("").trim());
     let user = {
         let identifier = identifier.clone();
         state

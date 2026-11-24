@@ -64,7 +64,9 @@ fn single_lowercase(c: char) -> impl Iterator<Item = char> {
 pub fn is_valid_channel_name(name: &str) -> bool {
     let length = name.encode_utf16().count();
     (1..=MAX_CHANNEL_NAME_LENGTH).contains(&length)
-        && name.chars().all(|c| c.is_alphanumeric() || c == '-')
+        && name
+            .chars()
+            .all(|c| stellarr_unicode::is_letter_or_digit(c) || c == '-')
 }
 
 /// Checks a request. The same checks serve the first registration and every

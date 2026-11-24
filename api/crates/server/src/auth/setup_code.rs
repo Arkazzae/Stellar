@@ -48,7 +48,7 @@ impl SetupCode {
         let normalized: String = candidate
             .chars()
             .filter(|c| *c != '-' && !c.is_whitespace())
-            .flat_map(char::to_uppercase)
+            .map(crate::instance::names::to_upper_char)
             .collect();
         fixed_time_equals(normalized.as_bytes(), code.as_bytes())
     }

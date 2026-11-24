@@ -559,14 +559,12 @@ async fn letters_collide_as_they_do_on_the_first_server() {
 }
 
 #[tokio::test]
-#[ignore = "waits for stellarr-unicode, which has not landed: ı is still capitalized here"]
 async fn the_dotless_i_is_not_capitalized_and_so_collides_with_nothing() {
     // `bıll` is an account of its own on the first server, and `bill` is another.
     collisions(&[("ı", "I", "created", "created")]).await;
 }
 
 #[tokio::test]
-#[ignore = "waits for stellarr-unicode, which has not landed: vowel signs are still taken for letters here"]
 async fn user_names_may_hold_letters_and_numbers_and_not_the_signs_that_go_with_them() {
     let server = Server::start().await;
     server.found("owner").await;

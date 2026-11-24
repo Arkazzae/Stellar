@@ -4,6 +4,7 @@
 
 pub mod access;
 pub mod invites;
+pub mod names;
 pub mod starter;
 pub mod users;
 pub mod welcome;
