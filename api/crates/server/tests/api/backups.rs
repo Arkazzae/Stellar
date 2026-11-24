@@ -450,3 +450,127 @@ async fn when_the_policy_asks_a_second_step_of_the_panel_the_owner_without_one_i
             .is_empty()
     );
 }
+
+/// A writer that inserts one row after another, each in a transaction of its
+/// own, until told to stop; the names of its rows are the order it wrote them.
+fn start_writer(
+    database: std::path::PathBuf,
+    stop: std::sync::Arc<std::sync::atomic::AtomicBool>,
+) -> std::thread::JoinHandle<u64> {
+    std::thread::spawn(move || {
+        let connection = rusqlite::Connection::open(database).unwrap();
+        connection.busy_timeout(Duration::from_secs(30)).unwrap();
+        let mut written = 0u64;
+        while !stop.load(std::sync::atomic::Ordering::Relaxed) {
+            written += 1;
+            connection
+                .execute(
+                    "INSERT INTO \"InstanceSecrets\" (\"Name\", \"ProtectedValue\", \"UpdatedAt\") VALUES (?1, 'w', '2026-11-24 00:00:00')",
+                    [format!("w{written:09}")],
+                )
+                .unwrap();
+        }
+        written
+    })
+}
+
+/// A full backup taken while a writer posts rows throughout restores to a
+/// database that is whole and holds exactly the first rows the writer wrote:
+/// a state the database really had, and not a mixture of two.
+#[tokio::test]
+async fn a_backup_taken_while_rows_are_being_written_is_a_state_that_existed() {
+    use std::sync::Arc;
+    use std::sync::atomic::{AtomicBool, Ordering};
+
+    let server = Server::start().await;
+    let owner = server.found("owner").await;
+    // Enough data that the copy takes a while.
+    {
+        let connection = server.database();
+        connection.execute_batch("BEGIN").unwrap();
+        for at in 0..20_000 {
+            connection
+                .execute(
+                    "INSERT INTO \"InstanceSecrets\" (\"Name\", \"ProtectedValue\", \"UpdatedAt\") VALUES (?1, ?2, '2026-11-24 00:00:00')",
+                    (format!("pad{at:06}"), "p".repeat(300)),
+                )
+                .unwrap();
+        }
+        connection.execute_batch("COMMIT").unwrap();
+    }
+    for round in 0..3 {
+        // Each round's writer numbers its rows from one.
+        server
+            .database()
+            .execute(
+                "DELETE FROM \"InstanceSecrets\" WHERE \"Name\" LIKE 'w%'",
+                [],
+            )
+            .unwrap();
+        let stop = Arc::new(AtomicBool::new(false));
+        let writer = start_writer(server.database_path(), stop.clone());
+        tokio::time::sleep(Duration::from_millis(300)).await;
+        let started = std::time::Instant::now();
+        let response = owner
+            .client
+            .post_json(
+                "/api/cockpit/backups",
+                &json!({"database": true, "objects": true, "keys": true, "instance": true}),
+            )
+            .await;
+        assert_eq!(response.status, 202, "{}", response.text());
+        let id = response.json::<Value>()["id"].as_str().unwrap().to_string();
+        let list = settled(&owner.client).await;
+        let took = started.elapsed();
+        assert_eq!(list["lastFailure"], Value::Null, "{list}");
+        tokio::time::sleep(Duration::from_millis(100)).await;
+        stop.store(true, Ordering::Relaxed);
+        let written = writer.join().unwrap();
+
+        let download = owner
+            .client
+            .get(&format!("/api/cockpit/backups/{id}/download"))
+            .await;
+        assert_eq!(download.status, 200);
+        let folder = crate::support::TempDir::new();
+        let archive = folder.path().join("backup.zip");
+        std::fs::write(&archive, &download.body).unwrap();
+        let root = folder.path().join("restored");
+        stellarr_api::backups::restore::apply(
+            &archive,
+            &root,
+            stellarr_api::values::Timestamp::now(),
+        )
+        .unwrap();
+
+        let restored = rusqlite::Connection::open(root.join("db/stellarr.db")).unwrap();
+        let verdict: String = restored
+            .query_row("PRAGMA integrity_check", [], |row| row.get(0))
+            .unwrap();
+        assert_eq!(verdict, "ok");
+        let broken: i64 = restored
+            .query_row("SELECT COUNT(*) FROM pragma_foreign_key_check", [], |row| {
+                row.get(0)
+            })
+            .unwrap();
+        assert_eq!(broken, 0);
+        let mut names = restored
+            .prepare("SELECT \"Name\" FROM \"InstanceSecrets\" WHERE \"Name\" LIKE 'w%' ORDER BY \"Name\"")
+            .unwrap();
+        let names: Vec<String> = names
+            .query_map([], |row| row.get(0))
+            .unwrap()
+            .map(Result::unwrap)
+            .collect();
+        // The writer's rows from the start of the sequence, with none missing
+        // in the middle and none past what the writer had written.
+        for (at, name) in names.iter().enumerate() {
+            assert_eq!(*name, format!("w{:09}", at as u64 + 1), "gap at {at}");
+        }
+        assert!(names.len() as u64 <= written);
+        println!(
+            "round {round}: the writer wrote {written} rows in the round; backup took {took:?}; restored database holds {} of the writer's rows",
+            names.len()
+        );
+    }
+}
