@@ -86,9 +86,9 @@ def register(base, setup, work, count):
         json.dump(cookies, out)
 
 
-def run_probe(base, cookie, server, probe):
+def run_probe(base, cookie, owner, server, probe):
     """One change a person tries: a role, an override of a role, one of a member. A change that went
-    through is undone at once, so that the next probe finds the server as it was arranged."""
+    through is undone at once, by the owner, so that the next probe finds the server as it was arranged."""
     if probe["kind"] == "role":
         status, _, _ = call(base, "POST", "/api/admin/roles", {
             "name": "probe-" + uuid.uuid4().hex, "color": "#7c6ff0", "permissions": probe["permissions"]}, cookie, server)
@@ -98,7 +98,8 @@ def run_probe(base, cookie, server, probe):
     path = f"/api/admin/{collection}/{probe['place']}/permissions/{tail}{probe['target']}"
     status, _, _ = call(base, "PUT", path, {"allow": probe["allow"], "deny": probe["deny"]}, cookie, server)
     if status == 200:
-        undone, _, _ = call(base, "DELETE", path, None, cookie, server)
+        # The owner undoes it: the change may have taken from the person the right to do so.
+        undone, _, _ = call(base, "DELETE", path, None, owner, server)
         if undone != 204:
             raise SystemExit(f"a change could not be undone: {path} {undone}")
     return status
@@ -128,7 +129,7 @@ def observe(base, work, expected_path):
                 sent[channel] = [status, permission]
             probed = []
             for probe in want["probes"]:
-                probed.append(run_probe(base, cookie, server, probe))
+                probed.append(run_probe(base, cookie, cookies["boss"], server, probe))
             lines.append({
                 "user": want["user"], "server": want["server"], "permissions": data["permissions"],
                 "channels": sorted(c["id"] for c in data["channels"]),
