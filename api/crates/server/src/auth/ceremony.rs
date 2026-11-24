@@ -1192,7 +1192,7 @@ pub enum FromSession {
 pub enum Started {
     /// The challenge and the cookie that binds it to this browser.
     Challenge {
-        body: flow::Challenge,
+        body: Box<flow::Challenge>,
         cookie: String,
     },
     /// The session may not (a 403): the account is disabled or waiting for
@@ -1260,7 +1260,10 @@ pub async fn start_from_session(
                     ..flow::Options::default()
                 },
             )?;
-            Ok(Started::Challenge { body, cookie })
+            Ok(Started::Challenge {
+                body: Box::new(body),
+                cookie,
+            })
         })
         .await
 }
@@ -1271,7 +1274,7 @@ pub enum Redeemed {
     /// The challenge that lets the person set up a new second step and the
     /// cookie that binds it to this browser.
     Challenge {
-        body: flow::Challenge,
+        body: Box<flow::Challenge>,
         cookie: String,
     },
     /// For whatever reason, said the same way.
@@ -1319,7 +1322,10 @@ pub async fn redeem_recovery_credential(
                 "recovery credential redeemed",
                 alert.as_deref(),
             )?;
-            Ok(Redeemed::Challenge { body, cookie })
+            Ok(Redeemed::Challenge {
+                body: Box::new(body),
+                cookie,
+            })
         })
         .await
 }

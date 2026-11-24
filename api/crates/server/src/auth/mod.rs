@@ -10,6 +10,8 @@
 //! of an account that lost its steps.
 
 pub mod ceremony;
+#[cfg(test)]
+mod ceremony_tests;
 pub mod cookies;
 #[cfg(test)]
 mod differential;

@@ -100,7 +100,7 @@ pub fn add_challenge(connection: &Connection, user: Id, purpose: &str) -> Stored
     let now = Timestamp::now();
     connection
         .execute(
-            "INSERT INTO \"AuthChallenges\" VALUES (?1, ?2, ?3, ?6, 'password', NULL, 1, 0, NULL, NULL, 0, 5, ?4, ?5, NULL)",
+            "INSERT INTO \"AuthChallenges\" SELECT ?1, ?2, ?3, ?6, 'password', NULL, \"SessionVersion\", 0, NULL, NULL, 0, 5, ?4, ?5, NULL FROM \"Users\" WHERE \"Id\" = ?2",
             params![id, user, purpose, now, now.plus(std::time::Duration::from_secs(300)), super::tokens::hash(SECRET)],
         )
         .expect("a challenge is added");

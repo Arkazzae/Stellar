@@ -1,23 +1,13 @@
-//! Checking a second step: one call that takes what a person sent to complete
-//! a sign-in (or to prove themselves again) and says what it came to, and the
-//! calls that set a second step up.
+//! Checking a second step against a challenge, and the steps of setting one
+//! up. Routes do not call this: `ceremony` does, in the transaction it owns,
+//! with the challenge it has just read there.
 //!
-//! Everything here runs inside the transaction it is given, which is the one
-//! the route completes the sign-in in, so there is no gap between a code being
-//! checked and being spent.
-//!
-//! A wrong proof is an ordinary outcome and not an error, because it has to be
-//! committed: it spends one of the challenge's attempts, is written to the
-//! account's events and counts towards its budget of failures. The route
-//! commits after [`Outcome::Refused`] as it does after a proof. The reverse
-//! holds too: a proof spends a code or a step, so a route that goes on to
-//! refuse the sign-in for another reason must roll the transaction back.
-//!
-//! Which methods a challenge may be answered with, and how often, is decided
-//! here and nowhere else: a code is looked at only after the account's budget
-//! of failures was checked, a trusted device never answers a fresh proof or a
-//! sign-in that links a provider, and every method is looked up among the
-//! account's own.
+//! A wrong proof is an ordinary outcome and not an error, because it has to
+//! be committed: it spends one of the challenge's attempts, is written to the
+//! account's events and counts towards its budget of failures. A code is
+//! looked at only after the account's budget of failures was checked, a
+//! remembered device never answers a fresh proof or a sign-in that links a
+//! provider, and every method is looked up among the account's own.
 
 use rusqlite::{OptionalExtension, Transaction};
 
@@ -199,7 +189,7 @@ pub(super) fn verify(
     }
     match request {
         Request::TrustedDevice => verify_trusted_device(tx, context, challenge, now),
-        Request::Code { code, .. } if code.is_empty() => Ok(Outcome::EmptyCode),
+        Request::Code { code: "", .. } => Ok(Outcome::EmptyCode),
         Request::Code {
             method: Some(method),
             code,
