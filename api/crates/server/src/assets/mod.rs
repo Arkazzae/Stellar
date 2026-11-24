@@ -16,8 +16,6 @@ use axum::body::Body;
 use axum::extract::State;
 use axum::http::{HeaderMap, HeaderValue, StatusCode, header};
 use axum::response::Response;
-use bytes::Bytes;
-use http_body_util::channel::Channel;
 use rusqlite::{OptionalExtension, params};
 use stellarr_storage::validation::{UploadKind, spec_for};
 use stellarr_storage::{Error as StoreError, ObjectBody, StoredObject};
@@ -218,20 +216,23 @@ pub(crate) fn escape_data_string(text: &str) -> String {
 /// Hands the object to the client as it takes it: a few pieces wait for a
 /// slow reader, and a client that goes stops the reading.
 fn stream(stored: StoredObject) -> Body {
-    let (mut sender, body) = Channel::<Bytes, io::Error>::new(2);
+    let (sender, body) = crate::http::stream::channel(2);
     let mut object: ObjectBody = stored.body;
     tokio::spawn(async move {
         loop {
             match object.chunk().await {
                 Ok(Some(piece)) => {
-                    if sender.send_data(piece).await.is_err() {
+                    if sender.send(Ok(piece)).await.is_err() {
                         return;
                     }
                 }
                 Ok(None) => return,
-                Err(error) => return sender.abort(io::Error::other(error.to_string())),
+                Err(error) => {
+                    let _ = sender.send(Err(io::Error::other(error.to_string()))).await;
+                    return;
+                }
             }
         }
     });
-    Body::new(body)
+    body
 }
