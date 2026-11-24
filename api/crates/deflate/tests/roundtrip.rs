@@ -122,6 +122,8 @@ fn the_encoder_uses_all_three_block_types() {
     assert_eq!(first_block_type("random-200000"), 0, "stored");
     assert_eq!(first_block_type("hello"), 1, "fixed");
     assert_eq!(first_block_type("words-70000"), 2, "dynamic");
+    // The input that needs code lengths limited to 15 is a dynamic block too.
+    assert_eq!(first_block_type("fibonacci-26"), 2, "dynamic");
 }
 
 /// Prints how fast each level runs and how small it makes things; run with

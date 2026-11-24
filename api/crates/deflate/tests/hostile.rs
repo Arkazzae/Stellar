@@ -256,7 +256,7 @@ fn random_noise_never_panics_or_hangs() {
 
 #[test]
 fn a_bomb_stops_at_the_cap() {
-    // A gigabyte of zeros is a few kilobytes of stream.
+    // Sixty-four megabytes of zeros are a few hundred kilobytes of stream.
     let zeros = vec![0u8; 64 << 20];
     let stream = deflate_to_vec(&zeros, Level::Fast);
     assert!(stream.len() < 100_000, "{}", stream.len());
@@ -277,6 +277,57 @@ fn a_bomb_stops_at_the_cap() {
     assert_eq!(Error::from_io(&error), Some(Error::OutputLimit));
     // And it stays an error.
     assert!(decoder.read(&mut buf).is_err());
+}
+
+#[test]
+fn a_failing_input_stays_failed() {
+    struct Fails(usize);
+    impl Read for Fails {
+        fn read(&mut self, buf: &mut [u8]) -> std::io::Result<usize> {
+            if self.0 == 0 {
+                return Err(std::io::Error::other("the disk went away"));
+            }
+            self.0 -= 1;
+            buf[..1].fill(0);
+            Ok(1)
+        }
+    }
+    let data = common::Rng::new(3).bytes(5000);
+    let stream = deflate_to_vec(&data, Level::Default);
+    // The input dies after a few bytes, wherever that falls in the stream.
+    for allowed in [0usize, 1, 2, 5] {
+        let mut decoder = Inflate::new(Fails(allowed));
+        let mut buf = [0u8; 100];
+        let mut failures = 0;
+        for _ in 0..10 {
+            if decoder.read(&mut buf).is_err() {
+                failures += 1;
+            }
+        }
+        assert!(failures >= 5, "allowed {allowed}");
+    }
+    // A stream cut at every length, read through a source that reports an
+    // error instead of the end, never decodes to anything but an error.
+    struct ThenFails<'a>(&'a [u8]);
+    impl Read for ThenFails<'_> {
+        fn read(&mut self, buf: &mut [u8]) -> std::io::Result<usize> {
+            if self.0.is_empty() {
+                return Err(std::io::Error::other("gone"));
+            }
+            let n = self.0.len().min(buf.len()).min(3);
+            buf[..n].copy_from_slice(&self.0[..n]);
+            self.0 = &self.0[n..];
+            Ok(n)
+        }
+    }
+    for cut in (0..stream.len()).step_by(7) {
+        let mut out = Vec::new();
+        assert!(
+            Inflate::new(ThenFails(&stream[..cut]))
+                .read_to_end(&mut out)
+                .is_err()
+        );
+    }
 }
 
 #[test]

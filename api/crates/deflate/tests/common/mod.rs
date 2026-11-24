@@ -51,6 +51,23 @@ fn skewed(rng: &mut Rng, n: usize, k: u64) -> Vec<u8> {
         .collect()
 }
 
+/// Byte values whose frequencies are Fibonacci numbers: the shape that makes
+/// a Huffman code as deep as possible, so the limit on code length has to act.
+fn fibonacci(rng: &mut Rng, symbols: usize) -> Vec<u8> {
+    let mut out = Vec::new();
+    let (mut a, mut b) = (1usize, 1usize);
+    for symbol in 0..symbols {
+        out.extend(std::iter::repeat_n((symbol * 9 + 3) as u8, a));
+        (a, b) = (b, a + b);
+    }
+    // Shuffled, so that no run or repeat helps and only the literals count.
+    for i in (1..out.len()).rev() {
+        let j = rng.below(i as u64 + 1) as usize;
+        out.swap(i, j);
+    }
+    out
+}
+
 /// Pages of a table-like binary file: headers, counters, a little text.
 fn records(rng: &mut Rng, n: usize) -> Vec<u8> {
     let mut out = Vec::new();
@@ -119,6 +136,9 @@ pub fn corpus(scale: usize) -> Vec<(String, Vec<u8>)> {
         cases.push((format!("words-{n}"), words(&mut rng, n)));
         cases.push((format!("records-{n}"), records(&mut rng, n)));
         cases.push((format!("mixed-{n}"), mixed(&mut rng, n)));
+    }
+    for symbols in [18usize, 22, 26] {
+        cases.push((format!("fibonacci-{symbols}"), fibonacci(&mut rng, symbols)));
     }
     for k in [2u64, 3, 5, 17, 64, 200] {
         cases.push((format!("skewed-{k}"), skewed(&mut rng, 50_000, k)));
