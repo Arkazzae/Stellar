@@ -346,14 +346,14 @@ async fn an_app_code_signs_in_a_session_that_passed_a_second_step_and_remembers_
 }
 
 #[tokio::test]
-async fn the_callers_own_writes_are_part_of_the_sign_in_and_fail_it_whole() {
+async fn a_refused_link_leaves_the_proof_spent_and_the_person_signed_in() {
     let world = World::new();
     let user = world.user(None);
     let (method, secret) = world.with_app(user).await;
     let (challenge, preauth) = world.challenge(user, PURPOSE_MFA);
     let id = challenge.id.to_string();
 
-    let failed = answer(
+    let answered = answer(
         &world.state,
         &ask(&challenge, &preauth, &id),
         Answer::Code {
@@ -361,34 +361,89 @@ async fn the_callers_own_writes_are_part_of_the_sign_in_and_fail_it_whole() {
             code: &now_code(&secret),
         },
         true,
-        |_, _| -> Result<(), DbError> {
+        |tx, completed| -> Result<(), DbError> {
+            // Writes of its own, then a failure: the writes must be gone.
+            tx.execute(
+                "UPDATE \"Users\" SET \"Bio\" = 'linked' WHERE \"Id\" = ?1",
+                [completed.user],
+            )?;
             Err(DbError::Task("the link could not be written".into()))
         },
     )
-    .await;
+    .await
+    .unwrap();
 
-    assert!(failed.is_err());
-    // Nothing of the proof survived: no session, no device, the challenge is open and the step unspent.
-    assert_eq!(world.count("SELECT COUNT(*) FROM \"UserSessions\""), 0);
-    assert_eq!(world.count("SELECT COUNT(*) FROM \"TrustedDevices\""), 0);
+    let Answered::SignedIn { completed, hook } = answered else {
+        panic!("a sign-in was expected");
+    };
+    assert!(hook.is_err());
+    assert_eq!(completed.cookies.len(), 3);
+    // The proof stands: the session, the device, the spent challenge and step.
+    assert_eq!(world.count("SELECT COUNT(*) FROM \"UserSessions\""), 1);
+    assert_eq!(world.count("SELECT COUNT(*) FROM \"TrustedDevices\""), 1);
     assert_eq!(
-        world.count("SELECT COUNT(*) FROM \"AuthChallenges\" WHERE \"ConsumedAt\" IS NULL"),
+        world.count("SELECT COUNT(*) FROM \"AuthChallenges\" WHERE \"ConsumedAt\" IS NOT NULL"),
         1
     );
     assert_eq!(
-        world.count("SELECT \"LastTotpStep\" FROM \"MfaMethods\""),
+        world.count("SELECT \"LastTotpStep\" > 1 FROM \"MfaMethods\""),
         1
     );
-    let ok = code_answer(
-        &world,
-        &challenge,
-        &preauth,
-        Some(method),
-        &now_code(&secret),
+    // The caller's own writes are not.
+    assert_eq!(
+        world.count("SELECT COUNT(*) FROM \"Users\" WHERE \"Bio\" = 'linked'"),
+        0
+    );
+    // And the same code opens nothing again.
+    let (again, again_preauth) = world.challenge(user, PURPOSE_MFA);
+    assert!(matches!(
+        code_answer(
+            &world,
+            &again,
+            &again_preauth,
+            Some(method),
+            &now_code(&secret),
+            false
+        )
+        .await,
+        Answered::Refused
+    ));
+}
+
+#[tokio::test]
+async fn a_hook_that_succeeds_keeps_its_writes_with_the_sign_in() {
+    let world = World::new();
+    let user = world.user(None);
+    let (method, secret) = world.with_app(user).await;
+    let (challenge, preauth) = world.challenge(user, PURPOSE_MFA);
+    let id = challenge.id.to_string();
+
+    let answered = answer(
+        &world.state,
+        &ask(&challenge, &preauth, &id),
+        Answer::Code {
+            method: Some(method),
+            code: &now_code(&secret),
+        },
         false,
+        |tx, completed| -> Result<usize, DbError> {
+            Ok(tx.execute(
+                "UPDATE \"Users\" SET \"Bio\" = 'linked' WHERE \"Id\" = ?1",
+                [completed.user],
+            )?)
+        },
     )
-    .await;
-    assert!(matches!(ok, Answered::SignedIn { .. }));
+    .await
+    .unwrap();
+
+    let Answered::SignedIn { hook, .. } = answered else {
+        panic!("a sign-in was expected");
+    };
+    assert_eq!(hook.unwrap(), 1);
+    assert_eq!(
+        world.count("SELECT COUNT(*) FROM \"Users\" WHERE \"Bio\" = 'linked'"),
+        1
+    );
 }
 
 #[tokio::test]
