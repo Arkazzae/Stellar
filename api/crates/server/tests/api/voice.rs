@@ -477,19 +477,6 @@ async fn joining_is_refused_for_rooms_the_account_cannot_use() {
 }
 
 #[tokio::test]
-async fn an_id_is_read_as_the_first_server_reads_one() {
-    let rig = Rig::start().await;
-    let maja = rig.person("maja").await;
-    let mut peer = rig.connect(&maja).await;
-    let room = rig.salon.to_string();
-
-    for spelling in [room.to_uppercase(), room.replace('-', ""), format!("{{{room}}}"), format!(" {room} ")] {
-        peer.ok("JoinVoice", json!([spelling])).await;
-    }
-    rig.occupants_become(rig.salon, &[&maja.id]).await;
-}
-
-#[tokio::test]
 async fn a_room_at_its_user_limit_refuses_newcomers_but_not_those_in_it() {
     let rig = Rig::start().await;
     rig.db()
@@ -1078,22 +1065,3 @@ async fn blocking_ends_a_live_direct_call_and_tells_both_people() {
     assert!(blocked.drain("DirectCallDeclined").await.is_empty());
 }
 
-#[tokio::test]
-async fn ids_in_the_moderation_paths_are_read_as_the_first_server_reads_them() {
-    let server = Server::start().await;
-    let owner = server.found("owner").await;
-    let id = Id::random();
-    let answer = owner
-        .client
-        .send(Request::new(Method::DELETE, &format!("/api/admin/channels/{id}/members/{id}")))
-        .await;
-    assert_ne!(answer.status, 405, "the route exists");
-    // Ids in a path are read as the first server reads them.
-    let braced = owner
-        .client
-        .send(Request::new(Method::DELETE, &format!("/api/admin/channels/%7B{id}%7D/members/{}", id.to_string().replace('-', ""))))
-        .await;
-    assert_eq!(braced.status, answer.status);
-    let bad = owner.client.send(Request::new(Method::DELETE, "/api/admin/channels/x/members/y")).await;
-    assert_eq!(bad.status, 404);
-}

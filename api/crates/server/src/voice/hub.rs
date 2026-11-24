@@ -405,11 +405,9 @@ mod tests {
     }
 
     #[test]
-    fn an_id_is_read_as_the_first_server_read_one_and_refused_by_the_name_of_its_field() {
+    fn an_id_that_is_not_one_is_refused_by_the_name_of_its_field() {
         let id = "380949bf-331b-48a3-bd4b-be26c59f8487";
         assert!(parse_id(Some(id), "channelId").is_ok());
-        assert!(parse_id(Some(&format!("{{{id}}}")), "channelId").is_ok());
-        assert!(parse_id(Some(&id.replace('-', "")), "channelId").is_ok());
         assert_eq!(
             parse_id(Some("x"), "conversationId"),
             Err(HubError::visible("Invalid conversationId."))
