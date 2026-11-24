@@ -83,7 +83,19 @@ pub async fn serve<A, S>(
     let call = Call::new(connection_id.clone(), identity, hub.clone(), shared.clone());
     let writer = tokio::spawn(write_loop(sender.clone(), shared.clone(), config.clone()));
 
-    let connected = app.connected(&call).await;
+    // In a task of its own, so that a panic in the application ends this
+    // connection and not the code that must still clean it up.
+    let connected = {
+        let app = app.clone();
+        let call = call.clone();
+        tokio::spawn(async move { app.connected(&call).await })
+    }
+    .await
+    .unwrap_or_else(|failure| {
+        Err(HubError::internal(format!(
+            "the connect hook panicked: {failure}"
+        )))
+    });
     let mut ended = match connected {
         Ok(()) => None,
         Err(error) => {
@@ -416,7 +428,6 @@ where
                 if !write_text(&sender, &config, &wire).await {
                     return;
                 }
-                next_ping = Instant::now() + config.keep_alive_interval;
             }
             () = sleep_until(next_ping) => {
                 if !write_text(&sender, &config, &message::ping()).await {

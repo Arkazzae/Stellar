@@ -518,6 +518,28 @@ async fn a_connect_hook_that_fails_closes_the_connection_and_the_disconnect_hook
 }
 
 #[tokio::test]
+async fn a_connect_hook_that_panics_still_leaves_nothing_behind() {
+    let app = TestApp {
+        panic_connect: true,
+        ..Default::default()
+    };
+    let mut r = start(app, quick(), "ann");
+    r.client.handshake().await;
+    let (records, code) = r.client.until_close().await;
+    assert_eq!(records[0]["allowReconnect"], true);
+    assert_eq!(code, Some(1000));
+    r.task.await.unwrap();
+    assert_eq!(r.hub.connection_count(), 0);
+    assert!(
+        r.app
+            .lines()
+            .last()
+            .unwrap()
+            .starts_with("disconnected ann")
+    );
+}
+
+#[tokio::test]
 async fn events_reach_the_group_and_the_caller_is_left_out_of_others() {
     let config = quick();
     let hub = Hub::new(&config);
@@ -613,7 +635,7 @@ async fn the_server_pings_a_quiet_client_at_both_levels() {
 }
 
 #[tokio::test]
-async fn traffic_in_either_direction_postpones_the_ping() {
+async fn pings_come_on_their_own_beat_whatever_else_is_sent() {
     let config = Config {
         keep_alive_interval: Duration::from_millis(200),
         client_timeout: None,
@@ -623,16 +645,25 @@ async fn traffic_in_either_direction_postpones_the_ping() {
     r.client.handshake().await;
     r.client.json().await;
     let started = std::time::Instant::now();
-    for n in 0..4 {
-        tokio::time::sleep(Duration::from_millis(100)).await;
+    for n in 0..3 {
+        tokio::time::sleep(Duration::from_millis(40)).await;
         r.hub
             .send_to_connection("conn-ann", &stellarr_hub::Outbound::bare(&format!("E{n}")));
     }
-    for _ in 0..4 {
-        assert_eq!(r.client.json().await["type"], 1);
+    let mut events = 0;
+    loop {
+        let record = r.client.json().await;
+        if record["type"] == 6 {
+            break;
+        }
+        events += 1;
     }
-    assert!(started.elapsed() < Duration::from_millis(600));
-    assert_eq!(r.client.record().await, "{\"type\":6}");
+    assert_eq!(events, 3);
+    let waited = started.elapsed();
+    assert!(
+        waited >= Duration::from_millis(150) && waited < Duration::from_millis(600),
+        "{waited:?}"
+    );
 }
 
 #[tokio::test]

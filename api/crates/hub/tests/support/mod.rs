@@ -23,6 +23,7 @@ pub struct TestApp {
     pub running: AtomicUsize,
     pub max_running: AtomicUsize,
     pub fail_connect: bool,
+    pub panic_connect: bool,
     pub connect_delay: Duration,
 }
 
@@ -42,6 +43,9 @@ impl Application for TestApp {
     async fn connected(&self, call: &Call<String>) -> Result<(), HubError> {
         tokio::time::sleep(self.connect_delay).await;
         self.log(format!("connected {}", call.identity()));
+        if self.panic_connect {
+            panic!("a bug in the connect hook");
+        }
         if self.fail_connect {
             return Err(HubError::visible("not today"));
         }

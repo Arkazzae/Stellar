@@ -96,6 +96,10 @@ pub enum Incoming {
 pub struct Malformed(pub &'static str);
 
 /// Reads one record sent by the client.
+///
+/// Messages the server ignores are still read for their shape, because a
+/// client that sends one with a part missing or of the wrong kind is broken,
+/// and is told so by closing the connection.
 pub fn parse_message(record: &[u8]) -> Result<Incoming, Malformed> {
     let Ok(value) = serde_json::from_slice::<Value>(record) else {
         return Err(Malformed("the record is not JSON"));
@@ -106,9 +110,27 @@ pub fn parse_message(record: &[u8]) -> Result<Incoming, Malformed> {
     let kind = message
         .get("type")
         .and_then(Value::as_i64)
+        .and_then(|kind| i32::try_from(kind).ok())
         .ok_or(Malformed("the message has no type"))?;
-    match kind {
-        TYPE_CLOSE => Ok(Incoming::Close),
+    let has_string = |message: &serde_json::Map<String, Value>, key: &str| {
+        matches!(message.get(key), Some(Value::String(_)))
+    };
+    match i64::from(kind) {
+        TYPE_CLOSE => {
+            let error_ok = matches!(
+                message.get("error"),
+                None | Some(Value::Null | Value::String(_))
+            );
+            let reconnect_ok = matches!(
+                message.get("allowReconnect"),
+                None | Some(Value::Null | Value::Bool(_))
+            );
+            if error_ok && reconnect_ok {
+                Ok(Incoming::Close)
+            } else {
+                Err(Malformed("the close message is malformed"))
+            }
+        }
         TYPE_INVOCATION | TYPE_STREAM_INVOCATION => {
             let target = match message.remove("target") {
                 Some(Value::String(target)) => target,
@@ -126,18 +148,39 @@ pub fn parse_message(record: &[u8]) -> Result<Incoming, Malformed> {
                 Some(_) => return Err(Malformed("the invocation id is not a string")),
             };
             let stream_ids = match message.remove("streamIds") {
-                None | Some(Value::Null) => 0,
+                None => 0,
                 Some(Value::Array(ids)) if ids.iter().all(Value::is_string) => ids.len(),
                 Some(_) => return Err(Malformed("the stream ids are not strings")),
             };
+            match message.get("headers") {
+                None => {}
+                Some(Value::Object(headers)) if headers.values().all(Value::is_string) => {}
+                Some(_) => return Err(Malformed("the headers are not strings")),
+            }
             Ok(Incoming::Invocation(Invocation {
                 id,
                 target,
                 arguments,
                 stream_ids,
-                streaming: kind == TYPE_STREAM_INVOCATION,
+                streaming: i64::from(kind) == TYPE_STREAM_INVOCATION,
             }))
         }
+        // A stream item: it names its stream and carries an item.
+        2 if has_string(&message, "invocationId") && message.contains_key("item") => {
+            Ok(Incoming::Ignored)
+        }
+        // A completion: it names its call and holds a result or an error, not both.
+        3 if has_string(&message, "invocationId")
+            && !(message.contains_key("result") && message.contains_key("error")) =>
+        {
+            Ok(Incoming::Ignored)
+        }
+        // A cancellation.
+        5 if has_string(&message, "invocationId") => Ok(Incoming::Ignored),
+        // An acknowledgement, or a sequence number.
+        8 | 9 if message.get("sequenceId").is_some_and(Value::is_i64) => Ok(Incoming::Ignored),
+        2 | 3 | 5 | 8 | 9 => Err(Malformed("the message is missing a part it needs")),
+        // A ping, and types nobody has defined.
         _ => Ok(Incoming::Ignored),
     }
 }

@@ -264,6 +264,15 @@ impl Hub {
         lock(&self.inner.state).connections.len()
     }
 
+    /// The ids of all the connections, in no particular order.
+    pub fn connection_ids(&self) -> Vec<String> {
+        lock(&self.inner.state)
+            .connections
+            .keys()
+            .map(|id| id.to_string())
+            .collect()
+    }
+
     pub fn is_connected(&self, connection_id: &str) -> bool {
         lock(&self.inner.state)
             .connections
