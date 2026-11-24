@@ -13,6 +13,7 @@ pub mod ceremony;
 #[cfg(test)]
 mod ceremony_tests;
 pub mod cookies;
+pub mod desktop_exchange;
 #[cfg(test)]
 mod differential;
 pub mod email_codes;
