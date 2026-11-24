@@ -1001,6 +1001,16 @@ async fn proving_a_second_step_again_gives_a_new_session_and_leaves_the_old_one(
         })
         .unwrap();
     assert_eq!(purpose, PURPOSE_REVERIFY);
+    // The challenge is tied to the session it was asked from.
+    let parent: Option<Id> = world
+        .db()
+        .query_row(
+            "SELECT \"ParentSessionId\" FROM \"AuthChallenges\"",
+            [],
+            |r| r.get(0),
+        )
+        .unwrap();
+    assert_eq!(parent, Some(me.session));
 
     let answered = answer(
         &world.state,
@@ -1601,4 +1611,71 @@ async fn an_enrolment_from_a_session_accepts_the_password_of_the_account_without
     .await
     .unwrap();
     assert!(matches!(allowed, Started::Challenge { .. }));
+}
+
+#[tokio::test]
+async fn a_challenge_asked_from_a_session_dies_with_that_session() {
+    let world = World::new();
+    let user = world.user(None);
+    let (method, secret) = world.with_app(user).await;
+    let me = caller(&world, user, Some(3600));
+    let Started::Challenge { body, cookie } = start_from_session(
+        &world.state,
+        me,
+        &CONTEXT,
+        FromSession::Reverification,
+        None,
+    )
+    .await
+    .unwrap() else {
+        panic!("a challenge was expected");
+    };
+    let id = serde_json::to_value(&*body).unwrap()["challengeId"]
+        .as_str()
+        .unwrap()
+        .to_string();
+    let preauth = security_cookies::parse_bound(
+        cookie
+            .strip_prefix("stellarr-dev-preauth=")
+            .unwrap()
+            .split(';')
+            .next()
+            .unwrap(),
+    )
+    .unwrap();
+    // The session it was asked from is signed out before the answer comes.
+    world
+        .db()
+        .execute(
+            "UPDATE \"UserSessions\" SET \"RevokedAt\" = ?2 WHERE \"Id\" = ?1",
+            params![me.session, Timestamp::now()],
+        )
+        .unwrap();
+
+    let answered = answer(
+        &world.state,
+        &Ask {
+            context: &CONTEXT,
+            preauth: Some(&preauth),
+            challenge_id: &id,
+        },
+        Answer::Code {
+            method: Some(method),
+            code: &now_code(&secret),
+        },
+        false,
+        nothing,
+    )
+    .await
+    .unwrap();
+
+    assert!(matches!(answered, Answered::Invalid(_)));
+    assert_eq!(
+        world.count("SELECT COUNT(*) FROM \"UserSessions\" WHERE \"RevokedAt\" IS NULL"),
+        0
+    );
+    assert_eq!(
+        world.count("SELECT COUNT(*) FROM \"AuthChallenges\" WHERE \"ConsumedAt\" IS NULL"),
+        1
+    );
 }
