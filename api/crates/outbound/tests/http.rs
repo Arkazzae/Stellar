@@ -442,3 +442,15 @@ async fn a_content_length_that_does_not_state_the_body_is_refused() {
     }
     assert_eq!(server.hits(), 0);
 }
+
+#[tokio::test]
+async fn the_http_types_come_from_this_crate() {
+    use stellarr_outbound::{HeaderName as Name, HeaderValue as Value, Method as M, header};
+    let mut secret = Value::from_static("token");
+    secret.set_sensitive(true);
+    let request = Request::new(M::PUT, "http://example.com/")
+        .unwrap()
+        .header(header::AUTHORIZATION, secret)
+        .header(Name::from_static("x-thing"), Value::from_static("1"));
+    assert!(!format!("{request:?}").contains("token"));
+}

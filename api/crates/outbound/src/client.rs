@@ -106,9 +106,16 @@ impl Request {
         Request::new(Method::POST, url)
     }
 
-    /// Adds a header. Mark one that carries a key or a token with
-    /// `HeaderValue::set_sensitive(true)`: a redirect to another origin
-    /// then does not forward it.
+    /// Adds a header. A value that carries a key or a token is marked
+    /// before it is given: build it with [`HeaderValue::from_str`] (or
+    /// `from_bytes`) and call `set_sensitive(true)` on it. A redirect to
+    /// another origin then does not forward it, and `Debug` output never
+    /// shows it. `Authorization` and `Proxy-Authorization` are not forwarded
+    /// by any redirect, marked or not.
+    ///
+    /// The headers the client sets itself are refused when the request is
+    /// sent, with [`Error::ForbiddenHeader`]. The one exception is a single
+    /// `Content-Length` equal to the length of the body of this request.
     pub fn header(mut self, name: HeaderName, value: HeaderValue) -> Request {
         self.headers.append(name, value);
         self
