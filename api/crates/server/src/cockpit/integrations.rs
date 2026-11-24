@@ -51,10 +51,8 @@ pub(super) async fn test_mail(State(state): State<AppState>, request: Request) -
     let recipient = body.to.as_deref().unwrap_or("").trim().to_string();
     // The address must be one, and nothing more: no name beside it, no comment.
     let plain = super::length(&recipient) <= MAX_MAIL_ADDRESS_LENGTH
-        && super::address::try_create(&recipient).is_some_and(|parsed| {
-            crate::instance::names::to_upper(&parsed.address)
-                == crate::instance::names::to_upper(&recipient)
-        });
+        && super::address::try_create(&recipient)
+            .is_some_and(|parsed| parsed.address == recipient);
     if !plain {
         return Err(invalid(
             "to",

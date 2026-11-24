@@ -399,10 +399,10 @@ pub fn save(
     Ok(())
 }
 
-/// Whether `text` is an address that mail can be sent from: `user@host`, or
-/// that with a name before it, `Name <user@host>`.
+/// Whether `text`, once trimmed, is an address that mail can be sent from:
+/// one plain `user@host`.
 pub fn is_mail_address(text: &str) -> bool {
-    super::sender_address::is_sender_address(text)
+    crate::cockpit::address::try_create(text.trim()).is_some()
 }
 
 /// What is wrong with an update, field by field, in the order the checks are
