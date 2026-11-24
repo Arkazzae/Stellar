@@ -247,6 +247,15 @@ impl Server {
             .with_header("X-Stellarr-Client-Version", version)
     }
 
+    /// The process id of the binary, for a test that looks at what the
+    /// process uses; none for a server run in the test's own process.
+    pub fn pid(&self) -> Option<u32> {
+        match &self.running {
+            Some(Running::Process(child)) => child.id(),
+            _ => None,
+        }
+    }
+
     pub fn folder(&self) -> &Path {
         &self.folder_path
     }
