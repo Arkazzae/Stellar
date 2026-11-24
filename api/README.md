@@ -407,16 +407,44 @@ digest or plain, and works on both servers.
 
 ## The second step
 
-`auth::mfa::verify` answers a challenge that waits for a second step, and
-`auth::passkeys` does the same for a passkey; both run inside the transaction
-that completes the sign-in. A wrong proof is an ordinary outcome, not an error,
-because it must be committed (it spends an attempt of the challenge, writes an
-event and counts against the account's budget of failures). A proof that was
-right spends a code or a step, so a route that then refuses the sign-in for
-another reason returns an error from the closure and the transaction rolls
-back. Mail is never sent inside a transaction: `auth::email_codes::reserve`
-writes the code and the route commits, sends, and then marks the code
-delivered or failed.
+A route never touches the pieces of the second step. For each thing a person
+does there is one call in `auth::ceremony`, which owns the transaction, looks
+the challenge and the account up inside it, and answers with an enum that says
+what to answer; the enums are `#[must_use]`. Every call that takes a challenge
+takes an `Ask`: the request's `Context`, the id and secret in the browser's
+challenge cookie (`flow::read_preauth`), and the challenge id the client sent.
+A challenge that is consumed, out of date, out of attempts, for another
+purpose or of an account that changed comes back as `Invalid(status)`: a 429
+for `ChallengeStatus::AttemptLimit`, a 401 for the rest. A wrong proof comes
+back as `Refused` with what it cost already kept.
+
+| The person | The call | In the order |
+| --- | --- | --- |
+| signs in with a password and has a second step | `flow::start` (as before) gives the challenge | `answer(Answer::Code / TrustedDevice / Passkey)`, and `send_login_code` first for a mailed code, `passkey_options` first for a passkey |
+| proves a second step again in a session | `start_from_session(.., Reverification, ..)` | then `answer`, which gives a new session and leaves the old one |
+| sets a second step up (a challenge for it from sign-in, from `start_from_session(.., Enrollment, ..)` or from a recovery credential) | `start_totp` then `confirm_totp`; `send_enrollment_code` then `confirm_email`; `start_passkey` then `confirm_passkey` | each `confirm_*` finishes the sign-in |
+| signs in with a passkey alone | `passkey_sign_in_options` then `passkey_sign_in` | a rejected answer is kept as rejected |
+| takes a second step away | `remove_method` | |
+| asks for new recovery codes / forgets a remembered device | `regenerate_recovery_codes`, `forget_trusted_device` | |
+| redeems an operator's credential | `redeem_recovery_credential`, then the enrolment calls | |
+| changes the password | `recovery::credentials_changed` in the route's own transaction | |
+
+`answer` and the `confirm_*` calls take a closure for the caller's own writes
+(linking the identity a sign-in was asked to link): it runs in the same
+transaction, and an error from it undoes everything, the spent code included. A
+sign-in that is completed comes back as `Completed`, with the `Set-Cookie`
+lines to send, in order: the session's, the remembered device's if one was
+made, and the one that takes the challenge's cookie away. A route reads
+neither the account nor the session itself to decide what a proof allows: a
+remembered device never makes a session fresh and is never remembered again,
+a passkey sign-in is a second step passed.
+
+Mail is sent by `send_login_code` and `send_enrollment_code`, in the one order
+that is right (reserve and commit, send through `mail::deliver`, then mark the
+code delivered or spent); a failed mail still counts toward the cooldown and
+the hourly limit. Questions about the account (`fresh::can_change_security`,
+`ways_in::remain`) are asked of an account id and read the account inside the
+transaction they are given.
 
 ## Sessions and who is calling
 
