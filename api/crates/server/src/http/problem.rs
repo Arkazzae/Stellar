@@ -42,12 +42,31 @@ fn defaults(status: StatusCode) -> Option<(&'static str, &'static str)> {
     Some(known)
 }
 
+/// What an extension holds: a value, or JSON that was written by a type of
+/// its own, because a [`Value`] sorts the members of an object.
+#[derive(Debug, Clone, PartialEq)]
+enum Extension {
+    Value(Value),
+    Written(String),
+}
+
+impl Serialize for Extension {
+    fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        match self {
+            Extension::Value(value) => value.serialize(serializer),
+            Extension::Written(text) => serde_json::value::RawValue::from_string(text.clone())
+                .map_err(serde::ser::Error::custom)?
+                .serialize(serializer),
+        }
+    }
+}
+
 #[derive(Debug, Clone, PartialEq)]
 pub struct Problem {
     status: StatusCode,
     title: Option<String>,
     detail: Option<String>,
-    extensions: Vec<(String, Value)>,
+    extensions: Vec<(String, Extension)>,
     errors: Option<Vec<(String, Vec<String>)>>,
 }
 
@@ -85,7 +104,19 @@ impl Problem {
 
     /// Adds a member after the standard ones, such as `code`.
     pub fn with(mut self, name: &str, value: impl Into<Value>) -> Problem {
-        self.extensions.push((name.to_string(), value.into()));
+        self.extensions
+            .push((name.to_string(), Extension::Value(value.into())));
+        self
+    }
+
+    /// Adds a member after the others whose value is written by `value`'s own
+    /// type, members in the order it declares them (which `with` cannot keep
+    /// for an object).
+    pub fn with_json(mut self, name: &str, value: &impl Serialize) -> Problem {
+        // A type of ours that cannot be written as JSON is a mistake in the code.
+        let text = serde_json::to_string(value).expect("an extension is written as JSON");
+        self.extensions
+            .push((name.to_string(), Extension::Written(text)));
         self
     }
 
@@ -170,6 +201,35 @@ mod tests {
                 "{\"type\":\"https://tools.ietf.org/html/rfc9110#section-15.5.4\",\
                  \"title\":\"This app is no longer supported.\",\"status\":403,\
                  \"code\":\"unsupported-client\",\"downloadPath\":\"/\",\"traceId\":\"00-"
+            ),
+            "{json}"
+        );
+    }
+
+    #[test]
+    fn an_object_written_by_its_own_type_keeps_its_members_in_order() {
+        #[derive(serde::Serialize)]
+        struct State {
+            state: &'static str,
+            #[serde(rename = "currentEpochId")]
+            current: Option<u8>,
+        }
+        let problem = Problem::new(StatusCode::CONFLICT)
+            .with_json(
+                "encryption",
+                &State {
+                    state: "on",
+                    current: None,
+                },
+            )
+            .with("code", "encryption-off");
+
+        let json = serde_json::to_string(&problem).unwrap();
+
+        assert!(
+            json.contains(
+                "\"status\":409,\"encryption\":{\"state\":\"on\",\"currentEpochId\":null},\
+                 \"code\":\"encryption-off\",\"traceId\""
             ),
             "{json}"
         );
