@@ -1,4 +1,4 @@
-//! The shell around the core: the UDP socket, the clock, the control API and
+//! The shell around the core: the media sockets, the clock, the control API and
 //! the life of the process.
 
 use std::fmt;
@@ -7,6 +7,7 @@ use std::io;
 use std::net::{SocketAddr, SocketAddrV4};
 use std::time::{Duration, Instant};
 
+use str0m::net::Protocol;
 use tokio::net::{TcpListener, UdpSocket};
 use tokio::sync::{mpsc, watch};
 use tokio::task::JoinHandle;
@@ -15,6 +16,7 @@ use tracing::{debug, error, info};
 use crate::config::{Config, ConfigError, primary_ipv4};
 use crate::core::{Core, CoreConfig, random_id};
 use crate::http::{self, AppState, Job};
+use crate::tcp::TcpMedia;
 
 /// How many datagrams are read in one go before the loop looks at anything
 /// else.
@@ -131,27 +133,56 @@ fn outcome(media: Joined<()>, http: Joined<io::Result<()>>) -> Result<(), Server
     }
 }
 
-/// Binds both sockets and starts serving.
+/// Reserves the same numbered port for both media transports. An ephemeral
+/// UDP port can be taken on TCP, so try another port in that case.
+async fn bind_media(
+    bind: SocketAddrV4,
+) -> Result<(UdpSocket, TcpListener, SocketAddrV4), ServerError> {
+    let mut retries = 15;
+    loop {
+        let addr = SocketAddr::V4(bind);
+        let socket = UdpSocket::bind(addr)
+            .await
+            .map_err(|source| ServerError::Bind {
+                what: "UDP media socket",
+                addr,
+                source,
+            })?;
+        let bound = socket.local_addr().map_err(|source| ServerError::Bind {
+            what: "UDP media socket",
+            addr,
+            source,
+        })?;
+        match TcpListener::bind(bound).await {
+            Ok(listener) => {
+                return Ok((
+                    socket,
+                    listener,
+                    SocketAddrV4::new(*bind.ip(), bound.port()),
+                ));
+            }
+            Err(error)
+                if bind.port() == 0 && error.kind() == io::ErrorKind::AddrInUse && retries > 0 =>
+            {
+                retries -= 1;
+            }
+            Err(source) => {
+                return Err(ServerError::Bind {
+                    what: "TCP media socket",
+                    addr: bound,
+                    source,
+                });
+            }
+        }
+    }
+}
+
+/// Binds the media and control sockets and starts serving.
 pub async fn start(config: Config) -> Result<Server, ServerError> {
     config.validate().map_err(ServerError::Config)?;
 
-    let media_bind = SocketAddr::V4(config.media_bind);
-    let socket = UdpSocket::bind(media_bind)
-        .await
-        .map_err(|source| ServerError::Bind {
-            what: "media socket",
-            addr: media_bind,
-            source,
-        })?;
-    let media_addr = socket.local_addr().map_err(|source| ServerError::Bind {
-        what: "media socket",
-        addr: media_bind,
-        source,
-    })?;
-    let bound = match media_addr {
-        SocketAddr::V4(v4) => v4,
-        SocketAddr::V6(_) => SocketAddrV4::new(*config.media_bind.ip(), media_addr.port()),
-    };
+    let (socket, tcp_listener, bound) = bind_media(config.media_bind).await?;
+    let media_addr = SocketAddr::V4(bound);
     let candidates = config
         .candidates(bound, primary_ipv4)
         .map_err(ServerError::Config)?;
@@ -170,18 +201,27 @@ pub async fn start(config: Config) -> Result<Server, ServerError> {
     })?;
 
     let epoch = random_id();
-    let core = Core::new(
+    let core = Core::with_tcp(
         CoreConfig {
             candidates: candidates.clone(),
         },
         epoch.clone(),
+        true,
     );
 
     let (jobs_tx, jobs_rx) = mpsc::channel::<Job>(1024);
     let (seq_tx, seq_rx) = watch::channel(0u64);
     let (stop_tx, stop_rx) = watch::channel(false);
 
-    let media = tokio::spawn(media_loop(core, socket, jobs_rx, seq_tx, stop_rx.clone()));
+    let tcp = TcpMedia::new(tcp_listener, candidates.clone());
+    let media = tokio::spawn(media_loop(
+        core,
+        socket,
+        tcp,
+        jobs_rx,
+        seq_tx,
+        stop_rx.clone(),
+    ));
 
     let app = http::router(AppState::new(jobs_tx, seq_rx, &config.control_secret));
     let mut http_stop = stop_rx;
@@ -221,6 +261,7 @@ pub async fn run(config: Config, signal: impl Future<Output = ()>) -> Result<(),
 async fn media_loop(
     mut core: Core,
     socket: UdpSocket,
+    mut tcp: TcpMedia,
     mut jobs: mpsc::Receiver<Job>,
     seq: watch::Sender<u64>,
     mut stop: watch::Receiver<bool>,
@@ -234,10 +275,19 @@ async fn media_loop(
         }
 
         for out in core.take_outgoing() {
-            if let Err(e) = socket.send_to(&out.contents, out.destination).await {
-                debug!(error = %e, destination = %out.destination, "a datagram could not be sent");
+            match out.protocol {
+                Protocol::Udp => {
+                    if let Err(e) = socket.send_to(&out.contents, out.destination).await {
+                        debug!(error = %e, destination = %out.destination, "a datagram could not be sent");
+                    }
+                }
+                Protocol::Tcp => tcp.send(out),
+                Protocol::SslTcp | Protocol::Tls => {}
             }
         }
+
+        let closed = core.take_closed_sessions();
+        tcp.remove_sessions(&closed);
 
         let last = core.last_seq();
         seq.send_if_modified(|current| {
@@ -256,6 +306,7 @@ async fn media_loop(
                 Some(job) => job(&mut core, Instant::now()),
                 None => break,
             },
+            event = tcp.next() => tcp.handle(&mut core, event),
             received = socket.recv_from(&mut buf) => {
                 match received {
                     Ok((n, source)) => core.handle_datagram(Instant::now(), source, &buf[..n]),
@@ -275,7 +326,13 @@ async fn media_loop(
     // A clean stop says goodbye to every browser that is still connected.
     core.reset(Instant::now());
     for out in core.take_outgoing() {
-        let _ = socket.try_send_to(&out.contents, out.destination);
+        match out.protocol {
+            Protocol::Udp => {
+                let _ = socket.try_send_to(&out.contents, out.destination);
+            }
+            Protocol::Tcp => tcp.send(out),
+            Protocol::SslTcp | Protocol::Tls => {}
+        }
     }
     if !*stop.borrow() {
         error!("the media loop ended unexpectedly");
