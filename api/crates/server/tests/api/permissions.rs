@@ -137,7 +137,7 @@ mod routes {
     }
 
     #[tokio::test]
-    async fn a_route_that_takes_the_active_server_answers_a_member_and_refuses_the_rest_as_the_first_server_did() {
+    async fn active_server_routes_require_access_to_the_selected_server() {
         let w = world().await;
         let instance: String = w.server.database().query_row("SELECT \"Id\" FROM \"Servers\"", [], |row| row.get(0)).unwrap();
         let instance = Id::parse(&instance).unwrap().to_string();
@@ -176,7 +176,7 @@ mod routes {
 
         let allowed = w.jozef.client.get(&format!("/api/test/channels/{}/send", w.general)).await;
         assert_eq!((allowed.status.as_u16(), allowed.text()), (200, "sent".to_string()));
-        // Where the first server answers with this problem, byte for byte but for the trace id.
+        // These routes return the same problem response apart from the trace ID.
         let denied = w.jozef.client.get("/api/test/invite").await;
         assert_eq!(denied.status.as_u16(), 403);
         assert_eq!(denied.header("content-type"), Some("application/problem+json"));

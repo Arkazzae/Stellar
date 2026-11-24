@@ -169,7 +169,7 @@ async fn a_name_taken_is_taken_in_any_letter_case_and_with_its_colons() {
 }
 
 #[tokio::test]
-async fn the_refusals_come_in_the_order_the_first_server_gave_them() {
+async fn upload_validation_reports_the_first_failure_in_order() {
     let (server, maja, jo) = with_member().await;
     assert_eq!(add(&maja, "taken").await.status, 201);
     async fn send(person: &Person, code: &str, bytes: &[u8], content_type: &str) -> u16 {
@@ -190,7 +190,7 @@ async fn the_refusals_come_in_the_order_the_first_server_gave_them() {
 }
 
 #[tokio::test]
-async fn a_file_that_is_refused_says_so_in_the_first_servers_words() {
+async fn an_invalid_file_returns_a_specific_validation_message() {
     let server = started(&[]).await;
     let maja = server.found("maja").await;
     let problem = |response: &crate::support::Response| {
@@ -360,7 +360,7 @@ async fn nobody_reads_or_writes_emoji_without_signing_in() {
 }
 
 #[tokio::test]
-async fn the_image_is_served_whole_with_the_headers_the_first_server_gave_it() {
+async fn the_image_is_served_whole_with_its_content_headers() {
     let (server, maja, jo) = with_member().await;
     let created: Value = maja.client.send(form("pic", &[PNG, &[7u8; 100][..]].concat(), "image/png")).await.json();
     let glyph = created["glyph"].as_str().unwrap().to_string();

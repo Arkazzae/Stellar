@@ -244,7 +244,7 @@ async fn a_message_is_stored_announced_to_both_people_and_nobody_else() {
 }
 
 #[tokio::test]
-async fn the_members_of_a_message_come_in_the_order_the_first_server_wrote_them() {
+async fn message_json_preserves_field_order() {
     let t = trio().await;
     let conversation = open_with(&t.ada.client, &t.ben).await;
     let text = send(&t.ada.client, &conversation, json!({ "content": "x" })).await.text();
@@ -553,8 +553,7 @@ async fn marking_a_conversation_read_sets_the_marker_to_now_and_tells_only_the_r
     assert_eq!(told.len(), before + 1);
     assert_eq!(told.last().unwrap()["audience"]["users"], json!([t.ben.id]));
 
-    // The marker is set to now, not held at the later of two: a marker in the
-    // future moves back, as the first server's did.
+    // Reading resets the marker to the current time, even if the stored marker was later.
     t.server
         .database()
         .execute(

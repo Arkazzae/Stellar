@@ -407,7 +407,7 @@ async fn an_id_that_is_no_id_is_no_route_and_one_nobody_started_is_an_expired_li
 }
 
 #[tokio::test]
-async fn the_page_is_the_first_servers_and_binds_the_request_to_the_person_and_their_session() {
+async fn approval_page_binds_the_request_to_the_account_and_session() {
     let (server, maja) = with_provider().await;
     let started = start(&server).await;
 
@@ -766,8 +766,7 @@ async fn nothing_the_application_or_the_browser_sends_can_reach_the_page() {
     assert_eq!(steered.status, 200);
     let id = steered.json::<Value>()["requestId"].as_str().unwrap().to_string();
 
-    // The page shows what the first server's did: the same bytes whatever the
-    // browser says about itself.
+    // The response stays byte-for-byte the same across browser headers.
     let page = maja
         .client
         .send(
@@ -949,7 +948,7 @@ async fn an_exchange_that_is_not_for_a_request_with_its_secret_is_one_answer() {
 }
 
 #[tokio::test]
-async fn a_body_that_is_not_the_request_is_refused_as_the_first_server_refused_it() {
+async fn an_invalid_desktop_exchange_body_is_rejected() {
     let server = Server::start_with(&PROVIDER).await;
     let application = application(&server);
 

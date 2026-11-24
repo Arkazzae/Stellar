@@ -220,7 +220,7 @@ async fn the_body_is_read_by_the_exact_name_and_members_nobody_asked_for_are_ign
 }
 
 #[tokio::test]
-async fn names_are_compared_in_capitals_the_way_the_first_server_stored_them() {
+async fn usernames_are_compared_using_uppercase_lookup_keys() {
     let server = Server::start().await;
     let ada = server.found("ada").await;
     let bill = server.register("bill").await;
@@ -406,7 +406,7 @@ async fn the_state_lists_friends_requests_with_their_direction_and_blocked_peopl
 }
 
 #[tokio::test]
-async fn members_of_the_state_come_in_the_order_the_first_server_wrote_them() {
+async fn social_state_json_preserves_field_order() {
     let p = people().await;
     befriend(&p.ada, &p.ben).await;
     let body = p.ada.client.get("/api/social").await.text();
@@ -514,7 +514,7 @@ async fn a_conversation_without_a_message_is_as_old_as_itself_and_one_with_a_blo
 }
 
 #[tokio::test]
-async fn an_attachment_and_an_encrypted_message_are_shown_as_the_first_server_showed_them() {
+async fn social_preview_describes_attachments_and_encrypted_messages() {
     let p = people().await;
     let room = conversation(&p.server, &p.ada, &p.ben, "2026-01-01 10:00:00");
     let said = message(&p.server, room, &p.ben, "2026-01-01 10:01:00", "", None);

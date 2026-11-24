@@ -1094,7 +1094,7 @@ async fn a_bucket_above_the_valid_range_counts_as_the_last_one_and_a_negative_on
 }
 
 #[tokio::test]
-async fn a_query_that_is_not_one_of_an_updater_is_a_bad_request_or_read_as_the_first_server_read_it() {
+async fn update_queries_validate_bucket_and_client_parameters() {
     let server = Server::start().await;
     publish_stable(server.folder(), "0.2.0");
     let client = server.client();
@@ -1507,10 +1507,7 @@ async fn a_symlink_the_operator_made_is_measured_and_served_as_the_file_it_point
     let elsewhere = server.folder().join("kept.bin");
     std::fs::rename(&real, &elsewhere).unwrap();
     std::os::unix::fs::symlink(&elsewhere, &real).unwrap();
-    // The first server measured the link itself, so that a symlinked package
-    // had to be declared with the length of the link's text. Here the size
-    // that counts is the one of the file it points at, which is the one the
-    // manifest declares.
+    // The manifest size describes the file the symlink points to.
 
     let linked = server.client().get(DESKTOP.download).await;
     std::fs::remove_file(&elsewhere).unwrap();

@@ -36,7 +36,7 @@ async fn the_owner_of_a_new_instance_is_given_everything_in_the_order_clients_re
 
     assert_eq!(response.status, 200);
     assert_eq!(response.header("content-type"), Some("application/json; charset=utf-8"));
-    // Nothing is said of caching: the first server did not.
+    // Bootstrap sends no explicit cache directive.
     assert!(response.header("cache-control").is_none());
     let text = response.text();
     let keys = ["\"user\"", "\"server\"", "\"servers\"", "\"channels\"", "\"sections\"", "\"members\"", "\"messages\"", "\"channelReads\"", "\"voice\"", "\"rtc\"", "\"permissions\""];
