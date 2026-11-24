@@ -281,7 +281,7 @@ async fn a_request_that_is_no_form_is_refused_as_such() {
             10
         )
         .err(),
-        Some(FormError::Malformed)
+        Some(FormError::NotAForm)
     );
 }
 
@@ -399,13 +399,13 @@ async fn a_client_that_trickles_is_cut_off_and_one_that_is_fast_is_not() {
         outcome
     };
 
-    // One byte every ten seconds is under any rate; a megabyte every ten is not.
+    // One byte every four seconds is under any rate; a megabyte every four is not.
     assert_eq!(
-        trickle(Duration::from_secs(10), 1).await,
+        trickle(Duration::from_secs(4), 1).await,
         Err(FormError::TooSlow)
     );
     assert_eq!(
-        trickle(Duration::from_secs(10), 1 << 20).await,
+        trickle(Duration::from_secs(4), 1 << 20).await,
         Err(FormError::Malformed)
     );
 }

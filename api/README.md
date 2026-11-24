@@ -843,3 +843,29 @@ here.
   server answered 500.
 - A release manifest that names a file with a null character in its name is
   unusable (503); the first server's runtime threw there (500).
+- A route that takes an upload answers 403 to somebody who is no member of the
+  server before it reads their form, where the first server read the form first
+  (and said 400 to one that could not be read).
+- An upload is staged in `incoming/` of the data root and not in the system's
+  temporary folder, and a form is read by `http::multipart` with the first
+  server's limits, plus one it did not have: a text field longer than 64 KiB is
+  read as a value too long to be anything. A client that sends nothing for six
+  seconds is cut off with a 408; the first server's rule was a speed under 240
+  bytes a second after five.
+- The free space of the data volume is asked of `df`; the standard library
+  cannot say, and `unsafe` is not allowed.
+
+## Comparing uploads with the first server
+
+`tests/uploads-probe.py <base-url> <setup-code> [database-file]` sends one corpus
+of requests (every type, names, limits to the byte, forms that lie, ranges,
+conditions, who may read what, the pictures of people and servers) to whichever
+server it is given and prints one normalized line per request. Start the first
+server with `oracle start <name> <port> Production`, this one with
+`ASPNETCORE_ENVIRONMENT=Testing`, run the script against each (the database file
+is for a server that cannot make an invite itself) and diff. `UPLOADS_PROBE_HEAVY=1`
+adds the 100 MiB cases. `tests/uploads-data-compare.py` compares the data folders
+the two leave: object keys, bytes and rows. `tests/uploads-witness/` holds the
+program that asks the first server's own code what a number, a flag, a name and a
+range make of an input, for `uploads::witness`; `tests/uploads-memory.py` measures
+the memory of the server while uploads pass.

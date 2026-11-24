@@ -5,6 +5,7 @@ mod health;
 mod mail;
 mod messages;
 mod message_views;
+mod object_stores;
 mod oracle;
 mod permissions;
 mod pipeline;
