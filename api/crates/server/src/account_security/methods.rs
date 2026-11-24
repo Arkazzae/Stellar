@@ -18,10 +18,17 @@ use crate::values::{Guid, Id};
 
 /// What a change of the second step may ask for besides the session's own
 /// proof: the account's current password.
-#[derive(Debug, Deserialize)]
+#[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Proof {
     password: Option<String>,
+}
+
+// Written by hand so that the password is never in what is printed.
+impl std::fmt::Debug for Proof {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("Proof").finish_non_exhaustive()
+    }
 }
 
 /// A body that has to be there. One that is JSON but not the right JSON is
