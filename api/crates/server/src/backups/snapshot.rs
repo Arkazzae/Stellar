@@ -24,6 +24,13 @@ const BUSY_ATTEMPTS: u32 = 100;
 /// that fails is removed: a half-written file would otherwise sit in the list
 /// as a backup. The destination must not exist.
 pub fn copy_database(source: &Path, destination: &Path) -> Result<(), BackupFailed> {
+    // What is there is not ours to remove if the copy then fails.
+    if destination.exists() {
+        return Err(BackupFailed::new(format!(
+            "{} already exists",
+            destination.display()
+        )));
+    }
     let outcome = copy(source, destination);
     if outcome.is_err() {
         remove_with_side_files(destination);
@@ -32,12 +39,6 @@ pub fn copy_database(source: &Path, destination: &Path) -> Result<(), BackupFail
 }
 
 fn copy(source: &Path, destination: &Path) -> Result<(), BackupFailed> {
-    if destination.exists() {
-        return Err(BackupFailed::new(format!(
-            "{} already exists",
-            destination.display()
-        )));
-    }
     let from = Connection::open_with_flags(
         source,
         OpenFlags::SQLITE_OPEN_READ_ONLY | OpenFlags::SQLITE_OPEN_NO_MUTEX,
