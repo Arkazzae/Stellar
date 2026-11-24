@@ -150,11 +150,15 @@ pub fn add(
         let name = messages
             .get(name, &[])
             .map_err(|e| DbError::Task(e.to_string()))?;
-        tx.execute(
-            "INSERT INTO \"ServerRoles\" (\"Id\", \"ServerId\", \"Name\", \"Color\", \"Permissions\", \"Position\", \"IsSystem\", \"IsOwner\")
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, 1, ?7)",
-            params![id, server, name, color, permissions, position, owner],
-        )?;
+        crate::permissions::roles::Role {
+            id,
+            server,
+            position,
+            is_system: true,
+            is_owner: owner,
+            permissions,
+        }
+        .insert(tx, &name, color)?;
         Ok(())
     };
     role(

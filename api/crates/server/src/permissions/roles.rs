@@ -29,6 +29,16 @@ const ROLE_COLUMNS: &str =
     "r.\"Id\", r.\"ServerId\", r.\"Position\", r.\"IsSystem\", r.\"IsOwner\", r.\"Permissions\"";
 
 impl Role {
+    /// Writes a new role at the position its caller chose.
+    pub(crate) fn insert(&self, db: &Connection, name: &str, color: &str) -> rusqlite::Result<()> {
+        db.execute(
+            "INSERT INTO \"ServerRoles\" (\"Id\", \"ServerId\", \"Name\", \"Color\", \"Permissions\", \"Position\", \"IsSystem\", \"IsOwner\")
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)",
+            params![self.id, self.server, name, color, self.permissions, self.position, self.is_system, self.is_owner],
+        )?;
+        Ok(())
+    }
+
     /// Reads the six columns of [`ROLE_COLUMNS`] from `first` on.
     pub(super) fn read(row: &rusqlite::Row<'_>, first: usize) -> rusqlite::Result<Role> {
         Ok(Role {

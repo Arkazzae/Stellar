@@ -127,11 +127,15 @@ pub(super) async fn create(
 
             let id = Id::random();
             let position = ownership::place_new_role(tx, server)?;
-            tx.execute(
-                "INSERT INTO \"ServerRoles\" (\"Id\", \"ServerId\", \"Name\", \"Color\", \"Permissions\", \"Position\", \"IsSystem\", \"IsOwner\")
-                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, 0, 0)",
-                params![id, server, draft.name, draft.color, draft.permissions, position],
-            )
+            Role {
+                id,
+                server,
+                position,
+                is_system: false,
+                is_owner: false,
+                permissions: draft.permissions,
+            }
+            .insert(tx, &draft.name, &draft.color)
             .map_err(taken)?;
             let added = privileges::to_names(draft.permissions);
             audit::record(
