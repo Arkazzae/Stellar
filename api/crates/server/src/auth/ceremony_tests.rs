@@ -8,6 +8,7 @@ use stellarr_webauthn::Algorithm;
 
 use super::ceremony::*;
 use super::ceremony::{PasswordCheck, check_password, may_change_security};
+use super::desktop_exchange::{Exchanged, exchange_browser_login};
 use super::email_codes::{ENROLLMENT, LOGIN};
 use super::email_send::Sent;
 use super::fixtures::{
@@ -2225,4 +2226,341 @@ async fn a_change_of_address_revokes_the_old_mail_methods_and_says_so_without_al
             .unwrap()
             .is_empty()
     );
+}
+
+// ---- the desktop application's sign-in through the browser ----
+
+const DESKTOP_SECRET: &str = "a-secret-of-the-desktop-0123456789ABCDEFGHI";
+
+impl World {
+    /// A request the application made, and, if `approver` is given, approved
+    /// by a session of that account as the browser's was when it did.
+    fn desktop_request(&self, approver: Option<(Id, Id, Option<u64>)>) -> Id {
+        let id = Id::random();
+        let now = Timestamp::now();
+        let db = self.db();
+        db.execute(
+            "INSERT INTO \"DesktopBrowserLogins\" (\"Id\", \"SecretHash\", \"SecurityVersion\", \"CreatedAt\", \"ExpiresAt\")
+             VALUES (?1, ?2, 1, ?3, ?4)",
+            params![id, super::tokens::hash(DESKTOP_SECRET), now, now.plus(Duration::from_secs(600))],
+        )
+        .unwrap();
+        if let Some((user, source, passed)) = approver {
+            let completed = passed.map(|s| now.minus(Duration::from_secs(s)));
+            db.execute(
+                "UPDATE \"DesktopBrowserLogins\" SET \"UserId\" = ?2, \"ApprovedSessionId\" = ?3, \"PrimarySource\" = 'oidc',
+                    \"MfaCompletedAt\" = ?4, \"MfaEvidence\" = ?5, \"ApprovedAt\" = ?6 WHERE \"Id\" = ?1",
+                params![id, user, source, completed, completed.map(|_| "totp"), now],
+            )
+            .unwrap();
+        }
+        id
+    }
+}
+
+async fn exchange(world: &World, id: Id, secret: &str) -> Exchanged {
+    exchange_browser_login(&world.state, &CONTEXT, &id.to_string(), secret)
+        .await
+        .unwrap()
+}
+
+#[tokio::test]
+async fn a_request_that_is_not_approved_yet_is_pending_and_costs_no_write() {
+    let world = World::new();
+    let id = world.desktop_request(None);
+
+    assert!(matches!(
+        exchange(&world, id, DESKTOP_SECRET).await,
+        Exchanged::Pending
+    ));
+
+    assert_eq!(world.count("SELECT COUNT(*) FROM \"UserSessions\""), 0);
+    assert_eq!(
+        world.count("SELECT COUNT(*) FROM \"DesktopBrowserLogins\" WHERE \"RedeemedAt\" IS NULL"),
+        1
+    );
+}
+
+#[tokio::test]
+async fn an_unknown_wrong_short_long_expired_or_used_request_is_one_answer() {
+    let world = World::new();
+    let user = world.user(None);
+    let source = caller(&world, user, None).session;
+    let id = world.desktop_request(Some((user, source, None)));
+    let expired = world.desktop_request(None);
+    world
+        .db()
+        .execute(
+            "UPDATE \"DesktopBrowserLogins\" SET \"ExpiresAt\" = ?2 WHERE \"Id\" = ?1",
+            params![expired, Timestamp::now()],
+        )
+        .unwrap();
+    let used = world.desktop_request(Some((user, source, None)));
+    world
+        .db()
+        .execute(
+            "UPDATE \"DesktopBrowserLogins\" SET \"RedeemedAt\" = ?2 WHERE \"Id\" = ?1",
+            params![used, Timestamp::now()],
+        )
+        .unwrap();
+
+    for (what, outcome) in [
+        (
+            "unknown id",
+            exchange(&world, Id::random(), DESKTOP_SECRET).await,
+        ),
+        (
+            "wrong secret",
+            exchange(&world, id, "a-different-secret-of-the-same-sort-12345").await,
+        ),
+        (
+            "short secret",
+            exchange(&world, id, "short-secret-15ch").await,
+        ),
+        ("empty secret", exchange(&world, id, "").await),
+        ("long secret", exchange(&world, id, &"x".repeat(513)).await),
+        ("expired", exchange(&world, expired, DESKTOP_SECRET).await),
+        ("used", exchange(&world, used, DESKTOP_SECRET).await),
+        (
+            "no id",
+            exchange_browser_login(&world.state, &CONTEXT, "nonsense", DESKTOP_SECRET)
+                .await
+                .unwrap(),
+        ),
+    ] {
+        assert!(matches!(outcome, Exchanged::Invalid), "{what}");
+    }
+    assert_eq!(world.count("SELECT COUNT(*) FROM \"UserSessions\""), 1);
+}
+
+#[tokio::test]
+async fn an_approved_request_gives_a_session_with_what_the_approving_session_had() {
+    let world = World::new();
+    let user = world.user(Some("maya@example.test"));
+    let source = caller(&world, user, Some(120)).session;
+    let authenticated: Timestamp = world
+        .db()
+        .query_row(
+            "SELECT \"AuthenticatedAt\" FROM \"UserSessions\" WHERE \"Id\" = ?1",
+            [source],
+            |r| r.get(0),
+        )
+        .unwrap();
+    let id = world.desktop_request(Some((user, source, Some(120))));
+
+    let Exchanged::SignedIn(signed) = exchange(&world, id, DESKTOP_SECRET).await else {
+        panic!("a session was expected")
+    };
+
+    assert_eq!(signed.user, user);
+    assert!(signed.cookie.starts_with("stellarr-dev-session="));
+    let (primary, evidence, completed, auth, short, version): (String, Option<String>, Option<Timestamp>, Timestamp, bool, i64) = world
+        .db()
+        .query_row(
+            "SELECT \"PrimarySource\", \"MfaEvidence\", \"MfaCompletedAt\", \"AuthenticatedAt\", \"ShortLived\", \"SecurityVersion\" FROM \"UserSessions\" WHERE \"Id\" = ?1",
+            [signed.session],
+            |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?, r.get(4)?, r.get(5)?)),
+        )
+        .unwrap();
+    assert_eq!(
+        (primary.as_str(), evidence.as_deref(), short, version),
+        ("oidc", Some("totp"), false, 1)
+    );
+    assert!(completed.is_some());
+    assert_eq!(auth, authenticated);
+    assert_eq!(
+        world.count(
+            "SELECT COUNT(*) FROM \"DesktopBrowserLogins\" WHERE \"RedeemedAt\" IS NOT NULL"
+        ),
+        1
+    );
+    assert_eq!(
+        events_of(&world.db(), user, "login-succeeded"),
+        vec!["desktop"]
+    );
+    // Used once: the same secret opens nothing more.
+    assert!(matches!(
+        exchange(&world, id, DESKTOP_SECRET).await,
+        Exchanged::Invalid
+    ));
+}
+
+#[tokio::test]
+async fn two_exchanges_of_one_request_at_the_same_moment_make_one_session() {
+    let world = World::new();
+    let user = world.user(None);
+    let source = caller(&world, user, None).session;
+    let id = world.desktop_request(Some((user, source, None)));
+
+    let (a, b) = tokio::join!(
+        exchange(&world, id, DESKTOP_SECRET),
+        exchange(&world, id, DESKTOP_SECRET)
+    );
+
+    let signed = [&a, &b]
+        .iter()
+        .filter(|o| matches!(o, Exchanged::SignedIn(_)))
+        .count();
+    let invalid = [&a, &b]
+        .iter()
+        .filter(|o| matches!(o, Exchanged::Invalid))
+        .count();
+    assert_eq!((signed, invalid), (1, 1));
+    assert_eq!(world.count("SELECT COUNT(*) FROM \"UserSessions\""), 2);
+}
+
+#[tokio::test]
+async fn a_session_that_passed_no_second_step_gives_a_session_that_counts_as_none() {
+    let world = World::new();
+    let user = world.user(None);
+    let source = caller(&world, user, None).session;
+    let id = world.desktop_request(Some((user, source, None)));
+
+    let Exchanged::SignedIn(signed) = exchange(&world, id, DESKTOP_SECRET).await else {
+        panic!("a session was expected")
+    };
+
+    let (completed, evidence): (Option<Timestamp>, Option<String>) = world
+        .db()
+        .query_row(
+            "SELECT \"MfaCompletedAt\", \"MfaEvidence\" FROM \"UserSessions\" WHERE \"Id\" = ?1",
+            [signed.session],
+            |r| Ok((r.get(0)?, r.get(1)?)),
+        )
+        .unwrap();
+    assert_eq!((completed, evidence), (None, None));
+}
+
+#[tokio::test]
+async fn an_approval_that_no_longer_stands_gives_nothing() {
+    let world = World::new();
+    let user = world.user(None);
+    let source = caller(&world, user, None).session;
+    let row = |world: &World| world.desktop_request(Some((user, source, None)));
+
+    // An account with a second step needs one the approval did not pass.
+    world.with_app(user).await;
+    let without = row(&world);
+    assert!(matches!(
+        exchange(&world, without, DESKTOP_SECRET).await,
+        Exchanged::Forbidden
+    ));
+    world
+        .db()
+        .execute(
+            "UPDATE \"MfaMethods\" SET \"RevokedAt\" = ?1",
+            [Timestamp::now()],
+        )
+        .unwrap();
+    // The approving session ended.
+    let ended = row(&world);
+    world
+        .db()
+        .execute(
+            "UPDATE \"UserSessions\" SET \"RevokedAt\" = ?1",
+            [Timestamp::now()],
+        )
+        .unwrap();
+    assert!(matches!(
+        exchange(&world, ended, DESKTOP_SECRET).await,
+        Exchanged::Forbidden
+    ));
+    world
+        .db()
+        .execute("UPDATE \"UserSessions\" SET \"RevokedAt\" = NULL", [])
+        .unwrap();
+    // The account changed since (a version the row does not carry).
+    let stale = row(&world);
+    world
+        .db()
+        .execute("UPDATE \"Users\" SET \"SessionVersion\" = 2", [])
+        .unwrap();
+    assert!(matches!(
+        exchange(&world, stale, DESKTOP_SECRET).await,
+        Exchanged::Forbidden
+    ));
+    world
+        .db()
+        .execute("UPDATE \"Users\" SET \"SessionVersion\" = 1", [])
+        .unwrap();
+    // Disabled, or waiting for recovery.
+    for column in ["IsDisabled", "SecurityRecoveryRequired"] {
+        let fresh = row(&world);
+        world
+            .db()
+            .execute(&format!("UPDATE \"Users\" SET \"{column}\" = 1"), [])
+            .unwrap();
+        assert!(
+            matches!(
+                exchange(&world, fresh, DESKTOP_SECRET).await,
+                Exchanged::Forbidden
+            ),
+            "{column}"
+        );
+        world
+            .db()
+            .execute(&format!("UPDATE \"Users\" SET \"{column}\" = 0"), [])
+            .unwrap();
+    }
+    assert_eq!(world.count("SELECT COUNT(*) FROM \"UserSessions\""), 1);
+}
+
+#[tokio::test]
+async fn an_approved_request_whose_approvers_password_changed_gives_nothing() {
+    let world = World::new();
+    let user = world.user(None);
+    let mine = caller(&world, user, None);
+    let id = world.desktop_request(Some((user, mine.session, None)));
+    world
+        .state
+        .database()
+        .write(move |tx| {
+            recovery::credentials_changed(tx, user, Some(mine.session), Timestamp::now())
+        })
+        .await
+        .map_err(|e: DbError| e)
+        .unwrap();
+
+    assert!(matches!(
+        exchange(&world, id, DESKTOP_SECRET).await,
+        Exchanged::Invalid
+    ));
+    assert_eq!(world.count("SELECT COUNT(*) FROM \"UserSessions\""), 1);
+}
+
+#[tokio::test]
+async fn the_version_the_approval_carries_must_be_the_accounts_and_a_secret_must_be_of_a_length_that_is_read()
+ {
+    let world = World::new();
+    let user = world.user(None);
+    let source = caller(&world, user, None).session;
+    // The session is at the account's version but the approval was not.
+    let id = world.desktop_request(Some((user, source, None)));
+    world
+        .db()
+        .execute(
+            "UPDATE \"DesktopBrowserLogins\" SET \"SecurityVersion\" = 7",
+            [],
+        )
+        .unwrap();
+    assert!(matches!(
+        exchange(&world, id, DESKTOP_SECRET).await,
+        Exchanged::Forbidden
+    ));
+    // A secret that is not of a length that is read opens nothing, even if a
+    // row holds its digest.
+    for secret in ["fifteen-chars-x", &"y".repeat(513)] {
+        let short = world.desktop_request(Some((user, source, None)));
+        world
+            .db()
+            .execute(
+                "UPDATE \"DesktopBrowserLogins\" SET \"SecretHash\" = ?2 WHERE \"Id\" = ?1",
+                params![short, super::tokens::hash(secret)],
+            )
+            .unwrap();
+        assert!(matches!(
+            exchange(&world, short, secret).await,
+            Exchanged::Invalid
+        ));
+    }
 }
