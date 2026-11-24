@@ -1,7 +1,6 @@
 //! Listing the inbox, reading entries and dismissing them.
 
-use axum::extract::{FromRequestParts, State};
-use axum::http::request::Parts;
+use axum::extract::State;
 use axum::http::{HeaderValue, StatusCode, header};
 use axum::response::{IntoResponse, Response};
 use rusqlite::{Connection, OptionalExtension, params};
@@ -10,7 +9,7 @@ use serde::Serialize;
 use super::entry::{COLUMNS, Entry, announce, announce_all_read};
 use crate::auth::Caller;
 use crate::database::DbError;
-use crate::http::{ApiError, ApiResult, Path, Problem, json_response};
+use crate::http::{ApiError, ApiResult, Path, Problem, Query, json_response};
 use crate::permissions::membership::ActiveServer;
 use crate::social::GuidSegment;
 use crate::state::AppState;
@@ -138,75 +137,44 @@ fn dto(entry: &Entry, just_read: bool) -> Notification {
 }
 
 /// `limit` and `beforeSequence` from the query, read as the first server read
-/// them: names in any case, an empty value as none, values given twice joined
-/// with a comma, a number with the spaces and sign a number may have. One that
-/// does not fit is a bad request, before anything else is asked.
-pub struct PageQuery {
+/// them: names in any case, values given twice joined with a comma, a number
+/// with the spaces and sign a number may have. A name that is there with a
+/// value that is no number, or with none, does not bind.
+struct PageQuery {
     limit: Option<i32>,
     before_sequence: Option<i64>,
-}
-
-fn decode(text: &str) -> String {
-    let bytes = text.as_bytes();
-    let mut out = Vec::with_capacity(bytes.len());
-    let mut at = 0;
-    while at < bytes.len() {
-        let hex = |i: usize| bytes.get(i).and_then(|b| char::from(*b).to_digit(16));
-        match bytes[at] {
-            b'+' => out.push(b' '),
-            b'%' => match (hex(at + 1), hex(at + 2)) {
-                (Some(high), Some(low)) => {
-                    out.push(u8::try_from(high * 16 + low).unwrap_or(b'%'));
-                    at += 2;
-                }
-                _ => out.push(b'%'),
-            },
-            byte => out.push(byte),
-        }
-        at += 1;
-    }
-    String::from_utf8_lossy(&out).into_owned()
 }
 
 fn is_blank(c: char) -> bool {
     matches!(c, '\t'..='\r' | ' ')
 }
 
-/// A whole number the way a number is read from a query: digits with an
-/// optional sign and spaces around.
-fn number<T: std::str::FromStr>(text: &str) -> Result<Option<T>, ()> {
-    if text.is_empty() {
-        return Ok(None);
-    }
+fn number<T: std::str::FromStr>(text: &str) -> Result<T, ()> {
     let trimmed = text.trim_matches(is_blank);
     let digits = trimmed.strip_prefix(['+', '-']).unwrap_or(trimmed);
     if digits.is_empty() || !digits.bytes().all(|b| b.is_ascii_digit()) {
         return Err(());
     }
-    trimmed.parse::<T>().map(Some).map_err(|_| ())
-
+    trimmed.parse::<T>().map_err(|_| ())
 }
 
-fn query_value(query: &str, name: &str) -> String {
-    query
-        .split('&')
-        .filter_map(|pair| {
-            let (key, value) = pair.split_once('=').unwrap_or((pair, ""));
-            decode(key).eq_ignore_ascii_case(name).then(|| decode(value))
-        })
-        .collect::<Vec<_>>()
-        .join(",")
+fn bound<T: std::str::FromStr>(pairs: &[(String, String)], name: &str) -> Result<Option<T>, ()> {
+    let values: Vec<&str> = pairs
+        .iter()
+        .filter(|(key, _)| key.eq_ignore_ascii_case(name))
+        .map(|(_, value)| value.as_str())
+        .collect();
+    if values.is_empty() {
+        return Ok(None);
+    }
+    number(&values.join(",")).map(Some)
 }
 
-impl<S: Send + Sync> FromRequestParts<S> for PageQuery {
-    type Rejection = ApiError;
-
-    async fn from_request_parts(parts: &mut Parts, _: &S) -> Result<PageQuery, ApiError> {
-        let query = parts.uri.query().unwrap_or("");
+impl PageQuery {
+    fn read(pairs: &[(String, String)]) -> Result<PageQuery, ()> {
         Ok(PageQuery {
-            limit: number(&query_value(query, "limit")).map_err(|()| ApiError::bad_request())?,
-            before_sequence: number(&query_value(query, "beforeSequence"))
-                .map_err(|()| ApiError::bad_request())?,
+            limit: bound(pairs, "limit")?,
+            before_sequence: bound(pairs, "beforeSequence")?,
         })
     }
 }
@@ -256,9 +224,14 @@ fn list_page(
 pub async fn list(
     State(state): State<AppState>,
     caller: Caller,
-    query: PageQuery,
     ActiveServer(server): ActiveServer,
+    Query(pairs): Query<Vec<(String, String)>>,
 ) -> ApiResult<Response> {
+    // The query is bound after the server is known, so a person who is no
+    // member is told so whatever the query says.
+    let Ok(query) = PageQuery::read(&pairs) else {
+        return Ok(private(ApiError::bad_request().into_response()));
+    };
     let size = i64::from(query.limit.map_or(DEFAULT_PAGE_SIZE as i32, |l| l));
     if !(1..=MAX_PAGE_SIZE).contains(&size) || query.before_sequence.is_some_and(|b| b <= 0) {
         return Ok(private(

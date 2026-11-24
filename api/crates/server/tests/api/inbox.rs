@@ -262,13 +262,14 @@ async fn the_query_is_read_the_way_the_first_server_read_it() {
     for n in 0..4 {
         i.plain(&i.ada, &format!("n{n}"));
     }
-    for (query, count) in [("?Limit=2", 2), ("?LIMIT=2", 2), ("?limit=+2", 2), ("?limit=%202", 2), ("?limit=", 4), ("?limit", 4), ("?beforeSequence=", 4), ("?BEFORESEQUENCE=3", 2), ("?unknown=1&limit=1", 1)] {
+    for (query, count) in [("?Limit=2", 2), ("?LIMIT=2", 2), ("?limit=+2", 2), ("?limit=%202", 2), ("?BEFORESEQUENCE=3", 2), ("?unknown=1&limit=1", 1)] {
         assert_eq!(list(&i.ada.client, query).await["items"].as_array().unwrap().len(), count, "{query}");
     }
-    for query in ["?limit=abc", "?limit=2&limit=3", "?limit=1e1", "?limit=2.0", "?limit=99999999999", "?beforeSequence=9999999999999999999999", "?limit=1_0", "?limit=%C2%B22"] {
+    for query in ["?limit=", "?limit", "?beforeSequence=", "?limit=abc", "?limit=2&limit=3", "?limit=1e1", "?limit=2.0", "?limit=99999999999", "?beforeSequence=9999999999999999999999", "?limit=1_0", "?limit=%C2%B22"] {
         let response = i.ada.client.get(&format!("/api/notifications{query}")).await;
         assert_eq!(response.status, 400, "{query}");
         assert!(response.text().is_empty(), "{query}");
+        assert_eq!(response.header("cache-control"), Some("no-store"), "{query}");
     }
     for query in ["?limit=0", "?limit=-1", "?limit=101", "?beforeSequence=0", "?beforeSequence=-4"] {
         let response = i.ada.client.get(&format!("/api/notifications{query}")).await;
@@ -291,9 +292,9 @@ async fn which_refusal_comes_first_and_which_answers_forbid_caching() {
         assert_eq!(response.status, 403, "{path}");
         assert!(response.header("cache-control").is_none(), "a refusal of the server comes before the headers");
     }
-    // A query that does not bind is refused before the server is looked at.
+    // A query that does not bind is refused after the server is looked at.
     let response = i.ada.client.send(Request::new(Method::GET, "/api/notifications?limit=x").header("X-Stellarr-Server", &stranger.to_string())).await;
-    assert_eq!(response.status, 400);
+    assert_eq!(response.status, 403);
     let response = i.ada.client.send(Request::new(Method::GET, "/api/notifications").header("X-Stellarr-Server", "not-an-id")).await;
     assert_eq!(response.status, 400);
     assert_eq!(i.server.anonymous().get("/api/notifications").await.status, 401);
