@@ -1927,3 +1927,107 @@ async fn the_address_a_code_was_mailed_to_is_the_one_in_the_account_trimmed() {
         .execute("UPDATE \"Users\" SET \"Email\" = 'new@example.test'", [])
         .unwrap();
 }
+
+#[tokio::test]
+async fn an_instance_without_passkeys_says_so_only_after_the_challenge_and_the_name_were_looked_at()
+{
+    let world = World::new();
+    let user = world.user(None);
+    let (signing, signing_preauth) = world.challenge(user, PURPOSE_MFA);
+    let (enrolling, enrolling_preauth) = world.challenge(user, PURPOSE_ENROLLMENT);
+    let (signing_id, enrolling_id) = (signing.id.to_string(), enrolling.id.to_string());
+    let for_signing = ask(&signing, &signing_preauth, &signing_id);
+    let for_enrolling = ask(&enrolling, &enrolling_preauth, &enrolling_id);
+    let none: Option<&stellarr_webauthn::RelyingParty> = None;
+
+    // Options for a second step: the challenge for it is looked at, then passkeys.
+    assert_eq!(
+        passkey_options(&world.state, &for_signing, none)
+            .await
+            .unwrap(),
+        PasskeyOptions::PasskeysUnavailable
+    );
+    assert!(matches!(
+        passkey_options(&world.state, &for_enrolling, none)
+            .await
+            .unwrap(),
+        PasskeyOptions::Invalid(_)
+    ));
+    // Options for adding one.
+    assert_eq!(
+        start_passkey(&world.state, &for_enrolling, none)
+            .await
+            .unwrap(),
+        PasskeyStarted::PasskeysUnavailable
+    );
+    assert!(matches!(
+        start_passkey(&world.state, &for_signing, none)
+            .await
+            .unwrap(),
+        PasskeyStarted::Invalid(_)
+    ));
+    // The answer to either.
+    let answered = answer(
+        &world.state,
+        &for_signing,
+        Answer::PasskeysUnavailable,
+        false,
+        nothing,
+    )
+    .await
+    .unwrap();
+    assert!(matches!(answered, Answered::PasskeysUnavailable));
+    let answered = answer(
+        &world.state,
+        &for_enrolling,
+        Answer::PasskeysUnavailable,
+        false,
+        nothing,
+    )
+    .await
+    .unwrap();
+    assert!(matches!(answered, Answered::Invalid(_)));
+    // Adding one: the challenge, then the name, then passkeys.
+    let too_long = "n".repeat(65);
+    let invalid_name = confirm_passkey(
+        &world.state,
+        &for_enrolling,
+        none,
+        Some(&too_long),
+        None,
+        false,
+        nothing,
+    )
+    .await
+    .unwrap();
+    assert!(matches!(invalid_name, Enrolled::InvalidName));
+    let unavailable = confirm_passkey(
+        &world.state,
+        &for_enrolling,
+        none,
+        Some("Key"),
+        None,
+        false,
+        nothing,
+    )
+    .await
+    .unwrap();
+    assert!(matches!(unavailable, Enrolled::PasskeysUnavailable));
+    let wrong_challenge = confirm_passkey(
+        &world.state,
+        &for_signing,
+        none,
+        Some("Key"),
+        None,
+        false,
+        nothing,
+    )
+    .await
+    .unwrap();
+    assert!(matches!(wrong_challenge, Enrolled::Invalid(_)));
+    // Nothing of it cost an attempt.
+    assert_eq!(
+        world.count("SELECT SUM(\"Attempts\") FROM \"AuthChallenges\""),
+        0
+    );
+}
