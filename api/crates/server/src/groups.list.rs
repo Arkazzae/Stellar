@@ -3,6 +3,8 @@ groups! {
     administration,
     assets,
     channels,
+    inbox,
+    social,
     health,
     messages,
     message_views,
