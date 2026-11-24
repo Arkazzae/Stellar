@@ -65,6 +65,8 @@ fn creation_options_have_the_members_the_client_reads() {
                 {"type": "public-key", "id": b64::encode(&[9; 20]), "transports": ["usb", "smart-card"]},
                 {"type": "public-key", "id": b64::encode(&[8; 5])},
             ],
+            "attestationFormats": [],
+            "hints": [],
         })
     );
     assert_eq!(options.challenge, challenge());
@@ -87,6 +89,7 @@ fn assertion_options_have_the_members_the_client_reads() {
                 {"type": "public-key", "id": b64::encode(&[7; 32]), "transports": ["internal"]}
             ],
             "userVerification": "required",
+            "hints": [],
         })
     );
 

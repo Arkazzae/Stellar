@@ -128,6 +128,11 @@ struct CreationOptions<'a> {
     authenticator_selection: SelectionJson,
     #[serde(rename = "excludeCredentials")]
     exclude_credentials: Vec<Descriptor>,
+    // Always empty: no hint is given and every attestation format is allowed
+    // to come back, as the options the web client already receives say.
+    #[serde(rename = "attestationFormats")]
+    attestation_formats: [&'static str; 0],
+    hints: [&'static str; 0],
 }
 
 #[derive(Serialize)]
@@ -138,8 +143,8 @@ struct RpJson<'a> {
 
 #[derive(Serialize)]
 struct UserJson<'a> {
-    id: String,
     name: &'a str,
+    id: String,
     #[serde(rename = "displayName")]
     display_name: &'a str,
 }
@@ -173,6 +178,7 @@ struct RequestOptions<'a> {
     allow_credentials: Vec<Descriptor>,
     #[serde(rename = "userVerification")]
     user_verification: &'static str,
+    hints: [&'static str; 0],
 }
 
 /// Options for creating a credential: attestation not requested, user
@@ -213,6 +219,8 @@ pub fn creation_options(
             user_verification: "required",
         },
         exclude_credentials: descriptors(exclude),
+        attestation_formats: [],
+        hints: [],
     };
     let json = serde_json::to_string(&options)
         .map_err(|_| Error::InvalidRequest("options do not serialize"))?;
@@ -232,6 +240,7 @@ pub fn assertion_options(
         rp_id: relying_party.id(),
         allow_credentials: descriptors(allow),
         user_verification: "required",
+        hints: [],
     };
     let json = serde_json::to_string(&options)
         .map_err(|_| Error::InvalidRequest("options do not serialize"))?;
