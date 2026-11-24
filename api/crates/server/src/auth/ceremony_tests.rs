@@ -144,7 +144,10 @@ async fn code_answer(
     answer(
         &world.state,
         &ask(challenge, preauth, &id),
-        Answer::Code { method, code },
+        Answer::Code {
+            method: method.map(|id| id.to_string()).as_deref(),
+            code,
+        },
         remember,
         nothing,
     )
@@ -184,7 +187,7 @@ async fn an_ordinary_sign_in_challenge_cannot_be_used_to_add_a_second_step() {
         &world.state,
         &ask(&challenge, &preauth, &id),
         TotpConfirmation {
-            method: Some(pending.0),
+            method: Some(&pending.0.to_string()),
             name: None,
             code: &now_code(&pending.1),
         },
@@ -358,7 +361,7 @@ async fn a_refused_link_leaves_the_proof_spent_and_the_person_signed_in() {
         &world.state,
         &ask(&challenge, &preauth, &id),
         Answer::Code {
-            method: Some(method),
+            method: Some(&method.to_string()),
             code: &now_code(&secret),
         },
         true,
@@ -423,7 +426,7 @@ async fn a_hook_that_succeeds_keeps_its_writes_with_the_sign_in() {
         &world.state,
         &ask(&challenge, &preauth, &id),
         Answer::Code {
-            method: Some(method),
+            method: Some(&method.to_string()),
             code: &now_code(&secret),
         },
         false,
@@ -571,9 +574,13 @@ async fn a_mailed_code_is_sent_and_answers_the_sign_in() {
     let (challenge, preauth) = world.challenge(user, PURPOSE_MFA);
     let id = challenge.id.to_string();
 
-    let sent = send_login_code(&world.state, &ask(&challenge, &preauth, &id), Some(method))
-        .await
-        .unwrap();
+    let sent = send_login_code(
+        &world.state,
+        &ask(&challenge, &preauth, &id),
+        Some(&method.to_string()),
+    )
+    .await
+    .unwrap();
 
     assert_eq!(sent, Sent::Delivered);
     let data = smtp.mails()[0].data.clone();
@@ -593,7 +600,7 @@ async fn a_mailed_code_is_sent_and_answers_the_sign_in() {
     let none = send_login_code(
         &world.state,
         &ask(&enrolling, &enrolling_preauth, &other),
-        Some(method),
+        Some(&method.to_string()),
     )
     .await
     .unwrap();
@@ -631,7 +638,7 @@ async fn an_app_is_set_up_and_signs_the_person_in_with_recovery_codes_once() {
         &world.state,
         &ask(&challenge, &preauth, &id),
         TotpConfirmation {
-            method: Some(method),
+            method: Some(&method.to_string()),
             name: Some(&too_long),
             code: &now_code(&secret),
         },
@@ -645,7 +652,7 @@ async fn an_app_is_set_up_and_signs_the_person_in_with_recovery_codes_once() {
         &world.state,
         &ask(&challenge, &preauth, &id),
         TotpConfirmation {
-            method: Some(method),
+            method: Some(&method.to_string()),
             name: None,
             code: &wrong_code(&secret),
         },
@@ -664,7 +671,7 @@ async fn an_app_is_set_up_and_signs_the_person_in_with_recovery_codes_once() {
         &world.state,
         &ask(&challenge, &preauth, &id),
         TotpConfirmation {
-            method: Some(method),
+            method: Some(&method.to_string()),
             name: Some("Mine"),
             code: &now_code(&secret),
         },
@@ -711,7 +718,7 @@ async fn an_app_is_set_up_and_signs_the_person_in_with_recovery_codes_once() {
         &world.state,
         &ask(&second, &second_preauth, &second_id),
         TotpConfirmation {
-            method: Some(method),
+            method: Some(&method.to_string()),
             name: None,
             code: &now_code(&secret),
         },
@@ -1020,7 +1027,7 @@ async fn proving_a_second_step_again_gives_a_new_session_and_leaves_the_old_one(
             challenge_id: &id,
         },
         Answer::Code {
-            method: Some(method),
+            method: Some(&method.to_string()),
             code: &now_code(&secret),
         },
         true,
@@ -1358,7 +1365,7 @@ async fn a_recovered_account_redeems_its_credential_once_and_sets_a_new_step_up(
         &world.state,
         &ask,
         TotpConfirmation {
-            method: Some(method),
+            method: Some(&method.to_string()),
             name: None,
             code: &now_code(&secret),
         },
@@ -1660,7 +1667,7 @@ async fn a_challenge_asked_from_a_session_dies_with_that_session() {
             challenge_id: &id,
         },
         Answer::Code {
-            method: Some(method),
+            method: Some(&method.to_string()),
             code: &now_code(&secret),
         },
         false,
@@ -1728,4 +1735,61 @@ async fn a_pending_challenge_is_described_to_its_browser_and_given_up_by_it_alon
             .unwrap(),
         Pending::Invalid(_)
     ));
+}
+
+#[tokio::test]
+async fn ids_are_read_in_every_spelling_the_first_server_read() {
+    let world = World::new();
+    let user = world.user(None);
+    let (method, secret) = world.with_app(user).await;
+    let (challenge, preauth) = world.challenge(user, PURPOSE_MFA);
+    // The challenge in capitals without hyphens, the method with hyphens in parentheses.
+    let spelled = challenge.id.to_string().replace('-', "").to_uppercase();
+    let method_spelled = format!("  ({})  ", method.to_string().to_uppercase());
+
+    let answered = answer(
+        &world.state,
+        &Ask {
+            context: &CONTEXT,
+            preauth: Some(&preauth),
+            challenge_id: &spelled,
+        },
+        Answer::Code {
+            method: Some(&method_spelled),
+            code: &now_code(&secret),
+        },
+        false,
+        nothing,
+    )
+    .await
+    .unwrap();
+
+    let Answered::SignedIn { completed, .. } = answered else {
+        panic!("a sign-in was expected")
+    };
+    assert_eq!(completed.evidence, "totp");
+    // A text that is no id names no method: the code is taken for a recovery code.
+    let (second, second_preauth) = world.challenge(user, PURPOSE_MFA);
+    let second_id = second.id.to_string();
+    let refused = answer(
+        &world.state,
+        &Ask {
+            context: &CONTEXT,
+            preauth: Some(&second_preauth),
+            challenge_id: &second_id,
+        },
+        Answer::Code {
+            method: Some("not an id"),
+            code: &now_code(&secret),
+        },
+        false,
+        nothing,
+    )
+    .await
+    .unwrap();
+    assert!(matches!(refused, Answered::Refused));
+    assert_eq!(
+        world.count("SELECT COUNT(*) FROM \"SecurityEvents\" WHERE \"Detail\" = 'recovery'"),
+        1
+    );
 }

@@ -51,9 +51,10 @@ pub(super) enum Attempt {
 pub(super) async fn login_code(
     state: &AppState,
     ask: &Ask<'_>,
-    method: Option<Id>,
+    method: Option<&str>,
 ) -> Result<Sent, DbError> {
     let own = Own::of(ask);
+    let method = method.and_then(crate::values::parse_guid);
     let sealer_state = state.clone();
     send_with(state, move |tx, policy, now| {
         let challenge = match open(tx, &own, mfa::answers_with_a_code, now)? {

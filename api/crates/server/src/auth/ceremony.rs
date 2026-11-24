@@ -433,7 +433,13 @@ pub enum Answer<'a> {
     /// "This browser is remembered."
     TrustedDevice,
     /// A code; for the method named, or a recovery code without one.
-    Code { method: Option<Id>, code: &'a str },
+    /// `method` is the id as the client wrote it, in any spelling the first
+    /// server read; a text that is none names no method, and the code is
+    /// taken for a recovery code.
+    Code {
+        method: Option<&'a str>,
+        code: &'a str,
+    },
     /// A passkey's signed answer.
     Passkey {
         relying_party: &'a RelyingParty,
@@ -500,7 +506,7 @@ where
     let answer = match answer {
         Answer::TrustedDevice => OwnedAnswer::TrustedDevice,
         Answer::Code { method, code } => OwnedAnswer::Code {
-            method,
+            method: method.and_then(crate::values::parse_guid),
             code: code.trim().to_string(),
         },
         Answer::Passkey {
@@ -713,7 +719,8 @@ pub async fn start_totp(
 
 /// The first code of an authenticator app.
 pub struct TotpConfirmation<'a> {
-    pub method: Option<Id>,
+    /// The id as the client wrote it, in any spelling the first server read.
+    pub method: Option<&'a str>,
     pub name: Option<&'a str>,
     pub code: &'a str,
 }
@@ -734,7 +741,7 @@ where
     let own = Own::of(ask);
     let state_in = state.clone();
     let (method, requested, code) = (
-        confirmation.method,
+        confirmation.method.and_then(crate::values::parse_guid),
         confirmation.name.map(str::to_string),
         confirmation.code.to_string(),
     );
@@ -797,7 +804,7 @@ where
 pub async fn send_login_code(
     state: &AppState,
     ask: &Ask<'_>,
-    method: Option<Id>,
+    method: Option<&str>,
 ) -> Result<super::email_send::Sent, DbError> {
     super::email_send::login_code(state, ask, method).await
 }

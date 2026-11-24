@@ -534,33 +534,12 @@ pub(super) fn confirm_totp_enrollment(
     }
 }
 
-/// The method a request names, read as the first server read it: the id
-/// with its dashes, without them, in braces or in parentheses, in either
-/// letter case and with white space round it. Anything else names no method,
-/// and the code that goes with it is taken for a recovery code.
+/// The method a request names, read as the first server read it (see
+/// `values::parse_guid`). Anything else names no method, and the code that
+/// goes with it is taken for a recovery code. The ceremonies read ids
+/// themselves; a route has no need of this.
 pub fn parse_method_id(text: &str) -> Option<Id> {
-    let text = text.trim();
-    let inner = if let Some(inner) = text.strip_prefix('{') {
-        inner.strip_suffix('}')?
-    } else if let Some(inner) = text.strip_prefix('(') {
-        inner.strip_suffix(')')?
-    } else {
-        text
-    };
-    if inner.len() == 32
-        && !text.starts_with(['{', '('])
-        && inner.bytes().all(|b| b.is_ascii_hexdigit())
-    {
-        return Id::parse(&format!(
-            "{}-{}-{}-{}-{}",
-            &inner[..8],
-            &inner[8..12],
-            &inner[12..16],
-            &inner[16..20],
-            &inner[20..]
-        ));
-    }
-    Id::parse(inner)
+    crate::values::parse_guid(text)
 }
 
 /// The name a person gave a method, or the one to use when they gave none:
