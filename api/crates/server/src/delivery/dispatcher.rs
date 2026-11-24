@@ -23,7 +23,7 @@
 //! being written down is not leased again, and is cancelled when it expires.
 //!
 //! A person who is online is not treated differently: the service worker
-//! hides a notice for a window that has focus, as the first server relied on.
+//! hides a notice for a window that has focus.
 
 use std::time::Duration;
 

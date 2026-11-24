@@ -13,8 +13,7 @@ pub fn open() -> (TempDir, Connection) {
     (folder, connection)
 }
 
-/// An account with the address given (stored the way the first server stores
-/// it: as written, and in capitals beside it).
+/// An account with the given address and its uppercase lookup key.
 pub fn add_user(connection: &Connection, email: Option<&str>) -> Id {
     let id = Id::random();
     connection

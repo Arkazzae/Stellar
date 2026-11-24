@@ -380,7 +380,7 @@ mod tests {
     }
 
     #[test]
-    fn a_range_is_read_the_way_the_first_server_read_it() {
+    fn range_parser_handles_supported_and_invalid_byte_ranges() {
         let read = |text: &str| parse_range(text);
 
         assert_eq!(read("bytes=0-5"), Some((Some(0), Some(5))));

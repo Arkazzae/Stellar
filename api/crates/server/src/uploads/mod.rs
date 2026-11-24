@@ -8,7 +8,7 @@
 //! The form is read while it arrives (see [`crate::http::multipart`]): each
 //! file goes to a staging folder as it comes, nothing over its limit is
 //! written, and only when the whole form is in is it decided what the answer
-//! is, in the order the first server decided it. A file is then checked
+//! is. A file is then checked
 //! against the type it claims, room is reserved for it
 //! ([`crate::admission`]), and it is moved into the store before its row is
 //! written; a row that cannot be written takes its objects out again.

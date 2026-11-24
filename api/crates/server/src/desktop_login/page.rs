@@ -1,9 +1,7 @@
 //! The two small pages the system browser is shown: a notice, and the
 //! confirmation with the button that approves.
 //!
-//! They are written here, byte for byte as the first server wrote them,
-//! because a browser opened by the desktop application has nothing else to
-//! run: the policy sent with them forbids every script, every outside
+//! The pages are self-contained. The content security policy forbids scripts, outside
 //! resource, every frame that would hold the page and every form that would
 //! send it elsewhere. Every value that is put into the markup passes through
 //! [`encode`].
@@ -117,7 +115,7 @@ fn html_response(html: String, status: StatusCode) -> Response {
     response
 }
 
-/// Text made safe to put into markup, as the first server's encoder made it:
+/// Escapes text before inserting it into markup:
 /// the five characters that mean something in markup, and every character of
 /// Latin-1 above the space and every one outside the Basic Multilingual Plane
 /// as a number, so that the page is plain ASCII wherever that matters.
@@ -177,8 +175,7 @@ mod tests {
     }
 
     #[test]
-    fn exactly_the_characters_the_first_servers_encoder_changed_are_changed() {
-        // The set was read from that encoder, for every character there is.
+    fn markup_escaping_changes_exactly_the_expected_code_points() {
         let mut changed: Vec<u32> = vec![34, 38, 39, 60, 62];
         changed.extend(160..=255);
         for code in (0..=0x10FFFF).filter(|code| !(0xD800..=0xDFFF).contains(code)) {
@@ -197,7 +194,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn the_notice_is_the_page_the_first_server_wrote() {
+    async fn the_notice_renders_the_expected_html() {
         let response = notice(
             "pl",
             "Zalogowano do <Stellarr>",

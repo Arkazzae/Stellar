@@ -1,6 +1,6 @@
 //! What every request goes through, in this order, outermost first:
 //!
-//! 0. read the target as the first server's front did (see [`super::path`]):
+//! 0. normalize the request target (see [`super::path`]):
 //!    refuse a request line that is too long or a path with a null character,
 //!    decode the path, remove its dot segments and one slash at its end.
 //!    Nothing after this sees another path;
@@ -21,8 +21,8 @@
 //!
 //! Which route a request is for is known to every step, since routing comes
 //! first, but a step that wants to refuse a request does so before the
-//! handler is ever called. The order is the one the first server had and it
-//! matters: a refusal by the gate still counts against the limit, and a
+//! handler is ever called. Order matters: a refusal by the gate still counts
+//! against the limit, and a
 //! response that the pipeline itself produces is counted and logged like any
 //! other.
 
@@ -132,8 +132,7 @@ pub fn build(
         .layer(from_fn_with_state(pipeline, count));
     // The router adds the `Allow` header of a 405 after its layers have run,
     // so the one step that rewrites it has to stand outside the router.
-    // Outermost of all, the target is read as the first server's front read
-    // it, so that nothing inside sees another path than the router does.
+    // Normalise the target before routing so the router and handlers see the same path.
     Router::new()
         .fallback_service(inner)
         .layer(axum::middleware::from_fn(allowed_methods))

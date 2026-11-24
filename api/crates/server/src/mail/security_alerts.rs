@@ -43,8 +43,7 @@ const RETRY_STEP_MINUTES: i64 = 5;
 const RETRY_CAP_MINUTES: i64 = 60;
 /// Where a batch goes when alerts or mail are off.
 const OFF_DELAY: Duration = Duration::from_secs(60 * 60);
-/// The most of an error a row keeps, counted in UTF-16 units as the clients
-/// and the first server count.
+/// Maximum error text stored per row, in UTF-16 code units.
 const MAX_ERROR_UNITS: usize = 500;
 
 pub fn workers() -> Vec<Worker> {

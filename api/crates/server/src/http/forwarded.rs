@@ -42,7 +42,7 @@ pub struct ClientInfo {
     pub address: IpAddr,
     /// What the proxy wrote in `X-Forwarded-Proto`: the last entry of it,
     /// trimmed, in the case it was written in. It is passed on as it came
-    /// whatever it is (`gopher`, `HTTPS`), as the first server did, provided it
+    /// whatever it is (`gopher`, `HTTPS`), provided it
     /// is made of letters, digits, `+`, `-` and `.`; an entry with anything else
     /// in it is not read at all (and the one before it is not looked at
     /// instead), and neither is an empty one. `http` then. Only
@@ -123,7 +123,7 @@ pub fn resolve(peer: IpAddr, headers: &HeaderMap, trusted: &TrustedProxies) -> C
     }
 }
 
-/// What the first server took for a scheme: not empty, and nothing but
+/// A valid forwarded scheme is nonempty and uses only
 /// letters, digits, `+`, `-` and `.`.
 fn is_scheme(text: &str) -> bool {
     !text.is_empty()

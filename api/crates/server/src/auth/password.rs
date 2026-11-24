@@ -112,7 +112,7 @@ fn decoded(text: &str, length: usize) -> Option<Vec<u8>> {
 }
 
 /// Whether a new password is shorter than the policy allows. Length is
-/// counted in UTF-16 code units, as the first server did.
+/// counted in UTF-16 code units.
 pub fn is_too_short(password: Option<&str>) -> bool {
     password.is_none_or(|p| stellarr_unicode::utf16::length(p) < MIN_LENGTH)
 }

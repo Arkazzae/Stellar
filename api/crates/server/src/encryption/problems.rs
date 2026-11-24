@@ -1,6 +1,6 @@
 //! The refusals clients act on by their `code`, each with a title they may
 //! show and whatever else they need to recover. The extras come first and the
-//! code last, as the first server wrote them.
+//! code last.
 
 use axum::http::StatusCode;
 use serde::Serialize;

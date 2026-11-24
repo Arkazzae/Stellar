@@ -33,7 +33,7 @@ use stellarr_messages::{MessageKey, Messages, MissingValue};
 /// The server a request is about, asked for like [`ActiveServer`] but refused
 /// only when the handler asks for it. A route that reads a body takes this
 /// one, so that a body that cannot be read is answered 400 before a person who
-/// is no member is answered 403, as the first server did.
+/// is no member is answered 403.
 pub struct Chosen(crate::permissions::membership::Choice);
 
 impl Chosen {
@@ -173,8 +173,7 @@ fn no_member_role(messages: &Messages) -> Result<ApiError, MissingValue> {
         .into())
 }
 
-/// An id that a request leaves out, which the first server read as the empty
-/// one.
+/// The nil ID used when a request omits an ID.
 fn nil() -> Id {
     Id::from_bytes([0; 16])
 }

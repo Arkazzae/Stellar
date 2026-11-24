@@ -295,8 +295,7 @@ fn verify_method(
 }
 
 /// What asking for a mailed code came to, before the mail itself is tried.
-/// The order is the first server's: the challenge was looked at already, then
-/// the method and the address, then whether mail can be sent at all.
+/// Checks the challenge and method, then the email address and mail availability.
 #[derive(Debug, PartialEq, Eq)]
 pub(super) enum Reserve {
     /// The method, or the address it is for, cannot be used.

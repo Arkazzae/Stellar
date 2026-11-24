@@ -1,7 +1,7 @@
 //! How a value is written into the database and into JSON, once.
 //!
 //! Every row has an [`Id`] and most have a [`Timestamp`]; the rest are plain
-//! columns whose storage the first server fixed:
+//! columns with the following storage formats:
 //!
 //! - ids are text in capitals, and lower case in JSON;
 //! - moments are UTC text with a trimmed fraction, and the same with `T` and

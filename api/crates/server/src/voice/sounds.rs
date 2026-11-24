@@ -25,8 +25,7 @@ const SOUNDBOARD_COOLDOWN: Duration = Duration::from_secs(5);
 /// itself is never delayed or refused.
 pub const JOIN_SOUND_COOLDOWN: Duration = Duration::from_secs(30);
 
-/// A number of seconds written as the first server wrote it: a whole number
-/// without a point.
+/// Whole durations in seconds are written as integers.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct Seconds(pub f64);
 

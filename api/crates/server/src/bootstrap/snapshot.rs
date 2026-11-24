@@ -271,9 +271,8 @@ fn first_page(
         .query_map(params![channel, FIRST_PAGE_SIZE], |row| row.get(0))?
         .collect::<rusqlite::Result<_>>()?;
     // Newest first as read, oldest first as answered. Messages of one moment
-    // come in the reverse of the order the database listed them, which is how
-    // the first server's page came out, and which of them are among the hundred
-    // is the database's choice too.
+    // come in the reverse of the database order, which also determines which
+    // of the tied messages make the page.
     ids.reverse();
     dto::load(db, messages, &ids, Some(viewer))
 }

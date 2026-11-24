@@ -1,11 +1,10 @@
-//! How the first server read text, where it differs from Rust's own habits:
+//! Text handling for messages:
 //! what counts as white space, and lengths in UTF-16 units.
 //!
 //! A limit written as "at most 64 characters" was a limit on UTF-16 units, so
 //! a flag counts four and a family seven. The limits here count the same way.
 
-/// Whether the character is white space as the first server's runtime knew
-/// it: the controls from tab to carriage return, the space separators, the
+/// Whether the character is white space: the controls from tab to carriage return, the space separators, the
 /// line and paragraph separators and U+0085. The list is spelled out because
 /// the standard library's own list follows a newer Unicode.
 pub fn is_white_space(c: char) -> bool {
@@ -37,7 +36,7 @@ mod tests {
     use super::*;
 
     #[test]
-    fn white_space_is_the_first_servers_list() {
+    fn white_space_has_the_expected_code_points() {
         let listed: Vec<u32> = (0..0x1_0000u32)
             .filter(|&u| char::from_u32(u).is_some_and(is_white_space))
             .collect();

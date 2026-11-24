@@ -57,8 +57,7 @@ mod tests {
         enum ChannelKind { Text = 0, Voice = 1 }
     }
 
-    // Values as they stand in a database the first server wrote: `general` is
-    // kind 0 and `voice` is kind 1.
+    // The database stores `general` as kind 0 and `voice` as kind 1.
     #[test]
     fn an_enum_is_the_integer_the_database_holds() {
         let db = rusqlite::Connection::open_in_memory().unwrap();

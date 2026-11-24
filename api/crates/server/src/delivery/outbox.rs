@@ -164,7 +164,7 @@ struct Queue<'a> {
 
 impl Queue<'_> {
     fn add(&self, channel: &str, key: &str, subscription: Option<Id>) -> rusqlite::Result<()> {
-        // The key is counted in UTF-16 units, as the first server counted it.
+        // The key length is counted in UTF-16 code units.
         if stellarr_unicode::utf16::length(&key) > MAX_DESTINATION_KEY_UNITS {
             return Ok(());
         }

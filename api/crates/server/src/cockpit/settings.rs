@@ -225,9 +225,8 @@ impl Change {
 
     /// A change of anything about mail: the server that sends every account
     /// mail (which a stolen session could point elsewhere), the sender, whether
-    /// mail is sent at all and which kinds of it are. The first server asked
-    /// for the step for the transport alone; this server asks for all of it,
-    /// on purpose.
+    /// mail is sent at all and which kinds of it are. Every mail setting change
+    /// requires a fresh second step.
     fn changes_mail(&self, row: &Row) -> bool {
         self.mailing_enabled != row.mailing_enabled
             || self.mail_from_address.as_deref().unwrap_or("").trim() != row.mail_from_address

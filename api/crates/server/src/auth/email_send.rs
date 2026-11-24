@@ -81,7 +81,7 @@ async fn mail_ready(state: &AppState) -> Result<bool, DbError> {
 
 /// Mails the code of a sign-in's second step for one of the account's mail
 /// methods. The challenge is looked at first, then the method, then whether
-/// mail can be sent, as the first server did; nothing is written until all
+/// mail can be sent. Nothing is written until all
 /// three are in order.
 pub(super) async fn login_code(
     state: &AppState,

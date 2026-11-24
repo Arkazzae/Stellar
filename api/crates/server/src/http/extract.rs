@@ -14,8 +14,7 @@ use super::forwarded::ClientInfo;
 
 /// A value taken from the path, such as `Path(id): Path<Id>` for
 /// `/api/channels/{id}`. A segment that is not a value of its type is a path
-/// that does not exist: 404 with no body, as it was where the first server
-/// typed a segment (`{id:guid}`).
+/// that does not exist and returns 404 with no body.
 pub struct Path<T>(pub T);
 
 impl<T: DeserializeOwned + Send, S: Send + Sync> FromRequestParts<S> for Path<T> {

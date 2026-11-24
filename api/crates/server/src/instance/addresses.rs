@@ -9,8 +9,7 @@
 const SYMBOLS: &str = "!#$%&'*+-/=?^_`{|}~";
 
 fn is_atom_char(c: char) -> bool {
-    // Outside ASCII, letters and digits by category, as the answers of the
-    // first server to addresses in several scripts have it.
+    // Outside ASCII, use Unicode general categories for letters and digits.
     stellarr_unicode::is_letter_or_digit(c) || SYMBOLS.contains(c)
 }
 

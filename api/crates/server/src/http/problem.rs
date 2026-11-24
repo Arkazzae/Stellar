@@ -279,7 +279,7 @@ mod tests {
     }
 
     #[test]
-    fn a_gone_problem_has_the_type_the_first_server_gave_it() {
+    fn a_gone_problem_has_the_expected_type_uri() {
         let json = text(Problem::new(StatusCode::GONE).title("Too many wrong PINs."));
         assert!(
             json.starts_with("{\"type\":\"https://tools.ietf.org/html/rfc9110#section-15.5.11\",\"title\":\"Too many wrong PINs.\",\"status\":410"),
