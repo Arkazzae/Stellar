@@ -22,4 +22,5 @@ groups! {
     moderation,
     roles,
     second_step,
+    voice,
 }
