@@ -123,7 +123,7 @@ pub(super) async fn finished(
             // them: it is removed again, so that a copy of its cookie opens
             // nothing.
             if let Some(expected) = completed.pending_identity {
-                link::forget(state, &Waiting::of(&state, &seen.origin), expected).await?;
+                link::forget(state, &Waiting::of(state, &seen.origin), expected).await?;
             }
             asked.then_some(link::FAILED)
         }

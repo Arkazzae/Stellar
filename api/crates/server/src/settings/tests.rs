@@ -541,3 +541,56 @@ fn a_flag_that_is_not_true_or_false_and_a_moved_callback_refuse_the_start() {
     assert!(refused.contains("Oidc:CallbackPath"), "{refused}");
     assert!(oidc(&[("Oidc__CallbackPath", "/api/auth/oidc/callback")]).is_ok());
 }
+
+#[test]
+fn a_provider_missing_a_piece_or_reached_over_http_is_not_set_up() {
+    let working = [
+        ("Oidc__Enabled", "true"),
+        ("Oidc__Authority", "https://identity.test"),
+        ("Oidc__ClientId", "stellarr"),
+        ("Oidc__ClientSecret", "secret"),
+    ];
+    assert!(oidc(&working).unwrap().oidc.any_set_up());
+    for missing in [
+        "Oidc__Enabled",
+        "Oidc__Authority",
+        "Oidc__ClientId",
+        "Oidc__ClientSecret",
+    ] {
+        let pairs: Vec<_> = working
+            .iter()
+            .filter(|(key, _)| *key != missing)
+            .copied()
+            .collect();
+        assert!(!oidc(&pairs).unwrap().oidc.any_set_up(), "{missing}");
+    }
+    for bad in [
+        "http://identity.test",
+        "identity.test",
+        "https://",
+        "https://id.test:99999",
+        "https://bad host",
+        "ftp://id.test",
+        "",
+    ] {
+        let mut pairs = working.to_vec();
+        pairs.retain(|(key, _)| *key != "Oidc__Authority");
+        pairs.push(("Oidc__Authority", bad));
+        assert!(!oidc(&pairs).unwrap().oidc.any_set_up(), "{bad}");
+    }
+    let found = oidc(&working).unwrap();
+    let provider = found.oidc.find("default").unwrap();
+    assert_eq!(provider.login_path(), "/api/auth/oidc/login");
+    assert_eq!(provider.callback_path, "/api/auth/oidc/callback");
+}
+
+#[test]
+fn a_provider_id_longer_than_thirty_two_characters_refuses_the_start() {
+    let id = "a-very-long-id-that-goes-past-thirty-two-characters";
+    let refused = oidc(&[(
+        &format!("Oidc__Providers__{id}__Authority"),
+        "https://x.test",
+    )])
+    .unwrap_err();
+    assert!(refused.to_string().contains(id), "{refused}");
+}
