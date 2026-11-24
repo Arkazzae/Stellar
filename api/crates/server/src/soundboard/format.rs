@@ -13,14 +13,14 @@ pub fn two_places(value: f64) -> String {
     // `d.dddddddddddddde±x`: fifteen digits and the power of the first.
     let written = format!("{magnitude:.14e}");
     let Some((digits, exponent)) = written.split_once('e') else {
-        return format!("{sign}0");
+        return "0".to_string();
     };
     let digits: String = digits.chars().filter(char::is_ascii_digit).collect();
     let Ok(exponent) = exponent.parse::<i32>() else {
-        return format!("{sign}0");
+        return "0".to_string();
     };
     let Ok(digits) = digits.parse::<u128>() else {
-        return format!("{sign}0");
+        return "0".to_string();
     };
     // The value is `digits * 10^(exponent - 14)`; hundredths are its 100 times.
     let shift = exponent - 12;
@@ -38,6 +38,8 @@ pub fn two_places(value: f64) -> String {
     let whole = hundredths / 100;
     let part = hundredths % 100;
     match part {
+        // What rounds to nothing has no sign, as `-0` is not a number of seconds.
+        0 if whole == 0 => "0".to_string(),
         0 => format!("{sign}{whole}"),
         _ if part % 10 == 0 => format!("{sign}{whole}.{}", part / 10),
         _ => format!("{sign}{whole}.{part:02}"),
@@ -71,7 +73,11 @@ mod tests {
             (99.995, "100"),
             (12.0, "12"),
             (1234.5678, "1234.57"),
-            (-0.0, "-0"),
+            (-0.0, "0"),
+            (-0.001, "0"),
+            (-0.004, "0"),
+            (-0.005, "-0.01"),
+            (-1.5, "-1.5"),
         ] {
             assert_eq!(two_places(value), written, "{value}");
         }
