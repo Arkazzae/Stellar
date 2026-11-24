@@ -671,3 +671,20 @@ async fn the_settings_ask_for_the_second_step_only_for_security_and_the_mail_tra
     assert_eq!(wrong.status, 400);
     assert_eq!(scene.rows("SELECT \"MailSmtpHost\" FROM \"OperationsSettings\"")[0][0], "");
 }
+
+#[tokio::test]
+async fn nobody_is_given_the_owners_role_by_a_role_change() {
+    let scene = Scene::new().await;
+    let owner_role = scene.instance_role("Owner").await;
+    let before = scene.rows(&format!("SELECT \"RoleId\" FROM \"ServerMembers\" WHERE \"UserId\" = '{}' COLLATE NOCASE", scene.member.id));
+
+    let refused = scene
+        .owner
+        .client
+        .send(Request::new(Method::PATCH, &format!("/api/cockpit/users/{}/role", scene.member.id)).json(&json!({"roleId": owner_role})))
+        .await;
+
+    assert_eq!(refused.status, 404);
+    let after = scene.rows(&format!("SELECT \"RoleId\" FROM \"ServerMembers\" WHERE \"UserId\" = '{}' COLLATE NOCASE", scene.member.id));
+    assert_eq!(before, after);
+}
