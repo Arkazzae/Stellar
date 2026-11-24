@@ -1,5 +1,11 @@
 //! Answering for a file on disk: what a browser or a download manager expects
-//! of one, without ever holding the file in memory.
+//! of one, without ever holding the file in memory. Any group that serves a
+//! file (releases, uploads, assets) answers with [`answer`].
+//!
+//! The pipeline sets no caching headers of its own: `Cache-Control` and the
+//! like are the handler's to put on the response it gets back. The file is
+//! opened by the handler, on a blocking thread (`tokio::fs` does that for
+//! you), and what this module reads of it afterwards is read the same way.
 //!
 //! The file is saved under the name the publisher gave it, a download that was
 //! interrupted continues with a range request, and a copy the client already
