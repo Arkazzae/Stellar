@@ -13,6 +13,7 @@ use super::text;
 use crate::messages::dto::{self, MessageDto};
 use crate::auth::Caller;
 use crate::database::DbError;
+use crate::http::{DEFAULT_PAGE_SIZE, MAX_PAGE_SIZE, valid_page_size};
 use crate::http::{ApiError, ApiResult, Json, Path, Problem, QueryValues};
 use crate::permissions::membership::ActiveServer;
 use crate::permissions::visibility::{self, ChannelKind};
@@ -20,8 +21,6 @@ use crate::state::AppState;
 use crate::values::{Id, Timestamp};
 
 const SEARCH_RESULT_COUNT: i64 = 50;
-const DEFAULT_PAGE_SIZE: i32 = 50;
-const MAX_PAGE_SIZE: i32 = 100;
 const MIN_QUERY_UNITS: usize = 2;
 const MAX_QUERY_UNITS: usize = 200;
 
@@ -134,7 +133,7 @@ pub async fn page(
     State(state): State<AppState>,
 ) -> ApiResult<Json<IndexPage>> {
     if let Some(limit) = asked.limit
-        && !(1..=MAX_PAGE_SIZE).contains(&limit)
+        && !valid_page_size(limit)
     {
         let reason = state
             .messages()

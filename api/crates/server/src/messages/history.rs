@@ -11,14 +11,13 @@ use super::cursor::HistoryCursor;
 use super::dto::{self, MessageDto};
 use super::field_problem;
 use crate::auth::Caller;
+use crate::http::{DEFAULT_PAGE_SIZE, MAX_PAGE_SIZE, valid_page_size};
 use crate::http::{ApiError, ApiResult, Json, Path, QueryValues};
 use crate::permissions::membership::ActiveServer;
 use crate::permissions::visibility::{self, ChannelKind};
 use crate::state::AppState;
 use crate::values::{Id, Timestamp};
 
-const DEFAULT_PAGE_SIZE: usize = 50;
-const MAX_PAGE_SIZE: i32 = 100;
 const DEFAULT_SYNC_PAGE_SIZE: usize = 200;
 const MAX_SYNC_PAGE_SIZE: i32 = 500;
 
@@ -116,7 +115,7 @@ pub async fn history(
     let messages = *state.messages();
     if query
         .limit
-        .is_some_and(|limit| !(1..=MAX_PAGE_SIZE).contains(&limit))
+        .is_some_and(|limit| !valid_page_size(limit))
     {
         return Err(field_problem(
             "limit",
@@ -169,7 +168,7 @@ fn read_history(
 
     let page_size = query
         .limit
-        .map_or(DEFAULT_PAGE_SIZE, |limit| limit as usize);
+        .unwrap_or(DEFAULT_PAGE_SIZE) as usize;
     // One snapshot for both reads, so the journal position matches the rows.
     let sync_sequence: Option<i64> = db.query_row(
         "SELECT MAX(\"Sequence\") FROM \"MessageChanges\" WHERE \"ChannelId\" = ?1",
