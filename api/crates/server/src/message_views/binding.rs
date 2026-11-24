@@ -76,8 +76,11 @@ pub fn parse_int(text: &str) -> Option<i32> {
     // The characters a number may be padded with: the controls from tab to
     // carriage return and the space, and a trailing null.
     let leading = |c: char| matches!(c, '\t'..='\r' | ' ');
-    let trailing = |c: char| leading(c) || c == '\0';
-    let body = text.trim_start_matches(leading).trim_end_matches(trailing);
+    // Trailing nulls come after any trailing white space, never before it.
+    let body = text
+        .trim_start_matches(leading)
+        .trim_end_matches('\0')
+        .trim_end_matches(leading);
     let (negative, digits) = match body.as_bytes().first()? {
         b'-' => (true, &body[1..]),
         b'+' => (false, &body[1..]),
@@ -292,6 +295,8 @@ mod tests {
             ("-5", Some(-5)),
             ("5 ", Some(5)),
             ("5\0", Some(5)),
+            ("5 \0", Some(5)),
+            ("5\0 ", None),
             ("", None),
             ("abc", None),
             ("5,6", None),
