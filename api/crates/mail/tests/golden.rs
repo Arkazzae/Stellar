@@ -1,13 +1,19 @@
-//! The crate against the mail the real server sent. `oracle/<language>.json`
-//! holds every message a running server delivered to a mail catcher while
-//! `oracle/scenario.py` drove it (a password reset, a delivery test, a code,
-//! alerts for several events, an address change and the two activity
-//! notices), with what the catcher read back. Each message is built again
-//! from the same inputs and must come out the same: subject, text, HTML,
-//! sender, recipient, message id and the images with their content ids.
+//! Every kind of mail, in both languages, against files that hold what each
+//! message must be. `golden/<language>.json` keeps, for every message, the
+//! subject, text, HTML, sender, recipient, message id and the images with
+//! their content ids, together with the inputs the message is made from (the
+//! person's name, the security events, the link or code in the text). Each
+//! message is built again from those inputs and must come out the same.
 //!
-//! Lines are compared with LF endings: the catcher returns what was on the
-//! wire, which is CRLF.
+//! Lines are compared with LF endings: the files hold what goes on the wire,
+//! which is CRLF.
+//!
+//! When the mail is meant to change, rewrite the files from what the code
+//! builds, and read the difference before committing it:
+//!
+//! ```sh
+//! STELLARR_MAIL_GOLDEN=update acargo test -p stellarr-mail --test golden
+//! ```
 
 use std::path::Path;
 
@@ -152,21 +158,60 @@ fn first_difference(expected: &str, built: &str) -> String {
             .collect::<String>()
     };
     format!(
-        "at {at}\nserver: {:?}\nours:   {:?}",
+        "at {at}\nexpected: {:?}\nbuilt:    {:?}",
         window(expected),
         window(built)
     )
 }
 
+/// The golden entry of a message: `mail` with what was built put in place of
+/// what it held, written the way it goes on the wire.
+fn golden_of(mail: &Value, built: &Message) -> Value {
+    let wire = |text: &str| text.replace('\n', "\r\n");
+    let mut entry = mail.clone();
+    entry["subject"] = built.subject.clone().into();
+    entry["text"] = wire(&built.text).into();
+    entry["html"] = wire(&built.html).into();
+    entry["message_id"] = built.message_id.clone().into();
+    entry["from"]["Name"] = built.from.name().unwrap_or("").into();
+    entry["from"]["Address"] = built.from.address().into();
+    entry["to"][0]["Address"] = built.to[0].address().into();
+    entry["images"] = built
+        .images
+        .iter()
+        .map(|image| {
+            serde_json::json!({
+                "content_id": image.content_id,
+                "file_name": image.file_name,
+                "content_type": image.content_type,
+                "size": image.content.len(),
+            })
+        })
+        .collect();
+    entry
+}
+
 fn check_language(file: &str, language: Language) {
     let path = Path::new(env!("CARGO_MANIFEST_DIR"))
-        .join("tests/oracle")
+        .join("tests/golden")
         .join(file);
-    let capture: Value = serde_json::from_str(&std::fs::read_to_string(path).unwrap()).unwrap();
+    let mut capture: Value =
+        serde_json::from_str(&std::fs::read_to_string(&path).unwrap()).unwrap();
     let messages = Messages::new(language);
-    let mails = capture["mails"].as_array().unwrap();
+    let mails = capture["mails"].as_array().unwrap().clone();
+    if std::env::var("STELLARR_MAIL_GOLDEN").is_ok_and(|mode| mode == "update") {
+        let rewritten: Vec<Value> = mails
+            .iter()
+            .map(|mail| golden_of(mail, &rebuild(&capture, mail, &messages)))
+            .collect();
+        capture["mails"] = rewritten.into();
+        let mut text = serde_json::to_string_pretty(&capture).unwrap();
+        text.push('\n');
+        std::fs::write(&path, text).unwrap();
+        return;
+    }
     let mut kinds = Vec::new();
-    for mail in mails {
+    for mail in &mails {
         let built = rebuild(&capture, mail, &messages);
         let label = text_of(mail, "message_id");
         kinds.push(label.split('/').next().unwrap().to_owned());
@@ -227,17 +272,17 @@ fn check_language(file: &str, language: Language) {
 }
 
 #[test]
-fn every_message_the_polish_server_sent_is_built_again_byte_for_byte() {
+fn every_polish_message_is_built_again_byte_for_byte() {
     check_language("pl.json", Language::Polish);
 }
 
 #[test]
-fn every_message_the_english_server_sent_is_built_again_byte_for_byte() {
+fn every_english_message_is_built_again_byte_for_byte() {
     check_language("en.json", Language::English);
 }
 
 #[test]
-fn a_name_full_of_characters_to_escape_is_escaped_the_way_the_server_does() {
+fn a_name_full_of_characters_to_escape_is_escaped_in_the_message() {
     // No-break space, accented letters from U+00A0 to U+00FF, an emoji, the
     // markup characters and a letter past Latin-1.
     check_language("extra.json", Language::English);
