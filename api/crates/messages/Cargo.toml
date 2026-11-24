@@ -1,0 +1,9 @@
+[package]
+name = "stellarr-messages"
+version.workspace = true
+edition.workspace = true
+publish.workspace = true
+description = "Everything the server says to people, in each language of the catalogue"
+
+[lints]
+workspace = true
