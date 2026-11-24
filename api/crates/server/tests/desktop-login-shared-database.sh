@@ -65,7 +65,7 @@ start_rust() {
   : > "$work/rust/log.txt"
   env ASPNETCORE_ENVIRONMENT=Production Rtc__TurnSharedSecret=x STELLARR_DATA_ROOT="$work/rust" \
     "ConnectionStrings__Database=Data Source=$work/rust/stellarr.db" ASPNETCORE_URLS=http://127.0.0.1:0 \
-    RateLimiting__AuthWrite__PermitLimit=500 RateLimiting__Login__PermitLimit=500 RateLimiting__LoginPoll__PermitLimit=5000 \
+    RateLimiting__AuthWrite__PermitLimit=500 RateLimiting__Login__PermitLimit=500 RateLimiting__LoginPoll__PermitLimit=${LOGIN_POLL:-5000} \
     "Stellarr__Language=$language" Oidc__Enabled=true Oidc__Authority=https://identity.test Oidc__ClientId=stellarr-tests Oidc__ClientSecret=test-client-secret \
     "Operations__PublicUrl=http://127.0.0.1:$port" "$binary" > "$work/rust/log.txt" 2>&1 &
   pid=$!
@@ -111,6 +111,11 @@ db.execute(f'UPDATE "DesktopBrowserLogins" SET "RedeemedAt" = {now}) WHERE "Id" 
 db.execute(f'UPDATE "UserSessions" SET "RevokedAt" = {now}) WHERE "Id" = ' + by_request.format('"ApprovalSessionId"'), (row("endedSession"),))
 db.execute('UPDATE "Users" SET "IsDisabled" = 1 WHERE "Id" = ' + by_request.format('"ApprovalUserId"'), (row("disabledAccount"),))
 db.execute('UPDATE "Users" SET "SessionVersion" = "SessionVersion" + 1 WHERE "Id" = ' + by_request.format('"ApprovalUserId"'), (row("passwordChanged"),))
+import uuid
+db.execute(
+    'INSERT INTO "MfaMethods" ("Id", "UserId", "Type", "Name", "CreatedAt", "ConfirmedAt") SELECT ?, "ApprovalUserId", \'totp\', \'Phone\', ' + now + '), ' + now + ') FROM "DesktopBrowserLogins" WHERE "Id" = ?',
+    (str(uuid.uuid4()).upper(), row("needsSecondStep")),
+)
 for name, seconds in (("staleSecondStep", 600), ("freshSecondStep", 30)):
     db.execute(
         f'UPDATE "UserSessions" SET "MfaCompletedAt" = strftime(\'%Y-%m-%d %H:%M:%f\', \'now\', \'-{seconds} seconds\'), "MfaEvidence" = \'totp\' WHERE "Id" = '
@@ -139,4 +144,19 @@ kill "$pid"; wait "$pid" 2>/dev/null || true; pid=
 stop_oracle
 docker cp "$container:/tmp/data/stellarr.db" "$work/after-first.db"
 python3 "$here/desktop-login-tables.py" "$work/after-first.db" "$work/rust/stellarr.db" || differ=1
+
+echo "== the limit on polls"
+[ -n "$pid" ] && { kill "$pid"; wait "$pid" 2>/dev/null || true; pid=; }
+stop_oracle
+cp "$work/seeded.db" "$work/oracle.db"; cp "$work/seeded.db" "$work/rust/stellarr.db"
+"$oracle_script" stop "$name" >/dev/null 2>&1 || true
+sed -i.bak 's/LoginPoll__PermitLimit=5000/LoginPoll__PermitLimit=3/' "$settings"
+ORACLE_ENV_FILE=$settings "$oracle_script" start "$name" "$port" Production > "$work/start2.log"
+stop_oracle; docker cp "$work/oracle.db" "$container:/tmp/data/stellarr.db"; start_oracle
+LOGIN_POLL=3 start_rust
+node "$here/desktop-login-oracle.mjs" poll --base "$oracle" --out "$work/poll-first.txt"
+node "$here/desktop-login-oracle.mjs" poll --base "$rust" --out "$work/poll-this.txt"
+diff "$work/poll-first.txt" "$work/poll-this.txt" && echo "the polls are limited the same" || differ=1
+grep -c "^status 429" "$work/poll-this.txt" | sed 's/^/refused polls: /'
+
 exit $differ
