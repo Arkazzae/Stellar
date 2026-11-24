@@ -160,6 +160,16 @@ fn mask_change(field: &str, before: i64, after: i64) -> Option<AuditChange> {
     })
 }
 
+/// Where a change is made and by whom, for the line it leaves in the audit log.
+#[derive(Clone, Copy)]
+struct Setting<'a> {
+    messages: &'a Messages,
+    caller: Caller,
+    server: Id,
+    section: bool,
+    target: Id,
+}
+
 /// What an override held before and holds now.
 struct Change {
     before: (i64, i64),
@@ -168,16 +178,8 @@ struct Change {
 
 /// A line for the audit log: which role, where, and what it was allowed and
 /// denied.
-fn record_role(
-    db: &Connection,
-    messages: &Messages,
-    caller: Caller,
-    server: Id,
-    section: bool,
-    target: Id,
-    role: Id,
-    change: Change,
-) -> Result<(), ApiError> {
+fn record_role(db: &Connection, setting: &Setting<'_>, role: Id, change: Change) -> Result<(), ApiError> {
+    let Setting { messages, caller, server, section, target } = *setting;
     if change.before == change.after {
         return Ok(());
     }
@@ -221,16 +223,8 @@ fn record_role(
 
 /// A line for the audit log: which member, where, and what they were allowed
 /// and denied.
-fn record_member(
-    db: &Connection,
-    messages: &Messages,
-    caller: Caller,
-    server: Id,
-    section: bool,
-    target: Id,
-    member: Id,
-    change: Change,
-) -> Result<(), ApiError> {
+fn record_member(db: &Connection, setting: &Setting<'_>, member: Id, change: Change) -> Result<(), ApiError> {
+    let Setting { messages, caller, server, section, target } = *setting;
     if change.before == change.after {
         return Ok(());
     }
@@ -380,11 +374,7 @@ async fn set<const SECTION: bool>(
                 .optional()?;
             record_role(
                 tx,
-                &messages,
-                caller,
-                server,
-                SECTION,
-                target,
+                &Setting { messages: &messages, caller, server, section: SECTION, target },
                 role,
                 Change {
                     before: current.map_or((0, 0), |(_, allow, deny)| (allow, deny)),
@@ -467,13 +457,9 @@ async fn clear<const SECTION: bool>(
             if let Some((id, allow, deny)) = cleared {
                 tx.execute("DELETE FROM \"PermissionOverrides\" WHERE \"Id\" = ?1", [id])?;
                 record_role(
-                    tx,
-                    &messages,
-                    caller,
-                    server,
-                    SECTION,
-                    target,
-                    role,
+                tx,
+                &Setting { messages: &messages, caller, server, section: SECTION, target },
+                role,
                     Change {
                         before: (allow, deny),
                         after: (0, 0),
@@ -523,11 +509,7 @@ async fn set_member<const SECTION: bool>(
             let current: Option<(Id, i64, i64)> = member_override(tx, server, SECTION, target, user)?;
             record_member(
                 tx,
-                &messages,
-                caller,
-                server,
-                SECTION,
-                target,
+                &Setting { messages: &messages, caller, server, section: SECTION, target },
                 user,
                 Change {
                     before: current.map_or((0, 0), |(_, allow, deny)| (allow, deny)),
@@ -597,13 +579,9 @@ async fn clear_member<const SECTION: bool>(
             if let Some((id, allow, deny)) = member_override(tx, server, SECTION, target, user)? {
                 tx.execute("DELETE FROM \"MemberPermissionOverrides\" WHERE \"Id\" = ?1", [id])?;
                 record_member(
-                    tx,
-                    &messages,
-                    caller,
-                    server,
-                    SECTION,
-                    target,
-                    user,
+                tx,
+                &Setting { messages: &messages, caller, server, section: SECTION, target },
+                user,
                     Change {
                         before: (allow, deny),
                         after: (0, 0),

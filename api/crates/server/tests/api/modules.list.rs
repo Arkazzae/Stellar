@@ -24,6 +24,7 @@ mod second_step;
 mod servers;
 mod soundboard;
 mod roles;
+mod roles_worlds;
 mod sign_in;
 mod social;
 mod streaming;
