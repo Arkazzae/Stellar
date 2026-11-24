@@ -502,3 +502,77 @@ async fn a_body_that_is_not_json_is_refused_before_anything_is_counted() {
 
     assert_eq!([text.status, broken.status], [415, 400]);
 }
+
+/// Registers `ab{name}cd` and says what came of it, as the probe of the first
+/// server did: `created`, or the field that was refused.
+async fn try_name(server: &Server, number: usize, name: &str) -> String {
+    let response = server
+        .client()
+        .post_json(
+            "/api/auth/register",
+            &json!({
+                "username": format!("ab{name}cd"), "displayName": "N", "email": format!("u{number}@example.test"),
+                "password": PASSWORD, "inviteCode": server.invite()
+            }),
+        )
+        .await;
+    if response.status == 201 {
+        return "created".into();
+    }
+    let mut keys: Vec<String> = response.json::<Value>()["errors"].as_object().map(|e| e.keys().cloned().collect()).unwrap_or_default();
+    keys.sort();
+    keys.join(",")
+}
+
+/// What the first server answered, one after another on one instance, when two
+/// spellings of a letter were registered in turn: the second is `username` when
+/// the two collide, because both are capitalized to the same name. The names
+/// are those of its probe; the results are its own.
+async fn collisions(pairs: &[(&str, &str, &str, &str)]) {
+    let server = Server::start().await;
+    server.found("owner").await;
+    for (index, (first, second, first_result, second_result)) in pairs.iter().enumerate() {
+        let a = try_name(&server, index * 2, first).await;
+        let b = try_name(&server, index * 2 + 1, second).await;
+        assert_eq!((a.as_str(), b.as_str()), (*first_result, *second_result), "{first} then {second}");
+    }
+}
+
+#[tokio::test]
+async fn letters_collide_as_they_do_on_the_first_server() {
+    collisions(&[
+        ("İ", "i", "created", "created"),
+        ("ß", "ẞ", "created", "created"),
+        ("ſ", "S", "created", "username"),
+        ("σ", "Σ", "created", "username"),
+        ("ς", "Σ", "username", "username"),
+        ("я", "Я", "created", "username"),
+        ("ᏸ", "Ᏸ", "created", "username"),
+        ("ꭰ", "Ꭰ", "created", "username"),
+        ("ა", "Ა", "created", "username"),
+        ("µ", "Μ", "created", "username"),
+        ("ǆ", "ǅ", "created", "username"),
+        ("é", "É", "created", "username"),
+        ("ŉ", "ʼN", "created", "created"),
+    ])
+    .await;
+}
+
+#[tokio::test]
+#[ignore = "waits for stellarr-unicode, which has not landed: ı is still capitalized here"]
+async fn the_dotless_i_is_not_capitalized_and_so_collides_with_nothing() {
+    // `bıll` is an account of its own on the first server, and `bill` is another.
+    collisions(&[("ı", "I", "created", "created")]).await;
+}
+
+#[tokio::test]
+#[ignore = "waits for stellarr-unicode, which has not landed: vowel signs are still taken for letters here"]
+async fn user_names_may_hold_letters_and_numbers_and_not_the_signs_that_go_with_them() {
+    let server = Server::start().await;
+    server.found("owner").await;
+    for (index, (name, accepted)) in [("ａｂｃ", true), ("名前ab", true), ("अआ12", true), ("क्षि", false), ("देवनागरी", false)].into_iter().enumerate() {
+        let got = try_name(&server, 100 + index, name).await;
+
+        assert_eq!(got == "created", accepted, "{name}: {got}");
+    }
+}
