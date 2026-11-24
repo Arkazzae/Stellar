@@ -8,7 +8,7 @@ use axum::response::{IntoResponse, Response};
 use serde::{Deserialize, Serialize};
 use stellarr_messages::MessageKey;
 
-use super::{context, fresh_proof_needed, no_store, providers, trusted_device_of};
+use super::{context, no_store, providers, trusted_device_of};
 use crate::auth::ceremony::{self, Changed, FromSession, Removed, Started};
 use crate::auth::{Caller, ways_in};
 use crate::http::{ApiError, ApiResult, Json, Origin, Path, Problem, json_response, with_cookie, with_session_cookie};
@@ -72,7 +72,7 @@ async fn start(
     let context = context(state, origin, trusted.as_deref());
     match ceremony::start_from_session(state, caller, &context, kind, password).await? {
         Started::Challenge { body, cookie } => Ok(with_cookie(json_response(StatusCode::OK, &body), &cookie)),
-        Started::NotAllowed => Err(fresh_proof_needed(state)?),
+        Started::NotAllowed => Err(crate::auth::fresh::security_refusal(state.messages())?.into()),
         Started::NoMethods => Err(method_unavailable(state, StatusCode::CONFLICT)?),
     }
 }
@@ -109,7 +109,7 @@ async fn removal(
     match ceremony::remove_method(state, caller, &context, method, &providers, password).await? {
         // The session that asked stays, on the account's new version.
         Removed::Done { cookie } => Ok(with_session_cookie(StatusCode::NO_CONTENT.into_response(), &cookie)),
-        Removed::NotAllowed => Err(fresh_proof_needed(state)?),
+        Removed::NotAllowed => Err(crate::auth::fresh::security_refusal(state.messages())?.into()),
         Removed::NotFound => {
             let title = state.messages().get(MessageKey::SecurityMethodNotFound, &[])?;
             Err(Problem::new(StatusCode::NOT_FOUND).title(title).into())
@@ -143,7 +143,7 @@ async fn regenerate(state: &AppState, caller: Caller, origin: &Origin, password:
     let context = context(state, origin, trusted.as_deref());
     match ceremony::regenerate_recovery_codes(state, caller, &context, password).await? {
         Changed::Done(recovery_codes) => Ok(json_response(StatusCode::OK, &RecoveryCodes { recovery_codes })),
-        Changed::NotAllowed => Err(fresh_proof_needed(state)?),
+        Changed::NotAllowed => Err(crate::auth::fresh::security_refusal(state.messages())?.into()),
         // With no second step there is nothing to give codes for.
         Changed::NotFound => Err(method_unavailable(state, StatusCode::CONFLICT)?),
     }

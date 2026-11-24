@@ -15,9 +15,11 @@ use rusqlite::{Connection, OptionalExtension, params};
 use stellarr_messages::{MessageKey, Messages, MissingValue};
 
 use super::policy::{FRESH_SECOND_STEP_WINDOW, has_confirmed_method};
-use crate::http::Problem;
+use crate::database::DbError;
+use crate::http::{ApiResult, Problem};
 use crate::instance::access;
 use crate::instance::users::User;
+use crate::state::AppState;
 use crate::values::{Id, Timestamp};
 
 /// The `code` of the problem a refused change is answered with, which the
@@ -66,6 +68,36 @@ pub fn refusal(messages: &Messages) -> Result<Problem, MissingValue> {
     Ok(Problem::new(axum::http::StatusCode::FORBIDDEN)
         .title(messages.get(MessageKey::FreshSecondStepRequired, &[])?)
         .with("code", CODE))
+}
+
+/// The security settings' 403 uses a title of its own and no code.
+pub(crate) fn security_refusal(messages: &Messages) -> Result<Problem, MissingValue> {
+    Ok(Problem::new(axum::http::StatusCode::FORBIDDEN)
+        .title(messages.get(MessageKey::SecurityFreshMfaRequired, &[])?))
+}
+
+pub(crate) async fn require(
+    state: &AppState,
+    caller: super::Caller,
+    server: Option<Id>,
+) -> ApiResult<()> {
+    let fresh = state
+        .database()
+        .read(move |db| -> Result<bool, DbError> {
+            let now = Timestamp::now();
+            let session = Some(caller.session);
+            let fresh = match server {
+                Some(server) => has_fresh_second_step_for_server(db, caller.user, session, server, now)?,
+                None => has_fresh_second_step(db, caller.user, session, now)?,
+            };
+            Ok(fresh)
+        })
+        .await?;
+    if fresh {
+        Ok(())
+    } else {
+        Err(refusal(state.messages())?.into())
+    }
 }
 
 /// Whether a session may change the account's security settings (add or take

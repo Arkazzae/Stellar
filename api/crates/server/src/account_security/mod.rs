@@ -30,11 +30,10 @@ mod tests;
 
 use axum::http::{HeaderValue, header};
 use axum::response::{IntoResponse, Response};
-use stellarr_messages::MessageKey;
 
 use crate::auth::flow::{self, Context};
 use crate::auth::security_cookies;
-use crate::http::{ApiError, ApiResult, Endpoints, Origin, Problem, RateLimitPolicy};
+use crate::http::{ApiError, ApiResult, Endpoints, Origin, RateLimitPolicy};
 use crate::state::AppState;
 
 pub fn routes() -> Endpoints {
@@ -114,17 +113,4 @@ fn context<'a>(state: &AppState, origin: &'a Origin, trusted_device: Option<&'a 
 /// The remembered-device token of the browser, if it holds one.
 fn trusted_device_of(origin: &Origin) -> Option<String> {
     security_cookies::read_trusted_device(&origin.headers, origin.https)
-}
-
-/// The refusal for a session that may not change the account's security
-/// settings now, as the routes of the page word it: a sentence and no code.
-fn fresh_proof_needed(state: &AppState) -> ApiResult<ApiError> {
-    let title = state.messages().get(MessageKey::SecurityFreshMfaRequired, &[])?;
-    Ok(Problem::new(axum::http::StatusCode::FORBIDDEN).title(title).into())
-}
-
-/// The refusal that has no sentence of its own: the code of a fresh second
-/// step, in the words the password routes use for it.
-fn fresh_second_step_refusal(state: &AppState) -> ApiResult<ApiError> {
-    Ok(crate::auth::fresh::refusal(state.messages())?.into())
 }

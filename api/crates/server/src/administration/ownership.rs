@@ -17,28 +17,7 @@ use crate::permissions::roles::Member;
 use crate::permissions::access_changed::{self, ViewChange};
 use crate::servers::Object;
 use crate::state::AppState;
-use crate::values::{Id, Timestamp};
-
-/// Refuses, with the problem the clients answer by asking for the proof, a
-/// session that has not passed the account's second step lately.
-async fn require_fresh(state: &AppState, caller: Caller) -> ApiResult<()> {
-    let fresh = state
-        .database()
-        .read(move |db| -> Result<bool, DbError> {
-            Ok(fresh::has_fresh_second_step(
-                db,
-                caller.user,
-                Some(caller.session),
-                Timestamp::now(),
-            )?)
-        })
-        .await?;
-    if fresh {
-        Ok(())
-    } else {
-        Err(fresh::refusal(state.messages())?.into())
-    }
-}
+use crate::values::Id;
 
 /// Who the server goes to. A body that names nobody names the empty id, which
 /// is nobody's.
@@ -68,7 +47,7 @@ pub async fn transfer(
 ) -> ApiResult<StatusCode> {
     // One change of who owns a server at a time: the slot is freed and then
     // given, and the database alone cannot keep two of them from interleaving.
-    require_fresh(&state, caller).await?;
+    fresh::require(&state, caller, None).await?;
     // The first server looked for the body only after this check, so a body
     // that is not there at all is told of the second step first.
     let Some(Json(Object(request))) = request else {
@@ -141,7 +120,7 @@ pub async fn delete(
     caller: Caller,
     ActiveServer(server): ActiveServer,
 ) -> ApiResult<StatusCode> {
-    require_fresh(&state, caller).await?;
+    fresh::require(&state, caller, None).await?;
     let outcome = state
         .database()
         .write({
