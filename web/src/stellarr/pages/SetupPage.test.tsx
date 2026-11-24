@@ -17,10 +17,16 @@ const mocks = vi.hoisted(() => ({
   ports: { session: { register: vi.fn() }, admin: { createInvite: vi.fn() } },
 }));
 
-vi.mock("@/state/hooks", () => ({
-  useSession: () => mocks.session,
-  useInstanceSetup: () => mocks.setup,
+vi.mock("@/state/SessionProvider", () => ({
+  useSessionContext: () => mocks.session,
+}));
+vi.mock("@/state/InstanceSetupProvider", () => ({
+  useInstanceSetupContext: () => mocks.setup,
+}));
+vi.mock("@/state/PortsProvider", () => ({
   usePorts: () => mocks.ports,
+}));
+vi.mock("@/state/LanguageProvider", () => ({
   useLanguage: () => ({ t }),
 }));
 

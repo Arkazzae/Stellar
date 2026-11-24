@@ -11,8 +11,10 @@ import ConfirmEmailPage from "./ConfirmEmailPage";
 
 const mocks = vi.hoisted(() => ({ confirm: vi.fn<(token: string) => Promise<"changed" | "invalid" | "taken">>() }));
 
-vi.mock("@/state/hooks", () => ({
+vi.mock("@/state/PortsProvider", () => ({
   usePorts: () => ({ session: { confirmEmailChange: mocks.confirm } }),
+}));
+vi.mock("@/state/LanguageProvider", () => ({
   useLanguage: () => ({
     t: (key: MessageKey, values?: MessageValues) => translateMessage("pl", key, values),
   }),

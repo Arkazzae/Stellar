@@ -5,7 +5,7 @@ import { AuthFrame } from "@/components/auth/AuthFrame";
 import type { MessageKey } from "@/i18n";
 import { singleQueryValue } from "@/lib/auth/query";
 import { safeReturnPath } from "@/lib/auth/returnPath";
-import { useLanguage } from "@/state/hooks";
+import { useLanguage } from "@/state/LanguageProvider";
 
 /**
  * How a round trip to an identity provider came out: a link, from the

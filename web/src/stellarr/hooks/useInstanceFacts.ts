@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 
 import type { SignInProvider, SessionPort } from "@/ports";
-import { usePorts } from "@/state/hooks";
+import { usePorts } from "@/state/PortsProvider";
 
 /**
  * What the account pages say about the instance before anyone signs in: its

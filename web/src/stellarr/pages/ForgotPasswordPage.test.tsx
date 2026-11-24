@@ -10,8 +10,10 @@ const mocks = vi.hoisted(() => ({
   ports: { session: { requestPasswordReset: vi.fn(), instanceName: vi.fn() } },
 }));
 
-vi.mock("@/state/hooks", () => ({
+vi.mock("@/state/PortsProvider", () => ({
   usePorts: () => mocks.ports,
+}));
+vi.mock("@/state/LanguageProvider", () => ({
   useLanguage: () => ({ t: (key: MessageKey) => translateMessage("pl", key) }),
 }));
 

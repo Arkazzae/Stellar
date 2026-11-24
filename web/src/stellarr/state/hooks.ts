@@ -6,6 +6,11 @@
  * It is the only barrel in `src/stellarr/state`, and it re-exports hooks and their value
  * types, never the providers, which are composed once in `StellarrApp` and
  * in `AppContainer`.
+ *
+ * Importing it pulls in every provider and what they use, so the code the
+ * sign-in pages load (pages, `useSignInFlow`, the shell skeleton) imports its
+ * hooks from the provider modules instead. Otherwise the signed-in app lands
+ * in the first page and the build's budget fails.
  */
 
 export {

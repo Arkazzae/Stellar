@@ -26,9 +26,13 @@ const mocks = vi.hoisted(() => ({
   },
 }));
 
-vi.mock("@/state/hooks", () => ({
-  useSession: () => mocks.session,
+vi.mock("@/state/SessionProvider", () => ({
+  useSessionContext: () => mocks.session,
+}));
+vi.mock("@/state/PortsProvider", () => ({
   usePorts: () => mocks.ports,
+}));
+vi.mock("@/state/LanguageProvider", () => ({
   useLanguage: () => ({ t }),
 }));
 

@@ -20,7 +20,10 @@ import type { Translator } from "@/i18n";
 import { PROVIDER_SIGN_UP, pendingInvite, rememberPendingInvite } from "@/lib/auth/invites";
 import { safeReturnPath } from "@/lib/auth/returnPath";
 import type { PendingIdentity } from "@/ports";
-import { useInstanceSetup, useLanguage, usePorts, useSession } from "@/state/hooks";
+import { useInstanceSetupContext as useInstanceSetup } from "@/state/InstanceSetupProvider";
+import { useLanguage } from "@/state/LanguageProvider";
+import { usePorts } from "@/state/PortsProvider";
+import { useSessionContext as useSession } from "@/state/SessionProvider";
 
 import { usePrefetchApp } from "./loadApp";
 

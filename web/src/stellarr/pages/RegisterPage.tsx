@@ -11,7 +11,9 @@ import { useRedirectWhenSignedIn } from "@/hooks/useRedirectWhenSignedIn";
 import { ApiError } from "@/lib/api/errors";
 import { PROVIDER_SIGN_UP, pendingInvite, rememberPendingInvite, takePendingInvite } from "@/lib/auth/invites";
 import type { AuthResult, PendingIdentity } from "@/ports";
-import { useLanguage, usePorts, useSession } from "@/state/hooks";
+import { useLanguage } from "@/state/LanguageProvider";
+import { usePorts } from "@/state/PortsProvider";
+import { useSessionContext as useSession } from "@/state/SessionProvider";
 
 import { usePrefetchApp } from "./loadApp";
 

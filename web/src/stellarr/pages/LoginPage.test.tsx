@@ -47,10 +47,16 @@ const mocks = vi.hoisted(() => ({
 }));
 
 vi.mock("@/lib/auth/leaveFor", () => ({ leaveFor: mocks.leaveFor }));
-vi.mock("@/state/hooks", () => ({
-  useSession: () => mocks.session,
-  useInstanceSetup: () => mocks.setup,
+vi.mock("@/state/SessionProvider", () => ({
+  useSessionContext: () => mocks.session,
+}));
+vi.mock("@/state/InstanceSetupProvider", () => ({
+  useInstanceSetupContext: () => mocks.setup,
+}));
+vi.mock("@/state/PortsProvider", () => ({
   usePorts: () => mocks.ports,
+}));
+vi.mock("@/state/LanguageProvider", () => ({
   useLanguage: () => ({
     t: (key: MessageKey, values?: MessageValues) => translateMessage("pl", key, values),
   }),

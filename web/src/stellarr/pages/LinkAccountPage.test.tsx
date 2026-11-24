@@ -9,7 +9,7 @@ import { routes } from "@/routes";
 
 import LinkAccountPage from "./LinkAccountPage";
 
-vi.mock("@/state/hooks", () => ({
+vi.mock("@/state/LanguageProvider", () => ({
   useLanguage: () => ({
     t: (key: MessageKey, values?: MessageValues) => translateMessage("pl", key, values),
   }),
