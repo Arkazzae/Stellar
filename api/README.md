@@ -323,7 +323,7 @@ the closure runs on a blocking thread and never on one that serves requests.
   has outcomes of its own may use an error type of its own as long as it has
   `From<DbError>` and `From<rusqlite::Error>`; `DbError::is_unique_violation()` and
   `is_foreign_key_violation()` tell the refusals apart.
-- The schema is `database/schema.sql`, kept as the first version of it made it. Do not
+- The initial schema is defined in `database/schema.sql`. Do not
   change it. Use the table and column names as they are, in quotes.
 - Ids, moments, booleans and enums go into and out of rows through the types in
   `values`: `Id` (capitals in the database, lower case in JSON), `Timestamp`
@@ -857,7 +857,7 @@ database, every object of the store, the keys folder and the instance files
 its layout is fixed and is not changed: `manifest.json` last,
 entries in the order `database`, `objects` (in key order), `keys`, `instance`
 (folder by folder, each by the whole path as text), objects stored and the rest
-deflated. An archive an older server wrote verifies and restores here.
+deflated. Archives that follow this layout can be verified and restored.
 
 - The database is copied with SQLite's online backup in one step, so a backup
   taken while people write is a state the database really had

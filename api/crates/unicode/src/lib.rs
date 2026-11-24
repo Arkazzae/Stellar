@@ -1,58 +1,42 @@
-//! Unicode general categories, and simple upper- and lower-casing, with the
-//! answers the first Stellarr server gave on Linux, and the UTF-16 view of
-//! text that message code works in.
+//! Unicode general categories, simple casing and UTF-16 text handling.
 //!
 //! The standard library cannot stand in for this. It has no way to ask for a
 //! general category, and its "alphabetic" and "numeric" take in marks and
 //! other kinds of number than the ones a user name is made of. Its casing is
 //! the full mapping, which turns one character into two (`ß` into `SS`) where
-//! the simple mapping keeps it one, and it follows a newer Unicode than the
-//! first server did. Names and e-mail addresses are compared by the simple
+//! the simple mapping keeps it one. Names and e-mail addresses use the simple
 //! mapping, character by character, so that comparing two texts never changes
 //! how long either is.
 //!
 //! # Where the data comes from
 //!
-//! Everything in `tables.rs` was read out of the first server's own platform:
-//! its runtime, running on Linux in the container the server is shipped in,
-//! was asked about every code point from U+0000 to U+10FFFF other than the
-//! surrogates. The tables are what that platform answered, not what a
-//! standard says, and the two parts come from different places:
+//! `tables.rs` pins the categories and casing of every code point from
+//! U+0000 through U+10FFFF except surrogates. The two tables use different
+//! Unicode versions:
 //!
-//! - **Categories** come from the runtime's own character data, which is
-//!   version 16.0 of the Unicode Standard and does not depend on the
-//!   platform (a dump on macOS gave the same ranges).
+//! - **Categories** use version 16.0 of the Unicode Standard.
 //!   - **Letter** is General_Category `L*` (Lu, Ll, Lt, Lm, Lo).
 //!   - **Decimal digit** is `Nd`; **number** is `N*` (Nd, Nl, No).
 //!   - **Punctuation** is `P*` and **symbol** is `S*`.
-//! - **Casing** comes from the system's ICU library, as the runtime calls it
-//!   for its invariant culture. The ICU of the container (version 74) follows
-//!   version 15.1 of Unicode, one version older than the categories, so a
+//! - **Casing** uses ICU 74 and Unicode 15.1, one version older than the
+//!   categories, so a
 //!   character added in 16.0 is a letter here and upper-cases to itself. The
 //!   mapping is ICU's simple one (`u_toupper`, `u_tolower`: field 12 and field
-//!   13 of `UnicodeData.txt`) with two exceptions the runtime makes itself, to
-//!   keep what Windows does:
+//!   13 of `UnicodeData.txt`) with two exceptions to match Windows invariant casing:
 //!   - U+0131 LATIN SMALL LETTER DOTLESS I is not upper-cased: it stays `ı`
 //!     (the standard says `I`).
 //!   - U+0130 LATIN CAPITAL LETTER I WITH DOT ABOVE is not lower-cased: it
 //!     stays `İ` (the standard says `i`).
 //!
-//!   U+017F LATIN SMALL LETTER LONG S is not an exception: it upper-cases to
-//!   `S`, as the standard says. (A dump on macOS leaves it alone, which is why
-//!   the data was taken on the platform the server runs on.)
+//!   U+017F LATIN SMALL LETTER LONG S upper-cases to `S` as in Unicode 15.1.
 //!
-//! Every place in the first server that changes case calls the runtime's
-//! invariant upper-casing or lower-casing of a string, which goes through the
-//! same code as the one of a single character, so there is one function for
-//! each direction. The data is frozen on purpose: a name that was a name stays
-//! one, and two names that were the same stay the same, whatever Unicode adds
-//! later. A character added after the version of a table is in no class of it
-//! and maps to itself.
+//! The data is frozen so upgrades to Unicode cannot change which names we
+//! accept or compare as equal. A character added after the version of a
+//! table is in none of its classes and maps to itself.
 //!
 //! # Making the data again
 //!
-//! When the first server's platform is no longer there to ask, make the tables
-//! from the Unicode Character Database, `UnicodeData.txt` (unicode.org, `ucd`):
+//! To regenerate the tables, use `UnicodeData.txt` from the Unicode Character Database:
 //!
 //! 1. Categories, of version 16.0: take field 2, the General_Category, for
 //!    every code point (expanding the `First>`/`Last>` range pairs), and list
@@ -74,10 +58,8 @@
 //! [`nfc`] puts a text in canonical composition. Its data,
 //! `normalization_tables.rs`, is not written by hand: the example
 //! `make_normalization_tables` makes it from two files of the Unicode
-//! Character Database, version 15.1.0, which is the version of the ICU library
-//! (74.2) of the first server's image: the tables made from the first server's
-//! own library there and the ones made from these files are the same, entry
-//! for entry. The files are not part of the repository. Fetch them, from
+//! Character Database, version 15.1.0. The generated tables match ICU 74.2
+//! entry for entry. Fetch the inputs from
 //!
 //! - `https://www.unicode.org/Public/15.1.0/ucd/UnicodeData.txt`
 //! - `https://www.unicode.org/Public/15.1.0/ucd/CompositionExclusions.txt`
@@ -169,8 +151,7 @@ fn map(table: &[(u32, u32)], c: char) -> char {
         .unwrap_or(c)
 }
 
-/// The simple upper case of one character, or the character itself, as the
-/// first server's invariant upper-casing gives it.
+/// The simple uppercase mapping for a character. Unmapped characters stay as they are.
 pub fn to_upper_char(c: char) -> char {
     map(UPPER, c)
 }
@@ -181,8 +162,7 @@ pub fn to_upper(text: &str) -> String {
     text.chars().map(to_upper_char).collect()
 }
 
-/// The simple lower case of one character, or the character itself, as the
-/// first server's invariant lower-casing gives it.
+/// The simple lowercase mapping for a character. Unmapped characters stay as they are.
 pub fn to_lower_char(c: char) -> char {
     map(LOWER, c)
 }

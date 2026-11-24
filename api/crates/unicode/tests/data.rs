@@ -147,8 +147,7 @@ fn upper_case_is_the_standard_simple_mapping_but_for_two_characters() {
             }
         }
     }
-    // The standard maps it to ASCII; the first server leaves it be. The long s
-    // is not an exception: it upper-cases to S, as the standard says.
+    // Dotless I stays unchanged. Long S follows Unicode and uppercases to S.
     assert_eq!(exceptions, BTreeSet::from([0x131]));
     assert_eq!(to_upper_char('ı'), 'ı');
     assert_eq!(to_upper_char('ſ'), 'S');
@@ -243,7 +242,7 @@ fn lower_case_is_the_standard_simple_mapping_but_for_one_character() {
             }
         }
     }
-    // The standard maps it to a plain i; the first server leaves it be.
+    // Dotted capital I stays unchanged under invariant casing.
     assert_eq!(exceptions, BTreeSet::from([0x130]));
     assert_eq!(to_lower_char('İ'), 'İ');
     assert_eq!(to_lower_char('I'), 'i');
