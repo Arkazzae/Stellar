@@ -61,6 +61,7 @@ emoji/           a group: a server's custom emoji, their upload and image
 own_profile/     a group: the own profile, preferences and join sound
 soundboard/      a group: a server's sounds, their order and switches
 account_security/ a group: the security page, sessions, the password and the address, from a session
+encryption/      a group: the server's side of end-to-end encrypted direct conversations: keys, PIN backup, devices, epochs
 health/          a group: /health/live and /health/ready
 releases/        a group: the discovery document and the desktop and Android builds
 second_step/     a group: the second half of a sign-in, a passkey alone, an operator's recovery credential, a forgotten password
@@ -875,6 +876,10 @@ here.
   where the first server answered 400.
 - A request body's property names must have the case the client sends; the
   first server matched them without regard to case.
+- The encryption routes write non-ASCII text as it is (a device label of
+  emoji), where the first server wrote `\uD83D\uDE00`; both are the same JSON.
+  A `null` among the envelopes of a new epoch is a 400 where the first server's
+  code failed on it (a 500).
 - Responses with a known length carry `Content-Length` where the first server
   sent them chunked, and a response sent before the request body was read may
   carry `Connection: close`.

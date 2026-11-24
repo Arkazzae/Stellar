@@ -22,6 +22,8 @@ const { values: args } = parseArgs({
     phase: { type: "string", default: "story" },
     password: { type: "string", default: "Corona!2026-long" },
     ids: { type: "string" },
+    cookies: { type: "string" },
+    dump: { type: "string" },
   },
 });
 const base = args.base;
@@ -702,8 +704,184 @@ async function tables(ids) {
   await compact("nobody signed in: keys", new Person("nobody").request("GET", conversationPath(A, "keys")));
 }
 
+// ---- requests that meet ----
+
+// Each pair or crowd is sent at the same moment, and what is told is the
+// multiset of the answers (their statuses and codes), not who got which.
+async function races(ids) {
+  const people = {};
+  for (const name of ["maja", "ada", "ilya", "zed"]) people[name] = await signIn(name);
+  const { maja, ada, ilya, zed } = people;
+  const A = ids.A;
+  const B = ids.B;
+  const outcome = async (title, requests) => {
+    const answers = await Promise.all(requests);
+    const told = answers
+      .map((r) => {
+        let code = "";
+        try {
+          code = JSON.parse(r.text).code ?? "";
+        } catch {}
+        return `${r.status}${code ? ` ${code}` : ""}`;
+      })
+      .sort();
+    out(`## ${title}`);
+    out(`   ${told.join(", ")}`);
+  };
+  const setUp = (person, n) => person.request("POST", `${ACCOUNT}/account-key`, { algorithm: "x25519", publicKey: b64(bytes(32, n)), backup: backupOf(pinOf(n)) });
+  for (const [person, n] of [[maja, 1], [ada, 2], [ilya, 3], [zed, 4]]) await setUp(person, n);
+
+  // Ninety-eight devices are zed's already; one more takes the ninety-ninth, and then two at once for the last place.
+  const zedLaptop = await signIn("zed");
+  const zedPhone = await signIn("zed");
+  const device = (n) => ({ algorithm: "x25519", publicKey: b64(bytes(32, 100 + n)), label: `d${n}` });
+  await zed.request("POST", `${ACCOUNT}/devices`, device(0));
+  await outcome("two devices registered at once with one place left", [zedLaptop.request("POST", `${ACCOUNT}/devices`, device(1)), zedPhone.request("POST", `${ACCOUNT}/devices`, device(2))]);
+  const count = JSON.parse((await zed.request("GET", `${ACCOUNT}/devices`)).text).devices.length;
+  out(`   devices afterwards: ${count}`);
+
+  // Confirm and cancel at the same moment.
+  await maja.request("POST", conversationPath(B, "request"));
+  await outcome("confirm and cancel at the same moment", [ilya.request("POST", conversationPath(B, "confirm")), maja.request("POST", conversationPath(B, "cancel"))]);
+  out(`   afterwards the state is one of the two that the winner made: ${["on", "off"].includes(JSON.parse((await maja.request("GET", conversationPath(B, "keys"))).text).encryption.state)}`);
+
+  // The same epoch number twice at once.
+  await maja.request("POST", `${ACCOUNT}/devices`, device(10));
+  await ada.request("POST", `${ACCOUNT}/devices`, device(11));
+  await maja.request("POST", conversationPath(A, "request"));
+  await ada.request("POST", conversationPath(A, "confirm"));
+  const keys = JSON.parse((await maja.request("GET", conversationPath(A, "keys"))).text);
+  const all = keys.recipients.map((r) => r.keyId);
+  const epoch = (id, previous) => ({ epochId: id, previousEpochId: previous, envelopes: all.map((keyId) => ({ recipientKeyId: keyId, ephemeralPublicKey: b64(bytes(32, 7)), iv: b64(bytes(12, 8)), ciphertext: b64(bytes(48, 9)) })) });
+  await outcome("two epochs after the same one at once", [maja.request("POST", conversationPath(A, "epochs"), epoch(uuid(501), null)), ada.request("POST", conversationPath(A, "epochs"), epoch(uuid(502), null))]);
+  const current = JSON.parse((await maja.request("GET", conversationPath(A, "keys"))).text).encryption.currentEpochId;
+  await outcome("the same epoch twice at once", [maja.request("POST", conversationPath(A, "epochs"), epoch(uuid(503), current)), maja.request("POST", conversationPath(A, "epochs"), epoch(uuid(503), current))]);
+  const epochs = JSON.parse((await maja.request("GET", conversationPath(A, "epochs"))).text).epochs;
+  out(`   epochs afterwards: ${epochs.map((e) => e.sequence).join(",")}`);
+
+  // Two attempts at the PIN when one is left.
+  const wrong = () => maja.request("POST", `${ACCOUNT}/backup/unlock`, { authKey: b64(bytes(32, 99)) });
+  for (let i = 0; i < 9; i++) await wrong();
+  await outcome("two wrong PINs at once with one try left", [wrong(), wrong()]);
+  out(`   afterwards: ${(await maja.request("GET", `${ACCOUNT}/backup`)).status}`);
+  await outcome("twelve wrong PINs at once", [adaFresh(ada)].length ? Array.from({ length: 12 }, () => ada.request("POST", `${ACCOUNT}/backup/unlock`, { authKey: b64(bytes(32, 99)) })) : []);
+}
+const adaFresh = (person) => person;
+
+// ---- the sessions that must show a fresh second step ----
+
+import { readFileSync } from "node:fs";
+
+// Signs people in and gives them what the routes ask for: keys, a backup, a device.
+// The shell then changes what the sessions say of their second step, and
+// `fresh` asks the two routes that guard it, as each session and with each
+// password.
+async function freshLogin() {
+  const jars = {};
+  const save = (label, person) => (jars[label] = { name: person.name, cookies: [...person.cookies] });
+  const prepare = async (person, n) => {
+    await person.request("POST", `${ACCOUNT}/account-key`, { algorithm: "x25519", publicKey: b64(bytes(32, n)), backup: backupOf(pinOf(n)) });
+    await person.request("POST", `${ACCOUNT}/devices`, { algorithm: "x25519", publicKey: b64(bytes(32, 50 + n)), label: `d${n}` });
+  };
+  for (const [name, n] of [["maja", 1], ["ada", 2], ["ilya", 3]]) {
+    const first = await signIn(name);
+    await prepare(first, n);
+    save(`${name}-first`, first);
+    await sleep(1100);
+    const second = await signIn(name);
+    await prepare(second, n);
+    save(`${name}-second`, second);
+  }
+  writeFileSync(args.cookies, JSON.stringify(jars));
+}
+
+async function fresh() {
+  const jars = JSON.parse(readFileSync(args.cookies, "utf8"));
+  const sessions = {};
+  for (const [label, jar] of Object.entries(jars)) {
+    const person = new Person(jar.name);
+    person.cookies = new Map(jar.cookies);
+    sessions[label] = person;
+  }
+  const accountKey = async (person) => JSON.parse((await person.request("GET", ACCOUNT)).text).accountKey?.keyId;
+  const row = async (label, person, route) => {
+    const keyId = await accountKey(person);
+    const password = [["the right password", args.password], ["a wrong password", "not-it"], ["no password", undefined], ["an empty password", ""]];
+    for (const [what, given] of password) {
+      const body = route === "PIN"
+        ? { currentPassword: given, accountKeyId: keyId, backup: backupOf(pinOf(8)) }
+        : { currentPassword: given, algorithm: "x25519", publicKey: b64(bytes(32, 91)), backup: backupOf(pinOf(9)) };
+      const answer = route === "PIN" ? await person.request("PUT", `${ACCOUNT}/backup`, body) : await person.request("POST", `${ACCOUNT}/account-key/reset`, body);
+      let code = "";
+      try {
+        code = JSON.parse(answer.text).code ?? "";
+      } catch {}
+      out(`${label.padEnd(14)} ${route.padEnd(5)} ${what.padEnd(20)} ${answer.status} ${code}`);
+    }
+  };
+  for (const route of ["PIN", "RESET"])
+    for (const [label, person] of Object.entries(sessions)) await row(label, person, route);
+}
+
+// ---- what ends a device, on the first server ----
+//
+// A device is a row that nothing writes on when its session ends. This is told
+// on the first server, which this server's tests (`lifecycle.rs`) hold it to:
+// the device's row, as the file has it, before and after each way a session can
+// end that a route of the first server reaches, and what the people of a
+// conversation are then told of it.
+
+import { execSync } from "node:child_process";
+
+async function lifecycle(ids) {
+  const A = ids.A;
+  known.set(A, "A");
+  const dump = () => execSync(`bash ${args.dump}`).toString().trim().split("\n").filter(Boolean);
+  const rows = () => dump().map((line) => line.replace(/[0-9]{4}-[0-9]{2}-[0-9]{2} [0-9:.]+/g, "<time>"));
+  const sessionOf = (label) => dump().find((line) => line.startsWith(`${label}|`)).split("|")[1];
+  const maja = await signIn("maja");
+  const ada = await signIn("ada");
+  const setUp = (person, n) => person.request("POST", `${ACCOUNT}/account-key`, { algorithm: "x25519", publicKey: b64(bytes(32, n)), backup: backupOf(pinOf(n)) });
+  await setUp(maja, 1);
+  await setUp(ada, 2);
+  const register = (person, label, n) => person.request("POST", `${ACCOUNT}/devices`, { algorithm: "x25519", publicKey: b64(bytes(32, n)), label });
+  await register(maja, "main", 10);
+  await register(ada, "ada", 11);
+  const laptop = await signIn("maja");
+  const phone = await signIn("maja");
+  const tablet = await signIn("maja");
+  await register(laptop, "laptop", 12);
+  await register(phone, "phone", 13);
+  await register(tablet, "tablet", 14);
+  await maja.request("POST", conversationPath(A, "request"));
+  await ada.request("POST", conversationPath(A, "confirm"));
+  const view = async (title) => {
+    out(`## ${title}`);
+    for (const row of rows()) out(`   row ${scrub(row)}`);
+    const own = JSON.parse((await maja.request("GET", `${ACCOUNT}/devices`)).text).devices.map((d) => d.label);
+    const seen = JSON.parse((await ada.request("GET", conversationPath(A, "keys"))).text).peer.devices.length;
+    out(`   maja lists ${own.join(",")}; ada sees ${seen} of maja's devices`);
+  };
+  await view("all four devices");
+  const last = (response) => out(`   ${response.status}`);
+  out("## the laptop signs out");
+  last(await laptop.request("POST", "/api/auth/logout"));
+  await view("after the laptop signed out");
+  out("## the phone's session is revoked from the main one");
+  last(await maja.request("DELETE", `/api/me/security/sessions/${sessionOf("phone")}`));
+  await view("after the phone's session was revoked");
+  out("## the password is changed from the main session");
+  last(await maja.request("POST", "/api/me/password", { currentPassword: args.password, newPassword: "Corona!2026-changed" }));
+  await view("after the password was changed (the tablet's session ended, the main one stayed)");
+  out(`   the tablet is told ${(await tablet.request("GET", "/api/me")).status}, the main session ${(await maja.request("GET", `${ACCOUNT}/devices`)).status}`);
+}
+
 const ids = JSON.parse(args.ids);
 if (args.phase === "story") await story(ids);
+else if (args.phase === "races") await races(ids);
+else if (args.phase === "fresh-login") await freshLogin();
+else if (args.phase === "fresh") await fresh();
+else if (args.phase === "lifecycle") await lifecycle(ids);
 else await tables(ids);
 for (const hub of hubs) hub.socket.close(1000);
 writeFileSync(args.out, lines.join("\n") + "\n");

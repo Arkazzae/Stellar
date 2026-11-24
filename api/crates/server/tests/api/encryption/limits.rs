@@ -317,6 +317,51 @@ async fn pin_attempts_are_limited_per_account_and_per_address() {
     assert_eq!(read(&crowd.maja.client, BACKUP).await["remainingAttempts"], 8);
 }
 
+/// What the first server did with these eight requests under a limit of three
+/// (the address limit counts every request, before anything is read; the
+/// account limit counts the ones whose body could be read, whatever they
+/// say, and none that the address limit refused).
+#[tokio::test]
+async fn which_refusals_cost_an_attempt_is_what_the_first_server_counted() {
+    let server = Server::start_with(&[
+        ("ASPNETCORE_ENVIRONMENT", "Development"),
+        ("RateLimiting__PinUnlock__PermitLimit", "3"),
+    ])
+    .await;
+    let crowd = Crowd::on(server).await;
+    set_up(&crowd.maja.client).await;
+    set_up(&crowd.ada.client).await;
+    let from = async |person: &crate::support::Person, address: &str| {
+        crowd.server.sign_in(person).await.with_header("X-Forwarded-For", address)
+    };
+    let (maja_one, maja_two) = (from(&crowd.maja, "10.0.0.1").await, from(&crowd.maja, "10.0.0.2").await);
+    let (ada_one, ada_two) = (from(&crowd.ada, "10.0.0.1").await, from(&crowd.ada, "10.0.0.2").await);
+    let raw = async |client: &crate::support::Client, body: &str| {
+        client
+            .send(Request::new(Method::POST, UNLOCK).body("application/json", body))
+            .await
+            .status
+            .as_u16()
+    };
+    let wrong = json!({ "authKey": text(&bytes(32, 9)) }).to_string();
+    let short = json!({ "authKey": text(&bytes(16, 9)) }).to_string();
+    let remaining = async |client: &crate::support::Client| read(client, BACKUP).await["remainingAttempts"].as_i64().unwrap();
+
+    assert_eq!(raw(&maja_one, "{").await, 400);
+    assert_eq!(raw(&maja_one, &short).await, 400);
+    assert_eq!(raw(&maja_one, &wrong).await, 403);
+    assert_eq!(raw(&maja_one, &wrong).await, 429);
+    assert_eq!(raw(&maja_one, &wrong).await, 429);
+    // Three of the account's tries are gone: the short one, and two wrong ones.
+    assert_eq!(raw(&maja_two, &wrong).await, 403);
+    assert_eq!(raw(&maja_two, &wrong).await, 429);
+    assert_eq!(remaining(&crowd.maja.client).await, 8);
+    // The refusals of the address spent nothing of Ada's.
+    assert_eq!(raw(&ada_one, &wrong).await, 429);
+    assert_eq!(raw(&ada_two, &wrong).await, 403);
+    assert_eq!(remaining(&crowd.ada.client).await, 9);
+}
+
 const UNLOCK: &str = "/api/me/encryption/backup/unlock";
 const BACKUP: &str = "/api/me/encryption/backup";
 
