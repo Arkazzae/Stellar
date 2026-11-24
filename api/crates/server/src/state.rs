@@ -8,8 +8,9 @@
 use std::sync::{Arc, OnceLock};
 
 use stellarr_messages::Messages;
-use stellarr_storage::{FOLDER_NAME, FolderStore, ObjectStorage};
+use stellarr_storage::ObjectStorage;
 
+use crate::admission::AdmissionGate;
 use crate::auth::setup_code::SetupCode;
 use crate::database::{Database, MutationGate};
 use crate::events::{EventPublisher, Presence};
@@ -39,7 +40,8 @@ struct Inner {
     setup_code: SetupCode,
     registration_gate: tokio::sync::Mutex<()>,
     realtime: OnceLock<Arc<Realtime>>,
-    storage: OnceLock<Arc<dyn ObjectStorage>>,
+    storage: Arc<dyn ObjectStorage>,
+    admission: AdmissionGate,
     previews: PreviewQueue,
 }
 
@@ -53,6 +55,8 @@ impl AppState {
     ) -> AppState {
         AppState {
             inner: Arc::new(Inner {
+                storage: crate::object_store::open(&settings),
+                admission: AdmissionGate::new(&settings.uploads, settings.data_root.clone()),
                 messages: settings.messages(),
                 pin_attempts: AttemptLimiter::for_pin_unlock(&settings.rate_limits),
                 settings,
@@ -64,7 +68,6 @@ impl AppState {
                 setup_code: SetupCode::default(),
                 registration_gate: tokio::sync::Mutex::new(()),
                 realtime: OnceLock::new(),
-                storage: OnceLock::new(),
                 previews: PreviewQueue::default(),
                 metrics: Metrics::default(),
                 mutation_gate: MutationGate::default(),
@@ -139,21 +142,21 @@ impl AppState {
         let _ = self.inner.realtime.set(realtime);
     }
 
-    /// Where uploaded files are kept: the store the settings name, which the
-    /// server opens when it starts. A state that was never given one (a unit
-    /// test's) keeps files in the folder of the data volume.
-    pub fn storage(&self) -> &Arc<dyn ObjectStorage> {
-        self.inner.storage.get_or_init(|| {
-            Arc::new(FolderStore::new(
-                self.inner.settings.data_root.join(FOLDER_NAME),
-            ))
-        })
+    /// Where uploaded files are kept: the folder of the data volume or the
+    /// bucket the settings name, made ready before the server listens.
+    pub fn storage(&self) -> &dyn ObjectStorage {
+        &*self.inner.storage
     }
 
-    /// Plugs in the object store the settings name, once, when the server
-    /// starts.
-    pub(crate) fn plug_in_storage(&self, storage: Arc<dyn ObjectStorage>) {
-        let _ = self.inner.storage.set(storage);
+    /// A shared handle on the store, for work that outlives the borrow of the
+    /// state.
+    pub fn storage_handle(&self) -> Arc<dyn ObjectStorage> {
+        Arc::clone(&self.inner.storage)
+    }
+
+    /// Reserves room for an upload; see [`crate::admission`].
+    pub fn admission(&self) -> &AdmissionGate {
+        &self.inner.admission
     }
 
     /// The messages whose links wait for their cards.

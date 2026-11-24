@@ -300,6 +300,16 @@ the first server stored.
 &payload))`, after `write` has returned. A change is committed first and
 announced after; a failed change announces nothing.
 
+**Uploaded files** are objects in `state.storage()`: the folder `files/` of the
+data volume or the bucket named by `Storage:*`, chosen when the state is built and
+made ready before the server listens (`object_store::prepare`: a store that is
+not ready is asked again every second, thirty times; `Storage:SkipInitialization`
+skips it). A file on its way in is staged in `incoming/` of the data root, which
+is emptied at start. `state.admission().enter(..)` reserves room for an upload
+(per-account and instance quotas, free disk space, and a few slots for uploads
+that move bytes at once) and gives a lease that is held until the row is written;
+anything that stores a file goes through it.
+
 **Settings** are read once at start in `settings/`, and handlers read
 `state.settings()`. To add a setting: its default in `defaults.rs`, a row in
 `variables.rs` if operators set it as `STELLARR_*`, a field in the section it
