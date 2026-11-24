@@ -128,7 +128,7 @@ pub(super) async fn runtime(
             id: "database",
         },
         Service {
-            name: "SignalR",
+            name: "Stellarr Realtime",
             state: "healthy",
             detail: messages.get(
                 MessageKey::CockpitRealtimeConnections,

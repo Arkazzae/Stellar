@@ -1,4 +1,5 @@
 use super::*;
+use serde_json::{Value, json};
 
 fn config() -> Config {
     Config {
@@ -29,20 +30,20 @@ fn names(shared: &Shared) -> Vec<String> {
     queued(shared)
         .iter()
         .map(|text| {
-            let value: Value = serde_json::from_str(text.trim_end_matches('\u{1e}')).unwrap();
-            value["target"].as_str().unwrap().to_owned()
+            let value: Value = serde_json::from_str(text).unwrap();
+            value["name"].as_str().unwrap().to_owned()
         })
         .collect()
 }
 
 #[test]
-fn a_message_is_a_server_invocation_record() {
+fn a_bare_event_carries_null() {
     let hub = Hub::new(&config());
     let a = connect(&hub, "a");
     assert!(hub.send_to_connection("a", &event("Ping")));
     assert_eq!(
-        queued(&a),
-        ["{\"type\":1,\"target\":\"Ping\",\"arguments\":[]}\u{1e}"]
+        serde_json::from_str::<Value>(&queued(&a)[0]).unwrap(),
+        json!({"type":"event","name":"Ping","data":null})
     );
 }
 
@@ -176,16 +177,16 @@ fn a_connection_that_falls_behind_by_count_is_closed_and_may_reconnect() {
     for n in 0..4 {
         assert!(hub.send_to_connection("a", &event(&format!("m{n}"))));
     }
-    assert!(a.close_request().is_none());
+    assert!(a.close_signal().is_none());
     assert!(!hub.send_to_connection("a", &event("one too many")));
-    let request = a.close_request().unwrap();
-    assert!(request.allow_reconnect);
+    let request = a.close_signal().unwrap();
+    assert_eq!(request.code, 1013);
     assert!(request.error.is_some());
     // What was queued stays; nothing more is added; others are unaffected.
     assert_eq!(names(&a).len(), 4);
     assert!(!hub.send_to_connection("a", &event("still refused")));
     assert!(hub.send_to_connection("b", &event("fine")));
-    assert!(b.close_request().is_none());
+    assert!(b.close_signal().is_none());
 }
 
 #[test]
@@ -199,7 +200,7 @@ fn a_connection_that_falls_behind_by_bytes_is_closed() {
         !hub.send_to_connection("a", &big),
         "a third would pass 1000 bytes"
     );
-    assert!(a.close_request().is_some());
+    assert!(a.close_signal().is_some());
 }
 
 #[test]
@@ -208,7 +209,7 @@ fn one_message_bigger_than_the_allowance_is_still_delivered_to_an_idle_client() 
     let a = connect(&hub, "a");
     let huge = Outbound::single("Huge", &"x".repeat(5000)).unwrap();
     assert!(hub.send_to_connection("a", &huge));
-    assert!(a.close_request().is_none());
+    assert!(a.close_signal().is_none());
 }
 
 #[test]
@@ -216,20 +217,8 @@ fn closing_is_decided_once() {
     let hub = Hub::new(&config());
     let a = connect(&hub, "a");
     assert!(hub.abort("a"));
-    assert!(hub.close(
-        "a",
-        CloseRequest {
-            error: Some("later".into()),
-            allow_reconnect: true
-        }
-    ));
-    assert_eq!(
-        a.close_request(),
-        Some(CloseRequest {
-            error: None,
-            allow_reconnect: false
-        })
-    );
+    assert!(hub.end_session("a"));
+    assert_eq!(a.close_signal().unwrap().code, 1000);
     assert!(!hub.abort("nobody"));
     assert!(
         !hub.send_to_connection("a", &event("after")),
@@ -243,56 +232,95 @@ fn closing_everyone_asks_every_client_to_start_over() {
     let all: Vec<_> = ["a", "b"].iter().map(|id| connect(&hub, id)).collect();
     hub.close_all();
     for shared in all {
-        assert_eq!(
-            shared.close_request(),
-            Some(CloseRequest {
-                error: None,
-                allow_reconnect: true
-            })
-        );
+        assert_eq!(shared.close_signal().unwrap().code, 1012);
     }
 }
 
 #[tokio::test]
-async fn take_waits_for_a_message_and_batches_what_fits() {
+async fn take_waits_for_a_message() {
     let hub = Hub::new(&Config::default());
     let a = connect(&hub, "a");
     let waiting = {
         let a = a.clone();
-        tokio::spawn(async move {
-            let mut out = Vec::new();
-            a.take(&mut out, 1 << 16).await;
-            out
-        })
+        tokio::spawn(async move { a.take().await })
     };
     tokio::task::yield_now().await;
     assert!(!waiting.is_finished());
-    hub.send_to_connection("a", &event("first"));
-    let out = waiting.await.unwrap();
-    assert_eq!(out.len(), 1);
-    for n in 0..5 {
-        hub.send_to_connection("a", &event(&format!("m{n}")));
-    }
-    let one = out[0].len();
-    let mut out = Vec::new();
-    a.take(&mut out, one * 3).await;
-    assert_eq!(out.len(), 3, "only what fits in the limit");
-    a.take(&mut out, 1).await;
-    assert_eq!(out.len(), 4, "at least one, however small the limit");
+    let first = event("first");
+    hub.send_to_connection("a", &first);
+    assert_eq!(waiting.await.unwrap(), first.bytes);
 }
 
 #[tokio::test]
 async fn a_message_sent_while_the_writer_is_busy_is_not_forgotten() {
     let hub = Hub::new(&Config::default());
     let a = connect(&hub, "a");
-    hub.send_to_connection("a", &event("one"));
-    hub.send_to_connection("a", &event("two"));
-    let mut out = Vec::new();
-    a.take(&mut out, 1).await;
-    assert_eq!(out.len(), 1);
-    // The second must still wake the next waiter even though no new push came.
-    tokio::time::timeout(std::time::Duration::from_secs(1), a.take(&mut out, 1))
+    let first = event("one");
+    let second = event("two");
+    hub.send_to_connection("a", &first);
+    hub.send_to_connection("a", &second);
+    assert_eq!(a.take().await, first.bytes);
+    let sent = tokio::time::timeout(std::time::Duration::from_secs(1), a.take())
         .await
         .unwrap();
-    assert_eq!(out.len(), 2);
+    assert_eq!(sent, second.bytes);
+}
+
+#[tokio::test]
+async fn native_presence_coalesces_only_consecutive_snapshots_for_the_same_user() {
+    let hub = Hub::new(&Config {
+        max_queued_messages: 5,
+        ..config()
+    });
+    let native = connect(&hub, "native");
+    let snapshot = |user: &str, presence: &str| {
+        Outbound::single(
+            "PresenceChanged",
+            &serde_json::json!({"userId": user, "presence": presence}),
+        )
+        .unwrap()
+    };
+
+    let first = snapshot("a", "idle");
+    let replacement = snapshot("a", "online");
+    for message in [&first, &replacement] {
+        assert_eq!(hub.send_to_all(message), 1);
+    }
+    let after_other_user = snapshot("a", "offline");
+    for message in [&snapshot("b", "idle"), &after_other_user, &event("Barrier")] {
+        assert!(hub.send_to_connection("native", message));
+    }
+    assert!(hub.send_to_connection("native", &snapshot("a", "dnd")));
+    assert!(hub.send_to_connection("native", &snapshot("a", "online")));
+    assert_eq!(queued(&native).len(), 5);
+    {
+        let state = lock(&native.outbox.state);
+        assert_eq!(
+            state.bytes,
+            state.queue.iter().map(Bytes::len).sum::<usize>()
+        );
+    }
+    let mut taken = Vec::new();
+    for _ in 0..5 {
+        taken.push(native.take().await);
+    }
+    assert_eq!(taken[0], replacement.bytes);
+    assert_eq!(taken[2], after_other_user.bytes);
+    assert_eq!(taken[4], replacement.bytes);
+
+    // Taking the last snapshot clears its key for the now empty queue.
+    assert!(hub.send_to_connection("native", &first));
+    assert_eq!(queued(&native).len(), 1);
+    let partial = Outbound::single("PresenceChanged", &serde_json::json!({"userId": "a"})).unwrap();
+    assert!(hub.send_to_connection("native", &partial));
+    assert!(hub.send_to_connection("native", &replacement));
+    assert_eq!(queued(&native).len(), 3, "partial snapshots are barriers");
+}
+
+#[test]
+fn outbound_keeps_the_application_payload_member_order() {
+    let raw =
+        RawValue::from_string(r#"{"z":123456789012345678901234567890,"a":2}"#.to_owned()).unwrap();
+    let message = Outbound::single("Update", &raw).unwrap();
+    assert!(String::from_utf8_lossy(message.as_bytes()).contains(raw.get()));
 }

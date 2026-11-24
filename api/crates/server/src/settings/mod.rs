@@ -16,7 +16,7 @@ mod config;
 mod defaults;
 mod objects;
 mod oidc;
-mod origin;
+pub(crate) mod origin;
 pub mod relay;
 mod storage;
 mod trusted_proxies;

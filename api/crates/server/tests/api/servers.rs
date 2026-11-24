@@ -202,8 +202,8 @@ fn member_count(connection: &Connection, server_id: &str) -> i64 {
 async fn until(hub: &mut HubClient, name: &str) -> Value {
     loop {
         let record = hub.record().await;
-        if record["target"] == name {
-            return record["arguments"][0].clone();
+        if record["name"] == name {
+            return record["data"].clone();
         }
     }
 }

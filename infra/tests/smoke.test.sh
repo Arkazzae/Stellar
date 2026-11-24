@@ -118,7 +118,6 @@ sign_in() {
 listen_script='
 import socket, ssl, struct, sys, json, time, base64, os
 port, cookie, marker = int(sys.argv[1]), sys.argv[2], sys.argv[3]
-RS = "\x1e"
 context = ssl.create_default_context()
 context.check_hostname = False
 context.verify_mode = ssl.CERT_NONE
@@ -128,6 +127,7 @@ key = base64.b64encode(os.urandom(16)).decode()
 sock.sendall((
     "GET /hubs/app HTTP/1.1\r\nHost: localhost:%d\r\nUpgrade: websocket\r\n"
     "Connection: Upgrade\r\nSec-WebSocket-Version: 13\r\nSec-WebSocket-Key: %s\r\n"
+    "Sec-WebSocket-Protocol: stellarr.v1\r\n"
     "Origin: https://localhost:%d\r\nCookie: %s\r\n\r\n" % (port, key, port, cookie)
 ).encode())
 head = b""
@@ -138,12 +138,12 @@ while not head.endswith(b"\r\n\r\n"):
     head += chunk
 if b" 101 " not in head.split(b"\r\n")[0]:
     sys.exit("the hub refused the upgrade: %r" % head)
+if b"\r\nsec-websocket-protocol: stellarr.v1\r\n" not in head.lower():
+    sys.exit("the hub did not select stellarr.v1: %r" % head)
 
-def send(text):
-    payload = text.encode()
+def send(opcode, payload):
     mask = os.urandom(4)
-    frame = bytes([0x81, 0x80 | len(payload)]) + mask + bytes(b ^ mask[i % 4] for i, b in enumerate(payload))
-    sock.sendall(frame)
+    sock.sendall(bytes([0x80 | opcode, 0x80 | len(payload)]) + mask + bytes(b ^ mask[i % 4] for i, b in enumerate(payload)))
 
 def read(n):
     data = b""
@@ -154,9 +154,8 @@ def read(n):
         data += chunk
     return data
 
-send(json.dumps({"protocol": "json", "version": 1}) + RS)
-buffer = ""
 ready = False
+clock_answered = False
 deadline = time.time() + 30
 sock.settimeout(5)
 while time.time() < deadline:
@@ -171,22 +170,27 @@ while time.time() < deadline:
         length = struct.unpack(">Q", read(8))[0]
     payload = read(length)
     if first & 0x0F == 9:
-        mask = os.urandom(4)
-        sock.sendall(bytes([0x8A, 0x80 | len(payload)]) + mask + bytes(b ^ mask[i % 4] for i, b in enumerate(payload)))
+        send(0xA, payload)
         continue
     if first & 0x0F != 1:
         continue
-    buffer += payload.decode()
-    while RS in buffer:
-        record, buffer = buffer.split(RS, 1)
-        if record == "{}" and not ready:
-            ready = True
-            print("READY", flush=True)
-            continue
-        if marker in record and "MessageCreated" in record:
-            print("OK", flush=True)
-            sys.exit(0)
-sys.exit("no MessageCreated with the marker within 30 seconds")
+    record = json.loads(payload)
+    if not ready:
+        if record.get("type") != "ready":
+            sys.exit("the first native message must be ready: %r" % record)
+        ready = True
+        send(1, b"{\"type\":\"call\",\"id\":1,\"method\":\"GetRtcClock\",\"args\":[]}")
+        continue
+    if record.get("id") == 1:
+        if record.get("type") != "result" or not isinstance(record.get("value"), int):
+            sys.exit("GetRtcClock failed: %r" % record)
+        clock_answered = True
+        print("READY", flush=True)
+        continue
+    if clock_answered and record.get("type") == "event" and record.get("name") == "MessageCreated" and marker in json.dumps(record.get("data")):
+        print("OK", flush=True)
+        sys.exit(0)
+sys.exit("no MessageCreated with the marker within 30 seconds" if clock_answered else "GetRtcClock did not answer")
 '
 
 step="starting $image as $name on port $port"

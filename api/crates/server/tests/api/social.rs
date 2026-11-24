@@ -595,8 +595,8 @@ async fn drain(client: &mut HubClient) {
 fn presence_of(records: &[Value], user: &str) -> Vec<String> {
     records
         .iter()
-        .filter(|r| r["target"] == "PresenceChanged" && r["arguments"][0]["userId"] == user)
-        .map(|r| r["arguments"][0]["presence"].as_str().unwrap().to_string())
+        .filter(|r| r["name"] == "PresenceChanged" && r["data"]["userId"] == user)
+        .map(|r| r["data"]["presence"].as_str().unwrap().to_string())
         .collect()
 }
 

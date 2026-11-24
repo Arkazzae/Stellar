@@ -2,8 +2,7 @@ use aws_lc_rs::rand;
 
 const ALPHABET: &[u8; 64] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_";
 
-/// A fresh unguessable name: sixteen random bytes as 22 URL-safe characters.
-/// Connection ids and the tokens that claim a connection are made this way.
+/// A fresh connection ID from sixteen random bytes as 22 URL-safe characters.
 pub(crate) fn random_id() -> String {
     let mut bytes = [0u8; 16];
     // The system generator failing means the process cannot keep any secret.

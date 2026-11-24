@@ -23,7 +23,6 @@
     "pretest": "node ../artifacts/assemble.mjs"
   },
   "dependencies": {
-    "@microsoft/signalr": "^11.0.0",
     "@stellarr/icons": "*",
     "@stellarr/router": "*",
     "@stellarr/ui": "*",

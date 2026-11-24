@@ -135,12 +135,12 @@ async fn a_removed_member_hears_of_it_and_nothing_more_from_the_server() {
     let user = scene.user("jun");
     assert_eq!(scene.status("boss", Method::POST, &format!("/api/admin/members/{user}/ban"), Some(json!({}))).await, 201);
     let told = removed.quiet_for(Duration::from_millis(500)).await;
-    let names: Vec<&str> = told.iter().filter_map(|record| record["target"].as_str()).collect();
+    let names: Vec<&str> = told.iter().filter_map(|record| record["name"].as_str()).collect();
     assert!(names.contains(&"ServerMemberRemoved") && names.contains(&"ServerAccessRevoked"), "{told:?}");
-    let revoked = told.iter().find(|record| record["target"] == "ServerAccessRevoked").unwrap();
-    assert_eq!(revoked["arguments"][0], json!({ "serverId": server_id, "kind": "banned" }));
+    let revoked = told.iter().find(|record| record["name"] == "ServerAccessRevoked").unwrap();
+    assert_eq!(revoked["data"], json!({ "serverId": server_id, "kind": "banned" }));
     let others = other.quiet_for(Duration::from_millis(100)).await;
-    assert!(others.iter().any(|record| record["target"] == "ServerMemberRemoved"), "{others:?}");
+    assert!(others.iter().any(|record| record["name"] == "ServerMemberRemoved"), "{others:?}");
 
     // A later event of the server does not reach the connection that was cut off.
     assert_eq!(scene.status("boss", Method::POST, "/api/admin/roles", Some(json!({ "name": "Later", "color": "#fff", "permissions": [] }))).await, 201);
@@ -149,8 +149,8 @@ async fn a_removed_member_hears_of_it_and_nothing_more_from_the_server() {
         scene.status("boss", Method::PUT, &format!("/api/admin/channels/{}/permissions/{base}", scene.channel), Some(json!({ "allow": [], "deny": ["viewChannel"] }))).await,
         200
     );
-    assert!(removed.quiet_for(Duration::from_millis(500)).await.iter().all(|record| record["target"] != "ChannelAccessChanged"));
-    assert!(other.quiet_for(Duration::from_millis(100)).await.iter().any(|record| record["target"] == "ChannelAccessChanged"));
+    assert!(removed.quiet_for(Duration::from_millis(500)).await.iter().all(|record| record["name"] != "ChannelAccessChanged"));
+    assert!(other.quiet_for(Duration::from_millis(100)).await.iter().any(|record| record["name"] == "ChannelAccessChanged"));
 }
 
 #[tokio::test]

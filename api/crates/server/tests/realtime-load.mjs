@@ -45,6 +45,7 @@ if (register.setupRequired !== false) {
 }
 const login = await fetch(`${base}/api/auth/login`, { method: "POST", headers, body: JSON.stringify({ username: "loader", password: "Passw0rd!2026" }) });
 const cookie = login.headers.getSetCookie().map((line) => line.split(";")[0]).join("; ");
+if (!login.ok || !cookie) throw new Error(`sign-in failed: ${login.status}`);
 
 await sleep(1000);
 const before = rss();
@@ -53,14 +54,15 @@ console.log(`server memory before: ${mib(before)} MiB`);
 const arrivals = new Array(total).fill(null);
 let open = 0;
 const sockets = [];
-const RS = "\u001e";
 for (let index = 0; index < total; index += 1) {
-  const socket = new WebSocket(`${base.replace("http", "ws")}/hubs/app`, { headers: { Cookie: cookie } });
-  socket.onopen = () => socket.send(`{"protocol":"json","version":1}${RS}`);
+  const socket = new WebSocket(`${base.replace(/^http/, "ws")}/hubs/app`, {
+    protocols: ["stellarr.v1"],
+    headers: { Cookie: cookie, Origin: base },
+  });
   socket.onmessage = (event) => {
-    const text = String(event.data);
-    if (text === `{}${RS}`) open += 1;
-    if (text.includes('"target":"Probe"')) arrivals[index] = performance.now();
+    const record = JSON.parse(event.data);
+    if (record.type === "ready") open += 1;
+    if (record.type === "event" && record.name === "Probe") arrivals[index] = performance.now();
   };
   sockets.push(socket);
   if (index % Number(args["ramp-per-second"]) === Number(args["ramp-per-second"]) - 1) await sleep(1000);
@@ -86,4 +88,4 @@ console.log(`server memory after the event: ${mib(rss())} MiB`);
 for (const socket of sockets) socket.close();
 await sleep(1500);
 console.log(`server memory after everyone left: ${mib(rss())} MiB`);
-process.exit(0);
+process.exit(open === total && got.length === total ? 0 : 1);

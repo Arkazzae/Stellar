@@ -376,7 +376,7 @@ async fn an_account_disabled_in_the_cockpit_loses_its_connection_and_with_it_its
     let mut scene = scene().await;
     scene.owner(Method::PATCH, &format!("/api/cockpit/users/{}/status", scene.jonas.id), Some(json!({"disabled": true})), 204).await;
     // The watcher of sessions closes the connection, and the seat goes with it.
-    let (_, _) = scene.peer.hub.until_close().await;
+    assert_eq!(scene.peer.hub.finish_close().await, Some(4401));
     scene.rig.media.delete_of(&scene.session).await;
     scene.other.next_where("VoiceParticipantChanged", |s| in_room(scene.rig.salon)(s) && s["participants"].as_array().is_some_and(|p| p.len() == 1)).await;
 }

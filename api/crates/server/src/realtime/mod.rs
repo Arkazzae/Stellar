@@ -26,6 +26,7 @@ pub mod audience;
 mod caller;
 pub mod method;
 pub mod names;
+mod origin;
 pub mod presence;
 mod publisher;
 pub mod registry;
@@ -108,7 +109,7 @@ impl Realtime {
     pub fn end_session(&self, session: Id) -> usize {
         let ended = self.registry.take_session(session);
         for connection in &ended {
-            self.hub.abort(connection);
+            self.hub.end_session(connection);
         }
         ended.len()
     }
@@ -116,7 +117,7 @@ impl Realtime {
     /// Ends one connection, as for a session that no longer counts.
     pub fn end_connection(&self, connection_id: &str) {
         self.registry.unregister(connection_id);
-        self.hub.abort(connection_id);
+        self.hub.end_session(connection_id);
     }
 
     /// Reads the presence a development seed left in the data folder.
@@ -125,7 +126,7 @@ impl Realtime {
     }
 }
 
-/// The hub's routes: negotiation and the WebSocket, at `/hubs/app`.
+/// The hub's WebSocket endpoint at `/hubs/app`.
 pub fn endpoints(state: AppState, realtime: Arc<Realtime>) -> Endpoints {
     let application = Arc::new(AppHub::new(state.clone(), Arc::clone(&realtime)));
     let router = stellarr_hub::router(
@@ -151,6 +152,9 @@ fn admit(state: &AppState, parts: &axum::http::request::Parts) -> Result<Who, Ap
         .get::<session::Caller>()
         .copied()
         .ok_or_else(refuse)?;
+    if !origin::allows(state.settings(), parts) {
+        return Err(ApiError::forbidden());
+    }
     // The pipeline has already opened the cookie; opening it again costs no
     // database and is how the hub learns which version of the account's
     // sessions the connection was let in with.

@@ -22,8 +22,8 @@ async fn told(client: &mut HubClient) -> Vec<(String, Value)> {
         .quiet_for(QUIET)
         .await
         .into_iter()
-        .filter(|record| record["type"] == 1 && record["target"] != "PresenceChanged")
-        .map(|record| (record["target"].as_str().unwrap().to_string(), record["arguments"][0].clone()))
+        .filter(|record| record["type"] == "event" && record["name"] != "PresenceChanged")
+        .map(|record| (record["name"].as_str().unwrap().to_string(), record["data"].clone()))
         .collect()
 }
 
