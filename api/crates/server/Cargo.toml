@@ -42,6 +42,7 @@ tracing-subscriber = { workspace = true, features = ["env-filter"] }
 workspace = true
 
 [dev-dependencies]
+stellarr-s3 = { path = "../s3" }
 stellarr-websocket = { path = "../websocket" }
 http = { workspace = true }
 # The unit tests of the permission rules count the statements a check runs.
