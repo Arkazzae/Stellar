@@ -34,7 +34,7 @@ mod start;
 
 pub use identities::{identity_name, issuer_name, owned};
 pub use linking::{Linked, Requester, link_pending, stage};
-pub use names::{recorded_name, recorded_name_of, shown_name, shown_name_of};
+pub use names::{RecordedNames, recorded_name, recorded_name_of, shown_name, shown_name_of};
 pub use pending::{
     Held, Pending, clear_cookie as clear_pending_cookie, find as find_pending, held as held_pending,
     take as take_pending,

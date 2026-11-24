@@ -89,7 +89,7 @@ pub async fn confirm_totp(
     let seen = Seen::of(&state, origin);
     let challenge = challenge_id(request.challenge_id.as_deref());
     let context = seen.context();
-    let waiting = Waiting::of(&seen.origin);
+    let waiting = Waiting::of(&state, &seen.origin);
     let enrolled = ceremony::confirm_totp(
         &state,
         &seen.ask(&context, challenge),
@@ -129,7 +129,7 @@ pub async fn confirm_email(
     let seen = Seen::of(&state, origin);
     let challenge = challenge_id(request.challenge_id.as_deref());
     let context = seen.context();
-    let waiting = Waiting::of(&seen.origin);
+    let waiting = Waiting::of(&state, &seen.origin);
     let enrolled = ceremony::confirm_email(
         &state,
         &seen.ask(&context, challenge),
@@ -194,7 +194,7 @@ pub async fn confirm_passkey(
     let seen = Seen::of(&state, origin);
     let challenge = challenge_id(request.challenge_id.as_deref());
     let context = seen.context();
-    let waiting = Waiting::of(&seen.origin);
+    let waiting = Waiting::of(&state, &seen.origin);
     let enrolled = ceremony::confirm_passkey(
         &state,
         &seen.ask(&context, challenge),

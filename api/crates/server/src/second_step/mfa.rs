@@ -83,7 +83,7 @@ pub async fn verify(
             code: request.code.as_deref().unwrap_or(""),
         }
     };
-    let waiting = Waiting::of(&seen.origin);
+    let waiting = Waiting::of(&state, &seen.origin);
     let answered = ceremony::answer(
         &state,
         &seen.ask(&context, challenge),
@@ -123,7 +123,7 @@ pub(super) async fn finished(
             // them: it is removed again, so that a copy of its cookie opens
             // nothing.
             if let Some(expected) = completed.pending_identity {
-                link::forget(state, &Waiting::of(&seen.origin), expected).await?;
+                link::forget(state, &Waiting::of(&state, &seen.origin), expected).await?;
             }
             asked.then_some(link::FAILED)
         }
