@@ -33,7 +33,7 @@ axum = { workspace = true, features = ["tokio", "http1", "matched-path", "query"
 bytes = { workspace = true }
 http-body-util = { workspace = true }
 hyper = { workspace = true }
-rusqlite = { workspace = true }
+rusqlite = { workspace = true, features = ["backup"] }
 rustls = { workspace = true, features = ["aws-lc-rs", "std", "tls12"] }
 serde = { workspace = true }
 serde_json = { workspace = true, features = ["raw_value"] }
