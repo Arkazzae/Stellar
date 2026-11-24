@@ -16,7 +16,10 @@
 //! application contact an internal address.
 //!
 //! The application is responsible for the transport: no redirects, no cookies,
-//! no proxy, a socket opened only to a public address, and a deadline. Failing
+//! no proxy, a socket opened only to a public address, and a deadline. It also
+//! asks for the answer as it is and decodes none of it: the status is all that
+//! is read, so a push service cannot make the server spend memory or time on
+//! a compressed body (the outbound client's `decompress(false)`). Failing
 //! to connect or to answer in time is a retry, which is not a status and so is
 //! not classified here.
 
