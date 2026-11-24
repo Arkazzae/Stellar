@@ -79,7 +79,8 @@ pub struct Origin {
     pub https: bool,
     /// The `User-Agent`, without surrounding whitespace.
     pub user_agent: String,
-    pub cookies: axum::http::HeaderMap,
+    /// Every header of the request, for the ones a handler reads itself.
+    pub headers: axum::http::HeaderMap,
 }
 
 impl<S: Send + Sync> FromRequestParts<S> for Origin {
@@ -100,7 +101,7 @@ impl<S: Send + Sync> FromRequestParts<S> for Origin {
                 .unwrap_or("")
                 .trim()
                 .to_string(),
-            cookies: parts.headers.clone(),
+            headers: parts.headers.clone(),
         })
     }
 }
