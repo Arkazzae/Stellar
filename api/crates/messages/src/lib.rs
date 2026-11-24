@@ -52,6 +52,10 @@ impl fmt::Display for UnsupportedLanguage {
 
 impl std::error::Error for UnsupportedLanguage {}
 
+/// A value for a placeholder: anything that can be written as text. It is
+/// `Sync` so that a list of values can be held across an `.await`.
+pub type Value<'a> = &'a (dyn fmt::Display + Sync);
+
 /// A text has a placeholder that the caller gave no value for. This is a bug
 /// in the calling code, never a fault of the person who sent the request.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -94,7 +98,7 @@ impl Messages {
     pub fn get(
         &self,
         key: MessageKey,
-        values: &[(&str, &dyn fmt::Display)],
+        values: &[(&str, Value<'_>)],
     ) -> Result<String, MissingValue> {
         let template = self.template(key);
         let mut result = String::with_capacity(template.len());
@@ -263,9 +267,9 @@ mod tests {
             let catalogue = Messages::new(language);
             for &key in MessageKey::ALL {
                 let names = placeholders_of(catalogue.template(key));
-                let values: Vec<(&str, &dyn fmt::Display)> = names
+                let values: Vec<(&str, Value<'_>)> = names
                     .iter()
-                    .map(|name| (name.as_str(), &1 as &dyn fmt::Display))
+                    .map(|name| (name.as_str(), &1 as Value<'_>))
                     .collect();
 
                 let text = catalogue.get(key, &values).unwrap();
