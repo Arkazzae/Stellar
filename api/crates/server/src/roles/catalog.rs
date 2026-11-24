@@ -286,7 +286,7 @@ pub(super) async fn update(
             Ok((dto, announcement))
         })
         .await?;
-    announcement.publish(&state, server);
+    announcement.publish(&state, server).await;
     Ok(json_response(StatusCode::OK, &dto))
 }
 
@@ -454,6 +454,6 @@ pub(super) async fn delete(
             Ok(Announcement::after(tx, server, &before, &holders)?)
         })
         .await?;
-    announcement.publish(&state, server);
+    announcement.publish(&state, server).await;
     Ok(no_content())
 }

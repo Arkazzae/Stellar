@@ -55,8 +55,10 @@ impl Announcement {
     }
 
     /// Hands it to the hub: the people whose view changed first, then each
-    /// recipient their own permissions.
-    pub(crate) fn publish(self, state: &AppState, server: Id) {
+    /// recipient their own permissions. What was taken may have been the right
+    /// to sit in a voice room, so whoever sits where they may not is taken out
+    /// of it last.
+    pub(crate) async fn publish(self, state: &AppState, server: Id) {
         access_changed::publish(state.events(), server, self.changed);
         for (user, permissions) in self.notices {
             state.events().publish(Event::new(
@@ -68,6 +70,7 @@ impl Announcement {
                 },
             ));
         }
+        crate::voice::enforce(state, server).await;
     }
 }
 

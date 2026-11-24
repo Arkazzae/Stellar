@@ -100,6 +100,7 @@ pub async fn reorder_channels(
 ) -> ApiResult<Response> {
     let messages = *state.messages();
     let user = caller.user;
+    let moved = request.r#move.is_some();
     let outcome = state
         .database()
         .write(move |tx| -> Result<Answer<Reordered>, DbError> {
@@ -270,6 +271,11 @@ pub async fn reorder_channels(
         .await?;
     for event in events {
         state.events().publish(event);
+    }
+    // A channel moved to another section may have gone private (or open), and
+    // whoever sits in it where they may not is taken out.
+    if moved {
+        crate::voice::enforce(&state, server).await;
     }
     Ok(StatusCode::NO_CONTENT.into_response())
 }

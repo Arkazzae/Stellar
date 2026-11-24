@@ -291,10 +291,11 @@ async fn kick(
 /// removed, then takes their connections out of the server's groups. They hear
 /// about it through their own user group, which outlives the membership.
 ///
-/// Their voice seats go first, with the media sessions they hold, and the rooms
-/// are told last, when the person is already out of the server's groups.
+/// Their voice seats go first (with theirs go the seats of anybody else who sits
+/// where they may not), with the media sessions they hold, and the rooms are
+/// told last, when the person is already out of the server's groups.
 async fn announce_removal(state: &AppState, server: Id, user: Id, kind: &'static str) {
-    let rooms = crate::voice::leave_server_rooms(state, server, user).await;
+    let unseated = crate::voice::unseat(state, server, None).await;
     state.events().publish(Event::new(
         Audience::Server(server),
         "ServerMemberRemoved",
@@ -312,7 +313,7 @@ async fn announce_removal(state: &AppState, server: Id, user: Id, kind: &'static
         },
     ));
     state.events().server_left(user, server);
-    crate::voice::announce_rooms(state, &rooms).await;
+    unseated.announce(state).await;
 }
 
 /// A unique value that was taken is a conflict.

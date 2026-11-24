@@ -18,6 +18,7 @@
 //!   state, [`rooms::broadcast_snapshot`] to tell a room who is in it,
 //!   [`turn::public_endpoint`] and [`turn::credentials`] for the bootstrap.
 
+pub mod access;
 pub mod closer;
 pub mod control;
 mod document;
@@ -36,7 +37,8 @@ pub mod turn;
 use crate::background::Worker;
 use crate::settings::Settings;
 
-pub use self::rooms::{announce_rooms, end_direct_call, leave_server_rooms};
+pub use self::access::{Unseated, enforce, unseat, voice_channels_of};
+pub use self::rooms::end_direct_call;
 use self::control::Control;
 use self::gate::PlaybackGate;
 use self::plane::Plane;

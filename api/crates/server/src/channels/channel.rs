@@ -398,6 +398,13 @@ pub async fn delete(
         .await?;
     match outcome {
         Answer::Refused(refusal) => Err(refusal.into_error(&messages)?),
-        Answer::Done(()) => Ok(StatusCode::NO_CONTENT.into_response()),
+        Answer::Done(()) => {
+            // Whoever sat in the channel is taken out of it, now that it is gone.
+            crate::voice::unseat(&state, server, Some(vec![channel_id]))
+                .await
+                .announce(&state)
+                .await;
+            Ok(StatusCode::NO_CONTENT.into_response())
+        }
     }
 }
