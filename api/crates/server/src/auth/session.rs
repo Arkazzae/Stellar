@@ -413,6 +413,17 @@ struct Row {
     user_is_disabled: bool,
 }
 
+/// Ends every session of every account that is still running, and says how
+/// many. For the one moment that all of them are in doubt, an instance's data
+/// replaced by a backup's: nobody who was signed in then, or is in the copy,
+/// stays signed in. It reaches the whole instance, so a route never calls it.
+pub fn revoke_all(tx: &Transaction, now: Timestamp) -> Result<usize, DbError> {
+    Ok(tx.execute(
+        "UPDATE \"UserSessions\" SET \"RevokedAt\" = ?1 WHERE \"RevokedAt\" IS NULL",
+        params![now],
+    )?)
+}
+
 /// Ends a session. True when it was running and now is not, so that the one
 /// request that ends it is the one that records it.
 pub fn revoke(tx: &Transaction, session: Id, now: Timestamp) -> Result<bool, DbError> {
@@ -421,4 +432,45 @@ pub fn revoke(tx: &Transaction, session: Id, now: Timestamp) -> Result<bool, DbE
         params![session, now],
     )?;
     Ok(changed == 1)
+}
+
+#[cfg(test)]
+mod end_all_tests {
+    use super::*;
+    use crate::auth::fixtures::{add_session, add_user, open};
+
+    #[test]
+    fn every_running_session_of_every_account_ends_and_the_ended_ones_keep_their_time() {
+        let (_folder, mut connection) = open();
+        let now = Timestamp::now();
+        let (first, second) = (add_user(&connection, None), add_user(&connection, None));
+        let a = add_session(&connection, first, now, None);
+        let b = add_session(&connection, second, now, None);
+        let ended = add_session(&connection, second, now, None);
+        let earlier = now.minus(std::time::Duration::from_secs(3600));
+        connection
+            .execute(
+                "UPDATE \"UserSessions\" SET \"RevokedAt\" = ?2 WHERE \"Id\" = ?1",
+                params![ended, earlier],
+            )
+            .unwrap();
+
+        let tx = connection.transaction().unwrap();
+        assert_eq!(revoke_all(&tx, now).unwrap(), 2);
+        tx.commit().unwrap();
+        let revoked = |id: Id| -> Option<Timestamp> {
+            connection
+                .query_row(
+                    "SELECT \"RevokedAt\" FROM \"UserSessions\" WHERE \"Id\" = ?1",
+                    [id],
+                    |row| row.get(0),
+                )
+                .unwrap()
+        };
+        assert_eq!(revoked(a), Some(now));
+        assert_eq!(revoked(b), Some(now));
+        assert_eq!(revoked(ended), Some(earlier));
+        let tx = connection.transaction().unwrap();
+        assert_eq!(revoke_all(&tx, now).unwrap(), 0);
+    }
 }
