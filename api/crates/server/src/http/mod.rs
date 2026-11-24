@@ -30,7 +30,7 @@ pub use client_gate::{ClientVersion, KIND_HEADER, VERSION_HEADER};
 pub use error::{ApiError, ApiResult};
 pub use extract::{MaybeCaller, Origin, Path, Query};
 pub use forwarded::ClientInfo;
-pub use json::{Json, json_response};
+pub use json::{Json, is_object_or_null, json_response};
 pub use metrics::Metrics;
 pub use pipeline::build;
 pub use problem::Problem;
