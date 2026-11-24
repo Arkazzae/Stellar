@@ -31,9 +31,20 @@ const RESERVED_V4: [(&str, u8); 14] = [
 // the discard-only block, documentation, 6to4 (it also carries an IPv4
 // address that is not checked here), unique-local, link-local, site-local and
 // multicast.
-const RESERVED_V6: [(&str, u8); 9] = [
+const RESERVED_V6: [(&str, u8); 14] = [
     ("::", 96),
+    // IPv4-translated (RFC 2765); it embeds an IPv4 address.
+    ("::ffff:0:0:0", 96),
     ("64:ff9b::", 96),
+    // Local-use NAT64 (RFC 8215); it embeds an IPv4 address.
+    ("64:ff9b:1::", 48),
+    // The IETF protocol assignments block: Teredo (which embeds an IPv4
+    // address), benchmarking, ORCHID and others, none of them a public host.
+    ("2001::", 23),
+    // Documentation, the second block (RFC 9637).
+    ("3fff::", 20),
+    // Segment routing SIDs (RFC 9602).
+    ("5f00::", 16),
     ("100::", 16),
     ("2001:db8::", 32),
     ("2002::", 16),
@@ -155,6 +166,43 @@ mod tests {
             "64:ff9b::7f00:1",
         ] {
             assert!(!v6(text), "{text}");
+        }
+    }
+
+    #[test]
+    fn the_newer_reserved_v6_blocks_are_refused_at_their_edges() {
+        for text in [
+            "::ffff:0:0:0",
+            "::ffff:0:7f00:1",
+            "::ffff:0:ffff:ffff",
+            "64:ff9b:1::",
+            "64:ff9b:1::7f00:1",
+            "64:ff9b:1:ffff:ffff:ffff:ffff:ffff",
+            "2001::",
+            "2001::7f00:1",
+            "2001:1ff:ffff:ffff:ffff:ffff:ffff:ffff",
+            "3fff::",
+            "3fff::1",
+            "3fff:fff:ffff:ffff:ffff:ffff:ffff:ffff",
+            "5f00::",
+            "5f00::1",
+            "5f00:ffff:ffff:ffff:ffff:ffff:ffff:ffff",
+        ] {
+            assert!(!v6(text), "{text}");
+        }
+        for text in [
+            "::ffff:1:0:0",
+            "64:ff9b:2::1",
+            "64:ff9c::1",
+            "2000:ffff::1",
+            "2001:200::1",
+            "2001:4860:4860::8888",
+            "3ffe::1",
+            "3fff:1000::1",
+            "5eff:ffff::1",
+            "5f01::1",
+        ] {
+            assert!(v6(text), "{text}");
         }
     }
 

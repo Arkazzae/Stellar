@@ -11,6 +11,10 @@
 //!   application sends with its own HTTP client.
 //! - [`classify`] reads the push service's answer.
 //!
+//! A stored subscription should be validated again before every delivery, not
+//! only when it was saved: a row that was altered or is old must not make the
+//! application contact an internal address.
+//!
 //! The application is responsible for the transport: no redirects, no cookies,
 //! no proxy, a socket opened only to a public address, and a deadline. Failing
 //! to connect or to answer in time is a retry, which is not a status and so is
@@ -29,8 +33,8 @@ mod vapid;
 mod testing;
 
 pub use address::{is_public_v4, is_public_v6};
-pub use encrypt::{EncryptError, HEADER_LEN, MAX_PLAINTEXT, RECORD_SIZE, encrypt};
-pub use outcome::{Dispatch, Outcome, classify, parse_retry_after};
+pub use encrypt::{EncryptError, HEADER_LEN, MAX_BODY, MAX_PLAINTEXT, RECORD_SIZE, encrypt};
+pub use outcome::{Dispatch, MAX_RETRY_AFTER, Outcome, classify, parse_retry_after};
 pub use request::{
     BuildError, MAX_PAYLOAD_BYTES, PushPayload, PushRequest, SendOptions, TIME_TO_LIVE_SECONDS,
     Urgency, build_request,

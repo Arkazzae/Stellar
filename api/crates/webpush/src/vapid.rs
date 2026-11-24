@@ -202,7 +202,12 @@ struct Claims<'a> {
 fn normalize_subject(value: &str) -> Option<String> {
     let candidate = value.trim();
     let length = candidate.chars().count();
-    if length == 0 || length > SUBJECT_MAX_LENGTH || candidate.chars().any(char::is_whitespace) {
+    if length == 0
+        || length > SUBJECT_MAX_LENGTH
+        || candidate
+            .chars()
+            .any(|c| c.is_whitespace() || c.is_control())
+    {
         return None;
     }
     if let Some(address) = strip_prefix_ignore_case(candidate, "mailto:") {
@@ -413,6 +418,10 @@ mod tests {
             "mailto:",
             "mailto:  ",
             "mailto:a b@example.test",
+            "mailto:a\u{0}b@example.test",
+            "mailto:a\u{7f}b@example.test",
+            "mailto:a\u{1}@example.test",
+            "https://ops.example.test/\u{1b}[0m",
             "http://ops.example.test",
             "https://",
             "https:///path",
