@@ -19,6 +19,7 @@ pub mod database;
 pub mod discord_import;
 pub mod encoding;
 pub mod events;
+pub mod housekeeping;
 pub mod http;
 pub mod instance;
 pub mod link_previews;
