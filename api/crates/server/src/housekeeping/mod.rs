@@ -79,8 +79,6 @@ pub struct Summary {
     pub orphan_attachments: usize,
     pub backup_files: usize,
     pub log_files: usize,
-    /// Objects still waiting in the deletion queue after the run.
-    pub pending_object_deletions: i64,
 }
 
 /// One pass of the housekeeping, with every age measured against `now`.
@@ -110,7 +108,6 @@ pub async fn run(
             orphan_attachments: 0,
             backup_files: 0,
             log_files: 0,
-            pending_object_deletions: queue::pending(state).await?,
         });
     }
 
@@ -139,7 +136,6 @@ pub async fn run(
         orphan_attachments,
         backup_files,
         log_files,
-        pending_object_deletions: queue::pending(state).await?,
     })
 }
 
@@ -203,11 +199,10 @@ pub fn workers() -> Vec<Worker> {
                 Ok(summary) if summary.enabled => {
                     info!(
                         target: TARGET,
-                        "Maintenance removed {} orphan attachments, {} backup files and {} log files; {} object deletions remain queued.",
+                        "Maintenance removed {} orphan attachments, {} backup files and {} log files.",
                         summary.orphan_attachments,
                         summary.backup_files,
-                        summary.log_files,
-                        summary.pending_object_deletions
+                        summary.log_files
                     );
                     Ok(())
                 }
