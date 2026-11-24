@@ -850,3 +850,23 @@ fn a_secret_read_from_a_file_of_the_shell_and_from_input_is_the_same_and_the_arg
         "line from a file"
     );
 }
+
+#[test]
+fn applying_a_staged_restore_says_what_it_replaces_before_it_asks() {
+    let instance = support::Instance::unstarted();
+    let restore = instance.root().join("restore");
+    std::fs::create_dir_all(&restore).unwrap();
+    std::fs::write(restore.join("staged.zip"), b"zip").unwrap();
+
+    let asked = instance.run_interactive("n\n", &["backup", "apply"]);
+    let said = format!("{}{}", asked.output, asked.error);
+    assert!(
+        said.contains(
+            "It replaces every account, every session, every setting and secret, and where automatic backups are sent"
+        ),
+        "{said}"
+    );
+    assert_eq!(asked.exit, 2, "{said}");
+    // Said, not done: the staged archive is where it was.
+    assert!(restore.join("staged.zip").exists());
+}
