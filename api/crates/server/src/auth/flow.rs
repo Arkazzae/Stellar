@@ -369,28 +369,13 @@ fn trusted_device(
 }
 
 /// Whether the instance can offer passkeys: its public address is HTTPS (or
-/// HTTP on localhost) and names a host, not an IP address, since browsers
-/// refuse them otherwise. It is read from the settings, never from a request,
-/// so a forged `Host` header cannot move it.
+/// HTTP on localhost) and names a host a browser reads as a name, not as an
+/// address. It is read from the settings, never from a request, so a forged
+/// `Host` header cannot move it. The routes that make a passkey work build the
+/// relying party from the same address in the same way, so what a challenge
+/// says about passkeys is never more than they can do.
 pub fn passkeys_available(public_url: &str) -> bool {
-    let public_url = public_url.trim();
-    let Some((scheme, rest)) = public_url.split_once("://") else {
-        return false;
-    };
-    let authority = rest.split(['/', '?', '#']).next().unwrap_or("");
-    let host_and_port = authority.rsplit('@').next().unwrap_or("");
-    if host_and_port.starts_with('[') {
-        return false;
-    }
-    let host = host_and_port.split(':').next().unwrap_or("").to_lowercase();
-    let is_dns = !host.is_empty()
-        && host.parse::<std::net::IpAddr>().is_err()
-        && host
-            .chars()
-            .all(|c| c.is_alphanumeric() || c == '-' || c == '.');
-    is_dns
-        && (scheme.eq_ignore_ascii_case("https")
-            || (scheme.eq_ignore_ascii_case("http") && host == "localhost"))
+    stellarr_webauthn::RelyingParty::from_public_url(public_url).is_some()
 }
 
 /// What looking a challenge up came to.
@@ -558,6 +543,8 @@ mod tests {
             ("http://chat.example.test", false),
             ("https://203.0.113.5", false),
             ("https://[::1]", false),
+            // A host a browser reads as an address.
+            ("https://0x7f.0x1", false),
             ("", false),
             ("chat.example.test", false),
         ] {
