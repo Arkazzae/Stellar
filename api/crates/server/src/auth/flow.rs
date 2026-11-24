@@ -11,8 +11,10 @@ use stellarr_messages::{MessageKey, Messages};
 
 use super::cookies;
 use super::policy::SecurityPolicy;
+use super::security_cookies;
 use super::session::NewSession;
 use super::tokens;
+use super::trusted_devices;
 use crate::database::DbError;
 use crate::instance::users::User;
 use crate::values::{Id, Timestamp};
@@ -155,10 +157,9 @@ fn preauth_name(https: bool) -> &'static str {
 }
 
 fn preauth_cookie(https: bool, id: Id, secret: &str, expires: Timestamp) -> String {
-    let compact: String = id.to_string().chars().filter(|c| *c != '-').collect();
     cookies::set(
         preauth_name(https),
-        &format!("{compact}.{secret}"),
+        &security_cookies::bound_value(id, secret),
         Some(expires),
         https,
     )
@@ -324,14 +325,7 @@ fn trusted_device(
     user: Id,
     cookie: Option<&str>,
 ) -> Result<bool, DbError> {
-    let Some(token) = cookie.filter(|token| !token.trim().is_empty() && token.len() <= 512) else {
-        return Ok(false);
-    };
-    Ok(connection.query_row(
-        "SELECT EXISTS (SELECT 1 FROM \"TrustedDevices\" WHERE \"UserId\" = ?1 AND \"TokenHash\" = ?2 AND \"RevokedAt\" IS NULL AND \"ExpiresAt\" > ?3)",
-        params![user, tokens::hash(token), Timestamp::now()],
-        |row| row.get(0),
-    )?)
+    Ok(trusted_devices::find(connection, user, cookie, Timestamp::now())?.is_some())
 }
 
 /// Whether the instance can offer passkeys: its public address is HTTPS (or
@@ -392,20 +386,7 @@ pub struct StoredChallenge {
 /// The challenge a browser holds, from the cookie that binds it: its id and
 /// its secret.
 pub fn read_preauth(headers: &axum::http::HeaderMap, https: bool) -> Option<(Id, String)> {
-    let value = cookies::read(headers, preauth_name(https))?;
-    let (compact, secret) = value.split_once('.')?;
-    if compact.len() != 32 || secret.is_empty() {
-        return None;
-    }
-    let dashed = format!(
-        "{}-{}-{}-{}-{}",
-        &compact[..8],
-        &compact[8..12],
-        &compact[12..16],
-        &compact[16..20],
-        &compact[20..]
-    );
-    Some((Id::parse(&dashed)?, secret.to_string()))
+    security_cookies::parse_bound(&cookies::read(headers, preauth_name(https))?)
 }
 
 /// Looks a challenge up for the browser that holds `cookie`, as of `now`, and
