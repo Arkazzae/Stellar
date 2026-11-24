@@ -12,7 +12,6 @@ use rusqlite::{OptionalExtension, params};
 use serde::{Deserialize, Serialize};
 use stellarr_messages::{MessageKey, MissingValue};
 
-use super::bind;
 use crate::database::DbError;
 use crate::http::{ApiError, ApiResult, Path, json_response};
 use crate::panel::{self};
@@ -123,7 +122,7 @@ pub async fn set_sign_up(
         caller,
         server,
         body,
-    } = panel::bind_then_gate(&state, request, true, bind::<SignUpChoice>).await?;
+    } = panel::bind_then_gate::<SignUpChoice>(&state, request, true).await?;
     let Some(body) = body else {
         return Err(ApiError::bad_request());
     };

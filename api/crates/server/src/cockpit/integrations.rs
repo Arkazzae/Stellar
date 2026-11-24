@@ -13,7 +13,7 @@ use stellarr_outbound::header::{ACCEPT, USER_AGENT};
 use stellarr_outbound::{AddressPolicy, Client, HeaderValue, Request as Outgoing};
 
 use super::settings;
-use super::{invalid, bind};
+use super::invalid;
 use crate::database::DbError;
 use crate::http::{ApiError, ApiResult, Problem, json_response};
 use crate::mail::Outcome;
@@ -43,7 +43,7 @@ struct Sent {
 /// resolve to, so the operator knows mail works before anybody needs it.
 pub(super) async fn test_mail(State(state): State<AppState>, request: Request) -> ApiResult<Response> {
     let panel::Bound { server, body, .. } =
-        panel::bind_then_gate(&state, request, false, bind::<Recipient>).await?;
+        panel::bind_then_gate::<Recipient>(&state, request, false).await?;
     let Some(body) = body else {
         return Err(ApiError::bad_request());
     };

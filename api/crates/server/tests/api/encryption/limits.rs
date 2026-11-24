@@ -100,18 +100,14 @@ async fn a_value_in_a_wrong_encoding_makes_the_whole_body_unreadable_before_anyt
         }
     };
 
-    // Taken as the bytes they are: spaces, tabs and line breaks are left out.
+    // Refused as unreadable: a 400 with no body. White space is no part of
+    // Base64, wherever it stands.
     for spelled in [
         format!("\"{} {}\"", &key[..10], &key[10..]),
         format!("\"{}\\n{}\"", &key[..10], &key[10..]),
         format!("\"{}\\t{}\"", &key[..10], &key[10..]),
         format!("\"{}\\r{}\"", &key[..10], &key[10..]),
         format!("\" {key} \""),
-    ] {
-        assert_eq!(send(body(&spelled)).await, (409, false), "{spelled}");
-    }
-    // Refused as unreadable: a 400 with no body.
-    for spelled in [
         format!("\"{}\\u000b{}\"", &key[..10], &key[10..]),
         format!("\"{}\"", key.trim_end_matches('=')),
         format!("\"{key}=\""),
@@ -130,18 +126,16 @@ async fn a_value_in_a_wrong_encoding_makes_the_whole_body_unreadable_before_anyt
     for spelled in ["null", "\"\"", "\"   \""] {
         assert_eq!(send(body(spelled)).await, (400, false), "{spelled}");
     }
-    // What the first server read in an integer: digits in a string are fine,
-    // a number with a fraction or an exponent is not.
+    // An integer is written as one: digits in a string, a fraction and an
+    // exponent are not.
     let with_iterations = |iterations: &str| {
         format!(
             "{{\"algorithm\":\"x25519\",\"publicKey\":\"{key}\",\"backup\":{{\"salt\":\"{}\",\"iterations\":{iterations},\"verifier\":\"{}\",\"iv\":\"{}\",\"ciphertext\":\"{}\"}}}}",
             text(&bytes(16, 1)), text(&bytes(32, 1)), text(&bytes(12, 1)), text(&bytes(64, 1))
         )
     };
-    for iterations in ["600000", "\"600000\"", "\"+600000\"", "\"0600000\""] {
-        assert_eq!(send(with_iterations(iterations)).await, (409, false), "{iterations}");
-    }
-    for iterations in ["600000.0", "6e5", "\" 600000\"", "\"600000 \"", "\"\"", "\"abc\"", "true", "1e400", "600000000000", "null"] {
+    assert_eq!(send(with_iterations("600000")).await, (409, false));
+    for iterations in ["\"600000\"", "\"+600000\"", "\"0600000\"", "\"NaN\"", "\"Infinity\"", "600000.0", "6e5", "\" 600000\"", "\"600000 \"", "\"\"", "\"abc\"", "true", "1e400", "600000000000", "null"] {
         let (status, empty) = send(with_iterations(iterations)).await;
         assert_eq!(status, 400, "{iterations}");
         assert_eq!(empty, iterations != "null", "{iterations}");
@@ -149,13 +143,13 @@ async fn a_value_in_a_wrong_encoding_makes_the_whole_body_unreadable_before_anyt
     for raw in ["", "null", "[]", "5", "\"x\"", "{", "{} x", "{\"algorithm\":}"] {
         assert_eq!(send(raw.to_string()).await, (400, true), "{raw:?}");
     }
-    // Names are read in any letter case, as the first server read them.
+    // Names are read as they are written: in capitals they name nothing.
     let shouting = body(&format!("\"{key}\"")).replace("algorithm", "ALGORITHM").replace("publicKey", "PublicKey").replace("backup", "Backup");
-    assert_eq!(send(shouting).await, (409, false));
-    // A member named twice is the last one, and a byte order mark is not part of the body.
+    assert_eq!(send(shouting).await, (400, false));
+    // A member named twice makes the body unreadable, and so does a byte order mark.
     let twice = format!("{{\"algorithm\":\"rsa\",{}", &body(&format!("\"{key}\""))[1..]);
-    assert_eq!(send(twice).await, (409, false));
-    assert_eq!(send(format!("\u{feff}{}", body(&format!("\"{key}\"")))).await, (409, false));
+    assert_eq!(send(twice).await, (400, true));
+    assert_eq!(send(format!("\u{feff}{}", body(&format!("\"{key}\"")))).await, (400, true));
 }
 
 #[tokio::test]

@@ -7,7 +7,6 @@ use std::time::Duration;
 use axum::extract::State;
 use axum::response::Response;
 use serde::{Deserialize, Serialize};
-use serde_json::Value;
 
 use super::common::{Seen, body_of, no_store, ok_json, passkey_rejected, passkeys_unavailable, with_cookies};
 use super::wire;
@@ -47,7 +46,7 @@ pub async fn options(State(state): State<AppState>, origin: Origin) -> ApiResult
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct SignInRequest {
-    response: Option<Value>,
+    response: wire::Raw,
     keep_signed_in: Option<bool>,
 }
 
@@ -61,7 +60,7 @@ pub async fn sign_in(
         Ok(request) => request,
         Err(response) => return Ok(*response),
     };
-    let Ok(response) = wire::assertion(request.response.as_ref()) else {
+    let Ok(response) = wire::assertion(request.response.as_deref()) else {
         return Err(ApiError::bad_request());
     };
     let seen = Seen::of(&state, origin);

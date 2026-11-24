@@ -12,7 +12,7 @@ use serde::{Deserialize, Serialize};
 use stellarr_messages::MessageKey;
 
 use super::providers;
-use super::{invalid, no_content, bind};
+use super::{invalid, no_content};
 use crate::account_security::{linked_identities, recent_events};
 use crate::auth::Caller;
 use crate::auth::policy::SecurityPolicy;
@@ -184,7 +184,7 @@ pub(super) async fn recover(
         caller,
         server,
         body,
-    } = panel::bind_then_gate(&state, request, true, bind::<RecoverRequest>).await?;
+    } = panel::bind_then_gate::<RecoverRequest>(&state, request, true).await?;
     let Some(body) = body else {
         return Err(ApiError::bad_request());
     };

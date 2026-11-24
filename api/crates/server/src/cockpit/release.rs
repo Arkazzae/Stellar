@@ -7,7 +7,6 @@ use rusqlite::{OptionalExtension, params};
 use serde::{Deserialize, Serialize};
 use stellarr_messages::{MessageKey, Messages};
 
-use super::bind;
 use crate::database::DbError;
 use crate::http::{ApiError, ApiResult, Problem, json_response};
 use crate::instance::operations;
@@ -131,7 +130,7 @@ pub(super) async fn update(State(state): State<AppState>, request: Request) -> A
         caller,
         server,
         body,
-    } = panel::bind_then_gate(&state, request, true, bind::<Versions>).await?;
+    } = panel::bind_then_gate::<Versions>(&state, request, true).await?;
     let Some(body) = body else {
         return Err(ApiError::bad_request());
     };

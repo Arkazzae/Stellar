@@ -361,7 +361,7 @@ async fn eight_sounds_made_of_one_clip_at_once_leave_one() {
 }
 
 #[tokio::test]
-async fn numbers_come_as_numbers_or_as_strings_that_hold_one_and_nothing_else() {
+async fn numbers_come_as_numbers_and_nothing_else() {
     let Board { server: _server, owner, .. } = board().await;
     let attempt = |trim_end: Value| {
         let owner = &owner;
@@ -373,11 +373,11 @@ async fn numbers_come_as_numbers_or_as_strings_that_hold_one_and_nothing_else() 
         }
     };
 
-    for ok in [json!(2), json!(2.5), json!("2"), json!("+2"), json!(".5e1"), json!("2."), json!("02"), json!("2e0")] {
+    for ok in [json!(2), json!(2.5), json!(0.5e1), json!(2e0)] {
         assert_eq!(attempt(ok.clone()).await.0, 201, "{ok}");
     }
-    assert_eq!(attempt(json!("1.5")).await, (201, Some(json!(1.5))));
-    for bad in [json!(" 2"), json!("2 "), json!("0x2"), json!("2,5"), json!(""), json!(true), json!([]), json!(null), json!("two")] {
+    assert_eq!(attempt(json!(1.5)).await, (201, Some(json!(1.5))));
+    for bad in [json!("2"), json!("+2"), json!(".5e1"), json!("1.5"), json!(" 2"), json!("2 "), json!("0x2"), json!("2,5"), json!(""), json!(true), json!([]), json!(null), json!("two")] {
         assert_eq!(attempt(bad.clone()).await.0, 400, "{bad}");
     }
     for words in ["NaN", "Infinity", "-Infinity", "1e999"] {

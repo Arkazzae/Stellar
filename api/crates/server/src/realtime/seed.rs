@@ -10,7 +10,7 @@
 
 use std::path::Path;
 
-use serde_json::Value;
+use serde::Deserialize;
 
 use super::presence::{PresenceTracker, is_supported};
 use crate::settings::Environment;
@@ -51,53 +51,35 @@ pub fn apply(environment: &Environment, data_root: &Path, tracker: &PresenceTrac
     }
 }
 
+#[derive(Deserialize)]
+struct Document {
+    users: Option<Vec<Entry>>,
+}
+
+#[derive(Deserialize)]
+struct Entry {
+    id: Option<String>,
+    presence: Option<String>,
+}
+
 /// The entries of the document that name an account and a status; the others
-/// are skipped. Property names are read without regard to case.
+/// are skipped. Property names are read as they are written.
 fn read(text: &str) -> Result<Vec<(Id, String)>, String> {
-    let document: Value = serde_json::from_str(text).map_err(|error| error.to_string())?;
-    let users = match &document {
-        Value::Object(members) => member(members, "users"),
-        Value::Null => None,
-        _ => return Err("the document is not an object".to_string()),
-    };
-    let entries = match users {
-        None | Some(Value::Null) => return Ok(Vec::new()),
-        Some(Value::Array(entries)) => entries,
-        Some(_) => return Err("users is not a list".to_string()),
-    };
+    let document: Option<Document> =
+        serde_json::from_str(text).map_err(|error| error.to_string())?;
+    let entries = document
+        .and_then(|document| document.users)
+        .unwrap_or_default();
     let mut presences = Vec::new();
     for entry in entries {
-        let Value::Object(members) = entry else {
-            return Err("an entry is not an object".to_string());
-        };
-        let id = text_member(members, "id")?;
-        let presence = text_member(members, "presence")?;
-        if let (Some(id), Some(presence)) = (id, presence)
+        if let (Some(id), Some(presence)) = (entry.id.as_deref(), entry.presence)
             && let Some(id) = Id::parse(id)
-            && is_supported(presence)
+            && is_supported(&presence)
         {
-            presences.push((id, presence.to_string()));
+            presences.push((id, presence));
         }
     }
     Ok(presences)
-}
-
-fn member<'a>(members: &'a serde_json::Map<String, Value>, name: &str) -> Option<&'a Value> {
-    members
-        .iter()
-        .find(|(key, _)| key.eq_ignore_ascii_case(name))
-        .map(|(_, value)| value)
-}
-
-fn text_member<'a>(
-    members: &'a serde_json::Map<String, Value>,
-    name: &str,
-) -> Result<Option<&'a str>, String> {
-    match member(members, name) {
-        None | Some(Value::Null) => Ok(None),
-        Some(Value::String(text)) => Ok(Some(text)),
-        Some(_) => Err(format!("{name} is not text")),
-    }
 }
 
 #[cfg(test)]
@@ -156,10 +138,14 @@ mod tests {
     }
 
     #[test]
-    fn names_are_read_in_any_case_and_a_wrong_kind_makes_the_whole_document_unreadable() {
+    fn names_are_read_as_written_and_a_wrong_kind_makes_the_whole_document_unreadable() {
         let user = Id::random();
         let upper = format!(r#"{{"Users":[{{"ID":"{user}","Presence":"dnd"}}]}}"#);
         let (tracker, _folder) = tracker_after("development", Some(&upper));
+        assert_eq!(tracker.presence_of(user), "offline");
+
+        let exact = format!(r#"{{"users":[{{"id":"{user}","presence":"dnd"}}]}}"#);
+        let (tracker, _folder) = tracker_after("development", Some(&exact));
         assert_eq!(tracker.presence_of(user), "dnd");
 
         let wrong = format!(
