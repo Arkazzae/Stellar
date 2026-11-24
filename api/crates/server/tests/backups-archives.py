@@ -175,6 +175,11 @@ def compare(first, ours, mode=""):
 # ---------------------------------------------------------------------------
 # A restored tree against its source.
 
+# What a restore by this server removes, and what it ends or marks used.
+HALF_MADE = ["AuthChallenges", "PasskeySignIns", "DesktopBrowserLogins", "PendingExternalIdentities"]
+STILL_GOOD = [("UserSessions", "RevokedAt"), ("TrustedDevices", "RevokedAt"), ("EmailOtpCodes", "ConsumedAt"),
+              ("PasswordResetTokens", "UsedAt"), ("EmailChangeRequests", "UsedAt"), ("CliRecoveryCredentials", "UsedAt")]
+
 def tree_files(root, skip):
     out = {}
     for folder in ["files", "keys", "secrets", "tls", "releases"]:
@@ -187,7 +192,7 @@ def tree_files(root, skip):
                 out[rel] = hashlib.sha256(open(p, "rb").read()).hexdigest()
     return out
 
-def tree(source, restored, archive=None):
+def tree(source, restored, archive=None, by="first"):
     a = tree_files(source, "files/.incoming")
     b = tree_files(restored, "files/.incoming")
     for k in sorted(set(a) | set(b)):
@@ -202,6 +207,19 @@ def tree(source, restored, archive=None):
     ra, va = rows(source_db); rb, vb = rows(os.path.join(restored, "db/stellarr.db"))
     print("restored database integrity:", vb, "tables", len(rb))
     if vb != "ok": fail("restored integrity_check")
+    if by == "ours":
+        # By decision: what this server's restore ends. The half-made sign-ins
+        # are gone, and everything that could let somebody in on a row made
+        # before the archive is ended or marked used. Every other table has the
+        # rows of the archive.
+        expected = dict(ra)
+        for table in HALF_MADE: expected[table] = 0
+        restored_db = sqlite3.connect(os.path.join(restored, "db/stellarr.db"))
+        for table, column in STILL_GOOD:
+            left = restored_db.execute(f'select count(*) from "{table}" where "{column}" is null').fetchone()[0]
+            if left: fail(f"{table}: {left} rows with {column} empty after a restore by this server")
+        restored_db.close()
+        ra = expected
     if ra != rb: fail(f"restored row counts differ: {[(t, ra[t], rb.get(t)) for t in ra if ra[t] != rb.get(t)]}")
     for f in ["keys", "secrets", "tls"]:
         for d, _, names in os.walk(os.path.join(restored, f)):
@@ -285,6 +303,6 @@ def hostile(out):
 if __name__ == "__main__":
     command = sys.argv[1]
     {"fill": lambda: fill(sys.argv[2]), "layout": lambda: layout(sys.argv[2], sys.argv[3]),
-     "compare": lambda: compare(*sys.argv[2:5]), "tree": lambda: tree(*sys.argv[2:5]),
+     "compare": lambda: compare(*sys.argv[2:5]), "tree": lambda: tree(*sys.argv[2:6]),
      "hostile": lambda: hostile(sys.argv[2])}[command]()
     sys.exit(1 if failures else 0)
