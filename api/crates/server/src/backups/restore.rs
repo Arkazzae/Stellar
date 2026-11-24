@@ -59,7 +59,9 @@ const KEYS_FOLDER_NAME: &str = "keys";
 const OBJECTS_FOLDER_NAME: &str = "files";
 /// The folders a restore leaves alone: `logs/`, `backups/` and the checkpoint
 /// of the automatic backup are not in an archive and are not touched.
-const PRIVATE_FOLDERS: [&str; 3] = [KEYS_FOLDER_NAME, "secrets", "tls"];
+/// The folders whose files hold secrets: the keys, the generated secrets, the
+/// certificates, and the database, which holds the accounts.
+const PRIVATE_FOLDERS: [&str; 4] = [KEYS_FOLDER_NAME, "secrets", "tls", DATABASE_FOLDER];
 
 /// Why an archive was not restored.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -157,7 +159,7 @@ fn check_what_it_names(
     };
     let copy = work_folder.join(format!(".verify-{}.partial", random_token()));
     let copied = (|| -> Result<(), stellarr_archive::Error> {
-        let mut target = OpenOptions::new().write(true).create_new(true).open(&copy)?;
+        let mut target = super::create_private(&copy)?;
         zip.copy_to(at, &mut target)?;
         target.flush()?;
         Ok(())
@@ -319,7 +321,7 @@ pub fn stage(archive_path: &Path, data_root: &Path) -> Result<PathBuf, RestoreEr
     let partial = folder.join(format!("{STAGED_ARCHIVE_NAME}.{}.partial", random_token()));
     let copied = (|| -> std::io::Result<()> {
         let mut source = File::open(archive_path)?;
-        let mut target = OpenOptions::new().write(true).create_new(true).open(&partial)?;
+        let mut target = super::create_private(&partial)?;
         std::io::copy(&mut source, &mut target)?;
         target.sync_all()?;
         std::fs::rename(&partial, &staged)
@@ -526,21 +528,36 @@ fn unpack(archive_path: &Path, unpacked: &Path) -> Result<(), stellarr_archive::
         target.flush()?;
         target.sync_all()?;
     }
+    make_private_folders(unpacked)?;
     Ok(())
 }
 
-/// A new file; a zip entry carries no file mode that is to be trusted, so what
-/// the container creates as its owner's alone stays its owner's alone.
+/// A new file. A zip entry carries no file mode that is to be trusted, so
+/// what the container keeps as its owner's alone is made so, and the rest is
+/// left to the umask.
 fn create_file(path: &Path, private: bool) -> std::io::Result<File> {
-    let mut options = OpenOptions::new();
-    options.write(true).create_new(true);
-    #[cfg(unix)]
     if private {
-        use std::os::unix::fs::OpenOptionsExt;
-        options.mode(0o600);
+        return super::create_private(path);
     }
-    let _ = private;
-    options.open(path)
+    OpenOptions::new().write(true).create_new(true).open(path)
+}
+
+/// Every folder under a private one is its owner's alone.
+fn make_private_folders(unpacked: &Path) -> std::io::Result<()> {
+    fn below(folder: &Path) -> std::io::Result<()> {
+        super::make_private(folder)?;
+        for entry in std::fs::read_dir(folder)? {
+            let entry = entry?;
+            if entry.file_type()?.is_dir() {
+                below(&entry.path())?;
+            }
+        }
+        Ok(())
+    }
+    for folder in PRIVATE_FOLDERS {
+        below(&unpacked.join(folder))?;
+    }
+    Ok(())
 }
 
 /// Moves each live folder into `previous` and its unpacked replacement into

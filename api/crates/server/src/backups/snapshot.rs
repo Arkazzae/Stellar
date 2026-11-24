@@ -39,6 +39,9 @@ pub fn copy_database(source: &Path, destination: &Path) -> Result<(), BackupFail
 }
 
 fn copy(source: &Path, destination: &Path) -> Result<(), BackupFailed> {
+    // The copy holds everything the database does: made for its owner alone,
+    // before SQLite writes a byte of it. An empty file is a database to SQLite.
+    drop(super::create_private(destination)?);
     let from = Connection::open_with_flags(
         source,
         OpenFlags::SQLITE_OPEN_READ_ONLY | OpenFlags::SQLITE_OPEN_NO_MUTEX,

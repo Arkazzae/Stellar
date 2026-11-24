@@ -80,6 +80,32 @@ impl From<stellarr_archive::Error> for BackupFailed {
     }
 }
 
+/// A new file that only its owner may read or write. A backup, a copy of the
+/// database, a staged archive and everything unpacked from one holds every
+/// secret of the instance, so they are made so and never opened up and shut
+/// again.
+pub fn create_private(path: &std::path::Path) -> std::io::Result<std::fs::File> {
+    let mut options = std::fs::OpenOptions::new();
+    options.write(true).create_new(true);
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::OpenOptionsExt;
+        options.mode(0o600);
+    }
+    options.open(path)
+}
+
+/// A folder that only its owner may enter.
+pub fn make_private(path: &std::path::Path) -> std::io::Result<()> {
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        std::fs::set_permissions(path, std::fs::Permissions::from_mode(0o700))?;
+    }
+    let _ = path;
+    Ok(())
+}
+
 /// 32 lower-case hex digits that nobody can guess, for names of files and
 /// backups.
 pub fn random_token() -> String {
