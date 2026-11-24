@@ -24,6 +24,7 @@ pub mod instance;
 pub mod link_previews;
 pub mod logging;
 pub mod mail;
+pub mod panel;
 pub mod object_store;
 pub mod permissions;
 pub mod realtime;

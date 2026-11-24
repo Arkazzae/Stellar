@@ -47,6 +47,7 @@ struct Inner {
     admission: AdmissionGate,
     previews: PreviewQueue,
     voice: Voice,
+    backups: crate::backups::Jobs,
 }
 
 impl AppState {
@@ -75,6 +76,7 @@ impl AppState {
                 registration_gate: tokio::sync::Mutex::new(()),
                 realtime: OnceLock::new(),
                 previews: PreviewQueue::default(),
+                backups: crate::backups::Jobs::default(),
                 metrics: Metrics::default(),
                 mutation_gate: MutationGate::default(),
             }),
@@ -169,6 +171,11 @@ impl AppState {
     /// Reserves room for an upload; see [`crate::admission`].
     pub fn admission(&self) -> &AdmissionGate {
         &self.inner.admission
+    }
+
+    /// The backup being written, if there is one.
+    pub fn backups(&self) -> &crate::backups::Jobs {
+        &self.inner.backups
     }
 
     /// The messages whose links wait for their cards.
