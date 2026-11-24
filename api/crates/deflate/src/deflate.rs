@@ -632,6 +632,11 @@ impl<W: Write> Deflater<W> {
         &self.out
     }
 
+    /// The writer, for a caller that moves the output along as it appears.
+    pub fn get_mut(&mut self) -> &mut W {
+        &mut self.out
+    }
+
     fn drain(&mut self) -> io::Result<()> {
         if !self.encoder.bits.out.is_empty() {
             self.out.write_all(&self.encoder.bits.out)?;
