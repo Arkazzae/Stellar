@@ -366,6 +366,10 @@ fn arrange_worlds_in_a_shared_database_and_plan_requests_for_each() {
         if no_base {
             // A server whose base role is gone: what the routes say then.
             db.execute("DELETE FROM \"ServerRoles\" WHERE \"Id\" = ?1", [base_role]).expect("no base role");
+            // A second system role then is the base role. The first server puts the base
+            // role last when it starts (a repair this server, which opens a file as it is,
+            // does not make), so the file is left as that repair would leave it.
+            db.execute("UPDATE \"ServerRoles\" SET \"Position\" = 8 WHERE \"ServerId\" = ?1 AND \"IsSystem\" = 1 AND \"IsOwner\" = 0", [server]).expect("a last base role");
         }
         // Everybody the plan may name, members or not.
         let everybody: Vec<(String, Id)> = users.clone();
