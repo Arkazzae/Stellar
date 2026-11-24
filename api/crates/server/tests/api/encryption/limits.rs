@@ -149,6 +149,9 @@ async fn a_value_in_a_wrong_encoding_makes_the_whole_body_unreadable_before_anyt
     for raw in ["", "null", "[]", "5", "\"x\"", "{", "{} x", "{\"algorithm\":}"] {
         assert_eq!(send(raw.to_string()).await, (400, true), "{raw:?}");
     }
+    // Names are read in any letter case, as the first server read them.
+    let shouting = body(&format!("\"{key}\"")).replace("algorithm", "ALGORITHM").replace("publicKey", "PublicKey").replace("backup", "Backup");
+    assert_eq!(send(shouting).await, (409, false));
     // A member named twice is the last one, and a byte order mark is not part of the body.
     let twice = format!("{{\"algorithm\":\"rsa\",{}", &body(&format!("\"{key}\""))[1..]);
     assert_eq!(send(twice).await, (409, false));
