@@ -2564,3 +2564,276 @@ async fn the_version_the_approval_carries_must_be_the_accounts_and_a_secret_must
         ));
     }
 }
+
+// ---- linked identities ----
+
+fn link_identity(world: &World, user: Id, provider: Option<&str>) -> Id {
+    let id = Id::random();
+    world
+        .db()
+        .execute(
+            "INSERT INTO \"ExternalIdentities\" (\"Id\", \"UserId\", \"Issuer\", \"Subject\", \"ProviderId\", \"CreatedAt\")
+             VALUES (?1, ?2, 'https://idp.example.test', ?3, ?4, '2026-11-24 00:00:00')",
+            params![id, user, id.to_string(), provider],
+        )
+        .unwrap();
+    id
+}
+
+fn default_provider() -> super::ways_in::OwnedProviders {
+    super::ways_in::OwnedProviders {
+        configured: vec!["default".into()],
+        default_id: "default".into(),
+    }
+}
+
+#[tokio::test]
+async fn a_linked_identity_is_taken_away_when_the_account_keeps_a_way_in() {
+    let world = World::new();
+    let user = world.user(Some("maya@example.test"));
+    world
+        .db()
+        .execute(
+            "UPDATE \"Users\" SET \"ProviderVerifiedEmail\" = \"NormalizedEmail\"",
+            [],
+        )
+        .unwrap();
+    let identity = link_identity(&world, user, None);
+    let other = world.user(None);
+    let theirs = link_identity(&world, other, None);
+    let me = caller(&world, user, None);
+    let version_before = world.count("SELECT SUM(\"SessionVersion\") FROM \"Users\"");
+    let another = add_session(&world.db(), user, Timestamp::now(), None);
+    let providers = default_provider();
+
+    // Not another account's identity.
+    assert_eq!(
+        remove_identity(&world.state, me, &CONTEXT, theirs, "Work", &providers, None)
+            .await
+            .unwrap(),
+        IdentityRemoved::NotFound
+    );
+    assert_eq!(
+        remove_identity(
+            &world.state,
+            me,
+            &CONTEXT,
+            Id::random(),
+            "Work",
+            &providers,
+            None
+        )
+        .await
+        .unwrap(),
+        IdentityRemoved::NotFound
+    );
+    let removed = remove_identity(
+        &world.state,
+        me,
+        &CONTEXT,
+        identity,
+        "Work",
+        &providers,
+        None,
+    )
+    .await
+    .unwrap();
+
+    assert_eq!(removed, IdentityRemoved::Done);
+    assert_eq!(
+        world.count(&format!(
+            "SELECT COUNT(*) FROM \"ExternalIdentities\" WHERE \"Id\" = '{}'",
+            identity.to_db_text()
+        )),
+        0
+    );
+    assert_eq!(
+        world.count("SELECT COUNT(*) FROM \"ExternalIdentities\""),
+        1
+    );
+    assert_eq!(
+        events_of(&world.db(), user, "identity-unlinked"),
+        vec!["Work"]
+    );
+    assert_eq!(
+        world.count("SELECT COUNT(*) FROM \"SecurityNotifications\""),
+        1
+    );
+    // As on the first server: no session ends and no version moves.
+    assert_eq!(
+        world.count("SELECT SUM(\"SessionVersion\") FROM \"Users\""),
+        version_before
+    );
+    let revoked: bool = world
+        .db()
+        .query_row(
+            "SELECT \"RevokedAt\" IS NOT NULL FROM \"UserSessions\" WHERE \"Id\" = ?1",
+            [another],
+            |r| r.get(0),
+        )
+        .unwrap();
+    assert!(!revoked);
+}
+
+#[tokio::test]
+async fn the_last_way_in_is_not_taken_away_and_the_guard_comes_first() {
+    let world = World::new();
+    let user = world.user(None);
+    world
+        .db()
+        .execute("UPDATE \"Users\" SET \"PasswordHash\" = NULL", [])
+        .unwrap();
+    let identity = link_identity(&world, user, None);
+    world.with_app(user).await;
+    let stale = caller(&world, user, Some(3600));
+    let fresh = caller(&world, user, Some(30));
+    let providers = default_provider();
+
+    assert_eq!(
+        remove_identity(
+            &world.state,
+            stale,
+            &CONTEXT,
+            identity,
+            "Work",
+            &providers,
+            None
+        )
+        .await
+        .unwrap(),
+        IdentityRemoved::NotAllowed
+    );
+    assert_eq!(
+        remove_identity(
+            &world.state,
+            fresh,
+            &CONTEXT,
+            identity,
+            "Work",
+            &providers,
+            None
+        )
+        .await
+        .unwrap(),
+        IdentityRemoved::LastWayIn
+    );
+    // A provider that is no longer set up has no button to press.
+    let none = super::ways_in::OwnedProviders {
+        configured: vec![],
+        default_id: "default".into(),
+    };
+    assert_eq!(
+        remove_identity(&world.state, fresh, &CONTEXT, identity, "Work", &none, None)
+            .await
+            .unwrap(),
+        IdentityRemoved::LastWayIn
+    );
+    assert_eq!(
+        world.count("SELECT COUNT(*) FROM \"ExternalIdentities\""),
+        1
+    );
+}
+
+#[tokio::test]
+async fn a_password_decides_for_an_account_without_a_second_step_and_only_if_unchanged() {
+    let world = World::new();
+    let user = world.user(None);
+    with_password(&world, user, "correct horse 42");
+    let identity = link_identity(&world, user, None);
+    let session = add_session(
+        &world.db(),
+        user,
+        Timestamp::now().minus(Duration::from_secs(3600)),
+        None,
+    );
+    let old = Caller { user, session };
+    let providers = default_provider();
+
+    assert_eq!(
+        may_start_identity_link(&world.state, old, None)
+            .await
+            .unwrap(),
+        LinkStart::NotAllowed
+    );
+    assert_eq!(
+        may_start_identity_link(&world.state, old, Some("not it"))
+            .await
+            .unwrap(),
+        LinkStart::NotAllowed
+    );
+    assert_eq!(
+        may_start_identity_link(&world.state, old, Some("correct horse 42"))
+            .await
+            .unwrap(),
+        LinkStart::Allowed {
+            security_version: 1
+        }
+    );
+    assert_eq!(
+        remove_identity(
+            &world.state,
+            old,
+            &CONTEXT,
+            identity,
+            "Work",
+            &providers,
+            Some("not it")
+        )
+        .await
+        .unwrap(),
+        IdentityRemoved::NotAllowed
+    );
+    assert_eq!(
+        remove_identity(
+            &world.state,
+            old,
+            &CONTEXT,
+            identity,
+            "Work",
+            &providers,
+            Some("correct horse 42")
+        )
+        .await
+        .unwrap(),
+        IdentityRemoved::Done
+    );
+    assert_eq!(
+        may_start_identity_link(
+            &world.state,
+            Caller {
+                user: Id::random(),
+                session
+            },
+            None
+        )
+        .await
+        .unwrap(),
+        LinkStart::NoAccount
+    );
+}
+
+#[tokio::test]
+async fn a_link_is_not_started_by_a_stale_session_of_an_account_with_a_second_step() {
+    let world = World::new();
+    let user = world.user(None);
+    with_password(&world, user, "correct horse 42");
+    world.with_app(user).await;
+    let stale = caller(&world, user, Some(3600));
+    let fresh = caller(&world, user, Some(30));
+
+    // The password does not stand in for the second step.
+    assert_eq!(
+        may_start_identity_link(&world.state, stale, Some("correct horse 42"))
+            .await
+            .unwrap(),
+        LinkStart::NotAllowed
+    );
+    assert_eq!(
+        may_start_identity_link(&world.state, fresh, None)
+            .await
+            .unwrap(),
+        LinkStart::Allowed {
+            security_version: 1
+        }
+    );
+}
