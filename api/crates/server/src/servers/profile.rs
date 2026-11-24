@@ -15,6 +15,7 @@ use crate::permissions::authorization::{self, Scope};
 use crate::permissions::membership::ActiveServer;
 use crate::permissions::privileges::MANAGE_SERVER;
 use crate::state::AppState;
+use super::Object;
 
 const MAX_NAME_LENGTH: usize = 80;
 const MAX_DESCRIPTION_LENGTH: usize = 280;
@@ -40,7 +41,7 @@ pub async fn update(
     State(state): State<AppState>,
     caller: Caller,
     ActiveServer(server): ActiveServer,
-    Json(request): Json<UpdateServer>,
+    Json(Object(request)): Json<Object<UpdateServer>>,
 ) -> ApiResult<axum::response::Response> {
     let messages = state.messages();
     let name = request.name.as_deref().map(str::trim);

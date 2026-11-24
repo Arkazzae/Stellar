@@ -19,6 +19,7 @@ use crate::permissions::membership::ActiveServer;
 use crate::permissions::privileges::{CREATE_INVITE, MANAGE_SERVER};
 use crate::permissions::visibility;
 use crate::servers::{invitation_arrived, invitations_changed};
+use crate::servers::Object;
 use crate::state::AppState;
 use crate::values::{Id, Timestamp};
 
@@ -150,10 +151,10 @@ pub async fn create(
     ActiveServer(server): ActiveServer,
     Extension(client): Extension<ClientInfo>,
     headers: HeaderMap,
-    request: Option<Json<CreateInvite>>,
+    request: Option<Json<Object<CreateInvite>>>,
 ) -> ApiResult<Response> {
     let origin = invite_origin(&state, &client, &headers);
-    let wanted = request.and_then(|Json(request)| request.channel_id);
+    let wanted = request.and_then(|Json(Object(request))| request.channel_id);
     let made = state
         .database()
         .write({
@@ -270,8 +271,9 @@ pub async fn revoke(
     State(state): State<AppState>,
     caller: Caller,
     ActiveServer(server): ActiveServer,
-    Path(invite): Path<Id>,
+    Path(invite): Path<String>,
 ) -> ApiResult<StatusCode> {
+    let invite = crate::servers::guid(&invite)?;
     let outcome = state
         .database()
         .write({
@@ -347,8 +349,9 @@ pub async fn send(
     State(state): State<AppState>,
     caller: Caller,
     ActiveServer(server): ActiveServer,
-    Path((invite, user)): Path<(Id, Id)>,
+    Path((invite, user)): Path<(String, String)>,
 ) -> ApiResult<Response> {
+    let (invite, user) = (crate::servers::guid(&invite)?, crate::servers::guid(&user)?);
     let outcome = state
         .database()
         .write(move |tx| -> Result<Result<Option<i64>, Response>, DbError> {

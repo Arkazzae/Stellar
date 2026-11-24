@@ -16,6 +16,28 @@ use crate::http::{Endpoints, RateLimitPolicy};
 
 pub use announce::{invitation_arrived, invitations_changed};
 
+/// A body that must be a JSON object. A list is no object, though serde would
+/// read one into a struct whose members all have defaults.
+pub struct Object<T>(pub T);
+
+impl<'de, T: serde::de::DeserializeOwned> serde::Deserialize<'de> for Object<T> {
+    fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Object<T>, D::Error> {
+        let value = serde_json::Value::deserialize(deserializer)?;
+        if !value.is_object() {
+            return Err(serde::de::Error::custom("not an object"));
+        }
+        T::deserialize(value)
+            .map(Object)
+            .map_err(serde::de::Error::custom)
+    }
+}
+
+/// An id in a path, in any spelling the first server's routes took for one:
+/// anything else is a route that does not exist.
+pub fn guid(text: &str) -> crate::http::ApiResult<crate::values::Id> {
+    crate::permissions::membership::parse_guid(text).ok_or_else(crate::http::ApiError::not_found)
+}
+
 pub fn routes() -> Endpoints {
     Endpoints::new()
         .get("/api/servers", directory::list)

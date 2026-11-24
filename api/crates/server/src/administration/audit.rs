@@ -77,7 +77,8 @@ pub async fn list(
     ActiveServer(server): ActiveServer,
     Query(page): Query<Page>,
 ) -> ApiResult<Json<Vec<EntryDto>>> {
-    let cursor = match page.before.as_deref().filter(|text| !text.is_empty()) {
+    // A cursor that is there but empty is no moment at all, which is refused.
+    let cursor = match page.before.as_deref() {
         Some(text) => Some(parse_moment(text).ok_or_else(ApiError::bad_request)?),
         None => None,
     };
@@ -139,6 +140,9 @@ pub async fn list(
 /// it is moved to UTC.
 fn parse_moment(text: &str) -> Option<Timestamp> {
     let text = text.trim();
+    if let Some(moment) = parse_informal(text) {
+        return Some(moment);
+    }
     let (body, offset_seconds) = split_zone(text)?;
     let full = if body.len() == 10 {
         format!("{body}T00:00:00")
@@ -148,6 +152,72 @@ fn parse_moment(text: &str) -> Option<Timestamp> {
     let moment = Timestamp::parse(&full)?;
     let ticks = moment.ticks().checked_sub(offset_seconds.checked_mul(10_000_000)?)?;
     Timestamp::from_ticks(ticks)
+}
+
+/// The spellings of a moment that are not ISO: `11/24/2026` and
+/// `11/24/2026 10:30:00` (month first), `Nov 24 2026` and `24 Nov 2026`, with
+/// an optional comma, and a time of day alone, which is today's.
+fn parse_informal(text: &str) -> Option<Timestamp> {
+    const MONTHS: [&str; 12] = [
+        "january", "february", "march", "april", "may", "june", "july", "august", "september",
+        "october", "november", "december",
+    ];
+    let words: Vec<&str> = text
+        .split([' ', ','])
+        .filter(|word| !word.is_empty())
+        .collect();
+    let number = |word: &str| -> Option<i64> {
+        (!word.is_empty() && word.bytes().all(|b| b.is_ascii_digit()))
+            .then(|| word.parse().ok())
+            .flatten()
+    };
+    // A month by its name or by the first three letters or more of it.
+    let month_of = |word: &str| -> Option<i64> {
+        let lower = word.to_ascii_lowercase();
+        MONTHS
+            .iter()
+            .position(|month| lower.len() >= 3 && month.starts_with(&lower))
+            .map(|index| index as i64 + 1)
+    };
+    let (year, month, day, rest): (i64, i64, i64, &[&str]) = match words.as_slice() {
+        [date, rest @ ..] if date.contains('/') => {
+            let parts: Vec<&str> = date.split('/').collect();
+            let [m, d, y] = parts.as_slice() else { return None };
+            (number(y)?, number(m)?, number(d)?, rest)
+        }
+        [month, day, year, rest @ ..] if month_of(month).is_some() => {
+            (number(year)?, month_of(month)?, number(day)?, rest)
+        }
+        [day, month, year, rest @ ..] if number(day).is_some() && month_of(month).is_some() => {
+            (number(year)?, month_of(month)?, number(day)?, rest)
+        }
+        [time] if time.contains(':') => {
+            let today = Timestamp::now().to_db_text();
+            let date = today.get(..10)?;
+            return Timestamp::parse(&format!("{date}T{}", pad_time(time)?));
+        }
+        _ => return None,
+    };
+    let time = match rest {
+        [] => "00:00:00".to_string(),
+        [time] if time.contains(':') => pad_time(time)?,
+        _ => return None,
+    };
+    Timestamp::parse(&format!("{year:04}-{month:02}-{day:02}T{time}"))
+}
+
+/// `10:30` or `10:30:05` as `HH:MM:SS`.
+fn pad_time(time: &str) -> Option<String> {
+    let parts: Vec<&str> = time.split(':').collect();
+    let (hours, minutes, seconds) = match parts.as_slice() {
+        [h, m] => (h, m, "0"),
+        [h, m, s] => (h, m, *s),
+        _ => return None,
+    };
+    let part = |text: &str| -> Option<i64> {
+        (!text.is_empty() && text.len() <= 2 && text.bytes().all(|b| b.is_ascii_digit())).then(|| text.parse().ok()).flatten()
+    };
+    Some(format!("{:02}:{:02}:{:02}", part(hours)?, part(minutes)?, part(seconds)?))
 }
 
 /// The text without its zone, and the zone's offset from UTC in seconds.
@@ -193,6 +263,15 @@ mod tests {
             parse_moment("2026-11-24"),
             Timestamp::parse("2026-11-24 00:00:00")
         );
+        let at_midnight = Timestamp::parse("2026-11-24 00:00:00");
+        for text in ["Nov 24 2026", "November 24, 2026", "24 Nov 2026", "11/24/2026"] {
+            assert_eq!(parse_moment(text), at_midnight, "{text}");
+        }
+        assert_eq!(
+            parse_moment("11/24/2026 10:30"),
+            Timestamp::parse("2026-11-24 10:30:00")
+        );
+        assert!(parse_moment("10:30:00").is_some());
         for text in ["", "yesterday", "2026-13-01", "2026-11-24T10:00", "2026-11-24T10:00:00+25"] {
             assert!(
                 parse_moment(text).is_none() || text.is_empty(),
