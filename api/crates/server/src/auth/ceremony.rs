@@ -12,8 +12,11 @@
 //!   cannot turn it into an error and lose it;
 //! - a right proof is spent, the sign-in is finished (the session, the events,
 //!   the remembered device, the cookies) and the caller's own writes run in
-//!   the same transaction, which is rolled back whole, the proof included, if
-//!   they fail or something forbids the sign-in after all;
+//!   the same transaction, in a savepoint: if they fail, only they are undone
+//!   and the sign-in stands with their error beside it. The transaction is
+//!   rolled back whole, the proof included, only when something forbids the
+//!   sign-in after all (the challenge was spent by another request, the
+//!   instance's requirement is no longer met) or the database fails;
 //! - what follows from the proof is decided by what it proved: a remembered
 //!   device never makes a session fresh and is never remembered again, a
 //!   passkey sign-in is a second step passed.
@@ -218,6 +221,29 @@ enum How<'a> {
     },
 }
 
+/// Runs the caller's own writes after a sign-in that is complete, inside a
+/// savepoint: if they fail, only they are undone. A proof that was right is
+/// spent and its sign-in stands whatever they do, so that a refused link
+/// cannot tell somebody who holds the password that a guessed code was right.
+/// Only a failure of the database itself undoes the proof.
+fn run_hook<R>(
+    tx: &Transaction,
+    completed: &Completed,
+    hook: impl FnOnce(&Transaction, &Completed) -> Result<R, DbError>,
+) -> Result<Result<R, DbError>, Abort> {
+    tx.execute_batch("SAVEPOINT caller_writes")?;
+    match hook(tx, completed) {
+        Ok(done) => {
+            tx.execute_batch("RELEASE caller_writes")?;
+            Ok(Ok(done))
+        }
+        Err(error) => {
+            tx.execute_batch("ROLLBACK TO caller_writes; RELEASE caller_writes")?;
+            Ok(Err(error))
+        }
+    }
+}
+
 /// Finishes what a proof or an enrolment leads to, in the transaction the
 /// proof was spent in.
 fn finish(
@@ -373,9 +399,14 @@ enum OwnedAnswer {
 /// What answering a challenge came to.
 #[must_use]
 pub enum Answered<R> {
-    /// The answer was right and the sign-in is complete. `hook` is what the
-    /// caller's own writes returned.
-    SignedIn { completed: Completed, hook: R },
+    /// The answer was right and the sign-in stands. `hook` is what the
+    /// caller's own writes came to: their error, if they failed, with their
+    /// writes undone and the sign-in kept. The route sets the cookies and then
+    /// says what went wrong with them.
+    SignedIn {
+        completed: Box<Completed>,
+        hook: Result<R, DbError>,
+    },
     /// Wrong. An attempt was spent and an event written, and that is kept.
     Refused,
     /// The account has failed too often lately (a 429).
@@ -395,7 +426,7 @@ pub enum Answered<R> {
 /// left as it was). `remember` asks to remember the browser; it is honoured
 /// only for a proof that is not itself a remembered device. `hook` runs the
 /// caller's writes in the same transaction, such as linking an identity the
-/// sign-in was asked to link.
+/// sign-in was asked to link; a failure of theirs undoes only them.
 pub async fn answer<R, H>(
     state: &AppState,
     ask: &Ask<'_>,
@@ -474,8 +505,11 @@ where
                     remember,
                     now,
                 )?;
-                let hook = hook(tx, &completed)?;
-                Ok(Answered::SignedIn { completed, hook })
+                let hook = run_hook(tx, &completed, hook)?;
+                Ok(Answered::SignedIn {
+                    completed: Box::new(completed),
+                    hook,
+                })
             }
             Outcome::Refused => Ok(Answered::Refused),
             Outcome::TooManyFailures => Ok(Answered::TooManyFailures),
@@ -532,8 +566,9 @@ pub enum Enrolled<R> {
     /// The step was added and the sign-in finished (the person who was asked
     /// to set one up is signed in, with new recovery codes if they had none).
     Done {
-        completed: Completed,
-        hook: R,
+        completed: Box<Completed>,
+        /// What the caller's own writes came to, as for [`Answered`].
+        hook: Result<R, DbError>,
     },
     /// Wrong code or answer. An attempt was spent and an event written.
     Refused,
@@ -682,8 +717,11 @@ where
                     remember,
                     now,
                 )?;
-                let hook = hook(tx, &completed)?;
-                Ok(Enrolled::Done { completed, hook })
+                let hook = run_hook(tx, &completed, hook)?;
+                Ok(Enrolled::Done {
+                    completed: Box::new(completed),
+                    hook,
+                })
             }
             TotpEnrollment::Unavailable => Ok(Enrolled::Unavailable),
             TotpEnrollment::TooManyFailures => Ok(Enrolled::TooManyFailures),
@@ -778,8 +816,11 @@ where
             remember,
             now,
         )?;
-        let hook = hook(tx, &completed)?;
-        Ok(Enrolled::Done { completed, hook })
+        let hook = run_hook(tx, &completed, hook)?;
+        Ok(Enrolled::Done {
+            completed: Box::new(completed),
+            hook,
+        })
     })
     .await?;
     Ok(done.unwrap_or_else(Enrolled::Invalid))
@@ -883,8 +924,11 @@ where
             remember,
             now,
         )?;
-        let hook = hook(tx, &completed)?;
-        Ok(Enrolled::Done { completed, hook })
+        let hook = run_hook(tx, &completed, hook)?;
+        Ok(Enrolled::Done {
+            completed: Box::new(completed),
+            hook,
+        })
     })
     .await?;
     Ok(done.unwrap_or_else(Enrolled::Invalid))
