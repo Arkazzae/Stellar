@@ -82,17 +82,38 @@ fn a_backup_is_restored_over_another_instance_and_the_old_data_is_kept_aside() {
 
 #[cfg(unix)]
 #[test]
-fn keys_secrets_and_certificates_stay_their_owners_alone() {
+fn everything_that_holds_a_secret_is_its_owners_alone_from_the_moment_it_is_made() {
     use std::os::unix::fs::PermissionsExt;
+    let mode = |path: &Path| fs::metadata(path).unwrap().permissions().mode() & 0o777;
     let source = Instance::new();
+    // Something a person put in a folder of the instance, with a folder in it.
+    fs::create_dir_all(source.root().join("secrets/nested")).unwrap();
+    fs::write(source.root().join("secrets/nested/token"), b"t").unwrap();
     let archive_folder = TempDir::new();
     let archive = archive_folder.path().join("backup.zip");
     source.archive(Parts::ALL, &archive);
+    // The archive, and the copy of the database it was made from.
+    assert_eq!(mode(&archive), 0o600);
+    let copy = archive_folder.path().join("copy.db");
+    crate::backups::snapshot::copy_database(&source.database_path(), &copy).unwrap();
+    assert_eq!(mode(&copy), 0o600);
+    // The staged archive.
     let target = Instance::new();
+    let staged = stage(&archive, target.root()).unwrap();
+    assert_eq!(mode(&staged), 0o600);
+
     apply(&archive, target.root(), now()).unwrap();
-    for private in ["keys/master.key", "secrets/turn-shared-secret", "tls/privkey.pem"] {
-        let mode = fs::metadata(target.root().join(private)).unwrap().permissions().mode();
-        assert_eq!(mode & 0o777, 0o600, "{private}");
+    for private in [
+        "keys/master.key",
+        "secrets/turn-shared-secret",
+        "secrets/nested/token",
+        "tls/privkey.pem",
+        "db/stellarr.db",
+    ] {
+        assert_eq!(mode(&target.root().join(private)), 0o600, "{private}");
+    }
+    for folder in ["keys", "secrets", "secrets/nested", "tls", "db"] {
+        assert_eq!(mode(&target.root().join(folder)), 0o700, "{folder}");
     }
 }
 
