@@ -10,7 +10,7 @@ use stellarr_webauthn::RelyingParty;
 
 use crate::auth::ceremony::{Ask, Completed};
 use crate::auth::flow::{self, ChallengeStatus, Context};
-use crate::auth::{mfa, security_cookies};
+use crate::auth::security_cookies;
 use crate::database::DbError;
 use crate::http::{
     ApiError, ApiResult, Json, Origin, Problem, json_response, with_cookie, with_session_cookie,
@@ -64,13 +64,10 @@ impl Seen {
     }
 }
 
-/// The challenge id a client wrote, as the ceremony reads it: the first
-/// server accepted any spelling of a GUID, and a text that is none names no
-/// challenge.
-pub(super) fn challenge_id(sent: Option<&str>) -> String {
-    sent.and_then(mfa::parse_method_id)
-        .map(|id| id.to_string())
-        .unwrap_or_default()
+/// The challenge id a client wrote, as the ceremony reads it (it knows every
+/// spelling of an id); a body without one names no challenge.
+pub(super) fn challenge_id(sent: Option<&str>) -> &str {
+    sent.unwrap_or("")
 }
 
 /// Keeps an answer out of every cache, as every route under `/api/auth/mfa`

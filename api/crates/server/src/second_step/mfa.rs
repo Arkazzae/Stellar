@@ -15,11 +15,9 @@ use super::common::{
 use super::link::{self, Waiting};
 use crate::auth::ceremony::{self, Answer, Answered, Pending};
 use crate::auth::email_send::Sent;
-use crate::auth::policy::SecurityPolicy;
-use crate::auth::{flow, mfa};
+use crate::auth::flow;
 use crate::database::DbError;
 use crate::http::{ApiError, ApiResult, Json, Origin, Problem, with_cookie};
-use crate::mail::{self, MailSetup};
 use crate::state::AppState;
 
 /// The challenge the browser holds, for the page that resumes it.
@@ -81,14 +79,14 @@ pub async fn verify(
         Answer::TrustedDevice
     } else {
         Answer::Code {
-            method: request.method_id.as_deref().and_then(mfa::parse_method_id),
+            method: request.method_id.as_deref(),
             code: request.code.as_deref().unwrap_or(""),
         }
     };
     let waiting = Waiting::of(&seen.origin);
     let answered = ceremony::answer(
         &state,
-        &seen.ask(&context, &challenge),
+        &seen.ask(&context, challenge),
         answer,
         request.remember_device,
         move |tx, completed| link::pending(tx, completed, &waiting),
@@ -102,6 +100,7 @@ pub async fn verify(
         Answered::TooManyFailures => too_many_failures(&state),
         Answered::MethodUnavailable => method_unavailable(&state),
         Answered::EmptyCode => empty_code(&state),
+        Answered::PasskeysUnavailable => passkeys_unavailable(&state),
         Answered::Invalid(status) => challenge_problem(&state, status),
     }
 }
@@ -161,15 +160,9 @@ pub async fn send_login_code(
     let seen = Seen::of(&state, origin);
     let challenge = challenge_id(request.challenge_id.as_deref());
     let context = seen.context();
-    let ask = seen.ask(&context, &challenge);
-    if let Some(refusal) = unusable_for(&state, &ask, Purposes::SecondStep).await? {
-        return Ok(refusal);
-    }
-    let Some(method) = request.method_id.as_deref().and_then(mfa::parse_method_id) else {
-        return method_unavailable(&state);
-    };
-    let sent = ceremony::send_login_code(&state, &ask, Some(method)).await?;
-    code_sent(&state, &seen, sent).await
+    let ask = seen.ask(&context, challenge);
+    let sent = ceremony::send_login_code(&state, &ask, request.method_id.as_deref()).await?;
+    code_sent(&state, sent).await
 }
 
 #[derive(Deserialize)]
@@ -194,61 +187,25 @@ pub async fn start_email(
     let seen = Seen::of(&state, origin);
     let challenge = challenge_id(request.challenge_id.as_deref());
     let context = seen.context();
-    let ask = seen.ask(&context, &challenge);
-    if let Some(refusal) = unusable_for(&state, &ask, Purposes::Enrolment).await? {
-        return Ok(refusal);
-    }
+    let ask = seen.ask(&context, challenge);
     let sent = ceremony::send_enrollment_code(&state, &ask).await?;
-    code_sent(&state, &seen, sent).await
-}
-
-/// Which challenges a call is for.
-#[derive(Clone, Copy)]
-pub(super) enum Purposes {
-    /// A sign-in waiting for its second step, or a request to pass it again.
-    SecondStep,
-    /// A sign-in that must set a second step up, or an operator's recovery.
-    Enrolment,
-}
-
-/// Looks at the challenge before anything that depends on the instance's
-/// settings is looked at, as the first server did: a challenge that cannot be
-/// used is refused whatever else is the case. Nothing is written.
-pub(super) async fn unusable_for(
-    state: &AppState,
-    ask: &crate::auth::ceremony::Ask<'_>,
-    wanted: Purposes,
-) -> ApiResult<Option<Response>> {
-    match ceremony::pending(state, ask).await? {
-        Pending::Invalid(status) => Ok(Some(challenge_problem(state, status)?)),
-        Pending::Challenge(body) => {
-            let purpose = serde_json::to_value(&*body)
-                .ok()
-                .and_then(|body| body.get("purpose").and_then(|p| p.as_str()).map(str::to_string))
-                .unwrap_or_default();
-            let fits = match wanted {
-                Purposes::SecondStep => purpose == flow::PURPOSE_MFA || purpose == flow::PURPOSE_REVERIFY,
-                Purposes::Enrolment => purpose == flow::PURPOSE_ENROLLMENT || purpose == flow::PURPOSE_RECOVERY,
-            };
-            Ok((!fits)
-                .then(|| challenge_problem(state, flow::ChallengeStatus::Missing))
-                .transpose()?)
-        }
-    }
+    code_sent(&state, sent).await
 }
 
 /// The answer to a request for a mailed code.
-async fn code_sent(state: &AppState, seen: &Seen, sent: Sent) -> ApiResult<Response> {
+async fn code_sent(state: &AppState, sent: Sent) -> ApiResult<Response> {
     match sent {
-        Sent::Delivered => {
-            let (address, cooldown) = recipient_and_cooldown(state, seen).await?;
+        Sent::Delivered {
+            address,
+            retry_after_seconds,
+        } => {
             let message = state
                 .messages()
                 .get(MessageKey::SecurityEmailCodeSent, &[("email", &address)])?;
             Ok(ok_json(&CodeSent {
                 status: "sent",
                 message,
-                retry_after_seconds: cooldown,
+                retry_after_seconds,
             }))
         }
         Sent::Cooldown { retry_after_seconds } => {
@@ -279,16 +236,8 @@ async fn code_sent(state: &AppState, seen: &Seen, sent: Sent) -> ApiResult<Respo
             ))
         }
         Sent::DeliveryFailed => problem(state, StatusCode::BAD_GATEWAY, MessageKey::SecurityDeliveryFailed),
-        Sent::Unavailable => {
-            // Nothing to send to (no such method, no address), or no way to
-            // send. The ceremony does not say which; mail that is not set up
-            // is the second.
-            if matches!(mail::setup::find_for(state).await?, MailSetup::Ready(_)) {
-                method_unavailable(state)
-            } else {
-                problem(state, StatusCode::CONFLICT, MessageKey::SecurityEmailUnavailable)
-            }
-        }
+        Sent::MethodUnavailable => method_unavailable(state),
+        Sent::MailUnavailable => problem(state, StatusCode::CONFLICT, MessageKey::SecurityEmailUnavailable),
         Sent::Invalid(status) => challenge_problem(state, status),
     }
 }
@@ -298,42 +247,4 @@ fn retry(mut response: Response, seconds: i64) -> Response {
         response.headers_mut().insert(header::RETRY_AFTER, value);
     }
     response
-}
-
-/// The address a code was mailed to, which is the account's own, and how long
-/// the person must wait for another.
-async fn recipient_and_cooldown(state: &AppState, seen: &Seen) -> ApiResult<(String, i64)> {
-    let Some((challenge, _)) = seen.preauth.clone() else {
-        return Err(ApiError::internal("a code was sent for a challenge with no cookie"));
-    };
-    let read = state
-        .database()
-        .read(move |connection| -> Result<(Option<String>, i64), DbError> {
-            let address: Option<String> = connection
-                .query_row(
-                    "SELECT u.\"Email\" FROM \"AuthChallenges\" c JOIN \"Users\" u ON u.\"Id\" = c.\"UserId\" WHERE c.\"Id\" = ?1",
-                    [challenge],
-                    |row| row.get(0),
-                )
-                .unwrap_or(None);
-            let cooldown = SecurityPolicy::load(connection)?.email_cooldown().as_secs();
-            Ok((address, i64::try_from(cooldown).unwrap_or(i64::MAX)))
-        })
-        .await?;
-    Ok((read.0.unwrap_or_default().trim().to_string(), read.1))
-}
-
-/// A passkey is asked for on an instance that cannot offer them.
-pub(super) async fn unavailable_passkeys(
-    state: &AppState,
-    seen: &Seen,
-    challenge: &str,
-    wanted: Purposes,
-) -> ApiResult<Response> {
-    let context = seen.context();
-    let ask = seen.ask(&context, challenge);
-    match unusable_for(state, &ask, wanted).await? {
-        Some(refusal) => Ok(refusal),
-        None => passkeys_unavailable(state),
-    }
 }
