@@ -89,9 +89,9 @@ impl RelyingParty {
     }
 }
 
-/// A host name made of letters, digits and hyphens, not an address. A name
-/// whose last label is all digits reads as an IPv4 address in some forms
-/// ("1", "192.0.2.10"), so it is refused.
+/// A host name made of letters, digits and hyphens, not an address. A browser
+/// reads a host whose last label is a number as an IPv4 address: all digits
+/// ("1", "192.0.2.10") or hexadecimal with a `0x` prefix ("0x7f.0x1", "1.0x").
 fn is_dns_name(host: &str) -> bool {
     if host.is_empty() || host.len() > 253 {
         return false;
@@ -106,7 +106,15 @@ fn is_dns_name(host: &str) -> bool {
                 .all(|b| b.is_ascii_lowercase() || b.is_ascii_digit() || b == b'-')
     });
     let last = labels.last().copied().unwrap_or("");
-    labels_ok && !last.bytes().all(|b| b.is_ascii_digit())
+    labels_ok && !is_browser_number(last)
+}
+
+/// A label a browser parses as a number in an IPv4 host (lower case already).
+fn is_browser_number(label: &str) -> bool {
+    match label.strip_prefix("0x") {
+        Some(hex) => hex.bytes().all(|b| b.is_ascii_hexdigit()),
+        None => label.bytes().all(|b| b.is_ascii_digit()),
+    }
 }
 
 #[cfg(test)]
@@ -158,6 +166,12 @@ mod tests {
             "https://[2001:db8::1]:8443",
             "https://1",
             "https://0x7f.1",
+            "https://0x7f.0x1",
+            "https://1.0x1",
+            "https://0x",
+            "https://1.0X1",
+            "https://chat.test.0xff",
+            "https://0xdeadbeef",
             "http://chat.test",
             "http://127.0.0.1",
             "ftp://chat.test",
