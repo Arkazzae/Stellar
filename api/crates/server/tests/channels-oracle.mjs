@@ -344,6 +344,7 @@ await step("cat may not remove", () => ask("cat", "DELETE", `${A}/${byName("gene
 await step("ola removes a voice channel", () => ask("ola", "DELETE", `${A}/${byName("lounge")}`));
 await step("ola removes a second", () => ask("ola", "DELETE", `${A}/${byName("ops")}`));
 await step("ola removes a third", () => ask("ola", "DELETE", `${A}/${byName("voice")}`));
+await step("ola removes one more", () => ask("ola", "DELETE", `${A}/${made.benzo ?? made.olas}`));
 await step("the last voice channel stays", () => ask("ola", "DELETE", `${A}/${made.olas}`));
 await step("a channel that is not there", () => ask("ola", "DELETE", `${A}/11111111-1111-1111-1111-111111111111`));
 
@@ -368,132 +369,6 @@ await step("a section with channels stays", () => ask("ola", "DELETE", `${S}/${s
 await step("cat may not remove a section", () => ask("cat", "DELETE", `${S}/${sectionByName("Alpha")}`));
 await step("ben removes a section he does not see", () => ask("ben", "DELETE", `${S}/${sectionByName("Bravo")}`));
 await step("ola removes an empty section", () => ask("ola", "DELETE", `${S}/${made.Charlie}`));
-await step("a section that is not there", () =>
-  ask("ola", "POST", A, { name: "nowhere", kind: "voice", sectionId: "11111111-1111-1111-1111-111111111111" }));
-await step("ola creates a voice channel", () => ask("ola", "POST", A, { name: "  Olas  ", kind: "voice" }));
-for (const [name, kind] of [["a b", "text"], ["", "text"], ["x".repeat(61), "text"], ["ok", "Text"], ["ok", "video"], [null, "text"], ["żółć-9", "text"], ["𝐀", "text"]]) {
-  await step(`a channel named ${JSON.stringify(name)} of kind ${JSON.stringify(kind)}`, () => ask("ola", "POST", A, { name, kind }));
-}
-await step("a body of another shape", () => ask("ola", "POST", A, { kind: "text" }));
-
-// Changing.
-await step("ben changes a channel he does not see", () => ask("ben", "PATCH", `${A}/${byName("dev")}`, { topic: "hidden" }));
-await step("cat changes a channel she does not see", () => ask("cat", "PATCH", `${A}/${byName("news")}`, { topic: "hidden" }));
-await step("cat may not change what she sees", () => ask("cat", "PATCH", `${A}/${byName("general")}`, { topic: "no" }));
-await step("ben sets a topic and slow mode", () => ask("ben", "PATCH", `${A}/${byName("general")}`, { topic: "  Hello  ", slowModeSeconds: 30 }));
-await step("nothing to change", () => ask("ben", "PATCH", `${A}/${byName("general")}`, {}));
-await step("a voice setting on a text channel", () => ask("ben", "PATCH", `${A}/${byName("general")}`, { userLimit: 5 }));
-await step("a text setting on a voice channel", () => ask("ben", "PATCH", `${A}/${byName("voice")}`, { topic: "x" }));
-await step("a limit on a voice channel", () => ask("ben", "PATCH", `${A}/${byName("voice")}`, { userLimit: 5, hideAfterInactivityHours: 24 }));
-for (const [field, value] of [["slowModeSeconds", 21601], ["slowModeSeconds", -1], ["hideAfterInactivityHours", 8761], ["userLimit", 100], ["topic", "t".repeat(1025)]]) {
-  await step(`${field} of ${String(value).length > 8 ? "too many" : value}`, () => ask("ola", "PATCH", `${A}/${byName("general")}`, { [field]: value }));
-}
-await step("a topic as long as it may be", () => ask("ola", "PATCH", `${A}/${byName("general")}`, { topic: "t".repeat(1024) }));
-await step("a name a hidden channel has", () => ask("ben", "PATCH", `${A}/${byName("general")}`, { name: "Dev" }));
-await step("a new name", () => ask("ben", "PATCH", `${A}/${byName("general")}`, { name: "  Lobby " }));
-await step("an invalid name", () => ask("ben", "PATCH", `${A}/${byName("general")}`, { name: "a b" }));
-await step("a channel that is not there", () => ask("ola", "PATCH", `${A}/11111111-1111-1111-1111-111111111111`, {}));
-await step("an id that is not one", () => ask("ola", "PATCH", `${A}/nope`, {}));
-
-// Removing.
-await step("ben removes a channel he does not see", () => ask("ben", "DELETE", `${A}/${byName("dev")}`));
-await step("cat may not remove", () => ask("cat", "DELETE", `${A}/${byName("general")}`));
-await step("ola removes a voice channel", () => ask("ola", "DELETE", `${A}/${byName("lounge")}`));
-await step("ola removes a second", () => ask("ola", "DELETE", `${A}/${byName("ops")}`));
-await step("ola removes a third", () => ask("ola", "DELETE", `${A}/${byName("voice")}`));
-await step("the last voice channel stays", () => ask("ola", "DELETE", `${A}/${made.olas}`));
-await step("a channel that is not there", () => ask("ola", "DELETE", `${A}/11111111-1111-1111-1111-111111111111`));
-
-// Sections.
-await step("cat may not make a section", () => ask("cat", "POST", S, { name: "Cats" }));
-await step("ben makes a section", () => ask("ben", "POST", S, { name: "  Charlie  " }));
-await step("a section with no name", () => ask("ben", "POST", S, { name: "   " }));
-await step("a section named too long", () => ask("ben", "POST", S, { name: "x".repeat(61) }));
-await step("a section named as long as it may be", () => ask("ben", "POST", S, { name: "𝐀".repeat(30) }));
-await step("ben renames Bravo, which he does not see", () => ask("ben", "PATCH", `${S}/${sectionByName("Bravo")}`, { name: "No" }));
-await step("dan renames Bravo, which he manages", () => ask("dan", "PATCH", `${S}/${sectionByName("Bravo")}`, { name: " Brav " }));
-await step("dan renames it to the same", () => ask("dan", "PATCH", `${S}/${sectionByName("Bravo")}`, { name: "Brav" }));
-await step("cat may not rename Alpha", () => ask("cat", "PATCH", `${S}/${sectionByName("Alpha")}`, { name: "No" }));
-await step("a rename without a name", () => ask("ola", "PATCH", `${S}/${sectionByName("Alpha")}`, {}));
-await step("a rename to nothing", () => ask("ola", "PATCH", `${S}/${sectionByName("Alpha")}`, { name: "" }));
-await step("sections ben sees, reversed", () => ask("ben", "PUT", `${S}/order`, { sectionIds: [...sectionIds("ben")].reverse() }));
-await step("a section order that names one ben does not see", () => ask("ben", "PUT", `${S}/order`, { sectionIds: sectionIds("ola") }));
-await step("a section order with a section left out", () => ask("ola", "PUT", `${S}/order`, { sectionIds: sectionIds("ola").slice(1) }));
-await step("cat may not order sections", () => ask("cat", "PUT", `${S}/order`, { sectionIds: sectionIds("cat") }));
-await step("ola orders every section", () => ask("ola", "PUT", `${S}/order`, { sectionIds: shuffled(sectionIds("ola"), 5) }));
-await step("a section with channels stays", () => ask("ola", "DELETE", `${S}/${sectionByName("Alpha")}`));
-await step("cat may not remove a section", () => ask("cat", "DELETE", `${S}/${sectionByName("Alpha")}`));
-await step("ben removes a section he does not see", () => ask("ben", "DELETE", `${S}/${sectionByName("Bravo")}`));
-await step("ola removes an empty section", async () => {
-  const sections = (await api(people.ola, "GET", "/api/bootstrap")).body.sections;
-  return ask("ola", "DELETE", `${S}/${sections.find((x) => x.name === "Charlie").id}`);
-});
-await step("a section that is not there", () =>
-  ask("ola", "POST", A, { name: "nowhere", kind: "voice", sectionId: "11111111-1111-1111-1111-111111111111" }));
-await step("ola creates a voice channel", () => ask("ola", "POST", A, { name: "  Olas  ", kind: "voice" }));
-for (const [name, kind] of [["a b", "text"], ["", "text"], ["x".repeat(61), "text"], ["ok", "Text"], ["ok", "video"], [null, "text"], ["żółć-9", "text"], ["𝐀", "text"]]) {
-  await step(`a channel named ${JSON.stringify(name)} of kind ${JSON.stringify(kind)}`, () => ask("ola", "POST", A, { name, kind }));
-}
-await step("a body of another shape", () => ask("ola", "POST", A, { kind: "text" }));
-
-// Changing.
-await step("ben changes a channel he does not see", () => ask("ben", "PATCH", `${A}/${byName("dev")}`, { topic: "hidden" }));
-await step("cat changes a channel she does not see", () => ask("cat", "PATCH", `${A}/${byName("news")}`, { topic: "hidden" }));
-await step("cat may not change what she sees", () => ask("cat", "PATCH", `${A}/${byName("general")}`, { topic: "no" }));
-await step("ben sets a topic and slow mode", () => ask("ben", "PATCH", `${A}/${byName("general")}`, { topic: "  Hello  ", slowModeSeconds: 30 }));
-await step("nothing to change", () => ask("ben", "PATCH", `${A}/${byName("general")}`, {}));
-await step("a voice setting on a text channel", () => ask("ben", "PATCH", `${A}/${byName("general")}`, { userLimit: 5 }));
-await step("a text setting on a voice channel", () => ask("ben", "PATCH", `${A}/${byName("voice")}`, { topic: "x" }));
-await step("a limit on a voice channel", () => ask("ben", "PATCH", `${A}/${byName("voice")}`, { userLimit: 5, hideAfterInactivityHours: 24 }));
-for (const [field, value] of [["slowModeSeconds", 21601], ["slowModeSeconds", -1], ["hideAfterInactivityHours", 8761], ["userLimit", 100], ["topic", "t".repeat(1025)]]) {
-  await step(`${field} of ${String(value).length > 8 ? "too many" : value}`, () => ask("ola", "PATCH", `${A}/${byName("general")}`, { [field]: value }));
-}
-await step("a topic as long as it may be", () => ask("ola", "PATCH", `${A}/${byName("general")}`, { topic: "t".repeat(1024) }));
-await step("a name a hidden channel has", () => ask("ben", "PATCH", `${A}/${byName("general")}`, { name: "Dev" }));
-await step("a new name", () => ask("ben", "PATCH", `${A}/${byName("general")}`, { name: "  Lobby " }));
-await step("an invalid name", () => ask("ben", "PATCH", `${A}/${byName("general")}`, { name: "a b" }));
-await step("a channel that is not there", () => ask("ola", "PATCH", `${A}/11111111-1111-1111-1111-111111111111`, {}));
-await step("an id that is not one", () => ask("ola", "PATCH", `${A}/nope`, {}));
-
-// Removing.
-await step("ben removes a channel he does not see", () => ask("ben", "DELETE", `${A}/${byName("dev")}`));
-await step("cat may not remove", () => ask("cat", "DELETE", `${A}/${byName("general")}`));
-await step("ola removes a voice channel", () => ask("ola", "DELETE", `${A}/${byName("lounge")}`));
-await step("ola removes a second", () => ask("ola", "DELETE", `${A}/${byName("ops")}`));
-await step("ola removes a third", () => ask("ola", "DELETE", `${A}/${byName("voice")}`));
-await step("the last voice channel stays", async () => {
-  const voice = (await api(people.ola, "GET", "/api/bootstrap")).body.channels.filter((x) => x.kind === "voice");
-  out(`   voice channels left: ${voice.map((x) => x.name).join(", ")}`);
-  return ask("ola", "DELETE", `${A}/${voice[0].id}`);
-});
-await step("a channel that is not there", () => ask("ola", "DELETE", `${A}/11111111-1111-1111-1111-111111111111`));
-
-// Sections.
-await step("cat may not make a section", () => ask("cat", "POST", S, { name: "Cats" }));
-await step("ben makes a section", () => ask("ben", "POST", S, { name: "  Charlie  " }));
-await step("a section with no name", () => ask("ben", "POST", S, { name: "   " }));
-await step("a section named too long", () => ask("ben", "POST", S, { name: "x".repeat(61) }));
-await step("a section named as long as it may be", () => ask("ben", "POST", S, { name: "𝐀".repeat(30) }));
-await step("ben renames Bravo, which he does not see", () => ask("ben", "PATCH", `${S}/${sectionByName("Bravo")}`, { name: "No" }));
-await step("dan renames Bravo, which he manages", () => ask("dan", "PATCH", `${S}/${sectionByName("Bravo")}`, { name: " Brav " }));
-await step("dan renames it to the same", () => ask("dan", "PATCH", `${S}/${sectionByName("Bravo")}`, { name: "Brav" }));
-await step("cat may not rename Alpha", () => ask("cat", "PATCH", `${S}/${sectionByName("Alpha")}`, { name: "No" }));
-await step("a rename without a name", () => ask("ola", "PATCH", `${S}/${sectionByName("Alpha")}`, {}));
-await step("a rename to nothing", () => ask("ola", "PATCH", `${S}/${sectionByName("Alpha")}`, { name: "" }));
-await step("sections ben sees, reversed", () => ask("ben", "PUT", `${S}/order`, { sectionIds: [...sectionIds("ben")].reverse() }));
-await step("a section order that names one ben does not see", () => ask("ben", "PUT", `${S}/order`, { sectionIds: sectionIds("ola") }));
-await step("a section order with a section left out", () => ask("ola", "PUT", `${S}/order`, { sectionIds: sectionIds("ola").slice(1) }));
-await step("cat may not order sections", () => ask("cat", "PUT", `${S}/order`, { sectionIds: sectionIds("cat") }));
-await step("ola orders every section", () => ask("ola", "PUT", `${S}/order`, { sectionIds: shuffled(sectionIds("ola"), 5) }));
-await step("a section with channels stays", () => ask("ola", "DELETE", `${S}/${sectionByName("Alpha")}`));
-await step("cat may not remove a section", () => ask("cat", "DELETE", `${S}/${sectionByName("Alpha")}`));
-await step("ben removes a section he does not see", () => ask("ben", "DELETE", `${S}/${sectionByName("Bravo")}`));
-const empty = () => [...names.entries()].find(([, name]) => name === "new 7")?.[0];
-await step("ola removes an empty section", async () => {
-  const sections = (await api(people.ola, "GET", "/api/bootstrap")).body.sections;
-  const charlie = sections.find((x) => x.name === "Charlie");
-  return ask("ola", "DELETE", `${S}/${charlie?.id ?? empty() ?? "11111111-1111-1111-1111-111111111111"}`);
-});
 await step("a section that is not there", () => ask("ola", "DELETE", `${S}/11111111-1111-1111-1111-111111111111`));
 
 // Reading.
