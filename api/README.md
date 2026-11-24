@@ -927,6 +927,21 @@ here.
   contain `df`**: where it is missing, fails or is too slow, a warning is logged
   at every upload and the reserve (`Uploads:MinimumFreeDataRootBytes`) is not
   enforced.
+- The answer of one poll of the media server's events may weigh up to 64 MiB
+  (256 events of up to 128 KiB of session description, with room to spare); the
+  first server had no ceiling. A longer answer is read as an unreachable media
+  server.
+- A voice signal's payload and a media signal's payload are read as JSON by
+  this server's reader, which refuses a lone surrogate escape (`"\ud800"`); the
+  first server's reader took it. A client that sends one is told "Invalid voice
+  state." (or "Invalid media signal.") here, where the first server relayed it
+  or failed with an unexplained error.
+- A signal object that has two members whose names differ only in letter case
+  (`kind` and `Kind`) is read here by the order of the names, not of the
+  document, so the member that wins can be the other one. No client writes
+  such an object.
+- A move request's body in the Development environment answers 400 where the
+  first server answered 500 (see the malformed bodies above).
 
 ## Comparing uploads with the first server
 
