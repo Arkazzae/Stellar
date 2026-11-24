@@ -305,7 +305,7 @@ impl RegistrationSpec {
             Statement::Custom(format, statement) => (format.clone(), statement.clone()),
         };
         let object = self.attestation_object.clone().unwrap_or_else(|| {
-            // The order the C# test authenticator used: fmt, authData, attStmt.
+            // Members are not in sorted order, as some authenticators write them.
             map(&[
                 (text("fmt"), text(&format)),
                 (text("authData"), bytes(&auth)),
