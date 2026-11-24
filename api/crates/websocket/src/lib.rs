@@ -17,7 +17,7 @@ mod handshake;
 mod socket;
 mod utf8;
 
-pub use handshake::{HandshakeError, accept, accept_key, is_upgrade_request};
+pub use handshake::{HandshakeError, accept, accept_key, is_upgrade_request, take_upgrade};
 pub use socket::{CloseFrame, Config, Error, Event, MessageKind, Receiver, Sender, split, status};
 
 use hyper::upgrade::{OnUpgrade, Upgraded};
