@@ -1,13 +1,16 @@
 //! The permission rules against the first server's own code, on the same
 //! inputs.
 //!
-//! Not part of the ordinary run: it needs a .NET SDK and a small program that
-//! feeds the first server's published assembly the inputs this test sends
-//! (see `tests/permissions-differential.sh`, which builds and runs it).
+//! Not part of the ordinary run: it needs a .NET SDK and a small program, kept
+//! outside the repository, that feeds the first server's published assembly
+//! the inputs this test sends and answers on its standard output. The program
+//! takes `evaluate` (27 little-endian words in, one word out, per case) or
+//! `lines` (one command per line, one answer per line); the commands are
+//! the ones the tests below send.
 //!
 //! ```sh
 //! PERMISSIONS_HARNESS=/path/to/Harness.dll DOTNET=~/.dotnet/dotnet \
-//!   cargo test -p stellarr-api --test api permissions -- --ignored --nocapture
+//!   cargo test -p stellarr-api --test api permissions:: -- --ignored --nocapture --skip arrange_servers
 //! ```
 //!
 //! The pure parts are compared on every case of a space small enough to walk
@@ -797,8 +800,7 @@ fn arrange_servers_in_a_shared_database_and_write_what_each_person_sees() {
             ownership::set_roles(&db, server, *user, &held_roles, &base.role).expect("held roles");
         }
         // Overrides: of the roles and of members, at sections and channels, of every kind.
-        let places: Vec<(bool, Id)> = sections.iter().map(|s| (true, *s)).chain(channels.iter().map(|(c, _)| (false, *c))).collect();
-        for (section, place) in &places {
+        for (section, place) in &places_for_overrides(&sections, &channels) {
             for role in &all_roles {
                 if *role != owner_role && random.chance(3) {
                     let allow = mask(&mut random);
@@ -821,6 +823,7 @@ fn arrange_servers_in_a_shared_database_and_write_what_each_person_sees() {
             }
         }
         // What these rules say each person sees on this server.
+        let places: Vec<(bool, Id)> = sections.iter().map(|s| (true, *s)).chain(channels.iter().map(|(c, _)| (false, *c))).collect();
         for (name, user) in &users {
             let permissions = authorization::server_wide(&db, *user, server).expect("permissions");
             let view = visibility::of_member(&db, *user, server).expect("a view");
@@ -853,17 +856,97 @@ fn arrange_servers_in_a_shared_database_and_write_what_each_person_sees() {
             }
             seen_channels.sort();
             seen_sections.sort();
+            // What the routes that change roles and overrides would answer, by the order of
+            // the checks they make: the place is there, the person may manage roles, the
+            // request is well formed, and then the decision of the rule itself.
+            let manages_roles = privileges::contains(permissions, privileges::MANAGE_ROLES);
+            let mut probes = Vec::new();
+            let wanted = if random.chance(2) { permissions & mask(&mut random) } else { mask(&mut random) };
+            probes.push(serde_json::json!({
+                "kind": "role", "permissions": privileges::to_names(wanted),
+                "status": if manages_roles && authorization::can_create_role(&db, *user, server, wanted).expect("a check") { 201 } else { 403 },
+            }));
+            let masks = |random: &mut Random| -> (i64, i64) {
+                let basis = permissions & ALL;
+                let pick = |random: &mut Random| if random.chance(2) { basis & mask(random) } else { mask(random) };
+                let allow = pick(random);
+                let deny = if random.chance(10) { pick(random) } else { pick(random) & !allow };
+                (allow, deny)
+            };
+            let existing = |table: &str, owner: &str, section: bool, place: Id, who: Id| -> bool {
+                let count: i64 = db
+                    .query_row(
+                        &format!("SELECT COUNT(*) FROM \"{table}\" WHERE \"TargetType\" = ?1 AND \"TargetId\" = ?2 AND \"{owner}\" = ?3"),
+                        params![i64::from(section), place, who],
+                        |row| row.get(0),
+                    )
+                    .expect("a count");
+                count > 0
+            };
+            let (section_place, place) = places[random.below(places.len() as u64) as usize];
+            let exists = if section_place {
+                visibility::section_listed(&db, *user, server, place).expect("a check")
+            } else {
+                visibility::find(&db, *user, server, place, None).expect("a check").is_some()
+            };
+            let scope = if section_place { authorization::Scope::section(server, place) } else { authorization::Scope::channel(server, place) };
+            let invalid = |allow: i64, deny: i64| allow & deny != 0 || (allow | deny) & privileges::ADMINISTRATOR != 0;
+            let role_target = all_roles[random.below(all_roles.len() as u64) as usize];
+            if !existing("PermissionOverrides", "RoleId", section_place, place, role_target) {
+                let (allow, deny) = masks(&mut random);
+                let status = if !exists {
+                    404
+                } else if !manages_roles {
+                    403
+                } else if invalid(allow, deny) {
+                    400
+                } else if authorization::can_change_override(&db, *user, &scope, role_target, allow, deny).expect("a check") {
+                    200
+                } else {
+                    403
+                };
+                probes.push(serde_json::json!({
+                    "kind": "override", "section": section_place, "place": place.to_string(), "target": role_target.to_string(),
+                    "allow": privileges::to_names(allow), "deny": privileges::to_names(deny), "status": status,
+                }));
+            }
+            let member_target = users[random.below(users.len() as u64) as usize].1;
+            if !existing("MemberPermissionOverrides", "UserId", section_place, place, member_target) {
+                let (allow, deny) = masks(&mut random);
+                let target_is_owner = roles::Member::load(&db, server, member_target).expect("a read").is_some_and(|member| member.is_owner());
+                let status = if !exists {
+                    404
+                } else if !manages_roles {
+                    403
+                } else if invalid(allow, deny) {
+                    400
+                } else if target_is_owner {
+                    409
+                } else if authorization::can_change_member_override(&db, *user, &scope, member_target, allow, deny).expect("a check") {
+                    200
+                } else {
+                    403
+                };
+                probes.push(serde_json::json!({
+                    "kind": "memberOverride", "section": section_place, "place": place.to_string(), "target": member_target.to_string(),
+                    "allow": privileges::to_names(allow), "deny": privileges::to_names(deny), "status": status,
+                }));
+            }
             let line = serde_json::json!({
                 "user": name, "server": server.to_string(),
                 "permissions": privileges::to_names(permissions),
                 "channels": seen_channels, "sections": seen_sections,
-                "send": sending,
+                "send": sending, "probes": probes,
             });
             out.push_str(&line.to_string());
             out.push('\n');
         }
     }
     std::fs::write(var("PERMISSIONS_EXPECTED"), out).expect("the answers are written");
+}
+
+fn places_for_overrides(sections: &[Id], channels: &[(Id, Option<Id>)]) -> Vec<(bool, Id)> {
+    sections.iter().map(|s| (true, *s)).chain(channels.iter().map(|(c, _)| (false, *c))).collect()
 }
 
 struct ServerRolesBase {
