@@ -492,7 +492,9 @@ async fn the_log_view_filters_pages_and_exports_without_a_secret_in_it() {
     scene.owner.client.get("/api/cockpit/users?token=abc123tokenvalue").await;
     scene.owner.client.get("/api/%3Cb%3Ehello%3C/b%3E").await;
 
-    let page = scene.owner.client.get("/api/cockpit/logs?limit=2&level=info").await.json::<Value>();
+    let first = scene.owner.client.get("/api/cockpit/logs?limit=2&level=info").await;
+    assert_eq!(first.header("cache-control"), Some("no-store"));
+    let page = first.json::<Value>();
     assert_eq!(page["entries"].as_array().unwrap().len(), 2);
     assert!(page["nextBefore"].is_u64());
     assert_eq!(page["capacity"], 10_000);
@@ -504,7 +506,7 @@ async fn the_log_view_filters_pages_and_exports_without_a_secret_in_it() {
         assert_eq!(clamped["entries"].as_array().unwrap().len(), expected, "{query}");
     }
     assert_eq!(scene.owner.client.get("/api/cockpit/logs?limit=abc").await.status, 400);
-    let found = scene.owner.client.get("/api/cockpit/logs?search=hello").await.json::<Value>();
+    let found = scene.owner.client.get("/api/cockpit/logs?search=%2F%2A%2A%2A").await.json::<Value>();
     assert!(!found["entries"].as_array().unwrap().is_empty());
 
     let export = scene.owner.client.get("/api/cockpit/logs/export").await;
@@ -720,15 +722,40 @@ async fn neither_an_invite_code_nor_the_setup_code_is_kept_in_a_log() {
     let code = "SecretInviteCode0123";
     anonymous.get(&format!("/api/invites/{code}")).await;
     anonymous.send(Request::new(Method::POST, &format!("/api/invites/{code}/join"))).await;
+    // Where no route took the request, what was typed is not repeated either.
+    for (method, path) in [
+        (Method::GET, format!("/api/invites//{code}")),
+        (Method::GET, format!("/api/invites/{code}/extra")),
+        (Method::GET, format!("/API/INVITES/{code}")),
+        (Method::GET, format!("/api/Invites/{code}")),
+        (Method::GET, format!("/api/invites%2F{code}")),
+        (Method::POST, format!("/api/invites/{code}/JOIN")),
+        (Method::GET, format!("/invite/{code}")),
+    ] {
+        let answered = anonymous.send(Request::new(method.clone(), &path)).await;
+        assert_eq!(answered.status, 404, "{method} {path}");
+    }
 
     let log = scene.server.log().join("\n");
     assert!(!log.contains(code), "the process output has the code");
-    assert!(log.contains("GET /api/invites/*** "), "{log}");
-    assert!(log.contains("POST /api/invites/***/join "), "{log}");
+    for line in [
+        "GET /api/invites/*** ",
+        "POST /api/invites/***/join ",
+        "GET /api/invites//*** ",
+        "GET /api/invites/***/*** ",
+        "GET /***/***/*** ",
+        "GET /api/***/*** ",
+        "GET /api/*** ",
+        "POST /api/invites/***/*** ",
+        "GET /***/*** ",
+    ] {
+        assert!(log.contains(line), "{line}\n{log}");
+    }
     for path in ["/api/cockpit/logs?limit=500", "/api/cockpit/logs/export"] {
         let kept = scene.owner.client.get(path).await.text();
         assert!(!kept.contains(code), "{path}");
         assert!(!kept.contains(&setup), "{path}");
         assert!(kept.contains("/api/invites/***"), "{path}");
+        assert!(kept.contains("/***/***/***"), "{path}");
     }
 }
