@@ -619,6 +619,36 @@ async fn after_a_restore_the_old_cookie_is_refused_and_a_sign_in_with_the_passwo
     let first = Server::start_in(folder.path(), &settings).await;
     let owner = first.found("owner").await;
     assert_eq!(owner.client.get("/api/cockpit/backups").await.status, 200);
+    // A sign-in half-way (a second step asked for) and a remembered browser,
+    // both of them in the archive.
+    let database = rusqlite::Connection::open(folder.path().join("db/stellarr.db")).unwrap();
+    database
+        .execute(
+            "INSERT INTO \"OperationsSettings\"
+                (\"ServerId\", \"PublicUrl\", \"TimeZone\", \"MailingEnabled\", \"MailFromAddress\", \"MailSmtpHost\",
+                 \"MailSmtpPort\", \"MailSmtpUsername\", \"MailSmtpSecurity\", \"MailResendEnabled\", \"InviteMailEnabled\",
+                 \"RecoveryMailEnabled\", \"AlertMailEnabled\", \"BackupRetentionDays\", \"LogRetentionDays\",
+                 \"OrphanObjectRetentionDays\", \"AutomaticCleanupEnabled\", \"UpdatedAt\", \"MfaRequirement\")
+             SELECT \"Id\", '', 'UTC', 0, '', '', 0, '', 'none', 0, 0, 0, 0, 14, 30, 1, 1, ?1, 'everyone' FROM \"Servers\" LIMIT 1
+             ON CONFLICT (\"ServerId\") DO UPDATE SET \"MfaRequirement\" = 'everyone'",
+            [stellarr_api::values::Timestamp::now()],
+        )
+        .unwrap();
+    let waiting = first.client();
+    let challenge = first.login(&waiting, "owner", crate::support::PASSWORD).await.json::<Value>();
+    assert_eq!(challenge["status"], "mfa_enrollment_required", "{challenge}");
+    assert_eq!(waiting.get("/api/auth/mfa/pending").await.status, 200);
+    database
+        .execute("UPDATE \"OperationsSettings\" SET \"MfaRequirement\" = 'none'", [])
+        .unwrap();
+    database
+        .execute(
+            "INSERT INTO \"TrustedDevices\" (\"Id\", \"UserId\", \"TokenHash\", \"Name\", \"Device\", \"IpAddress\", \"CreatedAt\", \"ExpiresAt\")
+             SELECT ?1, \"Id\", 'hash', 'Browser', 'Device', '127.0.0.1', ?2, '2999-01-01 00:00:00' FROM \"Users\" LIMIT 1",
+            rusqlite::params![stellarr_api::values::Id::random(), stellarr_api::values::Timestamp::now()],
+        )
+        .unwrap();
+    drop(database);
     let started = owner
         .client
         .post_json(
@@ -647,6 +677,19 @@ async fn after_a_restore_the_old_cookie_is_refused_and_a_sign_in_with_the_passwo
         401,
         "the cookie of a session that was running is refused"
     );
+    // The sign-in that was half-way is an unknown one, and the remembered
+    // browser is not remembered any more.
+    let half_way = second.client().with_cookies_of(&waiting);
+    assert_eq!(half_way.get("/api/auth/mfa/pending").await.status, 401);
+    let remembered: i64 = rusqlite::Connection::open(folder.path().join("db/stellarr.db"))
+        .unwrap()
+        .query_row(
+            "SELECT COUNT(*) FROM \"TrustedDevices\" WHERE \"RevokedAt\" IS NULL",
+            [],
+            |row| row.get(0),
+        )
+        .unwrap();
+    assert_eq!(remembered, 0);
     let again = second.client();
     let signed_in = second.login(&again, "owner", crate::support::PASSWORD).await;
     assert_eq!(signed_in.status, 200, "{}", signed_in.text());

@@ -238,12 +238,14 @@ pub fn apply_with(
     })
 }
 
-/// Ends every session in the database at `path`, in one transaction, and leaves
+/// Ends what a copy may bring back (sessions, remembered browsers, open
+/// challenges and the rest of `auth::restore`) in the database at `path`, in
+/// one transaction, and leaves
 /// the file as a single file again (no write-ahead log beside it).
 fn end_sessions(path: &Path, now: Timestamp) -> Result<(), String> {
     let mut connection = rusqlite::Connection::open(path).map_err(|error| error.to_string())?;
     let transaction = connection.transaction().map_err(|error| error.to_string())?;
-    crate::auth::session::revoke_all(&transaction, now).map_err(|error| error.to_string())?;
+    crate::auth::restore::end_what_a_copy_may_bring_back(&transaction, now).map_err(|error| error.to_string())?;
     transaction.commit().map_err(|error| error.to_string())?;
     connection
         .close()

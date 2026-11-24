@@ -30,6 +30,7 @@ pub mod password;
 pub mod policy;
 pub mod recovery;
 pub mod recovery_codes;
+pub mod restore;
 pub mod security_cookies;
 pub mod session;
 pub mod setup_code;
