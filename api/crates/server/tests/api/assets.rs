@@ -304,7 +304,9 @@ async fn a_poster_and_a_preview_are_served_whole_with_their_type_and_size_only()
     assert_eq!(&poster.body[..], JPEG);
     assert_eq!(poster.header("content-type"), Some("image/jpeg"));
     assert_eq!(poster.header("content-length"), Some(JPEG.len().to_string().as_str()));
-    for absent in ["accept-ranges", "x-content-type-options", "content-disposition"] {
+    // The first server sent no `nosniff` with these; this one does.
+    assert_eq!(poster.header("x-content-type-options"), Some("nosniff"));
+    for absent in ["accept-ranges", "content-disposition"] {
         assert_eq!(poster.header(absent), None, "{absent}");
     }
     assert_eq!(maja.client.get(&format!("/assets/{plain}/poster")).await.status, 404);

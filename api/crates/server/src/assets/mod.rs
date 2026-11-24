@@ -183,6 +183,10 @@ async fn serve_still(state: &AppState, still: Option<Still>) -> ApiResult<Respon
     };
     let mut response = Response::new(Body::empty());
     let out = response.headers_mut();
+    out.insert(
+        header::X_CONTENT_TYPE_OPTIONS,
+        HeaderValue::from_static("nosniff"),
+    );
     set(out, header::CONTENT_TYPE, &still.content_type);
     set(
         out,
