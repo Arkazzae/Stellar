@@ -32,7 +32,8 @@ const COLUMNS: &str = "\"Id\", \"Username\", \"DisplayName\", \"PasswordHash\", 
     \"CustomStatus\", \"Bio\", \"Pronouns\", \"Origin\"";
 
 impl User {
-    fn from_row(row: &Row<'_>) -> rusqlite::Result<User> {
+    /// A row selected with [`User::columns`].
+    pub(crate) fn from_row(row: &Row<'_>) -> rusqlite::Result<User> {
         Ok(User {
             id: row.get(0)?,
             username: row.get(1)?,
@@ -52,6 +53,15 @@ impl User {
             pronouns: row.get(15)?,
             origin: row.get(16)?,
         })
+    }
+
+    /// The columns [`User::from_row`] reads, each taken from the table known as `alias`.
+    pub(crate) fn columns(alias: &str) -> String {
+        COLUMNS
+            .split(", ")
+            .map(|column| format!("{alias}.{}", column.trim()))
+            .collect::<Vec<_>>()
+            .join(", ")
     }
 
     pub fn find(connection: &Connection, id: Id) -> rusqlite::Result<Option<User>> {

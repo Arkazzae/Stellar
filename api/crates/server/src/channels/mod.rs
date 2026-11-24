@@ -59,8 +59,8 @@ pub fn routes() -> Endpoints {
 /// What a channel looks like to the clients.
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
-struct ChannelDto {
-    id: Id,
+pub(crate) struct ChannelDto {
+    pub(crate) id: Id,
     name: String,
     kind: &'static str,
     position: i64,
@@ -71,13 +71,61 @@ struct ChannelDto {
     section_id: Option<Id>,
 }
 
+impl ChannelDto {
+    /// Whether people write in it, as against talk in it.
+    pub(crate) fn is_text(&self) -> bool {
+        self.kind == "text"
+    }
+}
+
 /// What a section looks like to the clients.
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
-struct SectionDto {
-    id: Id,
+pub(crate) struct SectionDto {
+    pub(crate) id: Id,
     name: String,
     position: i64,
+}
+
+/// Every channel of a server in its order, whoever may see it: the caller
+/// narrows the list to what a person sees.
+pub(crate) fn channels_of(db: &rusqlite::Connection, server: Id) -> rusqlite::Result<Vec<ChannelDto>> {
+    let mut statement = db.prepare(
+        "SELECT \"Id\", \"Name\", \"Kind\", \"Position\", \"Topic\", \"SlowModeSeconds\", \"HideAfterInactivityHours\",
+                \"UserLimit\", \"SectionId\"
+         FROM \"Channels\" WHERE \"ServerId\" = ?1 ORDER BY \"Position\"",
+    )?;
+    statement
+        .query_map([server], |row| {
+            Ok(ChannelDto {
+                id: row.get(0)?,
+                name: row.get(1)?,
+                kind: kind_name(row.get(2)?),
+                position: row.get(3)?,
+                topic: row.get(4)?,
+                slow_mode_seconds: row.get(5)?,
+                hide_after_inactivity_hours: row.get(6)?,
+                user_limit: row.get(7)?,
+                section_id: row.get(8)?,
+            })
+        })?
+        .collect()
+}
+
+/// Every section of a server in its order.
+pub(crate) fn sections_of(db: &rusqlite::Connection, server: Id) -> rusqlite::Result<Vec<SectionDto>> {
+    let mut statement = db.prepare(
+        "SELECT \"Id\", \"Name\", \"Position\" FROM \"Sections\" WHERE \"ServerId\" = ?1 ORDER BY \"Position\"",
+    )?;
+    statement
+        .query_map([server], |row| {
+            Ok(SectionDto {
+                id: row.get(0)?,
+                name: row.get(1)?,
+                position: row.get(2)?,
+            })
+        })?
+        .collect()
 }
 
 fn kind_name(kind: ChannelKind) -> &'static str {
