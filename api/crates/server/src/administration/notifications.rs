@@ -12,6 +12,7 @@ use crate::permissions::authorization::{self, Scope};
 use crate::permissions::membership::ActiveServer;
 use crate::permissions::privileges::MANAGE_SERVER;
 use crate::permissions::visibility::{self, MemberView};
+use crate::servers::Object;
 use crate::state::AppState;
 use crate::values::Id;
 
@@ -117,7 +118,7 @@ pub async fn update(
     State(state): State<AppState>,
     caller: Caller,
     ActiveServer(server): ActiveServer,
-    Json(request): Json<UpdateSettings>,
+    Json(Object(request)): Json<Object<UpdateSettings>>,
 ) -> ApiResult<Json<SettingsDto>> {
     let outcome = state
         .database()

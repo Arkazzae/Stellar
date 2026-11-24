@@ -16,6 +16,7 @@ use crate::permissions::membership::{self, ActiveServer};
 use crate::permissions::ownership;
 use crate::permissions::roles::Member;
 use crate::permissions::visibility::ServerVisibility;
+use crate::servers::Object;
 use crate::state::AppState;
 use crate::values::Id;
 
@@ -24,7 +25,12 @@ use crate::values::Id;
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Transfer {
-    user_id: Option<Id>,
+    #[serde(default = "nobody")]
+    user_id: Id,
+}
+
+fn nobody() -> Id {
+    Id::from_bytes([0; 16])
 }
 
 /// Tells the people whose view of the server changed that what they see has.
@@ -44,12 +50,12 @@ pub async fn transfer(
     State(state): State<AppState>,
     caller: Caller,
     ActiveServer(server): ActiveServer,
-    Json(request): Json<Transfer>,
+    Json(Object(request)): Json<Object<Transfer>>,
 ) -> ApiResult<StatusCode> {
     // One change of who owns a server at a time: the slot is freed and then
     // given, and the database alone cannot keep two of them from interleaving.
     let _turn = state.mutation_gate().enter().await;
-    let successor = request.user_id.unwrap_or(Id::from_bytes([0; 16]));
+    let successor = request.user_id;
     let outcome = state
         .database()
         .write({

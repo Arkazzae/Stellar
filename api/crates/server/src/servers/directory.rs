@@ -16,7 +16,7 @@ use crate::instance::starter::{self, ServerRequest};
 use crate::instance::users::User;
 use crate::instance::welcome::{self, Welcome};
 use crate::state::AppState;
-use crate::values::{Id, Timestamp};
+use crate::values::Timestamp;
 
 /// How many public servers one look at the directory shows.
 const DISCOVER_PAGE_SIZE: i64 = 100;
@@ -110,8 +110,9 @@ pub async fn create(
 pub async fn join_public(
     State(state): State<AppState>,
     caller: Caller,
-    Path(server): Path<Id>,
+    Path(server): Path<String>,
 ) -> ApiResult<Json<ServerDto>> {
+    let server = super::guid(&server)?;
     let outcome = state
         .database()
         .write({
@@ -130,7 +131,7 @@ pub async fn join_public(
                 let Some(found) = found else {
                     return Ok(None);
                 };
-                let entry = join::enter(tx, found.id, caller.user, Timestamp::now(), state.messages())?;
+                let entry = join::enter(tx, found.id, caller.user, Timestamp::now(), state.messages(), None)?;
                 Ok(Some((found, entry)))
             }
         })

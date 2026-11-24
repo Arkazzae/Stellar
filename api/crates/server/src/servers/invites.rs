@@ -186,7 +186,7 @@ pub async fn join(
                 let Some(server) = Server::find(tx, invite.server)? else {
                     return Ok(None);
                 };
-                let entry = join::enter(tx, server.id, caller.user, now, state.messages())?;
+                let entry = join::enter(tx, server.id, caller.user, now, state.messages(), invite.channel)?;
                 let mut channel = None;
                 if let Entry::Joined { added, .. } = &entry {
                     if *added && !invites::record_use(tx, invite.id, now)? {

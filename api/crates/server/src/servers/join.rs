@@ -35,10 +35,11 @@ pub fn enter(
     user: Id,
     now: Timestamp,
     messages: &Messages,
+    invited_to: Option<Id>,
 ) -> Result<Entry, DbError> {
     let account = User::find(tx, user)?
         .ok_or_else(|| DbError::Task("the signed-in account is not there".into()))?;
-    let (added, welcome) = match admission::admit(tx, server, &account, now, messages)? {
+    let (added, welcome) = match admission::admit(tx, server, &account, now, messages, invited_to)? {
         Admission::Banned => return Ok(Entry::Banned),
         Admission::NoMemberRole => return Ok(Entry::NoMemberRole),
         Admission::AlreadyMember => (false, None),
