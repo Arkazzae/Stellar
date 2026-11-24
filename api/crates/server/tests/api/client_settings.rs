@@ -1,6 +1,4 @@
-//! The settings a person's client keeps on the server. The wire is compared
-//! with the first server's by `tests/custom-probe.py`; these tests keep the
-//! rules in place.
+//! The settings a person's client keeps on the server.
 
 use http::Method;
 use rusqlite::OptionalExtension;

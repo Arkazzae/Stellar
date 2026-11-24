@@ -1,7 +1,6 @@
 //! What a person keeps for themselves on their own account: how their profile
 //! reads, their preferences and the sound that plays when they join a voice
-//! room. The wire is compared with the first server's by
-//! `tests/custom-probe.py` and `tests/custom-events.mjs`.
+//! room.
 
 use http::Method;
 use rusqlite::params;

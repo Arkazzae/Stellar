@@ -2,10 +2,8 @@
 //! or section, through the real binary.
 //!
 //! Every row of the delegation table is a pair: somebody who may, and the
-//! nearest who may not. The same pairs are sent to the first server in
-//! `tests/roles-shared-database.sh` (`ROLES_PAIRS=1`), which is the proof
-//! that the answers are its answers; these say what the answers are and what
-//! the routes leave behind.
+//! nearest who may not. The tests say what the answers are and what the
+//! routes leave behind.
 
 use std::collections::HashMap;
 

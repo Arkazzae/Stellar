@@ -1,6 +1,5 @@
 //! Friend requests, friendships, blocks and the state the friends screen
-//! loads, through the real binary. The comparison with the first server is
-//! `tests/social-oracle.sh`.
+//! loads, through the real binary.
 
 use std::time::Duration;
 

@@ -1,8 +1,7 @@
 //! Direct conversations through the real binary: opening, posting plain and
 //! encrypted messages, reading history, read markers, and what blocks,
 //! friendships and the peer's settings change. The encryption rows are
-//! arranged in the database here; the comparison with the first server, which
-//! turns encryption on through its own routes, is `tests/dms-oracle.sh`.
+//! arranged in the database here.
 
 use std::time::Duration;
 

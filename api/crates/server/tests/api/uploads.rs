@@ -1,8 +1,8 @@
 //! Uploading files: what is accepted and stored, what is refused and with
 //! what, the limits and the quotas, and what a form that is broken does.
 //!
-//! The wire is compared with the first server's by `tests/uploads-probe.py`;
-//! these tests keep the rules in place.
+//! `tests/uploads-probe.py` sends a corpus of requests to a running server and
+//! prints what a client could tell; `tests/uploads-real-bucket.sh` uses it.
 
 use std::path::Path;
 

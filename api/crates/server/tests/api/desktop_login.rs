@@ -1,10 +1,7 @@
 //! The desktop browser sign-in, as far as the browser's half: starting a
 //! request, the page that asks the person, and the post that approves.
 //!
-//! The pages are compared byte for byte with what the first server sent (the
-//! copies below were taken from it), and `tests/desktop-login-shared-database.sh`
-//! compares the whole conversation with the first server's, request by request,
-//! on one database file.
+//! The pages are compared byte for byte with the copies below.
 
 use http::Method;
 use rusqlite::{Connection, OptionalExtension, params};

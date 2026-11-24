@@ -1,6 +1,5 @@
 //! The custom emoji of a server: the list, adding one, deleting one and the
-//! image. The wire is compared with the first server's by
-//! `tests/custom-probe.py`; these tests keep the rules in place.
+//! image.
 
 use http::Method;
 use rusqlite::params;
