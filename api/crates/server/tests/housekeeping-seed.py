@@ -140,6 +140,41 @@ def seed(db, work, now):
             files.append(key)
         run('INSERT INTO "ObjectDeletions" ("ObjectKey","QueuedAt") VALUES (?,?)', key, stamp(now - 3600 + at))
 
+
+    # Rows of kinds the first server's housekeeping never prunes (some are
+    # pruned when a request asks, which no request does here): old as can be,
+    # and past every retention. Both servers must leave every one alone.
+    ancient = stamp(now - 900 * DAY)
+    run('INSERT INTO "PasswordResetTokens" ("Id","UserId","TokenHash","CreatedAt","ExpiresAt","UsedAt") VALUES (?,?,?,?,?,?)',
+        new("keep-PasswordResetTokens"), user, "keep-reset", ancient, ancient, ancient)
+    run('INSERT INTO "EmailChangeRequests" ("Id","UserId","NewEmail","NormalizedNewEmail","TokenHash","CreatedAt","ExpiresAt","UsedAt") VALUES (?,?,?,?,?,?,?,?)',
+        new("keep-EmailChangeRequests"), user, "n@b.c", "N@B.C", "keep-mail", ancient, ancient, ancient)
+    run('INSERT INTO "PasskeySignIns" ("Id","SecretHash","Options","CreatedAt","ExpiresAt","ConsumedAt") VALUES (?,?,?,?,?,?)',
+        new("keep-PasskeySignIns"), "keep-passkey", "{}", ancient, ancient, ancient)
+    run('INSERT INTO "DesktopBrowserLogins" ("Id","SecretHash","SecurityVersion","CreatedAt","ExpiresAt") VALUES (?,?,1,?,?)',
+        new("keep-DesktopBrowserLogins"), "keep-desktop", ancient, ancient)
+    run('INSERT INTO "UserSessions" ("Id","UserId","Device","IpAddress","CreatedAt","LastSeenAt","ExpiresAt","SecurityVersion","ShortLived","RevokedAt") VALUES (?,?,?,?,?,?,?,1,0,?)',
+        new("keep-UserSessions"), user, "d", "1.1.1.1", ancient, ancient, ancient, ancient)
+    run('INSERT INTO "ServerInvites" ("Id","ServerId","CreatedById","Code","Uses","ExpiresAt","CreatedAt") VALUES (?,?,?,?,0,?,?)',
+        new("keep-ServerInvites"), instance_server, user, "keepinvite", ancient, ancient)
+
+    # Link-preview pictures: kept under the all-zero uploader when a card shows
+    # them, swept with their objects when nothing does.
+    zero = "00000000-0000-0000-0000-000000000000"
+    for label, shown in (("preview-shown", True), ("preview-orphan", False)):
+        key = f"embeds/{label}"
+        files.append(key)
+        aid = new("att-" + label)
+        run('INSERT INTO "ImageAttachments" ("Id","UploadedById","ObjectKey","FileName","ContentType","SizeBytes","IsEncrypted","CreatedAt") VALUES (?,?,?,?,?,1,0,?)',
+            aid, zero, key, "f", "image/png", stamp(around(ORPHAN_DAYS * DAY)[1]))
+        if shown:
+            run('INSERT INTO "MessageEmbeds" ("Id","MessageId","Url","Kind","Provider","Domain","ThumbnailAttachmentId","Position","CreatedAt") VALUES (?,?,?,0,?,?,?,0,?)',
+                new("embed-" + label), message, "u", "p", "d", aid, stamp(around(ORPHAN_DAYS * DAY)[1]))
+    # Objects queued by uploads, servers, messages, emoji and profile pictures.
+    for key in ("emoji/queued-a", "profile/queued-b", "servers/queued-c", "messages/queued-d"):
+        files.append(key)
+        run('INSERT INTO "ObjectDeletions" ("ObjectKey","QueuedAt") VALUES (?,?)', key, stamp(now - 7200))
+
     # Settings of two servers: the one written last decides.
     other = ident("server-2")
     labels[other] = "server-2"
@@ -177,7 +212,9 @@ def dump(db, data_root, work):
     for table, key in (("MessageChanges", "MessageId"), ("AuthChallenges", "Id"), ("EmailOtpCodes", "Id"),
                        ("CliRecoveryCredentials", "Id"), ("PendingExternalIdentities", "Id"), ("TrustedDevices", "Id"),
                        ("RecoveryCodes", "Id"), ("SecurityNotifications", "Id"), ("ImageAttachments", "Id"),
-                       ("ObjectDeletions", "ObjectKey")):
+                       ("ObjectDeletions", "ObjectKey"), ("PasswordResetTokens", "Id"),
+                       ("EmailChangeRequests", "Id"), ("PasskeySignIns", "Id"), ("DesktopBrowserLogins", "Id"),
+                       ("UserSessions", "Id"), ("ServerInvites", "Id")):
         names = sorted(labels.get(row[0], "other:" + ("reset" if table == "MessageChanges" else "?"))
                        for row in connection.execute(f'SELECT "{key}" FROM "{table}"'))
         out.append(f"{table}: {names}")
