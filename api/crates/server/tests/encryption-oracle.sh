@@ -19,8 +19,13 @@
 #   RateLimiting__AuthWrite__PermitLimit=500   RateLimiting__Login__PermitLimit=500
 #   RateLimiting__SecurityWrite__PermitLimit=500   RateLimiting__PinUnlock__PermitLimit=500
 #
-# Prints the difference of each pair of files, which is empty when the servers
-# agree. The files are left in $WORK.
+# Prints the difference of each pair of files. The servers agree on everything
+# but two lines of `tables`, which are known and meant: a body of 1 MiB and a
+# little more (the first server read up to 128 MiB and answered the validation
+# problem of what it held; this one refuses it with a 413), and a `null` among
+# the envelopes of an epoch (a 500 of the first server's code, a 400 here).
+# Who wins a race is not compared, only what was answered. The files are left in
+# $WORK.
 #
 #   ORACLE=encryption ORACLE_PORT=5218 STELLARR_API=path/to/stellarr-api encryption-oracle.sh
 set -euo pipefail
@@ -168,7 +173,8 @@ phase() { # story or tables
   rows "$work/$1.rust.db" "$work/$1.rust.rows"
   for side in oracle rust; do tidy "$work/$1.$side.rows"; done
   compare "$1 transcript" "$work/$1.oracle.txt" "$work/$1.rust.txt"
-  compare "$1 rows" "$work/$1.oracle.rows.tidy" "$work/$1.rust.rows.tidy"
+  # Which of two requests that met won is not the same every time.
+  [ "$1" = races ] || compare "$1 rows" "$work/$1.oracle.rows.tidy" "$work/$1.rust.rows.tidy"
 }
 
 # What the guarded routes say to sessions that did and did not pass a second

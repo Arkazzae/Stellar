@@ -112,7 +112,8 @@ function normalise(value) {
         const names = raw.map(label);
         if (names.some((n, i) => i > 0 && n.startsWith("key-") && names[i - 1].startsWith("device-"))) violations.push("the envelopes are not in the order they were made in");
       } else if (raw.some((id, i) => i > 0 && raw[i - 1] > id)) violations.push("the envelopes are not in the order of their keys");
-      return items.sort((a, b) => label(a.recipientKeyId).localeCompare(label(b.recipientKeyId)));
+      // Made, they stay in the order they were made in, which is compared as it is.
+      return made ? items : items.sort((a, b) => label(a.recipientKeyId).localeCompare(label(b.recipientKeyId)));
     }
     if (items.length > 1 && items.every((item) => item && typeof item === "object" && "keyId" in item && "kind" in item && "userId" in item)) {
       const order = (item) => `${item.userId}|${item.kind}|${item.keyId}`;
@@ -764,9 +765,8 @@ async function races(ids) {
   for (let i = 0; i < 9; i++) await wrong();
   await outcome("two wrong PINs at once with one try left", [wrong(), wrong()]);
   out(`   afterwards: ${(await maja.request("GET", `${ACCOUNT}/backup`)).status}`);
-  await outcome("twelve wrong PINs at once", [adaFresh(ada)].length ? Array.from({ length: 12 }, () => ada.request("POST", `${ACCOUNT}/backup/unlock`, { authKey: b64(bytes(32, 99)) })) : []);
+  await outcome("twelve wrong PINs at once", Array.from({ length: 12 }, () => ada.request("POST", `${ACCOUNT}/backup/unlock`, { authKey: b64(bytes(32, 99)) })));
 }
-const adaFresh = (person) => person;
 
 // ---- the sessions that must show a fresh second step ----
 
