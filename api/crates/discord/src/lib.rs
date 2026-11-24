@@ -34,6 +34,8 @@ mod config;
 mod content;
 mod failure;
 mod mapper;
+#[cfg(test)]
+mod mapper_tests;
 mod mentions;
 mod permissions;
 mod rate_limits;
