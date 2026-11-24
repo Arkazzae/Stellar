@@ -57,6 +57,17 @@ start stellarr-port-smtp-mailpit-tls "$p3" "$h3" \
   --smtp-tls-cert /certs/cert.pem --smtp-tls-key /certs/key.pem \
   --smtp-require-tls --smtp-auth-file /certs/auth.txt
 
+# What the server offers, as Python's own client sees it.
+python3 - "$p2" <<'PY'
+import smtplib, sys
+c = smtplib.SMTP("127.0.0.1", int(sys.argv[1]))
+c.ehlo()
+c.starttls()
+c.ehlo()
+print("mailpit offers after STARTTLS:", sorted(c.esmtp_features.items()))
+c.quit()
+PY
+
 cd "$api"
 STELLARR_TEST_MAILPIT_PLAIN="$p1,$h1" \
 STELLARR_TEST_MAILPIT_STARTTLS="$p2,$h2" \

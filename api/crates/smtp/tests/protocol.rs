@@ -39,8 +39,8 @@ enum Step {
     Tls,
     /// Say nothing more, for a long time.
     Hang,
-    /// Wait, so that what follows arrives apart from what came before.
-    Pause,
+    /// Read what the client sends next, whatever it is, and drop it.
+    ReadAny,
     /// A byte every 40 ms, never a line break.
     Drip,
     /// Read a little of the message and hang up.
@@ -195,7 +195,13 @@ async fn serve(io: impl Io + 'static, steps: Vec<Step>, captured: Arc<Mutex<Capt
             Hang => {
                 tokio::time::sleep(Duration::from_secs(3600)).await;
             }
-            Pause => tokio::time::sleep(Duration::from_millis(150)).await,
+            ReadAny => {
+                let mut chunk = [0u8; 4096];
+                match reader.io.read(&mut chunk).await {
+                    Ok(0) | Err(_) => return,
+                    Ok(_) => {}
+                }
+            }
             Drip => loop {
                 if reader.io.write_all(b"2").await.is_err() {
                     return;
@@ -226,6 +232,12 @@ fn connection(security: Security) -> Connection {
 fn with_login(mut c: Connection) -> Connection {
     c.username = "jo".into();
     c.password = "s3cr3t-pässword".into();
+    c
+}
+
+fn ascii_login() -> Connection {
+    let mut c = with_login(connection(Security::None));
+    c.password = "pencil".into();
     c
 }
 
@@ -918,6 +930,7 @@ async fn a_server_that_drips_bytes_is_cut_off_by_the_deadline() {
     .await;
     let error = result.unwrap_err();
     assert_eq!(error.kind(), ErrorKind::Timeout);
+    assert!(error.is_transient());
     assert!(started.elapsed() < Duration::from_secs(3));
 }
 
@@ -1203,7 +1216,7 @@ async fn a_starttls_whose_handshake_never_happens_is_a_tls_error() {
             Say("250-mail.test\r\n250 STARTTLS"),
             Expect("STARTTLS"),
             Say("220 go ahead"),
-            Pause,
+            ReadAny,
             Raw(b"250 this is not a handshake\r\n".repeat(20)),
             Hang,
         ],
@@ -1435,4 +1448,112 @@ async fn several_recipients_each_get_a_rcpt() {
     .await;
     result.unwrap();
     assert_data_is_the_message(&captured, &message);
+}
+
+#[tokio::test]
+async fn a_scram_the_server_cannot_do_for_this_user_falls_back_to_plain() {
+    let script = vec![
+        Say("220 hi"),
+        Expect("EHLO client.test"),
+        Say("250-mail.test\r\n250 AUTH PLAIN SCRAM-SHA-256 SCRAM-SHA-1"),
+        Expect("AUTH SCRAM-SHA-256"),
+        Say("535 5.7.8 no SCRAM secret for this user"),
+        // SCRAM-SHA-1 is not tried as well: it would be the same refusal.
+        Expect("AUTH PLAIN"),
+        Say("334 "),
+        ExpectStart("AGpvA"),
+        Say("235 ok"),
+        Expect("MAIL FROM:<noreply@chat.test>"),
+        Say("250 ok"),
+        Expect("RCPT TO:<jo@example.test>"),
+        Say("250 ok"),
+        Expect("DATA"),
+        Say("354 go"),
+        Data,
+        Say("250 ok"),
+        Expect("QUIT"),
+    ];
+    let mut login = with_login(connection(Security::None));
+    login.password = "pencil".into();
+    let (result, captured) = exchange(&login, CA, &options(), &message(), script).await;
+    result.unwrap();
+    assert!(captured.lock().unwrap().finished);
+}
+
+#[tokio::test]
+async fn when_every_mechanism_is_refused_the_last_refusal_is_reported() {
+    let script = vec![
+        Say("220 hi"),
+        Expect("EHLO client.test"),
+        Say("250-mail.test\r\n250 AUTH PLAIN SCRAM-SHA-256"),
+        Expect("AUTH SCRAM-SHA-256"),
+        Say("535 5.7.8 no"),
+        Expect("AUTH PLAIN"),
+        Say("334 "),
+        ExpectStart("AGpvA"),
+        Say("535 5.7.8 bad credentials"),
+    ];
+    let (result, _) = exchange(&ascii_login(), CA, &options(), &message(), script).await;
+    let error = result.unwrap_err();
+    assert_eq!(
+        (error.stage(), error.reply_code()),
+        (Stage::Auth, Some(535))
+    );
+    assert!(error.to_string().contains("bad credentials"), "{error}");
+    assert!(!error.is_transient());
+}
+
+#[tokio::test]
+async fn a_temporary_failure_of_scram_is_not_papered_over_with_plain() {
+    let script = vec![
+        Say("220 hi"),
+        Expect("EHLO client.test"),
+        Say("250-mail.test\r\n250 AUTH PLAIN SCRAM-SHA-256"),
+        Expect("AUTH SCRAM-SHA-256"),
+        Say("454 4.7.0 try later"),
+    ];
+    let (result, _) = exchange(&ascii_login(), CA, &options(), &message(), script).await;
+    let error = result.unwrap_err();
+    assert!(error.is_transient());
+    assert_eq!(error.reply_code(), Some(454));
+}
+
+#[tokio::test]
+async fn a_host_that_is_no_tls_name_is_fine_without_tls() {
+    let mut plain = connection(Security::None);
+    plain.host = "bad host!".into();
+    let mut script = opening_plain();
+    script.extend(envelope_and_data());
+    let (result, _) = exchange(&plain, CA, &options(), &message(), script).await;
+    result.unwrap();
+
+    let mut tls = connection(Security::Tls);
+    tls.host = "bad host!".into();
+    let (result, _) = exchange(&tls, CA, &options(), &message(), vec![Close]).await;
+    let error = result.unwrap_err();
+    assert_eq!(
+        (error.kind(), error.stage()),
+        (ErrorKind::Unsupported, Stage::Handshake)
+    );
+}
+
+#[tokio::test]
+async fn the_deadline_is_reported_as_the_exchange_running_out_of_time() {
+    let options = Options {
+        step_timeout: Duration::from_secs(30),
+        total_timeout: Duration::from_millis(200),
+        local_name: Some("client.test".into()),
+    };
+    // The greeting arrives; the deadline runs out while waiting for the rest.
+    let (result, _) = exchange(
+        &connection(Security::None),
+        CA,
+        &options,
+        &message(),
+        vec![Say("220 hi"), Hang],
+    )
+    .await;
+    let error = result.unwrap_err();
+    assert_eq!(error.kind(), ErrorKind::Timeout);
+    assert!(!error.to_string().contains("0.0 seconds"), "{error}");
 }
