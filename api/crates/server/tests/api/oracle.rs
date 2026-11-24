@@ -19,6 +19,7 @@ use std::net::SocketAddr;
 
 use http::Method;
 use serde_json::{Value, json};
+use stellarr_api::values::Timestamp;
 
 use crate::support::{Client, Request, Response, Server};
 
@@ -48,13 +49,24 @@ fn scrub_cookie(line: &str) -> String {
     let mut text = if value.is_empty() { first.to_string() } else { format!("{name}=<value>") };
     for part in parts {
         text.push_str("; ");
-        if part.starts_with("expires=") && !part.contains("1970") {
-            text.push_str("expires=<later>");
+        if let Some(date) = part.strip_prefix("expires=").filter(|date| !date.contains("1970")) {
+            text.push_str(&format!("expires=in {} minutes", minutes_from_now(date)));
         } else {
             text.push_str(part);
         }
     }
     text
+}
+
+/// How far ahead an HTTP date is, in minutes, to the nearest ten, so that the
+/// seconds between the two servers' answers do not show.
+fn minutes_from_now(date: &str) -> i64 {
+    const MONTHS: [&str; 12] = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+    let parts: Vec<&str> = date.split_whitespace().collect();
+    let month = MONTHS.iter().position(|m| *m == parts[2]).expect("a month") + 1;
+    let moment = Timestamp::parse(&format!("{}-{month:02}-{:0>2} {}", parts[3], parts[1], parts[4])).expect("a date");
+    let seconds = Timestamp::now().until(moment).as_secs() as i64;
+    (seconds + 300) / 600 * 10
 }
 
 /// Replaces ids, moments, hues and trace identifiers.
@@ -109,6 +121,10 @@ enum Step {
     Send(&'static str, &'static str, Method, &'static str, Option<Value>),
     /// A client that has the cookies another had at this point.
     Copy(&'static str, &'static str),
+    /// An invite to the instance's server, made by the signed-in owner on the
+    /// named client: through the first server's own route there, written into
+    /// the database here. Later bodies name it as `$INVITE`.
+    Invite(&'static str),
 }
 
 fn send(jar: &'static str, label: &'static str, method: Method, path: &'static str, body: Option<Value>) -> Step {
@@ -165,15 +181,46 @@ fn part_two() -> Vec<Step> {
         send("b", "register: second without an invite", Method::POST, "/api/auth/register", Some(json!({ "username": "maya", "displayName": "Maya", "email": "maya@example.test", "password": "Corona!2026-long" }))),
         send("b", "register: bad invite", Method::POST, "/api/auth/register", Some(json!({ "username": "maya", "displayName": "Maya", "email": "maya@example.test", "password": "Corona!2026-long", "inviteCode": "nope" }))),
         send("b", "register: name and address taken", Method::POST, "/api/auth/register", Some(json!({ "username": "OWNER", "displayName": "Maya", "email": "Owner@Example.test", "password": "Corona!2026-long", "inviteCode": "nope" }))),
+        send("b", "register: a password over the limit", Method::POST, "/api/auth/register", Some(json!({ "username": "maya", "displayName": "Maya", "email": "maya@example.test", "password": "p".repeat(257), "inviteCode": "nope" }))),
     ]
 }
 
-async fn run(steps: &[Step], oracle: (SocketAddr, &str), ours: (SocketAddr, &str)) -> Vec<String> {
+/// A registration with an invite, and an invalid starter server first.
+fn part_three() -> Vec<Step> {
+    let maya = |name: &str| json!({ "username": name, "displayName": "Maya Lin", "email": format!("{name}@example.test"), "password": "Corona!2026-long", "inviteCode": "$INVITE" });
+    vec![
+        send("a", "register: an invalid starter server", Method::POST, "/api/auth/register", Some({
+            let mut body = registration();
+            body["initialServer"] = json!({ "name": "Crew", "textChannelName": "two words" });
+            body
+        })),
+        send("a", "register: founding with a voice name only", Method::POST, "/api/auth/register", Some({
+            let mut body = registration();
+            body["initialServer"] = json!({ "name": "Crew", "voiceChannelName": "hall" });
+            body
+        })),
+        Step::Invite("a"),
+        send("m", "register: with an invite", Method::POST, "/api/auth/register", Some(maya("maya"))),
+        send("m", "session of the new member", Method::GET, "/api/session", None),
+        send("m", "me of the new member", Method::GET, "/api/me", None),
+        send("n", "register: the same invite again", Method::POST, "/api/auth/register", Some(maya("jo"))),
+    ]
+}
+
+async fn run(steps: &[Step], oracle: (SocketAddr, &str), ours: (SocketAddr, &str), server: &Server) -> Vec<String> {
     let mut theirs: Vec<(String, Client)> = Vec::new();
     let mut mine: Vec<(String, Client)> = Vec::new();
     let mut differences = Vec::new();
+    let mut invites = (String::new(), String::new());
     for step in steps {
         match step {
+            Step::Invite(jar) => {
+                let owner = &theirs.iter().find(|(name, _)| name == jar).expect("an owner").1;
+                let made = owner.post_json("/api/admin/invites", &json!({})).await;
+                assert_eq!(made.status, 201, "{}", made.text());
+                let url = made.json::<Value>()["url"].as_str().unwrap().to_string();
+                invites = (url.rsplit('/').next().unwrap().to_string(), server.invite());
+            }
             Step::Copy(from, to) => {
                 for (jars, (address, _)) in [(&mut theirs, oracle), (&mut mine, ours)] {
                     let source = jars.iter().find(|(name, _)| name == from).map(|(_, client)| client);
@@ -192,7 +239,10 @@ async fn run(steps: &[Step], oracle: (SocketAddr, &str), ours: (SocketAddr, &str
                     let mut request = Request::new(method.clone(), path);
                     request = match body {
                         Some(Value::String(raw)) => request.body("application/json", raw),
-                        Some(value) => request.json(&serde_json::from_str(&value.to_string().replace("$SETUP", code)).unwrap()),
+                        Some(value) => {
+                            let invite = if address == oracle.0 { &invites.0 } else { &invites.1 };
+                            request.json(&serde_json::from_str(&value.to_string().replace("$SETUP", code).replace("$INVITE", invite)).unwrap())
+                        }
                         None => request,
                     };
                     answers.push(describe(&client.send(request).await));
@@ -213,11 +263,15 @@ async fn run(steps: &[Step], oracle: (SocketAddr, &str), ours: (SocketAddr, &str
 async fn this_server_answers_as_the_first_one_does() {
     let oracle: SocketAddr = std::env::var("ORACLE_ADDRESS").unwrap_or_else(|_| "127.0.0.1:5191".into()).parse().expect("an address");
     let theirs = std::env::var("ORACLE_SETUP_CODE").expect("ORACLE_SETUP_CODE: the code the first server logged");
-    let steps = if std::env::var("ORACLE_PART").as_deref() == Ok("2") { part_two() } else { part_one() };
+    let steps = match std::env::var("ORACLE_PART").as_deref() {
+        Ok("2") => part_two(),
+        Ok("3") => part_three(),
+        _ => part_one(),
+    };
     let server = Server::start_with(&[("ASPNETCORE_ENVIRONMENT", "Production"), ("Rtc__TurnSharedSecret", "a-secret")]).await;
     let ours = server.setup_code().await;
 
-    let differences = run(&steps, (oracle, &theirs), (server.address(), &ours)).await;
+    let differences = run(&steps, (oracle, &theirs), (server.address(), &ours), &server).await;
 
     for difference in &differences {
         println!("\n{difference}");
