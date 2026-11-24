@@ -802,6 +802,20 @@ named in `Testing__Workers` (comma-separated) run, so
 See `tests/api/workers.rs` for a worker that is told to stop, one that panics
 and one that does not stop.
 
+### The notification worker
+
+`delivery` (`notification-delivery`) sends what the outbox owes to people who are
+away, by Web Push and by mail, every thirty seconds; `delivery/dispatcher.rs` has
+its rules. A batch is up to 25 rows, leased for as long as the batch can take at its
+worst (25 rows of 20 seconds) and sent one after another.
+
+Limits it shares with the first server: the rows of a batch are sent one at a
+time, and a push service has ten seconds to answer, a mail server fifteen. So one
+person's subscriptions that never answer can delay everyone's notifications by up
+to 250 seconds a batch. That goes away with a later change to how the server's
+queues work, not with this worker. The sender only ever connects to public
+addresses; nothing a setting or a request says changes that.
+
 ## The realtime hub
 
 `realtime/` is the hub the web client keeps open at `/hubs/app`. `run` starts it
