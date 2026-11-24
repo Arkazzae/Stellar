@@ -294,30 +294,45 @@ fn verify_method(
     }
 }
 
-/// Asks for a code to be mailed for a method of a sign-in. `None` when the
-/// method is not an e-mail method of the account that is in use, or the
-/// account's address is not the one it was made for.
+/// What asking for a mailed code came to, before the mail itself is tried.
+/// The order is the first server's: the challenge was looked at already, then
+/// the method and the address, then whether mail can be sent at all.
+#[derive(Debug, PartialEq, Eq)]
+pub(super) enum Reserve {
+    /// The method, or the address it is for, cannot be used.
+    MethodUnavailable,
+    /// Mail is off or not set up.
+    MailUnavailable,
+    Reservation(Reservation),
+}
+
+/// Asks for a code to be mailed for a method of a sign-in. `mail_ready` is
+/// whether mail can be sent, which is looked at only once the method is.
 pub(super) fn request_login_email_code(
     tx: &Transaction,
     sealer: &Sealer,
     challenge: &StoredChallenge,
     method: Id,
+    mail_ready: bool,
     policy: &SecurityPolicy,
     now: Timestamp,
-) -> Result<Option<Reservation>, DbError> {
+) -> Result<Reserve, DbError> {
     if !answers_with_a_code(challenge) {
-        return Ok(None);
+        return Ok(Reserve::MethodUnavailable);
     }
     let Some(found) = mfa_methods::find_active(tx, challenge.user, method)? else {
-        return Ok(None);
+        return Ok(Reserve::MethodUnavailable);
     };
     let account = Address::of(tx, challenge.user)?;
     let (Some(address), Some(bound)) = (account.written.as_deref(), found.email_address.as_deref())
     else {
-        return Ok(None);
+        return Ok(Reserve::MethodUnavailable);
     };
     if found.kind != EMAIL || account.normalized.as_deref() != Some(bound) {
-        return Ok(None);
+        return Ok(Reserve::MethodUnavailable);
+    }
+    if !mail_ready {
+        return Ok(Reserve::MailUnavailable);
     }
     email_codes::reserve(
         tx,
@@ -332,29 +347,33 @@ pub(super) fn request_login_email_code(
         policy,
         now,
     )
-    .map(Some)
+    .map(Reserve::Reservation)
 }
 
 /// Asks for a code to be mailed to prove the address, to add it as a second
-/// step. `None` when the account has no address or already has the step.
+/// step. The account must have an address and not have the step already.
 pub(super) fn start_email_enrollment(
     tx: &Transaction,
     sealer: &Sealer,
     challenge: &StoredChallenge,
+    mail_ready: bool,
     policy: &SecurityPolicy,
     now: Timestamp,
-) -> Result<Option<Reservation>, DbError> {
+) -> Result<Reserve, DbError> {
     if !enrols(challenge) {
-        return Ok(None);
+        return Ok(Reserve::MethodUnavailable);
     }
     let account = Address::of(tx, challenge.user)?;
     let (Some(address), Some(normalized)) =
         (account.written.as_deref(), account.normalized.as_deref())
     else {
-        return Ok(None);
+        return Ok(Reserve::MethodUnavailable);
     };
     if mfa_methods::has_email(tx, challenge.user, normalized)? {
-        return Ok(None);
+        return Ok(Reserve::MethodUnavailable);
+    }
+    if !mail_ready {
+        return Ok(Reserve::MailUnavailable);
     }
     email_codes::reserve(
         tx,
@@ -369,7 +388,7 @@ pub(super) fn start_email_enrollment(
         policy,
         now,
     )
-    .map(Some)
+    .map(Reserve::Reservation)
 }
 
 /// What checking the code that proves an address came to.
@@ -561,6 +580,40 @@ mod tests {
     use stellarr_messages::{Language, Messages};
 
     use super::*;
+
+    /// The calls as the tests of the checks inside them want them: mail can be
+    /// sent, and an unusable method and an unusable address are both `None`.
+    fn request_login_email_code(
+        tx: &Transaction,
+        sealer: &Sealer,
+        challenge: &StoredChallenge,
+        method: Id,
+        policy: &SecurityPolicy,
+        now: Timestamp,
+    ) -> Result<Option<Reservation>, DbError> {
+        Ok(
+            match super::request_login_email_code(tx, sealer, challenge, method, true, policy, now)?
+            {
+                Reserve::Reservation(reservation) => Some(reservation),
+                _ => None,
+            },
+        )
+    }
+
+    fn start_email_enrollment(
+        tx: &Transaction,
+        sealer: &Sealer,
+        challenge: &StoredChallenge,
+        policy: &SecurityPolicy,
+        now: Timestamp,
+    ) -> Result<Option<Reservation>, DbError> {
+        Ok(
+            match super::start_email_enrollment(tx, sealer, challenge, true, policy, now)? {
+                Reserve::Reservation(reservation) => Some(reservation),
+                _ => None,
+            },
+        )
+    }
     use crate::auth::fixtures::{
         add_challenge, add_method, add_pending_method, add_user, attempts_of, events_of, open,
     };

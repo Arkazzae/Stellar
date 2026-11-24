@@ -582,7 +582,10 @@ async fn a_mailed_code_is_sent_and_answers_the_sign_in() {
     .await
     .unwrap();
 
-    assert_eq!(sent, Sent::Delivered);
+    assert!(
+        matches!(&sent, Sent::Delivered { address, retry_after_seconds: 45 } if address == "maya@example.test"),
+        "{sent:?}"
+    );
     let data = smtp.mails()[0].data.clone();
     let digits = data
         .lines()
@@ -748,12 +751,10 @@ async fn an_address_is_added_with_its_mailed_code_and_a_bad_name_keeps_the_code(
     let user = world.user(Some("maya@example.test"));
     let (challenge, preauth) = world.challenge(user, PURPOSE_ENROLLMENT);
     let id = challenge.id.to_string();
-    assert_eq!(
-        send_enrollment_code(&world.state, &ask(&challenge, &preauth, &id))
-            .await
-            .unwrap(),
-        Sent::Delivered
-    );
+    let sent = send_enrollment_code(&world.state, &ask(&challenge, &preauth, &id))
+        .await
+        .unwrap();
+    assert!(matches!(sent, Sent::Delivered { .. }), "{sent:?}");
     let data = smtp.mails()[0].data.clone();
     let digits = data
         .lines()
@@ -1792,4 +1793,137 @@ async fn ids_are_read_in_every_spelling_the_first_server_read() {
         world.count("SELECT COUNT(*) FROM \"SecurityEvents\" WHERE \"Detail\" = 'recovery'"),
         1
     );
+}
+
+#[tokio::test]
+async fn a_code_is_refused_for_the_challenge_then_the_method_then_the_mail() {
+    let world = World::new();
+    // Mail is off.
+    found(
+        &world.state,
+        Saved {
+            mailing: false,
+            ..Saved::default()
+        },
+    )
+    .await;
+    let user = world.user(Some("  Maya@Example.test "));
+    let method = add_method(&world.db(), user, EMAIL, Some("MAYA@EXAMPLE.TEST"));
+    let (challenge, preauth) = world.challenge(user, PURPOSE_MFA);
+    let id = challenge.id.to_string();
+    let ask_for = |text: Option<String>| {
+        let (world, challenge, preauth, id) = (&world, &challenge, &preauth, &id);
+        async move {
+            send_login_code(&world.state, &ask(challenge, preauth, id), text.as_deref())
+                .await
+                .unwrap()
+        }
+    };
+
+    // The challenge first: another purpose is invalid whatever else is so.
+    let (enrolling, enrolling_preauth) = world.challenge(user, PURPOSE_ENROLLMENT);
+    let other = enrolling.id.to_string();
+    let wrong = send_login_code(
+        &world.state,
+        &ask(&enrolling, &enrolling_preauth, &other),
+        Some("nothing"),
+    )
+    .await
+    .unwrap();
+    assert!(matches!(wrong, Sent::Invalid(_)));
+    // Then the method: one that is not there is that, mail off or not.
+    assert_eq!(
+        ask_for(Some(Id::random().to_string())).await,
+        Sent::MethodUnavailable
+    );
+    assert_eq!(ask_for(None).await, Sent::MethodUnavailable);
+    assert_eq!(
+        ask_for(Some("not an id".into())).await,
+        Sent::MethodUnavailable
+    );
+    // Only then mail.
+    assert_eq!(
+        ask_for(Some(method.to_string())).await,
+        Sent::MailUnavailable
+    );
+    assert_eq!(world.count("SELECT COUNT(*) FROM \"EmailOtpCodes\""), 0);
+}
+
+#[tokio::test]
+async fn an_enrolment_code_is_refused_for_the_method_before_the_mail() {
+    let world = World::new();
+    found(
+        &world.state,
+        Saved {
+            mailing: false,
+            ..Saved::default()
+        },
+    )
+    .await;
+    let without = world.user(None);
+    let with = world.user(Some("maya@example.test"));
+    let (first, first_preauth) = world.challenge(without, PURPOSE_ENROLLMENT);
+    let (second, second_preauth) = world.challenge(with, PURPOSE_ENROLLMENT);
+    let (first_id, second_id) = (first.id.to_string(), second.id.to_string());
+
+    let no_address = send_enrollment_code(&world.state, &ask(&first, &first_preauth, &first_id))
+        .await
+        .unwrap();
+    let mail_off = send_enrollment_code(&world.state, &ask(&second, &second_preauth, &second_id))
+        .await
+        .unwrap();
+
+    assert_eq!(no_address, Sent::MethodUnavailable);
+    assert_eq!(mail_off, Sent::MailUnavailable);
+    // An account that has the step already is told the method is not available.
+    add_method(&world.db(), with, EMAIL, Some("MAYA@EXAMPLE.TEST"));
+    let again = send_enrollment_code(&world.state, &ask(&second, &second_preauth, &second_id))
+        .await
+        .unwrap();
+    assert_eq!(again, Sent::MethodUnavailable);
+}
+
+#[tokio::test]
+async fn the_address_a_code_was_mailed_to_is_the_one_in_the_account_trimmed() {
+    let smtp = FakeSmtp::start(Behaviour::default()).await;
+    let world = World::new();
+    found(
+        &world.state,
+        Saved {
+            port: smtp.port,
+            ..Saved::default()
+        },
+    )
+    .await;
+    let user = world.user(Some("  Maya@Example.test "));
+    let method = add_method(&world.db(), user, EMAIL, Some("MAYA@EXAMPLE.TEST"));
+    let (challenge, preauth) = world.challenge(user, PURPOSE_MFA);
+    let id = challenge.id.to_string();
+
+    let sent = send_login_code(
+        &world.state,
+        &ask(&challenge, &preauth, &id),
+        Some(&method.to_string()),
+    )
+    .await
+    .unwrap();
+
+    assert_eq!(
+        sent,
+        Sent::Delivered {
+            address: "Maya@Example.test".into(),
+            retry_after_seconds: 45
+        }
+    );
+    assert!(
+        smtp.mails()[0]
+            .commands
+            .iter()
+            .any(|c| c.to_lowercase().contains("maya@example.test"))
+    );
+    // The address in the answer is the one in the mail, even if the account's changes after.
+    world
+        .db()
+        .execute("UPDATE \"Users\" SET \"Email\" = 'new@example.test'", [])
+        .unwrap();
 }

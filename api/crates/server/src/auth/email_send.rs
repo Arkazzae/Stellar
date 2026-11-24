@@ -12,7 +12,7 @@ use rusqlite::{OptionalExtension, Transaction};
 use super::ceremony::{Ask, Own, open};
 use super::email_codes::{self, Reservation};
 use super::flow::ChallengeStatus;
-use super::mfa;
+use super::mfa::{self, Reserve};
 use super::policy::SecurityPolicy;
 use crate::database::DbError;
 use crate::mail::{self, MailSetup, Outcome, setup};
@@ -23,11 +23,19 @@ use crate::values::{Id, Timestamp};
 #[must_use]
 #[derive(Debug, PartialEq, Eq)]
 pub enum Sent {
-    /// The mail was taken by the provider; the code works now.
-    Delivered,
-    /// Mail is off or not set up, or the account has no such address or
-    /// method.
-    Unavailable,
+    /// The mail was taken by the provider; the code works now. `address` is
+    /// the one it was mailed to, as the account has it, for the sentence the
+    /// client is shown; `retry_after_seconds` is how long before another may
+    /// be asked for.
+    Delivered {
+        address: String,
+        retry_after_seconds: i64,
+    },
+    /// The method cannot be used, or the account has no address to mail, or
+    /// has the step already (a 409 that says the method is not available).
+    MethodUnavailable,
+    /// Mail is off or not set up (a 409 that says mail is not available).
+    MailUnavailable,
     Cooldown {
         retry_after_seconds: i64,
     },
@@ -41,13 +49,40 @@ pub enum Sent {
 
 /// What the reserving step found.
 pub(super) enum Attempt {
-    Reserved { user: Id, reservation: Reservation },
-    Unavailable,
+    Reserved {
+        user: Id,
+        reservation: Reservation,
+        cooldown_seconds: i64,
+    },
+    MethodUnavailable,
+    MailUnavailable,
     Invalid(ChallengeStatus),
 }
 
+fn cooldown_seconds(policy: &SecurityPolicy) -> i64 {
+    i64::try_from(policy.email_cooldown().as_secs()).unwrap_or(i64::MAX)
+}
+
+fn attempt_of(user: Id, policy: &SecurityPolicy, reserve: Reserve) -> Attempt {
+    match reserve {
+        Reserve::MethodUnavailable => Attempt::MethodUnavailable,
+        Reserve::MailUnavailable => Attempt::MailUnavailable,
+        Reserve::Reservation(reservation) => Attempt::Reserved {
+            user,
+            reservation,
+            cooldown_seconds: cooldown_seconds(policy),
+        },
+    }
+}
+
+async fn mail_ready(state: &AppState) -> Result<bool, DbError> {
+    Ok(matches!(setup::find_for(state).await?, MailSetup::Ready(_)))
+}
+
 /// Mails the code of a sign-in's second step for one of the account's mail
-/// methods.
+/// methods. The challenge is looked at first, then the method, then whether
+/// mail can be sent, as the first server did; nothing is written until all
+/// three are in order.
 pub(super) async fn login_code(
     state: &AppState,
     ask: &Ask<'_>,
@@ -56,30 +91,25 @@ pub(super) async fn login_code(
     let own = Own::of(ask);
     let method = method.and_then(crate::values::parse_guid);
     let sealer_state = state.clone();
+    let ready = mail_ready(state).await?;
     send_with(state, move |tx, policy, now| {
         let challenge = match open(tx, &own, mfa::answers_with_a_code, now)? {
             Ok(challenge) => challenge,
             Err(status) => return Ok(Attempt::Invalid(status)),
         };
         let Some(method) = method else {
-            return Ok(Attempt::Unavailable);
+            return Ok(Attempt::MethodUnavailable);
         };
-        Ok(
-            match mfa::request_login_email_code(
-                tx,
-                sealer_state.sealer(),
-                &challenge,
-                method,
-                policy,
-                now,
-            )? {
-                Some(reservation) => Attempt::Reserved {
-                    user: challenge.user,
-                    reservation,
-                },
-                None => Attempt::Unavailable,
-            },
-        )
+        let reserve = mfa::request_login_email_code(
+            tx,
+            sealer_state.sealer(),
+            &challenge,
+            method,
+            ready,
+            policy,
+            now,
+        )?;
+        Ok(attempt_of(challenge.user, policy, reserve))
     })
     .await
 }
@@ -92,38 +122,27 @@ pub(super) async fn enrollment_code(state: &AppState, ask: &Ask<'_>) -> Result<S
 
 async fn enrollment_code_own(state: &AppState, own: Own) -> Result<Sent, DbError> {
     let sealer_state = state.clone();
+    let ready = mail_ready(state).await?;
     send_with(state, move |tx, policy, now| {
         let challenge = match open(tx, &own, mfa::enrols, now)? {
             Ok(challenge) => challenge,
             Err(status) => return Ok(Attempt::Invalid(status)),
         };
-        Ok(
-            match mfa::start_email_enrollment(tx, sealer_state.sealer(), &challenge, policy, now)? {
-                Some(reservation) => Attempt::Reserved {
-                    user: challenge.user,
-                    reservation,
-                },
-                None => Attempt::Unavailable,
-            },
-        )
+        let reserve =
+            mfa::start_email_enrollment(tx, sealer_state.sealer(), &challenge, ready, policy, now)?;
+        Ok(attempt_of(challenge.user, policy, reserve))
     })
     .await
 }
 
-/// Looks whether mail can be sent, reserves the code as `reserve` says (in
-/// the transaction it runs in, which also reads the challenge), commits,
-/// mails it and marks the row.
+/// Reserves the code as `reserve` says (in the transaction it runs in, which
+/// also reads the challenge), commits, mails it and marks the row.
 pub(super) async fn send_with<F>(state: &AppState, reserve: F) -> Result<Sent, DbError>
 where
     F: FnOnce(&Transaction, &SecurityPolicy, Timestamp) -> Result<Attempt, DbError>
         + Send
         + 'static,
 {
-    // Settings are looked at before anything is written: with no way to send,
-    // no code is made and none counts against the limits.
-    if !matches!(setup::find_for(state).await?, MailSetup::Ready(_)) {
-        return Ok(Sent::Unavailable);
-    }
     let reserved = state
         .database()
         .write(move |tx| -> Result<_, DbError> {
@@ -143,13 +162,18 @@ where
         })
         .await?;
     let (attempt, name) = reserved;
-    let reservation = match attempt {
+    let (reservation, cooldown) = match attempt {
         Attempt::Invalid(status) => return Ok(Sent::Invalid(status)),
-        Attempt::Unavailable => return Ok(Sent::Unavailable),
-        Attempt::Reserved { reservation, .. } => reservation,
+        Attempt::MethodUnavailable => return Ok(Sent::MethodUnavailable),
+        Attempt::MailUnavailable => return Ok(Sent::MailUnavailable),
+        Attempt::Reserved {
+            reservation,
+            cooldown_seconds,
+            ..
+        } => (reservation, cooldown_seconds),
     };
     let code = match reservation {
-        Reservation::Unavailable => return Ok(Sent::Unavailable),
+        Reservation::Unavailable => return Ok(Sent::MailUnavailable),
         Reservation::Cooldown {
             retry_after_seconds,
         } => {
@@ -189,7 +213,10 @@ where
         })
         .await?;
     Ok(if delivered {
-        Sent::Delivered
+        Sent::Delivered {
+            address: code.recipient,
+            retry_after_seconds: cooldown,
+        }
     } else {
         Sent::DeliveryFailed
     })
@@ -272,7 +299,10 @@ mod tests {
 
         let sent = ask(&state, user).await;
 
-        assert_eq!(sent, Sent::Delivered);
+        assert!(
+            matches!(&sent, Sent::Delivered { address, .. } if address == "maya@example.test"),
+            "{sent:?}"
+        );
         assert_eq!(row(&state), (true, false));
         let mails = smtp.mails();
         assert_eq!(mails.len(), 1);
@@ -330,7 +360,7 @@ mod tests {
         .await;
         let user = account(&state).await;
 
-        assert_eq!(ask(&state, user).await, Sent::Unavailable);
+        assert_eq!(ask(&state, user).await, Sent::MailUnavailable);
 
         let connection = rusqlite::Connection::open(state.database().path()).unwrap();
         let count: i64 = connection
