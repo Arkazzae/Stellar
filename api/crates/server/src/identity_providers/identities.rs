@@ -11,7 +11,6 @@ use axum::http::StatusCode;
 use axum::response::{IntoResponse, Response};
 use rusqlite::{OptionalExtension, params};
 use serde::{Deserialize, Serialize};
-use stellarr_messages::MessageKey;
 use stellarr_oidc::form::encode_component;
 use stellarr_oidc::ticket::{self, TicketKind};
 
@@ -24,7 +23,7 @@ use crate::auth::ceremony::{self, IdentityRemoved, LinkStart};
 use crate::auth::flow::{self, Context};
 use crate::auth::{Caller, security_cookies};
 use crate::database::DbError;
-use crate::http::{ApiError, ApiResult, Json, Origin, Path, Problem, json_response};
+use crate::http::{ApiError, ApiResult, Json, Origin, Path, json_response};
 use crate::instance::users::User;
 use crate::servers::Object;
 use crate::state::AppState;
@@ -47,12 +46,6 @@ fn password_of(request: Request) -> Result<Option<String>, Box<Response>> {
         Ok(request) => Ok(request.and_then(|Json(Object(change))| change.password)),
         Err(refusal) => Err(Box::new(refusal.into_response())),
     }
-}
-
-/// The refusal for a session that may not change the account's security now.
-fn fresh_proof_needed(state: &AppState) -> ApiResult<ApiError> {
-    let title = state.messages().get(MessageKey::SecurityFreshMfaRequired, &[])?;
-    Ok(Problem::new(StatusCode::FORBIDDEN).title(title).into())
 }
 
 #[derive(Serialize)]
@@ -86,7 +79,7 @@ async fn linking(
     };
     let version = match ceremony::may_start_identity_link(state, caller, password.as_deref()).await? {
         LinkStart::Allowed { security_version } => security_version,
-        LinkStart::NotAllowed => return Err(fresh_proof_needed(state)?),
+        LinkStart::NotAllowed => return Err(crate::auth::fresh::security_refusal(state.messages())?.into()),
         LinkStart::NoAccount => return Err(ApiError::not_found()),
     };
     let actor = actor_of(caller.user, caller.session, version)
@@ -206,7 +199,7 @@ async fn removal(
     match ceremony::remove_identity(state, caller, &context, identity, &name, &providers, password.as_deref()).await? {
         IdentityRemoved::Done => Ok(StatusCode::NO_CONTENT.into_response()),
         IdentityRemoved::NotFound => Err(ApiError::not_found()),
-        IdentityRemoved::NotAllowed => Err(fresh_proof_needed(state)?),
+        IdentityRemoved::NotAllowed => Err(crate::auth::fresh::security_refusal(state.messages())?.into()),
         IdentityRemoved::LastWayIn => Err(ways_in::identity_refusal(state.messages())?.into()),
     }
 }

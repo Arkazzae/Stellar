@@ -340,7 +340,7 @@ async fn set<const SECTION: bool>(
     let server = chosen.server()?;
     // Before any other refusal, as the first server's filter was, but after the
     // person is known to be a member and the body has been read.
-    super::require_fresh(&state, caller, server).await?;
+    crate::auth::fresh::require(&state, caller, Some(server)).await?;
     let messages = *state.messages();
     let (dto, announcement) = state
         .database()
@@ -427,7 +427,7 @@ async fn clear<const SECTION: bool>(
 ) -> ApiResult<Response> {
     // Before any other refusal, as the first server's filter was, but after the
     // person is known to be a member and the body has been read.
-    super::require_fresh(&state, caller, server).await?;
+    crate::auth::fresh::require(&state, caller, Some(server)).await?;
     let messages = *state.messages();
     let announcement = state
         .database()
@@ -492,7 +492,7 @@ async fn set_member<const SECTION: bool>(
     let server = chosen.server()?;
     // Before any other refusal, as the first server's filter was, but after the
     // person is known to be a member and the body has been read.
-    super::require_fresh(&state, caller, server).await?;
+    crate::auth::fresh::require(&state, caller, Some(server)).await?;
     let messages = *state.messages();
     let (dto, announcement) = state
         .database()
@@ -569,7 +569,7 @@ async fn clear_member<const SECTION: bool>(
 ) -> ApiResult<Response> {
     // Before any other refusal, as the first server's filter was, but after the
     // person is known to be a member and the body has been read.
-    super::require_fresh(&state, caller, server).await?;
+    crate::auth::fresh::require(&state, caller, Some(server)).await?;
     let messages = *state.messages();
     let announcement = state
         .database()

@@ -84,12 +84,3 @@ pub fn backup_missing(state: &AppState) -> ApiError {
 pub fn password_incorrect(state: &AppState) -> ApiError {
     coded(state, StatusCode::FORBIDDEN, PASSWORD_INCORRECT, MessageKey::EncryptionPasswordIncorrect)
 }
-
-/// The refusal of a change for want of a fresh proof, as the route's guard
-/// answers it.
-pub fn fresh_proof_needed(state: &AppState) -> ApiError {
-    match crate::auth::fresh::refusal(state.messages()) {
-        Ok(problem) => problem.into(),
-        Err(missing) => missing.into(),
-    }
-}

@@ -82,7 +82,7 @@ async fn guarded<T>(
         .read(move |db| fresh::has_fresh_second_step(db, caller.user, Some(caller.session), Timestamp::now()))
         .await?;
     if !fresh {
-        return Err(problems::fresh_proof_needed(state));
+        return Err(fresh::refusal(state.messages())?.into());
     }
     request.ok_or_else(ApiError::bad_request)
 }
@@ -334,7 +334,7 @@ pub async fn replace_backup(
             password::wrong_password_wait().await;
             Err(problems::password_incorrect(&state))
         }
-        Replaced::FreshProofNeeded => Err(problems::fresh_proof_needed(&state)),
+        Replaced::FreshProofNeeded => Err(fresh::refusal(state.messages())?.into()),
         Replaced::KeyMissing => Err(problems::account_key_missing(&state)),
         Replaced::KeyChanged(key_id) => Err(Refusal::new(
             &state,
@@ -454,7 +454,7 @@ pub async fn reset(
             password::wrong_password_wait().await;
             Err(problems::password_incorrect(&state))
         }
-        Resetting::FreshProofNeeded => Err(problems::fresh_proof_needed(&state)),
+        Resetting::FreshProofNeeded => Err(fresh::refusal(state.messages())?.into()),
         Resetting::KeyMissing => Err(problems::account_key_missing(&state)),
         Resetting::Done { answer, changes } => {
             let told = announce::keys_changed(&state, changes, caller.user).await?;
