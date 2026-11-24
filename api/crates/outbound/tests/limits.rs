@@ -410,10 +410,7 @@ async fn a_head_that_never_ends_is_cut_off() {
         .err()
         .unwrap();
 
-    assert!(
-        error.is_too_large() || matches!(error, Error::Protocol(_)),
-        "{error}"
-    );
+    assert!(error.is_too_large(), "{error}");
     assert!(clock.elapsed() < Duration::from_secs(5));
 }
 
@@ -670,4 +667,55 @@ async fn a_second_address_is_tried_when_the_first_refuses() {
         .unwrap();
 
     assert_eq!(answer.body.as_ref(), b"ok");
+}
+
+#[tokio::test]
+async fn the_previewers_recipe_refuses_an_announced_page_and_truncates_a_streamed_one() {
+    // One request, one ceiling above the cap: the caller looks at the
+    // announced length, then reads at most the cap.
+    const CAP: usize = 1024;
+    let mut page = b"<meta property=\"og:title\" content=\"Streamed\">".to_vec();
+    page.extend(vec![b' '; 4096]);
+    let announced = {
+        let page = page.clone();
+        Server::plain(handler(move |mut conn| {
+            let page = page.clone();
+            async move { conn.ok("text/html", &page).await }
+        }))
+        .await
+    };
+    let streamed = {
+        let page = page.clone();
+        Server::plain(handler(move |mut conn| {
+            let page = page.clone();
+            async move {
+                conn.write(
+                    b"HTTP/1.1 200 OK\r\nContent-Type: text/html\r\nConnection: close\r\n\r\n",
+                )
+                .await;
+                conn.write(&page).await;
+            }
+        }))
+        .await
+    };
+    let read = |url: String| async move {
+        let mut response = Client::new()
+            .send(local(&url).max_response_bytes(CAP as u64 * 16))
+            .await
+            .unwrap();
+        let announced: Option<usize> = response
+            .headers
+            .get(http::header::CONTENT_LENGTH)
+            .and_then(|value| value.to_str().ok())
+            .and_then(|value| value.parse().ok());
+        if announced.is_some_and(|length| length > CAP) {
+            return None;
+        }
+        Some(response.body.read_up_to(CAP).await.unwrap().0)
+    };
+
+    assert!(read(announced.url("/")).await.is_none());
+    let start = read(streamed.url("/")).await.unwrap();
+    assert_eq!(start.len(), CAP);
+    assert!(start.starts_with(b"<meta property"));
 }
