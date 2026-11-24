@@ -2,3 +2,4 @@
 crates/server/src/groups.list.rs merge=union
 crates/server/tests/api/modules.list.rs merge=union
 crates/server/src/workers.list.rs merge=union
+crates/server/src/realtime/methods.list.rs merge=union

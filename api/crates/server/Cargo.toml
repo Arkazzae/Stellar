@@ -15,6 +15,7 @@ path = "src/main.rs"
 
 [dependencies]
 stellarr-mail = { path = "../mail" }
+stellarr-hub = { path = "../hub" }
 stellarr-messages = { path = "../messages" }
 stellarr-outbound = { path = "../outbound" }
 stellarr-smtp = { path = "../smtp" }
@@ -27,7 +28,7 @@ http-body-util = { workspace = true }
 rusqlite = { workspace = true }
 rustls = { workspace = true, features = ["aws-lc-rs", "std", "tls12"] }
 serde = { workspace = true }
-serde_json = { workspace = true }
+serde_json = { workspace = true, features = ["raw_value"] }
 tokio = { workspace = true, features = ["rt-multi-thread", "macros", "net", "sync", "time", "signal"] }
 tracing = { workspace = true }
 tracing-subscriber = { workspace = true, features = ["env-filter"] }
@@ -36,6 +37,7 @@ tracing-subscriber = { workspace = true, features = ["env-filter"] }
 workspace = true
 
 [dev-dependencies]
+stellarr-websocket = { path = "../websocket" }
 http = { workspace = true }
 hyper = { workspace = true, features = ["client", "http1"] }
 hyper-util = { workspace = true, features = ["tokio"] }
