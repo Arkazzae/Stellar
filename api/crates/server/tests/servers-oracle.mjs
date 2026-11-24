@@ -25,6 +25,7 @@ const { values: args, positionals } = parseArgs({
     state: { type: "string" },
     out: { type: "string" },
     public: { type: "string" },
+    cookies: { type: "string" },
   },
 });
 const mode = positionals[0];
@@ -573,5 +574,59 @@ async function probe() {
   process.exit(0);
 }
 
+// ---------------------------------------------------------------------------
+// The second step: sessions made before the database is edited so that the
+// accounts have one, and asked afterwards.
+
+async function staleLogin() {
+  const people = ["maya", "kim", "ilya", "ada"];
+  const jars = {};
+  for (const name of people) {
+    const person = await new Person(name).login();
+    jars[name] = { id: person.id, cookies: [...person.cookies] };
+  }
+  writeFileSync(args.out, JSON.stringify(jars));
+}
+
+async function staleAsk() {
+  state = JSON.parse(readFileSync(args.state, "utf8"));
+  nameIds();
+  const jars = JSON.parse(readFileSync(args.cookies, "utf8"));
+  const who = {};
+  for (const [name, jar] of Object.entries(jars)) {
+    who[name] = new Person(name);
+    who[name].id = jar.id;
+    who[name].cookies = new Map(jar.cookies);
+  }
+  const s = state.servers;
+  const P = (name) => state.people[name];
+  const ask = async (label, person, method, path, options) => {
+    const response = await who[person].send(method, path, options);
+    out(`## ${label}`);
+    out(describe(response));
+  };
+  const transfer = (label, person, body, server, extra = {}) => ask(`transfer: ${label}`, person, "POST", "/api/admin/server/transfer", { body, server, ...extra });
+  await ask("session is still good", "kim", "GET", "/api/servers", { server: null });
+  await transfer("stale owner", "kim", { userId: P("ilya") }, s.handover);
+  await ask("delete: stale owner", "kim", "DELETE", "/api/admin/server", { server: s.handover });
+  await transfer("stale owner, to herself", "kim", { userId: P("kim") }, s.handover);
+  await transfer("stale owner, nobody", "kim", {}, s.handover);
+  await transfer("stale owner, broken body", "kim", undefined, s.handover, { raw: "{", type: "application/json" });
+  await transfer("stale owner, no body", "kim", undefined, s.handover, { raw: "", type: "application/json" });
+  await transfer("stale member, not the owner", "ilya", { userId: P("ilya") }, s.handover);
+  await ask("delete: stale member, not the owner", "ilya", "DELETE", "/api/admin/server", { server: s.handover });
+  await transfer("stale non-member", "kim", { userId: P("kim") }, s.orbit);
+  await ask("delete: stale non-member", "kim", "DELETE", "/api/admin/server", { server: s.orbit });
+  await ask("delete: stale, instance server", "kim", "DELETE", "/api/admin/server", { server: (await who.kim.get("/api/servers", { server: null })).json[0].id });
+  await transfer("fresh owner, to herself", "maya", { userId: P("maya") }, s.orbit);
+  await transfer("fresh owner", "maya", { userId: P("joe") }, s.orbit);
+  await ask("delete: no second step, not the owner", "ada", "DELETE", "/api/admin/server", { server: s.open });
+  await transfer("no second step, owner of nothing", "ada", { userId: P("ada") }, s.open);
+  await ask("delete: stale owner after the others", "kim", "DELETE", "/api/admin/server", { server: s.doomed });
+  writeFileSync(args.out, lines.join("\n") + "\n");
+}
+
 if (mode === "seed") await seed();
+if (mode === "stale-login") await staleLogin();
+if (mode === "stale-ask") await staleAsk();
 if (mode === "probe") await probe();

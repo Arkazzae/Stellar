@@ -70,4 +70,41 @@ docker stop -t 20 "$container" >/dev/null
 docker cp "$container:/tmp/data/stellarr.db" "$work/after-first.db"
 echo "== databases"
 python3 "$here/servers-tables.py" "$work/after-first.db" "$work/rust/stellarr.db" "$work/seeded.db"
+
+# The second step: accounts that have one, a session that passed it lately and
+# sessions that did not, on fresh copies of the seeded file.
+echo "== second step"
+restore_oracle() { docker stop -t 20 "$container" >/dev/null; docker cp "$1" "$container:/tmp/data/stellarr.db"; docker start "$container" >/dev/null; ready "$oracle"; }
+start_rust() {
+  [ -n "$pid" ] && { kill "$pid" 2>/dev/null; wait "$pid" 2>/dev/null || true; }
+  : > "$work/rust/log.txt"
+  env ASPNETCORE_ENVIRONMENT=Production Rtc__TurnSharedSecret=x STELLARR_DATA_ROOT="$work/rust" \
+    "ConnectionStrings__Database=Data Source=$work/rust/stellarr.db" ASPNETCORE_URLS=http://127.0.0.1:0 \
+    RateLimiting__AuthWrite__PermitLimit=500 RateLimiting__Login__PermitLimit=500 \
+    "Operations__PublicUrl=http://127.0.0.1:$port" "$binary" > "$work/rust/log.txt" 2>&1 &
+  pid=$!
+  for _ in $(seq 1 50); do grep -q 'Now listening on' "$work/rust/log.txt" && break; sleep 0.2; done
+  rust=http://127.0.0.1:$(sed -n 's/.*listening on: http:\/\/127.0.0.1:\([0-9]*\).*/\1/p' "$work/rust/log.txt")
+  ready "$rust"
+}
+edit() { # a database file: maya passed the second step a minute ago; kim, ilya and ada's sessions did not (ada has none)
+  sqlite3 "$1" "
+    INSERT INTO MfaMethods (Id, UserId, Type, Name, CreatedAt, ConfirmedAt)
+      SELECT upper(hex(randomblob(4))) || '-0000-4000-8000-' || upper(hex(randomblob(6))), Id, 'totp', 'Phone', datetime('now'), datetime('now')
+      FROM Users WHERE Username IN ('maya', 'kim', 'ilya');
+    UPDATE UserSessions SET MfaCompletedAt = strftime('%Y-%m-%d %H:%M:%f', 'now', '-60 seconds') WHERE UserId = (SELECT Id FROM Users WHERE Username = 'maya');
+    UPDATE UserSessions SET MfaCompletedAt = NULL WHERE UserId IN (SELECT Id FROM Users WHERE Username IN ('kim', 'ilya'));"
+}
+cp "$work/seeded.db" "$work/stale-oracle.db"; cp "$work/seeded.db" "$work/rust/stellarr.db"
+restore_oracle "$work/stale-oracle.db"; start_rust
+node "$here/servers-oracle.mjs" stale-login --base "$oracle" --out "$work/jar-first.json"
+node "$here/servers-oracle.mjs" stale-login --base "$rust" --out "$work/jar-this.json"
+docker stop -t 20 "$container" >/dev/null; docker cp "$container:/tmp/data/stellarr.db" "$work/stale-oracle.db"
+kill "$pid"; wait "$pid" 2>/dev/null || true; pid=
+edit "$work/stale-oracle.db"; edit "$work/rust/stellarr.db"
+docker cp "$work/stale-oracle.db" "$container:/tmp/data/stellarr.db"; docker start "$container" >/dev/null; ready "$oracle"; start_rust
+node "$here/servers-oracle.mjs" stale-ask --base "$oracle" --state "$work/state.json" --cookies "$work/jar-first.json" --out "$work/stale-first.txt" --public "http://127.0.0.1:$port"
+node "$here/servers-oracle.mjs" stale-ask --base "$rust" --state "$work/state.json" --cookies "$work/jar-this.json" --out "$work/stale-this.txt" --public "http://127.0.0.1:$port"
+diff "$work/stale-first.txt" "$work/stale-this.txt" && echo "the second-step transcripts are the same"
+docker stop -t 20 "$container" >/dev/null
 echo "work: $work"
