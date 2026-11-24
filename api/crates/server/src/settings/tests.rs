@@ -614,3 +614,91 @@ fn web_push_is_off_until_it_is_asked_for_and_never_stops_the_start() {
     assert!(!odd.push.enabled);
     assert!(!format!("{:?}", on.push).contains("priv"));
 }
+
+#[test]
+fn backups_start_as_the_documentation_promises_and_refuse_values_out_of_range() {
+    let settings = production(&[]).unwrap();
+    assert!(settings.backups.enabled);
+    assert_eq!(settings.backups.interval_hours, 24);
+    assert_eq!(settings.backups.retry_minutes, 15);
+    assert_eq!(settings.backups.initial_delay_minutes, 5);
+    let development = Settings::load(&env(&[("ASPNETCORE_ENVIRONMENT", "Development")])).unwrap();
+    assert!(!development.backups.enabled);
+
+    for (name, bad) in [
+        ("STELLARR_BACKUP_INTERVAL_HOURS", "0"),
+        ("STELLARR_BACKUP_INTERVAL_HOURS", "8761"),
+        ("STELLARR_BACKUP_RETRY_MINUTES", "1441"),
+        ("STELLARR_BACKUP_INITIAL_DELAY_MINUTES", "-1"),
+        ("STELLARR_BACKUP_INITIAL_DELAY_MINUTES", "soon"),
+    ] {
+        assert!(production(&[(name, bad)]).is_err(), "{name}={bad}");
+    }
+    let edge = production(&[
+        ("STELLARR_BACKUP_INTERVAL_HOURS", "8760"),
+        ("STELLARR_BACKUP_INITIAL_DELAY_MINUTES", "0"),
+    ])
+    .unwrap();
+    assert_eq!(edge.backups.interval_hours, 8760);
+    assert_eq!(edge.backups.initial_delay_minutes, 0);
+}
+
+#[test]
+fn an_enabled_offsite_destination_has_to_be_possible_before_the_start() {
+    assert!(!production(&[]).unwrap().cloudflare_r2.enabled);
+    let enabled = [("STELLARR_CLOUDFLARE_R2_ENABLED", "true")];
+    assert!(production(&enabled).is_err());
+    let good = [
+        ("STELLARR_CLOUDFLARE_R2_ENABLED", "true"),
+        (
+            "STELLARR_CLOUDFLARE_R2_ENDPOINT",
+            "https://account.r2.example",
+        ),
+        ("STELLARR_CLOUDFLARE_R2_BUCKET", "backups"),
+    ];
+    let settings = production(&good).unwrap().cloudflare_r2;
+    assert_eq!(settings.region, "auto");
+    assert_eq!(settings.prefix, "stellarr");
+    for (name, bad) in [
+        (
+            "STELLARR_CLOUDFLARE_R2_ENDPOINT",
+            "http://account.r2.example",
+        ),
+        (
+            "STELLARR_CLOUDFLARE_R2_ENDPOINT",
+            "https://user@account.r2.example",
+        ),
+        (
+            "STELLARR_CLOUDFLARE_R2_ENDPOINT",
+            "https://account.r2.example/?x=1",
+        ),
+        ("STELLARR_CLOUDFLARE_R2_PREFIX", "a/../b"),
+        ("STELLARR_CLOUDFLARE_R2_PREFIX", "/a"),
+        ("STELLARR_CLOUDFLARE_R2_MODE", "ftp"),
+        ("STELLARR_CLOUDFLARE_R2_BUCKET", " "),
+    ] {
+        let mut pairs: Vec<_> = good.iter().copied().filter(|(n, _)| *n != name).collect();
+        pairs.push((name, bad));
+        assert!(production(&pairs).is_err(), "{name}={bad}");
+    }
+    // A relay needs no bucket.
+    let relay = production(&[
+        ("STELLARR_CLOUDFLARE_R2_ENABLED", "true"),
+        ("STELLARR_CLOUDFLARE_R2_MODE", "worker"),
+        ("STELLARR_CLOUDFLARE_R2_ENDPOINT", "https://relay.example"),
+    ]);
+    assert!(relay.is_ok());
+}
+
+#[test]
+fn maintenance_limits_are_clamped_where_the_first_server_clamped_them() {
+    let settings = production(&[
+        ("Maintenance__BatchSize", "5000"),
+        ("Maintenance__MessageChangeRetentionDays", "1"),
+    ])
+    .unwrap()
+    .maintenance;
+    assert_eq!(settings.batch(), 1000);
+    assert_eq!(settings.journal_days(), 7);
+    assert!(settings.enabled);
+}

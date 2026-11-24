@@ -11,6 +11,7 @@
 //! section's `load`. A section the API does not use yet needs no struct: its
 //! defaults can already be in the table.
 
+mod backups;
 mod config;
 mod defaults;
 mod objects;
@@ -30,6 +31,10 @@ use stellarr_messages::{Language, Messages};
 
 use crate::values::Id;
 
+pub use backups::{
+    BackupSettings, CloudflareR2Settings, MaintenanceSettings, R2_MODE_S3, R2_MODE_WORKER,
+    is_known_r2_mode, is_plain_https_url,
+};
 pub use config::Config;
 pub use oidc::OidcSettings;
 pub use storage::{Provider, StorageSettings, UploadSettings};
@@ -725,6 +730,9 @@ pub struct Settings {
     pub discovery: DiscoverySettings,
     pub rate_limits: RateLimitSettings,
     pub storage: StorageSettings,
+    pub backups: BackupSettings,
+    pub cloudflare_r2: CloudflareR2Settings,
+    pub maintenance: MaintenanceSettings,
     pub uploads: UploadSettings,
     pub log: LogSettings,
     /// The identity providers people can sign in through.
@@ -802,6 +810,9 @@ impl Settings {
             discovery: DiscoverySettings::load(config)?,
             rate_limits: RateLimitSettings::load(config, &environment)?,
             storage: StorageSettings::load(config)?,
+            backups: BackupSettings::load(config)?,
+            cloudflare_r2: CloudflareR2Settings::load(config)?,
+            maintenance: MaintenanceSettings::load(config)?,
             uploads: UploadSettings::load(config)?,
             log: LogSettings::load(config),
             oidc: OidcSettings::load(config)?,
