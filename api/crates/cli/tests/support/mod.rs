@@ -19,7 +19,11 @@ use stellarr_api::database::Database;
 use stellarr_api::seal::Sealer;
 use stellarr_api::settings::DatabaseSettings;
 use stellarr_api::values::{Id, Timestamp};
+use stellarr_cli::terminal::PromptFailure;
 use stellarr_cli::{Io, run};
+
+/// What stands in for the hidden prompt of a terminal.
+pub type Prompt = Box<dyn FnMut() -> Result<String, PromptFailure>>;
 
 pub struct TempDir(PathBuf);
 
@@ -250,12 +254,44 @@ impl Instance {
         )
     }
 
+    /// At a terminal that answers the hidden prompt with `prompt`; `cancelled`
+    /// is the flag Ctrl+C sets.
+    pub fn run_prompted(&self, args: &[&str], prompt: Prompt, cancelled: Arc<AtomicBool>) -> Run {
+        self.run_full(
+            args,
+            Box::new(Cursor::new(Vec::new())),
+            true,
+            &[],
+            Some(prompt),
+            cancelled,
+        )
+    }
+
     fn run_io(
         &self,
         args: &[&str],
         input: Box<dyn std::io::BufRead>,
         interactive: bool,
         environment: &[(&str, &str)],
+    ) -> Run {
+        self.run_full(
+            args,
+            input,
+            interactive,
+            environment,
+            None,
+            Arc::new(AtomicBool::new(false)),
+        )
+    }
+
+    fn run_full(
+        &self,
+        args: &[&str],
+        input: Box<dyn std::io::BufRead>,
+        interactive: bool,
+        environment: &[(&str, &str)],
+        prompt: Option<Prompt>,
+        cancelled: Arc<AtomicBool>,
     ) -> Run {
         let mut words = vec!["--data-root".to_string(), self.root().display().to_string()];
         words.extend(args.iter().map(|word| word.to_string()));
@@ -266,7 +302,7 @@ impl Instance {
             output: Box::new(output.clone()),
             error: Box::new(error.clone()),
             interactive,
-            secret_prompt: None,
+            secret_prompt: prompt,
         };
         // The environment of a run is what it is given, and a test names the
         // environment the host runs in unless it names another.
@@ -276,7 +312,7 @@ impl Instance {
             variables.retain(|(have, _)| have != name);
             variables.push((name.to_string(), value.to_string()));
         }
-        let exit = run(&words, io, variables, Arc::new(AtomicBool::new(false)));
+        let exit = run(&words, io, variables, cancelled);
         let text = |sink: &Sink| String::from_utf8_lossy(&sink.0.lock().unwrap()).into_owned();
         Run {
             exit,
