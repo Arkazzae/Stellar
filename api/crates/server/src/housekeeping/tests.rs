@@ -992,3 +992,29 @@ async fn a_run_comes_after_the_first_wait_and_then_at_every_interval_and_a_faile
     settle().await;
     assert_eq!(runs.load(Ordering::SeqCst), 3);
 }
+
+#[tokio::test]
+async fn the_delivery_rows_are_the_dispatchers_and_a_run_never_touches_them() {
+    // The first server's housekeeping did nothing to delivery rows: its
+    // dispatcher prunes the finished ones itself after thirty days, and this
+    // server's does the same. A leased row is being sent, and a run that took
+    // it would take it from under the sender.
+    let place = Place::new(&[]);
+    let connection = place.raw();
+    let long_ago = ago(400 * DAY);
+    for (status, lease) in [
+        ("sent", None),
+        ("pending", Some(now().plus(Duration::from_secs(500)))),
+        ("pending", None),
+    ] {
+        connection
+            .execute(
+                "INSERT INTO \"NotificationDeliveries\" (\"Id\", \"SourceMessageId\", \"RecipientId\", \"EventKind\", \"Channel\", \"DestinationKey\", \"CreatedAt\", \"ExpiresAt\", \"Attempts\", \"NextAttemptAt\", \"Status\", \"LeaseId\", \"LeaseUntil\")
+                 VALUES (?1, ?1, ?1, 'mention', 'push', ?1, ?2, ?2, 1, ?2, ?3, ?4, ?5)",
+                params![Id::random(), long_ago, status, lease.map(|_| Id::random()), lease],
+            )
+            .unwrap();
+    }
+    place.run().await;
+    assert_eq!(place.count("NotificationDeliveries"), 3);
+}
