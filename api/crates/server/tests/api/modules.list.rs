@@ -10,6 +10,7 @@ mod realtime;
 mod registration;
 mod releases;
 mod second_step;
+mod servers;
 mod sign_in;
 mod workers;
 mod streaming;
