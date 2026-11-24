@@ -10,7 +10,9 @@ use super::ceremony::*;
 use super::ceremony::{PasswordCheck, check_password, may_change_security};
 use super::email_codes::{ENROLLMENT, LOGIN};
 use super::email_send::Sent;
-use super::fixtures::{add_challenge, add_method, add_session, add_user, preauth_of};
+use super::fixtures::{
+    add_challenge, add_method, add_pending_method, add_session, add_user, events_of, preauth_of,
+};
 use super::flow::{
     Context, PURPOSE_ENROLLMENT, PURPOSE_MFA, PURPOSE_RECOVERY, PURPOSE_REVERIFY, StoredChallenge,
 };
@@ -2137,5 +2139,90 @@ async fn an_instance_without_passkeys_says_so_only_after_the_challenge_and_the_n
     assert_eq!(
         world.count("SELECT SUM(\"Attempts\") FROM \"AuthChallenges\""),
         0
+    );
+}
+
+#[tokio::test]
+async fn a_change_of_address_revokes_the_old_mail_methods_and_says_so_without_alerting() {
+    let world = World::new();
+    let user = world.user(Some("maya@example.test"));
+    let other = world.user(Some("lee@example.test"));
+    let old = add_method(&world.db(), user, EMAIL, Some("OLD@EXAMPLE.TEST"));
+    let pending = add_pending_method(&world.db(), user, EMAIL);
+    world
+        .db()
+        .execute(
+            "UPDATE \"MfaMethods\" SET \"EmailAddress\" = 'OLDER@EXAMPLE.TEST' WHERE \"Id\" = ?1",
+            [pending],
+        )
+        .unwrap();
+    let kept = add_method(&world.db(), user, EMAIL, Some("NEW@EXAMPLE.TEST"));
+    let app = add_method(&world.db(), user, "totp", None);
+    let theirs = add_method(&world.db(), other, EMAIL, Some("OLD@EXAMPLE.TEST"));
+    let revoked_already = add_method(&world.db(), user, EMAIL, Some("GONE@EXAMPLE.TEST"));
+    world
+        .db()
+        .execute(
+            "UPDATE \"MfaMethods\" SET \"RevokedAt\" = ?2 WHERE \"Id\" = ?1",
+            params![revoked_already, Timestamp::now()],
+        )
+        .unwrap();
+    // An address the provider vouched for, so that an alert would be possible.
+    world
+        .db()
+        .execute(
+            "UPDATE \"Users\" SET \"ProviderVerifiedEmail\" = \"NormalizedEmail\"",
+            [],
+        )
+        .unwrap();
+    let (challenge, _) = world.challenge(user, PURPOSE_MFA);
+    let now = Timestamp::now();
+    world
+        .db()
+        .execute(
+            "INSERT INTO \"EmailOtpCodes\" VALUES (?1, ?2, ?3, ?4, 'login', 'a', 'x', 0, 5, ?5, ?5, NULL, ?5)",
+            params![Id::random(), user, old, challenge.id, now],
+        )
+        .unwrap();
+    let mut connection = world.db();
+    let tx = connection.transaction().unwrap();
+
+    let revoked = email_address_changed(&tx, &CONTEXT, user, "NEW@EXAMPLE.TEST", now).unwrap();
+    tx.commit().unwrap();
+
+    assert_eq!(revoked, vec![old, pending]);
+    let live = |method: Id| -> bool {
+        world
+            .db()
+            .query_row(
+                "SELECT \"RevokedAt\" IS NULL FROM \"MfaMethods\" WHERE \"Id\" = ?1",
+                [method],
+                |r| r.get(0),
+            )
+            .unwrap()
+    };
+    assert!(!live(old) && !live(pending));
+    assert!(live(kept) && live(app) && live(theirs));
+    assert_eq!(
+        events_of(&world.db(), user, "method-removed"),
+        vec!["email changed", "email changed"]
+    );
+    assert_eq!(
+        world.count("SELECT COUNT(*) FROM \"SecurityNotifications\""),
+        0
+    );
+    assert_eq!(
+        world.count("SELECT COUNT(*) FROM \"EmailOtpCodes\" WHERE \"ConsumedAt\" IS NULL"),
+        0
+    );
+    // Nothing about sessions, devices or the account's version.
+    assert_eq!(world.count("SELECT \"SessionVersion\" FROM \"Users\" WHERE \"Id\" = (SELECT \"UserId\" FROM \"MfaMethods\" WHERE \"Id\" = (SELECT \"Id\" FROM \"MfaMethods\" LIMIT 1))"), 1);
+    // A second call finds nothing more to do.
+    let mut connection = world.db();
+    let tx = connection.transaction().unwrap();
+    assert!(
+        email_address_changed(&tx, &CONTEXT, user, "NEW@EXAMPLE.TEST", now)
+            .unwrap()
+            .is_empty()
     );
 }
