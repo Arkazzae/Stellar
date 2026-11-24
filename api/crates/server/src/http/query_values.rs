@@ -316,3 +316,11 @@ mod tests {
         assert!(body.contains("\"errors\":{\"limit\":["), "{body}");
     }
 }
+
+/// Default and maximum page sizes for lists that take a `limit`.
+pub(crate) const DEFAULT_PAGE_SIZE: i32 = 50;
+pub(crate) const MAX_PAGE_SIZE: i32 = 100;
+
+pub(crate) fn valid_page_size(limit: i32) -> bool {
+    (1..=MAX_PAGE_SIZE).contains(&limit)
+}
