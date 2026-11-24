@@ -10,6 +10,7 @@ mod direct;
 mod desktop_login;
 mod encryption;
 mod discord_import;
+mod discord_import_proof;
 mod discord_placeholders;
 mod health;
 mod identity_providers;

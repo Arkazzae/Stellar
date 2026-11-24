@@ -1,0 +1,47 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <!-- Drives the first server's own writer, from its published assembly, with
+       the same generated Discord server the Rust runner reads. Built and run
+       inside the development image by ../compare.sh; STELLARR_FIRST_SERVER is
+       the folder the first server was published to. -->
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net10.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <SatelliteResourceLanguages>en</SatelliteResourceLanguages>
+  </PropertyGroup>
+  <ItemGroup>
+    <FrameworkReference Include="Microsoft.AspNetCore.App" />
+    <Reference Include="Stellarr.Api">
+      <HintPath>$(STELLARR_FIRST_SERVER)/Stellarr.Api.dll</HintPath>
+      <Private>true</Private>
+    </Reference>
+    <Reference Include="Microsoft.EntityFrameworkCore">
+      <HintPath>$(STELLARR_FIRST_SERVER)/Microsoft.EntityFrameworkCore.dll</HintPath>
+    </Reference>
+    <Reference Include="Microsoft.EntityFrameworkCore.Relational">
+      <HintPath>$(STELLARR_FIRST_SERVER)/Microsoft.EntityFrameworkCore.Relational.dll</HintPath>
+    </Reference>
+    <Reference Include="Microsoft.EntityFrameworkCore.Sqlite">
+      <HintPath>$(STELLARR_FIRST_SERVER)/Microsoft.EntityFrameworkCore.Sqlite.dll</HintPath>
+    </Reference>
+    <Reference Include="Microsoft.EntityFrameworkCore.Abstractions">
+      <HintPath>$(STELLARR_FIRST_SERVER)/Microsoft.EntityFrameworkCore.Abstractions.dll</HintPath>
+    </Reference>
+    <Reference Include="Microsoft.Data.Sqlite">
+      <HintPath>$(STELLARR_FIRST_SERVER)/Microsoft.Data.Sqlite.dll</HintPath>
+    </Reference>
+    <Reference Include="SQLitePCLRaw.core">
+      <HintPath>$(STELLARR_FIRST_SERVER)/SQLitePCLRaw.core.dll</HintPath>
+    </Reference>
+    <Reference Include="SQLitePCLRaw.batteries_v2">
+      <HintPath>$(STELLARR_FIRST_SERVER)/SQLitePCLRaw.batteries_v2.dll</HintPath>
+    </Reference>
+    <Reference Include="SQLitePCLRaw.provider.e_sqlite3">
+      <HintPath>$(STELLARR_FIRST_SERVER)/SQLitePCLRaw.provider.e_sqlite3.dll</HintPath>
+    </Reference>
+    <!-- The native SQLite, where the runtime looks for it. -->
+    <None Include="$(STELLARR_FIRST_SERVER)/runtimes/$(NETCoreSdkRuntimeIdentifier)/native/libe_sqlite3.so" Link="libe_sqlite3.so"
+          CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+</Project>
