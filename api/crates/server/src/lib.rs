@@ -6,11 +6,13 @@
 //!   problems are written.
 //! - [`events`]: what handlers tell the realtime hub.
 //! - [`state`]: what every handler can reach.
+//! - [`background`]: work that runs beside the requests, listed in [`workers`].
 //! - one folder per group of endpoints, listed in [`groups`].
 //!
 //! `api/README.md` says how to add a group of endpoints and how to test it.
 
 pub mod auth;
+pub mod background;
 pub mod database;
 pub mod encoding;
 pub mod events;
@@ -60,6 +62,24 @@ macro_rules! groups {
 // added on different branches merge without a conflict.
 include!("groups.list.rs");
 
+/// The background workers, joined: each name is a module that has one
+/// function, `pub fn workers() -> Vec<Worker>`. To add one, write the path of
+/// its module on a line of `workers.list.rs`; that is the only shared line it
+/// touches. The module itself is declared where it lives.
+macro_rules! workers {
+    ($($module:path),* $(,)?) => {
+        /// The workers of every module of the API.
+        pub fn workers() -> Vec<$crate::background::Worker> {
+            #[allow(unused_mut)]
+            let mut all = Vec::new();
+            $(all.extend($module::workers());)*
+            all
+        }
+    };
+}
+
+include!("workers.list.rs");
+
 /// How long a stopping server waits for the requests in flight before it
 /// gives up on them. The container's manager waits a little longer.
 const SHUTDOWN_GRACE: Duration = Duration::from_secs(30);
@@ -98,6 +118,13 @@ pub async fn serve(
 pub struct Services {
     pub events: Option<Arc<dyn EventPublisher>>,
     pub presence: Option<Arc<dyn Presence>>,
+    /// The background workers to run. None by default, so that a server
+    /// started for a test has no timers of its own; [`run`] gives it
+    /// [`workers`].
+    pub workers: Vec<background::Worker>,
+    /// How long a stopping server waits for requests and workers; the
+    /// built-in grace when `None`.
+    pub shutdown_grace: Option<Duration>,
 }
 
 /// [`serve`] with the services of the process given.
@@ -138,6 +165,7 @@ pub async fn serve_with(
         (None, Some(path)) => Arc::new(EventFile::new(path.clone())),
         (None, None) => Arc::new(Unconnected),
     };
+    let grace = services.shutdown_grace.unwrap_or(SHUTDOWN_GRACE);
     let presence: Arc<dyn Presence> = services.presence.unwrap_or_else(|| Arc::new(Unconnected));
     let addresses = settings.listen.0.clone();
     let sealer = Sealer::load_or_create(&keys).map_err(|e| StartError(e.to_string()))?;
@@ -149,7 +177,7 @@ pub async fn serve_with(
         .into_iter()
         .fold(Endpoints::new(), Endpoints::merge)
         .into_parts();
-    let app = http::build(state, router, rules);
+    let app = http::build(state.clone(), router, rules);
 
     let mut listeners = Vec::new();
     for address in addresses {
@@ -163,6 +191,7 @@ pub async fn serve_with(
         .map(TcpListener::local_addr)
         .collect::<Result<_, _>>()
         .map_err(|e| fail("cannot read the listening address", &e))?;
+    let running = background::start(services.workers, &state);
     listening(&bound);
     for address in &bound {
         info!(target: "Stellarr.Api.Host", "Now listening on: http://{address}");
@@ -199,12 +228,12 @@ pub async fn serve_with(
         }
     }
     let _ = stop.send(true);
-    let drained = tokio::time::timeout(SHUTDOWN_GRACE, async {
+    let drained = tokio::time::timeout(grace, async {
         while servers.join_next().await.is_some() {}
-    })
-    .await;
+    });
+    let (drained, ()) = tokio::join!(drained, running.stop(grace));
     if drained.is_err() {
-        error!("requests were still running after {SHUTDOWN_GRACE:?}; they are dropped");
+        error!("requests were still running after {grace:?}; they are dropped");
     }
     result
 }
@@ -239,7 +268,11 @@ async fn issue_setup_code(state: &AppState) -> Result<(), StartError> {
 
 /// Runs the real API, with every group of endpoints, until SIGTERM or SIGINT.
 pub async fn run(settings: Settings) -> Result<(), StartError> {
-    serve(settings, groups(), |_| {}, shutdown_signal()).await
+    let services = Services {
+        workers: background::chosen(&settings, workers()),
+        ..Services::default()
+    };
+    serve_with(settings, groups(), services, |_| {}, shutdown_signal()).await
 }
 
 /// Resolves on SIGTERM or SIGINT.

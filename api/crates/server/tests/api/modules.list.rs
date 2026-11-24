@@ -5,3 +5,4 @@ mod oracle;
 mod pipeline;
 mod registration;
 mod sign_in;
+mod workers;

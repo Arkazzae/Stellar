@@ -281,6 +281,23 @@ fn a_permit_limit_is_held_at_one_or_more_and_testing_lifts_the_limits() {
 }
 
 #[test]
+fn the_workers_that_run_are_chosen_in_the_testing_environment_only() {
+    let testing = |extra: &[(&str, &str)]| {
+        let mut variables = vec![("ASPNETCORE_ENVIRONMENT", "Testing")];
+        variables.extend_from_slice(extra);
+        Settings::load(&env(&variables)).unwrap().testing_workers
+    };
+    assert_eq!(testing(&[]), Some(vec![]));
+    assert_eq!(
+        testing(&[("Testing__Workers", " mail, previews ,")]),
+        Some(vec!["mail".to_string(), "previews".to_string()])
+    );
+
+    let other = production(&[("Testing__Workers", "mail")]).unwrap();
+    assert_eq!(other.testing_workers, None);
+}
+
+#[test]
 fn the_event_log_is_honoured_in_the_testing_environment_only() {
     let testing = Settings::load(&env(&[
         ("ASPNETCORE_ENVIRONMENT", "Testing"),

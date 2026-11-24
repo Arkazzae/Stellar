@@ -1,3 +1,4 @@
 # Lists that every group adds a line to: keep both sides' lines on a merge.
 crates/server/src/groups.list.rs merge=union
 crates/server/tests/api/modules.list.rs merge=union
+crates/server/src/workers.list.rs merge=union
