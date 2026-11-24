@@ -1,14 +1,17 @@
-//! Reading a section as JSON and writing it back the way the first server
-//! did, so that the text kept (and measured against the limit) is the same.
+//! Reading a section as JSON and writing it back compactly.
 //!
 //! The text is parsed as strict JSON, with at most 64 levels of nesting, and
 //! written again compactly: members stay in the order they came in, repeated
 //! names stay, and a number keeps the digits it was written with. A string is
-//! written with every character that is not printable ASCII, and the
-//! characters `"&'+<>` and the backtick, as `\uXXXX` with capital digits, so
-//! that a character outside ASCII counts for six.
+//! written as the web client's own `JSON.stringify` writes it: letters outside
+//! ASCII stay as they are, and only the quote, the backslash and the control
+//! characters are escaped. What is kept is therefore as long as the client
+//! counts it.
 
-use crate::permissions::audit::string as quoted;
+/// A string as a JSON literal.
+fn quoted(text: &str) -> String {
+    serde_json::Value::String(text.to_string()).to_string()
+}
 
 /// How deep arrays and objects may lie in one another.
 const MAX_DEPTH: usize = 64;
@@ -312,12 +315,12 @@ mod tests {
     }
 
     #[test]
-    fn what_is_not_printable_ascii_is_written_as_an_escape() {
+    fn a_letter_outside_ascii_stays_a_letter_and_only_what_json_needs_is_escaped() {
         assert_eq!(
-            kept("{\"\u{e9}\":\"<a href='x'>&\u{1f680}\\n\\/\u{7f}\"}").as_deref(),
-            Some("{\"\\u00E9\":\"\\u003Ca href=\\u0027x\\u0027\\u003E\\u0026\\uD83D\\uDE80\\n/\\u007F\"}")
+            kept("{\"\u{e9}\":\"<a href='x'>&\u{1f680}\\n\\/\u{7f}\u{2028}\"}").as_deref(),
+            Some("{\"\u{e9}\":\"<a href='x'>&\u{1f680}\\n/\u{7f}\u{2028}\"}")
         );
-        assert_eq!(kept("{\"a\":\"\\u0041\\ud83d\\ude80\"}").as_deref(), Some("{\"a\":\"A\\uD83D\\uDE80\"}"));
+        assert_eq!(kept("{\"a\":\"\\u0041\\ud83d\\ude80\\u0001\"}").as_deref(), Some("{\"a\":\"A\u{1f680}\\u0001\"}"));
     }
 
     #[test]

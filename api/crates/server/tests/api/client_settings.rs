@@ -152,18 +152,18 @@ async fn only_a_json_object_is_stored() {
 }
 
 #[tokio::test]
-async fn what_is_kept_is_compact_and_in_the_first_servers_spelling() {
+async fn what_is_kept_is_compact_and_in_the_spelling_of_the_web_client() {
     let server = started(&[]).await;
     let maja = server.found("maja").await;
     for (sent, kept) in [
         (&br#"{ "b" : 1 ,
 "a":[ true , null , "x" ], "b": {} }"#[..], r#"{"b":1,"a":[true,null,"x"],"b":{}}"#),
         (&br#"{"n":[1.0,-0,1E5,2e+3,0.10,-1.5e-7]}"#[..], r#"{"n":[1.0,-0,1E5,2e+3,0.10,-1.5e-7]}"#),
-        ("{\"a\":\"é<a href='x'>&\\n\\t\\\"\\\\\\/\\u0041 \u{1f680} \u{7f} \u{2028}`+\"}".as_bytes(), r#"{"a":"\u00E9\u003Ca href=\u0027x\u0027\u003E\u0026\n\t\u0022\\/A \uD83D\uDE80 \u007F \u2028\u0060\u002B"}"#),
-        ("{\"é<\":1}".as_bytes(), r#"{"\u00E9\u003C":1}"#),
-        (&b"{\"a\":\"\\ud83d\\ude80\\u00e9\"}"[..], r#"{"a":"\uD83D\uDE80\u00E9"}"#),
-        (&b"\xff\xfe{\0\"\0a\0\"\0:\0\"\0\xe9\0\"\0}\0"[..], r#"{"a":"\u00E9"}"#),
-        (&b"{\"a\":\"\xff\xfe\"}"[..], r#"{"a":"\uFFFD\uFFFD"}"#),
+        ("{\"a\":\"é<a href='x'>&\\n\\t\\\"\\\\\\/\\u0041 \u{1f680} \u{7f} \u{2028}`+\"}".as_bytes(), "{\"a\":\"é<a href='x'>&\\n\\t\\\"\\\\/A \u{1f680} \u{7f} \u{2028}`+\"}"),
+        ("{\"é<\":1}".as_bytes(), "{\"é<\":1}"),
+        (&b"{\"a\":\"\\ud83d\\ude80\\u00e9\"}"[..], "{\"a\":\"\u{1f680}é\"}"),
+        (&b"\xff\xfe{\0\"\0a\0\"\0:\0\"\0\xe9\0\"\0}\0"[..], "{\"a\":\"é\"}"),
+        (&b"{\"a\":\"\xff\xfe\"}"[..], "{\"a\":\"\u{fffd}\u{fffd}\"}"),
     ] {
         let sent_text = String::from_utf8_lossy(sent).into_owned();
         assert_eq!(put(&maja, "appearance", sent).await.status, 204, "{sent_text}");
@@ -177,18 +177,22 @@ async fn a_section_may_be_eight_thousand_one_hundred_and_ninety_two_characters_o
     let maja = server.found("maja").await;
     let of = |filler: &str, times: usize| format!("{{\"a\":\"{}\"}}", filler.repeat(times));
 
-    // The limit counts what is kept: the escapes of a letter outside ASCII are six.
+    // The limit counts what is kept, in UTF-16 units as the web client counts
+    // them: a letter outside ASCII is one unit, one outside the plane is two.
     let at = put(&maja, "voice", of("x", 8192 - 8).as_bytes()).await;
     let over = put(&maja, "voice", of("x", 8192 - 7).as_bytes()).await;
-    let escapes_at = put(&maja, "voice", of("\u{e9}", (8192 - 8) / 6).as_bytes()).await;
-    let escapes_over = put(&maja, "voice", of("\u{e9}", (8192 - 8) / 6 + 1).as_bytes()).await;
+    let escapes_at = put(&maja, "voice", of("\u{e9}", 8192 - 8).as_bytes()).await;
+    let escapes_over = put(&maja, "voice", of("\u{e9}", 8192 - 7).as_bytes()).await;
+    let pairs_at = put(&maja, "voice", of("\u{1f680}", (8192 - 8) / 2).as_bytes()).await;
+    let pairs_over = put(&maja, "voice", of("\u{1f680}", (8192 - 8) / 2 + 1).as_bytes()).await;
     let padded = put(&maja, "appearance", format!("{{{}\"palette\": \"ember\"}}", " ".repeat(9000)).as_bytes()).await;
 
     assert_eq!((at.status.as_u16(), over.status.as_u16()), (204, 400));
     assert_eq!((escapes_at.status.as_u16(), escapes_over.status.as_u16()), (204, 400));
+    assert_eq!((pairs_at.status.as_u16(), pairs_over.status.as_u16()), (204, 400));
     assert_eq!(padded.status, 204, "whitespace does not count");
     assert_eq!(stored(&server, "AppearanceSettingsJson", "maja").as_deref(), Some("{\"palette\":\"ember\"}"));
-    assert_eq!(stored(&server, "VoiceSettingsJson", "maja").unwrap().len(), 8192);
+    assert_eq!(stored(&server, "VoiceSettingsJson", "maja").unwrap().encode_utf16().count(), 8192);
 }
 
 #[tokio::test]
@@ -234,7 +238,7 @@ async fn a_section_that_is_damaged_in_the_database_reads_as_never_saved() {
 
     let settings = read(&maja).await;
 
-    assert_eq!(settings.text(), "{\"appearance\":null,\"language\":null,\"keybinds\":null,\"voice\":{\"a\":1},\"privacy\":{\"\\u00E9\":1}}");
+    assert_eq!(settings.text(), "{\"appearance\":null,\"language\":null,\"keybinds\":null,\"voice\":{\"a\":1},\"privacy\":{\"é\":1}}");
 }
 
 #[tokio::test]

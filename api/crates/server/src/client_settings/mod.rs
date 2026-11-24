@@ -7,7 +7,8 @@
 //! Each section is replaced whole, so two devices saving different sections
 //! never overwrite each other. What is inside a section belongs to the client,
 //! which reads it back as it wrote it; the server keeps it as one compact JSON
-//! object of at most [`MAX_LENGTH`] characters and does not look inside.
+//! object of at most [`MAX_LENGTH`] UTF-16 units, which is how the web client
+//! counts the text it sends, and does not look inside.
 
 mod json;
 
@@ -148,5 +149,5 @@ async fn body_object(headers: &axum::http::HeaderMap, body: Body) -> Result<Opti
     if text.encode_utf16().count() > MAX_BODY_CHARACTERS {
         return Ok(None);
     }
-    Ok(json::object(&text).filter(|compact| compact.len() <= MAX_LENGTH))
+    Ok(json::object(&text).filter(|compact| compact.encode_utf16().count() <= MAX_LENGTH))
 }
