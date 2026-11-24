@@ -1056,3 +1056,29 @@ async fn a_seat_moved_to_another_room_while_its_session_is_being_created_gets_no
     let own = peer.open_media(rig.night).await;
     assert_ne!(own, "session-1");
 }
+
+#[tokio::test]
+async fn a_member_whose_membership_row_is_removed_under_a_seat_may_neither_signal_nor_play() {
+    let rig = Rig::start().await;
+    let (jonas, maja) = (rig.person("jonas").await, rig.person("maja").await);
+    let (mut peer, mut other) = (rig.connect(&jonas).await, rig.connect(&maja).await);
+    peer.join(rig.salon).await;
+    other.join(rig.salon).await;
+    // A sound of the server, so that the refusal is about the member and not the clip.
+    let sound = crate::voice_moderation::add_sound_for_tests(&rig);
+    peer.ok("SendVoiceSignal", json!([signal(rig.salon, "state", "{}", None)])).await;
+    peer.ok("PlaySoundboard", json!([rig.salon, sound])).await;
+    other.drain("VoiceSignal").await;
+
+    // Removed behind the application's back: the seat is still there.
+    rig.db()
+        .execute(
+            "DELETE FROM \"ServerMembers\" WHERE \"ServerId\" = ?1 AND \"UserId\" = ?2",
+            rusqlite::params![rig.server_id, Id::parse(&jonas.id).unwrap()],
+        )
+        .unwrap();
+
+    peer.refused("SendVoiceSignal", json!([signal(rig.salon, "state", "{}", None)]), "Invalid voice signal.").await;
+    peer.refused("PlaySoundboard", json!([rig.salon, sound]), "Unknown voice channel.").await;
+    assert!(other.drain("VoiceSignal").await.is_empty());
+}

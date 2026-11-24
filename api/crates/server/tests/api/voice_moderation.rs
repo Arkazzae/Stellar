@@ -308,6 +308,12 @@ fn add_sound(rig: &Rig, server: Id, name: &str, start: f64, end: f64, duration: 
     sound
 }
 
+/// A sound of the instance's server that anybody may play, for another test file.
+pub fn add_sound_for_tests(rig: &Rig) -> Id {
+    soundboard_rules(rig, true, false);
+    add_sound(rig, rig.server_id, "Ping", 0.0, 1.0, Some(1.0))
+}
+
 fn soundboard_rules(rig: &Rig, everyone_can_play: bool, rate_limited: bool) {
     rig.db()
         .execute(
