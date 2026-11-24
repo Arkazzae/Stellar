@@ -26,7 +26,7 @@ Hop into voice, stream your game in 4K 60 fps without paying for Nitro, spam the
 
 ### Easy to host, (over)engineered inside
 
-Easy setup is a core focus of Stellarr. Instead of wiring up Postgres, Redis, LiveKit, and five separate containers just to hang out with your friends, everything runs inside a single `amd64` / `arm64` Docker container (~120–150 MiB RAM at idle) backed by one folder (`/data/stellarr`), with a guided `/setup` flow and a built-in `/cockpit` panel for accounts, live logs, backups, and settings.
+Easy setup is a core focus of Stellarr. Instead of wiring up Postgres, Redis, LiveKit, and five separate containers just to hang out with your friends, everything runs inside a single `amd64` / `arm64` Docker container (80 MiB RAM at idle) backed by one folder (`/data/stellarr`), with a guided `/setup` flow and a built-in `/cockpit` panel for accounts, live logs, backups, and settings.
 
 Under the hood, the entire backend is written in Rust: a custom WebRTC media server built specifically for Stellarr, the chat API and WebSocket hub, and the container's own init supervisor, paired with SQLite, optional STUN/TURN, and a static web frontend. Backing up or moving your server is just copying one directory. See [Architecture](docs/architecture.md) if you want the full breakdown.
 
