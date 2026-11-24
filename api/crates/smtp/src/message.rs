@@ -199,7 +199,14 @@ fn multipart(
         body.extend_from_slice(b"\r\n");
     }
     body.extend_from_slice(format!("--{boundary}--").as_bytes());
-    let headers = format!("Content-Type: multipart/{subtype};\r\n boundary=\"{boundary}\"\r\n");
+    // A related part names the type of the part that starts it (RFC 2387).
+    let root = if subtype == "related" {
+        "; type=\"text/html\""
+    } else {
+        ""
+    };
+    let headers =
+        format!("Content-Type: multipart/{subtype}{root};\r\n boundary=\"{boundary}\"\r\n");
     Ok((headers, body))
 }
 
@@ -377,6 +384,41 @@ mod tests {
         assert!(wire(&m).ends_with("\r\n\r\nabc\r\n"));
         m.text = "abc \n".into();
         assert!(wire(&m).ends_with("quoted-printable\r\n\r\nabc=20\r\n"));
+    }
+
+    #[test]
+    fn every_id_the_application_makes_is_accepted() {
+        let guid = "0123456789abcdef0123456789abcdef";
+        for kind in [
+            "password-reset",
+            "email-change",
+            "delivery-test",
+            "email-code",
+            "security-event",
+            "activity-notification",
+        ] {
+            let mut m = sample();
+            m.message_id = format!("{kind}/{guid}@stellarr");
+            let text = wire(&m);
+            assert!(
+                text.contains(&format!("\r\nMessage-ID: <{kind}/{guid}@stellarr>\r\n")),
+                "{kind}"
+            );
+        }
+    }
+
+    #[test]
+    fn related_names_the_type_of_its_root() {
+        let mut m = sample();
+        m.images = vec![InlineImage {
+            content_id: "a@b".into(),
+            file_name: "a.png".into(),
+            content_type: "image/png".into(),
+            content: vec![1],
+        }];
+        assert!(
+            wire(&m).contains("Content-Type: multipart/related; type=\"text/html\";\r\n boundary=")
+        );
     }
 
     #[test]

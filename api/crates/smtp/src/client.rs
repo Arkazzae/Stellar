@@ -112,8 +112,8 @@ pub async fn send(
 ) -> Result<Delivery, Error> {
     let at = |error: Error| error.with_endpoint(&connection.host, connection.port);
     let prepared = Prepared::new(message).map_err(at)?;
-    let deadline = Instant::now() + options.total_timeout;
-    let stream = connect(connection, options, deadline).await.map_err(at)?;
+    let clock = Clock::new(options);
+    let stream = connect(connection, &clock).await.map_err(at)?;
     let local = match &options.local_name {
         Some(name) => name.clone(),
         None => stream
@@ -121,17 +121,9 @@ pub async fn send(
             .map(|a| address_literal(a.ip()))
             .unwrap_or_else(|_| "localhost".into()),
     };
-    run(
-        Box::new(stream),
-        connection,
-        tls,
-        options,
-        deadline,
-        &prepared,
-        &local,
-    )
-    .await
-    .map_err(at)
+    run(Box::new(stream), connection, tls, clock, &prepared, &local)
+        .await
+        .map_err(at)
 }
 
 /// Sends the message over a stream that is already connected. This is the
@@ -149,22 +141,14 @@ where
 {
     let at = |error: Error| error.with_endpoint(&connection.host, connection.port);
     let prepared = Prepared::new(message).map_err(at)?;
-    let deadline = Instant::now() + options.total_timeout;
+    let clock = Clock::new(options);
     let local = options
         .local_name
         .clone()
         .unwrap_or_else(|| "localhost".into());
-    run(
-        Box::new(stream),
-        connection,
-        tls,
-        options,
-        deadline,
-        &prepared,
-        &local,
-    )
-    .await
-    .map_err(at)
+    run(Box::new(stream), connection, tls, clock, &prepared, &local)
+        .await
+        .map_err(at)
 }
 
 fn address_literal(ip: IpAddr) -> String {
@@ -201,11 +185,7 @@ impl Prepared {
     }
 }
 
-async fn connect(
-    connection: &Connection,
-    options: &Options,
-    deadline: Instant,
-) -> Result<TcpStream, Error> {
+async fn connect(connection: &Connection, clock: &Clock) -> Result<TcpStream, Error> {
     if connection.host.trim().is_empty() {
         return Err(Error::new(
             ErrorKind::Connect,
@@ -214,13 +194,13 @@ async fn connect(
             "no SMTP host is set",
         ));
     }
-    let limit = limit_of(options.step_timeout, deadline, Stage::Connect)?;
+    let limit = clock.limit(Stage::Connect)?;
     let found = timeout(
         limit,
         lookup_host((connection.host.as_str(), connection.port)),
     )
     .await
-    .map_err(|_| Error::timeout(Stage::Connect, limit.as_secs_f64()))?
+    .map_err(|_| clock.late(Stage::Connect, limit))?
     .map_err(|e| {
         Error::new(
             ErrorKind::Connect,
@@ -240,12 +220,7 @@ async fn connect(
         // Each address gets its share of what is left, so that a first one
         // that does not answer cannot use up the others' time.
         let left = (addresses.len() - index) as u32;
-        let remaining = deadline.saturating_duration_since(Instant::now());
-        let limit = limit_of(
-            options.step_timeout.min(remaining / left),
-            deadline,
-            Stage::Connect,
-        )?;
+        let limit = clock.limit_within(clock.left() / left, Stage::Connect)?;
         match timeout(limit, TcpStream::connect(address)).await {
             Ok(Ok(stream)) => {
                 // Mail is a conversation of short lines.
@@ -260,19 +235,62 @@ async fn connect(
                     format!("{address}: {e}"),
                 );
             }
-            Err(_) => last = Error::timeout(Stage::Connect, limit.as_secs_f64()),
+            Err(_) => last = clock.late(Stage::Connect, limit),
         }
     }
     Err(last)
 }
 
-fn limit_of(step: Duration, deadline: Instant, stage: Stage) -> Result<Duration, Error> {
-    let left = deadline.saturating_duration_since(Instant::now());
-    let limit = step.min(left);
-    if limit.is_zero() {
-        return Err(Error::timeout(stage, 0.0));
+/// The two bounds on every step: how long one step may take, and when the
+/// whole exchange must be over.
+#[derive(Clone, Copy)]
+struct Clock {
+    step: Duration,
+    total: Duration,
+    deadline: Instant,
+}
+
+impl Clock {
+    fn new(options: &Options) -> Clock {
+        Clock {
+            step: options.step_timeout,
+            total: options.total_timeout,
+            deadline: Instant::now() + options.total_timeout,
+        }
     }
-    Ok(limit)
+
+    fn left(&self) -> Duration {
+        self.deadline.saturating_duration_since(Instant::now())
+    }
+
+    /// How long the next step may take.
+    fn limit(&self, stage: Stage) -> Result<Duration, Error> {
+        self.limit_within(self.step, stage)
+    }
+
+    fn limit_within(&self, cap: Duration, stage: Stage) -> Result<Duration, Error> {
+        let limit = cap.min(self.step).min(self.left());
+        if limit.is_zero() {
+            return Err(self.late(stage, limit));
+        }
+        Ok(limit)
+    }
+
+    /// The error for a step that did not finish in `limit`.
+    fn late(&self, stage: Stage, limit: Duration) -> Error {
+        if limit.is_zero() {
+            return Error::new(
+                ErrorKind::Timeout,
+                stage,
+                true,
+                format!(
+                    "the exchange did not finish within the {:.0} seconds allowed",
+                    self.total.as_secs_f64()
+                ),
+            );
+        }
+        Error::timeout(stage, limit.as_secs_f64())
+    }
 }
 
 trait Io: AsyncRead + AsyncWrite + Unpin + Send {}
@@ -282,8 +300,7 @@ async fn run(
     io: Box<dyn Io>,
     connection: &Connection,
     tls: Arc<ClientConfig>,
-    options: &Options,
-    deadline: Instant,
+    clock: Clock,
     mail: &Prepared,
     local_name: &str,
 ) -> Result<Delivery, Error> {
@@ -296,22 +313,24 @@ async fn run(
             "{local_name:?} is not a name to announce in EHLO"
         )));
     }
-    let server_name = ServerName::try_from(connection.host.trim().to_owned()).map_err(|_| {
-        Error::unsupported(
-            Stage::Handshake,
-            "the host is not a valid server name for TLS",
-        )
-    })?;
+    // A name is only needed, and only has to be a valid one, when TLS is.
+    let server_name = || {
+        ServerName::try_from(connection.host.trim().to_owned()).map_err(|_| {
+            Error::unsupported(
+                Stage::Handshake,
+                "the host is not a valid server name for TLS",
+            )
+        })
+    };
     let connector = TlsConnector::from(tls);
     let mut session = Session {
         io,
         buffer: Vec::new(),
-        step: options.step_timeout,
-        deadline,
+        clock,
     };
 
     if connection.security == Security::Tls {
-        session.handshake(&connector, server_name.clone()).await?;
+        session.handshake(&connector, server_name()?).await?;
     }
     let greeting = session.read_reply(Stage::Greeting).await?;
     session.expect(Stage::Greeting, &greeting, &[220])?;
@@ -334,7 +353,7 @@ async fn run(
                 "the server sent data before the TLS handshake",
             ));
         }
-        session.handshake(&connector, server_name).await?;
+        session.handshake(&connector, server_name()?).await?;
         caps = session.hello(local_name).await?;
     }
 
@@ -475,20 +494,19 @@ struct Session {
     io: Box<dyn Io>,
     /// Bytes read from the server and not yet taken as a line.
     buffer: Vec<u8>,
-    step: Duration,
-    deadline: Instant,
+    clock: Clock,
 }
 
 impl Session {
     fn limit(&self, stage: Stage) -> Result<Duration, Error> {
-        limit_of(self.step, self.deadline, stage)
+        self.clock.limit(stage)
     }
 
     async fn write(&mut self, stage: Stage, data: &[u8]) -> Result<(), Error> {
         for chunk in data.chunks(16 * 1024) {
             let limit = self.limit(stage)?;
             match timeout(limit, self.io.write_all(chunk)).await {
-                Err(_) => return Err(Error::timeout(stage, limit.as_secs_f64())),
+                Err(_) => return Err(self.clock.late(stage, limit)),
                 Ok(Err(e)) => {
                     return Err(Error::io(
                         stage,
@@ -500,7 +518,7 @@ impl Session {
         }
         let limit = self.limit(stage)?;
         match timeout(limit, self.io.flush()).await {
-            Err(_) => Err(Error::timeout(stage, limit.as_secs_f64())),
+            Err(_) => Err(self.clock.late(stage, limit)),
             Ok(Err(e)) => Err(Error::io(
                 stage,
                 format!("writing to the server failed: {e}"),
@@ -535,7 +553,7 @@ impl Session {
             let limit = self.limit(stage)?;
             let mut chunk = [0u8; 2048];
             match timeout(limit, self.io.read(&mut chunk)).await {
-                Err(_) => return Err(Error::timeout(stage, limit.as_secs_f64())),
+                Err(_) => return Err(self.clock.late(stage, limit)),
                 Ok(Err(e)) if e.kind() == std::io::ErrorKind::UnexpectedEof => {
                     return Err(Error::io(stage, "the server closed the connection"));
                 }
@@ -610,7 +628,7 @@ impl Session {
             Box::new(tokio::io::join(tokio::io::empty(), tokio::io::sink())),
         );
         match timeout(limit, connector.connect(name, plain)).await {
-            Err(_) => Err(Error::timeout(Stage::Handshake, limit.as_secs_f64())),
+            Err(_) => Err(self.clock.late(Stage::Handshake, limit)),
             Ok(Err(e)) => {
                 // A verdict of the TLS library (an untrusted or wrong
                 // certificate, no common protocol) will not change on a
@@ -656,16 +674,38 @@ impl Session {
                 "a user name is set and the server does not offer authentication",
             ));
         }
-        let mechanism = Mechanism::choose(&caps.auth, user, password).ok_or_else(|| {
-            Error::unsupported(
+        let candidates = Mechanism::candidates(&caps.auth, user, password);
+        if candidates.is_empty() {
+            return Err(Error::unsupported(
                 Stage::Auth,
                 format!(
                     "the server offers no authentication this client can use (it offers {})",
                     caps.auth.join(", ")
                 ),
-            )
-        })?;
-        tracing::debug!(mechanism = mechanism.name(), "authenticating");
+            ));
+        }
+        let mut refusal = None;
+        for mechanism in candidates {
+            tracing::debug!(mechanism = mechanism.name(), "authenticating");
+            match self.authenticate_with(mechanism, user, password).await {
+                Ok(()) => return Ok(()),
+                // A refusal may be the mechanism's and not the login's; the
+                // next one decides. Anything else ends it.
+                Err(error) if error.kind() == ErrorKind::Rejected && !error.is_transient() => {
+                    refusal = Some(error);
+                }
+                Err(error) => return Err(error),
+            }
+        }
+        Err(refusal.unwrap_or_else(|| Error::protocol(Stage::Auth, "no mechanism was tried")))
+    }
+
+    async fn authenticate_with(
+        &mut self,
+        mechanism: Mechanism,
+        user: &str,
+        password: &str,
+    ) -> Result<(), Error> {
         let stage = Stage::Auth;
         let start = self
             .command(stage, &format!("AUTH {}", mechanism.name()))

@@ -1,10 +1,10 @@
 //! SASL mechanisms: PLAIN, LOGIN and SCRAM (SHA-256 and SHA-1).
 //!
-//! The mechanism is the strongest of these that the server offers. The
-//! challenge-response mechanisms that need MD5 (CRAM-MD5, DIGEST-MD5) and
-//! NTLM are not implemented: MD5 and NTLM are not in the crypto library the
-//! project uses, and a server that offers only those is reported as lacking
-//! a mechanism.
+//! CRAM-MD5, DIGEST-MD5 and NTLM are not implemented: the crypto library the
+//! project uses has no MD5 or MD4 (nor does it offer them as a MAC), and
+//! none may be written by hand. SCRAM-SHA-512 and the channel-binding
+//! variants (-PLUS) are left out too. A server that offers only those is
+//! reported as one without a usable mechanism.
 
 use aws_lc_rs::{constant_time, digest, hmac, pbkdf2, rand};
 use std::num::NonZeroU32;
@@ -33,20 +33,30 @@ impl Mechanism {
         }
     }
 
-    /// The best mechanism of the server's list for these credentials. SCRAM
-    /// would need the user name and password prepared with SASLprep, which is
-    /// not done here, so it is only used when both are plain ASCII.
-    pub(crate) fn choose(offered: &[String], username: &str, password: &str) -> Option<Mechanism> {
-        let ascii = username.is_ascii() && password.is_ascii();
-        [
-            Mechanism::ScramSha256,
-            Mechanism::ScramSha1,
-            Mechanism::Plain,
-            Mechanism::Login,
-        ]
-        .into_iter()
-        .filter(|m| ascii || !matches!(m, Mechanism::ScramSha256 | Mechanism::ScramSha1))
-        .find(|m| offered.iter().any(|o| o.eq_ignore_ascii_case(m.name())))
+    /// The mechanisms to try with these credentials, in order: the strongest
+    /// SCRAM the server offers, then PLAIN, or LOGIN when PLAIN is not
+    /// offered. SCRAM is advertised by servers that have no SCRAM secret for
+    /// the user, so a refusal of it is followed by the simple one; trying
+    /// PLAIN and then LOGIN would repeat the same refusal and only count as
+    /// one more failed login. SCRAM needs the user name and password
+    /// prepared with SASLprep, which is not done here, so it is only used
+    /// when both are plain ASCII.
+    pub(crate) fn candidates(offered: &[String], username: &str, password: &str) -> Vec<Mechanism> {
+        let has = |m: Mechanism| offered.iter().any(|o| o.eq_ignore_ascii_case(m.name()));
+        let mut order = Vec::new();
+        if username.is_ascii() && password.is_ascii() {
+            order.extend(
+                [Mechanism::ScramSha256, Mechanism::ScramSha1]
+                    .into_iter()
+                    .find(|&m| has(m)),
+            );
+        }
+        order.extend(
+            [Mechanism::Plain, Mechanism::Login]
+                .into_iter()
+                .find(|&m| has(m)),
+        );
+        order
     }
 }
 
@@ -296,22 +306,42 @@ mod tests {
     }
 
     #[test]
-    fn the_strongest_offered_mechanism_wins() {
+    fn the_strongest_scram_and_one_simple_mechanism_are_tried() {
         let offered = |names: &[&str]| names.iter().map(|n| n.to_string()).collect::<Vec<_>>();
-        let pick = |names: &[&str], u: &str, p: &str| Mechanism::choose(&offered(names), u, p);
+        let pick = |names: &[&str], u: &str, p: &str| Mechanism::candidates(&offered(names), u, p);
+        use Mechanism::*;
         assert_eq!(
-            pick(&["PLAIN", "LOGIN", "SCRAM-SHA-256"], "u", "p"),
-            Some(Mechanism::ScramSha256)
+            pick(
+                &["PLAIN", "LOGIN", "SCRAM-SHA-1", "SCRAM-SHA-256"],
+                "u",
+                "p"
+            ),
+            [ScramSha256, Plain]
         );
-        assert_eq!(pick(&["login", "plain"], "u", "p"), Some(Mechanism::Plain));
-        assert_eq!(pick(&["LOGIN"], "u", "p"), Some(Mechanism::Login));
-        assert_eq!(pick(&["CRAM-MD5", "XOAUTH2"], "u", "p"), None);
+        assert_eq!(
+            pick(&["SCRAM-SHA-1", "LOGIN"], "u", "p"),
+            [ScramSha1, Login]
+        );
+        assert_eq!(pick(&["login", "plain"], "u", "p"), [Plain]);
+        assert_eq!(pick(&["LOGIN"], "u", "p"), [Login]);
+        assert!(
+            pick(
+                &[
+                    "CRAM-MD5",
+                    "DIGEST-MD5",
+                    "NTLM",
+                    "XOAUTH2",
+                    "SCRAM-SHA-512",
+                    "SCRAM-SHA-256-PLUS"
+                ],
+                "u",
+                "p"
+            )
+            .is_empty()
+        );
         // Without SASLprep a non-ASCII secret does not go through SCRAM.
-        assert_eq!(
-            pick(&["SCRAM-SHA-256", "PLAIN"], "u", "zażółć"),
-            Some(Mechanism::Plain)
-        );
-        assert_eq!(pick(&["SCRAM-SHA-256"], "u", "zażółć"), None);
+        assert_eq!(pick(&["SCRAM-SHA-256", "PLAIN"], "u", "zażółć"), [Plain]);
+        assert!(pick(&["SCRAM-SHA-256"], "u", "zażółć").is_empty());
     }
 
     #[test]
