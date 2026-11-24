@@ -27,8 +27,6 @@ struct OwnSession {
     created_at: Timestamp,
     last_seen_at: Timestamp,
     expires_at: Timestamp,
-    primary_source: String,
-    mfa_evidence: Option<String>,
     current: bool,
 }
 
@@ -41,7 +39,7 @@ async fn listing(state: &AppState, caller: Caller) -> ApiResult<Response> {
         .database()
         .read(move |connection| -> rusqlite::Result<Vec<OwnSession>> {
             let mut statement = connection.prepare(
-                "SELECT \"Id\", \"Device\", \"IpAddress\", \"CreatedAt\", \"LastSeenAt\", \"ExpiresAt\", \"PrimarySource\", \"MfaEvidence\"
+                "SELECT \"Id\", \"Device\", \"IpAddress\", \"CreatedAt\", \"LastSeenAt\", \"ExpiresAt\"
                  FROM \"UserSessions\" WHERE \"UserId\" = ?1 AND \"RevokedAt\" IS NULL AND \"ExpiresAt\" > ?2
                  ORDER BY \"LastSeenAt\" DESC LIMIT ?3",
             )?;
@@ -55,8 +53,6 @@ async fn listing(state: &AppState, caller: Caller) -> ApiResult<Response> {
                         created_at: row.get(3)?,
                         last_seen_at: row.get(4)?,
                         expires_at: row.get(5)?,
-                        primary_source: row.get(6)?,
-                        mfa_evidence: row.get(7)?,
                         current: id == caller.session,
                     })
                 })?

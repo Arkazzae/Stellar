@@ -6,11 +6,11 @@ use axum::response::Response;
 use rusqlite::{Connection, params};
 use serde::Serialize;
 
-use super::{no_store, providers, trusted_device_of};
+use super::{no_store, providers};
 use crate::auth::policy::{FRESH_SECOND_STEP_WINDOW, SecurityPolicy};
 use crate::auth::{Caller, fresh, recovery_codes, trusted_devices};
 use crate::database::DbError;
-use crate::http::{ApiError, ApiResult, Origin, json_response};
+use crate::http::{ApiError, ApiResult, json_response};
 use crate::state::AppState;
 use crate::values::{Id, Timestamp};
 
@@ -26,16 +26,12 @@ struct Page {
     fresh_mfa: bool,
     mfa_evidence: Option<String>,
     mfa_completed_at: Option<Timestamp>,
-    trusted_device_available: bool,
     methods: Vec<Method>,
     remaining_recovery_codes: i64,
     trusted_devices: Vec<Device>,
     recent_events: Vec<SecurityEvent>,
-    fresh_mfa_window_seconds: u64,
     trusted_device_days: i64,
     email_code_available: bool,
-    email_resend_cooldown_seconds: i64,
-    security_recovery_required: bool,
     passkey_available: bool,
     identities: Vec<Identity>,
     identity_providers: Vec<Provider>,
@@ -124,8 +120,8 @@ struct Provider {
     display_name: String,
 }
 
-pub async fn read(State(state): State<AppState>, caller: Caller, origin: Origin) -> Response {
-    no_store(page(&state, caller, &origin).await)
+pub async fn read(State(state): State<AppState>, caller: Caller) -> Response {
+    no_store(page(&state, caller).await)
 }
 
 pub async fn events(State(state): State<AppState>, caller: Caller) -> Response {
@@ -159,8 +155,7 @@ fn events_of(connection: &Connection, user: Id, limit: i64) -> rusqlite::Result<
         .collect()
 }
 
-async fn page(state: &AppState, caller: Caller, origin: &Origin) -> ApiResult<Response> {
-    let trusted_token = trusted_device_of(origin);
+async fn page(state: &AppState, caller: Caller) -> ApiResult<Response> {
     let public_url = state.settings().operations.public_url.clone();
     let configured = providers::configured(state);
     let owned = crate::identity_providers::owned(state);
@@ -184,7 +179,6 @@ async fn page(state: &AppState, caller: Caller, origin: &Origin) -> ApiResult<Re
             };
             let completed = current.as_ref().and_then(|session| session.mfa_completed_at);
             let required = !methods.is_empty() || policy.is_required_at_login(connection, user.id)?;
-            let trusted = trusted_devices::find(connection, user.id, trusted_token.as_deref(), now)?.is_some();
             let devices = trusted_devices::list(connection, user.id, now)?
                 .into_iter()
                 .map(|device| Device {
@@ -203,16 +197,12 @@ async fn page(state: &AppState, caller: Caller, origin: &Origin) -> ApiResult<Re
                 fresh_mfa: completed.is_some_and(|at| at >= now.minus(FRESH_SECOND_STEP_WINDOW)),
                 mfa_evidence: evidence,
                 mfa_completed_at: completed,
-                trusted_device_available: trusted,
                 methods,
                 remaining_recovery_codes: recovery_codes::remaining(connection, user.id)?,
                 trusted_devices: devices,
                 recent_events: events_of(connection, user.id, PAGE_EVENTS)?,
-                fresh_mfa_window_seconds: FRESH_SECOND_STEP_WINDOW.as_secs(),
                 trusted_device_days: policy.trusted_device_days_clamped(),
                 email_code_available,
-                email_resend_cooldown_seconds: policy.email_code_cooldown_seconds,
-                security_recovery_required: user.security_recovery_required,
                 passkey_available: crate::auth::flow::passkeys_available(&public_url),
                 identities: identities(connection, user.id, &owned, &configured)?,
                 identity_providers: configured
