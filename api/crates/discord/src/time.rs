@@ -105,7 +105,11 @@ pub fn parse_timestamp(text: &str) -> Option<Timestamp> {
                     ticks += i64::from(digit - b'0') * scale;
                     scale /= 10;
                 }
-                if bytes.get(start + 7).is_some_and(|&digit| digit >= b'5' && digit <= b'9') && at > start + 7 {
+                if bytes
+                    .get(start + 7)
+                    .is_some_and(|digit| (b'5'..=b'9').contains(digit))
+                    && at > start + 7
+                {
                     ticks += 1;
                 }
             }

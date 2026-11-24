@@ -73,7 +73,7 @@ impl Transport {
                 }
                 tracing::info!(
                     seconds = wait.as_secs_f64(),
-                    route = %route,
+                    route = %self.redact(route.to_string()),
                     "waiting for Discord's rate limit"
                 );
                 clock.sleep(wait).await;
@@ -106,7 +106,7 @@ impl Transport {
                 }
                 tracing::info!(
                     seconds = retry_after.as_secs_f64(),
-                    route = %route,
+                    route = %self.redact(route.to_string()),
                     global,
                     "Discord rate-limited a route"
                 );

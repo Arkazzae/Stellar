@@ -53,7 +53,12 @@ fn a_template_becomes_sections_channels_and_roles() {
         snapshot
             .sections
             .iter()
-            .map(|s| (s.id.as_str(), s.name.as_str(), s.position, s.overwrites.len()))
+            .map(|s| (
+                s.id.as_str(),
+                s.name.as_str(),
+                s.position,
+                s.overwrites.len()
+            ))
             .collect::<Vec<_>>(),
         [("1", "Text Channels", 1, 0), ("5", "Voice Channels", 2, 0)]
     );
@@ -62,7 +67,13 @@ fn a_template_becomes_sections_channels_and_roles() {
         snapshot
             .channels
             .iter()
-            .map(|c| (c.id.as_str(), c.name.as_str(), c.kind, c.section_id.as_deref(), c.position))
+            .map(|c| (
+                c.id.as_str(),
+                c.name.as_str(),
+                c.kind,
+                c.section_id.as_deref(),
+                c.position
+            ))
             .collect::<Vec<_>>(),
         [
             ("2", "general", ChannelKind::Text, Some("1"), 1),
@@ -133,14 +144,34 @@ fn tolerates_numbers_for_text_missing_fields_and_fields_it_does_not_know() {
 
     assert_eq!(
         snapshot.icon_url.as_deref(),
-        Some("https://cdn.discordapp.com/icons/678070694164299796/f749bb0cbeeb26ef21eca719337d20f1.png")
+        Some(
+            "https://cdn.discordapp.com/icons/678070694164299796/f749bb0cbeeb26ef21eca719337d20f1.png"
+        )
     );
     assert_eq!(
-        snapshot.roles.iter().map(|r| r.permissions.as_str()).collect::<Vec<_>>(),
+        snapshot
+            .roles
+            .iter()
+            .map(|r| r.permissions.as_str())
+            .collect::<Vec<_>>(),
         ["104324689", "8"]
     );
-    assert_eq!(snapshot.roles.iter().map(|r| r.is_everyone).collect::<Vec<_>>(), [true, false]);
-    assert_eq!(snapshot.roles.iter().map(|r| r.position).collect::<Vec<_>>(), [0, 1]);
+    assert_eq!(
+        snapshot
+            .roles
+            .iter()
+            .map(|r| r.is_everyone)
+            .collect::<Vec<_>>(),
+        [true, false]
+    );
+    assert_eq!(
+        snapshot
+            .roles
+            .iter()
+            .map(|r| r.position)
+            .collect::<Vec<_>>(),
+        [0, 1]
+    );
     assert_eq!(snapshot.roles[1].color, Some(3447003));
     assert!(snapshot.roles[1].hoisted);
 
@@ -148,11 +179,26 @@ fn tolerates_numbers_for_text_missing_fields_and_fields_it_does_not_know() {
         snapshot
             .channels
             .iter()
-            .map(|c| (c.id.as_str(), c.kind, c.discord_type, c.section_id.as_deref()))
+            .map(|c| (
+                c.id.as_str(),
+                c.kind,
+                c.discord_type,
+                c.section_id.as_deref()
+            ))
             .collect::<Vec<_>>(),
         [
-            ("11", ChannelKind::Text, DiscordChannelType::Conversation, Some("10")),
-            ("12", ChannelKind::Text, DiscordChannelType::Announcements, None),
+            (
+                "11",
+                ChannelKind::Text,
+                DiscordChannelType::Conversation,
+                Some("10")
+            ),
+            (
+                "12",
+                ChannelKind::Text,
+                DiscordChannelType::Announcements,
+                None
+            ),
             ("13", ChannelKind::Text, DiscordChannelType::Forum, None),
             ("14", ChannelKind::Text, DiscordChannelType::Media, None),
             ("15", ChannelKind::Voice, DiscordChannelType::Stage, None),
@@ -218,10 +264,16 @@ fn a_message_keeps_its_author_reply_files_embeds_stickers_and_reactions() {
     assert_eq!(message.content, "Supa <@53908099506183680>");
     assert_eq!(Some(message.created_at), millis(1_499_794_027_299));
     assert_eq!(message.edited_at, seconds(1_499_794_200));
-    assert_eq!(message.reply_to_message_id.as_deref(), Some("1100000000000000000"));
+    assert_eq!(
+        message.reply_to_message_id.as_deref(),
+        Some("1100000000000000000")
+    );
     assert!(message.pinned);
     assert!(!message.is_system_notice);
-    assert_eq!(message.started_thread_id.as_deref(), Some("1200000000000000001"));
+    assert_eq!(
+        message.started_thread_id.as_deref(),
+        Some("1200000000000000001")
+    );
 
     assert_eq!(message.author.username, "Weather");
     assert_eq!(message.author.webhook_id.as_deref(), Some("777"));
@@ -231,11 +283,18 @@ fn a_message_keeps_its_author_reply_files_embeds_stickers_and_reactions() {
     );
 
     assert_eq!(
-        message.attachments.iter().map(|a| a.id.as_str()).collect::<Vec<_>>(),
+        message
+            .attachments
+            .iter()
+            .map(|a| a.id.as_str())
+            .collect::<Vec<_>>(),
         ["9", "10"]
     );
     assert_eq!(message.attachments[0].duration_seconds, Some(3.5));
-    assert_eq!(message.attachments[0].content_type.as_deref(), Some("audio/ogg"));
+    assert_eq!(
+        message.attachments[0].content_type.as_deref(),
+        Some("audio/ogg")
+    );
     assert_eq!(message.attachments[0].size, 12345);
     assert_eq!(
         (message.attachments[1].width, message.attachments[1].height),
@@ -265,7 +324,11 @@ fn a_message_keeps_its_author_reply_files_embeds_stickers_and_reactions() {
         message.reactions,
         [
             ReactionSnapshot {
-                emoji: ReactionEmoji { id: None, name: "🔥".into(), animated: false },
+                emoji: ReactionEmoji {
+                    id: None,
+                    name: "🔥".into(),
+                    animated: false
+                },
                 count: 3,
                 burst_count: 1
             },
@@ -341,31 +404,50 @@ fn members_threads_emoji_and_stickers_read() {
     .unwrap();
 
     assert_eq!(
-        (member.username.as_str(), member.display_name.as_deref(), member.nickname.as_deref()),
+        (
+            member.username.as_str(),
+            member.display_name.as_deref(),
+            member.nickname.as_deref()
+        ),
         ("nelly", Some("Nelly"), Some("NOT API SUPPORT"))
     );
     assert_eq!(
         member.avatar_url.as_deref(),
-        Some("https://cdn.discordapp.com/avatars/80351110224678912/8342729096ea3675442027381ff50dfe.png")
+        Some(
+            "https://cdn.discordapp.com/avatars/80351110224678912/8342729096ea3675442027381ff50dfe.png"
+        )
     );
     assert_eq!(
         member.server_avatar_url.as_deref(),
-        Some("https://cdn.discordapp.com/guilds/1/users/80351110224678912/avatars/a_1269e74af4df7417b13759eae50c83dc.webp?animated=true")
+        Some(
+            "https://cdn.discordapp.com/guilds/1/users/80351110224678912/avatars/a_1269e74af4df7417b13759eae50c83dc.webp?animated=true"
+        )
     );
     assert_eq!(member.role_ids, ["41771983423143936"]);
     assert_eq!(member.joined_at, millis(1_430_029_616_936));
 
     assert_eq!(
-        (thread.parent_channel_id.as_str(), thread.starter_message_id.as_deref(), thread.archived, thread.private),
+        (
+            thread.parent_channel_id.as_str(),
+            thread.starter_message_id.as_deref(),
+            thread.archived,
+            thread.private
+        ),
         ("41771983423143936", Some("41771983423143937"), true, false)
     );
     assert_eq!(private.starter_message_id, None);
     assert!(private.private);
     assert_eq!(private.created_at, seconds(1_672_531_200));
 
-    assert_eq!(emoji.image_url, "https://cdn.discordapp.com/emojis/41771983429993937.webp");
+    assert_eq!(
+        emoji.image_url,
+        "https://cdn.discordapp.com/emojis/41771983429993937.webp"
+    );
     assert!(emoji.available);
-    assert_eq!(sticker.image_url, "https://media.discordapp.net/stickers/5.gif");
+    assert_eq!(
+        sticker.image_url,
+        "https://media.discordapp.net/stickers/5.gif"
+    );
 }
 
 /* ------------------------------------------------------- what is not trusted */
@@ -373,12 +455,16 @@ fn members_threads_emoji_and_stickers_read() {
 #[test]
 fn a_value_of_the_wrong_kind_fails_the_answer_or_reads_as_absent() {
     // Where text is expected, an object or a list is absent and the rest reads.
-    let user = read::<crate::wire::WireUser>(r#"{"id": [1, 2], "username": {"a": 1}, "bot": null}"#);
+    let user =
+        read::<crate::wire::WireUser>(r#"{"id": [1, 2], "username": {"a": 1}, "bot": null}"#);
     assert_eq!(user.id.get(), None);
     assert_eq!(user.username.get(), None);
     // A number or a boolean is text.
     let user = read::<crate::wire::WireUser>(r#"{"id": 12, "username": true, "global_name": 1.5}"#);
-    assert_eq!((user.id.get(), user.username.get(), user.global_name.get()), (Some("12"), Some("true"), Some("1.5")));
+    assert_eq!(
+        (user.id.get(), user.username.get(), user.global_name.get()),
+        (Some("12"), Some("true"), Some("1.5"))
+    );
 
     // Where a number is expected, anything but a whole number in range fails.
     for json in [
@@ -420,7 +506,9 @@ fn a_value_of_the_wrong_kind_fails_the_answer_or_reads_as_absent() {
         assert!(fails::<WireMessage>(json), "{json}");
     }
     // Null is absent, in a list as well.
-    let message = read::<WireMessage>(r#"{"author": null, "attachments": null, "embeds": [null, {}], "pinned": null}"#);
+    let message = read::<WireMessage>(
+        r#"{"author": null, "attachments": null, "embeds": [null, {}], "pinned": null}"#,
+    );
     assert!(message.author.0.is_none());
     assert_eq!(message.embeds.0.len(), 2);
     assert_eq!(message.embeds.present().count(), 1);
@@ -429,19 +517,29 @@ fn a_value_of_the_wrong_kind_fails_the_answer_or_reads_as_absent() {
     assert!(fails::<WireMember>("[1, 2]"));
     assert!(fails::<WireMember>(r#"[{"id": "1"}, "nick"]"#));
     // Unknown fields, however deep, are ignored.
-    assert!(read::<WireMember>(r#"{"new": {"a": [1, {"b": null}]}, "nick": "x"}"#).nick.get() == Some("x"));
+    assert!(
+        read::<WireMember>(r#"{"new": {"a": [1, {"b": null}]}, "nick": "x"}"#)
+            .nick
+            .get()
+            == Some("x")
+    );
 }
 
 #[test]
 fn a_whole_error_body_reads_as_far_as_it_can() {
-    let error = read::<WireError>(r#"{"message": "Nope", "code": 50001, "retry_after": 1.5, "global": true}"#);
+    let error = read::<WireError>(
+        r#"{"message": "Nope", "code": 50001, "retry_after": 1.5, "global": true}"#,
+    );
     assert_eq!(error.message.get(), Some("Nope"));
     assert_eq!(error.code.0, Some(50001));
     assert_eq!(error.retry_after.0, Some(1.5));
     assert_eq!(error.global.0, Some(true));
     // Numbers as strings, as Discord's own documentation sometimes writes them.
     let error = read::<WireError>(r#"{"code": "10003", "retry_after": "2.25"}"#);
-    assert_eq!((error.code.0, error.retry_after.0), (Some(10003), Some(2.25)));
+    assert_eq!(
+        (error.code.0, error.retry_after.0),
+        (Some(10003), Some(2.25))
+    );
     assert!(fails::<WireError>(r#"{"retry_after": "NaN"}"#));
     assert!(fails::<WireError>(r#"{"retry_after": "inf"}"#));
 }
@@ -458,13 +556,22 @@ fn nesting_is_counted_and_strings_do_not_count() {
 #[test]
 fn a_record_without_its_id_is_left_out_and_the_rest_keeps_its_place() {
     // A number in a list of objects is a failure, not a record to skip.
-    assert!(fails::<WireTemplate>(r#"{"serialized_source_guild": {"roles": [5]}}"#));
+    assert!(fails::<WireTemplate>(
+        r#"{"serialized_source_guild": {"roles": [5]}}"#
+    ));
     let template = read::<WireTemplate>(
         r#"{"serialized_source_guild": {"roles": [null, {"name": "no id"}, {"id": "7", "name": "kept"}]}}"#,
     );
     let snapshot = mapper::from_template(&template);
     // A template gives no positions, so a role's place is its place in the list.
-    assert_eq!(snapshot.roles.iter().map(|r| (r.id.as_str(), r.position)).collect::<Vec<_>>(), [("7", 2)]);
+    assert_eq!(
+        snapshot
+            .roles
+            .iter()
+            .map(|r| (r.id.as_str(), r.position))
+            .collect::<Vec<_>>(),
+        [("7", 2)]
+    );
 }
 
 #[test]
@@ -473,8 +580,14 @@ fn colours_follow_the_new_field_then_the_old_one_and_zero_is_none() {
         (r#"{"id": "1"}"#, None),
         (r#"{"id": "1", "color": 0}"#, None),
         (r#"{"id": "1", "color": 5}"#, Some(5)),
-        (r#"{"id": "1", "colors": {"primary_color": 7}, "color": 5}"#, Some(7)),
-        (r#"{"id": "1", "colors": {"primary_color": 0}, "color": 5}"#, None),
+        (
+            r#"{"id": "1", "colors": {"primary_color": 7}, "color": 5}"#,
+            Some(7),
+        ),
+        (
+            r#"{"id": "1", "colors": {"primary_color": 0}, "color": 5}"#,
+            None,
+        ),
         (r#"{"id": "1", "colors": {}, "color": 5}"#, Some(5)),
         (r#"{"id": "1", "color": -5}"#, None),
     ];
@@ -490,30 +603,60 @@ fn a_reply_is_a_reply_only_to_a_message_and_a_thread_comes_from_flag_or_object()
     let message = |json: &str| mapper::message(&read::<WireMessage>(json)).unwrap();
     let base = r#""id": "10", "channel_id": "1""#;
     assert_eq!(
-        message(&format!(r#"{{{base}, "type": 19, "message_reference": {{"message_id": "9"}}}}"#))
-            .reply_to_message_id
-            .as_deref(),
+        message(&format!(
+            r#"{{{base}, "type": 19, "message_reference": {{"message_id": "9"}}}}"#
+        ))
+        .reply_to_message_id
+        .as_deref(),
         Some("9")
     );
     // A forward's reference is not a reply, and neither is a reply's own type missing.
     assert_eq!(
-        message(&format!(r#"{{{base}, "type": 19, "message_reference": {{"type": 1, "message_id": "9"}}}}"#))
-            .reply_to_message_id,
+        message(&format!(
+            r#"{{{base}, "type": 19, "message_reference": {{"type": 1, "message_id": "9"}}}}"#
+        ))
+        .reply_to_message_id,
         None
     );
     assert_eq!(
-        message(&format!(r#"{{{base}, "type": 0, "message_reference": {{"message_id": "9"}}}}"#)).reply_to_message_id,
+        message(&format!(
+            r#"{{{base}, "type": 0, "message_reference": {{"message_id": "9"}}}}"#
+        ))
+        .reply_to_message_id,
         None
     );
-    assert_eq!(message(&format!(r#"{{{base}, "flags": 32}}"#)).started_thread_id.as_deref(), Some("10"));
-    assert_eq!(message(&format!(r#"{{{base}, "flags": 31}}"#)).started_thread_id, None);
     assert_eq!(
-        message(&format!(r#"{{{base}, "thread": {{"id": "77"}}}}"#)).started_thread_id.as_deref(),
+        message(&format!(r#"{{{base}, "flags": 32}}"#))
+            .started_thread_id
+            .as_deref(),
+        Some("10")
+    );
+    assert_eq!(
+        message(&format!(r#"{{{base}, "flags": 31}}"#)).started_thread_id,
+        None
+    );
+    assert_eq!(
+        message(&format!(r#"{{{base}, "thread": {{"id": "77"}}}}"#))
+            .started_thread_id
+            .as_deref(),
         Some("77")
     );
     // Types that are somebody speaking, and the ones that are not.
-    for (kind, notice) in [(0, false), (19, false), (20, false), (23, false), (6, true), (7, true), (21, true), (-1, true)] {
-        assert_eq!(message(&format!(r#"{{{base}, "type": {kind}}}"#)).is_system_notice, notice, "{kind}");
+    for (kind, notice) in [
+        (0, false),
+        (19, false),
+        (20, false),
+        (23, false),
+        (6, true),
+        (7, true),
+        (21, true),
+        (-1, true),
+    ] {
+        assert_eq!(
+            message(&format!(r#"{{{base}, "type": {kind}}}"#)).is_system_notice,
+            notice,
+            "{kind}"
+        );
     }
     // The first snapshot is the forward, even if it is not the first present.
     let forwarded = message(&format!(
@@ -531,7 +674,8 @@ fn a_webhook_message_is_shown_as_the_webhook_and_a_missing_author_as_nobody() {
     assert_eq!(webhook.author.id, "99");
     assert_eq!(webhook.author.webhook_id.as_deref(), Some("99"));
     assert_eq!(webhook.author.avatar_url, None);
-    let nobody = mapper::message(&read::<WireMessage>(r#"{"id": "1", "channel_id": "2"}"#)).unwrap();
+    let nobody =
+        mapper::message(&read::<WireMessage>(r#"{"id": "1", "channel_id": "2"}"#)).unwrap();
     assert_eq!(nobody.author.id, "");
     assert_eq!(nobody.author.avatar_url, None);
 }
@@ -544,6 +688,7 @@ fn a_time_that_does_not_read_falls_back_to_the_id_and_then_to_the_epoch() {
     .unwrap();
     assert_eq!(Some(odd.created_at), millis(1_462_015_105_796));
     assert_eq!(odd.edited_at, None);
-    let none = mapper::message(&read::<WireMessage>(r#"{"id": "abc", "channel_id": "2"}"#)).unwrap();
+    let none =
+        mapper::message(&read::<WireMessage>(r#"{"id": "abc", "channel_id": "2"}"#)).unwrap();
     assert_eq!(none.created_at, Timestamp::UNIX_EPOCH);
 }
