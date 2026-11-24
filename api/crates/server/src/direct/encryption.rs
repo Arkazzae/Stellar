@@ -7,7 +7,7 @@
 //! switch encryption on and make epochs; these are the refusals of this one.
 
 use axum::http::StatusCode;
-use rusqlite::{Connection, params};
+use rusqlite::Connection;
 use stellarr_messages::{MessageKey, Messages};
 
 use crate::http::{ApiError, Problem};
@@ -50,25 +50,10 @@ fn conflict(
 /// The keys an epoch must be wrapped for, as ids: both account keys and every
 /// device of both that still signs a browser in.
 fn required(connection: &Connection, first: Id, second: Id, now: Timestamp) -> rusqlite::Result<Vec<Id>> {
-    let mut found: Vec<Id> = Vec::new();
-    let mut statement = connection
-        .prepare("SELECT \"KeyId\" FROM \"AccountKeys\" WHERE \"UserId\" = ?1 OR \"UserId\" = ?2")?;
-    for key in statement.query_map(params![first, second], |row| row.get::<_, Id>(0))? {
-        found.push(key?);
-    }
-    let mut statement = connection.prepare(
-        "SELECT d.\"Id\" FROM \"EncryptionDevices\" AS d
-         INNER JOIN \"UserSessions\" AS s ON d.\"SessionId\" = s.\"Id\"
-         INNER JOIN \"Users\" AS u ON s.\"UserId\" = u.\"Id\"
-         WHERE d.\"RevokedAt\" IS NULL AND s.\"RevokedAt\" IS NULL AND s.\"ExpiresAt\" > ?1
-           AND s.\"AbsoluteExpiresAt\" IS NOT NULL AND s.\"AbsoluteExpiresAt\" > ?1
-           AND s.\"SecurityVersion\" = u.\"SessionVersion\" AND NOT u.\"IsDisabled\"
-           AND (d.\"UserId\" = ?2 OR d.\"UserId\" = ?3)",
-    )?;
-    for key in statement.query_map(params![now, first, second], |row| row.get::<_, Id>(0))? {
-        found.push(key?);
-    }
-    Ok(found)
+    Ok(crate::encryption::store::recipients(connection, first, second, now)?
+        .into_iter()
+        .map(|recipient| recipient.key_id)
+        .collect())
 }
 
 /// What the message says it was encrypted with.
