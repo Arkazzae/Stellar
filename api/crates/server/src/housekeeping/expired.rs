@@ -4,10 +4,7 @@
 
 use std::time::Duration;
 
-use rusqlite::params;
-
 use super::Stopping;
-use super::journal::CHUNK;
 use crate::database::DbError;
 use crate::state::AppState;
 use crate::values::Timestamp;
@@ -60,33 +57,13 @@ const KINDS: [Kind; 7] = [
     },
 ];
 
-/// Deletes the expired records of every kind, each kind a few thousand rows
+/// Deletes the expired records of every kind, each kind a thousand rows
 /// at a time in short transactions of their own.
 pub async fn delete(state: &AppState, now: Timestamp, stop: Stopping<'_>) -> Result<(), DbError> {
     for kind in KINDS {
         let before = now.minus(Duration::from_secs(kind.grace_days * 86_400));
-        loop {
-            if stop() {
-                return Ok(());
-            }
-            let removed = state
-                .database()
-                .write(move |tx| -> Result<usize, DbError> {
-                    Ok(tx.execute(
-                        &format!(
-                            "DELETE FROM \"{table}\" WHERE rowid IN
-                               (SELECT rowid FROM \"{table}\" WHERE {expired} LIMIT ?2)",
-                            table = kind.table,
-                            expired = kind.expired
-                        ),
-                        params![before, CHUNK],
-                    )?)
-                })
-                .await?;
-            if (removed as i64) < CHUNK {
-                break;
-            }
-        }
+        super::journal::delete_in_chunks(state, kind.table, "rowid", kind.expired, before, stop)
+            .await?;
     }
     Ok(())
 }

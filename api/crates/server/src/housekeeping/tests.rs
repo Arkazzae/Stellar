@@ -718,3 +718,190 @@ async fn backups_and_logs_are_pruned_by_the_days_of_their_own_retention() {
     );
     assert!(!root.join("backups/backup-old.zip").exists());
 }
+
+/// How long a run holds the one writer, on a database with hundreds of
+/// thousands of rows to remove. A task writes one small row at a time through
+/// the same handle while the run goes, and the longest wait it saw is the
+/// longest the run kept it out.
+///
+///   cargo test -p stellarr-api --lib housekeeping::tests::cost -- --ignored --nocapture
+///
+/// `STELLARR_COST_ONE_STATEMENT=1` also times the same removals as single
+/// statements on a copy of the data.
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+#[ignore = "fills a database of about a hundred megabytes"]
+async fn cost_of_a_run_on_a_database_with_hundreds_of_thousands_of_rows() {
+    let place = Place::new(&[]);
+    let connection = place.raw();
+    let old = ago(40 * DAY);
+    let young = ago(60);
+    let fill = |sql: &str| {
+        if sql.contains("?2") {
+            connection.execute(sql, params![old, young]).unwrap();
+        } else {
+            connection.execute(sql, params![old]).unwrap();
+        }
+    };
+    let numbers = |n: u32, body: &str| {
+        format!(
+            "WITH RECURSIVE n(i) AS (SELECT 1 UNION ALL SELECT i + 1 FROM n WHERE i < {n}) {body}"
+        )
+    };
+    fill(&numbers(300_000, "INSERT INTO \"MessageChanges\" (\"ChannelId\", \"MessageId\", \"Kind\", \"CreatedAt\")
+         SELECT printf('00000000-0000-4000-8000-%012d', i % 100), printf('00000000-0000-4000-8000-%012d', i), 0,
+                CASE WHEN i % 2 = 0 THEN ?1 ELSE ?2 END FROM n"));
+    let uid = "printf('00000000-0000-4000-8000-%012d', i)";
+    for (table, columns, values) in [
+        (
+            "AuthChallenges",
+            "\"Id\", \"UserId\", \"Purpose\", \"SecretHash\", \"PrimarySource\", \"SecurityVersion\", \"ShortLived\", \"Attempts\", \"MaxAttempts\", \"CreatedAt\", \"ExpiresAt\"",
+            "'u', 'login', 'h' || i, 'password', 1, 0, 0, 5, ?1, ?1",
+        ),
+        (
+            "EmailOtpCodes",
+            "\"Id\", \"UserId\", \"Purpose\", \"EmailAddress\", \"ProtectedCode\", \"Attempts\", \"MaxAttempts\", \"CreatedAt\", \"ExpiresAt\"",
+            "'u', 'login', 'a@b.c', 'p', 0, 5, ?1, ?1",
+        ),
+        (
+            "CliRecoveryCredentials",
+            "\"Id\", \"UserId\", \"TokenHash\", \"Reason\", \"SecurityVersion\", \"CreatedAt\", \"ExpiresAt\"",
+            "'u', 'h' || i, 'r', 1, ?1, ?1",
+        ),
+        (
+            "PendingExternalIdentities",
+            "\"Id\", \"SecretHash\", \"ProviderId\", \"Issuer\", \"Subject\", \"EmailVerified\", \"Amr\", \"ShortLived\", \"CreatedAt\", \"ExpiresAt\"",
+            "'h', 'p', 'i', 's', 0, '', 0, ?1, ?1",
+        ),
+        (
+            "TrustedDevices",
+            "\"Id\", \"UserId\", \"TokenHash\", \"Name\", \"Device\", \"IpAddress\", \"CreatedAt\", \"ExpiresAt\"",
+            "'u', 'h' || i, 'n', 'd', '1.1.1.1', ?1, ?1",
+        ),
+        (
+            "RecoveryCodes",
+            "\"Id\", \"UserId\", \"BatchId\", \"CodeHash\", \"CreatedAt\", \"UsedAt\"",
+            "'u', 'b', 'h' || i, ?1, ?1",
+        ),
+        (
+            "SecurityNotifications",
+            "\"Id\", \"SecurityEventId\", \"UserId\", \"EmailAddress\", \"Attempts\", \"CreatedAt\", \"NextAttemptAt\", \"SentAt\", \"LastError\"",
+            "'e', 'u', 'a@b.c', 0, ?1, ?1, ?1, ''",
+        ),
+    ] {
+        fill(&numbers(
+            50_000,
+            &format!("INSERT INTO \"{table}\" ({columns}) SELECT {uid}, {values} FROM n"),
+        ));
+    }
+    fill(&numbers(20_000, "INSERT INTO \"ImageAttachments\" (\"Id\", \"UploadedById\", \"ObjectKey\", \"FileName\", \"ContentType\", \"SizeBytes\", \"PosterObjectKey\", \"IsEncrypted\", \"CreatedAt\")
+         SELECT printf('10000000-0000-4000-8000-%012d', i), 'u', 'images/' || i, 'f', 'image/png', 1, 'images/' || i || '.p', 0, ?1 FROM n"));
+    fill(&numbers(
+        50_000,
+        "INSERT INTO \"ObjectDeletions\" (\"ObjectKey\", \"QueuedAt\") SELECT 'queued/' || i, ?1 FROM n",
+    ));
+    connection
+        .query_row("PRAGMA wal_checkpoint(TRUNCATE)", [], |_| Ok(()))
+        .unwrap();
+    drop(connection);
+
+    let state = place.state.clone();
+    let stop = Arc::new(AtomicBool::new(false));
+    let writer = {
+        let (state, stop) = (state.clone(), stop.clone());
+        tokio::spawn(async move {
+            let mut longest = Duration::ZERO;
+            let mut writes = 0u32;
+            let origin = std::time::Instant::now();
+            while !stop.load(Ordering::Relaxed) {
+                let began = std::time::Instant::now();
+                state
+                    .database()
+                    .write(|tx| -> Result<(), crate::database::DbError> {
+                        tx.execute("INSERT OR REPLACE INTO \"InstanceSecrets\" (\"Name\", \"ProtectedValue\", \"UpdatedAt\") VALUES ('probe', 'x', '2026-11-24 00:00:00')", [])?;
+                        Ok(())
+                    })
+                    .await
+                    .unwrap();
+                longest = longest.max(began.elapsed());
+                if began.elapsed() > Duration::from_millis(250) {
+                    println!(
+                        "COST slow write at {:?}: {:?}",
+                        origin.elapsed(),
+                        began.elapsed()
+                    );
+                }
+                writes += 1;
+                tokio::time::sleep(Duration::from_millis(1)).await;
+            }
+            (longest, writes)
+        })
+    };
+    let began = std::time::Instant::now();
+    let mut runs = 0;
+    let mut phases = [Duration::ZERO; 4];
+    loop {
+        let timed = |at: usize, since: std::time::Instant, phases: &mut [Duration; 4]| {
+            phases[at] += since.elapsed();
+        };
+        if runs < 3 || runs % 40 == 0 {
+            println!("COST run {runs} begins at {:?}", began.elapsed());
+        }
+        let t = std::time::Instant::now();
+        super::journal::compact(&state, now(), 30, NEVER)
+            .await
+            .unwrap();
+        timed(0, t, &mut phases);
+        let t = std::time::Instant::now();
+        let removed = super::orphans::sweep(&state, super::cutoff(now(), 1), 1000, NEVER)
+            .await
+            .unwrap();
+        timed(1, t, &mut phases);
+        let t = std::time::Instant::now();
+        super::queue::drain(&state, 1000, NEVER).await;
+        timed(2, t, &mut phases);
+        let t = std::time::Instant::now();
+        super::expired::delete(&state, Timestamp::now(), NEVER)
+            .await
+            .unwrap();
+        timed(3, t, &mut phases);
+        runs += 1;
+        if (removed == 0 && super::queue::pending(&state).await.unwrap() == 0) || runs > 200 {
+            break;
+        }
+    }
+    println!("COST phases journal/orphans/queue/expired = {phases:?}");
+    let total = began.elapsed();
+    stop.store(true, Ordering::Relaxed);
+    let (longest, writes) = writer.await.unwrap();
+    println!(
+        "COST runs={runs} total={total:?} longest_wait_of_a_small_write={longest:?} small_writes={writes} chunk={}",
+        super::journal::CHUNK
+    );
+    assert_eq!(place.count("MessageChanges") as usize, 150_000 + 50);
+    assert_eq!(place.count("ObjectDeletions"), 0);
+
+    if std::env::var("STELLARR_COST_ONE_STATEMENT").is_ok() {
+        // The same removals as single statements, on fresh rows.
+        let place = Place::new(&[]);
+        let connection = place.raw();
+        connection
+            .execute(
+                "WITH RECURSIVE n(i) AS (SELECT 1 UNION ALL SELECT i + 1 FROM n WHERE i < 300000)
+                 INSERT INTO \"MessageChanges\" (\"ChannelId\", \"MessageId\", \"Kind\", \"CreatedAt\")
+                 SELECT 'c' || (i % 100), 'm' || i, 0, CASE WHEN i % 2 = 0 THEN ?1 ELSE ?2 END FROM n",
+                params![old, young],
+            )
+            .unwrap();
+        let began = std::time::Instant::now();
+        connection
+            .execute(
+                "DELETE FROM \"MessageChanges\" WHERE \"CreatedAt\" < ?1",
+                [ago(30 * DAY)],
+            )
+            .unwrap();
+        println!(
+            "COST one statement over 150000 journal rows held the writer for {:?}",
+            began.elapsed()
+        );
+    }
+}
