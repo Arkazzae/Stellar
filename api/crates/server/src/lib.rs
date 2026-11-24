@@ -19,6 +19,7 @@ pub mod events;
 pub mod http;
 pub mod instance;
 pub mod logging;
+pub mod mail;
 pub mod seal;
 pub mod secrets;
 pub mod settings;
