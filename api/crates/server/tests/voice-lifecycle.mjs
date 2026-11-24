@@ -29,7 +29,9 @@ const V1 = ids.v1;
 function scrub(value) {
   let text = typeof value === "string" ? value : JSON.stringify(value);
   for (const [id, name] of names) text = text.replaceAll(id, `<${name}>`).replaceAll(id.toUpperCase(), `<${name}>`);
-  return text;
+  return text
+    .replace(/\b1[67]\d{11}\b/g, "<ms>")
+    .replace(/"playbackId":"[0-9a-f-]{36}"/g, '"playbackId":"<guid>"');
 }
 
 async function signIn(username) {
@@ -136,6 +138,7 @@ out(`# phase ${args.phase}`);
 const phase = args.phase;
 if (phase === "start-down") {
   // The media server is down while this server starts: the first call it gets is refused, and it asks again.
+  await fakeSummary();
   const ola = await connect("ola", "ola");
   await text(ola, "JoinVoice", V1);
   await show("ola joins; a session is refused", { open: await text(ola, "OpenMediaSession", V1) });
@@ -171,7 +174,7 @@ if (phase === "start-down") {
   await admin("down", "on=0");
   await sleep(5000);
   const { counts, shown, polls } = await fakeSummary();
-  await show("it comes back", { requests: shown.filter((s) => !s.startsWith("POST /v1/sessions/") || true), resetsAgain: counts["POST /v1/reset"] ?? 0 });
+  await show("it comes back", { requests: [...new Set(shown)].sort(), resetsAgain: counts["POST /v1/reset"] ?? 0 });
   await show("a session opens again", { open: await text(ola, "OpenMediaSession", V1) });
 } else if (phase === "restart-media") {
   const ola = await connect("ola", "ola");
