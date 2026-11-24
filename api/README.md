@@ -919,7 +919,7 @@ own data-protection keys cannot be opened here, whatever the keys folder holds:
 | `MfaMethods.ProtectedSecret` | an authenticator app's seed | the app's codes are all wrong: sign in with another step or a recovery code and set the app up again |
 | `EmailOtpCodes.ProtectedCode` | a code mailed to a person | it uses up its guesses: ask for a new one |
 
-The session cookies are sealed with the same keys, so everybody signs in again.
+A restore ends every session in the restored database before it puts it in place, so nobody is signed in afterwards, whatever the archive held: a session that was ended after the archive was made does not come back (`auth::session::revoke_all`). The tool says in a fixed sentence, before it asks, that a restore replaces every account, session, setting and secret and where automatic backups are sent.
 The encryption tables (`AccountKeyBackups` and the rest) are encrypted by the
 client with the person's PIN and are unaffected. The first server's own
 `docs/admin/backups.md` says `instance-id` is part of `instance/`; its code

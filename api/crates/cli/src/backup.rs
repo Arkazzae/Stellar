@@ -79,6 +79,11 @@ pub trait RestoreLibrary {
     fn write_result(&self, data_root: &Path, outcome: &Json) -> std::io::Result<()>;
 }
 
+/// What a restore puts in place of everything the instance holds in its
+/// database, said once, whatever the archive holds: the tool does not read the
+/// archive's rows to tell.
+const WHAT_IT_REPLACES: &str = " It replaces every account, every session, every setting and secret, and where automatic backups are sent, with what the archive holds, and everybody is signed out afterwards.";
+
 /// `{moment:u}`: `2026-11-14 03:00:00Z`.
 fn universal(at: Timestamp) -> String {
     let text = at.to_wire_text();
@@ -195,7 +200,7 @@ pub fn restore(runtime: &mut Runtime, archive: &str) -> CliOutcome {
     let staged = runtime.restore.staged_archive_path(&data_root);
     let replacing = staged.is_file();
     runtime.confirm(&format!(
-        "At the container's next start, the database, uploaded files, keys, secrets, TLS files and desktop releases under {} will be replaced by the backup of {} from {}. Everything written since then is lost. The current data is kept in {}/previous-<time>.{}",
+        "At the container's next start, the database, uploaded files, keys, secrets, TLS files and desktop releases under {} will be replaced by the backup of {} from {}. Everything written since then is lost. The current data is kept in {}/previous-<time>.{}{WHAT_IT_REPLACES}",
         runtime.data_root,
         manifest.instance_name,
         universal(manifest.created_at),
@@ -218,10 +223,14 @@ pub fn restore(runtime: &mut Runtime, archive: &str) -> CliOutcome {
     ));
     let copied = (|| -> std::io::Result<()> {
         let mut source = std::fs::File::open(&path)?;
-        let mut target = std::fs::OpenOptions::new()
-            .write(true)
-            .create_new(true)
-            .open(&partial)?;
+        // The archive holds every secret of the instance: its owner's alone.
+        let mut options = std::fs::OpenOptions::new();
+        options.write(true).create_new(true);
+        {
+            use std::os::unix::fs::OpenOptionsExt;
+            options.mode(0o600);
+        }
+        let mut target = options.open(&partial)?;
         std::io::copy(&mut source, &mut target)?;
         target.flush()?;
         target.sync_all()?;
@@ -293,7 +302,7 @@ pub fn apply(runtime: &mut Runtime) -> CliOutcome {
         ));
     }
     runtime.confirm(&format!(
-        "Will replace the instance's data under {} with the staged backup now.",
+        "Will replace the instance's data under {} with the staged backup now.{WHAT_IT_REPLACES}",
         runtime.data_root
     ))?;
     let now = Timestamp::now();
