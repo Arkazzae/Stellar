@@ -40,21 +40,14 @@ pub fn container() -> Vec<Service> {
             .stop(Signal::Term, Duration::from_secs(5))
             .critical(),
         // /health/ready answers only once the API reaches its database. The
-        // host's own shutdown timeout is HostOptions' default of 30 seconds
-        // in .NET 10, and Program.cs keeps it; the deadline here is longer
-        // so that the host always finishes first.
-        Service::new(
-            "api",
-            &[
-                "/usr/share/dotnet/dotnet",
-                "/opt/stellarr/api/Stellarr.Api.dll",
-            ],
-        )
-        .dir("/opt/stellarr/api")
-        .needs(&["media"])
-        .ready(Readiness::http(loopback(5000), "/health/ready"))
-        .stop(Signal::Term, Duration::from_secs(35))
-        .critical(),
+        // API gives requests in flight 30 seconds to finish after SIGTERM;
+        // the deadline here is longer so that the API always finishes first.
+        Service::new("api", &["/opt/stellarr/api/stellarr-api"])
+            .dir("/opt/stellarr/api")
+            .needs(&["media"])
+            .ready(Readiness::http(loopback(5000), "/health/ready"))
+            .stop(Signal::Term, Duration::from_secs(35))
+            .critical(),
         // A binding request is the cheapest thing coturn answers, and it
         // needs no credentials. TLS renewal restarts it rather than reloading.
         Service::new(

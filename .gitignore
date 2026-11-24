@@ -41,21 +41,16 @@ docker-compose.override.yaml
 *.pid
 
 # ---------------------------------------------------------------------------
-# .NET
+# Build output
 # ---------------------------------------------------------------------------
 **/bin/
 **/obj/
 **/TestResults/
 **/artifacts/
 /.artifacts/
-# The top-level artifacts/ is not .NET output but the browser's binaries, their
+# The top-level artifacts/ is not build output but the browser's binaries, their
 # manifest and the recipes that build some of them.
 !/artifacts/
-*.user
-*.suo
-*.userosscache
-*.sln.docstates
-coverage.cobertura.xml
 
 # ---------------------------------------------------------------------------
 # Python
@@ -102,8 +97,8 @@ coverage.cobertura.xml
 # Rust
 # ---------------------------------------------------------------------------
 /media/target/
-# **/bin/ above is .NET build output, but src/bin holds extra binaries of a
-# Rust crate.
+# **/bin/ above is build output of other tools, but src/bin holds extra
+# binaries of a Rust crate.
 !/media/src/bin/
 
 # ---------------------------------------------------------------------------

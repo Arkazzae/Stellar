@@ -23,8 +23,13 @@ web/public/bergamot-models/*
 !web/public/bergamot-models/registry.json
 media/target
 init/target
-# **/bin is .NET build output, but src/bin holds extra binaries of a Rust crate.
+api/target
+# **/bin is not Rust output, but src/bin holds extra binaries of a Rust crate.
 !media/src/bin
+# The API's tests, examples and their fixtures are not part of the image's
+# build, and a change to one would otherwise rebuild the API's stage.
+api/crates/*/tests
+api/crates/*/examples
 # The browser smoke harness of the media server runs on a developer's machine;
 # in the context it would only invalidate the cached media build.
 media/smoke
@@ -37,6 +42,8 @@ client
 # Instance data and credentials never belong in an image.
 data
 **/secrets
+# The API's secrets module is source, not a folder of secrets.
+!api/crates/server/src/secrets
 **/certs
 **/.env
 **/.env.*
