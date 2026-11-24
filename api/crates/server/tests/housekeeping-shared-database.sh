@@ -91,7 +91,11 @@ scenario() { # label cleanup batch journal-days
       sleep 1
     done
   else
-    sleep 8
+    # With cleanup off it logs nothing, and the run's one visible effect is
+    # the emptied queue, which the database inside the container does not
+    # show cheaply: this server's run is waited for by its effect, the first
+    # server's by a margin well over what its run takes.
+    sleep 20
   fi
   docker stop -t 20 "$container" >/dev/null
   mkdir -p "$dir/first"
@@ -111,7 +115,12 @@ scenario() { # label cleanup batch journal-days
     ASPNETCORE_URLS=http://127.0.0.1:0 "${extra[@]}" "$binary" > "$dir/rust.log" 2>&1 &
   pid=$!
   for _ in $(seq 1 40); do grep -q 'Maintenance removed' "$dir/rust.log" && break; sleep 1; done
-  [ "$cleanup_flag" = 1 ] || sleep 5
+  if [ "$cleanup_flag" != 1 ]; then
+    for _ in $(seq 1 90); do
+      [ "$(sqlite3 "$dir/rust/stellarr.db" 'select count(*) from ObjectDeletions' 2>/dev/null)" = 0 ] && break
+      sleep 1
+    done
+  fi
   kill -TERM "$pid"; wait "$pid" 2>/dev/null || true; pid=
   grep 'Maintenance removed' "$dir/rust.log" | sed 's/.*Maintenance removed/Maintenance removed/' > "$dir/rust.line" || true
 

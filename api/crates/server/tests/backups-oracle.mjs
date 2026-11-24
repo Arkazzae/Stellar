@@ -344,7 +344,18 @@ async function ask() {
     if (args.phase === "r2-all") {
       // The automatic backup tries the unreachable destination the settings
       // name, so that a failure is logged; the script greps the logs.
-      await new Promise((x) => setTimeout(x, 85000));
+      // Wait for the thing itself, on this server, and only then ask: the
+      // copy has failed when the list says so. A few minutes is the ceiling,
+      // whatever else the machine is doing.
+      const limit = Date.now() + 5 * 60 * 1000;
+      for (;;) {
+        const r = await who.owner.get(B);
+        let failed = false;
+        try { failed = r.status === 200 && JSON.parse(r.text).automation.lastError !== null; } catch {}
+        if (failed) break;
+        if (Date.now() > limit) { lines.push("## the failed copy never showed in the list"); break; }
+        await new Promise((x) => setTimeout(x, 1000));
+      }
       await step("list: automation after a failed copy", "owner", "GET", B);
     }
     await step("r2: before anything", "owner", "GET", R2);
