@@ -1,0 +1,22 @@
+[package]
+name = "stellarr-outbound"
+version.workspace = true
+edition.workspace = true
+publish.workspace = true
+
+[lints]
+workspace = true
+
+[dependencies]
+bytes = { workspace = true }
+http = { workspace = true }
+http-body-util = { workspace = true }
+hyper = { workspace = true, features = ["client", "http1"] }
+hyper-util = { workspace = true, features = ["tokio"] }
+rustls = { workspace = true, features = ["aws-lc-rs", "std", "tls12"] }
+tokio = { workspace = true, features = ["net", "time", "io-util", "rt", "sync"] }
+tokio-rustls = { workspace = true, features = ["aws-lc-rs", "tls12"] }
+tracing = { workspace = true }
+
+[dev-dependencies]
+tokio = { workspace = true, features = ["rt-multi-thread", "macros", "io-util", "net", "time", "sync"] }
