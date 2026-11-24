@@ -48,7 +48,7 @@ pub fn is_plain_address(email: &str) -> bool {
     let Some((local, domain)) = email.rsplit_once('@') else {
         return false;
     };
-    (is_dot_atom(local) || is_quoted_string(local)) && (is_dot_atom(domain) || is_domain_literal(domain))
+    (is_dot_atom(local) || is_quoted_string(local)) && (is_dot_atom(domain.strip_suffix('.').unwrap_or(domain)) || is_domain_literal(domain))
 }
 
 #[cfg(test)]
@@ -66,6 +66,7 @@ mod tests {
             "\"two words\"@example.test",
             "x@y",
             "a@[1.2.3.4]",
+            "a@x.test.",
         ] {
             assert!(is_plain_address(email), "{email}");
         }
@@ -84,8 +85,9 @@ mod tests {
             ".a@example.test",
             "a.@example.test",
             "a@example..test",
-            "a@example.test.",
             "a@@example.test",
+            "a@.",
+            "a@x..",
             "a@[]",
             "a@[1.2",
             "\"unclosed@example.test",

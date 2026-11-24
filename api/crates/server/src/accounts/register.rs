@@ -191,9 +191,11 @@ struct Registered {
     founded: bool,
 }
 
-/// A hue for the person's avatar, taken from their id: the hash code that
-/// .NET gives a GUID, which is the exclusive or of its four 32-bit words as
-/// they lie in memory.
+/// A hue for the person's avatar, taken from their id: the exclusive or of
+/// its four 32-bit words, the first three read as the id's text gives them
+/// (the first whole, the next two as 16-bit halves) and the last two
+/// little-endian, taken modulo 360. Accounts made before keep the hue this
+/// gave them, so it must not change.
 fn avatar_hue(id: Id) -> u32 {
     let bytes = id.as_bytes();
     let word = |from: usize| u32::from_le_bytes([bytes[from], bytes[from + 1], bytes[from + 2], bytes[from + 3]]);

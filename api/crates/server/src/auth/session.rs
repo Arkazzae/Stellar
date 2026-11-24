@@ -155,9 +155,12 @@ impl NewSession {
     }
 }
 
-/// The `Set-Cookie` line that signs the person in: a kept sign-in outlives
-/// the browser and renews itself while in use, a short-lived one is dropped
-/// when the browser closes, and ends after twelve hours either way.
+/// The `Set-Cookie` line that signs the person in: the cookie of a kept
+/// sign-in outlives the browser, for thirty days, and its own expiry moves out
+/// again when it is past half its life; the one of a short-lived sign-in is
+/// dropped when the browser closes, and its session ends after twelve hours
+/// either way. How long the session lasts is the row's business, not the
+/// cookie's.
 pub fn sign_in_cookie(
     sealer: &Sealer,
     environment: &Environment,
