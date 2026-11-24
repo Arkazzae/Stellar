@@ -4,6 +4,11 @@
 //! reads each link, copies the preview picture into our own storage, replaces
 //! the message's cards and tells whoever sees the channel.
 
+mod builder;
 mod queue;
+mod thumbnails;
+mod worker;
 
 pub use queue::{PreviewQueue, PreviewRequest};
+pub use thumbnails::{clear_embeds, discard_thumbnails};
+pub use worker::{workers, workers_with};
