@@ -9,7 +9,8 @@
 //!    than thirty days are deleted;
 //! 2. when mail rows are due and mail is off or not set up, they are put an
 //!    hour off, without a try counted and without a provider called;
-//! 3. up to 25 due rows are leased for two minutes and counted as tried, which
+//! 3. up to 25 due rows are leased for as long as the whole batch can take at
+//!    its worst (see [`LEASE`]) and counted as tried, which
 //!    is what keeps two workers (or two servers on one file) from sending a
 //!    row twice at the same time;
 //! 4. each leased row is checked, sent, and written down at once, so a server
@@ -44,7 +45,14 @@ use crate::values::{Id, Timestamp};
 
 pub const BATCH_SIZE: usize = 25;
 pub const MAX_ATTEMPTS: i64 = 5;
-pub const LEASE: Duration = Duration::from_secs(2 * 60);
+/// The most one row can keep the worker: a push has ten seconds in all, a mail
+/// fifteen, and the reads and writes around either take little beside that.
+pub const WORST_PER_ROW: Duration = Duration::from_secs(20);
+/// How long a batch holds its rows. Rows are sent one after another, so the
+/// last of a batch of 25 is reached after 25 rows' worst, 500 seconds; a lease
+/// shorter than that would run out under the rows still waiting, and a second
+/// look could take them while this one still held them.
+pub const LEASE: Duration = Duration::from_secs(BATCH_SIZE as u64 * WORST_PER_ROW.as_secs());
 pub const RETRY_BASE: Duration = Duration::from_secs(2 * 60);
 pub const RETRY_CAP: Duration = Duration::from_secs(60 * 60);
 pub const MISSING_MAIL_DELAY: Duration = Duration::from_secs(60 * 60);

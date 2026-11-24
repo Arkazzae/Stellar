@@ -574,3 +574,47 @@ async fn a_mail_that_cannot_be_written_logs_the_row_and_never_the_address() {
     );
     assert!(!log.contains("without-an-at-sign") && !log.contains("example"), "{log}");
 }
+
+#[tokio::test]
+async fn every_row_of_a_slow_batch_keeps_its_lease_for_as_long_as_the_batch_can_last() {
+    let world = World::new(&[]).await;
+    world.prefer(world.ada, false, true).await;
+    for index in 0..25 {
+        world.browser(world.ada, &format!("b{index}")).await;
+    }
+    let message = world.mention(world.maja, "@ada", &[world.ada]).await;
+    let fake = FakePush::start(Behaviour::Slow(400)).await;
+    let sender = wired_to(&world, &fake);
+    let now = soon();
+
+    let looking = dispatch(&world.state, &sender, now);
+    let watching = async {
+        // While the batch is under way: the shortest lease any row still holds.
+        let mut shortest = None;
+        for _ in 0..8 {
+            tokio::time::sleep(Duration::from_millis(500)).await;
+            let leases: Vec<Timestamp> = world
+                .read(|db| {
+                    db.prepare("SELECT \"LeaseUntil\" FROM \"NotificationDeliveries\" WHERE \"LeaseId\" IS NOT NULL")?
+                        .query_map([], |row| row.get(0))?
+                        .collect()
+                })
+                .await;
+            for lease in leases {
+                shortest = Some(shortest.map_or(lease, |known: Timestamp| known.min(lease)));
+            }
+        }
+        shortest
+    };
+    let (sent, shortest) = tokio::join!(looking, watching);
+
+    assert_eq!(sent.unwrap(), 25);
+    let shortest = shortest.expect("the batch was under way when it was looked at");
+    // The 25th row is reached after 24 others at their worst, then has its own
+    // ten seconds: the lease must reach past the whole of it.
+    assert!(
+        shortest >= now.plus(Duration::from_secs(25 * 20)),
+        "a row of the batch holds its lease only until {shortest}, from {now}"
+    );
+    assert!(world.rows(message).await.iter().all(|row| row.status == "sent"));
+}
