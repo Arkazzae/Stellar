@@ -23,6 +23,17 @@ pub struct Proof {
     password: Option<String>,
 }
 
+/// A body that has to be there. One that is JSON but not the right JSON is
+/// refused as the framework refuses it, before the page's headers are set; one
+/// that is missing, or is `null`, is refused by the route itself, with them.
+pub(super) fn required<T>(request: Result<Option<Json<T>>, ApiError>) -> Result<T, Box<Response>> {
+    match request {
+        Ok(Some(Json(body))) => Ok(body),
+        Ok(None) => Err(Box::new(no_store(Err(ApiError::bad_request())))),
+        Err(refusal) => Err(Box::new(refusal.into_response())),
+    }
+}
+
 pub async fn start_enrollment(
     State(state): State<AppState>,
     caller: Caller,
@@ -31,7 +42,7 @@ pub async fn start_enrollment(
 ) -> Response {
     let password = match request {
         Ok(request) => request.and_then(|Json(request)| request.password),
-        Err(refusal) => return no_store(Err(refusal)),
+        Err(refusal) => return refusal.into_response(),
     };
     no_store(start(&state, caller, &origin, FromSession::Enrollment, password.as_deref()).await)
 }
@@ -68,16 +79,16 @@ pub async fn remove(
     caller: Caller,
     origin: Origin,
     Path(method): Path<String>,
-    request: Result<Json<Proof>, ApiError>,
+    request: Result<Option<Json<Proof>>, ApiError>,
 ) -> Response {
     // An id that is not one names no route, so nothing of the page's applies.
     let method = match guid(&method) {
         Ok(method) => method,
         Err(refusal) => return refusal.into_response(),
     };
-    let request = match request {
-        Ok(Json(request)) => request,
-        Err(refusal) => return no_store(Err(refusal)),
+    let request = match required(request) {
+        Ok(request) => request,
+        Err(refusal) => return *refusal,
     };
     no_store(removal(&state, caller, &origin, method, request.password.as_deref()).await)
 }
@@ -115,11 +126,11 @@ pub async fn regenerate_recovery_codes(
     State(state): State<AppState>,
     caller: Caller,
     origin: Origin,
-    request: Result<Json<Proof>, ApiError>,
+    request: Result<Option<Json<Proof>>, ApiError>,
 ) -> Response {
-    let request = match request {
-        Ok(Json(request)) => request,
-        Err(refusal) => return no_store(Err(refusal)),
+    let request = match required(request) {
+        Ok(request) => request,
+        Err(refusal) => return *refusal,
     };
     no_store(regenerate(&state, caller, &origin, request.password.as_deref()).await)
 }

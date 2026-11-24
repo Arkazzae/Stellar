@@ -60,11 +60,11 @@ pub async fn set(
     State(state): State<AppState>,
     caller: Caller,
     origin: Origin,
-    request: Result<Json<SetRequest>, ApiError>,
+    request: Result<Option<Json<SetRequest>>, ApiError>,
 ) -> Response {
-    let request = match request {
-        Ok(Json(request)) => request,
-        Err(refusal) => return no_store(Err(refusal)),
+    let request = match super::methods::required(request) {
+        Ok(request) => request,
+        Err(refusal) => return *refusal,
     };
     no_store(first(&state, caller, &origin, request.new_password).await)
 }
