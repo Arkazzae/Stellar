@@ -1231,7 +1231,7 @@ fn stored_hash(connection: &rusqlite::Connection, user: Id) -> rusqlite::Result<
 /// transaction: it counts only if the account's hash is still the one it was
 /// checked against.
 pub(super) fn may_change_security(
-    tx: &Transaction,
+    tx: &rusqlite::Connection,
     caller: Caller,
     password: &PasswordCheck,
     now: Timestamp,
@@ -1679,4 +1679,115 @@ pub fn email_address_changed(
     }
     super::email_codes::consume_all(tx, user, now)?;
     Ok(old)
+}
+
+// ---- linked identities ----
+
+/// Whether the caller may start linking an identity, and at what security
+/// version the link is asked for.
+#[must_use]
+#[derive(Debug, PartialEq, Eq)]
+pub enum LinkStart {
+    /// The caller may change the account's security settings now. The version
+    /// is the account's, which the provider's answer must still find when it
+    /// comes back.
+    Allowed { security_version: i64 },
+    /// Not now: the account is disabled or waiting for recovery, the session is
+    /// not good, or the proof it needs is not fresh (a 403).
+    NotAllowed,
+    /// There is no such account.
+    NoAccount,
+}
+
+/// May this caller change the account's security settings now, given this
+/// password? What starting a link asks, as removing a method does: the password
+/// is hashed before the read, only when it could decide, and counts only if the
+/// stored hash is still the one it was checked against. Nothing is written.
+pub async fn may_start_identity_link(
+    state: &AppState,
+    caller: Caller,
+    password: Option<&str>,
+) -> Result<LinkStart, DbError> {
+    let password = check_password(state, caller, password).await?;
+    state
+        .database()
+        .read(move |connection| -> Result<LinkStart, DbError> {
+            let Some(user) = User::find(connection, caller.user)? else {
+                return Ok(LinkStart::NoAccount);
+            };
+            if !may_change_security(connection, caller, &password, Timestamp::now())? {
+                return Ok(LinkStart::NotAllowed);
+            }
+            Ok(LinkStart::Allowed {
+                security_version: user.session_version,
+            })
+        })
+        .await
+}
+
+/// What taking a linked identity away came to.
+#[must_use]
+#[derive(Debug, PartialEq, Eq)]
+pub enum IdentityRemoved {
+    Done,
+    NotAllowed,
+    /// The account has no such identity (a 404).
+    NotFound,
+    /// It is the account's last way in (a 409 with the code `last-way-in`).
+    LastWayIn,
+}
+
+/// Takes a linked identity away: the guard, then the identity, then whether the
+/// account keeps a way in without it, then the row and its event, in one
+/// transaction. As on the first server it ends no session and moves no
+/// security version. `name` is how the identity is shown in the account's
+/// record (the provider's name, or the issuer's host), which the route knows
+/// from the providers that are set up; `providers` are those.
+pub async fn remove_identity(
+    state: &AppState,
+    caller: Caller,
+    context: &Context<'_>,
+    identity: Id,
+    name: &str,
+    providers: &ways_in::OwnedProviders,
+    password: Option<&str>,
+) -> Result<IdentityRemoved, DbError> {
+    let own = Own::of_context(context);
+    let providers = providers.clone();
+    let name = name.to_string();
+    let password = check_password(state, caller, password).await?;
+    state
+        .database()
+        .write(move |tx| -> Result<IdentityRemoved, DbError> {
+            let now = Timestamp::now();
+            if !may_change_security(tx, caller, &password, now)? {
+                return Ok(IdentityRemoved::NotAllowed);
+            }
+            let there: bool = tx.query_row(
+                "SELECT EXISTS (SELECT 1 FROM \"ExternalIdentities\" WHERE \"Id\" = ?1 AND \"UserId\" = ?2)",
+                params![identity, caller.user],
+                |row| row.get(0),
+            )?;
+            if !there {
+                return Ok(IdentityRemoved::NotFound);
+            }
+            if !ways_in::remain(tx, &providers.view(), caller.user, Some(identity), None)? {
+                return Ok(IdentityRemoved::LastWayIn);
+            }
+            let alert = events::verified_email(tx, caller.user)?;
+            tx.execute(
+                "DELETE FROM \"ExternalIdentities\" WHERE \"Id\" = ?1 AND \"UserId\" = ?2",
+                params![identity, caller.user],
+            )?;
+            events::record_from(
+                tx,
+                &own.context(),
+                caller.user,
+                events::IDENTITY_UNLINKED,
+                &name,
+                alert.as_deref(),
+            )?;
+            Ok(IdentityRemoved::Done)
+        })
+        .await
 }
