@@ -11,7 +11,7 @@ use rusqlite::{Connection, OptionalExtension, params};
 use serde::{Deserialize, Serialize};
 use stellarr_messages::MessageKey;
 
-use super::providers::{self, Registry};
+use super::providers;
 use super::{invalid, no_content, bind};
 use crate::auth::Caller;
 use crate::auth::policy::SecurityPolicy;
@@ -78,43 +78,12 @@ struct SecurityDto {
     events: Vec<Event>,
 }
 
-/// What an identity is called: the provider's name when it is one the
-/// instance has set up, else the host of its issuer, else the issuer as it is.
-fn identity_name(registry: &Registry, provider: Option<&str>, issuer: &str) -> String {
-    let id = provider.unwrap_or(&registry.default_id);
-    if let Some(found) = registry.find(id) {
-        return found.name.clone();
-    }
-    host_of(issuer).unwrap_or_else(|| issuer.to_string())
-}
-
-/// The host of an absolute address, as far as it is one.
-fn host_of(text: &str) -> Option<String> {
-    let (scheme, rest) = text.split_once("://")?;
-    if scheme.is_empty()
-        || !scheme.starts_with(|c: char| c.is_ascii_alphabetic())
-        || !scheme
-            .chars()
-            .all(|c| c.is_ascii_alphanumeric() || matches!(c, '+' | '-' | '.'))
-    {
-        return None;
-    }
-    let authority = rest.split(['/', '?', '#']).next().unwrap_or("");
-    let authority = authority.rsplit_once('@').map_or(authority, |(_, host)| host);
-    let host = if let Some(end) = authority.strip_prefix('[').and_then(|r| r.find(']')) {
-        &authority[..end + 2]
-    } else {
-        authority.split(':').next().unwrap_or("")
-    };
-    (!host.is_empty()).then(|| host.to_ascii_lowercase())
-}
-
 pub(super) async fn read(
     State(state): State<AppState>,
     Path(Guid(user)): Path<Guid>,
     InstanceOwner(server): InstanceOwner,
 ) -> ApiResult<Response> {
-    let registry = providers::registry(&state)?;
+    let reading = state.clone();
     let answer = state
         .database()
         .read(move |db| -> Result<Option<SecurityDto>, DbError> {
@@ -151,7 +120,12 @@ pub(super) async fn read(
                     let issuer: String = row.get(2)?;
                     Ok(Identity {
                         id: row.get(0)?,
-                        name: identity_name(&registry, provider.as_deref(), &issuer),
+                        name: crate::identity_providers::identity_name(
+                            &reading,
+                            provider.as_deref().unwrap_or("default"),
+                            &issuer,
+                        )
+                        .map_err(|e| rusqlite::Error::ToSqlConversionFailure(Box::new(e)))?,
                         issuer,
                         created_at: row.get(3)?,
                     })
@@ -342,19 +316,4 @@ pub(super) async fn unlink(
         })
         .await?;
     Ok(no_content())
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn the_host_of_an_issuer_is_what_a_person_is_shown_for_an_unknown_provider() {
-        assert_eq!(host_of("https://Accounts.Example.test/realm"), Some("accounts.example.test".into()));
-        assert_eq!(host_of("https://user@idp.test:8443/x?y#z"), Some("idp.test".into()));
-        assert_eq!(host_of("https://[::1]:9/x"), Some("[::1]".into()));
-        assert_eq!(host_of("not an address"), None);
-        assert_eq!(host_of("://x"), None);
-        assert_eq!(host_of("https:///path"), None);
-    }
 }

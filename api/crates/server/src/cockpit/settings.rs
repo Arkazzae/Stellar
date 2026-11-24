@@ -170,12 +170,6 @@ impl Row {
     }
 }
 
-/// GIFs are on when a key is set and the operator has not turned them off; an
-/// installation that never chose keeps them on while it has a key.
-fn giphy_enabled(chosen: Option<bool>, secrets: &ResolvedSecrets) -> bool {
-    secrets.get(&secrets::GIPHY_API_KEY).is_set() && chosen.unwrap_or(true)
-}
-
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
 struct SettingsDto {
@@ -248,7 +242,7 @@ fn dto(state: &AppState, name: String, row: &Row, secrets: &ResolvedSecrets, sav
         smtp_username: row.smtp_username.clone(),
         smtp_password_configured: secrets.smtp_password().is_set(),
         mail_ready: transport.ready,
-        giphy_enabled: giphy_enabled(row.giphy_enabled, secrets),
+        giphy_enabled: crate::bootstrap::resolve_giphy(row.giphy_enabled, secrets).enabled,
         giphy_key_configured: secrets.get(&secrets::GIPHY_API_KEY).is_set(),
         mfa_requirement: policy::normalize_requirement(Some(&row.mfa_requirement)),
         trusted_device_days: row.trusted_device_days,
