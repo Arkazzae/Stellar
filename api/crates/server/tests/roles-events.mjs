@@ -27,8 +27,33 @@ const RS = "\u001e";
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 const lines = [];
 
+// Where the script is, and a watchdog that says so when nothing has moved for
+// a minute: a wait that never ends names what it waits for.
+let doing = "starting";
+let moved = Date.now();
+const at = (what) => {
+  doing = what;
+  moved = Date.now();
+};
+setInterval(() => {
+  if (Date.now() - moved > 60000) {
+    console.error(`no progress for a minute; waiting for: ${doing}`);
+    process.exit(3);
+  }
+}, 5000).unref();
+
+/** A request that gives up, saying which one. */
+async function request(what, url, options) {
+  at(what);
+  try {
+    return await fetch(url, { ...options, signal: AbortSignal.timeout(20000) });
+  } catch (error) {
+    throw new Error(`${what}: ${error.message}`);
+  }
+}
+
 async function signIn(username) {
-  const response = await fetch(`${args.base}/api/auth/login`, {
+  const response = await request(`signing in ${username}`, `${args.base}/api/auth/login`, {
     method: "POST",
     headers: clientHeaders,
     body: JSON.stringify({ username, password: PASSWORD }),
@@ -112,6 +137,7 @@ for (const [number, text] of worlds.entries()) {
   for (const name of [...world.members].sort()) {
     if (process.env.EVENTS_DEBUG) console.error(`  connect ${name}`);
     try {
+      at(`world ${number}: the hub connection of ${name}`);
       clients.push(await new Client(name, cookies[name], world.server).open());
     } catch (error) {
       lines.push(`   ${name}: ${error.message}`);
@@ -122,12 +148,13 @@ for (const [number, text] of worlds.entries()) {
   for (const [index, step] of world.steps.entries()) {
     if (step.method === "GET") continue;
     if (process.env.EVENTS_DEBUG) console.error(`  step ${index} ${step.method} ${step.path}`);
-    const response = await fetch(`${args.base}${step.path}`, {
+    const response = await request(`world ${number} step ${index} ${step.method} ${step.path}`, `${args.base}${step.path}`, {
       method: step.method,
       headers: { ...clientHeaders, Cookie: cookies[step.actor], "X-Stellarr-Server": world.server },
       body: step.body === null ? undefined : JSON.stringify(step.body),
     });
     await response.arrayBuffer();
+    at(`world ${number} step ${index}: the events after ${step.method} ${step.path} (${response.status})`);
     if (process.env.EVENTS_DEBUG) console.error(`    -> ${response.status}`);
     lines.push(`## ${index} ${step.actor} ${step.method} ${scrub(step.path)} -> ${response.status}`);
     await sleep(250);
@@ -137,7 +164,7 @@ for (const [number, text] of worlds.entries()) {
       const name = labels.get(removed[1].toLowerCase());
       if (cookies[name]) {
         for (const named of [true, false]) {
-          const after = await fetch(`${args.base}/api/admin/roles`, {
+          const after = await request(`world ${number} the roles asked for by ${name}`, `${args.base}/api/admin/roles`, {
             headers: { ...clientHeaders, Cookie: cookies[name], ...(named ? { "X-Stellarr-Server": world.server } : {}) },
           });
           await after.arrayBuffer();

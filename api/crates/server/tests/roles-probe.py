@@ -58,11 +58,15 @@ class World:
 
 
 def send(base, ask, cookie, header):
-    """The request, without a content type when the step says so."""
-    if not ask.get("noContentType"):
+    """The request: without a content type when the step says so, with the text it gives as its body."""
+    header = {**header, **({"X-Stellarr-Server": ask["server"]} if ask.get("server") else {})}
+    if not ask.get("noContentType") and "raw" not in ask:
         return probe.call(base, ask["method"], ask["path"], ask["body"], cookie, header)
-    request = urllib.request.Request(base + ask["path"], method=ask["method"],
-                                     data=json.dumps(ask["body"]).encode() if ask["body"] is not None else None)
+    if "raw" in ask:
+        data = ask["raw"].encode()
+    else:
+        data = json.dumps(ask["body"]).encode() if ask["body"] is not None else None
+    request = urllib.request.Request(base + ask["path"], method=ask["method"], data=data)
     for name, value in {**probe.CLIENT, **header}.items():
         if name != "Content-Type":
             request.add_header(name, value)
@@ -103,15 +107,47 @@ def sign_in(base, users):
     return cookies
 
 
-def run(ours, theirs, work, plan_path):
+def login(base, work, plan_path, out_path):
+    """Signs the people of a plan in and keeps their cookies, for a run after the database is edited."""
+    people = plan_people(work, plan_path)
+    with open(out_path, "w") as out:
+        json.dump(sign_in(base, people), out)
+
+
+def plan_people(work, plan_path):
+    actors = set()
+    with open(plan_path) as plan_file:
+        for line in plan_file:
+            actors.update(step["actor"] for step in json.loads(line)["steps"])
+    users = [line.split()[0] for line in open(f"{work}/users.txt")]
+    return [name for name in users if name in actors or name == users[0]]
+
+
+def edit_second_step(database, users_path):
+    """person1, person4 and person5 get a second step their sessions never passed, person2 one passed a
+    minute ago, person3 none: the sessions were made before, so the accounts only now have a step."""
+    db = sqlite3.connect(database)
+    ids = {line.split()[0]: line.split()[1].upper() for line in open(users_path)}
+    now = datetime.datetime.utcnow()
+    for name in ("person1", "person2", "person4", "person5"):
+        db.execute('INSERT INTO "MfaMethods" ("Id","UserId","Type","Name","CreatedAt","ConfirmedAt") VALUES (?,?,?,?,?,?)',
+                   (os.urandom(16).hex().upper(), ids[name], "totp", "Phone", now.strftime("%Y-%m-%d %H:%M:%S.%f"), now.strftime("%Y-%m-%d %H:%M:%S.%f")))
+    minute = (now - datetime.timedelta(seconds=60)).strftime("%Y-%m-%d %H:%M:%S.%f")
+    db.execute('UPDATE "UserSessions" SET "MfaCompletedAt" = ? WHERE "UserId" = ?', (minute, ids["person2"]))
+    for name in ("person1", "person4", "person5"):
+        db.execute('UPDATE "UserSessions" SET "MfaCompletedAt" = NULL WHERE "UserId" = ?', (ids[name],))
+    db.commit()
+
+
+def run(ours, theirs, work, plan_path, cookies_ours=None, cookies_theirs=None):
     actors = set()
     with open(plan_path) as plan_file:
         for line in plan_file:
             actors.update(step["actor"] for step in json.loads(line)["steps"])
     users = [line.split()[0] for line in open(f"{work}/users.txt")]
     users = [name for name in users if name in actors or name == users[0]]
-    mine = sign_in(ours, users)
-    first = sign_in(theirs, users)
+    mine = json.load(open(cookies_ours)) if cookies_ours else sign_in(ours, users)
+    first = json.load(open(cookies_theirs)) if cookies_theirs else sign_in(theirs, users)
     boss = users[0]
     differences = 0
     steps = 0
@@ -218,7 +254,11 @@ def diff(ours_path, theirs_path):
 if __name__ == "__main__":
     command = sys.argv[1]
     if command == "run":
-        sys.exit(run(*sys.argv[2:6]))
+        sys.exit(run(*sys.argv[2:8]))
+    elif command == "login":
+        login(*sys.argv[2:6])
+    elif command == "edit-second-step":
+        edit_second_step(*sys.argv[2:4])
     elif command == "dump":
         dump(*sys.argv[2:5])
     elif command == "diff":

@@ -106,9 +106,18 @@ fn odd_step(random: &mut Random, world: &World, actor: &str, person: Id, role: I
             _ => id.to_string(),
         }
     };
-    // The first server read an id in a path in any spelling; a body only in the
-    // one with hyphens, and the router here reads only that one in a path.
-    let (target, named) = (person.to_string().to_uppercase(), role.to_string().to_uppercase());
+    // The first server read an id in a path in any spelling, and a body only in
+    // the one with hyphens (or, for a list, with none).
+    let in_path = |id: Id, random: &mut Random| -> String {
+        match random.below(5) {
+            0 => id.to_string().to_uppercase(),
+            1 => id.to_string().replace('-', ""),
+            2 => format!("%7B{id}%7D"),
+            3 => format!("%28{id}%29"),
+            _ => id.to_string(),
+        }
+    };
+    let (target, named) = (in_path(person, random), in_path(role, random));
     let loose = spelled(role, random);
     let mut one = match random.below(14) {
         0 => step(actor, "POST", format!("/api/admin/members/{target}/ban"), None),
@@ -703,4 +712,155 @@ fn arrange_pairs_of_requests_that_may_and_may_not_in_a_shared_database() {
         out.push('\n');
     }
     std::fs::write(var("ROLES_PLAN"), out).expect("the plan is written");
+}
+
+/// The second step, on the instance's own server and on another. Roles are
+/// made on the instance server, and the people hold them: `person1` (Admin),
+/// `person2` (Admin), `person3` (Admin), `person4` (Junior), `person5`
+/// (Senior). The script then gives `person1`, `person4` and `person5` a second
+/// step that was never passed in their sessions, `person2` one passed a minute
+/// ago, and `person3` none, before either server is asked. `person1` also owns
+/// a second server, where the step must not be asked for.
+///
+/// `ROLES_STALE_PLAN` is where the plan is written, beside the variables of
+/// the other arrangements.
+#[test]
+#[ignore = "run by tests/roles-shared-database.sh"]
+fn arrange_a_second_step_on_the_instance_server_and_on_another() {
+    let var = |name: &str| std::env::var(name).unwrap_or_else(|_| panic!("{name} is not set"));
+    let db = Connection::open(var("ROLES_DB")).expect("the database");
+    db.pragma_update(None, "foreign_keys", true).expect("foreign keys");
+    let users: Vec<(String, Id)> = std::fs::read_to_string(var("ROLES_USERS"))
+        .expect("the users")
+        .lines()
+        .filter_map(|line| {
+            let (name, id) = line.split_once(' ')?;
+            Some((name.to_string(), Id::parse(id)?))
+        })
+        .collect();
+    let server: Id = db
+        .query_row("SELECT \"Id\" FROM \"Servers\" ORDER BY \"CreatedAt\", \"Id\" LIMIT 1", [], |row| row.get(0))
+        .expect("the instance server");
+    let gate = privileges::MANAGE_ROLES | privileges::MANAGE_MEMBERS | privileges::MODERATE_MEMBERS | privileges::MANAGE_BANS | privileges::VIEW_CHANNEL;
+    let ordinary = privileges::SEND_MESSAGES | privileges::VIEW_CHANNEL;
+    let mut ids = std::collections::HashMap::new();
+    let mut role = |name: &str, position: i64, permissions: i64| {
+        let id = Id::random();
+        db.execute(
+            "INSERT INTO \"ServerRoles\" (\"Id\", \"ServerId\", \"Name\", \"Color\", \"Permissions\", \"Position\", \"IsSystem\", \"IsOwner\") VALUES (?1, ?2, ?3, '#777777', ?4, ?5, 0, 0)",
+            params![id, server, name, permissions, position],
+        )
+        .expect("a role");
+        ids.insert(name.to_string(), id);
+    };
+    role("Admin", 1, gate | privileges::MANAGE_CHANNELS | ordinary);
+    role("Senior", 2, gate | ordinary);
+    role("Junior", 3, ordinary);
+    role("Spare", 4, privileges::SEND_MESSAGES);
+    db.execute("UPDATE \"ServerRoles\" SET \"Position\" = 9 WHERE \"ServerId\" = ?1 AND \"IsSystem\" = 1 AND \"IsOwner\" = 0", [server]).expect("the base role last");
+    let all = ServerRoles::load(&db, server).expect("roles");
+    let base = all.base.expect("a base role");
+    let by_id = all.by_id();
+    let owner_role = all.roles.iter().find(|role| role.is_owner).expect("an owner role").id;
+    for (name, held) in [("person1", "Admin"), ("person2", "Admin"), ("person3", "Admin"), ("person4", "Junior"), ("person5", "Senior")] {
+        let user = users.iter().find(|(user, _)| user == name).expect("a person").1;
+        ownership::set_roles(&db, server, user, &[by_id[&ids[held]]], &base).expect("held roles");
+    }
+    let section = Id::random();
+    let channel = Id::random();
+    db.execute("INSERT INTO \"Sections\" (\"Id\", \"ServerId\", \"Name\", \"Position\") VALUES (?1, ?2, 'Section', 0)", params![section, server]).expect("a section");
+    db.execute(
+        "INSERT INTO \"Channels\" (\"Id\", \"ServerId\", \"Name\", \"Kind\", \"Position\", \"Topic\", \"SlowModeSeconds\", \"HideAfterInactivityHours\", \"UserLimit\", \"SectionId\") VALUES (?1, ?2, 'stale-room', 0, 99, '', 0, 0, 0, NULL)",
+        params![channel, server],
+    )
+    .expect("a channel");
+
+    // A second server, owned by person1.
+    let other = Id::random();
+    db.execute(
+        "INSERT INTO \"Servers\" (\"Id\", \"Name\", \"Description\", \"IsPublic\", \"CreatedAt\", \"SoundboardEveryoneCanPlay\", \"SoundboardRateLimited\") VALUES (?1, 'Other', '', 0, ?2, 0, 0)",
+        params![other, Timestamp::now()],
+    )
+    .expect("a server");
+    let other_owner = Id::random();
+    let other_base = Id::random();
+    for (id, name, position, permissions, system, owner) in [(other_owner, "Owner", 0, privileges::ALL, true, true), (other_base, "Member", 5, privileges::BASE_ROLE_DEFAULTS, true, false)] {
+        db.execute(
+            "INSERT INTO \"ServerRoles\" (\"Id\", \"ServerId\", \"Name\", \"Color\", \"Permissions\", \"Position\", \"IsSystem\", \"IsOwner\") VALUES (?1, ?2, ?3, '#777777', ?4, ?5, ?6, ?7)",
+            params![id, other, name, permissions, position, system, owner],
+        )
+        .expect("a role");
+    }
+    let person1 = users.iter().find(|(user, _)| user == "person1").expect("a person").1;
+    let other_roles = ServerRoles::load(&db, other).expect("roles");
+    ownership::admit(&db, other, person1, other_owner, false, Some(1), Timestamp::now()).expect("a member");
+    ownership::set_roles(&db, other, person1, &[other_roles.by_id()[&other_owner]], &other_roles.base.expect("a base role")).expect("held roles");
+    let _ = owner_role;
+
+    let id = |name: &str| ids[name].to_string();
+    let user = |name: &str| users.iter().find(|(user, _)| user == name).expect("a person").1.to_string();
+    let mut steps: Vec<Value> = Vec::new();
+    let order: Vec<String> = ["Admin", "Senior", "Junior", "Spare"].iter().map(|name| id(name)).collect();
+    let routes = |actor: &str, steps: &mut Vec<Value>, class: &str| {
+        let plain = user("person7");
+        let mut all = vec![
+            ("POST", "/api/admin/roles".to_string(), Some(json!({ "name": format!("New {actor}"), "color": "#fff", "permissions": [] }))),
+            ("PUT", "/api/admin/roles/order".to_string(), Some(json!({ "roleIds": order }))),
+            ("PATCH", format!("/api/admin/roles/{}", id("Junior")), Some(json!({ "name": format!("Junior {actor}") }))),
+            ("DELETE", format!("/api/admin/roles/{}", id("Spare")), None),
+            ("PATCH", format!("/api/admin/members/{plain}/role"), Some(json!({ "roleId": id("Junior") }))),
+            ("PUT", format!("/api/admin/members/{plain}/roles"), Some(json!({ "roleIds": [id("Junior")] }))),
+        ];
+        for (collection, place) in [("channels", channel), ("sections", section)] {
+            let base = format!("/api/admin/{collection}/{place}/permissions");
+            let masks = Some(json!({ "allow": ["sendMessages"], "deny": [] }));
+            all.push(("PUT", format!("{base}/{}", id("Junior")), masks.clone()));
+            all.push(("DELETE", format!("{base}/{}", id("Junior")), None));
+            all.push(("PUT", format!("{base}/members/{plain}"), masks));
+            all.push(("DELETE", format!("{base}/members/{plain}"), None));
+        }
+        for (method, path, body) in all {
+            steps.push(json!({ "actor": actor, "method": method, "path": path, "body": body, "class": class }));
+        }
+    };
+    // Stale accounts first: they change nothing.
+    routes("person1", &mut steps, "stale admin");
+    routes("person4", &mut steps, "stale, no power");
+    routes("person5", &mut steps, "stale, a senior");
+    // A stale admin who fails something else as well.
+    let stale = "person1";
+    let more = |steps: &mut Vec<Value>, method: &str, path: String, body: Option<Value>, extra: Value| {
+        let mut step = json!({ "actor": stale, "method": method, "path": path, "body": body, "class": "stale, two refusals" });
+        for (key, value) in extra.as_object().expect("an object") {
+            step[key] = value.clone();
+        }
+        steps.push(step);
+    };
+    more(&mut steps, "PATCH", format!("/api/admin/roles/{}", id("Admin")), Some(json!({ "name": "X" })), json!({}));
+    more(&mut steps, "PATCH", format!("/api/admin/roles/{}", Id::random()), Some(json!({})), json!({}));
+    more(&mut steps, "POST", "/api/admin/roles".into(), Some(json!({ "name": "", "color": "" })), json!({}));
+    more(&mut steps, "PUT", "/api/admin/roles/order".into(), Some(json!({})), json!({}));
+    more(&mut steps, "POST", "/api/admin/roles".into(), None, json!({ "raw": "{", "odd": true }));
+    more(&mut steps, "POST", "/api/admin/roles".into(), None, json!({ "raw": "", "odd": true }));
+    more(&mut steps, "PATCH", format!("/api/admin/members/{}/role", user("boss")), Some(json!({ "roleId": id("Junior") })), json!({}));
+    more(&mut steps, "PATCH", format!("/api/admin/members/{}/role", user("person7")), Some(json!({ "roleId": null })), json!({ "odd": true }));
+    more(&mut steps, "PATCH", format!("/api/admin/members/{}/role", user("person7")), Some(json!({ "roleId": id("Junior") })), json!({ "server": Id::random().to_string() }));
+    // On the second server, which is not the instance's own, the step is not asked for.
+    more(&mut steps, "POST", "/api/admin/roles".into(), Some(json!({ "name": "Elsewhere", "color": "#fff", "permissions": [] })), json!({ "server": other.to_string() }));
+    more(&mut steps, "GET", "/api/admin/roles".into(), None, json!({}));
+    // A fresh step, and none to pass.
+    routes("person2", &mut steps, "fresh admin");
+    routes("person3", &mut steps, "admin with no second step");
+
+    let known: Vec<String> = users.iter().map(|(_, id)| id.to_string()).chain(ids.values().map(Id::to_string)).chain([channel.to_string(), section.to_string(), server.to_string(), other.to_string()]).collect();
+    let mut labels = serde_json::Map::new();
+    for (name, id) in &users {
+        labels.insert(id.to_string(), json!(name));
+    }
+    for (name, id) in &ids {
+        labels.insert(id.to_string(), json!(format!("role {name}")));
+    }
+    // The instance's own server is `server`; the plan's requests name it by default.
+    let line = json!({ "server": server.to_string(), "known": known, "labels": labels, "members": [], "steps": steps });
+    std::fs::write(var("ROLES_STALE_PLAN"), format!("{line}\n")).expect("the plan is written");
 }
