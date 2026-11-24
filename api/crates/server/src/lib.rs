@@ -12,6 +12,7 @@
 //!
 //! `api/README.md` says how to add a group of endpoints and how to test it.
 
+pub mod admission;
 pub mod auth;
 pub mod background;
 pub mod database;
@@ -22,6 +23,7 @@ pub mod instance;
 pub mod link_previews;
 pub mod logging;
 pub mod mail;
+pub mod object_store;
 pub mod permissions;
 pub mod realtime;
 pub mod seal;
@@ -197,7 +199,9 @@ pub async fn serve_with(
     let addresses = settings.listen.0.clone();
     let sealer = Sealer::load_or_create(&keys).map_err(|e| StartError(e.to_string()))?;
     let state = AppState::new(settings, database, events, presence, sealer);
-    open_storage(&state).await?;
+    object_store::prepare(state.storage(), state.settings())
+        .await
+        .map_err(StartError)?;
 
     issue_setup_code(&state).await?;
 
@@ -278,25 +282,6 @@ pub async fn serve_with(
         error!("requests were still running after {grace:?}; they are dropped");
     }
     result
-}
-
-/// Opens the object store the settings name, and gets it ready: a bucket that
-/// cannot be reached is a start that fails, as a database that cannot be
-/// opened is.
-async fn open_storage(state: &AppState) -> Result<(), StartError> {
-    let settings = state.settings();
-    let store = stellarr_storage::open(
-        &settings.storage.options(),
-        &settings.data_root,
-        stellarr_outbound::Client::new(),
-    )
-    .map_err(|e| StartError(format!("the object storage cannot be opened: {e}")))?;
-    store
-        .prepare()
-        .await
-        .map_err(|e| StartError(format!("the object storage is not ready: {e}")))?;
-    state.plug_in_storage(store);
-    Ok(())
 }
 
 /// An instance without accounts is founded by whoever creates the first one.
