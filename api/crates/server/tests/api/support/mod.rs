@@ -15,11 +15,13 @@
 #![allow(dead_code)]
 
 mod client;
+mod hub;
 mod log;
 mod people;
 mod server;
 
 pub use client::{Client, Request, Response};
+pub use hub::{HubClient, upgrade};
 pub use log::LogCapture;
 #[allow(unused_imports)]
 pub use people::{PASSWORD, Person};
