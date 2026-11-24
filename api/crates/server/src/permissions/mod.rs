@@ -21,5 +21,9 @@ pub mod snapshot;
 pub mod visibility;
 
 mod error;
+#[cfg(test)]
+mod fixture;
+#[cfg(test)]
+mod tests;
 
 pub use error::DataError;

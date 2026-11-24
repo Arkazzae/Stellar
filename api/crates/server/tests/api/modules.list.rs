@@ -3,6 +3,7 @@ mod database;
 mod health;
 mod mail;
 mod oracle;
+mod permissions;
 mod pipeline;
 mod realtime;
 mod registration;

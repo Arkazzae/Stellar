@@ -39,6 +39,8 @@ workspace = true
 [dev-dependencies]
 stellarr-websocket = { path = "../websocket" }
 http = { workspace = true }
+# The unit tests of the permission rules count the statements a check runs.
+rusqlite = { workspace = true, features = ["trace"] }
 hyper = { workspace = true, features = ["client", "http1"] }
 hyper-util = { workspace = true, features = ["tokio"] }
 tokio = { workspace = true, features = ["io-util", "process"] }
