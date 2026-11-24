@@ -247,7 +247,14 @@ expect_line /etc/turnserver.conf "static-auth-secret=$turn_secret"
 expect_line /etc/turnserver.conf 'no-tcp'
 expect_line /etc/turnserver.conf 'no-tls'
 expect_line /etc/turnserver.conf 'no-dtls'
+expect_line /etc/turnserver.conf 'min-port=49160'
+expect_line /etc/turnserver.conf 'max-port=49200'
 expect_line /etc/turnserver.conf '# external-ip is not set; set STELLARR_PUBLIC_IP when the host is behind NAT'
+
+run custom-relay-range "${image_env[@]}" STELLARR_TURN_ENABLED=true STELLARR_TURN_RELAY_RANGE=55000-55080
+expect_started
+expect_line /etc/turnserver.conf 'min-port=55000'
+expect_line /etc/turnserver.conf 'max-port=55080'
 
 # Exercise settings shared by the entrypoint and the optional relay.
 
@@ -373,6 +380,10 @@ expect_refused bad-https-port "STELLARR_HTTPS_PORT must be an integer between 1 
 expect_refused bad-public-port "STELLARR_PUBLIC_PORT must be an integer between 1 and 65535." \
   STELLARR_PUBLIC_PORT=70000
 expect_refused bad-media-port "STELLARR_MEDIA_PORT must be an integer between 1 and 65535." STELLARR_MEDIA_PORT=udp
+for range in 49160 49200-49160 0-49200 49160-65536; do
+  expect_refused bad-turn-range 'STELLARR_TURN_RELAY_RANGE must be an ascending port range from 1 to 65535.' \
+    STELLARR_TURN_ENABLED=true STELLARR_TURN_RELAY_RANGE="$range"
+done
 expect_refused bad-turn-tcp "STELLARR_TURN_TCP_ENABLED must be 'true' or 'false'." STELLARR_TURN_TCP_ENABLED=yes
 expect_refused bad-turns "STELLARR_TURNS_ENABLED must be 'true' or 'false'." STELLARR_TURNS_ENABLED=1
 # Only the entrypoint looks the domain up, so the wrapper still hands the CLI

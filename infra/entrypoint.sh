@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Container entrypoint: prepares the data volume, exports the settings the
-# services read, renders the coturn and nginx configuration from their
+# services read, renders the nginx and optional coturn configuration from their
 # templates, writes the web client's instance language file, and hands over to
 # stellarr-init, the process manager that runs the services as PID 1.
 #
@@ -194,6 +194,8 @@ if [[ "$turn_enabled" == "true" ]]; then
     -e "s|__REALM__|$public_host|g" \
     -e "s|__STATIC_AUTH_SECRET__|$turn_secret|g" \
     -e "s|__EXTERNAL_IP_LINE__|$external_ip_line|g" \
+    -e "s|__TURN_RELAY_MIN__|$turn_relay_min|g" \
+    -e "s|__TURN_RELAY_MAX__|$turn_relay_max|g" \
     -e "s|__TURN_TCP_LINE__|$turn_tcp_line|g" \
     -e "s|__TURN_TLS_LINE__|$turn_tls_line|g" \
     -e "s|__TURN_DTLS_LINE__|$turn_dtls_line|g" \

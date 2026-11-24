@@ -100,6 +100,16 @@ read_settings() {
   require_boolean STELLARR_TURN_ENABLED "$turn_enabled" || return 1
   require_boolean STELLARR_TURN_TCP_ENABLED "$turn_tcp_enabled" || return 1
   require_boolean STELLARR_TURNS_ENABLED "$turns_enabled" || return 1
+  if [[ "$turn_enabled" == "true" ]]; then
+    turn_relay_range="$(or_default "${STELLARR_TURN_RELAY_RANGE:-}" 49160-49200)"
+    if [[ ! "$turn_relay_range" =~ ^([0-9]{1,5})-([0-9]{1,5})$ ]] ||
+      ! (( 10#${BASH_REMATCH[1]} >= 1 && 10#${BASH_REMATCH[1]} <= 10#${BASH_REMATCH[2]} && 10#${BASH_REMATCH[2]} <= 65535 )); then
+      echo "STELLARR_TURN_RELAY_RANGE must be an ascending port range from 1 to 65535." >&2
+      return 1
+    fi
+    turn_relay_min=$((10#${BASH_REMATCH[1]}))
+    turn_relay_max=$((10#${BASH_REMATCH[2]}))
+  fi
   # auto is resolved by the entrypoint, which looks the domain up.
   if [[ -n "$public_ip_setting" && "$public_ip_setting" != auto ]] && ! is_ipv4_address "$public_ip_setting"; then
     echo "STELLARR_PUBLIC_IP must be an IPv4 address or the value 'auto'." >&2
