@@ -16,6 +16,12 @@ fn is_dot_atom(text: &str) -> bool {
     !text.is_empty() && text.split('.').all(|atom| !atom.is_empty() && atom.chars().all(is_atom_char))
 }
 
+fn is_domain_literal(text: &str) -> bool {
+    text.strip_prefix('[')
+        .and_then(|rest| rest.strip_suffix(']'))
+        .is_some_and(|inner| !inner.is_empty() && !inner.contains(['[', ']', '\\', '\r', '\n']))
+}
+
 fn is_quoted_string(text: &str) -> bool {
     let Some(inner) = text.strip_prefix('"').and_then(|rest| rest.strip_suffix('"')) else {
         return false;
@@ -42,7 +48,7 @@ pub fn is_plain_address(email: &str) -> bool {
     let Some((local, domain)) = email.rsplit_once('@') else {
         return false;
     };
-    (is_dot_atom(local) || is_quoted_string(local)) && is_dot_atom(domain)
+    (is_dot_atom(local) || is_quoted_string(local)) && (is_dot_atom(domain) || is_domain_literal(domain))
 }
 
 #[cfg(test)]
@@ -59,6 +65,7 @@ mod tests {
             "user@localhost",
             "\"two words\"@example.test",
             "x@y",
+            "a@[1.2.3.4]",
         ] {
             assert!(is_plain_address(email), "{email}");
         }
@@ -79,6 +86,8 @@ mod tests {
             "a@example..test",
             "a@example.test.",
             "a@@example.test",
+            "a@[]",
+            "a@[1.2",
             "\"unclosed@example.test",
             &format!("{}@example.test", "a".repeat(320)),
         ] {

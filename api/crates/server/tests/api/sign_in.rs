@@ -668,3 +668,42 @@ async fn a_sign_in_records_the_address_the_listed_proxy_reports() {
         assert_eq!((session_address.as_str(), event_address.as_str()), (recorded, recorded), "{proxies}");
     }
 }
+
+#[tokio::test]
+async fn a_short_session_is_not_stretched_by_use_and_ends_on_time() {
+    let server = Server::start().await;
+    let owner = server.found("owner").await;
+    let client = server.client();
+    let login = client
+        .post_json("/api/auth/login", &json!({ "username": "owner", "password": PASSWORD, "keepSignedIn": false }))
+        .await;
+    assert_eq!(login.status, 200);
+    let (absolute, expires, short): (Timestamp, Timestamp, bool) = server
+        .database()
+        .query_row(
+            "SELECT \"AbsoluteExpiresAt\", \"ExpiresAt\", \"ShortLived\" FROM \"UserSessions\" WHERE \"ShortLived\" = 1",
+            [],
+            |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
+        )
+        .unwrap();
+    assert!(short);
+    assert_eq!(absolute, expires);
+    // Seen long enough ago that the next request renews it.
+    server.database().execute("UPDATE \"UserSessions\" SET \"LastSeenAt\" = ?1 WHERE \"ShortLived\" = 1", [ago(60)]).unwrap();
+
+    assert!(!user_of(&client).await.is_null());
+
+    let (renewed_seen, renewed_end): (Timestamp, Timestamp) = server
+        .database()
+        .query_row("SELECT \"LastSeenAt\", \"ExpiresAt\" FROM \"UserSessions\" WHERE \"ShortLived\" = 1", [], |row| Ok((row.get(0)?, row.get(1)?)))
+        .unwrap();
+    assert!(renewed_seen > ago(1));
+    assert!(renewed_end <= absolute);
+    server
+        .database()
+        .execute("UPDATE \"UserSessions\" SET \"AbsoluteExpiresAt\" = ?1, \"LastSeenAt\" = ?2 WHERE \"ShortLived\" = 1", params![ago(1), ago(60)])
+        .unwrap();
+    assert!(user_of(&client).await.is_null());
+    // The kept session of the first sign-in is another one.
+    assert!(!user_of(&owner.client).await.is_null());
+}
