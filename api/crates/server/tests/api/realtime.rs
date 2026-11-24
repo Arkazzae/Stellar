@@ -198,17 +198,14 @@ async fn the_clock_answers_in_milliseconds_and_takes_no_arguments() {
 }
 
 #[tokio::test]
-async fn a_method_nobody_has_registered_is_answered_as_one_that_does_not_exist() {
+async fn a_method_nobody_has_registered_is_an_unknown_method_and_names_are_exact() {
     let (server, owner, _) = two_people().await;
     let mut client = connect(&server, &owner).await;
     settle(&mut client, &owner).await;
 
-    for method in ["NoSuchMethod"] {
+    for method in ["NoSuchMethod", "setpresence", "SETPRESENCE", "getrtcclock"] {
         let answer = client.invoke(method, json!([])).await;
-        assert_eq!(
-            answer["error"],
-            format!("Failed to invoke '{method}' due to an error on the server. HubException: Method does not exist.")
-        );
+        assert_eq!(answer["error"], format!("Unknown method '{method}'."));
     }
 }
 
