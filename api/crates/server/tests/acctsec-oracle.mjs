@@ -302,7 +302,7 @@ async function ask() {
     await clearMail();
   };
   const alertsAtTheEnd = async () => {
-    await sleep(Number(process.env.ALERT_WAIT_MS ?? 40000));
+    await sleep(Number(process.env.ALERT_WAIT_MS ?? 75000));
     for (const message of await mails()) if (!alerts.includes(message)) alerts.push(message);
     out("## mail: the alerts, all of them");
     for (const message of alerts.map(scrub).sort()) out(message);
