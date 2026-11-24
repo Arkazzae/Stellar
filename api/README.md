@@ -941,8 +941,15 @@ past use (a day after expiry for challenges, mailed codes, recovery credentials
 and pending identities; thirty for trusted devices and for used recovery codes
 and sent notifications). With cleanup off only the journal and the queue are
 touched. The settings are those of the row written last. A delete is made a
-thousand rows at a time in transactions of their own, so the one writer is
-never held for a whole run; `housekeeping::run(state, now, stopping)` takes the
+thousand rows at a time in transactions of their own (an orphan and a queued
+object one at a time), with a pause of a few milliseconds between them for a
+request that waits for the write lock to get in, so the one writer is never
+held for a whole run. Measured on 300,000 journal rows and 350,000 expired
+records (`housekeeping::tests::cost`, ignored), the longest transaction of a
+run took 16 ms; a task that wrote one small row every millisecond beside it
+waited 0.16 ms at the median, 5 ms at the 99th percentile and 0.43 s at worst, on
+a machine busy with other work.
+`housekeeping::run(state, now, stopping)` takes the
 moment its ages are measured against. `tests/housekeeping-shared-database.sh`
 runs both servers on copies of one database with rows just inside and outside
 each retention.
