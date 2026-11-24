@@ -20,8 +20,8 @@ const MAX_METADATA_BYTES: usize = 2048;
 pub const MIN_PART_SIZE: u64 = 5 * 1024 * 1024;
 /// At most this many parts make an object.
 pub const MAX_PARTS: u64 = 10_000;
-/// A file of at least this many bytes goes up in parts, the same threshold the
-/// application used before.
+/// A file of at least this many bytes goes up in parts: below it one request
+/// is cheaper than the extra round trips of a multipart upload.
 pub const MULTIPART_THRESHOLD: u64 = 16 * 1024 * 1024;
 const MAX_PART_SIZE: u64 = 5 * 1024 * 1024 * 1024;
 
