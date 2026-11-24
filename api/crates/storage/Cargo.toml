@@ -1,0 +1,20 @@
+[package]
+name = "stellarr-storage"
+version.workspace = true
+edition.workspace = true
+publish.workspace = true
+description = "Where uploaded files are kept: a folder of the data volume or an S3-compatible bucket, and the checks on what may be uploaded"
+
+[dependencies]
+stellarr-outbound = { path = "../outbound" }
+stellarr-s3 = { path = "../s3" }
+bytes = { workspace = true }
+tokio = { workspace = true, features = ["fs", "io-util", "rt", "sync", "time"] }
+tracing = { workspace = true }
+
+[dev-dependencies]
+aws-lc-rs = { workspace = true }
+tokio = { workspace = true, features = ["fs", "io-util", "rt", "rt-multi-thread", "macros", "net", "sync", "time"] }
+
+[lints]
+workspace = true
