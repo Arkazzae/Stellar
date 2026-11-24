@@ -429,3 +429,58 @@ async fn the_worker_looks_at_the_outbox_when_it_starts_and_a_stopped_one_does_no
 
     assert_eq!(status(&second).as_deref(), Some("cancelled"));
 }
+
+/// The worker of this server on a copy of a database that the first server
+/// also worked on, sending to a push service of the comparison's own.
+///
+/// Not part of the ordinary run: `tests/delivery-wire-oracle.py` starts it
+/// with the variables it reads below. The sender is wired to the fake on the
+/// loopback (the only way a test can reach one); everything else is the
+/// server's own.
+#[tokio::test]
+#[ignore = "run by tests/delivery-wire-oracle.py"]
+async fn oracle_worker() {
+    use std::sync::Arc;
+
+    use stellarr_api::Services;
+    use stellarr_api::delivery::sender::{Sender, Wiring};
+    use stellarr_outbound::{AddressPolicy, TableResolver, tls};
+
+    let database = std::env::var("DELIVERY_DB").expect("DELIVERY_DB");
+    let port: u16 = std::env::var("FAKE_PORT").expect("FAKE_PORT").parse().unwrap();
+    let ca = std::env::var("FAKE_CA").expect("FAKE_CA");
+    let seconds: u64 = std::env::var("RUN_SECONDS").map_or(8, |text| text.parse().unwrap());
+    let settings = [
+        ("STELLARR_PUSH_ENABLED", "true".to_string()),
+        ("STELLARR_PUSH_SUBJECT", "mailto:push@example.test".to_string()),
+        ("STELLARR_PUSH_PUBLIC_KEY", std::env::var("PUSH_PUBLIC_KEY").unwrap()),
+        ("STELLARR_PUSH_PRIVATE_KEY", std::env::var("PUSH_PRIVATE_KEY").unwrap()),
+        ("Operations__PublicUrl", std::env::var("PUBLIC_URL").unwrap_or_default()),
+        ("STELLARR_LANGUAGE", std::env::var("LANGUAGE").unwrap_or_else(|_| "en".into())),
+        ("ConnectionStrings__Database", format!("Data Source={database};Pooling=True")),
+    ];
+    let borrowed: Vec<(&str, &str)> = settings.iter().map(|(k, v)| (*k, v.as_str())).collect();
+    let mut variables: Vec<(String, String)> = borrowed.iter().map(|(k, v)| (k.to_string(), v.to_string())).collect();
+    variables.push(("ASPNETCORE_ENVIRONMENT".into(), "Testing".into()));
+    let push = stellarr_api::settings::Settings::load(&variables).unwrap().push;
+    let sender = Sender::wired(
+        &push,
+        Wiring {
+            roots: Some(tls::roots_from_file(std::path::Path::new(&ca)).unwrap()),
+            resolver: Some(Arc::new(TableResolver(vec![(
+                "push.example.test".to_string(),
+                vec!["127.0.0.1".parse().unwrap()],
+            )]))),
+            policy: AddressPolicy::LoopbackOnly,
+            port: Some(port),
+        },
+    );
+    let services = Services {
+        workers: stellarr_api::delivery::workers_with(Some(Arc::new(sender))),
+        ..Services::default()
+    };
+
+    let server = Server::in_process_with(stellarr_api::http::Endpoints::new(), services, &borrowed).await;
+    tokio::time::sleep(Duration::from_secs(seconds)).await;
+    server.stop().await;
+}
