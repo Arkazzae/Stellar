@@ -26,7 +26,7 @@
 //! response that the pipeline itself produces is counted and logged like any
 //! other.
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 use std::time::Instant;
 
@@ -55,6 +55,9 @@ pub struct Pipeline {
     pub(super) state: AppState,
     rules: HashMap<(Method, String), Rules>,
     limiter: RateLimiter,
+    /// Every literal segment of every registered route: the only words of a
+    /// path the log may repeat when no route took the request.
+    words: HashSet<String>,
 }
 
 impl Pipeline {
@@ -97,10 +100,12 @@ pub fn build(
     rules: HashMap<(Method, String), Rules>,
 ) -> Router {
     let limiter = RateLimiter::new(&state.settings().rate_limits);
+    let words = super::secret_path::words(rules.keys().map(|(_, pattern)| pattern.as_str()));
     let pipeline = Arc::new(Pipeline {
         state: state.clone(),
         rules,
         limiter,
+        words,
     });
     let mut router = router
         .with_state(state)
@@ -144,20 +149,25 @@ async fn count(State(pipeline): State<Arc<Pipeline>>, request: Request, next: Ne
     response
 }
 
-/// The path as the log may say it: a secret in it (an invite's code) is
-/// replaced by a mark.
-fn shown_path(request: &Request, path: &str) -> String {
-    request.extensions().get::<MatchedPath>().map_or_else(
-        || path.to_string(),
-        |matched| super::secret_path::masked(matched.as_str(), path),
-    )
+/// The path as the log may say it. A secret in a route that took the request
+/// (an invite's code) is replaced by a mark; when no route took it, every
+/// segment the server does not know as a word of its own routes is.
+fn shown_path(pipeline: &Pipeline, request: &Request, path: &str) -> String {
+    match request.extensions().get::<MatchedPath>() {
+        Some(matched) => super::secret_path::masked(matched.as_str(), path),
+        None => super::secret_path::masked_unmatched(&pipeline.words, path),
+    }
 }
 
-async fn request_log(request: Request, next: Next) -> Response {
+async fn request_log(
+    State(pipeline): State<Arc<Pipeline>>,
+    request: Request,
+    next: Next,
+) -> Response {
     let started = Instant::now();
     let method = request.method().clone();
     let path = request.uri().path().to_string();
-    let shown = shown_path(&request, &path);
+    let shown = shown_path(&pipeline, &request, &path);
     let response = next.run(request).await;
     if !logging::is_probe(&path) {
         info!(
@@ -173,9 +183,9 @@ async fn request_log(request: Request, next: Next) -> Response {
 /// A handler that panics is a 500 problem like one that returned a failure,
 /// not a dropped connection. It runs as a task of its own so that the panic
 /// stops there.
-async fn recover(request: Request, next: Next) -> Response {
+async fn recover(State(pipeline): State<Arc<Pipeline>>, request: Request, next: Next) -> Response {
     let path = request.uri().path().to_string();
-    let shown = shown_path(&request, &path);
+    let shown = shown_path(&pipeline, &request, &path);
     let id = trace::current();
     let task = tokio::spawn(trace::scope(id, logging::serving(&path, next.run(request))));
     match task.await {
