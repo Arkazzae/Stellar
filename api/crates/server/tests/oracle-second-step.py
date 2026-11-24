@@ -992,9 +992,53 @@ def limits(server, rec):
             break
 
 
+def slow_mail_server(port, delay):
+    """A mail server that takes `delay` seconds to accept each message, for the
+    timing run: `SLOW_MAIL=1` points both servers at it."""
+    import socketserver
+    import threading
+
+    class Handler(socketserver.StreamRequestHandler):
+        def handle(self):
+            self.wfile.write(b"220 slow.test ESMTP\r\n")
+            data = False
+            for raw in self.rfile:
+                line = raw.decode("latin-1").rstrip("\r\n")
+                if data:
+                    if line == ".":
+                        data = False
+                        time.sleep(delay)
+                        self.wfile.write(b"250 2.0.0 Queued\r\n")
+                    continue
+                verb = line.split(" ")[0].upper()
+                if verb == "EHLO":
+                    self.wfile.write(b"250-slow.test\r\n250 8BITMIME\r\n")
+                elif verb == "DATA":
+                    data = True
+                    self.wfile.write(b"354 go ahead\r\n")
+                elif verb == "QUIT":
+                    self.wfile.write(b"221 bye\r\n")
+                    return
+                else:
+                    self.wfile.write(b"250 OK\r\n")
+
+    class Server(socketserver.ThreadingTCPServer):
+        allow_reuse_address = True
+        daemon_threads = True
+
+    server = Server(("0.0.0.0", port), Handler)
+    threading.Thread(target=server.serve_forever, daemon=True).start()
+    return server
+
+
 def timing(servers):
     """How long forgot takes for an address that is an account's and for one that is not."""
     import statistics
+    slow = None
+    if os.environ.get("SLOW_MAIL"):
+        slow = slow_mail_server(SMTP_PORT + 2, 1.0)
+        for server in servers:
+            server.edit(('UPDATE "OperationsSettings" SET "MailSmtpPort" = ?', (SMTP_PORT + 2,)))
     for server in servers:
         clear_mail()
         samples = {"known": [], "unknown": []}
@@ -1011,7 +1055,10 @@ def timing(servers):
             print("   %-12s %-8s n=%d  min %.0f  p10 %.0f  median %.0f  p90 %.0f  p99 %.0f  max %.0f ms  (mean %.1f, deviation %.1f)" % (
                 server.name, kind, len(values), values[0], cut(0.1), cut(0.5), cut(0.9), cut(0.99), values[-1],
                 statistics.mean(values), statistics.pstdev(values)))
-        print("   mails that arrived for the known address on %s: %d" % (server.name, len(mails(200, wait=20))))
+        if not slow:
+            print("   mails that arrived for the known address on %s: %d" % (server.name, len(mails(200, wait=20))))
+    if slow:
+        slow.shutdown()
 
 
 def prepare():
