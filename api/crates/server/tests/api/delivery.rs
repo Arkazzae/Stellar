@@ -481,6 +481,24 @@ async fn oracle_worker() {
     };
 
     let server = Server::in_process_with(stellarr_api::http::Endpoints::new(), services, &borrowed).await;
-    tokio::time::sleep(Duration::from_secs(seconds)).await;
+    // Until every row has had its try or been put off, or the time is up.
+    let deadline = std::time::Instant::now() + Duration::from_secs(seconds);
+    tokio::time::sleep(Duration::from_secs(3)).await;
+    let watching = rusqlite::Connection::open(&database).unwrap();
+    watching.busy_timeout(Duration::from_secs(10)).unwrap();
+    while std::time::Instant::now() < deadline {
+        let waiting: i64 = watching
+            .query_row(
+                "SELECT COUNT(*) FROM \"NotificationDeliveries\" WHERE \"LeaseId\" IS NOT NULL
+                 OR (\"Status\" = 'pending' AND \"Attempts\" = 0 AND \"NextAttemptAt\" <= ?1)",
+                [stellarr_api::values::Timestamp::now()],
+                |row| row.get(0),
+            )
+            .unwrap();
+        if waiting == 0 {
+            break;
+        }
+        tokio::time::sleep(Duration::from_millis(500)).await;
+    }
     server.stop().await;
 }
