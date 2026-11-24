@@ -22,15 +22,16 @@ fn insert_user(connection: &Connection, name: &str) -> rusqlite::Result<usize> {
 #[tokio::test]
 async fn every_connection_the_pool_hands_out_enforces_foreign_keys() {
     let (_folder, database) = new_database();
-    // Three reads that are all open at once, so that three connections are.
+    // Three leases that are all open at once, so that three connections are.
     let barrier = Arc::new(Barrier::new(3));
     let mut reads = Vec::new();
     for _ in 0..3 {
         let database = database.clone();
         let barrier = Arc::clone(&barrier);
         reads.push(tokio::spawn(async move {
+            // Lent a connection directly: a read could not insert a row.
             database
-                .read(move |connection| -> Result<(i64, i32), DbError> {
+                .run(move |connection| -> Result<(i64, i32), DbError> {
                     barrier.wait();
                     let enforced = connection.query_row("PRAGMA foreign_keys", [], |row| row.get(0))?;
                     let refusal = connection
@@ -55,9 +56,12 @@ async fn every_connection_the_pool_hands_out_enforces_foreign_keys() {
 #[tokio::test]
 async fn a_connection_that_had_foreign_keys_switched_off_has_them_back_when_lent_again() {
     let (_folder, database) = new_database();
+    // Outside a transaction, where the setting can be changed at all.
     database
-        .read(|connection| -> Result<(), DbError> {
+        .run(|connection| -> Result<(), DbError> {
             connection.pragma_update(None, "foreign_keys", false)?;
+            let now: i64 = connection.query_row("PRAGMA foreign_keys", [], |row| row.get(0))?;
+            assert_eq!(now, 0);
             Ok(())
         })
         .await
@@ -71,6 +75,27 @@ async fn a_connection_that_had_foreign_keys_switched_off_has_them_back_when_lent
         .unwrap();
 
     assert_eq!(enforced, 1);
+}
+
+#[tokio::test]
+async fn a_read_that_tries_to_change_something_fails_and_a_write_after_it_works() {
+    let (_folder, database) = new_database();
+
+    let attempt = database
+        .read(|connection| -> Result<(), DbError> {
+            insert_user(connection, "sneaky")?;
+            Ok(())
+        })
+        .await;
+
+    assert!(attempt.is_err());
+    database
+        .write(|tx| -> Result<(), DbError> {
+            insert_user(tx, "honest")?;
+            Ok(())
+        })
+        .await
+        .unwrap();
 }
 
 #[tokio::test]

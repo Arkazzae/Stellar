@@ -12,7 +12,7 @@ use serde::Serialize;
 use serde_json::{Value, json};
 use stellarr_api::events::{Audience, Event};
 use stellarr_api::http::{
-    ApiError, ApiResult, ClientInfo, Endpoints, Json, Problem, RateLimitPolicy,
+    ApiError, ApiResult, ClientInfo, Endpoints, Json, Path, Problem, Query, RateLimitPolicy,
 };
 use stellarr_api::state::AppState;
 use stellarr_api::values::{Id, Timestamp};
@@ -40,6 +40,26 @@ fn routes() -> Endpoints {
         .get("/api/test/wire", wire)
         .get("/api/test/counts", counts)
         .post("/api/test/announce", announce)
+        .get("/api/test/things/{id}", thing)
+        .delete("/api/test/things/{id}", forget)
+        .get("/api/test/search", search)
+}
+
+async fn thing(Path(id): Path<Id>) -> Json<Value> {
+    Json(json!({ "id": id }))
+}
+
+async fn forget(Path(_): Path<Id>) -> StatusCode {
+    StatusCode::NO_CONTENT
+}
+
+#[derive(serde::Deserialize)]
+struct Search {
+    limit: u32,
+}
+
+async fn search(Query(search): Query<Search>) -> Json<Value> {
+    Json(json!({ "limit": search.limit }))
 }
 
 async fn fails() -> ApiResult<Json<Value>> {
@@ -541,4 +561,138 @@ async fn other_environments_answer_no_origin() {
         .await;
 
     assert_eq!(response.header("access-control-allow-origin"), None);
+}
+
+#[tokio::test]
+async fn a_segment_that_is_not_an_id_is_a_path_that_does_not_exist() {
+    let server = server_with(&[]).await;
+    let client = server.client();
+
+    let found = client
+        .get("/api/test/things/8F62A4D1-BDCB-4D86-BD1C-6E351900E629")
+        .await;
+    let not_an_id = client.get("/api/test/things/xyz").await;
+
+    assert_eq!(
+        found.json::<Value>(),
+        json!({ "id": "8f62a4d1-bdcb-4d86-bd1c-6e351900e629" })
+    );
+    assert_eq!(not_an_id.status, 404);
+    assert!(not_an_id.body.is_empty());
+}
+
+#[tokio::test]
+async fn a_query_that_does_not_fit_is_a_bad_request_with_no_body() {
+    let server = server_with(&[]).await;
+    let client = server.client();
+
+    let fits = client.get("/api/test/search?limit=5").await;
+    let missing = client.get("/api/test/search").await;
+    let not_a_number = client.get("/api/test/search?limit=many").await;
+
+    assert_eq!(fits.json::<Value>(), json!({ "limit": 5 }));
+    assert_eq!([missing.status, not_a_number.status], [400, 400]);
+    assert!(missing.body.is_empty() && not_a_number.body.is_empty());
+}
+
+#[tokio::test]
+async fn a_method_the_route_does_not_have_is_a_405_that_lists_the_ones_it_has() {
+    let server = server_with(&[]).await;
+    let client = server.client();
+    let id = "8f62a4d1-bdcb-4d86-bd1c-6e351900e629";
+
+    let post = client
+        .send(Request::new(
+            Method::POST,
+            &format!("/api/test/things/{id}"),
+        ))
+        .await;
+    let head = client
+        .send(Request::new(
+            Method::HEAD,
+            &format!("/api/test/things/{id}"),
+        ))
+        .await;
+    let put = client
+        .send(Request::new(Method::PUT, "/api/test/search"))
+        .await;
+
+    assert_eq!([post.status, head.status, put.status], [405, 405, 405]);
+    assert_eq!(post.header("allow"), Some("DELETE, GET"));
+    assert_eq!(head.header("allow"), Some("DELETE, GET"));
+    assert_eq!(put.header("allow"), Some("GET"));
+    assert!(post.body.is_empty());
+}
+
+#[tokio::test]
+async fn a_body_with_no_content_type_is_a_415_and_no_body_at_all_is_left_to_the_handler() {
+    let server = server_with(&[]).await;
+    let client = server.client();
+
+    let unnamed = client
+        .send(Request::new(Method::POST, "/api/test/body").untyped_body("{\"a\":1}"))
+        .await;
+    let nothing = client
+        .send(Request::new(Method::POST, "/api/test/body"))
+        .await;
+
+    assert_eq!(unnamed.status, 415);
+    assert_eq!(nothing.status, 400);
+}
+
+#[tokio::test]
+async fn with_nothing_listed_everyone_behind_the_proxy_shares_its_budget() {
+    let server = server_with(&[
+        PRODUCTION[0],
+        PRODUCTION[1],
+        ("RateLimiting__Login__PermitLimit", "1"),
+    ])
+    .await;
+    let from = |client: &str| {
+        Request::new(Method::POST, "/api/auth/login")
+            .header("X-Forwarded-For", &format!("{client}, 172.18.0.1"))
+            .json(&json!({}))
+    };
+
+    let first = server.client().send(from("198.51.100.7")).await;
+    let somebody_else = server.client().send(from("198.51.100.8")).await;
+
+    // The proxy is the only address the server can see.
+    assert_eq!([first.status, somebody_else.status], [401, 429]);
+}
+
+#[tokio::test]
+async fn every_request_is_logged_once_with_the_status_the_client_got() {
+    let log = crate::support::LogCapture::start();
+    let server = server_with(&[]).await;
+    let client = server.client();
+
+    client.get("/nothing/here").await;
+    client
+        .send(Request::new(Method::POST, "/api/test/fails"))
+        .await;
+    client.get("/api/test/fails").await;
+    client.get("/health/live").await;
+    // A request is logged once its response is out.
+    tokio::time::sleep(std::time::Duration::from_millis(200)).await;
+
+    let lines = log.lines();
+    for expected in [
+        "GET /nothing/here 404 in ",
+        "POST /api/test/fails 405 in ",
+        "GET /api/test/fails 500 in ",
+    ] {
+        assert_eq!(
+            lines
+                .iter()
+                .filter(|line| line.starts_with(expected))
+                .count(),
+            1,
+            "{expected}: {lines:#?}"
+        );
+    }
+    assert!(
+        !lines.iter().any(|line| line.contains("/health/")),
+        "{lines:#?}"
+    );
 }

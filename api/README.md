@@ -41,11 +41,11 @@ A group is a folder under `src/` with a `mod.rs` that exposes one function.
 
 ```rust
 // src/channels/mod.rs
-use axum::extract::{Path, State};
+use axum::extract::State;
 use serde::Serialize;
 
 use crate::database::DbError;
-use crate::http::{ApiError, ApiResult, Endpoints, Json};
+use crate::http::{ApiError, ApiResult, Endpoints, Json, Path};
 use crate::state::AppState;
 use crate::values::Id;
 
@@ -108,6 +108,14 @@ Err(Problem::validation(vec![("username".into(), vec![text])]).into())
 Which of the two a route answers with is part of what the web client sees.
 Keep whichever the route has always done.
 
+**Reading a request** goes through `http::Path`, `http::Query` and `http::Json`
+and nothing else; axum's own extractors of the same names refuse with a
+sentence of plain text. A path segment that is not an id is a 404 with no body
+(the route does not exist), a query that does not fit is a 400 with no body,
+and a body that is not the right JSON is a 400 with no body. `Json<T>` reads the
+whole body into memory, up to the 128 MiB ceiling; a route that takes an upload
+streams it instead, through `http::read_all`'s limit, once it is written.
+
 **JSON** is decided in `http/json.rs`: camelCase names (`#[serde(rename_all =
 "camelCase")]`), `null` for a missing value (never `skip_serializing_if`), `Id`
 and `Timestamp` from `values`, an enum written as the clients expect it for
@@ -123,7 +131,8 @@ with a text in both languages, which the compiler insists on:
 **The database** is reached through `state.database()`. SQLite is blocking, so
 the closure runs on a blocking thread and never on one that serves requests.
 
-- `read(|db| ...)` sees one snapshot for its whole length.
+- `read(|db| ...)` sees one snapshot for its whole length. A statement in it
+  that would change something fails; use `write`.
 - `write(|tx| ...)` is one transaction that takes the write lock when it begins
   and waits behind other writers instead of failing. It commits when the
   closure returns `Ok` and rolls back on `Err`.

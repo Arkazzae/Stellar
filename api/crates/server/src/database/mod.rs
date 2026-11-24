@@ -77,7 +77,8 @@ impl Database {
         &self.inner.settings.path
     }
 
-    /// Runs `work` on a connection, inside one snapshot of the database.
+    /// Runs `work` on a connection, inside one snapshot of the database. A
+    /// statement in it that would change something fails.
     pub async fn read<T, E, F>(&self, work: F) -> Result<T, E>
     where
         F: FnOnce(&Connection) -> Result<T, E> + Send + 'static,
@@ -85,6 +86,9 @@ impl Database {
         E: From<DbError> + From<rusqlite::Error> + Send + 'static,
     {
         self.run(move |connection| {
+            // A statement that would change something fails, instead of
+            // changing it inside a transaction that is never committed.
+            connection.pragma_update(None, "query_only", true)?;
             let transaction =
                 connection.transaction_with_behavior(TransactionBehavior::Deferred)?;
             let result = work(&transaction);
@@ -151,11 +155,13 @@ impl Database {
                 Some(connection) => connection,
                 None => connect(&inner.settings).map_err(E::from)?,
             };
-            // A statement that switched it off on this connection must not
-            // leave it off for the next one that borrows it.
-            connection
-                .pragma_update(None, "foreign_keys", true)
-                .map_err(|e| E::from(DbError::from(e)))?;
+            // What an earlier lease switched on or off must not stay so for
+            // the next one that borrows the connection.
+            for (pragma, wanted) in [("foreign_keys", true), ("query_only", false)] {
+                connection
+                    .pragma_update(None, pragma, wanted)
+                    .map_err(|e| E::from(DbError::from(e)))?;
+            }
             let outcome = work(&mut connection);
             // A connection that was in the middle of a transaction when the
             // closure panicked never gets here, so only sound ones are kept.
