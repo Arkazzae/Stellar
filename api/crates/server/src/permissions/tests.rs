@@ -1201,15 +1201,9 @@ fn a_system_role_is_never_deleted_and_a_fallback_from_another_server_is_refused(
 }
 
 #[test]
-fn the_owner_can_clear_their_own_legacy_denies_but_other_actors_cannot() {
+fn nobody_edits_the_overrides_of_the_owners_role_the_owner_included() {
     for section in [false, true] {
         let s = Scenario::new();
-        s.override_of(
-            s.world.owner_role,
-            section,
-            NONE,
-            MANAGE_ROLES | MANAGE_MESSAGES,
-        );
 
         assert!(
             !s.change_override(section, s.world.owner_role, NONE, NONE),
@@ -1224,7 +1218,7 @@ fn the_owner_can_clear_their_own_legacy_denies_but_other_actors_cannot() {
             NONE,
         )
         .unwrap();
-        assert!(owner, "owner, section={section}");
+        assert!(!owner, "owner, section={section}");
     }
 }
 
@@ -2111,10 +2105,10 @@ fn an_audit_line_names_the_actor_and_keeps_the_structured_fields() {
         (row.1.as_str(), row.2.as_str(), row.3, row.4.as_str()),
         ("role.update", "role", role, "Straż")
     );
-    // Only the fields that changed, with the characters outside plain ASCII escaped as the first server wrote them.
+    // Only the fields that changed, with the text as it is.
     assert_eq!(
         row.5,
-        r#"[{"field":"name","from":"Old","to":"Stra\u017C"},{"field":"permissions","added":["manageBans"]}]"#
+        r#"[{"field":"name","from":"Old","to":"Straż"},{"field":"permissions","added":["manageBans"]}]"#
     );
     assert_eq!(row.7, world.maja);
     assert_eq!(super::audit::read_changes(Some(&row.5)).len(), 2);

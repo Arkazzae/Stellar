@@ -276,7 +276,7 @@ async fn a_sign_in_ends_as_one_message_to_the_address_with_the_password_another_
 }
 
 #[tokio::test]
-async fn a_database_copied_to_another_data_folder_reads_the_secret_as_not_set() {
+async fn a_database_copied_to_another_data_folder_has_a_secret_that_does_not_open_and_nothing_is_sent() {
     let folder = with_a_queued_alert("owner").await;
     let smtp = SmtpServer::start(0, "the panel's password").await;
     configure(folder.path(), &Saved { port: smtp.port, username: "mailer", mailing: true, alerts: true });
@@ -286,17 +286,14 @@ async fn a_database_copied_to_another_data_folder_reads_the_secret_as_not_set() 
     copy_database(folder.path(), elsewhere.path());
 
     let worker = start_worker(elsewhere.path(), &[]).await;
-    until("a login", || !smtp.seen().logins.is_empty()).await;
-    until("the failed try", || row(elsewhere.path()).attempts == 1).await;
+    tokio::time::sleep(std::time::Duration::from_secs(3)).await;
     let log = worker.log();
     assert!(worker.stop().await);
 
-    // The server asked for a password, and this instance had none to give.
-    assert_eq!(smtp.seen().logins, [("mailer".to_string(), String::new())]);
+    // The secret is a damaged value, not an empty password: nothing is tried.
+    assert!(smtp.seen().logins.is_empty());
     assert!(smtp.seen().mails.is_empty());
-    let recorded = row(elsewhere.path());
-    assert!(recorded.last_error.contains("535"), "{}", recorded.last_error);
-    assert!(log.iter().any(|line| line.contains("mail.smtp-password") && line.contains("counts as unset")), "{log:?}");
+    assert!(row(elsewhere.path()).sent_at.is_none());
     assert!(!log.iter().any(|line| line.contains("the panel's password")));
 }
 

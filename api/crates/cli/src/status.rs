@@ -219,9 +219,7 @@ fn check_directory(name: &'static str, path: &str) -> Check {
     }
 }
 
-/// The keys folder holds one master key, `master.key`. A folder the first
-/// server used holds its own key files instead (`*.xml`), which this server
-/// cannot read.
+/// The keys folder holds one master key, `master.key`.
 fn check_keys(runtime: &Runtime) -> Check {
     let keys = runtime.keys_directory();
     let shown = keys.display();
@@ -236,23 +234,6 @@ fn check_keys(runtime: &Runtime) -> Check {
     }
     if runtime.has_master_key() {
         return Check::new("keys", "ok", format!("{shown} has the master key"));
-    }
-    let foreign = std::fs::read_dir(&keys)
-        .map(|entries| {
-            entries
-                .filter_map(Result::ok)
-                .filter(|entry| entry.path().extension().is_some_and(|ext| ext == "xml"))
-                .count()
-        })
-        .unwrap_or(0);
-    if foreign > 0 {
-        return Check::new(
-            "keys",
-            "warn",
-            format!(
-                "{shown} has no master key yet; its {foreign} data-protection key file(s) belong to the first server and cannot open this server's sealed values"
-            ),
-        );
     }
     Check::new("keys", "warn", format!("{shown} has no master key yet"))
 }

@@ -66,6 +66,14 @@ impl fmt::Display for SealError {
 
 impl std::error::Error for SealError {}
 
+/// A stored value that does not open is a damaged value, like any other the
+/// database holds that is not what its column should be.
+impl From<SealError> for rusqlite::Error {
+    fn from(error: SealError) -> rusqlite::Error {
+        rusqlite::Error::FromSqlConversionFailure(0, rusqlite::types::Type::Text, Box::new(error))
+    }
+}
+
 /// Why the master key could not be made or read.
 #[derive(Debug)]
 pub struct KeyError(String);
