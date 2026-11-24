@@ -7,7 +7,9 @@
 
 use std::collections::HashSet;
 
-use stellarr_unicode::{is_letter_or_number, to_upper_char};
+use stellarr_unicode::is_letter_or_number;
+
+use super::ordinal_case::fold;
 
 /// The most words a search is made of; the rest are not looked for.
 const MAX_TERMS: usize = 16;
@@ -24,7 +26,7 @@ pub fn build_query(query: &str) -> Option<String> {
     for word in words(query) {
         // Two spellings that differ only in case are one word, and the first
         // one counts.
-        let key: String = word.chars().map(to_upper_char).collect();
+        let key: String = word.chars().map(fold).collect();
         if seen.insert(key) {
             terms.push(prefix_term(&word));
             if terms.len() == MAX_TERMS {

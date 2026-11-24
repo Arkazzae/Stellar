@@ -201,7 +201,7 @@ fn attachments_of(db: &Connection, message: Id) -> rusqlite::Result<Vec<Attachme
                 a.\"DurationSeconds\", a.\"PosterObjectKey\" IS NOT NULL, a.\"IsVoiceMessage\",
                 a.\"PreviewObjectKey\" IS NOT NULL, a.\"Placeholder\"
          FROM \"MessageAttachments\" ma JOIN \"ImageAttachments\" a ON a.\"Id\" = ma.\"AttachmentId\"
-         WHERE ma.\"MessageId\" = ?1",
+         WHERE ma.\"MessageId\" = ?1 ORDER BY ma.\"AttachmentId\"",
     )?;
     let rows = statement.query_map([message], |row| {
         let id: Id = row.get(0)?;
@@ -229,7 +229,7 @@ fn embeds_of(db: &Connection, message: Id) -> rusqlite::Result<Vec<EmbedDto>> {
     let mut statement = db.prepare_cached(
         "SELECT \"Id\", \"Url\", \"Kind\", \"Provider\", \"ProviderId\", \"StartSeconds\", \"Domain\", \"Title\",
                 \"Description\", \"ThumbnailAttachmentId\"
-         FROM \"MessageEmbeds\" WHERE \"MessageId\" = ?1 ORDER BY \"Position\"",
+         FROM \"MessageEmbeds\" WHERE \"MessageId\" = ?1 ORDER BY \"Position\", rowid",
     )?;
     let rows = statement.query_map([message], |row| {
         let kind: i64 = row.get(2)?;
@@ -257,7 +257,7 @@ fn reactions_of(
     viewer: Option<Id>,
 ) -> rusqlite::Result<Vec<ReactionDto>> {
     let mut statement = db.prepare_cached(
-        "SELECT \"Emoji\", \"UserId\", \"CreatedAt\" FROM \"MessageReactions\" WHERE \"MessageId\" = ?1",
+        "SELECT \"Emoji\", \"UserId\", \"CreatedAt\" FROM \"MessageReactions\" WHERE \"MessageId\" = ?1 ORDER BY \"Emoji\"",
     )?;
     let made = statement
         .query_map([message], |row| {
@@ -268,9 +268,9 @@ fn reactions_of(
             ))
         })?
         .collect::<rusqlite::Result<Vec<_>>>()?;
-    // Groups in the order their emoji first came up, then by the moment of
-    // their earliest reaction; the sort is stable, so equal moments keep that
-    // first order.
+    // Groups in the order of their emoji, then by the moment of their earliest
+    // reaction; the sort is stable, so groups that began at the same moment
+    // keep the order of their emoji.
     let mut groups: Vec<(String, i64, bool, Timestamp)> = Vec::new();
     for (emoji, user, at) in made {
         let mine = viewer == Some(user);
@@ -334,7 +334,7 @@ fn reference_of(
 }
 
 /// The words of the text on one line, cut to 160 units with an ellipsis.
-fn one_line(content: &str) -> String {
+pub(super) fn one_line(content: &str) -> String {
     let joined = content
         .split(text::is_white_space)
         .filter(|word| !word.is_empty())

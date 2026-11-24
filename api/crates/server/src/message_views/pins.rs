@@ -53,15 +53,21 @@ pub async fn list(
             if visibility::find(db, user, server, channel, Some(ChannelKind::Text))?.is_none() {
                 return Ok(None);
             }
+            // The newest fifty pins are the ones the index of the channel's
+            // pins gives first; among pins made at one moment, which of them
+            // make the fifty is the order that index reads them in. They are
+            // then shown by pin time, and by id among those of one moment.
             let mut statement = db.prepare(
-                "SELECT \"Id\" FROM \"Messages\" WHERE \"ChannelId\" = ?1 AND \"PinnedAt\" IS NOT NULL
+                "SELECT \"Id\", \"PinnedAt\" FROM \"Messages\" WHERE \"ChannelId\" = ?1 AND \"PinnedAt\" IS NOT NULL
                  ORDER BY \"PinnedAt\" DESC LIMIT ?2",
             )?;
-            let ids = statement
+            let mut pinned = statement
                 .query_map(rusqlite::params![channel, MAX_PINS_PER_CHANNEL], |row| {
-                    row.get::<_, Id>(0)
+                    Ok((row.get::<_, Id>(0)?, row.get::<_, Timestamp>(1)?))
                 })?
                 .collect::<rusqlite::Result<Vec<_>>>()?;
+            pinned.sort_by(|a, b| b.1.cmp(&a.1).then(a.0.cmp(&b.0)));
+            let ids: Vec<Id> = pinned.into_iter().map(|(id, _)| id).collect();
             Ok(Some(wire::load(db, &ids, Some(user), &words)?))
         })
         .await?;
