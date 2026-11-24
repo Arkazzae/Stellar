@@ -24,10 +24,10 @@ use crate::events::{Audience, Event};
 use crate::http::{ApiError, ApiResult, Endpoints, Path, RateLimitPolicy, json_response};
 use crate::permissions::audit::{self, AuditEvent};
 use crate::permissions::authorization::{Scope, allows};
-use crate::permissions::membership::{ActiveServer, parse_guid};
+use crate::permissions::membership::ActiveServer;
 use crate::permissions::privileges::MANAGE_SERVER;
 use crate::state::AppState;
-use crate::values::Id;
+use crate::values::{Guid, Id};
 
 pub fn routes() -> Endpoints {
     Endpoints::new()
@@ -111,9 +111,8 @@ async fn remove(
     State(state): State<AppState>,
     caller: Caller,
     ActiveServer(server): ActiveServer,
-    Path(emoji_id): Path<String>,
+    Path(Guid(emoji)): Path<Guid>,
 ) -> ApiResult<Response> {
-    let emoji = parse_guid(&emoji_id).ok_or_else(ApiError::not_found)?;
     let user = caller.user;
     let state_for_text = state.clone();
     let outcome = state

@@ -80,6 +80,12 @@ PNG, JPEG, WEBP, WAVE, PDF = probe.PNG, probe.JPEG, probe.WEBP, probe.WAVE, prob
 GIF = b"GIF89a...."
 
 
+def other(identifier):
+    """An id that is not this one: the last digit made another digit."""
+    last = identifier[-1]
+    return identifier[:-1] + ("1" if last == "0" else "0")
+
+
 def show(label, answer, limit=12000):
     describe(label, answer, limit)
     status, _, body = answer
@@ -154,8 +160,8 @@ def emoji_corpus(base, boss, maja, outsider):
     glyph = first.get("glyph", "")
     emoji_id = first.get("id", "")
     for label, path, cookie in [("member", glyph, maja), ("owner", glyph, boss), ("outsider", glyph, outsider), ("anonymous", glyph, None),
-                                ("no server id", f"/api/emoji/{emoji_id}/image", maja), ("unknown id", f"/api/emoji/{emoji_id[:-1]}0/image", maja),
-                                ("unknown id anonymous", f"/api/emoji/{emoji_id[:-1]}0/image", None), ("not an id", "/api/emoji/x/image", maja),
+                                ("no server id", f"/api/emoji/{emoji_id}/image", maja), ("unknown id", f"/api/emoji/{other(emoji_id)}/image", maja),
+                                ("unknown id anonymous", f"/api/emoji/{other(emoji_id)}/image", None), ("not an id", "/api/emoji/x/image", maja),
                                 ("not an id anonymous", "/api/emoji/x/image", None), ("braces", "/api/emoji/%7B" + emoji_id + "%7D/image", maja),
                                 ("without hyphens", f"/api/emoji/{emoji_id.replace('-', '')}/image", maja), ("upper case", f"/api/emoji/{emoji_id.upper()}/image", maja),
                                 ("trailing slash", glyph.replace("/image", "/image/"), maja)]:
@@ -165,7 +171,7 @@ def emoji_corpus(base, boss, maja, outsider):
     describe("emoji image conditional", send(base, "GET", glyph, None, {"If-None-Match": "*", "If-Modified-Since": "Wed, 21 Oct 2037 07:28:00 GMT"}, maja), 300)
     # Deleting.
     for label, path, cookie in [("member", f"/api/emoji/{emoji_id}", maja), ("outsider", f"/api/emoji/{emoji_id}", outsider), ("anonymous", f"/api/emoji/{emoji_id}", None),
-                                ("not an id", "/api/emoji/x", boss), ("unknown", f"/api/emoji/{emoji_id[:-1]}0", boss), ("member unknown", f"/api/emoji/{emoji_id[:-1]}0", maja)]:
+                                ("not an id", "/api/emoji/x", boss), ("unknown", f"/api/emoji/{other(emoji_id)}", boss), ("member unknown", f"/api/emoji/{other(emoji_id)}", maja)]:
         show(f"emoji delete {label}", send(base, "DELETE", path, None, None, cookie))
     show("emoji delete", send(base, "DELETE", f"/api/emoji/{emoji_id}", None, None, boss))
     show("emoji delete again", send(base, "DELETE", f"/api/emoji/{emoji_id}", None, None, boss))
@@ -263,8 +269,8 @@ def soundboard_corpus(base, boss, maja, outsider, ids):
     show("sound update member", jcall(base, "PATCH", f"{path}/{sid}", {"name": "x"}, maja))
     show("sound update outsider", jcall(base, "PATCH", f"{path}/{sid}", {"name": "x"}, outsider))
     show("sound update anonymous", jcall(base, "PATCH", f"{path}/{sid}", {"name": "x"}, None))
-    show("sound update unknown", jcall(base, "PATCH", f"{path}/{sid[:-1]}0", {"name": "x"}, boss))
-    show("sound update member unknown", jcall(base, "PATCH", f"{path}/{sid[:-1]}0", {"name": "x"}, maja))
+    show("sound update unknown", jcall(base, "PATCH", f"{path}/{other(sid)}", {"name": "x"}, boss))
+    show("sound update member unknown", jcall(base, "PATCH", f"{path}/{other(sid)}", {"name": "x"}, maja))
     show("sound update not an id", jcall(base, "PATCH", f"{path}/x", {"name": "x"}, boss))
     show("sound update not an id anonymous", jcall(base, "PATCH", f"{path}/x", {"name": "x"}, None))
     show("sound update bad body", raw_json(base, "PATCH", f"{path}/{sid}", b"[", boss))
@@ -305,8 +311,8 @@ def soundboard_corpus(base, boss, maja, outsider, ids):
     show("sound delete outsider", send(base, "DELETE", f"{path}/{sid}", None, None, outsider))
     show("sound delete anonymous", send(base, "DELETE", f"{path}/{sid}", None, None, None))
     show("sound delete not an id", send(base, "DELETE", f"{path}/x", None, None, boss))
-    show("sound delete unknown", send(base, "DELETE", f"{path}/{sid[:-1]}0", None, None, boss))
-    show("sound delete member unknown", send(base, "DELETE", f"{path}/{sid[:-1]}0", None, None, maja))
+    show("sound delete unknown", send(base, "DELETE", f"{path}/{other(sid)}", None, None, boss))
+    show("sound delete member unknown", send(base, "DELETE", f"{path}/{other(sid)}", None, None, maja))
     show("sound delete", send(base, "DELETE", f"{path}/{sid}", None, None, boss))
     show("sound delete again", send(base, "DELETE", f"{path}/{sid}", None, None, boss))
     show("join sound after delete", send(base, "GET", "/api/me", None, None, maja))

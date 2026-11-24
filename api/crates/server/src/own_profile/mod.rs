@@ -10,7 +10,7 @@
 //! writes to it ([`ensure_preferences`]); an account that never saved any has
 //! the defaults.
 
-mod join_sound;
+pub(crate) mod join_sound;
 mod preferences;
 mod profile;
 
