@@ -21,7 +21,7 @@ use crate::values::Id;
 
 /// What to tell people, worked out inside the transaction.
 #[derive(Debug, Default)]
-pub(super) struct Announcement {
+pub(crate) struct Announcement {
     /// Whose view of the server's channels changed.
     changed: Vec<Id>,
     /// Each member to tell, with their server-wide permissions now.
@@ -31,7 +31,7 @@ pub(super) struct Announcement {
 impl Announcement {
 
     /// Whoever sees something else, and each of `recipients` who is a member.
-    pub(super) fn after(
+    pub(crate) fn after(
         db: &Connection,
         server: Id,
         before: &ViewChange,
@@ -56,7 +56,7 @@ impl Announcement {
 
     /// Hands it to the hub: the people whose view changed first, then each
     /// recipient their own permissions.
-    pub(super) fn publish(self, state: &AppState, server: Id) {
+    pub(crate) fn publish(self, state: &AppState, server: Id) {
         access_changed::publish(state.events(), server, self.changed);
         for (user, permissions) in self.notices {
             state.events().publish(Event::new(

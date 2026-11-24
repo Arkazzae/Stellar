@@ -42,10 +42,10 @@ pub(super) struct OrderRequest {
 
 /// A role as a request may make it: the name and color trimmed and within
 /// their lengths, and every permission named one that exists.
-struct Draft {
-    name: String,
-    color: String,
-    permissions: i64,
+pub(crate) struct Draft {
+    pub(crate) name: String,
+    pub(crate) color: String,
+    pub(crate) permissions: i64,
 }
 
 /// What a person's text counts as in the first server: UTF-16 units.
@@ -53,7 +53,7 @@ fn length(text: &str) -> usize {
     text.encode_utf16().count()
 }
 
-fn validate(name: &str, color: &str, permissions: Option<&[String]>) -> Option<Draft> {
+pub(crate) fn validate(name: &str, color: &str, permissions: Option<&[String]>) -> Option<Draft> {
     let name = name.trim();
     let color = color.trim();
     let permissions = privileges::parse_names(
@@ -70,7 +70,7 @@ fn validate(name: &str, color: &str, permissions: Option<&[String]>) -> Option<D
         })
 }
 
-fn invalid_role(messages: &Messages) -> Result<ApiError, stellarr_messages::MissingValue> {
+pub(crate) fn invalid_role(messages: &Messages) -> Result<ApiError, stellarr_messages::MissingValue> {
     Ok(invalid("role", messages.get(MessageKey::RoleInvalid, &[])?))
 }
 
