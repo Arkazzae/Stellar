@@ -107,21 +107,6 @@ pub fn account_changed(state: &AppState, user: Id) {
     ));
 }
 
-/// Tells people's clients to reload the friends screen, each once.
-pub fn social_changed(state: &AppState, people: &[Id]) {
-    let mut each: Vec<Id> = Vec::new();
-    for person in people {
-        if !each.contains(person) {
-            each.push(*person);
-        }
-    }
-    state.events().publish(Event::new(
-        Audience::Users(each),
-        "SocialChanged",
-        &Nothing {},
-    ));
-}
-
 /// Tells both people that a line was added.
 pub fn line_created(state: &AppState, conversation: &Conversation, line: &Line) {
     state.events().publish(Event::new(
