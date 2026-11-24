@@ -39,6 +39,14 @@ struct InviteDto {
     /// Spelled by the caller: an invite just made says it is UTC, one read
     /// back from the database does not.
     expires_at: Option<String>,
+}
+
+/// The creation response also names the channel the caller chose.
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct CreatedInvite {
+    #[serde(flatten)]
+    invite: InviteDto,
     channel_id: Option<Id>,
     channel_name: Option<String>,
 }
@@ -63,9 +71,7 @@ fn invite_origin(state: &AppState, client: &ClientInfo, headers: &HeaderMap) -> 
     format!("{}://{host}", client.scheme)
 }
 
-/// The server's invites that can still be used, newest first. One to a
-/// channel the caller does not see is listed without the channel: the invite is
-/// theirs to revoke, the channel not theirs to know about.
+/// The server's invites that can still be used, newest first.
 pub async fn list(
     State(state): State<AppState>,
     caller: Caller,
@@ -82,51 +88,29 @@ pub async fn list(
             }
             let now = Timestamp::now();
             let mut statement = db.prepare(
-                "SELECT i.\"Id\", i.\"Code\", u.\"DisplayName\", i.\"Uses\", i.\"MaxUses\", i.\"ExpiresAt\", i.\"ChannelId\", c.\"Name\"
+                "SELECT i.\"Id\", i.\"Code\", u.\"DisplayName\", i.\"Uses\", i.\"MaxUses\", i.\"ExpiresAt\"
                  FROM \"ServerInvites\" i
                  JOIN \"Users\" u ON u.\"Id\" = i.\"CreatedById\"
-                 LEFT JOIN \"Channels\" c ON c.\"Id\" = i.\"ChannelId\"
                  WHERE i.\"ServerId\" = ?1
                    AND (i.\"ExpiresAt\" IS NULL OR i.\"ExpiresAt\" > ?2)
                    AND (i.\"MaxUses\" IS NULL OR i.\"Uses\" < i.\"MaxUses\")
                  ORDER BY i.\"CreatedAt\" DESC",
             )?;
-            let rows = statement
+            let invites = statement
                 .query_map(params![server, now], |row| {
-                    Ok((
-                        row.get::<_, Id>(0)?,
-                        row.get::<_, String>(1)?,
-                        row.get::<_, String>(2)?,
-                        row.get::<_, i64>(3)?,
-                        row.get::<_, Option<i64>>(4)?,
-                        row.get::<_, Option<Timestamp>>(5)?,
-                        row.get::<_, Option<Id>>(6)?,
-                        row.get::<_, Option<String>>(7)?,
-                    ))
+                    let code: String = row.get(1)?;
+                    let expires_at: Option<Timestamp> = row.get(5)?;
+                    Ok(InviteDto {
+                        id: row.get(0)?,
+                        url: format!("{origin}/invite/{code}"),
+                        created_by_name: row.get(2)?,
+                        uses: row.get(3)?,
+                        max_uses: row.get(4)?,
+                        expires_at: expires_at.map(Timestamp::to_wire_text),
+                    })
                 })?
                 .collect::<rusqlite::Result<Vec<_>>>()?;
-            let view = visibility::of_member(db, caller.user, server)?;
-            Ok(Some(
-                rows.into_iter()
-                    .map(|(id, code, by, uses, max_uses, expires_at, channel, name)| {
-                        let hidden = match (&view, channel) {
-                            (Some(view), Some(channel)) => !view.channels.contains(&channel),
-                            _ => false,
-                        };
-                        let (channel_id, channel_name) = if hidden { (None, None) } else { (channel, name) };
-                        InviteDto {
-                            id,
-                            url: format!("{origin}/invite/{code}"),
-                            created_by_name: by,
-                            uses,
-                            max_uses,
-                            expires_at: expires_at.map(Timestamp::to_wire_text),
-                            channel_id,
-                            channel_name,
-                        }
-                    })
-                    .collect(),
-            ))
+            Ok(Some(invites))
         })
         .await?;
     match found {
@@ -159,7 +143,7 @@ pub async fn create(
         .database()
         .write({
             let state = state.clone();
-            move |tx| -> Result<Result<InviteDto, Refused>, DbError> {
+            move |tx| -> Result<Result<CreatedInvite, Refused>, DbError> {
                 let messages = state.messages();
                 let text = |key: MessageKey| messages.get(key, &[]).map_err(|e| DbError::Task(e.to_string()));
                 // A channel the caller does not see is as unknown as one that
@@ -220,13 +204,15 @@ pub async fn create(
                 )?;
                 let by: String = crate::instance::users::User::display_name(tx, caller.user)?;
                 Ok(Ok(
-                    InviteDto {
-                        id,
-                        url: format!("{origin}/invite/{code}"),
-                        created_by_name: by,
-                        uses: 0,
-                        max_uses: Some(INVITE_MAX_USES),
-                        expires_at: Some(expires_at.to_wire_text()),
+                    CreatedInvite {
+                        invite: InviteDto {
+                            id,
+                            url: format!("{origin}/invite/{code}"),
+                            created_by_name: by,
+                            uses: 0,
+                            max_uses: Some(INVITE_MAX_USES),
+                            expires_at: Some(expires_at.to_wire_text()),
+                        },
                         channel_id: channel.as_ref().map(|c| c.0),
                         channel_name: channel.map(|c| c.1),
                     },
@@ -237,7 +223,7 @@ pub async fn create(
     match made {
         Ok(invite) => {
             let mut response = json_response(StatusCode::CREATED, &invite);
-            if let Ok(location) = HeaderValue::from_str(&format!("/api/admin/invites/{}", invite.id)) {
+            if let Ok(location) = HeaderValue::from_str(&format!("/api/admin/invites/{}", invite.invite.id)) {
                 response.headers_mut().insert(header::LOCATION, location);
             }
             Ok(response)

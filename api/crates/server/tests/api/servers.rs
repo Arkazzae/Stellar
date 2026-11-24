@@ -736,7 +736,7 @@ async fn invites_are_listed_until_revoked_and_only_for_those_who_manage_the_serv
     let invite = make_invite(&maya.client, &id, json!({})).await;
 
     let listing = get(&maya.client, "/api/admin/invites", Some(&id)).await;
-    assert_eq!(order(objects_of(&listing.text())[0]), ["id", "url", "createdByName", "uses", "maxUses", "expiresAt", "channelId", "channelName"]);
+    assert_eq!(order(objects_of(&listing.text())[0]), ["id", "url", "createdByName", "uses", "maxUses", "expiresAt"]);
     let listed = listing.json::<Value>();
     let found = listed.as_array().unwrap().iter().find(|x| x["id"] == invite.0).unwrap();
     // The instance's public address, without its trailing slash.
@@ -833,8 +833,8 @@ async fn joining_through_an_invite_counts_each_new_member_once_and_refuses_the_b
     assert_eq!(uses, 1);
     assert_eq!(member_count(&connection, &id), 2);
     let answer = first.json::<Value>();
-    assert_eq!(order(&first.text()), ["id", "name", "description", "iconUrl", "createdAt", "isPublic", "channelId", "channelName"]);
-    assert_eq!(answer["channelId"], Value::Null);
+    assert_eq!(order(&first.text()), ["id", "name", "description", "iconUrl", "createdAt", "isPublic"]);
+    assert_eq!(answer["id"], id);
 }
 
 #[tokio::test]
@@ -929,7 +929,7 @@ async fn one_person_joining_twice_at_once_is_a_member_once_and_counts_one_use() 
 }
 
 #[tokio::test]
-async fn joining_through_a_channel_invite_names_the_channel_only_when_the_newcomer_will_see_it() {
+async fn joining_through_an_invite_to_a_visible_or_hidden_channel_returns_the_server() {
     let server = Server::start().await;
     server.found("owner").await;
     let maya = server.register("maya").await;
@@ -945,15 +945,16 @@ async fn joining_through_a_channel_invite_names_the_channel_only_when_the_newcom
     let seen = post(&ada.client, &format!("/api/invites/{}/join", to_open.1), None, None).await.json::<Value>();
     let unseen = post(&jo.client, &format!("/api/invites/{}/join", to_meeting.1), None, None).await.json::<Value>();
 
-    assert_eq!((&seen["channelId"], &seen["channelName"]), (&json!(open), &json!("open")));
-    // The newcomer lands in the server without being told of the channel.
-    assert_eq!((&unseen["channelId"], &unseen["channelName"]), (&Value::Null, &Value::Null));
+    assert_eq!(seen["id"], id);
+    assert_eq!(unseen, seen);
+    assert!(seen.get("channelId").is_none());
+    assert!(seen.get("channelName").is_none());
     let still_stored: Option<String> = one(&server, "SELECT \"ChannelId\" FROM \"ServerInvites\" WHERE \"Id\" = ?1", &to_meeting.0);
     assert!(still_stored.is_some());
 }
 
 #[tokio::test]
-async fn an_invite_to_a_hidden_channel_is_listed_to_a_manager_who_does_not_see_it_without_the_channel() {
+async fn an_invite_to_a_hidden_channel_is_listed_without_channel_details() {
     let server = Server::start().await;
     server.found("owner").await;
     let maya = server.register("maya").await;
@@ -969,10 +970,11 @@ async fn an_invite_to_a_hidden_channel_is_listed_to_a_manager_who_does_not_see_i
     let listed = get(&ada.client, "/api/admin/invites", Some(&id)).await.json::<Value>();
 
     let found = listed.as_array().unwrap().iter().find(|x| x["id"] == invite.0).unwrap();
-    assert_eq!((&found["channelId"], &found["channelName"]), (&Value::Null, &Value::Null));
+    assert!(found.get("channelId").is_none());
+    assert!(found.get("channelName").is_none());
     let maya_sees = get(&maya.client, "/api/admin/invites", Some(&id)).await.json::<Value>();
-    let found = maya_sees.as_array().unwrap().iter().find(|x| x["id"] == invite.0).unwrap();
-    assert_eq!(found["channelName"], "meeting");
+    let owner_invite = maya_sees.as_array().unwrap().iter().find(|x| x["id"] == invite.0).unwrap();
+    assert_eq!(owner_invite, found);
 }
 
 // ---------------------------------------------------------------------------
