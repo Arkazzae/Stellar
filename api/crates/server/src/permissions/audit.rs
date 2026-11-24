@@ -104,14 +104,12 @@ pub fn record(db: &Connection, server: Id, actor: Id, event: &AuditEvent) -> rus
 }
 
 /// The text cut to `max` UTF-16 units, the last of which is an ellipsis when
-/// it was cut. A cut that falls inside a surrogate pair leaves half of it,
-/// which is stored as the replacement character.
+/// it was cut. A pair the cut falls inside is left out whole.
 pub fn clip(text: &str, max: usize) -> String {
-    let units = utf16::units(text);
-    if units.len() <= max {
+    if text.encode_utf16().count() <= max {
         return text.to_string();
     }
-    let mut kept = utf16::text(&units[..max - 1]);
+    let mut kept = utf16::prefix(text, max - 1).to_string();
     kept.push('\u{2026}');
     kept
 }

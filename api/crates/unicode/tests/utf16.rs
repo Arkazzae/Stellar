@@ -56,3 +56,20 @@ fn the_character_sets_of_the_readers() {
     );
     assert_eq!(REPLACEMENT, '\u{FFFD}');
 }
+
+#[test]
+fn a_prefix_is_never_half_a_character() {
+    assert_eq!(prefix("short", 10), "short");
+    assert_eq!(prefix("abc", 3), "abc");
+    assert_eq!(prefix("abc", 2), "ab");
+    assert_eq!(prefix("abc", 0), "");
+    // Each of these is two units: the limit may fall between its halves.
+    assert_eq!(prefix("a😀b", 3), "a😀");
+    assert_eq!(prefix("a😀b", 2), "a");
+    assert_eq!(prefix("😀", 1), "");
+    assert_eq!(prefix("é😀", 2), "é");
+    assert_eq!(
+        text(&units(prefix(&"😀".repeat(300), 499))).chars().count(),
+        249
+    );
+}

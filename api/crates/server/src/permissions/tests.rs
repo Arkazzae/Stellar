@@ -2125,9 +2125,10 @@ fn a_line_without_changes_stores_none_and_long_text_is_cut_with_an_ellipsis() {
     assert!(summary.ends_with('\u{2026}') && summary.starts_with("ada Display xxx"));
     assert_eq!(name.encode_utf16().count(), 200);
     assert_eq!(changes, None);
-    // A cut that falls between the halves of an emoji leaves the replacement character.
+    // A cut that falls between the halves of an emoji leaves the emoji out.
     assert_eq!(clip("ab😀", 3), "ab\u{2026}");
-    assert_eq!(clip("a😀b", 3), "a\u{fffd}\u{2026}");
+    assert_eq!(clip("a😀b", 3), "a\u{2026}");
+    assert_eq!(clip("a😀bc", 4), "a😀\u{2026}");
     assert_eq!(clip("abc", 3), "abc");
 }
 

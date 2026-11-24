@@ -270,11 +270,5 @@ fn instance_zone(id: &str) -> TimeZone {
 
 /// The first 500 UTF-16 units of `text`, never half a character.
 pub(crate) fn cut(text: &str) -> String {
-    let mut units = 0;
-    text.chars()
-        .take_while(|letter| {
-            units += letter.len_utf16();
-            units <= MAX_ERROR_UNITS
-        })
-        .collect()
+    stellarr_unicode::utf16::prefix(text, MAX_ERROR_UNITS).to_string()
 }
