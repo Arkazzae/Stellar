@@ -9,7 +9,8 @@
 //! 6. count the request against the rate limit its route asks for;
 //! 7. refuse a client that is not one of ours (the client gate);
 //! 8. refuse a JSON route a body of another content type;
-//! 9. authenticate: where a session cookie is read, once sessions exist;
+//! 9. authenticate: the session cookie is read and checked against the
+//!    database, and a route that needs a session refuses a request without one;
 //! 10. the handler.
 //!
 //! Which route a request is for is known to every step, since routing comes
@@ -37,8 +38,12 @@ use super::forwarded::{self, ClientInfo};
 use super::rate_limit::RateLimiter;
 use super::routes::Rules;
 use super::trace;
+use crate::auth::session::Authentication;
+use crate::auth::{self, Caller};
+use crate::database::DbError;
 use crate::logging::{self, REQUEST_TARGET};
 use crate::state::AppState;
+use crate::values::Timestamp;
 
 pub struct Pipeline {
     pub(super) state: AppState,
@@ -94,7 +99,7 @@ pub fn build(
     let mut router = router
         .with_state(state)
         // Innermost first: each `layer` wraps what is already there.
-        .layer(from_fn_with_state(Arc::clone(&pipeline), content_type))
+        .layer(from_fn_with_state(Arc::clone(&pipeline), route_checks))
         .layer(from_fn_with_state(
             Arc::clone(&pipeline),
             client_gate::middleware,
@@ -197,25 +202,110 @@ async fn rate_limit(
     }
 }
 
-async fn content_type(
+/// Reads the session cookie, then holds the request to what its route asks:
+/// the right content type, a method it has, and a signed-in person where the
+/// route needs one. Authentication runs for every request, whatever its
+/// route, since a cookie that is no longer good is taken away on whatever
+/// request carries it.
+async fn route_checks(
     State(pipeline): State<Arc<Pipeline>>,
-    request: Request,
+    mut request: Request,
     next: Next,
 ) -> Response {
-    if pipeline
-        .rules_of(&request)
-        .is_some_and(|rules| refuses_content_type(rules, &request))
-    {
-        return ApiError::status(StatusCode::UNSUPPORTED_MEDIA_TYPE).into_response();
+    let environment = &pipeline.state.settings().environment;
+    let https = request
+        .extensions()
+        .get::<ClientInfo>()
+        .is_some_and(|client| client.scheme == "https");
+    let mut cookies = Vec::new();
+    let cookie = auth::cookies::read(request.headers(), auth::session::cookie_name(environment));
+    if cookie.is_some() {
+        let state = pipeline.state.clone();
+        let outcome = pipeline
+            .state
+            .database()
+            .read(move |connection| -> Result<_, DbError> {
+                auth::session::authenticate(
+                    connection,
+                    state.sealer(),
+                    &state.settings().environment,
+                    https,
+                    cookie.as_deref(),
+                    Timestamp::now(),
+                )
+            })
+            .await;
+        match outcome {
+            Err(error) => return ApiError::from(error).into_response(),
+            Ok(Authentication::Anonymous) => {}
+            Ok(Authentication::Rejected) => {
+                cookies.push(auth::session::sign_out_cookie(environment, https))
+            }
+            Ok(Authentication::SignedIn {
+                caller,
+                renewed_cookie,
+                touch,
+            }) => {
+                if let Some(touch) = touch
+                    && let Err(error) = pipeline
+                        .state
+                        .database()
+                        .write(move |tx| touch.write(tx))
+                        .await
+                {
+                    return ApiError::from(error).into_response();
+                }
+                cookies.extend(renewed_cookie);
+                request.extensions_mut().insert(caller);
+            }
+        }
     }
-    if request.method() == Method::HEAD
+
+    let rules = pipeline.rules_of(&request);
+    let refusal = if rules.is_some_and(|rules| refuses_content_type(rules, &request)) {
+        Some(ApiError::status(StatusCode::UNSUPPORTED_MEDIA_TYPE).into_response())
+    } else if request.method() == Method::HEAD
         && let Some(refusal) = pipeline.head_refusal(&request)
     {
-        return refusal;
+        Some(refusal)
+    } else if rules.is_some_and(|rules| rules.authorize)
+        && request.extensions().get::<Caller>().is_none()
+    {
+        // A route that needs a session answers a request without one with
+        // 401 and no body.
+        Some(ApiError::unauthorized().into_response())
+    } else {
+        None
+    };
+    let mut response = match refusal {
+        Some(refusal) => refusal,
+        None => next.run(request).await,
+    };
+    if !cookies.is_empty() {
+        put_cookies_first(&mut response, &cookies);
     }
-    // Authentication goes here: once there are sessions, the cookie is read
-    // and the person is put into the request's extensions for the handler.
-    next.run(request).await
+    response
+}
+
+/// Puts the cookies that authentication set ahead of the ones the handler
+/// set, so that a handler that signs in after a rejected cookie wins, and
+/// keeps the answer out of every cache, as any answer that sets a session
+/// cookie is.
+fn put_cookies_first(response: &mut Response, cookies: &[String]) {
+    let handler: Vec<HeaderValue> = response
+        .headers()
+        .get_all(header::SET_COOKIE)
+        .iter()
+        .cloned()
+        .collect();
+    response.headers_mut().remove(header::SET_COOKIE);
+    let first = cookies
+        .iter()
+        .filter_map(|line| HeaderValue::from_str(line).ok());
+    for value in first.chain(handler) {
+        response.headers_mut().append(header::SET_COOKIE, value);
+    }
+    super::session_cookie::keep_out_of_caches(response);
 }
 
 /// The router lists `HEAD` among the methods of a route that has `GET`. The

@@ -42,3 +42,65 @@ impl<T: DeserializeOwned, S: Send + Sync> FromRequestParts<S> for Query<T> {
             .map_err(|_| ApiError::bad_request())
     }
 }
+
+/// The person a request is from. A handler takes `Caller` on a route that is
+/// `.authorized()`, where there always is one.
+impl<S: Send + Sync> FromRequestParts<S> for crate::auth::Caller {
+    type Rejection = ApiError;
+
+    async fn from_request_parts(parts: &mut Parts, _: &S) -> Result<crate::auth::Caller, ApiError> {
+        parts
+            .extensions
+            .get::<crate::auth::Caller>()
+            .copied()
+            .ok_or_else(ApiError::unauthorized)
+    }
+}
+
+/// The person a request is from, if there is one, for a route that answers
+/// those who are not signed in too.
+pub struct MaybeCaller(pub Option<crate::auth::Caller>);
+
+impl<S: Send + Sync> FromRequestParts<S> for MaybeCaller {
+    type Rejection = ApiError;
+
+    async fn from_request_parts(parts: &mut Parts, _: &S) -> Result<MaybeCaller, ApiError> {
+        Ok(MaybeCaller(
+            parts.extensions.get::<crate::auth::Caller>().copied(),
+        ))
+    }
+}
+
+/// What a request says about where it came from: the address the proxies
+/// vouch for, whether it came over HTTPS, and the browser's name for itself.
+#[derive(Debug, Clone)]
+pub struct Origin {
+    pub address: String,
+    pub https: bool,
+    /// The `User-Agent`, without surrounding whitespace.
+    pub user_agent: String,
+    pub cookies: axum::http::HeaderMap,
+}
+
+impl<S: Send + Sync> FromRequestParts<S> for Origin {
+    type Rejection = ApiError;
+
+    async fn from_request_parts(parts: &mut Parts, _: &S) -> Result<Origin, ApiError> {
+        let client = parts.extensions.get::<super::ClientInfo>();
+        Ok(Origin {
+            address: client.map_or_else(
+                || "unknown".to_string(),
+                |client| client.address.to_string(),
+            ),
+            https: client.is_some_and(|client| client.scheme == "https"),
+            user_agent: parts
+                .headers
+                .get(axum::http::header::USER_AGENT)
+                .and_then(|value| value.to_str().ok())
+                .unwrap_or("")
+                .trim()
+                .to_string(),
+            cookies: parts.headers.clone(),
+        })
+    }
+}

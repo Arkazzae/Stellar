@@ -1,3 +1,4 @@
 groups! {
+    accounts,
     health,
 }
