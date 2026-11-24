@@ -158,10 +158,7 @@ async fn ban(
                 params![server, user, caller.user, stored, now],
             )
             .map_err(taken)?;
-            tx.execute(
-                "DELETE FROM \"ServerMembers\" WHERE \"ServerId\" = ?1 AND \"UserId\" = ?2",
-                params![server, user],
-            )?;
+            crate::permissions::ownership::remove_member(tx, server, user)?;
             audit::record(
                 tx,
                 server,
@@ -255,10 +252,7 @@ async fn kick(
                 return Err(refused);
             }
             let name = crate::instance::users::User::display_name(tx, user)?;
-            tx.execute(
-                "DELETE FROM \"ServerMembers\" WHERE \"ServerId\" = ?1 AND \"UserId\" = ?2",
-                params![server, user],
-            )?;
+            crate::permissions::ownership::remove_member(tx, server, user)?;
             audit::record(
                 tx,
                 server,

@@ -88,7 +88,7 @@ pub async fn create(
                 let messages = state.messages();
                 let now = Timestamp::now();
                 let added = starter::add(tx, &starter, messages, now)?;
-                starter::admit(tx, added.id, caller.user, added.owner_role, true, false, now)?;
+                crate::permissions::ownership::admit(tx, added.id, caller.user, added.owner_role, false, Some(1), now)?;
                 let owner = User::find(tx, caller.user)?
                     .ok_or_else(|| DbError::Task("the signed-in account is not there".into()))?;
                 let welcome = welcome::create(tx, added.id, &owner, now, messages)?;

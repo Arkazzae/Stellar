@@ -4,7 +4,7 @@
 use axum::http::{HeaderValue, StatusCode, header};
 use axum::response::{IntoResponse, Response};
 use axum::extract::State;
-use rusqlite::{Connection, OptionalExtension, params};
+use rusqlite::{Connection, OptionalExtension};
 use serde::Serialize;
 use stellarr_messages::MessageKey;
 
@@ -28,11 +28,7 @@ fn names_channel(db: &Connection, invite: &Invite, user: Option<Id>) -> rusqlite
         return Ok(false);
     };
     if let Some(user) = user {
-        let member: bool = db.query_row(
-            "SELECT EXISTS (SELECT 1 FROM \"ServerMembers\" WHERE \"ServerId\" = ?1 AND \"UserId\" = ?2)",
-            params![invite.server, user],
-            |row| row.get(0),
-        )?;
+        let member: bool = crate::permissions::membership::is_member(db, invite.server, user)?;
         if member {
             return visibility::views(db, user, channel);
         }
