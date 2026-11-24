@@ -1495,8 +1495,11 @@ async fn the_audit_log_comes_in_pages_from_the_newest_back() {
         assert_eq!(rest.as_array().unwrap().len(), 10, "{before}");
         assert_eq!(rest[0]["summary"], "Maya did 9", "{before}");
     }
-    let empty = get(&maya.client, "/api/admin/audit?before=", Some(&id)).await.json::<Value>();
-    assert_eq!(empty.as_array().unwrap().len(), 50);
+    let empty = get(&maya.client, "/api/admin/audit?before=", Some(&id)).await;
+    assert_eq!((empty.status.as_u16(), empty.body.len()), (400, 0));
+    let informal = get(&maya.client, "/api/admin/audit?before=Jan%201%202026", Some(&id)).await;
+    assert_eq!(informal.status, 200);
+    assert_eq!(informal.json::<Value>(), json!([]));
     let garbage = get(&maya.client, "/api/admin/audit?before=yesterday", Some(&id)).await;
     assert_eq!((garbage.status.as_u16(), garbage.body.len()), (400, 0));
 }
@@ -1724,7 +1727,6 @@ async fn a_transfer_is_the_owners_alone_and_refuses_oneself_nobody_and_a_person_
         ("a stranger", json!({ "userId": nils.id })),
         ("nobody", json!({})),
         ("the empty id", json!({ "userId": "00000000-0000-0000-0000-000000000000" })),
-        ("null", json!({ "userId": null })),
         ("an unknown id", json!({ "userId": Id::random() })),
     ] {
         let refused = post(&maya.client, "/api/admin/server/transfer", Some(&id), Some(&body)).await;
@@ -1733,7 +1735,7 @@ async fn a_transfer_is_the_owners_alone_and_refuses_oneself_nobody_and_a_person_
         assert_eq!(keys(&problem["errors"]), ["userId"], "{label}");
         assert_eq!(problem["errors"]["userId"][0], "Pick another member of the server.", "{label}");
     }
-    for (label, raw) in [("not an id", "{\"userId\":\"x\"}"), ("no body", ""), ("not JSON", "{")] {
+    for (label, raw) in [("not an id", "{\"userId\":\"x\"}"), ("null", "{\"userId\":null}"), ("no body", ""), ("not JSON", "{")] {
         let refused = maya
             .client
             .send(Request::new(Method::POST, "/api/admin/server/transfer").header(SERVER_HEADER, &id).body("application/json", raw))
@@ -1964,4 +1966,76 @@ async fn deleting_an_unknown_server_is_not_a_member_s_business() {
     let response = delete(&maya.client, "/api/admin/server", Some(&Id::random().to_string())).await;
 
     assert_eq!((response.status.as_u16(), response.body.len()), (403, 0));
+}
+
+#[tokio::test]
+async fn a_newcomer_who_comes_through_a_channel_invite_is_greeted_in_that_channel() {
+    let server = Server::start().await;
+    server.found("owner").await;
+    let maya = server.register("maya").await;
+    let ada = server.register("ada").await;
+    let kim = server.register("kim").await;
+    let id = create_server(&maya.client, json!({ "name": "Crew", "textChannelName": "hall", "voiceChannelName": "" })).await;
+    let staff = {
+        let response = post(&maya.client, "/api/admin/channels", Some(&id), Some(&json!({ "name": "staff", "kind": "text" }))).await;
+        // The channels routes belong to another group; the channel is made in the database when they are not there yet.
+        if response.status == 201 {
+            response.json::<Value>()["id"].as_str().unwrap().to_string()
+        } else {
+            let channel = text_id();
+            server
+                .database()
+                .execute(
+                    "INSERT INTO \"Channels\" (\"Id\", \"ServerId\", \"Name\", \"Kind\", \"Position\", \"Topic\", \"SlowModeSeconds\", \"HideAfterInactivityHours\", \"UserLimit\", \"SectionId\") VALUES (?1, ?2, 'staff', 0, 2, '', 0, 0, 0, NULL)",
+                    params![channel, id.to_uppercase()],
+                )
+                .unwrap();
+            channel.to_lowercase()
+        }
+    };
+    hide_channel(&server, &id, &staff);
+    let to_staff = make_invite(&maya.client, &id, json!({ "channelId": staff })).await;
+    let plain = make_invite(&maya.client, &id, json!({})).await;
+
+    assert_eq!(post(&ada.client, &format!("/api/invites/{}/join", to_staff.1), None, None).await.status, 200);
+    assert_eq!(post(&kim.client, &format!("/api/invites/{}/join", plain.1), None, None).await.status, 200);
+
+    let greeted = |person: &Person| -> String {
+        let channel: String = server
+            .database()
+            .query_row(
+                "SELECT c.\"Name\" FROM \"Messages\" m JOIN \"Channels\" c ON c.\"Id\" = m.\"ChannelId\" WHERE m.\"IsSystem\" = 1 AND m.\"AuthorId\" = ?1 AND c.\"ServerId\" = ?2",
+                params![person.id.to_uppercase(), id.to_uppercase()],
+                |row| row.get(0),
+            )
+            .unwrap();
+        channel
+    };
+    // The invite names the channel the person is greeted in, hidden or not;
+    // anybody else is greeted in the first channel they see.
+    assert_eq!(greeted(&ada), "staff");
+    assert_eq!(greeted(&kim), "hall");
+}
+
+#[tokio::test]
+async fn a_list_is_not_an_object_for_any_route_that_reads_one() {
+    let server = Server::start().await;
+    server.found("owner").await;
+    let maya = server.register("maya").await;
+    let ada = server.register("ada").await;
+    let id = crowded(&server, &maya, &[&ada]).await;
+
+    for (method, path) in [
+        (Method::PATCH, "/api/admin/server"),
+        (Method::PATCH, "/api/admin/notifications"),
+        (Method::POST, "/api/admin/server/transfer"),
+        (Method::POST, "/api/admin/invites"),
+    ] {
+        let response = maya
+            .client
+            .send(Request::new(method.clone(), path).header(SERVER_HEADER, &id).body("application/json", "[]"))
+            .await;
+        assert_eq!((response.status.as_u16(), response.body.len()), (400, 0), "{method} {path}");
+    }
+    assert_eq!(count_of(&server, "SELECT count(*) FROM \"ServerAuditEntries\" WHERE \"ServerId\" = ?1", &id), 1);
 }
