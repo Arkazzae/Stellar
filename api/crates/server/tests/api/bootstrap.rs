@@ -261,8 +261,22 @@ async fn presence_is_what_the_caller_may_see_of_each_member() {
 // ---- voice
 
 #[tokio::test]
+async fn direct_media_does_not_advertise_a_relay_even_if_a_secret_is_configured() {
+    let server = Server::start_with(&[
+        ("Rtc__TurnSharedSecret", SECRET),
+        ("Rtc__PublicHost", "voice.example.test"),
+    ])
+    .await;
+    let owner = server.found("owner").await;
+
+    let rtc = answer(&owner).await["rtc"].clone();
+    assert_eq!(rtc["iceServers"], serde_json::json!([]));
+    assert_eq!(rtc["mediaServer"], "udp://voice.example.test:49000");
+}
+
+#[tokio::test]
 async fn the_relay_is_described_with_credentials_for_the_caller_that_last_an_hour() {
-    let server = Server::start_with(&[("Rtc__TurnSharedSecret", SECRET), ("Rtc__PublicHost", "voice.example.test"), ("Rtc__TurnTcpEnabled", "true"), ("Rtc__TurnsEnabled", "true"), ("Rtc__TurnsPort", "443")]).await;
+    let server = Server::start_with(&[("STELLARR_TURN_ENABLED", "true"), ("Rtc__TurnSharedSecret", SECRET), ("Rtc__PublicHost", "voice.example.test"), ("Rtc__TurnTcpEnabled", "true"), ("Rtc__TurnsEnabled", "true"), ("Rtc__TurnsPort", "443")]).await;
     let owner = server.found("owner").await;
 
     let rtc = answer(&owner).await["rtc"].clone();
@@ -289,7 +303,7 @@ async fn the_relay_is_described_with_credentials_for_the_caller_that_last_an_hou
 
 #[tokio::test]
 async fn the_tls_port_of_the_relay_is_looked_at_only_while_tls_is_on() {
-    let server = Server::start_with(&[("Rtc__TurnsPort", "0")]).await;
+    let server = Server::start_with(&[("STELLARR_TURN_ENABLED", "true"), ("Rtc__TurnsPort", "0")]).await;
     let owner = server.found("owner").await;
     assert_eq!(bootstrap_of(&owner).await.status, 200);
 }

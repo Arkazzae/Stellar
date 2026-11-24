@@ -1,4 +1,4 @@
-# Production stack: one container runs Nginx, the API, coturn and the Stellarr
+# Production stack: one container runs Nginx, the API and the Stellarr
 # Media server, and Nginx serves the web client and Cockpit.
 #
 #   docker compose up -d           pulls the published image
@@ -34,21 +34,16 @@ services:
         required: false
     environment:
       # The host side of the ports below, which the container cannot see.
-      STELLARR_HTTPS_PORT: ${STELLARR_HTTPS_PORT:-8443}
+      STELLARR_HTTPS_PORT: ${STELLARR_HTTPS_PORT:-443}
       STELLARR_MEDIA_PORT: ${STELLARR_MEDIA_PORT:-49000}
-      STELLARR_TURN_PORT: ${STELLARR_TURN_PORT:-3478}
-      STELLARR_TURNS_PORT: ${STELLARR_TURNS_PORT:-5349}
+      STELLARR_TURN_ENABLED: ${STELLARR_TURN_ENABLED:-false}
     ports:
-      - "${STELLARR_HTTP_PORT:-8888}:80"
-      - "${STELLARR_HTTPS_PORT:-8443}:443"
-      - "${STELLARR_TURN_PORT:-3478}:3478/tcp"
-      - "${STELLARR_TURN_PORT:-3478}:3478/udp"
-      - "${STELLARR_TURNS_PORT:-5349}:5349/tcp"
-      - "${STELLARR_TURNS_PORT:-5349}:5349/udp"
+      - "${STELLARR_HTTP_PORT:-127.0.0.1:8888}:80"
+      - "${STELLARR_HTTPS_PORT:-443}:443"
       # Every call goes through this port, and browsers are told
       # STELLARR_PUBLIC_IP with it: the router forwards the same external port.
       - "${STELLARR_MEDIA_PORT:-49000}:49000/udp"
-      - "${STELLARR_TURN_RELAY_RANGE:-49160-49200}:49160-49200/udp"
+      - "${STELLARR_MEDIA_PORT:-49000}:49000/tcp"
     volumes:
       - stellarr_data:/data/stellarr
 

@@ -14,12 +14,12 @@
   <Support>https://github.com/Arkazzae/Stellarr/issues</Support>
   <Project>https://github.com/Arkazzae/Stellarr</Project>
   <ReadMe>https://github.com/Arkazzae/Stellarr/blob/main/docs/install/unraid.md</ReadMe>
-  <Overview>Self-hosted text, voice and video chat for a group of friends. One container runs the web client, the API, object storage, a TURN server and the media server that carries every call.
+  <Overview>Self-hosted text, voice and video chat for a group of friends. One container runs the web client, the API, object storage and the media server that carries every call.
 
 Open the Web UI and create the first account: it becomes the instance owner and gets a server of its own. Later accounts join through invite links. The owner's panel, Cockpit, is at /cockpit/.
 
 On first start the container creates a self-signed certificate, so the browser shows a warning once. For a trusted certificate or a reverse proxy, see the documentation.</Overview>
-  <Requires>Voice from any device other than the Unraid server itself needs the Public IP setting. Calls from outside your network also need UDP port 49000 forwarded from the router to this server on the same external port.</Requires>
+  <Requires>Voice from any device other than the Unraid server itself needs the Public IP setting. Calls from outside your network also need port 49000 (UDP and TCP) forwarded from the router to this server on the same external port.</Requires>
   <Category>Network:Messenger Network:Voip Social:</Category>
   <WebUI>https://[IP]:[PORT:443]/</WebUI>
   <TemplateURL>https://raw.githubusercontent.com/Arkazzae/Stellarr/main/deploy/unraid/stellarr.xml</TemplateURL>
@@ -33,28 +33,19 @@ On first start the container creates a self-signed certificate, so the browser s
 
   <Config Name="Data" Target="/data/stellarr" Default="/mnt/user/appdata/stellarr" Mode="rw" Description="Database, uploads, encryption keys, generated secrets and TLS certificates. Keep it on a pool (cache) drive and back up the whole folder." Type="Path" Display="always" Required="true" Mask="false">/mnt/user/appdata/stellarr</Config>
 
-  <Config Name="HTTPS port" Target="443" Default="8443" Mode="tcp" Description="The web client and Cockpit. Set HTTPS host port below to the same number." Type="Port" Display="always" Required="true" Mask="false">8443</Config>
-  <Config Name="HTTP port" Target="80" Default="8888" Mode="tcp" Description="Redirects to HTTPS." Type="Port" Display="always" Required="false" Mask="false">8888</Config>
-  <Config Name="Voice media port" Target="49000" Default="49000" Mode="udp" Description="Every call goes through this port. Set Voice media host port below to the same number, and forward the same external port on the router for calls from outside your network." Type="Port" Display="always" Required="true" Mask="false">49000</Config>
-  <Config Name="TURN port (UDP)" Target="3478" Default="3478" Mode="udp" Description="TURN for browsers that cannot reach the voice media port directly. Set TURN host port below to the same number." Type="Port" Display="always" Required="false" Mask="false">3478</Config>
-  <Config Name="TURN relay ports" Target="49160-49200" Default="49160-49200" Mode="udp" Description="Ports TURN relays calls through. Keep the host range the same as the container range." Type="Port" Display="always" Required="false" Mask="false">49160-49200</Config>
-  <Config Name="TURN port (TCP)" Target="3478" Default="3478" Mode="tcp" Description="Used only when TURN over TCP is true." Type="Port" Display="advanced" Required="false" Mask="false">3478</Config>
-  <Config Name="TURNS port (TCP)" Target="5349" Default="5349" Mode="tcp" Description="TURN over TLS, used only when TURN over TLS is true. Set TURNS host port to the same number." Type="Port" Display="advanced" Required="false" Mask="false">5349</Config>
-  <Config Name="TURNS port (UDP)" Target="5349" Default="5349" Mode="udp" Description="TURN over DTLS, used only when TURN over TLS is true." Type="Port" Display="advanced" Required="false" Mask="false">5349</Config>
+  <Config Name="HTTPS port" Target="443" Default="8443" Mode="tcp" Description="The web client and Cockpit. Defaults to 8443 to avoid Unraid’s management port 443. Set HTTPS host port below to the same number." Type="Port" Display="always" Required="true" Mask="false">8443</Config>
+  <Config Name="Voice media port (UDP)" Target="49000" Default="49000" Mode="udp" Description="Every call goes through this port. Set Voice media host port below to the same number, and forward the same external port on the router for calls from outside your network." Type="Port" Display="always" Required="true" Mask="false">49000</Config>
+  <Config Name="Voice media port (TCP)" Target="49000" Default="49000" Mode="tcp" Description="Every call goes through this port. Set Voice media host port below to the same number, and forward the same external port on the router for calls from outside your network." Type="Port" Display="always" Required="true" Mask="false">49000</Config>
 
-  <Config Name="Domain" Target="STELLARR_DOMAIN" Default="" Mode="" Description="The name or IPv4 address people open Stellarr at, for example chat.example.com or 192.168.1.10. The certificate and TURN use it. Empty means localhost, which only the Unraid server itself can use." Type="Variable" Display="always" Required="false" Mask="false"></Config>
-  <Config Name="Public IP" Target="STELLARR_PUBLIC_IP" Default="" Mode="" Description="The IPv4 address browsers reach this server at: its LAN address for calls at home, your public address for calls over the internet, or auto to resolve the domain. Empty means voice works only through TURN." Type="Variable" Display="always" Required="false" Mask="false"></Config>
-  <Config Name="HTTPS host port" Target="STELLARR_HTTPS_PORT" Default="8443" Mode="" Description="The host side of the HTTPS port mapping above. The redirect from HTTP and the instance's public address use it." Type="Variable" Display="always" Required="true" Mask="false">8443</Config>
+  <Config Name="Domain" Target="STELLARR_DOMAIN" Default="" Mode="" Description="The name or IPv4 address people open Stellarr at, for example chat.example.com or 192.168.1.10. The certificate and public address use it. Empty means localhost, which only the Unraid server itself can use." Type="Variable" Display="always" Required="false" Mask="false"></Config>
+  <Config Name="Public IP" Target="STELLARR_PUBLIC_IP" Default="" Mode="" Description="The IPv4 address browsers reach this server at: its LAN address for calls at home, your public address for calls over the internet, or auto to resolve the domain. Set this for browsers outside the Unraid host." Type="Variable" Display="always" Required="false" Mask="false"></Config>
+  <Config Name="HTTPS host port" Target="STELLARR_HTTPS_PORT" Default="8443" Mode="" Description="The host side of the HTTPS port mapping above. The instance's public address uses it." Type="Variable" Display="always" Required="true" Mask="false">8443</Config>
   <Config Name="Voice media host port" Target="STELLARR_MEDIA_PORT" Default="49000" Mode="" Description="The host side of the voice media port mapping above. The media server tells browsers this port." Type="Variable" Display="always" Required="true" Mask="false">49000</Config>
   <Config Name="Language" Target="STELLARR_LANGUAGE" Default="" Mode="" Description="en or pl, English when empty: the web client's default language, and that of server messages, mail and the names of a new server's roles and channels." Type="Variable" Display="always" Required="false" Mask="false"></Config>
 
   <Config Name="Public HTTPS port" Target="STELLARR_PUBLIC_PORT" Default="" Mode="" Description="The HTTPS port browsers use, when it differs from the host port: 443 behind a reverse proxy. Empty means the HTTPS host port." Type="Variable" Display="advanced" Required="false" Mask="false"></Config>
   <Config Name="Public URL" Target="STELLARR_PUBLIC_URL" Default="" Mode="" Description="The full address for mail links and desktop clients, for example https://chat.example.com. Overrides the address built from the domain and port." Type="Variable" Display="advanced" Required="false" Mask="false"></Config>
   <Config Name="Trusted proxies" Target="STELLARR_TRUSTED_PROXIES" Default="" Mode="" Description="The reverse proxy in front of Stellarr, as the container sees it, for example 172.18.0.5: then each person's own address is recorded and rate-limited, not the proxy's. IPv4 and IPv6 addresses and networks, separated by commas. See the reverse proxy documentation for which address to list." Type="Variable" Display="advanced" Required="false" Mask="false"></Config>
-  <Config Name="TURN host port" Target="STELLARR_TURN_PORT" Default="3478" Mode="" Description="The host side of the TURN port mappings." Type="Variable" Display="advanced" Required="false" Mask="false">3478</Config>
-  <Config Name="TURNS host port" Target="STELLARR_TURNS_PORT" Default="5349" Mode="" Description="The host side of the TURNS port mappings." Type="Variable" Display="advanced" Required="false" Mask="false">5349</Config>
-  <Config Name="TURN over TCP" Target="STELLARR_TURN_TCP_ENABLED" Default="" Mode="" Description="true or false; false when empty." Type="Variable" Display="advanced" Required="false" Mask="false"></Config>
-  <Config Name="TURN over TLS" Target="STELLARR_TURNS_ENABLED" Default="" Mode="" Description="true or false; false when empty. Needs a certificate browsers trust." Type="Variable" Display="advanced" Required="false" Mask="false"></Config>
 
   <Config Name="GIPHY key" Target="STELLARR_GIPHY_API_KEY" Default="" Mode="" Description="Public GIPHY web key for GIF search. It can also be set in Cockpit under Integrations, which wins over this one." Type="Variable" Display="advanced" Required="false" Mask="false"></Config>
 
