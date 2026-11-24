@@ -1214,10 +1214,6 @@ async function logs(owner) {
   const markup = await ask(`?limit=500&search=${encodeURIComponent("forged")}`);
   const upper = await ask(`?limit=500&search=${encodeURIComponent("  FORGED ")}`);
   report("search for the markup path", `${markup.status}; found: ${markup.json.entries.length}; the same in upper case and padded: ${upper.json.entries.length === markup.json.entries.length}`);
-  for (const entry of markup.json.entries) {
-    const raw = markup.text.slice(markup.text.indexOf('"message":', markup.text.indexOf(`"sequence":${entry.sequence}`)));
-    report("  the line as sent", `${entry.level} | ${raw.slice(0, raw.indexOf('","traceId"') + 1).replace(/^"message":/, "")}`);
-  }
   const blank = await ask("?limit=500&search=%20%20");
   report("search blank", `${blank.status}; the same as no search: ${blank.json.entries.length === Math.min(500, total(blank.json))}`);
   const everything = (await ask("?limit=500")).text;
@@ -1473,6 +1469,7 @@ function compare() {
     ["decided: any change to the mail settings asks for a fresh second step", (x, y) => /^## (settings|stale)/.test(x[0]) && /^\s*200/.test(x[1] ?? "") && /fresh-mfa-required/.test(y[1] ?? "")],
     ["accepted: an id that is none is a 404 before the caller is asked who they are, here a 401 after", (x, y) => /^\s*404/.test(x[1] ?? "") && /^\s*401/.test(y[1] ?? "")],
     ["accepted: characters outside the basic plane are written whole, the first server wrote surrogate pairs", (x) => /astral/.test(x[0]) || /\\uD[89AB][0-9A-F]{2}\\uD[C-F][0-9A-F]{2}/.test(x.join("\n"))],
+    ["decided: a request line says only the words of the server's own routes where no route took the request (the markup path is masked here)", (x) => /^## log (search for the markup path|export of the markup path|export a search)/.test(x[0])],
     ["by nature: what each process logged (the rows of the log export by level)", (x) => /^## log export warnings/.test(x[0])],
     ["by nature: the secret of a new authenticator is random, and stands in its otpauth address too", (x) => /^## enrol an authenticator/.test(x[0])],
     ["by nature: a fresh moment has the fraction digits of the machine's clock (six on macOS)", (x) => /^## the longest fraction/.test(x[0])],
@@ -1495,6 +1492,7 @@ function compare() {
       kinds.set(kind[0], (kinds.get(kind[0]) ?? 0) + 1);
     } else {
       unknown++;
+      console.log("  (not on the list of known differences)");
     }
     console.log(x[0]);
     if (x[0] !== y[0]) console.log(`  (this one: ${y[0]})`);
