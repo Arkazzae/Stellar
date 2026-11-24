@@ -21,6 +21,7 @@ container=stellarr-port-oracle-$name
 work=${WORK:-$(mktemp -d)}
 password='Corona!2026-long'
 pids=()
+rust_pid=
 cleanup() { for pid in "${pids[@]}"; do kill "$pid" 2>/dev/null || true; done; }
 trap cleanup EXIT
 
@@ -34,6 +35,7 @@ start_rust() {
     rm -rf "$work/rust"; mkdir -p "$work/rust"
     cp "$1" "$work/rust/stellarr.db"
   fi
+  : > "$work/rust-log.txt"
   env ASPNETCORE_ENVIRONMENT=Development Rtc__TurnSharedSecret=x STELLARR_DATA_ROOT="$work/rust" \
     "ConnectionStrings__Database=Data Source=$work/rust/stellarr.db" ASPNETCORE_URLS=http://127.0.0.1:0 \
     Rtc__MediaControlUrl=http://127.0.0.1:5232 Rtc__MediaControlSecret=media-test-secret \
@@ -79,7 +81,7 @@ for target in oracle rust; do
   fi
   run after-restart
   kill "$fake_pid" 2>/dev/null || true
-  kill "$rust_pid" 2>/dev/null || true
+  [ -n "$rust_pid" ] && kill "$rust_pid" 2>/dev/null || true
   sleep 1
 done
 echo "transcripts: $work/oracle.txt (first server), $work/rust.txt (this one)"
