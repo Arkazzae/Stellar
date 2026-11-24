@@ -34,6 +34,7 @@ pub(super) fn clear_cookie(https: bool) -> String {
 /// How the link came out, in the words the web's link page reads.
 pub(super) const LINKED: &str = "linked";
 const TAKEN: &str = "taken";
+#[cfg(test)]
 const OTHER: &str = "other";
 pub(super) const FAILED: &str = "failed";
 
