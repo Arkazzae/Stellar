@@ -3,6 +3,7 @@ groups! {
     administration,
     health,
     messages,
+    message_views,
     releases,
     servers,
 }
