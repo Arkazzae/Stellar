@@ -70,7 +70,10 @@ fn accepts_the_edges_of_the_allowed_times_and_the_claims_it_does_not_require() {
         "expired_edge_ok",
         "not_yet_valid_edge_ok",
         "expiry_fraction",
-        "no_issued_at",
+        "audience_list_no_azp",
+        "empty_azp",
+        "audience_list_empty_azp",
+        "unknown_kid_right_key",
         "no_at_hash",
         "padded_subject",
         "long_subject_ok",
@@ -165,7 +168,6 @@ fn refuses_wrong_issuer_audience_and_authorized_party() {
         ("wrong_audience", E::WrongAudience),
         ("no_audience", E::WrongAudience),
         ("audience_not_text", E::WrongAudience),
-        ("audience_list_no_azp", E::MissingAuthorizedParty),
         ("audience_list_wrong_azp", E::WrongAuthorizedParty),
         ("single_audience_wrong_azp", E::WrongAuthorizedParty),
     ] {
@@ -198,7 +200,14 @@ fn refuses_an_expired_token_and_one_not_yet_valid() {
     for (name, expected) in [
         ("expired", E::Expired),
         ("no_expiry", E::MissingExpiry),
-        ("expiry_not_a_number", E::MissingExpiry),
+        ("no_issued_at", E::MissingIssuedAt),
+        // A time of the wrong type is a malformed token, not a late one.
+        ("expiry_not_a_number", E::Malformed),
+        ("exp_null", E::Malformed),
+        ("nbf_text", E::Malformed),
+        ("iat_text", E::Malformed),
+        ("auth_time_text", E::Malformed),
+        ("auth_time_bool", E::Malformed),
         ("not_yet_valid", E::NotYetValid),
         ("not_before_after_expiry", E::InvalidLifetime),
     ] {
@@ -255,7 +264,6 @@ fn a_demanded_fresh_sign_in_needs_a_recent_auth_time() {
         "auth_time_just_stale",
         "future_auth_time",
         "no_auth_time",
-        "auth_time_text",
     ] {
         assert_eq!(check(name), Err(E::NotFreshSignIn), "{name}");
     }
@@ -316,41 +324,37 @@ fn refuses_malformed_and_oversized_tokens() {
     let parts: Vec<&str> = good.split('.').collect();
     let keys = f.keys("jwks");
     let run = |token: &str| verify(token, &keys, &f.expect()).map(|_| ());
-    for token in [
-        "",
-        ".",
-        "..",
-        "a.b",
-        "a.b.c.d",
-        &format!("{}.{}", parts[0], parts[1]),
-        &format!("{good}.extra"),
-        // Not base64url, not JSON, not an object.
-        &format!("!!.{}.{}", parts[1], parts[2]),
-        &format!("{}.!!.{}", parts[0], parts[2]),
-        &format!("{}.{}.!!", parts[0], parts[2]),
-        &format!("{}.{}.{}", b64("[]"), parts[1], parts[2]),
-        &format!("{}.{}.{}", b64("null"), parts[1], parts[2]),
-        &format!("{}.{}.{}", b64("{"), parts[1], parts[2]),
-        &format!("{}.{}.{}", parts[0], b64("[1]"), parts[2]),
-        &format!("{}.{}.{}", parts[0], b64("\"x\""), parts[2]),
-        &format!("{}.{}.{}", parts[0], b64("{"), parts[2]),
-        &format!("{}.{}.{}", b64("\u{0}\u{1}"), parts[1], parts[2]),
+    let (h, p, sig) = (parts[0], parts[1], parts[2]);
+    for (token, expected) in [
+        (String::new(), E::Malformed),
+        (".".into(), E::Malformed),
+        ("..".into(), E::Malformed),
+        ("a.b".into(), E::Malformed),
+        ("a.b.c.d".into(), E::Malformed),
+        (format!("{h}.{p}"), E::Malformed),
+        (format!("{good}.extra"), E::Malformed),
+        // A header that is not base64url, not JSON, or not an object.
+        (format!("!!.{p}.{sig}"), E::Malformed),
+        (format!("{}.{p}.{sig}", b64("[]")), E::Malformed),
+        (format!("{}.{p}.{sig}", b64("null")), E::Malformed),
+        (format!("{}.{p}.{sig}", b64("{")), E::Malformed),
+        (format!("{}.{p}.{sig}", b64("\u{0}\u{1}")), E::Malformed),
+        // A signature that is not base64url.
+        (format!("{h}.{p}.!!"), E::Malformed),
+        // A payload changed after signing fails the signature, whatever it holds.
+        (format!("{h}.!!.{sig}"), E::BadSignature),
+        (format!("{h}.{}.{sig}", b64("[1]")), E::BadSignature),
+        (format!("{h}.{}.{sig}", b64("{")), E::BadSignature),
     ] {
-        let result = run(token);
-        assert!(
-            matches!(
-                result,
-                Err(E::Malformed | E::BadSignature | E::MissingAlgorithm)
-            ),
-            "{token:?} gave {result:?}"
-        );
+        assert_eq!(run(&token), Err(expected), "{token:.60}");
+    }
+    // A payload that is signed but not an object.
+    for name in ["payload_array", "payload_string"] {
+        assert_eq!(check(&f, name), Err(E::Malformed), "{name}");
     }
     assert_eq!(run(&"a".repeat(64 * 1024 + 1)), Err(E::TooLarge));
     let big_header = format!("{}.{}.{}", "a".repeat(4 * 1024 + 1), parts[1], parts[2]);
     assert_eq!(run(&big_header), Err(E::TooLarge));
-    for text in ["", "{", "[]"] {
-        assert!(run(&format!("{text}.{text}")).is_err());
-    }
 }
 
 fn b64(text: &str) -> String {
@@ -489,5 +493,59 @@ fn a_key_set_may_hold_several_keys_under_one_id() {
     assert_eq!(
         verify(f.token("tampered_payload"), &set, &f.expect()).map(|_| ()),
         Err(E::BadSignature)
+    );
+}
+
+#[test]
+fn at_hash_uses_the_hash_of_the_tokens_own_algorithm_family() {
+    let f = Fixtures::load();
+    let mut with_access = f.expect();
+    with_access.access_token = Some(f.0["access_token"].as_str().unwrap());
+    let run = |name: &str| verify(f.token(name), &f.keys("jwks"), &with_access).map(|_| ());
+    for name in ["at_rs384", "at_rs512", "at_ps512", "at_es384", "at_es512"] {
+        assert_eq!(run(name), Ok(()), "{name}");
+    }
+    // Each with the hash of another family, as the base token's SHA-256 is.
+    for name in [
+        "at_rs384_wrong",
+        "at_rs512_wrong",
+        "at_es384_wrong",
+        "at_es512_wrong",
+        "rs384",
+        "es512",
+    ] {
+        assert_eq!(run(name), Err(E::AccessTokenHashMismatch), "{name}");
+    }
+}
+
+#[test]
+fn a_key_id_must_be_text() {
+    let f = Fixtures::load();
+    for name in ["kid_number", "kid_null"] {
+        assert_eq!(check(&f, name), Err(E::Malformed), "{name}");
+    }
+}
+
+#[test]
+fn a_key_id_nobody_has_falls_back_to_every_fitting_key_and_then_asks_for_a_refetch() {
+    let f = Fixtures::load();
+    // Signed by a published key under a name the set does not know: accepted.
+    assert_eq!(check(&f, "unknown_kid_right_key"), Ok(()));
+    // Signed by nobody the set knows: the set may be stale.
+    assert_eq!(check(&f, "other_key_own_kid"), Err(E::UnknownKeyId));
+    // Where the key id matches a key, there is no fallback to the others.
+    let mut doc = f.0["jwks"].clone();
+    doc["keys"]
+        .as_array_mut()
+        .unwrap()
+        .push(f.0["rsa2_jwk"].clone());
+    let set = jwks::parse(&serde_json::to_vec(&doc).unwrap()).unwrap();
+    assert_eq!(
+        verify(f.token("other_key_same_kid"), &set, &f.expect()).map(|_| ()),
+        Err(E::BadSignature)
+    );
+    assert_eq!(
+        verify(f.token("other_key_own_kid"), &set, &f.expect()).map(|_| ()),
+        Ok(())
     );
 }

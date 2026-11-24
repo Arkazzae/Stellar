@@ -15,6 +15,30 @@
 //!    holds what the application reads.
 //!
 //! Every function that depends on time takes `now` in Unix seconds.
+//!
+//! # What the application must do itself
+//!
+//! This crate decides whether an answer is genuine. It does not know accounts
+//! or sessions, so the application must:
+//!
+//! - **Link and reauthentication.** [`flow::accept`] returns the account that
+//!   asked (the [`flow::Actor`] in the flow). The provider's answer is a
+//!   cross-site post that carries no session cookie, so before acting the
+//!   application must check again that this session is still active, its
+//!   security version unchanged, the account neither disabled nor waiting for
+//!   recovery, and the provider the same as the one the request was for.
+//! - **Tickets.** A [`ticket::Ticket`]'s account and provider must be compared
+//!   with the session presenting it and with the route it is presented to. A
+//!   ticket can be read more than once within its five minutes.
+//! - **The binding cookie.** The provider answers with a cross-site post, so
+//!   the cookie that carries [`flow::Started::browser_binding`] must be
+//!   `SameSite=None; Secure` (and `HttpOnly`), and cleared once the answer is
+//!   handled.
+//! - **Replay.** [`flow::ReplayGuard`] lives in memory, so a restart forgets
+//!   it. The route that starts a sign-in needs no account and must be
+//!   rate-limited, or the guard can be filled until answers are `Busy`.
+//! - **Keys.** On [`idtoken::IdTokenError::UnknownKeyId`], fetch the key set
+//!   again once and verify again.
 
 pub mod b64;
 pub mod discovery;

@@ -104,12 +104,21 @@ pub struct Start<'a> {
     pub now: i64,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Clone, PartialEq, Eq)]
 pub struct Started {
     /// Where to redirect the browser.
     pub redirect_to: String,
-    /// The value for the cookie that ties the answer to this browser.
+    /// The value for the cookie that ties the answer to this browser. The
+    /// provider answers with a cross-site POST, so the cookie must be
+    /// `SameSite=None; Secure` (and `HttpOnly`) to come along with it.
     pub browser_binding: String,
+}
+
+impl fmt::Debug for Started {
+    // The binding and the address (which holds the nonce) are secrets.
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("Started").finish_non_exhaustive()
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -118,6 +127,9 @@ pub enum StartError {
     BadRedirectUri,
     /// Random bytes or sealing failed.
     Unavailable,
+    /// The sealed state would be longer than a callback may carry, even with
+    /// the return address left out.
+    TooLarge,
 }
 
 impl fmt::Display for StartError {
@@ -125,6 +137,7 @@ impl fmt::Display for StartError {
         f.write_str(match self {
             Self::BadRedirectUri => "the redirect address is not usable",
             Self::Unavailable => "the sign-in state could not be made",
+            Self::TooLarge => "the sign-in state is too large",
         })
     }
 }
@@ -157,7 +170,7 @@ pub fn start(key: &SealingKey, request: &Start<'_>) -> Result<Started, StartErro
         return Err(StartError::BadRedirectUri);
     }
     let reauthenticate = matches!(request.purpose, Purpose::Reauthenticate(_));
-    let flow = Flow {
+    let mut flow = Flow {
         provider_id: request.provider.id.clone(),
         purpose: request.purpose.clone(),
         return_url: safe_return_url(request.return_url),
@@ -170,10 +183,22 @@ pub fn start(key: &SealingKey, request: &Start<'_>) -> Result<Started, StartErro
         expires_at: request.now.saturating_add(STATE_LIFETIME),
     };
     let binding = random_text(32)?;
-    let sealed = serde_json::to_vec(&flow)
-        .ok()
-        .and_then(|json| seal(key, PURPOSE, &binding, &json))
-        .ok_or(StartError::Unavailable)?;
+    let seal_flow = |flow: &Flow| {
+        serde_json::to_vec(flow)
+            .ok()
+            .and_then(|json| seal(key, PURPOSE, &binding, &json))
+            .ok_or(StartError::Unavailable)
+    };
+    // A state its own callback would refuse is no use: leave the return
+    // address out before giving up.
+    let mut sealed = seal_flow(&flow)?;
+    if sealed.len() > MAX_STATE {
+        flow.return_url = "/".to_string();
+        sealed = seal_flow(&flow)?;
+        if sealed.len() > MAX_STATE {
+            return Err(StartError::TooLarge);
+        }
+    }
 
     let challenge = code_challenge(&flow.code_verifier);
     let max_age = PROVIDER_MFA_MAX_AGE.to_string();
@@ -218,12 +243,21 @@ pub fn start(key: &SealingKey, request: &Start<'_>) -> Result<Started, StartErro
 
 /// The answer the provider sent to the callback, as parameters of a query or
 /// a posted form.
-#[derive(Debug, Clone, Default, PartialEq, Eq)]
+#[derive(Clone, Default, PartialEq, Eq)]
 pub struct Callback {
     pub code: Option<String>,
     pub state: Option<String>,
     pub error: Option<String>,
     pub error_description: Option<String>,
+}
+
+impl fmt::Debug for Callback {
+    // The code is a credential until it is redeemed.
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("Callback")
+            .field("error", &self.error)
+            .finish_non_exhaustive()
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -239,6 +273,10 @@ pub enum CallbackError {
     WrongProvider,
     /// The state was already used.
     Replayed,
+    /// The replay guard is full of live states and cannot take another.
+    /// Nothing is wrong with this callback; the route that starts sign-ins
+    /// must be rate-limited so this cannot be provoked.
+    Busy,
     MissingCode,
 }
 
@@ -276,7 +314,12 @@ impl Callback {
 
 /// Remembers the sign-ins already answered, until they would have expired
 /// anyway, so a state is good for one answer. It lives in memory: a restart
-/// forgets it, and with it every sign-in under way that was not answered.
+/// forgets it, so a state answered just before a restart could be answered
+/// again until it expires.
+///
+/// It holds at most 100,000 live states. The route that starts a sign-in
+/// needs no account, so the application must rate-limit it; otherwise anyone
+/// could fill the guard and make every answer `Busy`.
 #[derive(Debug, Default)]
 pub struct ReplayGuard {
     used: Mutex<HashMap<String, i64>>,
@@ -288,24 +331,24 @@ impl ReplayGuard {
     }
 
     /// True the first time an id is seen before it expires.
-    fn consume(&self, id: &str, expires_at: i64, now: i64) -> bool {
+    fn consume(&self, id: &str, expires_at: i64, now: i64) -> Result<(), CallbackError> {
         let mut used = self.used.lock().unwrap_or_else(|e| e.into_inner());
         if used.contains_key(id) {
-            return false;
+            return Err(CallbackError::Replayed);
         }
         if used.len() >= MAX_REMEMBERED {
             used.retain(|_, until| *until > now);
             if used.len() >= MAX_REMEMBERED {
-                return false;
+                return Err(CallbackError::Busy);
             }
         }
         used.insert(id.to_string(), expires_at);
-        true
+        Ok(())
     }
 }
 
 /// What a valid callback says to do next.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Clone, PartialEq, Eq)]
 pub enum Answer {
     /// Redeem this code at the token endpoint.
     Code { code: String, flow: Flow },
@@ -317,6 +360,29 @@ pub enum Answer {
         cancelled: bool,
         flow: Flow,
     },
+}
+
+impl fmt::Debug for Answer {
+    // The code is a credential until it is redeemed.
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::Code { flow, .. } => f
+                .debug_struct("Code")
+                .field("flow", flow)
+                .finish_non_exhaustive(),
+            Self::Refused {
+                error,
+                cancelled,
+                flow,
+                ..
+            } => f
+                .debug_struct("Refused")
+                .field("error", error)
+                .field("cancelled", cancelled)
+                .field("flow", flow)
+                .finish_non_exhaustive(),
+        }
+    }
 }
 
 /// Opens the callback's state and decides what the answer is. Each step is a
@@ -348,10 +414,9 @@ pub fn accept(
     if flow.provider_id != provider_id {
         return Err(CallbackError::WrongProvider);
     }
-    if !guard.consume(&flow.state_id, flow.expires_at, now) {
-        return Err(CallbackError::Replayed);
-    }
-    if let Some(error) = &callback.error {
+    guard.consume(&flow.state_id, flow.expires_at, now)?;
+    // An empty `error` is no error.
+    if let Some(error) = callback.error.as_ref().filter(|error| !error.is_empty()) {
         return Ok(Answer::Refused {
             cancelled: error == "access_denied",
             error: error.clone(),
@@ -375,20 +440,21 @@ mod tests {
     #[test]
     fn a_state_is_good_for_one_answer() {
         let guard = ReplayGuard::new();
-        assert!(guard.consume("a", 100, 0));
-        assert!(!guard.consume("a", 100, 0));
-        assert!(guard.consume("b", 100, 0));
+        assert_eq!(guard.consume("a", 100, 0), Ok(()));
+        assert_eq!(guard.consume("a", 100, 0), Err(CallbackError::Replayed));
+        assert_eq!(guard.consume("b", 100, 0), Ok(()));
     }
 
     #[test]
     fn a_full_guard_refuses_rather_than_forgets() {
         let guard = ReplayGuard::new();
         for i in 0..MAX_REMEMBERED {
-            assert!(guard.consume(&i.to_string(), 100, 0));
+            assert_eq!(guard.consume(&i.to_string(), 100, 0), Ok(()));
         }
-        assert!(!guard.consume("one more", 100, 0));
+        assert_eq!(guard.consume("one more", 100, 0), Err(CallbackError::Busy));
+        assert_eq!(guard.consume("5", 100, 0), Err(CallbackError::Replayed));
         // Once the remembered ones have expired there is room again, and a
         // state that expired is refused by its own expiry, never by the guard.
-        assert!(guard.consume("later", 300, 200));
+        assert_eq!(guard.consume("later", 300, 200), Ok(()));
     }
 }

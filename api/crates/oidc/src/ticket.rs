@@ -76,7 +76,10 @@ pub fn issue(
     )
 }
 
-/// A ticket made for `kind`. One made for the other kind does not open: the
+/// A ticket made for `kind`. A ticket can be read again within its five
+/// minutes, so it is not a one-time token; the caller compares its account and
+/// provider with the session presenting it and with the route.
+/// One made for the other kind does not open: the
 /// ticket for a fresh sign-in needs no proof, so it must never start a link.
 pub fn read(
     key: &SealingKey,

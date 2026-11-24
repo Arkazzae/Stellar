@@ -247,7 +247,7 @@ impl Provider {
 
     /// The authority without a trailing slash, as the discovery address is built from it.
     pub fn authority(&self) -> &str {
-        self.settings.authority.trim_end_matches('/')
+        self.settings.authority.trim().trim_end_matches('/')
     }
 
     pub fn client_id(&self) -> &str {
@@ -342,9 +342,11 @@ pub fn fresh_sign_in_time(auth_time: Option<&str>, now: i64) -> Option<i64> {
     (signed_in >= now - PROVIDER_MFA_MAX_AGE).then_some(signed_in)
 }
 
-/// Whether the text is an absolute `https` address with a host: no spaces or
-/// control characters, no credentials, no fragment.
+/// Whether the text, trimmed, is an absolute `https` address with a host: no
+/// spaces or control characters, no credentials, no fragment, a port that is
+/// a number up to 65535, and an IPv6 host that is closed.
 pub fn is_https_url(url: &str) -> bool {
+    let url = url.trim();
     let Some(rest) = url
         .get(..8)
         .filter(|scheme| scheme.eq_ignore_ascii_case("https://"))
@@ -355,11 +357,31 @@ pub fn is_https_url(url: &str) -> bool {
     let authority = rest.split(['/', '?', '#']).next().unwrap_or("");
     !authority.is_empty()
         && !authority.contains('@')
-        && !authority.starts_with(':')
+        && host_and_port_ok(authority)
         && !url.contains('#')
         && url
             .chars()
             .all(|c| !c.is_control() && !c.is_whitespace() && c != '\\')
+}
+
+fn host_and_port_ok(authority: &str) -> bool {
+    let (host, port) = if let Some(inner) = authority.strip_prefix('[') {
+        let Some((host, after)) = inner.split_once(']') else {
+            return false;
+        };
+        match after.strip_prefix(':') {
+            Some(port) => (host, port),
+            None if after.is_empty() => (host, ""),
+            None => return false,
+        }
+    } else {
+        authority.split_once(':').unwrap_or((authority, ""))
+    };
+    !host.is_empty()
+        && (authority.starts_with('[') || !host.contains(['[', ']']))
+        && port.len() <= 5
+        && port.bytes().all(|c| c.is_ascii_digit())
+        && (port.is_empty() || port.parse::<u32>().is_ok_and(|p| p <= 65535))
 }
 
 /// Where to send the person once signed in. Only a path on this origin is
@@ -684,7 +706,25 @@ mod tests {
         ] {
             assert!(is_https_url(good), "{good}");
         }
+        for good in [
+            "  https://a.test/x  ",
+            "https://a.test:65535/x",
+            "https://a.test:0/x",
+            "https://[::1]/x",
+            "https://[::1]:8443/x",
+        ] {
+            assert!(is_https_url(good), "{good:?}");
+        }
         for bad in [
+            "https://a.test:99999/x",
+            "https://a.test:65536/x",
+            "https://a.test:abc/x",
+            "https://a.test:+80/x",
+            "https://a.test:80:80/x",
+            "https://[::1/x",
+            "https://[]/x",
+            "https://[::1]x/x",
+            "https://[::1]:99999/x",
             "http://a.test",
             "https://",
             "https:///x",

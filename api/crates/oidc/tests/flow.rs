@@ -18,6 +18,7 @@ use stellarr_oidc::token::{
 };
 
 const NOW: i64 = 1_800_000_000;
+const JSON: Option<&str> = Some("application/json");
 const REDIRECT: &str = "https://localhost/api/auth/oidc/callback";
 
 fn key() -> SealingKey {
@@ -49,7 +50,6 @@ fn discovery() -> Discovery {
         br#"{"issuer":"https://identity.test","authorization_endpoint":"https://identity.test/authorize",
         "token_endpoint":"https://identity.test/token","jwks_uri":"https://identity.test/jwks",
         "userinfo_endpoint":"https://identity.test/userinfo"}"#,
-        "https://identity.test",
     )
     .unwrap()
 }
@@ -629,17 +629,22 @@ fn reads_the_token_response() {
     )
     .unwrap();
     assert_eq!(
-        (ok.id_token.as_str(), ok.access_token.as_deref()),
-        ("a.b.c", Some("at"))
+        (ok.id_token.as_str(), ok.access_token.as_str()),
+        ("a.b.c", "at")
     );
-    let no_access = parse_token_response(200, br#"{"id_token":"a.b.c"}"#).unwrap();
-    assert_eq!(no_access.access_token, None);
-    assert_eq!(
-        parse_token_response(200, br#"{"id_token":"x","access_token":""}"#)
-            .unwrap()
-            .access_token,
-        None
-    );
+    // An answer without an access token is refused, whatever else it holds.
+    for body in [
+        &br#"{"id_token":"a.b.c"}"#[..],
+        br#"{"id_token":"x","access_token":""}"#,
+        br#"{"id_token":"x","access_token":null}"#,
+        br#"{"id_token":"x","access_token":5}"#,
+    ] {
+        assert_eq!(
+            parse_token_response(200, body).unwrap_err(),
+            TokenError::MissingAccessToken,
+            "{body:?}"
+        );
+    }
 
     let refused = parse_token_response(
         400,
@@ -677,10 +682,6 @@ fn reads_the_token_response() {
             "{body:?}"
         );
     }
-    assert_eq!(
-        parse_token_response(200, br#"{"id_token":"x","access_token":5}"#).unwrap_err(),
-        TokenError::BadAccessToken
-    );
     for body in [&b""[..], b"[]", b"null", b"{", b"\xff"] {
         assert_eq!(
             parse_token_response(200, body).unwrap_err(),
@@ -751,13 +752,29 @@ fn reads_the_userinfo_answer_for_the_person_the_token_names() {
     for content_type in [
         Some("application/json"),
         Some("Application/JSON; charset=utf-8"),
-        None,
     ] {
         let info = parse_userinfo(200, content_type, body, "subject-1").unwrap();
         assert_eq!(info["name"], "Jan");
     }
+    // The subject is compared exactly: padding is another subject.
     let padded = br#"{"sub":" subject-1 "}"#;
-    assert!(parse_userinfo(200, None, padded, "subject-1").is_ok());
+    assert_eq!(
+        parse_userinfo(200, JSON, padded, "subject-1").unwrap_err(),
+        UserinfoError::SubjectMismatch
+    );
+    // Only JSON is read; a missing or other content type is refused.
+    for content_type in [
+        None,
+        Some(""),
+        Some("text/plain"),
+        Some("application/jsonx"),
+    ] {
+        assert_eq!(
+            parse_userinfo(200, content_type, body, "subject-1").unwrap_err(),
+            UserinfoError::WrongContentType,
+            "{content_type:?}"
+        );
+    }
     // Someone else's profile, or none, is never taken.
     for body in [
         &br#"{"sub":"someone-else"}"#[..],
@@ -766,13 +783,13 @@ fn reads_the_userinfo_answer_for_the_person_the_token_names() {
         br#"{"sub":null}"#,
     ] {
         assert_eq!(
-            parse_userinfo(200, None, body, "subject-1").unwrap_err(),
+            parse_userinfo(200, JSON, body, "subject-1").unwrap_err(),
             UserinfoError::SubjectMismatch,
             "{body:?}"
         );
     }
     assert_eq!(
-        parse_userinfo(401, None, body, "subject-1").unwrap_err(),
+        parse_userinfo(401, JSON, body, "subject-1").unwrap_err(),
         UserinfoError::Status(401)
     );
     assert_eq!(
@@ -781,14 +798,14 @@ fn reads_the_userinfo_answer_for_the_person_the_token_names() {
     );
     for body in [&b""[..], b"[]", b"null", b"{", b"\xff"] {
         assert_eq!(
-            parse_userinfo(200, None, body, "subject-1").unwrap_err(),
+            parse_userinfo(200, JSON, body, "subject-1").unwrap_err(),
             UserinfoError::NotJson,
             "{body:?}"
         );
     }
     let huge = vec![b' '; stellarr_oidc::MAX_DOCUMENT + 1];
     assert_eq!(
-        parse_userinfo(200, None, &huge, "subject-1").unwrap_err(),
+        parse_userinfo(200, JSON, &huge, "subject-1").unwrap_err(),
         UserinfoError::TooLarge
     );
 }
@@ -841,5 +858,105 @@ fn a_ticket_is_bound_to_its_kind_its_account_and_its_lifetime() {
     assert_eq!(
         ticket::read(&key(), TicketKind::Link, &state, NOW),
         Err(TicketError::Unreadable)
+    );
+}
+
+#[test]
+fn no_type_that_holds_a_secret_prints_it() {
+    let provider = provider("default", false);
+    let started = begin(&provider, Purpose::SignIn, None, false);
+    let flow = opened(&started);
+    let callback = answer_for(&started, "&code=THE-CODE-VALUE");
+    let answer = accept_at(&ReplayGuard::new(), &started, "&code=THE-CODE-VALUE", NOW).unwrap();
+    let refused = accept_at(
+        &ReplayGuard::new(),
+        &begin(&provider, Purpose::SignIn, None, false),
+        "&error=x",
+        NOW,
+    );
+    let discovery = discovery();
+    let expect = Expect::for_flow(
+        &discovery,
+        "stellarr-tests",
+        &flow,
+        Some("ACCESS-TOKEN-VALUE"),
+        NOW,
+    );
+    let response = parse_token_response(
+        200,
+        br#"{"id_token":"ID.TOKEN.VALUE","access_token":"ACCESS-TOKEN-VALUE"}"#,
+    )
+    .unwrap();
+    let userinfo = userinfo_request(&discovery, Some("ACCESS-TOKEN-VALUE"))
+        .unwrap()
+        .unwrap();
+    let shown = format!(
+        "{started:?} {callback:?} {answer:?} {refused:?} {expect:?} {flow:?} {response:?} {userinfo:?} {provider:?} {:?}",
+        provider.settings
+    );
+    let state = query(&started)["state"].clone();
+    for secret in [
+        started.browser_binding.as_str(),
+        &state,
+        &flow.nonce,
+        &flow.code_verifier,
+        "THE-CODE-VALUE",
+        "ACCESS-TOKEN-VALUE",
+        "ID.TOKEN.VALUE",
+        "test-client-secret",
+    ] {
+        assert!(!shown.contains(secret), "{secret} is printed");
+    }
+}
+
+#[test]
+fn a_state_its_own_callback_would_refuse_is_never_made() {
+    let provider = provider("default", false);
+    let discovery = discovery();
+    let go = |redirect_uri: &str, return_url: &str| {
+        flow::start(
+            &key(),
+            &Start {
+                provider: &provider,
+                discovery: &discovery,
+                redirect_uri,
+                purpose: Purpose::SignIn,
+                return_url: Some(return_url),
+                short_lived: false,
+                now: NOW,
+            },
+        )
+    };
+    // A long return address that escapes to twice its length falls back to `/`.
+    let quotes = format!("/{}", "\"".repeat(2047));
+    let started = go(REDIRECT, &quotes).unwrap();
+    let state = &query(&started)["state"];
+    assert!(state.len() <= 4096, "{}", state.len());
+    assert_eq!(opened(&started).return_url, "/");
+    // A moderate one is kept.
+    assert_eq!(opened(&go(REDIRECT, "/a/b").unwrap()).return_url, "/a/b");
+    // A redirect address too big even with no return address is an error.
+    let big = format!("https://a.test/{}", "\"".repeat(2020));
+    assert_eq!(go(&big, "/").map(|_| ()), Err(flow::StartError::TooLarge));
+    // Whatever is made is read back by the callback parser.
+    let started = go(REDIRECT, &quotes).unwrap();
+    assert!(
+        Callback::parse(&format!(
+            "state={}",
+            form::encode_component(&query(&started)["state"])
+        ))
+        .is_ok()
+    );
+}
+
+#[test]
+fn an_empty_error_parameter_is_no_error() {
+    let started = begin(&provider("default", false), Purpose::SignIn, None, false);
+    let answer = accept_at(&ReplayGuard::new(), &started, "&error=&code=c", NOW).unwrap();
+    assert!(matches!(answer, Answer::Code { .. }));
+    let started = begin(&provider("default", false), Purpose::SignIn, None, false);
+    assert_eq!(
+        accept_at(&ReplayGuard::new(), &started, "&error=", NOW).map(|_| ()),
+        Err(C::MissingCode)
     );
 }

@@ -56,7 +56,7 @@ pub fn token_request(
 #[derive(Clone, PartialEq, Eq)]
 pub struct TokenResponse {
     pub id_token: String,
-    pub access_token: Option<String>,
+    pub access_token: String,
 }
 
 impl fmt::Debug for TokenResponse {
@@ -78,8 +78,8 @@ pub enum TokenError {
     Status(u16),
     /// No `id_token`, or one that is not text.
     MissingIdToken,
-    /// An `access_token` that is not text.
-    BadAccessToken,
+    /// No `access_token`, or one that is not text. An answer without one is refused.
+    MissingAccessToken,
 }
 
 impl fmt::Display for TokenError {
@@ -90,7 +90,7 @@ impl fmt::Display for TokenError {
             Self::Provider { error, .. } => write!(f, "the provider refused the code: {error}"),
             Self::Status(status) => write!(f, "the token endpoint answered {status}"),
             Self::MissingIdToken => f.write_str("the token response holds no id_token"),
-            Self::BadAccessToken => f.write_str("the access_token is not text"),
+            Self::MissingAccessToken => f.write_str("the token response holds no access_token"),
         }
     }
 }
@@ -131,10 +131,8 @@ pub fn parse_token_response(status: u16, body: &[u8]) -> Result<TokenResponse, T
         _ => return Err(TokenError::MissingIdToken),
     };
     let access_token = match map.get("access_token") {
-        None | Some(Value::Null) => None,
-        Some(Value::String(token)) if !token.is_empty() => Some(token.clone()),
-        Some(Value::String(_)) => None,
-        Some(_) => return Err(TokenError::BadAccessToken),
+        Some(Value::String(token)) if !token.is_empty() => token.clone(),
+        _ => return Err(TokenError::MissingAccessToken),
     };
     Ok(TokenResponse {
         id_token,
@@ -166,6 +164,8 @@ pub enum UserinfoError {
     TooLarge,
     /// The answer is a signed token, which this crate does not read.
     SignedAnswer,
+    /// The content type is missing or is neither JSON nor a signed token.
+    WrongContentType,
     NotJson,
     /// No `sub`, or one that is not the ID token's subject.
     SubjectMismatch,
@@ -198,7 +198,8 @@ pub fn userinfo_request(
 }
 
 /// Reads the userinfo answer. Whoever it describes must be the person the ID
-/// token names; an answer about someone else is refused outright.
+/// token names, compared exactly; an answer about someone else is refused
+/// outright. Only `application/json` is read.
 pub fn parse_userinfo(
     status: u16,
     content_type: Option<&str>,
@@ -220,10 +221,13 @@ pub fn parse_userinfo(
     if media.eq_ignore_ascii_case("application/jwt") {
         return Err(UserinfoError::SignedAnswer);
     }
+    if !media.eq_ignore_ascii_case("application/json") {
+        return Err(UserinfoError::WrongContentType);
+    }
     let Ok(Value::Object(map)) = serde_json::from_slice(body) else {
         return Err(UserinfoError::NotJson);
     };
-    if map.get("sub").and_then(Value::as_str).map(str::trim) != Some(subject) {
+    if map.get("sub").and_then(Value::as_str) != Some(subject) {
         return Err(UserinfoError::SubjectMismatch);
     }
     Ok(map)
