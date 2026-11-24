@@ -81,11 +81,7 @@ pub fn only(changes: impl IntoIterator<Item = Option<AuditChange>>) -> Vec<Audit
 /// it records, so that both are kept or neither is. An actor who is no account
 /// is a fault, since the line names them.
 pub fn record(db: &Connection, server: Id, actor: Id, event: &AuditEvent) -> rusqlite::Result<Id> {
-    let name: String = db.query_row(
-        "SELECT \"DisplayName\" FROM \"Users\" WHERE \"Id\" = ?1",
-        [actor],
-        |row| row.get(0),
-    )?;
+    let name: String = crate::instance::users::User::display_name(db, actor)?;
     let id = Id::random();
     let changes = (!event.changes.is_empty()).then(|| changes_json(&event.changes));
     db.execute(

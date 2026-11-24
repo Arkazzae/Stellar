@@ -149,12 +149,7 @@ where
             let policy = SecurityPolicy::load(tx)?;
             let attempt = reserve(tx, &policy, Timestamp::now())?;
             let name: Option<String> = match &attempt {
-                Attempt::Reserved { user, .. } => tx
-                    .query_row(
-                        "SELECT \"DisplayName\" FROM \"Users\" WHERE \"Id\" = ?1",
-                        [*user],
-                        |row| row.get(0),
-                    )
+                Attempt::Reserved { user, .. } => crate::instance::users::User::display_name(tx, *user)
                     .optional()?,
                 _ => None,
             };

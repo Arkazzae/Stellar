@@ -102,14 +102,6 @@ fn diff(before: &[Role], after: &[Role]) -> Vec<Role> {
         .collect()
 }
 
-fn display_name(db: &Connection, user: Id) -> rusqlite::Result<String> {
-    db.query_row(
-        "SELECT \"DisplayName\" FROM \"Users\" WHERE \"Id\" = ?1",
-        [user],
-        |row| row.get(0),
-    )
-}
-
 /// Everything the two routes read before they decide: the caller may manage
 /// members and is not the member.
 fn may_manage(db: &Connection, caller: Caller, server: Id, user: Id) -> Result<(), ApiError> {
@@ -181,7 +173,7 @@ pub(super) async fn assign(
                 .map(|held| held_name(held.id))
                 .collect();
             if member.role.id != role.role.id || !removed_besides_top.is_empty() {
-                let name = display_name(tx, user)?;
+                let name = crate::instance::users::User::display_name(tx, user)?;
                 audit::record(
                     tx,
                     server,

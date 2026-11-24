@@ -218,11 +218,7 @@ pub async fn create(
                             .unwrap_or_default(),
                     },
                 )?;
-                let by: String = tx.query_row(
-                    "SELECT \"DisplayName\" FROM \"Users\" WHERE \"Id\" = ?1",
-                    [caller.user],
-                    |row| row.get(0),
-                )?;
+                let by: String = crate::instance::users::User::display_name(tx, caller.user)?;
                 Ok(Ok(
                     InviteDto {
                         id,
@@ -417,11 +413,7 @@ pub async fn send(
                 [server],
                 |row| row.get(0),
             )?;
-            let actor_name: String = tx.query_row(
-                "SELECT \"DisplayName\" FROM \"Users\" WHERE \"Id\" = ?1",
-                [caller.user],
-                |row| row.get(0),
-            )?;
+            let actor_name: String = crate::instance::users::User::display_name(tx, caller.user)?;
             let entry = inbox::add(
                 tx,
                 &NewEntry {

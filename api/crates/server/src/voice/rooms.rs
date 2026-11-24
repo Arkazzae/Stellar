@@ -168,12 +168,7 @@ pub async fn broadcast_snapshot(state: &AppState, room: Id) -> Result<(), DbErro
         .read(move |db| -> Result<(HashMap<Id, String>, Reach), DbError> {
             let mut names = HashMap::new();
             for user in &looked_up {
-                let name: Option<String> = db
-                    .query_row(
-                        "SELECT \"DisplayName\" FROM \"Users\" WHERE \"Id\" = ?1",
-                        [user],
-                        |row| row.get(0),
-                    )
+                let name: Option<String> = crate::instance::users::User::display_name(db, user)
                     .optional()?;
                 if let Some(name) = name {
                     names.insert(*user, name);

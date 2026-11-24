@@ -88,14 +88,6 @@ fn may_manage_bans(db: &Connection, caller: Caller, server: Id) -> Result<(), Ap
     }
 }
 
-fn display_name(db: &Connection, user: Id) -> rusqlite::Result<String> {
-    db.query_row(
-        "SELECT \"DisplayName\" FROM \"Users\" WHERE \"Id\" = ?1",
-        [user],
-        |row| row.get(0),
-    )
-}
-
 async fn list_bans(
     State(state): State<AppState>,
     caller: Caller,
@@ -153,8 +145,8 @@ async fn ban(
             if let Some(refused) = refusal(&decision) {
                 return Err(refused);
             }
-            let name = display_name(tx, user)?;
-            let by = display_name(tx, caller.user)?;
+            let name = crate::instance::users::User::display_name(tx, user)?;
+            let by = crate::instance::users::User::display_name(tx, caller.user)?;
             let stored = if reason.is_empty() {
                 messages.get(MessageKey::NoBanReason, &[])?
             } else {
@@ -228,7 +220,7 @@ async fn unban(
             if removed == 0 {
                 return Err(ApiError::not_found());
             }
-            let name = display_name(tx, user)?;
+            let name = crate::instance::users::User::display_name(tx, user)?;
             audit::record(
                 tx,
                 server,
@@ -262,7 +254,7 @@ async fn kick(
             if let Some(refused) = refusal(&decision) {
                 return Err(refused);
             }
-            let name = display_name(tx, user)?;
+            let name = crate::instance::users::User::display_name(tx, user)?;
             tx.execute(
                 "DELETE FROM \"ServerMembers\" WHERE \"ServerId\" = ?1 AND \"UserId\" = ?2",
                 params![server, user],
