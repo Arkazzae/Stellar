@@ -288,17 +288,7 @@ async fn the_relay_is_described_with_credentials_for_the_caller_that_last_an_hou
 }
 
 #[tokio::test]
-async fn a_relay_set_up_wrongly_fails_the_bootstrap_and_nothing_else() {
-    for (name, value) in [("Rtc__TurnPort", "0"), ("Rtc__TurnPort", "65536"), ("Rtc__TurnPort", "abc"), ("Rtc__TurnTcpEnabled", "maybe")] {
-        let server = Server::start_with(&[(name, value)]).await;
-        let owner = server.found("owner").await;
-        let response = bootstrap_of(&owner).await;
-        assert_eq!(response.status, 500, "{name}={value}");
-        assert_eq!(owner.client.get("/api/me").await.status, 200, "{name}={value}");
-        // The markers are made before the relay is asked about, as they were.
-        assert_eq!(count(&server, "SELECT COUNT(*) FROM \"ChannelReads\""), 1);
-    }
-    // The TLS port is looked at only while TLS is on.
+async fn the_tls_port_of_the_relay_is_looked_at_only_while_tls_is_on() {
     let server = Server::start_with(&[("Rtc__TurnsPort", "0")]).await;
     let owner = server.found("owner").await;
     assert_eq!(bootstrap_of(&owner).await.status, 200);

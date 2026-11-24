@@ -749,7 +749,7 @@ impl Settings {
             data_root,
             language,
             rtc,
-            relay: relay::RelaySettings::load(config),
+            relay: relay::RelaySettings::load(config)?,
             operations: OperationsSettings::load(config)?,
             mail: MailSettings::load(config)?,
             push: PushSettings::load(config),
