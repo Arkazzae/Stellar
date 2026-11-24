@@ -35,18 +35,24 @@ pub fn units(text: &str) -> usize {
     text.chars().map(char::len_utf16).sum()
 }
 
-/// The first `count` UTF-16 units of the text. A cut that would fall inside a
-/// pair drops the pair's first half too, so the result is always text.
-pub fn first_units(text: &str, count: usize) -> &str {
+/// The first `count` UTF-16 units of the text. A cut inside a pair leaves a
+/// lone half, which cannot be written as text: it comes out as the replacement
+/// character, as it did from the first server.
+pub fn first_units(text: &str, count: usize) -> String {
+    let mut kept = String::new();
     let mut seen = 0;
-    for (at, c) in text.char_indices() {
+    for c in text.chars() {
         let next = seen + c.len_utf16();
         if next > count {
-            return &text[..at];
+            if seen < count {
+                kept.push('\u{FFFD}');
+            }
+            break;
         }
+        kept.push(c);
         seen = next;
     }
-    text
+    kept
 }
 
 #[cfg(test)]
@@ -78,7 +84,7 @@ mod tests {
     fn lengths_count_utf16_units() {
         assert_eq!(units("a\u{1F44D}"), 3);
         assert_eq!(units("zażółć"), 6);
-        assert_eq!(first_units("a\u{1F44D}b", 2), "a");
+        assert_eq!(first_units("a\u{1F44D}b", 2), "a\u{FFFD}");
         assert_eq!(first_units("a\u{1F44D}b", 3), "a\u{1F44D}");
         assert_eq!(first_units("abc", 9), "abc");
     }

@@ -82,7 +82,9 @@ impl IndexCursor {
 
     /// None for text that is not a cursor of this form.
     pub fn decode(text: &str) -> Option<IndexCursor> {
-        let bytes = from_base64_url(unpadded(text)?)?;
+        // Spaces, tabs and line breaks anywhere in it are skipped.
+        let text: String = text.chars().filter(|c| !matches!(c, ' ' | '\t' | '\n' | '\r')).collect();
+        let bytes = from_base64_url(unpadded(&text)?)?;
         if bytes.len() != SIZE {
             return None;
         }
