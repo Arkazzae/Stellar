@@ -254,6 +254,28 @@ impl Instance {
         )
     }
 
+    /// With an output that has gone away, as a pipe does when what reads it
+    /// is closed.
+    pub fn run_into_a_closed_pipe(&self, args: &[&str]) -> Run {
+        let mut words = vec!["--data-root".to_string(), self.root().display().to_string()];
+        words.extend(args.iter().map(|word| word.to_string()));
+        let error = Sink::default();
+        let io = Io {
+            input: Box::new(Cursor::new(Vec::new())),
+            output: Box::new(ClosedPipe),
+            error: Box::new(error.clone()),
+            interactive: false,
+            secret_prompt: None,
+        };
+        let variables = vec![("ASPNETCORE_ENVIRONMENT".to_string(), "Testing".to_string())];
+        let exit = run(&words, io, variables, Arc::new(AtomicBool::new(false)));
+        Run {
+            exit,
+            output: String::new(),
+            error: String::from_utf8_lossy(&error.0.lock().unwrap()).into_owned(),
+        }
+    }
+
     /// At a terminal that answers the hidden prompt with `prompt`; `cancelled`
     /// is the flag Ctrl+C sets.
     pub fn run_prompted(&self, args: &[&str], prompt: Prompt, cancelled: Arc<AtomicBool>) -> Run {
@@ -331,6 +353,19 @@ pub fn silent_io() -> Io {
         error: Box::new(std::io::sink()),
         interactive: false,
         secret_prompt: None,
+    }
+}
+
+/// An output whose reader has gone: every write fails.
+struct ClosedPipe;
+
+impl Write for ClosedPipe {
+    fn write(&mut self, _: &[u8]) -> std::io::Result<usize> {
+        Err(std::io::ErrorKind::BrokenPipe.into())
+    }
+
+    fn flush(&mut self) -> std::io::Result<()> {
+        Err(std::io::ErrorKind::BrokenPipe.into())
     }
 }
 

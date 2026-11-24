@@ -240,7 +240,8 @@ pub fn set(runtime: &mut Runtime, name: &str) -> CliOutcome {
             format!("Audit: local-cli secrets.set {}", definition.name),
         ],
     )
-    .warnings(notes))
+    .warnings(notes)
+    .changed())
 }
 
 fn store(
@@ -341,5 +342,6 @@ pub fn clear(runtime: &mut Runtime, name: &str) -> CliOutcome {
             },
             format!("Audit: local-cli secrets.clear {}", definition.name),
         ],
-    ))
+    )
+    .changed())
 }

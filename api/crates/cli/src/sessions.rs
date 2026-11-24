@@ -148,7 +148,8 @@ pub fn revoke(runtime: &mut Runtime, id: &str) -> CliOutcome {
             "The API closes a matching WebSocket connection within one second.".to_string(),
             format!("Audit: local-cli sessions.revoke {session_id}"),
         ],
-    ))
+    )
+    .changed())
 }
 
 /// Ends the session, unless someone got there while the question waited: then
@@ -232,5 +233,6 @@ pub fn revoke_all(runtime: &mut Runtime, id_or_username: &str) -> CliOutcome {
             "The API closes matching WebSocket connections within one second.".to_string(),
             format!("Audit: local-cli sessions.revoke-all {}", user.id),
         ],
-    ))
+    )
+    .changed())
 }

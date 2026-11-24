@@ -493,6 +493,7 @@ pub fn unlink(runtime: &mut Runtime, id_or_username: &str, identity_id: &str) ->
             format!("Audit: local-cli security.unlink {}", user.id),
         ],
     );
+    result = result.changed();
     if last_way_in {
         result = result.warnings(vec![format!(
             "{} ({}) has no other way in now: no password, no passkey and no other identity at a provider configured here. Only a password reset by mail would open the account; `security recover` issues a credential to enroll new security.",
@@ -615,7 +616,8 @@ pub fn recover(runtime: &mut Runtime, id_or_username: &str, reason: &str) -> Cli
                 .to_string(),
             format!("Audit: local-cli security.recover {}", user.id),
         ],
-    ))
+    )
+    .changed())
 }
 
 fn load_user(connection: &rusqlite::Connection, id_or_username: &str) -> CliOutcome<User> {
