@@ -21,7 +21,7 @@ workspace. One crate per folder of `crates/`:
 | `smtp` (`stellarr-smtp`) | The mail the application sends: the message builder and an SMTP client. |
 | `storage` (`stellarr-storage`) | Where uploaded files are kept: a folder of the data volume or an S3-compatible bucket, and the checks on what may be uploaded. |
 | `timezone` (`stellarr-timezone`) | Time zones from the system's zone database: the offset and abbreviation in force at a moment. |
-| `unicode` (`stellarr-unicode`) | Unicode general categories and simple upper-casing, as the first server read them, and the UTF-16 view of text that message code works in. |
+| `unicode` (`stellarr-unicode`) | Unicode general categories and simple upper-casing, from tables of its own, and the UTF-16 view of text that message code works in. |
 | `webauthn` (`stellarr-webauthn`) | WebAuthn: the options a browser is given and the checks on what it sends back, with no I/O and no storage. |
 | `webpush` (`stellarr-webpush`) | Web Push without a network: everything a server needs to notify a browser except the HTTP request itself. |
 | `websocket` (`stellarr-websocket`) | The server side of WebSocket (RFC 6455) on a connection hyper has upgraded: handshake, frames, ping and pong, closing. |
@@ -196,11 +196,11 @@ is a 400 with no body; a body that is not the right JSON is a 400 with no body.
 
 - `Path<T>` takes one value, a tuple or a struct, by position or name. A segment
   is never empty, so `/api/x//` reaches no route with `{id}` (404). What a
-  segment holds is what the first server's front left of it (see Request paths):
+  segment holds is what the path reader left of it (see Request paths):
   `%2F` and any escape that is not a character stay as written, and everything
   else is decoded.
 - **An id in a path is read with `values::Guid`**: `Path<Guid>` (or `Path<(Guid, Guid)>`)
-  takes every spelling the first server's `{id:guid}` took (hyphens or none, braces,
+  takes every spelling of a GUID (hyphens or none, braces,
   parentheses, `0x` lists, spaces around), where `Path<Id>` takes only the lower-case
   hyphenated one. For an id in a query or a header call `values::parse_guid`. It is the
   one reader (`values/guid.rs`); `Id::parse_guid`, the hub's and the permissions' readers
@@ -210,20 +210,19 @@ is a 400 with no body; a body that is not the right JSON is a 400 with no body.
   `Vec<(String, String)>` that keeps every pair in order, repeated names and
   empty values (`?a=1&a=2&c` is `[a 1] [a 2] [c ""]`), for a route that reads it
   by hand. `+` and `%20` are a space.
-- `QueryValues` is the reader for a route whose first server read the query
-  loosely, and that clients may therefore send in a form `Query<T>` refuses. It
+- `QueryValues` is the reader for a route that reads its query loosely, so that
+  clients may send it in a form `Query<T>` refuses. It
   reads a name without regard to case, the non-empty values of a name given
-  twice joined with commas (`?limit=5&limit=` is `5`), and a number as the
-  runtime's integer parser did (white space and a sign around it, nothing out of
-  range): `values.text("cursor")`, `values.int("limit")?`, `values.long("after")?`;
-  a value that is no number is a 400 with no body. Use it where the first
-  server's route took `string?` or `int?` from the query; use `Query<T>` where
-  it did not matter.
+  twice joined with commas (`?limit=5&limit=` is `5`), and a number with white
+  space and a sign allowed around it and nothing out of range: `values.text("cursor")`, `values.int("limit")?`, `values.long("after")?`;
+  a value that is no number is a 400 with no body. Use it where a route takes an
+  optional text or number from the query that clients write loosely; use
+  `Query<T>` where it does not matter.
 - `Json<T>` reads the whole body into memory, up to the ceiling of its route: 1 MiB,
   unless the route says `.json_body_up_to(bytes)`, and never over the 128 MiB of
   the whole server. A route that takes an upload streams it instead.
 
-A body that needs the first server's leniency (encryption's, the direct
+A body that needs leniency (encryption's, the direct
 messages') is read through `http::lenient::Members`: member names in any letter
 case, the last of a name given twice (every occurrence of the right type), Base64
 with spaces, tabs and line breaks ignored (`Octets`), an integer from a number or
@@ -307,7 +306,7 @@ the closure runs on a blocking thread and never on one that serves requests.
   has outcomes of its own may use an error type of its own as long as it has
   `From<DbError>` and `From<rusqlite::Error>`; `DbError::is_unique_violation()` and
   `is_foreign_key_violation()` tell the refusals apart.
-- The schema is `database/schema.sql`, kept as the first server made it. Do not
+- The schema is `database/schema.sql`, kept as the first version of it made it. Do not
   change it. Use the table and column names as they are, in quotes.
 - Ids, moments, booleans and enums go into and out of rows through the types in
   `values`: `Id` (capitals in the database, lower case in JSON), `Timestamp`
@@ -320,12 +319,11 @@ may rely on it, and no handler may assume it will be told the client left.
 
 **Names and addresses** are stored and compared in capitals (`NormalizedUsername`,
 `NormalizedEmail`) through `instance::names`, and a user name's characters are
-letters and numbers by general category through `stellarr_unicode`. Both have to
-agree with the first server letter for letter, because the two are meant to work
-on copies of one database: the dotless i is not capitalized, and the long s is. Do
-not use the standard library's `to_uppercase`, `to_lowercase`, `is_alphabetic`,
-`is_alphanumeric` or `is_numeric` on anything that is stored or compared with what
-the first server stored.
+letters and numbers by general category through `stellarr_unicode`. Both follow
+the crate's own tables, which a database written earlier already depends on: the
+dotless i is not capitalized, and the long s is. Do not use the standard library's
+`to_uppercase`, `to_lowercase`, `is_alphabetic`, `is_alphanumeric` or `is_numeric`
+on anything that is stored or compared with what is already stored.
 
 **Events** go to the hub through `state.events().publish(Event::new(audience, "Name",
 &payload))`, after `write` has returned. A change is committed first and
@@ -359,9 +357,9 @@ refusal goes next to the others in `settings/tests.rs`
 One exception, on purpose: the Web Push settings (`Push:*`, `PushSettings`).
 A key pair or contact that is missing, wrong, or not a pair does not refuse the
 start; push is then unavailable (`GET /api/me/notification-delivery` says so, and
-every send is a retry) and everything else is served. The first server's own
-test demands this (an installation with a typo in one variable must still run),
-and a client can see the difference only as "push is off". `Push:Enabled` that
+every send is a retry) and everything else is served. An installation with a
+typo in one variable must still run, and a client can see the difference only as
+"push is off". `Push:Enabled` that
 is not `true` or `false` counts as off.
 
 **State that belongs to one group** (a gate, a cache, a connection pool the
@@ -379,7 +377,7 @@ not replace.
 ## The pipeline
 
 Every request goes through `http/pipeline.rs`, in this order: first the target is
-read as the first server's front read it (`http/path.rs`: see Request paths);
+read the way `http/path.rs` reads it (see Request paths);
 then count the response, log one line, turn a panic into a 500, read the
 `X-Forwarded-*` headers (the client's address is `Extension<ClientInfo>`), in
 development answer the web dev server's origin, count against the rate limit of
@@ -404,21 +402,19 @@ a bound is reached: 128 MiB (the ceiling of the whole server, so a refusal never
 costs more to read than an accepted request would), 10 seconds from the moment
 the server let go (not from the last byte, so a client that dribbles gains
 nothing), and 1024 connections at a time (past that a connection is closed as it
-would have been). The first server's front did the same for five to seven
-seconds. The rule for groups: refuse as early as you like and answer at once; do
+would have been). The rule for groups: refuse as early as you like and answer at once; do
 not read the rest of a body only to keep the client from seeing a reset, and do not
 send less than the declared length in a test to dodge one. A group that reads a
-form on purpose after it has decided to refuse (to refuse in the first server's
+form on purpose after it has decided to refuse (to refuse in a fixed
 order, as `uploads` does) is unaffected: the answer is written when the handler
 returns, as before.
 
 ## Request paths
 
-The first server sat behind a front that read the path of a request before any
-of its code did. This server does the same, once, outermost, in `http/path.rs`,
-and everything inside sees only the result: the rate limit, the client gate, the
-session rule, the body ceiling, the router and `Path`. Each was observed on the
-first server:
+The path of a request is read before any other code of the server reads it:
+once, outermost, in `http/path.rs`, and everything inside sees only the result:
+the rate limit, the client gate, the session rule, the body ceiling, the router
+and `Path`. The rules:
 
 - A request line of more than 8192 bytes (the method, the target, the version
   and the line break) is a 414; a `%00` in the path is a 400. Both are answered
@@ -441,26 +437,21 @@ first server:
 
 The normalised path is written back into the request in the one encoding that
 decodes to it again, so `Path<String>` for `/echo/a%252Fb` is `a%2Fb`, and for
-`/echo/a%2Fb` it is also `a%2Fb`: what the first server's routing saw.
+`/echo/a%2Fb` it is also `a%2Fb`. `tests/api/pipeline.rs` holds the table of
+spellings and what each becomes. Two choices are made on purpose:
 
-What is the same as the first server is tested against it (`tests/api/pipeline.rs`,
-`paths_are_read_as_the_first_server_reads_them`, ignored; its header says how to
-run it) and against a table of what it answered. Two things differ on purpose:
+- **Letter case.** Routes are matched with regard to case (`/API/x` is a 404).
+  Matching without it would mean a table of the literal parts of every route, in
+  every group and in the hub's own router, so that a literal is recognised in
+  any case while a parameter (a code, a name) keeps its own; that is a router of
+  our own beside axum's, not a cheap change, and what it buys is nothing a client
+  sends. The client gate does compare its paths without regard to case, which
+  only means it refuses more.
+- **The gate and the slash.** The gate, the limit and the router read the same
+  path, so `/api/session/` is gated like `/api/session`.
 
-- **Letter case.** The first server matched routes without regard to case; this
-  one matches them with it (`/API/x` is a 404). Matching it would mean a table of
-  the literal parts of every route, in every group and in the hub's own router,
-  so that a literal is recognised in any case while a parameter (a code, a name)
-  keeps its own; that is a router of our own beside axum's, not a cheap change,
-  and what it buys is nothing a client sends. The client gate does compare its
-  paths without regard to case, which only means it refuses more.
-- **The gate and the slash.** The first server's client gate compared the path as
-  written and its router ignored a slash at the end, so `/api/session/` got past the
-  gate and was served. Here the gate, the limit and the router read the same path,
-  so it is gated like `/api/session`.
-
-A fragment in the target (`/x#y`) is a 400 there; the HTTP library here drops it
-and serves the rest.
+A fragment in the target (`/x#y`) is dropped by the HTTP library and the rest is
+served.
 
 ## Sealed values
 
@@ -478,12 +469,12 @@ gets `state.sealer().derive_key("oidc")`, 32 bytes.
 The second step keeps two kinds of secret sealed, each for one purpose: an
 authenticator app's seed (`totp-secret`, bound to the account and the method)
 and a code mailed to a person (`email-code`, bound to the account and what the
-code is for). A row of either kind that the first server wrote was protected
-with that server's own keys and does not open here: the app's codes are all
-wrong, and the mailed code uses up its guesses. The person signs in with
-another step or a recovery code and sets that one up again. Everything else
+code is for). A row of either kind that was sealed under another master key
+(an older server's, say, or one since replaced) does not open here: the app's
+codes are all wrong, and the mailed code uses up its guesses. The person signs in
+with another step or a recovery code and sets that one up again. Everything else
 the second step stores (recovery codes, remembered devices, passkeys) is a
-digest or plain, and works on both servers.
+digest or plain, and does not depend on the key.
 
 ## The second step
 
@@ -563,10 +554,9 @@ without the web client: `status`, `doctor`, `config`, `secrets`, `users`,
 `sessions`, `security` and `backup`. `docs/admin/cli.md` is what operators were
 promised, and this tool keeps it to the letter: every command and option name,
 the text on standard output and standard error, the `--json` documents member by
-member and every exit status are the first server's tool's (`server/Stellarr.Cli`),
-which `crates/cli/tests/compare.py` checks by running both on copies of one data
-folder, in plain and `--json` form, for every command, every option and every
-wrong use, and comparing what each prints and the rows each leaves.
+member and every exit status are the ones that document gives. `cargo test -p
+stellarr-cli` runs every command, every option and every wrong use on instances
+made on disk and checks what each prints and the rows each leaves.
 
 It is a library, `stellarr_cli::run(args, io, environment, cancelled)`, with a
 `main.rs` that gives it the terminal, so that the tests give it an input and read
@@ -577,7 +567,7 @@ an account (`auth::recovery::recover`), the security events and the ways in
 (`auth::events`, `auth::ways_in`), the master key (`Sealer::open_existing`, which
 reads a key and never makes one) and the version (`version::server()`). It writes
 nothing of `auth` below its ceremonies: a session is revoked by its own `UPDATE`
-and an identity link removed by its own `DELETE`, as the first tool did.
+and an identity link removed by its own `DELETE`.
 
 What a command may do to the data folder:
 
@@ -609,31 +599,29 @@ What a command may do to the data folder:
   standard error saying the change was made; for `security recover`, that the
   credential was not delivered.
 
-What differs from the first server's tool, because only the first server has what
-it names:
+What is particular to this tool:
 
 - `doctor` says of `keys` what this server keeps there, a master key
-  (`keys/master.key`), and not data-protection key files; it names the key files of
-  the first server it finds, which this server cannot read.
-- A secret in the database that this instance's master key cannot open (the first
-  server sealed it, or the key was replaced) counts as not set, as it does for the
-  server, and `secrets list` names it in a warning, which the first tool had no
-  reason to do. `secrets set` writes over it; `secrets clear` removes it; the
-  commands that read secrets only to say what is effective (`config`) see it as unset.
-- A setting that the first server seeds from the host's time zone (`time-zone` on an
-  instance that never saved one) is the host's here too; it is spelled as the host's
-  zone database spells it.
-- The tool says `database` where the server says `panel`, as the first tool did.
+  (`keys/master.key`), and names any data-protection key files an older server
+  left, which this server cannot read.
+- A secret in the database that this instance's master key cannot open (it was
+  sealed by an older server, or the key was replaced) counts as not set, as it
+  does for the server, and `secrets list` names it in a warning. `secrets set`
+  writes over it; `secrets clear` removes it; the commands that read secrets only
+  to say what is effective (`config`) see it as unset.
+- A setting that is seeded from the host's time zone (`time-zone` on an instance
+  that never saved one) is the host's; it is spelled as the host's zone database
+  spells it.
+- The tool says `database` where the server says `panel`.
 - `security unlink` says when it removed an account's last way in (a warning, and
-  `lastWayIn` as the last member of its `--json` result, which the first tool did
-  not have); `secrets set` and `secrets clear` say in their question when the stored
-  value cannot be opened by this server.
+  `lastWayIn` as the last member of its `--json` result); `secrets set` and
+  `secrets clear` say in their question when the stored value cannot be opened by
+  this server.
 - `backup restore` refuses when the free space of the data volume cannot be read
-  (`free_space_unknown`, 5), where the first tool failed unexpectedly.
+  (`free_space_unknown`, 5).
 
 Backups: `backup verify | restore | cancel | apply` are written against
-`stellarr_cli::backup::RestoreLibrary`, whose members are the first tool's
-`BackupRestore` (`check`, `staged_archive_path`, `folder_name`, `broken_marker_name`,
+`stellarr_cli::backup::RestoreLibrary`, whose members are (`check`, `staged_archive_path`, `folder_name`, `broken_marker_name`,
 `clear_leftovers`, `apply`, `write_result`). `Runtime::create` gives it
 `archives::Archives`, which is those members over `stellarr_api::backups::restore`
 and nothing else: a restore is written once, in the server's library. The marker of
@@ -647,7 +635,6 @@ server, copied to that path). The tool needs `df` and, to hide a typed secret,
 
 ```sh
 cargo test -p stellarr-cli                       # the commands, on instances made on disk
-STELLARR_BIN=... BASE=... DN_DLL=... crates/cli/tests/compare.py   # both tools, side by side
 STELLARR_API=... STELLARR_BIN=... crates/cli/tests/running-server.sh # the tool against a running server
 ```
 
@@ -668,8 +655,7 @@ What ends a session in the database ends it for the next request that carries
 its cookie, but not for a connection the hub already holds open. The hub closes
 those in two ways: handlers tell it (`state.events().session_ended(user, session)`
 after a sign-out or a revocation), and a worker, `realtime-sessions` in
-`realtime/watcher.rs`, looks at the database once a second, as the first server's
-watcher did, so that sessions revoked, expired, past their absolute end, of a
+`realtime/watcher.rs`, looks at the database once a second, so that sessions revoked, expired, past their absolute end, of a
 disabled account or no longer meeting the second-step policy close whoever changed
 them, another process included. Both use `auth::session::authenticate`.
 
@@ -691,7 +677,7 @@ them, another process included. Both use `auth::session::authenticate`.
 ## Permissions
 
 `permissions/` holds who may do what on a server and who sees which channel,
-as the first server decided it (the rules are in `docs/architecture.md`, under
+(the rules are in `docs/architecture.md`, under
 "Server authorization" and "Private channels"). Every decision is the one pure
 function in `permissions::evaluator`; `snapshot` loads what it reads;
 `authorization` and `visibility` are what a handler calls. Nothing is cached:
@@ -813,7 +799,7 @@ away, by Web Push and by mail, every thirty seconds; `delivery/dispatcher.rs` ha
 its rules. A batch is up to 25 rows, leased for as long as the batch can take at its
 worst (25 rows of 20 seconds) and sent one after another.
 
-Limits it shares with the first server: the rows of a batch are sent one at a
+Its limits: the rows of a batch are sent one at a
 time, and a push service has ten seconds to answer, a mail server fifteen. So one
 person's subscriptions that never answer can delay everyone's notifications by up
 to 250 seconds a batch. That goes away with a later change to how the server's
@@ -832,10 +818,10 @@ extractors, and a route is declared `.authorized()` and nothing else:
 - `panel::FreshInstanceOwner(server)`: the same, and then a second step passed
   in the last five minutes where the account has one (`fresh-mfa-required`).
   Do not mark such a route `.fresh_second_step()`: the pipeline would ask the
-  second step of a caller who is not the owner before the owner check, and the
-  first server answered such a caller 403.
+  second step of a caller who is not the owner before the owner check, and such
+  a caller is answered 403.
 - A route that reads a JSON body calls `panel::bind_then_gate` and is marked
-  `.json_body()`: the first server bound the body before any filter, so a body
+  `.json_body()`: the body is bound before any filter, so a body
   that is not the right JSON is a 400 and another content type a 415 for
   anybody, before the gate.
 - `panel::record(tx, server, actor, sentence)` writes the audit line of a
@@ -843,9 +829,9 @@ extractors, and a route is declared `.authorized()` and nothing else:
   change), and `panel::operations` reads and writes the row of retention and
   clean-up settings that the first change of any setting creates.
 
-Both gates are compared with the first server in `tests/api/backups.rs` and
-`tests/backups-oracle.mjs` (a member, nobody, an owner without and with a
-second step, a disabled owner, the second step passed at the bound).
+Both gates are tested in `tests/api/backups.rs` (a member, nobody, an owner
+without and with a second step, a disabled owner, the second step passed at the
+bound).
 
 ## Backups
 
@@ -853,12 +839,10 @@ second step, a disabled owner, the second step passed at the bound).
 SQLite copy (`backup-<time>-<token>.db`) or a full archive (`.zip`) of the
 database, every object of the store, the keys folder and the instance files
 (`secrets/`, `tls/`, `releases/`). The archive is a file an operator keeps, so
-its layout is the first server's and is not changed: `manifest.json` last,
+its layout is fixed and is not changed: `manifest.json` last,
 entries in the order `database`, `objects` (in key order), `keys`, `instance`
 (folder by folder, each by the whole path as text), objects stored and the rest
-deflated. Archives of either server verify and restore on the other
-(`tests/backups-archives.sh`, which also asks the first server's own code, built
-from copies of its files by `tests/backups-witness/build.sh`).
+deflated. An archive an older server wrote verifies and restores here.
 
 - The database is copied with SQLite's online backup in one step, so a backup
   taken while people write is a state the database really had
@@ -869,8 +853,7 @@ from copies of its files by `tests/backups-witness/build.sh`).
 - The automatic backup is the worker `automatic-backups` (`backups/schedule.rs`):
   `run_once(state, destinations, clock)` is the whole of a pass and takes the
   clock and the destinations, so the schedule is tried at any moment; the
-  worker is a timer around it. It keeps `automatic-backup.json` (PascalCase, as
-  the first server wrote it) so that a failed offsite copy retries the archive
+  worker is a timer around it. It keeps `automatic-backup.json` (PascalCase) so that a failed offsite copy retries the archive
   already made, after a restart too.
 - The offsite destination is `backups/offsite.rs`: a bucket of S3 API
   (HEAD first, `sha256` metadata, multipart, nothing overwritten) or the relay
@@ -905,12 +888,11 @@ instance starts with its previous data". Nothing in `init/` knows about restores
 A restore checks everything before it changes anything (manifest, every entry
 name, the database, every byte), refuses an archive that is not a full backup,
 and unpacks beside the live folders and swaps them whole, keeping the previous
-ones in `restore/previous-<time>`. It is stricter than the first server in one
-way: an entry that is a link, a device or a folder is refused (the first server
-unpacked a link as a file). Files are only created, never opened over; keys,
+ones in `restore/previous-<time>`. An entry that is a link, a device or a
+folder is refused (a link is never unpacked as a file). Files are only created, never opened over; keys,
 secrets and tls files are 0600.
 
-**What a restore cannot carry over.** Values the first server sealed with its
+**What a restore cannot carry over.** Values an older server sealed with its
 own data-protection keys cannot be opened here, whatever the keys folder holds:
 
 | Table.column | What it held | What the operator or the person sets up again |
@@ -922,9 +904,8 @@ own data-protection keys cannot be opened here, whatever the keys folder holds:
 
 A restore ends, in the restored database and before it puts it in place, everything that a row made before the archive could use to let somebody in or past a step (`auth::restore::end_what_a_copy_may_bring_back`, one transaction). It ends every running session and every remembered browser (the second step is asked again); every mailed code, password-reset link, mail-change link and operator-printed recovery credential that was not yet used (one used after the archive was made would otherwise be good again); and the period of every confirmed authenticator app up to the current one. It removes open sign-in challenges, passkey sign-in ceremonies, desktop sign-ins with their approvals, and identities waiting to be linked. It leaves the account's own credentials as the archive holds them (password, recovery codes, passkeys, the methods of the second step) and does not raise any account's `SecurityVersion`, because every row that carries one is ended directly. A session or a browser that was ended after the archive was made does not come back. The tool says in a fixed sentence, before it asks, that a restore replaces every account, session, setting and secret and where automatic backups are sent.
 The encryption tables (`AccountKeyBackups` and the rest) are encrypted by the
-client with the person's PIN and are unaffected. The first server's own
-`docs/admin/backups.md` says `instance-id` is part of `instance/`; its code
-archives only `secrets/`, `tls/` and `releases/`, and so does this.
+client with the person's PIN and are unaffected. `instance/` in an archive holds
+only `secrets/`, `tls/` and `releases/`; `instance-id` is not part of it.
 
 ## Housekeeping
 
@@ -977,7 +958,7 @@ works it out, since no group stands for who may see something:
 | `Connection(id)` | one connection |
 
 An event goes to each group of its audience in turn, so a connection that is in
-two of them hears it twice, as it did from the first server. The payload is
+two of them hears it twice. The payload is
 sent as written. `state.events().session_ended(user, session)` closes the
 connections of a session and is not passed on; `server_left(user, server)` takes
 a person's connections out of the server's groups. In the Testing environment
@@ -1087,27 +1068,6 @@ The Testing environment lifts the rate limits (ten thousand a window) and lets
 the session cookie work over plain HTTP. To test a limit, start in Production
 with the limit set, as `pipeline.rs` does.
 
-### Comparing with the first server
-
-`tests/api/oracle.rs` (the accounts), `pipeline.rs` (paths) and `releases.rs`
-(`releases::oracle`) hold ignored tests that send the same requests to this
-server and to the first one and print where the answers differ; the header of each
-says how to run it. The first server runs in a container made by the integrator's
-`oracle start <name> <port> Production` (`oracle stop <name>` removes it; start a
-fresh one for each run of a comparison that counts against a rate limit, since
-the limits count across the whole run). `tests/oracle-shared-database.sh` runs
-both servers on copies of one database file: an account made by one signs in on the
-other, and the answers to the second step are the same.
-
-A group that reads files has to put the same files where the first server reads
-them. Its data folder is `/tmp/data` inside the container (`stellarr.db`, `keys/`,
-`releases/`, ...). `docker cp <folder> stellarr-port-oracle-<name>:/tmp/data/` puts
-files in, and `docker cp` out takes them; stop the container (`docker stop`) before
-copying its database, and start it again afterwards (`docker start`; `docker restart`
-if it holds nothing else) so that it reads what was put there. `releases.rs`
-does this for every layout it compares. Name your own container in the variable
-the test reads (`ORACLE_CONTAINER`), so as not to touch another person's.
-
 ## Crate features
 
 The server asks for the features it uses in its own `Cargo.toml`, and the workspace
@@ -1134,7 +1094,7 @@ makes cargo build the crate again when the variable changes. Nothing else reads 
 variable, and nothing else spells the version: the discovery document takes it from
 here.
 
-## Limits of voice that the first server has too
+## Limits of voice
 
 These are not fixed here, and are written down so that nobody takes them for
 guarantees. (A seat that outlives the right to sit there is no longer one of
@@ -1170,133 +1130,116 @@ so nobody sits in one that goes. A closed connection frees its seat by itself, s
 disabled account or an ended session needs nothing more. A moderator's move is
 no loss of access, but a person moved into a room they could not have joined is
 taken out of it by the next change of access on the server, since the rules
-count from then on. This is a deliberate difference from the first server, where
-a seat stayed until the person left.
+count from then on. A seat does not stay until the person leaves: it goes with
+the right to sit there.
 
-## Known differences from the first server
+## Behaviour worth knowing
 
-- A backup restore refuses an archive entry that is a link, a device or a folder; the
-  first server unpacked a link as a file. Backups follow no links when they read the
-  instance folders. The backup list dates a file as the first server did on Linux, by
-  the earlier of its two change times (a file copied in keeps its old date), and by
-  its birth time on other systems.
-- The housekeeping deletes in chunks of a thousand rows, where the first server deleted
-  with one statement each; the result is the same.
-- Routes are matched case-sensitively; the first server matched them without
-  regard to case (see Request paths for why that stays). The client gate still
-  treats its paths case-insensitively.
-- The client gate, the limits and the router read the same path, so a path the
-  first server's gate let by with a slash at the end (`/api/session/`) is gated
-  here. A fragment in a request target (`/x#y`) is dropped and the rest served,
-  where the first server answered 400.
-- A request body's property names must have the case the client sends; the
-  first server matched them without regard to case.
-- The encryption routes write non-ASCII text as it is (a device label of
-  emoji), where the first server wrote `\uD83D\uDE00`; both are the same JSON.
-  A `null` among the envelopes of a new epoch is a 400 where the first server's
-  code failed on it (a 500).
-- What encryption does not guard, as the first server did not: someone who holds
-  a session can try the account's password through the two routes that ask for
-  it (a new PIN and a reset), at the rate the `Login` policy allows, with no cost
-  per wrong try; can use up the account's unlock tries and, after ten wrong PINs,
-  delete the backup; and a device is registered without the PIN, which the other
-  person learns from the device line and the keys-changed event. The owner may
-  decide later to tighten any of that.
-- Responses with a known length carry `Content-Length` where the first server
-  sent them chunked, and a response sent before the request body was read may
-  carry `Connection: close`.
-- Settings are read once at start; the first server read a few again on each
-  request.
-- A route that reads JSON reads 1 MiB unless it asks for more (`.json_body_up_to`);
-  the first server read up to 128 MiB everywhere, which let anybody make it hold
-  that much on a route that needs no session. The 128 MiB ceiling of the whole
-  server stays.
-- A malformed JSON body is a 400 in every environment; in development the first
-  server answered 500.
+What this server does where a client, an operator or a reader of the code might
+expect otherwise.
+
+- A backup restore refuses an archive entry that is a link, a device or a folder.
+  Backups follow no links when they read the instance folders. The backup list
+  dates a file by the earlier of its two change times on Linux (a file copied in
+  keeps its old date), and by its birth time on other systems.
+- The housekeeping deletes in chunks of a thousand rows.
+- Routes are matched case-sensitively (see Request paths for why that stays). The
+  client gate still treats its paths case-insensitively.
+- The client gate, the limits and the router read the same path, so a path with a
+  slash at the end (`/api/session/`) is gated like the one without. A fragment in
+  a request target (`/x#y`) is dropped and the rest served.
+- A request body's property names must have the case the client sends.
+- The encryption routes write non-ASCII text as it is (a device label of emoji,
+  not `\uD83D\uDE00`); both are the same JSON. A `null` among the envelopes of a
+  new epoch is a 400.
+- What encryption does not guard: someone who holds a session can try the
+  account's password through the two routes that ask for it (a new PIN and a
+  reset), at the rate the `Login` policy allows, with no cost per wrong try; can
+  use up the account's unlock tries and, after ten wrong PINs, delete the backup;
+  and a device is registered without the PIN, which the other person learns from
+  the device line and the keys-changed event. The owner may decide later to
+  tighten any of that.
+- Responses with a known length carry `Content-Length` and are not sent chunked,
+  and a response sent before the request body was read may carry
+  `Connection: close`.
+- Settings are read once at start.
+- A route that reads JSON reads 1 MiB unless it asks for more
+  (`.json_body_up_to`), so nobody can make the server hold more on a route that
+  needs no session. The 128 MiB ceiling of the whole server stays.
+- A malformed JSON body is a 400 in every environment.
 - A release manifest that names a file with a null character in its name is
-  unusable (503); the first server's runtime threw there (500).
+  unusable (503).
 - A route that takes an upload answers 403 to somebody who is no member of the
-  server before it reads their form, where the first server read the form first
-  (and said 400 to one that could not be read).
+  server before it reads their form.
 - An upload is staged in `incoming/` of the data root and not in the system's
-  temporary folder, and a form is read by `http::multipart` with the first
-  server's limits, plus one it did not have: a text field longer than 64 KiB is
-  read as a value too long to be anything. A client that sends nothing for six
-  seconds is cut off with a 408; the first server's rule was a speed under 240
-  bytes a second after five.
-- The form that approves a desktop sign-in is read up to 1 MiB; over that is the same 500 the first server answered to a form over its limits, which for it were about 30 MB.
-- A poster and a preview are sent with `X-Content-Type-Options: nosniff`, which
-  the first server left off them.
+  temporary folder. A form is read by `http::multipart` within the limits set
+  there, and a text field longer than 64 KiB is read as a value too long to be
+  anything. A client that sends nothing for six seconds is cut off with a 408.
+- The form that approves a desktop sign-in is read up to 1 MiB; a form over that
+  is answered 500.
+- A poster and a preview are sent with `X-Content-Type-Options: nosniff`.
 - The free space of the data volume is asked of `df` (two seconds at most); the
   standard library cannot say, and `unsafe` is not allowed. **The image must
   contain `df`**: where it is missing, fails or is too slow, a warning is logged
   at every upload and the reserve (`Uploads:MinimumFreeDataRootBytes`) is not
   enforced.
 - The answer of one poll of the media server's events may weigh up to 64 MiB
-  (256 events of up to 128 KiB of session description, with room to spare); the
-  first server had no ceiling. A longer answer is read as an unreachable media
-  server.
-- A voice signal's payload and a media signal's payload are read as JSON by
-  this server's reader, which refuses a lone surrogate escape (`"\ud800"`); the
-  first server's reader took it. A client that sends one is told "Invalid voice
-  state." (or "Invalid media signal.") here, where the first server relayed it
-  or failed with an unexplained error.
+  (256 events of up to 128 KiB of session description, with room to spare). A
+  longer answer is read as an unreachable media server.
+- A voice signal's payload and a media signal's payload are read as JSON by this
+  server's reader, which refuses a lone surrogate escape (`"\ud800"`). A client
+  that sends one is told "Invalid voice state." (or "Invalid media signal.").
 - A signal object that has two members whose names differ only in letter case
-  (`kind` and `Kind`) is read here by the order of the names, not of the
-  document, so the member that wins can be the other one. No client writes
-  such an object.
-- A move request's body in the Development environment answers 400 where the
-  first server answered 500 (see the malformed bodies above).
+  (`kind` and `Kind`) is read by the order of the names, not of the document, so
+  the member that wins can be the other one. No client writes such an object.
+- A move request's body in the Development environment that is malformed is
+  answered 400, as in every environment.
+- The operator panel's runtime figures (memory, threads, processor use) are read
+  from `/proc` and are zero where there is none (macOS); the "heap" is the
+  process's mapped data. The API service's detail says `Rust <version>`.
+  Characters outside the basic plane are written raw in JSON. A test mail to an
+  address the SMTP client cannot write into a message (a quoted part before the
+  @, an address literal, one over 254 bytes) is answered 502 with the reason.
 
-## Single sign-on: where it differs from the first server
+## Single sign-on: what to know
 
-`tests/providers-oracle/run.sh` (header: how to run it) puts every flow of
-`identity_providers` to both servers and diffs the conversations. What stays
-different, and what somebody would notice:
+What somebody would notice about the flows of `identity_providers`:
 
-- **An unsigned ID token is refused.** The first server accepted one (`alg:
-  none`) from a token endpoint; here a provider that signs nothing cannot sign
-  anybody in. Only a provider that is set up to send unsigned tokens notices.
+- **An unsigned ID token is refused.** A provider that signs nothing (`alg:
+  none`) cannot sign anybody in. Only a provider that is set up to send unsigned
+  tokens notices.
 - **A return address of over 2,048 characters, or with a character beyond
-  ASCII, becomes `/`.** The first server kept a long one, and answered 500 for
-  one with such a character (and signed nobody in). The person lands on the
-  start page instead of the page they were headed for.
+  ASCII, becomes `/`.** The person lands on the start page instead of the page
+  they were headed for.
 - **A link answered in another browser, or whose state could not be opened,
-  ends on the sign-in page** (`/login?oidc_error=failed`), where the first
-  server sent `/link-account?result=failed`. The sealed state opens only for
-  the browser that asked, so it cannot say what the round trip was for; that
-  would take showing it to everybody. The person sees the sign-in page with an
-  error instead of the link page's. Once the state has opened (no code,
-  expired, used), the page is the link page's, as before. The same holds for
-  a fresh sign-in answered a second time: the first server sent
-  `/link-account?result=unconfirmed`, this one the sign-in page (the answer
-  that came first was the one that counted).
-- **`HEAD` on the callback is a 405**; the first server redirected it to the
-  sign-in page as a failure. No browser sends one.
+  ends on the sign-in page** (`/login?oidc_error=failed`). The sealed state opens
+  only for the browser that asked, so it cannot say what the round trip was for;
+  that would take showing it to everybody. The person sees the sign-in page with
+  an error instead of the link page's. Once the state has opened (no code,
+  expired, used), the page is the link page's. The same holds for a fresh
+  sign-in answered a second time: the sign-in page (the answer that came first
+  was the one that counted).
+- **`HEAD` on the callback is a 405.** No browser sends one.
 - **The provider's documents have their own timeouts**: ten seconds to
-  connect and thirty in all (the first server waited a minute), five
-  redirects for discovery and keys, none for the token and profile requests. A
-  provider slower than that fails the sign-in sooner.
-- **A secret kept in a file is read once, at start.** The first server read it
-  at every check, so a file created later made the provider appear. Here the
-  operator restarts.
+  connect and thirty in all, five redirects for discovery and keys, none for the
+  token and profile requests. A provider slower than that fails the sign-in.
+- **A secret kept in a file is read once, at start.** A file created later does
+  not make the provider appear; the operator restarts.
 - **A custom `Oidc:CallbackPath` refuses the start.** The callback is a route
   built at start; an operator who moved it must register the default address
   with the provider.
-- **A session that ended before a fresh sign-in is answered** is refused here
-  by its expiry too, which the first server did not look at.
-- **No orphan session** when a provider's profile fails after a linked
-  account was found: the first server had written the session and its event
-  before the profile failed.
-- **Cookie names**: one cookie for each sign-in under way, `stellarr-oidc-`
-  and a hash of its state, where the first server set two named for the
-  framework. Same attributes (path of the callback, `Secure`,
-  `SameSite=None`, `HttpOnly`).
+- **A session that ended before a fresh sign-in is answered** is refused by its
+  expiry too.
+- **No orphan session** when a provider's profile fails after a linked account
+  was found: no session and no event are written before the profile is read.
+- **Cookie names**: one cookie for each sign-in under way, `stellarr-oidc-` and a
+  hash of its state. Attributes: path of the callback, `Secure`,
+  `SameSite=None`, `HttpOnly`.
 - **The binding cookie has no `__Host-` prefix**, because it is limited to the
-  path of the callback, as the first server's were, and that prefix demands
-  the root. What that leaves open: a page on a sibling subdomain could plant
-  such a cookie in a browser. It could only make that browser's own answer
-  fail, since the state it opens is sealed to the value that browser holds.
+  path of the callback, and that prefix demands the root. What that leaves open:
+  a page on a sibling subdomain could plant such a cookie in a browser. It could
+  only make that browser's own answer fail, since the state it opens is sealed
+  to the value that browser holds.
 - **The replay guard lives in memory.** A restart forgets which answers were
   used, so for the minutes a state lives, an answer could be posted twice; the
   provider's code is single-use, and its second redemption fails.
@@ -1305,40 +1248,15 @@ different, and what somebody would notice:
   minutes), not before the retry. A person whose provider rotated its keys
   signs in on the second try.
 
-What the comparisons cover. `providers-oracle/run.sh flows` compares the
-conversations and, after them, the rows both servers left (`tables.py`; the one
-row that differs is the unsigned token's, above). `oracle-second-step.py`
-(header: how to run it) puts a fake provider in the second step: `link` (a
-password sign-in that asks to link, with the second step passed, wrong, or the
-identity taken, replaced, dropped or the account's already), `sso_security` (the
-security page, a link from it, removals, a session that signed in long ago, the
-last way in), `sso_reauth` (accounts made through a provider: the first
-password, a fresh sign-in at the provider as proof, answers that are old,
-somebody else's or that came after the account's security moved), `sso_policy`
-(the provider's second step, trusted or not, recent or not, for a sign-in and
-for a sign-up while everybody must have one) and `sso_named` (named providers
-only). Each prints the rows it left. A difference that is on purpose is listed
-in the script's `KNOWN` with its reason, and is printed as known.
-
-- The operator panel's runtime figures (memory, threads, processor use) are read
-  from `/proc` and are zero where there is none (macOS); the "heap" is the process's
-  mapped data. The API service's detail says `Rust <version>`. Characters outside the
-  basic plane are written raw in JSON; the first server wrote them as surrogate pairs.
-  A test mail to an address the SMTP client cannot write into a message (a quoted part
-  before the @, an address literal, one over 254 bytes) is answered 502 with the reason;
-  the first server sent to those.
-
-## Comparing uploads with the first server
+## Measuring uploads
 
 `tests/uploads-probe.py <base-url> <setup-code> [database-file]` sends one corpus
 of requests (every type, names, limits to the byte, forms that lie, ranges,
-conditions, who may read what, the pictures of people and servers) to whichever
-server it is given and prints one normalized line per request. Start the first
-server with `oracle start <name> <port> Production`, this one with
-`ASPNETCORE_ENVIRONMENT=Testing`, run the script against each (the database file
-is for a server that cannot make an invite itself) and diff. `UPLOADS_PROBE_HEAVY=1`
-adds the 100 MiB cases. `tests/uploads-data-compare.py` compares the data folders
-the two leave: object keys, bytes and rows. `tests/uploads-witness/` holds the
-program that asks the first server's own code what a number, a flag, a name and a
-range make of an input, for `uploads::witness`; `tests/uploads-memory.py` measures
-the memory of the server while uploads pass.
+conditions, who may read what, the pictures of people and servers) to a fresh
+server and prints one normalized line per request; the database file is for a
+server that cannot make an invite itself. `UPLOADS_PROBE_HEAVY=1` adds the
+100 MiB cases. `tests/uploads-real-bucket.sh` runs the corpus against the
+folder store and then against real S3-compatible servers (Garage and the
+Versity gateway, from images already on the machine) and requires the same
+answers. `tests/uploads-memory.py` measures the memory of the server while
+uploads pass.
