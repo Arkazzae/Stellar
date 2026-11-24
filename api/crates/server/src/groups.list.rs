@@ -1,4 +1,5 @@
 groups! {
+    account_security,
     accounts,
     administration,
     assets,
