@@ -217,14 +217,13 @@ async fn the_page_of_an_account_with_nothing_set_up_is_written_member_by_member(
     assert_eq!(
         head,
         "{\"requirement\":\"optional\",\"mfaRequired\":false,\"freshMfa\":false,\"mfaEvidence\":null,\"mfaCompletedAt\":null,\
-         \"trustedDeviceAvailable\":false,\"methods\":[],\"remainingRecoveryCodes\":0,\"trustedDevices\":[],"
+         \"methods\":[],\"remainingRecoveryCodes\":0,\"trustedDevices\":[],"
     );
-    let (events, tail) = rest.split_once("],\"freshMfaWindowSeconds\"").expect("what follows the events");
+    let (events, tail) = rest.split_once("],\"trustedDeviceDays\"").expect("what follows the events");
     assert!(events.starts_with('['), "{events}");
     assert_eq!(
         tail,
-        ":300,\"trustedDeviceDays\":14,\"emailCodeAvailable\":false,\"emailResendCooldownSeconds\":45,\
-         \"securityRecoveryRequired\":false,\"passkeyAvailable\":false,\"identities\":[],\"identityProviders\":[],\"hasPassword\":true}"
+        ":14,\"emailCodeAvailable\":false,\"passkeyAvailable\":false,\"identities\":[],\"identityProviders\":[],\"hasPassword\":true}"
     );
 }
 
@@ -361,14 +360,15 @@ async fn sessions_are_listed_most_recently_seen_first_with_this_one_marked() {
     assert_eq!(sessions[0]["current"], true);
     assert_eq!(sessions[1]["id"], second.to_string());
     assert_eq!(sessions[1]["current"], false);
-    assert_eq!(sessions[0]["primarySource"], "registration", "how this one began");
-    assert_eq!(sessions[1]["primarySource"], "password");
-    assert_eq!(sessions[0]["mfaEvidence"], Value::Null);
+    for session in &sessions {
+        assert!(session.get("primarySource").is_none());
+        assert!(session.get("mfaEvidence").is_none());
+    }
     let text = response.text();
     assert!(
         text.starts_with("[{\"id\":\"") && text.contains("\"device\":") && text.contains("\"ipAddress\":\"")
             && text.contains("\"createdAt\":") && text.contains("\"lastSeenAt\":") && text.contains("\"expiresAt\":")
-            && text.contains("\"primarySource\":\"registration\",\"mfaEvidence\":null,\"current\":true}"),
+            && text.contains("\"current\":true}"),
         "{text}"
     );
 }
