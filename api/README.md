@@ -852,8 +852,11 @@ here.
   read as a value too long to be anything. A client that sends nothing for six
   seconds is cut off with a 408; the first server's rule was a speed under 240
   bytes a second after five.
-- The free space of the data volume is asked of `df`; the standard library
-  cannot say, and `unsafe` is not allowed.
+- The free space of the data volume is asked of `df` (two seconds at most); the
+  standard library cannot say, and `unsafe` is not allowed. **The image must
+  contain `df`**: where it is missing, fails or is too slow, a warning is logged
+  at every upload and the reserve (`Uploads:MinimumFreeDataRootBytes`) is not
+  enforced.
 
 ## Comparing uploads with the first server
 

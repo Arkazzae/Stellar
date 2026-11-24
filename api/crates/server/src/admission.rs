@@ -12,6 +12,7 @@ use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
 
 use rusqlite::{Connection, params};
 use tokio::sync::{OwnedSemaphorePermit, Semaphore};
+use tracing::warn;
 
 use crate::database::{Database, DbError};
 use crate::settings::UploadSettings;
@@ -204,9 +205,14 @@ async fn has_disk_headroom(
     }
 }
 
+/// How long `df` may take. The turnstile is held while it runs, so a `df` that
+/// hangs would stall every upload.
+const DF_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(2);
+
 /// The space available on the volume that holds `path`, as `df` reports it.
 /// The standard library cannot say, and this code may not call into the
-/// system itself.
+/// system itself. When `df` is missing, fails or is too slow there is no
+/// answer, which is logged: the reserve is then not enforced.
 async fn free_bytes(path: &Path) -> Option<i64> {
     // The data root may not exist yet on a first start; its nearest parent is
     // on the same volume.
@@ -214,19 +220,36 @@ async fn free_bytes(path: &Path) -> Option<i64> {
     while !probe.exists() {
         probe = probe.parent()?.to_path_buf();
     }
-    let output = tokio::process::Command::new("df")
+    let run = tokio::process::Command::new("df")
         .arg("-Pk")
         .arg(&probe)
         .stdin(std::process::Stdio::null())
         .stderr(std::process::Stdio::null())
         .kill_on_drop(true)
-        .output()
-        .await
-        .ok()?;
-    if !output.status.success() {
-        return None;
+        .output();
+    let output = match tokio::time::timeout(DF_TIMEOUT, run).await {
+        Ok(Ok(output)) if output.status.success() => output,
+        Ok(Ok(output)) => {
+            warn!(
+                "df failed ({}): the free space reserve is not enforced",
+                output.status
+            );
+            return None;
+        }
+        Ok(Err(error)) => {
+            warn!("df cannot be run ({error}): the free space reserve is not enforced");
+            return None;
+        }
+        Err(_) => {
+            warn!("df did not answer in {DF_TIMEOUT:?}: the free space reserve is not enforced");
+            return None;
+        }
+    };
+    let free = parse_df(&String::from_utf8_lossy(&output.stdout));
+    if free.is_none() {
+        warn!("the answer of df was not understood: the free space reserve is not enforced");
     }
-    parse_df(&String::from_utf8_lossy(&output.stdout))
+    free
 }
 
 /// The Available column, in kilobytes, of the last line of `df -P`, in bytes.
