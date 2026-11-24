@@ -19,7 +19,6 @@ mod second_step;
 mod servers;
 mod sign_in;
 mod social;
-mod workers;
 mod streaming;
 mod uploads;
 mod workers;
