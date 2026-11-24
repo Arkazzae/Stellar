@@ -236,12 +236,10 @@ impl std::fmt::Debug for ChunkSigner {
 }
 
 impl ChunkSigner {
-    pub(crate) fn new(
-        seed: &Signed,
-        scope: &Scope<'_>,
-        decoded_length: u64,
-        chunk_size: usize,
-    ) -> Self {
+    /// Starts a body whose headers were signed as `seed`. Requests come with
+    /// their signer already made; this is public for the proof tests only.
+    #[doc(hidden)]
+    pub fn new(seed: &Signed, scope: &Scope<'_>, decoded_length: u64, chunk_size: usize) -> Self {
         Self {
             key: seed.signing_key,
             amz_date: scope.amz_date.to_owned(),
