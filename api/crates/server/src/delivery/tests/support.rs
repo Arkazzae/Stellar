@@ -65,13 +65,10 @@ impl World {
         let folder = TempDir::new();
         let vapid = generate_keys().expect("a key pair");
         let mut variables: Vec<(String, String)> = vec![
-            ("ASPNETCORE_ENVIRONMENT".into(), "Testing".into()),
+            ("STELLARR_ENVIRONMENT".into(), "Testing".into()),
             (
-                "ConnectionStrings__Database".into(),
-                format!(
-                    "Data Source={};Pooling=True",
-                    folder.path().join("stellarr.db").display()
-                ),
+                "STELLARR_DATA_ROOT".into(),
+                folder.path().display().to_string(),
             ),
             ("Operations__PublicUrl".into(), PUBLIC_URL.into()),
             ("STELLARR_PUSH_ENABLED".into(), "true".into()),

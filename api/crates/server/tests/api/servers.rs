@@ -1097,7 +1097,7 @@ async fn every_invite_that_cannot_be_used_gets_the_same_not_found() {
 #[tokio::test]
 async fn looking_at_invites_is_limited_so_that_codes_cannot_be_walked() {
     let server = Server::start_with(&[
-        ("ASPNETCORE_ENVIRONMENT", "Production"),
+        ("STELLARR_ENVIRONMENT", "Production"),
         ("Rtc__TurnSharedSecret", "a-secret"),
         ("RateLimiting__InvitePreview__PermitLimit", "3"),
     ])

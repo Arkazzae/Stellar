@@ -31,10 +31,8 @@ impl StorageSettings {
     pub(super) fn load(config: &Config) -> Result<StorageSettings, SettingError> {
         let provider = match config.text("Storage:Provider") {
             None => Provider::FileSystem,
-            Some(name) if name.eq_ignore_ascii_case("FileSystem") || name == "0" => {
-                Provider::FileSystem
-            }
-            Some(name) if name.eq_ignore_ascii_case("S3") || name == "1" => Provider::S3,
+            Some(name) if name.eq_ignore_ascii_case("FileSystem") => Provider::FileSystem,
+            Some(name) if name.eq_ignore_ascii_case("S3") => Provider::S3,
             Some(name) => {
                 return Err(SettingError::new(format!(
                     "Storage:Provider must be \"FileSystem\" or \"S3\", but is \"{name}\"."

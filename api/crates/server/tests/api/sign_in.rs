@@ -359,7 +359,7 @@ async fn a_kept_sign_in_has_a_cookie_that_outlives_the_browser_by_thirty_days() 
 
 #[tokio::test]
 async fn the_session_cookie_is_secure_with_a_host_prefix_in_production_and_plain_in_testing() {
-    let production = Server::start_with(&[("ASPNETCORE_ENVIRONMENT", "Production"), ("Rtc__TurnSharedSecret", "a-secret")]).await;
+    let production = Server::start_with(&[("STELLARR_ENVIRONMENT", "Production"), ("Rtc__TurnSharedSecret", "a-secret")]).await;
     let testing = Server::start().await;
     production.found("owner").await;
     testing.found("owner").await;
@@ -439,7 +439,7 @@ async fn a_cookie_due_for_renewal_is_left_alone_when_the_handler_signs_in_or_out
 
 #[tokio::test]
 async fn password_attempts_are_limited_per_address() {
-    let server = Server::start_with(&[("ASPNETCORE_ENVIRONMENT", "Production"), ("Rtc__TurnSharedSecret", "a-secret")]).await;
+    let server = Server::start_with(&[("STELLARR_ENVIRONMENT", "Production"), ("Rtc__TurnSharedSecret", "a-secret")]).await;
     server.found("owner").await;
     let client = server.client();
 

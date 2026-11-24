@@ -7,7 +7,7 @@
 
 use std::collections::BTreeMap;
 
-use stellarr_oidc::options::{DEFAULT_CALLBACK_PATH, Provider, ProviderSettings, Settings};
+use stellarr_oidc::options::{Provider, ProviderSettings, Settings};
 
 use super::{Config, SettingError};
 
@@ -23,15 +23,6 @@ pub struct OidcSettings {
 
 impl OidcSettings {
     pub(super) fn load(config: &Config) -> Result<OidcSettings, SettingError> {
-        // The route that receives the provider's answer is fixed when the
-        // routes are built, so the original provider's callback cannot move.
-        if let Some(path) = config.text("Oidc:CallbackPath")
-            && path != DEFAULT_CALLBACK_PATH
-        {
-            return Err(SettingError::new(format!(
-                "Oidc:CallbackPath is \"{path}\" but must be \"{DEFAULT_CALLBACK_PATH}\": this server receives the provider's answer there only."
-            )));
-        }
         let mut settings = Settings {
             original: ProviderSettings {
                 enabled: false,

@@ -267,7 +267,7 @@ impl Instance {
             interactive: false,
             secret_prompt: None,
         };
-        let variables = vec![("ASPNETCORE_ENVIRONMENT".to_string(), "Testing".to_string())];
+        let variables = vec![("STELLARR_ENVIRONMENT".to_string(), "Testing".to_string())];
         let exit = run(&words, io, variables, Arc::new(AtomicBool::new(false)));
         Run {
             exit,
@@ -329,7 +329,7 @@ impl Instance {
         // The environment of a run is what it is given, and a test names the
         // environment the host runs in unless it names another.
         let mut variables: Vec<(String, String)> =
-            vec![("ASPNETCORE_ENVIRONMENT".into(), "Testing".into())];
+            vec![("STELLARR_ENVIRONMENT".into(), "Testing".into())];
         for (name, value) in environment {
             variables.retain(|(have, _)| have != name);
             variables.push((name.to_string(), value.to_string()));

@@ -408,7 +408,7 @@ async fn verifying_counts_against_the_login_limit() {
     let instance = Instance::with(
         &["maya"],
         &[
-            ("ASPNETCORE_ENVIRONMENT", "Production"),
+            ("STELLARR_ENVIRONMENT", "Production"),
             ("Rtc__TurnSharedSecret", "a-secret"),
             ("RateLimiting__Login__PermitLimit", "3"),
         ],

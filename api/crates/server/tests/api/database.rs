@@ -89,15 +89,10 @@ async fn the_server_waits_for_a_writer_instead_of_failing() {
 }
 
 #[tokio::test]
-async fn a_database_in_another_place_is_created_there() {
-    let folder = TempDir::new();
-    let elsewhere = folder.path().join("db").join("nested").join("stellarr.db");
-    let connection_string = format!("Data Source={};Pooling=True", elsewhere.display());
+async fn the_database_is_created_in_the_db_folder_of_the_data_root() {
+    let server = Server::start().await;
 
-    let server =
-        Server::start_with(&[("ConnectionStrings__Database", connection_string.as_str())]).await;
-
-    assert!(elsewhere.is_file());
+    assert!(server.folder().join("db").join("stellarr.db").is_file());
     assert_eq!(
         server
             .client()
@@ -106,15 +101,4 @@ async fn a_database_in_another_place_is_created_there() {
             .json::<serde_json::Value>(),
         json!({ "status": "ready" })
     );
-}
-
-#[tokio::test]
-async fn a_shared_cache_stops_the_start_and_says_why() {
-    let said = Server::refused_to_start(&[(
-        "ConnectionStrings__Database",
-        "Data Source=x.db;Cache=Shared;Pooling=True",
-    )])
-    .await;
-
-    assert!(said.contains("Cache=Shared"), "{said}");
 }

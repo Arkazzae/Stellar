@@ -38,16 +38,12 @@ async fn main() {
     let port = arguments.next().expect("a port");
     let data = arguments.next().expect("a data folder");
     let variables = vec![
-        ("ASPNETCORE_ENVIRONMENT".to_string(), "Testing".to_string()),
+        ("STELLARR_ENVIRONMENT".to_string(), "Testing".to_string()),
         (
-            "ASPNETCORE_URLS".to_string(),
-            format!("http://127.0.0.1:{port}"),
+            "STELLARR_API_LISTEN".to_string(),
+            format!("127.0.0.1:{port}"),
         ),
         ("STELLARR_DATA_ROOT".to_string(), data.clone()),
-        (
-            "ConnectionStrings__Database".to_string(),
-            format!("Data Source={data}/stellarr.db;Pooling=True"),
-        ),
     ];
     let settings = Settings::load(&variables).expect("usable settings");
     let groups = vec![

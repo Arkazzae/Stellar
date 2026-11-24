@@ -466,7 +466,7 @@ async fn simultaneous_registrations_of_one_account_answer_created_and_validation
 #[tokio::test]
 async fn registration_attempts_are_limited_per_address() {
     let server = Server::start_with(&[
-        ("ASPNETCORE_ENVIRONMENT", "Production"),
+        ("STELLARR_ENVIRONMENT", "Production"),
         ("Rtc__TurnSharedSecret", "a-secret"),
     ])
     .await;

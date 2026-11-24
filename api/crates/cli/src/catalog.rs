@@ -608,12 +608,6 @@ pub fn startup_settings() -> Vec<StartupSetting> {
             read: oidc_providers,
         },
         StartupSetting {
-            key: "oidc.callback-path",
-            environment_variable: "Oidc__CallbackPath",
-            guidance: "Set Oidc__CallbackPath in .env and recreate the container. The normal value is /api/auth/oidc/callback.".to_string(),
-            read: |runtime| config_value(runtime, "Oidc:CallbackPath", "/api/auth/oidc/callback"),
-        },
-        StartupSetting {
             key: "rtc.public-host",
             environment_variable: "STELLARR_DOMAIN",
             guidance: format!("Set {domain} in .env and recreate the container."),

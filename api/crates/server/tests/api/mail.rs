@@ -174,7 +174,7 @@ struct Saved {
 }
 
 fn open(folder: &Path) -> Connection {
-    let connection = Connection::open(folder.join("stellarr.db")).unwrap();
+    let connection = Connection::open(folder.join("db").join("stellarr.db")).unwrap();
     connection.busy_timeout(Duration::from_secs(10)).unwrap();
     connection
 }
@@ -236,9 +236,11 @@ fn minutes_from_now(moment: Timestamp) -> i64 {
 }
 
 fn copy_database(from: &Path, to: &Path) {
+    std::fs::create_dir_all(to.join("db")).unwrap();
     for name in ["stellarr.db", "stellarr.db-wal", "stellarr.db-shm"] {
-        if from.join(name).exists() {
-            std::fs::copy(from.join(name), to.join(name)).unwrap();
+        let source = from.join("db").join(name);
+        if source.exists() {
+            std::fs::copy(source, to.join("db").join(name)).unwrap();
         }
     }
 }

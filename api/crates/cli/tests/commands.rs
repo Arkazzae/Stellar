@@ -400,7 +400,7 @@ fn with_no_environment_named_the_tool_takes_the_production_seeds() {
     let development = stellarr_cli::runtime::Runtime::create(
         stellarr_cli::invocation::Invocation::parse(&["status".to_string()]).unwrap(),
         support::silent_io(),
-        vec![("ASPNETCORE_ENVIRONMENT".into(), "Development".into())],
+        vec![("STELLARR_ENVIRONMENT".into(), "Development".into())],
         Default::default(),
     );
     assert_eq!(development.config.raw("Mail:Enabled"), Some("false"));

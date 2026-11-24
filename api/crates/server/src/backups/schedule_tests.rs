@@ -32,12 +32,8 @@ impl Instance {
     fn new(extra: &[(&str, &str)]) -> Instance {
         let folder = TempDir::new();
         let mut variables: Vec<(String, String)> = vec![
-            ("ASPNETCORE_ENVIRONMENT".into(), "Testing".into()),
+            ("STELLARR_ENVIRONMENT".into(), "Testing".into()),
             ("STELLARR_DATA_ROOT".into(), folder.path().display().to_string()),
-            (
-                "ConnectionStrings__Database".into(),
-                format!("Data Source={};Pooling=True", folder.path().join("stellarr.db").display()),
-            ),
             ("STELLARR_BACKUP_ENABLED".into(), "true".into()),
         ];
         for (name, value) in extra {
@@ -69,7 +65,7 @@ impl Instance {
     }
 
     fn raw(&self) -> Connection {
-        let connection = Connection::open(self.folder.path().join("stellarr.db")).unwrap();
+        let connection = Connection::open(self.folder.path().join("db").join("stellarr.db")).unwrap();
         connection.busy_timeout(Duration::from_secs(30)).unwrap();
         connection.pragma_update(None, "foreign_keys", false).unwrap();
         connection

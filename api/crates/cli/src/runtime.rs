@@ -9,7 +9,7 @@ use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 
 use stellarr_api::seal::Sealer;
-use stellarr_api::settings::{Config, VARIABLES, Variable};
+use stellarr_api::settings::{Config, ENVIRONMENT, VARIABLES, Variable};
 
 use crate::archives::Archives;
 use crate::backup::RestoreLibrary;
@@ -66,16 +66,12 @@ pub fn value_in<'a>(environment: &'a Environment, variable: &Variable) -> Option
         .filter(|value| !is_blank(value))
 }
 
-/// The environment the host is run in, `Production` when none is named.
+/// The environment the tool is run in, `Production` when none is named.
 fn host_environment(environment: &Environment) -> String {
-    for name in ["ASPNETCORE_ENVIRONMENT", "DOTNET_ENVIRONMENT"] {
-        if let Some((_, value)) = environment.iter().find(|(have, _)| have == name)
-            && !is_blank(value)
-        {
-            return trim(value);
-        }
+    match environment.iter().find(|(name, _)| name == ENVIRONMENT) {
+        Some((_, value)) if !is_blank(value) => trim(value),
+        _ => "Production".to_string(),
     }
-    "Production".to_string()
 }
 
 /// `--data-root`, then the configured `DataRoot` (`STELLARR_DATA_ROOT` among
