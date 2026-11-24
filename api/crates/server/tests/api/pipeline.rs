@@ -43,6 +43,13 @@ fn routes() -> Endpoints {
         .get("/api/test/things/{id}", thing)
         .delete("/api/test/things/{id}", forget)
         .get("/api/test/search", search)
+        .get("/api/test/slow-announce", slow_announce)
+}
+
+/// Takes its time, so that the client is gone before it commits and announces.
+async fn slow_announce(State(state): State<AppState>) -> ApiResult<StatusCode> {
+    tokio::time::sleep(std::time::Duration::from_millis(400)).await;
+    announce(State(state)).await
 }
 
 async fn thing(Path(id): Path<Id>) -> Json<Value> {
@@ -695,4 +702,25 @@ async fn every_request_is_logged_once_with_the_status_the_client_got() {
         !lines.iter().any(|line| line.contains("/health/")),
         "{lines:#?}"
     );
+}
+
+#[tokio::test]
+async fn a_handler_whose_client_went_away_still_commits_and_announces() {
+    let server = server_with(&[]).await;
+    assert!(server.events().is_empty());
+
+    server.client().get_and_hang_up("/api/test/slow-announce").await;
+
+    let mut events = Vec::new();
+    for _ in 0..50 {
+        events = server.events();
+        if !events.is_empty() {
+            break;
+        }
+        tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+    }
+    assert_eq!(events.len(), 1);
+    let connection = rusqlite::Connection::open(server.database_path()).unwrap();
+    let rows: i64 = connection.query_row("SELECT count(*) FROM \"Servers\"", [], |row| row.get(0)).unwrap();
+    assert_eq!(rows, 1);
 }
