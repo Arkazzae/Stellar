@@ -705,7 +705,14 @@ def main():
                 print(f"DIFFERENT step {number} {a['person']} {a['method']} {a['path']}\n  at {found}")
         print(f"{len(steps)} requests, {mismatches} answers differ")
         for who in ("owner", "bob", "carol", "dave"):
-            a, b = heard["first"].get(who, []), heard["this"].get(who, [])
+            # The cards of a message arrive when the worker is done with the linked host, so where they fall
+            # among the other events is not the servers' to promise: they are compared apart, as a set.
+            split = lambda events: ([e for e in events if e["target"] != "MessageEmbedsUpdated"],
+                                    sorted(json.dumps(e, sort_keys=True) for e in events if e["target"] == "MessageEmbedsUpdated"))
+            (a, a_cards), (b, b_cards) = split(heard["first"].get(who, [])), split(heard["this"].get(who, []))
+            if a_cards != b_cards:
+                mismatches += 1
+                print(f"DIFFERENT cards announced to {who}: {len(a_cards)} vs {len(b_cards)}")
             for number in range(max(len(a), len(b))):
                 found = first_difference(a[number] if number < len(a) else None, b[number] if number < len(b) else None)
                 if found:
