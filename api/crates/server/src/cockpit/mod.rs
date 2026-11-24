@@ -5,6 +5,7 @@
 //! Every route answers 403 to anybody but the owner of the instance server
 //! (see [`crate::panel`] for the gate and the order its refusals come in).
 
+pub mod address;
 pub mod runtime;
 
 use std::sync::{Arc, OnceLock};
