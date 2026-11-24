@@ -188,15 +188,19 @@ pub fn set(runtime: &mut Runtime, name: &str) -> CliOutcome {
     if runtime.invocation.stdin && !runtime.invocation.yes {
         return Err(stdin_needs_yes());
     }
-    // Fail before asking for anything when the key the API uses is absent, so
-    // that a stored value can never be unreadable by the running API.
-    let sealer = runtime.write_sealer()?;
+    // Fail before asking for anything when the keys folder the API uses is
+    // absent. The key itself is made only after the confirmation and the check
+    // of the value: a cancelled or refused command leaves the folder as it was.
+    runtime.require_keys_directory()?;
     let mut database = runtime.open_database(true)?;
     let mut preview = format!(
         "Will store the secret '{}' (value hidden).",
         definition.name
     );
-    if let Some(note) = unopenable_note(runtime, &database.connection, definition, "replaced")? {
+    for note in unopenable_note(runtime, &database.connection, definition, "replaced")?
+        .into_iter()
+        .chain(runtime.key_preview())
+    {
         preview.push(' ');
         preview.push_str(&note);
     }
@@ -215,6 +219,7 @@ pub fn set(runtime: &mut Runtime, name: &str) -> CliOutcome {
         ));
     }
     runtime.check_cancelled()?;
+    let (sealer, notes) = runtime.write_sealer()?;
     store(&mut database, &sealer, definition, &value)?;
     let resolved = secrets::read(
         &database.connection,
@@ -234,7 +239,8 @@ pub fn set(runtime: &mut Runtime, name: &str) -> CliOutcome {
                 .to_string(),
             format!("Audit: local-cli secrets.set {}", definition.name),
         ],
-    ))
+    )
+    .warnings(notes))
 }
 
 fn store(
@@ -268,7 +274,6 @@ fn store(
 pub fn clear(runtime: &mut Runtime, name: &str) -> CliOutcome {
     let definition = find(name)?;
     let mut database = runtime.open_database(true)?;
-    let sealer = runtime.read_sealer()?;
     let environment = environment_secrets(&runtime.config);
     let row: Option<Timestamp> = database
         .connection
@@ -278,9 +283,12 @@ pub fn clear(runtime: &mut Runtime, name: &str) -> CliOutcome {
             |row| row.get(0),
         )
         .optional()?;
+    // Removing a row needs no key: once it is gone nothing is left to open,
+    // so the status that follows is read with a key that opens nothing.
+    let nothing_opens = crate::runtime::unmatched_sealer();
     let current = |resolved: &ResolvedSecrets| resolved.status(definition);
     if row.is_none() {
-        let resolved = secrets::read(&database.connection, &environment, &sealer)?;
+        let resolved = secrets::read(&database.connection, &environment, &nothing_opens)?;
         let status = current(&resolved);
         let environmental = status.source == "environment";
         return Ok(CliResult::new(
@@ -315,7 +323,7 @@ pub fn clear(runtime: &mut Runtime, name: &str) -> CliOutcome {
     secrets::clear(&transaction, definition)?;
     CliDatabase::audit(&transaction, "secrets.clear", definition.name)?;
     transaction.commit()?;
-    let resolved = secrets::read(&database.connection, &environment, &sealer)?;
+    let resolved = secrets::read(&database.connection, &environment, &nothing_opens)?;
     let status = current(&resolved);
     let environmental = status.source == "environment";
     Ok(CliResult::new(

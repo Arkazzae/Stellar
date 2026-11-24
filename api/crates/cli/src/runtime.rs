@@ -3,6 +3,7 @@
 //! confirmation rules.
 
 use std::io::{BufRead, Read, Write};
+use std::os::unix::fs::{MetadataExt, PermissionsExt};
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -198,35 +199,81 @@ impl Runtime {
         self.keys_directory().join("master.key").is_file()
     }
 
-    /// The master key a secret is written under. It is the one the running
-    /// server reads, and the server makes it when it starts, so the folder
-    /// must exist: a folder the server never made means a server that never
-    /// ran, and a secret written then would be written for nobody. When the
-    /// folder is there and the key is not, the key is made, as the server's
-    /// own start would make it (the two cannot make two).
-    pub fn write_sealer(&self) -> CliOutcome<Sealer> {
+    /// The folder the master key lives in must be there before a secret is
+    /// written: it is the one the running server reads, and the server makes
+    /// it when it starts, so a folder it never made means a server that never
+    /// ran, and a secret written then would be written for nobody.
+    pub fn require_keys_directory(&self) -> CliOutcome<()> {
         let keys = self.keys_directory();
-        if !keys.is_dir() {
-            return Err(CliError::new(
-                "data_protection_keys_missing",
-                format!(
-                    "The keys directory {} does not exist, so a secret written now could not be read by the running API. Start the API once to create it, then retry.",
-                    keys.display()
-                ),
-                exit::CONFLICT,
-            )
-            .with_details(Json::object([(
-                "keysDirectory",
-                Json::text(keys.display().to_string()),
-            )])));
+        if keys.is_dir() {
+            return Ok(());
         }
-        Sealer::load_or_create(&keys).map_err(|error| {
+        Err(CliError::new(
+            "data_protection_keys_missing",
+            format!(
+                "The keys directory {} does not exist, so a secret written now could not be read by the running API. Start the API once to create it, then retry.",
+                keys.display()
+            ),
+            exit::CONFLICT,
+        )
+        .with_details(Json::object([(
+            "keysDirectory",
+            Json::text(keys.display().to_string()),
+        )])))
+    }
+
+    /// What the master key's file would be if a secret were written now, for
+    /// the question before it: said when the tool would have to make it.
+    pub fn key_preview(&self) -> Option<String> {
+        let path = self.keys_directory().join("master.key");
+        if path.exists() {
+            return None;
+        }
+        Some(format!(
+            "There is no master key in {} yet, so this makes {} (mode 0600, owned by whoever runs this tool); a key made by another account than the server's may not be readable by it.",
+            self.keys_directory().display(),
+            path.display()
+        ))
+    }
+
+    /// The master key a secret is written under, and what the tool did to the
+    /// keys folder to have it. An existing key is read as it is: its mode is
+    /// not changed, the server does that when it starts. When the folder is
+    /// there and the key is not, the key is made, as the server's own start
+    /// would make it (the two cannot make two), and that is said.
+    pub fn write_sealer(&self) -> CliOutcome<(Sealer, Vec<String>)> {
+        self.require_keys_directory()?;
+        let keys = self.keys_directory();
+        let path = keys.join("master.key");
+        let unreadable = |error: &dyn std::fmt::Display| {
             CliError::new(
                 "keys_unreadable",
                 format!("The master key cannot be read or made: {error}"),
                 exit::CONFLICT,
             )
-        })
+        };
+        let mut notes = Vec::new();
+        let existing = Sealer::open_existing(&keys).map_err(|e| unreadable(&e))?;
+        let sealer = match existing {
+            Some(sealer) => {
+                if let Ok(meta) = std::fs::metadata(&path) {
+                    let mode = meta.permissions().mode() & 0o777;
+                    if mode & 0o077 != 0 {
+                        notes.push(format!(
+                            "The master key {} has mode {mode:04o}, so others can read it; it was left as it is (the server makes it 0600 when it starts, or chmod 600 it).",
+                            path.display()
+                        ));
+                    }
+                }
+                sealer
+            }
+            None => {
+                let made = Sealer::load_or_create(&keys).map_err(|e| unreadable(&e))?;
+                notes.push(made_key_note(&path, &keys));
+                made
+            }
+        };
+        Ok((sealer, notes))
     }
 
     /// Fails when the person has pressed Ctrl+C.
@@ -312,6 +359,29 @@ impl Runtime {
     }
 }
 
+/// Says that the tool made the master key, with the path and the account that
+/// owns it, and warns when that is not the account that owns the folder: the
+/// server runs as the folder's owner, and a key it cannot read is a key it
+/// would have to replace, losing every secret sealed under it.
+fn made_key_note(path: &Path, keys: &Path) -> String {
+    let owner = std::fs::metadata(path).map(|meta| meta.uid()).ok();
+    let folder_owner = std::fs::metadata(keys).map(|meta| meta.uid()).ok();
+    let describe =
+        |uid: Option<u32>| uid.map_or_else(|| "unknown".to_string(), |uid| uid.to_string());
+    let mut note = format!(
+        "Made the master key {} (mode 0600, owner uid {}), because there was none.",
+        path.display(),
+        describe(owner)
+    );
+    if owner.is_some() && owner != folder_owner {
+        note.push_str(&format!(
+            " The keys folder belongs to uid {}, so the server may not be able to read this key; make it readable for that account or remove it and run the command as that account.",
+            describe(folder_owner)
+        ));
+    }
+    note
+}
+
 pub fn stdin_needs_yes() -> CliError {
     CliError::new(
         "confirmation_required",
@@ -334,6 +404,11 @@ pub fn strip_one_line_ending(value: &str) -> String {
         .or_else(|| value.strip_suffix('\r'))
         .unwrap_or(value)
         .to_string()
+}
+
+/// A sealer no sealed value was made with, for a status that needs no key.
+pub fn unmatched_sealer() -> Sealer {
+    Sealer::from_key(unmatched_key())
 }
 
 /// A key no sealed value was made with, for a read that has no key to use.
