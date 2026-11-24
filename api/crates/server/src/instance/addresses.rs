@@ -15,7 +15,10 @@ fn is_atom_char(c: char) -> bool {
 }
 
 fn is_dot_atom(text: &str) -> bool {
-    !text.is_empty() && text.split('.').all(|atom| !atom.is_empty() && atom.chars().all(is_atom_char))
+    !text.is_empty()
+        && text
+            .split('.')
+            .all(|atom| !atom.is_empty() && atom.chars().all(is_atom_char))
 }
 
 fn is_domain_literal(text: &str) -> bool {
@@ -25,7 +28,10 @@ fn is_domain_literal(text: &str) -> bool {
 }
 
 fn is_quoted_string(text: &str) -> bool {
-    let Some(inner) = text.strip_prefix('"').and_then(|rest| rest.strip_suffix('"')) else {
+    let Some(inner) = text
+        .strip_prefix('"')
+        .and_then(|rest| rest.strip_suffix('"'))
+    else {
         return false;
     };
     let mut chars = inner.chars();
@@ -50,7 +56,8 @@ pub fn is_plain_address(email: &str) -> bool {
     let Some((local, domain)) = email.rsplit_once('@') else {
         return false;
     };
-    (is_dot_atom(local) || is_quoted_string(local)) && (is_dot_atom(domain.strip_suffix('.').unwrap_or(domain)) || is_domain_literal(domain))
+    (is_dot_atom(local) || is_quoted_string(local))
+        && (is_dot_atom(domain.strip_suffix('.').unwrap_or(domain)) || is_domain_literal(domain))
 }
 
 #[cfg(test)]
