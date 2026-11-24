@@ -55,7 +55,13 @@ async fn what_the_real_server_does_with_the_requests_of_the_library() {
     let text = format!("{}{}", probe.transcript, probe.summary());
     let scheme = if server.https() { "https" } else { "http" };
     write_transcript(&format!("points-{}-{scheme}.txt", server.kind), &text);
-    let bad: Vec<_> = probe.findings.iter().filter(|f| !f.as_expected).collect();
+    // Point 5 is about hostile keys the store never sends, and servers differ
+    // on it legitimately: it is reported, not failed.
+    let bad: Vec<_> = probe
+        .findings
+        .iter()
+        .filter(|f| !f.as_expected && f.point != 5)
+        .collect();
     assert!(
         bad.is_empty(),
         "{} points did not go as expected; the transcript says how",
