@@ -444,6 +444,8 @@ pub fn unlink(runtime: &mut Runtime, id_or_username: &str, identity_id: &str) ->
     let transaction = database
         .connection
         .transaction_with_behavior(TransactionBehavior::Immediate)?;
+    // Counted again where nothing can change under it, with the link still there.
+    let last_way_in = !ways_in::remain(&transaction, &providers, user.id, Some(id), None)?;
     // Someone else may have removed the link while the question waited: then
     // nothing is recorded, as nothing was changed here.
     let removed = transaction.execute(
@@ -473,7 +475,7 @@ pub fn unlink(runtime: &mut Runtime, id_or_username: &str, identity_id: &str) ->
     .map_err(|_| CliError::unexpected("DbError"))?;
     CliDatabase::audit(&transaction, "security.unlink", &user.id.to_string())?;
     transaction.commit()?;
-    Ok(CliResult::new(
+    let mut result = CliResult::new(
         "security.unlink",
         Json::object([
             ("userId", Json::text(user.id.to_string())),
@@ -481,6 +483,7 @@ pub fn unlink(runtime: &mut Runtime, id_or_username: &str, identity_id: &str) ->
             ("identityId", Json::text(id.to_string())),
             ("issuer", Json::text(&issuer)),
             ("auditActor", "local-cli".into()),
+            ("lastWayIn", last_way_in.into()),
         ]),
         vec![
             format!(
@@ -489,7 +492,14 @@ pub fn unlink(runtime: &mut Runtime, id_or_username: &str, identity_id: &str) ->
             ),
             format!("Audit: local-cli security.unlink {}", user.id),
         ],
-    ))
+    );
+    if last_way_in {
+        result = result.warnings(vec![format!(
+            "{} ({}) has no other way in now: no password, no passkey and no other identity at a provider configured here. Only a password reset by mail would open the account; `security recover` issues a credential to enroll new security.",
+            user.display_name, user.username
+        )]);
+    }
+    Ok(result)
 }
 
 pub fn recover(runtime: &mut Runtime, id_or_username: &str, reason: &str) -> CliOutcome {
