@@ -3,6 +3,7 @@
 //! them. The groups of endpoints that manage servers and roles own the rest.
 
 pub mod access;
+pub mod addresses;
 pub mod admission;
 pub mod invites;
 pub mod names;

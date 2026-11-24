@@ -16,7 +16,6 @@
 //! that the connections it held are closed at once and not at the watcher's
 //! next look.
 
-mod address;
 mod email_change;
 mod methods;
 mod page;

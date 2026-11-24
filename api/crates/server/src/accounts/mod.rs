@@ -5,7 +5,6 @@
 //! /api/auth/login`, `POST /api/auth/logout`, `GET /api/session` and `GET
 //! /api/me`.
 
-mod email;
 mod login;
 pub(crate) mod me;
 mod register;

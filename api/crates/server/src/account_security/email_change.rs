@@ -13,7 +13,7 @@ use rusqlite::{Connection, OptionalExtension, params};
 use serde::{Deserialize, Serialize};
 use stellarr_messages::MessageKey;
 
-use super::address::is_plain_address;
+use crate::instance::addresses::is_plain_address;
 use crate::auth::{Caller, fresh, password, tokens};
 use crate::database::DbError;
 use crate::http::{ApiError, ApiResult, Json, Problem, json_response};

@@ -10,7 +10,6 @@ use rusqlite::{Connection, Transaction, params};
 use serde::Deserialize;
 use stellarr_messages::{MessageKey, Messages};
 
-use super::email;
 use crate::auth::flow::{self, Context, Options, Start};
 use crate::auth::policy::{ADMINS, EVERYONE, SecurityPolicy};
 use crate::auth::{cookies, password, session};
@@ -20,6 +19,7 @@ use crate::instance::access::{self, MANAGE_SERVER};
 use crate::instance::starter::{self, ServerRequest};
 use crate::instance::users::User;
 use crate::instance::{invites, welcome};
+use crate::instance::addresses;
 use crate::state::AppState;
 use crate::values::{Id, Timestamp};
 
@@ -71,7 +71,7 @@ fn validate(request: &RegisterRequest, messages: &Messages) -> Result<Errors, Ap
     if !(1..=64).contains(&display_name.encode_utf16().count()) {
         errors.push(("displayName".into(), vec![messages.get(MessageKey::RegistrationDisplayNameLength, &[])?]));
     }
-    if !email::is_plain_address(request.email.as_deref().unwrap_or("").trim()) {
+    if !addresses::is_plain_address(request.email.as_deref().unwrap_or("").trim()) {
         errors.push(("email".into(), vec![messages.get(MessageKey::EmailInvalid, &[])?]));
     }
     Ok(errors)
