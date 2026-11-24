@@ -14,15 +14,13 @@ mod format;
 mod snapshot;
 mod sounds;
 
-use axum::http::{HeaderValue, StatusCode, header};
-use axum::response::Response;
 use rusqlite::Connection;
 use serde::{Serialize, Serializer};
 
 pub(crate) use snapshot::sounds_of;
 
 use crate::events::{Audience, Event};
-use crate::http::{Endpoints, json_response};
+use crate::http::{Endpoints, created, no_content};
 use crate::permissions::authorization::server_wide;
 use crate::permissions::privileges::{MANAGE_MESSAGES, MANAGE_SERVER, MODERATE_MEMBERS};
 use crate::state::AppState;
@@ -97,21 +95,6 @@ pub(crate) fn seconds<S: Serializer>(value: &f64, serializer: S) -> Result<S::Ok
 /// The sound's address: the clip is an upload of its own.
 pub(crate) fn url_of(attachment: Id) -> String {
     format!("/assets/{attachment}")
-}
-
-/// A `201` that says where the new thing is.
-fn created(location: String, body: &impl Serialize) -> Response {
-    let mut response = json_response(StatusCode::CREATED, body);
-    if let Ok(value) = HeaderValue::from_str(&location) {
-        response.headers_mut().insert(header::LOCATION, value);
-    }
-    response
-}
-
-fn no_content() -> Response {
-    let mut response = Response::new(axum::body::Body::empty());
-    *response.status_mut() = StatusCode::NO_CONTENT;
-    response
 }
 
 /// Tells the members following the server that its soundboard changed.

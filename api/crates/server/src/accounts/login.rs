@@ -12,7 +12,7 @@ use crate::auth::flow::{self, Context, Options, Start};
 use crate::auth::policy::SecurityPolicy;
 use crate::auth::{Caller, cookies, events, password, session};
 use crate::database::DbError;
-use crate::http::{ApiError, ApiResult, Json, Origin, Problem, json_response, with_cookie, with_session_cookie};
+use crate::http::{ApiError, ApiResult, Json, Origin, Problem, json_response, no_store, with_cookie, with_session_cookie};
 use crate::identity_providers::{self as providers, Linked, Requester};
 use crate::instance::users::{User, UserDto};
 use crate::state::AppState;
@@ -40,15 +40,6 @@ struct LinkedSignIn {
 #[derive(Serialize)]
 struct Status {
     status: &'static str,
-}
-
-/// Answers the routes of `/api/auth` that must never be stored.
-fn no_store(mut response: Response) -> Response {
-    use axum::http::{HeaderValue, header};
-    let headers = response.headers_mut();
-    headers.insert(header::CACHE_CONTROL, HeaderValue::from_static("no-store"));
-    headers.insert(header::PRAGMA, HeaderValue::from_static("no-cache"));
-    response
 }
 
 pub async fn login(

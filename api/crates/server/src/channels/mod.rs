@@ -20,11 +20,10 @@ mod order;
 mod read;
 mod section;
 
-use axum::http::StatusCode;
 use serde::Serialize;
 use stellarr_messages::{MessageKey, Messages};
 
-use crate::http::{ApiError, Endpoints, Problem};
+use crate::http::{ApiError, Endpoints, Problem, created};
 use crate::permissions::visibility::ChannelKind;
 use crate::values::Id;
 
@@ -173,16 +172,6 @@ impl Refuse {
 enum Answer<T> {
     Done(T),
     Refused(Refuse),
-}
-
-fn created(location: &str, body: &impl Serialize) -> axum::response::Response {
-    let mut response = crate::http::json_response(StatusCode::CREATED, body);
-    if let Ok(value) = axum::http::HeaderValue::from_str(location) {
-        response
-            .headers_mut()
-            .insert(axum::http::header::LOCATION, value);
-    }
-    response
 }
 
 /// A path's id; one that is not an id is a path that does not exist.

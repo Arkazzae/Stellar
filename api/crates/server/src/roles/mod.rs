@@ -21,11 +21,10 @@ pub(crate) use catalog::{invalid_role, validate};
 mod overrides;
 
 use axum::http::StatusCode;
-use axum::response::Response;
 use rusqlite::{Connection, OptionalExtension, Row, params};
 use serde::Serialize;
 
-use crate::http::{ApiError, Endpoints, Problem};
+use crate::http::{ApiError, Endpoints, Problem, no_content};
 use crate::permissions::privileges;
 use crate::permissions::roles::Role;
 use crate::values::Id;
@@ -220,11 +219,4 @@ fn taken(error: rusqlite::Error) -> ApiError {
     } else {
         ApiError::from(error)
     }
-}
-
-/// The whole of a response that carries nothing.
-fn no_content() -> Response {
-    let mut response = Response::new(axum::body::Body::empty());
-    *response.status_mut() = StatusCode::NO_CONTENT;
-    response
 }

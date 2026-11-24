@@ -5,9 +5,8 @@
 use aws_lc_rs::constant_time::verify_slices_are_equal;
 use aws_lc_rs::digest::{SHA256, digest};
 use axum::extract::State;
-use axum::http::{HeaderMap, HeaderValue, StatusCode, header};
+use axum::http::{HeaderMap, StatusCode, header};
 use axum::response::{IntoResponse, Response};
-use serde::Serialize;
 use stellarr_messages::MessageKey;
 
 use super::announce::{self, DEVICE_ADDED, KEYS_RESET, Line};
@@ -20,18 +19,9 @@ use super::wire::{
 use crate::auth::ceremony::{PasswordProof, check_given_password, judge_given_password};
 use crate::auth::{Caller, events, fresh, password};
 use crate::database::DbError;
-use crate::http::{ApiError, ApiResult, Json, Origin, Path, json_response};
+use crate::http::{ApiError, ApiResult, Json, Origin, Path, created, json_response};
 use crate::state::AppState;
 use crate::values::{Id, Timestamp};
-
-/// A 201 that says where the thing is.
-fn created<T: Serialize>(location: &'static str, body: &T) -> Response {
-    let mut response = json_response(StatusCode::CREATED, body);
-    response
-        .headers_mut()
-        .insert(header::LOCATION, HeaderValue::from_static(location));
-    response
-}
 
 /// The refusal of a key that does not fit its algorithm, or of a backup that is
 /// not complete, before anything is read or stored.
