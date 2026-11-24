@@ -1079,10 +1079,7 @@ async fn blocking_ends_a_live_direct_call_and_tells_both_people() {
 }
 
 #[tokio::test]
-async fn the_binary_starts_with_every_group_registered_and_voice_routes_are_among_them() {
-    // The router refuses to start when two groups name a path parameter
-    // differently at one position, so a binary that starts and answers on a
-    // voice route has all the groups' routes in one router.
+async fn ids_in_the_moderation_paths_are_read_as_the_first_server_reads_them() {
     let server = Server::start().await;
     let owner = server.found("owner").await;
     let id = Id::random();
