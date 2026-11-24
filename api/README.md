@@ -64,6 +64,7 @@ account_security/ a group: the security page, sessions, the password and the add
 health/          a group: /health/live and /health/ready
 releases/        a group: the discovery document and the desktop and Android builds
 second_step/     a group: the second half of a sign-in, a passkey alone, an operator's recovery credential, a forgotten password
+desktop_login/   a group: starting the desktop application's sign-in through the browser, and the page that approves it
 permissions/     who may do what on a server, and who sees which channel
 realtime/        the hub the web client keeps open: connections, presence, methods, the watcher of sessions
 mail/            sending mail: the settings, one delivery service, the queue of security alerts
