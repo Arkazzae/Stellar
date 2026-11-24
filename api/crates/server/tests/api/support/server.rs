@@ -4,6 +4,7 @@ use std::process::Stdio;
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
+use stellarr_api::Services;
 use stellarr_api::http::Endpoints;
 use stellarr_api::settings::Settings;
 use stellarr_api::values::Id;
@@ -162,6 +163,16 @@ impl Server {
     /// The library's server, run in this process with `routes` instead of the
     /// real groups, plus the health group, which the harness waits on.
     pub async fn in_process(routes: Endpoints, extra: &[(&str, &str)]) -> Server {
+        Server::in_process_with(routes, Services::default(), extra).await
+    }
+
+    /// [`Server::in_process`] with the services given: background workers of
+    /// the test's own, a short shutdown grace.
+    pub async fn in_process_with(
+        routes: Endpoints,
+        services: Services,
+        extra: &[(&str, &str)],
+    ) -> Server {
         let folder = TempDir::new();
         let variables = environment(folder.path(), extra);
         let settings = Settings::load(&variables).expect("usable settings");
@@ -169,9 +180,10 @@ impl Server {
         let (stop, stopped) = oneshot::channel::<()>();
         let groups = vec![stellarr_api::health::routes(), routes];
         let task = tokio::spawn(async move {
-            let result = stellarr_api::serve(
+            let result = stellarr_api::serve_with(
                 settings,
                 groups,
+                services,
                 move |addresses| {
                     let _ = told.send(addresses[0]);
                 },

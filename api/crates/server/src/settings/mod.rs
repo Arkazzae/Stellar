@@ -455,6 +455,10 @@ pub struct Settings {
     /// Tests only: a file the process appends every published event to, one
     /// JSON object per line. Honoured in the Testing environment alone.
     pub event_log: Option<PathBuf>,
+    /// Tests only: the names of the background workers that run, from
+    /// `Testing:Workers` (comma-separated; none when it is not set). `None`
+    /// outside the Testing environment, where every worker runs.
+    pub testing_workers: Option<Vec<String>>,
 }
 
 impl Settings {
@@ -494,6 +498,15 @@ impl Settings {
             .is_testing()
             .then(|| config.text("Testing:EventLog").map(PathBuf::from))
             .flatten();
+        let testing_workers = environment.is_testing().then(|| {
+            config
+                .text("Testing:Workers")
+                .into_iter()
+                .flat_map(|names| names.split(','))
+                .map(|name| name.trim().to_string())
+                .filter(|name| !name.is_empty())
+                .collect()
+        });
         Ok(Settings {
             listen: Listen::parse(urls.unwrap_or(Listen::DEFAULT))?,
             data_root: PathBuf::from(config.text("DataRoot").unwrap_or("data")),
@@ -515,6 +528,7 @@ impl Settings {
             rate_limits: RateLimitSettings::load(config, &environment)?,
             log: LogSettings::load(config),
             event_log,
+            testing_workers,
             environment,
         })
     }
