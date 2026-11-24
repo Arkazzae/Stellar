@@ -5,7 +5,7 @@
 use std::collections::BTreeSet;
 use std::time::{Duration, Instant};
 
-use stellarr_discord::extract_normalized_usernames;
+use stellarr_mentions::extract_normalized_usernames;
 
 fn found(content: &str) -> BTreeSet<String> {
     extract_normalized_usernames(content)

@@ -1,0 +1,16 @@
+[package]
+name = "stellarr-mentions"
+version.workspace = true
+edition.workspace = true
+publish.workspace = true
+description = "Which accounts a message names with @username, read the way Stellarr's web client shows them"
+
+[dependencies]
+stellarr-unicode = { path = "../unicode" }
+
+[dev-dependencies]
+serde_json = { workspace = true }
+
+[lints]
+workspace = true
+

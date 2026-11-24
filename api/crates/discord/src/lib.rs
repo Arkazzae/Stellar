@@ -36,7 +36,6 @@ mod failure;
 mod mapper;
 #[cfg(test)]
 mod mapper_tests;
-mod mentions;
 mod permissions;
 mod rate_limits;
 mod resolver;
@@ -45,8 +44,6 @@ mod template_link;
 mod time;
 mod token;
 mod transport;
-mod unicode;
-mod unicode_tables;
 mod wire;
 
 pub use bot::{
@@ -60,10 +57,10 @@ pub use client::DiscordClient;
 pub use config::{API_BASE, ClientConfig, RequestPolicy};
 pub use content::{MentionText, ReferenceResolver, escape, rewrite};
 pub use failure::{DiscordError, FailureKind, Result};
-pub use mentions::extract_normalized_usernames;
 pub use permissions::{VIEW_CHANNEL, compare_ids, hidden_from_everyone, permission_bits};
 pub use resolver::ImportResolver;
 pub use snapshot::*;
+pub use stellarr_mentions::extract_normalized_usernames;
 pub use template_link::{TemplateCode, TemplateLinkRefusal, parse_template_link};
 pub use time::{Clock, SystemClock, Timestamp, parse_timestamp, snowflake_time};
 pub use token::{BotToken, InvalidToken};

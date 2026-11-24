@@ -4,9 +4,10 @@
 //! What the web client does not show as a mention is not one here either:
 //! fenced code, code spans, addresses, escaped characters and the labels of
 //! real http(s) links stay quiet. The rewriting of a Discord message checks
-//! its own result against this reader, so the two must agree; a server that
-//! reads mentions with another implementation has to be held to the same
-//! behaviour, and the tests of this module are the specification.
+//! its own result against this reader, and the server's message code decides
+//! whom to notify with it, so there is one reader and no copy to drift. The
+//! tests of this crate, with the cases shared with the web renderer, are its
+//! specification.
 //!
 //! The body is read linearly: fences first, then the prose between them, then
 //! the names outside the ranges that prose marks. No construct is searched
@@ -15,10 +16,11 @@
 
 use std::collections::{BTreeSet, HashMap};
 
-use crate::unicode::{
-    REPLACEMENT, is_ascii_punctuation, is_js_whitespace, is_letter_or_digit, is_punctuation,
-    is_symbol, scalar_at, scalar_before, simple_upper, text, units,
+use stellarr_unicode::utf16::{
+    REPLACEMENT, is_ascii_punctuation, is_high_surrogate, is_js_whitespace, is_low_surrogate,
+    scalar_at, scalar_before, text, to_upper_units, units,
 };
+use stellarr_unicode::{is_letter_or_digit, is_punctuation, is_symbol};
 
 const MIN_NAME: usize = 2;
 const MAX_NAME: usize = 32;
@@ -39,7 +41,7 @@ pub fn extract_normalized_usernames(content: &str) -> BTreeSet<String> {
         .collect()
 }
 
-pub(crate) fn extract_units(content: &[u16]) -> BTreeSet<Vec<u16>> {
+pub fn extract_units(content: &[u16]) -> BTreeSet<Vec<u16>> {
     let mut names = BTreeSet::new();
     if content.is_empty() {
         return names;
@@ -67,7 +69,7 @@ pub(crate) fn extract_units(content: &[u16]) -> BTreeSet<Vec<u16>> {
 
         let length = end - index - 1;
         if (MIN_NAME..=MAX_NAME).contains(&length) {
-            names.insert(simple_upper(&content[index + 1..end]));
+            names.insert(to_upper_units(&content[index + 1..end]));
         }
         index = end;
     }
@@ -480,19 +482,19 @@ fn spent(run: &Run) -> bool {
     run.count == 0 || (run.character == 0x7C && run.count < 2)
 }
 
-fn rune_at(source: &[u16], index: usize) -> u32 {
-    scalar_at(source, index).map_or(REPLACEMENT, |(code, _)| code)
+fn rune_at(source: &[u16], index: usize) -> char {
+    scalar_at(source, index).map_or(REPLACEMENT, |(c, _)| c)
 }
 
-fn space(rune: Option<u32>) -> bool {
+fn space(rune: Option<char>) -> bool {
     match rune {
         None => true,
-        Some(code) => code <= 0xFFFF && is_js_whitespace(code as u16),
+        Some(c) => u16::try_from(u32::from(c)).is_ok_and(is_js_whitespace),
     }
 }
 
-fn punctuation(rune: Option<u32>) -> bool {
-    rune.is_some_and(|code| is_punctuation(code) || is_symbol(code))
+fn punctuation(rune: Option<char>) -> bool {
+    rune.is_some_and(|c| is_punctuation(c) || is_symbol(c))
 }
 
 /// The fenced blocks of a body, in order: three backticks and an info string
@@ -500,7 +502,7 @@ fn punctuation(rune: Option<u32>) -> bool {
 /// later line that is three backticks and nothing but spaces or tabs. A fence
 /// that never closes is prose, and it ends the search: no later fence could
 /// close either.
-pub(crate) fn fenced_ranges(text: &[u16]) -> Vec<(usize, usize)> {
+pub fn fenced_ranges(text: &[u16]) -> Vec<(usize, usize)> {
     const FENCE: [u16; 3] = [BACKTICK; 3];
     let mut found = Vec::new();
     let mut line = 0;
@@ -534,7 +536,7 @@ pub(crate) fn fenced_ranges(text: &[u16]) -> Vec<(usize, usize)> {
     found
 }
 
-pub(crate) fn line_end(text: &[u16], from: usize) -> usize {
+pub fn line_end(text: &[u16], from: usize) -> usize {
     let mut end = from;
     while end < text.len() && !matches!(text[end], 0x0A | 0x0D | 0x2028 | 0x2029) {
         end += 1;
@@ -549,13 +551,13 @@ fn is_blank_only(text: &[u16]) -> bool {
 
 /// The runs of backticks, by length, with each length's cursor moving
 /// forward once.
-pub(crate) struct BacktickRuns {
+pub struct BacktickRuns {
     starts: HashMap<usize, Vec<usize>>,
     cursors: HashMap<usize, usize>,
 }
 
 impl BacktickRuns {
-    pub(crate) fn new(text: &[u16]) -> BacktickRuns {
+    pub fn new(text: &[u16]) -> BacktickRuns {
         let mut starts: HashMap<usize, Vec<usize>> = HashMap::new();
         let mut index = 0;
         while index < text.len() {
@@ -573,7 +575,7 @@ impl BacktickRuns {
         }
     }
 
-    pub(crate) fn next(&mut self, length: usize, from: usize) -> Option<usize> {
+    pub fn next(&mut self, length: usize, from: usize) -> Option<usize> {
         let list = self.starts.get(&length)?;
         let cursor = self.cursors.entry(length).or_insert(0);
         while *cursor < list.len() && list[*cursor] < from {
@@ -652,7 +654,7 @@ fn link_target(text: &[u16], open: usize, parens: &ClosingParentheses) -> Option
 /// addresses here, exactly as in the transcript's linkify pass. The end is
 /// trimmed the same way: sentence punctuation and a closing bracket that was
 /// not opened inside the address are not part of it.
-pub(crate) fn bare_address_end(text: &[u16], index: usize) -> Option<(usize, usize)> {
+pub fn bare_address_end(text: &[u16], index: usize) -> Option<(usize, usize)> {
     let rest = &text[index..];
     let scheme_length = if starts_with_ascii(rest, "http://", false) {
         7
@@ -710,7 +712,7 @@ fn trim_address(text: &[u16], index: usize, match_end: usize, formatting: bool) 
 
 /* ------------------------------------------------------------- characters */
 
-pub(crate) fn run_length(text: &[u16], from: usize, character: u16) -> usize {
+pub fn run_length(text: &[u16], from: usize, character: u16) -> usize {
     let mut end = from;
     while end < text.len() && text[end] == character {
         end += 1;
@@ -727,7 +729,7 @@ fn exclude(excluded: &mut [bool], from: usize, to: usize) {
 
 /// The characters a bare address may hold between its scheme and the next
 /// space.
-pub(crate) fn is_address_character(unit: u16) -> bool {
+pub fn is_address_character(unit: u16) -> bool {
     !is_js_whitespace(unit) && !matches!(unit, 0x3C | 0x3E | 0x22 | 0x27 | 0x60)
 }
 
@@ -747,7 +749,7 @@ fn is_blank_unit(unit: u16) -> bool {
 /// How many UTF-16 units the name character at `index` takes, or zero.
 fn name_character_width(content: &[u16], index: usize) -> usize {
     match scalar_at(content, index) {
-        Some((code, width)) if is_name_character(code) => width,
+        Some((c, width)) if is_name_character(c) => width,
         _ => 0,
     }
 }
@@ -755,23 +757,20 @@ fn name_character_width(content: &[u16], index: usize) -> usize {
 /// Whether the code point before `index` is a name character in visible text.
 fn name_character_before(content: &[u16], index: usize, excluded: &[bool]) -> bool {
     let mut start = index - 1;
-    if start > 0
-        && crate::unicode::is_low_surrogate(content[start])
-        && crate::unicode::is_high_surrogate(content[start - 1])
-    {
+    if start > 0 && is_low_surrogate(content[start]) && is_high_surrogate(content[start - 1]) {
         start -= 1;
     }
     !excluded[start] && name_character_width(content, start) > 0
 }
 
-fn is_name_character(code: u32) -> bool {
-    is_letter_or_digit(code) || matches!(code, 0x5F | 0x2E | 0x2D)
+fn is_name_character(c: char) -> bool {
+    is_letter_or_digit(c) || matches!(c, '_' | '.' | '-')
 }
 
 /// Whether `unit` can start a username character, for the rewriting's check.
-pub(crate) fn starts_name(text: &[u16], index: usize) -> bool {
+pub fn starts_name(text: &[u16], index: usize) -> bool {
     match scalar_at(text, index) {
-        Some((code, _)) => is_name_character(code),
+        Some((c, _)) => is_name_character(c),
         None => false,
     }
 }

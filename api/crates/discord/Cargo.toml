@@ -9,7 +9,9 @@ description = "Reads a Discord server, from a template link or with a bot token,
 http = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
+stellarr-mentions = { path = "../mentions" }
 stellarr-outbound = { path = "../outbound" }
+stellarr-unicode = { path = "../unicode" }
 tokio = { workspace = true, features = ["time"] }
 tracing = { workspace = true }
 
