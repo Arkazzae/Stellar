@@ -186,7 +186,7 @@ async fn answer(state: &AppState, origin: &Origin, provider: &Provider, message:
     let state_text = callback.state.clone().unwrap_or_default();
     let binding = pages::read_binding(&origin.headers, &state_text).unwrap_or_default();
     let sso = state.single_sign_on();
-    let accepted = flow::accept(
+    let accepted = flow::accept_detailed(
         sso.key(),
         sso.guard(),
         &provider.id,
@@ -196,9 +196,15 @@ async fn answer(state: &AppState, origin: &Origin, provider: &Provider, message:
     );
     let answered = match accepted {
         Ok(answered) => answered,
-        Err(refused) => {
+        Err((refused, opened)) => {
             tracing::info!("an answer from \"{}\" was refused: {refused}", provider.id);
-            return Reply::to(failure(None, cancelled));
+            let reply = Reply::to(failure(opened.as_deref(), cancelled));
+            // A state that opened is used up, the answer's cookie with it.
+            return if opened.is_some() {
+                reply.with(pages::clear_binding(&state_text, provider))
+            } else {
+                reply
+            };
         }
     };
     // The state is used up from here on, whatever comes of it.
@@ -251,8 +257,10 @@ async fn proceed(
             let linked = link_identity(state, &requester, provider, actor, &issuer, &subject).await?;
             Ok(Reply::to(pages::link_result(linked.word())))
         }
-        // No route starts such a round trip yet, so no state asks for one.
-        Purpose::Reauthenticate(_) => Err(Failed("a fresh sign-in is not offered".into())),
+        Purpose::Reauthenticate(actor) => {
+            let confirmed = reauthenticate(state, actor, &identity, &issuer, &subject).await?;
+            Ok(Reply::to(pages::reauthentication_page(confirmed, Some(&flow.return_url))))
+        }
         Purpose::SignIn => {
             sign_in_or_keep(state, origin, provider, flow, &metadata, &tokens.access_token, &identity, &issuer, &subject)
                 .await
@@ -270,7 +278,7 @@ async fn verified(
     access_token: &str,
     metadata: Metadata,
 ) -> Result<(Metadata, IdToken), Failed> {
-    let check = |metadata: &Metadata| {
+    let check = |metadata: &Metadata, keys: &stellarr_oidc::jwks::KeySet| {
         let expect = Expect::for_flow(
             &metadata.discovery,
             provider.client_id(),
@@ -278,18 +286,15 @@ async fn verified(
             Some(access_token),
             unix_now(),
         );
-        idtoken::verify(id_token, &metadata.keys, &expect)
+        idtoken::verify(id_token, keys, &expect)
     };
-    match check(&metadata) {
+    let sso = state.single_sign_on();
+    let keys = sso.keys_of(provider, &metadata).await?;
+    match check(&metadata, &keys) {
         Ok(identity) => Ok((metadata, identity)),
         Err(IdTokenError::UnknownKeyId) => {
-            let again = state
-                .single_sign_on()
-                .metadata_again(provider, &metadata)
-                .await?
-                .ok_or_else(|| Failed("the token names a key the provider does not publish".into()))?;
-            let identity = check(&again).map_err(|error| Failed(error.to_string()))?;
-            Ok((again, identity))
+            sso.ask_for_refresh(provider).await;
+            Err(Failed("the token names a key the provider does not publish".into()))
         }
         Err(error) => Err(Failed(error.to_string())),
     }
@@ -371,6 +376,81 @@ async fn link_identity(
         })
         .await
         .map_err(|error| Failed(error.to_string()))
+}
+
+/// Counts a fresh sign-in at the provider as the session's own proof again,
+/// when the identity that came back is the account's and the provider says the
+/// person signed in within the last few minutes (it was asked to with
+/// `max_age`, and has to answer with `auth_time`). The session counts as
+/// signed in when the provider says, not when it answered: a sign-in there
+/// three minutes old leaves two of the five fresh minutes. A provider that
+/// waved the person through on an older session of its own proves nothing new
+/// and is refused.
+async fn reauthenticate(
+    state: &AppState,
+    actor: &Actor,
+    identity: &IdToken,
+    issuer: &str,
+    subject: &str,
+) -> Result<bool, Failed> {
+    let now = unix_now();
+    let Some(signed_in) = stellarr_oidc::options::fresh_sign_in_time(identity.auth_time().as_deref(), now)
+        .and_then(Timestamp::from_unix_seconds)
+    else {
+        return Ok(false);
+    };
+    let (actor, issuer, subject) = (actor.clone(), issuer.to_string(), subject.to_string());
+    state
+        .database()
+        .write(move |tx| -> Result<bool, DbError> {
+            let Some(user) = asking_account(tx, &actor, Timestamp::now())? else {
+                return Ok(false);
+            };
+            let owns: bool = tx.query_row(
+                "SELECT EXISTS (SELECT 1 FROM \"ExternalIdentities\" WHERE \"UserId\" = ?1 AND \"Issuer\" = ?2 AND \"Subject\" = ?3)",
+                params![user.id, issuer, subject],
+                |row| row.get(0),
+            )?;
+            let Some(session) = crate::values::parse_guid(&actor.session_id) else {
+                return Ok(false);
+            };
+            Ok(owns && mark_reauthenticated(tx, user.id, session, user.session_version, signed_in)?)
+        })
+        .await
+        .map_err(|error| Failed(error.to_string()))
+}
+
+/// Records on the session that its person proved who they are at `at`, never
+/// earlier than what it already counts. False when it is not one of the
+/// account's, is revoked, or is of another version of the account.
+///
+/// This is the one place that writes it; `auth` is to offer the call and this
+/// then becomes one line.
+fn mark_reauthenticated(
+    tx: &rusqlite::Transaction,
+    user: Id,
+    session: Id,
+    security_version: i64,
+    at: Timestamp,
+) -> Result<bool, DbError> {
+    let counted: Option<Timestamp> = tx
+        .query_row(
+            "SELECT COALESCE(\"AuthenticatedAt\", \"CreatedAt\") FROM \"UserSessions\"
+             WHERE \"Id\" = ?1 AND \"UserId\" = ?2 AND \"RevokedAt\" IS NULL AND \"SecurityVersion\" = ?3",
+            params![session, user, security_version],
+            |row| row.get(0),
+        )
+        .optional()?;
+    let Some(counted) = counted else {
+        return Ok(false);
+    };
+    if counted < at {
+        tx.execute(
+            "UPDATE \"UserSessions\" SET \"AuthenticatedAt\" = ?2 WHERE \"Id\" = ?1",
+            params![session, at],
+        )?;
+    }
+    Ok(true)
 }
 
 // ---- signing in ----
