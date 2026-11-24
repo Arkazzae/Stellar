@@ -396,6 +396,11 @@ def main():
                 failures += 1
                 for part in ("fake", "rows", "mail"):
                     if not same[part]:
+                        for one, other in zip(results["first"][part], results["this"][part]):
+                            if one != other:
+                                print("  first entry:", json.dumps(one, ensure_ascii=False)[:700])
+                                print("  this  entry:", json.dumps(other, ensure_ascii=False)[:700])
+                                break
                         print("  %s first: %s" % (part, json.dumps(results["first"][part], ensure_ascii=False)[:1500]))
                         print("  %s this : %s" % (part, json.dumps(results["this"][part], ensure_ascii=False)[:1500]))
             if name == "ok-201":
