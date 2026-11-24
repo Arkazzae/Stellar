@@ -249,7 +249,7 @@ struct Registered {
 /// (the first whole, the next two as 16-bit halves) and the last two
 /// little-endian, taken modulo 360. Accounts made before keep the hue this
 /// gave them, so it must not change.
-fn avatar_hue(id: Id) -> u32 {
+pub(crate) fn avatar_hue(id: Id) -> u32 {
     let bytes = id.as_bytes();
     let word = |from: usize| u32::from_le_bytes([bytes[from], bytes[from + 1], bytes[from + 2], bytes[from + 3]]);
     let first = u32::from_be_bytes([bytes[0], bytes[1], bytes[2], bytes[3]]);

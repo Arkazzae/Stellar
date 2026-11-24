@@ -9,6 +9,8 @@ mod login;
 pub(crate) mod me;
 mod register;
 
+pub(crate) use register::avatar_hue;
+
 use axum::extract::State;
 use axum::http::{HeaderValue, header};
 use axum::response::Response;
