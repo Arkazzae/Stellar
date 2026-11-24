@@ -276,7 +276,16 @@ impl MediaServerSettings {
                 "Rtc:MediaControlUrl must be an absolute http or https address.",
             ));
         }
-        let port = config.number("Rtc:MediaPort")?.unwrap_or(49000);
+        // Read as the first server's binder read a number, which takes hexadecimal
+        // and refuses an empty value.
+        let port = match config.raw("Rtc:MediaPort") {
+            None => 49000,
+            Some(text) => relay::dotnet::int(text).ok_or_else(|| {
+                SettingError::new(format!(
+                    "Rtc:MediaPort must be a whole number, but is \"{text}\"."
+                ))
+            })?,
+        };
         let media_port = u16::try_from(port)
             .ok()
             .filter(|port| *port >= 1)
