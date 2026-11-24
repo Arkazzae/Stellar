@@ -207,7 +207,11 @@ pub fn verify(token: &str, keys: &KeySet, expect: &Expect<'_>) -> Result<IdToken
     let claims = json_object(payload_part)?;
     check_claims(&claims, alg, expect)?;
 
-    let issuer = claims["iss"].as_str().unwrap_or_default().to_string();
+    let issuer = claims
+        .get("iss")
+        .and_then(Value::as_str)
+        .unwrap_or_default()
+        .to_string();
     let subject = claims
         .get("sub")
         .and_then(Value::as_str)

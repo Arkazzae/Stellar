@@ -66,7 +66,7 @@ pub fn issue(
     let ticket = Ticket {
         actor,
         provider_id: provider_id.to_string(),
-        expires_at: now + TICKET_LIFETIME,
+        expires_at: now.saturating_add(TICKET_LIFETIME),
     };
     seal(
         key,

@@ -167,7 +167,7 @@ pub fn start(key: &SealingKey, request: &Start<'_>) -> Result<Started, StartErro
         code_verifier: random_text(32)?,
         demand_fresh_sign_in: reauthenticate,
         state_id: random_text(16)?,
-        expires_at: request.now + STATE_LIFETIME,
+        expires_at: request.now.saturating_add(STATE_LIFETIME),
     };
     let binding = random_text(32)?;
     let sealed = serde_json::to_vec(&flow)

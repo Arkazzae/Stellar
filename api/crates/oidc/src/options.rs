@@ -38,7 +38,7 @@ const MAX_UNIX_SECONDS: i64 = 253_402_300_799;
 
 /// One provider as configured. Every provider, the original or a named one,
 /// has these fields.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Clone, PartialEq, Eq)]
 pub struct ProviderSettings {
     pub enabled: bool,
     pub authority: String,
@@ -53,6 +53,18 @@ pub struct ProviderSettings {
     pub trust_provider_mfa: bool,
     /// The `amr` values, comma-separated, that mean more than a password.
     pub provider_mfa_amr: String,
+}
+
+impl fmt::Debug for ProviderSettings {
+    // The secret never reaches a log.
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("ProviderSettings")
+            .field("enabled", &self.enabled)
+            .field("authority", &self.authority)
+            .field("client_id", &self.client_id)
+            .field("display_name", &self.display_name)
+            .finish_non_exhaustive()
+    }
 }
 
 impl Default for ProviderSettings {
@@ -645,6 +657,16 @@ mod tests {
             Provider::new("default", "/cb", &both, &read).client_secret(),
             "inline"
         );
+    }
+
+    #[test]
+    fn debug_output_never_shows_the_secret() {
+        let settings = ProviderSettings {
+            client_secret: "hunter2".into(),
+            ..ProviderSettings::default()
+        };
+        let provider = Provider::new("default", "/cb", &settings, &no_files);
+        assert!(!format!("{settings:?} {provider:?}").contains("hunter2"));
     }
 
     #[test]
