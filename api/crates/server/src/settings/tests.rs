@@ -325,3 +325,32 @@ fn log_levels_become_tracing_directives() {
         "{directives}"
     );
 }
+
+#[test]
+fn mail_starts_from_the_environment_and_the_secrets_keep_their_spaces() {
+    let by_default = production(&[]).unwrap();
+    let on = production(&[
+        ("STELLARR_MAIL_ENABLED", "false"),
+        ("STELLARR_MAIL_FROM", " noreply@chat.test "),
+        ("Mail__FromName", "  "),
+        ("STELLARR_SMTP_PASSWORD", " pass with spaces "),
+        ("Mail__ResendApiKey", " re_key "),
+    ])
+    .unwrap();
+
+    assert!(by_default.mail.enabled);
+    assert_eq!(by_default.mail.from_name, "Stellarr");
+    assert!(!on.mail.enabled);
+    assert_eq!(on.mail.from_address, "noreply@chat.test");
+    assert_eq!(on.mail.from_name, "");
+    assert_eq!(on.secrets.get("Mail:SmtpPassword"), " pass with spaces ");
+    assert_eq!(on.secrets.get("Mail:ResendApiKey"), " re_key ");
+    assert_eq!(on.secrets.get("Giphy:ApiKey"), "");
+}
+
+#[test]
+fn a_secret_is_never_printed_with_the_settings() {
+    let settings = production(&[("STELLARR_SMTP_PASSWORD", "hunter2")]).unwrap();
+
+    assert!(!format!("{settings:?}").contains("hunter2"));
+}
