@@ -821,6 +821,52 @@ async function fresh() {
   };
   for (const route of ["PIN", "RESET"])
     for (const [label, person] of Object.entries(sessions)) await row(label, person, route);
+
+  // A caller who fails two checks at once: which is told first.
+  out("## two failures at once");
+  const K = b64(bytes(32, 91));
+  const goodBackup = JSON.stringify(backupOf(pinOf(9)));
+  const reset = (over = "", key = `"${K}"`, algorithm = "x25519", backup = goodBackup, password = args.password) =>
+    `{"currentPassword":${JSON.stringify(password)},"algorithm":"${algorithm}","publicKey":${key},"backup":${backup}${over}}`;
+  const bodies = [
+    ["a body that is not JSON", "{"],
+    ["a body that is null", "null"],
+    ["no body", ""],
+    ["a key in a wrong encoding", reset("", '"***"')],
+    ["a key that is a number", reset("", "5")],
+    ["an integer that is not one", reset("").replace('"iterations":600000', '"iterations":"x"')],
+    ["an algorithm that is not known", reset("", `"${K}"`, "rsa")],
+    ["a backup that is not complete", reset("", `"${K}"`, "x25519", "null")],
+    ["a wrong password with a good body", reset("", `"${K}"`, "x25519", goodBackup, "not-it")],
+    ["a good body", reset()],
+  ];
+  const putBodies = [
+    ["a body that is not JSON", "{"],
+    ["a backup in a wrong encoding", `{"currentPassword":"${args.password}","accountKeyId":"x","backup":{"salt":"***"}}`],
+    ["a backup that is not complete", `{"currentPassword":"${args.password}","accountKeyId":"x","backup":null}`],
+    ["a key id that is not the key", `{"currentPassword":"${args.password}","accountKeyId":"x","backup":${goodBackup}}`],
+  ];
+  for (const [label, person] of Object.entries(sessions).filter(([name]) => name !== "ilya-first" && name !== "ilya-second" && !name.startsWith("ada-second") && name !== "maja-second")) {
+    for (const [what, body] of bodies) {
+      const answer = await person.request("POST", `${ACCOUNT}/account-key/reset`, body);
+      out(`${label.padEnd(12)} RESET ${what.padEnd(36)} ${answer.status} ${scrubCode(answer.text)}`);
+    }
+    for (const [what, body] of putBodies) {
+      const answer = await person.request("PUT", `${ACCOUNT}/backup`, body);
+      out(`${label.padEnd(12)} PIN   ${what.padEnd(36)} ${answer.status} ${scrubCode(answer.text)}`);
+    }
+    const answer = await person.request("POST", `${ACCOUNT}/account-key/reset`, reset(), { "Content-Type": "text/plain" });
+    out(`${label.padEnd(12)} RESET ${"a good body of the wrong type".padEnd(36)} ${answer.status} ${scrubCode(answer.text)}`);
+  }
+}
+
+function scrubCode(text) {
+  try {
+    const body = JSON.parse(text);
+    return body.code ?? (body.errors ? `errors ${Object.keys(body.errors)}` : "");
+  } catch {
+    return "";
+  }
 }
 
 // ---- what ends a device, on the first server ----
