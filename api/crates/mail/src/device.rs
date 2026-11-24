@@ -9,10 +9,12 @@ fn is_word(c: char) -> bool {
     c.is_alphanumeric() || c == '_'
 }
 
-/// Whether `needle` occurs in `text` with a word boundary before it, and
-/// after it when `closed` is set (the needle then ends in a word character).
-fn has_word(text: &str, needle: &str, closed: bool) -> bool {
-    text.match_indices(needle).any(|(at, _)| {
+/// Whether `needle` occurs in `text[from..to]` with a word boundary before
+/// it, and after it when `closed` is set (the needle then ends in a word
+/// character). The characters around the range count for the boundaries.
+fn has_word_in(text: &str, from: usize, to: usize, needle: &str, closed: bool) -> bool {
+    text[from..to].match_indices(needle).any(|(offset, _)| {
+        let at = from + offset;
         let before = text[..at].chars().next_back().is_none_or(|c| !is_word(c));
         let after = text[at + needle.len()..]
             .chars()
@@ -20,6 +22,10 @@ fn has_word(text: &str, needle: &str, closed: bool) -> bool {
             .is_none_or(|c| !is_word(c));
         before && (!closed || after)
     })
+}
+
+fn has_word(text: &str, needle: &str, closed: bool) -> bool {
+    has_word_in(text, 0, text.len(), needle, closed)
 }
 
 fn is_edge(agent: &str) -> bool {
@@ -33,17 +39,17 @@ fn is_edge(agent: &str) -> bool {
 fn is_safari(agent: &str) -> bool {
     agent.match_indices("Version/").any(|(at, needle)| {
         let before = agent[..at].chars().next_back().is_none_or(|c| !is_word(c));
-        let after_needle = at + needle.len();
-        let rest = &agent[after_needle..];
-        let digits = rest
+        let digits_from = at + needle.len();
+        let digits = agent[digits_from..]
             .bytes()
             .take_while(|b| b.is_ascii_digit() || *b == b'.')
             .count();
         if !before || digits == 0 {
             return false;
         }
-        let line = rest[digits..].split('\n').next().unwrap_or("");
-        has_word(line, "Safari/", false)
+        let from = digits_from + digits;
+        let to = agent[from..].find('\n').map_or(agent.len(), |n| from + n);
+        has_word_in(agent, from, to, "Safari/", false)
     })
 }
 

@@ -126,12 +126,9 @@ need(owner.call("POST", "/api/me/password", {"currentPassword": PW1, "newPasswor
 need(owner.call("POST", "/api/me/security/sessions/revoke-others", {}, ua=IPHONE), "revoke others")
 time.sleep(8)
 need(owner.call("POST", "/api/me/email", {"email": "new.address@example.test", "password": PW2}, ua=FIREFOX), "email change")
-link = re.search(r"(http://127\.0\.0\.1:5196/\S*token=\S+)", latest_text("")).group(1) if False else None
 time.sleep(75)
 
-events = {e["id"].replace("-", ""): e for e in need(owner.call("GET", "/api/me/security/events"), "events")} \
-    if True else {}
-# The events list may be nested.
+events = {e["id"].replace("-", ""): e for e in need(owner.call("GET", "/api/me/security/events"), "events")}
 captured = []
 for m in mailpit("/api/v1/messages?limit=200")["messages"]:
     d = mailpit("/api/v1/message/" + m["ID"])
@@ -146,7 +143,13 @@ for m in mailpit("/api/v1/messages?limit=200")["messages"]:
         "from": d["From"], "to": d["To"], "message_id": d["MessageID"], "date": d["Date"],
         "images": inline, "raw_head": raw.split("\r\n\r\n", 1)[0],
     })
-out = {"language": LANG, "owner_id": owner_id, "events": events if isinstance(events, dict) else {}, "mails": captured,
-       "code": code}
+# What the tests read: the mails and the events, without ids, dates, raw
+# headers and image hashes (the images are compared by size and content id).
+for mail in captured:
+    for field in ("id", "raw_head", "date"):
+        mail.pop(field)
+    for image in mail["images"]:
+        image.pop("sha256")
+out = {"language": LANG, "events": events, "mails": captured}
 json.dump(out, open(f"captures/{LANG}.json", "w"), ensure_ascii=False, indent=1)
 print(LANG, len(captured), "mails:", [c["subject"] for c in captured])
