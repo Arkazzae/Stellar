@@ -16,11 +16,6 @@ groups! {
     servers,
     soundboard,
     uploads,
-    message_views,
-    messages,
     moderation,
-    releases,
     roles,
-    servers,
-    uploads,
 }
