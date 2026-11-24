@@ -147,23 +147,20 @@ fn upper_case_is_the_standard_simple_mapping_but_for_two_characters() {
             }
         }
     }
-    // The standard maps both to ASCII; the first server leaves them be.
-    assert_eq!(exceptions, BTreeSet::from([0x131, 0x17F]));
+    // The standard maps it to ASCII; the first server leaves it be. The long s
+    // is not an exception: it upper-cases to S, as the standard says.
+    assert_eq!(exceptions, BTreeSet::from([0x131]));
     assert_eq!(to_upper_char('ı'), 'ı');
-    assert_eq!(to_upper_char('ſ'), 'ſ');
+    assert_eq!(to_upper_char('ſ'), 'S');
     assert_eq!(to_upper_char('i'), 'I');
     assert_eq!(to_upper_char('s'), 'S');
-    // Mappings the standard of 13.0 does not have: 65 new characters, and two
-    // old ones that 16.0 gave an upper case (U+019B and U+0264).
-    let old: Vec<u32> = added
-        .iter()
-        .copied()
-        .filter(|code| assigned.contains(code))
-        .collect();
-    assert_eq!(old, [0x19B, 0x264]);
-    assert_eq!(added.len(), 67);
-    assert_eq!(u32::from(to_upper_char('\u{19B}')), 0xA7DC);
-    assert_eq!(u32::from(to_upper_char('\u{264}')), 0xA7CB);
+    // Mappings the standard of 13.0 does not have: all on characters added
+    // since, up to 15.1, the version of the casing data.
+    assert!(added.iter().all(|code| !assigned.contains(code)));
+    assert_eq!(added.len(), 40);
+    // 16.0 gave U+019B an upper case; the casing data does not know it yet.
+    assert_eq!(to_upper_char('\u{19B}'), '\u{19B}');
+    assert_eq!(to_upper_char('\u{264}'), '\u{264}');
 }
 
 #[test]
@@ -179,7 +176,7 @@ fn the_full_mapping_would_have_made_two_characters_and_this_makes_one() {
     assert_eq!(to_upper_char('\u{149}'), '\u{149}');
     assert_eq!(to_upper("Straße"), "STRAßE");
     assert_eq!(to_upper("ǆ ǅ"), "Ǆ Ǆ");
-    assert_eq!(to_upper("ilıſ"), "ILıſ");
+    assert_eq!(to_upper("ilıſ"), "ILıS");
     for text in ["", "abc", "Żaneta", "straße", "ǅ", "𐐨x", "ᾀ"] {
         assert_eq!(
             to_upper(text).chars().count(),
@@ -192,17 +189,97 @@ fn the_full_mapping_would_have_made_two_characters_and_this_makes_one() {
 }
 
 #[test]
-fn what_the_standard_library_maps_differently_is_the_two_exceptions_or_newer_than_the_data() {
+fn what_the_standard_library_maps_differently_is_one_exception_or_newer_than_the_data() {
+    let mut differ = Vec::new();
     for c in scalars() {
         assert!(!is_letter(c) || c.is_alphabetic(), "{c:?}");
         let mut upper = c.to_uppercase();
-        let (Some(theirs), None) = (upper.next(), upper.next()) else {
-            continue;
-        };
-        if theirs != to_upper_char(c) && !matches!(c, 'ı' | 'ſ') {
-            // The library knows a newer Unicode: it maps to a character that
-            // the data does not know yet.
-            assert!(!is_letter(theirs), "{c:?} -> {theirs:?}");
+        if let (Some(theirs), None) = (upper.next(), upper.next())
+            && theirs != to_upper_char(c)
+        {
+            differ.push(u32::from(c));
+        }
+    }
+    // The dotless i, and then only characters whose upper case the casing data
+    // (Unicode 15.1) does not know yet: they stay as they are.
+    assert_eq!(differ[0], 0x131);
+    for &code in &differ[1..] {
+        let c = char::from_u32(code).unwrap();
+        assert_eq!(to_upper_char(c), c, "{code:X}");
+    }
+}
+
+fn perl_lower() -> BTreeMap<u32, u32> {
+    include_str!("fixtures/perl-simple-lower.txt")
+        .lines()
+        .filter(|l| !l.starts_with('#'))
+        .map(|line| {
+            let (a, b) = line.split_once(' ').unwrap();
+            (
+                u32::from_str_radix(a, 16).unwrap(),
+                u32::from_str_radix(b, 16).unwrap(),
+            )
+        })
+        .collect()
+}
+
+#[test]
+fn lower_case_is_the_standard_simple_mapping_but_for_one_character() {
+    let standard = perl_lower();
+    let assigned = members(&ranges(include_str!("fixtures/python-categories.txt"))["ASSIGNED"]);
+    let mut exceptions = BTreeSet::new();
+    let mut added = BTreeSet::new();
+    for c in scalars() {
+        let ours = u32::from(to_lower_char(c));
+        let code = u32::from(c);
+        match standard.get(&code) {
+            Some(&theirs) if theirs == ours => {}
+            Some(_) => {
+                exceptions.insert(code);
+            }
+            None if ours == code => {}
+            None => {
+                added.insert(code);
+            }
+        }
+    }
+    // The standard maps it to a plain i; the first server leaves it be.
+    assert_eq!(exceptions, BTreeSet::from([0x130]));
+    assert_eq!(to_lower_char('İ'), 'İ');
+    assert_eq!(to_lower_char('I'), 'i');
+    assert_eq!(to_lower_char('ı'), 'ı');
+    // Characters added since 13.0, up to 15.1, the version of the casing data.
+    assert!(added.iter().all(|code| !assigned.contains(code)));
+    assert_eq!(added.len(), 40);
+}
+
+#[test]
+fn lower_casing_keeps_one_character_one_character() {
+    assert_eq!(to_lower_char('\u{212A}'), 'k');
+    assert_eq!(to_lower_char('\u{2126}'), '\u{3C9}');
+    assert_eq!(to_lower_char('\u{1C5}'), '\u{1C6}');
+    assert_eq!(to_lower_char('\u{1E9E}'), 'ß');
+    assert_eq!(to_lower_char('Σ'), 'σ');
+    assert_eq!(to_lower("ŻANETA İI"), "żaneta İi");
+    assert_eq!(to_lower("𐐀"), "𐐨");
+    for text in ["", "ABC", "İstanbul", "ǅ", "ΑΣ", "𐐀X"] {
+        assert_eq!(
+            to_lower(text).chars().count(),
+            text.chars().count(),
+            "{text:?}"
+        );
+    }
+}
+
+#[test]
+fn the_standard_library_lower_case_differs_only_where_the_data_is_older_or_at_the_dotted_i() {
+    for c in scalars() {
+        let mut lower = c.to_lowercase();
+        if let (Some(theirs), None) = (lower.next(), lower.next())
+            && theirs != to_lower_char(c)
+            && c != 'İ'
+        {
+            assert_eq!(to_lower_char(c), c, "{c:?}");
         }
     }
 }

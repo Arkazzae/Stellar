@@ -7,7 +7,7 @@
 //! functions still treat a lone surrogate as what it is, a character that
 //! belongs to no class, so that no input can make them panic.
 
-use crate::{is_letter_or_digit, to_upper_char};
+use crate::{is_letter_or_digit, to_lower_char, to_upper_char};
 
 /// The character shown for what could not be decoded.
 pub const REPLACEMENT: char = '\u{FFFD}';
@@ -95,16 +95,14 @@ pub fn is_ascii_punctuation(unit: u16) -> bool {
     matches!(unit, 0x21..=0x2F | 0x3A..=0x40 | 0x5B..=0x60 | 0x7B..=0x7E)
 }
 
-/// Simple upper case, character by character: one character stays one
-/// character. A lone surrogate stays as it is.
-pub fn to_upper_units(units: &[u16]) -> Vec<u16> {
+fn map_units(units: &[u16], map: fn(char) -> char) -> Vec<u16> {
     let mut out = Vec::with_capacity(units.len());
     let mut index = 0;
     while index < units.len() {
         match scalar_at(units, index) {
             Some((c, width)) => {
                 let mut buffer = [0u16; 2];
-                out.extend_from_slice(to_upper_char(c).encode_utf16(&mut buffer));
+                out.extend_from_slice(map(c).encode_utf16(&mut buffer));
                 index += width;
             }
             None => {
@@ -114,4 +112,15 @@ pub fn to_upper_units(units: &[u16]) -> Vec<u16> {
         }
     }
     out
+}
+
+/// Simple upper case, character by character: one character stays one
+/// character. A lone surrogate stays as it is.
+pub fn to_upper_units(units: &[u16]) -> Vec<u16> {
+    map_units(units, to_upper_char)
+}
+
+/// Simple lower case, character by character, as [`to_upper_units`].
+pub fn to_lower_units(units: &[u16]) -> Vec<u16> {
+    map_units(units, to_lower_char)
 }

@@ -26,9 +26,11 @@ fn pairs_and_lone_surrogates() {
 
 #[test]
 fn upper_casing_units_keeps_pairs_and_lone_surrogates() {
-    assert_eq!(text(&to_upper_units(&units("ab𐐨ı"))), "AB𐐀ı");
+    assert_eq!(text(&to_upper_units(&units("ab𐐨ıſ"))), "AB𐐀ıS");
     assert_eq!(to_upper_units(&[0x61, 0xD800, 0x62]), [0x41, 0xD800, 0x42]);
     assert_eq!(to_upper_units(&[]), Vec::<u16>::new());
+    assert_eq!(text(&to_lower_units(&units("ABİ𐐀"))), "abİ𐐨");
+    assert_eq!(to_lower_units(&[0x41, 0xDC00, 0x42]), [0x61, 0xDC00, 0x62]);
 }
 
 #[test]
