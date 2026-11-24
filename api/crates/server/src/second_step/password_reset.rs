@@ -39,26 +39,35 @@ pub async fn forgot(
         Ok(request) => request,
         Err(response) => return Ok(*response),
     };
-    tokio::time::sleep(Duration::from_millis(u64::from(tokens::random_below(100)) + 80)).await;
-    let normalized = crate::instance::names::to_upper(request.email.as_deref().unwrap_or("").trim());
-    let found = {
-        state
-            .database()
-            .read(move |connection| -> Result<Option<(Id, String, String)>, DbError> {
-                Ok(connection
-                    .query_row(
-                        "SELECT \"Id\", \"Email\", \"DisplayName\" FROM \"Users\" WHERE \"NormalizedEmail\" = ?1 AND \"IsDisabled\" = 0",
-                        [normalized],
-                        |row| Ok((row.get(0)?, row.get::<_, Option<String>>(1)?.unwrap_or_default(), row.get(2)?)),
-                    )
-                    .optional()?)
-            })
-            .await?
-    };
-    if let Some((user, address, display_name)) = found {
-        send_link(&state, user, address, display_name).await?;
-    }
+    // The work of an address that is an account's (a write, and a mail that is
+    // waited for) goes on beside the wait that every answer has, so that an
+    // account that exists is not the one whose answer is late: the answer comes
+    // when both are done.
+    let wait = tokio::time::sleep(Duration::from_millis(u64::from(tokens::random_below(100)) + 80));
+    let (done, ()) = tokio::join!(link_for(&state, request.email.unwrap_or_default()), wait);
+    done?;
     Ok(StatusCode::ACCEPTED.into_response())
+}
+
+/// Looks the address up and, if it is an account's, sends it a link.
+async fn link_for(state: &AppState, email: String) -> Result<(), DbError> {
+    let normalized = crate::instance::names::to_upper(email.trim());
+    let found = state
+        .database()
+        .read(move |connection| -> Result<Option<(Id, String, String)>, DbError> {
+            Ok(connection
+                .query_row(
+                    "SELECT \"Id\", \"Email\", \"DisplayName\" FROM \"Users\" WHERE \"NormalizedEmail\" = ?1 AND \"IsDisabled\" = 0",
+                    [normalized],
+                    |row| Ok((row.get(0)?, row.get::<_, Option<String>>(1)?.unwrap_or_default(), row.get(2)?)),
+                )
+                .optional()?)
+        })
+        .await?;
+    match found {
+        Some((user, address, display_name)) => send_link(state, user, address, display_name).await,
+        None => Ok(()),
+    }
 }
 
 /// Writes the link and mails it, when the instance is set up to send recovery
