@@ -13,7 +13,7 @@ use crate::auth::{Caller, events, session};
 use crate::database::DbError;
 use crate::http::{ApiError, ApiResult, Origin, Path, json_response};
 use crate::state::AppState;
-use crate::values::{Guid, Id, Timestamp};
+use crate::values::{Id, Timestamp};
 
 /// The most sessions the list shows.
 const LISTED: i64 = 100;
@@ -70,7 +70,7 @@ pub async fn revoke(
     State(state): State<AppState>,
     caller: Caller,
     origin: Origin,
-    Path(Guid(target)): Path<Guid>,
+    Path(target): Path<Id>,
 ) -> Response {
     no_store(revoking(&state, caller, &origin, target).await)
 }

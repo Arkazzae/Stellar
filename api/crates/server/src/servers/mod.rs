@@ -30,10 +30,9 @@ impl<'de, T: serde::de::DeserializeOwned> serde::Deserialize<'de> for Object<T> 
     }
 }
 
-/// An id in a path, in any spelling the first server's routes took for one:
-/// anything else is a route that does not exist.
+/// An id in a path: anything else is a route that does not exist.
 pub fn guid(text: &str) -> crate::http::ApiResult<crate::values::Id> {
-    crate::permissions::membership::parse_guid(text).ok_or_else(crate::http::ApiError::not_found)
+    crate::values::Id::parse(text).ok_or_else(crate::http::ApiError::not_found)
 }
 
 pub fn routes() -> Endpoints {

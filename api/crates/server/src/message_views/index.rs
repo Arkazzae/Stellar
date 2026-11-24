@@ -7,7 +7,6 @@ use rusqlite::{Connection, params};
 use serde::Serialize;
 use stellarr_messages::MessageKey;
 
-use crate::values::Guid;
 use super::cursor::{IndexCursor, Kind, query_hash};
 use super::search::build_query;
 use super::text;
@@ -78,7 +77,7 @@ impl<S: Send + Sync> FromRequestParts<S> for SearchQuery {
 
 /// The best matches in the channel, one page and no more.
 pub async fn search(
-    Path(Guid(channel)): Path<Guid>,
+    Path(channel): Path<Id>,
     SearchQuery(query): SearchQuery,
     caller: Caller,
     ActiveServer(server): ActiveServer,
@@ -126,7 +125,7 @@ fn query_length(state: &AppState) -> ApiResult<ApiError> {
 /// first page fixes the moment the result is read as of, so that messages that
 /// arrive while the reader pages cannot shift what is still to come.
 pub async fn page(
-    Path(Guid(channel)): Path<Guid>,
+    Path(channel): Path<Id>,
     asked: PageQuery,
     caller: Caller,
     ActiveServer(server): ActiveServer,

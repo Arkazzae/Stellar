@@ -13,7 +13,7 @@ use crate::database::DbError;
 use crate::http::{ApiError, ApiResult, Path, Problem, QueryValues, json_response};
 use crate::permissions::membership::ActiveServer;
 use crate::state::AppState;
-use crate::values::{Guid, Id, Timestamp};
+use crate::values::{Id, Timestamp};
 
 const DEFAULT_PAGE_SIZE: i64 = 30;
 const MAX_PAGE_SIZE: i64 = 100;
@@ -220,7 +220,7 @@ fn find_owned(
 pub async fn mark_read(
     State(state): State<AppState>,
     caller: Caller,
-    Path(Guid(id)): Path<Guid>,
+    Path(id): Path<Id>,
     ActiveServer(server): ActiveServer,
 ) -> ApiResult<Response> {
     let user = caller.user;
@@ -285,7 +285,7 @@ pub async fn mark_all_read(
 pub async fn delete(
     State(state): State<AppState>,
     caller: Caller,
-    Path(Guid(id)): Path<Guid>,
+    Path(id): Path<Id>,
     ActiveServer(server): ActiveServer,
 ) -> ApiResult<Response> {
     let user = caller.user;

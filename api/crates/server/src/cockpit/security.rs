@@ -22,7 +22,7 @@ use crate::http::{ApiError, ApiResult, Origin, Path, Problem, json_response};
 use crate::panel::{self, FreshInstanceOwner};
 use crate::permissions::membership::InstanceOwner;
 use crate::state::AppState;
-use crate::values::{Guid, Id, Timestamp};
+use crate::values::{Id, Timestamp};
 
 /// How many security events the account's page shows.
 const HISTORY_SHOWN: usize = 10;
@@ -81,7 +81,7 @@ struct SecurityDto {
 
 pub(super) async fn read(
     State(state): State<AppState>,
-    Path(Guid(user)): Path<Guid>,
+    Path(user): Path<Id>,
     InstanceOwner(server): InstanceOwner,
 ) -> ApiResult<Response> {
     let reading = state.clone();
@@ -177,7 +177,7 @@ struct Recovered {
 /// What an operator's recovery does, and the credential to hand the person.
 pub(super) async fn recover(
     State(state): State<AppState>,
-    Path(Guid(user)): Path<Guid>,
+    Path(user): Path<Id>,
     request: Request,
 ) -> ApiResult<Response> {
     let panel::Bound {
@@ -255,7 +255,7 @@ pub(super) async fn recover(
 /// in: the owner cannot give it a password, so the person adds one first.
 pub(super) async fn unlink(
     State(state): State<AppState>,
-    Path((Guid(user), Guid(identity))): Path<(Guid, Guid)>,
+    Path((user, identity)): Path<(Id, Id)>,
     origin: Origin,
     caller: Caller,
     FreshInstanceOwner(server): FreshInstanceOwner,

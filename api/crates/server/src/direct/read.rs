@@ -9,12 +9,12 @@ use crate::auth::Caller;
 use crate::http::{ApiError, ApiResult, Path};
 use crate::social::announce;
 use crate::state::AppState;
-use crate::values::{Guid, Timestamp};
+use crate::values::{Id, Timestamp};
 
 pub async fn mark_read(
     State(state): State<AppState>,
     caller: Caller,
-    Path(Guid(conversation)): Path<Guid>,
+    Path(conversation): Path<Id>,
 ) -> ApiResult<Response> {
     let me = caller.user;
     state

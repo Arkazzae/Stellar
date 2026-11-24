@@ -13,7 +13,6 @@ use crate::auth::Caller;
 use crate::database::DbError;
 use crate::events::{Audience, Event};
 use crate::http::{ApiError, ApiResult, Json, Problem, json_response};
-use crate::permissions::membership::parse_guid;
 use crate::realtime::audience::presence_reach;
 use crate::servers::Object;
 use crate::soundboard::numbers::optional_whole;
@@ -67,7 +66,7 @@ pub async fn update(
     // What is asked of the sound: blank clears it, anything else must be an id
     // of a sound on a server the account is in.
     let requested = request.join_sound_id.as_deref().map(str::trim);
-    let sound = requested.filter(|text| !text.is_empty()).map(parse_guid);
+    let sound = requested.filter(|text| !text.is_empty()).map(Id::parse);
     let change_sound = request.join_sound_id.is_some();
     let show_presence = request.show_presence;
     let muted = request

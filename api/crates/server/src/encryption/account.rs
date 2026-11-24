@@ -22,7 +22,7 @@ use crate::auth::{Caller, events, fresh, password};
 use crate::database::DbError;
 use crate::http::{ApiError, ApiResult, Json, Origin, Path, json_response};
 use crate::state::AppState;
-use crate::values::{Guid, Id, Timestamp};
+use crate::values::{Id, Timestamp};
 
 /// A 201 that says where the thing is.
 fn created<T: Serialize>(location: &'static str, body: &T) -> Response {
@@ -626,7 +626,7 @@ pub async fn revoke_device(
     State(state): State<AppState>,
     caller: Caller,
     origin: Origin,
-    Path(Guid(device_id)): Path<Guid>,
+    Path(device_id): Path<Id>,
 ) -> ApiResult<Response> {
     let outcome = state
         .database()

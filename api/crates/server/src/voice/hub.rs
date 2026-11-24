@@ -15,7 +15,6 @@ use super::rooms::{self, broadcast_snapshot};
 use crate::events::{Audience, Event};
 use crate::permissions::privileges::{CONNECT, VIEW_CHANNEL};
 use crate::realtime::method::{Context, Method, Registration, arguments};
-use crate::realtime::names::parse_guid;
 use crate::realtime::throttle::Policy;
 use crate::state::AppState;
 use crate::values::Id;
@@ -58,10 +57,9 @@ pub(super) fn internal(error: impl std::fmt::Display) -> HubError {
     HubError::internal(error.to_string())
 }
 
-/// An id a client wrote, which the hub reads as the first server read one;
-/// `field` is what its refusal calls it.
+/// An id a client wrote; `field` is what its refusal calls it.
 pub(super) fn parse_id(text: Option<&str>, field: &str) -> Result<Id, HubError> {
-    text.and_then(parse_guid)
+    text.and_then(Id::parse)
         .ok_or_else(|| HubError::visible(format!("Invalid {field}.")))
 }
 
@@ -360,7 +358,7 @@ fn recipients(cx: &Context, signal: &VoiceSignal, room: Id) -> Result<Vec<String
             .filter(|connection| connection != cx.connection_id())
             .collect());
     };
-    let peers = parse_guid(to)
+    let peers = Id::parse(to)
         .map(|peer| presence.voice_connections_of(peer, room))
         .unwrap_or_default();
     if peers.is_empty() {

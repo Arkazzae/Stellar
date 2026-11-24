@@ -89,7 +89,7 @@ pub(super) async fn login_code(
     method: Option<&str>,
 ) -> Result<Sent, DbError> {
     let own = Own::of(ask);
-    let method = method.and_then(crate::values::parse_guid);
+    let method = method.and_then(Id::parse);
     let sealer_state = state.clone();
     let ready = mail_ready(state).await?;
     send_with(state, move |tx, policy, now| {

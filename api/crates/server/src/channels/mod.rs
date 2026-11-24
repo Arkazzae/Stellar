@@ -185,11 +185,9 @@ fn created(location: &str, body: &impl Serialize) -> axum::response::Response {
     response
 }
 
-/// A path's id the way the first server's route constraint read one, which is
-/// as leniently as any other GUID text; one that is not an id is a path that
-/// does not exist.
+/// A path's id; one that is not an id is a path that does not exist.
 fn path_id(text: &str) -> Result<Id, ApiError> {
-    crate::permissions::membership::parse_guid(text).ok_or_else(ApiError::not_found)
+    Id::parse(text).ok_or_else(ApiError::not_found)
 }
 
 /// A sentence for the audit log. A text with a value missing is a fault in

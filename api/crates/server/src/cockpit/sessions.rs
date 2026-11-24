@@ -13,7 +13,7 @@ use crate::database::DbError;
 use crate::http::{ApiError, ApiResult, Path, json_response};
 use crate::permissions::membership::InstanceOwner;
 use crate::state::AppState;
-use crate::values::{Guid, Id, Timestamp};
+use crate::values::{Id, Timestamp};
 
 /// The most sessions the page lists.
 const MOST_LISTED: i64 = 500;
@@ -112,7 +112,7 @@ pub(super) async fn list(
 
 pub(super) async fn revoke(
     State(state): State<AppState>,
-    Path(Guid(session)): Path<Guid>,
+    Path(session): Path<Id>,
     caller: Caller,
     InstanceOwner(server): InstanceOwner,
 ) -> ApiResult<Response> {

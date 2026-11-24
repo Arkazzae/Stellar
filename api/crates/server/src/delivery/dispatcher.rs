@@ -587,6 +587,6 @@ fn is_muted(json: &str, channel: Id) -> bool {
         .is_some_and(|muted| {
             muted
                 .iter()
-                .any(|value| Id::parse_guid(value) == Some(channel))
+                .any(|value| Id::parse(value) == Some(channel))
         })
 }

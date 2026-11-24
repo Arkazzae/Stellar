@@ -10,7 +10,7 @@ use rusqlite::Connection;
 use serde::{Deserialize, Serialize};
 
 use super::announce::Announcement;
-use super::{Chosen, Guid, RoleRow, nil, no_content, no_member_role};
+use super::{Chosen, RoleRow, nil, no_content, no_member_role};
 use crate::auth::Caller;
 use crate::http::{ApiError, ApiResult, Json, Path, json_response};
 use crate::instance::users::{User, UserDto};
@@ -126,7 +126,7 @@ fn may_manage(db: &Connection, caller: Caller, server: Id, user: Id) -> Result<(
 pub(super) async fn assign(
     State(state): State<AppState>,
     caller: Caller,
-    Path(Guid(user)): Path<Guid>,
+    Path(user): Path<Id>,
     chosen: Chosen,
     Json(request): Json<AssignRequest>,
 ) -> ApiResult<Response> {

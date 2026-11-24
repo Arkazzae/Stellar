@@ -149,8 +149,10 @@ pub fn instance_id(data_root: &Path) -> io::Result<Id> {
     }
 }
 
+/// The id a file holds. A file an operator wrote ends in a line break, which
+/// is not part of the id.
 fn stored(path: &Path, text: &str) -> io::Result<Id> {
-    Id::parse_guid(text).ok_or_else(|| {
+    Id::parse(text.trim_end()).ok_or_else(|| {
         io::Error::new(
             io::ErrorKind::InvalidData,
             format!("{} does not contain a valid instance UUID.", path.display()),

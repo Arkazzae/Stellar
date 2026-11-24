@@ -12,7 +12,6 @@ use std::path::Path;
 
 use serde_json::Value;
 
-use super::names::parse_guid;
 use super::presence::{PresenceTracker, is_supported};
 use crate::settings::Environment;
 use crate::values::Id;
@@ -74,7 +73,7 @@ fn read(text: &str) -> Result<Vec<(Id, String)>, String> {
         let id = text_member(members, "id")?;
         let presence = text_member(members, "presence")?;
         if let (Some(id), Some(presence)) = (id, presence)
-            && let Some(id) = parse_guid(id)
+            && let Some(id) = Id::parse(id)
             && is_supported(presence)
         {
             presences.push((id, presence.to_string()));

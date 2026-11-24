@@ -76,7 +76,7 @@ fn muted_of(json: &str) -> Vec<Option<String>> {
 
 fn seen(view: &MemberView, text: &Option<String>) -> bool {
     text.as_deref()
-        .and_then(crate::permissions::membership::parse_guid)
+        .and_then(Id::parse)
         .is_some_and(|id| view.channels.contains(&id))
 }
 
@@ -168,7 +168,7 @@ pub async fn update(
                 let stored = settings_of(tx, server)?;
                 if let (Some(list), Some(view)) = (&mut muted, &view) {
                     for id in muted_of(&stored.muted_json) {
-                        let parsed = id.as_deref().and_then(crate::permissions::membership::parse_guid);
+                        let parsed = id.as_deref().and_then(Id::parse);
                         if let Some(parsed) = parsed
                             && !view.channels.contains(&parsed)
                         {

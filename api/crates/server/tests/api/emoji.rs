@@ -395,7 +395,7 @@ async fn the_image_is_served_whole_with_the_headers_the_first_server_gave_it() {
     assert_eq!(ranged.body.len(), 112);
     assert_eq!(conditional.status, 200);
     assert_eq!((elsewhere.status.as_u16(), unknown.status.as_u16(), not_an_id.status.as_u16()), (403, 404, 400));
-    assert_eq!(braces.status, 200, "an id in any spelling the first server took");
+    assert_eq!(braces.status, 404, "an id in braces is no id");
     // The files are gone from the store: the answer is the same as for an unknown emoji.
     std::fs::remove_dir_all(server.folder().join("files").join("emoji")).unwrap();
     assert_eq!(jo.client.get(&glyph).await.status, 404);

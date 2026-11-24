@@ -433,9 +433,8 @@ pub enum Answer<'a> {
     /// "This browser is remembered."
     TrustedDevice,
     /// A code; for the method named, or a recovery code without one.
-    /// `method` is the id as the client wrote it, in any spelling the first
-    /// server read; a text that is none names no method, and the code is
-    /// taken for a recovery code.
+    /// `method` is the id as the client wrote it; a text that is none names
+    /// no method, and the code is taken for a recovery code.
     Code {
         method: Option<&'a str>,
         code: &'a str,
@@ -513,7 +512,7 @@ where
     let answer = match answer {
         Answer::TrustedDevice => OwnedAnswer::TrustedDevice,
         Answer::Code { method, code } => OwnedAnswer::Code {
-            method: method.and_then(crate::values::parse_guid),
+            method: method.and_then(Id::parse),
             code: code.trim().to_string(),
         },
         Answer::Passkey {
@@ -744,7 +743,7 @@ pub async fn start_totp(
 
 /// The first code of an authenticator app.
 pub struct TotpConfirmation<'a> {
-    /// The id as the client wrote it, in any spelling the first server read.
+    /// The id as the client wrote it.
     pub method: Option<&'a str>,
     pub name: Option<&'a str>,
     pub code: &'a str,
@@ -766,7 +765,7 @@ where
     let own = Own::of(ask);
     let state_in = state.clone();
     let (method, requested, code) = (
-        confirmation.method.and_then(crate::values::parse_guid),
+        confirmation.method.and_then(Id::parse),
         confirmation.name.map(str::to_string),
         confirmation.code.to_string(),
     );

@@ -16,7 +16,7 @@ use super::session::{self, NewSession};
 use super::tokens;
 use crate::database::DbError;
 use crate::state::AppState;
-use crate::values::{Id, Timestamp, parse_guid};
+use crate::values::{Id, Timestamp};
 
 /// The shortest and the longest secret that is looked at, counted in UTF-16
 /// units as the first server counted them.
@@ -111,7 +111,7 @@ pub async fn exchange_browser_login(
     request_id: &str,
     secret: &str,
 ) -> Result<Exchanged, DbError> {
-    let Some(id) = parse_guid(request_id) else {
+    let Some(id) = Id::parse(request_id) else {
         return Ok(Exchanged::Invalid);
     };
     if !SECRET_UNITS.contains(&secret.encode_utf16().count()) {

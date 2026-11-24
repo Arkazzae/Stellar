@@ -15,7 +15,7 @@ use crate::messages::field_problem;
 use crate::social::conversations::{self, DirectMessage};
 use crate::social::is_blocked;
 use crate::state::AppState;
-use crate::values::{Guid, Id, Timestamp};
+use crate::values::{Id, Timestamp};
 
 const DEFAULT_PAGE_SIZE: usize = 50;
 const MAX_PAGE_SIZE: i32 = 100;
@@ -34,7 +34,7 @@ struct Page {
 pub async fn history(
     State(state): State<AppState>,
     caller: Caller,
-    Path(Guid(conversation)): Path<Guid>,
+    Path(conversation): Path<Id>,
     values: QueryValues,
 ) -> ApiResult<Response> {
     let cursor = values.text("cursor");

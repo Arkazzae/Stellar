@@ -9,7 +9,7 @@ use super::Stopping;
 use crate::database::DbError;
 use crate::state::AppState;
 use crate::uploads::retire_if_unreferenced;
-use crate::values::{Id, Timestamp, parse_guid};
+use crate::values::{Id, Timestamp};
 
 /// How many candidates are read at a time.
 const PAGE: i64 = 1_000;
@@ -57,7 +57,7 @@ async fn pictures_in_use(state: &AppState) -> Result<HashSet<Id>, DbError> {
                 let mut statement = connection.prepare(query)?;
                 let rows = statement.query_map([], |row| row.get::<_, Option<String>>(0))?;
                 for url in rows.filter_map(Result::ok).flatten() {
-                    if let Some(id) = url.strip_prefix("/assets/").and_then(parse_guid) {
+                    if let Some(id) = url.strip_prefix("/assets/").and_then(Id::parse) {
                         found.insert(id);
                     }
                 }

@@ -6,7 +6,6 @@ use serde::{Serialize, Serializer};
 use tracing::warn;
 
 use crate::database::DbError;
-use crate::permissions::membership::parse_guid;
 use crate::state::AppState;
 use crate::values::{Id, Timestamp};
 
@@ -173,7 +172,7 @@ pub async fn retire_if_unreferenced(
     uploaded_by: Option<Id>,
 ) -> bool {
     let Some(url) = asset_url else { return false };
-    let Some(id) = url.strip_prefix("/assets/").and_then(parse_guid) else {
+    let Some(id) = url.strip_prefix("/assets/").and_then(Id::parse) else {
         return false;
     };
     let retired = state

@@ -17,7 +17,7 @@ use crate::messages::{MAX_CONTENT_UNITS, field_problem, trimmed, units};
 use crate::social::conversations::{self, DirectMessage};
 use crate::social::{announce, is_blocked};
 use crate::state::AppState;
-use crate::values::{Guid, Id, Timestamp};
+use crate::values::{Id, Timestamp};
 
 const MAX_ATTACHMENTS: usize = 10;
 
@@ -132,7 +132,7 @@ fn load(connection: &Connection, id: Id) -> Result<DirectMessage, ApiError> {
 pub async fn create(
     State(state): State<AppState>,
     caller: Caller,
-    Path(Guid(conversation)): Path<Guid>,
+    Path(conversation): Path<Id>,
     Json(body): Json<Members>,
 ) -> ApiResult<Response> {
     let request = read(&body)?;

@@ -234,13 +234,13 @@ async fn a_join_sound_is_one_the_account_can_already_play_and_blank_clears_it() 
     let sound = sound_on(&maja, None, "Fanfara", 1.0, 12.0).await;
     let message = "Pick a sound from the soundboard of a server you are on.";
 
-    let chosen = patch(&ilya, "/api/me/preferences", json!({ "joinSoundId": format!("  {{{sound}}}  ") })).await;
+    let chosen = patch(&ilya, "/api/me/preferences", json!({ "joinSoundId": sound.to_uppercase() })).await;
     assert_eq!(chosen.json::<Value>()["joinSoundId"], json!(sound));
     let left_alone = patch(&ilya, "/api/me/preferences", json!({ "developerMode": true })).await;
     let nulled = patch(&ilya, "/api/me/preferences", json!({ "joinSoundId": null })).await;
     assert_eq!(left_alone.json::<Value>()["joinSoundId"], json!(sound), "absent changes nothing");
     assert_eq!(nulled.json::<Value>()["joinSoundId"], json!(sound), "so does null");
-    for refused in [json!(Id::random().to_string()), json!("x"), json!("{x}"), json!("not-a-guid-at-all")] {
+    for refused in [json!(Id::random().to_string()), json!("x"), json!("{x}"), json!("not-a-guid-at-all"), json!(format!("  {{{sound}}}  ")), json!(sound.replace('-', ""))] {
         let response = patch(&ilya, "/api/me/preferences", json!({ "joinSoundId": refused })).await;
         assert_eq!(response.status, 400, "{refused}");
         assert_eq!(response.json::<Value>()["errors"]["joinSoundId"][0], message);

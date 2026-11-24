@@ -1740,22 +1740,32 @@ fn the_active_server_is_the_one_named_else_the_first_joined() {
         Choice::Active(world.server)
     );
     assert_eq!(
-        choose(&world.db, world.jo, Some("  ")).unwrap(),
+        choose(&world.db, world.jo, Some("")).unwrap(),
         Choice::Active(world.server)
+    );
+    assert_eq!(
+        choose(&world.db, world.jo, Some("  ")).unwrap(),
+        Choice::Malformed
     );
     assert_eq!(
         choose(&world.db, world.jo, Some(&other.to_string())).unwrap(),
         Choice::Active(other)
     );
     assert_eq!(
-        choose(
-            &world.db,
-            world.jo,
-            Some(&format!(" {{{}}} ", other.to_string().to_uppercase()))
-        )
-        .unwrap(),
+        choose(&world.db, world.jo, Some(&other.to_string().to_uppercase())).unwrap(),
         Choice::Active(other)
     );
+    for spelling in [
+        format!(" {{{}}} ", other.to_string().to_uppercase()),
+        other.to_string().replace('-', ""),
+        format!("({other})"),
+    ] {
+        assert_eq!(
+            choose(&world.db, world.jo, Some(&spelling)).unwrap(),
+            Choice::Malformed,
+            "{spelling}"
+        );
+    }
     assert_eq!(
         choose(&world.db, world.ilya, Some(&other.to_string())).unwrap(),
         Choice::NotMember

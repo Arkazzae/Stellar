@@ -553,14 +553,6 @@ pub(super) fn confirm_totp_enrollment(
     }
 }
 
-/// The method a request names, read as the first server read it (see
-/// `values::parse_guid`). Anything else names no method, and the code that
-/// goes with it is taken for a recovery code. The ceremonies read ids
-/// themselves; a route has no need of this.
-pub fn parse_method_id(text: &str) -> Option<Id> {
-    crate::values::parse_guid(text)
-}
-
 /// The name a person gave a method, or the one to use when they gave none:
 /// `None` when it is too long. The length is counted the way the web client
 /// counts it, in UTF-16 units.
@@ -1294,32 +1286,6 @@ mod tests {
             format!("{:?}", Request::TrustedDevice),
             "Request::TrustedDevice"
         );
-    }
-
-    #[test]
-    fn a_method_is_named_as_a_guid_is_written() {
-        let id = Id::parse("049083c7-a28f-4b91-b21b-2a0920dc1686").unwrap();
-        for text in [
-            "049083c7-a28f-4b91-b21b-2a0920dc1686",
-            "049083C7-A28F-4B91-B21B-2A0920DC1686",
-            "049083c7a28f4b91b21b2a0920dc1686",
-            "{049083c7-a28f-4b91-b21b-2a0920dc1686}",
-            "(049083c7-a28f-4b91-b21b-2a0920dc1686)",
-            " 049083c7-a28f-4b91-b21b-2a0920dc1686\t",
-        ] {
-            assert_eq!(parse_method_id(text), Some(id), "{text:?}");
-        }
-        for text in [
-            "",
-            "a recovery code",
-            "ABCD-EFGH-IJKL-MNOP",
-            "{049083c7-a28f-4b91-b21b-2a0920dc1686",
-            "049083c7-a28f-4b91-b21b-2a0920dc1686)",
-            "{049083c7a28f4b91b21b2a0920dc1686}",
-            "049083c7-a28f-4b91-b21b-2a0920dc168",
-        ] {
-            assert_eq!(parse_method_id(text), None, "{text:?}");
-        }
     }
 
     #[test]

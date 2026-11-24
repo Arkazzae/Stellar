@@ -11,7 +11,7 @@ use rusqlite::{Connection, params};
 use serde::{Deserialize, Serialize};
 
 use crate::auth::Caller;
-use crate::roles::{Chosen, Guid};
+use crate::roles::Chosen;
 use crate::database::DbError;
 use crate::events::{Audience, Event};
 use crate::http::{ApiError, ApiResult, Endpoints, Json, Path, Problem, json_response};
@@ -132,7 +132,7 @@ async fn list_bans(
 async fn ban(
     State(state): State<AppState>,
     caller: Caller,
-    Path(Guid(user)): Path<Guid>,
+    Path(user): Path<Id>,
     chosen: Chosen,
     Json(request): Json<BanRequest>,
 ) -> ApiResult<Response> {
@@ -211,7 +211,7 @@ async fn ban(
 async fn unban(
     State(state): State<AppState>,
     caller: Caller,
-    Path(Guid(user)): Path<Guid>,
+    Path(user): Path<Id>,
     ActiveServer(server): ActiveServer,
 ) -> ApiResult<Response> {
     let messages = *state.messages();
@@ -251,7 +251,7 @@ async fn unban(
 async fn kick(
     State(state): State<AppState>,
     caller: Caller,
-    Path(Guid(user)): Path<Guid>,
+    Path(user): Path<Id>,
     ActiveServer(server): ActiveServer,
 ) -> ApiResult<Response> {
     let messages = *state.messages();

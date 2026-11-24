@@ -314,14 +314,14 @@ async fn which_refusal_comes_first_and_which_answers_forbid_caching() {
 }
 
 #[tokio::test]
-async fn the_server_may_be_named_by_header_or_query_in_any_case() {
+async fn the_server_may_be_named_by_header_or_query_in_the_id_spelling_only() {
     let i = inbox().await;
     i.plain(&i.ada, "one");
-    for query in [format!("?serverId={}", i.home), format!("?SERVERID={}", i.home.to_string().to_uppercase())] {
+    for query in [format!("?serverId={}", i.home), format!("?serverId={}", i.home.to_string().to_uppercase())] {
         assert_eq!(list(&i.ada.client, &query).await["items"].as_array().unwrap().len(), 1, "{query}");
     }
     let response = i.ada.client.send(Request::new(Method::GET, "/api/notifications").header("x-stellarr-server", &format!("{{{}}}", i.home))).await;
-    assert_eq!(response.status, 200);
+    assert_eq!(response.status, 400);
 }
 
 #[tokio::test]

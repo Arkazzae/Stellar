@@ -9,7 +9,7 @@ use serde_json::Value;
 use stellarr_hub::{Application, Call, HubError, Outbound};
 
 use super::method::{Context, Table, Who};
-use super::names::{follower_group, parse_guid, server_group, user_group};
+use super::names::{follower_group, server_group, user_group};
 use super::presence::OFFLINE;
 use super::registry::LiveConnection;
 use super::{Realtime, audience, registrations};
@@ -119,7 +119,7 @@ impl Application for AppHub {
         let requested = who
             .requested_server
             .as_deref()
-            .and_then(parse_guid)
+            .and_then(Id::parse)
             .filter(|id| account.servers.contains(id));
         if let Some(active) = requested.or_else(|| account.servers.first().copied()) {
             hub.add_to_group(connection, &server_group(active));

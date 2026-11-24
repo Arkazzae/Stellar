@@ -74,24 +74,24 @@ async fn encryption_is_on_only_once_the_other_person_confirms_with_a_key_of_thei
 }
 
 #[tokio::test]
-async fn a_conversation_or_a_device_is_named_in_any_spelling_a_guid_has() {
+async fn a_conversation_or_a_device_is_named_in_the_hyphenated_spelling_only() {
     let crowd = Crowd::ready().await;
     let conversation = crowd.conversation(&crowd.maja, &crowd.ada);
     let maja = &crowd.maja.client;
     let id = Id::parse(&conversation).unwrap().to_string();
 
+    let upper = maja.get(&path(&id.to_uppercase(), "keys")).await;
+    assert_eq!(upper.status, 200);
+    assert_eq!(upper.json::<Value>()["conversationId"], id.as_str());
     for spelled in [
-        id.to_uppercase(),
         id.replace('-', ""),
         format!("{{{id}}}"),
         format!("({id})"),
         format!("%7B{id}%7D"),
     ] {
-        let keys = maja.get(&path(&spelled, "keys")).await;
-        assert_eq!(keys.status, 200, "{spelled}");
-        assert_eq!(keys.json::<Value>()["conversationId"], id.as_str());
+        assert_eq!(maja.get(&path(&spelled, "keys")).await.status, 404, "{spelled}");
     }
-    assert_eq!(action(maja, &id.replace('-', ""), "request").await.status, 200);
+    assert_eq!(action(maja, &id.replace('-', ""), "request").await.status, 404);
     for bad in [&id[1..], &format!("{id}0"), "x"] {
         assert_eq!(maja.get(&path(bad, "keys")).await.status, 404, "{bad}");
     }
@@ -99,7 +99,7 @@ async fn a_conversation_or_a_device_is_named_in_any_spelling_a_guid_has() {
     let other = crowd.server.sign_in(&crowd.maja).await;
     assert_eq!(register_device_with(&other, &bytes(32, 3), "Other").await.status, 201);
     let spelled = read(&other, ACCOUNT).await["device"]["id"].as_str().unwrap().replace('-', "");
-    assert_eq!(delete(maja, &format!("{ACCOUNT}/devices/{spelled}")).await.status, 204);
+    assert_eq!(delete(maja, &format!("{ACCOUNT}/devices/{spelled}")).await.status, 404);
     assert_eq!(refusal(&delete(maja, &format!("{ACCOUNT}/devices/{}", device.to_uppercase())).await), (409, Some("current-device".into())));
 }
 

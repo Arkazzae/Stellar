@@ -273,7 +273,7 @@ async fn ticketed(
     // The ticket names this provider and the very session presenting it.
     let fits = read.provider_id == provider.id
         && caller.is_some_and(|caller| {
-            read.actor.user_id == compact(caller.user) && read.actor.session_id == compact(caller.session)
+            read.actor.user_id == caller.user.to_string() && read.actor.session_id == caller.session.to_string()
         });
     if !fits {
         return Ok(refused());
@@ -287,15 +287,10 @@ async fn ticketed(
     Ok(no_store(response))
 }
 
-/// An id as the tickets and states spell one: without hyphens.
-pub fn compact(id: Id) -> String {
-    id.to_string().replace('-', "")
-}
-
 pub fn actor_of(user: Id, session: Id, security_version: i64) -> Option<Actor> {
     Some(Actor {
-        user_id: compact(user),
-        session_id: compact(session),
+        user_id: user.to_string(),
+        session_id: session.to_string(),
         security_version: u32::try_from(security_version).ok()?,
     })
 }

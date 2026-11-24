@@ -90,12 +90,10 @@ fn decode(text: &str) -> String {
     String::from_utf8_lossy(&out).into_owned()
 }
 
-pub use crate::values::parse_guid;
-
 /// The server the request is about. A name that is blank is none, which
 /// means the server the person joined first.
 pub fn choose(db: &Connection, user: Id, selection: Option<&str>) -> rusqlite::Result<Choice> {
-    let selection = selection.map(str::trim).filter(|name| !name.is_empty());
+    let selection = selection.filter(|name| !name.is_empty());
     let found: Option<Id> = match selection {
         None => db
             .query_row(
@@ -105,7 +103,7 @@ pub fn choose(db: &Connection, user: Id, selection: Option<&str>) -> rusqlite::R
             )
             .optional()?,
         Some(name) => {
-            let Some(requested) = parse_guid(name) else {
+            let Some(requested) = Id::parse(name) else {
                 return Ok(Choice::Malformed);
             };
             db.query_row(

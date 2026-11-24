@@ -385,7 +385,7 @@ fn configured_providers(runtime: &Runtime) -> CliOutcome<Vec<String>> {
 }
 
 pub fn unlink(runtime: &mut Runtime, id_or_username: &str, identity_id: &str) -> CliOutcome {
-    let Some(id) = Id::parse_guid(&trim(identity_id)) else {
+    let Some(id) = Id::parse(&trim(identity_id)) else {
         return Err(CliError::new(
             "identity_not_found",
             format!(
