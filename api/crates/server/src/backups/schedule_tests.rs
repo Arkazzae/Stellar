@@ -445,3 +445,47 @@ async fn a_checkpoint_the_first_server_wrote_is_read_and_one_that_is_broken_star
     assert_eq!(broken.last_success_at, None);
     assert_eq!(status(&instance).last_success_at, None);
 }
+
+#[tokio::test(flavor = "multi_thread")]
+async fn the_offsite_destination_that_is_on_without_its_credentials_fails_the_cycle() {
+    let instance = Instance::new(&[]);
+    let destination = policy::Destination {
+        enabled: true,
+        mode: "s3".into(),
+        endpoint: "https://bucket.invalid".into(),
+        region: "auto".into(),
+        bucket: "backups".into(),
+        prefix: "stellarr".into(),
+    };
+    policy::save_destination(&instance.raw(), instance.state.sealer(), &destination).unwrap();
+    let offsite = super::offsite::Cloudflare::new(instance.state.clone());
+    assert!(offsite.enabled().await);
+    let archive = instance.folder.path().join("backup-1.zip");
+    std::fs::write(&archive, b"x").unwrap();
+    let failure = offsite.upload(&archive, Id::random()).await.unwrap_err();
+    assert_eq!(
+        failure.message(),
+        "Backup destination credentials or settings are missing."
+    );
+
+    // The schedule counts that as the cycle failing, with the archive kept
+    // for the next try, and says nothing of the credentials.
+    let moments = Moments::new();
+    let outcome = run_once(&instance.state, &[&offsite as &dyn Destination], &moments.clock()).await;
+    assert_eq!(outcome, Outcome::Failed);
+    let checkpoint = instance.state.backups().checkpoint();
+    assert!(checkpoint.pending_backup_id.is_some());
+    assert_eq!(
+        checkpoint.last_error.as_deref(),
+        Some("Automatic backup failed; inspect the server logs.")
+    );
+
+    policy::save_destination(
+        &instance.raw(),
+        instance.state.sealer(),
+        &policy::Destination { enabled: false, ..destination },
+    )
+    .unwrap();
+    assert!(!offsite.enabled().await);
+    assert!(offsite.upload(&archive, Id::random()).await.is_ok());
+}
