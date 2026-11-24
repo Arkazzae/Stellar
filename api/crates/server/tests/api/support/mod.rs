@@ -18,6 +18,7 @@ mod client;
 mod hub;
 mod log;
 mod people;
+mod raw;
 mod server;
 
 pub use client::{Client, Request, Response};
@@ -25,4 +26,5 @@ pub use hub::{HubClient, upgrade};
 pub use log::LogCapture;
 #[allow(unused_imports)]
 pub use people::{PASSWORD, Person};
+pub use raw::{Answer, raw_get, raw_request, raw_send};
 pub use server::{Server, TempDir};
