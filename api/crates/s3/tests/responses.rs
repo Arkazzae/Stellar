@@ -17,7 +17,7 @@ fn error(code: &str) -> String {
     )
 }
 
-// --- the Content-Range cases of the application's tests ---
+// --- Content-Range ---
 
 #[test]
 fn reads_the_range_actually_served() {
