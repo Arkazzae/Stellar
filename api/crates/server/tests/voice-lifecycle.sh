@@ -25,11 +25,12 @@ here=$(cd "$(dirname "$0")" && pwd)
 container=stellarr-port-oracle-$name
 oracle_script=${ORACLE_SCRIPT:-oracle}
 work=${WORK:-$(mktemp -d)}
+mkdir -p "$work"
 password='Corona!2026-long'
 pids=()
 rust_pid=
 cleanup() {
-  for pid in "${pids[@]}"; do kill "$pid" 2>/dev/null || true; done
+  for pid in ${pids[@]+"${pids[@]}"}; do kill "$pid" 2>/dev/null || true; done
   [ -n "${ORACLE_EXTERNAL:-}" ] || "$oracle_script" stop "$name" >/dev/null 2>&1 || true
   [ -n "${KEEP_WORK:-}" ] || rm -rf "$work"
 }

@@ -33,12 +33,13 @@ container=stellarr-port-oracle-$name
 oracle=http://127.0.0.1:$port
 oracle_script=${ORACLE_SCRIPT:-oracle}
 work=${WORK:-$(mktemp -d)}
+mkdir -p "$work"
 password='Corona!2026-long'
 headers=(-H 'X-Stellarr-Client: web' -H 'X-Stellarr-Client-Version: 2.0.0' -H 'Content-Type: application/json')
 pids=()
 
 cleanup() {
-  for pid in "${pids[@]}"; do kill "$pid" 2>/dev/null || true; done
+  for pid in ${pids[@]+"${pids[@]}"}; do kill "$pid" 2>/dev/null || true; done
   "$oracle_script" stop "$name" >/dev/null 2>&1 || true
   [ -n "${KEEP_WORK:-}" ] || rm -rf "$work"
 }
