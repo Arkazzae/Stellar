@@ -1,0 +1,12 @@
+[package]
+name = "stellarr-archive"
+version.workspace = true
+edition.workspace = true
+publish.workspace = true
+description = "A zip writer and reader for backups: streaming, ZIP64, every checksum checked"
+
+[dependencies]
+stellarr-deflate = { path = "../deflate" }
+
+[lints]
+workspace = true
