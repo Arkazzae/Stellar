@@ -1044,6 +1044,102 @@ pub async fn passkey_sign_in(
 
 // ---- changes the account makes to itself, from a session ----
 
+/// What checking a password beforehand came to. The hash of a password takes
+/// long, and there is one writer, so it is never computed inside a
+/// transaction: it is computed first, against the hash read at that moment,
+/// and the transaction relies on the result only if the stored hash is still
+/// that one.
+pub(super) struct PasswordCheck {
+    pub(super) hash: Option<String>,
+    pub(super) proves: bool,
+}
+
+impl PasswordCheck {
+    fn none() -> PasswordCheck {
+        PasswordCheck {
+            hash: None,
+            proves: false,
+        }
+    }
+}
+
+/// Checks the candidate password, but only when it could decide: when the
+/// session's own freshness already suffices, or the password would not be
+/// enough, nothing is hashed (a cheap read says which).
+pub(super) async fn check_password(
+    state: &AppState,
+    caller: Caller,
+    candidate: Option<&str>,
+) -> Result<PasswordCheck, DbError> {
+    let Some(candidate) = candidate.map(str::to_string) else {
+        return Ok(PasswordCheck::none());
+    };
+    let (decisive, hash) = state
+        .database()
+        .read(
+            move |connection| -> Result<(bool, Option<String>), DbError> {
+                let now = Timestamp::now();
+                let without = fresh::can_change_security(
+                    connection,
+                    caller.user,
+                    Some(caller.session),
+                    || false,
+                    now,
+                )?;
+                let with = fresh::can_change_security(
+                    connection,
+                    caller.user,
+                    Some(caller.session),
+                    || true,
+                    now,
+                )?;
+                let hash = stored_hash(connection, caller.user)?;
+                Ok((!without && with, hash))
+            },
+        )
+        .await?;
+    if !decisive {
+        return Ok(PasswordCheck::none());
+    }
+    let checked = hash.clone();
+    let proves = tokio::task::spawn_blocking(move || {
+        super::password::verify(&candidate, checked.as_deref())
+    })
+    .await
+    .map_err(|error| DbError::Task(error.to_string()))?;
+    Ok(PasswordCheck { hash, proves })
+}
+
+fn stored_hash(connection: &rusqlite::Connection, user: Id) -> rusqlite::Result<Option<String>> {
+    Ok(connection
+        .query_row(
+            "SELECT \"PasswordHash\" FROM \"Users\" WHERE \"Id\" = ?1",
+            [user],
+            |row| row.get(0),
+        )
+        .optional()?
+        .flatten())
+}
+
+/// [`fresh::can_change_security`], with a password that was checked before the
+/// transaction: it counts only if the account's hash is still the one it was
+/// checked against.
+pub(super) fn may_change_security(
+    tx: &Transaction,
+    caller: Caller,
+    password: &PasswordCheck,
+    now: Timestamp,
+) -> Result<bool, DbError> {
+    let stands = password.proves && stored_hash(tx, caller.user)? == password.hash;
+    Ok(fresh::can_change_security(
+        tx,
+        caller.user,
+        Some(caller.session),
+        || stands,
+        now,
+    )?)
+}
+
 /// What a change of the account's security settings came to when it was not
 /// allowed.
 #[must_use]
@@ -1086,17 +1182,18 @@ pub async fn remove_method(
     context: &Context<'_>,
     method: Id,
     providers: &ways_in::OwnedProviders,
-    password_proves: impl FnOnce() -> bool + Send + 'static,
+    password: Option<&str>,
 ) -> Result<Removed, DbError> {
     let own = Own::of_context(context);
     let state_in = state.clone();
     let providers = providers.clone();
+    let password = check_password(state, caller, password).await?;
     state
         .database()
         .write(move |tx| -> Result<Removed, DbError> {
             let now = Timestamp::now();
             let context = own.context();
-            if !fresh::can_change_security(tx, caller.user, Some(caller.session), password_proves, now)? {
+            if !may_change_security(tx, caller, &password, now)? {
                 return Ok(Removed::NotAllowed);
             }
             let found: Option<(String, bool)> = tx
@@ -1158,20 +1255,15 @@ pub async fn regenerate_recovery_codes(
     state: &AppState,
     caller: Caller,
     context: &Context<'_>,
-    password_proves: impl FnOnce() -> bool + Send + 'static,
+    password: Option<&str>,
 ) -> Result<Changed<Vec<String>>, DbError> {
     let own = Own::of_context(context);
+    let password = check_password(state, caller, password).await?;
     state
         .database()
         .write(move |tx| -> Result<Changed<Vec<String>>, DbError> {
             let now = Timestamp::now();
-            if !fresh::can_change_security(
-                tx,
-                caller.user,
-                Some(caller.session),
-                password_proves,
-                now,
-            )? {
+            if !may_change_security(tx, caller, &password, now)? {
                 return Ok(Changed::NotAllowed);
             }
             if !super::policy::has_confirmed_method(tx, caller.user)? {
@@ -1253,9 +1345,13 @@ pub async fn start_from_session(
     caller: Caller,
     context: &Context<'_>,
     kind: FromSession,
-    password_proves: impl FnOnce() -> bool + Send + 'static,
+    password: Option<&str>,
 ) -> Result<Started, DbError> {
     let own = Own::of_context(context);
+    let password = match kind {
+        FromSession::Enrollment => check_password(state, caller, password).await?,
+        FromSession::Reverification => PasswordCheck::none(),
+    };
     state
         .database()
         .write(move |tx| -> Result<Started, DbError> {
@@ -1263,13 +1359,7 @@ pub async fn start_from_session(
             let context = own.context();
             let user = user_of(tx, caller.user)?;
             let allowed = match kind {
-                FromSession::Enrollment => fresh::can_change_security(
-                    tx,
-                    caller.user,
-                    Some(caller.session),
-                    password_proves,
-                    now,
-                )?,
+                FromSession::Enrollment => may_change_security(tx, caller, &password, now)?,
                 FromSession::Reverification => {
                     !user.is_disabled
                         && !user.security_recovery_required
