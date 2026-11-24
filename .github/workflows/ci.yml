@@ -570,6 +570,11 @@ jobs:
       # container of its own, so the drills below see an untouched one.
       - name: Smoke-test the image
         run: STELLARR_SMOKE_IMAGE=stellarr:ci bash infra/tests/smoke.test.sh
+      # The same again with 512 MB and one core, the size of a Raspberry Pi
+      # Zero 2 W. Only a failed step fails it; the memory block it prints says
+      # how much of that the instance takes.
+      - name: Smoke-test the image in 512 MB and one core
+        run: STELLARR_SMOKE_IMAGE=stellarr:ci STELLARR_SMOKE_LIMITS='--memory 512m --cpus 1' bash infra/tests/smoke.test.sh
       # The services run under stellarr-init as PID 1. Each drill takes one of
       # them down in a different way and checks what health says meanwhile,
       # that the others keep running, and that it comes back.

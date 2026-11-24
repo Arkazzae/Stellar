@@ -30,8 +30,8 @@ trap cleanup EXIT INT TERM
 start_server() { # start_server NAME [VAR=value ...]
   name=$1; shift
   rm -rf "$work/$name"; mkdir -p "$work/$name"
-  env -i ASPNETCORE_ENVIRONMENT=Testing ASPNETCORE_URLS="http://127.0.0.1:$port" \
-    STELLARR_DATA_ROOT="$work/$name" "ConnectionStrings__Database=Data Source=$work/$name/stellarr.db" \
+  env -i STELLARR_ENVIRONMENT=Testing STELLARR_API_LISTEN="127.0.0.1:$port" \
+    STELLARR_DATA_ROOT="$work/$name" \
     Uploads__MinimumFreeDataRootBytes=0 PATH="$PATH" "$@" "$api" > "$work/$name.log" 2>&1 &
   pid=$!
   i=0

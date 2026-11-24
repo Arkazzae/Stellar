@@ -14,8 +14,15 @@
 #                        stellarr-smoke)
 # STELLARR_SMOKE_PORT    the host port nginx's HTTPS is published on, on
 #                        loopback only (default 8444)
+# STELLARR_SMOKE_LIMITS  extra arguments for docker run, such as
+#                        "--memory 512m --cpus 1", to see the instance in a small
+#                        machine (default none)
 # STELLARR_SMOKE_KEEP    set to anything to keep the container, the volume and
 #                        the work folder, for someone who wants to look
+#
+# After the steps it prints the container's memory, peak and current, and the
+# resident memory of every process in it, between MEMORY lines that are easy to
+# find in a log. The numbers decide nothing; only a failed step fails the run.
 #
 # Needs docker, curl and python3 (its standard library only).
 set -Eeuo pipefail
@@ -23,6 +30,7 @@ set -Eeuo pipefail
 image="${STELLARR_SMOKE_IMAGE:-stellarr:ci}"
 name="${STELLARR_SMOKE_NAME:-stellarr-smoke}"
 port="${STELLARR_SMOKE_PORT:-8444}"
+read -r -a limits <<<"${STELLARR_SMOKE_LIMITS:-}"
 volume="$name-data"
 base="https://localhost:$port"
 work="$(mktemp -d "${TMPDIR:-/tmp}/stellarr-smoke.XXXXXX")"
@@ -186,7 +194,7 @@ docker rm -f "$name" >/dev/null 2>&1 || true
 docker volume rm "$volume" >/dev/null 2>&1 || true
 docker run -d --name "$name" -v "$volume:/data/stellarr" \
   -e STELLARR_DOMAIN=localhost -e "STELLARR_HTTPS_PORT=$port" \
-  --health-interval 5s -p "127.0.0.1:$port:443" "$image" >/dev/null
+  --health-interval 5s ${limits[@]+"${limits[@]}"} -p "127.0.0.1:$port:443" "$image" >/dev/null
 before=''
 step="waiting for the container to be healthy"
 wait_healthy "$before"
@@ -231,7 +239,7 @@ grep -q OK "$work/hub" || fail "The hub listener did not report the message."
 
 step="uploading a file and downloading it back"
 { printf '%%PDF-1.4\n'; head -c 4096 /dev/urandom; } >"$work/upload.pdf"
-expect_status 201 POST /api/uploads -F "file=@$work/upload.pdf;type=application/pdf;filename=smoke.pdf"
+expect_status 201 POST /api/uploads/images -F "file=@$work/upload.pdf;type=application/pdf;filename=smoke.pdf"
 url=$(field url)
 expect_status 200 GET "$url"
 cmp -s "$work/upload.pdf" "$work/body" || fail "The downloaded file differs from the uploaded one."
@@ -274,6 +282,24 @@ cmp -s "$work/upload.pdf" "$work/body" || fail "The restored file differs from t
 
 step="stellarr status"
 docker exec "$name" stellarr status
+
+step="measuring the memory"
+echo "=== MEMORY (limits: ${STELLARR_SMOKE_LIMITS:-none}) ==="
+for file in memory.peak memory.current memory.max; do
+  value=$(docker exec "$name" cat "/sys/fs/cgroup/$file" 2>/dev/null || echo unavailable)
+  if [[ $value =~ ^[0-9]+$ ]]; then
+    echo "$file: $((value / 1048576)) MiB"
+  else
+    echo "$file: $value"
+  fi
+done
+docker stats --no-stream --format 'docker stats: {{.MemUsage}} ({{.MemPerc}}), cpu {{.CPUPerc}}' "$name" || true
+echo "resident memory by process (KiB):"
+docker exec "$name" sh -c '
+  for status in /proc/[0-9]*/status; do
+    awk "/^Name:/ { name = \$2 } /^VmRSS:/ { rss = \$2 } END { if (rss != \"\") printf \"%10d  %s\\n\", rss, name }" "$status" 2>/dev/null
+  done | sort -rn' || true
+echo "=== END MEMORY ==="
 
 step=''
 echo "PASS: the image founded an owner, carried a message over the hub, kept a file, and came back from a backup."
