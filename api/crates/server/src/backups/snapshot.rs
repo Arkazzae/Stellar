@@ -99,6 +99,32 @@ pub fn check_integrity(path: &Path) -> String {
     verdict
 }
 
+/// Which of `tables` the database at `path` does not have. A file that cannot
+/// be read as a database has none of them.
+pub fn missing_tables(path: &Path, tables: &[&str]) -> Vec<String> {
+    let found = (|| -> rusqlite::Result<Vec<String>> {
+        let connection = Connection::open_with_flags(
+            path,
+            OpenFlags::SQLITE_OPEN_READ_ONLY | OpenFlags::SQLITE_OPEN_NO_MUTEX,
+        )?;
+        let mut statement =
+            connection.prepare("SELECT name FROM sqlite_master WHERE type = 'table'")?;
+        let names = statement.query_map([], |row| row.get::<_, String>(0))?;
+        names.collect()
+    })()
+    .unwrap_or_default();
+    for suffix in ["-wal", "-shm"] {
+        let mut name = path.as_os_str().to_owned();
+        name.push(suffix);
+        let _ = std::fs::remove_file(PathBuf::from(name));
+    }
+    tables
+        .iter()
+        .filter(|table| !found.iter().any(|name| name == *table))
+        .map(|table| (*table).to_string())
+        .collect()
+}
+
 /// Whether the bytes begin as every SQLite database does.
 pub const SQLITE_HEADER: &[u8; 16] = b"SQLite format 3\0";
 

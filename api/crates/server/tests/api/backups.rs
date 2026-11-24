@@ -598,3 +598,52 @@ async fn a_partial_backup_left_by_a_stop_is_removed_at_the_next_start() {
     assert_eq!(left, ["backup-3.zip", "backup-3.zip.verified"]);
     server.stop().await;
 }
+
+#[tokio::test]
+async fn after_a_restore_the_old_cookie_is_refused_and_a_sign_in_with_the_password_works() {
+    let folder = crate::support::TempDir::new();
+    // The database sits where the container puts it, which is where a restore
+    // puts it back.
+    std::fs::create_dir_all(folder.path().join("db")).unwrap();
+    let database = format!(
+        "Data Source={};Pooling=True",
+        folder.path().join("db/stellarr.db").display()
+    );
+    let settings = [("ConnectionStrings__Database", database.as_str())];
+    let first = Server::start_in(folder.path(), &settings).await;
+    let owner = first.found("owner").await;
+    assert_eq!(owner.client.get("/api/cockpit/backups").await.status, 200);
+    let started = owner
+        .client
+        .post_json(
+            "/api/cockpit/backups",
+            &json!({"database": true, "objects": true, "keys": true, "instance": true}),
+        )
+        .await;
+    assert_eq!(started.status, 202, "{}", started.text());
+    let list = settled(&owner.client).await;
+    let id = list["backups"][0]["id"].as_str().unwrap().to_string();
+    let archive = folder.path().join("backups").join(&id);
+    assert!(first.stop().await);
+
+    // The container's next start does this before any service runs.
+    let applied = stellarr_api::backups::restore::apply(
+        &archive,
+        folder.path(),
+        stellarr_api::values::Timestamp::now(),
+    );
+    assert!(applied.is_ok(), "{applied:?}");
+
+    let second = Server::start_in(folder.path(), &settings).await;
+    let old = second.client().with_cookies_of(&owner.client);
+    assert_eq!(
+        old.get("/api/cockpit/backups").await.status,
+        401,
+        "the cookie of a session that was running is refused"
+    );
+    let again = second.client();
+    let signed_in = second.login(&again, "owner", crate::support::PASSWORD).await;
+    assert_eq!(signed_in.status, 200, "{}", signed_in.text());
+    assert_eq!(again.get("/api/cockpit/backups").await.status, 200);
+    second.stop().await;
+}
