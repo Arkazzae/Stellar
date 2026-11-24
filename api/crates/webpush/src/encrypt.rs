@@ -56,8 +56,9 @@ pub fn encrypt(
     receiver_public: &[u8],
     auth_secret: &[u8; 16],
 ) -> Result<Vec<u8>, EncryptError> {
-    let mut salt = [0u8; 16];
-    rand::fill(&mut salt).map_err(|_| EncryptError::Crypto)?;
+    let salt = rand::generate::<[u8; 16]>(&rand::SystemRandom::new())
+        .map_err(|_| EncryptError::Crypto)?
+        .expose();
     let sender = agreement::PrivateKey::generate(&ECDH_P256).map_err(|_| EncryptError::Crypto)?;
     encrypt_with(plaintext, receiver_public, auth_secret, &salt, &sender)
 }
