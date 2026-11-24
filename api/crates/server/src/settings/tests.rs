@@ -317,10 +317,21 @@ fn the_test_address_of_the_gif_service_is_honoured_in_the_testing_environment_on
         ("Testing__GiphyUrl", "http://127.0.0.1:9/"),
     ]))
     .unwrap();
-    assert_eq!(testing.testing_giphy_url.as_deref(), Some("http://127.0.0.1:9/"));
+    assert_eq!(
+        testing.testing_giphy_url.as_deref(),
+        Some("http://127.0.0.1:9/")
+    );
 
     let other = production(&[("Testing__GiphyUrl", "http://127.0.0.1:9/")]).unwrap();
     assert_eq!(other.testing_giphy_url, None);
+}
+
+#[test]
+fn the_housekeeping_is_on_unless_switched_off() {
+    assert!(production(&[]).unwrap().maintenance_enabled);
+    let off = production(&[("Maintenance__Enabled", "false")]).unwrap();
+    assert!(!off.maintenance_enabled);
+    assert!(production(&[("Maintenance__Enabled", "maybe")]).is_err());
 }
 
 #[test]
