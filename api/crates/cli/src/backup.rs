@@ -250,16 +250,7 @@ pub fn restore(runtime: &mut Runtime, archive: &str) -> CliOutcome {
     std::fs::create_dir_all(&folder)?;
     runtime.restore.clear_leftovers(&data_root)?;
     let size = std::fs::metadata(&path)?.len();
-    let available = crate::status::free_bytes(&folder).unwrap_or(u64::MAX);
-    if available < size {
-        return Err(CliError::new(
-            "not_enough_space",
-            format!(
-                "Staging the archive needs {size} bytes on the data volume, and {available} are free. Nothing was staged."
-            ),
-            exit::CONFLICT,
-        ));
-    }
+    enough_space(size, crate::status::free_bytes(&folder))?;
     // Copied, not moved: the archive may be one the panel lists, and the copy
     // lives on the data volume, which a recreated container keeps.
     let partial = PathBuf::from(format!(
@@ -302,7 +293,8 @@ pub fn restore(runtime: &mut Runtime, archive: &str) -> CliOutcome {
             "Until then, 'stellarr backup cancel' drops it.".to_string(),
         ],
     )
-    .warnings(warnings(&manifest)))
+    .warnings(warnings(&manifest))
+    .changed())
 }
 
 pub fn cancel(runtime: &mut Runtime) -> CliOutcome {
@@ -321,7 +313,8 @@ pub fn cancel(runtime: &mut Runtime) -> CliOutcome {
         "backup.cancel",
         Json::object([("staged", Json::text(staged.display().to_string()))]),
         vec!["Dropped the staged backup. The next start keeps the current data.".to_string()],
-    ))
+    )
+    .changed())
 }
 
 /// Puts the staged backup in place. The container's entrypoint runs this
@@ -379,7 +372,8 @@ pub fn apply(runtime: &mut Runtime) -> CliOutcome {
                     ),
                 ],
             )
-            .warnings(warnings(&applied.manifest)))
+            .warnings(warnings(&applied.manifest))
+            .changed())
         }
         Err(RestoreError::Refused(reason)) => {
             let kept = folder.join(format!("refused-{}.zip", stamp(now)));
@@ -424,6 +418,31 @@ pub fn apply(runtime: &mut Runtime) -> CliOutcome {
     }
 }
 
+/// Whether `size` bytes fit where the archive is staged. Space that cannot be
+/// read is not space that is there: the copy could fill the volume the
+/// instance runs on, so the archive is not staged.
+fn enough_space(size: u64, available: Option<u64>) -> CliOutcome<()> {
+    let Some(available) = available else {
+        return Err(CliError::new(
+            "free_space_unknown",
+            format!(
+                "The free space on the data volume could not be read (`df` failed), and staging the archive needs {size} bytes, so it was not staged. Nothing was staged."
+            ),
+            exit::UNAVAILABLE,
+        ));
+    };
+    if available < size {
+        return Err(CliError::new(
+            "not_enough_space",
+            format!(
+                "Staging the archive needs {size} bytes on the data volume, and {available} are free. Nothing was staged."
+            ),
+            exit::CONFLICT,
+        ));
+    }
+    Ok(())
+}
+
 /// `yyyyMMdd-HHmmss`.
 fn stamp(at: Timestamp) -> String {
     let text = at.to_wire_text();
@@ -447,4 +466,25 @@ fn nothing_staged(staged: &Path) -> CliError {
         ),
         exit::NOT_FOUND,
     )
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn staging_needs_space_that_is_known_and_enough() {
+        assert!(enough_space(100, Some(100)).is_ok());
+        let short = enough_space(101, Some(100)).unwrap_err();
+        assert_eq!(
+            (short.code, short.exit),
+            ("not_enough_space", exit::CONFLICT)
+        );
+        let unknown = enough_space(1, None).unwrap_err();
+        assert_eq!(
+            (unknown.code, unknown.exit),
+            ("free_space_unknown", exit::UNAVAILABLE)
+        );
+        assert!(unknown.message.contains("Nothing was staged"));
+    }
 }

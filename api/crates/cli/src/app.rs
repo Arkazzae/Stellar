@@ -65,10 +65,12 @@ pub fn run(
         .unwrap_or_else(|_| Err(CliError::unexpected("Panic")));
     let json = runtime.json();
     match outcome {
-        Ok(result) => {
-            write_result(&result, json, &mut runtime.io);
-            result.exit
-        }
+        Ok(result) => match write_result(&result, json, &mut runtime.io) {
+            Ok(()) => result.exit,
+            // A command that read only has nothing to lose with its answer.
+            Err(_) if !result.changed => result.exit,
+            Err(error) => write_lost_result(&result, &error, &mut runtime.io),
+        },
         Err(error) => write_error(&error, &command, json_requested, &mut runtime.io),
     }
 }
@@ -423,7 +425,7 @@ fn write_help(json: bool, topic: &str, io: &mut Io) -> i32 {
     exit::SUCCESS
 }
 
-fn write_result(result: &CliResult, json: bool, io: &mut Io) {
+fn write_result(result: &CliResult, json: bool, io: &mut Io) -> std::io::Result<()> {
     if json {
         let document = Json::object([
             ("ok", (result.exit == exit::SUCCESS).into()),
@@ -435,18 +437,37 @@ fn write_result(result: &CliResult, json: bool, io: &mut Io) {
                 Json::array(result.warnings.iter().cloned().map(Json::from)),
             ),
         ]);
-        let _ = writeln!(io.output, "{}", document.pretty());
-        let _ = io.output.flush();
-        return;
+        writeln!(io.output, "{}", document.pretty())?;
+        return io.output.flush();
     }
     for line in &result.lines {
-        let _ = writeln!(io.output, "{line}");
+        writeln!(io.output, "{line}")?;
     }
     for warning in &result.warnings {
-        let _ = writeln!(io.error, "warning: {warning}");
+        writeln!(io.error, "warning: {warning}")?;
     }
-    let _ = io.output.flush();
+    io.output.flush()?;
+    io.error.flush()
+}
+
+/// The answer of a command that changed something could not be written, a
+/// closed pipe perhaps: the change stands and the person is told so, on the
+/// stream that is most likely still open.
+fn write_lost_result(result: &CliResult, error: &std::io::Error, io: &mut Io) -> i32 {
+    let mut message = format!(
+        "error [output_failed]: The change was made ({}), but its result could not be written: {error}.",
+        result.command
+    );
+    if result.command == "security.recover" {
+        message.push_str(
+            " The recovery credential was not delivered and cannot be shown again; run `security recover` again to issue a new one.",
+        );
+    } else {
+        message.push_str(" Check the instance before running the command again.");
+    }
+    let _ = writeln!(io.error, "{message}");
     let _ = io.error.flush();
+    exit::FAILURE
 }
 
 fn write_error(error: &CliError, command: &str, json: bool, io: &mut Io) -> i32 {

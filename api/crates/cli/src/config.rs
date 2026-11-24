@@ -289,7 +289,8 @@ pub fn set(runtime: &mut Runtime, key: &str, raw_value: &str) -> CliOutcome {
             format!("Audit: local-cli config.set {}", definition.key),
         ],
     )
-    .warnings(warnings))
+    .warnings(warnings)
+    .changed())
 }
 
 pub fn validate(runtime: &mut Runtime) -> CliOutcome {

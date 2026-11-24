@@ -65,6 +65,8 @@ pub struct CliResult {
     pub lines: Vec<String>,
     pub exit: i32,
     pub warnings: Vec<String>,
+    /// Whether the command changed something that stays changed.
+    pub changed: bool,
 }
 
 impl CliResult {
@@ -75,11 +77,19 @@ impl CliResult {
             lines,
             exit: exit::SUCCESS,
             warnings: Vec::new(),
+            changed: false,
         }
     }
 
     pub fn exit(mut self, exit: i32) -> CliResult {
         self.exit = exit;
+        self
+    }
+
+    /// Marks a result whose command changed something: if it cannot be
+    /// written, the person must be told the change was made.
+    pub fn changed(mut self) -> CliResult {
+        self.changed = true;
         self
     }
 
