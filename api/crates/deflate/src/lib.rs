@@ -6,6 +6,7 @@
 //! * [`Deflater`] encodes a stream, writing as it goes.
 //! * [`GzipReader`] and [`ZlibReader`] read the wrapped forms, checking the
 //!   trailer's checksum and length.
+//! * [`PushDecoder`] decodes input that arrives in pieces, without blocking.
 //! * [`Crc32`] and [`Adler32`] are the checksums.
 
 mod adler32;
@@ -14,6 +15,7 @@ mod deflate;
 mod error;
 mod huffman;
 mod inflate;
+mod push;
 mod tables;
 mod wrappers;
 
@@ -22,4 +24,5 @@ pub use crc32::{Crc32, crc32};
 pub use deflate::{Deflater, Level, deflate_to_vec};
 pub use error::Error;
 pub use inflate::{Inflate, inflate_to_vec};
+pub use push::{Format, PushDecoder, Step};
 pub use wrappers::{GzipReader, ZlibReader, gunzip_to_vec, zlib_to_vec};
