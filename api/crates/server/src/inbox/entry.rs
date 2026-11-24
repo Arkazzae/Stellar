@@ -11,6 +11,46 @@ use serde::Serialize;
 use crate::events::{Audience, Event, EventPublisher};
 use crate::values::{Id, Timestamp};
 
+/// Clears invitations addressed to a person who has answered them.
+pub(crate) fn clear_joined_invitations(
+    db: &Connection,
+    server: Id,
+    user: Id,
+) -> rusqlite::Result<usize> {
+    db.execute(
+        "DELETE FROM \"UserNotifications\"
+         WHERE \"UserId\" = ?1 AND \"ServerId\" = ?2 AND \"Source\" = 'system' AND \"TargetInviteCode\" IS NOT NULL",
+        params![user, server],
+    )
+}
+
+/// Clears an invite from each recipient's inbox, in inbox sequence order.
+pub(crate) fn clear_revoked_invitation(
+    db: &Connection,
+    server: Id,
+    code: &str,
+) -> rusqlite::Result<Vec<Id>> {
+    let mut statement = db.prepare(
+        "SELECT \"UserId\" FROM \"UserNotifications\"
+         WHERE \"ServerId\" = ?1 AND \"Source\" = 'system' AND \"TargetInviteCode\" = ?2 ORDER BY \"Sequence\"",
+    )?;
+    let mut recipients = Vec::new();
+    for user in statement
+        .query_map(params![server, code], |row| row.get::<_, Id>(0))?
+        .collect::<rusqlite::Result<Vec<_>>>()?
+    {
+        if !recipients.contains(&user) {
+            recipients.push(user);
+        }
+    }
+    drop(statement);
+    db.execute(
+        "DELETE FROM \"UserNotifications\" WHERE \"ServerId\" = ?1 AND \"Source\" = 'system' AND \"TargetInviteCode\" = ?2",
+        params![server, code],
+    )?;
+    Ok(recipients)
+}
+
 /// What is written for a new entry. Its id, position and creation time (unless
 /// given) are made here; it starts unread.
 #[derive(Debug, Clone)]

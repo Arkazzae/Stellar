@@ -12,6 +12,7 @@ mod entry;
 mod page;
 mod query;
 
+pub(crate) use entry::{clear_joined_invitations, clear_revoked_invitation};
 pub use entry::{Entry, NewEntry, add, announce, announce_invitations_changed};
 
 use crate::http::Endpoints;

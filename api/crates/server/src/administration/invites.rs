@@ -288,24 +288,7 @@ pub async fn revoke(
                 let Some(code) = found else {
                     return Ok(Err(ApiError::not_found()));
                 };
-                let mut statement = tx.prepare(
-                    "SELECT \"UserId\" FROM \"UserNotifications\"
-                     WHERE \"ServerId\" = ?1 AND \"Source\" = 'system' AND \"TargetInviteCode\" = ?2 ORDER BY \"Sequence\"",
-                )?;
-                let mut recipients: Vec<Id> = Vec::new();
-                for user in statement
-                    .query_map(params![server, code], |row| row.get::<_, Id>(0))?
-                    .collect::<rusqlite::Result<Vec<_>>>()?
-                {
-                    if !recipients.contains(&user) {
-                        recipients.push(user);
-                    }
-                }
-                drop(statement);
-                tx.execute(
-                    "DELETE FROM \"UserNotifications\" WHERE \"ServerId\" = ?1 AND \"Source\" = 'system' AND \"TargetInviteCode\" = ?2",
-                    params![server, code],
-                )?;
+                let recipients = inbox::clear_revoked_invitation(tx, server, &code)?;
                 tx.execute("DELETE FROM \"ServerInvites\" WHERE \"Id\" = ?1", [invite])?;
                 audit::record(
                     tx,
