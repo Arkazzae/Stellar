@@ -36,6 +36,8 @@ fn routes() -> Endpoints {
         .rate_limit(RateLimitPolicy::Login)
         .post("/api/test/body", echo)
         .json_body()
+        .post("/api/test/big", echo)
+        .json_body_up_to(usize::MAX)
         .get("/api/test/client", client)
         .get("/api/test/wire", wire)
         .get("/api/test/counts", counts)
@@ -354,7 +356,7 @@ async fn a_body_of_another_type_is_a_415_and_a_missing_or_broken_one_a_400() {
 }
 
 #[tokio::test]
-async fn the_ceiling_on_a_body_is_128_mib() {
+async fn the_ceiling_of_the_server_is_128_mib_for_a_route_that_asks_for_it() {
     const CEILING: u64 = 128 * 1024 * 1024;
     let server = server_with(&[]).await;
     let client = server.client();
@@ -362,14 +364,14 @@ async fn the_ceiling_on_a_body_is_128_mib() {
     // Declared, and over: refused before a byte is read, and the connection
     // is closed after the answer.
     let declared = client
-        .post_zeros("/api/test/body", Some(CEILING + 1), 0)
+        .post_zeros("/api/test/big", Some(CEILING + 1), 0)
         .await;
     assert_eq!(declared.status, 413);
     assert!(declared.body.is_empty());
     assert_eq!(declared.header("connection"), Some("close"));
 
     // Not declared, and over: read until it is too much.
-    let streamed = client.post_zeros("/api/test/body", None, CEILING + 1).await;
+    let streamed = client.post_zeros("/api/test/big", None, CEILING + 1).await;
     assert_eq!(streamed.status, 400);
 
     // A route that reads no body is not refused for it.
@@ -379,9 +381,29 @@ async fn the_ceiling_on_a_body_is_128_mib() {
     // Exactly the ceiling is not over it; the body is not JSON, so the route
     // says so, which it can only do once it has read all of it.
     let exact = client
-        .post_zeros("/api/test/body", Some(CEILING), CEILING)
+        .post_zeros("/api/test/big", Some(CEILING), CEILING)
         .await;
     assert_eq!(exact.status, 400);
+}
+
+#[tokio::test]
+async fn a_route_that_reads_json_reads_one_mib_unless_it_asks_for_more() {
+    const MIB: u64 = 1024 * 1024;
+    let server = server_with(&[]).await;
+    let client = server.client();
+
+    let declared = client.post_zeros("/api/test/body", Some(MIB + 1), 0).await;
+    let streamed = client.post_zeros("/api/test/body", None, MIB + 1).await;
+    let exact = client.post_zeros("/api/test/body", Some(MIB), MIB).await;
+    let big_json = format!("\"{}\"", "x".repeat(2 * MIB as usize));
+    let refused = client.send(Request::new(Method::POST, "/api/test/body").body("application/json", &big_json)).await;
+    let allowed = client.send(Request::new(Method::POST, "/api/test/big").body("application/json", &big_json)).await;
+
+    assert_eq!([declared.status, streamed.status, exact.status], [413, 400, 400]);
+    assert_eq!(declared.header("connection"), Some("close"));
+    assert_eq!(refused.status, 413);
+    assert_eq!(allowed.status, 200);
+    assert_eq!(allowed.body.len(), 2 * MIB as usize + 2);
 }
 
 #[tokio::test]

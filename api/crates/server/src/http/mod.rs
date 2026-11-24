@@ -27,5 +27,5 @@ pub use metrics::Metrics;
 pub use pipeline::build;
 pub use problem::Problem;
 pub use rate_limit::{AttemptLimiter, Lease, RateLimitPolicy, RateLimiter};
-pub use routes::{Endpoints, Rules};
+pub use routes::{DEFAULT_JSON_BODY_BYTES, Endpoints, Rules};
 pub use session_cookie::{keep_out_of_caches, with_cookie, with_session_cookie};

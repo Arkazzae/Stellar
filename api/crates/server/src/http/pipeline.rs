@@ -265,6 +265,14 @@ async fn route_checks(
     }
 
     let rules = pipeline.rules_of(&request);
+    if let Some(rules) = rules.filter(|rules| rules.json_body) {
+        let ceiling = rules
+            .body_limit
+            .unwrap_or(super::routes::DEFAULT_JSON_BODY_BYTES);
+        request
+            .extensions_mut()
+            .insert(super::body::BodyCeiling(ceiling));
+    }
     let refusal = if rules.is_some_and(|rules| refuses_content_type(rules, &request)) {
         Some(ApiError::status(StatusCode::UNSUPPORTED_MEDIA_TYPE).into_response())
     } else if request.method() == Method::HEAD

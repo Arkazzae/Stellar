@@ -12,7 +12,8 @@ use http_body_util::{BodyExt, Limited};
 
 use super::error::ApiError;
 
-/// 128 MiB.
+/// The ceiling of the whole server, 128 MiB. A route that reads JSON has a
+/// lower one of its own (see `Endpoints::json_body`).
 pub const MAX_REQUEST_BODY_BYTES: usize = 128 * 1024 * 1024;
 
 /// The whole body. A request that declares more than the ceiling is refused
@@ -81,3 +82,8 @@ mod tests {
         assert!(bytes.is_empty());
     }
 }
+
+/// The most the body of this request may be, which the pipeline sets from the
+/// rules of its route.
+#[derive(Debug, Clone, Copy)]
+pub struct BodyCeiling(pub usize);

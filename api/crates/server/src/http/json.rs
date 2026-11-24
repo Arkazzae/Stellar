@@ -22,7 +22,7 @@ use axum::response::{IntoResponse, Response};
 use serde::Serialize;
 use serde::de::DeserializeOwned;
 
-use super::body::{MAX_REQUEST_BODY_BYTES, read_all};
+use super::body::{BodyCeiling, MAX_REQUEST_BODY_BYTES, read_all};
 use super::error::ApiError;
 
 /// A value that is sent as JSON with status 200, or read from the body of the
@@ -60,7 +60,11 @@ impl<T: DeserializeOwned, S: Send + Sync> FromRequest<S> for Json<T> {
 
     async fn from_request(request: Request, _: &S) -> Result<Json<T>, ApiError> {
         let (parts, body) = request.into_parts();
-        let bytes = read_all(&parts.headers, body, MAX_REQUEST_BODY_BYTES).await?;
+        let ceiling = parts
+            .extensions
+            .get::<BodyCeiling>()
+            .map_or(MAX_REQUEST_BODY_BYTES, |ceiling| ceiling.0);
+        let bytes = read_all(&parts.headers, body, ceiling).await?;
         serde_json::from_slice(&bytes)
             .map(Json)
             .map_err(|_| ApiError::bad_request())
