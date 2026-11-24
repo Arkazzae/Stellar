@@ -68,7 +68,7 @@ pub async fn upload(
 ) -> ApiResult<Response> {
     let keeps = |content_type: &str| keep_image(content_type, MAX_ICON_BYTES);
     let slots = [Slot { name: "file", keeps: &keeps }];
-    let mut received = read(&state, request, &slots).await?;
+    let mut received = read(&state, request, &slots, &[]).await?;
     let file = received.files.remove(0).ok_or_else(ApiError::bad_request)?;
     let user = caller.user;
     if !may_manage(&state, user, server).await? {

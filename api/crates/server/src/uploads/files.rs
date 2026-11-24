@@ -86,7 +86,13 @@ pub async fn upload(
         Slot { name: "poster", keeps: &keep_poster },
         Slot { name: "preview", keeps: &keep_preview },
     ];
-    let mut received = read(&state, request, &slots).await?;
+    let mut received = read(
+        &state,
+        request,
+        &slots,
+        &["durationSeconds", "width", "height", "voiceMessage", "placeholder"],
+    )
+    .await?;
     let duration = measured(&received, "durationSeconds", numbers::decimal)?;
     let width = measured(&received, "width", numbers::integer)?;
     let height = measured(&received, "height", numbers::integer)?;
@@ -298,7 +304,7 @@ pub async fn encrypted(
     .saturating_add(TAG_BYTES);
     let keeps = |_: &str| Some(largest.max(0) as u64);
     let slots = [Slot { name: "file", keeps: &keeps }];
-    let mut received = read(&state, request, &slots).await?;
+    let mut received = read(&state, request, &slots, &[]).await?;
     let file = received
         .files
         .remove(0)
@@ -350,8 +356,9 @@ pub async fn read(
     state: &AppState,
     request: Request,
     slots: &[Slot<'_>],
+    fields: &[&str],
 ) -> Result<Received, ApiError> {
     let (parts, body) = request.into_parts();
     let mut reader = Multipart::open(&parts.headers, body, MAX_REQUEST_BODY_BYTES)?;
-    form::read(&mut reader, &staging_dir(state.settings()), slots).await
+    form::read(&mut reader, &staging_dir(state.settings()), slots, fields).await
 }

@@ -137,11 +137,14 @@ pub struct Received {
     pub fields: Fields,
 }
 
-/// Reads the whole form. `staging` is where files are written.
+/// Reads the whole form. `staging` is where files are written, `slots` the
+/// files wanted and `fields` the names of the text values wanted: the rest of
+/// the form is read and let go.
 pub async fn read(
     reader: &mut Multipart,
     staging: &Path,
     slots: &[Slot<'_>],
+    fields: &[&str],
 ) -> Result<Received, ApiError> {
     let mut received = Received {
         files: slots.iter().map(|_| None).collect(),
@@ -165,10 +168,13 @@ pub async fn read(
                     None => skip(reader).await?,
                 }
             }
-            Kind::Field => {
+            // Only the values a route reads are kept, so that what a form holds
+            // in memory is a few names long however many parts it has.
+            Kind::Field if fields.iter().any(|wanted| same_name(&disposition.name, wanted)) => {
                 let text = value(reader).await?;
                 received.fields.add(&disposition.name, text);
             }
+            Kind::Field => skip(reader).await?,
             Kind::Other => skip(reader).await?,
         }
     }
