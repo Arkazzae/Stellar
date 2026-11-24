@@ -208,9 +208,29 @@ fn write(
     context: &Context<'_>,
     plan: Plan,
     input: &NewAccount,
-) -> Result<Registered, DbError> {
+) -> Result<Registered, WriteError> {
     let messages = state.messages();
     let now = Timestamp::now();
+    // What decided the plan is decided again here, where nothing can change
+    // it: the instance has still no account, the invite can still be used.
+    match &plan {
+        Plan::Founding(_) => {
+            let empty: bool = tx.query_row("SELECT NOT EXISTS (SELECT 1 FROM \"Users\")", [], |row| row.get(0))?;
+            if !empty {
+                return Err(WriteError::Stale);
+            }
+        }
+        Plan::Joining { invite, server, role, .. } => {
+            let there: bool = tx.query_row(
+                "SELECT EXISTS (SELECT 1 FROM \"ServerRoles\" WHERE \"Id\" = ?1 AND \"ServerId\" = ?2)",
+                params![role, server],
+                |row| row.get(0),
+            )?;
+            if !there || !invites::record_use(tx, *invite, now)? {
+                return Err(WriteError::Stale);
+            }
+        }
+    }
     let id = Id::random();
     tx.execute(
         "INSERT INTO \"Users\" (\"Id\", \"Username\", \"NormalizedUsername\", \"DisplayName\", \"PasswordHash\", \"Email\", \"NormalizedEmail\",
@@ -231,21 +251,18 @@ fn write(
     let user = User::find(tx, id)?.ok_or_else(|| DbError::Task("the account just written is not there".into()))?;
     // The first account owns the new instance server; anybody else joins it
     // with the base role.
-    let (server, role_is_owner, role_permissions, founded, invite) = match plan {
+    let (server, role_is_owner, role_permissions, founded) = match plan {
         Plan::Founding(starter) => {
             let added = starter::add(tx, &starter, messages, now)?;
             starter::admit(tx, added.id, id, added.owner_role, true, false, now)?;
-            (added.id, true, access::ALL, true, None)
+            (added.id, true, access::ALL, true)
         }
-        Plan::Joining { invite, server, role, role_is_owner, role_permissions } => {
+        Plan::Joining { server, role, role_is_owner, role_permissions, .. } => {
             starter::admit(tx, server, id, role, role_is_owner, !role_is_owner, now)?;
-            (server, role_is_owner, role_permissions, false, Some(invite))
+            (server, role_is_owner, role_permissions, false)
         }
     };
     let welcome = welcome::create(tx, server, &user, now, messages)?;
-    if let Some(invite) = invite {
-        invites::record_use(tx, invite)?;
-    }
 
     // The first owner cannot skip an instance-wide requirement by
     // registering: the decision is made against the role just assigned.
@@ -260,6 +277,25 @@ fn write(
         session.insert(tx)?;
     }
     Ok(Registered { user, start, welcome, founded })
+}
+
+/// Why the write of a registration did not happen.
+enum WriteError {
+    Db(DbError),
+    /// What the checks found is no longer so.
+    Stale,
+}
+
+impl From<DbError> for WriteError {
+    fn from(error: DbError) -> WriteError {
+        WriteError::Db(error)
+    }
+}
+
+impl From<rusqlite::Error> for WriteError {
+    fn from(error: rusqlite::Error) -> WriteError {
+        WriteError::Db(error.into())
+    }
 }
 
 struct NewAccount {
@@ -285,56 +321,70 @@ pub async fn register(State(state): State<AppState>, origin: Origin, Json(reques
     let email = request.email.as_deref().unwrap_or("").trim().to_string();
 
     // Whether the instance is still empty is read and acted on inside one
-    // critical section, so two first registrations cannot both found it.
+    // critical section, so two first registrations cannot both found it. The
+    // gate holds only against other registrations of this process, so what
+    // decides is read again inside the transaction that writes, and a plan
+    // that has gone stale is made again from the checks.
     let _turn = state.registration_gate().lock().await;
     let request = std::sync::Arc::new(request);
-    let plan = {
-        let (state, request, username, email) = (state.clone(), request.clone(), username.clone(), email.clone());
-        let database = state.database().clone();
-        database.read(move |connection| check(connection, &state, &request, &username, &email)).await?
-    };
-    let password = request.password.clone().unwrap_or_default();
-    let password_hash = tokio::task::spawn_blocking(move || password::hash(&password))
-        .await
-        .map_err(ApiError::internal)?;
-    let input = NewAccount {
-        username: username.clone(),
-        display_name: request.display_name.as_deref().unwrap_or("").trim().to_string(),
-        email: email.clone(),
-        password_hash: Some(password_hash),
-    };
-
-    let trusted_device_cookie = cookies::read(&origin.headers, trusted_device_name(origin.https));
-    let (context_state, context_origin) = (state.clone(), origin.clone());
-    let outcome = state
-        .database()
-        .clone()
-        .write(move |tx| {
-            let context = Context {
-                ip_address: &context_origin.address,
-                user_agent: &context_origin.user_agent,
-                https: context_origin.https,
-                trusted_device_cookie: trusted_device_cookie.as_deref(),
-                passkeys_available: flow::passkeys_available(&context_state.settings().operations.public_url),
-            };
-            write(tx, &context_state, &context, plan, &input)
-        })
-        .await;
-    let registered = match outcome {
-        Ok(registered) => registered,
-        // Somebody else wrote the same name or address after our check:
-        // answer as the check would have, not with a server error.
-        Err(error) if error.is_unique_violation() => {
-            let taken = state
-                .database()
-                .read({
-                    let (state, username, email) = (state.clone(), username.clone(), email.clone());
-                    move |connection| find_taken(connection, &to_upper_invariant(&username), &to_upper_invariant(&email), state.messages())
-                })
-                .await?;
-            return Err(if taken.is_empty() { error.into() } else { Problem::validation(taken).into() });
+    let mut password_hash: Option<String> = None;
+    let mut attempts = 0;
+    let registered = loop {
+        let plan = {
+            let (state, request, username, email) = (state.clone(), request.clone(), username.clone(), email.clone());
+            let database = state.database().clone();
+            database.read(move |connection| check(connection, &state, &request, &username, &email)).await?
+        };
+        let hash = match &password_hash {
+            Some(hash) => hash.clone(),
+            None => {
+                let password = request.password.clone().unwrap_or_default();
+                let made = tokio::task::spawn_blocking(move || password::hash(&password)).await.map_err(ApiError::internal)?;
+                password_hash = Some(made.clone());
+                made
+            }
+        };
+        let input = NewAccount {
+            username: username.clone(),
+            display_name: request.display_name.as_deref().unwrap_or("").trim().to_string(),
+            email: email.clone(),
+            password_hash: Some(hash),
+        };
+        let trusted_device_cookie = cookies::read(&origin.headers, trusted_device_name(origin.https));
+        let (context_state, context_origin) = (state.clone(), origin.clone());
+        let outcome = state
+            .database()
+            .clone()
+            .write(move |tx| {
+                let context = Context {
+                    ip_address: &context_origin.address,
+                    user_agent: &context_origin.user_agent,
+                    https: context_origin.https,
+                    trusted_device_cookie: trusted_device_cookie.as_deref(),
+                    passkeys_available: flow::passkeys_available(&context_state.settings().operations.public_url),
+                };
+                write(tx, &context_state, &context, plan, &input)
+            })
+            .await;
+        match outcome {
+            Ok(registered) => break registered,
+            // What the checks found has changed since: look again.
+            Err(WriteError::Stale) if attempts < 3 => attempts += 1,
+            Err(WriteError::Stale) => return Err(ApiError::internal("the instance kept changing under a registration")),
+            // Somebody else wrote the same name or address after our check:
+            // answer as the check would have, not with a server error.
+            Err(WriteError::Db(error)) if error.is_unique_violation() => {
+                let taken = state
+                    .database()
+                    .read({
+                        let (state, username, email) = (state.clone(), username.clone(), email.clone());
+                        move |connection| find_taken(connection, &to_upper_invariant(&username), &to_upper_invariant(&email), state.messages())
+                    })
+                    .await?;
+                return Err(if taken.is_empty() { error.into() } else { Problem::validation(taken).into() });
+            }
+            Err(WriteError::Db(error)) => return Err(error.into()),
         }
-        Err(error) => return Err(error.into()),
     };
 
     if registered.founded {
@@ -342,15 +392,20 @@ pub async fn register(State(state): State<AppState>, origin: Origin, Json(reques
         // code, and none could pass with it anyway: it is gone.
         state.setup_code().forget();
     }
+    // The account exists from here on: a notice that cannot be announced is
+    // logged, and the registration still succeeded.
     if let Some(welcome) = &registered.welcome {
         let announced = state
             .database()
             .read({
                 let welcome = welcome.clone();
-                move |connection| welcome::announcement(connection, &welcome)
+                move |connection| -> Result<_, DbError> { Ok(welcome::announcement(connection, &welcome)?) }
             })
-            .await?;
-        state.events().publish(announced);
+            .await;
+        match announced {
+            Ok(event) => state.events().publish(event),
+            Err(error) => tracing::warn!("the welcome of a new account could not be announced: {error}"),
+        }
     }
     created(&state, &origin, registered)
 }
@@ -391,6 +446,46 @@ fn created(state: &AppState, origin: &Origin, registered: Registered) -> ApiResu
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[tokio::test]
+    async fn a_plan_that_went_stale_before_the_write_is_not_carried_out() {
+        use crate::events::Unconnected;
+        use crate::seal::Sealer;
+        use crate::settings::Settings;
+        use crate::testing::new_database;
+        use std::sync::Arc;
+
+        let (_folder, database) = new_database();
+        let settings = Settings::load(&[("ASPNETCORE_ENVIRONMENT".into(), "Testing".into())]).unwrap();
+        let state = AppState::new(settings, database.clone(), Arc::new(Unconnected), Arc::new(Unconnected), Sealer::from_key([1; 32]));
+        let messages = state.messages();
+        let starter = starter::prepare(&starter::ServerRequest { name: Some("Crew".into()), ..Default::default() }, messages).ok().unwrap();
+        let input = || NewAccount { username: "maya".into(), display_name: "Maya".into(), email: "maya@example.test".into(), password_hash: None };
+        // Somebody else has founded the instance since the check.
+        let other = Id::random();
+        database
+            .write(move |tx| -> Result<(), DbError> {
+                tx.execute(
+                    "INSERT INTO \"Users\" (\"Id\", \"Username\", \"NormalizedUsername\", \"DisplayName\", \"IsDisabled\", \"SessionVersion\",
+                         \"SecurityRecoveryRequired\", \"AvatarColor\", \"CreatedAt\") VALUES (?1, 'x', 'X', 'X', 0, 0, 0, 'c', '2026-11-24 00:00:00')",
+                    [other],
+                )?;
+                Ok(())
+            })
+            .await
+            .unwrap();
+
+        let refused = database
+            .write(move |tx| {
+                let context = Context { ip_address: "1.2.3.4", user_agent: "", https: false, trusted_device_cookie: None, passkeys_available: false };
+                write(tx, &state, &context, Plan::Founding(starter), &input()).map(|_| ())
+            })
+            .await;
+
+        assert!(matches!(refused, Err(WriteError::Stale)));
+        let accounts: i64 = rusqlite::Connection::open(database.path()).unwrap().query_row("SELECT count(*) FROM \"Users\"", [], |r| r.get(0)).unwrap();
+        assert_eq!(accounts, 1);
+    }
 
     #[test]
     fn the_hue_is_the_hash_code_of_the_guid() {
