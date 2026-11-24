@@ -158,6 +158,20 @@ class Oracle(Server):
         run("docker", "cp", copy, CONTAINER + ":/tmp/data/stellarr.db")
         self.start()
 
+    def recover(self, username, reason="lost phone"):
+        """What `stellarr security recover` does, by the first server's own
+        command line, run on a copy of the database while the server is stopped."""
+        cli = os.environ["STELLARR_CLI"]
+        root = os.path.join(WORK, "oracle-cli")
+        os.makedirs(os.path.join(root, "db"), exist_ok=True)
+        self.stop()
+        run("docker", "cp", CONTAINER + ":/tmp/data/stellarr.db", os.path.join(root, "db", "stellarr.db"))
+        out = run(os.path.expanduser("~/.dotnet/dotnet"), cli, "--json", "security", "recover", username,
+                  "--reason", reason, "--yes", env=dict(os.environ, STELLARR_DATA_ROOT=root))
+        run("docker", "cp", os.path.join(root, "db", "stellarr.db"), CONTAINER + ":/tmp/data/stellarr.db")
+        self.start()
+        return json.loads(out)["data"]["recoveryCredential"]
+
     def database(self):
         self.stop()
         copy = os.path.join(WORK, "oracle-read.db")
@@ -216,6 +230,30 @@ class Rust(Server):
         db.commit()
         db.close()
         self.start()
+
+    def recover(self, username, reason="lost phone"):
+        """What the same command does to the rows, written out: every method,
+        remembered device, session, approved handoff, unused recovery code and
+        earlier credential ends, the account moves to a new version and waits
+        for recovery, and one credential is issued."""
+        credential = base64.urlsafe_b64encode(os.urandom(32)).decode().rstrip("=")
+        now = now_text()
+        user = user_id(self, username)
+        self.edit(
+            ('UPDATE "MfaMethods" SET "RevokedAt" = ? WHERE "UserId" = ? AND "RevokedAt" IS NULL', (now, user)),
+            ('UPDATE "TrustedDevices" SET "RevokedAt" = ? WHERE "UserId" = ? AND "RevokedAt" IS NULL', (now, user)),
+            ('UPDATE "UserSessions" SET "RevokedAt" = ? WHERE "UserId" = ? AND "RevokedAt" IS NULL', (now, user)),
+            ('UPDATE "DesktopBrowserLogins" SET "RedeemedAt" = ? WHERE "UserId" = ? AND "ApprovedAt" IS NOT NULL AND "RedeemedAt" IS NULL', (now, user)),
+            ('UPDATE "RecoveryCodes" SET "UsedAt" = ? WHERE "UserId" = ? AND "UsedAt" IS NULL', (now, user)),
+            ('UPDATE "CliRecoveryCredentials" SET "UsedAt" = ? WHERE "UserId" = ? AND "UsedAt" IS NULL', (now, user)),
+            ('UPDATE "Users" SET "SessionVersion" = "SessionVersion" + 1, "SecurityRecoveryRequired" = 1 WHERE "Id" = ?', (user,)),
+            ('INSERT INTO "SecurityEvents" ("Id","UserId","Kind","Detail","IpAddress","Device","CreatedAt") VALUES (?,?,?,?,?,?,?)',
+             (new_id(), user, "cli-recovery", "operator recovery: " + reason, "", "", now)),
+            ('INSERT INTO "CliRecoveryCredentials" ("Id","UserId","TokenHash","Reason","SecurityVersion","CreatedAt","ExpiresAt") '
+             'SELECT ?, "Id", ?, ?, "SessionVersion", ?, ? FROM "Users" WHERE "Id" = ?',
+             (new_id(), token_hash(credential), reason, now, now_text(600), user)),
+        )
+        return credential
 
     def database(self):
         copy = os.path.join(WORK, "rust-read.db")
@@ -321,6 +359,7 @@ class Recording:
         text = MOMENT.sub("<time>", text)
         text = re.sub(r'"code":"\d{6}"', '"code":"<digits>"', text)
         text = re.sub(r'"token":"[A-Za-z0-9_-]{20,}"', '"token":"<token>"', text)
+        text = re.sub(r'"credential":"\s*[A-Za-z0-9_-]{40,}\s*"', '"credential":"<credential>"', text)
         text = re.sub(r'"code":"[a-z0-9]{7}( [a-z0-9]{7}){3}"', '"code":"<typed recovery code>"', text)
         text = re.sub(r'"code":"[A-Z0-9]{7}(-[A-Z0-9]{7}){3}"', '"code":"<recovery code>"', text)
         text = RECOVERY.sub("<recovery code>", text)
@@ -395,7 +434,7 @@ def mails(count, wait=8.0):
     """The messages that arrived, oldest first, once `count` have."""
     deadline = time.time() + wait
     while True:
-        found = mailpit("GET", "/api/v1/messages")["messages"]
+        found = mailpit("GET", "/api/v1/messages?limit=1000")["messages"]
         if len(found) >= count or time.time() > deadline:
             break
         time.sleep(0.2)
@@ -862,15 +901,106 @@ def reset_refused(server, rec):
 
 
 
+@scenario
+def recover(server, rec):
+    """An operator's recovery: the credential the command line issued is
+    exchanged for the challenge that sets a new second step up."""
+    browser, secret, method, codes, _ = enrol_totp(rec, server, "recover")
+    ask(rec, "signed in before the recovery", browser, "GET", "/api/session")
+    credential = server.recover("recover")
+    ask(rec, "the session, after the recovery", browser, "GET", "/api/session")
+    anon = Browser(server.base)
+    ask(rec, "the password of an account waiting for recovery", anon, "POST", "/api/auth/login", {"username": "recover", "password": PASSWORD})
+    ask(rec, "redeem: nothing", anon, "POST", "/api/auth/recovery/redeem", {})
+    ask(rec, "redeem: too short", anon, "POST", "/api/auth/recovery/redeem", {"credential": "a" * 15})
+    ask(rec, "redeem: too long", anon, "POST", "/api/auth/recovery/redeem", {"credential": "a" * 513})
+    ask(rec, "redeem: a credential that is nothing", anon, "POST", "/api/auth/recovery/redeem", {"credential": "a" * 43})
+    ask(rec, "redeem: the credential, with spaces round it, not to be kept", anon, "POST", "/api/auth/recovery/redeem",
+        {"credential": "  %s  " % credential, "keepSignedIn": False})
+    ask(rec, "the challenge a reload would resume", anon, "GET", "/api/auth/mfa/pending")
+    ask(rec, "redeem: the credential again", Browser(server.base), "POST", "/api/auth/recovery/redeem", {"credential": credential})
+    challenge = anon.cookie("stellarr-dev-preauth").split(".")[0]
+    challenge = "%s-%s-%s-%s-%s" % (challenge[:8], challenge[8:12], challenge[12:16], challenge[16:20], challenge[20:])
+    ask(rec, "a code, for an enrolment", anon, "POST", "/api/auth/mfa/verify", {"challengeId": challenge, "code": "123456"})
+    started = ask(rec, "start a new app", anon, "POST", "/api/auth/mfa/enroll/totp/start", {"challengeId": challenge, "name": "New phone"})
+    secret, method = started.json()["secret"], started.json()["methodId"]
+    ask(rec, "confirm it", anon, "POST", "/api/auth/mfa/enroll/totp/confirm",
+        {"challengeId": challenge, "methodId": method, "code": totp_now(secret), "name": "New phone", "rememberDevice": True})
+    ask(rec, "the old password still signs in", Browser(server.base), "POST", "/api/auth/login", {"username": "recover", "password": PASSWORD})
+    leave(rec, server, ["recover"])
+
+
+def limits(server, rec):
+    """Each rate limit, on the defaults: the request that is refused, and what it is refused with."""
+    routes = [
+        ("LoginPoll", 120, "GET", "/api/auth/mfa/pending", None),
+        ("SecurityWrite", 30, "POST", "/api/auth/mfa/cancel", None),
+        ("Login", 10, "POST", "/api/auth/mfa/verify", {"challengeId": new_id(), "code": "000000"}),
+        ("AuthWrite", 5, "POST", "/api/auth/password/forgot", {"email": "nobody@example.test"}),
+    ]
+    for policy, permits, method, path, body in routes:
+        browser = Browser(server.base)
+        refused = None
+        for number in range(1, permits + 3):
+            answer = browser.send(method, path, body)
+            if answer.status == 429:
+                refused = number
+                rec.step("%s: the request that is refused" % policy, (method, path, json.dumps(body) if body else ""), answer)
+                break
+        rec.note("%s: refused from request %s of %d permitted" % (policy, refused, permits))
+    # The two second-step routes that share a policy share its count.
+    browser = Browser(server.base)
+    for number in range(1, 8):
+        answer = browser.post("/api/auth/mfa/email/send", {"challengeId": new_id()})
+        if answer.status == 429:
+            rec.note("AuthWrite, by the mailed-code route: refused from request %d" % number)
+            break
+
+
+def timing(servers):
+    """How long forgot takes for an address that is an account's and for one that is not."""
+    import statistics
+    for server in servers:
+        clear_mail()
+        samples = {"known": [], "unknown": []}
+        for index in range(200):
+            for kind, email in (("known", "shared@example.test"), ("unknown", "nobody%d@example.test" % index)):
+                browser = Browser(server.base)
+                start = time.perf_counter()
+                answer = browser.post("/api/auth/password/forgot", {"email": email})
+                samples[kind].append((time.perf_counter() - start) * 1000)
+                assert answer.status == 202, answer.status
+        for kind, values in samples.items():
+            values.sort()
+            cut = lambda p: values[min(len(values) - 1, int(len(values) * p))]
+            print("   %-12s %-8s n=%d  min %.0f  p10 %.0f  median %.0f  p90 %.0f  p99 %.0f  max %.0f ms  (mean %.1f, deviation %.1f)" % (
+                server.name, kind, len(values), values[0], cut(0.1), cut(0.5), cut(0.9), cut(0.99), values[-1],
+                statistics.mean(values), statistics.pstdev(values)))
+        print("   mails that arrived for the known address on %s: %d" % (server.name, len(mails(200, wait=20))))
+
+
 def main():
     names = sys.argv[1:] or list(SCENARIOS)
     first = second = None
     different = 0
     try:
+        if names == ["limits"]:
+            first, second = Oracle(limits_raised=False), Rust(limits_raised=False)
+            transcripts = []
+            for server in (first, second):
+                rec = Recording(server)
+                limits(server, rec)
+                transcripts.append(rec.lines)
+            print("== limits")
+            different += diff(transcripts[0], transcripts[1])
+            print("\n%d difference(s)" % different)
+            sys.exit(1 if different else 0)
         first, second = Oracle(), Rust()
-        recordings = []
         for server in (first, second):
             seed(server)
+        if names == ["timing"]:
+            timing((first, second))
+            sys.exit(0)
         for name in names:
             transcripts = []
             for server in (first, second):
