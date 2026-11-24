@@ -4,7 +4,7 @@
 // API, posts every signal a page sends in the order the page sent it, and
 // long-polls the event log and hands each event to the page whose session it
 // names, in log order. That is the whole signalling path of the contract
-// without SignalR in the middle.
+// without the API's realtime hub in the middle.
 
 import { spawn } from "node:child_process";
 import { randomBytes } from "node:crypto";
