@@ -157,6 +157,8 @@ impl Error {
     }
 
     /// The server's reply code, when the failure is a reply.
+    /// Inspect SMTP replies in protocol tests.
+    #[doc(hidden)]
     pub fn reply_code(&self) -> Option<u16> {
         self.code
     }
@@ -172,6 +174,8 @@ impl Error {
     /// True when the connection failed after the whole message was sent and
     /// before the server's answer arrived. The server may have accepted it,
     /// and a retry may then send it twice.
+    /// Inspect the delivery state in protocol tests.
+    #[doc(hidden)]
     pub fn may_have_been_delivered(&self) -> bool {
         self.maybe_delivered
     }

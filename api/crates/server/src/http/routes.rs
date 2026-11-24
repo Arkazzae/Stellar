@@ -165,6 +165,8 @@ impl Endpoints {
     /// Lets the JSON body of the route added last be up to `bytes`, where the
     /// ordinary limit is [`DEFAULT_JSON_BODY_BYTES`]; never more than the
     /// ceiling of the whole server.
+    /// Override the JSON ceiling in pipeline tests.
+    #[doc(hidden)]
     pub fn json_body_up_to(mut self, bytes: usize) -> Endpoints {
         let rules = self.rules_of_last();
         rules.json_body = true;

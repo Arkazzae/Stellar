@@ -103,6 +103,8 @@ impl Entry {
     /// Whether the archive says the name is UTF-8. A name without that flag
     /// is, by the format, in an old DOS code page; its bytes are still given
     /// as stored.
+    /// Observe the name flag in archive tests.
+    #[doc(hidden)]
     pub fn name_is_flagged_utf8(&self) -> bool {
         self.flags & FLAG_UTF8 != 0
     }
@@ -150,6 +152,8 @@ impl Entry {
 
     /// When the entry was last changed, in Unix seconds, read as UTC: the
     /// extended timestamp when there is one, else the DOS date and time.
+    /// Inspect the parsed timestamp in archive tests.
+    #[doc(hidden)]
     pub fn modified_unix(&self) -> i64 {
         self.unix_modified
             .unwrap_or_else(|| unix_from_dos(self.time, self.date))
@@ -245,6 +249,8 @@ impl<R: Read + Seek> ZipArchive<R> {
     /// A name that more than one entry carries, if any does. Which of them an
     /// extractor takes is a matter of the tool, so a caller that does not
     /// want the question should refuse such an archive.
+    /// Inspect duplicate names in archive tests.
+    #[doc(hidden)]
     pub fn duplicate_name(&self) -> Option<&[u8]> {
         let mut seen = std::collections::HashSet::with_capacity(self.entries.len());
         self.entries

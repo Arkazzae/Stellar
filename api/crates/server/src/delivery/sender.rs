@@ -104,6 +104,8 @@ impl Sender {
     }
 
     /// Whether push is set up on this instance.
+    /// Inspect sender availability in push tests.
+    #[cfg(test)]
     pub fn is_available(&self) -> bool {
         self.vapid.is_some()
     }
