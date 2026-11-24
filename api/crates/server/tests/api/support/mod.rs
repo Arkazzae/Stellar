@@ -1,0 +1,21 @@
+//! What the integration tests stand on: a server of their own for each test,
+//! and a client to talk to it.
+//!
+//! A test starts the real `stellarr-api` binary on a free port, with a
+//! temporary data folder, and waits until `/health/ready` answers. When the
+//! test's `Server` goes out of scope the process is killed and the folder
+//! removed. Tests run in parallel, each with a server of its own, so they
+//! share nothing.
+//!
+//! A test of the pipeline itself, which needs a route that fails or is rate
+//! limited, starts the server in the test's own process with
+//! [`Server::in_process`] and the routes it wants: the same library, the same
+//! pipeline, the same client.
+
+#![allow(dead_code)]
+
+mod client;
+mod server;
+
+pub use client::{Request, Response};
+pub use server::{Server, TempDir};
