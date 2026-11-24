@@ -295,13 +295,16 @@ async fn an_app_code_signs_in_a_session_that_passed_a_second_step_and_remembers_
     let user = world.user(Some("maya@example.test"));
     let (method, secret) = world.with_app(user).await;
     let (challenge, preauth) = world.challenge(user, PURPOSE_MFA);
+    // One code for both answers: a second one read later could belong to the
+    // next period and would be a new proof, not a replay.
+    let code = now_code(&secret);
 
     let answered = code_answer(
         &world,
         &challenge,
         &preauth,
         Some(method),
-        &now_code(&secret),
+        &code,
         true,
     )
     .await;
@@ -345,7 +348,7 @@ async fn an_app_code_signs_in_a_session_that_passed_a_second_step_and_remembers_
         &again,
         &again_preauth,
         Some(method),
-        &now_code(&secret),
+        &code,
         false,
     )
     .await;
@@ -359,13 +362,16 @@ async fn a_refused_link_leaves_the_proof_spent_and_the_person_signed_in() {
     let (method, secret) = world.with_app(user).await;
     let (challenge, preauth) = world.challenge(user, PURPOSE_MFA);
     let id = challenge.id.to_string();
+    // One code for both answers, so a period turning between them cannot make
+    // the second a new proof.
+    let code = now_code(&secret);
 
     let answered = answer(
         &world.state,
         &ask(&challenge, &preauth, &id),
         Answer::Code {
             method: Some(&method.to_string()),
-            code: &now_code(&secret),
+            code: &code,
         },
         true,
         |tx, completed| -> Result<(), DbError> {
@@ -409,7 +415,7 @@ async fn a_refused_link_leaves_the_proof_spent_and_the_person_signed_in() {
             &again,
             &again_preauth,
             Some(method),
-            &now_code(&secret),
+            &code,
             false
         )
         .await,
