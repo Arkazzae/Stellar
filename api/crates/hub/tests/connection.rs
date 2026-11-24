@@ -233,10 +233,7 @@ async fn a_streaming_invocation_is_answered_with_an_error() {
         r.client.json().await["error"],
         "The client attempted to invoke the non-streaming 'echo' method with a streaming invocation."
     );
-    assert_eq!(
-        r.client.json().await["error"],
-        "Unknown method 'nope'."
-    );
+    assert_eq!(r.client.json().await["error"], "Unknown method 'nope'.");
     assert_eq!(
         r.client.json().await["error"],
         "An unexpected error occurred invoking 'echo' on the server. HubException: Client sent 1 stream(s), Hub method expects 0."
