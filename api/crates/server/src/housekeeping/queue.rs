@@ -69,7 +69,8 @@ pub async fn drain(state: &AppState, batch: usize, stop: Stopping<'_>) {
     }
 }
 
-/// How many objects wait in the queue.
+/// Counts remaining objects for the housekeeping benchmark.
+#[cfg(test)]
 pub async fn pending(state: &AppState) -> Result<i64, DbError> {
     state
         .database()

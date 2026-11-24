@@ -64,11 +64,6 @@ pub async fn build(
         }
     }
 
-    let kept: Vec<(Id, i64)> = built
-        .iter()
-        .map(|card| (card.embed.id, card.position))
-        .collect();
-    let _ = kept;
     let replaced = replace(state, message, built).await;
     let (embeds, replaced) = match replaced {
         Ok(done) => done,

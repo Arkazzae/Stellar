@@ -44,7 +44,7 @@ async fn the_housekeeping_runs_once_at_start_and_says_what_it_did() {
         .await
         .expect("the run was logged");
     assert!(
-        line.contains("0 orphan attachments, 1 backup files and 1 log files; 0 object deletions remain queued."),
+        line.contains("0 orphan attachments, 1 backup files and 1 log files."),
         "{line}"
     );
     assert!(!folder.path().join("backups/backup-old.zip").exists());
