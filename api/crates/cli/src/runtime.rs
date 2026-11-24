@@ -11,7 +11,8 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use stellarr_api::seal::Sealer;
 use stellarr_api::settings::{Config, VARIABLES, Variable};
 
-use crate::backup::{NotYetBuilt, RestoreLibrary};
+use crate::archives::Archives;
+use crate::backup::RestoreLibrary;
 use crate::database::CliDatabase;
 use crate::errors::{CliError, CliOutcome, exit};
 use crate::invocation::{Invocation, is_blank, trim};
@@ -133,7 +134,7 @@ impl Runtime {
             environment,
             io,
             cancelled,
-            restore: Box::new(NotYetBuilt),
+            restore: Box::new(Archives),
         }
     }
 

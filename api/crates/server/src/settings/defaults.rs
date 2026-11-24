@@ -32,7 +32,6 @@ pub const BASE: &[(&str, &str)] = &[
     ("Maintenance:IntervalHours", "1"),
     ("Maintenance:BatchSize", "1000"),
     ("Maintenance:MessageChangeRetentionDays", "30"),
-    ("Backups:Enabled", "false"),
     ("Backups:IntervalHours", "24"),
     ("Backups:RetryMinutes", "15"),
     ("Backups:InitialDelayMinutes", "5"),

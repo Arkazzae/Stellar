@@ -11,7 +11,8 @@
 //! tests drive it; `main.rs` gives it the terminal.
 
 pub mod app;
-pub mod backup;
+pub mod archives;
+mod backup;
 pub mod catalog;
 pub mod config;
 pub mod database;

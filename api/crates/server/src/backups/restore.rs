@@ -214,6 +214,16 @@ pub fn write_result(data_root: &Path, result: &impl Serialize) -> std::io::Resul
     std::fs::rename(&pending, &path)
 }
 
+/// [`write_result`] for text that is already JSON.
+pub fn write_result_text(data_root: &Path, text: &str) -> std::io::Result<()> {
+    let folder = data_root.join(FOLDER_NAME);
+    std::fs::create_dir_all(&folder)?;
+    let path = folder.join(LAST_RESULT_NAME);
+    let pending = folder.join(format!("{LAST_RESULT_NAME}.partial"));
+    std::fs::write(&pending, text)?;
+    std::fs::rename(&pending, &path)
+}
+
 /// Stages a checked archive for the next start: copied, not moved (the archive
 /// may be one the panel lists, and the copy lives on the data volume, which a
 /// recreated container keeps), under a name nothing reads until the copy is
