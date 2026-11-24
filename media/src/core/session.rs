@@ -2,7 +2,6 @@
 //! what it receives and where its negotiation stands.
 
 use std::collections::{HashMap, HashSet, VecDeque};
-use std::net::SocketAddr;
 use std::time::Instant;
 
 use str0m::change::SdpPendingOffer;
@@ -12,7 +11,8 @@ use str0m::{IceConnectionState, Rtc};
 
 use super::downlink::{Downlink, RateMeter};
 use super::{
-    CONNECT_TIMEOUT, DISCONNECT_TIMEOUT, KEYFRAME_INTERVAL, MAX_SOURCE_ADDRS, OFFER_TIMEOUT,
+    CONNECT_TIMEOUT, DISCONNECT_TIMEOUT, Endpoint, KEYFRAME_INTERVAL, MAX_SOURCE_ADDRS,
+    OFFER_TIMEOUT,
 };
 use crate::sdp_text::{self, FormatOrders, OpusParams};
 
@@ -350,9 +350,9 @@ pub(crate) struct Session {
     /// The Opus parameters the browser gave each section it publishes, in
     /// its last offer.
     pub opus_params: OpusParams,
-    pub addrs: VecDeque<SocketAddr>,
+    pub addrs: VecDeque<Endpoint>,
     /// Every address a valid check of this browser has come from.
-    pub sources: HashSet<SocketAddr>,
+    pub sources: HashSet<Endpoint>,
     /// Trickled candidates handed to the `Rtc` so far.
     pub remote_candidates: usize,
     pub ingress: Counter,
@@ -566,7 +566,7 @@ impl Session {
 
     /// Routes a remote address to this session. Returns an address that no
     /// longer is, when the session already had as many as it may.
-    pub fn remember_addr(&mut self, addr: SocketAddr) -> Option<SocketAddr> {
+    pub fn remember_addr(&mut self, addr: Endpoint) -> Option<Endpoint> {
         if self.addrs.contains(&addr) {
             return None;
         }
