@@ -140,7 +140,7 @@ impl Tzif {
         }
 
         let mut types = Vec::with_capacity(header.types);
-        for info in infos.chunks_exact(6) {
+        for info in infos.as_chunks::<6>().0 {
             let offset = i32::from_be_bytes([info[0], info[1], info[2], info[3]]);
             if !(-MAX_OFFSET..=MAX_OFFSET).contains(&offset) {
                 return Err(Malformed("an offset is out of range"));

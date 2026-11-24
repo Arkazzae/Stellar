@@ -66,9 +66,9 @@ impl Huffman {
         }
 
         let mut left: i32 = 1;
-        for length in 1..16 {
+        for &count in &self.count[1..16] {
             left <<= 1;
-            left -= i32::from(self.count[length]);
+            left -= i32::from(count);
             if left < 0 {
                 return Err(Error::OversubscribedCode);
             }

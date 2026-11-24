@@ -189,7 +189,7 @@ pub async fn list(
     let Ok(query) = PageQuery::read(&values) else {
         return Ok(private(ApiError::bad_request().into_response()));
     };
-    let size = i64::from(query.limit.map_or(DEFAULT_PAGE_SIZE as i32, |l| l));
+    let size = i64::from(query.limit.unwrap_or(DEFAULT_PAGE_SIZE as i32));
     if !(1..=MAX_PAGE_SIZE).contains(&size) || query.before_sequence.is_some_and(|b| b <= 0) {
         return Ok(private(
             Problem::validation(vec![(
