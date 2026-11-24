@@ -75,6 +75,25 @@ mod tests {
     }
 
     #[test]
+    fn the_slot_goes_to_exactly_one_of_many_who_ask_at_once() {
+        let gate = PlaybackGate::default();
+        let (maja, server) = (Id::random(), Id::random());
+
+        let accepted = std::thread::scope(|scope| {
+            let askers: Vec<_> = (0..32)
+                .map(|_| scope.spawn(|| gate.try_acquire(maja, server, Duration::from_secs(60))))
+                .collect();
+            askers
+                .into_iter()
+                .map(|asker| asker.join().unwrap())
+                .filter(|accepted| *accepted)
+                .count()
+        });
+
+        assert_eq!(accepted, 1);
+    }
+
+    #[test]
     fn a_refusal_does_not_extend_the_window() {
         let gate = PlaybackGate::default();
         let (maja, server) = (Id::random(), Id::random());

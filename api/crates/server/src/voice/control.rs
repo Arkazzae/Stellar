@@ -372,6 +372,7 @@ impl Control {
         match self.client.send_collected(request).await {
             Ok(collected) => Ok(Answer {
                 status: collected.status,
+                json: is_json(&collected.headers),
                 body: collected.body,
                 route,
             }),
@@ -387,8 +388,19 @@ impl Control {
 
 struct Answer {
     status: StatusCode,
+    json: bool,
     body: bytes::Bytes,
     route: String,
+}
+
+/// Whether an answer says it is JSON, as `application/json` or a type that
+/// ends in `+json`.
+fn is_json(headers: &stellarr_outbound::HeaderMap) -> bool {
+    headers
+        .get(CONTENT_TYPE)
+        .and_then(|value| value.to_str().ok())
+        .map(|value| value.split(';').next().unwrap_or("").trim().to_ascii_lowercase())
+        .is_some_and(|kind| kind == "application/json" || kind.ends_with("+json"))
 }
 
 fn expect(answer: &Answer, status: StatusCode) -> Result<(), Unavailable> {
@@ -400,6 +412,11 @@ fn expect(answer: &Answer, status: StatusCode) -> Result<(), Unavailable> {
 }
 
 fn read<'a, T: Deserialize<'a>>(answer: &'a Answer, path: &str) -> Result<T, Unavailable> {
+    if !answer.json {
+        return Err(Unavailable::new(format!(
+            "the media server answered {path} with something that is not JSON"
+        )));
+    }
     serde_json::from_slice(&answer.body).map_err(|_| {
         Unavailable::new(format!(
             "the media server answered {path} with unreadable JSON"
