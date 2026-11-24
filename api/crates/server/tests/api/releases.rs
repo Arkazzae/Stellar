@@ -604,22 +604,25 @@ async fn the_name_a_package_is_saved_under_is_made_safe_for_every_browser() {
 }
 
 #[tokio::test]
-async fn a_manifest_may_be_written_in_the_spellings_the_first_server_read() {
+async fn a_manifest_is_read_by_exact_names_and_plain_values() {
     let server = Server::start().await;
     publish(server.folder(), &DESKTOP, "0.4.2", plain);
-    let mut text = std::fs::read_to_string(manifest_path(server.folder(), &DESKTOP)).unwrap();
-    text = text
-        .replace("schemaVersion", "SchemaVersion")
-        .replace("\"sizeBytes\":22", "\"sizeBytes\":\"22\"")
-        .replace("\"version\":\"0.4.2\"", "\"version\":\" 0.4.2\\t\"");
-    let mut bytes = b"\xEF\xBB\xBF".to_vec();
-    bytes.extend(text.into_bytes());
-    std::fs::write(manifest_path(server.folder(), &DESKTOP), bytes).unwrap();
+    let original = std::fs::read_to_string(manifest_path(server.folder(), &DESKTOP)).unwrap();
+    let marked = [b"\xEF\xBB\xBF".as_slice(), original.as_bytes()].concat();
+    let spellings: Vec<(&str, Vec<u8>)> = vec![
+        ("a name in capitals", original.replace("schemaVersion", "SchemaVersion").into_bytes()),
+        ("a size in quotes", original.replace("\"sizeBytes\":22", "\"sizeBytes\":\"22\"").into_bytes()),
+        ("a byte order mark", marked),
+    ];
 
-    let response = server.client().get(DESKTOP.describe).await;
+    assert_eq!(server.client().get(DESKTOP.describe).await.status, 200);
+    for (name, bytes) in spellings {
+        std::fs::write(manifest_path(server.folder(), &DESKTOP), bytes).unwrap();
 
-    assert_eq!(response.status, 200, "{}", response.text());
-    assert_eq!(response.json::<Value>()["version"], "0.4.2");
+        let response = server.client().get(DESKTOP.describe).await;
+
+        assert_eq!(response.status, 503, "{name}: {}", response.text());
+    }
 }
 
 // ---------------------------------------------------------------------------
