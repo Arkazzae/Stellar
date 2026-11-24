@@ -7,8 +7,26 @@ use rusqlite::Connection;
 use super::names::{server_group, user_group};
 use crate::values::Id;
 
+/// Who hears a change of `user`'s presence: the servers they belong to, and
+/// the people they share a friendship or a conversation with.
+pub struct Reach {
+    pub servers: Vec<Id>,
+    pub peers: Vec<Id>,
+}
+
 /// The groups a change of `user`'s presence goes to, servers first.
 pub fn presence_groups(connection: &Connection, user: Id) -> rusqlite::Result<Vec<String>> {
+    let reach = presence_reach(connection, user)?;
+    Ok(reach
+        .servers
+        .into_iter()
+        .map(server_group)
+        .chain(reach.peers.into_iter().map(user_group))
+        .collect())
+}
+
+/// The same, as the ids the groups are made from.
+pub fn presence_reach(connection: &Connection, user: Id) -> rusqlite::Result<Reach> {
     // No ORDER BY: the first server did not ask for one either, and the
     // order the rows come in is the order the groups are sent to.
     let mut servers =
@@ -34,9 +52,5 @@ pub fn presence_groups(connection: &Connection, user: Id) -> rusqlite::Result<Ve
         .query_map([user], |row| row.get(0))?
         .collect::<Result<_, _>>()?;
 
-    Ok(servers
-        .into_iter()
-        .map(server_group)
-        .chain(peers.into_iter().map(user_group))
-        .collect())
+    Ok(Reach { servers, peers })
 }

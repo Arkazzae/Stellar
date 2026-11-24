@@ -215,7 +215,7 @@ pub async fn remove(
 
 /// Tells everybody what the person looks like now, and the person what they
 /// themselves look like (their own status shows as it is).
-async fn broadcast_user_updated(state: &AppState, user: Id) -> Result<(), ApiError> {
+pub(crate) async fn broadcast_user_updated(state: &AppState, user: Id) -> Result<(), ApiError> {
     let row = state
         .database()
         .read(move |db| -> Result<Option<User>, DbError> { Ok(User::find(db, user)?) })

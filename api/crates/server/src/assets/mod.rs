@@ -219,7 +219,7 @@ pub(crate) fn escape_data_string(text: &str) -> String {
 
 /// Hands the object to the client as it takes it: a few pieces wait for a
 /// slow reader, and a client that goes stops the reading.
-fn stream(stored: StoredObject) -> Body {
+pub(crate) fn stream(stored: StoredObject) -> Body {
     let (sender, body) = crate::http::stream::channel(2);
     let mut object: ObjectBody = stored.body;
     tokio::spawn(async move {
