@@ -1082,7 +1082,7 @@ pub async fn remove_method(
             }
             // A new version ends every session and remembered device but this
             // session's.
-            let version = recovery::end_other_sessions(tx, caller.user, caller.session, now)?;
+            let version = recovery::end_other_sessions(tx, caller.user, Some(caller.session), now)?;
             let (short_lived, absolute): (bool, Timestamp) = tx.query_row(
                 "SELECT \"ShortLived\", \"AbsoluteExpiresAt\" FROM \"UserSessions\" WHERE \"Id\" = ?1",
                 [caller.session],
