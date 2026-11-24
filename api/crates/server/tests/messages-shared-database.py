@@ -742,6 +742,22 @@ def main():
                 print(f"rows of {table}: {len(ours[table])} identical")
         if mismatches:
             raise SystemExit(f"{mismatches} differences")
+    if "queries" in stages:
+        # How the two read a query: each variant is asked of both and the statuses are printed side by side.
+        cursor = legacy_cursor(busy, snapshot)
+        variants = [
+            "?limit=5", "?Limit=5", "?LIMIT=5", "?limit=%205", "?limit=+5", "?limit=5%20", "?limit=%2B5", "?limit=05", "?limit=5.0", "?limit=1e1",
+            "?limit=5&limit=6", "?limit=5&limit=", "?limit=&limit=5", "?limit=5,6", "?limit=", "?limit", "?limit=%35", "?limit=0x5", "?limit=99999999999",
+            "?limit=-0", "?limit=%E0%A5%AB", f"?cursor={cursor}", f"?CURSOR={cursor}", f"?cursor={cursor}&cursor={cursor}", f"?cursor={cursor}&cursor=",
+            f"?cursor=&cursor={cursor}", f"?cursor=%20{cursor}", "?cursor", "?unknown=1&limit=5", "?limit=5#frag",
+        ]
+        for query in variants:
+            for what, path in (("history", f"/api/channels/{busy}/messages{query}"), ("sync", f"/api/channels/{busy}/messages/sync{query.replace('cursor', 'after').replace('CURSOR', 'AFTER')}")):
+                a, b = pair.both("owner", "GET", path)
+                print(f"{what:8}{query[:60]:62}first {a[0]}  this {b[0]}" + ("" if a[0] == b[0] else "   <-- differs"))
+        for query in ["?after=5", "?After=5", "?after=%205", "?after=+5", "?after=5&after=6", "?after=", "?after=-0", "?after=5,6", "?after=0x5", "?after=9223372036854775807", "?after=9223372036854775808"]:
+            a, b = pair.both("owner", "GET", f"/api/channels/{busy}/messages/sync{query}")
+            print(f"sync    {query:62}first {a[0]}  this {b[0]}" + ("" if a[0] == b[0] else "   <-- differs"))
     print("ok")
 
 
