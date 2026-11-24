@@ -2,8 +2,8 @@
 //! defaults the instance ships with. Reading them from the environment is the
 //! caller's business.
 
-/// Where uploads are kept.
-#[derive(Clone, Debug, Default)]
+/// Where uploads are kept. `Debug` leaves the secret out.
+#[derive(Clone, Default)]
 pub struct StorageOptions {
     /// Files on the data volume, unless an S3-compatible store is named; the
     /// fields below are that store's.
@@ -12,6 +12,18 @@ pub struct StorageOptions {
     pub access_key: String,
     pub secret_key: String,
     pub bucket: String,
+}
+
+impl std::fmt::Debug for StorageOptions {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("StorageOptions")
+            .field("provider", &self.provider)
+            .field("endpoint", &self.endpoint)
+            .field("access_key", &self.access_key)
+            .field("secret_key", &"<hidden>")
+            .field("bucket", &self.bucket)
+            .finish()
+    }
 }
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]

@@ -3,8 +3,12 @@
 //! These tests move hundreds of megabytes, so they run only when asked:
 //!
 //! ```text
+//! cargo build -p stellarr-storage --example fake_s3
 //! cargo test -p stellarr-storage --test large -- --ignored --nocapture
 //! ```
+//!
+//! (The first line builds the server the bucket test starts; a run of
+//! `--test large` alone does not build examples, a plain `cargo test` does.)
 //!
 //! The size is `STELLARR_TEST_LARGE_MIB` (300 by default). The bucket test
 //! talks to the fake server as a process of its own (so its memory is not
@@ -270,7 +274,7 @@ fn spawn_fake() -> (ChildFake, String) {
         .spawn()
         .unwrap_or_else(|e| {
             panic!(
-                "cannot start {}: {e}; build examples first (cargo test builds them)",
+                "cannot start {}: {e}; run `cargo build -p stellarr-storage --example fake_s3` first",
                 examples.display()
             )
         });
