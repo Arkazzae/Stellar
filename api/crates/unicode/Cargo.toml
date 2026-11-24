@@ -7,3 +7,6 @@ description = "Unicode general categories and simple upper-casing, as the first 
 
 [lints]
 workspace = true
+
+[dev-dependencies]
+aws-lc-rs = { workspace = true }

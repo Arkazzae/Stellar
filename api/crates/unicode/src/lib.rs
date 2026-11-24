@@ -71,24 +71,35 @@
 //!
 //! # Normalization
 //!
-//! [`nfc`] puts a text in canonical composition, as the first server's
-//! platform does through its ICU library. Its data, `normalization_tables.rs`,
-//! is not written by hand: `generator/` is a small program that asks that
-//! library, on the machine it runs on, for the combining class of every code
-//! point, the one-level canonical decomposition of every character and which
-//! pairs compose back (all but the composition exclusions). It has to be run
-//! in the image the server is shipped in, whose ICU is the reference, and not
-//! on a development machine, whose ICU follows another Unicode:
+//! [`nfc`] puts a text in canonical composition. Its data,
+//! `normalization_tables.rs`, is not written by hand: the example
+//! `make_normalization_tables` makes it from two files of the Unicode
+//! Character Database, version 15.1.0, which is the version of the ICU library
+//! (74.2) of the first server's image: the tables made from the first server's
+//! own library there and the ones made from these files are the same, entry
+//! for entry. The files are not part of the repository. Fetch them, from
+//!
+//! - `https://www.unicode.org/Public/15.1.0/ucd/UnicodeData.txt`
+//! - `https://www.unicode.org/Public/15.1.0/ucd/CompositionExclusions.txt`
+//!
+//! into one folder, and run, from the `api` folder:
 //!
 //! ```sh
-//! dotnet build generator -c Release -o /tmp/generator
-//! docker run --rm -v /tmp/generator:/gen:ro --entrypoint dotnet \
-//!     stellarr-api-dev:local /gen/generator.dll > src/normalization_tables.rs
+//! cargo run -p stellarr-unicode --example make_normalization_tables -- <folder> \
+//!     > crates/unicode/src/normalization_tables.rs
 //! ```
 //!
-//! The tables of this version came from ICU 74.2 in that image, which follows
-//! version 15.1 of Unicode.
+//! The program checks the SHA-256 of each file against the one it has written
+//! in it and refuses another version. The standard's own conformance file,
+//! `NormalizationTest.txt` of the same version (same address), is checked by
+//! the ignored test `normalization_test_file`, which takes the same folder:
 //!
+//! ```sh
+//! UCD_FOLDER=<folder> cargo test -p stellarr-unicode --test normalization -- --ignored
+//! ```
+//!
+//! A new version of Unicode is a decision, like the tables of casing: change
+//! the version and the checksums in the example on purpose, and the tests.
 
 mod normalization;
 mod normalization_tables;
