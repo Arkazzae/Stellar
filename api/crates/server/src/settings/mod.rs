@@ -423,6 +423,40 @@ impl MailSettings {
     }
 }
 
+/// Web Push as the operator configured it: whether it is on and the contact
+/// and key pair the instance signs its requests with. The values are kept as
+/// written; whether they make a usable identity is decided where they are
+/// used, and a pair that is not usable makes push unavailable instead of
+/// stopping the start, as the first server did. The private key is never
+/// printed.
+#[derive(Clone, PartialEq, Eq)]
+pub struct PushSettings {
+    pub enabled: bool,
+    pub subject: String,
+    pub public_key: String,
+    pub private_key: String,
+}
+
+impl PushSettings {
+    fn load(config: &Config) -> PushSettings {
+        PushSettings {
+            // A value that is not true or false leaves push off.
+            enabled: matches!(config.flag("Push:Enabled"), Ok(Some(true))),
+            subject: config.raw("Push:Subject").unwrap_or("").to_string(),
+            public_key: config.raw("Push:PublicKey").unwrap_or("").to_string(),
+            private_key: config.raw("Push:PrivateKey").unwrap_or("").to_string(),
+        }
+    }
+}
+
+impl fmt::Debug for PushSettings {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("PushSettings")
+            .field("enabled", &self.enabled)
+            .finish_non_exhaustive()
+    }
+}
+
 /// What the environment holds for each secret an operator can also store in
 /// the panel, by the key it is read under. Whatever the panel stores wins; this
 /// is the fallback. A value is never printed.
@@ -684,6 +718,7 @@ pub struct Settings {
     pub relay: relay::RelaySettings,
     pub operations: OperationsSettings,
     pub mail: MailSettings,
+    pub push: PushSettings,
     pub secrets: EnvironmentSecrets,
     pub clients: ClientSettings,
     pub desktop: DesktopSettings,
@@ -760,6 +795,7 @@ impl Settings {
             relay: relay::RelaySettings::load(config),
             operations: OperationsSettings::load(config)?,
             mail: MailSettings::load(config)?,
+            push: PushSettings::load(config),
             secrets: EnvironmentSecrets::load(config),
             clients: ClientSettings::load(config)?,
             desktop: DesktopSettings::load(config)?,
