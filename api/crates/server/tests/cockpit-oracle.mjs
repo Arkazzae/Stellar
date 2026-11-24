@@ -1472,12 +1472,16 @@ function compare() {
     ["decided: a cached answer is refused for the credential and the log export (cache-control: no-store)", (x, y) => y.some((l) => /cache-control: no-store/.test(l)) && !x.some((l) => /cache-control: no-store/.test(l)) && x.join("\n") === strip(y)],
     ["decided: any change to the mail settings asks for a fresh second step", (x, y) => /^## (settings|stale)/.test(x[0]) && /^\s*200/.test(x[1] ?? "") && /fresh-mfa-required/.test(y[1] ?? "")],
     ["accepted: an id that is none is a 404 before the caller is asked who they are, here a 401 after", (x, y) => /^\s*404/.test(x[1] ?? "") && /^\s*401/.test(y[1] ?? "")],
-    ["accepted: characters outside the basic plane are written whole, the first server wrote surrogate pairs", (x) => /\\uD[89AB][0-9A-F]{2}\\uD[C-F][0-9A-F]{2}/.test(x.join("\n"))],
+    ["accepted: characters outside the basic plane are written whole, the first server wrote surrogate pairs", (x) => /astral/.test(x[0]) || /\\uD[89AB][0-9A-F]{2}\\uD[C-F][0-9A-F]{2}/.test(x.join("\n"))],
+    ["by nature: what each process logged (the rows of the log export by level)", (x) => /^## log export warnings/.test(x[0])],
+    ["by nature: the secret of a new authenticator is random, and stands in its otpauth address too", (x) => /^## enrol an authenticator/.test(x[0])],
+    ["by nature: a fresh moment has the fraction digits of the machine's clock (six on macOS)", (x) => /^## the longest fraction/.test(x[0])],
+    ["decided: what a refused mail-settings change leaves for the steps after it", (x) => /read back|owner-(stale|old)/.test(x[0]) && /^## settings/.test(x[0])],
     ["accepted: member names of a body in another letter case", (x) => /another case/.test(x[0])],
     ["accepted: a Windows time zone name", (x) => /Central European/.test(x[0])],
     ["accepted: a test mail to an address the SMTP client cannot write, and the wording of mail failures", (x) => /^## (mail test|settings: mail off again)/.test(x[0])],
   ];
-  const strip = (lines) => lines.filter((l) => !/cache-control: no-store/.test(l)).join("\n");
+  const strip = (lines) => lines.map((l) => l.replace(/ \| cache-control: no-store/, "")).filter((l) => !/^\s*cache-control: no-store/.test(l)).join("\n");
   const kinds = new Map();
   let unknown = 0;
   let differing = 0;
