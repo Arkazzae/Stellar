@@ -170,14 +170,14 @@ async fn login(
     provider: Option<Provider>,
 ) -> ApiResult<Response> {
     // A value that is not a flag is refused before anything else.
-    let keep_signed_in = match flag(&query, "keepSignedIn") {
+    let keep_signed_in = match query.flag("keepSignedIn") {
         Ok(flag) => flag,
         Err(refusal) => return Ok(no_store(refusal.into_response())),
     };
     let Some(provider) = provider else {
         return Ok(no_store(ApiError::not_found().into_response()));
     };
-    let return_url = query.text("returnUrl");
+    let return_url = query.text("returnUrl")?;
     let response = challenge(
         &state,
         &client,
@@ -256,7 +256,7 @@ async fn ticketed(
     let Some(provider) = provider else {
         return Ok(no_store(ApiError::not_found().into_response()));
     };
-    let return_url = query.text("returnUrl");
+    let return_url = query.text("returnUrl")?;
     let reauthenticating = kind == TicketKind::Reauthenticate;
     let refused = || {
         let page = if reauthenticating {
@@ -266,7 +266,7 @@ async fn ticketed(
         };
         no_store(redirect(&page))
     };
-    let ticket = query.text("ticket").unwrap_or_default();
+    let ticket = query.text("ticket")?.unwrap_or_default();
     let Ok(read) = ticket::read(state.single_sign_on().key(), kind, &ticket, unix_now()) else {
         return Ok(refused());
     };
@@ -293,21 +293,6 @@ pub fn actor_of(user: Id, session: Id, security_version: i64) -> Option<Actor> {
         session_id: session.to_string(),
         security_version: u32::try_from(security_version).ok()?,
     })
-}
-
-/// A query value read as `bool.TryParse` does, or nothing when there is none.
-fn flag(query: &QueryValues, name: &str) -> ApiResult<Option<bool>> {
-    let Some(text) = query.text(name).filter(|text| !text.is_empty()) else {
-        return Ok(None);
-    };
-    let trimmed = text.trim_matches(|c: char| c.is_whitespace() || c == '\0');
-    if trimmed.eq_ignore_ascii_case("true") {
-        Ok(Some(true))
-    } else if trimmed.eq_ignore_ascii_case("false") {
-        Ok(Some(false))
-    } else {
-        Err(ApiError::bad_request())
-    }
 }
 
 /// The address the provider is to answer to: this server's, as the request

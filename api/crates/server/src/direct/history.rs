@@ -37,7 +37,7 @@ pub async fn history(
     Path(conversation): Path<Id>,
     values: QueryValues,
 ) -> ApiResult<Response> {
-    let cursor = values.text("cursor");
+    let cursor = values.text("cursor")?;
     let limit = values.int("limit")?;
     let messages = *state.messages();
     if limit.is_some_and(|limit| !(1..=MAX_PAGE_SIZE).contains(&limit)) {

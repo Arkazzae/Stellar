@@ -26,22 +26,24 @@ const MAX_SYNC_PAGE_SIZE: i32 = 500;
 const UPSERT: i64 = 0;
 const RESET: i64 = 2;
 
-/// What a history request's query string says, read as the first server read
-/// it (see `http::QueryValues`).
+/// What a history request's query string says (see `http::QueryValues`).
 #[derive(Debug)]
 pub struct HistoryQuery {
     cursor: Option<String>,
     limit: Option<i32>,
 }
 
-impl<S: Send + Sync> FromRequestParts<S> for HistoryQuery {
+impl FromRequestParts<AppState> for HistoryQuery {
     type Rejection = ApiError;
 
-    async fn from_request_parts(parts: &mut Parts, _: &S) -> Result<HistoryQuery, ApiError> {
-        let values = QueryValues::parse(parts.uri.query());
+    async fn from_request_parts(
+        parts: &mut Parts,
+        state: &AppState,
+    ) -> Result<HistoryQuery, ApiError> {
+        let values = QueryValues::parse(parts.uri.query(), state.messages());
         Ok(HistoryQuery {
             limit: values.int("limit")?,
-            cursor: values.text("cursor"),
+            cursor: values.text("cursor")?,
         })
     }
 }
@@ -52,11 +54,14 @@ pub struct SyncQuery {
     limit: Option<i32>,
 }
 
-impl<S: Send + Sync> FromRequestParts<S> for SyncQuery {
+impl FromRequestParts<AppState> for SyncQuery {
     type Rejection = ApiError;
 
-    async fn from_request_parts(parts: &mut Parts, _: &S) -> Result<SyncQuery, ApiError> {
-        let values = QueryValues::parse(parts.uri.query());
+    async fn from_request_parts(
+        parts: &mut Parts,
+        state: &AppState,
+    ) -> Result<SyncQuery, ApiError> {
+        let values = QueryValues::parse(parts.uri.query(), state.messages());
         Ok(SyncQuery {
             after: values.long("after")?,
             limit: values.int("limit")?,

@@ -60,7 +60,11 @@ impl axum::extract::FromRequestParts<crate::state::AppState> for Chosen {
             .extensions
             .get::<crate::auth::Caller>()
             .ok_or_else(ApiError::unauthorized)?;
-        let named = crate::permissions::membership::selection(&parts.headers, parts.uri.query());
+        let named = crate::permissions::membership::selection(
+            &parts.headers,
+            parts.uri.query(),
+            state.messages(),
+        )?;
         let choice = state
             .database()
             .read(move |db| -> Result<_, crate::database::DbError> {

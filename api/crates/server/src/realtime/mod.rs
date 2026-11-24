@@ -45,7 +45,7 @@ use self::registry::Registry;
 use self::throttle::ThrottleGate;
 use crate::auth::cookies;
 use crate::auth::session::{self, Ticket};
-use crate::http::{ApiError, Endpoints};
+use crate::http::{ApiError, Endpoints, QueryValues};
 use crate::state::AppState;
 use crate::values::{Id, Timestamp};
 
@@ -135,7 +135,7 @@ pub fn endpoints(state: AppState, realtime: Arc<Realtime>) -> Endpoints {
         Config::default(),
         move |parts| {
             let state = state.clone();
-            async move { admit(&state, &parts).ok_or_else(|| ApiError::unauthorized().into_response()) }
+            async move { admit(&state, &parts).map_err(IntoResponse::into_response) }
         },
     );
     Endpoints::new().service(PATH, router)
@@ -144,21 +144,26 @@ pub fn endpoints(state: AppState, realtime: Arc<Realtime>) -> Endpoints {
 /// Lets in whoever the pipeline found signed in: the session cookie has been
 /// read and checked against the database before the request got here. Anyone
 /// else is refused as any route that needs a session refuses them.
-fn admit(state: &AppState, parts: &axum::http::request::Parts) -> Option<Who> {
-    let caller = parts.extensions.get::<session::Caller>().copied()?;
+fn admit(state: &AppState, parts: &axum::http::request::Parts) -> Result<Who, ApiError> {
+    let refuse = ApiError::unauthorized;
+    let caller = parts
+        .extensions
+        .get::<session::Caller>()
+        .copied()
+        .ok_or_else(refuse)?;
     // The pipeline has already opened the cookie; opening it again costs no
     // database and is how the hub learns which version of the account's
     // sessions the connection was let in with.
     let name = session::cookie_name(&state.settings().environment);
     let ticket = cookies::read(&parts.headers, name)
-        .and_then(|value| Ticket::open(state.sealer(), &value, Timestamp::now()))?;
-    Some(Who {
+        .and_then(|value| Ticket::open(state.sealer(), &value, Timestamp::now()))
+        .ok_or_else(refuse)?;
+    let requested_server =
+        QueryValues::parse(parts.uri.query(), state.messages()).text("serverId")?;
+    Ok(Who {
         user: caller.user,
         session: caller.session,
         version: ticket.version(),
-        requested_server: parts
-            .uri
-            .query()
-            .and_then(|query| names::query_value(query, "serverId")),
+        requested_server,
     })
 }

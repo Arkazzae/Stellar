@@ -497,11 +497,15 @@ async fn the_log_view_filters_pages_and_exports_without_a_secret_in_it() {
     let next = page["nextBefore"].as_u64().unwrap();
     let older = scene.owner.client.get(&format!("/api/cockpit/logs?limit=500&before={next}")).await.json::<Value>();
     assert!(older["entries"].as_array().unwrap().iter().all(|e| e["sequence"].as_u64().unwrap() < next));
-    for (query, expected) in [("limit=0", 1), ("limit=-5", 1)] {
+    for (query, expected) in [("limit=0", 1)] {
         let clamped = scene.owner.client.get(&format!("/api/cockpit/logs?{query}")).await.json::<Value>();
         assert_eq!(clamped["entries"].as_array().unwrap().len(), expected, "{query}");
     }
-    assert_eq!(scene.owner.client.get("/api/cockpit/logs?limit=abc").await.status, 400);
+    for bad in ["abc", "-5", "%2B5", "+5", "%205"] {
+        let refused = scene.owner.client.get(&format!("/api/cockpit/logs?limit={bad}")).await;
+        assert_eq!(refused.status, 400, "{bad}");
+        assert!(refused.json::<Value>()["errors"]["limit"].is_array(), "{bad}");
+    }
     let found = scene.owner.client.get("/api/cockpit/logs?search=%2F%2A%2A%2A").await.json::<Value>();
     assert!(!found["entries"].as_array().unwrap().is_empty());
 

@@ -402,12 +402,13 @@ async fn the_index_refuses_what_it_cannot_read() {
         assert!(response.json::<Value>()["errors"][field].is_array(), "{query}");
     }
     // A limit that is no number is refused before anything else is looked at.
-    for query in ["limit=abc", "limit=", "limit=5&limit=6"] {
+    for query in ["limit=abc", "limit=", "limit=5&limit=6", "limit=%205", "limit=%2B5", "limit=-5"] {
         let response = status(format!("{base}?{query}")).await;
-        assert_eq!((response.status.as_u16(), response.body.len()), (400, 0), "{query}");
+        assert_eq!(response.status.as_u16(), 400, "{query}");
+        assert!(response.json::<Value>()["errors"]["limit"].is_array(), "{query}");
     }
-    assert_eq!(status(format!("{base}?limit=%205")).await.status, 200);
-    assert_eq!(status(format!("{base}?limit=%2B5&KIND=ALL")).await.status, 200);
+    // A name is matched as it is written: another case names nothing.
+    assert_eq!(status(format!("{base}?KIND=videos")).await.status, 200);
 }
 
 #[tokio::test]

@@ -18,12 +18,12 @@ use axum::extract::FromRequestParts;
 use axum::http::request::Parts;
 use axum::http::{HeaderMap, StatusCode};
 use rusqlite::{Connection, OptionalExtension, params};
-use stellarr_messages::MessageKey;
+use stellarr_messages::{MessageKey, Messages};
 
 use crate::auth::Caller;
 use crate::auth::policy::{OPTIONAL, SecurityPolicy};
 use crate::database::DbError;
-use crate::http::{ApiError, Problem};
+use crate::http::{ApiError, Problem, QueryValues};
 use crate::state::AppState;
 use crate::values::{Id, Timestamp};
 
@@ -52,42 +52,16 @@ pub enum Choice {
 pub struct ActiveServer(pub Id);
 
 /// The name a request gives: the header when there is one, even an empty one,
-/// else the first `serverId` of the query (its name in any case, its value
-/// decoded). The first value counts where there are several.
-pub fn selection(headers: &HeaderMap, query: Option<&str>) -> Option<String> {
+/// else the `serverId` of the query. A query that names it twice is refused.
+pub fn selection(
+    headers: &HeaderMap,
+    query: Option<&str>,
+    messages: &Messages,
+) -> Result<Option<String>, ApiError> {
     if let Some(value) = headers.get(SERVER_HEADER) {
-        return Some(String::from_utf8_lossy(value.as_bytes()).into_owned());
+        return Ok(Some(String::from_utf8_lossy(value.as_bytes()).into_owned()));
     }
-    query?.split('&').find_map(|pair| {
-        let (name, value) = pair.split_once('=').unwrap_or((pair, ""));
-        decode(name)
-            .eq_ignore_ascii_case("serverId")
-            .then(|| decode(value))
-    })
-}
-
-/// A query component with `+` as a space and `%XX` as its byte; anything that
-/// is not a valid escape stays as it was.
-fn decode(text: &str) -> String {
-    let bytes = text.as_bytes();
-    let mut out = Vec::with_capacity(bytes.len());
-    let mut index = 0;
-    while index < bytes.len() {
-        let hex = |at: usize| bytes.get(at).and_then(|b| char::from(*b).to_digit(16));
-        match bytes[index] {
-            b'+' => out.push(b' '),
-            b'%' => match (hex(index + 1), hex(index + 2)) {
-                (Some(high), Some(low)) => {
-                    out.push(u8::try_from(high * 16 + low).unwrap_or(b'%'));
-                    index += 2;
-                }
-                _ => out.push(b'%'),
-            },
-            byte => out.push(byte),
-        }
-        index += 1;
-    }
-    String::from_utf8_lossy(&out).into_owned()
+    QueryValues::parse(query, messages).text("serverId")
 }
 
 /// The server the request is about. A name that is blank is none, which
@@ -128,7 +102,7 @@ impl FromRequestParts<AppState> for ActiveServer {
             .extensions
             .get::<Caller>()
             .ok_or_else(ApiError::unauthorized)?;
-        let named = selection(&parts.headers, parts.uri.query());
+        let named = selection(&parts.headers, parts.uri.query(), state.messages())?;
         let choice = state
             .database()
             .read(move |db| -> Result<Choice, DbError> {

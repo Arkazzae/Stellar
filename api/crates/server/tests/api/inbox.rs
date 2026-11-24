@@ -255,21 +255,21 @@ async fn the_unread_count_is_the_whole_inbox_of_the_server_not_the_page() {
 }
 
 #[tokio::test]
-async fn the_query_is_read_the_way_the_first_server_read_it() {
+async fn the_query_is_read_by_exact_names_and_plain_numbers() {
     let i = inbox().await;
     for n in 0..4 {
         i.plain(&i.ada, &format!("n{n}"));
     }
-    for (query, count) in [("?Limit=2", 2), ("?LIMIT=2", 2), ("?limit=+2", 2), ("?limit=%202", 2), ("?BEFORESEQUENCE=3", 2), ("?unknown=1&limit=1", 1)] {
+    for (query, count) in [("?limit=2", 2), ("?unknown=1&limit=1", 1), ("?beforeSequence=3", 2)] {
         assert_eq!(list(&i.ada.client, query).await["items"].as_array().unwrap().len(), count, "{query}");
     }
-    for query in ["?limit=", "?limit", "?beforeSequence=", "?limit=abc", "?limit=2&limit=3", "?limit=1e1", "?limit=2.0", "?limit=99999999999", "?beforeSequence=9999999999999999999999", "?limit=1_0", "?limit=%C2%B22"] {
+    for query in ["?limit=", "?limit", "?beforeSequence=", "?limit=abc", "?limit=2&limit=3", "?limit=1e1", "?limit=2.0", "?limit=99999999999", "?beforeSequence=9999999999999999999999", "?limit=1_0", "?limit=%C2%B22", "?limit=+2", "?limit=%202", "?limit=-1", "?beforeSequence=-4"] {
         let response = i.ada.client.get(&format!("/api/notifications{query}")).await;
         assert_eq!(response.status, 400, "{query}");
-        assert!(response.text().is_empty(), "{query}");
+        assert_eq!(response.header("content-type"), Some("application/problem+json"), "{query}");
         assert_eq!(response.header("cache-control"), Some("no-store"), "{query}");
     }
-    for query in ["?limit=0", "?limit=-1", "?limit=101", "?beforeSequence=0", "?beforeSequence=-4"] {
+    for query in ["?limit=0", "?limit=101", "?beforeSequence=0"] {
         let response = i.ada.client.get(&format!("/api/notifications{query}")).await;
         assert_eq!(response.status, 400, "{query}");
         assert_eq!(response.header("content-type"), Some("application/problem+json"));

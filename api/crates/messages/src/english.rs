@@ -119,6 +119,7 @@ pub(crate) fn text(key: MessageKey) -> &'static str {
 
         // Message history and search
         MessageKey::PageLimitRange => "The limit must be between 1 and {max}.",
+        MessageKey::QueryParameterInvalid => "The value of {name} in the address is not valid.",
         MessageKey::HistoryCursorInvalid => "The message history cursor is invalid.",
         MessageKey::DirectHistoryCursorInvalid => "The direct message history cursor is invalid.",
         MessageKey::SyncCursorInvalid => "The sync cursor or the limit is invalid.",
