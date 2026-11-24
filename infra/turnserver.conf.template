@@ -10,8 +10,9 @@ __TURN_TLS_LINE__
 __TURN_DTLS_LINE__
 listening-ip=0.0.0.0
 relay-ip=0.0.0.0
-min-port=49160
-max-port=49200
+# Compose publishes the UDP allocations one-to-one.
+min-port=__TURN_RELAY_MIN__
+max-port=__TURN_RELAY_MAX__
 fingerprint
 
 # The API hands out time-limited credentials derived from this shared secret.
