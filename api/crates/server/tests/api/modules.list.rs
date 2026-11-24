@@ -2,6 +2,7 @@ mod client_gate;
 mod database;
 mod health;
 mod mail;
+mod messages;
 mod oracle;
 mod permissions;
 mod pipeline;

@@ -345,7 +345,7 @@ pub fn load(
         let mut statement = db.prepare_cached(
             "SELECT \"MessageId\", \"Emoji\", \"UserId\", \"CreatedAt\" FROM \"MessageReactions\"
              WHERE \"MessageId\" IN (SELECT value FROM json_each(?1))
-             ORDER BY \"MessageId\", \"UserId\", \"Emoji\"",
+             ORDER BY \"MessageId\", \"Emoji\", \"UserId\"",
         )?;
         for row in statement.query_map([&wanted], |row| {
             Ok((
@@ -388,7 +388,7 @@ pub fn load(
             },
             content: row.content,
             created_at: row.created_at,
-            attachments: attachments.remove(&row.id).unwrap_or_default(),
+            attachments: attachments.get(&row.id).cloned().unwrap_or_default(),
             embeds: own_embeds.into_iter().map(|(_, embed)| embed).collect(),
             edited_at: row.edited_at,
             pinned_at: row.pinned_at,
