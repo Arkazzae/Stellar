@@ -10,6 +10,7 @@
 
 mod entry;
 mod page;
+mod query;
 
 pub use entry::{Entry, NewEntry, add, announce, announce_invitations_changed};
 
