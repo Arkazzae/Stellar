@@ -100,7 +100,10 @@ pub(super) async fn test_mail(State(state): State<AppState>, request: Request) -
     };
     let mut id = [0u8; 16];
     aws_lc_rs::rand::fill(&mut id).map_err(|_| ApiError::internal("no random numbers"))?;
-    let message = stellarr_mail::delivery_test(
+    // An address this client cannot write into a message (a quoted part
+    // before the @, an address literal, one past 254 bytes) is one the mail
+    // cannot go to: the operator is told so, as for any send that fails.
+    let message = match stellarr_mail::delivery_test(
         &from,
         &recipient,
         &name,
@@ -108,8 +111,15 @@ pub(super) async fn test_mail(State(state): State<AppState>, request: Request) -
         &transport,
         u128::from_be_bytes(id),
         &messages,
-    )
-    .map_err(ApiError::internal)?;
+    ) {
+        Ok(message) => message,
+        Err(error) => {
+            return Err(Problem::new(StatusCode::BAD_GATEWAY)
+                .title(messages.get(MessageKey::CockpitTestMailFailed, &[])?)
+                .detail(error.to_string())
+                .into());
+        }
+    };
     match state.mail().send(&message, &transport).await {
         Outcome::Sent { id } => Ok(json_response(
             StatusCode::OK,

@@ -76,6 +76,8 @@ realtime/        the hub the web client keeps open: connections, presence, metho
 voice/           a group: voice rooms and the media sessions behind them: the hub methods, the client of the media server, its workers, the two moderation routes
 mail/            sending mail: the settings, one delivery service, the queue of security alerts
 secrets/         the secrets an operator sets in the panel, sealed in the database
+panel/           the gate of the operator's panel and the line it writes in the audit log
+cockpit/         a group: the operator's panel, /api/cockpit (people, roles, servers, sessions, runtime, logs, settings, secrets)
 testing.rs       helpers the unit tests share (not compiled outside tests)
 ```
 
@@ -1300,6 +1302,14 @@ somebody else's or that came after the account's security moved), `sso_policy`
 for a sign-up while everybody must have one) and `sso_named` (named providers
 only). Each prints the rows it left. A difference that is on purpose is listed
 in the script's `KNOWN` with its reason, and is printed as known.
+
+- The operator panel's runtime figures (memory, threads, processor use) are read
+  from `/proc` and are zero where there is none (macOS); the "heap" is the process's
+  mapped data. The API service's detail says `Rust <version>`. Characters outside the
+  basic plane are written raw in JSON; the first server wrote them as surrogate pairs.
+  A test mail to an address the SMTP client cannot write into a message (a quoted part
+  before the @, an address literal, one over 254 bytes) is answered 502 with the reason;
+  the first server sent to those.
 
 ## Comparing uploads with the first server
 
