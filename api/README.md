@@ -875,6 +875,27 @@ makes cargo build the crate again when the variable changes. Nothing else reads 
 variable, and nothing else spells the version: the discovery document takes it from
 here.
 
+## Limits of voice that the first server has too
+
+These are not fixed here, and are written down so that nobody takes them for
+guarantees:
+
+- A seat, and the media session it holds, outlive the right to sit there when a
+  permission is taken away, when the channel is made private, or when it is
+  deleted, until the person leaves or their connection ends. Joining again needs
+  the right; a seat already held does not. Being removed from the server, or the
+  account being disabled, does free it (see `voice::leave_server_rooms` and the
+  watcher of sessions). The owner will decide about the rest separately.
+- Sessions to close wait in a queue of 4,096. Past that the oldest is dropped
+  and nothing reconciles the media server afterwards, so a dropped session lives
+  until the media server is reset. The queue is worked from the front, so one
+  close that always fails holds up the ones behind it.
+- The credentials for the relay are per account, valid for an hour, and cannot be
+  withdrawn before that.
+- A malformed event from the media server (not an object, or without a type or
+  a session) makes the whole answer unreadable: the pump asks again from the same
+  place and stalls on it, as long as the media server keeps it in its log.
+
 ## Known differences from the first server
 
 - Routes are matched case-sensitively; the first server matched them without
