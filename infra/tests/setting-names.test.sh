@@ -10,9 +10,13 @@ repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 cd "$repo_root"
 
 # Names the image reads that are no operator's setting:
-#   STELLARR_DATA_ROOT  the image's own data path, set by the Dockerfile
-#   STELLARR_API_URL    the operator CLI's own, described in docs/admin/cli.md
-exceptions=(STELLARR_DATA_ROOT STELLARR_API_URL)
+#   STELLARR_DATA_ROOT    the image's own data path, set by the Dockerfile
+#   STELLARR_API_URL      the operator CLI's own, described in docs/admin/cli.md
+#   STELLARR_ENVIRONMENT  the environment the API runs in, which the entrypoint
+#                         sets to Production whatever .env holds
+#   STELLARR_API_LISTEN   where the API listens, which the entrypoint sets to
+#                         the loopback address nginx forwards to
+exceptions=(STELLARR_DATA_ROOT STELLARR_API_URL STELLARR_ENVIRONMENT STELLARR_API_LISTEN)
 
 failed=0
 problem() {
@@ -22,8 +26,9 @@ problem() {
 
 only() { grep -oE 'STELLARR_[A-Z0-9_]+' | sort -u; }
 
-# The table: one row per line, the name first.
-table=$(grep -oE 'new\("STELLARR_[A-Z0-9_]+"' server/Stellarr.Api/Operations/StellarrVariables.cs | only)
+# The table: every quoted name above the tests of the file, which are not part
+# of it. rustfmt may wrap a row, so the name is not always on the line of `row(`.
+table=$(sed '/^#\[cfg(test)\]/,$d' api/crates/server/src/settings/variables.rs | grep -oE '"STELLARR_[A-Z0-9_]+"' | only)
 # A read is ${NAME...}; the names the entrypoint only exports to the media
 # server never appear so.
 scripts=$(grep -ohE '\$\{STELLARR_[A-Z0-9_]+' infra/entrypoint.sh infra/settings.sh infra/tls-maintenance.sh | only)
@@ -60,7 +65,7 @@ if grep -nE '^[[:space:]]*[A-Za-z_][A-Za-z0-9_]*=' .env.example >&2; then
   problem ".env.example assigns the lines above; every line must be a comment."
 fi
 if grep -nE '^#[[:space:]]*[A-Z][A-Za-z]*__[A-Za-z]' .env.example >&2; then
-  problem ".env.example names a raw .NET key on the lines above."
+  problem ".env.example names a raw Section__Key setting on the lines above."
 fi
 
 if (( failed )); then
