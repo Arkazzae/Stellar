@@ -9,6 +9,7 @@ use stellarr_messages::{MessageKey, Messages};
 
 use super::peer_in;
 use crate::auth::Caller;
+use crate::http::{DEFAULT_PAGE_SIZE, MAX_PAGE_SIZE, valid_page_size};
 use crate::http::{ApiError, ApiResult, Path, QueryValues, json_response};
 use crate::messages::cursor::HistoryCursor;
 use crate::messages::field_problem;
@@ -17,8 +18,6 @@ use crate::social::is_blocked;
 use crate::state::AppState;
 use crate::values::{Id, Timestamp};
 
-const DEFAULT_PAGE_SIZE: usize = 50;
-const MAX_PAGE_SIZE: i32 = 100;
 
 /// One page, oldest message first so that a client can prepend the whole array.
 #[derive(Serialize)]
@@ -40,7 +39,7 @@ pub async fn history(
     let cursor = values.text("cursor")?;
     let limit = values.int("limit")?;
     let messages = *state.messages();
-    if limit.is_some_and(|limit| !(1..=MAX_PAGE_SIZE).contains(&limit)) {
+    if limit.is_some_and(|limit| !valid_page_size(limit)) {
         return Err(field_problem("limit", &messages, MessageKey::PageLimitRange, &[("max", &MAX_PAGE_SIZE)]));
     }
     let me = caller.user;
@@ -78,7 +77,7 @@ fn read_page(
             }
         },
     };
-    let size = limit.map_or(DEFAULT_PAGE_SIZE, |limit| limit as usize);
+    let size = limit.unwrap_or(DEFAULT_PAGE_SIZE) as usize;
     let fetched = i64::try_from(size + 1).unwrap_or(i64::MAX);
     let rows: Vec<(Id, Timestamp)> = match page.before {
         Some((at, id)) => {

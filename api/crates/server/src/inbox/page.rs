@@ -10,13 +10,13 @@ use super::query::PageQuery;
 use super::entry::{COLUMNS, Entry, announce, announce_all_read};
 use crate::auth::Caller;
 use crate::database::DbError;
+use crate::http::{MAX_PAGE_SIZE, valid_page_size};
 use crate::http::{ApiError, ApiResult, Path, Problem, QueryValues, json_response};
 use crate::permissions::membership::ActiveServer;
 use crate::state::AppState;
 use crate::values::{Id, Timestamp};
 
-const DEFAULT_PAGE_SIZE: i64 = 30;
-const MAX_PAGE_SIZE: i64 = 100;
+const DEFAULT_PAGE_SIZE: i32 = 30;
 
 /// What the inbox lists and counts: the entries of the active server, and the
 /// invitations to other servers for as long as the invite can still be used.
@@ -182,8 +182,8 @@ pub async fn list(
         Ok(query) => query,
         Err(refusal) => return Ok(private(refusal.into_response())),
     };
-    let size = i64::from(query.limit.unwrap_or(DEFAULT_PAGE_SIZE as i32));
-    if !(1..=MAX_PAGE_SIZE).contains(&size) || query.before_sequence.is_some_and(|b| b <= 0) {
+    let limit = query.limit.unwrap_or(DEFAULT_PAGE_SIZE);
+    if !valid_page_size(limit) || query.before_sequence.is_some_and(|b| b <= 0) {
         return Ok(private(
             Problem::validation(vec![(
                 "page".into(),
@@ -194,6 +194,7 @@ pub async fn list(
             .into_response(),
         ));
     }
+    let size = i64::from(limit);
     let before = query.before_sequence;
     let page = state
         .database()
