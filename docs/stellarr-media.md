@@ -13,7 +13,7 @@ See [Voice and RTC protocol](./rtc-protocol.md) for bootstrap configuration, `Vo
 | Forwarded media | Microphone audio, camera video, screen video, and screen audio |
 | Media processing | Packet-level RTP header rewriting and forwarding; no decoding, mixing, or transcoding |
 | Authorization | The hub authorizes voice seats; `stellarr-media` accepts commands only on its loopback control API |
-| Signaling path | Browser ↔ hub (SignalR protocol) ↔ `stellarr-media` (`127.0.0.1:5200`) |
+| Signaling path | Browser ↔ hub (`/hubs/app`, `stellarr.v1` WebSocket) ↔ `stellarr-media` (`127.0.0.1:5200`) |
 | Connections per client | Single `RTCPeerConnection` (`bundlePolicy: "max-bundle"`) |
 | Offer direction | Browser offers published tracks (`sendonly`); `stellarr-media` offers forwarded tracks (`sendonly` to the receiver) |
 | Glare resolution | Browser is the impolite peer; `stellarr-media` is the polite peer |
@@ -29,7 +29,7 @@ flowchart LR
     BrowserA["Participant A (Browser)"]
     BrowserB["Participant B (Browser)"]
     Turn["coturn (:3478 / 49160-49200/udp)"]
-    Hub["Hub (SignalR protocol, /hubs/app)"]
+    Hub["Hub (stellarr.v1 WebSocket, /hubs/app)"]
     Media["stellarr-media (:49000/udp)"]
 
     BrowserA <-->|"OpenMediaSession / SendMediaSignal"| Hub
@@ -126,14 +126,14 @@ Each `Track` entry in the directory has the shape:
 - **Bounds & atomicity**: Lists accept up to `4,096` unique `mid`s (`1–16` printable ASCII characters, no whitespace). Invalid lists are rejected (`422 invalid-request`) without modifying the active subscription list.
 - **No SDP renegotiation**: Updating subscriptions toggles RTP packet forwarding only; transceivers, `mid`s, and the track directory remain unchanged.
 - **Resume without renegotiation**: Resuming a paused track continues outgoing RTP sequence numbers contiguously (preserving publisher timestamps) and issues a rate-limited PLI keyframe request for video. Receiver PLIs for unsubscribed or held-back m-lines are ignored.
-- **Client subscription policy**: The browser orders subscriptions as: all microphones → watched screen video and screen audio → cameras in directory order (`VoiceClient.setReceivePreferences({ screen, cameras })`). Subscription updates are queued ahead of matching SDP `answer` signals in the serialized SignalR outbox and throttled to at most once every `250 ms`.
+- **Client subscription policy**: The browser orders subscriptions as: all microphones → watched screen video and screen audio → cameras in directory order (`VoiceClient.setReceivePreferences({ screen, cameras })`). Subscription updates are queued ahead of matching SDP `answer` signals in the serialized hub outbox and throttled to at most once every `250 ms`.
 
 ### Negotiation rules
 
 ```mermaid
 sequenceDiagram
     participant B as Browser
-    participant H as Hub (SignalR protocol)
+    participant H as Hub (/hubs/app)
     participant M as stellarr-media (:5200)
 
     B->>H: JoinVoice(channelId)
@@ -197,13 +197,14 @@ A media session is bound to an active voice seat in the presence seats (`realtim
 
 | Trigger | Source |
 | --- | --- |
-| User leaves voice | `LeaveVoice` |
-| Hub connection disconnects | the hub's end-of-connection handler (`realtime/application.rs`) |
-| Newer browser tab takes the seat | `JoinVoice` (`VoiceSessionReplaced`) |
-| User switches voice rooms | `JoinVoice` (from a previous room) |
-| Direct call declined or user blocked | `DeclineDirectCall`, `SocialEndpoints` |
-| Moderator kicks or moves user in voice | `VoiceModerationEndpoints` |
-| Moderator kicks or bans user from server | `ModerationEndpoints` |
+| User leaves voice | `LeaveVoice` (`voice/hub.rs`) |
+| Hub connection disconnects | End-of-connection handler (`realtime/application.rs`) |
+| Newer browser tab takes the seat | `JoinVoice` (`VoiceSessionReplaced`, `voice/hub.rs`) |
+| User switches voice rooms | `JoinVoice` from a previous room (`voice/hub.rs`) |
+| Direct call declined or user blocked | `DeclineDirectCall` (`voice/hub.rs`), `social/relations.rs` |
+| Moderator kicks or moves user in voice | `voice/moderation.rs` |
+| Moderator kicks or bans user from server | `moderation/` |
+| Role, override, channel, or server change removes `viewChannel` or `connect` | `voice::enforce` (`voice/rooms.rs`, emitting `VoiceChannelKicked`) |
 
 The presence seats detach the session immediately in memory and enqueue a `DELETE /v1/sessions/{sessionId}` job in the session closer (`voice/closer.rs`, retrying every `2 s` up to a bounded queue of `4,096` pending deletes). Calling `JoinVoice` again for the room the connection already occupies is a no-op and preserves the existing session.
 
@@ -380,7 +381,7 @@ Each receiving session runs independent GoogCC bandwidth estimation (`str0m`) dr
 - **IPv6 or direct ICE-TCP**: The SFU media socket binds IPv4 UDP only; clients restricted to TCP connect through `coturn`.
 
 > [!WARNING]
-> Call media is encrypted in transit between each browser and `stellarr-media` via DTLS-SRTP. Because `stellarr-media` terminates SRTP on each leg to forward packets, the audio and video of server voice channels—and of 1:1 direct calls in conversations without end-to-end encryption—are decrypted in process memory on the host running the container. Only a 1:1 direct call in a conversation with end-to-end encryption enabled is encrypted end-to-end between the two browsers.
+> Call media is encrypted in transit between each browser and `stellarr-media` via DTLS-SRTP. Because `stellarr-media` terminates SRTP on each leg to forward packets, the audio and video of server voice channels (and of 1:1 direct calls in conversations without end-to-end encryption) are decrypted in process memory on the host running the container. Only a 1:1 direct call in a conversation with end-to-end encryption enabled is encrypted end-to-end between the two browsers.
 
 ## End-to-end encrypted calls
 

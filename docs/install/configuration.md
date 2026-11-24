@@ -62,14 +62,14 @@ Set byte limits to `0` (or a negative integer) to disable the corresponding quot
 | `STELLARR_MIN_FREE_BYTES` | bytes | `1073741824` (1 GiB) | Minimum free disk space that must remain on `/data/stellarr` after an upload. |
 | `STELLARR_MAX_CONCURRENT_UPLOADS` | integer (`1–32`) | `4` | Maximum concurrent uploads processed by the API. |
 
-Per-file size limits by media type: images `10 MiB` (plus optional `1 MiB` preview), audio `25 MiB`, general files `25 MiB`, and video `100 MiB` (plus optional `2 MiB` poster). Nginx and Kestrel reject request bodies larger than `128 MiB`.
+Per-file size limits by media type: images `10 MiB` (plus optional `1 MiB` preview), audio `25 MiB`, general files `25 MiB`, and video `100 MiB` (plus optional `2 MiB` poster). Nginx and the API reject request bodies larger than `128 MiB`.
 
 ## Mail
 
 Password-reset links, email 2FA codes, email-change confirmations, security alerts, and opt-in activity notifications are sent via SMTP (configured in **Cockpit → Settings**) or Resend (enabled in **Cockpit → Integrations**).
 
 > [!NOTE]
-> Secrets saved in Cockpit (`mail.smtp-password`, `mail.resend-api-key`) are encrypted with the instance's data-protection keys (`/data/stellarr/keys/`), override `.env`, and are never returned to browsers. Clearing a secret in Cockpit or via `stellarr secrets clear` restores the `.env` fallback.
+> Secrets saved in Cockpit (`mail.smtp-password`, `mail.resend-api-key`, `giphy.api-key`, and `cloudflare.r2.*`) are sealed with AES-256-GCM under keys derived from `/data/stellarr/keys/master.key`, override `.env`, and are never returned to browsers. Clearing a secret in Cockpit or via `stellarr secrets clear` restores the `.env` fallback.
 
 | Variable | Type | Default | Description |
 | --- | --- | --- | --- |
@@ -119,7 +119,7 @@ Oidc__Providers__work__TrustProviderMfa=true
 Oidc__Providers__work__ProviderMfaAmr=mfa,hwk
 ```
 
-- A provider is active only when its `Authority` is an `https://` URL and both `ClientId` and `ClientSecret` (or `ClientSecretFile`) are set. Invalid provider IDs abort API startup.
+- A provider is active only when its `Authority` is an `https://` URL and both `ClientId` and `ClientSecret` (or `ClientSecretFile`) are set. Invalid provider IDs or custom `Oidc__CallbackPath` overrides abort API startup (callback paths are fixed per provider).
 - Users link identities under **Settings → Login and security → Sign-in providers**. Identities match strictly by `(issuer, subject)`, never by email address.
 - When an unlinked provider identity signs in, Stellarr holds the verified identity in a 10-minute browser-bound cookie at `/link-account`, allowing the user to either sign in with an existing password to link the account or (if enabled for that provider in **Cockpit → Integrations → Sign-in providers** and the user holds an invite) create a passwordless account. See [Account security](../admin/account-security.md#linking-an-identity-provider).
 - Stellarr requests `openid profile email` scopes and reads `name`, `preferred_username`, `email`, and `email_verified` from the ID token or userinfo endpoint.
@@ -189,9 +189,9 @@ Any value other than `en` or `pl` aborts API startup. Existing database records 
 The API writes structured logs to container stdout/stderr (`docker compose logs`) and to Cockpit's in-memory **Logs** buffer (retaining the latest 10,000 entries). Default log output includes:
 
 - Information, warnings and errors from every component
-- One summary line per API request (`POST /api/channels/…/messages 201 in 12 ms` under `Stellarr.Api.Requests`), excluding routine `/health/ready` probes
-- Operational milestones: startup, media server epoch resets, backup jobs, and hourly maintenance
-- The one-time owner [setup code](quick-start.md#4-create-the-owner-account-and-first-server) on startup while the instance has zero accounts (logged at `Warning` level so it remains visible under stricter log filters)
+- One summary line per API request (`POST /api/channels/…/messages 201 in 12 ms` under `Stellarr.Api.Requests`), excluding routine `/health/ready` and `/health/live` probes. Secrets in request paths (such as invite codes and confirmation/reset tokens) and unrecognized segments on unmatched routes are masked before logging.
+- Operational milestones: startup, media server epoch resets, backup jobs, and hourly maintenance.
+- The one-time owner [setup code](quick-start.md#4-create-the-owner-account-and-first-server) on startup while the instance has zero accounts (`Stellarr.Api.Logging.StartupLog`), plus any object-store readiness warnings (`Stellarr.Api.Logging.ObjectStore`). Both targets write only to container stdout/stderr and are omitted from Cockpit's in-memory log buffer so authenticated browser sessions cannot read setup codes or upstream bucket error strings.
 
 Every category logs at `Information` and above unless set otherwise. A category is the name a line is logged under, which is what Cockpit's **Logs** page shows as its source: the API's own are `Stellarr.Api.Requests` (the request lines), `Stellarr.Api.Backups`, `Stellarr.Api.Host`, `Stellarr.Api.Mail`, `Stellarr.Api.Realtime`, `Stellarr.Api.Security` and `Stellarr.Api.Secrets`; the libraries it uses log under their crate names, such as `hyper` or `rustls`, and `stellarr_api` is every other module of the API. A level is one of `Trace`, `Debug`, `Information`, `Warning`, `Error`, `Critical` or `None`. Names of ASP.NET or Entity Framework categories (`Microsoft.AspNetCore` and the like) mean nothing to this server.
 

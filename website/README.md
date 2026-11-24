@@ -1,6 +1,6 @@
 # Stellarr project website
 
-Source for the public Stellarr website (`https://stellarr.online`): a single scrolling page that shows what Stellarr does and how to install it. The call settings and the translation example are small working copies of the app's own controls, with the presets, hints and labels taken from the web client.
+Source for the public Stellarr website (`https://stellarr.online`): a single scrolling page that shows what Stellarr does and how to install it. The call settings, translation example, and theme studio are small working copies of the app's own controls, with the presets, hints, palettes, and labels taken from the web client.
 
 Built with vanilla JavaScript and [Vite](https://vite.dev), with no runtime dependencies. `website/` is a standalone npm project outside the root monorepo workspaces and is not included in the Stellarr container image.
 
@@ -20,7 +20,7 @@ npm run preview   # preview dist/ locally
 | --- | --- |
 | Page copy, links, install command and the icon sprite | `index.html` |
 | Colors, typography and layout | `src/styles.css` |
-| Star field, pause button, call settings, translation example, copy button | `src/main.js` |
+| Star field, pause button, call settings, translation example, theme studio, copy button | `src/main.js` |
 | Resized images used by the page | `src/images/` |
 
 The star field behind the hero and the hosting section is drawn on a canvas and leans with the pointer. It stops when the section is off screen, when the tab is hidden, when the visitor presses the pause button in the hero (remembered in `localStorage`), and under `prefers-reduced-motion`, where the hero also shows a still frame instead of the tour film.

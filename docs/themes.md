@@ -1,0 +1,106 @@
+# Themes and appearance
+
+The web client (`web/src/stellarr/`) lets each user pick or edit a color palette, choose a scheme and self-hosted typeface, set a personal wallpaper, and import or share theme files.
+
+## Theme pipeline
+
+```mermaid
+flowchart LR
+    Storage["localStorage (stellarr.theme) & Account Settings"]
+    PrePaint["Inline THEME_SCRIPT (<head>)"]
+    Provider["ThemeProvider & AppAppearance"]
+    DOM["<html> data-* & --palette-* variables"]
+    CSS["recipe.css & ui-tokens.css (--ui-*)"]
+    Import["Theme File (.stellarr-theme.json) / BetterDiscord (.theme.css)"]
+
+    Import -->|"normaliseTheme / isolated convertTheme"| Provider
+    Storage --> PrePaint --> DOM
+    Provider <--> Storage
+    Provider --> DOM --> CSS
+```
+
+## Theme model
+
+A theme (`ThemePreference` in `web/src/stellarr/design/themes.ts`) stores seven independent axes plus an optional wallpaper object:
+
+| Axis | Values | Purpose |
+| --- | --- | --- |
+| `palette` | `midnight` (default), `slate`, `evergreen`, `harbor`, `amethyst`, `ink`, or `custom` | Color vocabulary (`--palette-*` CSS variables) |
+| `accent` | `#rrggbb` | Accent color (`#6f65d1` default); picking a preset resets `accent` to that preset's accent |
+| `scheme` | `dark` (default), `light`, or `system` | Color scheme (`system` follows `prefers-color-scheme`) |
+| `contrast` | `normal` (default) or `high` | Contrast level (`data-contrast`) |
+| `font` | One of 28 self-hosted families (`outfit` default) | Interface typeface (`data-font`), applied by `AppAppearance` |
+| `size` | `sm`, `md` (default), or `lg` | Message text scale (`data-size`) |
+| `density` | `cozy` (default) or `compact` | Message spacing (`data-density`) |
+| `wallpaper` | `{ shade, blur, placeholder? }` or `null` | App-wide background presentation (`wallpaperUrl` lives on the account) |
+
+## Presets and custom palettes
+
+Six presets live in `web/src/stellarr/design/themes.ts` and `web/src/stellarr/styles/themes/palettes.css`:
+
+- `midnight` (default): deep zinc surfaces, `#6f65d1` accent
+- `slate`: cool charcoal surfaces, `#6f65d1` accent
+- `evergreen`: neutral dark surfaces, `#1db954` accent
+- `harbor`: slate-blue surfaces, `#1a9fff` accent
+- `amethyst`: near-black surfaces, `#9146ff` accent
+- `ink`: dark slate surfaces, `#58a6ff` accent
+
+### Custom palette editor
+
+Forking a preset (`forkPreset` in `web/src/stellarr/design/customTheme.ts`) opens the `custom` palette (`ThemeStage.tsx`). Every color role must be `#rrggbb` or `#rrggbbaa`; CSS functions and `url(…)` values are rejected:
+
+- Backgrounds (8): `darkest`, `dark`, `primary`, `secondary`, `tertiary`, `hover`, `active`, `floating`
+- Text (3): `normal`, `muted`, `faint`
+- Borders (3): `subtle`, `default`, `strong`
+- Semantic (4): `success`, `warning`, `danger`, `info`
+- Accent (1): `accent` (`#rrggbb`)
+
+When a custom palette changes, `makeCustomTheme` computes two derived values once and stores them on the palette so neither runtime painting nor the pre-paint script runs color math:
+
+- `accessibleFaint`: an AA-contrast faint text color checked against all eight backgrounds.
+- `neutral`: `{ hue, chroma }` (`--h-neutral` and `--c-neutral`, capped at `LIGHT_TINT_MAX = 20`) for tinting light-mode surfaces.
+
+Switching back to a preset keeps `ThemePreference.custom` stored so the user can return to it later.
+
+## Typography and wallpapers
+
+All 28 font families (`FONTS` in `themes.ts`) are self-hosted (`scripts/sync-theme-fonts.mjs`). Browsers download only the active font. Sign-in and setup pages always stay in `Outfit` so unauthenticated visits fetch no extra font files.
+
+Users can upload a personal background image (`uploads/profile.rs`, stored on the account as `wallpaperUrl`) and set `shade` (`0–100%`, default `80%`) and `blur` (`0–24 px`, default `0 px`). A 32-byte base64 `placeholder` paints before the image loads. Wallpapers are readable only by their uploader (`assets/access.rs`).
+
+## Theme files and BetterDiscord conversion
+
+### `.stellarr-theme.json` files
+
+Themes export and import as `.stellarr-theme.json` (`web/src/stellarr/design/themeFile.ts`, capped at `12 MiB`):
+
+```json
+{
+  "stellarrTheme": 1,
+  "name": "Harbor Night",
+  "author": "Maya",
+  "colors": { "backgrounds": {}, "text": {}, "borders": {}, "semantic": {} },
+  "accent": "#1a9fff",
+  "font": "outfit",
+  "wallpaper": {
+    "image": "data:image/webp;base64,...",
+    "shade": 80,
+    "blur": 0
+  }
+}
+```
+
+A theme file carries only `colors`, `accent`, `font`, and an optional embedded `wallpaper`. Reader preferences (`size`, `density`, `contrast`, `scheme`) are left untouched. Embedded wallpapers must be raster `data:image/(webp|jpeg|png);base64,…` payloads and are decoded and re-encoded before upload.
+
+### BetterDiscord `.theme.css` converter
+
+`web/src/stellarr/lib/betterDiscord/` (loaded via dynamic `import()`) converts BetterDiscord `.theme.css` files from disk or a direct HTTPS URL:
+
+1. Reads `@name`, `@author`, and `@source` metadata and inlines `@import` stylesheets.
+2. Strips every `url(…)` from CSS rules and extracts any background image URL separately (fetched only if the user confirms).
+3. Evaluates Discord CSS variables (`roles.ts`) inside an isolated document (`evaluate.ts`), unwrapping `@container style(…)` blocks when needed, and maps them to `PaletteColors` (`convert.ts`).
+4. Matches `--font`, `--font-primary`, `--font-display`, `--font-headline`, or Google Fonts imports to one of Stellarr's 28 self-hosted fonts when available.
+
+## Persistence and pre-paint script
+
+`ThemeProvider` (`web/src/stellarr/state/ThemeProvider.tsx`) syncs preferences to the account's client settings and writes `stellarr.theme` in `localStorage`. At build time, `themeScript.ts` inlines `THEME_SCRIPT` into `<head>` of `web/index.html` to set `data-theme`, `data-scheme`, `data-contrast`, `data-size`, `data-density`, and `--palette-*` variables on `<html>` before first paint.

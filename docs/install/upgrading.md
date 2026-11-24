@@ -23,7 +23,7 @@ Always take a full volume backup while the container is stopped so SQLite (`db/s
      tar czf /backup/stellarr-data-$(date +%F).tar.gz -C /data .
    ```
 
-The archive contains the SQLite database, uploaded files, data-protection keys, shared internal secrets, client releases, and TLS private key. Store it off-host alongside a copy of your `.env` file.
+The archive contains the SQLite database, uploaded files, master key (`keys/master.key`), shared internal secrets, client releases, and TLS private key. Store it off-host alongside a copy of your `.env` file.
 
 > [!TIP]
 > You can also create full `.zip` backups from **Cockpit → Backups** while the instance is running (or automate them; see [Automatic backups](../admin/backups.md)). Download copies off-host. To restore a Cockpit `.zip` archive later, run `stellarr backup restore` and restart the container.
@@ -94,4 +94,4 @@ Rolling back restores the entire data volume to the pre-upgrade snapshot; any me
    docker compose up -d
    ```
 
-Existing user sessions remain valid because the data-protection keys (`keys/`) are restored with the archive.
+Existing user sessions remain valid after a raw volume rollback because `db/stellarr.db` and the master key (`keys/master.key`) are restored verbatim from the tarball. (By contrast, restoring a Cockpit `.zip` archive via `stellarr backup restore` invalidates active sessions, trusted devices, and unused single-use codes before swapping directories; see [Automatic backups](../admin/backups.md#restoring-a-backup).)

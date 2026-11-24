@@ -8,7 +8,7 @@ Stellarr runs as a single Docker container. To test it locally on one machine, f
 | --- | --- |
 | Software | Docker Engine with the Compose plugin (`docker compose`), `2.24.0` or newer |
 | Architecture | `linux/amd64` or `linux/arm64` |
-| Memory | At least 2 GiB host RAM recommended; 4 GiB default container cap (`STELLARR_CONTAINER_MEMORY_LIMIT`), ~120–150 MiB at idle |
+| Memory | At least 2 GiB host RAM recommended; 4 GiB default container cap (`STELLARR_CONTAINER_MEMORY_LIMIT`), ~120–150 MiB at idle (and smoke-tested end-to-end in CI inside `512 MiB` RAM and `1` CPU core) |
 | CPU | 4 CPUs default container cap (`STELLARR_CONTAINER_CPUS`) |
 | Process limit | 512 processes (`STELLARR_CONTAINER_PIDS_LIMIT`) |
 | Disk | At least 2 GiB free; ~390 MB unpacked image (~152 MB compressed) plus `/data/stellarr` (`stellarr_stellarr_data` volume) |
@@ -17,18 +17,18 @@ Uploads enforce per-user and instance storage quotas plus a free-space floor on 
 
 ## Ports
 
-By default, `docker-compose.yml` publishes TCP `8443` (HTTPS: web client, API, SignalR WebSocket, and `/cockpit`), TCP `8888` (HTTP redirect to HTTPS), UDP `49000` (`stellarr-media` SFU for all voice and video calls), UDP `3478` (`coturn` STUN/TURN), and UDP `49160-49200` (TURN media relay range, mapped 1:1), plus optional TURN TCP/TLS listeners (`3478/tcp`, `5349/tcp`, `5349/udp`) when enabled in `.env`.
+By default, `docker-compose.yml` publishes TCP `8443` (HTTPS: web client, API, `/hubs/app` WebSocket, and `/cockpit`), TCP `8888` (HTTP redirect to HTTPS), UDP `49000` (`stellarr-media` SFU for all voice and video calls), UDP `3478` (`coturn` STUN/TURN), and UDP `49160-49200` (TURN media relay range, mapped 1:1), plus optional TURN TCP/TLS listeners (`3478/tcp`, `5349/tcp`, `5349/udp`) when enabled in `.env`.
 
 See [RTC and ports](../rtc-and-ports.md#published-host-ports) for the full port table, corresponding `STELLARR_*` variables, internal loopback ports, and relay port sizing.
 
 ## Behind NAT
 
-A browser on the Docker host itself connects over local loopback without extra configuration. Calls from any other device—including other machines on your LAN—require:
+A browser on the Docker host itself connects over local loopback without extra configuration. Calls from any other device, including other machines on your LAN, require:
 
 1. `STELLARR_PUBLIC_IP` set to the IPv4 address browsers use to reach the Docker host (LAN IPv4 for LAN-only use, public IPv4 for internet access, or `auto` to resolve the `A` record of `STELLARR_DOMAIN` at container startup).
 2. UDP `49000` (`STELLARR_MEDIA_PORT`, on the **same external UDP port**), UDP `3478`, UDP `49160-49200`, and the HTTPS port (or an external [reverse proxy](reverse-proxy-and-tls.md#run-behind-a-reverse-proxy)) forwarded to the Docker host.
 
-See [RTC and ports — NAT and firewall configuration](../rtc-and-ports.md#nat-and-firewall-configuration) for candidate advertisement rules and call diagnostics.
+See [RTC and ports: NAT and firewall configuration](../rtc-and-ports.md#nat-and-firewall-configuration) for candidate advertisement rules and call diagnostics.
 
 ## Domain and TLS
 

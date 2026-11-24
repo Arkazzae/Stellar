@@ -12,7 +12,7 @@ Notifications are designed so external email relays and browser push providers n
 - **Generic localized copy**: Notification text uses the instance language (`STELLARR_LANGUAGE`, `en` or `pl`) and links only to the instance root (`STELLARR_PUBLIC_URL` or `STELLARR_DOMAIN`):
   - Mention: *"Someone mentioned you in a channel. Open Stellarr to read it."*
   - Direct message: *"You have a new direct message. Open Stellarr to read it."*
-- **Self-contained email rendering**: Outgoing HTML emails use Stellarr's dark *Midnight* template (`MailLayout.cs`) with inline CID PNG attachments (`lockup.png`, `mention.png`, `direct-message.png`), making zero external image or font requests when opened in a mail client.
+- **Self-contained email rendering**: Outgoing HTML emails use Stellarr's dark *Midnight* template (`api/crates/mail/src/layout.rs`) with inline CID PNG attachments (`lockup.png`, `mention.png`, `direct-message.png`), making zero external image or font requests when opened in a mail client.
 - **No PII in logs**: Push endpoints, P-256DH/auth keys, recipient email addresses, and message contents are never written to application logs.
 
 ## Email notifications
@@ -57,7 +57,7 @@ printf '%s' "$priv_hex" | xxd -r -p | base64 -w0 | tr '+/' '-_' | tr -d '='
 
 ### 2. Configure environment variables
 
-Add the VAPID configuration to `.env` (see [Configuration — Web Push](../install/configuration.md#web-push)) and recreate the container with `docker compose up -d`:
+Add the VAPID configuration to `.env` (see [Configuration: Web Push](../install/configuration.md#web-push)) and recreate the container with `docker compose up -d`:
 
 ```dotenv
 STELLARR_PUSH_ENABLED=true
@@ -92,11 +92,11 @@ If keys are missing, malformed, or mismatched, the container boots normally and 
 
 ## Delivery, cancellation, and retries
 
-Pending deliveries are persisted in SQLite (`NotificationDeliveries`) and processed asynchronously by `NotificationDeliveryWorker` with **at-least-once** semantics: one row for the user's verified email address and one row per active Web Push subscription.
+Pending deliveries are persisted in SQLite (`NotificationDeliveries`) and processed asynchronously every `30 s` by the `notification-delivery` worker (`api/crates/server/src/delivery/dispatcher.rs`) with **at-least-once** semantics: one row for the user's verified email address and one row per active Web Push subscription. Each pass leases up to `25` due rows (`10 s` timeout per push request, `15 s` per mail request) and connects exclusively to public IP addresses.
 
 ### Pre-send checks
 
-Immediately before calling an email or push provider, `NotificationDeliveryDispatcher` re-checks live database state and cancels the delivery silently if:
+Immediately before calling an email or push provider, the dispatcher re-checks live database state and cancels the delivery silently if:
 
 - The user disabled notifications or the account was disabled
 - The triggering message was deleted, or an edit removed the `@mention`

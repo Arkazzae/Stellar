@@ -13,24 +13,24 @@ Users manage their authentication methods under **Settings → Login and securit
 | **Passkey or security key** | Device passkey (biometrics/PIN) or USB/NFC Fido2 hardware key | Discoverable passkeys also support passwordless sign-in (see [Passkeys](#passkeys)) |
 | **Recovery codes** | Ten single-use backup codes generated when the first second-factor method is enrolled | Displayed once; regenerating invalidates all previous codes |
 
-The same settings pane displays **trusted devices**, **active sessions** (allowing users to revoke individual sessions or sign out everywhere else), and the account's **security history**. Revoking a session immediately terminates its active SignalR WebSocket and voice/media connections and returns that browser to `/login`.
+The same settings pane displays **trusted devices**, **active sessions** (allowing users to revoke individual sessions or sign out everywhere else), and the account's **security history**. Revoking a session immediately closes its active `/hubs/app` WebSocket (code `4401`) and voice/media connections and returns that browser to `/login`.
 
 ### Proof for sensitive account changes
 
-Adding or removing second-factor methods, regenerating recovery codes, linking or unlinking an OIDC provider, changing or setting a password, changing the email address, or replacing/resetting end-to-end encryption PIN backups and account keys require fresh authentication proof (`FreshSecondStepFilter`):
+Adding or removing second-factor methods, regenerating recovery codes, linking or unlinking an OIDC provider, changing or setting a password, changing the email address, or replacing/resetting end-to-end encryption PIN backups and account keys require fresh authentication proof (`auth/fresh.rs`):
 
 - **Accounts with a second factor**: A second factor completed within the **last 5 minutes** in the current session (trusted devices do not qualify).
 - **Accounts without a second factor**: Either the current password or a primary sign-in completed within the **last 5 minutes**.
 - **Accounts without a password and without a second factor**: When the current session's sign-in is more than 5 minutes old, the settings UI redirects the user to re-authenticate at one of their linked OIDC providers (`/api/auth/oidc/{id}/reauthenticate`). Stellarr sends `prompt=login` and `max_age=300` to the provider, verifies that the returned identity belongs to the account and carries an `auth_time` claim within the last 5 minutes, and updates the session's authentication timestamp to that `auth_time` value.
 
-Security-change endpoints are rate-limited to 30 requests per IP per 15 minutes (`RateLimitPolicies.SecurityWrite`).
+Security-change endpoints are rate-limited to 30 requests per IP per 15 minutes (`SecurityWrite` policy).
 
 ## Passkeys
 
 Passkeys require an HTTPS origin with a domain name: `STELLARR_PUBLIC_URL` or `STELLARR_DOMAIN` set to a hostname rather than an IP address (except `http://localhost` during local development). When no hostname origin is configured, the web client hides passkey enrollment.
 
 > [!WARNING]
-> Passkeys are cryptographically bound to the relying-party hostname (`Operations:PublicUrl`). **Changing `STELLARR_DOMAIN` or `STELLARR_PUBLIC_URL` invalidates all existing passkeys**; users must sign in with their password and another second factor (or a recovery code) and register a new passkey.
+> Passkeys are cryptographically bound to the relying-party hostname (`STELLARR_PUBLIC_URL` / `STELLARR_DOMAIN`). **Changing `STELLARR_DOMAIN` or `STELLARR_PUBLIC_URL` invalidates all existing passkeys**; users must sign in with their password and another second factor (or a recovery code) and register a new passkey.
 
 - **Passwordless sign-in**: A discoverable passkey enables **Continue with a passkey** on `/login`. Because it verifies both user presence and user verification (`uv`), it satisfies both primary authentication and second-factor requirements (including Cockpit access).
 - **Second-factor-only keys**: Non-discoverable hardware security keys work as a second factor after password or OIDC sign-in.
@@ -57,7 +57,7 @@ When a user authenticates at an OIDC provider with an identity that is not yet l
 
 In **Cockpit → Integrations → Sign-in providers**, the instance owner can allow each configured OIDC provider to create new accounts for invited users (`IdentityProviderSettings.SignUpAllowed`). This toggle defaults to **off** for every provider; changing it requires a fresh second factor and writes an operator audit entry.
 
-When enabled for a provider, a user holding a valid server invite link can register via that provider—either from `/link-account` or by clicking **Create with {provider}, no password** on the invite registration page:
+When enabled for a provider, a user holding a valid server invite link can register via that provider, either from `/link-account` or by clicking **Create with {provider}, no password** on the invite registration page:
 
 - The registration form pre-fills the display name, suggested username, and email address from the provider's claims, which the user can edit before submitting.
 - The resulting account is created **without a local password**, linked to the provider's `(issuer, subject)`, and joined to the invite's server.
@@ -96,7 +96,7 @@ During second-factor sign-in, users can check **Don't ask for a code on this dev
 - **Unchecked**: Issues a browser-session cookie with a hard 12-hour server-side expiration limit (even if the browser restores closed tabs).
 - **Desktop browser handoff**: Sessions issued via `/api/auth/desktop/browser/*` are always persistent (30 days) because the desktop client maintains its own cookie store across restarts.
 
-Modifying second-factor methods revokes all other active sessions on the account. Signing out, revoking a session remotely, or running operator recovery terminates active SignalR and voice/media connections within 1 second (`SessionRevocationWatcher`) and deactivates any end-to-end encryption device bound to that session.
+Modifying second-factor methods revokes all other active sessions on the account. Signing out, revoking a session remotely, or running operator recovery terminates active hub WebSocket and voice/media connections within 1 second (`realtime/watcher.rs`) and deactivates any end-to-end encryption device bound to that session.
 
 ## Instance MFA policy (operators)
 
