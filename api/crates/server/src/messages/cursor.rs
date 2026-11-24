@@ -87,11 +87,13 @@ impl HistoryCursor {
     }
 
     pub fn decode(text: &str) -> Reading {
-        let bytes = match unbase64url(text) {
-            Unbased::Bytes(bytes) => bytes,
+        let (bytes, undecodable) = match unbase64url(text) {
+            Unbased::Bytes(bytes, undecodable) => (bytes, undecodable),
             Unbased::Invalid => return Reading::Invalid,
-            Unbased::Fault => return Reading::Fault,
         };
+        if undecodable && matches!(bytes.len(), LEGACY_SIZE | SIZE) {
+            return Reading::Fault;
+        }
         match bytes.len() {
             LEGACY_SIZE => {
                 let snapshot = i64::from_be_bytes(bytes[16..24].try_into().unwrap_or_default());
@@ -147,9 +149,10 @@ fn base64url(bytes: &[u8]) -> String {
 }
 
 enum Unbased {
-    Bytes(Vec<u8>),
+    /// The bytes, and whether the first server's decoder would have thrown on
+    /// the text after its check let it through.
+    Bytes(Vec<u8>, bool),
     Invalid,
-    Fault,
 }
 
 fn digit(c: char) -> Option<u32> {
@@ -186,11 +189,13 @@ fn unbase64url(text: &str) -> Unbased {
     if padding > 2 || digits.len() % 4 == 1 {
         return Unbased::Invalid;
     }
-    let spare = digits.len() % 4;
-    if padding > 0 && (digits.len() + padding) % 4 != 0 {
-        // The library's check let it through and its decoder then threw.
-        return Unbased::Fault;
-    }
+    // The library's check let one pad after two digits through and its
+    // decoder then threw.
+    let undecodable = match (digits.len() % 4, padding) {
+        (_, 0) | (2, 2) | (3, 1) => false,
+        (2, 1) => true,
+        _ => return Unbased::Invalid,
+    };
     let mut bytes = Vec::with_capacity(digits.len() * 3 / 4);
     for group in digits.chunks(4) {
         let mut word = 0u32;
@@ -210,8 +215,7 @@ fn unbase64url(text: &str) -> Unbased {
             return Unbased::Invalid;
         }
     }
-    let _ = spare;
-    Unbased::Bytes(bytes)
+    Unbased::Bytes(bytes, undecodable)
 }
 
 #[cfg(test)]
