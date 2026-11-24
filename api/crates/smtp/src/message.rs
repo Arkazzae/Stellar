@@ -88,7 +88,13 @@ impl Message {
         bytes.extend_from_slice(entity_headers.as_bytes());
         bytes.extend_from_slice(b"\r\n");
         bytes.extend_from_slice(&body);
-        bytes.extend_from_slice(b"\r\n");
+        // A message ends with a line break. A single part that has its own
+        // keeps it as its last; one without gains one, which is all a
+        // message can do (inside a multipart, the delimiter takes that role
+        // and every part comes back exactly).
+        if !bytes.ends_with(b"\r\n") {
+            bytes.extend_from_slice(b"\r\n");
+        }
 
         let needs_utf8 = !head.is_ascii();
         Ok(Encoded { bytes, needs_utf8 })
@@ -135,7 +141,9 @@ fn text_entity(subtype: &str, text: &str) -> Result<(String, Vec<u8>), Error> {
         && !normal
             .bytes()
             .any(|b| (b < 0x20 && b != b'\t' && b != b'\r' && b != b'\n') || b == 0x7f)
-        && normal.split("\r\n").all(|line| line.len() <= 76);
+        && normal
+            .split("\r\n")
+            .all(|line| line.len() <= 76 && !line.ends_with([' ', '\t']));
     let (encoding, body) = if plain {
         ("7bit", normal.into_bytes())
     } else {
@@ -357,6 +365,18 @@ mod tests {
             !text.replace("\r\n", "").contains(['\r', '\n']),
             "only CRLF breaks"
         );
+    }
+
+    #[test]
+    fn a_single_part_ends_with_exactly_one_line_break() {
+        let mut m = sample();
+        m.html.clear();
+        m.text = "abc\n".into();
+        assert!(wire(&m).ends_with("\r\n\r\nabc\r\n"));
+        m.text = "abc".into();
+        assert!(wire(&m).ends_with("\r\n\r\nabc\r\n"));
+        m.text = "abc \n".into();
+        assert!(wire(&m).ends_with("quoted-printable\r\n\r\nabc=20\r\n"));
     }
 
     #[test]
