@@ -109,24 +109,40 @@ pub fn parse_guid(text: &str) -> Option<Id> {
     {
         return Some(parsed);
     }
-    let hex = |s: &str| {
-        u128::from_str_radix(s, 16)
-            .ok()
-            .filter(|_| s.bytes().all(|b| b.is_ascii_hexdigit()))
-    };
     let digits = match inner.len() {
-        32 if open == ' ' => inner.to_string(),
-        36 => {
-            let parts: Vec<&str> = inner.split('-').collect();
-            let sizes: Vec<usize> = parts.iter().map(|p| p.len()).collect();
-            if sizes != [8, 4, 4, 4, 12] {
-                return None;
-            }
-            parts.concat()
+        32 if open == ' ' => {
+            let value = u128::from_str_radix(inner, 16).ok()?;
+            return inner
+                .bytes()
+                .all(|b| b.is_ascii_hexdigit())
+                .then(|| Id::from_bytes(value.to_be_bytes()));
         }
+        36 => inner,
         _ => return None,
     };
-    hex(&digits).map(|value| Id::from_bytes(value.to_be_bytes()))
+    let parts: Vec<&str> = digits.split('-').collect();
+    let sizes = [8, 4, 4, 4, 12];
+    if parts.len() != 5
+        || parts
+            .iter()
+            .zip(sizes)
+            .any(|(part, size)| part.len() != size)
+    {
+        return None;
+    }
+    // A group may spell its number with a `0x` in front and fewer digits.
+    let mut value: u128 = 0;
+    for (part, size) in parts.iter().zip(sizes) {
+        let number = part
+            .strip_prefix("0x")
+            .or_else(|| part.strip_prefix("0X"))
+            .unwrap_or(part);
+        if number.is_empty() || !number.bytes().all(|b| b.is_ascii_hexdigit()) {
+            return None;
+        }
+        value = value << (size * 4) | u128::from_str_radix(number, 16).ok()?;
+    }
+    Some(Id::from_bytes(value.to_be_bytes()))
 }
 
 /// `0x`-prefixed groups: `{0xdddddddd,0xdddd,0xdddd,{0xdd,...}}`, each group
