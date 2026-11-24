@@ -351,6 +351,14 @@ given and is wrong; a value that was not given may have one. A test for each
 refusal goes next to the others in `settings/tests.rs`
 (`Server::refused_to_start` is the same check on the binary).
 
+One exception, on purpose: the Web Push settings (`Push:*`, `PushSettings`).
+A key pair or contact that is missing, wrong, or not a pair does not refuse the
+start; push is then unavailable (`GET /api/me/notification-delivery` says so, and
+every send is a retry) and everything else is served. The first server's own
+test demands this (an installation with a typo in one variable must still run),
+and a client can see the difference only as "push is off". `Push:Enabled` that
+is not `true` or `false` counts as off.
+
 **State that belongs to one group** (a gate, a cache, a connection pool the
 group alone uses) is a type in the group's own folder, held in a field of
 `Inner` in `state.rs` and built in `AppState::new`, with an accessor on
