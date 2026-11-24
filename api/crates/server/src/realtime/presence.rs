@@ -5,9 +5,23 @@
 //! connection and offline when the last one is gone, and what it chose
 //! outlives its connections, so that a reconnect announces the status it had.
 //! The state lives in this process only.
+//!
+//! The voice seats of the connections are kept here too, under the same lock,
+//! so that a connection that ends frees its seat in the same step; see
+//! [`seats`].
+
+mod seats;
 
 use std::collections::{HashMap, HashSet};
-use std::sync::Mutex;
+use std::sync::{Arc, Mutex};
+
+use tokio::sync::Notify;
+
+use self::seats::{Closes, Seat};
+pub use self::seats::{
+    MAX_PENDING_CLOSES, MediaSession, SeatedMediaSession, VoiceDeparture, VoiceDisplacement,
+    VoiceJoin, VoiceMove, VoiceParticipant, VoiceSnapshot,
+};
 
 use crate::values::Id;
 
@@ -30,6 +44,16 @@ struct State {
     visible: HashMap<Id, bool>,
     /// What a development seed says of accounts that have no connection.
     seeded: HashMap<Id, String>,
+    /// The voice seat each connection holds.
+    seats: HashMap<String, Seat>,
+    /// The seats of connections that ended, until the hub's hook has told the
+    /// rooms they left.
+    departures: HashMap<String, VoiceDeparture>,
+    snapshot_sequence: i64,
+    /// Media sessions whose seat ended and that the media server has yet to
+    /// be told to close.
+    closes: Closes,
+    closes_added: Arc<Notify>,
 }
 
 impl State {
@@ -112,6 +136,11 @@ impl PresenceTracker {
         let Some(user) = state.user_by_connection.remove(connection_id) else {
             return false;
         };
+        if let Some(departure) = seats::take_seat(&mut state, connection_id) {
+            state
+                .departures
+                .insert(connection_id.to_string(), departure);
+        }
         let Some(connections) = state.connections_by_user.get_mut(&user) else {
             return false;
         };
