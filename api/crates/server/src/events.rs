@@ -58,7 +58,23 @@ impl Event {
 pub trait EventPublisher: Send + Sync {
     /// Hands the event over. It does not wait for delivery and cannot fail.
     fn publish(&self, event: Event);
+
+    /// Tells the hub that a session has ended, so that it closes the
+    /// connections that session opened at once instead of at its next look at
+    /// the database. It is an event named [`SESSION_ENDED`] for the account,
+    /// with the session in its payload, which the hub acts on and does not
+    /// pass to clients.
+    fn session_ended(&self, user: Id, session: Id) {
+        self.publish(Event::new(
+            Audience::Users(vec![user]),
+            SESSION_ENDED,
+            &serde_json::json!({ "session": session }),
+        ));
+    }
 }
+
+/// The name of the event that says a session has ended.
+pub const SESSION_ENDED: &str = "SessionEnded";
 
 /// What the hub knows of who is connected, which the API reads to say whether
 /// a person is `online`, `idle`, `dnd` or `offline` to themselves.

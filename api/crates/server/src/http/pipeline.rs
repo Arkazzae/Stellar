@@ -38,7 +38,7 @@ use super::forwarded::{self, ClientInfo};
 use super::rate_limit::RateLimiter;
 use super::routes::Rules;
 use super::trace;
-use crate::auth::session::Authentication;
+use crate::auth::session::{self, Authentication};
 use crate::auth::{self, Caller};
 use crate::database::DbError;
 use crate::logging::{self, REQUEST_TARGET};
@@ -218,8 +218,11 @@ async fn route_checks(
         .get::<ClientInfo>()
         .is_some_and(|client| client.scheme == "https");
     let mut cookies = Vec::new();
+    let mut renewal = None;
     let cookie = auth::cookies::read(request.headers(), auth::session::cookie_name(environment));
-    if cookie.is_some() {
+    let ticket = cookie
+        .and_then(|value| session::Ticket::open(pipeline.state.sealer(), &value, Timestamp::now()));
+    if let Some(ticket) = ticket {
         let state = pipeline.state.clone();
         let outcome = pipeline
             .state
@@ -230,7 +233,7 @@ async fn route_checks(
                     state.sealer(),
                     &state.settings().environment,
                     https,
-                    cookie.as_deref(),
+                    ticket,
                     Timestamp::now(),
                 )
             })
@@ -255,7 +258,7 @@ async fn route_checks(
                 {
                     return ApiError::from(error).into_response();
                 }
-                cookies.extend(renewed_cookie);
+                renewal = renewed_cookie;
                 request.extensions_mut().insert(caller);
             }
         }
@@ -281,6 +284,17 @@ async fn route_checks(
         Some(refusal) => refusal,
         None => next.run(request).await,
     };
+    // A cookie that is due for renewal is left as it is when the handler has
+    // signed in or out itself.
+    let own_name = format!("{}=", auth::session::cookie_name(environment));
+    let handler_set_it = response
+        .headers()
+        .get_all(header::SET_COOKIE)
+        .iter()
+        .any(|value| value.to_str().is_ok_and(|line| line.starts_with(&own_name)));
+    if !handler_set_it {
+        cookies.extend(renewal);
+    }
     if !cookies.is_empty() {
         put_cookies_first(&mut response, &cookies);
     }

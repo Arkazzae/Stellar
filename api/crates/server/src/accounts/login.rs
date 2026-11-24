@@ -200,6 +200,8 @@ pub async fn logout(State(state): State<AppState>, origin: Origin, caller: Calle
             Ok(())
         })
         .await?;
+    // Whatever the session had open is closed now.
+    state.events().session_ended(user, session);
     let cookie = session::sign_out_cookie(&state.settings().environment, origin.https);
     Ok(with_session_cookie(no_store(StatusCode::NO_CONTENT.into_response()), &cookie))
 }

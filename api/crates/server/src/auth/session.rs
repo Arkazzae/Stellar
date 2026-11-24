@@ -14,7 +14,7 @@ use serde::{Deserialize, Serialize};
 use super::cookies;
 use super::policy::SecurityPolicy;
 use crate::database::DbError;
-use crate::seal::{SealError, Sealer};
+use crate::seal::Sealer;
 use crate::settings::Environment;
 use crate::values::{Id, Timestamp};
 
@@ -51,8 +51,9 @@ pub fn cookie_is_secure(environment: &Environment, request_is_https: bool) -> bo
     !environment.allows_plain_http() || request_is_https
 }
 
+/// What a session cookie says, once opened.
 #[derive(Serialize, Deserialize)]
-struct Ticket {
+pub struct Ticket {
     user: Id,
     version: i64,
     session: Id,
@@ -72,9 +73,11 @@ impl Ticket {
         )
     }
 
-    fn open(sealer: &Sealer, value: &str, now: Timestamp) -> Result<Ticket, SealError> {
-        let payload = sealer.open(PURPOSE, b"", value, now)?;
-        serde_json::from_slice(&payload).map_err(|_| SealError::Malformed)
+    /// Opens the cookie. Whatever is not a ticket this server sealed, or has
+    /// run out, is none, and costs the database nothing.
+    pub fn open(sealer: &Sealer, value: &str, now: Timestamp) -> Option<Ticket> {
+        let payload = sealer.open(PURPOSE, b"", value, now).ok()?;
+        serde_json::from_slice(&payload).ok()
     }
 }
 
@@ -288,15 +291,9 @@ pub fn authenticate(
     sealer: &Sealer,
     environment: &Environment,
     request_is_https: bool,
-    cookie: Option<&str>,
+    ticket: Ticket,
     now: Timestamp,
 ) -> Result<Authentication, DbError> {
-    let Some(cookie) = cookie.filter(|cookie| !cookie.is_empty()) else {
-        return Ok(Authentication::Anonymous);
-    };
-    let Ok(ticket) = Ticket::open(sealer, cookie, now) else {
-        return Ok(Authentication::Anonymous);
-    };
     let Some(row) = connection
         .query_row(
             "SELECT s.\"LastSeenAt\", s.\"ExpiresAt\", s.\"AbsoluteExpiresAt\", s.\"RevokedAt\", s.\"SecurityVersion\",

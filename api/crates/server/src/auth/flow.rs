@@ -5,7 +5,7 @@
 //! session without it. The routes that complete a challenge belong to a later
 //! group of endpoints; the answer to a sign-in that needs one is made here.
 
-use rusqlite::{Connection, Transaction, params};
+use rusqlite::{Connection, OptionalExtension, Transaction, params};
 use serde::Serialize;
 use stellarr_messages::{MessageKey, Messages};
 
@@ -144,6 +144,7 @@ struct Created {
     id: Id,
     purpose: String,
     expires_at: Timestamp,
+    pending_identity: Option<Id>,
 }
 
 fn create_challenge(
@@ -186,6 +187,7 @@ fn create_challenge(
             id,
             purpose: purpose.to_string(),
             expires_at,
+            pending_identity: options.pending_identity,
         },
         secret,
     ))
@@ -265,8 +267,10 @@ fn describe(
     } else {
         "mfa_enrollment_required"
     };
-    // A remembered device skips the step but proves nothing now.
-    let trusted = trusted_device(connection, user.id, context.trusted_device_cookie)?;
+    // A remembered device skips the step but proves nothing now, and a link
+    // of an identity asks for the proof a link from the settings would.
+    let trusted = challenge.pending_identity.is_none()
+        && trusted_device(connection, user.id, context.trusted_device_cookie)?;
     Ok(Challenge {
         status,
         challenge_id: challenge.id,
@@ -328,6 +332,168 @@ pub fn passkeys_available(public_url: &str) -> bool {
             || (scheme.eq_ignore_ascii_case("http") && host == "localhost"))
 }
 
+/// What looking a challenge up came to.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ChallengeStatus {
+    Valid,
+    /// There is no such challenge for this browser: no cookie, another
+    /// challenge's, a wrong secret or another purpose.
+    Missing,
+    Expired,
+    Consumed,
+    AttemptLimit,
+    /// The account changed since: disabled, a new session version, or in need
+    /// of recovery (and the challenge not for it), or the session it was asked
+    /// from is gone.
+    SecurityChanged,
+}
+
+/// A challenge row.
+#[derive(Debug, Clone)]
+pub struct StoredChallenge {
+    pub id: Id,
+    pub user: Id,
+    pub purpose: String,
+    pub primary_source: String,
+    pub parent_session: Option<Id>,
+    pub short_lived: bool,
+    pub pending_identity: Option<Id>,
+    pub attempts: i64,
+    pub max_attempts: i64,
+}
+
+/// The challenge a browser holds, from the cookie that binds it: its id and
+/// its secret.
+pub fn read_preauth(headers: &axum::http::HeaderMap, https: bool) -> Option<(Id, String)> {
+    let value = cookies::read(headers, preauth_name(https))?;
+    let (compact, secret) = value.split_once('.')?;
+    if compact.len() != 32 || secret.is_empty() {
+        return None;
+    }
+    let dashed = format!(
+        "{}-{}-{}-{}-{}",
+        &compact[..8],
+        &compact[8..12],
+        &compact[12..16],
+        &compact[16..20],
+        &compact[20..]
+    );
+    Some((Id::parse(&dashed)?, secret.to_string()))
+}
+
+/// Looks a challenge up for the browser that holds `cookie`, as of `now`, and
+/// says whether it can still be used. `purpose` limits it to one kind.
+pub fn validate(
+    connection: &Connection,
+    cookie: Option<&(Id, String)>,
+    challenge_id: &str,
+    purpose: Option<&str>,
+    now: Timestamp,
+) -> Result<(Option<StoredChallenge>, ChallengeStatus), DbError> {
+    use ChallengeStatus::*;
+    let (Some(id), Some((cookie_id, secret))) = (Id::parse(challenge_id), cookie) else {
+        return Ok((None, Missing));
+    };
+    if *cookie_id != id {
+        return Ok((None, Missing));
+    }
+    let found = connection
+        .query_row(
+            "SELECT c.\"UserId\", c.\"Purpose\", c.\"SecretHash\", c.\"PrimarySource\", c.\"ParentSessionId\", c.\"SecurityVersion\",
+                    c.\"ShortLived\", c.\"PendingIdentityId\", c.\"Attempts\", c.\"MaxAttempts\", c.\"ExpiresAt\", c.\"ConsumedAt\",
+                    u.\"IsDisabled\", u.\"SessionVersion\", u.\"SecurityRecoveryRequired\"
+             FROM \"AuthChallenges\" c JOIN \"Users\" u ON u.\"Id\" = c.\"UserId\" WHERE c.\"Id\" = ?1",
+            [id],
+            |row| {
+                Ok((
+                    StoredChallenge {
+                        id,
+                        user: row.get(0)?,
+                        purpose: row.get(1)?,
+                        primary_source: row.get(3)?,
+                        parent_session: row.get(4)?,
+                        short_lived: row.get(6)?,
+                        pending_identity: row.get(7)?,
+                        attempts: row.get(8)?,
+                        max_attempts: row.get(9)?,
+                    },
+                    row.get::<_, String>(2)?,
+                    row.get::<_, i64>(5)?,
+                    row.get::<_, Timestamp>(10)?,
+                    row.get::<_, Option<Timestamp>>(11)?,
+                    (row.get::<_, bool>(12)?, row.get::<_, i64>(13)?, row.get::<_, bool>(14)?),
+                ))
+            },
+        )
+        .optional()?;
+    let Some((
+        challenge,
+        secret_hash,
+        version,
+        expires_at,
+        consumed_at,
+        (disabled, user_version, recovery),
+    )) = found
+    else {
+        return Ok((None, Missing));
+    };
+    if !tokens::matches(secret, &secret_hash)
+        || purpose.is_some_and(|wanted| challenge.purpose != wanted)
+    {
+        return Ok((None, Missing));
+    }
+    if consumed_at.is_some() {
+        return Ok((None, Consumed));
+    }
+    if expires_at <= now {
+        return Ok((None, Expired));
+    }
+    if challenge.attempts >= challenge.max_attempts {
+        return Ok((None, AttemptLimit));
+    }
+    let for_recovery = challenge.purpose == "recovery";
+    if disabled
+        || user_version != version
+        || (recovery && !for_recovery)
+        || (for_recovery && !recovery)
+    {
+        return Ok((None, SecurityChanged));
+    }
+    if let Some(parent) = challenge.parent_session {
+        let active: bool = connection.query_row(
+            "SELECT EXISTS (SELECT 1 FROM \"UserSessions\" WHERE \"Id\" = ?1 AND \"UserId\" = ?2 AND \"RevokedAt\" IS NULL
+                            AND \"ExpiresAt\" > ?3 AND \"AbsoluteExpiresAt\" > ?3 AND \"SecurityVersion\" = ?4)",
+            params![parent, challenge.user, now, user_version],
+            |row| row.get(0),
+        )?;
+        if !active {
+            return Ok((None, SecurityChanged));
+        }
+    }
+    Ok((Some(challenge), Valid))
+}
+
+/// Uses a challenge up. True for the one request that did, so that two at
+/// once cannot both complete it.
+pub fn consume(tx: &Transaction, challenge: Id, now: Timestamp) -> Result<bool, DbError> {
+    let changed = tx.execute(
+        "UPDATE \"AuthChallenges\" SET \"ConsumedAt\" = ?2 WHERE \"Id\" = ?1 AND \"ConsumedAt\" IS NULL AND \"ExpiresAt\" > ?2",
+        params![challenge, now],
+    )?;
+    Ok(changed == 1)
+}
+
+/// Spends one attempt of a challenge, and closes it at its budget.
+pub fn fail_attempt(tx: &Transaction, challenge: Id, now: Timestamp) -> Result<(), DbError> {
+    tx.execute(
+        "UPDATE \"AuthChallenges\" SET \"Attempts\" = \"Attempts\" + 1,
+             \"ConsumedAt\" = CASE WHEN \"Attempts\" + 1 >= \"MaxAttempts\" THEN ?2 ELSE \"ConsumedAt\" END
+         WHERE \"Id\" = ?1 AND \"ConsumedAt\" IS NULL",
+        params![challenge, now],
+    )?;
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -358,5 +524,272 @@ mod tests {
             "__Host-stellarr-preauth=049083c7a28f4b91b21b2a0920dc1686.secret; expires=Tue, 24 Nov 2026 01:23:38 GMT; path=/; secure; samesite=lax; httponly"
         );
         assert!(preauth_cookie(false, id, "s", expires).starts_with("stellarr-dev-preauth="));
+    }
+
+    use crate::testing::new_database;
+
+    /// A challenge in a database of its own, written by `start`, with the
+    /// cookie that binds it.
+    fn challenge_in(database: &crate::database::Database) -> (Id, Id, (Id, String)) {
+        let user = Id::random();
+        let secret = tokens::random(32);
+        let id = Id::random();
+        let connection = rusqlite::Connection::open(database.path()).unwrap();
+        let now = Timestamp::now();
+        connection
+            .execute(
+                "INSERT INTO \"Users\" (\"Id\", \"Username\", \"NormalizedUsername\", \"DisplayName\", \"PasswordHash\", \"IsDisabled\",
+                     \"SessionVersion\", \"SecurityRecoveryRequired\", \"AvatarColor\", \"CreatedAt\")
+                 VALUES (?1, ?1, ?1, 'U', NULL, 0, 3, 0, 'c', ?2)",
+                params![user, now],
+            )
+            .unwrap();
+        connection
+            .execute(
+                "INSERT INTO \"AuthChallenges\" VALUES (?1, ?2, 'mfa', ?3, 'password', NULL, 3, 0, NULL, NULL, 0, 2, ?4, ?5, NULL)",
+                params![id, user, tokens::hash(&secret), now, now.plus(std::time::Duration::from_secs(300))],
+            )
+            .unwrap();
+        (id, user, (id, secret))
+    }
+
+    fn status(
+        database: &crate::database::Database,
+        cookie: Option<&(Id, String)>,
+        id: &str,
+        purpose: Option<&str>,
+        now: Timestamp,
+    ) -> ChallengeStatus {
+        let connection = rusqlite::Connection::open(database.path()).unwrap();
+        validate(&connection, cookie, id, purpose, now).unwrap().1
+    }
+
+    #[test]
+    fn a_challenge_is_found_by_the_browser_it_was_made_for_and_by_nobody_else() {
+        let (_folder, database) = new_database();
+        let (id, _, cookie) = challenge_in(&database);
+        let now = Timestamp::now();
+
+        assert_eq!(
+            status(&database, Some(&cookie), &id.to_string(), Some("mfa"), now),
+            ChallengeStatus::Valid
+        );
+        assert_eq!(
+            status(&database, Some(&cookie), &id.to_string(), None, now),
+            ChallengeStatus::Valid
+        );
+        assert_eq!(
+            status(&database, None, &id.to_string(), None, now),
+            ChallengeStatus::Missing
+        );
+        assert_eq!(
+            status(
+                &database,
+                Some(&(id, "wrong".into())),
+                &id.to_string(),
+                None,
+                now
+            ),
+            ChallengeStatus::Missing
+        );
+        assert_eq!(
+            status(
+                &database,
+                Some(&(Id::random(), cookie.1.clone())),
+                &id.to_string(),
+                None,
+                now
+            ),
+            ChallengeStatus::Missing
+        );
+        assert_eq!(
+            status(
+                &database,
+                Some(&cookie),
+                &Id::random().to_string(),
+                None,
+                now
+            ),
+            ChallengeStatus::Missing
+        );
+        assert_eq!(
+            status(&database, Some(&cookie), "not an id", None, now),
+            ChallengeStatus::Missing
+        );
+        assert_eq!(
+            status(
+                &database,
+                Some(&cookie),
+                &id.to_string(),
+                Some("enrollment"),
+                now
+            ),
+            ChallengeStatus::Missing
+        );
+    }
+
+    #[test]
+    fn a_challenge_that_ran_out_was_used_or_has_no_attempts_left_says_which() {
+        let (_folder, database) = new_database();
+        let (id, _, cookie) = challenge_in(&database);
+        let connection = rusqlite::Connection::open(database.path()).unwrap();
+        let later = Timestamp::now().plus(std::time::Duration::from_secs(301));
+
+        assert_eq!(
+            status(&database, Some(&cookie), &id.to_string(), None, later),
+            ChallengeStatus::Expired
+        );
+        connection
+            .execute("UPDATE \"AuthChallenges\" SET \"Attempts\" = 2", [])
+            .unwrap();
+        assert_eq!(
+            status(
+                &database,
+                Some(&cookie),
+                &id.to_string(),
+                None,
+                Timestamp::now()
+            ),
+            ChallengeStatus::AttemptLimit
+        );
+        connection
+            .execute(
+                "UPDATE \"AuthChallenges\" SET \"ConsumedAt\" = ?1",
+                [Timestamp::now()],
+            )
+            .unwrap();
+        assert_eq!(
+            status(
+                &database,
+                Some(&cookie),
+                &id.to_string(),
+                None,
+                Timestamp::now()
+            ),
+            ChallengeStatus::Consumed
+        );
+    }
+
+    #[test]
+    fn a_challenge_does_not_outlive_a_change_of_the_account() {
+        for change in [
+            "UPDATE \"Users\" SET \"IsDisabled\" = 1",
+            "UPDATE \"Users\" SET \"SessionVersion\" = 4",
+            "UPDATE \"Users\" SET \"SecurityRecoveryRequired\" = 1",
+        ] {
+            let (_folder, database) = new_database();
+            let (id, _, cookie) = challenge_in(&database);
+            rusqlite::Connection::open(database.path())
+                .unwrap()
+                .execute(change, [])
+                .unwrap();
+
+            assert_eq!(
+                status(
+                    &database,
+                    Some(&cookie),
+                    &id.to_string(),
+                    None,
+                    Timestamp::now()
+                ),
+                ChallengeStatus::SecurityChanged,
+                "{change}"
+            );
+        }
+    }
+
+    #[test]
+    fn a_challenge_asked_from_a_session_needs_that_session_to_be_running() {
+        let (_folder, database) = new_database();
+        let (id, user, cookie) = challenge_in(&database);
+        let connection = rusqlite::Connection::open(database.path()).unwrap();
+        let parent = Id::random();
+        let now = Timestamp::now();
+        let end = now.plus(std::time::Duration::from_secs(3600));
+        connection
+            .execute(
+                "INSERT INTO \"UserSessions\" (\"Id\", \"UserId\", \"Device\", \"IpAddress\", \"CreatedAt\", \"LastSeenAt\", \"ExpiresAt\", \"AbsoluteExpiresAt\",
+                     \"PrimarySource\", \"SecurityVersion\", \"ShortLived\") VALUES (?1, ?2, 'd', 'i', ?3, ?3, ?4, ?4, 'password', 3, 0)",
+                params![parent, user, now, end],
+            )
+            .unwrap();
+        connection
+            .execute(
+                "UPDATE \"AuthChallenges\" SET \"ParentSessionId\" = ?1",
+                [parent],
+            )
+            .unwrap();
+
+        assert_eq!(
+            status(&database, Some(&cookie), &id.to_string(), None, now),
+            ChallengeStatus::Valid
+        );
+        connection
+            .execute("UPDATE \"UserSessions\" SET \"RevokedAt\" = ?1", [now])
+            .unwrap();
+        assert_eq!(
+            status(&database, Some(&cookie), &id.to_string(), None, now),
+            ChallengeStatus::SecurityChanged
+        );
+    }
+
+    #[tokio::test]
+    async fn only_one_of_two_requests_uses_a_challenge_up_and_failures_close_it_at_its_budget() {
+        let (_folder, database) = new_database();
+        let (id, _, _) = challenge_in(&database);
+        let now = Timestamp::now();
+
+        let used = database
+            .write(move |tx| -> Result<(bool, bool), DbError> {
+                Ok((consume(tx, id, now)?, consume(tx, id, now)?))
+            })
+            .await
+            .unwrap();
+        assert_eq!(used, (true, false));
+
+        let (second, _, _) = challenge_in(&database);
+        database
+            .write(move |tx| -> Result<(), DbError> {
+                fail_attempt(tx, second, now)?;
+                let (attempts, consumed): (i64, Option<Timestamp>) = tx.query_row(
+                    "SELECT \"Attempts\", \"ConsumedAt\" FROM \"AuthChallenges\" WHERE \"Id\" = ?1",
+                    [second],
+                    |r| Ok((r.get(0)?, r.get(1)?)),
+                )?;
+                assert_eq!((attempts, consumed), (1, None));
+                fail_attempt(tx, second, now)?;
+                let consumed: Option<Timestamp> = tx.query_row(
+                    "SELECT \"ConsumedAt\" FROM \"AuthChallenges\" WHERE \"Id\" = ?1",
+                    [second],
+                    |r| r.get(0),
+                )?;
+                assert!(consumed.is_some());
+                Ok(())
+            })
+            .await
+            .unwrap();
+    }
+
+    #[test]
+    fn the_cookie_that_binds_a_challenge_is_read_back() {
+        let id = Id::parse("049083c7-a28f-4b91-b21b-2a0920dc1686").unwrap();
+        let mut headers = axum::http::HeaderMap::new();
+        headers.insert(
+            axum::http::header::COOKIE,
+            "stellarr-dev-preauth=049083c7a28f4b91b21b2a0920dc1686.the-secret"
+                .parse()
+                .unwrap(),
+        );
+
+        assert_eq!(
+            read_preauth(&headers, false),
+            Some((id, "the-secret".to_string()))
+        );
+        assert_eq!(read_preauth(&headers, true), None);
+        headers.insert(
+            axum::http::header::COOKIE,
+            "stellarr-dev-preauth=short.secret".parse().unwrap(),
+        );
+        assert_eq!(read_preauth(&headers, false), None);
     }
 }

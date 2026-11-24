@@ -174,8 +174,46 @@ response, log one line, turn a panic into a 500, read the `X-Forwarded-*`
 headers (the client's address is `Extension<ClientInfo>`), in development
 answer the web dev server's origin, count against the rate limit of the route,
 the client gate, refuse a JSON route another content type, authenticate, the
-handler. Authentication has its place at the end of `content_type` in
-`pipeline.rs`; it is not written yet.
+handler. Authentication is `route_checks` in `pipeline.rs`: it reads the session
+cookie of every request and checks it against the database (see Sessions).
+
+## Sealed values
+
+`seal.rs` seals what the server gives a client to keep, or writes to the
+database and must be able to trust: `state.sealer().seal(purpose, aad, expires,
+payload)` and `.open(purpose, aad, text, now)`. The key is derived from a master
+key (`keys/master.key` in the data root, made on the first start with mode 0600
+and carried by a backup) for the purpose named, so a value sealed for one
+purpose does not open as another, and `aad` (the account an id belongs to, say)
+has to be the same on opening. A value may expire inside the seal. Name the purpose
+for what the value is (`"session-cookie"`, `"totp-secret"`), once, in the module
+that seals it. A part that seals on its own, such as the single sign-on library,
+gets `state.sealer().derive_key("oidc")`, 32 bytes.
+
+## Sessions and who is calling
+
+The session cookie holds a sealed ticket (the account, its session version, the
+session row), and the row in `UserSessions` decides: revoked, expired, a bumped
+session version, a disabled account or a missing second step end it on the next
+request, and ending the row ends the session everywhere. `auth::session`
+checks it, writes the last-seen time back at most every five minutes, and
+renews a cookie that is past half its life. A request whose cookie is not good
+is simply not signed in, and the cookie is taken away.
+
+- `.authorized()` on a route (after `.get(..)` and the like): a request without
+  a valid session is answered 401 with no body before the handler.
+- A handler on such a route takes `caller: Caller` (`caller.user`,
+  `caller.session`). A handler on an open route that answers both takes
+  `MaybeCaller(caller)`.
+- To sign somebody in, a handler writes the session with `auth::flow::start`
+  (the one place every way of signing in goes through: it gives a session, or a
+  challenge when a second step or an enrolment is needed, never both) and
+  answers with `with_session_cookie(response, &auth::session::sign_in_cookie(..))`.
+  To sign out it revokes the row (`auth::session::revoke`) and answers with
+  `sign_out_cookie`.
+- `Origin` is the address the proxies vouch for, whether the request came over
+  HTTPS and the browser's name for itself, for the session row and the security
+  event.
 
 ## Tests
 
@@ -207,6 +245,12 @@ async fn a_channel_is_read_by_its_id() {
   to the environment; the names are the ones operators use.
 - `server.anonymous()` sends no client headers; `server.client_of("web", "2.0.0")`
   sends the ones you name.
+- `server.found("owner").await` founds the instance (the setup code is read from
+  the binary's log) and returns a `Person` who is signed in; `server.register("maya")`
+  makes an invite and registers with it; `server.sign_in(&person)` is a second
+  sign-in with a client of its own; `server.login(&client, name, password)` is the
+  bare request. Every person has the password `support::PASSWORD`. `server.database()`
+  is a connection of the test's own to the server's file, to arrange or to look.
 - `server.database_path()` is the database file. A test may open it with
   `rusqlite` to arrange rows or to look at what the server wrote.
 - `server.events()` is every event the server published, as JSON.
@@ -217,6 +261,10 @@ async fn a_channel_is_read_by_its_id() {
   `tests/api/pipeline.rs`.
 - `client.send(Request::new(Method::POST, "/path").json(&json!({...})))` for
   anything beyond `get` and `post_json`.
+
+`tests/api/oracle.rs` holds an ignored test that sends the same requests to this
+server and to the first one and prints where the answers differ; its header says
+how to run it.
 
 The Testing environment lifts the rate limits (ten thousand a window) and lets
 the session cookie work over plain HTTP. To test a limit, start in Production

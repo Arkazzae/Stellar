@@ -7,7 +7,7 @@ use rusqlite::params;
 use serde_json::{Value, json};
 use stellarr_api::values::Timestamp;
 
-use crate::support::{PASSWORD, Request, Server};
+use crate::support::{PASSWORD, Person, Request, Server};
 
 const POLISH: (&str, &str) = ("STELLARR_LANGUAGE", "pl");
 
@@ -172,6 +172,12 @@ async fn a_logout_revokes_the_session_so_its_cookie_stops_working() {
     assert!(revoked.is_some());
     let event: i64 = server.database().query_row("SELECT count(*) FROM \"SecurityEvents\" WHERE \"Kind\" = 'session-revoked' AND \"Detail\" = 'logout'", [], |row| row.get(0)).unwrap();
     assert_eq!(event, 1);
+    // The hub is told, so that it closes what the session had open.
+    let ended: Vec<Value> = server.events().into_iter().filter(|event| event["name"] == "SessionEnded").collect();
+    let session: String = server.database().query_row("SELECT \"Id\" FROM \"UserSessions\"", [], |row| row.get(0)).unwrap();
+    assert_eq!(ended.len(), 1);
+    assert_eq!(ended[0]["audience"]["users"][0], owner.id.as_str());
+    assert_eq!(ended[0]["payload"]["session"].as_str().unwrap().to_uppercase(), session);
     // The cookie alone is not trusted: sent again by hand, it is refused.
     let replay = server.anonymous().send(Request::new(Method::GET, "/api/me").header("Cookie", &format!("{name}={stale_cookie}"))).await;
     assert_eq!(replay.status, 401);
@@ -371,33 +377,64 @@ async fn the_session_cookie_is_secure_with_a_host_prefix_in_production_and_plain
     assert!(behind_https.header("set-cookie").unwrap().contains("; secure;"));
 }
 
-#[tokio::test]
-async fn the_cookie_is_renewed_once_less_of_its_life_is_left_than_has_gone() {
-    // The ticket is sealed with the key on the data volume, so a test can make
-    // an old one the way the server would have.
+/// A cookie of the signed-in person that was issued twenty days ago and ends in
+/// ten, which the server makes by sealing a ticket with the key on its volume.
+fn cookie_due_for_renewal(server: &Server, owner: &Person) -> String {
     use stellarr_api::seal::Sealer;
-    let server = Server::start().await;
-    let owner = server.found("owner").await;
     let sealer = Sealer::load_or_create(&server.folder().join("keys")).unwrap();
-    let name = "stellarr-dev-session";
-    let current = owner.client.cookie(name).unwrap();
     let now = Timestamp::now();
+    let current = owner.client.cookie("stellarr-dev-session").unwrap();
     let payload = sealer.open("session-cookie", b"", &current, now).unwrap();
     let mut ticket: Value = serde_json::from_slice(&payload).unwrap();
-    // Issued 20 days ago, ending in 10: less is left than has gone.
     ticket["issued"] = json!(now.minus(Duration::from_secs(20 * 24 * 3600)).unix_seconds());
     ticket["expires"] = json!(now.plus(Duration::from_secs(10 * 24 * 3600)).unix_seconds());
-    let old = sealer.seal("session-cookie", b"", Timestamp::from_unix_seconds(ticket["expires"].as_i64().unwrap()), ticket.to_string().as_bytes());
+    let old = sealer.seal(
+        "session-cookie",
+        b"",
+        Timestamp::from_unix_seconds(ticket["expires"].as_i64().unwrap()),
+        ticket.to_string().as_bytes(),
+    );
+    format!("stellarr-dev-session={old}")
+}
 
-    let response = server
-        .anonymous()
-        .send(Request::new(Method::GET, "/api/session").header("Cookie", &format!("{name}={old}")).header("X-Stellarr-Client", "web").header("X-Stellarr-Client-Version", "2.0.0"))
-        .await;
+fn browser_request(method: Method, path: &str, cookie: &str) -> Request {
+    Request::new(method, path)
+        .header("Cookie", cookie)
+        .header("X-Stellarr-Client", "web")
+        .header("X-Stellarr-Client-Version", "2.0.0")
+}
+
+#[tokio::test]
+async fn the_cookie_is_renewed_once_less_of_its_life_is_left_than_has_gone() {
+    let server = Server::start().await;
+    let owner = server.found("owner").await;
+    let old = cookie_due_for_renewal(&server, &owner);
+
+    let response = server.anonymous().send(browser_request(Method::GET, "/api/session", &old)).await;
 
     assert!(response.json::<Value>()["user"].is_object());
     let renewed = response.header("set-cookie").expect("a renewed cookie");
     assert!(renewed.starts_with("stellarr-dev-session="), "{renewed}");
+    assert_ne!(renewed.split(';').next(), old.split(';').next());
     assert_eq!(response.header("cache-control"), Some("no-cache,no-store"));
+}
+
+#[tokio::test]
+async fn a_cookie_due_for_renewal_is_left_alone_when_the_handler_signs_in_or_out_itself() {
+    let server = Server::start().await;
+    let owner = server.found("owner").await;
+    let old = cookie_due_for_renewal(&server, &owner);
+
+    let mut login = browser_request(Method::POST, "/api/auth/login", &old);
+    login = login.json(&json!({ "username": "owner", "password": PASSWORD }));
+    let signed_in = server.anonymous().send(login).await;
+    let signed_out = server.anonymous().send(browser_request(Method::POST, "/api/auth/logout", &old)).await;
+
+    for response in [&signed_in, &signed_out] {
+        let lines: Vec<_> = response.headers.get_all("set-cookie").iter().collect();
+        assert_eq!(lines.len(), 1, "{lines:?}");
+    }
+    assert!(signed_out.header("set-cookie").unwrap().contains("expires=Thu, 01 Jan 1970"));
 }
 
 #[tokio::test]
