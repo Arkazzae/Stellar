@@ -707,3 +707,43 @@ async fn a_short_session_is_not_stretched_by_use_and_ends_on_time() {
     // The kept session of the first sign-in is another one.
     assert!(!user_of(&owner.client).await.is_null());
 }
+
+/// Counts, through the seam of the password module, that every way of being
+/// turned away derives the password once. It is one test because the count is
+/// the process's, and nothing else in this binary derives passwords in it.
+#[tokio::test]
+async fn every_refusal_of_a_sign_in_does_the_work_of_a_real_check() {
+    use stellarr_api::auth::password;
+    let server = Server::in_process(stellarr_api::accounts::routes(), &[]).await;
+    let connection = server.database();
+    let good = password::hash(PASSWORD);
+    for (name, hash, disabled) in [
+        ("real", Some(good.as_str()), false),
+        ("disabled", Some(good.as_str()), true),
+        ("nohash", None, false),
+        ("garbage", Some("not a hash"), false),
+        ("otherscheme", Some("pbkdf2-sha512$210000$AAECAwQFBgcICQoLDA0ODw==$F7XbbcEiPZ9xiSyI75OfVvMnEQBrxxhoPRwTxTL13LM="), false),
+        ("fewrounds", Some("pbkdf2-sha256$10$AAECAwQFBgcICQoLDA0ODw==$F7XbbcEiPZ9xiSyI75OfVvMnEQBrxxhoPRwTxTL13LM="), false),
+    ] {
+        connection
+            .execute(
+                "INSERT INTO \"Users\" (\"Id\", \"Username\", \"NormalizedUsername\", \"DisplayName\", \"PasswordHash\", \"IsDisabled\", \"SessionVersion\",
+                     \"SecurityRecoveryRequired\", \"AvatarColor\", \"CreatedAt\") VALUES (?1, ?2, ?3, 'X', ?4, ?5, 0, 0, 'c', '2026-11-24 00:00:00')",
+                params![stellarr_api::values::Id::random().to_db_text(), name, name.to_uppercase(), hash, disabled],
+            )
+            .unwrap();
+    }
+    let client = server.client();
+
+    let mut counts = Vec::new();
+    for name in ["real", "disabled", "nohash", "garbage", "otherscheme", "fewrounds", "nobody-here"] {
+        let before = password::derivations();
+        let response = server.login(&client, name, "not the password").await;
+        assert_eq!(response.status, 401, "{name}");
+        counts.push((name, password::derivations() - before));
+    }
+
+    assert!(counts.iter().all(|(_, derived)| *derived == 1), "{counts:?}");
+    let failures: i64 = connection.query_row("SELECT count(*) FROM \"SecurityEvents\" WHERE \"Kind\" = 'login-failed'", [], |row| row.get(0)).unwrap();
+    assert_eq!(failures, 6);
+}
