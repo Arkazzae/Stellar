@@ -54,7 +54,25 @@ pub fn link(
     issuer: &str,
     subject: &str,
 ) -> Result<Linked, DbError> {
-    let mut statement = tx.prepare(
+    if let Some(outcome) = existing_link(tx, user, issuer, subject)? {
+        return Ok(outcome);
+    }
+    match stage(tx, requester, user, provider, issuer, subject, true) {
+        Ok(()) => Ok(Linked::Linked),
+        // Linked by a request that won the race.
+        Err(error) if error.is_unique_violation() => Ok(Linked::Taken),
+        Err(error) => Err(error),
+    }
+}
+
+/// Whether the issuer and subject, or the account's slot at that issuer, are taken.
+pub(crate) fn existing_link(
+    db: &Connection,
+    user: Id,
+    issuer: &str,
+    subject: &str,
+) -> Result<Option<Linked>, DbError> {
+    let mut statement = db.prepare(
         "SELECT \"UserId\", \"Issuer\", \"Subject\" FROM \"ExternalIdentities\"
          WHERE (\"Issuer\" = ?1 AND \"Subject\" = ?2) OR (\"UserId\" = ?3 AND \"Issuer\" = ?1)",
     )?;
@@ -68,21 +86,16 @@ pub fn link(
         .iter()
         .any(|(owner, i, s)| i == issuer && s == subject && *owner == user)
     {
-        return Ok(Linked::Linked);
+        return Ok(Some(Linked::Linked));
     }
     if !existing.is_empty() {
-        return Ok(if existing.iter().any(|(owner, ..)| *owner != user) {
+        return Ok(Some(if existing.iter().any(|(owner, ..)| *owner != user) {
             Linked::Taken
         } else {
             Linked::Other
-        });
+        }));
     }
-    match stage(tx, requester, user, provider, issuer, subject, true) {
-        Ok(()) => Ok(Linked::Linked),
-        // Linked by a request that won the race.
-        Err(error) if error.is_unique_violation() => Ok(Linked::Taken),
-        Err(error) => Err(error),
-    }
+    Ok(None)
 }
 
 /// Adds the link and its event: the account may have been made a moment ago
