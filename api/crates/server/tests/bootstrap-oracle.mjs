@@ -14,7 +14,7 @@ import { writeFileSync } from "node:fs";
 import { parseArgs } from "node:util";
 
 const { values: args } = parseArgs({
-  options: { base: { type: "string" }, out: { type: "string" }, home: { type: "string" }, beta: { type: "string" }, secret: { type: "string" }, password: { type: "string", default: "Corona!2026-long" } },
+  options: { base: { type: "string" }, out: { type: "string" }, home: { type: "string" }, beta: { type: "string" }, voice: { type: "string" }, lounge: { type: "string" }, ops: { type: "string" }, call: { type: "string" }, secret: { type: "string" }, password: { type: "string", default: "Corona!2026-long" } },
 });
 const base = args.base;
 const clientHeaders = { "X-Stellarr-Client": "web", "X-Stellarr-Client-Version": "2.0.0" };
@@ -177,6 +177,31 @@ await ask("giphy, signed in", P.mia, "/api/config/giphy");
 await ask("giphy, nobody signed in", null, "/api/config/giphy");
 await ask("giphy, POST", P.mia, "/api/config/giphy", {}, "POST");
 
+// Voice: who sits where, as the answer says it. Six people are in rooms and a
+// call: one muted, one in two tabs, one in a room the others cannot see, and two
+// in a direct call, which no bootstrap shows.
+const say = async (title, hub, target, ...argumentsList) => {
+  const done = await hub.invoke(target, ...argumentsList);
+  out(`## ${title}: ${target}(${scrub(argumentsList).slice(0, 120)}) -> ${scrub(done?.error ?? done?.result ?? "ok")}`);
+};
+const sig = (room, over = {}) => ({ protocolVersion: 1, channelId: room, toUserId: null, kind: "state", payload: '{"muted":false}', ...over });
+hubs.uma = await new Hub(P.uma).open();
+await say("mia sits in the voice room", hubs.mia, "JoinVoice", args.voice);
+await say("sam sits in it", hubs.sam, "JoinVoice", args.voice);
+await say("sam mutes herself", hubs.sam, "SendVoiceSignal", sig(args.voice, { payload: '{"muted":true}' }));
+await say("noor sits in the lounge", hubs.noor, "JoinVoice", args.lounge);
+await say("omar sits in the lounge", hubs.omar, "JoinVoice", args.lounge);
+await say("ola sits in a room most people cannot see", hubs.ola, "JoinVoice", args.ops);
+const tab = await new Hub(P.mia).open();
+await say("mia's second tab sits in the voice room too", tab, "JoinVoice", args.voice);
+await say("tess calls uma", hubs.tess, "JoinVoice", args.call);
+await say("uma answers", hubs.uma, "JoinVoice", args.call);
+await sleep(800);
+for (const name of ["ola", "mia", "noor", "omar", "uma", "tess", "sam"]) await ask(`${name} loads the bootstrap with people in the rooms`, P[name]);
+await say("mia leaves", tab, "LeaveVoice");
+await sleep(500);
+await ask("sam loads it once mia's second tab has left", P.sam);
+
 // How long the answer takes for the biggest page, said apart from the transcript.
 const took = [];
 let size = 0;
@@ -190,5 +215,5 @@ took.sort((a, b) => a - b);
 console.error(`${base}: median ${took[4].toFixed(1)} ms, fastest ${took[0].toFixed(1)} ms, ${size} bytes`);
 
 writeFileSync(args.out, lines.join("\n") + "\n");
-for (const hub of Object.values(hubs)) hub.socket.close(1000);
+for (const hub of [...Object.values(hubs), tab]) hub.socket.close(1000);
 process.exit(0);
