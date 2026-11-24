@@ -48,7 +48,7 @@ pub fn normalize_channel_name(name: Option<&str>) -> String {
 }
 
 pub fn is_valid_channel_name(name: &str) -> bool {
-    let length = stellarr_unicode::utf16::length(&name);
+    let length = stellarr_unicode::utf16::length(name);
     (1..=MAX_CHANNEL_NAME_LENGTH).contains(&length)
         && name
             .chars()

@@ -83,7 +83,7 @@ pub async fn create(
     match outcome {
         Answer::Refused(refusal) => Err(refusal.into_error(&messages)?),
         Answer::Done(section) => Ok(created(
-            &format!("/api/admin/sections/{}", section.id),
+            format!("/api/admin/sections/{}", section.id),
             &section,
         )),
     }
