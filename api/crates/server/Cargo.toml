@@ -15,6 +15,8 @@ path = "src/main.rs"
 
 [dependencies]
 stellarr-discord = { path = "../discord" }
+stellarr-archive = { path = "../archive" }
+stellarr-deflate = { path = "../deflate" }
 stellarr-embeds = { path = "../embeds" }
 stellarr-mail = { path = "../mail" }
 stellarr-mentions = { path = "../mentions" }
@@ -23,6 +25,7 @@ stellarr-hub = { path = "../hub" }
 stellarr-messages = { path = "../messages" }
 stellarr-oidc = { path = "../oidc" }
 stellarr-outbound = { path = "../outbound" }
+stellarr-s3 = { path = "../s3" }
 stellarr-smtp = { path = "../smtp" }
 stellarr-storage = { path = "../storage" }
 stellarr-timezone = { path = "../timezone" }
@@ -45,7 +48,6 @@ tracing-subscriber = { workspace = true, features = ["env-filter"] }
 workspace = true
 
 [dev-dependencies]
-stellarr-s3 = { path = "../s3" }
 stellarr-websocket = { path = "../websocket" }
 http = { workspace = true }
 # The unit tests of the permission rules count the statements a check runs.

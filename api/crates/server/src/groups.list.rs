@@ -3,6 +3,7 @@ groups! {
     accounts,
     administration,
     assets,
+    backups,
     channels,
     desktop_login,
     inbox,
