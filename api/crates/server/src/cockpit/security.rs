@@ -13,6 +13,7 @@ use stellarr_messages::MessageKey;
 
 use super::providers;
 use super::{invalid, no_content, bind};
+use crate::account_security::{linked_identities, recent_events};
 use crate::auth::Caller;
 use crate::auth::policy::SecurityPolicy;
 use crate::auth::{events, recovery, recovery_codes, ways_in};
@@ -111,39 +112,30 @@ pub(super) async fn read(
                     })
                 })?
                 .collect::<rusqlite::Result<Vec<_>>>()?;
-            let mut statement = db.prepare(
-                "SELECT \"Id\", \"ProviderId\", \"Issuer\", \"CreatedAt\" FROM \"ExternalIdentities\" WHERE \"UserId\" = ?1 ORDER BY \"CreatedAt\"",
-            )?;
-            let identities = statement
-                .query_map([user], |row| {
-                    let provider: Option<String> = row.get(1)?;
-                    let issuer: String = row.get(2)?;
+            let identities = linked_identities(db, user)?
+                .into_iter()
+                .map(|linked| {
                     Ok(Identity {
-                        id: row.get(0)?,
                         name: crate::identity_providers::identity_name(
                             &reading,
-                            provider.as_deref().unwrap_or("default"),
-                            &issuer,
+                            linked.provider.as_deref().unwrap_or("default"),
+                            &linked.issuer,
                         )
                         .map_err(|e| rusqlite::Error::ToSqlConversionFailure(Box::new(e)))?,
-                        issuer,
-                        created_at: row.get(3)?,
+                        id: linked.id,
+                        issuer: linked.issuer,
+                        created_at: linked.created_at,
                     })
-                })?
+                })
                 .collect::<rusqlite::Result<Vec<_>>>()?;
-            let mut statement = db.prepare(
-                "SELECT \"Kind\", \"IpAddress\", \"CreatedAt\" FROM \"SecurityEvents\" WHERE \"UserId\" = ?1
-                 ORDER BY \"CreatedAt\" DESC LIMIT ?2",
-            )?;
-            let events = statement
-                .query_map(params![user, HISTORY_SHOWN as i64], |row| {
-                    Ok(Event {
-                        kind: row.get(0)?,
-                        ip_address: row.get(1)?,
-                        created_at: row.get(2)?,
-                    })
-                })?
-                .collect::<rusqlite::Result<Vec<_>>>()?;
+            let events = recent_events(db, user, HISTORY_SHOWN as i64)?
+                .into_iter()
+                .map(|event| Event {
+                    kind: event.kind,
+                    ip_address: event.ip_address,
+                    created_at: event.created_at,
+                })
+                .collect();
             let now = Timestamp::now();
             Ok(Some(SecurityDto {
                 user_id: user,

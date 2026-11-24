@@ -1467,12 +1467,31 @@ function compare() {
     const from = Math.max(0, i - 120);
     return [x.slice(from, x.length - j + 30).slice(0, 900), y.slice(from, y.length - j + 30).slice(0, 900)];
   };
+  // Differences that are known, by kind, and why: the script's exit status counts the others.
+  const KNOWN = [
+    ["decided: a cached answer is refused for the credential and the log export (cache-control: no-store)", (x, y) => y.some((l) => /cache-control: no-store/.test(l)) && !x.some((l) => /cache-control: no-store/.test(l)) && x.join("\n") === strip(y)],
+    ["decided: any change to the mail settings asks for a fresh second step", (x, y) => /^## (settings|stale)/.test(x[0]) && /^\s*200/.test(x[1] ?? "") && /fresh-mfa-required/.test(y[1] ?? "")],
+    ["accepted: an id that is none is a 404 before the caller is asked who they are, here a 401 after", (x, y) => /^\s*404/.test(x[1] ?? "") && /^\s*401/.test(y[1] ?? "")],
+    ["accepted: characters outside the basic plane are written whole, the first server wrote surrogate pairs", (x) => /\\uD[89AB][0-9A-F]{2}\\uD[C-F][0-9A-F]{2}/.test(x.join("\n"))],
+    ["accepted: member names of a body in another letter case", (x) => /another case/.test(x[0])],
+    ["accepted: a Windows time zone name", (x) => /Central European/.test(x[0])],
+    ["accepted: a test mail to an address the SMTP client cannot write, and the wording of mail failures", (x) => /^## (mail test|settings: mail off again)/.test(x[0])],
+  ];
+  const strip = (lines) => lines.filter((l) => !/cache-control: no-store/.test(l)).join("\n");
+  const kinds = new Map();
+  let unknown = 0;
   let differing = 0;
   for (let i = 0; i < Math.max(a.length, b.length); i++) {
     const x = a[i] ?? ["<missing>"];
     const y = b[i] ?? ["<missing>"];
     if (x.join("\n") === y.join("\n")) continue;
     differing++;
+    const kind = KNOWN.find(([, applies]) => applies(x, y));
+    if (kind) {
+      kinds.set(kind[0], (kinds.get(kind[0]) ?? 0) + 1);
+    } else {
+      unknown++;
+    }
     console.log(x[0]);
     if (x[0] !== y[0]) console.log(`  (this one: ${y[0]})`);
     for (let k = 0; k < Math.max(x.length, y.length); k++) {
@@ -1483,6 +1502,9 @@ function compare() {
     }
   }
   console.log(differing === 0 ? "the transcripts are the same" : `${differing} of ${a.length} steps differ`);
+  for (const [kind, count] of kinds) console.log(`  known (${count}): ${kind}`);
+  console.log(`  unknown: ${unknown}`);
+  if (unknown > 0) process.exitCode = 1;
 }
 
 /** A mail server that answers every command with a refusal. */
