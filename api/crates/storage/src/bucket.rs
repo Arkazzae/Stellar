@@ -45,8 +45,9 @@ use crate::{
 /// and want this one.
 pub const REGION: &str = "us-east-1";
 
-/// The largest part S3 takes.
-const MAX_PART_SIZE: u64 = 5 * 1024 * 1024 * 1024;
+/// The largest part size that may be set. S3 takes up to 5 GiB, but a part is
+/// held in memory whole, so the setting stops well short of that.
+const MAX_PART_SIZE: u64 = 512 * 1024 * 1024;
 
 /// How an answer's body is bounded when it is read whole: an error document,
 /// a head, a part's answer.
@@ -56,8 +57,8 @@ const SMALL_ANSWER: u64 = 1024 * 1024;
 #[derive(Clone, Debug)]
 pub struct BucketTuning {
     /// The size of the parts of a multipart upload, and so the size from which
-    /// an upload is one. At least 5 MiB, the least S3 takes for every part
-    /// but the last.
+    /// an upload is one, and what an upload holds in memory. From 5 MiB, the
+    /// least S3 takes for every part but the last, to 512 MiB.
     pub part_size: u64,
     /// How long resolving, connecting and the TLS handshake may take.
     pub connect_timeout: Duration,
@@ -118,7 +119,7 @@ impl BucketStore {
         if !(s3::MIN_PART_SIZE..=MAX_PART_SIZE).contains(&tuning.part_size) {
             return Err(Error::store(
                 StoreFault::Rejected,
-                "the part size must be between 5 MiB and 5 GiB",
+                "the part size must be between 5 MiB and 512 MiB",
             ));
         }
         let config = s3::Config::new(
@@ -619,6 +620,9 @@ async fn read_part(
     size: u64,
 ) -> Result<Vec<u8>> {
     let room = size - part.len() as u64;
+    // One allocation of the part's size, and no doubling that would hold two
+    // copies of a large part for a moment.
+    part.reserve_exact(usize::try_from(room).unwrap_or(usize::MAX));
     (&mut *data).take(room).read_to_end(&mut part).await?;
     Ok(part)
 }

@@ -68,6 +68,7 @@ pub struct Settings {
 struct Object {
     bytes: Vec<u8>,
     content_type: String,
+    metadata: Vec<(String, String)>,
 }
 
 #[derive(Default)]
@@ -170,6 +171,7 @@ impl FakeS3 {
                 Object {
                     bytes: bytes.to_vec(),
                     content_type: String::new(),
+                    metadata: Vec::new(),
                 },
             );
     }
@@ -520,6 +522,7 @@ fn list(state: &State, bucket: &str, query: &str) -> Outgoing {
         page
     };
     // The token is opaque, as a store's is: not a key, and not encoded the way keys are.
+    let prefix = query_value(query, "prefix").unwrap_or_default();
     let after = query_value(query, "continuation-token").and_then(|t| {
         let bytes: Option<Vec<u8>> = (0..t.len() / 2)
             .map(|i| u8::from_str_radix(t.get(i * 2..i * 2 + 2)?, 16).ok())
@@ -541,7 +544,7 @@ fn list(state: &State, bucket: &str, query: &str) -> Outgoing {
     let mut last = None;
     let mut truncated = false;
     for (key, object) in objects {
-        if after.as_deref().is_some_and(|a| key.as_str() <= a) {
+        if after.as_deref().is_some_and(|a| key.as_str() <= a) || !key.starts_with(&prefix) {
             continue;
         }
         if taken == page {
@@ -606,15 +609,41 @@ fn object(state: &mut State, request: &Incoming, bucket: &str, key: &str, query:
             out
         }
         "PUT" => {
-            let etag = etag_of(&request.body);
             let content_type = header(request, "content-type")
                 .unwrap_or_default()
                 .to_owned();
+            let metadata = request
+                .headers
+                .iter()
+                .filter(|(n, _)| n.starts_with("x-amz-meta-"))
+                .cloned()
+                .collect();
+            let bytes = if header(request, "x-amz-content-sha256")
+                == Some("STREAMING-AWS4-HMAC-SHA256-PAYLOAD")
+            {
+                match unframe(
+                    &request.body,
+                    header(request, "x-amz-decoded-content-length"),
+                ) {
+                    Some(bytes) => bytes,
+                    None => {
+                        return Outgoing::error(
+                            400,
+                            "IncompleteBody",
+                            "the chunked body is broken",
+                        );
+                    }
+                }
+            } else {
+                request.body.clone()
+            };
+            let etag = etag_of(&bytes);
             state.buckets.get_mut(bucket).unwrap().insert(
                 key.to_owned(),
                 Object {
-                    bytes: request.body.clone(),
+                    bytes,
                     content_type,
+                    metadata,
                 },
             );
             let mut out = Outgoing::new(200);
@@ -661,6 +690,7 @@ fn object(state: &mut State, request: &Incoming, bucket: &str, key: &str, query:
             out.headers.push(("etag".into(), etag_of(&found.bytes)));
             out.headers
                 .push(("content-type".into(), found.content_type.clone()));
+            out.headers.extend(found.metadata.iter().cloned());
             let range = header(request, "range").filter(|_| request.method == "GET");
             if let Some(range) = range
                 && !state.settings.ignore_range
@@ -753,6 +783,7 @@ fn complete(
         Object {
             bytes: assembled,
             content_type: String::new(),
+            metadata: Vec::new(),
         },
     );
     let mut out = Outgoing::xml(
@@ -766,4 +797,31 @@ fn complete(
         out.body = [b"\n \n".as_slice(), &out.body].concat();
     }
     out
+}
+
+/// Reads an `aws-chunked` body back into the bytes it carries. The chunk
+/// signatures are not checked here: they are the library's own work, and the
+/// store's check of them is what the real-server run is for.
+fn unframe(body: &[u8], decoded_length: Option<&str>) -> Option<Vec<u8>> {
+    let mut out = Vec::new();
+    let mut at = 0;
+    loop {
+        let line_end = body[at..].windows(2).position(|w| w == b"\r\n")? + at;
+        let line = std::str::from_utf8(&body[at..line_end]).ok()?;
+        let (size, signature) = line.split_once(";chunk-signature=")?;
+        if signature.len() != 64 {
+            return None;
+        }
+        let size = usize::from_str_radix(size, 16).ok()?;
+        let start = line_end + 2;
+        out.extend_from_slice(body.get(start..start + size)?);
+        if body.get(start + size..start + size + 2)? != b"\r\n" {
+            return None;
+        }
+        at = start + size + 2;
+        if size == 0 {
+            break;
+        }
+    }
+    (at == body.len() && decoded_length?.parse::<usize>().ok()? == out.len()).then_some(out)
 }

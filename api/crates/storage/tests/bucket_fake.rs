@@ -573,7 +573,12 @@ async fn settings_that_cannot_make_a_store_are_refused_at_once() {
             "{endpoint:?} {bucket:?}"
         );
     }
-    for part_size in [0, 5 * 1024 * 1024 - 1, 5 * 1024 * 1024 * 1024 + 1] {
+    for part_size in [
+        0,
+        5 * 1024 * 1024 - 1,
+        512 * 1024 * 1024 + 1,
+        5 * 1024 * 1024 * 1024,
+    ] {
         let tuning = BucketTuning {
             part_size,
             ..BucketTuning::default()
