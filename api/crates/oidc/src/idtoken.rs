@@ -281,7 +281,7 @@ fn check_claims(
     let expires = time_claim(claims, "exp")?.ok_or(E::MissingExpiry)?;
     time_claim(claims, "iat")?.ok_or(E::MissingIssuedAt)?;
     let not_before = time_claim(claims, "nbf")?;
-    let auth_time = time_claim(claims, "auth_time")?;
+    let auth_time = auth_time_claim(claims)?;
     if expires < now - CLOCK_SKEW {
         return Err(E::Expired);
     }
@@ -342,6 +342,22 @@ fn json_object(part: &str) -> Result<Map<String, Value>, IdTokenError> {
         Ok(Value::Object(map)) => Ok(map),
         _ => Err(IdTokenError::Malformed),
     }
+}
+
+/// `auth_time`: a whole non-negative number, or a string of ASCII digits
+/// alone, which some providers send. Anything else is a malformed token.
+fn auth_time_claim(claims: &Map<String, Value>) -> Result<Option<i64>, IdTokenError> {
+    let parsed = match claims.get("auth_time") {
+        None => return Ok(None),
+        Some(Value::Number(number)) => number.as_i64().filter(|n| *n >= 0),
+        Some(Value::String(text))
+            if !text.is_empty() && text.bytes().all(|c| c.is_ascii_digit()) =>
+        {
+            text.parse::<i64>().ok()
+        }
+        Some(_) => None,
+    };
+    parsed.map(Some).ok_or(IdTokenError::Malformed)
 }
 
 /// A time claim in whole seconds, fractions cut off. `Ok(None)` when absent;

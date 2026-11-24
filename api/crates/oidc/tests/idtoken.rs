@@ -208,6 +208,11 @@ fn refuses_an_expired_token_and_one_not_yet_valid() {
         ("iat_text", E::Malformed),
         ("auth_time_text", E::Malformed),
         ("auth_time_bool", E::Malformed),
+        ("auth_time_null", E::Malformed),
+        ("auth_time_negative", E::Malformed),
+        ("auth_time_fraction", E::Malformed),
+        ("auth_time_overflow", E::Malformed),
+        ("auth_time_signed_text", E::Malformed),
         ("not_yet_valid", E::NotYetValid),
         ("not_before_after_expiry", E::InvalidLifetime),
     ] {
@@ -548,4 +553,15 @@ fn a_key_id_nobody_has_falls_back_to_every_fitting_key_and_then_asks_for_a_refet
         verify(f.token("other_key_own_kid"), &set, &f.expect()).map(|_| ()),
         Ok(())
     );
+}
+
+#[test]
+fn auth_time_may_be_a_number_or_a_string_of_digits() {
+    let f = Fixtures::load();
+    assert_eq!(check(&f, "auth_time_digits"), Ok(()));
+    let mut demand = f.expect();
+    demand.fresh_within = Some(300);
+    let run = |name: &str| verify(f.token(name), &f.keys("jwks"), &demand).map(|_| ());
+    assert_eq!(run("auth_time_digits"), Ok(()));
+    assert_eq!(run("auth_time_overflow"), Err(E::Malformed));
 }
