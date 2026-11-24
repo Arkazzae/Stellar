@@ -440,3 +440,104 @@ fn the_waits_for_the_media_server_are_fixed_outside_the_testing_environment() {
     variables.push(("Testing__MediaEventWaitMs", "soon"));
     assert!(Settings::load(&env(&variables)).is_err());
 }
+
+fn oidc(extra: &[(&str, &str)]) -> Result<Settings, SettingError> {
+    production(extra)
+}
+
+#[test]
+fn no_provider_is_offered_until_one_is_set_up() {
+    assert!(oidc(&[]).unwrap().oidc.providers.is_empty());
+    // Off by default, whatever else is set.
+    let off = oidc(&[
+        ("STELLARR_OIDC_ISSUER", "https://id.test"),
+        ("STELLARR_OIDC_CLIENT_ID", "stellarr"),
+        ("STELLARR_OIDC_CLIENT_SECRET", "s"),
+    ])
+    .unwrap();
+    assert!(off.oidc.providers.is_empty());
+}
+
+#[test]
+fn the_original_provider_and_the_named_ones_are_read_in_the_order_of_their_ids() {
+    let settings = oidc(&[
+        ("STELLARR_OIDC_ENABLED", "true"),
+        ("STELLARR_OIDC_ISSUER", "https://id.test/"),
+        ("STELLARR_OIDC_CLIENT_ID", "stellarr"),
+        ("STELLARR_OIDC_CLIENT_SECRET", " s "),
+        ("STELLARR_OIDC_DISPLAY_NAME", "Main"),
+        ("Oidc__Providers__work__Authority", "https://work.test"),
+        ("Oidc__Providers__work__ClientId", "w"),
+        ("Oidc__Providers__work__ClientSecret", "ws"),
+        ("Oidc__Providers__work__TrustProviderMfa", "TRUE"),
+        ("Oidc__Providers__work__ProviderMfaAmr", "mfa,hwk"),
+        ("Oidc__Providers__a1__Authority", "https://a.test"),
+        ("Oidc__Providers__a1__ClientId", "a"),
+        ("Oidc__Providers__a1__ClientSecret", "as"),
+        ("Oidc__Providers__a1__Enabled", "false"),
+        ("Oidc__Providers__unfinished__Authority", "https://u.test"),
+    ])
+    .unwrap();
+
+    let ids: Vec<&str> = settings
+        .oidc
+        .providers
+        .iter()
+        .map(|provider| provider.id.as_str())
+        .collect();
+    assert_eq!(ids, ["default", "work"]);
+    let work = settings.oidc.find("work").unwrap();
+    assert!(work.settings.trust_provider_mfa);
+    assert_eq!(work.callback_path, "/api/auth/oidc/work/callback");
+    assert_eq!(settings.oidc.find("default").unwrap().client_secret(), "s");
+}
+
+#[test]
+fn a_secret_is_read_from_its_file_when_none_is_written() {
+    let folder = crate::testing::TempDir::new();
+    let file = folder.path().join("secret");
+    std::fs::write(&file, "  from-a-file\n").unwrap();
+    let settings = oidc(&[
+        ("Oidc__Providers__work__Authority", "https://work.test"),
+        ("Oidc__Providers__work__ClientId", "w"),
+        (
+            "Oidc__Providers__work__ClientSecretFile",
+            file.to_str().unwrap(),
+        ),
+    ])
+    .unwrap();
+
+    assert_eq!(
+        settings.oidc.find("work").unwrap().client_secret(),
+        "from-a-file"
+    );
+}
+
+#[test]
+fn a_provider_id_no_route_could_serve_refuses_the_start() {
+    for id in ["Work", "login", "default", "-x", "a_b"] {
+        let refused = oidc(&[(
+            &format!("Oidc__Providers__{id}__Authority"),
+            "https://x.test",
+        )])
+        .unwrap_err()
+        .to_string();
+        assert!(
+            refused.contains("is not a valid provider id"),
+            "{id}: {refused}"
+        );
+    }
+}
+
+#[test]
+fn a_flag_that_is_not_true_or_false_and_a_moved_callback_refuse_the_start() {
+    let refused = oidc(&[("Oidc__TrustProviderMfa", "maybe")])
+        .unwrap_err()
+        .to_string();
+    assert!(refused.contains("Oidc:TrustProviderMfa"), "{refused}");
+    let refused = oidc(&[("Oidc__CallbackPath", "/signin-oidc")])
+        .unwrap_err()
+        .to_string();
+    assert!(refused.contains("Oidc:CallbackPath"), "{refused}");
+    assert!(oidc(&[("Oidc__CallbackPath", "/api/auth/oidc/callback")]).is_ok());
+}
