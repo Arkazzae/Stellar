@@ -629,7 +629,11 @@ async fn with_cleanup_off_the_queue_is_still_emptied_and_nothing_else_is_pruned(
     let place = Place::new(&[]);
     let connection = place.raw();
     let server = add_server(&connection);
-    operations::ensure(&connection, place.state.settings(), server, ago(DAY)).unwrap();
+    {
+        let tx = connection.unchecked_transaction().unwrap();
+        operations::ensure(&tx, place.state.settings(), server).unwrap();
+        tx.commit().unwrap();
+    }
     connection
         .execute(
             "UPDATE \"OperationsSettings\" SET \"AutomaticCleanupEnabled\" = 0",
@@ -681,7 +685,11 @@ async fn the_housekeeping_goes_by_the_settings_written_last() {
     let connection = place.raw();
     for (retention, updated) in [(1, ago(2 * DAY)), (400, ago(DAY))] {
         let server = add_server(&connection);
-        operations::ensure(&connection, place.state.settings(), server, updated).unwrap();
+        {
+            let tx = connection.unchecked_transaction().unwrap();
+            operations::ensure(&tx, place.state.settings(), server).unwrap();
+            tx.commit().unwrap();
+        }
         connection
             .execute(
                 "UPDATE \"OperationsSettings\" SET \"OrphanObjectRetentionDays\" = ?1, \"UpdatedAt\" = ?2 WHERE \"ServerId\" = ?3",

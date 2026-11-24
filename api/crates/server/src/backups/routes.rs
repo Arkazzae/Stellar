@@ -535,10 +535,9 @@ async fn replace_schedule(
     let written = state
         .database()
         .try_write(move |transaction| {
-            let created = server_created_at(transaction, server)?;
-            operations::ensure(transaction, &settings, server, created)?;
             operations::set_backup_retention(
                 transaction,
+                &settings,
                 server,
                 retention_days,
                 Timestamp::now(),
@@ -552,14 +551,6 @@ async fn replace_schedule(
         return Err(ApiError::conflict());
     };
     Ok(Json(policy_dto(schedule, Source::Panel, &retention)))
-}
-
-fn server_created_at(connection: &rusqlite::Connection, server: Id) -> Result<Timestamp, DbError> {
-    Ok(connection.query_row(
-        "SELECT \"CreatedAt\" FROM \"Servers\" WHERE \"Id\" = ?1",
-        [server],
-        |row| row.get(0),
-    )?)
 }
 
 async fn reset_schedule(
