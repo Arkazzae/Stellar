@@ -18,6 +18,7 @@ pub mod parts;
 pub mod policy;
 pub mod schedule;
 pub mod progress;
+pub mod restore;
 mod routes;
 pub mod snapshot;
 pub mod space;
@@ -90,3 +91,6 @@ pub fn random_token() -> String {
 }
 
 pub use routes::routes;
+
+#[cfg(test)]
+mod fixtures;

@@ -305,7 +305,8 @@ fn walk(folder: &Path, files: &mut Vec<PathBuf>) -> Result<(), BackupFailed> {
 /// not millions of them in a backup, and the manifest is never big.
 pub fn limits() -> Limits {
     Limits {
-        max_entries: 8_000_000,
+        max_entries: 2_000_000,
+        max_directory_bytes: 256 * 1024 * 1024,
         ..Limits::default()
     }
 }
