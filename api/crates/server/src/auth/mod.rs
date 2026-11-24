@@ -12,5 +12,6 @@ pub mod policy;
 pub mod session;
 pub mod setup_code;
 pub mod tokens;
+pub mod totp;
 
 pub use session::Caller;
