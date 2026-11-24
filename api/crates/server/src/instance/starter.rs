@@ -45,20 +45,10 @@ fn invalid(field: &str, message: String) -> ApiError {
     Problem::validation(vec![(field.to_string(), vec![message])]).into()
 }
 
-/// A channel name as it is stored: trimmed and in lower case.
+/// A channel name as it is stored: trimmed and in lower case, letter by
+/// letter.
 pub fn normalize_channel_name(name: Option<&str>) -> String {
-    name.map_or_else(String::new, |name| {
-        name.trim().chars().flat_map(single_lowercase).collect()
-    })
-}
-
-/// Lower case as a letter-by-letter mapping: a letter that would become
-/// several stays as it is, as with the invariant mapping of the first server.
-fn single_lowercase(c: char) -> impl Iterator<Item = char> {
-    let mut lower = c.to_lowercase();
-    let first = lower.next();
-    let kept = if lower.next().is_none() { first } else { None };
-    std::iter::once(kept.unwrap_or(c))
+    name.map_or_else(String::new, |name| stellarr_unicode::to_lower(name.trim()))
 }
 
 pub fn is_valid_channel_name(name: &str) -> bool {
@@ -335,5 +325,38 @@ mod tests {
 
         assert_eq!(refused_field(prepare(&long, &english())), "server");
         assert!(prepare(&fits, &english()).is_ok());
+    }
+
+    /// What the first server stored for a starter channel of each name, read
+    /// from its database after creating a server with it.
+    #[test]
+    fn channel_names_are_lowered_letter_by_letter_as_the_first_server_does() {
+        for (given, stored) in [
+            ("  ABC  ", "abc"),
+            ("I", "i"),
+            ("\u{130}", "\u{130}"),
+            ("\u{130}i", "\u{130}i"),
+            ("\u{131}i", "\u{131}i"),
+            ("\u{df}", "\u{df}"),
+            ("\u{1e9e}", "\u{df}"),
+            ("\u{3a3}", "\u{3c3}"),
+            (
+                "\u{39f}\u{394}\u{39f}\u{3a3}",
+                "\u{3bf}\u{3b4}\u{3bf}\u{3c3}",
+            ),
+            ("\u{13a0}", "\u{ab70}"),
+            ("\u{13a1}", "\u{ab71}"),
+            ("\u{13f8}", "\u{13f8}"),
+            ("\u{13f0}", "\u{13f8}"),
+            ("\u{1c90}", "\u{10d0}"),
+            ("\u{10a0}", "\u{2d00}"),
+            ("\u{10d0}", "\u{10d0}"),
+            ("\u{1c5}", "\u{1c6}"),
+            ("\u{1c4}", "\u{1c6}"),
+            ("\u{13b0}2", "\u{ab80}2"),
+        ] {
+            assert_eq!(normalize_channel_name(Some(given)), stored, "{given:?}");
+        }
+        assert_eq!(normalize_channel_name(None), "");
     }
 }
