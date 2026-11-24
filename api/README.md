@@ -5,8 +5,25 @@ workspace. One crate per folder of `crates/`:
 
 | Crate | What it is |
 | --- | --- |
-| `messages` (`stellarr-messages`) | Everything the server says to people, in each language. No dependencies. |
-| `server` (`stellarr-api`) | The library `stellarr_api` and the binary `stellarr-api`: settings, database, HTTP pipeline and the groups of endpoints. |
+| `archive` (`stellarr-archive`) | A zip writer and reader for backups: streaming, ZIP64, every checksum checked. |
+| `deflate` (`stellarr-deflate`) | DEFLATE, gzip and zlib in both directions, and CRC-32, with no dependencies. |
+| `discord` (`stellarr-discord`) | Reads a Discord server, from a template link or with a bot token, into a snapshot in Stellarr's own terms. |
+| `embeds` (`stellarr-embeds`) | Link previews: finding the links in a message and fetching what a card for each needs. |
+| `hub` (`stellarr-hub`) | The server for the SignalR hub protocol that the web client speaks: negotiation, the JSON protocol over a WebSocket, calls, events to connections and groups, and keep-alive. |
+| `mail` (`stellarr-mail`) | The mail the server writes: every kind of message, the choice of transport and the Resend request. |
+| `mentions` (`stellarr-mentions`) | Which accounts a message names with @username, read the way Stellarr's web client shows them. |
+| `messages` (`stellarr-messages`) | Everything the server says to people, in each language of the catalogue. No dependencies. |
+| `oidc` (`stellarr-oidc`) | OpenID Connect relying party: requests, state, callbacks and ID token checks, without network or storage. |
+| `outbound` (`stellarr-outbound`) | The HTTP client every outbound call of the API goes through: HTTP/1.1 over TCP or rustls, one connection per request. |
+| `s3` (`stellarr-s3`) | Requests and answers of the S3 calls Stellarr makes, with Signature Version 4, and no network I/O. |
+| `server` (`stellarr-api`) | The server: the library `stellarr_api` and the binary `stellarr-api`: settings, database, HTTP pipeline and the groups of endpoints. |
+| `smtp` (`stellarr-smtp`) | The mail the application sends: the message builder and an SMTP client. |
+| `storage` (`stellarr-storage`) | Where uploaded files are kept: a folder of the data volume or an S3-compatible bucket, and the checks on what may be uploaded. |
+| `timezone` (`stellarr-timezone`) | Time zones from the system's zone database: the offset and abbreviation in force at a moment. |
+| `unicode` (`stellarr-unicode`) | Unicode general categories and simple upper-casing, as the first server read them, and the UTF-16 view of text that message code works in. |
+| `webauthn` (`stellarr-webauthn`) | WebAuthn: the options a browser is given and the checks on what it sends back, with no I/O and no storage. |
+| `webpush` (`stellarr-webpush`) | Web Push without a network: everything a server needs to notify a browser except the HTTP request itself. |
+| `websocket` (`stellarr-websocket`) | The server side of WebSocket (RFC 6455) on a connection hyper has upgraded: handshake, frames, ping and pong, closing. |
 
 Run cargo from this folder, with `-p` for the crate you work on:
 
@@ -159,6 +176,15 @@ the closure runs on a blocking thread and never on one that serves requests.
 it as a task of its own, so a dropped connection never stops it between its commit
 and its event. That is what guarantees the event after a commit is sent; a handler
 may rely on it, and no handler may assume it will be told the client left.
+
+**Names and addresses** are stored and compared in capitals (`NormalizedUsername`,
+`NormalizedEmail`) through `instance::names`, and a user name's characters are
+letters and numbers by general category through `stellarr_unicode`. Both have to
+agree with the first server letter for letter, because the two are meant to work
+on copies of one database: the dotless i is not capitalized, and the long s is. Do
+not use the standard library's `to_uppercase`, `to_lowercase`, `is_alphabetic`,
+`is_alphanumeric` or `is_numeric` on anything that is stored or compared with what
+the first server stored.
 
 **Events** go to the hub through `state.events().publish(Event::new(audience, "Name",
 &payload))`, after `write` has returned. A change is committed first and
