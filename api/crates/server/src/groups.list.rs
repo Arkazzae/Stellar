@@ -7,6 +7,7 @@ groups! {
     social,
     client_settings,
     emoji,
+    direct,
     health,
     messages,
     own_profile,

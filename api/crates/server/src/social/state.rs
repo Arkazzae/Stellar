@@ -8,7 +8,7 @@ use axum::response::Response;
 use rusqlite::{Connection, params};
 use serde::Serialize;
 
-use super::conversations::{self, Encryption, LastMessage};
+use super::conversations::{self, Encryption, DirectMessage};
 use super::other;
 use crate::auth::Caller;
 use crate::database::DbError;
@@ -45,7 +45,7 @@ struct Request {
 struct Conversation {
     id: String,
     peer: UserDto,
-    last_message: Option<LastMessage>,
+    last_message: Option<DirectMessage>,
     unread: i64,
     updated_at: String,
     encryption: Encryption,
