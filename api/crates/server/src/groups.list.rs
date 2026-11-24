@@ -18,4 +18,5 @@ groups! {
     uploads,
     moderation,
     roles,
+    second_step,
 }
