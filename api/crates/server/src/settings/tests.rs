@@ -311,6 +311,19 @@ fn the_event_log_is_honoured_in_the_testing_environment_only() {
 }
 
 #[test]
+fn the_test_address_of_the_gif_service_is_honoured_in_the_testing_environment_only() {
+    let testing = Settings::load(&env(&[
+        ("ASPNETCORE_ENVIRONMENT", "Testing"),
+        ("Testing__GiphyUrl", "http://127.0.0.1:9/"),
+    ]))
+    .unwrap();
+    assert_eq!(testing.testing_giphy_url.as_deref(), Some("http://127.0.0.1:9/"));
+
+    let other = production(&[("Testing__GiphyUrl", "http://127.0.0.1:9/")]).unwrap();
+    assert_eq!(other.testing_giphy_url, None);
+}
+
+#[test]
 fn log_levels_become_tracing_directives() {
     let settings = production(&[
         ("Logging__LogLevel__Stellarr.Api.Requests", "Warning"),
