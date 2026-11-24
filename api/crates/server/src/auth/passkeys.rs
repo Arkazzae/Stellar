@@ -153,12 +153,12 @@ pub fn is_taken(connection: &Connection, credential_id: &[u8]) -> rusqlite::Resu
 
 /// What the stored options of a ceremony say, which the answer is checked
 /// against: the challenge, and the credentials it named.
-struct Kept {
-    challenge: Vec<u8>,
-    allowed: Vec<Vec<u8>>,
+pub(super) struct Kept {
+    pub(super) challenge: Vec<u8>,
+    pub(super) allowed: Vec<Vec<u8>>,
 }
 
-fn read_kept(options: &str) -> Option<Kept> {
+pub(super) fn read_kept(options: &str) -> Option<Kept> {
     let value: serde_json::Value = serde_json::from_str(options).ok()?;
     let challenge = webauthn::b64::decode(value.get("challenge")?.as_str()?)?;
     let allowed = match value.get("allowCredentials") {

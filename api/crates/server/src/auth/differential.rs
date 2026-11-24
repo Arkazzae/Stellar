@@ -16,7 +16,9 @@
 
 use std::fmt::Write as _;
 
-use super::{recovery_codes, tokens, totp};
+use stellarr_webauthn as webauthn;
+
+use super::{passkeys, recovery_codes, tokens, totp};
 use crate::encoding::hex_upper;
 use crate::values::Timestamp;
 
@@ -30,6 +32,23 @@ fn text(hex: &str) -> Option<String> {
         .map(|pair| u16::from(pair[0]) << 8 | u16::from(pair[1]))
         .collect();
     String::from_utf16(&units).ok()
+}
+
+fn from_hex(hex: &str) -> Vec<u8> {
+    (0..hex.len())
+        .step_by(2)
+        .map(|i| u8::from_str_radix(&hex[i..i + 2], 16).unwrap())
+        .collect()
+}
+
+fn descriptors(ids: &str) -> Vec<webauthn::CredentialDescriptor> {
+    ids.split(',')
+        .filter(|id| !id.is_empty())
+        .map(|id| webauthn::CredentialDescriptor {
+            id: from_hex(id),
+            transports: vec![],
+        })
+        .collect()
 }
 
 fn answer(line: &str) -> String {
@@ -71,6 +90,43 @@ fn answer(line: &str) -> String {
             Some(id) => id.to_string(),
             None => "no".to_string(),
         },
+        "kept" => match passkeys::read_kept(&argument(1).unwrap()) {
+            Some(kept) => format!(
+                "{} {}",
+                hex_upper(&kept.challenge),
+                kept.allowed
+                    .iter()
+                    .map(|id| hex_upper(id))
+                    .collect::<Vec<_>>()
+                    .join(",")
+            ),
+            None => "no".to_string(),
+        },
+        "rust_assertion" => {
+            let relying_party =
+                webauthn::RelyingParty::new("localhost", "Stellarr", &["http://localhost"])
+                    .unwrap();
+            let challenge = webauthn::Challenge::random().unwrap();
+            webauthn::assertion_options(&relying_party, &descriptors(fields[1]), challenge)
+                .unwrap()
+                .json
+        }
+        "rust_creation" => {
+            let relying_party =
+                webauthn::RelyingParty::new("localhost", "Stellarr", &["http://localhost"])
+                    .unwrap();
+            let challenge = webauthn::Challenge::random().unwrap();
+            let handle = from_hex(fields[1]);
+            let name = argument(2).unwrap();
+            let user = webauthn::User {
+                handle: &handle,
+                name: &name,
+                display_name: &name,
+            };
+            webauthn::creation_options(&relying_party, &user, &descriptors(fields[3]), challenge)
+                .unwrap()
+                .json
+        }
         "trim" => {
             let mut out = String::new();
             for unit in argument(1).unwrap().trim().encode_utf16() {
