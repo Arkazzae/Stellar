@@ -365,8 +365,14 @@ jobs:
             any(.ports[]; .published == "8888" and .target == 80 and .host_ip == "127.0.0.1")'
           docker compose -f docker-compose.yml -f docker-compose.turn.yml config --format json | jq -e '
             .services.stellarr | .environment.STELLARR_TURN_ENABLED == "true" and
-            ([.ports[] | "\(.published)/\(.protocol)"]) as $ports |
-            ["3478/tcp", "3478/udp", "5349/tcp", "5349/udp", "49160/udp", "49200/udp"] - $ports == []'
+            ((["3478/tcp", "3478/udp", "5349/tcp", "5349/udp", "49160/udp", "49200/udp"]
+              - [.ports[] | "\(.published)/\(.protocol)"]) == [])'
+          STELLARR_TURN_RELAY_RANGE=55000-55002 docker compose \
+            -f docker-compose.yml -f docker-compose.turn.yml config --format json | jq -e '
+            .services.stellarr | .environment.STELLARR_TURN_RELAY_RANGE == "55000-55002" and
+            ([.ports[] | select(.target >= 55000 and .target <= 55002)] | length) == 3 and
+            all(.ports[] | select(.target >= 55000 and .target <= 55002);
+              .protocol == "udp" and .published == (.target | tostring))'
       - name: Check that every place names the same settings
         run: bash infra/tests/setting-names.test.sh
       - run: bash infra/tests/install.test.sh
