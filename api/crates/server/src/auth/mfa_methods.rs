@@ -4,10 +4,8 @@
 //!
 //! The secret of an authenticator app is sealed for the account and the method
 //! it belongs to, so a copy of the column moved to another row opens as
-//! nothing. A value sealed by the first server's data protection cannot be
-//! opened here: such a method answers every code as wrong, and its owner signs
-//! in with one of their other steps or a recovery code, and sets the app up
-//! again.
+//! nothing. A secret that does not open is a damaged value like any other,
+//! and an error.
 
 use rusqlite::{Connection, OptionalExtension, Row, Transaction, params};
 
@@ -145,23 +143,26 @@ pub(super) fn start_totp(
     Ok((id, secret))
 }
 
-/// The step the code is for, if the method is an authenticator app whose
-/// secret opens and the code is one of its codes for now or the steps next to
-/// it. The step is not spent.
+/// The step the code is for, if the method is an authenticator app and the
+/// code is one of its codes for now or the steps next to it. The step is not
+/// spent. A secret that does not open is an error.
 pub(super) fn totp_step_of(
     sealer: &Sealer,
     method: &Method,
     code: &str,
     now: Timestamp,
-) -> Option<i64> {
-    if method.kind != TOTP {
-        return None;
-    }
-    let sealed = method.sealed_secret.as_deref()?;
-    let secret = sealer
-        .open(TOTP_PURPOSE, &totp_aad(method.user, method.id), sealed, now)
-        .ok()?;
-    totp::verify(std::str::from_utf8(&secret).ok()?, code, now)
+) -> rusqlite::Result<Option<i64>> {
+    let Some(sealed) = method
+        .sealed_secret
+        .as_deref()
+        .filter(|_| method.kind == TOTP)
+    else {
+        return Ok(None);
+    };
+    let secret = sealer.open(TOTP_PURPOSE, &totp_aad(method.user, method.id), sealed, now)?;
+    Ok(std::str::from_utf8(&secret)
+        .ok()
+        .and_then(|secret| totp::verify(secret, code, now)))
 }
 
 /// Spends a step of an authenticator app: false when it, or a later one, was
@@ -372,26 +373,29 @@ mod tests {
         let method = pending(&connection, user, id);
 
         assert_eq!(
-            totp_step_of(&sealer(), &method, &code, now),
+            totp_step_of(&sealer(), &method, &code, now).unwrap(),
             Some(1_800_000_000 / 30)
         );
         assert_eq!(
-            totp_step_of(&sealer(), &method, "000000", now).filter(|_| code != "000000"),
+            totp_step_of(&sealer(), &method, "000000", now)
+                .unwrap()
+                .filter(|_| code != "000000"),
             None
         );
-        // The secret of one method put in the row of another does not open there.
+        // The secret of one method put in the row of another, or of another
+        // account, does not open there: a damaged value.
         let moved = Method {
             id: other,
             ..method.clone()
         };
-        assert_eq!(totp_step_of(&sealer(), &moved, &code, now), None);
+        assert!(totp_step_of(&sealer(), &moved, &code, now).is_err());
         let theirs = Method {
             user: Id::random(),
             ..method.clone()
         };
-        assert_eq!(totp_step_of(&sealer(), &theirs, &code, now), None);
-        // A method that is not an authenticator app, or has no secret, or a
-        // secret that another server sealed, has no codes.
+        assert!(totp_step_of(&sealer(), &theirs, &code, now).is_err());
+        // A method that is not an authenticator app, or has no secret, has no
+        // codes.
         assert_eq!(
             totp_step_of(
                 &sealer(),
@@ -401,7 +405,8 @@ mod tests {
                 },
                 &code,
                 now
-            ),
+            )
+            .unwrap(),
             None
         );
         assert_eq!(
@@ -413,18 +418,17 @@ mod tests {
                 },
                 &code,
                 now
-            ),
+            )
+            .unwrap(),
             None
         );
+        // A text that was not sealed by this server is damaged.
         let foreign = Method {
-            sealed_secret: Some("CfDJ8-protected-by-the-first-server".into()),
+            sealed_secret: Some("CfDJ8-not-sealed-here".into()),
             ..method.clone()
         };
-        assert_eq!(totp_step_of(&sealer(), &foreign, &code, now), None);
-        assert_eq!(
-            totp_step_of(&Sealer::from_key([4; 32]), &method, &code, now),
-            None
-        );
+        assert!(totp_step_of(&sealer(), &foreign, &code, now).is_err());
+        assert!(totp_step_of(&Sealer::from_key([4; 32]), &method, &code, now).is_err());
     }
 
     #[test]

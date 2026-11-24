@@ -250,7 +250,7 @@ fn verify_method(
     };
     match found.kind.as_str() {
         TOTP => {
-            let spent = match mfa_methods::totp_step_of(sealer, &found, code, now) {
+            let spent = match mfa_methods::totp_step_of(sealer, &found, code, now)? {
                 Some(step) => mfa_methods::spend_totp_step(tx, user, method, step, now, false)?,
                 None => false,
             };
@@ -541,7 +541,7 @@ pub(super) fn confirm_totp_enrollment(
     if events::failure_budget_spent(tx, challenge.user, now)? {
         return Ok(TotpEnrollment::TooManyFailures);
     }
-    let Some(step) = mfa_methods::totp_step_of(sealer, &pending, code, now) else {
+    let Some(step) = mfa_methods::totp_step_of(sealer, &pending, code, now)? else {
         record_failure(tx, context, challenge, "totp-enrollment", now)?;
         return Ok(TotpEnrollment::Refused);
     };

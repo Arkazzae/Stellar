@@ -61,32 +61,34 @@ pub fn list(runtime: &mut Runtime) -> CliOutcome {
     let database = runtime.open_database(false)?;
     let connection = &database.connection;
     let sealer = runtime.read_sealer()?;
-    let resolved = secrets::read(connection, &environment_secrets(&runtime.config), &sealer)?;
-    let mut warnings = Vec::new();
     let mut statement = connection.prepare("SELECT \"Name\" FROM \"InstanceSecrets\"")?;
     let stored = statement
         .query_map([], |row| row.get::<_, String>(0))?
         .collect::<rusqlite::Result<Vec<_>>>()?;
-    if !stored.is_empty() && !runtime.has_master_key() {
-        warnings.push(format!(
-            "The database has {} stored secret(s), but the master key is missing from {}; those values count as unset until the API and the keys are restored.",
-            stored.len(),
-            runtime.keys_directory().display()
-        ));
-    } else {
-        // A value sealed by the first server, or under another key, is there
-        // and cannot be opened: it counts as unset, as it does for the server.
-        for definition in &secrets::ALL {
-            if stored.iter().any(|name| name == definition.name)
-                && resolved.get(definition).source != Source::Panel
-            {
-                warnings.push(format!(
-                    "The stored value of {} cannot be opened with this instance's master key (it was sealed under another one, by the first server perhaps); it counts as unset.",
-                    definition.name
-                ));
-            }
+    // A stored value that does not open is a damaged value: the list says so
+    // and stops, and `secrets clear` still removes it.
+    let resolved = match secrets::read(connection, &environment_secrets(&runtime.config), &sealer) {
+        Ok(resolved) => resolved,
+        Err(_) if !stored.is_empty() => {
+            let why = if runtime.has_master_key() {
+                "it was sealed under another master key, or was altered".to_string()
+            } else {
+                format!(
+                    "the master key is missing from {}",
+                    runtime.keys_directory().display()
+                )
+            };
+            return Err(CliError::new(
+                "secret_unreadable",
+                format!(
+                    "A stored secret cannot be opened by this server ({why}). Clear it with `secrets clear <name>`, or restore the master key."
+                ),
+                exit::CONFLICT,
+            ));
         }
-    }
+        Err(error) => return Err(error.into()),
+    };
+    let warnings: Vec<String> = Vec::new();
     let statuses = resolved.statuses();
     let lines = statuses
         .iter()
@@ -144,9 +146,9 @@ fn find(name: &str) -> CliOutcome<&'static SecretDefinition> {
 }
 
 /// What the person should know before a stored value is replaced or removed
-/// when this server cannot open it: it was sealed under another key, by the
-/// first server perhaps, or the key is gone or cannot be read. It counts as
-/// unset now, and what is about to happen is not a change the server sees.
+/// when this server cannot open it: it was sealed under another key, or the
+/// key is gone or cannot be read. What is about to happen is not a change the
+/// server sees.
 fn unopenable_note(
     runtime: &Runtime,
     connection: &rusqlite::Connection,
@@ -168,16 +170,14 @@ fn unopenable_note(
         ),
         Err(error) => format!("the master key cannot be read ({error})"),
         Ok(Some(sealer)) => {
-            let resolved =
-                secrets::read(connection, &environment_secrets(&runtime.config), &sealer)?;
-            if resolved.get(definition).source == Source::Panel {
+            if secrets::read(connection, &environment_secrets(&runtime.config), &sealer).is_ok() {
                 return Ok(None);
             }
-            "it was sealed under another master key, by the first server perhaps".to_string()
+            "it was sealed under another master key, or was altered".to_string()
         }
     };
     Ok(Some(format!(
-        "The stored value of {} cannot be opened by this server ({why}) and counts as unset; it will be {what_happens}.",
+        "The stored value of {} cannot be opened by this server ({why}); it will be {what_happens}.",
         definition.name
     )))
 }

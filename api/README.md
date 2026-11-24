@@ -601,13 +601,11 @@ What a command may do to the data folder:
 What is particular to this tool:
 
 - `doctor` says of `keys` what this server keeps there, a master key
-  (`keys/master.key`), and names any data-protection key files an older server
-  left, which this server cannot read.
-- A secret in the database that this instance's master key cannot open (it was
-  sealed by an older server, or the key was replaced) counts as not set, as it
-  does for the server, and `secrets list` names it in a warning. `secrets set`
-  writes over it; `secrets clear` removes it; the commands that read secrets only
-  to say what is effective (`config`) see it as unset.
+  (`keys/master.key`).
+- A secret in the database that this instance's master key cannot open (the key
+  was replaced, or the row was altered) is a damaged value, as it is for the
+  server: `secrets list` stops with `secret_unreadable`. `secrets set` writes
+  over it and `secrets clear` removes it.
 - A setting that is seeded from the host's time zone (`time-zone` on an instance
   that never saved one) is the host's; it is spelled as the host's zone database
   spells it.
@@ -702,8 +700,8 @@ key, a link or the text of a message.
 the Resend key, the keys of the integrations), sealed (see Sealed values) in the
 database. A value set there wins over the environment's; values only go in,
 nothing gives one back to a client and nothing logs one. A row that cannot be opened
-(another master key, altered) counts as not set and the environment's value stands
-in. The functions take the connection or transaction of the caller, so that what
+(another master key, altered) is a damaged value: reading the secrets fails with
+it, until the operator clears it or restores the key. The functions take the connection or transaction of the caller, so that what
 else commits with a change (its audit entry) is the caller's to decide.
 
 ## Background workers
@@ -859,8 +857,7 @@ deflated. An archive an older server wrote verifies and restores here.
   Worker. Its credentials are the stored secrets (`cloudflare.r2.*`); the
   destination's other settings and the schedule are rows of `InstanceSecrets`
   sealed for their own purposes (`backups.policy`, `cloudflare.r2.policy`). A
-  row that cannot be opened counts as not set and the environment's settings
-  stand. Nothing here puts a credential, or the text a store sent back, in an
+  row that cannot be opened is a damaged value, and an error. Nothing here puts a credential, or the text a store sent back, in an
   answer or a log line.
 - The routes (all under `/api/cockpit`): `GET backups`, `POST backups`,
   `POST backups/{id}/verify`, `GET backups/{id}/download` (a fresh second step),
@@ -891,15 +888,11 @@ ones in `restore/previous-<time>`. An entry that is a link, a device or a
 folder is refused (a link is never unpacked as a file). Files are only created, never opened over; keys,
 secrets and tls files are 0600.
 
-**What a restore cannot carry over.** Values an older server sealed with its
-own data-protection keys cannot be opened here, whatever the keys folder holds:
-
-| Table.column | What it held | What the operator or the person sets up again |
-| --- | --- | --- |
-| `InstanceSecrets.ProtectedValue` | the secrets set in the panel (`mail.resend-api-key`, `mail.smtp-password`, `giphy.api-key`, `cloudflare.r2.*`) | they count as unset and the environment's values stand: set them again in the panel |
-| `InstanceSecrets.ProtectedValue` of `backups.policy` and `cloudflare.r2.policy` | the schedule and the offsite destination saved in the panel | they count as unset and the environment's settings stand: save them again |
-| `MfaMethods.ProtectedSecret` | an authenticator app's seed | the app's codes are all wrong: sign in with another step or a recovery code and set the app up again |
-| `EmailOtpCodes.ProtectedCode` | a code mailed to a person | it uses up its guesses: ask for a new one |
+**What a restore needs.** The sealed values (the secrets set in the panel, the
+schedule and destination of backups, an authenticator app's seed, a mailed
+code) open only under the master key they were sealed with, which a full backup
+carries in `keys/`. Restored without it they are damaged values and an error:
+clear the secrets with `secrets clear` and set the rest up again.
 
 A restore ends, in the restored database and before it puts it in place, everything that a row made before the archive could use to let somebody in or past a step (`auth::restore::end_what_a_copy_may_bring_back`, one transaction). It ends every running session and every remembered browser (the second step is asked again); every mailed code, password-reset link, mail-change link and operator-printed recovery credential that was not yet used (one used after the archive was made would otherwise be good again); and the period of every confirmed authenticator app up to the current one. It removes open sign-in challenges, passkey sign-in ceremonies, desktop sign-ins with their approvals, and identities waiting to be linked. It leaves the account's own credentials as the archive holds them (password, recovery codes, passkeys, the methods of the second step) and does not raise any account's `SecurityVersion`, because every row that carries one is ended directly. A session or a browser that was ended after the archive was made does not come back. The tool says in a fixed sentence, before it asks, that a restore replaces every account, session, setting and secret and where automatic backups are sent.
 The encryption tables (`AccountKeyBackups` and the rest) are encrypted by the

@@ -9,9 +9,7 @@
 //! limit, so that a failing mail server cannot be used to get round them.
 //!
 //! The code is stored sealed for the account and the purpose it was asked for.
-//! A row written by the first server was protected with that server's own
-//! keys and does not open here: its code always reads as wrong, it uses up
-//! its guesses, and the person asks for a new one, which this module writes.
+//! A row that does not open is a damaged value like any other, and an error.
 
 use rusqlite::{OptionalExtension, Transaction, params};
 
@@ -230,9 +228,10 @@ pub(super) fn check(
     if expires_at <= now || attempts >= max_attempts {
         return Ok(None);
     }
-    let right = sealer
+    let code = sealer
         .open(PURPOSE, &aad(user, purpose), &sealed, now)
-        .is_ok_and(|code| tokens::fixed_time_equals(&code, supplied.trim().as_bytes()));
+        .map_err(rusqlite::Error::from)?;
+    let right = tokens::fixed_time_equals(&code, supplied.trim().as_bytes());
     if !right {
         tx.execute(
             "UPDATE \"EmailOtpCodes\" SET \"Attempts\" = \"Attempts\" + 1,
@@ -337,6 +336,8 @@ mod tests {
         outcome
     }
 
+    /// Whether the code is read as the right one; a row that does not open is
+    /// an error, shown here as `None` from [`damaged`].
     fn checked(
         connection: &mut Connection,
         scope: &Scope<'_>,
@@ -829,8 +830,19 @@ mod tests {
         assert!(checked(&mut connection, &scope, &newer.code, after(now, 2)));
     }
 
+    /// Whether checking the code fails because the row does not open.
+    fn damaged(
+        connection: &mut Connection,
+        scope: &Scope<'_>,
+        supplied: &str,
+        now: Timestamp,
+    ) -> bool {
+        let tx = connection.transaction().unwrap();
+        check(&tx, &sealer(), scope, supplied, now).is_err()
+    }
+
     #[test]
-    fn a_code_the_first_server_protected_never_opens_and_wears_out_its_attempts() {
+    fn a_code_that_does_not_open_is_a_damaged_value_and_spends_nothing() {
         let (_folder, mut connection) = open();
         let user = add_user(&connection, Some(ADDRESS));
         let scope = scope(user, Id::random());
@@ -843,8 +855,8 @@ mod tests {
             )
             .unwrap();
 
-        assert!(!checked(&mut connection, &scope, &code.code, now));
-        assert_eq!(attempts(&connection, code.id), (1, None));
+        assert!(damaged(&mut connection, &scope, &code.code, now));
+        assert_eq!(attempts(&connection, code.id), (0, None));
         // A new code, written here, works.
         let fresh = reserved(&mut connection, &scope, &eager(), after(now, 1));
         assert!(checked(&mut connection, &scope, &fresh.code, after(now, 2)));
@@ -877,7 +889,7 @@ mod tests {
             .unwrap();
 
         // Their row now holds my sealed code, which is not sealed for them.
-        assert!(!checked(&mut connection, &theirs_scope, &mine.code, now));
+        assert!(damaged(&mut connection, &theirs_scope, &mine.code, now));
         // And the same code sealed for another purpose does not serve this one.
         let as_enrolment = Scope {
             purpose: ENROLLMENT,
@@ -891,7 +903,7 @@ mod tests {
                 params![moved.id, sealed],
             )
             .unwrap();
-        assert!(!checked(
+        assert!(damaged(
             &mut connection,
             &as_enrolment,
             &mine.code,

@@ -380,26 +380,20 @@ pub fn can_change_override(
         return Ok(false);
     }
 
-    // The owner can repair legacy restrictions on their own role. Other
-    // actors cannot edit their own role or a peer/higher role.
-    let owner_recovery = actor_subject.is_owner() && actor_subject.top.id == role.id;
-    if !owner_recovery && !actor_subject.top.outranks(&role) {
+    // Nobody edits their own role, or a peer or higher one, the owner's
+    // included: the owner's role holds no overrides.
+    if !actor_subject.top.outranks(&role) {
         return Ok(false);
     }
 
     let effective = place.evaluate(&snapshot, actor_subject)?;
-    if !owner_recovery && !contains(effective, MANAGE_ROLES) {
+    if !contains(effective, MANAGE_ROLES) {
         return Ok(false);
     }
     let target = place.target.unwrap_or(Target::Channel);
     let current = snapshot.role_override(target, scope.resource, role.id)?;
     let touched = allow | deny | current.touched();
-    let ceiling = if owner_recovery {
-        permissions
-    } else {
-        permissions & effective
-    };
-    Ok(contains(ceiling, touched))
+    Ok(contains(permissions & effective, touched))
 }
 
 /// The same decision for a member's own override, with the member in place of

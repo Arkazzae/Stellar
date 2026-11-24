@@ -7,11 +7,9 @@
 //! purpose [`PURPOSE`] with the secret's name as associated data, so a row
 //! moved under another name does not open.
 //!
-//! A row that cannot be opened (written under another master key, by the
-//! first server, or altered) counts as not set, and the environment's value
-//! stands in; the log names the secret and nothing else. That is what an
-//! instance restored without its keys needs: mail and integrations go on with
-//! what the environment has, and the operator sets the secret again.
+//! A row that cannot be opened (written under another master key, or altered)
+//! is a damaged value like any other: reading the secrets fails with it, and
+//! the operator clears the secret in the panel or restores the master key.
 //!
 //! The functions work on a connection or a transaction so that the caller
 //! decides what else commits with a change (the operator panel writes its
@@ -20,7 +18,6 @@
 use std::fmt;
 
 use rusqlite::{Connection, params};
-use tracing::warn;
 
 use crate::seal::Sealer;
 use crate::settings::{EnvironmentSecrets, VARIABLES};
@@ -246,13 +243,15 @@ pub fn read(
     let mut values = Vec::new();
     let mut panel_updated_at = Vec::new();
     for definition in &ALL {
-        let panel = rows
-            .iter()
-            .find(|(name, _, _)| name == definition.name)
-            .and_then(|(name, sealed, updated)| {
-                let opened = open(sealer, name, sealed, now).filter(|value| !value.is_empty());
-                opened.map(|value| (value, *updated))
-            });
+        let mut panel = None;
+        if let Some((name, sealed, updated)) =
+            rows.iter().find(|(name, _, _)| name == definition.name)
+        {
+            let opened = open(sealer, name, sealed, now)?;
+            if !opened.is_empty() {
+                panel = Some((opened, *updated));
+            }
+        }
         if let Some((value, updated)) = panel {
             values.push((
                 definition.name,
@@ -288,20 +287,13 @@ pub fn read(
     })
 }
 
-/// The plain value, or none when it cannot be opened: a master key that is
-/// not the one it was sealed under, or a row the first server wrote.
-fn open(sealer: &Sealer, name: &str, sealed: &str, now: Timestamp) -> Option<String> {
-    let opened = sealer
-        .open(PURPOSE, name.as_bytes(), sealed, now)
-        .ok()
-        .and_then(|bytes| String::from_utf8(bytes).ok());
-    if opened.is_none() {
-        warn!(
-            target: "Stellarr.Api.Secrets",
-            "The secret {name} set in the panel cannot be decrypted with this instance's keys; it counts as unset"
-        );
-    }
-    opened
+/// The plain value; a row that cannot be opened (a master key that is not the
+/// one it was sealed under, or an altered row) is an error.
+fn open(sealer: &Sealer, name: &str, sealed: &str, now: Timestamp) -> rusqlite::Result<String> {
+    let bytes = sealer.open(PURPOSE, name.as_bytes(), sealed, now)?;
+    String::from_utf8(bytes).map_err(|error| {
+        rusqlite::Error::FromSqlConversionFailure(0, rusqlite::types::Type::Text, Box::new(error))
+    })
 }
 
 /// Stores `value` for `definition`. The caller has checked [`is_valid_value`]
