@@ -450,3 +450,86 @@ async fn a_named_provider_has_routes_of_its_own_beside_the_original() {
     assert!(work.requests().iter().any(|(method, path, _)| method == "POST" && path == "/token"));
     std::fs::remove_file(bundle).ok();
 }
+
+fn seconds_now() -> i64 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap()
+        .as_secs() as i64
+}
+
+#[tokio::test]
+async fn a_fresh_sign_in_at_the_provider_moves_the_sessions_proof_forward() {
+    let w = world().await;
+    link(&w.server, &w.owner.id, &w.provider.issuer(), &w.provider.subject(), None);
+    let client = w.server.sign_in(&w.owner).await;
+    let old = "2026-01-01 00:00:00";
+    w.server.database().execute("UPDATE \"UserSessions\" SET \"AuthenticatedAt\" = ?1", [old]).unwrap();
+    let authenticated = |server: &Server| -> String {
+        server.database().query_row("SELECT MAX(\"AuthenticatedAt\") FROM \"UserSessions\"", [], |r| r.get(0)).unwrap()
+    };
+    assert_eq!(client.post_json("/api/me/security/identities/work/reauthenticate", &json!({})).await.status, 404);
+    let own = w.provider.subject();
+    for (auth_time, subject, expected, moves) in [
+        (Some(seconds_now() - 3600), None, "unconfirmed", false),
+        (None, None, "unconfirmed", false),
+        (Some(seconds_now()), Some("somebody-else"), "unconfirmed", false),
+        (Some(seconds_now() - 30), Some(own.as_str()), "confirmed", true),
+    ] {
+        {
+            let mut script = w.provider.script.lock().unwrap();
+            script.auth_time = auth_time;
+            if let Some(subject) = subject {
+                script.subject = subject.to_string();
+            }
+        }
+        let started = client.post_json("/api/me/security/identities/default/reauthenticate", &json!({})).await;
+        assert_eq!(started.status, 200, "{}", started.text());
+        let url = started.json::<Value>()["url"].as_str().unwrap().to_string();
+        assert!(url.starts_with("/api/auth/oidc/reauthenticate?ticket="), "{url}");
+        let begun = begin(&client, &w.provider, &format!("{url}&returnUrl=%2Fsettings")).await;
+        let get = |name: &str| begun.query.iter().find(|(n, _)| n == name).map(|(_, v)| v.clone());
+        assert_eq!(get("max_age").as_deref(), Some("300"));
+        assert_eq!(get("prompt").as_deref(), Some("login"));
+        let back = answer(&client, &begun, "/api/auth/oidc/callback").await;
+        assert_eq!(location(&back), format!("/link-account?result={expected}&returnUrl=%2Fsettings"));
+        assert_eq!(authenticated(&w.server) != old, moves, "{expected}");
+    }
+    // A ticket for a fresh sign-in starts no link, and one for a link no fresh sign-in.
+    let t = client.post_json("/api/me/security/identities/default/reauthenticate", &json!({})).await.json::<Value>()["url"].as_str().unwrap().replace("/reauthenticate?", "/link?");
+    assert_eq!(location(&client.get(&t).await), "/link-account?result=failed");
+    let l = client.post_json("/api/me/security/identities/default/link", &json!({})).await.json::<Value>()["url"].as_str().unwrap().replace("/link?", "/reauthenticate?");
+    assert!(location(&client.get(&l).await).starts_with("/link-account?result=unconfirmed"));
+}
+
+#[tokio::test]
+async fn two_removals_at_once_still_leave_a_way_in() {
+    let other = FakeProvider::start().await;
+    let provider = FakeProvider::start().await;
+    let mut settings = provider.settings("First");
+    settings.extend(other.named_settings("work", "Work"));
+    let bundle = std::env::temp_dir().join(format!("stellarr-it-bundle-{}", stellarr_api::values::Id::random()));
+    std::fs::write(&bundle, format!("{}{}", certs::CA, certs::CA)).unwrap();
+    settings.retain(|(name, _)| name != "SSL_CERT_FILE");
+    settings.push(("SSL_CERT_FILE".into(), bundle.display().to_string()));
+    let pairs: Vec<(&str, &str)> = settings.iter().map(|(a, b)| (a.as_str(), b.as_str())).collect();
+    let server = Server::start_with(&pairs).await;
+    let owner = server.found("owner").await;
+    link(&server, &owner.id, &provider.issuer(), "one", None);
+    link(&server, &owner.id, &other.issuer(), "two", Some("work"));
+    let client = server.sign_in(&owner).await;
+    server.database().execute("UPDATE \"Users\" SET \"PasswordHash\" = NULL", []).unwrap();
+    let ids: Vec<String> = {
+        let connection = server.database();
+        let mut statement = connection.prepare("SELECT \"Id\" FROM \"ExternalIdentities\"").unwrap();
+        statement.query_map([], |r| r.get::<_, String>(0)).unwrap().map(|id| id.unwrap().to_lowercase()).collect()
+    };
+    let (first, second) = (format!("/api/me/security/identities/{}/remove", ids[0]), format!("/api/me/security/identities/{}/remove", ids[1]));
+    let nothing = json!({});
+    let (a, b) = tokio::join!(client.post_json(&first, &nothing), client.post_json(&second, &nothing));
+    let mut statuses = [a.status.as_u16(), b.status.as_u16()];
+    statuses.sort();
+    assert_eq!(statuses, [204, 409], "{} {}", a.text(), b.text());
+    assert_eq!(count(&server, "SELECT COUNT(*) FROM \"ExternalIdentities\""), 1);
+    std::fs::remove_file(bundle).ok();
+}
