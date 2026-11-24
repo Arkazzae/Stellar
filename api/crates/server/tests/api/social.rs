@@ -254,16 +254,18 @@ async fn an_account_that_turned_requests_off_reads_like_one_that_does_not_exist(
 }
 
 #[tokio::test]
-async fn accounts_that_stand_in_for_somebody_cannot_be_befriended_and_a_disabled_one_can() {
+async fn accounts_that_stand_in_for_somebody_or_are_disabled_cannot_be_befriended_or_blocked() {
     let p = people().await;
     let database = p.server.database();
     database.execute("UPDATE \"Users\" SET \"Origin\" = 'discord' WHERE \"Username\" = 'ben'", []).unwrap();
-    database.execute("UPDATE \"Users\" SET \"IsDisabled\" = 1 WHERE \"Username\" = 'cy'", []).unwrap();
+    database.execute("UPDATE \"Users\" SET \"IsDisabled\" = 1 WHERE \"Username\" = 'cyd'", []).unwrap();
     assert_eq!(ask(&p.ada.client, "ben").await, "unknown-user");
     assert_eq!(status(&p.ada.client, Method::POST, &format!("/api/social/blocks/{}", p.ben.id)).await, 404);
-    // The first server never looked at whether the account was disabled.
-    assert_eq!(ask(&p.ada.client, "cyd").await, "sent");
-    assert_eq!(status(&p.ada.client, Method::POST, &format!("/api/social/blocks/{}", p.cy.id)).await, 204);
+    // A disabled account reads as one that is not there.
+    assert_eq!(ask(&p.ada.client, "cyd").await, "unknown-user");
+    assert_eq!(status(&p.ada.client, Method::POST, &format!("/api/social/blocks/{}", p.cy.id)).await, 404);
+    assert!(state(&p.ada.client).await["requests"].as_array().unwrap().is_empty());
+    assert!(state(&p.ada.client).await["blocked"].as_array().unwrap().is_empty());
 }
 
 #[tokio::test]

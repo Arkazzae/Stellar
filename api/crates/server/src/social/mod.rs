@@ -69,6 +69,18 @@ pub fn other(first: Id, second: Id, me: Id) -> Id {
     if first == me { second } else { first }
 }
 
+/// Whether `user` is somebody who can be reached: a person of this instance
+/// (not a placeholder that stands in for an account on another service) whose
+/// account is not disabled. Whoever is not is answered as an account that does
+/// not exist.
+pub fn is_reachable(connection: &Connection, user: Id) -> rusqlite::Result<bool> {
+    connection.query_row(
+        "SELECT EXISTS (SELECT 1 FROM \"Users\" WHERE \"Id\" = ?1 AND \"Origin\" IS NULL AND \"IsDisabled\" = 0)",
+        [user],
+        |row| row.get(0),
+    )
+}
+
 /// Whether either of the two has blocked the other.
 pub fn is_blocked(connection: &Connection, first: Id, second: Id) -> rusqlite::Result<bool> {
     connection.query_row(

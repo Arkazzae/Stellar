@@ -62,12 +62,7 @@ pub async fn block(
     let done = state
         .database()
         .write(move |tx| -> Result<bool, DbError> {
-            let person: bool = tx.query_row(
-                "SELECT EXISTS (SELECT 1 FROM \"Users\" WHERE \"Id\" = ?1 AND \"Origin\" IS NULL)",
-                [other],
-                |row| row.get(0),
-            )?;
-            if !person {
+            if !super::is_reachable(tx, other)? {
                 return Ok(false);
             }
             tx.execute(
