@@ -1,8 +1,6 @@
 //! The second half of a sign-in that has a second step: the challenge, an
 //! authenticator app, a mailed code, a recovery code, a remembered browser,
-//! setting one up when the instance asks, and the refusals of each. The
-//! answers are the first server's; `oracle-second-step.py` asks both servers
-//! the same conversations and compares them.
+//! setting one up when the instance asks, and the refusals of each.
 
 use serde_json::{Value, json};
 use stellarr_api::values::{Id, Timestamp};
