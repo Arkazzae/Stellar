@@ -1154,11 +1154,14 @@ expect otherwise.
   new epoch is a 400.
 - What encryption does not guard: someone who holds a session can try the
   account's password through the two routes that ask for it (a new PIN and a
-  reset), at the rate the `Login` policy allows, with no cost per wrong try; can
-  use up the account's unlock tries and, after ten wrong PINs, delete the backup;
-  and a device is registered without the PIN, which the other person learns from
-  the device line and the keys-changed event. The owner may decide later to
-  tighten any of that.
+  reset), at the rate the `Login` policy allows. A wrong try costs what one at
+  sign-in costs (`events::record_wrong_password` and
+  `password::wrong_password_wait`): a `login-failed` event with the address and
+  browser, and a wait of 80 to 179 milliseconds before the answer. Like sign-in,
+  it does not lock the account. A session can also use up the account's unlock
+  tries and, after ten wrong PINs, delete the backup; and a device is registered
+  without the PIN, which the other person learns from the device line and the
+  keys-changed event. The owner may decide later to tighten any of that.
 - Responses with a known length carry `Content-Length` and are not sent chunked,
   and a response sent before the request body was read may carry
   `Connection: close`.

@@ -18,7 +18,7 @@ use super::wire::{
     Unlock, UnlockedDto,
 };
 use crate::auth::ceremony::{PasswordProof, check_given_password, judge_given_password};
-use crate::auth::{Caller, events, fresh};
+use crate::auth::{Caller, events, fresh, password};
 use crate::database::DbError;
 use crate::http::{ApiError, ApiResult, Json, Origin, Path, json_response};
 use crate::state::AppState;
@@ -302,6 +302,7 @@ enum Replaced {
 pub async fn replace_backup(
     State(state): State<AppState>,
     caller: Caller,
+    origin: Origin,
     headers: HeaderMap,
     body: Result<Json<Option<Members>>, ApiError>,
 ) -> ApiResult<Response> {
@@ -317,7 +318,10 @@ pub async fn replace_backup(
             let now = Timestamp::now();
             match judge_given_password(tx, caller, &given, now)? {
                 PasswordProof::Given => {}
-                PasswordProof::WrongPassword => return Ok(Replaced::WrongPassword),
+                PasswordProof::WrongPassword => {
+                    events::record_wrong_password(tx, caller.user, &origin.address, &origin.user_agent)?;
+                    return Ok(Replaced::WrongPassword);
+                }
                 PasswordProof::FreshProofNeeded => return Ok(Replaced::FreshProofNeeded),
             }
             let Some(key) = store::account_key(tx, caller.user)? else {
@@ -340,7 +344,10 @@ pub async fn replace_backup(
         })
         .await?;
     match outcome {
-        Replaced::WrongPassword => Err(problems::password_incorrect(&state)),
+        Replaced::WrongPassword => {
+            password::wrong_password_wait().await;
+            Err(problems::password_incorrect(&state))
+        }
         Replaced::FreshProofNeeded => Err(problems::fresh_proof_needed(&state)),
         Replaced::KeyMissing => Err(problems::account_key_missing(&state)),
         Replaced::KeyChanged(key_id) => Err(Refusal::new(
@@ -398,6 +405,7 @@ enum Resetting {
 pub async fn reset(
     State(state): State<AppState>,
     caller: Caller,
+    origin: Origin,
     headers: HeaderMap,
     body: Result<Json<Option<Members>>, ApiError>,
 ) -> ApiResult<Response> {
@@ -417,7 +425,10 @@ pub async fn reset(
             let now = Timestamp::now();
             match judge_given_password(tx, caller, &given, now)? {
                 PasswordProof::Given => {}
-                PasswordProof::WrongPassword => return Ok(Resetting::WrongPassword),
+                PasswordProof::WrongPassword => {
+                    events::record_wrong_password(tx, caller.user, &origin.address, &origin.user_agent)?;
+                    return Ok(Resetting::WrongPassword);
+                }
                 PasswordProof::FreshProofNeeded => return Ok(Resetting::FreshProofNeeded),
             }
             if store::account_key(tx, caller.user)?.is_none() {
@@ -453,7 +464,10 @@ pub async fn reset(
         })
         .await?;
     match outcome {
-        Resetting::WrongPassword => Err(problems::password_incorrect(&state)),
+        Resetting::WrongPassword => {
+            password::wrong_password_wait().await;
+            Err(problems::password_incorrect(&state))
+        }
         Resetting::FreshProofNeeded => Err(problems::fresh_proof_needed(&state)),
         Resetting::KeyMissing => Err(problems::account_key_missing(&state)),
         Resetting::Done { answer, changes } => {

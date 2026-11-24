@@ -209,6 +209,45 @@ async fn a_new_pin_needs_the_password_a_fresh_second_step_and_a_browser_that_hol
     assert_eq!(refusal(&put(maja, BACKUP, &new_pin("not-the-password", &account.key_id)).await).1, Some("password-incorrect".into()));
 }
 
+/// The `login-failed` events of the account: what a wrong password at sign-in
+/// leaves behind, and nothing else is counted against a password.
+fn failed_passwords(server: &Server, user: &str) -> Vec<(String, String)> {
+    let database = server.database();
+    let mut statement = database
+        .prepare("SELECT \"Detail\", \"IpAddress\" FROM \"SecurityEvents\" WHERE \"UserId\" = ?1 AND \"Kind\" = 'login-failed'")
+        .unwrap();
+    statement
+        .query_map([Id::parse(user).unwrap()], |row| Ok((row.get(0)?, row.get(1)?)))
+        .unwrap()
+        .map(Result::unwrap)
+        .collect()
+}
+
+#[tokio::test]
+async fn a_wrong_password_on_a_new_pin_or_a_reset_counts_as_one_at_sign_in() {
+    let crowd = Crowd::new().await;
+    let maja = &crowd.maja.client;
+    let account = set_up(maja).await;
+    register_device(maja).await;
+    let new_pin = |password: &str| json!({ "currentPassword": password, "accountKeyId": account.key_id, "backup": backup(&bytes(32, 11)) });
+    let reset = |password: &str| {
+        json!({ "currentPassword": password, "algorithm": "x25519", "publicKey": text(&bytes(32, 12)), "backup": backup(&bytes(32, 13)) })
+    };
+    assert_eq!(failed_passwords(&crowd.server, &crowd.maja.id), []);
+
+    let started = std::time::Instant::now();
+    assert_eq!(refusal(&put(maja, BACKUP, &new_pin("not-the-password")).await), (403, Some("password-incorrect".into())));
+    assert!(started.elapsed() >= std::time::Duration::from_millis(80), "the wait of a wrong password");
+    assert_eq!(refusal(&post(maja, RESET, &reset("not-the-password")).await), (403, Some("password-incorrect".into())));
+
+    let counted = failed_passwords(&crowd.server, &crowd.maja.id);
+    assert_eq!(counted.len(), 2, "{counted:?}");
+    assert!(counted.iter().all(|(detail, _)| detail == "password"), "{counted:?}");
+    // A right password costs nothing, and neither does a body that is refused before the password is looked at.
+    assert_eq!(put(maja, BACKUP, &new_pin(PASSWORD)).await.status, 200);
+    assert_eq!(failed_passwords(&crowd.server, &crowd.maja.id).len(), 2);
+}
+
 #[tokio::test]
 async fn a_session_that_is_not_fresh_is_told_so_after_its_body_is_read_and_before_it_is_checked() {
     let crowd = Crowd::new().await;

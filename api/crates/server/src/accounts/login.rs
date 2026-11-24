@@ -181,12 +181,12 @@ async fn refuse(state: &AppState, origin: &Origin, known: Option<crate::values::
         .database()
         .write(move |tx| -> Result<(), DbError> {
             match known {
-                Some(user) => events::record(tx, user, events::LOGIN_FAILED, &origin.address, &origin.user_agent, "password", None),
+                Some(user) => events::record_wrong_password(tx, user, &origin.address, &origin.user_agent),
                 None => Ok(()),
             }
         })
         .await?;
-    tokio::time::sleep(Duration::from_millis(u64::from(crate::auth::tokens::random_below(100)) + 80)).await;
+    password::wrong_password_wait().await;
     let title = state.messages().get(MessageKey::SignInFailed, &[])?;
     Ok(no_store(Problem::new(StatusCode::UNAUTHORIZED).title(title).into_response()))
 }
