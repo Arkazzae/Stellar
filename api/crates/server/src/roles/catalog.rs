@@ -9,7 +9,7 @@ use rusqlite::{Connection, params};
 use serde::Deserialize;
 
 use super::announce::Announcement;
-use super::{Guid, RoleDto, RoleRow, invalid, no_content, no_member_role, taken};
+use super::{Chosen, Guid, RoleDto, RoleRow, invalid, no_content, no_member_role, taken};
 use crate::auth::Caller;
 use crate::http::{ApiError, ApiResult, Json, Path, json_response};
 use crate::permissions::audit::{self, AuditChange, AuditEvent};
@@ -109,9 +109,10 @@ pub(super) async fn list(State(state): State<AppState>, ActiveServer(server): Ac
 pub(super) async fn create(
     State(state): State<AppState>,
     caller: Caller,
-    ActiveServer(server): ActiveServer,
+    chosen: Chosen,
     Json(request): Json<RoleRequest>,
 ) -> ApiResult<Response> {
+    let server = chosen.server()?;
     // Before any other refusal, as the first server's filter was, but after the
     // person is known to be a member and the body has been read.
     super::require_fresh(&state, caller, server).await?;
@@ -192,9 +193,10 @@ pub(super) async fn update(
     State(state): State<AppState>,
     caller: Caller,
     Path(Guid(role_id)): Path<Guid>,
-    ActiveServer(server): ActiveServer,
+    chosen: Chosen,
     Json(request): Json<RoleRequest>,
 ) -> ApiResult<Response> {
+    let server = chosen.server()?;
     // Before any other refusal, as the first server's filter was, but after the
     // person is known to be a member and the body has been read.
     super::require_fresh(&state, caller, server).await?;
@@ -303,9 +305,10 @@ fn names(mask: i64) -> Vec<String> {
 pub(super) async fn reorder(
     State(state): State<AppState>,
     caller: Caller,
-    ActiveServer(server): ActiveServer,
+    chosen: Chosen,
     Json(request): Json<OrderRequest>,
 ) -> ApiResult<Response> {
+    let server = chosen.server()?;
     // Before any other refusal, as the first server's filter was, but after the
     // person is known to be a member and the body has been read.
     super::require_fresh(&state, caller, server).await?;

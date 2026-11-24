@@ -10,7 +10,7 @@ use rusqlite::Connection;
 use serde::{Deserialize, Serialize};
 
 use super::announce::Announcement;
-use super::{Guid, RoleRow, nil, no_content, no_member_role};
+use super::{Chosen, Guid, RoleRow, nil, no_content, no_member_role};
 use crate::auth::Caller;
 use crate::http::{ApiError, ApiResult, Json, Path, json_response};
 use crate::instance::users::{User, UserDto};
@@ -134,9 +134,10 @@ pub(super) async fn assign(
     State(state): State<AppState>,
     caller: Caller,
     Path(Guid(user)): Path<Guid>,
-    ActiveServer(server): ActiveServer,
+    chosen: Chosen,
     Json(request): Json<AssignRequest>,
 ) -> ApiResult<Response> {
+    let server = chosen.server()?;
     // Before any other refusal, as the first server's filter was, but after the
     // person is known to be a member and the body has been read.
     super::require_fresh(&state, caller, server).await?;
@@ -236,9 +237,10 @@ pub(super) async fn set(
     State(state): State<AppState>,
     caller: Caller,
     Path(Guid(user)): Path<Guid>,
-    ActiveServer(server): ActiveServer,
+    chosen: Chosen,
     Json(request): Json<SetRequest>,
 ) -> ApiResult<Response> {
+    let server = chosen.server()?;
     // Before any other refusal, as the first server's filter was, but after the
     // person is known to be a member and the body has been read.
     super::require_fresh(&state, caller, server).await?;

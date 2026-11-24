@@ -166,3 +166,17 @@ async fn the_old_session_of_a_banned_member_is_not_let_into_the_server_again() {
     assert_eq!(scene.person("jun").client.send(named).await.status, 403);
     assert_eq!(scene.status("jun", Method::POST, &format!("/api/admin/members/{}/ban", scene.user("plain")), Some(json!({}))).await, 403);
 }
+
+#[tokio::test]
+async fn a_body_that_cannot_be_read_is_answered_before_a_person_who_is_no_member_is_refused() {
+    let scene = Scene::new().await;
+    assert_eq!(scene.status("boss", Method::POST, &format!("/api/admin/members/{}/ban", scene.user("jun")), Some(json!({}))).await, 201);
+    let broken = crate::support::Request::new(Method::POST, "/api/admin/roles").body("application/json", "{");
+    assert_eq!(scene.person("jun").client.send(broken).await.status, 400);
+    let named = crate::support::Request::new(Method::POST, "/api/admin/roles")
+        .header("X-Stellarr-Server", &scene.id.to_string())
+        .json(&json!({ "name": "x", "color": "#fff", "permissions": [] }));
+    assert_eq!(scene.person("jun").client.send(named).await.status, 403);
+    // Without a body to read, the first refusal is the person's.
+    assert_eq!(scene.status("jun", Method::GET, "/api/admin/roles", None).await, 403);
+}
