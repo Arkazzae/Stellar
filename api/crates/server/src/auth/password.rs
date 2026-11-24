@@ -20,6 +20,14 @@ const HASH_SIZE: usize = 32;
 pub const MIN_LENGTH: usize = 8;
 pub const MAX_LENGTH: usize = 256;
 
+/// The wait before a wrong password is answered, between 80 and 179
+/// milliseconds, so that how long an answer takes only blurs which refusal it
+/// was.
+pub async fn wrong_password_wait() {
+    let jitter = u64::from(super::tokens::random_below(100));
+    tokio::time::sleep(std::time::Duration::from_millis(80 + jitter)).await;
+}
+
 /// How many derivations this process has made, which a test reads to see that
 /// a refusal did the work of any other.
 static DERIVATIONS: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);

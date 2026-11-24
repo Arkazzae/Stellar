@@ -85,6 +85,19 @@ pub fn record(
     Ok(())
 }
 
+/// What a wrong password costs, wherever one is given: the account's own
+/// `login-failed` event, with the address and the browser it came from, in the
+/// transaction that decided it. Sign-in and the routes that ask for the
+/// password again all count it here.
+pub fn record_wrong_password(
+    tx: &Transaction,
+    user: Id,
+    ip_address: &str,
+    device: &str,
+) -> Result<(), DbError> {
+    record(tx, user, LOGIN_FAILED, ip_address, device, "password", None)
+}
+
 /// [`record`] for what a request says about itself: its address, and the
 /// browser's own name for itself as it was sent (cut, not replaced by a text
 /// for an unknown one, since an event names what was there).
