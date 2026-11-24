@@ -530,3 +530,37 @@ fn a_second_restore_in_the_same_second_gets_a_folder_of_its_own() {
     assert_ne!(first, second);
     assert!(second.to_string_lossy().ends_with("previous-20261124-101530-2"));
 }
+
+#[test]
+fn a_restore_without_room_or_without_a_figure_for_it_is_refused() {
+    use crate::backups::space::fake;
+    let source = Instance::new();
+    let archives = TempDir::new();
+    let archive = archives.path().join("backup.zip");
+    source.archive(Parts::ALL, &archive);
+    let target = Instance::new();
+    let before = snapshot(target.root());
+
+    for (told, words) in [
+        (Some(10), "bytes on the"),
+        (None, "could not be read"),
+    ] {
+        fake::tell(target.root(), told);
+        for outcome in [
+            apply(&archive, target.root(), now()).map(|_| ()),
+            check(&archive, &target.root().join("restore")).map(|_| ()),
+            stage(&archive, target.root()).map(|_| ()),
+        ] {
+            match outcome {
+                Err(RestoreError::Refused(message)) => {
+                    assert!(message.contains(words), "{told:?}: {message}");
+                }
+                other => panic!("{told:?}: not refused: {other:?}"),
+            }
+        }
+        assert_eq!(snapshot(target.root()), before);
+    }
+    // With room, and a figure, the same archive goes through.
+    fake::tell(target.root(), Some(u64::MAX / 2));
+    apply(&archive, target.root(), now()).unwrap();
+}

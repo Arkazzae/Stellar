@@ -431,7 +431,7 @@ async fn ensure_space(state: &AppState, directory: &Path, estimate: u64) -> Resu
         .ok()
         .flatten();
     let Some(free) = free else {
-        return Ok(());
+        return Err(BackupFailed::new(space::unknown("the backup", estimate)));
     };
     let needed = (estimate as f64 * SPACE_MARGIN) as u64;
     if needed > free {

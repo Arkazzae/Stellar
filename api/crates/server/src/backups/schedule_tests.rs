@@ -489,3 +489,36 @@ async fn the_offsite_destination_that_is_on_without_its_credentials_fails_the_cy
     assert!(!offsite.enabled().await);
     assert!(offsite.upload(&archive, Id::random()).await.is_ok());
 }
+
+#[tokio::test(flavor = "multi_thread")]
+async fn a_backup_without_room_or_without_a_figure_for_it_fails_and_leaves_nothing() {
+    use super::space::fake;
+    let instance = Instance::new(&[]);
+    let (server, user): (Id, Id) = instance
+        .raw()
+        .query_row(
+            "SELECT \"ServerId\", \"UserId\" FROM \"ServerMembers\" WHERE \"OwnerSlot\" = 1",
+            [],
+            |row| Ok((row.get(0)?, row.get(1)?)),
+        )
+        .unwrap();
+    for (told, words) in [(Some(1000), "MB"), (None, "could not be read")] {
+        fake::tell(instance.folder.path(), told);
+        let started = instance
+            .state
+            .backups()
+            .try_start(&instance.state, super::Parts::ALL, server, user, false)
+            .unwrap();
+        assert!(!started.finished.await.unwrap());
+        let failure = instance.state.backups().last_failure().unwrap();
+        assert!(failure.message.contains(words), "{told:?}: {}", failure.message);
+        assert_eq!(instance.files(), Vec::<String>::new());
+    }
+    fake::tell(instance.folder.path(), Some(u64::MAX / 2));
+    let started = instance
+        .state
+        .backups()
+        .try_start(&instance.state, super::Parts::ALL, server, user, false)
+        .unwrap();
+    assert!(started.finished.await.unwrap());
+}
