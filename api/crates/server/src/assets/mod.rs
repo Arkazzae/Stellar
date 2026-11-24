@@ -20,6 +20,7 @@ use rusqlite::{OptionalExtension, params};
 use stellarr_storage::validation::{UploadKind, spec_for};
 use stellarr_storage::{Error as StoreError, ObjectBody, StoredObject};
 
+use crate::encoding::percent_encode;
 use crate::auth::Caller;
 use crate::database::DbError;
 use crate::http::{ApiError, ApiResult, Endpoints, Path};
@@ -136,7 +137,7 @@ async fn download(
             header::CONTENT_DISPOSITION,
             &format!(
                 "attachment; filename*=UTF-8''{}",
-                escape_data_string(&row.file_name)
+                percent_encode(&row.file_name)
             ),
         );
     }
@@ -201,20 +202,6 @@ fn set(headers: &mut HeaderMap, name: header::HeaderName, value: &str) {
     if let Ok(value) = HeaderValue::from_str(value) {
         headers.insert(name, value);
     }
-}
-
-/// A name as a URL component, as the first server escaped it: letters,
-/// digits and `-_.~` stay, every other byte is `%` and two capital digits.
-pub(crate) fn escape_data_string(text: &str) -> String {
-    let mut out = String::with_capacity(text.len());
-    for byte in text.bytes() {
-        if byte.is_ascii_alphanumeric() || matches!(byte, b'-' | b'_' | b'.' | b'~') {
-            out.push(char::from(byte));
-        } else {
-            out.push_str(&format!("%{byte:02X}"));
-        }
-    }
-    out
 }
 
 /// Hands the object to the client as it takes it: a few pieces wait for a

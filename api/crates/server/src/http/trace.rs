@@ -15,17 +15,9 @@ tokio::task_local! {
 pub fn new_id() -> String {
     let mut bytes = [0u8; 24];
     rand::fill(&mut bytes).expect("the system random number generator failed");
-    let mut text = String::with_capacity(55);
-    text.push_str("00-");
-    for byte in &bytes[..16] {
-        text.push_str(&format!("{byte:02x}"));
-    }
-    text.push('-');
-    for byte in &bytes[16..] {
-        text.push_str(&format!("{byte:02x}"));
-    }
-    text.push_str("-00");
-    text
+    let trace = crate::encoding::hex_lower(&bytes[..16]);
+    let span = crate::encoding::hex_lower(&bytes[16..]);
+    format!("00-{trace}-{span}-00")
 }
 
 /// Runs `work` with `id` as the identifier of the request it serves.

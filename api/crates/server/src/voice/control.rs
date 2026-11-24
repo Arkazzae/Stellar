@@ -24,6 +24,7 @@ fn text(value: &str) -> String {
     serde_json::Value::String(value.to_string()).to_string()
 }
 
+use crate::encoding::percent_encode;
 use crate::settings::{MediaServerSettings, MediaTiming};
 use crate::values::Id;
 
@@ -269,7 +270,7 @@ impl Control {
     pub async fn events(&self, epoch: &str, after: i64) -> Result<Batch, Unavailable> {
         let path = format!(
             "v1/events?epoch={}&after={after}&waitMs={}",
-            escape(epoch),
+            percent_encode(epoch),
             self.timing.event_wait_ms
         );
         let limit = self.timing.command + Duration::from_millis(self.timing.event_wait_ms);
@@ -445,21 +446,7 @@ fn malformed(path: &str) -> Unavailable {
 }
 
 fn session_path(session: &str) -> String {
-    format!("v1/sessions/{}", escape(session))
-}
-
-/// A path segment or query value as `Uri.EscapeDataString` writes it: every
-/// byte but the unreserved characters of RFC 3986 as `%XX`.
-fn escape(text: &str) -> String {
-    let mut out = String::with_capacity(text.len());
-    for byte in text.bytes() {
-        if byte.is_ascii_alphanumeric() || matches!(byte, b'-' | b'.' | b'_' | b'~') {
-            out.push(char::from(byte));
-        } else {
-            out.push_str(&format!("%{byte:02X}"));
-        }
-    }
-    out
+    format!("v1/sessions/{}", percent_encode(session))
 }
 
 #[cfg(test)]
@@ -468,8 +455,8 @@ mod tests {
 
     #[test]
     fn a_name_is_escaped_but_for_its_unreserved_characters() {
-        assert_eq!(escape("epoch-1_a.b~c"), "epoch-1_a.b~c");
-        assert_eq!(escape("a b/c?d&e=ż"), "a%20b%2Fc%3Fd%26e%3D%C5%BC");
+        assert_eq!(percent_encode("epoch-1_a.b~c"), "epoch-1_a.b~c");
+        assert_eq!(percent_encode("a b/c?d&e=ż"), "a%20b%2Fc%3Fd%26e%3D%C5%BC");
     }
 
     #[test]
