@@ -245,3 +245,73 @@ fn a_copy_of_a_database_that_is_written_to_is_a_whole_state() {
     assert!(!missing.exists());
     let _: &dyn ObjectStorage = &*instance.store;
 }
+
+/// A backup of an instance whose objects are in a bucket, against a real
+/// server (`tests/backups-bucket.sh` starts one and sets the variables): the
+/// objects are listed, read through the bucket, written into the archive, and
+/// come back byte for byte from a restore, a large one among them.
+#[test]
+#[ignore = "needs an S3 server: tests/backups-bucket.sh"]
+fn a_backup_of_a_bucket_holds_its_objects_and_restores_them() {
+    use stellarr_storage::{BucketStore, StorageOptions, StorageProvider};
+
+    let env = |name: &str| std::env::var(name).unwrap_or_else(|_| panic!("{name} is not set"));
+    let bucket = format!("backup-source-{}", super::random_token());
+    let store: std::sync::Arc<dyn ObjectStorage> = std::sync::Arc::new(
+        BucketStore::new(
+            &StorageOptions {
+                provider: StorageProvider::S3,
+                endpoint: env("STELLARR_TEST_S3_ENDPOINT"),
+                access_key: env("STELLARR_TEST_S3_ACCESS_KEY"),
+                secret_key: env("STELLARR_TEST_S3_SECRET_KEY"),
+                bucket,
+            },
+            stellarr_outbound::Client::new(),
+        )
+        .unwrap(),
+    );
+    let instance = Instance::new();
+    let rt = instance.runtime.handle().clone();
+    rt.block_on(store.prepare()).unwrap();
+    // Small ones, an empty one and one big enough to have been sent in parts.
+    let large: Vec<u8> = (0..9 * 1024 * 1024u32).map(|at| (at % 251) as u8).collect();
+    let mut wanted: Vec<(String, Vec<u8>)> = vec![
+        ("images/2026/a.png".into(), b"png bytes".to_vec()),
+        ("audio/b.ogg".into(), b"OggS".to_vec()),
+        ("empty".into(), Vec::new()),
+        ("video/large.bin".into(), large),
+    ];
+    for (key, bytes) in &wanted {
+        rt.block_on(store.put(key, &mut std::io::Cursor::new(bytes.clone())))
+            .unwrap();
+    }
+    wanted.sort_by(|a, b| archive::utf16_order(&a.0, &b.0));
+
+    let listed = rt.block_on(store.list().collect()).unwrap();
+    assert_eq!(
+        listed.iter().map(|object| object.key.as_str()).collect::<Vec<_>>(),
+        wanted.iter().map(|(key, _)| key.as_str()).collect::<Vec<_>>()
+    );
+    let folder = TempDir::new();
+    let path = folder.path().join("bucket.zip");
+    let mut from = sources(&instance, listed);
+    from.store = store.clone();
+    let manifest = write(&instance, &from, &path).unwrap();
+    assert_eq!(manifest.object_count, 4);
+    assert!(manifest.missing_objects.is_empty());
+    assert_eq!(archive::verify(&path, folder.path()), "ok");
+
+    let target = Instance::new();
+    super::restore::apply(
+        &path,
+        target.root(),
+        crate::values::Timestamp::parse("2026-11-24 10:00:00").unwrap(),
+    )
+    .unwrap();
+    for (key, bytes) in &wanted {
+        assert_eq!(&fs::read(target.root().join("files").join(key)).unwrap(), bytes, "{key}");
+    }
+    for (key, _) in &wanted {
+        rt.block_on(store.delete(key)).unwrap();
+    }
+}

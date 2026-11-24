@@ -45,6 +45,11 @@ export STELLARR_TEST_S3_SECRET_KEY=$secret
 export STELLARR_TEST_S3_STOPPED_FLAG=$work/stopped
 
 cd "$api"
+# A backup of an instance whose objects are in the bucket, first, while the
+# server is up.
+"$cargo" test -p stellarr-api --lib -- --ignored --nocapture \
+  backups::archive_tests::a_backup_of_a_bucket
+
 "$cargo" test -p stellarr-api --lib -- --ignored --nocapture \
   backups::offsite::tests::a_real_bucket > "$work/out.txt" 2>&1 &
 runner=$!
