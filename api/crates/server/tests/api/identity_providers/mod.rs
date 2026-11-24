@@ -665,3 +665,132 @@ async fn a_provider_that_answers_by_form_post_with_a_code_signs_in() {
         .await;
     assert_eq!(location(&wrong), "/login?oidc_error=failed");
 }
+
+#[tokio::test]
+async fn an_account_made_through_a_provider_sets_its_first_password_with_a_fresh_proof() {
+    let w = world().await;
+    let (client, invite) = invited_identity(&w).await;
+    let made = client
+        .post_json("/api/auth/register", &json!({"username": "ola.nowak", "displayName": "Ola", "email": "ola@example.test", "inviteCode": invite, "external": true}))
+        .await;
+    assert_eq!(made.status, 201, "{}", made.text());
+    // Its sign-in is a moment old: that stands in for a password.
+    w.server.database().execute("UPDATE \"UserSessions\" SET \"AuthenticatedAt\" = '2026-01-01 00:00:00', \"CreatedAt\" = '2026-01-01 00:00:00' WHERE \"UserId\" = (SELECT \"Id\" FROM \"Users\" WHERE \"Username\" = 'ola.nowak')", []).unwrap();
+    let refused = client.post_json("/api/me/security/password", &json!({"newPassword": "Another-Passw0rd!2026"})).await;
+    assert_eq!(refused.status, 403, "{}", refused.text());
+    // A fresh sign-in at the provider stands in for the password again.
+    w.provider.script.lock().unwrap().auth_time = Some(seconds_now());
+    let url = client.post_json("/api/me/security/identities/default/reauthenticate", &json!({})).await.json::<Value>()["url"].as_str().unwrap().to_string();
+    let begun = begin(&client, &w.provider, &format!("{url}&returnUrl=%2F")).await;
+    assert_eq!(location(&answer(&client, &begun, "/api/auth/oidc/callback").await), "/link-account?result=confirmed");
+    let set = client.post_json("/api/me/security/password", &json!({"newPassword": "Another-Passw0rd!2026"})).await;
+    assert_eq!(set.status, 204, "{}", set.text());
+    assert_eq!(count(&w.server, "SELECT COUNT(*) FROM \"Users\" WHERE \"Username\" = 'ola.nowak' AND \"PasswordHash\" IS NOT NULL"), 1);
+}
+
+#[tokio::test]
+async fn a_password_sign_in_that_asked_to_link_links_once_a_real_second_step_is_passed() {
+    use crate::steps::{Instance, code};
+    for (taken, expected) in [(false, "linked"), (true, "taken")] {
+        let provider = FakeProvider::start().await;
+        let settings = provider.settings("Test IdP");
+        let pairs: Vec<(&str, &str)> = settings.iter().map(|(a, b)| (a.as_str(), b.as_str())).collect();
+        let instance = Instance::with(&["maya", "noor"], &pairs).await;
+        instance.require();
+        let app = instance.enrolled("maya", false).await;
+        let client = instance.server.client();
+        let back = sign_in(&client, &provider, "/").await;
+        assert_eq!(location(&back), "/login?oidc=unlinked");
+        if taken {
+            // Somebody else links the identity while this sign-in is under way.
+            let noor: String = instance.database().query_row("SELECT \"Id\" FROM \"Users\" WHERE \"Username\" = 'noor'", [], |r| r.get(0)).unwrap();
+            link(&instance.server, &noor.to_lowercase(), &provider.issuer(), &provider.subject(), None);
+        }
+        let started = client
+            .post_json("/api/auth/login", &json!({"username": "maya", "password": PASSWORD, "linkPending": true}))
+            .await;
+        let challenge = started.json::<Value>();
+        assert_eq!(challenge["status"], "mfa_required", "{}", started.text());
+        // Nothing is linked before the step is passed.
+        assert_eq!(count(&instance.server, "SELECT COUNT(*) FROM \"ExternalIdentities\""), i64::from(taken));
+        let verified = client
+            .post_json(
+                "/api/auth/mfa/verify",
+                &json!({"challengeId": challenge["challengeId"], "methodId": app.method, "code": code(&app.secret, 1)}),
+            )
+            .await;
+        assert_eq!(verified.status, 200, "{}", verified.text());
+        assert_eq!(verified.json::<Value>()["identityLink"], json!(expected));
+        assert_eq!(count(&instance.server, "SELECT COUNT(*) FROM \"ExternalIdentities\""), 1);
+        let events = count(&instance.server, "SELECT COUNT(*) FROM \"SecurityEvents\" WHERE \"Kind\" = 'identity-linked' AND \"Detail\" = 'Test IdP'");
+        assert_eq!(events, i64::from(!taken));
+    }
+}
+
+#[tokio::test]
+async fn the_providers_second_step_skips_the_accounts_own_only_when_trusted_and_recent() {
+    use crate::steps::Instance;
+    for (trusted, expected_session) in [(true, true), (false, false)] {
+        let provider = FakeProvider::start().await;
+        let mut settings = provider.settings("Test IdP");
+        if trusted {
+            settings.push(("Oidc__TrustProviderMfa".into(), "true".into()));
+        }
+        let pairs: Vec<(&str, &str)> = settings.iter().map(|(a, b)| (a.as_str(), b.as_str())).collect();
+        let instance = Instance::with(&["maya"], &pairs).await;
+        instance.require();
+        let _app = instance.enrolled("maya", false).await;
+        let maya: String = instance.database().query_row("SELECT \"Id\" FROM \"Users\" WHERE \"Username\" = 'maya'", [], |r| r.get(0)).unwrap();
+        link(&instance.server, &maya.to_lowercase(), &provider.issuer(), &provider.subject(), None);
+        {
+            let mut script = provider.script.lock().unwrap();
+            script.amr = Some(vec!["pwd".into(), "mfa".into()]);
+            script.auth_time = Some(seconds_now() - 10);
+        }
+        let client = instance.server.client();
+        let back = sign_in(&client, &provider, "/").await;
+        if expected_session {
+            assert_eq!(location(&back), "/");
+            assert_eq!(who(&client).await["username"], json!("maya"));
+        } else {
+            assert_eq!(location(&back), "/login?mfa_required=1&returnUrl=%2F");
+            assert!(who(&client).await.is_null());
+        }
+    }
+}
+
+#[tokio::test]
+async fn sign_up_through_a_provider_follows_the_second_step_policy_of_the_instance() {
+    use crate::steps::Instance;
+    for (trusted, signed_in) in [(true, true), (false, false)] {
+        let provider = FakeProvider::start().await;
+        let mut settings = provider.settings("Test IdP");
+        if trusted {
+            settings.push(("Oidc__TrustProviderMfa".into(), "true".into()));
+        }
+        let pairs: Vec<(&str, &str)> = settings.iter().map(|(a, b)| (a.as_str(), b.as_str())).collect();
+        let instance = Instance::with(&["maya"], &pairs).await;
+        instance.require();
+        {
+            let mut script = provider.script.lock().unwrap();
+            script.amr = Some(vec!["mfa".into()]);
+            script.auth_time = Some(seconds_now() - 10);
+            script.claims.insert("email".into(), json!("ola@example.test"));
+        }
+        instance.server.database().execute("INSERT INTO \"IdentityProviderSettings\" VALUES ('default', 1, '2026-01-01 00:00:00')", []).unwrap();
+        let client = instance.server.client();
+        assert_eq!(location(&sign_in(&client, &provider, "/").await), "/login?oidc=unlinked");
+        let made = client
+            .post_json("/api/auth/register", &json!({"username": "ola.nowak", "displayName": "Ola", "email": "ola@example.test", "inviteCode": instance.server.invite(), "external": true}))
+            .await;
+        assert_eq!(made.status, 201, "{}", made.text());
+        let body = made.json::<Value>();
+        if signed_in {
+            assert_eq!(body["username"], json!("ola.nowak"));
+            assert_eq!(who(&client).await["username"], json!("ola.nowak"));
+        } else {
+            assert_eq!(body["status"], json!("mfa_enrollment_required"));
+            assert!(who(&client).await.is_null());
+        }
+    }
+}
