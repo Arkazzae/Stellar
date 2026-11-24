@@ -21,13 +21,14 @@
 
 use std::collections::BTreeSet;
 
-use crate::mentions::{
+use stellarr_mentions::{
     BacktickRuns, extract_units, fenced_ranges, is_address_character, run_length, starts_name,
 };
-use crate::unicode::{
-    is_ascii_punctuation, is_letter_or_number, is_surrogate, scalar_at, simple_upper, text,
+use stellarr_unicode::utf16::{
+    is_ascii_punctuation, is_low_surrogate, is_surrogate, scalar_at, text, to_upper_units,
     unit_is_letter_or_digit, units,
 };
+use stellarr_unicode::{is_letter_or_digit, is_letter_or_number};
 
 const UNKNOWN_USER: &str = "@unknown-user";
 const UNKNOWN_ROLE: &str = "@deleted-role";
@@ -109,7 +110,7 @@ pub fn rewrite(content: &str, resolver: &dyn ReferenceResolver) -> String {
     let intended: BTreeSet<Vec<u16>> = pieces
         .iter()
         .filter(|piece| piece.kind == PieceKind::Mention)
-        .map(|piece| simple_upper(&piece.text[1..]))
+        .map(|piece| to_upper_units(&piece.text[1..]))
         .collect();
 
     let mut written = Vec::new();
@@ -454,7 +455,8 @@ fn resolve(token: &Token, raw: &[u16], resolver: &dyn ReferenceResolver) -> Piec
 fn is_username(name: &[u16]) -> bool {
     (2..=32).contains(&name.len())
         && name.iter().all(|&unit| {
-            (!is_surrogate(unit) && is_letter_or_number(u32::from(unit)))
+            (!is_surrogate(unit)
+                && char::from_u32(u32::from(unit)).is_some_and(is_letter_or_number))
                 || matches!(unit, 0x5F | 0x2E | 0x2D)
         })
 }
@@ -562,15 +564,15 @@ fn write(pieces: &[Piece], mode: Mode) -> Vec<u16> {
         match kind {
             CharKind::Raw => output.append_all(&source[index..end]),
             CharKind::Mention => {
-                let next = scalar_at(&source, end).map(|(code, _)| code);
+                let next = scalar_at(&source, end).map(|(c, _)| c);
                 let as_text = mode != Mode::Mentions
                     || output.ends_with_letter_or_digit
-                    || next.is_some_and(crate::unicode::is_letter_or_digit);
+                    || next.is_some_and(is_letter_or_digit);
                 if as_text {
                     output.append(BACKSLASH);
                 } else {
                     escape_next =
-                        matches!(next, Some(0x5F | 0x2E | 0x2D)) && kinds[end] == CharKind::Text;
+                        matches!(next, Some('_' | '.' | '-')) && kinds[end] == CharKind::Text;
                 }
                 output.append_all(&source[index..end]);
             }
@@ -660,11 +662,11 @@ impl Output {
     fn append(&mut self, unit: u16) {
         self.units.push(unit);
         self.ends_with_letter_or_digit = unit_is_letter_or_digit(unit);
-        if crate::unicode::is_low_surrogate(unit)
+        if is_low_surrogate(unit)
             && self.units.len() >= 2
-            && let Some((code, 2)) = scalar_at(&self.units, self.units.len() - 2)
+            && let Some((c, 2)) = scalar_at(&self.units, self.units.len() - 2)
         {
-            self.ends_with_letter_or_digit = crate::unicode::is_letter_or_digit(code);
+            self.ends_with_letter_or_digit = is_letter_or_digit(c);
         }
     }
 
