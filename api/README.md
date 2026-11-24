@@ -984,7 +984,10 @@ different, and what somebody would notice:
   the browser that asked, so it cannot say what the round trip was for; that
   would take showing it to everybody. The person sees the sign-in page with an
   error instead of the link page's. Once the state has opened (no code,
-  expired, used), the page is the link page's, as before.
+  expired, used), the page is the link page's, as before. The same holds for
+  a fresh sign-in answered a second time: the first server sent
+  `/link-account?result=unconfirmed`, this one the sign-in page (the answer
+  that came first was the one that counted).
 - **`HEAD` on the callback is a 405**; the first server redirected it to the
   sign-in page as a failure. No browser sends one.
 - **The provider's documents have their own timeouts**: ten seconds to
@@ -1018,6 +1021,21 @@ different, and what somebody would notice:
   provider's documents are read again after the failure (once in five
   minutes), not before the retry. A person whose provider rotated its keys
   signs in on the second try.
+
+What the comparisons cover. `providers-oracle/run.sh flows` compares the
+conversations and, after them, the rows both servers left (`tables.py`; the one
+row that differs is the unsigned token's, above). `oracle-second-step.py`
+(header: how to run it) puts a fake provider in the second step: `link` (a
+password sign-in that asks to link, with the second step passed, wrong, or the
+identity taken, replaced, dropped or the account's already), `sso_security` (the
+security page, a link from it, removals, a session that signed in long ago, the
+last way in), `sso_reauth` (accounts made through a provider: the first
+password, a fresh sign-in at the provider as proof, answers that are old,
+somebody else's or that came after the account's security moved), `sso_policy`
+(the provider's second step, trusted or not, recent or not, for a sign-in and
+for a sign-up while everybody must have one) and `sso_named` (named providers
+only). Each prints the rows it left. A difference that is on purpose is listed
+in the script's `KNOWN` with its reason, and is printed as known.
 
 ## Comparing uploads with the first server
 

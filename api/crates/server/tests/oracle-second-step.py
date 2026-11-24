@@ -1185,6 +1185,7 @@ def sso_link(server, rec, other, codes):
     issuer = "https://%s:%d/p2" % (PROVIDERS_HOST, PROVIDER_PORT)
     claims = {"email": "ola@example.test", "email_verified": True, "name": "Ola Nowak"}
     spare = iter(codes[4:])
+    require(server, "everyone")
 
     def waiting(label, subject, browser, name="default", **more):
         provider_reset(PROVIDERS[name][0], subject=subject, claims=claims, **more)
@@ -1249,11 +1250,14 @@ def sso_link(server, rec, other, codes):
     waiting("an identity arrives with a second step of its own", "s-trusted", proud, "trust", amr=["pwd", "mfa"], authTime=int(time.time()) - 30)
     challenge = asks("the password asks to link", proud)
     pass_it("the right code", proud, challenge)
+    require(server, "everyone", alerts=False)
 
 
-def require(server, level):
-    """What the instance asks of everybody's second step: optional, admins, everyone."""
-    server.edit(('UPDATE "OperationsSettings" SET "MfaRequirement" = ?', (level,)))
+def require(server, level, alerts=True):
+    """What the instance asks of everybody's second step (optional, admins,
+    everyone), and whether it mails an account's security alerts, which are
+    queued for every change the scenarios make."""
+    server.edit(('UPDATE "OperationsSettings" SET "MfaRequirement" = ?, "AlertMailEnabled" = ?', (level, int(alerts))))
 
 
 def old_sign_in(server, name):
@@ -1332,7 +1336,7 @@ def sso_security(server, rec):
     ask(rec, "the gone identity may go", gone, "POST", "/api/me/security/identities/%s/remove" % ids[0], {})
     leave(rec, server, ["ssopage", "ssokey", "ssoonly", "ssogone"])
     leave_identities(rec, server)
-    require(server, "everyone")
+    require(server, "everyone", alerts=False)
 
 
 def register_external(rec, label, browser, name, invite, email=None):
@@ -1410,7 +1414,7 @@ def sso_reauth(server, rec):
     ask(rec, "b: a link ticket asked of the reauthentication route", b, "GET", url.replace("/reauthenticate?", "/link?"))
     leave(rec, server, ["ssonewa", "ssonewb", "ssonewc"])
     leave_identities(rec, server)
-    require(server, "everyone")
+    require(server, "everyone", alerts=False)
 
 
 @scenario
@@ -1432,6 +1436,7 @@ def sso_policy(server, rec):
         statements.append(('INSERT INTO "ServerInvites" ("Id","ServerId","CreatedById","ChannelId","Code","Uses","MaxUses","ExpiresAt","CreatedAt") '
                            'SELECT ?, "ServerId", "UserId", NULL, ?, 0, NULL, NULL, ? FROM "ServerMembers" WHERE "OwnerSlot" = 1 LIMIT 1',
                            (new_id(), code, now_text())))
+    statements.append(('UPDATE "OperationsSettings" SET "AlertMailEnabled" = 1', ()))
     server.edit(*statements)
     now = int(time.time())
     rec.note("== the provider's second step, for an account that has its own")
@@ -1463,6 +1468,7 @@ def sso_policy(server, rec):
         ask(rec, "who", browser, "GET", "/api/session")
     leave(rec, server, ["ssopolicy", "ssonewtrust0", "ssonewtrust1", "ssonewplain2"])
     leave_identities(rec, server)
+    require(server, "everyone", alerts=False)
 
 
 @scenario
@@ -1487,6 +1493,7 @@ def sso_named(server, rec):
     sso_in(rec, "sign in through the named provider", Browser(server.base), "work")
     leave(rec, server, ["ssopage"])
     leave_identities(rec, server)
+    require(server, "everyone", alerts=False)
 
 
 def limits(server, rec):
