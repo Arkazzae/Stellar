@@ -41,6 +41,7 @@
       <symbol id="i-game" viewBox="0 0 24 24"><path d="M7.73 6.5L16.27 6.5C19.13 6.5 20.84 8.3 21.31 11.3L21.88 15.3C22.26 18 20.74 19.5 18.84 19.5C17.7 19.5 16.85 18.9 16.27 17.9L15.42 16.5C15.04 15.9 14.47 15.5 13.71 15.5L10.29 15.5C9.53 15.5 8.96 15.9 8.58 16.5L7.73 17.9C7.16 18.9 6.3 19.5 5.16 19.5C3.26 19.5 1.74 18 2.12 15.3L2.69 11.3C3.17 8.3 4.88 6.5 7.73 6.5Z"/><path d="M6.75 11.5H10.25M8.5 9.75V13.25"/><path d="M15.5 10.5H15.51M17.5 12.5H17.51"/></symbol>
       <symbol id="i-pause" viewBox="0 0 24 24"><path d="M7 3.5L7.5 3.5C9.25 3.5 10 4.25 10 6L10 18C10 19.75 9.25 20.5 7.5 20.5L7 20.5C5.25 20.5 4.5 19.75 4.5 18L4.5 6C4.5 4.25 5.25 3.5 7 3.5Z"/><path d="M16.5 3.5L17 3.5C18.75 3.5 19.5 4.25 19.5 6L19.5 18C19.5 19.75 18.75 20.5 17 20.5L16.5 20.5C14.75 20.5 14 19.75 14 18L14 6C14 4.25 14.75 3.5 16.5 3.5Z"/></symbol>
       <symbol id="i-play" viewBox="0 0 24 24"><path d="M9.55 5.34L17.7 10.41C19.49 11.52 19.49 12.48 17.7 13.59L9.55 18.66C7.76 19.77 7 19.35 7 17.25L7 6.75C7 4.65 7.76 4.23 9.55 5.34Z"/></symbol>
+      <symbol id="i-palette" viewBox="0 0 24 24"><path d="M12 21.5C6.75 21.5 2.5 17.25 2.5 12C2.5 6.75 6.75 2.5 12 2.5C17.25 2.5 21.5 6.4 21.5 11.2C21.5 14.3 19 16.5 16 16.5L14.4 16.5C13.5 16.5 12.9 17.2 12.9 18C12.9 18.4 13.1 18.7 13.3 19C13.6 19.4 13.8 19.8 13.8 20.2C13.8 21 13.1 21.5 12 21.5Z"/><path d="M7.5 11.5C8.05 11.5 8.5 11.95 8.5 12.5C8.5 13.05 8.05 13.5 7.5 13.5C6.95 13.5 6.5 13.05 6.5 12.5C6.5 11.95 6.95 11.5 7.5 11.5Z"/><path d="M9.25 6.75C9.8 6.75 10.25 7.2 10.25 7.75C10.25 8.3 9.8 8.75 9.25 8.75C8.7 8.75 8.25 8.3 8.25 7.75C8.25 7.2 8.7 6.75 9.25 6.75Z"/><path d="M14.25 6C14.8 6 15.25 6.45 15.25 7C15.25 7.55 14.8 8 14.25 8C13.7 8 13.25 7.55 13.25 7C13.25 6.45 13.7 6 14.25 6Z"/><path d="M17.75 9.5C18.3 9.5 18.75 9.95 18.75 10.5C18.75 11.05 18.3 11.5 17.75 11.5C17.2 11.5 16.75 11.05 16.75 10.5C16.75 9.95 17.2 9.5 17.75 9.5Z"/></symbol>
     </svg>
 
     <section class="announce" id="announce" aria-label="Announcement">
@@ -160,11 +161,12 @@
                   <div id="panel-voice" role="tabpanel" aria-labelledby="tab-voice">
                     <p class="panel__title">Voice quality</p>
                     <div class="presets" role="radiogroup" aria-label="Voice quality">
+                      <button type="button" role="radio" aria-checked="true"><b>Auto</b><span>Up to 128 kb/s</span></button>
                       <button type="button" role="radio" aria-checked="false"><b>Economy</b><span>32 kb/s</span></button>
                       <button type="button" role="radio" aria-checked="false"><b>Balanced</b><span>64 kb/s</span></button>
                       <button type="button" role="radio" aria-checked="false"><b>Clarity</b><span>96 kb/s</span></button>
                       <button type="button" role="radio" aria-checked="false"><b>Premium</b><span>128 kb/s, FEC</span></button>
-                      <button type="button" role="radio" aria-checked="true"><b>Studio</b><span>256 kb/s, full band</span></button>
+                      <button type="button" role="radio" aria-checked="false"><b>Studio</b><span>256 kb/s, full band</span></button>
                     </div>
                     <p class="panel__title">Noise reduction</p>
                     <div class="chips" role="radiogroup" aria-label="Noise reduction">
@@ -191,7 +193,7 @@
             </div>
             <div class="card__text">
               <h2>Voice up to 256&nbsp;kb/s, streams in&nbsp;4K</h2>
-              <p>Pick an Opus profile from 32 kb/s for a weak connection up to 256 kb/s full band with error correction. Two neural networks, RNNoise and GTCRN, clean up the mic on your own device before anything is sent.</p>
+              <p>Leave voice on Auto for uneven connections or lock in up to 256 kb/s full-band Opus with error correction. Two neural networks, RNNoise and GTCRN, clean up the mic on your own device before anything is sent.</p>
               <p>Screen shares go up to 2160p at 60 fps with their own stereo audio, and quality changes mid-share without picking the window again.</p>
             </div>
           </div>
@@ -239,6 +241,73 @@
 
         <section class="feature feature--flip container">
           <div class="card">
+            <div class="card__media card__media--demo" id="theme-demo">
+              <div class="theme-lab">
+                <div class="theme-room" data-palette="midnight" data-scheme="dark" data-font="outfit" data-wall="none">
+                  <img class="theme-room__wall" data-wall-img="nook" src="./src/images/scenes/10-reading-nook.webp" width="1400" height="788" alt="" hidden />
+                  <img class="theme-room__wall" data-wall-img="observatory" src="./src/images/scenes/13-observatory.webp" width="1400" height="788" alt="" hidden />
+                  <div class="theme-room__rail">
+                    <p class="theme-room__server">Friday Co-op</p>
+                    <span class="theme-room__chan is-active"><svg class="icon"><use href="#i-hash" /></svg>game-night</span>
+                    <span class="theme-room__chan"><svg class="icon"><use href="#i-hash" /></svg>clips</span>
+                    <span class="theme-room__chan"><svg class="icon"><use href="#i-sound" /></svg>lounge</span>
+                  </div>
+                  <div class="theme-room__main">
+                    <div class="theme-room__head"><span># game-night</span><span class="theme-room__label">Midnight</span></div>
+                    <div class="theme-room__msg">
+                      <img src="./src/images/avatars/02-orbit-fox.webp" width="96" height="96" alt="" />
+                      <div>
+                        <p class="theme-room__meta"><b>Maya</b> 21:14</p>
+                        <p class="theme-room__body">Dropped my Harbor fork in #clips if anyone wants the JSON</p>
+                      </div>
+                    </div>
+                    <div class="theme-room__msg">
+                      <img src="./src/images/avatars/11-aster-owl.webp" width="96" height="96" alt="" />
+                      <div>
+                        <p class="theme-room__meta"><b>Jonas</b> 21:15</p>
+                        <p class="theme-room__body">Imported my old BetterDiscord <span class="theme-room__accent">.theme.css</span> too</p>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+                <div class="panel">
+                  <p class="panel__title">Palette</p>
+                  <div class="chips" role="radiogroup" aria-label="Theme palette" data-theme-group="palette">
+                    <button type="button" role="radio" aria-checked="true" data-value="midnight" data-label="Midnight">Midnight</button>
+                    <button type="button" role="radio" aria-checked="false" data-value="slate" data-label="Slate">Slate</button>
+                    <button type="button" role="radio" aria-checked="false" data-value="evergreen" data-label="Evergreen">Evergreen</button>
+                    <button type="button" role="radio" aria-checked="false" data-value="harbor" data-label="Harbor">Harbor</button>
+                    <button type="button" role="radio" aria-checked="false" data-value="amethyst" data-label="Amethyst">Amethyst</button>
+                    <button type="button" role="radio" aria-checked="false" data-value="ink" data-label="Ink">Ink</button>
+                  </div>
+                  <p class="panel__title">Scheme and typeface</p>
+                  <div class="chips" role="radiogroup" aria-label="Color scheme" data-theme-group="scheme">
+                    <button type="button" role="radio" aria-checked="true" data-value="dark">Dark</button>
+                    <button type="button" role="radio" aria-checked="false" data-value="light">Light</button>
+                  </div>
+                  <div class="chips chips--tight" role="radiogroup" aria-label="Typeface" data-theme-group="font">
+                    <button type="button" role="radio" aria-checked="true" data-value="outfit">Outfit</button>
+                    <button type="button" role="radio" aria-checked="false" data-value="mono">JetBrains Mono</button>
+                  </div>
+                  <p class="panel__title">Wallpaper</p>
+                  <div class="chips" role="radiogroup" aria-label="App wallpaper" data-theme-group="wall">
+                    <button type="button" role="radio" aria-checked="true" data-value="none">None</button>
+                    <button type="button" role="radio" aria-checked="false" data-value="nook">Reading nook</button>
+                    <button type="button" role="radio" aria-checked="false" data-value="observatory">Observatory</button>
+                  </div>
+                </div>
+              </div>
+            </div>
+            <div class="card__text">
+              <h2>Make the app look like yours</h2>
+              <p>Switch between dark and light palettes, edit the colors yourself, change the typeface or put your own wallpaper behind the chat. Fonts are hosted by your server, so picking one never calls an outside font CDN.</p>
+              <p>Save a theme to a file to share in chat, or import a BetterDiscord <code>.theme.css</code> file with external URLs stripped out automatically.</p>
+            </div>
+          </div>
+        </section>
+
+        <section class="feature container">
+          <div class="card">
             <div class="card__media card__media--scene">
               <img class="scene" src="./src/images/scenes/13-observatory.webp" width="1400" height="788" alt="" loading="lazy" />
               <div class="scene-list">
@@ -272,7 +341,7 @@
             </div>
             <div class="hosting__text">
               <h2 id="hosting-title">Easy to host,<br />(over)engineered inside.</h2>
-              <p>No Postgres, Redis, LiveKit and five separate containers to wire up just to hang out with friends. The web app, chat, a custom Rust media server and the database all run in one container.</p>
+              <p>No Postgres, Redis, LiveKit and five separate containers to wire up just to hang out with friends. The web app, Rust chat API, custom Rust media server and SQLite database all run in one container.</p>
               <ul class="host-facts">
                 <li><svg class="icon"><use href="#i-server" /></svg><span><b>One container</b>amd64 or arm64, about 120–150 MiB of RAM at idle</span></li>
                 <li><svg class="icon"><use href="#i-database" /></svg><span><b>One folder</b>Everything lives in <code>/data/stellarr</code>, so a backup is one copied directory</span></li>
@@ -353,6 +422,8 @@
             </nav>
             <nav aria-label="Administration">
               <h3>Administration</h3>
+              <a href="https://arkazzae.github.io/Stellarr/admin/servers-and-features">Servers and features</a>
+              <a href="https://arkazzae.github.io/Stellarr/admin/cockpit">Stellarr Cockpit</a>
               <a href="https://arkazzae.github.io/Stellarr/admin/cli">Operator CLI</a>
               <a href="https://arkazzae.github.io/Stellarr/admin/account-security">Account security</a>
               <a href="https://arkazzae.github.io/Stellarr/admin/backups">Automatic backups</a>
@@ -362,6 +433,7 @@
             <nav aria-label="Under the hood">
               <h3>Under the hood</h3>
               <a href="https://arkazzae.github.io/Stellarr/architecture">Architecture</a>
+              <a href="https://arkazzae.github.io/Stellarr/themes">Themes and appearance</a>
               <a href="https://arkazzae.github.io/Stellarr/rtc-and-ports">RTC and ports</a>
               <a href="https://arkazzae.github.io/Stellarr/rtc-protocol">Voice and RTC protocol</a>
               <a href="https://arkazzae.github.io/Stellarr/stellarr-media">Stellarr Media SFU</a>

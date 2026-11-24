@@ -35,7 +35,7 @@ Setting `STELLARR_LANGUAGE=pl` (or `en`) in `.env` configures the instance defau
 1. **Engine and models**:
    - The Bergamot WASM runtime (`/codecs/bergamot/bergamot-translator.wasm` and `bergamot-translator.js`, v0.6.0 from `mozilla/translations`) is compiled from source during the Docker build by [`artifacts/recipes/bergamot/`](../artifacts/recipes/README.md) (Emscripten 3.1.8 on `linux/amd64`, producing byte-identical WASM to Firefox Remote Settings).
    - Translation uses Mozilla's 2.x Marian models (`pl-en` 2.0 and `en-pl` 2.1: `model.<pair>.intgemm.alphas.bin`, `lex.50.50.<pair>.s2t.bin`, and shared `vocab.<pair>.spm`) listed in `web/public/bergamot-models/registry.json`.
-2. **Same-origin download and SHA-256 verification**: When translation is enabled, missing model files are fetched from `/bergamot-models/<pair>/<file>` on the Stellarr instance—never from an external CDN—and verified against the exact byte size and SHA-256 digest in `registry.json` (which matches `artifacts/manifest.json`).
+2. **Same-origin download and SHA-256 verification**: When translation is enabled, missing model files are fetched from `/bergamot-models/<pair>/<file>` on the Stellarr instance (never from an external CDN) and verified against the exact byte size and SHA-256 digest in `registry.json` (which matches `artifacts/manifest.json`).
 3. **Content-addressed IndexedDB model cache**: Verified model files are stored in IndexedDB (`bergamot-models`, object store `files`) **keyed by their SHA-256 digest**. Because `plen` and `enpl` share an identical SentencePiece vocabulary (`vocab.*.spm`), the vocabulary is downloaded and stored only once. On worker startup, `pruneStoredFiles` deletes any IndexedDB entries whose key is not in the current `registry.json`, automatically cleaning up models from older releases.
 4. **Worker execution and sentence splitting**: `bergamot-worker.js` runs the WASM `BlockingService` off the main thread with a 40 MiB initial heap, passing language codes to `TranslationModel` so `Intl.Segmenter` splits multi-sentence messages accurately. If a single-sentence short reply (such as `"Dzięki!"` or `"No."`) is duplicated by the Marian model (`"Thanks! Thanks!"`), `withoutRepeat` collapses the duplicate sentence.
 5. **Main-thread language detection (`web/src/stellarr/lib/chatTranslation/detectLanguage.ts`)**: Classifies messages synchronously with zero extra downloads using character-trigram profiles (`web/scripts/derive-language-profiles.mjs`), function-word tables, and diacritic checks. Messages already in the target language are skipped; short ambiguous strings translate from the opposite language.
@@ -53,8 +53,8 @@ Setting `STELLARR_LANGUAGE=pl` (or `en`) in `.env` configures the instance defau
    - For chat translation support, update `TranslationTargetLanguage` (`i18n/index.ts`), `primaryPair` (`lib/chatTranslation/modelStatus.ts`), `artifacts/manifest.json`, `artifacts/NOTICES`, and `web/public/bergamot-models/registry.json`, placing model files under `artifacts/files/bergamot-models/<pair>/`.
 2. **Cockpit**:
    - Add `web/src/cockpit/i18n/<code>.ts` and register the locale in `web/src/cockpit/i18n/index.ts`.
-3. **Backend API**:
-   - Add the code to `LanguageOptions.cs`, create `Messages.<code>.cs`, and wire it into `Messages.cs`.
+3. **Backend API (`api/crates/messages/` & `api/crates/server/`)**:
+   - Add the language variant to `Language` in `api/crates/messages/src/lib.rs`, create `api/crates/messages/src/<code>.rs` implementing every `MessageKey` match arm, and accept the new code in `STELLARR_LANGUAGE` validation (`api/crates/server/src/settings/variables.rs`).
 
 ## Verification
 

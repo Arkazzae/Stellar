@@ -363,9 +363,116 @@ function initCopy() {
   });
 }
 
+// Palette values match web/src/stellarr/design/themes.ts.
+const THEME_PALETTES = {
+  midnight: {
+    label: 'Midnight',
+    accent: '#6f65d1',
+    onAccent: '#ffffff',
+    dark: { rail: '#18181b', main: '#222327', active: '#33343a', text: '#f3f4f6', muted: '#b9bec9', faint: '#9aa0ad', border: '#292e39', shade: 'rgba(24, 24, 27, 0.8)' },
+    light: { rail: '#f2f2f6', main: '#ffffff', active: '#e4e4ec', text: '#18181b', muted: '#434652', faint: '#626675', border: '#dcdce5', shade: 'rgba(255, 255, 255, 0.82)' },
+  },
+  slate: {
+    label: 'Slate',
+    accent: '#6f65d1',
+    onAccent: '#ffffff',
+    dark: { rail: '#1e1f22', main: '#2b2d31', active: '#3f4147', text: '#f2f3f5', muted: '#b5bac1', faint: '#afb3bb', border: '#3f4147', shade: 'rgba(30, 31, 34, 0.8)' },
+    light: { rail: '#f1f2f4', main: '#ffffff', active: '#e3e5e8', text: '#1e1f22', muted: '#474a51', faint: '#5f646d', border: '#d8dade', shade: 'rgba(255, 255, 255, 0.82)' },
+  },
+  evergreen: {
+    label: 'Evergreen',
+    accent: '#1db954',
+    onAccent: '#000000',
+    dark: { rail: '#121212', main: '#1a1a1a', active: '#333333', text: '#e8e8e8', muted: '#a7a7a7', faint: '#a0a0a0', border: '#282828', shade: 'rgba(18, 18, 18, 0.8)' },
+    light: { rail: '#f0f4f1', main: '#ffffff', active: '#dfe8e1', text: '#121814', muted: '#3b473e', faint: '#56645a', border: '#d4dfd7', shade: 'rgba(255, 255, 255, 0.82)' },
+  },
+  harbor: {
+    label: 'Harbor',
+    accent: '#1a9fff',
+    onAccent: '#000000',
+    dark: { rail: '#171a21', main: '#1b2838', active: '#335573', text: '#f1f1f1', muted: '#c7d5e0', faint: '#d1d9df', border: '#2a475e', shade: 'rgba(23, 26, 33, 0.8)' },
+    light: { rail: '#eef3f8', main: '#ffffff', active: '#dce7f2', text: '#13202d', muted: '#3c5064', faint: '#556c82', border: '#cfdceb', shade: 'rgba(255, 255, 255, 0.82)' },
+  },
+  amethyst: {
+    label: 'Amethyst',
+    accent: '#9146ff',
+    onAccent: '#ffffff',
+    dark: { rail: '#0e0e10', main: '#18181b', active: '#323239', text: '#efeff1', muted: '#adadb8', faint: '#a4a4ae', border: '#35353b', shade: 'rgba(14, 14, 16, 0.8)' },
+    light: { rail: '#f4f1f8', main: '#ffffff', active: '#e7e0f2', text: '#181520', muted: '#494258', faint: '#635b73', border: '#dfd7ec', shade: 'rgba(255, 255, 255, 0.82)' },
+  },
+  ink: {
+    label: 'Ink',
+    accent: '#58a6ff',
+    onAccent: '#000000',
+    dark: { rail: '#0d1117', main: '#161b22', active: '#272e38', text: '#f0f6fc', muted: '#b1bac4', faint: '#a8b1bb', border: '#30363d', shade: 'rgba(13, 17, 23, 0.8)' },
+    light: { rail: '#f0f3f6', main: '#ffffff', active: '#dfe5ec', text: '#0d1117', muted: '#424a53', faint: '#57606a', border: '#d0d7de', shade: 'rgba(255, 255, 255, 0.82)' },
+  },
+};
+
+function initThemeDemo() {
+  const root = document.getElementById('theme-demo');
+  if (!root) return;
+  const room = root.querySelector('.theme-room');
+  const label = room.querySelector('.theme-room__label');
+  const walls = [...room.querySelectorAll('[data-wall-img]')];
+  const state = { palette: 'midnight', scheme: 'dark', font: 'outfit', wall: 'none' };
+  const keys = { ArrowDown: 1, ArrowRight: 1, ArrowUp: -1, ArrowLeft: -1 };
+
+  const paint = () => {
+    const preset = THEME_PALETTES[state.palette];
+    const surface = preset[state.scheme];
+    room.dataset.palette = state.palette;
+    room.dataset.scheme = state.scheme;
+    room.dataset.font = state.font;
+    room.dataset.wall = state.wall;
+    room.style.setProperty('--t-accent', preset.accent);
+    room.style.setProperty('--t-rail', surface.rail);
+    room.style.setProperty('--t-main', surface.main);
+    room.style.setProperty('--t-active', surface.active);
+    room.style.setProperty('--t-text', surface.text);
+    room.style.setProperty('--t-muted', surface.muted);
+    room.style.setProperty('--t-faint', surface.faint);
+    room.style.setProperty('--t-border', surface.border);
+    room.style.setProperty('--t-shade', surface.shade);
+    label.textContent = preset.label;
+    for (const img of walls) img.hidden = img.dataset.wallImg !== state.wall;
+  };
+
+  root.querySelectorAll('[role="radiogroup"]').forEach((group) => {
+    const axis = group.dataset.themeGroup;
+    const options = [...group.querySelectorAll('[role="radio"]')];
+    const select = (option) => {
+      for (const other of options) {
+        const checked = other === option;
+        other.setAttribute('aria-checked', String(checked));
+        other.tabIndex = checked ? 0 : -1;
+      }
+      state[axis] = option.dataset.value;
+      paint();
+    };
+    options.forEach((option, index) => {
+      option.tabIndex = option.getAttribute('aria-checked') === 'true' ? 0 : -1;
+      option.addEventListener('click', () => select(option));
+      option.addEventListener('keydown', (event) => {
+        let next;
+        if (event.key in keys) next = options[(index + keys[event.key] + options.length) % options.length];
+        else if (event.key === 'Home') next = options[0];
+        else if (event.key === 'End') next = options[options.length - 1];
+        else return;
+        event.preventDefault();
+        select(next);
+        next.focus();
+      });
+    });
+  });
+
+  paint();
+}
+
 initAnnouncement();
 initDrawer();
 initMotion();
 initCallPanel();
 initTranslation();
+initThemeDemo();
 initCopy();

@@ -35,7 +35,7 @@ The CLI resolves `<data-root>` in this order:
 3. `DataRoot` configuration value
 4. `/data/stellarr`
 
-Inside `<data-root>`, the SQLite database lives at `db/stellarr.db` and the keys, including the master key (`keys/master.key`), live at `keys/`. Read-only commands never create `keys/` or write new key files. The API must have initialized `keys/` at least once before `stellarr secrets set` can encrypt secrets readable by the API.
+Inside `<data-root>`, the SQLite database lives at `db/stellarr.db` and the instance's master key lives at `keys/master.key`. Read-only commands never create `keys/` or write key files. `stellarr secrets set` requires the `keys/` directory to exist (`data_protection_keys_missing` if the API has never initialized the data folder); if `keys/master.key` itself is absent, `secrets set` creates it (`0600`) after confirmation and prints a warning with its path and owning UID.
 
 ## Commands
 
@@ -59,7 +59,7 @@ stellarr config set time-zone Europe/Warsaw --yes
 stellarr config validate
 ```
 
-`config list` displays each setting's configured value, effective value, source (`database`, `configuration`, `environment`, or `default`), editability, and whether a container restart is required. `config set` updates the same `OperationsSettings` database table used by Cockpit and enforces identical validation rules (`InstanceSettingsService`). `config validate` validates stored settings and warns about incomplete mail or integration setups without sending test emails.
+`config list` displays each setting's configured value, effective value, source (`database`, `configuration`, `environment`, or `default`), editability, and whether a container restart is required. `config set` updates the same `OperationsSettings` database table used by Cockpit and enforces identical validation rules (`api/crates/server/src/settings/`). `config validate` validates stored settings and warns about incomplete mail or integration setups without sending test emails.
 
 #### Writable database-backed keys
 
@@ -102,7 +102,6 @@ Startup settings controlled by `.env` appear in `config list` and can be queried
 | `oidc.trust-provider-mfa` | `STELLARR_OIDC_TRUST_PROVIDER_MFA` |
 | `oidc.provider-mfa-amr` | `STELLARR_OIDC_PROVIDER_MFA_AMR` |
 | `oidc.providers` | `Oidc__Providers__<id>__*` |
-| `oidc.callback-path` | `Oidc__CallbackPath` |
 | `rtc.turn-port` | `STELLARR_TURN_PORT` |
 | `rtc.turns-port` | `STELLARR_TURNS_PORT` |
 | `rtc.turns-enabled` | `STELLARR_TURNS_ENABLED` |
@@ -122,12 +121,12 @@ printf '%s\n' "$SMTP_PASSWORD" |
 stellarr secrets clear mail.smtp-password --yes
 ```
 
-Supported secret names: `mail.smtp-password`, `mail.resend-api-key`, and `giphy.api-key`.
+Supported secret names: `mail.resend-api-key`, `mail.smtp-password`, `giphy.api-key`, `cloudflare.r2.access-key`, `cloudflare.r2.secret-key`, and `cloudflare.r2.worker-token`.
 
 > [!WARNING]
 > Pass secret values only via `--stdin` or an interactive hidden prompt. Passing a secret as a positional argument is rejected (`secret_value_argument`) so secrets never leak into `ps` output or shell history. Always pair `--stdin` with `--yes` so stdin is not consumed by the confirmation prompt.
 
-Secrets are encrypted with `<data-root>/keys` and stored in the `InstanceSecrets` table, overriding `.env`. `secrets clear` removes the database override and reports whether an `.env` fallback is active. Plaintext secret values are never printed.
+Secrets are sealed under `<data-root>/keys/master.key` and stored in `InstanceSecrets`, overriding `.env`. If a stored row cannot be opened with `keys/master.key`, `secrets list` fails with `secret_unreadable` (exit status `4`) until you restore the matching key, replace the secret with `secrets set`, or remove the row with `secrets clear` (which restores any `.env` fallback). Plaintext secret values are never printed.
 
 ### Users and sessions
 
@@ -236,4 +235,4 @@ On failure, `ok` is `false` and `error` contains a stable snake_case `code`, `me
 | `4` | Conflict or failed precondition (read-only setting, locked/unreadable database, incompatible schema, disabled account, insufficient disk space, running API during `backup apply`, or invalid backup archive). |
 | `5` | Database file could not be opened (`database_unavailable`). |
 
-Stable `error.code` values: `usage`, `unknown_command`, `confirmation_required`, `cancelled`, `invalid_value`, `invalid_user`, `invalid_session_id`, `invalid_reason`, `invalid_secret`, `read_only_setting`, `secret_not_configuration`, `secret_value_argument`, `secret_value_required`, `secret_write_failed`, `data_protection_keys_missing`, `database_not_found`, `database_locked`, `database_unavailable`, `schema_incompatible`, `instance_not_found`, `setting_not_found`, `secret_not_found`, `user_not_found`, `session_not_found`, `identity_not_found`, `account_disabled`, `backup_not_found`, `backup_refused`, `not_enough_space`, `restore_not_staged`, `restore_refused`, `restore_broken`, and `instance_running`.
+Stable `error.code` values: `account_disabled`, `backup_not_found`, `backup_refused`, `cancelled`, `confirmation_required`, `data_protection_keys_missing`, `database_error`, `database_locked`, `database_not_found`, `database_unavailable`, `database_unreadable`, `free_space_unknown`, `identity_not_found`, `instance_not_found`, `instance_running`, `invalid_reason`, `invalid_secret`, `invalid_session_id`, `invalid_user`, `invalid_value`, `keys_unreadable`, `not_enough_space`, `permission_denied`, `read_only_setting`, `restore_broken`, `restore_not_staged`, `restore_refused`, `schema_incompatible`, `secret_not_configuration`, `secret_not_found`, `secret_unreadable`, `secret_value_argument`, `secret_value_required`, `secret_write_failed`, `session_not_found`, `setting_not_found`, `unexpected_error`, `unknown_command`, `usage`, and `user_not_found`.
