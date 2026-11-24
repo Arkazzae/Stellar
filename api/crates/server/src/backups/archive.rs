@@ -338,7 +338,7 @@ pub fn verify(path: &Path, work_folder: &Path) -> String {
 
 fn verify_inner(path: &Path, work_folder: &Path) -> Result<String, String> {
     let file = File::open(path).map_err(|error| error.to_string())?;
-    let mut archive = ZipArchive::with_limits(file, limits()).map_err(|error| error.to_string())?;
+    let mut archive = ZipArchive::with_limits(file, limits()).map_err(verdict_of)?;
     let Some(manifest) = manifest_of(&mut archive) else {
         return Ok("The archive has no readable manifest.".to_string());
     };
@@ -389,8 +389,25 @@ fn verify_inner(path: &Path, work_folder: &Path) -> Result<String, String> {
         }
     }
 
-    archive.verify_all().map_err(|error| error.to_string())?;
+    archive.verify_all().map_err(verdict_of)?;
     Ok("ok".to_string())
+}
+
+/// What is said of an archive that failed: the checksum failure in the words
+/// the first server used, the rest as the archive library says it.
+fn verdict_of(error: stellarr_archive::Error) -> String {
+    match error {
+        stellarr_archive::Error::Checksum(name) => {
+            format!("The archive entry '{name}' failed its checksum or length check.")
+        }
+        stellarr_archive::Error::Corrupt(why) if why.contains("end-of-archive record") => {
+            "End of Central Directory record could not be found.".to_string()
+        }
+        stellarr_archive::Error::Corrupt(why) if why.contains("too short") => {
+            "Central Directory corrupt.".to_string()
+        }
+        other => other.to_string(),
+    }
 }
 
 /// Writes an entry to a new file, never more than it declared.

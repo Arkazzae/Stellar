@@ -50,12 +50,7 @@ pub fn new_id(now: Timestamp, extension: &str) -> String {
         .filter(char::is_ascii_digit)
         .take(8)
         .chain(std::iter::once('-'))
-        .chain(
-            text.chars()
-                .skip(11)
-                .filter(char::is_ascii_digit)
-                .take(6),
-        )
+        .chain(text.chars().skip(11).filter(char::is_ascii_digit).take(6))
         .collect();
     format!("{PREFIX}{stamp}-{}{extension}", super::random_token())
 }
@@ -123,10 +118,17 @@ pub fn list(directory: &Path) -> Vec<Entry> {
     found
 }
 
-/// When the file was made: its birth time where the file system keeps one,
-/// else the earlier of the last change of its content and of its entry.
+/// When the file was made. On Linux the first server did not read the birth
+/// time the file system keeps (a file copied in kept its old date), but the
+/// earlier of the last change of its content and of its entry; elsewhere the
+/// birth time is used where there is one, else that same earlier moment.
 pub fn created(metadata: &Metadata) -> Timestamp {
-    let time = metadata.created().ok().or_else(|| {
+    let birth = if cfg!(target_os = "linux") {
+        None
+    } else {
+        metadata.created().ok()
+    };
+    let time = birth.or_else(|| {
         let modified = metadata.modified().ok()?;
         #[cfg(unix)]
         {

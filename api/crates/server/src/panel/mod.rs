@@ -24,6 +24,9 @@
 
 pub mod operations;
 
+use axum::extract::Request;
+use serde_json::Value;
+
 use axum::extract::FromRequestParts;
 use axum::http::request::Parts;
 use rusqlite::Connection;
@@ -96,4 +99,59 @@ pub fn settings_updated(state: &AppState) -> Result<String, ApiError> {
     Ok(state
         .messages()
         .get(MessageKey::AuditSettingsUpdated, &[])?)
+}
+
+/// What a route of the panel that takes a JSON body is given: who is calling,
+/// the instance server, and the body as the route read it.
+pub struct Bound<T> {
+    pub caller: Caller,
+    pub server: Id,
+    pub body: T,
+}
+
+/// Reads the JSON body of a request and then asks the gate, in that order.
+///
+/// The first server bound a route's body before any of its filters ran, so a
+/// body that is not JSON, or has a member of the wrong kind, was a 400 for
+/// anybody, owner or not, before it was asked who was calling. An empty body or
+/// `null` bound as nothing and went on to the gate; the route itself then
+/// said what it thought of nothing. The gate's answers come after the
+/// binding: a caller who is not the owner, then one without a fresh second
+/// step (when `fresh`), then the route.
+///
+/// `read` is given the body (none for an empty one or `null`) and refuses with
+/// a 400 what cannot be bound.
+pub async fn bind_then_gate<T>(
+    state: &AppState,
+    request: Request,
+    fresh: bool,
+    read: impl FnOnce(Option<Value>) -> Result<T, ApiError>,
+) -> Result<Bound<T>, ApiError> {
+    let (mut parts, body) = request.into_parts();
+    let bytes =
+        crate::http::read_all(&parts.headers, body, crate::http::DEFAULT_JSON_BODY_BYTES).await?;
+    let value = if bytes.is_empty() {
+        None
+    } else {
+        serde_json::from_slice::<Option<Value>>(&bytes).map_err(|_| ApiError::bad_request())?
+    };
+    let body = read(value)?;
+    let caller = *parts
+        .extensions
+        .get::<Caller>()
+        .ok_or_else(ApiError::unauthorized)?;
+    let server = if fresh {
+        FreshInstanceOwner::from_request_parts(&mut parts, state)
+            .await?
+            .0
+    } else {
+        InstanceOwner::from_request_parts(&mut parts, state)
+            .await?
+            .0
+    };
+    Ok(Bound {
+        caller,
+        server,
+        body,
+    })
 }
