@@ -24,7 +24,6 @@ use tokio::task::JoinHandle;
 
 use crate::support::{Client, PASSWORD, Person, Request, Server, TempDir};
 
-const WORKER: &str = ("Testing__Workers", "security-notifications").1;
 const PUBLIC_URL: &str = "https://chat.test";
 
 // ---- a mail server that keeps what it is given ----
