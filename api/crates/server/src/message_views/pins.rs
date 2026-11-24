@@ -4,7 +4,7 @@ use axum::extract::State;
 use serde::Serialize;
 use stellarr_messages::MessageKey;
 
-use super::binding::Guid;
+use crate::values::Guid;
 use crate::auth::Caller;
 use crate::database::DbError;
 use crate::events::Event;

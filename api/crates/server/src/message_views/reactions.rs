@@ -7,7 +7,7 @@ use axum::extract::State;
 use serde::Serialize;
 use stellarr_messages::MessageKey;
 
-use super::binding::Guid;
+use crate::values::Guid;
 use super::text;
 use crate::auth::Caller;
 use crate::database::DbError;
