@@ -54,7 +54,7 @@ pub fn verify(secret: &str, code: &str, now: Timestamp) -> Option<i64> {
     if code.len() != DIGITS as usize || !code.bytes().all(|byte| byte.is_ascii_digit()) {
         return None;
     }
-    let key = base32_decode(secret)?;
+    let key = key_of(secret)?;
     let present = now.unix_seconds().div_euclid(STEP_SECONDS);
     let mut found = None;
     for step in candidates(present) {
@@ -68,12 +68,17 @@ pub fn verify(secret: &str, code: &str, now: Timestamp) -> Option<i64> {
 
 /// The code an app shows at `now`, or none when the secret is not Base32.
 pub fn code_at(secret: &str, now: Timestamp) -> Option<String> {
-    let key = base32_decode(secret)?;
+    let key = key_of(secret)?;
     Some(hotp(
         &key,
         now.unix_seconds().div_euclid(STEP_SECONDS),
         DIGITS,
     ))
+}
+
+/// The key a secret spells, when it spells one.
+fn key_of(secret: &str) -> Option<Vec<u8>> {
+    base32_decode(secret).filter(|key| !key.is_empty())
 }
 
 /// The steps looked at, in the order they are preferred.
@@ -136,10 +141,10 @@ pub(crate) fn base32_encode(bytes: &[u8]) -> String {
 /// bits left over at the end are dropped. Anything else, and nothing at all,
 /// is refused.
 pub(crate) fn base32_decode(text: &str) -> Option<Vec<u8>> {
-    let text = text.trim_end_matches('=');
     if text.is_empty() {
         return None;
     }
+    let text = text.trim_end_matches('=');
     let mut bytes = Vec::with_capacity(text.len() * 5 / 8);
     let mut buffer = 0u32;
     let mut bits = 0;
@@ -253,7 +258,11 @@ mod tests {
             "MZXW0YTB",
             "MZXW8YTB",
         ] {
-            assert_eq!(base32_decode(bad), None, "{bad:?}");
+            assert_eq!(
+                base32_decode(bad).filter(|key| !key.is_empty()),
+                None,
+                "{bad:?}"
+            );
             assert_eq!(verify(bad, "123456", at(0)), None);
             assert_eq!(code_at(bad, at(0)), None);
         }
