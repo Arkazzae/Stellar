@@ -111,10 +111,10 @@ impl<'a> Members<'a> {
     }
 
     fn all(&self, name: &str) -> Vec<&'a Value> {
-        let wanted = stellarr_unicode::to_upper(name);
+        // Letters beyond ASCII do not fold: the long s is not an s here.
         self.0
             .iter()
-            .filter(|(key, _)| stellarr_unicode::to_upper(key) == wanted)
+            .filter(|(key, _)| key.eq_ignore_ascii_case(name))
             .map(|(_, value)| value)
             .collect()
     }
