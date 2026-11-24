@@ -12,6 +12,7 @@ mod fixtures;
 pub mod flow;
 pub mod mfa;
 pub mod mfa_methods;
+pub mod passkeys;
 pub mod password;
 pub mod policy;
 pub mod recovery_codes;
