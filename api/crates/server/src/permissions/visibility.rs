@@ -170,18 +170,6 @@ pub fn views(db: &Connection, user: Id, channel: Id) -> rusqlite::Result<bool> {
     }
 }
 
-/// The channel when the member sees it, whichever server it is on.
-pub fn find_anywhere(
-    db: &Connection,
-    user: Id,
-    channel: Id,
-) -> rusqlite::Result<Option<ChannelPlace>> {
-    let Some(found) = place(db, channel, None, None, Some(user))? else {
-        return Ok(None);
-    };
-    Ok(views_place(db, user, &found)?.then_some(found))
-}
-
 /// Whether somebody who has just joined, holding the base role alone, would
 /// see the channel: what an invite to it may name to whoever is not a member
 /// yet. A channel that is not there is seen by nobody.

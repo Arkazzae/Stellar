@@ -333,48 +333,10 @@ fn check_database(runtime: &Runtime) -> Check {
     }
 }
 
-/// The filesystem with the longest mount path containing `path`, so that a
-/// separately mounted data volume is checked instead of the root overlay.
-pub fn longest_matching_root<'a>(path: &str, roots: &[&'a str]) -> Option<&'a str> {
-    roots
-        .iter()
-        .copied()
-        .filter(|root| is_within(path, root))
-        .max_by_key(|root| root.len())
-}
-
-fn is_within(path: &str, root: &str) -> bool {
-    if path == root {
-        return true;
-    }
-    let prefix = if root.ends_with('/') {
-        root.to_string()
-    } else {
-        format!("{root}/")
-    };
-    path.starts_with(&prefix)
-}
 
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    #[test]
-    fn the_longest_mount_that_holds_the_path_is_the_one_checked() {
-        let roots = ["/", "/data", "/data/stellarr"];
-        assert_eq!(
-            longest_matching_root("/data/stellarr/db/stellarr.db", &roots),
-            Some("/data/stellarr")
-        );
-        assert_eq!(
-            longest_matching_root("/data/stellarr-other/db/stellarr.db", &roots),
-            Some("/data")
-        );
-        assert_eq!(
-            longest_matching_root("/var/lib/stellarr/db/stellarr.db", &["/"]),
-            Some("/")
-        );
-    }
 
     #[test]
     fn df_is_read_from_its_last_line() {

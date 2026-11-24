@@ -28,10 +28,6 @@ pub fn set_trusted_device(https: bool, token: &str, expires: Timestamp) -> Strin
     cookies::set(trusted_device_name(https), token, Some(expires), https)
 }
 
-pub fn clear_trusted_device(https: bool) -> String {
-    cookies::delete(trusted_device_name(https), https)
-}
-
 /// The token the browser holds, if it holds one.
 pub fn read_trusted_device(headers: &HeaderMap, https: bool) -> Option<String> {
     cookies::read(headers, trusted_device_name(https))
@@ -98,10 +94,6 @@ mod tests {
         assert_eq!(
             set_trusted_device(false, "token", expires),
             "stellarr-dev-trust=token; expires=Thu, 24 Dec 2026 01:18:38 GMT; path=/; samesite=lax; httponly"
-        );
-        assert_eq!(
-            clear_trusted_device(true),
-            "__Host-stellarr-trust=; expires=Thu, 01 Jan 1970 00:00:00 GMT; path=/; secure; samesite=lax; httponly"
         );
         let mut headers = HeaderMap::new();
         headers.insert(

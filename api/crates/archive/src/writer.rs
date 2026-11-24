@@ -170,11 +170,6 @@ impl<W: Write> ZipWriter<W> {
         self
     }
 
-    /// Bytes written so far.
-    pub fn bytes_written(&self) -> u64 {
-        self.out.written
-    }
-
     /// Starts an entry. Its bytes are written through the returned writer,
     /// which must be finished before the next entry starts.
     pub fn start_entry(
