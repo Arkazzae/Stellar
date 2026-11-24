@@ -178,15 +178,11 @@ if [[ -n "$API_CID" ]]; then
   configured_root="$(container_env STELLARR_DATA_ROOT)"
   [[ -n "$configured_root" ]] && DATA_ROOT="${configured_root%/}"
 
-  connection="$(container_env ConnectionStrings__Database)"
-  DB_IN_CONTAINER="$(printf '%s\n' "$connection" | sed -n 's/.*Data Source=\([^;]*\).*/\1/p')"
-
-  # The first address the API listens on, such as http://0.0.0.0:5000.
-  urls="$(container_env ASPNETCORE_URLS)"
-  if [[ -n "$urls" ]]; then
-    first="${urls%%;*}"
+  # The first address the API listens on, such as 0.0.0.0:5000.
+  listen="$(container_env STELLARR_API_LISTEN)"
+  if [[ -n "$listen" ]]; then
+    first="${listen%%,*}"
     port="${first##*:}"
-    port="${port%%/*}"
     [[ "$port" =~ ^[0-9]+$ ]] && CONTAINER_PORT="$port"
   fi
 
@@ -212,7 +208,7 @@ Stop it and seed that folder's database with --db PATH instead."
 fi
 
 if [[ -z "$DB_IN_CONTAINER" ]]; then
-  DB_IN_CONTAINER="$DATA_ROOT/stellarr-dev.db"
+  DB_IN_CONTAINER="$DATA_ROOT/db/stellarr.db"
 fi
 case "$DB_IN_CONTAINER" in
   "$DATA_ROOT"/*) ;;
@@ -345,7 +341,7 @@ if ! command -v curl >/dev/null 2>&1; then
   exit 0
 fi
 
-# dotnet watch builds before it serves, which takes a while on a cold start.
+# The watcher builds before it serves, which takes a while on a cold start.
 printf "Waiting for %s/health/ready" "$API_URL"
 waited=0
 while [[ "$waited" -lt "$READY_TIMEOUT" ]]; do

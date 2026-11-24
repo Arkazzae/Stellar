@@ -30,7 +30,7 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Tuple, Union
 
-DEFAULT_DB_PATH = "/data/stellarr/stellarr-dev.db"
+DEFAULT_DB_PATH = "/data/stellarr/db/stellarr.db"
 DEFAULT_SEED_PASSWORD = "dev-seed-2026"
 DEFAULT_RNG_SEED = 20261115
 PBKDF2_ITERATIONS = 210_000
@@ -89,7 +89,7 @@ USERS_SPEC: list[tuple[str, str, str, str, str, int]] = [
     ("jonas", "Jonas Lindqvist", "he/him", "In a voice lounge", "Linux tinkerer, Factorio architect, bass player.", 110),
     ("kenji", "Kenji Takahashi", "he/him", "Building local LLMs", "Rust + CUDA + mechanical keyboards.", 145),
     ("ola", "Ola Kowalska", "she/her", "Na kawie ☕", "Frontend dev z Warszawy. TypeScript & CSS.", 185),
-    ("kuba", "Kuba Nowak", "he/him", "Refactoring queries", "Backend .NET, SQLite FTS5, homelab NAS.", 210),
+    ("kuba", "Kuba Nowak", "he/him", "Refactoring queries", "Backend Rust, SQLite FTS5, homelab NAS.", 210),
     ("zuzanna", "Zuzanna Zielińska", "she/her", "Testuję tłumaczenia", "QA lead, accessibility & i18n enthusiast.", 245),
     ("marek", "Marek Wiśniewski", "he/him", "ZFS scrub running...", "Storage, Proxmox, WireGuard & backups.", 275),
     ("tomek", "Tomek Kamiński", "he/him", "Co-op wieczorem?", "DevOps, Nginx, Terraform and Helldivers.", 310),
@@ -101,7 +101,7 @@ USERS_SPEC: list[tuple[str, str, str, str, str, int]] = [
     ("liam", "Liam O'Connor", "he/him", "Brewing V60", "Platform reliability, Prometheus & logs.", 162),
     ("noah", "Noah Goldstein", "he/him", "Reviewing PRs", "Compilers, WASM, Bergamot runtime.", 198),
     ("elena", "Elena Popescu", "she/her", "Writing docs", "Technical writer & VitePress maintainer.", 232),
-    ("mateusz", "Mateusz Dąbrowski", "he/him", "Sprawdzam logi", "C# / ASP.NET Core & SignalR.", 265),
+    ("mateusz", "Mateusz Dąbrowski", "he/him", "Sprawdzam logi", "Rust, axum & WebSockets.", 265),
     ("natasha", "Natasha Ivanova", "she/her", "Audio tuning", "DSP, Opus bitrates & noise suppression.", 295),
     ("viktor", "Viktor Horvat", "he/him", "On-call this week", "Containers, systemd, kernel tuning.", 328),
     ("hanna", "Hanna Lindholm", "she/her", "Sketching layouts", "UI motion, haptics, design tokens.", 10),
@@ -114,10 +114,9 @@ USERS_SPEC: list[tuple[str, str, str, str, str, int]] = [
 ]
 
 # The permission masks of the two system roles, as the API writes them for a
-# new server (ServerPrivileges in server/Stellarr.Api/Domain/ServerRole.cs):
-# the owner role stores every permission, ServerPrivileges.All, and the base
-# role ServerRole.BaseRoleDefaults, which lets everybody see the channels, send
-# messages, attach files, add reactions and join voice.
+# new server (api/crates/server/src/permissions/): the owner role stores every
+# permission, and the base role lets everybody see the channels, send messages,
+# attach files, add reactions and join voice.
 OWNER_PERMISSIONS = (1 << 15) - 1
 MEMBER_PERMISSIONS = (1 << 9) | (1 << 10) | (1 << 11) | (1 << 12) | (1 << 14)
 
@@ -135,7 +134,7 @@ SECTIONS_AND_CHANNELS: list[tuple[str, list[tuple[str, str, str]]]] = [
         ("qa-markdown", "text", "Formatting playground: code blocks, quotes, spoilers, and @mentions."),
     ]),
     ("Engineering", [
-        ("backend-dotnet", "text", "ASP.NET Core 10 API, EF Core, SignalR hubs, and CLI."),
+        ("backend-rust", "text", "The Rust API: axum, SQLite, the realtime hub, and the operator CLI."),
         ("frontend-vite", "text", "Web client and Cockpit on Vite, React 19 state, and CSS design tokens."),
         ("rust-media-sfu", "text", "stellarr-media WebRTC SFU, str0m, ICE, and Opus forwarding."),
         ("homelab-infra", "text", "Unraid, Proxmox, ZFS, Nginx, backups, and self-hosting."),
@@ -208,20 +207,20 @@ CONVERSATIONS: dict[str, list[ScriptLine]] = {
         ("maya", "> Blockquote check: small details make interfaces feel effortless.\n> Second line of the quote with a safe doc link: https://docs.example.test/formatting"),
         ("ola", "Testing mentions inside code shouldn't notify: `@__VIEWER__` vs real mention outside: @__VIEWER__ check this out!"),
         ("theo", "Rust snippet check:\n```rust\nlet epoch = Uuid::new_v4().simple().to_string();\ntracing::info!(%epoch, \"stellarr-media ready\");\n```"),
-        ("mateusz", "C# snippet check:\n```csharp\npublic sealed record ChannelDto(string Id, string Name, string Kind);\n```"),
+        ("mateusz", "Rust struct check:\n```rust\npub struct ChannelDto {\n    pub id: String,\n    pub name: String,\n    pub kind: String,\n}\n```"),
         ("noah", "Nested formatting test: ***bold italic*** and `code with **stars** inside` plus ||hidden spoiler link||."),
         ("elena", "Ordered list check:\n1. First step — verify parser output\n2. Second step — verify FTS5 indexing\n3. Third step — verify copy button on code blocks"),
         ("viewer", "Test długiej wiadomości po polsku: zażółć gęślą jaźń — ZAŻÓŁĆ GĘŚLĄ JAŹŃ ąęćłńóśźż!"),
     ],
-    "backend-dotnet": [
-        ("kuba", "Moved schema initialization to `DatabaseSchema.PrepareAsync` on top of `EnsureCreated` — dropped over 3,000 lines of legacy migration code."),
-        ("mateusz", "Checked `AppDbContext` query plans on `Messages`: `(ChannelId, CreatedAt)` keeps `HistoryCursor` pagination flat."),
-        ("priya", "Good thing `WithMessageDetails()` uses `AsSplitQuery()` — avoids cartesian explosion when messages carry reactions and attachments."),
-        ("kuba", "Verified `MessageMentions.ExtractNormalizedUsernames` ignores fenced code blocks and URLs cleanly."),
+    "backend-rust": [
+        ("kuba", "Moved schema creation into one `schema.sql` that runs when the database is first opened — dropped over 3,000 lines of legacy migration code."),
+        ("mateusz", "Checked the query plans on `Messages`: `(ChannelId, CreatedAt)` keeps history pagination flat."),
+        ("priya", "Good thing the message loader fetches reactions and attachments in separate queries — avoids cartesian explosion when messages carry both."),
+        ("kuba", "Verified the mention reader ignores fenced code blocks and URLs cleanly."),
         ("lena", "Wait: did we also verify `@__OWNER__` mentions inside blockquotes still trigger notifications?"),
         ("kuba", "Yep! Blockquotes are normal prose, only code fences, inline backticks, escaped `@`, and URLs are excluded."),
         ("mateusz", "Tested `POST /api/channels/{id}/messages` retry idempotency with `ClientMessageId` — returns `200 OK` without duplicating rows."),
-        ("priya", "`SlowModeGate` also serializes the cooldown check before insert so parallel tabs can't bypass slow mode."),
+        ("priya", "The slow-mode check also runs inside the insert's transaction so parallel tabs can't bypass slow mode."),
         ("viktor", "How fast is `PRAGMA wal_checkpoint(TRUNCATE)` during online backups?"),
         ("kuba", "Under 3ms on NVMe, and SQLite's backup API doesn't even block concurrent readers."),
         ("viewer", "@kuba @mateusz sprawdźcie jeszcze proszę jak zachowuje się `/api/bootstrap` przy 16 kanałach i 30 userach."),
@@ -307,7 +306,7 @@ EXTRA_FILLER_TARGETS: dict[str, int] = {
     "general": 22,
     "announcements": 8,
     "qa-markdown": 18,
-    "backend-dotnet": 36,
+    "backend-rust": 36,
     "frontend-vite": 38,
     "rust-media-sfu": 34,
     "homelab-infra": 36,
@@ -424,7 +423,7 @@ AUDIT_SPEC: list[tuple[str, str]] = [
 ]
 
 REACTIONS_POOL = ["👍", "🔥", "❤️", "🎉", "🚀", "👀", "😂", "💯", "🍿", "🧠", "🛠️", "⚡"]
-UNREAD_CHANNEL_NAMES = {"backend-dotnet", "frontend-vite", "polski", "lfg-coop", "qa-long-history"}
+UNREAD_CHANNEL_NAMES = {"backend-rust", "frontend-vite", "polski", "lfg-coop", "qa-long-history"}
 
 # Presence normally lives only in the API process and follows live hub
 # connections. A seed cannot open one for every fixture account, so it leaves a
@@ -513,7 +512,7 @@ def hash_password(password: str) -> str:
 
 
 def pair_ids(a: str, b: str) -> tuple[str, str]:
-    # Matches EF/C# uppercase GUID ordering used by SocialEndpoints.Pair.
+    # Uppercase GUID ordering, which is how the API orders the two ids of a pair.
     return (a, b) if a.upper() < b.upper() else (b, a)
 
 
@@ -570,9 +569,9 @@ def welcome_notice(display_name: str) -> str:
 def infer_data_root(db_path: Path) -> Path:
     """Where the API's DataRoot sits for a database file.
 
-    The dev compose keeps the database at the root of the data volume, while a
-    production layout puts it under ``db/``. Both resolve to the folder that
-    holds ``files/``, which is what attachments need.
+    The API keeps its database under ``db/`` in the data root, the dev stack and
+    the container alike. A database elsewhere resolves to its own folder. The
+    root is the folder that holds ``files/``, which is what attachments need.
     """
     parent = db_path.resolve().parent
     return parent.parent if parent.name.lower() == "db" else parent
@@ -639,7 +638,7 @@ def ensure_schema_present(cur: sqlite3.Cursor) -> None:
         raise RuntimeError(
             "Database schema is not initialized (missing tables: "
             + ", ".join(missing)
-            + "). Start the API service once so EF Core creates the schema before seeding."
+            + "). Start the API service once so it creates the schema before seeding."
         )
     try:
         cur.execute("CREATE VIRTUAL TABLE temp.seed_fts5_probe USING fts5(x);")

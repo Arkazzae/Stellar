@@ -11,7 +11,7 @@ Populates a development SQLite database with multi-day sample activity—account
 - **Accounts and roles**: Member accounts (`USERS_SPEC` in `seed-dev.py`) assigned across four custom roles (`Admin`, `Moderator`, `Core Maintainer`, `Voice Host`) in addition to `Owner` and `Member`. All seeded accounts share the default password `dev-seed-2026` (override with `--password`; example usernames: `maya`, `theo`, `priya`, `jonas`, `kenji`, `ola`).
 - **Sections and channels**: Text and voice channels alongside the default `#general` and `#voice` channels, organized under four sections:
   - `Information`: `#announcements`, `#qa-markdown`
-  - `Engineering`: `#backend-dotnet`, `#frontend-vite`, `#rust-media-sfu`, `#homelab-infra`, `eng-standup` (voice)
+  - `Engineering`: `#backend-rust`, `#frontend-vite`, `#rust-media-sfu`, `#homelab-infra`, `eng-standup` (voice)
   - `Community`: `#polski`, `#lfg-coop`, `#llm-local`, `#random-chat`, `co-op-lounge` (voice)
   - `History & Chill`: `#qa-long-history` (multi-day message history for scroll and pagination testing), `chill-room` (voice)
 - **Messages and social graph**: Multi-day messages with replies, edits, pins, reactions, code blocks, `@mentions`, FTS5 search index rows, unread markers, friendships, pending friend requests, direct message threads, invites, audit log entries, and two secondary servers (`Homelab & Infra`, `Friday Co-op`) for server-rail switching.
@@ -20,7 +20,7 @@ Populates a development SQLite database with multi-day sample activity—account
 
 ### Usage
 
-By default, `./scripts/seed-dev.sh` inspects the `api` container of the `stellarr-dev` Compose project (`docker-compose.dev.yml` or overlays such as `docker-compose.dev.fresh.yml`) to discover its mounted data volume, `STELLARR_DATA_ROOT`, SQLite database path, and published port automatically. If the `api` container is running, `seed-dev.sh` stops it before writing to SQLite, runs `seed-dev.py`, restarts the container, and waits for `/health/ready`.
+By default, `./scripts/seed-dev.sh` inspects the `api` container of the `stellarr-dev` Compose project (`docker-compose.dev.yml` or overlays such as `docker-compose.dev.fresh.yml`) to discover its mounted data volume, `STELLARR_DATA_ROOT` (the database is `db/stellarr.db` in it), and published port automatically. If the `api` container is running, `seed-dev.sh` stops it before writing to SQLite, runs `seed-dev.py`, restarts the container, and waits for `/health/ready`.
 
 ```bash
 # Seed the active dev stack volume (discovers volume/path from the api container)
@@ -33,7 +33,7 @@ By default, `./scripts/seed-dev.sh` inspects the `api` container of the `stellar
 ./scripts/seed-dev.sh --dry-run
 
 # Seed a standalone local SQLite file directly using host python3 (3.9+)
-./scripts/seed-dev.sh --db ./path/to/stellarr-dev.db --reset
+./scripts/seed-dev.sh --db ./path/to/db/stellarr.db --reset
 
 # Bootstrap an empty schema-only database with a starter 'admin' owner and server first
 ./scripts/seed-dev.sh --reset --bootstrap-owner
