@@ -36,8 +36,7 @@ instance_name() { curl -s -b "$work/owner" "$base/api/servers" "${headers[@]}" |
 cli() { STELLARR_MAIL_ENABLED=false STELLARR_API_URL=$base "$tool" --data-root "$root" "$@"; }
 
 mkdir -p "$root/db"
-env -i PATH="$PATH" ASPNETCORE_ENVIRONMENT=Testing Testing__Workers=realtime-sessions ASPNETCORE_URLS=$base STELLARR_DATA_ROOT="$root" \
-  "ConnectionStrings__Database=Data Source=$root/db/stellarr.db;Pooling=True" \
+env -i PATH="$PATH" STELLARR_ENVIRONMENT=Testing Testing__Workers=realtime-sessions STELLARR_API_LISTEN="${base#http://}" STELLARR_DATA_ROOT="$root" \
   "$server" >"$work/server.log" 2>&1 &
 pid=$!
 for _ in $(seq 1 100); do curl -fs "$base/health/ready" >/dev/null && break; sleep 0.2; done
