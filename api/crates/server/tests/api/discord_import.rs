@@ -1207,3 +1207,72 @@ async fn hostile_snapshots_are_written_without_harm() {
     let tally = world.writer.tally(world.server_id).await.unwrap();
     assert_eq!((tally.written, tally.attachments_pending), (8, 1));
 }
+
+#[tokio::test]
+async fn people_signed_in_see_the_import_as_it_goes_and_are_never_kept_waiting() {
+    let guild = FakeGuild::new("Krew");
+    guild
+        .category("900", "Talk", 0)
+        .channel("100", "general", Ch { parent: Some("900"), ..Ch::default() })
+        .channel("160", "staff", Ch { parent: Some("900"), position: 1, hidden: true, ..Ch::default() });
+    for index in 0..1500 {
+        let text = if index % 100 == 0 { format!("quokka {index}") } else { format!("message {index}") };
+        guild.message(&(10_000 + index).to_string(), "100", "71", &text, index, plain());
+    }
+    guild.message("90000", "160", "71", "for the staff", 1, plain());
+    let world = std::sync::Arc::new(World::new(guild, &["nils"]).await);
+    let started = world.start().await;
+    let general = world.channel("100");
+    let staff = world.channel("160");
+
+    // The channels are there as soon as the structure is: empty, and readable.
+    // Overwrites are not imported, so a channel that hid from everyone on
+    // Discord is open to every member until a later stage closes it.
+    for channel in [&general, &staff] {
+        let history = world.get(&world.people["nils"], &format!("/api/channels/{channel}/messages")).await;
+        assert!(history["messages"].as_array().unwrap().is_empty(), "{channel}");
+    }
+
+    // The import runs on while people read.
+    let reader = {
+        let world = world.clone();
+        let (import, snapshot) = (started.import.clone(), started.snapshot.clone());
+        let source = started.bot;
+        tokio::spawn(async move {
+            let pins = HashMap::new();
+            let history = source.messages("100", None).unwrap().collect_all().await.unwrap();
+            for page in history.chunks(100) {
+                world.writer.write_messages(&import, &snapshot, "100", page, Some(&pins)).await.unwrap();
+            }
+            world.writer.complete_channel(&import, "100").await.unwrap();
+        })
+    };
+    let (mut seen, mut slowest, mut requests) = (0, Duration::ZERO, 0);
+    let me = &world.people["nils"];
+    while !reader.is_finished() {
+        let began = Instant::now();
+        let history = me.client.get(&format!("/api/channels/{general}/messages?limit=100")).await;
+        let found = me.client.get(&format!("/api/channels/{general}/messages/search?query=quokka")).await;
+        slowest = slowest.max(began.elapsed());
+        assert_eq!(history.status, 200, "{}", history.text());
+        assert_eq!(found.status, 200, "{}", found.text());
+        let newest: Value = history.json();
+        let messages = newest["messages"].as_array().unwrap();
+        // Whatever is shown is whole: every message has its author and its time.
+        for message in messages {
+            assert!(message["author"]["id"].is_string() && message["createdAt"].is_string(), "{message}");
+        }
+        seen = seen.max(messages.len());
+        requests += 1;
+    }
+    reader.await.unwrap();
+
+    assert!(requests > 3, "the readers asked {requests} times");
+    assert!(seen > 0, "history was readable before the import ended");
+    assert!(slowest < Duration::from_secs(2), "the slowest pair of requests took {slowest:?}");
+    let last = world.get(me, &format!("/api/channels/{general}/messages?limit=100")).await;
+    assert_eq!(last["messages"].as_array().unwrap().len(), 100);
+    let all = world.get(me, &format!("/api/channels/{general}/messages/search?query=quokka")).await;
+    assert_eq!(all.as_array().unwrap().len(), 15);
+    println!("{requests} rounds of requests during the import; the slowest pair took {slowest:?}");
+}
