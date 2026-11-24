@@ -17,6 +17,7 @@ const { values: args } = parseArgs({
     plan: { type: "string" },
     users: { type: "string" },
     worlds: { type: "string", default: "30" },
+    first: { type: "string", default: "0" },
     out: { type: "string" },
   },
 });
@@ -51,6 +52,7 @@ class Client {
     await new Promise((resolve, reject) => {
       this.socket.onopen = resolve;
       this.socket.onerror = () => reject(new Error(`the upgrade for ${this.label} failed`));
+      setTimeout(() => reject(new Error(`the upgrade for ${this.label} did not finish`)), 5000);
     });
     this.socket.onmessage = (event) => {
       this.buffer += String(event.data);
@@ -85,9 +87,13 @@ const GUID = /[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-
 
 const users = readFileSync(args.users, "utf8").split("\n").filter(Boolean).map((line) => line.split(" ")[0]);
 const cookies = {};
-for (const name of users) cookies[name] = await signIn(name);
+for (const name of users) {
+  try {
+    cookies[name] = await signIn(name);
+  } catch {}
+}
 
-const worlds = readFileSync(args.plan, "utf8").split("\n").filter(Boolean).slice(0, Number(args.worlds));
+const worlds = readFileSync(args.plan, "utf8").split("\n").filter(Boolean).slice(Number(args.first), Number(args.first) + Number(args.worlds));
 for (const [number, text] of worlds.entries()) {
   const world = JSON.parse(text);
   const labels = new Map(Object.entries(world.labels).map(([id, label]) => [id.toLowerCase(), label]));
@@ -101,8 +107,10 @@ for (const [number, text] of worlds.entries()) {
       return `<made ${made.get(key)}>`;
     });
   lines.push(`# world ${number}`);
+  if (process.env.EVENTS_DEBUG) console.error(`world ${number}`);
   const clients = [];
   for (const name of [...world.members].sort()) {
+    if (process.env.EVENTS_DEBUG) console.error(`  connect ${name}`);
     try {
       clients.push(await new Client(name, cookies[name], world.server).open());
     } catch (error) {
@@ -113,20 +121,37 @@ for (const [number, text] of worlds.entries()) {
   for (const client of clients) client.take();
   for (const [index, step] of world.steps.entries()) {
     if (step.method === "GET") continue;
+    if (process.env.EVENTS_DEBUG) console.error(`  step ${index} ${step.method} ${step.path}`);
     const response = await fetch(`${args.base}${step.path}`, {
       method: step.method,
       headers: { ...clientHeaders, Cookie: cookies[step.actor], "X-Stellarr-Server": world.server },
       body: step.body === null ? undefined : JSON.stringify(step.body),
     });
     await response.arrayBuffer();
+    if (process.env.EVENTS_DEBUG) console.error(`    -> ${response.status}`);
     lines.push(`## ${index} ${step.actor} ${step.method} ${scrub(step.path)} -> ${response.status}`);
     await sleep(250);
+    // A removed member, with the session they have: what the server says to them now.
+    const removed = step.path.match(/\/members\/([0-9a-fA-F-]{36})(\/ban)?$/);
+    if (removed && [201, 204].includes(response.status) && step.method !== "PUT") {
+      const name = labels.get(removed[1].toLowerCase());
+      if (cookies[name]) {
+        for (const named of [true, false]) {
+          const after = await fetch(`${args.base}/api/admin/roles`, {
+            headers: { ...clientHeaders, Cookie: cookies[name], ...(named ? { "X-Stellarr-Server": world.server } : {}) },
+          });
+          await after.arrayBuffer();
+          lines.push(`   after removal, ${name} asks for the roles ${named ? "naming the server" : "naming none"}: ${after.status}`);
+        }
+      }
+    }
     for (const client of clients) {
       for (const record of client.take()) {
         lines.push(`   ${client.label}: ${record.closed ? "closed" : `${record.target} ${scrub(record.arguments)}`}`);
       }
     }
   }
+  if (process.env.EVENTS_DEBUG) console.error(`  closing`);
   for (const client of clients) client.close();
   await sleep(100);
 }
