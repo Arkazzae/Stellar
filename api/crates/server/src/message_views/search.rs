@@ -37,7 +37,7 @@ pub fn build_query(query: &str) -> Option<String> {
     (!terms.is_empty()).then(|| terms.join(" AND "))
 }
 
-/// The runs of letters and numbers. The first server read text as UTF-16, in
+/// Finds runs of letters and numbers in UTF-16, in
 /// which a character beyond the first 65,536 is two halves that are neither
 /// letters nor numbers, so it ends a word like any mark does.
 fn words(query: &str) -> Vec<String> {

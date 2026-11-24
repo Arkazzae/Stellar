@@ -167,8 +167,7 @@ fn month_of(word: &str) -> Option<i64> {
     Some(MONTHS.iter().position(|name| *name == lower)? as i64 + 1)
 }
 
-/// Years of two digits are 1950 to 2049, as the calendar the first server
-/// read them with has it.
+/// Two-digit years map to 1950 through 2049.
 fn two_digit_year(year: i64) -> i64 {
     if year < 50 { 2000 + year } else { 1900 + year }
 }
@@ -231,7 +230,7 @@ mod tests {
     const MOMENT: i64 = 1_795_169_472;
 
     #[test]
-    fn the_spellings_the_first_server_read_are_read() {
+    fn supported_http_date_forms_parse_to_the_same_time() {
         for text in [
             "Fri, 20 Nov 2026 10:11:12 GMT",
             "fri, 20 nov 2026 10:11:12 GMT",

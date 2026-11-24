@@ -1,4 +1,4 @@
-//! A number of seconds as the first server wrote it into an audit line.
+//! Formats durations in seconds for audit entries.
 
 /// The number with at most two decimals and no trailing zeros, as the first
 /// server's `0.##` made it: the value is first read to 15 significant digits,

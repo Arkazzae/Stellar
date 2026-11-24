@@ -9,8 +9,8 @@
 //! the handler runs. [`InstanceOwner`] is the same for the instance's own
 //! panel.
 //!
-//! The first server read the body of a request before it asked about
-//! membership, so a person who is no member and sent a body that cannot be read
+//! Body extraction precedes membership checks, so a caller without membership
+//! who sends a body that cannot be read
 //! was told 400; an argument is read before the body is, so here they are told
 //! 403. Nothing a client could make use of.
 

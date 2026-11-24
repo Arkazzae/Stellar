@@ -2,16 +2,16 @@
 //! call it makes to a provider.
 //!
 //! A provider is a host the operator named, so the calls go to any address,
-//! a provider on the local network included, as the first server's did. The
-//! documents (discovery and keys) follow a few redirects, as its client did;
+//! including providers on local networks. The discovery and key requests
+//! follow a limited number of redirects;
 //! the token request and the profile request follow none, since a redirected
 //! token request would carry the code to a host nobody named. Every call has
-//! the client's own timeouts (ten seconds to connect, thirty in all, where the
-//! first server waited a minute) and a ceiling on the answer.
+//! the client's timeouts (ten seconds to connect, thirty in all) and a
+//! limit on the response size.
 //!
 //! What a provider publishes is kept for twelve hours and read again earlier
 //! only when a token names a key that is not in the set, and then at most
-//! once in five minutes, which is what the first server's library did. Nothing
+//! once in five minutes. Nothing
 //! is fetched at start: a provider that is down must not stop the server.
 
 use std::collections::HashMap;
@@ -113,7 +113,7 @@ impl SingleSignOn {
 
     /// A token named a key the copy does not have. The provider may have
     /// rotated its keys, so what it publishes is read again, for the sign-ins
-    /// after this one: this one has failed already, as the first server's did.
+    /// after this one, which has already failed.
     /// At most once in five minutes, so that tokens cannot make this server
     /// read it over and over.
     pub async fn ask_for_refresh(&self, provider: &Provider) {
@@ -156,9 +156,8 @@ impl SingleSignOn {
         let url = discovery::discovery_url(provider.authority());
         let body = self.document(&url).await?;
         let found = discovery::parse(&body).map_err(Failed::of)?;
-        // A provider that cannot be asked for its keys stops the sign-in, as
-        // it did on the first server. One that publishes none lets it start
-        // and fails every answer, which asks again.
+        // Failure to fetch keys stops sign-in. An empty key set permits sign-in
+        // to start, but its response cannot be verified and triggers a refresh.
         let keys = match self.document(&found.jwks_uri).await {
             Err(failed) => return Err(failed),
             Ok(body) => match jwks::parse(&body) {

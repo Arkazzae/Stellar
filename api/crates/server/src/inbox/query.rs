@@ -1,5 +1,4 @@
-//! The query of the inbox's list: `limit` and `beforeSequence`, bound as the
-//! first server bound them, by the shared reader of query values.
+//! Query parameters for listing the inbox: `limit` and `beforeSequence`.
 
 use crate::http::{ApiError, QueryValues};
 

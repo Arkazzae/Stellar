@@ -1268,7 +1268,7 @@ pub enum PasswordProof {
 /// Checks the candidate against the account's password now, so that no
 /// transaction waits for the hash. Nothing is hashed for an account that has
 /// no password, or when no candidate was given. A wrong password costs nothing
-/// else, as on the first server's routes that ask for one: no attempt, no
+/// else: no attempt, no
 /// event, no point against the account's budget.
 pub async fn check_given_password(
     state: &AppState,
@@ -1649,7 +1649,7 @@ pub async fn redeem_recovery_credential(
 /// is compared (in capitals). The ids of the methods revoked.
 ///
 /// A change of address does not touch the account's security version, its
-/// sessions, remembered devices or recovery codes, as on the first server.
+/// sessions, remembered devices or recovery codes.
 pub fn email_address_changed(
     tx: &Transaction,
     context: &Context<'_>,
@@ -1738,7 +1738,7 @@ pub enum IdentityRemoved {
 
 /// Takes a linked identity away: the guard, then the identity, then whether the
 /// account keeps a way in without it, then the row and its event, in one
-/// transaction. As on the first server it ends no session and moves no
+/// transaction. It ends no session and changes no
 /// security version. `name` is how the identity is shown in the account's
 /// record (the provider's name, or the issuer's host), which the route knows
 /// from the providers that are set up; `providers` are those.

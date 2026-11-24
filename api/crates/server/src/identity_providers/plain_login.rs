@@ -1,12 +1,11 @@
 //! The login to suggest for an account made from what a provider said about a
-//! person: the web client's rule, which the first server kept so that both
-//! suggest the same name.
+//! person. The web client and API use the same rules to suggest a name.
 //!
 //! The rule lower-cases the text, takes the accents off (decomposes it and
 //! drops the combining marks), and keeps ASCII letters and digits with one
 //! separator at most between them. No Unicode decomposition data is in the
 //! workspace, so [`FOLDED`] lists what each character that matters becomes,
-//! read once from the first server's own runtime: the one letter, digit or
+//! as a letter, digit or
 //! separator it leaves, or a space for white space. A character that is not
 //! here leaves nothing.
 
@@ -287,7 +286,7 @@ fn folded(c: char) -> Option<char> {
         .map(|at| FOLDED[at].1)
 }
 
-/// ASCII white space as the first server's runtime counts it.
+/// ASCII white space used when suggesting a login.
 fn is_space(c: char) -> bool {
     c == ' ' || ('\t'..='\r').contains(&c)
 }

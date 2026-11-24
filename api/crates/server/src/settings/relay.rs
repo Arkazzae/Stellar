@@ -1,10 +1,5 @@
 //! What browsers are told of the relay (TURN): its two ports and whether it
 //! also answers over TCP and TLS.
-//!
-//! The first server read these when a bootstrap was asked for, not at start,
-//! so a port that cannot be right did not stop it: it failed every bootstrap
-//! with a 500 until the setting was mended. That is kept: a value that cannot
-//! be right is held as the refusal it makes, and the bootstrap answers with it.
 
 use super::SettingError;
 use super::config::Config;

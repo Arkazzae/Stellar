@@ -40,7 +40,7 @@ pub fn create(
 
 /// Like [`create`], for somebody who came through an invite that leads to a
 /// channel: when it is a text channel of the server, the notice goes there,
-/// whether or not the newcomer will see it, as the first server did.
+/// even if the newcomer cannot see the channel.
 pub fn create_in(
     tx: &Transaction,
     server: Id,

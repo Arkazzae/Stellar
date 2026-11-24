@@ -696,7 +696,7 @@ mod tests {
     }
 
     #[test]
-    fn transports_are_written_as_the_first_server_wrote_them_and_read_back() {
+    fn passkey_transports_round_trip_in_storage() {
         let all = [
             Transport::Usb,
             Transport::Nfc,
@@ -718,7 +718,7 @@ mod tests {
             read_transports(r#"["usb","nfc","ble","hybrid","internal"]"#),
             all
         );
-        // What cannot be read names none, as in the first server.
+        // Unreadable transport lists are treated as empty.
         assert_eq!(read_transports(""), vec![]);
         assert_eq!(read_transports("usb,nfc"), vec![]);
         assert_eq!(read_transports(r#"["usb","teleport"]"#), vec![]);
@@ -726,7 +726,7 @@ mod tests {
     }
 
     #[test]
-    fn a_passkey_is_stored_as_the_first_server_stores_one() {
+    fn a_passkey_stores_its_credential_and_metadata() {
         let (_folder, mut connection) = open();
         let user = add_user(&connection, None);
         let id = enrolled(&mut connection, user, &[9; 32]);

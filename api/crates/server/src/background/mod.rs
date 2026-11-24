@@ -51,7 +51,7 @@
 //!
 //! A restart is a new call of the worker's function, so what lived in the old
 //! run is gone; what must last belongs in the database. An iteration that
-//! fails is the worker's own business, as it was in the first server: catch it,
+//! fails should be handled by the worker: catch it,
 //! log it, and go on to the next; the restart is the net under that, not the
 //! way to handle an error.
 

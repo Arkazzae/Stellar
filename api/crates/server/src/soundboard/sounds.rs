@@ -54,8 +54,7 @@ pub struct UpdateSound {
 }
 
 /// The name and symbol as they are kept, when the sound and its trim are
-/// acceptable. A length is counted in UTF-16 units, as the first server
-/// counted it.
+/// acceptable. Lengths are counted in UTF-16 code units.
 fn validate(
     name: Option<&str>,
     glyph: Option<&str>,

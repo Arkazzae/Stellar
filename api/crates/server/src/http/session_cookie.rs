@@ -3,8 +3,7 @@
 use axum::http::{HeaderValue, header};
 use axum::response::Response;
 
-/// An answer that sets a session cookie is kept out of every cache, as the
-/// cookie handler of the first server did.
+/// Keeps responses that set a session cookie out of caches.
 pub fn keep_out_of_caches(response: &mut Response) {
     let headers = response.headers_mut();
     headers.insert(

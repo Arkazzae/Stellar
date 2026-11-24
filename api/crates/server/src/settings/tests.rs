@@ -714,7 +714,7 @@ fn an_enabled_offsite_destination_has_to_be_possible_before_the_start() {
 }
 
 #[test]
-fn maintenance_limits_are_clamped_where_the_first_server_clamped_them() {
+fn maintenance_limits_are_clamped_to_the_supported_ranges() {
     let settings = production(&[
         ("Maintenance__BatchSize", "5000"),
         ("Maintenance__MessageChangeRetentionDays", "1"),

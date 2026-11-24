@@ -61,7 +61,7 @@ async fn the_push_service_gets_one_encrypted_signed_request_the_browser_can_read
 }
 
 #[tokio::test]
-async fn every_answer_means_what_the_first_server_took_it_to_mean() {
+async fn http_statuses_select_the_delivery_outcome() {
     for (status, expected) in [
         (200, Dispatch::Delivered),
         (201, Dispatch::Delivered),
@@ -84,7 +84,7 @@ async fn every_answer_means_what_the_first_server_took_it_to_mean() {
 }
 
 #[tokio::test]
-async fn a_retry_after_is_not_obeyed_as_the_first_server_did_not() {
+async fn retry_after_does_not_override_the_delivery_schedule() {
     for header in ["30", "Wed, 21 Oct 2099 07:28:00 GMT"] {
         let (result, _, _) = send_to(Behaviour::StatusWith(429, "Retry-After", header)).await;
         assert_eq!(result, Dispatch::Retry);

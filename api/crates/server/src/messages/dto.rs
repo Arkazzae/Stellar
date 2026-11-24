@@ -21,7 +21,7 @@ use crate::values::{Id, Timestamp};
 /// of which is the ellipsis.
 const PREVIEW_LENGTH: usize = 160;
 
-/// A number of seconds as the first server wrote it: a whole number without a
+/// A duration in seconds: a whole number without a
 /// fraction (`12`, not `12.0`).
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct Seconds(pub f64);

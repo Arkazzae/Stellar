@@ -1,6 +1,6 @@
 //! `POST /api/emoji`: a new emoji from a form with a `shortcode` and a `file`.
 //!
-//! The answers come in the order the first server gave them: a form that
+//! Validation reports the first failure in this order: a form that
 //! cannot be read, then who may, then the name, then what the file is (empty,
 //! of a type nobody serves, too large), then whether the name is taken, then
 //! whether the bytes are what the type says, then whether there is room.

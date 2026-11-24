@@ -144,7 +144,7 @@ mod tests {
 
     #[test]
     fn the_constants_are_the_ones_stored_rows_have() {
-        // `Member` is 24064 and `Owner` 32767 in a database the first server wrote.
+        // `Member` and `Owner` are stored as permission masks 24064 and 32767.
         assert_eq!(BASE_ROLE_DEFAULTS, 24064);
         assert_eq!(ALL, 32767);
     }

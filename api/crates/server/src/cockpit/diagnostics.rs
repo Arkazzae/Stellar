@@ -206,8 +206,7 @@ impl Filter {
         Filter {
             levels: (!levels.is_empty()).then_some(levels),
             source: trimmed(source),
-            // Compared in capitals, letter by letter, as the first server
-            // compared without regard to case.
+            // Compare uppercase characters one at a time.
             search: trimmed(search).map(|text| crate::instance::names::to_upper(&text)),
         }
     }

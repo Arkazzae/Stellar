@@ -1,9 +1,8 @@
 //! The identifier of every row: a random 128-bit value written as a hyphenated
 //! UUID.
 //!
-//! It is written in two spellings. The database holds it in capitals, as the
-//! rows the first server wrote do; the JSON the clients see has it in
-//! lower case. Either spelling is read back.
+//! The database stores uppercase IDs. JSON responses use lowercase IDs.
+//! Input accepts either case.
 
 use crate::encoding::hex_digit;
 use std::fmt;
@@ -131,7 +130,7 @@ impl<'de> Deserialize<'de> for Id {
 mod tests {
     use super::*;
 
-    // Ids as they stand in a database the first server wrote.
+    // An ID in its database format.
     const STORED: &str = "8F62A4D1-BDCB-4D86-BD1C-6E351900E629";
     const ON_THE_WIRE: &str = "8f62a4d1-bdcb-4d86-bd1c-6e351900e629";
 

@@ -189,8 +189,8 @@ pub async fn change(
     }
 }
 
-/// Everything that is looked at and hashed before the transaction, in the
-/// first server's order. The answer of a refusal is in the `Err`.
+/// Validates and hashes the password change before opening a transaction.
+/// A refusal carries the response in the inner `Err`.
 pub(super) async fn prepare(state: &AppState, caller: Caller, request: ChangeRequest) -> ApiResult<Result<Prepared, Response>> {
     if password::is_too_short(request.new_password.as_deref()) {
         return Ok(Err(outcome("too-short")));

@@ -189,9 +189,7 @@ pub async fn logout(State(state): State<AppState>, origin: Origin, caller: Calle
         .database()
         .write(move |tx| -> Result<(), DbError> {
             if session::revoke(tx, session, now)? {
-                // Signing out is the person's own doing: the first server
-                // sent no alert for it, and the event is written without an
-                // address to tell.
+                // Voluntary sign-out records an event without sending an alert.
                 events::record(
                     tx,
                     user,

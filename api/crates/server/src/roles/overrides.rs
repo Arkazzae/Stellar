@@ -334,8 +334,8 @@ async fn set<const SECTION: bool>(
     Json(request): Json<OverrideRequest>,
 ) -> ApiResult<Response> {
     let server = chosen.server()?;
-    // Before any other refusal, as the first server's filter was, but after the
-    // person is known to be a member and the body has been read.
+    // Check for fresh second-step proof after body parsing and membership
+    // checks, ahead of the remaining refusals.
     crate::auth::fresh::require(&state, caller, Some(server)).await?;
     let messages = *state.messages();
     let (dto, announcement) = state
@@ -421,8 +421,8 @@ async fn clear<const SECTION: bool>(
     Path((target, role)): Path<(Id, Id)>,
     ActiveServer(server): ActiveServer,
 ) -> ApiResult<Response> {
-    // Before any other refusal, as the first server's filter was, but after the
-    // person is known to be a member and the body has been read.
+    // Check for fresh second-step proof after body parsing and membership
+    // checks, ahead of the remaining refusals.
     crate::auth::fresh::require(&state, caller, Some(server)).await?;
     let messages = *state.messages();
     let announcement = state
@@ -486,8 +486,8 @@ async fn set_member<const SECTION: bool>(
     Json(request): Json<OverrideRequest>,
 ) -> ApiResult<Response> {
     let server = chosen.server()?;
-    // Before any other refusal, as the first server's filter was, but after the
-    // person is known to be a member and the body has been read.
+    // Check for fresh second-step proof after body parsing and membership
+    // checks, ahead of the remaining refusals.
     crate::auth::fresh::require(&state, caller, Some(server)).await?;
     let messages = *state.messages();
     let (dto, announcement) = state
@@ -563,8 +563,8 @@ async fn clear_member<const SECTION: bool>(
     Path((target, user)): Path<(Id, Id)>,
     ActiveServer(server): ActiveServer,
 ) -> ApiResult<Response> {
-    // Before any other refusal, as the first server's filter was, but after the
-    // person is known to be a member and the body has been read.
+    // Check for fresh second-step proof after body parsing and membership
+    // checks, ahead of the remaining refusals.
     crate::auth::fresh::require(&state, caller, Some(server)).await?;
     let messages = *state.messages();
     let announcement = state

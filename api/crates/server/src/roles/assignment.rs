@@ -123,8 +123,8 @@ pub(super) async fn assign(
     Json(request): Json<AssignRequest>,
 ) -> ApiResult<Response> {
     let server = chosen.server()?;
-    // Before any other refusal, as the first server's filter was, but after the
-    // person is known to be a member and the body has been read.
+    // Check for fresh second-step proof after body parsing and membership
+    // checks, ahead of the remaining refusals.
     crate::auth::fresh::require(&state, caller, Some(server)).await?;
     let messages = *state.messages();
     let announcement = state

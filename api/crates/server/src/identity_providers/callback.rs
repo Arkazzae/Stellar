@@ -9,7 +9,7 @@
 //! page that says roughly why. Which page depends on what the round trip was
 //! for, and that is only known once the state has been opened. The provider's
 //! own refusal reads as the person cancelling when the *query* of the request
-//! says `access_denied`, as the first server read it, so an answer that was
+//! says `access_denied`. An answer that was
 //! posted says "failed" for a person who cancelled.
 
 use axum::extract::{Request, State};

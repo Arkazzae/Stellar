@@ -2,8 +2,8 @@
 //! folder files are staged in on their way to it.
 //!
 //! Handlers and workers reach it as `state.storage()`. It is opened when the
-//! state is built and made ready by [`prepare`] before the server listens, as
-//! the first server did: a bucket on another host may still be starting, so a
+//! state is built and made ready by [`prepare`] before the server listens. A
+//! bucket on another host may still be starting, so a
 //! store that is not ready is asked again every second, thirty times.
 
 use std::path::{Path, PathBuf};
@@ -85,10 +85,8 @@ async fn ask_until_ready(
     }
 }
 
-/// The first server asked again after every failure; the ones that cannot get
-/// better (a refusal of the credentials, an address that is no address) are
-/// not worth thirty seconds. A folder that cannot be made may be a volume that
-/// is still being mounted, so it is asked again.
+/// Retry temporary failures, including I/O while a volume is being mounted.
+/// Invalid addresses and refused credentials fail immediately.
 fn is_worth_asking_again(error: &Error) -> bool {
     error.is_retryable() || matches!(error, Error::Io(_))
 }

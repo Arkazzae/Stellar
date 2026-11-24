@@ -1,6 +1,6 @@
 //! Who may do what on a server, and who sees which channel.
 //!
-//! The rules are the first server's, written down in `docs/architecture.md`
+//! The permission rules are documented in `docs/architecture.md`
 //! under "Server authorization" and "Private channels". Every decision comes
 //! from the one pure function in [`evaluator`]; [`snapshot`] loads what it
 //! reads; [`authorization`] and [`visibility`] are what a handler calls.

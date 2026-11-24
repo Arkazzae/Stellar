@@ -34,7 +34,7 @@ pub async fn exchange(
     request: Result<Json<Exchange>, crate::http::ApiError>,
 ) -> ApiResult<Response> {
     // A body that is not the request is refused before the route marks its
-    // answer as not to be stored, as the first server's binding was.
+    // response as non-cacheable.
     let Json(request) = request?;
     let context = Context {
         ip_address: &origin.address,

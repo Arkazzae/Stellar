@@ -121,8 +121,7 @@ pub fn safe_file_name(submitted: &str, spec: &UploadSpec) -> String {
     )
 }
 
-/// What follows the last `/`, which is all a path on the first server's
-/// system separates by.
+/// Returns the final segment of a slash-separated path.
 pub fn file_name_of(path: &str) -> &str {
     match path.rfind('/') {
         Some(at) => &path[at + 1..],
@@ -141,7 +140,7 @@ mod tests {
     }
 
     #[test]
-    fn the_checks_are_made_in_the_first_servers_order() {
+    fn upload_checks_report_the_first_error_in_validation_order() {
         let options = UploadOptions {
             max_image_bytes: 12,
             ..UploadOptions::default()

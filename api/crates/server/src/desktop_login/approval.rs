@@ -28,7 +28,7 @@ use crate::state::AppState;
 use crate::values::{Id, Timestamp};
 
 /// The shortest and the longest token the form is asked to carry, in UTF-16
-/// units, as the first server counted them.
+/// code units.
 const TOKEN_LENGTH: std::ops::RangeInclusive<usize> = 16..=512;
 
 /// What the row of a request says, as far as this page cares.

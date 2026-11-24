@@ -119,8 +119,8 @@ struct CreateUser {
     role_id: Id,
 }
 
-/// A user name's characters, one UTF-16 unit at a time as the first server
-/// read them: a letter or a digit, or one of three marks. A character outside
+/// A user name contains letters, digits or one of three marks, checked one UTF-16
+/// unit at a time. A character outside
 /// the basic plane is two units, neither of which is a letter.
 fn is_username(text: &str) -> bool {
     (2..=32).contains(&length(text))

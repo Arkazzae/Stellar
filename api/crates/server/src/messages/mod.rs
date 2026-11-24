@@ -116,7 +116,7 @@ pub fn field_problem(
     }
 }
 
-/// What the first server's `Trim()` takes off both ends.
+/// Trims Unicode white space from both ends.
 pub fn trimmed(text: &str) -> &str {
     text.trim_matches(char::is_whitespace)
 }

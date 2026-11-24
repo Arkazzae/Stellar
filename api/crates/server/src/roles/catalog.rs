@@ -103,8 +103,8 @@ pub(super) async fn create(
     Json(request): Json<RoleRequest>,
 ) -> ApiResult<Response> {
     let server = chosen.server()?;
-    // Before any other refusal, as the first server's filter was, but after the
-    // person is known to be a member and the body has been read.
+    // Check for fresh second-step proof after body parsing and membership
+    // checks, ahead of the remaining refusals.
     crate::auth::fresh::require(&state, caller, Some(server)).await?;
     let messages = *state.messages();
     let created = state
@@ -191,8 +191,8 @@ pub(super) async fn update(
     Json(request): Json<RoleRequest>,
 ) -> ApiResult<Response> {
     let server = chosen.server()?;
-    // Before any other refusal, as the first server's filter was, but after the
-    // person is known to be a member and the body has been read.
+    // Check for fresh second-step proof after body parsing and membership
+    // checks, ahead of the remaining refusals.
     crate::auth::fresh::require(&state, caller, Some(server)).await?;
     let messages = *state.messages();
     let (dto, announcement) = state
@@ -297,8 +297,8 @@ pub(super) async fn delete(
     Path(role_id): Path<Id>,
     ActiveServer(server): ActiveServer,
 ) -> ApiResult<Response> {
-    // Before any other refusal, as the first server's filter was, but after the
-    // person is known to be a member and the body has been read.
+    // Check for fresh second-step proof after body parsing and membership
+    // checks, ahead of the remaining refusals.
     crate::auth::fresh::require(&state, caller, Some(server)).await?;
     let messages = *state.messages();
     let announcement = state

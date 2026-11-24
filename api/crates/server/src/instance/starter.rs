@@ -302,10 +302,8 @@ mod tests {
         assert!(prepare(&fits, &english()).is_ok());
     }
 
-    /// What the first server stored for a starter channel of each name, read
-    /// from its database after creating a server with it.
     #[test]
-    fn channel_names_are_lowered_letter_by_letter_as_the_first_server_does() {
+    fn channel_names_use_simple_lowercase_mapping() {
         for (given, stored) in [
             ("  ABC  ", "abc"),
             ("I", "i"),
