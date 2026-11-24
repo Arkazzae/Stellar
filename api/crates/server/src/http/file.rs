@@ -18,7 +18,6 @@ use axum::body::Body;
 use axum::http::{HeaderMap, HeaderValue, StatusCode, header};
 use axum::response::Response;
 use bytes::Bytes;
-use http_body_util::channel::Channel;
 use tokio::fs::File;
 use tokio::io::{AsyncReadExt, AsyncSeekExt};
 
@@ -273,12 +272,13 @@ pub fn content_disposition(name: &str) -> String {
 
 /// A body that reads `length` bytes from `start` as the client takes them.
 fn stream(mut file: File, start: u64, length: u64) -> Body {
-    let (mut sender, body) = Channel::<Bytes, io::Error>::new(CHUNKS_IN_FLIGHT);
+    let (sender, body) = super::stream::channel(CHUNKS_IN_FLIGHT);
     tokio::spawn(async move {
         if start > 0
             && let Err(error) = file.seek(SeekFrom::Start(start)).await
         {
-            return sender.abort(error);
+            let _ = sender.send(Err(error)).await;
+            return;
         }
         let mut left = length;
         while left > 0 {
@@ -288,20 +288,24 @@ fn stream(mut file: File, start: u64, length: u64) -> Body {
                 match file.read(&mut chunk[filled..]).await {
                     Ok(0) => {
                         // The file got shorter than it was when it was checked.
-                        return sender.abort(io::ErrorKind::UnexpectedEof.into());
+                        let _ = sender.send(Err(io::ErrorKind::UnexpectedEof.into())).await;
+                        return;
                     }
                     Ok(read) => filled += read,
-                    Err(error) => return sender.abort(error),
+                    Err(error) => {
+                        let _ = sender.send(Err(error)).await;
+                        return;
+                    }
                 }
             }
             left -= filled as u64;
             // The client has gone: stop reading.
-            if sender.send_data(Bytes::from(chunk)).await.is_err() {
+            if sender.send(Ok(Bytes::from(chunk))).await.is_err() {
                 return;
             }
         }
     });
-    Body::new(body)
+    body
 }
 
 #[cfg(test)]
