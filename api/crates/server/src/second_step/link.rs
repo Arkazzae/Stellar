@@ -165,3 +165,179 @@ fn link(
     )?;
     Ok(LINKED)
 }
+
+#[cfg(test)]
+mod tests {
+    use std::time::Duration;
+
+    use rusqlite::Connection;
+
+    use super::*;
+    use crate::testing::new_database;
+
+    const SECRET: &str = "a secret only the browser has";
+
+    struct World {
+        _folder: crate::testing::TempDir,
+        connection: Connection,
+        user: Id,
+        identity: Id,
+    }
+
+    fn world() -> World {
+        let (folder, database) = new_database();
+        let connection = Connection::open(database.path()).unwrap();
+        let user = Id::random();
+        let now = Timestamp::now();
+        connection
+            .execute(
+                "INSERT INTO \"Users\" (\"Id\", \"Username\", \"NormalizedUsername\", \"DisplayName\", \"PasswordHash\", \"IsDisabled\",
+                     \"SessionVersion\", \"SecurityRecoveryRequired\", \"AvatarColor\", \"CreatedAt\")
+                 VALUES (?1, 'maya', 'MAYA', 'Maya', NULL, 0, 1, 0, 'c', ?2)",
+                params![user, now],
+            )
+            .unwrap();
+        let mut world = World {
+            _folder: folder,
+            connection,
+            user,
+            identity: Id::random(),
+        };
+        world.wait("subject-1", now.plus(Duration::from_secs(600)));
+        world
+    }
+
+    impl World {
+        /// An identity waiting for a browser that holds `SECRET`.
+        fn wait(&mut self, subject: &str, expires: Timestamp) {
+            self.connection
+                .execute("DELETE FROM \"PendingExternalIdentities\"", [])
+                .unwrap();
+            self.connection
+                .execute(
+                    "INSERT INTO \"PendingExternalIdentities\" (\"Id\", \"SecretHash\", \"ProviderId\", \"Issuer\", \"Subject\", \"EmailVerified\",
+                         \"Amr\", \"ShortLived\", \"CreatedAt\", \"ExpiresAt\")
+                     VALUES (?1, ?2, 'default', 'https://issuer.test', ?3, 0, '[]', 0, ?4, ?5)",
+                    params![self.identity, tokens::hash(SECRET), subject, Timestamp::now(), expires],
+                )
+                .unwrap();
+        }
+
+        fn waiting(&self) -> Waiting {
+            Waiting {
+                cookie: Some((self.identity, SECRET.to_string())),
+                ip_address: "203.0.113.9".into(),
+                user_agent: "Firefox".into(),
+            }
+        }
+
+        fn link(&mut self, waiting: &Waiting, expected: Id, provider: Option<&str>) -> &'static str {
+            let tx = self.connection.transaction().unwrap();
+            let provider = provider.map(str::to_string);
+            let outcome = link(&tx, self.user, expected, waiting, &|_| provider.clone()).unwrap();
+            tx.commit().unwrap();
+            outcome
+        }
+
+        fn count(&self, table: &str) -> i64 {
+            self.connection
+                .query_row(&format!("SELECT COUNT(*) FROM \"{table}\""), [], |row| row.get(0))
+                .unwrap()
+        }
+    }
+
+    #[test]
+    fn a_waiting_identity_is_linked_once_and_written_down() {
+        let mut world = world();
+        let waiting = world.waiting();
+
+        assert_eq!(world.link(&waiting, world.identity, Some("Company")), LINKED);
+
+        assert_eq!(world.count("PendingExternalIdentities"), 0);
+        assert_eq!(world.count("ExternalIdentities"), 1);
+        let (kind, detail): (String, String) = world
+            .connection
+            .query_row("SELECT \"Kind\", \"Detail\" FROM \"SecurityEvents\"", [], |row| Ok((row.get(0)?, row.get(1)?)))
+            .unwrap();
+        assert_eq!((kind.as_str(), detail.as_str()), ("identity-linked", "Company"));
+    }
+
+    #[test]
+    fn linking_the_same_identity_again_changes_nothing_and_a_taken_or_other_one_is_said_so() {
+        let mut world = world();
+        let waiting = world.waiting();
+        assert_eq!(world.link(&waiting, world.identity, Some("Company")), LINKED);
+
+        world.wait("subject-1", Timestamp::now().plus(Duration::from_secs(60)));
+        assert_eq!(world.link(&waiting, world.identity, Some("Company")), LINKED);
+        assert_eq!(world.count("ExternalIdentities"), 1);
+
+        // The account has another identity at the same provider.
+        world.wait("subject-2", Timestamp::now().plus(Duration::from_secs(60)));
+        assert_eq!(world.link(&waiting, world.identity, Some("Company")), OTHER);
+
+        // Somebody else has the identity.
+        let other = Id::random();
+        world
+            .connection
+            .execute(
+                "INSERT INTO \"Users\" (\"Id\", \"Username\", \"NormalizedUsername\", \"DisplayName\", \"PasswordHash\", \"IsDisabled\",
+                     \"SessionVersion\", \"SecurityRecoveryRequired\", \"AvatarColor\", \"CreatedAt\")
+                 VALUES (?1, 'noor', 'NOOR', 'Noor', NULL, 0, 1, 0, 'c', ?2)",
+                params![other, Timestamp::now()],
+            )
+            .unwrap();
+        world
+            .connection
+            .execute("UPDATE \"ExternalIdentities\" SET \"UserId\" = ?1", [other])
+            .unwrap();
+        world.wait("subject-1", Timestamp::now().plus(Duration::from_secs(60)));
+        assert_eq!(world.link(&waiting, world.identity, Some("Company")), TAKEN);
+        assert_eq!(world.count("ExternalIdentities"), 1);
+    }
+
+    #[test]
+    fn what_cannot_be_taken_fails_the_link_and_only_a_taken_identity_is_used_up() {
+        let mut world = world();
+        let waiting = world.waiting();
+
+        // No cookie, a wrong secret: nothing is taken.
+        let none = Waiting { cookie: None, ..waiting.clone() };
+        assert_eq!(world.link(&none, world.identity, Some("Company")), FAILED);
+        let wrong = Waiting { cookie: Some((world.identity, "not the secret".into())), ..waiting.clone() };
+        assert_eq!(world.link(&wrong, world.identity, Some("Company")), FAILED);
+        // An identity that replaced the one the sign-in saw is left where it is.
+        assert_eq!(world.link(&waiting, Id::random(), Some("Company")), FAILED);
+        assert_eq!(world.count("PendingExternalIdentities"), 1);
+        // One that ran out is not there.
+        world.wait("subject-1", Timestamp::now().minus(Duration::from_secs(5)));
+        assert_eq!(world.link(&waiting, world.identity, Some("Company")), FAILED);
+        // A provider that is not configured: used up, and no link.
+        world.wait("subject-1", Timestamp::now().plus(Duration::from_secs(60)));
+        assert_eq!(world.link(&waiting, world.identity, None), FAILED);
+        assert_eq!(world.count("PendingExternalIdentities"), 0);
+        assert_eq!(world.count("ExternalIdentities"), 0);
+    }
+
+    #[test]
+    fn this_build_configures_no_provider_so_a_link_is_refused() {
+        let mut world = world();
+        let waiting = world.waiting();
+        let tx = world.connection.transaction().unwrap();
+        let completed = crate::auth::ceremony::Completed {
+            user: world.user,
+            session: Id::random(),
+            security_version: 1,
+            short_lived: false,
+            evidence: "totp".into(),
+            trusted_device_expires_at: None,
+            recovery_codes: None,
+            pending_identity: Some(world.identity),
+            cookies: Vec::new(),
+        };
+
+        assert_eq!(pending(&tx, &completed, &waiting).unwrap(), Some(FAILED));
+        let asked_none = crate::auth::ceremony::Completed { pending_identity: None, ..completed };
+        assert_eq!(pending(&tx, &asked_none, &waiting).unwrap(), None);
+    }
+}

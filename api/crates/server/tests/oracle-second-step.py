@@ -712,16 +712,11 @@ def limit(server, rec):
     """The hourly limit of mailed codes, with the cooldown taken off."""
     clear_mail()
     server.edit('UPDATE "OperationsSettings" SET "EmailCodeCooldownSeconds" = 0')
-    browser, secret, method, codes, _ = enrol_totp(rec, server, "limit")
-    ask(rec, "sign out", browser, "POST", "/api/auth/logout")
-    # An address as a second step for an account that has an app: through a
-    # session's own enrolment is the settings' business, so the mail method is
-    # enrolled by the forced route of a recovered account instead; here the
-    # limit is asked of the enrolment code, which counts the same.
-    other = Browser(server.base)
-    answer = login(rec, "sign in", other, "limit")
-    challenge = answer.json()["challengeId"]
-    ask(rec, "no mail method yet", other, "POST", "/api/auth/mfa/email/send", {"challengeId": challenge, "methodId": answer.json()["methods"][0]["id"]})
+    browser = Browser(server.base)
+    challenge = login(rec, "sign in", browser, "limit").json()["challengeId"]
+    for number in range(1, 13):
+        ask(rec, "mailed code %d" % number, browser, "POST", "/api/auth/mfa/enroll/email/start", {"challengeId": challenge})
+    rec.note("mails that arrived: %d" % len(mails(10, wait=10)))
     server.edit('UPDATE "OperationsSettings" SET "EmailCodeCooldownSeconds" = 45')
     leave(rec, server, ["limit"])
 
@@ -930,6 +925,48 @@ def recover(server, rec):
     leave(rec, server, ["recover"])
 
 
+@scenario
+def link(server, rec):
+    """A password sign-in that asked to link the identity a provider confirmed: no provider is
+    configured on either server, so the link comes out as failed and the identity is used up."""
+    browser, secret, method, codes, _ = enrol_totp(rec, server, "other", remember=True)
+    ask(rec, "sign out", browser, "POST", "/api/auth/logout")
+    user = user_id(server, "other")
+    cases = {}
+    for name in ("taken", "no cookie", "replaced", "device"):
+        mine = Browser(server.base)
+        if name == "device":
+            mine.jar.update({key: value for key, value in browser.jar.items() if "trust" in key})
+        cases[name] = (mine, login(rec, "a sign-in that asks to link (%s)" % name, mine, "other").json()["challengeId"])
+    pending = {name: (new_id(), "S" + name.replace(" ", "x") * 12) for name in cases}
+    statements = []
+    for name, (identity, secret_text) in pending.items():
+        statements.append((
+            'INSERT INTO "PendingExternalIdentities" ("Id","SecretHash","ProviderId","Issuer","Subject","Email","EmailVerified","DisplayName",'
+            '"PreferredUsername","Amr","AuthTime","ShortLived","CreatedAt","ExpiresAt") VALUES (?,?,?,?,?,NULL,0,NULL,NULL,?,NULL,0,?,?)',
+            (identity, token_hash(secret_text), "default", "https://issuer.test", "subject-" + name, "[]", now_text(), now_text(600)),
+        ))
+        statements.append(('UPDATE "AuthChallenges" SET "PendingIdentityId" = ? WHERE "Id" = ?',
+                           (identity if name != "replaced" else new_id(), cases[name][1].upper())))
+    server.edit(*statements)
+    for name, (mine, challenge) in cases.items():
+        if name != "no cookie":
+            mine.jar["stellarr-dev-pending-identity"] = pending[name][0].lower().replace("-", "") + "." + pending[name][1]
+    first = cases["taken"]
+    ask(rec, "the challenge of a sign-in that asks to link, asked about", first[0], "GET", "/api/auth/mfa/pending")
+    ask(rec, "the code, linking", first[0], "POST", "/api/auth/mfa/verify", {"challengeId": first[1], "code": codes[1]})
+    nocookie = cases["no cookie"]
+    ask(rec, "the code, with no cookie of the waiting identity", nocookie[0], "POST", "/api/auth/mfa/verify", {"challengeId": nocookie[1], "code": codes[2]})
+    replaced = cases["replaced"]
+    ask(rec, "the code, the identity replaced since", replaced[0], "POST", "/api/auth/mfa/verify", {"challengeId": replaced[1], "code": codes[3]})
+    device = cases["device"]
+    ask(rec, "a remembered browser does not stand in for a link", device[0], "POST", "/api/auth/mfa/verify", {"challengeId": device[1], "useTrustedDevice": True})
+    rows = sql_one(server, 'SELECT "SecretHash" IS NOT NULL, "Subject" FROM "PendingExternalIdentities" ORDER BY "Subject"')
+    rec.note("identities still waiting: %s" % [row[1] for row in rows])
+    rec.note("identities linked: %s" % sql_one(server, 'SELECT COUNT(*) FROM "ExternalIdentities"')[0][0])
+    leave(rec, server, ["other"])
+
+
 def limits(server, rec):
     """Each rate limit, on the defaults: the request that is refused, and what it is refused with."""
     routes = [
@@ -1023,6 +1060,8 @@ def main():
                 SCENARIOS[name](server, rec)
                 transcripts.append(rec.lines)
             print("== %s" % name)
+            if os.environ.get("SHOW"):
+                print("\n".join(transcripts[1]))
             different += diff(transcripts[0], transcripts[1])
     finally:
         for server in (first, second):
