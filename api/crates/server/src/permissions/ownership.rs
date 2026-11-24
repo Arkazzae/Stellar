@@ -60,6 +60,15 @@ pub fn admit(
     Ok(())
 }
 
+/// Removes the membership and its held roles through the database cascade.
+pub(crate) fn remove_member(db: &Connection, server: Id, user: Id) -> rusqlite::Result<()> {
+    db.execute(
+        "DELETE FROM \"ServerMembers\" WHERE \"ServerId\" = ?1 AND \"UserId\" = ?2",
+        params![server, user],
+    )?;
+    Ok(())
+}
+
 /// Stores the roles the member holds as exactly `roles`, and their top role
 /// with them; the base role, held by everybody, is left out.
 pub fn set_roles(

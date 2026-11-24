@@ -315,11 +315,11 @@ fn write(
     let (server, role_is_owner, role_permissions, founded, invited_to) = match plan {
         Plan::Founding(starter) => {
             let added = starter::add(tx, &starter, messages, now)?;
-            starter::admit(tx, added.id, id, added.owner_role, true, false, now)?;
+            crate::permissions::ownership::admit(tx, added.id, id, added.owner_role, false, Some(1), now)?;
             (added.id, true, access::ALL, true, None)
         }
         Plan::Joining { server, channel, role, role_is_owner, role_permissions, .. } => {
-            starter::admit(tx, server, id, role, role_is_owner, !role_is_owner, now)?;
+            crate::permissions::ownership::admit(tx, server, id, role, !role_is_owner, role_is_owner.then_some(1), now)?;
             (server, role_is_owner, role_permissions, false, channel)
         }
     };

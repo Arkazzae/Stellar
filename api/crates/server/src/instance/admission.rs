@@ -4,7 +4,6 @@
 use rusqlite::{Transaction, params};
 use stellarr_messages::Messages;
 
-use super::starter;
 use super::users::User;
 use super::welcome::{self, Welcome};
 use crate::database::DbError;
@@ -44,18 +43,14 @@ pub fn admit(
     if banned {
         return Ok(Admission::Banned);
     }
-    let member: bool = tx.query_row(
-        "SELECT EXISTS (SELECT 1 FROM \"ServerMembers\" WHERE \"ServerId\" = ?1 AND \"UserId\" = ?2)",
-        params![server, user.id],
-        |row| row.get(0),
-    )?;
+    let member: bool = crate::permissions::membership::is_member(tx, server, user.id)?;
     if member {
         return Ok(Admission::AlreadyMember);
     }
     let Some(role) = roles::find_member_role(tx, server)? else {
         return Ok(Admission::NoMemberRole);
     };
-    starter::admit(tx, server, user.id, role.id, false, true, now)?;
+    crate::permissions::ownership::admit(tx, server, user.id, role.id, true, None, now)?;
     Ok(Admission::Added(welcome::create_in(
         tx, server, user, now, messages, invited_to,
     )?))

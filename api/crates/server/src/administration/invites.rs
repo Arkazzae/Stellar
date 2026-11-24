@@ -378,11 +378,7 @@ pub async fn send(
             let Some(code) = usable.filter(|_| person) else {
                 return Ok(Err(ApiError::not_found().into_response()));
             };
-            let member: bool = tx.query_row(
-                "SELECT EXISTS (SELECT 1 FROM \"ServerMembers\" WHERE \"ServerId\" = ?1 AND \"UserId\" = ?2)",
-                params![server, user],
-                |row| row.get(0),
-            )?;
+            let member: bool = crate::permissions::membership::is_member(tx, server, user)?;
             if member {
                 return Ok(Err(json_response(
                     StatusCode::CONFLICT,

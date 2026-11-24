@@ -200,31 +200,6 @@ pub fn add(
     })
 }
 
-/// Makes `user` a member of `server` with `role`. A role other than the base
-/// role, such as the owner role of a new server, is stored as held as well,
-/// and an owner takes the one owner slot.
-pub fn admit(
-    tx: &Transaction,
-    server: Id,
-    user: Id,
-    role: Id,
-    is_owner: bool,
-    is_base_role: bool,
-    now: Timestamp,
-) -> Result<(), DbError> {
-    tx.execute(
-        "INSERT INTO \"ServerMembers\" (\"ServerId\", \"UserId\", \"RoleId\", \"OwnerSlot\", \"JoinedAt\") VALUES (?1, ?2, ?3, ?4, ?5)",
-        params![server, user, role, is_owner.then_some(1), now],
-    )?;
-    if !is_base_role {
-        tx.execute(
-            "INSERT INTO \"ServerMemberRoles\" (\"ServerId\", \"UserId\", \"RoleId\") VALUES (?1, ?2, ?3)",
-            params![server, user, role],
-        )?;
-    }
-    Ok(())
-}
-
 #[cfg(test)]
 mod tests {
     use stellarr_messages::Language;
