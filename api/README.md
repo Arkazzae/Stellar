@@ -44,6 +44,7 @@ database/      SQLite: pool, schema.sql, errors, the write gate
 values/        Id, Timestamp, int_enum!: how a value is stored and written
 http/          the pipeline and the tools a group is built from
 events.rs      what handlers tell the realtime hub
+realtime/      the hub: connections, presence, methods, the watcher of sessions
 state.rs       what every handler can reach (AppState)
 logging.rs     where the log goes
 health/        a group: /health/live and /health/ready
@@ -345,13 +346,57 @@ named in `Testing__Workers` (comma-separated) run, so
 See `tests/api/workers.rs` for a worker that is told to stop, one that panics
 and one that does not stop.
 
-## Plugging in the hub
+## The realtime hub
 
-`serve(settings, groups, listening, shutdown)` runs the API with nobody connected.
-`serve_with(.., Services { events, presence }, ..)` is the same with the hub's
-`EventPublisher` and `Presence`; the hub publishes nothing back, it reads what
-handlers publish (and `SessionEnded`, which says that a session was revoked so
-its connections close, and is not passed on to clients).
+`realtime/` is the hub the web client keeps open at `/hubs/app`. `run` starts it
+(`Services { realtime: Some(Realtime::new()), .. }`); `serve` alone runs the API
+with nobody connected. A connection is let in by the session cookie, through the
+same pipeline as any request, and joins the groups of its account, of the
+server it follows (`?serverId=`, else the first it belongs to) and of its
+account on that server. Presence is the account's, not the connection's: online
+with the first connection, offline after the last.
+
+Handlers tell the hub through `state.events()`, and read it through
+`state.presence()`. An `Audience` says who hears an event, and the handler
+works it out, since no group stands for who may see something:
+
+| Audience | Who |
+| --- | --- |
+| `Server(id)` | every connection that follows the server |
+| `Users(ids)` | every connection of each of these people |
+| `Followers { server, users }` | the connections of these people that follow the server |
+| `Everyone` | every connection |
+| `Connection(id)` | one connection |
+
+An event goes to each group of its audience in turn, so a connection that is in
+two of them hears it twice, as it did from the first server. The payload is
+sent as written. `state.events().session_ended(user, session)` closes the
+connections of a session and is not passed on; `server_left(user, server)` takes
+a person's connections out of the server's groups. In the Testing environment
+every event is also appended to the event file (`server.events()`).
+
+A group adds methods the client calls, and work for a connection that starts
+or ends, from its own folder: a function returning `realtime::Registration`, and
+its path on a line of `src/realtime/methods.list.rs`, which merges by itself.
+
+```rust
+// src/channels/hub.rs
+pub fn registration() -> Registration {
+    Registration::new()
+        .method(Method::new("SendTyping", |cx, arguments| async move {
+            let [channel] = arguments::exactly(arguments)?;
+            // cx.state(), cx.user(), cx.realtime().throttle(), cx.hub() ...
+            Ok(Value::Null)
+        }))
+        .on_disconnected(|cx, _error| async move { /* free what the connection held */ })
+}
+```
+
+A call to a method nobody registered is answered as for one that does not
+exist. A refusal that the person should read is `HubError::visible(..)`, anything
+else is hidden behind a general sentence. The session watcher is a worker,
+`realtime-sessions`: run it in a test of the binary with
+`Testing__Workers=realtime-sessions`.
 
 ## Tests
 
