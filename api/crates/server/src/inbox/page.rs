@@ -10,7 +10,7 @@ use super::query::PageQuery;
 use super::entry::{COLUMNS, Entry, announce, announce_all_read};
 use crate::auth::Caller;
 use crate::database::DbError;
-use crate::http::{ApiError, ApiResult, Path, Problem, Query, json_response};
+use crate::http::{ApiError, ApiResult, Path, Problem, QueryValues, json_response};
 use crate::permissions::membership::ActiveServer;
 use crate::state::AppState;
 use crate::values::{Guid, Id, Timestamp};
@@ -182,11 +182,11 @@ pub async fn list(
     State(state): State<AppState>,
     caller: Caller,
     ActiveServer(server): ActiveServer,
-    Query(pairs): Query<Vec<(String, String)>>,
+    values: QueryValues,
 ) -> ApiResult<Response> {
     // The query is bound after the server is known, so a person who is no
     // member is told so whatever the query says.
-    let Ok(query) = PageQuery::read(&pairs) else {
+    let Ok(query) = PageQuery::read(&values) else {
         return Ok(private(ApiError::bad_request().into_response()));
     };
     let size = i64::from(query.limit.map_or(DEFAULT_PAGE_SIZE as i32, |l| l));
