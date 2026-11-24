@@ -19,8 +19,6 @@
 
 mod catalogue;
 mod discovery;
-mod file;
-mod http_date;
 mod json;
 mod manifest;
 mod moment;
@@ -138,9 +136,9 @@ async fn download(state: AppState, kind: &'static Kind, headers: HeaderMap) -> A
         return Err(unavailable(&state, Failure::Untrusted, kind.unavailable));
     };
     Ok(cached(
-        file::answer(
+        crate::http::file::answer(
             &headers,
-            file::Download {
+            crate::http::file::Download {
                 file,
                 length,
                 content_type: kind.content_type,
@@ -356,9 +354,9 @@ async fn download_update(
         return Err(unavailable(&state, Failure::Untrusted, MessageKey::DesktopUpdateUnavailable));
     };
     Ok(cached(
-        file::answer(
+        crate::http::file::answer(
             &headers,
-            file::Download {
+            crate::http::file::Download {
                 file,
                 length,
                 content_type: "application/octet-stream",
