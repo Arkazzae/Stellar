@@ -2,3 +2,5 @@ target/
 # Written once the crates are joined; until then every branch would carry
 # its own.
 Cargo.lock
+# The repository ignores every folder called secrets; this one is source.
+!/crates/server/src/secrets/
