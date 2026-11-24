@@ -348,6 +348,41 @@ impl Client {
         drop(stream);
     }
 
+    /// Sends a `POST` of JSON, with this client's cookies, and closes the
+    /// connection without waiting for the answer.
+    pub async fn post_json_and_hang_up(&self, path: &str, body: &str) {
+        use tokio::io::AsyncWriteExt;
+
+        let mut head = format!(
+            "POST {path} HTTP/1.1\r\nHost: {}\r\nConnection: close\r\nContent-Type: application/json\r\nContent-Length: {}\r\n",
+            self.address,
+            body.len()
+        );
+        for (name, value) in &self.headers {
+            head.push_str(&format!("{name}: {value}\r\n"));
+        }
+        let cookies: Vec<String> = self
+            .jar
+            .lock()
+            .unwrap()
+            .iter()
+            .map(|(name, value)| format!("{name}={value}"))
+            .collect();
+        if !cookies.is_empty() {
+            head.push_str(&format!("Cookie: {}\r\n", cookies.join("; ")));
+        }
+        head.push_str("\r\n");
+        head.push_str(body);
+        let mut stream = TcpStream::connect(self.address)
+            .await
+            .expect("a connection");
+        stream
+            .write_all(head.as_bytes())
+            .await
+            .expect("the request is sent");
+        drop(stream);
+    }
+
     fn remember_cookies(&self, headers: &HeaderMap) {
         let mut jar = self.jar.lock().unwrap();
         for value in headers.get_all("set-cookie") {
