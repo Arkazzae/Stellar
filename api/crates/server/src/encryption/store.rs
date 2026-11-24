@@ -446,26 +446,6 @@ pub fn encrypted_conversations_of(
     statement.query_map([user], Conversation::read)?.collect()
 }
 
-/// Whether the peer accepts a message, and so a request, from this person.
-/// Somebody who turned direct messages off still hears from their friends.
-pub fn peer_takes_messages_from(
-    connection: &Connection,
-    sender: Id,
-    peer: Id,
-) -> rusqlite::Result<bool> {
-    let allowed: Option<bool> = connection
-        .query_row(
-            "SELECT \"AllowDirectMessages\" FROM \"UserPreferences\" WHERE \"UserId\" = ?1",
-            [peer],
-            |row| row.get(0),
-        )
-        .optional()?;
-    if allowed != Some(false) {
-        return Ok(true);
-    }
-    crate::social::are_friends(connection, sender, peer)
-}
-
 // ---- epochs ----
 
 /// The keys an epoch has to be wrapped for: a device or an account key of one
