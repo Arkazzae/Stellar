@@ -35,23 +35,19 @@ struct Started {
 }
 
 pub async fn start(State(state): State<AppState>) -> ApiResult<Response> {
-    // The one place this group asks which providers are set up. Only an instance that has a provider to send the person to offers this;
-    // a secret kept in a file is read now, which is disk work.
-    let provider_state = state.clone();
-    let login_paths = tokio::task::spawn_blocking(move || {
-        provider_state
-            .settings()
-            .oidc
-            .configured()
-            .iter()
-            .map(|provider| provider.login_path())
-            .collect::<Vec<_>>()
-    })
-    .await
-    .map_err(crate::http::ApiError::internal)?;
-    let Some(first) = login_paths.first() else {
+    // The one place this group asks which providers are set up: only an
+    // instance that has a provider to send the person to offers this.
+    if !state.settings().oidc.any_set_up() {
         return Ok(no_store(StatusCode::NOT_FOUND.into_response()));
-    };
+    }
+    let login_paths: Vec<String> = state
+        .settings()
+        .oidc
+        .providers
+        .iter()
+        .map(|provider| provider.login_path())
+        .collect();
+    let first = &login_paths[0];
 
     let now = Timestamp::now();
     let secret = tokens::random(SECRET_BYTES);
