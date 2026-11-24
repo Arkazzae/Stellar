@@ -415,7 +415,7 @@ pub fn accept_detailed(
     browser_binding: &str,
     callback: &Callback,
     now: i64,
-) -> Result<Answer, (CallbackError, Option<Flow>)> {
+) -> Result<Answer, (CallbackError, Option<Box<Flow>>)> {
     let opened = |error: CallbackError| (error, None);
     let state = callback
         .state
@@ -430,13 +430,13 @@ pub fn accept_detailed(
     let flow: Flow =
         serde_json::from_slice(&json).map_err(|_| opened(CallbackError::UnreadableState))?;
     if flow.expires_at <= now {
-        return Err((CallbackError::Expired, Some(flow)));
+        return Err((CallbackError::Expired, Some(Box::new(flow))));
     }
     if flow.provider_id != provider_id {
-        return Err((CallbackError::WrongProvider, Some(flow)));
+        return Err((CallbackError::WrongProvider, Some(Box::new(flow))));
     }
     if let Err(error) = guard.consume(&flow.state_id, flow.expires_at, now) {
-        return Err((error, Some(flow)));
+        return Err((error, Some(Box::new(flow))));
     }
     // An empty `error` is no error.
     if let Some(error) = callback.error.as_ref().filter(|error| !error.is_empty()) {
@@ -452,7 +452,7 @@ pub fn accept_detailed(
             code: code.to_string(),
             flow,
         }),
-        None => Err((CallbackError::MissingCode, Some(flow))),
+        None => Err((CallbackError::MissingCode, Some(Box::new(flow)))),
     }
 }
 
