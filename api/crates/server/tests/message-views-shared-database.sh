@@ -62,7 +62,9 @@ python3 "$here/populate_b.py" work/base.db work/shared.db
 reset() { python3 -c "import harness; harness.reset_oracle('work/shared.db')" && python3 "$here/restart_rust.py" work/shared.db; }
 
 # The code compared on the same inputs.
-(cd "$here/dn" && "$dotnet" build -c Release -o "$work/dn-out" >/dev/null)
+# Built from a copy, so that the build leaves nothing in the repository.
+cp -R "$here/dn" "$work/dn-src"
+(cd "$work/dn-src" && "$dotnet" build -c Release -o "$work/dn-out" >/dev/null)
 export DN_DLL=$work/dn-out/dn.dll
 python3 "$here/differential.py" 5
 (cd "$api" && MESSAGE_VIEWS_CASES=$work/work/cases.txt MESSAGE_VIEWS_ANSWERS=$work/work/rust-answers.txt \
