@@ -35,7 +35,7 @@ fn encode(bytes: &[u8], alphabet: &[u8; 64], pad: bool) -> String {
 fn decode(text: &str, alphabet: &[u8; 64], pad: bool) -> Option<Vec<u8>> {
     let mut data = text.as_bytes();
     if pad {
-        if data.len() % 4 != 0 {
+        if !data.len().is_multiple_of(4) {
             return None;
         }
         let padding = data.iter().rev().take_while(|&&b| b == b'=').count();
