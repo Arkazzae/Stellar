@@ -80,12 +80,9 @@ check "the hub closed it" "closed" "$(tail -1 "$work/hub.log" | cut -d' ' -f1)"
 echo "== a recovery credential the tool issues is the server's to redeem"
 credential=$(cli --json security recover maya --reason "lost phone" --yes | python3 -c 'import sys,json;print(json.load(sys.stdin)["data"]["recoveryCredential"])')
 answer=$(curl -s -o "$work/redeem.json" -w '%{http_code}' -X POST "$base/api/auth/recovery/redeem" "${headers[@]}" -d "{\"credential\":\"$credential\"}")
-if [ "$answer" = 404 ]; then
-  echo "skipped   redeeming: this server has no /api/auth/recovery/redeem yet"
-else
-  check "redeeming it answers that a second step must be set up" "mfa_enrollment_required" "$(python3 -c 'import sys,json;print(json.load(open(sys.argv[1])).get("status"))' "$work/redeem.json")"
-  check "redeeming it twice is refused" "400" "$(curl -s -o /dev/null -w '%{http_code}' -X POST "$base/api/auth/recovery/redeem" "${headers[@]}" -d "{\"credential\":\"$credential\"}")"
-fi
+check "the server has the route the credential is redeemed at" 200 "$answer"
+check "redeeming it answers that a second step must be set up" "mfa_enrollment_required" "$(python3 -c 'import sys,json;print(json.load(open(sys.argv[1])).get("status"))' "$work/redeem.json")"
+check "redeeming it twice is refused" "400" "$(curl -s -o /dev/null -w '%{http_code}' -X POST "$base/api/auth/recovery/redeem" "${headers[@]}" -d "{\"credential\":\"$credential\"}")"
 
 echo "== the tool while the server writes heavily"
 writers=()
