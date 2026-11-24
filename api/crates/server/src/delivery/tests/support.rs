@@ -377,6 +377,8 @@ pub struct Row {
 pub enum Behaviour {
     /// Answers with this status.
     Status(u16),
+    /// Takes this many milliseconds to answer 201.
+    Slow(u64),
     /// Answers a request for this path with the first status, any other
     /// with the second.
     Split(&'static str, u16, u16),
@@ -502,6 +504,12 @@ async fn serve<S: AsyncReadExt + AsyncWriteExt + Unpin>(
         Behaviour::Status(status) => {
             let text = format!("HTTP/1.1 {status} X\r\nContent-Length: 0\r\nConnection: close\r\n\r\n");
             stream.write_all(text.as_bytes()).await?;
+        }
+        Behaviour::Slow(milliseconds) => {
+            tokio::time::sleep(Duration::from_millis(milliseconds)).await;
+            stream
+                .write_all(b"HTTP/1.1 201 Created\r\nContent-Length: 0\r\nConnection: close\r\n\r\n")
+                .await?;
         }
         Behaviour::Split(path, special, otherwise) => {
             let status = if recorded.lock().unwrap().last().is_some_and(|seen| seen.path == path) {
