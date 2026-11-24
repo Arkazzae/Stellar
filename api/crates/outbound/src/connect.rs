@@ -191,49 +191,85 @@ pub(crate) async fn open(
     }
 }
 
-/// What a failed handshake says, without anything the other end sent.
+/// What a failed handshake says, in words of this crate's own: nothing
+/// that the other end wrote, not even the names in its certificate.
 fn tls_message(error: &io::Error) -> String {
-    match error
+    use rustls::CertificateError as Certificate;
+    let inner = error
         .get_ref()
-        .and_then(|inner| inner.downcast_ref::<rustls::Error>())
-    {
-        Some(rustls::Error::InvalidCertificate(reason)) => {
-            format!("the certificate is not accepted ({reason:?})")
+        .and_then(|inner| inner.downcast_ref::<rustls::Error>());
+    match inner {
+        Some(rustls::Error::InvalidCertificate(reason)) => match reason {
+            Certificate::UnknownIssuer => "the certificate's issuer is not trusted",
+            Certificate::Expired | Certificate::ExpiredContext { .. } => {
+                "the certificate has expired"
+            }
+            Certificate::NotValidYet | Certificate::NotValidYetContext { .. } => {
+                "the certificate is not valid yet"
+            }
+            Certificate::NotValidForName | Certificate::NotValidForNameContext { .. } => {
+                "the certificate is not valid for this host"
+            }
+            Certificate::BadSignature => "the certificate's signature is wrong",
+            Certificate::Revoked => "the certificate was revoked",
+            _ => "the certificate is not accepted",
         }
-        Some(other) => format!("{other}"),
-        None => format!("{}", error.kind()),
+        .to_owned(),
+        Some(rustls::Error::AlertReceived(_)) => "the server refused the handshake".to_owned(),
+        Some(_) => "the handshake failed".to_owned(),
+        None => format!("the handshake failed ({})", error.kind()),
     }
 }
 
 /// Tries the addresses one after the other. Each gets an equal share of
 /// what is left, so one that swallows packets cannot use up the time of the
-/// others.
+/// others. When every attempt ran out of time the connect timed out; when
+/// some were refused, the last refusal is the error.
 async fn connect_any(
     host: &str,
     addresses: &[IpAddr],
     port: u16,
     deadline: Instant,
 ) -> Result<TcpStream> {
-    let mut last: Option<io::Error> = None;
+    dial_any(host, addresses, deadline, |address| async move {
+        let stream = TcpStream::connect(SocketAddr::new(address, port)).await?;
+        // A request is written in one go and the answer waited for:
+        // Nagle's delay would only add to the wait.
+        let _ = stream.set_nodelay(true);
+        Ok(stream)
+    })
+    .await
+}
+
+async fn dial_any<S, F, Fut>(
+    host: &str,
+    addresses: &[IpAddr],
+    deadline: Instant,
+    dial: F,
+) -> Result<S>
+where
+    F: Fn(IpAddr) -> Fut,
+    Fut: Future<Output = io::Result<S>>,
+{
+    let mut refused: Option<io::Error> = None;
     for (index, address) in addresses.iter().enumerate() {
         let left = u32::try_from(addresses.len() - index).unwrap_or(1);
         let share = deadline.saturating_duration_since(Instant::now()) / left;
-        let attempt = TcpStream::connect(SocketAddr::new(*address, port));
-        match tokio::time::timeout(share, attempt).await {
-            Ok(Ok(stream)) => {
-                // A request is written in one go and the answer waited for:
-                // Nagle's delay would only add to the wait.
-                let _ = stream.set_nodelay(true);
-                return Ok(stream);
-            }
-            Ok(Err(error)) => last = Some(error),
-            Err(_) => last = Some(io::ErrorKind::TimedOut.into()),
+        match tokio::time::timeout(share, dial(*address)).await {
+            Ok(Ok(stream)) => return Ok(stream),
+            Ok(Err(error)) => refused = Some(error),
+            Err(_) => {}
         }
     }
-    Err(Error::Connect {
-        host: host.to_owned(),
-        source: last.unwrap_or_else(|| io::ErrorKind::NotFound.into()),
-    })
+    match refused {
+        Some(source) => Err(Error::Connect {
+            host: host.to_owned(),
+            source,
+        }),
+        None => Err(Error::ConnectTimeout {
+            host: host.to_owned(),
+        }),
+    }
 }
 
 /// A resolver of a fixed table, for tests.
@@ -258,4 +294,68 @@ impl Resolve for TableResolver {
 /// Keeps the connector type out of the public interface.
 pub(crate) fn connector(config: Arc<rustls::ClientConfig>) -> TlsConnector {
     TlsConnector::from(config)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn addresses(count: usize) -> Vec<IpAddr> {
+        (1..=count)
+            .map(|i| IpAddr::from([192, 0, 2, i as u8]))
+            .collect()
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn a_connect_that_swallows_every_packet_is_a_connect_timeout() {
+        let deadline = Instant::now() + Duration::from_secs(10);
+
+        let result: Result<()> = dial_any("black.hole", &addresses(2), deadline, |_| {
+            std::future::pending::<io::Result<()>>()
+        })
+        .await;
+
+        let error = result.unwrap_err();
+        assert!(matches!(error, Error::ConnectTimeout { .. }), "{error}");
+        assert!(error.is_timeout());
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn an_address_that_swallows_packets_leaves_time_for_the_next() {
+        let deadline = Instant::now() + Duration::from_secs(10);
+
+        let result = dial_any("half.hole", &addresses(2), deadline, |address| async move {
+            if address == IpAddr::from([192, 0, 2, 1]) {
+                std::future::pending::<io::Result<u8>>().await
+            } else {
+                Ok(7)
+            }
+        })
+        .await;
+
+        assert_eq!(result.unwrap(), 7);
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn a_refusal_is_reported_as_one_even_when_another_address_timed_out() {
+        let deadline = Instant::now() + Duration::from_secs(10);
+
+        let result = dial_any(
+            "mixed.test",
+            &addresses(2),
+            deadline,
+            |address| async move {
+                if address == IpAddr::from([192, 0, 2, 1]) {
+                    std::future::pending::<io::Result<u8>>().await
+                } else {
+                    Err(io::ErrorKind::ConnectionRefused.into())
+                }
+            },
+        )
+        .await;
+
+        let error = result.unwrap_err();
+        assert!(matches!(error, Error::Connect { .. }), "{error}");
+        assert!(!error.is_timeout());
+    }
 }

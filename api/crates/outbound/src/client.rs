@@ -198,12 +198,24 @@ impl Response {
 }
 
 /// An answer with its body read.
-#[derive(Debug)]
 pub struct Collected {
     pub status: StatusCode,
     pub headers: HeaderMap,
     pub url: Url,
     pub body: Bytes,
+}
+
+/// Shows the status, the names of the headers and the size of the body, and
+/// no value: an answer can hold tokens and personal data.
+impl std::fmt::Debug for Collected {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("Collected")
+            .field("status", &self.status)
+            .field("headers", &self.headers.keys().collect::<Vec<_>>())
+            .field("url", &self.url)
+            .field("body_bytes", &self.body.len())
+            .finish()
+    }
 }
 
 /// Where the trusted roots come from.
@@ -299,7 +311,11 @@ impl Client {
     /// keeps running while it is.
     pub async fn send(&self, request: Request) -> Result<Response> {
         request.check_headers()?;
-        let deadline = Instant::now() + request.timeout;
+        // A timeout too large to add is no timeout at all.
+        let now = Instant::now();
+        let deadline = now
+            .checked_add(request.timeout)
+            .unwrap_or_else(|| now + Duration::from_secs(365 * 24 * 3600));
         match tokio::time::timeout_at(deadline, self.follow(request, deadline)).await {
             Ok(result) => result,
             Err(_) => Err(Error::Timeout),
@@ -368,11 +384,11 @@ impl Client {
             drop(response);
 
             // What the status says about the method, as browsers and the
-            // HTTP specification have it: a POST that is answered 301, 302
-            // or 303 is asked again as a GET, and any other method but
+            // HTTP specification have it: a POST that is answered 300, 301,
+            // 302 or 303 is asked again as a GET, and any other method but
             // GET and HEAD too after a 303. 307 and 308 repeat the request.
             let becomes_get = match status.as_u16() {
-                301 | 302 => method == Method::POST,
+                300..=302 => method == Method::POST,
                 303 => method != Method::GET && method != Method::HEAD,
                 _ => false,
             };
@@ -387,9 +403,7 @@ impl Client {
                     return Err(Error::BodyNotReplayable);
                 }
             }
-            if !url.same_origin(&next) {
-                strip_credentials(&mut headers);
-            }
+            strip_credentials(&mut headers, !url.same_origin(&next));
             url = next;
             hops += 1;
         }
@@ -508,7 +522,8 @@ fn incoming_length(incoming: &Incoming) -> Option<u64> {
 /// The `Location` to follow, when the answer is a redirect that is to be
 /// followed. A redirect without one is an answer like any other.
 fn redirect_target(response: &Response, max_redirects: u32) -> Option<String> {
-    if max_redirects == 0 || !matches!(response.status.as_u16(), 301 | 302 | 303 | 307 | 308) {
+    if max_redirects == 0 || !matches!(response.status.as_u16(), 300 | 301 | 302 | 303 | 307 | 308)
+    {
         return None;
     }
     response
@@ -518,12 +533,19 @@ fn redirect_target(response: &Response, max_redirects: u32) -> Option<String> {
         .map(str::to_owned)
 }
 
-/// What a redirect to another origin must not carry: the standard
-/// credential headers, and every header the caller marked as sensitive.
-fn strip_credentials(headers: &mut HeaderMap) {
-    for name in [AUTHORIZATION, PROXY_AUTHORIZATION, COOKIE] {
+/// What a redirect does not carry along. `Authorization` and
+/// `Proxy-Authorization` never go with a redirect, to the same origin or to
+/// another: a caller that needs them again asks again, knowing where it
+/// asks. To another origin neither do cookies, nor any header the caller
+/// marked as sensitive, which is how a key in a custom header is kept home.
+fn strip_credentials(headers: &mut HeaderMap, other_origin: bool) {
+    for name in [AUTHORIZATION, PROXY_AUTHORIZATION] {
         headers.remove(name);
     }
+    if !other_origin {
+        return;
+    }
+    headers.remove(COOKIE);
     let sensitive: Vec<HeaderName> = headers
         .iter()
         .filter(|(_, value)| value.is_sensitive())

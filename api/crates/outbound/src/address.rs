@@ -165,6 +165,50 @@ mod tests {
         text.parse().unwrap()
     }
 
+    /// The cases the link previewer's tests of this check named.
+    #[test]
+    fn keeps_every_verdict_the_previous_check_was_tested_for() {
+        for text in [
+            "127.0.0.1",
+            "10.1.2.3",
+            "172.16.0.1",
+            "172.31.255.255",
+            "192.168.1.1",
+            "169.254.169.254",
+            "100.64.0.1",
+            "0.0.0.0",
+            "224.0.0.1",
+            "255.255.255.255",
+            "::1",
+            "fe80::1",
+            "fc00::1",
+            "::ffff:127.0.0.1",
+            "::ffff:10.0.0.1",
+            "2001:db8::1",
+            "192.0.2.1",
+            "198.18.0.1",
+            "198.51.100.1",
+            "203.0.113.1",
+            "192.88.99.1",
+            "240.0.0.1",
+            "::",
+            "100::1",
+            "2002::1",
+        ] {
+            assert!(!is_public(ip(text)), "{text} must not be public");
+        }
+        for text in [
+            "1.1.1.1",
+            "93.184.216.34",
+            "172.32.0.1",
+            "192.167.1.1",
+            "2606:4700:4700::1111",
+            "64:ff9b::808:808",
+        ] {
+            assert!(is_public(ip(text)), "{text} must be public");
+        }
+    }
+
     #[test]
     fn refuses_every_reserved_ipv4_range_at_both_ends() {
         let refused = [

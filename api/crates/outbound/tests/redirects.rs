@@ -133,7 +133,7 @@ async fn a_redirect_without_a_location_is_the_answer() {
 #[tokio::test]
 async fn statuses_that_are_not_redirects_are_not_followed_even_with_a_location() {
     let end = echo().await;
-    for status in [300u16, 304, 305] {
+    for status in [304u16, 305, 200] {
         let a = sends_to(status, end.url("/")).await;
         let answer = Client::new()
             .send_collected(local(&a.url("/")).max_redirects(3))
@@ -145,8 +145,8 @@ async fn statuses_that_are_not_redirects_are_not_followed_even_with_a_location()
 }
 
 #[tokio::test]
-async fn a_post_answered_301_302_or_303_is_asked_again_as_a_get_without_its_body() {
-    for status in [301u16, 302, 303] {
+async fn a_post_answered_300_301_302_or_303_is_asked_again_as_a_get_without_its_body() {
+    for status in [300u16, 301, 302, 303] {
         let end = echo().await;
         let a = sends_to(status, end.url("/next")).await;
 
@@ -261,7 +261,7 @@ async fn a_302_drops_a_stream_instead_of_needing_it() {
 }
 
 #[tokio::test]
-async fn credentials_go_along_on_the_same_origin() {
+async fn the_standard_credential_headers_never_go_along_but_the_rest_stays_on_the_same_origin() {
     let server = Server::plain(handler(|mut conn| async move {
         if conn.request.target == "/start" {
             conn.redirect(302, "/next").await;
@@ -285,7 +285,7 @@ async fn credentials_go_along_on_the_same_origin() {
 
     let second = &server.recorded()[1];
     assert_eq!(second.target, "/next");
-    assert_eq!(second.header("authorization"), Some("Bearer t"));
+    assert_eq!(second.header("authorization"), None);
     assert_eq!(second.header("cookie"), Some("a=b"));
     assert_eq!(second.header("x-api-key"), Some("hunter2"));
 }
@@ -401,6 +401,28 @@ async fn credentials_removed_at_one_hop_stay_removed_when_it_comes_back() {
     assert_eq!(seen[0].header("authorization"), Some("Bearer t"));
     assert_eq!(seen[1].target, "/home");
     assert_eq!(seen[1].header("authorization"), None);
+}
+
+#[tokio::test]
+async fn a_300_with_a_location_is_followed_and_without_one_it_is_the_answer() {
+    let end = echo().await;
+    let with = sends_to(300, end.url("/chosen")).await;
+    let without = Server::plain(handler(|mut conn| async move {
+        conn.respond("300 Multiple Choices", &[], b"pick one").await;
+    }))
+    .await;
+
+    let followed = Client::new()
+        .send_collected(local(&with.url("/")).max_redirects(1))
+        .await
+        .unwrap();
+    let kept = Client::new()
+        .send_collected(local(&without.url("/")).max_redirects(1))
+        .await
+        .unwrap();
+
+    assert_eq!(followed.body.as_ref(), b"GET /chosen body=0");
+    assert_eq!(kept.status.as_u16(), 300);
 }
 
 #[tokio::test]
