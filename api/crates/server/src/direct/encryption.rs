@@ -14,11 +14,7 @@ use crate::http::{ApiError, Problem};
 use crate::social::conversations::Conversation;
 use crate::values::{Id, Timestamp};
 
-pub const REQUIRED: &str = "encryption-required";
-pub const OFF: &str = "encryption-off";
-pub const EPOCH_NOT_CURRENT: &str = "epoch-not-current";
-pub const EPOCH_OUTDATED: &str = "epoch-outdated";
-pub const ATTACHMENT_KIND: &str = "attachment-kind-mismatch";
+use crate::encryption::problems::{ATTACHMENT_KIND, EPOCH_NOT_CURRENT, EPOCH_OUTDATED, OFF, REQUIRED};
 
 /// A refusal with a title in the instance's language, what the client needs to
 /// recover, and its code last.
