@@ -11,6 +11,11 @@
 //!
 //! The hub implements [`EventPublisher`]. Until it is plugged in the process
 //! holds [`Unconnected`], which has nobody to send to.
+//!
+//! An event reaches whoever its [`Audience`] names, and nobody else: the hub
+//! keeps no list of who may see what, so the handler that publishes works out
+//! who it is for (everybody on the server, or only the members who see a
+//! channel) and says so.
 
 use std::fs::OpenOptions;
 use std::io::Write;
@@ -25,10 +30,16 @@ use crate::values::Id;
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub enum Audience {
-    /// Everyone connected who is on the server.
+    /// Everyone connected who follows the server.
     Server(Id),
     /// These people, on whichever connections they have.
     Users(Vec<Id>),
+    /// These people, on the connections that follow this server: what an
+    /// event about something only some members see goes to. Unlike `Users`
+    /// it leaves out the tabs a person has open on other servers.
+    Followers { server: Id, users: Vec<Id> },
+    /// Every connection there is.
+    Everyone,
     /// One connection, by the identifier the hub gave it.
     Connection(String),
 }
@@ -71,6 +82,11 @@ pub trait EventPublisher: Send + Sync {
             &serde_json::json!({ "session": session }),
         ));
     }
+
+    /// Tells the hub that somebody is no longer a member of a server, so that
+    /// their connections stop following it and receive nothing more sent to
+    /// the server's own audiences.
+    fn server_left(&self, _user: Id, _server: Id) {}
 }
 
 /// The name of the event that says a session has ended.
@@ -82,6 +98,25 @@ pub trait Presence: Send + Sync {
     /// The account's own view of its status; being disconnected wins over any
     /// choice it made.
     fn presence_of(&self, user: Id) -> String;
+
+    /// The status other people may see: an account that hides it reads as
+    /// offline to everybody but itself, which is the `viewer` that is the
+    /// account.
+    fn public_presence_of(&self, user: Id, viewer: Option<Id>) -> String {
+        let _ = viewer;
+        self.presence_of(user)
+    }
+
+    /// Whether other people may see the account's real status. True when the
+    /// change matters now: the account is connected and the choice differs.
+    fn set_visibility(&self, _user: Id, _visible: bool) -> bool {
+        false
+    }
+
+    /// The connections the account has open, in no particular order.
+    fn connection_ids(&self, _user: Id) -> Vec<String> {
+        Vec::new()
+    }
 }
 
 impl Presence for Unconnected {
@@ -97,6 +132,28 @@ pub struct Unconnected;
 
 impl EventPublisher for Unconnected {
     fn publish(&self, _event: Event) {}
+}
+
+/// Hands every event to each of several publishers, in order: the hub and the
+/// file the integration tests read.
+pub struct Fanout(pub Vec<std::sync::Arc<dyn EventPublisher>>);
+
+impl EventPublisher for Fanout {
+    fn publish(&self, event: Event) {
+        let Some((last, rest)) = self.0.split_last() else {
+            return;
+        };
+        for publisher in rest {
+            publisher.publish(event.clone());
+        }
+        last.publish(event);
+    }
+
+    fn server_left(&self, user: Id, server: Id) {
+        for publisher in &self.0 {
+            publisher.server_left(user, server);
+        }
+    }
 }
 
 /// Keeps what was published, for tests of handlers that run in the same

@@ -63,6 +63,27 @@ pub struct Ticket {
 }
 
 impl Ticket {
+    /// The session version the ticket was made for.
+    pub fn version(&self) -> i64 {
+        self.version
+    }
+
+    /// The ticket of a connection that is already open: the account, the
+    /// version and the session it was admitted with. It has no life of its
+    /// own, so checking it against the database can only fail because of what
+    /// the row says, never because a cookie ran out.
+    pub fn of_connection(user: Id, version: i64, session: Id) -> Ticket {
+        let now = Timestamp::now().unix_seconds();
+        Ticket {
+            user,
+            version,
+            session,
+            issued: now,
+            expires: now + LIFETIME.as_secs() as i64,
+            persistent: false,
+        }
+    }
+
     fn seal(&self, sealer: &Sealer) -> String {
         let payload = serde_json::to_vec(self).expect("a ticket is written as JSON");
         sealer.seal(
