@@ -120,7 +120,7 @@ pub async fn list(
                             created_by_name: by,
                             uses,
                             max_uses,
-                            expires_at: expires_at.map(Timestamp::to_unspecified_wire_text),
+                            expires_at: expires_at.map(Timestamp::to_wire_text),
                             channel_id,
                             channel_name,
                         }

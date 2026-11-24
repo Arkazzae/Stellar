@@ -193,8 +193,8 @@ async fn the_members_are_listed_by_name_with_their_roles_and_the_one_that_ranks_
     let plain = members.iter().find(|member| member["user"]["id"] == scene.user("plain").as_str()).unwrap();
     assert_eq!(plain["roleId"], scene.role("Member"));
     assert_eq!(plain["roleIds"], json!([]));
-    // The moment is written without a zone, as the first server wrote it.
-    assert!(!sen["joinedAt"].as_str().unwrap().ends_with('Z'), "{sen}");
+    // A moment says it is UTC.
+    assert!(sen["joinedAt"].as_str().unwrap().ends_with('Z'), "{sen}");
 }
 
 #[tokio::test]

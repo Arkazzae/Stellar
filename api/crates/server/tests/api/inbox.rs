@@ -162,7 +162,7 @@ async fn an_entry_has_its_members_in_the_order_the_first_server_wrote_them() {
         at += found + key.len();
     }
     assert!(text.starts_with("{\"items\":[{"), "{text}");
-    assert!(text.contains("\"createdAt\":\"2026-03-01T10:00:00.5\""), "{text}");
+    assert!(text.contains("\"createdAt\":\"2026-03-01T10:00:00.5Z\""), "{text}");
     assert!(text.ends_with("\"nextBeforeSequence\":null,\"unreadCount\":1,\"lastSequence\":1}"), "{text}");
 }
 
@@ -216,12 +216,11 @@ async fn reading_deleting_and_reading_everything_are_repeatable_and_private() {
     assert_eq!(read.status, 200);
     let body = read.json::<Value>();
     assert_eq!(body["id"], second.to_string());
-    // A moment the request set carries its zone, one read back does not.
+    // A moment the request set and one read back are spelled the same.
     assert!(body["readAt"].as_str().unwrap().ends_with('Z'), "{body}");
-    assert_eq!(body["createdAt"], "2026-03-01T10:00:00.5");
+    assert_eq!(body["createdAt"], "2026-03-01T10:00:00.5Z");
     let again = i.ada.client.send(Request::new(Method::PUT, &format!("/api/notifications/{second}/read"))).await.json::<Value>();
-    assert_eq!(again["readAt"].as_str().unwrap().trim_end_matches('Z'), body["readAt"].as_str().unwrap().trim_end_matches('Z'));
-    assert!(!again["readAt"].as_str().unwrap().ends_with('Z'), "{again}");
+    assert_eq!(again["readAt"], body["readAt"]);
     assert_eq!(list(&i.ada.client, "").await["unreadCount"], 1);
 
     let all = i.ada.client.send(Request::new(Method::POST, "/api/notifications/read-all")).await;

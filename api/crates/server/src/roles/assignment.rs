@@ -87,8 +87,7 @@ pub(super) async fn list(
         .map(|(user, role_id, joined, role_ids)| MemberDto {
             user: user.dto(&state.presence().public_presence_of(user.id, Some(caller.user))),
             role_id,
-            // The first server wrote this moment without saying it was UTC.
-            joined_at: joined.to_unspecified_wire_text(),
+            joined_at: joined.to_wire_text(),
             role_ids,
         })
         .collect();

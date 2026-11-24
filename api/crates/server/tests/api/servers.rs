@@ -741,8 +741,8 @@ async fn invites_are_listed_until_revoked_and_only_for_those_who_manage_the_serv
     let found = listed.as_array().unwrap().iter().find(|x| x["id"] == invite.0).unwrap();
     // The instance's public address, without its trailing slash.
     assert_eq!(found["url"], format!("https://chat.test/invite/{}", invite.1));
-    // Read back from the database, the moment says nothing of its zone.
-    assert!(!found["expiresAt"].as_str().unwrap().ends_with('Z'));
+    // Read back from the database, the moment still says it is UTC.
+    assert!(found["expiresAt"].as_str().unwrap().ends_with('Z'));
 
     let unknown = delete(&maya.client, &format!("/api/admin/invites/{}", Id::random()), Some(&id)).await;
     assert_eq!(unknown.status, 404);
@@ -1409,7 +1409,7 @@ async fn the_audit_log_says_who_did_what_to_what_with_every_member_of_a_change_p
     let created = &entries[1];
     assert_eq!(order(&newest), ["id", "summary", "at", "actor", "action", "target", "changes"]);
     assert_eq!(created["summary"], "Maya created an invite to channel #meeting");
-    assert!(!created["at"].as_str().unwrap().ends_with('Z'));
+    assert!(created["at"].as_str().unwrap().ends_with('Z'));
     assert_eq!(created["actor"]["id"], maya.id);
     assert_eq!(created["actor"]["presence"], "offline");
     assert_eq!(order(member(&newest, "target")), ["type", "id", "name"]);
@@ -1486,9 +1486,9 @@ async fn the_audit_log_comes_in_pages_from_the_newest_back() {
     assert_eq!(first.as_array().unwrap().len(), 50);
     assert_eq!(first[0]["summary"], "Maya did 59");
     let oldest = first[49]["at"].as_str().unwrap().to_string();
-    assert_eq!(oldest, "2026-01-01T12:10:00");
+    assert_eq!(oldest, "2026-01-01T12:10:00Z");
 
-    for before in ["2026-01-01T12:10:00Z", "2026-01-01T12:10:00", "2026-01-01%2012:10:00", "2026-01-01T13:10:00%2B01:00"] {
+    for before in ["2026-01-01T12:10:00Z", "2026-01-01T12:10:00Z", "2026-01-01%2012:10:00", "2026-01-01T13:10:00%2B01:00"] {
         let rest = get(&maya.client, &format!("/api/admin/audit?before={before}"), Some(&id)).await;
         assert_eq!(rest.status, 200, "{before}: {}", rest.text());
         let rest = rest.json::<Value>();

@@ -88,10 +88,8 @@ struct Notification {
 }
 
 /// An invitation keeps the server's name and the inviter's in the source
-/// columns it was delivered with. `just_read` is a moment that was set by this
-/// request and not read back from the database, which the first server wrote
-/// with its zone.
-fn dto(entry: &Entry, just_read: bool) -> Notification {
+/// columns it was delivered with.
+fn dto(entry: &Entry) -> Notification {
     let target = match (&entry.target_invite_code, entry.target_channel) {
         (Some(code), _) => Some(Target {
             kind: "server-invite",
@@ -125,14 +123,8 @@ fn dto(entry: &Entry, just_read: bool) -> Notification {
             module_name: entry.source_module_name.clone(),
         },
         target,
-        created_at: entry.created_at.to_unspecified_wire_text(),
-        read_at: entry.read_at.map(|at| {
-            if just_read {
-                at.to_wire_text()
-            } else {
-                at.to_unspecified_wire_text()
-            }
-        }),
+        created_at: entry.created_at.to_wire_text(),
+        read_at: entry.read_at.map(Timestamp::to_wire_text),
     }
 }
 
@@ -172,7 +164,7 @@ fn list_page(
     )?;
     Ok(Page {
         next_before_sequence: if more { rows.last().map(|e| e.sequence) } else { None },
-        items: rows.iter().map(|entry| dto(entry, false)).collect(),
+        items: rows.iter().map(|entry| dto(entry)).collect(),
         unread_count,
         last_sequence: last_sequence.unwrap_or(0),
     })
@@ -256,7 +248,7 @@ pub async fn mark_read(
     if changed {
         announce(state.events(), &entry);
     }
-    Ok(private(json_response(StatusCode::OK, &dto(&entry, changed))))
+    Ok(private(json_response(StatusCode::OK, &dto(&entry))))
 }
 
 #[derive(Serialize)]

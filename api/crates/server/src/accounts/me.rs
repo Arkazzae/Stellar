@@ -20,7 +20,6 @@ pub(crate) struct Account {
     username: String,
     display_name: String,
     email: Option<String>,
-    /// Written without a zone, as the first server wrote it.
     created_at: String,
     avatar_url: Option<String>,
     banner_url: Option<String>,
@@ -119,7 +118,7 @@ impl Account {
             username: user.username,
             display_name: user.display_name,
             email: user.email,
-            created_at: user.created_at.to_unspecified_wire_text(),
+            created_at: user.created_at.to_wire_text(),
             avatar_url: user.avatar_url,
             banner_url: user.banner_url,
             wallpaper_url: user.wallpaper_url,

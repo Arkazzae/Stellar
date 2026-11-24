@@ -28,7 +28,6 @@ use std::sync::{Arc, OnceLock};
 
 use axum::http::StatusCode;
 use axum::response::Response;
-use serde::Serialize;
 use serde::de::DeserializeOwned;
 use serde_json::Value;
 
@@ -36,7 +35,7 @@ use crate::database::DbError;
 use crate::http::{ApiError, Endpoints, Problem};
 use crate::logging::LogBuffer;
 use crate::panel::FreshInstanceOwner;
-use crate::values::{Id, Timestamp};
+use crate::values::Id;
 
 /// What the panel keeps for the whole process: the log buffer it shows and the
 /// history of the process's samples.
@@ -60,17 +59,6 @@ impl Kept {
     /// Hands the buffer over, once, when the server starts.
     pub(crate) fn plug_in_log(&self, log: Arc<LogBuffer>) {
         let _ = self.log.set(log);
-    }
-}
-
-/// A moment the first server wrote out as it read it back from the database,
-/// without saying it was UTC: the wire spelling without its `Z`.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(crate) struct Plain(pub Timestamp);
-
-impl Serialize for Plain {
-    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
-        serializer.serialize_str(&self.0.to_unspecified_wire_text())
     }
 }
 

@@ -19,14 +19,14 @@ use stellarr_oidc::options::{ProviderSettings, Settings as OidcSettings};
 use crate::database::CliDatabase;
 use crate::errors::{CliError, CliOutcome, CliResult, exit};
 use crate::invocation::trim;
-use crate::json::{Json, Zone, moment, round_trip};
+use crate::json::{Json, moment, round_trip};
 use crate::runtime::Runtime;
 use crate::support::{User, require_instance_server, resolve_user, user_not_found, yes_no};
 
 const MAX_EVENTS: usize = 100;
 
 fn optional_moment(at: Option<Timestamp>) -> Json {
-    at.map_or(Json::Null, |at| moment(at, Zone::Unspecified))
+    at.map_or(Json::Null, |at| moment(at))
 }
 
 fn load_policy(runtime: &Runtime, connection: &rusqlite::Connection) -> CliOutcome<SecurityPolicy> {
@@ -242,8 +242,8 @@ fn show_as(runtime: &mut Runtime, id_or_username: &str, command: &'static str) -
                     ("id", Json::text(device.id.to_string())),
                     ("name", Json::text(&device.name)),
                     ("device", Json::text(&device.device)),
-                    ("createdAt", moment(device.created_at, Zone::Unspecified)),
-                    ("expiresAt", moment(device.expires_at, Zone::Unspecified)),
+                    ("createdAt", moment(device.created_at)),
+                    ("expiresAt", moment(device.expires_at)),
                     ("lastUsedAt", optional_moment(device.last_used_at)),
                 ])
             })),
@@ -255,12 +255,9 @@ fn show_as(runtime: &mut Runtime, id_or_username: &str, command: &'static str) -
                     ("id", Json::text(session.id.to_string())),
                     ("device", Json::text(&session.device)),
                     ("ipAddress", Json::text(&session.ip_address)),
-                    ("createdAt", moment(session.created_at, Zone::Unspecified)),
-                    (
-                        "lastSeenAt",
-                        moment(session.last_seen_at, Zone::Unspecified),
-                    ),
-                    ("expiresAt", moment(session.expires_at, Zone::Unspecified)),
+                    ("createdAt", moment(session.created_at)),
+                    ("lastSeenAt", moment(session.last_seen_at)),
+                    ("expiresAt", moment(session.expires_at)),
                 ])
             })),
         ),
@@ -272,7 +269,7 @@ fn show_as(runtime: &mut Runtime, id_or_username: &str, command: &'static str) -
                     ("id", Json::text(identity.id.to_string())),
                     ("issuer", Json::text(&identity.issuer)),
                     ("providerId", Json::text(&identity.provider)),
-                    ("createdAt", moment(identity.created_at, Zone::Unspecified)),
+                    ("createdAt", moment(identity.created_at)),
                 ])
             })),
         ),
@@ -284,7 +281,7 @@ fn show_as(runtime: &mut Runtime, id_or_username: &str, command: &'static str) -
                     ("detail", Json::text(&event.detail)),
                     ("ipAddress", Json::text(&event.ip_address)),
                     ("device", Json::text(&event.device)),
-                    ("createdAt", moment(event.created_at, Zone::Unspecified)),
+                    ("createdAt", moment(event.created_at)),
                 ])
             })),
         ),
@@ -316,10 +313,7 @@ fn show_as(runtime: &mut Runtime, id_or_username: &str, command: &'static str) -
             },
             method
                 .last_used_at
-                .map_or("(never)".to_string(), |at| round_trip(
-                    at,
-                    Zone::Unspecified
-                )),
+                .map_or("(never)".to_string(), |at| round_trip(at)),
             method
                 .email
                 .as_ref()
@@ -336,7 +330,7 @@ fn show_as(runtime: &mut Runtime, id_or_username: &str, command: &'static str) -
             identity.id,
             identity.issuer,
             identity.provider,
-            round_trip(identity.created_at, Zone::Unspecified)
+            round_trip(identity.created_at)
         ));
     }
     lines.push(format!("Recent security events: {}", events.len()));
@@ -585,7 +579,7 @@ pub fn recover(runtime: &mut Runtime, id_or_username: &str, reason: &str) -> Cli
         ("sessionsRevoked", recovered.sessions_revoked.into()),
         ("handoffsInvalidated", recovered.handoffs_invalidated.into()),
         ("recoveryCredential", Json::text(&recovered.credential)),
-        ("recoveryExpiresAt", moment(recovered.expires_at, Zone::Utc)),
+        ("recoveryExpiresAt", moment(recovered.expires_at)),
         ("sessionVersion", recovered.session_version.into()),
         ("securityRecoveryRequired", true.into()),
         ("auditActor", "local-cli".into()),
@@ -609,7 +603,7 @@ pub fn recover(runtime: &mut Runtime, id_or_username: &str, reason: &str) -> Cli
                 .to_string(),
             format!(
                 "Recovery credential (shown once, valid until {}):",
-                round_trip(recovered.expires_at, Zone::Utc)
+                round_trip(recovered.expires_at)
             ),
             recovered.credential.clone(),
             "Exchange it through POST /api/auth/recovery/redeem; it can only enroll replacement security."

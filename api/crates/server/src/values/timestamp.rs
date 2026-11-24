@@ -83,13 +83,6 @@ impl Timestamp {
         self.spell('T', "Z")
     }
 
-    /// The text of a moment the first server wrote without saying it was UTC,
-    /// the way it still writes the creation time of an account: the wire
-    /// spelling without its `Z`.
-    pub fn to_unspecified_wire_text(self) -> String {
-        self.spell('T', "")
-    }
-
     /// The moment as an HTTP date, `Thu, 24 Dec 2026 01:18:38 GMT`, which is
     /// how a cookie names the time it expires.
     pub fn to_http_date(self) -> String {
@@ -285,16 +278,6 @@ mod tests {
 
             assert_eq!(moment.to_db_text(), text);
         }
-    }
-
-    #[test]
-    fn a_moment_written_without_a_zone_has_a_t_and_no_z() {
-        assert_eq!(
-            Timestamp::parse("2026-11-24 01:18:38.632863")
-                .unwrap()
-                .to_unspecified_wire_text(),
-            "2026-11-24T01:18:38.632863"
-        );
     }
 
     #[test]

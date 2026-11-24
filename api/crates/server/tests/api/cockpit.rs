@@ -418,7 +418,7 @@ async fn settings_are_read_before_they_are_saved_and_saved_as_a_whole() {
     assert_eq!(answer["publicUrl"], before["publicUrl"]);
     assert!(answer["updatedAt"].as_str().unwrap().ends_with('Z'));
     let read = scene.owner.client.get("/api/cockpit/settings").await.json::<Value>();
-    assert!(!read["updatedAt"].as_str().unwrap().ends_with('Z'));
+    assert!(read["updatedAt"].as_str().unwrap().ends_with('Z'));
     assert_eq!(read["logRetentionDays"], 31);
     assert_eq!(scene.rows("SELECT \"Name\" FROM \"Servers\" WHERE \"Name\" = 'Orbit HQ'").len(), 1);
     assert!(scene.audit().iter().any(|line| line.contains("settings")));

@@ -10,7 +10,6 @@ use rusqlite::{OptionalExtension, params};
 use serde::Serialize;
 use stellarr_timezone::TimeZone;
 
-use super::Plain;
 use crate::auth::Caller;
 use crate::database::DbError;
 use crate::http::{ApiResult, json_response};
@@ -35,7 +34,7 @@ struct Operator {
 struct Instance {
     id: Id,
     name: String,
-    created_at: Plain,
+    created_at: Timestamp,
 }
 
 #[derive(Serialize)]
@@ -85,7 +84,7 @@ pub(super) async fn bootstrap(
                     Ok(Instance {
                         id: row.get(0)?,
                         name: row.get(1)?,
-                        created_at: Plain(row.get(2)?),
+                        created_at: row.get(2)?,
                     })
                 },
             )?;
