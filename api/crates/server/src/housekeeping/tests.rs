@@ -95,6 +95,7 @@ impl Place {
             variables.push((name.to_string(), value.to_string()));
         }
         let settings = Settings::load(&variables).unwrap();
+        std::fs::create_dir_all(settings.database.path.parent().unwrap()).unwrap();
         let database = Database::open(&settings.database).unwrap();
         let store = Arc::new(Flaky {
             inner: FolderStore::new(folder.path().join("files")),

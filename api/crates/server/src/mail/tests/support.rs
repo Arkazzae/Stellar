@@ -37,6 +37,7 @@ pub fn instance(extra: &[(&str, &str)]) -> (TempDir, AppState) {
         variables.push((name.to_string(), value.to_string()));
     }
     let settings = Settings::load(&variables).expect("usable settings");
+    std::fs::create_dir_all(settings.database.path.parent().unwrap()).unwrap();
     let database = Database::open(&settings.database).expect("a new database");
     let state = AppState::new(
         settings,
