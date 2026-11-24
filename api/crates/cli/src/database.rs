@@ -263,42 +263,60 @@ impl CliDatabase {
 
 impl From<rusqlite::Error> for CliError {
     fn from(error: rusqlite::Error) -> CliError {
-        let message = error.to_string();
-        if message.to_lowercase().contains("no such table")
-            || message.to_lowercase().contains("no such column")
-        {
-            return CliError::new(
-                "schema_incompatible",
-                "The database lacks a table or column this CLI needs, so it was not created by this release of Stellarr.",
-                exit::CONFLICT,
-            );
+        let mut mapped = map_sqlite(&error);
+        if let rusqlite::Error::SqliteFailure(failure, text) = &error {
+            // As the first tool's driver writes what SQLite said.
+            let said = text.clone().unwrap_or_default();
+            // The driver here adds the path to a refusal to open; the first
+            // tool's driver did not.
+            let said = said
+                .strip_prefix("unable to open database file")
+                .map_or(said.as_str(), |_| "unable to open database file");
+            mapped.cause = Some(format!(
+                "SQLite Error {}: '{said}'.",
+                failure.extended_code & 0xff
+            ));
         }
-        let code = match &error {
-            rusqlite::Error::SqliteFailure(failure, _) => Some(failure.code),
-            _ => None,
-        };
-        match code {
-            Some(ErrorCode::DatabaseBusy | ErrorCode::DatabaseLocked) => CliError::new(
-                "database_locked",
-                "The database is busy or locked by another process. Try again when the API is less busy.",
-                exit::CONFLICT,
-            ),
-            Some(ErrorCode::CannotOpen) => CliError::new(
-                "database_unavailable",
-                "The database file cannot be opened. Check the data volume and permissions.",
-                exit::UNAVAILABLE,
-            ),
-            Some(ErrorCode::NotADatabase) => CliError::new(
-                "database_unreadable",
-                "The file is not a readable SQLite database.",
-                exit::CONFLICT,
-            ),
-            _ => CliError::new(
-                "database_error",
-                "The database operation failed. Nothing is reported as changed.",
-                exit::FAILURE,
-            ),
-        }
+        mapped
+    }
+}
+
+fn map_sqlite(error: &rusqlite::Error) -> CliError {
+    let message = error.to_string();
+    if message.to_lowercase().contains("no such table")
+        || message.to_lowercase().contains("no such column")
+    {
+        return CliError::new(
+            "schema_incompatible",
+            "The database lacks a table or column this CLI needs, so it was not created by this release of Stellarr.",
+            exit::CONFLICT,
+        );
+    }
+    let code = match error {
+        rusqlite::Error::SqliteFailure(failure, _) => Some(failure.code),
+        _ => None,
+    };
+    match code {
+        Some(ErrorCode::DatabaseBusy | ErrorCode::DatabaseLocked) => CliError::new(
+            "database_locked",
+            "The database is busy or locked by another process. Try again when the API is less busy.",
+            exit::CONFLICT,
+        ),
+        Some(ErrorCode::CannotOpen) => CliError::new(
+            "database_unavailable",
+            "The database file cannot be opened. Check the data volume and permissions.",
+            exit::UNAVAILABLE,
+        ),
+        Some(ErrorCode::NotADatabase) => CliError::new(
+            "database_unreadable",
+            "The file is not a readable SQLite database.",
+            exit::CONFLICT,
+        ),
+        _ => CliError::new(
+            "database_error",
+            "The database operation failed. Nothing is reported as changed.",
+            exit::FAILURE,
+        ),
     }
 }
 

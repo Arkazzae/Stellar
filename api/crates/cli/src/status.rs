@@ -340,7 +340,15 @@ fn check_database(runtime: &Runtime) -> Check {
         Err(error) if error.code == "schema_incompatible" => {
             Check::new("schema", "fail", error.message)
         }
-        Err(error) => Check::new("database", "fail", error.message),
+        Err(error) => Check::new(
+            "database",
+            "fail",
+            match error.cause {
+                // What the database driver said, as the first tool put it.
+                Some(cause) => format!("the database cannot be read: {cause}"),
+                None => error.message,
+            },
+        ),
     }
 }
 

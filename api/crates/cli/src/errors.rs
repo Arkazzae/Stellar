@@ -20,6 +20,9 @@ pub struct CliError {
     pub message: String,
     pub exit: i32,
     pub details: Option<Json>,
+    /// What SQLite said, when the failure came from it: not for the person
+    /// reading an answer, but for `doctor`, which says what it found.
+    pub cause: Option<String>,
 }
 
 impl CliError {
@@ -29,6 +32,7 @@ impl CliError {
             message: message.into(),
             exit,
             details: None,
+            cause: None,
         }
     }
 
