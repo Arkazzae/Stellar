@@ -248,6 +248,7 @@ impl Probe {
         self.point_10().await;
         self.point_11().await;
         self.point_12().await;
+        self.point_13().await;
     }
 
     pub fn summary(&self) -> String {
@@ -919,6 +920,143 @@ impl Probe {
                 },
             );
         }
+    }
+
+    async fn put_if_absent(&mut self, label: &str, key: &str, data: &[u8]) -> Reply {
+        let mut prepared = self
+            .client()
+            .put_object_if_absent(
+                key,
+                data.len() as u64,
+                None,
+                &[],
+                Payload::hash_of(data),
+                now(),
+            )
+            .unwrap();
+        let _ = Self::body_of(&mut prepared);
+        self.send(label, &prepared, Body::bytes(data.to_vec()))
+            .await
+    }
+
+    // 13. Creating only if the key is free (If-None-Match: *).
+    async fn point_13(&mut self) {
+        self.note("\n=== point 13: If-None-Match: * on PutObject and CompleteMultipartUpload");
+        let first = self
+            .put_if_absent("conditional create, key free", "p13/one", b"first")
+            .await;
+        self.find(
+            13,
+            &format!(
+                "a conditional create of a free key answered {}",
+                first.status
+            ),
+            first.status == 200,
+        );
+        let second = self
+            .put_if_absent("conditional create, key taken", "p13/one", b"second")
+            .await;
+        let honoured = second.status == 412;
+        self.find(
+            13,
+            &format!(
+                "a conditional create of a taken key answered {} {:?}",
+                second.status,
+                second.text().chars().take(120).collect::<String>()
+            ),
+            true,
+        );
+        self.note(&format!(
+            "  the condition on PutObject is {}",
+            if honoured { "HONOURED" } else { "NOT honoured" }
+        ));
+        let back = self.get("what the key holds now", "p13/one", None).await;
+        self.note(&format!("  the key holds {:?}", back.text()));
+        self.find(
+            13,
+            &format!(
+                "PutObject: honoured = {honoured}; the key holds {:?}",
+                back.text()
+            ),
+            honoured == (back.body == b"first"),
+        );
+
+        // Complete an upload over a key that is taken.
+        self.put("a plain object", "p13/two", b"plain", &[]).await;
+        let id = self.start_upload("p13/two").await;
+        let part = self
+            .upload_part("p13/two", &id, 1, &pattern(1000, 13))
+            .await;
+        let etag = s3::read_upload_part(part.status, &part.headers, &part.body).unwrap();
+        let parts = vec![Part { number: 1, etag }];
+        let prepared = self
+            .client()
+            .complete_multipart_upload_if_absent("p13/two", &id, &parts, now())
+            .unwrap();
+        let body = match &prepared.body {
+            RequestBody::Bytes(b) => Body::bytes(b.clone()),
+            _ => Body::empty(),
+        };
+        let reply = self
+            .send("conditional complete over a taken key", &prepared, body)
+            .await;
+        let read = s3::read_complete_multipart_upload(reply.status, &reply.headers, &reply.body);
+        let held = self.get("what the key holds now", "p13/two", None).await;
+        let honoured = read
+            .as_ref()
+            .is_err_and(|e| e.kind == s3::ErrorKind::PreconditionFailed);
+        self.find(13, &format!("CompleteMultipartUpload: answered {} ({:?}); the key holds {} bytes; honoured = {honoured}", reply.status, read.as_ref().map(|_| "ok").map_err(|e| e.kind), held.body.len()), true);
+        let prepared = self
+            .client()
+            .abort_multipart_upload("p13/two", &id, now())
+            .unwrap();
+        let _ = self
+            .send("abort what is left", &prepared, Body::empty())
+            .await;
+
+        // Many writers at once: how many win?
+        let mut tasks = Vec::new();
+        for n in 0..8u8 {
+            let client = self.client();
+            let http = self.http.clone();
+            tasks.push(tokio::spawn(async move {
+                let data = vec![n; 1000];
+                let prepared = client
+                    .put_object_if_absent(
+                        "p13/race",
+                        1000,
+                        None,
+                        &[],
+                        Payload::hash_of(&data),
+                        now(),
+                    )
+                    .unwrap();
+                let mut request = Request::new("PUT".parse().unwrap(), &prepared.url)
+                    .unwrap()
+                    .policy(AddressPolicy::Anywhere);
+                for (name, value) in &prepared.headers {
+                    if name != "content-length" {
+                        request = request.header(name.parse().unwrap(), value.parse().unwrap());
+                    }
+                }
+                http.send_collected(request.body(Body::bytes(data)))
+                    .await
+                    .unwrap()
+                    .status
+                    .as_u16()
+            }));
+        }
+        let mut statuses = Vec::new();
+        for task in tasks {
+            statuses.push(task.await.unwrap());
+        }
+        statuses.sort();
+        let winners = statuses.iter().filter(|s| **s == 200).count();
+        self.find(
+            13,
+            &format!("8 concurrent conditional creates answered {statuses:?}: {winners} winner(s)"),
+            true,
+        );
     }
 
     // 12. No checksum trailer, application/octet-stream.
