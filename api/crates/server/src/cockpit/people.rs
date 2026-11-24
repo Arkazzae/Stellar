@@ -4,87 +4,27 @@
 use axum::extract::{Request, State};
 use axum::http::{HeaderValue, StatusCode, header};
 use axum::response::Response;
-use rusqlite::{Connection, OptionalExtension, params};
+use rusqlite::{OptionalExtension, params};
 use serde::{Deserialize, Serialize};
-use stellarr_messages::{MessageKey, Messages};
+use stellarr_messages::MessageKey;
 
 use super::{Plain, invalid, length, no_content, nobody, bind, taken};
 use crate::auth::password;
 use crate::database::DbError;
-use crate::events::{Audience, Event};
 use crate::http::{ApiError, ApiResult, Path, Problem, json_response};
 use crate::panel::{self};
 use crate::permissions::membership::InstanceOwner;
-use crate::permissions::access_changed::{self, ViewChange};
+use crate::permissions::access_changed::ViewChange;
+use crate::roles::announce::Announcement;
+use crate::roles::{RoleDto, RoleRow, invalid_role, validate};
 use crate::permissions::ownership;
 use crate::permissions::privileges;
 use crate::permissions::roles::{self, HeldRoleTable, Role};
 use crate::state::AppState;
 use crate::values::{Guid, Id, Timestamp};
 
-const MAX_ROLE_NAME_LENGTH: usize = 64;
-const MAX_ROLE_COLOR_LENGTH: usize = 48;
-
-/// A role as the panel lists it.
-#[derive(Serialize)]
-#[serde(rename_all = "camelCase")]
-pub(super) struct RoleDto {
-    id: Id,
-    name: String,
-    color: String,
-    permissions: Vec<&'static str>,
-    member_count: usize,
-    is_system: bool,
-    is_owner: bool,
-}
-
-/// A role with the two columns the rules do not read.
-struct RoleRow {
-    role: Role,
-    name: String,
-    color: String,
-}
-
 const ROLE_COLUMNS: &str =
     "\"Id\", \"ServerId\", \"Name\", \"Color\", \"Permissions\", \"Position\", \"IsSystem\", \"IsOwner\"";
-
-impl RoleRow {
-    fn read(row: &rusqlite::Row<'_>) -> rusqlite::Result<RoleRow> {
-        Ok(RoleRow {
-            role: Role {
-                id: row.get(0)?,
-                server: row.get(1)?,
-                permissions: row.get(4)?,
-                position: row.get(5)?,
-                is_system: row.get(6)?,
-                is_owner: row.get(7)?,
-            },
-            name: row.get(2)?,
-            color: row.get(3)?,
-        })
-    }
-
-    fn find(db: &Connection, server: Id, id: Id) -> rusqlite::Result<Option<RoleRow>> {
-        db.query_row(
-            &format!("SELECT {ROLE_COLUMNS} FROM \"ServerRoles\" WHERE \"Id\" = ?1 AND \"ServerId\" = ?2"),
-            params![id, server],
-            RoleRow::read,
-        )
-        .optional()
-    }
-
-    fn dto(&self, member_count: usize) -> RoleDto {
-        RoleDto {
-            id: self.role.id,
-            name: self.name.clone(),
-            color: self.color.clone(),
-            permissions: privileges::to_names(self.role.permissions),
-            member_count,
-            is_system: self.role.is_system,
-            is_owner: self.role.is_owner,
-        }
-    }
-}
 
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -191,20 +131,6 @@ fn is_username(text: &str) -> bool {
         })
 }
 
-/// The hue of a new account's colour, from its id: the first server's hash
-/// of an identifier, taken modulo 360. Accounts made before keep what this
-/// gave them.
-fn avatar_hue(id: Id) -> u32 {
-    let bytes = id.as_bytes();
-    let word = |from: usize| {
-        u32::from_le_bytes([bytes[from], bytes[from + 1], bytes[from + 2], bytes[from + 3]])
-    };
-    let first = u32::from_be_bytes([bytes[0], bytes[1], bytes[2], bytes[3]]);
-    let second = u32::from(u16::from_be_bytes([bytes[4], bytes[5]]))
-        | u32::from(u16::from_be_bytes([bytes[6], bytes[7]])) << 16;
-    (first ^ second ^ word(8) ^ word(12)) % 360
-}
-
 pub(super) async fn create(
     State(state): State<AppState>,
     request: Request,
@@ -288,7 +214,7 @@ pub(super) async fn create(
                         hashed,
                         email,
                         normalized_email,
-                        format!("oklch(0.58 0.14 {})", avatar_hue(id)),
+                        format!("oklch(0.58 0.14 {})", crate::accounts::avatar_hue(id)),
                         now
                     ],
                 )
@@ -319,31 +245,6 @@ struct RoleChoice {
     role_id: Id,
 }
 
-/// Tells each of `users` who is a member what they now hold server-wide.
-fn notify(state: &AppState, server: Id, users: &[Id], held: &HeldRoleTable) {
-    let members: std::collections::HashSet<Id> = held.members().collect();
-    let mut seen = std::collections::HashSet::new();
-    for user in users {
-        if seen.insert(*user) && members.contains(user) {
-            state.events().publish(Event::new(
-                Audience::Users(vec![*user]),
-                "PermissionsChanged",
-                &PermissionsChanged {
-                    server_id: server,
-                    permissions: privileges::to_names(held.permissions_of(*user)),
-                },
-            ));
-        }
-    }
-}
-
-#[derive(Serialize)]
-#[serde(rename_all = "camelCase")]
-struct PermissionsChanged {
-    server_id: Id,
-    permissions: Vec<&'static str>,
-}
-
 pub(super) async fn set_role(
     State(state): State<AppState>,
     Path(Guid(user)): Path<Guid>,
@@ -364,7 +265,7 @@ pub(super) async fn set_role(
     let wanted = body.role_id;
     let done = state
         .database()
-        .write(move |tx| -> Result<(Vec<Id>, HeldRoleTable), ApiError> {
+        .write(move |tx| -> Result<Announcement, ApiError> {
             let member = roles::Member::load(tx, server, user)?;
             let role = RoleRow::find(tx, server, wanted)?.filter(|row| !row.role.is_owner);
             let (Some(member), Some(role)) = (member, role) else {
@@ -396,13 +297,10 @@ pub(super) async fn set_role(
                     &[("name", &name), ("role", &role.name)],
                 )?,
             )?;
-            let changed = view.finish(tx)?;
-            Ok((changed, HeldRoleTable::load(tx, server)?))
+            Ok(Announcement::after(tx, server, &view, &[user])?)
         })
         .await?;
-    let (changed, held) = done;
-    access_changed::publish(state.events(), server, changed);
-    notify(&state, server, &[user], &held);
+    done.publish(&state, server);
     Ok(no_content())
 }
 
@@ -493,33 +391,13 @@ struct RoleRequest {
     permissions: Option<Vec<Option<String>>>,
 }
 
-/// A role as a request may make it: name and colour trimmed and within their
-/// lengths, and every permission named one that exists.
-struct Draft {
-    name: String,
-    color: String,
-    permissions: i64,
-}
-
-fn validate(name: &str, color: &str, permissions: &[Option<String>]) -> Option<Draft> {
-    let (name, color) = (name.trim(), color.trim());
-    // A `null` among the names is a name that is none of them.
-    let permissions = privileges::parse_names(
-        permissions
-            .iter()
-            .map(|name| name.as_deref().unwrap_or("\u{0}")),
-    )?;
-    ((1..=MAX_ROLE_NAME_LENGTH).contains(&length(name))
-        && (1..=MAX_ROLE_COLOR_LENGTH).contains(&length(color)))
-    .then(|| Draft {
-        name: name.to_string(),
-        color: color.to_string(),
-        permissions,
-    })
-}
-
-fn invalid_role(messages: &Messages) -> Result<ApiError, stellarr_messages::MissingValue> {
-    Ok(invalid("role", messages.get(MessageKey::RoleInvalid, &[])?))
+/// The names of permissions a request lists, a `null` among them being a name
+/// that is none of them.
+fn names(permissions: &[Option<String>]) -> Vec<String> {
+    permissions
+        .iter()
+        .map(|name| name.clone().unwrap_or_else(|| "\u{0}".to_string()))
+        .collect()
 }
 
 pub(super) async fn create_role(
@@ -538,10 +416,11 @@ pub(super) async fn create_role(
     let created = state
         .database()
         .write(move |tx| -> Result<RoleDto, ApiError> {
+            let listed = names(body.permissions.as_deref().unwrap_or_default());
             let Some(draft) = validate(
                 body.name.as_deref().unwrap_or(""),
                 body.color.as_deref().unwrap_or(""),
-                body.permissions.as_deref().unwrap_or_default(),
+                Some(&listed),
             ) else {
                 return Err(invalid_role(&messages)?);
             };
@@ -567,15 +446,19 @@ pub(super) async fn create_role(
                 caller.user,
                 messages.get(MessageKey::AuditRoleCreated, &[("name", &draft.name)])?,
             )?;
-            Ok(RoleDto {
-                id,
+            Ok(RoleRow {
+                role: Role {
+                    id,
+                    server,
+                    position,
+                    is_system: false,
+                    is_owner: false,
+                    permissions: draft.permissions,
+                },
                 name: draft.name,
                 color: draft.color,
-                permissions: privileges::to_names(draft.permissions),
-                member_count: 0,
-                is_system: false,
-                is_owner: false,
-            })
+            }
+            .dto(0))
         })
         .await?;
     let mut response = json_response(StatusCode::CREATED, &created);
@@ -599,7 +482,7 @@ pub(super) async fn update_role(
         return Err(ApiError::bad_request());
     };
     let messages = *state.messages();
-    let (dto, changed, holders, held) = state
+    let (dto, announcement) = state
         .database()
         .write(move |tx| -> Result<_, ApiError> {
             let Some(row) = RoleRow::find(tx, server, role_id)? else {
@@ -608,14 +491,15 @@ pub(super) async fn update_role(
             if row.role.is_owner {
                 return Err(ApiError::conflict());
             }
-            let current: Vec<Option<String>> = privileges::to_names(row.role.permissions)
+            let current: Vec<String> = privileges::to_names(row.role.permissions)
                 .into_iter()
-                .map(|name| Some(name.to_string()))
+                .map(str::to_string)
                 .collect();
+            let listed = body.permissions.as_deref().map(names);
             let Some(draft) = validate(
                 body.name.as_deref().unwrap_or(&row.name),
                 body.color.as_deref().unwrap_or(&row.color),
-                body.permissions.as_deref().unwrap_or(&current),
+                Some(listed.as_deref().unwrap_or(&current)),
             ) else {
                 return Err(invalid_role(&messages)?);
             };
@@ -639,8 +523,9 @@ pub(super) async fn update_role(
                 caller.user,
                 messages.get(MessageKey::AuditRoleUpdated, &[("name", &draft.name)])?,
             )?;
-            let changed = view.finish(tx)?;
             let held = HeldRoleTable::load(tx, server)?;
+            let holders = held.holders(role_id);
+            let announcement = Announcement::after(tx, server, &view, &holders)?;
             let updated = RoleRow {
                 role: Role {
                     permissions: draft.permissions,
@@ -650,12 +535,10 @@ pub(super) async fn update_role(
                 color: draft.color,
             };
             let dto = updated.dto(held.count_holders(role_id));
-            let holders = held.holders(role_id);
-            Ok((dto, changed, holders, held))
+            Ok((dto, announcement))
         })
         .await?;
-    access_changed::publish(state.events(), server, changed);
-    notify(&state, server, &holders, &held);
+    announcement.publish(&state, server);
     Ok(json_response(StatusCode::OK, &dto))
 }
 
@@ -673,15 +556,5 @@ mod tests {
         }
         // A letter outside the basic plane is two units that are not letters.
         assert!(!is_username("\u{10400}\u{10401}"));
-    }
-
-    #[test]
-    fn the_hue_is_the_hash_code_of_the_guid() {
-        for (id, hue) in [
-            ("2bb89c37-c5f0-436a-84b7-a23c5b25ee9e", 272),
-            ("049083c7-a28f-4b91-b21b-2a0920dc1686", 146),
-        ] {
-            assert_eq!(avatar_hue(Id::parse(id).unwrap()), hue, "{id}");
-        }
     }
 }
