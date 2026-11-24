@@ -63,6 +63,7 @@ soundboard/      a group: a server's sounds, their order and switches
 account_security/ a group: the security page, sessions, the password and the address, from a session
 encryption/      a group: the server's side of end-to-end encrypted direct conversations: keys, PIN backup, devices, epochs
 health/          a group: /health/live and /health/ready
+identity_providers/ a group: signing in, signing up and proving oneself again through a provider (OpenID Connect), and linking identities
 releases/        a group: the discovery document and the desktop and Android builds
 second_step/     a group: the second half of a sign-in, a passkey alone, an operator's recovery credential, a forgotten password
 desktop_login/   a group: starting the desktop application's sign-in through the browser, and the page that approves it
@@ -963,6 +964,48 @@ guarantees:
   such an object.
 - A move request's body in the Development environment answers 400 where the
   first server answered 500 (see the malformed bodies above).
+
+## Single sign-on: where it differs from the first server
+
+`tests/providers-oracle/run.sh` (header: how to run it) puts every flow of
+`identity_providers` to both servers and diffs the conversations. What stays
+different, and what somebody would notice:
+
+- **An unsigned ID token is refused.** The first server accepted one (`alg:
+  none`) from a token endpoint; here a provider that signs nothing cannot sign
+  anybody in. Only a provider that is set up to send unsigned tokens notices.
+- **A return address of over 2,048 characters, or with a character beyond
+  ASCII, becomes `/`.** The first server kept a long one, and answered 500 for
+  one with such a character (and signed nobody in). The person lands on the
+  start page instead of the page they were headed for.
+- **A link answered in another browser, or whose state could not be opened,
+  ends on the sign-in page** (`/login?oidc_error=failed`), where the first
+  server sent `/link-account?result=failed`. The sealed state opens only for
+  the browser that asked, so it cannot say what the round trip was for; that
+  would take showing it to everybody. The person sees the sign-in page with an
+  error instead of the link page's. Once the state has opened (no code,
+  expired, used), the page is the link page's, as before.
+- **`HEAD` on the callback is a 405**; the first server redirected it to the
+  sign-in page as a failure. No browser sends one.
+- **The provider's documents have their own timeouts**: ten seconds to
+  connect and thirty in all (the first server waited a minute), five
+  redirects for discovery and keys, none for the token and profile requests. A
+  provider slower than that fails the sign-in sooner.
+- **A secret kept in a file is read once, at start.** The first server read it
+  at every check, so a file created later made the provider appear. Here the
+  operator restarts.
+- **A custom `Oidc:CallbackPath` refuses the start.** The callback is a route
+  built at start; an operator who moved it must register the default address
+  with the provider.
+- **A session that ended before a fresh sign-in is answered** is refused here
+  by its expiry too, which the first server did not look at.
+- **No orphan session** when a provider's profile fails after a linked
+  account was found: the first server had written the session and its event
+  before the profile failed.
+- **Cookie names**: one cookie for each sign-in under way, `stellarr-oidc-`
+  and a hash of its state, where the first server set two named for the
+  framework. Same attributes (path of the callback, `Secure`,
+  `SameSite=None`, `HttpOnly`).
 
 ## Comparing uploads with the first server
 
