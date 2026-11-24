@@ -571,9 +571,13 @@ What a command may do to the data folder:
 - It never makes the database, the keys folder or the master key. A missing
   database is `database_not_found` (3); a file that lacks the tables it needs is
   `schema_incompatible` (4), and no command migrates anything. `secrets set`
-  needs the keys folder to exist (the server made it), makes `master.key` in it
-  if the server has not yet (the server's own start makes the same one), and
-  otherwise fails with `data_protection_keys_missing` (4).
+  needs the keys folder to exist (the server made it) and fails with
+  `data_protection_keys_missing` (4) when it does not. It makes `master.key` in it
+  only once the question is answered and the value accepted (the server's own start
+  makes the same one), and then says so in a warning with the path and the owning
+  uid; the question before it says a key will be made. An existing key is read as it
+  is: its mode is never changed, and a mode others can read is said in a warning.
+  `secrets clear` needs no key at all.
 - Reading opens the database read-only and waits five seconds for a writer; a
   write waits the same for the write lock, takes it before it looks at anything
   it will change (`BEGIN IMMEDIATE`) and changes it and its audit row together.
@@ -581,7 +585,16 @@ What a command may do to the data folder:
   leaves half of a change.
 - A value it prints is never a secret. A secret is read from `--stdin` or a hidden
   prompt (`stty` switches the echo off), never from an argument, and appears in no
-  output and no log. The one thing shown once is a recovery credential.
+  output and no log. The one thing shown once is a recovery credential. When
+  `stty` cannot turn the echo off, nothing is read at the prompt (`secret_value_required`,
+  2, with the reason); the echo is put back on every way out, and Ctrl+C at the prompt
+  is a cancellation, judged before the value.
+- A change that someone else made while a confirmation waited is not made again and
+  not recorded: `sessions revoke` and `security unlink` write nothing and answer
+  `session_not_found` or `identity_not_found` (3). A command that changed something
+  and then cannot write its answer (a closed pipe) ends with status 1 and a line on
+  standard error saying the change was made; for `security recover`, that the
+  credential was not delivered.
 
 What differs from the first server's tool, because only the first server has what
 it names:
@@ -598,6 +611,12 @@ it names:
   instance that never saved one) is the host's here too; it is spelled as the host's
   zone database spells it.
 - The tool says `database` where the server says `panel`, as the first tool did.
+- `security unlink` says when it removed an account's last way in (a warning, and
+  `lastWayIn` as the last member of its `--json` result, which the first tool did
+  not have); `secrets set` and `secrets clear` say in their question when the stored
+  value cannot be opened by this server.
+- `backup restore` refuses when the free space of the data volume cannot be read
+  (`free_space_unknown`, 5), where the first tool failed unexpectedly.
 
 Backups: `backup verify | restore | cancel | apply` are written against
 `stellarr_cli::backup::RestoreLibrary`, whose members are the first tool's
