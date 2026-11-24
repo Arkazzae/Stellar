@@ -6,19 +6,17 @@ use axum::extract::State;
 use axum::response::Response;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
-use stellarr_messages::MessageKey;
 
 use super::common::{
     Seen, body_of, challenge_id, challenge_problem, invalid_name, method_unavailable, ok_json,
-    passkey_rejected, passkeys_unavailable, text, too_many_failures, wrong_code,
+    passkey_rejected, passkeys_unavailable, too_many_failures, wrong_code,
 };
 use super::link::{self, Waiting};
-use super::mfa::{Purposes, finished, unavailable_passkeys, unusable_for};
+use super::mfa::finished;
 use super::wire;
 use crate::auth::ceremony::{
     self, Enrolled, PasskeyStarted, TotpConfirmation, TotpStarted,
 };
-use crate::auth::mfa;
 use crate::http::{ApiError, ApiResult, Json, Origin};
 use crate::state::AppState;
 
@@ -53,7 +51,7 @@ pub async fn start_totp(
     let challenge = challenge_id(request.challenge_id.as_deref());
     let context = seen.context();
     let started =
-        ceremony::start_totp(&state, &seen.ask(&context, &challenge), request.name.as_deref())
+        ceremony::start_totp(&state, &seen.ask(&context, challenge), request.name.as_deref())
             .await?;
     match started {
         TotpStarted::Started { method, secret, uri } => Ok(ok_json(&Enrollment {
@@ -94,9 +92,9 @@ pub async fn confirm_totp(
     let waiting = Waiting::of(&seen.origin);
     let enrolled = ceremony::confirm_totp(
         &state,
-        &seen.ask(&context, &challenge),
+        &seen.ask(&context, challenge),
         TotpConfirmation {
-            method: request.method_id.as_deref().and_then(mfa::parse_method_id),
+            method: request.method_id.as_deref(),
             name: request.name.as_deref(),
             code: request.code.as_deref().unwrap_or(""),
         },
@@ -134,7 +132,7 @@ pub async fn confirm_email(
     let waiting = Waiting::of(&seen.origin);
     let enrolled = ceremony::confirm_email(
         &state,
-        &seen.ask(&context, &challenge),
+        &seen.ask(&context, challenge),
         request.name.as_deref(),
         request.code.as_deref().unwrap_or(""),
         request.remember_device,
@@ -163,11 +161,9 @@ pub async fn start_passkey(
     let seen = Seen::of(&state, origin);
     let challenge = challenge_id(request.challenge_id.as_deref());
     let context = seen.context();
-    let Some(relying_party) = &seen.relying_party else {
-        return unavailable_passkeys(&state, &seen, &challenge, Purposes::Enrolment).await;
-    };
-    match ceremony::start_passkey(&state, &seen.ask(&context, &challenge), relying_party).await? {
+    match ceremony::start_passkey(&state, &seen.ask(&context, challenge), seen.relying_party.as_ref()).await? {
         PasskeyStarted::Options(json) => Ok(super::passkey::options_answer(json)),
+        PasskeyStarted::PasskeysUnavailable => passkeys_unavailable(&state),
         PasskeyStarted::Invalid(status) => challenge_problem(&state, status),
     }
 }
@@ -198,25 +194,11 @@ pub async fn confirm_passkey(
     let seen = Seen::of(&state, origin);
     let challenge = challenge_id(request.challenge_id.as_deref());
     let context = seen.context();
-    let Some(relying_party) = &seen.relying_party else {
-        // The challenge and then the name are looked at before the
-        // instance's passkeys are.
-        if let Some(refusal) =
-            unusable_for(&state, &seen.ask(&context, &challenge), Purposes::Enrolment).await?
-        {
-            return Ok(refusal);
-        }
-        let fallback = text(&state, MessageKey::SecurityDefaultPasskeyName)?;
-        if mfa::method_name(request.name.as_deref(), &fallback).is_none() {
-            return invalid_name(&state);
-        }
-        return passkeys_unavailable(&state);
-    };
     let waiting = Waiting::of(&seen.origin);
     let enrolled = ceremony::confirm_passkey(
         &state,
-        &seen.ask(&context, &challenge),
-        relying_party,
+        &seen.ask(&context, challenge),
+        seen.relying_party.as_ref(),
         request.name.as_deref(),
         response.as_ref(),
         request.remember_device,
@@ -248,6 +230,7 @@ async fn enrolled_answer(
         Enrolled::TooManyFailures => too_many_failures(state),
         Enrolled::Unavailable => method_unavailable(state),
         Enrolled::InvalidName => invalid_name(state),
+        Enrolled::PasskeysUnavailable => passkeys_unavailable(state),
         Enrolled::Invalid(status) => challenge_problem(state, status),
     }
 }

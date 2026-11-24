@@ -8,10 +8,11 @@ use serde::Deserialize;
 use serde_json::Value;
 
 use super::common::{
-    Seen, body_of, challenge_id, challenge_problem, method_unavailable, no_store, wrong_code,
+    Seen, body_of, challenge_id, challenge_problem, method_unavailable, no_store, passkeys_unavailable,
+    wrong_code,
 };
 use super::link::{self, Waiting};
-use super::mfa::{Purposes, finished, unavailable_passkeys};
+use super::mfa::finished;
 use super::wire;
 use crate::auth::ceremony::{self, Answer, Answered, PasskeyOptions};
 use crate::http::{ApiError, ApiResult, Json, Origin};
@@ -48,12 +49,10 @@ pub async fn options(
     let seen = Seen::of(&state, origin);
     let challenge = challenge_id(request.challenge_id.as_deref());
     let context = seen.context();
-    let Some(relying_party) = &seen.relying_party else {
-        return unavailable_passkeys(&state, &seen, &challenge, Purposes::SecondStep).await;
-    };
-    match ceremony::passkey_options(&state, &seen.ask(&context, &challenge), relying_party).await? {
+    match ceremony::passkey_options(&state, &seen.ask(&context, challenge), seen.relying_party.as_ref()).await? {
         PasskeyOptions::Options(json) => Ok(options_answer(json)),
         PasskeyOptions::Unavailable => method_unavailable(&state),
+        PasskeyOptions::PasskeysUnavailable => passkeys_unavailable(&state),
         PasskeyOptions::Invalid(status) => challenge_problem(&state, status),
     }
 }
@@ -83,16 +82,16 @@ pub async fn verify(
     let seen = Seen::of(&state, origin);
     let challenge = challenge_id(request.challenge_id.as_deref());
     let context = seen.context();
-    let Some(relying_party) = &seen.relying_party else {
-        return unavailable_passkeys(&state, &seen, &challenge, Purposes::SecondStep).await;
-    };
     let waiting = Waiting::of(&seen.origin);
     let answered = ceremony::answer(
         &state,
-        &seen.ask(&context, &challenge),
-        Answer::Passkey {
-            relying_party,
-            response: response.as_ref(),
+        &seen.ask(&context, challenge),
+        match &seen.relying_party {
+            Some(relying_party) => Answer::Passkey {
+                relying_party,
+                response: response.as_ref(),
+            },
+            None => Answer::PasskeysUnavailable,
         },
         request.remember_device,
         move |tx, completed| link::pending(tx, completed, &waiting),
@@ -104,6 +103,7 @@ pub async fn verify(
         Answered::TooManyFailures => super::common::too_many_failures(&state),
         Answered::MethodUnavailable => method_unavailable(&state),
         Answered::EmptyCode => super::common::empty_code(&state),
+        Answered::PasskeysUnavailable => passkeys_unavailable(&state),
         Answered::Invalid(status) => challenge_problem(&state, status),
     }
 }

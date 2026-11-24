@@ -559,10 +559,7 @@ def leave(rec, server, names):
                 rec.note("   reset link used %s" % row)
             for row in db.execute('SELECT "UsedAt" IS NOT NULL FROM "CliRecoveryCredentials" WHERE "UserId" = ? ORDER BY "CreatedAt","Id"', (user,)):
                 rec.note("   recovery credential used %s" % row)
-            # A sign-out does not queue an alert on the first server; this
-            # server's account group queues one when the address is verified.
-            # It is the accounts group's and is reported as such.
-            for row in db.execute('SELECT e."Kind", n."EmailAddress" FROM "SecurityNotifications" n JOIN "SecurityEvents" e ON e."Id" = n."SecurityEventId" WHERE n."UserId" = ? AND e."Kind" <> \'session-revoked\' ORDER BY e."CreatedAt", e."Id"', (user,)):
+            for row in db.execute('SELECT e."Kind", n."EmailAddress" FROM "SecurityNotifications" n JOIN "SecurityEvents" e ON e."Id" = n."SecurityEventId" WHERE n."UserId" = ? ORDER BY e."CreatedAt", e."Id"', (user,)):
                 rec.note("   alert queued for %s to %s" % row)
     finally:
         db.close()
