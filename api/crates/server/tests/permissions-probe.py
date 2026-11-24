@@ -86,6 +86,24 @@ def register(base, setup, work, count):
         json.dump(cookies, out)
 
 
+def run_probe(base, cookie, server, probe):
+    """One change a person tries: a role, an override of a role, one of a member. A change that went
+    through is undone at once, so that the next probe finds the server as it was arranged."""
+    if probe["kind"] == "role":
+        status, _, _ = call(base, "POST", "/api/admin/roles", {
+            "name": "probe-" + uuid.uuid4().hex, "color": "#7c6ff0", "permissions": probe["permissions"]}, cookie, server)
+        return status
+    collection = "sections" if probe["section"] else "channels"
+    tail = "" if probe["kind"] == "override" else "members/"
+    path = f"/api/admin/{collection}/{probe['place']}/permissions/{tail}{probe['target']}"
+    status, _, _ = call(base, "PUT", path, {"allow": probe["allow"], "deny": probe["deny"]}, cookie, server)
+    if status == 200:
+        undone, _, _ = call(base, "DELETE", path, None, cookie, server)
+        if undone != 204:
+            raise SystemExit(f"a change could not be undone: {path} {undone}")
+    return status
+
+
 def observe(base, work, expected_path):
     with open(f"{work}/cookies.json") as cookies_file:
         cookies = json.load(cookies_file)
@@ -108,10 +126,13 @@ def observe(base, work, expected_path):
                 if status == 403:
                     permission = json.loads(reply).get("permission")
                 sent[channel] = [status, permission]
+            probed = []
+            for probe in want["probes"]:
+                probed.append(run_probe(base, cookie, server, probe))
             lines.append({
                 "user": want["user"], "server": want["server"], "permissions": data["permissions"],
                 "channels": sorted(c["id"] for c in data["channels"]),
-                "sections": sorted(s["id"] for s in data["sections"]), "send": sent})
+                "sections": sorted(s["id"] for s in data["sections"]), "send": sent, "probes": probed})
     with open(f"{work}/observed.jsonl", "w") as out:
         out.write("".join(json.dumps(line) + "\n" for line in lines))
 
@@ -133,6 +154,11 @@ def compare(expected_path, observed_path):
             if want[key] != got[key]:
                 differences += 1
                 print(f"DIFFERENT {where}: {key}\n   ours   {want[key]}\n   theirs {got[key]}")
+        for ours, theirs in zip(want["probes"], got["probes"]):
+            checks += 1
+            if ours["status"] != theirs:
+                differences += 1
+                print(f"DIFFERENT {where}: {ours['kind']} {json.dumps(ours)}: ours {ours['status']}, theirs {theirs}")
         for channel, ours in want["send"].items():
             checks += 1
             status, permission = got["send"][channel]

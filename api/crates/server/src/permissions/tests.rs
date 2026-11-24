@@ -2234,3 +2234,27 @@ fn an_audit_line_is_written_with_the_change_it_records_or_not_at_all() {
     // An actor who is no account is a fault, which writes nothing.
     assert!(record(&world.db, world.server, Id::random(), &event).is_err());
 }
+
+#[test]
+fn a_list_of_people_longer_than_a_statement_takes_is_read_whole_and_picked_out() {
+    let world = World::new();
+    let mut asked: Vec<Id> = (0..450).map(|_| Id::random()).collect();
+    asked.extend([world.maja, world.jo, world.ada]);
+    world.deny_view_to_base(world.projects, false);
+    world.allow_view_to(world.projects, false, world.moderator_role);
+
+    let snapshot = Snapshot::load(
+        &world.db,
+        world.server,
+        Some(&asked),
+        Targets::at(None, Some(world.projects)),
+    )
+    .unwrap();
+
+    let found: HashSet<Id> = snapshot.subjects().map(|subject| subject.user).collect();
+    assert_eq!(found, set(&[world.maja, world.jo, world.ada]));
+    assert_eq!(
+        visibility::who_view(&world.db, world.server, world.projects, &asked).unwrap(),
+        [world.maja, world.ada]
+    );
+}
