@@ -1236,10 +1236,11 @@ async fn a_manifest_that_is_not_json_fails_the_check() {
 }
 
 #[tokio::test]
-async fn a_signature_that_is_almost_too_long_is_still_one() {
+async fn a_signature_of_the_longest_length_is_one_and_a_line_break_counts_as_a_character() {
     for (signature, expected) in [
         ("A".repeat(4096), 200),
-        (format!("{}\n", "A".repeat(4096)), 200),
+        (format!("{}\n", "A".repeat(4095)), 200),
+        (format!("{}\n", "A".repeat(4096)), 503),
         ("A".repeat(4097), 503),
         ("A".repeat(63), 503),
         ("A".repeat(64), 200),

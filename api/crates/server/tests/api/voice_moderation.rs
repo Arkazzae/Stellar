@@ -114,7 +114,7 @@ async fn moving_somebody_keeps_their_seat_and_mute_state_tells_them_both_rooms_a
 }
 
 #[tokio::test]
-async fn a_move_that_changes_nothing_or_finds_nobody_is_answered_as_the_first_server_answered() {
+async fn a_move_that_changes_nothing_or_finds_nobody_is_answered_with_its_own_status() {
     let rig = Rig::start().await;
     let (maja, ada) = (rig.person("maja").await, rig.person("ada").await);
     let mut peer = rig.connect(&maja).await;
