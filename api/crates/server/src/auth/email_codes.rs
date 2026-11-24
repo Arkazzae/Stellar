@@ -690,6 +690,24 @@ mod tests {
     }
 
     #[test]
+    fn a_code_with_all_its_guesses_gone_is_refused_even_if_it_was_not_marked_spent() {
+        let (_folder, mut connection) = open();
+        let user = add_user(&connection, Some(ADDRESS));
+        let scope = scope(user, Id::random());
+        let now = Timestamp::now();
+        let code = reserved(&mut connection, &scope, &eager(), now);
+        connection
+            .execute(
+                "UPDATE \"EmailOtpCodes\" SET \"Attempts\" = \"MaxAttempts\" WHERE \"Id\" = ?1",
+                [code.id],
+            )
+            .unwrap();
+
+        assert!(!checked(&mut connection, &scope, &code.code, now));
+        assert_eq!(attempts(&connection, code.id), (5, None));
+    }
+
+    #[test]
     fn a_code_that_ran_out_is_refused_without_costing_an_attempt() {
         let (_folder, mut connection) = open();
         let user = add_user(&connection, Some(ADDRESS));

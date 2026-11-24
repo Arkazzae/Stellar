@@ -9,6 +9,10 @@ Uses nothing but Python's hmac, hashlib, struct and base64. Two jobs:
       The Rust unit test `auth::totp::tests::an_independent_implementation_agrees`
       reads the file.
 
+  totp-independent.py now SECRET [STEPS]
+      The code an authenticator app shows now (STEPS later), for a script that
+      has to answer a first server with a real code.
+
   totp-independent.py cases N SEED > cases.txt
       Lines for the differential runner (see src/auth/differential.rs): the
       same lines go to that runner and to a program built from the first
@@ -133,6 +137,11 @@ def cases(count: int, seed: int) -> None:
 if __name__ == "__main__":
     if sys.argv[1:2] == ["fixture"]:
         fixture()
+    elif sys.argv[1:2] == ["now"]:
+        import time
+        secret = sys.argv[2].upper()
+        key = base64.b32decode(secret + "=" * (-len(secret) % 8))
+        print(hotp(key, int(time.time()) // 30 + (int(sys.argv[3]) if len(sys.argv) > 3 else 0)))
     elif sys.argv[1:2] == ["cases"]:
         cases(int(sys.argv[2]), int(sys.argv[3]))
     else:

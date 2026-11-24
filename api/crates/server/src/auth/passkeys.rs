@@ -1072,6 +1072,36 @@ mod tests {
     }
 
     #[test]
+    fn a_credential_of_another_account_does_not_answer_even_when_the_options_name_none() {
+        let (_folder, mut connection) = open();
+        let user = add_user(&connection, None);
+        let other = add_user(&connection, None);
+        let theirs = enrolled(&mut connection, other, &[7; 32]);
+        let challenge = add_challenge(&connection, user, PURPOSE_MFA);
+        // Options that name no credential: only the account's own scoping is left.
+        let tx = connection.transaction().unwrap();
+        let options =
+            webauthn::assertion_options(&soft::relying_party(), &[], new_challenge()).unwrap();
+        keep_on_challenge(&tx, challenge.id, &options.json).unwrap();
+        tx.commit().unwrap();
+        let answer = assert_with(&options.json, &theirs, other, 1);
+
+        assert_eq!(
+            second_step(&mut connection, &challenge, Some(&answer)),
+            Outcome::Refused
+        );
+
+        let count: i64 = connection
+            .query_row(
+                "SELECT \"SignCount\" FROM \"WebAuthnCredentials\"",
+                [],
+                |r| r.get(0),
+            )
+            .unwrap();
+        assert_eq!(count, 0);
+    }
+
+    #[test]
     fn a_missing_answer_is_a_refusal_and_a_challenge_for_something_else_is_not_answered() {
         let (_folder, mut connection) = open();
         let user = add_user(&connection, None);
