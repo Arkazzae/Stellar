@@ -25,19 +25,32 @@ use super::{
 use crate::messages::MAX_CONTENT_UNITS;
 use crate::values::{Id, Timestamp};
 
-/// The snapshot's member and role names, read once per snapshot.
-pub(super) struct SnapshotNames {
-    /// Which snapshot they were read from: where it is and how big it is.
-    key: (usize, usize, usize),
-    members: HashMap<String, String>,
-    roles: HashMap<String, String>,
+/// How a role reads in a message: its name, with the at sign it is mentioned by.
+fn role_labels(snapshot: &ServerSnapshot) -> HashMap<String, String> {
+    let mut roles = HashMap::new();
+    for role in snapshot.roles.iter().filter(|role| !role.name.is_empty()) {
+        roles.entry(role.id.clone()).or_insert_with(|| {
+            if role.name.starts_with('@') {
+                role.name.clone()
+            } else {
+                format!("@{}", role.name)
+            }
+        });
+    }
+    roles
 }
 
-impl SnapshotNames {
-    fn of(snapshot: &ServerSnapshot) -> SnapshotNames {
-        let mut members = HashMap::new();
-        for member in &snapshot.members {
-            members.entry(member.id.clone()).or_insert_with(|| {
+/// The names the wanted people showed on the server: one pass over the members,
+/// which a server can have a hundred thousand of, for as many pages as it has.
+fn member_names(snapshot: &ServerSnapshot, wanted: &HashSet<String>) -> HashMap<String, String> {
+    let mut found = HashMap::new();
+    if wanted.is_empty() {
+        return found;
+    }
+    for member in &snapshot.members {
+        if wanted.contains(&member.id) && !found.contains_key(&member.id) {
+            found.insert(
+                member.id.clone(),
                 names::display_name(
                     &member.id,
                     &[
@@ -45,33 +58,33 @@ impl SnapshotNames {
                         member.display_name.as_deref(),
                         Some(&member.username),
                     ],
-                )
-            });
-        }
-        let mut roles = HashMap::new();
-        for role in snapshot.roles.iter().filter(|role| !role.name.is_empty()) {
-            roles.entry(role.id.clone()).or_insert_with(|| {
-                if role.name.starts_with('@') {
-                    role.name.clone()
-                } else {
-                    format!("@{}", role.name)
-                }
-            });
-        }
-        SnapshotNames {
-            key: SnapshotNames::key_of(snapshot),
-            members,
-            roles,
+                ),
+            );
         }
     }
+    found
+}
 
-    fn key_of(snapshot: &ServerSnapshot) -> (usize, usize, usize) {
-        (
-            std::ptr::from_ref(snapshot) as usize,
-            snapshot.members.len(),
-            snapshot.roles.len(),
-        )
+/// The ids of the people a chunk may show by name: its authors, and whoever its
+/// messages mention.
+fn wanted_members(
+    messages: &[MessageSnapshot],
+    channel: Option<(Id, bool)>,
+    roles: &HashMap<String, String>,
+) -> HashSet<String> {
+    let recording = ImportResolver::recording(roles.clone());
+    let mut wanted = HashSet::new();
+    for message in messages {
+        if classify(message, channel) != SkipReason::None {
+            continue;
+        }
+        if message.author.webhook_id.is_none() {
+            wanted.insert(message.author.id.clone());
+        }
+        rewrite(message.content.trim(), &recording);
     }
+    wanted.extend(recording.asked_users());
+    wanted
 }
 
 /// The counts one page adds up to.
@@ -138,23 +151,12 @@ struct Chunk {
     channel: Option<(Id, bool)>,
     messages: Vec<MessageSnapshot>,
     pinned_at: HashMap<String, Timestamp>,
-    names: Arc<SnapshotNames>,
+    roles: Arc<HashMap<String, String>>,
+    members: HashMap<String, String>,
     now: Timestamp,
 }
 
 impl ImportWriter {
-    fn names_of(&self, snapshot: &ServerSnapshot) -> Arc<SnapshotNames> {
-        let mut held = self.names.lock().unwrap_or_else(|p| p.into_inner());
-        if let Some(names) = held.as_ref()
-            && names.key == SnapshotNames::key_of(snapshot)
-        {
-            return Arc::clone(names);
-        }
-        let names = Arc::new(SnapshotNames::of(snapshot));
-        *held = Some(Arc::clone(&names));
-        names
-    }
-
     /// Writes one page of a channel's or a thread's history, as the reader gives
     /// it: newest first, and each page older than the one before.
     ///
@@ -206,7 +208,7 @@ impl ImportWriter {
                 },
             )
             .await?;
-        let names = self.names_of(snapshot);
+        let roles = Arc::new(role_labels(snapshot));
 
         let mut counts = Counts::default();
         for chunk in page.chunks(MESSAGES_PER_TRANSACTION) {
@@ -226,7 +228,8 @@ impl ImportWriter {
                 channel,
                 messages: chunk.to_vec(),
                 pinned_at: pinned,
-                names: Arc::clone(&names),
+                members: member_names(snapshot, &wanted_members(chunk, channel, &roles)),
+                roles: Arc::clone(&roles),
                 now: Timestamp::now(),
             };
             let done = self
@@ -263,9 +266,9 @@ fn classify(message: &MessageSnapshot, channel: Option<(Id, bool)>) -> SkipReaso
 /// The name an author showed on the server: a member's nickname or name from the
 /// snapshot, else what the message itself says. A webhook shows the name it gave
 /// the message.
-fn placeholder_name(author: &AuthorSnapshot, names: &SnapshotNames) -> String {
+fn placeholder_name(author: &AuthorSnapshot, members: &HashMap<String, String>) -> String {
     if author.webhook_id.is_none()
-        && let Some(member) = names.members.get(&author.id)
+        && let Some(member) = members.get(&author.id)
     {
         return member.clone();
     }
@@ -277,7 +280,6 @@ fn placeholder_name(author: &AuthorSnapshot, names: &SnapshotNames) -> String {
 
 fn write_chunk(tx: &rusqlite::Transaction<'_>, input: &Chunk) -> Result<Counts, ImportError> {
     let mut counts = Counts::default();
-    let names = &input.names;
 
     let mut distinct: Vec<&MessageSnapshot> = Vec::new();
     {
@@ -314,7 +316,7 @@ fn write_chunk(tx: &rusqlite::Transaction<'_>, input: &Chunk) -> Result<Counts, 
 
     // The rewriter asks about the people and channels it meets; ask once
     // without answers to learn which, then load them.
-    let recording = ImportResolver::recording(names.roles.clone());
+    let recording = ImportResolver::recording(input.roles.as_ref().clone());
     for message in &candidates {
         rewrite(message.content.trim(), &recording);
     }
@@ -343,15 +345,15 @@ fn write_chunk(tx: &rusqlite::Transaction<'_>, input: &Chunk) -> Result<Counts, 
         if let Some(account) = accounts.get(id) {
             user_names.insert(id.clone(), account.display_name.clone());
         } else if let Some(author) = author_by_key.get(id.as_str()) {
-            user_names.insert(id.clone(), placeholder_name(author, names));
-        } else if let Some(member) = names.members.get(id) {
+            user_names.insert(id.clone(), placeholder_name(author, &input.members));
+        } else if let Some(member) = input.members.get(id) {
             user_names.insert(id.clone(), member.clone());
         }
     }
     let resolver = ImportResolver::new(
         user_names,
         channel_labels(tx, input.server, &recording.asked_channels())?,
-        names.roles.clone(),
+        input.roles.as_ref().clone(),
     );
 
     let mut written: Vec<(&MessageSnapshot, Id, String)> = Vec::new();
@@ -576,7 +578,7 @@ fn make_placeholders(
             }
             None => {
                 let id = Id::random();
-                let display_name = placeholder_name(author, &input.names);
+                let display_name = placeholder_name(author, &input.members);
                 tx.execute(
                     "INSERT INTO \"Users\" (\"Id\", \"Username\", \"NormalizedUsername\", \"DisplayName\", \"PasswordHash\", \"Email\", \"NormalizedEmail\",
                          \"ProviderVerifiedEmail\", \"IsDisabled\", \"SessionVersion\", \"SecurityRecoveryRequired\", \"AvatarColor\", \"CreatedAt\",

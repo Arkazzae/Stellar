@@ -15,7 +15,11 @@
 //! second run, or a page read twice, writes nothing twice. What somebody
 //! deleted since stays deleted. That is also how an import that was interrupted
 //! goes on: every batch is one transaction, so what is stored is whole batches,
-//! and the channel's record says where to read on from (`oldest_message`).
+//! and the channel's record says where to read on from
+//! ([`ImportWriter::resume_after`]). Completing a channel is several
+//! transactions too, so a driver that was interrupted calls
+//! [`ImportWriter::complete_channel`] again for every channel it had read to the
+//! end: it links what is not linked and changes nothing else.
 //!
 //! History is restored, not posted: nothing a send does happens here. No slow
 //! mode, no mention notification or outbox row, no event, no link preview, no
@@ -303,7 +307,6 @@ pub struct Tally {
 pub struct ImportWriter {
     database: Database,
     last_commit: Mutex<Option<Instant>>,
-    names: Mutex<Option<std::sync::Arc<messages::SnapshotNames>>>,
 }
 
 impl ImportWriter {
@@ -311,7 +314,6 @@ impl ImportWriter {
         ImportWriter {
             database,
             last_commit: Mutex::new(None),
-            names: Mutex::new(None),
         }
     }
 
