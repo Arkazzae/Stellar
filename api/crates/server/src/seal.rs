@@ -163,6 +163,27 @@ impl Sealer {
         Ok(Sealer { master })
     }
 
+    /// The master key in `keys_folder` as it is, or none when there is no key
+    /// there. Nothing is made or changed, not the folder, the file or its
+    /// permissions: for a tool that only looks at an instance, such as the
+    /// operator's command line, which must leave a data folder as it found it.
+    pub fn open_existing(keys_folder: &Path) -> Result<Option<Sealer>, KeyError> {
+        let path = keys_folder.join(KEY_FILE);
+        let bytes = match fs::read(&path) {
+            Ok(bytes) => bytes,
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(None),
+            Err(error) => return Err(KeyError(format!("cannot read {}: {error}", path.display()))),
+        };
+        let master: [u8; KEY_LEN] = bytes.as_slice().try_into().map_err(|_| {
+            KeyError(format!(
+                "cannot read {}: the key is {} bytes long, not {KEY_LEN}",
+                path.display(),
+                bytes.len()
+            ))
+        })?;
+        Ok(Some(Sealer { master }))
+    }
+
     /// A sealer on a key of the caller's, for tests.
     pub fn from_key(master: [u8; KEY_LEN]) -> Sealer {
         Sealer { master }
@@ -328,6 +349,38 @@ mod tests {
 
     fn now() -> Timestamp {
         Timestamp::parse("2026-11-24 12:00:00").unwrap()
+    }
+
+    #[test]
+    fn an_existing_key_is_read_as_it_is_and_none_is_never_made() {
+        let folder = TempDir::new();
+        let keys = folder.path().join("keys");
+
+        assert!(Sealer::open_existing(&keys).unwrap().is_none());
+        assert!(!keys.exists(), "looking made the folder");
+
+        let made = Sealer::load_or_create(&keys).unwrap();
+        let sealed = made.seal("session", b"", None, b"x");
+        let read = Sealer::open_existing(&keys)
+            .unwrap()
+            .expect("the key is there");
+        assert_eq!(read.open("session", b"", &sealed, now()).unwrap(), b"x");
+
+        // A file that group can read stays as it is: this only looks.
+        std::fs::set_permissions(keys.join(KEY_FILE), std::fs::Permissions::from_mode(0o640))
+            .unwrap();
+        Sealer::open_existing(&keys).unwrap().unwrap();
+        assert_eq!(
+            std::fs::metadata(keys.join(KEY_FILE))
+                .unwrap()
+                .permissions()
+                .mode()
+                & 0o777,
+            0o640
+        );
+
+        std::fs::write(keys.join(KEY_FILE), b"short").unwrap();
+        assert!(Sealer::open_existing(&keys).is_err());
     }
 
     #[test]
