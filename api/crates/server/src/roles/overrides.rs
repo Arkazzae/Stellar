@@ -230,11 +230,7 @@ fn record_member(db: &Connection, setting: &Setting<'_>, member: Id, change: Cha
     if change.before == change.after {
         return Ok(());
     }
-    let member_name: String = db.query_row(
-        "SELECT \"DisplayName\" FROM \"Users\" WHERE \"Id\" = ?1",
-        [member],
-        |row| row.get(0),
-    )?;
+    let member_name: String = crate::instance::users::User::display_name(db, member)?;
     let name = target_name(db, section, target)?;
     audit::record(
         db,

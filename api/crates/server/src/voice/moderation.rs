@@ -74,14 +74,6 @@ fn refuse(refusal: Refusal) -> ApiError {
     }
 }
 
-fn display_name(db: &Connection, user: Id) -> rusqlite::Result<String> {
-    db.query_row(
-        "SELECT \"DisplayName\" FROM \"Users\" WHERE \"Id\" = ?1",
-        [user],
-        |row| row.get(0),
-    )
-}
-
 fn channel_name(db: &Connection, channel: Id) -> rusqlite::Result<String> {
     db.query_row(
         "SELECT \"Name\" FROM \"Channels\" WHERE \"Id\" = ?1",
@@ -127,7 +119,7 @@ pub(super) async fn kick_from_voice(
             let seated = presence.voice_connections_of(target, channel);
             presence.remove_user_from_voice_channels(target, &HashSet::from([channel]));
             if !seated.is_empty() {
-                let name = display_name(tx, target)?;
+                let name = crate::instance::users::User::display_name(tx, target)?;
                 let channel_name = channel_name(tx, channel)?;
                 audit::record(
                     tx,
@@ -213,7 +205,7 @@ pub(super) async fn move_between_voice_channels(
 
             let from = channel_name(tx, channel)?;
             let to = channel_name(tx, destination)?;
-            let name = display_name(tx, target)?;
+            let name = crate::instance::users::User::display_name(tx, target)?;
             audit::record(
                 tx,
                 server,

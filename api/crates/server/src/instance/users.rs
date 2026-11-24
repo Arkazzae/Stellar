@@ -64,6 +64,14 @@ impl User {
             .join(", ")
     }
 
+    pub(crate) fn display_name(connection: &Connection, user: Id) -> rusqlite::Result<String> {
+        connection.query_row(
+            "SELECT \"DisplayName\" FROM \"Users\" WHERE \"Id\" = ?1",
+            [user],
+            |row| row.get(0),
+        )
+    }
+
     pub fn find(connection: &Connection, id: Id) -> rusqlite::Result<Option<User>> {
         connection
             .query_row(

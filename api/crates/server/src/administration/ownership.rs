@@ -76,11 +76,7 @@ pub async fn transfer(
                     ));
                 };
                 ownership::hand_over(tx, server, &owner, &target)?;
-                let name: String = tx.query_row(
-                    "SELECT \"DisplayName\" FROM \"Users\" WHERE \"Id\" = ?1",
-                    [target.user],
-                    |row| row.get(0),
-                )?;
+                let name: String = crate::instance::users::User::display_name(tx, target.user)?;
                 audit::record(
                     tx,
                     server,
