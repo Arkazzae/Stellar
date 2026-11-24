@@ -453,6 +453,7 @@ back as `Refused` with what it cost already kept.
 | asks for new recovery codes / forgets a remembered device | `regenerate_recovery_codes`, `forget_trusted_device` | |
 | redeems an operator's credential | `redeem_recovery_credential`, then the enrolment calls | |
 | changes the password | `recovery::credentials_changed` in the route's own transaction | |
+| gives the password as the proof of a change the route also asks `fresh_second_step()` of | `check_given_password` before the write, then `judge_given_password` in it | an account with no password is judged by its sign-in |
 
 `answer` and the `confirm_*` calls take a closure for the caller's own writes
 (linking the identity a sign-in was asked to link). It runs in a savepoint of

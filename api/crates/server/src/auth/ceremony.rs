@@ -1240,6 +1240,75 @@ pub(super) fn may_change_security(
     )?)
 }
 
+/// A password given as the proof of a change that the route also guards with
+/// [`Endpoints::fresh_second_step`](crate::http::Endpoints::fresh_second_step):
+/// the one that decides is the password itself, whatever second step the
+/// account has. Like any password here it is checked before the transaction.
+pub struct GivenPassword(PasswordCheck);
+
+/// What a given password came to.
+#[must_use]
+#[derive(Debug, PartialEq, Eq)]
+pub enum PasswordProof {
+    /// The account's password, or, for an account that has none (it was made
+    /// through a provider), a sign-in from the last few minutes.
+    Given,
+    /// The account has a password and it was not given, or not this one.
+    WrongPassword,
+    /// The account has no password and its sign-in is too old to stand in
+    /// for one: the refusal is [`fresh::refusal`].
+    FreshProofNeeded,
+}
+
+/// Checks the candidate against the account's password now, so that no
+/// transaction waits for the hash. Nothing is hashed for an account that has
+/// no password, or when no candidate was given.
+pub async fn check_given_password(
+    state: &AppState,
+    user: Id,
+    candidate: Option<&str>,
+) -> Result<GivenPassword, DbError> {
+    let Some(candidate) = candidate.map(str::to_string) else {
+        return Ok(GivenPassword(PasswordCheck::none()));
+    };
+    let hash = state
+        .database()
+        .read(move |connection| stored_hash(connection, user))
+        .await?;
+    let Some(stored) = hash.clone() else {
+        return Ok(GivenPassword(PasswordCheck::none()));
+    };
+    let proves =
+        tokio::task::spawn_blocking(move || super::password::verify(&candidate, Some(&stored)))
+            .await
+            .map_err(|error| DbError::Task(error.to_string()))?;
+    Ok(GivenPassword(PasswordCheck { hash, proves }))
+}
+
+/// What the password given earlier is worth in this transaction: it counts
+/// only if the account's hash is still the one it was checked against.
+pub fn judge_given_password(
+    tx: &Transaction,
+    caller: Caller,
+    given: &GivenPassword,
+    now: Timestamp,
+) -> Result<PasswordProof, DbError> {
+    let stored = stored_hash(tx, caller.user)?;
+    if stored.is_some() {
+        return Ok(if given.0.proves && given.0.hash == stored {
+            PasswordProof::Given
+        } else {
+            PasswordProof::WrongPassword
+        });
+    }
+    let recent = fresh::can_change_security(tx, caller.user, Some(caller.session), || false, now)?;
+    Ok(if recent {
+        PasswordProof::Given
+    } else {
+        PasswordProof::FreshProofNeeded
+    })
+}
+
 /// What a change of the account's security settings came to when it was not
 /// allowed.
 #[must_use]
