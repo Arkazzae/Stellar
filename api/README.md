@@ -219,9 +219,14 @@ afterwards) and answers `Range`, `If-Range`, `If-Modified-Since` and
 `If-Unmodified-Since` the way a browser or a download manager expects, with
 `Last-Modified` from the moment you give it, `Accept-Ranges`, a
 `Content-Disposition` that names the file, and a body that streams in 64 KiB
-chunks (`http_body_util::channel::Channel`), two at a time, so memory does not
-grow with the file. A stream of your own is an `axum::body::Body` made from
-a stream or such a channel, never the whole content in a `Vec`. Disk or CPU work
+chunks, two at a time, so memory does not grow with the file. A stream of your
+own is made with `http::stream::channel(buffered)`: a task of your own sends
+`Ok(bytes)` (it waits while the client is behind, and fails when the client is
+gone: stop then) or `Err(error)` (the body ends abnormally and the connection is
+closed, so that no client takes it for a whole one), and dropping the sender ends
+the body. Use that and not `http_body_util::channel::Channel`, which loses the
+last chunks of a sender that ends while the body is being read: small downloads
+came back empty once in about eight thousand. Never the whole content in a `Vec`. Disk or CPU work
 of any length goes on a blocking thread (`tokio::task::spawn_blocking`, or
 `state.database()` for SQLite), never in the handler's own task.
 
@@ -699,7 +704,7 @@ keeps one version of each crate (`[workspace.dependencies]` in `api/Cargo.toml`,
 features there). What is on today: `axum` with `tokio`, `http1`, `matched-path` and
 `query` (no `json`, no `form`, no `multipart`, no `ws`: the hub does its own
 WebSocket); `tokio` with `rt-multi-thread`, `macros`, `net`, `sync`, `time`, `signal`,
-`fs` and `io-util`; `http-body-util` with `channel`; `rusqlite` with `bundled` (which
+`fs` and `io-util`; `http-body-util` (no features); `hyper` for `Body` and `Frame`; `rusqlite` with `bundled` (which
 brings FTS5) and `trace` in tests; `serde` with `derive`; `serde_json` with
 `raw_value`; `rustls` with `aws-lc-rs`, `std` and `tls12`; `tracing-subscriber` with
 `env-filter`; `aws-lc-rs`, `bytes`. A crate already in the workspace may be asked

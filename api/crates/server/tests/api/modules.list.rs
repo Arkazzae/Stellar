@@ -10,3 +10,4 @@ mod registration;
 mod releases;
 mod sign_in;
 mod workers;
+mod streaming;

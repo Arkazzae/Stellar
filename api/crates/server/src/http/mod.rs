@@ -18,6 +18,7 @@ mod problem;
 mod rate_limit;
 mod routes;
 mod session_cookie;
+pub mod stream;
 pub mod trace;
 
 pub use body::{MAX_REQUEST_BODY_BYTES, read_all};
