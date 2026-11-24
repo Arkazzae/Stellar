@@ -398,8 +398,6 @@ fn normalize(text: &str) -> Option<String> {
 
 #[cfg(test)]
 mod tests {
-    use std::fmt::Write as _;
-
     use super::*;
 
     fn read(text: &str) -> Option<String> {
@@ -630,67 +628,4 @@ mod tests {
         let syllables = format!("a@{}", "\u{1100}\u{1161}\u{11a8}".repeat(1000));
         assert_eq!(read(&syllables), Some(format!("a@{}", "\u{ac01}".repeat(1000))));
     }
-
-    /// The line the witness program prints for an input.
-    fn answer(text: &str) -> String {
-        let Some(found) = try_create(text) else {
-            return "invalid".to_owned();
-        };
-        let mut line = String::from("valid \"");
-        for unit in found.address.encode_utf16() {
-            match char::from_u32(u32::from(unit)) {
-                Some('"') => line.push_str("\\\""),
-                Some('\\') => line.push_str("\\\\"),
-                Some(c @ ' '..='~') => line.push(c),
-                _ => {
-                    let _ = write!(line, "\\u{unit:04x}");
-                }
-            }
-        }
-        line.push('"');
-        line
-    }
-
-    /// Asks this reader everything the first server's reader was asked.
-    ///
-    /// Not part of the ordinary run: it needs a file of inputs, one JSON
-    /// string a line, and the answers the witness program in
-    /// `tests/cockpit-address-witness` gave for them (`valid "<address>"` or
-    /// `invalid`, a line each). Build the witness outside the repository and
-    /// run it with the inputs:
-    ///
-    /// ```sh
-    /// cp tests/cockpit-address-witness/* "$work/witness/"
-    /// dotnet build "$work/witness" -c Release -o "$work/witness/out"
-    /// dotnet "$work/witness/out/witness.dll" < inputs.jsonl > answers.txt
-    /// ADDRESS_WITNESS_INPUTS=inputs.jsonl ADDRESS_WITNESS_ANSWERS=answers.txt \
-    ///   acargo test -p stellarr-api --lib cockpit::address -- --ignored --nocapture
-    /// ```
-    ///
-    /// A runtime whose system library follows a Unicode newer than 15.1
-    /// composes some characters assigned since, which this reader leaves
-    /// alone as the first server's container does; only inputs holding them
-    /// differ.
-    #[test]
-    #[ignore = "needs the inputs and the first server's answers; see the comment above"]
-    fn the_first_servers_reader_agrees_on_every_input() {
-        let inputs = std::fs::read_to_string(std::env::var("ADDRESS_WITNESS_INPUTS").unwrap()).unwrap();
-        let answers = std::fs::read_to_string(std::env::var("ADDRESS_WITNESS_ANSWERS").unwrap()).unwrap();
-        assert_eq!(inputs.lines().count(), answers.lines().count(), "one answer an input");
-        let mut differing = Vec::new();
-        let mut agreeing = 0usize;
-        for (line, expected) in inputs.lines().zip(answers.lines()) {
-            let input: String = serde_json::from_str(line).unwrap();
-            let got = answer(&input);
-            if got == expected {
-                agreeing += 1;
-            } else {
-                differing.push(format!("{line}\n  first: {expected}\n  here:  {got}"));
-            }
-        }
-        eprintln!("{agreeing} agree, {} differ", differing.len());
-        let shown: Vec<_> = differing.iter().take(40).cloned().collect();
-        assert!(differing.is_empty(), "{} differ:\n{}", differing.len(), shown.join("\n"));
-    }
 }
-

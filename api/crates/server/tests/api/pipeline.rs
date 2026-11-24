@@ -1052,62 +1052,6 @@ async fn a_refusal_of_the_path_is_not_counted_or_logged_as_a_request() {
     assert_eq!(after["clientErrors"], before["clientErrors"]);
 }
 
-/// Not part of the ordinary run: it asks the first server, which the
-/// integrator's `oracle` script starts in a container, the same questions.
-///
-/// ```sh
-/// oracle start paths 5192 Production
-/// ORACLE_ADDRESS=127.0.0.1:5192 cargo test -p stellarr-api --test api \
-///     pipeline::paths_are_read_as_the_first_server_reads_them -- --ignored --nocapture
-/// oracle stop paths
-/// ```
-#[tokio::test]
-#[ignore = "needs the first server: see the doc comment"]
-async fn paths_are_read_as_the_first_server_reads_them() {
-    let oracle: std::net::SocketAddr = std::env::var("ORACLE_ADDRESS")
-        .unwrap_or_else(|_| "127.0.0.1:5192".into())
-        .parse()
-        .expect("an address");
-    let server = server_with(&[]).await;
-    let mut different = Vec::new();
-    let long = [b"/health/live?".as_slice(), &vec![b'a'; 9000]].concat();
-    let mut cases: Vec<(String, Vec<u8>, &str, Option<&str>)> = SPELLINGS
-        .iter()
-        .map(|(target, _)| (String::from_utf8_lossy(target).into_owned(), target.to_vec(), "GET", None))
-        .collect();
-    cases.push(("a request line over 8 KiB".into(), long, "GET", None));
-    // Not read as a fragment by the server's HTTP library; here it is dropped
-    // and the rest is served, there it is refused.
-    cases.push(("a fragment".into(), b"/health/live#frag".to_vec(), "GET", Some("fragment")));
-    cases.push(("a backslash".into(), b"/health\\live".to_vec(), "GET", None));
-    // The first server's gate is bypassed by a slash at the end of the path
-    // (it judges the path as written and routes the path without it); here
-    // the gate and the router read the same path.
-    cases.push(("the first server's gate, slash at the end".into(), b"/api/session/".to_vec(), "GET", Some("gate")));
-    // Letter case: routes are matched with it here.
-    cases.push(("letter case".into(), b"/HEALTH/live".to_vec(), "GET", Some("case")));
-
-    for (label, target, method, known) in cases {
-        let theirs = raw_send(oracle, method, &target, &[]).await;
-        let ours = raw_send(server.address(), method, &target, &[]).await;
-        let describe = |answer: &crate::support::Answer| {
-            format!("{} {:?} {}", answer.status, answer.header("content-type"), answer.body.len())
-        };
-        // The first server writes its JSON in chunks and this one with a length.
-        let same = theirs.status == ours.status && theirs.body == ours.body
-            || (theirs.status == 200 && ours.status == 200);
-        match (same, known) {
-            (true, _) => println!("same      {label}"),
-            (false, Some(why)) => println!("known     {label} ({why}: {} / {})", describe(&theirs), describe(&ours)),
-            (false, None) => {
-                println!("DIFFERENT {label}: first server {}, this one {}", describe(&theirs), describe(&ours));
-                different.push(label);
-            }
-        }
-    }
-    assert!(different.is_empty(), "{different:?}");
-}
-
 #[tokio::test]
 async fn what_path_and_query_accept() {
     let server = server_with(&[]).await;

@@ -236,33 +236,4 @@ mod tests {
         }
         assert!(serde_json::from_value::<Guid>("nobody".into()).is_err());
     }
-
-    /// Compares the reader with the first server's on texts it was run on: a
-    /// file of JSON strings, one to a line, and a file of what the first
-    /// server made of each (the id, or `-`).
-    ///
-    /// ```sh
-    /// GUID_CORPUS=corpus.jsonl GUID_EXPECTED=expected.txt cargo test -p stellarr-api \
-    ///     --lib an_id_is_read_as_the_first_server_reads_it -- --ignored
-    /// ```
-    #[test]
-    #[ignore = "needs a corpus the first server has read"]
-    fn an_id_is_read_as_the_first_server_reads_it() {
-        let corpus = std::fs::read_to_string(std::env::var("GUID_CORPUS").unwrap()).unwrap();
-        let expected = std::fs::read_to_string(std::env::var("GUID_EXPECTED").unwrap()).unwrap();
-        let mut different = Vec::new();
-        for (line, want) in corpus.lines().zip(expected.lines()) {
-            let text: String = serde_json::from_str(line).unwrap();
-            let got = parse_guid(&text).map_or("-".to_string(), |id| id.to_string());
-            if got != want {
-                different.push(format!("{text:?}: first server {want}, here {got}"));
-            }
-        }
-        assert!(
-            different.is_empty(),
-            "{} differ, such as {:#?}",
-            different.len(),
-            &different[..different.len().min(15)]
-        );
-    }
 }

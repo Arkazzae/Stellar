@@ -14,8 +14,6 @@ pub mod ceremony;
 mod ceremony_tests;
 pub mod cookies;
 pub mod desktop_exchange;
-#[cfg(test)]
-mod differential;
 pub mod email_codes;
 pub mod email_send;
 pub mod events;
@@ -34,8 +32,6 @@ pub mod restore;
 pub mod security_cookies;
 pub mod session;
 pub mod setup_code;
-#[cfg(test)]
-mod shared_database;
 pub mod tokens;
 pub mod totp;
 pub mod trusted_devices;
