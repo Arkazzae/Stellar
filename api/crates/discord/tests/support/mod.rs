@@ -21,8 +21,7 @@ use tracing::{Event, Metadata, Subscriber};
 pub mod guild;
 
 /// A recognisable token, which no output of the crate may hold.
-pub const TOKEN: &str =
-    "sample.bot-token.not-a-real-one-0123456789";
+pub const TOKEN: &str = "sample.bot-token.not-a-real-one-0123456789";
 
 /// What the server read of a request.
 #[derive(Clone, Debug)]
