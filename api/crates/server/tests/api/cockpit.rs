@@ -142,7 +142,7 @@ async fn a_body_is_bound_before_the_gate_and_an_empty_one_after_it() {
 }
 
 #[tokio::test]
-async fn making_an_account_keeps_the_first_servers_rules_and_leaves_its_rows() {
+async fn making_an_account_takes_a_plain_address_and_leaves_its_rows() {
     let scene = Scene::new().await;
     let role = scene.base_role().await;
     let create = |body: Value| scene.owner.client.send(Request::new(Method::POST, "/api/cockpit/users").json(&body));
@@ -184,9 +184,9 @@ async fn making_an_account_keeps_the_first_servers_rules_and_leaves_its_rows() {
         assert_eq!(refused.status, 400, "{field} {value}");
         assert!(refused.json::<Value>()["errors"]["user"].is_array(), "{field} {value}");
     }
-    // An address with a name beside it is an address, and an empty one is none.
+    // An address with a name beside it is no plain address, and an empty one is none.
     let named = json!({"username": "named", "displayName": "N", "email": "Ala <ala@example.test>", "password": "long-enough-1", "roleId": role});
-    assert_eq!(create(named).await.status, 201);
+    assert_eq!(create(named).await.status, 400);
     let none = json!({"username": "none", "displayName": "N", "email": "  ", "password": "long-enough-1", "roleId": role});
     assert_eq!(create(none).await.status, 201);
 
@@ -430,11 +430,18 @@ async fn settings_are_read_before_they_are_saved_and_saved_as_a_whole() {
         assert_eq!(refused.status, 400, "{field} {value}");
         assert!(refused.json::<Value>()["errors"][field].is_array(), "{field} {value}");
     }
-    for (field, value) in [("backupRetentionDays", json!(1)), ("backupRetentionDays", json!(3650)), ("smtpPort", json!(65535)), ("emailCodeCooldownSeconds", json!(0)), ("trustedDeviceDays", json!("365"))] {
+    for (field, value) in [("backupRetentionDays", json!(1)), ("backupRetentionDays", json!(3650)), ("smtpPort", json!(65535)), ("emailCodeCooldownSeconds", json!(0)), ("trustedDeviceDays", json!(365))] {
         let mut edge = body.clone();
         edge[field] = value.clone();
         let accepted = scene.owner.client.send(Request::new(Method::PUT, "/api/cockpit/settings").json(&edge)).await;
         assert_eq!(accepted.status, 200, "{field} {value}: {}", accepted.text());
+    }
+    // A number in quotes is no number.
+    for field in ["trustedDeviceDays", "backupRetentionDays", "smtpPort"] {
+        let mut quoted = body.clone();
+        quoted[field] = json!("30");
+        let refused = scene.owner.client.send(Request::new(Method::PUT, "/api/cockpit/settings").json(&quoted)).await;
+        assert_eq!((refused.status.as_u16(), refused.body.is_empty()), (400, true), "{field}");
     }
     body["mailingEnabled"] = json!(true);
     body["mailFromAddress"] = json!("not an address");

@@ -198,23 +198,22 @@ async fn a_request_without_a_username_is_refused_in_the_words_of_the_instance() 
 }
 
 #[tokio::test]
-async fn the_body_is_read_the_way_the_first_server_read_it() {
+async fn the_body_is_read_by_the_exact_name_and_members_nobody_asked_for_are_ignored() {
     let p = people().await;
-    for (body, want) in [
-        ("{\"USERNAME\":\"ben\"}", "sent"),
-        ("{\"username\":\"xx\",\"Username\":\"ben\"}", "already-sent"),
-        ("{\"other\":[1,{\"a\":null}],\"username\":\"ben\"}", "already-sent"),
-        // The long s is a capital S, as the stored names are.
-        ("{\"ſername\":\"ben\"}", "x"),
-    ] {
-        let response = p.ada.client.send(Request::new(Method::POST, "/api/social/requests").body("application/json", body)).await;
-        if want == "x" {
-            assert_eq!(response.status, 400, "{body}");
-        } else {
-            assert_eq!(response.json::<Value>()["result"], want, "{body}");
-        }
-    }
-    // Spaces the first server trimmed, and characters it did not.
+    let post = |body: &str| {
+        p.ada.client.send(Request::new(Method::POST, "/api/social/requests").body("application/json", body))
+    };
+
+    let ignored = post("{\"other\":[1,{\"a\":null}],\"username\":\"ben\"}").await;
+    assert_eq!(ignored.json::<Value>()["result"], "sent");
+    // Another letter case, the long s and a repeated member name nothing we read.
+    let capitals = post("{\"USERNAME\":\"ben\"}").await;
+    assert_eq!(capitals.status, 400);
+    assert!(capitals.json::<Value>()["errors"]["username"].is_array());
+    let long_s = post("{\"\u{17f}ername\":\"ben\"}").await;
+    assert_eq!(long_s.status, 400);
+    assert_eq!(post("{\"username\":\"xx\",\"username\":\"ben\"}").await.status, 400);
+    // Spaces trimmed from a name, and characters that are not.
     for (name, want) in [("\u{85}ben\u{a0}", "already-sent"), ("\u{3000}@ben\u{2028}", "already-sent"), ("\u{1f}ben", "unknown-user"), ("\u{200b}ben", "unknown-user"), ("\u{feff}ben", "unknown-user")] {
         assert_eq!(ask(&p.ada.client, name).await, want, "{name:?}");
     }

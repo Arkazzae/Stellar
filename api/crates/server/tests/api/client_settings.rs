@@ -133,7 +133,10 @@ async fn only_a_json_object_is_stored() {
         ("a bad escape", br#"{"a":"\x"}"#.to_vec()),
         ("a short escape", br#"{"a":"\u12"}"#.to_vec()),
         ("a surrogate with no partner", br#"{"a":"\ud800"}"#.to_vec()),
+        ("a byte order mark", b"\xef\xbb\xbf{}".to_vec()),
         ("a second byte order mark", b"\xef\xbb\xbf\xef\xbb\xbf{}".to_vec()),
+        ("a text in UTF-16", b"\xff\xfe{\0}\0".to_vec()),
+        ("bytes that are not UTF-8", b"{\"a\":\"\xff\"}".to_vec()),
     ];
 
     for (label, body) in refused {
@@ -144,7 +147,6 @@ async fn only_a_json_object_is_stored() {
     assert_eq!(stored(&server, "VoiceSettingsJson", "maja"), None);
     for (label, body) in [
         ("spaces around", b" \n\t{ }\r\n ".to_vec()),
-        ("a byte order mark", b"\xef\xbb\xbf{}".to_vec()),
         ("a number as long as you like", b"{\"a\":123456789012345678901234567890,\"b\":1e999}".to_vec()),
     ] {
         assert_eq!(put(&maja, "voice", &body).await.status, 204, "{label}");
@@ -152,7 +154,7 @@ async fn only_a_json_object_is_stored() {
 }
 
 #[tokio::test]
-async fn what_is_kept_is_compact_and_in_the_spelling_of_the_web_client() {
+async fn what_is_kept_is_compact_and_written_as_the_web_client_wrote_it() {
     let server = started(&[]).await;
     let maja = server.found("maja").await;
     for (sent, kept) in [
@@ -162,8 +164,6 @@ async fn what_is_kept_is_compact_and_in_the_spelling_of_the_web_client() {
         ("{\"a\":\"é<a href='x'>&\\n\\t\\\"\\\\\\/\\u0041 \u{1f680} \u{7f} \u{2028}`+\"}".as_bytes(), "{\"a\":\"é<a href='x'>&\\n\\t\\\"\\\\/A \u{1f680} \u{7f} \u{2028}`+\"}"),
         ("{\"é<\":1}".as_bytes(), "{\"é<\":1}"),
         (&b"{\"a\":\"\\ud83d\\ude80\\u00e9\"}"[..], "{\"a\":\"\u{1f680}é\"}"),
-        (&b"\xff\xfe{\0\"\0a\0\"\0:\0\"\0\xe9\0\"\0}\0"[..], "{\"a\":\"é\"}"),
-        (&b"{\"a\":\"\xff\xfe\"}"[..], "{\"a\":\"\u{fffd}\u{fffd}\"}"),
     ] {
         let sent_text = String::from_utf8_lossy(sent).into_owned();
         assert_eq!(put(&maja, "appearance", sent).await.status, 204, "{sent_text}");

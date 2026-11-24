@@ -108,6 +108,7 @@ async fn a_value_in_a_wrong_encoding_makes_the_whole_body_unreadable_before_anyt
         format!("\"{}\\t{}\"", &key[..10], &key[10..]),
         format!("\"{}\\r{}\"", &key[..10], &key[10..]),
         format!("\" {key} \""),
+        "\"   \"".to_string(),
         format!("\"{}\\u000b{}\"", &key[..10], &key[10..]),
         format!("\"{}\"", key.trim_end_matches('=')),
         format!("\"{key}=\""),
@@ -123,7 +124,7 @@ async fn a_value_in_a_wrong_encoding_makes_the_whole_body_unreadable_before_anyt
         assert_eq!((status, empty), (400, true), "{spelled}");
     }
     // Readable and not a key: a validation problem.
-    for spelled in ["null", "\"\"", "\"   \""] {
+    for spelled in ["null", "\"\""] {
         assert_eq!(send(body(spelled)).await, (400, false), "{spelled}");
     }
     // An integer is written as one: digits in a string, a fraction and an

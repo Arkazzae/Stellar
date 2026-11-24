@@ -365,7 +365,7 @@ async fn a_file_over_the_limit_of_its_kind_is_refused_and_one_at_the_limit_is_no
 }
 
 #[tokio::test]
-async fn the_first_file_of_a_name_counts_and_the_others_are_ignored() {
+async fn a_file_sent_twice_under_one_name_is_refused_and_nothing_is_kept() {
     let server = started(&[]).await;
     let maja = server.found("maja").await;
 
@@ -377,8 +377,9 @@ async fn the_first_file_of_a_name_counts_and_the_others_are_ignored() {
     )
     .await;
 
-    assert_eq!(response.json::<Value>()["name"], "first.png");
-    assert_eq!(objects(&server).len(), 1);
+    assert_eq!(response.status, 400);
+    assert!(response.body.is_empty());
+    assert!(objects(&server).is_empty());
 }
 
 #[tokio::test]

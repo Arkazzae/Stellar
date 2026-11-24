@@ -306,7 +306,7 @@ async fn eight_posts_with_one_client_id_at_once_store_one_message() {
 }
 
 #[tokio::test]
-async fn what_may_be_posted_is_bounded_as_the_first_server_bounded_it() {
+async fn what_may_be_posted_is_bounded_and_a_body_must_be_an_object_with_exact_names() {
     let t = trio().await;
     let conversation = open_with(&t.ada.client, &t.ben).await;
     let c = &t.ada.client;
@@ -328,8 +328,10 @@ async fn what_may_be_posted_is_bounded_as_the_first_server_bounded_it() {
         assert_eq!(response.status, 400, "{body}");
         assert!(response.text().is_empty(), "{body}");
     }
-    // Names are read without regard to case, and a body that is no JSON object is refused.
-    assert_eq!(c.send(Request::new(Method::POST, &format!("/api/social/conversations/{conversation}/messages")).body("application/json", "{\"CONTENT\":\"x\"}")).await.status, 201);
+    // A name in another case names nothing, so the message has no content.
+    let capitals = c.send(Request::new(Method::POST, &format!("/api/social/conversations/{conversation}/messages")).body("application/json", "{\"CONTENT\":\"x\"}")).await;
+    assert_eq!(capitals.status, 400);
+    assert!(capitals.json::<Value>()["errors"]["content"].is_array());
     let big = "z".repeat(1_100_000);
     let response = c.send(Request::new(Method::POST, &format!("/api/social/conversations/{conversation}/messages")).body("application/json", &format!("{{\"content\":\"{big}\"}}"))).await;
     assert_eq!(response.status, 413);
