@@ -399,6 +399,47 @@ pub fn load(
     Ok(out)
 }
 
+/// The quotes of these messages, as a reply or a list of threads shows them,
+/// in the order of `ids`; an id that is no message is left out.
+pub fn references(
+    db: &Connection,
+    messages: &Messages,
+    ids: &[Id],
+) -> Result<Vec<MessageReferenceDto>, DbError> {
+    if ids.is_empty() {
+        return Ok(Vec::new());
+    }
+    let wanted = json_ids(ids);
+    let mut found: HashMap<Id, Row_> = HashMap::with_capacity(ids.len());
+    {
+        let mut statement = db.prepare_cached(&format!(
+            "SELECT {MESSAGE_COLUMNS} FROM \"Messages\" m JOIN \"Users\" u ON u.\"Id\" = m.\"AuthorId\"
+             WHERE m.\"Id\" IN (SELECT value FROM json_each(?1))"
+        ))?;
+        for row in statement.query_map([&wanted], message_from)? {
+            let row = row?;
+            found.insert(row.id, row);
+        }
+    }
+    let mut with_files: std::collections::HashSet<Id> = std::collections::HashSet::new();
+    {
+        let mut statement = db.prepare_cached(
+            "SELECT DISTINCT \"MessageId\" FROM \"MessageAttachments\"
+             WHERE \"MessageId\" IN (SELECT value FROM json_each(?1))",
+        )?;
+        for row in statement.query_map([&wanted], |row| row.get::<_, Id>(0))? {
+            with_files.insert(row?);
+        }
+    }
+    let mut out = Vec::with_capacity(ids.len());
+    for id in ids {
+        if let Some(row) = found.get(id) {
+            out.push(reference(row, with_files.contains(id), messages)?);
+        }
+    }
+    Ok(out)
+}
+
 fn reference(
     target: &Row_,
     has_attachment: bool,
