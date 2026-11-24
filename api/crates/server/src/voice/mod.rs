@@ -24,7 +24,6 @@ pub mod control;
 mod document;
 pub mod gate;
 pub mod hub;
-pub mod json;
 mod media;
 mod moderation;
 pub mod plane;
