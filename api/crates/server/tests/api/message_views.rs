@@ -424,8 +424,9 @@ async fn a_cursor_belongs_to_one_channel_kind_and_text() {
     assert_eq!(w.maya.client.get(&format!("{base}&cursor={cursor}")).await.status, 200);
     assert_eq!(w.maya.client.get(&format!("{base}&kind=media&cursor={cursor}")).await.status, 400);
     assert_eq!(w.maya.client.get(&format!("{base}&query=lampa&cursor={cursor}")).await.status, 400);
-    // One that is padded the way a stricter reader would have it still reads.
-    assert_eq!(w.maya.client.get(&format!("{base}&cursor={cursor}%3D%3D")).await.status, 200);
+    // One that is padded, or has a space in it, is no cursor.
+    assert_eq!(w.maya.client.get(&format!("{base}&cursor={cursor}%3D%3D")).await.status, 400);
+    assert_eq!(w.maya.client.get(&format!("{base}&cursor=%20{cursor}")).await.status, 400);
 }
 
 #[tokio::test]
