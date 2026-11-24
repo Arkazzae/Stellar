@@ -17,6 +17,7 @@ use super::{fresh_second_step_refusal, no_store};
 use crate::auth::{Caller, events, fresh, password, recovery};
 use crate::database::DbError;
 use crate::http::{ApiError, ApiResult, Json, Origin, Problem, json_response, with_session_cookie};
+use crate::servers::Object;
 use crate::state::AppState;
 use crate::values::Timestamp;
 
@@ -60,7 +61,7 @@ pub async fn set(
     State(state): State<AppState>,
     caller: Caller,
     origin: Origin,
-    request: Result<Option<Json<SetRequest>>, ApiError>,
+    request: Result<Option<Json<Object<SetRequest>>>, ApiError>,
 ) -> Response {
     let request = match super::methods::required(request) {
         Ok(request) => request,
@@ -159,7 +160,7 @@ pub async fn change(
     State(state): State<AppState>,
     caller: Caller,
     origin: Origin,
-    Json(request): Json<ChangeRequest>,
+    Json(Object(request)): Json<Object<ChangeRequest>>,
 ) -> ApiResult<Response> {
     if password::is_too_short(request.new_password.as_deref()) {
         return Ok(outcome("too-short"));

@@ -5,6 +5,7 @@ while its server is stopped. Both servers' files are edited the same way.
   acctsec-edit.py <database> <smtp host> <smtp port>      the arrangement
   acctsec-edit.py <database> --mail-port <port>            the mail server moves
 """
+import hashlib
 import sqlite3
 import sys
 import uuid
@@ -51,9 +52,10 @@ def main():
             db.execute('INSERT INTO "RecoveryCodes" ("Id", "UserId", "BatchId", "CodeHash", "CreatedAt") VALUES (?,?,?,?,?)',
                        (new_id(), user(name), batch, uuid.uuid4().hex.upper() * 2, text(NOW)))
 
-    def device(name, label):
+    def device(name, label, token=None):
+        digest = hashlib.sha256(token.encode()).hexdigest().upper() if token else uuid.uuid4().hex.upper() * 2
         db.execute('INSERT INTO "TrustedDevices" ("Id", "UserId", "TokenHash", "Name", "Device", "IpAddress", "CreatedAt", "ExpiresAt") VALUES (?,?,?,?,?,?,?,?)',
-                   (new_id(), user(name), uuid.uuid4().hex.upper() * 2, label, "Firefox on Linux", "203.0.113.5",
+                   (new_id(), user(name), digest, label, "Firefox on Linux", "203.0.113.5",
                     text(NOW - timedelta(days=1)), text(NOW + timedelta(days=13))))
 
     def mark(name, tab, fresh=None, primary="fresh"):
@@ -89,7 +91,7 @@ def main():
     method("armed", "totp", "Phone")
     method("armed", "email", "Mail", "ARMED@EXAMPLE.TEST", 1)
     codes("armed", 3)
-    device("armed", "Kitchen laptop")
+    device("armed", "Kitchen laptop", "known-device-token")
     device("armed", "Work desktop")
     mark("armed", 0, fresh=True)
     mark("armed", 1, fresh=False)

@@ -205,7 +205,7 @@ async function mails() {
     const to = message.To.map((x) => x.Address).join(",");
     const text = (message.Text ?? "").replace(/\r/g, "").trim();
     // The mail library writes the domain of an address in lower case; the first server kept it as typed.
-    found.push(`TO ${to.toLowerCase()} | SUBJECT ${message.Subject}\n${text}`);
+    found.push(`TO ${to.replace(/@.*$/, (domain) => domain.toLowerCase())} | SUBJECT ${message.Subject}\n${text}`);
   }
   return found.sort();
 }
@@ -275,10 +275,31 @@ async function ask() {
   const sessionIdOf = async (who) => (await sessionsOf(who)).find((s) => s.current)?.id;
   const secure = "/api/me/security";
   const NIL = "00000000-0000-0000-0000-000000000000";
+  // The confirmations of an address are printed where they are asked for. The
+  // alerts are sent by a worker on its own clock: they are collected and
+  // printed once, sorted, after it has had time to look more than once.
+  const alerts = [];
   const mailNow = async (label, expect = 0, wait = 8000) => {
     out(`## mail: ${label}`);
-    for (const message of await settledMail(expect, wait)) out(scrub(message));
+    const until = Date.now() + wait;
+    let confirmations = [];
+    for (;;) {
+      const found = await mails();
+      confirmations = found.filter((message) => message.includes("SUBJECT Confirm your new address"));
+      if (confirmations.length >= expect || Date.now() > until) {
+        for (const message of found) if (!confirmations.includes(message) && !alerts.includes(message)) alerts.push(message);
+        break;
+      }
+      await sleep(500);
+    }
+    for (const message of confirmations) out(scrub(message));
     await clearMail();
+  };
+  const alertsAtTheEnd = async () => {
+    await sleep(Number(process.env.ALERT_WAIT_MS ?? 40000));
+    for (const message of await mails()) if (!alerts.includes(message)) alerts.push(message);
+    out("## mail: the alerts, all of them");
+    for (const message of alerts.map(scrub).sort()) out(message);
   };
 
   // ----- nobody signed in: every route
@@ -326,6 +347,16 @@ async function ask() {
   await post("solo: first password, missing", solo, `${secure}/password`, {});
   await post("solo: first password, too long", solo, `${secure}/password`, { newPassword: "x".repeat(257) });
   await step("solo: first password, no body", solo, "POST", `${secure}/password`, {});
+  // A body that is JSON but not an object.
+  for (const [label, path] of [
+    ["remove a method", `${secure}/mfa/${NIL}/remove`], ["new recovery codes", `${secure}/recovery/regenerate`],
+    ["first password", `${secure}/password`], ["change the password", "/api/me/password"], ["address", "/api/me/email"],
+    ["set up a second step", `${secure}/mfa/enroll/start`],
+  ]) {
+    await step(`solo: ${label}, an array`, solo, "POST", path, { raw: '["Corona!2026-long","A-long-new-password"]', type: "application/json" });
+    await step(`solo: ${label}, null`, solo, "POST", path, { raw: "null", type: "application/json" });
+    await step(`solo: ${label}, a string`, solo, "POST", path, { raw: '"x"', type: "application/json" });
+  }
   // The password, its policy, and what each refusal says.
   await post("solo: change, too short", solo, "/api/me/password", { currentPassword: PASSWORD, newPassword: "short" });
   await post("solo: change, too long", solo, "/api/me/password", { currentPassword: PASSWORD, newPassword: "x".repeat(257) });
@@ -364,7 +395,6 @@ async function ask() {
   await get("solo: the third tab is out", soloC, "/api/session");
   await get("solo: the events afterwards", solo, `${secure}/events`);
   await get("solo: the page afterwards", solo, secure);
-  await mailNow("the alerts of the changes", 0, 4000);
   await post("solo: sign in with the old password", anonymous, "/api/auth/login", { username: "solo", password: PASSWORD });
   await post("solo: sign in with the new one", anonymous, "/api/auth/login", { username: "solo", password: "A-long-new-password" });
   await post("solo: end the others, nobody else left", solo, `${secure}/sessions/revoke-others`, undefined);
@@ -403,8 +433,18 @@ async function ask() {
   await post("armed stale: prove again", armedStale, `${secure}/mfa/reverify/start`, undefined);
   await post("armed stale: change the password", armedStale, "/api/me/password", { currentPassword: PASSWORD, newPassword: "A-long-new-password" });
   await post("armed stale: change the password, wrong", armedStale, "/api/me/password", { currentPassword: "nope-nope-nope", newPassword: "A-long-new-password" });
+  await post("armed stale: change the password, too short", armedStale, "/api/me/password", { currentPassword: PASSWORD, newPassword: "short" });
+  await post("armed stale: change the password, too long", armedStale, "/api/me/password", { currentPassword: PASSWORD, newPassword: "x".repeat(257) });
+  await post("armed stale: address, not an address", armedStale, "/api/me/email", { email: "nope", password: PASSWORD });
+  await post("armed stale: first password, too short", armedStale, `${secure}/password`, { newPassword: "short" });
   await post("armed stale: first password", armedStale, `${secure}/password`, { newPassword: "A-long-new-password" });
   await del("armed stale: forget a device nobody has", armedStale, `${secure}/trusted/${NIL}`);
+  // A browser that is remembered shows on the page and in a challenge to set up, not in one to prove again.
+  armedFresh.cookies.set("__Host-stellarr-trust", "known-device-token");
+  await get("armed fresh: the page with a remembered browser", armedFresh, secure);
+  await post("armed fresh: set up a second step from a remembered browser", armedFresh, `${secure}/mfa/enroll/start`, undefined);
+  await post("armed fresh: prove again from a remembered browser", armedFresh, `${secure}/mfa/reverify/start`, undefined);
+  armedFresh.cookies.delete("__Host-stellarr-trust");
   await post("armed fresh: new recovery codes, a wrong password", armedFresh, `${secure}/recovery/regenerate`, { password: "nope" });
   await get("armed fresh: the page, ten codes", armedFresh, secure);
   await post("armed fresh: remove a method nobody has", armedFresh, `${secure}/mfa/${NIL}/remove`, {});
@@ -420,7 +460,6 @@ async function ask() {
   await post("armed fresh: change the password", armedFresh, "/api/me/password", { currentPassword: PASSWORD, newPassword: "A-long-new-password" }, { ends: true });
   await get("armed fresh: the page afterwards", armedFresh, secure);
   await get("armed: the stale browser is out", armedStale, "/api/session");
-  await mailNow("armed, the alerts", 0, 8000);
 
   // ----- taking methods away
   const armed2 = tab("armed2", "a");
@@ -431,7 +470,6 @@ async function ask() {
   await post("armed2: remove the same again", armed2, `${secure}/mfa/${two.methods[0].id}/remove`, {});
   await post("armed2: remove the last method", armed2, `${secure}/mfa/${two.methods[1].id}/remove`, {});
   await get("armed2: the page, no methods", armed2, secure);
-  await mailNow("armed2, the alerts", 0, 6000);
   const sole = tab("sole", "a");
   const soleMethod = (await sole.send("GET", secure)).json.methods[0].id;
   await post("sole: remove the only method", sole, `${secure}/mfa/${soleMethod}/remove`, {}, { ends: true });
@@ -496,6 +534,7 @@ async function ask() {
   await mailNow("mailer", 1);
   await get("mailer: the page", mailer, secure);
 
+  await alertsAtTheEnd();
   writeFileSync(args.out, lines.join("\n") + "\n");
   for (const listener of Object.values(listeners)) listener.socket.close();
   process.exit(0);
@@ -524,6 +563,15 @@ async function mailDown() {
 // The limits of each route: one refusal of each, from a server that has the
 // real ones.
 
+const SIBLINGS = {
+  "/api/me/security/mfa/enroll/start": [
+    "/api/me/security/mfa/reverify/start", "/api/me/security/mfa/00000000-0000-0000-0000-000000000000/remove",
+    "/api/me/security/recovery/regenerate", "/api/me/security/password", "/api/me/password", "/api/me/email",
+  ],
+  "/api/me/password": ["/api/auth/login", "/api/me/security/password", "/api/me/email"],
+  "/api/me/email": ["/api/auth/register", "/api/me/password", "/api/me/security/password"],
+};
+
 async function limits() {
   const anonymous = new Browser("anonymous");
   const cases = [
@@ -547,6 +595,11 @@ async function limits() {
       }
     }
     if (!first429) out(`## ${method} ${path}: never refused in ${permits + 2} requests`);
+    // The routes that share the policy are refused now, the others are not.
+    for (const sibling of SIBLINGS[path] ?? []) {
+      const answer = await anonymous.send("POST", sibling, { body: {} });
+      out(`## after that, ${sibling}: ${answer.status}`);
+    }
   }
   writeFileSync(args.out, lines.join("\n") + "\n");
 }
