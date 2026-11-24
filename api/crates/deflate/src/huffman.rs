@@ -133,3 +133,114 @@ pub(crate) fn assign_codes(lengths: &[u8], codes: &mut [u16]) {
         codes[symbol] = c.reverse_bits() >> (16 - u32::from(length));
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn check(freq: &[u32], max_bits: u32) {
+        let mut lengths = vec![0u8; freq.len()];
+        build_lengths(freq, max_bits, &mut lengths);
+        assert!(
+            lengths.iter().all(|&l| u32::from(l) <= max_bits),
+            "{lengths:?}"
+        );
+        for (symbol, &count) in freq.iter().enumerate() {
+            assert!(
+                count == 0 || lengths[symbol] > 0,
+                "symbol {symbol} has no code: {lengths:?}"
+            );
+        }
+        assert!(lengths.iter().filter(|&&l| l > 0).count() >= 2);
+        // A complete prefix code fills the code space exactly.
+        let space: u64 = lengths
+            .iter()
+            .filter(|&&l| l > 0)
+            .map(|&l| 1u64 << (max_bits - u32::from(l)))
+            .sum();
+        assert_eq!(space, 1 << max_bits, "{lengths:?}");
+        // A more frequent symbol never has a longer code than a rarer one.
+        for a in 0..freq.len() {
+            for b in 0..freq.len() {
+                if freq[a] > freq[b] && freq[b] > 0 {
+                    assert!(lengths[a] <= lengths[b], "{freq:?} {lengths:?}");
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn fibonacci_frequencies_force_the_limit() {
+        for symbols in [3usize, 10, 16, 17, 20, 30, 40] {
+            let mut freq = vec![0u32; symbols];
+            let (mut a, mut b) = (1u32, 1u32);
+            for slot in &mut freq {
+                *slot = a;
+                (a, b) = (b, a.saturating_add(b));
+            }
+            // Unlimited, Fibonacci weights make a code as deep as it is long.
+            for max_bits in [7, 15] {
+                check(&freq, max_bits);
+            }
+        }
+    }
+
+    #[test]
+    fn random_frequencies_make_complete_limited_codes() {
+        let mut state = 12345u64;
+        let mut next = move || {
+            state ^= state >> 12;
+            state ^= state << 25;
+            state ^= state >> 27;
+            state.wrapping_mul(0x2545_f491_4f6c_dd1d)
+        };
+        for _ in 0..3000 {
+            let n = 2 + (next() % 300) as usize;
+            let spread = 1 + next() % 30;
+            let freq: Vec<u32> = (0..n)
+                .map(|_| {
+                    if next() % 4 == 0 {
+                        0
+                    } else {
+                        ((next() >> 8) % (1 << spread)) as u32
+                    }
+                })
+                .collect();
+            for max_bits in [7, 15] {
+                if n <= 1 << max_bits {
+                    check(&freq, max_bits);
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn one_or_no_symbol_still_gets_a_complete_code() {
+        check(&[0, 0, 5, 0], 15);
+        check(&[0, 0, 0, 0], 15);
+        check(&[1, 0], 7);
+    }
+
+    #[test]
+    fn codes_are_prefix_free() {
+        let freq: Vec<u32> = (0..40).map(|i| 1 + (i * i * 7) % 91).collect();
+        let mut lengths = vec![0u8; 40];
+        build_lengths(&freq, 15, &mut lengths);
+        let mut codes = vec![0u16; 40];
+        assign_codes(&lengths, &mut codes);
+        for a in 0..40 {
+            for b in 0..40 {
+                if a == b || lengths[a] == 0 || lengths[b] == 0 || lengths[a] > lengths[b] {
+                    continue;
+                }
+                // `a` is the shorter: it must not be the start of `b`.
+                let mask = (1u32 << lengths[a]) - 1;
+                assert_ne!(
+                    u32::from(codes[a]),
+                    u32::from(codes[b]) & mask,
+                    "{a} prefixes {b}"
+                );
+            }
+        }
+    }
+}

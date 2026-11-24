@@ -157,6 +157,8 @@ pub struct Inflate<R> {
     produced: u64,
     limit: u64,
     failed: Option<Error>,
+    /// The input failed once: what was half decoded cannot be resumed.
+    io_failed: Option<io::ErrorKind>,
     /// No block of the current stream has been started.
     fresh: bool,
 }
@@ -180,6 +182,7 @@ impl<R: Read> Inflate<R> {
             produced: 0,
             limit: u64::MAX,
             failed: None,
+            io_failed: None,
             fresh: true,
         }
     }
@@ -588,9 +591,19 @@ impl<R: Read> Inflate<R> {
         if let Some(error) = self.failed {
             return Err(error.into());
         }
+        if let Some(kind) = self.io_failed {
+            return Err(io::Error::new(
+                kind,
+                "an earlier read of the compressed input failed",
+            ));
+        }
         match self.decode() {
             Ok(()) => Ok(()),
-            Err(Fail::Io(error)) => Err(error),
+            Err(Fail::Io(error)) => {
+                // A symbol may be half taken: there is no going on from here.
+                self.io_failed = Some(error.kind());
+                Err(error)
+            }
             Err(Fail::Data(error)) => {
                 self.failed = Some(error);
                 Err(error.into())
