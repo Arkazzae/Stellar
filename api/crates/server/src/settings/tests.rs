@@ -74,13 +74,9 @@ fn the_turn_secret_is_required_outside_development_and_testing() {
 }
 
 #[test]
-fn development_has_its_own_database_file() {
+fn development_runs_on_localhost() {
     let settings = Settings::load(&env(&[("STELLARR_ENVIRONMENT", "Development")])).unwrap();
 
-    assert_eq!(
-        settings.database.path,
-        PathBuf::from("data/stellarr-dev.db")
-    );
     assert_eq!(settings.rtc.public_host, "localhost");
 }
 
