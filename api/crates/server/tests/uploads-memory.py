@@ -31,7 +31,7 @@ def one(i):
     n = size - 12
     total = len(head) + n + len(tail)
     s = socket.create_connection(("127.0.0.1", PORT), timeout=600)
-    h = f"POST /api/uploads HTTP/1.1\r\nHost: x\r\nCookie: {cookie}\r\nX-Stellarr-Client: web\r\nX-Stellarr-Client-Version: 2.0.0\r\nContent-Type: multipart/form-data; boundary=B\r\nContent-Length: {total}\r\nConnection: close\r\n\r\n"
+    h = f"POST /api/uploads/images HTTP/1.1\r\nHost: x\r\nCookie: {cookie}\r\nX-Stellarr-Client: web\r\nX-Stellarr-Client-Version: 2.0.0\r\nContent-Type: multipart/form-data; boundary=B\r\nContent-Length: {total}\r\nConnection: close\r\n\r\n"
     s.sendall(h.encode() + head)
     block = os.urandom(1 << 20)
     sent = 0

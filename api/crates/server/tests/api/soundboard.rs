@@ -19,7 +19,7 @@ async fn wave(person: &Person, seconds: f64) -> String {
             Form::new()
                 .file("file", "s.wav", "audio/wav", WAVE)
                 .text("durationSeconds", &seconds.to_string())
-                .post("/api/uploads"),
+                .post("/api/uploads/images"),
         )
         .await;
     assert_eq!(response.status, 201, "{}", response.text());
@@ -300,13 +300,13 @@ async fn a_trim_is_kept_to_the_thousandth_and_a_name_trimmed() {
 async fn only_an_audio_file_of_the_persons_own_with_a_known_length_that_no_sound_uses_is_a_clip() {
     let Board { server, owner, member } = board().await;
     let attachment_error = "Pick an uploaded audio file with a known duration.";
-    let image = owner.client.send(Form::new().file("file", "a.png", "image/png", PNG).post("/api/uploads")).await;
+    let image = owner.client.send(Form::new().file("file", "a.png", "image/png", PNG).post("/api/uploads/images")).await;
     let image = image.json::<Value>()["id"].as_str().unwrap().to_string();
-    let unmeasured = owner.client.send(Form::new().file("file", "n.wav", "audio/wav", WAVE).post("/api/uploads")).await;
+    let unmeasured = owner.client.send(Form::new().file("file", "n.wav", "audio/wav", WAVE).post("/api/uploads/images")).await;
     let unmeasured = unmeasured.json::<Value>()["id"].as_str().unwrap().to_string();
     let loud = owner
         .client
-        .send(Form::new().file("file", "n.wav", "AUDIO/WAV", WAVE).text("durationSeconds", "5").post("/api/uploads"))
+        .send(Form::new().file("file", "n.wav", "AUDIO/WAV", WAVE).text("durationSeconds", "5").post("/api/uploads/images"))
         .await;
     let loud = loud.json::<Value>()["id"].as_str().unwrap().to_string();
     let theirs = wave(&member, 5.0).await;

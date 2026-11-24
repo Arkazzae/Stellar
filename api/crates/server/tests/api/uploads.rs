@@ -87,7 +87,7 @@ pub async fn started(extra: &[(&str, &str)]) -> Server {
 }
 
 pub async fn upload(person: &Person, form: Form) -> Response {
-    person.client.send(form.post("/api/uploads")).await
+    person.client.send(form.post("/api/uploads/images")).await
 }
 
 pub fn image(name: &str) -> Form {
@@ -199,13 +199,13 @@ async fn a_png_is_answered_with_its_asset_address_and_stored_as_an_image() {
 }
 
 #[tokio::test]
-async fn the_older_image_address_still_accepts_uploads() {
+async fn there_is_one_address_for_uploads_and_the_plain_one_is_not_it() {
     let server = started(&[]).await;
     let maja = server.found("maja").await;
 
-    let response = maja.client.send(image("legacy.png").post("/api/uploads/images")).await;
+    let response = maja.client.send(image("a.png").post("/api/uploads")).await;
 
-    assert_eq!(response.status, 201);
+    assert_eq!(response.status, 404);
 }
 
 #[tokio::test]
@@ -213,7 +213,7 @@ async fn uploads_need_a_signed_in_person() {
     let server = started(&[]).await;
     server.found("maja").await;
 
-    for path in ["/api/uploads", "/api/uploads/images", "/api/uploads/encrypted"] {
+    for path in ["/api/uploads/images", "/api/uploads/encrypted"] {
         let response = server.client().send(image("tiny.png").post(path)).await;
         assert_eq!(response.status, 401, "{path}");
     }
@@ -748,11 +748,11 @@ async fn a_form_that_breaks_the_format_is_refused_and_leaves_nothing_behind() {
     let ok = || image("a.png");
     let with_boundary = |length: usize| Form::new().boundary(&"B".repeat(length)).file("file", "a.png", "image/png", PNG);
 
-    let unfinished = maja.client.send(ok().post_unfinished("/api/uploads")).await;
+    let unfinished = maja.client.send(ok().post_unfinished("/api/uploads/images")).await;
     let lying = maja
         .client
         .send(
-            Request::new(Method::POST, "/api/uploads").bytes(
+            Request::new(Method::POST, "/api/uploads/images").bytes(
                 "multipart/form-data; boundary=OTHER",
                 b"--XXB\r\nContent-Disposition: form-data; name=\"file\"; filename=\"a.png\"\r\nContent-Type: image/png\r\n\r\nx\r\n--XXB--\r\n".to_vec(),
             ),
@@ -760,20 +760,20 @@ async fn a_form_that_breaks_the_format_is_refused_and_leaves_nothing_behind() {
         .await;
     let no_boundary = maja
         .client
-        .send(Request::new(Method::POST, "/api/uploads").bytes("multipart/form-data", b"--XXB--\r\n".to_vec()))
+        .send(Request::new(Method::POST, "/api/uploads/images").bytes("multipart/form-data", b"--XXB--\r\n".to_vec()))
         .await;
-    let long_boundary = maja.client.send(with_boundary(129).post("/api/uploads")).await;
+    let long_boundary = maja.client.send(with_boundary(129).post("/api/uploads/images")).await;
     let not_a_form = maja
         .client
-        .send(Request::new(Method::POST, "/api/uploads").bytes("application/json", b"{}".to_vec()))
+        .send(Request::new(Method::POST, "/api/uploads/images").bytes("application/json", b"{}".to_vec()))
         .await;
     let urlencoded = maja
         .client
-        .send(Request::new(Method::POST, "/api/uploads").bytes("application/x-www-form-urlencoded", b"a=b".to_vec()))
+        .send(Request::new(Method::POST, "/api/uploads/images").bytes("application/x-www-form-urlencoded", b"a=b".to_vec()))
         .await;
     let no_disposition = maja
         .client
-        .send(Form::new().part(b"Content-Type: image/png", PNG).post("/api/uploads"))
+        .send(Form::new().part(b"Content-Type: image/png", PNG).post("/api/uploads/images"))
         .await;
 
     for response in [&unfinished, &lying, &no_boundary, &long_boundary, &no_disposition] {
@@ -783,7 +783,7 @@ async fn a_form_that_breaks_the_format_is_refused_and_leaves_nothing_behind() {
     assert_eq!(urlencoded.status, 415);
     assert!(objects(&server).is_empty());
     assert_eq!(staged(&server), 0);
-    let at_the_longest = maja.client.send(with_boundary(128).post("/api/uploads")).await;
+    let at_the_longest = maja.client.send(with_boundary(128).post("/api/uploads/images")).await;
     assert_eq!(at_the_longest.status, 201);
 }
 
@@ -845,7 +845,7 @@ async fn a_name_that_differs_only_in_case_or_a_long_s_names_the_same_field() {
 async fn a_request_that_declares_more_than_the_server_takes_is_refused_unread() {
     let server = started(&[]).await;
     let maja = server.found("maja").await;
-    let mut request = image("a.png").post("/api/uploads");
+    let mut request = image("a.png").post("/api/uploads/images");
     request = request.header("Content-Length", "134217729");
 
     let response = maja.client.try_send(request).await;
@@ -889,7 +889,7 @@ async fn only_as_many_forms_are_read_at_once_as_uploads_may_run() {
     let name = stellarr_api::auth::session::cookie_name(&stellarr_api::settings::Environment::new("Production"));
     let cookie = format!("{name}={}", maja.client.cookie(name).expect("a session"));
     let head = format!(
-        "POST /api/uploads HTTP/1.1\r\nHost: x\r\nCookie: {cookie}\r\nX-Stellarr-Client: web\r\nX-Stellarr-Client-Version: 2.0.0\r\nContent-Type: multipart/form-data; boundary=XXB\r\nContent-Length: 100000\r\nConnection: close\r\n\r\n--XXB\r\nContent-Disposition: form-data; name=\"file\"; filename=\"a.pdf\"\r\nContent-Type: application/pdf\r\n\r\n%PDF-1 and some more bytes"
+        "POST /api/uploads/images HTTP/1.1\r\nHost: x\r\nCookie: {cookie}\r\nX-Stellarr-Client: web\r\nX-Stellarr-Client-Version: 2.0.0\r\nContent-Type: multipart/form-data; boundary=XXB\r\nContent-Length: 100000\r\nConnection: close\r\n\r\n--XXB\r\nContent-Disposition: form-data; name=\"file\"; filename=\"a.pdf\"\r\nContent-Type: application/pdf\r\n\r\n%PDF-1 and some more bytes"
     );
     // Seven forms that start and stall: one runs, four wait, two are turned away.
     let mut streams = Vec::new();
@@ -971,7 +971,7 @@ async fn hang_up(server: &Server, person: &Person, bytes: usize, all: bool) {
         body
     };
     let head = format!(
-        "POST /api/uploads HTTP/1.1\r\nHost: x\r\nCookie: {cookie}\r\nX-Stellarr-Client: web\r\nX-Stellarr-Client-Version: 2.0.0\r\nContent-Type: multipart/form-data; boundary=XXB\r\nContent-Length: {}\r\n\r\n",
+        "POST /api/uploads/images HTTP/1.1\r\nHost: x\r\nCookie: {cookie}\r\nX-Stellarr-Client: web\r\nX-Stellarr-Client-Version: 2.0.0\r\nContent-Type: multipart/form-data; boundary=XXB\r\nContent-Length: {}\r\n\r\n",
         body.len()
     );
     let mut stream = tokio::net::TcpStream::connect(server.address()).await.unwrap();
@@ -1026,7 +1026,7 @@ async fn the_bytes_of_a_file_past_its_limit_never_reach_the_staging_folder() {
     let chunk = vec![b'x'; 64 * 1024];
     let total = opening.len() + 900 + 40 * chunk.len() + closing.len();
     let head = format!(
-        "POST /api/uploads HTTP/1.1\r\nHost: x\r\nCookie: {cookie}\r\nX-Stellarr-Client: web\r\nX-Stellarr-Client-Version: 2.0.0\r\nContent-Type: multipart/form-data; boundary=XXB\r\nContent-Length: {total}\r\nConnection: close\r\n\r\n"
+        "POST /api/uploads/images HTTP/1.1\r\nHost: x\r\nCookie: {cookie}\r\nX-Stellarr-Client: web\r\nX-Stellarr-Client-Version: 2.0.0\r\nContent-Type: multipart/form-data; boundary=XXB\r\nContent-Length: {total}\r\nConnection: close\r\n\r\n"
     );
     let largest = |server: &Server| {
         std::fs::read_dir(server.folder().join("incoming"))

@@ -1,9 +1,8 @@
 //! Uploading files: attachments for messages, the pictures of people and of
 //! servers, and the encrypted bytes of end-to-end encrypted conversations.
 //!
-//! `POST /api/uploads` (also at `/api/uploads/images`, which clients from
-//! before uploads took more than images still use), `POST
-//! /api/uploads/encrypted`, `POST` and `DELETE /api/me/images/{kind}` and
+//! `POST /api/uploads/images` (the name is from before uploads took more than
+//! images; it is the one address for a file), `POST /api/uploads/encrypted`, `POST` and `DELETE /api/me/images/{kind}` and
 //! `POST` and `DELETE /api/admin/server/icon`.
 //!
 //! The form is read while it arrives (see [`crate::http::multipart`]): each
@@ -37,9 +36,6 @@ pub(crate) use refusals::{no_room, problem};
 
 pub fn routes() -> Endpoints {
     Endpoints::new()
-        .post("/api/uploads", files::upload)
-        .authorized()
-        .rate_limit(RateLimitPolicy::Uploads)
         .post("/api/uploads/images", files::upload)
         .authorized()
         .rate_limit(RateLimitPolicy::Uploads)
