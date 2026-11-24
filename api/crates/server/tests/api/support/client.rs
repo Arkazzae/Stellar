@@ -309,6 +309,28 @@ impl Client {
         }
     }
 
+    /// Sends a `GET` and closes the connection without waiting for the answer.
+    pub async fn get_and_hang_up(&self, path: &str) {
+        use tokio::io::AsyncWriteExt;
+
+        let mut head = format!(
+            "GET {path} HTTP/1.1\r\nHost: {}\r\nConnection: close\r\n",
+            self.address
+        );
+        for (name, value) in &self.headers {
+            head.push_str(&format!("{name}: {value}\r\n"));
+        }
+        head.push_str("\r\n");
+        let mut stream = TcpStream::connect(self.address)
+            .await
+            .expect("a connection");
+        stream
+            .write_all(head.as_bytes())
+            .await
+            .expect("the request is sent");
+        drop(stream);
+    }
+
     fn remember_cookies(&self, headers: &HeaderMap) {
         let mut jar = self.jar.lock().unwrap();
         for value in headers.get_all("set-cookie") {

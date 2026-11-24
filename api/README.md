@@ -19,7 +19,7 @@ cargo test -p stellarr-api
 ## Layout of `crates/server/src`
 
 ```
-lib.rs         the list of groups (one line each) and serve()
+lib.rs         serve(); groups.list.rs is the list of groups
 main.rs        reads the environment, starts logging, runs
 settings/      everything read at start
 database/      SQLite: pool, schema.sql, errors, the write gate
@@ -77,8 +77,9 @@ async fn read(State(state): State<AppState>, Path(id): Path<Id>) -> ApiResult<Js
 }
 ```
 
-Then write the name of the group on a line of `groups! { ... }` in `lib.rs`.
-That is the only shared line a group touches. Do not edit `main.rs`, the
+Then write the name of the group on a line of `crates/server/src/groups.list.rs`.
+That is the only shared line a group touches, and the file holds nothing else;
+`.gitattributes` makes git keep both sides' lines when two branches each add one. Do not edit `main.rs`, the
 pipeline or another group.
 
 `Endpoints` has `get`, `post`, `put`, `patch` and `delete`. Two modifiers apply
@@ -149,6 +150,11 @@ the closure runs on a blocking thread and never on one that serves requests.
   `values`: `Id` (capitals in the database, lower case in JSON), `Timestamp`
   (UTC text with a trimmed fraction), `bool` (0 and 1), `int_enum!`.
 
+**A handler runs to the end** even when the client goes away: the pipeline runs
+it as a task of its own, so a dropped connection never stops it between its commit
+and its event. That is what guarantees the event after a commit is sent; a handler
+may rely on it, and no handler may assume it will be told the client left.
+
 **Events** go to the hub through `state.events().publish(Event::new(audience, "Name",
 &payload))`, after `write` has returned. A change is committed first and
 announced after; a failed change announces nothing.
@@ -176,7 +182,8 @@ handler. Authentication has its place at the end of `content_type` in
 Unit tests sit next to the code in `#[cfg(test)] mod tests`.
 
 Endpoint tests are in `crates/server/tests/api/`, one file per group, all
-linked into one test binary (`main.rs` lists them). Each test starts the real
+linked into one test binary (`modules.list.rs` lists them, one `mod` line to a
+file, merged the same way). Each test starts the real
 `stellarr-api` binary on a free port with a temporary data folder, waits for
 `/health/ready`, and stops it afterwards. Tests run in parallel and share
 nothing.

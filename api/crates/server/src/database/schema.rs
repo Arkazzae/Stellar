@@ -39,6 +39,9 @@ pub fn prepare(connection: &mut Connection) -> Result<(), DbError> {
     let tables: i64 =
         transaction.query_row("SELECT count(*) FROM sqlite_master", [], |row| row.get(0))?;
     if tables == 0 {
+        // `IMPLICIT_TABLE` is dropped because SQLite refuses to create a table
+        // whose name starts with `sqlite_`, and it has made this one itself
+        // by the time the statement would run.
         transaction.execute_batch(&SCHEMA.replacen(IMPLICIT_TABLE, "", 1))?;
         let now = Timestamp::now();
         for name in ONE_TIME_STEPS {
