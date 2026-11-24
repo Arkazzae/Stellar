@@ -33,13 +33,6 @@ pub fn recorded_name(provider: &Provider) -> String {
     }
 }
 
-/// [`recorded_name`] of the provider with this id, when the instance has such
-/// a provider set up. A link to name in the account's history is made only
-/// for one that has.
-pub fn recorded_name_of(state: &AppState, id: &str) -> Option<String> {
-    state.settings().oidc.find(id).map(recorded_name)
-}
-
 /// [`shown_name`] of the provider with this id, when the instance has one.
 pub fn shown_name_of(state: &AppState, id: &str) -> Option<Result<String, MissingValue>> {
     state
