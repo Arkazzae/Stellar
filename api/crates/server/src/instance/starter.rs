@@ -41,10 +41,6 @@ pub struct Starter {
     voice_join_sound: bool,
 }
 
-fn invalid(field: &str, message: String) -> ApiError {
-    Problem::validation(vec![(field.to_string(), vec![message])]).into()
-}
-
 /// A channel name as it is stored: trimmed and in lower case, letter by
 /// letter.
 pub fn normalize_channel_name(name: Option<&str>) -> String {
@@ -72,7 +68,7 @@ pub fn prepare(request: &ServerRequest, messages: &Messages) -> Result<Starter, 
     if !(1..=MAX_NAME_LENGTH).contains(&name.encode_utf16().count())
         || description.encode_utf16().count() > MAX_DESCRIPTION_LENGTH
     {
-        return Err(invalid(
+        return Err(Problem::invalid_field(
             "server",
             messages.get(MessageKey::ServerNameOrDescriptionInvalid, &[])?,
         ));
@@ -97,13 +93,13 @@ pub fn prepare(request: &ServerRequest, messages: &Messages) -> Result<Starter, 
     if !is_valid_channel_name(&text_channel)
         || (wants_voice && !is_valid_channel_name(&voice_channel))
     {
-        return Err(invalid(
+        return Err(Problem::invalid_field(
             "channels",
             messages.get(MessageKey::StarterChannelNameInvalid, &[])?,
         ));
     }
     if wants_voice && text_channel == voice_channel {
-        return Err(invalid(
+        return Err(Problem::invalid_field(
             "channels",
             messages.get(MessageKey::StarterChannelNamesCollide, &[])?,
         ));

@@ -200,11 +200,6 @@ fn no_member_role(messages: &Messages) -> Result<ApiError, MissingValue> {
         .into())
 }
 
-/// A field that is refused, in the language of the instance.
-fn invalid(field: &str, text: String) -> ApiError {
-    Problem::validation(vec![(field.to_string(), vec![text])]).into()
-}
-
 /// An id that a request leaves out, which the first server read as the empty
 /// one.
 fn nil() -> Id {

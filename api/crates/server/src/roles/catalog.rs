@@ -8,7 +8,7 @@ use rusqlite::{Connection, params};
 use serde::Deserialize;
 
 use super::announce::Announcement;
-use super::{Chosen, RoleDto, RoleRow, invalid, no_content, taken};
+use super::{Chosen, RoleDto, RoleRow, no_content, taken};
 use crate::auth::Caller;
 use crate::http::{ApiError, ApiResult, Json, Path, json_response};
 use crate::permissions::audit::{self, AuditChange, AuditEvent};
@@ -64,7 +64,7 @@ pub(crate) fn validate(name: &str, color: &str, permissions: Option<&[String]>) 
 }
 
 pub(crate) fn invalid_role(messages: &Messages) -> Result<ApiError, stellarr_messages::MissingValue> {
-    Ok(invalid("role", messages.get(MessageKey::RoleInvalid, &[])?))
+    Ok(crate::http::Problem::invalid_field("role", messages.get(MessageKey::RoleInvalid, &[])?))
 }
 
 fn name_taken(db: &Connection, server: Id, name: &str, except: Option<Id>) -> rusqlite::Result<bool> {
