@@ -77,6 +77,7 @@ scenario() { # label cleanup batch journal-days
   docker stop -t 20 "$container" >/dev/null
   docker cp "$dir/seeded.db" "$container:/tmp/data/stellarr.db"
   docker cp "$dir/root/." "$container:/tmp/data/"
+  lines_before=$("$oracle_script" logs "$name" 2>&1 | wc -l)
   docker start "$container" >/dev/null
   # The log holds the first start too, which ran on the base database: wait
   # for the second start's own listening line, and its run.
@@ -96,7 +97,8 @@ scenario() { # label cleanup batch journal-days
   mkdir -p "$dir/first"
   docker cp "$container:/tmp/data/." "$dir/first/"
   "$oracle_script" logs "$name" > "$dir/first.log" 2>&1 || true
-  grep 'Maintenance removed' "$dir/first.log" | tail -1 | sed 's/.*Maintenance removed/Maintenance removed/' > "$dir/first.line" || true
+  # Only what the second start said: the first ran on the base database.
+  tail -n +$((lines_before + 1)) "$dir/first.log" | grep 'Maintenance removed' | tail -1 | sed 's/.*Maintenance removed/Maintenance removed/' > "$dir/first.line" || true
 
   # This server.
   mkdir -p "$dir/rust"
