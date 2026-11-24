@@ -445,6 +445,8 @@ for key in ["public-url", "tls.domain", "https-port", "oidc.enabled", "oidc.prov
 for key in ["mail.smtp-password", "mail.resend-api-key", "giphy.api-key", "cloudflare.r2.access-key"]:
     one_of_each(f"config set a secret {key}", ["config", "set", key, "x", "--yes"], mutating=True)
 one_of_each("config set unknown", ["config", "set", "nope", "x", "--yes"], mutating=True)
+one_of_each("config set invalid, the instance speaking Polish", ["config", "set", "retention.backups-days", "0", "--yes"], mutating=True, env={"STELLARR_LANGUAGE": "pl"})
+one_of_each("config validate, the instance speaking Polish", ["config", "validate"], env={"STELLARR_LANGUAGE": "pl"})
 one_of_each("config set with -y", ["config", "set", "time-zone", "Europe/Warsaw", "-y"], mutating=True)
 one_of_each("config set with --yes before the command", ["--yes", "config", "set", "time-zone", "Europe/Warsaw"], mutating=True)
 one_of_each("config set without --yes, no terminal", ["config", "set", "time-zone", "Europe/Warsaw"], mutating=True)
