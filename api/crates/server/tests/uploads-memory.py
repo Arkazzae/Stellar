@@ -3,7 +3,7 @@
 
   uploads-memory.py <setup-code> <uploads-at-once> <size-in-MiB>
 
-Needs a fresh server of this API on 127.0.0.1:5217 (its process is found by
+Needs a fresh server of this API on 127.0.0.1:$UPLOADS_PORT (5217 unless set; its process is found by
 name), founds the instance, sends that many uploads of that size at once, each
 a video generated as it is sent, and prints the answers and the peak resident
 memory of the server. The files are left in the data folder: remove them.
@@ -12,10 +12,11 @@ import os, socket, subprocess, sys, threading, time, json
 import importlib.util
 spec = importlib.util.spec_from_file_location("probe", os.path.join(os.path.dirname(os.path.abspath(__file__)), "uploads-probe.py"))
 probe = importlib.util.module_from_spec(spec); spec.loader.exec_module(probe)
-base = "http://127.0.0.1:5217"
+PORT = int(os.environ.get("UPLOADS_PORT", "5217"))
+base = f"http://127.0.0.1:{PORT}"
 setup = sys.argv[1]; count = int(sys.argv[2]); size = int(sys.argv[3]) * 1024 * 1024
 cookie, _ = probe.register(base, "boss", {"setupCode": setup})
-pid = subprocess.check_output(["pgrep", "-f", "stellarr-api"]).split()[0].decode()
+pid = subprocess.check_output(["pgrep", "-f", os.environ.get("UPLOADS_PROCESS", "stellarr-api")]).split()[0].decode()
 def rss(): return int(subprocess.check_output(["ps", "-o", "rss=", "-p", pid]).strip()) / 1024
 peak = [rss()]; stop = [False]
 def sampler():
@@ -29,7 +30,7 @@ def one(i):
     tail = b"\r\n--B--\r\n"
     n = size - 12
     total = len(head) + n + len(tail)
-    s = socket.create_connection(("127.0.0.1", 5217), timeout=600)
+    s = socket.create_connection(("127.0.0.1", PORT), timeout=600)
     h = f"POST /api/uploads HTTP/1.1\r\nHost: x\r\nCookie: {cookie}\r\nX-Stellarr-Client: web\r\nX-Stellarr-Client-Version: 2.0.0\r\nContent-Type: multipart/form-data; boundary=B\r\nContent-Length: {total}\r\nConnection: close\r\n\r\n"
     s.sendall(h.encode() + head)
     block = os.urandom(1 << 20)
