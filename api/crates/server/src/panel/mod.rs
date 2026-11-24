@@ -77,12 +77,7 @@ impl FromRequestParts<AppState> for FreshInstanceOwner {
 
 /// Writes the audit line of a change the operator made, in the transaction of
 /// the change. The sentence is in the language of the instance.
-pub fn record(
-    db: &Connection,
-    server: Id,
-    actor: Id,
-    sentence: String,
-) -> rusqlite::Result<()> {
+pub fn record(db: &Connection, server: Id, actor: Id, sentence: String) -> rusqlite::Result<()> {
     audit::record(
         db,
         server,
@@ -98,5 +93,7 @@ pub fn record(
 
 /// The sentence of the audit line for a change of the panel's settings.
 pub fn settings_updated(state: &AppState) -> Result<String, ApiError> {
-    Ok(state.messages().get(MessageKey::AuditSettingsUpdated, &[])?)
+    Ok(state
+        .messages()
+        .get(MessageKey::AuditSettingsUpdated, &[])?)
 }

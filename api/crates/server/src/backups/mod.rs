@@ -13,9 +13,12 @@ pub mod destination;
 pub mod jobs;
 pub mod listing;
 pub mod manifest;
+pub mod offsite;
 pub mod parts;
 pub mod policy;
+pub mod schedule;
 pub mod progress;
+mod routes;
 pub mod snapshot;
 pub mod space;
 
@@ -86,7 +89,4 @@ pub fn random_token() -> String {
     text
 }
 
-/// The routes of the panel for backups.
-pub fn routes() -> crate::http::Endpoints {
-    crate::http::Endpoints::new()
-}
+pub use routes::routes;
