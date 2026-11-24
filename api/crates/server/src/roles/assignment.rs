@@ -133,7 +133,7 @@ pub(super) async fn assign(
     let server = chosen.server()?;
     // Before any other refusal, as the first server's filter was, but after the
     // person is known to be a member and the body has been read.
-    super::require_fresh(&state, caller, server).await?;
+    crate::auth::fresh::require(&state, caller, Some(server)).await?;
     let messages = *state.messages();
     let announcement = state
         .database()
@@ -222,4 +222,3 @@ pub(super) async fn assign(
     announcement.publish(&state, server).await;
     Ok(no_content())
 }
-

@@ -13,7 +13,7 @@ use rusqlite::{Connection, OptionalExtension, params};
 use serde::{Deserialize, Serialize};
 use stellarr_messages::MessageKey;
 
-use super::{fresh_second_step_refusal, no_store};
+use super::no_store;
 use crate::auth::{Caller, events, fresh, password, recovery};
 use crate::database::DbError;
 use crate::http::{ApiError, ApiResult, Json, Origin, Problem, json_response, with_session_cookie};
@@ -116,7 +116,7 @@ fn refuse_first(state: &AppState, check: FirstCheck) -> ApiResult<()> {
             let title = state.messages().get(MessageKey::SecurityPasswordAlreadySet, &[])?;
             Err(Problem::new(StatusCode::CONFLICT).title(title).into())
         }
-        FirstCheck::ProofNeeded => Err(fresh_second_step_refusal(state)?),
+        FirstCheck::ProofNeeded => Err(crate::auth::fresh::refusal(state.messages())?.into()),
     }
 }
 
