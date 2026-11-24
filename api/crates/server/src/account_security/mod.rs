@@ -33,7 +33,7 @@ use axum::response::{IntoResponse, Response};
 
 use crate::auth::flow::{self, Context};
 use crate::auth::security_cookies;
-use crate::http::{ApiError, ApiResult, Endpoints, Origin, RateLimitPolicy};
+use crate::http::{ApiResult, Endpoints, Origin, RateLimitPolicy};
 use crate::state::AppState;
 
 pub fn routes() -> Endpoints {
