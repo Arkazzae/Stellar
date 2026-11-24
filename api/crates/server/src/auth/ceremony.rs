@@ -1791,3 +1791,60 @@ pub async fn remove_identity(
         })
         .await
 }
+
+/// A provider's fresh answer moves a session's sign-in moment forward: the
+/// person signed in again at the provider, and for the minutes a change of
+/// security settings allows, that counts for a session of an account with no
+/// second step (an account with one still needs its second step; this never
+/// makes a session count as having passed one).
+///
+/// `signed_in_at` is the provider's own time of the person's sign-in there; a
+/// moment ahead of this server's clock counts as now, and one more than the
+/// fresh window ago confirms nothing. The identity must be one the account has
+/// (`issuer`, `subject`), the account must not be disabled or waiting for
+/// recovery, and the session must be the account's, still good and at its
+/// current security version. The sign-in moment only ever moves forward. False
+/// when any of that is not so; nothing is written then.
+///
+/// This is a ceremony and not a function of the session: it is the identity
+/// that is checked here, so that no route can refresh a session's sign-in
+/// moment without a provider's answer for that very account.
+pub async fn reauthenticated_by_provider(
+    state: &AppState,
+    user: Id,
+    session: Id,
+    issuer: &str,
+    subject: &str,
+    signed_in_at: Timestamp,
+) -> Result<bool, DbError> {
+    let (issuer, subject) = (issuer.to_string(), subject.to_string());
+    state
+        .database()
+        .write(move |tx| -> Result<bool, DbError> {
+            let now = Timestamp::now();
+            let signed_in = if signed_in_at < now { signed_in_at } else { now };
+            if signed_in < now.minus(super::policy::FRESH_SECOND_STEP_WINDOW) {
+                return Ok(false);
+            }
+            let Some(account) = User::find(tx, user)? else {
+                return Ok(false);
+            };
+            if account.is_disabled || account.security_recovery_required {
+                return Ok(false);
+            }
+            let known: bool = tx.query_row(
+                "SELECT EXISTS (SELECT 1 FROM \"ExternalIdentities\" WHERE \"UserId\" = ?1 AND \"Issuer\" = ?2 AND \"Subject\" = ?3)",
+                params![user, issuer, subject],
+                |row| row.get(0),
+            )?;
+            if !known || fresh::current_session(tx, &account, session, now)?.is_none() {
+                return Ok(false);
+            }
+            tx.execute(
+                "UPDATE \"UserSessions\" SET \"AuthenticatedAt\" = ?2 WHERE \"Id\" = ?1 AND COALESCE(\"AuthenticatedAt\", \"CreatedAt\") < ?2",
+                params![session, signed_in],
+            )?;
+            Ok(true)
+        })
+        .await
+}
