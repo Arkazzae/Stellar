@@ -286,7 +286,6 @@ async fn refuses_headers_that_are_the_clients_to_set() {
     .await;
     for name in [
         "host",
-        "content-length",
         "transfer-encoding",
         "connection",
         "upgrade",
@@ -363,4 +362,83 @@ async fn debug_output_and_errors_never_show_a_query_or_a_header_value() {
     let shown = format!("{error} {error:?}");
     assert!(!shown.contains("hunter2"), "{shown}");
     assert!(!shown.contains("capability-token"), "{shown}");
+}
+
+fn lengths_sent(server: &Server) -> Vec<String> {
+    server.recorded()[0]
+        .headers
+        .iter()
+        .filter(|(name, _)| name.eq_ignore_ascii_case("content-length"))
+        .map(|(_, value)| value.clone())
+        .collect()
+}
+
+#[tokio::test]
+async fn a_content_length_that_states_the_body_is_accepted_and_sent_once() {
+    for (body, length) in [
+        (Body::bytes(&b"seven!!"[..]), "7"),
+        (Body::stream(&b"seven!!"[..], 7), "7"),
+        (Body::empty(), "0"),
+        (Body::bytes(&b"seven!!"[..]), " 7 "),
+    ] {
+        let server = Server::plain(handler(|mut conn| async move {
+            let _ = conn.read_body().await;
+            conn.ok("text/plain", b"").await
+        }))
+        .await;
+        let answer = Client::new()
+            .send_collected(
+                Request::post(&server.url("/"))
+                    .unwrap()
+                    .policy(AddressPolicy::Anywhere)
+                    .header(
+                        http::header::CONTENT_LENGTH,
+                        HeaderValue::from_str(length).unwrap(),
+                    )
+                    .body(body),
+            )
+            .await
+            .unwrap();
+        assert_eq!(answer.status.as_u16(), 200);
+        let sent = lengths_sent(&server);
+        assert_eq!(sent.len(), 1, "{sent:?}");
+        assert_eq!(sent[0], length.trim());
+    }
+}
+
+#[tokio::test]
+async fn a_content_length_that_does_not_state_the_body_is_refused() {
+    let server = Server::plain(handler(|mut conn| async move {
+        conn.ok("text/plain", b"").await
+    }))
+    .await;
+    for values in [
+        &["6"][..],
+        &["8"],
+        &["0"],
+        &["-7"],
+        &["+7"],
+        &["7.0"],
+        &["seven"],
+        &[""],
+        &["7", "7"],
+        &["99999999999999999999999"],
+    ] {
+        let mut request = Request::post(&server.url("/"))
+            .unwrap()
+            .policy(AddressPolicy::Anywhere)
+            .body(Body::bytes(&b"seven!!"[..]));
+        for value in values {
+            request = request.header(
+                http::header::CONTENT_LENGTH,
+                HeaderValue::from_str(value).unwrap(),
+            );
+        }
+        let error = Client::new().send(request).await.err().unwrap();
+        assert!(
+            matches!(error, Error::ForbiddenHeader(_)),
+            "{values:?}: {error}"
+        );
+    }
+    assert_eq!(server.hits(), 0);
 }

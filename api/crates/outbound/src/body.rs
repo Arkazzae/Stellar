@@ -46,6 +46,15 @@ impl Body {
         }
     }
 
+    /// How many bytes the body carries.
+    pub(crate) fn len(&self) -> u64 {
+        match self {
+            Body::Empty => 0,
+            Body::Bytes(bytes) => bytes.len() as u64,
+            Body::Stream { length, .. } => *length,
+        }
+    }
+
     pub(crate) fn is_empty(&self) -> bool {
         match self {
             Body::Empty => true,
