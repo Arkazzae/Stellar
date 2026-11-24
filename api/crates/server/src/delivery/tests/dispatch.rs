@@ -511,3 +511,66 @@ async fn a_clock_that_goes_back_does_not_send_what_is_not_yet_due() {
     assert!(working.seen().is_empty());
     assert_eq!(world.rows(message).await[0].attempts, 1);
 }
+
+/// A writer that keeps every line the log gets.
+#[derive(Clone, Default)]
+struct Lines(std::sync::Arc<std::sync::Mutex<Vec<u8>>>);
+
+impl std::io::Write for Lines {
+    fn write(&mut self, bytes: &[u8]) -> std::io::Result<usize> {
+        self.0.lock().unwrap().extend_from_slice(bytes);
+        Ok(bytes.len())
+    }
+
+    fn flush(&mut self) -> std::io::Result<()> {
+        Ok(())
+    }
+}
+
+impl<'a> tracing_subscriber::fmt::MakeWriter<'a> for Lines {
+    type Writer = Lines;
+
+    fn make_writer(&'a self) -> Lines {
+        self.clone()
+    }
+}
+
+#[tokio::test]
+async fn a_mail_that_cannot_be_written_logs_the_row_and_never_the_address() {
+    use tracing::instrument::WithSubscriber;
+
+    let world = World::new(&[]).await;
+    world.prefer(world.ada, true, false).await;
+    // An address the mail library refuses, and names in its error.
+    world.verify_email(world.ada, "ada-without-an-at-sign.example").await;
+    let smtp = FakeSmtp::start(Mood::Takes).await;
+    world.mail_to(smtp.port).await;
+    let fake = FakePush::start(Behaviour::Status(201)).await;
+    let message = world.mention(world.maja, "@ada", &[world.ada]).await;
+    let lines = Lines::default();
+    let sender = wired_to(&world, &fake);
+    let mut at = soon();
+
+    // Every try the row gets (it gets five) is logged.
+    for _ in 0..5 {
+        let subscriber = tracing_subscriber::fmt()
+            .with_writer(lines.clone())
+            .with_ansi(false)
+            .finish();
+        dispatch(&world.state, &sender, at)
+            .with_subscriber(subscriber)
+            .await
+            .unwrap();
+        at = at.plus(minutes(70));
+    }
+
+    let log = String::from_utf8(lines.0.lock().unwrap().clone()).unwrap();
+    let row = world.rows(message).await.remove(0);
+    assert_eq!((row.status.as_str(), row.attempts), ("failed", 5), "the mail did fail every time");
+    assert_eq!(
+        log.matches(&format!("An activity notification delivery {} failed: the mail could not be written.", row.id)).count(),
+        5,
+        "{log}"
+    );
+    assert!(!log.contains("without-an-at-sign") && !log.contains("example"), "{log}");
+}
