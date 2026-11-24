@@ -1,4 +1,5 @@
 mod assets;
+mod channels;
 mod client_gate;
 mod database;
 mod health;
