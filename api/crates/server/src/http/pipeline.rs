@@ -237,38 +237,45 @@ fn only_the_methods_of_the_route(response: &mut Response) {
     else {
         return;
     };
-    let kept: Vec<&str> = allowed
+    let mut kept: Vec<&str> = allowed
         .split(',')
         .map(str::trim)
         .filter(|method| *method != "HEAD")
         .collect();
+    kept.sort_unstable();
     if let Ok(value) = HeaderValue::from_str(&kept.join(", ")) {
         response.headers_mut().insert(header::ALLOW, value);
     }
 }
 
-/// A JSON route that is sent a body of another type. A request that names no
-/// type at all gets as far as the handler, which finds there is no body.
+/// A JSON route that is sent a body of another type, or a body that names no
+/// type at all. A request with neither a type nor a body gets as far as the
+/// handler, which finds there is no body.
 fn refuses_content_type(rules: &Rules, request: &Request) -> bool {
     if !rules.json_body {
         return false;
     }
-    let Some(value) = request
-        .headers()
+    let headers = request.headers();
+    let named = headers
         .get(header::CONTENT_TYPE)
         .and_then(|value| value.to_str().ok())
-    else {
-        return false;
+        .map(|value| {
+            value
+                .split(';')
+                .next()
+                .unwrap_or("")
+                .trim()
+                .to_ascii_lowercase()
+        })
+        .filter(|media_type| !media_type.is_empty());
+    let Some(media_type) = named else {
+        let has_body = headers.contains_key(header::TRANSFER_ENCODING)
+            || headers
+                .get(header::CONTENT_LENGTH)
+                .and_then(|value| value.to_str().ok())
+                .is_some_and(|length| length.trim() != "0");
+        return has_body;
     };
-    let media_type = value
-        .split(';')
-        .next()
-        .unwrap_or("")
-        .trim()
-        .to_ascii_lowercase();
-    if media_type.is_empty() {
-        return false;
-    }
     !(media_type == "application/json"
         || (media_type.starts_with("application/") && media_type.ends_with("+json")))
 }

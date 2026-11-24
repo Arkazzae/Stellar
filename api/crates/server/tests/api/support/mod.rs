@@ -15,7 +15,9 @@
 #![allow(dead_code)]
 
 mod client;
+mod log;
 mod server;
 
 pub use client::{Request, Response};
+pub use log::LogCapture;
 pub use server::{Server, TempDir};

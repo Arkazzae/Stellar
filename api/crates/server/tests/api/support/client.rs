@@ -86,6 +86,14 @@ impl Request {
         self
     }
 
+    /// A body that does not say what it is.
+    pub fn untyped_body(mut self, body: &str) -> Request {
+        self.body = Full::new(Bytes::from(body.to_string()))
+            .map_err(|never| match never {})
+            .boxed();
+        self
+    }
+
     pub fn body(mut self, content_type: &str, body: &str) -> Request {
         self.headers
             .push(("Content-Type".to_string(), content_type.to_string()));

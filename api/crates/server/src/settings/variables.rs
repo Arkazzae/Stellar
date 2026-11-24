@@ -2,8 +2,8 @@
 //!
 //! This is the only place that spells one. A name without a key is read by the
 //! container's entrypoint or by the operator CLI, never by the API; it is
-//! listed so that the table stays the same as the documented one.
-//! `infra/tests/setting-names.test.sh` reads the rows, one per line.
+//! listed so that the table stays the same as the documented one. Keep one row
+//! to a line, so that a script can read them.
 
 pub struct Variable {
     pub name: &'static str,

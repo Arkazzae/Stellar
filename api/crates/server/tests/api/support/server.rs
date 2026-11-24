@@ -45,10 +45,11 @@ enum Running {
 
 pub struct Server {
     address: SocketAddr,
-    folder: Option<TempDir>,
     folder_path: PathBuf,
-    running: Option<Running>,
     log: Arc<Mutex<Vec<String>>>,
+    running: Option<Running>,
+    /// Last, so that it is removed after the process has been told to stop.
+    folder: Option<TempDir>,
 }
 
 fn environment(folder: &Path, extra: &[(&str, &str)]) -> Vec<(String, String)> {
@@ -286,10 +287,18 @@ impl Server {
 }
 
 impl Drop for Server {
+    /// The process is killed before the folder is removed, which happens when
+    /// the fields go, after this.
     fn drop(&mut self) {
-        if let Some(Running::InProcess { stop, task }) = &mut self.running {
-            let _ = stop.take().map(|stop| stop.send(()));
-            task.abort();
+        match &mut self.running {
+            Some(Running::InProcess { stop, task }) => {
+                let _ = stop.take().map(|stop| stop.send(()));
+                task.abort();
+            }
+            Some(Running::Process(child)) => {
+                let _ = child.start_kill();
+            }
+            None => {}
         }
     }
 }
