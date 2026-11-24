@@ -18,14 +18,11 @@ stellarr-messages = { path = "../messages" }
 aws-lc-rs = { workspace = true }
 axum = { workspace = true, features = ["tokio", "http1", "matched-path"] }
 bytes = { workspace = true }
-http = { workspace = true }
 http-body-util = { workspace = true }
-hyper = { workspace = true, features = ["http1", "server"] }
-hyper-util = { workspace = true, features = ["tokio", "server", "http1", "service"] }
 rusqlite = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
-tokio = { workspace = true, features = ["rt-multi-thread", "macros", "net", "sync", "time", "signal", "io-util", "fs", "process"] }
+tokio = { workspace = true, features = ["rt-multi-thread", "macros", "net", "sync", "time", "signal"] }
 tracing = { workspace = true }
 tracing-subscriber = { workspace = true, features = ["env-filter"] }
 
@@ -33,4 +30,7 @@ tracing-subscriber = { workspace = true, features = ["env-filter"] }
 workspace = true
 
 [dev-dependencies]
+http = { workspace = true }
 hyper = { workspace = true, features = ["client", "http1"] }
+hyper-util = { workspace = true, features = ["tokio"] }
+tokio = { workspace = true, features = ["io-util", "process"] }
