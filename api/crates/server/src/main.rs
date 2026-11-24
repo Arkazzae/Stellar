@@ -14,7 +14,8 @@ fn main() -> ExitCode {
             return ExitCode::FAILURE;
         }
     };
-    if let Err(error) = stellarr_api::logging::init(&settings.log, Vec::new()) {
+    let log = stellarr_api::logging::LogBuffer::new();
+    if let Err(error) = stellarr_api::logging::init(&settings.log, vec![log.sink()]) {
         eprintln!("stellarr-api: {error}");
         return ExitCode::FAILURE;
     }
@@ -28,7 +29,7 @@ fn main() -> ExitCode {
             return ExitCode::FAILURE;
         }
     };
-    match runtime.block_on(stellarr_api::run(settings)) {
+    match runtime.block_on(stellarr_api::run(settings, log)) {
         Ok(()) => ExitCode::SUCCESS,
         Err(error) => {
             tracing::error!(%error, "stellarr-api stopped");
