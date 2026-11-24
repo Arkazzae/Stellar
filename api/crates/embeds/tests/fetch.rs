@@ -80,7 +80,7 @@ async fn a_normal_page_becomes_a_card_with_its_picture_and_says_who_is_asking() 
     );
     assert!(first.header("accept").unwrap().starts_with("text/html"));
     assert_eq!(first.header("accept-language"), Some("pl,en;q=0.8"));
-    assert_eq!(first.header("accept-encoding"), Some("identity"));
+    assert_eq!(first.header("accept-encoding"), Some("gzip, deflate"));
 }
 
 #[tokio::test]
@@ -588,7 +588,7 @@ async fn every_kind_of_picture_is_kept_when_its_bytes_agree() {
 }
 
 #[tokio::test]
-async fn an_answer_that_is_not_a_success_or_is_compressed_anyway_gives_no_card() {
+async fn an_answer_that_is_not_a_success_gives_no_card() {
     let fetcher = fetcher(&["page.test"], settings());
     let missing = Server::start(handler(|mut conn| async move {
         conn.respond(
@@ -609,20 +609,146 @@ async fn an_answer_that_is_not_a_success_or_is_compressed_anyway_gives_no_card()
         fetcher.preview(&link(&missing.url("page.test", "/"))).await,
         Err(NoCard::Unreadable(Failure::Status(404)))
     );
+}
 
-    let gzip = Server::start(handler(|mut conn| async move {
-        conn.respond(
-            "200 OK",
-            &[("Content-Type", "text/html"), ("Content-Encoding", "gzip")],
-            b"\x1f\x8b\x08\x00",
-        )
-        .await;
+/// A body made by Python's gzip (see `fixtures/gzip.py`).
+fn gzipped(name: &str) -> Vec<u8> {
+    let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("tests/fixtures/gzip")
+        .join(name);
+    std::fs::read(&path).unwrap_or_else(|error| panic!("{}: {error}", path.display()))
+}
+
+/// A server that answers every request with `body`, declared as `coding`.
+async fn compressed(content_type: &'static str, coding: &'static str, body: Vec<u8>) -> Server {
+    Server::start(handler(move |mut conn| {
+        let body = body.clone();
+        async move {
+            conn.respond(
+                "200 OK",
+                &[("Content-Type", content_type), ("Content-Encoding", coding)],
+                &body,
+            )
+            .await;
+        }
     }))
-    .await;
-    assert_eq!(
-        fetcher.fetch_card(&link(&gzip.url("page.test", "/"))).await,
-        Err(Failure::Network)
-    );
+    .await
+}
+
+#[tokio::test]
+async fn a_page_answered_with_a_real_gzip_body_becomes_a_card() {
+    let server = compressed("text/html", "gzip", gzipped("page.html.gz")).await;
+    let card = card_of(&server, settings()).await.unwrap();
+    assert_eq!(card.title.as_deref(), Some("Compressed card"));
+    assert_eq!(card.description.as_deref(), Some("Said in gzip"));
+}
+
+#[tokio::test]
+async fn a_compressed_page_that_is_cut_short_gives_no_card() {
+    let whole = gzipped("page.html.gz");
+    for cut in [4, whole.len() / 2, whole.len() - 3] {
+        let server = compressed("text/html", "gzip", whole[..cut].to_vec()).await;
+        assert_eq!(
+            card_of(&server, settings()).await,
+            Err(Failure::Network),
+            "cut at {cut}"
+        );
+    }
+}
+
+#[tokio::test]
+async fn an_answer_in_a_coding_the_client_does_not_undo_gives_no_card() {
+    for coding in ["br", "zstd", "gzip, br"] {
+        let server = compressed("text/html", coding, gzipped("page.html.gz")).await;
+        assert_eq!(
+            card_of(&server, settings()).await,
+            Err(Failure::Network),
+            "{coding}"
+        );
+    }
+}
+
+#[tokio::test]
+async fn a_compressed_page_past_the_cap_is_read_to_the_cap_like_a_streamed_one() {
+    // The size is not announced up front, since the length on the wire says
+    // nothing about it: the page is read as far as the cap, and the
+    // description past the cap is not seen.
+    let server = compressed("text/html", "gzip", gzipped("long-page.html.gz")).await;
+    let card = card_of(
+        &server,
+        EmbedSettings {
+            max_html_bytes: 1024,
+            ..settings()
+        },
+    )
+    .await
+    .unwrap();
+    assert_eq!(card.title.as_deref(), Some("Streamed"));
+    assert_eq!(card.description, None);
+
+    // A page that inflates to megabytes from a few kilobytes costs the cap.
+    let bomb = compressed("text/html", "gzip", gzipped("bomb-page.html.gz")).await;
+    let card = card_of(
+        &bomb,
+        EmbedSettings {
+            max_html_bytes: 1024,
+            ..settings()
+        },
+    )
+    .await
+    .unwrap();
+    assert_eq!(card.title.as_deref(), Some("Bomb"));
+}
+
+#[tokio::test]
+async fn a_compressed_picture_over_the_cap_is_dropped_like_an_uncompressed_one() {
+    let small = EmbedSettings {
+        max_image_bytes: 1024,
+        ..settings()
+    };
+    let fetcher = fetcher(&["page.test"], small);
+    for file in ["big-picture.png.gz", "bomb-picture.png.gz"] {
+        let server = compressed("image/png", "gzip", gzipped(file)).await;
+        assert_eq!(
+            fetcher
+                .fetch_image(&link(&server.url("page.test", "/a.png")))
+                .await,
+            Err(Failure::TooLarge),
+            "{file}"
+        );
+    }
+}
+
+#[tokio::test]
+async fn a_compressed_picture_is_stored_as_the_bytes_an_uncompressed_fetch_stores() {
+    let fetcher = fetcher(&["page.test"], settings());
+    let plain = Server::page("image/png", PNG.to_vec()).await;
+    let packed = compressed("image/png", "gzip", gzipped("picture.png.gz")).await;
+    let from_plain = fetcher
+        .fetch_image(&link(&plain.url("page.test", "/a.png")))
+        .await
+        .unwrap();
+    let from_packed = fetcher
+        .fetch_image(&link(&packed.url("page.test", "/a.png")))
+        .await
+        .unwrap();
+    assert_eq!(from_packed, from_plain);
+    assert_eq!(from_packed.bytes, PNG);
+
+    // A damaged or cut body is no picture at all, not a shorter one.
+    let whole = gzipped("picture.png.gz");
+    let mut damaged = whole.clone();
+    let last = damaged.len() - 6;
+    damaged[last] ^= 1;
+    for body in [whole[..whole.len() - 2].to_vec(), damaged] {
+        let server = compressed("image/png", "gzip", body).await;
+        assert_eq!(
+            fetcher
+                .fetch_image(&link(&server.url("page.test", "/a.png")))
+                .await,
+            Err(Failure::Network)
+        );
+    }
 }
 
 #[tokio::test]
