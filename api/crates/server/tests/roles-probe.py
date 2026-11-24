@@ -244,8 +244,9 @@ def diff(ours_path, theirs_path):
             if ours[server][part] != theirs.get(server, {}).get(part):
                 differences += 1
                 print(f"DIFFERENT {part} of {server}")
-                print("   ours  ", json.dumps(ours[server][part])[:1500])
-                print("   theirs", json.dumps(theirs.get(server, {}).get(part))[:1500])
+                mine, first = ours[server][part], theirs.get(server, {}).get(part) or []
+                print("   only ours  ", json.dumps([row for row in mine if row not in first])[:1500])
+                print("   only theirs", json.dumps([row for row in first if row not in mine])[:1500])
     totals = {part: sum(len(ours[server][part]) for server in ours) for part in next(iter(ours.values()))}
     print(f"{len(ours)} worlds compared in the files ({totals}), {differences} differences")
     return 1 if differences else 0
