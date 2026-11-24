@@ -19,7 +19,7 @@ use super::wire::{
 };
 use crate::auth::Caller;
 use crate::database::DbError;
-use crate::http::{ApiError, ApiResult, Json, Path, Query, json_response};
+use crate::http::{ApiError, ApiResult, Json, Path, QueryValues, json_response};
 use crate::state::AppState;
 use crate::values::{Guid, Id, Timestamp};
 
@@ -338,32 +338,6 @@ pub async fn keys(
         .ok_or_else(ApiError::not_found)
 }
 
-/// The query of the epochs: the sequence number to read after.
-///
-/// Read by hand the way the first server bound an `int?`: no value at all is
-/// none, one that is empty or not an integer (space around it, and a sign, are
-/// allowed), or given twice, is a bad request. The name counts in any letter case.
-fn after_of(query: &[(String, String)]) -> Result<i64, ApiError> {
-    let mut given = query
-        .iter()
-        .filter(|(name, _)| name.eq_ignore_ascii_case("after"));
-    let Some((_, value)) = given.next() else {
-        return Ok(0);
-    };
-    if given.next().is_some() {
-        return Err(ApiError::bad_request());
-    }
-    let value = value.trim_matches(|c: char| matches!(c, '\u{9}'..='\u{d}' | ' '));
-    let digits = value.strip_prefix(['+', '-']).unwrap_or(value);
-    if digits.is_empty() || !digits.bytes().all(|b| b.is_ascii_digit()) {
-        return Err(ApiError::bad_request());
-    }
-    value
-        .parse::<i32>()
-        .map(i64::from)
-        .map_err(|_| ApiError::bad_request())
-}
-
 /// The conversation's epochs after a sequence number, from every period it was
 /// encrypted, each with the envelopes for the reader's account key and this
 /// browser's device. Envelopes for keys the reader no longer has are of no use
@@ -372,9 +346,9 @@ pub async fn epochs(
     State(state): State<AppState>,
     caller: Caller,
     Path(Guid(id)): Path<Guid>,
-    Query(query): Query<Vec<(String, String)>>,
+    query: QueryValues,
 ) -> ApiResult<Response> {
-    let after = after_of(&query)?;
+    let after = i64::from(query.int("after")?.unwrap_or(0));
     let found = state
         .database()
         .read(move |db| -> Result<Option<EpochsDto>, DbError> {
