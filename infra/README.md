@@ -17,9 +17,9 @@ Startup scripts, configuration templates, and container contract tests shipped i
 
 1. Validates `STELLARR_*` variables via `settings.sh` (blank values fall back to image defaults; malformed values exit `1` with an explicit message).
 2. Refuses to boot if `/data/stellarr/restore/broken` exists; runs `stellarr backup apply --yes` when `/data/stellarr/restore/staged.zip` is present (exit `4` marks the archive refused and boots with existing data).
-3. Creates `/data/stellarr/{db,files,incoming,keys,secrets,tls,releases,backups,restore,logs}`, ensures `/data/stellarr/secrets/{turn-shared-secret,media-control-secret}` exist (`0600`), and resolves `STELLARR_PUBLIC_IP=auto` via `getent ahostsv4`.
-4. Runs `tls-maintenance.sh prepare`: generates a 365-day RSA-3072 self-signed certificate (marked by `.stellarr-self-signed`) when absent, mismatched with `STELLARR_DOMAIN`, or within 30 days of expiry. Operator-mounted certificates are never overwritten (and log a warning within 7 days of expiry); when `watch` mode renews a managed certificate, it calls `stellarr-init reload nginx` and `stellarr-init restart turn`.
-5. Writes `/opt/stellarr/web/stellarr-instance.js` (`STELLARR_LANGUAGE`), renders `/etc/turnserver.conf` and `/etc/nginx/nginx.conf`, exports resolved `STELLARR_*` variables for `stellarr-api` and `stellarr-media`, and hands PID 1 to `stellarr-init run`.
+3. Creates `/data/stellarr/{db,files,incoming,keys,secrets,tls,releases,backups,restore,logs}`, creates `media-control-secret` and, when TURN is enabled, `turn-shared-secret` under `/data/stellarr/secrets/` (`0600`), and resolves `STELLARR_PUBLIC_IP=auto` via `getent ahostsv4`.
+4. Runs `tls-maintenance.sh prepare`: generates a 365-day RSA-3072 self-signed certificate (marked by `.stellarr-self-signed`) when absent, mismatched with `STELLARR_DOMAIN`, or within 30 days of expiry. Operator-mounted certificates are never overwritten (and log a warning within 7 days of expiry); when `watch` mode renews a managed certificate, it calls `stellarr-init reload nginx` and restarts `turn` if it is enabled.
+5. Writes `/opt/stellarr/web/stellarr-instance.js` (`STELLARR_LANGUAGE`), renders `/etc/nginx/nginx.conf` and, when TURN is enabled, `/etc/turnserver.conf`, exports resolved `STELLARR_*` variables for `stellarr-api` and `stellarr-media`, and hands PID 1 to `stellarr-init run`.
 
 ## Nginx caching and routing (`nginx.conf`)
 

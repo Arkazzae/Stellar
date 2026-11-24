@@ -26,8 +26,8 @@ docker compose up -d
 
 | Variable | Type | Default | Description |
 | --- | --- | --- | --- |
-| `STELLARR_DOMAIN` | hostname or IP | empty | Hostname or IP address users open in their browser. Sets the self-signed TLS Subject Alternative Name, TURN realm, and public URL host; defaults to `localhost` when unset. |
-| `STELLARR_PUBLIC_IP` | IPv4 or `auto` | empty | External IPv4 address advertised by `coturn` and `stellarr-media`. Required for voice calls from any device outside the Docker host; `auto` resolves the `A` record of `STELLARR_DOMAIN` at container startup. |
+| `STELLARR_DOMAIN` | hostname or IP | empty | Hostname or IP address users open in their browser. Sets the self-signed TLS Subject Alternative Name and public URL host, plus the realm when TURN is enabled; defaults to `localhost` when unset. |
+| `STELLARR_PUBLIC_IP` | IPv4 or `auto` | empty | External IPv4 address advertised by `stellarr-media` and, when enabled, `coturn`. Use a reachable IPv4 for remote calls. With this variable unset, a numeric IPv4 `STELLARR_DOMAIN` supplies the direct SFU address. `auto` resolves the domain’s IPv4 address at container startup. |
 | `STELLARR_HTTPS_PORT` | port | `443` | Host TCP port mapped to container port `443/tcp`. Used for HTTP-to-HTTPS redirects and for constructing the default public URL. |
 | `STELLARR_HTTP_PORT` | port or `ip:port` | `127.0.0.1:8888` | Host TCP binding for the local HTTP reverse-proxy upstream on container port `80/tcp`. Read by Compose only. |
 | `STELLARR_PUBLIC_PORT` | port | `STELLARR_HTTPS_PORT` | External HTTPS port browsers connect to (`443` when behind a [reverse proxy](reverse-proxy-and-tls.md#run-behind-a-reverse-proxy)). Omitted from generated URLs when set to `443`. |
@@ -46,7 +46,7 @@ docker compose up -d
 | `STELLARR_TURN_ENABLED` | `true` \| `false` | `false` | Enables the optional TURN relay. Add `docker-compose.turn.yml` alongside the base Compose file to publish its ports. |
 | `STELLARR_TURN_PORT` | port | `3478` | Host UDP/TCP port for STUN and TURN advertised to browsers. |
 | `STELLARR_TURNS_PORT` | port | `5349` | Host TCP/UDP port for TURN over TLS and DTLS. |
-| `STELLARR_TURN_RELAY_RANGE` | port range | `49160-49200` | Host UDP port range for TURN media relays, mapped 1:1 to the same container port range. |
+| `STELLARR_TURN_RELAY_RANGE` | port range | `49160-49200` | UDP port range used by coturn for media relays and mapped 1:1 by the optional Compose override. |
 | `STELLARR_TURN_TCP_ENABLED` | `true` \| `false` | `false` | Enables the `coturn` TCP listener and advertises `?transport=tcp` TURN URLs. |
 | `STELLARR_TURNS_ENABLED` | `true` \| `false` | `false` | Enables TURN over TLS and DTLS (`turns:`). Requires a CA-signed certificate trusted by browsers. |
 
@@ -220,11 +220,11 @@ Read by `docker-compose.yml` during container creation (for `docker run`, pass `
 | --- | --- | --- | --- |
 | `STELLARR_TLS_RENEW_BEFORE_SECONDS` | seconds | `2592000` (30 days) | Renews the container-managed self-signed TLS certificate when remaining validity drops below this threshold or `STELLARR_DOMAIN` changes. |
 | `STELLARR_TLS_RENEW_CHECK_SECONDS` | seconds | `43200` (12 hours) | Interval between self-signed certificate renewal checks (`stellarr-tls-maintenance watch`). |
-| `STELLARR_MEDIA_ADVERTISE` | `ip:port` list | empty | Explicit comma-separated IPv4 `ip:port` ICE host candidates for `stellarr-media`, overriding candidates derived from `STELLARR_PUBLIC_IP` and the container IP. |
+| `STELLARR_MEDIA_ADVERTISE` | `ip:port` list | empty | Explicit comma-separated IPv4 `ip:port` ICE host candidates for `stellarr-media`, replacing the default candidates derived from `STELLARR_PUBLIC_IP`, `STELLARR_DOMAIN` and the container IP. |
 | `STELLARR_MEDIA_LOG` | `tracing` filter | `info` | Rust `tracing` log filter for `stellarr-media` (e.g. `info,stellarr_media=debug`). |
 
 > [!IMPORTANT]
-> Shared secrets between the API, `coturn`, and `stellarr-media` are generated automatically on first start in `/data/stellarr/secrets/` (`turn-shared-secret` and `media-control-secret`) and are not configurable via environment variables. Preserve `/data/stellarr/secrets/` in all volume backups.
+> The container generates `media-control-secret` on first start and `turn-shared-secret` when TURN is first enabled. Both are stored in `/data/stellarr/secrets/`. The container reads these secrets from their files. Preserve `/data/stellarr/secrets/` in all volume backups.
 
 The container data directory is fixed at `/data/stellarr` inside the image (`STELLARR_DATA_ROOT`). The database is `db/stellarr.db` in it, and has no setting of its own.
 

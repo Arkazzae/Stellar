@@ -3,14 +3,14 @@
 Stellarr is self-hosted text, voice, and video chat for small groups of friends, packaged as one Docker container backed by `/data/stellarr`.
 
 > [!TIP]
-> To start a local instance in two minutes, follow the [Quick start](install/quick-start.md). Before inviting friends from outside your machine, review [Behind NAT](install/requirements.md#behind-nat) for `STELLARR_PUBLIC_IP` and UDP port forwarding.
+> To start a local instance in two minutes, follow the [Quick start](install/quick-start.md). Before inviting friends from outside your machine, review [Behind NAT](install/requirements.md#behind-nat) for reachable media addresses, firewall rules, and router forwarding.
 
 ## Self-hosting
 
 - [Quick start](install/quick-start.md): install with `install.sh` or Docker Compose, complete `/setup`, invite a second user, and test voice.
 - [Requirements](install/requirements.md): host sizing (tested down to 512 MiB RAM and 1 CPU core), published ports, NAT forwarding, TLS, and outbound network rules.
 - [Configuration](install/configuration.md): all 61 `STELLARR_*` variables, raw `Section__Key` settings, structured logging, dev stack settings, and `docker run`.
-- [Reverse proxy and TLS](install/reverse-proxy-and-tls.md): custom TLS certificates, Caddy and Nginx reverse-proxy configs, `STELLARR_TRUSTED_PROXIES`, and direct WebRTC UDP ports.
+- [Reverse proxy and TLS](install/reverse-proxy-and-tls.md): custom TLS certificates, Caddy and Nginx reverse-proxy configs, `STELLARR_TRUSTED_PROXIES`, and direct WebRTC over UDP and TCP.
 - [Unraid](install/unraid.md): install, map port pairs, run CLI checks, and update using the Unraid container template.
 - [Upgrading](install/upgrading.md): stopping and archiving `/data/stellarr`, pulling new releases, SQLite schema rules, and rollbacks.
 
@@ -44,7 +44,7 @@ Stellarr is self-hosted text, voice, and video chat for small groups of friends,
 - [Web workspace](../web/README.md): `stellarr-web` multi-page Vite build, up-front bundle budget, AudioWorklets, and the [Cockpit SPA](../web/src/cockpit/README.md).
 - [Media SFU crate](../media/README.md): building and testing `stellarr-media` and running the [browser smoke suite](../media/smoke/README.md).
 - [Init supervisor](../init/README.md): Rust PID 1 supervisor, readiness probes, Unix control socket protocol, and PID-namespace tests.
-- [Container infrastructure](../infra/README.md): `entrypoint.sh`, `settings.sh`, `stellarr-cli.sh`, `tls-maintenance.sh`, `nginx.conf`, `coturn`, and shell contract tests.
+- [Container infrastructure](../infra/README.md): `entrypoint.sh`, `settings.sh`, `stellarr-cli.sh`, `tls-maintenance.sh`, `nginx.conf`, optional TURN relay configuration, and shell contract tests.
 - [Runtime artifacts](../artifacts/README.md): `manifest.json`, `assemble.mjs`, prebuilt models, and reproducible [WebAssembly recipes](../artifacts/recipes/README.md).
 - [Shared frontend packages](../packages/stellarr-ui/README.md): [`@stellarr/ui`](../packages/stellarr-ui/README.md) components and `--ui-*` tokens, [`@stellarr/icons`](../packages/stellarr-icons/README.md), and [`@stellarr/router`](../packages/stellarr-router/README.md).
 - [Web benchmarks](../web/bench/README.md): browser benchmarks for 10,000-message transcripts, channel rail drag, live-call updates, and [voice DSP records](../web/bench/voice/README.md).

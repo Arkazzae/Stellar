@@ -102,6 +102,7 @@ Startup settings controlled by `.env` appear in `config list` and can be queried
 | `oidc.trust-provider-mfa` | `STELLARR_OIDC_TRUST_PROVIDER_MFA` |
 | `oidc.provider-mfa-amr` | `STELLARR_OIDC_PROVIDER_MFA_AMR` |
 | `oidc.providers` | `Oidc__Providers__<id>__*` |
+| `rtc.turn-enabled` | `STELLARR_TURN_ENABLED` |
 | `rtc.turn-port` | `STELLARR_TURN_PORT` |
 | `rtc.turns-port` | `STELLARR_TURNS_PORT` |
 | `rtc.turns-enabled` | `STELLARR_TURNS_ENABLED` |
