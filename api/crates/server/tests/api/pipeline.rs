@@ -419,7 +419,7 @@ async fn a_route_that_reads_json_reads_one_mib_unless_it_asks_for_more() {
 
     let declared = client.post_zeros("/api/test/body", Some(MIB + 1), 0).await;
     let exact = client.post_zeros("/api/test/body", Some(MIB), MIB).await;
-    let big_json = format!("\"{}\"", "x".repeat(2 * MIB as usize));
+    let big_json = format!("{{\"a\":\"{}\"}}", "x".repeat(2 * MIB as usize));
     let refused = client.send(Request::new(Method::POST, "/api/test/body").body("application/json", &big_json)).await;
     let allowed = client.send(Request::new(Method::POST, "/api/test/big").body("application/json", &big_json)).await;
 
@@ -430,7 +430,7 @@ async fn a_route_that_reads_json_reads_one_mib_unless_it_asks_for_more() {
     assert_eq!(declared.header("connection"), Some("close"));
     assert_eq!(refused.status, 413);
     assert_eq!(allowed.status, 200);
-    assert_eq!(allowed.body.len(), 2 * MIB as usize + 2);
+    assert_eq!(allowed.body.len(), big_json.len());
 }
 
 #[tokio::test]
