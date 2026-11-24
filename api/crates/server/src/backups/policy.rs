@@ -5,12 +5,11 @@
 //!
 //! What is read is always what is stored: nothing is cached, so a change made
 //! by one request is the next request's and the next hour's. A row that
-//! cannot be opened (another master key, or written by the first server)
-//! counts as not set, and the settings of the environment stand.
+//! cannot be opened (another master key, or an altered row) is a damaged
+//! value like any other, and an error.
 
 use rusqlite::{Connection, OptionalExtension, params};
 use serde::{Deserialize, Serialize};
-use tracing::warn;
 
 use crate::seal::Sealer;
 use crate::settings::BackupSettings;
@@ -162,17 +161,10 @@ fn read<T: for<'de> Deserialize<'de>>(
     else {
         return Ok(None);
     };
-    let opened = sealer
-        .open(purpose, row.as_bytes(), &sealed, Timestamp::now())
-        .ok()
-        .and_then(|bytes| serde_json::from_slice::<T>(&bytes).ok());
-    if opened.is_none() {
-        warn!(
-            target: "Stellarr.Api.Backups",
-            "The saved setting {row} cannot be read with this instance's keys; the settings of the environment stand"
-        );
-    }
-    Ok(opened)
+    let bytes = sealer.open(purpose, row.as_bytes(), &sealed, Timestamp::now())?;
+    serde_json::from_slice::<T>(&bytes).map(Some).map_err(|error| {
+        rusqlite::Error::FromSqlConversionFailure(0, rusqlite::types::Type::Text, Box::new(error))
+    })
 }
 
 fn write<T: Serialize>(

@@ -126,42 +126,35 @@ async fn setting_again_replaces_the_value_and_moves_the_time() {
     assert!(b > a);
 }
 
+/// Reading the secrets with these keys fails.
+async fn fails(
+    database: &crate::database::Database,
+    environment: EnvironmentSecrets,
+    sealer: Sealer,
+) -> bool {
+    database
+        .read(move |db| read(db, &environment, &sealer))
+        .await
+        .is_err()
+}
+
 #[tokio::test]
-async fn a_row_the_keys_cannot_open_counts_as_unset() {
+async fn a_row_the_keys_cannot_open_is_a_damaged_value() {
     let (_folder, database) = new_database();
     store(&database, RESEND_API_KEY, "re_sealed_elsewhere").await;
-    // A row the first server wrote, protected with keys this instance never had.
-    database
-        .write(|tx| {
-            tx.execute(
-                "INSERT INTO \"InstanceSecrets\" (\"Name\", \"ProtectedValue\", \"UpdatedAt\") VALUES (?1, ?2, ?3)",
-                params![
-                    SMTP_PASSWORD.name,
-                    "CfDJ8-written-under-keys-that-are-gone",
-                    Timestamp::now()
-                ],
-            )
-        })
+
+    // The same row under keys it was not sealed with, and the environment's
+    // value does not stand in for it.
+    assert!(fails(&database, environment(&[]), Sealer::from_key([1u8; 32])).await);
+    assert!(
+        fails(
+            &database,
+            environment(&[("Mail:ResendApiKey", "re_env")]),
+            Sealer::from_key([1u8; 32])
+        )
         .await
-        .unwrap();
-
-    let other_keys = Sealer::from_key([1u8; 32]);
-    let secrets = resolved(&database, environment(&[]), other_keys.clone()).await;
-
-    assert!(!secrets.resend_api_key().is_set());
-    assert!(!secrets.smtp_password().is_set());
-    let status = secrets.status(&RESEND_API_KEY);
-    assert_eq!((status.configured, status.source), (false, "none"));
-    assert_eq!(status.updated_at, None);
-    // The environment's value stands in for one that cannot be opened.
-    let with_fallback = resolved(
-        &database,
-        environment(&[("Mail:ResendApiKey", "re_env")]),
-        other_keys,
-    )
-    .await;
-    assert_eq!(with_fallback.resend_api_key().expose(), "re_env");
-    assert_eq!(with_fallback.resend_api_key().source, Source::Environment);
+    );
+    assert!(!fails(&database, environment(&[]), sealer()).await);
 }
 
 #[tokio::test]
@@ -178,34 +171,29 @@ async fn a_row_moved_under_another_name_does_not_open() {
         .await
         .unwrap();
 
-    let secrets = resolved(&database, environment(&[]), sealer()).await;
-
-    assert!(!secrets.resend_api_key().is_set());
-    assert!(!secrets.get(&GIPHY_API_KEY).is_set());
+    assert!(fails(&database, environment(&[]), sealer()).await);
 }
 
 #[tokio::test]
-async fn a_row_with_nothing_in_it_counts_as_unset() {
+async fn a_row_with_nothing_in_it_counts_as_unset_and_one_that_is_not_text_is_damaged() {
     let (_folder, database) = new_database();
     let empty = sealer().seal(PURPOSE, GIPHY_API_KEY.name.as_bytes(), None, b"");
     let not_text = sealer().seal(PURPOSE, RESEND_API_KEY.name.as_bytes(), None, &[0xff, 0xfe]);
-    database
-        .write(move |tx| {
-            for (name, sealed) in [(GIPHY_API_KEY.name, empty), (RESEND_API_KEY.name, not_text)] {
-                tx.execute(
-                    "INSERT INTO \"InstanceSecrets\" (\"Name\", \"ProtectedValue\", \"UpdatedAt\") VALUES (?1, ?2, ?3)",
-                    params![name, sealed, Timestamp::now()],
-                )?;
-            }
-            Ok::<_, rusqlite::Error>(())
+    let insert = |name: &'static str, sealed: String| {
+        database.write(move |tx| {
+            tx.execute(
+                "INSERT INTO \"InstanceSecrets\" (\"Name\", \"ProtectedValue\", \"UpdatedAt\") VALUES (?1, ?2, ?3)",
+                params![name, sealed, Timestamp::now()],
+            )
         })
-        .await
-        .unwrap();
+    };
+    insert(GIPHY_API_KEY.name, empty).await.unwrap();
 
     let secrets = resolved(&database, environment(&[("Giphy:ApiKey", "env")]), sealer()).await;
 
     assert_eq!(secrets.get(&GIPHY_API_KEY).source, Source::Environment);
-    assert!(!secrets.resend_api_key().is_set());
+    insert(RESEND_API_KEY.name, not_text).await.unwrap();
+    assert!(fails(&database, environment(&[]), sealer()).await);
 }
 
 #[test]

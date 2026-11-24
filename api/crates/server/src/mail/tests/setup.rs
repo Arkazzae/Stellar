@@ -246,7 +246,7 @@ async fn the_smtp_password_set_in_the_panel_goes_with_the_transport() {
 }
 
 #[tokio::test]
-async fn a_password_that_cannot_be_opened_leaves_mail_working_without_it() {
+async fn a_password_that_cannot_be_opened_is_a_damaged_value_and_mail_is_not_found() {
     let (_folder, state) = instance(&[]);
     found(
         &state,
@@ -261,16 +261,20 @@ async fn a_password_that_cannot_be_opened_leaves_mail_working_without_it() {
         .database()
         .write(|tx| {
             tx.execute(
-                "INSERT INTO \"InstanceSecrets\" (\"Name\", \"ProtectedValue\", \"UpdatedAt\") VALUES ('mail.smtp-password', 'CfDJ8-from-the-first-server', ?1)",
+                "INSERT INTO \"InstanceSecrets\" (\"Name\", \"ProtectedValue\", \"UpdatedAt\") VALUES ('mail.smtp-password', 'CfDJ8-not-sealed-here', ?1)",
                 [crate::values::Timestamp::now()],
             )
         })
         .await
         .unwrap();
 
-    let smtp = ready(find(&state).await).transport.smtp.unwrap();
+    let reading = state.clone();
+    let found = state
+        .database()
+        .read(move |db| setup::find(db, reading.settings(), reading.sealer()))
+        .await;
 
-    assert_eq!(smtp.password, "");
+    assert!(found.is_err());
 }
 
 #[tokio::test]

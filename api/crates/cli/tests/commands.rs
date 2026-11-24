@@ -642,9 +642,9 @@ fn a_secret_cannot_be_given_as_an_argument_and_needs_the_keys_folder() {
 }
 
 #[test]
-fn a_value_sealed_under_another_key_counts_as_unset_and_is_said() {
+fn a_value_sealed_under_another_key_is_a_damaged_value_and_clearing_it_still_works() {
     let instance = Instance::started();
-    // What the first server wrote, or this one under a key since lost.
+    // Sealed under a key since lost.
     let other = Sealer::from_key([9u8; 32]);
     instance
         .db()
@@ -656,23 +656,8 @@ fn a_value_sealed_under_another_key_counts_as_unset_and_is_said() {
 
     let list = instance.run(&["--json", "secrets", "list"]);
 
-    assert_eq!(list.exit, 0);
-    let json = list.json();
-    let one = json["data"]["secrets"]
-        .as_array()
-        .unwrap()
-        .iter()
-        .find(|item| item["name"] == "mail.smtp-password")
-        .unwrap()
-        .clone();
-    assert_eq!(one["configured"], false);
-    assert_eq!(one["source"], "none");
-    assert!(
-        json["warnings"][0]
-            .as_str()
-            .unwrap()
-            .contains("mail.smtp-password")
-    );
+    assert_eq!(list.exit, 4);
+    assert_eq!(list.code().as_str(), "secret_unreadable");
     assert!(!list.output.contains("old"));
     // Clearing removes the row; so would setting it again, under the key in use.
     assert_eq!(
