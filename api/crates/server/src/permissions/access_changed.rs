@@ -42,8 +42,18 @@ impl ViewChange {
 
     /// Reads it again and returns the people who see something else now.
     pub fn finish(&self, db: &Connection) -> rusqlite::Result<Vec<Id>> {
+        Ok(self.finish_with_view(db)?.1)
+    }
+
+    /// The same, with what everybody sees now, for an event that follows and
+    /// names what each member sees.
+    pub fn finish_with_view(
+        &self,
+        db: &Connection,
+    ) -> rusqlite::Result<(ServerVisibility, Vec<Id>)> {
         let after = ServerVisibility::load(db, self.before.server)?;
-        ServerVisibility::changed(db, &self.before, &after)
+        let changed = ServerVisibility::changed(db, &self.before, &after)?;
+        Ok((after, changed))
     }
 }
 
@@ -53,16 +63,21 @@ struct ChannelAccessChanged {
     server_id: Id,
 }
 
-/// Tells each of `users`, on the connections that follow the server, that what
-/// they see has changed. Nobody to tell sends nothing. Call it after the
-/// commit.
+/// The event that tells each of `users`, on the connections that follow the
+/// server, that what they see has changed; none when there is nobody to tell.
+pub fn event(server: Id, users: Vec<Id>) -> Option<Event> {
+    (!users.is_empty()).then(|| {
+        Event::new(
+            Audience::Followers { server, users },
+            "ChannelAccessChanged",
+            &ChannelAccessChanged { server_id: server },
+        )
+    })
+}
+
+/// Sends [`event`]. Call it after the commit.
 pub fn publish(events: &dyn EventPublisher, server: Id, users: Vec<Id>) {
-    if users.is_empty() {
-        return;
+    if let Some(event) = event(server, users) {
+        events.publish(event);
     }
-    events.publish(Event::new(
-        Audience::Followers { server, users },
-        "ChannelAccessChanged",
-        &ChannelAccessChanged { server_id: server },
-    ));
 }

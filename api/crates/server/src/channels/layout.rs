@@ -19,6 +19,7 @@ use rusqlite::Connection;
 use serde::Serialize;
 
 use crate::events::{Audience, Event};
+use crate::permissions::access_changed as access;
 use crate::permissions::visibility::{MemberView, ServerVisibility};
 use crate::values::Id;
 
@@ -41,12 +42,6 @@ struct ChannelPlacement {
 struct SectionOrder {
     server_id: Id,
     section_ids: Vec<Id>,
-}
-
-#[derive(Serialize)]
-#[serde(rename_all = "camelCase")]
-struct AccessChanged {
-    server_id: Id,
 }
 
 /// The people of a server who see the same, each group with what they see.
@@ -138,29 +133,21 @@ pub fn section_order(visibility: &ServerVisibility, ordered: &[Id]) -> Vec<Event
         .collect()
 }
 
-/// `ChannelAccessChanged` for each of `users`: what they see has changed.
-pub fn access_changed(server: Id, users: Vec<Id>) -> Option<Event> {
-    (!users.is_empty()).then(|| {
-        Event::new(
-            Audience::Followers { server, users },
-            "ChannelAccessChanged",
-            &AccessChanged { server_id: server },
-        )
-    })
-}
-
 /// One change that may show somebody a channel or hide one from them: what
 /// everybody sees is read before it, and again once it is committed, and
 /// whoever sees something else is told. On a server where nobody is denied
-/// view before or after, nobody is told anything.
+/// view before or after, nobody is told anything. The reading and the event
+/// are the shared ones of `permissions::access_changed`.
 pub struct ViewChange {
-    before: ServerVisibility,
+    change: access::ViewChange,
+    server: Id,
 }
 
 impl ViewChange {
     pub fn begin(db: &Connection, server: Id) -> rusqlite::Result<ViewChange> {
         Ok(ViewChange {
-            before: ServerVisibility::load(db, server)?,
+            change: access::ViewChange::begin(db, server)?,
+            server,
         })
     }
 
@@ -170,8 +157,7 @@ impl ViewChange {
         self,
         db: &Connection,
     ) -> rusqlite::Result<(ServerVisibility, Option<Event>)> {
-        let after = ServerVisibility::load(db, self.before.server)?;
-        let changed = ServerVisibility::changed(db, &self.before, &after)?;
-        Ok((after, access_changed(self.before.server, changed)))
+        let (after, changed) = self.change.finish_with_view(db)?;
+        Ok((after, access::event(self.server, changed)))
     }
 }
