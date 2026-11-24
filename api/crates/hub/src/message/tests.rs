@@ -52,10 +52,8 @@ fn a_streaming_invocation_is_recognised_and_stream_ids_are_counted() {
     );
     assert!(got.streaming);
     assert_eq!(got.stream_ids, 2);
-    assert_eq!(
-        invocation(r#"{"type":1,"target":"T","arguments":[],"streamIds":null}"#).stream_ids,
-        0
-    );
+    let headed = invocation(r#"{"type":1,"target":"T","arguments":[],"headers":{"a":"b"}}"#);
+    assert_eq!(headed.target, "T", "headers of strings are skipped");
 }
 
 #[test]
@@ -71,6 +69,9 @@ fn close_is_recognised_whatever_it_carries() {
 fn messages_the_server_has_no_use_for_are_skipped() {
     for text in [
         r#"{"type":6}"#,
+        r#"{"type":6,"anything":[1]}"#,
+        r#"{"type":3,"invocationId":"1"}"#,
+        r#"{"type":3,"invocationId":"1","error":"x"}"#,
         r#"{"type":2,"invocationId":"1","item":1}"#,
         r#"{"type":3,"invocationId":"1","result":1}"#,
         r#"{"type":5,"invocationId":"1"}"#,
@@ -104,6 +105,24 @@ fn what_cannot_be_read_is_malformed() {
         r#"{"type":1,"invocationId":5,"target":"T","arguments":[]}"#,
         r#"{"type":1,"invocationId":null,"target":"T","arguments":[]}"#,
         r#"{"type":1,"target":"T","arguments":[],"streamIds":[1]}"#,
+        r#"{"type":1,"target":"T","arguments":[],"streamIds":null}"#,
+        r#"{"type":1,"target":"T","arguments":[],"headers":5}"#,
+        r#"{"type":1,"target":"T","arguments":[],"headers":{"a":1}}"#,
+        r#"{"type":99999999999}"#,
+        r#"{"type":null}"#,
+        r#"{"type":2}"#,
+        r#"{"type":2,"invocationId":"1"}"#,
+        r#"{"type":2,"item":1}"#,
+        r#"{"type":3}"#,
+        r#"{"type":3,"result":1}"#,
+        r#"{"type":3,"invocationId":"1","result":1,"error":"x"}"#,
+        r#"{"type":5}"#,
+        r#"{"type":5,"invocationId":1}"#,
+        r#"{"type":8}"#,
+        r#"{"type":8,"sequenceId":"x"}"#,
+        r#"{"type":9}"#,
+        r#"{"type":7,"error":5}"#,
+        r#"{"type":7,"allowReconnect":"x"}"#,
         r#"{"type":1,"target":"T","arguments":[],"streamIds":"a"}"#,
         r#"{"type":1,"target":"T","arguments":[]} trailing"#,
         r#"{"type":1,"target":"T","arguments":["#,

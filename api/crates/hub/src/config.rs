@@ -8,7 +8,7 @@ pub struct Config {
     pub max_record_size: usize,
     /// How long a client has to send its handshake after connecting.
     pub handshake_timeout: Duration,
-    /// A ping record goes out when nothing else has for this long.
+    /// How often a ping record goes out, whatever else is sent.
     pub keep_alive_interval: Duration,
     /// A connection that has sent nothing at all, not even a reply to the
     /// transport's own ping, for this long is closed. `None` never closes one.
@@ -50,7 +50,7 @@ impl Default for Config {
             max_queued_bytes: 8 * 1024 * 1024,
             close_grace: Duration::from_secs(3),
             invocation_grace: Duration::from_secs(30),
-            pending_connection_ttl: Duration::from_secs(30),
+            pending_connection_ttl: Duration::from_secs(15),
             max_pending_connections: 50_000,
             invocation_queue: 32,
         }

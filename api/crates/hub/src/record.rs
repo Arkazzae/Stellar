@@ -16,7 +16,9 @@ pub struct TooLong;
 /// The limit counts a record with its separator, so a record of exactly
 /// `max` bytes passes and one byte more does not. Bytes of a record that has
 /// not ended yet count too, so a peer cannot make the buffer grow by never
-/// sending the separator.
+/// sending the separator. (A record that has reached the limit without its
+/// separator is waited for one more byte: the separator would make it too
+/// long anyway, and the answer is the same.)
 #[derive(Debug)]
 pub struct RecordBuffer {
     buf: BytesMut,
@@ -56,8 +58,7 @@ impl RecordBuffer {
             }
             None => {
                 self.scanned = self.buf.len();
-                // A record that ends with the next byte would be one longer.
-                if self.buf.len() >= self.max {
+                if self.buf.len() > self.max {
                     return Err(TooLong);
                 }
                 Ok(None)
@@ -140,6 +141,12 @@ mod tests {
             "9 bytes may still end in a separator"
         );
         buffer.push(b"0");
+        assert_eq!(
+            buffer.next_record(),
+            Ok(None),
+            "ten bytes are at the limit, not past it"
+        );
+        buffer.push(b"1");
         assert_eq!(buffer.next_record(), Err(TooLong));
     }
 
