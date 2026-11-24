@@ -25,10 +25,8 @@ pub(super) struct PresenceUpdate {
     pub presence: String,
 }
 
-/// Tells each of the groups, one after another, that `user`'s status changed.
-/// A connection that is in several of them is told once for each, as the
-/// first server told it: the clients are used to it and take the same status
-/// twice without a change.
+/// Tells the groups that `user`'s status changed. A connection that is in
+/// several of them is told once.
 pub(super) fn announce(realtime: &Realtime, groups: &[String], user: Id, presence: &str) {
     let update = PresenceUpdate {
         user_id: user,
@@ -40,9 +38,7 @@ pub(super) fn announce(realtime: &Realtime, groups: &[String], user: Id, presenc
 fn send_each(realtime: &Realtime, groups: &[String], update: &PresenceUpdate) {
     match Outbound::single("PresenceChanged", update) {
         Ok(message) => {
-            for group in groups {
-                realtime.hub().send_to_group(group, &message);
-            }
+            realtime.hub().send_to_groups(groups, &message);
         }
         Err(error) => tracing::error!(%error, "a presence change could not be written"),
     }

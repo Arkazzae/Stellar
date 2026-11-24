@@ -178,15 +178,9 @@ async fn announce_presence(state: &AppState, user: Id) -> Result<(), ApiError> {
         user_id: user,
         presence: state.presence().public_presence_of(user, None),
     };
-    for server in reach.servers {
-        state
-            .events()
-            .publish(Event::new(Audience::Server(server), "PresenceChanged", &shown));
-    }
-    if !reach.peers.is_empty() {
-        state
-            .events()
-            .publish(Event::new(Audience::Users(reach.peers), "PresenceChanged", &shown));
+    if !reach.servers.is_empty() || !reach.peers.is_empty() {
+        let audience = Audience::Reach { servers: reach.servers, users: reach.peers };
+        state.events().publish(Event::new(audience, "PresenceChanged", &shown));
     }
     let own = PresenceChanged { user_id: user, presence: state.presence_of(user) };
     state
