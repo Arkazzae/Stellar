@@ -303,7 +303,7 @@ pub async fn register(State(state): State<AppState>, origin: Origin, Json(reques
         password_hash: Some(password_hash),
     };
 
-    let trusted_device_cookie = cookies::read(&origin.cookies, trusted_device_name(origin.https));
+    let trusted_device_cookie = cookies::read(&origin.headers, trusted_device_name(origin.https));
     let (context_state, context_origin) = (state.clone(), origin.clone());
     let outcome = state
         .database()

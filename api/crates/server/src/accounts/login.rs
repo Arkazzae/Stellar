@@ -51,7 +51,20 @@ fn no_store(mut response: Response) -> Response {
     response
 }
 
-pub async fn login(State(state): State<AppState>, origin: Origin, Json(request): Json<LoginRequest>) -> ApiResult<Response> {
+pub async fn login(
+    State(state): State<AppState>,
+    origin: Origin,
+    request: Result<Json<LoginRequest>, ApiError>,
+) -> ApiResult<Response> {
+    let Json(request) = match request {
+        Ok(request) => request,
+        // A request that names no content type is turned away by the route,
+        // which has already marked its answer as not to be stored.
+        Err(refusal) if !origin.headers.contains_key(axum::http::header::CONTENT_TYPE) => {
+            return Ok(no_store(refusal.into_response()));
+        }
+        Err(refusal) => return Err(refusal),
+    };
     // Either the user name or the e-mail address, in any letter case.
     let identifier = to_upper_invariant(request.username.as_deref().unwrap_or("").trim());
     let user = {
@@ -79,7 +92,7 @@ pub async fn login(State(state): State<AppState>, origin: Origin, Json(request):
     };
 
     let short_lived = request.keep_signed_in == Some(false);
-    let trusted_device_cookie = cookies::read(&origin.cookies, trusted_device_name(origin.https));
+    let trusted_device_cookie = cookies::read(&origin.headers, trusted_device_name(origin.https));
     let (write_state, write_origin, write_user) = (state.clone(), origin.clone(), user.clone());
     let started = state
         .database()
@@ -124,20 +137,17 @@ pub async fn login(State(state): State<AppState>, origin: Origin, Json(request):
                 new.id,
                 short_lived,
             );
-            let signed_in = if request.link_pending {
+            if request.link_pending {
                 // The identity to link is read from a cookie that only a
                 // sign-in through a provider sets, and nothing here sets one:
                 // there is nothing waiting, so the link fails, and whatever
                 // cookie there is for it is taken away.
                 let pending = cookies::delete(pending_identity_name(origin.https), origin.https);
-                with_cookie(
-                    json_response(StatusCode::OK, &LinkedSignIn { user: user.dto("online"), identity_link: "failed" }),
-                    &pending,
-                )
-            } else {
-                json_response(StatusCode::OK, &user.dto("online"))
-            };
-            with_session_cookie(signed_in, &cookie)
+                let body = json_response(StatusCode::OK, &LinkedSignIn { user: user.dto("online"), identity_link: "failed" });
+                return Ok(with_cookie(with_session_cookie(no_store(body), &cookie), &pending));
+            }
+            // The cookie's own cache headers come after, and win.
+            return Ok(with_session_cookie(no_store(json_response(StatusCode::OK, &user.dto("online"))), &cookie));
         }
     };
     Ok(no_store(response))
@@ -191,5 +201,5 @@ pub async fn logout(State(state): State<AppState>, origin: Origin, caller: Calle
         })
         .await?;
     let cookie = session::sign_out_cookie(&state.settings().environment, origin.https);
-    Ok(no_store(with_session_cookie(StatusCode::NO_CONTENT.into_response(), &cookie)))
+    Ok(with_session_cookie(no_store(StatusCode::NO_CONTENT.into_response()), &cookie))
 }
