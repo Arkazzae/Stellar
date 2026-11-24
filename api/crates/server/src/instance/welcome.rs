@@ -1,13 +1,13 @@
 //! The system notice that greets a person who has just joined a server.
 
 use rusqlite::{Connection, OptionalExtension, Transaction, params};
-use serde::Serialize;
 use stellarr_messages::{MessageKey, Messages};
 
 use super::access;
 use super::users::{User, UserDto};
 use crate::database::DbError;
 use crate::events::Event;
+use crate::messages::dto::MessageDto;
 use crate::permissions::visibility;
 use crate::values::{Id, Timestamp};
 
@@ -87,28 +87,11 @@ pub fn create_in(
     }))
 }
 
-/// The message as the clients read it.
-#[derive(Serialize)]
-#[serde(rename_all = "camelCase")]
-struct MessageCreated {
-    id: Id,
-    channel_id: Id,
-    author: UserDto,
-    content: String,
-    created_at: Timestamp,
-    attachments: Vec<()>,
-    embeds: Vec<()>,
-    edited_at: Option<Timestamp>,
-    pinned_at: Option<Timestamp>,
-    reply_to: Option<()>,
-    reactions: Vec<()>,
-}
-
 /// The event that tells the members who are online and see the channel, to be
 /// published once the notice has been committed.
 pub fn announcement(connection: &Connection, welcome: &Welcome) -> rusqlite::Result<Event> {
     let audience = visibility::audience_of(connection, welcome.server, welcome.channel)?;
-    let message = MessageCreated {
+    let message = MessageDto {
         id: welcome.id,
         channel_id: welcome.channel,
         author: UserDto::system(),
