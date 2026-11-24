@@ -79,50 +79,6 @@ pub trait RestoreLibrary {
     fn write_result(&self, data_root: &Path, outcome: &Json) -> std::io::Result<()>;
 }
 
-/// What stands in until the backups library is on this branch: every command
-/// that needs it says so, and none touches the data. It is replaced where the
-/// runtime is made (`Runtime::create`), with nothing else to change.
-pub struct NotYetBuilt;
-
-impl NotYetBuilt {
-    fn error() -> RestoreError {
-        RestoreError::Refused(
-            "this build has no backups library yet; see stellarr_cli::backup::NotYetBuilt"
-                .to_string(),
-        )
-    }
-}
-
-impl RestoreLibrary for NotYetBuilt {
-    fn check(&self, _: &Path, _: &Path) -> Result<Manifest, RestoreError> {
-        Err(NotYetBuilt::error())
-    }
-
-    fn staged_archive_path(&self, data_root: &Path) -> PathBuf {
-        data_root.join("restore").join("staged.zip")
-    }
-
-    fn folder_name(&self) -> &'static str {
-        "restore"
-    }
-
-    fn broken_marker_name(&self) -> &'static str {
-        "restore-broken"
-    }
-
-    fn clear_leftovers(&self, _: &Path) -> std::io::Result<()> {
-        Ok(())
-    }
-
-    fn apply(&self, _: &Path, _: &Path, _: Timestamp) -> Result<Applied, RestoreError> {
-        Err(NotYetBuilt::error())
-    }
-
-    fn write_result(&self, _: &Path, _: &Json) -> std::io::Result<()> {
-        Ok(())
-    }
-}
-
 /// `{moment:u}`: `2026-11-14 03:00:00Z`.
 fn universal(at: Timestamp) -> String {
     let text = at.to_wire_text();

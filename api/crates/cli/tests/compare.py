@@ -152,7 +152,6 @@ def normalise(text, root, volatile):
 KNOWN = [
     ("secrets set, no master key", "this server's first start makes a master key, and the tool, which makes one only after the question and the value, says that it will and that it did; the first tool kept a data-protection key ring"),
     ("secrets set, no keys folder", "the folder is called the keys directory here, not the data-protection key directory"),
-    ("backup verify of a file that is not an archive", "reading an archive is the backups library's, which is not on this branch yet"),
 ]
 
 

@@ -631,12 +631,11 @@ it names:
 
 Backups: `backup verify | restore | cancel | apply` are written against
 `stellarr_cli::backup::RestoreLibrary`, whose members are the first tool's
-`BackupRestore` (`check`, `staged_archive_path`, `folder_name`, `clear_leftovers`,
-`apply`, `write_result`). Until the backups library is on this branch,
-`Runtime::create` gives `NotYetBuilt`, which refuses every archive in words that
-say so and touches nothing. When the library lands, the one change is in
-`Runtime::create`: `restore: Box::new(BackupLibrary)` with an implementation of
-the trait over `backups::archive::verify`, `read_manifest` and the restore.
+`BackupRestore` (`check`, `staged_archive_path`, `folder_name`, `broken_marker_name`,
+`clear_leftovers`, `apply`, `write_result`). `Runtime::create` gives it
+`archives::Archives`, which is those members over `stellarr_api::backups::restore`
+and nothing else: a restore is written once, in the server's library. The marker of
+a restore that broke is `restore/broken`, as the entrypoint looks for it.
 
 In the image, the launcher (`infra/stellarr-cli.sh`) keeps everything it does and
 its last line becomes `exec /opt/stellarr/cli/stellarr "$@"` (the binary built with
