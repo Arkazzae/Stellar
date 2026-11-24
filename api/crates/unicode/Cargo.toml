@@ -1,0 +1,9 @@
+[package]
+name = "stellarr-unicode"
+version.workspace = true
+edition.workspace = true
+publish.workspace = true
+description = "Unicode general categories and simple upper-casing, as the first server read them, and the UTF-16 view of text that message code works in"
+
+[lints]
+workspace = true
