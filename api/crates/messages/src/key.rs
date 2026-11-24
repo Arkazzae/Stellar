@@ -95,7 +95,6 @@ message_keys! {
     PermissionAllowedAndDenied,
     PermissionServerWideOnly,
     RoleInvalid,
-    RoleOrderIncomplete,
     CreateInviteDenied,
 
     // Operator panel
@@ -281,12 +280,10 @@ message_keys! {
     AuditDesktopVersionsSet,
     AuditAccountCreated,
     AuditRoleChanged,
-    AuditRolesChanged,
     AuditAccountDisabled,
     AuditAccountEnabled,
     AuditRoleCreated,
     AuditRoleUpdated,
-    AuditRolesReordered,
     AuditSessionRevoked,
     AuditProviderSignUpAllowed,
     AuditProviderSignUpStopped,

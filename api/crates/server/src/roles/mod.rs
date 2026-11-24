@@ -6,9 +6,9 @@
 //! themselves: every route here asks `permissions::authorization` for that and
 //! turns its answer into the refusal the clients know.
 //!
-//! `GET /api/admin/roles`, `POST /api/admin/roles`, `PUT /api/admin/roles/order`,
+//! `GET /api/admin/roles`, `POST /api/admin/roles`,
 //! `PATCH` and `DELETE /api/admin/roles/{roleId}`, `GET /api/admin/members`,
-//! `PATCH /api/admin/members/{userId}/role`, `PUT /api/admin/members/{userId}/roles`,
+//! `PATCH /api/admin/members/{userId}/role`,
 //! and under `/api/admin/channels/{id}/permissions` and
 //! `/api/admin/sections/{id}/permissions` the overrides of roles and, below
 //! `/members`, of members.
@@ -91,9 +91,6 @@ pub fn routes() -> Endpoints {
         .post("/api/admin/roles", catalog::create)
         .json_body()
         .authorized()
-        .put("/api/admin/roles/order", catalog::reorder)
-        .json_body()
-        .authorized()
         .patch("/api/admin/roles/{roleId}", catalog::update)
         .json_body()
         .authorized()
@@ -102,9 +99,6 @@ pub fn routes() -> Endpoints {
         .get("/api/admin/members", assignment::list)
         .authorized()
         .patch("/api/admin/members/{userId}/role", assignment::assign)
-        .json_body()
-        .authorized()
-        .put("/api/admin/members/{userId}/roles", assignment::set)
         .json_body()
         .authorized()
         .merge(overrides::routes())

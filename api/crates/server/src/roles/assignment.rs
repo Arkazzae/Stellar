@@ -1,7 +1,7 @@
 //! The members of a server and the roles each holds: listing them, giving one
 //! member exactly one role, and setting the whole list of a member's roles.
 
-use std::collections::{HashMap, HashSet};
+use std::collections::HashMap;
 
 use axum::extract::State;
 use axum::http::StatusCode;
@@ -31,12 +31,6 @@ pub(super) struct AssignRequest {
     /// Left out, it is the empty id, which no role has.
     #[serde(default = "nil")]
     role_id: Id,
-}
-
-#[derive(Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub(super) struct SetRequest {
-    role_ids: Option<Vec<Id>>,
 }
 
 /// A member of the server. `role_id` is the role that ranks them, the highest
@@ -229,124 +223,3 @@ pub(super) async fn assign(
     Ok(no_content())
 }
 
-/// Sets every role the member holds besides the base role, which nobody needs
-/// to name. Each role given or taken away is checked as if it were the only
-/// one.
-pub(super) async fn set(
-    State(state): State<AppState>,
-    caller: Caller,
-    Path(Guid(user)): Path<Guid>,
-    chosen: Chosen,
-    Json(request): Json<SetRequest>,
-) -> ApiResult<Response> {
-    let server = chosen.server()?;
-    // Before any other refusal, as the first server's filter was, but after the
-    // person is known to be a member and the body has been read.
-    super::require_fresh(&state, caller, server).await?;
-    let messages = *state.messages();
-    let announcement = state
-        .database()
-        .write(move |tx| -> Result<Option<Announcement>, ApiError> {
-            may_manage(tx, caller, server, user)?;
-            let member = Member::load(tx, server, user)?;
-            let mut seen = HashSet::new();
-            let ids: Vec<Id> = request
-                .role_ids
-                .unwrap_or_default()
-                .into_iter()
-                .filter(|id| seen.insert(*id))
-                .collect();
-            let mut found = Vec::with_capacity(ids.len());
-            for id in &ids {
-                if let Some(row) = RoleRow::find(tx, server, *id)? {
-                    found.push(row);
-                }
-            }
-            let Some(member) = member.filter(|_| found.len() == ids.len()) else {
-                return Err(ApiError::not_found());
-            };
-            if member.role.is_owner || found.iter().any(|row| row.role.is_owner) {
-                return Err(ApiError::conflict());
-            }
-            let (current, base) = roles::held_of_member(tx, &member)?;
-            let Some(base) = base else {
-                return Err(no_member_role(&messages)?);
-            };
-            let wanted: Vec<Role> = found
-                .iter()
-                .map(|row| row.role)
-                .filter(|role| role.id != base.id)
-                .collect();
-            let changed = diff(&current, &wanted);
-            if !authorization::can_change_roles(tx, caller.user, &member, &changed)? {
-                return Err(ApiError::forbidden());
-            }
-            if changed.is_empty() {
-                return Ok(None);
-            }
-
-            let rows: HashMap<Id, RoleRow> = RoleRow::all(tx, server)?
-                .into_iter()
-                .map(|row| (row.role.id, row))
-                .collect();
-            let name_of = |role: &Role| rows.get(&role.id).map(|row| row.name.clone()).unwrap_or_default();
-            let top = roles::top(&wanted, base);
-            let from = rows.get(&member.role.id);
-            let to = rows.get(&top.id);
-            let added: Vec<String> = roles::ranked(
-                wanted
-                    .iter()
-                    .filter(|role| current.iter().all(|held| held.id != role.id))
-                    .copied(),
-            )
-            .iter()
-            .map(name_of)
-            .collect();
-            let removed: Vec<String> = roles::ranked(
-                current
-                    .iter()
-                    .filter(|role| wanted.iter().all(|kept| kept.id != role.id))
-                    .copied(),
-            )
-            .iter()
-            .map(name_of)
-            .collect();
-            let name = display_name(tx, user)?;
-            audit::record(
-                tx,
-                server,
-                caller.user,
-                &AuditEvent {
-                    action: "member.role".to_string(),
-                    sentence: messages.get(MessageKey::AuditRolesChanged, &[("name", &name)])?,
-                    target_type: Some("member".to_string()),
-                    target_id: Some(user),
-                    target_name: Some(name),
-                    changes: audit::only([
-                        (top.id != member.role.id).then(|| AuditChange {
-                            field: "role".to_string(),
-                            from: from.map(|row| row.name.clone()),
-                            to: to.map(|row| row.name.clone()),
-                            from_color: from.map(|row| row.color.clone()),
-                            to_color: to.map(|row| row.color.clone()),
-                            ..AuditChange::default()
-                        }),
-                        Some(AuditChange {
-                            field: "roles".to_string(),
-                            added: Some(added),
-                            removed: Some(removed),
-                            ..AuditChange::default()
-                        }),
-                    ]),
-                },
-            )?;
-            let before = ViewChange::begin(tx, server)?;
-            ownership::set_roles(tx, server, user, &wanted, &base)?;
-            Ok(Some(Announcement::after(tx, server, &before, &[user])?))
-        })
-        .await?;
-    if let Some(announcement) = announcement {
-        announcement.publish(&state, server).await;
-    }
-    Ok(no_content())
-}

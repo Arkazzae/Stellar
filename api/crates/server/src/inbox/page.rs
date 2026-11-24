@@ -164,7 +164,7 @@ fn list_page(
     )?;
     Ok(Page {
         next_before_sequence: if more { rows.last().map(|e| e.sequence) } else { None },
-        items: rows.iter().map(|entry| dto(entry)).collect(),
+        items: rows.iter().map(dto).collect(),
         unread_count,
         last_sequence: last_sequence.unwrap_or(0),
     })
