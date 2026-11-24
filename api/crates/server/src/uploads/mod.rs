@@ -22,8 +22,6 @@ mod inspect;
 mod numbers;
 mod profile;
 mod refusals;
-#[cfg(test)]
-mod witness;
 
 use crate::http::{Endpoints, RateLimitPolicy};
 

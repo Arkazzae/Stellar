@@ -1,29 +1,24 @@
-//! The runners of the import's proofs. Each test here is ignored and driven by
-//! environment variables, by the scripts in `tests/discord-import/`; none of
+//! The runners of the import's measurement. Each test here is ignored and
+//! driven by environment variables, by `tests/discord-import/bulk.sh`; none of
 //! them means anything alone.
 //!
 //! - `proof_base` makes a database a founded instance would have, with ada,
 //!   the owner, and copies it to `$DISCORDW_OUT/base.db`.
-//! - `proof_write` imports a generated Discord server (`$DISCORDW_GUILD`) into
-//!   a copy of that database (`$DISCORDW_DB`), the way a driver would: from
-//!   where an earlier, interrupted run stopped. `$DISCORDW_STOP_AFTER=n` leaves
-//!   the process after the n-th call to the writer.
 //! - `proof_bulk` writes `$DISCORDW_MESSAGES` generated messages into one
 //!   channel and measures what that costs: how long a call takes, and how long a
 //!   second connection waits for the write lock meanwhile.
 
 use std::cmp::Ordering;
-use std::collections::HashMap;
 use std::sync::Arc;
-use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering as Atomic};
+use std::sync::atomic::{AtomicBool, Ordering as Atomic};
 use std::time::{Duration, Instant};
 
-use rusqlite::{Connection, OptionalExtension, params};
+use rusqlite::Connection;
 use serde_json::{Value, json};
 use stellarr_api::database::Database;
-use stellarr_api::discord_import::{Import, ImportWriter};
+use stellarr_api::discord_import::ImportWriter;
 use stellarr_api::settings::DatabaseSettings;
-use stellarr_api::values::{Id, Timestamp};
+use stellarr_api::values::Id;
 use stellarr_discord::{BotReader, BotToken, DiscordClient, ServerSnapshot};
 
 use crate::discord_import::discord;
@@ -129,88 +124,6 @@ async fn reader(guild: Value) -> (discord::Server, BotReader) {
     let config = config_for(server.addr.port(), FakeClock::new());
     let bot = DiscordClient::with_config(config).for_bot(BotToken::new(discord::TOKEN).unwrap());
     (server, bot)
-}
-
-fn load_import(db: &Connection, server: Id) -> Option<Import> {
-    db.query_row(
-        "SELECT \"Id\", \"ServerId\", \"DiscordServerId\", \"DiscordServerName\", \"StartedById\", \"StartedAt\"
-           FROM \"DiscordImports\" WHERE \"ServerId\" = ?1 ORDER BY \"StartedAt\" LIMIT 1",
-        [server],
-        |row| {
-            Ok(Import {
-                id: row.get(0)?,
-                server: row.get(1)?,
-                discord_server_id: row.get(2)?,
-                discord_server_name: row.get(3)?,
-                started_by: row.get(4)?,
-                started_at: row.get(5)?,
-            })
-        },
-    )
-    .optional()
-    .unwrap()
-}
-
-#[tokio::test]
-#[ignore = "driven by tests/discord-import/"]
-async fn proof_write() {
-    let guild: Value = serde_json::from_str(&std::fs::read_to_string(var("DISCORDW_GUILD")).unwrap()).unwrap();
-    let path = std::path::PathBuf::from(var("DISCORDW_DB"));
-    let server = Id::parse(&var("DISCORDW_SERVER")).unwrap();
-    let user = Id::parse(&var("DISCORDW_USER")).unwrap();
-    let stop_after = number("DISCORDW_STOP_AFTER", 0);
-    let page_size = number("DISCORDW_PAGE", 100);
-    let (_discord, bot) = reader(guild).await;
-    let snapshot = bot.read_server(discord::guild::ID).await.unwrap();
-    let db = Connection::open(&path).unwrap();
-    let writer = ImportWriter::new(
-        Database::open(&DatabaseSettings { path: path.clone(), busy_timeout: Duration::from_secs(60) }).unwrap(),
-    );
-    let calls = AtomicUsize::new(0);
-    let tick = || {
-        if stop_after > 0 && calls.fetch_add(1, Atomic::SeqCst) + 1 >= stop_after {
-            std::process::exit(0);
-        }
-    };
-
-    let import = match load_import(&db, server) {
-        Some(import) => import,
-        None => writer.start(server, user, &snapshot).await.unwrap(),
-    };
-    tick();
-    writer.write_structure(&import, &snapshot).await.unwrap();
-    tick();
-    let mut sources: Vec<String> = snapshot.channels.iter().map(|c| c.id.clone()).collect();
-    sources.extend(snapshot.threads.iter().map(|t| t.id.clone()));
-    for source in sources {
-        let (completed, oldest): (Option<Timestamp>, Option<String>) = db
-            .query_row(
-                "SELECT \"CompletedAt\", \"OldestMessageId\" FROM \"DiscordImportChannels\" WHERE \"ServerId\" = ?1 AND \"DiscordId\" = ?2",
-                params![server, source],
-                |row| Ok((row.get(0)?, row.get(1)?)),
-            )
-            .unwrap();
-        // A channel read to its end may have been left before its links were
-        // made: completing it again is how they are made, and changes nothing
-        // when they were.
-        if completed.is_some() {
-            writer.complete_channel(&import, &source).await.unwrap();
-            tick();
-            continue;
-        }
-        let mut pins = HashMap::new();
-        for pin in bot.pins(&source).unwrap().collect_all().await.unwrap() {
-            pins.insert(pin.message.id.clone(), pin.pinned_at);
-        }
-        let history = bot.messages(&source, oldest.as_deref()).unwrap().collect_all().await.unwrap();
-        for page in history.chunks(page_size) {
-            writer.write_messages(&import, &snapshot, &source, page, Some(&pins)).await.unwrap();
-            tick();
-        }
-        writer.complete_channel(&import, &source).await.unwrap();
-        tick();
-    }
-    println!("done");
 }
 
 /// Messages made up as they are written, so that what is held is the writer's

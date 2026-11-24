@@ -29,5 +29,5 @@ pub use log::LogCapture;
 pub use media::{Canned, FakeMedia, Recorded, SECRET, until};
 #[allow(unused_imports)]
 pub use people::{PASSWORD, Person};
-pub use raw::{Answer, raw_get, raw_request, raw_send};
+pub use raw::{raw_get, raw_request, raw_send};
 pub use server::{Server, TempDir};
