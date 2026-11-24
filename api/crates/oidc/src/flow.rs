@@ -398,23 +398,46 @@ pub fn accept(
     callback: &Callback,
     now: i64,
 ) -> Result<Answer, CallbackError> {
+    accept_detailed(key, guard, provider_id, browser_binding, callback, now)
+        .map_err(|(error, _)| error)
+}
+
+/// [`accept`], and for a refusal that came after the state was opened (it
+/// expired, was for another provider, was used, or the answer had no code) the
+/// flow it held, so that the application can send the person to the page that
+/// fits what the round trip was for. The state opened only for the browser it
+/// was made for, so nobody else learns anything from this; for a state that
+/// did not open there is no flow.
+pub fn accept_detailed(
+    key: &SealingKey,
+    guard: &ReplayGuard,
+    provider_id: &str,
+    browser_binding: &str,
+    callback: &Callback,
+    now: i64,
+) -> Result<Answer, (CallbackError, Option<Flow>)> {
+    let opened = |error: CallbackError| (error, None);
     let state = callback
         .state
         .as_deref()
         .filter(|s| !s.is_empty())
-        .ok_or(CallbackError::MissingState)?;
+        .ok_or(opened(CallbackError::MissingState))?;
     if browser_binding.is_empty() || browser_binding.len() > MAX_BINDING {
-        return Err(CallbackError::UnreadableState);
+        return Err(opened(CallbackError::UnreadableState));
     }
-    let json = open(key, PURPOSE, browser_binding, state).ok_or(CallbackError::UnreadableState)?;
-    let flow: Flow = serde_json::from_slice(&json).map_err(|_| CallbackError::UnreadableState)?;
+    let json =
+        open(key, PURPOSE, browser_binding, state).ok_or(opened(CallbackError::UnreadableState))?;
+    let flow: Flow =
+        serde_json::from_slice(&json).map_err(|_| opened(CallbackError::UnreadableState))?;
     if flow.expires_at <= now {
-        return Err(CallbackError::Expired);
+        return Err((CallbackError::Expired, Some(flow)));
     }
     if flow.provider_id != provider_id {
-        return Err(CallbackError::WrongProvider);
+        return Err((CallbackError::WrongProvider, Some(flow)));
     }
-    guard.consume(&flow.state_id, flow.expires_at, now)?;
+    if let Err(error) = guard.consume(&flow.state_id, flow.expires_at, now) {
+        return Err((error, Some(flow)));
+    }
     // An empty `error` is no error.
     if let Some(error) = callback.error.as_ref().filter(|error| !error.is_empty()) {
         return Ok(Answer::Refused {
@@ -429,7 +452,7 @@ pub fn accept(
             code: code.to_string(),
             flow,
         }),
-        None => Err(CallbackError::MissingCode),
+        None => Err((CallbackError::MissingCode, Some(flow))),
     }
 }
 
