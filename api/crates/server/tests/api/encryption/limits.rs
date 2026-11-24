@@ -162,12 +162,15 @@ async fn a_value_in_a_wrong_encoding_makes_the_whole_body_unreadable_before_anyt
 async fn a_body_over_the_ceiling_is_refused_before_it_is_read() {
     let crowd = Crowd::new().await;
     let big = format!("{{\"label\":\"{}\"}}", "a".repeat(1024 * 1024));
-    let response = crowd
+    // The server answers 413 and closes without reading the rest, so a client
+    // that is still writing may lose the answer to the close: that is a refusal
+    // too, and it is not a 201.
+    let answer = crowd
         .maja
         .client
-        .send(Request::new(Method::POST, &format!("{ACCOUNT}/devices")).body("application/json", &big))
+        .try_send(Request::new(Method::POST, &format!("{ACCOUNT}/devices")).body("application/json", &big))
         .await;
-    assert_eq!(response.status, 413);
+    assert!(matches!(&answer, Ok(response) if response.status == 413) || answer.is_err(), "{answer:?}");
     let small = r#"{"label":"a"}"#;
     let response = crowd
         .maja
