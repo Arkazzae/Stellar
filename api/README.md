@@ -68,6 +68,7 @@ second_step/     a group: the second half of a sign-in, a passkey alone, an oper
 desktop_login/   a group: starting the desktop application's sign-in through the browser, and the page that approves it
 permissions/     who may do what on a server, and who sees which channel
 realtime/        the hub the web client keeps open: connections, presence, methods, the watcher of sessions
+voice/           a group: voice rooms and the media sessions behind them: the hub methods, the client of the media server, its workers, the two moderation routes
 mail/            sending mail: the settings, one delivery service, the queue of security alerts
 secrets/         the secrets an operator sets in the panel, sealed in the database
 testing.rs       helpers the unit tests share (not compiled outside tests)
