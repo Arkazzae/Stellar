@@ -498,3 +498,75 @@ async fn every_route_wants_a_session_and_a_membership() {
     w.server.database().execute("DELETE FROM \"ServerMembers\" WHERE \"UserId\" = ?1", [outsider.id.to_uppercase()]).unwrap();
     assert_eq!(outsider.client.get(&format!("/api/channels/{}/pins", w.channel)).await.status, 403);
 }
+
+/// A second text channel nobody is denied.
+fn open_channel(w: &World) -> String {
+    let id = stellarr_api::values::Id::random();
+    w.server
+        .database()
+        .execute(
+            "INSERT INTO \"Channels\" (\"Id\", \"ServerId\", \"Name\", \"Kind\", \"Position\", \"SlowModeSeconds\", \"HideAfterInactivityHours\", \"UserLimit\")
+             VALUES (?1, ?2, 'open', 0, 9, 0, 0, 0)",
+            params![id.to_db_text(), w.server_id],
+        )
+        .unwrap();
+    id.to_string()
+}
+
+#[tokio::test]
+async fn somebody_who_does_not_see_a_channel_is_answered_as_for_an_id_nothing_has() {
+    let w = world().await;
+    let open = open_channel(&w);
+    let root = put(&w.server.database(), &w.channel, &w.owner.id, "tajne", &at(1), None);
+    put(&w.server.database(), &w.channel, &w.owner.id, "tajne odpowied\u{17a}", &at(2), Some(&root));
+    deny_member(&w, &w.maya, &w.channel, 1 << 14);
+    // Somebody who may manage messages and still does not see the channel gets the same.
+    w.server
+        .database()
+        .execute(
+            "UPDATE \"ServerRoles\" SET \"Permissions\" = \"Permissions\" | 16 WHERE \"IsSystem\" = 1 AND \"IsOwner\" = 0",
+            [],
+        )
+        .unwrap();
+    let unknown = "00000000-0000-4000-8000-0000000000aa";
+    let probes = |channel: &str, message: &str| -> Vec<(&'static str, String, String)> {
+        vec![
+            ("GET", format!("/api/channels/{channel}/messages/search?query=tajne"), "search".into()),
+            ("GET", format!("/api/channels/{channel}/messages/index"), "index".into()),
+            ("GET", format!("/api/channels/{channel}/messages/index?kind=media&query=tajne"), "index of media".into()),
+            ("GET", format!("/api/channels/{channel}/threads"), "threads".into()),
+            ("GET", format!("/api/channels/{channel}/threads/{message}"), "thread".into()),
+            ("GET", format!("/api/channels/{channel}/pins"), "pins".into()),
+            ("PUT", format!("/api/messages/{message}/reactions/%F0%9F%8E%89"), "react".into()),
+            ("DELETE", format!("/api/messages/{message}/reactions/%F0%9F%91%8D"), "take a reaction back".into()),
+            ("PUT", format!("/api/messages/{message}/pin"), "pin".into()),
+            ("DELETE", format!("/api/messages/{message}/pin"), "unpin".into()),
+        ]
+    };
+    for ((method, hidden_path, name), (_, unknown_path, _)) in probes(&w.channel, &root).into_iter().zip(probes(unknown, unknown)) {
+        let ask = |path: String| {
+            let client = &w.maya.client;
+            async move { client.send(crate::support::Request::new(method.parse().unwrap(), &path)).await }
+        };
+        let (hidden, nothing) = (ask(hidden_path).await, ask(unknown_path).await);
+        assert_eq!((hidden.status, &hidden.body), (nothing.status, &nothing.body), "{name}");
+        assert_eq!(hidden.status, 404, "{name}");
+    }
+    // The thread of a message of the hidden channel, asked of an open one.
+    let wrong = w.maya.client.get(&format!("/api/channels/{open}/threads/{root}")).await;
+    assert_eq!(wrong.status, 404);
+    assert!(wrong.body.is_empty());
+}
+
+#[tokio::test]
+async fn a_pin_in_a_private_channel_is_told_only_to_those_who_see_it() {
+    let w = world().await;
+    let message = put(&w.server.database(), &w.channel, &w.owner.id, "tajne", &at(1), None);
+    deny_member(&w, &w.maya, &w.channel, 1 << 14);
+    assert_eq!(pin(&w.owner, "PUT", &message).await.status, 200);
+    let told = &events_named(&w, "MessageUpdated")[0];
+    let users = told["audience"]["followers"]["users"].as_array().unwrap();
+    assert!(users.iter().any(|u| *u == w.owner.id));
+    assert!(!users.iter().any(|u| *u == w.maya.id));
+    assert_eq!(told["audience"]["followers"]["server"], w.server_id.to_lowercase());
+}
