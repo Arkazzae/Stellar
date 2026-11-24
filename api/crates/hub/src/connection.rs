@@ -131,10 +131,10 @@ pub async fn serve<A, S>(
         Ended::ByServer(error) => {
             // Let the writer say why and close, unless it is stuck in a
             // write to a client that does not read.
-            if timeout(config.close_grace, writer_done(writer))
+            let said_goodbye = timeout(config.close_grace, writer_done(writer))
                 .await
-                .is_ok()
-            {
+                .is_ok();
+            if said_goodbye && !shared.has_write_failed() {
                 drain_until_closed(&mut receiver, &config).await;
             } else {
                 abort_writer.abort();
