@@ -35,7 +35,7 @@ use tokio::net::TcpListener;
 use tracing::{error, info};
 
 use crate::database::Database;
-use crate::events::{EventFile, EventPublisher, Unconnected};
+use crate::events::{EventFile, EventPublisher, Presence, Unconnected};
 use crate::http::Endpoints;
 use crate::seal::Sealer;
 use crate::settings::Settings;
@@ -88,6 +88,26 @@ pub async fn serve(
     listening: impl FnOnce(&[SocketAddr]),
     shutdown: impl Future<Output = ()> + Send + 'static,
 ) -> Result<(), StartError> {
+    serve_with(settings, groups, Services::default(), listening, shutdown).await
+}
+
+/// What the server is plugged into: where handlers send events, and who says
+/// whether a person is online. The hub provides both. Without them events go
+/// nowhere, and nobody is online.
+#[derive(Default, Clone)]
+pub struct Services {
+    pub events: Option<Arc<dyn EventPublisher>>,
+    pub presence: Option<Arc<dyn Presence>>,
+}
+
+/// [`serve`] with the services of the process given.
+pub async fn serve_with(
+    settings: Settings,
+    groups: Vec<Endpoints>,
+    services: Services,
+    listening: impl FnOnce(&[SocketAddr]),
+    shutdown: impl Future<Output = ()> + Send + 'static,
+) -> Result<(), StartError> {
     let fail = |what: &str, error: &dyn fmt::Display| StartError(format!("{what}: {error}"));
 
     // The keys that protect sessions live in their own folder of the data
@@ -111,13 +131,17 @@ pub async fn serve(
         .map_err(|e| fail("the database did not open", &e))?
         .map_err(|e| fail("the database did not open", &e))?;
 
-    let events: Arc<dyn EventPublisher> = match &settings.event_log {
-        Some(path) => Arc::new(EventFile::new(path.clone())),
-        None => Arc::new(Unconnected),
+    // A hub that was given wins; in the Testing environment the events go to a
+    // file the tests read; otherwise there is nobody to tell.
+    let events: Arc<dyn EventPublisher> = match (services.events, &settings.event_log) {
+        (Some(events), _) => events,
+        (None, Some(path)) => Arc::new(EventFile::new(path.clone())),
+        (None, None) => Arc::new(Unconnected),
     };
+    let presence: Arc<dyn Presence> = services.presence.unwrap_or_else(|| Arc::new(Unconnected));
     let addresses = settings.listen.0.clone();
     let sealer = Sealer::load_or_create(&keys).map_err(|e| StartError(e.to_string()))?;
-    let state = AppState::new(settings, database, events, sealer);
+    let state = AppState::new(settings, database, events, presence, sealer);
 
     issue_setup_code(&state).await?;
 

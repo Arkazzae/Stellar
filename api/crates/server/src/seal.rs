@@ -100,24 +100,28 @@ impl Sealer {
             KeyError(format!("{what} {}: {error}", path.display()))
         };
         fs::create_dir_all(keys_folder).map_err(|e| fail("cannot create the folder of", &e))?;
-        // `create_new` means that of two processes that start at once on an
+        // The key is written whole to a file of its own and then linked to its
+        // name, so that the name is never seen without the whole key, whatever
+        // stops the process, and of two processes that start at once on an
         // empty folder one makes the key and the other reads it.
-        match OpenOptions::new()
-            .write(true)
-            .create_new(true)
-            .mode(0o600)
-            .open(&path)
-        {
-            Ok(mut file) => {
-                let mut key = [0u8; KEY_LEN];
-                rand::fill(&mut key)
-                    .map_err(|_| KeyError("the system random number generator failed".into()))?;
-                file.write_all(&key)
-                    .and_then(|()| file.sync_all())
-                    .map_err(|e| fail("cannot write", &e))?;
+        if !path.exists() {
+            let mut key = [0u8; KEY_LEN];
+            rand::fill(&mut key)
+                .map_err(|_| KeyError("the system random number generator failed".into()))?;
+            let draft = keys_folder.join(format!("{KEY_FILE}.{}", crate::values::Id::random()));
+            let written = OpenOptions::new()
+                .write(true)
+                .create_new(true)
+                .mode(0o600)
+                .open(&draft)
+                .and_then(|mut file| file.write_all(&key).and_then(|()| file.sync_all()));
+            let linked = written.and_then(|()| fs::hard_link(&draft, &path));
+            let _ = fs::remove_file(&draft);
+            match linked {
+                Ok(()) => {}
+                Err(error) if error.kind() == std::io::ErrorKind::AlreadyExists => {}
+                Err(error) => return Err(fail("cannot create", &error)),
             }
-            Err(error) if error.kind() == std::io::ErrorKind::AlreadyExists => {}
-            Err(error) => return Err(fail("cannot create", &error)),
         }
         Sealer::read(&path).map_err(|e| fail("cannot read", &e))
     }

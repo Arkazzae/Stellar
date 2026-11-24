@@ -11,7 +11,7 @@ use stellarr_messages::Messages;
 
 use crate::auth::setup_code::SetupCode;
 use crate::database::{Database, MutationGate};
-use crate::events::{EventPublisher, Presence, Unconnected};
+use crate::events::{EventPublisher, Presence};
 use crate::http::{AttemptLimiter, Metrics};
 use crate::seal::Sealer;
 use crate::settings::Settings;
@@ -40,6 +40,7 @@ impl AppState {
         settings: Settings,
         database: Database,
         events: Arc<dyn EventPublisher>,
+        presence: Arc<dyn Presence>,
         sealer: Sealer,
     ) -> AppState {
         AppState {
@@ -50,7 +51,7 @@ impl AppState {
                 database,
                 events,
                 sealer,
-                presence: Arc::new(Unconnected),
+                presence,
                 setup_code: SetupCode::default(),
                 registration_gate: tokio::sync::Mutex::new(()),
                 metrics: Metrics::default(),
