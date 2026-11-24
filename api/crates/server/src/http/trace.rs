@@ -33,6 +33,13 @@ pub async fn scope<F: Future>(id: String, work: F) -> F::Output {
     TRACE.scope(id, work).await
 }
 
+/// The identifier of the request being served, or none outside one: what the
+/// log wants, which must not invent an identifier for a line that no request
+/// wrote.
+pub fn try_current() -> Option<String> {
+    TRACE.try_with(Clone::clone).ok()
+}
+
 /// The identifier of the request being served. Outside one, a new identifier,
 /// so that a problem made in a test or at start still has one.
 pub fn current() -> String {
