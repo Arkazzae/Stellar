@@ -390,6 +390,16 @@ async fn connection(inner: Arc<Inner>, mut stream: TcpStream) {
             body,
             authorization,
         };
+        // A script that stands outside the process drives the fake through
+        // addresses of its own, which are no part of what the API asked.
+        if let Some(operation) = recorded.path.strip_prefix("/_fake/") {
+            let body = administer(&inner, operation, &recorded.query).await;
+            let bytes = render(200, Some("application/json"), body.as_bytes());
+            if stream.write_all(&bytes).await.is_err() || close {
+                return;
+            }
+            continue;
+        }
         inner.state().requests.push(recorded.clone());
         let answer = respond(&inner, &recorded).await;
         let bytes = match answer {
@@ -714,4 +724,150 @@ async fn poll(inner: &Arc<Inner>, query: &str) -> Answer {
         )
         .await;
     }
+}
+
+/// The value of a query parameter, decoded.
+fn query_value(query: &str, name: &str) -> Option<String> {
+    query
+        .split('&')
+        .filter_map(|pair| pair.split_once('='))
+        .find(|(key, _)| *key == name)
+        .map(|(_, value)| decode(value))
+}
+
+fn decode(text: &str) -> String {
+    let bytes = text.as_bytes();
+    let mut out = Vec::with_capacity(bytes.len());
+    let mut index = 0;
+    while index < bytes.len() {
+        match bytes[index] {
+            b'%' if index + 2 < bytes.len() => {
+                let pair = std::str::from_utf8(&bytes[index + 1..index + 3]).unwrap_or("");
+                if let Ok(byte) = u8::from_str_radix(pair, 16) {
+                    out.push(byte);
+                    index += 3;
+                    continue;
+                }
+                out.push(b'%');
+            }
+            b'+' => out.push(b' '),
+            byte => out.push(byte),
+        }
+        index += 1;
+    }
+    String::from_utf8_lossy(&out).into_owned()
+}
+
+/// What a script outside the process may ask of the fake, over `/_fake/...`:
+/// the same moves a test makes, and the requests it has taken.
+async fn administer(inner: &Arc<Inner>, operation: &str, query: &str) -> String {
+    let text = |name: &str| query_value(query, name).unwrap_or_default();
+    let number = |name: &str| {
+        query_value(query, name)
+            .and_then(|value| value.parse::<u64>().ok())
+            .unwrap_or(0)
+    };
+    let canned = || Canned {
+        status: number("status") as u16,
+        content_type: query_value(query, "type").filter(|kind| !kind.is_empty()),
+        body: text("body").into_bytes(),
+    };
+    match operation {
+        "requests" => {
+            let list: Vec<Value> = inner
+                .state()
+                .requests
+                .iter()
+                .map(|r| {
+                    json!({"method": r.method, "path": r.path, "query": r.query, "body": r.body, "authorization": r.authorization})
+                })
+                .collect();
+            return Value::Array(list).to_string();
+        }
+        "sessions" => {
+            let mut ids: Vec<String> = inner.state().sessions.keys().cloned().collect();
+            ids.sort();
+            return json!(ids).to_string();
+        }
+        "clear" => inner.state().requests.clear(),
+        "down" => inner.state().down = number("on") == 1,
+        "slow" => inner.state().slowness = Duration::from_millis(number("ms")),
+        "bearer" => inner.state().bearer = query_value(query, "secret").filter(|s| !s.is_empty()),
+        "drop" => {
+            inner.state().sessions.remove(&text("session"));
+        }
+        "restart" => {
+            {
+                let mut state = inner.state();
+                state.epoch = text("epoch");
+                state.sessions.clear();
+                state.events.clear();
+                state.first_kept_seq = 1;
+                state.last_served_seq = 0;
+            }
+            inner.wake();
+        }
+        "lose-window" => {
+            {
+                let mut state = inner.state();
+                state.first_kept_seq = state.events.len() as u64 + 2;
+            }
+            inner.wake();
+        }
+        "signal" | "closed" => {
+            let seq = {
+                let mut state = inner.state();
+                let seq = state.events.len() as u64 + 1;
+                let line = if operation == "signal" {
+                    format!(
+                        "{{\"seq\":{seq},\"type\":\"signal\",\"sessionId\":{},\"kind\":{},\"payload\":{}}}",
+                        json!(text("session")),
+                        json!(text("kind")),
+                        text("payload")
+                    )
+                } else {
+                    format!(
+                        "{{\"seq\":{seq},\"type\":\"closed\",\"sessionId\":{},\"reason\":{}}}",
+                        json!(text("session")),
+                        json!(text("reason"))
+                    )
+                };
+                state.events.push(line);
+                seq
+            };
+            inner.wake();
+            return json!({"seq": seq}).to_string();
+        }
+        "answer-signals" => {
+            inner
+                .state()
+                .signal_answers
+                .insert(text("session"), number("status") as u16);
+        }
+        "hold-polls" => {
+            inner.state().polls_held = true;
+            inner.wake();
+        }
+        "release-polls" => {
+            inner.state().polls_held = false;
+            inner.wake();
+        }
+        "hold-creates" => {
+            inner.state().creates_held = true;
+            inner.wake();
+        }
+        "release-creates" => {
+            inner.state().creates_held = false;
+            inner.wake();
+        }
+        "canned" => inner.state().canned = Some(canned()),
+        "canned-polls" => inner.state().canned_polls = Some(canned()),
+        "canned-clear" => {
+            let mut state = inner.state();
+            state.canned = None;
+            state.canned_polls = None;
+        }
+        _ => return json!({"error": "unknown operation"}).to_string(),
+    }
+    json!({"ok": true}).to_string()
 }
