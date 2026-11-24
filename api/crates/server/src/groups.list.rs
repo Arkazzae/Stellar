@@ -1,4 +1,5 @@
 groups! {
     accounts,
     health,
+    releases,
 }
