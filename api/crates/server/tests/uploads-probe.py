@@ -12,6 +12,8 @@ Run it against the first server and this one and diff the two outputs.
 The first server makes the invite itself; for a server that has no route for
 invites yet, name its database file and the invite is written there.
 
+UPLOADS_PROBE_SMALL=1 leaves out every request over a mebibyte.
+
 Both servers must have the rate limit of uploads lifted and no minimum of free
 disk space (Uploads__MinimumFreeDataRootBytes=0).
 """
@@ -175,6 +177,9 @@ def raw_part(head, value):
 
 def post(base, path, parts, cookie, boundary="XXB", ctype=None, end=True, extra_headers=None, raw=None):
     data = raw if raw is not None else multipart(parts, boundary, end)
+    if os.environ.get("UPLOADS_PROBE_SMALL") and len(data) > 1024 * 1024:
+        # For a store that is slow to reach: nothing over a mebibyte is sent.
+        return 0, {}, b"(skipped: large)"
     headers = {"Content-Type": ctype or f"multipart/form-data; boundary={boundary}"}
     headers.update(extra_headers or {})
     return send(base, "POST", path, data, headers, cookie)
