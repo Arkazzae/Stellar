@@ -1006,6 +1006,18 @@ different, and what somebody would notice:
   and a hash of its state, where the first server set two named for the
   framework. Same attributes (path of the callback, `Secure`,
   `SameSite=None`, `HttpOnly`).
+- **The binding cookie has no `__Host-` prefix**, because it is limited to the
+  path of the callback, as the first server's were, and that prefix demands
+  the root. What that leaves open: a page on a sibling subdomain could plant
+  such a cookie in a browser. It could only make that browser's own answer
+  fail, since the state it opens is sealed to the value that browser holds.
+- **The replay guard lives in memory.** A restart forgets which answers were
+  used, so for the minutes a state lives, an answer could be posted twice; the
+  provider's code is single-use, and its second redemption fails.
+- **An unknown key id fails that sign-in and the next one succeeds**: the
+  provider's documents are read again after the failure (once in five
+  minutes), not before the retry. A person whose provider rotated its keys
+  signs in on the second try.
 
 ## Comparing uploads with the first server
 
