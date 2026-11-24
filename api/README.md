@@ -215,6 +215,15 @@ is a 400 with no body; a body that is not the right JSON is a 400 with no body.
   unless the route says `.json_body_up_to(bytes)`, and never over the 128 MiB of
   the whole server. A route that takes an upload streams it instead.
 
+A body that needs the first server's leniency (encryption's, the direct
+messages') is read through `http::lenient::Members`: member names in any letter
+case, the last of a name given twice (every occurrence of the right type), Base64
+with spaces, tabs and line breaks ignored (`Octets`), an integer from a number or
+from a string of digits (`number`), and a value of the wrong type making the whole
+body a 400 with no body. A route whose second step is asked after the body is
+read (encryption's reset and new PIN) asks inside the handler, as the first
+server's order requires.
+
 **Headers** are not part of any of those, and a handler needs them. Take what the
 request says about itself in the form that fits:
 
