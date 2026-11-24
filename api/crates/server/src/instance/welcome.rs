@@ -1,6 +1,6 @@
 //! The system notice that greets a person who has just joined a server.
 
-use rusqlite::{Connection, Transaction, params};
+use rusqlite::{Connection, OptionalExtension, Transaction, params};
 use serde::Serialize;
 use stellarr_messages::{MessageKey, Messages};
 
@@ -35,8 +35,36 @@ pub fn create(
     joined_at: Timestamp,
     messages: &Messages,
 ) -> Result<Option<Welcome>, DbError> {
-    let Some(channel) = first_text_channel(tx, server)? else {
-        return Ok(None);
+    create_in(tx, server, user, joined_at, messages, None)
+}
+
+/// Like [`create`], for somebody who came through an invite that leads to a
+/// channel: when it is a text channel of the server, the notice goes there,
+/// whether or not the newcomer will see it, as the first server did.
+pub fn create_in(
+    tx: &Transaction,
+    server: Id,
+    user: &User,
+    joined_at: Timestamp,
+    messages: &Messages,
+    invited_to: Option<Id>,
+) -> Result<Option<Welcome>, DbError> {
+    let named = match invited_to {
+        Some(channel) => tx
+            .query_row(
+                "SELECT \"Id\" FROM \"Channels\" WHERE \"Id\" = ?1 AND \"ServerId\" = ?2 AND \"Kind\" = 0",
+                params![channel, server],
+                |row| row.get::<_, Id>(0),
+            )
+            .optional()?,
+        None => None,
+    };
+    let channel = match named {
+        Some(channel) => channel,
+        None => match first_text_channel(tx, server)? {
+            Some(channel) => channel,
+            None => return Ok(None),
+        },
     };
     // The notice is markup, so every punctuation character of the name is
     // escaped; the transcript shows it as the character that was typed and it
