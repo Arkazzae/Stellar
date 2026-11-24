@@ -15,7 +15,7 @@ use super::problems::{self, Refusal};
 use super::store::{self, Conversation, Epoch, State as Switch};
 use super::wire::{
     EnvelopeRequest, EpochRequest, EpochsDto, KeysDto, Members, PersonKeysDto, RecipientKeyDto,
-    is_wire_id,
+    is_wire_id, path_id,
 };
 use crate::auth::Caller;
 use crate::database::DbError;
@@ -210,18 +210,18 @@ struct Refused2(Refused, Conversation);
 pub async fn request(
     State(state): State<AppState>,
     caller: Caller,
-    Path(id): Path<Id>,
+    Path(id): Path<String>,
 ) -> ApiResult<Response> {
-    switch(state, caller, id, Action::Request).await
+    switch(state, caller, path_id(&id)?, Action::Request).await
 }
 
 /// Takes back a request; only the person who sent it.
 pub async fn cancel(
     State(state): State<AppState>,
     caller: Caller,
-    Path(id): Path<Id>,
+    Path(id): Path<String>,
 ) -> ApiResult<Response> {
-    switch(state, caller, id, Action::Cancel).await
+    switch(state, caller, path_id(&id)?, Action::Cancel).await
 }
 
 /// Switches encryption on: only the person who was asked, and only with an
@@ -229,9 +229,9 @@ pub async fn cancel(
 pub async fn confirm(
     State(state): State<AppState>,
     caller: Caller,
-    Path(id): Path<Id>,
+    Path(id): Path<String>,
 ) -> ApiResult<Response> {
-    switch(state, caller, id, Action::Confirm).await
+    switch(state, caller, path_id(&id)?, Action::Confirm).await
 }
 
 /// Switches encryption off, or turns a pending request down: either person, at
@@ -239,9 +239,9 @@ pub async fn confirm(
 pub async fn disable(
     State(state): State<AppState>,
     caller: Caller,
-    Path(id): Path<Id>,
+    Path(id): Path<String>,
 ) -> ApiResult<Response> {
-    switch(state, caller, id, Action::Disable).await
+    switch(state, caller, path_id(&id)?, Action::Disable).await
 }
 
 /// The conversation when the reader is in it and neither person blocks the
@@ -265,8 +265,9 @@ fn readable(
 pub async fn keys(
     State(state): State<AppState>,
     caller: Caller,
-    Path(id): Path<Id>,
+    Path(id): Path<String>,
 ) -> ApiResult<Response> {
+    let id = path_id(&id)?;
     let found = state
         .database()
         .read(move |db| -> Result<Option<KeysDto>, DbError> {
@@ -340,27 +341,28 @@ pub async fn keys(
 
 /// The query of the epochs: the sequence number to read after.
 ///
-/// Read by hand the way the first server bound an `int?`: nothing or an empty
-/// value is none, one that is not an integer, or given twice, is a bad request.
+/// Read by hand the way the first server bound an `int?`: no value at all is
+/// none, one that is empty or not an integer (space around it, and a sign, are
+/// allowed), or given twice, is a bad request. The name counts in any letter case.
 fn after_of(query: &[(String, String)]) -> Result<i64, ApiError> {
-    let mut given = query.iter().filter(|(name, _)| name == "after");
-    let first = given.next();
+    let mut given = query
+        .iter()
+        .filter(|(name, _)| name.eq_ignore_ascii_case("after"));
+    let Some((_, value)) = given.next() else {
+        return Ok(0);
+    };
     if given.next().is_some() {
         return Err(ApiError::bad_request());
     }
-    match first.map(|(_, value)| value.as_str()) {
-        None | Some("") => Ok(0),
-        Some(value) => {
-            let digits = value.strip_prefix(['+', '-']).unwrap_or(value);
-            if digits.is_empty() || !digits.bytes().all(|b| b.is_ascii_digit()) {
-                return Err(ApiError::bad_request());
-            }
-            value
-                .parse::<i32>()
-                .map(i64::from)
-                .map_err(|_| ApiError::bad_request())
-        }
+    let value = value.trim_matches(|c: char| matches!(c, '\u{9}'..='\u{d}' | ' '));
+    let digits = value.strip_prefix(['+', '-']).unwrap_or(value);
+    if digits.is_empty() || !digits.bytes().all(|b| b.is_ascii_digit()) {
+        return Err(ApiError::bad_request());
     }
+    value
+        .parse::<i32>()
+        .map(i64::from)
+        .map_err(|_| ApiError::bad_request())
 }
 
 /// The conversation's epochs after a sequence number, from every period it was
@@ -370,9 +372,10 @@ fn after_of(query: &[(String, String)]) -> Result<i64, ApiError> {
 pub async fn epochs(
     State(state): State<AppState>,
     caller: Caller,
-    Path(id): Path<Id>,
+    Path(id): Path<String>,
     Query(query): Query<Vec<(String, String)>>,
 ) -> ApiResult<Response> {
+    let id = path_id(&id)?;
     let after = after_of(&query)?;
     let found = state
         .database()
@@ -457,9 +460,10 @@ enum Made {
 pub async fn create_epoch(
     State(state): State<AppState>,
     caller: Caller,
-    Path(id): Path<Id>,
+    Path(id): Path<String>,
     Json(body): Json<Members>,
 ) -> ApiResult<Response> {
+    let id = path_id(&id)?;
     let request = EpochRequest::read(&body)?;
     let user = caller.user;
     let Some(epoch_id) = request.epoch_id.as_deref().and_then(is_wire_id) else {
