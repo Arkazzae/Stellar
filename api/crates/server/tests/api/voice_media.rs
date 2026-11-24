@@ -1022,3 +1022,37 @@ async fn signing_out_closes_its_hub_and_its_media_but_leaves_another_account_act
     assert!(rig.media.sessions().contains(&staying_session));
     rig.occupants_become(rig.salon, &[&ada.id]).await;
 }
+
+#[tokio::test]
+async fn a_seat_moved_to_another_room_while_its_session_is_being_created_gets_none() {
+    let rig = Rig::start().await;
+    let jonas = rig.person("jonas").await;
+    let mut peer = rig.connect(&jonas).await;
+    peer.join(rig.salon).await;
+    rig.media.hold_creates();
+
+    let room = rig.salon;
+    let opening = tokio::spawn(async move {
+        let answer = peer.call("OpenMediaSession", json!([room])).await;
+        (peer, answer)
+    });
+    rig.media.count_reaches("POST", "/v1/sessions", 1).await;
+    // A moderator moves the member while the media server is still making the session.
+    let path = format!("/api/admin/channels/{}/members/{}", rig.salon, jonas.id);
+    let moved = rig.call(&rig.owner, Method::PATCH, &path, Some(json!({"targetChannelId": rig.night}))).await;
+    assert_eq!(moved.status, 204, "{}", moved.text());
+    rig.media.release_creates();
+
+    let (mut peer, answer) = opening.await.unwrap();
+    // The seat is in the other room now: the session is not the new seat's.
+    assert!(answer["error"].as_str().unwrap().ends_with(&format!("HubException: {NOT_SEATED}")), "{answer}");
+    let created = created_sessions(&rig.media);
+    assert_eq!(created.len(), 1);
+    rig.media.next_request(|r| r.method == "DELETE").await;
+    until(|| rig.media.sessions().is_empty()).await;
+    // The seat in the new room has no session of that made, and may open its own.
+    peer.media_refused(rig.night, "session-1", "offer", OFFER, REFUSED).await;
+    peer.join(rig.night).await;
+    let own = peer.open_media(rig.night).await;
+    assert_ne!(own, "session-1");
+}
