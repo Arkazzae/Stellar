@@ -1299,6 +1299,71 @@ async fn each_route_counts_against_the_limit_the_first_server_gives_it() {
 }
 
 // ---------------------------------------------------------------------------
+// What a change keeps of the session that makes it.
+
+/// Whether a response sets a cookie that lasts beyond the browser.
+fn outlives_the_browser(response: &Response) -> bool {
+    response
+        .headers
+        .get_all("set-cookie")
+        .iter()
+        .any(|line| line.to_str().unwrap().to_ascii_lowercase().contains("expires=") && !line.to_str().unwrap().contains("1970"))
+}
+
+#[tokio::test]
+async fn changes_made_from_a_short_session_keep_it_short() {
+    let (server, owner, db) = owner().await;
+    let user = user_of(&owner);
+    let short = server.client();
+    let login = send(&short, Method::POST, "/api/auth/login", Some(&json!({ "username": "owner", "password": PASSWORD, "keepSignedIn": false }))).await;
+    assert_eq!(login.status, 200);
+    assert!(!outlives_the_browser(&login));
+    let session = session_of(&short).await;
+    let totp = add_method(&db, user, "totp", None, 1);
+    set_session(&db, session, 10, Some(10));
+
+    let removed = send(&short, Method::POST, &format!("{SECURE}/mfa/{totp}/remove"), Some(&json!({}))).await;
+    let changed = send(&short, Method::POST, "/api/me/password", Some(&json!({ "currentPassword": PASSWORD, "newPassword": NEW_PASSWORD }))).await;
+
+    assert_eq!(removed.status, 204);
+    assert!(!outlives_the_browser(&removed), "the cookie of a short session is not made to last");
+    assert_eq!(changed.status, 200);
+    assert!(!outlives_the_browser(&changed));
+    let (short_lived, expires, hard_end): (bool, Timestamp, Timestamp) = db
+        .query_row("SELECT \"ShortLived\", \"ExpiresAt\", \"AbsoluteExpiresAt\" FROM \"UserSessions\" WHERE \"Id\" = ?1", [session], |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)))
+        .unwrap();
+    assert!(short_lived);
+    assert!(expires <= hard_end, "a renewal never goes past the hard end of a short session");
+    // The one that stays signed in long keeps a cookie that lasts.
+    let long = server.client();
+    assert_eq!(server.login(&long, "owner", NEW_PASSWORD).await.status, 200);
+    let kept = send(&long, Method::POST, "/api/me/password", Some(&json!({ "currentPassword": NEW_PASSWORD, "newPassword": PASSWORD }))).await;
+    assert_eq!(kept.status, 200);
+    assert!(outlives_the_browser(&kept));
+}
+
+#[tokio::test]
+async fn the_address_that_is_told_of_a_removed_mail_method_is_read_before_it_goes() {
+    let (_server, owner, db) = owner().await;
+    let user = user_of(&owner);
+    // The founder's address, confirmed by a mail method, is the one alerts go to.
+    let mail = add_method(&db, user, "email", Some("OWNER@EXAMPLE.TEST"), 1);
+    set_session(&db, session_of(&owner.client).await, 10, Some(10));
+
+    let response = send(&owner.client, Method::POST, &format!("{SECURE}/mfa/{mail}/remove"), Some(&json!({}))).await;
+
+    assert_eq!(response.status, 204, "{}", response.text());
+    let alerted: Vec<(String, String)> = db
+        .prepare("SELECT e.\"Kind\", n.\"EmailAddress\" FROM \"SecurityNotifications\" n JOIN \"SecurityEvents\" e ON e.\"Id\" = n.\"SecurityEventId\" WHERE n.\"UserId\" = ?1 AND e.\"Kind\" = 'method-removed'")
+        .unwrap()
+        .query_map([user], |row| Ok((row.get(0)?, row.get(1)?)))
+        .unwrap()
+        .collect::<Result<_, _>>()
+        .unwrap();
+    assert_eq!(alerted, [("method-removed".to_string(), "owner@example.test".to_string())]);
+}
+
+// ---------------------------------------------------------------------------
 // The hand-over: a challenge this group starts is answered by the second
 // step's own calls. Routes that answer one are another group's, so the
 // server runs in this process with routes of the test's own that call the
