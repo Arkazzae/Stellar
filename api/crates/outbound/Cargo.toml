@@ -13,6 +13,7 @@ http = { workspace = true }
 http-body-util = { workspace = true }
 hyper = { workspace = true, features = ["client", "http1"] }
 hyper-util = { workspace = true, features = ["tokio"] }
+stellarr-deflate = { path = "../deflate" }
 rustls = { workspace = true, features = ["aws-lc-rs", "std", "tls12"] }
 tokio = { workspace = true, features = ["net", "time", "io-util", "rt", "sync"] }
 tokio-rustls = { workspace = true, features = ["aws-lc-rs", "tls12"] }

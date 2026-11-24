@@ -11,7 +11,7 @@ use tokio::io::{AsyncRead, ReadBuf};
 use tokio::task::JoinHandle;
 use tokio::time::Instant;
 
-use crate::encoding::Decoder;
+use crate::encoding::{Decoder, Pull};
 use crate::error::{Error, Result};
 
 /// The most read from a stream body in one piece.
@@ -157,7 +157,10 @@ pub struct ResponseBody {
     decoder: Decoder,
     /// What the headers already used of the ceiling.
     head_bytes: u64,
+    /// Body bytes taken off the wire.
     received: u64,
+    /// Body bytes handed to the caller, after decoding.
+    delivered: u64,
     ceiling: u64,
     deadline: Instant,
     finished: bool,
@@ -179,6 +182,7 @@ impl ResponseBody {
             decoder,
             head_bytes,
             received: 0,
+            delivered: 0,
             ceiling,
             deadline,
             finished,
@@ -186,22 +190,46 @@ impl ResponseBody {
         }
     }
 
-    /// The next piece of the body, or `None` at its end.
+    /// The next piece of the body, or `None` at its end. A piece is at most
+    /// 64 KiB when the body is being decoded, whatever the size of what
+    /// arrived.
     ///
     /// # Errors
-    /// Fails with [`Error::TooLarge`] when headers and body together pass
-    /// the ceiling, [`Error::Timeout`] when the request's time is up, and
-    /// [`Error::Body`] when the connection breaks or the framing is wrong.
+    /// Fails with [`Error::TooLarge`] when the answer passes the ceiling,
+    /// [`Error::Timeout`] when the request's time is up, and [`Error::Body`]
+    /// when the connection breaks, the framing is wrong, or the body is
+    /// compressed in a way that cannot be undone or is damaged.
     pub async fn chunk(&mut self) -> Result<Option<Bytes>> {
         loop {
             if self.finished {
                 return Ok(None);
             }
+            // What is already pushed into the decoder comes first.
+            if let Decoder::Chain(chain) = &mut self.decoder {
+                match chain.pull().inspect_err(|_| self.finished = true)? {
+                    Pull::Data(piece) => {
+                        self.delivered += piece.len() as u64;
+                        if self.head_bytes.saturating_add(self.delivered) > self.ceiling {
+                            self.finished = true;
+                            return Err(Error::TooLarge);
+                        }
+                        return Ok(Some(piece));
+                    }
+                    Pull::End => {
+                        self.finished = true;
+                        return Ok(None);
+                    }
+                    Pull::Wire => {}
+                }
+            }
             let frame = match tokio::time::timeout_at(self.deadline, self.incoming.frame()).await {
                 Err(_) => return Err(Error::Timeout),
                 Ok(None) => {
-                    self.finished = true;
-                    return Ok(None);
+                    match &mut self.decoder {
+                        Decoder::Chain(chain) => chain.finish_wire(),
+                        _ => self.finished = true,
+                    }
+                    continue;
                 }
                 Ok(Some(Err(error))) => return Err(Error::Body(describe(&error))),
                 Ok(Some(Ok(frame))) => frame,
@@ -215,11 +243,19 @@ impl ResponseBody {
                 self.finished = true;
                 return Err(Error::TooLarge);
             }
-            let data = self.decoder.feed(data)?;
-            if data.is_empty() {
-                continue;
+            match &mut self.decoder {
+                Decoder::Pass => {
+                    self.delivered += data.len() as u64;
+                    if !data.is_empty() {
+                        return Ok(Some(data));
+                    }
+                }
+                Decoder::Unsupported(why) => {
+                    self.finished = true;
+                    return Err(Error::Body((*why).into()));
+                }
+                Decoder::Chain(chain) => chain.push(&data),
             }
-            return Ok(Some(data));
         }
     }
 
