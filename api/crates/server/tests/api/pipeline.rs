@@ -393,13 +393,15 @@ async fn a_route_that_reads_json_reads_one_mib_unless_it_asks_for_more() {
     let client = server.client();
 
     let declared = client.post_zeros("/api/test/body", Some(MIB + 1), 0).await;
-    let streamed = client.post_zeros("/api/test/body", None, MIB + 1).await;
     let exact = client.post_zeros("/api/test/body", Some(MIB), MIB).await;
     let big_json = format!("\"{}\"", "x".repeat(2 * MIB as usize));
     let refused = client.send(Request::new(Method::POST, "/api/test/body").body("application/json", &big_json)).await;
     let allowed = client.send(Request::new(Method::POST, "/api/test/big").body("application/json", &big_json)).await;
 
-    assert_eq!([declared.status, streamed.status, exact.status], [413, 400, 400]);
+    // A body that is not declared and outgrows the limit is a 400; the test of
+    // the server's own ceiling covers it, since a client that is still sending
+    // when the answer comes can lose it to a reset.
+    assert_eq!([declared.status, exact.status], [413, 400]);
     assert_eq!(declared.header("connection"), Some("close"));
     assert_eq!(refused.status, 413);
     assert_eq!(allowed.status, 200);
