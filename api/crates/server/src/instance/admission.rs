@@ -55,13 +55,3 @@ pub fn admit(
         tx, server, user, now, messages, invited_to,
     )?))
 }
-
-/// Takes the invitations to the server out of the person's inbox, since they
-/// have been answered. Returns how many there were.
-pub fn clear_invitations(tx: &Transaction, server: Id, user: Id) -> rusqlite::Result<usize> {
-    tx.execute(
-        "DELETE FROM \"UserNotifications\"
-         WHERE \"UserId\" = ?1 AND \"ServerId\" = ?2 AND \"Source\" = 'system' AND \"TargetInviteCode\" IS NOT NULL",
-        params![user, server],
-    )
-}

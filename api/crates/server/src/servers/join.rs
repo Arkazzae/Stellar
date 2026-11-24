@@ -45,7 +45,7 @@ pub fn enter(
         Admission::AlreadyMember => (false, None),
         Admission::Added(welcome) => (true, welcome),
     };
-    let cleared = admission::clear_invitations(tx, server, user)?;
+    let cleared = crate::inbox::clear_joined_invitations(tx, server, user)?;
     Ok(Entry::Joined {
         added,
         welcome,
