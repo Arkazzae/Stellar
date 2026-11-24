@@ -55,7 +55,7 @@ async fn a_backup_of_the_database_alone_is_made_at_once_and_listed() {
         .unwrap()
         .map(|entry| entry.unwrap().file_name().to_string_lossy().into_owned())
         .collect();
-    assert_eq!(names, [id.clone()]);
+    assert_eq!(names, std::slice::from_ref(&id));
 }
 
 #[tokio::test]
