@@ -793,11 +793,17 @@ async fn a_real_page_by_hand() {
     let fetcher = stellarr_embeds::Fetcher::new(EmbedSettings::default());
     let started = Instant::now();
     let result = fetcher.preview(&link("https://www.rust-lang.org/")).await;
-    println!("took {:?}\n{result:#?}", started.elapsed());
-    if let Ok(preview) = &result {
-        println!(
-            "picture: {:?} bytes",
-            preview.thumbnail.as_ref().map(|t| t.size())
-        );
+    println!("took {:?}", started.elapsed());
+    match result {
+        Ok(p) => println!(
+            "{:?} {} provider={} title={:?} description={:?} picture={:?}",
+            p.kind,
+            p.url,
+            p.provider,
+            p.title,
+            p.description,
+            p.thumbnail.map(|t| (t.content_type(), t.size()))
+        ),
+        Err(reason) => println!("no card: {reason}"),
     }
 }
