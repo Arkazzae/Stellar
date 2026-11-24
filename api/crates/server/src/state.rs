@@ -168,6 +168,16 @@ impl AppState {
         Arc::clone(&self.inner.storage)
     }
 
+    /// The same state with another store, for a test that needs one that fails.
+    /// Only before the state is shared.
+    #[cfg(test)]
+    pub fn with_storage(mut self, storage: Arc<dyn ObjectStorage>) -> AppState {
+        Arc::get_mut(&mut self.inner)
+            .expect("the state is not shared yet")
+            .storage = storage;
+        self
+    }
+
     /// Reserves room for an upload; see [`crate::admission`].
     pub fn admission(&self) -> &AdmissionGate {
         &self.inner.admission
