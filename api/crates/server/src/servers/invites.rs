@@ -22,7 +22,7 @@ use crate::values::{Id, Timestamp};
 /// member is told it when they see it. Anybody else is told it when they would
 /// see it on joining, holding the base role alone, so that an invite to a
 /// channel the newcomer cannot see lands them in the server without naming the
-/// channel, before joining as after.
+/// channel.
 fn names_channel(db: &Connection, invite: &Invite, user: Option<Id>) -> rusqlite::Result<bool> {
     let Some(channel) = invite.channel else {
         return Ok(false);
@@ -140,8 +140,7 @@ pub async fn preview(
     Ok(response)
 }
 
-/// The server a person joined through an invite, and the channel the invite
-/// points to.
+/// The server a person joined through an invite.
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
 struct Joined {
@@ -151,15 +150,12 @@ struct Joined {
     icon_url: Option<String>,
     created_at: Timestamp,
     is_public: bool,
-    channel_id: Option<Id>,
-    channel_name: Option<String>,
 }
 
 /// What the write of a join brings out.
 struct Taken {
     server: Server,
     entry: Entry,
-    channel: Option<(Id, String)>,
 }
 
 /// Joins the server the invite leads to. The use of the invite is counted in
@@ -183,18 +179,12 @@ pub async fn join(
                     return Ok(None);
                 };
                 let entry = join::enter(tx, server.id, caller.user, now, state.messages(), invite.channel)?;
-                let mut channel = None;
-                if let Entry::Joined { added, .. } = &entry {
-                    if *added && !invites::record_use(tx, invite.id, now)? {
-                        return Err(DbError::Task("an invite found usable could not be used".into()));
-                    }
-                    if let Some(id) = invite.channel
-                        && names_channel(tx, &invite, Some(caller.user))?
-                    {
-                        channel = channel_name(tx, id)?.map(|name| (id, name));
-                    }
+                if let Entry::Joined { added: true, .. } = &entry
+                    && !invites::record_use(tx, invite.id, now)?
+                {
+                    return Err(DbError::Task("an invite found usable could not be used".into()));
                 }
-                Ok(Some(Taken { server, entry, channel }))
+                Ok(Some(Taken { server, entry }))
             }
         })
         .await?;
@@ -204,10 +194,6 @@ pub async fn join(
     let done = join::joined(taken.entry, &state)?;
     let server = taken.server;
     join::publish(&state, caller.user, server.id, done).await;
-    let (channel_id, channel_name) = match taken.channel {
-        Some((id, name)) => (Some(id), Some(name)),
-        None => (None, None),
-    };
     Ok(json_response(
         StatusCode::OK,
         &Joined {
@@ -217,8 +203,6 @@ pub async fn join(
             icon_url: server.icon_url,
             created_at: server.created_at,
             is_public: server.is_public,
-            channel_id,
-            channel_name,
         },
     ))
 }
