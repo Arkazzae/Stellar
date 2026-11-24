@@ -290,7 +290,10 @@ async fn hiding_presence_tells_the_servers_the_person_is_on_and_the_person_what_
 
     let told: Vec<Value> = events(&server, "PresenceChanged").split_off(before);
     assert_eq!(told.len(), 4, "{told:?}");
-    assert_eq!((told[0]["audience"]["server"].clone(), told[0]["payload"].clone()), (json!(first), json!({ "userId": maja.id, "presence": "offline" })));
+    assert_eq!(
+        (told[0]["audience"]["reach"]["servers"].clone(), told[0]["payload"].clone()),
+        (json!([first]), json!({ "userId": maja.id, "presence": "offline" }))
+    );
     assert_eq!((told[1]["audience"]["users"].clone(), told[1]["payload"].clone()), (json!([maja.id]), json!({ "userId": maja.id, "presence": "online" })));
     assert_eq!(told[2]["payload"]["presence"], "online");
     assert_eq!(told[3]["payload"]["presence"], "online");

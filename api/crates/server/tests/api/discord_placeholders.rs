@@ -29,14 +29,13 @@ use discord::guild::{Ch, FakeGuild, ID};
 const AUTHOR: &str = "1";
 
 /// Every route with a person's id in its path, which the walk below covers.
-const ROUTES_NAMING_A_PERSON: [&str; 15] = [
+const ROUTES_NAMING_A_PERSON: [&str; 14] = [
     "/api/admin/bans/{userId}",
     "/api/admin/channels/{channelId}/members/{userId}",
     "/api/admin/invites/{invite_id}/members/{user_id}",
     "/api/admin/members/{userId}",
     "/api/admin/members/{userId}/ban",
     "/api/admin/members/{userId}/role",
-    "/api/admin/members/{userId}/roles",
     "/api/cockpit/users/{userId}/identities/{identityId}/remove",
     "/api/cockpit/users/{userId}/role",
     "/api/cockpit/users/{userId}/security",
@@ -223,7 +222,6 @@ async fn a_placeholder_is_absent_or_refused_everywhere_a_person_is_found_or_acte
         .unwrap();
     for (method, route, path, body) in [
         (Method::PATCH, "/api/admin/members/{userId}/role", format!("/api/admin/members/{id}/role"), Some(json!({ "roleId": base_role.to_lowercase() }))),
-        (Method::PUT, "/api/admin/members/{userId}/roles", format!("/api/admin/members/{id}/roles"), Some(json!({ "roleIds": [] }))),
         (Method::POST, "/api/admin/members/{userId}/ban", format!("/api/admin/members/{id}/ban"), Some(json!({ "reason": "imported" }))),
         (Method::DELETE, "/api/admin/members/{userId}", format!("/api/admin/members/{id}"), None),
         (Method::DELETE, "/api/admin/bans/{userId}", format!("/api/admin/bans/{id}"), None),
