@@ -6,6 +6,7 @@ groups! {
     backups,
     channels,
     desktop_login,
+    cockpit,
     inbox,
     social,
     client_settings,
