@@ -31,7 +31,8 @@ pub fn argument<T: DeserializeOwned>(argument: Value) -> Result<Option<T>, HubEr
 /// The text of a signal's payload read as a document of type `T`: none when it
 /// is not one, or nests too deep.
 pub fn read<T: DeserializeOwned>(text: &str) -> Option<T> {
-    if nests_deeper_than(text, MAX_DEPTH) {
+    // A list would bind to a struct by position.
+    if !crate::http::is_object_or_null(text.as_bytes()) || nests_deeper_than(text, MAX_DEPTH) {
         return None;
     }
     serde_json::from_str(text).ok()
@@ -117,6 +118,16 @@ mod tests {
         assert!(read::<Value>(&nested(65)).is_none());
         assert!(read::<Value>("[\"[[[[\"]").is_some());
         assert!(read::<Value>("").is_none());
+        // A list is never a struct, whatever its elements.
+        #[derive(Deserialize)]
+        struct State {
+            #[allow(dead_code)]
+            muted: Option<bool>,
+        }
+        for list in ["[true]", "[]", "[null]", " [true]"] {
+            assert!(read::<State>(list).is_none(), "{list}");
+        }
+        assert!(read::<State>("{\"muted\":true}").is_some());
         assert!(read::<Value>("{\"a\":1,}").is_none());
         assert!(read::<Value>("{\"a\":1} x").is_none());
         assert!(read::<Value>("\u{feff}{}").is_none());

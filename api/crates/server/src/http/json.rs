@@ -25,6 +25,17 @@ use serde::de::DeserializeOwned;
 use super::body::{BodyCeiling, MAX_REQUEST_BODY_BYTES, read_all};
 use super::error::ApiError;
 
+/// Whether a JSON text is an object, or `null` where nothing is allowed. Serde
+/// binds a JSON array to a struct by position, so every place that reads a
+/// struct from JSON asks this first: a body is an object, never a list. No
+/// route takes a list as its body.
+pub fn is_object_or_null(text: &[u8]) -> bool {
+    matches!(
+        text.iter().find(|byte| !byte.is_ascii_whitespace()),
+        Some(b'{' | b'n')
+    )
+}
+
 /// A value that is sent as JSON with status 200, or read from the body of the
 /// request.
 pub struct Json<T>(pub T);
@@ -67,6 +78,9 @@ impl<T: DeserializeOwned, S: Send + Sync> FromRequest<S> for Json<T> {
         let bytes = read_all(&parts.headers, body, ceiling).await?;
         // A byte order mark is no part of JSON: a body that starts with one
         // is malformed.
+        if !is_object_or_null(&bytes) {
+            return Err(ApiError::bad_request());
+        }
         serde_json::from_slice(&bytes)
             .map(Json)
             .map_err(|_| ApiError::bad_request())
@@ -89,6 +103,9 @@ impl<T: DeserializeOwned, S: Send + Sync> OptionalFromRequest<S> for Json<T> {
         let bytes = read_all(&parts.headers, body, ceiling).await?;
         if bytes.is_empty() {
             return Ok(None);
+        }
+        if !is_object_or_null(&bytes) {
+            return Err(ApiError::bad_request());
         }
         serde_json::from_slice::<Option<T>>(&bytes)
             .map(|value| value.map(Json))
@@ -172,6 +189,16 @@ mod tests {
             panic!("a body that is there is read");
         };
         assert_eq!(account.display_name, "Maya");
+    }
+
+    #[tokio::test]
+    async fn a_list_is_never_read_as_a_struct_by_position() {
+        let list =
+            "[\"8f62a4d1-bdcb-4d86-bd1c-6e351900e629\",\"Maya\",null,\"2026-11-18T21:57:04Z\"]";
+
+        assert!(read(list).await.is_err());
+        assert!(read_optional(list).await.is_err());
+        assert!(read(&format!(" \n{list}")).await.is_err());
     }
 
     #[tokio::test]

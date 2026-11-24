@@ -389,7 +389,7 @@ mod tests {
 
     #[test]
     fn a_payload_that_is_not_an_object_is_no_voice_state() {
-        for bad in ["", "[]", "\"x\"", "null", "{", "{\"muted\":true,}", "1"] {
+        for bad in ["", "[]", "[true]", "[null]", "\"x\"", "null", "{", "{\"muted\":true,}", "1"] {
             assert!(read_muted(bad).is_err(), "{bad}");
         }
     }
