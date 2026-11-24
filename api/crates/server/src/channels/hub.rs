@@ -167,3 +167,23 @@ async fn send_typing(cx: Context, arguments: Vec<Value>) -> Result<Value, HubErr
     }
     Ok(Value::Null)
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn a_typing_notice_says_its_members_in_the_order_clients_read_them() {
+        let notice = Typing {
+            channel_id: Id::from_bytes([1; 16]),
+            user_id: Id::from_bytes([2; 16]),
+            display_name: "Maya".to_string(),
+            expires_at: Timestamp::from_unix_seconds(1_800_000_000).unwrap(),
+        };
+
+        assert_eq!(
+            serde_json::to_string(&notice).unwrap(),
+            "{\"channelId\":\"01010101-0101-0101-0101-010101010101\",\"userId\":\"02020202-0202-0202-0202-020202020202\",\"displayName\":\"Maya\",\"expiresAt\":\"2027-01-15T08:00:00Z\"}"
+        );
+    }
+}
