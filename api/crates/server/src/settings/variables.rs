@@ -1,9 +1,18 @@
 //! Every `STELLARR_*` name the API reads, and the key each one sets.
 //!
-//! This is the only place that spells one. A name without a key is read by the
-//! container's entrypoint or by the operator CLI, never by the API; it is
-//! listed so that the table stays the same as the documented one. Keep one row
-//! to a line, so that a script can read them.
+//! This is the only place that spells one. A name without a key either is read
+//! by the container's entrypoint or by the operator CLI, or is one of the two
+//! the API reads before it has layered any key, [`ENVIRONMENT`] and
+//! [`LISTEN`]; it is listed so that the table stays the same as the documented
+//! one. The image sets those two itself and an operator never should.
+
+/// The environment the process runs in: `Production`, `Development` or
+/// `Testing`. The container's entrypoint sets `Production`; the development
+/// stack and the tests set the others.
+pub const ENVIRONMENT: &str = "STELLARR_ENVIRONMENT";
+
+/// The addresses the API listens on, such as `127.0.0.1:5000`.
+pub const LISTEN: &str = "STELLARR_API_LISTEN";
 
 pub struct Variable {
     pub name: &'static str,
@@ -141,6 +150,9 @@ pub const VARIABLES: &[Variable] = &[
     // The image's own data path, and the address the CLI checks the API at.
     row("STELLARR_DATA_ROOT", Some("DataRoot")),
     row("STELLARR_API_URL", None),
+    // What the image sets for the process, and an operator never does.
+    row(ENVIRONMENT, None),
+    row(LISTEN, None),
 ];
 
 #[cfg(test)]
@@ -225,12 +237,15 @@ mod tests {
         ("STELLARR_DATA_ROOT", "DataRoot"),
     ];
 
-    /// Read by the entrypoint or the CLI only: none sets a key.
+    /// None sets a key: the entrypoint or the CLI reads them, or the API reads
+    /// them before it has any key.
     const KEYLESS: &[&str] = &[
         "STELLARR_PUBLIC_PORT",
         "STELLARR_PUBLIC_URL",
         "STELLARR_HTTPS_PORT",
         "STELLARR_API_URL",
+        ENVIRONMENT,
+        LISTEN,
     ];
 
     #[test]

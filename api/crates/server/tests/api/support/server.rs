@@ -55,16 +55,9 @@ pub struct Server {
 
 fn environment(folder: &Path, extra: &[(&str, &str)]) -> Vec<(String, String)> {
     let mut variables: Vec<(String, String)> = vec![
-        ("ASPNETCORE_ENVIRONMENT".into(), "Testing".into()),
-        ("ASPNETCORE_URLS".into(), "http://127.0.0.1:0".into()),
+        ("STELLARR_ENVIRONMENT".into(), "Testing".into()),
+        ("STELLARR_API_LISTEN".into(), "127.0.0.1:0".into()),
         ("STELLARR_DATA_ROOT".into(), folder.display().to_string()),
-        (
-            "ConnectionStrings__Database".into(),
-            format!(
-                "Data Source={};Pooling=True",
-                folder.join("stellarr.db").display()
-            ),
-        ),
         (
             "Testing__EventLog".into(),
             folder.join("events.jsonl").display().to_string(),
@@ -261,7 +254,7 @@ impl Server {
     }
 
     pub fn database_path(&self) -> PathBuf {
-        self.folder_path.join("stellarr.db")
+        self.folder_path.join("db").join("stellarr.db")
     }
 
     /// The lines the server has written to its log so far (the binary only).

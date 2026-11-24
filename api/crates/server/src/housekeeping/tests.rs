@@ -84,17 +84,10 @@ impl Place {
     fn new(extra: &[(&str, &str)]) -> Place {
         let folder = TempDir::new();
         let mut variables: Vec<(String, String)> = vec![
-            ("ASPNETCORE_ENVIRONMENT".into(), "Testing".into()),
+            ("STELLARR_ENVIRONMENT".into(), "Testing".into()),
             (
                 "STELLARR_DATA_ROOT".into(),
                 folder.path().display().to_string(),
-            ),
-            (
-                "ConnectionStrings__Database".into(),
-                format!(
-                    "Data Source={};Pooling=True",
-                    folder.path().join("stellarr.db").display()
-                ),
             ),
         ];
         for (name, value) in extra {
@@ -125,7 +118,8 @@ impl Place {
     /// A connection of the test's own, with the foreign keys off so that a row
     /// can be written without the ones it would refer to.
     fn raw(&self) -> Connection {
-        let connection = Connection::open(self.folder.path().join("stellarr.db")).unwrap();
+        let connection =
+            Connection::open(self.folder.path().join("db").join("stellarr.db")).unwrap();
         connection.busy_timeout(Duration::from_secs(30)).unwrap();
         connection
             .pragma_update(None, "foreign_keys", false)

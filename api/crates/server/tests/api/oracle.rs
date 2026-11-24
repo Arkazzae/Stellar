@@ -268,7 +268,7 @@ async fn this_server_answers_as_the_first_one_does() {
         Ok("3") => part_three(),
         _ => part_one(),
     };
-    let server = Server::start_with(&[("ASPNETCORE_ENVIRONMENT", "Production"), ("Rtc__TurnSharedSecret", "a-secret")]).await;
+    let server = Server::start_with(&[("STELLARR_ENVIRONMENT", "Production"), ("Rtc__TurnSharedSecret", "a-secret")]).await;
     let ours = server.setup_code().await;
 
     let differences = run(&steps, (oracle, &theirs), (server.address(), &ours), &server).await;

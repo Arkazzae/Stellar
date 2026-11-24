@@ -446,7 +446,15 @@ async fn oracle_worker() {
     use stellarr_api::delivery::sender::{Sender, Wiring};
     use stellarr_outbound::{AddressPolicy, TableResolver, tls};
 
+    // The database is db/stellarr.db in the data root, so the root is two
+    // levels up from the file the script names.
     let database = std::env::var("DELIVERY_DB").expect("DELIVERY_DB");
+    let data_root = std::path::Path::new(&database)
+        .parent()
+        .and_then(|folder| folder.parent())
+        .expect("DELIVERY_DB names db/stellarr.db in a data root")
+        .display()
+        .to_string();
     let port: u16 = std::env::var("FAKE_PORT").expect("FAKE_PORT").parse().unwrap();
     let ca = std::env::var("FAKE_CA").expect("FAKE_CA");
     let seconds: u64 = std::env::var("RUN_SECONDS").map_or(8, |text| text.parse().unwrap());
@@ -457,11 +465,11 @@ async fn oracle_worker() {
         ("STELLARR_PUSH_PRIVATE_KEY", std::env::var("PUSH_PRIVATE_KEY").unwrap()),
         ("Operations__PublicUrl", std::env::var("PUBLIC_URL").unwrap_or_default()),
         ("STELLARR_LANGUAGE", std::env::var("LANGUAGE").unwrap_or_else(|_| "en".into())),
-        ("ConnectionStrings__Database", format!("Data Source={database};Pooling=True")),
+        ("STELLARR_DATA_ROOT", data_root),
     ];
     let borrowed: Vec<(&str, &str)> = settings.iter().map(|(k, v)| (*k, v.as_str())).collect();
     let mut variables: Vec<(String, String)> = borrowed.iter().map(|(k, v)| (k.to_string(), v.to_string())).collect();
-    variables.push(("ASPNETCORE_ENVIRONMENT".into(), "Testing".into()));
+    variables.push(("STELLARR_ENVIRONMENT".into(), "Testing".into()));
     let push = stellarr_api::settings::Settings::load(&variables).unwrap().push;
     let sender = Sender::wired(
         &push,

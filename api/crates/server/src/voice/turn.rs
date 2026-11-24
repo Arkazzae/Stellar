@@ -89,7 +89,7 @@ mod tests {
     #[test]
     fn a_credential_ends_an_hour_from_now_and_the_secret_falls_back_in_development() {
         let settings = crate::settings::Settings::load(&[(
-            "ASPNETCORE_ENVIRONMENT".to_string(),
+            "STELLARR_ENVIRONMENT".to_string(),
             "Testing".to_string(),
         )])
         .unwrap();
@@ -109,7 +109,7 @@ mod tests {
     #[test]
     fn the_public_endpoint_names_the_host_and_the_media_port() {
         let settings = crate::settings::Settings::load(&[
-            ("ASPNETCORE_ENVIRONMENT".to_string(), "Testing".to_string()),
+            ("STELLARR_ENVIRONMENT".to_string(), "Testing".to_string()),
             ("STELLARR_MEDIA_PORT".to_string(), "49123".to_string()),
         ])
         .unwrap();

@@ -22,7 +22,7 @@ use crate::support::{Request, Server, raw_get, raw_send};
 
 /// A production-like environment, where the limits are the real ones.
 const PRODUCTION: [(&str, &str); 2] = [
-    ("ASPNETCORE_ENVIRONMENT", "Production"),
+    ("STELLARR_ENVIRONMENT", "Production"),
     ("Rtc__TurnSharedSecret", "a-secret"),
 ];
 
@@ -493,7 +493,7 @@ async fn a_trusted_proxy_that_is_not_an_address_stops_the_start_and_is_named() {
 
 #[tokio::test]
 async fn the_turn_secret_is_required_outside_development() {
-    let said = Server::refused_to_start(&[("ASPNETCORE_ENVIRONMENT", "Production")]).await;
+    let said = Server::refused_to_start(&[("STELLARR_ENVIRONMENT", "Production")]).await;
 
     assert!(
         said.contains("Rtc:TurnSharedSecret is required outside development"),
@@ -565,7 +565,7 @@ async fn an_event_is_published_after_the_change_is_committed() {
 
 #[tokio::test]
 async fn a_development_server_answers_the_web_dev_servers_origin_and_no_other() {
-    let server = server_with(&[("ASPNETCORE_ENVIRONMENT", "Development")]).await;
+    let server = server_with(&[("STELLARR_ENVIRONMENT", "Development")]).await;
     let client = server.client();
     let from = |origin: &str| Request::new(Method::GET, "/health/live").header("Origin", origin);
 

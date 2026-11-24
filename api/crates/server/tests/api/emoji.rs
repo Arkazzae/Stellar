@@ -486,7 +486,7 @@ async fn an_emoji_counts_against_the_quota_and_a_refusal_for_room_leaves_nothing
 #[tokio::test]
 async fn forms_are_counted_against_the_limit_of_uploads_per_minute() {
     let server = Server::start_with(&[
-        ("ASPNETCORE_ENVIRONMENT", "Production"),
+        ("STELLARR_ENVIRONMENT", "Production"),
         ("Rtc__TurnSharedSecret", "a-secret-for-the-relay-that-is-long-enough"),
         ("Uploads__MinimumFreeDataRootBytes", "0"),
         ("RateLimiting__Uploads__PermitLimit", "2"),

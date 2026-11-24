@@ -25,13 +25,10 @@ pub const PUBLIC_URL: &str = "https://chat.test";
 pub fn instance(extra: &[(&str, &str)]) -> (TempDir, AppState) {
     let folder = TempDir::new();
     let mut variables: Vec<(String, String)> = vec![
-        ("ASPNETCORE_ENVIRONMENT".into(), "Testing".into()),
+        ("STELLARR_ENVIRONMENT".into(), "Testing".into()),
         (
-            "ConnectionStrings__Database".into(),
-            format!(
-                "Data Source={};Pooling=True",
-                folder.path().join("stellarr.db").display()
-            ),
+            "STELLARR_DATA_ROOT".into(),
+            folder.path().display().to_string(),
         ),
         ("Operations__PublicUrl".into(), PUBLIC_URL.into()),
     ];

@@ -1466,7 +1466,7 @@ async fn the_link_changes_the_address_of_whoever_asked_whoever_opens_it() {
 
 #[tokio::test]
 async fn each_route_counts_against_the_limit_the_first_server_gives_it() {
-    const PRODUCTION: [(&str, &str); 2] = [("ASPNETCORE_ENVIRONMENT", "Production"), ("Rtc__TurnSharedSecret", "a-secret")];
+    const PRODUCTION: [(&str, &str); 2] = [("STELLARR_ENVIRONMENT", "Production"), ("Rtc__TurnSharedSecret", "a-secret")];
     // One request is what a policy allows; the next request of any route that
     // carries the policy is refused before anybody is looked at.
     for (policy, spent_on, carriers, free) in [

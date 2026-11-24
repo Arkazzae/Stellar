@@ -377,8 +377,8 @@ fn configured_providers(runtime: &Runtime) -> CliOutcome<Vec<String>> {
     }
     let settings = OidcSettings {
         original: provider("Oidc:", false),
-        callback_path: text("Oidc:CallbackPath", "/api/auth/oidc/callback"),
         named,
+        ..OidcSettings::default()
     };
     let providers = settings
         .configured_providers(|path| {

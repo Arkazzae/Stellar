@@ -288,7 +288,7 @@ async fn an_account_holds_keys_in_a_bounded_number_of_browsers() {
 #[tokio::test]
 async fn pin_attempts_are_limited_per_account_and_per_address() {
     let server = Server::start_with(&[
-        ("ASPNETCORE_ENVIRONMENT", "Development"),
+        ("STELLARR_ENVIRONMENT", "Development"),
         ("RateLimiting__PinUnlock__PermitLimit", "2"),
     ])
     .await;
@@ -326,7 +326,7 @@ async fn pin_attempts_are_limited_per_account_and_per_address() {
 #[tokio::test]
 async fn which_refusals_cost_an_attempt_is_what_the_first_server_counted() {
     let server = Server::start_with(&[
-        ("ASPNETCORE_ENVIRONMENT", "Development"),
+        ("STELLARR_ENVIRONMENT", "Development"),
         ("RateLimiting__PinUnlock__PermitLimit", "3"),
     ])
     .await;
@@ -370,7 +370,7 @@ const BACKUP: &str = "/api/me/encryption/backup";
 #[tokio::test]
 async fn an_attempt_that_is_cut_off_still_costs_the_one_it_made() {
     let server = Server::start_with(&[
-        ("ASPNETCORE_ENVIRONMENT", "Development"),
+        ("STELLARR_ENVIRONMENT", "Development"),
         ("RateLimiting__PinUnlock__PermitLimit", "50"),
     ])
     .await;

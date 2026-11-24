@@ -361,7 +361,7 @@ async fn starting_clears_out_the_requests_that_ran_out() {
 #[tokio::test]
 async fn the_start_of_a_request_counts_against_the_limit_on_signing_in() {
     let server = Server::start_with(&[
-        ("ASPNETCORE_ENVIRONMENT", "Production"),
+        ("STELLARR_ENVIRONMENT", "Production"),
         ("Rtc__TurnSharedSecret", "a-secret"),
         ("RateLimiting__Login__PermitLimit", "2"),
         ("Oidc__Enabled", "true"),
@@ -1017,7 +1017,7 @@ async fn a_poll_that_finds_nothing_yet_reads_and_writes_nothing() {
 #[tokio::test]
 async fn polls_count_against_a_limit_of_their_own() {
     let server = Server::start_with(&[
-        ("ASPNETCORE_ENVIRONMENT", "Production"),
+        ("STELLARR_ENVIRONMENT", "Production"),
         ("Rtc__TurnSharedSecret", "a-secret"),
         ("RateLimiting__LoginPoll__PermitLimit", "3"),
         ("Oidc__Enabled", "true"),

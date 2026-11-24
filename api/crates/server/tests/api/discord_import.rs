@@ -1075,7 +1075,7 @@ fn files_below(folder: &std::path::Path) -> Vec<String> {
     }
     let mut found = Vec::new();
     walk(folder, folder, &mut found);
-    found.retain(|name| !name.starts_with("stellarr.db") && name != "events.jsonl");
+    found.retain(|name| !name.starts_with("db/stellarr.db") && name != "events.jsonl");
     found.sort();
     found
 }

@@ -7,10 +7,6 @@
 //! documentation promises.
 
 pub const BASE: &[(&str, &str)] = &[
-    (
-        "ConnectionStrings:Database",
-        "Data Source=data/stellarr.db;Pooling=True",
-    ),
     // What the API logs: information from everything it logs, one line per
     // request among it. A category, which is a log target, can be set from the
     // environment, for example `Logging__LogLevel__Stellarr.Api.Requests=Warning`.
@@ -52,13 +48,8 @@ pub const BASE: &[(&str, &str)] = &[
 /// What an installation starts with and a developer's run does not.
 pub const PRODUCTION: &[(&str, &str)] = &[("Mail:Enabled", "true"), ("Backups:Enabled", "true")];
 
-/// The development stack: its own database file, and the published
-/// development secret for the TURN relay.
+/// The development stack: the published development secret for the TURN relay.
 pub const DEVELOPMENT: &[(&str, &str)] = &[
-    (
-        "ConnectionStrings:Database",
-        "Data Source=data/stellarr-dev.db;Pooling=True",
-    ),
     ("Rtc:PublicHost", "localhost"),
     ("Rtc:TurnSharedSecret", "stellarr-turn-development-secret"),
     ("Mail:Enabled", "false"),

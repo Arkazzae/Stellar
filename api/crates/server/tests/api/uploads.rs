@@ -879,7 +879,7 @@ async fn only_as_many_forms_are_read_at_once_as_uploads_may_run() {
     use tokio::io::{AsyncReadExt, AsyncWriteExt};
 
     let server = Server::start_with(&[
-        ("ASPNETCORE_ENVIRONMENT", "Production"),
+        ("STELLARR_ENVIRONMENT", "Production"),
         ("Rtc__TurnSharedSecret", "a-secret-for-the-relay-that-is-long-enough"),
         ("Uploads__MinimumFreeDataRootBytes", "0"),
         ("Uploads__MaxConcurrentUploads", "1"),

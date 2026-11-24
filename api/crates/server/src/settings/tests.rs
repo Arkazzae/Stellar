@@ -9,7 +9,7 @@ fn env(pairs: &[(&str, &str)]) -> Vec<(String, String)> {
 
 fn production(extra: &[(&str, &str)]) -> Result<Settings, SettingError> {
     let mut pairs = vec![
-        ("ASPNETCORE_ENVIRONMENT", "Production"),
+        ("STELLARR_ENVIRONMENT", "Production"),
         ("Rtc__TurnSharedSecret", "a-secret"),
     ];
     pairs.extend_from_slice(extra);
@@ -25,7 +25,7 @@ fn an_empty_production_environment_gets_the_documented_defaults() {
         Listen(vec!["127.0.0.1:5000".parse().unwrap()])
     );
     assert_eq!(settings.data_root, PathBuf::from("data"));
-    assert_eq!(settings.database.path, PathBuf::from("data/stellarr.db"));
+    assert_eq!(settings.database.path, PathBuf::from("data/db/stellarr.db"));
     assert_eq!(settings.database.busy_timeout, Duration::from_secs(30));
     assert_eq!(settings.language, Language::English);
     assert_eq!(settings.rtc.media.control_url, "http://127.0.0.1:5200/");
@@ -54,7 +54,7 @@ fn an_empty_production_environment_gets_the_documented_defaults() {
 
 #[test]
 fn the_turn_secret_is_required_outside_development_and_testing() {
-    let refused = Settings::load(&env(&[("ASPNETCORE_ENVIRONMENT", "Production")])).unwrap_err();
+    let refused = Settings::load(&env(&[("STELLARR_ENVIRONMENT", "Production")])).unwrap_err();
     assert_eq!(
         refused.to_string(),
         "Rtc:TurnSharedSecret is required outside development. In the container the entrypoint \
@@ -65,17 +65,17 @@ fn the_turn_secret_is_required_outside_development_and_testing() {
     // A blank secret is no secret.
     assert!(production(&[("Rtc__TurnSharedSecret", "  ")]).is_err());
 
-    let development = Settings::load(&env(&[("ASPNETCORE_ENVIRONMENT", "Development")])).unwrap();
+    let development = Settings::load(&env(&[("STELLARR_ENVIRONMENT", "Development")])).unwrap();
     assert_eq!(
         development.rtc.turn_shared_secret.as_deref(),
         Some("stellarr-turn-development-secret")
     );
-    assert!(Settings::load(&env(&[("ASPNETCORE_ENVIRONMENT", "testing")])).is_ok());
+    assert!(Settings::load(&env(&[("STELLARR_ENVIRONMENT", "testing")])).is_ok());
 }
 
 #[test]
 fn development_has_its_own_database_file() {
-    let settings = Settings::load(&env(&[("ASPNETCORE_ENVIRONMENT", "Development")])).unwrap();
+    let settings = Settings::load(&env(&[("STELLARR_ENVIRONMENT", "Development")])).unwrap();
 
     assert_eq!(
         settings.database.path,
@@ -109,99 +109,81 @@ fn the_language_is_read_from_the_variable_and_refused_when_unknown() {
 }
 
 #[test]
-fn the_data_root_and_the_database_follow_the_variables() {
-    let settings = production(&[
-        ("STELLARR_DATA_ROOT", "/data/stellarr"),
-        (
-            "ConnectionStrings__Database",
-            "Data Source=/data/stellarr/db/stellarr.db;Pooling=True",
-        ),
-    ])
-    .unwrap();
+fn the_database_is_in_the_data_root() {
+    let settings = production(&[("STELLARR_DATA_ROOT", "/data/stellarr")]).unwrap();
 
     assert_eq!(settings.data_root, PathBuf::from("/data/stellarr"));
     assert_eq!(
         settings.database.path,
         PathBuf::from("/data/stellarr/db/stellarr.db")
     );
+    assert_eq!(settings.database.busy_timeout, Duration::from_secs(30));
 }
 
 #[test]
-fn a_shared_cache_is_refused_and_foreign_keys_stay_on_whatever_the_string_says() {
-    let refused = production(&[(
-        "ConnectionStrings__Database",
-        "Data Source=stellarr.db;Cache=Shared;Pooling=True",
-    )])
-    .unwrap_err();
-    assert!(refused.to_string().contains("Cache=Shared"));
-
-    let kept = production(&[(
-        "ConnectionStrings__Database",
-        "Data Source=stellarr.db;Foreign Keys=False",
-    )])
-    .unwrap();
-    assert_eq!(kept.database.path, PathBuf::from("stellarr.db"));
-
-    assert!(production(&[("ConnectionStrings__Database", "Pooling=True")]).is_err());
-    assert!(production(&[("ConnectionStrings__Database", "Data Source=x.db;Bogus=1")]).is_err());
-}
-
-#[test]
-fn the_command_timeout_of_the_connection_string_is_the_busy_timeout() {
-    let settings = production(&[(
-        "ConnectionStrings__Database",
-        "Data Source=x.db;Default Timeout=5",
-    )])
-    .unwrap();
-
-    assert_eq!(settings.database.busy_timeout, Duration::from_secs(5));
-}
-
-#[test]
-fn the_shipped_connection_strings_are_accepted() {
+fn every_environment_keeps_its_database_in_the_data_root() {
     for environment in ["Production", "Development"] {
         let settings = Settings::load(&env(&[
-            ("ASPNETCORE_ENVIRONMENT", environment),
+            ("STELLARR_ENVIRONMENT", environment),
             ("Rtc__TurnSharedSecret", "s"),
         ]))
         .unwrap();
 
-        assert!(settings.database.path.to_string_lossy().ends_with(".db"));
+        assert!(settings.database.path.ends_with("db/stellarr.db"));
     }
 }
 
 #[test]
-fn urls_name_the_addresses_to_listen_on() {
+fn the_listen_address_is_a_socket_address() {
     let listen = |value: &str| Listen::parse(value);
 
     assert_eq!(
-        listen("http://127.0.0.1:5000").unwrap().0,
+        listen("127.0.0.1:5000").unwrap().0,
         ["127.0.0.1:5000".parse().unwrap()]
     );
     assert_eq!(
-        listen("http://+:80").unwrap().0,
+        listen("0.0.0.0:80").unwrap().0,
         ["0.0.0.0:80".parse().unwrap()]
     );
     assert_eq!(
-        listen("http://localhost:0/").unwrap().0,
-        ["127.0.0.1:0".parse().unwrap()]
-    );
-    assert_eq!(
-        listen("http://[::1]:5000").unwrap().0,
+        listen("[::1]:5000").unwrap().0,
         ["[::1]:5000".parse().unwrap()]
     );
+    assert_eq!(listen("127.0.0.1:1, 127.0.0.1:2").unwrap().0.len(), 2);
+    for refused in [
+        "http://127.0.0.1:5000",
+        "localhost:5000",
+        "127.0.0.1",
+        "127.0.0.1:99999",
+        " , ",
+    ] {
+        assert!(listen(refused).is_err(), "{refused}");
+    }
+}
+
+#[test]
+fn the_listen_address_and_the_environment_come_from_their_variables() {
+    let settings = Settings::load(&env(&[
+        ("STELLARR_ENVIRONMENT", "Testing"),
+        ("STELLARR_API_LISTEN", "127.0.0.1:0"),
+    ]))
+    .unwrap();
     assert_eq!(
-        listen("http://127.0.0.1:1;http://127.0.0.1:2")
-            .unwrap()
-            .0
-            .len(),
-        2
+        settings.listen,
+        Listen(vec!["127.0.0.1:0".parse().unwrap()])
     );
-    assert!(listen("https://127.0.0.1:5000").is_err());
-    assert!(listen("127.0.0.1:5000").is_err());
-    assert!(listen("http://127.0.0.1").is_err());
-    assert!(listen("http://127.0.0.1:99999").is_err());
-    assert!(listen(" ; ").is_err());
+    assert!(settings.environment.is_testing());
+
+    let refused = production(&[("STELLARR_API_LISTEN", "nowhere")]).unwrap_err();
+    assert!(refused.to_string().contains("STELLARR_API_LISTEN"));
+    assert!(
+        production(&[("STELLARR_API_LISTEN", "")])
+            .unwrap()
+            .listen
+            .0
+            .iter()
+            .all(|address| address.port() == 5000)
+    );
 }
 
 #[test]
@@ -275,7 +257,7 @@ fn a_permit_limit_is_held_at_one_or_more_and_testing_lifts_the_limits() {
     let wide = production(&[("STELLARR_MAX_CONCURRENT_UPLOADS", "500")]).unwrap();
     assert_eq!(wide.rate_limits.concurrent_uploads, 32);
 
-    let testing = Settings::load(&env(&[("ASPNETCORE_ENVIRONMENT", "Testing")])).unwrap();
+    let testing = Settings::load(&env(&[("STELLARR_ENVIRONMENT", "Testing")])).unwrap();
     assert_eq!(testing.rate_limits.login, 10_000);
     assert_eq!(testing.rate_limits.concurrent_uploads, 100);
 }
@@ -283,7 +265,7 @@ fn a_permit_limit_is_held_at_one_or_more_and_testing_lifts_the_limits() {
 #[test]
 fn the_workers_that_run_are_chosen_in_the_testing_environment_only() {
     let testing = |extra: &[(&str, &str)]| {
-        let mut variables = vec![("ASPNETCORE_ENVIRONMENT", "Testing")];
+        let mut variables = vec![("STELLARR_ENVIRONMENT", "Testing")];
         variables.extend_from_slice(extra);
         Settings::load(&env(&variables)).unwrap().testing_workers
     };
@@ -300,7 +282,7 @@ fn the_workers_that_run_are_chosen_in_the_testing_environment_only() {
 #[test]
 fn the_event_log_is_honoured_in_the_testing_environment_only() {
     let testing = Settings::load(&env(&[
-        ("ASPNETCORE_ENVIRONMENT", "Testing"),
+        ("STELLARR_ENVIRONMENT", "Testing"),
         ("Testing__EventLog", "/tmp/events.jsonl"),
     ]))
     .unwrap();
@@ -313,7 +295,7 @@ fn the_event_log_is_honoured_in_the_testing_environment_only() {
 #[test]
 fn the_test_address_of_the_gif_service_is_honoured_in_the_testing_environment_only() {
     let testing = Settings::load(&env(&[
-        ("ASPNETCORE_ENVIRONMENT", "Testing"),
+        ("STELLARR_ENVIRONMENT", "Testing"),
         ("Testing__GiphyUrl", "http://127.0.0.1:9/"),
     ]))
     .unwrap();
@@ -445,7 +427,7 @@ fn the_waits_for_the_media_server_are_fixed_outside_the_testing_environment() {
     assert_eq!(production.event_wait_ms, 25_000);
     assert_eq!(production.retry_pause, Duration::from_secs(2));
 
-    let mut variables = vec![("ASPNETCORE_ENVIRONMENT", "Testing")];
+    let mut variables = vec![("STELLARR_ENVIRONMENT", "Testing")];
     variables.extend(waits);
     let testing = Settings::load(&env(&variables)).unwrap().rtc.media.timing;
     assert_eq!(testing.command, Duration::from_millis(300));
@@ -546,16 +528,11 @@ fn a_provider_id_no_route_could_serve_refuses_the_start() {
 }
 
 #[test]
-fn a_flag_that_is_not_true_or_false_and_a_moved_callback_refuse_the_start() {
+fn a_flag_that_is_not_true_or_false_refuses_the_start() {
     let refused = oidc(&[("Oidc__TrustProviderMfa", "maybe")])
         .unwrap_err()
         .to_string();
     assert!(refused.contains("Oidc:TrustProviderMfa"), "{refused}");
-    let refused = oidc(&[("Oidc__CallbackPath", "/signin-oidc")])
-        .unwrap_err()
-        .to_string();
-    assert!(refused.contains("Oidc:CallbackPath"), "{refused}");
-    assert!(oidc(&[("Oidc__CallbackPath", "/api/auth/oidc/callback")]).is_ok());
 }
 
 #[test]
@@ -638,7 +615,7 @@ fn backups_start_as_the_documentation_promises_and_refuse_values_out_of_range() 
     assert_eq!(settings.backups.interval_hours, 24);
     assert_eq!(settings.backups.retry_minutes, 15);
     assert_eq!(settings.backups.initial_delay_minutes, 5);
-    let development = Settings::load(&env(&[("ASPNETCORE_ENVIRONMENT", "Development")])).unwrap();
+    let development = Settings::load(&env(&[("STELLARR_ENVIRONMENT", "Development")])).unwrap();
     assert!(!development.backups.enabled);
 
     for (name, bad) in [

@@ -614,12 +614,7 @@ async fn after_a_restore_the_old_cookie_is_refused_and_a_sign_in_with_the_passwo
     // The database sits where the container puts it, which is where a restore
     // puts it back.
     std::fs::create_dir_all(folder.path().join("db")).unwrap();
-    let database = format!(
-        "Data Source={};Pooling=True",
-        folder.path().join("db/stellarr.db").display()
-    );
-    let settings = [("ConnectionStrings__Database", database.as_str())];
-    let first = Server::start_in(folder.path(), &settings).await;
+    let first = Server::start_in(folder.path(), &[]).await;
     let owner = first.found("owner").await;
     assert_eq!(owner.client.get("/api/cockpit/backups").await.status, 200);
     // A sign-in half-way (a second step asked for) and a remembered browser,
@@ -673,7 +668,7 @@ async fn after_a_restore_the_old_cookie_is_refused_and_a_sign_in_with_the_passwo
     );
     assert!(applied.is_ok(), "{applied:?}");
 
-    let second = Server::start_in(folder.path(), &settings).await;
+    let second = Server::start_in(folder.path(), &[]).await;
     let old = second.client().with_cookies_of(&owner.client);
     assert_eq!(
         old.get("/api/cockpit/backups").await.status,

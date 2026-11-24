@@ -23,8 +23,8 @@ mod trusted_proxies;
 mod variables;
 
 use std::fmt;
-use std::net::{IpAddr, Ipv4Addr, SocketAddr};
-use std::path::PathBuf;
+use std::net::SocketAddr;
+use std::path::{Path, PathBuf};
 use std::time::Duration;
 
 use stellarr_messages::{Language, Messages};
@@ -39,7 +39,7 @@ pub use config::Config;
 pub use oidc::OidcSettings;
 pub use storage::{Provider, StorageSettings, UploadSettings};
 pub use trusted_proxies::{Network, TrustedProxies, normalize};
-pub use variables::{VARIABLES, Variable};
+pub use variables::{ENVIRONMENT, LISTEN, VARIABLES, Variable};
 
 /// A setting the API cannot start with. The text names the setting.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -91,44 +91,37 @@ impl Environment {
     }
 }
 
-/// The addresses to listen on, from `ASPNETCORE_URLS`, the name the
-/// container's entrypoint sets it under, such as `http://127.0.0.1:5000`. TLS ends at nginx, so
-/// only `http` is accepted.
+/// The addresses to listen on, from `STELLARR_API_LISTEN`: socket addresses
+/// such as `127.0.0.1:5000`, separated by commas. The container's entrypoint
+/// sets it to the loopback address nginx forwards to, and no operator should
+/// move it: nginx appends the client's address to `X-Forwarded-For`, and the
+/// server trusts the last entry only because nothing else can reach it.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Listen(pub Vec<SocketAddr>);
 
 impl Listen {
-    const DEFAULT: &'static str = "http://localhost:5000";
+    const DEFAULT: &'static str = "127.0.0.1:5000";
 
     fn parse(value: &str) -> Result<Listen, SettingError> {
         let mut addresses = Vec::new();
-        for url in value
-            .split(';')
+        for text in value
+            .split(',')
             .map(str::trim)
-            .filter(|url| !url.is_empty())
+            .filter(|text| !text.is_empty())
         {
-            let bad = || {
+            let address = text.parse::<SocketAddr>().map_err(|_| {
                 SettingError::new(format!(
-                    "ASPNETCORE_URLS lists \"{url}\", which is not an http address such as http://127.0.0.1:5000."
+                    "{} lists \"{text}\", which is not an address with a port such as 127.0.0.1:5000.",
+                    variables::LISTEN
                 ))
-            };
-            let rest = url.strip_prefix("http://").ok_or_else(bad)?;
-            let authority = rest.trim_end_matches('/');
-            let (host, port) = authority.rsplit_once(':').ok_or_else(bad)?;
-            let port: u16 = port.parse().map_err(|_| bad())?;
-            let ip = match host {
-                "localhost" => IpAddr::V4(Ipv4Addr::LOCALHOST),
-                "+" | "*" | "0.0.0.0" => IpAddr::V4(Ipv4Addr::UNSPECIFIED),
-                other => other
-                    .trim_start_matches('[')
-                    .trim_end_matches(']')
-                    .parse::<IpAddr>()
-                    .map_err(|_| bad())?,
-            };
-            addresses.push(SocketAddr::new(ip, port));
+            })?;
+            addresses.push(address);
         }
         if addresses.is_empty() {
-            return Err(SettingError::new("ASPNETCORE_URLS lists no address."));
+            return Err(SettingError::new(format!(
+                "{} lists no address.",
+                variables::LISTEN
+            )));
         }
         Ok(Listen(addresses))
     }
@@ -144,64 +137,13 @@ pub struct DatabaseSettings {
 }
 
 impl DatabaseSettings {
-    const CONNECTION_STRING: &'static str = "ConnectionStrings:Database";
-
-    /// The connection string names the file as `Data Source=...`, and may set
-    /// `Default Timeout` in seconds, 30 when it does not. Keywords that only
-    /// tune a pool, and `Foreign Keys`, which is always on, are accepted and
-    /// ignored. A shared cache is refused: the database runs in write-ahead
-    /// logging, which a shared cache defeats within one process.
-    fn load(config: &Config) -> Result<DatabaseSettings, SettingError> {
-        let text = config
-            .text(Self::CONNECTION_STRING)
-            .ok_or_else(|| SettingError::new("ConnectionStrings:Database is required."))?;
-        let mut path = None;
-        let mut timeout = Duration::from_secs(30);
-        for part in text
-            .split(';')
-            .map(str::trim)
-            .filter(|part| !part.is_empty())
-        {
-            let (keyword, value) = part.split_once('=').ok_or_else(|| {
-                SettingError::new(format!(
-                    "ConnectionStrings:Database has \"{part}\", which is not keyword=value."
-                ))
-            })?;
-            let keyword = keyword.trim().to_ascii_lowercase().replace([' ', '_'], "");
-            let value = value.trim();
-            match keyword.as_str() {
-                "datasource" | "data source" | "filename" => path = Some(PathBuf::from(value)),
-                "cache" if value.eq_ignore_ascii_case("shared") => {
-                    return Err(SettingError::new(
-                        "The database connection string sets Cache=Shared. The database runs in \
-                         write-ahead logging, which a shared cache defeats within this process; \
-                         remove Cache=Shared.",
-                    ));
-                }
-                "defaulttimeout" | "commandtimeout" => {
-                    let seconds: u64 = value.parse().map_err(|_| {
-                        SettingError::new(format!(
-                            "ConnectionStrings:Database has Default Timeout \"{value}\", which is not a number of seconds."
-                        ))
-                    })?;
-                    timeout = Duration::from_secs(seconds);
-                }
-                "pooling" | "cache" | "foreignkeys" | "mode" => {}
-                _ => {
-                    return Err(SettingError::new(format!(
-                        "ConnectionStrings:Database has the keyword \"{}\", which the API does not know.",
-                        part.split('=').next().unwrap_or(part).trim()
-                    )));
-                }
-            }
+    /// The database is `db/stellarr.db` in the data root, where the container,
+    /// the operator tool and the backups all look for it.
+    fn load(data_root: &Path) -> DatabaseSettings {
+        DatabaseSettings {
+            path: data_root.join("db").join("stellarr.db"),
+            busy_timeout: Duration::from_secs(30),
         }
-        let path = path
-            .filter(|path| !path.as_os_str().is_empty())
-            .ok_or_else(|| SettingError::new("ConnectionStrings:Database has no Data Source."))?;
-        Ok(DatabaseSettings {
-            path,
-            busy_timeout: timeout,
-        })
     }
 }
 
@@ -281,11 +223,10 @@ impl MediaServerSettings {
                 "Rtc:MediaControlUrl must be an absolute http or https address.",
             ));
         }
-        // Read as the first server's binder read a number, which takes hexadecimal
-        // and refuses an empty value.
+        // An empty value is refused, not taken for the default.
         let port = match config.raw("Rtc:MediaPort") {
             None => 49000,
-            Some(text) => relay::dotnet::int(text).ok_or_else(|| {
+            Some(text) => relay::int(text).ok_or_else(|| {
                 SettingError::new(format!(
                     "Rtc:MediaPort must be a whole number, but is \"{text}\"."
                 ))
@@ -714,8 +655,8 @@ fn level_directive(level: &str) -> String {
 pub struct Settings {
     pub environment: Environment,
     pub listen: Listen,
-    /// The folder every file of the instance lives in; the database and the
-    /// keys folder are inside it unless the connection string says otherwise.
+    /// The folder every file of the instance lives in, the database and the
+    /// keys folder among them.
     pub data_root: PathBuf,
     pub database: DatabaseSettings,
     pub language: Language,
@@ -764,10 +705,9 @@ impl Settings {
                 .filter(|value| !value.is_empty())
         };
         // The container's entrypoint sets both of these names.
-        let environment =
-            Environment::new(lookup("ASPNETCORE_ENVIRONMENT").unwrap_or("Production"));
+        let environment = Environment::new(lookup(ENVIRONMENT).unwrap_or("Production"));
         let config = Config::layered(environment.name(), variables);
-        Settings::from_config(&config, environment, lookup("ASPNETCORE_URLS"))
+        Settings::from_config(&config, environment, lookup(LISTEN))
     }
 
     /// Reads the sections from layered keys. Tests use this to set single
@@ -775,7 +715,7 @@ impl Settings {
     pub fn from_config(
         config: &Config,
         environment: Environment,
-        urls: Option<&str>,
+        listen: Option<&str>,
     ) -> Result<Settings, SettingError> {
         let language_text = config.raw("Stellarr:Language").unwrap_or("en");
         let language = Language::parse(language_text).map_err(|refused| {
@@ -802,10 +742,11 @@ impl Settings {
             .is_testing()
             .then(|| config.text("Testing:GiphyUrl").map(str::to_string))
             .flatten();
+        let data_root = PathBuf::from(config.text("DataRoot").unwrap_or("data"));
         Ok(Settings {
-            listen: Listen::parse(urls.unwrap_or(Listen::DEFAULT))?,
-            data_root: PathBuf::from(config.text("DataRoot").unwrap_or("data")),
-            database: DatabaseSettings::load(config)?,
+            listen: Listen::parse(listen.unwrap_or(Listen::DEFAULT))?,
+            database: DatabaseSettings::load(&data_root),
+            data_root,
             language,
             rtc,
             relay: relay::RelaySettings::load(config),

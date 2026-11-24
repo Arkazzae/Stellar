@@ -23,7 +23,7 @@ fn runtime_on(instance: &Instance) -> Runtime {
     Runtime::create(
         Invocation::parse(&words).expect("arguments"),
         silent_io(),
-        vec![("ASPNETCORE_ENVIRONMENT".into(), "Testing".into())],
+        vec![("STELLARR_ENVIRONMENT".into(), "Testing".into())],
         Arc::new(AtomicBool::new(false)),
     )
 }
