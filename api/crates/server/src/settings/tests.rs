@@ -327,14 +327,6 @@ fn the_test_address_of_the_gif_service_is_honoured_in_the_testing_environment_on
 }
 
 #[test]
-fn the_housekeeping_is_on_unless_switched_off() {
-    assert!(production(&[]).unwrap().maintenance_enabled);
-    let off = production(&[("Maintenance__Enabled", "false")]).unwrap();
-    assert!(!off.maintenance_enabled);
-    assert!(production(&[("Maintenance__Enabled", "maybe")]).is_err());
-}
-
-#[test]
 fn log_levels_become_tracing_directives() {
     let settings = production(&[
         ("Logging__LogLevel__Stellarr.Api.Requests", "Warning"),

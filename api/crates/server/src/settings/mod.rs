@@ -737,9 +737,6 @@ pub struct Settings {
     pub log: LogSettings,
     /// The identity providers people can sign in through.
     pub oidc: OidcSettings,
-    /// Whether the hourly housekeeping runs (`Maintenance:Enabled`), which the
-    /// operator panel's runtime page reports.
-    pub maintenance_enabled: bool,
     /// How link previews are fetched.
     pub embeds: stellarr_embeds::EmbedSettings,
     /// Tests only: a file the process appends every published event to, one
@@ -827,7 +824,6 @@ impl Settings {
             uploads: UploadSettings::load(config)?,
             log: LogSettings::load(config),
             oidc: OidcSettings::load(config)?,
-            maintenance_enabled: config.flag("Maintenance:Enabled")?.unwrap_or(true),
             embeds: objects::load_embeds(config)?,
             event_log,
             testing_workers,

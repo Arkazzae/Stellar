@@ -96,7 +96,7 @@ pub(super) async fn runtime(
     let process = Process::now();
     let history = state.cockpit().history().samples();
     let messages = state.messages();
-    let maintenance = state.settings().maintenance_enabled;
+    let maintenance = state.settings().maintenance.enabled;
     let storage_inactive = state.settings().storage.skip_initialization;
     let storage_state = match last_storage_check(&history) {
         Some(false) => "error",
