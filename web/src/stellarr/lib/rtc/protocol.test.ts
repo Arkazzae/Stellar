@@ -222,8 +222,13 @@ describe("Stellarr Media hub leg", () => {
     expect(decodeBrowserAnswer('{"type":"offer","sdp":"v=0","negotiationId":7}')).toBeNull();
   });
 
-  it("carries a candidate and the end-of-candidates marker like v1", () => {
-    const candidate = { candidate: "candidate:1", sdpMid: "0", sdpMLineIndex: 0 };
+  it("carries an active TCP candidate and the end-of-candidates marker", () => {
+    const candidate = {
+      candidate: "candidate:1 1 tcp 1518280447 192.0.2.10 9 typ host tcptype active",
+      sdpMid: "0",
+      sdpMLineIndex: 0,
+      usernameFragment: "offer",
+    };
 
     expect(decodeMediaCandidate(encodeMediaCandidate(candidate))).toEqual(candidate);
     expect(encodeMediaCandidate(null)).toBe("null");

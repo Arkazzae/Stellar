@@ -27,7 +27,7 @@ import { fileURLToPath } from "node:url";
 import { Client, browserPath, engine, launch, servePage } from "./lib/browser.mjs";
 import { nearestColour, nearestTone, writeFixtures } from "./lib/fixtures.mjs";
 import { Hub, startMedia } from "./lib/media.mjs";
-import { LossyNat, isRtp } from "./lib/nat.mjs";
+import { LossyNat, TcpOnlyMediaRoute, isRtp } from "./lib/nat.mjs";
 
 const here = dirname(fileURLToPath(import.meta.url));
 const sleep = (ms) => new Promise((done) => setTimeout(done, ms));
@@ -186,6 +186,7 @@ async function verifyReceiver(env, receiver, clients) {
       kind: m.publication.kind,
       mid: m.mid,
       packets: [b.packetsReceived ?? 0, a.packetsReceived ?? 0],
+      bytes: [b.bytesReceived ?? 0, a.bytesReceived ?? 0],
       codec: a.codec,
     };
     check(
@@ -238,8 +239,9 @@ async function verifyReceiver(env, receiver, clients) {
     return {
       name: p.name,
       mid: p.mid,
-      packetsSent: [b.packetsSent, a.packetsSent],
-      kbps: Math.round(((a.bytesSent - b.bytesSent) * 8) / 1500),
+      packetsSent: [b.packetsSent ?? 0, a.packetsSent],
+      bytesSent: [b.bytesSent ?? 0, a.bytesSent],
+      kbps: Math.round(((a.bytesSent - (b.bytesSent ?? 0)) * 8) / 1500),
       targetKbps: Math.round(a.targetBitrate / 1000),
       codec: a.codec,
     };
@@ -584,7 +586,85 @@ async function leave(client) {
   await client.leave();
 }
 
+async function verifyDirectMedia(s, protocol, withVideo = false) {
+  const first = await s.join("A");
+  const second = await s.join("B");
+  if (withVideo) {
+    await first.publish("camera", "video");
+    await directoryReady(second, s.clients);
+    await second.publish("camera", "video");
+  }
+  const results = await verifyRoom(s.env, s.clients);
+  for (const result of results) {
+    const { local, remote } = result.pair;
+    check(local?.protocol === protocol && remote?.protocol === protocol,
+      `${result.name} selected ${local?.protocol}/${remote?.protocol}, expected ${protocol}`);
+    check(local.candidateType !== "relay" && remote.candidateType === "host",
+      `${result.name} did not connect directly to the SFU candidate`);
+    check(result.rows.some((row) => row.kind === "audio"), `${result.name} received no audio track`);
+    if (withVideo) {
+      check(result.rows.some((row) => row.kind === "video"), `${result.name} received no video track`);
+    }
+    for (const incoming of result.rows) {
+      check(incoming.bytes[1] > incoming.bytes[0], `${result.name} did not receive ${incoming.kind} bytes`);
+    }
+    for (const outgoing of result.sending) {
+      check(outgoing.bytesSent[1] > outgoing.bytesSent[0], `${result.name} did not send ${outgoing.name} bytes`);
+    }
+  }
+  return { summary: `${protocol.toUpperCase()} ${summarise(results)}`, results };
+}
+
 const SCENARIOS = {
+  /** Direct bidirectional audio with normal UDP connectivity and no relay. */
+  async udp(s) {
+    return verifyDirectMedia(s, "udp");
+  },
+
+  /** The same two browsers, with a TCP-only network path to the advertised port. */
+  async tcp(s) {
+    const route = await TcpOnlyMediaRoute.listen();
+    let media;
+    let hub;
+    let scenario;
+    try {
+      const logFile = join(s.env.out, "tcp-media.log");
+      media = await startMedia({ binary: s.env.binary, logFile, advertisePort: route.port });
+      route.target = media.port;
+      hub = new Hub(media.control);
+      await hub.start();
+      scenario = new Scenario({
+        ...s.env,
+        hub,
+        candidate: media.candidate,
+        logText: () => readFileSync(logFile, "utf8"),
+      }, s.id);
+      const report = await verifyDirectMedia(scenario, "tcp", true);
+      for (const client of scenario.clients) {
+        const descriptions = await client.descriptions();
+        check(descriptions.some(({ side, sdp }) => side === "remote" &&
+          sdp.split(/\r?\n/).some((line) => /^a=candidate:.*\btcp\b.*\btyp host tcptype passive\b/i.test(line))),
+        `${client.name} was not advertised a passive SFU TCP candidate`);
+      }
+      check(route.accepted >= 2, `TCP route accepted only ${route.accepted} connections`);
+      check(route.dropped > 0, "the UDP blackhole received no connectivity checks");
+      await scenario.verifyClean();
+      check(hub.resets === 0 && !hub.pumpError, `TCP hub polling failed: ${hub.pumpError ?? hub.resets}`);
+      return {
+        ...report,
+        summary: `${report.summary}; ${route.accepted} TCP connections, ${route.dropped} UDP datagrams discarded`,
+        route: { tcpConnections: route.accepted, droppedUdpDatagrams: route.dropped },
+      };
+    } finally {
+      await scenario?.dump().catch((error) => console.log(`dump of tcp failed: ${error}`));
+      await scenario?.cleanup();
+      await hub?.stop();
+      await media?.stop();
+      await route.close();
+    }
+  },
+
+
   /** Two people with a fake microphone each hear each other and nothing of their own. */
   async a(s) {
     await s.join("A");
