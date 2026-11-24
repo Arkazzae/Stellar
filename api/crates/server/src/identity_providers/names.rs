@@ -48,3 +48,38 @@ pub fn shown_name_of(state: &AppState, id: &str) -> Option<Result<String, Missin
         .find(id)
         .map(|provider| shown_name(provider, state.messages()))
 }
+
+/// What the history of an account calls each provider that is set up, taken
+/// from the state once so that it can go into a transaction that runs on a
+/// thread of its own: no state, no I/O.
+#[derive(Debug, Clone, Default)]
+pub struct RecordedNames(Vec<(String, String)>);
+
+impl RecordedNames {
+    pub fn of(state: &AppState) -> RecordedNames {
+        RecordedNames(
+            state
+                .settings()
+                .oidc
+                .providers
+                .iter()
+                .map(|provider| (provider.id.clone(), recorded_name(provider)))
+                .collect(),
+        )
+    }
+
+    /// A snapshot of providers that are set up, for the tests of what uses it.
+    #[cfg(test)]
+    pub fn of_pairs(pairs: &[(&str, &str)]) -> RecordedNames {
+        RecordedNames(pairs.iter().map(|(id, name)| (id.to_string(), name.to_string())).collect())
+    }
+
+    /// The provider's name as the `identity-linked` event records it (its id
+    /// when it has none), or none when no provider with this id is set up.
+    pub fn display_name(&self, provider_id: &str) -> Option<String> {
+        self.0
+            .iter()
+            .find(|(id, _)| id == provider_id)
+            .map(|(_, name)| name.clone())
+    }
+}

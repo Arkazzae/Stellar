@@ -13,6 +13,8 @@ use crate::auth::ceremony::Completed;
 use crate::auth::{cookies, events, security_cookies, tokens};
 use crate::database::DbError;
 use crate::http::Origin;
+use crate::identity_providers::RecordedNames;
+use crate::state::AppState;
 use crate::values::{Id, Timestamp};
 
 /// The cookie that binds the waiting identity to the browser.
@@ -39,14 +41,16 @@ pub(super) const FAILED: &str = "failed";
 /// request says about itself, for the event the link writes.
 #[derive(Clone)]
 pub(super) struct Waiting {
+    names: RecordedNames,
     cookie: Option<(Id, String)>,
     ip_address: String,
     user_agent: String,
 }
 
 impl Waiting {
-    pub fn of(origin: &Origin) -> Waiting {
+    pub fn of(state: &AppState, origin: &Origin) -> Waiting {
         Waiting {
+            names: RecordedNames::of(state),
             cookie: security_cookies::parse_bound(
                 &cookies::read(&origin.headers, cookie_name(origin.https)).unwrap_or_default(),
             ),
@@ -54,15 +58,6 @@ impl Waiting {
             user_agent: origin.user_agent.clone(),
         }
     }
-}
-
-/// What the instance's providers are called by the people who see them, by
-/// id. This build reads no provider from its settings yet (signing in through
-/// one is another group's), so no waiting identity can name one that is
-/// configured: a link is always refused here, as `failed`, and the identity
-/// is used up.
-fn provider_name(_provider: &str) -> Option<String> {
-    None
 }
 
 /// The link that was asked for, as the caller's own writes of a completed
@@ -75,7 +70,7 @@ pub(super) fn pending(
     let Some(expected) = completed.pending_identity else {
         return Ok(None);
     };
-    link(tx, completed.user, expected, waiting, &provider_name).map(Some)
+    link(tx, completed.user, expected, waiting, &|id| waiting.names.display_name(id)).map(Some)
 }
 
 /// Gives the identity the browser waits with up for good, where a rollback of
@@ -258,6 +253,7 @@ mod tests {
 
         fn waiting(&self) -> Waiting {
             Waiting {
+                names: RecordedNames::of_pairs(&[("default", "Company")]),
                 cookie: Some((self.identity, SECRET.to_string())),
                 ip_address: "203.0.113.9".into(),
                 user_agent: "Firefox".into(),
@@ -376,9 +372,9 @@ mod tests {
     }
 
     #[test]
-    fn this_build_configures_no_provider_so_a_link_is_refused() {
+    fn a_link_through_a_provider_that_is_not_set_up_is_refused_and_one_that_is_goes_through() {
         let mut world = world();
-        let waiting = world.waiting();
+        let waiting = Waiting { names: RecordedNames::default(), ..world.waiting() };
         let tx = world.connection.transaction().unwrap();
         let completed = crate::auth::ceremony::Completed {
             user: world.user,
@@ -395,5 +391,12 @@ mod tests {
         assert_eq!(pending(&tx, &completed, &waiting).unwrap(), Some(FAILED));
         let asked_none = crate::auth::ceremony::Completed { pending_identity: None, ..completed };
         assert_eq!(pending(&tx, &asked_none, &waiting).unwrap(), None);
+
+        // With the provider set up the same sign-in links.
+        drop(tx);
+        let (identity, set_up) = (world.identity, world.waiting());
+        let tx = world.connection.transaction().unwrap();
+        let again = crate::auth::ceremony::Completed { pending_identity: Some(identity), ..asked_none };
+        assert_eq!(pending(&tx, &again, &set_up).unwrap(), Some(LINKED));
     }
 }

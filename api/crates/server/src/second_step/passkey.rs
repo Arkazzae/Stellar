@@ -82,7 +82,7 @@ pub async fn verify(
     let seen = Seen::of(&state, origin);
     let challenge = challenge_id(request.challenge_id.as_deref());
     let context = seen.context();
-    let waiting = Waiting::of(&seen.origin);
+    let waiting = Waiting::of(&state, &seen.origin);
     let answered = ceremony::answer(
         &state,
         &seen.ask(&context, challenge),
