@@ -15,7 +15,11 @@ class Browser {
   constructor() { this.jar = new Map(); }
   async send(method, path, { json, form, headers } = {}) {
     const h = { ...HEADERS, ...headers };
-    const cookie = [...this.jar].map(([k, v]) => `${k}=${v}`).join("; ");
+    // As a browser does: a cookie goes only to the paths under its own.
+    const here = path.split("?")[0];
+    const cookie = [...this.jar]
+      .filter(([, c]) => here === c.path || here.startsWith(c.path.endsWith("/") ? c.path : `${c.path}/`) || c.path === "/")
+      .map(([k, c]) => `${k}=${c.value}`).join("; ");
     if (cookie) h.cookie = cookie;
     let body;
     if (json !== undefined) { h["content-type"] = "application/json"; body = JSON.stringify(json); }
@@ -26,7 +30,8 @@ class Browser {
       const [pair] = line.split(";");
       const at = pair.indexOf("=");
       const name = pair.slice(0, at).trim(), value = pair.slice(at + 1).trim();
-      if (value === "" || /expires=Thu, 01 Jan 1970/i.test(line)) this.jar.delete(name); else this.jar.set(name, value);
+      const cookiePath = /;\s*path=([^;]*)/i.exec(line)?.[1] ?? "/";
+      if (value === "" || /expires=Thu, 01 Jan 1970/i.test(line)) this.jar.delete(name); else this.jar.set(name, { value, path: cookiePath });
     }
     return { status: res.status, headers: res.headers, cookies: lines, text: await res.text() };
   }
@@ -293,6 +298,7 @@ async function flows() {
 }
 
 async function limits() {
+  await new Browser().post("/api/auth/register", { username: "owner", displayName: "Owner", email: "owner@example.test", password: "Passw0rd!2026", setupCode });
   log("== rate limits: 12 sign-in starts, 7 pending drops, 12 pending reads, 35 link starts");
   const run = async (what, count, f) => {
     const codes = [];
@@ -304,6 +310,11 @@ async function limits() {
   await run("link", 12, () => b.get("/api/auth/oidc/p1/link"));
   await run("pending read", 12, () => b.get("/api/auth/oidc/pending"));
   await run("pending drop", 7, () => b.send("DELETE", "/api/auth/oidc/pending"));
+  const poll = new Browser();
+  await run("pending read, 125 in a minute", 125, () => poll.get("/api/auth/oidc/pending"));
+  const w = await ownerBrowser();
+  await run("security link, 32", 32, () => w.post("/api/me/security/identities/p1/link", {}));
+  await run("security reauthenticate, 3 more", 3, () => w.post("/api/me/security/identities/p1/reauthenticate"));
 }
 
 try {
