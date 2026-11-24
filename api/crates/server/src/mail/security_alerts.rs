@@ -43,7 +43,9 @@ const RETRY_STEP_MINUTES: i64 = 5;
 const RETRY_CAP_MINUTES: i64 = 60;
 /// Where a batch goes when alerts or mail are off.
 const OFF_DELAY: Duration = Duration::from_secs(60 * 60);
-const MAX_ERROR_CHARS: usize = 500;
+/// The most of an error a row keeps, counted in UTF-16 units as the clients
+/// and the first server count.
+const MAX_ERROR_UNITS: usize = 500;
 
 pub fn workers() -> Vec<Worker> {
     vec![Worker::new(
@@ -234,7 +236,7 @@ async fn record(
             let minutes = (RETRY_STEP_MINUTES * attempts).min(RETRY_CAP_MINUTES);
             (
                 None,
-                reason.chars().take(MAX_ERROR_CHARS).collect(),
+                cut(reason),
                 Some(now.plus(Duration::from_secs(minutes as u64 * 60))),
             )
         }
@@ -264,4 +266,15 @@ fn instance_zone(id: &str) -> TimeZone {
         return TimeZone::utc();
     }
     TimeZone::find(id).unwrap_or_else(|_| TimeZone::utc())
+}
+
+/// The first 500 UTF-16 units of `text`, never half a character.
+pub(crate) fn cut(text: &str) -> String {
+    let mut units = 0;
+    text.chars()
+        .take_while(|letter| {
+            units += letter.len_utf16();
+            units <= MAX_ERROR_UNITS
+        })
+        .collect()
 }

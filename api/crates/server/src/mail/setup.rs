@@ -14,10 +14,12 @@
 use rusqlite::{Connection, OptionalExtension};
 use stellarr_mail::{MailSettings as StoredSmtp, MailTransport};
 
+use crate::database::DbError;
 use crate::instance::access;
 use crate::seal::Sealer;
 use crate::secrets;
 use crate::settings::Settings;
+use crate::state::AppState;
 use crate::values::Id;
 
 /// The operator's switches for the kinds of mail. Without a saved row of
@@ -112,6 +114,48 @@ const DEFAULTS: Switches = Switches {
     alerts: false,
 };
 
+/// The transport the saved settings and the secrets resolve to, with nothing
+/// else checked: not whether mail is on, not a sender, not the instance's
+/// address. What the panel's test message and its settings page need, which
+/// ask those questions in their own order. An instance that never saved
+/// settings gets the defaults.
+pub fn transport(
+    connection: &Connection,
+    settings: &Settings,
+    sealer: &Sealer,
+) -> rusqlite::Result<MailTransport> {
+    let row = match access::instance_server(connection)? {
+        Some(server) => read_row(connection, server)?,
+        None => None,
+    };
+    transport_of(connection, settings, sealer, row.as_ref())
+}
+
+fn transport_of(
+    connection: &Connection,
+    settings: &Settings,
+    sealer: &Sealer,
+    row: Option<&Row>,
+) -> rusqlite::Result<MailTransport> {
+    let resolved = secrets::read(connection, &settings.secrets, sealer)?;
+    Ok(MailTransport::resolve(
+        row.map(|row| &row.stored),
+        resolved.resend_api_key().expose(),
+        resolved.smtp_password().expose(),
+    ))
+}
+
+/// [`find`] on the database of `state`.
+pub async fn find_for(state: &AppState) -> Result<MailSetup, DbError> {
+    let reading = state.clone();
+    state
+        .database()
+        .read(move |db| -> Result<MailSetup, DbError> {
+            Ok(find(db, reading.settings(), reading.sealer())?)
+        })
+        .await
+}
+
 /// Looks at the operator's settings and secrets and says whether mail can be
 /// sent, and how.
 pub fn find(
@@ -138,12 +182,7 @@ pub fn find(
         .filter(|address| !address.is_empty())
         .unwrap_or(settings.mail.from_address.trim());
     let public_url = settings.operations.public_url.clone();
-    let resolved = secrets::read(connection, &settings.secrets, sealer)?;
-    let transport = MailTransport::resolve(
-        row.as_ref().map(|row| &row.stored),
-        resolved.resend_api_key().expose(),
-        resolved.smtp_password().expose(),
-    );
+    let transport = transport_of(connection, settings, sealer, row.as_ref())?;
     if !enabled {
         return Ok(MailSetup::Off);
     }

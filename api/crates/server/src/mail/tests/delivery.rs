@@ -521,3 +521,208 @@ fn an_outcome_never_prints_more_than_it_was_given() {
     assert_eq!(Outcome::Off.reason(), None);
     assert_eq!(Outcome::TryAgain { reason: "r".into() }.reason(), Some("r"));
 }
+
+// ---- the whole of sending one message ----
+
+mod deliver {
+    use super::*;
+    use crate::mail::deliver;
+    use crate::mail::tests::support::{Saved, found, instance, resave};
+
+    fn build(mailing: &crate::mail::Mailing) -> Result<Message, stellarr_mail::Error> {
+        let mut mail = message();
+        mail.from = Mailbox::parse(&mailing.sender).unwrap();
+        Ok(mail)
+    }
+
+    #[tokio::test]
+    async fn mail_that_is_off_is_off_and_nothing_is_built_or_sent() {
+        let server = FakeSmtp::start(Behaviour::default()).await;
+        let (_folder, state) = instance(&[]);
+        found(
+            &state,
+            Saved {
+                port: server.port,
+                mailing: false,
+                ..Saved::default()
+            },
+        )
+        .await;
+        let built = std::cell::Cell::new(false);
+
+        let outcome = deliver(&state, |mailing| {
+            built.set(true);
+            build(mailing)
+        })
+        .await
+        .unwrap();
+
+        assert_eq!(outcome, Outcome::Off);
+        assert!(!built.get());
+        assert_eq!(server.seen().connections, 0);
+    }
+
+    #[tokio::test]
+    async fn mail_that_lacks_something_is_not_configured() {
+        let (_folder, state) = instance(&[]);
+        let server = found(
+            &state,
+            Saved {
+                host: "",
+                ..Saved::default()
+            },
+        )
+        .await;
+        assert_eq!(
+            deliver(&state, build).await.unwrap(),
+            Outcome::NotConfigured
+        );
+
+        resave(
+            &state,
+            server,
+            Saved {
+                from: "",
+                host: "mail.chat.test",
+                ..Saved::default()
+            },
+        )
+        .await;
+        assert_eq!(
+            deliver(&state, build).await.unwrap(),
+            Outcome::NotConfigured
+        );
+    }
+
+    #[tokio::test]
+    async fn a_message_is_written_with_what_the_setup_gives_and_sent() {
+        let server = FakeSmtp::start(Behaviour::default()).await;
+        let (_folder, state) = instance(&[("Mail__FromName", "Orbit")]);
+        found(
+            &state,
+            Saved {
+                port: server.port,
+                ..Saved::default()
+            },
+        )
+        .await;
+
+        let outcome = deliver(&state, build).await.unwrap();
+
+        assert_eq!(
+            outcome,
+            Outcome::Sent {
+                id: "message-1@stellarr".into()
+            }
+        );
+        assert!(
+            server.mails()[0]
+                .data
+                .contains("From: Orbit <noreply@chat.test>"),
+            "{}",
+            server.mails()[0].data
+        );
+    }
+
+    #[tokio::test]
+    async fn a_message_that_cannot_be_written_is_refused() {
+        let server = FakeSmtp::start(Behaviour::default()).await;
+        let (_folder, state) = instance(&[]);
+        found(
+            &state,
+            Saved {
+                port: server.port,
+                ..Saved::default()
+            },
+        )
+        .await;
+
+        let outcome = deliver(&state, |_| {
+            Mailbox::parse("not an address")
+                .map(|_| message())
+                .map_err(Into::into)
+        })
+        .await
+        .unwrap();
+
+        assert!(matches!(outcome, Outcome::Refused { .. }), "{outcome:?}");
+        assert_eq!(server.seen().connections, 0);
+    }
+}
+
+// ---- nothing secret in the log ----
+
+/// What the log says while `work` runs, at the most detailed level.
+async fn logged_during<F: std::future::Future>(work: F) -> (F::Output, String) {
+    use std::io::Write;
+    use std::sync::Mutex;
+
+    #[derive(Clone, Default)]
+    struct Sink(Arc<Mutex<Vec<u8>>>);
+    impl Write for Sink {
+        fn write(&mut self, bytes: &[u8]) -> std::io::Result<usize> {
+            self.0.lock().unwrap().extend_from_slice(bytes);
+            Ok(bytes.len())
+        }
+        fn flush(&mut self) -> std::io::Result<()> {
+            Ok(())
+        }
+    }
+    impl<'a> tracing_subscriber::fmt::MakeWriter<'a> for Sink {
+        type Writer = Sink;
+        fn make_writer(&'a self) -> Sink {
+            self.clone()
+        }
+    }
+    let sink = Sink::default();
+    let subscriber = tracing_subscriber::fmt()
+        .with_max_level(tracing::Level::TRACE)
+        .with_writer(sink.clone())
+        .finish();
+    // The test runs on one thread, so what the work logs reaches this
+    // subscriber and no other test's.
+    let _guard = tracing::subscriber::set_default(subscriber);
+    let output = work.await;
+    let text = String::from_utf8_lossy(&sink.0.lock().unwrap()).into_owned();
+    (output, text)
+}
+
+#[tokio::test]
+async fn neither_the_resend_key_nor_the_smtp_password_nor_the_message_is_logged() {
+    let (resend, delivery) = resend_answering(422, "refused for a reason").await;
+    let smtp = FakeSmtp::start(Behaviour {
+        password: Some("right"),
+        ..Behaviour::default()
+    })
+    .await;
+    let mut mail = message();
+    mail.text = "a body nobody may read in a log".into();
+
+    let ((by_resend, by_smtp), log) = logged_during(async {
+        let by_resend = delivery
+            .send(&mail, &resend_transport("re_secret_marker"))
+            .await;
+        let transport = smtp_transport_to(
+            "127.0.0.1",
+            smtp.port,
+            Security::None,
+            "mailer",
+            "smtp_secret_marker",
+        );
+        (by_resend, MailDelivery::new().send(&mail, &transport).await)
+    })
+    .await;
+
+    assert!(!by_resend.is_sent() && !by_smtp.is_sent());
+    assert!(!resend.asked().is_empty());
+    for secret in [
+        "re_secret_marker",
+        "smtp_secret_marker",
+        "a body nobody",
+        "jo@example.test",
+    ] {
+        assert!(!log.contains(secret), "the log holds {secret}:\n{log}");
+    }
+    // What the log does say shows the level was low enough to catch it.
+    assert!(!log.is_empty());
+}

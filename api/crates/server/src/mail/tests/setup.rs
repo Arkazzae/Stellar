@@ -298,3 +298,37 @@ async fn the_switches_default_to_invitations_and_recovery_on_and_alerts_off() {
     .await;
     assert!(!read(state.clone()).await.alerts);
 }
+
+#[tokio::test]
+async fn the_transport_alone_is_asked_without_a_sender_or_an_address() {
+    let (_folder, state) = instance(&[("Operations__PublicUrl", ""), ("Mail__FromAddress", "")]);
+    let read = |state: crate::state::AppState| async move {
+        let reading = state.clone();
+        state
+            .database()
+            .read(move |db| setup::transport(db, reading.settings(), reading.sealer()))
+            .await
+            .unwrap()
+    };
+    // Before anything is saved: SMTP, and not ready for want of a host.
+    let before = read(state.clone()).await;
+    found(
+        &state,
+        Saved {
+            mailing: false,
+            from: "",
+            host: "mail.chat.test",
+            port: 2525,
+            ..Saved::default()
+        },
+    )
+    .await;
+
+    let after = read(state.clone()).await;
+
+    assert_eq!((before.provider, before.ready), (Provider::Smtp, false));
+    assert_eq!((after.provider, after.ready), (Provider::Smtp, true));
+    assert_eq!(after.smtp.unwrap().port, 2525);
+    // The same instance is, for the rest of mail, off.
+    assert_eq!(find(&state).await, MailSetup::Off);
+}

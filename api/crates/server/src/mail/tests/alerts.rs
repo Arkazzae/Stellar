@@ -613,3 +613,18 @@ async fn the_worker_is_told_to_stop_between_messages() {
     assert_eq!(smtp.mails().len(), 1);
     let _ = PUBLIC_URL;
 }
+
+#[test]
+fn an_error_is_kept_to_five_hundred_units_and_never_half_a_character() {
+    use crate::mail::security_alerts::cut;
+
+    assert_eq!(cut("short"), "short");
+    assert_eq!(cut(&"x".repeat(501)).len(), 500);
+    // Each of these is two units; 250 of them fill the limit exactly.
+    let cut_emoji = cut(&"😀".repeat(300));
+    assert_eq!(cut_emoji.chars().count(), 250);
+    assert_eq!(cut_emoji.encode_utf16().count(), 500);
+    // One more unit would be half of the next.
+    let odd = cut(&format!("a{}", "😀".repeat(300)));
+    assert_eq!(odd.encode_utf16().count(), 499);
+}

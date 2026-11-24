@@ -37,7 +37,8 @@ pub enum Outcome {
     Refused { reason: String },
     /// The provider could not be reached or asked for a later try.
     TryAgain { reason: String },
-    /// The operator has switched mail off.
+    /// The operator has switched mail off. Only [`deliver`](super::deliver)
+    /// says this; sending by a transport already found does not ask.
     Off,
     /// Mail is on, but something it needs is not set: a sender, the public
     /// address of the instance, an SMTP host or the Resend key.
