@@ -32,6 +32,7 @@ mod plain_login;
 mod single_sign_on;
 mod start;
 
+pub(crate) use identities::identity_label;
 pub use identities::{identity_name, issuer_name, owned};
 pub(crate) use linking::existing_link;
 pub use linking::{Linked, Requester, link_pending, stage};

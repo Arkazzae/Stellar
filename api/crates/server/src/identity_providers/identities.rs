@@ -226,10 +226,13 @@ pub fn identity_name(
     provider: &str,
     issuer: &str,
 ) -> Result<String, stellarr_messages::MissingValue> {
-    match state.settings().oidc.find(provider) {
-        Some(found) => shown_name(found, state.messages()),
-        None => Ok(issuer_name(issuer)),
-    }
+    let name = super::names::shown_name_of(state, provider).transpose()?;
+    Ok(identity_label(issuer, name))
+}
+
+/// Names a linked identity after its provider when the provider still exists.
+pub(crate) fn identity_label(issuer: &str, configured_name: Option<String>) -> String {
+    configured_name.unwrap_or_else(|| issuer_name(issuer))
 }
 
 /// How a linked identity is named when its provider is no longer set up: the
@@ -269,5 +272,6 @@ mod tests {
         assert_eq!(issuer_name("https://user@id.example.test:8443/x"), "id.example.test");
         assert_eq!(issuer_name("https://[::1]:8443/x"), "[::1]");
         assert_eq!(issuer_name("not an address"), "not an address");
+        assert_eq!(issuer_name("1x://host"), "1x://host");
     }
 }
