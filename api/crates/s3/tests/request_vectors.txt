@@ -741,6 +741,32 @@ header x-amz-date 20130524T000000Z
 body_len 0
 body_sha256 e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855
 
+case put-if-absent
+config https
+call put_object_if_absent 6174746163686d656e74732f6120622b632e706e67 1234 696d6167652f706e67 - unsigned
+url https://store.example.test:9443/stellarr-test/attachments/a%20b%2Bc.png
+header authorization AWS4-HMAC-SHA256 Credential=AKIAIOSFODNN7EXAMPLE/20130524/us-east-1/s3/aws4_request, SignedHeaders=content-length;content-type;host;if-none-match;x-amz-content-sha256;x-amz-date, Signature=8184d1f80556b5ceb3358823940ed7fe64ed003049be6ba0235f0ab19d59f0b4
+header content-length 1234
+header content-type image/png
+header if-none-match *
+header x-amz-content-sha256 UNSIGNED-PAYLOAD
+header x-amz-date 20130524T000000Z
+body_len 0
+body_sha256 e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855
+
+case put-if-absent-hashed
+config http
+call put_object_if_absent 746573742466696c652e74657874 21 - - hashed:57656c636f6d6520746f20416d617a6f6e2053332e
+url http://minio.test:9000/stellarr-test/test%24file.text
+header authorization AWS4-HMAC-SHA256 Credential=AKIAIOSFODNN7EXAMPLE/20130524/us-east-1/s3/aws4_request, SignedHeaders=content-length;content-type;host;if-none-match;x-amz-content-sha256;x-amz-date, Signature=b802f384293c71e73ccd98bb6f5cd4a6d4161b6037661b0f2823f3fcafbe9ac1
+header content-length 21
+header content-type application/octet-stream
+header if-none-match *
+header x-amz-content-sha256 44ce7dd67c959e0d3524ffac1771dfbba87d2b6b4b4e99e42034a8b803f8b072
+header x-amz-date 20130524T000000Z
+body_len 0
+body_sha256 e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855
+
 case put-chunked-two-chunks
 config http
 call put_object 6368756e6b206f626a6563742e747874 66560 - - chunked:65536
@@ -842,6 +868,19 @@ url https://store.example.test:9443/stellarr-test/backups/0b8a6c1e/stellarr%2020
 header authorization AWS4-HMAC-SHA256 Credential=AKIAIOSFODNN7EXAMPLE/20130524/us-east-1/s3/aws4_request, SignedHeaders=content-length;content-type;host;x-amz-content-sha256;x-amz-date, Signature=fedba8d2de69e051e643034cff272251153f5ba4382e46ff03bf47b2466abecc
 header content-length 375
 header content-type application/xml
+header x-amz-content-sha256 fec5b7ff7f966b8ccb0c963f18eee72470dec6fbaf4e16ce6d05cce95e97e058
+header x-amz-date 20130524T000000Z
+body_len 375
+body_sha256 fec5b7ff7f966b8ccb0c963f18eee72470dec6fbaf4e16ce6d05cce95e97e058
+
+case multipart-complete-if-absent
+config https
+call complete_if_absent 6261636b7570732f30623861366331652f7374656c6c61727220323032362d31312d32342e7a6970 565842736232466b49456c4549475a766369426c62485a70626d636e637942746553317462335a705a5335744d6e527a49485677624739685a412b2f3d3d 1:22613534333537616666303633326363653436643934326166363833353662333822,2:22306337386165663833663636616263316661316538343737663239366433393422,10000:227826793c7a3e22
+url https://store.example.test:9443/stellarr-test/backups/0b8a6c1e/stellarr%202026-11-24.zip?uploadId=VXBsb2FkIElEIGZvciBlbHZpbmcncyBteS1tb3ZpZS5tMnRzIHVwbG9hZA%2B%2F%3D%3D
+header authorization AWS4-HMAC-SHA256 Credential=AKIAIOSFODNN7EXAMPLE/20130524/us-east-1/s3/aws4_request, SignedHeaders=content-length;content-type;host;if-none-match;x-amz-content-sha256;x-amz-date, Signature=3a7ff6218d5e2377b626a9554f461a68e2e6e940e7517985c1c1e8c4c897c9ac
+header content-length 375
+header content-type application/xml
+header if-none-match *
 header x-amz-content-sha256 fec5b7ff7f966b8ccb0c963f18eee72470dec6fbaf4e16ce6d05cce95e97e058
 header x-amz-date 20130524T000000Z
 body_len 375

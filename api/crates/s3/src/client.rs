@@ -467,6 +467,38 @@ impl Client {
         payload: Payload,
         now: Timestamp,
     ) -> Result<Prepared, RequestError> {
+        self.put_object_with(key, length, content_type, metadata, payload, false, now)
+    }
+
+    /// Like [`put_object`](Self::put_object), but only if no object is stored
+    /// under the key: the request carries the signed header
+    /// `If-None-Match: *`. A store that honours it answers `412` when the key
+    /// is taken, which reads as [`ErrorKind::PreconditionFailed`](crate::ErrorKind).
+    /// A store that does not know the header replaces the object, so whether
+    /// it is honoured is for the caller to know of the store.
+    pub fn put_object_if_absent(
+        &self,
+        key: &str,
+        length: u64,
+        content_type: Option<&str>,
+        metadata: &[(&str, &str)],
+        payload: Payload,
+        now: Timestamp,
+    ) -> Result<Prepared, RequestError> {
+        self.put_object_with(key, length, content_type, metadata, payload, true, now)
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    fn put_object_with(
+        &self,
+        key: &str,
+        length: u64,
+        content_type: Option<&str>,
+        metadata: &[(&str, &str)],
+        payload: Payload,
+        if_absent: bool,
+        now: Timestamp,
+    ) -> Result<Prepared, RequestError> {
         let mut headers = vec![(
             "content-type".to_owned(),
             content_type
@@ -475,6 +507,9 @@ impl Client {
         )];
         check_header_value(&headers[0].1)?;
         headers.extend(metadata_headers(metadata)?);
+        if if_absent {
+            headers.push(("if-none-match".to_owned(), "*".to_owned()));
+        }
         self.build(
             Target::Object(key),
             Method::Put,
@@ -547,6 +582,31 @@ impl Client {
         parts: &[Part],
         now: Timestamp,
     ) -> Result<Prepared, RequestError> {
+        self.complete_multipart_upload_with(key, upload_id, parts, false, now)
+    }
+
+    /// Like [`complete_multipart_upload`](Self::complete_multipart_upload),
+    /// but only if no object is stored under the key by the time the upload
+    /// is assembled: the request carries the signed header
+    /// `If-None-Match: *`. See [`put_object_if_absent`](Self::put_object_if_absent).
+    pub fn complete_multipart_upload_if_absent(
+        &self,
+        key: &str,
+        upload_id: &str,
+        parts: &[Part],
+        now: Timestamp,
+    ) -> Result<Prepared, RequestError> {
+        self.complete_multipart_upload_with(key, upload_id, parts, true, now)
+    }
+
+    fn complete_multipart_upload_with(
+        &self,
+        key: &str,
+        upload_id: &str,
+        parts: &[Part],
+        if_absent: bool,
+        now: Timestamp,
+    ) -> Result<Prepared, RequestError> {
         check_upload_id(upload_id)?;
         if parts.is_empty() || parts.len() as u64 > MAX_PARTS {
             return Err(RequestError::BadPart(
@@ -572,7 +632,10 @@ impl Client {
             ));
         }
         body.push_str("</CompleteMultipartUpload>");
-        let headers = vec![("content-type".to_owned(), "application/xml".to_owned())];
+        let mut headers = vec![("content-type".to_owned(), "application/xml".to_owned())];
+        if if_absent {
+            headers.push(("if-none-match".to_owned(), "*".to_owned()));
+        }
         self.build(
             Target::Object(key),
             Method::Post,

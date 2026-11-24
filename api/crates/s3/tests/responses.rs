@@ -652,3 +652,21 @@ fn a_refusal_body_is_only_read_up_to_its_bound() {
         Some("SlowDown")
     );
 }
+
+#[test]
+fn a_taken_key_is_the_same_refusal_on_a_put_and_on_completing_an_upload() {
+    let document = error("PreconditionFailed");
+    for status in [412, 200] {
+        let kind = |body: &str| {
+            read_complete_multipart_upload(status, NONE, body.as_bytes())
+                .unwrap_err()
+                .kind
+        };
+        assert_eq!(kind(&document), ErrorKind::PreconditionFailed, "{status}");
+    }
+    assert_eq!(
+        read_put_object(412, NONE, b"").unwrap_err().kind,
+        ErrorKind::PreconditionFailed,
+        "a refusal with no document is told by its status"
+    );
+}

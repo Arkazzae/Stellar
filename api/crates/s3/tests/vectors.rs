@@ -102,12 +102,18 @@ fn run(case: &BTreeMap<&str, Vec<&str>>) -> Prepared {
                 now,
             )
         }
-        "put_object" => {
+        "put_object" | "put_object_if_absent" => {
             let content_type = unhex(tokens[3]);
             let meta = metadata(tokens[4]);
             let meta: Vec<(&str, &str)> =
                 meta.iter().map(|(n, v)| (n.as_str(), v.as_str())).collect();
-            client.put_object(
+            let put = if tokens[0] == "put_object" {
+                Client::put_object
+            } else {
+                Client::put_object_if_absent
+            };
+            put(
+                &client,
                 &key(),
                 tokens[2].parse().unwrap(),
                 content_type.as_deref(),
@@ -131,7 +137,7 @@ fn run(case: &BTreeMap<&str, Vec<&str>>) -> Prepared {
             payload(tokens[5]),
             now,
         ),
-        "complete" => {
+        "complete" | "complete_if_absent" => {
             let parts: Vec<Part> = tokens[3]
                 .split(',')
                 .map(|p| {
@@ -142,7 +148,12 @@ fn run(case: &BTreeMap<&str, Vec<&str>>) -> Prepared {
                     }
                 })
                 .collect();
-            client.complete_multipart_upload(&key(), &unhex(tokens[2]).unwrap(), &parts, now)
+            let complete = if tokens[0] == "complete" {
+                Client::complete_multipart_upload
+            } else {
+                Client::complete_multipart_upload_if_absent
+            };
+            complete(&client, &key(), &unhex(tokens[2]).unwrap(), &parts, now)
         }
         "abort" => client.abort_multipart_upload(&key(), &unhex(tokens[2]).unwrap(), now),
         other => panic!("{other}"),
