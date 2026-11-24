@@ -38,8 +38,8 @@ use crate::state::AppState;
 
 /// The groups of endpoints, joined: each is a folder under `src/` whose
 /// `mod.rs` has one function, `pub fn routes() -> Endpoints`. To add a group,
-/// write its name on a line of the list below; that is the only shared line it
-/// touches.
+/// write its name on a line of `groups.list.rs`; that is the only shared line
+/// it touches.
 macro_rules! groups {
     ($($name:ident),* $(,)?) => {
         $(mod $name;)*
@@ -51,9 +51,9 @@ macro_rules! groups {
     };
 }
 
-groups! {
-    health,
-}
+// The list itself is in its own file, one name to a line, so that groups
+// added on different branches merge without a conflict.
+include!("groups.list.rs");
 
 /// How long a stopping server waits for the requests in flight before it
 /// gives up on them. The container's manager waits a little longer.
