@@ -79,6 +79,25 @@ enum Target {
     Push(Stored),
 }
 
+/// What went wrong with a row, in words that name no address: the text of the
+/// errors underneath can carry the person's address, so it is never kept.
+#[derive(Clone, Copy)]
+enum Failure {
+    Checks,
+    Mail,
+    Text,
+}
+
+impl Failure {
+    fn describe(self) -> &'static str {
+        match self {
+            Failure::Checks => "the checks could not be read",
+            Failure::Mail => "the mail could not be written",
+            Failure::Text => "a text of the notice is missing",
+        }
+    }
+}
+
 enum Finished {
     Sent,
     Cancelled,
@@ -142,8 +161,8 @@ pub(crate) async fn run(
         let finished = match attempt(state, sender, mailing.as_deref(), &item, now).await {
             Ok(finished) => finished,
             Err(error) => {
-                // Not logged with the row: what failed can name an address.
-                warn!(target: TARGET, "An activity notification delivery {} failed: {error}", item.id);
+                // The kind of failure and the id, never the error: its text can name an address.
+                warn!(target: TARGET, "An activity notification delivery {} failed: {}.", item.id, error.describe());
                 Finished::Retry
             }
         };
@@ -213,7 +232,7 @@ async fn attempt(
     mailing: Option<&Mailing>,
     item: &Leased,
     now: Timestamp,
-) -> Result<Finished, String> {
+) -> Result<Finished, Failure> {
     let checking = Leased {
         id: item.id,
         source: item.source,
@@ -229,7 +248,7 @@ async fn attempt(
         .database()
         .read(move |db| -> Result<Option<Target>, DbError> { Ok(prepare(db, &checking, now)?) })
         .await
-        .map_err(|error| error.to_string())?;
+        .map_err(|_| Failure::Checks)?;
     let Some(target) = target else {
         return Ok(Finished::Cancelled);
     };
@@ -255,7 +274,7 @@ async fn attempt(
                 delivery,
                 messages,
             )
-            .map_err(|error| error.to_string())?;
+            .map_err(|_| Failure::Mail)?;
             let outcome = state.mail().send(&message, &mailing.transport).await;
             Ok(if outcome.is_sent() {
                 Finished::Sent
@@ -278,8 +297,8 @@ async fn attempt(
             let id = item.id.to_string().replace('-', "");
             let payload = PushPayload {
                 id: id.clone(),
-                title: messages.get(title, &[]).map_err(|e| e.to_string())?,
-                body: messages.get(body, &[]).map_err(|e| e.to_string())?,
+                title: messages.get(title, &[]).map_err(|_| Failure::Text)?,
+                body: messages.get(body, &[]).map_err(|_| Failure::Text)?,
                 url: if public_url.is_empty() {
                     "/".to_string()
                 } else {
