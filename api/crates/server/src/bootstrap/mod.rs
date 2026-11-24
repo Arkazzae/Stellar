@@ -72,8 +72,6 @@ async fn bootstrap(
         read.add_markers(stored);
     }
 
-    // Asked last, as the first server did: a relay that is set up wrongly fails
-    // the answer after the markers were stored.
     let answer = read.finish(&state, Timestamp::now())?;
     Ok(json_response(StatusCode::OK, &answer))
 }

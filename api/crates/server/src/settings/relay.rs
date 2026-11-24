@@ -6,12 +6,14 @@
 //! with a 500 until the setting was mended. That is kept: a value that cannot
 //! be right is held as the refusal it makes, and the bootstrap answers with it.
 
+use super::SettingError;
 use super::config::Config;
 
-/// The relay's ports and switches, or why they cannot be used.
+/// The relay's ports and switches. A value that cannot be right stops the
+/// start, like any other setting.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct RelaySettings {
-    pub arrangement: Result<Relay, String>,
+    pub arrangement: Relay,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -23,28 +25,31 @@ pub struct Relay {
 }
 
 impl RelaySettings {
-    pub(super) fn load(config: &Config) -> RelaySettings {
-        RelaySettings {
-            arrangement: arrange(config),
-        }
+    pub(super) fn load(config: &Config) -> Result<RelaySettings, SettingError> {
+        Ok(RelaySettings {
+            arrangement: arrange(config)?,
+        })
     }
 }
 
-/// In the order the first server read and checked them, which decides which
-/// refusal is reported (all of them are a 500 that says nothing of the cause).
-fn arrange(config: &Config) -> Result<Relay, String> {
+fn arrange(config: &Config) -> Result<Relay, SettingError> {
     let turn_port = number(config, "Rtc:TurnPort", 3478)?;
     let turns_port = number(config, "Rtc:TurnsPort", 5349)?;
     let turns_enabled = flag(config, "Rtc:TurnsEnabled")?;
     if !(1..=65535).contains(&turn_port) {
-        return Err("Rtc:TurnPort must be between 1 and 65535.".to_string());
+        return Err(SettingError::new(
+            "Rtc:TurnPort must be between 1 and 65535.",
+        ));
     }
     if turns_enabled && !(1..=65535).contains(&turns_port) {
-        return Err("Rtc:TurnsPort must be between 1 and 65535.".to_string());
+        return Err(SettingError::new(
+            "Rtc:TurnsPort must be between 1 and 65535.",
+        ));
     }
     let tcp_enabled = flag(config, "Rtc:TurnTcpEnabled")?;
     Ok(Relay {
-        turn_port: u16::try_from(turn_port).map_err(|_| "port".to_string())?,
+        turn_port: u16::try_from(turn_port)
+            .map_err(|_| SettingError::new("Rtc:TurnPort must be between 1 and 65535."))?,
         // Only used when the TLS port is on, and then checked above.
         turns_port: u16::try_from(turns_port).unwrap_or(0),
         turns_enabled,
@@ -52,17 +57,19 @@ fn arrange(config: &Config) -> Result<Relay, String> {
     })
 }
 
-fn number(config: &Config, key: &str, default: i32) -> Result<i32, String> {
+fn number(config: &Config, key: &str, default: i32) -> Result<i32, SettingError> {
     match config.raw(key) {
         None => Ok(default),
-        Some(text) => int(text).ok_or_else(|| format!("{key} is not a number.")),
+        Some(text) => int(text).ok_or_else(|| SettingError::new(format!("{key} is not a number."))),
     }
 }
 
-fn flag(config: &Config, key: &str) -> Result<bool, String> {
+fn flag(config: &Config, key: &str) -> Result<bool, SettingError> {
     match config.raw(key) {
         None => Ok(false),
-        Some(text) => boolean(text).ok_or_else(|| format!("{key} is not true or false.")),
+        Some(text) => {
+            boolean(text).ok_or_else(|| SettingError::new(format!("{key} is not true or false.")))
+        }
     }
 }
 
@@ -86,12 +93,12 @@ fn boolean(text: &str) -> Option<bool> {
 mod tests {
     use super::*;
 
-    fn arranged(settings: &[(&str, &str)]) -> Result<Relay, String> {
+    fn arranged(settings: &[(&str, &str)]) -> Result<Relay, SettingError> {
         let mut config = Config::layered("Production", &[]);
         for (key, value) in settings {
             config.set(key, value);
         }
-        RelaySettings::load(&config).arrangement
+        RelaySettings::load(&config).map(|loaded| loaded.arrangement)
     }
 
     #[test]
@@ -160,7 +167,7 @@ mod tests {
     }
 
     #[test]
-    fn what_is_not_set_is_the_default_and_a_wrong_value_does_not_stop_the_start() {
+    fn what_is_not_set_is_the_default_and_a_wrong_value_stops_the_start() {
         let relay = arranged(&[]).unwrap();
         assert_eq!(
             (
@@ -171,8 +178,27 @@ mod tests {
             ),
             (3478, 5349, false, false)
         );
-        // Loading is not failing: the refusal is what the bootstrap will say.
-        assert!(arranged(&[("Rtc:TurnPort", "abc")]).is_err());
+        for (key, value, said) in [
+            ("Rtc:TurnPort", "abc", "Rtc:TurnPort is not a number."),
+            (
+                "Rtc:TurnPort",
+                "0",
+                "Rtc:TurnPort must be between 1 and 65535.",
+            ),
+            (
+                "Rtc:TurnPort",
+                "65536",
+                "Rtc:TurnPort must be between 1 and 65535.",
+            ),
+            (
+                "Rtc:TurnTcpEnabled",
+                "maybe",
+                "Rtc:TurnTcpEnabled is not true or false.",
+            ),
+        ] {
+            let refused = arranged(&[(key, value)]).unwrap_err();
+            assert_eq!(refused.to_string(), said);
+        }
     }
 
     #[test]
