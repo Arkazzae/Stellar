@@ -622,25 +622,33 @@ async fn an_invalid_signal_is_refused_and_reaches_nobody() {
 }
 
 #[tokio::test]
-async fn a_signal_is_read_in_the_way_of_the_first_servers_reader() {
+async fn a_signal_is_read_by_exact_names_and_plain_values() {
     let rig = Rig::start().await;
     let (maja, ada) = (rig.person("maja").await, rig.person("ada").await);
     let (mut sender, mut receiver) = (rig.connect(&maja).await, rig.connect(&ada).await);
     sender.join(rig.salon).await;
     receiver.join(rig.salon).await;
 
-    // Members are found in any letter case, and what is not there is nothing.
+    // A member in another letter case is not the member asked for: what is
+    // not there is nothing.
     sender
-        .ok("SendVoiceSignal", json!([{"PROTOCOLVERSION": 1, "ChannelId": rig.salon, "KIND": "state", "payload": "{\"muted\":true}"}]))
+        .refused(
+            "SendVoiceSignal",
+            json!([{"PROTOCOLVERSION": 1, "ChannelId": rig.salon, "KIND": "state", "payload": "{\"muted\":true}"}]),
+            "Invalid ChannelId.",
+        )
         .await;
-    assert_eq!(receiver.next("VoiceSignal").await["payload"], "{\"muted\":true}");
-    // The last of two members of one name counts, and a document nests 64 deep.
+    // A muted flag that is not a flag, or is named twice, makes no state; a
+    // document nests 64 deep.
+    for payload in ["{\"muted\":true,\"muted\":false}", "{\"muted\":\"yes\"}", "{\"muted\":1}"] {
+        sender
+            .refused("SendVoiceSignal", json!([signal(rig.salon, "state", payload, None)]), "Invalid voice state.")
+            .await;
+    }
     for (payload, muted) in [
-        ("{\"muted\":true,\"muted\":false}", Some(false)),
-        ("{\"muted\":false,\"muted\":true}", Some(true)),
+        ("{\"muted\":true}", Some(true)),
         ("{\"Muted\":false}", None),
         ("{\"muted\":null}", None),
-        ("{\"muted\":\"yes\"}", None),
     ] {
         sender.state(rig.salon, payload, None).await;
         // The room hears of a change of seat before the signal is relayed.

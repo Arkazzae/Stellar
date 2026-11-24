@@ -16,39 +16,10 @@ fn quoted(text: &str) -> String {
 /// How deep arrays and objects may lie in one another.
 const MAX_DEPTH: usize = 64;
 
-/// The text of a body, read as a reader of text reads it: a byte order mark
-/// names the encoding, and what is not valid in it becomes U+FFFD.
-pub fn decode(bytes: &[u8]) -> String {
-    match bytes {
-        [0xEF, 0xBB, 0xBF, rest @ ..] => String::from_utf8_lossy(rest).into_owned(),
-        [0xFF, 0xFE, 0, 0, rest @ ..] => wide(rest, 4, u32::from_le_bytes),
-        [0, 0, 0xFE, 0xFF, rest @ ..] => wide(rest, 4, u32::from_be_bytes),
-        [0xFF, 0xFE, rest @ ..] => narrow(rest, u16::from_le_bytes),
-        [0xFE, 0xFF, rest @ ..] => narrow(rest, u16::from_be_bytes),
-        _ => String::from_utf8_lossy(bytes).into_owned(),
-    }
-}
-
-fn narrow(bytes: &[u8], unit: fn([u8; 2]) -> u16) -> String {
-    let units = bytes.as_chunks::<2>().0.iter().map(|pair| unit(*pair));
-    let mut text: String = char::decode_utf16(units)
-        .map(|part| part.unwrap_or('\u{FFFD}'))
-        .collect();
-    if !bytes.len().is_multiple_of(2) {
-        text.push('\u{FFFD}');
-    }
-    text
-}
-
-fn wide(bytes: &[u8], width: usize, scalar: fn([u8; 4]) -> u32) -> String {
-    let mut text: String = bytes
-        .chunks_exact(width)
-        .map(|quad| char::from_u32(scalar([quad[0], quad[1], quad[2], quad[3]])).unwrap_or('\u{FFFD}'))
-        .collect();
-    if !bytes.len().is_multiple_of(width) {
-        text.push('\u{FFFD}');
-    }
-    text
+/// The text of a body: UTF-8 and nothing else. A byte order mark is not part
+/// of JSON, so a body that starts with one is not an object.
+pub fn decode(bytes: &[u8]) -> Option<&str> {
+    std::str::from_utf8(bytes).ok()
 }
 
 /// The text as one compact JSON object, or none when it is not JSON, not an
@@ -347,12 +318,12 @@ mod tests {
     }
 
     #[test]
-    fn a_body_is_read_as_a_reader_of_text_reads_it() {
-        assert_eq!(decode(b"\xEF\xBB\xBF{}"), "{}");
-        assert_eq!(decode(b"\xFF\xFE{\0}\0"), "{}");
-        assert_eq!(decode(b"\xFE\xFF\0{\0}"), "{}");
-        assert_eq!(decode(b"\xFF\xFE\0\0{\0\0\0}\0\0\0"), "{}");
-        assert_eq!(decode(b"\0\0\xFE\xFF\0\0\0{\0\0\0}"), "{}");
-        assert_eq!(decode(b"{\"a\":\"\xFF\"}"), "{\"a\":\"\u{fffd}\"}");
+    fn a_body_is_utf_8_and_a_byte_order_mark_is_no_object() {
+        assert_eq!(decode(b"{}"), Some("{}"));
+        assert_eq!(decode(b"{\"a\":\"\xFF\"}"), None);
+        for marked in [&b"\xEF\xBB\xBF{}"[..], b"\xFF\xFE{\0}\0", b"\xFE\xFF\0{\0}"] {
+            let text = decode(marked).unwrap_or("");
+            assert_eq!(kept(text), None);
+        }
     }
 }

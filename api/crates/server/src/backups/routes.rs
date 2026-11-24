@@ -5,8 +5,7 @@
 use axum::extract::State;
 use axum::http::{HeaderMap, StatusCode, header};
 use axum::response::Response;
-use serde::Serialize;
-use serde_json::Value;
+use serde::{Deserialize, Serialize};
 use stellarr_messages::MessageKey;
 
 use super::jobs::Job;
@@ -173,6 +172,19 @@ async fn list(
 // ---------------------------------------------------------------------------
 // Making one.
 
+/// Which parts a backup is to hold; a part that is not named is left out.
+#[derive(Deserialize)]
+struct PartsBody {
+    #[serde(default)]
+    database: bool,
+    #[serde(default)]
+    objects: bool,
+    #[serde(default)]
+    keys: bool,
+    #[serde(default)]
+    instance: bool,
+}
+
 /// Without a body: the database alone, copied at once into a plain SQLite
 /// file. With one naming the files or the keys: an archive written in the
 /// background, answered with 202 and followed through the backup list.
@@ -184,25 +196,24 @@ async fn create(
         caller,
         server,
         body: wanted,
-    } = panel::bind_then_gate(&state, request, false, |body| match body {
-        None => Ok(Parts::DATABASE),
-        Some(Value::Object(members)) => {
+    } = panel::bind_then_gate::<PartsBody>(&state, request, false).await?;
+    let wanted = match wanted {
+        None => Parts::DATABASE,
+        Some(body) => {
             let mut wanted = Parts::NONE;
-            for (name, part) in [
-                ("database", Parts::DATABASE),
-                ("objects", Parts::OBJECTS),
-                ("keys", Parts::KEYS),
-                ("instance", Parts::INSTANCE),
+            for (asked, part) in [
+                (body.database, Parts::DATABASE),
+                (body.objects, Parts::OBJECTS),
+                (body.keys, Parts::KEYS),
+                (body.instance, Parts::INSTANCE),
             ] {
-                if flag(member(&members, name))? {
+                if asked {
                     wanted = wanted.with(part);
                 }
             }
-            Ok(wanted)
+            wanted
         }
-        Some(_) => Err(ApiError::bad_request()),
-    })
-    .await?;
+    };
     if wanted.is_none() {
         let message = state
             .messages()
@@ -386,44 +397,21 @@ async fn download(
 // ---------------------------------------------------------------------------
 // The schedule.
 
-/// A member of a JSON object by name, without regard to letter case, the last
-/// of several winning, as the first server read request bodies.
-fn member<'a>(members: &'a serde_json::Map<String, Value>, name: &str) -> Option<&'a Value> {
-    members
-        .iter()
-        .rev()
-        .find(|(have, _)| have.eq_ignore_ascii_case(name))
-        .map(|(_, value)| value)
-}
-
-/// A whole number the way the first server read one from JSON: a number, or
-/// text holding one, that fits 32 bits.
-fn whole_number(value: Option<&Value>) -> Result<i64, ApiError> {
-    let Some(value) = value else {
-        return Ok(0);
-    };
-    let number = match value {
-        Value::Number(number) => number.as_i64(),
-        // Text holding a number counts, with nothing around it.
-        Value::String(text) => {
-            let digits = text.strip_prefix(['-', '+']).unwrap_or(text);
-            (!digits.is_empty() && digits.bytes().all(|byte| byte.is_ascii_digit()))
-                .then(|| text.parse::<i64>().ok())
-                .flatten()
-        }
-        _ => None,
-    };
-    number
-        .filter(|number| i32::try_from(*number).is_ok())
-        .ok_or_else(ApiError::bad_request)
-}
-
-fn flag(value: Option<&Value>) -> Result<bool, ApiError> {
-    match value {
-        None => Ok(false),
-        Some(Value::Bool(flag)) => Ok(*flag),
-        Some(_) => Err(ApiError::bad_request()),
-    }
+/// What a request to replace the schedule says. A number that is missing
+/// reads as 0, which the ranges below refuse; a flag that is missing is off.
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct ScheduleBody {
+    #[serde(default)]
+    enabled: bool,
+    #[serde(default)]
+    interval_hours: i32,
+    #[serde(default)]
+    retry_minutes: i32,
+    #[serde(default)]
+    initial_delay_minutes: i32,
+    #[serde(default)]
+    retention_days: i32,
 }
 
 struct ScheduleRequest {
@@ -431,19 +419,18 @@ struct ScheduleRequest {
     retention_days: i64,
 }
 
-fn read_schedule_request(body: Value) -> Result<ScheduleRequest, ApiError> {
-    let Value::Object(members) = body else {
-        return Err(ApiError::bad_request());
-    };
-    Ok(ScheduleRequest {
-        schedule: Schedule {
-            enabled: flag(member(&members, "enabled"))?,
-            interval_hours: whole_number(member(&members, "intervalHours"))?,
-            retry_minutes: whole_number(member(&members, "retryMinutes"))?,
-            initial_delay_minutes: whole_number(member(&members, "initialDelayMinutes"))?,
-        },
-        retention_days: whole_number(member(&members, "retentionDays"))?,
-    })
+impl From<ScheduleBody> for ScheduleRequest {
+    fn from(body: ScheduleBody) -> ScheduleRequest {
+        ScheduleRequest {
+            schedule: Schedule {
+                enabled: body.enabled,
+                interval_hours: i64::from(body.interval_hours),
+                retry_minutes: i64::from(body.retry_minutes),
+                initial_delay_minutes: i64::from(body.initial_delay_minutes),
+            },
+            retention_days: i64::from(body.retention_days),
+        }
+    }
 }
 
 async fn policy_of(state: &AppState, server: Id) -> Result<PolicyDto, ApiError> {
@@ -495,13 +482,10 @@ async fn replace_schedule(
         caller,
         server,
         body,
-    } = panel::bind_then_gate(&state, request, true, |body| {
-        body.map(read_schedule_request).transpose()
-    })
-    .await?;
+    } = panel::bind_then_gate::<ScheduleBody>(&state, request, true).await?;
     // Nothing to bind is a bad request, but only once the gate has let the
     // caller by.
-    let request = body.ok_or_else(ApiError::bad_request)?;
+    let request = ScheduleRequest::from(body.ok_or_else(ApiError::bad_request)?);
     let schedule = request.schedule;
     let mut problems = Vec::new();
     for (member, value, range) in [
@@ -603,17 +587,17 @@ async fn current_destination(state: &AppState) -> Result<DestinationDto, ApiErro
     Ok(destination_dto(destination, source))
 }
 
-/// A string member of the request: none when it is missing or null, which the
-/// route answers like one that is too long; anything but text is a bad request.
-fn text_member(
-    members: &serde_json::Map<String, Value>,
-    name: &str,
-) -> Result<Option<String>, ApiError> {
-    match member(members, name) {
-        None | Some(Value::Null) => Ok(None),
-        Some(Value::String(text)) => Ok(Some(text.clone())),
-        Some(_) => Err(ApiError::bad_request()),
-    }
+/// What a request to replace the offsite destination says. A text that is
+/// missing or null is answered like one that is too long.
+#[derive(Deserialize)]
+struct DestinationBody {
+    #[serde(default)]
+    enabled: bool,
+    mode: Option<String>,
+    endpoint: Option<String>,
+    region: Option<String>,
+    bucket: Option<String>,
+    prefix: Option<String>,
 }
 
 async fn replace_destination(
@@ -624,21 +608,15 @@ async fn replace_destination(
         caller,
         server,
         body,
-    } = panel::bind_then_gate(&state, request, true, |body| match body {
-        None => Ok(None),
-        Some(Value::Object(members)) => Ok(Some((
-            flag(member(&members, "enabled"))?,
-            text_member(&members, "mode")?,
-            text_member(&members, "endpoint")?,
-            text_member(&members, "region")?,
-            text_member(&members, "bucket")?,
-            text_member(&members, "prefix")?,
-        ))),
-        Some(_) => Err(ApiError::bad_request()),
-    })
-    .await?;
-    let (enabled, mode, endpoint, region, bucket, prefix) =
-        body.ok_or_else(ApiError::bad_request)?;
+    } = panel::bind_then_gate::<DestinationBody>(&state, request, true).await?;
+    let DestinationBody {
+        enabled,
+        mode,
+        endpoint,
+        region,
+        bucket,
+        prefix,
+    } = body.ok_or_else(ApiError::bad_request)?;
     let units = |text: &str| text.encode_utf16().count();
     let fields_invalid = match (&mode, &endpoint, &region, &bucket, &prefix) {
         (Some(mode), Some(endpoint), Some(region), Some(bucket), Some(prefix)) => {

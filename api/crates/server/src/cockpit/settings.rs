@@ -15,7 +15,6 @@ use serde::{Deserialize, Serialize};
 use stellarr_mail::{MailSettings, MailTransport, Provider};
 use stellarr_smtp::Security;
 
-use super::bind;
 use crate::auth::{fresh, policy};
 use crate::database::DbError;
 use crate::http::{ApiError, ApiResult, Problem, json_response};
@@ -179,35 +178,35 @@ struct Change {
     recovery_mail_enabled: bool,
     #[serde(default)]
     alert_mail_enabled: bool,
-    #[serde(default, deserialize_with = "super::lenient")]
+    #[serde(default)]
     backup_retention_days: i32,
-    #[serde(default, deserialize_with = "super::lenient")]
+    #[serde(default)]
     log_retention_days: i32,
-    #[serde(default, deserialize_with = "super::lenient")]
+    #[serde(default)]
     orphan_object_retention_days: i32,
     #[serde(default)]
     automatic_cleanup_enabled: bool,
     smtp_host: Option<String>,
-    #[serde(default, deserialize_with = "super::lenient_option")]
+    #[serde(default)]
     smtp_port: Option<i32>,
     smtp_security: Option<String>,
     smtp_username: Option<String>,
     resend_enabled: Option<bool>,
     giphy_enabled: Option<bool>,
     mfa_requirement: Option<String>,
-    #[serde(default, deserialize_with = "super::lenient_option")]
+    #[serde(default)]
     trusted_device_days: Option<i32>,
-    #[serde(default, deserialize_with = "super::lenient_option")]
+    #[serde(default)]
     auth_challenge_minutes: Option<i32>,
-    #[serde(default, deserialize_with = "super::lenient_option")]
+    #[serde(default)]
     email_code_minutes: Option<i32>,
-    #[serde(default, deserialize_with = "super::lenient_option")]
+    #[serde(default)]
     email_code_cooldown_seconds: Option<i32>,
-    #[serde(default, deserialize_with = "super::lenient_option")]
+    #[serde(default)]
     email_code_max_attempts: Option<i32>,
-    #[serde(default, deserialize_with = "super::lenient_option")]
+    #[serde(default)]
     email_code_sends_per_hour: Option<i32>,
-    #[serde(default, deserialize_with = "super::lenient_option")]
+    #[serde(default)]
     cli_recovery_minutes: Option<i32>,
 }
 
@@ -285,7 +284,7 @@ pub(super) async fn update(State(state): State<AppState>, request: Request) -> A
         caller,
         server,
         body,
-    } = panel::bind_then_gate(&state, request, false, bind::<Change>).await?;
+    } = panel::bind_then_gate::<Change>(&state, request, false).await?;
     let Some(change) = body else {
         return Err(ApiError::bad_request());
     };

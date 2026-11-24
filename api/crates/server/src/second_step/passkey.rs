@@ -5,7 +5,6 @@ use axum::extract::State;
 use axum::http::{HeaderValue, StatusCode, header};
 use axum::response::Response;
 use serde::Deserialize;
-use serde_json::Value;
 
 use super::common::{
     Seen, body_of, challenge_id, challenge_problem, method_unavailable, no_store, passkeys_unavailable,
@@ -61,7 +60,7 @@ pub async fn options(
 #[serde(rename_all = "camelCase")]
 pub struct VerifyRequest {
     challenge_id: Option<String>,
-    response: Option<Value>,
+    response: wire::Raw,
     #[serde(default)]
     remember_device: bool,
 }
@@ -76,7 +75,7 @@ pub async fn verify(
         Ok(request) => request,
         Err(response) => return Ok(*response),
     };
-    let Ok(response) = wire::assertion(request.response.as_ref()) else {
+    let Ok(response) = wire::assertion(request.response.as_deref()) else {
         return Err(ApiError::bad_request());
     };
     let seen = Seen::of(&state, origin);

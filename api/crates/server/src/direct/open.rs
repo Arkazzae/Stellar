@@ -4,14 +4,26 @@ use axum::extract::State;
 use axum::http::StatusCode;
 use axum::response::Response;
 use rusqlite::{OptionalExtension, params};
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 
-use crate::http::lenient::{Malformed, Members};
 use crate::auth::Caller;
 use crate::http::{ApiError, ApiResult, Json, json_response};
 use crate::social::{announce, is_blocked, pair};
 use crate::state::AppState;
 use crate::values::{Id, Timestamp};
+
+/// The body: `userId` is not optional, but a missing one is the empty id,
+/// which is nobody; a `null` is not an id.
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Request {
+    #[serde(default = "nobody")]
+    user_id: Id,
+}
+
+fn nobody() -> Id {
+    Id::from_bytes([0; 16])
+}
 
 #[derive(Serialize)]
 struct Opened {
@@ -23,15 +35,8 @@ struct Opened {
 pub async fn open(
     State(state): State<AppState>,
     caller: Caller,
-    Json(body): Json<Members>,
+    Json(Request { user_id: other }): Json<Request>,
 ) -> ApiResult<Response> {
-    // `userId` is not optional: a missing one is the empty id, which is nobody.
-    let other = match body.get::<Id>("userId") {
-        Ok(Some(id)) => id,
-        Ok(None) if body.is_null("userId") => return Err(Malformed.into()),
-        Ok(None) => Id::from_bytes([0; 16]),
-        Err(malformed) => return Err(malformed.into()),
-    };
     let me = caller.user;
     let (id, created) = state
         .database()

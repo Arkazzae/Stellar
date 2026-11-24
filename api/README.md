@@ -219,14 +219,16 @@ is a 400 with no body; a body that is not the right JSON is a 400 with no body.
   unless the route says `.json_body_up_to(bytes)`, and never over the 128 MiB of
   the whole server. A route that takes an upload streams it instead.
 
-A body that needs leniency (encryption's, the direct
-messages') is read through `http::lenient::Members`: member names in any letter
-case, the last of a name given twice (every occurrence of the right type), Base64
-with spaces, tabs and line breaks ignored (`Octets`), an integer from a number or
-from a string of digits (`number`), and a value of the wrong type making the whole
-body a 400 with no body. A route whose second step is asked after the body is
-read (encryption's reset and new PIN) asks inside the handler, as the first
-server's order requires.
+A body is read with serde's derive and the exact camelCase names the clients send:
+a member in another letter case is a member nobody asked for, a member named
+twice, a number in quotes, `NaN` or `Infinity`, Base64 with spaces in it and a
+leading byte order mark make the body a 400 with no body. Bytes are
+`encoding::Octets` (standard Base64 with padding, one spelling). A route of
+the panel binds its body with `panel::bind_then_gate::<T>`, a route whose
+second step is asked after the body is read (encryption's reset and new PIN)
+asks inside the handler. Where a document is kept as it was written (client
+settings) or only passed on (a signal's payload) a reader of its own remains,
+without the leniency.
 
 **Headers** are not part of any of those, and a handler needs them. Take what the
 request says about itself in the form that fits:

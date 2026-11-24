@@ -14,7 +14,7 @@ use super::announce::{self, DEVICE_ADDED, KEYS_RESET, Line};
 use super::problems::{self, Refusal};
 use super::store::{self, Conversation};
 use super::wire::{
-    AccountDto, BackupParametersDto, DevicesDto, Members, Octets, Register, Replace, Reset, ResetDto, SetUp,
+    AccountDto, BackupParametersDto, DevicesDto, Octets, Register, Replace, Reset, ResetDto, SetUp,
     Unlock, UnlockedDto,
 };
 use crate::auth::ceremony::{PasswordProof, check_given_password, judge_given_password};
@@ -79,16 +79,14 @@ async fn guarded<T>(
     state: &AppState,
     caller: Caller,
     headers: &HeaderMap,
-    body: Result<Json<Option<Members>>, ApiError>,
-    read: impl Fn(&Members) -> Result<T, super::wire::Malformed>,
+    body: Result<Json<Option<T>>, ApiError>,
 ) -> Result<T, ApiError> {
-    let members = match body {
-        Ok(Json(members)) => members,
+    let request = match body {
+        Ok(Json(request)) => request,
         // An empty body has nothing in it to be unreadable.
         Err(_) if says_nothing(headers) => None,
         Err(refusal) => return Err(refusal),
     };
-    let request = members.as_ref().map(read).transpose()?;
     let fresh = state
         .database()
         .read(move |db| fresh::has_fresh_second_step(db, caller.user, Some(caller.session), Timestamp::now()))
@@ -124,9 +122,8 @@ pub async fn read(State(state): State<AppState>, caller: Caller) -> ApiResult<Re
 pub async fn set_up(
     State(state): State<AppState>,
     caller: Caller,
-    Json(body): Json<Members>,
+    Json(request): Json<SetUp>,
 ) -> ApiResult<Response> {
-    let request = SetUp::read(&body)?;
     refuse_unfit_key(&state, request.algorithm.as_deref(), request.public_key.as_deref())?;
     let backup = checked_backup(&state, request.backup)?;
     let (algorithm, public_key) = (request.algorithm.unwrap_or_default(), request.public_key.unwrap_or_default());
@@ -209,9 +206,8 @@ enum Attempt {
 pub async fn unlock(
     State(state): State<AppState>,
     caller: Caller,
-    Json(body): Json<Members>,
+    Json(request): Json<Unlock>,
 ) -> ApiResult<Response> {
-    let request = Unlock::read(&body)?;
     if !state.pin_attempts().try_acquire(caller.user) {
         return Err(ApiError::status(StatusCode::TOO_MANY_REQUESTS));
     }
@@ -304,9 +300,9 @@ pub async fn replace_backup(
     caller: Caller,
     origin: Origin,
     headers: HeaderMap,
-    body: Result<Json<Option<Members>>, ApiError>,
+    body: Result<Json<Option<Replace>>, ApiError>,
 ) -> ApiResult<Response> {
-    let request = guarded(&state, caller, &headers, body, Replace::read).await?;
+    let request = guarded(&state, caller, &headers, body).await?;
     let backup = checked_backup(&state, request.backup)?;
     let given =
         check_given_password(&state, caller.user, request.current_password.as_deref()).await?;
@@ -407,9 +403,9 @@ pub async fn reset(
     caller: Caller,
     origin: Origin,
     headers: HeaderMap,
-    body: Result<Json<Option<Members>>, ApiError>,
+    body: Result<Json<Option<Reset>>, ApiError>,
 ) -> ApiResult<Response> {
-    let request = guarded(&state, caller, &headers, body, Reset::read).await?;
+    let request = guarded(&state, caller, &headers, body).await?;
     refuse_unfit_key(&state, request.algorithm.as_deref(), request.public_key.as_deref())?;
     let backup = checked_backup(&state, request.backup)?;
     let given =
@@ -515,9 +511,8 @@ enum Registered {
 pub async fn register_device(
     State(state): State<AppState>,
     caller: Caller,
-    Json(body): Json<Members>,
+    Json(request): Json<Register>,
 ) -> ApiResult<Response> {
-    let request = Register::read(&body)?;
     refuse_unfit_key(&state, request.algorithm.as_deref(), request.public_key.as_deref())?;
     let label = request.label.as_deref().map_or("", str::trim).to_string();
     if !(1..=100).contains(&label.encode_utf16().count()) {

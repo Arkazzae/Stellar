@@ -739,3 +739,23 @@ async fn removing_the_same_friend_twice_at_once_answers_no_content_to_whoever_fo
     assert!([204, 404].contains(&a) && [204, 404].contains(&b) && (a == 204 || b == 204), "{a} {b}");
     assert_eq!(rows(&p.server, "SELECT COUNT(*) FROM \"Friendships\""), 0);
 }
+
+#[tokio::test]
+async fn a_body_is_read_by_exact_names_without_a_byte_order_mark_and_without_a_repeated_member() {
+    let p = people().await;
+    let send = |raw: &str| {
+        let client = &p.ada.client;
+        let request = Request::new(Method::POST, "/api/social/requests").body("application/json", raw);
+        async move { client.send(request).await }
+    };
+
+    assert_eq!(send(r#"{"username":"ben"}"#).await.status, 200);
+    // A byte order mark is no part of JSON.
+    assert_eq!(send("\u{feff}{\"username\":\"ben\"}").await.status, 400);
+    // A member named twice is no object we can read.
+    assert_eq!(send(r#"{"username":"ben","username":"cyd"}"#).await.status, 400);
+    // Another letter case names a member nobody asked for: there is no user name.
+    let capitals = send(r#"{"USERNAME":"ben"}"#).await;
+    assert_eq!(capitals.status, 400);
+    assert!(capitals.json::<Value>()["errors"]["username"].is_array());
+}

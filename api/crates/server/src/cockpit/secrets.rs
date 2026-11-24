@@ -7,7 +7,7 @@ use axum::response::Response;
 use serde::{Deserialize, Serialize};
 use stellarr_messages::MessageKey;
 
-use super::{invalid, bind};
+use super::invalid;
 use crate::database::DbError;
 use crate::http::{ApiError, ApiResult, Path, json_response};
 use crate::panel::{self, FreshInstanceOwner};
@@ -67,7 +67,7 @@ pub(super) async fn set(
         caller,
         server,
         body,
-    } = panel::bind_then_gate(&state, request, true, bind::<Value>).await?;
+    } = panel::bind_then_gate::<Value>(&state, request, true).await?;
     let Some(body) = body else {
         return Err(ApiError::bad_request());
     };

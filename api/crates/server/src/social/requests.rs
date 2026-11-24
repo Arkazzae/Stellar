@@ -5,7 +5,6 @@ use axum::extract::State;
 use axum::http::StatusCode;
 use axum::response::{IntoResponse, Response};
 use rusqlite::{OptionalExtension, params};
-use serde::de::{self, Deserializer, IgnoredAny, MapAccess, Visitor};
 use serde::{Deserialize, Serialize};
 use stellarr_messages::MessageKey;
 
@@ -17,39 +16,10 @@ use crate::instance::names::to_upper;
 use crate::state::AppState;
 use crate::values::{Id, Timestamp};
 
-/// The body of a request to befriend. Property names are read without regard
-/// to case, and the last of a name given twice counts, as the first server
-/// read them.
+/// The body of a request to befriend.
+#[derive(Deserialize)]
 pub struct CreateRequest {
     username: Option<String>,
-}
-
-impl<'de> Deserialize<'de> for CreateRequest {
-    fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<CreateRequest, D::Error> {
-        struct Reader;
-        impl<'de> Visitor<'de> for Reader {
-            type Value = CreateRequest;
-
-            fn expecting(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-                f.write_str("an object")
-            }
-
-            fn visit_map<A: MapAccess<'de>>(self, mut map: A) -> Result<CreateRequest, A::Error> {
-                let mut username = None;
-                while let Some(key) = map.next_key::<String>()? {
-                    if to_upper(&key) == "USERNAME" {
-                        username = map.next_value::<Option<String>>()?;
-                    } else {
-                        map.next_value::<IgnoredAny>()?;
-                    }
-                }
-                Ok(CreateRequest { username })
-            }
-        }
-        deserializer
-            .deserialize_map(Reader)
-            .map_err(|e: D::Error| de::Error::custom(e))
-    }
 }
 
 #[derive(Serialize)]

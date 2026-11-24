@@ -11,8 +11,7 @@ use axum::extract::State;
 use axum::http::StatusCode;
 use axum::response::{IntoResponse, Response};
 use rusqlite::Connection;
-use serde::de::{IgnoredAny, MapAccess, Visitor};
-use serde::{Deserialize, Deserializer, Serialize};
+use serde::{Deserialize, Serialize};
 use stellarr_messages::{MessageKey, MissingValue};
 
 use super::hub::send_to_connections;
@@ -28,40 +27,13 @@ use crate::state::AppState;
 use crate::values::Id;
 
 /// The room somebody is sent to, as a request names it. A member that is
-/// missing reads as no room at all, which the moderator does not see.
+/// missing or `null` reads as no room at all, which the moderator does not
+/// see; one that is there must be an id. Only an object is a request, and
+/// members nobody asked for are ignored.
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub(super) struct MoveRequest {
     target_channel_id: Option<Id>,
-}
-
-impl<'de> Deserialize<'de> for MoveRequest {
-    /// Only an object is a request: a list is not one, whatever it holds. A
-    /// member that is there must be an id (`null` is none), and members nobody
-    /// asked for are ignored.
-    fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<MoveRequest, D::Error> {
-        struct Reader;
-
-        impl<'de> Visitor<'de> for Reader {
-            type Value = MoveRequest;
-
-            fn expecting(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-                f.write_str("an object")
-            }
-
-            fn visit_map<A: MapAccess<'de>>(self, mut map: A) -> Result<MoveRequest, A::Error> {
-                let mut target_channel_id = None;
-                while let Some(name) = map.next_key::<String>()? {
-                    if name == "targetChannelId" {
-                        target_channel_id = Some(map.next_value::<Id>()?);
-                    } else {
-                        map.next_value::<IgnoredAny>()?;
-                    }
-                }
-                Ok(MoveRequest { target_channel_id })
-            }
-        }
-
-        deserializer.deserialize_map(Reader)
-    }
 }
 
 #[derive(Serialize)]

@@ -5,11 +5,11 @@
 //! their media goes through the media server (see [`super::media`]); this hub
 //! decides who may take part.
 
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 use stellarr_hub::HubError;
 
-use super::document::{self, Members, ParsedPayload};
+use super::document;
 use super::protocol::{MAX_SIGNAL_BYTES, SIGNAL_KINDS, VERSION};
 use super::rooms::{self, broadcast_snapshot};
 use crate::events::{Audience, Event};
@@ -233,23 +233,17 @@ async fn decline_direct_call(cx: Context, arguments: Vec<Value>) -> Result<Value
     Ok(Value::Null)
 }
 
-/// What a browser sends the others in its room.
+/// What a browser sends the others in its room. A version that is missing
+/// reads as 0, which no server speaks.
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
 struct VoiceSignal {
+    #[serde(default)]
     protocol_version: i32,
     channel_id: Option<String>,
     to_user_id: Option<String>,
     kind: Option<String>,
     payload: Option<String>,
-}
-
-fn read_voice_signal(members: &Members) -> Result<VoiceSignal, HubError> {
-    Ok(VoiceSignal {
-        protocol_version: members.number("protocolVersion")?,
-        channel_id: members.text("channelId")?,
-        to_user_id: members.text("toUserId")?,
-        kind: members.text("kind")?,
-        payload: members.text("payload")?,
-    })
 }
 
 #[derive(Serialize)]
@@ -267,8 +261,7 @@ async fn send_voice_signal(cx: Context, arguments: Vec<Value>) -> Result<Value, 
     // The arguments are read before anything is counted: a call whose argument
     // does not fit never reaches the method.
     let [argument] = arguments::exactly(arguments)?;
-    let members = document::object(argument)?;
-    let signal = members.as_ref().map(read_voice_signal).transpose()?;
+    let signal: Option<VoiceSignal> = document::argument(argument)?;
 
     // A relay reaches every other connection in the room and may carry a
     // hundred and twenty kilobytes, so the flood is capped before any of the
@@ -370,13 +363,13 @@ fn recipients(cx: &Context, signal: &VoiceSignal, room: Id) -> Result<Vec<String
 
 /// The mute flag of a state payload; none when it does not say.
 fn read_muted(payload: &str) -> Result<Option<bool>, HubError> {
-    match document::parse_members(payload) {
-        Some(ParsedPayload::Object(members)) => Ok(match members.exact("muted") {
-            Some(Value::Bool(muted)) => Some(*muted),
-            _ => None,
-        }),
-        _ => Err(visible("Invalid voice state.")),
+    #[derive(Deserialize)]
+    struct State {
+        muted: Option<bool>,
     }
+    document::read::<State>(payload)
+        .map(|state| state.muted)
+        .ok_or_else(|| visible("Invalid voice state."))
 }
 
 #[cfg(test)]
@@ -384,14 +377,13 @@ mod tests {
     use super::*;
 
     #[test]
-    fn the_mute_flag_is_the_last_muted_member_when_it_is_a_boolean() {
+    fn the_mute_flag_is_the_muted_member_when_it_is_a_boolean() {
         assert_eq!(read_muted("{\"muted\":true}").unwrap(), Some(true));
-        assert_eq!(
-            read_muted("{\"muted\":true,\"muted\":false}").unwrap(),
-            Some(false)
-        );
-        for silent in ["{}", "{\"Muted\":true}", "{\"muted\":null}", "{\"muted\":1}", "{\"muted\":\"yes\"}"] {
+        for silent in ["{}", "{\"Muted\":true}", "{\"muted\":null}"] {
             assert_eq!(read_muted(silent).unwrap(), None, "{silent}");
+        }
+        for bad in ["{\"muted\":1}", "{\"muted\":\"yes\"}", "{\"muted\":true,\"muted\":false}"] {
+            assert!(read_muted(bad).is_err(), "{bad}");
         }
     }
 

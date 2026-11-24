@@ -193,16 +193,16 @@ async fn the_sensitivity_of_speech_detection_is_a_whole_number_from_nothing_to_a
     let maja = server.found("maja").await;
     let message = "Speech detection sensitivity must be between 0 and 100.";
 
-    for (sent, kept) in [(json!(0), 0), (json!(100), 100), (json!("42"), 42), (json!("+7"), 7), (json!("07"), 7)] {
+    for (sent, kept) in [(json!(0), 0), (json!(100), 100), (json!(42), 42), (json!(7), 7)] {
         let response = patch(&maja, "/api/me/preferences", json!({ "vadSensitivity": sent })).await;
         assert_eq!(response.json::<Value>()["vadSensitivity"], json!(kept), "{sent}");
     }
-    for refused in [json!(101), json!(-1), json!(2147483647), json!("101")] {
+    for refused in [json!(101), json!(-1), json!(2147483647)] {
         let response = patch(&maja, "/api/me/preferences", json!({ "vadSensitivity": refused })).await;
         assert_eq!(response.status, 400, "{refused}");
         assert_eq!(response.json::<Value>()["errors"]["vadSensitivity"][0], message, "{refused}");
     }
-    for unreadable in [json!(50.5), json!(5.0), json!(1e1), json!("5.0"), json!("1e1"), json!(" 5"), json!(true), json!(2147483648_i64), json!("x")] {
+    for unreadable in [json!(50.5), json!(5.0), json!(1e1), json!("5"), json!("+7"), json!("07"), json!("5.0"), json!("1e1"), json!(" 5"), json!(true), json!(2147483648_i64), json!("x")] {
         assert_eq!(patch(&maja, "/api/me/preferences", json!({ "vadSensitivity": unreadable })).await.status, 400, "{unreadable}");
     }
     assert_eq!(patch(&maja, "/api/me/preferences", json!({ "vadSensitivity": null })).await.json::<Value>()["vadSensitivity"], json!(7));

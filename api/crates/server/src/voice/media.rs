@@ -3,11 +3,13 @@
 //! media server through the hub, which decides who may do so. The media server
 //! trusts the hub and nobody else.
 
+use serde::Deserialize;
+use serde::de::IgnoredAny;
 use serde_json::{Value, json};
 use stellarr_hub::HubError;
 
 use super::control::{SignalOutcome, Unavailable};
-use super::document::{self, Members, ParsedPayload};
+use super::document;
 use super::hub::{parse_id, visible};
 use super::plane::{self, Opening};
 use super::protocol::{
@@ -55,23 +57,17 @@ pub(super) async fn open_media_session(
     }
 }
 
-/// What a browser sends the media server.
+/// What a browser sends the media server. A version that is missing reads as
+/// 0, which no server speaks.
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
 struct MediaSignal {
+    #[serde(default)]
     protocol_version: i32,
     channel_id: Option<String>,
     session_id: Option<String>,
     kind: Option<String>,
     payload: Option<String>,
-}
-
-fn read_media_signal(members: &Members) -> Result<MediaSignal, HubError> {
-    Ok(MediaSignal {
-        protocol_version: members.number("protocolVersion")?,
-        channel_id: members.text("channelId")?,
-        session_id: members.text("sessionId")?,
-        kind: members.text("kind")?,
-        payload: members.text("payload")?,
-    })
 }
 
 /// Hands one signal of the caller's media session to the media server. The
@@ -82,8 +78,7 @@ pub(super) async fn send_media_signal(
     arguments: Vec<Value>,
 ) -> Result<Value, HubError> {
     let [argument] = arguments::exactly(arguments)?;
-    let members = document::object(argument)?;
-    let signal = members.as_ref().map(read_media_signal).transpose()?;
+    let signal: Option<MediaSignal> = document::argument(argument)?;
 
     // Every accepted signal becomes a call to the media server's control API,
     // so this connection cannot decide that API's load.
@@ -163,102 +158,119 @@ async fn forward(
 ) -> Result<SignalOutcome, Forward> {
     let invalid = || Forward::Refused(visible(INVALID_MEDIA_SIGNAL));
     let control = cx.state().voice().control();
-    let Some(parsed) = document::parse_members(payload) else {
-        return Err(invalid());
-    };
-    match (kind, &parsed) {
-        ("offer", ParsedPayload::Object(root)) => {
-            let sdp = description(root, "offer").ok_or_else(invalid)?;
+    match kind {
+        "offer" => {
+            let sdp = document::read::<Description>(payload)
+                .and_then(|found| found.sdp_of("offer"))
+                .ok_or_else(invalid)?;
             Ok(control.send_offer(session, &sdp).await?)
         }
-        ("answer", ParsedPayload::Object(root)) => {
-            let sdp = description(root, "answer").ok_or_else(invalid)?;
-            let negotiation = match root.exact("negotiationId") {
-                Some(Value::Number(number)) => number.as_i64().ok_or_else(invalid)?,
-                _ => return Err(invalid()),
-            };
+        "answer" => {
+            let found = document::read::<Description>(payload).ok_or_else(invalid)?;
+            let negotiation = found.negotiation_id.ok_or_else(invalid)?;
+            let sdp = found.sdp_of("answer").ok_or_else(invalid)?;
             Ok(control.send_answer(session, &sdp, negotiation).await?)
         }
-        ("candidate", ParsedPayload::Null) => Ok(control.send_candidate(session, None).await?),
-        ("candidate", ParsedPayload::Object(_)) => {
-            Ok(control.send_candidate(session, Some(payload)).await?)
-        }
-        ("subscriptions", ParsedPayload::Object(root)) => {
-            let mids = subscriptions(root).ok_or_else(invalid)?;
+        "candidate" => match document::read::<Option<Candidate>>(payload) {
+            Some(None) => Ok(control.send_candidate(session, None).await?),
+            Some(Some(_)) => Ok(control.send_candidate(session, Some(payload)).await?),
+            None => Err(invalid()),
+        },
+        "subscriptions" => {
+            let mids = document::read::<Subscriptions>(payload)
+                .and_then(Subscriptions::checked)
+                .ok_or_else(invalid)?;
             Ok(control.send_subscriptions(session, &mids).await?)
         }
         _ => Err(invalid()),
     }
 }
 
-/// An `{ "type", "sdp" }` object whose type is `kind`; its description.
-fn description(root: &Members, kind: &str) -> Option<String> {
-    match (root.exact("type"), root.exact("sdp")) {
-        (Some(Value::String(declared)), Some(Value::String(sdp))) if declared == kind => {
-            Some(sdp.clone())
+/// An `{ "type", "sdp" }` object, with the negotiation an answer belongs to.
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct Description {
+    #[serde(rename = "type")]
+    kind: Option<String>,
+    sdp: Option<String>,
+    negotiation_id: Option<i64>,
+}
+
+impl Description {
+    /// The description, when its type is `kind`.
+    fn sdp_of(self, kind: &str) -> Option<String> {
+        match (self.kind, self.sdp) {
+            (Some(declared), Some(sdp)) if declared == kind => Some(sdp),
+            _ => None,
         }
-        _ => None,
     }
 }
 
-/// A complete allowlist of printable ASCII ids, including an empty one.
-fn subscriptions(root: &Members) -> Option<Vec<String>> {
-    if root.count("mids") != 1 {
-        return None;
-    }
-    let Some(Value::Array(entries)) = root.exact("mids") else {
-        return None;
-    };
-    if entries.len() > MAX_SUBSCRIPTION_MIDS {
-        return None;
-    }
-    let mut seen = std::collections::HashSet::new();
-    let mut mids = Vec::with_capacity(entries.len());
-    for entry in entries {
-        let Value::String(mid) = entry else {
-            return None;
-        };
-        // The characters are ASCII, so a length in bytes is a length in the
-        // units the limit counts.
-        if mid.is_empty()
-            || mid.len() > MAX_SUBSCRIPTION_MID_LENGTH
-            || mid.chars().any(|c| c <= ' ' || c >= '\u{7f}')
-            || !seen.insert(mid.as_str())
-        {
+/// An ICE candidate is handed on as it was written; reading it here only says
+/// that it is an object whose members are not repeated.
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+#[allow(dead_code)]
+struct Candidate {
+    candidate: Option<IgnoredAny>,
+    sdp_mid: Option<IgnoredAny>,
+    sdp_m_line_index: Option<IgnoredAny>,
+    username_fragment: Option<IgnoredAny>,
+}
+
+#[derive(Deserialize)]
+struct Subscriptions {
+    mids: Vec<String>,
+}
+
+impl Subscriptions {
+    /// A complete allowlist of printable ASCII ids, including an empty one.
+    fn checked(self) -> Option<Vec<String>> {
+        let entries = self.mids;
+        if entries.len() > MAX_SUBSCRIPTION_MIDS {
             return None;
         }
-        mids.push(mid.clone());
+        let mut seen = std::collections::HashSet::new();
+        for mid in &entries {
+            // The characters are ASCII, so a length in bytes is a length in
+            // the units the limit counts.
+            if mid.is_empty()
+                || mid.len() > MAX_SUBSCRIPTION_MID_LENGTH
+                || mid.chars().any(|c| c <= ' ' || c >= '\u{7f}')
+                || !seen.insert(mid.as_str())
+            {
+                return None;
+            }
+        }
+        Some(entries)
     }
-    Some(mids)
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
 
-    fn members(text: &str) -> Members {
-        serde_json::from_str(text).unwrap()
+    fn description(text: &str, kind: &str) -> Option<String> {
+        document::read::<Description>(text).and_then(|found| found.sdp_of(kind))
     }
 
     #[test]
     fn a_description_names_its_type_and_carries_text() {
-        let offer = members("{\"type\":\"offer\",\"sdp\":\"v=0\"}");
-        assert_eq!(description(&offer, "offer"), Some("v=0".to_string()));
-        assert_eq!(description(&offer, "answer"), None);
-        assert_eq!(description(&members("{\"type\":\"offer\"}"), "offer"), None);
+        let offer = "{\"type\":\"offer\",\"sdp\":\"v=0\"}";
+        assert_eq!(description(offer, "offer"), Some("v=0".to_string()));
+        assert_eq!(description(offer, "answer"), None);
+        assert_eq!(description("{\"type\":\"offer\"}", "offer"), None);
+        assert_eq!(description("{\"type\":\"offer\",\"sdp\":5}", "offer"), None);
+        assert_eq!(description("{\"type\":\"OFFER\",\"sdp\":\"x\"}", "offer"), None);
         assert_eq!(
-            description(&members("{\"type\":\"offer\",\"sdp\":5}"), "offer"),
-            None
-        );
-        assert_eq!(
-            description(&members("{\"type\":\"OFFER\",\"sdp\":\"x\"}"), "offer"),
+            description("{\"type\":\"offer\",\"sdp\":\"a\",\"sdp\":\"b\"}", "offer"),
             None
         );
     }
 
     #[test]
     fn a_subscription_list_is_complete_ordered_and_printable() {
-        let list = |text: &str| subscriptions(&members(text));
+        let list = |text: &str| document::read::<Subscriptions>(text).and_then(Subscriptions::checked);
 
         assert_eq!(list("{\"mids\":[]}"), Some(vec![]));
         assert_eq!(
@@ -290,7 +302,18 @@ mod tests {
             let ids: Vec<String> = (0..count).map(|n| format!("\"m{n}\"")).collect();
             format!("{{\"mids\":[{}]}}", ids.join(","))
         };
-        assert_eq!(subscriptions(&members(&many(4096))).map(|l| l.len()), Some(4096));
-        assert_eq!(subscriptions(&members(&many(4097))), None);
+        let list = |text: &str| document::read::<Subscriptions>(text).and_then(Subscriptions::checked);
+        assert_eq!(list(&many(4096)).map(|l| l.len()), Some(4096));
+        assert_eq!(list(&many(4097)), None);
+    }
+
+    #[test]
+    fn a_candidate_is_an_object_or_null_without_a_repeated_member() {
+        for good in ["null", "{}", "{\"candidate\":\"x\",\"sdpMid\":\"0\"}"] {
+            assert!(document::read::<Option<Candidate>>(good).is_some(), "{good}");
+        }
+        for bad in ["[]", "5", "\"x\"", "{\"candidate\":\"x\",\"candidate\":\"y\"}", ""] {
+            assert!(document::read::<Option<Candidate>>(bad).is_none(), "{bad}");
+        }
     }
 }

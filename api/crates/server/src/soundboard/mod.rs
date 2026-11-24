@@ -11,7 +11,6 @@
 
 mod board;
 mod format;
-pub(crate) mod numbers;
 mod snapshot;
 mod sounds;
 

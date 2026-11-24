@@ -5,7 +5,6 @@
 use axum::extract::State;
 use axum::response::Response;
 use serde::{Deserialize, Serialize};
-use serde_json::Value;
 
 use super::common::{
     Seen, body_of, challenge_id, challenge_problem, invalid_name, method_unavailable, ok_json,
@@ -173,7 +172,7 @@ pub async fn start_passkey(
 pub struct PasskeyConfirmRequest {
     challenge_id: Option<String>,
     name: Option<String>,
-    response: Option<Value>,
+    response: wire::Raw,
     #[serde(default)]
     remember_device: bool,
 }
@@ -188,7 +187,7 @@ pub async fn confirm_passkey(
         Ok(request) => request,
         Err(response) => return Ok(*response),
     };
-    let Ok(response) = wire::registration(request.response.as_ref()) else {
+    let Ok(response) = wire::registration(request.response.as_deref()) else {
         return Err(ApiError::bad_request());
     };
     let seen = Seen::of(&state, origin);
