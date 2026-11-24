@@ -144,6 +144,45 @@ fn find(name: &str) -> CliOutcome<&'static SecretDefinition> {
     secrets::find(name).ok_or_else(|| unknown(name))
 }
 
+/// What the person should know before a stored value is replaced or removed
+/// when this server cannot open it: it was sealed under another key, by the
+/// first server perhaps, or the key is gone or cannot be read. It counts as
+/// unset now, and what is about to happen is not a change the server sees.
+fn unopenable_note(
+    runtime: &Runtime,
+    connection: &rusqlite::Connection,
+    definition: &SecretDefinition,
+    what_happens: &str,
+) -> CliOutcome<Option<String>> {
+    let stored: bool = connection.query_row(
+        "SELECT EXISTS (SELECT 1 FROM \"InstanceSecrets\" WHERE \"Name\" = ?1)",
+        [definition.name],
+        |row| row.get(0),
+    )?;
+    if !stored {
+        return Ok(None);
+    }
+    let why = match Sealer::open_existing(&runtime.keys_directory()) {
+        Ok(None) => format!(
+            "there is no master key in {}",
+            runtime.keys_directory().display()
+        ),
+        Err(error) => format!("the master key cannot be read ({error})"),
+        Ok(Some(sealer)) => {
+            let resolved =
+                secrets::read(connection, &environment_secrets(&runtime.config), &sealer)?;
+            if resolved.get(definition).source == Source::Panel {
+                return Ok(None);
+            }
+            "it was sealed under another master key, by the first server perhaps".to_string()
+        }
+    };
+    Ok(Some(format!(
+        "The stored value of {} cannot be opened by this server ({why}) and counts as unset; it will be {what_happens}.",
+        definition.name
+    )))
+}
+
 pub fn set(runtime: &mut Runtime, name: &str) -> CliOutcome {
     let definition = find(name)?;
     if runtime.invocation.stdin && !runtime.invocation.yes {
@@ -153,10 +192,15 @@ pub fn set(runtime: &mut Runtime, name: &str) -> CliOutcome {
     // that a stored value can never be unreadable by the running API.
     let sealer = runtime.write_sealer()?;
     let mut database = runtime.open_database(true)?;
-    runtime.confirm(&format!(
+    let mut preview = format!(
         "Will store the secret '{}' (value hidden).",
         definition.name
-    ))?;
+    );
+    if let Some(note) = unopenable_note(runtime, &database.connection, definition, "replaced")? {
+        preview.push(' ');
+        preview.push_str(&note);
+    }
+    runtime.confirm(&preview)?;
     let value = runtime.read_secret()?;
     // Ctrl+C is a cancellation whatever was typed with it, judged first.
     runtime.check_cancelled()?;
@@ -255,10 +299,15 @@ pub fn clear(runtime: &mut Runtime, name: &str) -> CliOutcome {
             ],
         ));
     }
-    runtime.confirm(&format!(
+    let mut preview = format!(
         "Will remove the database override for the secret '{}'.",
         definition.name
-    ))?;
+    );
+    if let Some(note) = unopenable_note(runtime, &database.connection, definition, "removed")? {
+        preview.push(' ');
+        preview.push_str(&note);
+    }
+    runtime.confirm(&preview)?;
     runtime.check_cancelled()?;
     let transaction = database
         .connection
