@@ -18,7 +18,7 @@ pub mod security_alerts;
 pub mod setup;
 
 #[cfg(test)]
-mod tests;
+pub(crate) mod tests;
 
 pub use delivery::{MailDelivery, Outcome, Wiring};
 pub use setup::{MailSetup, Mailing, Switches};

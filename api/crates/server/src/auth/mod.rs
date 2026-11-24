@@ -13,6 +13,7 @@ pub mod cookies;
 #[cfg(test)]
 mod differential;
 pub mod email_codes;
+pub mod email_send;
 pub mod events;
 #[cfg(test)]
 mod fixtures;
