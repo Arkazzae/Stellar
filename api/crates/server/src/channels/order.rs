@@ -15,7 +15,7 @@ use stellarr_messages::MessageKey;
 
 use super::layout::{self, ViewChange};
 use super::{Answer, say, Refuse};
-use crate::auth::Caller;
+use crate::auth::{Caller, fresh};
 use crate::database::DbError;
 use crate::http::{ApiResult, Json};
 use crate::permissions::audit::{self, AuditChange, AuditEvent};
@@ -24,7 +24,7 @@ use crate::permissions::membership::ActiveServer;
 use crate::permissions::privileges::MANAGE_CHANNELS;
 use crate::permissions::visibility::{self, MemberView, ServerVisibility};
 use crate::state::AppState;
-use crate::values::Id;
+use crate::values::{Id, Timestamp};
 
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -152,9 +152,19 @@ pub async fn reorder_channels(
                 if !decision.allowed {
                     return Ok(Answer::Refused(Refuse::Forbidden));
                 }
-                // Moving a channel that changes what somebody may do on the
-                // instance's own server needs a second step made a moment ago;
-                // the check waits for the route modifier that asks for it.
+                // Moving a channel that changes what somebody may do, on the
+                // instance's own server, needs a second step made a moment ago.
+                if decision.changes_permissions
+                    && !fresh::has_fresh_second_step_for_server(
+                        tx,
+                        user,
+                        Some(caller.session),
+                        server,
+                        Timestamp::now(),
+                    )?
+                {
+                    return Ok(Answer::Refused(Refuse::SecondStep));
+                }
 
                 if channels[index].section != wanted.section_id {
                     let names = section_names(tx, server)?;
