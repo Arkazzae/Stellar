@@ -440,7 +440,8 @@ pub(super) fn validate(
     now: Timestamp,
 ) -> Result<(Option<StoredChallenge>, ChallengeStatus), DbError> {
     use ChallengeStatus::*;
-    let (Some(id), Some((cookie_id, secret))) = (Id::parse(challenge_id), cookie) else {
+    let (Some(id), Some((cookie_id, secret))) = (crate::values::parse_guid(challenge_id), cookie)
+    else {
         return Ok((None, Missing));
     };
     if *cookie_id != id {
