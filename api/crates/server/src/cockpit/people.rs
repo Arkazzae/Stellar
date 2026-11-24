@@ -490,7 +490,7 @@ pub(super) async fn set_status(
 struct RoleRequest {
     name: Option<String>,
     color: Option<String>,
-    permissions: Option<Vec<String>>,
+    permissions: Option<Vec<Option<String>>>,
 }
 
 /// A role as a request may make it: name and colour trimmed and within their
@@ -501,9 +501,14 @@ struct Draft {
     permissions: i64,
 }
 
-fn validate(name: &str, color: &str, permissions: &[String]) -> Option<Draft> {
+fn validate(name: &str, color: &str, permissions: &[Option<String>]) -> Option<Draft> {
     let (name, color) = (name.trim(), color.trim());
-    let permissions = privileges::parse_names(permissions.iter().map(String::as_str))?;
+    // A `null` among the names is a name that is none of them.
+    let permissions = privileges::parse_names(
+        permissions
+            .iter()
+            .map(|name| name.as_deref().unwrap_or("\u{0}")),
+    )?;
     ((1..=MAX_ROLE_NAME_LENGTH).contains(&length(name))
         && (1..=MAX_ROLE_COLOR_LENGTH).contains(&length(color)))
     .then(|| Draft {
@@ -603,9 +608,9 @@ pub(super) async fn update_role(
             if row.role.is_owner {
                 return Err(ApiError::conflict());
             }
-            let current: Vec<String> = privileges::to_names(row.role.permissions)
+            let current: Vec<Option<String>> = privileges::to_names(row.role.permissions)
                 .into_iter()
-                .map(str::to_string)
+                .map(|name| Some(name.to_string()))
                 .collect();
             let Some(draft) = validate(
                 body.name.as_deref().unwrap_or(&row.name),

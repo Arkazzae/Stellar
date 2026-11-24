@@ -302,27 +302,35 @@ struct Change {
     recovery_mail_enabled: bool,
     #[serde(default)]
     alert_mail_enabled: bool,
-    #[serde(default)]
+    #[serde(default, deserialize_with = "super::lenient")]
     backup_retention_days: i32,
-    #[serde(default)]
+    #[serde(default, deserialize_with = "super::lenient")]
     log_retention_days: i32,
-    #[serde(default)]
+    #[serde(default, deserialize_with = "super::lenient")]
     orphan_object_retention_days: i32,
     #[serde(default)]
     automatic_cleanup_enabled: bool,
     smtp_host: Option<String>,
+    #[serde(default, deserialize_with = "super::lenient_option")]
     smtp_port: Option<i32>,
     smtp_security: Option<String>,
     smtp_username: Option<String>,
     resend_enabled: Option<bool>,
     giphy_enabled: Option<bool>,
     mfa_requirement: Option<String>,
+    #[serde(default, deserialize_with = "super::lenient_option")]
     trusted_device_days: Option<i32>,
+    #[serde(default, deserialize_with = "super::lenient_option")]
     auth_challenge_minutes: Option<i32>,
+    #[serde(default, deserialize_with = "super::lenient_option")]
     email_code_minutes: Option<i32>,
+    #[serde(default, deserialize_with = "super::lenient_option")]
     email_code_cooldown_seconds: Option<i32>,
+    #[serde(default, deserialize_with = "super::lenient_option")]
     email_code_max_attempts: Option<i32>,
+    #[serde(default, deserialize_with = "super::lenient_option")]
     email_code_sends_per_hour: Option<i32>,
+    #[serde(default, deserialize_with = "super::lenient_option")]
     cli_recovery_minutes: Option<i32>,
 }
 

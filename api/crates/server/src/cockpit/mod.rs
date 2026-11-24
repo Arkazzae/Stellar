@@ -87,6 +87,42 @@ pub(crate) fn bind<T: DeserializeOwned>(body: Option<Value>) -> Result<Option<T>
     }
 }
 
+/// A whole number as the first server's reader took it: a JSON number, or a
+/// number written in quotes. Anything else is a request that cannot be bound.
+pub(crate) fn lenient<'de, D: serde::Deserializer<'de>>(deserializer: D) -> Result<i32, D::Error> {
+    use serde::Deserialize;
+    #[derive(Deserialize)]
+    #[serde(untagged)]
+    enum Number {
+        Plain(i32),
+        Quoted(String),
+    }
+    match Number::deserialize(deserializer)? {
+        Number::Plain(number) => Ok(number),
+        Number::Quoted(text) => text.trim().parse().map_err(serde::de::Error::custom),
+    }
+}
+
+/// [`lenient`] for a member that may be left out or `null`.
+pub(crate) fn lenient_option<'de, D: serde::Deserializer<'de>>(
+    deserializer: D,
+) -> Result<Option<i32>, D::Error> {
+    use serde::Deserialize;
+    #[derive(Deserialize)]
+    struct Wrapped(#[serde(deserialize_with = "lenient")] i32);
+    Ok(Option::<Wrapped>::deserialize(deserializer)?.map(|wrapped| wrapped.0))
+}
+
+/// A number written without a fraction when it has none, as the first
+/// server's writer does.
+pub(crate) fn plain_number<S: serde::Serializer>(value: &f64, serializer: S) -> Result<S::Ok, S::Error> {
+    if value.fract() == 0.0 && value.abs() < 1e15 {
+        serializer.serialize_i64(*value as i64)
+    } else {
+        serializer.serialize_f64(*value)
+    }
+}
+
 /// The id a request leaves out, which the first server read as the empty one.
 pub(crate) fn nobody() -> Id {
     Id::from_bytes([0; 16])
