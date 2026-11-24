@@ -9,16 +9,19 @@ use serde_json::{Value, json};
 
 use crate::support::{Client, Request, Server};
 
-/// The list, until no backup is being written.
+/// The list, until no backup is being written. A backup takes as long as the
+/// machine lets it (a whole suite runs beside it), so what is waited for is
+/// its end, with a ceiling that only a backup that never ends reaches.
 async fn settled(client: &Client) -> Value {
-    for _ in 0..200 {
+    let ceiling = std::time::Instant::now() + Duration::from_secs(180);
+    while std::time::Instant::now() < ceiling {
         let list: Value = client.get("/api/cockpit/backups").await.json();
         if list["job"].is_null() {
             return list;
         }
         tokio::time::sleep(Duration::from_millis(50)).await;
     }
-    panic!("the backup did not finish");
+    panic!("the backup did not finish in three minutes");
 }
 
 #[tokio::test]
