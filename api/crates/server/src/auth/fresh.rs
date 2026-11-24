@@ -87,7 +87,9 @@ pub(crate) async fn require(
             let now = Timestamp::now();
             let session = Some(caller.session);
             let fresh = match server {
-                Some(server) => has_fresh_second_step_for_server(db, caller.user, session, server, now)?,
+                Some(server) => {
+                    has_fresh_second_step_for_server(db, caller.user, session, server, now)?
+                }
                 None => has_fresh_second_step(db, caller.user, session, now)?,
             };
             Ok(fresh)

@@ -560,7 +560,8 @@ pub fn method_name(requested: Option<&str>, fallback: &str) -> Option<String> {
     if name.is_empty() {
         return Some(fallback.to_string());
     }
-    (stellarr_unicode::utf16::length(name) <= mfa_methods::MAX_NAME_LENGTH).then(|| name.to_string())
+    (stellarr_unicode::utf16::length(name) <= mfa_methods::MAX_NAME_LENGTH)
+        .then(|| name.to_string())
 }
 
 #[cfg(test)]
