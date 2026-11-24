@@ -19,6 +19,7 @@ stellarr-mail = { path = "../mail" }
 stellarr-mentions = { path = "../mentions" }
 stellarr-hub = { path = "../hub" }
 stellarr-messages = { path = "../messages" }
+stellarr-oidc = { path = "../oidc" }
 stellarr-outbound = { path = "../outbound" }
 stellarr-smtp = { path = "../smtp" }
 stellarr-storage = { path = "../storage" }
