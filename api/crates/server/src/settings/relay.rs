@@ -68,13 +68,36 @@ fn flag(config: &Config, key: &str) -> Result<bool, String> {
 
 /// Reading a configuration value as a number or a switch, as the first
 /// server's binder did.
-mod dotnet {
-    pub fn int(text: &str) -> Option<i32> {
+pub(super) mod dotnet {
+    /// A whole number as the first server's binder read one: white space around
+    /// it, then `#` or `0x` or `&h` and hexadecimal digits (eight at most, the
+    /// top bit making it negative), else the ordinary integer.
+    pub(in crate::settings) fn int(text: &str) -> Option<i32> {
         let text = text.trim_matches(char::is_whitespace);
+        if let Some(digits) = text.strip_prefix('#') {
+            return hexadecimal(digits);
+        }
+        let lower = text.get(..2).map(str::to_ascii_lowercase);
+        if matches!(lower.as_deref(), Some("0x" | "&h")) {
+            return hexadecimal(&text[2..]);
+        }
         crate::http::parse_int(text)
     }
 
-    pub fn boolean(text: &str) -> Option<bool> {
+    fn hexadecimal(digits: &str) -> Option<i32> {
+        let digits = digits
+            .strip_prefix("0x")
+            .or_else(|| digits.strip_prefix("0X"))
+            .unwrap_or(digits);
+        if digits.is_empty() || digits.len() > 8 || !digits.bytes().all(|b| b.is_ascii_hexdigit()) {
+            return None;
+        }
+        u32::from_str_radix(digits, 16)
+            .ok()
+            .map(|value| value as i32)
+    }
+
+    pub(in crate::settings) fn boolean(text: &str) -> Option<bool> {
         let text = text.trim_matches(char::is_whitespace);
         if text.eq_ignore_ascii_case("true") {
             Some(true)
@@ -83,5 +106,111 @@ mod dotnet {
         } else {
             None
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn arranged(settings: &[(&str, &str)]) -> Result<Relay, String> {
+        let mut config = Config::layered("Production", &[]);
+        for (key, value) in settings {
+            config.set(key, value);
+        }
+        RelaySettings::load(&config).arrangement
+    }
+
+    // Each of these was asked of the first server, which answered the
+    // bootstrap with a 200 or a 500 as the table says.
+    #[test]
+    fn a_port_is_read_as_the_first_servers_binder_read_it() {
+        for (text, port) in [
+            ("3478", Some(3478)),
+            (" 3478 ", Some(3478)),
+            ("+3478", Some(3478)),
+            ("01", Some(1)),
+            ("1", Some(1)),
+            ("65535", Some(65535)),
+            ("0x10", Some(16)),
+            ("0X10", Some(16)),
+            ("&h10", Some(16)),
+            ("#10", Some(16)),
+            ("0", None),
+            ("65536", None),
+            ("-1", None),
+            ("99999999999", None),
+            ("abc", None),
+            ("", None),
+            ("3478.0", None),
+            ("1_0", None),
+            ("1,000", None),
+            ("3 478", None),
+            ("٣٤٧٨", None),
+        ] {
+            let got = arranged(&[("Rtc:TurnPort", text)]).map(|relay| relay.turn_port);
+            assert_eq!(got.ok(), port, "{text:?}");
+        }
+    }
+
+    #[test]
+    fn the_tls_port_is_looked_at_only_while_tls_is_on_but_must_always_be_a_number() {
+        assert!(arranged(&[("Rtc:TurnsEnabled", "false"), ("Rtc:TurnsPort", "0")]).is_ok());
+        assert!(arranged(&[("Rtc:TurnsEnabled", "false"), ("Rtc:TurnsPort", "70000")]).is_ok());
+        assert!(arranged(&[("Rtc:TurnsEnabled", "false"), ("Rtc:TurnsPort", "abc")]).is_err());
+        assert!(arranged(&[("Rtc:TurnsEnabled", "false"), ("Rtc:TurnsPort", "")]).is_err());
+        assert!(arranged(&[("Rtc:TurnsEnabled", "true"), ("Rtc:TurnsPort", "0")]).is_err());
+        assert!(arranged(&[("Rtc:TurnsEnabled", "true"), ("Rtc:TurnsPort", "65536")]).is_err());
+        assert_eq!(
+            arranged(&[("Rtc:TurnsEnabled", "true"), ("Rtc:TurnsPort", "0x1BB")])
+                .unwrap()
+                .turns_port,
+            443
+        );
+    }
+
+    #[test]
+    fn a_switch_is_true_or_false_in_any_letter_case_with_spaces_around_and_nothing_else() {
+        for (text, on) in [
+            ("true", Some(true)),
+            ("TRUE", Some(true)),
+            (" true ", Some(true)),
+            ("False", Some(false)),
+            ("1", None),
+            ("yes", None),
+            ("", None),
+            ("abc", None),
+        ] {
+            let got = arranged(&[("Rtc:TurnTcpEnabled", text)]).map(|relay| relay.tcp_enabled);
+            assert_eq!(got.ok(), on, "{text:?}");
+            let got = arranged(&[("Rtc:TurnsEnabled", text)]).map(|relay| relay.turns_enabled);
+            assert_eq!(got.ok(), on, "{text:?}");
+        }
+    }
+
+    #[test]
+    fn what_is_not_set_is_the_default_and_a_wrong_value_does_not_stop_the_start() {
+        let relay = arranged(&[]).unwrap();
+        assert_eq!(
+            (
+                relay.turn_port,
+                relay.turns_port,
+                relay.turns_enabled,
+                relay.tcp_enabled
+            ),
+            (3478, 5349, false, false)
+        );
+        // Loading is not failing: the refusal is what the bootstrap will say.
+        assert!(arranged(&[("Rtc:TurnPort", "abc")]).is_err());
+    }
+
+    #[test]
+    fn eight_hexadecimal_digits_make_a_number_whose_top_bit_makes_it_negative() {
+        assert_eq!(dotnet::int("0xFFFFFFFF"), Some(-1));
+        assert_eq!(dotnet::int("0x7FFFFFFF"), Some(i32::MAX));
+        assert_eq!(dotnet::int("0x100000000"), None);
+        assert_eq!(dotnet::int("0x"), None);
+        assert_eq!(dotnet::int("0x0x10"), Some(16));
+        assert_eq!(dotnet::int("0x-1"), None);
     }
 }
