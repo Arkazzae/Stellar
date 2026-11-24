@@ -74,21 +74,19 @@ pub async fn login(
             .read(move |connection| -> Result<_, DbError> { Ok(User::find_by_login(connection, &identifier)?) })
             .await?
     };
-    // An account that is disabled, has no password or is not there is turned
-    // away the same way as a wrong password, slowed a little so that how
-    // quickly the answer comes says little about which it was.
+    let known_id = user.as_ref().map(|user| user.id);
+    // Every refusal does the same work: the password is derived whether or
+    // not there is an account that may sign in, and whether or not it has a
+    // usable hash, and one write follows. How long the answer takes then says
+    // nothing about which refusal it was. The random wait below only blurs
+    // what is left.
     let candidate = request.password.clone().unwrap_or_default();
-    let accepted = match &user {
-        Some(user) if !user.is_disabled => {
-            let stored = user.password_hash.clone();
-            tokio::task::spawn_blocking(move || password::verify(&candidate, stored.as_deref()))
-                .await
-                .map_err(ApiError::internal)?
-        }
-        _ => false,
-    };
-    let Some(user) = user.filter(|_| accepted) else {
-        return refuse(&state, &origin, &identifier).await;
+    let usable = user.as_ref().filter(|user| !user.is_disabled).and_then(|user| user.password_hash.clone());
+    let accepted = tokio::task::spawn_blocking(move || password::verify(&candidate, usable.as_deref()))
+        .await
+        .map_err(ApiError::internal)?;
+    let Some(user) = user.filter(|user| accepted && !user.is_disabled) else {
+        return refuse(&state, &origin, known_id).await;
     };
 
     let short_lived = request.keep_signed_in == Some(false);
@@ -157,22 +155,20 @@ fn pending_identity_name(https: bool) -> &'static str {
     if https { "__Host-stellarr-pending-identity" } else { "stellarr-dev-pending-identity" }
 }
 
-/// The 401 of a sign-in that did not work, after it has been recorded.
-async fn refuse(state: &AppState, origin: &Origin, identifier: &str) -> ApiResult<Response> {
-    let known = {
-        let identifier = identifier.to_string();
-        state
-            .database()
-            .read(move |connection| -> Result<_, DbError> { Ok(User::find_by_login(connection, &identifier)?) })
-            .await?
-    };
-    if let Some(user) = known {
-        let origin = origin.clone();
-        state
-            .database()
-            .write(move |tx| events::record(tx, user.id, events::LOGIN_FAILED, &origin.address, &origin.user_agent, "password", None))
-            .await?;
-    }
+/// The 401 of a sign-in that did not work. The failure of an account that
+/// exists is recorded; for one that does not, the same transaction is made and
+/// writes nothing.
+async fn refuse(state: &AppState, origin: &Origin, known: Option<crate::values::Id>) -> ApiResult<Response> {
+    let origin = origin.clone();
+    state
+        .database()
+        .write(move |tx| -> Result<(), DbError> {
+            match known {
+                Some(user) => events::record(tx, user, events::LOGIN_FAILED, &origin.address, &origin.user_agent, "password", None),
+                None => Ok(()),
+            }
+        })
+        .await?;
     tokio::time::sleep(Duration::from_millis(u64::from(crate::auth::tokens::random_below(100)) + 80)).await;
     let title = state.messages().get(MessageKey::SignInFailed, &[])?;
     Ok(no_store(Problem::new(StatusCode::UNAUTHORIZED).title(title).into_response()))

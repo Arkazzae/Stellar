@@ -20,7 +20,16 @@ const HASH_SIZE: usize = 32;
 pub const MIN_LENGTH: usize = 8;
 pub const MAX_LENGTH: usize = 256;
 
+/// How many derivations this process has made, which a test reads to see that
+/// a refusal did the work of any other.
+static DERIVATIONS: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+
+pub fn derivations() -> u64 {
+    DERIVATIONS.load(std::sync::atomic::Ordering::Relaxed)
+}
+
 fn derive(password: &str, salt: &[u8], iterations: u32) -> [u8; HASH_SIZE] {
+    DERIVATIONS.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
     let mut hash = [0u8; HASH_SIZE];
     let iterations = NonZeroU32::new(iterations).expect("the iteration count is not zero");
     pbkdf2::derive(
@@ -42,37 +51,44 @@ pub fn hash(password: &str) -> String {
 }
 
 /// Whether the password matches the stored hash. An account without a
-/// password matches nothing, after the same work a real check does, so how
-/// long the answer takes does not tell it from a wrong password.
+/// password, and a hash that cannot be used, match nothing, after the same
+/// work a real check does (one derivation with the usual parameters), so how
+/// long the answer takes does not tell them from a wrong password.
 pub fn verify(password: &str, stored: Option<&str>) -> bool {
-    let Some(stored) = stored else {
+    let decoy = || {
         let _ = derive(password, &[0u8; SALT_SIZE], ITERATIONS);
-        return false;
+        false
+    };
+    let Some(stored) = stored else {
+        return decoy();
     };
     let parts: Vec<&str> = stored.split('$').collect();
     let [scheme, iterations, salt, expected] = parts.as_slice() else {
-        return false;
+        return decoy();
     };
     let Some(iterations) = iterations
         .parse::<u32>()
         .ok()
         .filter(|n| (MINIMUM_ACCEPTED_ITERATIONS..=MAXIMUM_ACCEPTED_ITERATIONS).contains(n))
     else {
-        return false;
+        return decoy();
     };
     let (Some(salt), Some(expected)) = (decoded(salt, SALT_SIZE), decoded(expected, HASH_SIZE))
     else {
-        return false;
+        return decoy();
     };
-    *scheme == SCHEME
-        && pbkdf2::verify(
-            PBKDF2_HMAC_SHA256,
-            NonZeroU32::new(iterations).expect("the count is at least 100000"),
-            &salt,
-            password.as_bytes(),
-            &expected,
-        )
-        .is_ok()
+    if *scheme != SCHEME {
+        return decoy();
+    }
+    DERIVATIONS.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+    pbkdf2::verify(
+        PBKDF2_HMAC_SHA256,
+        NonZeroU32::new(iterations).expect("the count is at least 100000"),
+        &salt,
+        password.as_bytes(),
+        &expected,
+    )
+    .is_ok()
 }
 
 fn decoded(text: &str, length: usize) -> Option<Vec<u8>> {
