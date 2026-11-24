@@ -65,7 +65,10 @@ impl<T: DeserializeOwned, S: Send + Sync> FromRequest<S> for Json<T> {
             .get::<BodyCeiling>()
             .map_or(MAX_REQUEST_BODY_BYTES, |ceiling| ceiling.0);
         let bytes = read_all(&parts.headers, body, ceiling).await?;
-        serde_json::from_slice(&bytes)
+        // A body that starts with a byte order mark is read as the first
+        // server read it: without the mark.
+        let text = bytes.strip_prefix(b"\xEF\xBB\xBF").unwrap_or(&bytes);
+        serde_json::from_slice(text)
             .map(Json)
             .map_err(|_| ApiError::bad_request())
     }
@@ -182,6 +185,20 @@ mod tests {
                 "{body:?}"
             );
         }
+    }
+
+    #[tokio::test]
+    async fn a_byte_order_mark_in_front_of_the_body_is_not_part_of_it() {
+        let Json(account) = read(
+            "\u{feff}{\"id\":\"8f62a4d1-bdcb-4d86-bd1c-6e351900e629\",\"displayName\":\"Maya\",\
+             \"avatarUrl\":null,\"createdAt\":\"2026-11-18T21:57:04Z\"}",
+        )
+        .await
+        .unwrap();
+
+        assert_eq!(account.display_name, "Maya");
+        // Only the one at the very start: another is no JSON.
+        assert!(read("\u{feff}\u{feff}{}").await.is_err());
     }
 
     #[tokio::test]
