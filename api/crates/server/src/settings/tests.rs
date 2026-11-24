@@ -354,3 +354,53 @@ fn a_secret_is_never_printed_with_the_settings() {
 
     assert!(!format!("{settings:?}").contains("hunter2"));
 }
+
+#[test]
+fn the_canonical_origin_is_reduced_and_a_bad_one_stops_the_start() {
+    let settings =
+        production(&[("Desktop__CanonicalOrigin", "https://Chat.Example.test:443/")]).unwrap();
+    assert_eq!(
+        settings.desktop.canonical_origin,
+        "https://chat.example.test"
+    );
+    assert_eq!(production(&[]).unwrap().desktop.canonical_origin, "");
+
+    for bad in [
+        "chat.example.test",
+        "ftp://chat.example.test",
+        "https://u:p@chat.example.test",
+        "https://chat.example.test/?next=1",
+    ] {
+        let refused = production(&[("Desktop__CanonicalOrigin", bad)]).unwrap_err();
+        assert!(
+            refused
+                .to_string()
+                .starts_with("Desktop:CanonicalOrigin must be"),
+            "{bad}"
+        );
+    }
+}
+
+#[test]
+fn the_instance_id_and_the_build_are_read_when_given() {
+    let none = production(&[]).unwrap();
+    assert_eq!(none.discovery.instance_id, None);
+    assert_eq!(none.discovery.build_sha, None);
+
+    let given = production(&[
+        (
+            "STELLARR_INSTANCE_ID",
+            "{11111111-2222-4333-8444-555555555555}",
+        ),
+        ("Build__Sha", " abc1234 "),
+    ])
+    .unwrap();
+    assert_eq!(
+        given.discovery.instance_id,
+        Id::parse("11111111-2222-4333-8444-555555555555")
+    );
+    assert_eq!(given.discovery.build_sha.as_deref(), Some("abc1234"));
+
+    let refused = production(&[("STELLARR_INSTANCE_ID", "not-a-uuid")]).unwrap_err();
+    assert_eq!(refused.to_string(), "Stellarr:InstanceId must be a UUID.");
+}

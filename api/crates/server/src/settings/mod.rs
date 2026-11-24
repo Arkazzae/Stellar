@@ -13,6 +13,7 @@
 
 mod config;
 mod defaults;
+mod origin;
 mod trusted_proxies;
 mod variables;
 
@@ -22,6 +23,8 @@ use std::path::PathBuf;
 use std::time::Duration;
 
 use stellarr_messages::{Language, Messages};
+
+use crate::values::Id;
 
 pub use config::Config;
 pub use trusted_proxies::{Network, TrustedProxies, normalize};
@@ -422,7 +425,57 @@ impl ClientSettings {
 pub struct DesktopSettings {
     pub minimum_version: Option<String>,
     pub recommended_version: Option<String>,
+    /// The address clients are told to use for this instance, reduced to
+    /// scheme, host and a port that is not the scheme's own; empty when the
+    /// instance says it is whatever address the request came to.
     pub canonical_origin: String,
+}
+
+impl DesktopSettings {
+    fn load(config: &Config) -> Result<DesktopSettings, SettingError> {
+        let canonical_origin = match config.text("Desktop:CanonicalOrigin") {
+            None => String::new(),
+            Some(text) => origin::canonical(text).ok_or_else(|| {
+                SettingError::new(
+                    "Desktop:CanonicalOrigin must be an absolute HTTP(S) origin without \
+                     credentials, query or fragment.",
+                )
+            })?,
+        };
+        Ok(DesktopSettings {
+            minimum_version: config.text("Desktop:MinimumVersion").map(str::to_string),
+            recommended_version: config
+                .text("Desktop:RecommendedVersion")
+                .map(str::to_string),
+            canonical_origin,
+        })
+    }
+}
+
+/// How a client recognises this instance before it signs in.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct DiscoverySettings {
+    /// The id the operator gave the instance. Without one the instance keeps
+    /// an id of its own in the data folder.
+    pub instance_id: Option<Id>,
+    /// The source revision the running build was made from, when it is told.
+    pub build_sha: Option<String>,
+}
+
+impl DiscoverySettings {
+    fn load(config: &Config) -> Result<DiscoverySettings, SettingError> {
+        let instance_id = match config.text("Stellarr:InstanceId") {
+            None => None,
+            Some(text) => Some(
+                Id::parse_guid(text)
+                    .ok_or_else(|| SettingError::new("Stellarr:InstanceId must be a UUID."))?,
+            ),
+        };
+        Ok(DiscoverySettings {
+            instance_id,
+            build_sha: config.text("Build:Sha").map(str::to_string),
+        })
+    }
 }
 
 /// How many requests each limit allows in its window.
@@ -536,6 +589,7 @@ pub struct Settings {
     pub secrets: EnvironmentSecrets,
     pub clients: ClientSettings,
     pub desktop: DesktopSettings,
+    pub discovery: DiscoverySettings,
     pub rate_limits: RateLimitSettings,
     pub log: LogSettings,
     /// Tests only: a file the process appends every published event to, one
@@ -603,16 +657,8 @@ impl Settings {
             mail: MailSettings::load(config)?,
             secrets: EnvironmentSecrets::load(config),
             clients: ClientSettings::load(config)?,
-            desktop: DesktopSettings {
-                minimum_version: config.text("Desktop:MinimumVersion").map(str::to_string),
-                recommended_version: config
-                    .text("Desktop:RecommendedVersion")
-                    .map(str::to_string),
-                canonical_origin: config
-                    .text("Desktop:CanonicalOrigin")
-                    .unwrap_or("")
-                    .to_string(),
-            },
+            desktop: DesktopSettings::load(config)?,
+            discovery: DiscoverySettings::load(config)?,
             rate_limits: RateLimitSettings::load(config, &environment)?,
             log: LogSettings::load(config),
             event_log,

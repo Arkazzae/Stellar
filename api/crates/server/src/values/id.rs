@@ -61,6 +61,79 @@ impl Id {
         Some(Id(out))
     }
 
+    /// Reads a UUID as the first server's parser did: hyphenated, or as 32
+    /// digits with no hyphens, or the hyphenated form in braces or in
+    /// parentheses, in either letter case. For text an operator typed or an
+    /// older file kept; everything that crosses the wire is [`Id::parse`].
+    pub fn parse_guid(text: &str) -> Option<Id> {
+        let text = text.trim();
+        let bytes = text.as_bytes();
+        if bytes.len() == 32 && bytes.iter().all(u8::is_ascii_hexdigit) {
+            let spelled = format!(
+                "{}-{}-{}-{}-{}",
+                &text[..8],
+                &text[8..12],
+                &text[12..16],
+                &text[16..20],
+                &text[20..]
+            );
+            return Id::parse(&spelled);
+        }
+        if let Some(fields) = text.strip_prefix("{0x").and_then(|t| t.strip_suffix("}}")) {
+            return Id::parse_fields(fields);
+        }
+        let wrapped = matches!(
+            (bytes.first(), bytes.last()),
+            (Some(b'{'), Some(b'}')) | (Some(b'('), Some(b')'))
+        );
+        Id::parse(if wrapped && bytes.len() >= 2 {
+            &text[1..text.len() - 1]
+        } else {
+            text
+        })
+    }
+
+    /// The form `{0xAAAAAAAA,0xBBBB,0xCCCC,{0xDD,0xDD,0xDD,0xDD,0xDD,0xDD,0xDD,0xDD}}`,
+    /// given here without its first `{0x` and last `}}`. Each number may have
+    /// fewer digits than its place has.
+    fn parse_fields(fields: &str) -> Option<Id> {
+        let fields: String = format!("0x{fields}")
+            .chars()
+            .filter(|c| *c != ' ')
+            .collect();
+        let (head, tail) = fields.split_once(",{")?;
+        let numbers: Vec<&str> = head.split(',').chain(tail.split(',')).collect();
+        if numbers.len() != 11 {
+            return None;
+        }
+        let mut values = Vec::new();
+        for (index, number) in numbers.iter().enumerate() {
+            let digits = number
+                .strip_prefix("0x")
+                .or_else(|| number.strip_prefix("0X"))?;
+            let most = match index {
+                0 => 8,
+                1 | 2 => 4,
+                _ => 2,
+            };
+            if digits.is_empty()
+                || digits.len() > most
+                || !digits.bytes().all(|b| b.is_ascii_hexdigit())
+            {
+                return None;
+            }
+            values.push(u32::from_str_radix(digits, 16).ok()?);
+        }
+        let mut bytes = [0u8; 16];
+        bytes[..4].copy_from_slice(&values[0].to_be_bytes());
+        bytes[4..6].copy_from_slice(&(values[1] as u16).to_be_bytes());
+        bytes[6..8].copy_from_slice(&(values[2] as u16).to_be_bytes());
+        for (at, value) in values[3..].iter().enumerate() {
+            bytes[8 + at] = *value as u8;
+        }
+        Some(Id(bytes))
+    }
+
     /// The spelling the database holds: capitals.
     pub fn to_db_text(&self) -> String {
         self.spell(true)
@@ -158,6 +231,47 @@ mod tests {
         assert_eq!(Id::parse(STORED), Id::parse(ON_THE_WIRE));
         let from_json: Id = serde_json::from_str(&format!("\"{STORED}\"")).unwrap();
         assert_eq!(from_json, Id::parse(ON_THE_WIRE).unwrap());
+    }
+
+    #[test]
+    fn an_operator_may_write_a_uuid_in_the_other_forms_the_first_server_read() {
+        let wanted = Id::parse(ON_THE_WIRE);
+        for text in [
+            ON_THE_WIRE,
+            STORED,
+            "  8f62a4d1-bdcb-4d86-bd1c-6e351900e629\n",
+            "8f62a4d1bdcb4d86bd1c6e351900e629",
+            "{8f62a4d1-bdcb-4d86-bd1c-6e351900e629}",
+            "(8F62A4D1-BDCB-4D86-BD1C-6E351900E629)",
+            "{0x8f62a4d1,0xbdcb,0x4d86,{0xbd,0x1c,0x6e,0x35,0x19,0x00,0xe6,0x29}}",
+            "{0x8f62a4d1, 0xbdcb, 0x4d86, {0xbd, 0x1c, 0x6e, 0x35, 0x19, 0x0, 0xe6, 0x29}}",
+        ] {
+            assert_eq!(Id::parse_guid(text), wanted, "{text:?}");
+        }
+        assert_eq!(
+            Id::parse_guid("{0x1,0x2,0x3,{0x4,0x5,0x6,0x7,0x8,0x9,0xa,0xb}}")
+                .map(|id| id.to_string())
+                .as_deref(),
+            Some("00000001-0002-0003-0405-060708090a0b")
+        );
+        for text in [
+            "",
+            "{",
+            "{}",
+            "{0x1,0x2,0x3,{0x4,0x5,0x6,0x7,0x8,0x9,0xa}}",
+            "{0x1,0x2,0x3,{0x4,0x5,0x6,0x7,0x8,0x9,0xa,0xb},}",
+            "{0xg,0x2,0x3,{0x4,0x5,0x6,0x7,0x8,0x9,0xa,0xb}}",
+            "{0x,0x2,0x3,{0x4,0x5,0x6,0x7,0x8,0x9,0xa,0xb}}",
+            "{0x123456789,0x2,0x3,{0x4,0x5,0x6,0x7,0x8,0x9,0xa,0xb}}",
+            "{1,2,3,{4,5,6,7,8,9,10,11}}",
+            "{8f62a4d1bdcb4d86bd1c6e351900e629}",
+            "{8f62a4d1-bdcb-4d86-bd1c-6e351900e629)",
+            "8f62a4d1-bdcb-4d86-bd1c-6e351900e629}",
+            "8f62a4d1bdcb4d86bd1c6e351900e62g",
+            "ü8f62a4d1bdcb4d86bd1c6e351900e62",
+        ] {
+            assert_eq!(Id::parse_guid(text), None, "{text:?}");
+        }
     }
 
     #[test]
