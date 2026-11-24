@@ -399,8 +399,20 @@ async fn reauthenticate(
     else {
         return Ok(false);
     };
-    // The account's session must still be the one that asked, which the
-    // ceremony reads for itself.
+    // The session must still be the one that asked, on the version of the
+    // account the state was made at, and the account must be able to ask. The
+    // ceremony then checks the session itself again.
+    let asked = actor.clone();
+    let asking = state
+        .database()
+        .read(move |connection| -> Result<bool, DbError> {
+            Ok(asking_account(connection, &asked, Timestamp::now())?.is_some())
+        })
+        .await
+        .map_err(|error| Failed(error.to_string()))?;
+    if !asking {
+        return Ok(false);
+    }
     let (Some(user), Some(session)) = (
         crate::values::parse_guid(&actor.user_id),
         crate::values::parse_guid(&actor.session_id),

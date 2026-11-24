@@ -199,9 +199,9 @@ async fn removal(
             })
             .await?
     };
-    let Some(name) = named else {
-        return Err(ApiError::not_found());
-    };
+    // An identity that is not the account's is answered after the guard, which
+    // the ceremony asks first; the name is only for the record it writes.
+    let name = named.unwrap_or_default();
     let providers = owned(state);
     match ceremony::remove_identity(state, caller, &context, identity, &name, &providers, password.as_deref()).await? {
         IdentityRemoved::Done => Ok(StatusCode::NO_CONTENT.into_response()),

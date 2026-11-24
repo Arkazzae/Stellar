@@ -548,3 +548,120 @@ async fn the_security_page_lists_the_providers_and_the_identities_by_their_names
     names.sort();
     assert_eq!(names, ["Test IdP", "gone.example.test"]);
 }
+
+fn bump_versions(server: &Server, users: bool, sessions: bool) {
+    let connection = server.database();
+    if users {
+        connection.execute("UPDATE \"Users\" SET \"SessionVersion\" = \"SessionVersion\" + 1", []).unwrap();
+    }
+    if sessions {
+        connection.execute("UPDATE \"UserSessions\" SET \"SecurityVersion\" = \"SecurityVersion\" + 1", []).unwrap();
+    }
+}
+
+#[tokio::test]
+async fn a_link_answered_after_the_accounts_security_version_moved_links_nothing() {
+    for (users, sessions) in [(true, false), (false, true), (true, true)] {
+        let w = world().await;
+        let client = w.server.sign_in(&w.owner).await;
+        let url = client.post_json("/api/me/security/identities/default/link", &json!({})).await.json::<Value>()["url"].as_str().unwrap().to_string();
+        let begun = begin(&client, &w.provider, &url).await;
+        bump_versions(&w.server, users, sessions);
+        let back = answer(&client, &begun, "/api/auth/oidc/callback").await;
+        assert_eq!(location(&back), "/link-account?result=failed", "users {users}, sessions {sessions}");
+        assert_eq!(count(&w.server, "SELECT COUNT(*) FROM \"ExternalIdentities\""), 0);
+    }
+}
+
+#[tokio::test]
+async fn a_fresh_sign_in_answered_after_the_security_version_moved_confirms_nothing() {
+    for (users, sessions) in [(true, false), (false, true), (true, true)] {
+        let w = world().await;
+        link(&w.server, &w.owner.id, &w.provider.issuer(), &w.provider.subject(), None);
+        let client = w.server.sign_in(&w.owner).await;
+        w.server.database().execute("UPDATE \"UserSessions\" SET \"AuthenticatedAt\" = '2026-01-01 00:00:00'", []).unwrap();
+        w.provider.script.lock().unwrap().auth_time = Some(seconds_now());
+        let url = client.post_json("/api/me/security/identities/default/reauthenticate", &json!({})).await.json::<Value>()["url"].as_str().unwrap().to_string();
+        let begun = begin(&client, &w.provider, &url).await;
+        bump_versions(&w.server, users, sessions);
+        let back = answer(&client, &begun, "/api/auth/oidc/callback").await;
+        assert_eq!(location(&back), "/link-account?result=unconfirmed", "users {users}, sessions {sessions}");
+        let moved: i64 = w.server.database().query_row("SELECT COUNT(*) FROM \"UserSessions\" WHERE \"AuthenticatedAt\" <> '2026-01-01 00:00:00'", [], |r| r.get(0)).unwrap();
+        assert_eq!(moved, 0, "no session counts a sign-in it was not given");
+    }
+}
+
+#[tokio::test]
+async fn a_ticket_made_by_another_session_of_the_same_account_starts_nothing() {
+    let w = world().await;
+    let first = w.server.sign_in(&w.owner).await;
+    let second = w.server.sign_in(&w.owner).await;
+    let url = first.post_json("/api/me/security/identities/default/link", &json!({})).await.json::<Value>()["url"].as_str().unwrap().to_string();
+    assert_eq!(location(&second.get(&url).await), "/link-account?result=failed");
+    assert!(location(&first.get(&url).await).starts_with(&w.provider.issuer()));
+    link(&w.server, &w.owner.id, &w.provider.issuer(), &w.provider.subject(), None);
+    let url = first.post_json("/api/me/security/identities/default/reauthenticate", &json!({})).await.json::<Value>()["url"].as_str().unwrap().to_string();
+    assert!(location(&second.get(&url).await).starts_with("/link-account?result=unconfirmed"));
+}
+
+#[tokio::test]
+async fn an_address_the_provider_did_not_verify_is_not_marked_verified_however_it_is_typed() {
+    for (verified, marked) in [(false, 0), (true, 1)] {
+        let w = world().await;
+        let (client, invite) = invited_identity(&w).await;
+        w.provider.script.lock().unwrap().claims.insert("email_verified".into(), json!(verified));
+        // The identity waiting was made with the claims of the first answer; make it again.
+        let again = w.server.client();
+        assert_eq!(location(&sign_in(&again, &w.provider, "/").await), "/login?oidc=unlinked");
+        let made = again
+            .post_json("/api/auth/register", &json!({"username": "ola.nowak", "displayName": "Ola", "email": "OLA@example.test", "inviteCode": invite, "external": true}))
+            .await;
+        assert_eq!(made.status, 201, "{}", made.text());
+        assert_eq!(count(&w.server, "SELECT COUNT(*) FROM \"Users\" WHERE \"ProviderVerifiedEmail\" IS NOT NULL"), marked, "verified {verified}");
+        drop(client);
+    }
+}
+
+#[tokio::test]
+async fn a_pending_identity_opens_only_with_its_secret() {
+    let w = world().await;
+    let client = w.server.client();
+    assert_eq!(location(&sign_in(&client, &w.provider, "/").await), "/login?oidc=unlinked");
+    let cookie = client.cookie("stellarr-dev-pending-identity").expect("the browser holds the identity");
+    let (id, _) = cookie.split_once('.').unwrap();
+    for held in [format!("{id}.not-the-secret"), format!("{id}.")] {
+        let other = w.server.anonymous();
+        let answer = other
+            .send(crate::support::Request::new(http::Method::GET, "/api/auth/oidc/pending").header("Cookie", &format!("stellarr-dev-pending-identity={held}")))
+            .await;
+        assert_eq!(answer.status, 404, "{held}");
+    }
+    let right = w.server.anonymous();
+    let answer = right
+        .send(crate::support::Request::new(http::Method::GET, "/api/auth/oidc/pending").header("Cookie", &format!("stellarr-dev-pending-identity={cookie}")))
+        .await;
+    assert_eq!(answer.status, 200);
+}
+
+#[tokio::test]
+async fn a_provider_that_answers_by_form_post_with_a_code_signs_in() {
+    let w = world().await;
+    link(&w.server, &w.owner.id, &w.provider.issuer(), &w.provider.subject(), None);
+    let client = w.server.client();
+    let begun = begin(&client, &w.provider, "/api/auth/oidc/login?returnUrl=%2Fback").await;
+    let posted = client
+        .send(crate::support::Request::new(http::Method::POST, "/api/auth/oidc/callback").body(
+            "application/x-www-form-urlencoded; charset=utf-8",
+            &format!("state={}&code={}&session_state=ignored", form::encode_component(&begun.state), fake::CODE),
+        ))
+        .await;
+    assert_eq!(posted.status, 302, "{}", posted.text());
+    assert_eq!(location(&posted), "/back");
+    assert_eq!(who(&client).await["id"], json!(w.owner.id));
+    // A form of another kind says nothing a provider could have meant.
+    let begun = begin(&client, &w.provider, "/api/auth/oidc/login").await;
+    let wrong = client
+        .send(crate::support::Request::new(http::Method::POST, "/api/auth/oidc/callback").body("text/plain", &format!("state={}&code={}", form::encode_component(&begun.state), fake::CODE)))
+        .await;
+    assert_eq!(location(&wrong), "/login?oidc_error=failed");
+}
