@@ -147,12 +147,11 @@ async function raw({ handshake = `{"protocol":"json","version":1}${RS}`, send = 
   if (open) ws.close();
   // The records, whichever way they were packed into frames, without the
   // server's own events, which differ by design.
-  const records = frames
-    .join("")
-    .split(RS)
-    .filter(Boolean)
+  const all = frames.join("").split(RS).filter(Boolean);
+  const pings = all.filter((r) => r === '{"type":6}').length;
+  const records = all
     .filter((r) => !/"target":"(PresenceChanged|Hello)"/.test(r) && r !== '{"type":6}');
-  return { records, closed: open ? null : closed };
+  return { records, pings, closed: open ? null : closed };
 }
 const call = (id, target, ...a) => JSON.stringify({ type: 1, invocationId: id, target, arguments: a }) + RS;
 
@@ -407,7 +406,7 @@ for (const [name, options, expected, closed] of probes) {
 
 scenario("raw: the server's ping beat", async () => {
   const got = await raw({ window: 16_500 });
-  assert(got.records !== undefined, "ran");
+  equal(got.pings, 1, "one ping record in 16.5 seconds");
 }, { slow: true });
 
 scenario("raw: a handshake that never comes is cancelled after 15 seconds", async () => {
