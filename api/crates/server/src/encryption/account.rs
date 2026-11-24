@@ -15,14 +15,14 @@ use super::problems::{self, Refusal};
 use super::store::{self, Conversation};
 use super::wire::{
     AccountDto, BackupParametersDto, DevicesDto, Members, Octets, Register, Replace, Reset, ResetDto, SetUp,
-    Unlock, UnlockedDto, path_id,
+    Unlock, UnlockedDto,
 };
 use crate::auth::ceremony::{PasswordProof, check_given_password, judge_given_password};
 use crate::auth::{Caller, events, fresh};
 use crate::database::DbError;
 use crate::http::{ApiError, ApiResult, Json, Origin, Path, json_response};
 use crate::state::AppState;
-use crate::values::{Id, Timestamp};
+use crate::values::{Guid, Id, Timestamp};
 
 /// A 201 that says where the thing is.
 fn created<T: Serialize>(location: &'static str, body: &T) -> Response {
@@ -612,9 +612,8 @@ pub async fn revoke_device(
     State(state): State<AppState>,
     caller: Caller,
     origin: Origin,
-    Path(device_id): Path<String>,
+    Path(Guid(device_id)): Path<Guid>,
 ) -> ApiResult<Response> {
-    let device_id = path_id(&device_id)?;
     let outcome = state
         .database()
         .write(move |tx| -> Result<Revoked, DbError> {

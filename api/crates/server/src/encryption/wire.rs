@@ -144,12 +144,6 @@ impl<'de> Deserialize<'de> for Whole {
     }
 }
 
-/// An id in a path, in any of the spellings the first server's route took:
-/// with or without hyphens, in braces or in parentheses, in either letter case.
-pub fn path_id(text: &str) -> Result<Id, ApiError> {
-    Id::parse_guid(text).ok_or_else(ApiError::not_found)
-}
-
 /// An id that is only valid in one spelling: lower case with hyphens, the form
 /// browsers bind keys to. Any other spelling would have the two sides derive
 /// different keys.
@@ -617,24 +611,6 @@ mod tests {
     fn names_are_read_without_regard_to_letter_case_and_the_last_one_wins() {
         let body = members("{\"PublicKey\":\"AAAA\",\"publickey\":\"AAAB\"}");
         assert_eq!(octets(&body, "publicKey").unwrap(), Some(vec![0, 0, 1]));
-    }
-
-    #[test]
-    fn an_id_in_a_path_is_read_in_every_spelling_a_guid_has() {
-        let id = Id::random();
-        let plain = id.to_string();
-        for spelled in [
-            plain.clone(),
-            plain.to_uppercase(),
-            plain.replace('-', ""),
-            format!("{{{plain}}}"),
-            format!("({plain})"),
-        ] {
-            assert_eq!(path_id(&spelled).ok(), Some(id), "{spelled}");
-        }
-        for bad in ["", "x", &plain[1..], &format!("{plain}0")] {
-            assert!(path_id(bad).is_err(), "{bad}");
-        }
     }
 
     #[test]
