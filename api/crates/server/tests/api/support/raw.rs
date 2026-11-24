@@ -61,7 +61,7 @@ pub async fn raw_send(
 ) -> Answer {
     let mut request = format!("{method} ").into_bytes();
     request.extend_from_slice(target);
-    request.extend_from_slice(b" HTTP/1.1\r\nHost: oracle.test\r\nConnection: close\r\n");
+    request.extend_from_slice(b" HTTP/1.1\r\nHost: raw.test\r\nConnection: close\r\n");
     for (name, value) in headers {
         request.extend_from_slice(format!("{name}: {value}\r\n").as_bytes());
     }
