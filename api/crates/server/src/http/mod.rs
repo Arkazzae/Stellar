@@ -11,6 +11,7 @@ pub mod file;
 mod forwarded;
 mod http_date;
 mod json;
+pub mod linger;
 mod metrics;
 pub mod multipart;
 mod path;

@@ -22,7 +22,7 @@
 //! address the walk ends at. The scheme and host are nginx's word, whatever
 //! is listed.
 
-use std::net::{IpAddr, Ipv4Addr, Ipv6Addr, SocketAddr};
+use std::net::{IpAddr, Ipv4Addr, Ipv6Addr};
 
 use axum::extract::{ConnectInfo, Request, State};
 use axum::http::{HeaderMap, header::HeaderName};
@@ -67,8 +67,8 @@ pub(super) async fn middleware(
 ) -> Response {
     let peer = request
         .extensions()
-        .get::<ConnectInfo<SocketAddr>>()
-        .map_or(IpAddr::V4(Ipv4Addr::UNSPECIFIED), |info| info.0.ip());
+        .get::<ConnectInfo<super::linger::Peer>>()
+        .map_or(IpAddr::V4(Ipv4Addr::UNSPECIFIED), |info| info.0.0.ip());
     let info = resolve(
         peer,
         request.headers(),
