@@ -2,6 +2,7 @@
 //! that some of them queue.
 
 use rusqlite::{Connection, OptionalExtension, Transaction, params};
+use stellarr_unicode::utf16;
 
 use super::policy::{FAILURE_BUDGET, FAILURE_WINDOW};
 use crate::database::DbError;
@@ -45,8 +46,16 @@ const NOTIFIED: [&str; 15] = [
     "email-changed",
 ];
 
+/// The text cut to `maximum` UTF-16 units, as the first server cuts it. A
+/// character of two units that the cut falls in the middle of loses its
+/// second half, and the half left cannot be stored: the database holds the
+/// replacement character in its place, as it does there.
 fn truncated(value: &str, maximum: usize) -> String {
-    value.chars().take(maximum).collect()
+    let units = utf16::units(value);
+    if units.len() <= maximum {
+        return value.to_string();
+    }
+    utf16::text(&units[..maximum])
 }
 
 /// Records an account-global fact. The caller commits it with its own
@@ -220,6 +229,44 @@ mod tests {
         assert_eq!(count(&connection, "SecurityEvents"), 3);
         // Only the notified kind with an address queued a mail.
         assert_eq!(count(&connection, "SecurityNotifications"), 1);
+    }
+
+    #[test]
+    fn a_detail_is_cut_in_utf16_units_and_a_pair_at_the_edge_loses_its_second_half() {
+        let (_folder, mut connection) = open();
+        let user = add_user(&connection, None);
+        let detail_of = |connection: &Connection, kind: &str| -> String {
+            connection
+                .query_row(
+                    "SELECT \"Detail\" FROM \"SecurityEvents\" WHERE \"Kind\" = ?1",
+                    [kind],
+                    |row| row.get(0),
+                )
+                .unwrap()
+        };
+        let tx = connection.transaction().unwrap();
+        // 499 units and then a pair: the cut falls between its halves.
+        let split = format!("{}\u{1F600}x", "a".repeat(499));
+        // 498 units and then a pair: it fits exactly.
+        let fits = format!("{}\u{1F600}x", "b".repeat(498));
+        // Astral characters all the way: 250 of them are the 500 units.
+        let astral = "\u{1F600}".repeat(300);
+        record(&tx, user, MFA_SUCCEEDED, "", "", &split, None).unwrap();
+        record(&tx, user, MFA_FAILED, "", "", &fits, None).unwrap();
+        record(&tx, user, METHOD_ADDED, "", "", &astral, None).unwrap();
+        tx.commit().unwrap();
+
+        assert_eq!(
+            detail_of(&connection, "mfa-succeeded"),
+            format!("{}\u{FFFD}", "a".repeat(499))
+        );
+        assert_eq!(
+            detail_of(&connection, "mfa-failed"),
+            format!("{}\u{1F600}", "b".repeat(498))
+        );
+        let kept = detail_of(&connection, "method-added");
+        assert_eq!(kept.chars().count(), 250);
+        assert!(kept.chars().all(|c| c == '\u{1F600}'));
     }
 
     #[test]
