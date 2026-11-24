@@ -939,3 +939,19 @@ async fn the_fields_a_route_does_not_read_are_not_kept() {
     assert_eq!(response.status, 201, "{}", response.text());
     assert!(peak < before + 40.0, "the server grew from {before} to {peak} MiB");
 }
+
+#[tokio::test]
+async fn where_df_cannot_be_run_the_upload_goes_through_and_the_log_says_the_reserve_is_off() {
+    let server = Server::start_with(&[
+        ("PATH", "/nonexistent"),
+        ("Uploads__MinimumFreeDataRootBytes", "9000000000000000"),
+    ])
+    .await;
+    let maja = server.found("maja").await;
+
+    let response = upload(&maja, image("a.png")).await;
+
+    assert_eq!(response.status, 201, "{}", response.text());
+    let said = server.log().iter().any(|line| line.contains("free space reserve is not enforced"));
+    assert!(said, "{:?}", server.log());
+}
