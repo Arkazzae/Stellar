@@ -54,21 +54,13 @@ const LAST_ROLLOUT_BUCKET: i32 = 99;
 pub fn routes() -> Endpoints {
     Endpoints::new()
         .get("/.well-known/stellarr/client", discovery::describe)
-        .get("/.well-known/stellarr/client/", discovery::describe)
         .get("/api/desktop/release", describe_desktop)
-        .get("/api/desktop/release/", describe_desktop)
         .get("/api/desktop/release/arch", download_desktop)
-        .get("/api/desktop/release/arch/", download_desktop)
         .get("/api/android/release", describe_android)
-        .get("/api/android/release/", describe_android)
         .get("/api/android/release/apk", download_android)
-        .get("/api/android/release/apk/", download_android)
         .get("/api/client/releases", list)
-        .get("/api/client/releases/", list)
         .get("/api/desktop/update/{target}/{architecture}/{current_version}", check_update)
-        .get("/api/desktop/update/{target}/{architecture}/{current_version}/", check_update)
         .get("/api/desktop/update/download/{channel}/{bundle}", download_update)
-        .get("/api/desktop/update/download/{channel}/{bundle}/", download_update)
 }
 
 /// The scheme and host the request was made to, as the proxy in front of the

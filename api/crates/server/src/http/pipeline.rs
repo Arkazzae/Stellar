@@ -1,5 +1,9 @@
 //! What every request goes through, in this order, outermost first:
 //!
+//! 0. read the target as the first server's front did (see [`super::path`]):
+//!    refuse a request line that is too long or a path with a null character,
+//!    decode the path, remove its dot segments and one slash at its end.
+//!    Nothing after this sees another path;
 //! 1. count the response, whatever it turns out to be, and give the request
 //!    its trace identifier;
 //! 2. write one log line when it is answered;
@@ -121,9 +125,12 @@ pub fn build(
         .layer(from_fn_with_state(pipeline, count));
     // The router adds the `Allow` header of a 405 after its layers have run,
     // so the one step that rewrites it has to stand outside the router.
+    // Outermost of all, the target is read as the first server's front read
+    // it, so that nothing inside sees another path than the router does.
     Router::new()
         .fallback_service(inner)
         .layer(axum::middleware::from_fn(allowed_methods))
+        .layer(axum::middleware::from_fn(super::path::middleware))
 }
 
 async fn count(State(pipeline): State<Arc<Pipeline>>, request: Request, next: Next) -> Response {
@@ -216,7 +223,7 @@ async fn route_checks(
     let https = request
         .extensions()
         .get::<ClientInfo>()
-        .is_some_and(|client| client.scheme == "https");
+        .is_some_and(ClientInfo::is_https);
     let mut cookies = Vec::new();
     let mut renewal = None;
     let cookie = auth::cookies::read(request.headers(), auth::session::cookie_name(environment));

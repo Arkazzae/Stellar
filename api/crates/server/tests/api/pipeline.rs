@@ -18,7 +18,7 @@ use stellarr_api::state::AppState;
 use stellarr_api::values::{Id, Timestamp};
 use stellarr_messages::MessageKey;
 
-use crate::support::{Request, Server};
+use crate::support::{Request, Server, raw_get, raw_send};
 
 /// A production-like environment, where the limits are the real ones.
 const PRODUCTION: [(&str, &str); 2] = [
@@ -46,6 +46,18 @@ fn routes() -> Endpoints {
         .delete("/api/test/things/{id}", forget)
         .get("/api/test/search", search)
         .get("/api/test/slow-announce", slow_announce)
+        .get("/api/test/private", private)
+        .authorized()
+        .get("/api/test/echo/{what}", spoken)
+}
+
+async fn private() -> StatusCode {
+    StatusCode::NO_CONTENT
+}
+
+/// What the router made of a segment.
+async fn spoken(Path(what): Path<String>) -> Json<Value> {
+    Json(json!({ "what": what }))
 }
 
 /// Takes its time, so that the client is gone before it commits and announces.
@@ -446,6 +458,19 @@ async fn the_client_is_the_address_the_proxies_vouch_for() {
 }
 
 #[tokio::test]
+async fn a_forwarded_scheme_is_passed_on_as_the_proxy_wrote_it() {
+    let server = server_with(&[]).await;
+
+    for (written, seen) in [("gopher", "gopher"), ("HTTPS", "HTTPS"), ("http, ws", "ws"), ("", "http")] {
+        let answer = server
+            .client()
+            .send(Request::new(Method::GET, "/api/test/client").header("X-Forwarded-Proto", written))
+            .await;
+        assert_eq!(answer.json::<Value>()["scheme"], seen, "{written:?}");
+    }
+}
+
+#[tokio::test]
 async fn a_trusted_proxy_that_is_not_an_address_stops_the_start_and_is_named() {
     let said = Server::refused_to_start(&[("STELLARR_TRUSTED_PROXIES", "10.0.0.1/24")]).await;
 
@@ -747,4 +772,321 @@ async fn a_handler_whose_client_went_away_still_commits_and_announces() {
     let connection = rusqlite::Connection::open(server.database_path()).unwrap();
     let rows: i64 = connection.query_row("SELECT count(*) FROM \"Servers\"", [], |row| row.get(0)).unwrap();
     assert_eq!(rows, 1);
+}
+
+// ---------------------------------------------------------------------------
+// The path every step sees
+// ---------------------------------------------------------------------------
+
+/// Spellings of `/health/live` and what the first server answered to each,
+/// asked of it one by one (`paths_are_read_as_the_first_server_reads_them`
+/// asks again). A target is sent byte for byte.
+const SPELLINGS: &[(&[u8], u16)] = &[
+    (b"/health/live", 200),
+    // One slash at the end is dropped; two are not.
+    (b"/health/live/", 200),
+    (b"/health/live//", 404),
+    (b"//health/live", 404),
+    (b"/health//live", 404),
+    (b"/health/live/?a=1", 200),
+    (b"/health/live?", 200),
+    // Dot segments go before routing, and cannot leave the root.
+    (b"/health/./live", 200),
+    (b"/health/x/../live", 200),
+    (b"/./health/live", 200),
+    (b"/health/live/.", 200),
+    (b"/health/live/./.", 200),
+    (b"/health/live/./", 200),
+    (b"/health/./live/", 200),
+    (b"/health/live/..", 404),
+    (b"/health/live/../live/", 200),
+    (b"/../health/live", 200),
+    (b"/health/../../health/live", 200),
+    (b"/..", 404),
+    (b"/.", 404),
+    (b"/", 404),
+    (b"//", 404),
+    (b"/health/.../live", 404),
+    (b"/health/..;/live", 404),
+    (b"/health/live;x=1", 404),
+    (b"/health/live.", 404),
+    // Escapes are decoded first, so they cannot hide a dot segment...
+    (b"/%68ealth/live", 200),
+    (b"/health/li%76e", 200),
+    (b"/health/%2e/live", 200),
+    (b"/health/%2e%2e/health/live", 200),
+    (b"/health/%2E%2E/health/live", 200),
+    (b"/health/%2e%2E/health/live", 200),
+    (b"/health/%2e%2e/%2e%2e/health/live", 200),
+    (b"/health/live/%2e/", 200),
+    (b"/health/live/%2e%2e/live", 200),
+    (b"/health/live/.%2e/live", 200),
+    (b"/health/live/%2e%2E", 404),
+    (b"/health/live%2e", 404),
+    // ...except an encoded slash, which is never a separator.
+    (b"/health%2flive", 404),
+    (b"/health%2Flive", 404),
+    (b"/health/live%2f", 404),
+    (b"/health/live%2F/", 404),
+    (b"/health/live/%2f", 404),
+    (b"/health/..%2flive", 404),
+    (b"/health/%2e%2e%2flive", 404),
+    // Other characters decoded are characters of the path, not syntax.
+    (b"/health%5clive", 404),
+    (b"/health/live%20", 404),
+    (b"/health/live%3f", 404),
+    (b"/health/live%23", 404),
+    (b"/health/live%25", 404),
+    (b"/health/live%2500", 404),
+    (b"/health/li%zzve", 404),
+    (b"/health/li%7", 404),
+    (b"/health/live%C3%A9", 404),
+    (b"/health/live%ff", 404),
+    (b"/health/live%c0%af", 404),
+    // The query is not read.
+    (b"/health/live?x=%00", 200),
+    (b"/health/live?x=%zz&y=%", 200),
+    // A null character in the path is refused before anything else.
+    (b"/health/live%00", 400),
+    (b"/health/%00live", 400),
+    (b"/health/li%00ve", 400),
+    (b"/%00", 400),
+];
+
+#[tokio::test]
+async fn a_path_is_read_before_routing_as_the_first_server_reads_it() {
+    let server = server_with(&[]).await;
+
+    for (target, expected) in SPELLINGS {
+        let answer = raw_get(server.address(), target, &[]).await;
+        assert_eq!(
+            answer.status,
+            *expected,
+            "{}",
+            String::from_utf8_lossy(target)
+        );
+    }
+}
+
+#[tokio::test]
+async fn a_request_line_over_8192_bytes_is_a_414_and_one_that_fits_is_not() {
+    let server = server_with(&[]).await;
+    // `GET ` and ` HTTP/1.1` and the line break take 15 of them.
+    let longest = 8192 - 15;
+    let target = |length: usize| format!("/health/live?{}", "a".repeat(length - "/health/live?".len()));
+
+    let fits = raw_get(server.address(), target(longest).as_bytes(), &[]).await;
+    let over = raw_get(server.address(), target(longest + 1).as_bytes(), &[]).await;
+    let post = raw_send(server.address(), "POST", target(longest).as_bytes(), &[]).await;
+
+    assert_eq!((fits.status, over.status, post.status), (200, 414, 414));
+    assert!(over.body.is_empty());
+}
+
+#[tokio::test]
+async fn what_a_segment_holds_is_what_the_first_server_would_have_read_from_it() {
+    let server = server_with(&[]).await;
+    let said = |target: &'static str| {
+        let address = server.address();
+        async move {
+            let answer = raw_get(address, target.as_bytes(), &[]).await;
+            assert_eq!(answer.status, 200, "{target}");
+            serde_json::from_slice::<Value>(&answer.body).unwrap()["what"]
+                .as_str()
+                .unwrap()
+                .to_string()
+        }
+    };
+
+    for (target, what) in [
+        ("/api/test/echo/plain", "plain"),
+        ("/api/test/echo/pl%61in", "plain"),
+        ("/api/test/echo/a%2fb", "a%2fb"),
+        ("/api/test/echo/a%2Fb", "a%2Fb"),
+        ("/api/test/echo/a%25b", "a%b"),
+        ("/api/test/echo/a%252fb", "a%2fb"),
+        ("/api/test/echo/a%20b%3Fc%23d", "a b?c#d"),
+        ("/api/test/echo/a%5Cb", "a\\b"),
+        ("/api/test/echo/a+b", "a+b"),
+        ("/api/test/echo/a%2bb", "a+b"),
+        ("/api/test/echo/%C3%A9", "\u{e9}"),
+        ("/api/test/echo/%c3%a9", "\u{e9}"),
+        ("/api/test/echo/x%c3", "x%c3"),
+        ("/api/test/echo/x%ff%c0%af", "x%ff%c0%af"),
+        ("/api/test/echo/x%e2%82", "x%e2%82"),
+        ("/api/test/echo/x%e2%82%ac", "x\u{20ac}"),
+        ("/api/test/echo/x%zz", "x%zz"),
+        ("/api/test/echo/a%7e", "a~"),
+        ("/api/test/echo/a/", "a"),
+        ("/api/test/echo/..%2fa", "..%2fa"),
+    ] {
+        assert_eq!(said(target).await, what, "{target}");
+    }
+    // A segment that is not there is not a segment.
+    let missing = raw_get(server.address(), b"/api/test/echo/", &[]).await;
+    assert_eq!(missing.status, 404);
+}
+
+/// The one the first server let through: its gate decides on the path as
+/// written, and its router on the path without the slash.
+const THE_GATE: &[&str] = &[
+    "/api/auth/login",
+    "/api/auth/login/",
+    "/api/./auth/login",
+    "/api/x/../auth/login",
+    "/health/../api/auth/login",
+    "/api/%61uth/%6cogin",
+    "/api/auth/login/.",
+    "/api/auth/login?x=1",
+];
+
+#[tokio::test]
+async fn the_client_gate_judges_every_spelling_of_a_gated_route_as_the_route_it_is() {
+    let server = server_with(&[]).await;
+
+    for target in THE_GATE {
+        let refused = raw_send(server.address(), "POST", target.as_bytes(), &[]).await;
+        let admitted = raw_send(
+            server.address(),
+            "POST",
+            target.as_bytes(),
+            &[("X-Stellarr-Client", "web"), ("X-Stellarr-Client-Version", "2.0.0")],
+        )
+        .await;
+
+        // A client the gate does not know is refused; one it knows reaches the
+        // handler (which has nothing to read).
+        assert_eq!(refused.status, 403, "{target}");
+        assert_ne!(admitted.status, 403, "{target}");
+        assert_ne!(admitted.status, 404, "{target}");
+    }
+    // What is not the route is not gated and is not served.
+    for target in ["/api/auth/login//", "/api/auth/login%2f", "/api/auth/log%69n%2f"] {
+        let answer = raw_send(server.address(), "POST", target.as_bytes(), &[]).await;
+        assert_eq!(answer.status, 404, "{target}");
+    }
+}
+
+#[tokio::test]
+async fn every_spelling_of_a_limited_route_counts_against_its_limit() {
+    let server = server_with(&[
+        PRODUCTION[0],
+        PRODUCTION[1],
+        ("RateLimiting__Login__PermitLimit", "4"),
+    ])
+    .await;
+    let client = [("X-Stellarr-Client", "web"), ("X-Stellarr-Client-Version", "2.0.0")];
+
+    let mut statuses = Vec::new();
+    for target in [
+        "/api/auth/login",
+        "/api/auth/login/",
+        "/api/%61uth/login",
+        "/api/./auth/login/.",
+        "/api/auth/login",
+        "/api/auth/login/",
+    ] {
+        let body = r#"{"username":"x","password":"y"}"#;
+        let request = format!(
+            "POST {target} HTTP/1.1\r\nHost: x\r\nConnection: close\r\nContent-Type: application/json\r\n{}Content-Length: {}\r\n\r\n{body}",
+            client.iter().map(|(n, v)| format!("{n}: {v}\r\n")).collect::<String>(),
+            body.len()
+        );
+        statuses.push(crate::support::raw_request(server.address(), request.as_bytes()).await.status);
+    }
+
+    assert_eq!(statuses, [401, 401, 401, 401, 429, 429]);
+}
+
+#[tokio::test]
+async fn every_spelling_of_a_route_that_needs_a_session_needs_one() {
+    let server = server_with(&[]).await;
+
+    for target in [
+        "/api/test/private",
+        "/api/test/private/",
+        "/api/test/./private",
+        "/api/test/x/../private/",
+        "/api/%74est/%70rivate",
+        "/api/test/private/.",
+        "/api/test/private?a=b",
+    ] {
+        let answer = raw_get(server.address(), target.as_bytes(), &[]).await;
+        assert_eq!(answer.status, 401, "{target}");
+        assert!(answer.body.is_empty(), "{target}");
+    }
+    for target in ["/api/test/private//", "/api/test/private%2f", "/api/test/private/..%2f"] {
+        assert_eq!(raw_get(server.address(), target.as_bytes(), &[]).await.status, 404, "{target}");
+    }
+}
+
+#[tokio::test]
+async fn a_refusal_of_the_path_is_not_counted_or_logged_as_a_request() {
+    let server = server_with(&[]).await;
+    let before = server.client().get("/api/test/counts").await.json::<Value>();
+
+    let refused = raw_get(server.address(), b"/health/live%00", &[]).await;
+    let after = server.client().get("/api/test/counts").await.json::<Value>();
+
+    assert_eq!(refused.status, 400);
+    assert_eq!(refused.header("connection"), Some("close"));
+    // The first `counts` is in the second answer; the refusal is not.
+    assert_eq!(after["requests"].as_u64(), before["requests"].as_u64().map(|n| n + 1));
+    assert_eq!(after["clientErrors"], before["clientErrors"]);
+}
+
+/// Not part of the ordinary run: it asks the first server, which the
+/// integrator's `oracle` script starts in a container, the same questions.
+///
+/// ```sh
+/// oracle start paths 5192 Production
+/// ORACLE_ADDRESS=127.0.0.1:5192 cargo test -p stellarr-api --test api \
+///     pipeline::paths_are_read_as_the_first_server_reads_them -- --ignored --nocapture
+/// oracle stop paths
+/// ```
+#[tokio::test]
+#[ignore = "needs the first server: see the doc comment"]
+async fn paths_are_read_as_the_first_server_reads_them() {
+    let oracle: std::net::SocketAddr = std::env::var("ORACLE_ADDRESS")
+        .unwrap_or_else(|_| "127.0.0.1:5192".into())
+        .parse()
+        .expect("an address");
+    let server = server_with(&[]).await;
+    let mut different = Vec::new();
+    let long = [b"/health/live?".as_slice(), &vec![b'a'; 9000]].concat();
+    let mut cases: Vec<(String, Vec<u8>, &str, Option<&str>)> = SPELLINGS
+        .iter()
+        .map(|(target, _)| (String::from_utf8_lossy(target).into_owned(), target.to_vec(), "GET", None))
+        .collect();
+    cases.push(("a request line over 8 KiB".into(), long, "GET", None));
+    // Not read as a fragment by the server's HTTP library; here it is dropped
+    // and the rest is served, there it is refused.
+    cases.push(("a fragment".into(), b"/health/live#frag".to_vec(), "GET", Some("fragment")));
+    cases.push(("a backslash".into(), b"/health\\live".to_vec(), "GET", None));
+    // The first server's gate is bypassed by a slash at the end of the path
+    // (it judges the path as written and routes the path without it); here
+    // the gate and the router read the same path.
+    cases.push(("the first server's gate, slash at the end".into(), b"/api/session/".to_vec(), "GET", Some("gate")));
+    // Letter case: routes are matched with it here.
+    cases.push(("letter case".into(), b"/HEALTH/live".to_vec(), "GET", Some("case")));
+
+    for (label, target, method, known) in cases {
+        let theirs = raw_send(oracle, method, &target, &[]).await;
+        let ours = raw_send(server.address(), method, &target, &[]).await;
+        let describe = |answer: &crate::support::Answer| {
+            format!("{} {:?} {}", answer.status, answer.header("content-type"), answer.body.len())
+        };
+        // The first server writes its JSON in chunks and this one with a length.
+        let same = theirs.status == ours.status && theirs.body == ours.body
+            || (theirs.status == 200 && ours.status == 200);
+        match (same, known) {
+            (true, _) => println!("same      {label}"),
+            (false, Some(why)) => println!("known     {label} ({why}: {} / {})", describe(&theirs), describe(&ours)),
+            (false, None) => {
+                println!("DIFFERENT {label}: first server {}, this one {}", describe(&theirs), describe(&ours));
+                different.push(label);
+            }
+        }
+    }
+    assert!(different.is_empty(), "{different:?}");
 }

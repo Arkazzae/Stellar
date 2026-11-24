@@ -53,7 +53,11 @@ enum Verdict {
 pub async fn answer(headers: &HeaderMap, download: Download) -> Response {
     let modified = download.modified.unix_seconds();
     let mut response = Response::new(Body::empty());
-    put(&mut response, header::LAST_MODIFIED, &http_date_of(modified));
+    put(
+        &mut response,
+        header::LAST_MODIFIED,
+        &http_date_of(modified),
+    );
 
     match verdict(headers, modified) {
         Verdict::NotModified => {
@@ -189,7 +193,9 @@ fn requested_range(headers: &HeaderMap, modified: i64, length: u64) -> Range {
         return Range::Whole;
     }
     match (from, to) {
-        (Some(from), to) if from < length => Range::Part(from, to.map_or(length - 1, |to| to.min(length - 1))),
+        (Some(from), to) if from < length => {
+            Range::Part(from, to.map_or(length - 1, |to| to.min(length - 1)))
+        }
         (Some(_), _) => Range::Unsatisfiable,
         (None, Some(last)) if last > 0 => Range::Part(length.saturating_sub(last), length - 1),
         (None, _) => Range::Unsatisfiable,
@@ -269,7 +275,9 @@ pub fn content_disposition(name: &str) -> String {
 fn stream(mut file: File, start: u64, length: u64) -> Body {
     let (mut sender, body) = Channel::<Bytes, io::Error>::new(CHUNKS_IN_FLIGHT);
     tokio::spawn(async move {
-        if start > 0 && let Err(error) = file.seek(SeekFrom::Start(start)).await {
+        if start > 0
+            && let Err(error) = file.seek(SeekFrom::Start(start)).await
+        {
             return sender.abort(error);
         }
         let mut left = length;
@@ -303,23 +311,65 @@ mod tests {
     #[test]
     fn the_name_is_written_for_old_and_new_browsers() {
         for (name, expected) in [
-            ("plain.bin", "attachment; filename=plain.bin; filename*=UTF-8''plain.bin"),
-            ("a b.bin", "attachment; filename=\"a b.bin\"; filename*=UTF-8''a%20b.bin"),
-            ("ü.bin", "attachment; filename=_.bin; filename*=UTF-8''%C3%BC.bin"),
-            ("a\"b.bin", "attachment; filename=\"a\\\"b.bin\"; filename*=UTF-8''a%22b.bin"),
-            ("a;b.bin", "attachment; filename=\"a;b.bin\"; filename*=UTF-8''a%3Bb.bin"),
-            ("a%b.bin", "attachment; filename=a%b.bin; filename*=UTF-8''a%25b.bin"),
-            ("a'b.bin", "attachment; filename=a'b.bin; filename*=UTF-8''a%27b.bin"),
-            ("a\\b.bin", "attachment; filename=\"a\\\\b.bin\"; filename*=UTF-8''a%5Cb.bin"),
-            ("~x.bin", "attachment; filename=~x.bin; filename*=UTF-8''~x.bin"),
-            ("日本.bin", "attachment; filename=__.bin; filename*=UTF-8''%E6%97%A5%E6%9C%AC.bin"),
-            ("😀", "attachment; filename=__; filename*=UTF-8''%F0%9F%98%80"),
+            (
+                "plain.bin",
+                "attachment; filename=plain.bin; filename*=UTF-8''plain.bin",
+            ),
+            (
+                "a b.bin",
+                "attachment; filename=\"a b.bin\"; filename*=UTF-8''a%20b.bin",
+            ),
+            (
+                "ü.bin",
+                "attachment; filename=_.bin; filename*=UTF-8''%C3%BC.bin",
+            ),
+            (
+                "a\"b.bin",
+                "attachment; filename=\"a\\\"b.bin\"; filename*=UTF-8''a%22b.bin",
+            ),
+            (
+                "a;b.bin",
+                "attachment; filename=\"a;b.bin\"; filename*=UTF-8''a%3Bb.bin",
+            ),
+            (
+                "a%b.bin",
+                "attachment; filename=a%b.bin; filename*=UTF-8''a%25b.bin",
+            ),
+            (
+                "a'b.bin",
+                "attachment; filename=a'b.bin; filename*=UTF-8''a%27b.bin",
+            ),
+            (
+                "a\\b.bin",
+                "attachment; filename=\"a\\\\b.bin\"; filename*=UTF-8''a%5Cb.bin",
+            ),
+            (
+                "~x.bin",
+                "attachment; filename=~x.bin; filename*=UTF-8''~x.bin",
+            ),
+            (
+                "日本.bin",
+                "attachment; filename=__.bin; filename*=UTF-8''%E6%97%A5%E6%9C%AC.bin",
+            ),
+            (
+                "😀",
+                "attachment; filename=__; filename*=UTF-8''%F0%9F%98%80",
+            ),
             ("a\tb", "attachment; filename=a_b; filename*=UTF-8''a%09b"),
-            ("a\u{7f}b", "attachment; filename=a_b; filename*=UTF-8''a%7Fb"),
+            (
+                "a\u{7f}b",
+                "attachment; filename=a_b; filename*=UTF-8''a%7Fb",
+            ),
             ("@x", "attachment; filename=\"@x\"; filename*=UTF-8''%40x"),
             ("a*b", "attachment; filename=a*b; filename*=UTF-8''a%2Ab"),
-            ("a!b$c&d^e`f|g", "attachment; filename=a!b$c&d^e`f|g; filename*=UTF-8''a!b$c&d^e`f|g"),
-            ("a(b)", "attachment; filename=\"a(b)\"; filename*=UTF-8''a%28b%29"),
+            (
+                "a!b$c&d^e`f|g",
+                "attachment; filename=a!b$c&d^e`f|g; filename*=UTF-8''a!b$c&d^e`f|g",
+            ),
+            (
+                "a(b)",
+                "attachment; filename=\"a(b)\"; filename*=UTF-8''a%28b%29",
+            ),
         ] {
             assert_eq!(content_disposition(name), expected, "{name:?}");
         }
@@ -335,12 +385,31 @@ mod tests {
         assert_eq!(read("items=1-2"), Some((Some(1), Some(2))));
         assert_eq!(read("bytes=5-"), Some((Some(5), None)));
         assert_eq!(read("bytes=-5"), Some((None, Some(5))));
-        assert_eq!(read("bytes=0-9223372036854775807"), Some((Some(0), Some(i64::MAX as u64))));
+        assert_eq!(
+            read("bytes=0-9223372036854775807"),
+            Some((Some(0), Some(i64::MAX as u64)))
+        );
         for refused in [
-            "", "bytes", "bytes=", "bytes=-", "bytes=1", "bytes=5-2", "bytes=+1-5", "bytes=1-+5",
-            "bytes=1-2-3", "bytes=x0-5", "bytes=0-5x", "bytes==0-5", "bytes 0-5", "=1-2", "by tes=1-2",
-            "bytes=0-9223372036854775808", "bytes=-9223372036854775808", "bytes=\"0-5\"",
-            "bytes=0000000000000000000000000-5", "bytes=0-00000000000000000000000005",
+            "",
+            "bytes",
+            "bytes=",
+            "bytes=-",
+            "bytes=1",
+            "bytes=5-2",
+            "bytes=+1-5",
+            "bytes=1-+5",
+            "bytes=1-2-3",
+            "bytes=x0-5",
+            "bytes=0-5x",
+            "bytes==0-5",
+            "bytes 0-5",
+            "=1-2",
+            "by tes=1-2",
+            "bytes=0-9223372036854775808",
+            "bytes=-9223372036854775808",
+            "bytes=\"0-5\"",
+            "bytes=0000000000000000000000000-5",
+            "bytes=0-00000000000000000000000005",
         ] {
             assert_eq!(read(refused), None, "{refused:?}");
         }
@@ -397,14 +466,24 @@ mod tests {
 
     #[test]
     fn the_conditions_of_a_request_decide_whether_the_file_is_sent() {
-        let on = |name: header::HeaderName, date: &str| verdict(&headers_of(&[(name, date)]), MODIFIED);
+        let on =
+            |name: header::HeaderName, date: &str| verdict(&headers_of(&[(name, date)]), MODIFIED);
 
-        assert!(on(header::IF_MODIFIED_SINCE, "Fri, 20 Nov 2026 10:11:12 GMT") == Verdict::NotModified);
+        assert!(
+            on(header::IF_MODIFIED_SINCE, "Fri, 20 Nov 2026 10:11:12 GMT") == Verdict::NotModified
+        );
         assert!(on(header::IF_MODIFIED_SINCE, "Fri, 20 Nov 2026 10:11:11 GMT") == Verdict::Process);
         assert!(on(header::IF_MODIFIED_SINCE, "not a date") == Verdict::Unspecified);
-        assert!(on(header::IF_UNMODIFIED_SINCE, "Fri, 20 Nov 2026 10:11:11 GMT") == Verdict::PreconditionFailed);
-        assert!(on(header::IF_UNMODIFIED_SINCE, "Fri, 20 Nov 2026 10:11:12 GMT") == Verdict::Process);
-        assert!(on(header::IF_MODIFIED_SINCE, "Fri, 20 Nov 2090 10:11:12 GMT") == Verdict::Unspecified);
+        assert!(
+            on(header::IF_UNMODIFIED_SINCE, "Fri, 20 Nov 2026 10:11:11 GMT")
+                == Verdict::PreconditionFailed
+        );
+        assert!(
+            on(header::IF_UNMODIFIED_SINCE, "Fri, 20 Nov 2026 10:11:12 GMT") == Verdict::Process
+        );
+        assert!(
+            on(header::IF_MODIFIED_SINCE, "Fri, 20 Nov 2090 10:11:12 GMT") == Verdict::Unspecified
+        );
         // The heaviest wins: a request that is modified for one condition and
         // not for the other is served.
         let both = headers_of(&[
