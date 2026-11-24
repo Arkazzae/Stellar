@@ -402,3 +402,68 @@ async fn ten_codes_an_hour_are_mailed_and_the_next_is_refused_for_an_hour() {
     assert_eq!(title(&limited), "Too many codes have been sent. Try again later.");
     assert_eq!(instance.smtp.until(10).await.len(), 10);
 }
+
+#[tokio::test]
+async fn verifying_counts_against_the_login_limit() {
+    let instance = Instance::with(
+        &["maya"],
+        &[
+            ("ASPNETCORE_ENVIRONMENT", "Production"),
+            ("Rtc__TurnSharedSecret", "a-secret"),
+            ("RateLimiting__Login__PermitLimit", "3"),
+        ],
+    )
+    .await;
+    let client = instance.server.client();
+    let body = json!({"challengeId": Id::random().to_string(), "code": "000000"});
+
+    for _ in 0..3 {
+        assert_eq!(post(&client, "/api/auth/mfa/verify", body.clone()).await.status, 401);
+    }
+    let refused = post(&client, "/api/auth/mfa/verify", body).await;
+    assert_eq!(refused.status, 429);
+}
+
+#[tokio::test]
+async fn a_sign_in_that_asked_to_link_an_identity_clears_the_cookie_of_the_identity() {
+    use stellarr_api::auth::tokens;
+
+    let instance = Instance::with(&["maya"], &[]).await;
+    instance.require();
+    let app = instance.enrolled("maya", false).await;
+    let (client, id) = waiting(&instance, "maya").await;
+    // An identity waits for this browser, and the sign-in asked to link it.
+    let (identity, secret) = (Id::random(), "a secret only the browser has");
+    let database = instance.database();
+    database
+        .execute(
+            "INSERT INTO \"PendingExternalIdentities\" (\"Id\", \"SecretHash\", \"ProviderId\", \"Issuer\", \"Subject\", \"EmailVerified\",
+                 \"Amr\", \"ShortLived\", \"CreatedAt\", \"ExpiresAt\")
+             VALUES (?1, ?2, 'default', 'https://issuer.test', 'subject', 0, '[]', 0, ?3, ?4)",
+            rusqlite::params![identity, tokens::hash(secret), Timestamp::now(), Timestamp::now().plus(std::time::Duration::from_secs(600))],
+        )
+        .unwrap();
+    database
+        .execute("UPDATE \"AuthChallenges\" SET \"PendingIdentityId\" = ?1 WHERE \"Id\" = ?2", rusqlite::params![identity, Id::parse(&id).unwrap()])
+        .unwrap();
+    let cookie = format!("stellarr-dev-pending-identity={}.{secret}", identity.to_string().replace('-', ""));
+
+    let answered = client
+        .send(
+            Request::new(http::Method::POST, "/api/auth/mfa/verify")
+                .json(&json!({"challengeId": id, "methodId": app.method, "code": code(&app.secret, 1)}))
+                .header("Cookie", &cookie),
+        )
+        .await;
+
+    assert_eq!(answered.status, 200, "{}", answered.text());
+    // No provider is configured yet: the link is refused, the sign-in stands.
+    assert_eq!(answered.json::<Value>()["identityLink"], "failed");
+    assert!(
+        cookies(&answered).iter().any(|line| line.starts_with("stellarr-dev-pending-identity=;") && line.contains("1970")),
+        "{:?}",
+        cookies(&answered)
+    );
+    let waiting: i64 = database.query_row("SELECT COUNT(*) FROM \"PendingExternalIdentities\"", [], |row| row.get(0)).unwrap();
+    assert_eq!(waiting, 0);
+}

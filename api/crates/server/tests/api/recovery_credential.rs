@@ -106,3 +106,37 @@ async fn a_credential_that_ran_out_or_is_of_a_disabled_account_or_an_older_recov
     }
     assert_eq!(redeem(&instance, &newer).await.status, 200);
 }
+
+#[tokio::test]
+async fn a_credential_is_between_16_and_512_utf16_units_long() {
+    let instance = Instance::with(&["maya", "noor", "omar", "pia", "quinn"], &[]).await;
+    let names = ["maya", "noor", "omar", "pia", "quinn"];
+    let mut users = Vec::new();
+    for name in names {
+        recovered(&instance, name);
+        users.push(name);
+    }
+    let set = |name: &str, token: &str| {
+        instance
+            .database()
+            .execute(
+                "UPDATE \"CliRecoveryCredentials\" SET \"TokenHash\" = ?1 WHERE \"UserId\" = (SELECT \"Id\" FROM \"Users\" WHERE \"Username\" = ?2)",
+                rusqlite::params![stellarr_api::auth::tokens::hash(token), name],
+            )
+            .unwrap();
+    };
+    // One past a bound is refused though the credential is the account's: the
+    // length is looked at, and a sign of the astral plane counts as two units.
+    let astral = "\u{1D518}";
+    for (user, too) in [("maya", "a".repeat(15)), ("maya", "a".repeat(513)), ("maya", astral.repeat(7)), ("maya", astral.repeat(257))] {
+        set(user, &too);
+        assert_eq!(redeem(&instance, &too).await.status, 400, "{} units", too.encode_utf16().count());
+    }
+    // At a bound it is read.
+    for (user, token) in [("noor", "a".repeat(16)), ("omar", "a".repeat(512)), ("pia", astral.repeat(8)), ("quinn", astral.repeat(256))] {
+        set(user, &token);
+        let redeemed = redeem(&instance, &token).await;
+        assert_eq!(redeemed.status, 200, "{} units: {}", token.encode_utf16().count(), redeemed.text());
+    }
+    let _ = users;
+}
