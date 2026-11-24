@@ -32,6 +32,8 @@ pub async fn wrong_password_wait() {
 /// a refusal did the work of any other.
 static DERIVATIONS: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
 
+/// Observe password-derivation work in integration tests.
+#[doc(hidden)]
 pub fn derivations() -> u64 {
     DERIVATIONS.load(std::sync::atomic::Ordering::Relaxed)
 }

@@ -151,6 +151,8 @@ pub fn max_bytes(spec: &UploadSpec, options: &UploadOptions) -> i64 {
 pub mod image {
     use super::{RULES, UploadKind, is_gif, is_jpeg, is_png, is_webp, rule_named};
 
+    /// Inspect supported image types in tests.
+    #[doc(hidden)]
     pub fn is_allowed_content_type(content_type: &str) -> bool {
         rule_named(content_type).is_some_and(|rule| rule.kind == UploadKind::Image)
     }
@@ -168,6 +170,8 @@ pub mod image {
     }
 
     /// The extension of an image type, with its dot.
+    /// Inspect image extensions in tests.
+    #[doc(hidden)]
     pub fn extension_for(content_type: &str) -> Option<&'static str> {
         RULES
             .iter()

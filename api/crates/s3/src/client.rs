@@ -333,6 +333,8 @@ impl UploadPlan {
 
     /// Where part `number` (from 1) of an object of `length` bytes starts and
     /// how long it is.
+    /// Inspect multipart boundaries in tests.
+    #[doc(hidden)]
     pub fn part_span(&self, number: u32, length: u64) -> Option<(u64, u64)> {
         let Self::Multipart { part_size, parts } = *self else {
             return None;

@@ -100,6 +100,8 @@ pub fn load(
 
 /// Writes the row with the installation's defaults when the server has none,
 /// as the first change of any setting did.
+/// Set up a stored operations row for housekeeping tests.
+#[cfg(test)]
 pub fn ensure(transaction: &Transaction, settings: &Settings, server: Id) -> rusqlite::Result<()> {
     let (loaded, name) = load(transaction, settings, server)?;
     if !loaded.stored {

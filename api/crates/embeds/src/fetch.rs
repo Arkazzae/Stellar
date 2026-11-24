@@ -223,12 +223,16 @@ impl Fetcher {
     /// Narrows or widens the addresses that may be connected to, whatever
     /// the settings say. The default is public addresses only unless the
     /// settings allow private networks.
+    /// Override the address policy in tests.
+    #[doc(hidden)]
     pub fn with_address_policy(mut self, policy: AddressPolicy) -> Fetcher {
         self.policy = policy;
         self
     }
 
     /// Asks another endpoint than YouTube's for oEmbed answers.
+    /// Point oEmbed at a test server.
+    #[doc(hidden)]
     pub fn with_oembed_endpoint(mut self, endpoint: impl Into<String>) -> Fetcher {
         self.oembed_endpoint = endpoint.into();
         self
