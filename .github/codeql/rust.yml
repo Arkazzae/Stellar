@@ -1,0 +1,9 @@
+# What CodeQL leaves out of the Rust analysis: the code that only tests run.
+# Their passwords, keys and salts are fixed on purpose, so that a test knows
+# what to expect, and an assertion that a secret is not logged has to name the
+# secret. A pattern may start or end with `**` but not hold one in the middle.
+paths-ignore:
+  - '**/tests/**'
+  - '**/*_tests.rs'
+  - '**/tests.rs'
+  - '**/testing.rs'
