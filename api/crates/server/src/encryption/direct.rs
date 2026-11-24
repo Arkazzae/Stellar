@@ -161,7 +161,7 @@ async fn switch(state: AppState, caller: Caller, id: Id, action: Action) -> ApiR
             // A request reaches the other person like a message does:
             // somebody who takes direct messages only from friends takes
             // requests only from them too.
-            if matches!(action, Action::Request) && !store::peer_takes_messages_from(db, user, peer)? {
+            if matches!(action, Action::Request) && !crate::direct::peer_takes_messages_from(db, user, peer)? {
                 return Ok(Ready::Declined);
             }
             if action.needs_account_key() && store::account_key(db, user)?.is_none() {
