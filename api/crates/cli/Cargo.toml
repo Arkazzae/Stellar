@@ -21,10 +21,8 @@ stellarr-oidc = { path = "../oidc" }
 stellarr-outbound = { path = "../outbound" }
 stellarr-timezone = { path = "../timezone" }
 rusqlite = { workspace = true }
-tokio = { workspace = true, features = ["rt", "macros", "signal", "sync", "time", "net"] }
-
-[dev-dependencies]
 serde_json = { workspace = true }
+tokio = { workspace = true, features = ["rt", "macros", "signal", "sync", "time", "net"] }
 
 [lints]
 workspace = true

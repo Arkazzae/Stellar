@@ -1,9 +1,7 @@
 //! The contents list at the root of every archive.
 //!
-//! It is written the way the first server wrote it (camelCase members in a
-//! fixed order, indented by two spaces, every character outside printable
-//! ASCII and `"&'+<>` and the backtick as `\uXXXX`), so an archive made by
-//! either server reads on the other.
+//! It is written as JSON with camelCase members in a fixed order, indented by
+//! two spaces, text as it is.
 
 use serde::{Deserialize, Serialize};
 
@@ -50,28 +48,7 @@ pub struct Manifest {
 impl Manifest {
     /// The bytes of `manifest.json`.
     pub fn to_json(&self) -> Vec<u8> {
-        let mut out = String::from("{\n");
-        let mut member = |name: &str, value: String, last: bool| {
-            out.push_str("  \"");
-            out.push_str(name);
-            out.push_str("\": ");
-            out.push_str(&value);
-            out.push_str(if last { "\n" } else { ",\n" });
-        };
-        member("format", text(&self.format), false);
-        member("version", self.version.to_string(), false);
-        member("createdAt", text(&self.created_at.to_wire_text()), false);
-        member("instanceName", text(&self.instance_name), false);
-        member("parts", list(&self.parts), false);
-        member("databaseBytes", self.database_bytes.to_string(), false);
-        member("objectCount", self.object_count.to_string(), false);
-        member("objectBytes", self.object_bytes.to_string(), false);
-        member("missingObjects", list(&self.missing_objects), false);
-        member("keyFiles", self.key_files.to_string(), false);
-        member("environmentSecrets", list(&self.environment_secrets), false);
-        member("instanceFiles", self.instance_files.to_string(), true);
-        out.push('}');
-        out.into_bytes()
+        serde_json::to_vec_pretty(self).expect("a manifest is written as JSON")
     }
 
     /// Reads a manifest of a Stellarr backup, or none when the bytes are not
@@ -85,40 +62,6 @@ impl Manifest {
     pub fn has_part(&self, name: &str) -> bool {
         self.parts.iter().any(|part| part == name)
     }
-}
-
-fn text(value: &str) -> String {
-    let mut out = String::from("\"");
-    for unit in value.encode_utf16().collect::<Vec<_>>().iter().copied() {
-        match unit {
-            0x22 => out.push_str("\\u0022"),
-            0x5c => out.push_str("\\\\"),
-            0x08 => out.push_str("\\b"),
-            0x09 => out.push_str("\\t"),
-            0x0a => out.push_str("\\n"),
-            0x0c => out.push_str("\\f"),
-            0x0d => out.push_str("\\r"),
-            0x26 | 0x27 | 0x2b | 0x3c | 0x3e | 0x60 => out.push_str(&format!("\\u{unit:04X}")),
-            0x20..=0x7e => out.push(unit as u8 as char),
-            _ => out.push_str(&format!("\\u{unit:04X}")),
-        }
-    }
-    out.push('"');
-    out
-}
-
-fn list(items: &[String]) -> String {
-    if items.is_empty() {
-        return "[]".to_string();
-    }
-    let mut out = String::from("[\n");
-    for (at, item) in items.iter().enumerate() {
-        out.push_str("    ");
-        out.push_str(&text(item));
-        out.push_str(if at + 1 == items.len() { "\n" } else { ",\n" });
-    }
-    out.push_str("  ]");
-    out
 }
 
 #[cfg(test)]
@@ -143,11 +86,11 @@ mod tests {
     }
 
     #[test]
-    fn the_json_is_written_as_the_first_server_wrote_it() {
+    fn the_json_is_written_indented_with_its_text_as_it_is() {
         let json = String::from_utf8(sample().to_json()).unwrap();
         assert_eq!(
             json,
-            "{\n  \"format\": \"stellarr-backup\",\n  \"version\": 1,\n  \"createdAt\": \"2026-11-24T10:20:30.1234567Z\",\n  \"instanceName\": \"Ja\\u015B \\u0026 \\u003CMa\\u0142gosia\\u003E\",\n  \"parts\": [\n    \"database\",\n    \"objects\"\n  ],\n  \"databaseBytes\": 4096,\n  \"objectCount\": 2,\n  \"objectBytes\": 10,\n  \"missingObjects\": [],\n  \"keyFiles\": 1,\n  \"environmentSecrets\": [\n    \"STELLARR_X\"\n  ],\n  \"instanceFiles\": 0\n}"
+            "{\n  \"format\": \"stellarr-backup\",\n  \"version\": 1,\n  \"createdAt\": \"2026-11-24T10:20:30.1234567Z\",\n  \"instanceName\": \"Ja\u{15b} & <Ma\u{142}gosia>\",\n  \"parts\": [\n    \"database\",\n    \"objects\"\n  ],\n  \"databaseBytes\": 4096,\n  \"objectCount\": 2,\n  \"objectBytes\": 10,\n  \"missingObjects\": [],\n  \"keyFiles\": 1,\n  \"environmentSecrets\": [\n    \"STELLARR_X\"\n  ],\n  \"instanceFiles\": 0\n}"
         );
     }
 

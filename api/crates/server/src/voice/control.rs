@@ -19,7 +19,11 @@ use serde_json::value::RawValue;
 use stellarr_outbound::header::{AUTHORIZATION, CONTENT_TYPE};
 use stellarr_outbound::{AddressPolicy, Body, Client, HeaderValue, Method, Request, StatusCode};
 
-use super::json;
+/// A JSON string with its quotes, as it is written.
+fn text(value: &str) -> String {
+    serde_json::Value::String(value.to_string()).to_string()
+}
+
 use crate::settings::{MediaServerSettings, MediaTiming};
 use crate::values::Id;
 
@@ -216,7 +220,7 @@ impl Control {
 
     /// Hands the media server the browser's description of what it publishes.
     pub async fn send_offer(&self, session: &str, sdp: &str) -> Result<SignalOutcome, Unavailable> {
-        let body = format!("{{\"sdp\":{}}}", json::text(sdp));
+        let body = format!("{{\"sdp\":{}}}", text(sdp));
         self.signal(session, "offer", body).await
     }
 
@@ -229,7 +233,7 @@ impl Control {
     ) -> Result<SignalOutcome, Unavailable> {
         let body = format!(
             "{{\"sdp\":{},\"negotiationId\":{negotiation}}}",
-            json::text(sdp)
+            text(sdp)
         );
         self.signal(session, "answer", body).await
     }
@@ -241,7 +245,9 @@ impl Control {
         session: &str,
         candidate: Option<&str>,
     ) -> Result<SignalOutcome, Unavailable> {
-        let candidate = candidate.map_or_else(|| "null".to_string(), json::compact);
+        // The document is handed on as the browser wrote it; the caller has
+        // checked that it is JSON.
+        let candidate = candidate.map_or("null", str::trim);
         self.signal(session, "candidate", format!("{{\"candidate\":{candidate}}}"))
             .await
     }
@@ -252,7 +258,7 @@ impl Control {
         session: &str,
         mids: &[String],
     ) -> Result<SignalOutcome, Unavailable> {
-        let list: Vec<String> = mids.iter().map(|mid| json::text(mid)).collect();
+        let list: Vec<String> = mids.iter().map(|mid| text(mid)).collect();
         self.signal(session, "subscriptions", format!("{{\"mids\":[{}]}}", list.join(",")))
             .await
     }

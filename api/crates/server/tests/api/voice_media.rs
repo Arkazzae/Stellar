@@ -270,7 +270,7 @@ async fn signals_reach_the_media_server_in_the_form_of_its_control_api_and_in_or
     peer.media(rig.salon, &session, "candidate", CANDIDATE).await;
     peer.media(rig.salon, &session, "candidate", "null").await;
     peer.media(rig.salon, &session, "answer", ANSWER).await;
-    // Whitespace and escapes are written the way the first server wrote them.
+    // A description is written as JSON text, a candidate as the browser wrote it.
     peer.media(rig.salon, &session, "offer", "{ \"type\" : \"offer\",\"sdp\":\"a+b <c> \\u00e9\\r\\n\" }").await;
     peer.media(rig.salon, &session, "candidate", " { \"candidate\" : \"a+b\" , \"n\": 1.50, \"t\": true } ").await;
 
@@ -284,8 +284,8 @@ async fn signals_reach_the_media_server_in_the_form_of_its_control_api_and_in_or
     assert_eq!(signals[1].body, format!("{{\"candidate\":{CANDIDATE}}}"));
     assert_eq!(signals[2].body, "{\"candidate\":null}");
     assert_eq!(signals[3].body, "{\"sdp\":\"v=0 answer\",\"negotiationId\":7}");
-    assert_eq!(signals[4].body, "{\"sdp\":\"a\\u002Bb \\u003Cc\\u003E \\u00E9\\r\\n\"}");
-    assert_eq!(signals[5].body, "{\"candidate\":{\"candidate\":\"a\\u002Bb\",\"n\":1.50,\"t\":true}}");
+    assert_eq!(signals[4].body, "{\"sdp\":\"a+b <c> \u{e9}\\r\\n\"}");
+    assert_eq!(signals[5].body, "{\"candidate\":{ \"candidate\" : \"a+b\" , \"n\": 1.50, \"t\": true }}");
 }
 
 #[tokio::test]
