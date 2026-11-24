@@ -121,15 +121,17 @@ fn compare_evaluations(generate: impl FnOnce(&mut dyn FnMut(bool, bool, i64, &[i
             record(owner, at_channel, base, held, levels, &mut bytes);
             expected.push(evaluator::evaluate(&Input { is_owner: owner, base, held, levels, at_channel }));
             if expected.len() == 20_000 {
-                stdin.write_all(&bytes).expect("write");
+                // Tell the reader first: the harness answers as it reads, and
+                // stops reading when nobody takes its answers.
                 sender.send(std::mem::take(&mut expected)).expect("send");
+                stdin.write_all(&bytes).expect("write");
                 bytes.clear();
             }
         };
         generate(&mut push);
         if !expected.is_empty() {
-            stdin.write_all(&bytes).expect("write");
             sender.send(expected).expect("send");
+            stdin.write_all(&bytes).expect("write");
         }
         // Closing the pipe ends the harness.
     });
@@ -587,7 +589,27 @@ fn an_id_in_a_header_is_read_as_the_first_server_reads_one() {
         "00000000-0000-0000-0000-000000000000", "{0x1,0x1,0x1,{0x1,0x1,0x1,0x1,0x1,0x1,0x1,0x1}}", "ab", "cdef",
     ];
     for round in 0..60_000 {
-        let text: String = if round % 3 == 0 {
+        let text: String = if round % 3 == 1 {
+            // Groups spelled with a `0x` in front, and fewer digits, and other damage.
+            let id = Id::random().to_string();
+            let groups: Vec<String> = id
+                .split('-')
+                .map(|group| match random.below(6) {
+                    0 => format!("0x{}", &group[2..]),
+                    1 => format!("0X{}", &group[2..]),
+                    2 => format!("0x{}", &group[2..]).replacen('0', "g", 1),
+                    3 => format!("{}0x", &group[..group.len() - 2]),
+                    4 => format!("0x{}", "0".repeat(group.len() - 2)),
+                    _ => group.to_string(),
+                })
+                .collect();
+            let joined = groups.join("-");
+            match random.below(3) {
+                0 => joined,
+                1 => format!("{{{joined}}}"),
+                _ => joined.replace('-', ""),
+            }
+        } else if round % 3 == 0 {
             // A real id in one of its spellings, then damaged.
             let id = Id::random().to_string();
             let spelled = match random.below(6) {
@@ -626,4 +648,198 @@ fn an_id_in_a_header_is_read_as_the_first_server_reads_one() {
     println!("ids: {cases} cases, {differences} differences");
     lines.finish();
     assert_eq!(differences, 0);
+}
+
+// ---- The same database in both servers
+
+/// Arranges servers of random shape in a copy of the first server's database
+/// and writes what these rules say each person sees, for
+/// `tests/permissions-shared-database.sh` to compare with what the first
+/// server answers on the same file.
+///
+/// `PERMISSIONS_DB` is the database file, `PERMISSIONS_USERS` a file of
+/// `name id` lines of accounts that exist in it, `PERMISSIONS_EXPECTED` where
+/// the answers are written, `PERMISSIONS_SERVERS` how many servers to make and
+/// `PERMISSIONS_SEED` which shapes.
+#[test]
+#[ignore = "run by tests/permissions-shared-database.sh"]
+fn arrange_servers_in_a_shared_database_and_write_what_each_person_sees() {
+    use rusqlite::{Connection, params};
+    use stellarr_api::permissions::{authorization, ownership, visibility};
+    use stellarr_api::values::Timestamp;
+
+    let var = |name: &str| std::env::var(name).unwrap_or_else(|_| panic!("{name} is not set"));
+    let db = Connection::open(var("PERMISSIONS_DB")).expect("the database");
+    db.pragma_update(None, "foreign_keys", true).expect("foreign keys");
+    let users: Vec<(String, Id)> = std::fs::read_to_string(var("PERMISSIONS_USERS"))
+        .expect("the users")
+        .lines()
+        .filter_map(|line| {
+            let (name, id) = line.split_once(' ')?;
+            Some((name.to_string(), Id::parse(id)?))
+        })
+        .collect();
+    let servers: u64 = var("PERMISSIONS_SERVERS").parse().expect("a count");
+    let mut random = Random(var("PERMISSIONS_SEED").parse::<u64>().expect("a seed") | 1);
+    let mut out = String::new();
+
+    // Permissions worth telling apart: the ones the rules treat in their own way, and a few others.
+    let kinds = [
+        privileges::VIEW_CHANNEL,
+        privileges::SEND_MESSAGES,
+        privileges::MANAGE_CHANNELS,
+        privileges::MANAGE_MESSAGES,
+        privileges::MANAGE_ROLES,
+    ];
+    let mask = |random: &mut Random| -> i64 {
+        let ordinary = kinds.iter().filter(|_| random.chance(3)).fold(0, |all, bit| all | bit);
+        // Administrator is rare, and an override that says it is ignored.
+        if random.chance(14) { ordinary | privileges::ADMINISTRATOR } else { ordinary }
+    };
+    for number in 0..servers {
+        let server = Id::random();
+        db.execute(
+            "INSERT INTO \"Servers\" (\"Id\", \"Name\", \"Description\", \"IsPublic\", \"CreatedAt\", \"SoundboardEveryoneCanPlay\", \"SoundboardRateLimited\") VALUES (?1, ?2, '', 0, ?3, 0, 0)",
+            params![server, format!("Shape {number}"), Timestamp::now()],
+        )
+        .expect("a server");
+        let role = |name: &str, position: i64, permissions: i64, system: bool, owner: bool| -> Id {
+            let id = Id::random();
+            db.execute(
+                "INSERT INTO \"ServerRoles\" (\"Id\", \"ServerId\", \"Name\", \"Color\", \"Permissions\", \"Position\", \"IsSystem\", \"IsOwner\") VALUES (?1, ?2, ?3, '#777777', ?4, ?5, ?6, ?7)",
+                params![id, server, name, permissions, position, system, owner],
+            )
+            .expect("a role");
+            id
+        };
+        let owner_role = role("Owner", 0, privileges::ALL, true, true);
+        // Most servers keep the usual base role; some lose view or have none.
+        let base_permissions = match random.below(5) {
+            0 => privileges::SEND_MESSAGES,
+            1 => 0,
+            _ => privileges::BASE_ROLE_DEFAULTS,
+        };
+        let others: Vec<Id> = (0..1 + random.below(4))
+            .map(|n| role(&format!("Role {n}"), 1 + random.below(3) as i64, mask(&mut random), false, false))
+            .collect();
+        let base_role = role("Member", 5, base_permissions, true, false);
+        let base = ServerRolesBase::of(&db, server, base_role);
+        let all_roles: Vec<Id> = std::iter::once(owner_role).chain(others.iter().copied()).chain([base_role]).collect();
+
+        let sections: Vec<Id> = (0..random.below(4)).map(|_| Id::random()).collect();
+        for (n, section) in sections.iter().enumerate() {
+            db.execute(
+                "INSERT INTO \"Sections\" (\"Id\", \"ServerId\", \"Name\", \"Position\") VALUES (?1, ?2, ?3, ?4)",
+                params![section, server, format!("Section {n}"), n as i64],
+            )
+            .expect("a section");
+        }
+        let mut channels: Vec<(Id, Option<Id>)> = Vec::new();
+        let mut texts: Vec<Id> = Vec::new();
+        for n in 0..2 + random.below(8) {
+            let id = Id::random();
+            let section = (!sections.is_empty() && random.chance(2)).then(|| sections[random.below(sections.len() as u64) as usize]);
+            let voice = random.chance(4);
+            if !voice {
+                texts.push(id);
+            }
+            db.execute(
+                "INSERT INTO \"Channels\" (\"Id\", \"ServerId\", \"Name\", \"Kind\", \"Position\", \"Topic\", \"SlowModeSeconds\", \"HideAfterInactivityHours\", \"UserLimit\", \"SectionId\") VALUES (?1, ?2, ?3, ?4, ?5, '', 0, 0, 0, ?6)",
+                params![id, server, format!("channel-{n}"), i64::from(voice), n as i64, section],
+            )
+            .expect("a channel");
+            channels.push((id, section));
+        }
+        // People: the first is the owner, the rest hold some of the roles.
+        for (position, (_, user)) in users.iter().enumerate() {
+            let held: Vec<Id> = if position == 0 {
+                vec![owner_role]
+            } else {
+                others.iter().copied().filter(|_| random.chance(3)).collect()
+            };
+            let by_id = stellarr_api::permissions::roles::ServerRoles::load(&db, server).expect("roles").by_id();
+            let held_roles: Vec<Role> = held.iter().map(|id| by_id[id]).collect();
+            let top = roles::top(&held_roles, base.role);
+            ownership::admit(&db, server, *user, top.id, top.id == base.role.id, (position == 0).then_some(1), Timestamp::now()).expect("a member");
+            ownership::set_roles(&db, server, *user, &held_roles, &base.role).expect("held roles");
+        }
+        // Overrides: of the roles and of members, at sections and channels, of every kind.
+        let places: Vec<(bool, Id)> = sections.iter().map(|s| (true, *s)).chain(channels.iter().map(|(c, _)| (false, *c))).collect();
+        for (section, place) in &places {
+            for role in &all_roles {
+                if *role != owner_role && random.chance(3) {
+                    let allow = mask(&mut random);
+                    let deny = if random.chance(6) { allow & mask(&mut random) | mask(&mut random) } else { mask(&mut random) & !allow };
+                    db.execute(
+                        "INSERT INTO \"PermissionOverrides\" (\"Id\", \"ServerId\", \"TargetType\", \"TargetId\", \"RoleId\", \"AllowMask\", \"DenyMask\") VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
+                        params![Id::random(), server, i64::from(*section), place, role, allow, deny],
+                    )
+                    .expect("an override");
+                }
+            }
+            for (_, user) in users.iter().skip(1) {
+                if random.chance(6) {
+                    db.execute(
+                        "INSERT INTO \"MemberPermissionOverrides\" (\"Id\", \"ServerId\", \"TargetType\", \"TargetId\", \"UserId\", \"AllowMask\", \"DenyMask\") VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
+                        params![Id::random(), server, i64::from(*section), place, user, mask(&mut random), mask(&mut random)],
+                    )
+                    .expect("an override of a member");
+                }
+            }
+        }
+        // What these rules say each person sees on this server.
+        for (name, user) in &users {
+            let permissions = authorization::server_wide(&db, *user, server).expect("permissions");
+            let view = visibility::of_member(&db, *user, server).expect("a view");
+            let mut seen_channels: Vec<String> = Vec::new();
+            let mut seen_sections: Vec<String> = Vec::new();
+            let mut sending = serde_json::Map::new();
+            for (channel, _) in &channels {
+                let held = authorization::held_at(&db, *user, &authorization::Scope::channel(server, *channel)).expect("held");
+                let visible = view.as_ref().is_none_or(|view| view.channels.contains(channel));
+                assert_eq!(held.views(), visible, "{name}: the view of a channel is what the layout says");
+                if visible {
+                    seen_channels.push(channel.to_string());
+                }
+                if !texts.contains(channel) {
+                    continue;
+                }
+                let answer = if !held.views() {
+                    404
+                } else if !held.has(privileges::SEND_MESSAGES) {
+                    403
+                } else {
+                    201
+                };
+                sending.insert(channel.to_string(), answer.into());
+            }
+            for section in &sections {
+                if view.as_ref().is_none_or(|view| view.sections.contains(section)) {
+                    seen_sections.push(section.to_string());
+                }
+            }
+            seen_channels.sort();
+            seen_sections.sort();
+            let line = serde_json::json!({
+                "user": name, "server": server.to_string(),
+                "permissions": privileges::to_names(permissions),
+                "channels": seen_channels, "sections": seen_sections,
+                "send": sending,
+            });
+            out.push_str(&line.to_string());
+            out.push('\n');
+        }
+    }
+    std::fs::write(var("PERMISSIONS_EXPECTED"), out).expect("the answers are written");
+}
+
+struct ServerRolesBase {
+    role: Role,
+}
+
+impl ServerRolesBase {
+    fn of(db: &rusqlite::Connection, server: Id, base: Id) -> ServerRolesBase {
+        let role = roles::ServerRoles::load(db, server).expect("roles").by_id()[&base];
+        ServerRolesBase { role }
+    }
 }
