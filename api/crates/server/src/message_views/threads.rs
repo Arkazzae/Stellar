@@ -5,7 +5,7 @@
 use axum::extract::State;
 use serde::Serialize;
 
-use super::binding::Guid;
+use crate::values::Guid;
 use crate::auth::Caller;
 use crate::database::DbError;
 use crate::messages::dto::{self, MessageDto, MessageReferenceDto};

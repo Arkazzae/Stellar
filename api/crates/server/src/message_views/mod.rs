@@ -9,7 +9,6 @@
 //!
 //! A message is written by [`crate::messages::dto`], as everywhere.
 
-mod binding;
 mod cursor;
 mod index;
 mod ordinal_case;

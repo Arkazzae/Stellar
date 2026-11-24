@@ -7,7 +7,7 @@ use rusqlite::{Connection, params};
 use serde::Serialize;
 use stellarr_messages::MessageKey;
 
-use super::binding::Guid;
+use crate::values::Guid;
 use super::cursor::{IndexCursor, Kind, query_hash};
 use super::search::build_query;
 use super::text;
