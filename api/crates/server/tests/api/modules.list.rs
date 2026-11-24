@@ -4,6 +4,7 @@ mod health;
 mod mail;
 mod oracle;
 mod pipeline;
+mod realtime;
 mod registration;
 mod sign_in;
 mod workers;

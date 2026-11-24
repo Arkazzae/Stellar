@@ -5,7 +5,7 @@
 //! and give it an accessor. Everything else reaches it through
 //! `State(state): State<AppState>`.
 
-use std::sync::Arc;
+use std::sync::{Arc, OnceLock};
 
 use stellarr_messages::Messages;
 
@@ -14,6 +14,7 @@ use crate::database::{Database, MutationGate};
 use crate::events::{EventPublisher, Presence};
 use crate::http::{AttemptLimiter, Metrics};
 use crate::mail::MailDelivery;
+use crate::realtime::Realtime;
 use crate::seal::Sealer;
 use crate::settings::Settings;
 
@@ -35,6 +36,7 @@ struct Inner {
     presence: Arc<dyn Presence>,
     setup_code: SetupCode,
     registration_gate: tokio::sync::Mutex<()>,
+    realtime: OnceLock<Arc<Realtime>>,
 }
 
 impl AppState {
@@ -57,6 +59,7 @@ impl AppState {
                 presence,
                 setup_code: SetupCode::default(),
                 registration_gate: tokio::sync::Mutex::new(()),
+                realtime: OnceLock::new(),
                 metrics: Metrics::default(),
                 mutation_gate: MutationGate::default(),
             }),
@@ -110,6 +113,24 @@ impl AppState {
     /// nobody is.
     pub fn presence_of(&self, user: crate::values::Id) -> String {
         self.inner.presence.presence_of(user)
+    }
+
+    /// What the hub knows of who is connected, for the rest of what a
+    /// handler asks of it (what other people see, who has a connection open).
+    pub fn presence(&self) -> &dyn Presence {
+        &*self.inner.presence
+    }
+
+    /// The realtime hub, when this process runs one. The workers that look
+    /// after its connections reach it here; handlers talk to it through
+    /// [`events`](Self::events) and [`presence`](Self::presence).
+    pub fn realtime(&self) -> Option<&Arc<Realtime>> {
+        self.inner.realtime.get()
+    }
+
+    /// Plugs the hub in, once, when the server starts.
+    pub(crate) fn plug_in_realtime(&self, realtime: Arc<Realtime>) {
+        let _ = self.inner.realtime.set(realtime);
     }
 
     /// The code the owner account is created with, while there is none.

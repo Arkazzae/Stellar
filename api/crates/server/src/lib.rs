@@ -5,6 +5,7 @@
 //! - [`http`]: the pipeline every request goes through, and the way JSON and
 //!   problems are written.
 //! - [`events`]: what handlers tell the realtime hub.
+//! - [`realtime`]: the hub itself, its connections and its methods.
 //! - [`state`]: what every handler can reach.
 //! - [`background`]: work that runs beside the requests, listed in [`workers`].
 //! - one folder per group of endpoints, listed in [`groups`].
@@ -20,6 +21,7 @@ pub mod http;
 pub mod instance;
 pub mod logging;
 pub mod mail;
+pub mod realtime;
 pub mod seal;
 pub mod secrets;
 pub mod settings;
@@ -39,8 +41,9 @@ use tokio::net::TcpListener;
 use tracing::{error, info};
 
 use crate::database::Database;
-use crate::events::{EventFile, EventPublisher, Presence, Unconnected};
+use crate::events::{EventFile, EventPublisher, Fanout, Presence, Unconnected};
 use crate::http::Endpoints;
+use crate::realtime::Realtime;
 use crate::seal::Sealer;
 use crate::settings::Settings;
 use crate::state::AppState;
@@ -122,6 +125,11 @@ pub async fn serve(
 pub struct Services {
     pub events: Option<Arc<dyn EventPublisher>>,
     pub presence: Option<Arc<dyn Presence>>,
+    /// The realtime hub. When there is one it serves `/hubs/app` and is the
+    /// publisher and the source of presence, whatever `events` and `presence`
+    /// say; in the Testing environment what is published is also written to
+    /// the event file. [`run`] gives it one.
+    pub realtime: Option<Arc<Realtime>>,
     /// The background workers to run. None by default, so that a server
     /// started for a test has no timers of its own; [`run`] gives it
     /// [`workers`].
@@ -162,20 +170,41 @@ pub async fn serve_with(
         .map_err(|e| fail("the database did not open", &e))?
         .map_err(|e| fail("the database did not open", &e))?;
 
-    // A hub that was given wins; in the Testing environment the events go to a
-    // file the tests read; otherwise there is nobody to tell.
-    let events: Arc<dyn EventPublisher> = match (services.events, &settings.event_log) {
-        (Some(events), _) => events,
-        (None, Some(path)) => Arc::new(EventFile::new(path.clone())),
-        (None, None) => Arc::new(Unconnected),
+    // The hub, when there is one, hears the events; in the Testing
+    // environment they are also written to a file the tests read. A
+    // publisher that was given instead stands in for the hub; with neither
+    // there is nobody to tell.
+    let realtime = services.realtime;
+    let file = settings
+        .event_log
+        .as_ref()
+        .map(|path| Arc::new(EventFile::new(path.clone())) as Arc<dyn EventPublisher>);
+    let events: Arc<dyn EventPublisher> = match (&realtime, services.events, file) {
+        (Some(hub), _, Some(file)) => Arc::new(Fanout(vec![hub.clone(), file])),
+        (Some(hub), _, None) => hub.clone(),
+        (None, Some(events), _) => events,
+        (None, None, Some(file)) => file,
+        (None, None, None) => Arc::new(Unconnected),
     };
     let grace = services.shutdown_grace.unwrap_or(SHUTDOWN_GRACE);
-    let presence: Arc<dyn Presence> = services.presence.unwrap_or_else(|| Arc::new(Unconnected));
+    let presence: Arc<dyn Presence> = match &realtime {
+        Some(hub) => hub.clone(),
+        None => services.presence.unwrap_or_else(|| Arc::new(Unconnected)),
+    };
     let addresses = settings.listen.0.clone();
     let sealer = Sealer::load_or_create(&keys).map_err(|e| StartError(e.to_string()))?;
     let state = AppState::new(settings, database, events, presence, sealer);
 
     issue_setup_code(&state).await?;
+
+    // The hub needs the state, which needs the hub as its publisher, so it is
+    // built first and mounted now.
+    let mut groups = groups;
+    if let Some(hub) = &realtime {
+        hub.restore_seed(state.settings());
+        state.plug_in_realtime(hub.clone());
+        groups.push(realtime::endpoints(state.clone(), hub.clone()));
+    }
 
     let (router, rules) = groups
         .into_iter()
@@ -232,6 +261,11 @@ pub async fn serve_with(
         }
     }
     let _ = stop.send(true);
+    // The clients are told the server is going and may start over, instead of
+    // finding out from a connection that goes quiet.
+    if let Some(hub) = &realtime {
+        hub.hub().close_all();
+    }
     let drained = tokio::time::timeout(grace, async {
         while servers.join_next().await.is_some() {}
     });
@@ -273,6 +307,7 @@ async fn issue_setup_code(state: &AppState) -> Result<(), StartError> {
 /// Runs the real API, with every group of endpoints, until SIGTERM or SIGINT.
 pub async fn run(settings: Settings) -> Result<(), StartError> {
     let services = Services {
+        realtime: Some(Realtime::new()),
         workers: background::chosen(&settings, workers()),
         ..Services::default()
     };
