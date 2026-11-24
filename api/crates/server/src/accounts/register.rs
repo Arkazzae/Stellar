@@ -287,8 +287,9 @@ pub async fn register(State(state): State<AppState>, origin: Origin, Json(reques
     // Whether the instance is still empty is read and acted on inside one
     // critical section, so two first registrations cannot both found it.
     let _turn = state.registration_gate().lock().await;
+    let request = std::sync::Arc::new(request);
     let plan = {
-        let (state, request, username, email) = (state.clone(), clone_request(&request), username.clone(), email.clone());
+        let (state, request, username, email) = (state.clone(), request.clone(), username.clone(), email.clone());
         let database = state.database().clone();
         database.read(move |connection| check(connection, &state, &request, &username, &email)).await?
     };
@@ -352,19 +353,6 @@ pub async fn register(State(state): State<AppState>, origin: Origin, Json(reques
         state.events().publish(announced);
     }
     created(&state, &origin, registered)
-}
-
-fn clone_request(request: &RegisterRequest) -> RegisterRequest {
-    RegisterRequest {
-        username: request.username.clone(),
-        display_name: request.display_name.clone(),
-        email: request.email.clone(),
-        password: None,
-        invite_code: request.invite_code.clone(),
-        initial_server: request.initial_server.clone(),
-        setup_code: request.setup_code.clone(),
-        external: request.external,
-    }
 }
 
 pub fn trusted_device_name(https: bool) -> &'static str {

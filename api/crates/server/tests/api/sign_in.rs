@@ -605,3 +605,29 @@ async fn an_account_written_by_one_server_signs_in_on_the_other_because_the_stor
 
     assert_eq!(response.status, 200);
 }
+
+#[tokio::test]
+async fn a_sign_in_records_the_address_the_listed_proxy_reports() {
+    for (proxies, forwarded, recorded) in [
+        ("172.18.0.1", "203.0.113.66, 198.51.100.7, 172.18.0.1", "198.51.100.7"),
+        ("", "198.51.100.7, 172.18.0.1", "172.18.0.1"),
+        ("2001:db8::/32", "2001:db8:ff::7, 2001:db8::1", "2001:db8:ff::7"),
+    ] {
+        let server = Server::start_with(&[("STELLARR_TRUSTED_PROXIES", proxies)]).await;
+        server.found("owner").await;
+        let client = server.client().with_header("X-Forwarded-For", forwarded);
+
+        assert_eq!(server.login(&client, "owner", PASSWORD).await.status, 200);
+
+        let (session_address, event_address): (String, String) = server
+            .database()
+            .query_row(
+                "SELECT (SELECT \"IpAddress\" FROM \"UserSessions\" ORDER BY \"CreatedAt\" DESC LIMIT 1),
+                        (SELECT \"IpAddress\" FROM \"SecurityEvents\" WHERE \"Kind\" = 'login-succeeded')",
+                [],
+                |row| Ok((row.get(0)?, row.get(1)?)),
+            )
+            .unwrap();
+        assert_eq!((session_address.as_str(), event_address.as_str()), (recorded, recorded), "{proxies}");
+    }
+}
