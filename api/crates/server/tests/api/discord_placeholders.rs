@@ -29,7 +29,7 @@ use discord::guild::{Ch, FakeGuild, ID};
 const AUTHOR: &str = "1";
 
 /// Every route with a person's id in its path, which the walk below covers.
-const ROUTES_NAMING_A_PERSON: [&str; 10] = [
+const ROUTES_NAMING_A_PERSON: [&str; 15] = [
     "/api/admin/bans/{userId}",
     "/api/admin/channels/{channelId}/members/{userId}",
     "/api/admin/invites/{invite_id}/members/{user_id}",
@@ -37,6 +37,11 @@ const ROUTES_NAMING_A_PERSON: [&str; 10] = [
     "/api/admin/members/{userId}/ban",
     "/api/admin/members/{userId}/role",
     "/api/admin/members/{userId}/roles",
+    "/api/cockpit/users/{userId}/identities/{identityId}/remove",
+    "/api/cockpit/users/{userId}/role",
+    "/api/cockpit/users/{userId}/security",
+    "/api/cockpit/users/{userId}/security/recover",
+    "/api/cockpit/users/{userId}/status",
     "/api/social/blocks/{userId}",
     "/api/social/blocks/{userId}",
     "/api/social/friends/{userId}",
@@ -225,6 +230,20 @@ async fn a_placeholder_is_absent_or_refused_everywhere_a_person_is_found_or_acte
         // Removing or moving somebody out of a voice room: nobody sits there.
         (Method::DELETE, "/api/admin/channels/{channelId}/members/{userId}", format!("/api/admin/channels/{}/members/{id}", w.voice), None),
         (Method::PATCH, "/api/admin/channels/{channelId}/members/{userId}", format!("/api/admin/channels/{}/members/{id}", w.voice), Some(json!({ "targetChannelId": w.voice }))),
+    ] {
+        walked.insert(route);
+        assert_eq!(send(&w.ada.client, method.clone(), &path, body).await, 404, "{method} {path}");
+    }
+    // The operator's panel manages the members of the instance server, and a
+    // placeholder belongs to no server, so every route of it that names one
+    // finds nobody.
+    let nil = "00000000-0000-0000-0000-000000000000";
+    for (method, route, path, body) in [
+        (Method::GET, "/api/cockpit/users/{userId}/security", format!("/api/cockpit/users/{id}/security"), None),
+        (Method::PATCH, "/api/cockpit/users/{userId}/role", format!("/api/cockpit/users/{id}/role"), Some(json!({ "roleId": base_role.to_lowercase() }))),
+        (Method::PATCH, "/api/cockpit/users/{userId}/status", format!("/api/cockpit/users/{id}/status"), Some(json!({ "disabled": false }))),
+        (Method::POST, "/api/cockpit/users/{userId}/security/recover", format!("/api/cockpit/users/{id}/security/recover"), Some(json!({ "reason": "imported" }))),
+        (Method::POST, "/api/cockpit/users/{userId}/identities/{identityId}/remove", format!("/api/cockpit/users/{id}/identities/{nil}/remove"), None),
     ] {
         walked.insert(route);
         assert_eq!(send(&w.ada.client, method.clone(), &path, body).await, 404, "{method} {path}");
