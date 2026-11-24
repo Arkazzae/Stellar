@@ -187,16 +187,16 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn a_byte_order_mark_in_front_of_the_body_is_not_part_of_it() {
-        let Json(account) = read(
+    async fn a_byte_order_mark_in_front_of_the_body_makes_it_malformed() {
+        let refusal = read(
             "\u{feff}{\"id\":\"8f62a4d1-bdcb-4d86-bd1c-6e351900e629\",\"displayName\":\"Maya\",\
              \"avatarUrl\":null,\"createdAt\":\"2026-11-18T21:57:04Z\"}",
         )
         .await
-        .unwrap();
+        .err()
+        .expect("a body with a byte order mark is refused");
 
-        assert_eq!(account.display_name, "Maya");
-        // Only the one at the very start: another is no JSON.
+        assert!(matches!(refusal, ApiError::Status(status) if status.as_u16() == 400));
         assert!(read("\u{feff}\u{feff}{}").await.is_err());
     }
 
