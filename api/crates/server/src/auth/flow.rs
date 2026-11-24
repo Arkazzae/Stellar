@@ -26,6 +26,8 @@ pub const PURPOSE_ENROLLMENT: &str = "enrollment";
 /// The challenge of a session that is already running and is asked for a fresh
 /// second step.
 pub const PURPOSE_REVERIFY: &str = "reverify";
+/// The challenge an operator's recovery credential is exchanged for.
+pub const PURPOSE_RECOVERY: &str = "recovery";
 /// Evidence of a second step that the identity provider asked for.
 pub const PROVIDER_EVIDENCE: &str = "provider_mfa";
 
@@ -96,6 +98,9 @@ pub struct Options {
     /// trusts it.
     pub second_step_at_provider: bool,
     pub pending_identity: Option<Id>,
+    /// The session the challenge was asked from, which has to be still good
+    /// when the challenge is completed.
+    pub parent_session: Option<Id>,
 }
 
 /// Decides what a proof of identity leads to, and writes the challenge when it
@@ -142,13 +147,30 @@ pub fn start(
     } else {
         PURPOSE_MFA
     };
-    let (challenge, secret) = create_challenge(tx, user, primary_source, purpose, policy, options)?;
-    let body = describe(tx, context, user, &challenge, methods, policy)?;
-    let cookie = preauth_cookie(context.https, challenge.id, &secret, challenge.expires_at);
+    let (body, cookie) =
+        start_challenge(tx, context, user, primary_source, purpose, policy, options)?;
     Ok(Start::Challenge { body, cookie })
 }
 
-fn preauth_name(https: bool) -> &'static str {
+/// Writes a challenge of the purpose given for the account, and says what to
+/// tell the client and which cookie binds it to this browser.
+pub(crate) fn start_challenge(
+    tx: &Transaction,
+    context: &Context<'_>,
+    user: &User,
+    primary_source: &str,
+    purpose: &str,
+    policy: &SecurityPolicy,
+    options: Options,
+) -> Result<(Challenge, String), DbError> {
+    let methods = confirmed_methods(tx, user.id)?;
+    let (challenge, secret) = create_challenge(tx, user, primary_source, purpose, policy, options)?;
+    let body = describe(tx, context, user, &challenge, methods, policy)?;
+    let cookie = preauth_cookie(context.https, challenge.id, &secret, challenge.expires_at);
+    Ok((body, cookie))
+}
+
+pub(crate) fn preauth_name(https: bool) -> &'static str {
     if https {
         "__Host-stellarr-preauth"
     } else {
@@ -156,7 +178,12 @@ fn preauth_name(https: bool) -> &'static str {
     }
 }
 
-fn preauth_cookie(https: bool, id: Id, secret: &str, expires: Timestamp) -> String {
+/// The `Set-Cookie` line that takes the challenge's cookie away.
+pub fn clear_preauth_cookie(https: bool) -> String {
+    cookies::delete(preauth_name(https), https)
+}
+
+pub(crate) fn preauth_cookie(https: bool, id: Id, secret: &str, expires: Timestamp) -> String {
     cookies::set(
         preauth_name(https),
         &security_cookies::bound_value(id, secret),
@@ -172,7 +199,7 @@ pub(crate) struct Created {
     pending_identity: Option<Id>,
 }
 
-fn create_challenge(
+pub(crate) fn create_challenge(
     tx: &Transaction,
     user: &User,
     primary_source: &str,
@@ -188,7 +215,7 @@ fn create_challenge(
         "INSERT INTO \"AuthChallenges\" (\"Id\", \"UserId\", \"Purpose\", \"SecretHash\", \"PrimarySource\", \"ParentSessionId\",
              \"SecurityVersion\", \"ShortLived\", \"PendingIdentityId\", \"WebAuthnOptions\", \"Attempts\", \"MaxAttempts\",
              \"CreatedAt\", \"ExpiresAt\", \"ConsumedAt\")
-         VALUES (?1, ?2, ?3, ?4, ?5, NULL, ?6, ?7, ?8, NULL, 0, 5, ?9, ?10, NULL)",
+         VALUES (?1, ?2, ?3, ?4, ?5, ?11, ?6, ?7, ?8, NULL, 0, 5, ?9, ?10, NULL)",
         params![
             id,
             user.id,
@@ -199,7 +226,8 @@ fn create_challenge(
             options.short_lived,
             options.pending_identity,
             now,
-            expires_at
+            expires_at,
+            options.parent_session
         ],
     )?;
     // Challenges of the account that ran out unused are of no use to anybody.
@@ -256,7 +284,7 @@ struct ChallengeAccount {
     avatar_url: Option<String>,
 }
 
-fn confirmed_methods(connection: &Connection, user: Id) -> Result<Vec<Method>, DbError> {
+pub(crate) fn confirmed_methods(connection: &Connection, user: Id) -> Result<Vec<Method>, DbError> {
     let mut statement = connection.prepare(
         "SELECT \"Id\", \"Type\", \"Name\", \"CreatedAt\", \"LastUsedAt\", \"EmailAddress\", \"ConfirmedAt\" FROM \"MfaMethods\"
          WHERE \"UserId\" = ?1 AND \"ConfirmedAt\" IS NOT NULL AND \"RevokedAt\" IS NULL ORDER BY \"CreatedAt\"",
@@ -459,7 +487,7 @@ pub fn validate(
     if challenge.attempts >= challenge.max_attempts {
         return Ok((None, AttemptLimit));
     }
-    let for_recovery = challenge.purpose == "recovery";
+    let for_recovery = challenge.purpose == PURPOSE_RECOVERY;
     if disabled
         || user_version != version
         || (recovery && !for_recovery)

@@ -155,7 +155,11 @@ const CREDENTIAL_LENGTH: std::ops::RangeInclusive<usize> = 16..=512;
 /// unused and not run out, which the claim that spends it decides in the same
 /// statement, so that two requests cannot both have it. Anything else is
 /// nothing, said the same way.
-pub fn redeem(tx: &Transaction, credential: &str, now: Timestamp) -> Result<Option<Id>, DbError> {
+pub(super) fn redeem(
+    tx: &Transaction,
+    credential: &str,
+    now: Timestamp,
+) -> Result<Option<Id>, DbError> {
     let credential = credential.trim();
     if !CREDENTIAL_LENGTH.contains(&credential.chars().count()) {
         return Ok(None);
@@ -196,7 +200,11 @@ pub fn redeem(tx: &Transaction, credential: &str, now: Timestamp) -> Result<Opti
 /// What the completion of a setup does to the account: a new security version,
 /// which ends every session that is not the one about to be made, and, for the
 /// setup that follows a recovery, the end of the wait. The new version.
-pub fn finish_enrollment(tx: &Transaction, user: Id, after_recovery: bool) -> Result<i64, DbError> {
+pub(super) fn finish_enrollment(
+    tx: &Transaction,
+    user: Id,
+    after_recovery: bool,
+) -> Result<i64, DbError> {
     tx.execute(
         "UPDATE \"Users\" SET \"SessionVersion\" = \"SessionVersion\" + 1,
              \"SecurityRecoveryRequired\" = CASE WHEN ?2 THEN 0 ELSE \"SecurityRecoveryRequired\" END WHERE \"Id\" = ?1",
@@ -207,6 +215,54 @@ pub fn finish_enrollment(tx: &Transaction, user: Id, after_recovery: bool) -> Re
         [user],
         |row| row.get(0),
     )?)
+}
+
+/// Moves the account to a new security version, which ends every session but
+/// `keep_session` (kept, at the new version) and forgets every remembered
+/// device. The new version. What a removal of a second step does.
+pub(super) fn end_other_sessions(
+    tx: &Transaction,
+    user: Id,
+    keep_session: Id,
+    now: Timestamp,
+) -> Result<i64, DbError> {
+    tx.execute(
+        "UPDATE \"Users\" SET \"SessionVersion\" = \"SessionVersion\" + 1 WHERE \"Id\" = ?1",
+        [user],
+    )?;
+    let version: i64 = tx.query_row(
+        "SELECT \"SessionVersion\" FROM \"Users\" WHERE \"Id\" = ?1",
+        [user],
+        |row| row.get(0),
+    )?;
+    tx.execute(
+        "UPDATE \"UserSessions\" SET \"RevokedAt\" = ?3 WHERE \"UserId\" = ?1 AND \"Id\" <> ?2 AND \"RevokedAt\" IS NULL",
+        params![user, keep_session, now],
+    )?;
+    super::trusted_devices::revoke_all(tx, user, now)?;
+    tx.execute(
+        "UPDATE \"UserSessions\" SET \"SecurityVersion\" = ?2 WHERE \"Id\" = ?1",
+        params![keep_session, version],
+    )?;
+    Ok(version)
+}
+
+/// What a change of the account's password does, which the route that changes
+/// it must call in the same transaction: what [`end_other_sessions`] does, and
+/// every desktop handoff that was approved but not used ends too. The new
+/// version.
+pub fn credentials_changed(
+    tx: &Transaction,
+    user: Id,
+    keep_session: Id,
+    now: Timestamp,
+) -> Result<i64, DbError> {
+    let version = end_other_sessions(tx, user, keep_session, now)?;
+    tx.execute(
+        "UPDATE \"DesktopBrowserLogins\" SET \"RedeemedAt\" = ?2 WHERE \"UserId\" = ?1 AND \"ApprovedAt\" IS NOT NULL AND \"RedeemedAt\" IS NULL",
+        params![user, now],
+    )?;
+    Ok(version)
 }
 
 #[cfg(test)]

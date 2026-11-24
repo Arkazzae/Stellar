@@ -58,7 +58,12 @@ pub fn spend_all(tx: &Transaction, user: Id, now: Timestamp) -> Result<usize, Db
 /// The digest is compared with every unused digest of the account in constant
 /// time, rather than by a lookup on it, so that how long the answer takes
 /// says nothing about the code.
-pub fn consume(tx: &Transaction, user: Id, code: &str, now: Timestamp) -> Result<bool, DbError> {
+pub(super) fn consume(
+    tx: &Transaction,
+    user: Id,
+    code: &str,
+    now: Timestamp,
+) -> Result<bool, DbError> {
     let normalized = normalize(code);
     if normalized.is_empty() {
         return Ok(false);

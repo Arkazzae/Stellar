@@ -266,6 +266,7 @@ fn raw_id_of(response: &AssertionResponse) -> Option<Vec<u8>> {
 
 /// What asking for the options of a second step came to.
 #[derive(Debug, PartialEq, Eq)]
+#[must_use]
 pub enum Begin {
     /// The options to send to the browser, which are kept on the challenge.
     Options(String),
@@ -276,7 +277,7 @@ pub enum Begin {
 }
 
 /// The options for answering a challenge with one of the account's passkeys.
-pub fn begin_second_step(
+pub(super) fn begin_second_step(
     tx: &Transaction,
     relying_party: &RelyingParty,
     challenge: &StoredChallenge,
@@ -296,7 +297,7 @@ pub fn begin_second_step(
 
 /// Checks a passkey's answer to the options of a challenge, and spends the
 /// options, whatever the answer.
-pub fn verify_second_step(
+pub(super) fn verify_second_step(
     tx: &Transaction,
     relying_party: &RelyingParty,
     context: &Context<'_>,
@@ -332,7 +333,7 @@ pub fn verify_second_step(
 /// The options for adding a passkey to the account of a challenge that lets
 /// one be added. None for any other challenge. The passkeys the account has
 /// are excluded, so one key is not registered twice.
-pub fn begin_registration(
+pub(super) fn begin_registration(
     tx: &Transaction,
     relying_party: &RelyingParty,
     challenge: &StoredChallenge,
@@ -357,6 +358,7 @@ pub fn begin_registration(
 
 /// What checking the answer that registers a passkey came to.
 #[derive(Debug)]
+#[must_use]
 pub enum Registered {
     /// Right; [`store`] adds it.
     Ready(webauthn::Registration),
@@ -368,7 +370,7 @@ pub enum Registered {
 
 /// Checks the answer to the options of an enrolment, and spends the options,
 /// whatever the answer. A credential id that any account has is refused.
-pub fn check_registration(
+pub(super) fn check_registration(
     tx: &Transaction,
     relying_party: &RelyingParty,
     context: &Context<'_>,
@@ -390,7 +392,7 @@ pub fn check_registration(
     {
         return Ok(Registered::Ready(registration));
     }
-    mfa::refuse(tx, context, challenge, "passkey-enrollment", now)?;
+    mfa::record_failure(tx, context, challenge, "passkey-enrollment", now)?;
     Ok(Registered::Refused)
 }
 
@@ -399,13 +401,17 @@ pub fn check_registration(
 /// requests cannot race here, since a write takes the database's lock before
 /// it looks; the unique index on the id still refuses a second copy, and that
 /// refusal (see `DbError::is_unique_violation`) rolls everything back.
-pub fn store(
+pub(super) fn store(
     tx: &Transaction,
-    user: Id,
+    challenge: &StoredChallenge,
     name: &str,
     registration: &webauthn::Registration,
     now: Timestamp,
 ) -> Result<Option<Id>, DbError> {
+    if !mfa::enrols(challenge) {
+        return Ok(None);
+    }
+    let user = challenge.user;
     if is_taken(tx, &registration.credential_id)? {
         return Ok(None);
     }
@@ -458,7 +464,7 @@ impl std::fmt::Debug for SignInOptions {
 /// Makes the options of a sign-in. They name no passkey: the browser offers
 /// the ones it holds for this site. Options that ran out or were used are
 /// swept away on the way.
-pub fn begin_sign_in(
+pub(super) fn begin_sign_in(
     tx: &Transaction,
     relying_party: &RelyingParty,
     https: bool,
@@ -486,6 +492,7 @@ pub fn begin_sign_in(
 
 /// What a sign-in with a passkey came to.
 #[derive(Debug, PartialEq, Eq)]
+#[must_use]
 pub enum SignIn {
     /// The passkey is the account's and the answer was right. The account is
     /// not disabled and is not waiting for an operator's recovery.
@@ -498,7 +505,7 @@ pub enum SignIn {
 /// browser's cookie names. The options are spent by the first answer, right or
 /// wrong. The passkey says which account it is; a known account that is
 /// refused gets a failed sign-in written to its events.
-pub fn sign_in(
+pub(super) fn sign_in(
     tx: &Transaction,
     relying_party: &RelyingParty,
     context: &Context<'_>,
@@ -629,7 +636,7 @@ mod tests {
             panic!("the registration was right");
         };
         assert!(
-            store(&tx, user, "Key", &registration, Timestamp::now())
+            store(&tx, &challenge, "Key", &registration, Timestamp::now())
                 .unwrap()
                 .is_some()
         );
@@ -823,7 +830,7 @@ mod tests {
             ..registration
         };
         assert_eq!(
-            store(&tx, second, "Key", &taken, Timestamp::now()).unwrap(),
+            store(&tx, &challenge, "Key", &taken, Timestamp::now()).unwrap(),
             None
         );
     }
@@ -1388,7 +1395,7 @@ mod tests {
         let now = Timestamp::now();
         sign_in_options(&mut connection, now.minus(Duration::from_secs(3600)));
         let (_, used) = sign_in_options(&mut connection, now);
-        sign_in_as(&mut connection, Some(&used), None, now);
+        let _ = sign_in_as(&mut connection, Some(&used), None, now);
         sign_in_options(&mut connection, now);
 
         let remaining: i64 = connection

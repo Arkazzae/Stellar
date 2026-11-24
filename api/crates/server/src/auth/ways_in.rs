@@ -10,11 +10,10 @@
 //! A write of the database holds its lock from the start, so the second one
 //! waits and counts what the first left; nothing more is needed here.
 
-use rusqlite::{Connection, params};
+use rusqlite::{Connection, OptionalExtension, params};
 use stellarr_messages::{MessageKey, Messages, MissingValue};
 
 use crate::http::Problem;
-use crate::instance::users::User;
 use crate::values::Id;
 
 /// The `code` of the problem that refuses to remove the last way in, so a
@@ -59,6 +58,22 @@ impl Providers<'_> {
     }
 }
 
+/// [`Providers`] with its names owned, so that it can go into a transaction.
+#[derive(Debug, Clone)]
+pub struct OwnedProviders {
+    pub configured: Vec<String>,
+    pub default_id: String,
+}
+
+impl OwnedProviders {
+    pub fn view(&self) -> Providers<'_> {
+        Providers {
+            configured: &self.configured,
+            default_id: &self.default_id,
+        }
+    }
+}
+
 /// Whether the account still has a way in once the identity or the method
 /// named is gone. A second step other than a passkey signs nobody in on its
 /// own, and an identity at a provider that is no longer configured has no
@@ -66,23 +81,31 @@ impl Providers<'_> {
 pub fn remain(
     connection: &Connection,
     providers: &Providers<'_>,
-    user: &User,
+    user: Id,
     without_identity: Option<Id>,
     without_method: Option<Id>,
 ) -> rusqlite::Result<bool> {
-    if user.password_hash.is_some() {
+    // The account is read here, in the transaction the question is asked in.
+    let has_password: Option<bool> = connection
+        .query_row(
+            "SELECT \"PasswordHash\" IS NOT NULL FROM \"Users\" WHERE \"Id\" = ?1",
+            [user],
+            |row| row.get(0),
+        )
+        .optional()?;
+    if has_password == Some(true) {
         return Ok(true);
     }
     let passkey: bool = connection.query_row(
         "SELECT EXISTS (SELECT 1 FROM \"MfaMethods\" WHERE \"UserId\" = ?1 AND (?2 IS NULL OR \"Id\" <> ?2) AND \"Type\" = 'passkey'
                         AND \"ConfirmedAt\" IS NOT NULL AND \"RevokedAt\" IS NULL)",
-        params![user.id, without_method],
+        params![user, without_method],
         |row| row.get(0),
     )?;
     if passkey {
         return Ok(true);
     }
-    Ok(!linked_providers(connection, providers, user.id, without_identity)?.is_empty())
+    Ok(!linked_providers(connection, providers, user, without_identity)?.is_empty())
 }
 
 /// The configured providers the account signs in through, each once and in
@@ -129,14 +152,13 @@ mod tests {
         id
     }
 
-    fn without_password(connection: &Connection, user: Id) -> User {
+    fn without_password(connection: &Connection, user: Id) {
         connection
             .execute(
                 "UPDATE \"Users\" SET \"PasswordHash\" = NULL WHERE \"Id\" = ?1",
                 [user],
             )
             .unwrap();
-        User::find(connection, user).unwrap().unwrap()
     }
 
     fn providers(configured: &[String]) -> Providers<'_> {
@@ -150,37 +172,36 @@ mod tests {
     fn a_password_is_a_way_in_whatever_else_goes() {
         let (_folder, connection) = open();
         let user = add_user(&connection, None);
-        let account = User::find(&connection, user).unwrap().unwrap();
         let configured = vec!["default".to_string()];
 
-        assert!(remain(&connection, &providers(&configured), &account, None, None).unwrap());
+        assert!(remain(&connection, &providers(&configured), user, None, None).unwrap());
     }
 
     #[test]
     fn an_account_with_nothing_has_no_way_in() {
         let (_folder, connection) = open();
         let user = add_user(&connection, None);
-        let account = without_password(&connection, user);
+        without_password(&connection, user);
         let configured = vec!["default".to_string()];
 
-        assert!(!remain(&connection, &providers(&configured), &account, None, None).unwrap());
+        assert!(!remain(&connection, &providers(&configured), user, None, None).unwrap());
     }
 
     #[test]
     fn a_passkey_is_one_unless_it_is_the_one_going_or_is_not_in_use() {
         let (_folder, connection) = open();
         let user = add_user(&connection, None);
-        let account = without_password(&connection, user);
+        without_password(&connection, user);
         let configured: Vec<String> = vec![];
         let passkey = add_method(&connection, user, "passkey", None);
         add_method(&connection, user, "totp", None);
 
-        assert!(remain(&connection, &providers(&configured), &account, None, None).unwrap());
+        assert!(remain(&connection, &providers(&configured), user, None, None).unwrap());
         assert!(
             !remain(
                 &connection,
                 &providers(&configured),
-                &account,
+                user,
                 None,
                 Some(passkey)
             )
@@ -193,25 +214,25 @@ mod tests {
                 [passkey],
             )
             .unwrap();
-        assert!(!remain(&connection, &providers(&configured), &account, None, None).unwrap());
+        assert!(!remain(&connection, &providers(&configured), user, None, None).unwrap());
         connection.execute("UPDATE \"MfaMethods\" SET \"RevokedAt\" = NULL, \"ConfirmedAt\" = NULL WHERE \"Id\" = ?1", [passkey]).unwrap();
-        assert!(!remain(&connection, &providers(&configured), &account, None, None).unwrap());
+        assert!(!remain(&connection, &providers(&configured), user, None, None).unwrap());
     }
 
     #[test]
     fn an_identity_is_one_while_its_provider_is_configured_and_it_is_not_the_one_going() {
         let (_folder, connection) = open();
         let user = add_user(&connection, None);
-        let account = without_password(&connection, user);
+        without_password(&connection, user);
         let named = link(&connection, user, Some("work"));
         let configured = vec!["default".to_string(), "work".to_string()];
 
-        assert!(remain(&connection, &providers(&configured), &account, None, None).unwrap());
+        assert!(remain(&connection, &providers(&configured), user, None, None).unwrap());
         assert!(
             !remain(
                 &connection,
                 &providers(&configured),
-                &account,
+                user,
                 Some(named),
                 None
             )
@@ -219,14 +240,14 @@ mod tests {
         );
         // A provider that is not configured any more has no button to press.
         let only_default = vec!["default".to_string()];
-        assert!(!remain(&connection, &providers(&only_default), &account, None, None).unwrap());
+        assert!(!remain(&connection, &providers(&only_default), user, None, None).unwrap());
         // An identity linked through no provider is the default one's.
         link(&connection, user, None);
         assert!(
             remain(
                 &connection,
                 &providers(&only_default),
-                &account,
+                user,
                 Some(named),
                 None
             )

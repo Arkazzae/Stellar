@@ -85,6 +85,14 @@ pub fn add_pending_method(connection: &Connection, user: Id, kind: &str) -> Id {
     id
 }
 
+/// The secret every test challenge's cookie holds.
+pub const SECRET: &str = "secret";
+
+/// What the browser's cookie holds for the challenge.
+pub fn preauth_of(challenge: &StoredChallenge) -> (Id, String) {
+    (challenge.id, SECRET.to_string())
+}
+
 /// A challenge of the purpose given, as the flow looks it up, and the row
 /// that stands behind it.
 pub fn add_challenge(connection: &Connection, user: Id, purpose: &str) -> StoredChallenge {
@@ -92,8 +100,8 @@ pub fn add_challenge(connection: &Connection, user: Id, purpose: &str) -> Stored
     let now = Timestamp::now();
     connection
         .execute(
-            "INSERT INTO \"AuthChallenges\" VALUES (?1, ?2, ?3, 'hash', 'password', NULL, 1, 0, NULL, NULL, 0, 5, ?4, ?5, NULL)",
-            params![id, user, purpose, now, now.plus(std::time::Duration::from_secs(300))],
+            "INSERT INTO \"AuthChallenges\" VALUES (?1, ?2, ?3, ?6, 'password', NULL, 1, 0, NULL, NULL, 0, 5, ?4, ?5, NULL)",
+            params![id, user, purpose, now, now.plus(std::time::Duration::from_secs(300)), super::tokens::hash(SECRET)],
         )
         .expect("a challenge is added");
     StoredChallenge {

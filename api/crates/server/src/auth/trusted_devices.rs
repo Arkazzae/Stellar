@@ -84,7 +84,7 @@ impl std::fmt::Debug for Issued {
 }
 
 /// Remembers the browser of this request for as long as the policy says.
-pub fn issue(
+pub(super) fn issue(
     tx: &Transaction,
     context: &Context<'_>,
     messages: &Messages,
@@ -126,20 +126,11 @@ pub fn issue(
     })
 }
 
-/// Notes that the device was used, when it is still good.
-pub fn mark_used(tx: &Transaction, device: Id, now: Timestamp) -> Result<(), DbError> {
-    tx.execute(
-        "UPDATE \"TrustedDevices\" SET \"LastUsedAt\" = ?2 WHERE \"Id\" = ?1 AND \"RevokedAt\" IS NULL AND \"ExpiresAt\" > ?2",
-        params![device, now],
-    )?;
-    Ok(())
-}
-
 /// Spends the device on the sign-in that is being completed: checks, inside
 /// the transaction that completes it, that it is still the account's and still
 /// good, as it was when it was found, and notes that it was used. False when
 /// it was revoked or has run out in between.
-pub fn use_for_sign_in(
+pub(super) fn use_for_sign_in(
     tx: &Transaction,
     user: Id,
     found: &TrustedDevice,
@@ -400,7 +391,6 @@ mod tests {
         // Revoked in between: the sign-in that found it must not go on.
         assert!(revoke(&tx, user, found.id, later).unwrap());
         assert!(!use_for_sign_in(&tx, user, &found, later).unwrap());
-        mark_used(&tx, found.id, later.plus(Duration::from_secs(5))).unwrap();
         let used: Option<Timestamp> = tx
             .query_row(
                 "SELECT \"LastUsedAt\" FROM \"TrustedDevices\" WHERE \"Id\" = ?1",

@@ -86,7 +86,7 @@ impl std::fmt::Debug for Reserved {
 /// The address in the scope must be the account's own, compared without
 /// regard to white space or case. A cooldown and an hourly limit count every
 /// code of the account for the same purpose, whichever challenge asked for it.
-pub fn reserve(
+pub(super) fn reserve(
     tx: &Transaction,
     sealer: &Sealer,
     scope: &Scope<'_>,
@@ -171,7 +171,7 @@ pub fn reserve(
 }
 
 /// The mail was handed to the mail server: from now on the code can be used.
-pub fn mark_delivered(tx: &Transaction, code: Id, now: Timestamp) -> Result<(), DbError> {
+pub(super) fn mark_delivered(tx: &Transaction, code: Id, now: Timestamp) -> Result<(), DbError> {
     tx.execute(
         "UPDATE \"EmailOtpCodes\" SET \"DeliveredAt\" = ?2 WHERE \"Id\" = ?1",
         params![code, now],
@@ -181,7 +181,7 @@ pub fn mark_delivered(tx: &Transaction, code: Id, now: Timestamp) -> Result<(), 
 
 /// The mail could not be sent: the code is spent, but it still counts towards
 /// the cooldown and the hourly limit.
-pub fn mark_failed(tx: &Transaction, code: Id, now: Timestamp) -> Result<(), DbError> {
+pub(super) fn mark_failed(tx: &Transaction, code: Id, now: Timestamp) -> Result<(), DbError> {
     tx.execute(
         "UPDATE \"EmailOtpCodes\" SET \"ConsumedAt\" = ?2 WHERE \"Id\" = ?1",
         params![code, now],
@@ -200,7 +200,7 @@ pub struct Proof(Id);
 ///
 /// A wrong answer is an ordinary outcome and changes the row, so the caller
 /// must commit the transaction after it as it would after a right one.
-pub fn check(
+pub(super) fn check(
     tx: &Transaction,
     sealer: &Sealer,
     scope: &Scope<'_>,
@@ -246,26 +246,12 @@ pub fn check(
 }
 
 /// Spends a code that was right. True for one request only.
-pub fn consume(tx: &Transaction, proof: &Proof, now: Timestamp) -> Result<bool, DbError> {
+pub(super) fn consume(tx: &Transaction, proof: &Proof, now: Timestamp) -> Result<bool, DbError> {
     let changed = tx.execute(
         "UPDATE \"EmailOtpCodes\" SET \"ConsumedAt\" = ?2 WHERE \"Id\" = ?1 AND \"ConsumedAt\" IS NULL AND \"ExpiresAt\" > ?2",
         params![proof.0, now],
     )?;
     Ok(changed == 1)
-}
-
-/// [`check`], then [`consume`].
-pub fn verify(
-    tx: &Transaction,
-    sealer: &Sealer,
-    scope: &Scope<'_>,
-    supplied: &str,
-    now: Timestamp,
-) -> Result<bool, DbError> {
-    match check(tx, sealer, scope, supplied, now)? {
-        Some(proof) => consume(tx, &proof, now),
-        None => Ok(false),
-    }
 }
 
 /// Spends every code the account has not used, whatever it was for.

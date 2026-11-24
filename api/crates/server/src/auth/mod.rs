@@ -9,6 +9,7 @@
 //! ago; `ways_in` keeps the last way in; `recovery` is an operator's recovery
 //! of an account that lost its steps.
 
+pub mod ceremony;
 pub mod cookies;
 #[cfg(test)]
 mod differential;
