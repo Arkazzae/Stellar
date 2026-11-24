@@ -24,7 +24,7 @@ mod refusals;
 
 use crate::http::{Endpoints, RateLimitPolicy};
 
-pub use attachments::{Attachment, compact, month, queue_deletion, retire_if_unreferenced, roll_back};
+pub use attachments::{Attachment, compact, month, retire_if_unreferenced, roll_back};
 // What the groups that keep a file of their own (a custom emoji) borrow from
 // here, so that they take the form, the checks and the refusals the same way.
 pub(crate) use attachments::number as json_number;

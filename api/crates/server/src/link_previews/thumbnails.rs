@@ -119,10 +119,7 @@ fn queue_if_unreferenced(tx: &Connection, picture: Id) -> rusqlite::Result<Optio
         }
     }
     for object in keys {
-        tx.execute(
-            "INSERT OR IGNORE INTO \"ObjectDeletions\" (\"ObjectKey\", \"QueuedAt\") VALUES (?1, ?2)",
-            params![object, now],
-        )?;
+        crate::housekeeping::queue_deletion(tx, &object, now)?;
     }
     Ok(Some(key))
 }
@@ -153,10 +150,7 @@ pub async fn roll_back(state: &AppState, keys: Vec<String>) {
         .write(move |tx| -> Result<(), DbError> {
             let now = Timestamp::now();
             for key in failed {
-                tx.execute(
-                    "INSERT OR IGNORE INTO \"ObjectDeletions\" (\"ObjectKey\", \"QueuedAt\") VALUES (?1, ?2)",
-                    params![key, now],
-                )?;
+                crate::housekeeping::queue_deletion(tx, &key, now)?;
             }
             Ok(())
         })

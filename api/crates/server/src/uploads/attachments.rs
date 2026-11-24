@@ -119,7 +119,7 @@ pub async fn roll_back(state: &AppState, keys: Vec<String>) {
         .database()
         .write(move |tx| -> Result<(), DbError> {
             for key in &failed {
-                queue_deletion(tx, key)?;
+                crate::housekeeping::queue_deletion(tx, key, Timestamp::now())?;
             }
             Ok(())
         })
@@ -127,15 +127,6 @@ pub async fn roll_back(state: &AppState, keys: Vec<String>) {
     if let Err(error) = queued {
         warn!("objects to remove could not be queued: {error}");
     }
-}
-
-/// Adds an object to the deletion queue, once.
-pub fn queue_deletion(db: &Connection, key: &str) -> rusqlite::Result<()> {
-    db.execute(
-        "INSERT OR IGNORE INTO \"ObjectDeletions\" (\"ObjectKey\", \"QueuedAt\") VALUES (?1, ?2)",
-        params![key, Timestamp::now()],
-    )?;
-    Ok(())
 }
 
 /// Deletes the attachment behind an `/assets/{id}` address, with its poster and
@@ -169,7 +160,7 @@ pub async fn retire_if_unreferenced(
                 return Ok(false);
             }
             for key in [Some(key), poster, preview].into_iter().flatten() {
-                queue_deletion(tx, &key)?;
+                crate::housekeeping::queue_deletion(tx, &key, Timestamp::now())?;
             }
             tx.execute("DELETE FROM \"ImageAttachments\" WHERE \"Id\" = ?1", [id])?;
             Ok(true)

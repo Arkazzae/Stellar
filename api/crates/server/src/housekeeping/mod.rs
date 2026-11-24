@@ -19,6 +19,7 @@ mod files;
 mod journal;
 mod orphans;
 mod queue;
+pub(crate) use queue::enqueue as queue_deletion;
 #[cfg(test)]
 mod tests;
 
