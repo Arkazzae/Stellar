@@ -241,7 +241,8 @@ pub(super) async fn recover(
             .title(messages.get(MessageKey::CockpitRecoverDisabled, &[])?)
             .into());
     };
-    Ok(json_response(
+    // The credential is shown once and kept by nobody, caches included.
+    let mut response = json_response(
         StatusCode::OK,
         &Recovered {
             credential: done.credential.clone(),
@@ -250,7 +251,12 @@ pub(super) async fn recover(
             trusted_devices_revoked: done.trusted_devices_revoked,
             sessions_revoked: done.sessions_revoked,
         },
-    ))
+    );
+    response.headers_mut().insert(
+        axum::http::header::CACHE_CONTROL,
+        axum::http::HeaderValue::from_static("no-store"),
+    );
+    Ok(response)
 }
 
 /// Removes a link to a provider, unless it is the only way the account signs
