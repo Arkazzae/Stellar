@@ -86,9 +86,9 @@ Setup code: K7QM-2XWP-9HDA. Open /setup at the address of this instance to creat
 
 Complete the three-step `/setup` wizard:
 
-1. **Step 1 — Owner account**: Enter the setup code, display name, username (`3–32` characters: letters, digits, `.`, `-`, `_`), email address, and password (at least `8` characters). Click **Next: first server**.
-2. **Step 2 — First server**: Enter a server name (`1–80` characters), an optional description, and the first text channel name (default `general`). Leave the voice channel toggle enabled (default `lounge`) to test voice calls, then click **Create account and server**.
-3. **Step 3 — Invite friends**: The wizard creates the owner account and initial server atomically in one transaction (invalidating the setup code), generates an invite link, and displays a **Copy link** button. Copy the invite link, then click **Open server**.
+1. **Step 1 (Owner account)**: Enter the setup code, display name, username (`3–32` characters: letters, digits, `.`, `-`, `_`), email address, and password (at least `8` characters). Click **Next: first server**.
+2. **Step 2 (First server)**: Enter a server name (`1–80` characters), an optional description, and the first text channel name (default `general`). Leave the voice channel toggle enabled (default `lounge`) to test voice calls, then click **Create account and server**.
+3. **Step 3 (Invite friends)**: The wizard creates the owner account and initial server atomically in one transaction (invalidating the setup code), generates an invite link, and displays a **Copy link** button. Copy the invite link, then click **Open server**.
 
 ## 5. Invite a second user
 
@@ -146,4 +146,4 @@ cd Stellarr
 docker compose up -d --build
 ```
 
-The multi-stage `Dockerfile` compiles the webAssembly artifact recipes, web client, Cockpit, the API, the operator CLI, `stellarr-media`, and `stellarr-init` inside Docker. No host toolchains beyond Docker and BuildKit are required.
+The multi-stage `Dockerfile` compiles the WebAssembly artifact recipes (`speex`, `rnnoise`, `bergamot`), web client, Cockpit, Rust API (`stellarr-api`), operator CLI (`stellarr`), `stellarr-media`, and `stellarr-init` inside Docker. No host toolchains beyond Docker and BuildKit are required.

@@ -79,9 +79,24 @@ Binding `STELLARR_HTTP_PORT` to `127.0.0.1` prevents external clients from bypas
 | `X-Forwarded-Proto: https` | Prevents container Nginx from redirecting HTTP requests to `https://<host>:<STELLARR_HTTPS_PORT>/` and ensures secure cookies are issued. |
 | Preserve `Host` (`$http_host`) | Used as the fallback origin when `STELLARR_PUBLIC_URL` is unset and for `/.well-known/stellarr/client` discovery. |
 | Append client IP to `X-Forwarded-For` | Lets the API resolve real client IPs once the proxy is listed in `STELLARR_TRUSTED_PROXIES`. |
-| Forward `Upgrade` and `Connection` headers | Required for SignalR WebSocket connections under `/hubs/app`. |
-| Allow request bodies up to `128 MiB` | Video uploads can be up to `100 MiB`; container Nginx and Kestrel allow up to `128 MiB`. |
-| Read timeout above `20 s` | SignalR sends keep-alives every `15 s` and WebSockets ping every `20 s`. |
+| Forward `Upgrade` and `Connection` headers | Required for `stellarr.v1` WebSocket connections under `/hubs/app` (keep `Origin` intact as well). |
+| Allow request bodies up to `128 MiB` | Video uploads can be up to `100 MiB`; container Nginx and the API allow up to `128 MiB`. |
+| Read timeout above `20 s` | The realtime hub sends keep-alives every `15 s` and WebSockets ping every `20 s`. |
+
+### Example: Caddy
+
+Caddy provisions and renews TLS certificates automatically, forwards WebSocket upgrades and `X-Forwarded-*` headers by default, and needs only a body-size ceiling for video uploads:
+
+```txt
+chat.example.com {
+    request_body {
+        max_size 128MB
+    }
+    reverse_proxy 127.0.0.1:8888
+}
+```
+
+If Caddy runs in the same Docker network as Stellarr, proxy to `stellarr:80` instead of `127.0.0.1:8888`. Remember to list Caddy's connecting IP in `STELLARR_TRUSTED_PROXIES` (see [Client addresses](#client-addresses)).
 
 ### Example: Nginx
 

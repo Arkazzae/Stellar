@@ -39,7 +39,7 @@ All `/object` endpoints require `Authorization: Bearer <BACKUP_TOKEN>`.
 
 Uploading an existing object key with the same SHA-256 digest is idempotent and returns `200 OK` without rewriting the object. Uploading an existing key with a different digest returns `409 Conflict` so existing archives cannot be overwritten. The Worker exposes no list or delete endpoints; manage retention and lifecycle rules directly on the R2 bucket in the Cloudflare dashboard.
 
-Object keys follow the `<prefix>/<server-uuid>/<backup-file>.zip` layout used by direct S3 uploads. Store `BACKUP_TOKEN` alongside your data-protection recovery records and rotate it if compromised.
+Object keys follow the `<prefix>/<server-uuid>/<backup-file>.zip` layout used by direct S3 uploads. Store `BACKUP_TOKEN` alongside your offline `.env` recovery records and rotate it if compromised.
 
 ## Verification
 

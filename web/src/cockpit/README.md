@@ -7,12 +7,12 @@ Stellarr Cockpit is the instance operator panel served at `/cockpit` on the inst
 - **Servers**: Instance-wide server list with ownership transfer and deletion.
 - **Runtime**: Process telemetry (requests, errors, CPU, memory, active connections, SQLite latency) and per-minute availability across all supervised container services.
 - **Logs**: Paged, searchable, and filterable in-memory log ring buffer with TSV export.
-- **Backups**: Background SQLite snapshots and full `.zip` backup archives (database, object storage, data-protection keys, and instance files) with SHA-256 manifest verification, automated schedules, retention pruning, and staged restores.
+- **Backups**: Background SQLite snapshots and full `.zip` backup archives (database, object storage, `keys/master.key`, and instance files) with SHA-256 manifest verification, automated schedules, retention pruning, and staged restores.
 - **Integrations**: Resend email delivery, GIPHY GIF search, per-provider OIDC account creation controls, and Cloudflare R2 offsite backups (Direct S3 or Backup Relay Worker) with live credential tests.
 - **Settings**: Instance name, time zone, telemetry/audit retention windows, SMTP server configuration, instance MFA policy, and Cockpit UI language.
 
 > [!NOTE]
-> Secrets saved in Cockpit (SMTP password, Resend API key, GIPHY API key, and R2 credentials) are encrypted at rest with the instance's ASP.NET Core Data Protection keys, override environment variables, and are never returned to the browser.
+> Secrets saved in Cockpit (SMTP password, Resend API key, GIPHY API key, and R2 credentials) are sealed at rest with AES-256-GCM under keys derived from `/data/stellarr/keys/master.key` (`api/crates/server/src/seal.rs`), override environment variables, and are never returned to the browser.
 
 ## Build and runtime architecture
 

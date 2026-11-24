@@ -62,6 +62,14 @@ The [operator CLI](cli.md) verifies and stages **full backups** for automated re
 
 4. Verify owner login, message history, attachments, avatars, integrations, and creating a new backup. Once verified, delete `/data/stellarr/restore/previous-<timestamp>/` to reclaim disk space; moving those folders back while the container is stopped undoes the restore.
 
+### What a restore resets and preserves
+
+Before `stellarr backup apply` swaps the restored database into place, `auth::restore::end_what_a_copy_may_bring_back` runs a single cleanup transaction on the restored SQLite snapshot so tokens spent after the backup was taken cannot be replayed:
+
+- **Ended immediately**: All active browser/desktop sessions and all remembered trusted devices (every user signs in again and completes a fresh second step), all unused email 2FA codes, password-reset links, email-change confirmation links, and operator CLI recovery credentials, plus open sign-in challenges, passkey ceremonies, desktop browser handoffs, and pending OIDC link cookies. Confirmed TOTP apps also advance their last-used time step to the restore timestamp so recently used codes cannot replay.
+- **Preserved intact**: Passwords, confirmed passkeys, TOTP seeds, unused recovery codes, OIDC identity links, client-side PIN-encrypted E2EE key backups (`AccountKeyBackups`), and the host's `/data/stellarr/instance-id` (which lives outside `instance/`).
+- **Master key requirement**: Sealed database values (Cockpit secrets in `InstanceSecrets`, backup and R2 schedules/policies, confirmed TOTP seeds, and mailed OTP codes) open only under the `keys/master.key` they were sealed with, which a full `.zip` backup carries in `keys/`. If a database is restored without its matching `keys/master.key` (or comes from a pre-Rust release that used legacy Data Protection keys), sealed rows fail to open as damaged values until you clear stored secrets (`stellarr secrets clear <name>`) and re-save policies and TOTP methods.
+
 ### Restore safeguards
 
 | Behavior | Detail |

@@ -14,7 +14,7 @@ Each subdirectory packages the production Stellarr container for a non-Compose h
 2. **Data mount**: Mount a single persistent host directory or volume at `/data/stellarr`.
 3. **Port mappings**: Publish every port defined in `docker-compose.yml` with matching protocol and default host port. Keep the UDP TURN relay range (`49160-49200/udp`) mapped 1:1.
 4. **Advertised port variables**: Because a container cannot inspect host port mappings, expose `STELLARR_HTTPS_PORT`, `STELLARR_MEDIA_PORT`, `STELLARR_TURN_PORT`, and `STELLARR_TURNS_PORT` initialized to the default host ports and instruct operators to keep them equal to the published host ports (see [Running without Docker Compose](../docs/install/configuration.md#running-without-docker-compose)).
-5. **Variable names**: Use the canonical `STELLARR_*` names from [Configuration](../docs/install/configuration.md). Only use raw `.NET` configuration keys when no `STELLARR_*` alias exists.
+5. **Variable names**: Use the canonical `STELLARR_*` names from [Configuration](../docs/install/configuration.md). Only use raw `Section__Key` environment variables when no `STELLARR_*` name exists.
 6. **Unset optional defaults**: Leave all non-port variables empty so the container image's built-in defaults apply across upgrades.
 7. **Resource and security limits**: Apply the memory (`4g`), CPU (`4`), PID (`512`), and `no-new-privileges` settings from `docker-compose.yml` wherever the platform supports them.
 8. **Stop timeout**: Pass `--stop-timeout=75` so `stellarr-init` has time to complete its 60-second ordered service shutdown before Docker sends `SIGKILL`.
