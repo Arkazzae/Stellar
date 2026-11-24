@@ -5,6 +5,8 @@ use rusqlite::{Connection, OptionalExtension, params};
 use serde::{Serialize, Serializer};
 use tracing::warn;
 
+use super::form::Staged;
+use super::inspect::file_name_of;
 use crate::database::DbError;
 use crate::messages::dto::{AttachmentDto, Seconds};
 use crate::state::AppState;
@@ -36,6 +38,26 @@ pub struct Extra {
 }
 
 impl Attachment {
+    pub(super) fn plain_image(id: Id, user: Id, key: String, file: &Staged, content_type: &str) -> Self {
+        Self {
+            id,
+            uploaded_by: user,
+            object_key: key,
+            file_name: file_name_of(&file.file_name).to_string(),
+            content_type: content_type.to_string(),
+            size: file.length as i64,
+            width: None,
+            height: None,
+            duration_seconds: None,
+            is_voice_message: false,
+            poster: None,
+            preview: None,
+            placeholder: None,
+            is_encrypted: false,
+        }
+    }
+
+
     pub fn insert(&self, db: &Connection) -> rusqlite::Result<()> {
         db.execute(
             "INSERT INTO \"ImageAttachments\" (\"Id\", \"UploadedById\", \"ObjectKey\", \"FileName\", \"ContentType\", \"SizeBytes\",

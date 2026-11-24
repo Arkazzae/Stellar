@@ -8,16 +8,17 @@ use axum::response::Response;
 use stellarr_messages::MessageKey;
 use stellarr_storage::validation::{UploadKind, UploadSpec};
 
-use super::attachments::{Attachment, Extra, compact, month, roll_back};
+use super::attachments::{Attachment, Extra, compact, month};
 use super::form::{self, Received, Slot, Staged};
 use super::inspect::{self, is_placeholder, keep_attachment, keep_image, safe_file_name};
 use super::numbers;
-use super::refusals::{Texts, invalid, no_room, problem, refuse};
+use super::transfer::{reserve, store_file, stored_or_rollback};
+use super::refusals::{Texts, invalid, problem, refuse};
 use crate::auth::Caller;
 use crate::database::DbError;
 use crate::http::multipart::Multipart;
 use crate::http::{ApiError, ApiResult, MAX_REQUEST_BODY_BYTES};
-pub(super) use crate::http::created;
+use crate::http::created;
 use crate::object_store::staging_dir;
 use crate::permissions::membership::ActiveServer;
 use crate::state::AppState;
@@ -150,14 +151,7 @@ pub async fn upload(
     let bytes = file.length
         + poster.as_ref().map_or(0, |(staged, _)| staged.length)
         + preview.as_ref().map_or(0, |(staged, _)| staged.length);
-    let lease = match state
-        .admission()
-        .enter(state.database(), caller.user, i64::try_from(bytes).unwrap_or(i64::MAX))
-        .await?
-    {
-        Ok(lease) => lease,
-        Err(why) => return Err(no_room(&state, why)?),
-    };
+    let lease = reserve(&state, caller.user, i64::try_from(bytes).unwrap_or(i64::MAX)).await?;
 
     let n = compact(id);
     let key = format!("{}/{month}/{n}{}", spec.folder, spec.extension);
@@ -247,17 +241,8 @@ async fn store_and_record(
 ) -> ApiResult<Response> {
     let keys: Vec<String> = stored.iter().map(|(key, _)| key.clone()).collect();
     for (key, staged) in stored {
-        let put = async {
-            let mut source = staged.open().await.map_err(ApiError::internal)?;
-            state
-                .storage()
-                .put(key, &mut source)
-                .await
-                .map_err(ApiError::internal)
-        };
-        if let Err(error) = put.await {
-            roll_back(state, keys).await;
-            return Err(error);
+        if let Err(error) = store_file(state, key, staged).await {
+            return stored_or_rollback(state, keys, Err(error)).await;
         }
     }
     let dto = attachment.dto();
@@ -266,10 +251,7 @@ async fn store_and_record(
         .database()
         .write(move |tx| -> Result<(), DbError> { Ok(attachment.insert(tx)?) })
         .await;
-    if let Err(error) = written {
-        roll_back(state, keys).await;
-        return Err(error.into());
-    }
+    stored_or_rollback(state, keys, written.map_err(ApiError::from)).await?;
     Ok(created(location, &dto))
 }
 
@@ -312,14 +294,7 @@ pub async fn encrypted(
             MessageKey::UploadOverLimit,
         )?);
     }
-    let lease = match state
-        .admission()
-        .enter(state.database(), caller.user, file.length as i64)
-        .await?
-    {
-        Ok(lease) => lease,
-        Err(why) => return Err(no_room(&state, why)?),
-    };
+    let lease = reserve(&state, caller.user, file.length as i64).await?;
     let id = Id::random();
     let attachment = Attachment {
         id,
