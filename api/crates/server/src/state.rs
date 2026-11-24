@@ -13,6 +13,7 @@ use crate::auth::setup_code::SetupCode;
 use crate::database::{Database, MutationGate};
 use crate::events::{EventPublisher, Presence};
 use crate::http::{AttemptLimiter, Metrics};
+use crate::mail::MailDelivery;
 use crate::seal::Sealer;
 use crate::settings::Settings;
 
@@ -30,6 +31,7 @@ struct Inner {
     mutation_gate: MutationGate,
     pin_attempts: AttemptLimiter,
     sealer: Sealer,
+    mail: MailDelivery,
     presence: Arc<dyn Presence>,
     setup_code: SetupCode,
     registration_gate: tokio::sync::Mutex<()>,
@@ -51,6 +53,7 @@ impl AppState {
                 database,
                 events,
                 sealer,
+                mail: MailDelivery::new(),
                 presence,
                 setup_code: SetupCode::default(),
                 registration_gate: tokio::sync::Mutex::new(()),
@@ -95,6 +98,12 @@ impl AppState {
     /// Seals values for clients and the database; see [`crate::seal`].
     pub fn sealer(&self) -> &Sealer {
         &self.inner.sealer
+    }
+
+    /// Sends a built message by the transport the operator chose; see
+    /// [`crate::mail`].
+    pub fn mail(&self) -> &MailDelivery {
+        &self.inner.mail
     }
 
     /// Whether a person is online, as the hub sees them. Without a hub,
