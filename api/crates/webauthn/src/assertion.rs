@@ -69,6 +69,16 @@ pub struct Assertion {
     pub backup_eligible: bool,
 }
 
+/// Checks the answer to `navigator.credentials.get` against the stored
+/// credential and the options the ceremony started with.
+///
+/// The caller must still: refuse a challenge that was used or has expired
+/// (and spend it on the first attempt); replace the stored signature count
+/// with a compare-and-set on the value it read, so two simultaneous answers
+/// cannot both pass; set `require_user_handle` for sign-in without a user
+/// name and pass the allowed list from the stored options; and look the
+/// credential up by id only among credentials it has already tied to the
+/// account (ids are unique across accounts).
 pub fn verify_assertion(
     request: &AssertionRequest<'_>,
     stored: &StoredCredential<'_>,
