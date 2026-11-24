@@ -68,12 +68,14 @@ include!("groups.list.rs");
 /// its module on a line of `workers.list.rs`; that is the only shared line it
 /// touches. The module itself is declared where it lives.
 macro_rules! workers {
-    ($($module:path),* $(,)?) => {
+    // A path is written as its segments: a `path` fragment cannot be followed
+    // by `::workers`.
+    ($($($module:ident)::+),* $(,)?) => {
         /// The workers of every module of the API.
         pub fn workers() -> Vec<$crate::background::Worker> {
             #[allow(unused_mut)]
             let mut all = Vec::new();
-            $(all.extend($module::workers());)*
+            $(all.extend($($module)::+::workers());)*
             all
         }
     };
