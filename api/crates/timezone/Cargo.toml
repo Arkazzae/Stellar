@@ -1,0 +1,11 @@
+[package]
+name = "stellarr-timezone"
+version.workspace = true
+edition.workspace = true
+publish.workspace = true
+description = "Time zones from the system's zone database: the offset and abbreviation in force at a moment"
+
+[dependencies]
+
+[lints]
+workspace = true
