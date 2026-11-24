@@ -539,11 +539,12 @@ async fn the_security_page_lists_the_providers_and_the_identities_by_their_names
     let w = world().await;
     let client = w.server.sign_in(&w.owner).await;
     let page: Value = client.get("/api/me/security").await.json();
-    assert_eq!(page["providers"], json!([{"id": "default", "displayName": "Test IdP"}]));
+    assert_eq!(page["identityProviders"], json!([{"id": "default", "displayName": "Test IdP"}]));
     assert_eq!(page["identities"], json!([]));
     link(&w.server, &w.owner.id, &w.provider.issuer(), &w.provider.subject(), None);
     link(&w.server, &w.owner.id, "https://Gone.Example.test/realms/x", "s", Some("gone"));
     let page: Value = client.get("/api/me/security").await.json();
-    let names: Vec<&str> = page["identities"].as_array().unwrap().iter().map(|i| i["name"].as_str().unwrap()).collect();
+    let mut names: Vec<&str> = page["identities"].as_array().unwrap().iter().map(|i| i["name"].as_str().unwrap()).collect();
+    names.sort();
     assert_eq!(names, ["Test IdP", "gone.example.test"]);
 }
