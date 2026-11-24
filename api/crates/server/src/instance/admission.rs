@@ -34,6 +34,7 @@ pub fn admit(
     user: &User,
     now: Timestamp,
     messages: &Messages,
+    invited_to: Option<Id>,
 ) -> Result<Admission, DbError> {
     let banned: bool = tx.query_row(
         "SELECT EXISTS (SELECT 1 FROM \"ServerBans\" WHERE \"ServerId\" = ?1 AND \"UserId\" = ?2)",
@@ -55,8 +56,8 @@ pub fn admit(
         return Ok(Admission::NoMemberRole);
     };
     starter::admit(tx, server, user.id, role.id, false, true, now)?;
-    Ok(Admission::Added(welcome::create(
-        tx, server, user, now, messages,
+    Ok(Admission::Added(welcome::create_in(
+        tx, server, user, now, messages, invited_to,
     )?))
 }
 
