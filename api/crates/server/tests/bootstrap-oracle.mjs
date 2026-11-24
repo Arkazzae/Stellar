@@ -177,6 +177,18 @@ await ask("giphy, signed in", P.mia, "/api/config/giphy");
 await ask("giphy, nobody signed in", null, "/api/config/giphy");
 await ask("giphy, POST", P.mia, "/api/config/giphy", {}, "POST");
 
+// How long the answer takes for the biggest page, said apart from the transcript.
+const took = [];
+let size = 0;
+for (let i = 0; i < 9; i++) {
+  const started = performance.now();
+  const r = await fetch(base + "/api/bootstrap", { headers: { ...clientHeaders, Cookie: P.mia.cookie } });
+  size = (await r.text()).length;
+  took.push(performance.now() - started);
+}
+took.sort((a, b) => a - b);
+console.error(`${base}: median ${took[4].toFixed(1)} ms, fastest ${took[0].toFixed(1)} ms, ${size} bytes`);
+
 writeFileSync(args.out, lines.join("\n") + "\n");
 for (const hub of Object.values(hubs)) hub.socket.close(1000);
 process.exit(0);
