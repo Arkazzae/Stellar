@@ -274,6 +274,19 @@ describe("preferOpusInSdp", () => {
     expect(mLine).toBe("m=audio 9 UDP/TLS/RTP/SAVPF 111 0 8 13");
   });
 
+  it("preserves ICE-TCP and UDP candidates when tuning a description", () => {
+    const candidates = [
+      "a=candidate:1 1 udp 2130706431 192.0.2.20 49000 typ host",
+      "a=candidate:2 1 tcp 1518214911 192.0.2.20 49000 typ host tcptype passive",
+    ];
+    const sdp = CHROME_AUDIO + candidates.join("\r\n") + "\r\n";
+    const tuned = tuneAudioSections(sdp, () => ({
+      parameters: OPUS_FMTP_PARAMETERS,
+      ptime: OPUS_PTIME,
+    }));
+    expect(audioLines(tuned).filter((line) => line.startsWith("a=candidate:"))).toEqual(candidates);
+  });
+
   it("leaves an m-line that already leads with Opus alone", () => {
     expect(preferOpusInSdp(CHROME_AUDIO)).toBe(CHROME_AUDIO);
   });
