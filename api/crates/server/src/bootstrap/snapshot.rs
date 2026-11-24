@@ -284,10 +284,9 @@ impl Read {
         self.markers.extend(stored);
     }
 
-    /// The answer, with how to take part in voice as of `now`. Written last, as
-    /// the first server wrote it, so that a relay set up wrongly fails it.
+    /// The answer, with how to take part in voice as of `now`.
     pub fn finish(self, state: &AppState, now: Timestamp) -> Result<Bootstrap, ApiError> {
-        let rtc = voice::rtc(state.settings(), self.user, now).map_err(broken)?;
+        let rtc = voice::rtc(state.settings(), self.user, now);
         Ok(Bootstrap {
             user: self.person,
             server: self.server.dto(),

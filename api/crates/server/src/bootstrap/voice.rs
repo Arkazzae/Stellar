@@ -63,9 +63,8 @@ struct IceServer {
 
 /// How a client takes part in voice. Every room goes through the media server;
 /// the relay stays in the ICE servers for browsers on networks that block UDP.
-/// A relay that is set up wrongly is an error here, at the time of asking.
-pub fn rtc(settings: &Settings, user: Id, now: Timestamp) -> Result<Rtc, String> {
-    let relay: Relay = settings.relay.arrangement.clone()?;
+pub fn rtc(settings: &Settings, user: Id, now: Timestamp) -> Rtc {
+    let relay: Relay = settings.relay.arrangement;
     let host = settings.rtc.public_host.as_str();
     let turn = turn::credentials(&settings.rtc, user, now);
     let port = relay.turn_port;
@@ -92,7 +91,7 @@ pub fn rtc(settings: &Settings, user: Id, now: Timestamp) -> Result<Rtc, String>
             credential: Some(turn.credential),
         });
     }
-    Ok(Rtc {
+    Rtc {
         protocol_version: PROTOCOL_VERSION,
         capabilities: Capabilities {
             audio_codecs: ["opus"],
@@ -105,5 +104,5 @@ pub fn rtc(settings: &Settings, user: Id, now: Timestamp) -> Result<Rtc, String>
         ice_servers,
         signaling_hub: "/hubs/app",
         media_server: turn::public_endpoint(&settings.rtc, host),
-    })
+    }
 }

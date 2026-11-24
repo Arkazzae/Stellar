@@ -17,6 +17,34 @@ fn production(extra: &[(&str, &str)]) -> Result<Settings, SettingError> {
 }
 
 #[test]
+fn a_relay_set_up_wrongly_stops_the_start_with_the_message_of_its_setting() {
+    for (name, value, said) in [
+        (
+            "Rtc__TurnPort",
+            "0",
+            "Rtc:TurnPort must be between 1 and 65535.",
+        ),
+        (
+            "Rtc__TurnPort",
+            "65536",
+            "Rtc:TurnPort must be between 1 and 65535.",
+        ),
+        ("Rtc__TurnPort", "abc", "Rtc:TurnPort is not a number."),
+        (
+            "Rtc__TurnTcpEnabled",
+            "maybe",
+            "Rtc:TurnTcpEnabled is not true or false.",
+        ),
+    ] {
+        let refused = production(&[(name, value)]).unwrap_err();
+        assert_eq!(refused.to_string(), said, "{name}={value}");
+    }
+    // The TLS port is looked at only while TLS is on.
+    assert!(production(&[("Rtc__TurnsPort", "0")]).is_ok());
+    assert!(production(&[("Rtc__TurnsPort", "0"), ("Rtc__TurnsEnabled", "true")]).is_err());
+}
+
+#[test]
 fn an_empty_production_environment_gets_the_documented_defaults() {
     let settings = production(&[]).unwrap();
 
