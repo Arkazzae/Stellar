@@ -33,6 +33,11 @@ impl Drop for Smtp {
 
 impl Smtp {
     pub async fn start() -> Smtp {
+        Smtp::start_slow(Duration::ZERO).await
+    }
+
+    /// A mail server that takes `delay` to accept each message.
+    pub async fn start_slow(delay: Duration) -> Smtp {
         let listener = TcpListener::bind(("127.0.0.1", 0)).await.unwrap();
         let port = listener.local_addr().unwrap().port();
         let mails = Arc::new(Mutex::new(Vec::new()));
@@ -40,7 +45,7 @@ impl Smtp {
         let task = tokio::spawn(async move {
             while let Ok((stream, _)) = listener.accept().await {
                 let mails = Arc::clone(&shared);
-                tokio::spawn(async move { converse(stream, &mails).await });
+                tokio::spawn(async move { converse(stream, &mails, delay).await });
             }
         });
         Smtp { port, mails, task }
@@ -63,7 +68,7 @@ impl Smtp {
     }
 }
 
-async fn converse(stream: tokio::net::TcpStream, mails: &Mutex<Vec<String>>) {
+async fn converse(stream: tokio::net::TcpStream, mails: &Mutex<Vec<String>>, delay: Duration) {
     let (read, mut write) = stream.into_split();
     let mut lines = BufReader::new(read).lines();
     let _ = write.write_all(b"220 fake.test ESMTP\r\n").await;
@@ -81,6 +86,7 @@ async fn converse(stream: tokio::net::TcpStream, mails: &Mutex<Vec<String>>) {
                     data.push_str(&body);
                     data.push('\n');
                 }
+                tokio::time::sleep(delay).await;
                 mails.lock().unwrap().push(data);
                 "250 2.0.0 Queued".to_string()
             }
@@ -125,7 +131,11 @@ impl Instance {
     /// named, whose addresses are `<name>@example.test`. Nothing asks for a
     /// second step until [`Instance::require`] says so.
     pub async fn with(accounts: &[&str], extra: &[(&str, &str)]) -> Instance {
-        let smtp = Smtp::start().await;
+        Instance::with_mail(accounts, extra, Smtp::start().await).await
+    }
+
+    /// [`Instance::with`], with a mail server of the caller's making.
+    pub async fn with_mail(accounts: &[&str], extra: &[(&str, &str)], smtp: Smtp) -> Instance {
         let mut variables = vec![("Operations__PublicUrl", PUBLIC_URL)];
         variables.extend_from_slice(extra);
         let server = Server::start_with(&variables).await;
