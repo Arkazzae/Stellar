@@ -6,13 +6,10 @@ publish = false
 
 [dependencies]
 str0m = { version = "0.25", default-features = false, features = ["aws-lc-rs"] }
-tokio = { version = "1", features = ["rt-multi-thread", "macros", "net", "signal", "sync", "time"] }
+tokio = { version = "1", features = ["rt-multi-thread", "macros", "net", "signal", "sync", "time", "io-util"] }
 axum = { version = "0.8", default-features = false, features = ["http1", "json", "query", "tokio"] }
 serde = { version = "1", features = ["derive", "rc"] }
 serde_json = "1"
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter", "fmt"] }
 rand = "0.9"
-
-[dev-dependencies]
-tokio = { version = "1", features = ["io-util"] }

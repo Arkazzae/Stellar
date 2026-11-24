@@ -24,8 +24,9 @@ use str0m::bwe::{Bitrate, BweKind};
 use str0m::change::{SdpAnswer, SdpOffer};
 use str0m::crypto::CryptoProvider;
 use str0m::format::PayloadParams;
+use str0m::ice::StunMessage;
 use str0m::media::{Direction, KeyframeRequestKind, MediaKind, Mid};
-use str0m::net::{DatagramSend, Protocol, Receive};
+use str0m::net::{DatagramSend, Protocol, Receive, TcpType, Transmit};
 use str0m::rtp::{ExtensionValues, RtpPacket, RtpWrite};
 use str0m::{Candidate, Event, IceConnectionState, Input, Output, Rtc};
 use tracing::{debug, info, warn};
@@ -35,9 +36,7 @@ use crate::sdp_text;
 use crate::stun;
 
 use downlink::{INITIAL_ESTIMATE_BPS, Wanted};
-use session::{
-    Counter, OutState, PendingOffer, PtCache, Published, RoomKey, Session, SessionKey, TrackKey,
-};
+use session::{Counter, OutState, PendingOffer, PtCache, Published, RoomKey, Session, TrackKey};
 
 /// The largest SDP of one signal, in either direction.
 pub const MAX_SDP_BYTES: usize = 128 * 1024;
@@ -61,8 +60,10 @@ pub const MAX_SOURCE_ADDRS: usize = 64;
 /// The most mids one list of what a receiver wants sent may hold.
 pub const MAX_SUBSCRIPTIONS: usize = 4096;
 
-/// The largest datagram the media plane looks at.
-const MAX_DATAGRAM: usize = 2048;
+pub(crate) use session::SessionKey;
+
+/// The largest packet the media plane looks at.
+pub(crate) const MAX_DATAGRAM: usize = 2048;
 /// How often a connection reports its statistics, which carry the latest
 /// estimate of its downlink before str0m smooths it.
 const STATS_INTERVAL: Duration = Duration::from_millis(200);
@@ -218,11 +219,34 @@ impl From<Counter> for Traffic {
     }
 }
 
-/// A datagram the shell has to send.
+/// The remote endpoint and local candidate for one transport path.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub(crate) struct Endpoint {
+    pub(crate) protocol: Protocol,
+    pub(crate) remote: SocketAddr,
+    pub(crate) local: SocketAddr,
+}
+
+/// A packet the shell has to send.
 #[derive(Debug)]
 pub struct Outgoing {
+    pub protocol: Protocol,
+    pub source: SocketAddr,
     pub destination: SocketAddr,
     pub contents: DatagramSend,
+    pub(crate) session: SessionKey,
+}
+
+impl Outgoing {
+    fn new(session: SessionKey, packet: Transmit) -> Self {
+        Self {
+            protocol: packet.proto,
+            source: packet.source,
+            destination: packet.destination,
+            contents: packet.contents,
+            session,
+        }
+    }
 }
 
 /// Work that touches more than the session whose output produced it. It is
@@ -261,17 +285,19 @@ pub struct CoreConfig {
 pub struct Core {
     epoch: String,
     candidates: Vec<SocketAddr>,
+    tcp: bool,
     crypto: Arc<CryptoProvider>,
     sessions: HashMap<SessionKey, Session>,
     by_id: HashMap<String, SessionKey>,
     by_user: HashMap<String, SessionKey>,
-    by_addr: HashMap<SocketAddr, SessionKey>,
+    by_addr: HashMap<Endpoint, SessionKey>,
     by_ufrag: HashMap<String, SessionKey>,
     rooms: HashMap<RoomKey, Room>,
     room_by_id: HashMap<String, RoomKey>,
     timers: BinaryHeap<Reverse<(Instant, SessionKey)>>,
     log: EventLog,
     outgoing: Vec<Outgoing>,
+    closed_sessions: Vec<SessionKey>,
     work: VecDeque<Work>,
     next_key: u64,
 }
@@ -304,12 +330,10 @@ fn kind_name(kind: MediaKind) -> &'static str {
     }
 }
 
-/// Whether a browser candidate is well formed but of a kind this media
-/// server cannot use: mDNS host names, IPv6 and TCP. These are accepted and
-/// ignored, because a browser sends them as a matter of course and the media
-/// server, being ICE-lite, learns the browser's address from its checks
-/// anyway.
-fn is_unusable_candidate(line: &str) -> bool {
+/// Ignore candidates on transports we cannot use. The passive TCP listener
+/// only accepts an active peer, and this is an IPv4 media plane. ICE-lite
+/// also learns the actual address and port from authenticated checks.
+fn is_unusable_candidate(line: &str, tcp_enabled: bool) -> bool {
     let line = line.trim().strip_prefix("a=").unwrap_or(line.trim());
     let tokens: Vec<&str> = line.split_whitespace().collect();
     if tokens.len() < 8 || !tokens[0].starts_with("candidate:") {
@@ -317,9 +341,14 @@ fn is_unusable_candidate(line: &str) -> bool {
     }
     let transport = tokens[2];
     let address = tokens[4];
-    !transport.eq_ignore_ascii_case("udp")
-        || address.ends_with(".local")
-        || address.parse::<std::net::Ipv6Addr>().is_ok()
+    let supported = transport.eq_ignore_ascii_case("udp")
+        || (tcp_enabled
+            && transport.eq_ignore_ascii_case("tcp")
+            && tokens[8..].as_chunks::<2>().0.iter().any(|attribute| {
+                attribute[0].eq_ignore_ascii_case("tcptype")
+                    && attribute[1].eq_ignore_ascii_case("active")
+            }));
+    !supported || address.ends_with(".local") || address.parse::<std::net::Ipv6Addr>().is_ok()
 }
 
 /// Everything a drain may need besides the session itself.
@@ -341,10 +370,7 @@ impl Ctx<'_> {
                         s.rtc_timeout = t;
                         return Ok(());
                     }
-                    Ok(Output::Transmit(t)) => self.outgoing.push(Outgoing {
-                        destination: t.destination,
-                        contents: t.contents,
-                    }),
+                    Ok(Output::Transmit(t)) => self.outgoing.push(Outgoing::new(key, t)),
                     Ok(Output::Event(e)) => on_event(s, e, now, self.work),
                     Err(e) => return Err(e),
                 }
@@ -473,6 +499,10 @@ fn queue_allocation(s: &mut Session, work: &mut VecDeque<Work>) {
 
 impl Core {
     pub fn new(config: CoreConfig, epoch: String) -> Core {
+        Self::with_tcp(config, epoch, false)
+    }
+
+    pub(crate) fn with_tcp(config: CoreConfig, epoch: String, tcp: bool) -> Core {
         assert!(
             !config.candidates.is_empty(),
             "the media server needs a candidate to advertise"
@@ -482,6 +512,7 @@ impl Core {
             log: EventLog::new(epoch.clone()),
             epoch,
             candidates: config.candidates,
+            tcp,
             crypto: Arc::new(str0m::crypto::from_feature_flags()),
             sessions: HashMap::new(),
             by_id: HashMap::new(),
@@ -492,6 +523,7 @@ impl Core {
             room_by_id: HashMap::new(),
             timers: BinaryHeap::new(),
             outgoing: Vec::new(),
+            closed_sessions: Vec::new(),
             work: VecDeque::new(),
             next_key: 1,
         }
@@ -513,6 +545,11 @@ impl Core {
     /// The datagrams produced since the last call, to be sent in order.
     pub fn take_outgoing(&mut self) -> Vec<Outgoing> {
         std::mem::take(&mut self.outgoing)
+    }
+
+    /// TCP peers cannot outlive the sessions that authenticated them.
+    pub(crate) fn take_closed_sessions(&mut self) -> Vec<SessionKey> {
+        std::mem::take(&mut self.closed_sessions)
     }
 
     /// When [`Core::handle_timeout`] should be called next.
@@ -642,11 +679,25 @@ impl Core {
         }
 
         let candidates = self.candidates.clone();
+        let tcp = self.tcp;
         let (mut ctx, _) = self.ctx();
-        for addr in candidates {
+        for addr in candidates.iter().copied() {
             if let Ok(candidate) = Candidate::host(addr, "udp") {
                 session.rtc.add_local_candidate(candidate);
                 ctx.drain(&mut session, now);
+            }
+        }
+        if tcp {
+            for addr in candidates {
+                if let Ok(candidate) = Candidate::builder()
+                    .tcp()
+                    .host(addr)
+                    .tcptype(TcpType::Passive)
+                    .build()
+                {
+                    session.rtc.add_local_candidate(candidate);
+                    ctx.drain(&mut session, now);
+                }
             }
         }
         ctx.reschedule(&mut session);
@@ -906,7 +957,7 @@ impl Core {
             ));
         };
         // Some browsers end their candidates with an empty one.
-        if line.trim().is_empty() || is_unusable_candidate(line) {
+        if line.trim().is_empty() || is_unusable_candidate(line, self.tcp) {
             return Ok(());
         }
         let candidate: Candidate = serde_json::from_value(value.clone())
@@ -1528,17 +1579,39 @@ impl Core {
     /// str0m thinks its source is, and a NAT in front of the socket maps it
     /// back to the address the browser used.
     pub fn handle_datagram(&mut self, now: Instant, source: SocketAddr, buf: &[u8]) {
-        if buf.is_empty() || buf.len() > MAX_DATAGRAM || !source.is_ipv4() {
-            return;
-        }
-        let Ok(receive) = Receive::new(Protocol::Udp, source, self.candidates[0], buf) else {
-            return;
+        let endpoint = Endpoint {
+            protocol: Protocol::Udp,
+            remote: source,
+            local: self.candidates[0],
         };
-        let input = Input::Receive(now, receive);
+        self.handle_packet(now, endpoint, buf, None);
+    }
 
-        let Some(key) = self.route(source, buf, &input) else {
-            return;
-        };
+    /// Takes one RFC 4571 frame from a socket. The first frame must be an
+    /// authenticated ICE Binding request; a socket stays with that session.
+    pub(crate) fn handle_tcp(
+        &mut self,
+        now: Instant,
+        endpoint: Endpoint,
+        buf: &[u8],
+        owner: Option<SessionKey>,
+    ) -> Option<SessionKey> {
+        self.handle_packet(now, endpoint, buf, owner)
+    }
+
+    fn handle_packet(
+        &mut self,
+        now: Instant,
+        endpoint: Endpoint,
+        buf: &[u8],
+        owner: Option<SessionKey>,
+    ) -> Option<SessionKey> {
+        if buf.is_empty() || buf.len() > MAX_DATAGRAM || !endpoint.remote.is_ipv4() {
+            return None;
+        }
+        let receive = Receive::new(endpoint.protocol, endpoint.remote, endpoint.local, buf).ok()?;
+        let input = Input::Receive(now, receive);
+        let key = self.route(endpoint, buf, &input, owner)?;
 
         let (mut ctx, sessions) = self.ctx();
         let s = sessions
@@ -1562,12 +1635,29 @@ impl Core {
         }
 
         self.run_work(now);
+        self.sessions.contains_key(&key).then_some(key)
     }
 
-    /// Which session a datagram belongs to: by the remote address once it is
-    /// known, and before that by the ICE credentials of a connectivity check.
-    fn route(&mut self, source: SocketAddr, buf: &[u8], input: &Input) -> Option<SessionKey> {
-        if let Some(&key) = self.by_addr.get(&source)
+    /// Which session a datagram belongs to, first by the bound endpoint and
+    /// then by the ICE credentials of a connectivity check.
+    fn route(
+        &mut self,
+        endpoint: Endpoint,
+        buf: &[u8],
+        input: &Input,
+        owner: Option<SessionKey>,
+    ) -> Option<SessionKey> {
+        let tcp = endpoint.protocol == Protocol::Tcp;
+        // An authenticated TCP socket already has an immutable owner. It
+        // does not depend on the bounded cache of recent UDP endpoints.
+        if let Some(owner) = owner {
+            let session = self.sessions.get(&owner)?;
+            return (stun::local_ufrag(buf).is_none_or(|ufrag| ufrag == session.ufrag)
+                && session.rtc.accepts(input))
+            .then_some(owner);
+        }
+        if !tcp
+            && let Some(&key) = self.by_addr.get(&endpoint)
             && self
                 .sessions
                 .get(&key)
@@ -1582,28 +1672,40 @@ impl Core {
         if !s.rtc.accepts(input) {
             return None;
         }
-        // Every new address a valid check comes from becomes a remote
-        // candidate that str0m keeps for the life of the session and compares
-        // each later check with. A browser uses a handful; whoever holds the
-        // session's credentials could otherwise send one check from as many
-        // addresses as it likes and slow the media task of every room.
-        if !s.sources.contains(&source) {
-            if s.sources.len() >= MAX_SOURCE_ADDRS {
-                debug!(session = %s.id, "ignored a check from one address too many");
+        if tcp {
+            // Rtc::accepts also has an address-only fast path for the
+            // nominated pair, which cannot authenticate a new TCP socket.
+            let request = StunMessage::parse(buf).ok()?;
+            let creds = s.rtc.direct_api().local_ice_credentials();
+            let hmac = self.crypto.sha1_hmac_provider;
+            if !request.is_binding_request()
+                || !request.verify(creds.pass.as_bytes(), |key, data| hmac.sha1_hmac(key, data))
+            {
                 return None;
             }
-            s.sources.insert(source);
+        }
+        // A valid check can add a peer-reflexive candidate inside str0m.
+        // Keep the lifetime bound even when a TCP socket has closed.
+        if !s.sources.contains(&endpoint) {
+            if s.sources.len() >= MAX_SOURCE_ADDRS {
+                debug!(session = %s.id, "ignored a check from one endpoint too many");
+                return None;
+            }
+            s.sources.insert(endpoint);
         }
 
-        // The latest check with valid credentials decides who owns an address.
-        if let Some(previous) = self.by_addr.insert(source, key)
+        if tcp {
+            return Some(key);
+        }
+        // The latest check with valid credentials decides who owns a UDP endpoint.
+        if let Some(previous) = self.by_addr.insert(endpoint, key)
             && previous != key
-            && let Some(p) = self.sessions.get_mut(&previous)
+            && let Some(previous) = self.sessions.get_mut(&previous)
         {
-            p.addrs.retain(|a| *a != source);
+            previous.addrs.retain(|addr| *addr != endpoint);
         }
         let s = self.sessions.get_mut(&key)?;
-        if let Some(evicted) = s.remember_addr(source)
+        if let Some(evicted) = s.remember_addr(endpoint)
             && self.by_addr.get(&evicted) == Some(&key)
         {
             self.by_addr.remove(&evicted);
@@ -1890,6 +1992,9 @@ impl Core {
             return;
         };
 
+        if self.tcp {
+            self.closed_sessions.push(key);
+        }
         self.by_id.remove(&s.id);
         if self.by_user.get(&s.user_id) == Some(&key) {
             self.by_user.remove(&s.user_id);
@@ -1931,10 +2036,7 @@ impl Core {
             }
             for _ in 0..64 {
                 match s.rtc.poll_output() {
-                    Ok(Output::Transmit(t)) => outgoing.push(Outgoing {
-                        destination: t.destination,
-                        contents: t.contents,
-                    }),
+                    Ok(Output::Transmit(t)) => outgoing.push(Outgoing::new(key, t)),
                     Ok(Output::Event(_)) => {}
                     Ok(Output::Timeout(_)) | Err(_) => break,
                 }

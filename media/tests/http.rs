@@ -10,7 +10,7 @@ use stellarr_media::server::{self, Server, ServerError};
 use str0m::change::{SdpAnswer, SdpOffer, SdpPendingOffer};
 use str0m::format::Codec;
 use str0m::media::{Direction, MediaKind, Mid};
-use str0m::net::{Protocol, Receive};
+use str0m::net::{Protocol, Receive, TcpType, Transmit};
 use str0m::rtp::RtpWrite;
 use str0m::{Candidate, Event, Input, Output, Rtc};
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
@@ -237,6 +237,26 @@ async fn refuses_to_start_when_a_socket_is_taken() {
         "{:?}",
         refused.err()
     );
+}
+
+#[tokio::test]
+async fn refuses_to_start_when_the_tcp_media_port_is_taken() {
+    let taken = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let SocketAddr::V4(address) = taken.local_addr().unwrap() else {
+        unreachable!()
+    };
+    let mut config = config(SECRET);
+    config.media_bind = address;
+    let refused = server::start(config).await;
+    assert!(matches!(
+        refused,
+        Err(ServerError::Bind {
+            what: "TCP media socket",
+            ..
+        })
+    ));
+    // A failed start releases the UDP socket it reserved first.
+    UdpSocket::bind(address).await.unwrap();
 }
 
 #[tokio::test]
@@ -724,24 +744,114 @@ async fn reset_and_stats_report_what_the_contract_says() {
     server.shutdown().await.unwrap();
 }
 
-// ------------------------------------------------------------ over real UDP
+// ------------------------------------------------------- over real UDP and TCP
 
-struct UdpClient {
+enum MediaWire {
+    Udp(UdpSocket),
+    Tcp {
+        stream: TcpStream,
+        local: SocketAddr,
+        remote: SocketAddr,
+        buffered: Vec<u8>,
+    },
+}
+
+impl MediaWire {
+    async fn send(&mut self, packet: Transmit) {
+        match self {
+            Self::Udp(socket) => {
+                assert_eq!(packet.proto, Protocol::Udp);
+                socket
+                    .send_to(&packet.contents, packet.destination)
+                    .await
+                    .unwrap();
+            }
+            Self::Tcp { stream, remote, .. } => {
+                assert_eq!(packet.proto, Protocol::Tcp);
+                assert_eq!(packet.destination, *remote);
+                stream
+                    .write_u16(packet.contents.len().try_into().unwrap())
+                    .await
+                    .unwrap();
+                stream.write_all(&packet.contents).await.unwrap();
+            }
+        }
+    }
+
+    async fn receive(&mut self) -> Option<(Protocol, SocketAddr, SocketAddr, Vec<u8>)> {
+        match self {
+            Self::Udp(socket) => {
+                let mut buf = vec![0; 2048];
+                let (n, source) =
+                    tokio::time::timeout(Duration::from_millis(1), socket.recv_from(&mut buf))
+                        .await
+                        .ok()?
+                        .unwrap();
+                buf.truncate(n);
+                Some((Protocol::Udp, source, socket.local_addr().unwrap(), buf))
+            }
+            Self::Tcp {
+                stream,
+                local,
+                remote,
+                buffered,
+            } => loop {
+                if let Some(header) = buffered.get(..2) {
+                    let len = u16::from_be_bytes(header.try_into().unwrap()) as usize;
+                    if buffered.len() >= 2 + len {
+                        let packet = buffered[2..2 + len].to_vec();
+                        buffered.drain(..2 + len);
+                        return Some((Protocol::Tcp, *remote, *local, packet));
+                    }
+                }
+                let n = tokio::time::timeout(Duration::from_millis(1), stream.read_buf(buffered))
+                    .await
+                    .ok()?
+                    .unwrap();
+                assert_ne!(n, 0, "the media server closed a live TCP transport");
+            },
+        }
+    }
+}
+
+struct NetworkClient {
     rtc: Rtc,
-    socket: UdpSocket,
+    wire: MediaWire,
     session: String,
     pending: Option<SdpPendingOffer>,
     received: Vec<(Mid, Vec<u8>)>,
 }
 
-impl UdpClient {
-    async fn new(server: &Server, user: u64) -> UdpClient {
-        let socket = UdpSocket::bind("127.0.0.1:0").await.unwrap();
+impl NetworkClient {
+    async fn new(server: &Server, user: u64, tcp: bool) -> Self {
         let mut rtc = Rtc::builder().set_rtp_mode(true).build(Instant::now());
-        rtc.add_local_candidate(Candidate::host(socket.local_addr().unwrap(), "udp").unwrap());
-        UdpClient {
+        let wire = if tcp {
+            let remote = server.candidates()[0];
+            assert_eq!(remote.port(), server.media_addr().port());
+            let stream = TcpStream::connect(remote).await.unwrap();
+            let local = SocketAddr::new(stream.local_addr().unwrap().ip(), 9);
+            rtc.add_local_candidate(
+                Candidate::builder()
+                    .tcp()
+                    .host(local)
+                    .tcptype(TcpType::Active)
+                    .build()
+                    .unwrap(),
+            );
+            MediaWire::Tcp {
+                stream,
+                local,
+                remote,
+                buffered: Vec::new(),
+            }
+        } else {
+            let socket = UdpSocket::bind("127.0.0.1:0").await.unwrap();
+            rtc.add_local_candidate(Candidate::host(socket.local_addr().unwrap(), "udp").unwrap());
+            MediaWire::Udp(socket)
+        };
+        Self {
             rtc,
-            socket,
+            wire,
             session: create(server, user).await,
             pending: None,
             received: Vec::new(),
@@ -753,7 +863,7 @@ impl UdpClient {
             match self.rtc.poll_output().unwrap() {
                 Output::Timeout(_) => return,
                 Output::Transmit(t) => {
-                    let _ = self.socket.send_to(&t.contents, t.destination).await;
+                    self.wire.send(t).await;
                 }
                 Output::Event(Event::RtpPacket(p)) => {
                     let mid = self
@@ -770,12 +880,8 @@ impl UdpClient {
     }
 
     async fn pump(&mut self) {
-        let mut buf = vec![0; 2048];
-        while let Ok(Ok((n, source))) =
-            tokio::time::timeout(Duration::from_millis(1), self.socket.recv_from(&mut buf)).await
-        {
-            let local = self.socket.local_addr().unwrap();
-            let receive = Receive::new(Protocol::Udp, source, local, &buf[..n]).unwrap();
+        while let Some((protocol, source, local, packet)) = self.wire.receive().await {
+            let receive = Receive::new(protocol, source, local, &packet).unwrap();
             self.rtc
                 .handle_input(Input::Receive(Instant::now(), receive))
                 .unwrap();
@@ -788,7 +894,7 @@ impl UdpClient {
     }
 }
 
-async fn relay(server: &Server, clients: &mut [&mut UdpClient], seen: &mut u64) {
+async fn relay(server: &Server, clients: &mut [&mut NetworkClient], seen: &mut u64) {
     let reply = get(
         server,
         &format!("/v1/events?epoch={}&after={seen}", server.epoch()),
@@ -844,24 +950,44 @@ async fn relay(server: &Server, clients: &mut [&mut UdpClient], seen: &mut u64) 
 
 #[tokio::test(flavor = "multi_thread")]
 async fn two_clients_talk_over_real_udp_through_the_process() {
+    conversation_over_media(false, false).await;
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn clients_forward_media_in_both_directions_between_tcp_and_udp() {
+    conversation_over_media(true, false).await;
+    conversation_over_media(false, true).await;
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn two_clients_talk_over_tcp_without_a_udp_route() {
+    conversation_over_media(true, true).await;
+}
+
+async fn conversation_over_media(tcp_a: bool, tcp_b: bool) {
     // The socket is bound to every address, and the one address advertised
     // is not the bind address.
-    let port = StdUdpSocket::bind("127.0.0.1:0")
-        .unwrap()
-        .local_addr()
-        .unwrap()
-        .port();
     let mut c = config(SECRET);
-    c.media_bind = SocketAddrV4::new([0, 0, 0, 0].into(), port);
-    c.advertise = Some(vec![SocketAddrV4::new([127, 0, 0, 1].into(), port)]);
+    if !(tcp_a && tcp_b) {
+        let port = StdUdpSocket::bind("127.0.0.1:0")
+            .unwrap()
+            .local_addr()
+            .unwrap()
+            .port();
+        c.media_bind = SocketAddrV4::new([0, 0, 0, 0].into(), port);
+        c.advertise = Some(vec![SocketAddrV4::new([127, 0, 0, 1].into(), port)]);
+    }
     let server = server::start(c).await.unwrap();
     assert_eq!(
         server.candidates(),
-        [SocketAddr::from(([127, 0, 0, 1], port))]
+        [SocketAddr::from((
+            [127, 0, 0, 1],
+            server.media_addr().port()
+        ))]
     );
 
-    let mut a = UdpClient::new(&server, 1).await;
-    let mut b = UdpClient::new(&server, 2).await;
+    let mut a = NetworkClient::new(&server, 1, tcp_a).await;
+    let mut b = NetworkClient::new(&server, 2, tcp_b).await;
     let mut mids = Vec::new();
     for client in [&mut a, &mut b] {
         let mut api = client.rtc.sdp_api();
@@ -942,6 +1068,26 @@ async fn two_clients_talk_over_real_udp_through_the_process() {
         sessions.iter().all(|s| s["state"] == "connected"),
         "{sessions:?}"
     );
+
+    if let MediaWire::Tcp { stream, .. } = &mut a.wire {
+        let deleted = request(
+            &server,
+            "DELETE",
+            &format!("/v1/sessions/{}", a.session),
+            Some(SECRET),
+            None,
+        )
+        .await;
+        assert_eq!(deleted.status, 204);
+        tokio::time::timeout(Duration::from_secs(1), stream.read_to_end(&mut Vec::new()))
+            .await
+            .expect("deleting the session promptly closes its TCP stream")
+            .unwrap();
+        let stats = get(&server, "/v1/stats").await;
+        let remaining = stats.body["rooms"][0]["sessions"].as_array().unwrap();
+        assert_eq!(remaining.len(), 1);
+        assert_eq!(remaining[0]["state"], "connected");
+    }
 
     server.shutdown().await.unwrap();
 }
