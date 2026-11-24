@@ -201,7 +201,7 @@ pub async fn link_default(
     caller: MaybeCaller,
     query: QueryValues,
 ) -> ApiResult<Response> {
-    let first = state.0.settings().oidc.providers.first().cloned();
+    let first = state.0.settings().oidc.find("default").cloned();
     ticketed(state.0, client.0, headers, caller.0, query, first, TicketKind::Link).await
 }
 
@@ -228,7 +228,7 @@ pub async fn reauthenticate_default(
     caller: MaybeCaller,
     query: QueryValues,
 ) -> ApiResult<Response> {
-    let first = state.0.settings().oidc.providers.first().cloned();
+    let first = state.0.settings().oidc.find("default").cloned();
     ticketed(state.0, client.0, headers, caller.0, query, first, TicketKind::Reauthenticate).await
 }
 
