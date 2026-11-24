@@ -339,7 +339,12 @@ pub(super) async fn logs(
         sources,
         capacity: LOG_CAPACITY,
     };
-    Ok(json_response(StatusCode::OK, &answer))
+    // The same lines as the export, which is not cached either.
+    let mut response = json_response(StatusCode::OK, &answer);
+    response
+        .headers_mut()
+        .insert(header::CACHE_CONTROL, HeaderValue::from_static("no-store"));
+    Ok(response)
 }
 
 /// Keeps a value inside its tab-separated cell and row.
