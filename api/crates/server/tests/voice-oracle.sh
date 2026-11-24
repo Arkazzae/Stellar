@@ -6,20 +6,21 @@
 # routes leave.
 #
 # It founds an instance on this server, makes six accounts, their rooms, roles,
-# calls and sounds in the database, copies the file to the first server's
-# container, starts a fake media server for each (one bound to every address so
-# that the container can reach it), and runs voice-oracle.mjs against each.
-# Needs docker, sqlite3, curl, Node 26, and the first server's container from
-# the `oracle` script of the integrator with `Rtc__MediaControlUrl` set in
-# ORACLE_ENV_FILE to http://host.docker.internal:5231 (its own script puts its
-# own value after the file's; use a copy that does not).
+# calls and sounds in the database, starts the first server with the `oracle`
+# script (and removes it again), copies the database into it, starts a fake
+# media server for each (one bound to every address so that the container can
+# reach it), and runs voice-oracle.mjs against each. Needs docker, sqlite3,
+# curl and Node 26. Ports 5231 and 5232 are the fakes'.
 #
 #   ORACLE=voice ORACLE_PORT=5217 STELLARR_API=path/to/stellarr-api \
-#   FAKE_MEDIA=path/to/examples/fake_media voice-oracle.sh [section,section]
+#   FAKE_MEDIA=path/to/examples/fake_media ORACLE_SCRIPT=path/to/oracle \
+#   voice-oracle.sh [section,section]
 #
-# Prints the difference between the two transcripts, which is empty when the
-# servers agree on everything the script observes. The transcripts are left in
-# $WORK (default a new folder under the temporary directory).
+# LIFECYCLE=1 also runs voice-lifecycle.sh on the same database. KEEP_WORK=1
+# leaves the work folder, which holds both transcripts; without it the folder
+# is removed, with the transcripts printed first. Prints the difference between
+# the two transcripts, which is empty when the servers agree on everything the
+# script observes. Every server and fake it started is stopped on every way out.
 set -euo pipefail
 
 name=${ORACLE:-voice}
@@ -30,13 +31,20 @@ only=${1:-}
 here=$(cd "$(dirname "$0")" && pwd)
 container=stellarr-port-oracle-$name
 oracle=http://127.0.0.1:$port
+oracle_script=${ORACLE_SCRIPT:-oracle}
 work=${WORK:-$(mktemp -d)}
 password='Corona!2026-long'
 headers=(-H 'X-Stellarr-Client: web' -H 'X-Stellarr-Client-Version: 2.0.0' -H 'Content-Type: application/json')
 pids=()
 
-cleanup() { for pid in "${pids[@]}"; do kill "$pid" 2>/dev/null || true; done; }
-trap cleanup EXIT
+cleanup() {
+  for pid in "${pids[@]}"; do kill "$pid" 2>/dev/null || true; done
+  "$oracle_script" stop "$name" >/dev/null 2>&1 || true
+  [ -n "${KEEP_WORK:-}" ] || rm -rf "$work"
+}
+trap cleanup EXIT INT TERM
+printf 'Rtc__MediaControlUrl=http://host.docker.internal:5231\nRtc__MediaControlSecret=media-test-secret\nRtc__MediaPort=5236\nRateLimiting__AuthWrite__PermitLimit=500\nRateLimiting__Login__PermitLimit=500\n' > "$work/oracle.env"
+ORACLE_ENV_FILE="$work/oracle.env" "$oracle_script" start "$name" "$port" Development
 
 code() { curl -s -o /dev/null -w '%{http_code}' "$@"; }
 wait_ready() {
@@ -90,6 +98,13 @@ role_mod=60000000-0000-4000-8000-000000000001; role_senior=60000000-0000-4000-80
 role3=60000000-0000-4000-8000-000000000003; role3staff=60000000-0000-4000-8000-000000000004; role4=60000000-0000-4000-8000-000000000005
 sound1=70000000-0000-4000-8000-000000000001; sound3=70000000-0000-4000-8000-000000000003
 now='2026-11-24 02:00:00'
+conv() { # id first second: stored with the lower id first, as conversations are made
+  if [[ "$2" < "$3" ]]; then echo "insert into DirectConversations (Id,UserAId,UserBId,CreatedAt,EncryptionState) values('$1','$2','$3','$now','Off');"; else echo "insert into DirectConversations (Id,UserAId,UserBId,CreatedAt,EncryptionState) values('$1','$3','$2','$now','Off');"; fi
+}
+sqlite3 "$db" "$(conv C0000000-0000-4000-8000-000000000001 "$(id ola)" "$(id cat)")
+$(conv C0000000-0000-4000-8000-000000000002 "$(id ola)" "$(id dan)")
+$(conv C0000000-0000-4000-8000-000000000003 "$(id ben)" "$(id eve)")
+$(conv C0000000-0000-4000-8000-000000000004 "$(id ben)" "$(id fay)")"
 sqlite3 "$db" "
 update ServerRoles set Position=100 where Id='$base';
 insert into ServerRoles values('$role_mod','$first','Mod','#123456',32,5,0,0);
@@ -123,10 +138,6 @@ insert into SoundboardSounds values('$sound1','$first','80000000-0000-4000-8000-
 insert into SoundboardSounds values('$sound3','$third','80000000-0000-4000-8000-000000000003','$(id ola)','Third','y',0,2,0,'$now');
 insert into UserPreferences (UserId,DesktopNotifications,MentionPopups,CallRingtone,EmailNotifications,PushNotifications,MentionsOnly,MessageSound,JoinLeaveSound,AllowDirectMessages,AllowFriendRequests,ShowPresence,DeveloperMode,ReducedMotion,VadSensitivity,JoinSoundId) values('$(id ola)',1,1,1,0,0,0,1,1,1,1,1,0,0,50,'$sound1');
 insert into UserPreferences (UserId,DesktopNotifications,MentionPopups,CallRingtone,EmailNotifications,PushNotifications,MentionsOnly,MessageSound,JoinLeaveSound,AllowDirectMessages,AllowFriendRequests,ShowPresence,DeveloperMode,ReducedMotion,VadSensitivity) values('$(id eve)',1,1,1,0,0,0,1,1,0,1,1,0,0,50);
-insert into DirectConversations (Id,UserAId,UserBId,CreatedAt,EncryptionState) values('C0000000-0000-4000-8000-000000000001','$(id ola)','$(id cat)','$now','Off');
-insert into DirectConversations (Id,UserAId,UserBId,CreatedAt,EncryptionState) values('C0000000-0000-4000-8000-000000000002','$(id ola)','$(id dan)','$now','Off');
-insert into DirectConversations (Id,UserAId,UserBId,CreatedAt,EncryptionState) values('C0000000-0000-4000-8000-000000000003','$(id ben)','$(id eve)','$now','Off');
-insert into DirectConversations (Id,UserAId,UserBId,CreatedAt,EncryptionState) values('C0000000-0000-4000-8000-000000000004','$(id ben)','$(id fay)','$now','Off');
 insert into UserBlocks values('$(id dan)','$(id ola)','$now');
 "
 ben=$(id ben); fay=$(id fay)
@@ -165,5 +176,12 @@ docker cp "$container:/tmp/data/stellarr.db-shm" "$work/oracle-db/stellarr.db-sh
 { echo "# audit rows"; rows "$work/oracle-db/stellarr.db"; } >> "$work/oracle.txt"
 { echo "# audit rows"; rows "$work/rust/stellarr.db"; } >> "$work/rust.txt"
 docker start "$container" >/dev/null
+docker stop -t 5 "$container" >/dev/null 2>&1 || true
 echo "transcripts: $work/oracle.txt (first server), $work/rust.txt (this one)"
-diff "$work/oracle.txt" "$work/rust.txt" && echo "the two servers agree on everything observed"
+status=0
+diff "$work/oracle.txt" "$work/rust.txt" && echo "the two servers agree on everything observed" || status=1
+echo "lines: $(wc -l < "$work/oracle.txt") and $(wc -l < "$work/rust.txt")"
+if [ -n "${LIFECYCLE:-}" ]; then
+  ORACLE_EXTERNAL=1 SHARED="$work" bash "$here/voice-lifecycle.sh" || status=1
+fi
+exit $status

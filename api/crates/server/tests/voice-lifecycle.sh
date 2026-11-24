@@ -5,10 +5,15 @@
 # first one, each with a fake media server behind it.
 #
 # It needs the database and the ids a run of voice-oracle.sh left in its work
-# folder, and the same tools:
+# folder (KEEP_WORK=1 there), or runs after it with LIFECYCLE=1. Standalone it
+# starts the first server with the `oracle` script and removes it again:
 #
 #   SHARED=<the work folder of voice-oracle.sh> ORACLE=voice ORACLE_PORT=5217 \
-#   STELLARR_API=path/to/stellarr-api FAKE_MEDIA=path/to/examples/fake_media voice-lifecycle.sh
+#   STELLARR_API=path/to/stellarr-api FAKE_MEDIA=path/to/examples/fake_media \
+#   ORACLE_SCRIPT=path/to/oracle voice-lifecycle.sh
+#
+# Every server and fake it started is stopped, and its work folder removed
+# (unless KEEP_WORK=1), on every way out.
 set -euo pipefail
 
 name=${ORACLE:-voice}
@@ -18,12 +23,21 @@ fake=${FAKE_MEDIA:?the path of the fake_media example}
 shared=${SHARED:?the work folder of a run of voice-oracle.sh}
 here=$(cd "$(dirname "$0")" && pwd)
 container=stellarr-port-oracle-$name
+oracle_script=${ORACLE_SCRIPT:-oracle}
 work=${WORK:-$(mktemp -d)}
 password='Corona!2026-long'
 pids=()
 rust_pid=
-cleanup() { for pid in "${pids[@]}"; do kill "$pid" 2>/dev/null || true; done; }
-trap cleanup EXIT
+cleanup() {
+  for pid in "${pids[@]}"; do kill "$pid" 2>/dev/null || true; done
+  [ -n "${ORACLE_EXTERNAL:-}" ] || "$oracle_script" stop "$name" >/dev/null 2>&1 || true
+  [ -n "${KEEP_WORK:-}" ] || rm -rf "$work"
+}
+trap cleanup EXIT INT TERM
+if [ -z "${ORACLE_EXTERNAL:-}" ]; then
+  printf 'Rtc__MediaControlUrl=http://host.docker.internal:5231\nRtc__MediaControlSecret=media-test-secret\nRtc__MediaPort=5236\nRateLimiting__AuthWrite__PermitLimit=500\nRateLimiting__Login__PermitLimit=500\n' > "$work/oracle.env"
+  ORACLE_ENV_FILE="$work/oracle.env" "$oracle_script" start "$name" "$port" Development
+fi
 
 code() { curl -s -o /dev/null -w '%{http_code}' "$@"; }
 wait_ready() {
@@ -86,3 +100,4 @@ for target in oracle rust; do
 done
 echo "transcripts: $work/oracle.txt (first server), $work/rust.txt (this one)"
 diff "$work/oracle.txt" "$work/rust.txt" && echo "the two servers agree on everything observed"
+echo "lines: $(wc -l < "$work/oracle.txt") and $(wc -l < "$work/rust.txt")"
