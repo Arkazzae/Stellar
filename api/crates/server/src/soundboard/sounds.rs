@@ -15,11 +15,11 @@ use crate::database::DbError;
 use crate::http::{ApiError, ApiResult, Json, Path, Problem, json_response};
 use crate::permissions::audit::{self, AuditChange, AuditEvent};
 use crate::permissions::authorization::{Scope, allows};
-use crate::permissions::membership::{ActiveServer, parse_guid};
+use crate::permissions::membership::ActiveServer;
 use crate::permissions::privileges::MANAGE_SERVER;
 use crate::servers::Object;
 use crate::state::AppState;
-use crate::values::{Id, Timestamp};
+use crate::values::{Guid, Id, Timestamp};
 
 const MIN_CLIP_SECONDS: f64 = 0.15;
 const MAX_CLIP_SECONDS: f64 = 15.0;
@@ -233,10 +233,9 @@ pub async fn update(
     State(state): State<AppState>,
     caller: Caller,
     ActiveServer(server): ActiveServer,
-    Path(sound_id): Path<String>,
+    Path(Guid(sound_id)): Path<Guid>,
     Json(Object(request)): Json<Object<UpdateSound>>,
 ) -> ApiResult<Response> {
-    let sound_id = parse_guid(&sound_id).ok_or_else(ApiError::not_found)?;
     let user = caller.user;
     let work = {
         let state = state.clone();
@@ -331,9 +330,8 @@ pub async fn remove(
     State(state): State<AppState>,
     caller: Caller,
     ActiveServer(server): ActiveServer,
-    Path(sound_id): Path<String>,
+    Path(Guid(sound_id)): Path<Guid>,
 ) -> ApiResult<Response> {
-    let sound_id = parse_guid(&sound_id).ok_or_else(ApiError::not_found)?;
     let user = caller.user;
     let work = {
         let state = state.clone();

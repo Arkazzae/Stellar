@@ -11,16 +11,16 @@ use stellarr_storage::Error as StoreError;
 use crate::auth::Caller;
 use crate::database::DbError;
 use crate::http::{ApiError, ApiResult, Path};
-use crate::permissions::membership::{ActiveServer, parse_guid};
+use crate::permissions::membership::ActiveServer;
 use crate::state::AppState;
+use crate::values::Guid;
 
 pub async fn image(
     State(state): State<AppState>,
     _caller: Caller,
     ActiveServer(server): ActiveServer,
-    Path(emoji_id): Path<String>,
+    Path(Guid(emoji)): Path<Guid>,
 ) -> ApiResult<Response> {
-    let emoji = parse_guid(&emoji_id).ok_or_else(ApiError::not_found)?;
     let found: Option<(String, String, i64)> = state
         .database()
         .read(move |db| -> Result<_, DbError> {

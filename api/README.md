@@ -56,6 +56,10 @@ background/      work that runs beside the requests, from start to stop (workers
 auth/            who a request is from: passwords, setup code, sessions, the sign-in flow
 instance/        what the instance is made of: accounts, servers, starter channels, invites
 accounts/        a group: founding, registering, signing in and out, who is signed in
+client_settings/ a group: the sections of settings a client keeps on the account
+emoji/           a group: a server's custom emoji, their upload and image
+own_profile/     a group: the own profile, preferences and join sound
+soundboard/      a group: a server's sounds, their order and switches
 health/          a group: /health/live and /health/ready
 releases/        a group: the discovery document and the desktop and Android builds
 permissions/     who may do what on a server, and who sees which channel

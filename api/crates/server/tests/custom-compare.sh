@@ -11,6 +11,12 @@
 #   2. the same changes made while three people are connected to the hub
 #      (custom-events.mjs, needs Node 26): what each of them is told.
 #
+# The exit status is 0 when the only differences are the ones listed in
+# custom-known-differences.txt (a label, a tab, a word on why; the label is the
+# text before the first " | " of a transcript line). It is 1 on any other
+# difference, or on a listed line that no longer differs. To change the list,
+# run with KEEP_WORK=1, read $work/diff.txt, and add or remove the labels.
+#
 # Everything started is stopped and every folder removed on every way out;
 # KEEP_WORK=1 keeps the folder.
 #
@@ -73,7 +79,8 @@ case ",$run," in *,probe,*)
   wait $first $second
   echo "== transcripts ($(wc -l < "$work/first.txt") and $(wc -l < "$work/this.txt") lines)"
   cat "$work/first.err" "$work/this.err"
-  diff "$work/first.txt" "$work/this.txt" > "$work/diff.txt" && echo "the transcripts are the same" || { cat "$work/diff.txt"; status=1; }
+  diff "$work/first.txt" "$work/this.txt" > "$work/diff.txt"
+  python3 "$here/custom-transcripts.py" "$work/first.txt" "$work/this.txt" "$here/custom-known-differences.txt" || status=1
   kill "$pid" 2>/dev/null; wait "$pid" 2>/dev/null; pid=
   docker stop -t 20 "$container" >/dev/null
   docker cp "$container:/tmp/data" "$work/first-data" >/dev/null
