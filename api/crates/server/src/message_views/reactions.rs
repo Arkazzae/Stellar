@@ -7,12 +7,12 @@ use axum::extract::State;
 use serde::Serialize;
 use stellarr_messages::MessageKey;
 
-use super::binding::ReactionTarget;
+use super::binding::Guid;
 use super::text;
 use crate::auth::Caller;
 use crate::database::DbError;
 use crate::events::Event;
-use crate::http::{ApiError, ApiResult, Json, Problem};
+use crate::http::{ApiError, ApiResult, Json, Path, Problem};
 use crate::permissions::authorization::{Held, Refusal, Scope, held_at};
 use crate::permissions::membership::ActiveServer;
 use crate::permissions::privileges::ADD_REACTIONS;
@@ -39,21 +39,21 @@ pub struct ReactionChanged {
 }
 
 pub async fn add(
-    target: ReactionTarget,
+    Path((Guid(message), emoji)): Path<(Guid, String)>,
     caller: Caller,
     server: ActiveServer,
     State(state): State<AppState>,
 ) -> ApiResult<Json<ReactionChanged>> {
-    set(state, target, caller, server, true).await
+    set(state, message, emoji, caller, server, true).await
 }
 
 pub async fn remove(
-    target: ReactionTarget,
+    Path((Guid(message), emoji)): Path<(Guid, String)>,
     caller: Caller,
     server: ActiveServer,
     State(state): State<AppState>,
 ) -> ApiResult<Json<ReactionChanged>> {
-    set(state, target, caller, server, false).await
+    set(state, message, emoji, caller, server, false).await
 }
 
 /// What the checks in front of a change found.
@@ -66,12 +66,13 @@ enum Check {
 
 async fn set(
     state: AppState,
-    target: ReactionTarget,
+    message: Id,
+    emoji: String,
     caller: Caller,
     ActiveServer(server): ActiveServer,
     added: bool,
 ) -> ApiResult<Json<ReactionChanged>> {
-    let emoji = text::trim(&target.emoji).to_string();
+    let emoji = text::trim(&emoji).to_string();
     let length = text::units(&emoji);
     if !(1..=MAX_EMOJI_UNITS).contains(&length) || emoji.chars().any(text::is_white_space) {
         let reason = state
@@ -80,7 +81,6 @@ async fn set(
         return Err(Problem::validation(vec![("emoji".to_string(), vec![reason])]).into());
     }
 
-    let message = target.message;
     let user = caller.user;
     // Adding is admitted in the message's channel; taking one's own reaction
     // back needs no permission, so that losing the right to react leaves no

@@ -7,14 +7,14 @@ use rusqlite::{Connection, params};
 use serde::Serialize;
 use stellarr_messages::MessageKey;
 
-use super::binding::{Guid, QueryValues, parse_int};
+use super::binding::Guid;
 use super::cursor::{IndexCursor, Kind, query_hash};
 use super::search::build_query;
 use super::text;
 use crate::messages::dto::{self, MessageDto};
 use crate::auth::Caller;
 use crate::database::DbError;
-use crate::http::{ApiError, ApiResult, Json, Path, Problem};
+use crate::http::{ApiError, ApiResult, Json, Path, Problem, QueryValues};
 use crate::permissions::membership::ActiveServer;
 use crate::permissions::visibility::{self, ChannelKind};
 use crate::state::AppState;
@@ -54,15 +54,11 @@ impl<S: Send + Sync> FromRequestParts<S> for PageQuery {
 
     async fn from_request_parts(parts: &mut Parts, _: &S) -> Result<PageQuery, ApiError> {
         let values = QueryValues::parse(parts.uri.query());
-        let limit = match values.get("limit") {
-            Some(text) => Some(parse_int(&text).ok_or_else(ApiError::bad_request)?),
-            None => None,
-        };
         Ok(PageQuery {
-            limit,
-            kind: values.get("kind"),
-            query: values.get("query"),
-            cursor: values.get("cursor"),
+            limit: values.int("limit")?,
+            kind: values.text("kind"),
+            query: values.text("query"),
+            cursor: values.text("cursor"),
         })
     }
 }
@@ -74,7 +70,9 @@ impl<S: Send + Sync> FromRequestParts<S> for SearchQuery {
     type Rejection = ApiError;
 
     async fn from_request_parts(parts: &mut Parts, _: &S) -> Result<SearchQuery, ApiError> {
-        Ok(SearchQuery(QueryValues::parse(parts.uri.query()).get("query")))
+        Ok(SearchQuery(
+            QueryValues::parse(parts.uri.query()).text("query"),
+        ))
     }
 }
 
