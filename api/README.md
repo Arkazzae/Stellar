@@ -36,7 +36,8 @@ cargo test -p stellarr-api
 ## Layout of `crates/server/src`
 
 ```
-lib.rs         serve(); groups.list.rs is the list of groups
+lib.rs         serve(); groups.list.rs is the list of groups, workers.list.rs of workers
+background/    the framework for work that runs beside the requests
 main.rs        reads the environment, starts logging, runs
 settings/      everything read at start
 database/      SQLite: pool, schema.sql, errors, the write gate
@@ -258,6 +259,91 @@ reuse.
 - `Origin` is the address the proxies vouch for, whether the request came over
   HTTPS and the browser's name for itself, for the session row and the security
   event.
+
+## Background workers
+
+Work that runs beside the requests from start to stop (a watcher of ended
+sessions, the queue of mail, link previews, housekeeping every hour) is a
+`Worker`. A module declares its workers in one function and writes its path on a
+line of `src/workers.list.rs`, the one line it shares with the others; the file
+merges by itself, as the list of groups does.
+
+```rust
+// src/instance/census.rs (this example is compiled as a doc test of `background`)
+use std::time::Duration;
+
+use stellarr_api::background::Worker;
+use stellarr_api::database::DbError;
+use tracing::{info, warn};
+
+pub fn workers() -> Vec<Worker> {
+    vec![Worker::new("census", |state, stop| async move {
+        // `while stop.sleep(..)` is a timer that ends with the server.
+        while stop.sleep(Duration::from_secs(3600)).await {
+            let counted = state
+                .database()
+                .read(|connection| -> Result<i64, DbError> {
+                    Ok(connection.query_row("SELECT COUNT(*) FROM \"Users\"", [], |row| row.get(0))?)
+                })
+                .await;
+            // An iteration that fails is logged, and the next one tries again.
+            match counted {
+                Ok(accounts) => info!("{accounts} accounts"),
+                Err(error) => warn!("the census failed: {error}"),
+            }
+        }
+    })]
+}
+```
+
+```
+// src/workers.list.rs
+workers! {
+    instance::census,
+}
+```
+
+The rules:
+
+- It starts after the database is open, the state is built and the server
+  listens, and it never delays any of them. It is given an `AppState` (the one
+  the handlers have) and a `Stop`. Do nothing at the top of the function that
+  waits for something slow before the first `.await`; the function is a future.
+- It reads and writes through `state.database().read` and `.write`, like a
+  handler, and tells the hub through `state.events()`. It does not open a
+  connection of its own.
+- It stops when told: `stop.stopped().await` resolves when the server is
+  stopping (put it in a `select!` with what else the worker waits on),
+  `stop.is_stopping()` says it between the steps of a long iteration, and
+  `stop.sleep(time)` is a wait that ends early. Do not wait on anything
+  that does not end without a timeout.
+- The server waits for all the workers together, within the same shutdown
+  grace as the requests in flight (30 seconds). A worker still running then is
+  abandoned: its task is aborted at its next `.await` and its name is logged as
+  an error. Work that never reaches an `.await` cannot be aborted; keep a long
+  blocking step inside `database.read` or `.write`, which runs on its own thread.
+- An iteration that fails is the worker's own business, as in the first
+  server's workers: catch the error, log it, go on. A panic is the net under
+  that: it is logged with the worker's name and what it said, the worker is
+  started again after a pause that doubles from one second to a minute (and
+  starts over after a run of a minute), and nothing else is touched. A restart
+  is a new call of the function, so state kept in the old run is gone; what must
+  last is in the database. A worker that returns before it was told to stop is
+  finished and is not started again, which is how one that a setting turns off
+  ends.
+- A worker that must not run in tests (a timer that would race them) checks
+  `state.settings().environment.is_testing()` itself, or is left out by the
+  harness as below.
+
+In tests, `Server::in_process_with(routes, Services { workers, shutdown_grace,
+..Services::default() }, &[])` starts a server with exactly the workers given,
+and a short grace if one wants to see a worker abandoned; `Server::in_process`
+and the library's `serve` have none. The binary the other tests start
+(`Server::start`) runs none either: in the Testing environment only the workers
+named in `Testing__Workers` (comma-separated) run, so
+`Server::start_with(&[("Testing__Workers", "census")])` runs that one.
+See `tests/api/workers.rs` for a worker that is told to stop, one that panics
+and one that does not stop.
 
 ## Plugging in the hub
 
