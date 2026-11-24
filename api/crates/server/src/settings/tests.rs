@@ -594,3 +594,23 @@ fn a_provider_id_longer_than_thirty_two_characters_refuses_the_start() {
     .unwrap_err();
     assert!(refused.to_string().contains(id), "{refused}");
 }
+
+#[test]
+fn web_push_is_off_until_it_is_asked_for_and_never_stops_the_start() {
+    let off = production(&[]).unwrap();
+    let on = production(&[
+        ("STELLARR_PUSH_ENABLED", "TRUE"),
+        ("STELLARR_PUSH_SUBJECT", "mailto:a@chat.test"),
+        ("STELLARR_PUSH_PUBLIC_KEY", "pub"),
+        ("STELLARR_PUSH_PRIVATE_KEY", "priv"),
+    ])
+    .unwrap();
+    let odd = production(&[("STELLARR_PUSH_ENABLED", "maybe")]).unwrap();
+
+    assert!(!off.push.enabled);
+    assert!(on.push.enabled);
+    assert_eq!(on.push.subject, "mailto:a@chat.test");
+    assert_eq!(on.push.public_key, "pub");
+    assert!(!odd.push.enabled);
+    assert!(!format!("{:?}", on.push).contains("priv"));
+}
