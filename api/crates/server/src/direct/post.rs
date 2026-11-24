@@ -7,7 +7,7 @@ use rusqlite::{Connection, OptionalExtension, params};
 use stellarr_messages::MessageKey;
 
 use super::encryption::{self, Payload};
-use super::request::{Body, Malformed, Octets};
+use crate::http::lenient::{Malformed, Members, Octets};
 use super::{peer_in, peer_takes_messages_from, set_read};
 use crate::auth::Caller;
 use crate::events::{Audience, Event};
@@ -55,8 +55,8 @@ struct RequestedEncryption {
     ciphertext: Option<Vec<u8>>,
 }
 
-fn read(body: &Body) -> Result<Request, Malformed> {
-    let encrypted = match body.get::<Body>("encrypted")? {
+fn read(body: &Members) -> Result<Request, Malformed> {
+    let encrypted = match body.get::<Members>("encrypted")? {
         None => None,
         Some(inner) => Some(RequestedEncryption {
             epoch: inner.get::<Id>("epochId")?,
@@ -132,7 +132,7 @@ pub async fn create(
     State(state): State<AppState>,
     caller: Caller,
     Path(Guid(conversation)): Path<Guid>,
-    Json(body): Json<Body>,
+    Json(body): Json<Members>,
 ) -> ApiResult<Response> {
     let request = read(&body)?;
     let messages = *state.messages();
