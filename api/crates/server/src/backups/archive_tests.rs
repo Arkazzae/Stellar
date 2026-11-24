@@ -315,3 +315,66 @@ fn a_backup_of_a_bucket_holds_its_objects_and_restores_them() {
         rt.block_on(store.delete(key)).unwrap();
     }
 }
+
+#[test]
+fn a_copy_succeeds_while_another_connection_restarts_the_wal_and_writes() {
+    let instance = Instance::new();
+    let folder = TempDir::new();
+    let stop = std::sync::Arc::new(AtomicBool::new(false));
+    let (started, ready) = std::sync::mpsc::channel();
+    let churn = {
+        let (path, stop) = (instance.database_path(), stop.clone());
+        std::thread::spawn(move || {
+            let mut connection = rusqlite::Connection::open(path).unwrap();
+            connection
+                .busy_timeout(std::time::Duration::from_secs(30))
+                .unwrap();
+            let mut started = Some(started);
+            let mut generation = 0;
+            while !stop.load(std::sync::atomic::Ordering::Relaxed) {
+                generation += 1;
+                let tx = connection.transaction().unwrap();
+                for name in ["checkpoint-a", "checkpoint-b"] {
+                    tx.execute(
+                        "INSERT OR REPLACE INTO \"InstanceSecrets\" (\"Name\", \"ProtectedValue\", \"UpdatedAt\") VALUES (?1, ?2, '2026-11-24 00:00:00')",
+                        (name, generation.to_string()),
+                    )
+                    .unwrap();
+                }
+                tx.commit().unwrap();
+                // A restarting checkpoint competes with incoming readers.
+                connection
+                    .query_row("PRAGMA wal_checkpoint(RESTART)", [], |_| Ok(()))
+                    .unwrap();
+                if let Some(started) = started.take() {
+                    started.send(()).unwrap();
+                }
+            }
+        })
+    };
+    let copies = ready.recv().map(|()| {
+        (0..40)
+            .map(|round| {
+                let copy = folder.path().join(format!("copy-{round}.db"));
+                super::snapshot::copy_database(&instance.database_path(), &copy).map(|()| copy)
+            })
+            .collect::<Vec<_>>()
+    });
+    stop.store(true, std::sync::atomic::Ordering::Relaxed);
+    churn.join().unwrap();
+    for (round, copy) in copies.unwrap().into_iter().enumerate() {
+        let copy = copy.unwrap_or_else(|error| panic!("round {round}: {error}"));
+        assert_eq!(
+            super::snapshot::check_integrity(&copy),
+            "ok",
+            "round {round}"
+        );
+        let db = rusqlite::Connection::open(&copy).unwrap();
+        let (rows, generations): (i64, i64) = db.query_row(
+            "SELECT count(*), count(DISTINCT \"ProtectedValue\") FROM \"InstanceSecrets\" WHERE \"Name\" IN ('checkpoint-a', 'checkpoint-b')",
+            [],
+            |row| Ok((row.get(0)?, row.get(1)?)),
+        ).unwrap();
+        assert_eq!((rows, generations), (2, 1), "round {round}");
+    }
+}

@@ -30,6 +30,7 @@ mod schema;
 
 use std::path::Path;
 use std::sync::{Arc, Mutex};
+use std::time::{Duration, Instant};
 
 use rusqlite::{Connection, OpenFlags, Transaction, TransactionBehavior};
 use tokio::sync::Semaphore;
@@ -118,6 +119,30 @@ impl Database {
         .await
     }
 
+    /// Takes the write lock with short polls for work that must compete with
+    /// an external writer committing back-to-back transactions.
+    pub(crate) async fn write_with_lock_retry<F>(&self, work: F) -> Result<(), DbError>
+    where
+        F: FnOnce(&Transaction) -> rusqlite::Result<()> + Send + 'static,
+    {
+        let timeout = self.inner.settings.busy_timeout;
+        self.run(move |connection| {
+            connection.busy_timeout(Duration::ZERO)?;
+            let outcome = (|| {
+                let transaction = retry_lock(timeout, || {
+                    Transaction::new_unchecked(connection, TransactionBehavior::Immediate)
+                })?;
+                work(&transaction)?;
+                transaction.commit()
+            })();
+            let restored = connection.busy_timeout(timeout);
+            outcome?;
+            restored?;
+            Ok(())
+        })
+        .await
+    }
+
     /// Like [`Database::write`], but a unique value that another request took
     /// after this one had checked that it was free comes back as `None`
     /// instead of an error. Nothing is kept of the attempt.
@@ -176,6 +201,32 @@ impl Database {
         match joined {
             Ok(outcome) => outcome,
             Err(error) => Err(E::from(DbError::Task(error.to_string()))),
+        }
+    }
+}
+
+/// Retries SQLite contention after releasing the failed attempt's resources.
+/// Callers disable SQLite's own busy wait so the retries share one budget.
+pub(crate) fn retry_lock<T>(
+    timeout: Duration,
+    mut attempt: impl FnMut() -> rusqlite::Result<T>,
+) -> rusqlite::Result<T> {
+    const POLL: Duration = Duration::from_millis(1);
+    let started = Instant::now();
+    loop {
+        match attempt() {
+            Err(error)
+                if matches!(
+                    error.sqlite_error_code(),
+                    Some(rusqlite::ErrorCode::DatabaseBusy | rusqlite::ErrorCode::DatabaseLocked)
+                ) =>
+            {
+                std::thread::sleep(POLL.min(timeout.saturating_sub(started.elapsed())));
+                if started.elapsed() >= timeout {
+                    return Err(error);
+                }
+            }
+            result => return result,
         }
     }
 }

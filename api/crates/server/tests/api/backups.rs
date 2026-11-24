@@ -531,10 +531,19 @@ async fn a_backup_taken_while_rows_are_being_written_is_a_state_that_existed() {
         let id = response.json::<Value>()["id"].as_str().unwrap().to_string();
         let list = settled(&owner.client).await;
         let took = started.elapsed();
-        assert_eq!(list["lastFailure"], Value::Null, "{list}");
         tokio::time::sleep(Duration::from_millis(100)).await;
         stop.store(true, Ordering::Relaxed);
         let written = writer.join().unwrap();
+        assert_eq!(list["lastFailure"], Value::Null, "{list}");
+        let logged: i64 = server
+            .database()
+            .query_row(
+                r#"SELECT count(*) FROM "ServerAuditEntries" WHERE "Action" = 'operator' AND instr("Summary", ?1) > 0"#,
+                [&id],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_eq!(logged, 1, "the completed backup is audited once");
 
         let download = owner
             .client

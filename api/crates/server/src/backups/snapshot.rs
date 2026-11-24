@@ -11,25 +11,28 @@ use std::path::{Path, PathBuf};
 use std::time::Duration;
 
 use rusqlite::backup::{Backup, StepResult};
-use rusqlite::{Connection, OpenFlags};
+use rusqlite::{Connection, OpenFlags, ffi};
 
 use super::BackupFailed;
+use crate::database::retry_lock;
 
-/// How long the copy waits for a lock another connection holds, and how many
-/// times it asks again after the library says it is busy.
+/// The time allowed for acquiring the locks needed to copy the database.
 const BUSY_TIMEOUT: Duration = Duration::from_secs(30);
-const BUSY_ATTEMPTS: u32 = 100;
 
 /// Copies the database at `source` into a new file at `destination`. A copy
 /// that fails is removed: a half-written file would otherwise sit in the list
 /// as a backup. The destination must not exist.
 pub fn copy_database(source: &Path, destination: &Path) -> Result<(), BackupFailed> {
-    // What is there is not ours to remove if the copy then fails.
-    if destination.exists() {
-        return Err(BackupFailed::new(format!(
-            "{} already exists",
-            destination.display()
-        )));
+    // Only remove the destination after we have created and own it.
+    match super::create_private(destination) {
+        Ok(file) => drop(file),
+        Err(error) if error.kind() == std::io::ErrorKind::AlreadyExists => {
+            return Err(BackupFailed::new(format!(
+                "{} already exists",
+                destination.display()
+            )));
+        }
+        Err(error) => return Err(error.into()),
     }
     let outcome = copy(source, destination);
     if outcome.is_err() {
@@ -39,35 +42,34 @@ pub fn copy_database(source: &Path, destination: &Path) -> Result<(), BackupFail
 }
 
 fn copy(source: &Path, destination: &Path) -> Result<(), BackupFailed> {
-    // The copy holds everything the database does: made for its owner alone,
-    // before SQLite writes a byte of it. An empty file is a database to SQLite.
-    drop(super::create_private(destination)?);
-    let from = Connection::open_with_flags(
-        source,
-        OpenFlags::SQLITE_OPEN_READ_ONLY | OpenFlags::SQLITE_OPEN_NO_MUTEX,
-    )?;
-    from.busy_timeout(BUSY_TIMEOUT)?;
-    let mut to = Connection::open_with_flags(
-        destination,
-        OpenFlags::SQLITE_OPEN_READ_WRITE
-            | OpenFlags::SQLITE_OPEN_CREATE
-            | OpenFlags::SQLITE_OPEN_NO_MUTEX,
-    )?;
-    let backup = Backup::new(&from, &mut to)?;
-    for attempt in 0..BUSY_ATTEMPTS {
-        match backup.step(-1)? {
-            StepResult::Done => return Ok(()),
-            // Another connection holds a lock the copy needs; wait and ask
-            // again. Everything is copied afresh each time, so nothing mixes.
-            StepResult::Busy | StepResult::Locked | StepResult::More => {
-                std::thread::sleep(Duration::from_millis(50 + u64::from(attempt) * 10));
-            }
-            _ => {}
-        }
+    let result = retry_lock(BUSY_TIMEOUT, || {
+        let from = Connection::open_with_flags(
+            source,
+            OpenFlags::SQLITE_OPEN_READ_ONLY | OpenFlags::SQLITE_OPEN_NO_MUTEX,
+        )?;
+        from.busy_timeout(Duration::ZERO)?;
+        let mut to = Connection::open_with_flags(
+            destination,
+            OpenFlags::SQLITE_OPEN_READ_WRITE | OpenFlags::SQLITE_OPEN_NO_MUTEX,
+        )?;
+        to.busy_timeout(Duration::ZERO)?;
+        // SQLite rolls back the destination when an unfinished backup is
+        // dropped. The next attempt starts with a new backup handle.
+        let backup = Backup::new(&from, &mut to)?;
+        let code = match backup.step(-1)? {
+            StepResult::Busy => ffi::SQLITE_BUSY,
+            StepResult::Locked => ffi::SQLITE_LOCKED,
+            step => return Ok(step),
+        };
+        Err(rusqlite::Error::SqliteFailure(ffi::Error::new(code), None))
+    })?;
+    if matches!(result, StepResult::Done) {
+        Ok(())
+    } else {
+        Err(BackupFailed::new(
+            "SQLite did not complete the database snapshot.",
+        ))
     }
-    Err(BackupFailed::new(
-        "the database stayed locked and could not be copied",
-    ))
 }
 
 /// Removes a database file and what SQLite leaves beside a copy it opened.
@@ -138,9 +140,7 @@ fn sqlite_message(error: &rusqlite::Error) -> String {
         rusqlite::Error::SqliteFailure(failure, message) => format!(
             "SQLite Error {}: '{}'.",
             failure.extended_code & 0xff,
-            message
-                .clone()
-                .unwrap_or_else(|| failure.to_string())
+            message.clone().unwrap_or_else(|| failure.to_string())
         ),
         other => other.to_string(),
     }

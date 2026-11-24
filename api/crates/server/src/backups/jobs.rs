@@ -312,9 +312,8 @@ async fn write_and_record(
     };
     state
         .database()
-        .write(move |transaction| -> Result<(), crate::database::DbError> {
-            crate::panel::record(transaction, server, actor, sentence)?;
-            Ok(())
+        .write_with_lock_retry(move |transaction| {
+            crate::panel::record(transaction, server, actor, sentence)
         })
         .await
         .map_err(|error| BackupFailed::new(error.to_string()))?;

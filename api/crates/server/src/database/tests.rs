@@ -403,3 +403,69 @@ async fn the_gate_lets_one_through_at_a_time() {
     drop(first);
     other.await.unwrap();
 }
+
+#[test]
+fn lock_retry_waits_on_extended_contention_and_preserves_other_errors() {
+    use rusqlite::ffi;
+
+    let mut codes = [
+        ffi::SQLITE_BUSY_RECOVERY,
+        ffi::SQLITE_LOCKED_SHAREDCACHE,
+        ffi::SQLITE_IOERR_READ,
+    ]
+    .into_iter();
+    let result: rusqlite::Result<()> = retry_lock(Duration::from_secs(1), || {
+        Err(rusqlite::Error::SqliteFailure(
+            ffi::Error::new(codes.next().unwrap()),
+            None,
+        ))
+    });
+    assert_eq!(
+        DbError::from(result.unwrap_err()).extended_code(),
+        Some(ffi::SQLITE_IOERR_READ)
+    );
+
+    let mut attempts = 0;
+    let result: rusqlite::Result<()> = retry_lock(Duration::ZERO, || {
+        attempts += 1;
+        Err(rusqlite::Error::SqliteFailure(
+            ffi::Error::new(ffi::SQLITE_BUSY),
+            None,
+        ))
+    });
+    assert_eq!(attempts, 1);
+    assert_eq!(
+        DbError::from(result.unwrap_err()).extended_code(),
+        Some(ffi::SQLITE_BUSY)
+    );
+}
+
+#[tokio::test]
+async fn a_timed_out_write_restores_the_pooled_connections_busy_timeout() {
+    let folder = TempDir::new();
+    let mut settings = database_settings(&folder);
+    settings.busy_timeout = Duration::from_millis(25);
+    let database = Database::open(&settings).unwrap();
+    let mut holder = Connection::open(&settings.path).unwrap();
+    let lock = holder
+        .transaction_with_behavior(TransactionBehavior::Immediate)
+        .unwrap();
+
+    let failure = database
+        .write_with_lock_retry(|_| panic!("the write must not run without the lock"))
+        .await
+        .unwrap_err();
+    assert_eq!(failure.extended_code(), Some(rusqlite::ffi::SQLITE_BUSY));
+
+    let timeout: i64 = database
+        .read(|db| db.query_row("PRAGMA busy_timeout", [], |row| row.get(0)))
+        .await
+        .unwrap();
+    assert_eq!(timeout, 25);
+    lock.commit().unwrap();
+
+    database
+        .write_with_lock_retry(|tx| insert_user(tx, "after-timeout").map(|_| ()))
+        .await
+        .unwrap();
+}
