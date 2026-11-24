@@ -113,10 +113,13 @@ mod tests {
 
     #[test]
     fn a_document_nests_to_64_containers_and_no_deeper() {
-        let nested = |depth: usize| format!("{}1{}", "[".repeat(depth), "]".repeat(depth));
+        // A document is an object, so the object is the first level.
+        let nested = |depth: usize| format!("{}1{}", "{\"a\":[".repeat(depth / 2) + &"[".repeat(depth % 2), "]".repeat(depth % 2) + &"]}".repeat(depth / 2));
         assert!(read::<Value>(&nested(64)).is_some());
         assert!(read::<Value>(&nested(65)).is_none());
-        assert!(read::<Value>("[\"[[[[\"]").is_some());
+        assert!(read::<Value>(&nested(63)).is_some());
+        // Brackets inside a string are not levels.
+        assert!(read::<Value>("{\"a\":\"[[[[\"}").is_some());
         assert!(read::<Value>("").is_none());
         // A list is never a struct, whatever its elements.
         #[derive(Deserialize)]
