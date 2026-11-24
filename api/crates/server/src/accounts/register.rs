@@ -111,7 +111,7 @@ enum Plan {
     Founding(starter::Starter),
     /// A later one, with the server its invite belongs to and that server's
     /// role for plain members.
-    Joining { invite: Id, server: Id, role: Id, role_is_owner: bool, role_permissions: i64 },
+    Joining { invite: Id, server: Id, channel: Option<Id>, role: Id, role_is_owner: bool, role_permissions: i64 },
 }
 
 /// Everything that can refuse a registration, read before anything is written.
@@ -167,7 +167,7 @@ fn check(
             .title(messages.get(MessageKey::InstanceHasNoMemberRole, &[])?)
             .into());
     };
-    Ok(Plan::Joining { invite: invite.id, server: invite.server, role, role_is_owner, role_permissions })
+    Ok(Plan::Joining { invite: invite.id, server: invite.server, channel: invite.channel, role, role_is_owner, role_permissions })
 }
 
 /// What a registration comes to once it is committed.
@@ -240,18 +240,19 @@ fn write(
     let user = User::find(tx, id)?.ok_or_else(|| DbError::Task("the account just written is not there".into()))?;
     // The first account owns the new instance server; anybody else joins it
     // with the base role.
-    let (server, role_is_owner, role_permissions, founded) = match plan {
+    let (server, role_is_owner, role_permissions, founded, invited_to) = match plan {
         Plan::Founding(starter) => {
             let added = starter::add(tx, &starter, messages, now)?;
             starter::admit(tx, added.id, id, added.owner_role, true, false, now)?;
-            (added.id, true, access::ALL, true)
+            (added.id, true, access::ALL, true, None)
         }
-        Plan::Joining { server, role, role_is_owner, role_permissions, .. } => {
+        Plan::Joining { server, channel, role, role_is_owner, role_permissions, .. } => {
             starter::admit(tx, server, id, role, role_is_owner, !role_is_owner, now)?;
-            (server, role_is_owner, role_permissions, false)
+            (server, role_is_owner, role_permissions, false, channel)
         }
     };
-    let welcome = welcome::create(tx, server, &user, now, messages)?;
+    // An invite to a channel greets the newcomer there, as the first server did.
+    let welcome = welcome::create_in(tx, server, &user, now, messages, invited_to)?;
 
     // The first owner cannot skip an instance-wide requirement by
     // registering: the decision is made against the role just assigned.
