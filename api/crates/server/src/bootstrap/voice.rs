@@ -1,23 +1,14 @@
 //! The voice parts of the bootstrap: who sits in which room, and how a client
-//! takes part.
-//!
-//! Voice rooms are another group's. Until they are on this branch nobody sits
-//! anywhere, which is what the first server answers for an instance where no
-//! room is in use, and the relay credentials and the media endpoint are written
-//! here the way the voice group writes them. When voice lands, the three
-//! calls below are the ones to switch, and the rest of this file goes:
-//!
-//! - [`seats`] to `PresenceTracker::voice_users(channel)`;
-//! - [`credentials`] to `voice::turn::credentials(&settings.rtc, user, now)`;
-//! - [`media_endpoint`] to `voice::turn::public_endpoint(&settings.rtc, host)`.
+//! takes part. The seats come from the presence tracker the hub keeps, the
+//! relay credential and the media endpoint from the voice group's own.
 
-use aws_lc_rs::hmac;
 use serde::Serialize;
 
-use crate::encoding::base64;
+use crate::realtime::presence::PresenceTracker;
 use crate::settings::Settings;
 use crate::settings::relay::Relay;
 use crate::values::{Id, Timestamp};
+use crate::voice::turn;
 
 /// Somebody sitting in a voice room.
 pub struct Seat {
@@ -25,46 +16,18 @@ pub struct Seat {
     pub muted: bool,
 }
 
-/// Who sits in a room. Nobody does, until voice is here.
-pub fn seats(_channel: Id) -> Vec<Seat> {
-    Vec::new()
-}
-
-/// What a browser is given to use the relay: valid for an hour.
-struct Credentials {
-    username: String,
-    credential: String,
-}
-
-/// The secret that is used when none is set, which only development and tests
-/// can be without: a start elsewhere is refused without one.
-const DEVELOPMENT_SECRET: &str = "stellarr-turn-development-secret";
-
-fn credentials(settings: &Settings, user: Id, now: Timestamp) -> Credentials {
-    let secret = settings
-        .rtc
-        .turn_shared_secret
-        .as_deref()
-        .filter(|secret| !secret.trim().is_empty())
-        .unwrap_or(DEVELOPMENT_SECRET);
-    let ends = now.plus(std::time::Duration::from_secs(60 * 60));
-    let username = format!(
-        "{}:{}",
-        ends.unix_seconds(),
-        user.to_string().replace('-', "")
-    );
-    let key = hmac::Key::new(hmac::HMAC_SHA1_FOR_LEGACY_USE_ONLY, secret.as_bytes());
-    let mac = hmac::sign(&key, username.as_bytes());
-    Credentials {
-        credential: base64(mac.as_ref()),
-        username,
-    }
-}
-
-/// The media server's public endpoint, which a browser does not connect to:
-/// it uses the candidates of the session description.
-fn media_endpoint(settings: &Settings, host: &str) -> String {
-    format!("udp://{host}:{}", settings.rtc.media.media_port)
+/// Who sits in a room. Without a tracker (a server started without the hub)
+/// nobody does.
+pub fn seats(tracker: Option<&PresenceTracker>, channel: Id) -> Vec<Seat> {
+    tracker
+        .map(|tracker| {
+            tracker
+                .voice_users(channel)
+                .into_iter()
+                .map(|seat| Seat { user: seat.user, muted: seat.muted })
+                .collect()
+        })
+        .unwrap_or_default()
 }
 
 /// The version of the signalling contract.
@@ -104,7 +67,7 @@ struct IceServer {
 pub fn rtc(settings: &Settings, user: Id, now: Timestamp) -> Result<Rtc, String> {
     let relay: Relay = settings.relay.arrangement.clone()?;
     let host = settings.rtc.public_host.as_str();
-    let turn = credentials(settings, user, now);
+    let turn = turn::credentials(&settings.rtc, user, now);
     let port = relay.turn_port;
     let mut turn_urls = vec![format!("turn:{host}:{port}?transport=udp")];
     if relay.tcp_enabled {
@@ -141,6 +104,6 @@ pub fn rtc(settings: &Settings, user: Id, now: Timestamp) -> Result<Rtc, String>
         },
         ice_servers,
         signaling_hub: "/hubs/app",
-        media_server: media_endpoint(settings, host),
+        media_server: turn::public_endpoint(&settings.rtc, host),
     })
 }

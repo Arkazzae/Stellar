@@ -414,7 +414,7 @@ fn measure(channels: usize, members: usize, messages: usize, hidden: bool) -> (u
         )
         .unwrap();
         let text = stellarr_messages::Messages::new(stellarr_messages::Language::English);
-        let context = Context { messages: &text, presence: &stellarr_api::events::Unconnected };
+        let context = Context { messages: &text, presence: &stellarr_api::events::Unconnected, seats: None };
         db.execute_batch("BEGIN").unwrap();
         log.lock().unwrap().clear();
         let read = read(&db, &context, id(&maya), Id::parse(&home).unwrap()).map_err(|_| ()).unwrap();
