@@ -58,7 +58,6 @@ export default function LoginPage() {
   const oidcError = params.get("oidc_error");
   const unlinked = params.get("oidc") === "unlinked";
   const returnPath = safeReturnPath(params.get("returnUrl"));
-  usePrefetchApp(phase !== "loading");
   const providers = useSignInProviders();
   const instanceName = useInstanceName();
   const ports = usePorts();
@@ -75,6 +74,7 @@ export default function LoginPage() {
     fresh: params.get("fresh") === "1",
     keepSignedIn,
   });
+  usePrefetchApp(phase !== "loading", loginPending || flow.pending);
   const linkOutcome = flow.identityLink;
 
   // A confirmation leaves only once the second step is done, not as soon as

@@ -2,11 +2,14 @@ import { readFileSync } from "node:fs";
 import { join } from "node:path";
 
 import { renderHook } from "@testing-library/react";
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-import { usePrefetchApp } from "./loadApp";
+import type { usePrefetchApp as UsePrefetchApp } from "./loadApp";
 
 const loaded = vi.hoisted(() => vi.fn());
+const loadSignedInCode = vi.hoisted(() => vi.fn(async () => ({})));
+
+vi.mock("@/adapters/signedInLoader", () => ({ loadSignedInCode }));
 
 vi.mock("@/containers/AppContainer", () => {
   loaded();
@@ -15,10 +18,18 @@ vi.mock("@/containers/AppContainer", () => {
 
 afterEach(() => {
   vi.unstubAllGlobals();
+  vi.restoreAllMocks();
   vi.useRealTimers();
 });
 
 describe("usePrefetchApp", () => {
+  let usePrefetchApp: typeof UsePrefetchApp;
+
+  beforeEach(async () => {
+    vi.resetModules();
+    loadSignedInCode.mockClear();
+    ({ usePrefetchApp } = await import("./loadApp"));
+  });
   it("fetches the signed-in app once the browser is idle", async () => {
     let idle: () => void = () => undefined;
     vi.stubGlobal("requestIdleCallback", vi.fn((callback: () => void) => ((idle = callback), 7)));
@@ -26,8 +37,10 @@ describe("usePrefetchApp", () => {
 
     const hook = renderHook(() => usePrefetchApp(true));
     expect(loaded).not.toHaveBeenCalled();
+    expect(loadSignedInCode).not.toHaveBeenCalled();
 
     idle();
+    expect(loadSignedInCode).toHaveBeenCalledOnce();
     await vi.waitFor(() => expect(loaded).toHaveBeenCalledOnce());
     hook.unmount();
   });
@@ -42,6 +55,43 @@ describe("usePrefetchApp", () => {
 
     hook.rerender({ usable: true });
     expect(request).toHaveBeenCalledOnce();
+    hook.unmount();
+  });
+
+  it.each([{ saveData: true }, { effectiveType: "slow-2g" }, { effectiveType: "2g" }, { effectiveType: "3g" }])(
+    "skips speculative downloads over a constrained connection (%o)",
+    (connection) => {
+      Object.defineProperty(navigator, "connection", { configurable: true, value: connection });
+      const request = vi.fn(() => 7);
+      vi.stubGlobal("requestIdleCallback", request);
+      try {
+        const hook = renderHook(({ signingIn }) => usePrefetchApp(true, signingIn), {
+          initialProps: { signingIn: false },
+        });
+        hook.rerender({ signingIn: true });
+        expect(request).not.toHaveBeenCalled();
+        expect(loadSignedInCode).not.toHaveBeenCalled();
+        hook.unmount();
+      } finally {
+        Reflect.deleteProperty(navigator, "connection");
+      }
+    },
+  );
+
+  it("cancels speculative idle scheduling when someone starts signing in", () => {
+    const request = vi.fn(() => 7);
+    const cancel = vi.fn();
+    vi.stubGlobal("requestIdleCallback", request);
+    vi.stubGlobal("cancelIdleCallback", cancel);
+
+    const hook = renderHook(({ signingIn }) => usePrefetchApp(true, signingIn), {
+      initialProps: { signingIn: false },
+    });
+    expect(loadSignedInCode).not.toHaveBeenCalled();
+    hook.rerender({ signingIn: true });
+    expect(loadSignedInCode).toHaveBeenCalledOnce();
+    expect(request).toHaveBeenCalledOnce();
+    expect(cancel).toHaveBeenCalledWith(7);
     hook.unmount();
   });
 
