@@ -3,7 +3,7 @@
 //! browser encrypted for an encrypted conversation.
 
 use axum::extract::{Request, State};
-use axum::http::{HeaderValue, StatusCode, header};
+use axum::http::StatusCode;
 use axum::response::Response;
 use stellarr_messages::MessageKey;
 use stellarr_storage::validation::{UploadKind, UploadSpec};
@@ -16,7 +16,8 @@ use super::refusals::{Texts, invalid, no_room, problem, refuse};
 use crate::auth::Caller;
 use crate::database::DbError;
 use crate::http::multipart::Multipart;
-use crate::http::{ApiError, ApiResult, MAX_REQUEST_BODY_BYTES, json_response};
+use crate::http::{ApiError, ApiResult, MAX_REQUEST_BODY_BYTES};
+pub(super) use crate::http::created;
 use crate::object_store::staging_dir;
 use crate::permissions::membership::ActiveServer;
 use crate::state::AppState;
@@ -59,14 +60,6 @@ fn measured<T>(
         Some(Ok(text)) => parse(text).map(Some).ok_or_else(ApiError::bad_request),
         Some(Err(_)) => Err(ApiError::bad_request()),
     }
-}
-
-pub(super) fn created(location: String, body: &impl serde::Serialize) -> Response {
-    let mut response = json_response(StatusCode::CREATED, body);
-    if let Ok(value) = HeaderValue::from_str(&location) {
-        response.headers_mut().insert(header::LOCATION, value);
-    }
-    response
 }
 
 pub async fn upload(

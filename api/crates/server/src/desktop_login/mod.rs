@@ -19,10 +19,7 @@ mod page;
 mod same_origin;
 mod start;
 
-use axum::http::{HeaderValue, header};
-use axum::response::Response;
-
-use crate::http::{Endpoints, RateLimitPolicy};
+use crate::http::{Endpoints, RateLimitPolicy, no_store};
 
 pub fn routes() -> Endpoints {
     Endpoints::new()
@@ -35,12 +32,4 @@ pub fn routes() -> Endpoints {
         .post("/api/auth/desktop/browser/exchange", exchange::exchange)
         .json_body()
         .rate_limit(RateLimitPolicy::LoginPoll)
-}
-
-/// Every answer of this route is kept out of every cache.
-fn no_store(mut response: Response) -> Response {
-    let headers = response.headers_mut();
-    headers.insert(header::CACHE_CONTROL, HeaderValue::from_static("no-store"));
-    headers.insert(header::PRAGMA, HeaderValue::from_static("no-cache"));
-    response
 }
