@@ -25,6 +25,7 @@ pub mod security;
 pub mod sessions;
 pub mod status;
 pub mod support;
+pub mod terminal;
 pub mod users;
 
 pub use app::run;

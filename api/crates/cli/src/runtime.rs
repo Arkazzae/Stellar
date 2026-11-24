@@ -15,6 +15,7 @@ use crate::database::CliDatabase;
 use crate::errors::{CliError, CliOutcome, exit};
 use crate::invocation::{Invocation, is_blank, trim};
 use crate::json::Json;
+use crate::terminal::PromptFailure;
 
 pub const DEFAULT_CONTAINER_DATA_ROOT: &str = "/data/stellarr";
 
@@ -31,7 +32,7 @@ pub struct Io {
     /// Whether a person is at the other end of the input, to be asked.
     pub interactive: bool,
     /// Asks for a secret without showing it; none where nobody can be asked.
-    pub secret_prompt: Option<Box<dyn FnMut() -> Option<String>>>,
+    pub secret_prompt: Option<Box<dyn FnMut() -> Result<String, PromptFailure>>>,
 }
 
 pub struct Runtime {
@@ -292,7 +293,18 @@ impl Runtime {
             ));
         }
         let prompt = self.io.secret_prompt.as_mut().expect("checked above");
-        Ok(prompt().unwrap_or_default())
+        let asked = prompt();
+        // Ctrl+C at the prompt is a cancellation, whatever came with it.
+        self.check_cancelled()?;
+        match asked {
+            Ok(value) => Ok(value),
+            Err(PromptFailure::Interrupted) => Err(cancelled()),
+            Err(PromptFailure::EchoStays) => Err(CliError::new(
+                "secret_value_required",
+                "The terminal's echo could not be turned off (`stty -echo` failed), so the secret was not asked for: it would have been shown as it was typed. Provide it with --stdin instead.",
+                exit::USAGE,
+            )),
+        }
     }
 
     pub fn stdout_line(&mut self, line: &str) {

@@ -158,6 +158,8 @@ pub fn set(runtime: &mut Runtime, name: &str) -> CliOutcome {
         definition.name
     ))?;
     let value = runtime.read_secret()?;
+    // Ctrl+C is a cancellation whatever was typed with it, judged first.
+    runtime.check_cancelled()?;
     if !secrets::is_valid_value(&value) {
         return Err(CliError::new(
             "invalid_secret",
