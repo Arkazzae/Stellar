@@ -141,8 +141,11 @@ the closure runs on a blocking thread and never on one that serves requests.
   another request after this one had checked it was free.
 - `MutationGate` (`state.mutation_gate().enter().await`) lets one change of a
   server-wide invariant at a time through.
-- The closure's error type may be your own as long as it has `From<DbError>` and
-  `From<rusqlite::Error>`; `DbError::is_unique_violation()` and
+- A closure that only runs statements can return `rusqlite::Result<T>`: a failure
+  to get a connection comes back as a `rusqlite::Error` too (it is a refused
+  conversion in disguise, so do not read anything into its kind). A closure that
+  has outcomes of its own may use an error type of its own as long as it has
+  `From<DbError>` and `From<rusqlite::Error>`; `DbError::is_unique_violation()` and
   `is_foreign_key_violation()` tell the refusals apart.
 - The schema is `database/schema.sql`, kept as the first server made it. Do not
   change it. Use the table and column names as they are, in quotes.
@@ -215,6 +218,14 @@ is simply not signed in, and the cookie is taken away.
   HTTPS and the browser's name for itself, for the session row and the security
   event.
 
+## Plugging in the hub
+
+`serve(settings, groups, listening, shutdown)` runs the API with nobody connected.
+`serve_with(.., Services { events, presence }, ..)` is the same with the hub's
+`EventPublisher` and `Presence`; the hub publishes nothing back, it reads what
+handlers publish (and `SessionEnded`, which says that a session was revoked so
+its connections close, and is not passed on to clients).
+
 ## Tests
 
 Unit tests sit next to the code in `#[cfg(test)] mod tests`.
@@ -264,7 +275,9 @@ async fn a_channel_is_read_by_its_id() {
 
 `tests/api/oracle.rs` holds an ignored test that sends the same requests to this
 server and to the first one and prints where the answers differ; its header says
-how to run it.
+how to run it. `tests/oracle-shared-database.sh` runs both servers on copies of one
+database file: an account made by one signs in on the other, and the answers to the
+second step are the same.
 
 The Testing environment lifts the rate limits (ten thousand a window) and lets
 the session cookie work over plain HTTP. To test a limit, start in Production

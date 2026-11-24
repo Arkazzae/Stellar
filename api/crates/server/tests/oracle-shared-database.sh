@@ -88,7 +88,11 @@ insert into ServerInvites values('AAAAAAAA-0000-0000-0000-000000000002','$server
 give_oracle_db "$work/shared.db"
 start_rust "$work/shared.db"
 
-scrub() { sed -E 's/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/<id>/g; s/[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9:.]+Z?/<time>/g; s/oklch\(0\.58 0\.14 [0-9]+\)/oklch(<hue>)/g; s/00-[0-9a-f]{32}-[0-9a-f]{16}-00/<trace>/g; s/=[^;=]{20,};/=<value>;/; /^(Date|Server|Transfer-Encoding|Content-Length):/Id' | tr -d '\r' | sort; }
+# What differs by nature is replaced, header names are lower-cased (the two
+# servers spell them differently) and the lines are sorted.
+scrub() {
+  tr -d '\r' | perl -pe 's/^([A-Za-z-]+):/\L$1:/; s/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/<id>/g; s/[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9:.]+Z?/<time>/g; s/oklch\(0\.58 0\.14 [0-9]+\)/oklch(<hue>)/g; s/00-[0-9a-f]{32}-[0-9a-f]{16}-00/<trace>/g; s/=[^;=]{20,};/=<value>;/; s/expires=[A-Za-z]+, [0-9]+ [A-Za-z]+ [0-9]+ [0-9:]+ GMT/expires=<in five minutes>/' | grep -Eiv '^(date|server|transfer-encoding|content-length):' | sort
+}
 compare() { # label, path, body
   local a b
   a=$(curl -si -X POST "$oracle$2" "${headers[@]}" -d "$3" | scrub)
