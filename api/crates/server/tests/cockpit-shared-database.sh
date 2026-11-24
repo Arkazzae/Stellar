@@ -22,7 +22,9 @@
 # `oracle start <name> <port> Production`, which the script starts and stops
 # itself. Every server and helper it starts is stopped, and its work folder
 # removed, however it ends (KEEP=1 keeps the folder). Not part of the ordinary
-# run.
+# run. It exits 1 when a transcript differs in a way that is not on the list of
+# known differences (see KNOWN in cockpit-oracle.mjs: each is there by decision
+# or accepted, with its reason).
 #
 #   STELLARR_API=path/to/stellarr-api ORACLE_SCRIPT=path/to/oracle \
 #     [ORACLE=cockpit ORACLE_PORT=5233 MAIL_PORTS=5291,5292,5293,5294 KEEP=1 PROVIDERS=1] \
@@ -41,6 +43,7 @@ public=http://127.0.0.1:$port
 work=$(mktemp -d "${TMPDIR:-/tmp}/cockpit-oracle.XXXXXX")
 pid=
 helpers=
+unknown=0
 
 finish() {
   status=$?
@@ -151,7 +154,7 @@ wait $first
 wait $second
 echo "== transcripts"
 grep -B2 '^!!' "$work/first.txt" | head -30 || true
-node "$here/cockpit-oracle.mjs" compare --first "$work/first.txt" --this "$work/this.txt"
+node "$here/cockpit-oracle.mjs" compare --first "$work/first.txt" --this "$work/this.txt" || unknown=1
 echo "== mail"
 node "$here/cockpit-oracle.mjs" mails --first "$work/mail-first" --this "$work/mail-this"
 
@@ -187,9 +190,10 @@ helpers="$helpers $first $second"
 wait $first
 wait $second
 grep -B2 '^!!' "$work/stale-first.txt" | head -30 || true
-node "$here/cockpit-oracle.mjs" compare --first "$work/stale-first.txt" --this "$work/stale-this.txt"
+node "$here/cockpit-oracle.mjs" compare --first "$work/stale-first.txt" --this "$work/stale-this.txt" || unknown=1
 stop_rust
 take_oracle_db "$work/stale-after-first.db"
 echo "== databases after the second step (a refused change must leave nothing behind)"
 python3 -I "$here/cockpit-tables.py" "$work/stale-after-first.db" "$work/rust/stellarr.db" "$work/seeded.db"
 echo "work: $work"
+[ "$unknown" = 0 ] || { echo "there are differences that are not known"; exit 1; }
