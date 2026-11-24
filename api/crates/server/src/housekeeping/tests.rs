@@ -402,7 +402,6 @@ async fn an_upload_nobody_uses_goes_after_its_day_and_takes_its_objects_with_it(
     assert_eq!(summary.orphan_attachments, 1);
     assert_eq!(attachments(&connection), [young]);
     // Its objects were queued and then removed from the store in the same run.
-    assert_eq!(summary.pending_object_deletions, 0);
     assert!(queued(&connection).is_empty());
 }
 
@@ -588,13 +587,12 @@ async fn a_store_that_fails_keeps_what_is_queued_and_the_next_run_empties_it() {
     }
 
     place.store.failing.store(true, Ordering::Relaxed);
-    let summary = place.run().await;
-    assert_eq!(summary.pending_object_deletions, 3);
+    place.run().await;
     assert_eq!(queued(&connection), ["a", "b", "c"]);
 
     place.store.failing.store(false, Ordering::Relaxed);
-    let summary = place.run().await;
-    assert_eq!(summary.pending_object_deletions, 0);
+    place.run().await;
+    assert!(queued(&connection).is_empty());
     for key in ["a", "b", "c"] {
         assert!(
             place.store.get(key, None).await.is_err(),
@@ -668,7 +666,7 @@ async fn with_cleanup_off_the_queue_is_still_emptied_and_nothing_else_is_pruned(
         ),
         (0, 0, 0)
     );
-    assert_eq!(summary.pending_object_deletions, 0);
+    assert_eq!(place.count("ObjectDeletions"), 0);
     assert_eq!(place.count("ImageAttachments"), 1);
     assert_eq!(place.count("AuthChallenges"), 1);
     assert!(old_backup.exists());
@@ -905,10 +903,12 @@ async fn an_object_that_could_not_be_removed_after_a_failed_upload_waits_for_the
     // The upload's own rollback cannot reach the store, so it queues the key.
     crate::uploads::roll_back(&place.state, vec!["images/half".to_string()]).await;
     assert_eq!(queued(&connection), ["images/half"]);
-    assert_eq!(place.run().await.pending_object_deletions, 1);
+    place.run().await;
+    assert_eq!(queued(&connection), ["images/half"]);
 
     place.store.failing.store(false, Ordering::Relaxed);
-    assert_eq!(place.run().await.pending_object_deletions, 0);
+    place.run().await;
+    assert!(queued(&connection).is_empty());
     assert!(place.store.get("images/half", None).await.is_err());
 }
 

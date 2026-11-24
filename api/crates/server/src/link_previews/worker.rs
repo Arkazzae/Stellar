@@ -58,7 +58,7 @@ async fn process(
 ) -> Result<(), DbError> {
     let embeds = builder::build(state, fetcher, request.message).await?;
     let channel = request.channel;
-    let found: Option<(Id, crate::events::Audience)> = state
+    let audience = state
         .database()
         .read(move |db| -> Result<_, DbError> {
             let server: Option<Id> = db
@@ -69,12 +69,12 @@ async fn process(
                 )
                 .optional()?;
             Ok(match server {
-                Some(server) => Some((server, visibility::audience_of(db, server, channel)?)),
+                Some(server) => Some(visibility::audience_of(db, server, channel)?),
                 None => None,
             })
         })
         .await?;
-    let Some((_, audience)) = found else {
+    let Some(audience) = audience else {
         return Ok(());
     };
     // Sent even when nothing was built: after an edit, an empty set is how
