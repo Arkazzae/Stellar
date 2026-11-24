@@ -19,10 +19,31 @@ const LIFETIME: Duration = Duration::from_secs(7 * 24 * 60 * 60);
 const MAX_DESTINATION_KEY: usize = 320;
 
 const MENTION: &str = "mention";
+const DIRECT_MESSAGE: &str = "direct-message";
 
 /// Queues what a mention of `recipient` in the message asked for.
 pub fn enqueue_mention(
     db: &Connection,
+    message: Id,
+    recipient: Id,
+    created_at: Timestamp,
+) -> rusqlite::Result<()> {
+    enqueue(db, MENTION, message, recipient, created_at)
+}
+
+/// Queues what a direct message to `recipient` asked for.
+pub fn enqueue_direct_message(
+    db: &Connection,
+    message: Id,
+    recipient: Id,
+    created_at: Timestamp,
+) -> rusqlite::Result<()> {
+    enqueue(db, DIRECT_MESSAGE, message, recipient, created_at)
+}
+
+fn enqueue(
+    db: &Connection,
+    kind: &'static str,
     message: Id,
     recipient: Id,
     created_at: Timestamp,
@@ -53,6 +74,7 @@ pub fn enqueue_mention(
 
     let queue = Queue {
         db,
+        kind,
         message,
         recipient,
         created_at,
@@ -133,6 +155,7 @@ fn trim(text: &str) -> &str {
 
 struct Queue<'a> {
     db: &'a Connection,
+    kind: &'static str,
     message: Id,
     recipient: Id,
     created_at: Timestamp,
@@ -154,7 +177,7 @@ impl Queue<'_> {
             Id::random(),
             self.message,
             self.recipient,
-            MENTION,
+            self.kind,
             channel,
             key,
             subscription,
