@@ -8,7 +8,7 @@ use axum::response::{IntoResponse, Response};
 use serde::{Deserialize, Serialize};
 use stellarr_messages::MessageKey;
 
-use super::{context, no_store, providers, trusted_device_of};
+use super::{context, no_store, trusted_device_of};
 use crate::auth::ceremony::{self, Changed, FromSession, Removed, Started};
 use crate::auth::{Caller, ways_in};
 use crate::http::{ApiError, ApiResult, Json, Origin, Path, Problem, json_response, with_cookie, with_session_cookie};
@@ -105,7 +105,7 @@ async fn removal(
 ) -> ApiResult<Response> {
     let trusted = trusted_device_of(origin);
     let context = context(state, origin, trusted.as_deref());
-    let providers = providers::owned_of(&providers::configured(state));
+    let providers = crate::identity_providers::owned(state);
     match ceremony::remove_method(state, caller, &context, method, &providers, password).await? {
         // The session that asked stays, on the account's new version.
         Removed::Done { cookie } => Ok(with_session_cookie(StatusCode::NO_CONTENT.into_response(), &cookie)),

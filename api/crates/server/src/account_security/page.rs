@@ -163,6 +163,7 @@ async fn page(state: &AppState, caller: Caller, origin: &Origin) -> ApiResult<Re
     let trusted_token = trusted_device_of(origin);
     let public_url = state.settings().operations.public_url.clone();
     let configured = providers::configured(state);
+    let owned = crate::identity_providers::owned(state);
     let found = state
         .database()
         .read(move |connection| -> Result<Option<Page>, DbError> {
@@ -196,7 +197,6 @@ async fn page(state: &AppState, caller: Caller, origin: &Origin) -> ApiResult<Re
                 })
                 .collect();
             let email_code_available = methods.iter().any(|method| method.r#type == "email");
-            let owned = providers::owned_of(&configured);
             Ok(Some(Page {
                 requirement: policy.mfa_requirement,
                 mfa_required: required,
@@ -264,7 +264,13 @@ fn identities(
             let provider = providers.of(linked.provider.as_deref()).to_string();
             Identity {
                 id: linked.id,
-                name: providers::identity_name(configured, &provider, &linked.issuer),
+                name: crate::identity_providers::identity_label(
+                    &linked.issuer,
+                    configured
+                        .iter()
+                        .find(|candidate| candidate.id == provider)
+                        .map(|candidate| candidate.display_name.clone()),
+                ),
                 provider_id: Some(provider),
                 created_at: linked.created_at,
             }
