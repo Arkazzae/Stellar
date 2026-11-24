@@ -2,6 +2,7 @@
 
 use rusqlite::{Connection, params};
 
+use super::flow::StoredChallenge;
 use crate::testing::{TempDir, new_database};
 use crate::values::{Id, Timestamp};
 
@@ -56,6 +57,53 @@ pub fn add_pending_method(connection: &Connection, user: Id, kind: &str) -> Id {
         )
         .expect("a method is made pending");
     id
+}
+
+/// A challenge of the purpose given, as the flow looks it up, and the row
+/// that stands behind it.
+pub fn add_challenge(connection: &Connection, user: Id, purpose: &str) -> StoredChallenge {
+    let id = Id::random();
+    let now = Timestamp::now();
+    connection
+        .execute(
+            "INSERT INTO \"AuthChallenges\" VALUES (?1, ?2, ?3, 'hash', 'password', NULL, 1, 0, NULL, NULL, 0, 5, ?4, ?5, NULL)",
+            params![id, user, purpose, now, now.plus(std::time::Duration::from_secs(300))],
+        )
+        .expect("a challenge is added");
+    StoredChallenge {
+        id,
+        user,
+        purpose: purpose.to_string(),
+        primary_source: "password".to_string(),
+        parent_session: None,
+        short_lived: false,
+        pending_identity: None,
+        attempts: 0,
+        max_attempts: 5,
+    }
+}
+
+/// How many attempts the challenge has spent, and whether it is closed.
+pub fn attempts_of(connection: &Connection, challenge: Id) -> (i64, bool) {
+    connection
+        .query_row(
+            "SELECT \"Attempts\", \"ConsumedAt\" IS NOT NULL FROM \"AuthChallenges\" WHERE \"Id\" = ?1",
+            [challenge],
+            |row| Ok((row.get(0)?, row.get(1)?)),
+        )
+        .expect("the challenge is there")
+}
+
+/// The details of the account's events of one kind, oldest first.
+pub fn events_of(connection: &Connection, user: Id, kind: &str) -> Vec<String> {
+    let mut statement = connection
+        .prepare("SELECT \"Detail\" FROM \"SecurityEvents\" WHERE \"UserId\" = ?1 AND \"Kind\" = ?2 ORDER BY \"CreatedAt\"")
+        .expect("a statement");
+    statement
+        .query_map(params![user, kind], |row| row.get(0))
+        .expect("events are read")
+        .map(|detail| detail.expect("a detail"))
+        .collect()
 }
 
 /// The first server of the instance, so that the settings have a row to hang on.
