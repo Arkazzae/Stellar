@@ -484,8 +484,10 @@ async fn a_search_needs_two_to_two_hundred_characters() {
         assert!(response.json::<Value>()["errors"]["query"][0].as_str().unwrap().contains("200"));
     }
     assert_eq!(w.maya.client.get(&path(&format!("?query={}", "a".repeat(200)))).await.status, 200);
-    // A name given twice has its values joined with a comma.
-    assert_eq!(w.maya.client.get(&path("?query=a&query=b")).await.status, 200);
+    // A name given twice is refused.
+    let twice = w.maya.client.get(&path("?query=cat&query=dog")).await;
+    assert_eq!(twice.status, 400);
+    assert!(twice.json::<Value>()["errors"]["query"].is_array());
 }
 
 #[tokio::test]

@@ -1070,13 +1070,13 @@ async fn a_client_not_behind_the_published_version_or_not_saying_its_version_is_
 }
 
 #[tokio::test]
-async fn a_bucket_outside_the_valid_range_counts_as_the_last_one() {
+async fn a_bucket_above_the_valid_range_counts_as_the_last_one_and_a_negative_one_is_refused() {
     for (rollout, bucket, expected) in [
         (100, 99, 200),
         (100, 1000, 200),
-        (100, -1, 200),
+        (100, -1, 400),
         (99, 1000, 204),
-        (99, -1, 204),
+        (99, -1, 400),
         (50, 49, 200),
         (50, 50, 204),
         (0, 0, 204),

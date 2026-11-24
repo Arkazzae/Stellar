@@ -1005,14 +1005,14 @@ async fn a_connection_follows_the_server_it_asked_for_when_it_belongs_to_it() {
         (String::new(), true),
         (format!("?serverId={}", instance_server.to_lowercase()), true),
         (format!("?serverId={}", other.to_lowercase()), false),
-        (format!("?SERVERID={}", other.to_lowercase()), false),
+        // The name is `serverId`; in another case it names nothing.
+        (format!("?SERVERID={}", other.to_lowercase()), true),
         // Only the hyphenated spelling is an id; any other names no server and
         // the connection follows the first.
         (format!("?serverId={}", other.to_lowercase().replace('-', "")), true),
         (format!("?serverId=%7B{}%7D", other.to_lowercase()), true),
         ("?serverId=garbage".to_string(), true),
         ("?serverId=11111111-1111-1111-1111-111111111111".to_string(), true),
-        (format!("?serverId={}&serverId={}", other.to_lowercase(), instance_server.to_lowercase()), false),
     ] {
         let mut watcher = HubClient::connect_to(server.address(), &query, &cookie).await;
         // The order the database lists the owner's servers in decides which

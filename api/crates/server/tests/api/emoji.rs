@@ -116,8 +116,6 @@ async fn a_name_is_trimmed_unwrapped_and_lower_cased_and_must_then_be_a_code() {
         ("::ab::", Some("ab")),
         ("a_1", Some("a_1")),
         (long.as_str(), Some(long.as_str())),
-        // The first server's pattern let one line break stand last, and kept it.
-        (":ab\n:", Some("ab\n")),
         // Kelvin, which lower-cases to a plain k.
         ("\u{212a}\u{212a}", Some("kk")),
         ("\u{3000}spaced\u{a0}", Some("spaced")),
@@ -127,6 +125,7 @@ async fn a_name_is_trimmed_unwrapped_and_lower_cased_and_must_then_be_a_code() {
         ("a-b", None),
         ("a b", None),
         ("ab:cd", None),
+        (":ab\n:", None),
         (":ab\n\n:", None),
         (":\nab:", None),
         ("\u{130}ab", None),
