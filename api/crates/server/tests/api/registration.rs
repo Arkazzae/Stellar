@@ -574,3 +574,53 @@ async fn user_names_may_hold_letters_and_numbers_and_not_the_signs_that_go_with_
         assert_eq!(got == "created", accepted, "{name}: {got}");
     }
 }
+
+#[tokio::test]
+async fn an_account_made_with_an_invite_to_a_channel_is_greeted_in_that_channel_even_a_hidden_one() {
+    let server = Server::start().await;
+    let owner = server.found("owner").await;
+    let connection = server.database();
+    let instance: String = connection.query_row("SELECT \"Id\" FROM \"Servers\"", [], |row| row.get(0)).unwrap();
+    let base: String = connection
+        .query_row("SELECT \"Id\" FROM \"ServerRoles\" WHERE \"IsSystem\" = 1 AND \"IsOwner\" = 0", [], |row| row.get(0))
+        .unwrap();
+    let staff = stellarr_api::values::Id::random().to_db_text();
+    connection
+        .execute(
+            "INSERT INTO \"Channels\" (\"Id\", \"ServerId\", \"Name\", \"Kind\", \"Position\", \"Topic\", \"SlowModeSeconds\", \"HideAfterInactivityHours\", \"UserLimit\", \"SectionId\") VALUES (?1, ?2, 'staff', 0, 5, '', 0, 0, 0, NULL)",
+            rusqlite::params![staff, instance],
+        )
+        .unwrap();
+    connection
+        .execute(
+            "INSERT INTO \"PermissionOverrides\" (\"Id\", \"ServerId\", \"TargetType\", \"TargetId\", \"RoleId\", \"AllowMask\", \"DenyMask\") VALUES (?1, ?2, 0, ?3, ?4, 0, 16384)",
+            rusqlite::params![stellarr_api::values::Id::random().to_db_text(), instance, staff, base],
+        )
+        .unwrap();
+    let invite = owner
+        .client
+        .post_json("/api/admin/invites", &json!({ "channelId": staff.to_lowercase() }))
+        .await;
+    assert_eq!(invite.status, 201, "{}", invite.text());
+    let url = invite.json::<Value>()["url"].as_str().unwrap().to_string();
+    let code = url.rsplit('/').next().unwrap().to_string();
+
+    let response = server
+        .client()
+        .post_json(
+            "/api/auth/register",
+            &json!({ "username": "maya", "displayName": "Maya", "email": "maya@example.test", "password": PASSWORD, "inviteCode": code }),
+        )
+        .await;
+
+    assert_eq!(response.status, 201, "{}", response.text());
+    let channel: String = server
+        .database()
+        .query_row(
+            "SELECT c.\"Name\" FROM \"Messages\" m JOIN \"Channels\" c ON c.\"Id\" = m.\"ChannelId\" WHERE m.\"Content\" LIKE '%Maya%'",
+            [],
+            |row| row.get(0),
+        )
+        .unwrap();
+    assert_eq!(channel, "staff");
+}
