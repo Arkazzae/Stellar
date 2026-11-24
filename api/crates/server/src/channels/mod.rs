@@ -100,6 +100,10 @@ enum Refuse {
     Conflict,
     /// 400 with the validation problem: the field and what is wrong with it.
     Invalid(&'static str, MessageKey),
+    /// 403 with the code clients ask for a second step by: a change of what
+    /// somebody may do on the instance's own server, from a session whose
+    /// second step is not recent.
+    SecondStep,
 }
 
 impl Refuse {
@@ -108,6 +112,7 @@ impl Refuse {
             Refuse::NotFound => ApiError::not_found(),
             Refuse::Forbidden => ApiError::forbidden(),
             Refuse::Conflict => ApiError::conflict(),
+            Refuse::SecondStep => ApiError::from(crate::auth::fresh::refusal(messages)?),
             Refuse::Invalid(field, key) => ApiError::from(Problem::validation(vec![(
                 field.to_string(),
                 vec![messages.get(key, &[])?],

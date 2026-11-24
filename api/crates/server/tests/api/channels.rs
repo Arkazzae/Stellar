@@ -20,6 +20,7 @@ const QUIET: Duration = Duration::from_millis(400);
 
 const MANAGE_CHANNELS: i64 = 1 << 1;
 const SEND_MESSAGES: i64 = 1 << 9;
+const BASE_PERMISSIONS: i64 = 24064;
 const VIEW_CHANNEL: i64 = 1 << 14;
 
 /// An instance with its owner, who sees and may do everything.
@@ -837,6 +838,154 @@ async fn a_move_the_caller_may_not_make_is_forbidden() {
 
     assert_eq!(response.status, 403);
     assert_eq!(world.layout()[0], ("general".to_string(), None));
+}
+
+// A change of permissions on the instance's own server.
+
+impl World {
+    /// Gives the owner a confirmed second step, and says when the session
+    /// passed it (`None`: never).
+    fn second_step_of_owner(&self, passed_ago: Option<u64>) {
+        let db = self.db();
+        let user = self.owner.id.to_uppercase();
+        let present: bool = db
+            .query_row("SELECT EXISTS (SELECT 1 FROM \"MfaMethods\" WHERE \"UserId\" = ?1)", [&user], |row| row.get(0))
+            .unwrap();
+        if !present {
+            db.execute(
+                "INSERT INTO \"MfaMethods\" (\"Id\", \"UserId\", \"Type\", \"Name\", \"CreatedAt\", \"ConfirmedAt\") VALUES (?1, ?2, 'totp', 'Phone', ?3, ?3)",
+                params![stellarr_api::values::Id::random().to_db_text(), user, stellarr_api::values::Timestamp::now()],
+            )
+            .unwrap();
+        }
+        let completed = passed_ago.map(|seconds| {
+            stellarr_api::values::Timestamp::now().minus(Duration::from_secs(seconds))
+        });
+        db.execute("UPDATE \"UserSessions\" SET \"MfaCompletedAt\" = ?2 WHERE \"UserId\" = ?1", params![user, completed]).unwrap();
+    }
+
+    /// A section where the base role may not send, so that putting a channel
+    /// in it, from outside, changes what people may do.
+    fn restricting_section(&self) -> String {
+        let alpha = self.add_section("Alpha");
+        self.db()
+            .execute(
+                "INSERT INTO \"PermissionOverrides\" (\"Id\", \"ServerId\", \"TargetType\", \"TargetId\", \"RoleId\", \"AllowMask\", \"DenyMask\")
+                 VALUES (?1, ?2, 1, upper(?3), (SELECT \"Id\" FROM \"ServerRoles\" WHERE \"IsSystem\" = 1 AND \"IsOwner\" = 0), 0, ?4)",
+                params![stellarr_api::values::Id::random().to_db_text(), self.server_id(), alpha, SEND_MESSAGES],
+            )
+            .unwrap();
+        alpha
+    }
+}
+
+async fn move_into(world: &World, channel: &str, section: &str) -> Response {
+    let (general, voice) = (world.channel("general"), world.channel("voice"));
+    reorder(&world.owner, &[&general, &voice], Some(json!({ "channelId": channel, "sectionId": section }))).await
+}
+
+#[tokio::test]
+async fn a_move_that_changes_permissions_needs_a_recent_second_step_on_the_instances_own_server() {
+    let world = World::new().await;
+    let restricting = world.restricting_section();
+    let plain = world.add_section("Plain");
+    let (general, voice) = (world.channel("general"), world.channel("voice"));
+    world.second_step_of_owner(Some(3600));
+
+    let stale = move_into(&world, &general, &restricting).await;
+    let harmless = move_into(&world, &voice, &plain).await;
+
+    assert_eq!(stale.status, 403, "{}", stale.text());
+    assert_eq!(stale.json::<Value>()["code"], "fresh-mfa-required");
+    assert_eq!(world.layout()[0], ("general".to_string(), None), "nothing was written");
+    assert_eq!(harmless.status, 204, "a move that changes nobody's rights asks for nothing");
+
+    world.second_step_of_owner(Some(10));
+    let fresh = move_into(&world, &general, &restricting).await;
+    assert_eq!(fresh.status, 204, "{}", fresh.text());
+    assert_eq!(world.layout()[0], ("general".to_string(), Some("Alpha".to_string())));
+}
+
+#[tokio::test]
+async fn an_account_without_a_second_step_may_make_such_a_move_and_a_never_passed_one_may_not() {
+    let world = World::new().await;
+    let restricting = world.restricting_section();
+    let general = world.channel("general");
+
+    let nothing_to_prove = move_into(&world, &general, &restricting).await;
+    assert_eq!(nothing_to_prove.status, 204, "{}", nothing_to_prove.text());
+
+    world.second_step_of_owner(None);
+    let never = reorder(
+        &world.owner,
+        &[&general, &world.channel("voice")],
+        Some(json!({ "channelId": general, "sectionId": null })),
+    )
+    .await;
+    assert_eq!(never.status, 403, "{}", never.text());
+}
+
+#[tokio::test]
+async fn a_move_on_another_server_asks_for_no_second_step() {
+    let world = World::new().await;
+    world.second_step_of_owner(Some(3600));
+    let db = world.db();
+    let other = stellarr_api::values::Id::random().to_db_text();
+    let owner = world.owner.id.to_uppercase();
+    let role = |name: &str, position: i64, permissions: i64, owner: bool| {
+        let id = stellarr_api::values::Id::random().to_db_text();
+        db.execute(
+            "INSERT INTO \"ServerRoles\" (\"Id\", \"ServerId\", \"Name\", \"Color\", \"Permissions\", \"Position\", \"IsSystem\", \"IsOwner\") VALUES (?1, ?2, ?3, '#777777', ?4, ?5, 1, ?6)",
+            params![id, other, name, permissions, position, owner],
+        )
+        .unwrap();
+        id
+    };
+    db.execute(
+        "INSERT INTO \"Servers\" (\"Id\", \"Name\", \"Description\", \"IsPublic\", \"CreatedAt\", \"SoundboardEveryoneCanPlay\", \"SoundboardRateLimited\") VALUES (?1, 'Other', '', 0, ?2, 0, 0)",
+        params![other, stellarr_api::values::Timestamp::now()],
+    )
+    .unwrap();
+    let owner_role = role("Owner", 0, 0x7fff, true);
+    let base = role("Member", 1, BASE_PERMISSIONS, false);
+    db.execute(
+        "INSERT INTO \"ServerMembers\" (\"ServerId\", \"UserId\", \"RoleId\", \"OwnerSlot\", \"JoinedAt\") VALUES (?1, ?2, ?3, 1, ?4)",
+        params![other, owner, owner_role, stellarr_api::values::Timestamp::now()],
+    )
+    .unwrap();
+    let ids: Vec<String> = ["one", "two"]
+        .iter()
+        .enumerate()
+        .map(|(position, name)| {
+            let id = stellarr_api::values::Id::random();
+            db.execute(
+                "INSERT INTO \"Channels\" (\"Id\", \"ServerId\", \"Name\", \"Kind\", \"Position\", \"Topic\", \"SlowModeSeconds\", \"HideAfterInactivityHours\", \"UserLimit\", \"SectionId\") VALUES (?1, ?2, ?3, 0, ?4, '', 0, 0, 0, NULL)",
+                params![id.to_db_text(), other, name, position as i64],
+            )
+            .unwrap();
+            id.to_string()
+        })
+        .collect();
+    let section = stellarr_api::values::Id::random();
+    db.execute("INSERT INTO \"Sections\" (\"Id\", \"ServerId\", \"Name\", \"Position\") VALUES (?1, ?2, 'Alpha', 0)", params![section.to_db_text(), other]).unwrap();
+    db.execute(
+        "INSERT INTO \"PermissionOverrides\" (\"Id\", \"ServerId\", \"TargetType\", \"TargetId\", \"RoleId\", \"AllowMask\", \"DenyMask\") VALUES (?1, ?2, 1, ?3, ?4, 0, ?5)",
+        params![stellarr_api::values::Id::random().to_db_text(), other, section.to_db_text(), base, SEND_MESSAGES],
+    )
+    .unwrap();
+    let other_id = stellarr_api::values::Id::parse(&other.to_lowercase()).unwrap().to_string();
+
+    let response = world
+        .owner
+        .client
+        .send(
+            Request::new(Method::PUT, "/api/admin/channels/order")
+                .header("X-Stellarr-Server", &other_id)
+                .json(&json!({ "channelIds": ids, "move": { "channelId": ids[0], "sectionId": section.to_string() } })),
+        )
+        .await;
+
+    assert_eq!(response.status, 204, "{}", response.text());
 }
 
 // What people are told.
