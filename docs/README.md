@@ -41,10 +41,11 @@ Stellarr is self-hosted text, voice, and video chat for small groups of friends,
 ## Component guides
 
 - [API workspace](../api/README.md): 20-crate Rust Cargo workspace (`stellarr-api`, `stellarr-cli`, `stellarr-hub`, `stellarr-discord`), HTTP pipeline, and test harness.
-- [Cockpit SPA](../web/src/cockpit/README.md): operator SPA architecture, routing, app isolation, localization, and test commands.
+- [Web workspace](../web/README.md): `stellarr-web` multi-page Vite build, up-front bundle budget, AudioWorklets, and the [Cockpit SPA](../web/src/cockpit/README.md).
 - [Media SFU crate](../media/README.md): building and testing `stellarr-media` and running the [browser smoke suite](../media/smoke/README.md).
 - [Init supervisor](../init/README.md): Rust PID 1 supervisor, readiness probes, Unix control socket protocol, and PID-namespace tests.
-- [Artifact recipes](../artifacts/recipes/README.md): BuildKit stages compiling browser WebAssembly binaries (`speex`, `rnnoise`, `bergamot`) from pinned sources.
+- [Container infrastructure](../infra/README.md): `entrypoint.sh`, `settings.sh`, `stellarr-cli.sh`, `tls-maintenance.sh`, `nginx.conf`, `coturn`, and shell contract tests.
+- [Runtime artifacts](../artifacts/README.md): `manifest.json`, `assemble.mjs`, prebuilt models, and reproducible [WebAssembly recipes](../artifacts/recipes/README.md).
 - [Shared frontend packages](../packages/stellarr-ui/README.md): [`@stellarr/ui`](../packages/stellarr-ui/README.md) components and `--ui-*` tokens, [`@stellarr/icons`](../packages/stellarr-icons/README.md), and [`@stellarr/router`](../packages/stellarr-router/README.md).
 - [Web benchmarks](../web/bench/README.md): browser benchmarks for 10,000-message transcripts, channel rail drag, live-call updates, and [voice DSP records](../web/bench/voice/README.md).
 - [Development scripts](../scripts/README.md): seeding the development SQLite database with sample accounts, channels, messages, media, and presence.

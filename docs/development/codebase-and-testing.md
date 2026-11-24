@@ -5,12 +5,12 @@
 | Directory | Stack | Contents |
 | --- | --- | --- |
 | [`api/`](../../api/README.md) | Rust (20 crates) | `stellarr-api` server (`crates/server`), `stellarr-hub` (`crates/hub`), `stellarr` CLI (`crates/cli`), and workspace crates (`archive`, `deflate`, `discord`, `embeds`, `mail`, `mentions`, `messages`, `oidc`, `outbound`, `s3`, `smtp`, `storage`, `timezone`, `unicode`, `webauthn`, `webpush`, `websocket`). |
-| `web/` | TypeScript, React, Vite | Multi-page static build for the web client (`web/src/stellarr/`) and [Cockpit](../../web/src/cockpit/README.md) (`web/src/cockpit/`). |
+| [`web/`](../../web/README.md) | TypeScript, React, Vite | Multi-page static build for the web client (`web/src/stellarr/`) and [Cockpit](../../web/src/cockpit/README.md) (`web/src/cockpit/`). |
 | `packages/` | TypeScript, React | [`@stellarr/ui`](../../packages/stellarr-ui/README.md) components and `--ui-*` tokens, [`@stellarr/icons`](../../packages/stellarr-icons/README.md), and [`@stellarr/router`](../../packages/stellarr-router/README.md). |
 | [`media/`](../../media/README.md) | Rust (`str0m`, `axum`) | `stellarr-media` WebRTC SFU and the browser smoke suite in [`media/smoke/`](../../media/smoke/README.md). |
 | [`init/`](../../init/README.md) | Rust (`std`, `libc`) | `stellarr-init` PID 1 supervisor, readiness probes, and Unix control socket. |
-| `infra/` | Shell, Nginx, coturn | `entrypoint.sh`, `settings.sh`, `stellarr-cli.sh`, `tls-maintenance.sh`, `nginx.conf`, and `infra/tests/`. |
-| [`artifacts/`](../../artifacts/recipes/README.md) | BuildKit, `wasi-sdk`, Emscripten | Source recipes (`speex`, `rnnoise`, `bergamot`), `files/`, `NOTICES`, and `manifest.json`. |
+| [`infra/`](../../infra/README.md) | Shell, Nginx, coturn | `entrypoint.sh`, `settings.sh`, `stellarr-cli.sh`, `tls-maintenance.sh`, `nginx.conf`, and `infra/tests/`. |
+| [`artifacts/`](../../artifacts/README.md) | BuildKit, `wasi-sdk`, Emscripten | `manifest.json`, `assemble.mjs`, source [`recipes/`](../../artifacts/recipes/README.md) (`speex`, `rnnoise`, `bergamot`), `files/`, and `NOTICES`. |
 | `docs/` | VitePress, Mermaid | Documentation site (`navigation.ts` builds the nav and sidebar from `docs/README.md`). |
 | [`website/`](../../website/README.md) | Vanilla JS, CSS, Vite | `stellarr.online` landing page and `/install.sh` build (standalone npm project). |
 | [`branding/`](../../branding/README.md) | SVG, WebP, CDP | Logos, mascot assets, avatars, backgrounds, icons, and the [`branding/film/`](../../branding/film/README.md) pipeline. |
