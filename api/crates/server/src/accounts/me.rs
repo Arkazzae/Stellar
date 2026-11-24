@@ -15,7 +15,7 @@ use crate::values::Id;
 
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
-struct Account {
+pub(crate) struct Account {
     id: Id,
     username: String,
     display_name: String,
@@ -33,7 +33,7 @@ struct Account {
 
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
-struct Preferences {
+pub(crate) struct Preferences {
     desktop_notifications: bool,
     email_notifications: bool,
     push_notifications: bool,
@@ -111,17 +111,10 @@ impl Preferences {
     }
 }
 
-pub async fn read(State(state): State<AppState>, caller: Caller) -> ApiResult<Response> {
-    let (user, preferences) = state
-        .database()
-        .read(move |connection| -> Result<_, DbError> {
-            Ok((User::find(connection, caller.user)?, Preferences::load(connection, caller.user)?))
-        })
-        .await?;
-    let user = user.ok_or_else(|| ApiError::internal("the signed-in account is not there"))?;
-    Ok(json_response(
-        StatusCode::OK,
-        &Account {
+impl Account {
+    /// The account as its owner sees it, from the row and the preferences.
+    pub(crate) fn of(user: User, preferences: Preferences) -> Account {
+        Account {
             id: user.id,
             username: user.username,
             display_name: user.display_name,
@@ -134,6 +127,24 @@ pub async fn read(State(state): State<AppState>, caller: Caller) -> ApiResult<Re
             bio: user.bio.unwrap_or_default(),
             pronouns: user.pronouns.unwrap_or_default(),
             preferences,
-        },
-    ))
+        }
+    }
+
+    /// The row and the preferences of an account, read together.
+    pub(crate) fn load(connection: &Connection, user: Id) -> rusqlite::Result<Option<Account>> {
+        let Some(row) = User::find(connection, user)? else {
+            return Ok(None);
+        };
+        let preferences = Preferences::load(connection, user)?;
+        Ok(Some(Account::of(row, preferences)))
+    }
+}
+
+pub async fn read(State(state): State<AppState>, caller: Caller) -> ApiResult<Response> {
+    let account = state
+        .database()
+        .read(move |connection| -> Result<_, DbError> { Ok(Account::load(connection, caller.user)?) })
+        .await?;
+    let account = account.ok_or_else(|| ApiError::internal("the signed-in account is not there"))?;
+    Ok(json_response(StatusCode::OK, &account))
 }

@@ -7,7 +7,7 @@
 
 mod email;
 mod login;
-mod me;
+pub(crate) mod me;
 mod register;
 
 use axum::extract::State;
