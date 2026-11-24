@@ -50,6 +50,7 @@ async fn bootstrap(
             let context = Context {
                 messages: &messages,
                 presence: shared.presence(),
+                seats: shared.realtime().map(|realtime| realtime.presence()),
             };
             read(db, &context, user, server)
         })

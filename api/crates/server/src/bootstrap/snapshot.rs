@@ -19,6 +19,7 @@ use crate::http::ApiError;
 use crate::instance::servers::{Server, ServerDto};
 use crate::instance::users::{User, UserDto};
 use crate::messages::dto::{self, MessageDto};
+use crate::realtime::presence::PresenceTracker;
 use crate::permissions::{authorization, privileges, visibility};
 use crate::state::AppState;
 use crate::values::{Id, Timestamp};
@@ -30,6 +31,8 @@ const FIRST_PAGE_SIZE: i64 = 100;
 pub struct Context<'a> {
     pub messages: &'a Messages,
     pub presence: &'a dyn Presence,
+    /// Who sits in the voice rooms; none when the server runs without the hub.
+    pub seats: Option<&'a PresenceTracker>,
 }
 
 /// The markers of the read channels, as an object in the order they come.
@@ -155,7 +158,7 @@ pub fn read(
         .iter()
         .filter(|channel| !channel.is_text())
         .map(|channel| {
-            let occupants = voice::seats(channel.id)
+            let occupants = voice::seats(context.seats, channel.id)
                 .into_iter()
                 .filter_map(|seat| {
                     names.get(&seat.user).map(|name| Occupant {
