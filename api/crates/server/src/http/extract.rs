@@ -10,6 +10,7 @@ use axum::http::request::Parts;
 use serde::de::DeserializeOwned;
 
 use super::error::ApiError;
+use super::forwarded::ClientInfo;
 
 /// A value taken from the path, such as `Path(id): Path<Id>` for
 /// `/api/channels/{id}`. A segment that is not a value of its type is a path
@@ -103,7 +104,7 @@ impl<S: Send + Sync> FromRequestParts<S> for Origin {
                 || "unknown".to_string(),
                 |client| client.address.to_string(),
             ),
-            https: client.is_some_and(|client| client.scheme == "https"),
+            https: client.is_some_and(ClientInfo::is_https),
             user_agent: parts
                 .headers
                 .get(axum::http::header::USER_AGENT)

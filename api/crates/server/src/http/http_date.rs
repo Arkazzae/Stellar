@@ -65,9 +65,11 @@ pub fn parse(text: &str) -> Option<i64> {
     };
     let clock = |at: &[Token]| -> Option<(i64, i64, i64)> {
         match at {
-            [hour, Mark(':'), minute, Mark(':'), second] => {
-                Some((number(hour, 1, 2)?, number(minute, 1, 2)?, number(second, 1, 2)?))
-            }
+            [hour, Mark(':'), minute, Mark(':'), second] => Some((
+                number(hour, 1, 2)?,
+                number(minute, 1, 2)?,
+                number(second, 1, 2)?,
+            )),
             _ => None,
         }
     };
@@ -87,7 +89,16 @@ pub fn parse(text: &str) -> Option<i64> {
         }
         // `Friday, 20-Nov-26 10:11:12 GMT`, the form HTTP once had for older
         // clients, whose year has two digits.
-        [Word(day), Mark(','), date, Mark('-'), Word(month), Mark('-'), year, rest @ ..] => {
+        [
+            Word(day),
+            Mark(','),
+            date,
+            Mark('-'),
+            Word(month),
+            Mark('-'),
+            year,
+            rest @ ..,
+        ] => {
             let (time, zone) = rest.split_at(rest.len().min(5));
             let offset = match zone {
                 [] => 0,
@@ -127,9 +138,12 @@ pub fn parse(text: &str) -> Option<i64> {
                 [Mark(sign @ ('+' | '-')), Number(digits)] if digits.len() == 4 => {
                     offset_of(sign, digits[..2].parse().ok()?, digits[2..].parse().ok()?)?
                 }
-                [Mark(sign @ ('+' | '-')), Number(hours), Mark(':'), Number(minutes)]
-                    if hours.len() == 2 && minutes.len() == 2 =>
-                {
+                [
+                    Mark(sign @ ('+' | '-')),
+                    Number(hours),
+                    Mark(':'),
+                    Number(minutes),
+                ] if hours.len() == 2 && minutes.len() == 2 => {
                     offset_of(sign, hours.parse().ok()?, minutes.parse().ok()?)?
                 }
                 _ => return None,
@@ -255,10 +269,19 @@ mod tests {
             assert_eq!(parse(text), Some(MOMENT), "{text}");
         }
         assert_eq!(parse("Thu, 01 Jan 1970 00:00:00 GMT"), Some(0));
-        assert_eq!(parse("Fri, 5 Nov 2026 1:2:3 GMT"), parse("Fri, 05 Nov 2026 01:02:03 GMT"));
+        assert_eq!(
+            parse("Fri, 5 Nov 2026 1:2:3 GMT"),
+            parse("Fri, 05 Nov 2026 01:02:03 GMT")
+        );
         // Two digits are the years 1950 to 2049.
-        assert_eq!(parse("Sat, 20 Nov 2049 00:00:00 GMT"), parse("Sat, 20 Nov 49 00:00:00 GMT"));
-        assert_eq!(parse("Mon, 20 Nov 1950 00:00:00 GMT"), parse("Mon, 20 Nov 50 00:00:00 GMT"));
+        assert_eq!(
+            parse("Sat, 20 Nov 2049 00:00:00 GMT"),
+            parse("Sat, 20 Nov 49 00:00:00 GMT")
+        );
+        assert_eq!(
+            parse("Mon, 20 Nov 1950 00:00:00 GMT"),
+            parse("Mon, 20 Nov 50 00:00:00 GMT")
+        );
     }
 
     #[test]

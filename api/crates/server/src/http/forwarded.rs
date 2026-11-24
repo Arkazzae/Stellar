@@ -40,10 +40,21 @@ const FORWARDED_HOST: HeaderName = HeaderName::from_static("x-forwarded-host");
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ClientInfo {
     pub address: IpAddr,
-    /// `http` or `https`.
+    /// What the proxy wrote in `X-Forwarded-Proto` (the last entry of it,
+    /// trimmed, in the case it was written in, whatever it is), `http` when it
+    /// wrote nothing. A scheme that is not `http` or `https` is passed on as it
+    /// came, as the first server did; only [`ClientInfo::is_https`] looks at it.
     pub scheme: String,
     /// The host the client asked for, when a proxy said so.
     pub host: Option<String>,
+}
+
+impl ClientInfo {
+    /// Whether the request came over TLS, which is what cookies and links
+    /// depend on. The comparison ignores letter case.
+    pub fn is_https(&self) -> bool {
+        self.scheme.eq_ignore_ascii_case("https")
+    }
 }
 
 pub(super) async fn middleware(
@@ -67,8 +78,7 @@ pub(super) async fn middleware(
 /// Reads the headers of one request that arrived from `peer`.
 pub fn resolve(peer: IpAddr, headers: &HeaderMap, trusted: &TrustedProxies) -> ClientInfo {
     let scheme = last_value(headers, &FORWARDED_PROTO)
-        .map(|value| value.to_ascii_lowercase())
-        .filter(|value| value == "http" || value == "https")
+        .filter(|value| !value.is_empty())
         .unwrap_or_else(|| "http".to_string());
     let host = last_value(headers, &FORWARDED_HOST).filter(|value| !value.is_empty());
 
@@ -334,6 +344,25 @@ mod tests {
                 address(read(proxies, NGINX, forwarded)),
                 ip(expected),
                 "{proxies} / {forwarded}"
+            );
+        }
+    }
+
+    #[test]
+    fn a_scheme_is_passed_on_as_it_was_written() {
+        for (written, scheme, https) in [
+            ("https", "https", true),
+            ("HTTPS", "HTTPS", true),
+            ("gopher", "gopher", false),
+            ("http, gopher", "gopher", false),
+            ("  https  ", "https", true),
+            ("", "http", false),
+        ] {
+            let info = read_with("", NGINX, CLIENT, Some(written), None);
+            assert_eq!(
+                (info.scheme.as_str(), info.is_https()),
+                (scheme, https),
+                "{written:?}"
             );
         }
     }
