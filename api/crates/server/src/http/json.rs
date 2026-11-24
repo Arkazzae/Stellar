@@ -16,7 +16,7 @@
 //! empty body, as is one that has no body at all.
 
 use axum::body::Body;
-use axum::extract::{FromRequest, Request};
+use axum::extract::{FromRequest, OptionalFromRequest, Request};
 use axum::http::{HeaderValue, StatusCode, header};
 use axum::response::{IntoResponse, Response};
 use serde::Serialize;
@@ -67,6 +67,29 @@ impl<T: DeserializeOwned, S: Send + Sync> FromRequest<S> for Json<T> {
         let bytes = read_all(&parts.headers, body, ceiling).await?;
         serde_json::from_slice(&bytes)
             .map(Json)
+            .map_err(|_| ApiError::bad_request())
+    }
+}
+
+/// A body that may be left out: no body at all, or `null`, is none. The route
+/// that takes it does not mark itself `.json_body()` unless it wants a request
+/// that names another content type refused; a body that is there is read as
+/// ever, and one that is not the right JSON is a bad request.
+impl<T: DeserializeOwned, S: Send + Sync> OptionalFromRequest<S> for Json<T> {
+    type Rejection = ApiError;
+
+    async fn from_request(request: Request, _: &S) -> Result<Option<Json<T>>, ApiError> {
+        let (parts, body) = request.into_parts();
+        let ceiling = parts
+            .extensions
+            .get::<BodyCeiling>()
+            .map_or(MAX_REQUEST_BODY_BYTES, |ceiling| ceiling.0);
+        let bytes = read_all(&parts.headers, body, ceiling).await?;
+        if bytes.is_empty() {
+            return Ok(None);
+        }
+        serde_json::from_slice::<Option<T>>(&bytes)
+            .map(|value| value.map(Json))
             .map_err(|_| ApiError::bad_request())
     }
 }
