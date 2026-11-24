@@ -66,6 +66,12 @@ const MAX_MESSAGE_BYTES: usize = 2048;
 /// panel's buffer, which people with a session read.
 pub const OPERATOR_ONLY_TARGET: &str = "Stellarr.Api.Logging.StartupLog";
 
+/// The target of the warning that the object store is not ready yet. Also kept
+/// out of the panel's buffer: the text is the store's own error, and a bucket
+/// store's answer to a refused request can name the access key it was given,
+/// which is half of a credential. The operator reads it in the process output.
+pub const STORE_NOT_READY_TARGET: &str = "Stellarr.Api.Logging.ObjectStore";
+
 /// What a line says for its trace when no request wrote it.
 pub const BACKGROUND_TRACE: &str = "background";
 
@@ -213,7 +219,10 @@ struct BufferLayer {
 impl<S: Subscriber> Layer<S> for BufferLayer {
     fn on_event(&self, event: &tracing::Event<'_>, _: tracing_subscriber::layer::Context<'_, S>) {
         let metadata = event.metadata();
-        if metadata.target() == OPERATOR_ONLY_TARGET {
+        if matches!(
+            metadata.target(),
+            OPERATOR_ONLY_TARGET | STORE_NOT_READY_TARGET
+        ) {
             return;
         }
         let level = match *metadata.level() {
@@ -449,6 +458,7 @@ mod tests {
     fn the_setup_code_is_not_kept_for_the_panel() {
         let buffer = buffered(|| {
             tracing::warn!(target: OPERATOR_ONLY_TARGET, "Setup code: ABCD-1234. Open /setup.");
+            tracing::warn!(target: STORE_NOT_READY_TARGET, "The object store is not ready: its answer");
             tracing::warn!(target: "Stellarr.Api.Other", "kept");
         });
 
