@@ -353,4 +353,31 @@ mod tests {
     fn the_table_is_sorted_so_that_the_search_is_sound() {
         assert!(FOLDED.windows(2).all(|pair| pair[0].0 < pair[1].0));
     }
+
+    /// Compares with the first server's own rules over the inputs of a file:
+    /// `tests/providers-witness` answers the same lines (`check`). Run with
+    /// `PROVIDERS_WITNESS_INPUT` and `PROVIDERS_WITNESS_EXPECTED` naming the
+    /// two files.
+    #[test]
+    #[ignore = "needs the witness's answers: see tests/providers-witness/Program.cs"]
+    fn it_agrees_with_the_first_server() {
+        let read = |name: &str| std::fs::read_to_string(std::env::var(name).expect(name)).unwrap();
+        let (input, expected) = (read("PROVIDERS_WITNESS_INPUT"), read("PROVIDERS_WITNESS_EXPECTED"));
+        let mut differences = 0;
+        for (line, answer) in input.lines().zip(expected.lines()) {
+            let text: String = serde_json::from_str(line).unwrap();
+            let answer: serde_json::Value = serde_json::from_str(answer).unwrap();
+            let ours = (
+                plain_login(Some(&text)),
+                stellarr_oidc::options::safe_return_url(Some(&text)),
+            );
+            if answer["login"] != ours.0 || answer["safe"] != ours.1 {
+                differences += 1;
+                if differences < 15 {
+                    eprintln!("{line}: first server {answer}, here {ours:?}");
+                }
+            }
+        }
+        assert_eq!(differences, 0);
+    }
 }

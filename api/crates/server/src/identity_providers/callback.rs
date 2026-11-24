@@ -381,7 +381,7 @@ enum Signed {
     Refused,
     Recovery,
     SecondStep { enrollment: bool, cookie: String },
-    Session { user: User, id: Id },
+    Session { user: Box<User>, id: Id },
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -512,7 +512,7 @@ async fn write_sign_in(
                         "oidc",
                         email.as_deref(),
                     )?;
-                    Ok(Signed::Session { user, id: new.id })
+                    Ok(Signed::Session { user: Box::new(user), id: new.id })
                 }
             }
         })

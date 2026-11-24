@@ -64,6 +64,11 @@ impl OidcSettings {
         })
     }
 
+    /// Whether any provider can be used: the sign-in page has something to offer.
+    pub fn any_set_up(&self) -> bool {
+        !self.providers.is_empty()
+    }
+
     pub fn find(&self, id: &str) -> Option<&Provider> {
         self.providers.iter().find(|provider| provider.id == id)
     }
