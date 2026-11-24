@@ -25,9 +25,9 @@
 //! }
 //! ```
 //!
-//! A call that names a method nobody has registered is answered as the first
-//! server answered one that does not exist. Names are compared without regard
-//! to case, as the client library's are.
+//! A call that names a method nobody has registered is answered with the
+//! completion error of an unknown method. Names are compared exactly, as the
+//! web client writes them.
 
 use std::collections::HashMap;
 use std::future::Future;
@@ -203,7 +203,7 @@ impl Table {
         let mut table = Table::default();
         for registration in registrations {
             for method in registration.methods {
-                let key = method.name.to_ascii_lowercase();
+                let key = method.name.to_string();
                 assert!(
                     !table.methods.contains_key(&key),
                     "the hub method {} is registered twice",
@@ -218,7 +218,7 @@ impl Table {
     }
 
     pub fn has_method(&self, name: &str) -> bool {
-        self.methods.contains_key(&name.to_ascii_lowercase())
+        self.methods.contains_key(name)
     }
 
     pub(super) async fn invoke(
@@ -227,7 +227,7 @@ impl Table {
         name: &str,
         arguments: Vec<Value>,
     ) -> Result<Value, HubError> {
-        match self.methods.get(&name.to_ascii_lowercase()) {
+        match self.methods.get(name) {
             Some(method) => (method.run)(context, arguments).await,
             None => Err(HubError::UnknownMethod),
         }

@@ -156,7 +156,7 @@ async fn a_call_with_a_result_a_void_call_and_the_ones_that_fail() {
             "4",
             "Nope",
             json!([]),
-            json!({"type": 3, "invocationId": "4", "error": "Failed to invoke 'Nope' due to an error on the server. HubException: Method does not exist."}),
+            json!({"type": 3, "invocationId": "4", "error": "Unknown method 'Nope'."}),
         ),
         (
             "5",
@@ -235,7 +235,7 @@ async fn a_streaming_invocation_is_answered_with_an_error() {
     );
     assert_eq!(
         r.client.json().await["error"],
-        "Failed to invoke 'nope' due to an error on the server. HubException: Method does not exist."
+        "Unknown method 'nope'."
     );
     assert_eq!(
         r.client.json().await["error"],

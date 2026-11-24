@@ -13,7 +13,7 @@ use crate::hub::{CloseRequest, Hub, Outbound, Shared, close_requested};
 pub enum HubError {
     /// A message written for the person: the client is told the text.
     Visible(String),
-    /// No such method.
+    /// No such method: the name is matched exactly.
     UnknownMethod,
     /// The arguments do not fit the method: too few, too many, or of the
     /// wrong kind. The client is told the call failed, not why.
@@ -40,9 +40,7 @@ impl HubError {
                 )
             }
             Self::UnknownMethod => {
-                format!(
-                    "Failed to invoke '{target}' due to an error on the server. HubException: Method does not exist."
-                )
+                format!("Unknown method '{target}'.")
             }
             Self::InvalidArguments => {
                 format!("Failed to invoke '{target}' due to an error on the server.")
