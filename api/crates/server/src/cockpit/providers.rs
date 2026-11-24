@@ -1,11 +1,9 @@
 //! The sign-in providers of the instance and whether each may create
 //! accounts for people with an invite.
 //!
-//! Which providers exist is the environment's business, and the registry
-//! that reads it is not part of this tree yet: [`registry`] is the one place
-//! that asks it, and answers that nothing is set up until the registry can be
-//! asked. Everything else here (the row that holds the switch, who may change
-//! it, what is audited) is written and tested as it will stand.
+//! Which providers exist is the environment's business (the registry in
+//! `settings.oidc`); whether each may create accounts is the owner's, here, in
+//! the row `identity_providers` reads when somebody signs up.
 
 use axum::extract::{Request, State};
 use axum::http::StatusCode;
@@ -51,11 +49,23 @@ impl Registry {
     }
 }
 
-/// Asks the registry of providers.
-pub(super) fn registry(_state: &AppState) -> Result<Registry, MissingValue> {
+/// Asks the registry of providers the environment set up.
+pub(super) fn registry(state: &AppState) -> Result<Registry, MissingValue> {
+    let providers = state
+        .settings()
+        .oidc
+        .providers
+        .iter()
+        .map(|provider| {
+            Ok(Registered {
+                id: provider.id.clone(),
+                name: crate::identity_providers::shown_name(provider, state.messages())?,
+            })
+        })
+        .collect::<Result<_, MissingValue>>()?;
     Ok(Registry {
-        providers: Vec::new(),
-        default_id: "default".to_string(),
+        providers,
+        default_id: crate::identity_providers::owned(state).default_id,
     })
 }
 
