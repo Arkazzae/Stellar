@@ -6,6 +6,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { createRuntime, type Runtime } from "@/adapters";
 import { translateMessage, type MessageKey } from "@/i18n";
 import { ApiError } from "@/lib/api/errors";
+import { deferred } from "@/test/chatHarness";
 import { BOOTSTRAP, FakeRealtimeClient, SELF, SERVER } from "@/test/fakes";
 import { fullApi, type FullApi } from "@/test/runtime";
 
@@ -20,6 +21,7 @@ function Probe() {
   return (
     <div>
       <output aria-label="phase">{session.phase}</output>
+      <output aria-label="verified">{String(session.verifiedAt !== null)}</output>
       <output aria-label="user">{session.user?.displayName ?? "none"}</output>
       <output aria-label="error">{session.error ?? "none"}</output>
       <output aria-label="connection">{session.connection}</output>
@@ -100,6 +102,25 @@ describe("SessionProvider boot", () => {
     expect(screen.getByLabelText("error")).toHaveTextContent("none");
     await waitFor(() => expect(realtime.getStatus()).toBe("connected"));
     expect(screen.getByLabelText("connection")).toHaveTextContent("connected");
+  });
+
+  it("verifies the session before account hydration finishes", async () => {
+    const check = deferred<Awaited<ReturnType<FullApi["bootstrap"]>>>();
+    const account = deferred<Awaited<ReturnType<FullApi["getAccount"]>>>();
+    const accountDetails = await fullApi().getAccount();
+    const getAccount = vi.fn(() => account.promise);
+    mount(fullApi({ bootstrap: () => check.promise, getAccount }));
+
+    expect(screen.getByLabelText("verified")).toHaveTextContent("false");
+    expect(getAccount).not.toHaveBeenCalled();
+
+    await act(async () => check.resolve(BOOTSTRAP));
+    expect(screen.getByLabelText("verified")).toHaveTextContent("true");
+    expect(phase()).toHaveTextContent("loading");
+    expect(getAccount).toHaveBeenCalledOnce();
+
+    await act(async () => account.resolve(accountDetails));
+    expect(phase()).toHaveTextContent("ready");
   });
 
   it("seeds the stores before it reports ready", async () => {

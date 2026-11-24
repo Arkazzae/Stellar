@@ -625,6 +625,8 @@ export const en = {
   "dm.chatUnread": "Chat, {count} unread",
 
   "app.loading": "Loading server…",
+  "app.loadingTipTitle": "Did you know?",
+  "app.loadingTip": "You can mute a channel from its menu and still find mentions in your inbox.",
   "app.loadFailed": "The server could not be loaded",
   "app.accessRevoked": "You no longer have access to this server",
   "app.checkConnection": "Check your connection and try again in a moment.",
