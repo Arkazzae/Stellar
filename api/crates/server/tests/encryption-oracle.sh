@@ -11,6 +11,7 @@
 #
 #   story   every answer, and every event each connection hears, in order
 #   tables  what each route accepts at each size and in each encoding
+#   races   requests that meet: the answers that came, and what was left
 #
 # Needs docker, sqlite3, curl, Node 26, and the first server's container from
 # `oracle start <name> <port> Production` with the limits raised:
@@ -50,6 +51,18 @@ start_rust() {
   rm -rf "$work/rust"; mkdir -p "$work/rust"
   [ -n "${2:-}" ] && cp "$2" "$work/rust/stellarr.db"
   env ASPNETCORE_ENVIRONMENT="$1" Rtc__TurnSharedSecret=x STELLARR_DATA_ROOT="$work/rust" \
+    RateLimiting__AuthWrite__PermitLimit=500 RateLimiting__Login__PermitLimit=500 \
+    RateLimiting__SecurityWrite__PermitLimit=500 RateLimiting__PinUnlock__PermitLimit=500 \
+    "ConnectionStrings__Database=Data Source=$work/rust/stellarr.db" ASPNETCORE_URLS=http://127.0.0.1:0 \
+    "$binary" > "$work/rust/log.txt" 2>&1 &
+  pid=$!
+  for _ in $(seq 1 50); do grep -q 'Now listening on' "$work/rust/log.txt" && break; sleep 0.2; done
+  rust=http://127.0.0.1:$(sed -n 's/.*listening on: http:\/\/127.0.0.1:\([0-9]*\).*/\1/p' "$work/rust/log.txt")
+  wait_ready "$rust"
+}
+# This server on the folder it has now (the sealing key of its sessions is in it).
+start_rust_in_place() {
+  env ASPNETCORE_ENVIRONMENT=Production Rtc__TurnSharedSecret=x STELLARR_DATA_ROOT="$work/rust" \
     RateLimiting__AuthWrite__PermitLimit=500 RateLimiting__Login__PermitLimit=500 \
     RateLimiting__SecurityWrite__PermitLimit=500 RateLimiting__PinUnlock__PermitLimit=500 \
     "ConnectionStrings__Database=Data Source=$work/rust/stellarr.db" ASPNETCORE_URLS=http://127.0.0.1:0 \
@@ -158,7 +171,56 @@ phase() { # story or tables
   compare "$1 rows" "$work/$1.oracle.rows.tidy" "$work/$1.rust.rows.tidy"
 }
 
+# What the guarded routes say to sessions that did and did not pass a second
+# step lately, and to an account that has no password: sessions are made, the
+# file is changed while the server is stopped, and the same sessions ask.
+fresh() {
+  give_oracle "$work/shared.db"
+  start_rust Production "$work/shared.db"
+  node "$here/encryption-oracle.mjs" --base "$oracle" --phase fresh-login --cookies "$work/fresh.oracle.json" --ids "$ids" --password "$password" --out /dev/null
+  node "$here/encryption-oracle.mjs" --base "$rust" --phase fresh-login --cookies "$work/fresh.rust.json" --ids "$ids" --password "$password" --out /dev/null
+  take_oracle "$work/fresh.oracle.db"
+  stop_rust
+  cp "$work/rust/stellarr.db" "$work/fresh.rust.db"
+  for side in oracle rust; do
+    file=$work/fresh.$side.db
+    sqlite3 "$file" "
+      insert into MfaMethods (Id,UserId,Type,Name,CreatedAt,ConfirmedAt) select 'CCCC' || substr(Id,5), Id, 'totp', 'Seeded', '2026-11-20 10:00:00', '2026-11-20 10:00:00' from Users where Username in ('maja','ilya');
+      update UserSessions set MfaCompletedAt = strftime('%Y-%m-%d %H:%M:%f', 'now', '-15 minutes') where UserId in (select Id from Users where Username in ('maja','ilya'));
+      update UserSessions set MfaCompletedAt = strftime('%Y-%m-%d %H:%M:%f', 'now') where Id in (select Id from UserSessions s where UserId in (select Id from Users where Username in ('maja','ilya')) and CreatedAt = (select max(CreatedAt) from UserSessions where UserId = s.UserId));
+      update Users set PasswordHash = NULL where Username = 'ada';
+      update UserSessions set AuthenticatedAt = strftime('%Y-%m-%d %H:%M:%f', 'now', '-1 hour'), CreatedAt = strftime('%Y-%m-%d %H:%M:%f', 'now', '-1 hour') where UserId = (select Id from Users where Username = 'ada') and CreatedAt = (select CreatedAt from UserSessions where UserId = (select Id from Users where Username = 'ada') order by CreatedAt limit 1 offset 1);
+      pragma wal_checkpoint(truncate);" > /dev/null
+  done
+  give_oracle "$work/fresh.oracle.db"
+  # This server goes on from the folder it has, with the file changed.
+  rm -f "$work/rust"/stellarr.db-*; cp "$work/fresh.rust.db" "$work/rust/stellarr.db"
+  start_rust_in_place
+  node "$here/encryption-oracle.mjs" --base "$oracle" --phase fresh --cookies "$work/fresh.oracle.json" --ids "$ids" --password "$password" --out "$work/fresh.oracle.txt"
+  node "$here/encryption-oracle.mjs" --base "$rust" --phase fresh --cookies "$work/fresh.rust.json" --ids "$ids" --password "$password" --out "$work/fresh.rust.txt"
+  stop_rust
+  compare "fresh second step" "$work/fresh.oracle.txt" "$work/fresh.rust.txt"
+}
+
+# What ends a device on the first server only: signing out, a session revoked
+# from another, a changed password. The rows of the devices are read from the
+# first server's file after each, and nothing is written on them. (This server
+# has no route for the last two yet; its own tests of them are in lifecycle.rs.)
+lifecycle() {
+  give_oracle "$work/shared.db"
+  cat > "$work/dump.sh" <<DUMP
+rm -f $work/dump.db*
+for suffix in "" -wal -shm; do docker cp $container:/tmp/data/stellarr.db\$suffix $work/dump.db\$suffix > /dev/null 2>&1 || true; done
+sqlite3 $work/dump.db "select d.Label || '|' || d.SessionId || '|' || d.CreatedAt || '|' || d.LastSeenAt || '|' || coalesce(d.RevokedAt, '-') from EncryptionDevices d join Users u on u.Id = d.UserId where u.Username = 'maja' order by d.CreatedAt"
+DUMP
+  node "$here/encryption-oracle.mjs" --base "$oracle" --phase lifecycle --dump "$work/dump.sh" --ids "$ids" --password "$password" --out "$work/lifecycle.oracle.txt"
+  echo "first server, devices before and after (kept in $work/lifecycle.oracle.txt):"; cat "$work/lifecycle.oracle.txt"
+}
+
 phase story
 phase tables
+phase races
+fresh
+lifecycle
 echo "files are in $work"
 exit $differ
