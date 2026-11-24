@@ -473,3 +473,132 @@ async fn whoever_sees_something_else_after_a_change_is_told_to_read_their_channe
     assert!(events.iter().any(|event| event["name"] == "ChannelAccessChanged"), "{events:?}");
     let _ = Timestamp::now();
 }
+
+// ---------------------------------------------------------------------------
+// The second step, asked on the instance's own server only.
+
+/// Gives the person a confirmed second step, and their sessions the moment it
+/// was passed (never, when none).
+fn second_step(scene: &Scene, who: &str, passed_seconds_ago: Option<u64>) {
+    let db = scene.server.database();
+    let user = Id::parse(&scene.user(who)).expect("an id");
+    db.execute(
+        "INSERT INTO \"MfaMethods\" (\"Id\", \"UserId\", \"Type\", \"Name\", \"CreatedAt\", \"ConfirmedAt\") VALUES (?1, ?2, 'totp', 'Phone', ?3, ?3)",
+        params![Id::random(), user, Timestamp::now()],
+    )
+    .expect("a method");
+    let passed = passed_seconds_ago.map(|seconds| Timestamp::now().minus(std::time::Duration::from_secs(seconds)));
+    db.execute("UPDATE \"UserSessions\" SET \"MfaCompletedAt\" = ?2 WHERE \"UserId\" = ?1", params![user, passed]).expect("sessions");
+}
+
+/// The fourteen routes that need it, each as a request that would succeed for
+/// somebody who may: the path, the method and the body.
+fn second_step_routes(scene: &Scene) -> Vec<(Method, String, Option<Value>)> {
+    let (channel, section) = (scene.channel, scene.section);
+    let junior = scene.role("Junior");
+    let plain = scene.user("plain");
+    let order: Vec<String> = ["Admin", "Senior", "Powerful", "Junior", "Spare"].iter().map(|name| scene.role(name)).collect();
+    let mut routes = vec![
+        (Method::POST, "/api/admin/roles".to_string(), Some(json!({ "name": "Late", "color": "#fff", "permissions": [] }))),
+        (Method::PUT, "/api/admin/roles/order".to_string(), Some(json!({ "roleIds": order }))),
+        (Method::PATCH, format!("/api/admin/roles/{junior}"), Some(json!({ "name": "Renamed" }))),
+        (Method::DELETE, format!("/api/admin/roles/{}", scene.role("Spare")), None),
+        (Method::PATCH, format!("/api/admin/members/{plain}/role"), Some(json!({ "roleId": junior }))),
+        (Method::PUT, format!("/api/admin/members/{plain}/roles"), Some(json!({ "roleIds": [junior] }))),
+    ];
+    for (collection, place) in [("channels", channel.to_string()), ("sections", section.to_string())] {
+        let base = format!("/api/admin/{collection}/{place}/permissions");
+        let masks = Some(json!({ "allow": ["sendMessages"], "deny": [] }));
+        routes.push((Method::PUT, format!("{base}/{junior}"), masks.clone()));
+        routes.push((Method::DELETE, format!("{base}/{junior}"), None));
+        routes.push((Method::PUT, format!("{base}/members/{plain}"), masks));
+        routes.push((Method::DELETE, format!("{base}/members/{plain}"), None));
+    }
+    routes
+}
+
+fn writes(scene: &Scene) -> i64 {
+    let db = scene.server.database();
+    db.query_row("SELECT (SELECT COUNT(*) FROM \"ServerAuditEntries\") + (SELECT COUNT(*) FROM \"ServerRoles\") + (SELECT SUM(\"Position\") FROM \"ServerRoles\")", [], |row| row.get(0)).unwrap()
+}
+
+#[tokio::test]
+async fn a_stale_second_step_refuses_the_fourteen_routes_and_writes_nothing() {
+    let scene = Scene::new().await;
+    second_step(&scene, "adm", None);
+    let before = writes(&scene);
+    for (method, path, body) in second_step_routes(&scene) {
+        let refused = scene.send("adm", method.clone(), &path, body).await;
+        assert_eq!(refused.status, 403, "{method} {path}: {}", refused.text());
+        let problem: Value = refused.json();
+        assert_eq!(problem["code"], "fresh-mfa-required", "{method} {path}");
+    }
+    assert_eq!(writes(&scene), before);
+    // Reading is not asked for the step.
+    assert_eq!(scene.status("adm", Method::GET, "/api/admin/roles", None).await, 200);
+    assert_eq!(scene.status("adm", Method::GET, &format!("/api/admin/channels/{}/permissions", scene.channel), None).await, 200);
+}
+
+#[tokio::test]
+async fn a_second_step_passed_lately_or_none_to_pass_leaves_the_routes_open() {
+    let scene = Scene::new().await;
+    second_step(&scene, "adm", Some(60));
+    // `sen` has no second step at all.
+    for (who, route) in [("adm", 0), ("sen", 2), ("adm", 4), ("sen", 6)] {
+        let (method, path, body) = second_step_routes(&scene).remove(route);
+        let answer = scene.send(who, method.clone(), &path, body).await;
+        assert!(answer.status.is_success(), "{who} {method} {path}: {} {}", answer.status, answer.text());
+    }
+}
+
+#[tokio::test]
+async fn the_order_of_refusals_puts_the_second_step_after_the_request_is_read_and_before_the_decision() {
+    let scene = Scene::new().await;
+    second_step(&scene, "jun", None);
+    second_step(&scene, "adm", None);
+    // A person who may not manage roles is asked for the step first.
+    let create = Some(json!({ "name": "Late", "color": "#fff", "permissions": [] }));
+    let refused = scene.send("jun", Method::POST, "/api/admin/roles", create).await;
+    assert_eq!((refused.status.as_u16(), refused.json::<Value>()["code"].clone()), (403, json!("fresh-mfa-required")));
+    // So is one whose request names a role that is not there, or one above them.
+    let unknown = format!("/api/admin/roles/{}", Id::random());
+    assert_eq!(scene.send("adm", Method::PATCH, &unknown, Some(json!({}))).await.json::<Value>()["code"], "fresh-mfa-required");
+    let above = format!("/api/admin/roles/{}", scene.role("Admin"));
+    assert_eq!(scene.send("adm", Method::PATCH, &above, Some(json!({ "name": "X" }))).await.json::<Value>()["code"], "fresh-mfa-required");
+    // A body that cannot be read is refused first, as it was bound first.
+    let broken = crate::support::Request::new(Method::POST, "/api/admin/roles").body("application/json", "{");
+    assert_eq!(scene.person("adm").client.send(broken).await.status, 400);
+    // The step is not asked for on a server that is not the instance's own.
+    let other = Id::random();
+    {
+        let db = scene.server.database();
+        db.execute(
+            "INSERT INTO \"Servers\" (\"Id\", \"Name\", \"Description\", \"IsPublic\", \"CreatedAt\", \"SoundboardEveryoneCanPlay\", \"SoundboardRateLimited\") VALUES (?1, 'Other', '', 0, ?2, 0, 0)",
+            params![other, Timestamp::now()],
+        )
+        .unwrap();
+        let owner_role = Id::random();
+        db.execute(
+            "INSERT INTO \"ServerRoles\" (\"Id\", \"ServerId\", \"Name\", \"Color\", \"Permissions\", \"Position\", \"IsSystem\", \"IsOwner\") VALUES (?1, ?2, 'Owner', '#777', ?3, 0, 1, 1)",
+            params![owner_role, other, privileges::ALL],
+        )
+        .unwrap();
+        let base = Id::random();
+        db.execute(
+            "INSERT INTO \"ServerRoles\" (\"Id\", \"ServerId\", \"Name\", \"Color\", \"Permissions\", \"Position\", \"IsSystem\", \"IsOwner\") VALUES (?1, ?2, 'Member', '#777', ?3, 5, 1, 0)",
+            params![base, other, privileges::BASE_ROLE_DEFAULTS],
+        )
+        .unwrap();
+        let user = Id::parse(&scene.user("adm")).unwrap();
+        db.execute(
+            "INSERT INTO \"ServerMembers\" (\"ServerId\", \"UserId\", \"RoleId\", \"OwnerSlot\", \"JoinedAt\") VALUES (?1, ?2, ?3, 1, ?4)",
+            params![other, user, owner_role, Timestamp::now()],
+        )
+        .unwrap();
+        db.execute("INSERT INTO \"ServerMemberRoles\" (\"ServerId\", \"UserId\", \"RoleId\") VALUES (?1, ?2, ?3)", params![other, user, owner_role]).unwrap();
+    }
+    let named = crate::support::Request::new(Method::POST, "/api/admin/roles")
+        .header("X-Stellarr-Server", &other.to_string())
+        .json(&json!({ "name": "Elsewhere", "color": "#fff", "permissions": [] }));
+    assert_eq!(scene.person("adm").client.send(named).await.status, 201);
+}
