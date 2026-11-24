@@ -2,7 +2,8 @@
 # and reloads on change, so editing code never needs an image build.
 #
 #   web     :3000       Vite's dev server: the web client, and Cockpit under /cockpit
-#   api     :5000       dotnet watch, which the browser reaches through the web proxy
+#   api     :5000       the Rust API under cargo run and watchexec, which the browser
+#                       reaches through the web proxy
 #   media   :49100/udp  Stellarr Media under cargo run and watchexec; its control
 #                       API on 127.0.0.1:5200
 #   mailpit :8025       catches every message the API sends; its SMTP port 1025
@@ -21,8 +22,8 @@
 # there, and the stack sets the rest itself. There is no env_file: a checkout
 # may hold the .env of a production stack, which must not reach this one whole.
 #
-# The first start installs the npm packages, restores the NuGet packages and
-# compiles the media server's crates into named volumes, so it is slow. The web
+# The first start installs the npm packages and compiles the API's and the
+# media server's crates into named volumes, so it is slow. The web
 # service checks the browser's binaries before it starts; those that
 # artifacts/recipes/ builds from source are built on the host first, once:
 # `docker buildx bake recipes`.
@@ -85,34 +86,24 @@ services:
       dockerfile: Dockerfile
       target: api-dev
     image: stellarr-api-dev:local
-    working_dir: /src/server/Stellarr.Api
-    # Hot reload is off: when applying an edit in place fails, it can stop the
-    # whole watcher, while a plain rebuild and restart always recovers. Warnings
-    # are muted here because TreatWarningsAsErrors would stop the watcher on an
-    # unused variable in the middle of an edit.
+    working_dir: /app
+    # cargo run instead of a --locked build, as for the media server: Cargo.lock
+    # lives on the host, and adding a dependency should mean no more than saving
+    # Cargo.toml. watchexec polls and restarts the server after every change.
     command: >
-      dotnet watch --no-hot-reload run
-        --no-launch-profile
-        --property:WarningLevel=0
-        --property:TreatWarningsAsErrors=false
+      watchexec --restart --poll=1s --watch crates --watch Cargo.toml
+        -- cargo run -p stellarr-api
     environment:
-      ASPNETCORE_ENVIRONMENT: Development
-      ASPNETCORE_URLS: http://0.0.0.0:5000
-      # Same reason as STELLARR_DEV_POLLING: inotify events from the host do not
-      # reach the container.
-      DOTNET_USE_POLLING_FILE_WATCHER: "1"
-      # The browser reaches the API only through the web proxy, so there is no
-      # page of the API's own to refresh, and the one HTML page it sends, the
-      # desktop browser-login confirmation, has a CSP of `default-src 'none'`
-      # that blocks the script dotnet watch would inject.
-      DOTNET_WATCH_SUPPRESS_BROWSER_REFRESH: "1"
+      STELLARR_ENVIRONMENT: Development
+      # Off loopback, because the browser's requests reach it from the web
+      # service across the compose network, and curl through the port below.
+      STELLARR_API_LISTEN: 0.0.0.0:5000
       # The stack's own settings, under the names production uses.
       STELLARR_DATA_ROOT: /data/stellarr
       # Mailpit below catches the mail.
       STELLARR_MAIL_ENABLED: "true"
       STELLARR_MEDIA_PORT: ${STELLARR_DEV_MEDIA_PORT:-49100}
       # What the entrypoint derives in production, which has no STELLARR_* name.
-      ConnectionStrings__Database: Data Source=/data/stellarr/stellarr-dev.db;Pooling=True
       Rtc__MediaControlUrl: http://media:5200
       Rtc__MediaControlSecret: stellarr-media-development-secret
       Operations__PublicUrl: http://localhost:${STELLARR_DEV_WEB_PORT:-3000}
@@ -136,13 +127,11 @@ services:
       # For curl; the browser uses the web service.
       - "${STELLARR_DEV_API_PORT:-5000}:5000"
     volumes:
-      - ./:/src
-      # Build output and the package cache stay in the container. An obj/
-      # shared with a host that also builds leads to restore errors that point
-      # at the wrong machine's paths.
-      - api_obj:/src/server/Stellarr.Api/obj
-      - api_bin:/src/server/Stellarr.Api/bin
-      - nuget:/root/.nuget/packages
+      - ./api:/app
+      # Build output and the crate cache stay in the container, apart from a
+      # cargo build on the host.
+      - api_target:/app/target
+      - cargo_registry:/usr/local/cargo/registry
       - stellarr_dev_data:/data/stellarr
     depends_on:
       media:
@@ -183,7 +172,9 @@ services:
   # A local inbox for the mail the API sends: password resets, address
   # changes, sign-in codes, security alerts and activity notifications. The
   # SMTP server is a setting in the database, so point the instance at it once,
-  # in Cockpit or with the CLI inside the api container:
+  # in Cockpit or with the CLI inside the api container, which
+  # `docker compose -f docker-compose.dev.yml exec api cargo run -q -p stellarr-cli --`
+  # runs:
   #
   #   mail.enabled=true  mail.from-address=stellarr@dev.test
   #   mail.smtp.host=mailpit  mail.smtp.port=1025  mail.smtp.security=none
@@ -208,9 +199,7 @@ services:
 volumes:
   web_root_node_modules:
   web_node_modules:
-  api_obj:
-  api_bin:
-  nuget:
+  api_target:
   media_target:
   cargo_registry:
   stellarr_dev_data:
