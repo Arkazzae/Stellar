@@ -15,12 +15,16 @@
 # Needs docker, node 26, python3, the .NET SDK (~/.dotnet/dotnet) and a built
 # `examples/backups`. Not part of the ordinary run.
 #
+#   STELLARR_API=path/to/stellarr-api   (optional: start it on each restored folder)
 #   BACKUPS_EXAMPLE=path/to/examples/backups ORACLE_SCRIPT=path/to/oracle \
 #   FIRST_SOURCE=path/to/server/Stellarr.Api backups-archives.sh
 #
 # Everything made is removed on every way out unless KEEP_WORK=1 (then the work
 # folder is named on stderr); the container is stopped and removed.
 set -euo pipefail
+# For the last step, a server started on a restored folder, the binary is also
+# needed: STELLARR_API=path/to/stellarr-api (the step is skipped without it).
+server_pid=
 
 example=${BACKUPS_EXAMPLE:?the path of the built examples/backups}
 oracle_script=${ORACLE_SCRIPT:?the path of the oracle script}
@@ -32,6 +36,7 @@ container=stellarr-port-oracle-$name
 work=${WORK:-$(mktemp -d)}
 base=http://127.0.0.1:$port
 cleanup() {
+  [ -z "$server_pid" ] || kill "$server_pid" 2>/dev/null || true
   "$oracle_script" stop "$name" >/dev/null 2>&1 || true
   docker rm -f "$container" >/dev/null 2>&1 || true
   if [ "${KEEP_WORK:-}" = 1 ]; then echo "work kept: $work" >&2; else rm -rf "$work"; fi
@@ -51,6 +56,8 @@ docker rm -f "$container" >/dev/null 2>&1 || true
 ORACLE_ENV_FILE=$work/oracle.env "$oracle_script" start "$name" "$port" Production > "$work/start.log"
 setup=$(sed -n 's/.*Setup code: \([A-Z0-9-]*\)\..*/\1/p' "$work/start.log" | tail -1)
 node "$here/servers-oracle.mjs" seed --base "$base" --setup "$setup" --state "$work/state.json" >/dev/null
+# What the groups merged since the seed add, through the first server's routes.
+node "$here/backups-archives-fill.mjs" --base "$base" --state "$work/state.json" --out "$work/facts.json"
 docker stop -t 20 "$container" >/dev/null
 docker cp "$container:/tmp/data" "$work/seed"
 py fill "$work/seed"
@@ -87,6 +94,28 @@ witness apply "$work/ours.zip" "$work/witness-restores-ours" || status=1
 py tree "$work/data" "$work/ours-restores-first" "$work/first.zip" || status=1
 echo "-- the first server's own restore, for what it does with modes:"
 py tree "$work/data" "$work/witness-restores-ours" || status=1
+
+# This server, started on a folder each archive was restored into: the people
+# sign in, the history reads, an attachment downloads, the hub negotiates.
+if [ -n "${STELLARR_API:-}" ]; then
+  echo "== this server on a folder restored from each archive"
+  for from in first ours; do
+    root=$work/started-on-$from
+    mkdir -p "$root"
+    "$example" apply "$work/$from.zip" "$root" >/dev/null || status=1
+    env ASPNETCORE_ENVIRONMENT=Testing Rtc__TurnSharedSecret=x STELLARR_DATA_ROOT="$root" \
+      "ConnectionStrings__Database=Data Source=$root/db/stellarr.db" ASPNETCORE_URLS=http://127.0.0.1:0 \
+      "$STELLARR_API" > "$root.log" 2>&1 &
+    server_pid=$!
+    for _ in $(seq 1 60); do grep -q 'Now listening' "$root.log" && break; sleep 0.5; done
+    address=$(sed -n 's/.*listening on: \(http:[^ ]*\).*/\1/p' "$root.log" | tail -1)
+    echo "-- restored from the $from archive: $address"
+    if [ -z "$address" ]; then tail -5 "$root.log"; status=1; else
+      node "$here/backups-archives-restored.mjs" --base "$address" --facts "$work/facts.json" --sealed 1 || status=1
+    fi
+    kill "$server_pid" 2>/dev/null || true; wait "$server_pid" 2>/dev/null || true; server_pid=
+  done
+fi
 
 echo "== hostile archives given to both checks"
 py hostile "$work/hostile" > /dev/null
