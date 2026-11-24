@@ -46,16 +46,10 @@ const NOTIFIED: [&str; 15] = [
     "email-changed",
 ];
 
-/// The text cut to `maximum` UTF-16 units, as the first server cuts it. A
-/// character of two units that the cut falls in the middle of loses its
-/// second half, and the half left cannot be stored: the database holds the
-/// replacement character in its place, as it does there.
+/// The text cut to `maximum` UTF-16 units; a character of two units that the
+/// cut falls in the middle of is left out whole.
 fn truncated(value: &str, maximum: usize) -> String {
-    let units = utf16::units(value);
-    if units.len() <= maximum {
-        return value.to_string();
-    }
-    utf16::text(&units[..maximum])
+    utf16::prefix(value, maximum).to_string()
 }
 
 /// Records an account-global fact. The caller commits it with its own
@@ -232,7 +226,7 @@ mod tests {
     }
 
     #[test]
-    fn a_detail_is_cut_in_utf16_units_and_a_pair_at_the_edge_loses_its_second_half() {
+    fn a_detail_is_cut_in_utf16_units_and_a_pair_at_the_edge_is_left_out_whole() {
         let (_folder, mut connection) = open();
         let user = add_user(&connection, None);
         let detail_of = |connection: &Connection, kind: &str| -> String {
@@ -256,10 +250,7 @@ mod tests {
         record(&tx, user, METHOD_ADDED, "", "", &astral, None).unwrap();
         tx.commit().unwrap();
 
-        assert_eq!(
-            detail_of(&connection, "mfa-succeeded"),
-            format!("{}\u{FFFD}", "a".repeat(499))
-        );
+        assert_eq!(detail_of(&connection, "mfa-succeeded"), "a".repeat(499));
         assert_eq!(
             detail_of(&connection, "mfa-failed"),
             format!("{}\u{1F600}", "b".repeat(498))

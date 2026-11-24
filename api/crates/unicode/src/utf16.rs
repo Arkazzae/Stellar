@@ -29,6 +29,20 @@ pub fn units(text: &str) -> Vec<u16> {
     text.encode_utf16().collect()
 }
 
+/// The longest start of `text` that fits in `max` UTF-16 units. A character of
+/// two units that the limit falls in the middle of is left out whole, so what
+/// comes back is never half a character.
+pub fn prefix(text: &str, max: usize) -> &str {
+    let mut used = 0;
+    for (at, letter) in text.char_indices() {
+        used += letter.len_utf16();
+        if used > max {
+            return &text[..at];
+        }
+    }
+    text
+}
+
 /// Units back to text. A lone surrogate reads as the replacement character.
 pub fn text(units: &[u16]) -> String {
     String::from_utf16_lossy(units)

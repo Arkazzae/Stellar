@@ -142,16 +142,7 @@ pub fn earlier(current: Option<String>, id: &str) -> String {
 
 /// At most `length` UTF-16 units, never cutting a surrogate pair in two.
 pub fn clamp(text: &str, length: usize) -> String {
-    let units: Vec<u16> = text.encode_utf16().collect();
-    if units.len() <= length {
-        return text.to_string();
-    }
-    let end = if (0xDC00..=0xDFFF).contains(&units[length]) {
-        length - 1
-    } else {
-        length
-    };
-    String::from_utf16_lossy(&units[..end])
+    stellarr_unicode::utf16::prefix(text, length).to_string()
 }
 
 /// A length as the first server counted it, in UTF-16 units.

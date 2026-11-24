@@ -11,6 +11,7 @@ use std::collections::HashMap;
 use rusqlite::{Connection, Row};
 use serde::{Serialize, Serializer};
 use stellarr_messages::{MessageKey, Messages};
+use stellarr_unicode::utf16;
 
 use crate::database::DbError;
 use crate::instance::users::UserDto;
@@ -139,13 +140,11 @@ pub struct ChannelReadDto {
 /// to `limit - 3` units and an ellipsis.
 pub fn one_line(content: &str, limit: usize) -> String {
     let compact = content.split_whitespace().collect::<Vec<_>>().join(" ");
-    let units: Vec<u16> = compact.encode_utf16().collect();
-    if units.len() <= limit {
+    if compact.encode_utf16().count() <= limit {
         return compact;
     }
-    // A cut inside a pair leaves half of it, which the text carries as the
-    // replacement character, as the first server's did.
-    let mut cut = String::from_utf16_lossy(&units[..limit - 3]);
+    // A pair the cut falls inside is left out whole.
+    let mut cut = utf16::prefix(&compact, limit - 3).to_string();
     cut.push('…');
     cut
 }
@@ -507,12 +506,16 @@ mod tests {
     }
 
     #[test]
-    fn a_cut_through_a_pair_leaves_the_replacement_character() {
+    fn a_cut_through_a_pair_leaves_the_pair_out() {
         let text = format!("{}\u{1F600}bbbb", "a".repeat(156));
 
         let cut = one_line(&text, 160);
 
-        assert_eq!(cut, format!("{}\u{FFFD}…", "a".repeat(156)));
+        assert_eq!(cut, format!("{}…", "a".repeat(156)));
+        assert!(!cut.contains('\u{FFFD}'));
+        // One unit further on the pair fits whole.
+        let fits = one_line(&format!("{}\u{1F600}bbbb", "a".repeat(155)), 160);
+        assert_eq!(fits, format!("{}\u{1F600}…", "a".repeat(155)));
     }
 
     #[test]
