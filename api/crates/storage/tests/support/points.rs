@@ -50,6 +50,8 @@ pub struct Probe {
     http: Client,
     pub transcript: String,
     pub findings: Vec<Finding>,
+    /// Whether `If-None-Match: *` kept an object from being replaced.
+    pub conditional: Option<bool>,
 }
 
 fn now() -> s3::Timestamp {
@@ -78,6 +80,7 @@ impl Probe {
             http,
             transcript: String::new(),
             findings: Vec::new(),
+            conditional: None,
         }
     }
 
@@ -253,6 +256,9 @@ impl Probe {
 
     pub fn summary(&self) -> String {
         let mut out = String::from("\nFINDINGS\n");
+        if let Some(honoured) = self.conditional {
+            let _ = writeln!(out, "CONDITIONAL={}", if honoured { "yes" } else { "no" });
+        }
         for finding in &self.findings {
             let _ = writeln!(
                 out,
@@ -392,6 +398,17 @@ impl Probe {
             .await;
         let page = s3::read_list_objects(reply.status, &reply.headers, &reply.body);
         let raw = reply.text();
+        let written: Vec<&str> = raw
+            .split("<Key>")
+            .skip(1)
+            .filter_map(|part| part.split("</Key>").next())
+            .collect();
+        self.note(&format!(
+            "  the keys as the answer wrote them: {written:?}; EncodingType: {:?}",
+            raw.split("<EncodingType>")
+                .nth(1)
+                .and_then(|s| s.split("</EncodingType>").next())
+        ));
         self.find(
             2,
             "the answer says <EncodingType>url</EncodingType>",
@@ -970,6 +987,7 @@ impl Probe {
             "  the condition on PutObject is {}",
             if honoured { "HONOURED" } else { "NOT honoured" }
         ));
+        self.conditional = Some(honoured);
         let back = self.get("what the key holds now", "p13/one", None).await;
         self.note(&format!("  the key holds {:?}", back.text()));
         self.find(
