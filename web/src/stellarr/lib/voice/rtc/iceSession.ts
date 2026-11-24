@@ -117,7 +117,7 @@ export interface RuntimeIceProviderOptions {
  */
 export class RuntimeIceProvider implements VoiceIceProvider {
   /** Last successfully resolved list: the seed first, then each refresh. */
-  private lastKnown: RTCIceServer[] = [];
+  private lastKnown: RTCIceServer[] | null = null;
   private session: RTCIceServer[] | null = null;
 
   constructor(private readonly options: RuntimeIceProviderOptions) {}
@@ -127,7 +127,8 @@ export class RuntimeIceProvider implements VoiceIceProvider {
    * seconds after page load has something valid to fall back on.
    */
   seed(runtime?: readonly IceServerConfig[]): void {
-    this.lastKnown = this.resolve(runtime);
+    const servers = this.resolve(runtime);
+    this.lastKnown = runtime !== undefined || servers.length > 0 ? servers : null;
   }
 
   async beginSession(): Promise<RTCIceServer[]> {
@@ -135,21 +136,27 @@ export class RuntimeIceProvider implements VoiceIceProvider {
       const rtc = await this.options.fetchRtc();
       // Minted by the server a moment ago, so it is trusted as it is, even
       // when empty: that means this instance genuinely offers no ICE servers.
-      const fresh = this.resolve(rtc?.iceServers);
-      this.lastKnown = fresh;
+      this.seed(rtc?.iceServers);
+      const fresh = this.lastKnown ?? [];
       this.session = fresh;
       return fresh;
     } catch (cause) {
       if (cause instanceof IceConfigError) throw cause;
 
-      const fallback = this.evaluate(this.lastKnown);
+      // An explicit empty list means the instance supports direct ICE.
+      const cached = this.lastKnown;
+      if (cached?.length === 0) {
+        this.session = cached;
+        return cached;
+      }
+      const fallback = this.evaluate(cached ?? []);
       if (!fallback.usable) {
         this.session = null;
         // `lastKnown` deliberately keeps the expired entry. Pruning it would
         // leave a STUN-only list, which counts as usable forever, so the next
         // retry would quietly succeed with no relay instead of reporting the
         // real problem. Nothing leaks, because `current()` prunes every read.
-        const nothingCached = this.lastKnown.length === 0;
+        const nothingCached = cached === null;
         throw new IceConfigError(
           nothingCached ? "unavailable" : "expired",
           nothingCached
@@ -167,7 +174,7 @@ export class RuntimeIceProvider implements VoiceIceProvider {
     // The session can outlive a credential too, so every read prunes, whether
     // the source is the session or the bootstrap seed. A connection replaced
     // late in a call never receives a dead relay credential.
-    const source = this.session ?? this.lastKnown;
+    const source = this.session ?? this.lastKnown ?? [];
     const { servers } = this.evaluate(source);
     return servers.length === source.length ? source : servers;
   }

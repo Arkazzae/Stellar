@@ -11,6 +11,7 @@
 // queue, delay, jitter and losses in bursts.
 
 import { createSocket } from "node:dgram";
+import { createConnection, createServer } from "node:net";
 
 /** UDP and IPv4 headers, which a shaped link carries as well. */
 const DATAGRAM_OVERHEAD = 28;
@@ -214,5 +215,70 @@ export class LossyNat {
     for (const link of new Set(this.links.values())) link.close();
     for (const upstream of this.upstreams.values()) upstream.close();
     this.socket.close();
+  }
+}
+
+/** Advertises a port that forwards TCP to the SFU and drops every UDP datagram. */
+export class TcpOnlyMediaRoute {
+  static async listen() {
+    const route = new TcpOnlyMediaRoute();
+    try {
+      await new Promise((resolve, reject) => {
+        route.tcp.once("error", reject);
+        route.tcp.listen(0, "127.0.0.1", resolve);
+      });
+      route.port = route.tcp.address().port;
+      await new Promise((resolve, reject) => {
+        route.udp.once("error", reject);
+        route.udp.bind(route.port, "127.0.0.1", resolve);
+      });
+      return route;
+    } catch (error) {
+      await route.close();
+      throw error;
+    }
+  }
+
+  constructor() {
+    this.target = null;
+    this.sockets = new Set();
+    this.accepted = 0;
+    this.dropped = 0;
+    this.tcp = createServer((browser) => this.forward(browser));
+    this.udp = createSocket("udp4");
+    this.udp.on("message", () => this.dropped++);
+  }
+
+  forward(browser) {
+    if (this.target === null) {
+      browser.destroy();
+      return;
+    }
+    this.accepted++;
+    const media = createConnection({ host: "127.0.0.1", port: this.target });
+    for (const [socket, peer] of [[browser, media], [media, browser]]) {
+      this.sockets.add(socket);
+      socket.on("error", () => socket.destroy());
+      socket.on("close", () => {
+        this.sockets.delete(socket);
+        peer.destroy();
+      });
+      socket.pipe(peer);
+    }
+  }
+
+  async close() {
+    for (const socket of this.sockets) socket.destroy();
+    await Promise.all([
+      new Promise((resolve) => this.tcp.close(resolve)),
+      new Promise((resolve) => {
+        try {
+          this.udp.close(resolve);
+        } catch (error) {
+          if (error.code !== "ERR_SOCKET_DGRAM_NOT_RUNNING") throw error;
+          resolve();
+        }
+      }),
+    ]);
   }
 }

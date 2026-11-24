@@ -313,6 +313,16 @@ describe("RuntimeIceProvider", () => {
     expect(ice.current()).toEqual([]);
   });
 
+  it("keeps direct ICE available during a refresh failure when bootstrap offered no relays", async () => {
+    const ice = provider(async () => {
+      throw new Error("offline");
+    });
+    ice.seed([]);
+
+    await expect(ice.beginSession()).resolves.toEqual([]);
+    expect(ice.current()).toEqual([]);
+  });
+
   it("survives a bootstrap payload with no rtc block", async () => {
     const ice = provider(async () => undefined);
     await expect(ice.beginSession()).resolves.toEqual([]);
