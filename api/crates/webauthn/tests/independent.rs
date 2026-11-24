@@ -30,7 +30,6 @@ struct Stored {
     public_key: String,
     user_handle: String,
     sign_count: u32,
-    backup_eligible: bool,
 }
 
 fn load(json: &str) -> Vec<Fixture> {
@@ -65,7 +64,6 @@ fn run(fixtures: &[Fixture], expected_algorithms: &[&str]) {
             public_key: &public_key,
             user_handle: &handle,
             sign_count: fixture.stored.sign_count,
-            backup_eligible: fixture.stored.backup_eligible,
         };
         let request = AssertionRequest {
             relying_party: &relying_party,
