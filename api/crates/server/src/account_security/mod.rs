@@ -20,6 +20,8 @@
 mod email_change;
 mod methods;
 mod page;
+
+pub(crate) use page::{linked_identities, recent_events};
 mod password;
 mod providers;
 mod sessions;
