@@ -13,9 +13,11 @@
 //! `/api/admin/sections/{id}/permissions` the overrides of roles and, below
 //! `/members`, of members.
 
-mod announce;
+pub(crate) mod announce;
 mod assignment;
 mod catalog;
+
+pub(crate) use catalog::{invalid_role, validate};
 mod overrides;
 
 use axum::http::StatusCode;
@@ -110,17 +112,17 @@ pub fn routes() -> Endpoints {
 
 /// A role with the two columns the rules do not read.
 #[derive(Debug, Clone)]
-struct RoleRow {
-    role: Role,
-    name: String,
-    color: String,
+pub(crate) struct RoleRow {
+    pub(crate) role: Role,
+    pub(crate) name: String,
+    pub(crate) color: String,
 }
 
 const ROLE_COLUMNS: &str =
     "\"Id\", \"ServerId\", \"Name\", \"Color\", \"Permissions\", \"Position\", \"IsSystem\", \"IsOwner\"";
 
 impl RoleRow {
-    fn read(row: &Row<'_>) -> rusqlite::Result<RoleRow> {
+    pub(crate) fn read(row: &Row<'_>) -> rusqlite::Result<RoleRow> {
         Ok(RoleRow {
             role: Role {
                 id: row.get(0)?,
@@ -136,7 +138,7 @@ impl RoleRow {
     }
 
     /// The role of the server with this id.
-    fn find(db: &Connection, server: Id, id: Id) -> rusqlite::Result<Option<RoleRow>> {
+    pub(crate) fn find(db: &Connection, server: Id, id: Id) -> rusqlite::Result<Option<RoleRow>> {
         db.query_row(
             &format!("SELECT {ROLE_COLUMNS} FROM \"ServerRoles\" WHERE \"Id\" = ?1 AND \"ServerId\" = ?2"),
             params![id, server],
@@ -153,7 +155,7 @@ impl RoleRow {
         statement.query_map([server], RoleRow::read)?.collect()
     }
 
-    fn dto(&self, member_count: usize) -> RoleDto {
+    pub(crate) fn dto(&self, member_count: usize) -> RoleDto {
         RoleDto {
             id: self.role.id,
             name: self.name.clone(),
@@ -170,8 +172,8 @@ impl RoleRow {
 /// role every member.
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
-struct RoleDto {
-    id: Id,
+pub(crate) struct RoleDto {
+    pub(crate) id: Id,
     name: String,
     color: String,
     permissions: Vec<&'static str>,
