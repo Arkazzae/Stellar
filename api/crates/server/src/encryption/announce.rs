@@ -8,7 +8,7 @@
 use rusqlite::{Transaction, params};
 use serde::Serialize;
 
-use super::store::{self, Conversation};
+use super::store::Conversation;
 use super::wire::{EncryptionChangedDto, EpochCreatedDto, EpochDto, KeysChangedDto, Nothing};
 use crate::database::DbError;
 use crate::events::{Audience, Event};
@@ -177,7 +177,7 @@ pub async fn keys_changed(
         .read(move |connection| -> Result<Vec<bool>, DbError> {
             peers
                 .iter()
-                .map(|peer| Ok(!store::blocked(connection, user, *peer)?))
+                .map(|peer| Ok(!crate::social::is_blocked(connection, user, *peer)?))
                 .collect()
         })
         .await?;

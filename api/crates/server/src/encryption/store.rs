@@ -446,16 +446,6 @@ pub fn encrypted_conversations_of(
     statement.query_map([user], Conversation::read)?.collect()
 }
 
-/// Whether either of the two blocks the other.
-pub fn blocked(connection: &Connection, first: Id, second: Id) -> rusqlite::Result<bool> {
-    connection.query_row(
-        "SELECT EXISTS (SELECT 1 FROM \"UserBlocks\"
-            WHERE (\"BlockerId\" = ?1 AND \"BlockedId\" = ?2) OR (\"BlockerId\" = ?2 AND \"BlockedId\" = ?1))",
-        params![first, second],
-        |row| row.get(0),
-    )
-}
-
 /// Whether the peer accepts a message, and so a request, from this person.
 /// Somebody who turned direct messages off still hears from their friends.
 pub fn peer_takes_messages_from(
@@ -473,16 +463,7 @@ pub fn peer_takes_messages_from(
     if allowed != Some(false) {
         return Ok(true);
     }
-    let (a, b) = if sender < peer {
-        (sender, peer)
-    } else {
-        (peer, sender)
-    };
-    connection.query_row(
-        "SELECT EXISTS (SELECT 1 FROM \"Friendships\" WHERE \"UserAId\" = ?1 AND \"UserBId\" = ?2)",
-        params![a, b],
-        |row| row.get(0),
-    )
+    crate::social::are_friends(connection, sender, peer)
 }
 
 // ---- epochs ----
