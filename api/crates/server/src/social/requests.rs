@@ -97,15 +97,14 @@ pub async fn create(
                 .query_row(
                     "SELECT u.\"Id\", COALESCE(p.\"AllowFriendRequests\", 1) FROM \"Users\" u
                      LEFT JOIN \"UserPreferences\" p ON p.\"UserId\" = u.\"Id\"
-                     WHERE u.\"NormalizedUsername\" = ?1 AND u.\"Origin\" IS NULL",
+                     WHERE u.\"NormalizedUsername\" = ?1 AND u.\"Origin\" IS NULL AND u.\"IsDisabled\" = 0",
                     [&normalized],
                     |row| Ok((row.get(0)?, row.get(1)?)),
                 )
                 .optional()?;
-            let Some((target, allows)) = target.filter(|(_, allows)| *allows) else {
+            let Some((target, _)) = target.filter(|(_, allows)| *allows) else {
                 return Ok(Outcome::Result("unknown-user"));
             };
-            let _ = allows;
             if target == me {
                 return Ok(Outcome::Result("self"));
             }

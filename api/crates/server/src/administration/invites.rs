@@ -373,11 +373,7 @@ pub async fn send(
                     },
                 )
                 .optional()?;
-            let person: bool = tx.query_row(
-                "SELECT EXISTS (SELECT 1 FROM \"Users\" WHERE \"Id\" = ?1 AND \"Origin\" IS NULL)",
-                [user],
-                |row| row.get(0),
-            )?;
+            let person = crate::social::is_reachable(tx, user)?;
             let usable = found
                 .filter(|(_, expires_at, uses, max_uses)| {
                     !expires_at.is_some_and(|at| at <= now) && !max_uses.is_some_and(|max| max <= *uses)

@@ -155,11 +155,11 @@ async fn a_conversation_is_opened_with_a_person_who_exists_and_has_not_blocked_t
         415
     );
 
-    // An account that stands in for somebody is nobody; a disabled one is somebody.
+    // An account that stands in for somebody is nobody, and so is a disabled one.
     t.server.database().execute("UPDATE \"Users\" SET \"Origin\" = 'discord' WHERE \"Username\" = 'cyd'", []).unwrap();
     assert_eq!(t.ada.client.post_json("/api/social/conversations", &json!({ "userId": t.cyd.id })).await.status, 404);
     t.server.database().execute("UPDATE \"Users\" SET \"IsDisabled\" = 1 WHERE \"Username\" = 'ben'", []).unwrap();
-    assert_eq!(t.ada.client.post_json("/api/social/conversations", &json!({ "userId": t.ben.id })).await.status, 200);
+    assert_eq!(t.ada.client.post_json("/api/social/conversations", &json!({ "userId": t.ben.id })).await.status, 404);
 
     // A block in either direction refuses, for a pair that has a conversation too.
     let t = trio().await;

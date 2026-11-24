@@ -1151,6 +1151,10 @@ async fn sending_an_invite_is_refused_for_members_the_banned_and_people_who_do_n
         )
         .unwrap();
     assert_eq!(send_to(&invite.0, &placeholder.to_lowercase()).await.status, 404);
+    // So is a disabled account.
+    let gone = server.register("gone").await;
+    server.database().execute("UPDATE \"Users\" SET \"IsDisabled\" = 1 WHERE \"Username\" = 'gone'", []).unwrap();
+    assert_eq!(send_to(&invite.0, &gone.id).await.status, 404);
     let spent = make_invite(&maya.client, &id, json!({})).await;
     server.database().execute("UPDATE \"ServerInvites\" SET \"Uses\" = \"MaxUses\" WHERE \"Id\" = ?1", [spent.0.to_uppercase()]).unwrap();
     let ilya = server.register("ilya").await;

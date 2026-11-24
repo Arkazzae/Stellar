@@ -36,12 +36,7 @@ pub async fn open(
     let (id, created) = state
         .database()
         .write(move |tx| -> Result<(Id, bool), ApiError> {
-            let person: bool = tx.query_row(
-                "SELECT EXISTS (SELECT 1 FROM \"Users\" WHERE \"Id\" = ?1 AND \"Origin\" IS NULL)",
-                [other],
-                |row| row.get(0),
-            )?;
-            if me == other || !person {
+            if me == other || !crate::social::is_reachable(tx, other)? {
                 return Err(ApiError::not_found());
             }
             if is_blocked(tx, me, other)? {
