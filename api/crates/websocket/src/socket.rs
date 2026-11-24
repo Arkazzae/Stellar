@@ -421,7 +421,7 @@ impl<S: AsyncRead + AsyncWrite + Send + Unpin> Receiver<S> {
             .message
             .as_mut()
             .expect("a data frame always has a message");
-        message.size += chunk.len();
+        message.size = message.size.saturating_add(chunk.len());
         if message.size > self.config.max_message_size {
             return Err(Error::MessageTooBig);
         }

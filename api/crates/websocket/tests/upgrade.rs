@@ -6,15 +6,17 @@ use http_body_util::Full;
 use hyper::service::service_fn;
 use hyper_util::rt::TokioIo;
 use stellarr_websocket::frame::{OP_TEXT, encode_frame};
-use stellarr_websocket::{Config, Event, accept, accept_key};
+use stellarr_websocket::{Config, Event, accept, accept_key, take_upgrade};
 use tokio::io::{AsyncReadExt, AsyncWriteExt, DuplexStream};
 
 /// A server that upgrades every request it accepts and echoes text back.
 fn serve() -> DuplexStream {
     let (client, server) = tokio::io::duplex(64 * 1024);
-    let service = service_fn(|mut request| async move {
-        Ok::<_, std::convert::Infallible>(match accept(&mut request) {
-            Ok((response, on_upgrade)) => {
+    let service = service_fn(|request| async move {
+        let (mut parts, _) = request.into_parts();
+        Ok::<_, std::convert::Infallible>(match accept(&parts) {
+            Ok(response) => {
+                let on_upgrade = take_upgrade(&mut parts).unwrap();
                 tokio::spawn(async move {
                     let (sender, mut receiver) =
                         stellarr_websocket::upgraded(on_upgrade, Config::default())
@@ -72,8 +74,8 @@ fn good<'a>(extra: &[&'a str]) -> Vec<&'a str> {
 
 #[test]
 fn the_accept_value_is_the_one_in_the_standard() {
-    // RFC 6455, section 1.3. The value is also what the C# server answered
-    // for this key, and what openssl computes.
+    // RFC 6455, section 1.3. The value is also what openssl computes and
+    // what a reference server answered for this key.
     assert_eq!(accept_key(KEY), "s3pPLMBiTxaQ9kYGzzhZRbK+xOo=");
 }
 

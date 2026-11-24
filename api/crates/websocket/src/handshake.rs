@@ -4,7 +4,8 @@ use aws_lc_rs::digest;
 use http::header::{
     CONNECTION, SEC_WEBSOCKET_ACCEPT, SEC_WEBSOCKET_KEY, SEC_WEBSOCKET_VERSION, UPGRADE,
 };
-use http::{HeaderMap, HeaderValue, Method, Request, Response, StatusCode, Version};
+use http::request::Parts;
+use http::{HeaderMap, HeaderValue, Method, Response, StatusCode, Version};
 use hyper::upgrade::OnUpgrade;
 
 use crate::base64;
@@ -91,29 +92,30 @@ pub fn is_upgrade_request(headers: &HeaderMap) -> bool {
 }
 
 /// Checks the handshake and, when it is good, returns the `101` response to
-/// send and the handle that yields the raw connection once it is sent.
+/// send. The connection is taken over with [`take_upgrade`] and
+/// [`upgraded`](crate::upgraded).
 ///
 /// No subprotocol is selected and no extension accepted, whatever the client
 /// offers: the client then falls back to plain frames, which is all this
 /// crate speaks.
-pub fn accept<B>(request: &mut Request<B>) -> Result<(Response<()>, OnUpgrade), HandshakeError> {
-    if !is_upgrade_request(request.headers()) {
+pub fn accept(parts: &Parts) -> Result<Response<()>, HandshakeError> {
+    if !is_upgrade_request(&parts.headers) {
         return Err(HandshakeError::NotAnUpgrade);
     }
-    if request.method() != Method::GET {
+    if parts.method != Method::GET {
         return Err(HandshakeError::MethodNotGet);
     }
-    if request.version() != Version::HTTP_11 {
+    if parts.version != Version::HTTP_11 {
         return Err(HandshakeError::VersionNotHttp11);
     }
-    let version = request
-        .headers()
+    let version = parts
+        .headers
         .get(SEC_WEBSOCKET_VERSION)
         .and_then(|v| v.to_str().ok());
     if version.map(str::trim) != Some("13") {
         return Err(HandshakeError::UnsupportedVersion);
     }
-    let mut keys = request.headers().get_all(SEC_WEBSOCKET_KEY).iter();
+    let mut keys = parts.headers.get_all(SEC_WEBSOCKET_KEY).iter();
     let key = match (keys.next(), keys.next()) {
         (Some(key), None) => key.to_str().map_err(|_| HandshakeError::BadKey)?.trim(),
         _ => return Err(HandshakeError::BadKey),
@@ -122,10 +124,6 @@ pub fn accept<B>(request: &mut Request<B>) -> Result<(Response<()>, OnUpgrade), 
         return Err(HandshakeError::BadKey);
     }
     let accept = accept_key(key);
-    if request.extensions().get::<OnUpgrade>().is_none() {
-        return Err(HandshakeError::NoUpgradeSupport);
-    }
-    let on_upgrade = hyper::upgrade::on(request);
 
     let mut response = Response::new(());
     *response.status_mut() = StatusCode::SWITCHING_PROTOCOLS;
@@ -136,5 +134,11 @@ pub fn accept<B>(request: &mut Request<B>) -> Result<(Response<()>, OnUpgrade), 
         SEC_WEBSOCKET_ACCEPT,
         HeaderValue::from_str(&accept).expect("base64 is a valid header value"),
     );
-    Ok((response, on_upgrade))
+    Ok(response)
+}
+
+/// Takes the handle that yields the raw connection once the response has
+/// gone out. It can be taken once.
+pub fn take_upgrade(parts: &mut Parts) -> Option<OnUpgrade> {
+    parts.extensions.remove::<OnUpgrade>()
 }
