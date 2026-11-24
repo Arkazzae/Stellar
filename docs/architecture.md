@@ -1,6 +1,6 @@
 # Architecture
 
-Stellarr runs inside a single Docker container backed by one persistent volume (`/data/stellarr`). All HTTP and WebSocket traffic enters through Nginx, while WebRTC voice and video packets flow directly to `stellarr-media` (or through `coturn` when direct UDP is blocked).
+Stellarr runs inside a single Docker container backed by one persistent volume (`/data/stellarr`). All HTTP and WebSocket traffic enters through Nginx, while WebRTC voice and video packets flow directly to `stellarr-media` (over UDP or ICE-TCP, or through the optional TURN relay).
 
 See [Voice and RTC protocol](./rtc-protocol.md) for client state and hub signaling, and [Stellarr Media](./stellarr-media.md) for the Rust SFU media server.
 
@@ -17,8 +17,8 @@ flowchart TD
         Api["Stellarr API & hub (Rust, :5000)"]
         Sqlite[("SQLite WAL (db/stellarr.db)")]
         Files[("Object storage (files/)")]
-        Coturn["coturn STUN / TURN (:3478 / :5349)"]
-        Media["Stellarr Media SFU (:49000/udp)"]
+        Coturn["Optional coturn STUN / TURN (:3478 / :5349)"]
+        Media["Stellarr Media SFU (:49000 UDP/TCP)"]
 
         Nginx -->|"Static files"| Web
         Nginx -->|"Static files"| Cockpit
@@ -31,7 +31,7 @@ flowchart TD
 
     Browser -->|"HTTPS + WebSocket (:443/tcp)"| Nginx
     Browser <-->|"STUN / TURN (:3478, 49160-49200/udp)"| Coturn
-    Browser <-->|"WebRTC RTP / SRTP (:49000/udp)"| Media
+    Browser <-->|"WebRTC RTP / SRTP (:49000 UDP/TCP)"| Media
 ```
 
 ## Component responsibilities
@@ -50,9 +50,9 @@ flowchart TD
   - Every download under `/assets/{id}` is authorized and streamed by the API (`assets/`).
 - **Link previews (`api/crates/embeds`, `api/crates/server/src/link_previews/`)**: Background worker unfurls up to two HTTP(S) links per channel message (`Stellarr__Embeds__Enabled`), blocking loopback, link-local, and private network ranges by default (`AllowPrivateNetworks=false`). Preview thumbnails are downloaded and stored as local attachments so reader browsers never contact external hosts.
 - **Housekeeping (`api/crates/server/src/housekeeping/`)**: Hourly background worker that compacts the `MessageChanges` journal, drains the object deletion queue, sweeps unreferenced orphan uploads, prunes expired local backups and log files per Cockpit retention settings, and purges expired auth challenges, OTP codes, and recovery tokens.
-- **coturn**: Stateless STUN server and HMAC-authenticated TURN relay forwarding relayed media allocations to the local `stellarr-media` UDP socket.
+- **coturn**: Optional STUN server and HMAC-authenticated TURN relay forwarding relayed media allocations to the local `stellarr-media` UDP socket.
 - **Stellarr Init (`init/`, Rust)**: PID 1 process supervisor (`stellarr-init`). Starts container services in dependency order (`media` before `api`), runs periodic readiness probes, restarts exited processes with exponential backoff (1 s to 30 s), kills leftover process groups, reaps zombies, and stops services in reverse order on container shutdown.
-- **Stellarr Media (`media/`, Rust)**: Selective Forwarding Unit (SFU) on UDP `49000` using `str0m` (ICE-lite, DTLS-SRTP). Forwards microphone, camera, and screen-share RTP packets without transcoding or mixing, with per-leg RTCP feedback and per-receiver GoogCC downlink adaptation.
+- **Stellarr Media (`media/`, Rust)**: Selective Forwarding Unit (SFU) on UDP and TCP `49000` using `str0m` (ICE-lite, DTLS-SRTP). Forwards microphone, camera, and screen-share RTP packets without transcoding or mixing, with per-leg RTCP feedback and per-receiver GoogCC downlink adaptation.
 
 ## End-to-end encrypted direct messages and calls
 
@@ -145,7 +145,7 @@ A channel is private when somebody is denied `viewChannel` there; it is made so 
 | `restore/` | Staged `staged.zip` archive, `last-restore.json` status, and `previous-<timestamp>/` rollback directories |
 | `instance-id` | Auto-generated UUID persisted when `STELLARR_INSTANCE_ID` is unset |
 
-`stellarr-init` supervises all five container processes (`media`, `api`, `turn`, `nginx`, and `tls-maintenance`, defined in `init/src/services.rs`) behind `/data/stellarr`. See [`init/README.md`](../init/README.md) for the control socket wire protocol.
+`stellarr-init` supervises `media`, `api`, `nginx`, and `tls-maintenance` behind `/data/stellarr`. It also supervises `turn` when the relay is enabled. See [`init/README.md`](../init/README.md) for the control socket wire protocol.
 
 ### Container services (`stellarr-init`)
 

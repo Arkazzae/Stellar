@@ -4,7 +4,7 @@ End-to-end browser test suite that runs the `stellarr-media` release binary agai
 
 ## Running
 
-Requires Node.js 20+ and a local Chromium or Chrome binary.
+Requires Node.js 22.13+ and a local Chromium or Chrome binary.
 
 ```bash
 cd media/smoke
@@ -25,6 +25,10 @@ node smoke.mjs a e     # run specific scenarios against an existing binary
 
 Each scenario prints `PASS` or `FAIL` with verified metrics and writes `stellarr-media.log`, `results.json`, and per-participant SDP logs (`<scenario>-<participant>-descriptions.json`) to `STELLARR_SMOKE_OUT`.
 
+## Direct UDP and ICE-TCP
+
+Run `node smoke.mjs udp tcp` against a freshly built SFU to verify direct media without STUN or TURN servers. The UDP case uses the normal direct route. The TCP case advertises a port whose TCP traffic is forwarded to the SFU and whose UDP datagrams are discarded. Both browsers must select the expected protocol in `getStats()`, exchange growing RTP packet and byte counters, and decode the other browser’s audio tone. The TCP case also verifies a passive TCP host candidate, discarded UDP probes, and bidirectional decoded video.
+
 ## Architecture
 
 - `smoke.mjs` acts as the signaling hub: it spawns `stellarr-media` on ephemeral loopback ports, creates and deletes sessions via the HTTP control API, relays browser offers, answers, ICE candidates, and track subscriptions, and long-polls `/v1/events` (optionally delaying events to stage glare collisions).
@@ -41,6 +45,8 @@ Each scenario prints `PASS` or `FAIL` with verified metrics and writes `stellarr
 | `b` | Immediate PLI keyframe request when a new participant joins an already-running camera stream |
 | `c` | Late third participant receives all four existing tracks attributed to the right `userId`, with directory delivered before `ontrack` |
 | `d` | Leaving participant's forwarded m-lines transition to `inactive` and are removed from the directory |
+| `udp` | Direct UDP between each browser and the SFU with two-way audio |
+| `tcp` | Direct ICE-TCP with the advertised UDP route blocked and two-way audio and video |
 | `e` | Offer glare collision: browser ignores pending server offer, server rolls back and re-offers after answering browser |
 | `f` | Track swap (`replaceTrack` + `setStreams`) emits a `tracks` directory update without SDP renegotiation |
 | `g` | Selected ICE candidate pairs terminate at `stellarr-media` |

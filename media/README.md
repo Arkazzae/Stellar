@@ -8,13 +8,13 @@ Stellarr Media (`stellarr-media`) is Stellarr's Rust WebRTC Selective Forwarding
 cargo run --release
 ```
 
-By default, `stellarr-media` binds its UDP media socket on `0.0.0.0:49000` and its HTTP control API on `127.0.0.1:5200`.
+By default, `stellarr-media` binds its UDP media socket and passive TCP listener on `0.0.0.0:49000` and its HTTP control API on `127.0.0.1:5200`.
 
 | Variable | Default | Description |
 | --- | --- | --- |
-| `STELLARR_MEDIA_BIND` | `0.0.0.0:49000` | UDP media socket bind address |
+| `STELLARR_MEDIA_BIND` | `0.0.0.0:49000` | Bind address shared by the UDP socket and TCP listener |
 | `STELLARR_MEDIA_PUBLIC_IP` | empty | Public IPv4 address advertised in ICE host candidates |
-| `STELLARR_MEDIA_PUBLIC_PORT` | port of `STELLARR_MEDIA_BIND` | Public UDP port advertised with `STELLARR_MEDIA_PUBLIC_IP` |
+| `STELLARR_MEDIA_PUBLIC_PORT` | port of `STELLARR_MEDIA_BIND` | Public UDP and TCP port advertised with `STELLARR_MEDIA_PUBLIC_IP` |
 | `STELLARR_MEDIA_ADVERTISE` | empty | Comma-separated `ip:port` list overriding derived host candidates |
 | `STELLARR_MEDIA_CONTROL_BIND` | `127.0.0.1:5200` | HTTP control API bind address |
 | `STELLARR_MEDIA_CONTROL_SECRET` | empty | Bearer secret for the control API (required when not bound to loopback) |
@@ -49,7 +49,7 @@ cd smoke && npm ci && npm run smoke
 ## Crate layout
 
 - `src/core/`: sans-IO SFU state machine (rooms, sessions, `str0m::Rtc`, negotiation, and RTP forwarding). Performs no clock or socket I/O. `src/core/downlink.rs` tracks per-track bitrates and allocates receiver downlink budget across subscribed tracks in priority order.
-- `src/server.rs`: single async event loop driving `core`, the UDP socket, and timers alongside the Axum HTTP server.
+- `src/server.rs`: single async event loop driving `core`, the UDP socket, the TCP media transport, and timers alongside the Axum HTTP server.
 - `src/http.rs`: control API routes and bearer authentication.
 - `src/config.rs`: environment configuration parser.
 - `src/events.rs`: bounded 4,096-event ring buffer and long-poll notifier.

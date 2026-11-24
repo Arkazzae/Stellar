@@ -24,9 +24,9 @@ The first start installs npm workspace dependencies and compiles the `api` and `
 | --- | --- | --- |
 | `web` | `http://localhost:3000` | Vite dev server for the web client (`/`) and Cockpit (`/cockpit`), proxying `/api`, `/assets`, `/health`, `/hubs`, and `/.well-known/stellarr/client` to `api:5000` |
 | `api` | `http://localhost:5000` | `stellarr-api` under `watchexec` and `cargo run -p stellarr-api` |
-| `media` | `127.0.0.1:49100/udp` (`5200/tcp` control) | `stellarr-media` under `watchexec` and `cargo run` (`49100/udp` avoids clashing with production `49000/udp`) |
+| `media` | `127.0.0.1:49100` UDP and TCP (`5200/tcp` control) | `stellarr-media` under `watchexec` and `cargo run` (`49100` avoids clashing with production `49000`) |
 | `mailpit` | `http://127.0.0.1:8025` (`1025/tcp` SMTP) | Captures outgoing verification, 2FA, reset, and notification emails |
-| `coturn` | `3478` (`--profile turn`) | Optional STUN/TURN relay (`docker compose -f docker-compose.dev.yml --profile turn up -d`) |
+| `coturn` | `3478` (`--profile turn`) | Optional STUN/TURN relay (`STELLARR_TURN_ENABLED=true docker compose -f docker-compose.dev.yml --profile turn up -d`) |
 
 > [!TIP]
 > On macOS, port `5000` is often used by AirPlay Receiver. Override host ports in your shell or `.env` with `STELLARR_DEV_WEB_PORT`, `STELLARR_DEV_API_PORT`, `STELLARR_DEV_MEDIA_PORT`, `STELLARR_DEV_MEDIA_CONTROL_PORT`, or `STELLARR_DEV_MAILPIT_PORT` (see [Configuration: Development stack](../install/configuration.md#development-stack-docker-composedevyml)).

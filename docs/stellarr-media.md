@@ -9,7 +9,7 @@ See [Voice and RTC protocol](./rtc-protocol.md) for bootstrap configuration, `Vo
 | Aspect | Behavior |
 | --- | --- |
 | WebRTC engine | `str0m` (sans-IO ICE, DTLS, SRTP, RTP/RTCP, GoogCC BWE) |
-| Transport | ICE-lite on a single UDP socket (`0.0.0.0:49000`) |
+| Transport | ICE-lite on UDP and passive TCP at the same address (`0.0.0.0:49000`) |
 | Forwarded media | Microphone audio, camera video, screen video, and screen audio |
 | Media processing | Packet-level RTP header rewriting and forwarding; no decoding, mixing, or transcoding |
 | Authorization | The hub authorizes voice seats; `stellarr-media` accepts commands only on its loopback control API |
@@ -28,20 +28,21 @@ See [Voice and RTC protocol](./rtc-protocol.md) for bootstrap configuration, `Vo
 flowchart LR
     BrowserA["Participant A (Browser)"]
     BrowserB["Participant B (Browser)"]
-    Turn["coturn (:3478 / 49160-49200/udp)"]
+    Turn["Optional coturn (:3478 / 49160-49200/udp)"]
     Hub["Hub (stellarr.v1 WebSocket, /hubs/app)"]
-    Media["stellarr-media (:49000/udp)"]
+    Media["stellarr-media (:49000 UDP/TCP)"]
 
     BrowserA <-->|"OpenMediaSession / SendMediaSignal"| Hub
     BrowserB <-->|"OpenMediaSession / SendMediaSignal"| Hub
     Hub <-->|"HTTP Control API (127.0.0.1:5200)"| Media
 
-    BrowserA <-->|"Direct SRTP (:49000/udp)"| Media
-    BrowserB <-->|"TURN relay (when direct UDP is blocked)"| Turn
+    BrowserA <-->|"Direct WebRTC (UDP preferred)"| Media
+    BrowserB <-->|"Direct WebRTC (UDP or ICE-TCP)"| Media
+    BrowserB -.->|"Optional TURN relay"| Turn
     Turn <-->|"Local UDP"| Media
 ```
 
-Because all call media enters the container, any browser outside the Docker host needs the media server's public host candidate: set `STELLARR_PUBLIC_IP` and forward UDP `STELLARR_MEDIA_PORT` (default `49000`) to the host on the same external UDP port. Without `STELLARR_PUBLIC_IP`, the media server advertises only the container's internal bridge IPv4 address, which external browsers can reach only through TURN (`coturn`). See [Requirements](install/requirements.md#behind-nat).
+For callers outside the Docker host, set `STELLARR_PUBLIC_IP` to the IPv4 address browsers can reach. Forward both UDP and TCP on `STELLARR_MEDIA_PORT` (default `49000`) on the same external port. Passive ICE-TCP gives browsers a direct path when UDP is blocked. If neither direct path can reach the SFU, enable the optional relay. [Requirements](install/requirements.md#behind-nat)
 
 `GET /api/bootstrap` includes:
 
@@ -319,10 +320,10 @@ Returns immediately when events with `seq > after` exist, or waits up to `waitMs
 
 ### Transport
 
-- Single UDP socket (`0.0.0.0:49000`); incoming packets are demultiplexed by remote socket address (and by STUN username fragment on the initial connectivity check).
+- One UDP socket and a passive TCP listener share the same port (`0.0.0.0:49000`). TCP uses RFC 4571 length framing. Incoming packets are routed by transport and peer address, with STUN username fragments identifying new ICE sessions.
 - Each session accepts connectivity checks from at most `64` distinct remote socket addresses over its lifetime.
 - ICE-lite: `stellarr-media` responds to STUN binding checks and acts as the DTLS server.
-- Advertised host candidates (IPv4 only): `STELLARR_MEDIA_PUBLIC_IP:STELLARR_MEDIA_PUBLIC_PORT` (when set) followed by the primary local IPv4 address on the bound port (used for internal `coturn` relay).
+- Advertised host candidates (IPv4 only): UDP and passive TCP at `STELLARR_MEDIA_PUBLIC_IP:STELLARR_MEDIA_PUBLIC_PORT` when set, plus the primary local IPv4 address on the bound port. An optional local TURN relay can reach the local UDP candidate.
 
 ### Forwarding
 
@@ -378,7 +379,7 @@ Each receiving session runs independent GoogCC bandwidth estimation (`str0m`) dr
 - **SDP m-line recycling**: Inactive m-lines are not reused within an existing session. A long session with many camera/screen toggles that reaches the 128 KiB SDP limit automatically reconnects with a fresh session.
 - **Active-speaker video switching**: Receive subscriptions and downlink allocation follow the priority order sent by the browser rather than switching video by active speaker.
 - **Session persistence across hub reconnects or ICE restarts**: The client opens a replacement session instead.
-- **IPv6 or direct ICE-TCP**: The SFU media socket binds IPv4 UDP only; clients restricted to TCP connect through `coturn`.
+- **IPv6**: The SFU media transport binds IPv4. Direct ICE-TCP uses the same IPv4 candidate addresses and port as UDP.
 
 > [!WARNING]
 > Call media is encrypted in transit between each browser and `stellarr-media` via DTLS-SRTP. Because `stellarr-media` terminates SRTP on each leg to forward packets, the audio and video of server voice channels (and of 1:1 direct calls in conversations without end-to-end encryption) are decrypted in process memory on the host running the container. Only a 1:1 direct call in a conversation with end-to-end encryption enabled is encrypted end-to-end between the two browsers.
@@ -427,9 +428,9 @@ End-to-end encryption protects media content (audio and video frames), not call 
 
 | Variable | Default | Description |
 | --- | --- | --- |
-| `STELLARR_MEDIA_BIND` | `0.0.0.0:49000` | UDP media socket bind address |
+| `STELLARR_MEDIA_BIND` | `0.0.0.0:49000` | Bind address shared by the UDP socket and TCP listener |
 | `STELLARR_MEDIA_PUBLIC_IP` | empty | Public IPv4 address advertised in ICE host candidates |
-| `STELLARR_MEDIA_PUBLIC_PORT` | port of `STELLARR_MEDIA_BIND` | Public UDP port advertised with `STELLARR_MEDIA_PUBLIC_IP` |
+| `STELLARR_MEDIA_PUBLIC_PORT` | port of `STELLARR_MEDIA_BIND` | Public UDP and TCP port advertised with `STELLARR_MEDIA_PUBLIC_IP` |
 | `STELLARR_MEDIA_ADVERTISE` | empty | Comma-separated IPv4 `ip:port` list overriding derived host candidates |
 | `STELLARR_MEDIA_CONTROL_BIND` | `127.0.0.1:5200` | HTTP control API bind address |
 | `STELLARR_MEDIA_CONTROL_SECRET` | empty | Bearer token required by the control API (mandatory when not bound to loopback) |
@@ -441,4 +442,4 @@ End-to-end encryption protects media content (audio and video frames), not call 
 | --- | --- | --- |
 | `Rtc:MediaControlUrl` | `http://127.0.0.1:5200` | Base URL of the `stellarr-media` control API |
 | `Rtc:MediaControlSecret` | empty | Shared bearer secret (`/data/stellarr/secrets/media-control-secret`) |
-| `Rtc:MediaPort` | `49000` | Public UDP port advertised in `GET /api/bootstrap` (`1–65535`) |
+| `Rtc:MediaPort` | `49000` | Public media port advertised in `GET /api/bootstrap` (`1–65535`) |
