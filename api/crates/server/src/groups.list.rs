@@ -4,6 +4,7 @@ groups! {
     administration,
     assets,
     channels,
+    desktop_login,
     inbox,
     social,
     client_settings,
