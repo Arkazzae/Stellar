@@ -82,6 +82,28 @@ pub fn record(
     Ok(())
 }
 
+/// [`record`] for what a request says about itself: its address, and the
+/// browser's own name for itself as it was sent (cut, not replaced by a text
+/// for an unknown one, since an event names what was there).
+pub fn record_from(
+    tx: &Transaction,
+    context: &super::flow::Context<'_>,
+    user: Id,
+    kind: &str,
+    detail: &str,
+    verified_email: Option<&str>,
+) -> Result<(), DbError> {
+    record(
+        tx,
+        user,
+        kind,
+        context.ip_address,
+        context.user_agent,
+        detail,
+        verified_email,
+    )
+}
+
 /// Failed second-step proofs the account has collected since `since`, across
 /// every challenge: what the account-wide throttle counts.
 pub fn recent_mfa_failures(
