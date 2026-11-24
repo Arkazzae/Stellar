@@ -379,7 +379,7 @@
           <ol class="steps">
             <li><b>Open Stellarr</b>Open the HTTPS address printed by the installer (usually <code>https://localhost</code>) and accept the warning about the container's self-signed certificate.</li>
             <li><b>Create the owner account</b>Enter the setup code the installer prints. <code>/setup</code> creates your account and first server.</li>
-            <li><b>Invite friends</b>Set <code>STELLARR_DOMAIN</code> and <code>STELLARR_PUBLIC_IP</code>, forward the UDP ports and add a trusted HTTPS certificate.</li>
+            <li><b>Invite friends</b>Set <code>STELLARR_DOMAIN</code> and <code>STELLARR_PUBLIC_IP</code>, forward HTTPS on <code>443/TCP</code> and media on <code>49000/UDP</code> and <code>49000/TCP</code>, and add a trusted HTTPS certificate. Use your configured ports if they differ.</li>
           </ol>
           <div class="install__actions">
             <a class="btn" href="https://arkazzae.github.io/Stellarr/install/quick-start">Open the quick start</a>

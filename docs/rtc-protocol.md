@@ -55,7 +55,7 @@ UI components interact exclusively with `VoiceClient` and immutable `VoiceState`
 ```
 
 - `iceServers` is empty by default. If the optional TURN relay is enabled, bootstrap supplies STUN and a short-lived authenticated TURN URL. Enabling TURN over TLS also supplies a `turns:` URL.
-- `mediaServer` keeps the diagnostic format `udp://<Rtc:PublicHost>:<Rtc:MediaPort>`. The peer connection takes its UDP and passive TCP host candidates from the SFU’s SDP.
+- `mediaServer` keeps the diagnostic format `udp://<Rtc:PublicHost>:<Rtc:MediaPort>`. The peer connection takes its UDP and passive TCP host candidates from the SFU’s SDP. Inspect the selected ICE candidate pair to see which transport the browser uses.
 - The client verifies `protocolVersion === 1` before opening media devices and aborts with an `unsupported` error otherwise.
 
 ## Signaling

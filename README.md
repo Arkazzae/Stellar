@@ -57,8 +57,8 @@ docker compose up -d
 Want to build from source instead? Clone the repo and run `docker compose up -d --build`.
 
 1. Grab the one-time setup code printed by the installer (or run `docker compose logs stellarr | grep "Setup code"`).
-2. Open `https://localhost`, accept the local self-signed certificate, and run through `/setup` to create your owner account and first server.
-3. Visit `https://localhost/cockpit` anytime to manage accounts, security, logs, and backups.
+2. Open the HTTPS address printed by the installer (default `https://localhost`), accept the local self-signed certificate, and run through `/setup` to create your owner account and first server.
+3. Visit `/cockpit` on your instance to manage accounts, security, logs, and backups.
 
 ## Inviting friends
 

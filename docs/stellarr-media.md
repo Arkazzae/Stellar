@@ -42,7 +42,7 @@ flowchart LR
     Turn <-->|"Local UDP"| Media
 ```
 
-For callers outside the Docker host, set `STELLARR_PUBLIC_IP` to the IPv4 address browsers can reach. Forward both UDP and TCP on `STELLARR_MEDIA_PORT` (default `49000`) on the same external port. Passive ICE-TCP gives browsers a direct path when UDP is blocked. If neither direct path can reach the SFU, enable the optional relay. [Requirements](install/requirements.md#behind-nat)
+For callers outside the Docker host, advertise an IPv4 address their browsers can reach. Allow UDP and TCP on `STELLARR_MEDIA_PORT` (default `49000`) in the host firewall. For internet callers behind NAT, forward both transports on the same external port. Passive ICE-TCP gives browsers a direct path when UDP is blocked. If neither direct path can reach the SFU, enable the optional relay. [Requirements](install/requirements.md#behind-nat)
 
 `GET /api/bootstrap` includes:
 

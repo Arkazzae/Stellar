@@ -23,16 +23,16 @@ See [RTC and ports](../rtc-and-ports.md#published-host-ports) for the full port 
 
 ## Behind NAT
 
-A browser on the Docker host itself connects over local loopback without extra configuration. Calls from any other device, including other machines on your LAN, require:
+With the default `localhost` configuration, Stellarr advertises the published media port on loopback for browsers on the Docker host. For other devices, the SFU must advertise an IPv4 address those browsers can reach. Set `STELLARR_PUBLIC_IP` to that address, use `auto` to resolve the IPv4 address of `STELLARR_DOMAIN` at startup, or set `STELLARR_MEDIA_ADVERTISE` explicitly. If `STELLARR_PUBLIC_IP` is unset, a numeric IPv4 `STELLARR_DOMAIN` is enough for direct media.
 
-1. `STELLARR_PUBLIC_IP` set to the IPv4 address browsers use to reach the Docker host (LAN IPv4 for LAN-only use, public IPv4 for internet access, or `auto` to resolve the `A` record of `STELLARR_DOMAIN` at container startup).
-2. Forward both UDP and TCP `49000` (`STELLARR_MEDIA_PORT`) to the Docker host on the **same external port**. Forward HTTPS too, unless it is handled by an external reverse proxy. Enable and forward extra relay ports only if you need TURN. [Reverse proxy and TLS](reverse-proxy-and-tls.md#run-behind-a-reverse-proxy)
+- **LAN:** Use the Docker host’s LAN IPv4 address and allow HTTPS and both media transports (`49000/udp` and `49000/tcp` by default) through the host firewall. LAN clients using the host’s LAN address need no router port forwarding.
+- **Internet behind NAT:** Advertise the reachable public IPv4 address and forward the configured media port on both UDP and TCP to the Docker host on the same external port. Forward HTTPS to Stellarr or to your reverse proxy. If you enable TURN, forward its enabled transports and UDP relay range too. See [Reverse proxy and TLS](reverse-proxy-and-tls.md#run-behind-a-reverse-proxy).
 
 See [RTC and ports: NAT and firewall configuration](../rtc-and-ports.md#nat-and-firewall-configuration) for candidate advertisement rules and call diagnostics.
 
 ## Domain and TLS
 
-When `STELLARR_DOMAIN` is unset, TLS certificate generation and TURN realm configuration default to `localhost`, which works only on the Docker host. Remote connections require a domain name or IPv4 address pointing to the host. On first start, the container generates a 365-day self-signed certificate for `STELLARR_DOMAIN`. To use a browser-trusted certificate, see [Reverse proxy and TLS](reverse-proxy-and-tls.md).
+When `STELLARR_DOMAIN` is unset, TLS certificate generation and, when TURN is enabled, the TURN realm default to `localhost`, which works only on the Docker host. Remote connections require a domain name or IPv4 address pointing to the host. On first start, the container generates a 365-day self-signed certificate for `STELLARR_DOMAIN`. To use a browser-trusted certificate, see [Reverse proxy and TLS](reverse-proxy-and-tls.md).
 
 ## Browser requirements
 

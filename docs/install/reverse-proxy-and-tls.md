@@ -192,4 +192,4 @@ networks:
 An HTTP reverse proxy forwards HTTP and WebSocket traffic. The SFU’s public media address must be reachable on `49000/udp` and `49000/tcp` directly. ICE-TCP on that port is raw WebRTC traffic. Forward relay ports separately if TURN is enabled.
 
 > [!IMPORTANT]
-> Publish both media transports on the Docker host and forward them on your router. `STELLARR_PUBLIC_IP` must point to the host reachable on the media port, even when `STELLARR_DOMAIN` points to an HTTP-only CDN or tunnel. See the port tables in [Requirements](requirements.md#ports) and [RTC and ports](../rtc-and-ports.md#published-host-ports).
+> Publish both media transports on the Docker host and forward them on your router for internet access behind NAT. If `STELLARR_DOMAIN` points to an HTTP-only CDN or tunnel, use `STELLARR_PUBLIC_IP` or `STELLARR_MEDIA_ADVERTISE` to advertise an IPv4 address reachable on the media port. See the port tables in [Requirements](requirements.md#ports) and [RTC and ports](../rtc-and-ports.md#published-host-ports).

@@ -1,7 +1,7 @@
 import type { IceServerConfig } from "@/lib/api/types";
 
 export interface ResolveIceInput {
-  /** `rtc.iceServers` from `/api/bootstrap`, with the per-user TURN credentials. */
+  /** `rtc.iceServers` from `/api/bootstrap`, with per-user credentials when TURN is enabled. */
   runtime?: readonly IceServerConfig[] | undefined;
   /** `VITE_ICE_SERVERS`, baked in at build time. */
   env?: readonly RTCIceServer[] | undefined;
@@ -12,16 +12,12 @@ export interface ResolveIceInput {
 /**
  * Decides which ICE servers a peer connection gets.
  *
- * The runtime list from `/api/bootstrap` is authoritative. It carries coturn's
- * time-limited REST credentials, an HMAC over `<expiry>:<userId>` that is valid
- * for an hour and unique to the user, so it can be neither baked into a build
- * nor shared between people. A build-time list can hold STUN and nothing more.
+ * In production, use the runtime list from `/api/bootstrap`. An empty list is
+ * normal for direct media over ICE-UDP or ICE-TCP. When TURN is enabled, the
+ * runtime list carries time-limited credentials unique to the user.
  *
- * The env list is therefore a development convenience: it lets someone run the
- * UI against a STUN server with no backend. In production an empty runtime list
- * means the server really offered nothing. Substituting a stale build-time list
- * would hide that misconfiguration behind calls that fail only for people
- * behind symmetric NAT.
+ * A development build can fall back to a build-time STUN list when bootstrap
+ * supplies no ICE servers.
  */
 export function resolveIceServers({
   runtime,
