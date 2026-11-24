@@ -9,8 +9,10 @@ import { routes } from "@/routes";
 
 import HomePage from "./HomePage";
 
-vi.mock("@/state/hooks", () => ({
-  useSession: () => ({ phase: "ready", error: null, reload: vi.fn(), logout: vi.fn() }),
+vi.mock("@/state/SessionProvider", () => ({
+  useSessionContext: () => ({ phase: "ready", error: null, reload: vi.fn(), logout: vi.fn() }),
+}));
+vi.mock("@/state/LanguageProvider", () => ({
   useLanguage: () => ({ t: (key: MessageKey) => translateMessage("pl", key) }),
 }));
 // The app's code cannot be had: the network failed, or the server has moved

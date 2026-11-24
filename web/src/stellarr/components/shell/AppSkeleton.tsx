@@ -1,4 +1,4 @@
-import { useLanguage } from "@/state/hooks";
+import { useLanguage } from "@/state/LanguageProvider";
 
 import styles from "./AppSkeleton.module.css";
 

@@ -13,7 +13,9 @@ import type {
   MfaCompletion,
   MfaEnrollment,
 } from "@/ports";
-import { useLanguage, usePorts, useSession } from "@/state/hooks";
+import { useLanguage } from "@/state/LanguageProvider";
+import { usePorts } from "@/state/PortsProvider";
+import { useSessionContext as useSession } from "@/state/SessionProvider";
 
 import type { EnrollMode } from "@/components/auth/MfaEnrollStep";
 

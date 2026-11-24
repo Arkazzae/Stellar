@@ -1,7 +1,7 @@
 import { Link } from "@stellarr/router";
 import { Button } from "@stellarr/ui";
 
-import { useLanguage } from "@/state/hooks";
+import { useLanguage } from "@/state/LanguageProvider";
 
 /**
  * Built from the same `.sv-h` heading and primary `Button` the settings

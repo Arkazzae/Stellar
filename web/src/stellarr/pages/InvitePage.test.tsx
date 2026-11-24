@@ -23,9 +23,13 @@ const mocks = vi.hoisted(() => ({
 vi.mock("./HomePage", () => ({ default: () => <p>Aplikacja</p> }));
 vi.mock("./RegisterPage", () => ({ default: () => <p>Rejestracja</p> }));
 vi.mock("./LoginPage", () => ({ default: () => <p>Logowanie</p> }));
-vi.mock("@/state/hooks", () => ({
-  useSession: () => mocks.session,
+vi.mock("@/state/SessionProvider", () => ({
+  useSessionContext: () => mocks.session,
+}));
+vi.mock("@/state/PortsProvider", () => ({
   usePorts: () => mocks.ports,
+}));
+vi.mock("@/state/LanguageProvider", () => ({
   useLanguage: () => ({ t, locale: "pl" }),
 }));
 

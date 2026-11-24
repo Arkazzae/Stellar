@@ -2,7 +2,8 @@ import { useSearchParams } from "@stellarr/router";
 
 import { ResetPasswordScreen } from "@/components/auth/ResetPasswordScreen";
 import { singleQueryValue } from "@/lib/auth/query";
-import { useLanguage, usePorts } from "@/state/hooks";
+import { useLanguage } from "@/state/LanguageProvider";
+import { usePorts } from "@/state/PortsProvider";
 
 /**
  * Where the mailed reset link leads. The token is read from the address in

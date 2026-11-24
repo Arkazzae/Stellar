@@ -19,8 +19,10 @@ const mocks = vi.hoisted(() => ({
   },
 }));
 
-vi.mock("@/state/hooks", () => ({
-  useSession: () => mocks.session,
+vi.mock("@/state/SessionProvider", () => ({
+  useSessionContext: () => mocks.session,
+}));
+vi.mock("@/state/LanguageProvider", () => ({
   useLanguage: () => ({
     t: (key: MessageKey, values?: MessageValues) => translateMessage("pl", key, values),
   }),

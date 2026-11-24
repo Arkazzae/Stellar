@@ -3,7 +3,8 @@ import { lazy, Suspense, useEffect } from "react";
 
 import { ErrorNotice, type ErrorNoticeProps } from "@/components/primitives/ErrorNotice";
 import { AppSkeleton } from "@/components/shell/AppSkeleton";
-import { useLanguage, useSession } from "@/state/hooks";
+import { useLanguage } from "@/state/LanguageProvider";
+import { useSessionContext as useSession } from "@/state/SessionProvider";
 
 import { loadApp } from "./loadApp";
 

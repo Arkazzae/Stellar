@@ -13,7 +13,9 @@ import { pendingInvite, rememberPendingInvite, takePendingInvite } from "@/lib/a
 import { formatDate } from "@/lib/format/format";
 import type { InvitePreview } from "@/ports";
 import { serverMark } from "@/state/directoryView";
-import { useLanguage, usePorts, useSession } from "@/state/hooks";
+import { useLanguage } from "@/state/LanguageProvider";
+import { usePorts } from "@/state/PortsProvider";
+import { useSessionContext as useSession } from "@/state/SessionProvider";
 
 import { usePrefetchApp } from "./loadApp";
 

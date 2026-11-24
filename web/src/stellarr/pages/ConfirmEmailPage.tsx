@@ -5,7 +5,8 @@ import controls from "@/components/auth/AuthControls.module.css";
 import { AuthFrame } from "@/components/auth/AuthFrame";
 import type { MessageKey } from "@/i18n";
 import { singleQueryValue } from "@/lib/auth/query";
-import { useLanguage, usePorts } from "@/state/hooks";
+import { useLanguage } from "@/state/LanguageProvider";
+import { usePorts } from "@/state/PortsProvider";
 
 type Outcome = "changed" | "invalid" | "taken" | "failed";
 

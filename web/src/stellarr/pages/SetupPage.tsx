@@ -19,7 +19,10 @@ import { Switch } from "@/components/primitives/Switch";
 import { registrationIssue, type RegistrationField } from "@/containers/registrationErrors";
 import type { Translator } from "@/i18n";
 import { serverMark } from "@/state/directoryView";
-import { useInstanceSetup, useLanguage, usePorts, useSession } from "@/state/hooks";
+import { useInstanceSetupContext as useInstanceSetup } from "@/state/InstanceSetupProvider";
+import { useLanguage } from "@/state/LanguageProvider";
+import { usePorts } from "@/state/PortsProvider";
+import { useSessionContext as useSession } from "@/state/SessionProvider";
 
 import { usePrefetchApp } from "./loadApp";
 
