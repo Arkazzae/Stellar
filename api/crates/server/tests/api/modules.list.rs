@@ -7,6 +7,7 @@ mod database;
 mod emoji;
 mod direct;
 mod desktop_login;
+mod encryption;
 mod health;
 mod inbox;
 mod mail;
