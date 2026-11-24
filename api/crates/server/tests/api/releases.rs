@@ -1858,16 +1858,8 @@ mod oracle {
     /// Answers that differ from the first server's by decision, and why.
     fn known_difference(label: &str) -> Option<&'static str> {
         let has = |text: &str| label.contains(text);
-        if has("forwarded proto that is not one") {
-            Some("a scheme that is not http or https is taken as http here; the first server used whatever the proxy wrote")
-        } else if has("%00") {
-            Some("the first server refuses a path with an encoded null with 400 before routing; the pipeline here does not")
-        } else if label.ends_with("x86_64/..") {
-            Some("the first server removes dot segments from a path before routing; the pipeline here does not")
-        } else if has("/ARCH") || has("/APK") || has("/Client") || has("%63lient") {
-            Some("routes are matched case-sensitively and without decoding here (listed in the readme)")
-        } else if has("a very long") {
-            Some("the first server refuses a request line over 8 KiB with 414; hyper's limit is another")
+        if has("/ARCH") || has("/APK") || has("/Client") {
+            Some("routes are matched case-sensitively here (listed in the readme)")
         } else if has("\\0") {
             Some("a file name with a null character is a manifest that cannot be trusted here (503); in the first server the runtime threw (500)")
         } else {
@@ -2054,6 +2046,9 @@ mod oracle {
             ("forwarded", vec![("X-Forwarded-Host", "chat.example.test"), ("X-Forwarded-Proto", "https")]),
             ("forwarded twice", vec![("X-Forwarded-Host", "a.example.test, b.example.test"), ("X-Forwarded-Proto", "http, https")]),
             ("forwarded proto that is not one", vec![("X-Forwarded-Proto", "gopher")]),
+            ("forwarded proto in capitals", vec![("X-Forwarded-Proto", "HTTPS")]),
+            ("forwarded proto with a space in it", vec![("X-Forwarded-Proto", "a b")]),
+            ("forwarded proto that is empty", vec![("X-Forwarded-Proto", "")]),
             ("forwarded host with a port", vec![("X-Forwarded-Host", "chat.example.test:8443")]),
         ] {
             for target in [
