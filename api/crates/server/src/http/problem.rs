@@ -30,6 +30,7 @@ fn defaults(status: StatusCode) -> Option<(&'static str, &'static str)> {
         406 => ("15.5.7", "Not Acceptable"),
         408 => ("15.5.9", "Request Timeout"),
         409 => ("15.5.10", "Conflict"),
+        413 => ("15.5.14", "Content Too Large"),
         415 => ("15.5.16", "Unsupported Media Type"),
         500 => ("15.6.1", "An error occurred while processing your request."),
         501 => ("15.6.2", "Not Implemented"),
