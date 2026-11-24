@@ -1,4 +1,5 @@
 mod assets;
+mod bootstrap;
 mod channels;
 mod account_security;
 mod client_gate;
