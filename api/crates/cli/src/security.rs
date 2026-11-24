@@ -444,7 +444,22 @@ pub fn unlink(runtime: &mut Runtime, id_or_username: &str, identity_id: &str) ->
     let transaction = database
         .connection
         .transaction_with_behavior(TransactionBehavior::Immediate)?;
-    transaction.execute("DELETE FROM \"ExternalIdentities\" WHERE \"Id\" = ?1", [id])?;
+    // Someone else may have removed the link while the question waited: then
+    // nothing is recorded, as nothing was changed here.
+    let removed = transaction.execute(
+        "DELETE FROM \"ExternalIdentities\" WHERE \"Id\" = ?1 AND \"UserId\" = ?2",
+        params![id, user.id],
+    )?;
+    if removed == 0 {
+        return Err(CliError::new(
+            "identity_not_found",
+            format!(
+                "{} has no linked identity '{identity_id}'. Take the id from `security show`.",
+                user.username
+            ),
+            exit::NOT_FOUND,
+        ));
+    }
     let verified = events::verified_email(&transaction, user.id)?;
     events::record(
         &transaction,
