@@ -5,6 +5,7 @@ import {
   parseMediaSessionClosed,
   parseMediaSessionOpened,
   parseMediaSignal,
+  parseSoundboardPlayed,
   parseVoiceSignal,
 } from "./hubPayloads";
 
@@ -256,5 +257,57 @@ describe("parseMediaSessionOpened", () => {
     for (const bad of [undefined, null, "session-1", {}, { sessionId: "" }, { sessionId: 1 }]) {
       expect(parseMediaSessionOpened(bad)).toBeNull();
     }
+  });
+});
+
+describe("RTC envelope", () => {
+  const signal = {
+    protocolVersion: RTC_PROTOCOL_VERSION,
+    channelId: "channel-1",
+    fromUserId: "user-1",
+    toUserId: "user-2",
+    kind: "state",
+    payload: '{"muted":false,"screenStreamId":null,"cameraStreamId":null}',
+  };
+
+  it("accepts the current version", () => {
+    expect(parseVoiceSignal(signal)).toEqual(signal);
+  });
+
+  it("drops unknown versions and signal kinds at the adapter boundary", () => {
+    expect(parseVoiceSignal({ ...signal, protocolVersion: 2 })).toBeNull();
+    expect(parseVoiceSignal({ ...signal, kind: "execute" })).toBeNull();
+  });
+
+  it("drops a description or candidate, which only the media server takes", () => {
+    for (const kind of ["offer", "answer", "candidate"]) {
+      expect(parseVoiceSignal({ ...signal, kind })).toBeNull();
+    }
+  });
+});
+
+describe("Soundboard envelope", () => {
+  const event = {
+    playbackId: "play-1",
+    channelId: "voice-1",
+    triggeredByUserId: "user-1",
+    startsAtUnixMs: 1_800_000_000_750,
+    sound: {
+      id: "sound-1",
+      name: "Ping",
+      glyph: "🔔",
+      url: "/assets/audio-1",
+      durationSeconds: 3,
+      trimStartSeconds: 0.5,
+      trimEndSeconds: 2,
+    },
+  };
+
+  it("accepts a scheduled trimmed clip", () => {
+    expect(parseSoundboardPlayed(event)).toEqual(event);
+  });
+
+  it("drops an event without a finite shared start time", () => {
+    expect(parseSoundboardPlayed({ ...event, startsAtUnixMs: "soon" })).toBeNull();
   });
 });

@@ -187,7 +187,8 @@ async fn a_seat_that_ends_while_its_session_is_being_created_gets_none() {
     rig.media.release_creates();
 
     let (_peer, answer) = opening.await.unwrap();
-    assert!(answer["error"].as_str().unwrap().ends_with(&format!("HubException: {NOT_SEATED}")), "{answer}");
+    assert_eq!(answer["code"], "visible", "{answer}");
+    assert_eq!(answer["message"], NOT_SEATED, "{answer}");
     // The session the media server made for the seat that is gone is closed again.
     let created = created_sessions(&rig.media);
     assert_eq!(created.len(), 1);
@@ -1015,7 +1016,7 @@ async fn signing_out_closes_its_hub_and_its_media_but_leaves_another_account_act
     let signed_out = maja.client.post_json("/api/auth/logout", &json!({})).await;
     assert_eq!(signed_out.status, 204, "{}", signed_out.text());
 
-    let (_, _) = leaving.hub.until_close().await;
+    assert_eq!(leaving.hub.finish_close().await, Some(4401));
     until(|| !rig.media.sessions().contains(&leaving_session)).await;
     rig.media.delete_of(&leaving_session).await;
     assert!(staying.ok("GetRtcClock", json!([])).await.as_i64().unwrap() > 0);
@@ -1045,7 +1046,8 @@ async fn a_seat_moved_to_another_room_while_its_session_is_being_created_gets_no
 
     let (mut peer, answer) = opening.await.unwrap();
     // The seat is in the other room now: the session is not the new seat's.
-    assert!(answer["error"].as_str().unwrap().ends_with(&format!("HubException: {NOT_SEATED}")), "{answer}");
+    assert_eq!(answer["code"], "visible", "{answer}");
+    assert_eq!(answer["message"], NOT_SEATED, "{answer}");
     let created = created_sessions(&rig.media);
     assert_eq!(created.len(), 1);
     rig.media.next_request(|r| r.method == "DELETE").await;
@@ -1099,7 +1101,7 @@ async fn an_account_disabled_while_seated_loses_its_connection_its_seat_and_its_
         .execute("UPDATE \"Users\" SET \"IsDisabled\" = 1 WHERE \"Id\" = ?1", [Id::parse(&jonas.id).unwrap()])
         .unwrap();
 
-    let (_, _) = peer.hub.until_close().await;
+    assert_eq!(peer.hub.finish_close().await, Some(4401));
     rig.occupants_become(rig.salon, &[&maja.id]).await;
     rig.media.delete_of(&session).await;
     until(|| !rig.media.sessions().contains(&session)).await;

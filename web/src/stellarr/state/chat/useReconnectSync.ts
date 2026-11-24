@@ -108,7 +108,7 @@ async function catchUp(
 }
 
 /**
- * SignalR is transient. Every successful page carries a durable mutation
+ * Realtime delivery is transient. Every successful page carries a durable mutation
  * cursor, and each time the socket is up this drains that journal for every
  * text channel before push events are trusted again.
  */

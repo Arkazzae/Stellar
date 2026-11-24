@@ -1,6 +1,4 @@
-//! A client of the hub that plays the browser's part over a raw socket:
-//! the WebSocket upgrade with the session cookie, the hub protocol's
-//! handshake, calls with answers, and the records the server sends.
+//! A cookie-authenticated client that speaks the native hub protocol over TCP.
 
 use std::collections::VecDeque;
 use std::time::Duration;
@@ -10,9 +8,6 @@ use stellarr_websocket::frame::{OP_CLOSE, OP_PING, OP_PONG, OP_TEXT, encode_fram
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::TcpStream;
 use tokio::time::timeout;
-
-/// The byte that ends a record of the hub protocol.
-const RS: char = '\u{1e}';
 
 /// How long a test waits for the server before it calls it silent.
 const PATIENCE: Duration = Duration::from_secs(10);
@@ -25,10 +20,9 @@ pub struct Upgrade {
 
 pub struct HubClient {
     stream: TcpStream,
-    text: String,
     records: VecDeque<Value>,
     next_invocation: u32,
-    pub closed: Option<u16>,
+    closed: Option<u16>,
 }
 
 /// The upgrade request to `/hubs/app` with a query string and a cookie, and
@@ -39,14 +33,39 @@ pub async fn upgrade(
     query: &str,
     cookie: Option<&str>,
 ) -> (Upgrade, TcpStream) {
+    let host = address.to_string();
+    let origin = format!("http://{host}");
+    upgrade_with(
+        address,
+        query,
+        cookie,
+        &host,
+        &[
+            ("Origin", &origin),
+            ("Sec-WebSocket-Protocol", "stellarr.v1"),
+        ],
+    )
+    .await
+}
+
+pub async fn upgrade_with(
+    address: std::net::SocketAddr,
+    query: &str,
+    cookie: Option<&str>,
+    host: &str,
+    headers: &[(&str, &str)],
+) -> (Upgrade, TcpStream) {
     let mut stream = TcpStream::connect(address)
         .await
         .expect("the server listens");
     let mut request = format!(
-        "GET /hubs/app{query} HTTP/1.1\r\nHost: {address}\r\nUpgrade: websocket\r\nConnection: Upgrade\r\nSec-WebSocket-Version: 13\r\nSec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ==\r\n"
+        "GET /hubs/app{query} HTTP/1.1\r\nHost: {host}\r\nUpgrade: websocket\r\nConnection: Upgrade\r\nSec-WebSocket-Version: 13\r\nSec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ==\r\n"
     );
     if let Some(cookie) = cookie {
         request.push_str(&format!("Cookie: {cookie}\r\n"));
+    }
+    for (name, value) in headers {
+        request.push_str(&format!("{name}: {value}\r\n"));
     }
     request.push_str("\r\n");
     stream.write_all(request.as_bytes()).await.unwrap();
@@ -64,27 +83,28 @@ pub async fn upgrade(
 }
 
 impl HubClient {
-    /// A connection that has been admitted and has done the protocol's
-    /// handshake, signed in with `cookie` (`name=value`).
     pub async fn connect(address: std::net::SocketAddr, cookie: &str) -> HubClient {
         HubClient::connect_to(address, "", cookie).await
     }
 
-    /// The same, with a query string (`?serverId=...`).
     pub async fn connect_to(address: std::net::SocketAddr, query: &str, cookie: &str) -> HubClient {
         let (answer, stream) = upgrade(address, query, Some(cookie)).await;
         assert_eq!(answer.status, 101, "{}", answer.head);
+        assert!(
+            answer
+                .head
+                .to_ascii_lowercase()
+                .contains("\r\nsec-websocket-protocol: stellarr.v1\r\n"),
+            "{}",
+            answer.head
+        );
         let mut client = HubClient {
             stream,
-            text: String::new(),
             records: VecDeque::new(),
             next_invocation: 0,
             closed: None,
         };
-        client
-            .send_text(&format!("{{\"protocol\":\"json\",\"version\":1}}{RS}"))
-            .await;
-        assert_eq!(client.next_text().await, "{}");
+        assert_eq!(client.record().await, json!({"type": "ready"}));
         client
     }
 
@@ -124,65 +144,44 @@ impl HubClient {
         Some(Some((head[0] & 0x0f, payload)))
     }
 
-    /// The next record as text: transport pings are answered as a browser
-    /// would, and the hub's own pings are skipped.
-    async fn next_text(&mut self) -> String {
-        loop {
-            if let Some(end) = self.text.find(RS) {
-                let record: String = self.text.drain(..=end).collect();
-                return record[..record.len() - 1].to_string();
-            }
-            match self.frame(PATIENCE).await {
-                None => panic!("the server said nothing for {PATIENCE:?}"),
-                Some(None) => panic!("the connection ended while a record was expected"),
-                Some(Some((OP_TEXT, payload))) => {
-                    self.text.push_str(std::str::from_utf8(&payload).unwrap())
-                }
-                Some(Some((OP_PING, payload))) => self.send_frame(OP_PONG, &payload).await,
-                Some(Some((OP_CLOSE, payload))) => {
-                    self.closed = payload
-                        .get(..2)
-                        .map(|code| u16::from_be_bytes([code[0], code[1]]));
-                    panic!("the server closed the connection while a record was expected")
-                }
-                Some(Some(_)) => {}
-            }
-        }
+    async fn receive_close(&mut self, payload: &[u8]) {
+        self.closed = payload
+            .get(..2)
+            .map(|code| u16::from_be_bytes([code[0], code[1]]));
+        self.send_frame(OP_CLOSE, payload).await;
     }
 
-    /// The next record exactly as it went over the wire.
+    /// The next text message other than a heartbeat.
     pub async fn raw_record(&mut self) -> String {
+        let deadline = tokio::time::Instant::now() + PATIENCE;
         loop {
-            let text = self.next_text().await;
-            if !text.starts_with("{\"type\":6") {
-                return text;
+            match self
+                .frame(deadline.saturating_duration_since(tokio::time::Instant::now()))
+                .await
+            {
+                Some(Some((OP_TEXT, payload))) if payload == br#"{"type":"ping"}"# => {}
+                Some(Some((OP_TEXT, payload))) => return String::from_utf8(payload).unwrap(),
+                Some(Some((OP_PING, payload))) => self.send_frame(OP_PONG, &payload).await,
+                other => panic!("expected a native text message, got {other:?}"),
             }
         }
     }
 
-    /// The next record the server sent that is not a ping.
     pub async fn record(&mut self) -> Value {
-        loop {
-            if let Some(record) = self.records.pop_front() {
-                return record;
-            }
-            let record: Value = serde_json::from_str(&self.next_text().await).unwrap();
-            if record["type"] != 6 {
-                return record;
-            }
+        match self.records.pop_front() {
+            Some(record) => record,
+            None => serde_json::from_str(&self.raw_record().await).unwrap(),
         }
     }
 
-    /// The arguments of the next event, which must be named `name`.
     pub async fn event(&mut self, name: &str) -> Value {
         let record = self.record().await;
-        assert_eq!(record["type"], 1, "{record}");
-        assert_eq!(record["target"], name, "{record}");
-        record["arguments"][0].clone()
+        assert_eq!(record["type"], "event", "{record}");
+        assert_eq!(record["name"], name, "{record}");
+        record["data"].clone()
     }
 
-    /// Everything the server sends within `wait`, which is expected to be
-    /// nothing a test did not ask for.
+    /// Collects events until the socket is quiet for the requested window.
     pub async fn quiet_for(&mut self, wait: Duration) -> Vec<Value> {
         let mut seen: Vec<Value> = self.records.drain(..).collect();
         let deadline = tokio::time::Instant::now() + wait;
@@ -192,24 +191,16 @@ impl HubClient {
                 return seen;
             }
             match self.frame(left).await {
-                None => return seen,
-                Some(None) => return seen,
+                None | Some(None) => return seen,
                 Some(Some((OP_TEXT, payload))) => {
-                    self.text.push_str(std::str::from_utf8(&payload).unwrap());
-                    while let Some(end) = self.text.find(RS) {
-                        let record: String = self.text.drain(..=end).collect();
-                        let record: Value =
-                            serde_json::from_str(&record[..record.len() - 1]).unwrap();
-                        if record["type"] != 6 {
-                            seen.push(record);
-                        }
+                    let record: Value = serde_json::from_slice(&payload).unwrap();
+                    if record["type"] != "ping" {
+                        seen.push(record);
                     }
                 }
                 Some(Some((OP_PING, payload))) => self.send_frame(OP_PONG, &payload).await,
                 Some(Some((OP_CLOSE, payload))) => {
-                    self.closed = payload
-                        .get(..2)
-                        .map(|code| u16::from_be_bytes([code[0], code[1]]));
+                    self.receive_close(&payload).await;
                     return seen;
                 }
                 Some(Some(_)) => {}
@@ -217,78 +208,42 @@ impl HubClient {
         }
     }
 
-    /// Calls a method and waits for its completion, keeping the events that
-    /// come first for later.
-    pub async fn invoke(&mut self, target: &str, arguments: Value) -> Value {
+    /// Calls a method and keeps any events that arrive before its answer.
+    pub async fn invoke(&mut self, method: &str, args: Value) -> Value {
         self.next_invocation += 1;
-        let id = self.next_invocation.to_string();
-        let record =
-            json!({"type": 1, "invocationId": id, "target": target, "arguments": arguments});
-        self.send_text(&format!("{record}{RS}")).await;
-        let mut kept = Vec::new();
-        let completion = loop {
-            let record: Value = serde_json::from_str(&self.next_text().await).unwrap();
-            if record["type"] == 3 && record["invocationId"] == id.as_str() {
-                break record;
+        let id = self.next_invocation;
+        self.send_text(
+            &json!({"type": "call", "id": id, "method": method, "args": args}).to_string(),
+        )
+        .await;
+        loop {
+            let answer: Value = serde_json::from_str(&self.raw_record().await).unwrap();
+            if answer["id"] == id {
+                assert!(
+                    matches!(answer["type"].as_str(), Some("result" | "error")),
+                    "{answer}"
+                );
+                return answer;
             }
-            if record["type"] != 6 {
-                kept.push(record);
-            }
-        };
-        for record in kept.into_iter().rev() {
-            self.records.push_front(record);
+            self.records.push_back(answer);
         }
-        completion
     }
 
-    /// Reads until the server closes, and gives the records that came before
-    /// the hub's close message and that message.
-    pub async fn until_close(&mut self) -> (Vec<Value>, Option<Value>) {
-        let mut records: Vec<Value> = self.records.drain(..).collect();
+    /// Waits for and acknowledges the WebSocket close.
+    pub async fn finish_close(&mut self) -> Option<u16> {
+        if self.closed.is_some() {
+            return self.closed;
+        }
         let deadline = tokio::time::Instant::now() + PATIENCE;
         loop {
-            let left = deadline.saturating_duration_since(tokio::time::Instant::now());
-            match self.frame(left).await {
-                None => panic!("the server did not close the connection"),
-                Some(None) => return (records, None),
-                Some(Some((OP_TEXT, payload))) => {
-                    self.text.push_str(std::str::from_utf8(&payload).unwrap());
-                    while let Some(end) = self.text.find(RS) {
-                        let record: String = self.text.drain(..=end).collect();
-                        let record: Value =
-                            serde_json::from_str(&record[..record.len() - 1]).unwrap();
-                        if record["type"] == 7 {
-                            return (records, Some(record));
-                        }
-                        if record["type"] != 6 {
-                            records.push(record);
-                        }
-                    }
-                }
-                Some(Some((OP_PING, payload))) => self.send_frame(OP_PONG, &payload).await,
-                Some(Some((OP_CLOSE, payload))) => {
-                    self.closed = payload
-                        .get(..2)
-                        .map(|code| u16::from_be_bytes([code[0], code[1]]));
-                    return (records, None);
-                }
-                Some(Some(_)) => {}
-            }
-        }
-    }
-
-    /// Waits for the WebSocket close that follows the hub's own close message
-    /// and answers it, as a browser does.
-    pub async fn finish_close(&mut self) -> Option<u16> {
-        loop {
-            match self.frame(PATIENCE).await {
+            match self
+                .frame(deadline.saturating_duration_since(tokio::time::Instant::now()))
+                .await
+            {
                 None => panic!("the server did not finish closing"),
                 Some(None) => return self.closed,
                 Some(Some((OP_CLOSE, payload))) => {
-                    self.closed = payload
-                        .get(..2)
-                        .map(|code| u16::from_be_bytes([code[0], code[1]]));
-                    self.send_frame(OP_CLOSE, &payload).await;
+                    self.receive_close(&payload).await;
                     return self.closed;
                 }
                 Some(Some((OP_PING, payload))) => self.send_frame(OP_PONG, &payload).await,
@@ -297,7 +252,6 @@ impl HubClient {
         }
     }
 
-    /// Hangs up as a browser that was closed does.
     pub async fn hang_up(mut self) {
         self.send_frame(OP_CLOSE, &1000u16.to_be_bytes()).await;
         let _ = timeout(Duration::from_secs(5), self.finish_close()).await;

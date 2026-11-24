@@ -119,8 +119,8 @@ async fn a_reset_ends_every_session_remembered_browser_and_approved_handoff() {
     // Its cookie no longer opens anything, and its connection to the hub is closed.
     assert!(app.client.get("/api/session").await.json::<Value>()["user"].is_null());
     let started = Instant::now();
-    let (_, close) = hub.until_close().await;
-    assert!(close.is_some() && started.elapsed() < Duration::from_secs(3), "{:?}", started.elapsed());
+    let close = hub.finish_close().await;
+    assert!(close == Some(4401) && started.elapsed() < Duration::from_secs(3), "{:?}", started.elapsed());
     assert_eq!(rows(&instance, "SELECT COUNT(*) FROM \"UserSessions\" WHERE \"RevokedAt\" IS NULL"), 1, "only the owner's remains");
     assert_eq!(rows(&instance, "SELECT COUNT(*) FROM \"TrustedDevices\" WHERE \"RevokedAt\" IS NULL"), 0);
     assert_eq!(rows(&instance, "SELECT COUNT(*) FROM \"DesktopBrowserLogins\" WHERE \"RedeemedAt\" IS NULL"), 0);

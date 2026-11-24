@@ -1,7 +1,7 @@
 /**
  * The RTC control-plane contract: wire-level facts only.
  *
- * Nothing here may depend on SignalR or React, so the contract stays the
+ * Nothing here may depend on WebSocket or React, so the contract stays the
  * same whatever carries it.
  */
 export const RTC_PROTOCOL_VERSION = 1 as const;

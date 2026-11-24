@@ -20,17 +20,15 @@ function commaSeparated(value: string | undefined): string[] {
 
 /**
  * The same-origin paths the client calls on the API, which Nginx proxies in
- * production. The dev and preview servers proxy them to `apiOrigin`, as the
- * API's own host, and say which host the browser asked in X-Forwarded-Host:
- * the desktop handshake at /.well-known/stellarr/client reports the instance's
- * origin from it. /hubs/ carries SignalR's WebSocket, without which SignalR
- * falls back to slower transports. Requests stream through; nothing is
- * buffered, so an upload has no limit here beyond the API's own.
+ * production. The dev and preview servers forward requests to `apiOrigin`.
+ * /hubs/ preserves the browser's Host for the WebSocket origin check.
+ * The desktop handshake at /.well-known/stellarr/client uses X-Forwarded-Host
+ * to report the instance's origin. Uploads stream through to the API.
  */
 function apiProxy(apiOrigin: string): Record<string, ProxyOptions> {
   const forward = (ws: boolean): ProxyOptions => ({
     target: apiOrigin,
-    changeOrigin: true,
+    changeOrigin: !ws,
     ws,
     configure(proxy) {
       proxy.on("proxyReq", (request, incoming) => request.setHeader("X-Forwarded-Host", incoming.headers.host ?? ""));
@@ -96,13 +94,8 @@ export default defineConfig(({ mode }) => {
       outDir: "dist",
       emptyOutDir: true,
       assetsDir: BUILD_DIRECTORY,
-      // The largest chunks are the signed-in app, about 490 kB, and the web
-      // client's entry and the chunk it shares with the app, about 320 kB
-      // each: the providers every page needs and React. SignalR and voice are
-      // a chunk of their own, about 140 kB, which arrives with the app, and
-      // each message catalog is one too, of which a page loads its language's.
-      // What the web document loads up front is held to a budget in
-      // bundleReport.ts, which this limit does not replace.
+      // Realtime and voice arrive with the signed-in app. The web document's
+      // initial download budget is enforced separately in bundleReport.ts.
       chunkSizeWarningLimit: 500,
       rolldownOptions: {
         input: {

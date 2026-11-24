@@ -304,28 +304,23 @@ impl Peer {
     /// Calls a method that must succeed, and gives its result.
     pub async fn ok(&mut self, method: &str, arguments: Value) -> Value {
         let answer = self.call(method, arguments).await;
-        assert!(answer.get("error").is_none(), "{method}: {answer}");
-        answer["result"].clone()
+        assert_eq!(answer["type"], "result", "{method}: {answer}");
+        answer["value"].clone()
     }
 
     /// Calls a method that must be refused with this text.
     pub async fn refused(&mut self, method: &str, arguments: Value, text: &str) {
         let answer = self.call(method, arguments).await;
-        let error = answer["error"].as_str().unwrap_or_else(|| panic!("{method} was not refused: {answer}"));
-        assert!(
-            error.ends_with(&format!("HubException: {text}")),
-            "{method}: {error}"
-        );
+        assert_eq!(answer["type"], "error", "{method}: {answer}");
+        assert_eq!(answer["code"], "visible", "{method}: {answer}");
+        assert_eq!(answer["message"], text, "{method}: {answer}");
     }
 
     /// Calls a method that must fail as a call whose arguments do not fit.
     pub async fn does_not_fit(&mut self, method: &str, arguments: Value) {
         let answer = self.call(method, arguments).await;
-        assert_eq!(
-            answer["error"],
-            format!("Failed to invoke '{method}' due to an error on the server."),
-            "{answer}"
-        );
+        assert_eq!(answer["type"], "error", "{method}: {answer}");
+        assert_eq!(answer["code"], "invalid_arguments", "{method}: {answer}");
     }
 
     pub async fn join(&mut self, room: Id) {
@@ -355,8 +350,8 @@ impl Peer {
     pub async fn next_where(&mut self, name: &str, accept: impl Fn(&Value) -> bool) -> Value {
         loop {
             let record = self.hub.record().await;
-            if record["type"] == 1 && record["target"] == name && accept(&record["arguments"][0]) {
-                return record["arguments"][0].clone();
+            if record["type"] == "event" && record["name"] == name && accept(&record["data"]) {
+                return record["data"].clone();
             }
         }
     }
@@ -369,8 +364,8 @@ impl Peer {
             .quiet_for(Duration::from_millis(30))
             .await
             .into_iter()
-            .filter(|record| record["type"] == 1 && record["target"] == name)
-            .map(|record| record["arguments"][0].clone())
+            .filter(|record| record["type"] == "event" && record["name"] == name)
+            .map(|record| record["data"].clone())
             .collect()
     }
 }
@@ -756,7 +751,7 @@ async fn a_dropped_connection_frees_its_seat_and_a_second_tab_keeps_the_account_
     // The account is still connected through the other tab, so nobody was
     // told it went offline.
     let told = observer.hub.quiet_for(QUIET).await;
-    assert!(!told.iter().any(|r| r["target"] == "PresenceChanged" && r["arguments"][0]["presence"] == "offline"), "{told:?}");
+    assert!(!told.iter().any(|r| r["name"] == "PresenceChanged" && r["data"]["presence"] == "offline"), "{told:?}");
     chat.settle().await;
 }
 
@@ -1037,8 +1032,8 @@ async fn a_device_that_connects_during_a_call_is_told_who_is_in_it() {
     let mut device = HubClient::connect(rig.server.address(), &cookie).await;
     let restored = loop {
         let record = device.record().await;
-        if record["target"] == "VoiceParticipantChanged" {
-            break record["arguments"][0].clone();
+        if record["name"] == "VoiceParticipantChanged" {
+            break record["data"].clone();
         }
     };
     assert_eq!(restored["channelId"], room.to_string().as_str());

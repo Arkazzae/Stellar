@@ -58,8 +58,11 @@ function GoneProbe({ hasEnded, onGone }: { hasEnded: () => boolean; onGone: (end
 
 const runtimes: Runtime[] = [];
 
-function mount(api: FullApi, onGone: (ended: boolean) => void = () => undefined) {
-  const realtime = new FakeRealtimeClient();
+function mount(
+  api: FullApi,
+  onGone: (ended: boolean) => void = () => undefined,
+  realtime = new FakeRealtimeClient(),
+) {
   const runtime = createRuntime({ api, realtime });
   runtimes.push(runtime);
   render(
@@ -177,6 +180,26 @@ describe("SessionProvider boot", () => {
 });
 
 describe("SessionProvider when the hub drops", () => {
+  it("handles a session-end close even when the HTTP session check is unavailable", async () => {
+    let sessionEnded = false;
+    const realtime = Object.assign(new FakeRealtimeClient(), { hasSessionEnded: () => sessionEnded });
+    const onGone = vi.fn();
+    const api = fullApi({ session: vi.fn(async () => { throw new Error("offline"); }) });
+    mount(api, onGone, realtime);
+    await waitFor(() => expect(realtime.getStatus()).toBe("connected"));
+
+    act(() => {
+      sessionEnded = true;
+      realtime.drop();
+    });
+
+    await waitFor(() => expect(phase()).toHaveTextContent("anonymous"));
+    expect(screen.getByLabelText("login-error")).toHaveTextContent(polish("session.unauthorized"));
+    expect(onGone).toHaveBeenCalledWith(true);
+    expect(api.session).not.toHaveBeenCalled();
+    expect(realtime.getStatus()).toBe("idle");
+  });
+
   it("leaves for the sign-in page when the server no longer knows the session", async () => {
     const api = fullApi({ session: vi.fn(async () => null) });
     const { realtime } = mount(api);

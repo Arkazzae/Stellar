@@ -23,7 +23,7 @@ mod raw;
 mod server;
 
 pub use client::{Client, Request, Response};
-pub use hub::{HubClient, upgrade};
+pub use hub::{HubClient, upgrade, upgrade_with};
 pub use log::LogCapture;
 #[allow(unused_imports)]
 pub use media::{Canned, FakeMedia, Recorded, SECRET, until};

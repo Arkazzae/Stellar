@@ -1,5 +1,5 @@
 /**
- * The code only a signed-in person runs: the SignalR client and the WebRTC
+ * The code only a signed-in person runs: the realtime client and the WebRTC
  * voice client with what they bring in. Only `signedInLoader.ts` may import
  * this file, and only through a dynamic import; that is what keeps it out of
  * the files the sign-in pages wait for.
@@ -8,7 +8,7 @@
 import type { ApiClient } from "@/lib/api/client";
 import type { RtcConfig } from "@/lib/api/types";
 import { iceServers } from "@/lib/platform/env";
-import { SignalRRealtimeClient } from "@/lib/realtime/signalr";
+import { WebSocketRealtimeClient } from "@/lib/realtime/websocket";
 import type { RealtimeClient } from "@/lib/realtime/types";
 import { RuntimeIceProvider } from "@/lib/voice/rtc/iceSession";
 import { WebRtcVoiceClient } from "@/lib/voice/rtc/webrtc";
@@ -17,8 +17,8 @@ import type { CallKeySource } from "@/lib/voice/e2ee/callCrypto";
 import type { VoiceSettingsStore } from "@/lib/voice/settings";
 import type { CreateVoiceOptions, VoicePort } from "@/ports";
 
-export function createSignalRClient(): RealtimeClient {
-  return new SignalRRealtimeClient();
+export function createWebSocketRealtimeClient(): RealtimeClient {
+  return new WebSocketRealtimeClient();
 }
 
 export interface VoiceDependencies {

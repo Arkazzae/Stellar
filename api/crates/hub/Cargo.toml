@@ -10,7 +10,7 @@ axum = { workspace = true, features = ["http1", "tokio"] }
 bytes.workspace = true
 http.workspace = true
 serde.workspace = true
-serde_json.workspace = true
+serde_json = { workspace = true, features = ["raw_value"] }
 stellarr-websocket = { path = "../websocket" }
 tokio = { workspace = true, features = ["io-util", "rt", "sync", "time"] }
 tracing.workspace = true

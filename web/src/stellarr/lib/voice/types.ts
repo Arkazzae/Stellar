@@ -28,7 +28,7 @@ export type VoiceMediaState =
   | "failed";
 
 /**
- * Signaling and media health are tracked separately: SignalR can reconnect
+ * Signaling and media health are tracked separately: signaling can reconnect
  * while SRTP keeps flowing, and a healthy hub says nothing about whether a
  * peer connection ever established media.
  */

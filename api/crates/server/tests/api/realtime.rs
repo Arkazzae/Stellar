@@ -10,7 +10,7 @@ use std::time::Duration;
 use serde_json::{Value, json};
 use stellarr_api::values::{Id, Timestamp};
 
-use crate::support::{HubClient, PASSWORD, Person, Server, upgrade};
+use crate::support::{HubClient, PASSWORD, Person, Server, upgrade, upgrade_with};
 
 const COOKIE: &str = "stellarr-dev-session";
 const QUIET: Duration = Duration::from_millis(400);
@@ -24,6 +24,199 @@ async fn connect(server: &Server, person: &Person) -> HubClient {
     HubClient::connect(server.address(), &cookie_of(person)).await
 }
 
+#[tokio::test]
+async fn native_hub_calls_and_fans_out_to_other_tabs_until_logout() {
+    let server = Server::start().await;
+    let owner = server.found("owner").await;
+    let cookie = cookie_of(&owner);
+    let mut actor = HubClient::connect(server.address(), &cookie).await;
+    let mut observer = HubClient::connect(server.address(), &cookie).await;
+    let online = json!({"userId": owner.id, "presence": "online"});
+    assert_eq!(
+        observer.record().await,
+        json!({"type":"event", "name":"PresenceChanged", "data":online})
+    );
+
+    let before = Timestamp::now().unix_millis();
+    let clock = actor.invoke("GetRtcClock", json!([])).await;
+    assert_eq!(clock["type"], "result");
+    let clock = clock["value"].as_i64().expect("milliseconds");
+    assert!((before..=Timestamp::now().unix_millis()).contains(&clock));
+
+    let rejected = actor.invoke("GetRtcClock", json!([0])).await;
+    assert_eq!(rejected["type"], "error");
+    assert_eq!(rejected["code"], "invalid_arguments");
+
+    assert_eq!(
+        actor.invoke("SetPresence", json!(["dnd"])).await,
+        json!({"type":"result", "id":3, "value":null})
+    );
+    let dnd = json!({"userId": owner.id, "presence": "dnd"});
+    assert_eq!(
+        observer.record().await,
+        json!({"type":"event", "name":"PresenceChanged", "data":dnd})
+    );
+
+    assert_eq!(
+        owner
+            .client
+            .post_json("/api/auth/logout", &json!({}))
+            .await
+            .status,
+        204
+    );
+    assert_eq!(actor.finish_close().await, Some(4401));
+    assert_eq!(observer.finish_close().await, Some(4401));
+
+    let host = server.address().to_string();
+    let origin = format!("http://{host}");
+    let (refused, _) = upgrade_with(
+        server.address(),
+        "",
+        Some(&cookie),
+        &host,
+        &[
+            ("Origin", &origin),
+            ("Sec-WebSocket-Protocol", "stellarr.v1"),
+        ],
+    )
+    .await;
+    assert_eq!(refused.status, 401, "{}", refused.head);
+}
+
+#[tokio::test]
+async fn native_voice_signaling_opens_a_media_session_for_a_seated_caller() {
+    let rig = crate::voice::Rig::start().await;
+    let maya = rig.person("maya").await;
+    let mut observer = rig.connect(&maya).await;
+    let mut actor = HubClient::connect(rig.server.address(), &cookie_of(&rig.owner)).await;
+
+    let denied = actor
+        .invoke("OpenMediaSession", json!([rig.salon]))
+        .await;
+    assert_eq!(denied["type"], "error");
+    assert_eq!(denied["code"], "visible");
+    assert_eq!(denied["message"], "Not seated in this voice room.");
+    assert_eq!(rig.media.count("POST", "/v1/sessions"), 0);
+
+    let joined = actor.invoke("JoinVoice", json!([rig.salon])).await;
+    assert_eq!(joined["type"], "result", "{joined}");
+    let snapshot = observer.next("VoiceParticipantChanged").await;
+    assert_eq!(snapshot["channelId"], json!(rig.salon));
+    assert_eq!(snapshot["participants"][0]["userId"], rig.owner.id);
+
+    let opened = actor
+        .invoke("OpenMediaSession", json!([rig.salon]))
+        .await;
+    assert_eq!(opened["type"], "result", "{opened}");
+    let session = opened["value"]["sessionId"]
+        .as_str()
+        .expect("media session id");
+    assert_eq!(
+        rig.media.session_of(session),
+        Some((rig.salon.to_string(), rig.owner.id.clone()))
+    );
+}
+
+#[tokio::test]
+async fn native_hub_checks_origin_and_keeps_the_public_port() {
+    let server =
+        Server::start_with(&[("Desktop__CanonicalOrigin", "https://chat.example.test:8443")]).await;
+    let owner = server.found("owner").await;
+    let cookie = cookie_of(&owner);
+    let peer = server.address().to_string();
+    let cases = [
+        (
+            Some(cookie.as_str()),
+            "preview.test:4180",
+            Some("http://preview.test:4180"),
+            None,
+            101,
+        ),
+        (
+            Some(cookie.as_str()),
+            "preview.test:4180",
+            Some("http://preview.test"),
+            None,
+            403,
+        ),
+        (
+            Some(cookie.as_str()),
+            "tls.test:9443",
+            Some("https://tls.test:9443"),
+            Some("https"),
+            101,
+        ),
+        (
+            Some(cookie.as_str()),
+            peer.as_str(),
+            Some("https://chat.example.test:8443"),
+            Some("https"),
+            101,
+        ),
+        (
+            Some(cookie.as_str()),
+            peer.as_str(),
+            Some("https://chat.example.test"),
+            Some("https"),
+            403,
+        ),
+        (
+            Some(cookie.as_str()),
+            peer.as_str(),
+            Some("http://evil.example.test"),
+            None,
+            403,
+        ),
+        (
+            Some(cookie.as_str()),
+            "preview.test:4180",
+            Some("http://preview.test:4180/path"),
+            None,
+            403,
+        ),
+        (
+            Some(cookie.as_str()),
+            peer.as_str(),
+            Some("null"),
+            None,
+            403,
+        ),
+        (Some(cookie.as_str()), peer.as_str(), None, None, 403),
+        (
+            None,
+            "preview.test:4180",
+            Some("http://preview.test:4180"),
+            None,
+            401,
+        ),
+    ];
+    for (cookie, host, origin, scheme, expected) in cases {
+        let mut headers = vec![
+            ("Sec-WebSocket-Protocol", "stellarr.v1"),
+            ("X-Forwarded-Host", "evil.example.test"),
+        ];
+        headers.extend(origin.map(|origin| ("Origin", origin)));
+        headers.extend(scheme.map(|scheme| ("X-Forwarded-Proto", scheme)));
+        let (answer, _) = upgrade_with(server.address(), "", cookie, host, &headers).await;
+        assert_eq!(answer.status, expected, "{origin:?}: {}", answer.head);
+    }
+
+    let (duplicate, _) = upgrade_with(
+        server.address(),
+        "",
+        Some(&cookie),
+        "preview.test:4180",
+        &[
+            ("Sec-WebSocket-Protocol", "stellarr.v1"),
+            ("Origin", "http://preview.test:4180"),
+            ("Origin", "http://evil.example.test"),
+        ],
+    )
+    .await;
+    assert_eq!(duplicate.status, 403, "{}", duplicate.head);
+}
+
 /// What a `PresenceChanged` says, as (account, status).
 fn presence(event: &Value) -> (String, String) {
     (
@@ -33,9 +226,9 @@ fn presence(event: &Value) -> (String, String) {
 }
 
 fn is_presence_of(record: &Value, person: &Person, status: &str) -> bool {
-    record["target"] == "PresenceChanged"
-        && record["arguments"][0]["userId"] == person.id.as_str()
-        && record["arguments"][0]["presence"] == status
+    record["name"] == "PresenceChanged"
+        && record["data"]["userId"] == person.id.as_str()
+        && record["data"]["presence"] == status
 }
 
 /// Two people on the instance's server.
@@ -46,37 +239,24 @@ async fn two_people() -> (Server, Person, Person) {
     (server, owner, maya)
 }
 
-/// Reads until the connection is settled: its own status has come, which the
-/// hub says last of what it does when a connection starts.
-async fn settle(client: &mut HubClient, who: &Person) -> Vec<Value> {
-    let mut seen = Vec::new();
-    // Joining the server's group says the status once to the group, so a
-    // connection that follows a server hears it twice.
-    loop {
-        let record = client.record().await;
-        let own = is_presence_of(&record, who, "online");
-        seen.push(record);
-        if own && seen.len() >= 2 {
-            return seen;
-        }
-    }
+/// Consumes the startup state up to a call's completion.
+async fn settle(client: &mut HubClient, who: &Person) {
+    assert_eq!(client.invoke("GetRtcClock", json!([])).await["type"], "result");
+    let seen = client.quiet_for(Duration::ZERO).await;
+    let own = seen.iter().rfind(|event| {
+        event["name"] == "PresenceChanged" && event["data"]["userId"] == who.id.as_str()
+    });
+    assert!(own.is_some_and(|event| is_presence_of(event, who, "online")), "{seen:?}");
 }
 
 #[tokio::test]
-async fn a_connecting_account_is_told_its_own_status_once_for_each_group_that_carries_it() {
+async fn a_connecting_account_is_told_its_own_status() {
     let (server, owner, _) = two_people().await;
     let mut client = connect(&server, &owner).await;
-
-    let first = client.record().await;
-    let second = client.record().await;
-
-    // The server's group, which the connection is in, and then the connection
-    // itself: the first server said it twice, and so does this one.
-    assert_eq!(first["type"], 1);
-    assert_eq!(first["target"], "PresenceChanged");
-    assert_eq!(first["arguments"], json!([{"userId": owner.id, "presence": "online"}]));
-    assert_eq!(second, first);
-    assert!(client.quiet_for(QUIET).await.is_empty());
+    let expected = json!({"userId": owner.id, "presence": "online"});
+    assert_eq!(client.event("PresenceChanged").await, expected);
+    let other_startup_records = client.quiet_for(QUIET).await;
+    assert!(other_startup_records.iter().all(|record| is_presence_of(record, &owner, "online")), "{other_startup_records:?}");
 }
 
 #[tokio::test]
@@ -131,12 +311,10 @@ async fn a_chosen_status_reaches_other_members_and_the_caller_and_is_remembered(
 
     let answer = actor.invoke("SetPresence", json!(["dnd"])).await;
 
-    assert_eq!(answer["type"], 3);
-    assert!(answer.get("error").is_none(), "{answer}");
+    assert_eq!(answer["type"], "result", "{answer}");
     assert_eq!(presence(&observer.event("PresenceChanged").await), (maya.id.clone(), "dnd".to_string()));
-    // The caller hears it through the server's group and again directly.
-    assert_eq!(presence(&actor.event("PresenceChanged").await), (maya.id.clone(), "dnd".to_string()));
-    assert_eq!(presence(&actor.event("PresenceChanged").await), (maya.id.clone(), "dnd".to_string()));
+    let to_caller = actor.quiet_for(Duration::from_millis(50)).await;
+    assert!(to_caller.iter().any(|event| is_presence_of(event, &maya, "dnd")), "{to_caller:?}");
     assert!(observer.quiet_for(QUIET).await.is_empty());
 
     // Choosing what is already chosen says nothing to anybody.
@@ -148,16 +326,9 @@ async fn a_chosen_status_reaches_other_members_and_the_caller_and_is_remembered(
     actor.hang_up().await;
     observer.event("PresenceChanged").await;
     let mut again = connect(&server, &maya).await;
-    let own = settle_any(&mut again).await;
+    let own = again.event("PresenceChanged").await;
     assert_eq!(own["presence"], "dnd");
     assert_eq!(presence(&observer.event("PresenceChanged").await), (maya.id.clone(), "dnd".to_string()));
-}
-
-/// The first status record of a connection that has just started.
-async fn settle_any(client: &mut HubClient) -> Value {
-    let first = client.event("PresenceChanged").await;
-    client.event("PresenceChanged").await;
-    first
 }
 
 #[tokio::test]
@@ -166,19 +337,17 @@ async fn an_unknown_or_malformed_status_is_refused_and_changes_nothing() {
     let mut client = connect(&server, &owner).await;
     settle(&mut client, &owner).await;
 
-    let unknown = client.invoke("SetPresence", json!(["invisible"])).await;
-    assert_eq!(
-        unknown["error"],
-        "An unexpected error occurred invoking 'SetPresence' on the server. HubException: Unknown presence."
-    );
-    let wrong_case = client.invoke("setpresence", json!(["Idle"])).await;
-    assert!(wrong_case["error"].as_str().unwrap().ends_with("HubException: Unknown presence."));
-    let nothing = client.invoke("SetPresence", json!([])).await;
-    assert_eq!(nothing["error"], "Failed to invoke 'SetPresence' due to an error on the server.");
-    let two = client.invoke("SetPresence", json!(["idle", "dnd"])).await;
-    assert_eq!(two["error"], "Failed to invoke 'SetPresence' due to an error on the server.");
-    let number = client.invoke("SetPresence", json!([3])).await;
-    assert_eq!(number["error"], "Failed to invoke 'SetPresence' due to an error on the server.");
+    for status in ["invisible", "Idle"] {
+        let rejected = client.invoke("SetPresence", json!([status])).await;
+        assert_eq!(rejected["type"], "error", "{rejected}");
+        assert_eq!(rejected["code"], "visible", "{rejected}");
+        assert_eq!(rejected["message"], "Unknown presence.");
+    }
+    for args in [json!([]), json!(["idle", "dnd"]), json!([3])] {
+        let rejected = client.invoke("SetPresence", args).await;
+        assert_eq!(rejected["type"], "error", "{rejected}");
+        assert_eq!(rejected["code"], "invalid_arguments", "{rejected}");
+    }
     assert!(client.quiet_for(Duration::from_millis(100)).await.is_empty());
 }
 
@@ -191,10 +360,11 @@ async fn the_clock_answers_in_milliseconds_and_takes_no_arguments() {
 
     let answer = client.invoke("GetRtcClock", json!([])).await;
 
-    let clock = answer["result"].as_i64().expect("a number of milliseconds");
+    let clock = answer["value"].as_i64().expect("a number of milliseconds");
     assert!(clock >= before - 5_000 && clock <= Timestamp::now().unix_millis() + 5_000);
     let extra = client.invoke("GetRtcClock", json!([1])).await;
-    assert_eq!(extra["error"], "Failed to invoke 'GetRtcClock' due to an error on the server.");
+    assert_eq!(extra["type"], "error");
+    assert_eq!(extra["code"], "invalid_arguments");
 }
 
 #[tokio::test]
@@ -205,7 +375,8 @@ async fn a_method_nobody_has_registered_is_an_unknown_method_and_names_are_exact
 
     for method in ["NoSuchMethod", "setpresence", "SETPRESENCE", "getrtcclock"] {
         let answer = client.invoke(method, json!([])).await;
-        assert_eq!(answer["error"], format!("Unknown method '{method}'."));
+        assert_eq!(answer["type"], "error", "{method}: {answer}");
+        assert_eq!(answer["code"], "unknown_method", "{method}: {answer}");
     }
 }
 
@@ -227,10 +398,7 @@ async fn an_account_that_hides_its_status_is_offline_to_others_and_online_to_its
 
     let heard = observer.event("PresenceChanged").await;
     assert_eq!(presence(&heard), (maya.id.clone(), "offline".to_string()));
-    // The server's group got the public status, which the connection is in,
-    // and then the connection its own.
-    assert_eq!(actor.event("PresenceChanged").await["presence"], "offline");
-    assert_eq!(actor.event("PresenceChanged").await["presence"], "online");
+    settle(&mut actor, &maya).await;
     assert!(observer.quiet_for(QUIET).await.is_empty());
 }
 
@@ -244,27 +412,25 @@ async fn the_hub_refuses_whoever_is_not_signed_in() {
     let (answer, _) = upgrade(server.address(), "", Some("stellarr-dev-session=garbage")).await;
     assert_eq!(answer.status, 401);
 
-    let anonymous = server.anonymous();
-    let negotiation = anonymous
-        .send(crate::support::Request::new(http::Method::POST, "/hubs/app/negotiate?negotiateVersion=1"))
-        .await;
-    assert_eq!(negotiation.status, 401);
 }
 
 #[tokio::test]
-async fn the_clients_negotiation_is_answered_for_a_signed_in_account() {
+async fn a_signed_in_account_must_offer_stellarr_v1_and_cannot_negotiate() {
     let (server, owner, _) = two_people().await;
+    let cookie = cookie_of(&owner);
+    let host = server.address().to_string();
+    let origin = format!("http://{host}");
+    for offered in [None, Some("stellarr.v2")] {
+        let mut headers = vec![("Origin", origin.as_str())];
+        headers.extend(offered.map(|value| ("Sec-WebSocket-Protocol", value)));
+        let (answer, _) = upgrade_with(server.address(), "", Some(&cookie), &host, &headers).await;
+        assert_eq!(answer.status, 400, "offer {offered:?}: {}", answer.head);
+    }
 
-    let negotiation = owner
-        .client
+    let negotiation = owner.client
         .send(crate::support::Request::new(http::Method::POST, "/hubs/app/negotiate?negotiateVersion=1"))
         .await;
-
-    assert_eq!(negotiation.status, 200);
-    let body: Value = negotiation.json();
-    assert_eq!(body["negotiateVersion"], 1);
-    assert_eq!(body["availableTransports"][0]["transport"], "WebSockets");
-    drop(server);
+    assert_eq!(negotiation.status, 404);
 }
 
 #[tokio::test]
@@ -278,7 +444,7 @@ async fn the_password_is_not_needed_again_to_stay_connected() {
     assert_eq!(server.login(&other, &owner.username, PASSWORD).await.status, 200);
 
     assert!(client.quiet_for(QUIET).await.is_empty());
-    assert_eq!(client.invoke("GetRtcClock", json!([])).await["type"], 3);
+    assert_eq!(client.invoke("GetRtcClock", json!([])).await["type"], "result");
 }
 
 // What ends a session while it has a connection open.
@@ -318,12 +484,11 @@ async fn two_sessions() -> (Server, Person, Id, HubClient, Id, HubClient) {
 
 /// Changes the database as another process would, then says how long the
 /// connection of `closed` took to be closed, and what it was told.
-async fn closed_within_two_seconds(connection: &mut HubClient) -> Value {
+async fn closed_within_two_seconds(connection: &mut HubClient) -> Option<u16> {
     let started = std::time::Instant::now();
-    let (_, close) = connection.until_close().await;
+    let close = connection.finish_close().await;
     assert!(started.elapsed() < Duration::from_secs(2), "closed after {:?}", started.elapsed());
-    // The hub's close message: no error, and the client is not to come back.
-    close.expect("the hub said it was closing")
+    close
 }
 
 #[tokio::test]
@@ -338,9 +503,9 @@ async fn a_session_revoked_in_the_database_loses_its_connection_and_only_its_own
         )
         .unwrap();
 
-    assert_eq!(closed_within_two_seconds(&mut closing).await, json!({"type": 7}));
+    assert_eq!(closed_within_two_seconds(&mut closing).await, Some(4401));
     assert!(staying.quiet_for(Duration::from_millis(1500)).await.is_empty());
-    assert_eq!(staying.invoke("GetRtcClock", json!([])).await["type"], 3);
+    assert_eq!(staying.invoke("GetRtcClock", json!([])).await["type"], "result");
 }
 
 #[tokio::test]
@@ -356,8 +521,8 @@ async fn a_session_that_ran_out_or_reached_its_absolute_end_loses_its_connection
             )
             .unwrap();
 
-        assert_eq!(closed_within_two_seconds(&mut closing).await, json!({"type": 7}), "{column}");
-        assert_eq!(staying.invoke("GetRtcClock", json!([])).await["type"], 3, "{column}");
+        assert_eq!(closed_within_two_seconds(&mut closing).await, Some(4401), "{column}");
+        assert_eq!(staying.invoke("GetRtcClock", json!([])).await["type"], "result", "{column}");
     }
 }
 
@@ -373,8 +538,8 @@ async fn a_disabled_account_loses_every_connection() {
         )
         .unwrap();
 
-    assert_eq!(closed_within_two_seconds(&mut first).await, json!({"type": 7}));
-    assert_eq!(closed_within_two_seconds(&mut second).await, json!({"type": 7}));
+    assert_eq!(closed_within_two_seconds(&mut first).await, Some(4401));
+    assert_eq!(closed_within_two_seconds(&mut second).await, Some(4401));
 }
 
 #[tokio::test]
@@ -389,8 +554,8 @@ async fn a_bump_of_the_accounts_session_version_ends_every_connection_it_made() 
         )
         .unwrap();
 
-    assert_eq!(closed_within_two_seconds(&mut first).await, json!({"type": 7}));
-    assert_eq!(closed_within_two_seconds(&mut second).await, json!({"type": 7}));
+    assert_eq!(closed_within_two_seconds(&mut first).await, Some(4401));
+    assert_eq!(closed_within_two_seconds(&mut second).await, Some(4401));
 }
 
 /// Makes the instance ask for the second step of `requirement`.
@@ -418,8 +583,8 @@ async fn a_policy_that_starts_demanding_a_second_step_ends_the_connections_that_
     // the owner is one of them.
     require_second_step(&server, "everyone");
 
-    assert_eq!(closed_within_two_seconds(&mut first).await, json!({"type": 7}));
-    assert_eq!(closed_within_two_seconds(&mut second).await, json!({"type": 7}));
+    assert_eq!(closed_within_two_seconds(&mut first).await, Some(4401));
+    assert_eq!(closed_within_two_seconds(&mut second).await, Some(4401));
 }
 
 #[tokio::test]
@@ -433,7 +598,7 @@ async fn a_policy_that_does_not_reach_the_account_leaves_its_connections_alone()
     require_second_step(&server, "admins");
 
     assert!(connection.quiet_for(Duration::from_millis(2500)).await.is_empty());
-    assert_eq!(connection.invoke("GetRtcClock", json!([])).await["type"], 3);
+    assert_eq!(connection.invoke("GetRtcClock", json!([])).await["type"], "result");
 }
 
 #[tokio::test]
@@ -447,7 +612,7 @@ async fn signing_out_closes_the_connections_of_that_session_at_once_without_the_
     let response = owner.client.post_json("/api/auth/logout", &json!({})).await;
     assert_eq!(response.status, 204);
 
-    assert_eq!(closed_within_two_seconds(&mut connection).await, json!({"type": 7}));
+    assert_eq!(closed_within_two_seconds(&mut connection).await, Some(4401));
     assert!(started.elapsed() < Duration::from_millis(900), "{:?}", started.elapsed());
 }
 
@@ -457,7 +622,7 @@ async fn a_session_that_stays_valid_keeps_its_connection_through_many_sweeps() {
     drop(server.database());
 
     assert!(first.quiet_for(Duration::from_millis(3500)).await.is_empty());
-    assert_eq!(first.invoke("GetRtcClock", json!([])).await["type"], 3);
+    assert_eq!(first.invoke("GetRtcClock", json!([])).await["type"], "result");
 }
 
 // What handlers publish, and who hears it. These run the library in the
@@ -739,7 +904,7 @@ mod published {
         instance.publish(json!({"followers": {"server": server, "users": [id, id]}}), "TypingChanged", "{\"n\":2}").await;
 
         let heard = owner.quiet_for(Duration::from_millis(400)).await;
-        let named: Vec<&str> = heard.iter().filter_map(|record| record["target"].as_str()).collect();
+        let named: Vec<&str> = heard.iter().filter_map(|record| record["name"].as_str()).collect();
         assert_eq!(named, ["DirectMessageCreated", "TypingChanged"], "{heard:?}");
     }
 
@@ -759,7 +924,7 @@ mod published {
         for client in [&mut owner, &mut maya] {
             let heard = client.quiet_for(Duration::from_millis(400)).await;
             assert_eq!(heard.len(), 1, "{heard:?}");
-            assert_eq!(heard[0]["target"], "Probe");
+            assert_eq!(heard[0]["name"], "Probe");
         }
     }
 
@@ -786,7 +951,7 @@ mod published {
         let heard = owner.quiet_for(Duration::from_millis(500)).await;
         let of_maya = heard
             .iter()
-            .filter(|record| record["target"] == "PresenceChanged" && record["arguments"][0]["userId"] == instance.maya.id.as_str())
+            .filter(|record| record["name"] == "PresenceChanged" && record["data"]["userId"] == instance.maya.id.as_str())
             .count();
         assert_eq!(of_maya, 1, "{heard:?}");
     }
@@ -826,7 +991,7 @@ mod published {
 
         assert_eq!(
             owner.raw_record().await,
-            "{\"type\":1,\"target\":\"Probe\",\"arguments\":[{\"zebra\":1,\"apple\":[2,1],\"mango\":\"é\"}]}\u{1e}".trim_end_matches('\u{1e}')
+            r#"{"type":"event","name":"Probe","data":{"zebra":1,"apple":[2,1],"mango":"é"}}"#
         );
     }
 
@@ -843,11 +1008,11 @@ mod published {
             .post("/api/test/session-ended", json!({"user": instance.owner.id, "session": session}))
             .await;
 
-        assert_eq!(closed_within_two_seconds(&mut leaving).await, json!({"type": 7}));
+        assert_eq!(closed_within_two_seconds(&mut leaving).await, Some(4401));
         // The owner going offline is the only thing the others hear.
         let heard = staying.quiet_for(QUIET).await;
-        assert!(heard.iter().all(|record| record["target"] == "PresenceChanged"), "{heard:?}");
-        assert!(heard.iter().all(|record| record["target"] != "SessionEnded"));
+        assert!(heard.iter().all(|record| record["name"] == "PresenceChanged"), "{heard:?}");
+        assert!(heard.iter().all(|record| record["name"] != "SessionEnded"));
     }
 
     #[tokio::test]
@@ -996,7 +1161,7 @@ async fn a_connection_follows_the_server_it_asked_for_when_it_belongs_to_it() {
         .unwrap();
     let cookie = cookie_of(&owner);
     let mut actor = connect(&server, &maya).await;
-    settle_any(&mut actor).await;
+    settle(&mut actor, &maya).await;
 
     for (query, hears) in [
         (String::new(), true),
@@ -1020,7 +1185,7 @@ async fn a_connection_follows_the_server_it_asked_for_when_it_belongs_to_it() {
         actor.invoke("SetPresence", json!(["online"])).await;
         actor.quiet_for(Duration::from_millis(100)).await;
         let heard = watcher.quiet_for(Duration::from_millis(300)).await;
-        let counted = heard.iter().filter(|r| r["target"] == "PresenceChanged").count();
+        let counted = heard.iter().filter(|r| r["name"] == "PresenceChanged").count();
         assert_eq!(counted > 0, hears, "{query}: {heard:?}");
         watcher.hang_up().await;
         actor.quiet_for(Duration::from_millis(100)).await;

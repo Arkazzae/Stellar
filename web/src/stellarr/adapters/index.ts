@@ -2,7 +2,7 @@
  * The composition root: the one place that knows which implementation backs
  * which port. Components, containers and tests above it see only `Ports`.
  *
- * Every port is backed by the real HTTP, SignalR or WebRTC implementation. A
+ * Every port is backed by the real HTTP, WebSocket or WebRTC implementation. A
  * platform that brings its own transport (the desktop client) passes it in
  * `RuntimeOptions`; nothing above this file changes.
  */
@@ -54,7 +54,7 @@ export interface RuntimeOptions {
    * client supplies its native broker without changing any UI-facing port.
    */
   api?: ApiClient & SocialApiClient & AdminApiClient;
-  /** Browser SignalR by default; the desktop client keeps its socket in Rust. */
+  /** Browser WebSocket by default; the desktop client keeps its socket in Rust. */
   realtime?: RealtimeClient;
   /** Operating-system preferences, supplied by the desktop shell only. */
   desktop?: DesktopPort;
@@ -198,7 +198,7 @@ function followAccess(
 }
 
 /** The browser's socket, fetched with the signed-in code and not before it is needed. */
-const loadRealtime = () => loadSignedInCode().then((code) => code.createSignalRClient());
+const loadRealtime = () => loadSignedInCode().then((code) => code.createWebSocketRealtimeClient());
 
 export function createRuntime(options: RuntimeOptions = {}): Runtime {
   const api = options.api ?? createHttpApiClient();

@@ -212,8 +212,7 @@ async fn disabling_a_person_ends_their_sessions_and_closes_their_connections() {
     let off = scene.owner.client.send(Request::new(Method::PATCH, &path).json(&json!({"disabled": true}))).await;
 
     assert_eq!(off.status, 204);
-    let (_, closing) = hub.until_close().await;
-    let _ = closing;
+    assert_eq!(hub.finish_close().await, Some(4401));
     assert_eq!(scene.member.client.get("/api/me").await.status, 401);
     let open = scene.rows(&format!("SELECT COUNT(*) FROM \"UserSessions\" WHERE \"UserId\" = '{}' COLLATE NOCASE AND \"RevokedAt\" IS NULL", scene.member.id));
     assert_eq!(open[0][0], "0");

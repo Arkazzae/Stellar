@@ -370,8 +370,8 @@ async fn a_clip_is_written_on_the_wire_in_the_order_and_numbers_the_first_server
     let mut player = rig.connect(&maja).await;
     player.join(rig.salon).await;
 
-    let call = json!({"type": 1, "invocationId": "99", "target": "PlaySoundboard", "arguments": [rig.salon, sound]});
-    player.hub.send_text(&format!("{call}\u{1e}")).await;
+    let call = json!({"type": "call", "id": 99, "method": "PlaySoundboard", "args": [rig.salon, sound]});
+    player.hub.send_text(&call.to_string()).await;
 
     let text = loop {
         let raw = player.hub.raw_record().await;

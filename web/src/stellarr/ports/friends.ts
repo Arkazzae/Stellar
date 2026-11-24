@@ -18,7 +18,7 @@ export type {
 
 import type { Unsubscribe } from "./chat";
 
-/** Friends and direct messages, backed by the social API and SignalR. */
+/** Friends and direct messages, backed by the social API and the realtime hub. */
 
 /** A conversation between exactly two people; groups are not modelled. */
 export type DmId = string;
