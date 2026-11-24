@@ -191,7 +191,7 @@ enum Value<'a> {
 /// A JSON string the way the first server's writer makes one: anything that is
 /// not printable ASCII, and the characters a page could mistake for markup,
 /// as `\uXXXX` with capital hex digits.
-fn string(text: &str) -> String {
+pub(crate) fn string(text: &str) -> String {
     let mut out = String::with_capacity(text.len() + 2);
     out.push('"');
     for unit in text.encode_utf16() {

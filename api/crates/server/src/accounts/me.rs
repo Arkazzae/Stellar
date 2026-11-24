@@ -75,7 +75,7 @@ impl Preferences {
         }
     }
 
-    fn load(connection: &Connection, user: Id) -> rusqlite::Result<Preferences> {
+    pub(crate) fn load(connection: &Connection, user: Id) -> rusqlite::Result<Preferences> {
         let found = connection
             .query_row(
                 "SELECT \"DesktopNotifications\", \"EmailNotifications\", \"PushNotifications\", \"MentionsOnly\", \"MessageSound\",

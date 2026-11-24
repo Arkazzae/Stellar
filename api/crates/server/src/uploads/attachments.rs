@@ -107,7 +107,7 @@ pub struct AttachmentDto {
 }
 
 /// A duration the way the first server wrote it: `42`, not `42.0`.
-fn number<S: Serializer>(value: &Option<f64>, serializer: S) -> Result<S::Ok, S::Error> {
+pub(crate) fn number<S: Serializer>(value: &Option<f64>, serializer: S) -> Result<S::Ok, S::Error> {
     match value {
         Some(value) if value.fract() == 0.0 && value.abs() < 1e15 => {
             serializer.serialize_i64(*value as i64)
