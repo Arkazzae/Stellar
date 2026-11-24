@@ -212,14 +212,10 @@ pub fn find_update(
 }
 
 /// A minisign signature is base64 together with the comment lines the
-/// bundler writes around it: 64 to 4096 of the characters of both. The test
-/// the first server made lets a final line break stand outside the count, so
-/// that one more character is allowed when it is that.
+/// bundler writes around it: 64 to 4096 of the characters of both.
 fn is_signature(text: &str) -> bool {
     let allowed = |b: u8| b.is_ascii_alphanumeric() || b"+/=\r\n:. _-".contains(&b);
-    let length = text.len();
-    text.bytes().all(allowed)
-        && (64..=4096).contains(&(length - usize::from(length > 4096 && text.ends_with('\n'))))
+    text.bytes().all(allowed) && (64..=4096).contains(&text.len())
 }
 
 /// A version the desktop client has to be at least, or is advised to be:
@@ -257,7 +253,8 @@ mod tests {
         assert!(is_signature(&"A".repeat(4096)));
         assert!(!is_signature(&"A".repeat(63)));
         assert!(!is_signature(&"A".repeat(4097)));
-        assert!(is_signature(&format!("{}\n", "A".repeat(4096))));
+        assert!(is_signature(&format!("{}\n", "A".repeat(4095))));
+        assert!(!is_signature(&format!("{}\n", "A".repeat(4096))), "a line break counts like any character");
         assert!(!is_signature(&format!("{}\n\n", "A".repeat(4096))));
         assert!(!is_signature(&format!("{}\r", "A".repeat(4096))));
         assert!(!is_signature(&format!("{real}!")));

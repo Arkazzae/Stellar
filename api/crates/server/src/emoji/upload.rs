@@ -30,12 +30,11 @@ const MAX_CODE: usize = 32;
 
 /// The code a name is kept as: without the space around it or the colons
 /// around that, in lower case. It is two to 32 lower-case letters, digits or
-/// underscores; the first server's pattern also let one line break follow.
+/// underscores, and nothing after them: not even a line break.
 fn shortcode(typed: &str) -> Option<String> {
     let code = to_lower(typed.trim().trim_matches(':'));
-    let body = code.strip_suffix('\n').unwrap_or(&code);
-    let fits = (MIN_CODE..=MAX_CODE).contains(&body.len())
-        && body.bytes().all(|byte| matches!(byte, b'a'..=b'z' | b'0'..=b'9' | b'_'));
+    let fits = (MIN_CODE..=MAX_CODE).contains(&code.len())
+        && code.bytes().all(|byte| matches!(byte, b'a'..=b'z' | b'0'..=b'9' | b'_'));
     fits.then_some(code)
 }
 
@@ -207,9 +206,9 @@ mod tests {
             ("a b", None),
             (&"a".repeat(32), Some("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa")),
             (&"a".repeat(33), None),
-            // The first server's pattern let one line break stand last.
-            (":ab\n:", Some("ab\n")),
-            (&format!(":{}\n:", "a".repeat(32)), Some(&format!("{}\n", "a".repeat(32)))),
+            // Not even one line break may follow.
+            (":ab\n:", None),
+            (&format!(":{}\n:", "a".repeat(32)), None),
             (":ab\n\n:", None),
             (":\nab:", None),
             ("\u{212a}k", Some("kk")),
