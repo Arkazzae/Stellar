@@ -18,11 +18,10 @@ mod requests;
 mod state;
 
 use rusqlite::{Connection, params};
-use serde::{Deserialize, Deserializer, Serialize};
+use serde::Serialize;
 
 use crate::events::{Audience, Event};
 use crate::http::Endpoints;
-use crate::permissions::membership::parse_guid;
 use crate::state::AppState;
 use crate::values::Id;
 
@@ -43,20 +42,6 @@ pub fn routes() -> Endpoints {
         .authorized()
         .delete("/api/social/blocks/{userId}", relations::unblock)
         .authorized()
-}
-
-/// An id in a path, in every spelling the first server's route accepted:
-/// hyphenated or not, in braces or parentheses, in either case.
-#[derive(Debug, Clone, Copy)]
-pub struct GuidSegment(pub Id);
-
-impl<'de> Deserialize<'de> for GuidSegment {
-    fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<GuidSegment, D::Error> {
-        let text = String::deserialize(deserializer)?;
-        parse_guid(&text)
-            .map(GuidSegment)
-            .ok_or_else(|| serde::de::Error::custom("not an id"))
-    }
 }
 
 /// The two ids in the order friendships and conversations are stored in.
@@ -141,20 +126,5 @@ mod tests {
             pair_key(high, low),
             "0360bf01b87b4fe3ba0df2417ac364ab:84a0daa8179c42c481b66980d37f2fdc"
         );
-    }
-
-    #[test]
-    fn a_path_segment_is_an_id_in_any_spelling_the_first_server_took() {
-        let want = Id::parse("0360bf01-b87b-4fe3-ba0d-f2417ac364ab").unwrap();
-        for text in [
-            "0360bf01-b87b-4fe3-ba0d-f2417ac364ab",
-            "0360BF01B87B4FE3BA0DF2417AC364AB",
-            "{0360bf01-b87b-4fe3-ba0d-f2417ac364ab}",
-            "(0360bf01-b87b-4fe3-ba0d-f2417ac364ab)",
-        ] {
-            let segment: GuidSegment = serde_json::from_value(text.into()).unwrap();
-            assert_eq!(segment.0, want, "{text}");
-        }
-        assert!(serde_json::from_value::<GuidSegment>("nobody".into()).is_err());
     }
 }

@@ -9,13 +9,13 @@ use serde::de::{self, Deserializer, IgnoredAny, MapAccess, Visitor};
 use serde::{Deserialize, Serialize};
 use stellarr_messages::MessageKey;
 
-use super::{GuidSegment, announce, are_friends, is_blocked, pair, pair_key};
+use super::{announce, are_friends, is_blocked, pair, pair_key};
 use crate::auth::Caller;
 use crate::database::DbError;
 use crate::http::{ApiError, ApiResult, Json, Path, Problem, json_response};
 use crate::instance::names::to_upper;
 use crate::state::AppState;
-use crate::values::{Id, Timestamp};
+use crate::values::{Guid, Id, Timestamp};
 
 /// The body of a request to befriend. Property names are read without regard
 /// to case, and the last of a name given twice counts, as the first server
@@ -148,7 +148,7 @@ pub async fn create(
 pub async fn accept(
     State(state): State<AppState>,
     caller: Caller,
-    Path(GuidSegment(request)): Path<GuidSegment>,
+    Path(Guid(request)): Path<Guid>,
 ) -> ApiResult<Response> {
     let me = caller.user;
     let found: Option<(Id, Id)> = state
@@ -188,7 +188,7 @@ pub async fn accept(
 pub async fn delete(
     State(state): State<AppState>,
     caller: Caller,
-    Path(GuidSegment(request)): Path<GuidSegment>,
+    Path(Guid(request)): Path<Guid>,
 ) -> ApiResult<Response> {
     let me = caller.user;
     let found: Option<(Id, Id)> = state
