@@ -144,7 +144,32 @@ mod tests {
         let request = Request::builder()
             .body(Body::from(body.to_string()))
             .unwrap();
-        Json::<Account>::from_request(request, &()).await
+        <Json<Account> as FromRequest<()>>::from_request(request, &()).await
+    }
+
+    async fn read_optional(body: &str) -> Result<Option<Json<Account>>, ApiError> {
+        let request = Request::builder()
+            .body(Body::from(body.to_string()))
+            .unwrap();
+        <Json<Account> as OptionalFromRequest<()>>::from_request(request, &()).await
+    }
+
+    #[tokio::test]
+    async fn a_body_that_may_be_left_out_is_none_when_it_is_empty_or_null() {
+        for body in ["", "null"] {
+            assert!(read_optional(body).await.unwrap().is_none(), "{body:?}");
+        }
+        assert!(read_optional("{bad").await.is_err());
+        assert!(read_optional("[]").await.is_err());
+        let Some(Json(account)) = read_optional(
+            "{\"id\":\"8f62a4d1-bdcb-4d86-bd1c-6e351900e629\",\"displayName\":\"Maya\",\
+             \"avatarUrl\":null,\"createdAt\":\"2026-11-18T21:57:04Z\"}",
+        )
+        .await
+        .unwrap() else {
+            panic!("a body that is there is read");
+        };
+        assert_eq!(account.display_name, "Maya");
     }
 
     #[tokio::test]
