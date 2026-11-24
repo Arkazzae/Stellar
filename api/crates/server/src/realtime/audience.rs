@@ -27,10 +27,11 @@ pub fn presence_groups(connection: &Connection, user: Id) -> rusqlite::Result<Ve
 
 /// The same, as the ids the groups are made from.
 pub fn presence_reach(connection: &Connection, user: Id) -> rusqlite::Result<Reach> {
-    // No ORDER BY: the first server did not ask for one either, and the
-    // order the rows come in is the order the groups are sent to.
-    let mut servers =
-        connection.prepare("SELECT \"ServerId\" FROM \"ServerMembers\" WHERE \"UserId\" = ?1")?;
+    // Servers in the order the person joined them, and peers by id, so that the
+    // groups are always listed in the same order.
+    let mut servers = connection.prepare(
+        "SELECT \"ServerId\" FROM \"ServerMembers\" WHERE \"UserId\" = ?1 ORDER BY \"JoinedAt\", \"ServerId\"",
+    )?;
     let servers: Vec<Id> = servers
         .query_map([user], |row| row.get(0))?
         .collect::<Result<_, _>>()?;
@@ -46,7 +47,8 @@ pub fn presence_reach(connection: &Connection, user: Id) -> rusqlite::Result<Rea
          WHERE NOT EXISTS (
              SELECT 1 FROM \"UserBlocks\" AS block
              WHERE (block.\"BlockerId\" = ?1 AND block.\"BlockedId\" = people.peer)
-                OR (block.\"BlockerId\" = people.peer AND block.\"BlockedId\" = ?1))",
+                OR (block.\"BlockerId\" = people.peer AND block.\"BlockedId\" = ?1))
+         ORDER BY peer",
     )?;
     let peers: Vec<Id> = peers
         .query_map([user], |row| row.get(0))?

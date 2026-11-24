@@ -59,8 +59,8 @@ pub fn enqueue_mentions(
     created_at: Timestamp,
 ) -> rusqlite::Result<()> {
     let distinct: BTreeSet<Id> = recipients.into_iter().collect();
-    // The first server queued in the order the inbox entries were written;
-    // the order of the rows is not observable but the ids are random anyway.
+    // In the order of the people's ids, so that the rows are always written in
+    // the same order for the same message.
     for recipient in distinct {
         enqueue(db, Kind::Mention, message, recipient, created_at)?;
     }
