@@ -17,7 +17,8 @@
 # Not part of the ordinary run.
 #
 #   ORACLE=roles ORACLE_PORT=5213 ACARGO=path/to/acargo STELLARR_API=path/to/stellarr-api roles-shared-database.sh
-#   (WORLDS=100 STEPS=8 PEOPLE=8 SEED=7 to change the shapes)
+#   (WORLDS=100 STEPS=8 PEOPLE=8 SEED=7 to change the shapes; ROLES_PAIRS=1 for the pairs of
+#   requests that may and may not, one world each, instead of random worlds)
 set -euo pipefail
 
 name=${ORACLE:-roles}
@@ -49,9 +50,11 @@ python3 "$here/permissions-probe.py" register "$oracle" "$setup" "$work" "$peopl
 
 docker stop -t 10 "$container" >/dev/null
 docker cp "$container:/tmp/data/stellarr.db" "$work/stellarr.db"
+arranger=arrange_worlds_in_a_shared_database
+[ -z "${ROLES_PAIRS:-}" ] || arranger=arrange_pairs_of_requests
 (cd "$api" && ROLES_DB="$work/stellarr.db" ROLES_USERS="$work/users.txt" ROLES_PLAN="$work/plan.jsonl" \
   ROLES_WORLDS="$worlds" ROLES_STEPS="$steps" ROLES_SEED="$seed" \
-  "$acargo" test -p stellarr-api --test api arrange_worlds_in_a_shared_database -- --ignored --nocapture)
+  "$acargo" test -p stellarr-api --test api "$arranger" -- --ignored --nocapture)
 
 # Starts this server on a copy of the arranged file; sets $rust.
 start_rust() {
