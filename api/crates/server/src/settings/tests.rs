@@ -350,9 +350,19 @@ fn mail_starts_from_the_environment_and_the_secrets_keep_their_spaces() {
 
 #[test]
 fn a_secret_is_never_printed_with_the_settings() {
-    let settings = production(&[("STELLARR_SMTP_PASSWORD", "hunter2")]).unwrap();
+    let settings = production(&[
+        ("STELLARR_SMTP_PASSWORD", "hunter2"),
+        ("Rtc__MediaControlSecret", "media-hunter3"),
+        ("Rtc__TurnSharedSecret", "turn-hunter4"),
+    ])
+    .unwrap();
 
-    assert!(!format!("{settings:?}").contains("hunter2"));
+    let printed = format!("{settings:?} {:?} {:?}", settings.rtc, settings.rtc.media);
+    for secret in ["hunter2", "media-hunter3", "turn-hunter4"] {
+        assert!(!printed.contains(secret), "{secret}");
+    }
+    assert!(printed.contains("control_secret: \"(set)\""));
+    assert!(printed.contains("turn_shared_secret: \"(set)\""));
 }
 
 #[test]
