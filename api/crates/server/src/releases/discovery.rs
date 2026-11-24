@@ -18,14 +18,6 @@ use crate::values::Id;
 const FILE_NAME: &str = "instance-id";
 const API_PROTOCOL: u32 = 1;
 const RTC_PROTOCOL: u32 = 1;
-/// The version the image was built as, which its build says in
-/// `STELLARR_VERSION` when it compiles the server; the version of the
-/// workspace otherwise. What follows a plus sign, the revision, is not part
-/// of it.
-const SERVER_VERSION: &str = match option_env!("STELLARR_VERSION") {
-    Some(version) => version,
-    None => env!("CARGO_PKG_VERSION"),
-};
 const FALLBACK_INSTANCE_NAME: &str = "Stellarr";
 const SIGN_IN_METHODS: [&str; 2] = ["password", "invite"];
 
@@ -108,7 +100,7 @@ pub async fn describe(
         } else {
             desktop.canonical_origin.clone()
         },
-        server_version: SERVER_VERSION.split('+').next().unwrap_or(SERVER_VERSION),
+        server_version: crate::version::server(),
         build_sha: settings.discovery.build_sha.clone(),
         api_protocol: API_PROTOCOL,
         api_protocol_min: API_PROTOCOL,
