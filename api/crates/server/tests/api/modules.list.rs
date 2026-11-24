@@ -4,6 +4,7 @@ mod client_gate;
 mod client_settings;
 mod database;
 mod emoji;
+mod direct;
 mod health;
 mod inbox;
 mod mail;

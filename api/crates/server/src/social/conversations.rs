@@ -116,7 +116,7 @@ pub struct SystemEntry {
 /// A message of a private conversation in the shape of a channel message.
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
-pub struct LastMessage {
+pub struct DirectMessage {
     id: String,
     channel_id: String,
     author: UserDto,
@@ -132,22 +132,48 @@ pub struct LastMessage {
     system: Option<SystemEntry>,
 }
 
+impl DirectMessage {
+    /// The message's id, as written in JSON.
+    pub fn id(&self) -> &str {
+        &self.id
+    }
+}
+
 /// The newest message of the conversation, or line about its encryption. A
 /// line about somebody's keys stays in the history but is left out here: a new
 /// sign-in is no reason to move a conversation up the list.
 pub fn last_message(
     connection: &Connection,
     conversation: Id,
-) -> rusqlite::Result<Option<(LastMessage, Timestamp)>> {
-    let found = connection
+) -> rusqlite::Result<Option<(DirectMessage, Timestamp)>> {
+    let newest: Option<Id> = connection
         .query_row(
-            "SELECT \"Id\", \"AuthorId\", \"Content\", \"CreatedAt\", \"EncryptedEpochId\", \"EncryptedIv\",
-                    \"EncryptedCiphertext\", \"SystemKind\"
-             FROM \"DirectMessages\"
+            "SELECT \"Id\" FROM \"DirectMessages\"
              WHERE \"ConversationId\" = ?1
                AND (\"SystemKind\" IS NULL OR (\"SystemKind\" <> 'device_added' AND \"SystemKind\" <> 'keys_reset'))
              ORDER BY \"CreatedAt\" DESC, \"Id\" DESC LIMIT 1",
             [conversation],
+            |row| row.get(0),
+        )
+        .optional()?;
+    match newest {
+        Some(id) => message(connection, id),
+        None => Ok(None),
+    }
+}
+
+/// A message or line of a conversation as clients read it, with the moment it
+/// was written.
+pub fn message(
+    connection: &Connection,
+    id: Id,
+) -> rusqlite::Result<Option<(DirectMessage, Timestamp)>> {
+    let found = connection
+        .query_row(
+            "SELECT \"ConversationId\", \"AuthorId\", \"Content\", \"CreatedAt\", \"EncryptedEpochId\", \"EncryptedIv\",
+                    \"EncryptedCiphertext\", \"SystemKind\"
+             FROM \"DirectMessages\" WHERE \"Id\" = ?1",
+            [id],
             |row| {
                 Ok((
                     row.get::<_, Id>(0)?,
@@ -162,7 +188,7 @@ pub fn last_message(
             },
         )
         .optional()?;
-    let Some((id, author, content, created_at, epoch, iv, ciphertext, kind)) = found else {
+    let Some((conversation, author, content, created_at, epoch, iv, ciphertext, kind)) = found else {
         return Ok(None);
     };
     let Some(author_row) = User::find(connection, author)? else {
@@ -205,7 +231,7 @@ pub fn last_message(
         }),
         _ => None,
     };
-    let message = LastMessage {
+    let message = DirectMessage {
         id: id.to_string(),
         channel_id: conversation.to_string(),
         author: author_row.dto("online"),
@@ -242,4 +268,17 @@ pub fn unread(connection: &Connection, me: Id, conversation: &Conversation) -> r
         params![conversation.id, me, conversation.created_at],
         |row| row.get(0),
     )
+}
+
+/// The conversation, whoever asks.
+pub fn find(connection: &Connection, id: Id) -> rusqlite::Result<Option<Conversation>> {
+    connection
+        .query_row(
+            "SELECT \"Id\", \"UserAId\", \"UserBId\", \"CreatedAt\", \"EncryptionState\", \"EncryptionRequestedById\",
+                    \"EncryptionRequestedAt\", \"EncryptionEnabledAt\", \"CurrentEpochId\"
+             FROM \"DirectConversations\" WHERE \"Id\" = ?1",
+            [id],
+            Conversation::from_row,
+        )
+        .optional()
 }
