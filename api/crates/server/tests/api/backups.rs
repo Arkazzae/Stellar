@@ -50,6 +50,12 @@ async fn a_backup_of_the_database_alone_is_made_at_once_and_listed() {
 
     let after = settled(&owner.client).await;
     assert_eq!(after["backups"][0]["id"], id.as_str());
+    // Nothing of the writing is left beside it.
+    let names: Vec<String> = std::fs::read_dir(server.folder().join("backups"))
+        .unwrap()
+        .map(|entry| entry.unwrap().file_name().to_string_lossy().into_owned())
+        .collect();
+    assert_eq!(names, [id.clone()]);
 }
 
 #[tokio::test]

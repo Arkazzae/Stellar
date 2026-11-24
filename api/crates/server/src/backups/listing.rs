@@ -218,6 +218,23 @@ mod tests {
     }
 
     #[test]
+    fn a_database_copy_being_written_is_neither_listed_nor_a_backup_and_a_stop_removes_it() {
+        let folder = crate::testing::TempDir::new();
+        for name in [
+            ".backup-20261124-101500-abc.db.partial",
+            ".backup-20261124-101500-abc.db.partial-wal",
+            "backup-20261124-100000-def.db",
+        ] {
+            std::fs::write(folder.path().join(name), b"x").unwrap();
+        }
+        let listed: Vec<String> = list(folder.path()).into_iter().map(|entry| entry.id).collect();
+        assert_eq!(listed, ["backup-20261124-100000-def.db"]);
+        assert!(resolve(folder.path(), ".backup-20261124-101500-abc.db.partial").is_none());
+        remove_leftovers(folder.path());
+        assert_eq!(std::fs::read_dir(folder.path()).unwrap().count(), 1);
+    }
+
+    #[test]
     fn leftovers_are_the_partial_files_and_what_sqlite_left_beside_them() {
         let folder = crate::testing::TempDir::new();
         for name in [
