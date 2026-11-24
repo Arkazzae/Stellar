@@ -752,6 +752,9 @@ async fn a_body_is_read_by_exact_names_without_a_byte_order_mark_and_without_a_r
     assert_eq!(send(r#"{"username":"ben"}"#).await.status, 200);
     // A byte order mark is no part of JSON.
     assert_eq!(send("\u{feff}{\"username\":\"ben\"}").await.status, 400);
+    // A list where an object belongs is refused, whatever it holds.
+    assert_eq!(send(r#"["ben"]"#).await.status, 400);
+    assert_eq!(send("[]").await.status, 400);
     // A member named twice is no object we can read.
     assert_eq!(send(r#"{"username":"ben","username":"cyd"}"#).await.status, 400);
     // Another letter case names a member nobody asked for: there is no user name.

@@ -144,8 +144,7 @@ pub async fn bind_then_gate<T: serde::de::DeserializeOwned>(
         None
     } else {
         // Only an object is a body; a list would bind to a struct by position.
-        let first = bytes.iter().find(|byte| !byte.is_ascii_whitespace());
-        if !matches!(first, Some(b'{' | b'n')) {
+        if !crate::http::is_object_or_null(&bytes) {
             return Err(ApiError::bad_request());
         }
         serde_json::from_slice::<Option<T>>(&bytes).map_err(|_| ApiError::bad_request())?
