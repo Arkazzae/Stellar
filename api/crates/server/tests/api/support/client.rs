@@ -144,6 +144,13 @@ impl Client {
         self
     }
 
+    /// This client's cookies as another client has them, as a browser that
+    /// kept a copy of them before they changed.
+    pub fn with_cookies_of(self, other: &Client) -> Client {
+        *self.jar.lock().unwrap() = other.jar.lock().unwrap().clone();
+        self
+    }
+
     /// The value of a cookie the server has set and not taken away.
     pub fn cookie(&self, name: &str) -> Option<String> {
         let jar = self.jar.lock().unwrap();
