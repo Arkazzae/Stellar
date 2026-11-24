@@ -20,6 +20,7 @@ pub mod http;
 pub mod instance;
 pub mod logging;
 pub mod seal;
+pub mod secrets;
 pub mod settings;
 pub mod state;
 pub mod values;
