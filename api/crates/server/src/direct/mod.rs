@@ -17,7 +17,6 @@ mod history;
 mod open;
 mod post;
 mod read;
-mod request;
 
 use rusqlite::{Connection, OptionalExtension, params};
 

@@ -6,7 +6,7 @@ use axum::response::Response;
 use rusqlite::{OptionalExtension, params};
 use serde::Serialize;
 
-use super::request::{Body, Malformed};
+use crate::http::lenient::{Malformed, Members};
 use crate::auth::Caller;
 use crate::http::{ApiError, ApiResult, Json, json_response};
 use crate::social::{announce, is_blocked, pair};
@@ -23,7 +23,7 @@ struct Opened {
 pub async fn open(
     State(state): State<AppState>,
     caller: Caller,
-    Json(body): Json<Body>,
+    Json(body): Json<Members>,
 ) -> ApiResult<Response> {
     // `userId` is not optional: a missing one is the empty id, which is nobody.
     let other = match body.get::<Id>("userId") {
