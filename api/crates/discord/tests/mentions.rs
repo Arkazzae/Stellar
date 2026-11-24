@@ -40,12 +40,7 @@ fn names_in_prose_are_mentions() {
 
 #[test]
 fn short_names_and_mail_addresses_are_not_mentions() {
-    for content in [
-        "",
-        "@",
-        "@a",
-        "maja@ada.pl",
-    ] {
+    for content in ["", "@", "@a", "maja@ada.pl"] {
         assert!(found(content).is_empty(), "{content:?}");
     }
 }
@@ -100,7 +95,10 @@ fn only_a_real_fenced_block_hides_a_name() {
         ("```\n@ada", &["ADA"]),
         ("```\n@ada\n```\n@bea", &["BEA"]),
         ("```\n@ada\n```\n@bea\n```\n@cee\n```", &["BEA"]),
-        ("` start\n```\nnot here\n```\n@ada\n```\nnot here\n```\nend `", &["ADA"]),
+        (
+            "` start\n```\nnot here\n```\n@ada\n```\nnot here\n```\nend `",
+            &["ADA"],
+        ),
     ];
     for (content, expected) in cases {
         assert_eq!(found(content), set(expected), "{content:?}");
@@ -109,11 +107,7 @@ fn only_a_real_fenced_block_hides_a_name() {
 
 #[test]
 fn an_escaped_at_is_not_a_mention() {
-    for content in [
-        "\\@ada",
-        "a\\@ada",
-        "\\@ada \\@bea",
-    ] {
+    for content in ["\\@ada", "a\\@ada", "\\@ada \\@bea"] {
         assert!(found(content).is_empty(), "{content:?}");
     }
 }
@@ -268,7 +262,10 @@ fn a_url_inside_a_label_does_not_swallow_the_mention_after_the_link() {
     let cases: &[(&str, &[&str])] = &[
         ("[https://x.test](http://y)@ada", &["ADA"]),
         ("[https://x.test/@bea](http://y)@ada", &["ADA"]),
-        ("[http://x](http://y)@ada [x](http://z)@bea", &["ADA", "BEA"]),
+        (
+            "[http://x](http://y)@ada [x](http://z)@bea",
+            &["ADA", "BEA"],
+        ),
         ("_[http://x](http://y)@ada_", &["ADA"]),
         ("[a](http://x)@ada_", &["ADA_"]),
         ("[a](http://x)_@ada_", &["ADA"]),
@@ -294,7 +291,10 @@ fn a_url_in_literal_text_still_hides_all_of_its_names() {
 fn a_name_is_the_whole_word() {
     let x = |count: usize| "x".repeat(count);
     assert_eq!(found(&format!("@{}", x(32))), set(&[&"X".repeat(32)]));
-    assert_eq!(found(&format!("@{}m", x(31))), set(&[&format!("{}M", "X".repeat(31))]));
+    assert_eq!(
+        found(&format!("@{}m", x(31))),
+        set(&[&format!("{}M", "X".repeat(31))])
+    );
     assert!(found(&format!("@{}", x(33))).is_empty());
     assert!(found(&format!("@{}", x(40))).is_empty());
     assert!(found(&format!("@{}more", x(32))).is_empty());
@@ -347,7 +347,8 @@ fn hostile_text_is_read_in_linear_time() {
 
 #[test]
 fn every_shared_case_of_the_message_syntax_gives_the_same_names() {
-    let contract: serde_json::Value = serde_json::from_str(include_str!("fixtures/message-syntax.json")).unwrap();
+    let contract: serde_json::Value =
+        serde_json::from_str(include_str!("fixtures/message-syntax.json")).unwrap();
     let messages = contract["messages"].as_array().unwrap();
     assert!(!messages.is_empty());
     for message in messages {

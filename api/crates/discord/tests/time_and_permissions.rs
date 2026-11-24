@@ -20,15 +20,30 @@ fn reads_the_timestamps_discord_writes() {
     assert_eq!(at("2024-01-01T00:00:00+00:00"), 1_704_067_200 * 10_000_000);
     assert_eq!(at("2024-01-01T00:00:00Z"), 1_704_067_200 * 10_000_000);
     assert_eq!(at("2024-01-01T00:00:00"), 1_704_067_200 * 10_000_000);
-    assert_eq!(at("2017-07-11T17:27:07.299000+00:00"), 1_499_794_027_299 * 10_000);
+    assert_eq!(
+        at("2017-07-11T17:27:07.299000+00:00"),
+        1_499_794_027_299 * 10_000
+    );
     assert_eq!(at("2024-01-01T02:00:00+02:00"), 1_704_067_200 * 10_000_000);
     assert_eq!(at("2023-12-31T19:00:00-05:00"), 1_704_067_200 * 10_000_000);
-    assert_eq!(at("2024-01-01T00:00:00.1234567+00:00"), 1_704_067_200 * 10_000_000 + 1_234_567);
+    assert_eq!(
+        at("2024-01-01T00:00:00.1234567+00:00"),
+        1_704_067_200 * 10_000_000 + 1_234_567
+    );
     // Past the seventh digit the value rounds, as a tick holds no more.
-    assert_eq!(at("2024-01-01T00:00:00.12345675Z"), 1_704_067_200 * 10_000_000 + 1_234_568);
-    assert_eq!(at("2024-01-01T00:00:00.99999999Z"), (1_704_067_200 + 1) * 10_000_000);
+    assert_eq!(
+        at("2024-01-01T00:00:00.12345675Z"),
+        1_704_067_200 * 10_000_000 + 1_234_568
+    );
+    assert_eq!(
+        at("2024-01-01T00:00:00.99999999Z"),
+        (1_704_067_200 + 1) * 10_000_000
+    );
     assert_eq!(at("2024-01-01"), 1_704_067_200 * 10_000_000);
-    assert_eq!(at("2024-01-01T00:00:00.000000 +01:00"), 1_704_063_600 * 10_000_000);
+    assert_eq!(
+        at("2024-01-01T00:00:00.000000 +01:00"),
+        1_704_063_600 * 10_000_000
+    );
     assert_eq!(at("1969-12-31T23:59:59Z"), -10_000_000);
     assert_eq!(at("0001-01-01T00:00:00Z"), -62_135_596_800 * 10_000_000);
     assert_eq!(at("9999-12-31T23:59:59Z"), 253_402_300_799 * 10_000_000);
@@ -38,13 +53,32 @@ fn reads_the_timestamps_discord_writes() {
 #[test]
 fn one_odd_date_is_none_and_never_a_panic() {
     for text in [
-        "", "x", "last tuesday", "2023-02-29T00:00:00Z", "2024-13-01", "2024-00-10", "2024-01-32",
-        "2024-01-01T24:00:00Z", "2024-01-01T12:60:00Z", "2024-01-01T12:00:60Z", "2024-01-01T00:00:00+15:00",
-        "2024-01-01T00:00:00+00:60", "2024-01-01T00:00:00junk", "0000-01-01", "10000-01-01",
-        "2024-01-01T00:00:00.", "2024-01-01T00:00:00.Z", "20240101", "-2024-01-01", "2024-01-01T",
-        "2024\u{ff0d}01-01", "\u{0662}024-01-01", "\u{1F600}",
+        "",
+        "x",
+        "last tuesday",
+        "2023-02-29T00:00:00Z",
+        "2024-13-01",
+        "2024-00-10",
+        "2024-01-32",
+        "2024-01-01T24:00:00Z",
+        "2024-01-01T12:60:00Z",
+        "2024-01-01T12:00:60Z",
+        "2024-01-01T00:00:00+15:00",
+        "2024-01-01T00:00:00+00:60",
+        "2024-01-01T00:00:00junk",
+        "0000-01-01",
+        "10000-01-01",
+        "2024-01-01T00:00:00.",
+        "2024-01-01T00:00:00.Z",
+        "20240101",
+        "-2024-01-01",
+        "2024-01-01T",
+        "2024\u{ff0d}01-01",
+        "\u{0662}024-01-01",
+        "\u{1F600}",
         // Past the last moment a timestamp holds, by way of the offset.
-        "9999-12-31T23:59:59-01:00", "0001-01-01T00:00:00+01:00",
+        "9999-12-31T23:59:59-01:00",
+        "0001-01-01T00:00:00+01:00",
     ] {
         assert_eq!(parse_timestamp(text), None, "{text:?}");
     }
@@ -58,7 +92,10 @@ fn a_snowflake_carries_the_time_it_was_made() {
         snowflake_time("175928847299117063").map(|t| t.unix_millis()),
         Some(1_462_015_105_796)
     );
-    assert_eq!(snowflake_time("0").map(|t| t.unix_millis()), Some(1_420_070_400_000));
+    assert_eq!(
+        snowflake_time("0").map(|t| t.unix_millis()),
+        Some(1_420_070_400_000)
+    );
     // The largest snowflake is in the year 2155.
     assert!(snowflake_time("18446744073709551615").is_some());
     for text in ["", "abc", "-1", "+1", "1.5", "18446744073709551616", " 1"] {
@@ -72,7 +109,10 @@ fn ids_order_as_the_numbers_they_are() {
     assert_eq!(compare_ids("9", "10"), Less);
     assert_eq!(compare_ids("1000", "999"), Greater);
     assert_eq!(compare_ids("0007", "7"), Equal);
-    assert_eq!(compare_ids("18446744073709551615", "18446744073709551614"), Greater);
+    assert_eq!(
+        compare_ids("18446744073709551615", "18446744073709551614"),
+        Greater
+    );
     // Not numbers: by length, then by text.
     assert_eq!(compare_ids("abc", "ab"), Greater);
     assert_eq!(compare_ids("abc", "abd"), Less);
@@ -89,7 +129,17 @@ fn permission_bits_are_digits_that_fit_sixty_four_bits_or_nothing() {
     assert_eq!(permission_bits("18446744073709551615"), u64::MAX);
     assert_eq!(permission_bits("0001024"), 1024);
     for text in [
-        "", "-1", "+1024", " 1024", "1024 ", "1e3", "1.0", "0x400", "18446744073709551616", "1_024", "\u{0661}",
+        "",
+        "-1",
+        "+1024",
+        " 1024",
+        "1024 ",
+        "1e3",
+        "1.0",
+        "0x400",
+        "18446744073709551616",
+        "1_024",
+        "\u{0661}",
         "1024\n",
     ] {
         assert_eq!(permission_bits(text), 0, "{text:?}");
@@ -125,7 +175,12 @@ fn channel(overwrites: Vec<PermissionOverwriteSnapshot>) -> ChannelSnapshot {
     }
 }
 
-fn overwrite(target: OverwriteTarget, id: &str, allow: &str, deny: &str) -> PermissionOverwriteSnapshot {
+fn overwrite(
+    target: OverwriteTarget,
+    id: &str,
+    allow: &str,
+    deny: &str,
+) -> PermissionOverwriteSnapshot {
     PermissionOverwriteSnapshot {
         target,
         target_id: id.into(),
@@ -157,14 +212,24 @@ fn only_the_view_channel_bit_decides_and_every_bit_is_tried() {
             "all but bit {bit}"
         );
         // In an overwrite that denies: only the view bit hides.
-        let deny = channel(vec![overwrite(OverwriteTarget::Role, "100", "0", &single.to_string())]);
+        let deny = channel(vec![overwrite(
+            OverwriteTarget::Role,
+            "100",
+            "0",
+            &single.to_string(),
+        )]);
         assert_eq!(
             hidden_from_everyone(&deny, Some(&everyone(VIEW_CHANNEL))),
             sees,
             "deny, bit {bit}"
         );
         // In an overwrite that allows: only the view bit shows.
-        let allow = channel(vec![overwrite(OverwriteTarget::Role, "100", &single.to_string(), "0")]);
+        let allow = channel(vec![overwrite(
+            OverwriteTarget::Role,
+            "100",
+            &single.to_string(),
+            "0",
+        )]);
         assert_eq!(
             hidden_from_everyone(&allow, Some(&everyone(0))),
             !sees,
@@ -183,15 +248,27 @@ fn an_allow_beats_a_deny_and_only_the_everyone_role_counts() {
 
     assert!(!hidden_from_everyone(&channel(vec![]), Some(&granted)));
     assert!(hidden_from_everyone(&channel(vec![]), Some(&not_granted)));
-    assert!(hidden_from_everyone(&channel(vec![denies.clone()]), Some(&granted)));
-    assert!(!hidden_from_everyone(&channel(vec![allows.clone()]), Some(&not_granted)));
+    assert!(hidden_from_everyone(
+        &channel(vec![denies.clone()]),
+        Some(&granted)
+    ));
+    assert!(!hidden_from_everyone(
+        &channel(vec![allows.clone()]),
+        Some(&not_granted)
+    ));
     assert!(!hidden_from_everyone(&channel(vec![both]), Some(&granted)));
-    assert!(!hidden_from_everyone(&channel(vec![both_swapped()]), Some(&granted)));
+    assert!(!hidden_from_everyone(
+        &channel(vec![both_swapped()]),
+        Some(&granted)
+    ));
 
     // Another role's or a member's overwrite does not hide the channel from everyone.
     let other_role = overwrite(OverwriteTarget::Role, "200", "0", "1024");
     let member = overwrite(OverwriteTarget::Member, "100", "0", "1024");
-    assert!(!hidden_from_everyone(&channel(vec![other_role, member]), Some(&granted)));
+    assert!(!hidden_from_everyone(
+        &channel(vec![other_role, member]),
+        Some(&granted)
+    ));
 
     // Without the role every member has, nothing can be said to be hidden.
     assert!(!hidden_from_everyone(&channel(vec![denies]), None));
@@ -204,7 +281,10 @@ fn an_allow_beats_a_deny_and_only_the_everyone_role_counts() {
     assert!(!hidden_from_everyone(&first, Some(&granted)));
 
     // A permission set that cannot be read grants nothing, and denies nothing.
-    assert!(hidden_from_everyone(&channel(vec![]), Some(&role("garbage"))));
+    assert!(hidden_from_everyone(
+        &channel(vec![]),
+        Some(&role("garbage"))
+    ));
     assert!(hidden_from_everyone(&channel(vec![]), Some(&role("-1"))));
     assert!(!hidden_from_everyone(
         &channel(vec![overwrite(OverwriteTarget::Role, "100", "x", "y")]),
