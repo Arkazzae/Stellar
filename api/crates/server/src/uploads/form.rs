@@ -11,7 +11,6 @@
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 
-use stellarr_unicode::to_upper;
 use tokio::fs::File;
 use tokio::io::AsyncWriteExt;
 
@@ -73,7 +72,7 @@ impl Drop for Staged {
 
 /// One file a route asks for.
 pub struct Slot<'a> {
-    /// The name of the form field, in any letter case.
+    /// The name of the form field, exactly.
     pub name: &'a str,
     /// How many bytes of a file of this `Content-Type` are kept, or none when
     /// the file is not wanted at all.
@@ -93,35 +92,23 @@ enum Value {
 }
 
 impl Fields {
-    /// The value of a field, several of the same name joined by commas, as
-    /// the first server joined them. `Err` for one that was too long to be
-    /// anything.
+    /// The value of a field. `Err` for one that was too long to be anything.
     pub fn get(&self, name: &str) -> Option<Result<&str, TooLong>> {
-        self.values.get(&to_upper(name)).map(|value| match value {
+        self.values.get(name).map(|value| match value {
             Value::Text(text) => Ok(text.as_str()),
             Value::TooLong => Err(TooLong),
         })
     }
 
-    fn add(&mut self, name: &str, text: String) {
-        match self.values.entry(to_upper(name)) {
-            std::collections::hash_map::Entry::Vacant(slot) => {
-                slot.insert(if text.len() > VALUE_LIMIT {
-                    Value::TooLong
-                } else {
-                    Value::Text(text)
-                });
-            }
-            std::collections::hash_map::Entry::Occupied(mut slot) => {
-                let joined = match slot.get() {
-                    Value::Text(have) if have.len() + 1 + text.len() <= VALUE_LIMIT => {
-                        Some(format!("{have},{text}"))
-                    }
-                    _ => None,
-                };
-                slot.insert(joined.map_or(Value::TooLong, Value::Text));
-            }
-        }
+    /// Keeps a value; says whether the name had one already, which no field
+    /// of these forms may have twice.
+    fn add(&mut self, name: &str, text: String) -> bool {
+        let value = if text.len() > VALUE_LIMIT {
+            Value::TooLong
+        } else {
+            Value::Text(text)
+        };
+        self.values.insert(name.to_string(), value).is_some()
     }
 }
 
@@ -151,15 +138,18 @@ pub async fn read(
         fields: Fields::default(),
     };
     let mut taken = vec![false; slots.len()];
+    // A file or a field the form carries twice is refused, but only once the
+    // whole body has been read.
+    let mut twice = false;
     while let Some(head) = reader.next_part().await? {
         let disposition = head.disposition()?;
         match disposition.kind {
             Kind::File => {
                 let wanted = slots
                     .iter()
-                    .position(|slot| same_name(&disposition.name, slot.name))
-                    .filter(|at| !taken[*at]);
-                match wanted {
+                    .position(|slot| disposition.name == slot.name);
+                twice |= wanted.is_some_and(|at| taken[at]);
+                match wanted.filter(|at| !taken[*at]) {
                     Some(at) => {
                         taken[at] = true;
                         received.files[at] =
@@ -170,19 +160,18 @@ pub async fn read(
             }
             // Only the values a route reads are kept, so that what a form holds
             // in memory is a few names long however many parts it has.
-            Kind::Field if fields.iter().any(|wanted| same_name(&disposition.name, wanted)) => {
+            Kind::Field if fields.contains(&disposition.name.as_str()) => {
                 let text = value(reader).await?;
-                received.fields.add(&disposition.name, text);
+                twice |= received.fields.add(&disposition.name, text);
             }
             Kind::Field => skip(reader).await?,
             Kind::Other => skip(reader).await?,
         }
     }
+    if twice {
+        return Err(ApiError::bad_request());
+    }
     Ok(received)
-}
-
-fn same_name(sent: &str, wanted: &str) -> bool {
-    to_upper(sent) == to_upper(wanted)
 }
 
 async fn skip(reader: &mut Multipart) -> Result<(), FormError> {

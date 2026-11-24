@@ -1,15 +1,13 @@
 //! Reading the one field of the approval form.
 //!
 //! The page's own form is sent as a browser sends one, URL-encoded, but a
-//! client may also send the other kind of form (`multipart/form-data`), and
-//! the first server read both. What it did with the field is kept: the name is
-//! matched without regard to letter case, a name sent twice is read as the
-//! non-empty values joined with commas, and a request that is not a form at
-//! all, or breaks the limits of one, is a failure of the server's own (500)
-//! and not a refusal. The limits are the first server's (1024 fields, a name of
-//! at most 2048 characters, a value of at most 4 MiB), with one more: the body
-//! is at most [`BODY_LIMIT`], where the first server took tens of megabytes,
-//! since nothing but a token of 43 characters is ever sent.
+//! client may also send the other kind of form (`multipart/form-data`). The
+//! name is matched exactly, a field sent twice is a bad request, and a request
+//! that is not a form at all, or breaks the limits of one, is a failure of the
+//! server's own (500) and not a refusal. The limits are 1024 fields, a name of
+//! at most 2048 characters and a value of at most 4 MiB, and the body is at
+//! most [`BODY_LIMIT`], since nothing but a token of 43 characters is ever
+//! sent.
 
 use axum::body::Body;
 use axum::http::{HeaderMap, header};
@@ -67,14 +65,14 @@ fn limit(what: &str) -> ApiError {
     ApiError::internal(format!("the form breaks a limit: {what}"))
 }
 
-/// What a name sent once or more comes to: the values that are not empty,
-/// joined with commas.
-fn joined(values: Vec<String>) -> String {
-    values
-        .into_iter()
-        .filter(|value| !value.is_empty())
-        .collect::<Vec<_>>()
-        .join(",")
+/// What the field comes to: its value, empty when it was not sent, and a
+/// refusal when it was sent more than once.
+fn single(mut values: Vec<String>) -> Result<String, ApiError> {
+    match values.len() {
+        0 => Ok(String::new()),
+        1 => Ok(values.remove(0)),
+        _ => Err(ApiError::bad_request()),
+    }
 }
 
 fn token_of_urlencoded(body: &[u8]) -> Result<String, ApiError> {
@@ -95,11 +93,11 @@ fn token_of_urlencoded(body: &[u8]) -> Result<String, ApiError> {
         if value.len() > MAX_VALUE {
             return Err(limit("a value is too long"));
         }
-        if decode(name).eq_ignore_ascii_case(FIELD) {
+        if decode(name) == FIELD {
             values.push(decode(value));
         }
     }
-    Ok(joined(values))
+    single(values)
 }
 
 /// A name or a value as a form writes it: a plus is a space, and `%` and two
@@ -152,7 +150,7 @@ async fn token_of_multipart(headers: &HeaderMap, body: Body) -> Result<String, A
         if disposition.name.len() > MAX_NAME {
             return Err(limit("a name is too long"));
         }
-        let wanted = disposition.name.eq_ignore_ascii_case(FIELD);
+        let wanted = disposition.name == FIELD;
         let mut value = Vec::new();
         while let Some(chunk) = form.chunk().await.map_err(failed)? {
             if value.len() + chunk.len() > MAX_VALUE {
@@ -166,7 +164,7 @@ async fn token_of_multipart(headers: &HeaderMap, body: Body) -> Result<String, A
             values.push(String::from_utf8_lossy(&value).into_owned());
         }
     }
-    Ok(joined(values))
+    single(values)
 }
 
 #[cfg(test)]
@@ -191,9 +189,9 @@ mod tests {
     const URL: &str = "application/x-www-form-urlencoded";
 
     #[tokio::test]
-    async fn the_field_is_found_by_any_spelling_of_its_name_and_value() {
+    async fn the_field_is_found_by_its_exact_name_and_any_spelling_of_its_value() {
         assert_eq!(token(URL, "token=abc").await.unwrap(), "abc");
-        assert_eq!(token(URL, "TOKEN=abc").await.unwrap(), "abc");
+        assert_eq!(token(URL, "TOKEN=abc").await.unwrap(), "");
         assert_eq!(token(URL, "t%6Fken=a%2Db+c").await.unwrap(), "a-b c");
         assert_eq!(token(URL, "x=1&token=abc&y=2").await.unwrap(), "abc");
         assert_eq!(token(URL, "a=1;token=abc").await.unwrap(), "");
@@ -205,15 +203,20 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn a_name_sent_twice_is_read_as_its_values_joined_without_the_empty_ones() {
-        assert_eq!(token(URL, "token=a&token=b").await.unwrap(), "a,b");
-        assert_eq!(token(URL, "token=&token=b").await.unwrap(), "b");
+    async fn a_field_sent_twice_is_refused() {
+        for body in ["token=a&token=b", "token=&token=b", "token=a&token="] {
+            let refused = token(URL, body).await.unwrap_err();
+            assert!(
+                matches!(refused, ApiError::Status(status) if status == axum::http::StatusCode::BAD_REQUEST),
+                "{body}"
+            );
+        }
         assert_eq!(token(URL, "token=a&Token=").await.unwrap(), "a");
     }
 
     #[tokio::test]
     async fn a_multipart_form_is_read_and_its_files_are_not_fields() {
-        let body = "--B\r\nContent-Disposition: form-data; name=\"token\"; filename=\"t.txt\"\r\n\r\nfile\r\n--B\r\nContent-Disposition: form-data; name=\"x\"\r\n\r\n1\r\n--B\r\nContent-Disposition: form-data; name=\"Token\"\r\n\r\nabc\r\n--B--\r\n";
+        let body = "--B\r\nContent-Disposition: form-data; name=\"token\"; filename=\"t.txt\"\r\n\r\nfile\r\n--B\r\nContent-Disposition: form-data; name=\"x\"\r\n\r\n1\r\n--B\r\nContent-Disposition: form-data; name=\"token\"\r\n\r\nabc\r\n--B--\r\n";
         assert_eq!(
             token("multipart/form-data; boundary=B", body).await.unwrap(),
             "abc"

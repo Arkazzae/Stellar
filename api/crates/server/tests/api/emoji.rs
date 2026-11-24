@@ -326,9 +326,9 @@ async fn a_form_that_cannot_be_read_is_a_bad_request_and_another_kind_of_body_is
         [400, 400, 400, 400, 415, 400],
         "the form is read before anybody is asked whether they may"
     );
-    // Two values of a field are one, joined by a comma, which is no name.
+    // A field named twice is refused, and a name in another case is no name.
     assert_eq!(named_twice.status, 400);
-    assert_eq!(any_case.status, 201, "{}", any_case.text());
+    assert_eq!(any_case.status, 400, "{}", any_case.text());
 }
 
 #[tokio::test]

@@ -565,7 +565,7 @@ async fn a_post_that_does_not_carry_the_right_token_from_the_right_session_is_an
         "token=abc".to_string(),
         format!("token={wrong}"),
         format!("token={long}"),
-        format!("token={token}&token={token}"),
+        format!("TOKEN={token}"),
         format!("other={token}"),
         format!("token={token}x"),
         format!("token=%20{token}"),
@@ -632,7 +632,7 @@ async fn a_post_from_another_site_is_refused_before_anything_is_read_and_costs_n
 }
 
 #[tokio::test]
-async fn a_form_may_come_in_the_spellings_the_first_server_read() {
+async fn a_form_may_come_in_the_spellings_a_browser_writes_and_a_field_twice_is_refused() {
     let (server, maja) = with_provider().await;
     let own = format!("http://{}", server.address());
     let many = (0..1023).map(|i| format!("f{i}=1")).collect::<Vec<_>>().join("&");
@@ -640,9 +640,7 @@ async fn a_form_may_come_in_the_spellings_the_first_server_read() {
         format!("--B\r\nContent-Disposition: form-data; name=\"x\"; filename=\"a\"\r\n\r\nzz\r\n--B\r\nContent-Disposition: form-data; name=\"token\"\r\n\r\n{t}\r\n--B--\r\n")
     };
     let spellings: Vec<Spelling> = vec![
-        ("a name in capitals", FORM, Box::new(|t| format!("TOKEN={t}"))),
         ("percent-encoded", FORM, Box::new(|t| format!("t%6Fken={}", t.replace('-', "%2D").replace('_', "%5F")))),
-        ("an empty one before it", FORM, Box::new(|t| format!("token=&token={t}"))),
         ("a charset", "application/x-www-form-urlencoded; charset=utf-8", Box::new(|t| format!("token={t}"))),
         ("1024 fields", FORM, Box::new(move |t| format!("{many}&token={t}"))),
         ("multipart, a file before it", "multipart/form-data; boundary=B", Box::new(file_first)),
@@ -654,6 +652,19 @@ async fn a_form_may_come_in_the_spellings_the_first_server_read() {
             .header("Origin", &own)
             .body(content_type, &make(&token));
         assert_eq!(maja.client.send(request).await.status, 200, "{name}");
+    }
+    // The field twice, even with an empty one, is no form.
+    for make in [
+        (|t: &str| format!("token={t}&token={t}")) as fn(&str) -> String,
+        |t| format!("token=&token={t}"),
+        |t| format!("token={t}&token="),
+    ] {
+        let started = start(&server).await;
+        let token = look(&maja.client, &started.id).await;
+        let request = Request::new(Method::POST, &page_of(&started.id))
+            .header("Origin", &own)
+            .body(FORM, &make(&token));
+        assert_eq!(maja.client.send(request).await.status, 400);
     }
 }
 
