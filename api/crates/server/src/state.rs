@@ -20,6 +20,7 @@ use crate::mail::MailDelivery;
 use crate::realtime::Realtime;
 use crate::seal::Sealer;
 use crate::settings::Settings;
+use crate::voice::Voice;
 
 #[derive(Clone)]
 pub struct AppState {
@@ -43,6 +44,7 @@ struct Inner {
     storage: Arc<dyn ObjectStorage>,
     admission: AdmissionGate,
     previews: PreviewQueue,
+    voice: Voice,
 }
 
 impl AppState {
@@ -59,6 +61,7 @@ impl AppState {
                 admission: AdmissionGate::new(&settings.uploads, settings.data_root.clone()),
                 messages: settings.messages(),
                 pin_attempts: AttemptLimiter::for_pin_unlock(&settings.rate_limits),
+                voice: Voice::new(&settings),
                 settings,
                 database,
                 events,
@@ -162,6 +165,12 @@ impl AppState {
     /// The messages whose links wait for their cards.
     pub fn previews(&self) -> &PreviewQueue {
         &self.inner.previews
+    }
+
+    /// The media plane's memory: the client of the media server and the
+    /// gates of voice; see [`crate::voice`].
+    pub fn voice(&self) -> &Voice {
+        &self.inner.voice
     }
 
     /// The code the owner account is created with, while there is none.

@@ -203,7 +203,7 @@ async fn a_method_nobody_has_registered_is_answered_as_one_that_does_not_exist()
     let mut client = connect(&server, &owner).await;
     settle(&mut client, &owner).await;
 
-    for method in ["NoSuchMethod", "JoinVoice", "OpenMediaSession", "PlaySoundboard"] {
+    for method in ["NoSuchMethod"] {
         let answer = client.invoke(method, json!([])).await;
         assert_eq!(
             answer["error"],

@@ -482,6 +482,12 @@ impl PresenceTracker {
         }
     }
 
+    /// Has the media server told to close a session no seat holds, as one
+    /// that was created while its seat ended.
+    pub fn close_session(&self, session: MediaSession) {
+        queue_close(&mut self.state(), session);
+    }
+
     /// The oldest media session that waits to be closed, left in the queue
     /// until [`finish_close`](Self::finish_close) says it is done.
     pub fn next_close(&self) -> Option<MediaSession> {
