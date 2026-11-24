@@ -9,7 +9,10 @@
 
 use rusqlite::{OptionalExtension, Transaction};
 
+use super::ceremony::{Ask, Own, open};
 use super::email_codes::{self, Reservation};
+use super::flow::ChallengeStatus;
+use super::mfa;
 use super::policy::SecurityPolicy;
 use crate::database::DbError;
 use crate::mail::{self, MailSetup, Outcome, setup};
@@ -17,6 +20,7 @@ use crate::state::AppState;
 use crate::values::{Id, Timestamp};
 
 /// What asking for a code to be mailed came to.
+#[must_use]
 #[derive(Debug, PartialEq, Eq)]
 pub enum Sent {
     /// The mail was taken by the provider; the code works now.
@@ -31,15 +35,86 @@ pub enum Sent {
     /// The mail was not taken. The code is spent, and counts towards the
     /// cooldown and the hourly limit.
     DeliveryFailed,
+    /// The challenge cannot be used.
+    Invalid(ChallengeStatus),
 }
 
-/// Reserves a code as `reserve` says (a call of `mfa::request_login_email_code`
-/// or `mfa::start_email_enrollment`, or `email_codes::reserve` itself; `None`
-/// means the account or the method cannot have one), mails it to the account
-/// and marks it. The account's name is read for the greeting.
-pub async fn send<F>(state: &AppState, user: Id, reserve: F) -> Result<Sent, DbError>
+/// What the reserving step found.
+pub(super) enum Attempt {
+    Reserved { user: Id, reservation: Reservation },
+    Unavailable,
+    Invalid(ChallengeStatus),
+}
+
+/// Mails the code of a sign-in's second step for one of the account's mail
+/// methods.
+pub(super) async fn login_code(
+    state: &AppState,
+    ask: &Ask<'_>,
+    method: Option<Id>,
+) -> Result<Sent, DbError> {
+    let own = Own::of(ask);
+    let sealer_state = state.clone();
+    send_with(state, move |tx, policy, now| {
+        let challenge = match open(tx, &own, mfa::answers_with_a_code, now)? {
+            Ok(challenge) => challenge,
+            Err(status) => return Ok(Attempt::Invalid(status)),
+        };
+        let Some(method) = method else {
+            return Ok(Attempt::Unavailable);
+        };
+        Ok(
+            match mfa::request_login_email_code(
+                tx,
+                sealer_state.sealer(),
+                &challenge,
+                method,
+                policy,
+                now,
+            )? {
+                Some(reservation) => Attempt::Reserved {
+                    user: challenge.user,
+                    reservation,
+                },
+                None => Attempt::Unavailable,
+            },
+        )
+    })
+    .await
+}
+
+/// Mails the code that proves the account's address, to add it as a second
+/// step.
+pub(super) async fn enrollment_code(state: &AppState, ask: &Ask<'_>) -> Result<Sent, DbError> {
+    enrollment_code_own(state, Own::of(ask)).await
+}
+
+async fn enrollment_code_own(state: &AppState, own: Own) -> Result<Sent, DbError> {
+    let sealer_state = state.clone();
+    send_with(state, move |tx, policy, now| {
+        let challenge = match open(tx, &own, mfa::enrols, now)? {
+            Ok(challenge) => challenge,
+            Err(status) => return Ok(Attempt::Invalid(status)),
+        };
+        Ok(
+            match mfa::start_email_enrollment(tx, sealer_state.sealer(), &challenge, policy, now)? {
+                Some(reservation) => Attempt::Reserved {
+                    user: challenge.user,
+                    reservation,
+                },
+                None => Attempt::Unavailable,
+            },
+        )
+    })
+    .await
+}
+
+/// Looks whether mail can be sent, reserves the code as `reserve` says (in
+/// the transaction it runs in, which also reads the challenge), commits,
+/// mails it and marks the row.
+pub(super) async fn send_with<F>(state: &AppState, reserve: F) -> Result<Sent, DbError>
 where
-    F: FnOnce(&Transaction, &SecurityPolicy, Timestamp) -> Result<Option<Reservation>, DbError>
+    F: FnOnce(&Transaction, &SecurityPolicy, Timestamp) -> Result<Attempt, DbError>
         + Send
         + 'static,
 {
@@ -52,28 +127,37 @@ where
         .database()
         .write(move |tx| -> Result<_, DbError> {
             let policy = SecurityPolicy::load(tx)?;
-            let name: Option<String> = tx
-                .query_row(
-                    "SELECT \"DisplayName\" FROM \"Users\" WHERE \"Id\" = ?1",
-                    [user],
-                    |row| row.get(0),
-                )
-                .optional()?;
-            Ok((reserve(tx, &policy, Timestamp::now())?, name, policy))
+            let attempt = reserve(tx, &policy, Timestamp::now())?;
+            let name: Option<String> = match &attempt {
+                Attempt::Reserved { user, .. } => tx
+                    .query_row(
+                        "SELECT \"DisplayName\" FROM \"Users\" WHERE \"Id\" = ?1",
+                        [*user],
+                        |row| row.get(0),
+                    )
+                    .optional()?,
+                _ => None,
+            };
+            Ok((attempt, name))
         })
         .await?;
-    let (reservation, name, _policy) = reserved;
+    let (attempt, name) = reserved;
+    let reservation = match attempt {
+        Attempt::Invalid(status) => return Ok(Sent::Invalid(status)),
+        Attempt::Unavailable => return Ok(Sent::Unavailable),
+        Attempt::Reserved { reservation, .. } => reservation,
+    };
     let code = match reservation {
-        None | Some(Reservation::Unavailable) => return Ok(Sent::Unavailable),
-        Some(Reservation::Cooldown {
+        Reservation::Unavailable => return Ok(Sent::Unavailable),
+        Reservation::Cooldown {
             retry_after_seconds,
-        }) => {
+        } => {
             return Ok(Sent::Cooldown {
                 retry_after_seconds,
             });
         }
-        Some(Reservation::Limit) => return Ok(Sent::Limit),
-        Some(Reservation::Reserved(code)) => code,
+        Reservation::Limit => return Ok(Sent::Limit),
+        Reservation::Reserved(code) => code,
     };
     let minutes = u32::try_from(code.lifetime_minutes).unwrap_or(1);
     let id = u128::from_be_bytes(*code.id.as_bytes());
@@ -115,7 +199,7 @@ mod tests {
     use rusqlite::params;
 
     use super::*;
-    use crate::auth::email_codes::{ENROLLMENT, Scope};
+    use crate::auth::email_codes::ENROLLMENT;
     use crate::mail::tests::support::{Behaviour, FakeSmtp, Saved, found, instance};
 
     async fn account(state: &AppState) -> Id {
@@ -135,26 +219,29 @@ mod tests {
         user
     }
 
-    fn ask(
-        user: Id,
-    ) -> impl FnOnce(
-        &Transaction,
-        &SecurityPolicy,
-        Timestamp,
-    ) -> Result<Option<Reservation>, DbError>
-    + Send
-    + 'static {
-        move |tx, policy, now| {
-            let scope = Scope {
-                user,
-                challenge: Id::from_bytes([3; 16]),
-                purpose: ENROLLMENT,
-                method: None,
-                address: "maya@example.test",
-            };
-            let sealer = crate::seal::Sealer::from_key([5u8; 32]);
-            email_codes::reserve(tx, &sealer, &scope, policy, now).map(Some)
-        }
+    /// A challenge of an enrolment of the account, in the state's database.
+    fn challenge_of(state: &AppState, user: Id) -> Own {
+        let connection = rusqlite::Connection::open(state.database().path()).unwrap();
+        let challenge = crate::auth::fixtures::add_challenge(&connection, user, ENROLLMENT);
+        let preauth = crate::auth::fixtures::preauth_of(&challenge);
+        let context = crate::auth::flow::Context {
+            ip_address: "203.0.113.9",
+            user_agent: "test",
+            https: true,
+            trusted_device_cookie: None,
+            passkeys_available: false,
+        };
+        Own::of(&Ask {
+            context: &context,
+            preauth: Some(&preauth),
+            challenge_id: &challenge.id.to_string(),
+        })
+    }
+
+    async fn ask(state: &AppState, user: Id) -> Sent {
+        enrollment_code_own(state, challenge_of(state, user))
+            .await
+            .unwrap()
     }
 
     fn row(state: &AppState) -> (bool, bool) {
@@ -182,7 +269,7 @@ mod tests {
         .await;
         let user = account(&state).await;
 
-        let sent = send(&state, user, ask(user)).await.unwrap();
+        let sent = ask(&state, user).await;
 
         assert_eq!(sent, Sent::Delivered);
         assert_eq!(row(&state), (true, false));
@@ -222,17 +309,11 @@ mod tests {
         .await;
         let user = account(&state).await;
 
-        assert_eq!(
-            send(&state, user, ask(user)).await.unwrap(),
-            Sent::DeliveryFailed
-        );
+        assert_eq!(ask(&state, user).await, Sent::DeliveryFailed);
 
         assert_eq!(row(&state), (false, true));
         // The code that failed holds the cooldown.
-        assert!(matches!(
-            send(&state, user, ask(user)).await.unwrap(),
-            Sent::Cooldown { .. }
-        ));
+        assert!(matches!(ask(&state, user).await, Sent::Cooldown { .. }));
     }
 
     #[tokio::test]
@@ -248,10 +329,7 @@ mod tests {
         .await;
         let user = account(&state).await;
 
-        assert_eq!(
-            send(&state, user, ask(user)).await.unwrap(),
-            Sent::Unavailable
-        );
+        assert_eq!(ask(&state, user).await, Sent::Unavailable);
 
         let connection = rusqlite::Connection::open(state.database().path()).unwrap();
         let count: i64 = connection
@@ -261,7 +339,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn a_reservation_that_says_no_sends_nothing() {
+    async fn a_challenge_that_cannot_be_used_sends_nothing() {
         let smtp = FakeSmtp::start(Behaviour::default()).await;
         let (_folder, state) = instance(&[]);
         found(
@@ -273,10 +351,12 @@ mod tests {
         )
         .await;
         let user = account(&state).await;
+        let mut own = challenge_of(&state, user);
+        own.break_secret();
 
-        let sent = send(&state, user, |_, _, _| Ok(None)).await.unwrap();
+        let sent = enrollment_code_own(&state, own).await.unwrap();
 
-        assert_eq!(sent, Sent::Unavailable);
+        assert!(matches!(sent, Sent::Invalid(_)), "{sent:?}");
         assert_eq!(smtp.seen().connections, 0);
     }
 }

@@ -12,6 +12,7 @@
 use rusqlite::{Connection, OptionalExtension, Row, Transaction, params};
 
 use super::email_codes;
+use super::flow::StoredChallenge;
 use super::totp;
 use crate::database::DbError;
 use crate::seal::Sealer;
@@ -125,7 +126,7 @@ pub fn count_active_besides(
 /// Begins setting up an authenticator app: a method that is not confirmed
 /// yet, with a new secret sealed for it. The secret comes back to be shown to
 /// the person, once.
-pub fn start_totp(
+pub(super) fn start_totp(
     tx: &Transaction,
     sealer: &Sealer,
     user: Id,
@@ -147,7 +148,12 @@ pub fn start_totp(
 /// The step the code is for, if the method is an authenticator app whose
 /// secret opens and the code is one of its codes for now or the steps next to
 /// it. The step is not spent.
-pub fn totp_step_of(sealer: &Sealer, method: &Method, code: &str, now: Timestamp) -> Option<i64> {
+pub(super) fn totp_step_of(
+    sealer: &Sealer,
+    method: &Method,
+    code: &str,
+    now: Timestamp,
+) -> Option<i64> {
     if method.kind != TOTP {
         return None;
     }
@@ -161,7 +167,7 @@ pub fn totp_step_of(sealer: &Sealer, method: &Method, code: &str, now: Timestamp
 /// Spends a step of an authenticator app: false when it, or a later one, was
 /// spent before, so a code is never accepted twice, and when the method was
 /// revoked or (unless `allow_pending`) was never confirmed.
-pub fn spend_totp_step(
+pub(super) fn spend_totp_step(
     tx: &Transaction,
     user: Id,
     method: Id,
@@ -181,7 +187,7 @@ pub fn spend_totp_step(
 /// Finishes setting up an authenticator app with the first code that was
 /// right: confirms the method, names it, and spends the step. False when the
 /// method is not a pending one of the account, or the step was spent.
-pub fn confirm_totp(
+pub(super) fn confirm_totp(
     tx: &Transaction,
     user: Id,
     method: Id,
@@ -201,13 +207,17 @@ pub fn confirm_totp(
 /// Adds the mail address of the account as a second step, which the person
 /// has just shown they can read. False, and nothing is added, when the account
 /// already has one for the address.
-pub fn add_email(
+pub(super) fn add_email(
     tx: &Transaction,
-    user: Id,
+    challenge: &StoredChallenge,
     normalized_address: &str,
     name: &str,
     now: Timestamp,
 ) -> Result<bool, DbError> {
+    if !super::mfa::enrols(challenge) {
+        return Ok(false);
+    }
+    let user = challenge.user;
     let existing: bool = tx.query_row(
         "SELECT EXISTS (SELECT 1 FROM \"MfaMethods\" WHERE \"UserId\" = ?1 AND \"Type\" = 'email' AND \"EmailAddress\" = ?2 AND \"RevokedAt\" IS NULL)",
         params![user, normalized_address],
@@ -240,7 +250,12 @@ pub fn has_email(
 }
 
 /// Takes a method back. False when the account has no such method in use.
-pub fn revoke(tx: &Transaction, user: Id, method: Id, now: Timestamp) -> Result<bool, DbError> {
+pub(super) fn revoke(
+    tx: &Transaction,
+    user: Id,
+    method: Id,
+    now: Timestamp,
+) -> Result<bool, DbError> {
     let changed = tx.execute(
         "UPDATE \"MfaMethods\" SET \"RevokedAt\" = ?3 WHERE \"Id\" = ?1 AND \"UserId\" = ?2 AND \"RevokedAt\" IS NULL",
         params![method, user, now],
@@ -252,7 +267,7 @@ pub fn revoke(tx: &Transaction, user: Id, method: Id, now: Timestamp) -> Result<
 /// and the codes that were sent for it stop working. Only done when the
 /// method really is stale (checked here, inside the transaction that decides
 /// it), and never for a method of another account.
-pub fn revoke_if_address_changed(
+pub(super) fn revoke_if_address_changed(
     tx: &Transaction,
     user: Id,
     method: Id,
@@ -493,10 +508,11 @@ mod tests {
         let (_folder, mut connection) = open();
         let user = add_user(&connection, Some("maya@example.test"));
         let now = Timestamp::now();
+        let enrolling = crate::auth::fixtures::add_challenge(&connection, user, "enrollment");
         let tx = connection.transaction().unwrap();
 
-        assert!(add_email(&tx, user, "MAYA@EXAMPLE.TEST", "Mail", now).unwrap());
-        assert!(!add_email(&tx, user, "MAYA@EXAMPLE.TEST", "Again", now).unwrap());
+        assert!(add_email(&tx, &enrolling, "MAYA@EXAMPLE.TEST", "Mail", now).unwrap());
+        assert!(!add_email(&tx, &enrolling, "MAYA@EXAMPLE.TEST", "Again", now).unwrap());
         tx.commit().unwrap();
 
         assert!(has_email(&connection, user, "MAYA@EXAMPLE.TEST").unwrap());
@@ -519,7 +535,7 @@ mod tests {
             .unwrap();
         let tx = connection.transaction().unwrap();
         assert!(revoke(&tx, user, id, now).unwrap());
-        assert!(add_email(&tx, user, "MAYA@EXAMPLE.TEST", "Mail", now).unwrap());
+        assert!(add_email(&tx, &enrolling, "MAYA@EXAMPLE.TEST", "Mail", now).unwrap());
     }
 
     #[test]

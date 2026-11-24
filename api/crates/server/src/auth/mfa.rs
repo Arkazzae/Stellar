@@ -87,6 +87,7 @@ impl Proof {
 
 /// What a request to answer a challenge came to.
 #[derive(Debug, PartialEq, Eq)]
+#[must_use]
 pub enum Outcome {
     Proved(Proof),
     /// Wrong. An attempt of the challenge was spent and an event written.
@@ -99,6 +100,8 @@ pub enum Outcome {
     WrongChallenge,
     /// The method asked for is not there for this challenge (a 409).
     MethodUnavailable,
+    /// No code was sent (a validation problem; nothing was spent).
+    EmptyCode,
 }
 
 /// Challenges that wait for a second step the person already has.
@@ -108,7 +111,7 @@ pub fn answers_with_a_code(challenge: &StoredChallenge) -> bool {
 
 /// Challenges that let a person add a second step.
 pub fn enrols(challenge: &StoredChallenge) -> bool {
-    challenge.purpose == PURPOSE_ENROLLMENT || challenge.purpose == "recovery"
+    challenge.purpose == PURPOSE_ENROLLMENT || challenge.purpose == super::flow::PURPOSE_RECOVERY
 }
 
 /// What the account has as an address: the one it was written with, trimmed,
@@ -144,21 +147,32 @@ impl Address {
 
 /// Spends an attempt of the challenge for a proof that was wrong, and writes
 /// what was tried to the account's events.
-pub fn refuse(
+pub(super) fn refuse(
     tx: &Transaction,
     context: &Context<'_>,
     challenge: &StoredChallenge,
     tried: &str,
     now: Timestamp,
 ) -> Result<Outcome, DbError> {
-    flow::fail_attempt(tx, challenge.id, now)?;
-    events::record_from(tx, context, challenge.user, events::MFA_FAILED, tried, None)?;
+    record_failure(tx, context, challenge, tried, now)?;
     Ok(Outcome::Refused)
+}
+
+/// What a wrong proof costs: an attempt of the challenge and an event.
+pub(super) fn record_failure(
+    tx: &Transaction,
+    context: &Context<'_>,
+    challenge: &StoredChallenge,
+    tried: &str,
+    now: Timestamp,
+) -> Result<(), DbError> {
+    flow::fail_attempt(tx, challenge.id, now)?;
+    events::record_from(tx, context, challenge.user, events::MFA_FAILED, tried, None)
 }
 
 /// Checks what was sent to answer a challenge of a sign-in or of a fresh
 /// proof, and spends it if it was right.
-pub fn verify(
+pub(super) fn verify(
     tx: &Transaction,
     sealer: &Sealer,
     context: &Context<'_>,
@@ -185,6 +199,7 @@ pub fn verify(
     }
     match request {
         Request::TrustedDevice => verify_trusted_device(tx, context, challenge, now),
+        Request::Code { code, .. } if code.is_empty() => Ok(Outcome::EmptyCode),
         Request::Code {
             method: Some(method),
             code,
@@ -292,7 +307,7 @@ fn verify_method(
 /// Asks for a code to be mailed for a method of a sign-in. `None` when the
 /// method is not an e-mail method of the account that is in use, or the
 /// account's address is not the one it was made for.
-pub fn request_login_email_code(
+pub(super) fn request_login_email_code(
     tx: &Transaction,
     sealer: &Sealer,
     challenge: &StoredChallenge,
@@ -332,7 +347,7 @@ pub fn request_login_email_code(
 
 /// Asks for a code to be mailed to prove the address, to add it as a second
 /// step. `None` when the account has no address or already has the step.
-pub fn start_email_enrollment(
+pub(super) fn start_email_enrollment(
     tx: &Transaction,
     sealer: &Sealer,
     challenge: &StoredChallenge,
@@ -369,17 +384,21 @@ pub fn start_email_enrollment(
 
 /// What checking the code that proves an address came to.
 #[derive(Debug, PartialEq, Eq)]
+#[must_use]
 pub enum EmailEnrollment {
     /// The code was right; [`finish_email_enrollment`] adds the step.
-    Checked(email_codes::Proof, String),
+    /// The proof, the address as it is compared, and as the account has it.
+    Checked(email_codes::Proof, String, String),
     Refused,
     TooManyFailures,
     /// The account has no address.
     Unavailable,
+    /// The challenge does not let a second step be added.
+    WrongChallenge,
 }
 
 /// Checks the code that was mailed to prove an address.
-pub fn check_email_enrollment(
+pub(super) fn check_email_enrollment(
     tx: &Transaction,
     sealer: &Sealer,
     context: &Context<'_>,
@@ -387,6 +406,9 @@ pub fn check_email_enrollment(
     code: &str,
     now: Timestamp,
 ) -> Result<EmailEnrollment, DbError> {
+    if !enrols(challenge) {
+        return Ok(EmailEnrollment::WrongChallenge);
+    }
     let account = Address::of(tx, challenge.user)?;
     let (Some(address), Some(normalized)) = (account.written, account.normalized) else {
         return Ok(EmailEnrollment::Unavailable);
@@ -402,9 +424,9 @@ pub fn check_email_enrollment(
         address: &address,
     };
     match email_codes::check(tx, sealer, &scope, code, now)? {
-        Some(checked) => Ok(EmailEnrollment::Checked(checked, normalized)),
+        Some(checked) => Ok(EmailEnrollment::Checked(checked, normalized, address)),
         None => {
-            refuse(tx, context, challenge, "email-enrollment", now)?;
+            record_failure(tx, context, challenge, "email-enrollment", now)?;
             Ok(EmailEnrollment::Refused)
         }
     }
@@ -414,14 +436,18 @@ pub fn check_email_enrollment(
 /// the address changed since, the account already has the step, or the code was
 /// spent by another request; nothing is added then, and the route answers that
 /// the challenge is no longer valid.
-pub fn finish_email_enrollment(
+pub(super) fn finish_email_enrollment(
     tx: &Transaction,
-    user: Id,
+    challenge: &StoredChallenge,
     checked: &email_codes::Proof,
     normalized: &str,
     name: &str,
     now: Timestamp,
 ) -> Result<bool, DbError> {
+    if !enrols(challenge) {
+        return Ok(false);
+    }
+    let user = challenge.user;
     let account = Address::of(tx, user)?;
     if account.normalized.as_deref() != Some(normalized) {
         return Ok(false);
@@ -429,26 +455,30 @@ pub fn finish_email_enrollment(
     if mfa_methods::has_email(tx, user, normalized)? || !email_codes::consume(tx, checked, now)? {
         return Ok(false);
     }
-    mfa_methods::add_email(tx, user, normalized, name, now)
+    mfa_methods::add_email(tx, challenge, normalized, name, now)
 }
 
 /// Starts adding an authenticator app: the method, the secret to show once and
 /// the address a QR code carries.
-pub fn start_totp_enrollment(
+pub(super) fn start_totp_enrollment(
     tx: &Transaction,
     sealer: &Sealer,
-    user: Id,
+    challenge: &StoredChallenge,
     username: &str,
     name: &str,
     now: Timestamp,
-) -> Result<(Id, String, String), DbError> {
-    let (method, secret) = mfa_methods::start_totp(tx, sealer, user, name, now)?;
+) -> Result<Option<(Id, String, String)>, DbError> {
+    if !enrols(challenge) {
+        return Ok(None);
+    }
+    let (method, secret) = mfa_methods::start_totp(tx, sealer, challenge.user, name, now)?;
     let uri = super::totp::otpauth_uri(ISSUER, username, &secret);
-    Ok((method, secret, uri))
+    Ok(Some((method, secret, uri)))
 }
 
 /// What the first code of an authenticator app came to.
 #[derive(Debug, PartialEq, Eq)]
+#[must_use]
 pub enum TotpEnrollment {
     /// The method is confirmed and the code's step spent.
     Confirmed,
@@ -459,6 +489,8 @@ pub enum TotpEnrollment {
     Refused,
     /// The code was right but was spent by another request first.
     Lost,
+    /// The challenge does not let a second step be added.
+    WrongChallenge,
 }
 
 /// The first code of an authenticator app, and what the person called it.
@@ -482,7 +514,7 @@ impl std::fmt::Debug for FirstCode<'_> {
 }
 
 /// Confirms an authenticator app with the first code it shows.
-pub fn confirm_totp_enrollment(
+pub(super) fn confirm_totp_enrollment(
     tx: &Transaction,
     sealer: &Sealer,
     context: &Context<'_>,
@@ -490,6 +522,9 @@ pub fn confirm_totp_enrollment(
     first: FirstCode<'_>,
     now: Timestamp,
 ) -> Result<TotpEnrollment, DbError> {
+    if !enrols(challenge) {
+        return Ok(TotpEnrollment::WrongChallenge);
+    }
     let FirstCode { method, name, code } = first;
     let Some(pending) = mfa_methods::find_pending(tx, challenge.user, method, TOTP)? else {
         return Ok(TotpEnrollment::Unavailable);
@@ -498,7 +533,7 @@ pub fn confirm_totp_enrollment(
         return Ok(TotpEnrollment::TooManyFailures);
     }
     let Some(step) = mfa_methods::totp_step_of(sealer, &pending, code, now) else {
-        refuse(tx, context, challenge, "totp-enrollment", now)?;
+        record_failure(tx, context, challenge, "totp-enrollment", now)?;
         return Ok(TotpEnrollment::Refused);
     };
     let name = name.unwrap_or(&pending.name);
@@ -711,7 +746,7 @@ mod tests {
         let challenge = add_challenge(&connection, user, PURPOSE_MFA);
 
         for _ in 0..5 {
-            run(
+            let _ = run(
                 &mut connection,
                 &challenge,
                 code(Some(method), "000000"),
@@ -1291,7 +1326,9 @@ mod tests {
         let now = at(1_800_000_000);
         let tx = connection.transaction().unwrap();
         let (method, secret, uri) =
-            start_totp_enrollment(&tx, &sealer(), user, "maya", "Phone", now).unwrap();
+            start_totp_enrollment(&tx, &sealer(), &challenge, "maya", "Phone", now)
+                .unwrap()
+                .unwrap();
         tx.commit().unwrap();
         assert_eq!(
             uri,
@@ -1360,7 +1397,9 @@ mod tests {
         let now = at(1_800_000_000);
         let tx = connection.transaction().unwrap();
         let (method, secret, _) =
-            start_totp_enrollment(&tx, &sealer(), user, "maya", "Phone", now).unwrap();
+            start_totp_enrollment(&tx, &sealer(), &challenge, "maya", "Phone", now)
+                .unwrap()
+                .unwrap();
         // A step later than the one the code is for was spent already.
         tx.execute(
             "UPDATE \"MfaMethods\" SET \"LastTotpStep\" = ?2 WHERE \"Id\" = ?1",
@@ -1394,7 +1433,9 @@ mod tests {
         let now = Timestamp::now();
         let tx = connection.transaction().unwrap();
         let (method, secret, _) =
-            start_totp_enrollment(&tx, &sealer(), user, "maya", "Phone", now).unwrap();
+            start_totp_enrollment(&tx, &sealer(), &challenge, "maya", "Phone", now)
+                .unwrap()
+                .unwrap();
         for _ in 0..10 {
             events::record(&tx, user, events::MFA_FAILED, "", "", "totp", None).unwrap();
         }
@@ -1451,16 +1492,20 @@ mod tests {
         assert_eq!(attempts_of(&connection, challenge.id), (1, false));
 
         let tx = connection.transaction().unwrap();
-        let EmailEnrollment::Checked(checked, normalized) =
+        let EmailEnrollment::Checked(checked, normalized, _) =
             check_email_enrollment(&tx, &sealer(), &context(None), &challenge, &mail.code, now)
                 .unwrap()
         else {
             panic!("the code was right");
         };
         assert_eq!(normalized, "MAYA@EXAMPLE.TEST");
-        assert!(finish_email_enrollment(&tx, user, &checked, &normalized, "Mail", now).unwrap());
+        assert!(
+            finish_email_enrollment(&tx, &challenge, &checked, &normalized, "Mail", now).unwrap()
+        );
         // The code is spent with the step, so it cannot add a second one.
-        assert!(!finish_email_enrollment(&tx, user, &checked, &normalized, "Mail", now).unwrap());
+        assert!(
+            !finish_email_enrollment(&tx, &challenge, &checked, &normalized, "Mail", now).unwrap()
+        );
         tx.commit().unwrap();
         assert!(mfa_methods::has_email(&connection, user, "MAYA@EXAMPLE.TEST").unwrap());
         // An account that has the step is not offered it again.
@@ -1492,7 +1537,7 @@ mod tests {
             panic!("a code was expected");
         };
         email_codes::mark_delivered(&tx, mail.id, now).unwrap();
-        let EmailEnrollment::Checked(checked, normalized) =
+        let EmailEnrollment::Checked(checked, normalized, _) =
             check_email_enrollment(&tx, &sealer(), &context(None), &challenge, &mail.code, now)
                 .unwrap()
         else {
@@ -1500,7 +1545,9 @@ mod tests {
         };
         tx.execute("UPDATE \"Users\" SET \"Email\" = 'new@example.test', \"NormalizedEmail\" = 'NEW@EXAMPLE.TEST' WHERE \"Id\" = ?1", [user]).unwrap();
 
-        assert!(!finish_email_enrollment(&tx, user, &checked, &normalized, "Mail", now).unwrap());
+        assert!(
+            !finish_email_enrollment(&tx, &challenge, &checked, &normalized, "Mail", now).unwrap()
+        );
         assert!(!mfa_methods::has_email(&tx, user, &normalized).unwrap());
     }
 
@@ -1544,14 +1591,16 @@ mod tests {
             panic!("a code was expected");
         };
         email_codes::mark_delivered(&tx, mail.id, now).unwrap();
-        let EmailEnrollment::Checked(checked, normalized) =
+        let EmailEnrollment::Checked(checked, normalized, _) =
             check_email_enrollment(&tx, &sealer(), &context(None), &challenge, &mail.code, now)
                 .unwrap()
         else {
             panic!("the code was right");
         };
 
-        assert!(!finish_email_enrollment(&tx, user, &checked, &normalized, "Again", now).unwrap());
+        assert!(
+            !finish_email_enrollment(&tx, &challenge, &checked, &normalized, "Again", now).unwrap()
+        );
 
         let consumed: bool = tx
             .query_row(

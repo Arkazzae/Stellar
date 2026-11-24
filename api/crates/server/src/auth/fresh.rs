@@ -80,11 +80,15 @@ pub fn refusal(messages: &Messages) -> Result<Problem, MissingValue> {
 /// account that has a second step.
 pub fn can_change_security(
     connection: &Connection,
-    user: &User,
+    user: Id,
     session: Option<Id>,
     password_proves: impl FnOnce() -> bool,
     now: Timestamp,
 ) -> rusqlite::Result<bool> {
+    // The account is read here, in the transaction the question is asked in.
+    let Some(user) = User::find(connection, user)? else {
+        return Ok(false);
+    };
     if user.is_disabled || user.security_recovery_required {
         return Ok(false);
     }
@@ -92,22 +96,50 @@ pub fn can_change_security(
         return Ok(false);
     };
     let since = now.minus(FRESH_SECOND_STEP_WINDOW);
-    let current: Option<(Timestamp, Option<Timestamp>)> = connection
-        .query_row(
-            "SELECT COALESCE(\"AuthenticatedAt\", \"CreatedAt\"), \"MfaCompletedAt\" FROM \"UserSessions\"
-             WHERE \"Id\" = ?1 AND \"UserId\" = ?2 AND \"RevokedAt\" IS NULL AND \"ExpiresAt\" > ?3
-               AND \"AbsoluteExpiresAt\" > ?3 AND \"SecurityVersion\" = ?4",
-            params![session, user.id, now, user.session_version],
-            |row| Ok((row.get(0)?, row.get(1)?)),
-        )
-        .optional()?;
-    let Some((signed_in_at, second_step_at)) = current else {
+    let Some(current) = current_session(connection, &user, session, now)? else {
         return Ok(false);
     };
     if has_confirmed_method(connection, user.id)? {
-        return Ok(second_step_at.is_some_and(|at| at >= since));
+        return Ok(current.mfa_completed_at.is_some_and(|at| at >= since));
     }
-    Ok(signed_in_at >= since || password_proves())
+    Ok(current.authenticated_at >= since || password_proves())
+}
+
+/// A session that is in good standing, as it stands.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct CurrentSession {
+    pub primary_source: String,
+    pub short_lived: bool,
+    /// When the person last proved who they are, by any proof.
+    pub authenticated_at: Timestamp,
+    /// When the session last passed a real second step.
+    pub mfa_completed_at: Option<Timestamp>,
+}
+
+/// The session of the account, if it is still good: not revoked, not ended,
+/// not past its absolute end, and of the version the account is at.
+pub fn current_session(
+    connection: &Connection,
+    user: &User,
+    session: Id,
+    now: Timestamp,
+) -> rusqlite::Result<Option<CurrentSession>> {
+    connection
+        .query_row(
+            "SELECT \"PrimarySource\", \"ShortLived\", COALESCE(\"AuthenticatedAt\", \"CreatedAt\"), \"MfaCompletedAt\" FROM \"UserSessions\"
+             WHERE \"Id\" = ?1 AND \"UserId\" = ?2 AND \"RevokedAt\" IS NULL AND \"ExpiresAt\" > ?3
+               AND \"AbsoluteExpiresAt\" > ?3 AND \"SecurityVersion\" = ?4",
+            params![session, user.id, now, user.session_version],
+            |row| {
+                Ok(CurrentSession {
+                    primary_source: row.get(0)?,
+                    short_lived: row.get(1)?,
+                    authenticated_at: row.get(2)?,
+                    mfa_completed_at: row.get(3)?,
+                })
+            },
+        )
+        .optional()
 }
 
 #[cfg(test)]
@@ -215,10 +247,6 @@ mod tests {
         );
     }
 
-    fn account(connection: &Connection, user: Id) -> User {
-        User::find(connection, user).unwrap().unwrap()
-    }
-
     #[test]
     fn security_settings_of_an_account_with_a_second_step_need_it_passed_lately_and_never_the_password()
      {
@@ -229,15 +257,14 @@ mod tests {
         let fresh = add_session(&connection, user, ago(now, 60), Some(ago(now, 60)));
         let signed_in_lately = add_session(&connection, user, ago(now, 10), None);
         let stale = add_session(&connection, user, ago(now, 3600), Some(ago(now, 3600)));
-        let user = account(&connection, user);
         let never = || panic!("a password is not asked about when there is a second step");
 
-        assert!(can_change_security(&connection, &user, Some(fresh), never, now).unwrap());
+        assert!(can_change_security(&connection, user, Some(fresh), never, now).unwrap());
         assert!(
-            !can_change_security(&connection, &user, Some(signed_in_lately), never, now).unwrap()
+            !can_change_security(&connection, user, Some(signed_in_lately), never, now).unwrap()
         );
-        assert!(!can_change_security(&connection, &user, Some(stale), never, now).unwrap());
-        assert!(!can_change_security(&connection, &user, None, never, now).unwrap());
+        assert!(!can_change_security(&connection, user, Some(stale), never, now).unwrap());
+        assert!(!can_change_security(&connection, user, None, never, now).unwrap());
     }
 
     #[test]
@@ -247,15 +274,12 @@ mod tests {
         let now = Timestamp::now();
         let recent = add_session(&connection, user, ago(now, 120), None);
         let old = add_session(&connection, user, ago(now, 3600), None);
-        let user = account(&connection, user);
 
-        assert!(can_change_security(&connection, &user, Some(recent), || false, now).unwrap());
-        assert!(!can_change_security(&connection, &user, Some(old), || false, now).unwrap());
-        assert!(can_change_security(&connection, &user, Some(old), || true, now).unwrap());
+        assert!(can_change_security(&connection, user, Some(recent), || false, now).unwrap());
+        assert!(!can_change_security(&connection, user, Some(old), || false, now).unwrap());
+        assert!(can_change_security(&connection, user, Some(old), || true, now).unwrap());
         // Without a session of the account there is nothing to be fresh in.
-        assert!(
-            !can_change_security(&connection, &user, Some(Id::random()), || true, now).unwrap()
-        );
+        assert!(!can_change_security(&connection, user, Some(Id::random()), || true, now).unwrap());
     }
 
     #[test]
@@ -265,14 +289,7 @@ mod tests {
         let now = Timestamp::now();
         let session = add_session(&connection, user, ago(now, 10), None);
         let ok = |connection: &Connection| {
-            can_change_security(
-                connection,
-                &account(connection, user),
-                Some(session),
-                || true,
-                now,
-            )
-            .unwrap()
+            can_change_security(connection, user, Some(session), || true, now).unwrap()
         };
         assert!(ok(&connection));
 
