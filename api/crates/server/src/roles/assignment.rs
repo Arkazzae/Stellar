@@ -10,7 +10,7 @@ use rusqlite::Connection;
 use serde::{Deserialize, Serialize};
 
 use super::announce::Announcement;
-use super::{RoleRow, nil, no_content, no_member_role};
+use super::{Guid, RoleRow, nil, no_content, no_member_role};
 use crate::auth::Caller;
 use crate::http::{ApiError, ApiResult, Json, Path, json_response};
 use crate::instance::users::{User, UserDto};
@@ -20,7 +20,7 @@ use crate::permissions::membership::ActiveServer;
 use crate::permissions::ownership;
 use crate::permissions::privileges::{MANAGE_MEMBERS, contains};
 use crate::permissions::roles::{self, HeldRoleTable, Member, Role};
-use crate::permissions::visibility::ServerVisibility;
+use crate::permissions::access_changed::ViewChange;
 use crate::state::AppState;
 use crate::values::{Id, Timestamp};
 use stellarr_messages::MessageKey;
@@ -133,10 +133,13 @@ fn may_manage(db: &Connection, caller: Caller, server: Id, user: Id) -> Result<(
 pub(super) async fn assign(
     State(state): State<AppState>,
     caller: Caller,
+    Path(Guid(user)): Path<Guid>,
     ActiveServer(server): ActiveServer,
-    Path(user): Path<Id>,
     Json(request): Json<AssignRequest>,
 ) -> ApiResult<Response> {
+    // Before any other refusal, as the first server's filter was, but after the
+    // person is known to be a member and the body has been read.
+    super::require_fresh(&state, caller, server).await?;
     let messages = *state.messages();
     let announcement = state
         .database()
@@ -217,7 +220,7 @@ pub(super) async fn assign(
                 )?;
             }
 
-            let before = ServerVisibility::load(tx, server)?;
+            let before = ViewChange::begin(tx, server)?;
             ownership::set_roles(tx, server, user, &wanted, &base)?;
             Ok(Announcement::after(tx, server, &before, &[user])?)
         })
@@ -232,10 +235,13 @@ pub(super) async fn assign(
 pub(super) async fn set(
     State(state): State<AppState>,
     caller: Caller,
+    Path(Guid(user)): Path<Guid>,
     ActiveServer(server): ActiveServer,
-    Path(user): Path<Id>,
     Json(request): Json<SetRequest>,
 ) -> ApiResult<Response> {
+    // Before any other refusal, as the first server's filter was, but after the
+    // person is known to be a member and the body has been read.
+    super::require_fresh(&state, caller, server).await?;
     let messages = *state.messages();
     let announcement = state
         .database()
@@ -333,7 +339,7 @@ pub(super) async fn set(
                     ]),
                 },
             )?;
-            let before = ServerVisibility::load(tx, server)?;
+            let before = ViewChange::begin(tx, server)?;
             ownership::set_roles(tx, server, user, &wanted, &base)?;
             Ok(Some(Announcement::after(tx, server, &before, &[user])?))
         })

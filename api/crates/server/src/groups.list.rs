@@ -19,4 +19,5 @@ groups! {
     moderation,
     releases,
     roles,
+    servers,
 }
