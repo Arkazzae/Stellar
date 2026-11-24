@@ -39,18 +39,42 @@ pub async fn forgot(
         Ok(request) => request,
         Err(response) => return Ok(*response),
     };
-    // The work of an address that is an account's (a write, and a mail that is
-    // waited for) goes on beside the wait that every answer has, so that an
-    // account that exists is not the one whose answer is late: the answer comes
-    // when both are done.
+    // What an account that exists costs (a lookup, a write) goes on beside the
+    // wait every answer has, and the answer comes when the wait is over. The
+    // mail is sent after that write and the answer does not depend on it, so a
+    // slow mail server cannot make a known address the one whose answer is
+    // late.
     let wait = tokio::time::sleep(Duration::from_millis(u64::from(tokens::random_below(100)) + 80));
-    let (done, ()) = tokio::join!(link_for(&state, request.email.unwrap_or_default()), wait);
-    done?;
+    let (prepared, ()) = tokio::join!(prepare(&state, request.email.unwrap_or_default()), wait);
+    if let Some(link) = prepared? {
+        // A task of its own, so that it runs to the end when the client has
+        // gone. If the server stops in the moment between the write and the
+        // delivery, the mail is not sent: the link is stored and good, the
+        // earlier links are still good too (they are retired only once a new
+        // one is out), and asking again sends another.
+        tokio::spawn(async move {
+            if let Err(error) = link.deliver(&state).await {
+                tracing::error!(target: "Stellarr.Api.Mail", "Retiring the earlier reset links failed: {error}");
+            }
+        });
+    }
     Ok(StatusCode::ACCEPTED.into_response())
 }
 
-/// Looks the address up and, if it is an account's, sends it a link.
-async fn link_for(state: &AppState, email: String) -> Result<(), DbError> {
+/// A link that is written and waits to be mailed.
+struct Link {
+    mailing: crate::mail::Mailing,
+    address: String,
+    display_name: String,
+    raw: String,
+    token: Id,
+    earlier: Vec<Id>,
+    now: Timestamp,
+}
+
+/// Looks the address up and, if it is an account's and the instance is set up
+/// to send recovery mail, writes a link for it.
+async fn prepare(state: &AppState, email: String) -> Result<Option<Link>, DbError> {
     let normalized = crate::instance::names::to_upper(email.trim());
     let found = state
         .database()
@@ -64,24 +88,12 @@ async fn link_for(state: &AppState, email: String) -> Result<(), DbError> {
                 .optional()?)
         })
         .await?;
-    match found {
-        Some((user, address, display_name)) => send_link(state, user, address, display_name).await,
-        None => Ok(()),
-    }
-}
-
-/// Writes the link and mails it, when the instance is set up to send recovery
-/// mail. The older links go only once a new one is out, so that an unreachable
-/// provider does not take away the last link the person was sent.
-async fn send_link(
-    state: &AppState,
-    user: Id,
-    address: String,
-    display_name: String,
-) -> Result<(), DbError> {
+    let Some((user, address, display_name)) = found else {
+        return Ok(None);
+    };
     let mailing = match mail::setup::find_for(state).await? {
-        MailSetup::Ready(mailing) if mailing.switches.recovery => mailing,
-        _ => return Ok(()),
+        MailSetup::Ready(mailing) if mailing.switches.recovery => *mailing,
+        _ => return Ok(None),
     };
     let now = Timestamp::now();
     let raw = tokens::random(32);
@@ -103,39 +115,48 @@ async fn send_link(
             Ok(earlier)
         })
         .await?;
+    Ok(Some(Link { mailing, address, display_name, raw, token, earlier, now }))
+}
 
-    let link = format!("{}/reset-password?token={raw}", mailing.public_url);
-    let message = stellarr_mail::password_reset(
-        &mailing.sender,
-        &address,
-        &display_name,
-        &mailing.instance_name,
-        &link,
-        u128::from_be_bytes(*token.as_bytes()),
-        state.messages(),
-    );
-    let outcome = match message {
-        Ok(message) => state.mail().send(&message, &mailing.transport).await,
-        Err(error) => Outcome::Refused { reason: error.to_string() },
-    };
-    if !outcome.is_sent() {
-        // The new link stays valid: a provider that timed out may well have
-        // sent it.
-        tracing::error!(target: "Stellarr.Api.Mail", "Sending the password reset mail for token {token} failed.");
-        return Ok(());
+impl Link {
+    /// Mails the link. The older links go only once a new one is out, so that
+    /// an unreachable provider does not take away the last link the person was
+    /// sent.
+    async fn deliver(self, state: &AppState) -> Result<(), DbError> {
+        let link = format!("{}/reset-password?token={}", self.mailing.public_url, self.raw);
+        let message = stellarr_mail::password_reset(
+            &self.mailing.sender,
+            &self.address,
+            &self.display_name,
+            &self.mailing.instance_name,
+            &link,
+            u128::from_be_bytes(*self.token.as_bytes()),
+            state.messages(),
+        );
+        let outcome = match message {
+            Ok(message) => state.mail().send(&message, &self.mailing.transport).await,
+            Err(error) => Outcome::Refused { reason: error.to_string() },
+        };
+        if !outcome.is_sent() {
+            // The new link stays valid: a provider that timed out may well
+            // have sent it.
+            tracing::error!(target: "Stellarr.Api.Mail", "Sending the password reset mail for token {} failed.", self.token);
+            return Ok(());
+        }
+        let (earlier, now) = (self.earlier, self.now);
+        state
+            .database()
+            .write(move |tx| -> Result<(), DbError> {
+                for id in earlier {
+                    tx.execute(
+                        "UPDATE \"PasswordResetTokens\" SET \"UsedAt\" = ?2 WHERE \"Id\" = ?1",
+                        params![id, now],
+                    )?;
+                }
+                Ok(())
+            })
+            .await
     }
-    state
-        .database()
-        .write(move |tx| -> Result<(), DbError> {
-            for id in earlier {
-                tx.execute(
-                    "UPDATE \"PasswordResetTokens\" SET \"UsedAt\" = ?2 WHERE \"Id\" = ?1",
-                    params![id, now],
-                )?;
-            }
-            Ok(())
-        })
-        .await
 }
 
 #[derive(Deserialize)]

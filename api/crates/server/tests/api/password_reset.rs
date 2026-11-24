@@ -137,6 +137,13 @@ async fn a_newer_link_retires_the_older_one_once_it_is_out() {
     forgot(&client, "maya@example.test").await;
     let mails = instance.smtp.until(2).await;
     let (older, newer) = (token_in(&mails[0]), token_in(&mails[1]));
+    // The older link is retired once the newer is out, a moment after the answer.
+    for _ in 0..200 {
+        if rows(&instance, "SELECT COUNT(*) FROM \"PasswordResetTokens\" WHERE \"UsedAt\" IS NOT NULL") == 1 {
+            break;
+        }
+        tokio::time::sleep(Duration::from_millis(25)).await;
+    }
 
     let retired = reset(&client, &older, NEW).await;
     assert_eq!((retired.status.as_u16(), title(&retired).as_str()), (400, INVALID));
@@ -201,4 +208,29 @@ async fn an_account_without_a_password_gets_its_first_one_through_the_link() {
 
     assert_eq!(reset(&client, &token, NEW).await.status, 204);
     assert_eq!(instance.server.login(&client, "maya", NEW).await.status, 200);
+}
+
+#[tokio::test]
+async fn a_slow_mail_server_does_not_make_a_known_address_answer_later() {
+    let smtp = crate::steps::Smtp::start_slow(Duration::from_secs(1)).await;
+    let instance = Instance::with_mail(&["maya"], &[], smtp).await;
+    let client = instance.server.client();
+
+    let timed = |email: &'static str| {
+        let client = &client;
+        async move {
+            let started = Instant::now();
+            assert_eq!(forgot(client, email).await.status, 202);
+            started.elapsed()
+        }
+    };
+    let known = timed("maya@example.test").await;
+    let unknown = timed("nobody@example.test").await;
+
+    assert!(known < Duration::from_millis(600), "{known:?}");
+    assert!(unknown < Duration::from_millis(600), "{unknown:?}");
+    // The mail still arrives, a second later, and the link works.
+    let mails = instance.smtp.until(1).await;
+    assert_eq!(mails.len(), 1);
+    assert_eq!(reset(&client, &token_in(&mails[0]), NEW).await.status, 204);
 }
