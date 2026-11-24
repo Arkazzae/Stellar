@@ -250,6 +250,16 @@ async fn an_epoch_follows_the_current_one_and_reaches_exactly_every_key_of_both_
     let keys = crowd.keys(maja, &conversation).await;
     let every = crowd.recipients(maja, &conversation).await;
     assert_eq!(every.len(), 4);
+    let mut own: Vec<String> = vec![
+        keys["self"]["accountKey"]["keyId"].as_str().unwrap().to_string(),
+        keys["currentDeviceKeyId"].as_str().unwrap().to_string(),
+    ];
+    own.sort();
+    let envelope_ids = |epoch: &Value| -> Vec<String> {
+        let mut ids: Vec<String> = epoch["envelopes"].as_array().unwrap().iter().map(|e| e["recipientKeyId"].as_str().unwrap().to_string()).collect();
+        ids.sort();
+        ids
+    };
     // Whoever asks is told them in the one order: by person, then kind, then id.
     let order: Vec<(String, String, String)> = keys["recipients"]
         .as_array()
@@ -288,6 +298,9 @@ async fn an_epoch_follows_the_current_one_and_reaches_exactly_every_key_of_both_
     let epoch: Value = created.json();
     assert_eq!((epoch["sequence"].clone(), epoch["previousEpochId"].clone()), (json!(1), Value::Null));
     assert_eq!(epoch["createdById"], crowd.maja.id.as_str());
+    // The answer holds the envelopes of the keys of the person who made it, and no other.
+    assert_eq!(envelope_ids(&epoch), own);
+    assert_eq!(epoch["recipients"].as_array().unwrap().len(), 4);
     assert!(created.text().starts_with(&format!("{{\"id\":\"{first}\",\"sequence\":1,\"previousEpochId\":null,\"createdById\":\"")), "{}", created.text());
     // The person who made it gets the same answer again; another person does not.
     assert_eq!(post_epoch(maja, &conversation, &epoch_body(&first, None, &every)).await.status, 200);
@@ -300,16 +313,19 @@ async fn an_epoch_follows_the_current_one_and_reaches_exactly_every_key_of_both_
     let second = Id::random().to_string();
     assert_eq!(post_epoch(ada, &conversation, &epoch_body(&second, Some(&first), &every)).await.status, 201);
 
+    // The keys route hands the reader the envelopes of the current epoch for their own keys, and no others.
+    let seen = crowd.keys(maja, &conversation).await;
+    assert_eq!(seen["currentEpoch"]["recipients"].as_array().unwrap().len(), 4);
+    assert_eq!(envelope_ids(&seen["currentEpoch"]), own);
+    let ada_keys = crowd.keys(ada, &conversation).await;
+    let mut ada_own = vec![ada_keys["self"]["accountKey"]["keyId"].as_str().unwrap().to_string(), ada_keys["currentDeviceKeyId"].as_str().unwrap().to_string()];
+    ada_own.sort();
+    assert_eq!(envelope_ids(&ada_keys["currentEpoch"]), ada_own);
     // Each reader gets the envelopes for their own account key and browser, and no others.
     let epochs = read(maja, &path(&conversation, "epochs")).await;
     assert_eq!(epochs["currentEpochId"], second.as_str());
     let ids: Vec<&str> = epochs["epochs"].as_array().unwrap().iter().map(|e| e["id"].as_str().unwrap()).collect();
     assert_eq!(ids, [first.as_str(), second.as_str()]);
-    let mut own: Vec<String> = vec![
-        keys["self"]["accountKey"]["keyId"].as_str().unwrap().to_string(),
-        keys["currentDeviceKeyId"].as_str().unwrap().to_string(),
-    ];
-    own.sort();
     for epoch in epochs["epochs"].as_array().unwrap() {
         assert_eq!(epoch["recipients"].as_array().unwrap().len(), 4);
         let mut got: Vec<String> = epoch["envelopes"].as_array().unwrap().iter().map(|e| e["recipientKeyId"].as_str().unwrap().to_string()).collect();
@@ -329,6 +345,23 @@ async fn an_epoch_follows_the_current_one_and_reaches_exactly_every_key_of_both_
     let ids: Vec<&str> = later["epochs"].as_array().unwrap().iter().map(|e| e["id"].as_str().unwrap()).collect();
     assert_eq!(ids, [second.as_str(), third.as_str()]);
     assert_eq!(later["hasMore"], false);
+}
+
+#[tokio::test]
+async fn an_epoch_wrapped_for_a_key_of_nobody_in_the_conversation_is_refused_though_nothing_is_missing() {
+    let crowd = Crowd::ready().await;
+    let maja = &crowd.maja.client;
+    let conversation = crowd.conversation(&crowd.maja, &crowd.ada);
+    crowd.enable(&crowd.maja, &crowd.ada, &conversation).await;
+    let mut every = crowd.recipients(maja, &conversation).await;
+    let stranger = Id::random().to_string();
+    every.push(stranger.clone());
+
+    let refused = post_epoch(maja, &conversation, &epoch_body(&Id::random().to_string(), None, &every)).await;
+
+    assert_eq!(refusal(&refused), (409, Some("epoch-coverage".into())));
+    let body: Value = refused.json();
+    assert_eq!((body["missing"].clone(), body["extra"].clone()), (json!([]), json!([stranger])));
 }
 
 #[tokio::test]
