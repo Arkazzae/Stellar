@@ -68,7 +68,6 @@ STELLARR_CLOUDFLARE_R2_PREFIX=stellarr
 ## References
 
 - [Cloudflare R2 S3 API compatibility](https://developers.cloudflare.com/r2/api/s3/api/)
-- [Cloudflare R2 .NET SDK configuration](https://developers.cloudflare.com/r2/examples/aws/aws-sdk-net/)
 - [Cloudflare R2 object lifecycles](https://developers.cloudflare.com/r2/buckets/object-lifecycles/)
 - [Cloudflare R2 bucket locks](https://developers.cloudflare.com/r2/buckets/bucket-locks/)
 - [Cloudflare Workers request limits](https://developers.cloudflare.com/workers/platform/limits/)

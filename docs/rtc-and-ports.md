@@ -7,7 +7,7 @@ Published host ports, internal container ports, NAT and TURN forwarding rules, r
 | Default port | Protocol | Process | Purpose |
 | --- | --- | --- | --- |
 | `8888` | TCP | Nginx | HTTP redirect to HTTPS (`STELLARR_HTTP_PORT`) |
-| `8443` | TCP | Nginx | HTTPS: web client, API, SignalR WebSocket, and Cockpit (`STELLARR_HTTPS_PORT`) |
+| `8443` | TCP | Nginx | HTTPS: web client, API, hub WebSocket, and Cockpit (`STELLARR_HTTPS_PORT`) |
 | `3478` | UDP, TCP | `coturn` | STUN and TURN (`STELLARR_TURN_PORT`) |
 | `5349` | UDP, TCP | `coturn` | TURN over TLS/DTLS (`STELLARR_TURNS_PORT`) |
 | `49000` | UDP | `stellarr-media` | SFU media server port (`STELLARR_MEDIA_PORT`); carries all voice and video calls |
@@ -30,10 +30,10 @@ To expand the relay range for larger deployments, update `min-port`/`max-port` i
 
 | Port | Service |
 | --- | --- |
-| `5000/tcp` | ASP.NET Core API and SignalR (`127.0.0.1:5000`) |
+| `5000/tcp` | Stellarr API and hub (`127.0.0.1:5000`) |
 | `5200/tcp` | `stellarr-media` HTTP control API (`127.0.0.1:5200`, authenticated with `/data/stellarr/secrets/media-control-secret`) |
 
-Nginx routes HTTP and WebSocket requests to ASP.NET Core or serves static bundles from `/opt/stellarr/web`; see [Nginx routing and cache policy](./architecture.md#nginx-routing-and-cache-policy).
+Nginx routes HTTP and WebSocket requests to the API or serves static bundles from `/opt/stellarr/web`; see [Nginx routing and cache policy](./architecture.md#nginx-routing-and-cache-policy).
 
 ## NAT and firewall configuration
 

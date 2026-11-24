@@ -12,8 +12,8 @@ See [Voice and RTC protocol](./rtc-protocol.md) for bootstrap configuration, `Vo
 | Transport | ICE-lite on a single UDP socket (`0.0.0.0:49000`) |
 | Forwarded media | Microphone audio, camera video, screen video, and screen audio |
 | Media processing | Packet-level RTP header rewriting and forwarding; no decoding, mixing, or transcoding |
-| Authorization | `AppHub` authorizes voice seats; `stellarr-media` accepts commands only on its loopback control API |
-| Signaling path | Browser ↔ `AppHub` (SignalR) ↔ `stellarr-media` (`127.0.0.1:5200`) |
+| Authorization | The hub authorizes voice seats; `stellarr-media` accepts commands only on its loopback control API |
+| Signaling path | Browser ↔ hub (SignalR protocol) ↔ `stellarr-media` (`127.0.0.1:5200`) |
 | Connections per client | Single `RTCPeerConnection` (`bundlePolicy: "max-bundle"`) |
 | Offer direction | Browser offers published tracks (`sendonly`); `stellarr-media` offers forwarded tracks (`sendonly` to the receiver) |
 | Glare resolution | Browser is the impolite peer; `stellarr-media` is the polite peer |
@@ -29,7 +29,7 @@ flowchart LR
     BrowserA["Participant A (Browser)"]
     BrowserB["Participant B (Browser)"]
     Turn["coturn (:3478 / 49160-49200/udp)"]
-    Hub["AppHub SignalR (/hubs/app)"]
+    Hub["Hub (SignalR protocol, /hubs/app)"]
     Media["stellarr-media (:49000/udp)"]
 
     BrowserA <-->|"OpenMediaSession / SendMediaSignal"| Hub
@@ -56,7 +56,7 @@ Because all call media enters the container, any browser outside the Docker host
 
 ## Hub leg
 
-`AppHub` exposes two SignalR methods and two events for SFU signaling:
+The hub (`api/crates/server/src/voice/media.rs`) exposes two methods and two events for SFU signaling:
 
 | Type | Name | Description |
 | --- | --- | --- |
@@ -107,7 +107,7 @@ Each `Track` entry in the directory has the shape:
 
 `heldBack` is `true` when the receiver subscribed to a video track that `stellarr-media` has temporarily paused because the receiver's estimated downlink bandwidth lacks headroom (see [Downlink adaptation](#downlink-adaptation)). It is always present on every directory entry, and is always `false` for audio tracks and for unsubscribed video tracks. Whenever any track's `heldBack` state changes, `stellarr-media` emits an updated `tracks` directory signal.
 
-- **Validation**: `AppHub` verifies `protocolVersion == 1`, `kind` (`offer`, `answer`, `candidate`, or `subscriptions` from browser), seat ownership, `sessionId` ownership, payload UTF-8 byte length `≤ 128 KiB`, and payload schema. Invalid signals throw `HubException("Invalid media signal.")` (or `HubException("Invalid ChannelId.")`).
+- **Validation**: The hub verifies `protocolVersion == 1`, `kind` (`offer`, `answer`, `candidate`, or `subscriptions` from browser), seat ownership, `sessionId` ownership, payload UTF-8 byte length `≤ 128 KiB`, and payload schema. Invalid signals throw `HubException("Invalid media signal.")` (or `HubException("Invalid ChannelId.")`).
 - **Control API status mapping**:
   - `409 stale-negotiation` on a stale answer returns normally (`stellarr-media` discards stale answers by design).
   - `422` or `413` throws `HubException("Invalid media signal.")`.
@@ -133,7 +133,7 @@ Each `Track` entry in the directory has the shape:
 ```mermaid
 sequenceDiagram
     participant B as Browser
-    participant H as AppHub (SignalR)
+    participant H as Hub (SignalR protocol)
     participant M as stellarr-media (:5200)
 
     B->>H: JoinVoice(channelId)
@@ -193,19 +193,19 @@ Sessions closed because the user left the seat or opened a replacement session d
 
 ## Seat and session lifecycle
 
-A media session is bound to an active voice seat in `PresenceTracker`. `AppHub` and moderation endpoints close the media session whenever a seat ends or moves:
+A media session is bound to an active voice seat in the presence seats (`realtime/presence/seats.rs`). The hub and moderation endpoints close the media session whenever a seat ends or moves:
 
 | Trigger | Source |
 | --- | --- |
 | User leaves voice | `LeaveVoice` |
-| SignalR connection disconnects | `OnDisconnectedAsync` |
+| Hub connection disconnects | the hub's end-of-connection handler (`realtime/application.rs`) |
 | Newer browser tab takes the seat | `JoinVoice` (`VoiceSessionReplaced`) |
 | User switches voice rooms | `JoinVoice` (from a previous room) |
 | Direct call declined or user blocked | `DeclineDirectCall`, `SocialEndpoints` |
 | Moderator kicks or moves user in voice | `VoiceModerationEndpoints` |
 | Moderator kicks or bans user from server | `ModerationEndpoints` |
 
-`PresenceTracker` detaches the session immediately in memory and enqueues a `DELETE /v1/sessions/{sessionId}` job in `MediaSessionCloser` (retrying every `2 s` up to a bounded queue of `4,096` pending deletes). Calling `JoinVoice` again for the room the connection already occupies is a no-op and preserves the existing session.
+The presence seats detach the session immediately in memory and enqueue a `DELETE /v1/sessions/{sessionId}` job in the session closer (`voice/closer.rs`, retrying every `2 s` up to a bounded queue of `4,096` pending deletes). Calling `JoinVoice` again for the room the connection already occupies is a no-op and preserves the existing session.
 
 ## Client state and recovery
 
@@ -235,7 +235,7 @@ A media session is bound to an active voice seat in `PresenceTracker`. `AppHub` 
 
 ## Control API (`127.0.0.1:5200`)
 
-`AppHub` is the sole client of the HTTP/1.1 JSON control API:
+The API (`voice/control.rs`) is the sole client of the HTTP/1.1 JSON control API:
 
 - Every endpoint except `GET /v1/health` requires `Authorization: Bearer <secret>` (unless bound to loopback with an empty secret). Invalid or missing credentials return `401`.
 - Error responses use `{ "error": "<code>", "detail": "<text>" }`.
@@ -434,7 +434,7 @@ End-to-end encryption protects media content (audio and video frames), not call 
 | `STELLARR_MEDIA_CONTROL_SECRET` | empty | Bearer token required by the control API (mandatory when not bound to loopback) |
 | `STELLARR_MEDIA_LOG` | `info` | `tracing` log filter (e.g. `info,stellarr_media=debug`) |
 
-### ASP.NET Core API settings
+### API settings
 
 | Setting | Default | Description |
 | --- | --- | --- |

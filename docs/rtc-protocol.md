@@ -1,6 +1,6 @@
 # Voice and RTC protocol
 
-All voice and video call media routes through Stellarr Media (`stellarr-media`). The web client (`VoiceClient`) exchanges signaling events with the SignalR hub (`AppHub`), which manages room sessions over the media server's loopback control API. See [Stellarr Media](./stellarr-media.md) for SFU SDP negotiation, track attribution, downlink adaptation, end-to-end encrypted call frames, and the loopback control API.
+All voice and video call media routes through Stellarr Media (`stellarr-media`). The web client (`VoiceClient`) exchanges signaling events with the realtime hub (`/hubs/app`, speaking the SignalR protocol), which manages room sessions over the media server's loopback control API. See [Stellarr Media](./stellarr-media.md) for SFU SDP negotiation, track attribution, downlink adaptation, end-to-end encrypted call frames, and the loopback control API.
 
 ## Client and signaling layers
 
@@ -21,7 +21,7 @@ flowchart TD
     end
 
     subgraph Server["Stellarr Container"]
-        Hub["AppHub SignalR (/hubs/app)"]
+        Hub["Hub (SignalR protocol, /hubs/app)"]
         SFU["Stellarr Media SFU (:49000/udp)"]
         Hub <-->|"Loopback Control API (127.0.0.1:5200)"| SFU
     end
@@ -74,7 +74,7 @@ UI components interact exclusively with `VoiceClient` and immutable `VoiceState`
 ```
 
 - `channelId` identifies an RTC room: either a server voice channel or a two-user direct conversation.
-- Clients omit `fromUserId`; `AppHub` populates it from the authenticated session. When `toUserId` is omitted, the signal broadcasts to all other participants in the room.
+- Clients omit `fromUserId`; the hub populates it from the authenticated session. When `toUserId` is omitted, the signal broadcasts to all other participants in the room.
 - The backend validates authentication, room membership, recipient membership, `protocolVersion`, `kind`, and a 128 KiB payload limit.
 - Occupancy updates (`VoiceParticipantChanged`) for server voice channels go to the members who see the channel, and to whoever is seated in it; where nobody is denied `viewChannel` at the channel that is the server's whole group, as before. Direct-call occupancy updates go only to the two conversation participants.
 - Declining a direct call (`DeclineDirectCall`) clears room occupancy and emits `DirectCallDeclined` so the caller releases capture devices immediately.
@@ -82,13 +82,13 @@ UI components interact exclusively with `VoiceClient` and immutable `VoiceState`
 - Local mute state is authoritative for the local user over out-of-order hub echoes. In a 1:1 direct call, an unencrypted receiver mutes remote media until the peer's `state` signal arrives (preventing encrypted frames from playing as static noise) and upgrades its own connection to end-to-end encryption if the peer announces `encrypted: true` (see [End-to-end encrypted calls](./stellarr-media.md#end-to-end-encrypted-calls)).
 
 > [!NOTE]
-> `SendVoiceSignal` accepts only `kind: "state"`. `AppHub` rejects `offer`, `answer`, and `candidate` with `HubException("Invalid voice signal.")`. SDP descriptions, ICE candidates, and receive subscriptions flow exclusively through `OpenMediaSession`, `SendMediaSignal`, `MediaSignal`, and `MediaSessionClosed` (see [Stellarr Media](./stellarr-media.md#hub-leg)).
+> `SendVoiceSignal` accepts only `kind: "state"`. The hub rejects `offer`, `answer`, and `candidate` with a hub error ("Invalid voice signal."). SDP descriptions, ICE candidates, and receive subscriptions flow exclusively through `OpenMediaSession`, `SendMediaSignal`, `MediaSignal`, and `MediaSessionClosed` (see [Stellarr Media](./stellarr-media.md#hub-leg)).
 
 Breaking changes to the envelope or payload require incrementing `protocolVersion`. Optional fields may be added within version `1`.
 
 ### Hub methods and events
 
-Defined in `web/src/stellarr/lib/rtc/protocol.ts` and implemented by `AppHub` (`AppHub.cs`, `AppHub.Voice.cs`, `AppHub.Media.cs`, `AppHub.Soundboard.cs`) in `server/Stellarr.Api/Realtime/`:
+Defined in `web/src/stellarr/lib/rtc/protocol.ts` and implemented by the hub methods of `api/crates/server/src/voice/` (`hub.rs`, `media.rs`, `sounds.rs`):
 
 | Type | Name | Description |
 | --- | --- | --- |
@@ -114,7 +114,7 @@ Clients ignore any `VoiceParticipantChanged` snapshot whose `sequence` is older 
 
 ### Voice seats, `viewChannel` and `connect`
 
-The seat is what admits a connection to a room's media: `OpenMediaSession` creates a session on `stellarr-media` only for the caller's seat in that room, and `stellarr-media` takes commands from the API alone. So `viewChannel` and `connect` are decided where seats are given, in `JoinVoice`, evaluated at the channel so overrides apply, and inside `PresenceTracker`'s lock, so a seat cannot be taken between the decision and the join. A caller who does not see the room is answered as for a room that does not exist, `HubException("Unknown voice room.")`; one who sees it without `connect` is refused with `HubException("Not allowed to join this voice room.")`. Either keeps whatever seat it had elsewhere, and cannot open media in the room, since it has no seat there. Direct calls are not server channels and need neither.
+The seat is what admits a connection to a room's media: `OpenMediaSession` creates a session on `stellarr-media` only for the caller's seat in that room, and `stellarr-media` takes commands from the API alone. So `viewChannel` and `connect` are decided where seats are given, in `JoinVoice`, evaluated at the channel so overrides apply, and inside the presence tracker's lock, so a seat cannot be taken between the decision and the join. A caller who does not see the room is answered as for a room that does not exist, a hub error ("Unknown voice room."); one who sees it without `connect` is refused with a hub error ("Not allowed to join this voice room."). Either keeps whatever seat it had elsewhere, and cannot open media in the room, since it has no seat there. Direct calls are not server channels and need neither.
 
 - **Moderator moves**: `PATCH /api/admin/channels/{id}/members/{userId}` moves the seat, which is the moderator's act and needs `moderateMembers` in both rooms, and seeing both, not the member's `viewChannel` or `connect`. The client confirms a move with `JoinVoice` for the room it was moved to; a connection already seated in that room keeps its seat without either, and opens media there.
 - **Losing `viewChannel` or `connect`**: a member who is seated when they lose either keeps the seat, and with it media sessions for that seat, signals and the soundboard, until they leave or their hub connection drops; joining again needs both. The same holds for a member moved into a room they could not join. While seated they receive the room's `VoiceParticipantChanged` whether they see it or not; once they leave, a room they do not see sends them nothing and does not appear in their bootstrap.
@@ -158,7 +158,7 @@ Users can select a personal arrival clip (`UserPreferences.JoinSoundId`) from an
 > [!IMPORTANT]
 > Only one active voice session is permitted per account across all tabs and devices. Joining from a second tab replaces the earlier seat and emits `VoiceSessionReplaced` to the previous connection.
 
-When a user switches directly from one voice channel to another (including by dragging their own row onto another voice channel in the rail), the client calls `JoinVoice` for the destination room without calling `LeaveVoice` first. `AppHub` moves the seat atomically and broadcasts both rooms' snapshots so observers see a single transition, while the client closes its previous SFU session and opens a fresh one for the new room.
+When a user switches directly from one voice channel to another (including by dragging their own row onto another voice channel in the rail), the client calls `JoinVoice` for the destination room without calling `LeaveVoice` first. The hub moves the seat atomically and broadcasts both rooms' snapshots so observers see a single transition, while the client closes its previous SFU session and opens a fresh one for the new room.
 
 ## Audio pipeline
 
@@ -243,16 +243,16 @@ The entire capture, suppressor, and playback DSP pipeline is held to sample- and
 
 | Area | Source files |
 | --- | --- |
-| Wire protocol & payload codecs | `web/src/stellarr/lib/rtc/protocol.ts`, `server/Stellarr.Api/Realtime/RtcProtocol.cs` |
+| Wire protocol & payload codecs | `web/src/stellarr/lib/rtc/protocol.ts`, `api/crates/server/src/voice/protocol.rs` |
 | Client interface & state store | `web/src/stellarr/lib/voice/types.ts` (`VoiceClient`, `VoiceState`), `web/src/stellarr/lib/voice/store.ts` (`VoiceStateStore`) |
 | Call session & SFU client | `web/src/stellarr/lib/voice/rtc/webrtc.ts`, `webrtcPeer.ts`, `webrtcSfu.ts`, `webrtcSfuDirectory.ts`, `webrtcSfuHealth.ts`, `webrtcTopology.ts`, `webrtcParticipant.ts`, `speakingHold.ts` |
 | End-to-end encrypted calls | `web/src/stellarr/lib/voice/e2ee/sframe.ts`, `frameWorker.ts`, `callCrypto.ts`, `encryptedMedia.ts` |
-| Soundboard & arrival sounds | `web/src/stellarr/adapters/soundboard.ts`, `web/src/stellarr/containers/useJoinSound.ts`, `SoundboardEndpoints.cs`, `SoundboardAccess.cs`, `JoinSound.cs`, `AppHub.Soundboard.cs` |
+| Soundboard & arrival sounds | `web/src/stellarr/adapters/soundboard.ts`, `web/src/stellarr/containers/useJoinSound.ts`, `api/crates/server/src/soundboard/`, `api/crates/server/src/voice/sounds.rs` |
 | Audio, screen & camera profiles | `web/src/stellarr/lib/voice/audioProfiles.ts`, `video/screenShare.ts`, `video/camera.ts` |
 | Microphone DSP, worklets & VAD | `web/worklets.ts`, `web/src/stellarr/lib/voice/capture/micPipeline.ts`, `captureGraph.ts`, `noiseSuppression.ts`, `suppressorDownload.ts`, `detector/`, `speex/`, `rnnoise/` |
 | Playback mixer & profiles | `web/src/stellarr/lib/voice/playback/remoteMixer.ts`, `remoteStrip.ts`, `playbackProfile.ts` |
 | ICE/TURN credential refresh | `web/src/stellarr/lib/voice/rtc/iceSession.ts` |
-| Hub & media server broker | `server/Stellarr.Api/Realtime/`: `AppHub.cs`, `AppHub.Voice.cs`, `AppHub.Media.cs`, `AppHub.Soundboard.cs`, `MediaServerSettings.cs`, `PresenceTracker.cs`, `MediaPlane.cs`, `MediaControlClient.cs`, `MediaEventPump.cs`, `MediaEventOutbox.cs`, `MediaSessionCloser.cs` |
+| Hub & media server broker | `api/crates/server/src/voice/`: `hub.rs`, `media.rs`, `sounds.rs`, `control.rs` (client of the media server's control API), `plane.rs`, `pump.rs` (media events), `closer.rs` (closing media sessions); `api/crates/server/src/realtime/` (presence and seats in `presence/seats.rs`); `api/crates/hub` (the hub protocol) |
 | Rust SFU media server | `media/` (`stellarr-media`) |
 
 ## Verification
@@ -265,8 +265,8 @@ docker buildx bake recipes
 npm run typecheck -w stellarr-web
 npm test -w stellarr-web
 
-# Backend SignalR & voice room integration tests
-dotnet test server/Stellarr.Api.Tests
+# Backend hub & voice room integration tests
+(cd api && cargo test -p stellarr-api)
 
 # Rust SFU tests and headless Chromium smoke suite
 cd media && cargo test

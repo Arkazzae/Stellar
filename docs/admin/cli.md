@@ -35,7 +35,7 @@ The CLI resolves `<data-root>` in this order:
 3. `DataRoot` configuration value
 4. `/data/stellarr`
 
-Inside `<data-root>`, the SQLite database lives at `db/stellarr.db` and data-protection keys live at `keys/`. Read-only commands never create `keys/` or write new key files. The API must have initialized `keys/` at least once before `stellarr secrets set` can encrypt secrets readable by the API.
+Inside `<data-root>`, the SQLite database lives at `db/stellarr.db` and the keys, including the master key (`keys/master.key`), live at `keys/`. Read-only commands never create `keys/` or write new key files. The API must have initialized `keys/` at least once before `stellarr secrets set` can encrypt secrets readable by the API.
 
 ## Commands
 
@@ -141,7 +141,7 @@ stellarr sessions revoke --user arkazz --all --yes
 ```
 
 - `users list` and `sessions list` return up to 200 and 500 rows respectively and expose only administrative metadata (never password hashes, session cookies, or tokens).
-- `sessions revoke` marks sessions revoked in SQLite (`UserSessions.RevokedAt`) and deactivates any end-to-end encryption devices bound to those sessions. The running API polls revocations every second (`SessionRevocationWatcher`) and closes matching SignalR and media sessions. Passing `--all` for a user also invalidates unredeemed desktop browser handoffs.
+- `sessions revoke` marks sessions revoked in SQLite (`UserSessions.RevokedAt`) and deactivates any end-to-end encryption devices bound to those sessions. The running API polls revocations every second (the `realtime-sessions` worker) and closes matching hub connections and media sessions. Passing `--all` for a user also invalidates unredeemed desktop browser handoffs.
 
 ### Account security and MFA recovery
 
