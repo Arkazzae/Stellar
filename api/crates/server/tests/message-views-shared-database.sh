@@ -23,6 +23,9 @@
 #     same inputs: the search expression, the number of a limit, the cursor,
 #     a quote of a message, ids, case and white space.
 #
+# The server it starts is stopped and the folder it makes removed however it
+# ends; KEEP_WORK=1 keeps the folder, WORK=<folder> uses (and keeps) one.
+#
 # Needs docker, python3, node (26), the .NET SDK and the first server's
 # container. Not part of the ordinary run. Prints every difference, and
 # "differences 0" lines when there are none.
@@ -32,13 +35,24 @@
 set -euo pipefail
 here=$(cd "$(dirname "$0")/message-views" && pwd)
 api=$(cd "$here/../../../.." && pwd)
-work=${WORK:-$(mktemp -d)}
+made=
+if [ -z "${WORK:-}" ]; then WORK=$(mktemp -d); made=1; fi
+work=$WORK
 dotnet=${DOTNET:-dotnet}
 acargo=${ACARGO:?the path of acargo}
 mkdir -p "$work/work" && cd "$work"
 export PYTHONPATH=$here ORACLE=${ORACLE:-msgviews} ORACLE_PORT=${ORACLE_PORT:-5215} RUST_PORT=${RUST_PORT:-5316}
 export STELLARR_API=${STELLARR_API:?the path of the stellarr-api binary}
 container=stellarr-port-oracle-$ORACLE
+
+# However this ends, stop the server it started and remove the folder it made
+# (KEEP_WORK=1 keeps it). The first server's container is the caller's.
+cleanup() {
+  for pid in $(lsof -tiTCP:"$RUST_PORT" -sTCP:LISTEN 2>/dev/null); do kill "$pid" 2>/dev/null || true; done
+  if [ -n "$made" ] && [ -z "${KEEP_WORK:-}" ]; then rm -rf "$work"; elif [ -n "${KEEP_WORK:-}" ]; then echo "kept $work"; fi
+}
+trap cleanup EXIT
+trap 'exit 130' INT TERM
 
 python3 "$here/populate_a.py"
 docker stop -t 15 "$container" >/dev/null

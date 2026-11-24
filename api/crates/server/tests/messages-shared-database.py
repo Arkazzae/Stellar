@@ -27,7 +27,9 @@ ordinary run.
   python3 messages-shared-database.py <oracle name> <oracle port> <stellarr-api binary> [stage ...]
 
 Stages: history, sync, refusals, writes (all by default; writes covers the mentions, their deliveries and the events heard). Set
-MESSAGES=4000 for the number of messages and SEED for the random shapes.
+MESSAGES=4000 for the number of messages and SEED for the random shapes. The
+servers it starts are stopped and its work folder removed however it ends (a
+failure and Ctrl-C included); set KEEP_WORK=1 to keep the folder and look in it.
 """
 import base64
 import json
@@ -35,6 +37,7 @@ import os
 import random
 import re
 import shutil
+import signal
 import sqlite3
 import struct
 import subprocess
@@ -100,6 +103,24 @@ def wait_ready(base):
     raise SystemExit(f"{base} did not become ready")
 
 
+# Everything this run started that must not outlive it.
+RUNNING = []
+LISTENERS = []
+
+
+def clean_up(work):
+    for server in list(RUNNING):
+        server.stop()
+    for process in LISTENERS:
+        if process.poll() is None:
+            process.kill()
+        process.wait()
+    if os.environ.get("KEEP_WORK"):
+        print(f"kept {work}")
+    else:
+        shutil.rmtree(work, ignore_errors=True)
+
+
 class Rust:
     def __init__(self, binary, folder, database=None):
         self.binary, self.folder = binary, folder
@@ -118,6 +139,7 @@ class Rust:
         environment.update(extra or {})
         self.log = open(f"{self.folder}/log.txt", "w")
         self.process = subprocess.Popen([self.binary], env=environment, stdout=self.log, stderr=subprocess.STDOUT)
+        RUNNING.append(self)
         for _ in range(100):
             text = open(f"{self.folder}/log.txt").read()
             found = re.search(r"listening on: http://127.0.0.1:(\d+)", text)
@@ -134,8 +156,14 @@ class Rust:
     def stop(self):
         if self.process:
             self.process.terminate()
-            self.process.wait(timeout=30)
+            try:
+                self.process.wait(timeout=30)
+            except subprocess.TimeoutExpired:
+                self.process.kill()
+                self.process.wait()
             self.process = None
+        if self in RUNNING:
+            RUNNING.remove(self)
 
 
 class Oracle:
@@ -559,11 +587,21 @@ def run_scenario(base, cookies, steps, names):
 
 
 def main():
+    work = tempfile.mkdtemp(prefix="messages-shared-")
+    # Ctrl-C and a plain kill end the run the way an error does, so that the
+    # servers are stopped and the folder removed below.
+    signal.signal(signal.SIGTERM, lambda *_: sys.exit(143))
+    try:
+        run(work)
+    finally:
+        clean_up(work)
+
+
+def run(work):
     name, port, binary = sys.argv[1], sys.argv[2], sys.argv[3]
     stages = sys.argv[4:] or ["history", "sync", "refusals", "writes"]
     count = int(os.environ.get("MESSAGES", "4000"))
     rng = random.Random(int(os.environ.get("SEED", "5214")))
-    work = tempfile.mkdtemp(prefix="messages-shared-")
     oracle = Oracle(name, port)
     # Founded and populated on this server first.
     first = Rust(binary, f"{work}/first").start()
@@ -681,6 +719,7 @@ def main():
             out = f"{work}/events-{label}.jsonl"
             process = subprocess.Popen(["node", f"{here}/messages-listen.mjs", base, out] + [f"{n}={jar[n]}" for n in ("owner", "bob", "carol", "dave")],
                                        stdin=subprocess.PIPE, stdout=subprocess.PIPE, text=True)
+            LISTENERS.append(process)
             assert process.stdout.readline().strip() == "listening"
             listeners[label] = (process, out)
         answers_oracle = run_scenario(oracle.base, cookies, steps, names)
