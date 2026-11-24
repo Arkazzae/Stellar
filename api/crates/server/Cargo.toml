@@ -48,5 +48,5 @@ http = { workspace = true }
 rusqlite = { workspace = true, features = ["trace"] }
 hyper = { workspace = true, features = ["client", "http1"] }
 hyper-util = { workspace = true, features = ["tokio"] }
-tokio = { workspace = true, features = ["io-util", "process"] }
+tokio = { workspace = true, features = ["io-util", "process", "test-util"] }
 tokio-rustls = { workspace = true, features = ["aws-lc-rs", "tls12"] }

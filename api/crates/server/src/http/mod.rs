@@ -12,6 +12,7 @@ mod forwarded;
 mod http_date;
 mod json;
 mod metrics;
+pub mod multipart;
 mod path;
 mod pipeline;
 mod problem;
