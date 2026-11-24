@@ -69,7 +69,7 @@ const FORBIDDEN: &[HeaderName] = &[
 /// One request: what to send, where, and the limits to hold the other end
 /// to. [`Request::new`] starts from the strictest settings that make
 /// sense: public addresses only, no redirects, ten seconds to connect,
-/// thirty in all and a one mebibyte ceiling.
+/// thirty in all, a one mebibyte ceiling and compressed answers decoded.
 pub struct Request {
     method: Method,
     url: Url,
@@ -80,6 +80,7 @@ pub struct Request {
     max_response_bytes: u64,
     max_redirects: u32,
     policy: AddressPolicy,
+    decompress: bool,
 }
 
 impl Request {
@@ -94,6 +95,7 @@ impl Request {
             max_response_bytes: 1024 * 1024,
             max_redirects: 0,
             policy: AddressPolicy::PublicOnly,
+            decompress: true,
         })
     }
 
@@ -132,8 +134,12 @@ impl Request {
         self
     }
 
-    /// The ceiling on the size of the answer, the head and the body
-    /// together, in bytes as they come over the wire.
+    /// The ceiling on the size of the answer, which is the most memory it may
+    /// take: the head and the body as the caller receives it, after any
+    /// decoding, may not pass it, and the body as it came over the wire is
+    /// held to the same number. An answer that is not compressed is counted
+    /// once. One that is compressed is stopped the moment what it decodes to
+    /// passes the ceiling, however small it was on the wire.
     pub fn max_response_bytes(mut self, bytes: u64) -> Request {
         self.max_response_bytes = bytes;
         self
@@ -147,6 +153,24 @@ impl Request {
 
     pub fn policy(mut self, policy: AddressPolicy) -> Request {
         self.policy = policy;
+        self
+    }
+
+    /// Whether the request offers `gzip` and `deflate` and decodes what
+    /// comes back. On by default: pages, JSON and other text are what this
+    /// client mostly reads, and hosts that compress send much less of it.
+    /// Turn it off for a body whose bytes matter as they are on the wire: a
+    /// download that is stored or checked against a size or a digest. The
+    /// request then says `identity`, the body is handed over exactly as it
+    /// arrives, and the answer's `Content-Encoding` and `Content-Length` are
+    /// left as the server sent them, so a caller can see a host that
+    /// compressed anyway.
+    ///
+    /// Decoded, an answer loses those two headers (they describe the wire),
+    /// and a coding that is not `gzip`, `deflate` or `identity` makes reading
+    /// the body fail.
+    pub fn decompress(mut self, decompress: bool) -> Request {
+        self.decompress = decompress;
         self
     }
 
@@ -339,6 +363,7 @@ impl Client {
             max_response_bytes,
             max_redirects,
             policy,
+            decompress,
             ..
         } = request;
         let mut hops = 0u32;
@@ -361,6 +386,7 @@ impl Client {
                     policy,
                     connect_timeout,
                     max_response_bytes,
+                    decompress,
                     deadline,
                 )
                 .await?;
@@ -420,6 +446,7 @@ impl Client {
         policy: AddressPolicy,
         connect_timeout: Duration,
         ceiling: u64,
+        decompress: bool,
         deadline: Instant,
     ) -> Result<Response> {
         let connector = if url.is_https() {
@@ -479,7 +506,11 @@ impl Client {
         headers_out.insert(CONNECTION, HeaderValue::from_static("close"));
         headers_out.insert(
             ACCEPT_ENCODING,
-            HeaderValue::from_static(encoding::ACCEPT_ENCODING),
+            HeaderValue::from_static(if decompress {
+                encoding::ACCEPT_DECODED
+            } else {
+                encoding::ACCEPT_RAW
+            }),
         );
 
         let response = sender.send_request(request).await.map_err(|error| {
@@ -503,11 +534,18 @@ impl Client {
         {
             return Err(Error::TooLarge);
         }
-        let decoder = Decoder::for_headers(&parts.headers)?;
+        let mut headers = parts.headers;
+        let decoder = Decoder::for_response(
+            method,
+            parts.status,
+            &mut headers,
+            decompress,
+            ceiling - head_bytes,
+        );
         let body = ResponseBody::new(incoming, decoder, head_bytes, ceiling, deadline, driver);
         Ok(Response {
             status: parts.status,
-            headers: parts.headers,
+            headers,
             url: url.clone(),
             body,
         })

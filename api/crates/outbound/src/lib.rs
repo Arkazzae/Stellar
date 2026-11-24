@@ -1,10 +1,12 @@
 //! The HTTP client every outbound call of the API goes through.
 //!
 //! Small on purpose: HTTP/1.1 over TCP or rustls, one connection per
-//! request, no cookies, no proxy from the environment, no compression yet.
+//! request, no cookies, no proxy from the environment. Answers compressed
+//! with `gzip` or `deflate` are decoded unless the request opts out.
 //! What each request states for itself is the method, the URL, the headers,
 //! a body, two timeouts, a ceiling on the size of the answer, how many
-//! redirects are followed and which addresses may be connected to.
+//! redirects are followed, which addresses may be connected to and whether
+//! compression is offered.
 //!
 //! Nothing here logs a URL's path or query or a header value, and no error
 //! shows one: keys and tokens travel there.
