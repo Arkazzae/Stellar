@@ -9,7 +9,7 @@
 //! find.
 
 use std::cmp::Ordering;
-use std::fs::{File, OpenOptions};
+use std::fs::File;
 use std::io::{BufWriter, Read, Write};
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
@@ -75,7 +75,7 @@ pub fn write(
     cancel: &AtomicBool,
     runtime: &Handle,
 ) -> Result<Manifest, BackupFailed> {
-    let file = OpenOptions::new().write(true).create_new(true).open(path)?;
+    let file = super::create_private(path)?;
     let mut zip = ZipWriter::new(BufWriter::with_capacity(256 * 1024, file));
     let now = Timestamp::now().unix_seconds();
     let mut database_bytes = 0u64;
@@ -419,7 +419,7 @@ fn copy_entry(
     at: usize,
     to: &Path,
 ) -> Result<(), stellarr_archive::Error> {
-    let mut target = OpenOptions::new().write(true).create_new(true).open(to)?;
+    let mut target = super::create_private(to)?;
     archive.copy_to(at, &mut target)?;
     target.flush()?;
     Ok(())
