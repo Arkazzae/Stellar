@@ -299,15 +299,7 @@ async fn an_app_code_signs_in_a_session_that_passed_a_second_step_and_remembers_
     // next period and would be a new proof, not a replay.
     let code = now_code(&secret);
 
-    let answered = code_answer(
-        &world,
-        &challenge,
-        &preauth,
-        Some(method),
-        &code,
-        true,
-    )
-    .await;
+    let answered = code_answer(&world, &challenge, &preauth, Some(method), &code, true).await;
 
     let Answered::SignedIn { completed, .. } = answered else {
         panic!("a sign-in was expected")
@@ -343,15 +335,7 @@ async fn an_app_code_signs_in_a_session_that_passed_a_second_step_and_remembers_
     }
     // The same code is not good for a second sign-in.
     let (again, again_preauth) = world.challenge(user, PURPOSE_MFA);
-    let replay = code_answer(
-        &world,
-        &again,
-        &again_preauth,
-        Some(method),
-        &code,
-        false,
-    )
-    .await;
+    let replay = code_answer(&world, &again, &again_preauth, Some(method), &code, false).await;
     assert!(matches!(replay, Answered::Refused));
 }
 
@@ -410,15 +394,7 @@ async fn a_refused_link_leaves_the_proof_spent_and_the_person_signed_in() {
     // And the same code opens nothing again.
     let (again, again_preauth) = world.challenge(user, PURPOSE_MFA);
     assert!(matches!(
-        code_answer(
-            &world,
-            &again,
-            &again_preauth,
-            Some(method),
-            &code,
-            false
-        )
-        .await,
+        code_answer(&world, &again, &again_preauth, Some(method), &code, false).await,
         Answered::Refused
     ));
 }
@@ -2569,6 +2545,32 @@ async fn the_version_the_approval_carries_must_be_the_accounts_and_a_secret_must
             Exchanged::Invalid
         ));
     }
+}
+
+#[tokio::test]
+async fn an_approval_from_a_session_at_another_version_than_the_accounts_gives_nothing() {
+    let world = World::new();
+    let user = world.user(None);
+    let source = caller(&world, user, None).session;
+    // The row carries the account's version; the session that approved it does
+    // not, so it is not a session of the account as it stands.
+    let id = world.desktop_request(Some((user, source, None)));
+    world
+        .db()
+        .execute("UPDATE \"UserSessions\" SET \"SecurityVersion\" = 0", [])
+        .unwrap();
+    assert!(matches!(
+        exchange(&world, id, DESKTOP_SECRET).await,
+        Exchanged::Forbidden
+    ));
+    // Nothing was made, and the approval was not spent on it.
+    assert_eq!(world.count("SELECT COUNT(*) FROM \"UserSessions\""), 1);
+    assert_eq!(
+        world.count(
+            "SELECT COUNT(*) FROM \"DesktopBrowserLogins\" WHERE \"RedeemedAt\" IS NOT NULL"
+        ),
+        0
+    );
 }
 
 // ---- linked identities ----
