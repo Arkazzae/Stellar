@@ -15,6 +15,7 @@ use rusqlite::{Connection, OptionalExtension, params};
 
 use super::privileges::{MANAGE_CHANNELS, VIEW_CHANNEL};
 use super::snapshot::{Snapshot, Subject, Targets};
+use crate::events::Audience;
 use crate::int_enum;
 use crate::values::Id;
 
@@ -304,28 +305,18 @@ pub fn who_view(
     Ok(seeing)
 }
 
-/// Who an event about a channel is for, as the hub needs to know it.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub enum ChannelAudience {
-    /// Nobody is denied view at the channel: everybody on the server, with
-    /// nothing evaluated.
-    Server(Id),
-    /// Only these enabled members of the server, who view the channel. The
-    /// event goes to the people on the server, not to every connection of
-    /// theirs: an account's tabs on other servers do not receive it.
-    Viewers { server: Id, users: Vec<Id> },
-}
-
-/// The decision the realtime side asks for when an event is about a channel:
-/// is anybody denied view there, and if so who views. Run it when the event
-/// is sent, so that whoever loses view stops receiving with the next event.
-pub fn audience_of(db: &Connection, server: Id, channel: Id) -> rusqlite::Result<ChannelAudience> {
+/// Who an event about a channel is for: the whole server when nobody is denied
+/// view there, with nothing evaluated, and otherwise only the enabled members
+/// who view it, on the connections that follow this server. A person's tabs on
+/// other servers do not hear it. Run it when the event is sent, so that whoever
+/// loses view stops receiving with the next event.
+pub fn audience_of(db: &Connection, server: Id, channel: Id) -> rusqlite::Result<Audience> {
     Ok(match viewers(db, server, channel)? {
-        None => ChannelAudience::Server(server),
+        None => Audience::Server(server),
         Some(seeing) => {
             let mut users: Vec<Id> = seeing.into_iter().collect();
             users.sort();
-            ChannelAudience::Viewers { server, users }
+            Audience::Followers { server, users }
         }
     })
 }

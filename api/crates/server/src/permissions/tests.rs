@@ -8,7 +8,8 @@ use super::fixture::{MODERATOR, World};
 use super::privileges::*;
 use super::roles::{self, HeldRoleTable, Member, Role, ServerRoles};
 use super::snapshot::{Snapshot, Targets};
-use super::visibility::{self, ChannelAudience, ChannelKind, ServerVisibility};
+use super::visibility::{self, ChannelKind, ServerVisibility};
+use crate::events::Audience;
 use crate::values::Id;
 
 fn holds(world: &World, user: Id, channel: Id, permission: i64) -> bool {
@@ -549,7 +550,7 @@ fn a_server_where_nobody_is_denied_view_is_open_everywhere() {
     );
     assert_eq!(
         visibility::audience_of(&world.db, world.server, world.projects).unwrap(),
-        ChannelAudience::Server(world.server)
+        Audience::Server(world.server)
     );
 }
 
@@ -638,7 +639,7 @@ fn a_deny_at_one_channel_closes_that_channel_and_the_server_but_no_other_channel
     assert!(view.channels.contains(&world.general));
     assert_eq!(
         visibility::audience_of(&world.db, world.server, world.projects).unwrap(),
-        ChannelAudience::Viewers {
+        Audience::Followers {
             server: world.server,
             users: {
                 let mut users = vec![world.maja, world.ada];
@@ -649,7 +650,7 @@ fn a_deny_at_one_channel_closes_that_channel_and_the_server_but_no_other_channel
     );
     assert_eq!(
         visibility::audience_of(&world.db, world.server, world.general).unwrap(),
-        ChannelAudience::Server(world.server)
+        Audience::Server(world.server)
     );
 }
 

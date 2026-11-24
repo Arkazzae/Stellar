@@ -47,20 +47,3 @@ pub fn newcomer_views(
 ) -> rusqlite::Result<bool> {
     visibility::newcomer_views(connection, channel)
 }
-
-/// Who an event about a channel reaches. None when everybody on the server
-/// sees it (nobody is denied view there), so the event goes to the whole
-/// server; otherwise the enabled members who see it.
-pub fn channel_viewers(
-    connection: &Connection,
-    server: Id,
-    channel: Id,
-) -> rusqlite::Result<Option<Vec<Id>>> {
-    Ok(
-        visibility::viewers(connection, server, channel)?.map(|seeing| {
-            let mut users: Vec<Id> = seeing.into_iter().collect();
-            users.sort();
-            users
-        }),
-    )
-}

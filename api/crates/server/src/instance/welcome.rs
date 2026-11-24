@@ -7,7 +7,8 @@ use stellarr_messages::{MessageKey, Messages};
 use super::access;
 use super::users::{User, UserDto};
 use crate::database::DbError;
-use crate::events::{Audience, Event};
+use crate::events::Event;
+use crate::permissions::visibility;
 use crate::values::{Id, Timestamp};
 
 /// A notice that has been written and is waiting to be announced.
@@ -78,10 +79,7 @@ struct MessageCreated {
 /// The event that tells the members who are online and see the channel, to be
 /// published once the notice has been committed.
 pub fn announcement(connection: &Connection, welcome: &Welcome) -> rusqlite::Result<Event> {
-    let audience = match access::channel_viewers(connection, welcome.server, welcome.channel)? {
-        None => Audience::Server(welcome.server),
-        Some(viewers) => Audience::Users(viewers),
-    };
+    let audience = visibility::audience_of(connection, welcome.server, welcome.channel)?;
     let message = MessageCreated {
         id: welcome.id,
         channel_id: welcome.channel,

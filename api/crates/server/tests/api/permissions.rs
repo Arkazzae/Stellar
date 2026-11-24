@@ -1210,3 +1210,73 @@ mod routes {
         assert_eq!(w.owner.client.get("/api/test/instance").await.status, 200);
     }
 }
+
+// ---- Who hears an event about a private channel
+
+mod audience {
+    use std::time::Duration;
+
+    use rusqlite::params;
+    use serde_json::Value;
+    use stellarr_api::values::{Id, Timestamp};
+
+    use crate::support::{HubClient, Person, Server};
+
+    fn cookie_of(person: &Person) -> String {
+        format!("stellarr-dev-session={}", person.client.cookie("stellarr-dev-session").expect("signed in"))
+    }
+
+    fn messages(heard: &[Value]) -> Vec<&Value> {
+        heard.iter().filter(|record| record["target"] == "MessageCreated").collect()
+    }
+
+    #[tokio::test]
+    async fn an_event_about_a_private_channel_reaches_a_viewers_connection_on_that_server_and_nobody_elses() {
+        let server = Server::start().await;
+        let owner = server.found("owner").await;
+        let maya = server.register("maya").await;
+        let noor = server.register("noor").await;
+        let database = server.database();
+        let instance: String = database.query_row("SELECT \"Id\" FROM \"Servers\"", [], |row| row.get(0)).unwrap();
+        // The first text channel is private to one person: noor's own override denies it.
+        let channel: String = database
+            .query_row("SELECT \"Id\" FROM \"Channels\" WHERE \"Kind\" = 0 ORDER BY \"Position\" LIMIT 1", [], |row| row.get(0))
+            .unwrap();
+        database
+            .execute(
+                "INSERT INTO \"MemberPermissionOverrides\" (\"Id\", \"ServerId\", \"TargetType\", \"TargetId\", \"UserId\", \"AllowMask\", \"DenyMask\") VALUES (?1, ?2, 0, ?3, ?4, 0, 16384)",
+                params![Id::random().to_db_text(), instance, channel, noor.id.to_uppercase()],
+            )
+            .unwrap();
+        // Maya is on a second server as well, and has a tab open on it.
+        let other = Id::random();
+        database.execute_batch("PRAGMA foreign_keys = OFF").unwrap();
+        database
+            .execute(
+                "INSERT INTO \"ServerMembers\" VALUES (?1, ?2, (SELECT \"RoleId\" FROM \"ServerMembers\" LIMIT 1), NULL, ?3)",
+                params![other.to_db_text(), maya.id.to_uppercase(), Timestamp::now()],
+            )
+            .unwrap();
+
+        let cookie_maya = cookie_of(&maya);
+        let mut on_the_server = HubClient::connect_to(server.address(), "", &cookie_maya).await;
+        let mut on_the_other = HubClient::connect_to(server.address(), &format!("?serverId={other}"), &cookie_maya).await;
+        let mut denied = HubClient::connect_to(server.address(), "", &cookie_of(&noor)).await;
+        for client in [&mut on_the_server, &mut on_the_other, &mut denied] {
+            client.quiet_for(Duration::from_millis(300)).await;
+        }
+
+        // A newcomer is welcomed in the channel, which only some of the members see.
+        server.register("zed").await;
+
+        let seen = on_the_server.quiet_for(Duration::from_millis(500)).await;
+        let elsewhere = on_the_other.quiet_for(Duration::from_millis(500)).await;
+        let refused = denied.quiet_for(Duration::from_millis(500)).await;
+        let welcome = messages(&seen);
+        assert_eq!(welcome.len(), 1, "{seen:?}");
+        assert_eq!(welcome[0]["arguments"][0]["channelId"], channel.to_lowercase());
+        assert!(messages(&elsewhere).is_empty(), "{elsewhere:?}");
+        assert!(messages(&refused).is_empty(), "{refused:?}");
+        let _ = owner;
+    }
+}
