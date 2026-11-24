@@ -5,7 +5,7 @@
 //! they are well past use.
 //!
 //! A run never holds the one writer for long: each piece is its own short
-//! transaction (a delete is done a few thousand rows at a time, one orphan or
+//! transaction (a delete is done a thousand rows at a time, one orphan or
 //! one queued object at a time), so requests that write wait for a moment and
 //! not for the length of the run. A run looks at whether the server is
 //! stopping between pieces.
