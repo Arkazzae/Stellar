@@ -35,7 +35,7 @@ pub async fn redeem(
         Err(response) => return Ok(*response),
     };
     let credential = request.credential.as_deref().unwrap_or("").trim();
-    if !LENGTH.contains(&credential.encode_utf16().count()) {
+    if !LENGTH.contains(&stellarr_unicode::utf16::length(credential)) {
         return invalid(&state);
     }
     let seen = Seen::of(&state, origin);

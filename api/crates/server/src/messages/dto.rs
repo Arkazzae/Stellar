@@ -140,7 +140,7 @@ pub struct ChannelReadDto {
 /// to `limit - 3` units and an ellipsis.
 pub fn one_line(content: &str, limit: usize) -> String {
     let compact = content.split_whitespace().collect::<Vec<_>>().join(" ");
-    if compact.encode_utf16().count() <= limit {
+    if utf16::length(&compact) <= limit {
         return compact;
     }
     // A pair the cut falls inside is left out whole.

@@ -48,7 +48,7 @@ pub fn normalize_channel_name(name: Option<&str>) -> String {
 }
 
 pub fn is_valid_channel_name(name: &str) -> bool {
-    let length = name.encode_utf16().count();
+    let length = stellarr_unicode::utf16::length(&name);
     (1..=MAX_CHANNEL_NAME_LENGTH).contains(&length)
         && name
             .chars()
@@ -65,8 +65,8 @@ pub fn prepare(request: &ServerRequest, messages: &Messages) -> Result<Starter, 
         .unwrap_or("")
         .trim()
         .to_string();
-    if !(1..=MAX_NAME_LENGTH).contains(&name.encode_utf16().count())
-        || description.encode_utf16().count() > MAX_DESCRIPTION_LENGTH
+    if !(1..=MAX_NAME_LENGTH).contains(&stellarr_unicode::utf16::length(&name))
+        || stellarr_unicode::utf16::length(&description) > MAX_DESCRIPTION_LENGTH
     {
         return Err(Problem::invalid_field(
             "server",

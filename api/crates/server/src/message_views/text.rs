@@ -30,10 +30,7 @@ pub fn trim(text: &str) -> &str {
     text.trim_matches(is_white_space)
 }
 
-/// How long the text is in UTF-16 units.
-pub fn units(text: &str) -> usize {
-    text.chars().map(char::len_utf16).sum()
-}
+pub(crate) use stellarr_unicode::utf16::length as units;
 
 #[cfg(test)]
 mod tests {

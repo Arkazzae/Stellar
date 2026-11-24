@@ -65,12 +65,12 @@ fn validate(request: &RegisterRequest, messages: &Messages) -> Result<Errors, Ap
         }
     }
     let username = request.username.as_deref().unwrap_or("").trim();
-    let length = username.encode_utf16().count();
+    let length = stellarr_unicode::utf16::length(username);
     if !(3..=32).contains(&length) || !username.chars().all(is_username_char) {
         errors.push(("username".into(), vec![messages.get(MessageKey::UsernameInvalid, &[])?]));
     }
     let display_name = request.display_name.as_deref().unwrap_or("").trim();
-    if !(1..=64).contains(&display_name.encode_utf16().count()) {
+    if !(1..=64).contains(&stellarr_unicode::utf16::length(display_name)) {
         errors.push(("displayName".into(), vec![messages.get(MessageKey::RegistrationDisplayNameLength, &[])?]));
     }
     if !addresses::is_plain_address(request.email.as_deref().unwrap_or("").trim()) {

@@ -248,7 +248,7 @@ pub async fn confirm(
     Json(Object(request)): Json<Object<ConfirmRequest>>,
 ) -> ApiResult<Response> {
     let token = request.token.as_deref().unwrap_or("").trim().to_string();
-    let length = token.encode_utf16().count();
+    let length = stellarr_unicode::utf16::length(&token);
     if length == 0 || length > 256 {
         return answer("invalid");
     }

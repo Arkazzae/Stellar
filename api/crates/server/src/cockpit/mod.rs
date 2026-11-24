@@ -89,10 +89,7 @@ pub(crate) fn invalid(field: &str, text: String) -> ApiError {
     Problem::validation(vec![(field.to_string(), vec![text])]).into()
 }
 
-/// The text cut to its length in UTF-16 units, which is how clients count.
-pub(crate) fn length(text: &str) -> usize {
-    text.encode_utf16().count()
-}
+pub(crate) use stellarr_unicode::utf16::length;
 
 pub fn routes() -> Endpoints {
     Endpoints::new()

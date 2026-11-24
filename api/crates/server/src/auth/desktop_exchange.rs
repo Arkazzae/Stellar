@@ -114,7 +114,7 @@ pub async fn exchange_browser_login(
     let Some(id) = Id::parse(request_id) else {
         return Ok(Exchanged::Invalid);
     };
-    if !SECRET_UNITS.contains(&secret.encode_utf16().count()) {
+    if !SECRET_UNITS.contains(&stellarr_unicode::utf16::length(secret)) {
         return Ok(Exchanged::Invalid);
     }
     let owned_secret = secret.to_string();
