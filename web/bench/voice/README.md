@@ -4,7 +4,7 @@ Characterization records and real-browser verification harnesses for the web cli
 
 - **`capture`**: The speech detector, input gate, and automatic leveler inside the detector worklet (`web/src/stellarr/lib/voice/capture/detector/`, compiled to `/audio/detector-worklet.js`), driven with the exact node options used in production (`capture/captureGraph.ts`, `capture/gateNode.ts`, `capture/vad.ts`).
 - **`playback`**: Per-participant remote Web Audio processing strips (`playback/remoteMixer.ts`, `playback/remoteStrip.ts`, `playback/playbackProfile.ts`) across all playback profiles and custom EQ/compressor tunings.
-- **`suppressor`**: Source-built WebAssembly noise suppressors—Speex and RNNoise (`capture/speex/` and `capture/rnnoise/`, compiled to `/audio/speex-worklet.js` and `/audio/rnnoise-worklet.js` with WASM binaries from `artifacts/recipes/speex/` and `artifacts/recipes/rnnoise/`).
+- **`suppressor`**: Source-built WebAssembly noise suppressors: Speex and RNNoise (`capture/speex/` and `capture/rnnoise/`, compiled to `/audio/speex-worklet.js` and `/audio/rnnoise-worklet.js` with WASM binaries from `artifacts/recipes/speex/` and `artifacts/recipes/rnnoise/`).
 
 Microphone device acquisition and browser-native constraints (`micAcquire.ts`, `browserProcessing.ts`, `micPipeline.ts`), fixed input gain, and the prebuilt GTCRN artifact are excluded from the characterization records.
 
@@ -161,7 +161,7 @@ docker rm -f stellarr-voice-call && docker volume rm stellarr-voice-call-data
 
 ## Harness integration boundaries
 
-The characterization suite touches only public module boundaries—never private fields of processors or nodes:
+The characterization suite touches only public module boundaries, never private fields of processors or nodes:
 
 - `capture/worklet.ts`: `capture/detector/processor.ts` registration, `sampleRate`, `processorOptions`, and `this.port`.
 - `playback/run.mjs`: `workerBuild` from `web/worklets.ts` (testing the minified production worklet bundle).

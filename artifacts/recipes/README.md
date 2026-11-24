@@ -1,6 +1,6 @@
 # Artifact recipes
 
-A recipe builds one or more browser artifacts declared in [`../manifest.json`](../manifest.json) from pinned source instead of committing prebuilt binaries under `../files/`. Remaining third-party artifacts without a recipe are committed under `../files/`.
+A recipe builds one or more browser artifacts declared in [`../manifest.json`](../manifest.json) from pinned source instead of committing prebuilt binaries under `../files/` (see [`artifacts/README.md`](../README.md)). Remaining third-party artifacts without a recipe are committed under `../files/`.
 
 | Recipe | Outputs | Upstream source & toolchain |
 | --- | --- | --- |
@@ -18,7 +18,7 @@ docker buildx bake recipes
 
 This builds every recipe listed in [`../../docker-bake.hcl`](../../docker-bake.hcl) into `artifacts/recipes/<name>/out/` using the same `Dockerfile` stages as the production image build.
 
-Run `docker buildx bake recipes` once in a fresh checkout or worktree—and whenever a recipe changes—before running `npm run dev`, `npm test`, or `npm run build` in `web/`. Those commands invoke [`../assemble.mjs`](../assemble.mjs) first, which copies outputs from `out/` into `web/public/`, verifies every SHA-256 digest against `artifacts/manifest.json`, and fails if any output is missing or mismatched (`assemble.mjs` never invokes Docker itself). The `web` service in `docker-compose.dev.yml` reads the assembled files from the host bind mount.
+Run `docker buildx bake recipes` once in a fresh checkout or worktree, and whenever a recipe changes, before running `npm run dev`, `npm test`, or `npm run build` in `web/`. Those commands invoke [`../assemble.mjs`](../assemble.mjs) first, which copies outputs from `out/` into `web/public/`, verifies every SHA-256 digest against `artifacts/manifest.json`, and fails if any output is missing or mismatched (`assemble.mjs` never invokes Docker itself). The `web` service in `docker-compose.dev.yml` reads the assembled files from the host bind mount.
 
 Cached builds finish in a few seconds. Cold builds download the pinned toolchains first (`wasi-sdk` is ~776 MB compressed; Bergamot's Emscripten archive is ~318 MB and runs under `linux/amd64` emulation on Apple silicon, taking 13–28 minutes on a cold cache).
 
@@ -86,7 +86,7 @@ The `recipes` job in `.github/workflows/ci.yml` builds all recipes once per work
 ## WebAssembly build guidelines
 
 - **Standalone `wasm32-wasip1` modules without JS glue (where possible)**: For audio worklets (`speex`, `rnnoise`), compile with `wasi-sdk` `clang --target=wasm32-wasip1 -nostartfiles -Wl,--no-entry` and explicitly export only the functions called by the worklet plus `malloc` and `free`. Static `libm` and `dlmalloc` from `wasi-libc` link without WASI host imports; the build script checks that the final `.wasm` binary has zero imports so the worklet can instantiate it with `{}`. (If C++ static constructors are present, export and call `__wasm_call_ctors` once on initialization.)
-- **Explicit WebAssembly feature pinning**: Compiler defaults advance over time. Pass `-mcpu=mvp` plus explicit `-m<feature>` flags to `clang`, and pass `-Xlinker --features=<comma-separated-list>` to `wasm-ld` (use `-Xlinker` because `-Wl,` splits on commas). `wasm-ld` rejects the link if any object—including `wasi-libc`, which in `wasi-sdk 33` targets `lime1` and requires `extended-const`—uses a feature outside the allowed list. Enable `simd128` only when the recipe's own kernels use WebAssembly SIMD (such as `rnnoise`).
+- **Explicit WebAssembly feature pinning**: Compiler defaults advance over time. Pass `-mcpu=mvp` plus explicit `-m<feature>` flags to `clang`, and pass `-Xlinker --features=<comma-separated-list>` to `wasm-ld` (use `-Xlinker` because `-Wl,` splits on commas). `wasm-ld` rejects the link if any object (including `wasi-libc`, which in `wasi-sdk 33` targets `lime1` and requires `extended-const`) uses a feature outside the allowed list. Enable `simd128` only when the recipe's own kernels use WebAssembly SIMD (such as `rnnoise`).
 - **Minimal manual configuration**: Rather than running Autotools inside the build stage, compile only the required source files with explicit `-D` defines matching upstream's `configure.ac`. Stub out unused symbols referenced by shared compilation units with `__builtin_trap()`.
 - **Bit-exact or characterized audio verification**: Compare new recipe builds against previous binaries using `npm run bench:voice-suppressor -w stellarr-web -- --engine <engine> --before <revision>` (see [`web/bench/voice/README.md`](../../web/bench/voice/README.md)).
 - **Worklet lifecycle**: `speex-worklet.js` compiles its small binary inside the worklet constructor; `rnnoise-worklet.js` receives a `WebAssembly.Module` compiled on the main thread (`noiseSuppression.ts`) and instantiates it in the constructor. Both process audio from the first render quantum, attach `this.port.onmessage` (so `"destroy"` messages start the MessagePort and tear down state), perform zero per-quantum heap allocations, and refresh typed-array views whenever linear memory grows.

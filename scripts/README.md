@@ -4,7 +4,7 @@ Development utilities for seeding and inspecting the local Stellarr stack.
 
 ## `seed-dev.sh` / `seed-dev.py`
 
-Populates a development SQLite database with multi-day sample activity—accounts, roles, sections, text and voice channels, messages, attachments, friendships, direct messages, invites, audit entries, and presence—while preserving any pre-existing owner account, personal test accounts, and messages authored by non-seeded users.
+Populates a development SQLite database with multi-day sample activity (accounts, roles, sections, text and voice channels, messages, attachments, friendships, direct messages, invites, audit entries, and presence) while preserving any pre-existing owner account, personal test accounts, and messages authored by non-seeded users.
 
 ### What gets seeded
 

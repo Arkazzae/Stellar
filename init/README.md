@@ -14,7 +14,7 @@ stellarr-init restart SERVICE      # stop a service and restart it immediately
 stellarr-init reload SERVICE       # send a service its configured reload signal
 ```
 
-Pass `--socket PATH` to use a control socket path other than `/run/stellarr/init.sock`. Client subcommands exit `0` on success, `1` on failure or unhealthy state, and time out with exit code `1` after 3 seconds if the supervisor does not respond—making `stellarr-init health` suitable for the container `HEALTHCHECK`.
+Pass `--socket PATH` to use a control socket path other than `/run/stellarr/init.sock`. Client subcommands exit `0` on success, `1` on failure or unhealthy state, and time out with exit code `1` after 3 seconds if the supervisor does not respond, making `stellarr-init health` suitable for the container `HEALTHCHECK`.
 
 | `stellarr-init run` exit code | Meaning |
 | --- | --- |

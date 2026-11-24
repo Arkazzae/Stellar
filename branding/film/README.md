@@ -35,7 +35,7 @@ Commit `stellarr.webp`, `ui/`, and any modified source files. `out/` is gitignor
 
 ### Verifying framing and element selectors after a capture
 
-Target positions for pointer interactions—such as clicking **Translate**, selecting the `lounge` channel, highlighting the six theme swatches, measuring the shared screen bounds, and measuring Ola's translated message offset—are queried dynamically from the captured DOM.
+Target positions for pointer interactions (such as clicking **Translate**, selecting the `lounge` channel, highlighting the six theme swatches, measuring the shared screen bounds, and measuring Ola's translated message offset) are queried dynamically from the captured DOM.
 
 Camera framing coordinates (`CHAT_CAM`, `VOICE_CAM`, `SHARE_CAM`, `PAL_CAM`, and `COCKPIT_CAM` in `index.html`), however, are specified in `1920 × 1080` snapshot pixels. Always inspect `out/stills.png` after `./film.sh stills` to confirm panels remain properly framed.
 

@@ -40,45 +40,63 @@ One line for each, from the module's own header. The three lists are macro
 invocations in files of their own (see below).
 
 ```
-lib.rs           serve() and run(); the lists groups.list.rs and workers.list.rs
-main.rs          reads the environment, starts logging, runs
-version.rs       the version the server reports, from the build (see Version)
-settings/        everything read at start; a value that cannot be right stops the start
-database/        SQLite: pool, schema.sql, errors, the write gate
-values/          Id, Timestamp, int_enum!: how a value is stored and written
-encoding.rs      base64url and hex, written once
-seal.rs          sealed values: what the server hands a client or the database to keep
-http/            the pipeline and the tools a group is built from (path, extractors,
-                 JSON and problems, rate limits, the client gate, answering with a file)
-events.rs        what handlers tell the hub, and what they ask it
-state.rs         what every handler can reach (AppState)
-logging.rs       where the log goes
-background/      work that runs beside the requests, from start to stop (workers)
-auth/            who a request is from: passwords, setup code, sessions, the sign-in flow
-instance/        what the instance is made of: accounts, servers, starter channels, invites
-accounts/        a group: founding, registering, signing in and out, who is signed in
-client_settings/ a group: the sections of settings a client keeps on the account
-emoji/           a group: a server's custom emoji, their upload and image
-own_profile/     a group: the own profile, preferences and join sound
-soundboard/      a group: a server's sounds, their order and switches
-account_security/ a group: the security page, sessions, the password and the address, from a session
-encryption/      a group: the server's side of end-to-end encrypted direct conversations: keys, PIN backup, devices, epochs
-backups/         a group: backups of the instance, the schedule, the offsite copy, restoring; and the panel's routes for them
-housekeeping/    a worker: the hourly pruning of journals, records, uploads, the deletion queue, old backups and logs
-panel/           what every route of the administration panel stands on: its gate, its audit line, its settings row
-health/          a group: /health/live and /health/ready
-identity_providers/ a group: signing in, signing up and proving oneself again through a provider (OpenID Connect), and linking identities
-releases/        a group: the discovery document and the desktop and Android builds
-second_step/     a group: the second half of a sign-in, a passkey alone, an operator's recovery credential, a forgotten password
-desktop_login/   a group: starting the desktop application's sign-in through the browser, and the page that approves it
-permissions/     who may do what on a server, and who sees which channel
-realtime/        the hub the web client keeps open: connections, presence, methods, the watcher of sessions
-voice/           a group: voice rooms and the media sessions behind them: the hub methods, the client of the media server, its workers, the two moderation routes
-mail/            sending mail: the settings, one delivery service, the queue of security alerts
-secrets/         the secrets an operator sets in the panel, sealed in the database
-panel/           the gate of the operator's panel and the line it writes in the audit log
-cockpit/         a group: the operator's panel, /api/cockpit (people, roles, servers, sessions, runtime, logs, settings, secrets)
-testing.rs       helpers the unit tests share (not compiled outside tests)
+lib.rs              serve() and run(); the lists groups.list.rs and workers.list.rs
+main.rs             reads the environment, starts logging, runs
+version.rs          the version the server reports, from the build (see Version)
+settings/           everything read at start; a value that cannot be right stops the start
+database/           SQLite: pool, schema.sql, errors, the write gate
+values/             Id, Timestamp, int_enum!: how a value is stored and written
+encoding.rs         base64url and hex, written once
+cursor.rs           opaque URL-safe Base64 cursors in standard byte order
+seal.rs             sealed values: what the server hands a client or the database to keep
+object_store.rs     uploaded file store (files/ or S3) and incoming/ staging
+admission.rs        upload reservation leases: quotas, free disk space and concurrency slots
+http/               the pipeline and the tools a group is built from (path, extractors,
+                    JSON and problems, rate limits, the client gate, answering with a file)
+events.rs           what handlers tell the hub, and what they ask it
+state.rs            what every handler can reach (AppState)
+logging.rs          where the log goes, and what is kept out of the panel buffer
+background/         work that runs beside the requests, from start to stop (workers)
+auth/               who a request is from: passwords, setup code, sessions, the sign-in flow
+instance/           what the instance is made of: accounts, servers, starter channels, invites
+permissions/        who may do what on a server, and who sees which channel
+panel/              what every route of /api/cockpit stands on: its gate, audit line, settings row
+secrets/            the secrets an operator sets in the panel, sealed in the database
+mail/               sending mail: settings, one delivery service, the queue of security alerts
+realtime/           the hub the web client keeps open: connections, presence, methods, session watcher
+accounts/           a group: founding, registering, signing in and out, who is signed in
+account_security/   a group: security page, sessions, password and email changes from a session
+second_step/        a group: 2FA challenges and enrolment, passkey sign-in, recovery, password reset
+identity_providers/ a group: OpenID Connect sign-in, sign-up, re-authentication and linking
+desktop_login/      a group: browser-approved sign-in handoff for the desktop client
+own_profile/        a group: own profile, preferences and voice arrival sound
+client_settings/    a group: per-account client settings sections synced across devices
+bootstrap/          a group: /api/bootstrap initial state and runtime integration switches
+servers/            a group: listing, discovering, creating and joining servers, invites and profiles
+administration/     a group: server invites, audit log, notification defaults, handover and deletion
+roles/              a group: server roles, member role assignments, and channel/section overrides
+moderation/         a group: kicking and banning members from a server
+channels/           a group: channels and sections, ordering, read markers and typing/view hub calls
+messages/           a group: posting, editing and deleting channel messages, transcripts and journal
+message_views/      a group: message reactions, channel pins, threads and FTS5 channel search
+link_previews/      a worker: unfurling message links and storing preview images locally
+social/             a group: friend requests, friendships and blocks across the instance
+direct/             a group: 1:1 direct conversations, paged messages, sending and read markers
+encryption/         a group: server side of 1:1 E2EE: public keys, PIN backup, devices and epochs
+uploads/            a group: multipart attachments, profile/server images and encrypted DM blobs
+assets/             a group: /assets/{id}, /poster and /preview, streamed with byte ranges
+emoji/              a group: server custom emoji upload, listing, deletion and image serving
+soundboard/         a group: server soundboard clips, ordering and playback switches
+voice/              a group: voice rooms, media server sessions and workers, voice moderation routes
+inbox/              a group: /api/notifications, a person's mention and system inbox
+delivery/           a group and worker: away notifications via Web Push and mail, subscription routes
+backups/            a group and worker: snapshots, full .zip archives, R2 upload, schedule and restore
+housekeeping/       a worker: hourly pruning of journals, orphan uploads, deletion queue, backups, logs
+cockpit/            a group: /api/cockpit (users, roles, servers, sessions, runtime, logs, settings)
+releases/           a group: /.well-known/stellarr/client discovery and desktop/Android builds
+health/             a group: /health/live and /health/ready
+discord_import/     writes a stellarr-discord snapshot into an existing server, page by page
+testing.rs          helpers the unit tests share (not compiled outside tests)
 ```
 
 Shared plumbing (`settings`, `database`, `values`, `http`, `events`, `state`,
@@ -923,9 +941,7 @@ run took 16 ms; a task that wrote one small row every millisecond beside it
 waited 0.16 ms at the median, 5 ms at the 99th percentile and 0.43 s at worst, on
 a machine busy with other work.
 `housekeeping::run(state, now, stopping)` takes the
-moment its ages are measured against. `tests/housekeeping-shared-database.sh`
-runs both servers on copies of one database with rows just inside and outside
-each retention.
+moment its ages are measured against.
 
 ## The realtime hub
 
