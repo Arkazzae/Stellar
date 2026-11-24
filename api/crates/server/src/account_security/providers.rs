@@ -1,10 +1,8 @@
 //! The identity providers an account can sign in through.
 //!
-//! This server has no settings for one yet: the sign-in through a provider is
-//! another group's, and it will bring them. Until then no provider is
-//! configured, so a linked identity is named by the host of its issuer and
-//! counts as a way in for nobody. This is the one place that changes when the
-//! settings arrive.
+//! They are the ones the settings name (see `identity_providers`). An identity
+//! whose provider is no longer set up is named by the host of its issuer and
+//! counts as a way in for nobody.
 
 use crate::auth::ways_in::OwnedProviders;
 use crate::state::AppState;
@@ -18,8 +16,19 @@ pub struct Provider {
     pub display_name: String,
 }
 
-pub fn configured(_state: &AppState) -> Vec<Provider> {
-    Vec::new()
+/// The providers this instance is set up with, in the order the sign-in
+/// page offers them, named as the person sees them.
+pub fn configured(state: &AppState) -> Vec<Provider> {
+    state
+        .settings()
+        .oidc
+        .providers
+        .iter()
+        .map(|provider| Provider {
+            id: provider.id.clone(),
+            display_name: crate::identity_providers::shown_name(provider, state.messages()).unwrap_or_default(),
+        })
+        .collect()
 }
 
 /// What `auth::ways_in` asks about, for these providers.
