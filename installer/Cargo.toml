@@ -1,0 +1,29 @@
+[package]
+name = "stellarr-installer"
+version = "0.1.0"
+edition = "2024"
+publish = false
+
+# The installer runs on the machine that will run Stellarr, before anything
+# else is there, so it brings what it needs: HTTPS with its own roots, and no
+# library of the system beyond libc. Docker, Compose and sudo stay commands it
+# runs, as a person would.
+[dependencies]
+libc = "0.2"
+ureq = { version = "3", default-features = false, features = ["rustls"] }
+
+[features]
+# Hooks for infra/tests/install.test.sh: answers from files in place of
+# GitHub and the instance, another OS or user id, and a clock that does not
+# wait. A release build never has them.
+test-seams = []
+
+[[bin]]
+name = "stellarr-installer"
+path = "src/main.rs"
+
+[profile.release]
+lto = true
+codegen-units = 1
+strip = true
+opt-level = "s"

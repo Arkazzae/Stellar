@@ -233,7 +233,7 @@ Two more names belong to the image and are not settings. `STELLARR_API_LISTEN` i
 ### Settings without a `STELLARR_*` name
 
 > [!NOTE]
-> Every operator-facing `STELLARR_*` variable is kept in lockstep across `api/crates/server/src/settings/variables.rs` (or `infra/{entrypoint,settings,tls-maintenance}.sh`), `docker-compose.yml`, `.env.example`, and the tables above (`infra/tests/setting-names.test.sh`). In `.env.example`, every entry must remain commented out (`# STELLARR_...=`) and must not include raw `Section__Key` settings because `install.sh` appends `.env.example` directly to the `.env` file it writes.
+> Every operator-facing `STELLARR_*` variable is kept in lockstep across `api/crates/server/src/settings/variables.rs` (or `infra/{entrypoint,settings,tls-maintenance}.sh`), `docker-compose.yml`, `.env.example`, and the tables above (`infra/tests/setting-names.test.sh`). In `.env.example`, every entry must remain commented out (`# STELLARR_...=`) and must not include raw `Section__Key` settings because the installer appends `.env.example` directly to the `.env` file it writes.
 
 Advanced internal subsystems that rarely need tuning can be configured in `.env` using raw configuration keys (`Section__Key`, where `__` stands for `:`; names are not case-sensitive). For any setting that has a `STELLARR_*` variable, the `STELLARR_*` variable always takes precedence over the raw key:
 

@@ -1,16 +1,29 @@
 #!/usr/bin/env bash
-# Runs install.sh against stub commands, so no Docker, network or root is
-# needed. The stubs record every call and answer from files each case writes.
+# Runs the installer, installer/ built with its test-seams feature, and the
+# install.sh that fetches it, against stub commands, so no Docker, network or
+# root is needed. The stubs record every call and answer from files each case
+# writes; the installer's HTTPS requests are answered from files as well.
 # Each case checks what a person or the machine would notice: the files, the
 # calls made to Docker, the exit status, a line on screen.
 #
 #   bash infra/tests/install.test.sh            every case
 #   bash infra/tests/install.test.sh demo NAME  one screen on this terminal:
 #                                               fresh, update, no-release or start-failed
+#
+# It builds the installer with cargo, unless STELLARR_INSTALLER_TEST_BIN names
+# one built with --features test-seams already.
 set -Eeuo pipefail
 
 repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 installer="$repo_root/install.sh"
+binary=${STELLARR_INSTALLER_TEST_BIN:-}
+if [[ -z $binary ]]; then
+  cargo build --quiet --features test-seams --manifest-path "$repo_root/installer/Cargo.toml"
+  binary="$(cargo metadata --format-version 1 --no-deps --manifest-path "$repo_root/installer/Cargo.toml" |
+    sed -n 's/.*"target_directory":"\([^"]*\)".*/\1/p')/debug/stellarr-installer"
+fi
+[[ -x $binary ]] || { echo "No installer at $binary" >&2; exit 1; }
+binary="$(cd -P "$(dirname "$binary")" && pwd -P)/$(basename "$binary")"
 scratch="$(mktemp -d "${TMPDIR:-/tmp}/stellarr-install-test.XXXXXX")"
 # Without symbolic links, as the installer and the stubs see it.
 scratch="$(cd -P "$scratch" && pwd -P)"
@@ -38,7 +51,7 @@ fail() {
 # case removes is never replaced by the machine's own docker or sudo.
 tools="$scratch/tools"
 mkdir -p "$tools"
-for tool in awk cat chmod cmp cp date grep ln mkdir mktemp mv rm sed sleep sort tail touch tr sh dash; do
+for tool in awk cat chmod cmp cp cut date grep ln mkdir mktemp mv rm sed sha256sum sleep sort tail touch tr sh dash; do
   if path=$(command -v "$tool" 2>/dev/null) && [[ $path == /* ]]; then
     ln -s "$path" "$tools/$tool"
   fi
@@ -133,62 +146,27 @@ case $name in
     case $1 in -lnt) listening tcp ;; -lnu) listening udp ;; esac
     ;;
   curl | wget)
-    # GNU wget (with wget-gnu set) and BusyBox's answer --version and report
-    # an HTTP error as each really does.
-    if [[ $name == wget && $* == --version ]]; then
-      [[ -e $state/wget-gnu ]] || { echo "wget: unrecognized option '--version'" >&2; exit 1; }
-      echo "GNU Wget 1.21.4 built on linux-gnu."
-      exit 0
-    fi
-    url='' target='' format='' quiet=0
+    # Only install.sh downloads with these: the installer of a release and
+    # its sums, served from $STUB_ASSETS.
+    url='' target=''
     while [[ $# -gt 0 ]]; do
       case $1 in
-        -q) quiet=1 ;;
         -o | -O) target=$2; shift ;;
-        -w) format=$2; shift ;;
         --proto | --connect-timeout | --max-time | --retry | --retry-delay | -T | -t) shift ;;
         https://* | http://*) url=$1 ;;
       esac
       shift
     done
-    [[ $target != - ]] || target=''
-    serve() { if [[ -n $target ]]; then cat "$1" >"$target"; else cat "$1"; fi; }
-    not_found() {
-      if [[ $name == curl ]]; then
-        echo "curl: (22) The requested URL returned error: 404" >&2
-        exit 22
-      elif [[ -e $state/wget-gnu ]]; then
-        # With -q GNU wget prints nothing at all; these are its -nv lines.
-        [[ $quiet -eq 1 ]] || printf '%s:\n2026-11-20 22:52:45 ERROR 404: Not Found.\n' "$url" >&2
-        exit 8
-      fi
-      echo "wget: server returned error: HTTP/1.1 404 Not Found" >&2
-      exit 1
-    }
-    latest=$(read_file latest-url https://github.com/Arkazzae/Stellarr/releases)
     case $url in
-      https://github.com/Arkazzae/Stellarr/releases/latest)
-        [[ ! -e $state/github-down ]] || { echo "curl: (6) Could not resolve host: github.com" >&2; exit 6; }
-        printf '%s' "${format//'%{url_effective}'/$latest}"
-        ;;
-      https://api.github.com/repos/Arkazzae/Stellarr/releases/latest)
-        [[ ! -e $state/github-down ]] || { echo "wget: bad address 'api.github.com'" >&2; exit 4; }
-        case $latest in
-          */releases/tag/*) printf '{\n  "url": "x",\n  "tag_name": "%s",\n  "name": "x"\n}\n' "${latest##*/}" >"$target" ;;
-          *) not_found ;;
-        esac
-        ;;
-      https://raw.githubusercontent.com/Arkazzae/Stellarr/*)
-        file="$state/raw/${url#https://raw.githubusercontent.com/Arkazzae/Stellarr/}"
-        [[ -f $file ]] || not_found
-        serve "$file"
-        ;;
-      https://get.docker.com)
-        printf '%s\n' 'echo "get-docker $*" >>"$STUB_LOG"' 'ln -s "$STUB_PROGRAM" "$STUB_BIN/docker"' >"$target"
-        ;;
-      https://127.0.0.1:*/api/auth/registration)
-        [[ -f $state/registration ]] || { echo "curl: (7) Failed to connect" >&2; exit 7; }
-        serve "$state/registration"
+      https://github.com/Arkazzae/Stellarr/releases/latest/download/* | \
+        https://github.com/Arkazzae/Stellarr/releases/download/v*/*)
+        [[ ! -e $state/github-down ]] || { echo "$name: Could not resolve host: github.com" >&2; exit 6; }
+        file="$STUB_ASSETS/${url##*/}"
+        if [[ ! -f $file ]]; then
+          echo "$name: The requested URL returned error: 404" >&2
+          exit 22
+        fi
+        cat "$file" >"$target"
         ;;
       *) echo "$name: no answer for $url" >&2; exit 6 ;;
     esac
@@ -282,40 +260,72 @@ sed -e '/STELLARR_TURN_ENABLED/d' -e '/49000\/tcp/d' \
 ' "$repo_root/docker-compose.yml" >"$fixtures/compose-1.4.0"
 { cat "$fixtures/compose-1.4.0"; echo "# 1.5.0"; } >"$fixtures/compose-1.5.0"
 cp "$repo_root/.env.example" "$fixtures/env.example"
-# Without a checkout beside it, the script downloads its files.
+# Without a checkout beside it, install.sh downloads the installer.
 mkdir -p "$scratch/download"
 cp "$installer" "$scratch/download/install.sh"
 downloaded="$scratch/download/install.sh"
 marker='# Written by the Stellarr installer, which changes only the settings it is given.'
 
+# The installer as a release publishes it, for every target, and its sums.
+assets="$scratch/assets"
+mkdir -p "$assets"
+for target in x86_64-unknown-linux-musl aarch64-unknown-linux-musl x86_64-apple-darwin aarch64-apple-darwin; do
+  cp "$binary" "$assets/stellarr-installer-$target"
+done
+(cd "$assets" && sha256sum stellarr-installer-* >stellarr-installer.sha256)
+
 # Starts a case: a directory with its own bin, home, working directory and
-# stub state, every stub in place, and release 1.4.0 published.
+# stub state, every stub in place, and release 1.4.0 published. The
+# installer's HTTPS requests are answered from $http, by files named after
+# their address.
 new_case() {
   case_name=$1
   case_dir="$scratch/cases/$1"
   bin="$case_dir/bin" state="$case_dir/state" home="$case_dir/home" work="$case_dir/cwd"
-  mkdir -p "$bin" "$state" "$home" "$work"
+  http="$case_dir/http" case_assets="$case_dir/assets"
+  raw="$http/raw.githubusercontent.com/Arkazzae/Stellarr"
+  mkdir -p "$bin" "$state" "$home" "$work" "$http/127.0.0.1/api/auth" "$http/get.docker.com" "$case_assets"
   : >"$case_dir/calls"
   local name
   for name in docker curl wget sudo uname ss lsof systemctl id df sleep; do
     ln -s "$stub" "$bin/$name"
   done
+  ln -s "$assets"/* "$case_assets/"
   release 1.4.0
   echo "2026-11-20T18:30:13Z stellarr-api: Setup code: K7QM-2XWP-9HDA. Open https://chat.example.com:8443/setup to create the owner account." >"$state/logs"
-  echo '{"setupRequired":true}' >"$state/registration"
-  script=$downloaded
+  registration '{"setupRequired":true}'
+  # Docker's install script, as the stubs have it: it logs and puts docker
+  # in place.
+  # shellcheck disable=SC2016 # The script expands these when it runs.
+  printf '%s\n' 'echo "get-docker $*" >>"$STUB_LOG"' 'ln -s "$STUB_PROGRAM" "$STUB_BIN/docker"' \
+    >"$http/get.docker.com/index"
+  runner=("$binary")
+  clock=fast
+}
+
+latest_release() {
+  mkdir -p "$http/github.com/Arkazzae/Stellarr/releases"
+  echo "$1" >"$http/github.com/Arkazzae/Stellarr/releases/latest.redirect"
 }
 
 release() {
-  echo "https://github.com/Arkazzae/Stellarr/releases/tag/v$1" >"$state/latest-url"
-  mkdir -p "$state/raw/v$1"
-  cp "$fixtures/compose-$1" "$state/raw/v$1/docker-compose.yml"
-  cp "$fixtures/env.example" "$state/raw/v$1/.env.example"
+  latest_release "https://github.com/Arkazzae/Stellarr/releases/tag/v$1"
+  mkdir -p "$raw/v$1"
+  cp "$fixtures/compose-$1" "$raw/v$1/docker-compose.yml"
+  cp "$fixtures/env.example" "$raw/v$1/.env.example"
 }
 
-no_release() { echo https://github.com/Arkazzae/Stellarr/releases >"$state/latest-url"; }
+no_release() { latest_release https://github.com/Arkazzae/Stellarr/releases; }
+github_down() {
+  : >"$http/github.com.down"
+  : >"$state/github-down"
+}
+registration() { echo "$1" >"$http/127.0.0.1/api/auth/registration"; }
 flag() { : >"$state/$1"; }
 answer() { printf '%s\n' "$@" >"$case_dir/answers"; }
+# The case runs install.sh, which fetches the installer, in place of the
+# installer itself.
+through_install_sh() { runner=("$BASH" "${1:-$downloaded}"); }
 
 # A container named stellarr that Compose started from $1, running or not,
 # of release $2.
@@ -347,6 +357,21 @@ installed() {
 # default, /dev/tty, can be left to fail as it would for a person.
 no_controlling_terminal() { ! (: <>/dev/tty) 2>/dev/null; }
 
+# The environment of every run: the stubs' state and the installer's test
+# seams. The case's state may name another OS or user id for the installer.
+seams() {
+  # A temporary directory of the case's own, which must be empty again after
+  # every run.
+  mkdir -p "$case_dir/tmp"
+  seam_env=(PATH="$bin:$tools" HOME="$home" TMPDIR="$case_dir/tmp" STUB_STATE="$state" STUB_LOG="$case_dir/calls"
+    STUB_PROGRAM="$stub" STUB_BIN="$bin" STUB_ASSETS="$case_assets"
+    STELLARR_INSTALLER_TEST_HTTP="$http" STELLARR_INSTALLER_TEST_HTTP_LOG="$case_dir/calls")
+  if [[ $clock == fast ]]; then seam_env+=(STELLARR_INSTALLER_TEST_CLOCK=fast); fi
+  if [[ -f $state/os ]]; then seam_env+=(STELLARR_INSTALLER_TEST_OS="$(cat "$state/os")"); fi
+  # A person, not root, unless the case says otherwise.
+  seam_env+=(STELLARR_INSTALLER_TEST_UID="$(cat "$state/uid" 2>/dev/null || echo 1000)")
+}
+
 # Runs the installer in the case's working directory with a clean
 # environment. VAR=value arguments come first, then the installer's options.
 # Without answers there is no terminal to ask on.
@@ -357,11 +382,12 @@ run() {
     env+=("$1")
     shift
   done
+  seams
   status=0
-  (cd "$work" && env -i PATH="$bin:$tools" HOME="$home" TERM=dumb LANG=C STUB_STATE="$state" \
-    STUB_LOG="$case_dir/calls" STUB_PROGRAM="$stub" STUB_BIN="$bin" STELLARR_INSTALLER_TTY="$tty" \
-    STELLARR_INSTALLER_UI=plain ${env[@]+"${env[@]}"} "$BASH" "$script" "$@" \
+  (cd "$work" && env -i "${seam_env[@]}" TERM=dumb LANG=C STELLARR_INSTALLER_TTY="$tty" \
+    STELLARR_INSTALLER_UI=plain ${env[@]+"${env[@]}"} "${runner[@]}" "$@" \
     </dev/null >"$case_dir/out" 2>"$case_dir/err") || status=$?
+  expect_empty_dir "$case_dir/tmp"
 }
 
 expect_status() { [[ $status -eq $1 ]] || fail "exit status $status, not $1."; }
@@ -390,14 +416,14 @@ case_truncated() {
   local size cut cuts=() body="$case_dir/head.sh"
   size=$(wc -c <"$installer")
   size=$((size))
-  for ((cut = 0; cut < size; cut += 500)); do cuts+=("$cut"); done
+  for ((cut = 0; cut < size; cut += 100)); do cuts+=("$cut"); done
   # The last byte is the final newline; without it the script is whole.
-  for ((cut = size - 200; cut < size - 1; cut++)); do cuts+=("$cut"); done
+  for ((cut = size - 60; cut < size - 1; cut++)); do cuts+=("$cut"); done
+  seams
   for cut in "${cuts[@]}"; do
     # BSD head refuses a count of 0.
     if [[ $cut -eq 0 ]]; then : >"$body"; else head -c "$cut" "$installer" >"$body"; fi
-    (cd "$work" && env -i PATH="$bin:$tools" HOME="$home" STUB_STATE="$state" STUB_LOG="$case_dir/calls" \
-      "$BASH" <"$body" >/dev/null 2>&1) || :
+    (cd "$work" && env -i "${seam_env[@]}" "$BASH" <"$body" >/dev/null 2>&1) || :
     [[ ! -s $case_dir/calls ]] || fail "the first $cut bytes ran: $(cat "$case_dir/calls")"
     expect_empty_dir "$home"
     expect_empty_dir "$work"
@@ -407,45 +433,133 @@ case_truncated() {
 # Runs command $@ the way run starts the installer, with output to the
 # case's files and the status in $status.
 hermetic() {
+  seams
   status=0
-  (cd "$work" && env -i PATH="$bin:$tools" HOME="$home" TERM=dumb STUB_STATE="$state" STUB_LOG="$case_dir/calls" \
-    STELLARR_INSTALLER_TTY="$case_dir/no-terminal" STELLARR_INSTALLER_UI=plain "$@" \
-    </dev/null >"$case_dir/out" 2>"$case_dir/err") || status=$?
+  (cd "$work" && env -i "${seam_env[@]}" TERM=dumb STELLARR_INSTALLER_TTY="$case_dir/no-terminal" \
+    STELLARR_INSTALLER_UI=plain "$@" </dev/null >"$case_dir/out" 2>"$case_dir/err") || status=$?
 }
 
+# install.sh is POSIX sh: any sh runs it, from a file or from its input.
 case_posix_shells() {
   new_case posix-shells
   local shell
   for shell in sh dash; do
     [[ -e $tools/$shell ]] || continue
-    # A file is handed to bash.
     hermetic "$shell" "$downloaded" --help
     [[ $status -eq 0 ]] || fail "$shell install.sh --help exited with $status."
     expect_shown "Usage:"
     expect_not_shown "syntax error"
-    # A script on the input cannot be: either bash in POSIX mode reads it, or
-    # the guard says to pipe it to bash.
     status=0
-    (cd "$work" && env -i PATH="$bin:$tools" HOME="$home" "$shell" -s -- --help <"$downloaded" \
+    (cd "$work" && env -i "${seam_env[@]}" "$shell" -s -- --help <"$downloaded" \
       >"$case_dir/out" 2>"$case_dir/err") || status=$?
-    shown "Usage:" || shown "needs bash: curl -fsSL https://stellarr.online/install.sh | bash" ||
-      fail "$shell reading the script from its input neither ran it nor asked for bash."
-    expect_not_shown "syntax error"
+    [[ $status -eq 0 ]] || fail "$shell -s <install.sh --help exited with $status."
+    expect_shown "Usage:"
   done
-  expect_no_calls
-  # Started as sh, bash runs in POSIX mode; the installer leaves it.
+  expect_not_called "docker"
   hermetic "$BASH" --posix "$downloaded" --yes
   expect_success
   expect_shown "Stellarr 1.4.0 is running"
+}
+
+# install.sh fetches the installer for this machine from the latest release,
+# checks its sum and runs it with the same arguments.
+case_install_sh() {
+  new_case install-sh
+  through_install_sh
+  run --yes --domain chat.example.com
+  expect_success
+  expect_called "curl --proto =https --tlsv1.2 -fsSL"
+  expect_called "https://github.com/Arkazzae/Stellarr/releases/latest/download/stellarr-installer-x86_64-unknown-linux-musl"
+  expect_called "https://github.com/Arkazzae/Stellarr/releases/latest/download/stellarr-installer.sha256"
+  expect_line "$home/stellarr/.env" "STELLARR_DOMAIN=chat.example.com"
+  expect_shown "Stellarr 1.4.0 is running"
+
+  new_case install-sh-macos
+  through_install_sh
+  echo Darwin >"$state/os"
+  echo arm64 >"$state/arch"
+  run --help
+  expect_success
+  expect_called "stellarr-installer-aarch64-apple-darwin"
+
+  new_case install-sh-version
+  through_install_sh
+  run STELLARR_INSTALLER_VERSION=1.5.0 --help
+  expect_success
+  expect_called "https://github.com/Arkazzae/Stellarr/releases/download/v1.5.0/stellarr-installer-x86_64-unknown-linux-musl"
+
+  new_case install-sh-wget
+  through_install_sh
+  rm "$bin/curl"
+  run --yes
+  expect_success
+  expect_called "wget -q -T 20 -O"
+
+  new_case install-sh-bad-sum
+  through_install_sh
+  rm "$case_assets/stellarr-installer.sha256"
+  echo "0000  stellarr-installer-x86_64-unknown-linux-musl" >"$case_assets/stellarr-installer.sha256"
+  run --yes
+  expect_failure
+  expect_shown "does not match its published SHA-256 sum"
+  expect_not_called docker
+  expect_missing "$home/stellarr"
+
+  new_case install-sh-no-installer
+  through_install_sh
+  rm "$case_assets/stellarr-installer-x86_64-unknown-linux-musl"
+  run --yes
+  expect_failure
+  expect_shown "Could not download the Stellarr installer for x86_64-unknown-linux-musl"
+  expect_shown "cd Stellarr && ./install.sh --build"
+  expect_empty_dir "$case_dir/tmp"
+
+  # In a checkout without cargo it downloads the installer too, and says
+  # how to build it there when there is none to download.
+  new_case install-sh-checkout-no-cargo
+  local checkout="$case_dir/Stellarr"
+  mkdir -p "$checkout/installer"
+  cp "$installer" "$repo_root/docker-compose.yml" "$repo_root/.env.example" "$checkout/"
+  echo 'FROM scratch' >"$checkout/Dockerfile"
+  : >"$checkout/installer/Cargo.toml"
+  rm "$case_assets/stellarr-installer-x86_64-unknown-linux-musl"
+  through_install_sh "$checkout/install.sh"
+  run --yes --build
+  expect_failure
+  expect_shown "install Rust's cargo (https://rustup.rs)"
+  expect_shown "builds the installer from this checkout"
+  expect_not_shown "git clone"
+
+  new_case install-sh-arch
+  through_install_sh
+  echo armv7l >"$state/arch"
+  run --yes
+  expect_failure
+  expect_shown "There is no Stellarr installer or image for armv7l"
+  expect_not_called curl
+
+  new_case install-sh-windows
+  through_install_sh
+  echo MINGW64_NT-10.0 >"$state/os"
+  run --yes
+  expect_failure
+  expect_shown "On Windows, run the installer inside WSL 2"
+
+  # Exit statuses pass through, 2 for a mistyped option.
+  new_case install-sh-status
+  through_install_sh
+  run --frobnicate
+  expect_status 2
+  expect_shown "Unknown option --frobnicate"
 }
 
 case_fresh_install() {
   new_case fresh-install
   run --yes --domain chat.example.com --public-ip auto --language pl
   expect_success
-  expect_called "curl --proto =https --tlsv1.2 -fsSL --connect-timeout 15 --max-time 120 --retry 3 --retry-delay 2 -o"
-  expect_called "https://raw.githubusercontent.com/Arkazzae/Stellarr/v1.4.0/docker-compose.yml"
-  expect_called "https://raw.githubusercontent.com/Arkazzae/Stellarr/v1.4.0/.env.example"
+  expect_called "https GET https://github.com/Arkazzae/Stellarr/releases/latest"
+  expect_called "https GET https://raw.githubusercontent.com/Arkazzae/Stellarr/v1.4.0/docker-compose.yml"
+  expect_called "https GET https://raw.githubusercontent.com/Arkazzae/Stellarr/v1.4.0/.env.example"
   cmp -s "$fixtures/compose-1.4.0" "$home/stellarr/docker-compose.yml" || fail "docker-compose.yml is not 1.4.0's."
   cmp -s "$fixtures/env.example" "$home/stellarr/.env.example" || fail ".env.example is not 1.4.0's."
   local env_file="$home/stellarr/.env"
@@ -468,15 +582,15 @@ case_fresh_install() {
   expect_shown "For TURN, also forward 3478/UDP and the UDP relay range 49160-49200."
   # .env.example's own lines for the installer's settings stay comments.
   [[ $(assignments STELLARR_DOMAIN "$env_file") -eq 1 ]] || fail ".env sets STELLARR_DOMAIN more than once."
+  # Every file is written through a temporary one beside it, which goes.
+  [[ $(find "$home/stellarr" -mindepth 1 | wc -l) -eq 3 ]] || fail "more than three files: $(ls -A "$home/stellarr")"
 
-  # With the release named, nothing is looked up, and the files still come
-  # through curl.
+  # With the release named, nothing is looked up.
   new_case exact-version
   run --yes --version 1.4.0
   expect_success
-  expect_called "curl --proto =https --tlsv1.2 -fsSL"
+  expect_called "https GET https://raw.githubusercontent.com/Arkazzae/Stellarr/v1.4.0/docker-compose.yml"
   expect_not_called "releases/latest"
-  expect_not_called wget
   expect_line "$home/stellarr/.env" "STELLARR_VERSION=1.4.0"
 }
 
@@ -486,10 +600,10 @@ case_piped_without_terminal() {
   # Where there is no controlling terminal, the installer's own /dev/tty is
   # what fails to open.
   if no_controlling_terminal; then tty_env=(); fi
+  seams
   status=0
-  (cd "$work" && env -i PATH="$bin:$tools" HOME="$home" TERM=dumb STUB_STATE="$state" STUB_LOG="$case_dir/calls" \
-    STELLARR_INSTALLER_UI=plain ${tty_env[@]+"${tty_env[@]}"} "$BASH" -s -- --yes <"$installer" \
-    >"$case_dir/out" 2>"$case_dir/err") || status=$?
+  (cd "$work" && env -i "${seam_env[@]}" TERM=dumb STELLARR_INSTALLER_UI=plain ${tty_env[@]+"${tty_env[@]}"} \
+    "$BASH" -s -- --yes <"$installer" >"$case_dir/out" 2>"$case_dir/err") || status=$?
   expect_success
   expect_not_called sudo
   expect_not_shown "Where will people open Stellarr?"
@@ -499,10 +613,10 @@ case_piped_without_terminal() {
   expect_shown "Open: https://localhost:8443/setup"
   # Without --yes nothing is asked either, and no default is taken for one.
   new_case piped-without-yes
+  seams
   status=0
-  (cd "$work" && env -i PATH="$bin:$tools" HOME="$home" TERM=dumb STUB_STATE="$state" STUB_LOG="$case_dir/calls" \
-    STELLARR_INSTALLER_UI=plain ${tty_env[@]+"${tty_env[@]}"} "$BASH" -s <"$installer" \
-    >"$case_dir/out" 2>"$case_dir/err") || status=$?
+  (cd "$work" && env -i "${seam_env[@]}" TERM=dumb STELLARR_INSTALLER_UI=plain ${tty_env[@]+"${tty_env[@]}"} \
+    "$BASH" -s <"$installer" >"$case_dir/out" 2>"$case_dir/err") || status=$?
   expect_success
   expect_not_shown "Where will people open Stellarr?"
 }
@@ -533,7 +647,7 @@ case_no_release() {
 
 case_github_unreachable() {
   new_case github-unreachable
-  flag github-down
+  github_down
   run --yes
   expect_failure
   expect_shown "GitHub did not answer"
@@ -541,47 +655,13 @@ case_github_unreachable() {
   expect_missing "$home/stellarr"
 }
 
-case_wget_only() {
-  new_case wget-only
-  rm "$bin/curl"
-  run --yes
-  expect_success
-  expect_called "wget -q -T 20 -O"
-  expect_called "https://api.github.com/repos/Arkazzae/Stellarr/releases/latest"
-  expect_line "$home/stellarr/.env" "STELLARR_VERSION=1.4.0"
-  new_case wget-no-release
-  rm "$bin/curl"
-  no_release
-  run --yes
-  expect_failure
-  expect_shown "no published release yet"
-
-  # GNU wget says nothing of a 404 unless it runs with -nv.
-  new_case wget-gnu
-  rm "$bin/curl"
-  flag wget-gnu
-  run --yes
-  expect_success
-  expect_called "wget -nv -T 20 -t 1 -O"
-  expect_line "$home/stellarr/.env" "STELLARR_VERSION=1.4.0"
-
-  new_case wget-gnu-no-release
-  rm "$bin/curl"
-  flag wget-gnu
-  no_release
-  run --yes
-  expect_failure
-  expect_shown "no published release yet"
-  expect_not_shown "GitHub did not answer"
-
-  new_case wget-gnu-missing-file
-  rm "$bin/curl"
-  flag wget-gnu
+case_missing_file() {
+  new_case missing-file
   run --yes --version 1.4.0 --ref no-such-branch
   expect_failure
   expect_shown "Could not download docker-compose.yml for no-such-branch"
-  expect_shown "ERROR 404: Not Found."
-  expect_not_shown "2026-11-20 22:52:45"
+  expect_shown "The requested URL returned error: 404"
+  expect_missing "$home/stellarr"
 }
 
 case_docker_missing() {
@@ -690,7 +770,7 @@ case_found_by_label() {
   local dir="$case_dir/srv/stellarr" before
   installed "$dir" 1.4.0
   container "$dir" 1.4.0
-  echo '{"setupRequired":false}' >"$state/registration"
+  registration '{"setupRequired":false}'
   before=$(snapshot "$dir")
   run --yes
   expect_success
@@ -1151,21 +1231,21 @@ case_never_healthy() {
   expect_shown "The container stopped (exited)"
 }
 
-# An unexpected failure is never silent: it names the line and where to
-# report it.
+# A fault in the installer is never silent: it names where, says that
+# nothing was removed and where to report it.
 case_unexpected_failure() {
   new_case unexpected-failure
-  ln -s "$stub" "$bin/date"
-  run --yes
-  expect_status 97
-  expect_shown "The installer stopped at line"
+  run STELLARR_INSTALLER_TEST_PANIC=1 --yes
+  expect_status 70
+  expect_shown "The installer stopped at "
+  expect_shown "nothing was removed"
   expect_shown "https://github.com/Arkazzae/Stellarr/issues"
 }
 
 modern_release() {
   cp "$repo_root/docker-compose.yml" "$fixtures/compose-1.6.0"
   release 1.6.0
-  cp "$repo_root/docker-compose.turn.yml" "$state/raw/v1.6.0/docker-compose.turn.yml"
+  cp "$repo_root/docker-compose.turn.yml" "$raw/v1.6.0/docker-compose.turn.yml"
 }
 
 case_direct_and_turn() {
@@ -1255,7 +1335,8 @@ case_checkout() {
   cp "$installer" "$repo_root/docker-compose.yml" "$repo_root/.env.example" "$checkout/"
   echo 'FROM scratch' >"$checkout/Dockerfile"
   no_release
-  script="$checkout/install.sh"
+  # install.sh names the checkout it is in to the installer.
+  through_install_sh "$checkout/install.sh"
   run --yes --build
   expect_success
   expect_called "compose build @$checkout"
@@ -1270,7 +1351,7 @@ case_checkout() {
   cp "$installer" "$repo_root/docker-compose.yml" "$repo_root/.env.example" "$checkout/"
   echo 'FROM scratch' >"$checkout/Dockerfile"
   no_release
-  script="$checkout/install.sh"
+  through_install_sh "$checkout/install.sh"
   run --yes
   expect_failure
   expect_shown "  ./install.sh --build"
@@ -1310,7 +1391,8 @@ case_terminal_mode() {
   # receives the interrupt; a helper sends it once the waiting has begun.
   new_case terminal-interrupt
   flag never-healthy
-  rm "$bin/sleep"
+  clock=real
+  seams
   local pid_file="$case_dir/pid"
   (
     for ((i = 0; i < 60; i++)); do
@@ -1322,9 +1404,9 @@ case_terminal_mode() {
     done
   ) &
   status=0
-  (cd "$work" && exec "$BASH" -c "echo \$\$ >\"\$0\"; exec \"\$@\"" "$pid_file" env -i PATH="$bin:$tools" HOME="$home" \
-    LANG=C.UTF-8 TERM=xterm-256color STELLARR_INSTALLER_UI=terminal STUB_STATE="$state" STUB_LOG="$case_dir/calls" \
-    STELLARR_INSTALLER_TTY="$case_dir/no-terminal" STELLARR_START_TIMEOUT=120 "$BASH" "$script" --yes \
+  (cd "$work" && exec "$BASH" -c "echo \$\$ >\"\$0\"; exec \"\$@\"" "$pid_file" env -i "${seam_env[@]}" \
+    LANG=C.UTF-8 TERM=xterm-256color STELLARR_INSTALLER_UI=terminal \
+    STELLARR_INSTALLER_TTY="$case_dir/no-terminal" STELLARR_START_TIMEOUT=120 "$binary" --yes \
     </dev/null >"$case_dir/out" 2>"$case_dir/err") || status=$?
   wait
   expect_status 130
@@ -1359,7 +1441,7 @@ demo() {
   local ui=(STELLARR_INSTALLER_UI=terminal "LANG=${LC_ALL:-${LANG:-C.UTF-8}}" "TERM=${TERM:-xterm}"
     "COLORTERM=${COLORTERM:-}" "NO_COLOR=${NO_COLOR:-}")
   new_case "demo-$1"
-  rm "$bin/sleep"
+  clock=real
   case $1 in
     fresh)
       echo 4 >"$state/healthy-after"
@@ -1371,7 +1453,7 @@ demo() {
       container "$home/stellarr" 1.4.0
       release 1.5.0
       echo 2 >"$state/healthy-after"
-      echo '{"setupRequired":false}' >"$state/registration"
+      registration '{"setupRequired":false}'
       answer ''
       ;;
     no-release) no_release ;;
@@ -1386,8 +1468,8 @@ demo() {
   esac
   local tty="$case_dir/no-terminal"
   [[ ! -f $case_dir/answers ]] || tty="$case_dir/answers"
-  (cd "$work" && env -i PATH="$bin:$tools" HOME="$home" STUB_STATE="$state" STUB_LOG="$case_dir/calls" \
-    STELLARR_INSTALLER_TTY="$tty" "${ui[@]}" "$BASH" "$script" </dev/null) || :
+  seams
+  (cd "$work" && env -i "${seam_env[@]}" STELLARR_INSTALLER_TTY="$tty" "${ui[@]}" "$binary" </dev/null) || :
 }
 
 if [[ ${1:-} == demo ]]; then
@@ -1397,12 +1479,13 @@ fi
 
 case_truncated
 case_posix_shells
+case_install_sh
 case_fresh_install
 case_piped_without_terminal
 case_interactive_answers
 case_no_release
 case_github_unreachable
-case_wget_only
+case_missing_file
 case_docker_missing
 case_docker_through_sudo
 case_compose_v1
