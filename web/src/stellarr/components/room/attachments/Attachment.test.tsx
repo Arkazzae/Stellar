@@ -72,8 +72,8 @@ describe("Attachment", () => {
     ["image", image, () => screen.getByRole("img", { name: "A cat" })],
     ["gallery", gallery, () => screen.getAllByRole("img", { name: /First|Second/ })],
     ["file", file, () => screen.getByRole("group", { name: "Załącznik report.pdf" })],
-    ["audio", audio, () => screen.getByRole("slider")],
-    ["video", video, () => screen.getByLabelText("Odtwórz wideo")],
+    ["audio", audio, () => screen.getByRole("slider", { name: /Pozycja odtwarzania/ })],
+    ["video", video, () => screen.getByLabelText("clip.mp4")],
     ["embed", embed, () => screen.getByRole("link", { name: "A page (example.org)" })],
     ["video-embed", videoEmbed, () => screen.getByRole("button", { name: /A clip/ })],
     ["giphy", giphy, () => screen.getByRole("status")],
@@ -102,20 +102,15 @@ describe("Attachment", () => {
     );
   });
 
-  it("hands a file, a video and an embed back to the host that asked to be told", async () => {
+  it("hands a file and an embed back to the host that asked to be told", async () => {
     const user = userEvent.setup();
     const onDownloadFile = vi.fn();
-    const onPlayVideo = vi.fn();
     const onOpenEmbed = vi.fn();
-    const callbacks = { onDownloadFile, onPlayVideo, onOpenEmbed };
+    const callbacks = { onDownloadFile, onOpenEmbed };
     const { rerender } = render(<Attachment part={file} callbacks={callbacks} />);
 
     await user.click(screen.getByRole("button", { name: "Pobierz report.pdf" }));
     expect(onDownloadFile).toHaveBeenCalledWith(file);
-
-    rerender(<Attachment part={video} callbacks={callbacks} />);
-    await user.click(screen.getByRole("button", { name: "Odtwórz wideo" }));
-    expect(onPlayVideo).toHaveBeenCalledWith(video);
 
     rerender(<Attachment part={embed} callbacks={callbacks} />);
     const card = screen.getByRole("link", { name: "A page (example.org)" });

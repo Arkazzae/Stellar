@@ -97,7 +97,7 @@ describe("MediaViewer", () => {
     expect(screen.getByRole("dialog", { name: "Pies.webm" })).toBeInTheDocument();
     const video = document.querySelector("video");
     expect(video).toHaveAttribute("src", "/files/pies.webm");
-    // Playback opens with its sound; only the in-message frame is a still.
+    // Opening from the media grid requests immediate playback with sound.
     expect(video).toHaveProperty("muted", false);
     expect(screen.getByRole("link", { name: "Pobierz" })).toHaveAttribute(
       "href",
@@ -116,7 +116,7 @@ describe("MediaViewer", () => {
     fireEvent.error(document.querySelector("video")!);
 
     expect(document.querySelector("video")).toBeNull();
-    expect(screen.getByText(/Nagranie nie jest dostępne/)).toBeInTheDocument();
+    expect(screen.getByText("Nie można odtworzyć Wideo")).toBeInTheDocument();
     expect(document.querySelector('img[src="/files/pies.jpg"]')).not.toBeNull();
   });
 

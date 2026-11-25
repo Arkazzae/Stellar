@@ -1,7 +1,9 @@
+import { LAZY_LINK_PREFIX } from "@/lib/messages/messageExport";
 import type { AttachmentCallbacks, MessagePart } from "@/lib/messages/parts";
 
 import { AudioAttachment } from "./AudioAttachment";
 import { CodeAttachment } from "./CodeAttachment";
+import { DeferredMediaAttachment } from "./DeferredMediaAttachment";
 import { EmbedAttachment } from "./EmbedAttachment";
 import { FileAttachment } from "./FileAttachment";
 import { GiphyAttachment } from "./GiphyAttachment";
@@ -34,9 +36,11 @@ export function Attachment({ part, callbacks = {}, priority = false, translation
     case "file":
       return <FileAttachment part={part} onDownload={callbacks.onDownloadFile} />;
     case "audio":
-      return <AudioAttachment part={part} />;
     case "video":
-      return <VideoAttachment part={part} onPlay={callbacks.onPlayVideo} />;
+      if (part.url?.startsWith(LAZY_LINK_PREFIX)) {
+        return <DeferredMediaAttachment key={part.url} part={part} resolveOriginal={callbacks.resolveOriginal} />;
+      }
+      return part.kind === "audio" ? <AudioAttachment part={part} /> : <VideoAttachment part={part} />;
     case "embed":
       return <EmbedAttachment part={part} onOpen={callbacks.onOpenEmbed} />;
     case "video-embed":

@@ -358,13 +358,29 @@
   .au-meta span{flex:none;font-variant-numeric:tabular-nums}
   /* Separated by a dot rather than a pipe, and only when there is a size. */
   .au-meta span::before{content:"·";margin-right:7px}
-  .au-get{
+  .media-tool{
     width:26px;height:26px;border-radius:50%;flex:none;
     display:inline-flex;align-items:center;justify-content:center;
     color:var(--text-faint);
     transition:background var(--dur-fast) var(--ease-standard), color var(--dur-fast) var(--ease-standard);
   }
-  .au-get:hover{background:var(--surface-overlay);color:var(--text)}
+  .media-tool:hover{background:var(--surface-overlay);color:var(--text)}
+  .media-volume{display:flex;align-items:center;gap:3px}
+  .media-volume input{width:52px;height:26px;accent-color:var(--accent);cursor:pointer}
+  :is(.media-volume input,.video-seek) {
+    appearance:none;border:0;padding:0;
+    background:linear-gradient(to right,var(--accent) var(--media-progress),var(--line-strong) var(--media-progress)) center / 100% 3px no-repeat;
+  }
+  :is(.media-volume input,.video-seek)::-webkit-slider-thumb {
+    appearance:none;width:10px;height:10px;border-radius:50%;background:var(--accent-text);
+  }
+  :is(.media-volume input,.video-seek)::-moz-range-thumb {
+    width:10px;height:10px;border:0;border-radius:50%;background:var(--accent-text);
+  }
+  @media (forced-colors:active) {
+    :is(.media-volume input,.video-seek) {appearance:auto;background:revert}
+    :is(.media-volume input,.video-seek)::-webkit-slider-thumb {appearance:auto}
+  }
   .att-audio audio{display:none}
   .play-btn{
     width:32px;height:32px;border-radius:50%;flex:none;
@@ -404,9 +420,29 @@
   }
   .att-audio .audio-error{font-size:var(--text-11);color:var(--danger-text);flex:none}
 
-  .att-video{position:relative;width:min(var(--att-w),100%);aspect-ratio:16/9;border-radius:var(--radius-md);overflow:hidden;border:1px solid var(--line-subtle);background:var(--surface-raised);cursor:pointer}
-  .att-video img,.att-video video,.att-video .video-placeholder{display:block;width:100%;height:100%;object-fit:cover;border:none;border-radius:0}
-  .att-video .video-placeholder{background:var(--surface-overlay)}
+  .att-video {
+    position:relative;width:min(var(--att-w),100%);overflow:hidden;
+    border:1px solid var(--line-subtle);border-radius:var(--radius-md);background:var(--surface-raised);
+  }
+  .video-stage {position:relative;aspect-ratio:16/9;max-height:400px;background:black}
+  .video-stage video,.att-video img {width:100%;height:100%;object-fit:contain;border:0;border-radius:0;cursor:default}
+  .video-surface,.video-fallback {position:absolute;inset:0;display:grid;place-content:center}
+  .video-surface span {
+    display:grid;place-items:center;width:44px;height:44px;border-radius:50%;
+    background:var(--surface-raised);color:var(--text);
+  }
+  .video-surface:hover span {background:var(--accent);color:var(--on-accent)}
+  .video-fallback {padding:12px;text-align:center;color:white;background:rgb(0 0 0 / 65%);font-size:var(--text-13)}
+  .video-fallback a {text-decoration:underline}
+  .video-controls {padding:0 10px 8px;color:var(--text-muted);font-size:var(--text-12)}
+  .video-seek {display:block;width:100%;height:22px;margin:0;accent-color:var(--accent);cursor:pointer}
+  .video-transport {display:flex;align-items:center;gap:8px}
+  .video-time {margin-right:auto;font-variant-numeric:tabular-nums;white-space:nowrap}
+  .att-video.expanded,.att-video:fullscreen {display:flex;flex-direction:column;margin:0;width:100%;max-width:100%;height:100%}
+  .att-video.expanded .video-stage,.att-video:fullscreen .video-stage {flex:1;min-height:0;max-height:none}
+  .att-video.expanded .video-controls,.att-video:fullscreen .video-controls {flex:none;padding-inline:16px}
+  .att-video:fullscreen {border:0;border-radius:0}
+  .att-video.deferred {aspect-ratio:16/9}
   .att-video .overlay-play{
     position:absolute;inset:0;display:flex;align-items:center;justify-content:center;
     background:oklch(0 0 0 / 0.25);transition:background var(--dur-base) var(--ease-standard);
@@ -493,8 +529,8 @@
      their compact desktop appearance, but give a finger the full target it
      needs on phones and other coarse-pointer devices. */
   @media (max-width:767px), (pointer:coarse){
-    .play-btn,.au-get{width:44px;height:44px}
-    .wave{height:44px}
+    .play-btn,.media-tool{width:44px;height:44px}
+    .wave,.media-volume input,.video-seek{height:44px}
   }
 
   /* --- LINK Z ODTWARZACZEM --- */
