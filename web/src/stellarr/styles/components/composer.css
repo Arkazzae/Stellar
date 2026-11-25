@@ -34,6 +34,7 @@
     flex:none;padding:4px 20px calc((var(--dock-h) - var(--composer-h)) / 2);width:100%;position:relative;
   }
   .chips{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:8px}
+  .chips:empty{display:none}
   .chip{
     display:flex;align-items:center;gap:8px;
     background:var(--surface-raised);border:1px solid var(--line-subtle);
