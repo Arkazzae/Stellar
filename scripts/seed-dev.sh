@@ -36,8 +36,8 @@ Usage:
 By default the seed goes to the database of the dev stack's api container: the
 container of compose project "stellarr-dev" and service "api", running or
 stopped. Its data volume, database path and published port are read from the
-container itself, so a stack started with extra compose files (for example
-docker-compose.dev.fresh.yml) is seeded where it actually keeps its data. A
+container itself, so a stack started with extra Compose files is seeded
+where it actually keeps its data. A
 running api is stopped while SQLite is written and started again afterwards.
 
 Options:
@@ -55,7 +55,7 @@ Options:
   --compose-file PATH      Compose file; repeat for several. Only used to find
                            the volume when no api container exists (default:
                            the files the container was started from, else
-                           ./docker-compose.dev.yml)
+                           ./infra/compose/dev.yml)
   --password PASS          Password for seeded accounts (default: dev-seed-2026)
   --seed INT               Deterministic RNG seed (default: 20261115)
   --bootstrap-owner        If the schema exists with 0 servers, create the owner
@@ -203,7 +203,21 @@ Stop it and seed that folder's database with --db PATH instead."
 
   if [[ "${#COMPOSE_FILES[@]}" -eq 0 ]]; then
     label="$(docker inspect -f '{{index .Config.Labels "com.docker.compose.project.config_files"}}' "$API_CID")"
-    [[ -n "$label" ]] && IFS=',' read -r -a COMPOSE_FILES <<<"$label"
+    if [[ -n "$label" && "$label" != '<no value>' ]]; then
+      IFS=',' read -r -a COMPOSE_FILES <<<"$label"
+      # Containers created before the move still label the old file.
+      for index in "${!COMPOSE_FILES[@]}"; do
+        file="${COMPOSE_FILES[index]}"
+        case "$file" in
+          */docker-compose.dev.yml)
+            migrated="${file%/*}/infra/compose/dev.yml"
+            if [[ ! -f "$file" && -f "$migrated" ]]; then
+              COMPOSE_FILES[index]="$migrated"
+            fi
+            ;;
+        esac
+      done
+    fi
   fi
 fi
 
@@ -216,9 +230,9 @@ case "$DB_IN_CONTAINER" in
 esac
 
 if [[ "${#COMPOSE_FILES[@]}" -eq 0 ]]; then
-  COMPOSE_FILES=("$REPO_ROOT/docker-compose.dev.yml")
+  COMPOSE_FILES=("$REPO_ROOT/infra/compose/dev.yml")
 fi
-compose_args=()
+compose_args=(--project-name "$PROJECT")
 for file in "${COMPOSE_FILES[@]}"; do
   compose_args+=(-f "$file")
 done
@@ -263,7 +277,7 @@ if [[ -z "$API_URL" && -n "$HOST_PORT" ]]; then
 fi
 
 start_hint() {
-  printf 'docker compose'
+  printf 'docker compose --project-name %q' "$PROJECT"
   for file in "${COMPOSE_FILES[@]}"; do
     printf ' -f %q' "$file"
   done

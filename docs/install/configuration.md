@@ -20,7 +20,9 @@ docker compose up -d
 
 | Variable | Type | Default | Description |
 | --- | --- | --- | --- |
-| `STELLARR_VERSION` | image tag | `latest` | Image tag of `ghcr.io/arkazzae/stellarr` used by Compose. Pin a version tag such as `1.2` or `1.2.3` for production deployments. |
+| `STELLARR_VERSION` | image tag | `latest` | Image tag of `ghcr.io/arkazzae/stellarr` used by Compose. Use an exact version such as `1.2.3` to pin a release, or a series such as `1.2` to follow its stable releases. |
+| `STELLARR_TRACK` | release track | empty | Set by the installer when you choose `--version latest` or a stable series such as `1.2`. The installer records the resolved exact version separately in `STELLARR_VERSION`. |
+| `STELLARR_IMAGE` | image reference | empty | Overrides the image reference used by Compose. The installer's `--build` sets this to `stellarr-local:dev`. |
 
 ## Address and TLS
 
@@ -43,7 +45,7 @@ docker compose up -d
 | Variable | Type | Default | Description |
 | --- | --- | --- | --- |
 | `STELLARR_MEDIA_PORT` | port | `49000` | Host UDP and TCP port for Stellarr Media. Forward the same external port for both transports. [Stellarr Media](../stellarr-media.md) |
-| `STELLARR_TURN_ENABLED` | `true` \| `false` | `false` | Enables the optional TURN relay. Add `docker-compose.turn.yml` alongside the base Compose file to publish its ports. |
+| `STELLARR_TURN_ENABLED` | `true` \| `false` | `false` | Enables the optional TURN relay. Include [the TURN overlay](../rtc-and-ports.md#optional-turn-relay) with the base Compose file to publish its ports. |
 | `STELLARR_TURN_PORT` | port | `3478` | Host UDP/TCP port for STUN and TURN advertised to browsers. |
 | `STELLARR_TURNS_PORT` | port | `5349` | Host TCP/UDP port for TURN over TLS and DTLS. |
 | `STELLARR_TURN_RELAY_RANGE` | port range | `49160-49200` | UDP port range used by coturn for media relays and mapped 1:1 by the optional Compose override. |
@@ -247,9 +249,9 @@ Advanced internal subsystems that rarely need tuning can be configured in `.env`
 | `Clients__RequireIdentification` | `true` | Requires `X-Stellarr-Client` and `X-Stellarr-Client-Version` headers on gated auth/bootstrap routes (`Allowed`: `web`, `cockpit`, `desktop-linux`, `mobile-android`). |
 | `Storage__Provider` | `FileSystem` | Object storage backend (`FileSystem` under `/data/stellarr/files`, or `S3` with `Storage__Endpoint`, `Storage__Bucket`, `Storage__AccessKey`, `Storage__SecretKey`). |
 
-## Development stack (`docker-compose.dev.yml`)
+## Development stack
 
-`docker-compose.dev.yml` runs each service from a bind mount with live reload (`web` on Vite, `api` on `cargo run` under `watchexec`, `media` on `cargo run` under `watchexec`, `mailpit` for local email capture, and optional `coturn` under `--profile turn`). It does not load `env_file: .env` whole so a production `.env` in the checkout cannot collide with development services; instead it forwards selected variables (`STELLARR_LANGUAGE`, `STELLARR_TIME_ZONE`, `STELLARR_INSTANCE_ID`, desktop versions, `STELLARR_GIPHY_API_KEY`, mail sender/secrets, and Web Push keys) from the shell or `.env`.
+`infra/compose/dev.yml` runs each service from a bind mount with live reload (`web` on Vite, `api` on `cargo run` under `watchexec`, `media` on `cargo run` under `watchexec`, `mailpit` for local email capture, and optional `coturn` under `--profile turn`). It does not load `env_file: .env` whole so a production `.env` in the checkout cannot collide with development services; instead it forwards selected variables (`STELLARR_LANGUAGE`, `STELLARR_TIME_ZONE`, `STELLARR_INSTANCE_ID`, desktop versions, `STELLARR_GIPHY_API_KEY`, mail sender/secrets, and Web Push keys) from the shell or `.env`.
 
 | Variable | Default | Description |
 | --- | --- | --- |
@@ -262,10 +264,10 @@ Advanced internal subsystems that rarely need tuning can be configured in `.env`
 | `STELLARR_DEV_ALLOWED_HOSTS` | empty | Comma-separated additional hostnames accepted by Vite's dev server (`localhost` and IP addresses are always allowed). |
 | `STELLARR_DEV_POLLING` | `true` | Enables file-watcher polling for Vite inside Docker bind mounts (macOS/Windows). |
 
-To start the dev stack against a clean database volume without touching `stellarr-dev_stellarr_dev_data`, layer `docker-compose.dev.fresh.yml`:
+Use a separate Compose project to start the dev stack with its own empty database volume. The default ports must be free.
 
 ```bash
-docker compose -f docker-compose.dev.yml -f docker-compose.dev.fresh.yml up -d
+docker compose -f infra/compose/dev.yml --project-name stellarr-dev-fresh up -d
 ```
 
 Running `npm run dev` in `web/` outside Docker reads [`web/.env.example`](../../web/.env.example) (including `STELLARR_API_ORIGIN`, `http://127.0.0.1:5000` by default).

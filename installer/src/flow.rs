@@ -1,44 +1,62 @@
 //! One run of the installer, from the checks of the machine to the summary.
-//! Everything that could stop it is checked before the first file is
-//! written, so a run that stops early leaves nothing behind.
+//! Validate the proposed configuration before publishing files or starting services.
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::ffi::OsStr;
 use std::fs;
 use std::io::Write;
-use std::os::unix::fs::{OpenOptionsExt, PermissionsExt};
+use std::os::unix::fs::OpenOptionsExt;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::time::{Duration, Instant};
 
 use crate::checks::{
-    binding_port, is_address, is_exact_version, is_hostname, is_http_binding, is_ipv4,
-    is_local_address, is_port, is_tag, normalize_address, port_number, version_older,
+    binding_port, exact_version, is_address, is_exact_version, is_hostname, is_http_binding,
+    is_ipv4, is_local_address, is_port, normalize_address, port_number, release_series,
+    version_older,
 };
 use crate::cli::{KEYS, Key, Options, env};
 use crate::envfile;
 use crate::http::{Answer, Http};
+use crate::install_plan::{self, InstallPlan};
 use crate::ports::{Tool, port_numbers};
 use crate::sys;
 use crate::ui::{Fd, Stop, Ui};
+
+mod deploy;
 
 type Step<T = ()> = Result<T, Stop>;
 
 const REPO_URL: &str = "https://github.com/Arkazzae/Stellarr";
 const RAW_URL: &str = "https://raw.githubusercontent.com/Arkazzae/Stellarr";
 const IMAGE: &str = "ghcr.io/arkazzae/stellarr";
+const CHECKOUT_TURN: &str = "infra/compose/turn.yml";
+const INSTALLED_TURN: &str = "docker-compose.turn.yml";
+const CHECKOUT_BUILD: &str = "infra/compose/build.yml";
+const LEGACY_BUILD: &str = "docker-compose.build.yml";
+const OVERRIDES: &[&str] = &[
+    "compose.override.yml",
+    "compose.override.yaml",
+    "docker-compose.override.yml",
+    "docker-compose.override.yaml",
+];
 // The documentation will move to its own address; every link starts here.
 const DOCS_URL: &str = "https://arkazzae.github.io/Stellarr";
 pub const ISSUES_URL: &str = "https://github.com/Arkazzae/Stellarr/issues";
 const ENV_MARKER: &str =
     "# Written by the Stellarr installer, which changes only the settings it is given.";
 /// The keys of .env the installer reads besides its own settings.
-const OTHER_KEYS: [&str; 5] = [
+const OTHER_KEYS: &[&str] = &[
     "STELLARR_VERSION",
+    "STELLARR_IMAGE",
+    "STELLARR_TRACK",
     "STELLARR_TURN_RELAY_RANGE",
     "COMPOSE_PROJECT_NAME",
     "COMPOSE_FILE",
     "COMPOSE_PROFILES",
+    "COMPOSE_DISABLE_ENV_FILE",
+    "COMPOSE_ENV_FILES",
+    "COMPOSE_PATH_SEPARATOR",
 ];
 const NONE: &[&str] = &[];
 
@@ -89,32 +107,11 @@ enum EnvAction {
 }
 
 #[derive(Clone, Copy, PartialEq, Eq)]
-enum Kept {
-    No,
-    Moving,
-    Newer,
-}
-
-#[derive(Clone, Copy, PartialEq, Eq)]
-enum ReleaseProblem {
-    None,
-    NoRelease,
-    Unreachable,
-}
-
-#[derive(Clone, Copy, PartialEq, Eq)]
 enum PortsResult {
     Free,
     Held,
     Skipped,
     Unknown,
-}
-
-#[derive(Clone, Copy, PartialEq, Eq)]
-enum FileResult {
-    Same,
-    New,
-    Changed,
 }
 
 /// What Docker knows of the container named stellarr.
@@ -148,10 +145,8 @@ pub struct Run {
     target_tag: String,
     target_version: String,
     files_ref: String,
-    target_kept: Kept,
-    latest_tag: String,
-    latest_version: String,
-    release_problem: ReleaseProblem,
+    target_track: String,
+    target_image: String,
     installed_version: String,
     env_action: EnvAction,
     compose_label: String,
@@ -168,8 +163,8 @@ pub struct Run {
     listen_tcp: BTreeSet<u32>,
     listen_udp: BTreeSet<u32>,
     run_stamp: String,
-    env_created: bool,
-    env_backed_up: bool,
+    override_file: Option<&'static str>,
+    existing_env: Vec<u8>,
     /// Variables the commands the installer runs must not see.
     removed_env: Vec<String>,
     /// Whether the waiting moves on without waiting, for the tests.
@@ -225,42 +220,34 @@ fn display(path: &Path) -> String {
 /// without the shell expanding it.
 fn absolute_path(path: &str) -> PathBuf {
     let home = env("HOME");
-    let mut path = if path == "~" {
-        home
+    let path = if path == "~" {
+        PathBuf::from(home)
     } else if let Some(rest) = path.strip_prefix("~/") {
-        format!("{home}/{rest}")
+        PathBuf::from(home).join(rest.trim_start_matches('/'))
     } else {
-        path.to_string()
+        PathBuf::from(path)
     };
-    if !path.starts_with('/') {
-        let cwd = std::env::current_dir()
-            .map(|d| display(&d))
-            .unwrap_or_else(|_| env("PWD"));
-        path = format!("{cwd}/{path}");
-    }
-    while path.contains("//") {
-        path = path.replace("//", "/");
-    }
-    if path != "/" && path.ends_with('/') {
-        path.pop();
-    }
-    let mut existing = PathBuf::from(&path);
-    let mut rest: Vec<std::ffi::OsString> = Vec::new();
-    while !existing.is_dir() {
-        match (existing.file_name(), existing.parent()) {
-            (Some(name), Some(parent)) => {
-                rest.push(name.to_os_string());
-                existing = parent.to_path_buf();
+    let path = if path.is_absolute() {
+        path
+    } else {
+        std::env::current_dir()
+            .unwrap_or_else(|_| PathBuf::from(env("PWD")))
+            .join(path)
+    };
+    let mut absolute = PathBuf::from("/");
+    for component in path.components() {
+        match component {
+            std::path::Component::ParentDir => {
+                absolute.pop();
             }
-            _ => {
-                existing = PathBuf::from("/");
-                break;
+            std::path::Component::Normal(name) => {
+                absolute.push(name);
+                if let Ok(resolved) = fs::canonicalize(&absolute) {
+                    absolute = resolved;
+                }
             }
+            _ => {}
         }
-    }
-    let mut absolute = fs::canonicalize(&existing).unwrap_or(existing);
-    for name in rest.iter().rev() {
-        absolute.push(name);
     }
     absolute
 }
@@ -292,10 +279,8 @@ impl Run {
             target_tag: String::new(),
             target_version: String::new(),
             files_ref: String::new(),
-            target_kept: Kept::No,
-            latest_tag: String::new(),
-            latest_version: String::new(),
-            release_problem: ReleaseProblem::None,
+            target_track: String::new(),
+            target_image: String::new(),
             installed_version: String::new(),
             env_action: EnvAction::New,
             compose_label: String::new(),
@@ -312,8 +297,8 @@ impl Run {
             listen_tcp: BTreeSet::new(),
             listen_udp: BTreeSet::new(),
             run_stamp: sys::stamp(),
-            env_created: false,
-            env_backed_up: false,
+            override_file: None,
+            existing_env: Vec::new(),
             removed_env: Vec::new(),
             fast_clock,
         }
@@ -336,8 +321,16 @@ impl Run {
         self.ui.section("Checking this machine");
         self.check_host()?;
         self.check_docker()?;
+        let _docker_lock = if self.o.start {
+            let identity = sys::output(self.docker(["info", "--format", "{{.ID}}"]))
+                .filter(|id| !id.trim().is_empty())
+                .ok_or_else(|| self.die("Could not identify the Docker daemon", NONE))?;
+            Some(self.acquire_lock("docker", identity.trim().as_bytes())?)
+        } else {
+            None
+        };
         self.find_container();
-        self.choose_directory()?;
+        let _directory_lock = self.choose_directory()?;
         self.choose_release()?;
         self.decide_env()?;
         self.fetch_compose_files()?;
@@ -347,11 +340,7 @@ impl Run {
         self.check_ports()?;
         self.fetch_turn_overlay()?;
 
-        self.prepare_directory()?;
-        self.write_env()?;
-        self.show_ports();
-        self.clear_compose_environment();
-        self.start_stellarr()?;
+        self.deploy()?;
         if !self.o.start {
             self.show_not_started();
             return Ok(());
@@ -448,25 +437,41 @@ impl Run {
         }
     }
 
-    /// Compose in the installation's directory, run as the commands the
-    /// summary prints run it: Compose finds docker-compose.yml and its
-    /// override itself. choose_directory refuses a directory with another
-    /// Compose file that it would read first, and decide_env a .env that
-    /// names other files.
-    fn compose(&self, args: &[&str]) -> Command {
-        if self.compose_plugin {
-            let mut command = self.docker(["compose"]);
-            command.args(args);
-            command
+    fn compose_at(&self, config_dir: &Path, args: &[&str]) -> Command {
+        let mut command = if self.compose_plugin {
+            self.docker(["compose"])
         } else if self.docker_sudo {
-            let mut command = self.sudo(["docker-compose"]);
-            command.args(args);
-            command
+            self.sudo(["docker-compose"])
         } else {
-            let mut command = self.command("docker-compose");
-            command.args(args);
-            command
+            self.command("docker-compose")
+        };
+        command
+            .args(["--project-name", "stellarr", "--project-directory"])
+            .arg(config_dir)
+            .arg("--env-file")
+            .arg(config_dir.join(".env"))
+            .arg("-f")
+            .arg(config_dir.join("docker-compose.yml"));
+        if self.two_port_layout && self.turn_published {
+            command.arg("-f").arg(config_dir.join(self.turn_file()));
         }
+        if self.o.build && config_dir != self.install_dir {
+            command
+                .arg("-f")
+                .arg(config_dir.join(self.build_file()))
+                .arg("-f")
+                .arg(InstallPlan::build_context_path(&self.install_dir));
+        }
+        if let Some(file) = self.override_file {
+            command.arg("-f").arg(config_dir.join(file));
+        }
+        if args.first() == Some(&"build") {
+            command
+                .arg("-f")
+                .arg(InstallPlan::build_paths_file(&self.install_dir));
+        }
+        command.args(args);
+        command
     }
 
     /// The command a person types later for Compose in the installation, as
@@ -491,12 +496,6 @@ impl Run {
         sys::output(self.docker(["container", "inspect", "--format", format, "stellarr"]))
     }
 
-    fn sleep(&self, secs: u64) {
-        if !self.fast_clock {
-            std::thread::sleep(Duration::from_secs(secs));
-        }
-    }
-
     // ---- This machine ----
 
     fn check_host(&mut self) -> Step {
@@ -508,10 +507,10 @@ impl Run {
         } else {
             arch
         };
-        if !matches!(arch, "x86_64" | "aarch64") && !self.o.build {
+        if !matches!(arch, "x86_64" | "aarch64") {
             return Err(self.die(
                 format!("There is no Stellarr image for {raw_arch}, only for amd64 and arm64"),
-                &["In a checkout, ./install.sh --build builds an image for it."],
+                NONE,
             ));
         }
         let memory = sys::memory_kib(macos);
@@ -896,7 +895,7 @@ impl Run {
     /// installer was started from, the directory of the installation Docker
     /// runs, the current directory when it holds Stellarr's
     /// docker-compose.yml, and ~/stellarr.
-    fn choose_directory(&mut self) -> Step {
+    fn choose_directory(&mut self) -> Step<fs::File> {
         let cwd = std::env::current_dir().unwrap_or_default();
         self.install_dir = if !self.o.dir.is_empty() {
             absolute_path(&self.o.dir.clone())
@@ -915,6 +914,19 @@ impl Run {
             }
             absolute_path(&format!("{}/stellarr", env("HOME")))
         };
+        let path = self.install_dir.clone();
+        let lock = self.acquire_lock("directory", path.as_os_str().as_encoded_bytes())?;
+        if InstallPlan::recover(&path).map_err(|error| {
+            self.die(
+                "Could not recover the installation files",
+                &[error.to_string()],
+            )
+        })? {
+            self.ui.ok(
+                "Restored the files from before the interrupted installation",
+                NONE,
+            );
+        }
         let install_dir = display(&self.install_dir);
         self.owns_container = false;
 
@@ -1014,7 +1026,17 @@ impl Run {
                 ],
             ));
         }
-        self.read_existing_env()
+        self.read_existing_env()?;
+        Ok(lock)
+    }
+
+    fn acquire_lock(&mut self, scope: &str, identity: &[u8]) -> Step<fs::File> {
+        install_plan::lock(scope, identity).map_err(|error| {
+            self.die(
+                "Could not lock the Stellarr installation",
+                &[error.to_string()],
+            )
+        })
     }
 
     /// Reads the .env already in the directory. Values may be quoted, end in
@@ -1024,17 +1046,17 @@ impl Run {
         self.env_state = EnvState::None;
         self.exist.clear();
         let path = self.install_dir.join(".env");
-        if !path.is_file() {
-            return Ok(());
-        }
-        let Ok(content) = fs::read(&path) else {
-            return Err(self.die(
+        let Some(content) = install_plan::read(&path).map_err(|error| {
+            self.die(
                 format!("{} cannot be read by this user", display(&path)),
-                &["Run the installer as the user that owns the installation."],
-            ));
+                &[error.to_string()],
+            )
+        })?
+        else {
+            return Ok(());
         };
         self.env_state = EnvState::Foreign;
-        let first = envfile::records(&content)
+        let first = envfile::records(content.strip_prefix(envfile::BOM).unwrap_or(&content))
             .first()
             .map(|line| line.strip_suffix(b"\r").unwrap_or(line).to_vec());
         let marker_start = ENV_MARKER
@@ -1045,119 +1067,182 @@ impl Run {
         if first.is_some_and(|line| line.starts_with(marker_start)) {
             self.env_state = EnvState::Marked;
         }
-        let wanted: Vec<&str> = KEYS.iter().map(|k| k.name()).chain(OTHER_KEYS).collect();
+        let wanted: Vec<&str> = KEYS
+            .iter()
+            .map(|k| k.name())
+            .chain(OTHER_KEYS.iter().copied())
+            .collect();
         self.exist = envfile::parse(&content)
             .into_iter()
             .filter(|(key, _)| wanted.contains(&key.as_str()))
             .collect();
+        self.existing_env = content;
         Ok(())
     }
 
     // ---- Which release ----
 
-    /// Finds the newest release. Otherwise it notes why not: GitHub says
-    /// there is no release, or it did not answer.
-    fn find_latest_release(&mut self) -> bool {
-        self.latest_tag.clear();
-        self.latest_version.clear();
-        self.release_problem = ReleaseProblem::None;
-        let tag = match self.http.redirect(&format!("{REPO_URL}/releases/latest")) {
-            Some(Answer::Redirect(to)) => {
-                let to = to.trim_end_matches('/');
-                if let Some((_, tag)) = to.split_once("/releases/tag/") {
-                    tag.to_string()
-                } else if to.ends_with("/releases") {
-                    self.release_problem = ReleaseProblem::NoRelease;
-                    return false;
-                } else {
-                    String::new()
-                }
-            }
-            Some(Answer::Status(404)) => {
-                self.release_problem = ReleaseProblem::NoRelease;
-                return false;
-            }
-            _ => String::new(),
-        };
-        match tag.strip_prefix('v') {
-            Some(version) if is_exact_version(version) => {
-                self.latest_version = version.to_string();
-                self.latest_tag = tag;
-                true
-            }
-            _ => {
-                self.release_problem = ReleaseProblem::Unreachable;
-                false
-            }
+    fn latest_release(&mut self) -> Step<String> {
+        let url = format!("{REPO_URL}/releases/latest");
+        let target = self.http.redirect(&url);
+        if let Some(Answer::Redirect(to)) = &target
+            && let Some(version) = to
+                .trim_end_matches('/')
+                .rsplit_once("/releases/tag/v")
+                .map(|(_, v)| v)
+            && is_exact_version(version)
+        {
+            return Ok(version.to_string());
         }
+        let missing = match target {
+            Some(Answer::Status(404)) => true,
+            Some(Answer::Redirect(to)) => to.trim_end_matches('/').ends_with("/releases"),
+            _ => false,
+        };
+        if missing {
+            return Err(self.die(
+                "Stellarr has no published release yet, so there is no image to pull.",
+                &[
+                    "To build it from a checkout instead:",
+                    "  ./install.sh --build",
+                ],
+            ));
+        }
+        Err(self.die(
+            "GitHub did not answer, so the latest release is unknown",
+            &[
+                "Check that this machine reaches github.com and run the installer again,",
+                "or name the release with --version.",
+            ],
+        ))
     }
 
-    /// Which release to install and where docker-compose.yml comes from. The
-    /// file, .env.example and the image must be of the same release.
-    fn choose_release(&mut self) -> Step {
-        let existing_tag = self.exist("STELLARR_VERSION").to_string();
-        self.target_tag.clear();
-        self.target_kept = Kept::No;
-        self.latest_tag.clear();
-        self.latest_version.clear();
+    fn latest_in_series(&mut self, series: &str, major: u64, minor: u64) -> Step<String> {
+        let mut newest: Option<semver::Version> = None;
+        for page in 1.. {
+            let url = format!(
+                "https://api.github.com/repos/Arkazzae/Stellarr/releases?per_page=100&page={page}"
+            );
+            let releases = self
+                .http
+                .get(&url)
+                .and_then(|body| {
+                    serde_json::from_slice::<Vec<serde_json::Value>>(&body)
+                        .map_err(|error| error.to_string())
+                })
+                .map_err(|error| {
+                    self.die(
+                        format!("Could not resolve the Stellarr {series} release series"),
+                        &[error],
+                    )
+                })?;
+            for release in &releases {
+                if release["draft"].as_bool() != Some(false)
+                    || release["prerelease"].as_bool() != Some(false)
+                {
+                    continue;
+                }
+                let Some(tag) = release["tag_name"]
+                    .as_str()
+                    .and_then(|tag| tag.strip_prefix('v'))
+                else {
+                    continue;
+                };
+                let Some(version) = exact_version(tag) else {
+                    continue;
+                };
+                if version.major == major
+                    && version.minor == minor
+                    && version.pre.is_empty()
+                    && newest
+                        .as_ref()
+                        .is_none_or(|old| version.cmp_precedence(old).is_gt())
+                {
+                    newest = Some(version);
+                }
+            }
+            if releases.len() < 100 {
+                break;
+            }
+        }
+        newest.map(|version| version.to_string()).ok_or_else(|| {
+            self.die(
+                format!("Stellarr has no stable release in the {series} series"),
+                NONE,
+            )
+        })
+    }
 
-        if !self.o.version.is_empty() {
-            self.target_tag = self.o.version.clone();
-        } else if self.o.build {
-            self.target_tag = if existing_tag.is_empty() {
-                "latest".into()
-            } else {
-                existing_tag.clone()
-            };
-        } else if self.env_state != EnvState::None
-            && is_tag(&existing_tag)
+    /// Resolve moving tags before reading release files or comparing versions.
+    fn choose_release(&mut self) -> Step {
+        const LOCAL_IMAGE: &str = "stellarr-local:dev";
+        let existing_tag = self.exist("STELLARR_VERSION").to_string();
+        let existing_track = self.exist("STELLARR_TRACK").to_string();
+        self.installed_version = if self.owns_container && !self.container.version.is_empty() {
+            self.container.version.clone()
+        } else {
+            existing_tag.clone()
+        };
+        if self.o.build {
+            self.target_tag = "dev".into();
+            self.target_version = self.target_tag.clone();
+            self.target_image = LOCAL_IMAGE.into();
+            self.ui
+                .ok("The image will be built from the checkout", NONE);
+            return Ok(());
+        }
+
+        let existing_image = self.exist("STELLARR_IMAGE");
+        if self.o.version.is_empty()
+            && !existing_image.is_empty()
+            && existing_image != LOCAL_IMAGE
+            && existing_image != format!("{IMAGE}:{existing_tag}")
+        {
+            return Err(self.die(
+                format!("The installation uses a custom image {existing_image}"),
+                &["Choose a published release with --version, or manage this image through Compose."],
+            ));
+        }
+
+        let requested = if !self.o.version.is_empty() {
+            self.o.version.clone()
+        } else if !existing_track.is_empty() {
+            existing_track
+        } else if !existing_tag.is_empty()
+            && existing_tag != "dev"
             && !is_exact_version(&existing_tag)
         {
-            // A moving tag such as latest stays; pulling it again is the
-            // update.
-            self.target_tag = existing_tag.clone();
-            self.target_kept = Kept::Moving;
-        }
-        // The latest release decides the image when nothing else does, and
-        // the files when they are downloaded for a tag that names no release.
-        let no_checkout = !self.dir_is_checkout && self.script_checkout.is_none();
-        let required = self.target_tag.is_empty()
-            || (no_checkout && self.o.reference.is_empty() && !is_exact_version(&self.target_tag));
-        // For latest it only names the version on screen.
-        let wanted = required || (self.target_tag == "latest" && !self.o.build);
-        if wanted && !self.find_latest_release() && required {
-            return Err(self.release_unavailable());
-        }
-        if self.target_tag.is_empty() {
-            self.target_tag = self.latest_version.clone();
-            // An update never goes back: a newer release pinned in .env stays.
-            if self.env_state != EnvState::None
-                && is_exact_version(&existing_tag)
-                && version_older(&self.latest_version, &existing_tag)
-            {
-                self.target_tag = existing_tag.clone();
-                self.target_kept = Kept::Newer;
-            }
-        }
-
-        self.installed_version = if self.owns_container {
-            if self.container.version.is_empty() {
-                existing_tag.clone()
-            } else {
-                self.container.version.clone()
-            }
-        } else if self.env_state != EnvState::None {
             existing_tag.clone()
         } else {
             String::new()
         };
-        // Starting an older image on data a newer one has used is not
-        // supported; going back is a restore of the backup made before the
-        // update.
-        if is_exact_version(&self.target_tag)
-            && is_exact_version(&self.installed_version)
-            && version_older(&self.target_tag, &self.installed_version)
-        {
+        let mut retained_newer = false;
+        self.target_tag = if requested.is_empty() || requested == "latest" {
+            self.target_track = requested.clone();
+            let latest = self.latest_release()?;
+            if requested.is_empty() && version_older(&latest, &existing_tag) {
+                retained_newer = true;
+                self.ui.ok(
+                    &format!("Latest release is {latest}; {existing_tag}, which is newer, stays"),
+                    NONE,
+                );
+                existing_tag
+            } else {
+                latest
+            }
+        } else if let Some((major, minor)) = release_series(&requested) {
+            self.target_track = requested.clone();
+            self.latest_in_series(&requested, major, minor)?
+        } else if is_exact_version(&requested) {
+            requested.clone()
+        } else {
+            return Err(self.die(
+                format!("{requested} is not an exact release, a release series, or latest"),
+                &["Choose a published release with --version, or manage this image through Compose."],
+            ));
+        };
+
+        if version_older(&self.target_tag, &self.installed_version) {
             let problem = format!(
                 "Stellarr {} is installed, and {} is older",
                 self.installed_version, self.target_tag
@@ -1173,96 +1258,55 @@ impl Run {
         }
 
         self.target_version = self.target_tag.clone();
-        if self.target_tag == "latest" && !self.latest_version.is_empty() && !self.o.build {
-            self.target_version = self.latest_version.clone();
-        }
-        self.files_ref = if !self.o.reference.is_empty() {
-            self.o.reference.clone()
-        } else if is_exact_version(&self.target_tag) {
+        self.target_image = format!("{IMAGE}:{}", self.target_tag);
+        self.files_ref = if self.o.reference.is_empty() {
             format!("v{}", self.target_tag)
         } else {
-            self.latest_tag.clone()
+            self.ui.ok(
+                &format!(
+                    "Using Compose and settings files from {} as {} asks",
+                    self.o.reference, self.o.ref_from
+                ),
+                NONE,
+            );
+            self.o.reference.clone()
         };
-        self.show_release();
-        Ok(())
-    }
-
-    fn show_release(&mut self) {
-        let dir = display(&self.install_dir);
-        let found = if self.owns_container {
-            match self.container.version.as_str() {
-                "" => "Stellarr".to_string(),
-                "dev" => "Stellarr built from source".to_string(),
-                version => format!("Stellarr {version}"),
-            }
-        } else if self.env_state == EnvState::Marked {
-            "the settings of an installation".to_string()
-        } else {
-            String::new()
-        };
-        if !found.is_empty()
-            && !self.latest_version.is_empty()
-            && !self.o.build
-            && self.container.version == self.latest_version
-            && self.target_version == self.latest_version
+        if retained_newer {
+            return Ok(());
+        }
+        if self.owns_container
+            && self.container.version == self.target_version
+            && requested.is_empty()
         {
+            self.ui.ok(
+                &format!(
+                    "Stellarr {} in {} is the latest release",
+                    self.target_version,
+                    display(&self.install_dir)
+                ),
+                NONE,
+            );
+        } else if requested.is_empty() {
             self.ui
-                .ok(&format!("{found} in {dir} is the latest release"), NONE);
-            return;
-        }
-        if !found.is_empty() {
-            self.ui.ok(&format!("Found {found} in {dir}"), NONE);
-        }
-        let (latest, tag, from) = (
-            self.latest_version.clone(),
-            self.target_tag.clone(),
-            self.o.version_from.clone(),
-        );
-        let line = if self.o.build {
-            "The image will be built from the checkout".to_string()
-        } else if !self.o.version.is_empty() && tag == "latest" && !latest.is_empty() {
-            format!("Latest release is {latest}, as {from} asks")
-        } else if !self.o.version.is_empty() {
-            format!("Version {tag}, as {from} asks")
-        } else if self.target_kept == Kept::Newer {
-            format!("Latest release is {latest}; {tag}, which is newer, stays")
-        } else if self.target_kept == Kept::Moving && !latest.is_empty() {
-            format!("Latest release is {latest}; .env follows the tag {tag}")
-        } else if self.target_kept == Kept::Moving {
-            format!(".env follows the tag {tag}")
+                .ok(&format!("Latest release is {}", self.target_version), NONE);
+        } else if self.target_track.is_empty() {
+            self.ui.ok(
+                &format!(
+                    "Version {}, as {} asks",
+                    self.target_version, self.o.version_from
+                ),
+                NONE,
+            );
         } else {
-            format!("Latest release is {latest}")
-        };
-        self.ui.ok(&line, NONE);
-    }
-
-    fn release_unavailable(&mut self) -> Stop {
-        if self.release_problem == ReleaseProblem::NoRelease {
-            if self.script_checkout.is_some() || self.dir_is_checkout {
-                return self.die(
-                    "Stellarr has no published release yet, so there is no image to pull.",
-                    &[
-                        "To build it from this checkout instead:",
-                        "  ./install.sh --build",
-                    ],
-                );
-            }
-            return self.die(
-                "Stellarr has no published release yet, so there is no image to pull.",
-                &[
-                    "To build it from the source instead:".to_string(),
-                    format!("  git clone {REPO_URL}.git"),
-                    "  cd Stellarr && ./install.sh --build".to_string(),
-                ],
+            self.ui.ok(
+                &format!(
+                    "Release {} follows the tag {requested}",
+                    self.target_version
+                ),
+                NONE,
             );
         }
-        self.die(
-            "GitHub did not answer, so the latest release is unknown",
-            &[
-                "Check that this machine reaches github.com and run the installer again,",
-                "or name the release with --version.",
-            ],
-        )
+        Ok(())
     }
 
     // ---- .env and the settings ----
@@ -1287,20 +1331,27 @@ impl Run {
         // have. The known TURN stack and default override are the only
         // approved file list.
         let compose_file = self.exist("COMPOSE_FILE");
-        if !self.exist("COMPOSE_PROJECT_NAME").is_empty()
-            || !self.exist("COMPOSE_PROFILES").is_empty()
-            || (!compose_file.is_empty() && !managed_turn_files(compose_file))
-        {
+        let forbidden = [
+            "COMPOSE_PROJECT_NAME",
+            "COMPOSE_PROFILES",
+            "COMPOSE_ENV_FILES",
+            "COMPOSE_DISABLE_ENV_FILE",
+            "COMPOSE_PATH_SEPARATOR",
+        ];
+        let mut unsupported: Vec<_> = forbidden
+            .into_iter()
+            .filter(|key| !self.exist(key).is_empty())
+            .collect();
+        if !compose_file.is_empty() && !managed_turn_files(compose_file) {
+            unsupported.push("COMPOSE_FILE");
+        }
+        if !unsupported.is_empty() {
             if self.env_state == EnvState::Marked {
-                let names: Vec<&str> = ["COMPOSE_PROJECT_NAME", "COMPOSE_FILE", "COMPOSE_PROFILES"]
-                    .into_iter()
-                    .filter(|key| !self.exist(key).is_empty())
-                    .collect();
-                let (set, it) = match names.as_slice() {
+                let (set, it) = match unsupported.as_slice() {
                     [one] => (one.to_string(), "it"),
                     [a, b] => (format!("{a} and {b}"), "them"),
                     [a, b, c] => (format!("{a}, {b} and {c}"), "them"),
-                    _ => (names.join(", "), "them"),
+                    _ => (unsupported.join(", "), "them"),
                 };
                 return Err(self.die(
                     format!("{dir}/.env sets {set}"),
@@ -1318,7 +1369,7 @@ impl Run {
                 ));
             }
             return Err(self.die(
-                format!("{dir}/.env sets COMPOSE_PROJECT_NAME, COMPOSE_FILE or COMPOSE_PROFILES"),
+                format!("{dir}/.env sets {}", unsupported.join(", ")),
                 &[
                     "It looks like a development stack's .env, which the installer must not run",
                     "the production stack with. Choose another directory with --dir, or add",
@@ -1395,8 +1446,12 @@ impl Run {
             }
             self.default_to(Key::HttpsPort, "443");
             self.default_to(Key::HttpPort, "127.0.0.1:8888");
+            let selected_turn = self.keeps_env() && managed_turn_files(self.exist("COMPOSE_FILE"));
             if self.set(Key::TurnEnabled).is_empty()
-                && (legacy_install || self.given(Key::TurnPort) || self.given(Key::TurnsPort))
+                && (legacy_install
+                    || selected_turn
+                    || self.given(Key::TurnPort)
+                    || self.given(Key::TurnsPort))
             {
                 self.put(Key::TurnEnabled, "true");
                 self.o.setting_mut(Key::TurnEnabled).given = true;
@@ -1599,20 +1654,37 @@ impl Run {
         Ok(())
     }
 
+    fn checkout_overlay(&self, current: &'static str, legacy: &'static str) -> &'static str {
+        if !self.install_dir.join(current).is_file() && self.install_dir.join(legacy).is_file() {
+            legacy
+        } else {
+            current
+        }
+    }
+
+    fn turn_file(&self) -> &'static str {
+        if self.dir_is_checkout {
+            self.checkout_overlay(CHECKOUT_TURN, INSTALLED_TURN)
+        } else {
+            INSTALLED_TURN
+        }
+    }
+
+    fn build_file(&self) -> &'static str {
+        self.checkout_overlay(CHECKOUT_BUILD, LEGACY_BUILD)
+    }
+
     fn settle_compose_files(&mut self) {
         self.set_compose_file.clear();
+        self.override_file = OVERRIDES
+            .iter()
+            .copied()
+            .find(|name| self.install_dir.join(name).is_file());
         if self.two_port_layout && self.turn_published {
-            self.set_compose_file = "docker-compose.yml:docker-compose.turn.yml".to_string();
-            for name in [
-                "compose.override.yaml",
-                "compose.override.yml",
-                "docker-compose.override.yml",
-                "docker-compose.override.yaml",
-            ] {
-                if self.install_dir.join(name).is_file() {
-                    self.set_compose_file = format!("{}:{name}", self.set_compose_file);
-                    break;
-                }
+            self.set_compose_file = format!("docker-compose.yml:{}", self.turn_file());
+            if let Some(name) = self.override_file {
+                self.set_compose_file.push(':');
+                self.set_compose_file.push_str(name);
             }
         }
     }
@@ -1756,13 +1828,12 @@ impl Run {
             self.ports_result = PortsResult::Skipped;
             return Ok(());
         }
-        if self.owns_container && self.container.running {
-            self.ports_result = PortsResult::Held;
-            return Ok(());
-        }
         if !self.list_listening() {
             self.ports_result = PortsResult::Unknown;
             return Ok(());
+        }
+        if self.owns_container && self.container.running {
+            self.remove_owned_listeners();
         }
         let busy: Vec<Key> = self
             .port_keys
@@ -1856,6 +1927,56 @@ impl Run {
         Err(self.die("Ports Stellarr needs are in use on this machine", &lines))
     }
 
+    fn remove_owned_listeners(&mut self) {
+        let Some(bindings) = self
+            .container_format("{{json .NetworkSettings.Ports}}")
+            .and_then(|json| {
+                serde_json::from_str::<serde_json::Map<String, serde_json::Value>>(&json).ok()
+            })
+        else {
+            return;
+        };
+        let relay = self.relay_bounds();
+        let bindings = bindings
+            .iter()
+            .filter_map(|(key, entries)| {
+                let (_, protocol) = key.split_once('/')?;
+                Some(
+                    entries
+                        .as_array()?
+                        .iter()
+                        .map(move |entry| (protocol, entry)),
+                )
+            })
+            .flatten();
+        for (protocol, entry) in bindings {
+            let Some(port) = entry["HostPort"].as_str().and_then(port_number) else {
+                continue;
+            };
+            let address = entry["HostIp"].as_str().unwrap_or_default();
+            let wildcard = address == "0.0.0.0";
+            let requested = self.port_keys.iter().any(|&key| {
+                let value = self.set(key);
+                let host = value.rsplit_once(':').map_or("", |(host, _)| host);
+                port_number(binding_port(value)) == Some(port)
+                    && self.port_role(key).1.contains(&protocol)
+                    && (wildcard || (!host.is_empty() && host == address))
+            }) || (wildcard
+                && protocol == "udp"
+                && relay.is_some_and(|(first, last)| (first..=last).contains(&port)));
+            if requested {
+                let removed = match protocol {
+                    "tcp" => self.listen_tcp.remove(&port),
+                    "udp" => self.listen_udp.remove(&port),
+                    _ => false,
+                };
+                if removed {
+                    self.ports_result = PortsResult::Held;
+                }
+            }
+        }
+    }
+
     fn show_ports(&mut self) {
         let mut text = format!(
             "{}, {}, {}",
@@ -1873,9 +1994,10 @@ impl Run {
         }
         match self.ports_result {
             PortsResult::Free => self.ui.ok(&format!("Ports are free: {text}"), NONE),
-            PortsResult::Held => self
-                .ui
-                .ok("The ports are held by Stellarr's running container", NONE),
+            PortsResult::Held => self.ui.ok(
+                "Some of these ports are held by Stellarr's running container",
+                NONE,
+            ),
             PortsResult::Skipped => self.ui.warn("Did not check the ports, as asked", NONE),
             PortsResult::Unknown => self.ui.warn(
                 "Could not check the ports: no ss, lsof or netstat that works",
@@ -1886,49 +2008,72 @@ impl Run {
 
     // ---- The files ----
 
+    fn release_file(&mut self, name: &str) -> Step<Vec<u8>> {
+        let url = format!("{RAW_URL}/{}/{name}", self.files_ref);
+        let contents = self.http.get(&url).map_err(|error| {
+            self.die(
+                format!("Could not download {name} {}", self.compose_label),
+                &[url, error],
+            )
+        })?;
+        self.check_checkout_match(name, &contents)?;
+        Ok(contents)
+    }
+
+    fn check_checkout_match(&mut self, name: &str, contents: &[u8]) -> Step {
+        if self.dir_is_checkout
+            && fs::read(self.install_dir.join(name)).as_deref().ok() != Some(contents)
+        {
+            return Err(self.die(
+                format!(
+                    "The checkout's {name} differs from the copy {}",
+                    self.compose_label
+                ),
+                &[
+                    "Check out the selected Git ref in this working tree to update an existing installation.",
+                    "For a separate installation, use --dir. To run this checkout, use --build.",
+                ],
+            ));
+        }
+        Ok(())
+    }
+
+    fn checkout_file(&mut self, name: &str) -> Step<Vec<u8>> {
+        let path = self.install_dir.join(name);
+        fs::read(&path).map_err(|error| {
+            self.die(
+                format!("Could not read {}", display(&path)),
+                &[error.to_string()],
+            )
+        })
+    }
+
     fn fetch_compose_files(&mut self) -> Step {
-        let compose: Vec<u8> = if self.dir_is_checkout {
-            fs::read(self.install_dir.join("docker-compose.yml")).unwrap_or_default()
-        } else if let Some(checkout) = self.script_checkout.clone() {
-            let compose = fs::read(checkout.join("docker-compose.yml")).unwrap_or_default();
-            self.staged_compose = Some(compose.clone());
-            self.staged_example = fs::read(checkout.join(".env.example")).ok();
-            self.compose_label = format!("from {}", display(&checkout));
-            compose
+        let compose = if self.o.build {
+            self.checkout_file(self.build_file())?;
+            self.checkout_file("docker-compose.yml")?
         } else {
-            let files_ref = self.files_ref.clone();
-            self.compose_label = match files_ref.strip_prefix('v') {
-                Some(version) if is_exact_version(version) => format!("for {version}"),
-                _ => format!("for {files_ref}"),
+            let label = if self.o.reference.is_empty() {
+                &self.target_version
+            } else {
+                &self.files_ref
             };
-            let label = self.compose_label.clone();
-            let url = format!("{RAW_URL}/{files_ref}/docker-compose.yml");
-            let compose = match self.http.get(&url) {
-                Ok(compose) => compose,
-                Err(error) => {
-                    return Err(self.die(
-                        format!("Could not download docker-compose.yml {label}"),
-                        &[url, error],
-                    ));
-                }
-            };
+            self.compose_label = format!("for {label}");
+            let compose = self.release_file("docker-compose.yml")?;
             if !is_stellarr_compose(&compose) {
                 return Err(self.die(
-                    format!("The docker-compose.yml downloaded {label} is not Stellarr's"),
-                    &[url],
+                    format!(
+                        "The docker-compose.yml downloaded {} is not Stellarr's",
+                        self.compose_label
+                    ),
+                    NONE,
                 ));
             }
-            let url = format!("{RAW_URL}/{files_ref}/.env.example");
-            match self.http.get(&url) {
-                Ok(example) => self.staged_example = Some(example),
-                Err(error) => {
-                    return Err(self.die(
-                        format!("Could not download .env.example {label}"),
-                        &[url, error],
-                    ));
-                }
+            let example = self.release_file(".env.example")?;
+            if !self.dir_is_checkout {
+                self.staged_compose = Some(compose.clone());
+                self.staged_example = Some(example);
             }
-            self.staged_compose = Some(compose.clone());
             compose
         };
         self.two_port_layout = String::from_utf8_lossy(&compose).contains("STELLARR_TURN_ENABLED");
@@ -1939,412 +2084,53 @@ impl Run {
         if !(self.two_port_layout && self.turn_published) {
             return Ok(());
         }
-        if self.dir_is_checkout {
-            if !self.install_dir.join("docker-compose.turn.yml").is_file() {
-                return Err(self.die("The checkout is missing docker-compose.turn.yml", NONE));
-            }
-        } else if let Some(checkout) = &self.script_checkout {
-            self.staged_turn = fs::read(checkout.join("docker-compose.turn.yml")).ok();
+        let local = self.turn_file();
+        if self.o.build {
+            self.checkout_file(local)?;
         } else {
-            let url = format!("{RAW_URL}/{}/docker-compose.turn.yml", self.files_ref);
-            match self.http.get(&url) {
-                Ok(overlay) => self.staged_turn = Some(overlay),
-                Err(error) => {
-                    let label = self.compose_label.clone();
-                    return Err(self.die(
-                        format!("Could not download docker-compose.turn.yml {label}"),
-                        &[error],
-                    ));
+            let url = format!("{RAW_URL}/{}/{CHECKOUT_TURN}", self.files_ref);
+            let overlay = match self.http.get_optional(&url).map_err(|error| {
+                self.die(
+                    format!("Could not download {CHECKOUT_TURN} {}", self.compose_label),
+                    &[url, error],
+                )
+            })? {
+                Some(overlay) => overlay,
+                None => {
+                    let url = format!("{RAW_URL}/{}/{INSTALLED_TURN}", self.files_ref);
+                    self.http.get(&url).map_err(|error| {
+                        self.die(
+                            format!("Could not download {INSTALLED_TURN} {}", self.compose_label),
+                            &[url, error],
+                        )
+                    })?
                 }
+            };
+            self.check_checkout_match(local, &overlay)?;
+            if !self.dir_is_checkout {
+                self.staged_turn = Some(overlay);
             }
         }
         Ok(())
-    }
-
-    fn prepare_directory(&mut self) -> Step {
-        let dir = display(&self.install_dir);
-        if self.env_action == EnvAction::New && !self.owns_container {
-            self.ui.section(&format!("Installing into {dir}"));
-        } else if self.updating {
-            self.ui.section(&format!("Updating {dir}"));
-        } else {
-            self.ui.section(&format!("Using {dir}"));
-        }
-        if fs::create_dir_all(&self.install_dir).is_err() {
-            return Err(self.die(
-                format!("Could not create {dir}"),
-                &["Choose another directory with --dir."],
-            ));
-        }
-        if std::env::set_current_dir(&self.install_dir).is_err() {
-            return Err(self.die(format!("Could not enter {dir}"), NONE));
-        }
-        if let Ok(canonical) = fs::canonicalize(".") {
-            self.install_dir = canonical;
-        }
-        let dir = display(&self.install_dir);
-        // SAFETY: access only reads the C string passed.
-        let writable = std::ffi::CString::new(".")
-            .is_ok_and(|p| unsafe { libc::access(p.as_ptr(), libc::W_OK) } == 0);
-        if !writable {
-            return Err(self.die(
-                format!("This user cannot write to {dir}"),
-                &["Run the installer as a user who can, or choose another directory with --dir."],
-            ));
-        }
-        self.place_compose_files()
-    }
-
-    fn place_compose_files(&mut self) -> Step {
-        if self.dir_is_checkout {
-            self.ui
-                .ok("Using docker-compose.yml from the checkout", NONE);
-            return Ok(());
-        }
-        let label = self.compose_label.clone();
-        if let Some(overlay) = self.staged_turn.take() {
-            self.install_file(&overlay, "docker-compose.turn.yml", true)?;
-        }
-        let compose = self.staged_compose.take().unwrap_or_default();
-        let (result, backup) = self.install_file(&compose, "docker-compose.yml", true)?;
-        match result {
-            FileResult::Same => self
-                .ui
-                .ok(&format!("docker-compose.yml {label} is in place"), NONE),
-            FileResult::New => self
-                .ui
-                .ok(&format!("Saved docker-compose.yml {label}"), NONE),
-            FileResult::Changed => {
-                self.ui.ok(
-                    &format!("Saved docker-compose.yml {label}, previous kept as"),
-                    &[backup.unwrap_or_default()],
-                );
-            }
-        }
-        if let Some(example) = self.staged_example.take() {
-            self.install_file(&example, ".env.example", false)?;
-        }
-        Ok(())
-    }
-
-    /// Writes `name` in the current directory through a temporary file
-    /// beside it, so it is never half written.
-    fn write_file(&mut self, name: &str, content: &[u8], mode: u32) -> Step {
-        let temp = format!("{name}.{:06x}", sys::unique() & 0xff_ffff);
-        let written = fs::OpenOptions::new()
-            .write(true)
-            .create_new(true)
-            .mode(mode)
-            .open(&temp)
-            .and_then(|mut file| {
-                file.write_all(content)?;
-                file.sync_all()
-            })
-            .and_then(|()| fs::set_permissions(&temp, fs::Permissions::from_mode(mode)))
-            .and_then(|()| fs::rename(&temp, name));
-        if let Err(error) = written {
-            let _ = fs::remove_file(&temp);
-            let dir = display(&self.install_dir);
-            return Err(self.die(
-                format!("Could not write {name} in {dir}"),
-                &[error.to_string()],
-            ));
-        }
-        Ok(())
-    }
-
-    /// Puts `content` at `name` unless it already has it. With `backup`, the
-    /// file it replaces is kept beside it, named after the time.
-    fn install_file(
-        &mut self,
-        content: &[u8],
-        name: &str,
-        backup: bool,
-    ) -> Step<(FileResult, Option<String>)> {
-        let mut kept = None;
-        let result = match fs::read(name) {
-            Ok(existing) if existing == content => return Ok((FileResult::Same, None)),
-            Ok(_) => {
-                if backup {
-                    kept = Some(self.backup_file(name)?);
-                }
-                FileResult::Changed
-            }
-            Err(_) => FileResult::New,
-        };
-        self.write_file(name, content, 0o644)?;
-        Ok((result, kept))
-    }
-
-    /// Copies `name` to `name.bak-<time>`, keeping its mode and times.
-    fn backup_file(&mut self, name: &str) -> Step<String> {
-        let mut backup = format!("{name}.bak-{}", self.run_stamp);
-        let mut n = 1;
-        while Path::new(&backup).exists() {
-            backup = format!("{name}.bak-{}-{n}", self.run_stamp);
-            n += 1;
-        }
-        let copied = fs::copy(name, &backup).and_then(|_| {
-            let modified = fs::metadata(name)?.modified()?;
-            fs::File::options()
-                .write(true)
-                .open(&backup)?
-                .set_modified(modified)
-        });
-        if let Err(error) = copied {
-            return Err(self.die(format!("Could not back up {name}"), &[error.to_string()]));
-        }
-        Ok(backup)
-    }
-
-    fn write_env(&mut self) -> Step {
-        match self.env_action {
-            EnvAction::New => {
-                self.env_write_new()?;
-                self.ui.ok("Wrote .env", NONE);
-            }
-            EnvAction::Replace => {
-                let backup = self.backup_file(".env")?;
-                self.env_backed_up = true;
-                self.env_write_new()?;
-                self.ui.ok("Wrote a new .env, previous kept as", &[backup]);
-            }
-            EnvAction::Keep | EnvAction::Adopt => {
-                let changes = self.env_changes();
-                if self.env_action == EnvAction::Adopt {
-                    self.env_backup_once()?;
-                    let content = fs::read(".env").unwrap_or_default();
-                    self.write_file(".env", &envfile::with_marker(&content, ENV_MARKER), 0o600)?;
-                    self.ui.ok(
-                        "Kept the settings in .env and marked it as the installer's",
-                        NONE,
-                    );
-                }
-                if !changes.is_empty() {
-                    self.env_set(&changes)?;
-                } else if self.env_action == EnvAction::Keep {
-                    self.ui.ok("Kept .env as it is", NONE);
-                }
-            }
-        }
-        Ok(())
-    }
-
-    /// The changes an existing .env needs: what this run was given, and the
-    /// release on an update. A value it already has is no change.
-    fn env_changes(&self) -> Vec<(String, String)> {
-        let mut changes = Vec::new();
-        for key in KEYS {
-            if self.given(key) && (!self.has(key.name()) || self.exist(key.name()) != self.set(key))
-            {
-                changes.push((key.name().to_string(), self.set(key).to_string()));
-            }
-        }
-        if self.set_compose_file != self.exist("COMPOSE_FILE")
-            || (self.set_compose_file.is_empty() && self.has("COMPOSE_FILE"))
-        {
-            changes.push(("COMPOSE_FILE".to_string(), self.set_compose_file.clone()));
-        }
-        if !self.has("STELLARR_VERSION") || self.exist("STELLARR_VERSION") != self.target_tag {
-            changes.push(("STELLARR_VERSION".to_string(), self.target_tag.clone()));
-        }
-        changes
-    }
-
-    fn env_backup_once(&mut self) -> Step {
-        if !self.env_created && !self.env_backed_up {
-            self.backup_file(".env")?;
-            self.env_backed_up = true;
-        }
-        Ok(())
-    }
-
-    /// Sets each pair in .env, in place: the effective assignment of a key is
-    /// rewritten, and a key it lacks goes under the first line.
-    fn env_set(&mut self, pairs: &[(String, String)]) -> Step {
-        self.env_backup_once()?;
-        let content = fs::read(".env").unwrap_or_default();
-        self.write_file(".env", &envfile::with_values(&content, pairs), 0o600)?;
-        let shown: Vec<String> = pairs.iter().map(|(k, v)| format!("{k}={v}")).collect();
-        if shown.len() == 1 {
-            self.ui.ok(&format!("Set {} in .env", shown[0]), NONE);
-        } else {
-            self.ui.ok("Set in .env:", &shown);
-        }
-        Ok(())
-    }
-
-    /// A new .env: the installer's line, its settings, and .env.example of
-    /// the same release below them for reference. An assignment there of a
-    /// setting above is commented out, as it would override it.
-    fn env_write_new(&mut self) -> Step {
-        let mut out = format!("{ENV_MARKER}\n");
-        for key in [Key::Domain, Key::PublicIp, Key::Language] {
-            out.push_str(&format!("{}={}\n", key.name(), self.set(key)));
-        }
-        out.push_str(&format!("STELLARR_VERSION={}\n", self.target_tag));
-        if !self.set_compose_file.is_empty() {
-            out.push_str(&format!("COMPOSE_FILE={}\n", self.set_compose_file));
-        }
-        for key in [
-            Key::HttpsPort,
-            Key::PublicPort,
-            Key::HttpPort,
-            Key::MediaPort,
-            Key::TurnEnabled,
-            Key::TurnPort,
-            Key::TurnsPort,
-        ] {
-            if !self.set(key).is_empty() {
-                out.push_str(&format!("{}={}\n", key.name(), self.set(key)));
-            }
-        }
-        let mut content = out.into_bytes();
-        if let Ok(example) = fs::read(".env.example") {
-            content.extend_from_slice(b"\n# Below is .env.example of the same version as docker-compose.yml, for reference.\n");
-            let ours: Vec<&str> = KEYS
-                .iter()
-                .map(|k| k.name())
-                .chain(["STELLARR_VERSION"])
-                .collect();
-            content.extend_from_slice(&envfile::commented(&example, &ours));
-        }
-        self.write_file(".env", &content, 0o600)?;
-        self.env_created = true;
-        Ok(())
-    }
-
-    /// Compose takes a variable from the environment over the one in .env,
-    /// and COMPOSE_PROJECT_NAME over the project's own name, which would
-    /// start the installation on another, empty volume. The installer runs
-    /// Compose on .env alone, as a later "docker compose up" from another
-    /// shell would; what it was given in the environment is in .env by now.
-    fn clear_compose_environment(&mut self) {
-        let mut files = vec!["docker-compose.yml"];
-        if self.two_port_layout && self.turn_published {
-            files.push("docker-compose.turn.yml");
-        }
-        self.removed_env = [
-            "COMPOSE_PROJECT_NAME",
-            "COMPOSE_FILE",
-            "COMPOSE_PROFILES",
-            "COMPOSE_ENV_FILES",
-            "COMPOSE_PATH_SEPARATOR",
-        ]
-        .map(String::from)
-        .to_vec();
-        let mut names = BTreeSet::new();
-        for file in files {
-            let content = fs::read(file).unwrap_or_default();
-            let mut rest = content.as_slice();
-            while let Some(at) = rest.windows(2).position(|w| w == b"${") {
-                rest = &rest[at + 2..];
-                let first = rest.first().copied().unwrap_or(0);
-                if first.is_ascii_alphabetic() || first == b'_' {
-                    let end = rest
-                        .iter()
-                        .position(|b| !(b.is_ascii_alphanumeric() || *b == b'_'))
-                        .unwrap_or(rest.len());
-                    names.insert(String::from_utf8_lossy(&rest[..end]).into_owned());
-                }
-            }
-        }
-        let ours: Vec<&str> = KEYS
-            .iter()
-            .map(|k| k.name())
-            .chain(["STELLARR_VERSION"])
-            .collect();
-        let mut ignored = String::new();
-        for name in names {
-            if std::env::var_os(&name).is_none() {
-                continue;
-            }
-            if !ours.contains(&name.as_str()) {
-                ignored.push(' ');
-                ignored.push_str(&name);
-            }
-            self.removed_env.push(name);
-        }
-        if !ignored.is_empty() {
-            self.ui.warn(
-                &format!("Ignored from the environment, as Compose reads .env:{ignored}"),
-                NONE,
-            );
-        }
     }
 
     // ---- Starting ----
 
-    fn start_stellarr(&mut self) -> Step {
-        let (ok, log) = sys::logged(self.compose(&["config", "-q"]));
-        if !ok {
-            let dir = display(&self.install_dir);
-            self.ui.fail(
-                &format!("Docker Compose cannot read the configuration in {dir}"),
-                NONE,
-            );
-            self.ui.block(Fd::Err, &log);
-            return Err(Stop(1));
+    fn pull_image(&mut self, config_dir: &Path) -> Step {
+        let mut args = vec!["pull"];
+        if !self.ui.terminal {
+            args.push("--quiet");
         }
-        if !self.o.start {
-            return Ok(());
-        }
-        if self.o.build {
-            self.ui.text(
-                Fd::Out,
-                &["Building the image; Docker's output follows. This takes a while."],
-            );
-            if !sys::shown(self.compose(&["build"])) {
-                return Err(self.die("Building the image failed", &["Docker's output is above."]));
-            }
-            self.ui.ok("Built the image from the checkout", NONE);
-        } else {
-            self.pull_image()?;
-        }
-        let (ok, log) = sys::logged(self.compose(&["up", "-d", "--no-build"]));
-        if !ok {
-            self.ui
-                .fail("Docker Compose could not start the container", NONE);
-            self.ui.block(Fd::Err, &log);
-            let logs = format!("All logs: {}", self.compose_command("logs"));
-            self.ui.text(
-                Fd::Err,
-                &[
-                    "",
-                    "Nothing was removed. When the cause is fixed, run the installer again.",
-                    &logs,
-                ],
-            );
-            return Err(Stop(1));
-        }
-        if self.owns_container && self.container.running {
-            self.ui.ok("Brought the container up to date", NONE);
-        } else {
-            self.ui.ok("Started the container", NONE);
-        }
-        self.wait_until_up()
-    }
-
-    fn image_present(&self, image: &str) -> bool {
-        sys::quiet(self.docker(["image", "inspect", image]))
-    }
-
-    fn pull_image(&mut self) -> Step {
-        let image = format!("{IMAGE}:{}", self.target_tag);
+        args.extend(["--policy", "always", "stellarr"]);
+        let command = self.compose_at(config_dir, &args);
         let (ok, log) = if self.ui.terminal {
-            (sys::shown(self.compose(&["pull"])), Vec::new())
+            (sys::shown(command), Vec::new())
         } else {
-            sys::logged(self.compose(&["pull", "--quiet"]))
+            sys::logged(command)
         };
-        if ok && self.image_present(&image) {
+        let image = self.target_image.clone();
+        if ok && sys::quiet(self.docker(["image", "inspect", &image])) {
             self.ui.ok(&format!("Pulled {image}"), NONE);
-            return Ok(());
-        }
-        if self.image_present(&image) {
-            self.ui.warn(
-                &format!("Could not pull {image}; using the copy already on this machine"),
-                NONE,
-            );
             return Ok(());
         }
         self.ui.fail(&format!("Could not pull {image}"), NONE);
@@ -2370,13 +2156,25 @@ impl Run {
         let mut checks: u64 = 0;
         let mut base: Option<u64> = None;
         let limit = self.o.start_timeout_secs;
+        let deadline = started.checked_add(Duration::from_secs(limit));
         loop {
             // Each check waits a second, so the time counts at least one per
             // check, even where the clock does not move.
             let elapsed = started.elapsed().as_secs().max(checks);
-            let info = self
-                .container_format("{{.State.Status}} {{.RestartCount}}")
-                .unwrap_or_default();
+            if elapsed >= limit {
+                return Err(self.start_failed(&format!("Stellarr did not start within {limit} s")));
+            }
+            let info = sys::output_until(
+                self.docker([
+                    "container",
+                    "inspect",
+                    "--format",
+                    "{{.State.Status}} {{.RestartCount}}",
+                    "stellarr",
+                ]),
+                deadline,
+            )
+            .unwrap_or_default();
             let mut fields = info.split_whitespace();
             let state = fields.next().unwrap_or_default().to_string();
             let restarts: u64 = fields.last().and_then(|r| r.parse().ok()).unwrap_or(0);
@@ -2393,8 +2191,12 @@ impl Run {
                 )));
             }
             if state == "running"
-                && sys::quiet(self.docker(["exec", "stellarr", "stellarr-init", "health"]))
+                && sys::quiet_until(
+                    self.docker(["exec", "stellarr", "stellarr-init", "health"]),
+                    deadline,
+                )
             {
+                let elapsed = started.elapsed().as_secs().max(checks);
                 if elapsed == 0 {
                     self.ui.ok("Stellarr is up", NONE);
                 } else {
@@ -2403,11 +2205,14 @@ impl Run {
                 }
                 return Ok(());
             }
-            if elapsed >= limit {
+            let remaining = Duration::from_secs(limit).saturating_sub(started.elapsed());
+            if remaining.is_zero() {
                 return Err(self.start_failed(&format!("Stellarr did not start within {limit} s")));
             }
             self.ui.wait(elapsed, limit);
-            self.sleep(1);
+            if !self.fast_clock {
+                std::thread::sleep(remaining.min(Duration::from_secs(1)));
+            }
             checks += 1;
         }
     }
@@ -2415,8 +2220,10 @@ impl Run {
     fn start_failed(&mut self, problem: &str) -> Stop {
         self.ui.fail(problem, NONE);
         self.ui.section("What its services report");
-        let (ok, status) =
-            sys::logged(self.docker(["exec", "stellarr", "stellarr-init", "status"]));
+        let (ok, status) = sys::logged_until(
+            self.docker(["exec", "stellarr", "stellarr-init", "status"]),
+            Some(Instant::now() + Duration::from_secs(1)),
+        );
         if ok || !status.is_empty() {
             self.ui.block(Fd::Out, &status);
         } else {
@@ -2424,14 +2231,17 @@ impl Run {
                 .text(Fd::Out, &["Nothing: the container is not running."]);
         }
         self.ui.section("Last lines of the container's log");
-        let (_, logs) = sys::logged(self.docker(["logs", "--tail", "40", "stellarr"]));
+        let (_, logs) = sys::logged_until(
+            self.docker(["logs", "--tail", "40", "stellarr"]),
+            Some(Instant::now() + Duration::from_secs(1)),
+        );
         self.ui.block(Fd::Out, &logs);
         let all = format!("All logs: {}", self.compose_command("logs"));
         self.ui.text(
             Fd::Out,
             &[
                 "",
-                "Nothing was removed. When the cause is fixed, run the installer again.",
+                "The saved configuration is in place. Fix the cause and run the installer again.",
                 &all,
             ],
         );
@@ -2486,12 +2296,21 @@ impl Run {
     }
 
     fn show_not_started(&mut self) {
-        let up = if self.o.build {
-            "up -d --build"
+        let start = if self.o.build {
+            let mut args = "-f docker-compose.yml".to_string();
+            if self.two_port_layout && self.turn_published {
+                args.push_str(&format!(" -f {}", self.turn_file()));
+            }
+            args.push_str(&format!(" -f {}", self.build_file()));
+            if let Some(file) = self.override_file {
+                args.push_str(&format!(" -f {}", shell_word(file)));
+            }
+            args.push_str(" up -d --build");
+            self.compose_command(&args)
         } else {
-            "up -d"
+            self.compose_command("up -d")
         };
-        let command = format!("  {}", self.compose_command(up));
+        let command = format!("  {start}");
         self.ui.section("Ready to start");
         self.ui.text(
             Fd::Out,
@@ -2656,14 +2475,11 @@ impl Run {
 
 /// Only the Compose file lists this installer can write are safe to reuse.
 fn managed_turn_files(list: &str) -> bool {
-    matches!(
-        list,
-        "docker-compose.yml:docker-compose.turn.yml"
-            | "docker-compose.yml:docker-compose.turn.yml:compose.override.yaml"
-            | "docker-compose.yml:docker-compose.turn.yml:compose.override.yml"
-            | "docker-compose.yml:docker-compose.turn.yml:docker-compose.override.yml"
-            | "docker-compose.yml:docker-compose.turn.yml:docker-compose.override.yaml"
-    )
+    let mut files = list.split(':');
+    files.next() == Some("docker-compose.yml")
+        && matches!(files.next(), Some(CHECKOUT_TURN | INSTALLED_TURN))
+        && files.next().is_none_or(|path| OVERRIDES.contains(&path))
+        && files.next().is_none()
 }
 
 #[cfg(test)]
@@ -2678,6 +2494,16 @@ mod tests {
         assert!(is_stellarr_compose(b"name:stellarr  \n"));
         assert!(!is_stellarr_compose(b"name: other\n"));
         assert!(!is_stellarr_compose(b"  name: stellarr\n"));
+    }
+
+    #[test]
+    fn normalizes_missing_path_components() {
+        let cwd = std::env::current_dir().unwrap().canonicalize().unwrap();
+        assert_eq!(
+            absolute_path("./missing/../future/./child/.."),
+            cwd.join("future")
+        );
+        assert_eq!(absolute_path("/../../"), PathBuf::from("/"));
     }
 
     #[test]
@@ -2698,6 +2524,12 @@ mod tests {
     fn approves_only_known_compose_files() {
         assert!(managed_turn_files(
             "docker-compose.yml:docker-compose.turn.yml"
+        ));
+        assert!(managed_turn_files(
+            "docker-compose.yml:infra/compose/turn.yml:compose.override.yml"
+        ));
+        assert!(!managed_turn_files(
+            "docker-compose.yml:infra/compose/turn.yml:compose.override.yml:other.yml"
         ));
         assert!(!managed_turn_files("other.yml"));
     }

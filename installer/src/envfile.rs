@@ -3,6 +3,9 @@
 //! exactly as it was, whatever its encoding or line end.
 
 use std::collections::BTreeMap;
+use std::ops::Range;
+
+pub const BOM: &[u8] = b"\xef\xbb\xbf";
 
 fn is_blank(b: u8) -> bool {
     b == b' ' || b == b'\t'
@@ -42,7 +45,7 @@ fn name_then_equals(line: &[u8], start: usize) -> Option<(String, usize)> {
         end += 1;
     }
     let equals = skip_blank(line, end);
-    if line.get(equals) == Some(&b'=') {
+    if matches!(line.get(equals), Some(b'=' | b':')) {
         Some((
             String::from_utf8_lossy(&line[start..end]).into_owned(),
             equals + 1,
@@ -77,7 +80,7 @@ pub fn value(line: &[u8], at: usize) -> String {
     match value.first() {
         Some(&quote @ (b'"' | b'\'')) => {
             value = &value[1..];
-            if let Some(end) = value.iter().position(|&b| b == quote) {
+            if let Some(end) = quote_end(value, quote) {
                 value = &value[..end];
             }
         }
@@ -103,59 +106,98 @@ pub fn value(line: &[u8], at: usize) -> String {
     String::from_utf8_lossy(value).into_owned()
 }
 
-/// Every key the file assigns and its value; the last assignment of a key
-/// wins, as in Compose.
-pub fn parse(content: &[u8]) -> BTreeMap<String, String> {
-    let mut values = BTreeMap::new();
-    for line in records(content) {
-        if let Some((name, at)) = assignment(line) {
-            values.insert(name, value(line, at));
+fn quote_end(value: &[u8], quote: u8) -> Option<usize> {
+    let mut escaped = false;
+    for (index, &byte) in value.iter().enumerate() {
+        if byte == quote && !escaped {
+            return Some(index);
         }
+        escaped = byte == b'\\' && !escaped;
     }
-    values
+    None
 }
 
-/// The file with `marker` as its new first line.
+/// Keep an assignment and its quoted continuations together when reading or
+/// rewriting. A key-looking line inside a value is part of that value.
+fn assignments(content: &[u8]) -> impl Iterator<Item = (Range<usize>, String, usize)> + '_ {
+    let mut start = 0;
+    std::iter::from_fn(move || {
+        while start < content.len() {
+            let row = start;
+            let end = content[row..]
+                .iter()
+                .position(|&b| b == b'\n')
+                .map_or(content.len(), |n| row + n + 1);
+            start = end;
+            let line = content[row..end]
+                .strip_suffix(b"\n")
+                .unwrap_or(&content[row..end]);
+            let Some((key, at)) = assignment(line) else {
+                continue;
+            };
+            let at = skip_blank(line, at);
+            if let Some(&quote @ (b'\'' | b'"')) = line.get(at) {
+                start = quote_end(&content[row + at + 1..], quote)
+                    .map(|n| row + at + n + 2)
+                    .map_or(content.len(), |closing| {
+                        content[closing..]
+                            .iter()
+                            .position(|&b| b == b'\n')
+                            .map_or(content.len(), |n| closing + n + 1)
+                    });
+            }
+            return Some((row..start, key, at));
+        }
+        None
+    })
+}
+
+pub fn parse(content: &[u8]) -> BTreeMap<String, String> {
+    let content = content.strip_prefix(BOM).unwrap_or(content);
+    assignments(content)
+        .map(|(span, key, at)| {
+            let line = &content[span];
+            (key, value(line.strip_suffix(b"\n").unwrap_or(line), at))
+        })
+        .collect()
+}
+
 pub fn with_marker(content: &[u8], marker: &str) -> Vec<u8> {
     let mut out = Vec::with_capacity(content.len() + marker.len() + 2);
+    let body = if let Some(body) = content.strip_prefix(BOM) {
+        out.extend_from_slice(BOM);
+        body
+    } else {
+        content
+    };
     out.extend_from_slice(marker.as_bytes());
     out.push(b'\n');
-    for line in records(content) {
-        out.extend_from_slice(line);
+    out.extend_from_slice(body);
+    if !out.ends_with(b"\n") {
         out.push(b'\n');
     }
     out
 }
 
-/// The file with each `(key, value)` set: the effective assignment of a key is
-/// rewritten in place, keeping its line end, and a key the file lacks goes
-/// under the first line. An empty COMPOSE_FILE removes every assignment of it.
+fn remove_assignment(key: &str, value: &str) -> bool {
+    value.is_empty() && matches!(key, "COMPOSE_FILE" | "STELLARR_IMAGE" | "STELLARR_TRACK")
+}
+
 pub fn with_values(content: &[u8], pairs: &[(String, String)]) -> Vec<u8> {
-    let lines = records(content);
-    let mut last: BTreeMap<String, usize> = BTreeMap::new();
-    let mut remove = vec![false; lines.len()];
-    let clear_compose_file = pairs
+    let mut out = Vec::with_capacity(content.len() + 64);
+    let content = if let Some(body) = content.strip_prefix(BOM) {
+        out.extend_from_slice(BOM);
+        body
+    } else {
+        content
+    };
+    let spans: Vec<_> = assignments(content).collect();
+    let last: BTreeMap<&str, usize> = spans
         .iter()
-        .any(|(key, value)| key == "COMPOSE_FILE" && value.is_empty());
-    for (row, line) in lines.iter().enumerate() {
-        if let Some((name, _)) = assignment(line) {
-            if name == "COMPOSE_FILE" && clear_compose_file {
-                remove[row] = true;
-            }
-            last.insert(name, row);
-        }
-    }
-    let mut at: BTreeMap<usize, &(String, String)> = BTreeMap::new();
-    for pair in pairs {
-        if let Some(&row) = last.get(&pair.0) {
-            at.insert(row, pair);
-        }
-    }
-    let missing: Vec<&(String, String)> = pairs
-        .iter()
-        .filter(|(key, _)| !last.contains_key(key))
+        .enumerate()
+        .map(|(i, (_, key, _))| (key.as_str(), i))
         .collect();
-    let write_pair = |out: &mut Vec<u8>, (key, value): &(String, String), cr: bool| {
+    let write_pair = |out: &mut Vec<u8>, key: &str, value: &str, cr: bool| {
         out.extend_from_slice(key.as_bytes());
         out.push(b'=');
         out.extend_from_slice(value.as_bytes());
@@ -164,43 +206,80 @@ pub fn with_values(content: &[u8], pairs: &[(String, String)]) -> Vec<u8> {
         }
         out.push(b'\n');
     };
-
-    let mut out = Vec::with_capacity(content.len() + 64);
-    for (row, line) in lines.iter().enumerate() {
-        if !remove[row] {
-            match at.get(&row) {
-                Some(pair) => write_pair(&mut out, pair, line.ends_with(b"\r")),
-                None => {
-                    out.extend_from_slice(line);
-                    out.push(b'\n');
-                }
+    let first = content
+        .iter()
+        .position(|&b| b == b'\n')
+        .map_or(content.len(), |i| i + 1);
+    let insert_at = spans
+        .iter()
+        .find(|(span, _, _)| span.start == 0)
+        .map_or(first, |(span, _, _)| span.end);
+    let missing: Vec<_> = pairs
+        .iter()
+        .filter(|(key, value)| !(last.contains_key(key.as_str()) || remove_assignment(key, value)))
+        .collect();
+    let mut cursor = 0;
+    let mut added = false;
+    for (i, (span, name, _)) in spans.iter().enumerate() {
+        if !added && insert_at <= span.start {
+            out.extend_from_slice(&content[cursor..insert_at]);
+            for (key, value) in &missing {
+                write_pair(&mut out, key, value, false);
             }
+            cursor = insert_at;
+            added = true;
         }
-        if row == 0 {
-            for pair in &missing {
-                write_pair(&mut out, pair, false);
+        let Some((key, value)) = pairs.iter().find(|(key, _)| key == name) else {
+            continue;
+        };
+        let remove = remove_assignment(key, value);
+        if remove || last.get(name.as_str()) == Some(&i) {
+            out.extend_from_slice(&content[cursor..span.start]);
+            if !remove {
+                write_pair(
+                    &mut out,
+                    key,
+                    value,
+                    content[span.clone()].ends_with(b"\r\n"),
+                );
             }
+            cursor = span.end;
         }
     }
-    if lines.is_empty() {
-        for pair in &missing {
-            write_pair(&mut out, pair, false);
+    if !added {
+        out.extend_from_slice(&content[cursor..insert_at]);
+        if !missing.is_empty() && !out.is_empty() && !out.ends_with(b"\n") && out != BOM {
+            out.push(b'\n');
         }
+        for (key, value) in missing {
+            write_pair(&mut out, key, value, false);
+        }
+        cursor = insert_at;
+    }
+    out.extend_from_slice(&content[cursor..]);
+    if !out.ends_with(b"\n") {
+        out.push(b'\n');
     }
     out
 }
 
-/// `.env.example` with each assignment of a key in `ours` turned into a
-/// comment, as it would override the installer's own setting above it.
 pub fn commented(example: &[u8], ours: &[&str]) -> Vec<u8> {
+    let example = example.strip_prefix(BOM).unwrap_or(example);
     let mut out = Vec::with_capacity(example.len() + 64);
-    for line in records(example) {
-        if let Some((name, _)) = assignment(line)
-            && ours.contains(&name.as_str())
-        {
-            out.extend_from_slice(b"# ");
+    let mut cursor = 0;
+    for (span, name, _) in assignments(example) {
+        if ours.contains(&name.as_str()) {
+            out.extend_from_slice(&example[cursor..span.start]);
+            for line in records(&example[span.clone()]) {
+                out.extend_from_slice(b"# ");
+                out.extend_from_slice(line);
+                out.push(b'\n');
+            }
+            cursor = span.end;
         }
-        out.extend_from_slice(line);
+    }
+    out.extend_from_slice(&example[cursor..]);
+    if !out.ends_with(b"\n") {
         out.push(b'\n');
     }
     out
@@ -271,6 +350,16 @@ STELLARR_LANGUAGE=en";
         assert_eq!(with_values(b"", &pairs(&[("A", "2")])), b"A=2\n");
         assert_eq!(with_marker(b"", "# m"), b"# m\n");
         assert_eq!(with_marker(b"A=1", "# m"), b"# m\nA=1\n");
+    }
+
+    #[test]
+    fn preserves_bom_and_never_rewrites_keys_inside_multiline_values() {
+        let env = b"\xef\xbb\xbfPASSWORD='first line\nSTELLARR_VERSION=ignore\nlast line'\nCOMPOSE_PROJECT_NAME: stellarr\n";
+        let values = parse(env);
+        assert_eq!(values["COMPOSE_PROJECT_NAME"], "stellarr");
+        assert!(!values.contains_key("STELLARR_VERSION"));
+        assert_eq!(with_values(&with_marker(env, "# marked"), &pairs(&[("STELLARR_VERSION", "1.2.3")])),
+            b"\xef\xbb\xbf# marked\nSTELLARR_VERSION=1.2.3\nPASSWORD='first line\nSTELLARR_VERSION=ignore\nlast line'\nCOMPOSE_PROJECT_NAME: stellarr\n");
     }
 
     #[test]

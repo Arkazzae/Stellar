@@ -8,43 +8,83 @@ on:
 # the registry and the attestations. It signs in with the token GitHub gives
 # the run, no secret is set.
 permissions:
-  contents: write
-  packages: write
-  id-token: write
-  attestations: write
+  contents: read
+
+concurrency:
+  group: release-${{ github.ref }}
+  queue: max
 
 jobs:
+  installer:
+    uses: ./.github/workflows/installer-build.yml
+    with:
+      artifacts: true
+
   publish:
+    needs: installer
+    permissions:
+      contents: read
+      packages: write
+      id-token: write
+      attestations: write
     runs-on: ubuntu-latest
     # The arm64 half of the image is built under emulation.
     timeout-minutes: 120
     env:
       IMAGE: ghcr.io/arkazzae/stellarr
     steps:
+      - id: release
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ github.ref_name }}
+        run: |
+          python3 - <<'PYTHON'
+          import os
+          import re
+
+          tag = os.environ["TAG"]
+          match = re.fullmatch(
+              r"v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)(?:-([0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*))?", tag
+          )
+          if match is None or len(tag) > 129 or any(int(value) >= 2**64 for value in match.groups()[:3]):
+              raise SystemExit(f"Invalid release tag: {tag}")
+          for identifier in tag.partition("-")[2].split("."):
+              if identifier.isdecimal() and len(identifier) > 1 and identifier.startswith("0"):
+                  raise SystemExit(f"Invalid numeric prerelease identifier: {identifier}")
+          PYTHON
+          draft=$(gh api --paginate --slurp "repos/$GITHUB_REPOSITORY/releases?per_page=100" |
+            jq -r --arg tag "$TAG" '.[][] | select(.tag_name == $tag) | .draft')
+          if [[ $draft == false ]]; then
+            echo 'published=true' >> "$GITHUB_OUTPUT"
+          fi
       - uses: actions/checkout@v7
+        if: steps.release.outputs.published != 'true'
       - uses: docker/setup-qemu-action@99012661954931238ded8c8b007157a8430204e1 # v4.4.0
+        if: steps.release.outputs.published != 'true'
         with:
           platforms: arm64
       - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
+        if: steps.release.outputs.published != 'true'
       - uses: docker/login-action@8aa5831fb8d48d8f76594c7ddde61ae58019f550 # v4.8.0
+        if: steps.release.outputs.published != 'true'
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
-      # Tags v1.2.3 as 1.2.3 and 1.2. A stable version also gets "latest"; a
-      # pre-release such as v1.2.3-rc.1 only gets its own tag.
       - id: meta
+        if: steps.release.outputs.published != 'true'
         uses: docker/metadata-action@dc802804100637a589fabce1cb79ff13a1411302 # v6.2.0
         with:
           images: ${{ env.IMAGE }}
-          tags: |
-            type=semver,pattern={{version}}
-            type=semver,pattern={{major}}.{{minor}}
+          flavor: latest=false
+          tags: type=semver,pattern={{version}}
       # Read only: the caches CI fills on main, the image job's and one per
       # recipe of artifacts/recipes/, which the recipes job writes and the
       # image job does not build. A cache written under a tag would never be
       # used again.
       - id: cache
+        if: steps.release.outputs.published != 'true'
         name: List the caches to read
         run: |
           {
@@ -56,6 +96,7 @@ jobs:
             echo 'EOF'
           } >> "$GITHUB_OUTPUT"
       - id: build
+        if: steps.release.outputs.published != 'true'
         uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
         with:
           context: .
@@ -71,53 +112,31 @@ jobs:
           cache-from: ${{ steps.cache.outputs.from }}
       # Storage records need an organization-owned repository.
       - uses: actions/attest@v4
+        if: steps.release.outputs.published != 'true'
         with:
           subject-name: ${{ env.IMAGE }}
           subject-digest: ${{ steps.build.outputs.digest }}
           push-to-registry: true
           create-storage-record: false
 
-  # The installer that install.sh fetches, one static program per target.
-  # Linux builds against musl on a runner of its own architecture, so ring's C
-  # code needs no cross compiler; one macOS runner builds both Mac targets.
-  installer:
-    strategy:
-      matrix:
-        include:
-          - target: x86_64-unknown-linux-musl
-            runner: ubuntu-latest
-          - target: aarch64-unknown-linux-musl
-            runner: ubuntu-24.04-arm
-          - target: x86_64-apple-darwin
-            runner: macos-latest
-          - target: aarch64-apple-darwin
-            runner: macos-latest
-    runs-on: ${{ matrix.runner }}
-    timeout-minutes: 30
-    defaults:
-      run:
-        shell: bash
-        working-directory: installer
-    steps:
-      - uses: actions/checkout@v7
-      - run: rustup toolchain install stable --profile minimal --target ${{ matrix.target }} && rustup default stable
-      - if: runner.os == 'Linux'
-        run: sudo apt-get update && sudo apt-get install -y musl-tools
-      - run: cargo build --locked --release --target ${{ matrix.target }}
-      - run: cp target/${{ matrix.target }}/release/stellarr-installer stellarr-installer-${{ matrix.target }}
-      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
-        with:
-          name: installer-${{ matrix.target }}
-          path: installer/stellarr-installer-${{ matrix.target }}
-          if-no-files-found: error
-
-  # The release is created with the installers attached, never before them:
-  # install.sh fetches them from the latest release, which this one becomes
-  # the moment it exists.
+  # Hold this lock from publication through promotion so a late-finishing
+  # release cannot replace a newer stable tag.
   release:
     needs: [publish, installer]
+    concurrency:
+      group: release-promotion
+      queue: max
+    permissions:
+      contents: write
+      packages: write
+      id-token: write
+      attestations: write
     runs-on: ubuntu-latest
     timeout-minutes: 10
+    env:
+      GH_TOKEN: ${{ github.token }}
+      TAG: ${{ github.ref_name }}
+      IMAGE: ghcr.io/arkazzae/stellarr
     steps:
       - uses: actions/checkout@v7
       - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
@@ -125,19 +144,78 @@ jobs:
           pattern: installer-*
           path: assets
           merge-multiple: true
-      - name: Sum the installers
+      - name: Sum the four installers
         working-directory: assets
-        run: sha256sum stellarr-installer-* >stellarr-installer.sha256 && cat stellarr-installer.sha256
+        run: |
+          sha256sum stellarr-installer-{aarch64,x86_64}-{apple-darwin,unknown-linux-musl} > stellarr-installer.sha256
       - uses: actions/attest@v4
         with:
           subject-path: assets/stellarr-installer-*
-      - name: Create the GitHub release
-        env:
-          GH_TOKEN: ${{ github.token }}
-          TAG: ${{ github.ref_name }}
+      - name: Publish GitHub release with installer assets
+        shell: bash
         run: |
-          args=(--generate-notes --verify-tag)
+          draft=$(gh api --paginate --slurp "repos/$GITHUB_REPOSITORY/releases?per_page=100" |
+            jq -r --arg tag "$TAG" '.[][] | select(.tag_name == $tag) | .draft')
+          if [[ $draft == false ]]; then
+            exit 0
+          fi
+
+          args=(--generate-notes --verify-tag --draft --latest=false)
           if [[ $TAG == *-* ]]; then
             args+=(--prerelease)
           fi
-          gh release create "$TAG" "${args[@]}" assets/stellarr-installer-* assets/stellarr-installer.sha256
+          if [[ -z $draft ]]; then
+            gh release create "$TAG" "${args[@]}"
+          fi
+          gh release upload "$TAG" assets/stellarr-installer-* assets/stellarr-installer.sha256 --clobber
+          gh release edit "$TAG" --draft=false --latest=false
+      - name: Verify the published installer assets
+        run: |
+          assets=$(gh api "repos/$GITHUB_REPOSITORY/releases/tags/$TAG" --jq '.assets[].name')
+          for name in stellarr-installer-{aarch64,x86_64}-{apple-darwin,unknown-linux-musl} stellarr-installer.sha256; do
+            grep -Fx "$name" <<< "$assets"
+          done
+      - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
+        if: ${{ !contains(github.ref_name, '-') }}
+      - uses: docker/login-action@8aa5831fb8d48d8f76594c7ddde61ae58019f550 # v4.8.0
+        if: ${{ !contains(github.ref_name, '-') }}
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - name: Promote the stable image
+        if: ${{ !contains(github.ref_name, '-') }}
+        run: |
+          gh api --paginate --slurp "repos/$GITHUB_REPOSITORY/releases?per_page=100" > releases.json
+          python3 - <<'PYTHON' > promotions.txt
+          import json
+          import os
+          import re
+
+          def parse(tag):
+              match = re.fullmatch(r"v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)", tag)
+              return tuple(map(int, match.groups())) if match else None
+
+          with open("releases.json") as source:
+              published = {
+                  version
+                  for page in json.load(source)
+                  for release in page
+                  if not release["draft"] and not release["prerelease"]
+                  if (version := parse(release["tag_name"])) is not None
+              }
+          version = parse(os.environ["TAG"])
+          if version not in published:
+              raise SystemExit("The new release did not appear in the GitHub release list.")
+          series = version[:2]
+          if version == max(candidate for candidate in published if candidate[:2] == series):
+              print(f"{series[0]}.{series[1]}")
+          if version == max(published):
+              print("latest")
+          PYTHON
+          while IFS= read -r alias; do
+            docker buildx imagetools create --tag "$IMAGE:$alias" "$IMAGE:${TAG#v}"
+            if [[ $alias == latest ]]; then
+              gh release edit "$TAG" --latest
+            fi
+          done < promotions.txt

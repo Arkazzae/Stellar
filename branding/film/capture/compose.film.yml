@@ -1,4 +1,4 @@
-# Over docker-compose.dev.yml for the throwaway instance the film is captured
+# Over infra/compose/dev.yml for the throwaway instance the film is captured
 # from: the same instance on every machine, whatever the shell or film.env
 # hold, and no rate limit in the way of the seed script.
 services:

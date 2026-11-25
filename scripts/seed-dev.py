@@ -229,7 +229,7 @@ CONVERSATIONS: dict[str, list[ScriptLine]] = {
     "frontend-vite": [
         ("ola", "Po ostatnich zmianach w `TranscriptRow` memoizacja robi ogromną różnicę przy szybkich aktualizacjach reakcji."),
         ("piotr", "Isolating `contain: layout style` per row cut forced reflows to near zero when new messages arrive at the bottom."),
-        ("ania", "Did anyone check how Vite's dev server handles `@stellarr/ui` hot reload in `docker-compose.dev.yml`?"),
+        ("ania", "Did anyone check how Vite's dev server handles `@stellarr/ui` hot reload in `infra/compose/dev.yml`?"),
         ("ola", "Works great with `STELLARR_DEV_POLLING=true` — it polls every 300ms, so edits in `packages/stellarr-ui/src` show up without a restart."),
         ("maya", "Remember `npm run build` writes both apps as static files to `web/dist/` for nginx, while `npm run dev` proxies `/api`, `/assets`, `/health`, and `/hubs` to the API."),
         ("piotr", "Added `npm run bench:transcript` so we can measure row render regressions objectively.", "scroll-demo"),
@@ -244,7 +244,7 @@ CONVERSATIONS: dict[str, list[ScriptLine]] = {
         ("theo", "Barely 4% of a single core on my mini PC. Pure RTP forwarding avoids transcoding completely."),
         ("marcus", "Checked `STELLARR_MEDIA_ADVERTISE` in dev: advertising `127.0.0.1:49100` lets two local browser tabs connect over UDP without coturn."),
         ("tomek", "The optional dev relay uses `STELLARR_TURN_ENABLED=true` and `--profile turn`. The API advertises it on UDP port `3478`."),
-        ("theo", "Exact command:\n```bash\nSTELLARR_TURN_ENABLED=true docker compose -f docker-compose.dev.yml --profile turn up\n```"),
+        ("theo", "Exact command:\n```bash\nSTELLARR_TURN_ENABLED=true docker compose -f infra/compose/dev.yml --profile turn up\n```"),
         ("natasha", "Tested RNNoise / `@sapphi-red/web-noise-suppressor` on mechanical keyboard clicks — suppresses Cherry Browns nicely without clipping voice.", "voice-quality"),
         ("marcus", "Also verified `reset: every session closed` handles API restarts gracefully so stale rooms never linger."),
     ],

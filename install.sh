@@ -9,8 +9,8 @@
 # The installer itself is a program, built from installer/ in the repository
 # and attached to every release. This script only fetches the one for this
 # machine, checks its SHA-256 sum and runs it with the same arguments; --help
-# lists them. In a checkout with Rust's cargo it builds the installer from the
-# checkout instead, and STELLARR_INSTALLER_BIN runs a program already here.
+# lists them. STELLARR_INSTALLER_BIN runs an executable already on the host.
+# To run from source, use cargo run --locked --manifest-path installer/Cargo.toml.
 # STELLARR_INSTALLER_VERSION takes the installer of another release, such as
 # 1.5.0, in place of the latest one.
 #
@@ -47,62 +47,97 @@ installer_target() {
     x86_64 | amd64) cpu=x86_64 ;;
     aarch64 | arm64) cpu=aarch64 ;;
     *)
-      fail "There is no Stellarr installer or image for $arch, only for amd64 and arm64" \
-        "In a checkout with Rust's cargo, ./install.sh --build builds both from it."
+      fail "There is no Stellarr installer or image for $arch, only for amd64 and arm64"
       ;;
   esac
   target=$cpu-$system
 }
 
-# Downloads $1 to $2 over HTTPS only, with curl or wget.
+# Fetches $1 over HTTPS to $2 and writes the final URL to stdout.
 download() {
   if have curl; then
-    curl --proto '=https' --tlsv1.2 -fsSL --connect-timeout 15 --max-time 300 \
-      --retry 3 --retry-delay 2 -o "$2" "$1"
+    curl --proto '=https' --proto-redir '=https' --tlsv1.2 -fsSL \
+      --connect-timeout 15 --max-time 300 --retry 3 --retry-delay 2 \
+      -w '%{url_effective}\n' -o "$2" "$1"
   elif have wget; then
-    # wget follows a redirect to plain HTTP, and BusyBox's knows no option
-    # against it, so only an https address is accepted at all.
-    case "$1" in https://*) ;; *) return 1 ;; esac
-    wget -q -T 20 -O "$2" "$1"
+    # Follow redirects ourselves so wget cannot switch to an insecure URL.
+    url=$1
+    redirects=0
+    while [ "$redirects" -le 10 ]; do
+      case "$url" in https://*) ;; *) return 1 ;; esac
+      if wget -S -T 20 --max-redirect=0 -O "$2" "$url" 2>"$work/response"; then
+        printf '%s\n' "$url"
+        return 0
+      fi
+      location=$(awk '
+        $1 ~ /^HTTP\// { status = $2; target = "" }
+        status ~ /^3[0-9][0-9]$/ && tolower($1) == "location:" { target = $2 }
+        END { print target }
+      ' "$work/response")
+      case "$location" in
+        https://*) url=$location ;;
+        /*)
+          case "$location" in //*) return 1 ;; esac
+          origin=${url#https://}
+          url=https://${origin%%/*}$location
+          ;;
+        *) return 1 ;;
+      esac
+      redirects=$((redirects + 1))
+    done
+    return 1
   else
-    fail "Neither curl nor wget is installed" "Install one of them and run the installer again."
+    return 1
   fi
 }
 
 sha256() {
   if have sha256sum; then
-    sha256sum "$1" | cut -d ' ' -f 1
+    sha256sum <"$1" | cut -d ' ' -f 1
   elif have shasum; then
-    shasum -a 256 "$1" | cut -d ' ' -f 1
+    shasum -a 256 <"$1" | cut -d ' ' -f 1
   elif have openssl; then
-    openssl dgst -sha256 -r "$1" | cut -d ' ' -f 1
+    openssl dgst -sha256 -r <"$1" | cut -d ' ' -f 1
   else
     return 1
   fi
+}
+
+release_failed() {
+  fail "$1" "Check that this machine reaches github.com. Use curl or GNU wget for HTTPS downloads." '' \
+    "If no release carries the installer yet, run from a Stellarr checkout with Rust's cargo:" \
+    "  cargo run --locked --manifest-path installer/Cargo.toml -- --dir . --build"
 }
 
 # Fetches the installer for this machine into $work and checks it against
 # the sums published with it.
 fetch_installer() {
   installer_target
-  if [ -n "${STELLARR_INSTALLER_VERSION:-}" ]; then
-    base="$repo_url/releases/download/v${STELLARR_INSTALLER_VERSION#v}"
-  else
-    base="$repo_url/releases/latest/download"
+  if ! have curl && ! have wget; then
+    fail "Neither curl nor wget is installed" "Install curl or GNU wget and run the installer again."
   fi
+  if [ -n "${STELLARR_INSTALLER_VERSION:-}" ]; then
+    tag=v${STELLARR_INSTALLER_VERSION#v}
+  else
+    release=$(download "$repo_url/releases/latest" /dev/null) ||
+      release_failed "Could not find the latest Stellarr release"
+    case "$release" in
+      "$repo_url"/releases/tag/*) tag=${release##*/} ;;
+      *) release_failed "Could not find the latest Stellarr release" ;;
+    esac
+  fi
+  case "$tag" in
+    v[0-9]*.[0-9]*.[0-9]*) ;;
+    *) fail "Invalid Stellarr installer release tag: $tag" ;;
+  esac
+  case "$tag" in
+    *[!A-Za-z0-9.-]*) fail "Invalid Stellarr installer release tag: $tag" ;;
+  esac
+  base="$repo_url/releases/download/$tag"
   name="stellarr-installer-$target"
-  if ! download "$base/$name" "$work/$name" || ! download "$base/stellarr-installer.sha256" "$work/sums"; then
-    if [ -n "$checkout" ]; then
-      fail "Could not download the Stellarr installer for $target" "$base/$name" '' \
-        "Check that this machine reaches github.com. If Stellarr has no release with" \
-        "an installer yet, install Rust's cargo (https://rustup.rs) and run" \
-        "./install.sh again: it then builds the installer from this checkout."
-    fi
-    fail "Could not download the Stellarr installer for $target" "$base/$name" '' \
-      "Check that this machine reaches github.com. If Stellarr has no release with" \
-      "an installer yet, build it from the source instead, with Rust's cargo" \
-      "(https://rustup.rs) installed:" \
-      "  git clone $repo_url.git" "  cd Stellarr && ./install.sh --build"
+  if ! download "$base/$name" "$work/$name" >/dev/null ||
+    ! download "$base/stellarr-installer.sha256" "$work/sums" >/dev/null; then
+    release_failed "Could not download the Stellarr installer for $target from $tag"
   fi
   expected=$(awk -v name="$name" '$2 == name || $2 == "*" name { print $1; exit }' "$work/sums")
   actual=$(sha256 "$work/$name") ||
@@ -112,17 +147,19 @@ fetch_installer() {
     fail "The downloaded installer does not match its published SHA-256 sum" \
       "Nothing was run. Try again; if it persists, report it at $repo_url/issues"
   fi
-  chmod 755 "$work/$name"
+  chmod 700 "$work/$name" || fail "Could not make the verified installer executable"
   installer="$work/$name"
 }
 
-# Builds the installer from the checkout at $1 with cargo.
-build_installer() {
-  printf 'Building the installer from the checkout with cargo.\n' >&2
-  cargo build --quiet --release --locked --manifest-path "$1/installer/Cargo.toml" \
-    --target-dir "$1/installer/target" ||
-    fail "cargo could not build the installer from the checkout" "Its output is above."
-  installer="$1/installer/target/release/stellarr-installer"
+# The signal traps call this while the shell is waiting for the installer.
+# shellcheck disable=SC2329
+cancel() {
+  pid=${child:-$!}
+  if [ -n "$pid" ]; then
+    kill -s "$1" "$pid" 2>/dev/null || :
+    wait "$pid" 2>/dev/null || :
+  fi
+  exit "$2"
 }
 
 main() {
@@ -146,23 +183,25 @@ main() {
     fi
   fi
 
-  work=''
-  trap 'if [ -n "$work" ]; then rm -rf -- "$work"; fi' EXIT
-  trap 'exit 130' INT
-  trap 'exit 143' TERM
   if [ -n "${STELLARR_INSTALLER_BIN:-}" ]; then
-    installer=$STELLARR_INSTALLER_BIN
-  elif [ -n "$checkout" ] && [ -f "$checkout/installer/Cargo.toml" ] && have cargo; then
-    build_installer "$checkout"
-  else
-    work=$(mktemp -d "${TMPDIR:-/tmp}/stellarr-installer.XXXXXX") ||
-      fail "Could not make a temporary directory for the installer"
-    fetch_installer
+    STELLARR_INSTALLER_CHECKOUT=$checkout
+    export STELLARR_INSTALLER_CHECKOUT
+    exec "$STELLARR_INSTALLER_BIN" "$@"
   fi
 
-  STELLARR_INSTALLER_CHECKOUT=$checkout "$installer" "$@"
+  work=$(mktemp -d "${TMPDIR:-/tmp}/stellarr-installer.XXXXXX") ||
+    fail "Could not make a temporary directory for the installer"
+  child=''
+  trap 'rm -rf -- "$work"' EXIT
+  trap 'cancel INT 130' INT
+  trap 'cancel TERM 143' TERM
+  fetch_installer
+
+  STELLARR_INSTALLER_CHECKOUT=$checkout "$installer" "$@" </dev/null &
+  child=$!
+  wait "$child"
   status=$?
-  if [ "$status" -eq 126 ] && [ -n "$work" ]; then
+  if [ "$status" -eq 126 ]; then
     fail "Could not run the installer from ${TMPDIR:-/tmp}, which may not allow programs" \
       "Set TMPDIR to another directory and run the installer again."
   fi

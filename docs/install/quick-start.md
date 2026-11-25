@@ -10,7 +10,7 @@ Start a local Stellarr instance on a single machine, create the owner account an
 
 ## One-line installer
 
-Run the installer script to verify host prerequisites, write `docker-compose.yml` and `.env`, start the container, and print the instance URL and setup code:
+After the first stable release with installer assets, run the installer script to verify host prerequisites, write `docker-compose.yml` and `.env`, start the container, and print the instance URL and setup code:
 
 ```bash
 curl -fsSL https://stellarr.online/install.sh | bash
@@ -25,11 +25,16 @@ curl -fsSL https://stellarr.online/install.sh | bash
 
 - **Install directory (`--dir PATH` or `STELLARR_INSTALL_DIR`)**: When omitted, resolves in order to: (1) the git checkout containing `./install.sh`, (2) the working directory of an existing Stellarr Compose container, (3) the current directory if it already holds Stellarr's `docker-compose.yml`, or (4) `~/stellarr`.
 - **Updating**: Re-running the installer updates an existing installation to the latest pinned release tag (or `--version TAG`), backs up the previous `docker-compose.yml`, updates `STELLARR_VERSION` in `.env`, and preserves all other `.env` settings. Local Compose customizations belong in `docker-compose.override.yml`.
-- **From a git checkout**: Run `./install.sh` to use the checkout's files, or `./install.sh --build` to build the container image locally. With Rust's `cargo` installed, the script builds the installer from the checkout's `installer/` instead of downloading it. Run `./install.sh --help` for the full option list.
-- **How it works**: `install.sh` is a short POSIX script. It downloads the installer program for the machine (Linux or macOS, amd64 or arm64) from the latest GitHub release, checks it against the release's `stellarr-installer.sha256`, and runs it with the same options. `STELLARR_INSTALLER_VERSION=1.5.0` takes the installer of another release.
+- **From a git checkout**: Run `./install.sh --build` to build the checkout as `stellarr-local:dev`. For a published release, use a separate directory with `--dir` or check out the matching Git tag in the directory that already runs your installation.
+- **Installer binary**: The script accepts curl or GNU wget. It resolves the latest stable GitHub release, downloads both the installer and its SHA-256 manifest from that release, and runs the verified binary (Linux or macOS, amd64 or arm64). Set `STELLARR_INSTALLER_VERSION` to pin the installer binary. Set `STELLARR_INSTALLER_BIN` to use an existing executable and skip the download. The `--version` option selects the Stellarr container release.
 
-> [!NOTE]
-> If no container image has been published to GHCR for the requested release yet, build from a local checkout instead (`./install.sh --build` or see [Build from source](#build-from-source)). Until a release carries the installer, `./install.sh` in a checkout needs Rust's `cargo` ([rustup.rs](https://rustup.rs)) to build it.
+Before the first release with installer assets, or to run the installer from the checkout's Rust sources, install [Rust and Cargo](https://rustup.rs/) and run this command from the repository root:
+
+```bash
+cargo run --locked --manifest-path installer/Cargo.toml -- --dir . --build
+```
+
+Pass `--help` after the Cargo argument separator to see all installer options.
 
 The steps below walk through performing the same setup manually with Docker Compose.
 
@@ -144,7 +149,7 @@ To build the production container image directly from a local git checkout:
 ```bash
 git clone https://github.com/Arkazzae/Stellarr.git
 cd Stellarr
-docker compose up -d --build
+docker compose -f docker-compose.yml -f infra/compose/build.yml up -d --build
 ```
 
 The multi-stage `Dockerfile` compiles the WebAssembly artifact recipes (`speex`, `rnnoise`, `bergamot`), web client, Cockpit, Rust API (`stellarr-api`), operator CLI (`stellarr`), `stellarr-media`, and `stellarr-init` inside Docker. No host toolchains beyond Docker and BuildKit are required.

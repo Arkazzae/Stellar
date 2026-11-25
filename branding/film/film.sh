@@ -16,12 +16,12 @@ cd "$(dirname "$0")"
 FILM=$PWD
 
 # The throwaway instance is its own Compose project. Every command below names it, because
-# docker-compose.dev.yml declares `name: stellarr-dev`, and a bare `down -v` would delete the
+# infra/compose/dev.yml declares `name: stellarr-dev`, and a bare `down -v` would delete the
 # development database instead. The repository is needed only for its compose file.
 PROJECT=stellarr-film
 compose() {
   local repo=${STELLARR_REPO:-$(git -C "$FILM" rev-parse --show-toplevel)}
-  docker compose -f "$repo/docker-compose.dev.yml" -f "$FILM/capture/compose.film.yml" -p "$PROJECT" --env-file "$FILM/capture/film.env" "$@"
+  docker compose -f "$repo/infra/compose/dev.yml" -f "$FILM/capture/compose.film.yml" -p "$PROJECT" --env-file "$FILM/capture/film.env" "$@"
 }
 # Cockpit is served by the web dev server, under /cockpit.
 WEB=http://127.0.0.1:3100 API=http://127.0.0.1:5100

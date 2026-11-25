@@ -31,6 +31,7 @@
 # A recipe whose toolchain is a different build on each host pins its stages
 # to linux/amd64 instead, and says so beside them.
 ARG RECIPE_PLATFORM=$BUILDPLATFORM
+ARG VERSION=dev
 
 # SpeexDSP's preprocessor, the Speex noise suppressor (artifacts/recipes/speex/).
 FROM --platform=$RECIPE_PLATFORM ghcr.io/webassembly/wasi-sdk:wasi-sdk-33@sha256:f4d3519a6d4b36e8fd541019e13cb8d232980d9586e2b185f872ab97ea15bcfd AS recipe-speex-build
@@ -206,7 +207,7 @@ EOF
 # are built and no stub is shipped. The server reports the version it was
 # built as, which it reads from STELLARR_VERSION at compile time.
 FROM rust-cross AS api-build
-ARG VERSION=2.0.0
+ARG VERSION
 ENV STELLARR_VERSION=${VERSION}
 WORKDIR /src/api
 COPY --from=api-skeleton /skeleton/ ./
@@ -235,7 +236,7 @@ RUN cargo build --release --locked --target "$(cat /etc/rust-target)" --bin stel
     && install -D "target/$(cat /etc/rust-target)/release/stellarr-init" /out/stellarr-init
 
 # The Rust toolchain and a file watcher, for the development stack's two Rust
-# services. Each is a target of docker-compose.dev.yml that rebuilds and
+# services. Each is a target of infra/compose/dev.yml that rebuilds and
 # restarts its bind-mounted crate. The stack mounts its own volume over the
 # registry, so the copy left by the install is dropped.
 FROM rust:1-slim-bookworm AS rust-watch
@@ -243,10 +244,10 @@ RUN cargo install --locked watchexec-cli@2.8.0 \
     && rm -rf "$CARGO_HOME/registry"
 WORKDIR /app
 
-# Target of docker-compose.dev.yml: the media server.
+# Target of infra/compose/dev.yml: the media server.
 FROM rust-watch AS media-dev
 
-# Target of docker-compose.dev.yml: the API.
+# Target of infra/compose/dev.yml: the API.
 FROM rust-watch AS api-dev
 
 # The same distribution as before, pinned by the digest of its multi-platform
@@ -302,7 +303,7 @@ VOLUME ["/data/stellarr"]
 HEALTHCHECK --interval=30s --timeout=5s --start-period=60s --retries=3 \
   CMD ["/usr/local/bin/stellarr-init", "health"]
 
-ARG VERSION=dev
+ARG VERSION
 ARG REVISION=unknown
 LABEL org.opencontainers.image.title="Stellarr" \
       org.opencontainers.image.description="Self-hosted text and voice chat for small groups" \

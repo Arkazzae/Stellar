@@ -616,7 +616,7 @@ pub fn startup_settings() -> Vec<StartupSetting> {
         StartupSetting {
             key: "rtc.turn-enabled",
             environment_variable: "STELLARR_TURN_ENABLED",
-            guidance: "Use the installer with --enable-turn. For manual Docker Compose deployments, include docker-compose.turn.yml when recreating the container.".to_string(),
+            guidance: "Use the installer with --enable-turn. For manual Docker Compose deployments, include the TURN overlay from your release when recreating the container.".to_string(),
             read: |runtime| config_value(runtime, "Rtc:TurnEnabled", "false"),
         },
         from_variable!("rtc.turn-port", "STELLARR_TURN_PORT", "Rtc:TurnPort", "3478", ""),
