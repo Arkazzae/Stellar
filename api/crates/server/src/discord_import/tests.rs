@@ -130,7 +130,17 @@ async fn the_wizard_enforces_the_preview_and_resumes_the_selected_history_on_the
                 ..Msg::default()
             },
         )
-        .message("1003", "100", "905", "", 3, Msg { attachments: 1, ..Msg::default() })
+        .message(
+            "1003",
+            "100",
+            "905",
+            "",
+            3,
+            Msg {
+                attachments: 1,
+                ..Msg::default()
+            },
+        )
         .message(
             "2100",
             "210",
@@ -298,11 +308,20 @@ async fn the_wizard_enforces_the_preview_and_resumes_the_selected_history_on_the
             |row| Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?, row.get::<_, Option<Timestamp>>(2)?)),
         )?)
     }).await.unwrap();
-    assert_eq!(content, r"the selected message \@Ula https://klipy.com/gifs/wave");
+    assert_eq!(
+        content,
+        r"the selected message \@Ula https://klipy.com/gifs/wave"
+    );
     let cards: Value = serde_json::from_str(&cards).unwrap();
     assert_eq!(cards[0]["title"], "A wave");
-    assert_eq!(cards[0]["image_url"], "https://images-ext-1.discordapp.net/external/wave.gif");
-    assert_eq!(cards[0]["animation_url"], "https://static.klipy.com/ii/wave.mp4");
+    assert_eq!(
+        cards[0]["image_url"],
+        "https://images-ext-1.discordapp.net/external/wave.gif"
+    );
+    assert_eq!(
+        cards[0]["animation_url"],
+        "https://static.klipy.com/ii/wave.mp4"
+    );
     assert!(attempted.is_none());
     assert!(!rig.server.targets().iter().any(|path| {
         ["101", "102", "103", "211"]
@@ -310,7 +329,10 @@ async fn the_wizard_enforces_the_preview_and_resumes_the_selected_history_on_the
             .any(|channel| path.contains(&format!("/channels/{channel}/")))
     }));
     let Json(recent) = latest(State(state.clone()), actor).await.unwrap();
-    assert_eq!(serde_json::to_value(recent.unwrap()).unwrap()["id"], result["id"]);
+    assert_eq!(
+        serde_json::to_value(recent.unwrap()).unwrap()["id"],
+        result["id"]
+    );
     let published = Jobs::find(&state, id, actor.user).await.unwrap().unwrap();
     let imported_channel: Id = state.database().read(move |db| -> Result<_, DbError> {
         Ok(db.query_row(
@@ -318,11 +340,23 @@ async fn the_wizard_enforces_the_preview_and_resumes_the_selected_history_on_the
             [server], |row| row.get(0),
         )?)
     }).await.unwrap();
-    let originals = rig.bot().messages("100", None).unwrap().collect_all().await.unwrap();
+    let originals = rig
+        .bot()
+        .messages("100", None)
+        .unwrap()
+        .collect_all()
+        .await
+        .unwrap();
     let writer = crate::discord_import::ImportWriter::new(state.database().clone());
     let mut ids = Vec::new();
-    for (discord_id, content_type, name) in [("1002", "image/png", "photo.png"), ("1003", "video/mp4", "clip.mp4")] {
-        let message = originals.iter().find(|message| message.id == discord_id).unwrap();
+    for (discord_id, content_type, name) in [
+        ("1002", "image/png", "photo.png"),
+        ("1003", "video/mp4", "clip.mp4"),
+    ] {
+        let message = originals
+            .iter()
+            .find(|message| message.id == discord_id)
+            .unwrap();
         let destination = crate::discord_import::names::message_id(server, discord_id);
         ids.push(destination);
         let asset = crate::uploads::Attachment {
@@ -341,12 +375,19 @@ async fn the_wizard_enforces_the_preview_and_resumes_the_selected_history_on_the
             placeholder: None,
             is_encrypted: false,
         };
-        assert!(writer.attach(&published.import, imported_channel, message, asset).await.unwrap());
+        assert!(
+            writer
+                .attach(&published.import, imported_channel, message, asset)
+                .await
+                .unwrap()
+        );
     }
     let messages = *state.messages();
-    let recovered = state.database().read(move |db| {
-        crate::messages::dto::load(db, &messages, &ids, Some(actor.user))
-    }).await.unwrap();
+    let recovered = state
+        .database()
+        .read(move |db| crate::messages::dto::load(db, &messages, &ids, Some(actor.user)))
+        .await
+        .unwrap();
     assert_eq!(recovered[0].content, content);
     assert_eq!(recovered[0].attachments[0].content_type, "image/png");
     assert!(recovered[1].content.is_empty());

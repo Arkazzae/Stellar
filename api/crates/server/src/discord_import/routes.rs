@@ -289,12 +289,11 @@ async fn status(
     Ok(Json(job.status(state.discord_imports().run_id())))
 }
 
-async fn latest(
-    State(state): State<AppState>,
-    caller: Caller,
-) -> ApiResult<Json<Option<Status>>> {
+async fn latest(State(state): State<AppState>, caller: Caller) -> ApiResult<Json<Option<Status>>> {
     let found = Jobs::latest(&state, caller.user).await?;
-    Ok(Json(found.map(|job| job.status(state.discord_imports().run_id()))))
+    Ok(Json(
+        found.map(|job| job.status(state.discord_imports().run_id())),
+    ))
 }
 
 async fn resume(
