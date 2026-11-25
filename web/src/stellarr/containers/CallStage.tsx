@@ -57,10 +57,10 @@ export function CallStage({ fullscreenTarget }: CallStageProps) {
         onParticipantSuppressionChange={voice.setParticipantSuppression}
         soundPlays={ports.soundboard.live}
         onOpenProfile={profile.toggle}
-        share={voice.share}
-        localShare={voice.localShare}
+        shares={voice.shares}
         onWatchShare={voice.watchShare}
         onStopWatchingShare={voice.stopWatchingShare}
+        onStopSharing={voice.toggleShare}
         cinema={ui.cinema}
       />
       <VoiceControlBar

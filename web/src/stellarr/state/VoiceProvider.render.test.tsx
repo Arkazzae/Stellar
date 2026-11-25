@@ -72,9 +72,11 @@ function Probe() {
   const voice = useVoiceContext();
   return (
     <div>
-      <output aria-label="share-owner">{voice.share?.ownerId ?? "none"}</output>
-      <output aria-label="watching">{String(voice.share?.watching ?? false)}</output>
-      <button type="button" onClick={voice.watchShare}>Watch</button>
+      <output aria-label="share-owner">{voice.shares[0]?.ownerId ?? "none"}</output>
+      <output aria-label="watching">{String(voice.shares[0]?.watching ?? false)}</output>
+      <button type="button" onClick={() => voice.watchShare(voice.shares[0]?.key ?? "")}>
+        Watch
+      </button>
       <button type="button" onClick={voice.stopWatchingShare}>Stop watching</button>
     </div>
   );

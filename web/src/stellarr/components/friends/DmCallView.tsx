@@ -1,4 +1,4 @@
-import type { ReactNode } from "react";
+import { useState, type ReactNode } from "react";
 
 import type { PersonVM, ScreenShareVM } from "@/components/view-models";
 import { CallClock } from "@/components/voice/CallClock";
@@ -7,7 +7,8 @@ import {
   participantTileProps,
   type ParticipantTileSources,
 } from "@/components/voice/ParticipantTiles";
-import { ShareBand } from "@/components/voice/ShareBand";
+import { ScreenTile } from "@/components/voice/ScreenTile";
+import { useChromeIdle } from "@/components/voice/useChromeIdle";
 import { useLanguage } from "@/state/LanguageProvider";
 
 export interface DmCallViewProps extends ParticipantTileSources {
@@ -23,12 +24,12 @@ export interface DmCallViewProps extends ParticipantTileSources {
   status?: string;
   /** The call is encrypted end to end, which the line under the name says. */
   encrypted?: boolean;
-  /** Null while nobody shares a screen. */
-  share: ScreenShareVM | null;
-  /** The screen is your own, which plays back muted. */
-  localShare?: boolean;
-  onWatchShare: () => void;
+  /** The screens shared in the call, your own first. */
+  shares: readonly ScreenShareVM[];
+  onWatchShare: (key: string) => void;
   onStopWatchingShare: () => void;
+  /** Stops your own share, from its tile. */
+  onStopSharing?: () => void;
   /** Cinema mode: a shared screen keeps the room to itself. */
   cinema?: boolean;
   /** What went wrong with the call, above it. */
@@ -57,10 +58,10 @@ export function DmCallView({
   since,
   status,
   encrypted = false,
-  share,
-  localShare = false,
+  shares,
   onWatchShare,
   onStopWatchingShare,
+  onStopSharing,
   cinema = false,
   notice,
   bar,
@@ -71,6 +72,44 @@ export function DmCallView({
   // Your own tile has no menu: there is nobody in it to turn down.
   const you = { ...participantTileProps(self, sources), onOpenProfile: undefined };
   const { participantVolumes, onParticipantVolumeChange } = sources;
+  const chrome = useChromeIdle();
+  const [chosenKey, setChosenKey] = useState<string | null>(null);
+  const [previewHidden, setPreviewHidden] = useState(false);
+
+  // The middle goes to the screen you picked, else the one you watch, else
+  // your own, else theirs waiting to be watched. Any other one sits small in
+  // the corner.
+  const share =
+    shares.find((item) => item.key === chosenKey) ??
+    shares.find((item) => item.watching) ??
+    shares.find((item) => item.local) ??
+    shares[0] ??
+    null;
+  const others = shares.filter((item) => item !== share);
+  const screenTile = (item: ScreenShareVM, focused: boolean) => (
+    <ScreenTile
+      key={item.key}
+      share={item}
+      className={focused ? "dm-call-screen" : "dm-call-small"}
+      focused={focused}
+      volume={participantVolumes?.get(item.ownerId)}
+      onVolumeChange={
+        onParticipantVolumeChange && ((volume) => onParticipantVolumeChange(item.ownerId, volume))
+      }
+      previewHidden={item.local && previewHidden}
+      onTogglePreview={item.local ? () => setPreviewHidden((hidden) => !hidden) : undefined}
+      onStopSharing={item.local ? onStopSharing : undefined}
+      onWatch={() => {
+        onWatchShare(item.key);
+        setChosenKey(item.key);
+      }}
+      onStopWatching={() => {
+        onStopWatchingShare();
+        setChosenKey(null);
+      }}
+      onFocus={() => setChosenKey(item.key)}
+    />
+  );
 
   const meta =
     status ?? (ringing ? t("dm.calling") : since === null ? null : <CallClock since={since} />);
@@ -80,21 +119,17 @@ export function DmCallView({
     .join(" ");
 
   return (
-    <div className={classes}>
+    <div
+      className={classes}
+      data-chrome={chrome.idle ? "idle" : "awake"}
+      onPointerMove={chrome.wake}
+      onPointerDown={chrome.wake}
+      onKeyDown={chrome.wake}
+    >
       {notice}
       <div className="dm-call-stage">
         {share !== null ? (
-          <ShareBand
-            share={share}
-            local={localShare}
-            volume={participantVolumes?.get(share.ownerId)}
-            onVolumeChange={
-              onParticipantVolumeChange &&
-              ((volume) => onParticipantVolumeChange(share.ownerId, volume))
-            }
-            onWatch={onWatchShare}
-            onStopWatching={onStopWatchingShare}
-          />
+          screenTile(share, true)
         ) : them.stream ? (
           <ParticipantTile {...them} className="dm-call-frame" />
         ) : (
@@ -111,6 +146,7 @@ export function DmCallView({
         )}
       </div>
       <div className="dm-call-corner">
+        {others.map((item) => screenTile(item, false))}
         {share === null ? null : <ParticipantTile {...them} className="dm-call-small" />}
         <ParticipantTile {...you} label={t("dm.you")} className="dm-call-small" />
       </div>

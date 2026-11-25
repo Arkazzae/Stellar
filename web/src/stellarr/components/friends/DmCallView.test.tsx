@@ -13,7 +13,7 @@ function openCall(overrides: Partial<DmCallViewProps> = {}) {
     self: maja,
     ringing: false,
     since: Date.now(),
-    share: null,
+    shares: [],
     onWatchShare: vi.fn(),
     onStopWatchingShare: vi.fn(),
     localPersonId: maja.id,
@@ -84,11 +84,21 @@ describe("DmCallView", () => {
 
   it("gives a shared screen the middle and moves the other person above you", async () => {
     const { container, user, props } = openCall({
-      share: { ownerId: ada.id, ownerName: "Ada", hasAudio: false, stream: null, watching: false },
+      shares: [
+        {
+          key: "remote:u-ada:s1",
+          ownerId: ada.id,
+          ownerName: "Ada",
+          local: false,
+          hasAudio: false,
+          stream: null,
+          watching: false,
+        },
+      ],
     });
 
-    await user.click(within(middle(container)).getByRole("button", { name: "Oglądaj" }));
-    expect(props.onWatchShare).toHaveBeenCalledOnce();
+    await user.click(within(middle(container)).getByRole("button", { name: "Oglądaj: Ada (ekran)" }));
+    expect(props.onWatchShare).toHaveBeenCalledWith("remote:u-ada:s1");
 
     const tiles = within(corner(container));
     expect(tiles.getByText("Ada")).toBeTruthy();

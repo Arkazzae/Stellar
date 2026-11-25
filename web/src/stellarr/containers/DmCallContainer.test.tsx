@@ -30,7 +30,7 @@ beforeEach(() => {
       call: { startedAt: Date.now(), headline: "connected", cameraOn: false },
       people: [{ id: ADA.id, displayName: "Ada", initials: "AD", presence: "online", speaking: true }],
       problem: null,
-      share: null,
+      shares: [],
       localShare: false,
       cameraStreams: new Map(),
       heldCameras: new Set(),
