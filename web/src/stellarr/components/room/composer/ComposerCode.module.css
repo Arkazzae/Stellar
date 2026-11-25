@@ -148,7 +148,7 @@
   z-index: 1;
   display: block;
   width: calc(100% - var(--gutter));
-  max-height: none;
+  max-height: max(1lh, var(--composer-editor-height) - 40px);
   margin: 0 0 0 var(--gutter);
   padding: 0;
   align-self: auto;
@@ -262,14 +262,6 @@
 
 /* ---------------------------------------------------------------- touch -- */
 
-/* Safari zooms into a focused field set below 16px, so a phone writes code at
-   16px like any other text. */
-@media (max-width: 767px) {
-  .field {
-    --code-size: 16px;
-  }
-}
-
 /* On a phone, or under a finger: no key hint, finger-sized targets, and the
    actions in a row of their own under the field, the send button at its end. */
 @media (max-width: 767px), (pointer: coarse) {
@@ -298,6 +290,8 @@
   }
 
   .field {
+    /* Prevent Safari from zooming a focused field below 16px. */
+    --code-size: var(--text-16);
     margin: 10px 4px 6px 12px;
   }
 
@@ -324,5 +318,38 @@
   .box > :global(.comp-actions) :global(.comp-code-trigger[aria-pressed="true"]) {
     background: var(--accent-soft);
     color: var(--accent-text);
+  }
+}
+
+/* At high page zoom the code header and a separate row of actions can use up
+   the room. Put the disclosure beside the field as in the text composer. */
+@media (max-height: 300px) and (max-width: 767px),
+  (max-height: 300px) and (pointer: coarse) {
+  .box {
+    grid-template-columns: minmax(0, 1fr) auto auto;
+    grid-template-areas:
+      "head head head"
+      "field more send";
+  }
+
+  .box > :global(.comp-mobile-more) {
+    display: inline-flex;
+  }
+
+  .box > :global(.comp-actions) {
+    position: absolute;
+    display: none;
+    padding: 6px;
+    border-radius: var(--radius-lg);
+    background: var(--surface-pop);
+    box-shadow: var(--elev-drawer);
+  }
+
+  .box > :global(.comp-actions.mobile-open) {
+    display: grid;
+  }
+
+  .box > :global(.comp-actions) :global(.attach) {
+    width: 100%;
   }
 }

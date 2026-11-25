@@ -964,6 +964,11 @@
     align-self: flex-start;
   }
 
+  .vc-check .ui-button {
+    max-width: 100%;
+    overflow-wrap: anywhere;
+  }
+
   .vc-check .pf-count,
   .vc-check .output-status {
     margin: 0;

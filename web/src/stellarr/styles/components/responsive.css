@@ -204,13 +204,6 @@
       padding: 2px 16px 12px;
     }
 
-    /* Safari zooms the viewport when a focused field renders below 16px.
-       The composer is the most frequently focused control in the app, so a
-       15px desktop reading size must become 16px on phones. */
-    .composer textarea {
-      font-size: var(--text-16);
-    }
-
     /* iOS otherwise zooms the entire application when any settings/search
        field below 16px receives focus. Layout stays dense; only editable
        controls cross the browser's zoom threshold. */
@@ -236,6 +229,16 @@
 
     .composer {
       padding-inline: 12px;
+    }
+  }
+
+  @media (max-height: 300px) {
+    .transcript {
+      padding-block: 8px 4px;
+    }
+
+    .typing:not(.show) {
+      height: 0;
     }
   }
 
