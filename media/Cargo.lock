@@ -1136,7 +1136,7 @@ name = "stellarr-media"
 version = "0.1.0"
 dependencies = [
  "axum",
- "rand 0.9.5",
+ "rand 0.10.3",
  "serde",
  "serde_json",
  "str0m",
