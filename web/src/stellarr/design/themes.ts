@@ -333,7 +333,7 @@ export const FONTS = [
   "outfit", "inter", "geist-sans", "dm-sans", "plus-jakarta-sans", "manrope", "figtree",
   "ibm-plex-sans", "source-sans-3", "noto-sans", "open-sans", "lato", "poppins", "montserrat",
   "raleway", "nunito", "rubik", "quicksand", "baloo-2", "varela-round", "comfortaa", "fira-code",
-  "jetbrains-mono", "source-code-pro", "ibm-plex-mono", "space-grotesk", "sora", "lexend",
+  "jetbrains-mono", "source-code-pro", "ibm-plex-mono", "space-grotesk", "sora", "lexend", "opendyslexic",
 ] as const;
 
 export type FontId = (typeof FONTS)[number];

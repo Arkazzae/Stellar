@@ -3,7 +3,7 @@ import userEvent from "@testing-library/user-event";
 import { describe, expect, it, vi } from "vitest";
 
 import { renderInConfirm as render } from "@/test/confirm";
-import { DEFAULT_THEME } from "@/design/themes";
+import { DEFAULT_THEME, FONTS } from "@/design/themes";
 
 import { AppearancePane, type AppearancePaneProps } from "./AppearancePane";
 
@@ -31,7 +31,8 @@ describe("AppearancePane controls", () => {
 
     const face = screen.getByRole("combobox", { name: /Krój pisma/ });
     expect(face).toHaveValue("outfit");
-    expect(within(face).getAllByRole("option")).toHaveLength(28);
+    expect(within(face).getAllByRole("option")).toHaveLength(FONTS.length);
+    expect(within(face).getByRole("option", { name: "OpenDyslexic" })).toHaveValue("opendyslexic");
     await user.selectOptions(face, "Figtree");
     expect(p.onChange).toHaveBeenLastCalledWith({ font: "figtree" });
 

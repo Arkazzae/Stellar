@@ -11,25 +11,26 @@ export const DISCORD_ROLES = {
   accent: [
     "--brand-500", "--brand-experiment", "--control-brand-foreground", "--text-brand", "--brand-560",
     "--dplus-accent-ui", "--main-theme-color", "--darkplus-sec", "--themeColor1", "--mainColor",
-    "--primary1-colour", "--ocean-color1", "--accent", "--primary-color", "--text-link",
+    "--primary1-colour", "--ocean-color1", "--accent", "--primary-color", "--nox-accent",
+    "--gx-accent", "--var-accent", "--custom-accent", "--nord-blue", "--ieytd-color-1", "--text-link",
   ],
   backgrounds: {
     // The frame around everything: the server list, the title bar.
-    darkest: ["--background-base-lowest", "--background-tertiary", "--app-frame-background", "--app-background", "--app-bg", "--darkplus-bg", "--backgroundColor02", "--stellarr-frame"],
+    darkest: ["--background-base-lowest", "--background-tertiary", "--app-frame-background", "--app-background", "--app-bg", "--darkplus-bg", "--backgroundColor02", "--gx-main-bg", "--stellarr-frame"],
     // The channel list and the member list.
-    dark: ["--background-base-lower", "--background-secondary", "--sidebar-panel-color", "--bg-secondary", "--darkplus-bg2", "--stellarr-sidebar"],
+    dark: ["--background-base-lower", "--background-secondary", "--sidebar-panel-color", "--bg-secondary", "--darkplus-bg2", "--custom-secondary-bg", "--nox-level2", "--stellarr-sidebar"],
     // The chat itself.
-    primary: ["--background-base-low", "--chat-background-default", "--background-primary", "--chat-color", "--app-foreground", "--dplus-bgc-ui-base", "--bg-primary", "--darkplus-bg", "--backgroundColor01", "--ocean-bg", "--stellarr-chat"],
-    secondary: ["--background-base-lower", "--background-secondary", "--sidebar-panel-color", "--bg-secondary", "--darkplus-bg2", "--stellarr-sidebar"],
+    primary: ["--background-base-low", "--chat-background-default", "--background-primary", "--chat-color", "--app-foreground", "--dplus-bgc-ui-base", "--bg-primary", "--darkplus-bg", "--backgroundColor01", "--ocean-bg", "--gx-main-bg", "--custom-bg", "--nord-dark1", "--stellarr-chat", "--stellarr-backdrop", "--custom-theme-base-color"],
+    secondary: ["--background-base-lower", "--background-secondary", "--sidebar-panel-color", "--bg-secondary", "--darkplus-bg2", "--custom-secondary-bg", "--nox-level2", "--stellarr-sidebar"],
     // Fields: the message box and inputs.
-    tertiary: ["--input-background-default", "--channeltextarea-background", "--background-surface-high", "--background-secondary-alt", "--main-textarea-color", "--textbox-background", "--textarea-background", "--message-box-transparency", "--stellarr-input"],
+    tertiary: ["--input-background-default", "--channeltextarea-background", "--background-surface-high", "--background-secondary-alt", "--main-textarea-color", "--textbox-background", "--textarea-background", "--message-box-transparency", "--nox-level1-5", "--stellarr-input"],
     hover: ["--background-mod-subtle", "--interactive-background-hover", "--background-modifier-hover", "--message-color-hover", "--hover-color"],
     active: ["--background-mod-normal", "--interactive-background-selected", "--background-modifier-selected", "--background-modifier-active"],
     // Popouts, menus and cards.
-    floating: ["--background-surface-higher", "--background-surface-high", "--background-floating", "--card-background-default", "--popout-color", "--dplus-bgc-popout", "--tooltip-color"],
+    floating: ["--background-surface-higher", "--background-surface-high", "--background-floating", "--card-background-default", "--popout-color", "--dplus-bgc-popout", "--modal-background", "--var-popout-color", "--tooltip-color"],
   },
   text: {
-    normal: ["--text-default", "--text-normal", "--chat-font-color", "--text-color", "--xp-txt-color", "--header-primary", "--stellarr-message"],
+    normal: ["--text-default", "--text-normal", "--chat-font-color", "--text-color", "--xp-txt-color", "--header-primary", "--gx-text-normal", "--custom-text", "--nord-light1", "--ieytd-color-2", "--stellarr-message"],
     // Channel names, icons, secondary lines.
     muted: ["--text-subtle", "--channels-default", "--interactive-normal", "--interactive-text-default", "--header-secondary", "--chat-subtext-color", "--inactivetext-colour"],
     // Timestamps and muted channels: Discord's dimmest tier.
@@ -43,7 +44,7 @@ export const DISCORD_ROLES = {
   semantic: {
     success: ["--status-positive", "--text-feedback-positive", "--status-online", "--green-360", "--rs-online-color", "--green-color", "--online-color"],
     warning: ["--status-warning", "--text-feedback-warning", "--status-idle", "--yellow-300", "--rs-idle-color", "--yellow-color", "--idle-color"],
-    danger: ["--status-danger", "--text-feedback-critical", "--status-dnd", "--red-400", "--rs-dnd-color", "--red-color", "--dnd-color"],
+    danger: ["--status-danger", "--text-feedback-critical", "--status-dnd", "--red-400", "--rs-dnd-color", "--red-color", "--dnd-color", "--nox-important-notification", "--nord-red"],
     info: ["--text-feedback-info", "--text-link", "--info-help-foreground"],
   },
 } as const;
@@ -60,6 +61,7 @@ export const DISCORD_VARIABLES: readonly string[] = [
     ...Object.values(DISCORD_ROLES.borders).flat(),
     ...Object.values(DISCORD_ROLES.semantic).flat(),
     ...SHADING_VARIABLES,
+    "--neutral-83",
   ]),
 ];
 
@@ -125,8 +127,9 @@ export function mapDiscordTheme(resolved: ResolvedVariables, withWallpaper = fal
   const chat = pick(DISCORD_ROLES.backgrounds.primary);
   const fromShading = withWallpaper && chat === undefined;
   const shading: Found | undefined = fromShading ? (pick(SHADING_VARIABLES) ?? { colour: BLACK }) : undefined;
-  const darkest = pick(DISCORD_ROLES.backgrounds.darkest) ?? shading;
-  const sidebar = pick(DISCORD_ROLES.backgrounds.dark);
+  const nordFrame = resolved.has("--nord-dark1") ? pick(["--neutral-83"]) : undefined;
+  const darkest = pick(DISCORD_ROLES.backgrounds.darkest) ?? nordFrame ?? shading;
+  const sidebar = pick(DISCORD_ROLES.backgrounds.dark) ?? nordFrame;
   const primary = chat ?? shading;
   const normal = pick(DISCORD_ROLES.text.normal);
   const missingCore = [

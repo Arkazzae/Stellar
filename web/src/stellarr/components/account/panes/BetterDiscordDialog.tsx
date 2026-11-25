@@ -31,7 +31,7 @@ import { applyWallpaper, type WallpaperAccess } from "./wallpaperUpload";
 const converter = () => import("@/lib/betterDiscord/run");
 
 /** What a theme's stylesheets may hold together; `INLINE_LIMITS.total` repeated, so the check needs no converter. */
-const THEME_MAX_CHARS = 2 * 1024 * 1024;
+const THEME_MAX_CHARS = 4 * 1024 * 1024;
 
 const ADDRESS_PROBLEMS: Record<"notHttps" | "notFound" | "invalid", MessageKey> = {
   notHttps: "theme.bd.notHttps",
@@ -296,6 +296,9 @@ function Result({
 }) {
   const { t } = useLanguage();
   const { meta, palette, font, wallpaper } = conversion;
+  const pictureLabel = wallpaper?.host === undefined
+    ? t("theme.bd.pictureEmbedded")
+    : t("theme.bd.picture", { host: wallpaper.host });
   const filled = conversion.roles.filter((role) => role.from === undefined && role.group !== "accent");
   const preview =
     palette === undefined
@@ -354,10 +357,10 @@ function Result({
       {wallpaper === undefined || !canSetWallpaper ? null : (
         <div className={styles.picture}>
           <span>
-            {t("theme.bd.picture", { host: wallpaper.host })}
+            {pictureLabel}
             <small>{t("theme.bd.pictureDetail")}</small>
           </span>
-          <Switch checked={fetchPicture} onChange={onFetchPicture} label={t("theme.bd.picture", { host: wallpaper.host })} />
+          <Switch checked={fetchPicture} onChange={onFetchPicture} label={pictureLabel} />
         </div>
       )}
     </div>

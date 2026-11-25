@@ -7,7 +7,7 @@ const MAX_RESULTS = 8;
 
 type Kind = "css" | "catalog" | "picture";
 
-class SourceError extends Error {
+export class SourceError extends Error {
   constructor(readonly status: number) {
     super(`Theme source answered ${status}.`);
   }
@@ -22,6 +22,29 @@ export async function fetchSource(url: string, kind: Kind, signal?: AbortSignal)
   );
   if (!response.ok) throw new SourceError(response.status);
   return response;
+}
+
+/** RawGit served the same owner, repository, ref and path as GitHub Raw. */
+export function canonicalStylesheetUrl(input: string): string {
+  const url = new URL(input);
+  if (url.protocol === "https:" && (url.hostname === "rawgit.com" || url.hostname === "cdn.rawgit.com")) {
+    return `${RAW}${url.pathname}${url.search}`;
+  }
+  return url.href;
+}
+
+/** A missing GitHub Pages asset may still be in the installed release's commit. */
+export function releasedStylesheetUrl(input: string, release: string): string | undefined {
+  const url = new URL(input);
+  const source = new URL(release);
+  if (source.origin !== RAW || url.protocol !== "https:") return undefined;
+  const [, owner, repo, ref] = source.pathname.split("/");
+  const [, project, ...path] = url.pathname.split("/");
+  if (owner === undefined || repo === undefined || ref === undefined || !/^[0-9a-f]{40}$/i.test(ref)) return undefined;
+  if (url.hostname !== `${owner.toLowerCase()}.github.io` || repo.toLowerCase() !== project?.toLowerCase() || path.length === 0) {
+    return undefined;
+  }
+  return `${RAW}/${owner}/${repo}/${ref}/${path.join("/")}`;
 }
 
 export interface ThemeChoice {
