@@ -86,6 +86,42 @@ describe("Transcript rows", () => {
     expect(screen.getByText("Dzisiaj")).toHaveClass("day-sep");
   });
 
+  it("reuses recent portrait URLs without eagerly loading other old portraits", () => {
+    const messages = blocks(30).map((block) => ({
+      ...block,
+      authorAvatarUrl: block.id === "m2" ? "/old.webp" : "/recent.webp",
+    }));
+    show(<Transcript sections={section(...messages)} label="Wiadomości" />);
+
+    const log = screen.getByRole("log");
+    expect(log.querySelector('[data-row-id="m1"] img')).toHaveAttribute("loading", "eager");
+    expect(log.querySelector('[data-row-id="m2"] img')).toHaveAttribute("loading", "lazy");
+    expect(log.querySelector('[data-row-id="m30"] img')).toHaveAttribute("loading", "eager");
+  });
+
+  it("reuses the rendered history when scrolling shows or hides the catch-up button", () => {
+    const layout = fakeTranscriptLayout();
+    const notice: MessageGroupVM = {
+      ...group("notice"),
+      notice: { kind: "sealed", reason: "pin", count: 1 },
+    };
+    const renderNotice = vi.fn(() => <p>Zaszyfrowana wiadomość</p>);
+    show(
+      <Transcript
+        sections={section(notice, ...blocks(20))}
+        label="Wiadomości"
+        renderNotice={renderNotice}
+      />,
+    );
+    renderNotice.mockClear();
+
+    layout.scrollTo(1_000);
+    expect(screen.getByRole("button", { name: "Przejdź do najnowszych wiadomości" })).toBeVisible();
+    layout.scrollTo(layout.end());
+
+    expect(renderNotice).not.toHaveBeenCalled();
+  });
+
   it("renders the intro inside the list, above the first day", () => {
     show(
       <Transcript

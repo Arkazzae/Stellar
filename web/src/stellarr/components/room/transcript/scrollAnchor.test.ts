@@ -69,6 +69,27 @@ describe("readingMarks", () => {
     expect(measured.size).toBeLessThan(30);
   });
 
+  it("looks near the previous mark on short scrolls and still handles long jumps", () => {
+    const boxes = stack(-100_000, ...Array.from({ length: 2_000 }, (_, index): [string, number] => [`m${index}`, 100]));
+    const expected = marksOf(boxes, 300);
+    for (const previous of [998, 1002, 400, 1600]) {
+      const measured: number[] = [];
+      const marks = readingMarks(
+        boxes.length,
+        (index) => {
+          measured.push(index);
+          return boxes[index]!;
+        },
+        300,
+        previous,
+      );
+      expect(marks).toEqual(expected);
+      if (previous === 998 || previous === 1002) {
+        expect(measured.every((index) => index >= 998 && index <= 1003)).toBe(true);
+      }
+    }
+  });
+
   it("has nothing to offer without rows", () => {
     expect(marksOf([], 300)).toEqual([]);
   });
