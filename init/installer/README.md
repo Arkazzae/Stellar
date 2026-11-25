@@ -1,6 +1,6 @@
 # Stellarr installer
 
-`stellarr-installer` installs Stellarr with Docker Compose on a Linux or macOS host, and updates an installation it made. The root [`install.sh`](../install.sh), served at `https://stellarr.online/install.sh`, is a short POSIX script that downloads the installer for the machine from a single GitHub release, checks it against that release's `stellarr-installer.sha256`, and runs it with the same options.
+`stellarr-installer` installs Stellarr with Docker Compose on a Linux or macOS host, and updates an installation it made. The root [`install.sh`](../../install.sh), served at `https://stellarr.online/install.sh`, is a short POSIX script that downloads the installer for the machine from a single GitHub release, checks it against that release's `stellarr-installer.sha256`, and runs it with the same options.
 
 ```bash
 curl -fsSL https://stellarr.online/install.sh | bash -s -- --help
@@ -11,7 +11,7 @@ The script resolves the latest stable release once. Set `STELLARR_INSTALLER_VERS
 To run the installer from source before release binaries are available, run this from the repository root with Rust and Cargo installed:
 
 ```bash
-cargo run --locked --manifest-path installer/Cargo.toml -- --dir . --build
+cargo run --locked --manifest-path init/installer/Cargo.toml -- --dir . --build
 ```
 
 The Cargo command builds the installer. The installer flag `--build` builds the container image from the checkout.
@@ -49,9 +49,9 @@ Docker, Compose, `sudo`, `systemctl` and the port listers stay commands it runs,
 cargo fmt --check
 cargo clippy --locked --all-targets -- -D warnings
 cargo test --locked --features test-seams
-bash ../infra/tests/install.test.sh
+bash ../../infra/tests/install.test.sh
 ```
 
-The crate builds on Unix only. [`infra/tests/install.test.sh`](../infra/tests/install.test.sh) builds it with the `test-seams` feature, which answers HTTPS from files and lets a case choose the OS, the user id and a clock that does not wait, then runs it and `install.sh` against stub commands. A release build never has that feature.
+The crate builds on Unix only. [`infra/tests/install.test.sh`](../../infra/tests/install.test.sh) builds it with the `test-seams` feature, which answers HTTPS from files and lets a case choose the OS, the user id and a clock that does not wait, then runs it and `install.sh` against stub commands. A release build never has that feature.
 
 The release workflow builds installer binaries for `x86_64-unknown-linux-musl`, `aarch64-unknown-linux-musl`, `x86_64-apple-darwin` and `aarch64-apple-darwin` and attaches them, with their sums, when it creates the GitHub release.

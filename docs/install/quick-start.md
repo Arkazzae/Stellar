@@ -31,7 +31,7 @@ curl -fsSL https://stellarr.online/install.sh | bash
 Before the first release with installer assets, or to run the installer from the checkout's Rust sources, install [Rust and Cargo](https://rustup.rs/) and run this command from the repository root:
 
 ```bash
-cargo run --locked --manifest-path installer/Cargo.toml -- --dir . --build
+cargo run --locked --manifest-path init/installer/Cargo.toml -- --dir . --build
 ```
 
 Pass `--help` after the Cargo argument separator to see all installer options.

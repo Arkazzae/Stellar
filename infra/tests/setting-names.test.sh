@@ -34,7 +34,7 @@ table=$(sed '/^#\[cfg(test)\]/,$d' api/crates/server/src/settings/variables.rs |
 # server never appear so.
 scripts=$(grep -ohE '\$\{STELLARR_[A-Z0-9_]+' infra/entrypoint.sh infra/settings.sh infra/tls-maintenance.sh | only)
 compose=$(grep -ohE '\$\{STELLARR_[A-Z0-9_]+' docker-compose.yml infra/compose/turn.yml | only)
-installer=$(sed -n '/^const OTHER_KEYS:/,/^];/p' installer/src/flow.rs | grep -o 'STELLARR_TRACK' | only)
+installer=$(sed -n '/^const OTHER_KEYS:/,/^];/p' init/installer/src/flow.rs | grep -o 'STELLARR_TRACK' | only)
 example_lines=$(grep -oE '^# STELLARR_[A-Z0-9_]+=' .env.example | sed 's/^# //; s/=$//')
 example=$(only <<<"$example_lines")
 # A table row starts with the name in backticks. The development stack's

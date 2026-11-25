@@ -6,11 +6,11 @@
 #   ./install.sh               in a checkout
 #   ./install.sh --build       in a checkout, building the image from it
 #
-# The installer itself is a program, built from installer/ in the repository
+# The installer itself is a program, built from init/installer/ in the repository
 # and attached to every release. This script only fetches the one for this
 # machine, checks its SHA-256 sum and runs it with the same arguments; --help
 # lists them. STELLARR_INSTALLER_BIN runs an executable already on the host.
-# To run from source, use cargo run --locked --manifest-path installer/Cargo.toml.
+# To run from source, use cargo run --locked --manifest-path init/installer/Cargo.toml.
 # STELLARR_INSTALLER_VERSION takes the installer of another release, such as
 # 1.5.0, in place of the latest one.
 #
@@ -106,7 +106,7 @@ sha256() {
 release_failed() {
   fail "$1" "Check that this machine reaches github.com. Use curl or GNU wget for HTTPS downloads." '' \
     "If no release carries the installer yet, run from a Stellarr checkout with Rust's cargo:" \
-    "  cargo run --locked --manifest-path installer/Cargo.toml -- --dir . --build"
+    "  cargo run --locked --manifest-path init/installer/Cargo.toml -- --dir . --build"
 }
 
 # Fetches the installer for this machine into $work and checks it against
