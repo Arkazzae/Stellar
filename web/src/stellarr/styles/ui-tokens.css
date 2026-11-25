@@ -65,9 +65,9 @@
   --ui-button-edge-size: 3px;
   --ui-button-sm-edge-size: 2px;
   --ui-button-primary-edge: var(--accent-edge);
-  --ui-button-danger-solid-edge: color-mix(in oklab, var(--danger-line) 55%, black);
-  --ui-button-disabled-edge: color-mix(in oklab, var(--surface-active) 55%, black);
-  --ui-button-secondary-edge: color-mix(in oklab, var(--surface-active) 55%, black);
+  --ui-button-danger-solid-edge: var(--danger-edge);
+  --ui-button-disabled-edge: var(--neutral-edge);
+  --ui-button-secondary-edge: var(--neutral-edge);
   --ui-button-secondary-solid-bg: var(--surface-active);
   --ui-button-secondary-solid-hover-bg: color-mix(in oklab, var(--surface-active) 86%, var(--text));
   --ui-button-secondary-solid-border: transparent;
