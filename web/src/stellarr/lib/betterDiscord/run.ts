@@ -1,12 +1,32 @@
+import { imageFromDataAddress } from "@/design/themeFile";
+
 import { convertTheme, type Conversion } from "./convert";
 import { browserEvaluator } from "./evaluate";
-import { fetchSource, findGithubFiles, readSource, searchThemes, storeTheme, type SourceGroup, type ThemeChoice } from "./sources";
+import {
+  SourceError,
+  canonicalStylesheetUrl,
+  fetchSource,
+  findGithubFiles,
+  readSource,
+  releasedStylesheetUrl,
+  searchThemes,
+  storeTheme,
+  type SourceGroup,
+  type ThemeChoice,
+} from "./sources";
 
-async function fetchSheet(url: string, signal: AbortSignal) {
-  const response = await fetchSource(url, "css", signal);
+async function fetchSheet(url: string, signal: AbortSignal, release?: string) {
+  const address = canonicalStylesheetUrl(url);
+  const response = await fetchSource(address, "css", signal).catch((error: unknown) => {
+    if (release !== undefined && error instanceof SourceError && (error.status === 404 || error.status === 410)) {
+      const archived = releasedStylesheetUrl(address, release);
+      if (archived !== undefined) return fetchSource(archived, "css", signal);
+    }
+    throw error;
+  });
   const text = await response.text();
   if (/^\s*</.test(text)) throw new Error("Expected a stylesheet.");
-  return { text, url: response.headers.get("x-theme-source") ?? url };
+  return { text, url: response.headers.get("x-theme-source") ?? address };
 }
 
 function fileName(url: string): string {
@@ -30,7 +50,7 @@ async function convertUrl(url: string, choice?: ThemeChoice): Promise<AddressRes
   const deadline = AbortSignal.timeout(25_000);
   const sheet = await fetchSheet(url, deadline);
   const conversion = await convertTheme(sheet.text, sheet.url, {
-    fetchSheet: (address) => fetchSheet(address, deadline),
+    fetchSheet: (address) => fetchSheet(address, deadline, sheet.url),
     evaluator: browserEvaluator(),
   });
   conversion.meta.name ??= fileName(choice?.label ?? new URL(sheet.url).pathname);
@@ -62,5 +82,10 @@ export async function convertAddress(input: string): Promise<AddressResult> {
 }
 
 export async function fetchPicture(url: string): Promise<Blob> {
+  if (url.startsWith("data:")) {
+    const image = imageFromDataAddress(url);
+    if (image === null) throw new Error("Expected an embedded raster image.");
+    return image;
+  }
   return (await fetchSource(url, "picture")).blob();
 }

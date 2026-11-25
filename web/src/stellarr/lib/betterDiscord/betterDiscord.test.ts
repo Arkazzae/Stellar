@@ -3,8 +3,8 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { parseHex } from "@/design/colour";
 
 import { convertTheme } from "./convert";
-import { readSource } from "./sources";
-import { browserEvaluator, type Evaluation, type Evaluator } from "./evaluate";
+import { canonicalStylesheetUrl, readSource, releasedStylesheetUrl } from "./sources";
+import { browserEvaluator, type DiscordVariant, type Evaluation, type Evaluator } from "./evaluate";
 import { DISCORD_ROLES, mapDiscordTheme } from "./roles";
 import {
   inlineImports,
@@ -84,6 +84,25 @@ describe("reading a theme's text", () => {
     expect(inlined.fetched).toHaveLength(3);
   });
 
+  it("retains declarations after minified imports and malformed imported text", async () => {
+    const fetchSheet = fetcher({
+      "https://example.com/build.css": `@import"https://fonts.googleapis.com/css2?family=Inter:wght@400;500&family=Figtree";
+      [class*=sidebar_"] { color: blue; }
+      .notice::before { content: "literal @import 'x.css'; /* text */"; }
+      /* unterminated comment`,
+    });
+
+    const result = await inlineImports('@import"build.css"; :root{--accent:#40aaff}', "https://example.com/theme.css", fetchSheet);
+    const clean = withoutAddresses(result.css);
+
+    expect(result.googleFonts).toEqual(["Inter", "Figtree"]);
+    expect(clean).toContain("[class*=sidebar_]");
+    expect(clean).toContain(`content: "literal @import 'x.css'; /* text */"`);
+    expect(clean).toContain("--accent:#40aaff");
+    expect(clean).not.toContain("unterminated comment");
+    expect(fetchSheet).toHaveBeenCalledTimes(1);
+  });
+
   it("stops at the depth and size it is given and leaves out what is not https", async () => {
     const fetchSheet = fetcher({
       "https://a.example/1.css": '@import "2.css";',
@@ -154,6 +173,15 @@ describe("reading a theme's text", () => {
 describe("Discord's variables as our palette", () => {
   const rgba = (hex: string) => parseHex(hex);
 
+  it("maps authored palette aliases without treating a standalone neutral ramp as a theme", () => {
+    const primary = "#0a0607";
+    const accent = "#ff0048";
+    const mapped = mapDiscordTheme(new Map([["--gx-main-bg", rgba(primary)], ["--gx-accent", rgba(accent)]]));
+    expect(mapped.colors?.backgrounds.primary).toBe(primary);
+    expect(mapped.accent).toBe(accent);
+    expect(mapDiscordTheme(new Map([["--neutral-83", rgba(primary)]])).colors).toBeUndefined();
+  });
+
   it("reads the 2025 names and the older ones alike", () => {
     const now = mapDiscordTheme(new Map([
       ["--background-base-lowest", rgba("#0a0b0d")],
@@ -215,13 +243,13 @@ describe("Discord's variables as our palette", () => {
 });
 
 /** An evaluator that answers from fixed colours and records what it was given. */
-function stubEvaluator(answers: (css: string) => Partial<Evaluation>): Evaluator & { seen: string[] } {
+function stubEvaluator(answers: (css: string, variant?: DiscordVariant) => Partial<Evaluation>): Evaluator & { seen: string[] } {
   const seen: string[] = [];
   return {
     seen,
-    async evaluate(css) {
+    async evaluate(css, _colourNames, _valueNames, variant) {
       seen.push(css);
-      const answer = answers(css);
+      const answer = answers(css, variant);
       return {
         colours: answer.colours ?? new Map(),
         values: answer.values ?? new Map(),
@@ -257,6 +285,18 @@ describe("converting a theme", () => {
     expect(conversion.font).toEqual({ family: "figtree", id: "figtree" });
     expect(conversion.styleQueries).toBe("native");
     expect(conversion.meta.name).toBe("nocturne");
+  });
+
+  it("prefers an authored alternate palette to an isolated dark panel color", async () => {
+    const evaluator = stubEvaluator((_css, variant) => variant === "light"
+      ? { colours: new Map([["--background-base-low", parseHex("#f5e8d0")]]) }
+      : { colours: new Map([["--stellarr-chat", parseHex("#000000")]]) });
+    const result = await convertTheme(".theme-light{--background-base-low:#f5e8d0}", null, {
+      fetchSheet: fetcher({}),
+      evaluator,
+    });
+
+    expect(result.palette?.backgrounds.primary).toBe("#f5e8d0");
   });
 
   it("decides the style queries itself where the engine cannot, from the theme's own values", async () => {
@@ -306,6 +346,26 @@ describe("converting a theme", () => {
     });
     expect(readSource("frosted glass")).toEqual({ kind: "search", query: "frosted glass" });
     expect(readSource("http://ada.github.io/n.css")).toEqual({ kind: "problem", problem: "notHttps" });
+  });
+});
+
+describe("recovering published stylesheets", () => {
+  it("uses GitHub Raw for legacy RawGit links", () => {
+    expect(canonicalStylesheetUrl("https://cdn.rawgit.com/ada/theme/main/base.css")).toBe(
+      "https://raw.githubusercontent.com/ada/theme/main/base.css",
+    );
+    expect(canonicalStylesheetUrl("https://example.com/base.css")).toBe("https://example.com/base.css");
+  });
+
+  it("only falls back to the release of the same repository", () => {
+    const commit = "a".repeat(40);
+    const release = `https://raw.githubusercontent.com/Ada/Theme/${commit}/release/main.theme.css`;
+    expect(releasedStylesheetUrl("https://ada.github.io/theme/dist/main.css", release)).toBe(
+      `https://raw.githubusercontent.com/Ada/Theme/${commit}/dist/main.css`,
+    );
+    expect(releasedStylesheetUrl("https://ada.github.io/AnotherTheme/main.css", release)).toBeUndefined();
+    expect(releasedStylesheetUrl("https://bo.github.io/theme/main.css", release)).toBeUndefined();
+    expect(releasedStylesheetUrl("https://ada.github.io/theme/dist/main.css", release.replace(commit, "HEAD"))).toBeUndefined();
   });
 });
 

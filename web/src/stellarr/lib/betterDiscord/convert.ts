@@ -2,7 +2,7 @@ import { matchFont } from "@/design/fontLabels";
 import type { FontId, PaletteColors } from "@/design/themes";
 
 import type { DiscordVariant, Evaluator } from "./evaluate";
-import { DISCORD_VARIABLES, SHADING_VARIABLES, mapDiscordTheme, type RoleSource } from "./roles";
+import { DISCORD_VARIABLES, SHADING_VARIABLES, mapDiscordTheme, type MappedTheme, type RoleSource } from "./roles";
 import {
   inlineImports,
   readMeta,
@@ -15,7 +15,7 @@ import {
 } from "./text";
 
 /** Where a theme's face is set, in the order a theme's own choice wins. */
-const FONT_VARIABLES = ["--font", "--app-font", "--font-primary", "--font-display", "--font-headline", "--dplus-font-ui", "--main-font"] as const;
+const FONT_VARIABLES = ["--font", "--app-font", "--font-primary", "--font-display", "--font-headline", "--dplus-font-ui", "--main-font", "--stellarr-font"] as const;
 
 export interface Conversion {
   meta: ThemeMeta;
@@ -31,7 +31,7 @@ export interface Conversion {
   /** The face the theme asks for, and ours when we have it. */
   font?: { family: string; id: FontId | null };
   /** A picture the theme puts behind Discord, which is fetched only if the person agrees. */
-  wallpaper?: { url: string; host: string; shade?: number };
+  wallpaper?: { url: string; host?: string; shade?: number };
   /** How the engine dealt with container style queries. */
   styleQueries: "native" | "unwrapped" | "none";
   /** Style-query blocks that could not be decided without the engine. */
@@ -50,6 +50,13 @@ export interface ConvertOptions {
 /** The first family of a `font-family` list, without quotes. */
 export function firstFamily(value: string): string {
   return (value.split(",")[0] ?? "").trim().replace(/^["']|["']$/g, "").trim();
+}
+
+function hasDeclaredSurface(theme: MappedTheme): boolean {
+  return theme.roles.some(({ group, role, from }) =>
+    group === "backgrounds" && ["primary", "darkest", "secondary"].includes(role) &&
+    from !== undefined && from !== "--custom-theme-base-color" && !from.startsWith("--stellarr-"),
+  );
 }
 
 /**
@@ -87,14 +94,19 @@ export async function convertTheme(text: string, from: string | null, options: C
   };
 
   let result = await evaluate("dark");
-  for (const variant of ["midnight", "light"] as const) {
-    if (result.mapped.colors !== undefined || !clean.includes(`.theme-${variant}`)) continue;
+  for (const variant of ["darker", "midnight", "light"] as const) {
+    if (result.picture !== null || hasDeclaredSurface(result.mapped)) break;
+    if (!clean.includes(`.theme-${variant}`)) continue;
     const candidate = await evaluate(variant);
-    if (candidate.mapped.colors !== undefined) result = candidate;
+    if (candidate.mapped.colors !== undefined && (result.mapped.colors === undefined || hasDeclaredSurface(candidate.mapped))) {
+      result = candidate;
+    }
   }
   const { evaluation, picture, mapped, styleQueries, undecided } = result;
-  const declared = FONT_VARIABLES.map((name) => evaluation.values.get(name)).find((value) => value !== undefined && firstFamily(value) !== "");
-  const family = declared === undefined ? inlined.googleFonts[0] : firstFamily(declared);
+  const stack = FONT_VARIABLES.map((name) => evaluation.values.get(name))
+    .find((value) => value !== undefined && firstFamily(value) !== "");
+  const families = stack === undefined ? inlined.googleFonts : stack.split(",").map(firstFamily);
+  const family = families.find((name) => matchFont(name) !== null) ?? families[0];
   const shading = SHADING_VARIABLES.map((name) => evaluation.colours.get(name)).find((value) => value !== undefined);
 
   return {
@@ -110,7 +122,7 @@ export async function convertTheme(text: string, from: string | null, options: C
       : {
           wallpaper: {
             url: picture,
-            host: new URL(picture).host,
+            ...(picture.startsWith("https://") ? { host: new URL(picture).host } : {}),
             ...(shading === undefined ? {} : { shade: Math.round(shading[3] * 100) }),
           },
         }),

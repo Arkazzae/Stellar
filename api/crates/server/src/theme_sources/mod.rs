@@ -39,7 +39,7 @@ enum Kind {
 impl Kind {
     fn limit(self) -> u64 {
         match self {
-            Self::Css => 2 * 1024 * 1024,
+            Self::Css => 4 * 1024 * 1024,
             Self::Catalog => 7 * 1024 * 1024,
             Self::Picture => 25 * 1024 * 1024,
         }
