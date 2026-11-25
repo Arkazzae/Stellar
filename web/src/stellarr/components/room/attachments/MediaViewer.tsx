@@ -8,6 +8,7 @@ import { useLanguage } from "@/state/hooks";
 
 import { LAZY_LINK_PREFIX } from "@/lib/messages/messageExport";
 
+import { VideoAttachment } from "./VideoAttachment";
 import { useMediaMenu, type MediaMenuTarget } from "./MediaMenu";
 
 /**
@@ -88,8 +89,6 @@ export function MediaViewer({ target, onClose, resolveOriginal }: MediaViewerPro
   // The gallery position lives here: nothing outside this dialog cares which
   // image is on screen, and a host would only hand it straight back.
   const [index, setIndex] = useState(() => startIndex(target));
-  // A video that will not play leaves only its poster to show.
-  const [broken, setBroken] = useState(false);
   const menu = useMediaMenu();
 
   // State derived from a prop is reset during render, not in an effect: an
@@ -98,7 +97,6 @@ export function MediaViewer({ target, onClose, resolveOriginal }: MediaViewerPro
   if (shown !== target) {
     setShown(target);
     setIndex(startIndex(target));
-    setBroken(false);
   }
 
   const galleryLength = target?.kind === "image" ? target.images.length : 0;
@@ -197,17 +195,11 @@ export function MediaViewer({ target, onClose, resolveOriginal }: MediaViewerPro
                     : undefined
                 }
               />
-            ) : target.src === "" || broken ? (
-              <MissingVideo poster={target.poster} />
             ) : (
-              <video
-                className="mv-media"
-                src={target.src}
-                poster={target.poster}
-                controls
+              <VideoAttachment
+                part={{ kind: "video", url: target.src, name: target.name, thumb: target.poster }}
                 autoPlay
-                playsInline
-                onError={() => setBroken(true)}
+                expanded
               />
             )}
           </div>
@@ -394,15 +386,5 @@ function ImageStage({
         />
       ) : null}
     </>
-  );
-}
-
-function MissingVideo({ poster }: { poster?: string }) {
-  const { t } = useLanguage();
-  return (
-    <div className="mv-missing">
-      {poster === undefined ? null : <img className="mv-media" src={poster} alt="" />}
-      <p className="mv-note">{t("media.recordingUnavailable")}</p>
-    </div>
   );
 }

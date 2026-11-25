@@ -2,6 +2,7 @@ import { fireEvent, render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
+import { Attachment } from "./Attachment";
 import { AudioAttachment } from "./AudioAttachment";
 import { VideoAttachment } from "./VideoAttachment";
 
@@ -71,26 +72,69 @@ describe("uploaded media attachments", () => {
     );
   });
 
-  it("uses the uploaded video itself as the in-message preview", () => {
-    const onPlay = vi.fn();
-    const { container } = render(
-      <VideoAttachment
-        part={{ kind: "video", name: "clip.mp4", url: "/assets/video" }}
-        onPlay={onPlay}
-      />,
-    );
-
-    const video = container.querySelector("video");
-    expect(video).toHaveAttribute("src", "/assets/video");
-    fireEvent.click(screen.getByRole("button", { name: "Odtwórz wideo" }));
-    expect(onPlay).toHaveBeenCalledOnce();
+  it("plays the uploaded video inline with Stellarr controls, its poster and sound", () => {
+    render(<Attachment part={{ kind: "video", name: "clip.mp4", url: "/clip.mp4", thumb: "/poster.jpg" }} />);
+    const video = screen.getByLabelText("clip.mp4");
+    expect(screen.getByRole("button", { name: "Odtwórz clip.mp4" })).toBeEnabled();
+    expect(video).toHaveProperty("controls", false);
+    expect(video).toHaveProperty("muted", false);
+    expect(video).toHaveProperty("autoplay", false);
+    expect(video).toHaveAttribute("poster", "/poster.jpg");
+    expect(video).toHaveAttribute("src", "/clip.mp4");
   });
 
-  it("leaves the in-message video with its sound", () => {
-    const { container } = render(
-      <VideoAttachment part={{ kind: "video", name: "clip.mp4", url: "/assets/video" }} />,
-    );
+  it("seeks against the video's measured duration and reflects playback events", () => {
+    render(<VideoAttachment part={{ kind: "video", name: "clip.mp4", url: "/clip.mp4" }} />);
+    const video = screen.getByLabelText<HTMLVideoElement>("clip.mp4");
+    const timeline = screen.getByRole("slider", { name: /Pozycja odtwarzania/ });
+    expect(timeline).toBeDisabled();
+    Object.defineProperty(video, "duration", { value: 80 });
+    fireEvent.loadedMetadata(video);
+    fireEvent.change(timeline, { target: { value: "60" } });
+    expect(video.currentTime).toBe(60);
+    expect(screen.getByText("1:00 / 1:20")).toBeInTheDocument();
+    fireEvent.play(video);
+    expect(screen.getByRole("button", { name: "Wstrzymaj clip.mp4" })).toBeInTheDocument();
+    fireEvent.ended(video);
+    expect(screen.getByRole("button", { name: "Odtwórz clip.mp4" })).toBeInTheDocument();
+  });
 
-    expect(container.querySelector("video")).toHaveProperty("muted", false);
+  it("offers the original when a codec fails and tries a refreshed URL", () => {
+    const part = { kind: "video" as const, name: "clip.mp4", url: "/clip.mp4" };
+    const { rerender } = render(<VideoAttachment part={part} />);
+    fireEvent.error(screen.getByLabelText("clip.mp4"));
+    expect(screen.getByRole("link", { name: "Pobierz" })).toHaveAttribute("href", part.url);
+    rerender(<VideoAttachment part={{ ...part, url: "/new.mp4" }} />);
+    expect(screen.getByLabelText("clip.mp4")).toHaveAttribute("src", "/new.mp4");
+  });
+
+  it.each(["audio", "video"] as const)("decrypts private %s only on play and can retry", async (kind) => {
+    const resolveOriginal = vi.fn().mockRejectedValueOnce(new Error("offline")).mockResolvedValue("blob:opened");
+    const { container } = render(
+      <Attachment part={{ kind, name: "clip", url: "e2ee:id" }} callbacks={{ resolveOriginal }} />,
+    );
+    expect(container.querySelector(kind)).toBeNull();
+    expect(resolveOriginal).not.toHaveBeenCalled();
+    const user = userEvent.setup();
+    const play = screen.getByRole("button", { name: "Odtwórz clip" });
+    await user.click(play);
+    expect(screen.getByRole("status")).toHaveTextContent("Błąd odtwarzania");
+    await user.click(play);
+    expect(resolveOriginal).toHaveBeenCalledWith("e2ee:id");
+    expect(container.querySelector(kind)).toHaveAttribute("src", "blob:opened");
+    expect(container.querySelector(kind)).toHaveProperty("autoplay", true);
+  });
+
+  it("changes audio volume and restores the same level after unmuting", async () => {
+    const { container } = render(<AudioAttachment part={{ kind: "audio", name: "song", url: "/song" }} />);
+    const audio = container.querySelector("audio")!;
+    fireEvent.change(screen.getByRole("slider", { name: "Głośność" }), { target: { value: "35" } });
+    expect(audio.volume).toBe(0.35);
+    const user = userEvent.setup();
+    await user.click(screen.getByRole("button", { name: "Wycisz dźwięk" }));
+    expect(audio.muted).toBe(true);
+    await user.click(screen.getByRole("button", { name: "Włącz dźwięk" }));
+    expect(audio.muted).toBe(false);
+    expect(audio.volume).toBe(0.35);
   });
 });

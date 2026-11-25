@@ -1,73 +1,109 @@
-import { useState, type KeyboardEvent } from "react";
+import { useEffect, useRef, useState } from "react";
 
 import { Icon } from "@stellarr/icons";
+import type { VideoPart } from "@/lib/messages/parts";
 import { useLanguage } from "@/state/LanguageProvider";
 
-import type { VideoPart } from "@/lib/messages/parts";
-
 import { formatMediaTime } from "./mediaTime";
+import { PlayButton, PlaybackSlider, VolumeControl } from "./PlaybackControls";
+import { useMediaPlayback } from "./useMediaPlayback";
 
-export interface VideoAttachmentProps {
+interface VideoAttachmentProps {
   part: VideoPart;
-  onPlay?(part: VideoPart): void;
+  autoPlay?: boolean;
+  expanded?: boolean;
 }
 
-/** The in-message tile of an uploaded video; playing it is the host's decision. */
-export function VideoAttachment({ part, onPlay }: VideoAttachmentProps) {
+export function VideoAttachment(props: VideoAttachmentProps) {
+  return <VideoPlayer key={props.part.url} {...props} />;
+}
+
+interface FullscreenVideo extends HTMLVideoElement {
+  webkitEnterFullscreen?: () => void;
+}
+
+function VideoPlayer({ part, autoPlay, expanded }: VideoAttachmentProps) {
   const { t } = useLanguage();
-  const [measuredDuration, setMeasuredDuration] = useState<number | null>(null);
-  const hasUrl = part.url !== undefined && part.url !== "";
-  const play = onPlay !== undefined && part.url !== undefined ? () => onPlay(part) : undefined;
-  const duration =
-    part.duration ??
-    (measuredDuration === null ? undefined : formatMediaTime(measuredDuration));
+  const player = useMediaPlayback();
+  const frame = useRef<HTMLDivElement>(null);
+  const [fullscreen, setFullscreen] = useState(false);
+  const [fullscreenError, setFullscreenError] = useState(false);
+  const name = part.name || t("media.video");
+  const time = formatMediaTime(player.currentTime);
+  const total = player.duration ? formatMediaTime(player.duration) : part.duration;
+  const fullscreenLabel = t(fullscreen ? "voiceBar.leaveFullscreen" : "voiceBar.fullscreen");
 
-  // A button role comes with the keyboard contract of a button.
-  const onKeyDown = (event: KeyboardEvent<HTMLDivElement>) => {
-    if (play === undefined || (event.key !== "Enter" && event.key !== " ")) return;
-    event.preventDefault();
-    play();
-  };
+  useEffect(() => {
+    const node = frame.current;
+    const follow = () => setFullscreen(document.fullscreenElement === node);
+    node?.addEventListener("fullscreenchange", follow);
+    return () => node?.removeEventListener("fullscreenchange", follow);
+  }, []);
 
+  async function toggleFullscreen() {
+    const node = frame.current;
+    if (!node) return;
+    try {
+      if (document.fullscreenElement === node) await document.exitFullscreen();
+      else if (document.fullscreenEnabled) await node.requestFullscreen();
+      else node.querySelector<FullscreenVideo>("video")?.webkitEnterFullscreen?.();
+      setFullscreenError(false);
+    } catch {
+      setFullscreenError(true);
+    }
+  }
+
+  const canExpand = document.fullscreenEnabled || "webkitEnterFullscreen" in HTMLVideoElement.prototype;
+  const aspectRatio = part.width && part.height ? part.width / part.height : undefined;
   return (
-    <div
-      className="att att-video"
-      role={play === undefined ? undefined : "button"}
-      tabIndex={play === undefined ? undefined : 0}
-      aria-label={
-        duration === undefined
-          ? t("attachment.playVideo")
-          : t("attachment.playVideoDuration", { duration })
-      }
-      onClick={play}
-      onKeyDown={onKeyDown}
-    >
-      {part.thumb !== undefined ? (
-        <img src={part.thumb} alt="" width={part.width} height={part.height} loading="lazy" />
-      ) : hasUrl ? (
-        // Without a poster the first frame of the file itself is the preview.
-        // The tile is opened, not played here, so the frame is silent without
-        // muting the element: a browser that can play the preview natively,
-        // such as a phone's inline player, must not lose its sound.
-        <video
-          src={part.url}
-          preload="metadata"
-          playsInline
-          aria-hidden="true"
-          onLoadedMetadata={(event) => {
-            const reported = event.currentTarget.duration;
-            if (Number.isFinite(reported)) setMeasuredDuration(reported);
-          }}
-        />
-      ) : (
-        <span className="video-placeholder" aria-hidden="true" />
+    <div ref={frame} className={expanded ? "att att-video expanded" : "att att-video"}>
+      <div className="video-stage" style={{ aspectRatio }}>
+        {part.url && !player.failed ? (
+          <>
+            <video {...player.mediaProps} src={part.url} poster={part.thumb} preload="metadata"
+              playsInline autoPlay={autoPlay} aria-label={name} />
+            {/* The entire picture is a pointer target. The labelled button below handles keyboard playback. */}
+            <button type="button" className="video-surface" tabIndex={-1} aria-hidden="true"
+              onClick={() => void player.toggle()}>
+              {!player.playing && <span><Icon name="play" size={20} /></span>}
+            </button>
+          </>
+        ) : (
+          <>
+            {part.thumb && <img src={part.thumb} alt="" />}
+            <div className="video-fallback" role="status">
+              {part.url ? t("attachment.cannotPlay", { name }) : t("media.recordingUnavailable")}
+              {part.url && !expanded && <a href={part.url} download={part.name || true}>{t("common.download")}</a>}
+            </div>
+          </>
+        )}
+      </div>
+      {part.url && !player.failed && (
+        <div className="video-controls">
+          <PlaybackSlider
+            className="video-seek"
+            max={player.duration}
+            step="any"
+            value={Math.min(player.currentTime, player.duration)}
+            disabled={!player.duration}
+            aria-label={t("attachment.playbackPosition", { name })}
+            aria-valuetext={total ? t("attachment.timeOfTotal", { current: time, duration: total }) : time}
+            onChange={(event) => player.seek(event.currentTarget.valueAsNumber)}
+          />
+          <div className="video-transport">
+            <PlayButton player={player} name={name} />
+            <span className="video-time">{time}{total && ` / ${total}`}</span>
+            <VolumeControl player={player} />
+            {canExpand && (
+              <button type="button" className="media-tool" aria-label={fullscreenLabel} title={fullscreenLabel}
+                onClick={() => void toggleFullscreen()}>
+                <Icon name={fullscreen ? "collapse" : "expand"} size={16} />
+              </button>
+            )}
+          </div>
+          {fullscreenError && <span role="status">{t("attachment.fullscreenUnavailable")}</span>}
+        </div>
       )}
-      <span className="overlay-play">
-        <span>
-          <Icon name="play" size={16} />
-        </span>
-      </span>
-      {duration === undefined ? null : <span className="vdur">{duration}</span>}
     </div>
   );
 }

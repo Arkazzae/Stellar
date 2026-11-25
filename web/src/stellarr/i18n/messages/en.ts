@@ -1401,6 +1401,7 @@ export const en = {
   "attachment.timeOfTotal": "{current} of {duration}",
   "attachment.download": "Download {name}",
   "attachment.cannotPlay": "Cannot play {name}",
+  "attachment.fullscreenUnavailable": "Fullscreen is unavailable.",
   "attachment.playbackError": "Playback error",
   "attachment.file": "Attachment {name}",
   "attachment.uploading": "Uploading…",

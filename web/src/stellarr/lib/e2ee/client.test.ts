@@ -472,6 +472,22 @@ describe("encryption client", () => {
       vi.unstubAllGlobals();
     });
 
+    it("leaves large music uploads playable on demand in a private conversation", async () => {
+      const { server, ada, ola } = await pair();
+      const file = new File(["audio data"], "concert.flac", { type: "audio/flac" });
+      const upload = await ada.client.uploadFile(file, {});
+      // Exercise the lazy-size boundary without encrypting a full concert in the test.
+      upload.payload.size = 26 * 1024 * 1024;
+      await ada.client.send(server.conversationId, { text: "", uploads: [upload], clientMessageId: crypto.randomUUID() });
+      const message = stored(server);
+      expect((await ola.client.decode(message)).attachments[0]).toMatchObject({
+        contentType: "audio/flac", url: `${LAZY_ATTACHMENT_PREFIX}${upload.payload.id}`,
+      });
+      const opened = await ola.client.openAttachment(upload.payload.id);
+      expect(opened?.type).toBe("audio/flac");
+      expect(await urls.get(opened!.url)?.text()).toBe("audio data");
+    });
+
     it("uploads each file sealed, shows a picture once decrypted and decrypts a document when opened", async () => {
       const { server, ada, ola } = await pair();
       const picture = await ada.client.uploadFile(new File([new Uint8Array([137, 80, 78, 71])], "tile.png", { type: "image/png" }), { width: 2, height: 2 });

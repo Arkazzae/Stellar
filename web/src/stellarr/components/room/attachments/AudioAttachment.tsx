@@ -12,6 +12,8 @@ import { useLanguage } from "@/state/hooks";
 
 import type { AudioPart } from "@/lib/messages/parts";
 
+import { PlayButton, VolumeControl } from "./PlaybackControls";
+import { useMediaPlayback } from "./useMediaPlayback";
 import { formatMediaTime } from "./mediaTime";
 import { BAR_COUNT, MAX_PEAK_BYTES, useAudioPeaks } from "./peaks";
 
@@ -26,27 +28,24 @@ const BAR_RANGE_PX = 19;
 
 export interface AudioAttachmentProps {
   part: AudioPart;
+  autoPlay?: boolean;
 }
 
-export function AudioAttachment({ part }: AudioAttachmentProps) {
+export function AudioAttachment({ part, autoPlay }: AudioAttachmentProps) {
   // Playback state belongs to one resource: a refreshed signed URL must not
   // inherit the expired one's disabled player or stale duration.
-  return <AudioPlayer key={part.url ?? ""} part={part} />;
+  return <AudioPlayer key={part.url ?? ""} part={part} autoPlay={autoPlay} />;
 }
 
 function clampPeaks(peaks: readonly number[]): number[] {
   return peaks.map((peak) => Math.min(Math.max(peak, 0), 1));
 }
 
-function AudioPlayer({ part }: AudioAttachmentProps) {
+function AudioPlayer({ part, autoPlay }: AudioAttachmentProps) {
   const { t } = useLanguage();
-  const audio = useRef<HTMLAudioElement | null>(null);
   const wave = useRef<HTMLDivElement | null>(null);
-
-  const [playing, setPlaying] = useState(false);
-  const [currentTime, setCurrentTime] = useState(0);
-  const [duration, setDuration] = useState(0);
-  const [failed, setFailed] = useState(false);
+  const player = useMediaPlayback();
+  const { playing, currentTime, duration, failed } = player;
   /** Where the pointer is along the waveform, 0..1, or null when it is elsewhere. */
   const [hover, setHover] = useState<number | null>(null);
 
@@ -58,7 +57,7 @@ function AudioPlayer({ part }: AudioAttachmentProps) {
   // did not ask for.
   const measured = useAudioPeaks(
     part.url,
-    playable && (part.size === undefined || part.size <= MAX_PEAK_BYTES),
+    playable && part.peaks === undefined && (part.size === undefined || part.size <= MAX_PEAK_BYTES),
   );
   const bars = useMemo(
     () => (part.peaks === undefined ? (measured ?? PLACEHOLDER) : clampPeaks(part.peaks)),
@@ -75,36 +74,6 @@ function AudioPlayer({ part }: AudioAttachmentProps) {
   const displayName = isVoiceMessage ? t("attachment.voiceMessageLabel") : part.name;
   const totalLabel = duration > 0 ? formatMediaTime(duration) : part.duration;
 
-  /** Records a duration the element reports, wherever it came from. */
-  const adopt = (reported: number) => {
-    if (Number.isFinite(reported) && reported > 0) setDuration(reported);
-  };
-
-  const toggle = async () => {
-    const element = audio.current;
-    if (element === null || !playable) return;
-    if (!element.paused) {
-      element.pause();
-      return;
-    }
-    if (element.ended) element.currentTime = 0;
-    try {
-      await element.play();
-    } catch {
-      setPlaying(false);
-      setFailed(true);
-    }
-  };
-
-  const seekTo = (ratio: number) => {
-    const element = audio.current;
-    if (element === null || !seekable) return;
-    const next = Math.min(duration, Math.max(0, ratio * duration));
-    element.currentTime = next;
-    // Painted now rather than at the next `timeupdate`, or a click feels missed.
-    setCurrentTime(next);
-  };
-
   const ratioAt = (event: PointerEvent<HTMLDivElement>): number | null => {
     const box = wave.current?.getBoundingClientRect();
     if (box === undefined || box.width === 0) return null;
@@ -113,19 +82,16 @@ function AudioPlayer({ part }: AudioAttachmentProps) {
 
   const onKeyDown = (event: KeyboardEvent<HTMLDivElement>) => {
     if (!seekable) return;
-    const target =
-      event.key === "ArrowLeft"
-        ? (currentTime - SEEK_STEP) / duration
-        : event.key === "ArrowRight"
-          ? (currentTime + SEEK_STEP) / duration
-          : event.key === "Home"
-            ? 0
-            : event.key === "End"
-              ? 1
-              : null;
-    if (target === null) return;
+    let next: number;
+    switch (event.key) {
+      case "ArrowLeft": next = currentTime - SEEK_STEP; break;
+      case "ArrowRight": next = currentTime + SEEK_STEP; break;
+      case "Home": next = 0; break;
+      case "End": next = duration; break;
+      default: return;
+    }
     event.preventDefault();
-    seekTo(target);
+    player.seek(next);
   };
 
   const onPointerDown = (event: PointerEvent<HTMLDivElement>) => {
@@ -135,7 +101,7 @@ function AudioPlayer({ part }: AudioAttachmentProps) {
     const ratio = ratioAt(event);
     if (ratio === null) return;
     setHover(ratio);
-    seekTo(ratio);
+    player.seek(ratio * duration);
   };
 
   const onPointerMove = (event: PointerEvent<HTMLDivElement>) => {
@@ -144,7 +110,7 @@ function AudioPlayer({ part }: AudioAttachmentProps) {
     if (ratio === null) return;
     setHover(ratio);
     // Dragging scrubs; passing over only previews.
-    if (event.currentTarget.hasPointerCapture(event.pointerId)) seekTo(ratio);
+    if (event.currentTarget.hasPointerCapture(event.pointerId)) player.seek(ratio * duration);
   };
 
   return (
@@ -153,46 +119,8 @@ function AudioPlayer({ part }: AudioAttachmentProps) {
         .filter(Boolean)
         .join(" ")}
     >
-      <audio
-        ref={(element) => {
-          audio.current = element;
-          // Also read off the element: a cached file or a `data:` URL can be
-          // ready before React attaches `loadedmetadata`, and the event never comes.
-          if (element !== null) adopt(element.duration);
-        }}
-        // An empty `src` would make React request the current document.
-        src={part.url || undefined}
-        preload="metadata"
-        onLoadedMetadata={(event) => adopt(event.currentTarget.duration)}
-        onDurationChange={(event) => adopt(event.currentTarget.duration)}
-        onTimeUpdate={(event) => setCurrentTime(event.currentTarget.currentTime)}
-        onPlay={() => setPlaying(true)}
-        onPause={() => setPlaying(false)}
-        onEnded={() => {
-          setPlaying(false);
-          setCurrentTime(0);
-        }}
-        onError={() => {
-          setPlaying(false);
-          setFailed(true);
-        }}
-      />
-
-      <button
-        type="button"
-        className="play-btn"
-        disabled={!playable}
-        aria-label={
-          failed
-            ? t("attachment.cannotPlay", { name: spokenName })
-            : playing
-              ? t("attachment.pause", { name: spokenName })
-              : t("attachment.play", { name: spokenName })
-        }
-        onClick={() => void toggle()}
-      >
-        {playing ? <Icon name="pause" size={12} /> : <Icon name="play" size={13} />}
-      </button>
+      <audio {...player.mediaProps} src={part.url || undefined} preload="metadata" autoPlay={autoPlay} />
+      <PlayButton player={player} name={spokenName} disabled={!hasUrl} />
 
       <div className="au-track">
         {/* A slider rather than decoration: it shows progress and takes a click
@@ -270,9 +198,10 @@ function AudioPlayer({ part }: AudioAttachmentProps) {
             <span>{formatBytes(part.size)}</span>
           )}
         </span>
+        {!isVoiceMessage && playable && <VolumeControl player={player} />}
         {isVoiceMessage || !hasUrl ? null : (
           <a
-            className="au-get"
+            className="media-tool"
             href={part.url}
             download={part.name}
             aria-label={t("attachment.download", { name: part.name })}
