@@ -110,10 +110,12 @@
     <main>
       <div class="features" id="features">
         <section class="feature container">
-          <div class="mascot mascot--chat" aria-hidden="true"><img src="./src/images/mascot/68-zero-g-game-night.webp" width="520" height="778" alt="" /></div>
-          <div class="card">
+          <div class="card card--scene">
             <div class="card__media card__media--scene">
-              <img class="scene" src="./src/images/scenes/10-reading-nook.webp" width="1400" height="788" alt="" loading="lazy" />
+              <picture>
+                <source media="(max-width: 620px)" srcset="./src/images/scenes/group-chat-lounge-mobile.webp" width="800" height="450" />
+                <img class="scene" src="./src/images/scenes/group-chat-lounge.webp" width="1440" height="810" alt="" loading="lazy" decoding="async" />
+              </picture>
               <div class="scene-list">
                 <ul class="offer" aria-label="Text chat in Stellarr">
                   <li><svg class="icon"><use href="#i-hash" /></svg>Text channels</li>
@@ -307,7 +309,7 @@
         </section>
 
         <section class="feature container">
-          <div class="card">
+          <div class="card card--scene">
             <div class="card__media card__media--scene">
               <img class="scene" src="./src/images/scenes/13-observatory.webp" width="1400" height="788" alt="" loading="lazy" />
               <div class="scene-list">
@@ -385,12 +387,10 @@
             <a class="btn" href="https://arkazzae.github.io/Stellarr/install/quick-start">Open the quick start</a>
             <a class="link-arrow" href="https://arkazzae.github.io/Stellarr/install/unraid">Running Unraid? Use the template <svg class="icon"><use href="#i-arrow" /></svg></a>
           </div>
-        </div>
-        <div class="crew" aria-hidden="true">
-          <img src="./src/images/mascot/61-launch-mission.webp" width="520" height="856" alt="" loading="lazy" />
-          <img src="./src/images/mascot/69-late-night-chat.webp" width="520" height="820" alt="" loading="lazy" />
-          <img src="./src/images/mascot/65-home-server-workshop.webp" width="520" height="774" alt="" loading="lazy" />
-          <img src="./src/images/mascot/70-launch-party.webp" width="520" height="793" alt="" loading="lazy" />
+          <picture class="install__scene">
+            <source media="(max-width: 620px)" srcset="./src/images/scenes/server-launch-mobile.webp" width="800" height="450" />
+            <img src="./src/images/scenes/server-launch.webp" width="1920" height="640" alt="" loading="lazy" decoding="async" />
+          </picture>
         </div>
       </section>
     </main>
