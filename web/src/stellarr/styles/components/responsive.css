@@ -236,10 +236,6 @@
     .transcript {
       padding-block: 8px 4px;
     }
-
-    .typing:not(.show) {
-      height: 0;
-    }
   }
 
   /* Touch targets, where the pointer cannot be precise. */

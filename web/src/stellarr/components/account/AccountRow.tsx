@@ -98,6 +98,7 @@ export function AccountRow({
         />
       </Popover>
       <IconButton
+        className="account-settings"
         icon="gear"
         size={16}
         label={t("common.openSettings")}
