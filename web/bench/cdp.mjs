@@ -91,6 +91,7 @@ async function start(executable, flags) {
       proc.kill("SIGKILL");
       await exited;
     }
+    proc.stderr.destroy();
     rmSync(profile, { recursive: true, force: true });
     throw error;
   }
@@ -316,6 +317,8 @@ export async function launch({ width = 1280, height = 900, headless = true, flag
       } catch {
         // Already exited.
       }
+      // A Chrome helper can hold the inherited stderr pipe open after Chrome exits.
+      proc.stderr.destroy();
       // A killed Chrome's helpers may still be writing to the profile for a
       // moment, which fails a single attempt with ENOTEMPTY.
       rmSync(profile, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 });

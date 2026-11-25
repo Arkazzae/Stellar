@@ -5,6 +5,7 @@
 //! prints what a client could tell; `tests/uploads-real-bucket.sh` uses it.
 
 use std::path::Path;
+use std::time::Duration;
 
 use http::Method;
 use rusqlite::{Connection, params};
@@ -980,8 +981,7 @@ async fn where_df_cannot_be_run_the_upload_goes_through_and_the_log_says_the_res
     assert!(said, "{:?}", server.log());
 }
 
-/// Sends a form over a socket and hangs up: after all of it (`all`), or
-/// after the head of the file part alone.
+/// Sends a form over a socket and hangs up after either all of it or half of it.
 async fn hang_up(server: &Server, person: &Person, bytes: usize, all: bool) {
     use tokio::io::AsyncWriteExt;
     let name = stellarr_api::auth::session::cookie_name(&stellarr_api::settings::Environment::new("Testing"));
@@ -1002,14 +1002,27 @@ async fn hang_up(server: &Server, person: &Person, bytes: usize, all: bool) {
     stream.write_all(head.as_bytes()).await.unwrap();
     let sent = if all { body.len() } else { body.len() / 2 };
     stream.write_all(&body[..sent]).await.unwrap();
+    if !all {
+        // Make sure there is a partial file to clean up after the disconnect.
+        wait_for_upload("the partial file to reach staging", || staged(server) > 0).await;
+    }
     // Gone before any answer.
     drop(stream);
 }
 
-async fn settle(server: &Server) -> (i64, Vec<String>) {
-    tokio::time::sleep(std::time::Duration::from_secs(3)).await;
-    let rows = server.database().query_row("SELECT COUNT(*) FROM \"ImageAttachments\"", [], |row| row.get(0)).unwrap();
-    (rows, objects(server))
+async fn wait_for_upload(what: &str, mut reached: impl FnMut() -> bool) {
+    tokio::time::timeout(Duration::from_secs(10), async {
+        while !reached() {
+            tokio::time::sleep(Duration::from_millis(25)).await;
+        }
+    })
+    .await
+    .unwrap_or_else(|_| panic!("timed out waiting for {what}"));
+}
+
+fn attachment_count(db: &Connection) -> i64 {
+    db.query_row("SELECT COUNT(*) FROM \"ImageAttachments\"", [], |row| row.get(0))
+        .unwrap()
 }
 
 #[tokio::test]
@@ -1018,11 +1031,14 @@ async fn a_client_that_hangs_up_after_its_whole_form_still_gets_its_file_stored_
     let maja = server.found("maja").await;
 
     hang_up(&server, &maja, 20 * 1024 * 1024, true).await;
-    let (rows, stored) = settle(&server).await;
+    let db = server.database();
+    wait_for_upload("the attachment to be committed and staging to be cleared", || {
+        attachment_count(&db) > 0 && staged(&server) == 0
+    })
+    .await;
 
-    // The handler runs to its end without its client: object and row, or neither.
-    assert_eq!((rows, stored.len()), (1, 1), "{stored:?}");
-    assert_eq!(staged(&server), 0);
+    let stored = objects(&server);
+    assert_eq!((attachment_count(&db), stored.len()), (1, 1), "{stored:?}");
 }
 
 #[tokio::test]
@@ -1031,10 +1047,10 @@ async fn a_client_that_hangs_up_in_the_middle_of_its_form_leaves_nothing() {
     let maja = server.found("maja").await;
 
     hang_up(&server, &maja, 20 * 1024 * 1024, false).await;
-    let (rows, stored) = settle(&server).await;
+    wait_for_upload("the partial file to be removed", || staged(&server) == 0).await;
 
-    assert_eq!((rows, stored.len()), (0, 0), "{stored:?}");
-    assert_eq!(staged(&server), 0);
+    let stored = objects(&server);
+    assert_eq!((attachment_count(&server.database()), stored.len()), (0, 0), "{stored:?}");
 }
 
 #[tokio::test]
