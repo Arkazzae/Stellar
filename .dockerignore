@@ -56,3 +56,6 @@ data
 **/*.p12
 **/*.pfx
 **/*.jks
+
+# Installer transaction files can contain the operator's .env.
+.stellarr-install-stage*

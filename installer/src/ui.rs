@@ -527,10 +527,10 @@ Settings, kept in .env (a terminal asks for the first three):
   --turns-port PORT    Optional TURN TLS and DTLS host port (default 5349)
 
 Release:
-  --version TAG        Image to run: a release such as 1.4.0, or a moving tag
-                       such as latest (default: the latest release, pinned)
-  --ref REF            Git tag or branch to take docker-compose.yml from
-                       (default: the release's tag)
+  --version TAG        Run a release such as 1.4.0, or follow latest or a
+                       stable series such as 1.4 (default: the latest release)
+  --ref REF            Git tag or branch for Compose and settings files
+                       (default: the selected release's Git tag)
   --build              Build the image from this checkout instead of pulling
 
 Behaviour:

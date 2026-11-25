@@ -11,6 +11,7 @@ mod cli;
 mod envfile;
 mod flow;
 mod http;
+mod install_plan;
 mod ports;
 mod sys;
 mod ui;

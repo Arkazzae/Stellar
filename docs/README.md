@@ -35,7 +35,7 @@ Stellarr is self-hosted text, voice, and video chat for small groups of friends,
 
 ## Development
 
-- [Local setup](development/local-setup.md): building WebAssembly recipes, running `docker-compose.dev.yml` with live reload, seeding sample data, and running natively.
+- [Local setup](development/local-setup.md): building WebAssembly recipes, running `infra/compose/dev.yml` with live reload, seeding sample data, and running natively.
 - [Codebase and testing](development/codebase-and-testing.md): monorepo layout, adding endpoints and workers, test commands, and CI contract guards.
 
 ## Component guides

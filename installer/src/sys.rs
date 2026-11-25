@@ -3,11 +3,13 @@
 
 use std::ffi::CString;
 use std::fs::File;
-use std::io::{Read, Seek, SeekFrom};
-use std::os::unix::fs::PermissionsExt;
+use std::io::{self, Read, Seek, SeekFrom};
+use std::os::unix::fs::{OpenOptionsExt, PermissionsExt};
+use std::os::unix::process::CommandExt;
 use std::path::{Path, PathBuf};
-use std::process::{Command, Stdio};
-use std::sync::atomic::{AtomicPtr, Ordering};
+use std::process::{Command, ExitStatus, Output, Stdio};
+use std::sync::atomic::{AtomicI32, AtomicPtr, Ordering};
+use std::time::{Duration, Instant};
 
 use crate::ui::{ASK_FD, CURSOR_HIDDEN, OPEN, TERMINAL};
 
@@ -27,83 +29,151 @@ pub fn have(name: &str) -> bool {
     which(name).is_some()
 }
 
-/// The command's output, when it ran and succeeded; its errors are dropped.
-pub fn output(mut command: Command) -> Option<String> {
-    let out = command
-        .stdin(Stdio::null())
-        .stderr(Stdio::null())
-        .output()
-        .ok()?;
-    out.status
-        .success()
-        .then(|| String::from_utf8_lossy(&out.stdout).into_owned())
+// A negative ID addresses the entire process group. Interactive sudo stays
+// in the foreground group so it can still open the terminal for a password.
+static ACTIVE_CHILD: AtomicI32 = AtomicI32::new(0);
+
+fn run(mut command: Command, deadline: Option<Instant>) -> io::Result<ExitStatus> {
+    let interactive_sudo = command.get_program() == "sudo"
+        && !command.get_args().any(|arg| arg == "-n")
+        && deadline.is_none();
+    if !interactive_sudo {
+        command.process_group(0);
+    }
+
+    // Block cancellation across spawn and registration. The child restores
+    // the caller's signal mask before it executes the requested program.
+    let mut signals: libc::sigset_t = unsafe { std::mem::zeroed() };
+    let mut previous: libc::sigset_t = unsafe { std::mem::zeroed() };
+    // SAFETY: both masks are local, initialized by libc and used by this thread.
+    unsafe {
+        libc::sigemptyset(&mut signals);
+        libc::sigaddset(&mut signals, libc::SIGINT);
+        libc::sigaddset(&mut signals, libc::SIGTERM);
+        let result = libc::pthread_sigmask(libc::SIG_BLOCK, &signals, &mut previous);
+        if result != 0 {
+            return Err(io::Error::from_raw_os_error(result));
+        }
+        command.pre_exec(move || {
+            if libc::sigprocmask(libc::SIG_SETMASK, &previous, std::ptr::null_mut()) == 0 {
+                Ok(())
+            } else {
+                Err(io::Error::last_os_error())
+            }
+        });
+    }
+    let spawned = command.stdin(Stdio::null()).spawn();
+    if let Ok(child) = &spawned {
+        let pid = child.id() as i32;
+        ACTIVE_CHILD.store(if interactive_sudo { pid } else { -pid }, Ordering::SeqCst);
+    }
+    // SAFETY: restores the signal mask saved above.
+    unsafe { libc::pthread_sigmask(libc::SIG_SETMASK, &previous, std::ptr::null_mut()) };
+    let mut child = spawned?;
+    let result = match deadline {
+        None => child.wait(),
+        Some(deadline) => loop {
+            let remaining = deadline.saturating_duration_since(Instant::now());
+            if remaining.is_zero() {
+                // SAFETY: the group belongs to the spawned, unreaped child.
+                unsafe { signal_child(-(child.id() as i32), libc::SIGTERM) };
+                let _ = child.wait();
+                break Err(io::Error::new(io::ErrorKind::TimedOut, "command timed out"));
+            }
+            match child.try_wait() {
+                Ok(None) => std::thread::sleep(remaining.min(Duration::from_millis(25))),
+                result => break result.map(Option::unwrap),
+            }
+        },
+    };
+    ACTIVE_CHILD.store(0, Ordering::SeqCst);
+    result
 }
 
-/// Whether the command ran and succeeded, with all its output dropped.
-pub fn quiet(mut command: Command) -> bool {
-    command
-        .stdin(Stdio::null())
-        .stdout(Stdio::null())
-        .stderr(Stdio::null())
-        .status()
-        .is_ok_and(|s| s.success())
-}
-
-/// Whether the command ran and succeeded, with its output on the screen.
-pub fn shown(mut command: Command) -> bool {
-    command
-        .stdin(Stdio::null())
-        .status()
-        .is_ok_and(|s| s.success())
-}
-
-/// Runs the command with its output and errors interleaved in one log, as a
-/// person would see them, and returns whether it succeeded and the log. The
-/// log is a file removed as soon as it is open, so nothing is left behind.
-pub fn logged(mut command: Command) -> (bool, Vec<u8>) {
+fn log_file() -> io::Result<File> {
     let path = std::env::temp_dir().join(format!(
         "stellarr-installer.{}.{}.log",
         std::process::id(),
         unique()
     ));
-    let Ok(mut log) = File::options()
+    let file = File::options()
         .read(true)
         .write(true)
         .create_new(true)
-        .open(&path)
-    else {
-        let out = command.stdin(Stdio::null()).output();
-        return match out {
-            Ok(out) => {
-                let mut text = out.stdout;
-                text.extend_from_slice(&out.stderr);
-                (out.status.success(), text)
-            }
-            Err(error) => (false, error.to_string().into_bytes()),
-        };
-    };
-    let _ = std::fs::remove_file(&path);
-    let (Ok(out), Ok(err)) = (log.try_clone(), log.try_clone()) else {
-        return (false, b"could not open a log".to_vec());
-    };
-    let ok = match command
-        .stdin(Stdio::null())
-        .stdout(out)
-        .stderr(err)
-        .status()
-    {
-        Ok(status) => status.success(),
-        Err(error) => {
-            return (
-                false,
-                format!("{}: {error}", command.get_program().to_string_lossy()).into_bytes(),
-            );
-        }
-    };
-    let mut text = Vec::new();
-    let _ = log.seek(SeekFrom::Start(0));
-    let _ = log.read_to_end(&mut text);
-    (ok, text)
+        .mode(0o600)
+        .open(&path)?;
+    std::fs::remove_file(&path)?;
+    Ok(file)
+}
+
+fn read_log(mut file: File) -> io::Result<Vec<u8>> {
+    let mut bytes = Vec::new();
+    file.seek(SeekFrom::Start(0))?;
+    file.read_to_end(&mut bytes)?;
+    Ok(bytes)
+}
+
+/// Captures stdout and stderr separately without blocking on inherited pipes.
+pub fn capture(mut command: Command) -> io::Result<Output> {
+    let stdout = log_file()?;
+    let stderr = log_file()?;
+    command
+        .stdout(stdout.try_clone()?)
+        .stderr(stderr.try_clone()?);
+    let status = run(command, None)?;
+    Ok(Output {
+        status,
+        stdout: read_log(stdout)?,
+        stderr: read_log(stderr)?,
+    })
+}
+
+/// The command's output, when it ran and succeeded; its errors are dropped.
+pub fn output(command: Command) -> Option<String> {
+    output_until(command, None)
+}
+
+pub fn output_until(mut command: Command, deadline: Option<Instant>) -> Option<String> {
+    let stdout = log_file().ok()?;
+    command
+        .stdout(stdout.try_clone().ok()?)
+        .stderr(Stdio::null());
+    let status = run(command, deadline).ok()?;
+    status.success().then(|| {
+        read_log(stdout)
+            .ok()
+            .map(|bytes| String::from_utf8_lossy(&bytes).into_owned())
+    })?
+}
+
+/// Whether the command ran and succeeded, with all its output dropped.
+pub fn quiet(command: Command) -> bool {
+    quiet_until(command, None)
+}
+
+pub fn quiet_until(mut command: Command, deadline: Option<Instant>) -> bool {
+    command.stdout(Stdio::null()).stderr(Stdio::null());
+    run(command, deadline).is_ok_and(|status| status.success())
+}
+
+/// Whether the command ran and succeeded, with its output on the screen.
+pub fn shown(command: Command) -> bool {
+    run(command, None).is_ok_and(|status| status.success())
+}
+
+/// Runs the command with its output and errors interleaved in one log.
+pub fn logged(command: Command) -> (bool, Vec<u8>) {
+    logged_until(command, None)
+}
+
+pub fn logged_until(mut command: Command, deadline: Option<Instant>) -> (bool, Vec<u8>) {
+    let result = (|| {
+        let log = log_file()?;
+        command.stdout(log.try_clone()?).stderr(log.try_clone()?);
+        let status = run(command, deadline)?;
+        Ok::<_, io::Error>((status.success(), read_log(log)?))
+    })();
+    result.unwrap_or_else(|error| (false, error.to_string().into_bytes()))
 }
 
 /// A number no other name of this run has had.
@@ -210,8 +280,30 @@ fn write_raw(fd: libc::c_int, text: &[u8]) {
     }
 }
 
+/// Sends the requested signal to the child or its own group. The group gets
+/// a short grace period to stop before any remaining processes are killed.
+unsafe fn signal_child(child: libc::pid_t, signal: libc::c_int) {
+    // SAFETY: the caller supplies a tracked child or process group, and
+    // kill and nanosleep are async-signal-safe.
+    unsafe {
+        libc::kill(child, signal);
+        if child < 0 {
+            let grace = libc::timespec {
+                tv_sec: 0,
+                tv_nsec: 100_000_000,
+            };
+            libc::nanosleep(&grace, std::ptr::null_mut());
+            libc::kill(child, libc::SIGKILL);
+        }
+    }
+}
+
 extern "C" fn on_signal(signal: libc::c_int) {
-    // Only what is safe in a signal handler: plain writes, unlink and _exit.
+    let child = ACTIVE_CHILD.load(Ordering::SeqCst);
+    if child != 0 {
+        // SAFETY: only run registers the active child's ID here.
+        unsafe { signal_child(child, signal) };
+    }
     match OPEN.load(Ordering::Relaxed) {
         2 => write_raw(1, b"\r\x1b[K"),
         1 => write_raw(ASK_FD.load(Ordering::Relaxed), b"\n"),
@@ -244,6 +336,8 @@ pub fn handle_signals() {
         let mut action: libc::sigaction = std::mem::zeroed();
         action.sa_sigaction = on_signal as extern "C" fn(libc::c_int) as libc::sighandler_t;
         libc::sigemptyset(&mut action.sa_mask);
+        libc::sigaddset(&mut action.sa_mask, libc::SIGINT);
+        libc::sigaddset(&mut action.sa_mask, libc::SIGTERM);
         libc::sigaction(libc::SIGINT, &action, std::ptr::null_mut());
         libc::sigaction(libc::SIGTERM, &action, std::ptr::null_mut());
     }

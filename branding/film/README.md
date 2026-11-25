@@ -55,7 +55,7 @@ Both `index.html` and `capture/capture.mjs` locate several elements by visible t
 
 ## Invariants
 
-- **Isolate the Compose project name (`-p stellarr-film`)**: `docker-compose.dev.yml` sets `name: stellarr-dev`. Every Compose invocation for the film must pass `-p stellarr-film` (handled automatically by `film.sh`) so `down -v` never removes the development database volume.
+- **Isolate the Compose project name (`-p stellarr-film`)**: `infra/compose/dev.yml` sets `name: stellarr-dev`. Every Compose invocation for the film must pass `-p stellarr-film` (handled automatically by `film.sh`) so `down -v` never removes the development database volume.
 - **Seed only a fresh disposable instance**: The first registered user automatically becomes the instance owner.
 - **Encode animated WebP with `tools/webp.py`**: `tools/webp.py` encodes complete frames rather than delta sub-rectangles (`libwebp_anim`'s delta patches leave visible compression seams on flat dark surfaces).
 - **Keep frame rendering deterministic**: Do not use CSS animations, transitions, timers, or `Math.random()`. Frames render concurrently across worker tabs and must depend solely on `t`.

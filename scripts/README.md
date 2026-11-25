@@ -20,7 +20,7 @@ Populates a development SQLite database with multi-day sample activity (accounts
 
 ### Usage
 
-By default, `./scripts/seed-dev.sh` inspects the `api` container of the `stellarr-dev` Compose project (`docker-compose.dev.yml` or overlays such as `docker-compose.dev.fresh.yml`) to discover its mounted data volume, `STELLARR_DATA_ROOT` (the database is `db/stellarr.db` in it), and published port automatically. If the `api` container is running, `seed-dev.sh` stops it before writing to SQLite, runs `seed-dev.py`, restarts the container, and waits for `/health/ready`.
+By default, `./scripts/seed-dev.sh` inspects the `api` container of the `stellarr-dev` Compose project to discover its mounted data volume, `STELLARR_DATA_ROOT` (the database is `db/stellarr.db` in it), and published port. Pass `--project stellarr-dev-fresh` if you started the stack with that project name. If the `api` container is running, `seed-dev.sh` stops it before writing to SQLite, runs `seed-dev.py`, restarts the container, and waits for `/health/ready`.
 
 ```bash
 # Seed the active dev stack volume (discovers volume/path from the api container)

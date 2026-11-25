@@ -10,8 +10,8 @@
 #                       is on loopback too
 #   coturn  :3478       only with the "turn" profile
 #
-#   docker compose -f docker-compose.dev.yml up
-#   STELLARR_TURN_ENABLED=true docker compose -f docker-compose.dev.yml --profile turn up
+#   docker compose -f infra/compose/dev.yml up
+#   STELLARR_TURN_ENABLED=true docker compose -f infra/compose/dev.yml --profile turn up
 #
 # The host ports come from STELLARR_DEV_WEB_PORT, STELLARR_DEV_API_PORT,
 # STELLARR_DEV_MEDIA_PORT, STELLARR_DEV_MEDIA_CONTROL_PORT,
@@ -71,7 +71,7 @@ services:
     ports:
       - "${STELLARR_DEV_WEB_PORT:-3000}:3000"
     volumes:
-      - .:/app
+      - ../../:/app
       # Named volumes keep these directories inside Docker; through the bind
       # mount they would be the host's, built for another OS. Packages npm
       # cannot hoist land in the workspace's own node_modules, which also holds
@@ -83,7 +83,7 @@ services:
 
   api:
     build:
-      context: .
+      context: ../..
       dockerfile: Dockerfile
       target: api-dev
     image: stellarr-api-dev:local
@@ -129,7 +129,7 @@ services:
       # For curl; the browser uses the web service.
       - "${STELLARR_DEV_API_PORT:-5000}:5000"
     volumes:
-      - ./api:/app
+      - ../../api:/app
       # Build output and the crate cache stay in the container, apart from a
       # cargo build on the host.
       - api_target:/app/target
@@ -141,7 +141,7 @@ services:
 
   media:
     build:
-      context: .
+      context: ../..
       dockerfile: Dockerfile
       target: media-dev
     image: stellarr-media-dev:local
@@ -166,7 +166,7 @@ services:
       # For curl. Loopback only, because the secret above is in this file.
       - "127.0.0.1:${STELLARR_DEV_MEDIA_CONTROL_PORT:-5200}:5200"
     volumes:
-      - ./media:/app
+      - ../../media:/app
       # Build output and the crate cache stay in the container, apart from a
       # cargo build on the host.
       - media_target:/app/target
@@ -176,7 +176,7 @@ services:
   # changes, sign-in codes, security alerts and activity notifications. The
   # SMTP server is a setting in the database, so point the instance at it once,
   # in Cockpit or with the CLI inside the api container, which
-  # `docker compose -f docker-compose.dev.yml exec api cargo run -q -p stellarr-cli --`
+  # `docker compose -f infra/compose/dev.yml exec api cargo run -q -p stellarr-cli --`
   # runs:
   #
   #   mail.enabled=true  mail.from-address=stellarr@dev.test

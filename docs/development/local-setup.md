@@ -1,6 +1,6 @@
 # Local setup
 
-`docker-compose.dev.yml` runs each service from a bind mount so edits to TypeScript, CSS, or Rust reload without rebuilding the production image.
+`infra/compose/dev.yml` runs each service from a bind mount so edits to TypeScript, CSS, or Rust reload without rebuilding the production image.
 
 ## 1. Build WebAssembly recipes once
 
@@ -15,7 +15,7 @@ Cached runs take seconds; a cold first run downloads `wasi-sdk` and Bergamot's E
 ## 2. Start the development stack
 
 ```bash
-docker compose -f docker-compose.dev.yml up -d
+docker compose -f infra/compose/dev.yml up -d
 ```
 
 The first start installs npm workspace dependencies and compiles the `api` and `media` crates into named Docker volumes.
@@ -28,18 +28,18 @@ The first start installs npm workspace dependencies and compiles the `api` and `
 | `mailpit` | `http://127.0.0.1:8025` (`1025/tcp` SMTP) | Captures outgoing verification, 2FA, reset, and notification emails |
 | `coturn` | `3478` and `49160-49200/udp` on the host network | Optional TURN development profile |
 
-Two browsers on this machine use the advertised loopback media candidate directly. The dev profile `STELLARR_TURN_ENABLED=true docker compose -f docker-compose.dev.yml --profile turn up -d` starts coturn for relay testing. To test a relayed call, advertise an SFU IPv4 address reachable by coturn and the browsers. The default loopback candidate works for local browser calls, while coturn refuses loopback peers.
+Two browsers on this machine use the advertised loopback media candidate directly. The dev profile `STELLARR_TURN_ENABLED=true docker compose -f infra/compose/dev.yml --profile turn up -d` starts coturn for relay testing. To test a relayed call, advertise an SFU IPv4 address reachable by coturn and the browsers. The default loopback candidate works for local browser calls, while coturn refuses loopback peers.
 
 > [!TIP]
-> On macOS, port `5000` is often used by AirPlay Receiver. Override host ports in your shell or `.env` with `STELLARR_DEV_WEB_PORT`, `STELLARR_DEV_API_PORT`, `STELLARR_DEV_MEDIA_PORT`, `STELLARR_DEV_MEDIA_CONTROL_PORT`, or `STELLARR_DEV_MAILPIT_PORT` (see [Configuration: Development stack](../install/configuration.md#development-stack-docker-composedevyml)).
+> On macOS, port `5000` is often used by AirPlay Receiver. Override host ports in your shell or `.env` with `STELLARR_DEV_WEB_PORT`, `STELLARR_DEV_API_PORT`, `STELLARR_DEV_MEDIA_PORT`, `STELLARR_DEV_MEDIA_CONTROL_PORT`, or `STELLARR_DEV_MAILPIT_PORT` (see [Configuration: Development stack](../install/configuration.md#development-stack)).
 
-To start on an empty SQLite volume without touching `stellarr-dev_stellarr_dev_data`, add `docker-compose.dev.fresh.yml`:
+To start with a fresh database volume, use a different Compose project name. Stop the regular development stack first if it is using the same ports.
 
 ```bash
-docker compose -f docker-compose.dev.yml -f docker-compose.dev.fresh.yml up -d
+docker compose -f infra/compose/dev.yml --project-name stellarr-dev-fresh up -d
 ```
 
-Read the setup code with `docker logs stellarr-dev-api-1 2>&1 | grep "Setup code"`, then open `http://localhost:3000/setup`.
+Read the setup code with `docker compose -f infra/compose/dev.yml --project-name stellarr-dev-fresh logs api | grep "Setup code"`, then open `http://localhost:3000/setup`.
 
 ## 3. Seed sample data
 

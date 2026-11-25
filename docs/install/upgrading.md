@@ -59,7 +59,7 @@ To pin a specific release tag during an installer update, pass `--version 1.2.3`
    docker compose up -d
    ```
 
-   *(If `STELLARR_VERSION` names a tag that does not exist in GHCR, `docker compose` attempts a local build and fails if no `Dockerfile` is present in the directory.)*
+   If `STELLARR_VERSION` names a tag that does not exist in GHCR, Compose reports a pull error.
 
 3. Verify the upgrade:
 
