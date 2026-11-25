@@ -150,6 +150,14 @@ Component tokens follow `--ui-<component>-<part>-<property>` and fall back to th
 | `--ui-button-danger-solid-border-width` | `1px` | Transparent border width on `danger-solid` to match outlined sibling height |
 | `--ui-button-danger-solid-hover-bg` | `color-mix(in oklab, var(--ui-danger) 86%, white)` | Hover background fill for `danger-solid` variant |
 | `--ui-button-danger-solid-focus-shadow` | `--ui-focus-shadow` | Focus ring shadow for `danger-solid` variant |
+| `--ui-button-edge-size` | `0px` | Height of the solid edge a labeled button sits on and sinks into when pressed; `0px` draws none. Icon-only, `quiet`, outlined `danger` and toggle buttons never take one |
+| `--ui-button-sm-edge-size` | `--ui-button-edge-size` | The same for `sm` size |
+| `--ui-button-primary-edge` | `transparent` | Edge color for `primary` variant |
+| `--ui-button-secondary-edge` | `transparent` | Edge color for `secondary` variant (not toggles) |
+| `--ui-button-danger-solid-edge` | `transparent` | Edge color for `danger-solid` variant |
+| `--ui-button-disabled-edge` | the variant's edge | Edge color for a disabled button |
+| `--ui-button-secondary-solid-bg`, `--ui-button-secondary-solid-hover-bg` | `transparent`, the idle fill | A filled face for a `secondary` button that is no toggle, used where no scope sets `--ui-button-secondary-bg` or `--ui-button-secondary-hover-bg` |
+| `--ui-button-secondary-solid-border`, `--ui-button-secondary-solid-text` | `--ui-line`, `--ui-text-muted` | Border and text for that filled face, under the same condition |
 
 `Segmented`:
 

@@ -54,6 +54,24 @@
   /* The tick of a chosen option is the accent as text, which is not the accent
      of a fill: the two are mixed differently in every scheme. */
   --ui-dropdown-tick-text: var(--accent-text);
+
+  /*
+   * The website's buttons, in the app: a text button that stands on its own
+   * sits on a solid edge and sinks into it when pressed, and the answer beside
+   * the main one is a filled graphite face rather than an outline. Tools stay
+   * flat: the package gives icon-only, quiet, toggle and outlined-danger
+   * buttons no edge whatever is set here.
+   */
+  --ui-button-edge-size: 3px;
+  --ui-button-sm-edge-size: 2px;
+  --ui-button-primary-edge: var(--accent-edge);
+  --ui-button-danger-solid-edge: color-mix(in oklab, var(--danger-line) 55%, black);
+  --ui-button-disabled-edge: color-mix(in oklab, var(--surface-active) 55%, black);
+  --ui-button-secondary-edge: color-mix(in oklab, var(--surface-active) 55%, black);
+  --ui-button-secondary-solid-bg: var(--surface-active);
+  --ui-button-secondary-solid-hover-bg: color-mix(in oklab, var(--surface-active) 86%, var(--text));
+  --ui-button-secondary-solid-border: transparent;
+  --ui-button-secondary-solid-text: var(--text);
 }
 
 /* Structure never changes with a theme, so one declaration on `:root` serves

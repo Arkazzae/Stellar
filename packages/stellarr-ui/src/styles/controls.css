@@ -25,6 +25,12 @@
        cannot do: a `var()` without a value makes the declaration invalid, and
        the border would turn `currentcolor` instead of keeping its colour. */
     --_border: transparent;
+    /* A standing button's solid edge, the website's: the face sits on it and
+       sinks into it when pressed. Off until an app sets
+       `--ui-button-edge-size`; each variant that takes one names its colour,
+       and tools (icon-only, quiet, toggles, outlined danger) never take one. */
+    --_edge-size: var(--ui-button-edge-size, 0px);
+    --_edge: transparent;
     display: inline-flex;
     flex-shrink: 0;
     align-items: center;
@@ -36,9 +42,15 @@
     font-size: var(--ui-button-font-size, calc(13 * var(--ui-unit)));
     line-height: var(--ui-button-line-height, inherit);
     font-weight: var(--ui-button-font-weight, 600);
-    transition-property: color, background-color, border-color;
+    box-shadow: 0 var(--_edge-size) 0 var(--_edge);
+    transition-property: color, background-color, border-color, transform, box-shadow;
     transition-timing-function: var(--ui-ease);
     transition-duration: var(--ui-dur-fast);
+  }
+
+  .ui-button:active:not(:disabled) {
+    transform: translateY(var(--_edge-size));
+    box-shadow: 0 0 0 var(--_edge);
   }
 
   /* `auto` leaves an icon at the size of its own `width` and `height`
@@ -55,11 +67,20 @@
   }
 
   .ui-button[data-size="sm"] {
+    --_edge-size: var(--ui-button-sm-edge-size, var(--ui-button-edge-size, 0px));
     height: calc(32 * var(--ui-unit));
     gap: var(--ui-button-sm-gap, var(--ui-button-gap, normal));
     padding-inline: var(--ui-button-sm-padding-x, calc(14 * var(--ui-unit)));
     font-size: var(--ui-button-sm-font-size, var(--ui-button-font-size, calc(13 * var(--ui-unit))));
     line-height: var(--ui-button-sm-line-height, var(--ui-button-line-height, inherit));
+  }
+
+  .ui-button[data-size="icon"],
+  .ui-button[data-size="icon-sm"],
+  .ui-button[data-variant="quiet"],
+  .ui-button[data-variant="danger"],
+  .ui-button[aria-pressed] {
+    --_edge-size: 0px;
   }
 
   .ui-button[data-size="icon"] {
@@ -77,15 +98,25 @@
   }
 
   .ui-button[data-variant="primary"] {
+    --_edge: var(--ui-button-primary-edge, transparent);
     background-color: var(--ui-button-primary-bg, var(--ui-accent));
     color: var(--ui-on-accent);
   }
 
   .ui-button[data-variant="secondary"] {
+    --_edge: var(--ui-button-secondary-edge, transparent);
     --_border: var(--ui-button-secondary-border, var(--ui-line));
     border: 1px solid var(--_border);
     background-color: var(--ui-button-secondary-bg, transparent);
     color: var(--ui-button-secondary-text, var(--ui-text-muted));
+  }
+
+  /* A secondary button that is no toggle can take a filled face of the app's
+     own, under any scope that sets the plain secondary tokens. */
+  .ui-button[data-variant="secondary"]:not([aria-pressed]) {
+    --_border: var(--ui-button-secondary-border, var(--ui-button-secondary-solid-border, var(--ui-line)));
+    background-color: var(--ui-button-secondary-bg, var(--ui-button-secondary-solid-bg, transparent));
+    color: var(--ui-button-secondary-text, var(--ui-button-secondary-solid-text, var(--ui-text-muted)));
   }
 
   .ui-button[data-variant="quiet"] {
@@ -103,6 +134,7 @@
      share the space (flex-basis 0) starts from the same base size whether or
      not a sibling is outlined. */
   .ui-button[data-variant="danger-solid"] {
+    --_edge: var(--ui-button-danger-solid-edge, transparent);
     border: var(--ui-button-danger-solid-border-width, 1px) solid var(--_border);
     background-color: var(--ui-danger);
     color: var(--ui-on-danger);
@@ -135,6 +167,17 @@
       color: var(--ui-button-secondary-hover-text, var(--ui-text));
     }
 
+    .ui-button[data-variant="secondary"]:not([aria-pressed]):hover:not(:disabled) {
+      --_border: var(
+        --ui-button-secondary-hover-border,
+        var(--ui-button-secondary-solid-border, var(--ui-line-strong))
+      );
+      background-color: var(
+        --ui-button-secondary-hover-bg,
+        var(--ui-button-secondary-solid-hover-bg, var(--ui-button-secondary-bg, transparent))
+      );
+    }
+
     .ui-button[data-variant="quiet"]:hover:not(:disabled) {
       background-color: var(--ui-button-quiet-hover-bg, var(--ui-hover));
       color: var(--ui-button-quiet-hover-text, var(--ui-text));
@@ -153,16 +196,22 @@
     border-color: var(--ui-focus-border, var(--_border));
     outline: var(--ui-focus-outline, 2px solid var(--ui-ring));
     outline-offset: 2px;
-    box-shadow: var(--ui-focus-shadow, none);
+    box-shadow: var(--ui-focus-shadow, 0 var(--_edge-size) 0 var(--_edge));
   }
 
   .ui-button[data-variant="danger-solid"]:focus-visible {
-    box-shadow: var(--ui-button-danger-solid-focus-shadow, var(--ui-focus-shadow, none));
+    box-shadow: var(
+      --ui-button-danger-solid-focus-shadow,
+      var(--ui-focus-shadow, 0 var(--_edge-size) 0 var(--_edge))
+    );
   }
 
   .ui-button:disabled {
     cursor: default;
     opacity: var(--ui-button-disabled-opacity, 1);
+    /* A button that cannot be pressed keeps its edge, in a colour that does
+       not promise the action. */
+    box-shadow: 0 var(--_edge-size) 0 var(--ui-button-disabled-edge, var(--_edge));
   }
 
   /* A read-only view is full of outlined buttons, such as an edit button on
