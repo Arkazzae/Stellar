@@ -537,7 +537,12 @@
     border-radius:var(--radius-sm);background:var(--accent);color:var(--on-accent);
     font-size:var(--text-12);font-weight:600;
   }
+  .att-vembed .ve-play-inline{
+    box-shadow:0 2px 0 var(--accent-edge);
+    transition:background var(--dur-fast) var(--ease-standard), transform 100ms var(--ease-standard), box-shadow 100ms var(--ease-standard);
+  }
   .att-vembed .ve-play-inline:hover{background:var(--accent-hover)}
+  .att-vembed .ve-play-inline:active{transform:translateY(2px);box-shadow:0 0 0 var(--accent-edge)}
 
   .att-code{
     position:relative;
