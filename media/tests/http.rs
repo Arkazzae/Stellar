@@ -44,6 +44,7 @@ async fn start() -> Server {
 
 struct Reply {
     status: u16,
+    content_type: Option<String>,
     body: Value,
 }
 
@@ -94,13 +95,22 @@ async fn raw_request(
     let _ = stream.read_to_end(&mut buf).await;
     let text = String::from_utf8_lossy(&buf).to_string();
     let status = text.get(9..12).and_then(|s| s.parse().ok()).unwrap_or(0);
-    let body = text.split_once("\r\n\r\n").map_or("", |(_, b)| b);
+    let (head, body) = text.split_once("\r\n\r\n").unwrap_or((&text, ""));
+    let content_type = head.lines().find_map(|line| {
+        let (name, value) = line.split_once(':')?;
+        name.eq_ignore_ascii_case("content-type")
+            .then(|| value.trim().to_owned())
+    });
     let body = if body.is_empty() {
         Value::Null
     } else {
         serde_json::from_str(body).unwrap_or_else(|_| Value::String(body.to_string()))
     };
-    Reply { status, body }
+    Reply {
+        status,
+        content_type,
+        body,
+    }
 }
 
 async fn post(server: &Server, path: &str, body: Value) -> Reply {
@@ -156,6 +166,7 @@ async fn health_needs_no_secret() {
 
     let reply = request(&server, "GET", "/v1/health", None, None).await;
     assert_eq!(reply.status, 200);
+    assert_eq!(reply.content_type.as_deref(), Some("application/json"));
     assert_eq!(reply.body["status"], "ok");
     assert_eq!(reply.body["version"], env!("CARGO_PKG_VERSION"));
     assert_eq!(reply.body["epoch"], server.epoch());
@@ -189,6 +200,7 @@ async fn every_other_route_needs_the_secret() {
         ] {
             let reply = request(&server, method, path, secret, Some("{}")).await;
             assert_eq!(reply.status, 401, "{method} {path} with {secret:?}");
+            assert_eq!(reply.content_type.as_deref(), Some("application/json"));
             assert_eq!(reply.body["error"], "unauthorized");
             assert!(reply.body["detail"].is_string());
         }
@@ -607,6 +619,18 @@ async fn the_event_poll_resets_another_epoch_and_validates_its_query() {
     )
     .await;
     assert_eq!(reply.body["reset"], true);
+
+    // Percent-encoded keys and values are decoded, and the last value wins.
+    let reply = get(
+        &server,
+        &format!(
+            "/v1/events?epoch=old&%65poch={}&after=99&after=%30",
+            server.epoch()
+        ),
+    )
+    .await;
+    assert_eq!(reply.status, 200);
+    assert_eq!(reply.body["reset"], false);
 
     for path in [
         "/v1/events?after=-1",
