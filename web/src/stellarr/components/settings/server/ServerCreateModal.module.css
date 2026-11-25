@@ -129,6 +129,8 @@
   line-height: 1.5;
 }
 
+.importAction { margin-top: 14px; }
+
 .fields {
   display: flex;
   flex-direction: column;

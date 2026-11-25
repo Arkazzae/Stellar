@@ -28,12 +28,18 @@ pub struct PageCard {
     pub description: Option<String>,
     /// An absolute `http` or `https` address, in the form [`Link`] writes.
     pub image_url: Option<String>,
+    /// A still image to use if the GIF advertised by the page is too large.
+    pub fallback_image_url: Option<String>,
+    pub animation_url: Option<String>,
 }
 
 impl PageCard {
     /// Whether the page said nothing a card can show.
     pub fn is_empty(&self) -> bool {
-        self.title.is_none() && self.description.is_none() && self.image_url.is_none()
+        self.title.is_none()
+            && self.description.is_none()
+            && self.image_url.is_none()
+            && self.animation_url.is_none()
     }
 }
 
@@ -58,24 +64,60 @@ pub fn parse_open_graph(html: &str, page: &Link) -> PageCard {
     // og:title is the page's answer and the title element is not asked
     // after it.
     let mut meta: [Option<&str>; 7] = [None; 7];
+    let gif_page = matches!(page.domain(), "klipy.com" | "tenor.com");
+    let mut gif = None;
+    let mut animation_url = None;
     for_each_meta(head, |key, content| {
         if let Some(slot) = WANTED.iter().position(|wanted| *wanted == key)
             && meta[slot].is_none()
         {
             meta[slot] = Some(content);
         }
+        if gif_page && key == "og:image" && gif.is_none() {
+            gif = page
+                .join(&decode_entities(content))
+                .filter(|link| link.path().to_ascii_lowercase().ends_with(".gif"))
+                .map(|link| link.to_string());
+        }
+        if gif_page && key == "og:video" && animation_url.is_none() {
+            animation_url = absolute_web_address(Some(content), page)
+                .and_then(|address| gif_animation_url(page, &address));
+        }
     });
 
     let first = |slots: &[usize]| slots.iter().find_map(|slot| meta[*slot]);
     let title = first(&[0, 1]).or_else(|| title_element(head));
     let description = first(&[2, 3, 4]);
-    let image = first(&[5, 6]);
+    let image = absolute_web_address(first(&[5, 6]), page);
+    let fallback_image_url = image
+        .clone()
+        .filter(|still| gif.as_ref().is_some_and(|gif| gif != still));
 
     PageCard {
         title: clean_text(title, MAX_TITLE),
         description: clean_text(description, MAX_DESCRIPTION),
-        image_url: absolute_web_address(image, page),
+        image_url: gif.or(image),
+        fallback_image_url,
+        animation_url,
     }
+}
+
+/// Trusted MP4 renditions for GIF pages, which often advertise them beside
+/// the image. Arbitrary site videos never become autoplaying previews.
+pub fn gif_animation_url(page: &Link, address: &str) -> Option<String> {
+    let link = Link::parse(address)?;
+    let provider_media = match page.domain() {
+        "tenor.com" => matches!(link.host(), "media.tenor.com" | "media1.tenor.com"),
+        "klipy.com" => matches!(
+            link.host(),
+            "static.klipy.com" | "static1.klipy.com" | "static2.klipy.com"
+        ),
+        _ => false,
+    };
+    if provider_media && link.is_https() && link.path().ends_with(".mp4") {
+        return link.fetch_address();
+    }
+    None
 }
 
 /// Where the head ends: at the first `</head`, whitespace and a `>` after it
@@ -157,6 +199,7 @@ fn for_each_meta<'a>(head: &'a str, mut found: impl FnMut(&str, &'a str)) {
 fn canonical(key: &str) -> &str {
     match key {
         "og:image:url" | "og:image:secure_url" => "og:image",
+        "og:video:url" | "og:video:secure_url" => "og:video",
         "twitter:image:src" => "twitter:image",
         other => other,
     }
@@ -297,6 +340,36 @@ mod tests {
 
     fn card(html: &str) -> PageCard {
         parse_open_graph(html, &page())
+    }
+
+    #[test]
+    fn a_klipy_page_can_advertise_a_gif_after_its_still_image() {
+        let card = parse_open_graph(
+            r#"<meta property="og:image" content="https://static.klipy.com/cover.webp">
+               <meta property="og:image" content="https://static.klipy.com/wave.gif">"#,
+            &Link::parse("https://klipy.com/gifs/wave").unwrap(),
+        );
+        assert_eq!(
+            card.image_url.as_deref(),
+            Some("https://static.klipy.com/wave.gif")
+        );
+        assert_eq!(
+            card.fallback_image_url.as_deref(),
+            Some("https://static.klipy.com/cover.webp")
+        );
+    }
+
+    #[test]
+    fn a_tenor_page_uses_its_own_mp4_as_an_animation() {
+        let card = parse_open_graph(
+            r#"<meta property="og:video" content="https://other.test/wave.mp4">
+               <meta property="og:video:secure_url" content="https://media.tenor.com/id/wave.mp4">"#,
+            &Link::parse("https://tenor.com/view/wave-123").unwrap(),
+        );
+        assert_eq!(
+            card.animation_url.as_deref(),
+            Some("https://media.tenor.com/id/wave.mp4")
+        );
     }
 
     #[test]

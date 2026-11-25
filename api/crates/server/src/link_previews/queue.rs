@@ -10,6 +10,7 @@ use crate::values::Id;
 /// How many messages wait at most. A preview is decoration, so a flood may
 /// cost cards but never a send and never the process's memory.
 const CAPACITY: usize = 256;
+const IMPORTED_CAPACITY: usize = 48;
 
 /// A message whose links are waiting to be read.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -28,6 +29,8 @@ pub struct PreviewRequest {
 pub struct PreviewQueue {
     requests: Mutex<VecDeque<PreviewRequest>>,
     arrived: Notify,
+    imported: Mutex<VecDeque<PreviewRequest>>,
+    imported_arrived: Notify,
 }
 
 impl PreviewQueue {
@@ -60,6 +63,34 @@ impl PreviewQueue {
             }
             self.arrived.notified().await;
         }
+    }
+
+    pub(super) async fn next_imported(&self) -> PreviewRequest {
+        loop {
+            let taken = self
+                .imported
+                .lock()
+                .unwrap_or_else(|poisoned| poisoned.into_inner())
+                .pop_front();
+            if let Some(request) = taken {
+                return request;
+            }
+            self.imported_arrived.notified().await;
+        }
+    }
+
+    pub(super) fn enqueue_imported(&self, request: PreviewRequest) {
+        {
+            let mut requests = self
+                .imported
+                .lock()
+                .unwrap_or_else(|poisoned| poisoned.into_inner());
+            if requests.len() >= IMPORTED_CAPACITY || requests.contains(&request) {
+                return;
+            }
+            requests.push_back(request);
+        }
+        self.imported_arrived.notify_one();
     }
 
     pub fn len(&self) -> usize {

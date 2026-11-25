@@ -84,6 +84,20 @@ async fn a_normal_page_becomes_a_card_with_its_picture_and_says_who_is_asking() 
 }
 
 #[tokio::test]
+async fn an_address_that_serves_a_gif_becomes_a_preview_in_one_request() {
+    let gif = b"GIF89a\x01\x00\x01\x00";
+    let server = Server::page("image/gif", gif.to_vec()).await;
+    let preview = fetcher(&["page.test"], settings())
+        .preview(&link(&server.url("page.test", "/animation")))
+        .await
+        .unwrap();
+
+    assert_eq!(preview.provider, "gif");
+    assert_eq!(preview.thumbnail.unwrap().bytes, gif);
+    assert_eq!(server.recorded().len(), 1);
+}
+
+#[tokio::test]
 async fn a_private_address_is_refused_unless_the_operator_allows_it() {
     let server = Server::page("text/html", b"<title>Local &amp; private</title>".to_vec()).await;
     let closed = fetcher(&["page.test"], settings()).with_address_policy(AddressPolicy::PublicOnly);

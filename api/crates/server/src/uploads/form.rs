@@ -41,6 +41,44 @@ pub struct Staged {
 }
 
 impl Staged {
+    /// Receives a bounded outbound file into the same staging area as uploads.
+    pub(crate) async fn from_download(
+        staging: &Path,
+        file_name: String,
+        content_type: String,
+        length: u64,
+        mut body: stellarr_outbound::ResponseBody,
+    ) -> Result<Option<Self>, std::io::Error> {
+        let path = staging.join(format!("{}.part", Id::random()));
+        let mut file = File::create(&path).await?;
+        let mut staged = Self {
+            file_name,
+            content_type,
+            length: 0,
+            header: Vec::with_capacity(HEADER_BYTES),
+            path: Some(path),
+        };
+        loop {
+            let chunk = match body.chunk().await {
+                Ok(Some(chunk)) => chunk,
+                Ok(None) => break,
+                Err(_) => return Ok(None),
+            };
+            staged.length += chunk.len() as u64;
+            if staged.length > length {
+                return Ok(None);
+            }
+            let room = HEADER_BYTES.saturating_sub(staged.header.len());
+            staged.header.extend_from_slice(&chunk[..chunk.len().min(room)]);
+            file.write_all(&chunk).await?;
+        }
+        if staged.length != length {
+            return Ok(None);
+        }
+        file.flush().await?;
+        Ok(Some(staged))
+    }
+
     /// The file opened for reading, from its first byte.
     pub async fn open(&self) -> std::io::Result<File> {
         match &self.path {

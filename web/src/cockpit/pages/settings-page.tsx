@@ -169,6 +169,30 @@ function InstanceCard({ settings, update, errors }: CardProps) {
   );
 }
 
+const MIB = 1024 * 1024;
+
+function UploadQuotaCard({ value, onChange, errors }: {
+  value: string;
+  onChange: (value: string) => void;
+  errors?: string[];
+}) {
+  return (
+    <Section title={t("settings.storage.title")} description={t("settings.storage.description")}>
+      <Field
+        id="upload-user-limit"
+        label={t("settings.storage.userLimit")}
+        hint={t("settings.storage.userLimitHint")}
+        type="number"
+        min={0}
+        step="any"
+        value={value}
+        onChange={(event) => onChange(event.target.value)}
+        errors={errors}
+      />
+    </Section>
+  );
+}
+
 type RetentionKey = "backupRetentionDays" | "logRetentionDays" | "orphanObjectRetentionDays";
 
 function RetentionField({
@@ -588,6 +612,7 @@ export function SettingsPage() {
   // What the server last stored, once a save has returned it, and the edits made since.
   const [stored, setStored] = useState<CockpitSettings | null>(null);
   const [edits, setEdits] = useState<Partial<CockpitSettings>>({});
+  const [uploadQuota, setUploadQuota] = useState<string | null>(null);
   // The security card's edits, kept apart: each save sends and clears only its own.
   const [securityEdits, setSecurityEdits] = useState<CockpitSecurityChanges>({});
   // One save at a time: each sends the stored values of what it does not own.
@@ -606,6 +631,11 @@ export function SettingsPage() {
     ? SECURITY_LIMITS.every((limit) => withinLimit(security[limit.field], limit))
     : false;
   const canSaveSecurity = saving === null && securityChanged && securityValid;
+  const quotaMiB = uploadQuota === null || uploadQuota.trim() === "" ? NaN : Number(uploadQuota);
+  const quotaBytes = Math.round(quotaMiB * MIB);
+  const quotaValid = uploadQuota === null || (
+    Number.isSafeInteger(quotaBytes) && (quotaBytes > 0 || quotaMiB === 0)
+  );
 
   const update: Update = (key, value) => {
     setEdits((current) => ({ ...current, [key]: value }));
@@ -628,14 +658,18 @@ export function SettingsPage() {
 
   async function save(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    if (!settings || saving) return;
+    if (!settings || saving || !quotaValid) return;
     setSaving("settings");
     setSaved(false);
     setSaveError(null);
     setFieldErrors({});
     try {
-      setStored(await cockpitApi.updateSettings(settings));
+      const savedSettings = uploadQuota === null
+        ? await cockpitApi.updateSettings(settings)
+        : await cockpitApi.updateSettings(settings, { uploadUserLimitBytes: quotaBytes });
+      setStored(savedSettings);
       setEdits({});
+      setUploadQuota(null);
       setSaved(true);
       await reload();
     } catch (cause) {
@@ -672,7 +706,7 @@ export function SettingsPage() {
         title={t("settings.title")}
         description={t("settings.description")}
         actions={
-          <Button type="submit" form="cockpit-settings-form" disabled={!settings || saving !== null}>
+          <Button type="submit" form="cockpit-settings-form" disabled={!settings || saving !== null || !quotaValid}>
             {saving === "settings" ? <Spinner /> : null}
             {saving === "settings" ? t("common.saving") : t("settings.save")}
           </Button>
@@ -716,6 +750,18 @@ export function SettingsPage() {
         >
           <div className="space-y-6">
             <InstanceCard settings={settings} update={update} errors={fieldErrors} />
+            {settings.uploadUserLimitBytes !== undefined && (
+              <UploadQuotaCard
+                value={uploadQuota ?? String(settings.uploadUserLimitBytes / MIB)}
+                onChange={(value) => {
+                  setUploadQuota(value);
+                  setSaved(false);
+                  setSaveError(null);
+                  setFieldErrors({});
+                }}
+                errors={quotaValid ? fieldErrors.uploadUserLimitBytes : [t("settings.storage.invalidQuota")]}
+              />
+            )}
             <RetentionCard settings={settings} update={update} errors={fieldErrors} />
             <SecurityCard
               settings={security}

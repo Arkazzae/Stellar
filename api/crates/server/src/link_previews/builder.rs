@@ -5,9 +5,10 @@
 //! message ends in the same state and never in duplicates.
 
 use rusqlite::{OptionalExtension, params};
-use stellarr_embeds::{Fetcher, Preview, PreviewKind, extract_links};
+use stellarr_embeds::{Fetcher, PageCard, Preview, PreviewKind, extract_links};
 use tracing::{debug, warn};
 
+use super::imported::{ImportedCard, retry_before};
 use super::thumbnails::{NOBODY, discard_thumbnails, roll_back};
 use crate::database::DbError;
 use crate::http::AttemptLimiter;
@@ -31,6 +32,13 @@ struct Stored {
     size: i64,
 }
 
+struct Source {
+    content: String,
+    author: Id,
+    edited_at: Option<Timestamp>,
+    cards: Option<String>,
+}
+
 /// Rebuilds the cards of a message and returns them. Empty when the message
 /// has no link worth a card, or does not exist any more.
 pub async fn build(
@@ -38,30 +46,61 @@ pub async fn build(
     fetcher: &Fetcher,
     message: Id,
     unfurls: &AttemptLimiter,
-) -> Result<Vec<MessageEmbedDto>, DbError> {
-    let content = state
+    imported: bool,
+) -> Result<Option<Vec<MessageEmbedDto>>, DbError> {
+    let source = state
         .database()
-        .read(move |db| -> Result<Option<(String, Id)>, DbError> {
+        .read(move |db| -> Result<Option<Source>, DbError> {
             Ok(db
                 .query_row(
-                    "SELECT \"Content\", \"AuthorId\" FROM \"Messages\" WHERE \"Id\" = ?1",
-                    [message],
-                    |row| Ok((row.get(0)?, row.get(1)?)),
+                    "SELECT m.\"Content\", m.\"AuthorId\", m.\"EditedAt\", p.\"Cards\"
+                     FROM \"Messages\" m LEFT JOIN \"DiscordImportPreviews\" p ON p.\"MessageId\" = m.\"Id\"
+                     WHERE m.\"Id\" = ?1
+                       AND (NOT ?2 OR ((p.\"AttemptedAt\" IS NULL OR p.\"AttemptedAt\" < ?3)
+                         AND NOT EXISTS (SELECT 1 FROM \"MessageEmbeds\" e WHERE e.\"MessageId\" = m.\"Id\")))",
+                    params![message, imported, retry_before()],
+                    |row| Ok(Source { content: row.get(0)?, author: row.get(1)?, edited_at: row.get(2)?, cards: row.get(3)? }),
                 )
                 .optional()?)
         })
         .await?;
-    let Some((content, author)) = content else {
-        return Ok(Vec::new());
+    let Some(source) = source else {
+        return Ok(None);
     };
 
     let mut previews = Vec::new();
-    let links = extract_links(&content, fetcher.settings().max_per_message);
+    let links = extract_links(&source.content, fetcher.settings().max_per_message);
+    let cards: Vec<ImportedCard> = source
+        .cards
+        .as_deref()
+        .and_then(|data| serde_json::from_str(data).ok())
+        .unwrap_or_default();
     for (position, link) in links.iter().enumerate() {
-        if !unfurls.try_acquire(author) {
+        // The history queue is already limited across all imported authors.
+        if !imported && !unfurls.try_acquire(source.author) {
             break;
         }
-        match fetcher.preview(link).await {
+        let address = link.fetch_address();
+        let card = cards
+            .iter()
+            .find(|card| Some(card.url.as_str()) == address.as_deref())
+            .map(|card| PageCard {
+                title: card.title.clone(),
+                description: card.description.clone(),
+                image_url: card.image_url.clone(),
+                fallback_image_url: None,
+                animation_url: card.animation_url.clone(),
+            });
+        let result = match card {
+            Some(card) => match fetcher.preview_with_metadata(link, Some(card)).await {
+                Ok(preview) if preview.thumbnail.is_some() || preview.animation.is_some() => {
+                    Ok(preview)
+                }
+                preferred => fetcher.preview(link).await.or(preferred),
+            },
+            None => fetcher.preview(link).await,
+        };
+        match result {
             Ok(preview) => previews.push((position, preview)),
             // A page that says nothing about itself is worse than the link the
             // reader can already see.
@@ -71,8 +110,14 @@ pub async fn build(
 
     let bytes = previews
         .iter()
-        .filter_map(|(_, preview)| preview.thumbnail.as_ref())
-        .map(|image| i64::try_from(image.size()).unwrap_or(i64::MAX))
+        .filter_map(|(_, preview)| {
+            preview
+                .animation
+                .as_ref()
+                .map(Vec::len)
+                .or_else(|| preview.thumbnail.as_ref().map(|image| image.size()))
+        })
+        .map(|size| i64::try_from(size).unwrap_or(i64::MAX))
         .fold(0i64, i64::saturating_add);
     // Reserve all pictures for one message with one slot, through the commit.
     let lease = if bytes > 0 {
@@ -88,30 +133,48 @@ pub async fn build(
     for (position, mut preview) in previews {
         if lease.is_none() {
             preview.thumbnail = None;
+            preview.animation = None;
         }
         built.push(make(state, preview, position).await);
     }
-    let replaced = replace(state, message, built).await;
-    let (embeds, replaced) = match replaced {
-        Ok(done) => done,
-        Err((error, keys)) => {
-            // Images already stored belong to no row, and would stay forever.
-            roll_back(state, keys).await;
-            return Err(error);
-        }
-    };
+    let keys: Vec<String> = built
+        .iter()
+        .filter_map(|card| card.picture.as_ref().map(|stored| stored.key.clone()))
+        .collect();
+    let replaced = replace(state, message, source, built, imported).await;
     drop(lease);
-    discard_thumbnails(state, replaced).await;
-    Ok(embeds)
+    match replaced {
+        Ok(Some((embeds, replaced))) => {
+            discard_thumbnails(state, replaced).await;
+            Ok(Some(embeds))
+        }
+        other => {
+            // Images already stored belong to no row if the message changed,
+            // disappeared or the transaction failed.
+            roll_back(state, keys).await;
+            other.map(|_| None)
+        }
+    }
 }
 
 /// One card from what was read of its link, with its picture copied into our
 /// own storage: putting the other host's address in an `img` tag would tell it
 /// who reads this channel, and when.
 async fn make(state: &AppState, preview: Preview, position: usize) -> Built {
-    let picture = match &preview.thumbnail {
-        Some(image) => store(state, image).await,
-        None => None,
+    let picture = match (&preview.animation, &preview.thumbnail) {
+        (Some(bytes), _) => store(state, bytes, "preview.mp4".into(), "video/mp4").await,
+        (None, Some(image)) => {
+            store(state, &image.bytes, image.file_name(), image.content_type()).await
+        }
+        _ => None,
+    };
+    let media_url = picture
+        .as_ref()
+        .map(|stored| format!("/assets/{}", stored.id));
+    let (thumbnail_url, animation_url) = if preview.animation.is_some() {
+        (None, media_url)
+    } else {
+        (media_url, None)
     };
     let id = Id::random();
     Built {
@@ -129,9 +192,8 @@ async fn make(state: &AppState, preview: Preview, position: usize) -> Built {
             domain: preview.domain,
             title: preview.title,
             description: preview.description,
-            thumbnail_url: picture
-                .as_ref()
-                .map(|stored| format!("/assets/{}", stored.id)),
+            thumbnail_url,
+            animation_url,
         },
         position: i64::try_from(position).unwrap_or(i64::MAX),
         created_at: Timestamp::now(),
@@ -139,9 +201,14 @@ async fn make(state: &AppState, preview: Preview, position: usize) -> Built {
     }
 }
 
-async fn store(state: &AppState, image: &stellarr_embeds::FetchedImage) -> Option<Stored> {
+async fn store(
+    state: &AppState,
+    mut bytes: &[u8],
+    name: String,
+    content_type: &'static str,
+) -> Option<Stored> {
     let id = Id::random();
-    let name = image.file_name();
+    let size = i64::try_from(bytes.len()).unwrap_or(i64::MAX);
     let extension = name.rfind('.').map_or("", |dot| &name[dot..]);
     let now = Timestamp::now().to_db_text();
     let key = format!(
@@ -150,7 +217,6 @@ async fn store(state: &AppState, image: &stellarr_embeds::FetchedImage) -> Optio
         &now[5..7],
         id.to_string().replace('-', "")
     );
-    let mut bytes = image.bytes.as_slice();
     if let Err(error) = state.storage().put(&key, &mut bytes).await {
         warn!("a preview picture could not be stored: {error}");
         return None;
@@ -159,27 +225,34 @@ async fn store(state: &AppState, image: &stellarr_embeds::FetchedImage) -> Optio
         id,
         key,
         name,
-        content_type: image.content_type(),
-        size: i64::try_from(image.size()).unwrap_or(i64::MAX),
+        content_type,
+        size,
     })
 }
 
 /// Swaps the cards of a message for `built` in one transaction, so that nobody
 /// reads it with the old set gone and the new one not there yet. Gives the
-/// cards, and the pictures the old ones used; on failure, the keys of the
-/// pictures that were stored for nothing.
+/// cards and the pictures the old ones used, unless the message changed while
+/// the links were being fetched.
 async fn replace(
     state: &AppState,
     message: Id,
+    source: Source,
     built: Vec<Built>,
-) -> Result<(Vec<MessageEmbedDto>, Vec<Id>), (DbError, Vec<String>)> {
-    let keys: Vec<String> = built
-        .iter()
-        .filter_map(|card| card.picture.as_ref().map(|stored| stored.key.clone()))
-        .collect();
-    let written = state
+    imported: bool,
+) -> Result<Option<(Vec<MessageEmbedDto>, Vec<Id>)>, DbError> {
+    state
         .database()
-        .write(move |tx| -> Result<(Vec<MessageEmbedDto>, Vec<Id>), DbError> {
+        .write(move |tx| -> Result<_, DbError> {
+            let current: bool = tx.query_row(
+                "SELECT EXISTS (SELECT 1 FROM \"Messages\"
+                 WHERE \"Id\" = ?1 AND \"Content\" = ?2 AND \"EditedAt\" IS ?3)",
+                params![message, source.content, source.edited_at],
+                |row| row.get(0),
+            )?;
+            if !current {
+                return Ok(None);
+            }
             let replaced = super::thumbnails::clear_embeds(tx, message)?;
             let mut embeds = Vec::with_capacity(built.len());
             for card in built {
@@ -216,8 +289,14 @@ async fn replace(
                 )?;
                 embeds.push(card.embed);
             }
-            Ok((embeds, replaced))
+            if imported {
+                tx.execute(
+                    "INSERT INTO \"DiscordImportPreviews\" (\"MessageId\", \"AttemptedAt\") VALUES (?1, ?2)
+                     ON CONFLICT (\"MessageId\") DO UPDATE SET \"AttemptedAt\" = excluded.\"AttemptedAt\"",
+                    params![message, Timestamp::now()],
+                )?;
+            }
+            Ok(Some((embeds, replaced)))
         })
-        .await;
-    written.map_err(|error| (error, keys))
+        .await
 }

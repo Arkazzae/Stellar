@@ -138,6 +138,7 @@ message_keys! {
     CockpitCloudflareR2Invalid,
     CockpitLogRetentionRange,
     CockpitOrphanRetentionRange,
+    CockpitUploadQuotaRange,
     CockpitVersionInvalid,
     CockpitRecommendedBelowMinimum,
     CockpitReleaseManifestBroken,

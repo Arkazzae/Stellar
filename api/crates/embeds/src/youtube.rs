@@ -64,6 +64,8 @@ pub fn parse_oembed(json: &[u8], expected_video_id: &str) -> Option<PageCard> {
         title,
         description: None,
         image_url: thumbnail,
+        fallback_image_url: None,
+        animation_url: None,
     })
 }
 

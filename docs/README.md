@@ -17,6 +17,7 @@ Stellarr is self-hosted text, voice, and video chat for small groups of friends,
 ## Administration
 
 - [Servers, channels, and features](admin/servers-and-features.md): text channels, threads, polls, soundboards, arrival clips, roles, permissions, private channels (`viewChannel`), and 1:1 E2EE.
+- [Import from Discord](admin/servers-and-features.md#import-from-discord) covers bot setup, available channels and history, copying attachments, and resuming an import.
 - [Stellarr Cockpit](admin/cockpit.md): `/cockpit` operator panel for accounts, servers, runtime telemetry, logs, backups, integrations, and settings.
 - [Operator CLI](admin/cli.md): inspect health, edit database settings, seal secrets, revoke sessions, recover accounts, and stage restores with `stellarr`.
 - [Account security](admin/account-security.md): passkeys, TOTP, email codes, OIDC linking and passwordless sign-ups, instance MFA policy, and account recovery.

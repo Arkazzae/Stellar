@@ -10,7 +10,7 @@ use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
 
-use rusqlite::{Connection, params};
+use rusqlite::{Connection, OptionalExtension, params};
 use tokio::sync::{OwnedSemaphorePermit, Semaphore};
 use tracing::warn;
 
@@ -24,6 +24,27 @@ pub enum Refusal {
     UserQuota,
     InstanceQuota,
     LowDiskSpace,
+}
+
+/// The limit saved in Cockpit, or the installation's configured default.
+pub(crate) fn user_limit(db: &Connection, configured: i64) -> rusqlite::Result<i64> {
+    Ok(db
+        .query_row(
+            "SELECT \"UserBytes\" FROM \"UploadLimits\" WHERE \"Id\" = 1",
+            [],
+            |row| row.get(0),
+        )
+        .optional()?
+        .unwrap_or(configured.max(0)))
+}
+
+pub(crate) fn set_user_limit(db: &Connection, bytes: i64) -> rusqlite::Result<()> {
+    db.execute(
+        "INSERT INTO \"UploadLimits\" (\"Id\", \"UserBytes\") VALUES (1, ?1)
+         ON CONFLICT (\"Id\") DO UPDATE SET \"UserBytes\" = excluded.\"UserBytes\"",
+        [bytes],
+    )?;
+    Ok(())
 }
 
 #[derive(Clone)]
@@ -95,13 +116,7 @@ impl AdmissionGate {
         user: Id,
         bytes: i64,
     ) -> Result<Result<Lease, Refusal>, DbError> {
-        self.reserve(
-            database,
-            user,
-            bytes,
-            self.inner.limits.max_stored_bytes_per_user,
-        )
-        .await
+        self.reserve(database, user, bytes, false).await
     }
 
     pub async fn enter_previews(
@@ -109,21 +124,7 @@ impl AdmissionGate {
         database: &Database,
         bytes: i64,
     ) -> Result<Result<Lease, Refusal>, DbError> {
-        // Existing previews are already charged to this shared bucket. Keep
-        // most of the instance quota available for user uploads.
-        const PREVIEW_BYTES: i64 = 256 * 1024 * 1024;
-        let quotas = &self.inner.limits;
-        let mut limit = PREVIEW_BYTES;
-        if quotas.max_stored_bytes_per_user > 0 {
-            limit = limit.min(quotas.max_stored_bytes_per_user);
-        }
-        if quotas.max_stored_bytes > 0 {
-            limit = limit.min(quotas.max_stored_bytes / 10);
-        }
-        if limit == 0 {
-            return Ok(Err(Refusal::UserQuota));
-        }
-        self.reserve(database, crate::link_previews::NOBODY, bytes, limit)
+        self.reserve(database, crate::link_previews::NOBODY, bytes, true)
             .await
     }
 
@@ -132,7 +133,7 @@ impl AdmissionGate {
         database: &Database,
         user: Id,
         bytes: i64,
-        user_limit: i64,
+        preview: bool,
     ) -> Result<Result<Lease, Refusal>, DbError> {
         let inner = &self.inner;
         let slot = Arc::clone(&inner.slots)
@@ -140,8 +141,11 @@ impl AdmissionGate {
             .await
             .map_err(|_| DbError::Task("the upload slots were closed".to_string()))?;
         let _turn = inner.turnstile.lock().await;
-        let stored = database
-            .read(move |db| -> Result<Stored, DbError> { Ok(Stored::of(db, user)?) })
+        let configured = inner.limits.max_stored_bytes_per_user;
+        let (stored, mut limit) = database
+            .read(move |db| -> Result<(Stored, i64), DbError> {
+                Ok((Stored::of(db, user)?, user_limit(db, configured)?))
+            })
             .await?;
         let (user_reserved, total_reserved) = {
             let reserved = inner.reserved();
@@ -151,7 +155,22 @@ impl AdmissionGate {
             )
         };
         let limits = &inner.limits;
-        if would_exceed(stored.user, user_reserved, bytes, user_limit) {
+        if preview {
+            // Keep most of the instance quota available for user uploads.
+            const PREVIEW_BYTES: i64 = 256 * 1024 * 1024;
+            limit = if limit > 0 {
+                limit.min(PREVIEW_BYTES)
+            } else {
+                PREVIEW_BYTES
+            };
+            if limits.max_stored_bytes > 0 {
+                limit = limit.min(limits.max_stored_bytes / 10);
+            }
+            if limit == 0 {
+                return Ok(Err(Refusal::UserQuota));
+            }
+        }
+        if would_exceed(stored.user, user_reserved, bytes, limit) {
             return Ok(Err(Refusal::UserQuota));
         }
         if would_exceed(stored.total, total_reserved, bytes, limits.max_stored_bytes) {

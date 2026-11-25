@@ -15,6 +15,7 @@ Hop into voice, stream your game in 4K 60 fps without paying for Nitro, spam the
 
 - Stream games and screens up to 4K 60 fps with stereo audio and mid-stream quality switching, talk in Opus up to 256 kb/s, and clean up noisy mics right in the browser.
 - Run public and private channels with roles, threads, polls, and voice messages. Bring your own emojis, hit the server soundboard, or set a walk-on clip for when you join voice.
+- [Import from Discord](docs/admin/servers-and-features.md#import-from-discord) to copy selected public channels and message history into a new private Stellarr server. Copy attachments from the import report.
 - Make the app yours with dark and light themes, custom colors, self-hosted fonts, and wallpapers. Share themes with friends as a file, or import a BetterDiscord theme.
 - Translate messages right inside the browser, offline and without character limits, starting with English and Polish.
 
@@ -35,7 +36,6 @@ Under the hood, the entire backend is written in Rust: a custom WebRTC media ser
 - Dedicated desktop and mobile clients alongside the web app.
 - An Activities SDK for running shared mini-apps and games right inside your server.
 - More languages for offline in-browser translation beyond English and Polish.
-- Import your Discord server structure and history.
 
 ## Try it
 

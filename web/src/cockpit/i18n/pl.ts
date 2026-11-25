@@ -310,6 +310,11 @@ export const pl = {
   "settings.instance.publicUrl": "Publiczny adres",
   "settings.instance.publicUrlHint": "Wynika ze STELLARR_DOMAIN w środowisku serwera. Używany w zaproszeniach i wiadomościach systemowych.",
   "settings.instance.timeZone": "Strefa czasowa serwera",
+  "settings.storage.title": "Miejsce na pliki",
+  "settings.storage.description": "Limit dotyczy plików jednego konta na wszystkich serwerach tej instancji. Obejmuje też załączniki zaimportowane z Discorda.",
+  "settings.storage.userLimit": "Limit plików na konto (MiB)",
+  "settings.storage.userLimitHint": "Wpisz 0, aby zdjąć limit z konta. Nadal obowiązują limit instancji i rezerwa wolnego miejsca na dysku.",
+  "settings.storage.invalidQuota": "Podaj nieujemny limit miejsca na pliki.",
   "settings.retention.title": "Retencja danych",
   "settings.retention.description":
     "Limity są zapisywane już teraz; zadania sprzątające powstaną osobno.",
