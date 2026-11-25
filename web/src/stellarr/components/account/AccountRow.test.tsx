@@ -1,9 +1,12 @@
 import { render, screen, within } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 
+import type { VoiceSeatVM } from "@/components/view-models";
+import { VoiceSeatContext } from "@/components/voice/useVoiceSeat";
+
 import { AccountRow, type AccountRowProps } from "./AccountRow";
 
-function setup(overrides: Partial<AccountRowProps> = {}) {
+function setup(overrides: Partial<AccountRowProps> = {}, seat: VoiceSeatVM | null = null) {
   const props: AccountRowProps = {
     user: {
       id: "u-maja-9",
@@ -22,10 +25,30 @@ function setup(overrides: Partial<AccountRowProps> = {}) {
     ...overrides,
   };
 
-  render(<AccountRow {...props} />);
+  render(
+    <VoiceSeatContext.Provider value={{ get: () => seat, subscribe: () => () => undefined }}>
+      <AccountRow {...props} />
+    </VoiceSeatContext.Provider>,
+  );
 }
 
 describe("AccountRow", () => {
+  it("says, in a call, that your microphone is off, and rings you while you are heard", () => {
+    setup({}, { speaking: false, muted: true, sharing: false, camera: false });
+
+    const trigger = screen.getByRole("button", { name: /Maja/ });
+    expect(within(trigger).getByText("Mikrofon wyłączony")).toHaveClass("mic-off");
+    expect(trigger.querySelector(".acc-av")).toHaveClass("muted");
+  });
+
+  it("rings your avatar while you are heard in a call", () => {
+    setup({}, { speaking: true, muted: false, sharing: false, camera: false });
+
+    const trigger = screen.getByRole("button", { name: "MajaOnline" });
+    expect(trigger.querySelector(".av")).toHaveClass("speaking");
+    expect(trigger.querySelector(".acc-mic")).toBeNull();
+  });
+
   it("shows a short presence label under the name", () => {
     setup();
 

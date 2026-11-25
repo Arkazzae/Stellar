@@ -1,5 +1,7 @@
 import { useState } from "react";
 
+import { Icon } from "@stellarr/icons";
+
 import {
   AccountPanel,
   type AccountPanelProps,
@@ -9,6 +11,7 @@ import { IconButton } from "@/components/primitives/IconButton";
 import { Popover } from "@/components/primitives/Popover";
 import { CustomStatusText } from "@/components/profile/ProfileBio";
 import type { PersonVM } from "@/components/view-models";
+import { useVoiceSeat } from "@/components/voice/useVoiceSeat";
 import { SELF_PRESENCE_LABEL } from "@/ports";
 import { useLanguage } from "@/state/hooks";
 
@@ -36,6 +39,10 @@ export function AccountRow({
 
   const presenceLabel = t(SELF_PRESENCE_LABEL[user.presence]);
   const hasCustomStatus = panel.customStatus.trim().length > 0;
+  // In a call, this row is where you see whether you are heard: the dock
+  // above shows the others.
+  const seat = useVoiceSeat(user.id);
+  const micOff = seat?.muted === true;
 
   return (
     <div className="account">
@@ -47,19 +54,30 @@ export function AccountRow({
         className="acc-pop"
         renderTrigger={(trigger) => (
           <button {...trigger} type="button" className="acc-open">
-            {/* Call state is not repeated here: the voice dock directly above
-                already shows it. */}
-            <Avatar
-              id={user.id}
-              displayName={user.displayName}
-              initials={user.initials}
-              avatarUrl={user.avatarUrl}
-              presence={user.presence}
-            />
+            <span className={micOff ? "acc-av muted" : "acc-av"}>
+              <Avatar
+                id={user.id}
+                displayName={user.displayName}
+                initials={user.initials}
+                avatarUrl={user.avatarUrl}
+                presence={user.presence}
+                speaking={seat?.speaking === true && !micOff}
+              />
+              {micOff ? (
+                <span className="acc-mic" aria-hidden="true">
+                  <Icon name="micSlash" size={10} />
+                </span>
+              ) : null}
+            </span>
             <span className="who">
               <b>{user.displayName}</b>
-              <span className="astate" title={panel.customStatus || presenceLabel}>
-                {hasCustomStatus ? (
+              <span
+                className={micOff ? "astate mic-off" : "astate"}
+                title={micOff ? t("shell.micOff") : panel.customStatus || presenceLabel}
+              >
+                {micOff ? (
+                  t("shell.micOff")
+                ) : hasCustomStatus ? (
                   <CustomStatusText
                     text={panel.customStatus}
                     customEmoji={panel.customEmoji}
