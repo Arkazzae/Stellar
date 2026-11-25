@@ -35,12 +35,14 @@ The build reads these files directly from [`../branding/`](../branding/README.md
 
 The icons in the sprite in `index.html` are copied from `branding/icons/linear/`; copy the new path from there when an icon changes.
 
-The images in `src/images/` are WebP exports of branding files at the size the page shows them:
+The images in `src/images/` are sized and exported as WebP for the site.
 
 | File | Source |
 | --- | --- |
 | `film/app.webp`, `film/screenshare.webp`, `film/cockpit.webp` | Frames 100, 410 and 590 of `branding/film/stellarr.webp` |
 | `scenes/10-reading-nook.webp`, `scenes/13-observatory.webp` | `branding/backgrounds/`, resized to 1400 px wide |
+| `scenes/group-chat-lounge*.webp` | ImageGen scene based on Reading Nook and Zero-G Game Night, with a tighter mobile crop |
+| `scenes/server-launch*.webp` | ImageGen panorama based on Launch Mission, Home Server Workshop and Observatory, with a tighter mobile crop |
 | `avatars/*.webp` | `branding/avatars/`, resized to 96 × 96 |
 | `mascot/*.webp` | `branding/mascot/illustrations/`, trimmed to the drawing and resized to 520 px wide |
 
