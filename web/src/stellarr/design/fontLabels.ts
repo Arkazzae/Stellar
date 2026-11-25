@@ -23,6 +23,7 @@ export const FONT_LABELS: Record<FontId, { label: string; kind: "sans" | "rounde
   "space-grotesk": { label: "Space Grotesk", kind: "sans" },
   sora: { label: "Sora", kind: "sans" },
   lexend: { label: "Lexend", kind: "sans" },
+  opendyslexic: { label: "OpenDyslexic", kind: "sans" },
   nunito: { label: "Nunito", kind: "rounded" },
   rubik: { label: "Rubik", kind: "rounded" },
   quicksand: { label: "Quicksand", kind: "rounded" },

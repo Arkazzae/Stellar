@@ -1,5 +1,5 @@
 /**
- * Downloads the theme fonts from Google Fonts and rewrites the two sheets
+ * Downloads the theme fonts from Google Fonts and Fontsource and rewrites the two sheets
  * that declare them, so every face is served from our own origin. The
  * results are committed; run this by hand (`npm run fonts:sync`) only when
  * the list below changes.
@@ -27,6 +27,8 @@ const UP_FRONT = {
   directory: "fonts",
   css: here("../src/stellarr/styles/themes/font-faces.css"),
 };
+const OPENDYSLEXIC = "https://cdn.jsdelivr.net/npm/@fontsource/opendyslexic@5.3.0";
+
 const PACK = {
   directory: "typefaces",
   css: here("../src/stellarr/styles/themes/font-pack.css"),
@@ -72,6 +74,7 @@ const FONTS = [
   ["space-grotesk", "Space Grotesk", "Space+Grotesk:wght@300..700", "sans"],
   ["sora", "Sora", "Sora:wght@100..800", "sans"],
   ["lexend", "Lexend", "Lexend:wght@100..900", "sans"],
+  ["opendyslexic", "OpenDyslexic", null, "sans"],
 ];
 
 /** The faces the first page needs; every other one is in the pack. */
@@ -132,6 +135,30 @@ async function syncFamily(id, family, query, directory) {
   return blocks;
 }
 
+async function syncOpenDyslexic(directory) {
+  const destination = here(`../public/${directory}`);
+  const blocks = ["  /* OpenDyslexic (SIL OFL 1.1) */"];
+  const license = await (await fetchOk(`${OPENDYSLEXIC}/LICENSE`)).text();
+  await writeFile(join(destination, "opendyslexic-LICENSE.txt"), license);
+  for (const weight of [400, 700]) {
+    for (const style of ["normal", "italic"]) {
+      const file = `opendyslexic-latin-${weight}-${style}.woff2`;
+      const bytes = Buffer.from(await (await fetchOk(`${OPENDYSLEXIC}/files/${file}`)).arrayBuffer());
+      await writeFile(join(destination, file), bytes);
+      blocks.push(
+        "  @font-face {",
+        "    font-family: 'OpenDyslexic';",
+        `    font-style: ${style};`,
+        `    font-weight: ${weight};`,
+        "    font-display: swap;",
+        `    src: url(/${directory}/${file}) format('woff2');`,
+        "  }",
+      );
+    }
+  }
+  return blocks;
+}
+
 /**
  * The rules that pick a face. Unlayered on purpose: `--font-sans` is
  * declared by Tailwind's `@theme`, which lands in the `theme` layer, and an
@@ -164,7 +191,7 @@ const pack = [HEADER, "@layer base {"];
 for (const [id, family, query] of FONTS) {
   const into = UP_FRONT_IDS.has(id) ? upFront : pack;
   const { directory } = UP_FRONT_IDS.has(id) ? UP_FRONT : PACK;
-  into.push(...(await syncFamily(id, family, query, directory)));
+  into.push(...(query === null ? await syncOpenDyslexic(directory) : await syncFamily(id, family, query, directory)));
 }
 upFront.push("}", "");
 pack.push("}", ...typesetRules(), "");

@@ -39,15 +39,47 @@ interface ImportRule {
   condition: string;
 }
 
-const IMPORT = /@import\s+(?:url\(\s*(["']?)([^"')]*)\1\s*\)|(["'])([^"']*)\3)\s*([^;]*);/gi;
+const QUOTED = String.raw`"(?:\\[\s\S]|[^"\\\n\r\f])*"|'(?:\\[\s\S]|[^'\\\n\r\f])*'`;
+const CSS_TEXT = new RegExp(String.raw`/\*[\s\S]*?(?:\*/|$)|${QUOTED}|\\[\s\S]`, "g");
+const IMPORT = new RegExp(String.raw`^@import\s*(?:url\(\s*(${QUOTED}|[^)]*)\s*\)|(${QUOTED}))\s*([\s\S]*);$`, "i");
+const IMPORT_OR_CHARSET = /@(?:import|charset)\b[^;{}]*;/gi;
+
+function unquote(value: string): string {
+  const text = value.trim();
+  return text.startsWith('"') || text.startsWith("'") ? text.slice(1, -1) : text;
+}
+
+function withoutComments(css: string): string {
+  return css.replace(CSS_TEXT, (token) => token.startsWith("/*") ? " " : token);
+}
+
+/** Keep positions unchanged while hiding text that cannot contain CSS syntax. */
+function cssCode(css: string): string {
+  return css.replace(CSS_TEXT, (token) => " ".repeat(token.length));
+}
+
+/** A stray closing quote on a bare class selector can swallow the rest of a sheet. */
+function repairAttributeSelectors(css: string): string {
+  let out = "";
+  let at = 0;
+  const typo = /\[\s*(?:class|id)\s*[*^$|~]?=\s*[\w-]+(["'])\s*\]/gi;
+  for (const match of cssCode(css).matchAll(typo)) {
+    const quote = match.index + match[0].indexOf(match[1]!);
+    out += css.slice(at, quote);
+    at = quote + 1;
+  }
+  return out + css.slice(at);
+}
 
 function importsOf(css: string): ImportRule[] {
-  return [...css.matchAll(IMPORT)].map((match) => ({
-    start: match.index,
-    end: match.index + match[0].length,
-    url: (match[2] ?? match[4] ?? "").trim(),
-    condition: (match[5] ?? "").trim(),
-  }));
+  const rules: ImportRule[] = [];
+  for (const match of cssCode(css).matchAll(IMPORT_OR_CHARSET)) {
+    const start = match.index;
+    const end = start + match[0].length;
+    const rule = IMPORT.exec(css.slice(start, end));
+    if (rule !== null) rules.push({ start, end, url: unquote(rule[1] ?? rule[2] ?? ""), condition: rule[3]?.trim() ?? "" });
+  }
+  return rules;
 }
 
 /** The families a Google Fonts stylesheet address asks for. */
@@ -69,7 +101,7 @@ export interface InlineLimits {
   total: number;
 }
 
-export const INLINE_LIMITS: InlineLimits = { depth: 4, total: 2 * 1024 * 1024 };
+export const INLINE_LIMITS: InlineLimits = { depth: 4, total: 4 * 1024 * 1024 };
 
 export interface Inlined {
   css: string;
@@ -99,7 +131,7 @@ export async function inlineImports(
   const sheets = new Map<string, ReturnType<FetchStylesheet>>();
 
   const expand = async (text: string, from: string | null, depth: number, ancestors: ReadonlySet<string>): Promise<string> => {
-    text = text.replace(COMMENTS, "");
+    text = repairAttributeSelectors(withoutComments(text.replace(/^\uFEFF/, "")));
     let out = "";
     let at = 0;
     for (const rule of importsOf(text)) {
@@ -178,13 +210,19 @@ function wrapIn(condition: string, css: string): string {
   return wrapped;
 }
 
-const COMMENTS = /\/\*[\s\S]*?\*\//g;
-const URL_TOKEN = /url\(\s*(?:"([^"]*)"|'([^']*)'|([^)]*))\s*\)/gi;
+const URL_TOKEN = new RegExp(String.raw`url\(\s*(${QUOTED}|[^)]*)\s*\)`, "gi");
+
+function rewriteUrls(css: string, replace: (address: string, token: string) => string): string {
+  const code = cssCode(css);
+  return css.replace(URL_TOKEN, (token, address: string, offset: number) =>
+    /^url\(/i.test(code.slice(offset, offset + 4)) ? replace(unquote(address), token) : token,
+  );
+}
 
 function absoluteAddresses(css: string, base: string | null): string {
-  return css.replace(URL_TOKEN, (token, double: string | undefined, single: string | undefined, bare: string | undefined) => {
+  return rewriteUrls(css, (address, token) => {
     try {
-      const url = new URL((double ?? single ?? bare ?? "").trim(), base ?? undefined);
+      const url = new URL(address, base ?? undefined);
       return url.protocol === "https:" ? `url("${url.href.replaceAll('"', "%22")}")` : token;
     } catch {
       return token;
@@ -194,19 +232,34 @@ function absoluteAddresses(css: string, base: string | null): string {
 
 /** Strip fetchable CSS. The optional callback turns image addresses into inert values. */
 export function withoutAddresses(css: string, replaceAddress = (_address: string) => "none"): string {
-  return removeBlocks(css.replace(COMMENTS, ""), /@font-face\s*\{/gi)
-    .replace(/@import[^;]*;/gi, "")
-    .replace(/(?:-webkit-)?image-set\(\s*(?:[^()]|\([^()]*\))*\)/gi, "none")
-    .replace(URL_TOKEN, (_token, double: string | undefined, single: string | undefined, bare: string | undefined) =>
-      replaceAddress((double ?? single ?? bare ?? "").trim()),
-    );
+  const text = withoutComments(css);
+  const code = cssCode(text);
+  const start = /@font-face\s*\{|@(?:import|charset)\b[^;{}]*;|(?:-webkit-)?image-set\(/gi;
+  let stripped = "";
+  let at = 0;
+  for (const match of code.matchAll(start)) {
+    if (match.index < at) continue;
+    stripped += text.slice(at, match.index);
+    const end = match.index + match[0].length;
+    if (match[0].endsWith("(")) {
+      at = blockEnd(code, end - 1, "(", ")");
+      stripped += "none";
+    } else {
+      at = match[0].endsWith("{") ? blockEnd(code, end - 1) : end;
+      stripped += " ";
+    }
+  }
+  return rewriteUrls(stripped + text.slice(at), replaceAddress);
 }
 
 /** Let the evaluator choose the winning wallpaper variable, including aliases and overrides. */
 export function wallpaperValues(css: string) {
   const pictures = new Map<string, string>();
   const safeCss = withoutAddresses(css, (address) => {
-    if (!address.startsWith("https://") || !/\.(?:jpe?g|png|webp|gif|avif)(?:[?#]|$)/i.test(address)) return "none";
+    // A tiny inline raster is generally a repeatable texture or an icon.
+    // The wallpaper fills a viewport and would stretch either of them.
+    const embedded = address.length >= 1024 && /^data:image\/(?:jpeg|png|webp);base64,/i.test(address);
+    if (!embedded && (!address.startsWith("https://") || !/\.(?:jpe?g|png|webp|gif|avif)(?:[?#]|$)/i.test(address))) return "none";
     if (pictures.size >= 65536) return "none";
     // An inert image keeps the declaration valid on both custom properties
     // and actual backgrounds; RGB channels carry its index through CSSOM.
@@ -216,7 +269,7 @@ export function wallpaperValues(css: string) {
   });
   const preferred = [
     "--background-image", "--app-bg", "--dplus-backdrop", "--wallpaper",
-    "--theme-background-image", "--backgroundImage", "--background", "--bg-image", "--bg-img",
+    "--theme-background-image", "--backgroundImage", "--background", "--bg-image", "--bg-img", "--gx-image-bg",
   ];
   const names = [...new Set([
     ...preferred,
@@ -234,25 +287,14 @@ export function wallpaperValues(css: string) {
 }
 
 /** The index just past the block whose `{` is at `open`. */
-function blockEnd(css: string, open: number): number {
+function blockEnd(css: string, open: number, opening = "{", closing = "}"): number {
   let depth = 0;
   for (let index = open; index < css.length; index += 1) {
     const char = css[index];
-    if (char === "{") depth += 1;
-    else if (char === "}" && --depth === 0) return index + 1;
+    if (char === opening) depth += 1;
+    else if (char === closing && --depth === 0) return index + 1;
   }
   return css.length;
-}
-
-function removeBlocks(css: string, start: RegExp): string {
-  let out = "";
-  let at = 0;
-  for (const match of css.matchAll(start)) {
-    if (match.index < at) continue;
-    out += css.slice(at, match.index);
-    at = blockEnd(css, match.index + match[0].length - 1);
-  }
-  return out + css.slice(at);
 }
 
 /** The custom properties `style()` tests name, by the container they ask. */
