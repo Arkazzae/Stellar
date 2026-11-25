@@ -114,7 +114,17 @@ jobs:
           workspaces: api
       - run: cargo fmt --all --check
       - run: cargo clippy --workspace --all-targets --locked -- -D warnings
+      - run: cargo test --workspace --locked --no-run
+      # Every endpoint test starts a server on a data folder of its own under
+      # the temporary folder, and SQLite syncs each commit to it. In memory a
+      # sync costs nothing; the build above keeps the disk for its own files.
+      # A mount of its own, because some tests run a script they wrote to the
+      # temporary folder, and /dev/shm may be mounted noexec.
+      - name: Mount a temporary folder in memory
+        run: sudo mkdir -p /mnt/stellarr-tmp && sudo mount -t tmpfs -o size=4g,mode=1777 tmpfs /mnt/stellarr-tmp
       - run: cargo test --workspace --locked --no-fail-fast
+        env:
+          TMPDIR: /mnt/stellarr-tmp
 
   # The recipes of artifacts/recipes/ build some of the browser's binaries from
   # source. This is the one job of a run that builds them; the web and image
