@@ -6,6 +6,7 @@
 !.env.example
 !**/.env.example
 *.local
+/.impeccable/
 
 *.key
 *.pem
