@@ -421,6 +421,13 @@ pub(crate) struct WireUser {
     pub global_name: Text,
     pub avatar: Text,
     pub bot: Flag,
+    pub member: Obj<WireMentionMember>,
+}
+
+#[derive(Debug, Default, Deserialize)]
+#[serde(default)]
+pub(crate) struct WireMentionMember {
+    pub nick: Text,
 }
 
 #[derive(Debug, Default, Deserialize)]
@@ -553,6 +560,7 @@ pub(crate) struct WireMessage {
     pub channel_id: Text,
     pub author: Obj<WireUser>,
     pub content: Text,
+    pub mentions: List<WireUser>,
     pub timestamp: Text,
     pub edited_timestamp: Text,
     pub pinned: Flag,
@@ -607,12 +615,14 @@ pub(crate) struct WireEmbed {
     pub url: Text,
     pub image: Obj<WireEmbedMedia>,
     pub thumbnail: Obj<WireEmbedMedia>,
+    pub video: Obj<WireEmbedMedia>,
 }
 
 #[derive(Debug, Default, Deserialize)]
 #[serde(default)]
 pub(crate) struct WireEmbedMedia {
     pub url: Text,
+    pub proxy_url: Text,
 }
 
 #[derive(Debug, Default, Deserialize)]

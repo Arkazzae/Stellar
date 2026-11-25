@@ -50,6 +50,7 @@ export interface ServerCreateModalProps {
    * which mounts the app again, so the dialog stays busy until then.
    */
   onCreate: (input: ServerCreateInput) => Promise<void>;
+  onDiscordImport?: () => void;
   /** The servers already on the rail, which the preview draws before the new one. */
   servers?: readonly RailServer[];
   /**
@@ -113,6 +114,7 @@ export function ServerCreateModal({
   open,
   onClose,
   onCreate,
+  onDiscordImport,
   servers = [],
   created = null,
   invite = { state: "making" },
@@ -278,6 +280,13 @@ export function ServerCreateModal({
               {t("shell.createServerNameTitle")}
             </h2>
             <p className={css("lead")}>{t("auth.setup.serverDescription")}</p>
+            {onDiscordImport !== undefined && (
+              <div className={css("importAction")}>
+                <Button type="button" variant="secondary" disabled={busy} onClick={onDiscordImport}>
+                  {t("discordImport.title")}
+                </Button>
+              </div>
+            )}
             <div className={css("fields")}>
               <div className={css("field")}>
                 <label className={css("label")} htmlFor={nameId}>

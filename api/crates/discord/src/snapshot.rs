@@ -208,6 +208,7 @@ pub struct MessageSnapshot {
     /// Stellarr text of it. Empty for every message but the bot's own when
     /// the app lacks the Message Content intent.
     pub content: String,
+    pub mentions: Vec<MentionedUser>,
     pub created_at: Timestamp,
     pub edited_at: Option<Timestamp>,
     /// The message this one answers, if it is a reply.
@@ -242,6 +243,14 @@ pub struct AuthorSnapshot {
     pub webhook_id: Option<String>,
 }
 
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct MentionedUser {
+    pub id: String,
+    pub username: Option<String>,
+    pub display_name: Option<String>,
+    pub nickname: Option<String>,
+}
+
 #[derive(Clone, Debug, PartialEq)]
 pub struct AttachmentSnapshot {
     pub id: String,
@@ -264,6 +273,8 @@ pub struct EmbedSummary {
     pub title: Option<String>,
     pub description: Option<String>,
     pub image_url: Option<String>,
+    pub image_proxy_url: Option<String>,
+    pub video_url: Option<String>,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]

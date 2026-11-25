@@ -29,7 +29,9 @@ pub use attachments::{Attachment, compact, month, retire_if_unreferenced, roll_b
 // What the groups that keep a file of their own (a custom emoji) borrow from
 // here, so that they take the form, the checks and the refusals the same way.
 pub(crate) use attachments::number as json_number;
+pub(crate) use form::Staged;
 pub(crate) use inspect::{Failure, image as inspect_image};
+pub(crate) use inspect::{attachment as inspect_attachment, safe_file_name};
 pub(crate) use profile::broadcast_user_updated;
 pub(crate) use refusals::problem;
 

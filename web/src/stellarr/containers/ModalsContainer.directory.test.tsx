@@ -1,4 +1,4 @@
-import { cleanup, render, screen, waitFor } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -86,6 +86,186 @@ describe("ModalsContainer: creating a server", () => {
     expect(harness.ui.closeModal).toHaveBeenCalledOnce();
     expect(screen.queryByRole("dialog")).toBeNull();
     expect(sessionStorage.getItem(CREATED_SERVER_STORAGE_KEY)).toBeNull();
+  });
+
+  it("opens the Discord wizard and creates a server from the reviewed scope", async () => {
+    const installUrl = "https://discord.com/oauth2/authorize?client_id=5&scope=bot&permissions=66560";
+    const server = { id: "5", name: "Stary serwer" };
+    let listed = false;
+    let previewed = false;
+    const start = vi.fn((body: unknown) => {
+      expect(body).toMatchObject({
+        botToken: "example-bot-token",
+        options: {
+          sourceId: "5",
+          name: "Przeniesiony serwer",
+          channelIds: ["10"],
+          history: { type: "since", since: new Date(2024, 0, 5).toISOString() },
+          includeThreads: false,
+        },
+      });
+      return Response.json({
+        id: "job-1",
+        state: "running",
+        name: "Przeniesiony serwer",
+        serverId: null,
+        totalSources: null,
+        completedSources: 0,
+        channelsImported: 0,
+        sectionsImported: 0,
+        historyRequested: true,
+      });
+    });
+    vi.spyOn(globalThis, "fetch").mockImplementation(async (input, init) => {
+      switch (String(input)) {
+        case "/api/servers/discord/imports/latest":
+          return Response.json(null);
+        case "/api/servers/discord/servers": {
+          const servers = listed ? [server] : [];
+          listed = true;
+          return Response.json({ servers, installUrl });
+        }
+        case "/api/servers/discord/preview": {
+          const messageContent = previewed;
+          previewed = true;
+          return Response.json({
+            name: server.name,
+            messageContent,
+            restrictedChannels: 1,
+            sections: [],
+            channels: [
+              { id: "10", name: "ogólny", kind: "text", canCopyHistory: true, hasOwnMessages: true },
+              { id: "11", name: "pomoc", kind: "text", canCopyHistory: true, hasOwnMessages: true },
+            ],
+          });
+        }
+        case "/api/servers/discord/imports":
+          return start(JSON.parse(String(init?.body)));
+        case "/api/servers/discord/imports/job-1":
+          return Response.json({
+            id: "job-1",
+            state: "completed",
+            name: "Przeniesiony serwer",
+            serverId: "srv-imported",
+            totalSources: 1,
+            completedSources: 1,
+            channelsImported: 1,
+            sectionsImported: 0,
+            historyRequested: true,
+            report: { messages: 25, skippedMessages: 2, messagesMissingAttachments: 0 },
+          });
+        default: throw new Error(String(input));
+      }
+    });
+
+    const user = userEvent.setup();
+    harness.ui.modal = "server-create";
+    const view = render(<ModalsContainer />);
+    await user.click(screen.getByRole("button", { name: t("discordImport.title") }));
+    expect(harness.ui.openModal).toHaveBeenCalledWith("discord-import");
+    harness.ui.modal = "discord-import";
+    view.rerender(<ModalsContainer />);
+
+    await user.type(await screen.findByLabelText(t("discordImport.token")), "example-bot-token");
+    await user.click(screen.getByRole("button", { name: t("discordImport.connectButton") }));
+    expect(await screen.findByRole("link", { name: t("discordImport.addBot") })).toHaveAttribute("href", installUrl);
+    await user.click(screen.getByRole("button", { name: t("discordImport.refreshServers") }));
+    expect(await screen.findByRole("combobox")).toHaveValue("5");
+    await user.click(screen.getByRole("button", { name: t("shell.createServerNext") }));
+
+    const serverName = await screen.findByRole("textbox", { name: t("shell.serverName") });
+    await user.clear(serverName);
+    await user.type(serverName, "Przeniesiony serwer");
+    await user.click(screen.getByRole("checkbox", { name: "ogólny" }));
+    expect(screen.getByRole("button", { name: t("shell.createServerNext") })).toBeDisabled();
+    expect(screen.getByRole("radio", { name: t("discordImport.sinceDate") })).toBeDisabled();
+    await user.click(screen.getByRole("button", { name: t("discordImport.refreshHistoryAccess") }));
+    await waitFor(() => expect(screen.getByRole("radio", { name: t("discordImport.sinceDate") })).toBeEnabled());
+    expect(screen.getByRole("checkbox", { name: "ogólny" })).toBeChecked();
+    expect(screen.getByRole("button", { name: t("shell.createServerNext") })).toBeDisabled();
+    await user.click(screen.getByRole("radio", { name: t("discordImport.sinceDate") }));
+    fireEvent.change(screen.getByLabelText(t("discordImport.startDate")), { target: { value: "2024-01-05" } });
+    await user.click(screen.getByRole("checkbox", { name: t("discordImport.threads") }));
+    await user.click(screen.getByRole("button", { name: t("shell.createServerNext") }));
+
+    expect(screen.getByRole("heading", { name: t("discordImport.review") })).toBeVisible();
+    expect(screen.getByText(t("discordImport.reviewAttachments"))).toBeVisible();
+    expect(start).not.toHaveBeenCalled();
+    await user.click(screen.getByRole("button", { name: t("discordImport.start") }));
+    await user.click(await screen.findByRole("button", { name: t("discordImport.openServer") }));
+    expect(start).toHaveBeenCalledOnce();
+    expectServerActivated("srv-imported");
+    expect(harness.directory.createServer).not.toHaveBeenCalled();
+    expect(Object.values(sessionStorage)).not.toContain("example-bot-token");
+  });
+
+  it("repairs attachments of the latest import without creating another server", async () => {
+    const completed = {
+      id: "job-1", state: "completed", name: "Arkaland", serverId: "srv-imported",
+      totalSources: 1, completedSources: 1, channelsImported: 1, sectionsImported: 0,
+      historyRequested: true, pendingAttachments: 2,
+      report: { messages: 25, skippedMessages: 2, messagesMissingAttachments: 2 },
+    };
+    const resumed = vi.fn();
+    vi.spyOn(globalThis, "fetch").mockImplementation(async (input, init) => {
+      switch (String(input)) {
+        case "/api/servers/discord/imports/latest":
+          return Response.json(completed);
+        case "/api/servers/discord/imports/job-1/resume":
+          resumed(JSON.parse(String(init?.body)));
+          return Response.json({ ...completed, state: "running" });
+        case "/api/servers/discord/imports/job-1":
+          return Response.json({
+            ...completed, pendingAttachments: 0,
+            report: { messages: 27, skippedMessages: 0, messagesMissingAttachments: 0 },
+          });
+        default: throw new Error(String(input));
+      }
+    });
+    harness.ui.modal = "discord-import";
+    const user = userEvent.setup();
+    render(<ModalsContainer />);
+
+    expect(await screen.findByRole("heading", { name: t("discordImport.serverReady") })).toBeVisible();
+    expect(screen.getByRole("region", { name: t("discordImport.attachmentsPending") })).toHaveTextContent(
+      t("discordImport.attachmentOnlyHelp"),
+    );
+    await user.click(screen.getByRole("button", { name: t("discordImport.restoreAttachments") }));
+    await user.type(screen.getByLabelText(t("discordImport.token")), "example-bot-token");
+    await user.click(screen.getByRole("button", { name: t("discordImport.startAttachments") }));
+    await screen.findByRole("heading", { name: t("discordImport.completed") });
+    await user.click(screen.getByRole("button", { name: t("discordImport.openServer") }));
+
+    expect(resumed).toHaveBeenCalledExactlyOnceWith({ botToken: "example-bot-token" });
+    expectServerActivated("srv-imported");
+    expect(harness.directory.createServer).not.toHaveBeenCalled();
+  });
+
+  it("shows the structure imported for a completed job that excluded history", async () => {
+    sessionStorage.setItem("stellarr.discord-import", "structure-job");
+    harness.ui.modal = "discord-import";
+    vi.spyOn(globalThis, "fetch").mockResolvedValue(Response.json({
+      id: "structure-job",
+      state: "completed",
+      serverId: "srv-imported",
+      name: "Structure",
+      totalSources: 0,
+      completedSources: 0,
+      channelsImported: 19,
+      sectionsImported: 2,
+      historyRequested: false,
+      report: { messages: 0, skippedMessages: 0, messagesMissingAttachments: 0 },
+    }));
+
+    render(<ModalsContainer />);
+
+    expect(await screen.findByText(t("discordImport.structureResult"))).toBeVisible();
+    expect(screen.getByText(t("discordImport.channelsImported")).nextElementSibling).toHaveTextContent("19");
+    expect(screen.getByText(t("discordImport.sectionsImported")).nextElementSibling).toHaveTextContent("2");
+    expect(screen.queryByText(t("discordImport.messagesCopied"))).toBeNull();
+    await userEvent.setup().click(screen.getByRole("button", { name: t("discordImport.newImport") }));
+    expect(screen.getByLabelText(t("discordImport.token"))).toBeVisible();
+    expect(sessionStorage.getItem("stellarr.discord-import")).toBeNull();
   });
 
   it("shows the same link again when the page is loaded again, without making another", async () => {

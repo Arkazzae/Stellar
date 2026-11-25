@@ -137,7 +137,7 @@
   .rail-cap .group-caption{margin:0}
   /* Only the rail's first caption: a section's caption is the first child of
      its section too, and keeps the space above it. */
-  .rail-scroll > .rail-cap:first-child{margin-top:0}
+  .rail-scroll > :nth-child(1 of .rail-cap){margin-top:0}
   .group-caption .hint{font-size:var(--text-10);opacity:0.7}
 
   .channel{

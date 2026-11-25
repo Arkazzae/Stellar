@@ -346,7 +346,7 @@ export interface MessageEmbed {
   id: string;
   url: string;
   kind: EmbedKind;
-  /** "youtube", "vimeo", or the host for a plain card. */
+  /** "youtube", "vimeo", "gif", or the host for a plain card. */
   provider: string;
   /** The id a video player needs; absent on link cards. */
   providerId?: string;
@@ -355,6 +355,7 @@ export interface MessageEmbed {
   title?: string;
   description?: string;
   thumbnailUrl?: string;
+  animationUrl?: string;
 }
 
 export interface Message {

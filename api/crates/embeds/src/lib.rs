@@ -34,7 +34,9 @@ pub use fetch::{Failure, FetchedImage, Fetcher, NoCard, Preview, PreviewKind, YO
 pub use giphy::parse_giphy_link;
 pub use image::ImageKind;
 pub use link::{Link, MAX_LINK_CHARS, Scheme};
-pub use opengraph::{MAX_DESCRIPTION, MAX_TITLE, MAX_TITLE_ELEMENT, PageCard, parse_open_graph};
+pub use opengraph::{
+    MAX_DESCRIPTION, MAX_TITLE, MAX_TITLE_ELEMENT, PageCard, gif_animation_url, parse_open_graph,
+};
 pub use settings::EmbedSettings;
 pub use text::{clean_text, decode_entities};
 pub use video::{MAX_START_SECONDS, VIMEO, VideoLink, YOUTUBE, parse_video_link};

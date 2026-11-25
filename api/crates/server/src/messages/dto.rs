@@ -70,6 +70,8 @@ pub struct MessageEmbedDto {
     pub description: Option<String>,
     /// Always one of our own `/assets` addresses, never a third party's.
     pub thumbnail_url: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub animation_url: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -172,7 +174,7 @@ fn attachment_from(row: &Row<'_>, from: usize) -> rusqlite::Result<AttachmentDto
 const ATTACHMENT_COLUMNS: &str = "a.\"Id\", a.\"FileName\", a.\"ContentType\", a.\"SizeBytes\", a.\"Width\", a.\"DurationSeconds\",
     a.\"PosterObjectKey\", a.\"PreviewObjectKey\", a.\"Height\", a.\"IsVoiceMessage\", a.\"Placeholder\"";
 
-fn json_ids(ids: &[Id]) -> String {
+pub(crate) fn json_ids(ids: &[Id]) -> String {
     let mut text = String::with_capacity(ids.len() * 39 + 2);
     text.push('[');
     for (index, id) in ids.iter().enumerate() {
@@ -306,13 +308,20 @@ pub fn load(
     let mut embeds: HashMap<Id, Vec<(i64, MessageEmbedDto)>> = HashMap::new();
     {
         let mut statement = db.prepare_cached(
-            "SELECT \"MessageId\", \"Id\", \"Url\", \"Kind\", \"Provider\", \"ProviderId\", \"StartSeconds\", \"Domain\",
-                    \"Title\", \"Description\", \"ThumbnailAttachmentId\", \"Position\"
-             FROM \"MessageEmbeds\" WHERE \"MessageId\" IN (SELECT value FROM json_each(?1))
-             ORDER BY \"MessageId\", \"Position\", rowid",
+            "SELECT e.\"MessageId\", e.\"Id\", e.\"Url\", e.\"Kind\", e.\"Provider\", e.\"ProviderId\", e.\"StartSeconds\", e.\"Domain\",
+                    e.\"Title\", e.\"Description\", e.\"ThumbnailAttachmentId\", e.\"Position\", a.\"ContentType\"
+             FROM \"MessageEmbeds\" e LEFT JOIN \"ImageAttachments\" a ON a.\"Id\" = e.\"ThumbnailAttachmentId\"
+             WHERE e.\"MessageId\" IN (SELECT value FROM json_each(?1))
+             ORDER BY e.\"MessageId\", e.\"Position\", e.rowid",
         )?;
         for row in statement.query_map([&wanted], |row| {
-            let thumbnail: Option<Id> = row.get(10)?;
+            let media = row.get::<_, Option<Id>>(10)?.map(|id| format!("/assets/{id}"));
+            let content_type: Option<String> = row.get(12)?;
+            let (thumbnail_url, animation_url) = if content_type.as_deref() == Some("video/mp4") {
+                (None, media)
+            } else {
+                (media, None)
+            };
             Ok((
                 row.get::<_, Id>(0)?,
                 row.get::<_, i64>(11)?,
@@ -330,7 +339,8 @@ pub fn load(
                     domain: row.get(7)?,
                     title: row.get(8)?,
                     description: row.get(9)?,
-                    thumbnail_url: thumbnail.map(|id| format!("/assets/{id}")),
+                    thumbnail_url,
+                    animation_url,
                 },
             ))
         })? {

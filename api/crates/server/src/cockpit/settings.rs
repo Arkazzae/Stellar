@@ -13,6 +13,7 @@ use axum::response::Response;
 use rusqlite::Connection;
 use serde::{Deserialize, Serialize};
 use stellarr_mail::{MailSettings, MailTransport, Provider};
+use stellarr_messages::MessageKey;
 use stellarr_smtp::Security;
 
 use crate::auth::{fresh, policy};
@@ -64,6 +65,7 @@ struct SettingsDto {
     instance_name: String,
     public_url: String,
     time_zone: String,
+    upload_user_limit_bytes: i64,
     mailing_enabled: bool,
     mail_provider: &'static str,
     mail_from_address: String,
@@ -95,12 +97,22 @@ struct SettingsDto {
     cli_recovery_minutes: i64,
 }
 
-fn dto(state: &AppState, name: String, row: &Row, secrets: &ResolvedSecrets) -> SettingsDto {
+fn dto(
+    db: &Connection,
+    state: &AppState,
+    name: String,
+    row: &Row,
+    secrets: &ResolvedSecrets,
+) -> rusqlite::Result<SettingsDto> {
     let transport = transport(row, secrets);
-    SettingsDto {
+    Ok(SettingsDto {
         instance_name: name,
         public_url: state.settings().operations.public_url.clone(),
         time_zone: row.time_zone.clone(),
+        upload_user_limit_bytes: crate::admission::user_limit(
+            db,
+            state.settings().uploads.max_stored_bytes_per_user,
+        )?,
         mailing_enabled: row.mailing_enabled,
         mail_provider: transport.provider.name(),
         mail_from_address: row.mail_from_address.clone(),
@@ -134,7 +146,7 @@ fn dto(state: &AppState, name: String, row: &Row, secrets: &ResolvedSecrets) -> 
         email_code_max_attempts: row.email_code_max_attempts,
         email_code_sends_per_hour: row.email_code_sends_per_hour,
         cli_recovery_minutes: row.cli_recovery_minutes,
-    }
+    })
 }
 
 fn instance_name(db: &Connection, server: Id) -> rusqlite::Result<String> {
@@ -155,7 +167,13 @@ pub(super) async fn read(
         .read(move |db| -> Result<SettingsDto, DbError> {
             let row = load(db, &reading, server)?.settings;
             let secrets = secrets::read(db, &reading.settings().secrets, reading.sealer())?;
-            Ok(dto(&reading, instance_name(db, server)?, &row, &secrets))
+            Ok(dto(
+                db,
+                &reading,
+                instance_name(db, server)?,
+                &row,
+                &secrets,
+            )?)
         })
         .await?;
     Ok(json_response(StatusCode::OK, &answer))
@@ -169,6 +187,7 @@ pub(super) async fn read(
 struct Change {
     instance_name: Option<String>,
     time_zone: Option<String>,
+    upload_user_limit_bytes: Option<i64>,
     #[serde(default)]
     mailing_enabled: bool,
     mail_from_address: Option<String>,
@@ -289,7 +308,16 @@ pub(super) async fn update(State(state): State<AppState>, request: Request) -> A
     };
     let messages = *state.messages();
     let update = change.update();
-    let problems = operations::validate(&update, &messages)?;
+    let mut problems = operations::validate(&update, &messages)?;
+    if change
+        .upload_user_limit_bytes
+        .is_some_and(|bytes| !(0..=9_007_199_254_740_991).contains(&bytes))
+    {
+        problems.push((
+            "uploadUserLimitBytes",
+            vec![messages.get(MessageKey::CockpitUploadQuotaRange, &[])?],
+        ));
+    }
     if !problems.is_empty() {
         return Err(Problem::validation(
             problems
@@ -313,9 +341,12 @@ pub(super) async fn update(State(state): State<AppState>, request: Request) -> A
             }
             let name = operations::apply(&mut settings, &update, Timestamp::now());
             operations::save(tx, &settings, stored, &name)?;
+            if let Some(bytes) = change.upload_user_limit_bytes {
+                crate::admission::set_user_limit(tx, bytes)?;
+            }
             panel::record(tx, server, caller.user, panel::settings_updated(&writing)?)?;
             let secrets = secrets::read(tx, &writing.settings().secrets, writing.sealer())?;
-            Ok(dto(&writing, name, &settings, &secrets))
+            Ok(dto(tx, &writing, name, &settings, &secrets)?)
         })
         .await?;
     Ok(json_response(StatusCode::OK, &answer))

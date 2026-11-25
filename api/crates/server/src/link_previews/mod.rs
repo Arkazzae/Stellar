@@ -5,10 +5,12 @@
 //! the message's cards and tells whoever sees the channel.
 
 mod builder;
+mod imported;
 mod queue;
 mod thumbnails;
 mod worker;
 
+pub(crate) use imported::{enqueue_imported, remember_imported};
 pub use queue::{PreviewQueue, PreviewRequest};
 pub(crate) use thumbnails::NOBODY;
 pub use thumbnails::{clear_embeds, discard_thumbnails};

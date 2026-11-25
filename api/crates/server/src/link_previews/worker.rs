@@ -10,6 +10,7 @@ use std::time::Duration;
 
 use rusqlite::OptionalExtension;
 use stellarr_embeds::Fetcher;
+use tokio::time::{Instant, sleep_until};
 use tracing::warn;
 
 use super::builder;
@@ -42,15 +43,24 @@ pub fn workers_with(fetcher: Fetcher) -> Vec<Worker> {
 
 async fn run(state: AppState, stop: Stop, fetcher: Fetcher) {
     let unfurls = AttemptLimiter::new(20, Duration::from_secs(60));
+    let mut import_ready = Instant::now();
     loop {
-        let request = tokio::select! {
+        let (request, imported) = tokio::select! {
+            biased;
             () = stop.stopped() => return,
-            request = state.previews().next() => request,
+            request = state.previews().next() => (request, false),
+            request = async {
+                sleep_until(import_ready).await;
+                state.previews().next_imported().await
+            } => (request, true),
         };
         // One bad link must not take the worker down, or every later message
         // would silently lose its previews.
-        if let Err(error) = process(&state, &fetcher, request, &unfurls).await {
+        if let Err(error) = process(&state, &fetcher, request, &unfurls, imported).await {
             warn!("the previews of a message could not be built: {error}");
+        }
+        if imported {
+            import_ready = Instant::now() + Duration::from_secs(1);
         }
     }
 }
@@ -60,8 +70,12 @@ async fn process(
     fetcher: &Fetcher,
     request: PreviewRequest,
     unfurls: &AttemptLimiter,
+    imported: bool,
 ) -> Result<(), DbError> {
-    let embeds = builder::build(state, fetcher, request.message, unfurls).await?;
+    let Some(embeds) = builder::build(state, fetcher, request.message, unfurls, imported).await?
+    else {
+        return Ok(());
+    };
     let channel = request.channel;
     let audience = state
         .database()

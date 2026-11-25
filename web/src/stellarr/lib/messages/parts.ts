@@ -182,16 +182,24 @@ function embedPart(embed: MessageEmbed): EmbedPart | VideoEmbedPart | null {
     };
   }
 
-  if (embed.title === undefined && embed.description === undefined && embed.thumbnailUrl === undefined) {
+  if (embed.title === undefined && embed.description === undefined
+    && embed.thumbnailUrl === undefined && embed.animationUrl === undefined) {
     return null;
   }
+  const showFullImage = embed.animationUrl !== undefined || (embed.thumbnailUrl !== undefined && (
+    embed.provider === "gif" || embed.domain === "tenor.com" || embed.domain === "klipy.com"
+  ));
   return {
     kind: "embed",
     domain: embed.domain,
     title: embed.title ?? embed.domain,
     description: embed.description ?? "",
     url: embed.url,
-    ...defined({ thumb: embed.thumbnailUrl }),
+    ...defined({
+      thumb: embed.thumbnailUrl,
+      animationUrl: embed.animationUrl,
+      showFullImage: showFullImage ? true : undefined,
+    }),
   };
 }
 

@@ -10,6 +10,7 @@ export * from "./account";
 export * from "./chat";
 export type * from "./desktop";
 export type * from "./directory";
+export * from "./discordImport";
 export type * from "./encryption";
 export { SERVER_PERMISSION_VALUES } from "./directory";
 export type * from "./friends";

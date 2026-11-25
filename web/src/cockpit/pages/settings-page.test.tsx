@@ -181,6 +181,22 @@ describe("SettingsPage loading", () => {
 });
 
 describe("SettingsPage saving", () => {
+  it("saves the account upload quota in bytes", async () => {
+    const start = { ...stored, uploadUserLimitBytes: 2 * 1024 ** 3 };
+    const quota = "Limit plików na konto (MiB)";
+    await renderLoaded(start);
+    expect(input(quota).value).toBe("2048");
+    await userEvent.clear(input(quota));
+    expect(button("Zapisz ustawienia").disabled).toBe(true);
+    await userEvent.type(input(quota), "6144");
+    const bytes = 6 * 1024 ** 3;
+    updateMock.mockResolvedValue({ ...start, uploadUserLimitBytes: bytes });
+    await userEvent.click(button("Zapisz ustawienia"));
+    expect(updateMock).toHaveBeenCalledExactlyOnceWith(start, { uploadUserLimitBytes: bytes });
+    expect(await screen.findByText("Ustawienia zapisane")).toBeTruthy();
+    expect(input(quota).value).toBe("6144");
+  });
+
   it("sends the edited settings, shows the stored result and refreshes the shell", async () => {
     const context = await renderLoaded();
     const reply = deferred<CockpitSettings>();
