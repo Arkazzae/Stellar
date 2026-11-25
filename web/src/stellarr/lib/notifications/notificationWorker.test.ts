@@ -216,4 +216,14 @@ describe("notification worker click handling", () => {
 
     expect(worker.openWindow).toHaveBeenCalledExactlyOnceWith("/");
   });
+
+  it("uses the home page when a same-origin URL would produce a protocol-relative path", async () => {
+    const worker = loadWorker();
+    const { event } = clickEvent("https://chat.example//other.example/path");
+
+    worker.listener("notificationclick")(event);
+    await event.waitUntil.mock.calls[0]?.[0];
+
+    expect(worker.openWindow).toHaveBeenCalledExactlyOnceWith("/");
+  });
 });

@@ -10,14 +10,15 @@
 //! 3. turn a handler that panicked into a 500 problem;
 //! 4. read the `X-Forwarded-*` headers of the proxies that are believed;
 //! 5. in development, answer the web dev server's cross-origin requests;
-//! 6. count the request against the rate limit its route asks for;
+//! 6. count requests against their per-address rate limit;
 //! 7. refuse a client that is not one of ours (the client gate);
 //! 8. refuse a JSON route a body of another content type;
 //! 9. authenticate: the session cookie is read and checked against the
 //!    database, and a route that needs a session refuses a request without one;
 //!    a route that needs a fresh second step refuses a session that has not
 //!    passed one lately;
-//! 10. the handler.
+//! 10. apply the per-account upload limit when the route asks for it;
+//! 11. the handler.
 //!
 //! Which route a request is for is known to every step, since routing comes
 //! first, but a step that wants to refuse a request does so before the
@@ -41,7 +42,7 @@ use tracing::info;
 use super::client_gate;
 use super::error::{ApiError, internal_error_response};
 use super::forwarded::{self, ClientInfo};
-use super::rate_limit::RateLimiter;
+use super::rate_limit::{RateLimitPolicy, RateLimiter};
 use super::routes::Rules;
 use super::trace;
 use crate::auth::session::{self, Authentication};
@@ -207,6 +208,9 @@ async fn rate_limit(
     let Some(policy) = rules.rate_limit else {
         return next.run(request).await;
     };
+    if policy == RateLimitPolicy::Uploads {
+        return next.run(request).await;
+    }
     // A request that is about to be refused for its content type reaches an
     // answer that has no limit of its own.
     if refuses_content_type(rules, &request) {
@@ -326,6 +330,15 @@ async fn route_checks(
     };
     let mut response = match refusal {
         Some(refusal) => refusal,
+        None if rules.is_some_and(|rules| rules.rate_limit == Some(RateLimitPolicy::Uploads)) => {
+            match request.extensions().get::<Caller>().copied() {
+                Some(caller) => match pipeline.limiter.acquire_upload(caller.user).await {
+                    Some(_lease) => next.run(request).await,
+                    None => StatusCode::TOO_MANY_REQUESTS.into_response(),
+                },
+                None => ApiError::unauthorized().into_response(),
+            }
+        }
         None => next.run(request).await,
     };
     // A cookie that is due for renewal is left as it is when the handler has

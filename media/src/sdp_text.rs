@@ -138,7 +138,8 @@ fn stream_of(lines: &[&str]) -> Option<String> {
         .split_whitespace()
         .next()?;
 
-    (stream != "-").then(|| stream.to_string())
+    (stream != "-" && stream.len() <= 64 && stream.bytes().all(|b| b.is_ascii_graphic()))
+        .then(|| stream.to_string())
 }
 
 /// The media sections of a description, in order.

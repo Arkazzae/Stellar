@@ -36,9 +36,12 @@ function safeUrl(value) {
     return HOME_URL;
   }
   try {
+    const decoded = decodeURI(value);
+    if ([value, decoded].some((text) => /[\\\u0000-\u001f\u007f]/.test(text))) return HOME_URL;
     const url = new URL(value, self.location.origin);
     if (url.origin !== self.location.origin) return HOME_URL;
     if (url.protocol !== "http:" && url.protocol !== "https:") return HOME_URL;
+    if (url.pathname.startsWith("//")) return HOME_URL;
     return `${url.pathname}${url.search}${url.hash}` || HOME_URL;
   } catch {
     return HOME_URL;

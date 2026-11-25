@@ -28,18 +28,8 @@
 # artifacts/recipes/ builds from source are built on the host first, once:
 # `docker buildx bake recipes`.
 #
-# Local browser tabs connect directly to the SFU. The optional turn profile
-# runs coturn on the host network, advertised on UDP port 3478 and allocating
-# UDP relay ports 49160–49200. End-to-end relay tests need a media candidate
-# that coturn can reach and that is outside the loopback range.
-#
-# Every call goes through the media server, as in production. It advertises
-# 127.0.0.1 with the published port, because Docker forwards that port into
-# the container on every host, while the container's own address is reachable
-# from the host only on Linux. So only a browser on this machine reaches it: not
-# one on another device, and not one forced through the turn profile's coturn,
-# which refuses loopback peers. The port is not production's 49000, so this
-# stack starts next to a running production container.
+# Published ports are for clients on this machine. Media advertises both the
+# host loopback port and its Docker address, which the optional TURN relay uses.
 
 name: stellarr-dev
 
@@ -69,7 +59,7 @@ services:
       # macOS and Windows), so the dev server polls for changes.
       STELLARR_DEV_POLLING: ${STELLARR_DEV_POLLING:-true}
     ports:
-      - "${STELLARR_DEV_WEB_PORT:-3000}:3000"
+      - "127.0.0.1:${STELLARR_DEV_WEB_PORT:-3000}:3000"
     volumes:
       - ../../:/app
       # Named volumes keep these directories inside Docker; through the bind
@@ -91,9 +81,12 @@ services:
     # cargo run instead of a --locked build, as for the media server: Cargo.lock
     # lives on the host, and adding a dependency should mean no more than saving
     # Cargo.toml. watchexec polls and restarts the server after every change.
-    command: >
-      watchexec --restart --poll=1s --watch crates --watch Cargo.toml
-        -- cargo run -p stellarr-api
+    command:
+      - /bin/sh
+      - -ec
+      - |
+        export Rtc__TurnSharedSecret="$$(cat /run/stellarr-turn/secret)"
+        exec watchexec --restart --poll=1s --watch crates --watch Cargo.toml -- cargo run -p stellarr-api
     environment:
       STELLARR_TURN_ENABLED: ${STELLARR_TURN_ENABLED:-false}
       STELLARR_ENVIRONMENT: Development
@@ -127,7 +120,7 @@ services:
       STELLARR_PUSH_PRIVATE_KEY:
     ports:
       # For curl; the browser uses the web service.
-      - "${STELLARR_DEV_API_PORT:-5000}:5000"
+      - "127.0.0.1:${STELLARR_DEV_API_PORT:-5000}:5000"
     volumes:
       - ../../api:/app
       # Build output and the crate cache stay in the container, apart from a
@@ -135,7 +128,10 @@ services:
       - api_target:/app/target
       - cargo_registry:/usr/local/cargo/registry
       - stellarr_dev_data:/data/stellarr
+      - turn_secret:/run/stellarr-turn:ro
     depends_on:
+      turn-secret:
+        condition: service_completed_successfully
       media:
         condition: service_started
 
@@ -159,10 +155,11 @@ services:
       # without a secret.
       STELLARR_MEDIA_CONTROL_BIND: 0.0.0.0:5200
       STELLARR_MEDIA_CONTROL_SECRET: stellarr-media-development-secret
-      STELLARR_MEDIA_ADVERTISE: 127.0.0.1:${STELLARR_DEV_MEDIA_PORT:-49100}
+      STELLARR_MEDIA_PUBLIC_IP: 127.0.0.1
+      STELLARR_MEDIA_PUBLIC_PORT: ${STELLARR_DEV_MEDIA_PORT:-49100}
     ports:
-      - "${STELLARR_DEV_MEDIA_PORT:-49100}:49000/udp"
-      - "${STELLARR_DEV_MEDIA_PORT:-49100}:49000/tcp"
+      - "127.0.0.1:${STELLARR_DEV_MEDIA_PORT:-49100}:49000/udp"
+      - "127.0.0.1:${STELLARR_DEV_MEDIA_PORT:-49100}:49000/tcp"
       # For curl. Loopback only, because the secret above is in this file.
       - "127.0.0.1:${STELLARR_DEV_MEDIA_CONTROL_PORT:-5200}:5200"
     volumes:
@@ -189,15 +186,51 @@ services:
       - "127.0.0.1:${STELLARR_DEV_MAILPIT_PORT:-8025}:8025"
       - "127.0.0.1:${STELLARR_DEV_MAILPIT_SMTP_PORT:-1025}:1025"
 
+  turn-secret:
+    image: alpine:3.22
+    command:
+      - /bin/sh
+      - -ec
+      - |
+        umask 077
+        if [ ! -s /secrets/secret ]; then
+          od -An -v -tx1 -N32 /dev/urandom | tr -d ' \n' > /secrets/secret.new
+          mv /secrets/secret.new /secrets/secret
+        fi
+        grep -Eq '^[0-9a-f]{64}$' /secrets/secret
+        chown 65534:65534 /secrets/secret
+        chmod 600 /secrets/secret
+    volumes:
+      - turn_secret:/secrets
+
   coturn:
     profiles: ["turn"]
     image: coturn/coturn:4.6
-    network_mode: host
-    command: >
-      -n --log-file=stdout
-      --listening-port=3478 --realm=stellarr
-      --use-auth-secret --static-auth-secret=stellarr-turn-development-secret
-      --min-port=49160 --max-port=49200
+    user: "65534:65534"
+    entrypoint: ["/bin/sh", "-ec"]
+    command:
+      - |
+        media_ip="$$(getent ahostsv4 media | awk 'NR == 1 {print $$1}')"
+        test -n "$$media_ip"
+        umask 077
+        printf 'static-auth-secret=%s\n' "$$(cat /run/stellarr-turn/secret)" > /tmp/stellarr-turn.conf
+        exec turnserver -c /tmp/stellarr-turn.conf --log-file=stdout \
+          --pidfile=/tmp/stellarr-turn.pid --userdb=/tmp/stellarr-turn.db \
+          --listening-port=3478 --realm=localhost --external-ip=127.0.0.1 --use-auth-secret \
+          --no-cli --no-tcp --no-tls --no-dtls --no-tcp-relay --no-multicast-peers --no-dynamic-ip-list \
+          --denied-peer-ip=0.0.0.0-255.255.255.255 \
+          --denied-peer-ip=::-ffff:ffff:ffff:ffff:ffff:ffff:ffff:ffff \
+          --allowed-peer-ip="$$media_ip" --min-port=49160 --max-port=49200
+    ports:
+      - "127.0.0.1:3478:3478/udp"
+      - "127.0.0.1:49160-49200:49160-49200/udp"
+    volumes:
+      - turn_secret:/run/stellarr-turn:ro
+    depends_on:
+      turn-secret:
+        condition: service_completed_successfully
+      media:
+        condition: service_started
 
 volumes:
   web_root_node_modules:
@@ -206,3 +239,4 @@ volumes:
   media_target:
   cargo_registry:
   stellarr_dev_data:
+  turn_secret:

@@ -548,8 +548,12 @@ fn swap(
 ) -> Result<(), RestoreError> {
     std::fs::create_dir_all(previous).map_err(|error| refused(error.to_string()))?;
     let mut done: Vec<(PathBuf, PathBuf)> = Vec::new();
+    let mounted_tls = archive::has_mounted_tls(data_root);
     let attempt = (|| -> std::io::Result<()> {
         for folder in replaced_folders() {
+            if folder == "tls" && mounted_tls {
+                continue;
+            }
             let live = data_root.join(folder);
             if live.is_dir() {
                 let aside = previous.join(folder);

@@ -11,7 +11,7 @@ use super::names::{
     MAX_HIDE_AFTER, MAX_SLOW_MODE, MAX_TOPIC, MAX_USER_LIMIT, is_valid_channel_name, length,
     normalize_channel, trim,
 };
-use super::{Answer, say, ChannelDto, Refuse, created, kind_name, path_id};
+use super::{Answer, ChannelDto, Refuse, created, kind_name, path_id, say};
 use crate::auth::Caller;
 use crate::database::DbError;
 use crate::http::{ApiResult, Json, Path, json_response};
@@ -106,8 +106,10 @@ pub async fn create(
         _ => None,
     };
     let (true, Some(kind)) = (is_valid_channel_name(&name), kind) else {
-        return Err(Refuse::Invalid("channel", MessageKey::ChannelNameOrKindInvalid)
-            .into_error(&messages)?);
+        return Err(
+            Refuse::Invalid("channel", MessageKey::ChannelNameOrKindInvalid)
+                .into_error(&messages)?,
+        );
     };
     let user = caller.user;
     let section = request.section_id;
@@ -116,16 +118,6 @@ pub async fn create(
     let outcome = state
         .database()
         .try_write(move |tx| -> Result<Answer<ChannelDto>, DbError> {
-            // A name another channel has is taken, whether or not the caller
-            // sees that channel.
-            let taken: bool = tx.query_row(
-                "SELECT EXISTS (SELECT 1 FROM \"Channels\" WHERE \"ServerId\" = ?1 AND \"Name\" = ?2)",
-                params![server, name],
-                |row| row.get(0),
-            )?;
-            if taken {
-                return Ok(Answer::Refused(Refuse::Conflict));
-            }
             // A section that is not listed for the caller is one that does
             // not exist.
             if let Some(section) = section
@@ -140,6 +132,16 @@ pub async fn create(
             };
             if !allows(tx, user, &scope, MANAGE_CHANNELS)? {
                 return Ok(Answer::Refused(Refuse::Forbidden));
+            }
+            // A name another channel has is taken, whether or not the caller
+            // sees that channel.
+            let taken: bool = tx.query_row(
+                "SELECT EXISTS (SELECT 1 FROM \"Channels\" WHERE \"ServerId\" = ?1 AND \"Name\" = ?2)",
+                params![server, name],
+                |row| row.get(0),
+            )?;
+            if taken {
+                return Ok(Answer::Refused(Refuse::Conflict));
             }
             let last: Option<i64> = tx.query_row(
                 "SELECT MAX(\"Position\") FROM \"Channels\" WHERE \"ServerId\" = ?1",

@@ -27,7 +27,7 @@ binary="$(cd -P "$(dirname "$binary")" && pwd -P)/$(basename "$binary")"
 scratch="$(mktemp -d "${TMPDIR:-/tmp}/stellarr-install-test.XXXXXX")"
 # Without symbolic links, as the installer and the stubs see it.
 scratch="$(cd -P "$scratch" && pwd -P)"
-mkdir -p "$scratch/locks"
+mkdir -m 700 "$scratch/locks"
 # KEEP=1 leaves the cases' directories, with their screens and calls, to look at.
 if [[ -n ${KEEP:-} ]]; then
   trap 'echo "The cases are in $scratch/cases." >&2' EXIT

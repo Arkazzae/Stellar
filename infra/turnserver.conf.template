@@ -22,17 +22,21 @@ realm=__REALM__
 # external-ip=<STELLARR_PUBLIC_IP>, or a comment while it is empty.
 __EXTERNAL_IP_LINE__
 
-cert=/data/stellarr/tls/fullchain.pem
-pkey=/data/stellarr/tls/privkey.pem
+cert=/run/stellarr-turn/fullchain.pem
+pkey=/run/stellarr-turn/privkey.pem
+pidfile=/run/stellarr-turn/state/turnserver.pid
 no-tlsv1
 no-tlsv1_1
 
 no-cli
 stale-nonce=600
 max-allocate-lifetime=300
-# Peers on private addresses must stay allowed: a relayed browser reaches the
-# media server at this container's own address. Loopback peers stay refused,
-# which is coturn's default.
+# Loopback peers are disabled by default (allow-loopback-peers is unset).
+# The entrypoint appends the local media IPs as the only exceptions.
+no-tcp-relay
+no-dynamic-ip-list
+denied-peer-ip=0.0.0.0-255.255.255.255
+denied-peer-ip=::-ffff:ffff:ffff:ffff:ffff:ffff:ffff:ffff
 no-multicast-peers
 response-origin-only-with-rfc5780
 

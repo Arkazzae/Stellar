@@ -4,7 +4,7 @@ By default, the container terminates TLS itself using an auto-generated 365-day 
 
 ## Mount a custom TLS certificate
 
-Nginx and, when TURN over TLS is enabled, `coturn` read the certificate chain and private key from `/data/stellarr/tls/`:
+The container takes the certificate chain and private key from `/data/stellarr/tls/` and installs private runtime copies for Nginx and coturn:
 
 | Container path | Contents |
 | --- | --- |
@@ -44,7 +44,7 @@ If a mounted CA-signed certificate is unreadable or does not match `privkey.pem`
 
 ### Reloading after certificate renewal
 
-After updating the certificate files, reload Nginx. If TURN over TLS is enabled, restart `turn` as well.
+After updating the mounted files, install the new runtime pair and reload Nginx. If TURN is enabled, restart `turn` as well. The mounted certificate directory belongs to the operator and is excluded from instance backups and restores.
 
 ```bash
 docker compose exec stellarr stellarr-init reload nginx
@@ -73,11 +73,13 @@ STELLARR_HTTP_PORT=127.0.0.1:8888
 
 The proxy owns public port `443`. Move the container’s HTTPS mapping to `8443` to avoid a bind conflict and keep it outside the router forwarding rules. The loopback HTTP binding keeps port `8888` private.
 
+Set `STELLARR_TRUSTED_PROXIES` to the proxy addresses or CIDR ranges as seen by the container. A proxy on the Docker host may appear as the bridge gateway even when it connects to the published loopback port.
+
 ### Proxy requirements
 
 | Requirement | Reason |
 | --- | --- |
-| `X-Forwarded-Proto: https` | Prevents container Nginx from redirecting HTTP requests to `https://<host>:<STELLARR_HTTPS_PORT>/` and ensures secure cookies are issued. |
+| `X-Forwarded-Proto: https` | Nginx honors it from loopback or a listed proxy and passes it to the API for secure cookies. |
 | Preserve `Host` (`$http_host`) | Used as the fallback origin when `STELLARR_PUBLIC_URL` is unset and for `/.well-known/stellarr/client` discovery. |
 | Append client IP to `X-Forwarded-For` | Lets the API resolve real client IPs once the proxy is listed in `STELLARR_TRUSTED_PROXIES`. |
 | Forward `Upgrade` and `Connection` headers | Required for `stellarr.v1` WebSocket connections under `/hubs/app` (keep `Origin` intact as well). |

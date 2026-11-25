@@ -221,6 +221,27 @@ async fn uploads_need_a_signed_in_person() {
 }
 
 #[tokio::test]
+async fn upload_rate_limits_count_only_signed_in_accounts() {
+    let server = started(&[
+        ("STELLARR_ENVIRONMENT", "Development"),
+        ("RateLimiting__Uploads__PermitLimit", "1"),
+    ])
+    .await;
+    let maja = server.found("maja").await;
+    let ada = server.register("ada").await;
+    let anonymous = server.client();
+    for _ in 0..2 {
+        let response = anonymous
+            .send(image("sample.png").post("/api/uploads/images"))
+            .await;
+        assert_eq!(response.status, 401);
+    }
+    assert_eq!(upload(&maja, image("first.png")).await.status, 201);
+    assert_eq!(upload(&maja, image("second.png")).await.status, 429);
+    assert_eq!(upload(&ada, image("other.png")).await.status, 201);
+}
+
+#[tokio::test]
 async fn each_kind_is_stored_under_its_own_folder() {
     let server = started(&[]).await;
     let maja = server.found("maja").await;

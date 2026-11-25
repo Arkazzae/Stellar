@@ -80,40 +80,32 @@ pub(super) async fn middleware(
 
 /// Reads the headers of one request that arrived from `peer`.
 pub fn resolve(peer: IpAddr, headers: &HeaderMap, trusted: &TrustedProxies) -> ClientInfo {
+    let mut address = normalize(peer);
+    if !is_loopback(address) && !trusted.contains(address) {
+        return ClientInfo {
+            address,
+            scheme: "http".to_string(),
+            host: None,
+        };
+    }
     let scheme = last_value(headers, &FORWARDED_PROTO)
         .filter(|value| is_scheme(value))
         .unwrap_or_else(|| "http".to_string());
-    let host = last_value(headers, &FORWARDED_HOST).filter(|value| !value.is_empty());
+    let host = last_value(headers, &FORWARDED_HOST).filter(|value| is_host(value));
 
-    let mut entries: Vec<String> = headers
+    let mut entries = headers
         .get_all(&FORWARDED_FOR)
         .iter()
         .filter_map(|value| value.to_str().ok())
         .flat_map(|value| value.split(','))
-        .map(|entry| entry.trim().to_string())
-        .collect();
-    let mut address = normalize(peer);
-
-    // The entry nginx appended: believed from loopback when proxies are
-    // listed, from anyone when none is, since nobody then vouches for more
-    // than the one hop.
-    if trusted.is_empty() || is_loopback(address) {
-        match entries.pop().as_deref().and_then(parse_entry) {
-            Some(client) => address = client,
-            None => {
-                return ClientInfo {
-                    address,
-                    scheme,
-                    host,
-                };
-            }
-        }
-    }
-    // Then each hop through a listed proxy.
-    while trusted.contains(address) {
-        match entries.pop().as_deref().and_then(parse_entry) {
-            Some(client) => address = client,
-            None => break,
+        .rev()
+        .map(str::trim);
+    // The immediate peer was checked above. For subsequent hops, loopback
+    // is trusted only when explicitly listed.
+    while let Some(client) = entries.next().and_then(parse_entry) {
+        address = client;
+        if !trusted.contains(address) {
+            break;
         }
     }
     ClientInfo {
@@ -121,6 +113,42 @@ pub fn resolve(peer: IpAddr, headers: &HeaderMap, trusted: &TrustedProxies) -> C
         scheme,
         host,
     }
+}
+
+fn is_host(text: &str) -> bool {
+    let port = if let Some(bracketed) = text.strip_prefix('[') {
+        let Some((ip, suffix)) = bracketed.split_once(']') else {
+            return false;
+        };
+        if ip.parse::<Ipv6Addr>().is_err() || (!suffix.is_empty() && !suffix.starts_with(':')) {
+            return false;
+        }
+        suffix.strip_prefix(':')
+    } else {
+        let (host, port) = text
+            .split_once(':')
+            .map_or((text, None), |(host, port)| (host, Some(port)));
+        let name = host.strip_suffix('.').unwrap_or(host);
+        if name.len() > 253
+            || !name.split('.').all(|label| {
+                !label.is_empty()
+                    && label.len() <= 63
+                    && !label.starts_with('-')
+                    && !label.ends_with('-')
+                    && label
+                        .bytes()
+                        .all(|b| b.is_ascii_alphanumeric() || b == b'-')
+            })
+        {
+            return false;
+        }
+        port
+    };
+    port.is_none_or(|port| {
+        !port.is_empty()
+            && port.bytes().all(|b| b.is_ascii_digit())
+            && port.parse::<u16>().is_ok_and(|n| n != 0)
+    })
 }
 
 /// A valid forwarded scheme is nonempty and uses only
@@ -271,6 +299,37 @@ mod tests {
             address(read(PROXY, "192.0.2.44", &format!("{FORGED}, {CLIENT}"))),
             ip("192.0.2.44")
         );
+    }
+
+    #[test]
+    fn only_a_trusted_peer_can_set_the_forwarded_headers() {
+        for proxies in ["", "192.0.2.0/24"] {
+            let info = read_with(proxies, CLIENT, FORGED, Some("https"), Some("other.test"));
+            assert_eq!(info.address, ip(CLIENT));
+            assert!(!info.is_https());
+            assert_eq!(info.host, None);
+        }
+        let info = read_with(PROXY, PROXY, CLIENT, Some("https"), Some("[::1]:8443"));
+        assert_eq!(info.address, ip(CLIENT));
+        assert!(info.is_https());
+        assert_eq!(info.host.as_deref(), Some("[::1]:8443"));
+    }
+
+    #[test]
+    fn the_forwarded_host_must_be_a_host_and_optional_port() {
+        for host in [
+            "name.test/path",
+            "user@name.test",
+            "name.test:70000",
+            "name.test:",
+            "-name.test",
+            "[::1]suffix",
+            "[invalid]:443",
+            "::1",
+            "name..test",
+        ] {
+            assert_eq!(read_with("", NGINX, CLIENT, None, Some(host)).host, None);
+        }
     }
 
     #[test]

@@ -91,7 +91,7 @@ function OpenThreadPanel(props: Omit<ComponentProps<typeof ThreadPanel>, "sectio
  * scroll position across a call.
  */
 export function RoomContainer() {
-  const { channels, textChannels, channelName, canManageMessages } = useDirectory();
+  const { server, channels, textChannels, channelName, canManageMessages } = useDirectory();
   const ui = useUi();
   const voice = useVoice();
   const chat = useChatRoom();
@@ -102,7 +102,7 @@ export function RoomContainer() {
   const translation = useChatTranslation(chat.channelId);
   const viewer = useAttachmentViewer();
   const threadLayout = useThreadLayout(chat.thread);
-  useJoinFromPopoutLink(ui.joinVoiceChannel);
+  useJoinFromPopoutLink(ui.joinVoiceChannel, server.id, channels);
 
   const room = useRef<HTMLElement>(null);
   const fullscreenTarget = useCallback(() => room.current, []);
