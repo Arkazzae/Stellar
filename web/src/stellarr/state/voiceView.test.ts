@@ -6,7 +6,7 @@ import { IDLE_VOICE_STATE, type VoicePeer, type VoiceState } from "@/lib/voice/t
 import {
   callHeadline,
   deriveVoiceView,
-  shareSourceOf,
+  shareSourcesOf,
   type VoiceViewInput,
 } from "./voiceView";
 
@@ -43,9 +43,10 @@ function inputFor(state: VoiceState, patch: Partial<VoiceViewInput> = {}): Voice
     deafened: false,
     room: null,
     roomName: state.channelId,
-    watching: false,
+    watchedKey: null,
+    watchFresh: false,
     occupantsOf: () => [],
-    source: shareSourceOf(state, "me"),
+    sources: shareSourcesOf(state, "me"),
     ...patch,
   };
 }
@@ -115,34 +116,34 @@ describe("callHeadline", () => {
   });
 });
 
-describe("shareSourceOf", () => {
+describe("shareSourcesOf", () => {
   it("has no source when nobody shares", () => {
     const state = stateWith({ peers: [peer("ada")] });
 
-    expect(shareSourceOf(state, "me")).toEqual({ key: null, ownerId: null, remote: null });
+    expect(shareSourcesOf(state, "me")).toEqual([]);
   });
 
-  it("prefers the local share over a remote one", () => {
+  it("lists the local share before the remote ones", () => {
+    const ada = peer("ada", { screen: { streamId: "theirs", hasAudio: false, stream: null } });
     const state = stateWith({
       localScreen: { streamId: "mine", hasAudio: false, stream: null },
-      peers: [peer("ada", { screen: { streamId: "theirs", hasAudio: false, stream: null } })],
+      peers: [ada],
     });
 
-    expect(shareSourceOf(state, "me")).toEqual({
-      key: "local:me:mine",
-      ownerId: "me",
-      remote: null,
-    });
+    expect(shareSourcesOf(state, "me")).toEqual([
+      { key: "local:me:mine", ownerId: "me", remote: null },
+      { key: "remote:ada:theirs", ownerId: "ada", remote: ada },
+    ]);
   });
 
   it("names the remote stream, so a new stream is a different source", () => {
     const withStream = (streamId: string) =>
-      shareSourceOf(
+      shareSourcesOf(
         stateWith({
           peers: [peer("ada", { screen: { streamId, hasAudio: false, stream: null } })],
         }),
         "me",
-      );
+      )[0]!;
 
     expect(withStream("one").key).toBe("remote:ada:one");
     expect(withStream("two").key).not.toBe(withStream("one").key);
@@ -154,7 +155,7 @@ describe("shareSourceOf", () => {
       localScreen: { streamId: "mine", hasAudio: false, stream: null },
     });
 
-    expect(shareSourceOf(state, null).ownerId).toBe("self");
+    expect(shareSourcesOf(state, null)[0]?.ownerId).toBe("self");
   });
 });
 
@@ -266,22 +267,33 @@ describe("deriveVoiceView", () => {
     });
   });
 
-  describe("share", () => {
-    const remoteScreen = { streamId: "s", hasAudio: true, stream: {} as MediaStream };
+  describe("shares", () => {
+    const remoteScreen: NonNullable<VoicePeer["screen"]> = {
+      streamId: "s",
+      hasAudio: true,
+      stream: {} as MediaStream,
+    };
+    const KEY = "remote:ada:s";
 
-    function remoteShare(watching: boolean) {
-      const state = stateWith({
+    function stateOf(screen = remoteScreen, patch: Partial<VoicePeer> = {}) {
+      return stateWith({
         channelId: "voice",
         connection: "connected",
-        peers: [peer("ada", { screen: remoteScreen })],
+        peers: [peer("ada", { screen, ...patch })],
       });
-      return deriveVoiceView(inputFor(state, { watching })).share;
+    }
+
+    function remoteShare(watching: boolean, patch: Partial<VoiceViewInput> = {}) {
+      const state = stateOf();
+      return deriveVoiceView(inputFor(state, { watchedKey: watching ? KEY : null, ...patch })).shares[0];
     }
 
     it("withholds a remote stream until the viewer opts in", () => {
       expect(remoteShare(false)).toEqual({
+        key: KEY,
         ownerId: "ada",
         ownerName: "ADA",
+        local: false,
         hasAudio: true,
         stream: null,
         watching: false,
@@ -291,47 +303,69 @@ describe("deriveVoiceView", () => {
     it("hands the remote stream over once the viewer opts in", () => {
       expect(remoteShare(true)).toMatchObject({ stream: remoteScreen.stream, watching: true });
       expect(remoteShare(true)).not.toHaveProperty("heldBack");
+      expect(remoteShare(true)).not.toHaveProperty("connecting");
     });
 
-    it("says a watched share is held back and hands over no frozen picture", () => {
-      const held = { ...remoteScreen, heldBack: true };
-      const state = stateWith({ channelId: "voice", connection: "connected", peers: [peer("ada", { screen: held })] });
+    it("says a watched share is connecting until its first picture arrives", () => {
+      const state = stateOf({ ...remoteScreen, stream: null as unknown as MediaStream });
 
-      expect(deriveVoiceView(inputFor(state, { watching: true })).share).toEqual({
-        ownerId: "ada",
-        ownerName: "ADA",
-        hasAudio: true,
+      expect(deriveVoiceView(inputFor(state, { watchedKey: KEY })).shares[0]).toMatchObject({
         stream: null,
         watching: true,
-        heldBack: true,
+        connecting: true,
       });
-      // A share nobody watches is not asked for, so nothing of it is held back.
-      expect(deriveVoiceView(inputFor(state, { watching: false })).share).not.toHaveProperty("heldBack");
     });
 
-    it("previews the user's own capture as already watched", () => {
-      const stream = {} as MediaStream;
+    it("calls a picture held back right after the opt-in connecting, and held back later on", () => {
+      const state = stateOf({ ...remoteScreen, heldBack: true });
+
+      const fresh = deriveVoiceView(inputFor(state, { watchedKey: KEY, watchFresh: true })).shares[0];
+      expect(fresh).toMatchObject({ stream: null, connecting: true });
+      expect(fresh).not.toHaveProperty("heldBack");
+
+      const later = deriveVoiceView(inputFor(state, { watchedKey: KEY })).shares[0];
+      expect(later).toMatchObject({ stream: null, heldBack: true });
+      expect(later).not.toHaveProperty("connecting");
+
+      // A share nobody watches is not asked for, so nothing of it is held back.
+      expect(deriveVoiceView(inputFor(state)).shares[0]).not.toHaveProperty("heldBack");
+    });
+
+    it("plays nothing of a watched picture that does not decrypt", () => {
+      const state = stateOf(remoteScreen, { undecryptable: { audio: false, video: true } });
+
+      expect(deriveVoiceView(inputFor(state, { watchedKey: KEY })).shares[0]).toMatchObject({
+        stream: null,
+        sealed: true,
+      });
+    });
+
+    it("lists every screen in the call, the user's own first, and watches one at a time", () => {
+      const own = {} as MediaStream;
       const state = stateWith({
         channelId: "voice",
         connection: "connected",
-        localScreen: { streamId: "mine", hasAudio: false, stream },
+        localScreen: { streamId: "mine", hasAudio: false, stream: own },
+        peers: [
+          peer("ada", { screen: remoteScreen }),
+          peer("bo", { screen: { streamId: "t", hasAudio: false, stream: {} as MediaStream } }),
+        ],
       });
 
-      const view = deriveVoiceView(inputFor(state));
+      const shares = deriveVoiceView(inputFor(state, { watchedKey: "remote:bo:t" })).shares;
 
-      expect(view.share).toEqual({
-        ownerId: "me",
-        ownerName: "Me",
-        hasAudio: false,
-        stream,
-        watching: true,
-      });
+      expect(shares.map((share) => [share.key, share.watching])).toEqual([
+        ["local:me:mine", false],
+        [KEY, false],
+        ["remote:bo:t", true],
+      ]);
+      expect(shares[0]).toMatchObject({ local: true, ownerName: "Me", stream: own });
     });
 
-    it("is absent when nobody shares", () => {
+    it("is empty when nobody shares", () => {
       const state = stateWith({ channelId: "voice", connection: "connected", peers: [peer("ada")] });
 
-      expect(deriveVoiceView(inputFor(state)).share).toBeNull();
+      expect(deriveVoiceView(inputFor(state)).shares).toEqual([]);
     });
   });
 

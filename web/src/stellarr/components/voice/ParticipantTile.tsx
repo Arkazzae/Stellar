@@ -32,6 +32,10 @@ export interface ParticipantTileProps {
   /** The board's clips under way: one this person played shows after their name. */
   soundPlays?: SoundboardLive;
   onOpenProfile?: OpenProfile;
+  /** The tile has the stage on its own. */
+  focused?: boolean;
+  /** Give the tile the stage, or take it back when it has it. Absent: no such click. */
+  onFocus?: () => void;
 }
 
 /** The latest clip this person played that is still under way, the same object while it plays. */
@@ -79,6 +83,8 @@ export function ParticipantTile({
   onSuppressionChange,
   soundPlays,
   onOpenProfile,
+  focused = false,
+  onFocus,
 }: ParticipantTileProps) {
   const video = useRef<HTMLVideoElement>(null);
   const menu = useContextMenu();
@@ -119,6 +125,7 @@ export function ParticipantTile({
   const classes = [
     "tile",
     className,
+    focused && "is-focus",
     stream && "has-video",
     hasMenu && "has-actions",
     person.speaking && "speaking",
@@ -171,6 +178,14 @@ export function ParticipantTile({
           initials={person.initials}
           avatarUrl={person.avatarUrl}
           size="xl"
+        />
+      )}
+      {onFocus === undefined || focused ? null : (
+        <button
+          type="button"
+          className="tile-hit"
+          aria-label={t("stage.focusOf", { name: label ?? person.displayName })}
+          onClick={onFocus}
         />
       )}
       <span className="t-name">

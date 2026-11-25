@@ -962,7 +962,7 @@
   /* A camera or a screen in the middle: the largest 16:9 frame the stage
      holds, the picture contained in it. */
   .tile.dm-call-frame,
-  .dm-call-stage .share-band {
+  .tile.dm-call-screen {
     flex: none;
     width: min(100cqw, 100cqh * 16 / 9);
     max-width: none;

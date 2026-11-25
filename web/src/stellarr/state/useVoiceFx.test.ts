@@ -31,7 +31,7 @@ function call(patch: Partial<VoiceState> = {}): VoiceState {
 
 interface Props {
   state: VoiceState;
-  shareOwnerId?: string | null;
+  shareKeys?: readonly string[];
   arrivals?: boolean;
 }
 
@@ -42,8 +42,8 @@ const soundboard = {
 
 function mount(initial: Props) {
   return renderHook(
-    ({ state, shareOwnerId = null, arrivals = true }: Props) =>
-      useVoiceFx({ soundboard, state, userId: "me", shareOwnerId, arrivals }),
+    ({ state, shareKeys = [], arrivals = true }: Props) =>
+      useVoiceFx({ soundboard, state, userId: "me", shareKeys, arrivals }),
     { initialProps: initial },
   );
 }
@@ -143,17 +143,27 @@ describe("useVoiceFx", () => {
   it("gives a share its own sounds, whatever the arrivals preference says", () => {
     const view = mount({ state: call(), arrivals: false });
 
-    view.rerender({ state: call(), arrivals: false, shareOwnerId: "ada" });
+    view.rerender({ state: call(), arrivals: false, shareKeys: ["remote:ada:s1"] });
     expect(played()).toEqual(["stream"]);
 
-    view.rerender({ state: call(), arrivals: false, shareOwnerId: null });
+    view.rerender({ state: call(), arrivals: false, shareKeys: [] });
+    expect(played()).toEqual(["stream", "leave"]);
+  });
+
+  it("announces a second screen that starts while another is on", () => {
+    const view = mount({ state: call(), shareKeys: ["remote:ada:s1"] });
+
+    view.rerender({ state: call(), shareKeys: ["remote:ada:s1", "remote:bo:s2"] });
+    expect(played()).toEqual(["stream"]);
+
+    view.rerender({ state: call(), shareKeys: ["remote:bo:s2"] });
     expect(played()).toEqual(["stream", "leave"]);
   });
 
   it("does not add a share-ended sound on top of leaving the call", () => {
-    const view = mount({ state: call(), shareOwnerId: "ada" });
+    const view = mount({ state: call(), shareKeys: ["remote:ada:s1"] });
 
-    view.rerender({ state: IDLE_VOICE_STATE, shareOwnerId: null });
+    view.rerender({ state: IDLE_VOICE_STATE, shareKeys: [] });
 
     expect(played()).toEqual(["leave"]);
   });

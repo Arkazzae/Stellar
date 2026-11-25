@@ -14,32 +14,55 @@ export interface VoiceRoomPresentation {
 const NO_CAMERAS: ReadonlyMap<string, MediaStream> = new Map();
 const NONE_HELD: ReadonlySet<string> = new Set();
 
-/** Which screen share is on show, if any, and who owns it. */
+/** One screen in the call and whose it is, before it is shaped for the stage. */
 export interface ShareSource {
   /**
    * Names one concrete stream, so opting in to watch it never carries over to
    * the next stream or owner a reconnect brings.
    */
-  key: string | null;
-  ownerId: string | null;
+  key: string;
+  ownerId: string;
+  /** Null for this user's own screen. */
   remote: VoicePeer | null;
 }
 
-/** The local share wins; otherwise the first remote one. */
-export function shareSourceOf(state: VoiceState, userId: string | null): ShareSource {
+/** The key of a remote peer's current screen, or null while it shares none. */
+export function remoteShareKey(peer: VoicePeer): string | null {
+  return peer.screen === null ? null : `remote:${peer.userId}:${peer.screen.streamId}`;
+}
+
+/**
+ * Whether two lists name the same screens of the same people, so the older
+ * one can be kept: speaking levels replace the peers many times a second.
+ */
+export function sameSources(a: readonly ShareSource[], b: readonly ShareSource[]): boolean {
+  if (a === b) return true;
+  if (a.length !== b.length) return false;
+  return a.every((source, index) => {
+    const other = b[index];
+    return (
+      other !== undefined &&
+      source.key === other.key &&
+      source.remote?.screen === other.remote?.screen &&
+      source.remote?.displayName === other.remote?.displayName &&
+      source.remote?.undecryptable?.video === other.remote?.undecryptable?.video
+    );
+  });
+}
+
+/** Every screen in the call: this user's own first, then the others in call order. */
+export function shareSourcesOf(state: VoiceState, userId: string | null): ShareSource[] {
+  const sources: ShareSource[] = [];
   const self = userId ?? "self";
   if (state.localScreen !== null) {
-    return { key: `local:${self}:${state.localScreen.streamId}`, ownerId: self, remote: null };
+    sources.push({ key: `local:${self}:${state.localScreen.streamId}`, ownerId: self, remote: null });
   }
-  const remote = state.peers.find((peer) => peer.screen !== null) ?? null;
-  if (remote?.screen) {
-    return {
-      key: `remote:${remote.userId}:${remote.screen.streamId}`,
-      ownerId: remote.userId,
-      remote,
-    };
+  for (const peer of state.peers) {
+    if (peer.self) continue;
+    const key = remoteShareKey(peer);
+    if (key !== null) sources.push({ key, ownerId: peer.userId, remote: peer });
   }
-  return { key: null, ownerId: null, remote: null };
+  return sources;
 }
 
 /** Whether two call summaries draw the same dock, so the older one can be kept. */
@@ -139,17 +162,22 @@ export interface VoiceViewInput {
   room: VoiceRoomPresentation | null;
   /** What the dock calls the joined channel. */
   roomName: string | null;
-  /** The viewer opted in to the share that is currently on show. */
-  watching: boolean;
+  /** The key of the one remote share the viewer opted in to, or null. */
+  watchedKey: string | null;
+  /**
+   * The watched screen has not shown a picture since the opt-in: one held
+   * back now is the first on its way, not a link that ran out of room.
+   */
+  watchFresh: boolean;
   occupantsOf: (channelId: string) => PersonVM[];
-  source: ShareSource;
+  sources: readonly ShareSource[];
 }
 
 export interface VoiceView {
   call: CallVM | null;
   people: PersonVM[];
   applySpeaking: (people: PersonVM[]) => PersonVM[];
-  share: ScreenShareVM | null;
+  shares: ScreenShareVM[];
   privateCall: boolean;
   cameraStreams: ReadonlyMap<string, MediaStream>;
   /** People whose camera is on but held back for this side's downlink. */
@@ -170,7 +198,7 @@ export function deriveVoiceView(input: VoiceViewInput): VoiceView {
     call: deriveCall(input, privateCall),
     people: derivePeople(input, applySpeaking),
     applySpeaking,
-    share: deriveShare(input),
+    shares: deriveShares(input),
     privateCall,
     cameraStreams: cameraStreamsOf(state, userId),
     heldCameras: heldCamerasOf(state),
@@ -235,28 +263,49 @@ function derivePeople(
   return [...listed, ...negotiated];
 }
 
-function deriveShare(input: VoiceViewInput): ScreenShareVM | null {
-  const { state, source } = input;
-  if (state.localScreen !== null) {
-    return {
-      ownerId: input.userId ?? "",
-      ownerName: input.displayName,
-      hasAudio: state.localScreen.hasAudio,
-      // The capture already belongs to this tab. Previewing it muted costs no
-      // second capture and shows the sharer what is really being sent.
-      stream: state.localScreen.stream,
-      watching: true,
-    };
-  }
-  const { remote } = source;
-  if (remote?.screen == null) return null;
-  const heldBack = input.watching && remote.screen.heldBack === true;
-  return {
-    ownerId: remote.userId,
-    ownerName: remote.displayName,
-    hasAudio: remote.screen.hasAudio,
-    stream: input.watching && !heldBack ? remote.screen.stream : null,
-    watching: input.watching,
-    ...(heldBack ? { heldBack } : {}),
-  };
+function deriveShares(input: VoiceViewInput): ScreenShareVM[] {
+  const { state } = input;
+  return input.sources.flatMap((source): ScreenShareVM[] => {
+    if (source.remote === null) {
+      if (state.localScreen === null) return [];
+      return [
+        {
+          key: source.key,
+          ownerId: source.ownerId,
+          ownerName: input.displayName,
+          local: true,
+          hasAudio: state.localScreen.hasAudio,
+          // The capture already belongs to this tab. Previewing it muted costs
+          // no second capture and shows the sharer what is really being sent.
+          stream: state.localScreen.stream,
+          watching: false,
+        },
+      ];
+    }
+    const { remote } = source;
+    if (remote.screen === null) return [];
+    const watching = input.watchedKey === source.key;
+    // A picture that does not decrypt is no picture: nothing of it is played.
+    const sealed = watching && remote.undecryptable?.video === true;
+    const held = watching && !sealed && remote.screen.heldBack === true;
+    // Right after the opt-in the media server may hold the first frames back
+    // while it makes room; that is the picture on its way, not a weak link.
+    const heldBack = held && !input.watchFresh;
+    const stream = watching && !sealed && !held ? remote.screen.stream : null;
+    const connecting = watching && !sealed && !heldBack && stream === null;
+    return [
+      {
+        key: source.key,
+        ownerId: remote.userId,
+        ownerName: remote.displayName,
+        local: false,
+        hasAudio: remote.screen.hasAudio,
+        stream,
+        watching,
+        ...(connecting ? { connecting } : {}),
+        ...(heldBack ? { heldBack } : {}),
+        ...(sealed ? { sealed } : {}),
+      },
+    ];
+  });
 }

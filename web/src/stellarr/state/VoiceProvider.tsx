@@ -35,7 +35,8 @@ import { voiceProblemForUi, type VoiceProblem } from "./voiceProblems";
 import {
   deriveVoiceView,
   sameCall,
-  shareSourceOf,
+  sameSources,
+  shareSourcesOf,
   type VoiceRoomPresentation,
 } from "./voiceView";
 
@@ -55,8 +56,9 @@ export interface VoiceValue {
   people: PersonVM[];
   /** Applies live speech state to people the directory produced. */
   applySpeaking: (people: PersonVM[]) => PersonVM[];
-  share: ScreenShareVM | null;
-  /** True when the visible share is this user's own screen. */
+  /** Every screen in the call: this user's own first, then the others'. */
+  shares: ScreenShareVM[];
+  /** True while this user shares a screen. */
   localShare: boolean;
   cameraStreams: ReadonlyMap<string, MediaStream>;
   /** People whose camera is held back for this side's downlink. */
@@ -85,7 +87,8 @@ export interface VoiceValue {
   toggleDeafen: () => void;
   toggleCamera: () => void;
   toggleShare: () => void;
-  watchShare: () => void;
+  /** Opt in to one remote screen by its key; any other one stops being watched. */
+  watchShare: (key: string) => void;
   stopWatchingShare: () => void;
   playSound: (soundId: string) => void;
   setParticipantVolume: (userId: string, volume: number) => void;
@@ -222,10 +225,27 @@ export function VoiceProvider({ children }: { children: ReactNode }) {
     console.error(`[voice:${error.kind}] ${error.message}`);
   }, [state.error]);
 
-  const source = useMemo(() => shareSourceOf(state, userId), [state, userId]);
-  const watching = source.key !== null && watchedShareKey === source.key;
-  const watchedScreenUserId = watching ? (source.remote?.userId ?? null) : null;
-  const watchedScreenStreamId = watching ? (source.remote?.screen?.streamId ?? null) : null;
+  const sources = useSettled(
+    useMemo(() => shareSourcesOf(state, userId), [state, userId]),
+    sameSources,
+  );
+  const watched = sources.find((source) => source.key === watchedShareKey) ?? null;
+  const watchedScreenUserId = watched?.remote?.userId ?? null;
+  const watchedScreenStreamId = watched?.remote?.screen?.streamId ?? null;
+
+  // Until the watched screen has shown one picture, a held-back one is the
+  // first on its way, so the tile says it is connecting rather than that the
+  // link is too weak. The media server holds pictures back while it measures
+  // the downlink, which can take a while after the opt-in.
+  const [pictureSeenKey, setPictureSeenKey] = useState<string | null>(null);
+  const watchedPicture =
+    watched?.remote?.screen?.stream != null && watched.remote.screen.heldBack !== true;
+  // Noted while rendering, like `useSettled`: the first picture is a fact
+  // about this render, not something to catch up on after it.
+  if (watched !== null && watchedPicture && pictureSeenKey !== watched.key) {
+    setPictureSeenKey(watched.key);
+  }
+  const watchFresh = watched !== null && pictureSeenKey !== watched.key && !watchedPicture;
 
   useEffect(() => {
     holder.getClient()?.setReceivePreferences({
@@ -241,7 +261,7 @@ export function VoiceProvider({ children }: { children: ReactNode }) {
     soundboard: ports.soundboard,
     state,
     userId,
-    shareOwnerId: source.ownerId,
+    shareKeys: sources.map((source) => source.key),
     arrivals: preferences.joinLeaveSound,
   });
 
@@ -351,7 +371,7 @@ export function VoiceProvider({ children }: { children: ReactNode }) {
       : client.startCamera());
   }, [holder]);
 
-  const watchShare = useCallback(() => setWatchedShareKey(source.key), [source.key]);
+  const watchShare = useCallback((key: string) => setWatchedShareKey(key), []);
   const stopWatchingShare = useCallback(() => setWatchedShareKey(null), []);
 
   const playSound = useCallback(
@@ -417,11 +437,24 @@ export function VoiceProvider({ children }: { children: ReactNode }) {
         deafened,
         room,
         roomName,
-        watching,
+        watchedKey: watched === null ? null : watched.key,
+        watchFresh,
         occupantsOf,
-        source,
+        sources,
       }),
-    [state, userId, displayName, startedAt, deafened, room, roomName, watching, occupantsOf, source],
+    [
+      state,
+      userId,
+      displayName,
+      startedAt,
+      deafened,
+      room,
+      roomName,
+      watched,
+      watchFresh,
+      occupantsOf,
+      sources,
+    ],
   );
   const problem = useMemo(() => voiceProblemForUi(state.error, t), [state.error, t]);
   const call = useSettled(view.call, sameCall);

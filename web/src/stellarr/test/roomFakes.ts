@@ -118,7 +118,7 @@ export function fakeVoice(overrides: Partial<VoiceValue> = {}): VoiceValue {
     channelId: null,
     problem: null,
     people: [],
-    share: null,
+    shares: [],
     localShare: false,
     cameraStreams: new Map(),
     participantVolumes: new Map(),
