@@ -112,6 +112,16 @@
       ]
     },
     {
+      "name": "a longer fence protects a literal three-backtick line and the mentions after it",
+      "content": "````\n```\n@ada\n````\n@bea",
+      "mentions": ["BEA"],
+      "inline": [
+        { "code": "\n```\n@ada\n" },
+        { "text": "\n" },
+        { "mention": "@bea" }
+      ]
+    },
+    {
       "name": "three backticks on one line are a code span",
       "content": "```@ada```",
       "mentions": [],

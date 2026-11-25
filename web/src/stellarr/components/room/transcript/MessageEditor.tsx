@@ -1,8 +1,11 @@
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 
 import type { Translator } from "@/i18n";
+import { documentLocale } from "@/i18n/defaultLocale";
 
-import { MESSAGE_MAX_LENGTH } from "@/lib/messages/messageLimits";
+import { resolveCodeLanguage } from "@/lib/messages/codeLanguages";
+import { fencedCode } from "@/lib/messages/composerText";
+import { CODE_MESSAGE_MAX_LENGTH, messageContentLimit } from "@/lib/messages/messageLimits";
 
 /** How tall the field may grow before it scrolls: eight lines, like the composer. */
 const MAX_HEIGHT_PX = 8 * 24;
@@ -31,7 +34,7 @@ export interface MessageEditorProps {
 export function MessageEditor({ original, onSave, onCancel, t }: MessageEditorProps) {
   const [text, setText] = useState(original);
   const [saving, setSaving] = useState(false);
-  const [failed, setFailed] = useState(false);
+  const [error, setError] = useState<string | null>(null);
   const field = useRef<HTMLTextAreaElement>(null);
 
   // Caret at the end, nothing selected: a selected body would be wiped by the
@@ -57,17 +60,26 @@ export function MessageEditor({ original, onSave, onCancel, t }: MessageEditorPr
   const save = async () => {
     // Emptying a message is deleting it, and there is a bin for that.
     if (empty) return;
-    const next = text.trim();
-    if (next === original.trim()) {
+    const authored = text.trim();
+    if (authored === original.trim()) {
       onCancel();
       return;
     }
+    const next = authored.length > messageContentLimit(authored) && authored.length <= CODE_MESSAGE_MAX_LENGTH
+      ? fencedCode(resolveCodeLanguage("", text), text)
+      : authored;
+    if (next.length > CODE_MESSAGE_MAX_LENGTH) {
+      setError(t("composer.codeTooLong", {
+        count: CODE_MESSAGE_MAX_LENGTH.toLocaleString(documentLocale() === "en" ? "en-GB" : "pl-PL"),
+      }));
+      return;
+    }
     setSaving(true);
-    setFailed(false);
+    setError(null);
     try {
       await onSave(next);
     } catch {
-      setFailed(true);
+      setError(t("message.edit.failed"));
       setSaving(false);
     }
   };
@@ -78,11 +90,13 @@ export function MessageEditor({ original, onSave, onCancel, t }: MessageEditorPr
         ref={field}
         className="msg-edit-field"
         rows={1}
-        maxLength={MESSAGE_MAX_LENGTH}
         value={text}
         aria-label={t("message.edit.label")}
         disabled={saving}
-        onChange={(event) => setText(event.target.value)}
+        onChange={(event) => {
+          setText(event.target.value);
+          setError(null);
+        }}
         onKeyDown={(event) => {
           if (event.key === "Escape") {
             event.preventDefault();
@@ -110,9 +124,9 @@ export function MessageEditor({ original, onSave, onCancel, t }: MessageEditorPr
           {t("common.save")}
         </button>
       </div>
-      {failed ? (
+      {error !== null ? (
         <p className="acc-answer bad" role="alert">
-          {t("message.edit.failed")}
+          {error}
         </p>
       ) : null}
     </div>

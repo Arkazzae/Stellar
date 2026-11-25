@@ -497,14 +497,16 @@ fn punctuation(rune: Option<char>) -> bool {
     rune.is_some_and(|c| is_punctuation(c) || is_symbol(c))
 }
 
-/// The fenced blocks of a body, in order: three backticks and an info string
-/// at the start of a line, with a line ending in a newline, up to the first
-/// later line that is three backticks and nothing but spaces or tabs. A fence
+/// The fenced blocks of a body, in order: at least three backticks and an info
+/// string at the start of a line, with a line ending in a newline, up to the
+/// first later line with the same backticks and nothing but spaces or tabs.
+/// Older messages can use extra opening backticks and a triple closer. A fence
 /// that never closes is prose, and it ends the search: no later fence could
 /// close either.
 pub fn fenced_ranges(text: &[u16]) -> Vec<(usize, usize)> {
     const FENCE: [u16; 3] = [BACKTICK; 3];
     let mut found = Vec::new();
+    let mut closings = None;
     let mut line = 0;
     while line < text.len() {
         let info_end = line_end(text, line);
@@ -516,12 +518,21 @@ pub fn fenced_ranges(text: &[u16]) -> Vec<(usize, usize)> {
             continue;
         }
 
+        let length = run_length(text, line, BACKTICK);
+        let marker = if length > FENCE.len()
+            && closings.get_or_insert_with(|| last_fence_closings(text))
+                .get(&length).is_some_and(|&closing| closing > line)
+        {
+            &text[line..line + length]
+        } else {
+            &FENCE
+        };
         let mut closing = info_end + 1;
         loop {
             let closing_end = line_end(text, closing);
             if closing <= text.len()
-                && text[closing.min(text.len())..].starts_with(&FENCE)
-                && is_blank_only(&text[closing + FENCE.len()..closing_end])
+                && text[closing..closing_end].starts_with(marker)
+                && is_blank_only(&text[closing + marker.len()..closing_end])
             {
                 found.push((line, closing_end));
                 line = closing_end + 1;
@@ -534,6 +545,21 @@ pub fn fenced_ranges(text: &[u16]) -> Vec<(usize, usize)> {
         }
     }
     found
+}
+
+/// Index longer closers once so falling back to triple fences stays linear.
+fn last_fence_closings(text: &[u16]) -> HashMap<usize, usize> {
+    let mut closings = HashMap::new();
+    let mut line = 0;
+    while line < text.len() {
+        let end = line_end(text, line);
+        let length = run_length(text, line, BACKTICK);
+        if length >= 4 && is_blank_only(&text[line + length..end]) {
+            closings.insert(length, line);
+        }
+        line = end + 1;
+    }
+    closings
 }
 
 pub fn line_end(text: &[u16], from: usize) -> usize {

@@ -9,7 +9,7 @@ use stellarr_messages::{MessageKey, Messages};
 
 use super::dto::{self, ChannelReadDto, MessageDto};
 use super::mentions::{self, Mentioning};
-use super::{MAX_CONTENT_UNITS, Stop, field_problem, trimmed, units};
+use super::{Stop, content_limit, field_problem, trimmed, units};
 use crate::auth::Caller;
 use crate::events::{Audience, Event};
 use crate::http::{ApiError, ApiResult, Json, Path, json_response};
@@ -364,14 +364,14 @@ pub async fn create(
         reply_to: request.reply_to_message_id,
         client_id: request.client_message_id,
     };
-    if (submission.content.is_empty() && submission.attachments.is_empty())
-        || units(&submission.content) > MAX_CONTENT_UNITS
-    {
+    let length = units(&submission.content);
+    let max = content_limit(&submission.content, length);
+    if (submission.content.is_empty() && submission.attachments.is_empty()) || length > max {
         return Err(field_problem(
             "content",
             &messages,
             MessageKey::MessageContentInvalid,
-            &[("max", &MAX_CONTENT_UNITS)],
+            &[("max", &max)],
         ));
     }
 

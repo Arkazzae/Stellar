@@ -465,15 +465,15 @@ describe("Composer code messages", () => {
   it("counts the characters left once the code nears the limit", async () => {
     const { field } = await codeComposer();
 
-    fireEvent.change(field, { target: { value: "x".repeat(17_000) } });
+    fireEvent.change(field, { target: { value: "x".repeat(89_000) } });
     expect(screen.queryByText(/Zostało/)).toBeNull();
 
-    // The fence counts against the limit too: 20,000 less 17,990 and the
+    // The fence counts against the limit too: 100,000 less 97,990 and the
     // seventeen characters of a plain-text fence.
-    fireEvent.change(field, { target: { value: "x".repeat(17_990) } });
+    fireEvent.change(field, { target: { value: "x".repeat(97_990) } });
     expect(screen.getByText(/^Zostały 1\s?993 znaki$/)).toBeInTheDocument();
 
-    fireEvent.change(field, { target: { value: "x".repeat(19_995) } });
+    fireEvent.change(field, { target: { value: "x".repeat(99_995) } });
     expect(screen.getByText("12 znaków za dużo")).toBeInTheDocument();
   });
 
