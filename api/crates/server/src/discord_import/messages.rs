@@ -22,8 +22,8 @@ use super::{
     Import, ImportError, ImportWriter, MESSAGES_PER_TRANSACTION, Outcome, PageResult, RecordKind,
     SkipReason, moment, names, require_same_server, require_server,
 };
-use crate::messages::MAX_CONTENT_UNITS;
 use crate::link_previews;
+use crate::messages::MAX_CONTENT_UNITS;
 use crate::uploads::Attachment;
 use crate::values::{Id, Timestamp};
 
@@ -167,7 +167,9 @@ impl ImportWriter {
         attachment: Attachment,
     ) -> Result<bool, ImportError> {
         let server = require_server(import)?;
-        let actor = import.started_by.ok_or_else(|| ImportError::State("Missing import owner.".into()))?;
+        let actor = import
+            .started_by
+            .ok_or_else(|| ImportError::State("Missing import owner.".into()))?;
         let now = Timestamp::now();
         let original = message.id.clone();
         let created = moment(message.created_at);
