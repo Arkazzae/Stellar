@@ -1350,6 +1350,11 @@
     .ap-stage-rail,.ap-stage-side{display:none}
     .sv-pane .frm-row.ap-row{grid-template-columns:minmax(0,1fr)}
     .ap-end{justify-content:flex-start}
+    .ap-seg{max-width:100%}
+    .ap-seg > .ui-segmented-item{
+      min-width:0;height:auto;min-height:44px;
+      flex-wrap:wrap;row-gap:2px;padding:4px 6px;overflow-wrap:anywhere;
+    }
     .ap-foot{flex-direction:column;align-items:flex-start;gap:8px}
     .set-item{gap:8px}
     .set-item-act{
