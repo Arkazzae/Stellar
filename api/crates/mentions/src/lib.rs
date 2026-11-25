@@ -520,8 +520,10 @@ pub fn fenced_ranges(text: &[u16]) -> Vec<(usize, usize)> {
 
         let length = run_length(text, line, BACKTICK);
         let marker = if length > FENCE.len()
-            && closings.get_or_insert_with(|| last_fence_closings(text))
-                .get(&length).is_some_and(|&closing| closing > line)
+            && closings
+                .get_or_insert_with(|| last_fence_closings(text))
+                .get(&length)
+                .is_some_and(|&closing| closing > line)
         {
             &text[line..line + length]
         } else {

@@ -1271,7 +1271,12 @@ mod previews {
     }
 
     async fn with_previews() -> World {
-        let server = Server::start_with(&[("Testing__Workers", "link-previews"), ("Stellarr__Embeds__AllowPrivateNetworks", "true")]).await;
+        let server = Server::start_with(&[
+            ("Testing__Workers", "link-previews"),
+            ("Stellarr__Embeds__AllowPrivateNetworks", "true"),
+            ("STELLARR_MIN_FREE_BYTES", "0"),
+        ])
+        .await;
         let owner = server.found("owner").await;
         let db = server.database();
         let general: String = db.query_row("SELECT \"Id\" FROM \"Channels\" WHERE \"Kind\" = 0 ORDER BY \"Position\" LIMIT 1", [], |row| row.get(0)).unwrap();
