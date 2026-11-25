@@ -8,14 +8,15 @@ interface FxSnapshot {
   connection: VoiceState["connection"];
   channelId: VoiceState["channelId"];
   peerIds: ReadonlySet<string>;
-  shareOwnerId: string | null;
+  shareKeys: ReadonlySet<string>;
 }
 
 interface VoiceFxInput {
   soundboard: Pick<Ports["soundboard"], "takeJoinAnnouncement">;
   state: VoiceState;
   userId: string | null;
-  shareOwnerId: string | null;
+  /** The keys of the screens shared in the call, each one concrete stream. */
+  shareKeys: readonly string[];
   /** The "join and leave sounds" preference. */
   arrivals: boolean;
 }
@@ -34,7 +35,7 @@ interface VoiceFxInput {
  * Someone who turned arrivals off hears neither, their own included. A share
  * has sounds of its own, which that preference does not touch.
  */
-export function useVoiceFx({ soundboard, state, userId, shareOwnerId, arrivals }: VoiceFxInput) {
+export function useVoiceFx({ soundboard, state, userId, shareKeys: keys, arrivals }: VoiceFxInput) {
   const { connection, channelId } = state;
 
   // Speaking levels replace `state.peers` many times a second; keying on the
@@ -48,11 +49,17 @@ export function useVoiceFx({ soundboard, state, userId, shareOwnerId, arrivals }
     [peerIdsKey],
   );
 
-  const previous = useRef<FxSnapshot>({ connection, channelId, peerIds, shareOwnerId });
+  const shareKeysKey = [...keys].sort().join("\u0000");
+  const shareKeys = useMemo<ReadonlySet<string>>(
+    () => new Set(shareKeysKey === "" ? [] : shareKeysKey.split("\u0000")),
+    [shareKeysKey],
+  );
+
+  const previous = useRef<FxSnapshot>({ connection, channelId, peerIds, shareKeys });
 
   useEffect(() => {
     const before = previous.current;
-    previous.current = { connection, channelId, peerIds, shareOwnerId };
+    previous.current = { connection, channelId, peerIds, shareKeys };
 
     // Asking consumes the answer, so each arrival is asked about exactly once.
     const hadOwnClip = (id: string | null): boolean =>
@@ -77,9 +84,10 @@ export function useVoiceFx({ soundboard, state, userId, shareOwnerId, arrivals }
       if (departed && arrivals) playSystemFx("leave");
     }
 
-    if (before.shareOwnerId !== shareOwnerId) {
-      if (shareOwnerId !== null) playSystemFx("stream");
-      else if (!left && channelId !== null) playSystemFx("leave");
-    }
-  }, [soundboard, arrivals, connection, channelId, peerIds, shareOwnerId, userId]);
+    // One sound per change, however many screens it brings or takes.
+    const started = [...shareKeys].some((key) => !before.shareKeys.has(key));
+    const ended = [...before.shareKeys].some((key) => !shareKeys.has(key));
+    if (started) playSystemFx("stream");
+    else if (ended && !left && channelId !== null) playSystemFx("leave");
+  }, [soundboard, arrivals, connection, channelId, peerIds, shareKeys, userId]);
 }

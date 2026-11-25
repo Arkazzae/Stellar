@@ -215,15 +215,31 @@ export interface CallVM {
     | "screen";
 }
 
+/**
+ * One screen shared in the call. Every share is its own tile on the stage; at
+ * most one remote share is watched at a time, because the client asks the
+ * media server for a single screen.
+ */
 export interface ScreenShareVM {
+  /**
+   * Names one concrete stream, so opting in to watch it never carries over to
+   * the next stream or owner a reconnect brings.
+   */
+  key: string;
   ownerId: string;
   ownerName: string;
+  /** This user's own screen: previewed muted, never watched or opted into. */
+  local: boolean;
   hasAudio: boolean;
-  /** Null while the viewer has not opted in yet. */
+  /** Null while nobody here watches it, and while its picture is on its way. */
   stream: MediaStream | null;
   /** A still to show before the viewer opts in, when there is no stream. */
   posterUrl?: string;
   watching: boolean;
+  /** Watched a moment ago and the first picture has not come yet. */
+  connecting?: boolean;
   /** Watched, but the picture is held back: the viewer's link has no room for it now. */
   heldBack?: boolean;
+  /** In an encrypted call: the picture reaches this side but does not decrypt. */
+  sealed?: boolean;
 }

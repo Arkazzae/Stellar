@@ -85,10 +85,10 @@ export function DmCallContainer({ fullscreenTarget }: DmCallContainerProps) {
       since={call?.startedAt ?? null}
       {...(statusKey === null ? {} : { status: t(statusKey) })}
       encrypted={voice.state.encrypted}
-      share={voice.share}
-      localShare={voice.localShare}
+      shares={voice.shares}
       onWatchShare={voice.watchShare}
       onStopWatchingShare={voice.stopWatchingShare}
+      onStopSharing={voice.toggleShare}
       cinema={ui.cinema}
       cameraStreams={voice.cameraStreams}
       heldCameras={voice.heldCameras}

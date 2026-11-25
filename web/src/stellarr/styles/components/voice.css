@@ -30,24 +30,8 @@
   .voice-stage{
     flex:1;min-height:0;display:flex;flex-direction:column;
     padding:var(--sp-4) var(--sp-5) var(--sp-1);gap:var(--sp-3);overflow-y:auto;
+    container:stage / inline-size;
   }
-
-  /* ---------- Stage focus: which surface has the stage (local choice) ---------- */
-  .stage-focus{
-    flex:none;display:flex;align-items:center;gap:6px;flex-wrap:wrap;min-width:0;
-  }
-  .stage-focus-seg{
-    min-height:32px;max-width:260px;display:inline-flex;align-items:center;gap:6px;
-    padding:0 10px;border-radius:var(--radius-sm);border:1px solid var(--line-subtle);
-    font-size:var(--text-12);font-weight:550;color:var(--text-muted);
-    transition:background var(--dur-fast) var(--ease-standard),color var(--dur-fast) var(--ease-standard),border-color var(--dur-fast) var(--ease-standard);
-  }
-  .stage-focus-seg span{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-  .stage-focus-seg small{font-size:var(--text-11);color:var(--text-faint);font-variant-numeric:tabular-nums}
-  .stage-focus-seg svg{flex:none}
-  .stage-focus-seg:hover{background:var(--surface-overlay);color:var(--text);border-color:var(--line)}
-  .stage-focus-seg[aria-pressed="true"]{background:var(--surface-overlay);color:var(--text);border-color:var(--line-strong)}
-  .stage-focus-seg:focus-visible{outline:2px solid var(--accent-quiet);outline-offset:2px}
 
   /* Referenced by `.am-card` and `.sv` too; the mockup defines it here, beside
      the band it was written for. */
@@ -60,111 +44,6 @@
     .voice-problem-slot.centered {
       padding: 12px;
     }
-  }
-  .share-band{
-    display:none;border:1px solid var(--line-subtle);border-radius:var(--radius-md);
-    overflow:hidden;position:relative;flex:none;max-height:42vh;
-  }
-  .share-band.show{display:block;animation:viewIn var(--dur-slow) var(--ease-standard)}
-  .share-band:not(.watching) img{filter:brightness(0.45) saturate(0.8)}
-  .share-band > video,.share-band > img,.share-placeholder{
-    width:100%;height:100%;display:block;background:var(--surface-canvas-solid);
-  }
-  .share-band > video,.share-band > img{object-fit:contain}
-  .share-placeholder{
-    min-height:180px;display:flex;flex-direction:column;align-items:center;justify-content:center;
-    gap:7px;color:var(--text-faint);font-size:var(--text-12);
-  }
-  .watch-cover{
-    position:absolute;inset:0;
-    display:flex;flex-direction:column;align-items:center;justify-content:center;gap:12px;
-  }
-  .wc-title{font-size:var(--text-13);font-weight:550;color:var(--text-muted)}
-  .wc-note{margin-top:-8px;font-size:var(--text-12);color:var(--text-faint)}
-  .watch-btn{
-    display:inline-flex;align-items:center;gap:8px;
-    height:36px;padding:0 20px;border-radius:999px;
-    background:var(--accent);color:var(--on-accent);
-    font-size:var(--text-13);font-weight:600;
-    transition:background var(--dur-fast) var(--ease-standard), transform var(--dur-fast) var(--ease-standard);
-  }
-  .watch-btn:hover{background:var(--accent-hover);transform:scale(1.04)}
-  .stop-watch{
-    min-height:32px;padding:0 10px;border-radius:var(--radius-sm);
-    background:var(--veil);color:var(--text-muted);font-size:var(--text-11);font-weight:550;
-    transition:background var(--dur-fast) var(--ease-standard),color var(--dur-fast) var(--ease-standard);
-  }
-  .stop-watch:hover{background:var(--surface-floating);color:var(--text)}
-  /* streaming: udostępnianie dominuje, userzy schodzą niżej w pasek.
-     The band gets a definite height from the flex column — that is what lets
-     `object-fit:contain` letterbox the picture instead of cropping it — and a
-     floor, below which the stage scrolls rather than shrinking it to nothing. */
-  .voice-stage.streaming .share-band{flex:1 1 0;max-height:none;min-height:180px}
-  .voice-stage.streaming .share-band > video,
-  .voice-stage.streaming .share-band > img,
-  .voice-stage.streaming .share-placeholder{width:100%;height:100%}
-  .voice-stage.streaming .tiles{
-    flex:none;display:flex;overflow-x:auto;gap:10px;justify-content:center;
-    padding:2px;max-width:100%;
-  }
-  /* The same tile, small: a smaller face over the name. It changes the size,
-     it does not restate the avatar. */
-  .voice-stage.streaming .tile{flex:none;width:168px;max-width:none;aspect-ratio:16 / 9}
-  .voice-stage.streaming .tile .av{--av-size:36px;--av-face:13px;margin-bottom:6px}
-  .voice-stage.streaming .tile:not(.has-video) .t-name{font-size:var(--text-12)}
-
-  .share-toolbar{
-    position:absolute;right:10px;bottom:10px;
-    display:flex;align-items:center;justify-content:flex-end;gap:6px;
-  }
-  .share-volume{
-    min-height:32px;padding:0 8px;border-radius:var(--radius-sm);
-    display:flex;align-items:center;gap:8px;background:var(--veil);color:var(--text-muted);
-  }
-  .share-volume svg{flex:none;color:var(--text-faint)}
-  .share-volume input[type="range"]{
-    width:112px;min-height:20px;accent-color:var(--accent);cursor:pointer;
-  }
-  .share-volume input[type="range"]:focus-visible{
-    outline:2px solid var(--accent-quiet);outline-offset:2px;
-  }
-  .share-volume output{
-    min-width:38px;font-size:var(--text-11);font-weight:550;text-align:right;
-    color:var(--text);font-variant-numeric:tabular-nums;
-  }
-  @media (max-width:480px){
-    .share-toolbar{left:8px;right:8px;bottom:8px}
-    .share-volume{min-width:0;flex:1}
-    .share-volume input[type="range"]{width:auto;min-width:48px;flex:1}
-    .stop-watch{flex:none}
-  }
-  @media (pointer:coarse){
-    .watch-btn,.share-volume,.stop-watch{min-height:44px}
-    .share-volume input[type="range"]{min-height:44px}
-  }
-  /*
-   * The stage's grid, as even as the room allows. `useTileGrid` measures this
-   * box and publishes on it the columns, the rows and the tile shape that give
-   * the largest tile for the people in it; every tile takes the width that
-   * fits both, and never less than 150px, below which the stage scrolls. Only
-   * the grid is a size container: the strip under a share takes its height
-   * from its tiles.
-   */
-  .voice-stage:not(.streaming) .tiles{
-    --gap:var(--sp-3);
-    flex:1;min-height:0;
-    display:flex;flex-wrap:wrap;justify-content:center;align-content:safe center;
-    gap:var(--gap);
-    container:tiles / size;
-  }
-  .voice-stage:not(.streaming) .tile{
-    flex:none;
-    width:max(150px, min(
-      (100cqw - (var(--cols, 1) - 1) * var(--gap)) / var(--cols, 1),
-      (100cqh - (var(--rows, 1) - 1) * var(--gap)) / var(--rows, 1) * var(--tile-ratio, 16 / 9)
-    ));
-    max-width:none;
-    aspect-ratio:var(--tile-ratio, 16 / 9);
   }
   .tile{
     aspect-ratio:16/10;max-width:460px;justify-self:center;width:100%;border-radius:var(--radius-lg);
@@ -233,7 +112,6 @@
     grid-column:1 / -1;grid-row:4;align-self:start;justify-self:center;
     margin-top:2px;color:var(--text-faint);
   }
-  .voice-stage.streaming .tile .t-held{font-size:var(--text-11);padding:0 6px}
   /* With a camera the picture fills the tile and the name keeps its veil in
      the corner, the mute mark inside it. Media stays dark in a light theme
      (`recipe.css`), so the name on it stays light, as in a private call. */
@@ -480,11 +358,6 @@
     .vc-caret svg{transition:none}
   }
 
-  .voice-stage.cinema{padding:0;gap:0;overflow:hidden}
-  /* Cinema is for the focused surface; the others stay one click away. */
-  .voice-stage.cinema .stage-focus{padding:8px 12px}
-  .voice-stage.cinema .tiles{display:none}
-  .voice-stage.cinema .share-band{border:0;border-radius:0}
 
   /*
    * Cinema takes the channel's topbar as well, so the stage reaches the top
@@ -498,7 +371,255 @@
     height:0;border-bottom-width:0;opacity:0;pointer-events:none;
   }
 
-  @media (pointer:coarse){
-    .stage-focus-seg{min-height:44px}
+  /*
+   * ---------- THE STAGE: one list of tiles, two layouts ----------
+   * People and shared screens are tiles of one list. As a grid they share the
+   * room evenly; with a focus, one tile has the stage and the rest line up in
+   * a strip under it. The layout is a class on the stage, never a second
+   * tree, so a picture is not mounted anew when it changes.
+   */
+  .voice-stage .tiles{
+    --gap:var(--sp-3);
+    position:relative;flex:1;min-height:0;
+    display:flex;flex-wrap:wrap;justify-content:center;align-content:safe center;
+    gap:var(--gap);
+    container:tiles / size;
   }
+  /* The grid, as even as the room allows: `useTileGrid` measures this box and
+     publishes the columns, the rows and the tile shape that give the largest
+     tile; every tile takes the width that fits both, never under 150px. */
+  .voice-stage[data-layout="grid"] .tile{
+    flex:none;
+    width:max(150px, min(
+      (100cqw - (var(--cols, 1) - 1) * var(--gap)) / var(--cols, 1),
+      (100cqh - (var(--rows, 1) - 1) * var(--gap)) / var(--rows, 1) * var(--tile-ratio, 16 / 9)
+    ));
+    max-width:none;
+    aspect-ratio:var(--tile-ratio, 16 / 9);
+  }
+  .voice-stage[data-layout="focus"] .tiles{
+    --strip-h:90px;--strip-gap:10px;
+    align-content:flex-start;column-gap:var(--strip-gap);row-gap:var(--gap);
+  }
+  .voice-stage[data-layout="focus"] .tile.is-focus{
+    order:-1;flex:0 0 100%;width:100%;max-width:none;
+    height:calc(100cqh - var(--strip-h) - var(--gap));aspect-ratio:auto;
+  }
+  .voice-stage[data-layout="focus"][data-strip="hidden"] .tile.is-focus{height:100cqh}
+  /* The strip: the same tiles, small, as many to a row as fit at 112px or more. */
+  .voice-stage[data-layout="focus"] .tile:not(.is-focus){
+    flex:none;max-width:none;
+    width:clamp(112px, (100cqw - (var(--strip-count, 1) - 1) * var(--strip-gap)) / var(--strip-count, 1), 160px);
+    aspect-ratio:16 / 9;border-radius:var(--radius-md);
+  }
+  .voice-stage[data-layout="focus"] .tile:not(.is-focus) .t-name{font-size:var(--text-12)}
+  /* Hidden, not removed: a picture in the strip keeps playing when it returns. */
+  .voice-stage[data-layout="focus"][data-strip="hidden"] .tile:not(.is-focus){display:none}
+
+  /* A tile's own click: the whole tile, under its menu and its controls. */
+  .tile-hit{
+    position:absolute;inset:0;z-index:1;border-radius:inherit;
+    background:transparent;cursor:pointer;
+  }
+  .tile-hit:focus-visible{outline:2px solid var(--accent-quiet);outline-offset:-3px}
+
+  /* ---------- A shared screen ---------- */
+  .tile.screen,
+  .voice-stage .tile.screen{
+    display:block;position:relative;overflow:hidden;
+    background:var(--surface-stage);
+  }
+  .tile.screen > video{
+    position:absolute;inset:0;width:100%;height:100%;
+    object-fit:contain;background:var(--surface-canvas-solid);border-radius:inherit;
+  }
+  .tile.screen > .st-poster{
+    position:absolute;inset:0;width:100%;height:100%;object-fit:cover;
+    filter:brightness(0.45) saturate(0.8);
+  }
+  /* Why there is no picture, in one line in the middle. */
+  .st-unwatched,
+  .st-note{
+    position:absolute;inset:0;
+    display:flex;flex-direction:column;align-items:center;justify-content:center;gap:10px;
+    padding:0 var(--sp-5);text-align:center;pointer-events:none;
+    color:var(--text-faint);font-size:var(--text-12);line-height:1.4;
+  }
+  .st-note .st-action{position:relative;z-index:2;pointer-events:auto}
+  .st-ring{
+    width:24px;height:24px;border-radius:50%;
+    border:2.5px solid var(--line);border-top-color:var(--accent-text);
+    animation:stSpin 900ms linear infinite;
+  }
+  @keyframes stSpin{to{transform:rotate(360deg)}}
+  /* "Watch": the website's button, a face on its own solid edge. The whole
+     tile takes the click, so the pill only shows it, pressing with it. */
+  .watch-btn{
+    display:inline-flex;align-items:center;gap:8px;
+    height:36px;padding:0 18px;border-radius:10px;
+    background:var(--accent);color:var(--on-accent);
+    font-size:var(--text-13);font-weight:600;
+    box-shadow:0 3px 0 var(--accent-edge);
+    transition:background var(--dur-fast) var(--ease-standard), transform 100ms var(--ease-standard), box-shadow 100ms var(--ease-standard);
+  }
+  .tile.screen.unwatched:hover .watch-btn{background:var(--accent-hover)}
+  .tile.screen.unwatched .tile-hit:active ~ .st-unwatched .watch-btn{transform:translateY(3px);box-shadow:0 0 0 var(--accent-edge)}
+  .st-action{
+    min-height:30px;padding:0 12px;border-radius:8px;
+    background:var(--surface-active);color:var(--text);
+    font-size:var(--text-12);font-weight:600;
+    box-shadow:0 2px 0 var(--surface-canvas-solid);
+    transition:background var(--dur-fast) var(--ease-standard), transform 100ms var(--ease-standard), box-shadow 100ms var(--ease-standard);
+  }
+  .st-action:hover{background:var(--surface-overlay)}
+  .st-action:active{transform:translateY(2px);box-shadow:0 0 0 var(--surface-canvas-solid)}
+  .st-action:focus-visible{outline:2px solid var(--accent-quiet);outline-offset:2px}
+
+  /* Whose screen, live, in the corner on a veil: media stays dark. */
+  .st-label{
+    position:absolute;left:10px;bottom:10px;z-index:1;
+    display:flex;align-items:center;gap:6px;max-width:calc(100% - 20px);
+    padding:2px 8px;border-radius:var(--radius-sm);
+    background:var(--veil);color:var(--on-veil);
+    font-size:var(--text-12);font-weight:550;white-space:nowrap;overflow:hidden;pointer-events:none;
+  }
+  .st-label > svg{flex:none;color:var(--on-veil-muted)}
+  .st-label > span:not(.live-badge){min-width:0;overflow:hidden;text-overflow:ellipsis}
+  .live-badge{
+    flex:none;display:inline-flex;align-items:center;height:16px;padding:0 5px;border-radius:4px;
+    background:var(--live-line);color:var(--on-live);
+    font-size:var(--text-10);font-weight:650;letter-spacing:.02em;
+  }
+  .voice-stage[data-layout="focus"] .tile.screen:not(.is-focus) .st-label{left:6px;bottom:6px;font-size:var(--text-11)}
+  .voice-stage[data-layout="focus"] .tile.screen:not(.is-focus) .watch-btn{height:28px;padding:0 12px;font-size:var(--text-12)}
+  .voice-stage[data-layout="focus"] .tile.screen:not(.is-focus) .st-unwatched > svg,
+  .voice-stage[data-layout="focus"] .tile.screen:not(.is-focus) .st-note > span:not(.st-ring){display:none}
+  .tile.screen.ended .st-label{opacity:.7}
+  .tile.screen.is-focus .st-label{display:none}
+
+  /* ---------- Controls over the picture ---------- */
+  .st-chrome{
+    position:absolute;inset:0;z-index:2;pointer-events:none;
+    display:flex;flex-direction:column;justify-content:space-between;padding:12px;
+    opacity:0;transition:opacity var(--dur-base) var(--ease-standard);
+  }
+  .st-chrome button,
+  .st-chrome input{pointer-events:auto}
+  .st-row{display:flex;align-items:center;justify-content:space-between;gap:8px;min-width:0}
+  .st-group{display:flex;align-items:center;gap:6px;min-width:0}
+  /* With the stage: shown while the pointer moves over the picture, faded
+     once it rests, and always while one of them has the keyboard. */
+  .tile.screen.is-focus:hover .st-chrome,
+  .tile.screen:focus-within .st-chrome{opacity:1}
+  [data-chrome="idle"] .tile.screen.is-focus:hover:not(:focus-within) .st-chrome{opacity:0}
+  @media (hover:none){
+    .tile.screen.is-focus .st-chrome{opacity:1}
+    [data-chrome="idle"] .tile.screen.is-focus:not(:focus-within) .st-chrome{opacity:0}
+  }
+  /* As a tile: only its own actions, at the top, on hover. */
+  .tile.screen:not(.is-focus) .st-chrome{justify-content:flex-start;padding:8px}
+  .tile.screen:not(.is-focus) .st-row.top,
+  .tile.screen:not(.is-focus) .st-row.bottom > .st-group:first-child{display:none}
+  .tile.screen:not(.is-focus) .st-row.bottom{justify-content:flex-end}
+  .tile.screen:not(.is-focus):hover .st-chrome{opacity:1}
+  .voice-stage[data-layout="focus"] .tile.screen:not(.is-focus) .st-chrome{display:none}
+  .st-chip{
+    display:inline-flex;align-items:center;gap:7px;min-width:0;
+    height:32px;padding:0 10px;border-radius:8px;
+    background:var(--veil);color:var(--on-veil);
+    font-size:var(--text-12);font-weight:550;white-space:nowrap;
+  }
+  .st-chip > svg{flex:none;color:var(--on-veil-muted)}
+  .st-chip-name{min-width:0;overflow:hidden;text-overflow:ellipsis}
+  .st-button{cursor:pointer;transition:background var(--dur-fast) var(--ease-standard)}
+  .st-button:hover{background:var(--veil-strong)}
+  .st-icon{
+    width:32px;height:32px;flex:none;border-radius:8px;
+    display:inline-flex;align-items:center;justify-content:center;
+    background:var(--veil);color:var(--on-veil);
+    transition:background var(--dur-fast) var(--ease-standard);
+  }
+  .st-icon:hover,
+  .st-icon[aria-pressed="true"]{background:var(--veil-strong)}
+  .st-button:focus-visible,
+  .st-icon:focus-visible{outline:2px solid var(--accent-quiet);outline-offset:2px}
+  .st-volume input[type="range"]{width:96px;min-height:20px;accent-color:var(--accent);cursor:pointer}
+  .st-volume input[type="range"]:focus-visible{outline:2px solid var(--accent-quiet);outline-offset:2px}
+  .st-volume output{min-width:36px;font-size:var(--text-11);text-align:right;font-variant-numeric:tabular-nums}
+  .st-faces{display:inline-flex;align-items:center}
+  .st-faces > *{
+    width:20px;height:20px;border-radius:50%;margin-left:-6px;
+    box-shadow:0 0 0 2px var(--veil-strong);object-fit:cover;
+  }
+  .st-faces > :first-child{margin-left:0}
+  .st-face-initials{
+    display:inline-flex;align-items:center;justify-content:center;
+    background:var(--surface-active);color:var(--text);font-size:9px;font-weight:650;
+  }
+  /* A narrow picture keeps its controls as icons; each still names itself. */
+  @container tile (max-width:560px){
+    .tile.screen .st-chip-text{display:none}
+    .tile.screen .st-chip.st-button{width:32px;padding:0;justify-content:center}
+    .tile.screen .st-chip:has(> .st-chip-text){padding:0 8px}
+  }
+
+  /* A picture alone on the screen: no frame left to draw. */
+  .tile.screen:fullscreen{border:0;border-radius:0;background:var(--surface-canvas-solid)}
+
+  /* ---------- The stage's own controls: back to the grid, the strip ---------- */
+  .stage-chrome{
+    position:absolute;left:0;right:0;top:0;z-index:3;pointer-events:none;
+    height:calc(100cqh - var(--strip-h) - var(--gap));
+    opacity:0;transition:opacity var(--dur-base) var(--ease-standard);
+  }
+  .voice-stage[data-strip="hidden"] .stage-chrome{height:100cqh}
+  .stage-chrome > *{pointer-events:auto}
+  .voice-stage:hover .stage-chrome,
+  .stage-chrome:focus-within{opacity:1}
+  .voice-stage[data-chrome="idle"]:hover .stage-chrome:not(:focus-within){opacity:0}
+  @media (hover:none){
+    .voice-stage .stage-chrome{opacity:1}
+    .voice-stage[data-chrome="idle"] .stage-chrome:not(:focus-within){opacity:0}
+  }
+  .stage-grid{position:absolute;right:12px;bottom:12px}
+  .stage-handle{
+    position:absolute;left:50%;bottom:12px;transform:translateX(-50%);
+    height:30px;border-radius:999px;
+  }
+  .stage-faces{display:inline-flex;align-items:center;margin-left:2px}
+  .stage-face{display:inline-flex;margin-left:-6px;border-radius:50%;box-shadow:0 0 0 2px var(--veil-strong)}
+  .stage-face:first-child{margin-left:0}
+  .stage-face.speaking{box-shadow:0 0 0 2px var(--accent)}
+  /* A focused screen keeps its own "Grid" beside its other controls. */
+  .voice-stage .tile.screen.is-focus ~ .stage-chrome .stage-grid{display:none}
+
+  /* Cinema: the focused tile alone, edge to edge. */
+  .voice-stage.cinema[data-layout="focus"]{padding:0;gap:0;overflow:hidden}
+  .voice-stage.cinema[data-layout="focus"] .tile.is-focus{border:0;border-radius:0}
+
+  /* A phone, or any narrow stage: the focused tile on top at 16:9, the rest
+     two to a row under it, scrolling with the stage. */
+  @container stage (max-width:599px){
+    .voice-stage[data-layout="focus"] .tile.is-focus{height:auto;aspect-ratio:16 / 9}
+    .voice-stage[data-layout="focus"] .tile:not(.is-focus){
+      width:calc((100% - var(--strip-gap)) / 2);aspect-ratio:4 / 3;
+    }
+    .voice-stage[data-layout="focus"][data-strip="hidden"] .tile:not(.is-focus){display:flex}
+    .voice-stage[data-layout="focus"][data-strip="hidden"] .tile.screen:not(.is-focus){display:block}
+    .stage-chrome,
+    .voice-stage[data-strip="hidden"] .stage-chrome{height:calc(100cqw * 9 / 16)}
+    .stage-handle{display:none}
+  }
+
+  @media (pointer:coarse){
+    .st-chip,.st-icon{min-height:44px}
+    .st-icon{min-width:44px}
+    .st-volume input[type="range"]{min-height:44px}
+  }
+
+  @media (prefers-reduced-motion:reduce){
+    .st-ring{animation-duration:2400ms}
+    .watch-btn,.st-action{transition:none}
+  }
+
 }
