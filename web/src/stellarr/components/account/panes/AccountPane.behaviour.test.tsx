@@ -109,21 +109,21 @@ describe("AccountPane", () => {
     expect(screen.queryByRole("button", { name: "Zapisz zmiany" })).toBeNull();
   });
 
-  it("reports a picture that could not be uploaded", async () => {
+  it("reports a banner that could not be uploaded", async () => {
     const user = userEvent.setup();
     const onPickImage = vi.fn().mockRejectedValue(new Error("too large"));
     render(<AccountPane {...pane({ onPickImage })} />);
-    const input = document.querySelector<HTMLInputElement>(
+    const inputs = document.querySelectorAll<HTMLInputElement>(
       'input[type="file"][accept*="image/png"]',
     );
-    const file = new File(["avatar"], "avatar.png", { type: "image/png" });
+    const file = new File(["banner"], "banner.png", { type: "image/png" });
 
-    await user.upload(input!, file);
+    await user.upload(inputs[1]!, file);
 
     expect(await screen.findByRole("alert")).toHaveTextContent(
       "Nie udało się przesłać obrazu",
     );
-    expect(onPickImage).toHaveBeenCalledWith("avatar", file);
+    expect(onPickImage).toHaveBeenCalledWith("banner", file);
   });
 
   it("edits the pronouns with the rest of the profile and shows them on the card", async () => {
@@ -147,7 +147,7 @@ describe("AccountPane", () => {
     });
   });
 
-  it("offers to remove only the pictures that were uploaded", async () => {
+  it("offers to remove the uploaded banner", async () => {
     const user = userEvent.setup();
     const onRemoveImage = vi.fn();
     const { rerender } = render(<AccountPane {...pane({ onRemoveImage })} />);
@@ -155,11 +155,14 @@ describe("AccountPane", () => {
     expect(screen.queryByRole("button", { name: "Usuń awatar" })).toBeNull();
     expect(screen.queryByRole("button", { name: "Usuń tło" })).toBeNull();
 
-    rerender(<AccountPane {...pane({ onRemoveImage, account: { ...account, avatarUrl: "/assets/a" } })} />);
-    expect(screen.queryByRole("button", { name: "Usuń tło" })).toBeNull();
-    await user.click(screen.getByRole("button", { name: "Usuń awatar" }));
+    rerender(<AccountPane {...pane({
+      onRemoveImage,
+      account: { ...account, avatarUrl: "/assets/a", bannerUrl: "/assets/b" },
+    })} />);
+    expect(screen.queryByRole("button", { name: "Usuń awatar" })).toBeNull();
+    await user.click(screen.getByRole("button", { name: "Usuń tło" }));
 
-    expect(onRemoveImage).toHaveBeenCalledExactlyOnceWith("avatar");
+    expect(onRemoveImage).toHaveBeenCalledExactlyOnceWith("banner");
   });
 
   it("reports a picture that could not be removed", async () => {

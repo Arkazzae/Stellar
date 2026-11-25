@@ -287,6 +287,12 @@ export const PALETTE_ROLE_VARIABLES = (Object.keys(COLOUR_ROLES) as ColourGroup[
 
 export const CUSTOM_NAME_MAX = 64;
 export const CUSTOM_SOURCE_MAX = 512;
+export const THEME_CSS_MAX = 4096;
+
+/** Bound the saved editor text, including its JSON escapes, for account settings. */
+export function fitsThemeCss(value: string): boolean {
+  return value.length <= THEME_CSS_MAX && new TextEncoder().encode(JSON.stringify(value)).byteLength <= THEME_CSS_MAX;
+}
 
 /** What paints a palette: its colours and the values derived from them. */
 export interface ResolvedPalette {
@@ -311,6 +317,8 @@ export interface LightTint {
  */
 export interface CustomTheme extends ResolvedPalette {
   name: string;
+  /** Source text from the CSS editor, kept for editing. Only the parsed colours are painted. */
+  css?: string;
   author?: string;
   /** Where it came from, an http(s) address. */
   source?: string;
@@ -551,8 +559,10 @@ export function normaliseCustomTheme(value: unknown): CustomTheme | null {
   const author = normaliseText(field(value, "author"), CUSTOM_NAME_MAX);
   const source = normaliseSource(field(value, "source"));
   const basedOn = PALETTE_IDS.find((id) => id === field(value, "basedOn"));
+  const css = field(value, "css");
   return {
     name: normaliseText(field(value, "name"), CUSTOM_NAME_MAX),
+    ...(typeof css === "string" && fitsThemeCss(css) ? { css } : {}),
     ...(author === "" ? {} : { author }),
     ...(source === undefined ? {} : { source }),
     ...(basedOn === undefined ? {} : { basedOn }),

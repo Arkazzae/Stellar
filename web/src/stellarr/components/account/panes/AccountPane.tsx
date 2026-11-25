@@ -117,7 +117,6 @@ export function AccountPane({
     });
   };
 
-  const hasAvatar = typeof account.avatarUrl === "string";
   const hasBanner = typeof account.bannerUrl === "string";
 
   return (
@@ -127,23 +126,15 @@ export function AccountPane({
         bio={bio}
         pronouns={pronouns}
         customEmoji={customEmoji}
-        onPickImage={pickImage}
+        onPickAvatar={(file) => onPickImage("avatar", file)}
+        onPickBanner={(file) => pickImage("banner", file)}
       />
 
-      {/* Only an uploaded picture can be removed; the built-in art is what
-          removing one goes back to. */}
-      {hasAvatar || hasBanner ? (
+      {hasBanner ? (
         <div className="pf-remove">
-          {hasAvatar ? (
-            <Button type="button" variant="secondary" size="sm" onClick={() => removeImage("avatar")}>
-              {t("account.removeAvatar")}
-            </Button>
-          ) : null}
-          {hasBanner ? (
-            <Button type="button" variant="secondary" size="sm" onClick={() => removeImage("banner")}>
-              {t("account.removeBackground")}
-            </Button>
-          ) : null}
+          <Button type="button" variant="secondary" size="sm" onClick={() => removeImage("banner")}>
+            {t("account.removeBackground")}
+          </Button>
         </div>
       ) : null}
 

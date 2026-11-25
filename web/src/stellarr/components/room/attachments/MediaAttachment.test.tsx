@@ -75,7 +75,7 @@ describe("uploaded media attachments", () => {
   it("plays the uploaded video inline with Stellarr controls, its poster and sound", () => {
     render(<Attachment part={{ kind: "video", name: "clip.mp4", url: "/clip.mp4", thumb: "/poster.jpg" }} />);
     const video = screen.getByLabelText("clip.mp4");
-    expect(screen.getByRole("button", { name: "Odtwórz clip.mp4" })).toBeEnabled();
+    expect(screen.getAllByRole("button", { name: "Odtwórz clip.mp4" })).toHaveLength(2);
     expect(video).toHaveProperty("controls", false);
     expect(video).toHaveProperty("muted", false);
     expect(video).toHaveProperty("autoplay", false);
@@ -89,14 +89,16 @@ describe("uploaded media attachments", () => {
     const timeline = screen.getByRole("slider", { name: /Pozycja odtwarzania/ });
     expect(timeline).toBeDisabled();
     Object.defineProperty(video, "duration", { value: 80 });
+    Object.defineProperties(video, { videoWidth: { value: 360 }, videoHeight: { value: 640 } });
     fireEvent.loadedMetadata(video);
+    expect(video.closest(".att-video")).toHaveStyle("--video-ratio: 0.5625");
     fireEvent.change(timeline, { target: { value: "60" } });
     expect(video.currentTime).toBe(60);
     expect(screen.getByText("1:00 / 1:20")).toBeInTheDocument();
     fireEvent.play(video);
-    expect(screen.getByRole("button", { name: "Wstrzymaj clip.mp4" })).toBeInTheDocument();
+    expect(screen.getAllByRole("button", { name: "Wstrzymaj clip.mp4" })).toHaveLength(2);
     fireEvent.ended(video);
-    expect(screen.getByRole("button", { name: "Odtwórz clip.mp4" })).toBeInTheDocument();
+    expect(screen.getAllByRole("button", { name: "Odtwórz clip.mp4" })).toHaveLength(2);
   });
 
   it("offers the original when a codec fails and tries a refreshed URL", () => {

@@ -11,7 +11,7 @@ flowchart LR
     Provider["ThemeProvider & AppAppearance"]
     DOM["<html> data-* & --palette-* variables"]
     CSS["recipe.css & ui-tokens.css (--ui-*)"]
-    Import["Theme File (.stellarr-theme.json) / BetterDiscord (.theme.css)"]
+    Import["Stellarr CSS / Theme File (.stellarr-theme.json) / BetterDiscord (.theme.css)"]
 
     Import -->|"normaliseTheme / isolated convertTheme"| Provider
     Storage --> PrePaint --> DOM
@@ -60,7 +60,37 @@ When a custom palette changes, `makeCustomTheme` computes two derived values onc
 - `accessibleFaint`: an AA-contrast faint text color checked against all eight backgrounds.
 - `neutral`: `{ hue, chroma }` (`--h-neutral` and `--c-neutral`, capped at `LIGHT_TINT_MAX = 20`) for tinting light-mode surfaces.
 
-Switching back to a preset keeps `ThemePreference.custom` stored so the user can return to it later.
+Switching back to a preset keeps `ThemePreference.custom` stored so the user can return to it later. Choosing Midnight or restoring defaults hides the wallpaper and returns the surfaces to their normal opacity. **Show saved wallpaper** in Appearance makes the uploaded picture visible again.
+
+### Write a CSS theme
+
+Open **User Settings → Appearance → Edit CSS**. Stellarr opens the saved source of your custom theme or generates a starting stylesheet from the palette. Paste your own CSS or edit the declarations, then save to apply the palette.
+
+```css
+:root {
+  /* Deep blue panels with a sea-green accent */
+  --palette-accent: #47bfa2;
+  --palette-background-darkest: #101923;
+  --palette-background-dark: #152230;
+  --palette-background-primary: #1c2c3b;
+  --palette-background-secondary: #243647;
+  --palette-text-normal: #edf5f8;
+  --palette-text-muted: #bacbd5;
+  --palette-border-subtle: #b1cde630;
+}
+```
+
+| Variables | Where they appear |
+| --- | --- |
+| `--palette-background-{darkest,dark,primary,secondary,tertiary,hover,active,floating}` | App surfaces and interactive states |
+| `--palette-text-{normal,muted,faint}` | Text and secondary labels |
+| `--palette-border-{subtle,default,strong}` | Dividers and outlines |
+| `--palette-{success,warning,danger,info}` | Status colors |
+| `--palette-accent` | Selected controls and highlights |
+
+Use one `:root` block with semicolon-separated declarations. The editor accepts CSS comments and hex colors (`#rgb`, `#rgba`, `#rrggbb`, `#rrggbbaa`). Use an opaque hex color for the accent. Each omitted role inherits from the preset the custom palette is based on. The saved editor text syncs with the account. Changing colors in the visual palette editor regenerates the stylesheet from the current colors the next time you open it.
+
+The editor reads palette declarations. Choose fonts, light or dark scheme, and wallpaper in the Appearance controls. For Discord-specific selectors, styles and remote assets, use the BetterDiscord converter below.
 
 ## Typography and wallpapers
 

@@ -32,6 +32,7 @@ import { BetterDiscordRow } from "./BetterDiscordRow";
 import { PaletteBoard, customThemeName } from "./PaletteBoard";
 import { Stage } from "./ThemeStage";
 import { ThemeFileRow } from "./ThemeFileRow";
+import { ThemeCssRow } from "./ThemeCssRow";
 import { WallpaperSection } from "./WallpaperSection";
 import type { WallpaperAccess } from "./wallpaperUpload";
 
@@ -225,7 +226,7 @@ export function AppearancePane({
   // The custom palette is kept through a reset, so it does not count here.
   const isDefault =
     (Object.keys(DEFAULT_THEME) as (keyof ThemePreference)[]).every(
-      (axis) => axis === "custom" || axis === "wallpaper" || theme[axis] === DEFAULT_THEME[axis],
+      (axis) => axis === "custom" || theme[axis] === DEFAULT_THEME[axis],
     ) && motion?.reducedMotion !== true;
 
   // "Restore defaults" means everything this pane shows, motion included.
@@ -294,7 +295,11 @@ export function AppearancePane({
                   data-scheme={resolvedScheme}
                   data-contrast={theme.contrast}
                   style={paletteCssVariables(tile.palette) as CSSProperties}
-                  onClick={() => onChange({ palette: tile.id, accent: tile.palette.colors.accent })}
+                  onClick={() => onChange({
+                    palette: tile.id,
+                    accent: tile.palette.colors.accent,
+                    ...(tile.id === DEFAULT_THEME.palette ? { wallpaper: null } : {}),
+                  })}
                 >
                   <span className="ap-sw" aria-hidden="true">
                     <i />
@@ -375,6 +380,7 @@ export function AppearancePane({
               </div>
             </div>
 
+            <ThemeCssRow theme={theme} onChange={onChange} />
             <ThemeFileRow theme={theme} onChange={onChange} {...(wallpaper === undefined ? {} : { wallpaper })} />
             <BetterDiscordRow theme={theme} onChange={onChange} {...(wallpaper === undefined ? {} : { wallpaper })} />
           </div>
