@@ -56,7 +56,9 @@ STELLARR_PUBLIC_IP=auto
 STELLARR_MEDIA_PORT=49000
 ```
 
-Set `STELLARR_PUBLIC_IP` to the IPv4 address callers can reach. With `auto`, the container resolves the hostname’s IPv4 address at startup. A numeric IPv4 `STELLARR_DOMAIN` supplies the direct SFU address when `STELLARR_PUBLIC_IP` is unset. `STELLARR_MEDIA_ADVERTISE` replaces the automatically derived candidates. The SFU advertises that IP and port in SDP for both UDP and passive TCP. When TURN is enabled, the same public IP configures its external address. Without a reachable SFU candidate, remote browsers need a working TURN relay and a reachable path to the SFU.
+Set `STELLARR_PUBLIC_IP` to the IPv4 address callers can reach. With `auto`, the container resolves the hostname’s IPv4 address at startup. A numeric IPv4 `STELLARR_DOMAIN` supplies the direct SFU address when `STELLARR_PUBLIC_IP` is unset.
+
+Set `STELLARR_MEDIA_LAN_IP` to the host’s LAN IPv4 if local callers cannot reach the public address through the router. Stellarr advertises both addresses on `STELLARR_MEDIA_PORT` while continuing to resolve the public address at startup when set to `auto`. The SFU advertises both UDP and passive TCP in SDP. For custom routing, `STELLARR_MEDIA_ADVERTISE` overrides the entire candidate list. TURN uses the public IP for its external address. Browsers that cannot reach any direct candidate need a working TURN relay.
 
 ## Diagnostics
 

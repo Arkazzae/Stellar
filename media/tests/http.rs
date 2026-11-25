@@ -28,6 +28,7 @@ fn config(secret: &str) -> Config {
         media_bind: "127.0.0.1:0".parse().unwrap(),
         public_ip: None,
         public_port: None,
+        lan_ip: None,
         advertise: None,
         control_bind: "127.0.0.1:0".parse().unwrap(),
         control_secret: secret.into(),

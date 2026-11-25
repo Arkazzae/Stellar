@@ -45,6 +45,7 @@ docker compose up -d
 | Variable | Type | Default | Description |
 | --- | --- | --- | --- |
 | `STELLARR_MEDIA_PORT` | port | `49000` | Host UDP and TCP port for Stellarr Media. Forward the same external port for both transports. [Stellarr Media](../stellarr-media.md) |
+| `STELLARR_MEDIA_LAN_IP` | IPv4 address | empty | Optional host LAN address advertised alongside the public address on `STELLARR_MEDIA_PORT`. Useful for callers on the local network when the router cannot loop traffic back through its public address. |
 | `STELLARR_TURN_ENABLED` | `true` \| `false` | `false` | Enables the optional TURN relay. Include [the TURN overlay](../rtc-and-ports.md#optional-turn-relay) with the base Compose file to publish its ports. |
 | `STELLARR_TURN_PORT` | port | `3478` | Host UDP/TCP port for STUN and TURN advertised to browsers. |
 | `STELLARR_TURNS_PORT` | port | `5349` | Host TCP/UDP port for TURN over TLS and DTLS. |
@@ -222,7 +223,7 @@ Read by `docker-compose.yml` during container creation (for `docker run`, pass `
 | --- | --- | --- | --- |
 | `STELLARR_TLS_RENEW_BEFORE_SECONDS` | seconds | `2592000` (30 days) | Renews the container-managed self-signed TLS certificate when remaining validity drops below this threshold or `STELLARR_DOMAIN` changes. |
 | `STELLARR_TLS_RENEW_CHECK_SECONDS` | seconds | `43200` (12 hours) | Interval between self-signed certificate renewal checks (`stellarr-tls-maintenance watch`). |
-| `STELLARR_MEDIA_ADVERTISE` | `ip:port` list | empty | Explicit comma-separated IPv4 `ip:port` ICE host candidates for `stellarr-media`, replacing the default candidates derived from `STELLARR_PUBLIC_IP`, `STELLARR_DOMAIN` and the container IP. |
+| `STELLARR_MEDIA_ADVERTISE` | `ip:port` list | empty | Explicit comma-separated IPv4 `ip:port` ICE host candidates for `stellarr-media`, overriding the derived public, LAN and container addresses. |
 | `STELLARR_MEDIA_LOG` | `tracing` filter | `info` | Rust `tracing` log filter for `stellarr-media` (e.g. `info,stellarr_media=debug`). |
 
 > [!IMPORTANT]

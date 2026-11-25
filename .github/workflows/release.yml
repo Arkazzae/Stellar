@@ -121,10 +121,28 @@ jobs:
           push-to-registry: true
           create-storage-record: false
 
+  verify-image-pull:
+    needs: publish
+    permissions: {}
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      IMAGE: ghcr.io/arkazzae/stellarr
+      TAG: ${{ github.ref_name }}
+    steps:
+      - name: Pull the versioned image without signing in
+        run: |
+          registry_config=$(mktemp -d)
+          trap 'rm -rf -- "$registry_config"' EXIT
+          if ! docker --config "$registry_config" pull "$IMAGE:${TAG#v}"; then
+            echo "::error::The versioned image could not be pulled anonymously. Check the GHCR package visibility and rerun this job."
+            exit 1
+          fi
+
   # Hold this lock from publication through promotion so a late-finishing
   # release cannot replace a newer stable tag.
   release:
-    needs: [publish, installer]
+    needs: [verify-image-pull, installer]
     concurrency:
       group: release-promotion
       queue: max
@@ -217,8 +235,11 @@ jobs:
           if version == max(published):
               print("latest")
           PYTHON
+          registry_config=$(mktemp -d)
+          trap 'rm -rf -- "$registry_config"' EXIT
           while IFS= read -r alias; do
             docker buildx imagetools create --tag "$IMAGE:$alias" "$IMAGE:${TAG#v}"
+            docker --config "$registry_config" manifest inspect "$IMAGE:$alias" > /dev/null
             if [[ $alias == latest ]]; then
               gh release edit "$TAG" --latest
             fi

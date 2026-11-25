@@ -23,6 +23,7 @@ pub struct Config {
     pub media_bind: SocketAddrV4,
     pub public_ip: Option<Ipv4Addr>,
     pub public_port: Option<u16>,
+    pub lan_ip: Option<Ipv4Addr>,
     /// When set, the candidates exactly as listed, in this order.
     pub advertise: Option<Vec<SocketAddrV4>>,
     pub control_bind: SocketAddr,
@@ -50,17 +51,17 @@ impl Config {
             None => DEFAULT_MEDIA_BIND,
         };
 
-        let public_ip = match var("STELLARR_MEDIA_PUBLIC_IP") {
-            Some(v) => {
-                let ip = v.parse::<Ipv4Addr>().map_err(|_| {
-                    ConfigError(format!(
-                        "STELLARR_MEDIA_PUBLIC_IP must be an IPv4 address, got {v:?}"
-                    ))
-                })?;
-                Some(ip)
-            }
-            None => None,
+        let candidate_ip = |name: &str| {
+            var(name)
+                .map(|value| {
+                    value.parse::<Ipv4Addr>().map_err(|_| {
+                        ConfigError(format!("{name} must be an IPv4 address, got {value:?}"))
+                    })
+                })
+                .transpose()
         };
+        let public_ip = candidate_ip("STELLARR_MEDIA_PUBLIC_IP")?;
+        let lan_ip = candidate_ip("STELLARR_MEDIA_LAN_IP")?;
 
         let public_port = match var("STELLARR_MEDIA_PUBLIC_PORT") {
             Some(v) => match v.parse::<u16>() {
@@ -113,6 +114,7 @@ impl Config {
             media_bind,
             public_ip,
             public_port,
+            lan_ip,
             advertise,
             control_bind,
             control_secret,
@@ -135,8 +137,13 @@ impl Config {
             )));
         }
 
-        if let Some(ip) = self.public_ip {
-            check_candidate_ip(ip, "STELLARR_MEDIA_PUBLIC_IP")?;
+        for (ip, name) in [
+            (self.public_ip, "STELLARR_MEDIA_PUBLIC_IP"),
+            (self.lan_ip, "STELLARR_MEDIA_LAN_IP"),
+        ] {
+            if let Some(ip) = ip {
+                check_candidate_ip(ip, name)?;
+            }
         }
         for addr in self.advertise.iter().flatten() {
             check_candidate_ip(*addr.ip(), "STELLARR_MEDIA_ADVERTISE")?;
@@ -165,10 +172,12 @@ impl Config {
         }
 
         let mut out = Vec::new();
-
-        if let Some(ip) = self.public_ip {
-            let port = self.public_port.unwrap_or(bound.port());
-            out.push(SocketAddr::V4(SocketAddrV4::new(ip, port)));
+        let published_port = self.public_port.unwrap_or(bound.port());
+        for ip in [self.public_ip, self.lan_ip].into_iter().flatten() {
+            let candidate = SocketAddr::V4(SocketAddrV4::new(ip, published_port));
+            if !out.contains(&candidate) {
+                out.push(candidate);
+            }
         }
 
         let local = if bound.ip().is_unspecified() {
@@ -309,9 +318,43 @@ mod tests {
     }
 
     #[test]
+    fn advertises_public_and_lan_addresses_on_the_published_port() {
+        let c = config(&[
+            ("STELLARR_MEDIA_PUBLIC_IP", "203.0.113.7"),
+            ("STELLARR_MEDIA_LAN_IP", "192.168.1.4"),
+            ("STELLARR_MEDIA_PUBLIC_PORT", "50000"),
+        ])
+        .unwrap();
+
+        assert_eq!(
+            c.candidates(bound("172.18.0.2:49000"), || None).unwrap(),
+            [
+                "203.0.113.7:50000".parse().unwrap(),
+                "192.168.1.4:50000".parse().unwrap(),
+                "172.18.0.2:49000".parse().unwrap(),
+            ]
+        );
+    }
+
+    #[test]
+    fn lists_a_shared_public_lan_and_local_candidate_once() {
+        let c = config(&[
+            ("STELLARR_MEDIA_PUBLIC_IP", "192.168.1.4"),
+            ("STELLARR_MEDIA_LAN_IP", "192.168.1.4"),
+        ])
+        .unwrap();
+
+        assert_eq!(
+            c.candidates(bound("192.168.1.4:49000"), || None).unwrap(),
+            ["192.168.1.4:49000".parse().unwrap()]
+        );
+    }
+
+    #[test]
     fn an_explicit_list_replaces_the_derived_one() {
         let c = config(&[
             ("STELLARR_MEDIA_PUBLIC_IP", "203.0.113.7"),
+            ("STELLARR_MEDIA_LAN_IP", "192.168.1.4"),
             (
                 "STELLARR_MEDIA_ADVERTISE",
                 "198.51.100.1:49000, 10.0.0.2:49001",
@@ -336,6 +379,8 @@ mod tests {
         assert!(config(&[("STELLARR_MEDIA_PUBLIC_IP", "chat.example.com")]).is_err());
         assert!(config(&[("STELLARR_MEDIA_PUBLIC_IP", "0.0.0.0")]).is_err());
         assert!(config(&[("STELLARR_MEDIA_PUBLIC_PORT", "0")]).is_err());
+        assert!(config(&[("STELLARR_MEDIA_LAN_IP", "239.0.0.1")]).is_err());
+        assert!(config(&[("STELLARR_MEDIA_LAN_IP", "host.local")]).is_err());
         assert!(config(&[("STELLARR_MEDIA_ADVERTISE", "1.2.3.4")]).is_err());
         assert!(config(&[("STELLARR_MEDIA_ADVERTISE", "1.2.3.4:0")]).is_err());
         assert!(config(&[("STELLARR_MEDIA_ADVERTISE", " , ")]).is_err());
