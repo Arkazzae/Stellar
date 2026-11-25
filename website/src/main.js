@@ -38,9 +38,12 @@ function initDrawer() {
     drawer.setAttribute('aria-hidden', String(!open));
     opener.setAttribute('aria-expanded', String(open));
     for (const el of background) el.inert = open;
-    document.body.style.overflow = open ? 'hidden' : '';
-    if (open) drawer.querySelector('[data-close]').focus();
-    else opener.focus({ preventScroll: true });
+    if (open) {
+      drawer.scrollTop = 0;
+      drawer.querySelector('[data-close]').focus({ preventScroll: true });
+    } else {
+      opener.focus({ preventScroll: true });
+    }
   };
   opener.addEventListener('click', () => setOpen(true));
   drawer.querySelectorAll('[data-close]').forEach((el) => el.addEventListener('click', () => setOpen(false)));
