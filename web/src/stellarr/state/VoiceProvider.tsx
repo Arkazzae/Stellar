@@ -56,6 +56,12 @@ export interface VoiceValue {
   people: PersonVM[];
   /** Applies live speech state to people the directory produced. */
   applySpeaking: (people: PersonVM[]) => PersonVM[];
+  /**
+   * The other people in the call, by who they are only: no speech, no mute.
+   * The same list until somebody comes, goes or is renamed, so the dock that
+   * shows them is not rendered by a word.
+   */
+  others: readonly PersonVM[];
   /** Every screen in the call: this user's own first, then the others'. */
   shares: ScreenShareVM[];
   /** Who watches each screen, by its key; empty for one nobody watches. */
@@ -122,6 +128,7 @@ export interface VoiceLive {
 export type VoiceCallValue = Pick<
   VoiceValue,
   | "call"
+  | "others"
   | "sounds"
   | "soundboard"
   | "soundboardEnabled"
@@ -134,6 +141,23 @@ export type VoiceCallValue = Pick<
   | "toggleShare"
   | "playSound"
 >;
+
+/** Whether two lists show the same faces in the same order. */
+function sameFaces(a: readonly PersonVM[], b: readonly PersonVM[]): boolean {
+  return (
+    a === b ||
+    (a.length === b.length &&
+      a.every((person, index) => {
+        const other = b[index];
+        return (
+          other !== undefined &&
+          person.id === other.id &&
+          person.displayName === other.displayName &&
+          person.avatarUrl === other.avatarUrl
+        );
+      }))
+  );
+}
 
 const VoiceContext = createContext<VoiceValue | null>(null);
 const VoiceLiveContext = createContext<VoiceLive | null>(null);
@@ -460,6 +484,24 @@ export function VoiceProvider({ children }: { children: ReactNode }) {
   );
   const problem = useMemo(() => voiceProblemForUi(state.error, t), [state.error, t]);
   const call = useSettled(view.call, sameCall);
+  const others = useSettled(
+    useMemo(
+      () =>
+        view.people
+          .filter((person) => person.id !== userId)
+          .map(
+            (person): PersonVM => ({
+              id: person.id,
+              displayName: person.displayName,
+              initials: person.initials,
+              presence: person.presence,
+              ...(person.avatarUrl === undefined ? {} : { avatarUrl: person.avatarUrl }),
+            }),
+          ),
+      [view.people, userId],
+    ),
+    sameFaces,
+  );
   // The cooldown is not here: it ticks every second, and only the panel
   // reads it, from the board's own live store.
   const soundboardEnabled = !view.privateCall && soundboard.supported;
@@ -468,6 +510,7 @@ export function VoiceProvider({ children }: { children: ReactNode }) {
     () => ({
       ...view,
       call,
+      others,
       state,
       channelId: state.channelId,
       error: problem?.message ?? null,
@@ -495,6 +538,7 @@ export function VoiceProvider({ children }: { children: ReactNode }) {
     [
       view,
       call,
+      others,
       state,
       problem,
       soundboard,
@@ -518,6 +562,7 @@ export function VoiceProvider({ children }: { children: ReactNode }) {
   const dock = useMemo<VoiceCallValue>(
     () => ({
       call,
+      others,
       sounds: soundboard.sounds,
       soundboard,
       soundboardEnabled,
@@ -532,6 +577,7 @@ export function VoiceProvider({ children }: { children: ReactNode }) {
     }),
     [
       call,
+      others,
       soundboard,
       soundboardEnabled,
       view.privateCall,

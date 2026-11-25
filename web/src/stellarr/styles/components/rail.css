@@ -417,21 +417,25 @@
     animation:viewIn var(--dur-slow) var(--ease-standard);
   }
   .voice-dock.hidden{display:none}
-  /* The link's quality as the logo's three bars; words only when something is
-     wrong, in place of the time. */
+  /* Words only when something is wrong, in place of the time; the link's
+     quality and ping are in the time's tooltip. */
   .dock-status{display:flex;align-items:center;gap:8px;min-width:0}
-  .qbars{--qoff:var(--line);display:inline-flex;align-items:center;gap:2.5px;width:18px;height:16px;flex:none}
-  [data-scheme="light"] .qbars{--qoff:color-mix(in oklab,var(--line-strong) 45%,transparent)}
-  .qbars i{display:block;width:4px;border-radius:2px;background:var(--qoff)}
-  .qbars i:nth-child(1){height:9px}
-  .qbars i:nth-child(2){height:16px}
-  .qbars i:nth-child(3){height:12px}
-  .qbars.q3 i{background:var(--live)}
-  .qbars.q2 i:nth-child(-n+2){background:var(--warn-text)}
-  .qbars.q1 i:nth-child(1){background:var(--danger-text)}
-  .qbars.busy i{background:var(--text-faint);opacity:.55}
-  .qbars.busy i:nth-child(2){opacity:1}
-  .qbars.screen i{background:var(--accent-text)}
+  /* The others in the call lead the line, three faces at most: the one who
+     speaks first, ringed as on a stage tile. While the call is not up they
+     step back with it. */
+  .ds-faces{display:inline-flex;align-items:center;flex:none}
+  .ds-faces.faded{opacity:.45}
+  .ds-face{display:inline-flex;margin-left:-6px;border-radius:50%;box-shadow:0 0 0 2px var(--surface-sidebar)}
+  .ds-face:first-child{margin-left:0}
+  .ds-face .av{--av-size:22px}
+  .ds-face.speaking{box-shadow:0 0 0 2px var(--surface-sidebar),0 0 0 3.5px var(--accent)}
+  .ds-more{
+    margin-left:-6px;height:22px;min-width:22px;padding:0 5px;border-radius:11px;
+    display:inline-flex;align-items:center;justify-content:center;
+    background:var(--surface-active);color:var(--text);
+    font-size:var(--text-10);font-weight:650;font-variant-numeric:tabular-nums;
+    box-shadow:0 0 0 2px var(--surface-sidebar);
+  }
   .ds-name{
     flex:1;min-width:0;font-size:13.5px;font-weight:600;color:var(--text);
     white-space:nowrap;overflow:hidden;text-overflow:ellipsis;
@@ -585,6 +589,20 @@
      `account.css` is positioned against this row. */
   /* Exactly the bottom band: its hairline is the band's top edge, and the
      name centres on the same line as the launcher and the composer. */
+  /* You, in a call: the avatar rings while you are heard, and with the
+     microphone off it steps back and wears the crossed microphone where the
+     presence dot sits. The dock above shows the others, so nobody is in the
+     column twice. */
+  .acc-av{position:relative;display:inline-flex;flex:none}
+  .acc-av.muted .av{opacity:.55}
+  .acc-mic{
+    position:absolute;right:-4px;bottom:-4px;z-index:1;
+    width:17px;height:17px;border-radius:50%;
+    display:inline-flex;align-items:center;justify-content:center;
+    background:color-mix(in srgb, var(--danger-line) 24%, var(--surface-sidebar));
+    color:var(--danger-text);box-shadow:0 0 0 2px var(--surface-sidebar);
+  }
+  .astate.mic-off{color:var(--danger-text)}
   .account{position:relative;border-top:1px solid var(--line-subtle);height:var(--dock-h);padding:0 8px 0 16px;display:flex;align-items:center;gap:6px;flex:none;--ui-button-disabled-opacity:0.4}
   /* Only the row's own buttons: the panel inside it styles its own controls. */
   .account > button:disabled{cursor:not-allowed}

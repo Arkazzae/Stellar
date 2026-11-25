@@ -69,36 +69,46 @@ describe("VoiceDock status line", () => {
     expect(status().querySelector(".ds-time time")).not.toBeNull();
   });
 
-  it("lights the logo's bars by the link's quality and says the quality and ping on them", () => {
-    const cases: [CallVM["connectionQuality"], number | null, string, string][] = [
-      ["good", 32, "q3", "Jakość połączenia: dobra, opóźnienie 32 ms."],
-      ["fair", 140, "q2", "Jakość połączenia: średnia, opóźnienie 140 ms."],
-      ["poor", 420, "q1", "Jakość połączenia: słaba, opóźnienie 420 ms."],
-      ["unknown", null, "busy", "Trwa pomiar jakości połączenia."],
+  it("says the link's quality and ping on the time, and for a screen reader", () => {
+    const cases: [CallVM["connectionQuality"], number | null, string][] = [
+      ["good", 32, "Jakość połączenia: dobra, opóźnienie 32 ms."],
+      ["fair", 140, "Jakość połączenia: średnia, opóźnienie 140 ms."],
+      ["poor", 420, "Jakość połączenia: słaba, opóźnienie 420 ms."],
+      ["unknown", null, "Trwa pomiar jakości połączenia."],
     ];
-    for (const [connectionQuality, latencyMs, lit, said] of cases) {
+    for (const [connectionQuality, latencyMs, said] of cases) {
       const { unmount } = render(
         <VoiceDock {...props({ call: { ...CALL, connectionQuality, latencyMs } })} />,
       );
-      const bars = screen.getByRole("img", { name: said });
-      expect(bars).toHaveClass("qbars", lit);
-      expect(bars).toHaveAttribute("title", said);
+      expect(status().querySelector(".ds-time")).toHaveAttribute("title", said);
+      expect(within(status()).getByText(said)).toHaveClass("sr-only");
       unmount();
     }
 
     // Until the call is up there is no quality to state.
     render(<VoiceDock {...props({ call: { ...CALL, headline: "reconnecting" } })} />);
-    expect(screen.queryByRole("img")).toBeNull();
+    expect(status().querySelector(".sr-only")).toBeNull();
   });
 
-  it("draws an unsteady connection as fair, whatever the last reading said", () => {
-    for (const connectionQuality of ["good", "poor", "unknown"] as const) {
-      const { unmount } = render(
-        <VoiceDock {...props({ call: { ...CALL, headline: "degraded", connectionQuality } })} />,
-      );
-      expect(status().querySelector(".qbars")).toHaveClass("q2");
-      unmount();
-    }
+  it("leads with the others' faces instead of bars, three at most and the rest counted", () => {
+    const person = (id: string) => ({ id, displayName: id, initials: id.slice(0, 2), presence: "online" as const });
+    const { unmount } = render(
+      <VoiceDock {...props({ others: ["ada", "bo", "cy", "dan", "ewa"].map(person) })} />,
+    );
+    expect(status().querySelectorAll(".ds-face")).toHaveLength(3);
+    expect(within(status()).getByText("+2")).toHaveClass("ds-more");
+    expect(status().querySelector(".qbars")).toBeNull();
+    unmount();
+
+    // Alone on the channel, nothing stands before its name.
+    render(<VoiceDock {...props({ others: [] })} />);
+    expect(status().querySelector(".ds-faces")).toBeNull();
+  });
+
+  it("fades the faces while the call is not up", () => {
+    const others = [{ id: "ada", displayName: "Ada", initials: "AD", presence: "online" as const }];
+    render(<VoiceDock {...props({ others, call: { ...CALL, headline: "reconnecting" } })} />);
+    expect(status().querySelector(".ds-faces")).toHaveClass("faded");
   });
 });
 
