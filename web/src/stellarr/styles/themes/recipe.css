@@ -280,6 +280,7 @@
   --neutral-edge: color-mix(in oklab, var(--surface-active) 55%, black);
   --danger-edge: color-mix(in oklab, var(--danger-line) 55%, black);
   --live-edge: color-mix(in oklab, var(--live-line) 55%, black);
+  --hang-edge: color-mix(in oklab, var(--hang) 55%, black);
 
   /* Two caps, not one: 72ch keeps prose readable, 860px lets images breathe. */
   --room-max: 860px;
