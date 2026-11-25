@@ -80,12 +80,13 @@ jobs:
           # workspaces. It reads the logo, fonts and tour film from branding/,
           # and serves install.sh.
           check website '^(website/|branding/(logo|film|guidelines/fonts)/|install\.sh$|\.github/workflows/ci\.yml$)'
-          # The installer downloads docker-compose.yml and .env.example and
-          # writes .env from them, and its tests read both. The same job
-          # checks that the settings in those two files are the ones the
-          # image reads and the configuration page lists, and runs ShellCheck
-          # on the scripts that read them.
-          check installer '^(install\.sh$|infra/tests/(install|setting-names|entrypoint|smoke)|infra/(entrypoint|settings|stellarr-cli|tls-maintenance)\.sh$|api/crates/server/src/settings/variables\.rs$|docs/install/configuration\.md$|docker-compose(\.turn)?\.yml$|\.env\.example$|\.github/workflows/ci\.yml$)'
+          # The installer, installer/ and the install.sh that fetches it,
+          # downloads docker-compose.yml and .env.example and writes .env from
+          # them, and its tests read both. The same job checks that the
+          # settings in those two files are the ones the image reads and the
+          # configuration page lists, and runs ShellCheck on the scripts that
+          # read them.
+          check installer '^(install\.sh$|installer/|infra/tests/(install|setting-names|entrypoint|smoke)|infra/(entrypoint|settings|stellarr-cli|tls-maintenance)\.sh$|api/crates/server/src/settings/variables\.rs$|docs/install/configuration\.md$|docker-compose(\.turn)?\.yml$|\.env\.example$|\.github/workflows/ci\.yml$)'
           # vite.config.ts, documents.ts and worklets.ts lay out the build that
           # nginx serves. The image job drills the process manager in the
           # image, so its sources count, not only its manifest. It takes the
@@ -353,17 +354,40 @@ jobs:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
 
-  # The one-command installer, install.sh. Its tests run it against stub
-  # commands and need neither Docker nor the network themselves; the images
-  # below only hold the tools. They run on the runner's bash with GNU tools,
-  # and in bash 3.2, the one macOS ships, with BusyBox's.
+  # The one-command installer: the program in installer/ and install.sh,
+  # which fetches it. Their tests run both against stub commands, with the
+  # installer's HTTPS answered from files, and need neither Docker nor the
+  # network themselves; the images below only hold the tools. They run on the
+  # runner's bash with GNU tools, and in bash 3.2, the one macOS ships, with
+  # BusyBox's. The installer is built static, for musl, so the same build
+  # runs in both.
   installer:
     needs: changes
     if: needs.changes.outputs.installer == 'true'
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    timeout-minutes: 20
+    defaults:
+      run:
+        shell: bash
+    env:
+      STELLARR_INSTALLER_TEST_BIN: installer/target/x86_64-unknown-linux-musl/debug/stellarr-installer
     steps:
       - uses: actions/checkout@v7
+      - run: rustup toolchain install stable --profile minimal --component rustfmt,clippy --target x86_64-unknown-linux-musl && rustup default stable
+      - run: sudo apt-get update && sudo apt-get install -y musl-tools
+      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
+        with:
+          workspaces: installer
+      - run: cargo fmt --check
+        working-directory: installer
+      - run: cargo clippy --locked --all-targets -- -D warnings
+        working-directory: installer
+      - run: cargo clippy --locked --all-targets --features test-seams -- -D warnings
+        working-directory: installer
+      - run: cargo test --locked --features test-seams
+        working-directory: installer
+      - run: cargo build --locked --features test-seams --target x86_64-unknown-linux-musl
+        working-directory: installer
       - name: Check the scripts with ShellCheck
         run: docker run --rm -v "$PWD":/mnt:ro -w /mnt koalaman/shellcheck:v0.11.0@sha256:61862eba1fcf09a484ebcc6feea46f1782532571a34ed51fedf90dd25f925a8d install.sh infra/tests/install.test.sh infra/tests/setting-names.test.sh infra/tests/smoke.test.sh infra/settings.sh infra/entrypoint.sh infra/stellarr-cli.sh infra/tests/entrypoint.test.sh
       - name: Check production port mappings
@@ -387,7 +411,43 @@ jobs:
         run: bash infra/tests/setting-names.test.sh
       - run: bash infra/tests/install.test.sh
       - name: Run the tests under bash 3.2 with BusyBox
-        run: docker run --rm -v "$PWD":/w:ro -w /w bash:3.2.57@sha256:2556c2da19c32c1614d318645c73a7bf64d38be21cf69e98e3ca51f053983719 bash infra/tests/install.test.sh
+        run: docker run --rm -v "$PWD":/w:ro -w /w -e STELLARR_INSTALLER_TEST_BIN bash:3.2.57@sha256:2556c2da19c32c1614d318645c73a7bf64d38be21cf69e98e3ca51f053983719 bash infra/tests/install.test.sh
+
+  # Builds the installer for every target the release attaches, on the same
+  # runners, so a target that does not build shows here and not after a tag
+  # has pushed the image.
+  installer-targets:
+    needs: changes
+    if: needs.changes.outputs.installer == 'true'
+    strategy:
+      matrix:
+        include:
+          - target: aarch64-unknown-linux-musl
+            runner: ubuntu-24.04-arm
+          - target: x86_64-apple-darwin
+            runner: macos-latest
+          - target: aarch64-apple-darwin
+            runner: macos-latest
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 20
+    defaults:
+      run:
+        shell: bash
+        working-directory: installer
+    steps:
+      - uses: actions/checkout@v7
+      - run: rustup toolchain install stable --profile minimal --component clippy --target ${{ matrix.target }} && rustup default stable
+      - if: runner.os == 'Linux'
+        run: sudo apt-get update && sudo apt-get install -y musl-tools
+      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
+        with:
+          workspaces: installer
+          key: ${{ matrix.target }}
+      - run: cargo clippy --locked --target ${{ matrix.target }} -- -D warnings
+      - run: cargo build --locked --release --target ${{ matrix.target }}
+      # A Mac runs both of its builds, under Rosetta for x86_64.
+      - if: runner.os == 'macOS'
+        run: target/${{ matrix.target }}/release/stellarr-installer --help
 
   # Builds the image without pushing it, when the Dockerfile, the container
   # configuration or a dependency list changes. On main it also refreshes the
