@@ -1352,12 +1352,17 @@
 
   .nt-state {
     display: inline-flex;
-    align-items: center;
+    align-items: flex-start;
     gap: 6px;
     font-size: var(--text-13);
     font-weight: 500;
     color: var(--warn-text);
-    white-space: nowrap;
+    overflow-wrap: anywhere;
+  }
+
+  .nt-state > svg {
+    flex: none;
+    margin-top: 2px;
   }
 
   /* Under the table: how to read it, and the sound to hear. */
