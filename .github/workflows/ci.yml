@@ -167,7 +167,7 @@ jobs:
           if-no-files-found: error
           retention-days: 7
 
-  web:
+  web-tests:
     needs: [changes, recipes]
     if: needs.changes.outputs.web == 'true'
     runs-on: ubuntu-latest
@@ -198,25 +198,6 @@ jobs:
       - run: npm run test:icons
       - run: npm run typecheck:router
       - run: npm run test:router
-      - name: Check long transcript in Chromium
-        run: |
-          chrome=$(command -v google-chrome || command -v google-chrome-stable || command -v chromium || true)
-          if [[ -z $chrome ]]; then
-            echo "::error::Chrome or Chromium is required for the transcript benchmark."
-            exit 1
-          fi
-          STELLARR_CHROMIUM="$chrome" npm run bench:transcript -w stellarr-web -- \
-            --messages 1000,10000 --check --out "$RUNNER_TEMP/transcript-benchmark.json"
-      - name: Report transcript benchmark
-        if: always()
-        run: |
-          if [[ -f $RUNNER_TEMP/transcript-benchmark.json ]]; then
-            {
-              printf '### Transcript benchmark\n\n```json\n'
-              cat "$RUNNER_TEMP/transcript-benchmark.json"
-              printf '\n```\n'
-            } >> "$GITHUB_STEP_SUMMARY"
-          fi
       # Each playback strip and the speech detector's worklet, rendered in
       # Chromium against web/bench/voice/records/playback.txt.
       - name: Check voice playback in Chromium
@@ -247,6 +228,55 @@ jobs:
       - run: npm run tokens:check -w @stellarr/ui
       # One build compiles both apps.
       - run: npm run build:web
+
+  # The transcript fixture builds from tracked sources and can start before the recipes finish.
+  web-transcript:
+    needs: changes
+    if: needs.changes.outputs.web == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 26
+          cache: npm
+          cache-dependency-path: package-lock.json
+      - run: npm ci
+      - name: Check long transcript in Chromium
+        run: |
+          chrome=$(command -v google-chrome || command -v google-chrome-stable || command -v chromium || true)
+          if [[ -z $chrome ]]; then
+            echo "::error::Chrome or Chromium is required for the transcript benchmark."
+            exit 1
+          fi
+          STELLARR_CHROMIUM="$chrome" npm run bench:transcript -w stellarr-web -- \
+            --messages 1000,10000 --check --out "$RUNNER_TEMP/transcript-benchmark.json"
+      - name: Report transcript benchmark
+        if: always()
+        run: |
+          if [[ -f $RUNNER_TEMP/transcript-benchmark.json ]]; then
+            {
+              printf '### Transcript benchmark\n\n```json\n'
+              cat "$RUNNER_TEMP/transcript-benchmark.json"
+              printf '\n```\n'
+            } >> "$GITHUB_STEP_SUMMARY"
+          fi
+
+  # Keep the web check tied to both jobs while they run on separate runners.
+  web:
+    needs: [changes, web-tests, web-transcript]
+    if: ${{ !cancelled() && needs.changes.outputs.web == 'true' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Check web job results
+        env:
+          WEB_TESTS: ${{ needs.web-tests.result }}
+          WEB_TRANSCRIPT: ${{ needs.web-transcript.result }}
+        run: |
+          printf 'Web tests: %s\nTranscript benchmark: %s\n' "$WEB_TESTS" "$WEB_TRANSCRIPT"
+          test "$WEB_TESTS" = success && test "$WEB_TRANSCRIPT" = success
 
   media:
     needs: changes
